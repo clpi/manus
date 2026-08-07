@@ -113,6 +113,16 @@ pub fn build(b: *std.Build) void {
     const public_safety_step = b.step("public-safety", "Scan tracked files for secrets and personal paths (Pass 10 A19)");
     public_safety_step.dependOn(&public_safety_cmd.step);
 
+    // Pass 57 A2 — one source, N projection targets, compared on a stdout
+    // fingerprint rather than exit status alone. native-differential compares
+    // only exit status (it sends stdout to /dev/null), so two backends that
+    // print different answers "agree" there as long as both exit 0.
+    const semantic_harness_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/semantic_harness.duo" });
+    semantic_harness_cmd.setCwd(b.path("."));
+    semantic_harness_cmd.step.dependOn(b.getInstallStep());
+    const semantic_harness_step = b.step("semantic-harness", "Every projection target must agree on stdout, not just exit status (Pass 57 A2)");
+    semantic_harness_step.dependOn(&semantic_harness_cmd.step);
+
     const repo_hygiene_cmd = b.addSystemCommand(&.{ "bash", "./scripts/repo_hygiene.sh" });
     repo_hygiene_cmd.setCwd(b.path("."));
     const repo_hygiene_step = b.step("repo-hygiene", "Pass 11 WP-12: forbidden root artifacts and tracked agent noise");

@@ -10982,6 +10982,42 @@ pub const CodeGen = struct {
                     self.expr_type(nf.start);
                 const vt2 = if (vt == .any) RT.i64 else vt;
                 try self.note_local_type(nf.var_name, vt2);
+                // The continuation test MUST follow the step's sign. This was an
+                // unconditional `<=`, so `for i = 4, 1, -1` emitted
+                // `for (int64_t i = 4; i <= 1; i += (-1))` and ran ZERO times —
+                // every descending loop silently did nothing. It went unnoticed
+                // because the DIRECT ARM64 backend lowers the same loop
+                // correctly, so examples/native_for_smoke.duo (which compiles
+                // native) passed while the C backend was wrong. That is exactly
+                // the backend divergence scripts/semantic_harness.duo exists to
+                // catch, and it took the harness to surface it.
+                const step_negative: ?bool = if (nf.step) |s| num_for_step_negative(s) else false;
+                var closed_scope = false;
+                if (step_negative == null) {
+                    // Sign unknown until run time. Lua evaluates `stop` and
+                    // `step` exactly ONCE, so they are hoisted into temps rather
+                    // than re-evaluated in the condition — an expression with a
+                    // side effect must not fire per iteration. The temps live in
+                    // their own C block, so a nested loop reusing the same loop
+                    // variable name simply shadows, which is well defined. The
+                    // block opens BEFORE the vectorization pragma below: a
+                    // `#pragma clang loop` must be immediately followed by the
+                    // loop itself, and an intervening `{` is a hard error.
+                    closed_scope = true;
+                    self.p("{{\n", .{});
+                    self.indent += 1;
+                    self.ind();
+                    self.typ(vt2);
+                    self.p(" __dfor_stop_{s} = ", .{nf.var_name});
+                    try self.emit_num_for_bound(nf.stop, vt2);
+                    self.p(";\n", .{});
+                    self.ind();
+                    self.typ(vt2);
+                    self.p(" __dfor_step_{s} = ", .{nf.var_name});
+                    try self.emit_num_for_bound(nf.step.?, vt2);
+                    self.p(";\n", .{});
+                    self.ind();
+                }
                 // Emit vectorization hint for simple counted loops in typed code.
                 // Stronger pragma when sema detects reduction/accumulation loops.
                 if (self.current_ret.is_native()) {
@@ -11005,10 +11041,18 @@ pub const CodeGen = struct {
                 self.typ(vt2);
                 self.p(" {s} = ", .{nf.var_name});
                 try self.emit_num_for_bound(nf.start, vt2);
-                self.p("; {s} <= ", .{nf.var_name});
-                try self.emit_num_for_bound(nf.stop, vt2);
-                self.p("; {s} += ", .{nf.var_name});
-                if (nf.step) |s| try self.emit_num_for_bound(s, vt2) else self.p("1", .{});
+                self.p("; ", .{});
+                if (step_negative) |neg| {
+                    self.p("{s} {s} ", .{ nf.var_name, if (neg) ">=" else "<=" });
+                    try self.emit_num_for_bound(nf.stop, vt2);
+                    self.p("; {s} += ", .{nf.var_name});
+                    if (nf.step) |s| try self.emit_num_for_bound(s, vt2) else self.p("1", .{});
+                } else {
+                    self.p("__dfor_step_{s} > 0 ? {s} <= __dfor_stop_{s} : {s} >= __dfor_stop_{s}", .{
+                        nf.var_name, nf.var_name, nf.var_name, nf.var_name, nf.var_name,
+                    });
+                    self.p("; {s} += __dfor_step_{s}", .{ nf.var_name, nf.var_name });
+                }
                 self.p(") {{\n", .{});
                 self.indent += 1;
                 try self.push_break_scope();
@@ -11016,6 +11060,10 @@ pub const CodeGen = struct {
                 try self.emit_block(&nf.body);
                 self.indent -= 1;
                 self.pl("}}", .{});
+                if (closed_scope) {
+                    self.indent -= 1;
+                    self.pl("}}", .{});
+                }
             },
             .gen_for => |*gf| {
                 const IterMode = enum { generic, direct_table, explicit_pairs, explicit_ipairs };
@@ -17076,6 +17124,21 @@ pub const CodeGen = struct {
     /// reserved words, so no program can bind them and no projection can hijack
     /// a user name; `string`, `ptr`, `isize`, `usize` are ordinary identifiers a
     /// program MAY bind, so they stay out.
+    /// Whether a numeric `for` step is a statically-known NEGATIVE value.
+    /// null means the sign is only knowable at run time, which the caller
+    /// handles with a hoisted runtime test rather than guessing.
+    fn num_for_step_negative(e: *const ast.Expr) ?bool {
+        return switch (e.*) {
+            .int_lit => |x| x.val < 0,
+            .float_lit => |x| x.val < 0,
+            .unop => |u| if (u.op == .neg) blk: {
+                const inner = num_for_step_negative(u.operand) orelse break :blk null;
+                break :blk !inner;
+            } else null,
+            else => null,
+        };
+    }
+
     fn primitive_descriptor_name(name: []const u8) ?[]const u8 {
         for ([_][]const u8{
             "i8",  "i16", "i32",  "i64",

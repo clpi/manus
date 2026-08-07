@@ -11,6 +11,19 @@ run(cmd: str): i64
     1
 end
 
+-- The EXACT exit status, which `run` cannot give. std.os.execute collapses
+-- every failure to 1 -- `std.os.execute("exit 7")` returns 1, not 7 -- so any
+-- differential built on `run` calls a 7-vs-3 divergence "agreement". The status
+-- is read back through the shell instead, which is exact and needs no runtime
+-- change.
+--
+-- The subshell parentheses are load-bearing: without them `exit 7` terminates
+-- the popen'd shell before `echo $?` ever runs, and capture returns "" -> 0.
+-- That reads as "everything succeeded", the worst possible failure mode here.
+status(cmd: str): i64
+    to(i64)(capture("( " .. cmd .. " ) >/dev/null 2>&1; echo $?"))
+end
+
 ok(cmd: str): bool
     run(cmd) == 0
 end
@@ -279,12 +292,29 @@ fs_rm(path: str): void
     must("rm -rf '" .. path .. "'")
 end
 
+-- Strip trailing newlines. `capture` terminates every line it reads, so a
+-- single-line command's output is a value with a "\n" welded on -- fine to
+-- print, silently wrong the moment it is used as a PATH.
+chomp(s: str): str
+    n = string.len(s)
+    while n > 0 and string.byte(s, n) == 10
+        n = n - 1
+    end
+    string.sub(s, 1, n)
+end
+
+-- Both of these returned the temp path WITH capture's trailing newline, so
+-- `fs_tmpdir() .. "/x"` built "/var/.../tmp.ABC\n/x". Embedded in a shell
+-- command that newline ends the line, and the remainder runs as its own
+-- command -- giving exit 127 ("command not found") rather than any error
+-- naming the real problem. A differential harness reading that 127 in every
+-- column concluded the columns AGREED.
 fs_tmp(): str
-    capture("mktemp 2>/dev/null")
+    chomp(capture("mktemp 2>/dev/null"))
 end
 
 fs_tmpdir(): str
-    capture("mktemp -d 2>/dev/null")
+    chomp(capture("mktemp -d 2>/dev/null"))
 end
 
 -- === Process piping (makes Duo ergonomic vs bash pipes) ===
