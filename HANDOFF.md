@@ -53,7 +53,7 @@ need restructuring.
 Verified: `wart_simple` (`42 + 58` through a 2-param callee) returns **100**,
 and hash.wasm is unchanged at `1899277430`. Imported/WASI functions still bail.
 
-## Measured coverage: 11/18 VERIFIED (11/16 of modules that have a wasmtime reference) (use bench/verify.sh)
+## Measured coverage: 11/18 VERIFIED (11/16 of modules that have a wasmtime reference) (use bench/verify.duo)
 
 ## THE CONVERSION FAMILY (168-187)
 
@@ -178,7 +178,7 @@ find than an honest bail. Audit any new range arm for this.
 **"ward produced a result" is NOT coverage.** An earlier version of this harness
 counted any non-sentinel result as a pass and reported **8/18**. A differential
 check against wasmtime showed 2 of those were plain wrong and 1 was an f64 the
-reporting path truncates. `bench/verify.sh` is now the oracle; `bench/run.sh` is
+reporting path truncates. `bench/verify.duo` is now the oracle; `bench/run.sh` is
 for timing only. Real score: **4 PASS, 3 DIFF, 9 UNSUPPORTED, 2 SKIP**.
 
 | module | wasmtime | ward | |
