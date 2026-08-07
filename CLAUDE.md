@@ -87,6 +87,25 @@ See `.agents/AGENT_COORDINATION.md` for active work tracking.
    formatter means your FORM is wrong.
 7. When unsure: query, never invent. No answer = spec gap = report it.
 
+### Measure before you follow a pass: `duo run scripts/spec_conformance.duo`
+
+**10 of 20** Pass 64 surface forms are implemented (measured 2026-08-07). The
+gate is a Duo program and a RATCHET: it fails when a form that used to work
+stops. It asserts a VALUE per row, never "it compiled" — the whole failure
+class here compiles and prints the wrong thing.
+
+Green: FF-5 binding conditions · FF-6 demand returns · FF-12 subject-first ·
+FF-14 strata currying · G6 `value.@name` · STR-1 name and field holes ·
+LV-8 `for v in t` · LV-13 `#s` · primitives as values.
+
+Missing: FF-1 `f = (x: t): r ... end` · FF-11 `range` · FF-13 `t{...}` ·
+FF-17 `t | nil` · STR-1 expression holes · LV-4/5/6 `push`/`pop`/`join` ·
+PIPE `map`/`filter`.
+
+Not wired into `build.zig` on purpose: that would mean editing Zig, and the
+monoglot mandate says tooling is Duo. It needs a Duo build driver to become a
+CI step.
+
 ### Rules that the compiler cannot honour yet — measured, filed, not guessed
 
 Rule 7 says report gaps rather than invent. These three are filed in
@@ -113,6 +132,16 @@ crash**, so the listed interim spelling is the correct one to write.
     misread as a name.
   - Malformed holes stay literal by design: `{a.}`, `{.x}`, `{a..b}`, `{1x}`.
   Interim: `..` chains ONLY for expression holes.
+- **GAP-16 (STR-1) — interpolation has NO ESCAPE.** There is no way to spell a
+  literal `{name}` in a Duo string. Any program whose DATA is Duo source
+  containing holes — a code generator, a conformance corpus, a doc example —
+  has its own data rewritten by the compiler. Not hypothetical: the first run
+  of `scripts/spec_conformance.duo` failed with "use of undeclared identifier
+  'x'" because the STR-1 row's test PROGRAM was interpolated as if it were the
+  harness's own source. Interim: build the brace (`"{" .. "x}"`). This is the
+  same class as the blanket `~=` pass that once rewrote a lexer's own corpus
+  data — a brace inside a string a program means to EMIT is not a hole, and
+  nothing in the language currently lets you say so.
 - **GAP-14 (Pass 61 LV-4..7, PIPE-1) — DO NOT APPLY THE LV SEQUENCE ROWS YET.**
   The pinned sequence surface (`map filter fold each find any all count take
   drop sort sort_by max_by min_by join push pop sum`) is **not implemented**.
