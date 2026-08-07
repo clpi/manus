@@ -1,4 +1,4 @@
-new(texture: any, x: f64, y: f64) -> any
+new(texture: any, x: f64, y: f64): any
   {
     texture = texture,
     x = x,
@@ -22,18 +22,18 @@ new(texture: any, x: f64, y: f64) -> any
     z_order = 0
   }
 end
-set_position(sprite: any, x: f64, y: f64) -> void
+set_position(sprite: any, x: f64, y: f64): void
   sprite.x = x
   sprite.y = y
 end
-set_scale(sprite: any, sx: f64, sy: f64) -> void
+set_scale(sprite: any, sx: f64, sy: f64): void
   sprite.scale_x = sx
   sprite.scale_y = sy or sx
 end
-set_rotation(sprite: any, degrees: f64) -> void
+set_rotation(sprite: any, degrees: f64): void
   sprite.rotation = degrees
 end
-set_color(sprite: any, r: f64, g: f64, b: f64, a: f64) -> void
+set_color(sprite: any, r: f64, g: f64, b: f64, a: f64): void
   sprite.color = {
     r = r,
     g = g,
@@ -41,11 +41,11 @@ set_color(sprite: any, r: f64, g: f64, b: f64, a: f64) -> void
     a = a or 1
   }
 end
-set_flip(sprite: any, flip_x: bool, flip_y: bool) -> void
+set_flip(sprite: any, flip_x: bool, flip_y: bool): void
   sprite.flip_x = flip_x
   sprite.flip_y = flip_y
 end
-sheet_new(texture: any, frame_width: i64, frame_height: i64) -> any
+sheet_new(texture: any, frame_width: i64, frame_height: i64): any
   cols = math.floor(texture.width / frame_width)
   rows = math.floor(texture.height / frame_height)
   frames = {}
@@ -70,13 +70,13 @@ sheet_new(texture: any, frame_width: i64, frame_height: i64) -> any
     frames = frames
   }
 end
-sheet_get_frame(sheet: any, index: i64) -> any
+sheet_get_frame(sheet: any, index: i64): any
   sheet.frames[index]
 end
-sheet_get_frame_count(sheet: any) -> i64
+sheet_get_frame_count(sheet: any): i64
   #sheet.frames
 end
-anim_new(sheet: any, frame_indices: any, fps: f64) -> any
+anim_new(sheet: any, frame_indices: any, fps: f64): any
   {
     sheet = sheet,
     frames = frame_indices,
@@ -87,18 +87,18 @@ anim_new(sheet: any, frame_indices: any, fps: f64) -> any
     loop = true
   }
 end
-anim_play(anim: any) -> void
+anim_play(anim: any): void
   anim.playing = true
   anim.current_frame = 1
   anim.elapsed = 0
 end
-anim_stop(anim: any) -> void
+anim_stop(anim: any): void
   anim.playing = false
 end
-anim_pause(anim: any) -> void
+anim_pause(anim: any): void
   anim.playing = false
 end
-anim_update(anim: any, delta_time: f64) -> void
+anim_update(anim: any, delta_time: f64): void
   if not anim.playing
     return
   end
@@ -117,21 +117,21 @@ anim_update(anim: any, delta_time: f64) -> void
     end
   end
 end
-anim_get_frame(anim: any) -> any
+anim_get_frame(anim: any): any
   frame_index = anim.frames[anim.current_frame]
   anim.sheet.frames[frame_index]
 end
-renderer_new() -> any
+renderer_new(): any
   {
     sprites = {},
     sorted = false
   }
 end
-renderer_add(renderer: any, sprite: any) -> void
+renderer_add(renderer: any, sprite: any): void
   renderer.sprites[#renderer.sprites + 1] = sprite
   renderer.sorted = false
 end
-renderer_remove(renderer: any, sprite: any) -> void
+renderer_remove(renderer: any, sprite: any): void
   i = 1
   while i <= #renderer.sprites
     if renderer.sprites[i] == sprite
@@ -141,13 +141,13 @@ renderer_remove(renderer: any, sprite: any) -> void
     i = i + 1
   end
 end
-renderer_sort(renderer: any) -> void
-  table.sort(renderer.sprites, (a: any, b: any) -> any
+renderer_sort(renderer: any): void
+  table.sort(renderer.sprites, (a: any, b: any): any
     a.z_order < b.z_order
   end)
   renderer.sorted = true
 end
-renderer_render(renderer: any) -> any
+renderer_render(renderer: any): any
   if not renderer.sorted
     renderer_sort(renderer)
   end

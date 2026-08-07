@@ -1,5 +1,5 @@
 time_mod = req("std.time")
-new(factory: any, destroyer: any, opts: any) -> any
+new(factory: any, destroyer: any, opts: any): any
   if opts == nil
     opts = {}
   end
@@ -20,7 +20,7 @@ new(factory: any, destroyer: any, opts: any) -> any
     total_destroyed = 0
   }
 end
-get(p: any) -> any
+get(p: any): any
   while rawlen(p.resources) > 0
     res = table.remove(p.resources)
     age = time_mod.now() - (p.last_used[res] or time_mod.now())
@@ -57,7 +57,7 @@ get(p: any) -> any
   end
   slot._val
 end
-put(p: any, res: any) -> void
+put(p: any, res: any): void
   if res == nil
     return
   end
@@ -79,7 +79,7 @@ put(p: any, res: any) -> void
   p.resources[rawlen(p.resources) + 1] = res
   p.last_used[res] = time_mod.now()
 end
-try_get(p: any) -> any
+try_get(p: any): any
   while rawlen(p.resources) > 0
     res = table.remove(p.resources)
     age = time_mod.now() - (p.last_used[res] or time_mod.now())
@@ -108,10 +108,10 @@ try_get(p: any) -> any
   end
   nil
 end
-release(p: any, res: any) -> void
+release(p: any, res: any): void
   put(p, res)
 end
-stats(p: any) -> any
+stats(p: any): any
   idle = 0
   for _ in p.resources
     idle = idle + 1
@@ -132,7 +132,7 @@ stats(p: any) -> any
     total_destroyed = p.total_destroyed
   }
 end
-drain(p: any) -> void
+drain(p: any): void
   while rawlen(p.resources) > 0
     destroy_res(p, table.remove(p.resources))
   end
@@ -144,10 +144,10 @@ drain(p: any) -> void
   end
   p.waiters = {}
 end
-resize(p: any, new_max: i64) -> void
+resize(p: any, new_max: i64): void
   p.max = new_max
 end
-destroy_res(p: any, res: any) -> void
+destroy_res(p: any, res: any): void
   p.total_destroyed = p.total_destroyed + 1
   p.created_at[res] = nil
   p.last_used[res] = nil
@@ -155,7 +155,7 @@ destroy_res(p: any, res: any) -> void
     p.destroyer(res)
   end
 end
-wake_waiter(p: any) -> void
+wake_waiter(p: any): void
   if rawlen(p.waiters) == 0
     return
   end

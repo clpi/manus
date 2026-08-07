@@ -123,7 +123,7 @@ shader_pbr_vertex(): str
         }
 
         @vertex
-        fn vs_main(input: VertexInput) -> VertexOutput {
+        fn vs_main(input: VertexInput): VertexOutput {
             var output: VertexOutput;
             output.world_position = (uniforms.model * vec4f(input.position, 1.0)).xyz;
             output.world_normal = uniforms.normal_matrix * input.normal;

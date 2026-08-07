@@ -1,4 +1,4 @@
-str_join(parts: any, sep: str) -> str
+str_join(parts: any, sep: str): str
   result = ""
   for i, part in parts
     if i > 1
@@ -8,32 +8,32 @@ str_join(parts: any, sep: str) -> str
   end
   result
 end
-push(out: any, value: any) -> any
+push(out: any, value: any): any
   out[#out + 1] = value
   out
 end
-member_name(member: any) -> str
+member_name(member: any): str
   if member.name
     return member.name
   end
   to(str)(member[1] or "")
 end
-member_kind(member: any) -> str
+member_kind(member: any): str
   member.kind or "field"
 end
-field_type(field: any) -> str
+field_type(field: any): str
   field.type or "any"
 end
-method_ret(method: any) -> str
+method_ret(method: any): str
   method.ret or "any"
 end
-method_param_count(method: any) -> str
+method_param_count(method: any): str
   to(str)(method.param_count or 0)
 end
-method_params(method: any) -> any
+method_params(method: any): any
   method.params or {}
 end
-method_params_text(method: any) -> str
+method_params_text(method: any): str
   params = method_params(method)
   if #params == 0
     return method_param_count(method) .. " params"
@@ -45,7 +45,7 @@ method_params_text(method: any) -> str
     return str_join(parts, ", ")
   end
 end
-bool_text(value: bool) -> str
+bool_text(value: bool): str
   if value
     return "true"
   else
@@ -82,65 +82,65 @@ assert_const(condition: bool, message: str)
   @c.emit("/* [contract] assert_const */")
   
 end
-emit_preconditions() -> void
+emit_preconditions(): void
   @c.emit("/* [contracts] emit_preconditions */")
   
   contract_stack = {}
   contract_count = 0
 end
-emit_postconditions() -> void
+emit_postconditions(): void
   @c.emit("/* [contracts] emit_postconditions */")
   
   contract_stack = {}
   contract_count = 0
 end
-emit_invariants() -> void
+emit_invariants(): void
   @c.emit("/* [contracts] emit_invariants */")
   
   contract_stack = {}
   contract_count = 0
 end
-debug_check(condition_str: str, message: str) -> void
+debug_check(condition_str: str, message: str): void
   @c.emit("/* [contracts] debug_check */")
   
 end
-profile_check(condition_str: str, message: str) -> void
+profile_check(condition_str: str, message: str): void
   @c.emit("/* [contracts] profile_check */")
   
 end
-all(conditions: any) -> str
+all(conditions: any): str
   parts = {}
   for i = 1, #conditions
     parts[i] = "(" .. conditions[i] .. ")"
   end
   str_join(parts, " && ")
 end
-any(conditions: any) -> str
+any(conditions: any): str
   parts = {}
   for i = 1, #conditions
     parts[i] = "(" .. conditions[i] .. ")"
   end
   str_join(parts, " || ")
 end
-implies(antecedent: str, consequent: str) -> str
+implies(antecedent: str, consequent: str): str
   "(!(" .. antecedent .. ") || (" .. consequent .. "))"
 end
-between(value: str, lo: str, hi: str) -> str
+between(value: str, lo: str, hi: str): str
   "(" .. value .. " >= " .. lo .. " && " .. value .. " <= " .. hi .. ")"
 end
-not_nil(value: str) -> str
+not_nil(value: str): str
   "(" .. value .. " != nil)"
 end
-positive(value: str) -> str
+positive(value: str): str
   "(" .. value .. " > 0)"
 end
-non_negative(value: str) -> str
+non_negative(value: str): str
   "(" .. value .. " >= 0)"
 end
-in_range(value: str, lo: str, hi: str) -> str
+in_range(value: str, lo: str, hi: str): str
   between(value, lo, hi)
 end
-field_check(value_expr: str, field: any) -> any
+field_check(value_expr: str, field: any): any
   field_name = member_name(field)
   type_name = field_type(field)
   access = str_join({
@@ -156,7 +156,7 @@ field_check(value_expr: str, field: any) -> any
     message = access .. " must exist as " .. type_name
   }
 end
-method_check(value_expr: str, method: any) -> any
+method_check(value_expr: str, method: any): any
   method_name = member_name(method)
   ret = method_ret(method)
   params = method_param_count(method)
@@ -174,21 +174,21 @@ method_check(value_expr: str, method: any) -> any
     message = access .. " must be a method with " .. params .. " params -> " .. ret
   }
 end
-concept_field_checks(value_expr: str, fields: any) -> any
+concept_field_checks(value_expr: str, fields: any): any
   checks = {}
   for i = 1, #fields
     checks[#checks + 1] = field_check(value_expr, fields[i])
   end
   checks
 end
-concept_method_checks(value_expr: str, methods: any) -> any
+concept_method_checks(value_expr: str, methods: any): any
   checks = {}
   for i = 1, #methods
     checks[#checks + 1] = method_check(value_expr, methods[i])
   end
   checks
 end
-concept_member_checks(value_expr: str, members: any) -> any
+concept_member_checks(value_expr: str, members: any): any
   checks = {}
   for i = 1, #members
     member = members[i]
@@ -200,7 +200,7 @@ concept_member_checks(value_expr: str, members: any) -> any
   end
   checks
 end
-checks_expression(checks: any) -> str
+checks_expression(checks: any): str
   if #checks == 0
     return "true"
   else
@@ -211,7 +211,7 @@ checks_expression(checks: any) -> str
     return all(conditions)
   end
 end
-checks_report(checks: any) -> str
+checks_report(checks: any): str
   if #checks == 0
     return "no concept requirements"
   else
@@ -222,7 +222,7 @@ checks_report(checks: any) -> str
     return str_join(messages, "; ")
   end
 end
-concept_contract_from_checks(checks: any) -> any
+concept_contract_from_checks(checks: any): any
   return {
     count = #checks,
     checks = checks,
@@ -230,7 +230,7 @@ concept_contract_from_checks(checks: any) -> any
     report = checks_report(checks)
   }
 end
-concept_contract(value_expr: str, fields: any, methods: any) -> any
+concept_contract(value_expr: str, fields: any, methods: any): any
   checks = concept_field_checks(value_expr, fields)
   method_checks = concept_method_checks(value_expr, methods)
   for i = 1, #method_checks
@@ -238,23 +238,23 @@ concept_contract(value_expr: str, fields: any, methods: any) -> any
   end
   concept_contract_from_checks(checks)
 end
-concept_member_contract(value_expr: str, members: any) -> any
+concept_member_contract(value_expr: str, members: any): any
   concept_contract_from_checks(concept_member_checks(value_expr, members))
 end
-method_signature(method: any) -> str
+method_signature(method: any): str
   name_text = member_name(method)
   params = method_params_text(method)
   ret = method_ret(method)
   name_text .. "(" .. params .. ") -> " .. ret
 end
-member_doc_line(member: any) -> str
+member_doc_line(member: any): str
   if member_kind(member) == "method"
     return "- method " .. method_signature(member)
   else
     return "- field " .. member_name(member) .. ": " .. field_type(member)
   end
 end
-concept_markdown(concept_name: str, members: any) -> str
+concept_markdown(concept_name: str, members: any): str
   lines: any = {}
   lines[1] = "# " .. concept_name
   if #members == 0
@@ -266,10 +266,10 @@ concept_markdown(concept_name: str, members: any) -> str
   end
   str_join(lines, "\n")
 end
-wrapper_name(target_name: str, method: any) -> str
+wrapper_name(target_name: str, method: any): str
   target_name .. "_" .. member_name(method)
 end
-method_wrapper_plan(target_name: str, receiver_expr: str, method: any) -> any
+method_wrapper_plan(target_name: str, receiver_expr: str, method: any): any
   method_name = member_name(method)
   return {
     kind = "method_wrapper",
@@ -281,10 +281,10 @@ method_wrapper_plan(target_name: str, receiver_expr: str, method: any) -> any
     params = method_params(method)
   }
 end
-field_accessor_name(target_name: str, field: any) -> str
+field_accessor_name(target_name: str, field: any): str
   target_name .. "_get_" .. member_name(field)
 end
-field_accessor_plan(target_name: str, receiver_expr: str, field: any) -> any
+field_accessor_plan(target_name: str, receiver_expr: str, field: any): any
   field_name = member_name(field)
   return {
     kind = "field_accessor",
@@ -294,10 +294,10 @@ field_accessor_plan(target_name: str, receiver_expr: str, field: any) -> any
     ret = field_type(field)
   }
 end
-c_type_eq(type_name: str, expected: str) -> bool
+c_type_eq(type_name: str, expected: str): bool
   return string.find(type_name, expected, 1, true) == 1 and #type_name == #expected
 end
-c_type(type_name: str) -> str
+c_type(type_name: str): str
   if c_type_eq(type_name, "i64") or c_type_eq(type_name, "integer")
     return "int64_t"
   end
@@ -330,10 +330,10 @@ c_type(type_name: str) -> str
   end
   type_name
 end
-c_param_decl(param_type: str, param_name: str) -> str
+c_param_decl(param_type: str, param_name: str): str
   c_type(param_type) .. " " .. param_name
 end
-c_wrapper_params(wrapper: any) -> any
+c_wrapper_params(wrapper: any): any
   params = wrapper.params or {}
   out: any = {}
   out[1] = "void* self"
@@ -342,7 +342,7 @@ c_wrapper_params(wrapper: any) -> any
   end
   out
 end
-c_wrapper_call_args(wrapper: any) -> str
+c_wrapper_call_args(wrapper: any): str
   params = wrapper.params or {}
   args: any = {}
   if #params == 0
@@ -355,7 +355,7 @@ c_wrapper_call_args(wrapper: any) -> str
   end
   str_join(args, ", ")
 end
-c_method_wrapper(receiver_c_type: str, wrapper: any) -> str
+c_method_wrapper(receiver_c_type: str, wrapper: any): str
   ret = c_type(wrapper.ret or "void")
   params = str_join(c_wrapper_params(wrapper), ", ")
   target = "((" .. receiver_c_type .. "*)self)->" .. wrapper.name
@@ -368,7 +368,7 @@ c_method_wrapper(receiver_c_type: str, wrapper: any) -> str
   end
   "static inline " .. ret .. " " .. wrapper.wrapper .. "(" .. params .. ") {\n" .. body .. "}\n"
 end
-c_field_accessor(receiver_c_type: str, accessor: any) -> str
+c_field_accessor(receiver_c_type: str, accessor: any): str
   ret = c_type(accessor.ret or "any")
   field_name = accessor.name
   wrapper = accessor.wrapper
@@ -376,21 +376,21 @@ c_field_accessor(receiver_c_type: str, accessor: any) -> str
   header = "static inline " .. ret .. " " .. wrapper .. "(void* self) {\n"
   return header .. "    return " .. target .. ";\n}\n"
 end
-concept_c_wrappers(receiver_c_type: str, wrappers: any) -> str
+concept_c_wrappers(receiver_c_type: str, wrappers: any): str
   parts: any = {}
   for i = 1, #wrappers
     parts[#parts + 1] = c_method_wrapper(receiver_c_type, wrappers[i])
   end
   str_join(parts, "\n")
 end
-concept_c_accessors(receiver_c_type: str, accessors: any) -> str
+concept_c_accessors(receiver_c_type: str, accessors: any): str
   parts: any = {}
   for i = 1, #accessors
     parts[#parts + 1] = c_field_accessor(receiver_c_type, accessors[i])
   end
   str_join(parts, "\n")
 end
-concept_wrapper_plan(target_name: str, receiver_expr: str, members: any) -> any
+concept_wrapper_plan(target_name: str, receiver_expr: str, members: any): any
   wrappers: any = {}
   for i = 1, #members
     if member_kind(members[i]) == "method"
@@ -399,7 +399,7 @@ concept_wrapper_plan(target_name: str, receiver_expr: str, members: any) -> any
   end
   wrappers
 end
-concept_accessor_plan(target_name: str, receiver_expr: str, members: any) -> any
+concept_accessor_plan(target_name: str, receiver_expr: str, members: any): any
   accessors: any = {}
   for i = 1, #members
     if member_kind(members[i]) != "method"
@@ -408,7 +408,7 @@ concept_accessor_plan(target_name: str, receiver_expr: str, members: any) -> any
   end
   accessors
 end
-concept_target_report(concept_name: str, target_name: str, receiver_expr: str, members: any) -> any
+concept_target_report(concept_name: str, target_name: str, receiver_expr: str, members: any): any
   return {
     concept_name = concept_name,
     target = target_name,
@@ -418,7 +418,7 @@ concept_target_report(concept_name: str, target_name: str, receiver_expr: str, m
     accessors = concept_accessor_plan(target_name, receiver_expr, members)
   }
 end
-concept_target_c_report(concept_name: str, target_name: str, receiver_expr: str, receiver_c_type: str, members: any) -> any
+concept_target_c_report(concept_name: str, target_name: str, receiver_expr: str, receiver_c_type: str, members: any): any
   report = concept_target_report(concept_name, target_name, receiver_expr, members)
   report.receiver_c_type = receiver_c_type
   report.c_wrappers = concept_c_wrappers(receiver_c_type, report.wrappers)
@@ -432,14 +432,14 @@ concept_target_c_report(concept_name: str, target_name: str, receiver_expr: str,
   end
   report
 end
-member_signature(member: any) -> str
+member_signature(member: any): str
   if member_kind(member) == "method"
     return "method:" .. method_signature(member)
   else
     return "field:" .. member_name(member) .. ":" .. field_type(member)
   end
 end
-concept_signature(concept_name: str, members: any) -> str
+concept_signature(concept_name: str, members: any): str
   parts: any = {}
   parts[1] = concept_name
   for i = 1, #members
@@ -447,10 +447,10 @@ concept_signature(concept_name: str, members: any) -> str
   end
   str_join(parts, "|")
 end
-concept_specialization_key(concept_name: str, target_name: str, members: any) -> str
+concept_specialization_key(concept_name: str, target_name: str, members: any): str
   target_name .. "::" .. concept_signature(concept_name, members)
 end
-member_matches(required: any, provided: any) -> bool
+member_matches(required: any, provided: any): bool
   if member_kind(required) != member_kind(provided)
     return false
   end
@@ -476,7 +476,7 @@ member_matches(required: any, provided: any) -> bool
     return field_type(required) == field_type(provided)
   end
 end
-find_member(members: any, required: any) -> any
+find_member(members: any, required: any): any
   for i = 1, #members
     if member_matches(required, members[i])
       return members[i]
@@ -484,7 +484,7 @@ find_member(members: any, required: any) -> any
   end
   nil
 end
-concept_coverage(required_members: any, provided_members: any) -> any
+concept_coverage(required_members: any, provided_members: any): any
   missing_parts: any = {}
   missing_count = 0
   matched_count = 0
@@ -506,7 +506,7 @@ concept_coverage(required_members: any, provided_members: any) -> any
     missing = missing_text
   }
 end
-coverage_report(coverage: any) -> str
+coverage_report(coverage: any): str
   lines: any = {}
   lines[1] = "ok=" .. bool_text(coverage.ok)
   lines[2] = "matched=" .. to(str)(coverage.matched_count)

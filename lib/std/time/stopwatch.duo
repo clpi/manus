@@ -1,4 +1,4 @@
-stopwatch_new() -> any
+stopwatch_new(): any
   {
     start_time = nil,
     elapsed = 0,
@@ -6,14 +6,14 @@ stopwatch_new() -> any
     laps = {}
   }
 end
-stopwatch_start(sw: any) -> void
+stopwatch_start(sw: any): void
   if sw.running
     return
   end
   sw.start_time = os.clock()
   sw.running = true
 end
-stopwatch_stop(sw: any) -> f64
+stopwatch_stop(sw: any): f64
   if not sw.running
     return sw.elapsed
   end
@@ -21,19 +21,19 @@ stopwatch_stop(sw: any) -> f64
   sw.running = false
   sw.elapsed
 end
-stopwatch_reset(sw: any) -> void
+stopwatch_reset(sw: any): void
   sw.start_time = nil
   sw.elapsed = 0
   sw.running = false
   sw.laps = {}
 end
-stopwatch_elapsed(sw: any) -> f64
+stopwatch_elapsed(sw: any): f64
   if not sw.running
     return sw.elapsed
   end
   sw.elapsed + os.clock() - sw.start_time
 end
-stopwatch_lap(sw: any) -> f64
+stopwatch_lap(sw: any): f64
   if not sw.running
     return 0.0
   end
@@ -42,10 +42,10 @@ stopwatch_lap(sw: any) -> f64
   sw.start_time = os.clock()
   lap_time
 end
-stopwatch_laps(sw: any) -> any
+stopwatch_laps(sw: any): any
   sw.laps
 end
-stopwatch_avg_lap(sw: any) -> f64
+stopwatch_avg_lap(sw: any): f64
   if #sw.laps == 0
     return 0.0
   end
@@ -55,7 +55,7 @@ stopwatch_avg_lap(sw: any) -> f64
   end
   total / #sw.laps
 end
-scoped_timer_new(name: str) -> any
+scoped_timer_new(name: str): any
   sw = stopwatch_new()
   stopwatch_start(sw)
   {
@@ -63,19 +63,19 @@ scoped_timer_new(name: str) -> any
     stopwatch = sw
   }
 end
-scoped_timer_stop(st: any) -> f64
+scoped_timer_stop(st: any): f64
   elapsed = stopwatch_stop(st.stopwatch)
   elapsed
 end
-scoped_timer_elapsed(st: any) -> f64
+scoped_timer_elapsed(st: any): f64
   stopwatch_elapsed(st.stopwatch)
 end
-profiler_new() -> any
+profiler_new(): any
   {
     sections = {}
   }
 end
-profiler_start(profiler: any, name: str) -> void
+profiler_start(profiler: any, name: str): void
   if profiler.sections[name] == nil
     profiler.sections[name] = {
       total = 0,
@@ -87,7 +87,7 @@ profiler_start(profiler: any, name: str) -> void
   end
   profiler.sections[name].start_time = os.clock()
 end
-profiler_stop(profiler: any, name: str) -> void
+profiler_stop(profiler: any, name: str): void
   section = profiler.sections[name]
   if section == nil or section.start_time == nil
     return
@@ -103,7 +103,7 @@ profiler_stop(profiler: any, name: str) -> void
   end
   section.start_time = nil
 end
-profiler_stats(profiler: any, name: str) -> any
+profiler_stats(profiler: any, name: str): any
   section = profiler.sections[name]
   if section == nil
     return nil
@@ -117,20 +117,20 @@ profiler_stats(profiler: any, name: str) -> any
     max = section.count > 0 and section.max or 0
   }
 end
-profiler_report(profiler: any) -> any
+profiler_report(profiler: any): any
   report = {}
   for name, section in profiler.sections
     report[#report + 1] = profiler_stats(profiler, name)
   end
-  table.sort(report, (a: any, b: any) -> any
+  table.sort(report, (a: any, b: any): any
     a.total > b.total
   end)
   report
 end
-profiler_reset(profiler: any) -> void
+profiler_reset(profiler: any): void
   profiler.sections = {}
 end
-benchmark(func: any, iterations: i64) -> any
+benchmark(func: any, iterations: i64): any
   if iterations == nil
     iterations = 1000
   end

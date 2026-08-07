@@ -3,8 +3,11 @@
 -- utilities for measuring code performance.
 
 -- Internal: round a number to nearest integer.
+-- `math.floor` yields f64, so the declared `: i64` was a return-type mismatch
+-- that took the whole module down. The conversion is written explicitly through
+-- the canonical `to` edge rather than left to an implicit narrowing.
 std_timer_round(x: any): i64
-    math.floor(x + 0.5)
+    to(i64)(math.floor(x + 0.5))
 end
 
 -- Internal: round a number to `places` decimal places.

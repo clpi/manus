@@ -141,13 +141,13 @@ recipes(): str
     "N types one macro: @comp.derive.all(\"Concept\", MyDerive)\n" ..
     "N×M type pairs: @comp.derive.product(\"A\", \"B\", MyDerive)\n" ..
     "Max file emit: @comp.burst(\"A\", MyDerive, \"B\")\n" ..
-    "User macro: @comp.define.derive(\"Name\", fun generate(meta) -> str ... end)\n" ..
+    "User macro: @comp.define.derive(\"Name\", fun generate(meta): str ... end)\n" ..
     "Bundle traits: @comp.derive.bundle(\"Numeric\") on type\n" ..
     "Fixed-size subsets: @comp.choose(\"Concept\", 2, fn) — controlled O(n choose k) expansion\n" ..
     "Pipeline family: @comp.pipeline({ variants = \"name:ctype:init | ...\" })\n" ..
     "Compose combinators: @comp.each(@comp.power(\"C\", fn), fn2) — chains two exponential stages\n" ..
     "Constraint cartesian: @comp.generate({ ops/types/template block }) — O(ops×types)\n" ..
-    "Declarative scheme: @comp.scheme(\"type T {...} | fn f(...) -> T\", template)\n" ..
+    "Declarative scheme: @comp.scheme(\"type T {...} | fn f(...): T\", template)\n" ..
     "Generate→each: @comp.each(@comp.generate(spec, body), fn) — re-expand each cartesian fragment\n" ..
     "Scheme→each: @comp.each(@comp.scheme(decls, tmpl), fn) — declarative units → fragments\n" ..
     "Full stack: examples/meta_generative_stack_showcase.duo — template/generate/scheme → each\n" ..

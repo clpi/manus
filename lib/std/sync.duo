@@ -1,5 +1,5 @@
 global __sync_run_queue = {}
-spawn(fn: any, ...args) -> any
+spawn(fn: any, ...args): any
   args_list = {
     args
   }
@@ -11,10 +11,10 @@ spawn(fn: any, ...args) -> any
   }
   return nil
 end
-yield() -> void
+yield(): void
   coroutine.yield()
 end
-run() -> void
+run(): void
   while #__sync_run_queue > 0
     task = table.remove(__sync_run_queue, 1)
     ok, err = coroutine.resume(task.co)
@@ -25,7 +25,7 @@ run() -> void
     end
   end
 end
-step() -> bool
+step(): bool
   if #__sync_run_queue == 0
     return false
   end
@@ -38,7 +38,7 @@ step() -> bool
   end
   return #__sync_run_queue > 0
 end
-channel(capacity: i64) -> any
+channel(capacity: i64): any
   return {
     _cap = capacity or 0,
     _queue = {},
@@ -47,7 +47,7 @@ channel(capacity: i64) -> any
     _closed = false
   }
 end
-channel_send(ch: any, val: any) -> void
+channel_send(ch: any, val: any): void
   if ch._closed
     error("send on closed channel")
   end
@@ -69,7 +69,7 @@ channel_send(ch: any, val: any) -> void
   ch._send_waiters[#ch._send_waiters + 1] = entry
   coroutine.yield()
 end
-channel_recv(ch: any) -> any
+channel_recv(ch: any): any
   if #ch._queue > 0
     val = table.remove(ch._queue, 1)
     if #ch._send_waiters > 0
@@ -94,7 +94,7 @@ channel_recv(ch: any) -> any
   coroutine.yield()
   return slot._val
 end
-channel_try_recv(ch: any) -> any
+channel_try_recv(ch: any): any
   if #ch._queue > 0
     val = table.remove(ch._queue, 1)
     if #ch._send_waiters > 0
@@ -106,7 +106,7 @@ channel_try_recv(ch: any) -> any
   end
   return nil
 end
-channel_close(ch: any) -> void
+channel_close(ch: any): void
   ch._closed = true
   for _, w in ch._recv_waiters
     w._slot[1] = nil
@@ -115,26 +115,26 @@ channel_close(ch: any) -> void
   end
   ch._recv_waiters = {}
 end
-channel_drain(ch: any) -> any
+channel_drain(ch: any): any
   out = {}
   while #ch._queue > 0
     out[#out + 1] = table.remove(ch._queue, 1)
   end
   return out
 end
-waitgroup_new() -> any
+waitgroup_new(): any
   {
     count = 0,
     waiters = {}
   }
 end
-waitgroup_add(wg: any, n: i64) -> void
+waitgroup_add(wg: any, n: i64): void
   if n == nil
     n = 1
   end
   wg.count = wg.count + n
 end
-waitgroup_done(wg: any) -> void
+waitgroup_done(wg: any): void
   wg.count = wg.count - 1
   if wg.count <= 0
     for _, w in wg.waiters
@@ -143,7 +143,7 @@ waitgroup_done(wg: any) -> void
     wg.waiters = {}
   end
 end
-waitgroup_wait(wg: any) -> void
+waitgroup_wait(wg: any): void
   if wg.count <= 0
     return
   end
@@ -153,13 +153,13 @@ waitgroup_wait(wg: any) -> void
   }
   coroutine.yield()
 end
-once(fn: any) -> any
+once(fn: any): any
   {
     fn = fn,
     done = false
   }
 end
-once_do(o: any) -> void
+once_do(o: any): void
   if o.done
     return
   end

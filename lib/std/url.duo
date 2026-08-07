@@ -1,21 +1,21 @@
-encode(s: str) -> str
+encode(s: str): str
   if s == nil
     return ""
   end
-  string.gsub(s, "([^%w%.%-~_])", (c: str) -> str
+  string.gsub(s, "([^%w%.%-~_])", (c: str): str
     string.format("%%%02X", string.byte(c))
   end)
 end
-decode(s: str) -> str
+decode(s: str): str
   if s == nil
     return ""
   end
   s = string.gsub(s, "+", " ")
-  string.gsub(s, "%%(%x%x)", (h: str) -> str
+  string.gsub(s, "%%(%x%x)", (h: str): str
     string.char(tonumber(h, 16))
   end)
 end
-parse(url: str) -> any
+parse(url: str): any
   scheme = "http"
   rest = url
   if string.sub(rest, 1, 7) == "http://"

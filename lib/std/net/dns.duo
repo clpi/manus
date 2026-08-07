@@ -9,7 +9,7 @@ AAAA = 28
 SRV = 33
 PTR = 12
 ANY = 255
-header_new(id: i64, qr: i64, opcode: i64, aa: i64, tc: i64, rd: i64, ra: i64, z: i64, rcode: i64) -> any
+header_new(id: i64, qr: i64, opcode: i64, aa: i64, tc: i64, rd: i64, ra: i64, z: i64, rcode: i64): any
   {
     id = id,
     qr = qr,
@@ -26,7 +26,7 @@ header_new(id: i64, qr: i64, opcode: i64, aa: i64, tc: i64, rd: i64, ra: i64, z:
     arcount = 0
   }
 end
-header_encode(h: any) -> any
+header_encode(h: any): any
   bytes = {}
   bytes[1] = h.id >> 8 & 255
   bytes[2] = h.id & 255
@@ -43,7 +43,7 @@ header_encode(h: any) -> any
   bytes[12] = h.arcount & 255
   bytes
 end
-header_decode(data: any) -> any
+header_decode(data: any): any
   id = data[1] << 8 | data[2]
   flags = data[3] << 8 | data[4]
   {
@@ -62,7 +62,7 @@ header_decode(data: any) -> any
     arcount = data[11] << 8 | data[12]
   }
 end
-name_encode(name: str) -> any
+name_encode(name: str): any
   bytes = {}
   pos = 1
   len = string.len(name)
@@ -83,7 +83,7 @@ name_encode(name: str) -> any
   bytes[#bytes + 1] = 0
   bytes
 end
-name_decode(data: any, pos: i64) -> any
+name_decode(data: any, pos: i64): any
   parts = {}
   jumped = false
   original_pos = pos
@@ -121,7 +121,7 @@ name_decode(data: any, pos: i64) -> any
     next = next_pos
   }
 end
-query_new(name: str, qtype: i64) -> any
+query_new(name: str, qtype: i64): any
   crypto_rand = req("std.crypto.rand")
   id_bytes = crypto_rand.bytes(2)
   query_id = string.byte(id_bytes, 1) << 8 | string.byte(id_bytes, 2)
@@ -134,7 +134,7 @@ query_new(name: str, qtype: i64) -> any
     }
   }
 end
-query_encode(q: any) -> any
+query_encode(q: any): any
   bytes = {}
   q.header.qdcount = 1
   header_bytes = header_encode(q.header)
@@ -151,7 +151,7 @@ query_encode(q: any) -> any
   bytes[#bytes + 1] = q.question.qclass & 255
   bytes
 end
-record_decode(data: any, pos: i64) -> any
+record_decode(data: any, pos: i64): any
   result = name_decode(data, pos)
   name = result.name
   pos = result.next
@@ -218,7 +218,7 @@ record_decode(data: any, pos: i64) -> any
     next = pos
   }
 end
-response_decode(data: any) -> any
+response_decode(data: any): any
   header = header_decode(data)
   pos = 13
   i = 0
@@ -258,7 +258,7 @@ response_decode(data: any) -> any
     additional = additional
   }
 end
-resolver_new() -> any
+resolver_new(): any
   {
     servers = {
       "8.8.8.8",
@@ -272,13 +272,13 @@ resolver_new() -> any
     retries = 3
   }
 end
-resolver_set_servers(resolver: any, servers: any) -> void
+resolver_set_servers(resolver: any, servers: any): void
   resolver.servers = servers
 end
-resolver_set_timeout(resolver: any, timeout: i64) -> void
+resolver_set_timeout(resolver: any, timeout: i64): void
   resolver.timeout = timeout
 end
-resolver_resolve(resolver: any, name: str, qtype: i64) -> any
+resolver_resolve(resolver: any, name: str, qtype: i64): any
   cache_key = name .. ":" .. to(str)(qtype)
   if resolver.cache[cache_key]
     return resolver.cache[cache_key]
@@ -324,7 +324,7 @@ resolver_resolve(resolver: any, name: str, qtype: i64) -> any
     error = "All DNS servers failed"
   }
 end
-resolver_lookup_a(resolver: any, name: str) -> any
+resolver_lookup_a(resolver: any, name: str): any
   result = resolver_resolve(resolver, name, A)
   if result.error
     return result
@@ -339,7 +339,7 @@ resolver_lookup_a(resolver: any, name: str) -> any
     ips = ips
   }
 end
-resolver_lookup_aaaa(resolver: any, name: str) -> any
+resolver_lookup_aaaa(resolver: any, name: str): any
   result = resolver_resolve(resolver, name, AAAA)
   if result.error
     return result
@@ -354,7 +354,7 @@ resolver_lookup_aaaa(resolver: any, name: str) -> any
     ips = ips
   }
 end
-resolver_lookup_mx(resolver: any, name: str) -> any
+resolver_lookup_mx(resolver: any, name: str): any
   result = resolver_resolve(resolver, name, MX)
   if result.error
     return result
@@ -365,14 +365,14 @@ resolver_lookup_mx(resolver: any, name: str) -> any
       mx_records[#mx_records + 1] = answer.rdata
     end
   end
-  table.sort(mx_records, (a: any, b: any) -> any
+  table.sort(mx_records, (a: any, b: any): any
     a.preference < b.preference
   end)
   {
     records = mx_records
   }
 end
-resolver_lookup_cname(resolver: any, name: str) -> any
+resolver_lookup_cname(resolver: any, name: str): any
   result = resolver_resolve(resolver, name, CNAME)
   if result.error
     return result
@@ -388,10 +388,10 @@ resolver_lookup_cname(resolver: any, name: str) -> any
     cname = nil
   }
 end
-resolver_flush_cache(resolver: any) -> void
+resolver_flush_cache(resolver: any): void
   resolver.cache = {}
 end
-type_name(qtype: i64) -> str
+type_name(qtype: i64): str
   types = {
     [A] = "A",
     [NS] = "NS",
@@ -406,7 +406,7 @@ type_name(qtype: i64) -> str
   }
   types[qtype] or "UNKNOWN"
 end
-type_from_name(name: str) -> i64
+type_from_name(name: str): i64
   types = {
     A = A,
     NS = NS,

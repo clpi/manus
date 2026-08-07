@@ -309,7 +309,26 @@ stalled = (lx: Lexer, before: i64): bool
 end
 
 mark_error = (lx: Lexer)
+    -- Record WHERE the parse first went wrong, not just that it did. A bare
+    -- boolean makes `parse_status` a yes/no oracle, which is enough to gate a
+    -- 55-case corpus and useless for driving coverage up: with 201 of 245
+    -- lib/std files rejected, the only question that matters is which construct
+    -- stopped each one. Only the first is kept — later marks are downstream of
+    -- the first and would just name recovery noise.
+    if not lx.has_error
+        lx.error_loc = lexer.peek(lx).loc
+    end
     lx.has_error = true
+end
+
+-- Line of the first parse failure, or 0 when the source parses clean.
+parse_error_line = (src: str, file: str): i64
+    lx: Lexer = lexer.new(src, file)
+    _p = proj_program_lx(lx)
+    if lx.has_error
+        return lx.error_loc.line
+    end
+    0
 end
 
 -- `;` is a separator, not a statement. Skipped by the block loops rather than

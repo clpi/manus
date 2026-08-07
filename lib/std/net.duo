@@ -138,7 +138,7 @@ udp_recvfrom(fd: any, maxlen: i64): any
 end
 
 -- Simple blocking HTTP server (requires native socket support via codegen path)
--- handler(method, path, raw_request) -> response_body string
+-- handler(method, path, raw_request): response_body string
 http_serve(port: i64, handler: any): void
     srv = listen("0.0.0.0", port, 128)
     if srv == nil
