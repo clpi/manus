@@ -396,6 +396,10 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   tbl  = mem.alloc(4096 * 8)
   vstk = mem.alloc(1024 * 16)
   eseg = mem.alloc(64 * 2 * 8)
+  vwid = mem.alloc(256)
+  vker = mem.alloc(256)
+  extw = mem.alloc(256)
+  exts = mem.alloc(256)
   mem.zero(code, cd_len + 16)
   mem.zero(st, 4096 * 8)
   mem.zero(lo, 64 * 64 * 8)
@@ -412,6 +416,56 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   mem.zero(tbl, 4096 * 8)
   mem.zero(vstk, 1024 * 16)
   mem.zero(eseg, 64 * 2 * 8)
+  mem.zero(vwid, 256)
+  mem.zero(vker, 256)
+  mem.zero(extw, 256)
+  mem.zero(exts, 256)
+  -- extract_lane descriptors: (lane width, signed?). Reading `w` bytes at the
+  -- lane covers EVERY variant -- float lanes need no special case because ward
+  -- keeps floats on the operand stack as their bit pattern, so extracting an
+  -- f32 lane and an i32 lane are the same four bytes.
+  mem.write_byte(extw, 21, 1)  mem.write_byte(exts, 21, 1)  -- i8x16.extract_lane_s
+  mem.write_byte(extw, 22, 1)                               -- i8x16.extract_lane_u
+  mem.write_byte(extw, 24, 2)  mem.write_byte(exts, 24, 1)  -- i16x8.extract_lane_s
+  mem.write_byte(extw, 25, 2)                               -- i16x8.extract_lane_u
+  mem.write_byte(extw, 27, 4)                               -- i32x4.extract_lane
+  mem.write_byte(extw, 29, 8)                               -- i64x2.extract_lane
+  mem.write_byte(extw, 31, 4)                               -- f32x4.extract_lane
+  mem.write_byte(extw, 33, 8)                               -- f64x2.extract_lane
+  -- ── SIMD descriptor table ────────────────────────────────────────────
+  -- Every v128 lane op has ONE shape: walk the lanes, apply a kernel,
+  -- reassemble. So a row is (sub-opcode -> lane width in bytes, kernel) and
+  -- there is a single executor below; adding an opcode is a row, not a branch.
+  -- Indexed by sub-opcode so the lookup is O(1) and stays a native scalar --
+  -- a width of 0 means "no arm", which is what the executor tests.
+  -- Every number here was read out of wasm-tools, not derived: i64x2.add is
+  -- 206, not the 190 a +16 stride would predict (the real stride is +32).
+  -- kernels: 1 and  2 or  3 xor  4 add  5 sub  6 mul  7 fadd  8 fsub  9 fmul  10 fdiv
+  -- Written as direct stores, not a table literal: a table in `run_body`
+  -- disqualifies the whole function from native lowering, and this is the
+  -- interpreter's hot loop. The rows below ARE the descriptor table.
+  mem.write_byte(vwid, 78, 8)    mem.write_byte(vker, 78, 1)    -- v128.and
+  mem.write_byte(vwid, 80, 8)    mem.write_byte(vker, 80, 2)    -- v128.or
+  mem.write_byte(vwid, 81, 8)    mem.write_byte(vker, 81, 3)    -- v128.xor
+  mem.write_byte(vwid, 110, 1)   mem.write_byte(vker, 110, 4)   -- i8x16.add
+  mem.write_byte(vwid, 142, 2)   mem.write_byte(vker, 142, 4)   -- i16x8.add
+  mem.write_byte(vwid, 174, 4)   mem.write_byte(vker, 174, 4)   -- i32x4.add
+  mem.write_byte(vwid, 206, 8)   mem.write_byte(vker, 206, 4)   -- i64x2.add
+  mem.write_byte(vwid, 113, 1)   mem.write_byte(vker, 113, 5)   -- i8x16.sub
+  mem.write_byte(vwid, 145, 2)   mem.write_byte(vker, 145, 5)   -- i16x8.sub
+  mem.write_byte(vwid, 177, 4)   mem.write_byte(vker, 177, 5)   -- i32x4.sub
+  mem.write_byte(vwid, 209, 8)   mem.write_byte(vker, 209, 5)   -- i64x2.sub
+  mem.write_byte(vwid, 149, 2)   mem.write_byte(vker, 149, 6)   -- i16x8.mul
+  mem.write_byte(vwid, 181, 4)   mem.write_byte(vker, 181, 6)   -- i32x4.mul
+  mem.write_byte(vwid, 213, 8)   mem.write_byte(vker, 213, 6)   -- i64x2.mul
+  mem.write_byte(vwid, 228, 4)   mem.write_byte(vker, 228, 7)   -- f32x4.add
+  mem.write_byte(vwid, 240, 8)   mem.write_byte(vker, 240, 7)   -- f64x2.add
+  mem.write_byte(vwid, 229, 4)   mem.write_byte(vker, 229, 8)   -- f32x4.sub
+  mem.write_byte(vwid, 241, 8)   mem.write_byte(vker, 241, 8)   -- f64x2.sub
+  mem.write_byte(vwid, 230, 4)   mem.write_byte(vker, 230, 9)   -- f32x4.mul
+  mem.write_byte(vwid, 242, 8)   mem.write_byte(vker, 242, 9)   -- f64x2.mul
+  mem.write_byte(vwid, 231, 4)   mem.write_byte(vker, 231, 10)  -- f32x4.div
+  mem.write_byte(vwid, 243, 8)   mem.write_byte(vker, 243, 10)  -- f64x2.div
   -- Initialise globals from the module's OWN global section. ward used to
   -- hardcode gl[0] = 65536 unconditionally, so every module that declares its
   -- own globals started 65536 too high: `wart_simple_opcode_bench` reported
@@ -2352,84 +2406,119 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           pc += 16
           sp += 1
           mem.write_i64(st, sp * 8, vi)
-        elseif vsub == 78 or vsub == 174 or vsub == 177 or vsub == 181 or vsub == 206 or vsub == 228 or vsub == 240
+        elseif mem.read_byte(extw, vsub) != 0
+          -- extract_lane: unary, with ONE immediate lane index. The descriptor
+          -- gives width and signedness; the lane replaces the vector on the
+          -- stack, so `sp` is unchanged.
+          if sp < 1
+            return -1
+          end
+          ew: i64 = mem.read_byte(extw, vsub)
+          es: i64 = mem.read_byte(exts, vsub)
+          eln: i64 = mem.read_byte(code, pc)
+          pc += 1
+          evi: i64 = mem.read_i64(st, sp * 8) & 1023
+          mem.write_i64(fb, 0, 0)
+          ek: i64 = 0
+          while ek < ew
+            mem.write_byte(fb, ek, mem.read_byte(vstk, evi * 16 + eln * ew + ek))
+            ek += 1
+          end
+          ev: i64 = mem.read_i64(fb, 0)
+          if es == 1
+            eone: i64 = 1
+            esb: i64 = eone << (ew * 8 - 1)
+            if (ev & esb) != 0
+              ev = ev - (eone << (ew * 8))
+            end
+          end
+          mem.write_i64(st, sp * 8, ev)
+
+        elseif mem.read_byte(vwid, vsub) != 0
+          -- ONE executor for every v128 lane op. They all share a single shape:
+          -- read lane i from each operand, apply a kernel, write lane i. The
+          -- descriptor above supplies the lane width and the kernel, so a new
+          -- opcode is a ROW, not another branch -- 22 opcodes, one loop.
           if sp < 2
             return -1
           end
+          vwd: i64 = mem.read_byte(vwid, vsub)
+          vkr: i64 = mem.read_byte(vker, vsub)
           vbi: i64 = mem.read_i64(st, sp * 8) & 1023
           vai: i64 = mem.read_i64(st, (sp - 1) * 8) & 1023
           vri: i64 = vtop
           vtop = (vtop + 1) & 1023
-          if vsub == 78
-            bk: i64 = 0
-            while bk < 16
-              mem.write_byte(vstk, vri * 16 + bk, mem.read_byte(vstk, vai * 16 + bk) & mem.read_byte(vstk, vbi * 16 + bk))
-              bk += 1
+          nl: i64 = 16 // vwd
+          ll: i64 = 0
+          while ll < nl
+            -- Assemble each lane through `fb` rather than shifting into an i64:
+            -- a value above 2^53 built with shift/or loses its low byte.
+            mem.write_i64(fb, 0, 0)
+            ck: i64 = 0
+            while ck < vwd
+              mem.write_byte(fb, ck, mem.read_byte(vstk, vai * 16 + ll * vwd + ck))
+              ck += 1
             end
-          elseif vsub == 174 or vsub == 177 or vsub == 181
-            lk: i64 = 0
-            while lk < 4
-              la: i64 = mem.read_byte(vstk, vai * 16 + lk * 4) | (mem.read_byte(vstk, vai * 16 + lk * 4 + 1) << 8) | (mem.read_byte(vstk, vai * 16 + lk * 4 + 2) << 16) | (mem.read_byte(vstk, vai * 16 + lk * 4 + 3) << 24)
-              lb: i64 = mem.read_byte(vstk, vbi * 16 + lk * 4) | (mem.read_byte(vstk, vbi * 16 + lk * 4 + 1) << 8) | (mem.read_byte(vstk, vbi * 16 + lk * 4 + 2) << 16) | (mem.read_byte(vstk, vbi * 16 + lk * 4 + 3) << 24)
-              lr: i64 = 0
-              if vsub == 174
-                lr = (la + lb) & M32
-              elseif vsub == 177
-                lr = (la - lb) & M32
-              else
-                lr = (la * lb) & M32
-              end
-              mem.write_byte(vstk, vri * 16 + lk * 4, lr & 255)
-              mem.write_byte(vstk, vri * 16 + lk * 4 + 1, (lr >> 8) & 255)
-              mem.write_byte(vstk, vri * 16 + lk * 4 + 2, (lr >> 16) & 255)
-              mem.write_byte(vstk, vri * 16 + lk * 4 + 3, (lr >> 24) & 255)
-              lk += 1
+            av2: i64 = mem.read_i64(fb, 0)
+            af: f64 = mem.load("f64", fb)
+            a32: f32 = mem.load("f32", fb)
+            mem.write_i64(fb, 0, 0)
+            ck2: i64 = 0
+            while ck2 < vwd
+              mem.write_byte(fb, ck2, mem.read_byte(vstk, vbi * 16 + ll * vwd + ck2))
+              ck2 += 1
             end
-          else
-            -- 64-bit lanes: i64x2.add, f32x4.add (4 lanes), f64x2.add.
-            -- Assemble through `fb` rather than shifting: a >2^53 value built
-            -- with shift/or loses its low byte.
-            wid: i64 = 8
-            if vsub == 228
-              wid = 4
-            end
-            nl: i64 = 16 // wid
-            ll: i64 = 0
-            while ll < nl
-              mem.write_i64(fb, 0, 0)
-              ck: i64 = 0
-              while ck < wid
-                mem.write_byte(fb, ck, mem.read_byte(vstk, vai * 16 + ll * wid + ck))
-                ck += 1
-              end
-              av2: i64 = mem.read_i64(fb, 0)
-              af: f64 = mem.load("f64", fb)
-              a32: f32 = mem.load("f32", fb)
-              mem.write_i64(fb, 0, 0)
-              ck2: i64 = 0
-              while ck2 < wid
-                mem.write_byte(fb, ck2, mem.read_byte(vstk, vbi * 16 + ll * wid + ck2))
-                ck2 += 1
-              end
-              bv2: i64 = mem.read_i64(fb, 0)
-              bf: f64 = mem.load("f64", fb)
-              b32: f32 = mem.load("f32", fb)
-              mem.write_i64(fb, 0, 0)
-              if vsub == 206
-                mem.write_i64(fb, 0, av2 + bv2)
-              elseif vsub == 240
-                mem.store("f64", fb, af + bf)
-              else
+            bv2: i64 = mem.read_i64(fb, 0)
+            bf: f64 = mem.load("f64", fb)
+            b32: f32 = mem.load("f32", fb)
+            mem.write_i64(fb, 0, 0)
+            -- Integer kernels need no masking: only `vwd` bytes are written
+            -- back, so a lane truncates to its own width by construction.
+            if vkr == 1
+              mem.write_i64(fb, 0, av2 & bv2)
+            elseif vkr == 2
+              mem.write_i64(fb, 0, av2 | bv2)
+            elseif vkr == 3
+              mem.write_i64(fb, 0, av2 ~ bv2)
+            elseif vkr == 4
+              mem.write_i64(fb, 0, av2 + bv2)
+            elseif vkr == 5
+              mem.write_i64(fb, 0, av2 - bv2)
+            elseif vkr == 6
+              mem.write_i64(fb, 0, av2 * bv2)
+            elseif vkr == 7
+              if vwd == 4
                 mem.store("f32", fb, a32 + b32)
+              else
+                mem.store("f64", fb, af + bf)
               end
-              ck3: i64 = 0
-              while ck3 < wid
-                mem.write_byte(vstk, vri * 16 + ll * wid + ck3, mem.read_byte(fb, ck3))
-                ck3 += 1
+            elseif vkr == 8
+              if vwd == 4
+                mem.store("f32", fb, a32 - b32)
+              else
+                mem.store("f64", fb, af - bf)
               end
-              ll += 1
+            elseif vkr == 9
+              if vwd == 4
+                mem.store("f32", fb, a32 * b32)
+              else
+                mem.store("f64", fb, af * bf)
+              end
+            else
+              if vwd == 4
+                mem.store("f32", fb, a32 / b32)
+              else
+                mem.store("f64", fb, af / bf)
+              end
             end
+            ck3: i64 = 0
+            while ck3 < vwd
+              mem.write_byte(vstk, vri * 16 + ll * vwd + ck3, mem.read_byte(fb, ck3))
+              ck3 += 1
+            end
+            ll += 1
           end
+
           mem.write_i64(st, (sp - 1) * 8, vri)
           sp -= 1
         else
