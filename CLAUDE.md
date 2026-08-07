@@ -210,9 +210,26 @@ crash**, so the listed interim spelling is the correct one to write.
   links the lexer and calls `duo_lexer_tokenize_all` directly SEGFAULTS on
   uninitialized globals — verified: compiles, links (`link=0`), runs, exit 139.
 
-  What SH-03 needs is therefore not "host wiring" but an emitted, callable
-  initialization entry separate from `main` — plus lib mode so the artifact has
-  no `main` at all. Both are C-emitter changes.
+  Narrowed further by bisection, all measured, each a C host linking the emitted
+  object and calling in:
+
+      pure export (no req, no tables, no strings)   -> WORKS, returned 42
+      + a module-level `req`                        -> WORKS, returned 42
+      + an export that USES the req'd module        -> WORKS, returned 3
+      lib/std/compiler/lexer.duo, bare entry        -> SEGV (139)
+      lib/std/compiler/lexer.duo, mangled entry     -> SEGV (139)
+
+  So a Duo function IS callable from a C host today, with no initialization at
+  all, and that holds even when its module requires another module and the
+  export uses it. The failure is specific to lexer.duo, not to exports, not to
+  `req`, and not to the calling convention (both the bare alias and the mangled
+  native-signature entry crash identically).
+
+  What SH-03 needs is therefore whatever initialization lexer.duo specifically
+  requires — its own module state and nested requires are the remaining
+  suspects — plus lib mode so the artifact has no `main`. That is a much smaller
+  and better-located problem than either "internal linkage" or "wire the host",
+  and the bisection above is the starting point rather than a fresh one.
 
 - **GAP-12 (rule 1 / FF-1)** — `@comp.c.export` does not attach to a
   value-form binding; it degrades into a call to an undefined `__c_export`.
