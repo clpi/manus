@@ -3694,20 +3694,73 @@ pub const Parser = struct {
                 const rest = s[i + 1 ..];
                 if (std.mem.indexOfScalar(u8, rest, '}')) |off| {
                     const ident = rest[0..off];
-                    if (ident.len > 0 and std.mem.allEqual(u8, ident, ident[0]) == false) {
+                    // Pass 59 STR-1. This used to also require
+                    // `allEqual(ident, ident[0]) == false`, i.e. "not every
+                    // character the same" — which silently declined to
+                    // interpolate any SINGLE-CHARACTER name, since one char is
+                    // trivially all-the-same. `"v={x}"` therefore printed the
+                    // literal text `v={x}` while `"v={val}"` printed the value,
+                    // and it failed as OUTPUT, never as an error. Single-letter
+                    // names (`{i}`, `{n}`, `{b}`) are the common case in exactly
+                    // the loops interpolation is for, so STR-1 was broken where
+                    // it matters most. The character loop below already
+                    // restricts this to a valid identifier, so the guard bought
+                    // nothing. Verified zero strings in lib/ examples/ scripts/
+                    // contain `{c}` or `{cc}`, so no existing literal changes
+                    // meaning.
+                    if (ident.len > 0) {
+                        // A DOTTED PATH is accepted, not just a bare name:
+                        // `"({p.x}, {p.y})"`. Restricting the hole to a single
+                        // identifier is what forced `..` chains for the most
+                        // common case there is — printing a field — so STR-1
+                        // could not actually replace them. Each `.` segment must
+                        // itself be a valid identifier, so `{a.}`, `{.x}` and
+                        // `{a..b}` stay literal rather than becoming a partial
+                        // parse. Leading-`.` lens holes (STR-4) are deliberately
+                        // NOT claimed here: they need an ambient subject, which
+                        // is a separate feature, and silently reading them as a
+                        // name would be worse than leaving them literal.
                         var valid = true;
+                        var seg_len: usize = 0;
                         for (ident) |c| {
-                            if (!((c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or (c >= '0' and c <= '9') or c == '_')) {
+                            if (c == '.') {
+                                if (seg_len == 0) {
+                                    valid = false;
+                                    break;
+                                }
+                                seg_len = 0;
+                                continue;
+                            }
+                            const alpha = (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or c == '_';
+                            const digit = c >= '0' and c <= '9';
+                            if (!alpha and !digit) {
                                 valid = false;
                                 break;
                             }
+                            // A segment may not START with a digit.
+                            if (seg_len == 0 and digit) {
+                                valid = false;
+                                break;
+                            }
+                            seg_len += 1;
                         }
-                        if (valid and !(ident[0] >= '0' and ident[0] <= '9')) {
+                        if (seg_len == 0) valid = false; // trailing '.'
+                        if (valid) {
                             if (start < i) {
                                 const lit = try self.alloc.dupe(u8, s[start..i]);
                                 try parts.append(self.alloc, try self.new_expr(.{ .string_lit = .{ .loc = loc, .val = lit } }));
                             }
-                            try parts.append(self.alloc, try self.new_expr(.{ .name = .{ .loc = loc, .ident = try self.alloc.dupe(u8, ident) } }));
+                            var seg_it = std.mem.splitScalar(u8, ident, '.');
+                            const head = seg_it.next().?;
+                            var hole = try self.new_expr(.{ .name = .{ .loc = loc, .ident = try self.alloc.dupe(u8, head) } });
+                            while (seg_it.next()) |seg| {
+                                hole = try self.new_expr(.{ .field = .{
+                                    .loc = loc,
+                                    .obj = hole,
+                                    .field = try self.alloc.dupe(u8, seg),
+                                } });
+                            }
+                            try parts.append(self.alloc, hole);
                             i += 1 + off + 1;
                             start = i;
                             continue;
