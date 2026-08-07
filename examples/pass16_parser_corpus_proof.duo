@@ -144,6 +144,12 @@ positives = {
     -- the identical two tokens.
     { "span: { start: u32, stop: u32 }", "(program (descriptor span (desc start u32 stop u32)))" },
     { "ByteCursor: @{ data: str, pos: i64 }", "(program (descriptor ByteCursor (desc data str pos i64)))" },
+    -- A directive ends with its LINE. The existing `@fence` / `@comp.c.export`
+    -- cases above are single lines with nothing after them, so they passed while
+    -- the loop happily ate the next line: a directive followed by the
+    -- declaration it annotates parsed as one directive and swallowed the whole
+    -- function. This case is the one that can tell.
+    { "@comp.c.export(\"x\")\nsub(s: str): str\n    s\nend\n", "(program (at comp c export \"x\") (fun sub (params (param s str)) (ret str) s))" },
 }
 
 fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",

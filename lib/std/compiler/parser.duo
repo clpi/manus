@@ -943,10 +943,19 @@ end
 
 -- '@' directive: dotted names, then optional parenthesised arguments.
 proj_directive = (lx: Lexer): str
-    _a = lexer.next(lx)
+    at = lexer.next(lx)
     s = "(at"
+    -- A directive ends with its line. Without this the loop kept eating NAMEs
+    -- and swallowed the declaration it annotates: `@comp.c.export("duo_str_sub")`
+    -- on one line and `sub(s: str, ...)` on the next parsed as ONE directive,
+    -- taking the whole function with it. Every attribute-carrying declaration in
+    -- lib/std failed this way.
+    line = at.loc.line
     while true
         t = lexer.peek(lx)
+        if t.loc.line != line
+            return s .. ")"
+        end
         if t.kind == token.KIND_NAME
             _n = lexer.next(lx)
             s = s .. " " .. t.text
