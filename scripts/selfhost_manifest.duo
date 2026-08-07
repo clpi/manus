@@ -47,6 +47,25 @@ main(): i64
     print("{ \"schema\": \"selfhost-duo-manifest-v1\", \"rows\": [")
 
     all_ok = true
+
+    -- SH-01..SH-03 predate this session and already had Duo implementations and
+    -- proofs; they were missing from this manifest, which made the record look
+    -- like the session's work was the whole picture. SH-02 is the one row that
+    -- is genuinely duo_canonical — its Duo projection IS the production keyword
+    -- classifier — and SH-03's Duo lexer is proved token-for-token equal to
+    -- src/lexer.zig while production still dispatches to the host.
+    if not _row("SH-01", "lib/std/compiler/source.duo", "examples/pass16_source_cursor_proof.duo",
+        "differential against the production ProductionCursor")
+        all_ok = false
+    end
+    if not _row("SH-02", "lib/std/token/classify.duo", "examples/pass12_m1_diff.duo",
+        "DUO_CANONICAL — this Duo projection is the production classifier")
+        all_ok = false
+    end
+    if not _row("SH-03", "lib/std/compiler/lexer.duo", "examples/pass16_lexer_fingerprint_differential.duo",
+        "token-for-token fingerprint equality with src/lexer.zig")
+        all_ok = false
+    end
     if not _row("SH-04", "lib/std/compiler/parser.duo", "examples/pass16_parser_corpus_proof.duo",
         "252-file corpus, ratcheted")
         all_ok = false
@@ -97,8 +116,8 @@ main(): i64
     -- consumer cannot mistake one for the other: these rows have Duo
     -- implementations with passing oracles. They are NOT duo_canonical, which
     -- additionally requires the host to dispatch through them.
-    print("  \"duo_impl_rows\": 11,")
-    print("  \"oracle_backed_rows\": 10,")
+    print("  \"duo_impl_rows\": 14,")
+    print("  \"oracle_backed_rows\": 13,")
     print("  \"duo_canonical_rows\": 1,")
     print("  \"canonical_blocker\": \"production dispatch: host still calls src/*.zig\"")
     print("}")
