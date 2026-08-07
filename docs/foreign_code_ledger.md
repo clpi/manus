@@ -27,12 +27,14 @@ Every row below is therefore debt by construction.
 
 | file | sites | class | role | replacement | deletion gate | status |
 | --- | ---: | --- | --- | --- | --- | --- |
-| `src/wasm/runtime.duo` | **275** | B | interpreter core: memory, stack, dispatch, SIMD | Duo over a v128/value substrate | see split below | **open** |
-| `src/wasm/module.duo` | 9 | B | decoder byte access | `std.bytes` / slice substrate | slice substrate lands in `lib/std` | open |
-| `src/ward.duo` | **0** | — | interpreter + ARM64 JIT, the build that ships | — | **n/a — already pure Duo** | **compliant** |
-| `src/wasm/interp_ward.duo` | 1 | B | interp shim | fold into runtime | with runtime split | open |
-| `src/wasm/jit_ward.duo` | 1 | B | JIT shim | fold into `jit_arm64.duo` | with runtime split | open |
-| `src/wasm/jit_arm64.duo` | **0** | — | ARM64 template JIT | — | **n/a — already pure Duo** | **compliant** |
+| `src/ward.duo` | **0** | — | interpreter + ARM64 JIT, the build that ships | — | n/a | **compliant** |
+| `src/wasm/jit_arm64.duo` | **0** | — | ARM64 template JIT | — | n/a | **compliant** |
+| `src/wasm/{op,wasi,simd,aot,jit,memory,stack,table,value}.duo` | **0** | — | C-free leaves | — | n/a | **compliant** |
+| ~~`src/wasm/runtime.duo`~~ | ~~278~~ | — | dead tree | — | — | **DELETED 2026-08-07** |
+| ~~`src/wasm/module.duo`~~ | ~~9~~ | — | dead tree | — | — | **DELETED 2026-08-07** |
+| ~~`src/main.duo`~~ | ~~5~~ | — | dead entry, did not compile | — | — | **DELETED 2026-08-07** |
+| ~~`src/wasm/interp_ward.duo`~~ | ~~1~~ | — | dead shim | — | — | **DELETED 2026-08-07** |
+| ~~`src/wasm/jit_ward.duo`~~ | ~~1~~ | — | dead shim | — | — | **DELETED 2026-08-07** |
 
 ### `runtime.duo` split (the 275)
 
@@ -124,9 +126,8 @@ tested.
 
 | | count |
 | --- | ---: |
-| ward `@c.emit` sites (all debt) | **288** |
-| ...with a written replacement | 118 (SIMD — inert) |
-| ...compliant modules | `jit_arm64.duo` (0 sites) |
+| ward `@c.emit` sites (all debt) | **0 — RETIRED 2026-08-07** |
+| ...compliant modules | ALL of `src/` (14 files, zero `@c.` directives) |
 | duo S0 Zig files (class A) | 224 |
 | entries with a real deletion gate | ward SIMD, ward decoder, S0 |
 | entries **without** a deletion gate | remaining `scripts/*.sh` not in `removal_ledger.zig` |
@@ -135,8 +136,9 @@ tested.
 
 1. **Enforce the S0 freeze.** Nothing else in this ledger can progress while the bootstrap
    compiler does not build.
-2. **Wire in `simd.duo`.** The replacement is written; only the codegen failure blocks it.
-   Closes 118 of ward's 288 sites — 41% of ward's C debt in one change.
+2. ~~Wire in `simd.duo`.~~ **Moot.** ward's C debt was retired wholesale on
+   2026-08-07 by deleting the dead tree; the shipping `src/ward.duo` carries a
+   descriptor-driven SIMD executor (30 opcodes from 30 rows) with no C at all.
 3. **Slice/bytes substrate in `lib/std`.** Unblocks `module.duo` (9) and is §7 phase 1
    regardless.
 4. **Give `scripts/*.sh` a deletion gate** or accept it as permanent class-D.
