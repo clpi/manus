@@ -2654,6 +2654,16 @@ CMP_OPS = {
   {86, 8},   -- i64.gt_u
   {88, 9},   -- i64.le_u
   {90, 2},   -- i64.ge_u
+  -- SIGNED compares. Omitting these was an asymmetry, not a decision: LT=0xB,
+  -- GT=0xC, LE=0xD, GE=0xA. i64.lt_s (83) was blocking wart_i64_bench.
+  {72, 11},  -- i32.lt_s
+  {74, 12},  -- i32.gt_s
+  {76, 13},  -- i32.le_s
+  {78, 10},  -- i32.ge_s
+  {83, 11},  -- i64.lt_s
+  {85, 12},  -- i64.gt_s
+  {87, 13},  -- i64.le_s
+  {89, 10},  -- i64.ge_s
 }
 
 alu_word(op: i64): i64
@@ -3075,7 +3085,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       end
       sp += 1
 
-    elseif (op >= 146 and op <= 149) or (op >= 160 and op <= 163)
+    elseif (op >= 146 and op <= 151) or (op >= 160 and op <= 165)
       -- f32/f64 add/sub/mul/div. Floats live in GP registers as bit patterns,
       -- so the value is moved into an FP scratch register, operated on, and
       -- moved back. That costs two FMOVs per op but needs NO second register
@@ -3101,6 +3111,10 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         fop = 0x0800
       elseif vix == 3
         fop = 0x1800
+      elseif vix == 4
+        fop = 0x5800
+      elseif vix == 5
+        fop = 0x4800
       end
       if f64op == 1
         jitm.w32(code, n, 0x9E670000 | (af << 5))
@@ -3269,6 +3283,25 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       n += 1
       last_cset = n - 1
       last_cc = 0
+
+    elseif op == 69 or op == 80
+      -- i32.eqz / i64.eqz: compare against zero, then CSET EQ. Unary, so the
+      -- operand slot is reused for the result.
+      if sp < 1
+        return -1
+      end
+      ez: i64 = sp - 1
+      ezw: i64 = 0x7100001F
+      if op == 80
+        ezw = 0xF100001F
+      end
+      jitm.w32(code, n, ezw | (ez << 5))
+      n += 1
+      jitm.w32(code, n, 0x1A9F07E0 | (1 << 12) | ez)
+      n += 1
+      last_cset = n - 1
+      last_cc = 0
+      last_alu = -1
 
     elseif op == 26
       -- drop: the value simply stops being referenced
