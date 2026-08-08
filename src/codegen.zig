@@ -284,6 +284,8 @@ pub const CodeGen = struct {
     /// Per-scope set of `lua_Value` locals known to hold numbers only (safe to
     /// unbox in binops without going through metamethod dispatch).
     numeric_lua_scopes: std.ArrayList(std.StringHashMapUnmanaged(void)) = .empty,
+    /// gap[027]: parameter names of the function being emitted. See is_param_name.
+    current_params: std.StringHashMapUnmanaged(void) = .empty,
     /// Sema-tracked field types for dynamic table locals (`t.x` after `t.x = n`).
     table_field_types: ?*const std.StringHashMapUnmanaged(RT) = null,
     concepts: ?*const std.StringHashMapUnmanaged(sema.ConceptInfo) = null,
@@ -908,6 +910,18 @@ pub const CodeGen = struct {
         return self.break_scope_bases.items[self.break_scope_bases.items.len - 1];
     }
 
+    /// gap[027]: names bound as PARAMETERS of the function being emitted.
+    ///
+    /// Kept apart from `local_scopes` on purpose. A module-level `local x` is
+    /// recorded BOTH as a local and as a global — its storage is `duo_g_x` —
+    /// so letting every local shadow would mis-spell module-level call sites
+    /// (`sum_point(p)` reaching for a `p` that has no C storage). A parameter
+    /// is the one binding that unambiguously shadows: it has its own C name and
+    /// LAW-SCOPE rung 1 says lexical wins.
+    fn is_param_name(self: *CodeGen, name: []const u8) bool {
+        return self.current_params.contains(name);
+    }
+
     fn is_local_name(self: *CodeGen, name: []const u8) bool {
         var i = self.local_scopes.items.len;
         while (i > 0) {
@@ -1003,9 +1017,13 @@ pub const CodeGen = struct {
             // Must precede the `duo_g_` branches: sema reports these as globals,
             // but their only storage is the `static const <mod>__<name>` above.
             self.emit_comptime_const_var_name(name);
-        } else if (self.current_module_cname.len > 0 and !is_runtime_global(name) and self.global_type(name) != null) {
+        } else if (self.current_module_cname.len > 0 and !is_runtime_global(name) and
+            !self.is_param_name(name) and self.global_type(name) != null)
+        {
             self.p("duo_g_{s}_{s}", .{ self.current_module_cname, name });
-        } else if (!is_runtime_global(name) and self.global_type(name) != null) {
+        } else if (!is_runtime_global(name) and !self.is_param_name(name) and
+            self.global_type(name) != null)
+        {
             if (self.current_module_cname.len > 0) {
                 self.p("duo_g_{s}_{s}", .{ self.current_module_cname, name });
             } else {
@@ -7977,9 +7995,11 @@ pub const CodeGen = struct {
         defer {
             if (!scope_popped) self.pop_local_scope();
         }
+        self.current_params.clearRetainingCapacity();
         for (fb.params) |*par| {
             try self.note_local_type(par.name, self.resolve_type(par.typ));
             try self.note_comptime_unavailable(par.name);
+            try self.current_params.put(self.alloc, par.name, {});
         }
         if (fb.profile_attr) {
             self.pl("struct timespec __duo_prof_t0, __duo_prof_t1;", .{});
