@@ -111,6 +111,23 @@ pub fn build(b: *std.Build) void {
     const capability_matrix_step = b.step("capability-matrix", "Pass 100 §22: population of examples/ per capability rung");
     capability_matrix_step.dependOn(&capability_matrix_cmd.step);
 
+    // The third §22 report, and the one review actually asks for. The other two
+    // are POPULATION reports -- how far does the corpus get, how far does each
+    // FIXTURE get -- and neither can answer "does THIS capability work", because
+    // one capability takes several files and one file carries several
+    // capabilities. This puts capabilities down the side and the §22 pipeline
+    // across the top (described / parsed / semantic / graph / C / native /
+    // witnessed / hosted), derives every cell by running the fixtures, and
+    // prints `—` plus a NO FIXTURE line for any capability nothing demonstrates.
+    // It carries its own positive controls: three damaged copies of a corpus
+    // fixture must lose exactly one column each, or the report exits 3 rather
+    // than printing a table it has not earned.
+    const capability_rows_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/capability_rows.duo" });
+    capability_rows_cmd.setCwd(b.path("."));
+    capability_rows_cmd.step.dependOn(b.getInstallStep());
+    const capability_rows_step = b.step("capability-rows", "Pass 100 §22: per-CAPABILITY matrix, generated from fixtures");
+    capability_rows_step.dependOn(&capability_rows_cmd.step);
+
     const test_step = b.step("test", "Run all tests (unit + compile-fail)");
     test_step.dependOn(&test_cmd.step);
 
