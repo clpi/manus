@@ -101,20 +101,21 @@ pub fn tokenizeAuthority() TokenizeAuthority {
     // parser coverage 256/256, selfhost proofs 12/12, repo-hygiene pass, and
     // examples/layout_attrs_test.duo — which panicked before — checks clean.
     //
-    // Still .host_zig for a NARROWER, un-isolated reason, recorded so the next
-    // attempt starts here (GAP-023): with the flag on, two proofs regress —
-    //     examples/pass16_lexer_fingerprint_differential.duo   exit 3
-    //     examples/pass16_lexer_text_differential.duo          exit 3
-    // plus unit tests c_sim_import and native_barrier_checks. Both proofs carry
-    // LEXER CORPUS DATA as string literals, so they are the programs most
-    // sensitive to how the compiler lexes string literals — which is exactly
-    // what changes when the compiler lexes itself with the Duo lexer. That is a
-    // strong hypothesis, NOT a diagnosis; it has not been isolated.
+    // gap[023] is CLOSED and this is .duo_native: the compiler tokenizes
+    // itself with the Duo lexer. Both halves landed 2026-08-07.
     //
-    // Everything else is done: artifact linked, dispatch live (verified by
-    // corrupting the stream), field-for-field differential, GAP-017 rejections,
-    // GAP-022 source-slice text. The routing in main.zig stays in place and
-    // inert under .host_zig.
+    // The lexer half was `_int_of` in lib/std/compiler/lexer.duo -- exact
+    // decimal/hex digit accumulation in i64, never through f64, so the two
+    // lexers agree on integer literals above 2^53.
+    //
+    // The native half was NOT a lexer divergence at all. With the flag on,
+    // pass16_lexer_text_differential failed while --backend c passed, because
+    // a native main never initialises the Lua runtime it links against:
+    // next_tok performs a runtime require and read the module registry out of
+    // a zeroed `package` (KERN_INVALID_ADDRESS at 0x68). The direct path now
+    // declines when the executable must link Duo module objects, so `auto`
+    // falls through to the C emit. Both differentials exit 0.
+    //
     return .duo_native;
 }
 
