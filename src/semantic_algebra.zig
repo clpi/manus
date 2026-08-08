@@ -455,9 +455,13 @@ pub fn effectSetFromAttributes(attrs: []const ast.Attribute) EffectSet {
         if (std.mem.eql(u8, key, "noalloc")) set = set.add(.noalloc);
         if (std.mem.eql(u8, key, "device")) {
             if (attr.args) |args| {
-                if (std.mem.indexOf(u8, args, "cuda") != null or
-                    std.mem.indexOf(u8, args, "metal") != null or
-                    std.mem.indexOf(u8, args, "webgpu") != null)
+                // Substring matching made `@device("cuda_helper")` and
+                // `@device(not_metal)` register as GPU targets. The argument is
+                // a single device NAME, so compare the whole trimmed token.
+                const dev = std.mem.trim(u8, args, " \t\r\n\"'");
+                if (std.mem.eql(u8, dev, "cuda") or
+                    std.mem.eql(u8, dev, "metal") or
+                    std.mem.eql(u8, dev, "webgpu"))
                 {
                     set = set.add(.gpu);
                 }

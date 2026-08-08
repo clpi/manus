@@ -421,7 +421,12 @@ fn hasArcFalse(attributes: []const ast.Attribute) bool {
     for (attributes) |attr| {
         if (std.mem.eql(u8, attr.name, "arc")) {
             if (attr.args) |args| {
-                if (std.mem.eql(u8, args, "false")) return true;
+                // `attr.args` is RAW SOURCE TEXT between the parens, so
+                // `@arc( false )` arrives as " false " and an exact compare
+                // silently answers "arc is enabled". Trim before deciding;
+                // quotes too, since `@arc("false")` is the same intent.
+                const t = std.mem.trim(u8, args, " \t\r\n\"'");
+                if (std.mem.eql(u8, t, "false")) return true;
             }
         }
     }
