@@ -1889,7 +1889,14 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
         });
         return .{ .temp = t };
     }
-    return bail(@src());
+    // Name the callee. Every row this session that reported only a location
+    // turned out to be covering more than one cause, and a call site's whole
+    // content is "I could not resolve this callee" — the name IS the finding.
+    return bailWith(@src(), switch (c.func.*) {
+        .name => |n| n.ident,
+        .field => |f| f.field,
+        else => @tagName(c.func.*),
+    });
 }
 
 /// `print(v)` — sovereign native output (DNIR `print_value`). Zero-arg prints a
