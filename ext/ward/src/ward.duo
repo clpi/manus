@@ -2707,8 +2707,44 @@ cmp_cond(op: i64): i64
   -1
 end
 
--- Compile body bytes [off, off+len) to ARM64 in `code`; returns word count,
--- or -1 if an unsupported opcode is hit (caller falls back to the interpreter).
+-- Local slot -> ARM64 register, and it depends on whether the body CALLS.
+--
+-- A leaf body has nothing that can clobber the caller-saved window, so it puts
+-- its locals in w9..w17 first and only spills into the callee-saved x19..x26
+-- past nine of them -- which is what the JIT always did.
+--
+-- A body that emits a `BL` wants the opposite. Its locals have to survive the
+-- call, so they start in x19..x26 (the callee saves them once, in ITS prologue)
+-- and only the ninth and beyond land in w9..w17, where the call site has to
+-- spill them by hand. For the shapes that matter -- a recursive function with a
+-- few locals -- this makes the register save/restore happen once per callee
+-- instead of once per call site, and leaves the call site with no spills at all.
+--
+-- x18 is the reserved platform register on Darwin and is skipped in both maps;
+-- x27/x28 hold the globals and linear-memory bases and are never locals.
+locreg(idx: i64, cf: i64): i64
+  if cf == 1
+    if idx < 8
+      return 19 + idx
+    end
+    return idx + 1
+  end
+  if idx < 9
+    return 9 + idx
+  end
+  10 + idx
+end
+
+-- Compile the module's entry body and every function it can reach into `code`;
+-- returns word count, or -1 if an unsupported opcode is hit (caller falls back
+-- to the interpreter).
+--
+-- Functions are compiled into ONE buffer, each at its own word offset, and a
+-- `call` that is not worth inlining becomes a real `BL` patched once every body
+-- has an address. That is the whole reason this is a work queue rather than the
+-- single-body compiler it used to be: inlining alone can never express
+-- recursion, so a recursive body used to dump the ENTIRE function back to the
+-- interpreter (bench/fib.wasm lost 36x to wasmtime that way).
 jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
   n: i64 = 0                       -- emitted instruction words
   sp: i64 = 0                      -- compile-time operand-stack depth
@@ -2789,9 +2825,31 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
   -- pointer local crossing a Duo function boundary -- the same reason
   -- `run_body` builds its tables inline.
   jtp = mem.alloc(256 * 8)
-  jft = mem.alloc(256 * 5 * 8)
+  jtr = mem.alloc(256 * 8)
+  jft = mem.alloc(256 * 6 * 8)
   mem.zero(jtp, 256 * 8)
-  mem.zero(jft, 256 * 5 * 8)
+  mem.zero(jtr, 256 * 8)
+  mem.zero(jft, 256 * 6 * 8)
+  -- Work queue of functions still to compile, their entry word once compiled,
+  -- and the call sites whose BL offset is not resolvable until then.
+  jq   = mem.alloc(256 * 8)
+  jqa  = mem.alloc(256 * 8)
+  jqs  = mem.alloc(256 * 8)
+  jcw  = mem.alloc(1024 * 8)
+  jct  = mem.alloc(1024 * 8)
+  jrw  = mem.alloc(64 * 8)
+  jspr = mem.alloc(64 * 8)
+  mem.zero(jq, 256 * 8)
+  mem.zero(jqa, 256 * 8)
+  mem.zero(jqs, 256 * 8)
+  mem.zero(jcw, 1024 * 8)
+  mem.zero(jct, 1024 * 8)
+  mem.zero(jrw, 64 * 8)
+  mem.zero(jspr, 64 * 8)
+  jqn: i64 = 0
+  jqh: i64 = 0
+  jcn: i64 = 0
+  jrn: i64 = 0
   jty: i64 = 0
   jfo: i64 = 0
   jco: i64 = 0
@@ -2867,6 +2925,9 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       mem.write_i64(jtp, jtv * 8, jnp)
       jnr: i64 = uleb_val(s, jtq, mlen)
       jtq = uleb_end(s, jtq, mlen) + jnr
+      -- result count too: a real call has to know whether the BL leaves a value
+      -- in x0 to push, and the inline path never needed to ask.
+      mem.write_i64(jtr, jtv * 8, jnr)
       jtv += 1
     end
   end
@@ -2893,10 +2954,12 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         jgv += 1
       end
       jpf: i64 = 0
+      jpr: i64 = 0
       if jgq > 0
         jtix: i64 = uleb_val(s, jgq, mlen)
         jgq = uleb_end(s, jgq, mlen)
         jpf = mem.read_i64(jtp, jtix * 8)
+        jpr = mem.read_i64(jtr, jtix * 8)
       end
       -- Leafness by byte scan. An immediate that happens to equal 0x10 can read
       -- as a call, which only ever makes a body look NON-leaf: that costs
@@ -2911,38 +2974,44 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         end
         jzz += 1
       end
-      mem.write_i64(jft, (jfv * 5) * 8, jrq - 1)
-      mem.write_i64(jft, (jfv * 5 + 1) * 8, jbt + jbs - jrq)
-      mem.write_i64(jft, (jfv * 5 + 2) * 8, jlc)
-      mem.write_i64(jft, (jfv * 5 + 3) * 8, jpf)
-      mem.write_i64(jft, (jfv * 5 + 4) * 8, jlf)
+      mem.write_i64(jft, (jfv * 6) * 8, jrq - 1)
+      mem.write_i64(jft, (jfv * 6 + 1) * 8, jbt + jbs - jrq)
+      mem.write_i64(jft, (jfv * 6 + 2) * 8, jlc)
+      mem.write_i64(jft, (jfv * 6 + 3) * 8, jpf)
+      mem.write_i64(jft, (jfv * 6 + 4) * 8, jlf)
+      mem.write_i64(jft, (jfv * 6 + 5) * 8, jpr)
       jcq = jbt + jbs
       jfv += 1
     end
   end
 
-  -- Which function is THIS body? An inlined callee's locals start above the
-  -- caller's, so the caller's local count has to be known.
+  -- Which function is THIS body? The work queue is seeded with it, and an
+  -- inlined callee's locals start above its caller's, so its local count has to
+  -- be known. Without a match there is no queue to seed: bail to the
+  -- interpreter rather than compile a body no `call` can name.
   jself: i64 = -1
   jsv: i64 = 0
   while jsv < jnf
-    if mem.read_i64(jft, (jsv * 5) * 8) == off
+    if mem.read_i64(jft, (jsv * 6) * 8) == off
       jself = jsv
       jsv = jnf
     end
     jsv += 1
   end
-  selfloc: i64 = 0
-  if jself >= 0
-    selfloc = mem.read_i64(jft, (jself * 5 + 2) * 8) + mem.read_i64(jft, (jself * 5 + 3) * 8)
+  if jself < 0
+    return -1
   end
 
-  -- Prologue. x19..x28 are CALLEE-SAVED on AArch64, and this JIT uses them for
-  -- locals and for the memory base, so they must be preserved or the generated
-  -- code corrupts its caller -- ward's own compiled C. That is not theoretical:
-  -- clobbering x28 made `rtype` read back wrong and every f32/f64 module print
-  -- its raw bit pattern instead of a float. The original w9..w16 window needed
-  -- none of this because x9..x15 are caller-saved temporaries.
+  -- ── ENTRY TRAMPOLINE ────────────────────────────────────────────────────
+  -- jitm.call2 enters at word 0 under the C ABI, so this is the one place that
+  -- has to preserve the FULL callee-saved window for ward's own compiled C.
+  -- x19..x28 are CALLEE-SAVED on AArch64 and this JIT uses them for locals and
+  -- for the two bases, so clobbering them corrupts the caller: it once made
+  -- `rtype` read back wrong and every f32/f64 module print its raw bit pattern.
+  -- Compiled wasm functions below save only the pairs they touch, because they
+  -- are entered by BL from code that already respects the same convention.
+  jitm.w32(code, n, 0xA9800000 | (0x7E << 15) | (30 << 10) | (31 << 5) | 29)
+  n += 1
   jitm.w32(code, n, 0xA9800000 | (0x7E << 15) | (20 << 10) | (31 << 5) | 19)
   n += 1
   jitm.w32(code, n, 0xA9800000 | (0x7E << 15) | (22 << 10) | (31 << 5) | 21)
@@ -2953,31 +3022,97 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
   n += 1
   jitm.w32(code, n, 0xA9800000 | (0x7E << 15) | (28 << 10) | (31 << 5) | 27)
   n += 1
-  -- the linear-memory base arrives in x0 (jitm.call1); stash it in x28 before
-  -- x0 is reused as operand-stack slot 0
+  -- the linear-memory base arrives in x0 and the globals base in x1; both stay
+  -- resident for the whole run, in registers no compiled body ever writes
   jitm.w32(code, n, 0xAA0003E0 | (0 << 16) | 28)
   n += 1
   jitm.w32(code, n, 0xAA0003E0 | (1 << 16) | 27)
   n += 1
+  jitm.w32(code, n, 0x94000000)
+  mem.write_i64(jcw, jcn * 8, n)
+  mem.write_i64(jct, jcn * 8, jself)
+  jcn += 1
+  n += 1
+  jitm.w32(code, n, 0xA8C00000 | (2 << 15) | (28 << 10) | (31 << 5) | 27)
+  n += 1
+  jitm.w32(code, n, 0xA8C00000 | (2 << 15) | (26 << 10) | (31 << 5) | 25)
+  n += 1
+  jitm.w32(code, n, 0xA8C00000 | (2 << 15) | (24 << 10) | (31 << 5) | 23)
+  n += 1
+  jitm.w32(code, n, 0xA8C00000 | (2 << 15) | (22 << 10) | (31 << 5) | 21)
+  n += 1
+  jitm.w32(code, n, 0xA8C00000 | (2 << 15) | (20 << 10) | (31 << 5) | 19)
+  n += 1
+  jitm.w32(code, n, 0xA8C00000 | (2 << 15) | (30 << 10) | (31 << 5) | 29)
+  n += 1
+  jitm.w32(code, n, 0xD65F03C0)
+  n += 1
 
-  -- and the entry function's own declared locals, for the same reason
-  sz: i64 = 0
-  if jself >= 0
-    sz = mem.read_i64(jft, (jself * 5 + 3) * 8)
-  end
-  while sz < selfloc
-    rgs: i64 = 9 + sz
-    if sz >= 9
-      rgs = 10 + sz
+  mem.write_i64(jq, 0, jself)
+  mem.write_i64(jqs, jself * 8, 1)
+  jqn = 1
+
+  -- Per-function compile state, declared out here because the opcode arms in
+  -- the inner loop read it.
+  selfloc: i64 = 0
+  cf: i64 = 0
+  hwm: i64 = 0
+  curfn: i64 = 0
+
+  while jqh < jqn
+    curfn = mem.read_i64(jq, jqh * 8)
+    jqh += 1
+    off = mem.read_i64(jft, (curfn * 6) * 8)
+    blen = mem.read_i64(jft, (curfn * 6 + 1) * 8)
+    fnprm: i64 = mem.read_i64(jft, (curfn * 6 + 3) * 8)
+    selfloc = mem.read_i64(jft, (curfn * 6 + 2) * 8) + fnprm
+    -- `jlf` is a byte scan for 0x10/0x11 and can only ever over-report a call,
+    -- so `cf == 0` genuinely means no BL will be emitted from this body.
+    cf = 1 - mem.read_i64(jft, (curfn * 6 + 4) * 8)
+    -- eight argument registers, seventeen local registers
+    if selfloc > 17 or fnprm > 8 or n > 260000
+      return -1
     end
-    jitm.w32(code, n, 0x2A1F03E0 | rgs)
-    n += 1
-    sz += 1
-  end
 
-  curloc = selfloc
+    -- Five reserved words for the prologue. Which pairs actually need saving is
+    -- not known until the body has been walked (inlining raises the local
+    -- high-water mark), so the words are filled in at the epilogue and the
+    -- function's ENTRY ADDRESS is the first one used -- unused slots sit above
+    -- it as NOPs and are never executed.
+    pstart: i64 = n
+    n += 5
 
-  while pc <= blen or inl_d > 0
+    fpk: i64 = 0
+    while fpk < fnprm
+      jitm.w32(code, n, 0xAA0003E0 | (fpk << 16) | locreg(fpk, cf))
+      n += 1
+      fpk += 1
+    end
+    -- Wasm guarantees declared locals start at ZERO.
+    fsz: i64 = fnprm
+    while fsz < selfloc
+      jitm.w32(code, n, 0x2A1F03E0 | locreg(fsz, cf))
+      n += 1
+      fsz += 1
+    end
+
+    hwm = selfloc - 1
+    curloc = selfloc
+    lbase = 0
+    sp = 0
+    pc = 1
+    ldep = 0
+    inl_d = 0
+    ali_slot = -1
+    ali2_slot = -1
+    last_alu = -1
+    last_slot = -1
+    last_cset = -1
+    last_cc = -1
+    fcl = -1
+    jrn = 0
+
+    while pc <= blen or inl_d > 0
     -- An inlined body is done when its cursor runs past its own length:
     -- restore the caller's cursor and register window and carry on.
     if pc > blen and inl_d > 0
@@ -3001,7 +3136,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
     -- past either would silently alias a local, so refuse and let the caller
     -- fall back to the interpreter. Correctness before speed (pass14 s1.1:
     -- a fast path that changes semantics is not proof).
-    if sp > 8 or sp < 0
+    if sp > 8 or sp < 0 or n > 260000
       return -1
     end
 
@@ -3231,10 +3366,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       if string.byte(s, off + pc) == 33
         pidx: i64 = uleb_val(s, off + pc + 1, off + blen) + lbase
         if pidx <= 16
-          prg: i64 = 9 + pidx
-          if pidx >= 9
-            prg = 10 + pidx
-          end
+          prg: i64 = locreg(pidx, cf)
           if fsa == prg
             accreg = prg
           end
@@ -3379,10 +3511,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       if idx > 16
         return -1
       end
-      rgi: i64 = 9 + idx
-      if idx >= 9
-        rgi = 10 + idx
-      end
+      rgi: i64 = locreg(idx, cf)
       -- Two alias registers, because consecutive `local.get`s are the common
       -- shape (`local.get 1; local.get 0; xor`) and with only one tracked the
       -- second spills a chain MOV.
@@ -3405,10 +3534,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       if idx2 > 16 or sp < 1
         return -1
       end
-      rgo: i64 = 9 + idx2
-      if idx2 >= 9
-        rgo = 10 + idx2
-      end
+      rgo: i64 = locreg(idx2, cf)
       -- If the value was just produced by an ALU op into this very slot,
       -- retarget that instruction's Rd at the local register instead of copying.
       -- These MOVs are on the dependency chain: one round's `local.tee` feeds
@@ -4297,16 +4423,36 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_cset = -1
 
     elseif op == 15
-      -- return. Implemented as "stop compiling this body", which is only
-      -- correct when the return is the LAST thing in it. Inside a label the
-      -- rest of the function still has to be emitted, and silently dropping it
-      -- made wart_compute_bench hang once `if` stopped bailing. Emitting a
-      -- jump to the epilogue would need the epilogue's address, which is not
-      -- known yet, so refuse instead.
-      if ldep > 0
+      -- return. At label depth zero it is simply "stop compiling this body".
+      -- Deeper in, the rest of the function still has to be emitted (silently
+      -- dropping it made wart_compute_bench hang once `if` stopped bailing), so
+      -- the result moves to x0 here and an unconditional B jumps to the
+      -- epilogue -- whose address is not known yet, hence the patch list. A
+      -- return from an INLINED body would exit the wrong function, so that
+      -- shape still bails.
+      if ldep == 0
+        pc = blen + 1
+      elseif inl_d > 0 or jrn >= 64
         return -1
+      else
+        if sp > 0
+          jitm.w32(code, n, 0xAA0003E0 | ((sp - 1) << 16) | 0)
+          n += 1
+        end
+        jitm.w32(code, n, 0x14000000)
+        mem.write_i64(jrw, jrn * 8, n)
+        jrn += 1
+        n += 1
+        -- Like `br`, everything after this is unreachable, and wasm makes the
+        -- operand stack polymorphic there while this JIT tracks `sp`
+        -- concretely. Accept it only where that region is empty.
+        nxr: i64 = string.byte(s, off + pc)
+        if nxr != 11 and nxr != 5
+          return -1
+        end
+        last_alu = -1
+        last_cset = -1
       end
-      pc = blen + 1
 
     elseif op == 16
       -- call: INLINE a leaf callee. A real call needs a frame and spill
@@ -4316,25 +4462,35 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       cidx: i64 = uleb_val(s, off + pc, off + blen)
       pc = uleb_end(s, off + pc, off + blen) - off
       cfx: i64 = cidx - jimp
-      if inl_d >= 6 or cfx < 0 or cfx >= jnf
+      if cfx < 0 or cfx >= jnf
         return -1
       end
-      cnl: i64 = mem.read_i64(jft, (cfx * 5 + 2) * 8)
-      cnp: i64 = mem.read_i64(jft, (cfx * 5 + 3) * 8)
+      cnl: i64 = mem.read_i64(jft, (cfx * 6 + 2) * 8)
+      cnp: i64 = mem.read_i64(jft, (cfx * 6 + 3) * 8)
+      cnr: i64 = mem.read_i64(jft, (cfx * 6 + 5) * 8)
+      clf: i64 = mem.read_i64(jft, (cfx * 6 + 4) * 8)
       -- the callee's locals start above every enclosing frame's
       nlb2: i64 = lbase + curloc
-      if nlb2 + cnp + cnl > 17 or cnp > sp
+      if cnp > sp or cnr > 1
         return -1
       end
+      -- INLINE only a LEAF callee. Leafness is what makes this terminate: a
+      -- body containing no call cannot recurse, so the splice is always finite
+      -- and the depth cap is belt and braces. It used to inline non-leaves too,
+      -- and a recursive callee simply ran the cap out and then bailed the WHOLE
+      -- function to the interpreter. Everything else is a real call now, which
+      -- is both cheaper to compile and unbounded in what it can express.
+      doinl: i64 = 0
+      if clf == 1 and inl_d < 6 and nlb2 + cnp + cnl <= 17
+        doinl = 1
+      end
+
+      if doinl == 1
       -- arguments move from the operand stack into the callee's params, which
-      -- are its locals 0..cnp-1 and therefore registers 9+selfloc..
+      -- are its locals 0..cnp-1 and therefore registers locreg(nlb2)..
       ck4: i64 = 0
       while ck4 < cnp
-        rga: i64 = 9 + nlb2 + ck4
-        if nlb2 + ck4 >= 9
-          rga = 10 + nlb2 + ck4
-        end
-        jitm.w32(code, n, 0xAA0003E0 | ((sp - cnp + ck4) << 16) | rga)
+        jitm.w32(code, n, 0xAA0003E0 | ((sp - cnp + ck4) << 16) | locreg(nlb2 + ck4, cf))
         n += 1
         ck4 += 1
       end
@@ -4345,11 +4501,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- 69986 instead of 70000.
       cz: i64 = cnp
       while cz < cnp + cnl
-        rgz: i64 = 9 + nlb2 + cz
-        if nlb2 + cz >= 9
-          rgz = 10 + nlb2 + cz
-        end
-        jitm.w32(code, n, 0x2A1F03E0 | rgz)
+        jitm.w32(code, n, 0x2A1F03E0 | locreg(nlb2 + cz, cf))
         n += 1
         cz += 1
       end
@@ -4361,45 +4513,215 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       mem.write_i64(inl_lds, inl_d * 8, ldep)
       mem.write_i64(inl_lcs, inl_d * 8, curloc)
       inl_d += 1
-      off = mem.read_i64(jft, (cfx * 5) * 8)
-      blen = mem.read_i64(jft, (cfx * 5 + 1) * 8)
+      off = mem.read_i64(jft, (cfx * 6) * 8)
+      blen = mem.read_i64(jft, (cfx * 6 + 1) * 8)
       lbase = nlb2
       curloc = cnp + cnl
+      if nlb2 + cnp + cnl - 1 > hwm
+        hwm = nlb2 + cnp + cnl - 1
+      end
       pc = 1
       last_alu = -1
       last_cset = -1
+
+      else
+      -- ── REAL CALL ──────────────────────────────────────────────────────
+      -- AAPCS-shaped, with the two module-wide bases riding along: args in
+      -- x0..x7, result in x0, x27 = globals base, x28 = linear-memory base,
+      -- and the callee saves whatever of x19..x26 and x29/x30 it touches.
+      --
+      -- Everything the caller holds in a CALLER-saved register has to survive
+      -- the BL by hand. That is the operand-stack slots below the arguments
+      -- (w0..w8 are the argument registers) plus any local that landed above
+      -- the callee-saved window. The local map is chosen so a body that calls
+      -- puts its first eight locals in x19..x26, which usually leaves this
+      -- spill list EMPTY -- a recursive `fib` spills nothing at all.
+      if jcn >= 1024 or cnp > 8
+        return -1
+      end
+      nsp: i64 = 0
+      lv: i64 = 0
+      while lv < lbase + curloc
+        lr: i64 = locreg(lv, cf)
+        if lr <= 17
+          mem.write_i64(jspr, nsp * 8, lr)
+          nsp += 1
+        end
+        lv += 1
+      end
+      ov: i64 = 0
+      while ov < sp - cnp
+        mem.write_i64(jspr, nsp * 8, ov)
+        nsp += 1
+        ov += 1
+      end
+      if nsp > 64
+        return -1
+      end
+      spi: i64 = 0
+      while spi < nsp
+        jitm.w32(code, n, 0xF81F0FE0 | mem.read_i64(jspr, spi * 8))
+        n += 1
+        spi += 1
+      end
+      -- Arguments slide down to x0..x{cnp-1}. Ascending is safe: at step i the
+      -- destination is x{i} and every remaining source is x{sp-cnp+j} with
+      -- j > i, hence strictly above i.
+      ag: i64 = 0
+      while ag < cnp
+        if sp - cnp + ag != ag
+          jitm.w32(code, n, 0xAA0003E0 | ((sp - cnp + ag) << 16) | ag)
+          n += 1
+        end
+        ag += 1
+      end
+      jitm.w32(code, n, 0x94000000)
+      mem.write_i64(jcw, jcn * 8, n)
+      mem.write_i64(jct, jcn * 8, cfx)
+      jcn += 1
+      n += 1
+      -- Move the result out of x0 BEFORE restoring, or the first pop lands on
+      -- top of it. Its slot is sp-cnp, which is never in the restored range
+      -- 0..sp-cnp-1.
+      if cnr == 1 and sp - cnp != 0
+        jitm.w32(code, n, 0xAA0003E0 | (0 << 16) | (sp - cnp))
+        n += 1
+      end
+      spj: i64 = nsp - 1
+      while spj >= 0
+        jitm.w32(code, n, 0xF84107E0 | mem.read_i64(jspr, spj * 8))
+        n += 1
+        spj -= 1
+      end
+      sp = sp - cnp + cnr
+      -- Queue the callee. A function is compiled once however many call it,
+      -- and the entry was queued before this loop began.
+      if mem.read_i64(jqs, cfx * 8) == 0
+        if jqn >= 256
+          return -1
+        end
+        mem.write_i64(jqs, cfx * 8, 1)
+        mem.write_i64(jq, jqn * 8, cfx)
+        jqn += 1
+      end
+      last_alu = -1
+      last_cset = -1
+      end
 
     else
       return -1
     end
   end
 
-  if fcl >= 0
-    jitm.w32(code, n, 0x9E660000 | (2 << 5) | fcl)
+    if fcl >= 0
+      jitm.w32(code, n, 0x9E660000 | (2 << 5) | fcl)
+      n += 1
+      fcl = -1
+    end
+
+    -- result in x0, then RET. This MOV must be 64-BIT: a 32-bit one truncates
+    -- every i64 and f64 return. It went unnoticed because the i64 regression
+    -- value happened to fit in 32 bits.
+    if sp > 0
+      jitm.w32(code, n, 0xAA0003E0 | ((sp - 1) << 16) | 0)
+      n += 1
+    end
+    -- An early `return` moved its own result into x0 and branched HERE, past
+    -- the fallthrough move, because its operand-stack depth is its own.
+    eprst: i64 = n
+
+    -- How many callee-saved pairs this body actually touched. `hwm` is the
+    -- highest local index reached, inlined callees included.
+    need: i64 = 0
+    if cf == 1
+      need = hwm + 1
+      if need > 8
+        need = 8
+      end
+    else
+      need = hwm - 8
+    end
+    if need < 0
+      need = 0
+    end
+    if need > 6
+      jitm.w32(code, n, 0xA8C00000 | (2 << 15) | (26 << 10) | (31 << 5) | 25)
+      n += 1
+    end
+    if need > 4
+      jitm.w32(code, n, 0xA8C00000 | (2 << 15) | (24 << 10) | (31 << 5) | 23)
+      n += 1
+    end
+    if need > 2
+      jitm.w32(code, n, 0xA8C00000 | (2 << 15) | (22 << 10) | (31 << 5) | 21)
+      n += 1
+    end
+    if need > 0
+      jitm.w32(code, n, 0xA8C00000 | (2 << 15) | (20 << 10) | (31 << 5) | 19)
+      n += 1
+    end
+    if cf == 1
+      jitm.w32(code, n, 0xA8C00000 | (2 << 15) | (30 << 10) | (31 << 5) | 29)
+      n += 1
+    end
+    jitm.w32(code, n, 0xD65F03C0)
     n += 1
-    fcl = -1
+
+    -- Fill the reserved prologue BACKWARDS from its last word, so the pushes
+    -- land in the exact reverse order of the pops above and the entry address
+    -- is the first word used. x30 is saved only when the body emits a BL --
+    -- a leaf body would otherwise pay a store and a load per invocation for a
+    -- link register nothing overwrites.
+    pw: i64 = pstart + 5
+    if need > 6
+      pw -= 1
+      jitm.w32(code, pw, 0xA9800000 | (0x7E << 15) | (26 << 10) | (31 << 5) | 25)
+    end
+    if need > 4
+      pw -= 1
+      jitm.w32(code, pw, 0xA9800000 | (0x7E << 15) | (24 << 10) | (31 << 5) | 23)
+    end
+    if need > 2
+      pw -= 1
+      jitm.w32(code, pw, 0xA9800000 | (0x7E << 15) | (22 << 10) | (31 << 5) | 21)
+    end
+    if need > 0
+      pw -= 1
+      jitm.w32(code, pw, 0xA9800000 | (0x7E << 15) | (20 << 10) | (31 << 5) | 19)
+    end
+    if cf == 1
+      pw -= 1
+      jitm.w32(code, pw, 0xA9800000 | (0x7E << 15) | (30 << 10) | (31 << 5) | 29)
+    end
+    pnop: i64 = pstart
+    while pnop < pw
+      jitm.w32(code, pnop, 0xD503201F)
+      pnop += 1
+    end
+    mem.write_i64(jqa, curfn * 8, pw)
+
+    prt: i64 = 0
+    while prt < jrn
+      rw: i64 = mem.read_i64(jrw, prt * 8)
+      jitm.w32(code, rw, 0x14000000 | ((eprst - rw) & 0x03FFFFFF))
+      prt += 1
+    end
   end
 
-  -- result in x0, then RET. This MOV must be 64-BIT: a 32-bit one truncates
-  -- every i64 and f64 return. It went unnoticed because the i64 regression
-  -- value happened to fit in 32 bits.
-  if sp > 0
-    jitm.w32(code, n, 0xAA0003E0 | ((sp - 1) << 16) | 0)
-    n += 1
+  -- Every body now has an address, so the BLs can be resolved. imm26 is a
+  -- SIGNED word displacement from the branch itself, which is why this cannot
+  -- happen at emit time for a forward or recursive target.
+  jci: i64 = 0
+  while jci < jcn
+    cw: i64 = mem.read_i64(jcw, jci * 8)
+    ct: i64 = mem.read_i64(jct, jci * 8)
+    ca: i64 = mem.read_i64(jqa, ct * 8)
+    if ca <= 0
+      return -1
+    end
+    jitm.w32(code, cw, 0x94000000 | ((ca - cw) & 0x03FFFFFF))
+    jci += 1
   end
-  -- restore the callee-saved window, in reverse
-  jitm.w32(code, n, 0xA8C00000 | (2 << 15) | (28 << 10) | (31 << 5) | 27)
-  n += 1
-  jitm.w32(code, n, 0xA8C00000 | (2 << 15) | (26 << 10) | (31 << 5) | 25)
-  n += 1
-  jitm.w32(code, n, 0xA8C00000 | (2 << 15) | (24 << 10) | (31 << 5) | 23)
-  n += 1
-  jitm.w32(code, n, 0xA8C00000 | (2 << 15) | (22 << 10) | (31 << 5) | 21)
-  n += 1
-  jitm.w32(code, n, 0xA8C00000 | (2 << 15) | (20 << 10) | (31 << 5) | 19)
-  n += 1
-  jitm.w32(code, n, 0xD65F03C0)
-  n += 1
   n
 end
 
