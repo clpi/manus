@@ -1344,7 +1344,33 @@ const Arm64Compiler = struct {
             .binop => blk: {
                 if (ins.ty == .f64) {
                     const ast_op = dnirBinOpToAst(ins.binop);
-                    if (!isComparison(ast_op)) return refuse(@src());
+                    // f64 ARITHMETIC outside a float-returning function. The
+                    // arm below emits exactly this and is gated on
+                    // `cur_func_float`, a per-FUNCTION property — so
+                    // `mandel(cx: f64, cy: f64): i64`, a float kernel that
+                    // answers with a count, had nowhere to go and was refused.
+                    //
+                    // `temps` is disambiguated by the CONSUMING instruction's
+                    // `ty`, not by the function's: a consumer typed f64 reads
+                    // through evalDnirValueFp, an integer consumer through
+                    // evalDnirValue. So an FP result is correct here regardless
+                    // of what the function returns.
+                    if (!isComparison(ast_op)) {
+                        const alhs = try self.evalDnirValueFp(temps, ins.lhs);
+                        const arhs = try self.evalDnirValueFp(temps, ins.rhs);
+                        const adst = try self.allocFpReg();
+                        switch (ins.binop) {
+                            .add => try self.emitFaddReg(adst, alhs, arhs),
+                            .sub => try self.emitFsubReg(adst, alhs, arhs),
+                            .mul => try self.emitFmulReg(adst, alhs, arhs),
+                            .div => try self.emitFdivReg(adst, alhs, arhs),
+                            else => return refuseWith(@src(), @tagName(ins.binop)),
+                        }
+                        if (alhs != adst) self.releaseFpReg(alhs);
+                        if (arhs != adst) self.releaseFpReg(arhs);
+                        if (ins.result) |t| try temps.put(self.alloc, t, adst);
+                        break :blk;
+                    }
                     const lhs = try self.evalDnirValueFp(temps, ins.lhs);
                     const rhs = try self.evalDnirValueFp(temps, ins.rhs);
                     const dst = try self.allocReg();
