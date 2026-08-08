@@ -1,0 +1,191 @@
+-- Native lowering differential — the direct ARM64 backend must agree with the C
+-- backend on every corpus program.
+--
+-- Duo replacement for scripts/native_differential.sh (monoglot census).
+--
+-- Why this exists: the direct backend's own unit tests assert that instructions
+-- are *present* ("at least 3 cmp, at least 3 b."). A backend can satisfy every
+-- one of those while computing the wrong answer, which is exactly what happened
+-- -- `if n < 0` compiled as `if n == 0`, loop bodies returned after one
+-- iteration, and loop counters were folded to constants. Only a behavioural
+-- differential against a known-good backend catches that class.
+--
+-- Exit 0 iff every program in examples/native_differential/ produces the same
+-- exit status under --backend=direct and --backend=c, with no hangs.
+--
+-- THE STATUS READ IS LOAD-BEARING. std.script.run cannot report an exit code:
+-- std.os.execute collapses every nonzero status to 1. A differential built on
+-- `run` would compare 1 against 1 and call every divergence agreement -- it
+-- would pass while the backend returned 3 where C returned 7. std.script.status
+-- reads the real code back through a subshell, so it is used throughout.
+
+_WORK = "/tmp/duo-native-diff"
+
+_agree = 0
+_diverge = 0
+_failures = ""
+
+_fail(msg: str): void
+    _failures = _failures .. "  " .. msg .. "\n"
+    _diverge = _diverge + 1
+end
+
+_env_or(name: str, fallback: str): str
+    v = std.script.getenv_or(name)
+    if v == "" return fallback end
+    v
+end
+
+-- A miscompiled loop does not fail, it spins. Every run is bounded, and 124 is
+-- the timeout marker the caller checks for.
+_timeout_prefix = ""
+
+_run_binary(bin: str): i64
+    std.script.status(_timeout_prefix .. bin)
+end
+
+-- `ls` rather than a glob: an empty directory must yield nothing, not a literal
+-- unexpanded pattern treated as a filename.
+_list(dir: str): any
+    out = std.script.capture("ls " .. dir .. "/*.duo 2>/dev/null")
+    files = {}
+    for _i, line in std.string.split(out, "\n")
+        t = std.script.chomp(line)
+        if t != ""
+            files[#files + 1] = t
+        end
+    end
+    files
+end
+
+_stem(path: str): str
+    b = std.script.chomp(std.script.capture("basename " .. path .. " .duo"))
+    b
+end
+
+_compile(duo: str, src: str, backend: str, out: str): bool
+    std.script.run(duo .. " compile " .. src .. " --backend=" .. backend
+        .. " --emit exe -o " .. out .. " >/dev/null 2>&1") == 0
+end
+
+main = (): i64
+    duo = _env_or("DUO", "./zig-out/bin/duo")
+    corpus = _env_or("NATIVE_DIFF_CORPUS", "examples/native_differential")
+    run_timeout = _env_or("NATIVE_DIFF_TIMEOUT", "10")
+
+    if not std.script.fs_exists(duo)
+        zig = _env_or("ZIG", "zig")
+        if std.script.run(zig .. " build") != 0
+            print("native_differential: FAIL — zig build")
+            return 1
+        end
+    end
+
+    for _i, cand in {"timeout", "gtimeout"}
+        if _timeout_prefix == "" and std.script.chomp(std.script.capture(
+            "command -v " .. cand .. " 2>/dev/null")) != ""
+            _timeout_prefix = cand .. " " .. run_timeout .. " "
+        end
+    end
+
+    std.script.run("rm -rf " .. _WORK .. " && mkdir -p " .. _WORK)
+
+    for _i, src in _list(corpus)
+        name = _stem(src)
+        direct_bin = _WORK .. "/" .. name .. ".direct"
+        c_bin = _WORK .. "/" .. name .. ".c"
+
+        if not _compile(duo, src, "direct", direct_bin)
+            _fail(name .. ": direct backend failed to compile")
+        else
+            if not _compile(duo, src, "c", c_bin)
+                _fail(name .. ": c backend failed to compile")
+            else
+                direct_rc = _run_binary(direct_bin)
+                c_rc = _run_binary(c_bin)
+                if direct_rc == 124
+                    _fail(name .. ": direct backend HUNG (>" .. run_timeout .. "s) — c="
+                        .. to(str)(c_rc))
+                else
+                    if direct_rc != c_rc
+                        _fail(name .. ": c=" .. to(str)(c_rc) .. " direct=" .. to(str)(direct_rc))
+                    else
+                        _agree = _agree + 1
+                    end
+                end
+            end
+        end
+    end
+
+    -- `native_only/` gates capabilities where the C backend is not a valid
+    -- oracle (it cannot compile them at all), so the expected exit status is
+    -- declared in the file itself as `-- expect: N`. These block like the main
+    -- corpus: they pin self-hosting capabilities with no differential twin.
+    for _i, src in _list(corpus .. "/native_only")
+        name = _stem(src)
+        expected = std.script.chomp(std.script.capture(
+            "sed -n 's/^-- expect: *\\([0-9][0-9]*\\).*/\\1/p' " .. src .. " | head -1"))
+        if expected == ""
+            _fail(name .. ": native_only file has no '-- expect: N' header")
+        else
+            bin = _WORK .. "/no_" .. name
+            if not _compile(duo, src, "direct", bin)
+                _fail(name .. ": direct backend failed to compile (native_only)")
+            else
+                actual = _run_binary(bin)
+                if to(str)(actual) != expected
+                    _fail(name .. ": expected " .. expected .. ", got " .. to(str)(actual)
+                        .. " (native_only)")
+                else
+                    _agree = _agree + 1
+                end
+            end
+        end
+    end
+
+    -- Frontier reporting. `unsupported/` holds programs the direct backend
+    -- refuses to compile (a capability gap — honest, not a miscompilation).
+    -- `known_divergent/` holds programs it compiles and gets WRONG; those are
+    -- open bugs, listed every run so they stay visible instead of decaying into
+    -- folklore. Neither blocks: the gate exists to stop regressions in what
+    -- already works.
+    unsupported_count = 0
+    for _i, src in _list(corpus .. "/unsupported")
+        unsupported_count = unsupported_count + 1
+        print("native_differential: unsupported (direct backend cannot compile) — " .. _stem(src))
+    end
+
+    for _i, src in _list(corpus .. "/known_divergent")
+        name = _stem(src)
+        dbin = _WORK .. "/kd_" .. name .. ".direct"
+        cbin = _WORK .. "/kd_" .. name .. ".c"
+        if _compile(duo, src, "direct", dbin) and _compile(duo, src, "c", cbin)
+            d = _run_binary(dbin)
+            c = _run_binary(cbin)
+            if d == c
+                print("native_differential: known_divergent now AGREES — " .. name
+                    .. " (promote it into the corpus)")
+            else
+                print("native_differential: known divergence — " .. name
+                    .. " (c=" .. to(str)(c) .. " direct=" .. to(str)(d) .. ")")
+            end
+        end
+    end
+
+    print("native_differential: " .. to(str)(_agree) .. " agree, " .. to(str)(_diverge)
+        .. " diverge, " .. to(str)(unsupported_count) .. " unsupported (corpus: " .. corpus .. ")")
+
+    if _diverge != 0
+        print("native_differential: FAIL")
+        io.write(_failures)
+        return 1
+    end
+    -- An empty corpus passing every check is the failure mode this catches:
+    -- a mistyped corpus path would otherwise report a clean run.
+    if _agree == 0
+        print("native_differential: FAIL (empty corpus)")
+        return 1
+    end
+    print("native_differential: PASS")
+    0
+end

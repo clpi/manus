@@ -536,7 +536,7 @@ pub fn build(b: *std.Build) void {
     const hpls_frontier_gate_step = b.step("hpls-frontier-gate", "Alias for pass34-gate");
     hpls_frontier_gate_step.dependOn(pass34_gate_step);
 
-    const native_diff_cmd = b.addSystemCommand(&.{ "bash", "scripts/native_differential.sh" });
+    const native_diff_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/native_differential.duo" });
     native_diff_cmd.step.dependOn(b.getInstallStep());
     native_diff_cmd.setCwd(b.path("."));
     const native_diff_step = b.step("native-differential", "Direct ARM64 backend must agree with the C backend on the native corpus");
