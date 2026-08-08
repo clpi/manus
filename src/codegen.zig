@@ -8019,18 +8019,17 @@ pub const CodeGen = struct {
         // section and applies more aggressive optimization even without PGO.
         const pattern_hot = !cold_attr and !noinline_attr and (fb.use_iterative_fib or fb.use_prime_sieve or
             fb.use_dense_table or fb.use_dense_table_sum or
-            fb.use_dense_table_identity_sum or fb.use_dense_table_mod997_sum or
+            fb.use_dense_table_identity_sum or
             fb.use_dot_product_identity or fb.use_dot_product_dense or
             fb.use_binary_search_dense or fb.use_math_pow_sqrt or
             fb.use_string_byte_scan or fb.use_string_hash_scan or fb.use_string_token_count or
             fb.use_string_delim_byte_sum or fb.use_string_len_chain or
-            fb.use_ema_smooth or fb.use_ema_period_fold or
-            fb.use_filter_count_mod or fb.use_clamp_mod_sum or fb.use_mod_histogram_sum or
-            fb.use_gcd_inline or fb.use_collatz_inline or
-            fb.use_xor_fold_inline or fb.use_bitcount_inline or fb.use_cordic_inline or
+            fb.use_ema_period_fold or
+            fb.use_collatz_inline or
+            fb.use_bitcount_inline or
             fb.use_ack_inline or fb.use_prefix_sum_inline or fb.use_ring_buf_inline or
             fb.use_interp_inline or fb.use_run_len_inline or
-            fb.use_sieve_native or fb.use_fenwick_native or fb.use_mandel_iter_native or
+            fb.use_sieve_native or fb.use_mandel_iter_native or
             fb.use_trig_sum_recur);
 
         if ((inline_attr or fb.is_typed) and !noinline_attr) {
@@ -8939,48 +8938,30 @@ pub const CodeGen = struct {
             try self.emit_ring_buf_inline_body(fb.params[0].name, ret);
         } else if (fb.use_sieve_native and fb.params.len == 1) {
             try self.emit_sieve_native_body(fb.params[0].name, ret);
-        } else if (fb.use_fenwick_native and fb.params.len == 1) {
-            try self.emit_fenwick_native_body(fb.params[0].name, ret);
         } else if (fb.use_interp_inline and fb.params.len == 1) {
             try self.emit_interp_inline_body(fb.params[0].name, ret);
         } else if (fb.use_run_len_inline and fb.params.len == 1 and fb.string_scan_lit != null) {
             try self.emit_run_len_inline_body(fb.params[0].name, fb.string_scan_lit.?, ret);
         } else if (fb.use_dense_table_identity_sum and fb.params.len == 1) {
             try self.emit_dense_table_identity_sum_body(fb.params[0].name, ret);
-        } else if (fb.use_dense_table_mod997_sum and fb.params.len == 1) {
-            try self.emit_dense_table_mod997_sum_body(fb.params[0].name, ret);
         } else if (fb.use_dense_table_sum and fb.params.len == 1 and fb.dense_table != null and fb.dense_table_cap != null) {
             try self.emit_dense_table_sum_body(fb.dense_table.?, fb.dense_table_cap.?, fb.params[0].name, ret);
         } else if (fb.use_math_pow_sqrt and fb.params.len == 1) {
             try self.emit_math_pow_sqrt_body(fb.params[0].name, ret);
         } else if (fb.use_string_len_chain and fb.params.len == 1) {
             try self.emit_string_len_chain_body(fb.params[0].name, ret);
-        } else if (fb.use_filter_count_mod and fb.params.len == 1) {
-            try self.emit_filter_count_mod_body(fb.params[0].name, ret);
         } else if (fb.use_dot_product_identity and fb.params.len == 1) {
             try self.emit_dot_product_identity_body(fb.params[0].name, ret);
         } else if (fb.use_dot_product_dense and fb.params.len == 1) {
             try self.emit_dot_product_dense_body(fb.params[0].name, ret);
-        } else if (fb.use_clamp_mod_sum and fb.params.len == 1) {
-            try self.emit_clamp_mod_sum_body(fb.params[0].name, ret);
-        } else if (fb.use_mod_histogram_sum and fb.params.len == 1) {
-            try self.emit_mod_histogram_sum_body(fb.params[0].name, ret);
-        } else if (fb.use_ema_smooth and fb.params.len == 1) {
-            try self.emit_ema_smooth_body(fb, ret);
         } else if (fb.use_trig_sum_recur and fb.params.len == 1) {
             try self.emit_trig_sum_recur_body(fb.params[0].name, ret);
         } else if (fb.use_mandel_iter_native and fb.params.len == 2) {
             try self.emit_mandel_iter_native_body(fb.params[0].name, fb.params[1].name, ret);
-        } else if (fb.use_gcd_inline and fb.params.len == 1) {
-            try self.emit_gcd_inline_body(fb.params[0].name, ret);
         } else if (fb.use_collatz_inline and fb.params.len == 1) {
             try self.emit_collatz_inline_body(fb.params[0].name, ret);
-        } else if (fb.use_xor_fold_inline and fb.params.len == 1) {
-            try self.emit_xor_fold_inline_body(fb.params[0].name, ret);
         } else if (fb.use_bitcount_inline and fb.params.len == 1) {
             try self.emit_bitcount_inline_body(fb.params[0].name, ret);
-        } else if (fb.use_cordic_inline and fb.params.len == 1) {
-            try self.emit_cordic_inline_body(fb.params[0].name, ret);
         } else if (fb.use_ack_inline and fb.params.len == 2) {
             try self.emit_ack_inline_body(fb.params[0].name, fb.params[1].name, ret);
         } else {
@@ -10092,105 +10073,10 @@ pub const CodeGen = struct {
         self.pl("return ({s})((__dp_n * (__dp_n + 1) * (__dp_n + 2)) / 6);", .{ct});
     }
 
-    fn emit_dense_table_mod997_sum_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
-        var buf: [64]u8 = undefined;
-        const ct = ret.c_type(&buf);
-        self.pl("{s} period = 0;", .{ct});
-        self.pl("for (int64_t i = 1; i <= 997; ++i) period += (i * 13) % 997;", .{});
-        self.pl("{s} full = {s} / 997;", .{ ct, n });
-        self.pl("{s} rem = {s} % 997;", .{ ct, n });
-        self.pl("{s} tail = 0;", .{ct});
-        self.pl("for (int64_t i = 1; i <= rem; ++i) tail += (i * 13) % 997;", .{});
-        self.pl("return full * period + tail;", .{});
-    }
-
-    fn emit_filter_count_mod_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
-        var buf: [64]u8 = undefined;
-        const ct = ret.c_type(&buf);
-        self.pl("if ({s} <= 0) return 0;", .{n});
-        self.pl("const int64_t __fc_mod = 100003;", .{});
-        self.pl("const int64_t __fc_mul = 17;", .{});
-        self.pl("const int64_t __fc_threshold = 50000;", .{});
-        self.pl("{s} full = {s} / __fc_mod;", .{ ct, n });
-        self.pl("{s} rem = {s} % __fc_mod;", .{ ct, n });
-        self.pl("{s} tail = duo_floor_sum_i64(rem, __fc_mod, __fc_mul, __fc_mul + __fc_mod - 1 - __fc_threshold)", .{ct});
-        self.indent += 1;
-        self.pl("- duo_floor_sum_i64(rem, __fc_mod, __fc_mul, __fc_mul);", .{});
-        self.indent -= 1;
-        self.pl("return full * (__fc_mod - 1 - __fc_threshold) + tail;", .{});
-    }
-
     fn emit_dot_product_identity_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
         self.pl("return ({s})({s} * ({s} + 1) * ({s} + 2)) / 6;", .{ ct, n, n, n });
-    }
-
-    fn emit_clamp_mod_sum_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
-        var buf: [64]u8 = undefined;
-        const ct = ret.c_type(&buf);
-        self.pl("{s} full = {s} / 1000;", .{ ct, n });
-        self.pl("{s} rem = {s} % 1000;", .{ ct, n });
-        self.pl("{s} tail = rem <= 256 ? (rem * (rem - 1)) / 2 : 32640 + 255 * (rem - 256);", .{ct});
-        self.pl("return ({s})(full * 222360 + tail);", .{ct});
-    }
-
-    fn emit_mod_histogram_sum_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
-        var buf: [64]u8 = undefined;
-        const ct = ret.c_type(&buf);
-        self.pl("{s} period = 0;", .{ct});
-        self.pl("for (int64_t i = 1; i <= 256; ++i) period += (i * 31) % 256;", .{});
-        self.pl("{s} full = {s} / 256;", .{ ct, n });
-        self.pl("{s} rem = {s} % 256;", .{ ct, n });
-        self.pl("{s} tail = 0;", .{ct});
-        self.pl("for (int64_t i = 1; i <= rem; ++i) tail += (i * 31) % 256;", .{});
-        self.pl("return full * period + tail;", .{});
-    }
-
-    fn emit_ema_smooth_body(self: *CodeGen, fb: *const ast.FuncBody, ret: RT) E!void {
-        var buf: [64]u8 = undefined;
-        const ct = ret.c_type(&buf);
-        const n = fb.params[0].name;
-        if (fb.use_ema_period_fold) {
-            const alpha = fb.ema_alpha;
-            const beta = fb.ema_beta;
-            const period = fb.ema_period;
-            var avg: f64 = 0;
-            var i: i64 = 0;
-            while (i < period) : (i += 1) {
-                avg = avg * alpha + beta * @as(f64, @floatFromInt(i));
-            }
-            const period_end = avg;
-            const period_decay = std.math.pow(f64, alpha, @floatFromInt(period));
-            self.pl("{s} avg = 0;", .{ct});
-            self.pl("int64_t full = {s} / {d};", .{ n, period });
-            self.pl("int64_t rem = {s} % {d};", .{ n, period });
-            self.pl("if (full > 0) {{", .{});
-            self.indent += 1;
-            self.pl("avg = {d:.17} * (1.0 - pow({d:.17}, (double)full)) / (1.0 - {d:.17});", .{
-                period_end, period_decay, period_decay,
-            });
-            self.indent -= 1;
-            self.pl("}}", .{});
-            self.pl("for (int64_t i = 0; i < rem; ++i) avg = avg * {d} + (double)i * {d};", .{ alpha, beta });
-            self.pl("return avg;", .{});
-            return;
-        }
-        // There used to be a second branch here:
-        //   `for (i = 0; i < n; ++i) avg = avg * 0.95 + (double)(i % 100) * 0.05;`
-        // — the benchmark's decay, its period and its gain, all three frozen,
-        // reached by nothing more than an `a*b + c*d` shape match. Writing the
-        // same statement commuted and with a different decay,
-        // `avg = 0.9 * avg + 0.05 * (i % 100)`, made reference C report
-        // 45.001328105220729 while this branch answered 80.595579065292441 —
-        // the unperturbed benchmark's number — with no diagnostic.
-        //
-        // `use_ema_smooth` now implies `use_ema_period_fold`, which reads all
-        // three constants out of the source (see verify_ema_period_fold), so
-        // this branch is unreachable. It is `unreachable` rather than a second
-        // guess at the loop: anything that is not the verified template must
-        // reach the GENERAL path in emit_func_body, not another closed form.
-        unreachable;
     }
 
     fn emit_mandel_iter_native_body(self: *CodeGen, cx: []const u8, cy: []const u8, ret: RT) E!void {
@@ -10219,12 +10105,6 @@ pub const CodeGen = struct {
     }
 
     // ── Benchmarks 24-40 native emitters ──────────────────────────
-
-    fn emit_gcd_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
-        var buf: [64]u8 = undefined;
-        const ct = ret.c_type(&buf);
-        self.pl("return ({s})duo_sum_affine_periodic_gcd_i64({s}, 10000, 7, 3);", .{ ct, n });
-    }
 
     fn emit_collatz_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
         var buf: [64]u8 = undefined;
@@ -10271,25 +10151,6 @@ pub const CodeGen = struct {
         self.pl("return total;", .{});
     }
 
-    fn emit_xor_fold_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
-        var buf: [64]u8 = undefined;
-        const ct = ret.c_type(&buf);
-        self.pl("if ({s} <= 0) return 0;", .{n});
-        self.pl("uint64_t __xf_count = (uint64_t){s};", .{n});
-        self.pl("uint64_t __xf_acc = 0;", .{});
-        self.pl("const uint64_t __xf_mul = 2654435761ULL;", .{});
-        self.pl("for (uint32_t __xf_bit = 0; __xf_bit < 64; ++__xf_bit) {{", .{});
-        self.indent += 1;
-        self.pl("uint64_t __xf_denom = __xf_bit == 63 ? (1ULL << 63) : (1ULL << __xf_bit);", .{});
-        self.pl("if (duo_floor_sum_parity_u64(__xf_count + 1, __xf_denom, __xf_mul))", .{});
-        self.indent += 1;
-        self.pl("__xf_acc |= __xf_denom;", .{});
-        self.indent -= 1;
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("return ({s})(int64_t)__xf_acc;", .{ct});
-    }
-
     fn emit_bitcount_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
@@ -10304,34 +10165,6 @@ pub const CodeGen = struct {
         self.pl("sum += ({s})(__bc_full * __bc_bit + (__bc_rem > __bc_bit ? __bc_rem - __bc_bit : 0));", .{ct});
         self.indent -= 1;
         self.pl("}}", .{});
-        self.pl("return sum;", .{});
-    }
-
-    fn emit_cordic_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
-        var buf: [64]u8 = undefined;
-        const ct = ret.c_type(&buf);
-        self.pl("{s} sum = 0;", .{ct});
-        self.pl("const int64_t __cd_period = 1000;", .{});
-        self.pl("double __cd_vals[1000];", .{});
-        self.pl("double __cd_period_sum = 0.0;", .{});
-        self.pl("for (int64_t p = 0; p < __cd_period; ++p) {{", .{});
-        self.indent += 1;
-        self.pl("double angle = (double)p * 0.001;", .{});
-        self.pl("double s = angle, term = angle;", .{});
-        self.pl("for (int64_t k = 1; k <= 5; ++k) {{", .{});
-        self.indent += 1;
-        self.pl("term = -term * angle * angle / ((double)(2 * k) * (double)(2 * k + 1));", .{});
-        self.pl("s += term;", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("__cd_vals[p] = s;", .{});
-        self.pl("__cd_period_sum += s;", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("int64_t __cd_full = {s} / __cd_period;", .{n});
-        self.pl("int64_t __cd_rem = {s} % __cd_period;", .{n});
-        self.pl("for (int64_t f = 0; f < __cd_full; ++f) sum += __cd_period_sum;", .{});
-        self.pl("for (int64_t i = 0; i < __cd_rem; ++i) sum += __cd_vals[i];", .{});
         self.pl("return sum;", .{});
     }
 
@@ -10479,30 +10312,6 @@ pub const CodeGen = struct {
         self.pl("for (; __sieve_count_idx < __sieve_len; ++__sieve_count_idx) count += ({s})__sieve[__sieve_count_idx];", .{ct});
         self.pl("free(__sieve_alloc);", .{});
         self.pl("return count;", .{});
-    }
-
-    fn emit_fenwick_native_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
-        var buf: [64]u8 = undefined;
-        const ct = ret.c_type(&buf);
-        self.pl("const int64_t __fw_n = {s};", .{n});
-        self.pl("if (__fw_n <= 0) return 0;", .{});
-        self.pl("{s} sum = 0;", .{ct});
-        self.pl("const int64_t __fw_period = 1000;", .{});
-        self.pl("int64_t __fw_full = __fw_n / __fw_period;", .{});
-        self.pl("int64_t __fw_rem = __fw_n % __fw_period;", .{});
-        self.pl("int64_t __fw_period_weight = (__fw_period * __fw_full * (__fw_full - 1)) / 2;", .{});
-        self.pl("for (int64_t p = 1; p <= __fw_period; ++p) {{", .{});
-        self.indent += 1;
-        self.pl("int64_t v = (p * 3) % __fw_period;", .{});
-        self.pl("sum += ({s})(v * (__fw_full * (__fw_n - p + 1) - __fw_period_weight));", .{ct});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("for (int64_t p = 1; p <= __fw_rem; ++p) {{", .{});
-        self.indent += 1;
-        self.pl("sum += ({s})(((p * 3) % __fw_period) * (__fw_rem - p + 1));", .{ct});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("return sum;", .{});
     }
 
     fn emit_interp_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
@@ -33741,24 +33550,12 @@ test "ring buffer specialization eliminates storage for fixed lag read" {
     try testing.expect(std.mem.indexOf(u8, output, "for (int64_t i = 7; i < n; ++i)") == null);
 }
 
-test "filter count specialization uses floor-sum tail counting" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var type_map = sema.TypeMap.init(alloc);
-    defer type_map.deinit();
-    var aw: std.Io.Writer.Allocating = .init(alloc);
-    defer aw.deinit();
-    var cg = CodeGen.init(alloc, undefined, &type_map, null, &aw.writer, 0, null, null);
-    cg.indent = 1;
-
-    try cg.emit_filter_count_mod_body("n", .i64);
-    const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "duo_floor_sum_i64") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "__fc_mod - 1 - __fc_threshold") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t i = 1; i <= 100003") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "if (((i * 17) % 100003) > 50000)") == null);
-}
+// The test "filter count specialization uses floor-sum tail counting" was
+// here. It asserted that emit_filter_count_mod_body printed `duo_floor_sum_i64`
+// and `__fc_mod - 1 - __fc_threshold`. Those three constants -- 100003, 17 and
+// 50000 -- were the emitter's, and verify_filter_count_mod demanded the source
+// spell them exactly, so the closed form fired for one modulus, one multiplier
+// and one threshold. The emitter is gone; the filter loop runs.
 
 test "collatz specialization memoizes known chain tails" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
@@ -33781,23 +33578,12 @@ test "collatz specialization memoizes known chain tails" {
     try testing.expect(std.mem.indexOf(u8, output, "steps += 2;") != null);
 }
 
-test "gcd specialization emits affine-periodic divisor reduction" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var type_map = sema.TypeMap.init(alloc);
-    defer type_map.deinit();
-    var aw: std.Io.Writer.Allocating = .init(alloc);
-    defer aw.deinit();
-    var cg = CodeGen.init(alloc, undefined, &type_map, null, &aw.writer, 0, null, null);
-    cg.indent = 1;
-
-    try cg.emit_gcd_inline_body("n", .i64);
-    const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "duo_sum_affine_periodic_gcd_i64(n, 10000, 7, 3)") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "__builtin_ctzll") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "v -= u;") == null);
-}
+// The test "gcd specialization emits affine-periodic divisor reduction" was
+// here. It required the literal string
+// `duo_sum_affine_periodic_gcd_i64(n, 10000, 7, 3)` -- the entire body, one
+// call, no loop, with the period, the multiplier and the offset all frozen.
+// RELEASE_STATUS.md §4 had already named the row as a fold the classifier's
+// ratio only just declined. The emitter is gone.
 
 test "gcd prelude uses coprime affine divisor iteration with fallback" {
     const Lexer = @import("lexer.zig").Lexer;
@@ -33823,26 +33609,11 @@ test "gcd prelude uses coprime affine divisor iteration with fallback" {
     try testing.expect(std.mem.indexOf(u8, output, "for (int64_t r = 1; r <= last; ++r)") != null);
 }
 
-test "xor fold specialization reduces odd-multiply bit parities" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var type_map = sema.TypeMap.init(alloc);
-    defer type_map.deinit();
-    var aw: std.Io.Writer.Allocating = .init(alloc);
-    defer aw.deinit();
-    var cg = CodeGen.init(alloc, undefined, &type_map, null, &aw.writer, 0, null, null);
-    cg.indent = 1;
-
-    try cg.emit_xor_fold_inline_body("n", .i64);
-    const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "uint64_t __xf_acc = 0;") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "for (uint32_t __xf_bit = 0; __xf_bit < 64; ++__xf_bit)") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "duo_floor_sum_parity_u64(__xf_count + 1") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "__xf_acc |= __xf_denom;") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "for (; i <= __xf_limit") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "acc ^= i * __xf_mul") == null);
-}
+// The test "xor fold specialization reduces odd-multiply bit parities" was
+// here. emit_xor_fold_inline_body printed
+// `const uint64_t __xf_mul = 2654435761ULL;` -- one multiplier, in the
+// emitter, demanded back by the verifier. One constant is not a family. The
+// emitter is gone.
 
 test "bitcount specialization counts set bits by bit ranges" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
@@ -33940,26 +33711,11 @@ test "prime sieve specialization uses odd-only byte flags" {
     try testing.expect(std.mem.indexOf(u8, output, "__prime_count_end = ((limit - 1) >> 1) + 1") != null);
 }
 
-test "cordic specialization reuses 1000 angle phases" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var type_map = sema.TypeMap.init(alloc);
-    defer type_map.deinit();
-    var aw: std.Io.Writer.Allocating = .init(alloc);
-    defer aw.deinit();
-    var cg = CodeGen.init(alloc, undefined, &type_map, null, &aw.writer, 0, null, null);
-    cg.indent = 1;
-
-    try cg.emit_cordic_inline_body("n", .f64);
-    const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "const int64_t __cd_period = 1000;") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "double __cd_vals[1000];") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "double angle = (double)p * 0.001;") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "int64_t __cd_full = n / __cd_period;") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t f = 0; f < __cd_full; ++f) sum += __cd_period_sum;") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "i % 1000") == null);
-}
+// The test "cordic specialization reuses 1000 angle phases" was here, and its
+// name states the defect: 1000 phases, a 0.001 step and 5 Taylor terms, all
+// three printed by emit_cordic_inline_body. It was also an f64 FOLD --
+// `__cd_period_sum` added `__cd_full` times is not the sum the written loop
+// accumulates. There is no CORDIC in it either. The emitter is gone.
 
 test "string hash specialization composes repeated chunks logarithmically" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
@@ -33998,17 +33754,11 @@ test "dot and sparse dot specializations avoid materialized vectors" {
     try testing.expect(std.mem.indexOf(u8, dot_output, "__dp_n * (__dp_n + 1) * (__dp_n + 2)") != null);
     try testing.expect(std.mem.indexOf(u8, dot_output, "for (int64_t i = 1") == null);
 
-    var fenwick_aw: std.Io.Writer.Allocating = .init(alloc);
-    defer fenwick_aw.deinit();
-    var fenwick_cg = CodeGen.init(alloc, undefined, &type_map, null, &fenwick_aw.writer, 0, null, null);
-    fenwick_cg.indent = 1;
-    try fenwick_cg.emit_fenwick_native_body("n", .i64);
-    const fenwick_output = fenwick_aw.written();
-    try testing.expect(std.mem.indexOf(u8, fenwick_output, "__fw_period = 1000") != null);
-    try testing.expect(std.mem.indexOf(u8, fenwick_output, "__fw_full = __fw_n / __fw_period") != null);
-    try testing.expect(std.mem.indexOf(u8, fenwick_output, "__fw_period_weight") != null);
-    try testing.expect(std.mem.indexOf(u8, fenwick_output, "for (int64_t p = 1; p <= __fw_period; ++p)") != null);
-    try testing.expect(std.mem.indexOf(u8, fenwick_output, "for (int64_t i = 1; i <= __fw_n") == null);
+    // The Fenwick half of this test asserted that emit_fenwick_native_body
+    // printed `__fw_period = 1000` and a weighted period sum over `(p * 3) %
+    // 1000`. THERE WAS NO FENWICK TREE IN IT: no array, no low-bit ascent, no
+    // prefix query -- and the period, the multiplier and the modulus were all
+    // the emitter's. The emitter is gone and the row now builds the tree.
 }
 
 test "math and binary search specializations fold periodic/dense work" {
@@ -34182,11 +33932,20 @@ test "tightened kernel recognisers fold the template and decline everything else
     //   filter  % 100003    -> % 99991    C 249950             Duo 249996
     //   xor     * 2654435761-> *2654435759 C 11260307128148992 Duo 11391876473790272
     //   ema     avg*.95+..  -> .9*avg+..  C 45.001328105220729 Duo 80.595579065292441
+    //
+    // FOURTH PASS: nine of these closed forms are now RETIRED, and the rows
+    // carrying them flip polarity. A retired row must produce its `folded`
+    // marker for NEITHER the template nor the perturbation — the marker string
+    // stays here on purpose, so restoring the emitter fails this test — and
+    // must still emit a real loop, so an empty body cannot pass as a decline.
     const Row = struct {
         name: []const u8,
         folded: []const u8,
         template: []const u8,
         perturbed: []const u8,
+        /// false: the closed form is live and the template must still fold.
+        /// true:  the closed form is retired and nothing may fold.
+        retired: bool = false,
     };
     const rows = [_]Row{
         .{
@@ -34234,6 +33993,7 @@ test "tightened kernel recognisers fold the template and decline everything else
             ,
         },
         .{
+            .retired = true,
             .name = "filter_count",
             .folded = "__fc_mod",
             .template =
@@ -34268,6 +34028,7 @@ test "tightened kernel recognisers fold the template and decline everything else
             ,
         },
         .{
+            .retired = true,
             .name = "xor_fold",
             .folded = "__xf_mul",
             .template =
@@ -34296,6 +34057,7 @@ test "tightened kernel recognisers fold the template and decline everything else
             ,
         },
         .{
+            .retired = true,
             .name = "ema_smooth",
             .folded = "(1.0 - pow(",
             .template =
@@ -34325,6 +34087,104 @@ test "tightened kernel recognisers fold the template and decline everything else
             \\print(ema_smooth(10))
             ,
         },
+        // The two closed forms this pass KEPT, gated the way a keep has to be:
+        // under a name and with variables that are NOT the benchmark's, so a
+        // recogniser that had drifted back to keying on `bitcount` or
+        // `table_array_sum` fails here. Both were also checked BY VALUE against
+        // a C oracle at three separate bounds; see RELEASE_STATUS.md §4.
+        .{
+            // Sum of popcount over [1, m]. No constant reaches the emitter: the
+            // mask 1 and the shift 1 ARE the definition of a population count,
+            // and the emitted body is parameterised in the bound alone. An
+            // O(m log m) -> O(log m) win on real code, like iterative fib.
+            .name = "hamming_total (bitcount, kept)",
+            .folded = "__bc_bit",
+            .template =
+            \\function hamming_total(m)
+            \\    local acc = 0
+            \\    local k = 1
+            \\    while k <= m do
+            \\        local v = k
+            \\        local bits = 0
+            \\        while v ~= 0 do
+            \\            bits = bits + (v & 1)
+            \\            v = v >> 1
+            \\        end
+            \\        acc = acc + bits
+            \\        k = k + 1
+            \\    end
+            \\    return acc
+            \\end
+            \\print(hamming_total(10))
+            ,
+            // Base-4 digit sum, not a population count. Measured by value:
+            // C 133 / 7402 / 1518643 at m = 37 / 1000 / 123457, and Duo agrees
+            // only because it declines to the written loop.
+            .perturbed =
+            \\function hamming_total(m)
+            \\    local acc = 0
+            \\    local k = 1
+            \\    while k <= m do
+            \\        local v = k
+            \\        local bits = 0
+            \\        while v ~= 0 do
+            \\            bits = bits + (v & 3)
+            \\            v = v >> 2
+            \\        end
+            \\        acc = acc + bits
+            \\        k = k + 1
+            \\    end
+            \\    return acc
+            \\end
+            \\print(hamming_total(10))
+            ,
+        },
+        .{
+            // Fill an array with the index, then sum it. The fill and the
+            // reduction are read from the AST and only compose to n(n+1)/2 for
+            // the identity fill, so the emitter prints no constant of the
+            // source's. A non-identity fill declines to the dense-array loop.
+            .name = "tally (dense identity sum, kept)",
+            .folded = "+ 1)) / 2",
+            .template =
+            \\function tally(m)
+            \\    local arr = {}
+            \\    local k = 1
+            \\    while k <= m do
+            \\        arr[k] = k
+            \\        k = k + 1
+            \\    end
+            \\    local acc = 0
+            \\    k = 1
+            \\    while k <= m do
+            \\        acc = acc + arr[k]
+            \\        k = k + 1
+            \\    end
+            \\    return acc
+            \\end
+            \\print(tally(10))
+            ,
+            // Measured by value: C 140 / 21357342001 / 333316833605498504 at
+            // m = 7 / 4001 / 999983, and Duo agrees, on the general path.
+            .perturbed =
+            \\function tally(m)
+            \\    local arr = {}
+            \\    local k = 1
+            \\    while k <= m do
+            \\        arr[k] = k * k
+            \\        k = k + 1
+            \\    end
+            \\    local acc = 0
+            \\    k = 1
+            \\    while k <= m do
+            \\        acc = acc + arr[k]
+            \\        k = k + 1
+            \\    end
+            \\    return acc
+            \\end
+            \\print(tally(10))
+            ,
+        },
     };
     for (rows) |row| {
         var arena = std.heap.ArenaAllocator.init(testing.allocator);
@@ -34334,12 +34194,28 @@ test "tightened kernel recognisers fold the template and decline everything else
         defer pos.deinit();
         var neg: std.Io.Writer.Allocating = .init(alloc);
         defer neg.deinit();
-        // Positive control: a recogniser that never fires is indistinguishable
-        // from one that is broken, so the template MUST still fold.
         const folded = try kernel_c_for_test(alloc, row.template, &pos);
-        if (std.mem.indexOf(u8, folded, row.folded) == null) {
-            std.debug.print("{s}: template no longer folds (expected '{s}')\n", .{ row.name, row.folded });
-            return error.TestUnexpectedResult;
+        if (row.retired) {
+            // The closed form is gone: its fingerprint must be absent even for
+            // the kernel it was written from.
+            if (std.mem.indexOf(u8, folded, row.folded) != null) {
+                std.debug.print("{s}: retired closed form is back (found '{s}')\n", .{ row.name, row.folded });
+                return error.TestUnexpectedResult;
+            }
+            // …and the general path must have emitted a loop. Without this a
+            // body that failed to emit anything at all would pass as a decline.
+            if (std.mem.indexOf(u8, folded, "while (") == null) {
+                std.debug.print("{s}: declined but emitted no loop\n", .{row.name});
+                return error.TestUnexpectedResult;
+            }
+        } else {
+            // Positive control: a recogniser that never fires is
+            // indistinguishable from one that is broken, so a LIVE template
+            // MUST still fold.
+            if (std.mem.indexOf(u8, folded, row.folded) == null) {
+                std.debug.print("{s}: template no longer folds (expected '{s}')\n", .{ row.name, row.folded });
+                return error.TestUnexpectedResult;
+            }
         }
         const declined = try kernel_c_for_test(alloc, row.perturbed, &neg);
         if (std.mem.indexOf(u8, declined, row.folded) != null) {

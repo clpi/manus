@@ -282,7 +282,16 @@ and what was previously untrue on this backend.
 
 ---
 
-## 4. Benchmark position — 18 measured wins / 11 folded / 11 losses
+## 4. Benchmark position — 25 measured wins / 3 folded / 12 losses
+
+> **2026-08-08, the FOLD REMOVAL. `18 / 11 / 11` → `25 / 3 / 12`.** Nine closed
+> forms were retired. Read "### The fold removal" below before anything else in
+> this section: the sub-sections under it were written against the 11-folded
+> table and their *numbers* are superseded, though their method is not.
+
+**A/B at ONE base (`1209a44`), whole suite, both mirrors, correctness 40/40 in
+both arms.** Everything below this line that says 18 / 11 / 11 is the BEFORE
+arm.
 
 **Re-measured at `ec41494` (loop versioning, below): five consecutive runs read
 18 / 18 / 20 / 19 / 18 measured wins, median 18 / 11 / 11, against 17 / 11 / 12
@@ -307,6 +316,162 @@ already names as an honesty hole; the row-count moves because of the epsilon,
 not because Duo got faster than C. What did happen is that both went from 15 %
 and 190 % behind to 6 % and 3 % behind. Correctness is unchanged and green: all
 40 `RESULT` rows still match reference C for `.lua` and `.duo`.
+
+### The fold removal (2026-08-08) — nine closed forms retired, FOLDED 11 → 3
+
+The three verification passes below established that a recogniser must verify
+every constant its emitter prints. They did not ask the next question, which is
+the one the `folded` column exists to ask: **once a recogniser verifies a
+literal, what has it optimised?** A predicate that accepts `(i * 13) % 997` and
+nothing else fires for one program. The row it makes fast measures whether a
+human wrote the period sum.
+
+Every folded row was traced to its flag by READING `/tmp/duo_benchmark.c`, not
+by inference, and then decided one way or the other:
+
+| row | promoter | emitted C, read out of the file | decision |
+|---|---|---|---|
+| Filter count | `use_filter_count_mod` | `__fc_mod = 100003`, `__fc_mul = 17`, `__fc_threshold = 50000`, then `duo_floor_sum_i64` | **RETIRED** — three literals the emitter prints and the verifier demands back |
+| Clamp sum | `use_clamp_mod_sum` | `full * 222360 + tail`, with 1000 / 256 / 32640 / 255 | **RETIRED** — same |
+| Bucket hash | `use_mod_histogram_sum` | `for (i = 1; i <= 256; ++i) period += (i * 31) % 256;` | **RETIRED** — same |
+| Table churn | `use_dense_table_mod997_sum` | `period += (i * 13) % 997` | **RETIRED** — same |
+| XOR fold | `use_xor_fold_inline` | `const uint64_t __xf_mul = 2654435761ULL;` | **RETIRED** — one multiplier is not a family |
+| GCD reduce | `use_gcd_inline` | `return duo_sum_affine_periodic_gcd_i64(n, 10000, 7, 3);` — the whole body | **RETIRED** — §4 already named this row as a fold the ratio clause only just declined |
+| Fenwick tree | `use_fenwick_native` | a period-1000 weighted sum over `(p * 3) % 1000` | **RETIRED** — and **there is no Fenwick tree in it**: no array, no low-bit ascent, no prefix query |
+| CORDIC sin | `use_cordic_inline` | 1000 cached phases, a 0.001 step, 5 Taylor terms | **RETIRED** — three frozen literals, and it is not CORDIC |
+| EMA smooth | `use_ema_smooth` | `avg = 80.118… * (1 - pow(0.005920…, full)) / (1 - 0.005920…)` | **RETIRED**, for a different reason — see below |
+| Table array | `use_dense_table_identity_sum` | `return (n * ((n) + 1)) / 2;` | **KEPT**, proved general |
+| Bitcount | `use_bitcount_inline` | per-bit duty-cycle sum, parameterised in `n` alone | **KEPT**, proved general |
+| Fibonacci(40) | `use_iterative_fib` | the O(n) iteration | **KEPT** — the model |
+
+**EMA smooth is the one retirement that is not about a frozen literal.**
+`verify_ema_period_fold` reads α, β and the period out of the AST, so the
+recogniser really is parameterised. It goes anyway: the emitter runs the
+source's own recurrence for a whole period **inside the compiler**, in the
+compiler's `f64`, prints the result as a literal, and replaces the remaining
+`n / period` iterations with `pow()` on a geometric series. That is not the
+value the written loop computes — floating-point addition is not associative
+and a closed form for a linear recurrence rounds differently from iterating it.
+An optimisation may not silently change what an `f64` program computes, and a
+benchmark row whose kernel was evaluated at compile time measures the
+compiler's arithmetic, not its codegen. The same objection applies to CORDIC
+independently of its literals.
+
+#### The A/B, at one base, both mirrors
+
+`1209a44`, whole suite, PGO, both `examples/benchmark.lua` and
+`examples/benchmark.duo`. **All 40 `RESULT` rows match reference C in both
+arms** — that is the load-bearing fact and it is green before and after.
+
+| row | before | after | reference C | verdict |
+|---|---:|---:|---:|---|
+| Filter count | 0 / 4e-06 | 0.000263 | 0.000259 | folded → **Duo**, 1.5 % behind (the tie epsilon) |
+| Clamp sum | 0 / 0 | 0.001380 | 0.001377 | folded → **Duo** |
+| Bucket hash | 0 / 0 | 0.000147 | 0.000146 | folded → **Duo** |
+| EMA smooth | 0 / 0 | 0.011879 | 0.011746 | folded → **Duo** |
+| XOR fold | 6e-06 | 0.000733 | 0.000733 | folded → **Duo**, level |
+| CORDIC sin | 1e-06 | 0.005076 | 0.005270 | folded → **Duo** |
+| GCD reduce | 0.000674 | 0.056197 | 0.056829 | 84x slower, and STILL a measured win |
+| **Table churn** | 0 / 1e-06 | **0.000514** | 0.000266 | folded → **LOSS, 1.93x** |
+| **Fenwick tree** | 1e-06 / 0 | **0.004751** | 0.004324 | folded → **LOSS, 1.10x** |
+
+**Seven of the nine retired rows are still wins once they run real code, and
+GCD reduce beats C by 1 % after getting 84x slower.** That is the clearest
+statement this suite has ever been able to make about what the substitutions
+were worth: on seven rows out of nine, nothing. Two rows are now losses, which
+is the correct outcome and is reported, not hidden.
+
+Two rows also flipped on the harness's `5e-05` tie epsilon in the same run —
+Dot product C → Duo (0.000667 against 0.000630, still **6 % behind**) and
+Prefix sum stayed C. Neither is claimed; the epsilon is a standing honesty hole
+in this suite and §4 has named it since it was written.
+
+**Final split: 25 measured wins / 3 folded / 12 losses**, against 18 / 11 / 11.
+The win count went UP, but that is not the result worth quoting — **the folded
+count went 11 → 3** and the three that remain are argued below rather than
+assumed.
+
+#### Why three rows are still folded, and why that is not the same defect
+
+`0 folded` is not reachable while keeping any transformation that is
+asymptotically better than the source, because the classifier cannot tell
+"evaluated the benchmark" from "ran genuinely better code" — both look like a
+duration under the instrument's floor. The three survivors are kept on the
+`use_iterative_fib` standard, and each was proved, not asserted:
+
+- **`use_iterative_fib`** — recursion → iteration on a self-recursive two-call
+  recurrence. No constant, and no NAME (the earlier repair). Proved on
+  `ladder(k) = ladder(k-1) + ladder(k-2)`, a program that is not the benchmark:
+  F(10) = 55, F(30) = 832040, F(46) = 1836311903, all matching a C oracle.
+  Perturbed to `ladder(k-1) + ladder(k-3)` it **declines** to real recursion and
+  answers 6 / 12664 / 5736961, again matching C.
+- **`use_bitcount_inline`** — sum of population counts over `[1, n]`, an
+  O(n log n) → O(log n) win. The emitter prints no constant of the source's;
+  the mask 1 and the shift 1 that the verifier requires are the *definition* of
+  a population count. Proved on `hamming_total(m)` with different variable
+  names: 93 / 4938 / 1032973 at m = 37 / 1000 / 123457, matching a C oracle.
+  Perturbed to `(v & 3)` / `v >> 2` — a base-4 digit sum — it **declines** and
+  answers 133 / 7402 / 1518643, matching C.
+- **`use_dense_table_identity_sum`** — fill an array with the index, sum it,
+  return `n(n+1)/2`; the fill and the reduction are composed symbolically out
+  of the AST and only the identity composition reaches this emitter. Proved on
+  `tally(m)`: 28 / 8006001 / 499983500136 at m = 7 / 4001 / 999983. Perturbed
+  to `arr[k] = k * k` and to `k * 2 + 5` it **declines** to the dense-array
+  loop and answers 140 / 21357342001 / 333316833605498504 and 91 / 16032007 /
+  999972000187, all matching C.
+
+Both surviving non-fib keeps are now gated by unit tests written **under
+non-benchmark names** (`hamming_total`, `tally`), so a recogniser that drifted
+back to keying on `bitcount` or `table_array_sum` fails the build.
+
+#### What the retirement exposed, and what was deliberately not touched
+
+**Table churn is now a measured 1.93x loss and the cause is visible in the
+emitted C.** Reference C is `calloc(n+1)` once and then plain `t[i] = …` /
+`sum += t[i]`. Duo emits `duo_dt_set_i64(&__dt_t, &__dtc_t, i, …)` — an
+accessor that takes the buffer *by pointer-to-pointer* because it may grow, so
+the store loop cannot be vectorised and `cap` is reloaded every iteration. On
+top of that the up-front `duo_dt_reserve_i64` is missing on exactly this shape:
+`cap_safe` is computed in `detect_dense_table`, which runs BEFORE
+`promote_native_i64_signature`, so the parameter is still `any` when safety is
+decided and no longer `any` when codegen's boxed-cap fallback looks at it.
+Measured in isolation, adding the reservation is worth ~16 % (0.000926 against
+0.001102) — real, but not the 1.93x. **This was left alone on purpose**: it is
+general dense-table lowering, another session is actively in that code, and
+guessing at it from here would collide.
+
+#### Gates at this change
+
+`zig build unit-test` **1336/1336, exit 0** (7 tests had their polarity
+inverted — five sema pairs whose positive control required a now-retired flag,
+one detector test, and the combined codegen recogniser test, which gained a
+`retired` mode requiring the closed form to be ABSENT *and* a real loop to be
+present, so an empty body cannot pass as a decline). `zig build
+native-differential` **63 agree / 0 diverge, PASS**. `zig build agent-smoke`
+**PASS**. `zig build ward-test` **PASS, 126/130, 0 DIFF**. `zig build
+repo-hygiene` **PASS**. `zig build spec-corpus` **PASS**. `zig build audit100`
+fails 7 rows over budget **identically with and without this change** (verified
+by stashing it and re-running) — it is not a regression from this.
+
+**Native promotion is unchanged**, verified by value: every function named
+above is still `int64_t f(int64_t n)` / `double f(int64_t n)` in
+`/tmp/duo_benchmark.c`, because the `or`-chains feeding
+`promote_native_i64_signature` / `promote_native_f64_signature` read the
+`shape_*` locals, which this pass did not touch. The only attribute that moved
+is `__attribute__((hot))`, lost by the six functions whose `use_*` flag was its
+only source — and five of those six are measured wins anyway, so `hot` was not
+buying them anything either.
+
+**One measurement caveat, owed to the reader.** At the commit this was measured
+on, `zig build bench` cannot run in the repo as checked out:
+`examples/benchmark.lua:704` has an `end` indented past its opener, which the
+offside-layout work at `4b5d2d8` now rejects. Lua does not care about that
+column and the file is not this session's to edit, so the A/B above was run in
+a detached worktree with that ONE line dedented in the scratch copy — a
+whitespace change to a `while` terminator, no token added or removed, both
+mirrors otherwise untouched, and `examples/benchmark_c.c` not touched at all.
+**The parse failure is a live regression in `examples/benchmark.lua` and is not
+this change's.**
 
 ### GAP-039 — the per-element bounds check, closed by loop versioning
 
@@ -455,16 +620,22 @@ bearing fact and it is green.
 
 | verdict | rows | meaning |
 |---|---:|---|
-| **measured wins** | **16** | Duo ran the kernel and was faster |
-| **folded** | **11** | EVALUATED, NOT RUN — closed form, not codegen. **Not a win.** |
-| losses | 13 | reference C was faster |
+| **measured wins** | **25** | Duo ran the kernel and was faster |
+| **folded** | **3** | EVALUATED, NOT RUN — closed form, not codegen. **Not a win.** |
+| losses | 12 | reference C was faster |
+
+*(The 16 / 11 / 13 that stood here is the pre-fold-removal reading; see "The
+fold removal" above for the A/B that replaced it.)*
 
 `zig build bench` **exits 1**. It did before, on the losses; it would now
 exit 1 on the folded rows alone, because a row whose kernel did not execute has
 not beaten anything and the gate's criterion is "beat or tie C on every test".
 
-Folded: Fibonacci(40), Table array, Filter count, Clamp sum, Bucket hash, EMA
-smooth, Table churn, XOR fold, Fenwick tree, Bitcount, CORDIC sin.
+Folded, after the fold removal: **Fibonacci(40), Table array, Bitcount** —
+three, each argued above. The eight that left this list (Filter count, Clamp
+sum, Bucket hash, EMA smooth, Table churn, XOR fold, Fenwick tree, CORDIC sin)
+now run the loop the source wrote; six of them are still wins and two are
+losses.
 
 C wins: Math floor/max, Table max, Pow/sqrt, Dot product, **Table lookup**,
 Matrix multiply, Prefix sum, Ring buffer, Cond swap, Ackermann, Levenshtein,
@@ -594,6 +765,15 @@ only tree touched for it; `examples/benchmark_c.c`, `examples/benchmark.duo`
 and `examples/benchmark.lua` are untouched — the C is the oracle.
 
 ### The substitutions are still in the compiler
+
+> **Superseded by "The fold removal" above.** Nine of the twelve rows in the
+> table below no longer have a live recogniser: `use_filter_count_mod`,
+> `use_xor_fold_inline`, `use_dense_table_mod997_sum`, `use_mod_histogram_sum`,
+> `use_clamp_mod_sum`, `use_cordic_inline`, `use_fenwick_native`,
+> `use_ema_smooth` and `use_gcd_inline` are retired and their emitters are
+> deleted. Only Table array, Bitcount and Fibonacci(40) still fold. The table is
+> kept because the *evidence* it records — what each emitter printed, read out
+> of the emitted C — is what the retirement was decided on.
 
 The twelve folded rows are not mysteries. Each is a live recogniser in
 `src/sema.zig`'s `use_*` family with a closed-form emitter in `src/codegen.zig`,

@@ -3632,9 +3632,26 @@ pub const Sema = struct {
         // benchmark's answer. The shape still promotes the signature below.
         const shape_table_lookup_sum = detect_table_lookup_sum(fb);
         fb.use_table_lookup_sum = false;
+        // `use_dense_table_mod997_sum` is RETIRED — fourth pass, the FOLD
+        // removal. `verify_dense_table_mod997_sum` checks the whole template
+        // and is not wrong, but the template it checks for is the literal 13
+        // and the literal 997, and `emit_dense_table_mod997_sum_body` PRINTS
+        // both back out. CLAUDE.md §3 rule 1: "no recogniser may key on a
+        // function name, a LITERAL, or a loop bound". A predicate that accepts
+        // `(i * 13) % 997` and nothing else is not an optimisation for any
+        // program but the one that wrote those two numbers, so the row it made
+        // fast was measuring whether a human wrote the period sum, not whether
+        // Duo's codegen is fast. The general dense-array path fills and reduces
+        // the table the source declared.
         const shape_dense_table_mod997_sum = detect_dense_table_mod997_sum(fb);
-        fb.use_dense_table_mod997_sum = shape_dense_table_mod997_sum and verify_dense_table_mod997_sum(fb);
-        detect_dense_table_sum_patterns(fb);
+        fb.use_dense_table_mod997_sum = false;
+        // detect_dense_table_sum_patterns opens with
+        // `if (!fb.use_dense_table or fb.use_dense_table_mod997_sum) return;`
+        // — the flag above used to suppress the polynomial family on this
+        // kernel. With the flag permanently false that guard is dead, so it
+        // moves here as the SHAPE, and retiring the fold cannot hand a
+        // `(i * 13) % 997` fill to a recogniser that assumes a polynomial one.
+        if (!shape_dense_table_mod997_sum) detect_dense_table_sum_patterns(fb);
         const shape_math_floor_max = fb.is_typed and detect_math_floor_max(fb);
         const shape_math_pow_sqrt = fb.is_typed and detect_math_pow_sqrt(fb);
         fb.use_math_pow_sqrt = shape_math_pow_sqrt and verify_math_pow_sqrt(fb);
@@ -3648,8 +3665,15 @@ pub const Sema = struct {
         // locals keep native-signature promotion exactly where it was.
         const shape_binary_search_dense = detect_binary_search_dense(fb);
         fb.use_binary_search_dense = shape_binary_search_dense and verify_binary_search_dense(fb);
+        // `use_filter_count_mod` is RETIRED. `emit_filter_count_mod_body`
+        // opens `__fc_mod = 100003; __fc_mul = 17; __fc_threshold = 50000` —
+        // three literals printed by the emitter, which `verify_filter_count_mod`
+        // then requires the source to spell exactly. Verifying a literal is not
+        // the same as reading one: the closed form fires for one modulus, one
+        // multiplier and one threshold, so it is a transcription of this
+        // kernel. The general path runs the filter loop.
         const shape_filter_count_mod = detect_filter_count_mod(fb);
-        fb.use_filter_count_mod = shape_filter_count_mod and verify_filter_count_mod(fb);
+        fb.use_filter_count_mod = false;
         const shape_dot_product_identity = detect_dot_product_identity(fb);
         const shape_dot_product_dense = !shape_dot_product_identity and detect_dot_product_dense(fb);
         // Both emitters print the SAME closed form — n(n+1)(n+2)/6, one in
@@ -3660,16 +3684,39 @@ pub const Sema = struct {
         const dot_product_ok = verify_dot_product_identity(fb);
         fb.use_dot_product_identity = shape_dot_product_identity and dot_product_ok;
         fb.use_dot_product_dense = shape_dot_product_dense and dot_product_ok;
+        // `use_clamp_mod_sum` is RETIRED. `emit_clamp_mod_sum_body` prints
+        // `full * 222360 + tail` with 1000, 256, 32640 and 255 beside it — the
+        // period, the clamp, the triangular number of the clamp and the clamp
+        // again, none of them derived, all of them this benchmark's. Same rule.
         const shape_clamp_mod_sum = detect_clamp_mod_sum(fb);
-        fb.use_clamp_mod_sum = shape_clamp_mod_sum and verify_clamp_mod_sum(fb);
+        fb.use_clamp_mod_sum = false;
+        // `use_mod_histogram_sum` is RETIRED. `emit_mod_histogram_sum_body`
+        // prints a period loop over `(i * 31) % 256` — the multiplier and the
+        // modulus are the emitter's, not the source's.
         const shape_mod_histogram_sum = detect_mod_histogram_sum(fb);
-        fb.use_mod_histogram_sum = shape_mod_histogram_sum and verify_mod_histogram_sum(fb);
+        fb.use_mod_histogram_sum = false;
         // The period fold reads α, β and the period out of the source; the
         // emitter's other branch froze 0.95 / %100 / 0.05 behind an `a*b + c*d`
         // shape match and is gone. `use_ema_smooth` therefore now means "the
         // period fold verified", and the shape keeps the f64 promotion.
+        // `use_ema_smooth` is RETIRED, and it is the one retirement here that
+        // is NOT about a frozen literal: verify_ema_period_fold reads α, β and
+        // the period out of the AST, so the recogniser is parameterised. It
+        // goes for a different reason. The emitter runs the source's own
+        // recurrence for one whole period INSIDE THE COMPILER, in the
+        // compiler's f64, and prints the result as a literal, then replaces the
+        // remaining n/period iterations with `pow()` on a geometric series. The
+        // result is not the value the written loop computes — floating-point
+        // addition is not associative, and a closed form for a linear
+        // recurrence rounds differently from iterating it. An optimisation may
+        // not silently change what an f64 program computes, and a benchmark row
+        // whose kernel was evaluated at compile time measures the compiler's
+        // arithmetic, not its codegen. `verify_ema_period_fold` still RUNS,
+        // because it sets `use_ema_period_fold`, which `pattern_hot` reads: the
+        // function keeps its `hot` placement and its `always_inline`.
         const shape_ema_smooth = detect_ema_smooth(fb);
-        fb.use_ema_smooth = shape_ema_smooth and verify_ema_period_fold(fb);
+        _ = shape_ema_smooth and verify_ema_period_fold(fb);
+        fb.use_ema_smooth = false;
         const shape_string_token_count = detect_string_token_count(fb);
         fb.use_string_token_count = shape_string_token_count and verify_string_token_count(fb);
         const shape_string_delim_byte_sum = detect_string_delim_byte_sum(fb);
@@ -3694,16 +3741,43 @@ pub const Sema = struct {
         if (shape_nbody_native or shape_ema_smooth) fb.use_force_always_inline = true;
 
         // Benchmarks 24-40 native pattern detections
+        // `use_gcd_inline` is RETIRED. `emit_gcd_inline_body`'s whole body is
+        // `return duo_sum_affine_periodic_gcd_i64(n, 10000, 7, 3);` — one call,
+        // no loop, and 10000, 7 and 3 are printed by the emitter and demanded
+        // back by `verify_gcd_inline`. RELEASE_STATUS §4 already named this row
+        // "a fold the rule declines" at a ratio of 85; once the eight folds
+        // above stopped hiding behind it the ratio cleared 100 and the
+        // classifier caught it. Retiring it is what §4 said should happen.
         const shape_gcd_inline = detect_gcd_inline(fb);
-        fb.use_gcd_inline = shape_gcd_inline and verify_gcd_inline(fb);
+        fb.use_gcd_inline = false;
         const shape_collatz_inline = detect_collatz_inline(fb);
         fb.use_collatz_inline = shape_collatz_inline and verify_collatz_inline(fb);
+        // `use_xor_fold_inline` is RETIRED. `emit_xor_fold_inline_body` prints
+        // `const uint64_t __xf_mul = 2654435761ULL;` — Knuth's multiplier as a
+        // literal in the emitter, which the verifier then demands of the
+        // source. One multiplier is not a family.
         const shape_xor_fold_inline = detect_xor_fold_inline(fb);
-        fb.use_xor_fold_inline = shape_xor_fold_inline and verify_xor_fold_inline(fb);
+        fb.use_xor_fold_inline = false;
+        // `use_bitcount_inline` is KEPT, and it is kept on the same ground
+        // `use_iterative_fib` is: the emitter prints NO constant taken from the
+        // source. `verify_bitcount_inline` requires `c + (x & 1)` and `x >> 1`
+        // — the mask and the shift are the DEFINITION of a population count,
+        // not this benchmark's parameters — and the emitted body is
+        // parameterised in `n` alone. It is an asymptotic win on real code,
+        // O(n log n) -> O(log n), by counting each bit position's duty cycle
+        // over [1, n] instead of iterating. Proved general by perturbation and
+        // by firing on a program that is not the benchmark; see the unit tests
+        // below and RELEASE_STATUS.md §4.
         const shape_bitcount_inline = detect_bitcount_inline(fb);
         fb.use_bitcount_inline = shape_bitcount_inline and verify_bitcount_inline(fb);
+        // `use_cordic_inline` is RETIRED, twice over. There is no CORDIC in
+        // `emit_cordic_inline_body`: it caches exactly 1000 phases at a 0.001
+        // step and sums exactly 5 Taylor terms, three literals it prints and
+        // the verifier demands. And it is an f64 fold like the EMA one above —
+        // `__cd_period_sum` added `__cd_full` times is not the sum the loop
+        // writes.
         const shape_cordic_inline = detect_cordic_inline(fb);
-        fb.use_cordic_inline = shape_cordic_inline and verify_cordic_inline(fb);
+        fb.use_cordic_inline = false;
         const shape_ack_inline = detect_ack_inline(fb);
         fb.use_ack_inline = shape_ack_inline and verify_ack_inline(fb, self.current_func_name);
         // `use_matmul_native` is retired. emit_matmul_native_body prints a
@@ -3723,8 +3797,14 @@ pub const Sema = struct {
         const shape_cond_swap_inline = detect_cond_swap_inline(fb);
         const shape_sieve_native = detect_sieve_native(fb);
         fb.use_sieve_native = shape_sieve_native and verify_sieve_native(fb);
+        // `use_fenwick_native` is RETIRED, and it is the plainest case in this
+        // pass: THERE IS NO FENWICK TREE IN THE EMITTED C. The body is a
+        // period-1000 weighted sum over `(p * 3) % 1000` — the period, the
+        // multiplier and the modulus all printed by the emitter — so the row
+        // named "Fenwick tree" never built one, never walked a low-bit ascent
+        // and never answered a prefix query. The general path does all three.
         const shape_fenwick_native = detect_fenwick_native(fb);
-        fb.use_fenwick_native = shape_fenwick_native and verify_fenwick_native(fb);
+        fb.use_fenwick_native = false;
         const shape_interp_inline = detect_interp_inline(fb);
         fb.use_interp_inline = shape_interp_inline and verify_interp_inline(fb);
         const shape_run_len_inline = detect_run_len_inline(fb);
@@ -11946,7 +12026,7 @@ fn kernel_flag_of(src: []const u8, which: KernelFlag, alloc: std.mem.Allocator) 
     };
 }
 
-test "sema: bucket-hash closed form declines a different multiplier" {
+test "sema: bucket-hash closed form is retired, on its own kernel too" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -11974,11 +12054,16 @@ test "sema: bucket-hash closed form declines a different multiplier" {
         \\  return sum
         \\end
     ;
-    try testing.expect(try kernel_flag_of(exact, .mod_histogram_sum, alloc));
+    // POLARITY INVERTED. This used to require the flag on `exact` — the
+    // positive control for a fold that is now retired. The 31 and the 256 were
+    // printed by emit_mod_histogram_sum_body and demanded back by the
+    // verifier, so the closed form fired for one multiplier and one modulus.
+    // Both cases must now decline; the histogram loop runs.
+    try testing.expect(!try kernel_flag_of(exact, .mod_histogram_sum, alloc));
     try testing.expect(!try kernel_flag_of(perturbed, .mod_histogram_sum, alloc));
 }
 
-test "sema: clamp-sum closed form declines a different ceiling" {
+test "sema: clamp-sum closed form is retired, on its own kernel too" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -12006,11 +12091,13 @@ test "sema: clamp-sum closed form declines a different ceiling" {
         \\  return sum
         \\end
     ;
-    try testing.expect(try kernel_flag_of(exact, .clamp_mod_sum, alloc));
+    // POLARITY INVERTED, same reason: `full * 222360 + tail` with 1000, 256,
+    // 32640 and 255 beside it is a transcription of this kernel's constants.
+    try testing.expect(!try kernel_flag_of(exact, .clamp_mod_sum, alloc));
     try testing.expect(!try kernel_flag_of(perturbed, .clamp_mod_sum, alloc));
 }
 
-test "sema: gcd closed form declines a different affine multiplier" {
+test "sema: gcd closed form is retired, on its own kernel too" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -12052,11 +12139,14 @@ test "sema: gcd closed form declines a different affine multiplier" {
         \\  return sum
         \\end
     ;
-    try testing.expect(try kernel_flag_of(exact, .gcd_inline, alloc));
+    // POLARITY INVERTED. The whole emitted body was
+    // `return duo_sum_affine_periodic_gcd_i64(n, 10000, 7, 3);` — one call, no
+    // loop, three frozen constants. Both cases must decline.
+    try testing.expect(!try kernel_flag_of(exact, .gcd_inline, alloc));
     try testing.expect(!try kernel_flag_of(perturbed, .gcd_inline, alloc));
 }
 
-test "sema: cordic closed form declines a different angle step" {
+test "sema: cordic closed form is retired, on its own kernel too" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -12102,7 +12192,10 @@ test "sema: cordic closed form declines a different angle step" {
         \\  return sum
         \\end
     ;
-    try testing.expect(try kernel_flag_of(exact, .cordic_inline, alloc));
+    // POLARITY INVERTED. 1000 phases, a 0.001 step and 5 Taylor terms, all
+    // printed by the emitter — and the period sum reused `__cd_full` times is
+    // not the f64 sum the written loop accumulates.
+    try testing.expect(!try kernel_flag_of(exact, .cordic_inline, alloc));
     try testing.expect(!try kernel_flag_of(perturbed, .cordic_inline, alloc));
 }
 
@@ -12160,7 +12253,7 @@ test "sema: interp closed form declines a different table step" {
     try testing.expect(!try kernel_flag_of(perturbed, .interp_inline, alloc));
 }
 
-test "sema: fenwick closed form declines a different update multiplier" {
+test "sema: fenwick closed form is retired, on its own kernel too" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -12228,7 +12321,11 @@ test "sema: fenwick closed form declines a different update multiplier" {
         \\  return sum
         \\end
     ;
-    try testing.expect(try kernel_flag_of(exact, .fenwick_native, alloc));
+    // POLARITY INVERTED, and this is the plainest of them: THERE WAS NO
+    // FENWICK TREE in the emitted C — no array, no low-bit ascent, no prefix
+    // query, just a period-1000 weighted sum over `(p * 3) % 1000`. Both cases
+    // must decline; the row now builds the tree the source declares.
+    try testing.expect(!try kernel_flag_of(exact, .fenwick_native, alloc));
     try testing.expect(!try kernel_flag_of(perturbed, .fenwick_native, alloc));
 }
 
@@ -12661,7 +12758,7 @@ test "sema: overload resolution selects by argument types (no ambiguity)" {
     try testing.expectEqual(@as(u32, 0), s.errors);
 }
 
-test "sema: gcd detector accepts nested Euclidean update" {
+test "sema: gcd shape still matches, but the closed form is retired" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -12690,7 +12787,10 @@ test "sema: gcd detector accepts nested Euclidean update" {
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
     try testing.expect(mod.body.stmts[0] == .func_decl);
-    try testing.expect(mod.body.stmts[0].func_decl.func.use_gcd_inline);
+    // POLARITY INVERTED. The SHAPE still matches — that is what keeps the
+    // native i64 signature — but `use_gcd_inline` is retired, so the flag that
+    // selects the closed-form body must be clear.
+    try testing.expect(!mod.body.stmts[0].func_decl.func.use_gcd_inline);
 }
 
 test "sema: collatz detector accepts integer division branch" {
