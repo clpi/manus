@@ -423,6 +423,22 @@ test "Pass 2.4: native pipeline |> lowers to direct C call" {
     const alloc = testing.allocator;
     const c_source = try compilePipelineNative(alloc);
     defer alloc.free(c_source);
-    try testing.expect(std.mem.indexOf(u8, c_source, "double(") != null);
-    try testing.expect(std.mem.indexOf(u8, c_source, "lua_invoke(") == null);
+    // `21 |> double` must become the direct C call `double(21)`.
+    try testing.expect(std.mem.indexOf(u8, c_source, "int64_t y = double(21);") != null);
+
+    // The "no lua_invoke" half has to be scoped to the ENTRY BODY. `fun main()`
+    // carries no return type, so this module emits the lua runtime prelude —
+    // and that prelude defines `lua_invoke` and calls it from its own helpers.
+    // Scanning the whole translation unit therefore measured the runtime, not
+    // the pipeline, and could never pass for any module that keeps the runtime.
+    // What the pipeline promises is that the CALL SITE is direct.
+    const body_start = std.mem.indexOf(u8, c_source, "duo_entry_main() {") orelse
+        return error.TestUnexpectedResult;
+    const body_end_rel = std.mem.indexOf(u8, c_source[body_start..], "\n}\n") orelse
+        return error.TestUnexpectedResult;
+    const body = c_source[body_start .. body_start + body_end_rel];
+    try testing.expect(std.mem.indexOf(u8, body, "lua_invoke(") == null);
+    // Positive control: the slice must actually contain the call it is scoped
+    // around, or "no lua_invoke" would be a statement about an empty string.
+    try testing.expect(std.mem.indexOf(u8, body, "double(21)") != null);
 }

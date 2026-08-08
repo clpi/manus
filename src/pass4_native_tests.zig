@@ -61,8 +61,15 @@ test "Pass 4 M1: distance2 emits native struct fields without lua_invoke" {
     try testing.expect(std.mem.indexOf(u8, body, "lua_invoke") == null);
     try testing.expect(std.mem.indexOf(u8, body, "lua_Value") == null);
     try testing.expect(std.mem.indexOf(u8, body, "lua_to_") == null);
-    try testing.expect(std.mem.indexOf(u8, body, "p.x") != null);
-    try testing.expect(std.mem.indexOf(u8, body, "p.y") != null);
+    // A native record parameter travels by pointer under Duo's own convention
+    // (`native_record_param_by_ptr`), so the field access is spelled `p->x`.
+    // `p.x` was the by-value spelling; both are the same native struct member
+    // read, which is what "without lua_invoke" is about. Accept either rather
+    // than pinning one calling convention into a test about boxing.
+    try testing.expect(std.mem.indexOf(u8, body, "p.x") != null or
+        std.mem.indexOf(u8, body, "p->x") != null);
+    try testing.expect(std.mem.indexOf(u8, body, "p.y") != null or
+        std.mem.indexOf(u8, body, "p->y") != null);
     try testing.expect(std.mem.indexOf(u8, output, "double x") != null);
     try testing.expect(std.mem.indexOf(u8, output, "double y") != null);
 
@@ -126,7 +133,14 @@ test "Pass 4 M1: full milestone asm has f64 main wrapper and distance2 kernel" {
     semantic.duo_mode = true;
     try semantic.check_module(&module);
 
-    const listing = try native_backend.emitAssembly(alloc, &module, "native-asm");
+    // `fcvtzs x0, d0` is the PROCESS ENTRY wrapper: an `f64` main has to hand the
+    // OS an integer exit status. Only `emitAssemblyForExecutable` emits an entry
+    // point — `emitAssembly` lists the module's functions with `process_entry =
+    // null`, so asking it for the wrapper asked the wrong emitter and the
+    // listing correctly did not contain one. Confirmed against the real object:
+    // `otool -tV` on the `--emit exe` binary shows `fcvtzs x0, d0` in `_main`,
+    // and that binary exits 25 (3² + 4²).
+    const listing = try native_backend.emitAssemblyForExecutable(alloc, &module, "main");
     defer alloc.free(listing);
     try testing.expect(std.mem.indexOf(u8, listing, "_main") != null);
     try testing.expect(std.mem.indexOf(u8, listing, "fcvtzs x0, d0") != null);

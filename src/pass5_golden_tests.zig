@@ -24,10 +24,16 @@ test "pass5 golden: C point.h SIM entity ids" {
     try std.testing.expect(std.mem.indexOf(u8, json, "\"pass_by\":\"value\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"storage_class\":\"native\"") != null);
 
-    aw.deinit();
-    aw = .init(std.testing.allocator);
-    try sim.writeSnapshotJson(&snap, &aw.writer);
-    try std.testing.expectEqualStrings(json, aw.written());
+    // Formatting invariance: writing the same snapshot twice must produce the
+    // same bytes. This used to `aw.deinit()` and re-`init` the SAME writer while
+    // `json` still pointed into the buffer it had just freed — the second
+    // allocation reused that memory, so the comparison read poisoned bytes and
+    // reported a wall of `U` (0x55) as "expected". A second writer keeps the
+    // first result alive, which is what the assertion is about.
+    var aw2: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw2.deinit();
+    try sim.writeSnapshotJson(&snap, &aw2.writer);
+    try std.testing.expectEqualStrings(json, aw2.written());
 }
 
 test "pass5 golden: native Duo Point SIM export" {

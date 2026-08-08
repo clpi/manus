@@ -47,12 +47,14 @@ pub const first_milestone = Milestone{
     .direct_backend = "pass",
 };
 
-/// Catalog counts for P4-01 — update when `pass4_boxed_inventory` test fails.
+/// Catalog counts for P4-01 — the SINGLE source; `pass4_boxed_inventory.expected`
+/// aliases this struct rather than restating it. Update when the test reports
+/// drift; it now prints every drifted row, not just the first.
 pub const boxed_inventory = struct {
-    pub const lua_value_refs: usize = 1887;
-    pub const lua_invoke_refs: usize = 67;
-    pub const emit_as_lua_value_refs: usize = 178;
-    pub const module_needs_lua_runtime_refs: usize = 21;
+    pub const lua_value_refs: usize = 1876;
+    pub const lua_invoke_refs: usize = 72;
+    pub const emit_as_lua_value_refs: usize = 188;
+    pub const module_needs_lua_runtime_refs: usize = 58;
     pub const primary_file: []const u8 = "src/codegen.zig";
 };
 

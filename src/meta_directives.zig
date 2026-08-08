@@ -193,9 +193,14 @@ fn registerDefineDeriveBundle(alloc: std.mem.Allocator, raw: []const u8) !void {
 pub var module_derive_registry: derive_registry.DeriveRegistry = undefined;
 var module_derive_registry_inited = false;
 
+/// Same lifetime rule as `derive_registry.initNativeDeriveRegistry`: this
+/// singleton is initialized once per PROCESS and outlives every compile, so it
+/// cannot hold the arena of whichever compile happened to reach it first. It
+/// did, and a later `register`/`exists` then wrote through a freed map.
 pub fn initModuleDeriveRegistry(alloc: std.mem.Allocator) void {
+    _ = alloc;
     if (!module_derive_registry_inited) {
-        module_derive_registry = derive_registry.DeriveRegistry.init(alloc);
+        module_derive_registry = derive_registry.DeriveRegistry.init(std.heap.page_allocator);
         module_derive_registry_inited = true;
     }
 }

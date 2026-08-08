@@ -74,9 +74,24 @@ pub fn getNativeDeriveRegistry() *NativeDeriveRegistry {
 
 var native_derive_registry_initialized: bool = false;
 
+/// The built-in derive table is a PROCESS-lifetime singleton — it is filled once
+/// and never freed — so it must not be backed by a caller's arena.
+///
+/// It used to take whichever allocator called `initNativeDeriveRegistry` first.
+/// In the `duo` binary that arena outlives the compile and nothing showed. In
+/// the test binary each test owns its own arena: the first test to reach a
+/// derive hook filled the map from an arena that was then destroyed, and the
+/// next `hasNativeDerive` read a freed hash-map header — a segfault in
+/// `std.hash_map.capacity`, arriving in a test that had nothing to do with
+/// derives. The registry's own lifetime decides its allocator.
+fn nativeDeriveAllocator() std.mem.Allocator {
+    return std.heap.page_allocator;
+}
+
 pub fn initNativeDeriveRegistry(alloc: std.mem.Allocator) void {
+    _ = alloc;
     if (!native_derive_registry_initialized) {
-        native_derive_registry.registerBuiltins(alloc);
+        native_derive_registry.registerBuiltins(nativeDeriveAllocator());
         native_derive_registry_initialized = true;
     }
 }

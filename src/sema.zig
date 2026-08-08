@@ -1641,6 +1641,16 @@ pub const Sema = struct {
                 const actual = try self.check_expr(e);
                 self.check_return_value(e.loc(), actual);
             }
+        } else if (blk.tail_expr) |e| {
+            // A block's tail expression is not in `stmts`, so without this it was
+            // never visited and nothing it contains ever reached `type_map`.
+            // Downstream that reads as "no type": the monomorphizer inferred
+            // `.any` for `pick(1.5, 2)` when the call was a module's LAST
+            // statement and `f64` when any statement followed it — the same call
+            // specialized two different ways depending only on its position.
+            // Types only; the return-type check above stays owned by the
+            // function-body path, which is the only place a return is demanded.
+            _ = try self.check_expr(e);
         }
         self.scope.pop();
     }

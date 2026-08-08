@@ -2080,6 +2080,27 @@ pub const Parser = struct {
                 .tail_expr = expr,
             };
         };
+        // A single-line body may still be closed explicitly:
+        // `fun(m) m.pattern .. "\n" end`. The multi-line branch above consumes
+        // its `end`; this one did not, so the same lambda parsed as an argument
+        // (`@comp.match("a|b", fun(m) … end)`) died on "expected ')', got 'end'"
+        // while the identical body split over three lines parsed fine.
+        //
+        // The `end` must be on the SAME LINE as the body to belong to this
+        // lambda. That is what separates it from an enclosing block's
+        // terminator:
+        //
+        //     if c
+        //         f = fun(x) x + 1      -- body ends here
+        //     end                       -- closes the `if`, not the lambda
+        //
+        // so the line test is the disambiguation, not a heuristic.
+        if (!blockish) {
+            const end_tok = try self.pk();
+            if (end_tok.kind == .kw_end and end_tok.loc.line == rparen_tok.loc.line) {
+                _ = try self.adv();
+            }
+        }
         return ast.FuncBody{
             .loc = l,
             .params = try params.toOwnedSlice(self.alloc),
@@ -7079,8 +7100,19 @@ test "parse: @c.emit with combinator arg is expr_stmt not directive" {
     const mod = try parseDuoSource(
         \\@c.emit(@comp.map("a", fun(t) t))
     , &arena);
-    try testing.expectEqual(@as(usize, 1), mod.body.stmts.len);
-    try testing.expect(mod.body.stmts[0] == .expr_stmt);
-    try testing.expect(mod.body.stmts[0].expr_stmt.expr.* == .call);
-    try testing.expectEqualStrings("__emit", mod.body.stmts[0].expr_stmt.expr.call.func.name.ident);
+    // The property: `@c.emit(...)` is a CALL to `__emit`, never a directive.
+    // Routing it through the directive table is what this test forbids.
+    for (mod.body.stmts) |stmt| try testing.expect(stmt != .directive);
+    // Where it lands is Pass 25's business, not this test's: a lone module-level
+    // expression is the module's TAIL RESULT, so it arrives in `tail_expr` and
+    // `stmts` is empty. This used to be asserted at `stmts[0]` and failed on
+    // `expected 1, found 0` while the parse was entirely correct.
+    const call_expr: *const ast.Expr = if (mod.body.tail_expr) |e| e else blk: {
+        try testing.expectEqual(@as(usize, 1), mod.body.stmts.len);
+        try testing.expect(mod.body.stmts[0] == .expr_stmt);
+        break :blk mod.body.stmts[0].expr_stmt.expr;
+    };
+    try testing.expect(call_expr.* == .call);
+    try testing.expect(call_expr.call.func.* == .name);
+    try testing.expectEqualStrings("__emit", call_expr.call.func.name.ident);
 }

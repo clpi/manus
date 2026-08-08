@@ -696,8 +696,40 @@ fn tryEmitTailDemandReturn(ctx: *LowerCtx, block: *const ast.Block) Error!bool {
         try lowerRecordReturn(ctx, r.expr);
         return true;
     }
+    // A trailing compound assignment has ALREADY been lowered as a statement,
+    // so its storage holds the answer. Lowering `r.expr` here would evaluate
+    // `x * 2` a second time against the updated `x` — `twice(5)` returned 20
+    // where the C backend returned 10, and `v.x += amt` returned 5+3+3 for
+    // 5+3. Return the slot, not the expression.
+    if (r.rule == .tail_compound_assignment) {
+        if (r.target) |target| {
+            if (compoundTargetSlot(ctx, target)) |slot| {
+                try ctx.emit(.{ .op = .ret, .lhs = .{ .local = slot }, .ty = ret_ty });
+                return true;
+            }
+        }
+        // No slot means the statement did not lower to storage this pass can
+        // name. Re-evaluating would be a miscompile, so decline the function
+        // instead and let the C backend take it.
+        return bail(@src());
+    }
     try ctx.emit(.{ .op = .ret, .lhs = try lowerExpr(ctx, r.expr), .ty = ret_ty });
     return true;
+}
+
+/// The local slot a compound-assignment target was stored into. Field targets
+/// live under the `obj.field` key `lowerFieldAssignTarget` writes.
+fn compoundTargetSlot(ctx: *LowerCtx, target: *const ast.Expr) ?u32 {
+    switch (target.*) {
+        .name => |n| return ctx.locals.get(n.ident),
+        .field => |f| {
+            if (f.obj.* != .name) return null;
+            var buf: [512]u8 = undefined;
+            const fk = std.fmt.bufPrint(&buf, "{s}.{s}", .{ f.obj.name.ident, f.field }) catch return null;
+            return ctx.locals.get(fk);
+        },
+        else => return null,
+    }
 }
 
 fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error!void {
@@ -3039,17 +3071,26 @@ test "dnir_lower: trailing compound field assign returns updated field slot" {
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     const f = m.functions[0];
+    // "The updated field slot" is whatever slot the compound assignment STORED
+    // into — under the exploded-record model a one-field record parameter owns
+    // slot 0, so the old proxy for it (`local != 0 and local != 1`) named a slot
+    // that cannot exist here and failed on a correct lowering. Compare the ret
+    // against the store instead; that is the property, and it cannot pass by
+    // accident.
     var ret_count: usize = 0;
-    var ret_from_field = false;
+    var ret_slot: ?u32 = null;
+    var store_slot: ?u32 = null;
     for (f.blocks) |b| {
         for (b.instrs) |ins| {
+            if (ins.op == .store_local) store_slot = ins.result;
             if (ins.op != .ret) continue;
             ret_count += 1;
-            if (ins.lhs == .local and ins.lhs.local != 0 and ins.lhs.local != 1) ret_from_field = true;
+            if (ins.lhs == .local) ret_slot = ins.lhs.local;
         }
     }
     try std.testing.expectEqual(@as(usize, 1), ret_count);
-    try std.testing.expect(ret_from_field);
+    try std.testing.expect(store_slot != null);
+    try std.testing.expectEqual(store_slot.?, ret_slot orelse return error.RetIsNotALocal);
 }
 
 test "dnir_lower: if binding assigns before branch" {

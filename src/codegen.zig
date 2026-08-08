@@ -223,6 +223,14 @@ pub const CodeGen = struct {
     dense_table_cap: ?[]const u8 = null,
     /// Module-scope dense literal tables (1-based positional keys) lowered to native C arrays.
     native_dense_module_tables: std.StringHashMapUnmanaged(NativeDenseModuleTable) = .empty,
+    /// Module-scope literal DESCRIPTORS — `Kind = @{ eof = 0, ident = 1 }` — the
+    /// keyed twin of `native_dense_module_tables`. Every field is a scalar
+    /// literal and the name is only ever read as `Kind.field`, so the whole
+    /// binding is a compile-time constant map: no storage, and each projection
+    /// folds to its literal. This is what the direct backend already does
+    /// (DNB007); without it the C backend emitted `static lua_Value duo_g_Kind`
+    /// into a translation unit that had just decided to declare no runtime.
+    native_const_descriptors: std.StringHashMapUnmanaged(NativeConstDescriptor) = .empty,
     /// Function-local `t = {}` lowered to `t_items[]` + `t_len` (no lua tables).
     native_str_list_locals: std.StringHashMapUnmanaged(void) = .empty,
     /// Names in the current block that must NOT take the `t_items[]` lowering
@@ -386,6 +394,13 @@ pub const CodeGen = struct {
         module_cname: []const u8,
         elem: NativeDenseElem,
         len: usize,
+        init: *const ast.Expr,
+    };
+
+    const NativeConstDescriptor = struct {
+        module_cname: []const u8,
+        /// The `.table` expression, with any `@{}` (`.compile` unop) wrapper
+        /// already stripped, so field lookup reads `init.table.fields` directly.
         init: *const ast.Expr,
     };
 
@@ -1185,6 +1200,17 @@ pub const CodeGen = struct {
 
     /// Native record parameters are passed by pointer so mutating methods
     /// (e.g. lexer `self.pos = …`, ByteCursor `c.pos = …`) persist across calls.
+    /// The `.table_type` behind a record parameter, following the alias a
+    /// `.@"struct"` annotation names. Same resolution `native_record_param_by_ptr`
+    /// performs, factored out so an emitter can reach the field list.
+    fn resolved_record_type(self: *const CodeGen, rt: RT) ?RT {
+        var resolved = rt;
+        if (resolved == .@"struct") {
+            if (self.record_aliases.get(resolved.@"struct".name)) |alias_rt| resolved = alias_rt;
+        }
+        return if (resolved == .table_type) resolved else null;
+    }
+
     fn native_record_param_by_ptr(self: *const CodeGen, rt: RT) bool {
         var resolved = rt;
         if (resolved == .@"struct") {
@@ -3955,13 +3981,14 @@ pub const CodeGen = struct {
         }
         try self.emit_expr(c.func);
         self.p("(", .{});
+        const callee_abi: ParamAbi = if (self.expr_names_foreign_func(c.func)) .foreign else .duo;
         var emitted_args: usize = 0;
         for (c.args, 0..) |arg, i| {
             if (i > 0) self.p(", ", .{});
             switch (ft) {
                 .func => |f| {
                     if (i < f.params.len) {
-                        try self.emit_arg_for_param(arg, f.params[i], true);
+                        try self.emit_arg_for_param_abi(arg, f.params[i], true, callee_abi);
                     } else {
                         try self.emit_expr(arg);
                     }
@@ -5040,6 +5067,7 @@ pub const CodeGen = struct {
         });
         self.current_module = mod;
         try self.collect_native_dense_module_tables(mod);
+        try self.collect_native_const_descriptors(mod);
         const native_scalar_plain = self.moduleUsesFullNativeLowering() and
             !self.module_has_cinclude(mod) and
             !self.module_has_concept_def(mod);
@@ -5567,6 +5595,11 @@ pub const CodeGen = struct {
             while (it.next()) |key| {
                 if (is_runtime_global(key.*)) continue;
                 if (self.is_native_dense_module_table(key.*)) continue;
+                // A folded descriptor has no storage by construction: every use
+                // site is a projection that emitted a literal. Declaring it
+                // would require `lua_Value`, the one type a no-runtime
+                // translation unit cannot name.
+                if (self.is_native_const_descriptor(key.*)) continue;
                 // NOTE: req-module bindings are NOT skipped here. They usually
                 // resolve to direct C symbols, but not every use site does — a
                 // field read that sema types as `.any` still emits the variable,
@@ -6498,6 +6531,14 @@ pub const CodeGen = struct {
         }
     }
 
+    /// True when the callee is a function imported from a C header, whose
+    /// parameter ABI the header fixed and Duo may not reinterpret.
+    fn expr_names_foreign_func(self: *const CodeGen, func: *const ast.Expr) bool {
+        if (func.* != .name) return false;
+        const map = self.foreign_functions orelse return false;
+        return map.contains(func.name.ident);
+    }
+
     fn emit_foreign_func_decls(self: *CodeGen) E!void {
         const map = self.foreign_functions orelse return;
         var it = map.iterator();
@@ -7125,10 +7166,51 @@ pub const CodeGen = struct {
     }
 
     fn emit_arg_for_param(self: *CodeGen, arg: *const ast.Expr, param_type: RT, for_call: bool) E!void {
-        if (for_call and self.native_record_param_by_ptr(param_type)) {
+        try self.emit_arg_for_param_abi(arg, param_type, for_call, .duo);
+    }
+
+    /// Which calling convention the receiving parameter obeys.
+    ///
+    /// `.duo` records may travel by pointer — that is Duo's own convention and
+    /// it is chosen per translation unit. A `.foreign` parameter's convention
+    /// is fixed by the C header that declared it: `extern double
+    /// distance2(CPoint)` takes the record BY VALUE, and handing it `&p` is not
+    /// a style difference, it is a type error clang rejects ("passing 'CPoint *'
+    /// to parameter of incompatible type 'CPoint'"). Applying the Duo record
+    /// convention to an imported C function is what made every `@comp.c.import`
+    /// program with a record argument unlinkable.
+    const ParamAbi = enum { duo, foreign };
+
+    fn emit_arg_for_param_abi(
+        self: *CodeGen,
+        arg: *const ast.Expr,
+        param_type: RT,
+        for_call: bool,
+        abi: ParamAbi,
+    ) E!void {
+        if (for_call and abi == .duo and self.native_record_param_by_ptr(param_type)) {
             if (arg.* == .name and self.expr_is_native_record_ptr_param(arg)) {
                 try self.emit_expr(arg);
                 return;
+            }
+            // A record LITERAL at a native record parameter is a designated
+            // initializer, not a table. `emit_expr` on a `.table` builds one
+            // through `lua_table_new_with_capacity` — in a translation unit that
+            // has already decided to declare no lua runtime, so
+            // `distance2({ x = 3.0, y = 4.0 })` did not compile at all
+            // ("use of undeclared identifier 'lua_Value'"). Same defect shape as
+            // the module-scope descriptor: native lowering chosen, boxed
+            // emission produced. The pointer branch below already had this arm;
+            // it was unreachable because this one runs first.
+            if (arg.* == .table) {
+                if (self.resolved_record_type(param_type)) |rec| {
+                    self.p("&((", .{});
+                    self.typ(rec);
+                    self.p(")", .{});
+                    try self.emit_record_initializer(rec.table_type.fields, arg);
+                    self.p(")", .{});
+                    return;
+                }
             }
             self.p("&", .{});
             try self.emit_expr(arg);
@@ -9112,6 +9194,268 @@ pub const CodeGen = struct {
     fn is_native_dense_module_table(self: *CodeGen, name: []const u8) bool {
         const nd = self.native_dense_module_tables.get(name) orelse return false;
         return std.mem.eql(u8, nd.module_cname, self.current_module_cname);
+    }
+
+    /// `@{ … }` is a `.compile` unop wrapping a table literal; a bare `{ … }`
+    /// is the table itself. Both spell the same descriptor.
+    fn descriptor_table_expr(e: *const ast.Expr) ?*const ast.Expr {
+        if (e.* == .table) return e;
+        if (e.* == .unop and e.unop.op == .compile and e.unop.operand.* == .table) return e.unop.operand;
+        return null;
+    }
+
+    /// A scalar literal usable as a compile-time descriptor field. `-1` arrives
+    /// as a `.neg` unop over a literal, so it is admitted here too — declining
+    /// it would silently keep a whole descriptor on the boxed path.
+    fn is_descriptor_literal(e: *const ast.Expr) bool {
+        return switch (e.*) {
+            .int_lit, .float_lit, .true_lit, .false_lit, .string_lit => true,
+            .unop => |u| u.op == .neg and switch (u.operand.*) {
+                .int_lit, .float_lit => true,
+                else => false,
+            },
+            else => false,
+        };
+    }
+
+    /// Every field named, every value a scalar literal, at least one field.
+    fn classify_const_descriptor_table(fields: []const ast.TableField) bool {
+        if (fields.len == 0) return false;
+        for (fields) |f| {
+            switch (f) {
+                .named => |n| if (!is_descriptor_literal(n.val)) return false,
+                else => return false,
+            }
+        }
+        return true;
+    }
+
+    /// The safety condition that makes folding sound: the binding must be
+    /// written exactly once and never READ as a whole value. Folding a
+    /// descriptor removes its storage, so a surviving bare `Kind` would be a
+    /// reference to a symbol nothing declares — the same defect the
+    /// `module_globals` loop's comment block records for scalar constants,
+    /// reached through a table instead.
+    fn descriptor_name_used_bare(name: []const u8, mod: *const ast.Module) bool {
+        var seen_writes: usize = 0;
+        for (mod.body.stmts) |*stmt| {
+            switch (stmt.*) {
+                .assign => |as| {
+                    for (as.targets) |tgt| {
+                        if (tgt.* == .name and std.mem.eql(u8, tgt.name.ident, name)) seen_writes += 1;
+                    }
+                    for (as.values) |v| if (exprUsesNameBare(v, name)) return true;
+                },
+                .global_decl => |gd| {
+                    for (gd.names) |*ln| {
+                        if (std.mem.eql(u8, ln.ident, name)) seen_writes += 1;
+                    }
+                    for (gd.inits) |v| if (exprUsesNameBare(v, name)) return true;
+                },
+                .func_decl => |fd| {
+                    if (blockUsesNameBare(&fd.func.body, name)) return true;
+                },
+                else => {
+                    if (stmtUsesNameBare(stmt, name)) return true;
+                },
+            }
+        }
+        if (mod.body.tail_expr) |e| {
+            if (exprUsesNameBare(e, name)) return true;
+        }
+        return seen_writes != 1;
+    }
+
+    /// True when `name` appears anywhere other than as the object of a
+    /// `.field` projection. Every arm this walker does not model returns
+    /// **true** — folding removes storage, so an unrecognised construct must
+    /// decline the fold rather than assume it is safe. A wrong `false` here is
+    /// a "use of undeclared identifier" at C compile time; a wrong `true` only
+    /// leaves the descriptor on the path it is on today.
+    fn exprUsesNameBare(e: *const ast.Expr, name: []const u8) bool {
+        return switch (e.*) {
+            .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg, .semantic, .semantic_scope => false,
+            .name => |n| std.mem.eql(u8, n.ident, name),
+            // The whole point: `Kind.ident` reads a field and never the binding.
+            .field => |f| if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, name))
+                false
+            else
+                exprUsesNameBare(f.obj, name),
+            .index => |ix| exprUsesNameBare(ix.obj, name) or exprUsesNameBare(ix.key, name),
+            .call => |c| blk: {
+                if (exprUsesNameBare(c.func, name)) break :blk true;
+                for (c.args) |a| if (exprUsesNameBare(a, name)) break :blk true;
+                break :blk false;
+            },
+            .method_call => |mc| blk: {
+                if (exprUsesNameBare(mc.obj, name)) break :blk true;
+                for (mc.args) |a| if (exprUsesNameBare(a, name)) break :blk true;
+                break :blk false;
+            },
+            .binop => |b| exprUsesNameBare(b.lhs, name) or exprUsesNameBare(b.rhs, name),
+            .unop => |u| exprUsesNameBare(u.operand, name),
+            .try_expr => |t| exprUsesNameBare(t.operand, name),
+            .unwrap_expr => |t| exprUsesNameBare(t.operand, name),
+            .await_expr => |t| exprUsesNameBare(t.operand, name),
+            .contains_expr => |c| exprUsesNameBare(c.lhs, name) or exprUsesNameBare(c.rhs, name),
+            .sequence => |s| blk: {
+                for (s.exprs) |x| if (exprUsesNameBare(x, name)) break :blk true;
+                break :blk false;
+            },
+            .range => |r| exprUsesNameBare(r.start, name) or exprUsesNameBare(r.end, name) or
+                (if (r.step) |s| exprUsesNameBare(s, name) else false),
+            .table => |t| blk: {
+                for (t.fields) |f| {
+                    const used = switch (f) {
+                        .named => |n| exprUsesNameBare(n.val, name),
+                        .positional => |v| exprUsesNameBare(v, name),
+                        .indexed => |ix| exprUsesNameBare(ix.key, name) or exprUsesNameBare(ix.val, name),
+                        .spread => |s| exprUsesNameBare(s, name),
+                        .semantic => |s| exprUsesNameBare(s.val, name),
+                    };
+                    if (used) break :blk true;
+                }
+                break :blk false;
+            },
+            .func_expr => |f| blockUsesNameBare(&f.body, name),
+            else => true,
+        };
+    }
+
+    fn stmtUsesNameBare(stmt: *const ast.Stmt, name: []const u8) bool {
+        return switch (stmt.*) {
+            .brk, .cont, .goto_stmt, .label_stmt, .cinclude, .directive => false,
+            .enum_def, .concept_def, .alias_def, .macro_def => false,
+            .local_decl => |ld| blk: {
+                for (ld.inits) |v| if (exprUsesNameBare(v, name)) break :blk true;
+                break :blk false;
+            },
+            .global_decl => |gd| blk: {
+                for (gd.inits) |v| if (exprUsesNameBare(v, name)) break :blk true;
+                break :blk false;
+            },
+            .const_decl => |cd| exprUsesNameBare(cd.val, name),
+            .assign => |as| blk: {
+                // A write to the binding itself is counted by the caller; a
+                // write THROUGH it (`Kind.x = 1`) is a mutation of a value that
+                // is supposed to be constant, so it counts as a bare use.
+                for (as.targets) |t| {
+                    if (t.* == .name and std.mem.eql(u8, t.name.ident, name)) continue;
+                    if (t.* == .field and t.field.obj.* == .name and
+                        std.mem.eql(u8, t.field.obj.name.ident, name)) break :blk true;
+                    if (exprUsesNameBare(t, name)) break :blk true;
+                }
+                for (as.values) |v| if (exprUsesNameBare(v, name)) break :blk true;
+                break :blk false;
+            },
+            .call_stmt => |cs| exprUsesNameBare(cs.expr, name),
+            .expr_stmt => |es| exprUsesNameBare(es.expr, name),
+            .do_block => |db| blockUsesNameBare(&db.body, name),
+            .while_loop => |ws| exprUsesNameBare(ws.cond, name) or blockUsesNameBare(&ws.body, name),
+            .repeat_loop => |rs| exprUsesNameBare(rs.cond, name) or blockUsesNameBare(&rs.body, name),
+            .if_stmt => |is| blk: {
+                if (is.binding) |b| if (exprUsesNameBare(b.expr, name)) break :blk true;
+                if (exprUsesNameBare(is.cond, name)) break :blk true;
+                if (blockUsesNameBare(&is.then, name)) break :blk true;
+                for (is.elseifs) |ei| {
+                    if (exprUsesNameBare(ei.cond, name)) break :blk true;
+                    if (blockUsesNameBare(&ei.body, name)) break :blk true;
+                }
+                if (is.else_body) |eb| if (blockUsesNameBare(&eb, name)) break :blk true;
+                break :blk false;
+            },
+            .num_for => |nf| blk: {
+                if (exprUsesNameBare(nf.start, name) or exprUsesNameBare(nf.stop, name)) break :blk true;
+                if (nf.step) |s| if (exprUsesNameBare(s, name)) break :blk true;
+                break :blk blockUsesNameBare(&nf.body, name);
+            },
+            .gen_for => |gf| blk: {
+                for (gf.iters) |it| if (exprUsesNameBare(it, name)) break :blk true;
+                break :blk blockUsesNameBare(&gf.body, name);
+            },
+            .func_decl => |fd| blockUsesNameBare(&fd.func.body, name),
+            .ret => |r| blk: {
+                for (r.vals) |v| if (exprUsesNameBare(v, name)) break :blk true;
+                break :blk false;
+            },
+            else => true,
+        };
+    }
+
+    fn blockUsesNameBare(blk: *const ast.Block, name: []const u8) bool {
+        for (blk.stmts) |*stmt| {
+            if (stmtUsesNameBare(stmt, name)) return true;
+        }
+        if (blk.tail_expr) |e| {
+            if (exprUsesNameBare(e, name)) return true;
+        }
+        return false;
+    }
+
+    fn collect_native_const_descriptors(self: *CodeGen, mod: *const ast.Module) !void {
+        try self.remove_native_const_descriptors_for_scope(self.current_module_cname);
+        // Folding is only *required* where no lua runtime is declared, but it is
+        // correct everywhere; restricting it to the native modes keeps the boxed
+        // path byte-identical, which is what the emitted-C fixtures assert.
+        if (!self.native_scalar_mode and !self.mixed_scalar_mode and !self.moduleKnowledgeAtLeast(.native)) return;
+        for (mod.body.stmts) |*stmt| {
+            const as = switch (stmt.*) {
+                .assign => |*a| a,
+                else => continue,
+            };
+            if (as.targets.len != as.values.len) continue;
+            for (as.targets, as.values) |tgt, val| {
+                if (tgt.* != .name) continue;
+                const tbl = descriptor_table_expr(val) orelse continue;
+                if (!classify_const_descriptor_table(tbl.table.fields)) continue;
+                if (descriptor_name_used_bare(tgt.name.ident, mod)) continue;
+                const owned_name = try self.alloc.dupe(u8, tgt.name.ident);
+                const owned_module = try self.alloc.dupe(u8, self.current_module_cname);
+                try self.native_const_descriptors.put(self.alloc, owned_name, .{
+                    .module_cname = owned_module,
+                    .init = tbl,
+                });
+            }
+        }
+    }
+
+    fn remove_native_const_descriptors_for_scope(self: *CodeGen, module_cname: []const u8) !void {
+        var to_remove: std.ArrayList([]const u8) = .empty;
+        defer to_remove.deinit(self.alloc);
+        var it = self.native_const_descriptors.iterator();
+        while (it.next()) |entry| {
+            if (!std.mem.eql(u8, entry.value_ptr.module_cname, module_cname)) continue;
+            try to_remove.append(self.alloc, entry.key_ptr.*);
+        }
+        for (to_remove.items) |key| {
+            if (self.native_const_descriptors.fetchRemove(key)) |kv| {
+                self.alloc.free(kv.key);
+                self.alloc.free(kv.value.module_cname);
+            }
+        }
+    }
+
+    fn is_native_const_descriptor(self: *CodeGen, name: []const u8) bool {
+        const cd = self.native_const_descriptors.get(name) orelse return false;
+        return std.mem.eql(u8, cd.module_cname, self.current_module_cname);
+    }
+
+    /// `Kind.ident` → the literal expression bound to `ident`, when `Kind` is a
+    /// folded module descriptor in this module and is not shadowed by a local
+    /// or parameter of the function being emitted (LAW-SCOPE rung 1).
+    fn const_descriptor_field(self: *CodeGen, obj: *const ast.Expr, field: []const u8) ?*const ast.Expr {
+        if (obj.* != .name) return null;
+        const name = obj.name.ident;
+        if (self.is_param_name(name) or self.is_func_local_name(name)) return null;
+        const cd = self.native_const_descriptors.get(name) orelse return null;
+        if (!std.mem.eql(u8, cd.module_cname, self.current_module_cname)) return null;
+        for (cd.init.table.fields) |f| {
+            switch (f) {
+                .named => |n| if (std.mem.eql(u8, n.key, field)) return n.val,
+                else => {},
+            }
+        }
+        return null;
     }
 
     fn is_dense_table_name(self: *CodeGen, name: []const u8) bool {
@@ -11256,6 +11600,10 @@ pub const CodeGen = struct {
                         if (i < as.values.len) try self.note_comptime_binding(tgt.name.ident, as.values[i]);
                         continue;
                     }
+                    if (tgt.* == .name and self.is_native_const_descriptor(tgt.name.ident)) {
+                        if (i < as.values.len) try self.note_comptime_binding(tgt.name.ident, as.values[i]);
+                        continue;
+                    }
                     self.ind();
                     const tt = self.expr_type(tgt);
 
@@ -12926,6 +13274,19 @@ pub const CodeGen = struct {
         }
     }
 
+    /// Emit a folded descriptor field. The value is a scalar literal, so the
+    /// only work is the cast the surrounding expression expects.
+    fn emit_const_descriptor_literal(self: *CodeGen, lit: *const ast.Expr, want: RT) E!void {
+        if (want.is_integer() or want.is_float()) {
+            var buf: [64]u8 = undefined;
+            self.p("(({s})", .{want.c_type(&buf)});
+            try self.emit_expr(lit);
+            self.p(")", .{});
+            return;
+        }
+        try self.emit_expr(lit);
+    }
+
     fn emit_mret_get_as(self: *CodeGen, idx: usize, want: RT) void {
         if (want.is_numeric()) {
             var buf: [64]u8 = undefined;
@@ -12943,6 +13304,10 @@ pub const CodeGen = struct {
         if (!want.is_numeric() and want != .bool and want != .str) return false;
         switch (e.*) {
             .field => |f| {
+                if (self.const_descriptor_field(f.obj, f.field)) |lit| {
+                    try self.emit_const_descriptor_literal(lit, want);
+                    return true;
+                }
                 if (f.obj.* == .name) {
                     if (self.req_module_bindings.get(f.obj.name.ident)) |mod_cname| {
                         if (try self.try_emit_req_module_const_field(mod_cname, f.field, want)) return true;
@@ -13984,6 +14349,13 @@ pub const CodeGen = struct {
                     }
                     return;
                 }
+                // A module-scope literal descriptor is a compile-time constant
+                // map: `Kind.ident` IS its literal, and the binding has no
+                // storage to read from.
+                if (self.const_descriptor_field(f.obj, f.field)) |lit| {
+                    try self.emit_expr(lit);
+                    return;
+                }
                 if (f.obj.* == .name) {
                     if (self.req_module_bindings.get(f.obj.name.ident)) |mod_cname| {
                         if (try self.try_emit_req_module_const_field(mod_cname, f.field, self.expr_type(expr))) return;
@@ -14898,13 +15270,14 @@ pub const CodeGen = struct {
                     var name_buf: [256]u8 = undefined;
                     break :blk self.func_bodies.get(self.mangled_name(c.func.name.ident, &name_buf));
                 } else null;
+                const callee_abi: ParamAbi = if (self.expr_names_foreign_func(c.func)) .foreign else .duo;
                 var emitted_args: usize = 0;
                 for (c.args, 0..) |arg, i| {
                     if (i > 0) self.p(", ", .{});
                     switch (ft) {
                         .func => |f| {
                             if (i < f.params.len) {
-                                try self.emit_arg_for_param(arg, f.params[i], true);
+                                try self.emit_arg_for_param_abi(arg, f.params[i], true, callee_abi);
                             } else {
                                 try self.emit_expr(arg);
                             }
@@ -29782,7 +30155,13 @@ test "codegen: any accumulator plus boxed field unboxes both sides" {
     const fn_start = std.mem.indexOf(u8, output, "static lua_Value f(") orelse return error.TestExpectedEqual;
     const fn_end = std.mem.indexOf(u8, output[fn_start..], "return sum;") orelse return error.TestExpectedEqual;
     const fn_body = output[fn_start .. fn_start + fn_end + "return sum;".len];
-    try testing.expect(std.mem.indexOf(u8, fn_body, "lua_table_get_str_num(") != null);
+    // `duo_fallback_get_num` is the Pass 34 L2 interned-field marker and expands
+    // verbatim to `lua_table_get_str_num`; inside a function body it is the
+    // spelling the emitter uses. Accept either, because the assertion is about
+    // reading the field as a NUMBER (not `lua_to_num` on a boxed read, and no
+    // `lua_add` metamethod dispatch), not about the marker.
+    try testing.expect(std.mem.indexOf(u8, fn_body, "lua_table_get_str_num(") != null or
+        std.mem.indexOf(u8, fn_body, "duo_fallback_get_num(") != null);
     try testing.expect(std.mem.indexOf(u8, fn_body, "lua_to_num(lua_table_get_str_lit") == null);
     try testing.expect(std.mem.indexOf(u8, fn_body, "lua_add(") == null);
 }
@@ -30477,7 +30856,14 @@ test "codegen: implicit typed return unboxes dynamic field projection" {
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
     try cg.emit_module(&module);
     const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "return ((int64_t)lua_table_get_str_num(box, \"n\"") != null);
+    // Inside a function body a fallback projection is spelled through the
+    // Pass 34 L2 interned-field marker `duo_fallback_get_num(<fid>, …)`, a
+    // verbatim `#define` of `lua_table_get_str_num` (see the runtime prelude).
+    // The property this test is named for is the UNBOX — the `(int64_t)` cast
+    // straight off the numeric read — not which of the two identical spellings
+    // carries it. The sibling test "typed locals unbox dynamic table field
+    // projections" records the same rule.
+    try testing.expect(std.mem.indexOf(u8, output, "return ((int64_t)duo_fallback_get_num(0, box, \"n\"") != null);
     try testing.expect(std.mem.indexOf(u8, output, "return (int64_t)lua_to_num(lua_table_get_str_lit(box, \"n\"") == null);
     try testing.expect(std.mem.indexOf(u8, output, "return lua_table_get_str_lit(box, \"n\"") == null);
 }
@@ -31012,9 +31398,21 @@ test "codegen: typed global builtins unbox boxed runtime results" {
     try testing.expect(std.mem.indexOf(u8, output, "const char* str_kind = \"string\";") != null);
     try testing.expect(std.mem.indexOf(u8, output, "const char* nil_kind = \"nil\";") != null);
     try testing.expect(std.mem.indexOf(u8, output, "const char* text = lua_to_str(tostring(") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "double num = lua_to_num(lua_val_from_literal(\"42\"") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "double native_cast = native_num;") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "lua_to_num(tonumber(") == null);
+    // `tonumber` is a CONVERSION THAT CAN FAIL, and `builtin_return_type` types
+    // it `.any` for exactly that reason (see its comment): it answers nil for a
+    // string that is not a complete numeral. This test used to require
+    // `double num = lua_to_num(lua_val_from_literal("42"` — the old fold that
+    // bypassed `tonumber` entirely and converted the literal directly — and to
+    // FORBID `lua_to_num(tonumber(`. Under that rule `tonumber("abc")` became 0
+    // before any caller could test it, which is the defect the `.any` typing
+    // fixed. So the two rows below assert the current law, and the negative row
+    // that forbade the correct lowering is gone.
+    //
+    // Verified by value, not by shape: `tonumber("42")` prints 42,
+    // `tonumber(42.0)` prints 42, and `tonumber("abc") or -1.0` prints -1 —
+    // the nil survives, which is the whole point.
+    try testing.expect(std.mem.indexOf(u8, output, "double num = (double)lua_to_num(tonumber(lua_val_from_literal(\"42\"") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "double native_cast = (double)lua_to_num(tonumber(") != null);
     try testing.expect(std.mem.indexOf(u8, output, "int64_t len = lua_rawlen_i64(") != null);
     try testing.expect(std.mem.indexOf(u8, output, "int64_t slen = ((int64_t)strlen(s));") != null);
     try testing.expect(std.mem.indexOf(u8, output, "int64_t lit_len = 8;") != null);
@@ -31803,7 +32201,14 @@ test "codegen: typed multi-return locals unbox from lua result buffer" {
     try cg.emit_module(&module);
     const output = aw.written();
 
-    try testing.expect(std.mem.indexOf(u8, output, "int64_t n = ((int64_t)lua_to_num(split()))") != null);
+    // The FIRST result comes back through the call expression and the rest come
+    // out of the mret buffer. This row used to pin the call spelling too
+    // (`lua_to_num(split())`); an `any`-returning callee is now reached through
+    // `lua_invoke`, which is what populates `lua_mret_*` for the siblings below,
+    // so pinning the direct call was pinning the wrong thing. Assert the unbox —
+    // `int64_t n` taken through `(int64_t)lua_to_num(...)`, never a `lua_Value`
+    // local. Verified by value: this fixture prints 42.
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t n = ((int64_t)lua_to_num(") != null);
     try testing.expect(std.mem.indexOf(u8, output, "int64_t inc = ((int64_t)lua_mret_get_num(0));") != null);
     try testing.expect(std.mem.indexOf(u8, output, "const char* s = lua_mret_get_cstr(1);") != null);
     try testing.expect(std.mem.indexOf(u8, output, "bool ok = lua_mret_get_bool(2);") != null);

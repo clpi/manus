@@ -12,18 +12,43 @@ fn countOccurrences(haystack: []const u8, needle: []const u8) usize {
     return count;
 }
 
-/// Keep in sync with `pass4_catalog.boxed_inventory` — this test fails when counts drift.
-pub const expected = struct {
-    pub const lua_value_refs: usize = 1889;
-    pub const lua_invoke_refs: usize = 67;
-    pub const emit_as_lua_value_refs: usize = 178;
-    pub const module_needs_lua_runtime_refs: usize = 21;
-};
+/// The counts live in ONE place: `pass4_catalog.boxed_inventory`, which is what
+/// `compiler_dynamic_boundary` and `compat_layer_projection` also report from.
+///
+/// This used to be a second copy carrying its own numbers "kept in sync" by
+/// hand, and it had drifted: the copy said 1889 `lua_Value` where the catalog
+/// said 1887, and neither matched the file. Because the test asserts in order
+/// and stopped at the first mismatch, three further counts (`lua_invoke`,
+/// `emit_as_lua_value`, `moduleNeedsLuaRuntime`) had drifted unnoticed behind
+/// it — a ratchet reporting one number while three others were unmeasured.
+/// Aliasing removes the class of defect rather than resetting the numbers.
+pub const expected = @import("pass4_catalog.zig").boxed_inventory;
 
 test "pass4_boxed_inventory: codegen.zig boxing counts match catalog" {
     const src = @embedFile("codegen.zig");
-    try std.testing.expectEqual(expected.lua_value_refs, countOccurrences(src, "lua_Value"));
-    try std.testing.expectEqual(expected.lua_invoke_refs, countOccurrences(src, "lua_invoke"));
-    try std.testing.expectEqual(expected.emit_as_lua_value_refs, countOccurrences(src, "emit_as_lua_value"));
-    try std.testing.expectEqual(expected.module_needs_lua_runtime_refs, countOccurrences(src, "moduleNeedsLuaRuntime"));
+    // Every row is checked and the mismatches are reported TOGETHER. Asserting
+    // in sequence let the first failure hide the other three for however long
+    // it took someone to look at this file.
+    const Row = struct { name: []const u8, needle: []const u8, want: usize };
+    const rows = [_]Row{
+        .{ .name = "lua_Value", .needle = "lua_Value", .want = expected.lua_value_refs },
+        .{ .name = "lua_invoke", .needle = "lua_invoke", .want = expected.lua_invoke_refs },
+        .{ .name = "emit_as_lua_value", .needle = "emit_as_lua_value", .want = expected.emit_as_lua_value_refs },
+        .{ .name = "moduleNeedsLuaRuntime", .needle = "moduleNeedsLuaRuntime", .want = expected.module_needs_lua_runtime_refs },
+    };
+    var drifted = false;
+    for (rows) |row| {
+        const actual = countOccurrences(src, row.needle);
+        if (actual != row.want) {
+            drifted = true;
+            std.debug.print(
+                "pass4_boxed_inventory: {s} catalog={d} actual={d} — update pass4_catalog.boxed_inventory\n",
+                .{ row.name, row.want, actual },
+            );
+        }
+    }
+    try std.testing.expect(!drifted);
+    // Positive control: `countOccurrences` must be able to answer zero, or every
+    // row above could be comparing 0 against 0 for a needle that never appears.
+    try std.testing.expectEqual(@as(usize, 0), countOccurrences(src, "lua_Value_this_identifier_does_not_exist"));
 }

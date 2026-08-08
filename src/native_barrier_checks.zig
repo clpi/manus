@@ -497,6 +497,10 @@ test "native_barrier_checks: pass12_m1 branch_chain body passes no_boxing" {
     const argv = [_][]const u8{ "zig-out/bin/duo", "dump-c", "examples/pass12_m1_diff.duo" };
     const out = @import("host_run.zig").runHostCommandArgs(alloc, &argv) orelse return error.SkipZigTest;
     defer alloc.free(out.stdout);
+    // `runHostCommandArgs` allocates BOTH pipes; freeing only stdout leaked the
+    // captured stderr (4588 bytes — this command is chatty on stderr). The
+    // sibling `evaluateProfile` above already frees both.
+    defer alloc.free(out.stderr);
     if (!out.ok) return error.SkipZigTest;
     const body = extractFunctionBody(out.stdout, "std_token_classify__classify_branch_chain", true) orelse return error.TestExpectedEqual;
     var report = try checkGeneratedC(alloc, body, &.{ .no_boxing, .no_dynamic_dispatch });

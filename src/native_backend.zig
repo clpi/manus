@@ -4888,11 +4888,18 @@ test "native backend emits assembly listing for arithmetic" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
+    // The fixture used to be `x = 6; y = 7; x * y` inside `main`, and asserted a
+    // `mul` in the listing. Both operands are compile-time constants, so the
+    // backend folds the product to `mov x9, #42` and there is no `mul` to find —
+    // the assertion was requiring a de-optimization. Multiplying two PARAMETERS
+    // is arithmetic nothing can fold, which is what this test means to pin.
+    // Verified by value: the same program run through `--emit exe` exits 42.
     var lex = Lexer.init(
+        \\prod(a: i64, b: i64): i64
+        \\    a * b
+        \\end
         \\main(): i64
-        \\    x = 6
-        \\    y = 7
-        \\    x * y
+        \\    prod(6, 7)
         \\end
     , "native.duo");
     var parser = Parser.init(&lex, alloc);

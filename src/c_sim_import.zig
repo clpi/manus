@@ -282,7 +282,13 @@ test "c_sim_import: point.h → SIM entities" {
     defer aw.deinit();
     try sim.writeSnapshotJson(&snap, &aw.writer);
     const j1 = aw.written();
-    aw = .init(std.testing.allocator);
-    try sim.writeSnapshotJson(&snap, &aw.writer);
-    try std.testing.expectEqualStrings(j1, aw.written());
+    // Formatting invariance: the same snapshot must serialise identically twice.
+    // Re-`init`ing `aw` in place overwrote the first writer's buffer handle
+    // without deinit — 1382 bytes leaked every run — and left `j1` aliasing a
+    // buffer the writer no longer owned. A second writer keeps the first result
+    // alive and accounted for.
+    var aw2: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw2.deinit();
+    try sim.writeSnapshotJson(&snap, &aw2.writer);
+    try std.testing.expectEqualStrings(j1, aw2.written());
 }

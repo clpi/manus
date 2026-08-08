@@ -11,6 +11,15 @@ pub const Resolution = struct {
     region: pass25_tail_result_model.TailRegionKind = .tail_statement,
     /// Expression used for type-check / lowering (name ref for loop/branch-carried value).
     expr: *ast.Expr,
+    /// For `.tail_compound_assignment` only: the assignment TARGET.
+    ///
+    /// `expr` is the update expression (`x * 2` for `x *= 2`), which is what a
+    /// type check wants. A lowering pass must not evaluate it a second time —
+    /// the statement has already run, so re-evaluating reads the updated
+    /// binding and applies the operator twice: `twice(5)` returned 20 through
+    /// the direct backend where C returned 10, and `v.x += amt` returned
+    /// 5+3+3. The storage named here already holds the answer.
+    target: ?*ast.Expr = null,
     transparent_trailer_count: u8 = 0,
 };
 
@@ -171,10 +180,13 @@ fn resolveTailAssign(targets: []*ast.Expr, values: []*ast.Expr) ?Resolution {
     // to a function literally named `req`.
     if (isReqBinding(val)) return null;
     if (targets.len == 1) {
-        if (assignTargetName(targets[0])) |n| {
-            if (binopUpdatesName(val, n)) {
-                return .{ .rule = .tail_compound_assignment, .expr = val };
-            }
+        // Both spellings of a compound update — `x *= 2` and `v.x += amt` —
+        // desugar to `target = target <op> rhs`, so the shape check covers a
+        // field target as well as a name. It used to be name-only, which left
+        // the field case classified as an ordinary tail assignment and so
+        // re-evaluated by the lowerer.
+        if (binopUpdatesTarget(val, targets[0])) {
+            return .{ .rule = .tail_compound_assignment, .expr = val, .target = targets[0] };
         }
     }
     if (val.* == .call or val.* == .method_call) {
@@ -280,6 +292,19 @@ fn binopUpdatesName(val: *const ast.Expr, name: []const u8) bool {
     if (val.* != .binop) return false;
     return switch (val.binop.lhs.*) {
         .name => |n| std.mem.eql(u8, n.ident, name),
+        else => false,
+    };
+}
+
+/// `target <op> rhs` assigned back to `target` — the desugaring of `target op= rhs`.
+fn binopUpdatesTarget(val: *const ast.Expr, target: *const ast.Expr) bool {
+    if (val.* != .binop) return false;
+    const lhs = val.binop.lhs;
+    return switch (target.*) {
+        .name => |n| lhs.* == .name and std.mem.eql(u8, lhs.name.ident, n.ident),
+        .field => |f| lhs.* == .field and std.mem.eql(u8, lhs.field.field, f.field) and
+            f.obj.* == .name and lhs.field.obj.* == .name and
+            std.mem.eql(u8, lhs.field.obj.name.ident, f.obj.name.ident),
         else => false,
     };
 }
