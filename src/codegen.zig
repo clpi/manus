@@ -1594,6 +1594,12 @@ pub const CodeGen = struct {
             if (self.func_decls.get(mc.method)) |fd| {
                 return self.resolve_type(fd.func.ret_type);
             }
+            {
+                var tbuf: [256]u8 = undefined;
+                if (self.func_decls.get(self.mangled_name(mc.method, &tbuf))) |fd| {
+                    return self.resolve_type(fd.func.ret_type);
+                }
+            }
             if (self.static_dispatch_type_for_expr(mc.obj, mc.method)) |_| {
                 if (std.mem.eql(u8, mc.method, "increment") or
                     std.mem.eql(u8, mc.method, "decrement") or
@@ -14219,8 +14225,21 @@ pub const CodeGen = struct {
                     // Data wins the name by construction: reached only after
                     // member, alias-method and table-module dispatch decline,
                     // which is the receiver-shape knowledge gap[014] required.
-                    if (self.func_decls.contains(mc.method) or self.func_bodies.contains(mc.method)) {
-                        const cname = if (self.function_c_names.get(mc.method)) |cn| cn else mc.method;
+                    // Inside an EMBEDDED module the registries are keyed by the
+                    // MANGLED name (note_func_decl stores mangled_name(name)),
+                    // so the bare method never matched and lexer.duo's converted
+                    // faces fell through to the concatenation path.
+                    var mbuf: [256]u8 = undefined;
+                    const mangled = self.mangled_name(mc.method, &mbuf);
+                    const face_bare = self.func_decls.contains(mc.method) or self.func_bodies.contains(mc.method);
+                    const face_mangled = self.func_decls.contains(mangled) or self.func_bodies.contains(mangled);
+                    if (face_bare or face_mangled) {
+                        const cname = if (self.function_c_names.get(mc.method)) |cn|
+                            cn
+                        else if (face_mangled)
+                            mangled
+                        else
+                            mc.method;
                         self.p("{s}(", .{cname});
                         const self_rt: ?RT = if (mc.obj.* == .name)
                             self.local_type(mc.obj.name.ident) orelse self.record_aliases.get(mc.obj.name.ident)
