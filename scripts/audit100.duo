@@ -53,9 +53,20 @@
 -- usually a broken gate, so every zero here is positive-controlled).
 --
 -- AUDIT100_SHOW=<row>   print up to 20 offending lines for one row, with paths.
+-- AUDIT100_LIST=<path>  where to write the canonical file list.
+--
+-- NOT SAFE TO RUN CONCURRENTLY AT THE DEFAULT PATH, and that is why the
+-- override above exists. The canonical list used to be written to a fixed
+-- /tmp path with no override. A run in a detached worktree printed that
+-- worktree as its `root` and then counted THE MAIN TREE'S FILES, because a
+-- concurrent run in the main tree had rewritten the list underneath it — one
+-- tree's banner over another tree's numbers, with no indication. A fixed path
+-- in /tmp is a shared mutable surface. If you are measuring anything you
+-- intend to write down, point AUDIT100_LIST somewhere private and confirm the
+-- counts are stable across repeat runs.
 
 _SELF = "scripts/audit100.duo"
-_LIST = "/tmp/duo_audit100_canonical.list"
+_LIST = std.script.getenv("AUDIT100_LIST", "/tmp/duo_audit100_canonical.list")
 
 -- The string-body strip, as a shell fragment. Two passes, in this order:
 -- drop escaped quotes (`\"`) so they cannot close a body early, then drop
@@ -289,6 +300,29 @@ main(): i64
     if control == 0
         print("audit100: FAIL — control pattern matched 0 lines across "
             .. to(str)(listed) .. " canonical files; the grep pipeline is broken")
+        return 3
+    end
+
+    -- The SAME control, through the STRIPPED path — and it is a separate check
+    -- because the two paths are separate pipelines and only one of them was
+    -- ever controlled. Sixteen of the seventeen rows below are measured with
+    -- string bodies stripped; the control above is measured with them intact
+    -- (keep=1), so it never touches the sed at all.
+    --
+    -- What that missed, reproduced by perturbation 2026-08-08: replace the
+    -- strip with a sed that ERRORS (`sed -e 's/unterminated'`) and every
+    -- stripped row reads 0, every row is therefore under budget, and the gate
+    -- exits 0 saying "18 rows at or under budget". The no-op control below
+    -- cannot catch it — a broken sed emits nothing, so `razed` is 0, and
+    -- `kept > razed` is satisfied HARDER by the worse failure than by the
+    -- lesser one. A confident zero is usually a broken gate (CLAUDE.md §3),
+    -- and this gate had sixteen of them one shell error away.
+    stripped: i64 = _hits("[a-zA-Z]", 0)
+    if stripped == 0
+        print("audit100: FAIL — control pattern matched 0 lines through the"
+            .. " STRIPPED path while reading " .. to(str)(control)
+            .. " unstripped; the strip pipeline is broken and every row that"
+            .. " uses it would read a confident 0")
         return 3
     end
 
@@ -529,6 +563,32 @@ main(): i64
     --   HEAD and removing both new files, then re-running this gate. They are
     --   named here rather than absorbed silently, and they are that session's
     --   to lower.
+    --
+    -- 2026-08-08, SIXTH pass: NOT a rebaseline. Not one number below moved,
+    -- and this is what the ratchet looks like when it works.
+    --
+    -- The gate went red at `1bb304f` on two rows — `oneline` 2268/2258 and
+    -- `trailret` 3417/3415 — and it was red AT THE REBASELINE COMMIT ITSELF,
+    -- not because of anything landed after it. Attributed per file, counting
+    -- at `1bb304f` and again at `a6e35e8` in two detached worktrees with
+    -- AUDIT100_LIST pointed at private paths:
+    --
+    --   row        1bb304f   a6e35e8   all of it in
+    --   oneline      2268      2258    scripts/capability_matrix.duo  10 -> 0
+    --   trailret     3417      3415    scripts/capability_matrix.duo  14 -> 12
+    --
+    -- All 12 points, both rows, ONE file, and no other canonical file moved by
+    -- a single line. That file is the one the block above already names as the
+    -- other session's to lower, and `ce4a313` lowered it — the debt was paid at
+    -- source by the session that incurred it, which is the outcome the protocol
+    -- is for. So the budgets stay where they are and the gate is green against
+    -- them: every row now reads EXACTLY its budget again.
+    --
+    -- LOWERING was checked for the third consecutive pass and there is again
+    -- nothing to give back: all 17 line rows and `nonduo` read their budget to
+    -- the unit. Zero slack is the expected steady state of a ratchet whose
+    -- budgets are set to exact counts — but it has to be checked rather than
+    -- assumed, because "no slack" and "nobody looked" print the same.
     budgets: str = "14081 2254 1847 259 322 481 152 58 2028 442 167 128 228 36 2429 2258 3415"
 
     -- Per-row: 1 = measure with string bodies INTACT. Only `concatlit` sets
