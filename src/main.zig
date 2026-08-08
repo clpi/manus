@@ -3139,6 +3139,7 @@ fn spliceReqModules(
             continue;
         }
 
+        const added_start = added.items.len;
         for (ps.mod.body.stmts) |st| {
             switch (st) {
                 .func_decl => |fd| {
@@ -3185,6 +3186,27 @@ fn spliceReqModules(
                 else => {},
             }
         }
+
+        // ONE PREDICATE FOR DECLARATION AND USE. `wanted` decided which module
+        // FUNCTIONS came across; the literal test above decided which module
+        // BINDINGS did; and nothing checked that the second set covers what the
+        // first set reads. `std.wasm.opcodes` is the case that broke: its
+        // functions index `TYPES = { "i32", … }`, a table literal that
+        // `exprIsLiteral` rejects, so `type_index` was spliced and `TYPES` was
+        // not. The splice mutates the AST the C emitter later walks, so the use
+        // survived into the emitted C with no declaration anywhere in the file
+        // — `error: use of undeclared identifier 'TYPES'`, twenty of them.
+        //
+        // A spliced body may read only module-scope names spliced beside it.
+        // If the walk cannot see the whole body it must not answer "clean"
+        // either. Either way the module goes back unspliced, which is the
+        // honest undefined-symbol bail this splice replaced.
+        if (!spliceIsSelfContained(alloc, &ps.mod, added.items[added_start..])) {
+            added.shrinkRetainingCapacity(added_start);
+            if (term.trace) term.traceStep("req-splice-unbound-module-name", .{});
+            continue;
+        }
+
         for (ps.mod.body.stmts) |st| {
             if (topLevelName(st)) |n| try taken.put(alloc, n, {});
         }
@@ -3201,19 +3223,80 @@ fn spliceReqModules(
     return added.items.len;
 }
 
-/// One AST walk, two questions, because they differ only in what counts as a
-/// hit and duplicating a twenty-arm statement walker to ask the second one is
-/// how the two drift apart later.
+/// Does every module-scope name the spliced declarations READ come across with
+/// them? The call closure picks the functions and a literal test picks the
+/// bindings; this is the check that makes those two answer together, so a
+/// reference cannot outlive its declaration into the emitted C.
+///
+/// `false` means "not provably self-contained", which includes "the walk met an
+/// expression form it does not descend into". A splice that cannot be proved is
+/// not taken, and an untaken splice is the honest undefined-symbol bail.
+fn spliceIsSelfContained(
+    alloc: std.mem.Allocator,
+    src: *const ast.Module,
+    spliced: []const ast.Stmt,
+) bool {
+    // What the splice binds. A spliced function's path was re-rooted to
+    // `[alias, name]`, so `topLevelName` — which wants `path.len == 1` — does
+    // not see it; ask for the last segment instead.
+    var bound: std.StringHashMapUnmanaged(void) = .empty;
+    defer bound.deinit(alloc);
+    for (spliced) |st| {
+        const name = switch (st) {
+            .func_decl => |fd| if (fd.path.len == 0) continue else fd.path[fd.path.len - 1],
+            else => topLevelName(st) orelse continue,
+        };
+        bound.put(alloc, name, {}) catch return false;
+    }
+
+    // What the spliced bodies read. Locals and parameters land in here too;
+    // a module-scope name shadowed by one of them only costs a declined
+    // splice, never a wrong program.
+    var used: std.StringHashMapUnmanaged(void) = .empty;
+    defer used.deinit(alloc);
+    var scan = CallScan{
+        .alias = null,
+        .siblings = &empty_name_set,
+        .out = &used,
+        .alloc = alloc,
+        .free = &used,
+    };
+    for (spliced) |st| {
+        if (st != .func_decl) continue;
+        collectBareCallsInBlock2(&st.func_decl.func.body, &scan) catch return false;
+    }
+    if (scan.blind) return false;
+
+    for (src.body.stmts) |st| {
+        const name = topLevelName(st) orelse continue;
+        if (used.contains(name) and !bound.contains(name)) return false;
+    }
+    return true;
+}
+
+/// One AST walk, three questions, because they differ only in what counts as a
+/// hit and duplicating a twenty-arm statement walker to ask the others is how
+/// they drift apart later.
 ///
 ///   * `alias` set   — collect `<alias>.<field>(…)`: what the PROGRAM calls
 ///                     into a module, i.e. what a splice must supply.
 ///   * `alias` null  — collect bare calls naming a member of `siblings`: what
 ///                     a spliced function reaches for INSIDE its own module.
+///   * `free` set    — collect every bare identifier read, which is how
+///                     `spliceIsSelfContained` learns what a spliced body
+///                     depends on.
 const CallScan = struct {
     alias: ?[]const u8,
     siblings: *const std.StringHashMapUnmanaged(void),
     out: *std.StringHashMapUnmanaged(void),
     alloc: std.mem.Allocator,
+    /// Non-null in free-name mode: every bare identifier the walk reads.
+    free: ?*std.StringHashMapUnmanaged(void) = null,
+    /// Set when the walk meets a node it does not descend into. A free-name
+    /// scan that reports "nothing unbound" after skipping part of the body is
+    /// exactly the asymmetry this check exists to catch, so it reports its own
+    /// blind spots instead.
+    blind: bool = false,
 
     fn hit(self: *const CallScan, c: anytype) std.mem.Allocator.Error!void {
         if (self.alias) |a| {
@@ -3304,7 +3387,10 @@ fn collectBareCallsInStmt(
         },
         .ret => |d| for (d.vals) |e| try collectBareCallsInExpr(e, scan),
         .func_decl => |fd| try collectBareCallsInBlock2(&fd.func.body, scan),
-        else => {},
+        // Statements that hold no expression to walk.
+        .brk, .cont, .goto_stmt, .label_stmt, .cinclude, .directive => {},
+        // Everything else can hold a name this walk would not see.
+        else => scan.blind = true,
     }
 }
 
@@ -3332,7 +3418,41 @@ fn collectBareCallsInExpr(
             try collectBareCallsInExpr(ix.key, scan);
         },
         .field => |f| try collectBareCallsInExpr(f.obj, scan),
-        else => {},
+        .name => |n| if (scan.free) |f| try f.put(scan.alloc, n.ident, {}),
+        .table => |t| for (t.fields) |fl| switch (fl) {
+            .indexed => |kv| {
+                try collectBareCallsInExpr(kv.key, scan);
+                try collectBareCallsInExpr(kv.val, scan);
+            },
+            .named => |kv| try collectBareCallsInExpr(kv.val, scan),
+            .positional, .spread => |v| try collectBareCallsInExpr(v, scan),
+            .semantic => |s| try collectBareCallsInExpr(s.val, scan),
+        },
+        .func_expr => |fb| try collectBareCallsInBlock2(&fb.body, scan),
+        .if_expr => |ie| {
+            try collectBareCallsInExpr(ie.cond, scan);
+            try collectBareCallsInExpr(ie.then_expr, scan);
+            try collectBareCallsInExpr(ie.else_expr, scan);
+        },
+        .range => |r| {
+            try collectBareCallsInExpr(r.start, scan);
+            try collectBareCallsInExpr(r.end, scan);
+            if (r.step) |s| try collectBareCallsInExpr(s, scan);
+        },
+        .contains_expr => |c| {
+            try collectBareCallsInExpr(c.lhs, scan);
+            try collectBareCallsInExpr(c.rhs, scan);
+        },
+        .try_expr => |x| try collectBareCallsInExpr(x.operand, scan),
+        .unwrap_expr => |x| try collectBareCallsInExpr(x.operand, scan),
+        .await_expr => |x| try collectBareCallsInExpr(x.operand, scan),
+        .sequence => |s| for (s.exprs) |x| try collectBareCallsInExpr(x, scan),
+        // Leaves that carry no identifier.
+        .nil, .true_lit, .false_lit, .vararg, .semantic_scope => {},
+        .int_lit, .float_lit, .string_lit, .semantic => {},
+        // Everything else can hold a name this walk would not see. Saying so
+        // is what lets the free-name check decline instead of guessing.
+        else => scan.blind = true,
     }
 }
 
@@ -3900,6 +4020,26 @@ fn do_compile(
                     // no longer a link input, so doing this first is also what
                     // keeps the "max 1 runtime-linked module" ceiling from
                     // counting dependencies that no longer need an object.
+                    //
+                    // THE SPLICE BELONGS TO THIS OBJECT AND NOTHING ELSE. It
+                    // rewrites `ps.mod` in place, and `ps.mod` is also what the
+                    // C emit below walks when this path declines — so a
+                    // transform that exists only to feed the direct backend was
+                    // deciding what the C backend compiled. When the direct
+                    // backend then bailed, the spliced declarations survived as
+                    // dead C nobody calls, and dead C still has to type-check:
+                    // `instruction_descriptor_smoke` died on
+                    // `return ((int64_t)lua_to_num(63))` in a spliced body whose
+                    // constant had been hoisted to a boxed program global, and
+                    // `wasm_opcode_projection_proof` on identifiers the splice
+                    // never brought over. Both programs call the module's own
+                    // C-emitted function; neither ever reaches the splice.
+                    //
+                    // So the restore below is the same rule as
+                    // `spliceIsSelfContained`, applied one level out: the
+                    // predicate that decides a declaration is emitted must be
+                    // the one that decides its use is. No object, no splice.
+                    const pre_splice_stmts = ps.mod.body.stmts;
                     const spliced = spliceReqModules(alloc, io, &ps.mod) catch 0;
                     if (spliced != 0 and term.trace) term.traceStep("req-splice", .{});
                     const runtime_linked_modules = try directLinkInputs(alloc, io, &ps.mod, mt, cc);
@@ -3965,6 +4105,9 @@ fn do_compile(
                         }
                         return;
                     } else |e| {
+                        // No object: put the program back the way the C emit
+                        // expects to find it.
+                        if (spliced != 0) ps.mod.body.stmts = pre_splice_stmts;
                         if (std.mem.eql(u8, backend_mode, "auto")) {
                             if (term.info) term.infoMsg("auto backend: direct machine lowering unavailable ({s}) — using C emit bootstrap", .{@errorName(e)});
                         } else {

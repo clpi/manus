@@ -161,6 +161,7 @@ smoke_targets(): any
     {
         "examples/agent_hooks_showcase.duo",
         "examples/wasm_opcode_projection_proof.duo",
+        "examples/req_splice_table_constant_proof.duo",
         "examples/script_lock_smoke.duo",
         "examples/nested_std_req_smoke.duo",
         "examples/json_direct_iteration_smoke.duo",

@@ -1,0 +1,16 @@
+-- Fixture module for the `req` splice's DECLARATION/USE agreement (see
+-- `spliceIsSelfContained` in src/main.zig). Deliberately plain canonical Duo:
+-- no directives, no `@comp.c.export`, so the direct backend can only reach it
+-- by absorbing it, which is the path under test.
+--
+-- The one thing this module has that `lib/nativespliceprobe.duo` does not is a
+-- module-scope constant bound to a TABLE literal. `exprIsLiteral` admits ints,
+-- floats, strings and bools, so a table binding was dropped from the splice
+-- while the function that indexes it came across anyway — the emitted C then
+-- read an identifier no declaration in the file introduced. That is the shape
+-- `std.wasm.opcodes` has, in twelve lines instead of two hundred.
+slots = { 40, 41, 42 }
+
+pick(i: i64): i64
+  slots[i]
+end
