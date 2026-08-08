@@ -66,6 +66,12 @@ To promote a file, add a one-line rule above the rule that currently catches it.
   re-adjudicated to `canonical` one at a time as they are revived.
 - `scripts/` is `canonical` even though every gate in it shells out. Shelling
   out is a library call, not a foreign file.
+- `examples/spec100/` is `canonical` and is the one place in `examples/` that
+  is promoted by construction rather than case by case: each file is the
+  fixture for one Pass 100 §20 construct, checked by `zig build spec-corpus`.
+  The §20 blocks themselves are NOT here — the gate extracts them from
+  `docs/spec/pass100.md` on every run, because a tracked copy of the spec's
+  own text is a second source of truth and its drift is invisible.
 - `scripts/audit100.duo` is excluded from its own scan by the gate itself, and
   the gate prints that it did. Its deny patterns are DATA; a corpus walker whose
   data is the thing it greps for reports its own source. This repo has already
@@ -94,6 +100,7 @@ foreign        examples/ffi
 foreign        examples/wasm/
 compatibility  examples/lua
 compatibility  examples/test_lua
+canonical      examples/spec100/
 historical     examples/
 foreign        vendor/
 historical     test.duo

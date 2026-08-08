@@ -144,6 +144,17 @@ fn native_diag_fail(tag: []const u8) void {
 /// a hand-written tag per line is exactly the drift `@src()` avoids.
 var native_scalar_fail_line: u32 = 0;
 
+/// A TypeExpr's shape, for a diagnostic. `.named` carries the actual spelling,
+/// which is the whole point — "some type is not native" sends a reader looking
+/// at the wrong declaration; "ret type: any" does not.
+fn typeLabel(t: ast.TypeExpr) []const u8 {
+    return switch (t) {
+        .named => |n| n,
+        .inferred => "inferred",
+        else => @tagName(t),
+    };
+}
+
 fn nofit(src: std.builtin.SourceLocation) bool {
     if (native_scalar_fail_line == 0 and native_diag_tag == null) native_scalar_fail_line = src.line;
     return false;
@@ -3281,10 +3292,16 @@ pub const CodeGen = struct {
                     if (@import("directives.zig").attrsHaveDebug(fd.attributes)) return nofit(@src());
                     // Allow closures and methods — they compile to C functions.
                     if (fd.func.type_params != null) return nofit(@src());
-                    if (!self.type_expr_is_native_scalar(fd.func.ret_type)) return nofit(@src());
+                    if (!self.type_expr_is_native_scalar(fd.func.ret_type)) {
+                        native_diag_fail_fmt("ret-type:{s}", .{typeLabel(fd.func.ret_type)});
+                        return nofit(@src());
+                    }
                     for (fd.func.params) |param| {
                         if (param.default_val != null) return nofit(@src());
-                        if (!self.type_expr_is_native_scalar(param.typ)) return nofit(@src());
+                        if (!self.type_expr_is_native_scalar(param.typ)) {
+                            native_diag_fail_fmt("param-type:{s}", .{typeLabel(param.typ)});
+                            return nofit(@src());
+                        }
                     }
                     if (!self.block_is_native_scalar(fd.func.body, true)) {
                         native_diag_fail("func-body");
