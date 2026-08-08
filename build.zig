@@ -784,7 +784,7 @@ pub fn build(b: *std.Build) void {
     pass_gates_step.dependOn(passes_audit_step);
 
     // Agent-smoke gate (tier-0): public safety + coordination/stdlib/meta smokes
-    const agent_smoke_cmd = b.addSystemCommand(&.{ "bash", "scripts/duo_lock.sh", "--", "./zig-out/bin/duo", "run", "scripts/agent_smoke.duo" });
+    const agent_smoke_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/duo_lock.duo", "--", "./zig-out/bin/duo", "run", "scripts/agent_smoke.duo" });
     agent_smoke_cmd.setCwd(b.path("."));
     agent_smoke_cmd.step.dependOn(b.getInstallStep());
     const agent_smoke_step = b.step("agent-smoke", "Run tier-0 agent-smoke gate (public safety, coordination, stdlib, meta)");
@@ -806,7 +806,7 @@ pub fn build(b: *std.Build) void {
     const meta_smoke_step = b.step("meta-smoke", "Run G-061 tier-0 @comp.* metaprogramming smokes");
     meta_smoke_step.dependOn(b.getInstallStep());
     inline for (meta_smoke_paths) |path| {
-        const cmd = b.addSystemCommand(&.{ "bash", "scripts/duo_lock.sh", "--", "./zig-out/bin/duo", "run", path });
+        const cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/duo_lock.duo", "--", "./zig-out/bin/duo", "run", path });
         cmd.setCwd(b.path("."));
         meta_smoke_step.dependOn(&cmd.step);
     }
@@ -814,7 +814,7 @@ pub fn build(b: *std.Build) void {
     // G-061 strict dispatch gate: metaprogramming smoke under DUO_TRANSFORM_GATE=1
     const meta_gate_cmd = b.addSystemCommand(&.{
         "bash",                                                                                                                 "-c",
-        "DUO_TRANSFORM_GATE=1 DUO_PROVENANCE=1 scripts/duo_lock.sh -- ./zig-out/bin/duo run examples/metaprogramming_test.duo",
+        "DUO_TRANSFORM_GATE=1 DUO_PROVENANCE=1 ./zig-out/bin/duo run scripts/duo_lock.duo -- ./zig-out/bin/duo run examples/metaprogramming_test.duo",
     });
     meta_gate_cmd.setCwd(b.path("."));
     meta_gate_cmd.step.dependOn(b.getInstallStep());

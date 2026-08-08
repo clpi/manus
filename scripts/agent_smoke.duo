@@ -1,7 +1,7 @@
 -- Agent tier-0 gate — Duo-native scripting (replaces bash logic; bash wrapper optional).
 -- Safe for parallel agent sessions; does NOT run bench/ml-bench/gpu-bench.
 -- Run: duo run scripts/agent_smoke.duo
--- Or:  scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/agent_smoke.duo
+-- Or:  duo run scripts/duo_lock.duo -- ./zig-out/bin/duo run scripts/agent_smoke.duo
 
 agent = req "std.agent"
 script = req "std.script"

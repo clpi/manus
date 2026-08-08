@@ -35,14 +35,17 @@ else
         i = i + 2
     end
 
-    if i > n or args[i] != "--"
-        print("duo_lock: expected -- before command")
-        os.exit(64)
+    -- `duo run script.duo -- cmd args` CONSUMES the `--` itself; the script
+    -- receives only what follows. This used to require `--` in its own argv and
+    -- rejected every invocation with "expected -- before command", which is why
+    -- build.zig still called the bash version. A leading `--` is tolerated for
+    -- anyone invoking the script directly, but never required.
+    if i <= n and args[i] == "--"
+        i = i + 1
     end
 
-    i = i + 1
     if i > n
-        print("duo_lock: no command after --")
+        print("duo_lock: no command given")
         os.exit(64)
     end
 
