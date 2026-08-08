@@ -148,12 +148,12 @@ pub fn build(b: *std.Build) void {
     const repo_hygiene_step = b.step("repo-hygiene", "Pass 11 WP-12: forbidden root artifacts and tracked agent noise");
     repo_hygiene_step.dependOn(&repo_hygiene_cmd.step);
 
-    const repro_cmd = b.addSystemCommand(&.{ "bash", "./scripts/reproducibility_smoke.sh" });
+    const repro_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/reproducibility_smoke.duo" });
     repro_cmd.setCwd(b.path("."));
     const repro_step = b.step("reproducibility-smoke", "Pass 11 WP-13: ReleaseFast compiler binary identity across clean rebuilds");
     repro_step.dependOn(&repro_cmd.step);
 
-    const pass11_direct_cmd = b.addSystemCommand(&.{ "bash", "./scripts/pass11_direct_smoke.sh" });
+    const pass11_direct_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/pass11_direct_smoke.duo" });
     pass11_direct_cmd.setCwd(b.path("."));
     pass11_direct_cmd.step.dependOn(b.getInstallStep());
     const pass11_direct_step = b.step("pass11-direct-smoke", "Pass 11: direct ARM64 record proof smoke (macOS AArch64 only)");
@@ -221,13 +221,13 @@ pub fn build(b: *std.Build) void {
     pass11_module_step.dependOn(&run_pass11_module_ward.step);
     pass11_module_step.dependOn(&pass11_module_catalog_cmd.step);
 
-    const pass11_blob_cmd = b.addSystemCommand(&.{ "bash", "./scripts/pass11_blob_object_smoke.sh" });
+    const pass11_blob_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/pass11_blob_object_smoke.duo" });
     pass11_blob_cmd.setCwd(b.path("."));
     pass11_blob_cmd.step.dependOn(b.getInstallStep());
     const pass11_blob_step = b.step("pass11-blob-object-smoke", "Pass 11 WP-05: byte blob direct Mach-O object (macOS AArch64 only)");
     pass11_blob_step.dependOn(&pass11_blob_cmd.step);
 
-    const pass11_spill_cmd = b.addSystemCommand(&.{ "bash", "./scripts/pass11_spill_smoke.sh" });
+    const pass11_spill_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/pass11_spill_smoke.duo" });
     pass11_spill_cmd.setCwd(b.path("."));
     pass11_spill_cmd.step.dependOn(b.getInstallStep());
     const pass11_spill_step = b.step("pass11-spill-smoke", "Pass 11 WP-03: register spill proof (macOS AArch64 only)");
