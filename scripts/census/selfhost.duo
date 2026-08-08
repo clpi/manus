@@ -16,6 +16,15 @@
 
 parser = std.compiler.parser
 
+-- Pinned floor: the MEASURED count. Raised 6 -> 8 on 2026-08-07 when the two
+-- missing forms were added to proj_desc_body (slot defaults) and proj_unary
+-- (the leading-`:` sibling call). Verified against the 256-file corpus walk in
+-- the same run, which stayed at 256/256 — a parser change that gains rows and
+-- loses corpus is a regression wearing a win.
+floor = 8
+
+parser = std.compiler.parser
+
 ok = 0
 seen = 0
 report = ""
@@ -45,13 +54,26 @@ main(): i64
 
     -- The Epoch 2 forms the Zig parser also refuses.
     accepts("E2 inline case-set", "kind: {\n    name\n    number\n    eof\n}\n")
-    accepts("E2 method + sibling call", "lexer: {\n    pos: u32\n    peek = () .pos\n    next = () :peek()\n}\n")
+    -- The sibling call in its CANONICAL position. The one-line spelling
+    -- `next = () :peek()` was the first probe here and it is genuinely
+    -- ambiguous: `:` after a param list is the RETURN-TYPE marker (parser.duo
+    -- line 685), so that text reads as "lambda returning type peek" and
+    -- projected `(ret peek)`. Epoch 2 §3's own shape puts the sibling call in a
+    -- multiline body, which is unambiguous — a leading `:` at statement start
+    -- has no params to attach to.
+    accepts("E2 method + sibling call", "lexer: {\n    pos: u32\n    peek = () .pos\n    next = ()\n        b = :peek()\n        b\n    end\n}\n")
 
     io.write(report)
-    print("selfhost: {ok}/{seen} accepted by the Duo parser")
+    print("selfhost: {ok}/{seen} accepted by the Duo parser (floor {floor})")
     print("")
     print("  Read against GAP-035: every accepted row is a form the ZIG parser")
     print("  rejects. Where the Duo parser accepts, the gap is in the bootstrap")
     print("  compiler, not in the language — and the repair belongs in Duo.")
+
+    if ok < floor
+        print("selfhost: FAIL — a form the Duo parser used to accept has regressed")
+        return 1
+    end
+    print("selfhost: PASS")
     0
 end

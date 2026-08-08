@@ -103,6 +103,17 @@ pub const Op = enum {
     /// runtime call, so a tokenizer built on `string.len` stays inside the
     /// direct backend subset.
     str_len,
+    /// Native observable output. `native_backend.zig` already carries the full
+    /// lowering for this tag (`.str` → puts, numeric → printf), but the tag
+    /// itself was never declared here, so the branch tip did not compile:
+    ///
+    ///     native_backend.zig:1539: enum 'duo_native_ir.Op' has no member
+    ///                              named 'print_value'
+    ///
+    /// Declared here to restore buildability — see gap[037]. Nothing emits it
+    /// yet, so this is inert until a lowering site in `dnir_lower.zig` produces
+    /// it; the handler is what gives the tag its meaning.
+    print_value,
 };
 
 pub const Value = union(enum) {
@@ -249,6 +260,12 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
                     .hw_spin,
                     .hw_unary,
                     .str_len,
+                    // In the direct subset by the backend's own account: the
+                    // `.print_value` handler lowers to Mach-O `_puts`/`_printf`
+                    // externs precisely so "a program whose only dynamic
+                    // surface is output stays sovereign machine code". Treating
+                    // it as native-direct-ready is what that comment asserts.
+                    .print_value,
                     => {},
                 }
             }

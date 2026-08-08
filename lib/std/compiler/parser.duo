@@ -1107,6 +1107,17 @@ proj_desc_body = (lx: Lexer): str
             if v != ""
                 s = s .. " " .. v
             end
+            -- `x: i64 = 42` — a slot carrying BOTH its shape and a default.
+            -- The keyed arm consumes `x` and `:` and projects the shape, which
+            -- leaves `=` where the loop expects a comma or `}`; the next turn
+            -- takes the `else` arm, projects nothing, and stalls into an error
+            -- (measured: `(desc x i64 (item (error)) (item 42))`). Pass 81 §2.3
+            -- names `default` a family and Epoch 2 spells param defaults the
+            -- same way, so the shape-plus-default slot has to parse here.
+            if lexer.peek(lx).kind == token.KIND_ASSIGN
+                eq = lexer.next(lx)
+                s = s .. " (default " .. proj_expr(lx) .. ")"
+            end
         else
             before: i64 = lx.pos
             peeked = lx.has_peeked
@@ -1283,6 +1294,18 @@ proj_unary = (lx: Lexer): str
     if t.kind == token.KIND_TILDE
         _o = lexer.next(lx)
         return "(bnot " .. proj_unary(lx) .. ")"
+    end
+    -- Leading `:` is the SIBLING CALL (Epoch 2 §1): inside a method body,
+    -- `:peek()` invokes a sibling on the ambient subject. Position decides,
+    -- exactly as it does for `~` above — WITH a left operand `:` is the
+    -- receiver call `a:m(x)` and proj_postfix owns it, but LEADING there is no
+    -- left operand for the infix level to have parsed, so nothing claimed it.
+    -- Measured before this arm existed, the body `() :peek()` projected
+    -- `(ret peek) (lambda (params) (error))` — the `:` was dropped and `peek`
+    -- read as a bare return.
+    if t.kind == token.KIND_COLON
+        _s = lexer.next(lx)
+        return "(sibling " .. proj_postfix(lx) .. ")"
     end
     proj_pow(lx)
 end
