@@ -3,6 +3,13 @@
 (function_declaration
   name: (function_name) @definition.function)
 
+; GR-001 — the form most Duo functions are actually written in.
+(bare_function_declaration
+  name: (function_name) @definition.function)
+
+(foreign_declaration
+  name: (function_name) @definition.function)
+
 (function_expression
   ) @definition.function
 
@@ -31,6 +38,3 @@
 
 (field_expression
   (identifier) @reference.property)
-
-(import_statement
-  (identifier) @reference.import)

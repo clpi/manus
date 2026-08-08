@@ -10,7 +10,6 @@
   "fun"
   "end"
   "return"
-  "break"
   "goto"
   "do"
   "if"
@@ -37,7 +36,6 @@
   "catch"
   "try"
   "defer"
-  "async"
   "await"
   "enum"
   "concept"
@@ -48,14 +46,10 @@
   "type"
 ] @keyword
 
-; ── Type keywords ─────────────────────────────────────────────────────────────
-
-[
-  "i8" "i16" "i32" "i64"
-  "u8" "u16" "u32" "u64"
-  "f32" "f64"
-  "bool" "void" "str"
-] @type.builtin
+; ── Types ─────────────────────────────────────────────────────────────────────
+;
+; `i64` / `str` / `void` are not tokens in this grammar — they are ordinary
+; identifiers reaching `named_type`, which the rule below already covers.
 
 (named_type) @type
 (generic_type) @type
@@ -89,6 +83,26 @@
 
 (function_expression) @function
 
+; GR-001, the canonical declaration form, and its value and bodyless spellings.
+(bare_function_declaration
+  name: (function_name) @function)
+
+(foreign_declaration
+  name: (function_name) @function)
+
+(function_value_expression) @function
+
+(break_statement) @keyword
+(empty_statement) @punctuation.delimiter
+(shebang) @comment
+(field_projection
+  "." @punctuation.special
+  (identifier) @property)
+(descriptor_constructor
+  "@" @punctuation.special)
+(type_parameter
+  (identifier) @type)
+
 ; ── Parameters ────────────────────────────────────────────────────────────────
 
 (parameter
@@ -115,7 +129,7 @@
 ] @punctuation.bracket
 
 [
-  "," "." ":" "::" ";"
+  "," "." ":" "::"
 ] @punctuation.delimiter
 
 ; ── Operators ─────────────────────────────────────────────────────────────────
@@ -130,7 +144,12 @@
   [
     "and" "or" "<" ">" "<=" ">=" "~=" "=="
     "+" "-" "*" "/" "//" "%" "^" ".."
-    "<<" ">>" "|" "~" "in"
+    "<<" ">>" "|" "&" "~" "!=" "|>" "in"
+  ] @operator)
+
+(compound_assignment
+  [
+    "+=" "-=" "*=" "/=" "%=" "^="
   ] @operator)
 
 (unary_expression
@@ -198,10 +217,4 @@
 ; ## prefix for comptime (legacy, still supported)
 "##" @keyword.operator
 
-; Compile-time builtins called with @name(...)
-; Highlighted as special function calls
-(call_expression
-  function: (field_expression
-    object: (identifier) @_obj
-    field: (identifier) @function.builtin)
-  (#match? @_obj "^@"))
+; `@name(...)` needs no separate pattern: it IS an `attribute`, captured above.

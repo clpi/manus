@@ -963,7 +963,7 @@ Closed since filing and not listed: GAP-017, 020, 021, 022, 023, 024, 026
 | **GAP-043** | `std.script`'s ergonomic aliases are all nil at runtime. |
 | **GAP-044** | A function cannot be attached to a table, in any spelling. |
 | **GAP-045** | Textual names still carry semantic identity in `sema` and codegen — **partially closed** (`986fee4` gave a binding its scope chain; `b339f68` gave occurrences positional ids). |
-| **GAP-049** | `ext/tree-sitter-duo/grammar.js` is authored, not projected; there is no declarative production registry in Duo to project it from, and it does not currently pass `tree-sitter generate`. |
+| **GAP-049** | `ext/tree-sitter-duo/grammar.js` is authored, not projected; there is no declarative production registry in Duo to project it from. It builds and now recognises **93.8 %** of the corpus (was 10 %) — the projection itself is untouched. |
 
 `docs/spec/AUTHORITY.md` additionally carries four unticked P0 items:
 `@`-directive ontology → graph/world facts; stable semantic identity across
@@ -1052,25 +1052,56 @@ Stated plainly, no hedging.
      at 3 (`CENSUS_JS_FLOOR`). It is debt, not "generated", because a
      sanctioned generated artifact must name its generator and none of the
      three has one.
-   - **It does not build.** `tree-sitter generate` exits 1 in that directory
-     with an unresolved conflict on `return_statement` (`'return' • '('`).
-     Verified against the pristine `HEAD` copy as well as the working tree. The
-     tracked `src/grammar.json` beside it lists the same 90 rule names and is
-     output from a tree-sitter that resolved the conflict; the CLI installed
-     here does not. `scripts/setup-nvim.duo` runs the generator with
-     `>/dev/null 2>&1` and prints `-- tree-sitter generate failed`, which reads
-     like a skipped optional step.
+   - **It did not build, and now does.** `tree-sitter generate` exited 1 on an
+     unresolved `return_statement` conflict (`'return' • '('`), verified
+     against the pristine `HEAD` copy as well as the working tree, and the
+     tracked `src/grammar.json` beside it was **not** a fallback — regenerating
+     from that JSON alone failed identically, and `parser.c` is untracked, so
+     no editor on this tree had a parser by any route. Repaired at `54708c1`
+     (`prec.right` plus 36 proven-necessary `conflicts:` entries), and
+     `scripts/setup-nvim.duo`, which had been running the generator under
+     `>/dev/null 2>&1`, now prints its output and returns 1.
+
+   - **It recognised 10 % of the corpus.** With a parser finally available,
+     `tree-sitter parse` over all 748 tracked `.duo` files put **75** of them
+     through with no ERROR node. **423 of the 673 failures were one missing
+     rule** — the bare function declaration `fib(n: any)` (GR-001), which is
+     Pass 100's own canonical form. GAP-049 deferred it as "a language
+     decision"; it was not one, and it is now **702 of 748 — 93.8 %**, in nine
+     measured steps recorded in that gap and in the file's header. Ten missing
+     surfaces in all: GR-001, the operator table (`!=` `&` `~` `|>` and the six
+     compound assignments, none of which matched `src/lexer.zig`), the function
+     value form, N-segment `@` directives with expression arguments, `@{ … }`,
+     the shebang, `;`, long strings containing a `]`, `->` results, default
+     parameters, `.field` projection, bodyless `@ffi` declarations,
+     `alias N = T`, constrained type parameters, bracket types, and Lua's
+     `f "s"` / `f { … }` sugar.
+
+     **Two of those repairs the recognition count could not see, and they
+     matter more than the percentage.** `require "x"` had no rule in **95**
+     tracked files and never produced an ERROR node, because `require` and
+     `"x"` are each a valid expression statement — so the editors were handed
+     two unrelated statements and the count called the file recognised. The
+     same ambiguity made every `if f(x) …` read its condition as the bare `f`,
+     on the pristine `HEAD` grammar too. A file with no ERROR node is not a
+     correct tree.
+   - **The `queries/*.scm` files did not compile either**, on `HEAD` as well:
+     `highlights.scm` failed at line 13 on the node type `break`, `tags.scm` on
+     `import_statement`, and both named fields the grammar never declared. So
+     the editor front-ends were dead twice over. All four compile now.
 
    **It was not converted, and must not be deleted.** The descriptor surface it
    would be projected from does not exist: `lib/std/compiler/parser.duo` is an
    imperative recursive-descent parser over a ~12-production bounded subset,
    `docs/GRAMMAR_SPEC.md` is prose, `duo token-tables emit` is lexical only, and
-   `duo graph` is downstream of parsing. Separately, the 90 rules still spell a
+   `duo graph` is downstream of parsing. Separately, the rules still spell a
    pre-Pass-100 surface (`match`, `enum`, `try`/`catch`, `concept`, optional
    types, `local`, `const`, `function`), every one denied by `CLAUDE.md` §1 —
-   so regenerating it from Pass 100 descriptors would change which programs the
-   editors recognise, a language decision downstream of GAP-025. **`GAP-049`**
-   names the three missing pieces and the order they have to land in.
+   and every one still **used by the corpus** or still assigned a token number
+   by the generated `lib/std/token/classify.duo`, so retiring one is the
+   language decision, not adding one. **`GAP-049`** names the three missing
+   pieces and the order they have to land in. Recognising 93.8 % of the corpus
+   discharges none of them.
 9. **The shared working tree is not a measurement surface**, and neither is
    `/tmp`. Concurrent sessions caused one transient gate failure during this
    pass, and `audit100`'s fixed `/tmp/duo_audit100_canonical.list` was
