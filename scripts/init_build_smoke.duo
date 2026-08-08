@@ -36,12 +36,13 @@ _at(dir: str, cmd: str): i64
     std.script.status("cd " .. dir .. " && " .. cmd)
 end
 
--- NOT std.script.fs_exists: that whole predicate family (fs_exists, fs_is_file,
--- fs_is_dir) is built on an `@c.emit` statement-expression whose value never
--- reaches the Duo caller, so all three return nil for EVERY path -- present or
--- absent alike. `if not fs_exists(p)` is therefore always taken. A gate that
--- asserted a build artifact into existence with it would report the artifact
--- missing whether or not it was built. See gap[41].
+-- NOT std.script.exists: std.script's whole block of ergonomic aliases (exists,
+-- is_file, is_dir, read, ...) returns nil for EVERY input, because a module-scope
+-- function re-exported under a SECOND name does not survive lowering. The
+-- underlying fs_exists works; the short name does not. nil is falsy, so
+-- `if not exists(p)` is taken for present and absent paths alike -- the first
+-- draft of this gate reported "no duo binary" for a 7.3 MB binary at exactly
+-- that path. See gap[43].
 _present(path: str): bool
     std.script.status("test -e " .. path) == 0
 end
