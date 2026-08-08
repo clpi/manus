@@ -33,15 +33,36 @@ WARD_WASM=<abs path> WARD_INVOKE=<export> WARD_ENGINE=jit|interp /tmp/ward
 ```
 
 `WARD_INVOKE` defaults to `run`. `WARD_DUMP=<path>` dumps the emitted JIT words;
-`WARD_PHASES=1` prints read/walk/alloc/compile timings.
+`WARD_PHASES=1` prints read/walk/alloc/compile timings; **`WARD_JIT_TRACE=1`
+names the reason the JIT declined a body** — it declines silently otherwise and
+`main` runs the interpreter without saying so, which is how `hot_big` stayed 30x
+behind wasmtime while printing the right answer.
+
+## The test suite
+
+```bash
+zig build ward-test          # from the repo root — builds ward, then runs:
+duo run test/conform.duo     # from ext/ward, against WARD_BIN (default /tmp/ward)
+```
+
+`test/conform.duo` runs every `.wasm` fixture under **both engines and both
+entry shapes** and differences the answer against wasmtime **by value**. It
+refuses to print a score until five controls pass (exit 3, not 1): both
+binaries respond, the module path reaches the runtime, the comparator can
+return a red, a perturbed module is refused, a missing module is refused.
+Read `HANDOFF.md` for what it found on its first run.
+
+Note `ext/ward/test/` is covered by the ROOT `.gitignore`'s bare `test`
+pattern, so files there need `git add -f`.
 
 ## What does NOT build
 
 `src/wasm/*.duo` (1406 code lines) and `test/main.duo` are **dead code**.
 Nothing requires them; the modules they depend on (`src/main.duo`,
 `src/cli.duo`, `src/wasm/runtime.duo`, `src/wasm/init.duo`, `src/lib.duo`) were
-deleted. `test/main.duo` does not even parse. The README's source layout
-describes that deleted architecture and is historical.
+deleted. `test/main.duo` does not even parse — `test/conform.duo` replaces it
+as the suite. The README's source layout describes that deleted architecture and
+is historical.
 
 Do not delete `src/wasm/jit_arm64.duo` without reading HANDOFF first — it is the
 only surviving copy of the virtual-stack register-allocating JIT, which is a
@@ -55,7 +76,14 @@ duo run bench/wart.duo        # ward vs wart, generated kernels, Pass 101 §4
 duo run bench/derived.duo     # derived-lines / total-lines ratio
 duo run bench/run.duo         # coverage sweep + per-engine timing
 duo run bench/perf.duo        # interleaved median wall clock vs wasmtime
+duo run bench/six.duo         # ward vs wart/wasmtime/wasmer/wasm3/iwasm
 ```
+
+`bench/six.duo` VERIFIES before it times: a runtime that cannot be driven to an
+export, or that disagrees with wasmtime, gets `n/a`/`WRONG` and is never given a
+millisecond. It also records the CLI facts that produce bogus rows if ignored —
+`wasm3` writes its result to stderr, `iwasm` prints hex with a `:i32` suffix,
+and `wart run` can only enter `_start`.
 
 All of them take `WARD_BIN` (default `/tmp/ward`). `bench/run.duo` builds ward;
 the others expect it to exist.
@@ -101,6 +129,14 @@ is exactly the drift the 2026-08-06 handoff warned against.
   which on macOS accumulates CPU across threads. Use an interleaved harness.
 - **Positive-control every zero**, and negative-control every oracle. A gate that
   cannot fail is not evidence.
+- **Linear memory is the module's DECLARED page count.** It used to be a fixed
+  one page with every address masked `& 0xFFFF`, which FOLDED a two-page
+  module's upper half onto its lower half: one fixture answered 792579638 for
+  3674599702 and seven printed nothing at all while exiting 0. An out-of-range
+  access must bail, never wrap.
+- **A JIT refusal must name itself.** `WARD_JIT_TRACE=1`. Four separate
+  refusals were stacked behind the first one on `hot_big`, and nothing could
+  see past the first until they did.
 
 ## Monoglot
 

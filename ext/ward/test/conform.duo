@@ -1,0 +1,480 @@
+-- ward conformance suite — every fixture, both engines, both entry shapes,
+-- differenced against wasmtime BY VALUE.
+--
+--   duo run test/conform.duo          (from ext/ward)
+--   zig build ward-test               (from the repo root)
+--
+-- Until this file existed ward had NO test suite. `test/main.duo` required four
+-- modules that had been deleted and did not parse; the only checking in the
+-- project was `bench/verify.duo` (one engine per run, one entry shape) and a
+-- benchmark harness that filtered on ward's `-1` sentinel. A WASM runtime was
+-- shipping in a release on that.
+--
+-- WHAT THIS ASSERTS
+--   * every `.wasm` under the fixture globs, under `interp` AND `jit`, at every
+--     entry shape wasmtime can invoke (`run` and `_start`);
+--   * the VALUE, not the exit status. ward exits 0 while printing nothing, and
+--     it has returned a correct-looking number for a module it never read.
+--
+-- WHY THE CONTROLS COME FIRST, AND WHY THEY EXIT 3
+--   A harness in this repo once reported a confident "0 identical / 176
+--   differing" because the baseline binary it was comparing against had been
+--   deleted mid-run. Another reported "18/18 passing" while ward ignored its
+--   argument entirely and ran a hardcoded `/tmp/hash.wasm`. Both were green-
+--   looking numbers from a harness that was not measuring anything. So this one
+--   refuses to print a score at all until it has proved, in this process, that
+--   both binaries exist, that the module path reaches the runtime, that a
+--   perturbed module is refused, and that its own comparator can return a red.
+--   A control failure is exit 3 — distinct from exit 1 (real conformance
+--   failures), so a broken harness can never be read as a failing runtime.
+
+_isnum(s: str): bool
+    if s == "" return false end
+    string.match(s, "^%-?%d+%.?%d*$") != nil
+end
+
+-- wasmtime prints i32 signed, ward prints it unsigned; the same 32-bit value
+-- has to fold to one spelling before it is compared. Non-integral values are
+-- f64 and are compared as DOUBLES, because the two runtimes print different
+-- digit counts for the same number (4.436463668243931 vs 4.4364636682439311).
+_norm(s: str): str
+    t = std.script.chomp(s)
+    if not _isnum(t)
+        return t
+    end
+    f: f64 = to(f64)(t)
+    i: i64 = to(i64)(f)
+    if to(f64)(i) == f
+        -- Duo's `%` is C-style TRUNCATED and keeps the dividend's sign, so the
+        -- wrap-to-positive is load-bearing: without it wasmtime's -1009008024
+        -- and ward's 3285959272 — one value — read as a difference.
+        u = i % 4294967296
+        if u < 0
+            u = u + 4294967296
+        end
+        return to(str)(u)
+    end
+    to(str)(f)
+end
+
+-- Every non-empty line of an output, joined by ONE space. Both sides of every
+-- comparison go through this, so a module printing two lines cannot read as a
+-- difference just because one side was sampled with `tail -1` and the other was
+-- concatenated without a separator. That defect reported 30 false DIFFs on the
+-- first full run of this suite.
+_lines(raw: str): str
+    out = ""
+    for _i, line in std.string.split(raw, "\n")
+        t = std.string.trim(line)
+        if t != ""
+            if out == ""
+                out = t
+            else
+                out = out .. " " .. t
+            end
+        end
+    end
+    out
+end
+
+-- A module whose answer is what it PRINTS through fd_write is compared on its
+-- emitted bytes, not on the numeric result of a void `_start`. ward's own
+-- protocol lines are stripped to recover just the module's output.
+_emitted(raw: str): str
+    out = ""
+    for _i, line in std.string.split(raw, "\n")
+        keep = true
+        if string.match(line, "^engine=") != nil keep = false end
+        if string.match(line, "^result=") != nil keep = false end
+        if string.match(line, "^seconds=") != nil keep = false end
+        if string.match(line, "^ward: ") != nil keep = false end
+        t = std.string.trim(line)
+        if keep and t != ""
+            if out == ""
+                out = t
+            else
+                out = out .. " " .. t
+            end
+        end
+    end
+    out
+end
+
+_field(raw: str, key: str): str
+    m = string.match(raw, "\n" .. key .. "=([^\n]*)")
+    if m == nil
+        m = string.match(raw, "^" .. key .. "=([^\n]*)")
+    end
+    if m == nil
+        return ""
+    end
+    std.script.chomp(m)
+end
+
+_pad(s: str, w: i64): str
+    out = s
+    while string.len(out) < w
+        out = out .. " "
+    end
+    out
+end
+
+_rule(): void
+    line = ""
+    i = 1
+    while i <= 104
+        line = line .. "-"
+        i += 1
+    end
+    print(line)
+end
+
+-- ward's honest refusal: an opcode with no arm, or a guard inside an arm.
+-- Distinguished from silence because they are different failures — a named
+-- refusal is a known gap that ratchets, silence is a timeout or a crash and is
+-- never acceptable.
+_refusal(raw: str): str
+    m = string.match(raw, "ward: unimplemented opcode ([^\n]*)")
+    if m == nil
+        m = string.match(raw, "ward: cannot execute opcode ([^\n]*)")
+    end
+    if m == nil
+        m = string.match(raw, "ward: cannot decode module ([^\n]*)")
+    end
+    if m == nil
+        return ""
+    end
+    std.script.chomp(m)
+end
+
+-- THE COMPARATOR. Every row in the matrix and every positive control goes
+-- through this one function, so a control that proves it can say DIFF proves it
+-- for the whole table. Returns the verdict word.
+_verdict(ref: str, got: str, raw: str): str
+    if _refusal(raw) != ""
+        return "UNSUPPORTED"
+    end
+    if got == ""
+        return "NORESULT"
+    end
+    if got == "-1"
+        return "BAIL"
+    end
+    if _norm(ref) == _norm(got)
+        return "PASS"
+    end
+    "DIFF"
+end
+
+-- Run ward once. `raw` is stdout+stderr; the caller pulls fields out of it.
+_ward(bin: str, mod: str, invoke: str, engine: str, secs: i64): str
+    std.script.capture("WARD_WASM=" .. mod .. " WARD_INVOKE=" .. invoke
+        .. " WARD_ENGINE=" .. engine .. " timeout " .. to(str)(secs) .. " "
+        .. bin .. " 2>&1")
+end
+
+-- The observable answer ward gave. PRINTED BYTES WIN, unconditionally: a
+-- wasi-libc `_start` prints its answer and returns void, so ward's `result=0`
+-- is the exit code, not the answer. Keying this on "is the oracle numeric"
+-- looked reasonable and was wrong — hot_big printed 2331661441 and was scored
+-- against `result=0` for it, one of 30 false DIFFs.
+_answer(raw: str): str
+    em = _emitted(raw)
+    if em != ""
+        return em
+    end
+    _field(raw, "result")
+end
+
+main(): i64
+    ward = std.script.getenv("WARD_BIN", "/tmp/ward")
+    wasmtime = std.script.getenv("WASMTIME", "wasmtime")
+    secs: i64 = to(i64)(std.script.getenv("WARD_TIMEOUT", "90"))
+    root = std.script.chomp(std.script.capture("pwd"))
+    tmp = std.script.getenv("TMPDIR", "/tmp")
+
+    ctlfail = 0
+
+    print("== controls ==")
+
+    -- ── CONTROL 1: both binaries under test exist and run ────────────────
+    -- The 176-row harness that scored a confident zero did so because the
+    -- binary it was differencing against was gone. Nothing below is worth
+    -- reading until this passes.
+    if not std.script.fs_is_file(ward)
+        print("CONTROL FAIL: ward binary not found at " .. ward)
+        print("  build it: duo compile src/ward.duo --backend=c --emit exe -o " .. ward)
+        ctlfail += 1
+    else
+        -- `env -u`, not `WARD_WASM=`: an EMPTY variable is still set, and ward
+        -- only prints its usage when the variable is absent.
+        probe = std.script.capture("env -u WARD_WASM " .. ward .. " 2>&1")
+        if string.match(probe, "WARD_WASM") == nil
+            print("CONTROL FAIL: " .. ward .. " does not respond as ward")
+            ctlfail += 1
+        else
+            print("ok   ward binary runs: " .. ward)
+        end
+    end
+    if std.script.status(wasmtime .. " --version >/dev/null 2>&1") != 0
+        print("CONTROL FAIL: oracle `" .. wasmtime .. "` does not run")
+        ctlfail += 1
+    else
+        print("ok   oracle runs: " .. std.script.chomp(std.script.capture(wasmtime .. " --version 2>&1 | head -1")))
+    end
+
+    if ctlfail != 0
+        print("refusing to score: the things under test are not both present")
+        return 3
+    end
+
+    -- ── collect fixtures ─────────────────────────────────────────────────
+    -- Two corpora: ward's own, and the repo's wasm_rt set (which is where
+    -- hot_big lives). Both are INPUT, not source; the monoglot rule covers
+    -- source only.
+    fixtures = {}
+    nfix = 0
+    for _g, pat in {std.script.getenv("WARD_FIXTURES", "bench/*.wasm"),
+                    std.script.getenv("WARD_FIXTURES2", "examples/*.wasm"),
+                    std.script.getenv("WARD_FIXTURES3", "../../benchmarks/wasm_rt/*.wasm")}
+        for _i, m in std.script.fs_glob(pat)
+            nfix += 1
+            fixtures[nfix] = m
+        end
+    end
+    if nfix == 0
+        print("CONTROL FAIL: the fixture globs matched nothing — cwd is " .. root)
+        return 3
+    end
+    print("ok   " .. to(str)(nfix) .. " fixture module(s) found")
+
+    -- ── build the ORACLE table: (module, entry) -> wasmtime's answer ──────
+    -- The entry shape is decided by wasmtime's EXIT STATUS, not by its output:
+    -- a void export runs fine and prints nothing, and keying off output alone
+    -- both drops those rows and misnames the export in the diagnostic.
+    omod = {}
+    oent = {}
+    oval = {}
+    nora = 0
+    for _i, m in fixtures
+        for _j, cand in {"run", "_start"}
+            if std.script.status(wasmtime .. " --invoke " .. cand .. " " .. m .. " >/dev/null 2>&1") == 0
+                v = _lines(std.script.capture(
+                    wasmtime .. " --invoke " .. cand .. " " .. m .. " 2>/dev/null"))
+                nora += 1
+                omod[nora] = m
+                oent[nora] = cand
+                oval[nora] = v
+            end
+        end
+    end
+    if nora == 0
+        print("CONTROL FAIL: wasmtime could not invoke ANY fixture — the oracle is not working")
+        return 3
+    end
+    print("ok   " .. to(str)(nora) .. " (module, entry) pair(s) the oracle can answer")
+
+    -- ── CONTROL 2: the module path REACHES the runtime ───────────────────
+    -- ward reads WARD_WASM, not argv, and it used to DEFAULT to a hardcoded
+    -- /tmp/hash.wasm — so it answered 1899277430 for a path that did not exist
+    -- and a whole 18-module sweep came back "100% passing". Two fixtures with
+    -- different oracle answers must produce two different ward answers.
+    ai = 0
+    bi = 0
+    for k = 1, nora
+        if oval[k] != "" and ai == 0
+            ai = k
+        elseif oval[k] != "" and bi == 0 and _norm(oval[k]) != _norm(oval[ai])
+            bi = k
+        end
+    end
+    if ai == 0 or bi == 0
+        print("CONTROL FAIL: could not find two fixtures with different oracle answers")
+        return 3
+    end
+    ra = _ward(ward, root .. "/" .. omod[ai], oent[ai], "interp", secs)
+    rb = _ward(ward, root .. "/" .. omod[bi], oent[bi], "interp", secs)
+    aa = _answer(ra)
+    ab = _answer(rb)
+    if aa == "" or ab == ""
+        print("CONTROL FAIL: ward produced no answer for a control fixture")
+        return 3
+    end
+    if _norm(aa) == _norm(ab)
+        print("CONTROL FAIL: two different modules gave ward the SAME answer (" .. aa .. ")")
+        print("  the module path is not reaching the runtime")
+        return 3
+    end
+    print("ok   input reaches the runtime: " .. std.script.path_stem(omod[ai]) .. "=" .. aa
+        .. " vs " .. std.script.path_stem(omod[bi]) .. "=" .. ab)
+
+    -- ── CONTROL 3: the comparator can return a RED ───────────────────────
+    -- Same function every matrix row uses, handed a deliberately mismatched
+    -- pair. If this says PASS the whole table below is meaningless.
+    if _verdict(oval[ai], aa, ra) != "PASS"
+        print("CONTROL FAIL: the comparator does not accept a known-good pair")
+        return 3
+    end
+    if _verdict(oval[bi], aa, ra) != "DIFF"
+        print("CONTROL FAIL: the comparator does not reject a known-bad pair")
+        return 3
+    end
+    print("ok   comparator says PASS on a matched pair and DIFF on a mismatched one")
+
+    -- ── CONTROL 4: a PERTURBED module is refused ─────────────────────────
+    -- Byte 4 of every wasm module is `m` of the magic `\0asm`. Overwriting it
+    -- is a fixture-independent perturbation: no runtime may execute the result.
+    -- ward DID execute it — every walker in ward.duo started at byte 9 and
+    -- assumed the header — and printed the unperturbed answer, which is the
+    -- silent-success shape this project has been caught by twice. The header
+    -- check that makes this control meaningful landed with this suite.
+    pert = tmp .. "/ward-conform-perturbed.wasm"
+    std.script.fs_cp(root .. "/" .. omod[ai], pert)
+    std.script.run("printf '\\x00' | dd of=" .. pert .. " bs=1 seek=3 conv=notrunc >/dev/null 2>&1")
+    if std.script.status(wasmtime .. " --invoke " .. oent[ai] .. " " .. pert .. " >/dev/null 2>&1") == 0
+        print("CONTROL FAIL: the oracle ACCEPTED a module with a broken magic number")
+        print("  the perturbation did not take — dd may not have written")
+        return 3
+    end
+    rp = _ward(ward, pert, oent[ai], "interp", secs)
+    ap = _answer(rp)
+    if ap != "" and _norm(ap) == _norm(aa)
+        print("CONTROL FAIL: ward answered " .. ap .. " for a module with a broken magic number")
+        return 3
+    end
+    print("ok   perturbed module refused by both (ward said: "
+        .. std.string.trim(std.string.split(rp, "\n")[1]) .. ")")
+
+    -- ── CONTROL 5: a MISSING module is refused, not defaulted ────────────
+    miss = tmp .. "/ward-conform-no-such-module.wasm"
+    std.script.fs_rm(miss)
+    rm = _ward(ward, miss, "run", "interp", secs)
+    if _field(rm, "result") != ""
+        print("CONTROL FAIL: ward printed a result for a nonexistent module")
+        return 3
+    end
+    print("ok   missing module refused rather than defaulted")
+
+    print("")
+    print("== matrix: " .. to(str)(nora) .. " (module, entry) x 2 engines ==")
+    print(_pad("MODULE", 34) .. " " .. _pad("ENTRY", 7) .. " " .. _pad("ENGINE-ASKED", 7)
+        .. " " .. _pad("RAN", 10) .. " " .. _pad("WASMTIME", 18) .. " "
+        .. _pad("WARD", 18) .. " VERDICT")
+    _rule()
+
+    pass = 0
+    diff = 0
+    bail = 0
+    none = 0
+    voidok = 0
+    unsup = 0
+    jitran = 0
+    jitasked = 0
+
+    for k = 1, nora
+        fx = omod[k]
+        name = std.script.path_stem(fx)
+        for _e, engine in {"interp", "jit"}
+            raw = _ward(ward, root .. "/" .. fx, oent[k], engine, secs)
+            ran = _field(raw, "engine")
+            if ran == "" ran = "?" end
+            if engine == "jit"
+                jitasked += 1
+                if ran == "jit-arm64"
+                    jitran += 1
+                end
+            end
+            got = _answer(raw)
+            ref = oval[k]
+            if ref == ""
+                -- wasmtime invoked it but it yields nothing observable: a void
+                -- export that neither returns nor prints. There is no value to
+                -- difference, so the only honest check is that ward also ran it
+                -- to completion. Counted apart from PASS — "did not trap" is
+                -- much weaker evidence than "matched the oracle".
+                v = "OK(void)"
+                if _refusal(raw) != ""
+                    v = "UNSUPPORTED"
+                    unsup += 1
+                elseif got == "" or got == "-1"
+                    v = "BAIL"
+                    bail += 1
+                else
+                    voidok += 1
+                end
+                print(_pad(name, 34) .. " " .. _pad(oent[k], 7) .. " " .. _pad(engine, 7)
+                    .. " " .. _pad(ran, 10) .. " " .. _pad("<void>", 18) .. " "
+                    .. _pad(got, 18) .. " " .. v)
+            else
+                v = _verdict(ref, got, raw)
+                if v == "PASS" pass += 1 end
+                if v == "DIFF" diff += 1 end
+                if v == "BAIL" bail += 1 end
+                if v == "NORESULT" none += 1 end
+                if v == "UNSUPPORTED"
+                    unsup += 1
+                    if got == "" got = _refusal(raw) end
+                end
+                mark = v
+                if v == "DIFF" mark = "*** DIFF ***" end
+                print(_pad(name, 34) .. " " .. _pad(oent[k], 7) .. " " .. _pad(engine, 7)
+                    .. " " .. _pad(ran, 10) .. " " .. _pad(ref, 18) .. " "
+                    .. _pad(got, 18) .. " " .. mark)
+            end
+        end
+    end
+
+    _rule()
+    total = pass + diff + bail + none + voidok + unsup
+    print("rows " .. to(str)(total)
+        .. "   PASS " .. to(str)(pass)
+        .. "   DIFF " .. to(str)(diff)
+        .. "   UNSUPPORTED " .. to(str)(unsup)
+        .. "   BAIL " .. to(str)(bail)
+        .. "   NORESULT " .. to(str)(none)
+        .. "   OK(void) " .. to(str)(voidok))
+    print("jit asked " .. to(str)(jitasked) .. ", jit actually compiled " .. to(str)(jitran)
+        .. " — the rest fell back to the interpreter (WARD_JIT_TRACE=1 names the refusal)")
+
+    -- JIT ENGAGEMENT FLOOR. The JIT falls back SILENTLY, so a purely value-based
+    -- gate stays fully green while the JIT is dead: that has happened here, an
+    -- operand-stack bug disabled compilation for every float module and the
+    -- corpus still read 42/42. The floor is a ratchet, not a target.
+    floor: i64 = to(i64)(std.script.getenv("JIT_FLOOR", "0"))
+    if jitran < floor
+        print("*** JIT ENGAGEMENT REGRESSION: " .. to(str)(jitran) .. " < floor " .. to(str)(floor) .. " ***")
+        return 1
+    end
+
+    -- WRONG and SILENT are never acceptable: a DIFF is a wrong answer and a
+    -- NORESULT is a timeout or a crash. An UNSUPPORTED row is ward refusing an
+    -- opcode by name, which is a KNOWN GAP — it ratchets against a budget so a
+    -- new gap is caught while the existing ones do not hold the gate hostage.
+    -- The budget is a number someone has to lower, not a licence.
+    -- Measured 2026-08-08: 2 rows, both `loop_f64` (_start), both refusing
+    -- opcode 252 `prefix.fc` at body offset 287 — one gap, counted once per
+    -- engine. Lower this whenever that gap closes.
+    budget: i64 = to(i64)(std.script.getenv("WARD_UNSUPPORTED_BUDGET", "2"))
+    bad = 0
+    if diff != 0
+        print("*** " .. to(str)(diff) .. " row(s) DISAGREE with the oracle ***")
+        bad += 1
+    end
+    if none != 0
+        print("*** " .. to(str)(none) .. " row(s) produced NOTHING (timeout or crash) ***")
+        bad += 1
+    end
+    if bail != 0
+        print("*** " .. to(str)(bail) .. " row(s) returned the -1 sentinel with no diagnostic ***")
+        bad += 1
+    end
+    if unsup > budget
+        print("*** UNSUPPORTED went up: " .. to(str)(unsup) .. " > budget " .. to(str)(budget)
+            .. " — a new opcode gap landed ***")
+        bad += 1
+    end
+    if bad != 0
+        return 1
+    end
+    0
+end

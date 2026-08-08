@@ -1,0 +1,413 @@
+-- Six-runtime wall-clock table: ward, wart, wasmtime, wasmer, wasm3, iwasm.
+--
+--   duo run bench/six.duo
+--   N=5 WARD_ENGINE=jit duo run bench/six.duo
+--
+-- NOTHING IS TIMED UNTIL IT IS VERIFIED. Every runtime is first asked for the
+-- fixture's answer and differenced against wasmtime; a runtime that cannot be
+-- driven to that fixture, or that disagrees, gets a cell of `n/a` or `WRONG`
+-- and is never given a millisecond. A faster wrong runtime is worthless, and
+-- this project has published a table that timed one.
+--
+-- Timing is interleaved min-of-N. `ward`'s own printed `seconds=` is os.clock,
+-- which on macOS accumulates CPU across threads; it must never be quoted for a
+-- perf claim. This harness uses std.time.monotonic around the whole process.
+--
+-- THE INVOCATION SURFACES DO NOT MATCH, and pretending they do is how a bogus
+-- row gets published:
+--   ward      WARD_WASM env var, WARD_INVOKE picks the export (never argv)
+--   wasmtime  --invoke <export>
+--   wasmer    run -i <export>
+--   wasm3     --func <export>
+--   iwasm     -f <export>, and prints HEX with a `:i32` suffix
+--   wasm3     writes its `Result:` line to STDERR, not stdout — reading only
+--             stdout made every wasm3 cell read WRONG against a right answer
+--   wart      `wart run <mod>` only, i.e. `_start` only — it cannot reach a
+--             `run` export at all, so those cells are `n/a` and not a loss.
+
+_msns(): i64
+    1000000
+end
+
+_time_ms(cmd: str): i64
+    a: i64 = std.time.monotonic()
+    std.script.status(cmd)
+    b: i64 = std.time.monotonic()
+    to(i64)((b - a) / _msns())
+end
+
+_min_of(xs: any, n: i64): i64
+    m = xs[1]
+    i = 2
+    while i <= n
+        if xs[i] < m
+            m = xs[i]
+        end
+        i += 1
+    end
+    m
+end
+
+_pad(s: str, w: i64): str
+    out = s
+    while string.len(out) < w
+        out = out .. " "
+    end
+    out
+end
+
+_lpad(s: str, w: i64): str
+    out = s
+    while string.len(out) < w
+        out = " " .. out
+    end
+    out
+end
+
+_isnum(s: str): bool
+    if s == "" return false end
+    string.match(s, "^%-?%d+%.?%d*$") != nil
+end
+
+-- Position in the digit alphabet IS the value, so there is no sixteen-arm
+-- ladder to get wrong. `string.find` with plain=true; `-1` for a non-digit.
+_hexdigit(c: str): i64
+    at = string.find("0123456789abcdef", string.lower(c), 1, true)
+    if at == nil
+        return -1
+    end
+    at - 1
+end
+
+-- iwasm reports `0x7134ac76:i32`. Hand-rolled because `tonumber` in this
+-- toolchain answers 0 for a string it cannot parse, which would silently turn
+-- every iwasm row into a WRONG verdict against a real answer.
+_unhex(s: str): str
+    v: i64 = 0
+    i: i64 = 3
+    n: i64 = string.len(s)
+    if n < 3
+        return s
+    end
+    while i <= n
+        d: i64 = _hexdigit(string.sub(s, i, i))
+        if d < 0
+            return s
+        end
+        v = v * 16 + d
+        i += 1
+    end
+    to(str)(v)
+end
+
+-- One spelling for a value that six runtimes print six ways: signed vs
+-- unsigned i32, hex with a type suffix, and differing f64 digit counts.
+_norm(raw: str): str
+    t = std.script.chomp(raw)
+    t = string.gsub(t, ":i32", "")
+    t = string.gsub(t, ":i64", "")
+    t = string.gsub(t, ":f32", "")
+    t = string.gsub(t, ":f64", "")
+    t = string.gsub(t, "Result: ", "")
+    t = std.string.trim(t)
+    if string.match(t, "^0[xX]%x+$") != nil
+        t = _unhex(t)
+    end
+    if not _isnum(t)
+        return t
+    end
+    f: f64 = to(f64)(t)
+    i: i64 = to(i64)(f)
+    if to(f64)(i) == f
+        u = i % 4294967296
+        if u < 0
+            u = u + 4294967296
+        end
+        return to(str)(u)
+    end
+    to(str)(f)
+end
+
+-- Is this line the RUNTIME talking rather than the MODULE? Every runtime here
+-- wraps the module's own output in a protocol of its own, and mistaking one for
+-- the other is how a right answer reads as WRONG: wasm3 appends `Result: 0` to
+-- a printing `_start`, so taking the last line scored wasm3 against its own
+-- epilogue on eight fixtures.
+_protocol(line: str): bool
+    if string.match(line, "^engine=") != nil return true end
+    if string.match(line, "^result=") != nil return true end
+    if string.match(line, "^seconds=") != nil return true end
+    if string.match(line, "^ward: ") != nil return true end
+    if string.match(line, "^Result: ") != nil return true end
+    if string.match(line, "^warning:") != nil return true end
+    if string.match(line, "^0[xX]%x+:[if]%d+$") != nil return true end
+    false
+end
+
+-- The module's answer: what it PRINTED if it printed anything, otherwise the
+-- runtime's own report of the returned value. Printed bytes win because a
+-- wasi-libc `_start` returns void and prints its result.
+_answer(raw: str): str
+    body = ""
+    proto = ""
+    for _i, line in std.string.split(raw, "\n")
+        t = std.string.trim(line)
+        if t != ""
+            if _protocol(t)
+                proto = t
+            else
+                body = t
+            end
+        end
+    end
+    if body != ""
+        return body
+    end
+    -- searched over the WHOLE output, not just the last protocol line: ward
+    -- prints `seconds=` after `result=`, and taking the last one scored every
+    -- ward row against its own timing line
+    m = string.match(raw, "result=([^\n]*)")
+    if m != nil
+        return std.script.chomp(m)
+    end
+    proto
+end
+
+-- The runtime refused the module rather than answering it — wasm3 cannot decode
+-- two of the wasm_rt fixtures at all ("Error: LEB encoded value overflow").
+-- That is not a wrong answer and must not be printed as one.
+_errored(raw: str): bool
+    if string.match(raw, "Error:") != nil return true end
+    if string.match(raw, "error:") != nil return true end
+    false
+end
+
+main(): i64
+    ward = std.script.getenv("WARD_BIN", "/tmp/ward")
+    engine = std.script.getenv("WARD_ENGINE", "jit")
+    wart = std.script.getenv("WART_BIN", std.script.getenv("HOME", "") .. "/x/wart/zig-out/bin/wart")
+    n: i64 = to(i64)(std.script.getenv("N", "5"))
+    secs = std.script.getenv("SIX_TIMEOUT", "120")
+    root = std.script.chomp(std.script.capture("pwd"))
+
+    -- Every runtime is named and probed BEFORE anything is measured. A table
+    -- whose baseline binary had been deleted mid-run once reported a confident
+    -- "0 identical / 176 differing"; a missing runtime must be a stated `n/a`
+    -- column, never a silent zero.
+    have = {}
+    for _i, r in {"wasmtime", "wasmer", "wasm3", "iwasm"}
+        have[r] = std.script.status(r .. " --help >/dev/null 2>&1") == 0
+        if not have[r]
+            have[r] = std.script.status("command -v " .. r .. " >/dev/null 2>&1") == 0
+        end
+    end
+    have["ward"] = std.script.fs_is_file(ward)
+    have["wart"] = std.script.fs_is_file(wart)
+    line = "runtimes:"
+    for _i, r in {"ward", "wart", "wasmtime", "wasmer", "wasm3", "iwasm"}
+        mark = " MISSING"
+        if have[r]
+            mark = " ok"
+        end
+        line = line .. "  " .. r .. mark
+    end
+    print(line)
+    if not have["ward"]
+        print("refusing to measure: no ward binary at " .. ward)
+        return 3
+    end
+    if not have["wasmtime"]
+        print("refusing to measure: wasmtime is the oracle and it is missing")
+        return 3
+    end
+
+    fixtures = {}
+    nfix = 0
+    for _g, pat in {std.script.getenv("SIX_FIXTURES", "bench/*.wasm"),
+                    std.script.getenv("SIX_FIXTURES2", "../../benchmarks/wasm_rt/*.wasm")}
+        for _i, m in std.script.fs_glob(pat)
+            nfix += 1
+            fixtures[nfix] = m
+        end
+    end
+    if nfix == 0
+        print("refusing to measure: the fixture globs matched nothing")
+        return 3
+    end
+
+    print("")
+    print(_pad("MODULE", 30) .. " " .. _pad("ENTRY", 7)
+        .. _lpad("ward", 9) .. _lpad("wart", 9) .. _lpad("wasmtime", 10)
+        .. _lpad("wasmer", 9) .. _lpad("wasm3", 9) .. _lpad("iwasm", 9)
+        .. "   FASTEST")
+    rule = ""
+    ri = 1
+    while ri <= 104
+        rule = rule .. "-"
+        ri += 1
+    end
+    print(rule)
+
+    firsts = 0
+    rows = 0
+    losses = {}
+    nloss = 0
+    -- STARTUP FLOOR. Most fixtures here finish in single-digit milliseconds, so
+    -- the number being compared is PROCESS STARTUP -- ward is a 208 KB static
+    -- binary and wasmtime builds a JIT before it runs anything. Counting those
+    -- as wins is the same defect as the withdrawn table in this repo's README,
+    -- where 13 of 24 "wins" read at or below timer resolution. A row whose
+    -- FASTEST runtime is under the floor is reported and shown but attributed
+    -- to nobody. This is a resolution rule, not a per-module one: it keys on the
+    -- measured time, never on a name, an index or an input size.
+    floor: i64 = to(i64)(std.script.getenv("FLOOR_MS", "40"))
+    startup = 0
+
+    for _i, mod in fixtures
+        abs = root .. "/" .. mod
+        name = std.script.path_stem(mod)
+        for _j, entry in {"run", "_start"}
+            if std.script.status("wasmtime --invoke " .. entry .. " " .. mod .. " >/dev/null 2>&1") == 0
+                oracle = _norm(_answer(std.script.capture(
+                    "wasmtime --invoke " .. entry .. " " .. mod .. " 2>/dev/null")))
+
+                -- ── commands, one per runtime ────────────────────────────
+                cmd = {}
+                cmd["ward"] = "WARD_WASM=" .. abs .. " WARD_INVOKE=" .. entry
+                    .. " WARD_ENGINE=" .. engine .. " timeout " .. secs .. " " .. ward
+                cmd["wasmtime"] = "timeout " .. secs .. " wasmtime --invoke " .. entry .. " " .. mod
+                cmd["wasmer"] = "timeout " .. secs .. " wasmer run -i " .. entry .. " " .. mod
+                cmd["wasm3"] = "timeout " .. secs .. " wasm3 --func " .. entry .. " " .. mod
+                cmd["iwasm"] = "timeout " .. secs .. " iwasm -f " .. entry .. " " .. mod
+                -- wart's CLI has no export selector: `wart run` enters _start
+                -- and nothing else. A `run`-only fixture is UNREACHABLE for it,
+                -- which is not the same as slow and is not counted as a loss.
+                cmd["wart"] = "timeout " .. secs .. " " .. wart .. " run " .. mod
+                -- Where each runtime writes its answer. wasm3 and iwasm use
+                -- stderr; wasmtime's stdout must stay clean because it is the
+                -- oracle and it prints a `--invoke` warning on stderr.
+                errpol = {}
+                errpol["ward"] = " 2>/dev/null"
+                errpol["wasmtime"] = " 2>/dev/null"
+                errpol["wasmer"] = " 2>/dev/null"
+                errpol["wasm3"] = " 2>&1"
+                errpol["iwasm"] = " 2>&1"
+                errpol["wart"] = " 2>&1"
+
+                -- ── verify before timing ─────────────────────────────────
+                okrt = {}
+                miss = {}
+                errd = {}
+                for _k, r in {"ward", "wart", "wasmtime", "wasmer", "wasm3", "iwasm"}
+                    okrt[r] = false
+                    miss[r] = false
+                    errd[r] = false
+                    if have[r]
+                        if r == "wart" and entry != "_start"
+                            okrt[r] = false
+                        else
+                            raw = std.script.capture(cmd[r] .. errpol[r])
+                            got = _norm(_answer(raw))
+                            if oracle == ""
+                                -- a void export: there is no value to agree on,
+                                -- so agreement cannot be claimed and the row is
+                                -- skipped rather than timed on exit status
+                                okrt[r] = false
+                            elseif got == oracle
+                                okrt[r] = true
+                            elseif got == "" or _errored(raw)
+                                -- produced nothing at all: this runtime cannot
+                                -- be driven to this export, which is different
+                                -- from computing the wrong thing and must not
+                                -- be reported as if it were
+                                miss[r] = true
+                                if _errored(raw)
+                                    errd[r] = true
+                                end
+                            end
+                        end
+                    end
+                end
+
+                if okrt["ward"] or okrt["wasmtime"]
+                    -- ── interleaved min-of-N over the verified runtimes ──
+                    t = {}
+                    for _k, r in {"ward", "wart", "wasmtime", "wasmer", "wasm3", "iwasm"}
+                        t[r] = {}
+                    end
+                    q = 1
+                    while q <= n
+                        for _k, r in {"ward", "wart", "wasmtime", "wasmer", "wasm3", "iwasm"}
+                            if okrt[r]
+                                t[r][q] = _time_ms(cmd[r] .. " >/dev/null 2>&1")
+                            end
+                        end
+                        q += 1
+                    end
+
+                    best = -1
+                    bestr = "-"
+                    cells = ""
+                    for _k, r in {"ward", "wart", "wasmtime", "wasmer", "wasm3", "iwasm"}
+                        w = 9
+                        if r == "wasmtime" w = 10 end
+                        if okrt[r]
+                            v = _min_of(t[r], n)
+                            cells = cells .. _lpad(to(str)(v), w)
+                            if best < 0 or v < best
+                                best = v
+                                bestr = r
+                            end
+                        else
+                            mark = "WRONG"
+                            if miss[r] or r == "wart"
+                                mark = "n/a"
+                            end
+                            if errd[r]
+                                mark = "err"
+                            end
+                            if not have[r]
+                                mark = "-"
+                            end
+                            cells = cells .. _lpad(mark, w)
+                        end
+                    end
+                    rows += 1
+                    if best < floor
+                        startup += 1
+                        bestr = bestr .. " (startup)"
+                    elseif bestr == "ward"
+                        firsts += 1
+                    else
+                        nloss += 1
+                        wv = "n/a"
+                        if okrt["ward"]
+                            wv = to(str)(_min_of(t["ward"], n))
+                        end
+                        losses[nloss] = _pad(name .. " (" .. entry .. ")", 34)
+                            .. " ward " .. _lpad(wv, 6) .. " ms vs " .. bestr .. " "
+                            .. _lpad(to(str)(best), 6) .. " ms"
+                    end
+                    print(_pad(name, 30) .. " " .. _pad(entry, 7) .. cells .. "   " .. bestr)
+                end
+            end
+        end
+    end
+
+    print(rule)
+    print("timed rows " .. to(str)(rows)
+        .. " — " .. to(str)(startup) .. " below the " .. to(str)(floor)
+        .. " ms startup floor and attributed to NOBODY")
+    print("of the " .. to(str)(rows - startup) .. " rows that do measurable work: ward first on "
+        .. to(str)(firsts) .. ", NOT first on " .. to(str)(nloss))
+    print("(ms, min of " .. to(str)(n) .. " interleaved runs; only VERIFIED runtimes are timed;")
+    print(" n/a = cannot be driven to that export; err = refused the module; WRONG = ran and disagreed)")
+    if nloss > 0
+        print("")
+        print("every workload where ward is NOT first:")
+        for _i, l in losses
+            print("  " .. l)
+        end
+    end
+    0
+end

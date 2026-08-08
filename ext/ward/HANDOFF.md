@@ -1,5 +1,91 @@
 # ward — handoff
 
+## 2026-08-08 (late) — ward has a test suite, and it found eight real bugs
+
+`test/conform.duo` is the suite. `zig build ward-test` is the step. It runs
+**every `.wasm` fixture under both engines and both entry shapes**, differences
+the answer against wasmtime BY VALUE, and refuses to print a score until five
+controls pass in the same process (exit 3, distinct from exit 1, so a broken
+harness can never be read as a failing runtime):
+
+1. both binaries under test exist and respond;
+2. the module path REACHES the runtime — two fixtures with different oracle
+   answers must give ward two different answers;
+3. the comparator returns PASS on a matched pair and DIFF on a mismatched one;
+4. a PERTURBED module (byte 4 of the magic overwritten) is refused by both;
+5. a MISSING module is refused rather than defaulted.
+
+Control 4 was **red when it was written**: every walker in `ward.duo` starts at
+byte 9, so ward ran a file whose magic had been destroyed and printed the
+unperturbed answer. `main` now validates the 8-byte header. A control that
+cannot fail is not evidence, so the header check and the control landed
+together.
+
+| | rows | PASS | DIFF | UNSUPPORTED | NORESULT | OK(void) |
+|---|---:|---:|---:|---:|---:|---:|
+| first full run | 128 | 100 | **16** | 8 | 0 | 4 |
+| after the memory fix | 128 | **122** | **0** | 2 | 0 | 4 |
+
+The 16 DIFFs were one bug. **ward's linear memory was a hardcoded ONE page and
+every effective address was masked `& 0xFFFF` to fit it**, so a module declaring
+two pages had its upper half folded onto its lower half:
+`benchmarks/wasm_rt/memory` answered 792579638 for 3674599702, and seven
+wasi-libc modules whose printf buffers sit above 64 KiB **emitted nothing at all
+while exiting 0**. Both engines now size linear memory from the module's memory
+section, `memory.size` reports the declared page count instead of the literal 1,
+and an out-of-range access bails instead of wrapping. That single fix closed all
+16 DIFFs and 6 of the 8 UNSUPPORTED rows.
+
+The 2 remaining UNSUPPORTED are one gap counted once per engine: `loop_f64`
+refusing opcode 252 (`prefix.fc`) at body offset 287. That is the suite's
+budget; lower it when the gap closes.
+
+**The suite's own comparator had a bug on its first run** and reported 30 false
+DIFFs: it scored a printing `_start` against ward's `result=` field (which is
+the void return, i.e. 0) instead of against the bytes ward printed. Printed
+bytes now win unconditionally. This is why a new harness's first red is worth
+reading before it is believed.
+
+## 2026-08-08 (late) — why the JIT declined `hot_big`, and where it still does
+
+`WARD_JIT_TRACE=1` is new: all 56 `return -1` sites in `jit_compile` now go
+through `jitbail(why, op, pos)` and name themselves. The JIT declines whole
+bodies silently and `main` runs the interpreter without saying so — that is how
+`hot_big` stayed 30x behind wasmtime with a correct answer.
+
+The trace produced a chain of four refusals, three of which are now fixed:
+
+| # | refusal | status |
+|---|---|---|
+| 1 | `module has a data section, so linear memory is not a flat zeroed base` — `i32.load` at body offset 19 | **fixed**: `main` sizes the JIT's memory from the memory section and seeds it from the active data segments, exactly as `run_body` does |
+| 2 | `memory offset unaligned or above the 4095-slot immediate` — `i32.store` at offset 16 | **fixed**: an offset the scaled 12-bit immediate cannot encode now folds into the address register as one or two ADD immediates, covering everything below 16 MiB. wasi-libc addresses its data at 65540 and up, which is precisely the range the immediate cannot reach — this blocked EVERY `_start` in both corpora |
+| 3 | `no jit arm for this opcode — opcode 0 (unreachable)` at offset 74 | **fixed**: `BRK #0`, guarded like `br` so the polymorphic region after it must be empty |
+| 4 | `call target is an IMPORTED function, which the jit cannot reach` — `call` at body offset 9 | **ARCHITECTURAL, open** |
+
+**#4 is what is missing, stated exactly.** `hot_big`'s `_start` reaches
+`fd_write` and `proc_exit` through `__original_main` and `__wasi_proc_exit`, so
+compiling that body means compiling a call to an imported host function. Nothing
+in `lib/std/jit.duo` can express one: its surface is
+`alloc / w32 / r32 / w8 / seal / call0..call2 / release / arch`, and **none of
+those yields the ADDRESS of a host function**, so emitted code has no way to
+call back into ward. The two ways out are both larger than a fix:
+
+- give `std.jit` a primitive that returns a callable host address, and refactor
+  ward's WASI (which today lives inline inside `run_body`'s dispatch) into a
+  C-ABI trampoline the emitted `BLR` can target; or
+- mixed mode: interpret the outer frames and JIT only the hot inner function.
+  That needs per-function entry points that take arguments (the current entry
+  trampoline takes none) and a compiled-code cache that survives a Duo function
+  boundary, which BUG B forbids for pointer locals.
+
+Until one of those exists, **a WASI program that prints its answer will run on
+ward's interpreter**, and `hot_big` is such a program. What did change: it is
+now CORRECT on both engines, where before the fix above it was correct only by
+accident of the 16-bit address wrap.
+
+`call_indirect` (0x11) still has no JIT arm, and `ltgt` is still ONE shared
+label buffer across frames.
+
 Everything below is **measured**. The 2026-08-06 handoff's numbers were not
 reproducible; two separate "it passes the whole corpus" results turned out to be
 the same measurement bug (see "The trap"). Sections below the "state" block are

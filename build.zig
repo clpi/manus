@@ -80,6 +80,20 @@ pub fn build(b: *std.Build) void {
     const native_census_step = b.step("native-census", "native coverage over the reachable set; ratchets NATIVE_FLOOR");
     native_census_step.dependOn(&native_census_cmd.step);
 
+    // Pass 100 §22's capability matrix. §22 answered "what works?" with a
+    // Boolean and, for running, with "nothing" -- conservative rather than
+    // honest, because a compiler does not implement a program, it carries it
+    // some distance up a ladder and the distance is the information. This
+    // reports the population of examples/ at each rung from described through
+    // canonical. It depends on the install step for the same reason the census
+    // does: a matrix measured with yesterday's compiler is a confident report
+    // about a build nobody has, and the script refuses to run against one.
+    const capability_matrix_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/capability_matrix.duo" });
+    capability_matrix_cmd.setCwd(b.path("."));
+    capability_matrix_cmd.step.dependOn(b.getInstallStep());
+    const capability_matrix_step = b.step("capability-matrix", "Pass 100 §22: population of examples/ per capability rung");
+    capability_matrix_step.dependOn(&capability_matrix_cmd.step);
+
     const test_step = b.step("test", "Run all tests (unit + compile-fail)");
     test_step.dependOn(&test_cmd.step);
 
@@ -131,6 +145,38 @@ pub fn build(b: *std.Build) void {
     wasm_bench_cmd.step.dependOn(b.getInstallStep());
     const wasm_bench_step = b.step("wasm-bench", "Run WASM runtime benchmark (wasmtime, wazero, wasm3, iwasm, wasmer, spin)");
     wasm_bench_step.dependOn(&wasm_bench_cmd.step);
+
+    // ── ward conformance suite (ext/ward) ───────────────────────────────────
+    // ward is a WASM runtime shipping in the release, and until 2026-08-08 it
+    // had NO test suite: `ext/ward/test/main.duo` required four modules that
+    // had been deleted and did not parse, so the only checking was a benchmark
+    // harness's `-1` filter. This step builds the runtime and differences every
+    // fixture against wasmtime BY VALUE, under both engines and both entry
+    // shapes, and refuses to print a score until its own controls pass (exit 3).
+    //
+    // Both commands run with cwd = ext/ward so `duo run`'s `.out` artifact
+    // lands where ext/ward/.gitignore already covers it, and the compiled
+    // runtime goes to /tmp for the reason that directory's .gitignore states:
+    // a stale binary sitting next to the source is this project's oldest
+    // measurement bug.
+    // Paths are relative to the CHILD's cwd (ext/ward), which is what setCwd
+    // establishes before exec. An absolute path via the build root would be
+    // nicer to read, and the API for it has moved twice in zig master.
+    const ward_bin_path = "../../zig-out/bin/ward-conform";
+    const duo_bin_path = "../../zig-out/bin/duo";
+    const ward_build_cmd = b.addSystemCommand(&.{
+        duo_bin_path,  "compile",     "src/ward.duo",
+        "--backend=c", "--emit",      "exe",
+        "-o",          ward_bin_path,
+    });
+    ward_build_cmd.setCwd(b.path("ext/ward"));
+    ward_build_cmd.step.dependOn(b.getInstallStep());
+    const ward_test_cmd = b.addSystemCommand(&.{ duo_bin_path, "run", "test/conform.duo" });
+    ward_test_cmd.setEnvironmentVariable("WARD_BIN", ward_bin_path);
+    ward_test_cmd.setCwd(b.path("ext/ward"));
+    ward_test_cmd.step.dependOn(&ward_build_cmd.step);
+    const ward_test_step = b.step("ward-test", "ward conformance: every fixture, both engines, differenced against wasmtime");
+    ward_test_step.dependOn(&ward_test_cmd.step);
 
     const ml_bench_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/run_ml_benchmark.duo" });
     ml_bench_cmd.setCwd(b.path("."));
@@ -889,7 +935,7 @@ pub fn build(b: *std.Build) void {
 
     // G-061 strict dispatch gate: metaprogramming smoke under DUO_TRANSFORM_GATE=1
     const meta_gate_cmd = b.addSystemCommand(&.{
-        "bash",                                                                                                                 "-c",
+        "bash",                                                                                                                                        "-c",
         "DUO_TRANSFORM_GATE=1 DUO_PROVENANCE=1 ./zig-out/bin/duo run scripts/duo_lock.duo -- ./zig-out/bin/duo run examples/metaprogramming_test.duo",
     });
     meta_gate_cmd.setCwd(b.path("."));

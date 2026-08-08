@@ -731,6 +731,25 @@ bailshape(why: str): i64
   -1
 end
 
+-- The JIT declines a whole body by returning -1, and `main` then runs the
+-- interpreter without saying so. That is why `hot_big.wasm` could print a
+-- correct answer 31x behind wasmtime for weeks: the answer was right and the
+-- refusal was invisible. `WARD_JIT_TRACE=1` makes every refusal name itself --
+-- the reason, the opcode, and the byte offset inside the body.
+--
+-- Unlike `bail`/`bailop` this does NOT exit: declining to compile is legal, the
+-- interpreter still has to run. Only the silence was the bug.
+jitbail(why: str, op: i64, pos: i64): i64
+  if os.getenv("WARD_JIT_TRACE")
+    if op >= 0
+      iom.err("ward: jit declined -- " .. why .. " -- opcode " .. to(str)(op) .. " " .. opname(op) .. " at body offset " .. to(str)(pos) .. "\n")
+    else
+      iom.err("ward: jit declined -- " .. why .. "\n")
+    end
+  end
+  -1
+end
+
 -- Interprets function `target` of the module image `img`.
 --
 -- It re-walks the module rather than being handed offsets, because BUG B
@@ -756,6 +775,14 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   el_off: i64 = 0
   tbsize: i64 = 0
   nimp: i64 = 0
+  -- LINEAR MEMORY SIZE. This was a hardcoded ONE page and every effective
+  -- address was masked `& 0xFFFF` to fit it, so a module declaring two pages
+  -- had its upper half FOLDED ONTO THE LOWER HALF: `benchmarks/wasm_rt/memory`
+  -- answered 792579638 for 3674599702, and seven wasi-libc modules whose printf
+  -- buffers live above 64 KiB emitted nothing at all while exiting 0. Wrapping
+  -- is not a legal wasm behaviour in either direction — an out-of-range access
+  -- traps. Size from the memory section, and let the bounds checks below bail.
+  mempages: i64 = 1
   si: i64 = 9
   while si <= n
     sid2: i64 = string.byte(img, si)
@@ -770,6 +797,17 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       gb_off = si
     elseif sid2 == 11
       da_off = si
+    elseif sid2 == 5
+      -- memory section: count, then limits (flags byte, min uleb, opt max)
+      mc: i64 = uleb_val(img, si, n)
+      mj: i64 = uleb_end(img, si, n)
+      if mc > 0
+        mj += 1
+        mempages = uleb_val(img, mj, n)
+        if mempages < 1
+          mempages = 1
+        end
+      end
     elseif sid2 == 4
       tb_off = si
     elseif sid2 == 9
@@ -843,7 +881,14 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   ltgt = mem.alloc(64 * 8)
   lelse = mem.alloc(64 * 8)
   gl   = mem.alloc(64 * 8)
-  lin  = mem.alloc(65536)
+  -- A declared minimum is what a runtime must actually provide, but this one
+  -- allocates eagerly, so an absurd minimum has to be refused rather than
+  -- attempted. 4096 pages is 256 MiB; nothing in any corpus here is close.
+  if mempages > 4096
+    return bailshape("declared linear memory above 4096 pages")
+  end
+  linsz: i64 = mempages * 65536
+  lin  = mem.alloc(linsz)
   himm = mem.alloc(256)
   fb   = mem.alloc(16)
   dseg = mem.alloc(64 * 2 * 8)
@@ -863,7 +908,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   mem.zero(ltgt, 64 * 8)
   mem.zero(lelse, 64 * 8)
   mem.zero(gl, 64 * 8)
-  mem.zero(lin, 65536)
+  mem.zero(lin, linsz)
   mem.zero(himm, 256)
   mem.zero(fb, 16)
   mem.zero(dseg, 64 * 2 * 8)
@@ -1050,7 +1095,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       end
       if dmode != 1
         dk: i64 = 0
-        while dk < dlen and doff + dk < 65536
+        while dk < dlen and doff + dk < linsz
           mem.write_byte(lin, doff + dk, string.byte(img, dq + dk))
           dk += 1
         end
@@ -1418,14 +1463,14 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
               bp: i64 = mem.read_byte(lin, vb) | (mem.read_byte(lin, vb + 1) << 8) | (mem.read_byte(lin, vb + 2) << 16) | (mem.read_byte(lin, vb + 3) << 24)
               bl: i64 = mem.read_byte(lin, vb + 4) | (mem.read_byte(lin, vb + 5) << 8) | (mem.read_byte(lin, vb + 6) << 16) | (mem.read_byte(lin, vb + 7) << 24)
               k3: i64 = 0
-              while k3 < bl and bp + k3 < 65536
+              while k3 < bl and bp + k3 < linsz
                 io.write(string.char(mem.read_byte(lin, bp + k3)))
                 k3 += 1
               end
               tot = tot + bl
               q3 += 1
             end
-            if npw + 4 <= 65536
+            if npw + 4 <= linsz
               mem.write_byte(lin, npw, tot & 255)
               mem.write_byte(lin, npw + 1, (tot >> 8) & 255)
               mem.write_byte(lin, npw + 2, (tot >> 16) & 255)
@@ -1780,7 +1825,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
             co = 0
           end
         end
-        av2: i64 = (mem.read_i64(st, sp * 8) + offv) & 0xFFFF
+        av2: i64 = mem.read_i64(st, sp * 8) + offv
         -- Width and signedness are DATA, one byte loop serves all 14 loads:
         --   1B 44/45 (i32 s/u) 48/49 (i64 s/u)
         --   2B 46/47           50/51
@@ -1794,7 +1839,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         elseif op == OP_i64_load or op == OP_f64_load
           wl = 8
         end
-        if av2 + wl > 65536
+        if av2 + wl > linsz or av2 < 0
           return bail(op, pc)
         end
         -- Assemble through the scratch buffer, never `| (byte << (k * 8))`:
@@ -1851,7 +1896,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           end
         end
         sv2: i64 = mem.read_i64(st, sp * 8)
-        ad2: i64 = (mem.read_i64(st, (sp - 1) * 8) + offs) & 0xFFFF
+        ad2: i64 = mem.read_i64(st, (sp - 1) * 8) + offs
         ws: i64 = 4
         if op == OP_i32_store8 or op == OP_i64_store8
           ws = 1
@@ -1860,7 +1905,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         elseif op == OP_i64_store or op == OP_f64_store
           ws = 8
         end
-        if ad2 + ws > 65536
+        if ad2 + ws > linsz or ad2 < 0
           return bail(op, pc)
         end
         -- Spill through the scratch buffer so the 8-byte case never needs a
@@ -2652,13 +2697,15 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         sp = sp
 
       elseif op == OP_memory_size or op == OP_memory_grow
-        -- memory.size / memory.grow. ward's linear memory is a fixed 64 KiB =
-        -- exactly one page, so size is 1 and grow always refuses (-1), which is
-        -- a legal wasm answer rather than a bail.
+        -- memory.size / memory.grow. ward's linear memory is the module's
+        -- DECLARED page count and never grows, so size is that count (it used
+        -- to be the literal 1, which is wrong for every module above one page)
+        -- and grow always refuses (-1), which is a legal wasm answer rather
+        -- than a bail.
         pc += 1                        -- memidx byte
         if op == OP_memory_size
           sp += 1
-          mem.write_i64(st, sp * 8, 1)
+          mem.write_i64(st, sp * 8, mempages)
         else
           if sp < 1
             return bail(op, pc)
@@ -2713,7 +2760,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           cln: i64 = mem.read_i64(st, sp * 8) & M32
           csr: i64 = mem.read_i64(st, (sp - 1) * 8) & M32
           cds: i64 = mem.read_i64(st, (sp - 2) * 8) & M32
-          if cds + cln > 65536 or csr + cln > 65536
+          if cds + cln > linsz or csr + cln > linsz
             return bail(op, pc)
           end
           -- copy direction matters when the ranges overlap
@@ -2740,7 +2787,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           fln: i64 = mem.read_i64(st, sp * 8) & M32
           fvl: i64 = mem.read_i64(st, (sp - 1) * 8) & 255
           fds: i64 = mem.read_i64(st, (sp - 2) * 8) & M32
-          if fds + fln > 65536
+          if fds + fln > linsz
             return bail(op, pc)
           end
           fk: i64 = 0
@@ -2761,7 +2808,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           ids: i64 = mem.read_i64(st, (sp - 2) * 8) & M32
           sbase: i64 = mem.read_i64(dseg, (dix * 2) * 8)
           ik: i64 = 0
-          while ik < iln and ids + ik < 65536
+          while ik < iln and ids + ik < linsz
             mem.write_byte(lin, ids + ik, string.byte(img, sbase + iso + ik))
             ik += 1
           end
@@ -3303,7 +3350,10 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
   jfo: i64 = 0
   jco: i64 = 0
   jimp: i64 = 0
-  jdata: i64 = 0
+  -- Declared linear-memory size in 64 KiB pages. `main` allocates exactly this
+  -- much and seeds it from the data segments, so `memory.size` reports it and
+  -- the emitted loads address a real image rather than a zeroed page.
+  jpages: i64 = 1
   jglz: i64 = 1
   jsi: i64 = 9
   while jsi <= mlen
@@ -3317,8 +3367,18 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       jfo = jsi
     elseif jsid == 10
       jco = jsi
-    elseif jsid == 11
-      jdata = 1
+    elseif jsid == 5
+      -- memory section: count, then per-memory limits (flags byte, min uleb,
+      -- optional max). Only the first memory exists in MVP wasm.
+      jmc: i64 = uleb_val(s, jsi, mlen)
+      jmj: i64 = uleb_end(s, jsi, mlen)
+      if jmc > 0
+        jmj += 1
+        jpages = uleb_val(s, jmj, mlen)
+        if jpages < 1
+          jpages = 1
+        end
+      end
     elseif jsid == 6
       jgc: i64 = uleb_val(s, jsi, mlen)
       jgj: i64 = uleb_end(s, jsi, mlen)
@@ -3448,7 +3508,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
     jsv += 1
   end
   if jself < 0
-    return -1
+    return jitbail("entry body is not in the code section", -1, pc)
   end
 
   -- ── ENTRY TRAMPOLINE ────────────────────────────────────────────────────
@@ -3520,7 +3580,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
     cf = 1 - mem.read_i64(jft, (curfn * 6 + 4) * 8)
     -- eight argument registers, seventeen local registers
     if selfloc > 17 or fnprm > 8 or n > 260000
-      return -1
+      return jitbail("body needs more locals or params than the register file has", -1, pc)
     end
 
     -- Five reserved words for the prologue. Which pairs actually need saving is
@@ -3586,7 +3646,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
     -- fall back to the interpreter. Correctness before speed (pass14 s1.1:
     -- a fast path that changes semantics is not proof).
     if sp > 8 or sp < 0 or n > 260000
-      return -1
+      return jitbail("operand stack deeper than 8 slots, or code buffer full", op, pc)
     end
 
     aw: i64 = alu_word(op)
@@ -3721,7 +3781,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- Slot `sp` is free here (it is where a push would land), which is why
       -- this needs sp <= 7 rather than the usual 8.
       if sp < 2 or sp > 7
-        return -1
+        return jitbail("operand stack shape", op, pc)
       end
       a4: i64 = sp - 2
       b4: i64 = sp - 1
@@ -3787,7 +3847,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- allocator -- the operand stack and locals stay entirely integer, which
       -- is what lets floats coexist with the w0..w8 / w9..w16 split.
       if sp < 2
-        return -1
+        return jitbail("operand stack shape", op, pc)
       end
       af: i64 = sp - 2
       bf2: i64 = sp - 1
@@ -3958,7 +4018,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- the frame pointer and link register. The old cap of 8 was what blocked
       -- wart_mixed_type_bench and wart_complete_opcode_bench.
       if idx > 16
-        return -1
+        return jitbail("local index above 16", op, pc)
       end
       rgi: i64 = locreg(idx, cf)
       -- Two alias registers, because consecutive `local.get`s are the common
@@ -3981,7 +4041,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       idx2: i64 = uleb_val(s, off + pc, off + blen) + lbase
       pc = uleb_end(s, off + pc, off + blen) - off
       if idx2 > 16 or sp < 1
-        return -1
+        return jitbail("local index above 16", op, pc)
       end
       rgo: i64 = locreg(idx2, cf)
       -- If the value was just produced by an ALU op into this very slot,
@@ -4008,7 +4068,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
     elseif aw != 0
       -- binary ALU: Wd = W(sp-2) op W(sp-1)
       if sp < 2
-        return -1
+        return jitbail("operand stack shape", op, pc)
       end
       a: i64 = sp - 2
       b: i64 = sp - 1
@@ -4035,7 +4095,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
     elseif cc >= 0
       -- comparison: CMP W(sp-2), W(sp-1) then CSET W(sp-2), cond
       if sp < 2
-        return -1
+        return jitbail("operand stack shape", op, pc)
       end
       a2: i64 = sp - 2
       b2: i64 = sp - 1
@@ -4067,7 +4127,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- two (the FP unit reads/writes a GP register directly for SCVTF/FCVTZS,
       -- so only one FMOV is needed); demote/promote need three.
       if sp < 1
-        return -1
+        return jitbail("operand stack shape", op, pc)
       end
       cv: i64 = sp - 1
       if op == OP_i32_wrap_i64 or op == OP_i64_extend_i32_u
@@ -4168,7 +4228,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- an unordered (NaN) operand yields false for lt/gt/le/ge and true for
       -- ne, matching wasm: eq=EQ, ne=NE, lt=MI, gt=GT, le=LS, ge=GE.
       if sp < 2
-        return -1
+        return jitbail("operand stack shape", op, pc)
       end
       ca: i64 = sp - 2
       cb: i64 = sp - 1
@@ -4220,7 +4280,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- abs clears the sign bit, neg flips it. That removes two shuttle moves
       -- each, both of which sat on the dependency chain.
       if sp < 1 or sp > 8
-        return -1
+        return jitbail("operand stack shape", op, pc)
       end
       na: i64 = sp - 1
       nt: i64 = sp
@@ -4255,7 +4315,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- the same GP<->FP shuttle as the binops. Offsets are the ARM64 opcode
       -- field, identical for single and double; only the type base differs.
       if sp < 1
-        return -1
+        return jitbail("operand stack shape", op, pc)
       end
       uf: i64 = sp - 1
       ubase: i64 = 0x1E200000
@@ -4300,7 +4360,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- i32.eqz / i64.eqz: compare against zero, then CSET EQ. Unary, so the
       -- operand slot is reused for the result.
       if sp < 1
-        return -1
+        return jitbail("operand stack shape", op, pc)
       end
       ez: i64 = sp - 1
       ezw: i64 = 0x7100001F
@@ -4318,9 +4378,6 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
     elseif (op >= OP_i32_load8_s and op <= OP_i64_load32_u) or (op >= OP_i32_store8 and op <= OP_i64_store32)
       -- sub-width loads and stores. Same effective-address form as the full
       -- width ops; only the size, signedness and offset scale differ.
-      if jdata != 0
-        return -1
-      end
       salign: i64 = uleb_val(s, off + pc, off + blen)
       pc = uleb_end(s, off + pc, off + blen) - off
       soff: i64 = uleb_val(s, off + pc, off + blen)
@@ -4341,8 +4398,23 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       if op >= OP_i64_load8_s and op <= OP_i64_load32_u
         sx64 = 1
       end
+      -- The scaled 12-bit immediate reaches 4095 slots and demands natural
+      -- alignment. Everything else FOLDS INTO THE ADDRESS REGISTER as one or
+      -- two ADD immediates (imm12, the first optionally shifted left 12), which
+      -- covers every offset below 16 MiB. This used to be a refusal, and it is
+      -- why every wasi-libc `_start` in the corpus ran on the interpreter:
+      -- wasi-libc addresses its data through offsets at 65540 and up, which is
+      -- precisely the range the scaled immediate cannot encode.
+      sfold: i64 = 0
       if soff - (soff // ssz) * ssz != 0 or soff // ssz > 4095
-        return -1
+        if soff > 16777215
+          return jitbail("memory offset above 16 MiB, past two ADD immediates", op, pc)
+        end
+        sfold = 1
+      end
+      simm: i64 = soff // ssz
+      if sfold == 1
+        simm = 0
       end
       sbase: i64 = 0x39000000
       if ssz == 2
@@ -4352,22 +4424,42 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       end
       if op >= OP_i32_store8
         if sp < 2
-          return -1
+          return jitbail("operand stack shape", op, pc)
         end
         za: i64 = sp - 2
         zv: i64 = sp - 1
         jitm.w32(code, n, 0x8B000000 | (za << 16) | (28 << 5) | za)
         n += 1
-        jitm.w32(code, n, sbase | ((soff // ssz) << 10) | (za << 5) | zv)
+        if sfold == 1
+          if soff >= 4096
+            jitm.w32(code, n, 0x91400000 | ((soff >> 12) << 10) | (za << 5) | za)
+            n += 1
+          end
+          if (soff & 0xFFF) > 0
+            jitm.w32(code, n, 0x91000000 | ((soff & 0xFFF) << 10) | (za << 5) | za)
+            n += 1
+          end
+        end
+        jitm.w32(code, n, sbase | (simm << 10) | (za << 5) | zv)
         n += 1
         sp -= 2
       else
         if sp < 1
-          return -1
+          return jitbail("operand stack shape", op, pc)
         end
         zl: i64 = sp - 1
         jitm.w32(code, n, 0x8B000000 | (zl << 16) | (28 << 5) | zl)
         n += 1
+        if sfold == 1
+          if soff >= 4096
+            jitm.w32(code, n, 0x91400000 | ((soff >> 12) << 10) | (zl << 5) | zl)
+            n += 1
+          end
+          if (soff & 0xFFF) > 0
+            jitm.w32(code, n, 0x91000000 | ((soff & 0xFFF) << 10) | (zl << 5) | zl)
+            n += 1
+          end
+        end
         lw: i64 = sbase | 0x00400000
         if ssg == 1
           if sx64 == 1
@@ -4376,7 +4468,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
             lw = sbase | 0x00C00000
           end
         end
-        jitm.w32(code, n, lw | ((soff // ssz) << 10) | (zl << 5) | zl)
+        jitm.w32(code, n, lw | (simm << 10) | (zl << 5) | zl)
         n += 1
       end
       last_alu = -1
@@ -4387,9 +4479,6 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- are LEBs. The dynamic address is an UNSIGNED i32 already zero-extended
       -- in its register, because every 32-bit ARM64 op clears the top half, so
       -- `ADD Xa, x28, Xa` forms the effective address without a separate UXTW.
-      if jdata != 0
-        return -1
-      end
       malign: i64 = uleb_val(s, off + pc, off + blen)
       pc = uleb_end(s, off + pc, off + blen) - off
       moff: i64 = uleb_val(s, off + pc, off + blen)
@@ -4403,36 +4492,66 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       if wide == 1
         sc = 8
       end
+      -- same fold as the sub-width arm: an offset the scaled immediate cannot
+      -- encode goes into the address register instead of being a refusal
+      mfold: i64 = 0
       if moff - (moff // sc) * sc != 0 or moff // sc > 4095
-        return -1
+        if moff > 16777215
+          return jitbail("memory offset above 16 MiB, past two ADD immediates", op, pc)
+        end
+        mfold = 1
+      end
+      mimm: i64 = moff // sc
+      if mfold == 1
+        mimm = 0
       end
       if op >= OP_i32_store
         -- store: [addr, value]
         if sp < 2
-          return -1
+          return jitbail("operand stack shape", op, pc)
         end
         ma: i64 = sp - 2
         mv: i64 = sp - 1
         jitm.w32(code, n, 0x8B000000 | (ma << 16) | (28 << 5) | ma)
         n += 1
+        if mfold == 1
+          if moff >= 4096
+            jitm.w32(code, n, 0x91400000 | ((moff >> 12) << 10) | (ma << 5) | ma)
+            n += 1
+          end
+          if (moff & 0xFFF) > 0
+            jitm.w32(code, n, 0x91000000 | ((moff & 0xFFF) << 10) | (ma << 5) | ma)
+            n += 1
+          end
+        end
         if wide == 1
-          jitm.w32(code, n, 0xF9000000 | ((moff // 8) << 10) | (ma << 5) | mv)
+          jitm.w32(code, n, 0xF9000000 | (mimm << 10) | (ma << 5) | mv)
         else
-          jitm.w32(code, n, 0xB9000000 | ((moff // 4) << 10) | (ma << 5) | mv)
+          jitm.w32(code, n, 0xB9000000 | (mimm << 10) | (ma << 5) | mv)
         end
         n += 1
         sp -= 2
       else
         if sp < 1
-          return -1
+          return jitbail("operand stack shape", op, pc)
         end
         ma2: i64 = sp - 1
         jitm.w32(code, n, 0x8B000000 | (ma2 << 16) | (28 << 5) | ma2)
         n += 1
+        if mfold == 1
+          if moff >= 4096
+            jitm.w32(code, n, 0x91400000 | ((moff >> 12) << 10) | (ma2 << 5) | ma2)
+            n += 1
+          end
+          if (moff & 0xFFF) > 0
+            jitm.w32(code, n, 0x91000000 | ((moff & 0xFFF) << 10) | (ma2 << 5) | ma2)
+            n += 1
+          end
+        end
         if wide == 1
-          jitm.w32(code, n, 0xF9400000 | ((moff // 8) << 10) | (ma2 << 5) | ma2)
+          jitm.w32(code, n, 0xF9400000 | (mimm << 10) | (ma2 << 5) | ma2)
         else
-          jitm.w32(code, n, 0xB9400000 | ((moff // 4) << 10) | (ma2 << 5) | ma2)
+          jitm.w32(code, n, 0xB9400000 | (mimm << 10) | (ma2 << 5) | ma2)
         end
         n += 1
       end
@@ -4443,7 +4562,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- select: [a, b, c] -> c != 0 ? a : b. CMP against zero then CSEL, so no
       -- branch is emitted at all.
       if sp < 3
-        return -1
+        return jitbail("operand stack shape", op, pc)
       end
       sa: i64 = sp - 3
       sb: i64 = sp - 2
@@ -4460,18 +4579,18 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       gidx: i64 = uleb_val(s, off + pc, off + blen)
       pc = uleb_end(s, off + pc, off + blen) - off
       if gidx > 4095
-        return -1
+        return jitbail("global index above 4095", op, pc)
       end
       if op == OP_global_get
         if sp > 8
-          return -1
+          return jitbail("operand stack shape", op, pc)
         end
         jitm.w32(code, n, 0xF9400000 | (gidx << 10) | (27 << 5) | sp)
         n += 1
         sp += 1
       else
         if sp < 1
-          return -1
+          return jitbail("operand stack shape", op, pc)
         end
         jitm.w32(code, n, 0xF9000000 | (gidx << 10) | (27 << 5) | (sp - 1))
         n += 1
@@ -4481,14 +4600,16 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_cset = -1
 
     elseif op == OP_memory_size
-      -- memory.size: the JIT is handed a fixed ONE-page (65536 byte) buffer,
-      -- so this is the constant 1. memory.grow (64) has no arm and still bails
-      -- — growing would need a real allocator behind the base pointer.
+      -- memory.size: `main` allocates exactly the declared page count and the
+      -- image never grows, so this is the constant `jpages`. It used to emit a
+      -- hardcoded 1, which is wrong for every module declaring more than one
+      -- page. memory.grow (64) has no arm and still bails — growing would need
+      -- a real allocator behind the base pointer.
       pc += 1
-      if sp > 8 or jdata != 0
-        return -1
+      if sp > 8
+        return jitbail("operand stack shape", op, pc)
       end
-      jitm.w32(code, n, 0x52800000 | (1 << 5) | sp)
+      jitm.w32(code, n, 0x52800000 | ((jpages & 0xFFFF) << 5) | sp)
       n += 1
       sp += 1
 
@@ -4498,7 +4619,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- the vector unit as CNT over bytes then ADDV to sum the lanes, reusing
       -- the same GP<->FP shuttle the float ops use.
       if sp < 1
-        return -1
+        return jitbail("operand stack shape", op, pc)
       end
       bq: i64 = sp - 1
       b64: i64 = 0
@@ -4546,7 +4667,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- the width from the low bits of its register, so negating the amount
       -- turns a right rotate into a left one with no explicit `width - n`.
       if sp < 2
-        return -1
+        return jitbail("operand stack shape", op, pc)
       end
       ra: i64 = sp - 2
       rb: i64 = sp - 1
@@ -4570,7 +4691,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- pure integer masking: clear the sign bit of a, take b's, OR them. No FP
       -- register is touched -- another dividend of the representation.
       if sp < 2 or sp > 8
-        return -1
+        return jitbail("operand stack shape", op, pc)
       end
       pa: i64 = sp - 2
       pb: i64 = sp - 1
@@ -4605,10 +4726,31 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
     elseif op == OP_nop
       -- nop: emits nothing
 
+    elseif op == OP_unreachable
+      -- unreachable: the module traps. BRK #0 is the only trap this JIT can
+      -- express -- there is no way to call back into ward from emitted code --
+      -- so a jit trap raises SIGTRAP where an interpreter trap exits 71. That
+      -- divergence is REAL and `test/conform.duo` reports it rather than
+      -- hiding it; what is not acceptable is inventing a return value here.
+      --
+      -- Like `br`, everything after this is unreachable and wasm makes the
+      -- operand stack polymorphic there while this JIT tracks `sp` concretely.
+      -- Accept it only where that region is empty. Without this guard, the
+      -- wasi-libc `_start` prologue compiles its post-trap tail against a stale
+      -- `sp` -- the same defect that made wart_simple_bench return 1.
+      nxu: i64 = string.byte(s, off + pc)
+      if nxu != 11 and nxu != 5
+        return jitbail("reachable code after unreachable", op, pc)
+      end
+      jitm.w32(code, n, 0xD4200000)
+      n += 1
+      last_alu = -1
+      last_cset = -1
+
     elseif op == OP_drop
       -- drop: the value simply stops being referenced
       if sp < 1
-        return -1
+        return jitbail("operand stack shape", op, pc)
       end
       sp -= 1
 
@@ -4619,7 +4761,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- block, so `br` out of an `if` uses the same forward machinery.
       pc += 1
       if ldep >= 32 or sp < 1
-        return -1
+        return jitbail("label stack deeper than 32", op, pc)
       end
       sp -= 1
       mem.write_i64(lkind, ldep * 8, 0)
@@ -4636,12 +4778,12 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- else: end of the then-arm. Jump over the else-arm (patched at `end`),
       -- then point the `if`'s conditional branch here.
       if ldep < 1
-        return -1
+        return jitbail("else with no open if", op, pc)
       end
       lte: i64 = ldep - 1
       pke: i64 = mem.read_i64(lpn, lte * 8)
       if pke >= 8
-        return -1
+        return jitbail("more than 8 forward branches to one label", op, pc)
       end
       jitm.w32(code, n, 0x14000000)
       mem.write_i64(lpat, (lte * 8 + pke) * 8, n * 2 + 1)
@@ -4665,7 +4807,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- to it are recorded and patched there.
       pc += 1
       if ldep >= 32
-        return -1
+        return jitbail("label stack deeper than 32", op, pc)
       end
       mem.write_i64(lkind, ldep * 8, 0)
       mem.write_i64(lpn, ldep * 8, 0)
@@ -4676,7 +4818,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- loop: header is here, so branches to it resolve immediately
       pc += 1
       if ldep >= 32
-        return -1
+        return jitbail("label stack deeper than 32", op, pc)
       end
       mem.write_i64(lkind, ldep * 8, 1)
       mem.write_i64(lhead, ldep * 8, n)
@@ -4691,7 +4833,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       sp -= 1
       lt: i64 = ldep - 1 - d3
       if lt < 0
-        return -1
+        return jitbail("branch target above the label stack", op, pc)
       end
       -- If a CSET produced this condition immediately before, discard it and
       -- branch on the flags the CMP already set: `cmp; cset; cbnz` (3 insns,
@@ -4713,7 +4855,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         -- forward: emit with a zero offset and record the word for patching
         pk2: i64 = mem.read_i64(lpn, lt * 8)
         if pk2 >= 8
-          return -1
+          return jitbail("more than 8 forward branches to one label", op, pc)
         end
         if last_cset == n - 1
           n -= 1
@@ -4777,7 +4919,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       pc = uleb_end(s, off + pc, off + blen) - off
       lt2: i64 = ldep - 1 - d4
       if lt2 < 0
-        return -1
+        return jitbail("branch target above the label stack", op, pc)
       end
       if mem.read_i64(lkind, lt2 * 8) == 1
         dlb: i64 = mem.read_i64(lhead, lt2 * 8) - n
@@ -4786,7 +4928,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       else
         pk4: i64 = mem.read_i64(lpn, lt2 * 8)
         if pk4 >= 8
-          return -1
+          return jitbail("more than 8 forward branches to one label", op, pc)
         end
         jitm.w32(code, n, 0x14000000)
         mem.write_i64(lpat, (lt2 * 8 + pk4) * 8, n * 2 + 1)
@@ -4800,7 +4942,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- the unreachable region is empty -- immediately before `end` or `else`.
       nxb: i64 = string.byte(s, off + pc)
       if nxb != 11 and nxb != 5
-        return -1
+        return jitbail("reachable code after an unconditional branch", op, pc)
       end
 
     elseif op == OP_br_table
@@ -4811,7 +4953,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       bt_n: i64 = uleb_val(s, off + pc, off + blen)
       pc = uleb_end(s, off + pc, off + blen) - off
       if sp < 1 or bt_n > 32
-        return -1
+        return jitbail("br_table with more than 32 targets", op, pc)
       end
       sp -= 1
       bti: i64 = sp
@@ -4821,7 +4963,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         pc = uleb_end(s, off + pc, off + blen) - off
         btt: i64 = ldep - 1 - btd
         if btt < 0
-          return -1
+          return jitbail("branch target above the label stack", op, pc)
         end
         jitm.w32(code, n, 0x7100001F | (btk << 10) | (bti << 5))
         n += 1
@@ -4832,7 +4974,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         else
           btp: i64 = mem.read_i64(lpn, btt * 8)
           if btp >= 8
-            return -1
+            return jitbail("more than 8 forward branches to one label", op, pc)
           end
           jitm.w32(code, n, 0x54000000)
           mem.write_i64(lpat, (btt * 8 + btp) * 8, n * 2)
@@ -4846,7 +4988,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       pc = uleb_end(s, off + pc, off + blen) - off
       btt2: i64 = ldep - 1 - btdf
       if btt2 < 0
-        return -1
+        return jitbail("branch target above the label stack", op, pc)
       end
       if mem.read_i64(lkind, btt2 * 8) == 1
         btl: i64 = mem.read_i64(lhead, btt2 * 8) - n
@@ -4855,7 +4997,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       else
         btp2: i64 = mem.read_i64(lpn, btt2 * 8)
         if btp2 >= 8
-          return -1
+          return jitbail("more than 8 forward branches to one label", op, pc)
         end
         jitm.w32(code, n, 0x14000000)
         mem.write_i64(lpat, (btt2 * 8 + btp2) * 8, n * 2 + 1)
@@ -4866,7 +5008,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- model cannot compile it
       nxt2: i64 = string.byte(s, off + pc)
       if nxt2 != 11 and nxt2 != 5
-        return -1
+        return jitbail("reachable code after an unconditional branch", op, pc)
       end
       last_alu = -1
       last_cset = -1
@@ -4882,7 +5024,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       if ldep == 0
         pc = blen + 1
       elseif inl_d > 0 or jrn >= 64
-        return -1
+        return jitbail("return inside an inlined body, or more than 64 returns", op, pc)
       else
         if sp > 0
           jitm.w32(code, n, 0xAA0003E0 | ((sp - 1) << 16) | 0)
@@ -4897,7 +5039,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         -- concretely. Accept it only where that region is empty.
         nxr: i64 = string.byte(s, off + pc)
         if nxr != 11 and nxr != 5
-          return -1
+          return jitbail("reachable code after an unconditional branch", op, pc)
         end
         last_alu = -1
         last_cset = -1
@@ -4912,7 +5054,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       pc = uleb_end(s, off + pc, off + blen) - off
       cfx: i64 = cidx - jimp
       if cfx < 0 or cfx >= jnf
-        return -1
+        return jitbail("call target is an IMPORTED function, which the jit cannot reach", op, pc)
       end
       cnl: i64 = mem.read_i64(jft, (cfx * 6 + 2) * 8)
       cnp: i64 = mem.read_i64(jft, (cfx * 6 + 3) * 8)
@@ -4921,7 +5063,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- the callee's locals start above every enclosing frame's
       nlb2: i64 = lbase + curloc
       if cnp > sp or cnr > 1
-        return -1
+        return jitbail("call passes more arguments than are on the stack, or returns more than one value", op, pc)
       end
       -- INLINE only a LEAF callee. Leafness is what makes this terminate: a
       -- body containing no call cannot recurse, so the splice is always finite
@@ -4986,7 +5128,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- puts its first eight locals in x19..x26, which usually leaves this
       -- spill list EMPTY -- a recursive `fib` spills nothing at all.
       if jcn >= 1024 or cnp > 8
-        return -1
+        return jitbail("call passes more than 8 arguments, or the call-patch table is full", op, pc)
       end
       nsp: i64 = 0
       lv: i64 = 0
@@ -5005,7 +5147,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         ov += 1
       end
       if nsp > 64
-        return -1
+        return jitbail("more than 64 registers to spill across a call", op, pc)
       end
       spi: i64 = 0
       while spi < nsp
@@ -5047,7 +5189,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- and the entry was queued before this loop began.
       if mem.read_i64(jqs, cfx * 8) == 0
         if jqn >= 256
-          return -1
+          return jitbail("more than 256 functions queued for compilation", op, pc)
         end
         mem.write_i64(jqs, cfx * 8, 1)
         mem.write_i64(jq, jqn * 8, cfx)
@@ -5058,7 +5200,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       end
 
     else
-      return -1
+      return jitbail("no jit arm for this opcode", op, pc)
     end
   end
 
@@ -5166,7 +5308,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
     ct: i64 = mem.read_i64(jct, jci * 8)
     ca: i64 = mem.read_i64(jqa, ct * 8)
     if ca <= 0
-      return -1
+      return jitbail("a queued callee was never compiled", -1, pc)
     end
     jitm.w32(code, cw, 0x94000000 | ((ca - cw) & 0x03FFFFFF))
     jci += 1
@@ -5212,6 +5354,21 @@ main(): void
   bytes = f:read("*a")
   f:close()
   tRD1 = os.clock()
+
+  -- HEADER CHECK. Every walker in this file starts at byte 9, i.e. it ASSUMED
+  -- the 8-byte header rather than reading it, so ward would run a file whose
+  -- magic number had been overwritten and print a confident answer for it.
+  -- `test/conform.duo` perturbs byte 4 of a fixture and requires a refusal;
+  -- without this the perturbation is invisible, and a control that cannot fail
+  -- is not evidence.
+  if #bytes < 8 or string.byte(bytes, 1) != 0 or string.byte(bytes, 2) != 97 or string.byte(bytes, 3) != 115 or string.byte(bytes, 4) != 109
+    iom.err("ward: " .. path .. " is not a wasm module (bad magic)\n")
+    os.exit(1)
+  end
+  if string.byte(bytes, 5) != 1 or string.byte(bytes, 6) != 0 or string.byte(bytes, 7) != 0 or string.byte(bytes, 8) != 0
+    iom.err("ward: " .. path .. " is not wasm version 1\n")
+    os.exit(1)
+  end
 
   packed: i64 = find_run_body(bytes, #bytes, invoke, #invoke, 0)
   tRD2 = os.clock()
@@ -5268,8 +5425,80 @@ main(): void
         -- came back as 0), and it was invisible while the JIT could only
         -- compile i32 bodies.
         rt0: i64 = find_run_body(bytes, #bytes, invoke, #invoke, 2)
-        jlin = mem.alloc(65536)
-        mem.zero(jlin, 65536)
+        -- LINEAR MEMORY for compiled code. Two things used to be wrong here and
+        -- they compounded: the buffer was a hardcoded 65536 bytes regardless of
+        -- the module's declared page count, and it was never seeded from the
+        -- data segments. The second was "fixed" by making every load and store
+        -- REFUSE when a data section was present, which is why every wasi-libc
+        -- `_start` in the corpus ran on the interpreter — the refusal fired on
+        -- the first `i32.load`, eight bytes into the body, and said nothing.
+        -- Emitted loads carry no bounds check, so under-allocating here is heap
+        -- corruption, not a wrong answer: size from the memory section.
+        jpg: i64 = 1
+        jdb: i64 = 0
+        jmx: i64 = 9
+        while jmx <= #bytes
+          jmd: i64 = string.byte(bytes, jmx)
+          jmx += 1
+          jmz: i64 = uleb_val(bytes, jmx, #bytes)
+          jmx = uleb_end(bytes, jmx, #bytes)
+          if jmd == 5
+            jmn: i64 = uleb_val(bytes, jmx, #bytes)
+            jmq: i64 = uleb_end(bytes, jmx, #bytes)
+            if jmn > 0
+              jmq += 1
+              jpg = uleb_val(bytes, jmq, #bytes)
+              if jpg < 1
+                jpg = 1
+              end
+            end
+          elseif jmd == 11
+            jdb = jmx
+          end
+          jmx += jmz
+        end
+        -- Same refusal as `run_body`: emitted loads carry no bounds check, so
+        -- quietly shrinking an absurd declared minimum here would be heap
+        -- corruption rather than a wrong answer.
+        if jpg > 4096
+          iom.err("ward: declared linear memory above 4096 pages\n")
+          os.exit(1)
+        end
+        jlinsz: i64 = jpg * 65536
+        jlin = mem.alloc(jlinsz)
+        mem.zero(jlin, jlinsz)
+        -- Active data segments, exactly as `run_body` seeds `lin`. A PASSIVE
+        -- segment (mode 1) carries no offset and must NOT be copied now; the
+        -- `memory.init` that would place it has no jit arm and bails anyway.
+        if jdb > 0
+          jdn: i64 = uleb_val(bytes, jdb, #bytes)
+          jdq: i64 = uleb_end(bytes, jdb, #bytes)
+          jdv: i64 = 0
+          while jdv < jdn and jdq <= #bytes
+            jdm: i64 = uleb_val(bytes, jdq, #bytes)
+            jdq = uleb_end(bytes, jdq, #bytes)
+            jdo: i64 = 0
+            if jdm == 2
+              jdq = uleb_end(bytes, jdq, #bytes)
+            end
+            if jdm != 1
+              jdq += 1
+              jdo = uleb_val(bytes, jdq, #bytes)
+              jdq = uleb_end(bytes, jdq, #bytes) + 1
+            end
+            jdl: i64 = uleb_val(bytes, jdq, #bytes)
+            jdq = uleb_end(bytes, jdq, #bytes)
+            if jdm != 1
+              jdk: i64 = 0
+              while jdk < jdl and jdo + jdk < jlinsz
+                mem.write_byte(jlin, jdo + jdk, string.byte(bytes, jdq + jdk))
+                jdk += 1
+              end
+            end
+            jdq = jdq + jdl
+            jdv += 1
+          end
+        end
         jgl = mem.alloc(4096 * 8)
         mem.zero(jgl, 4096 * 8)
         -- Seed globals from the module's OWN section 6, mirroring `run_body`,
