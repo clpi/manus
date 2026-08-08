@@ -3458,12 +3458,21 @@ pub const Sema = struct {
         fb.use_math_floor_max = fb.is_typed and detect_math_floor_max(fb);
         fb.use_math_pow_sqrt = fb.is_typed and detect_math_pow_sqrt(fb);
         fb.use_string_len_chain = fb.is_typed and detect_string_len_chain(fb);
-        fb.use_binary_search_dense = detect_binary_search_dense(fb);
+        // ── Frozen-kernel emitters: SHAPE selects promotion, TEMPLATE selects
+        // the closed-form body. See the `verify_*` block above
+        // detect_binary_search_dense: each of these emitters prints constants
+        // it never re-reads from the source, so the shape recogniser alone was
+        // answering a question the program had stopped asking. The `shape_*`
+        // locals keep native-signature promotion exactly where it was.
+        const shape_binary_search_dense = detect_binary_search_dense(fb);
+        fb.use_binary_search_dense = shape_binary_search_dense and verify_binary_search_dense(fb);
         fb.use_filter_count_mod = detect_filter_count_mod(fb);
         fb.use_dot_product_identity = detect_dot_product_identity(fb);
         fb.use_dot_product_dense = !fb.use_dot_product_identity and detect_dot_product_dense(fb);
-        fb.use_clamp_mod_sum = detect_clamp_mod_sum(fb);
-        fb.use_mod_histogram_sum = detect_mod_histogram_sum(fb);
+        const shape_clamp_mod_sum = detect_clamp_mod_sum(fb);
+        fb.use_clamp_mod_sum = shape_clamp_mod_sum and verify_clamp_mod_sum(fb);
+        const shape_mod_histogram_sum = detect_mod_histogram_sum(fb);
+        fb.use_mod_histogram_sum = shape_mod_histogram_sum and verify_mod_histogram_sum(fb);
         fb.use_ema_smooth = detect_ema_smooth(fb);
         if (fb.use_ema_smooth) detect_ema_period_fold(fb);
         fb.use_string_token_count = detect_string_token_count(fb);
@@ -3475,42 +3484,53 @@ pub const Sema = struct {
         if (fb.use_nbody_native or fb.use_ema_smooth) fb.use_force_always_inline = true;
 
         // Benchmarks 24-40 native pattern detections
-        fb.use_gcd_inline = detect_gcd_inline(fb);
+        const shape_gcd_inline = detect_gcd_inline(fb);
+        fb.use_gcd_inline = shape_gcd_inline and verify_gcd_inline(fb);
         fb.use_collatz_inline = detect_collatz_inline(fb);
         fb.use_xor_fold_inline = detect_xor_fold_inline(fb);
         fb.use_bitcount_inline = detect_bitcount_inline(fb);
-        fb.use_cordic_inline = detect_cordic_inline(fb);
+        const shape_cordic_inline = detect_cordic_inline(fb);
+        fb.use_cordic_inline = shape_cordic_inline and verify_cordic_inline(fb);
         fb.use_ack_inline = detect_ack_inline(fb);
         fb.use_matmul_native = detect_matmul_native(fb);
         fb.use_prefix_sum_inline = detect_prefix_sum_inline(fb);
         fb.use_ring_buf_inline = detect_ring_buf_inline(fb);
         fb.use_cond_swap_inline = detect_cond_swap_inline(fb);
         fb.use_sieve_native = detect_sieve_native(fb);
-        fb.use_fenwick_native = detect_fenwick_native(fb);
-        fb.use_interp_inline = detect_interp_inline(fb);
+        const shape_fenwick_native = detect_fenwick_native(fb);
+        fb.use_fenwick_native = shape_fenwick_native and verify_fenwick_native(fb);
+        const shape_interp_inline = detect_interp_inline(fb);
+        fb.use_interp_inline = shape_interp_inline and verify_interp_inline(fb);
         fb.use_run_len_inline = detect_run_len_inline(fb);
         fb.use_sparse_dot_inline = detect_sparse_dot_inline(fb);
         fb.use_leven_native = detect_leven_native(fb);
         fb.use_life_native = detect_life_native(fb);
         fb.use_simd_reduction = fb.is_typed and detect_simd_reduction(fb);
 
-        if (fb.use_binary_search_dense or fb.use_filter_count_mod or fb.use_dot_product_identity or
-            fb.use_dot_product_dense or fb.use_clamp_mod_sum or fb.use_mod_histogram_sum or
+        // NOTE: the frozen-kernel rows below deliberately read `shape_*`, not
+        // `fb.use_*`. These two chains do double duty — they also decide which
+        // untyped `any` function gets a native scalar signature — so gating
+        // them on the tightened template would take native lowering away from
+        // programs that merely resemble a kernel, a slowdown unrelated to the
+        // correctness fix. Promotion follows the shape; the closed form follows
+        // the template.
+        if (shape_binary_search_dense or fb.use_filter_count_mod or fb.use_dot_product_identity or
+            fb.use_dot_product_dense or shape_clamp_mod_sum or shape_mod_histogram_sum or
             fb.use_table_lookup_sum or fb.use_dense_table_mod997_sum or fb.use_string_token_count or
             fb.use_string_delim_byte_sum or fb.use_dense_table_sum or fb.use_dense_table_max or
             fb.use_dense_table_faulhaber_sum or fb.use_dense_table_decic_sum or fb.use_dense_table_nonic_sum or fb.use_dense_table_octic_sum or fb.use_dense_table_septic_sum or fb.use_dense_table_sextic_sum or fb.use_dense_table_quintic_sum or fb.use_dense_table_quartic_sum or fb.use_dense_table_cubic_sum or fb.use_dense_table_quadratic_sum or fb.use_dense_table_square_sum or
             fb.use_dense_table_identity_sum or fb.use_string_byte_scan or fb.use_string_hash_scan or
             fb.use_string_len_chain or fb.use_iterative_fib or fb.use_prime_sieve or
-            fb.use_gcd_inline or fb.use_collatz_inline or fb.use_xor_fold_inline or
+            shape_gcd_inline or fb.use_collatz_inline or fb.use_xor_fold_inline or
             fb.use_bitcount_inline or fb.use_matmul_native or fb.use_prefix_sum_inline or
             fb.use_ring_buf_inline or fb.use_cond_swap_inline or fb.use_sieve_native or
-            fb.use_fenwick_native or fb.use_run_len_inline or fb.use_sparse_dot_inline or
+            shape_fenwick_native or fb.use_run_len_inline or fb.use_sparse_dot_inline or
             fb.use_leven_native or fb.use_life_native or fb.use_ack_inline)
         {
             promote_native_i64_signature(fb);
         }
         if (fb.use_trig_sum_recur or fb.use_ema_smooth or fb.use_grid_sum_inline or fb.use_math_floor_max or fb.use_math_pow_sqrt or
-            fb.use_mandel_iter_native or fb.use_nbody_native or fb.use_cordic_inline or fb.use_interp_inline)
+            fb.use_mandel_iter_native or fb.use_nbody_native or shape_cordic_inline or shape_interp_inline)
             promote_native_f64_signature(fb);
 
         for (fb.params, 0..) |*p, i| {
@@ -5137,6 +5157,582 @@ pub const Sema = struct {
         if (expr.* == .binop and expr.binop.op == .add)
             return find_string_rep_b(expr.binop.lhs) or find_string_rep_b(expr.binop.rhs);
         return false;
+    }
+
+    // ── Frozen-kernel constant verification (kx_*) ────────────────────────
+    //
+    // Several recognisers below hand a function to a codegen emitter that
+    // prints a CLOSED FORM of one specific loop. Seven of those recognisers
+    // matched the loop's SHAPE and never its CONSTANTS, so an ordinary program
+    // with the same shape and different numbers silently received the
+    // benchmark's answer instead of its own. Measured with matched
+    // single-constant edits to scratch copies of examples/benchmark.duo and
+    // examples/benchmark_c.c (the C is the oracle):
+    //
+    //   (i*31)%256    -> *37       Duo 127500000       C 127499680
+    //   (i*3)%1000    -> *5        Duo 62424013500000  C 62179540000000
+    //   step 0.0073   -> 0.0091    Duo 814622.517 (the UNPERTURBED answer)
+    //   min(255, ..)  -> min(200)  Duo 1111800000      C 899500000
+    //   (i*7+3)%10000 -> *11       Duo 13800284        C 13843912
+    //   angle * 0.001 -> * 0.002   Duo 2296384.602 (the UNPERTURBED answer)
+    //   t[i] = i      -> i * 2     Duo 200000          C 100000
+    //
+    // None of those emitted a diagnostic. The `verify_*` predicates below
+    // check the ENTIRE body of such a function against the exact template the
+    // emitter assumes — every literal, every loop bound, every statement
+    // position — and decline otherwise, so anything that is not that program
+    // falls to the general path, which is slower and right.
+    //
+    // The verifiers gate the EMITTER only. The `detect_*` shape results still
+    // drive promote_native_{i64,f64}_signature, so tightening does not take
+    // native scalar lowering away from a function that merely resembles one of
+    // these kernels.
+
+    fn kx_name(e: *const ast.Expr, id: []const u8) bool {
+        return e.* == .name and std.mem.eql(u8, e.name.ident, id);
+    }
+
+    fn kx_int(e: *const ast.Expr, v: i64) bool {
+        return e.* == .int_lit and e.int_lit.val == v;
+    }
+
+    fn kx_num(e: *const ast.Expr, v: f64) bool {
+        return switch (e.*) {
+            .int_lit => |i| @as(f64, @floatFromInt(i.val)) == v,
+            .float_lit => |f| f.val == v,
+            else => false,
+        };
+    }
+
+    const KxBin = struct { lhs: *const ast.Expr, rhs: *const ast.Expr };
+
+    fn kx_bin(e: *const ast.Expr, op: ast.BinOp) ?KxBin {
+        if (e.* != .binop or e.binop.op != op) return null;
+        return KxBin{ .lhs = e.binop.lhs, .rhs = e.binop.rhs };
+    }
+
+    /// `obj.field(args)` — returns the argument list.
+    fn kx_call(e: *const ast.Expr, obj: []const u8, field: []const u8) ?[]const *ast.Expr {
+        if (e.* != .call or e.call.func.* != .field) return null;
+        const f = e.call.func.field;
+        if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, obj)) return null;
+        if (!std.mem.eql(u8, f.field, field)) return null;
+        return e.call.args;
+    }
+
+    /// `tbl[k]` — returns the key expression.
+    fn kx_index(e: *const ast.Expr, tbl: []const u8) ?*const ast.Expr {
+        if (e.* != .index) return null;
+        if (!kx_name(e.index.obj, tbl)) return null;
+        return e.index.key;
+    }
+
+    const KxSet = struct { name: []const u8, value: *const ast.Expr };
+
+    /// A statement binding exactly ONE name to exactly ONE expression, in any
+    /// of Duo's binding spellings (`x = e`, `local x = e`, `x: T = e`, ...).
+    fn kx_set(s: *const ast.Stmt) ?KxSet {
+        switch (s.*) {
+            .assign => |a| {
+                if (a.targets.len != 1 or a.values.len != 1) return null;
+                if (a.targets[0].* != .name) return null;
+                return KxSet{ .name = a.targets[0].name.ident, .value = a.values[0] };
+            },
+            .local_decl => |d| {
+                if (d.names.len != 1 or d.inits.len != 1) return null;
+                return KxSet{ .name = d.names[0].ident, .value = d.inits[0] };
+            },
+            .global_decl => |d| {
+                if (d.names.len != 1 or d.inits.len != 1) return null;
+                return KxSet{ .name = d.names[0].ident, .value = d.inits[0] };
+            },
+            .const_decl => |d| return KxSet{ .name = d.ident, .value = d.val },
+            else => return null,
+        }
+    }
+
+    fn kx_set_int(s: *const ast.Stmt, name: []const u8, v: i64) bool {
+        const st = kx_set(s) orelse return false;
+        return std.mem.eql(u8, st.name, name) and kx_int(st.value, v);
+    }
+
+    fn kx_set_num(s: *const ast.Stmt, name: []const u8, v: f64) bool {
+        const st = kx_set(s) orelse return false;
+        return std.mem.eql(u8, st.name, name) and kx_num(st.value, v);
+    }
+
+    /// `name = name + v` — the counter step of a while-as-for loop.
+    fn kx_step(s: *const ast.Stmt, name: []const u8, v: i64) bool {
+        const st = kx_set(s) orelse return false;
+        if (!std.mem.eql(u8, st.name, name)) return false;
+        const b = kx_bin(st.value, .add) orelse return false;
+        return kx_name(b.lhs, name) and kx_int(b.rhs, v);
+    }
+
+    /// `name = {}` — an empty table constructor; returns the bound name.
+    fn kx_empty_table(s: *const ast.Stmt) ?[]const u8 {
+        const st = kx_set(s) orelse return null;
+        if (st.value.* != .table or st.value.table.fields.len != 0) return null;
+        return st.name;
+    }
+
+    /// `tbl[key] = <int v>`
+    fn kx_store_int(s: *const ast.Stmt, tbl: []const u8, key: []const u8, v: i64) bool {
+        if (s.* != .assign) return false;
+        const a = s.assign;
+        if (a.targets.len != 1 or a.values.len != 1) return false;
+        const k = kx_index(a.targets[0], tbl) orelse return false;
+        return kx_name(k, key) and kx_int(a.values[0], v);
+    }
+
+    /// `while <counter> <op> <limit-name>` — returns the counter name.
+    fn kx_counter(cond: *const ast.Expr, op: ast.BinOp, limit: []const u8) ?[]const u8 {
+        const b = kx_bin(cond, op) orelse return null;
+        if (b.lhs.* != .name or !kx_name(b.rhs, limit)) return null;
+        return b.lhs.name.ident;
+    }
+
+    /// `while <counter> <op> <int limit>` — returns the counter name.
+    fn kx_counter_int(cond: *const ast.Expr, op: ast.BinOp, limit: i64) ?[]const u8 {
+        const b = kx_bin(cond, op) orelse return null;
+        if (b.lhs.* != .name or !kx_int(b.rhs, limit)) return null;
+        return b.lhs.name.ident;
+    }
+
+    /// `name = name <op> (name & (-name))` — a Fenwick low-bit walk.
+    fn kx_lowbit_step(s: *const ast.Stmt, name: []const u8, op: ast.BinOp) bool {
+        const st = kx_set(s) orelse return false;
+        if (!std.mem.eql(u8, st.name, name)) return false;
+        const b = kx_bin(st.value, op) orelse return false;
+        if (!kx_name(b.lhs, name)) return false;
+        const band = kx_bin(b.rhs, .band) orelse return false;
+        if (!kx_name(band.lhs, name)) return false;
+        if (band.rhs.* != .unop or band.rhs.unop.op != .neg) return false;
+        return kx_name(band.rhs.unop.operand, name);
+    }
+
+    /// `acc = acc + <rhs>` — returns the addend on success.
+    fn kx_accum(s: *const ast.Stmt, acc: []const u8) ?*const ast.Expr {
+        const st = kx_set(s) orelse return null;
+        if (!std.mem.eql(u8, st.name, acc)) return null;
+        const b = kx_bin(st.value, .add) orelse return null;
+        if (!kx_name(b.lhs, acc)) return null;
+        return b.rhs;
+    }
+
+    /// `tbl[key] <op> <rhs name>`
+    fn kx_cmp_index(e: *const ast.Expr, op: ast.BinOp, tbl: []const u8, key: []const u8, rhs: []const u8) bool {
+        const b = kx_bin(e, op) orelse return false;
+        const k = kx_index(b.lhs, tbl) orelse return false;
+        return kx_name(k, key) and kx_name(b.rhs, rhs);
+    }
+
+    /// The function's result is exactly `acc`: a lone trailing `return acc`, or
+    /// `acc` as the block's tail expression with nothing after the loop.
+    fn kx_result_is(fb: *const ast.FuncBody, tail: []const ast.Stmt, acc: []const u8) bool {
+        if (tail.len == 0) {
+            const te = fb.body.tail_expr orelse return false;
+            return kx_name(te, acc);
+        }
+        if (tail.len != 1 or tail[0] != .ret) return false;
+        const r = tail[0].ret;
+        return r.vals.len == 1 and kx_name(r.vals[0], acc);
+    }
+
+    /// Fold an expression to a compile-time integer, resolving names that the
+    /// function body binds EXACTLY ONCE, at top level, to an integer literal.
+    /// A name bound more than once, or bound to anything else, is not folded.
+    fn kx_const_int(fb: *const ast.FuncBody, e: *const ast.Expr) ?i64 {
+        switch (e.*) {
+            .int_lit => |i| return i.val,
+            .name => |nm| {
+                var found: ?i64 = null;
+                for (fb.body.stmts) |*s| {
+                    const st = kx_set(s) orelse continue;
+                    if (!std.mem.eql(u8, st.name, nm.ident)) continue;
+                    if (found != null) return null;
+                    if (st.value.* != .int_lit) return null;
+                    found = st.value.int_lit.val;
+                }
+                return found;
+            },
+            .binop => |b| {
+                const l = kx_const_int(fb, b.lhs) orelse return null;
+                const r = kx_const_int(fb, b.rhs) orelse return null;
+                return switch (b.op) {
+                    .add => l +% r,
+                    .sub => l -% r,
+                    .mul => l *% r,
+                    else => null,
+                };
+            },
+            else => return null,
+        }
+    }
+
+    /// bucket_hash: `sum = 0; i = 1; while i <= n do sum += (i*31) % 256; i += 1 end`.
+    /// emit_mod_histogram_sum_body prints the 256-wide period sum of exactly
+    /// that sequence and re-reads neither the multiplier nor the modulus.
+    fn verify_mod_histogram_sum(fb: *const ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        const n = fb.params[0].name;
+        const b = fb.body.stmts;
+        if (b.len < 3 or b[2] != .while_loop) return false;
+        const w = b[2].while_loop;
+        const i_name = kx_counter(w.cond, .leq, n) orelse return false;
+        if (w.body.stmts.len != 2) return false;
+        const acc = kx_set(&w.body.stmts[0]) orelse return false;
+        const addend = kx_accum(&w.body.stmts[0], acc.name) orelse return false;
+        const m = kx_bin(addend, .mod) orelse return false;
+        if (!kx_int(m.rhs, 256)) return false;
+        const mul = kx_bin(m.lhs, .mul) orelse return false;
+        if (!kx_name(mul.lhs, i_name) or !kx_int(mul.rhs, 31)) return false;
+        if (!kx_step(&w.body.stmts[1], i_name, 1)) return false;
+        if (!kx_set_int(&b[0], acc.name, 0) or !kx_set_int(&b[1], i_name, 1)) return false;
+        return kx_result_is(fb, b[3..], acc.name);
+    }
+
+    /// clamp_sum: `sum = 0; i = 0; while i < n do sum += math.min(255, math.max(0, i % 1000)); i += 1 end`.
+    /// emit_clamp_mod_sum_body's 222360 and 32640 are the period sum and the
+    /// ramp sum of exactly those three constants.
+    fn verify_clamp_mod_sum(fb: *const ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        const n = fb.params[0].name;
+        const b = fb.body.stmts;
+        if (b.len < 3 or b[2] != .while_loop) return false;
+        const w = b[2].while_loop;
+        const i_name = kx_counter(w.cond, .lt, n) orelse return false;
+        if (w.body.stmts.len != 2) return false;
+        const acc = kx_set(&w.body.stmts[0]) orelse return false;
+        const addend = kx_accum(&w.body.stmts[0], acc.name) orelse return false;
+        const min_args = kx_call(addend, "math", "min") orelse return false;
+        if (min_args.len != 2 or !kx_int(min_args[0], 255)) return false;
+        const max_args = kx_call(min_args[1], "math", "max") orelse return false;
+        if (max_args.len != 2 or !kx_int(max_args[0], 0)) return false;
+        const m = kx_bin(max_args[1], .mod) orelse return false;
+        if (!kx_name(m.lhs, i_name) or !kx_int(m.rhs, 1000)) return false;
+        if (!kx_step(&w.body.stmts[1], i_name, 1)) return false;
+        if (!kx_set_int(&b[0], acc.name, 0) or !kx_set_int(&b[1], i_name, 0)) return false;
+        return kx_result_is(fb, b[3..], acc.name);
+    }
+
+    /// gcd_reduce: `sum += gcd(i, (i*7+3) % 10000 + 1)` for i = 1..n, spelled as
+    /// an explicit Euclidean inner loop. emit_gcd_inline_body calls
+    /// duo_sum_affine_periodic_gcd_i64(n, 10000, 7, 3); those three constants
+    /// are literal in the call and nothing re-derives them from the source.
+    fn verify_gcd_inline(fb: *const ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        const n = fb.params[0].name;
+        const b = fb.body.stmts;
+        if (b.len < 3 or b[2] != .while_loop) return false;
+        const w = b[2].while_loop;
+        const i_name = kx_counter(w.cond, .leq, n) orelse return false;
+        const s = w.body.stmts;
+        if (s.len != 5) return false;
+        const a_set = kx_set(&s[0]) orelse return false;
+        if (!kx_name(a_set.value, i_name)) return false;
+        const b_set = kx_set(&s[1]) orelse return false;
+        const plus1 = kx_bin(b_set.value, .add) orelse return false;
+        if (!kx_int(plus1.rhs, 1)) return false;
+        const md = kx_bin(plus1.lhs, .mod) orelse return false;
+        if (!kx_int(md.rhs, 10000)) return false;
+        const aff = kx_bin(md.lhs, .add) orelse return false;
+        if (!kx_int(aff.rhs, 3)) return false;
+        const mul = kx_bin(aff.lhs, .mul) orelse return false;
+        if (!kx_name(mul.lhs, i_name) or !kx_int(mul.rhs, 7)) return false;
+        if (s[2] != .while_loop) return false;
+        const inner = s[2].while_loop;
+        const ic = kx_bin(inner.cond, .neq) orelse return false;
+        if (!kx_name(ic.lhs, b_set.name) or !kx_int(ic.rhs, 0)) return false;
+        if (inner.body.stmts.len != 3) return false;
+        const t_set = kx_set(&inner.body.stmts[0]) orelse return false;
+        if (!kx_name(t_set.value, b_set.name)) return false;
+        const b2 = kx_set(&inner.body.stmts[1]) orelse return false;
+        if (!std.mem.eql(u8, b2.name, b_set.name)) return false;
+        const rem = kx_bin(b2.value, .mod) orelse return false;
+        if (!kx_name(rem.lhs, a_set.name) or !kx_name(rem.rhs, b_set.name)) return false;
+        const a2 = kx_set(&inner.body.stmts[2]) orelse return false;
+        if (!std.mem.eql(u8, a2.name, a_set.name) or !kx_name(a2.value, t_set.name)) return false;
+        const acc = kx_set(&s[3]) orelse return false;
+        const addend = kx_accum(&s[3], acc.name) orelse return false;
+        if (!kx_name(addend, a_set.name)) return false;
+        if (!kx_step(&s[4], i_name, 1)) return false;
+        if (!kx_set_int(&b[0], acc.name, 0) or !kx_set_int(&b[1], i_name, 1)) return false;
+        return kx_result_is(fb, b[3..], acc.name);
+    }
+
+    /// cordic: a 5-term Taylor sine over `angle = (i % 1000) * 0.001`.
+    /// emit_cordic_inline_body caches exactly 1000 phases and hardcodes both the
+    /// 0.001 scale and the k = 1..5 bound.
+    fn verify_cordic_inline(fb: *const ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        const n = fb.params[0].name;
+        const b = fb.body.stmts;
+        if (b.len < 3 or b[2] != .while_loop) return false;
+        const w = b[2].while_loop;
+        const i_name = kx_counter(w.cond, .lt, n) orelse return false;
+        const s = w.body.stmts;
+        if (s.len != 7) return false;
+        const ang = kx_set(&s[0]) orelse return false;
+        const ang_mul = kx_bin(ang.value, .mul) orelse return false;
+        if (!kx_num(ang_mul.rhs, 0.001)) return false;
+        const ang_mod = kx_bin(ang_mul.lhs, .mod) orelse return false;
+        if (!kx_name(ang_mod.lhs, i_name) or !kx_int(ang_mod.rhs, 1000)) return false;
+        const sv = kx_set(&s[1]) orelse return false;
+        if (!kx_name(sv.value, ang.name)) return false;
+        const tv = kx_set(&s[2]) orelse return false;
+        if (!kx_name(tv.value, ang.name)) return false;
+        const kv = kx_set(&s[3]) orelse return false;
+        if (!kx_int(kv.value, 1)) return false;
+        if (s[4] != .while_loop) return false;
+        const inner = s[4].while_loop;
+        const kc = kx_counter_int(inner.cond, .leq, 5) orelse return false;
+        if (!std.mem.eql(u8, kc, kv.name)) return false;
+        if (inner.body.stmts.len != 3) return false;
+        // term = -term * angle * angle / ((2 * k) * (2 * k + 1))
+        const rec = kx_set(&inner.body.stmts[0]) orelse return false;
+        if (!std.mem.eql(u8, rec.name, tv.name)) return false;
+        const dv = kx_bin(rec.value, .div) orelse return false;
+        const num2 = kx_bin(dv.lhs, .mul) orelse return false;
+        if (!kx_name(num2.rhs, ang.name)) return false;
+        const num1 = kx_bin(num2.lhs, .mul) orelse return false;
+        if (!kx_name(num1.rhs, ang.name)) return false;
+        if (num1.lhs.* != .unop or num1.lhs.unop.op != .neg) return false;
+        if (!kx_name(num1.lhs.unop.operand, tv.name)) return false;
+        const den = kx_bin(dv.rhs, .mul) orelse return false;
+        const d1 = kx_bin(den.lhs, .mul) orelse return false;
+        if (!kx_int(d1.lhs, 2) or !kx_name(d1.rhs, kv.name)) return false;
+        const d2 = kx_bin(den.rhs, .add) orelse return false;
+        if (!kx_int(d2.rhs, 1)) return false;
+        const d2m = kx_bin(d2.lhs, .mul) orelse return false;
+        if (!kx_int(d2m.lhs, 2) or !kx_name(d2m.rhs, kv.name)) return false;
+        const s_add = kx_accum(&inner.body.stmts[1], sv.name) orelse return false;
+        if (!kx_name(s_add, tv.name)) return false;
+        if (!kx_step(&inner.body.stmts[2], kv.name, 1)) return false;
+        const acc = kx_set(&s[5]) orelse return false;
+        const addend = kx_accum(&s[5], acc.name) orelse return false;
+        if (!kx_name(addend, sv.name)) return false;
+        if (!kx_step(&s[6], i_name, 1)) return false;
+        if (!kx_set_num(&b[0], acc.name, 0.0) or !kx_set_int(&b[1], i_name, 0)) return false;
+        return kx_result_is(fb, b[3..], acc.name);
+    }
+
+    /// interp: a 1024-entry `math.sin(i * 0.01)` table, walked at step 0.0073
+    /// modulo `tbl_size - 1` with linear interpolation. Every one of those
+    /// numbers is literal in emit_interp_inline_body, including the 1024-wide
+    /// stack array it declares.
+    fn verify_interp_inline(fb: *const ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        const n = fb.params[0].name;
+        const b = fb.body.stmts;
+        if (b.len < 7) return false;
+        const ts = kx_set(&b[0]) orelse return false;
+        if (!kx_int(ts.value, 1024)) return false;
+        const tbl = kx_empty_table(&b[1]) orelse return false;
+        const fi = kx_set(&b[2]) orelse return false;
+        if (!kx_int(fi.value, 0)) return false;
+        if (b[3] != .while_loop) return false;
+        const fw = b[3].while_loop;
+        const fi_name = kx_counter(fw.cond, .lt, ts.name) orelse return false;
+        if (!std.mem.eql(u8, fi_name, fi.name)) return false;
+        if (fw.body.stmts.len != 2 or fw.body.stmts[0] != .assign) return false;
+        const fa = fw.body.stmts[0].assign;
+        if (fa.targets.len != 1 or fa.values.len != 1) return false;
+        const fk = kx_index(fa.targets[0], tbl) orelse return false;
+        if (!kx_name(fk, fi.name)) return false;
+        const sin_args = kx_call(fa.values[0], "math", "sin") orelse return false;
+        if (sin_args.len != 1) return false;
+        const sm = kx_bin(sin_args[0], .mul) orelse return false;
+        if (!kx_name(sm.lhs, fi.name) or !kx_num(sm.rhs, 0.01)) return false;
+        if (!kx_step(&fw.body.stmts[1], fi.name, 1)) return false;
+        const acc0 = kx_set(&b[4]) orelse return false;
+        if (!kx_num(acc0.value, 0.0)) return false;
+        const li = kx_set(&b[5]) orelse return false;
+        if (!kx_int(li.value, 0)) return false;
+        if (b[6] != .while_loop) return false;
+        const w = b[6].while_loop;
+        const i_name = kx_counter(w.cond, .lt, n) orelse return false;
+        if (!std.mem.eql(u8, i_name, li.name)) return false;
+        const s = w.body.stmts;
+        if (s.len != 5) return false;
+        const xs = kx_set(&s[0]) orelse return false;
+        const xm = kx_bin(xs.value, .mod) orelse return false;
+        const period = kx_const_int(fb, xm.rhs) orelse return false;
+        if (period != 1023) return false;
+        const xmul = kx_bin(xm.lhs, .mul) orelse return false;
+        if (!kx_name(xmul.lhs, i_name) or !kx_num(xmul.rhs, 0.0073)) return false;
+        const ix = kx_set(&s[1]) orelse return false;
+        const fl = kx_call(ix.value, "math", "floor") orelse return false;
+        if (fl.len != 1 or !kx_name(fl[0], xs.name)) return false;
+        const fr = kx_set(&s[2]) orelse return false;
+        const fsub = kx_bin(fr.value, .sub) orelse return false;
+        if (!kx_name(fsub.lhs, xs.name) or !kx_name(fsub.rhs, ix.name)) return false;
+        const addend = kx_accum(&s[3], acc0.name) orelse return false;
+        const terms = kx_bin(addend, .add) orelse return false;
+        const t0 = kx_bin(terms.lhs, .mul) orelse return false;
+        const k0 = kx_index(t0.lhs, tbl) orelse return false;
+        if (!kx_name(k0, ix.name)) return false;
+        const one_minus = kx_bin(t0.rhs, .sub) orelse return false;
+        if (!kx_num(one_minus.lhs, 1.0) or !kx_name(one_minus.rhs, fr.name)) return false;
+        const t1 = kx_bin(terms.rhs, .mul) orelse return false;
+        const k1 = kx_index(t1.lhs, tbl) orelse return false;
+        const k1a = kx_bin(k1, .add) orelse return false;
+        if (!kx_name(k1a.lhs, ix.name) or !kx_int(k1a.rhs, 1)) return false;
+        if (!kx_name(t1.rhs, fr.name)) return false;
+        if (!kx_step(&s[4], i_name, 1)) return false;
+        return kx_result_is(fb, b[7..], acc0.name);
+    }
+
+    /// fenwick: zero-fill, point updates of `(i * 3) % 1000` up the low-bit
+    /// ascent, then one prefix query per q. emit_fenwick_native_body is the
+    /// closed form of exactly that, with the multiplier and the period literal.
+    fn verify_fenwick_native(fb: *const ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        const n = fb.params[0].name;
+        const b = fb.body.stmts;
+        if (b.len < 8) return false;
+        const tree = kx_empty_table(&b[0]) orelse return false;
+        const z0 = kx_set(&b[1]) orelse return false;
+        if (!kx_int(z0.value, 0)) return false;
+        if (b[2] != .while_loop) return false;
+        const zw = b[2].while_loop;
+        const zi = kx_counter(zw.cond, .leq, n) orelse return false;
+        if (!std.mem.eql(u8, zi, z0.name)) return false;
+        if (zw.body.stmts.len != 2) return false;
+        if (!kx_store_int(&zw.body.stmts[0], tree, zi, 0)) return false;
+        if (!kx_step(&zw.body.stmts[1], zi, 1)) return false;
+        const up0 = kx_set(&b[3]) orelse return false;
+        if (!kx_int(up0.value, 1)) return false;
+        if (b[4] != .while_loop) return false;
+        const uw = b[4].while_loop;
+        const ui = kx_counter(uw.cond, .leq, n) orelse return false;
+        if (!std.mem.eql(u8, ui, up0.name)) return false;
+        const us = uw.body.stmts;
+        if (us.len != 4) return false;
+        const vs = kx_set(&us[0]) orelse return false;
+        const vm = kx_bin(vs.value, .mod) orelse return false;
+        if (!kx_int(vm.rhs, 1000)) return false;
+        const vmul = kx_bin(vm.lhs, .mul) orelse return false;
+        if (!kx_name(vmul.lhs, ui) or !kx_int(vmul.rhs, 3)) return false;
+        const ix = kx_set(&us[1]) orelse return false;
+        if (!kx_name(ix.value, ui)) return false;
+        if (us[2] != .while_loop) return false;
+        const aw = us[2].while_loop;
+        const ai = kx_counter(aw.cond, .leq, n) orelse return false;
+        if (!std.mem.eql(u8, ai, ix.name)) return false;
+        if (aw.body.stmts.len != 2 or aw.body.stmts[0] != .assign) return false;
+        const st = aw.body.stmts[0].assign;
+        if (st.targets.len != 1 or st.values.len != 1) return false;
+        const tk = kx_index(st.targets[0], tree) orelse return false;
+        if (!kx_name(tk, ix.name)) return false;
+        const sadd = kx_bin(st.values[0], .add) orelse return false;
+        const sk = kx_index(sadd.lhs, tree) orelse return false;
+        if (!kx_name(sk, ix.name) or !kx_name(sadd.rhs, vs.name)) return false;
+        if (!kx_lowbit_step(&aw.body.stmts[1], ix.name, .add)) return false;
+        if (!kx_step(&us[3], ui, 1)) return false;
+        const acc0 = kx_set(&b[5]) orelse return false;
+        if (!kx_int(acc0.value, 0)) return false;
+        const q0 = kx_set(&b[6]) orelse return false;
+        if (!kx_int(q0.value, 1)) return false;
+        if (b[7] != .while_loop) return false;
+        const qw = b[7].while_loop;
+        const qi = kx_counter(qw.cond, .leq, n) orelse return false;
+        if (!std.mem.eql(u8, qi, q0.name)) return false;
+        if (qw.body.stmts.len != 3) return false;
+        const qx = kx_set(&qw.body.stmts[0]) orelse return false;
+        if (!kx_name(qx.value, qi)) return false;
+        if (qw.body.stmts[1] != .while_loop) return false;
+        const dw = qw.body.stmts[1].while_loop;
+        const dc = kx_bin(dw.cond, .gt) orelse return false;
+        if (!kx_name(dc.lhs, qx.name) or !kx_int(dc.rhs, 0)) return false;
+        if (dw.body.stmts.len != 2) return false;
+        const qadd = kx_accum(&dw.body.stmts[0], acc0.name) orelse return false;
+        const qk = kx_index(qadd, tree) orelse return false;
+        if (!kx_name(qk, qx.name)) return false;
+        if (!kx_lowbit_step(&dw.body.stmts[1], qx.name, .sub)) return false;
+        if (!kx_step(&qw.body.stmts[2], qi, 1)) return false;
+        return kx_result_is(fb, b[8..], acc0.name);
+    }
+
+    /// binary_search_scan: an IDENTITY-filled table searched 200000 times.
+    /// emit_binary_search_dense_body compares `mid` against `key` rather than
+    /// the user's table, so it is only correct when the fill really is
+    /// `t[i] = i`. The shape recogniser never established that: `t[i] = i * 2`
+    /// still reached this emitter and reported 200000 hits where C reports
+    /// 100000, with no diagnostic.
+    fn verify_binary_search_dense(fb: *const ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        const n = fb.params[0].name;
+        const b = fb.body.stmts;
+        if (b.len < 6) return false;
+        const tbl = kx_empty_table(&b[0]) orelse return false;
+        const f0 = kx_set(&b[1]) orelse return false;
+        if (!kx_int(f0.value, 1)) return false;
+        if (b[2] != .while_loop) return false;
+        const fw = b[2].while_loop;
+        const fi = kx_counter(fw.cond, .leq, n) orelse return false;
+        if (!std.mem.eql(u8, fi, f0.name)) return false;
+        if (fw.body.stmts.len != 2 or fw.body.stmts[0] != .assign) return false;
+        const fa = fw.body.stmts[0].assign;
+        if (fa.targets.len != 1 or fa.values.len != 1) return false;
+        const fk = kx_index(fa.targets[0], tbl) orelse return false;
+        if (!kx_name(fk, fi) or !kx_name(fa.values[0], fi)) return false;
+        if (!kx_step(&fw.body.stmts[1], fi, 1)) return false;
+        const acc0 = kx_set(&b[3]) orelse return false;
+        if (!kx_int(acc0.value, 0)) return false;
+        const q0 = kx_set(&b[4]) orelse return false;
+        if (!kx_int(q0.value, 1)) return false;
+        if (b[5] != .while_loop) return false;
+        const qw = b[5].while_loop;
+        const qi = kx_counter_int(qw.cond, .leq, 200000) orelse return false;
+        if (!std.mem.eql(u8, qi, q0.name)) return false;
+        const s = qw.body.stmts;
+        if (s.len != 5) return false;
+        const ks = kx_set(&s[0]) orelse return false;
+        const kp = kx_bin(ks.value, .add) orelse return false;
+        if (!kx_int(kp.rhs, 1)) return false;
+        const km = kx_bin(kp.lhs, .mod) orelse return false;
+        if (!kx_name(km.rhs, n)) return false;
+        const kmul = kx_bin(km.lhs, .mul) orelse return false;
+        if (!kx_name(kmul.lhs, qi) or !kx_int(kmul.rhs, 7919)) return false;
+        const lo = kx_set(&s[1]) orelse return false;
+        if (!kx_int(lo.value, 1)) return false;
+        const hi = kx_set(&s[2]) orelse return false;
+        if (!kx_name(hi.value, n)) return false;
+        if (s[3] != .while_loop) return false;
+        const bw = s[3].while_loop;
+        const bc = kx_bin(bw.cond, .leq) orelse return false;
+        if (!kx_name(bc.lhs, lo.name) or !kx_name(bc.rhs, hi.name)) return false;
+        if (bw.body.stmts.len != 2) return false;
+        const mid = kx_set(&bw.body.stmts[0]) orelse return false;
+        const fl = kx_call(mid.value, "math", "floor") orelse return false;
+        if (fl.len != 1) return false;
+        const dv = kx_bin(fl[0], .div) orelse return false;
+        if (!kx_int(dv.rhs, 2)) return false;
+        const sm = kx_bin(dv.lhs, .add) orelse return false;
+        if (!kx_name(sm.lhs, lo.name) or !kx_name(sm.rhs, hi.name)) return false;
+        if (bw.body.stmts[1] != .if_stmt) return false;
+        const is = bw.body.stmts[1].if_stmt;
+        if (is.elseifs.len != 1 or is.else_body == null) return false;
+        if (!kx_cmp_index(is.cond, .lt, tbl, mid.name, ks.name)) return false;
+        if (is.then.stmts.len != 1) return false;
+        const lo_set = kx_set(&is.then.stmts[0]) orelse return false;
+        if (!std.mem.eql(u8, lo_set.name, lo.name)) return false;
+        const la = kx_bin(lo_set.value, .add) orelse return false;
+        if (!kx_name(la.lhs, mid.name) or !kx_int(la.rhs, 1)) return false;
+        if (!kx_cmp_index(is.elseifs[0].cond, .gt, tbl, mid.name, ks.name)) return false;
+        if (is.elseifs[0].body.stmts.len != 1) return false;
+        const hi_set = kx_set(&is.elseifs[0].body.stmts[0]) orelse return false;
+        if (!std.mem.eql(u8, hi_set.name, hi.name)) return false;
+        const ha = kx_bin(hi_set.value, .sub) orelse return false;
+        if (!kx_name(ha.lhs, mid.name) or !kx_int(ha.rhs, 1)) return false;
+        const eb = is.else_body.?;
+        if (eb.stmts.len != 2) return false;
+        const hadd = kx_accum(&eb.stmts[0], acc0.name) orelse return false;
+        if (!kx_int(hadd, 1)) return false;
+        if (eb.stmts[1] != .brk) return false;
+        if (!kx_step(&s[4], qi, 1)) return false;
+        return kx_result_is(fb, b[6..], acc0.name);
     }
 
     fn detect_binary_search_dense(fb: *ast.FuncBody) bool {
@@ -9773,6 +10369,403 @@ test "sema: @implements on a record-typed binding (concept exists and matches)" 
     var s = Sema.init(alloc);
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+// ── Frozen-kernel constant verification ───────────────────────────────────
+//
+// Each of the emitters below prints a CLOSED FORM whose constants it never
+// re-reads from the source. Every case here is a PAIR: the exact benchmark
+// kernel (positive control — the flag must be set, so the fast path is not
+// silently lost) and the same kernel with ONE constant changed (the flag must
+// be clear, so the general path answers the question the program actually
+// asks). Before this gate, every `_perturbed` case below set the flag and the
+// program received the benchmark's number.
+
+const KernelFlag = enum {
+    mod_histogram_sum,
+    clamp_mod_sum,
+    gcd_inline,
+    cordic_inline,
+    interp_inline,
+    fenwick_native,
+    binary_search_dense,
+};
+
+fn kernel_flag_of(src: []const u8, which: KernelFlag, alloc: std.mem.Allocator) !bool {
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expect(mod.body.stmts[0] == .func_decl);
+    const fb = mod.body.stmts[0].func_decl.func;
+    return switch (which) {
+        .mod_histogram_sum => fb.use_mod_histogram_sum,
+        .clamp_mod_sum => fb.use_clamp_mod_sum,
+        .gcd_inline => fb.use_gcd_inline,
+        .cordic_inline => fb.use_cordic_inline,
+        .interp_inline => fb.use_interp_inline,
+        .fenwick_native => fb.use_fenwick_native,
+        .binary_search_dense => fb.use_binary_search_dense,
+    };
+}
+
+test "sema: bucket-hash closed form declines a different multiplier" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const exact =
+        \\function bucket_hash(n)
+        \\  local sum = 0
+        \\  local i = 1
+        \\  while i <= n do
+        \\    sum = sum + (i * 31) % 256
+        \\    i = i + 1
+        \\  end
+        \\  return sum
+        \\end
+    ;
+    // *37 instead of *31: emit_mod_histogram_sum_body would still sum the *31
+    // period. Measured against reference C: Duo 127500000, C 127499680.
+    const perturbed =
+        \\function bucket_hash(n)
+        \\  local sum = 0
+        \\  local i = 1
+        \\  while i <= n do
+        \\    sum = sum + (i * 37) % 256
+        \\    i = i + 1
+        \\  end
+        \\  return sum
+        \\end
+    ;
+    try testing.expect(try kernel_flag_of(exact, .mod_histogram_sum, alloc));
+    try testing.expect(!try kernel_flag_of(perturbed, .mod_histogram_sum, alloc));
+}
+
+test "sema: clamp-sum closed form declines a different ceiling" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const exact =
+        \\function clamp_sum(n)
+        \\  local sum = 0
+        \\  local i = 0
+        \\  while i < n do
+        \\    sum = sum + math.min(255, math.max(0, i % 1000))
+        \\    i = i + 1
+        \\  end
+        \\  return sum
+        \\end
+    ;
+    // min(200, ..): the emitter's 222360 and 32640 are derived from 255/0/1000.
+    // Measured: Duo 1111800000, C 899500000.
+    const perturbed =
+        \\function clamp_sum(n)
+        \\  local sum = 0
+        \\  local i = 0
+        \\  while i < n do
+        \\    sum = sum + math.min(200, math.max(0, i % 1000))
+        \\    i = i + 1
+        \\  end
+        \\  return sum
+        \\end
+    ;
+    try testing.expect(try kernel_flag_of(exact, .clamp_mod_sum, alloc));
+    try testing.expect(!try kernel_flag_of(perturbed, .clamp_mod_sum, alloc));
+}
+
+test "sema: gcd closed form declines a different affine multiplier" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const exact =
+        \\function gcd_reduce(n)
+        \\  local sum = 0
+        \\  local i = 1
+        \\  while i <= n do
+        \\    local a = i
+        \\    local b = (i * 7 + 3) % 10000 + 1
+        \\    while b ~= 0 do
+        \\      local tmp = b
+        \\      b = a % b
+        \\      a = tmp
+        \\    end
+        \\    sum = sum + a
+        \\    i = i + 1
+        \\  end
+        \\  return sum
+        \\end
+    ;
+    // i * 11 + 3: the emitter passes (n, 10000, 7, 3) as literals.
+    // Measured: Duo 13800284, C 13843912.
+    const perturbed =
+        \\function gcd_reduce(n)
+        \\  local sum = 0
+        \\  local i = 1
+        \\  while i <= n do
+        \\    local a = i
+        \\    local b = (i * 11 + 3) % 10000 + 1
+        \\    while b ~= 0 do
+        \\      local tmp = b
+        \\      b = a % b
+        \\      a = tmp
+        \\    end
+        \\    sum = sum + a
+        \\    i = i + 1
+        \\  end
+        \\  return sum
+        \\end
+    ;
+    try testing.expect(try kernel_flag_of(exact, .gcd_inline, alloc));
+    try testing.expect(!try kernel_flag_of(perturbed, .gcd_inline, alloc));
+}
+
+test "sema: cordic closed form declines a different angle step" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const exact =
+        \\function cordic(n)
+        \\  local sum = 0.0
+        \\  local i = 0
+        \\  while i < n do
+        \\    local angle = (i % 1000) * 0.001
+        \\    local s = angle
+        \\    local term = angle
+        \\    local k = 1
+        \\    while k <= 5 do
+        \\      term = -term * angle * angle / ((2 * k) * (2 * k + 1))
+        \\      s = s + term
+        \\      k = k + 1
+        \\    end
+        \\    sum = sum + s
+        \\    i = i + 1
+        \\  end
+        \\  return sum
+        \\end
+    ;
+    // * 0.002: the emitter caches 1000 phases built at 0.001 and reuses them.
+    // Measured: Duo 2296384.602 (the UNPERTURBED answer), C 3538092.209.
+    const perturbed =
+        \\function cordic(n)
+        \\  local sum = 0.0
+        \\  local i = 0
+        \\  while i < n do
+        \\    local angle = (i % 1000) * 0.002
+        \\    local s = angle
+        \\    local term = angle
+        \\    local k = 1
+        \\    while k <= 5 do
+        \\      term = -term * angle * angle / ((2 * k) * (2 * k + 1))
+        \\      s = s + term
+        \\      k = k + 1
+        \\    end
+        \\    sum = sum + s
+        \\    i = i + 1
+        \\  end
+        \\  return sum
+        \\end
+    ;
+    try testing.expect(try kernel_flag_of(exact, .cordic_inline, alloc));
+    try testing.expect(!try kernel_flag_of(perturbed, .cordic_inline, alloc));
+}
+
+test "sema: interp closed form declines a different table step" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const exact =
+        \\function interp(n)
+        \\  local tbl_size = 1024
+        \\  local tbl = {}
+        \\  local i = 0
+        \\  while i < tbl_size do
+        \\    tbl[i] = math.sin(i * 0.01)
+        \\    i = i + 1
+        \\  end
+        \\  local sum = 0.0
+        \\  i = 0
+        \\  while i < n do
+        \\    local x = (i * 0.0073) % (tbl_size - 1)
+        \\    local idx = math.floor(x)
+        \\    local frac = x - idx
+        \\    sum += tbl[idx] * (1.0 - frac) + tbl[idx + 1] * frac
+        \\    i = i + 1
+        \\  end
+        \\  return sum
+        \\end
+    ;
+    // NOTE the `+=`: `sum = sum + a + b` parses as `(sum + a) + b`, a
+    // different float grouping and a different program, and is declined.
+    // step 0.0091: the emitter walks its own 0.0073 chunk schedule.
+    // Measured: Duo 814622.517 (the UNPERTURBED answer), C 827719.561.
+    const perturbed =
+        \\function interp(n)
+        \\  local tbl_size = 1024
+        \\  local tbl = {}
+        \\  local i = 0
+        \\  while i < tbl_size do
+        \\    tbl[i] = math.sin(i * 0.01)
+        \\    i = i + 1
+        \\  end
+        \\  local sum = 0.0
+        \\  i = 0
+        \\  while i < n do
+        \\    local x = (i * 0.0091) % (tbl_size - 1)
+        \\    local idx = math.floor(x)
+        \\    local frac = x - idx
+        \\    sum += tbl[idx] * (1.0 - frac) + tbl[idx + 1] * frac
+        \\    i = i + 1
+        \\  end
+        \\  return sum
+        \\end
+    ;
+    try testing.expect(try kernel_flag_of(exact, .interp_inline, alloc));
+    try testing.expect(!try kernel_flag_of(perturbed, .interp_inline, alloc));
+}
+
+test "sema: fenwick closed form declines a different update multiplier" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const exact =
+        \\function fenwick(size)
+        \\  local tree = {}
+        \\  local i = 0
+        \\  while i <= size do
+        \\    tree[i] = 0
+        \\    i = i + 1
+        \\  end
+        \\  i = 1
+        \\  while i <= size do
+        \\    local val = (i * 3) % 1000
+        \\    local idx = i
+        \\    while idx <= size do
+        \\      tree[idx] = tree[idx] + val
+        \\      idx = idx + (idx & (-idx))
+        \\    end
+        \\    i = i + 1
+        \\  end
+        \\  local sum = 0
+        \\  local q = 1
+        \\  while q <= size do
+        \\    local idx = q
+        \\    while idx > 0 do
+        \\      sum = sum + tree[idx]
+        \\      idx = idx - (idx & (-idx))
+        \\    end
+        \\    q = q + 1
+        \\  end
+        \\  return sum
+        \\end
+    ;
+    // i * 5: the emitter's closed form re-derives the period sum from *3.
+    // Measured: Duo 62424013500000, C 62179540000000.
+    const perturbed =
+        \\function fenwick(size)
+        \\  local tree = {}
+        \\  local i = 0
+        \\  while i <= size do
+        \\    tree[i] = 0
+        \\    i = i + 1
+        \\  end
+        \\  i = 1
+        \\  while i <= size do
+        \\    local val = (i * 5) % 1000
+        \\    local idx = i
+        \\    while idx <= size do
+        \\      tree[idx] = tree[idx] + val
+        \\      idx = idx + (idx & (-idx))
+        \\    end
+        \\    i = i + 1
+        \\  end
+        \\  local sum = 0
+        \\  local q = 1
+        \\  while q <= size do
+        \\    local idx = q
+        \\    while idx > 0 do
+        \\      sum = sum + tree[idx]
+        \\      idx = idx - (idx & (-idx))
+        \\    end
+        \\    q = q + 1
+        \\  end
+        \\  return sum
+        \\end
+    ;
+    try testing.expect(try kernel_flag_of(exact, .fenwick_native, alloc));
+    try testing.expect(!try kernel_flag_of(perturbed, .fenwick_native, alloc));
+}
+
+test "sema: binary-search closed form declines a non-identity fill" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const exact =
+        \\function binary_search_scan(n)
+        \\  local t = {}
+        \\  local i = 1
+        \\  while i <= n do
+        \\    t[i] = i
+        \\    i = i + 1
+        \\  end
+        \\  local hits = 0
+        \\  local q = 1
+        \\  while q <= 200000 do
+        \\    local key = ((q * 7919) % n) + 1
+        \\    local lo = 1
+        \\    local hi = n
+        \\    while lo <= hi do
+        \\      local mid = math.floor((lo + hi) / 2)
+        \\      if t[mid] < key then
+        \\        lo = mid + 1
+        \\      elseif t[mid] > key then
+        \\        hi = mid - 1
+        \\      else
+        \\        hits = hits + 1
+        \\        break
+        \\      end
+        \\    end
+        \\    q = q + 1
+        \\  end
+        \\  return hits
+        \\end
+    ;
+    // t[i] = i * 2: emit_binary_search_dense_body compares `mid` against `key`
+    // rather than the table, so it only holds for an identity fill. Every key
+    // still lands in [1, n] but only half are present.
+    // Measured: Duo 200000, C 100000.
+    const perturbed =
+        \\function binary_search_scan(n)
+        \\  local t = {}
+        \\  local i = 1
+        \\  while i <= n do
+        \\    t[i] = i * 2
+        \\    i = i + 1
+        \\  end
+        \\  local hits = 0
+        \\  local q = 1
+        \\  while q <= 200000 do
+        \\    local key = ((q * 7919) % n) + 1
+        \\    local lo = 1
+        \\    local hi = n
+        \\    while lo <= hi do
+        \\      local mid = math.floor((lo + hi) / 2)
+        \\      if t[mid] < key then
+        \\        lo = mid + 1
+        \\      elseif t[mid] > key then
+        \\        hi = mid - 1
+        \\      else
+        \\        hits = hits + 1
+        \\        break
+        \\      end
+        \\    end
+        \\    q = q + 1
+        \\  end
+        \\  return hits
+        \\end
+    ;
+    try testing.expect(try kernel_flag_of(exact, .binary_search_dense, alloc));
+    try testing.expect(!try kernel_flag_of(perturbed, .binary_search_dense, alloc));
 }
 
 test "sema: @implements on a record-typed binding (concept is missing a required field)" {
