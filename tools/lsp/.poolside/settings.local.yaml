@@ -1,0 +1,23 @@
+tools:
+    shell:
+        allow:
+            - ls *
+            - echo *
+            - file *
+            - cd *
+            - git log *
+            - node *
+            - sleep 3
+            - sleep 2
+            - timeout 15 *
+            - "true"
+            - git diff *
+            - head *
+            - git show *
+            - cat *
+            - git status *
+            - git stash *
+            - mkdir *
+paths:
+    allow:
+        - path: /Users/clp/x/duo/**
