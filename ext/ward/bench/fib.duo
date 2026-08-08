@@ -1,0 +1,36 @@
+-- WASM benchmark fixture: naive recursive fib(32).
+--
+-- The corpus had no CALL-BOUND module. Every other fixture is a tight
+-- arithmetic loop, which the JIT compiles and which is latency-bound on its
+-- own dependency chain -- so every runtime lands within 20% of every other and
+-- the table says nothing. This one separates them:
+--
+--   duo compile bench/fib.duo --target wasm32-wasi -o bench/fib.wasm
+--
+-- It also pins ward's largest known gap. ward's ARM64 JIT implements `call`
+-- by INLINING the callee (src/ward.duo, `elseif op == 16`), capped at depth 6,
+-- and a bail returns -1 for the WHOLE body. Recursion can never be inlined
+-- away, so this module always falls back to the interpreter and runs ~11x
+-- slower than wasmtime. Any future real-call support in the JIT should show up
+-- here first; until then the row is the honest cost of the inline-only design.
+--
+-- fib(32) = 2178309, verified against wasmtime.
+
+fib(k: i32): i32
+    if k < 2
+        return k
+    end
+    fib(k - 1) + fib(k - 2)
+end
+
+-- GAP-12: `@c.export` does not attach to a value-form binding, and it binds to
+-- the NEXT bare declaration -- so it must sit directly above `run`, not above
+-- `fib`. Placing it above `fib` exports the wrong arity and the C build fails.
+@c.export("run")
+run(): i32
+    fib(32)
+end
+
+main = (): i32
+    run()
+end

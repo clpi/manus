@@ -901,6 +901,166 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           mem.write_i64(st, sp * 8, r2)
           sp = sp
         end
+      elseif op == OP_loop
+        if lsp >= 63
+          return -1
+        end
+        pc += 1
+        mem.write_i64(ltgt, lsp * 8, pc)
+        lsp += 1
+      elseif op == OP_end_
+        -- lsp == 0 means this `end` closes the *function*, not a block. With
+        -- frames on the stack that is a return to the caller; at depth 0 it
+        -- falls through and `pc >= cur_end` ends the loop.
+        if lsp > lsp_base
+          lsp -= 1
+        elseif depth > 0
+          depth -= 1
+          pc       = mem.read_i64(fr, (depth * 8) * 8)
+          cur_end  = mem.read_i64(fr, (depth * 8 + 1) * 8)
+          lbase    = mem.read_i64(fr, (depth * 8 + 2) * 8)
+          lsp      = mem.read_i64(fr, (depth * 8 + 3) * 8)
+          lsp_base = mem.read_i64(fr, (depth * 8 + 4) * 8)
+        end
+      elseif op == OP_br
+        lb: i64 = lsp - 1 - imm2
+        if lb < 0 or lb >= 64
+          return -1
+        end
+        tgt3: i64 = mem.read_i64(ltgt, lb * 8)
+        if tgt3 <= pc
+          lsp = lb + 1
+        else
+          lsp = lb
+        end
+        pc = tgt3
+      elseif op == OP_return_
+        if depth > 0
+          depth -= 1
+          pc       = mem.read_i64(fr, (depth * 8) * 8)
+          cur_end  = mem.read_i64(fr, (depth * 8 + 1) * 8)
+          lbase    = mem.read_i64(fr, (depth * 8 + 2) * 8)
+          lsp      = mem.read_i64(fr, (depth * 8 + 3) * 8)
+          lsp_base = mem.read_i64(fr, (depth * 8 + 4) * 8)
+        else
+          pc = cur_end
+        end
+
+      elseif op == 16
+        -- call: `imm2` already holds the decoded function index (opcode 16 is
+        -- registered in `himm`). Imported/WASI functions are not executable
+        -- here yet, so bail rather than jumping into a body that isn't ours.
+        if imm2 < nimp
+          -- Imported (WASI) function. ward has no host bindings yet, so it
+          -- cannot perform the effect -- but bailing loses the whole module.
+          -- Consume the declared params and leave the declared number of
+          -- results, which keeps the operand stack balanced so everything
+          -- around the import still executes and is still checkable.
+          -- fd_write(fd, iovs, iovs_len, nwritten) -> errno. The only host
+          -- effect ward performs: walk the iovec array in linear memory and
+          -- emit the bytes, so a module's real output is checkable against
+          -- wasmtime instead of being silently dropped.
+          if mem.read_i64(imfn, imm2 * 8) == 1 and sp >= 4
+            npw: i64 = mem.read_i64(st, sp * 8) & M32
+            nio: i64 = mem.read_i64(st, (sp - 1) * 8) & M32
+            iop: i64 = mem.read_i64(st, (sp - 2) * 8) & M32
+            tot: i64 = 0
+            q3: i64 = 0
+            while q3 < nio
+              vb: i64 = iop + q3 * 8
+              bp: i64 = mem.read_byte(lin, vb) | (mem.read_byte(lin, vb + 1) << 8) | (mem.read_byte(lin, vb + 2) << 16) | (mem.read_byte(lin, vb + 3) << 24)
+              bl: i64 = mem.read_byte(lin, vb + 4) | (mem.read_byte(lin, vb + 5) << 8) | (mem.read_byte(lin, vb + 6) << 16) | (mem.read_byte(lin, vb + 7) << 24)
+              k3: i64 = 0
+              while k3 < bl and bp + k3 < 65536
+                io.write(string.char(mem.read_byte(lin, bp + k3)))
+                k3 += 1
+              end
+              tot = tot + bl
+              q3 += 1
+            end
+            if npw + 4 <= 65536
+              mem.write_byte(lin, npw, tot & 255)
+              mem.write_byte(lin, npw + 1, (tot >> 8) & 255)
+              mem.write_byte(lin, npw + 2, (tot >> 16) & 255)
+              mem.write_byte(lin, npw + 3, (tot >> 24) & 255)
+            end
+            sp = sp - 4
+            sp += 1
+            mem.write_i64(st, sp * 8, 0)
+          else
+          itx: i64 = mem.read_i64(imtab, imm2 * 8)
+          ipn: i64 = mem.read_i64(tpar, (itx * 2) * 8)
+          irn: i64 = mem.read_i64(tpar, (itx * 2 + 1) * 8)
+          if ipn > sp
+            return -1
+          end
+          sp = sp - ipn
+          iz: i64 = 0
+          while iz < irn
+            sp += 1
+            mem.write_i64(st, sp * 8, 0)
+            iz += 1
+          end
+          sp = sp
+          end
+        else
+        fx: i64 = imm2 - nimp
+        if fx < 0 or fx >= nfn or depth >= 63
+          return -1
+        end
+        mem.write_i64(fr, (depth * 8) * 8, pc)
+        mem.write_i64(fr, (depth * 8 + 1) * 8, cur_end)
+        mem.write_i64(fr, (depth * 8 + 2) * 8, lbase)
+        mem.write_i64(fr, (depth * 8 + 3) * 8, lsp)
+        mem.write_i64(fr, (depth * 8 + 4) * 8, lsp_base)
+        depth += 1
+        nb: i64 = lbase + 64
+        npc: i64 = mem.read_i64(ftab, (fx * 4 + 3) * 8)
+        nlc2: i64 = mem.read_i64(ftab, (fx * 4 + 2) * 8)
+        if nb + 64 > 64 * 64 or npc > sp
+          return -1
+        end
+        -- Arguments sit on the operand stack with the LAST param on top, so
+        -- fill the callee's locals downwards as they pop.
+        ka: i64 = npc - 1
+        while ka >= 0
+          mem.write_i64(lo, (nb + ka) * 8, mem.read_i64(st, sp * 8))
+          sp -= 1
+          ka -= 1
+        end
+        za: i64 = npc
+        while za < npc + nlc2
+          mem.write_i64(lo, (nb + za) * 8, 0)
+          za += 1
+        end
+        lbase = nb
+        lsp_base = lsp
+        -- Do NOT reset lsp. `ltgt` is ONE shared label buffer, so starting the
+        -- callee at 0 made its labels overwrite the caller's: a call inside a
+        -- loop, to a callee that also loops, returned the caller's first
+        -- iteration value and exited (1 instead of 10). Branch depths are
+        -- relative to the top of the stack, so letting the callee's labels
+        -- stack ABOVE the caller's is correct; the frame pop restores lsp.
+        pc = mem.read_i64(ftab, (fx * 4) * 8)
+        cur_end = mem.read_i64(ftab, (fx * 4 + 1) * 8)
+        end
+
+      elseif op == 35
+        -- global.get (immediate already decoded into imm2 via himm)
+        if imm2 < 0 or imm2 >= 64
+          return -1
+        end
+        sp += 1
+        mem.write_i64(st, sp * 8, mem.read_i64(gl, imm2 * 8))
+
+      elseif op == 36
+        -- global.set
+        if sp < 1 or imm2 < 0 or imm2 >= 64
+          return -1
+        end
+        mem.write_i64(gl, imm2 * 8, mem.read_i64(st, sp * 8))
+        sp -= 1
+
       elseif op == 2 or op == 4
         -- block (0x02) / if (0x04): branch target is just past the matching
         -- `end`. Scan forward tracking nesting; also record the `else` for `if`.
@@ -1266,150 +1426,6 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         end
         sp = sp
         sp -= 2
-
-      elseif op == OP_loop
-        if lsp >= 63
-          return -1
-        end
-        pc += 1
-        mem.write_i64(ltgt, lsp * 8, pc)
-        lsp += 1
-      elseif op == OP_end_
-        -- lsp == 0 means this `end` closes the *function*, not a block. With
-        -- frames on the stack that is a return to the caller; at depth 0 it
-        -- falls through and `pc >= cur_end` ends the loop.
-        if lsp > lsp_base
-          lsp -= 1
-        elseif depth > 0
-          depth -= 1
-          pc       = mem.read_i64(fr, (depth * 8) * 8)
-          cur_end  = mem.read_i64(fr, (depth * 8 + 1) * 8)
-          lbase    = mem.read_i64(fr, (depth * 8 + 2) * 8)
-          lsp      = mem.read_i64(fr, (depth * 8 + 3) * 8)
-          lsp_base = mem.read_i64(fr, (depth * 8 + 4) * 8)
-        end
-      elseif op == OP_br
-        lb: i64 = lsp - 1 - imm2
-        if lb < 0 or lb >= 64
-          return -1
-        end
-        tgt3: i64 = mem.read_i64(ltgt, lb * 8)
-        if tgt3 <= pc
-          lsp = lb + 1
-        else
-          lsp = lb
-        end
-        pc = tgt3
-      elseif op == OP_return_
-        if depth > 0
-          depth -= 1
-          pc       = mem.read_i64(fr, (depth * 8) * 8)
-          cur_end  = mem.read_i64(fr, (depth * 8 + 1) * 8)
-          lbase    = mem.read_i64(fr, (depth * 8 + 2) * 8)
-          lsp      = mem.read_i64(fr, (depth * 8 + 3) * 8)
-          lsp_base = mem.read_i64(fr, (depth * 8 + 4) * 8)
-        else
-          pc = cur_end
-        end
-
-      elseif op == 16
-        -- call: `imm2` already holds the decoded function index (opcode 16 is
-        -- registered in `himm`). Imported/WASI functions are not executable
-        -- here yet, so bail rather than jumping into a body that isn't ours.
-        if imm2 < nimp
-          -- Imported (WASI) function. ward has no host bindings yet, so it
-          -- cannot perform the effect -- but bailing loses the whole module.
-          -- Consume the declared params and leave the declared number of
-          -- results, which keeps the operand stack balanced so everything
-          -- around the import still executes and is still checkable.
-          -- fd_write(fd, iovs, iovs_len, nwritten) -> errno. The only host
-          -- effect ward performs: walk the iovec array in linear memory and
-          -- emit the bytes, so a module's real output is checkable against
-          -- wasmtime instead of being silently dropped.
-          if mem.read_i64(imfn, imm2 * 8) == 1 and sp >= 4
-            npw: i64 = mem.read_i64(st, sp * 8) & M32
-            nio: i64 = mem.read_i64(st, (sp - 1) * 8) & M32
-            iop: i64 = mem.read_i64(st, (sp - 2) * 8) & M32
-            tot: i64 = 0
-            q3: i64 = 0
-            while q3 < nio
-              vb: i64 = iop + q3 * 8
-              bp: i64 = mem.read_byte(lin, vb) | (mem.read_byte(lin, vb + 1) << 8) | (mem.read_byte(lin, vb + 2) << 16) | (mem.read_byte(lin, vb + 3) << 24)
-              bl: i64 = mem.read_byte(lin, vb + 4) | (mem.read_byte(lin, vb + 5) << 8) | (mem.read_byte(lin, vb + 6) << 16) | (mem.read_byte(lin, vb + 7) << 24)
-              k3: i64 = 0
-              while k3 < bl and bp + k3 < 65536
-                io.write(string.char(mem.read_byte(lin, bp + k3)))
-                k3 += 1
-              end
-              tot = tot + bl
-              q3 += 1
-            end
-            if npw + 4 <= 65536
-              mem.write_byte(lin, npw, tot & 255)
-              mem.write_byte(lin, npw + 1, (tot >> 8) & 255)
-              mem.write_byte(lin, npw + 2, (tot >> 16) & 255)
-              mem.write_byte(lin, npw + 3, (tot >> 24) & 255)
-            end
-            sp = sp - 4
-            sp += 1
-            mem.write_i64(st, sp * 8, 0)
-          else
-          itx: i64 = mem.read_i64(imtab, imm2 * 8)
-          ipn: i64 = mem.read_i64(tpar, (itx * 2) * 8)
-          irn: i64 = mem.read_i64(tpar, (itx * 2 + 1) * 8)
-          if ipn > sp
-            return -1
-          end
-          sp = sp - ipn
-          iz: i64 = 0
-          while iz < irn
-            sp += 1
-            mem.write_i64(st, sp * 8, 0)
-            iz += 1
-          end
-          sp = sp
-          end
-        else
-        fx: i64 = imm2 - nimp
-        if fx < 0 or fx >= nfn or depth >= 63
-          return -1
-        end
-        mem.write_i64(fr, (depth * 8) * 8, pc)
-        mem.write_i64(fr, (depth * 8 + 1) * 8, cur_end)
-        mem.write_i64(fr, (depth * 8 + 2) * 8, lbase)
-        mem.write_i64(fr, (depth * 8 + 3) * 8, lsp)
-        mem.write_i64(fr, (depth * 8 + 4) * 8, lsp_base)
-        depth += 1
-        nb: i64 = lbase + 64
-        npc: i64 = mem.read_i64(ftab, (fx * 4 + 3) * 8)
-        nlc2: i64 = mem.read_i64(ftab, (fx * 4 + 2) * 8)
-        if nb + 64 > 64 * 64 or npc > sp
-          return -1
-        end
-        -- Arguments sit on the operand stack with the LAST param on top, so
-        -- fill the callee's locals downwards as they pop.
-        ka: i64 = npc - 1
-        while ka >= 0
-          mem.write_i64(lo, (nb + ka) * 8, mem.read_i64(st, sp * 8))
-          sp -= 1
-          ka -= 1
-        end
-        za: i64 = npc
-        while za < npc + nlc2
-          mem.write_i64(lo, (nb + za) * 8, 0)
-          za += 1
-        end
-        lbase = nb
-        lsp_base = lsp
-        -- Do NOT reset lsp. `ltgt` is ONE shared label buffer, so starting the
-        -- callee at 0 made its labels overwrite the caller's: a call inside a
-        -- loop, to a callee that also loops, returned the caller's first
-        -- iteration value and exited (1 instead of 10). Branch depths are
-        -- relative to the top of the stack, so letting the callee's labels
-        -- stack ABOVE the caller's is correct; the frame pop restores lsp.
-        pc = mem.read_i64(ftab, (fx * 4) * 8)
-        cur_end = mem.read_i64(ftab, (fx * 4 + 1) * 8)
-        end
 
       elseif op == 17
         -- call_indirect: `imm2` holds the type index (op 17 is registered in
@@ -2573,22 +2589,6 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       elseif op == 0
         -- unreachable: a genuine trap, not an unimplemented opcode.
         return -1
-
-      elseif op == 35
-        -- global.get (immediate already decoded into imm2 via himm)
-        if imm2 < 0 or imm2 >= 64
-          return -1
-        end
-        sp += 1
-        mem.write_i64(st, sp * 8, mem.read_i64(gl, imm2 * 8))
-
-      elseif op == 36
-        -- global.set
-        if sp < 1 or imm2 < 0 or imm2 >= 64
-          return -1
-        end
-        mem.write_i64(gl, imm2 * 8, mem.read_i64(st, sp * 8))
-        sp -= 1
 
       else
         -- Unimplemented opcode: its stack effect is unknown, so continuing
