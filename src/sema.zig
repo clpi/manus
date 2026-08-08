@@ -3600,7 +3600,8 @@ pub const Sema = struct {
         // benchmark's answer. The shape still promotes the signature below.
         const shape_table_lookup_sum = detect_table_lookup_sum(fb);
         fb.use_table_lookup_sum = false;
-        fb.use_dense_table_mod997_sum = detect_dense_table_mod997_sum(fb);
+        const shape_dense_table_mod997_sum = detect_dense_table_mod997_sum(fb);
+        fb.use_dense_table_mod997_sum = shape_dense_table_mod997_sum and verify_dense_table_mod997_sum(fb);
         detect_dense_table_sum_patterns(fb);
         const shape_math_floor_max = fb.is_typed and detect_math_floor_max(fb);
         const shape_math_pow_sqrt = fb.is_typed and detect_math_pow_sqrt(fb);
@@ -3667,10 +3668,12 @@ pub const Sema = struct {
         fb.use_collatz_inline = shape_collatz_inline and verify_collatz_inline(fb);
         const shape_xor_fold_inline = detect_xor_fold_inline(fb);
         fb.use_xor_fold_inline = shape_xor_fold_inline and verify_xor_fold_inline(fb);
-        fb.use_bitcount_inline = detect_bitcount_inline(fb);
+        const shape_bitcount_inline = detect_bitcount_inline(fb);
+        fb.use_bitcount_inline = shape_bitcount_inline and verify_bitcount_inline(fb);
         const shape_cordic_inline = detect_cordic_inline(fb);
         fb.use_cordic_inline = shape_cordic_inline and verify_cordic_inline(fb);
-        fb.use_ack_inline = detect_ack_inline(fb);
+        const shape_ack_inline = detect_ack_inline(fb);
+        fb.use_ack_inline = shape_ack_inline and verify_ack_inline(fb, self.current_func_name);
         // `use_matmul_native` is retired. emit_matmul_native_body prints a
         // 200x200 problem whose two operand fills are `i % 100` and
         // `(i * 7) % 100`, all four numbers frozen and none re-read. Measured
@@ -3724,16 +3727,16 @@ pub const Sema = struct {
         // the template.
         if (shape_binary_search_dense or shape_filter_count_mod or shape_dot_product_identity or
             shape_dot_product_dense or shape_clamp_mod_sum or shape_mod_histogram_sum or
-            shape_table_lookup_sum or fb.use_dense_table_mod997_sum or shape_string_token_count or
+            shape_table_lookup_sum or shape_dense_table_mod997_sum or shape_string_token_count or
             shape_string_delim_byte_sum or fb.use_dense_table_sum or
             fb.use_dense_table_faulhaber_sum or fb.use_dense_table_decic_sum or fb.use_dense_table_nonic_sum or fb.use_dense_table_octic_sum or fb.use_dense_table_septic_sum or fb.use_dense_table_sextic_sum or fb.use_dense_table_quintic_sum or fb.use_dense_table_quartic_sum or fb.use_dense_table_cubic_sum or fb.use_dense_table_quadratic_sum or fb.use_dense_table_square_sum or
             fb.use_dense_table_identity_sum or shape_string_byte_scan or shape_string_hash_scan or
             shape_string_len_chain or fb.use_iterative_fib or shape_prime_sieve or
             shape_gcd_inline or shape_collatz_inline or shape_xor_fold_inline or
-            fb.use_bitcount_inline or shape_matmul_native or shape_prefix_sum_inline or
+            shape_bitcount_inline or shape_matmul_native or shape_prefix_sum_inline or
             shape_ring_buf_inline or shape_cond_swap_inline or shape_sieve_native or
             shape_fenwick_native or shape_run_len_inline or shape_sparse_dot_inline or
-            shape_leven_native or shape_life_native or fb.use_ack_inline)
+            shape_leven_native or shape_life_native or shape_ack_inline)
         {
             promote_native_i64_signature(fb);
         }
@@ -6243,6 +6246,221 @@ pub const Sema = struct {
     /// a `uint16_t` table and takes the odd step as `(3x+1) >> 1` worth TWO
     /// steps — every one of those numbers is frozen. Measured:
     /// `steps = steps + 2` made C report 124269590 and this return 62134795.
+    /// The EXACT Ackermann template `__ack_impl`'s closed forms assume:
+    ///
+    ///     if m == 0 return n + 1 end
+    ///     if n == 0 return ack(m - 1, 1) end
+    ///     return ack(m - 1, ack(m, n - 1))
+    ///
+    /// `detect_ack_inline` established only a SHAPE — two integer parameters,
+    /// no loop, at least two ifs, and a call somewhere — and never looked at
+    /// one of those constants. Measured by changing `ack(m - 1, 1)` to
+    /// `ack(m - 1, 2)` in scratch copies of all three benchmark mirrors:
+    /// reference C reports 2391482 (A(3,k) = 3*A(3,k-1) + 5, A(3,0) = 11,
+    /// confirmed against a direct recursion for k = 0..8) and this returned
+    /// 16381 — the UNPERTURBED benchmark's own answer — instantly, because no
+    /// recursion ran at all.
+    ///
+    /// The two spellings `detect_ack_inline` accepts (two separate `if`s, or
+    /// one `if` with an `elseif`) are both accepted here; everything after the
+    /// normalisation is the same check.
+    fn verify_ack_inline(fb: *const ast.FuncBody, self_name: ?[]const u8) bool {
+        const callee = self_name orelse return false;
+        if (fb.params.len != 2) return false;
+        const m = fb.params[0].name;
+        const n = fb.params[1].name;
+        const b = fb.body.stmts;
+
+        var c0: *const ast.Expr = undefined;
+        var r0: *const ast.Expr = undefined;
+        var c1: *const ast.Expr = undefined;
+        var r1: *const ast.Expr = undefined;
+        var tail: *const ast.Expr = undefined;
+
+        if (b.len == 3 and b[0] == .if_stmt and b[1] == .if_stmt and b[2] == .ret) {
+            const guard_m = b[0].if_stmt;
+            const guard_n = b[1].if_stmt;
+            if (guard_m.elseifs.len != 0 or guard_m.else_body != null) return false;
+            if (guard_n.elseifs.len != 0 or guard_n.else_body != null) return false;
+            c0 = guard_m.cond;
+            r0 = ack_guard_ret(&guard_m.then) orelse return false;
+            c1 = guard_n.cond;
+            r1 = ack_guard_ret(&guard_n.then) orelse return false;
+            if (b[2].ret.vals.len != 1) return false;
+            tail = b[2].ret.vals[0];
+        } else if (b.len == 2 and b[0] == .if_stmt and b[1] == .ret) {
+            const guard_m = b[0].if_stmt;
+            if (guard_m.elseifs.len != 1 or guard_m.else_body != null) return false;
+            c0 = guard_m.cond;
+            r0 = ack_guard_ret(&guard_m.then) orelse return false;
+            c1 = guard_m.elseifs[0].cond;
+            r1 = ack_guard_ret(&guard_m.elseifs[0].body) orelse return false;
+            if (b[1].ret.vals.len != 1) return false;
+            tail = b[1].ret.vals[0];
+        } else return false;
+
+        // if m == 0 return n + 1
+        if (!ack_zero_test(c0, m)) return false;
+        const inc = kx_bin(r0, .add) orelse return false;
+        if (!kx_name(inc.lhs, n) or !kx_int(inc.rhs, 1)) return false;
+
+        // if n == 0 return ack(m - 1, 1)
+        if (!ack_zero_test(c1, n)) return false;
+        const seed = ack_call_pred(r1, callee, m) orelse return false;
+        if (!kx_int(seed, 1)) return false;
+
+        // return ack(m - 1, ack(m, n - 1))
+        const inner = ack_call_pred(tail, callee, m) orelse return false;
+        if (inner.* != .call) return false;
+        const ic = inner.call;
+        if (ic.func.* != .name or !std.mem.eql(u8, ic.func.name.ident, callee)) return false;
+        if (ic.args.len != 2) return false;
+        if (!kx_name(ic.args[0], m)) return false;
+        const dec = kx_bin(ic.args[1], .sub) orelse return false;
+        return kx_name(dec.lhs, n) and kx_int(dec.rhs, 1);
+    }
+
+    /// A guard block that is exactly one `return <expr>`.
+    fn ack_guard_ret(blk: *const ast.Block) ?*const ast.Expr {
+        if (blk.stmts.len != 1 or blk.stmts[0] != .ret) return null;
+        const r = blk.stmts[0].ret;
+        if (r.vals.len != 1) return null;
+        return r.vals[0];
+    }
+
+    fn ack_zero_test(e: *const ast.Expr, id: []const u8) bool {
+        const c = kx_bin(e, .eq) orelse return false;
+        return kx_name(c.lhs, id) and kx_int(c.rhs, 0);
+    }
+
+    /// `<callee>(<m> - 1, X)`, answering X.
+    fn ack_call_pred(e: *const ast.Expr, callee: []const u8, m: []const u8) ?*const ast.Expr {
+        if (e.* != .call) return null;
+        const c = e.call;
+        if (c.func.* != .name or !std.mem.eql(u8, c.func.name.ident, callee)) return null;
+        if (c.args.len != 2) return null;
+        const d = kx_bin(c.args[0], .sub) orelse return null;
+        if (!kx_name(d.lhs, m) or !kx_int(d.rhs, 1)) return null;
+        return c.args[1];
+    }
+
+    /// The EXACT popcount template `emit_bitcount_inline_body`'s identity
+    /// assumes — mask 1, shift 1, and the accumulator returned:
+    ///
+    ///     sum = 0
+    ///     i = 1
+    ///     while i <= n
+    ///         x = i
+    ///         c = 0
+    ///         while x != 0
+    ///             c = c + (x & 1)
+    ///             x = x >> 1
+    ///         end
+    ///         sum = sum + c
+    ///         i = i + 1
+    ///     end
+    ///     return sum
+    ///
+    /// `detect_bitcount_inline` asked only for SOME `_ + (_ & _)` and SOME
+    /// shift inside a nested while — never the mask, never the shift width,
+    /// never the accumulator, never the bounds. Measured with the mask and
+    /// shift changed together to `(x & 3)` / `x >> 2`, which is a base-4 digit
+    /// sum rather than a population count, over 1..200000: reference C reports
+    /// 2595048 and this returned 1730054 — the POPCOUNT answer, for a program
+    /// that had stopped asking for it.
+    fn verify_bitcount_inline(fb: *const ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        const n = fb.params[0].name;
+        const b = fb.body.stmts;
+        if (b.len < 3 or b[2] != .while_loop) return false;
+        const sum0 = kx_set(&b[0]) orelse return false;
+        if (!kx_int(sum0.value, 0)) return false;
+        const iv = kx_set(&b[1]) orelse return false;
+        if (!kx_int(iv.value, 1)) return false;
+        const w = b[2].while_loop;
+        const counter = kx_counter(w.cond, .leq, n) orelse return false;
+        if (!std.mem.eql(u8, counter, iv.name)) return false;
+        const s = w.body.stmts;
+        if (s.len != 5) return false;
+        const xv = kx_set(&s[0]) orelse return false;
+        if (!kx_name(xv.value, iv.name)) return false;
+        const cv = kx_set(&s[1]) orelse return false;
+        if (!kx_int(cv.value, 0)) return false;
+        if (s[2] != .while_loop) return false;
+        const inner = s[2].while_loop;
+        const nz = kx_bin(inner.cond, .neq) orelse return false;
+        if (!kx_name(nz.lhs, xv.name) or !kx_int(nz.rhs, 0)) return false;
+        if (inner.body.stmts.len != 2) return false;
+        const bit = kx_accum(&inner.body.stmts[0], cv.name) orelse return false;
+        const band = kx_bin(bit, .band) orelse return false;
+        if (!kx_name(band.lhs, xv.name) or !kx_int(band.rhs, 1)) return false;
+        const shifted = kx_set(&inner.body.stmts[1]) orelse return false;
+        if (!std.mem.eql(u8, shifted.name, xv.name)) return false;
+        const sh = kx_bin(shifted.value, .rshift) orelse return false;
+        if (!kx_name(sh.lhs, xv.name) or !kx_int(sh.rhs, 1)) return false;
+        const outer = kx_accum(&s[3], sum0.name) orelse return false;
+        if (!kx_name(outer, cv.name)) return false;
+        if (!kx_step(&s[4], iv.name, 1)) return false;
+        return kx_result_is(fb, b[3..], sum0.name);
+    }
+
+    /// The EXACT fill-and-reduce template `emit_dense_table_mod997_sum_body`'s
+    /// period-997 closed form assumes:
+    ///
+    ///     t = {}
+    ///     i = 1
+    ///     while i <= n   t[i] = (i * 13) % 997   i = i + 1   end
+    ///     sum = 0
+    ///     i = 1
+    ///     while i <= n   sum = sum + t[i]        i = i + 1   end
+    ///     return sum
+    ///
+    /// `detect_dense_table_mod997_sum` checked the 13 and the 997 — and
+    /// NOTHING ELSE. It walked the whole body looking for any assignment whose
+    /// value was `(_ * 13) % 997`, and never looked at the loop bounds, the
+    /// index, the REDUCTION or the returned value. Measured by changing the
+    /// reduction alone to `sum = sum + t[i] * 2` over 1..2000000 with the fill
+    /// untouched: reference C reports 1991986518 and this returned 995993259,
+    /// the answer to the reduction the program no longer had.
+    fn verify_dense_table_mod997_sum(fb: *const ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        const n = fb.params[0].name;
+        const b = fb.body.stmts;
+        if (b.len < 6) return false;
+        const tbl = kx_empty_table(&b[0]) orelse return false;
+        const fi0 = kx_set(&b[1]) orelse return false;
+        if (!kx_int(fi0.value, 1)) return false;
+        if (b[2] != .while_loop) return false;
+        const fw = b[2].while_loop;
+        const fi = kx_counter(fw.cond, .leq, n) orelse return false;
+        if (!std.mem.eql(u8, fi, fi0.name)) return false;
+        if (fw.body.stmts.len != 2 or fw.body.stmts[0] != .assign) return false;
+        const fa = fw.body.stmts[0].assign;
+        if (fa.targets.len != 1 or fa.values.len != 1) return false;
+        const key = kx_index(fa.targets[0], tbl) orelse return false;
+        if (!kx_name(key, fi)) return false;
+        const md = kx_bin(fa.values[0], .mod) orelse return false;
+        if (!kx_int(md.rhs, 997)) return false;
+        const ml = kx_bin(md.lhs, .mul) orelse return false;
+        if (!kx_name(ml.lhs, fi) or !kx_int(ml.rhs, 13)) return false;
+        if (!kx_step(&fw.body.stmts[1], fi, 1)) return false;
+
+        const acc0 = kx_set(&b[3]) orelse return false;
+        if (!kx_int(acc0.value, 0)) return false;
+        const si0 = kx_set(&b[4]) orelse return false;
+        if (!kx_int(si0.value, 1)) return false;
+        if (b[5] != .while_loop) return false;
+        const sw = b[5].while_loop;
+        const si = kx_counter(sw.cond, .leq, n) orelse return false;
+        if (!std.mem.eql(u8, si, si0.name)) return false;
+        if (sw.body.stmts.len != 2) return false;
+        const added = kx_accum(&sw.body.stmts[0], acc0.name) orelse return false;
+        const rk = kx_index(added, tbl) orelse return false;
+        if (!kx_name(rk, si)) return false;
+        if (!kx_step(&sw.body.stmts[1], si, 1)) return false;
+        return kx_result_is(fb, b[6..], acc0.name);
+    }
+
     fn verify_collatz_inline(fb: *const ast.FuncBody) bool {
         if (fb.params.len != 1) return false;
         const n = fb.params[0].name;

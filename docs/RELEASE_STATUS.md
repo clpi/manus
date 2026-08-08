@@ -663,6 +663,87 @@ this change — it is not a regression from it.
 This matters more here than it would elsewhere, because a table with exactly
 this shape was published and withdrawn.
 
+### The third verification pass (2026-08-08) — the closed forms with no `verify_`
+
+The pass above ends "the rest are either algorithm-general or still unaudited",
+and names `use_bitcount_inline` and `use_ack_inline` as **established
+algorithm-general**. They were not. Every closed-form emitter in
+`src/codegen.zig` was enumerated and matched against how its flag is set in
+`src/sema.zig`; **four had no `verify_` predicate of any kind**, and the three
+that could be perturbed were all wrong.
+
+The procedure is unchanged and the proofs are BY VALUE, in a detached worktree
+at a pushed commit, against scratch copies — the repo's `examples/benchmark.*`
+were not touched.
+
+| recogniser | perturbation | reference C | Duo, before | Duo, after | action |
+|---|---|---:|---:|---:|---|
+| `use_ack_inline` | `ack(m - 1, 1)` → `ack(m - 1, 2)` | 88571 | **2045** | 88571 | TIGHTENED |
+| `use_bitcount_inline` | `(x & 1)` / `x >> 1` → `(x & 3)` / `x >> 2` | 2595048 | **1730054** | 2595048 | TIGHTENED |
+| `use_dense_table_mod997_sum` | `sum + t[i]` → `sum + t[i] * 2` (fill untouched) | 1991986518 | **995993259** | 1991986518 | TIGHTENED |
+
+In all three "Duo, before" cells the number is the answer to the program that
+was NOT written, returned with no diagnostic. What each detector was actually
+establishing:
+
+- **`detect_ack_inline`** — two integer parameters, no loop, at least two
+  `if`s, and a call somewhere in the body. Not one Ackermann constant. Its own
+  comment records an earlier version returning 65533 for `two_if(5, 32)`; the
+  repair then was to require a call, which does nothing for a *recursive*
+  function of a different definition. `__ack_impl`'s closed forms for m = 0..3
+  are Ackermann's identities and were handed to any such function.
+- **`detect_bitcount_inline`** — SOME `_ + (_ & _)` and SOME shift inside a
+  nested `while`. Never the mask, never the shift width, never the accumulator,
+  never the bounds. A base-4 digit sum received the population count.
+- **`detect_dense_table_mod997_sum`** — walked the entire body for any
+  assignment whose value was `(_ * 13) % 997`, and checked nothing else. It got
+  the two constants the previous pass re-proved and missed that the REDUCTION
+  is not part of its template at all, so changing the reduction alone left the
+  detector firing and the emitter printing the old sum. **A recogniser can
+  verify every constant its emitter prints and still be wrong about which
+  expression the program reduces.**
+
+Each perturbation was checked for signal before its Duo row was read. Two were
+rejected first for exactly the reason the previous pass records: `A(0,n) = n+1`
+→ `n+3` makes the reference C build overflow its stack rather than answer, and
+→ `n` degenerates A(3,11) to 1, which both engines agree on for the wrong
+reason. `ack(m-1, 1)` → `ack(m-1, 2)` moves A(3,k) to the recurrence
+3·A(3,k−1)+5 with A(3,0)=11, confirmed against a direct recursion for k = 0..8.
+
+**Timing cost: none, on any row.** The benchmark's own kernels still satisfy
+the exact templates, so all three closed forms still fire there — verified by
+value with a positive control on each (unperturbed Ackermann still answers 2045
+instantly, bitcount 1730054, churn 995993259). The verdict split is **17
+measured wins / 11 folded / 12 losses before and after**, and Table churn
+(0.000266 s vs 0.000269 s), Bitcount (0.034406 s vs 0.034718 s) and Ackermann
+(1.05886 s vs 1.07313 s) all move by less than the run-to-run spread. A
+tightening that costs nothing is what a *correct* template should cost; the
+rows that got slower were the ones whose templates were fictional.
+
+Counted after this pass: **27 of the 37 `use_*` flags that reach codegen carry
+a `verify_*` predicate** (was 24). Of the remaining ten, seven are permanently
+false with their emitters deleted, `use_dense_table` / `use_simd_reduction` /
+`use_force_always_inline` / `use_fp_strict_always_inline` are lowering switches
+with no closed form, and `use_dot_product_dense` / `use_dot_product_identity`
+are gated on `verify_dot_product_identity` through a shared local rather than
+inline. `use_iterative_fib` and `use_dense_table_identity_sum` are verified by
+construction — the first checks the whole two-self-call template including the
+function's own name, the second fires only when the fill and reduction
+polynomials COMPOSE to the identity, both read from the AST.
+
+**One dead emitter, named so it is not mistaken for a live one.**
+`emit_dense_table_sum_body` is unreachable: `use_dense_table_sum` is never
+assigned anywhere in `sema`. Its body fills the array with `t[i] = i`
+regardless of the source's polynomial, so it would answer the identity for
+every non-identity fill if it were ever reached. It is left in place with the
+`sema` comment that explains why nothing sets its flag.
+
+Gates at this commit, all in a detached worktree: `zig build unit-test`
+**exit 0**, `zig build native-differential` **63 agree / 0 diverge, PASS**,
+`zig build agent-smoke` **PASS**, `zig build bench` **all 40 RESULT rows match
+reference C for both `.lua` and `.duo`** (the gate itself still exits 1, on the
+losses, as it did before).
+
 ### What was removed, so the current numbers cannot be confused with the old ones
 
 A results table in `README.md` reported a geometric-mean **"Duo beats C by 4×"**
