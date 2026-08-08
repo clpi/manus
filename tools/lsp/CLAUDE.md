@@ -36,17 +36,34 @@ shipped it.
 - Go-to-definition for Duo symbols
 - `@comp.*` directive catalog and completions
 - Diagnostics from the Duo compiler
-- Hover documentation
+- Hover — a projection of `duo graph`, the compiler's semantic graph
+
+## Pass 101 §3: this server is a PROJECTION, not a second compiler
+
+The ruling is one graph service, N protocol front-ends. When a fact about the
+code is needed, ASK THE COMPILER — `duo graph`, `duo check
+--plain-diagnostics`, `duo sim --import-c` — and do not grow another line
+scanner beside it. `graph_for` in `src/server.duo` is the query client; hover
+goes through it.
+
+Two scanners still exist and are NOT licence to add a third: the top-level
+symbol scanner (the graph lifts no node for module bindings — measured) and the
+word-boundary reference scanner (`duo graph` emits nodes but no edges, so
+`usersOf` is unreachable from the CLI). Both are documented as gaps in
+`README.md` with the measurement that keeps them. Close the gap in the
+compiler, then delete the scanner — not the other way round.
 
 ## Editor setup
 
-Add to your editor's LSP config:
+The server is its OWN binary, built by `build.duo`. There is no `duo lsp`
+subcommand — measured: `grep -c '"lsp"' src/main.zig` is 0, and `duo help` does
+not list one. Point your editor at the built binary:
+
 ```json
 {
   "duo": {
-    "command": "<DUO_ROOT>/zig-out/bin/duo",
-    "args": ["lsp"],
-    "filetypes": ["duo"]
+    "command": "<DUO_ROOT>/tools/lsp/duo-lsp",
+    "filetypes": ["duo", "lua"]
   }
 }
 ```

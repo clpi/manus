@@ -1163,6 +1163,8 @@ fun doc_for(uri) -> any
     d.lo = nil
     d.syms = nil
     d.syms_version = -1
+    d.graph = nil
+    d.graph_version = -1
     d.dirty = false
     d.last_t = 0
     io.lsp.docs[uri] = d
@@ -1184,6 +1186,25 @@ end
 fun invalidate(d) -> void
   d.lo = nil
   d.syms = nil
+  d.graph = nil
+  d.graph_version = -1
+end
+-- The compiler reads files, not buffers, so every query about an UNSAVED
+-- document goes through a temp file. `run_check` grew its own copy of this;
+-- the graph client needs the same file, so it is one function now and the
+-- two callers share the buffer instead of racing to write it twice.
+fun doc_tmp_write(d, uri) -> any
+  if d.tmp == nil then
+    io.lsp.counter = io.lsp.counter + 1
+    d.tmp = os.tmpname() .. "_" .. tostring(io.lsp.counter) .. doc_ext(uri)
+  end
+  f = io.open(d.tmp, "w")
+  if f == nil then
+    return nil
+  end
+  f:write(d.text)
+  f:close()
+  d.tmp
 end
 
 -- ── diagnostics ──────────────────────────────────────────────────────────────
@@ -1345,15 +1366,8 @@ fun run_check(uri) -> void
     send_diagnostics(uri, {})
     return
   end
-  ext = doc_ext(uri)
-  if d.tmp == nil then
-    io.lsp.counter = io.lsp.counter + 1
-    d.tmp = os.tmpname() .. "_" .. tostring(io.lsp.counter) .. ext
-  end
-  f = io.open(d.tmp, "w")
-  if f ~= nil then
-    f:write(d.text)
-    f:close()
+  if doc_tmp_write(d, uri) == nil then
+    return
   end
   cmd = shell_quote(io.lsp.duo_bin) .. " check --plain-diagnostics " .. io.lsp.check_flags .. " " .. shell_quote(d.tmp) .. " 2>&1"
   p = io.popen(cmd, "r")
@@ -2061,34 +2075,265 @@ fun format_foreign_hover(ent) -> str
   table.concat(lines, "\n")
 end
 
+-- ── graph service client (Pass 101 §3) ──────────────────────────────────────
+--
+-- `duo graph <file>` IS the query surface Pass 101 asks a front-end to project.
+-- Per node it emits the kind the COMPILER assigned, the declaration line/col,
+-- a content-addressed `stable_id`, and for calls the callee kind, arity,
+-- specializability and the Pass 2 knowledge/stage lattice position. None of
+-- that is recoverable by scanning text, and the scanner's answers were wrong
+-- where they overlapped: measured on `lib/std/compiler/graph.duo`, hover over
+-- `_has` (a `func` in the graph) reported "_variable_", and hover over a call
+-- site or a local returned nil because the scanner only indexes declarations.
+--
+-- Coordinates: the graph is 1-based in line AND col; LSP positions are 0-based
+-- in both.
+fun graph_bare_name(n) -> str
+  if n == nil then
+    return ""
+  end
+  p = find_from(n, "::", 1)
+  if p ~= 0 then
+    return string.sub(n, p + 2)
+  end
+  n
+end
+fun graph_owner_name(n) -> str
+  if n == nil then
+    return ""
+  end
+  p = find_from(n, "::", 1)
+  if p == 0 then
+    return ""
+  end
+  string.sub(n, 1, p - 1)
+end
+-- One spawn per document version, cached on the doc. A negative result is
+-- cached too, so a file the compiler cannot parse does not spawn a process on
+-- every keystroke.
+fun graph_for(uri) -> any
+  d = io.lsp.docs[uri]
+  if d == nil then
+    return nil
+  end
+  if d.graph_version == d.version then
+    return d.graph
+  end
+  d.graph = nil
+  d.graph_version = d.version
+  if io.lsp.duo_bin == nil then
+    return nil
+  end
+  path = doc_tmp_write(d, uri)
+  if path == nil then
+    return nil
+  end
+  out = run_duo_capture("graph " .. shell_quote(path))
+  -- A parse failure prints diagnostics, not JSON. Decide on the first byte
+  -- rather than handing the decoder something it will answer nil to anyway.
+  if string.sub(out, 1, 1) ~= "{" then
+    return nil
+  end
+  g = io.lsp.json.decode(out)
+  if g == nil or g.nodes == nil then
+    return nil
+  end
+  d.graph = g
+  g
+end
+-- The identifier under the cursor, with its bounds. Deliberately NOT
+-- `word_at_lo`: that one treats `.`, `@` and `$` as word bytes, so on
+-- `std.agent.discover()` it answers the whole dotted path, and starting it on a
+-- non-word byte makes it span the punctuation into the next token. The graph is
+-- keyed by bare names, so bare names are what the cursor must resolve to.
+fun ident_span_lo(text, lo, line, col) -> any
+  ln = get_line_lo(text, lo, line)
+  if ln == nil then
+    return nil
+  end
+  n = string.len(ln)
+  if col < 0 then
+    col = 0
+  end
+  if col >= n then
+    col = n - 1
+  end
+  if col < 0 or not is_ident_char(string.byte(ln, col + 1)) then
+    return nil
+  end
+  start = col
+  while start > 0 and is_ident_char(string.byte(ln, start))
+    start = start - 1
+  end
+  stop = col
+  while stop + 1 < n and is_ident_char(string.byte(ln, stop + 2))
+    stop = stop + 1
+  end
+  sp = {}
+  sp.name = string.sub(ln, start + 1, stop + 1)
+  sp.start = start
+  sp.stop = stop + 1
+  sp
+end
+-- The node the cursor is inside, else the nearest node on the line carrying
+-- that name.
+--
+-- MEASURED: a `call` node's col is NOT the callee's first byte. On
+-- `lib/std/compiler/graph.duo:78` (`acc = _add(acc, t.text)`) the graph puts
+-- `_add` at col 27, which is the `(`; on `:61` the method call `byte` lands on
+-- the `:` at col 23. So containment can only decide a declaration, and the
+-- caller must take the hover RANGE from the cursor's own token, never from
+-- `node.col`.
+fun graph_node_here(g, name, line, col) -> any
+  nodes = g.nodes
+  best = nil
+  bestd = 0
+  n = rawlen(nodes)
+  i = 1
+  while i <= n
+    e = nodes[i]
+    if e.line == line + 1 and graph_bare_name(e.name) == name then
+      sc = e.col - 1
+      if col >= sc and col < sc + string.len(name) then
+        return e
+      end
+      dist = sc - col
+      if dist < 0 then
+        dist = col - sc
+      end
+      if best == nil or dist < bestd then
+        best = e
+        bestd = dist
+      end
+    end
+    i = i + 1
+  end
+  best
+end
+-- Where the compiler says the name is DECLARED, anywhere in the module.
+fun graph_def_node(g, name) -> any
+  nodes = g.nodes
+  n = rawlen(nodes)
+  i = 1
+  while i <= n
+    e = nodes[i]
+    k = e.kind
+    if k == "func" or k == "local" or k == "table_shape" or k == "enum_shape" then
+      if graph_bare_name(e.name) == name then
+        return e
+      end
+    end
+    i = i + 1
+  end
+  nil
+end
+fun graph_add_line(lines, s) -> void
+  lines[rawlen(lines) + 1] = s
+end
+fun format_graph_hover(node, def, sig) -> str
+  lines = {}
+  if sig ~= "" then
+    graph_add_line(lines, "```duo")
+    graph_add_line(lines, sig)
+    graph_add_line(lines, "```")
+  end
+  graph_add_line(lines, "_" .. tostring(node.kind) .. "_ **" .. graph_bare_name(node.name) .. "**")
+  owner = graph_owner_name(node.name)
+  if owner ~= "" then
+    graph_add_line(lines, "- **in:** `" .. owner .. "`")
+  end
+  if node.callee_kind ~= nil then
+    graph_add_line(lines, "- **callee:** " .. tostring(node.callee_kind) .. " · **arity:** " .. tostring(node.arg_count))
+  end
+  if node.specializable ~= nil then
+    spec = "no"
+    if node.specializable then
+      spec = "yes"
+    end
+    graph_add_line(lines, "- **specializable:** " .. spec)
+  end
+  if node.knowledge ~= nil then
+    graph_add_line(lines, "- **knowledge:** " .. tostring(node.knowledge) .. " · **stage:** " .. tostring(node.stage))
+  end
+  if def ~= nil and def ~= node and def.line ~= nil and def.line > 0 then
+    graph_add_line(lines, "- **declared:** " .. tostring(def.kind) .. " at line " .. tostring(def.line))
+  end
+  -- `stable_id` is deliberately NOT shown. It hashes the module PATH, and an
+  -- unsaved buffer is queried through a temp file, so the value shown would
+  -- differ from the one the same symbol has on disk. A durable-looking hash
+  -- that is not durable is worse than no hash.
+  graph_add_line(lines, "")
+  graph_add_line(lines, "_from `duo graph` — the compiler's own semantic graph_")
+  table.concat(lines, "\n")
+end
+
 fun handle_hover(params) -> any
   uri = params.textDocument.uri
   d = io.lsp.docs[uri]
   if d == nil then
     return nil
   end
+  ensure_lo(d)
+  line = params.position.line
+  col = params.position.character
+  span = ident_span_lo(d.text, d.lo, line, col)
+
+  if span ~= nil then
+    -- Foreign descriptors keep answering from the Pass 5 SIM snapshot: they are
+    -- C entities, so the Duo semantic graph has nothing to say about them.
+    foreign = foreign_entity_in_doc(d.text, uri, span.name)
+    if foreign ~= nil then
+      c = {}
+      c.kind = "markdown"
+      c.value = format_foreign_hover(foreign)
+      r = {}
+      r.contents = c
+      r.range = mk_range(line, span.start, span.stop)
+      return r
+    end
+
+    g = graph_for(uri)
+    if g ~= nil then
+      node = graph_node_here(g, span.name, line, col)
+      if node ~= nil then
+        sig = ""
+        ln = get_line_lo(d.text, d.lo, node.line - 1)
+        if ln ~= nil then
+          sig = trim(ln)
+        end
+        c = {}
+        c.kind = "markdown"
+        c.value = format_graph_hover(node, graph_def_node(g, span.name), sig)
+        r = {}
+        r.contents = c
+        r.range = mk_range(line, span.start, span.stop)
+        return r
+      end
+    end
+  end
+
+  -- Residue, not a parallel implementation: MEASURED, `duo graph` lifts no
+  -- node for a top-level module binding -- `x: i64 = 1` in a 5-line file yields
+  -- module/func/param/call nodes and nothing for `x`. Until the lift covers
+  -- them, dropping the scanner here would delete hover for every module-level
+  -- constant. It answers only what the graph did not.
   ensure_syms(d)
-  s = symbol_at(d.syms, params.position.line, params.position.character)
+  s = symbol_at(d.syms, line, col)
   if s == nil then
     return nil
   end
-  ensure_lo(d)
   ln = get_line_lo(d.text, d.lo, s.line)
   sig = ""
   if ln ~= nil then
     sig = trim(ln)
   end
-  foreign = foreign_entity_in_doc(d.text, uri, s.name)
   c = {}
   c.kind = "markdown"
-  if foreign ~= nil then
-    c.value = format_foreign_hover(foreign)
-  else
-    c.value = "```duo\n" .. sig .. "\n```\n_" .. kind_label(s.kind) .. "_ **" .. s.name .. "**"
-    if s.container ~= nil and s.container ~= "" then
-      c.value = c.value .. "  (in " .. s.container .. ")"
-    end
+  c.value = "```duo\n" .. sig .. "\n```\n_" .. kind_label(s.kind) .. "_ **" .. s.name .. "**"
+  if s.container ~= nil and s.container ~= "" then
+    c.value = c.value .. "  (in " .. s.container .. ")"
   end
+  c.value = c.value .. "\n\n_not lifted into the semantic graph; scanned from text_"
   r = {}
   r.contents = c
   r.range = mk_range(s.line, s.col, s.col + string.len(s.name))

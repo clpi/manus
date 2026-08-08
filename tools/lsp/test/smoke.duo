@@ -68,17 +68,31 @@ _doc_symbol(id: i64, uri: str): str
         .. uri .. "\"}}}")
 end
 
+_hover(id: i64, uri: str, line: i64, ch: i64): str
+    _frame("{\"jsonrpc\":\"2.0\",\"id\":" .. to(str)(id)
+        .. ",\"method\":\"textDocument/hover\",\"params\":{\"textDocument\":{\"uri\":\""
+        .. uri .. "\"},\"position\":{\"line\":" .. to(str)(line)
+        .. ",\"character\":" .. to(str)(ch) .. "}}}")
+end
+
 main = (): i64
+    -- `main`'s return value is NOT propagated to the process exit status, so a
+    -- guard that returns 2 reports a confident 0 to CI. Measured before this
+    -- change: the corpus path below was stale, the guard fired, and
+    -- `duo run test/smoke.duo` still exited 0. Every abort here exits directly.
     if not std.script.fs_exists(_SERVER)
         print("smoke: server binary not found at " .. _SERVER .. " (run: duo run build.duo)")
-        return 2
+        os.exit(2)
     end
 
+    -- These paths were written when the LSP lived in a SIBLING repo. After the
+    -- subtree merge into duo/tools/lsp the repo root is two levels up, not
+    -- `../duo`.
     duo = std.script.getenv_or("DUO_LSP_DUO_BIN")
-    if duo == "" duo = "../duo/zig-out/bin/duo" end
+    if duo == "" duo = "../../zig-out/bin/duo" end
     if not std.script.fs_exists(duo)
         print("smoke: duo binary not found at " .. duo .. " (run zig build)")
-        return 2
+        os.exit(2)
     end
 
     bad_uri = "file:///tmp/duo_smoke_bad.duo"
@@ -96,10 +110,10 @@ main = (): i64
     -- the same assertion with the same two messages, so the rot predates the
     -- port. A no-diagnostics control has to point at a file that actually has
     -- none, or it stops testing the server and starts testing the corpus.
-    pm_path = "../duo/examples/agent_hooks_showcase.duo"
+    pm_path = "../../examples/agent_hooks_showcase.duo"
     if not std.script.fs_exists(pm_path)
         print("smoke: corpus file not found at " .. pm_path)
-        return 2
+        os.exit(2)
     end
     pm_text = std.script.fs_read(pm_path)
 
@@ -108,8 +122,11 @@ main = (): i64
         .. _did_open(bad_uri, "x =\n")
         .. _did_open(sym_uri, sym_text)
         .. _doc_symbol(2, sym_uri)
-        .. _frame("{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"textDocument/hover\",\"params\":{\"textDocument\":{\"uri\":\""
-            .. sym_uri .. "\"},\"position\":{\"line\":1,\"character\":0}}}")
+        .. _hover(3, sym_uri, 1, 0)
+        -- The CALL site `f(x)` on the last line, and the top-level binding `x`
+        -- on the first. See the graph assertions below for why both are here.
+        .. _hover(8, sym_uri, 4, 6)
+        .. _hover(9, sym_uri, 0, 0)
         .. _did_open(pm_uri, pm_text)
         .. _doc_symbol(4, pm_uri)
         .. _frame("{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"shutdown\",\"params\":null}")
@@ -131,6 +148,32 @@ main = (): i64
 
     _check("documentSymbol finds f and x", _has(out, "\"f\"") and _has(out, "\"x\""), "")
     _check("hover returns a value for f", _has(out, "\"contents\""), "")
+
+    -- Pass 101 §3: the LSP is a PROJECTION of the compiler's graph, so hover
+    -- must assert the graph's answer, not merely that some string came back.
+    --
+    -- `_func_` is the kind `duo graph` assigns. Before this was wired, the
+    -- text scanner answered `_variable_` for exactly this declaration form --
+    -- so this assertion is the one that distinguishes the two implementations.
+    _check("hover on f reports the graph's kind, not the scanner's",
+        _has(out, "_func_ **f**") and not _has(out, "_variable_ **f**"), "")
+    _check("hover cites the graph as its source", _has(out, "from `duo graph`"), "")
+
+    -- Facts only the graph has: callee kind, arity, and the declaration site.
+    -- The scanner returned NOTHING at a call site (measured: null), so every
+    -- one of these is new surface rather than a reformatting.
+    _check("hover on the call f(x) reports callee kind and arity",
+        _has(out, "_call_ **f**") and _has(out, "**callee:** direct") and _has(out, "**arity:** 1"), "")
+    _check("hover on the call f(x) resolves its declaration",
+        _has(out, "**declared:** func at line 2"), "")
+
+    -- GAP TRIPWIRE, not a desired behaviour. `duo graph` lifts no node for a
+    -- top-level module binding: on this very corpus it emits module/func/param/
+    -- call and nothing for `x`. Hover therefore still falls back to the text
+    -- scanner there, and says so. When the graph lift covers module bindings
+    -- this assertion FLIPS and should be deleted along with the fallback.
+    _check("top-level binding is still scanner residue (graph lift gap)",
+        _has(out, "not lifted into the semantic graph"), "")
 
     _check("clean duo doc -> no diagnostics",
         _has(out, "\"uri\":\"" .. pm_uri .. "\",\"diagnostics\":[]"), "")
@@ -184,8 +227,8 @@ main = (): i64
     print("")
     if _failed == 0
         print("ALL PASS")
-        return 0
+        os.exit(0)
     end
     print(to(str)(_failed) .. " FAILED")
-    1
+    os.exit(1)
 end
