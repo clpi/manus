@@ -973,6 +973,39 @@ pub const Parser = struct {
         return ast.Stmt{ .ret = .{ .loc = l, .vals = try vals.toOwnedSlice(self.alloc) } };
     }
 
+    /// Pass 100 §1 — statement-leading keywords the deny table retires.
+    ///
+    /// This fires for `.duo` input ONLY. Duo is a Lua superset and `.lua` input
+    /// keeps today's behaviour unchanged; the dialect is selected from the file
+    /// extension by `is_duo_source_path` in main.zig, which sets `duo_mode`.
+    /// That is the same switch `comptime` already rejects on, not a new one.
+    ///
+    /// A row belongs here only once its statement-leading count is measured at
+    /// zero over EVERY `.duo` file a gate compiles — not just the canonical
+    /// partition of `docs/spec/corpus.md`. That distinction is not pedantic:
+    /// `const` was in this switch on the first cut because canonical measured
+    /// 0, and it still broke `examples/control_defaults_mem.duo`, whose output
+    /// `zig build test` asserts. `examples/` is classified `historical`, so the
+    /// canonical count could not see it. Measure against the gates, then add
+    /// the row.
+    ///
+    /// Measured 2026-08-08, statement-leading over 466 canonical files:
+    /// try 0, catch 0. Rows deliberately NOT here yet, with their counts:
+    /// `then` 656, `elseif` 820, `do` 179, `fun` 322, `global` 112, `local` 23,
+    /// `const` 0 canonical but 1 in the tested examples. Each needs a corpus
+    /// migration before it can become an error; `string.` (175 files) and
+    /// `req` (100 files) need the replacement surface to exist first.
+    fn denyRetiredStmtKeyword(self: *Parser, tok: Token) ParseError!void {
+        if (!self.duo_mode) return;
+        const replacement: []const u8 = switch (tok.kind) {
+            .kw_try, .kw_catch => "Pass 100 §0.5: bind the result and route it — `if v, err = f(x) use(v) else report(err)`",
+            else => return,
+        };
+        term.locErr(tok.loc, "'{s}' is retired in .duo files (Pass 100 §1 deny table)", .{tok.kind.spelling()});
+        term.locHint(tok.loc, "{s}", .{replacement});
+        return ParseError.UnexpectedToken;
+    }
+
     fn parse_stmt(self: *Parser) ParseError!ast.Stmt {
         const tok = try self.pk();
         // A bare `type` keyword at statement start usually means a type alias
@@ -987,6 +1020,8 @@ pub const Parser = struct {
                 return self.parse_alias_def_with_attrs(&.{});
             }
         }
+
+        try self.denyRetiredStmtKeyword(tok);
 
         return switch (tok.kind) {
             .at => blk: {

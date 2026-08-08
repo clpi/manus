@@ -1,0 +1,18 @@
+-- Pass 100 §1 — `try`/`catch` is a deny-table row. Failure is the assertion.
+--
+-- The canonical replacement is §0.5's result ladder: a fallible call returns
+-- `: T | error`, and the caller BINDS the failure, conditions on it, and routes
+-- it. Wrapping a region in `try` drops the binding, which is the thing §0.5
+-- forbids ("NEVER drop a failure").
+--
+-- Its twin `pass100_try_retired.lua` is the SAME text and must still compile:
+-- Duo is a Lua superset and this gate is dialect-scoped to `.duo`, not deletion
+-- of the Lua path.
+
+local ok = 1
+try
+  ok = 2
+catch e
+  ok = 3
+end
+print(ok)

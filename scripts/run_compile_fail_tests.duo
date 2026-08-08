@@ -124,6 +124,15 @@ run_fail("examples/compile_fail/multi_concept_fail.duo", "does not satisfy conce
 run_fail("examples/compile_fail/offside_misindent.duo", "indentation matches no block")
 run_fail("examples/compile_fail/offside_end_column.duo", "closes a block opened at column")
 
+-- Pass 100 §1 — deny-table rows enforced at the .duo surface. Each row is a
+-- pair — the .duo file must be rejected, and its byte-identical .lua twin must
+-- still compile. The .lua half is the load-bearing one — it is what proves the
+-- construct was gated on the dialect rather than removed from the compiler,
+-- so "lua native compile" keeps working. Drop the run_ok rows and this suite
+-- can no longer tell "Duo rejects it" apart from "the compiler lost it".
+run_fail("examples/compile_fail/pass100_try_retired.duo", "'try' is retired in .duo files")
+run_ok("examples/compile_fail/pass100_try_retired.lua")
+
 run_ok("tests/test.lua")
 run_ok("examples/hello.lua")
 run_ok("examples/fib.lua")
