@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Duo Self-Hosting Foundation (Canonical Spec)
 
 > **Status:** canonical specification, recorded 2026-08-05.  

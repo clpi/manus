@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 8 — Persistent Semantic Computing, Negotiated Realization
 
 **Status:** Phase 0 bootstrap **partial** (2026-08-04)  

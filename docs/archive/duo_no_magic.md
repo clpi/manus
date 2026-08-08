@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Duo — No Magic (canonical)
 
 **Ruling:** `satisfies` — and everything shaped like it — is deleted as a

@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 6 — Architectural Reconciliation, Dependency Audit, and Convergence
 
 **Status:** Phase 0 audit **partial** (2026-08-04)  

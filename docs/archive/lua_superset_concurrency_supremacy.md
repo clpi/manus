@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Lua Superset & Concurrency — Index
 
 > **Authority:** [`pass24_execution_concurrency_lua_supremacy.md`](pass24_execution_concurrency_lua_supremacy.md)  

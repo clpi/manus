@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 24 — Native Semantic Unification, Bidirectional Metaprogramming, Lifetime Model, and Descriptor Reconciliation
 
 Status: **specified 2026-08-05**, not yet implemented.

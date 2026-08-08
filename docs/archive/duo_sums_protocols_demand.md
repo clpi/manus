@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Duo — Sums, Protocols, and the Demand-Return Correction (canonical)
 
 Three gaps closed with **zero new grammar**. Every construct below rides one of

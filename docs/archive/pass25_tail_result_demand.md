@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 25 §5.1 — Tail-Demand Propagation and Result Lineage
 
 **Status:** Adopted design (2026-08-05)  

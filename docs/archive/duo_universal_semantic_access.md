@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Duo — Final Semantic Access and Projection Calculus
 
 Canonical spec (Pass 36 algebra, Pass 40 surface ruling, Pass 41 native-first amendment).

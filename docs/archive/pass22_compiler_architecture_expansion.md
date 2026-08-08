@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 22 — Compiler Architecture Expansion
 
 Graph-native IR, universal metaprogramming, and hardware realization.

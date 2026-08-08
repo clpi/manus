@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 13 — Development Control Plane
 
 > **Mission:** One deterministic, inspectable development control plane so humans and
@@ -125,6 +127,6 @@ bash zig build pass13-gate
 
 ## Related plans
 
-- Pass 12 semantic autonomy: `docs/plans/pass12_semantic_autonomy.md`
-- Pass 11 release proof: `docs/plans/pass11_release_proof.md`
+- Pass 12 semantic autonomy: `docs/archive/pass12_semantic_autonomy.md`
+- Pass 11 release proof: `docs/archive/pass11_release_proof.md`
 - Agent router (transitional): `.agents/AGENT_CANONICAL.md`

@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 16 — Self-Hosted Compiler Supremacy
 
 > **Status:** Level 1 partial (keyword classify production-integrated) + M1 lexer substrate  
@@ -6,7 +8,7 @@
 > **Bootstrap:** `docs/bootstrap.md`  
 > **Mission:** Canonical production compiler in Duo; bootstrap closure; compiler-as-proof.
 
-> **Canonical spec:** `docs/plans/duo_self_hosting_foundation.md` is the authoritative
+> **Canonical spec:** `docs/archive/duo_self_hosting_foundation.md` is the authoritative
 > statement of the self-hosting architecture (bootstrap ladder S0-S3, the single semantic
 > graph, the nine IR layers and their invariants, the foundation completion gate). This
 > document is the **execution plan** — milestones, gates, catalog wiring. Where the two

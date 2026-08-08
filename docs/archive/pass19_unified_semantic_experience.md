@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 19 — Unified Semantic Experience
 
 Standard library, packages, shell, CLI, and developer platform as **one semantic computing environment**.

@@ -1,6 +1,8 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 27 Proof Bundle Index
 
-Authority: `docs/plans/pass27_proof_bundle.md`
+Authority: `docs/archive/pass27_proof_bundle.md`
 
 ## Proof bundle pipeline
 

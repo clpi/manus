@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 26 — Foundational Closure (redirect)
 
 **Authority:** [`pass26_foundational_semantic_closure.md`](pass26_foundational_semantic_closure.md)  

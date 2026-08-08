@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Duo Self-Hosting Foundation (Operational Projection)
 
 > **Canonical constitution:** [`duo_self_hosting_foundation.md`](duo_self_hosting_foundation.md) — pure spec (§1–§12). **This file** adds repo anchors, F-G status, and cross-references. Where they disagree, the canonical spec wins.
@@ -13,7 +15,7 @@ All production implementation converges to Duo.
 
 **In scope:** compiler (all phases), parser/lexer, formatter, semantic graph, descriptor + shape system, compile-time system, all IR layers, instruction selection, register allocation, backend(s), runtime, stdlib, build, package system, shell, LSP, MCP, Ward, testing/benchmarking, release tooling.
 
-**Repo anchors:** `dependency_manifest.zig`, `removal_ledger.zig`, Pass 4 (`docs/plans/pass4_native_end_to_end.md`), Pass 16 (`docs/plans/pass16_self_hosted_compiler.md`).
+**Repo anchors:** `dependency_manifest.zig`, `removal_ledger.zig`, Pass 4 (`docs/archive/pass4_native_end_to_end.md`), Pass 16 (`docs/archive/pass16_self_hosted_compiler.md`).
 
 ---
 
@@ -177,5 +179,5 @@ The self-hosted compiler is the first full realization of a **graph-native, mult
 - Bootstrap DAG: `src/bootstrap_dag.zig`
 - Self-hosting matrix: `src/selfhosting_matrix.zig`
 - Proof carrying: `src/proof_carrying.zig`
-- Pass 27 evidence: `docs/plans/pass27_proof_bundle.md`, `zig build bench-proof-gate`
+- Pass 27 evidence: `docs/archive/pass27_proof_bundle.md`, `zig build bench-proof-gate`
 - Agent alignment: `docs/AGENT_ALIGNMENT.md`

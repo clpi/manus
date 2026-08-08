@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 27 — Proof bundle and honest performance evidence (P0)
 
 > **Mission:** Replace provisional performance claims with charter-grade proof bundles.  

@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 24 — Execution Graph, Call Supremacy, Lua Superset Maximization, and Concurrency Architecture
 
 **Status:** Design constitution (2026-08-05). P0 partially landed; P1–P12 open.  
@@ -887,7 +889,7 @@ Pass 24 completes when all hold:
 | **Pass 9/16** | Ward / self-hosted proofs §21.2 |
 | **Pass 4** | Native lowering, no lua_Value |
 
-**Supersedes:** compressed addenda that implied `then` deprecation or bare-name invocation. **`docs/plans/lua_superset_concurrency_supremacy.md`** is now an index pointing here.
+**Supersedes:** compressed addenda that implied `then` deprecation or bare-name invocation. **`docs/archive/lua_superset_concurrency_supremacy.md`** is now an index pointing here.
 
 ---
 

@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 23 — Unified Metaprogramming, Native Metaprogramming, Function Compression, Conversion, Lifecycle, and Semantic Closure
 
 **Status:** M0 tracking (2026-08-05)  

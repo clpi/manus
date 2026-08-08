@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 11 — Canonical Compiler Closure & Release Proof
 
 > **Date:** 2026-08-04  

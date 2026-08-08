@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 25 — Semantic Unification Index
 
 > **Authority:** [`pass25_native_semantic_unification.md`](pass25_native_semantic_unification.md)

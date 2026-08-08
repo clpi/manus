@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 9 — Ward Readiness, Vertical Proof, and Runtime Supremacy
 
 **Status:** active (2026-08-04)  

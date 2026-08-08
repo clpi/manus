@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 3 — Directive Surface, Grammar Minimalism, and Convergence
 
 > **Date:** 2026-08-04
@@ -193,7 +195,7 @@ For every proposal:
 
 | Deliverable | File |
 | --- | --- |
-| Executive findings | `docs/plans/pass3_directive_grammar_convergence.md` (this) |
+| Executive findings | `docs/archive/pass3_directive_grammar_convergence.md` (this) |
 | Keyword catalog | `docs/catalogs/keywords.md` |
 | Directive catalog | `docs/catalogs/directives.md` |
 | Grammar catalog | `docs/catalogs/grammar_compactness.md` |
@@ -202,8 +204,8 @@ For every proposal:
 | Catalog index | `docs/catalogs/README.md` |
 | **Machine-readable JSON** | `duo catalog` → `src/pass3_catalog.zig` |
 | Pass 2 algebras JSON | `duo algebra` |
-| Pass 2 convergence | `docs/plans/pass2_foundational_convergence.md` |
-| Architecture plan | `docs/plans/semantic_graph_architecture.md` |
+| Pass 2 convergence | `docs/archive/pass2_foundational_convergence.md` |
+| Architecture plan | `docs/archive/semantic_graph_architecture.md` |
 | Agent compass | `docs/AGENT_ALIGNMENT.md` |
 | Coordination | `.agents/AGENT_COORDINATION.md` |
 

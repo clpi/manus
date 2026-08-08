@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 21 — Canonical Grammar Closure
 
 Keyword retirement, table-native dispatch, and high-leverage syntax compression.

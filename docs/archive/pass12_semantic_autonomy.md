@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 12 — Semantic Autonomy & Proof-Carrying Development
 
 > **Mission:** Humans and agents express semantic intent; Duo deterministically owns correctness, performance, provenance, and release truth.  

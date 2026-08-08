@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Gap: a variadic function exported from a `req`'d module is never emitted
 
 Found 2026-08-07 while clearing tier-0 (`agent-smoke`) failures. Recorded here

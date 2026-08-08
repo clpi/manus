@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 2 — Foundational Convergence Audit
 
 > **Date:** 2026-08-04  
@@ -7,7 +9,7 @@
 
 **Spine implementation:** `src/semantic_algebra.zig`  
 **CLI introspection:** `duo algebra` (JSON catalog)  
-**Pass 1 reference:** architecture convergence started in `docs/semantic_universe.md`, `docs/plans/semantic_graph_architecture.md`
+**Pass 1 reference:** architecture convergence started in `docs/semantic_universe.md`, `docs/archive/semantic_graph_architecture.md`
 
 ---
 
@@ -388,7 +390,7 @@ reflection/LSP ───────┼──► descriptor queries (no API)
 | Unit tests (lattice, effects, shapes, cost, calls) | `semantic_algebra.zig` / `transform_engine.zig` tests |
 | Transform metadata hooks | `transform_engine.zig` (`KnowledgeLevel`, `CostVector` on descriptors) |
 | Graph metadata hooks | `semantic_graph.zig` (`knowledge`, `stage` on nodes) |
-| This audit | `docs/plans/pass2_foundational_convergence.md` |
+| This audit | `docs/archive/pass2_foundational_convergence.md` |
 
 ---
 

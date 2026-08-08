@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Semantic Graph Architecture
 
 > **Status:** Active plan. All agents read before architectural work.

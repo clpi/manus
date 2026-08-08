@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 5 — Semantic Interchange, Cross-Language Metaprogramming
 
 **Status:** Phase 0 audit complete · Phase 1 (SIM v0) partial · Phase 2 (C import) partial · **P5-M1 direct call done · abi.specialize partial**

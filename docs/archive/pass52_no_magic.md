@@ -1,6 +1,8 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 52 — operational plan
 
-Canonical spec: `docs/plans/duo_no_magic.md`
+Canonical spec: `docs/archive/duo_no_magic.md`
 Catalog: `src/pass52_catalog.zig` (schema `pass52-no-magic-v1`)
 Gate: `src/pass52_gate.zig` — 16 proofs, `zig build pass52-gate`
 

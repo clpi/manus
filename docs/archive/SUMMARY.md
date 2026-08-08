@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Duo Architecture — 6-Pass Summary
 
 > One-page reference. See individual pass docs for details.
@@ -14,7 +16,7 @@ Every feature strengthens this specialization ladder. Nothing bypasses it.
 
 Duo is Lua with progressively stronger compiler knowledge.
 
-- Plan: `docs/plans/pass1_identity.md`
+- Plan: `docs/archive/pass1_identity.md`
 - Catalog: `duo catalog` → `pass1`
 - Owners: `src/pass1_catalog.zig`, `src/semantic_graph.zig`, `src/transform_engine.zig`
 
@@ -92,7 +94,7 @@ Collapse ~15 mechanisms into 8 orthogonal algebras over one Knowledge Lattice:
 ## Pass 11 — Canonical Compiler Closure
 
 - **Mission:** Honest release architecture — explicit backends, no silent fallback, trustworthy benchmarks
-- Plan: `docs/plans/pass11_release_proof.md`; catalog: `duo catalog` → `pass11`
+- Plan: `docs/archive/pass11_release_proof.md`; catalog: `duo catalog` → `pass11`
 - **Profile A (default):** `--backend=c` (generated C → Clang)
 - **Profile B (experimental):** `--backend=direct` (ARM64 Mach-O subset)
 - **WP-01 partial:** `bench_mode` no longer forces boxing; `--bench-backend` + manifest
@@ -102,7 +104,7 @@ Collapse ~15 mechanisms into 8 orthogonal algebras over one Knowledge Lattice:
 ## Pass 12 — Semantic Autonomy & Proof-Carrying Development
 
 - **Mission:** AI proposes; Duo proves — one semantic source drives many validated artifacts
-- Plan: `docs/plans/pass12_semantic_autonomy.md`; catalog: `duo catalog | jq '.pass12'`
+- Plan: `docs/archive/pass12_semantic_autonomy.md`; catalog: `duo catalog | jq '.pass12'`
 - **P12-WS2 partial:** intent/obligation schema in `src/proof_carrying.zig`
 - **P12-WS3 partial:** `transform_engine.buildTransformProofRecord` + proof log on `logProvenance`
 - **P12-WS4 partial:** `realization.compareCandidates` for bounded selection
@@ -114,7 +116,7 @@ Collapse ~15 mechanisms into 8 orthogonal algebras over one Knowledge Lattice:
 ## Pass 13 — Development Control Plane
 
 - **Mission:** One deterministic, inspectable development control plane so humans and concurrent agents operate on canonical truth
-- Plan: `docs/plans/pass13_development_control_plane.md`; catalog: `duo catalog` → `pass13`
+- Plan: `docs/archive/pass13_development_control_plane.md`; catalog: `duo catalog` → `pass13`
 - `duo dev snapshot|audit|context|summary|claim|session|validate|coordination`
 - Canonical owners: `src/dev_control_plane.zig`, `src/pass13_dev_audit.zig`, `src/presentation_record.zig`
 - **Open:** claim-lease MCP wire, `.duo/dev/` persistence, coordination migration (P13-WS18)
@@ -122,7 +124,7 @@ Collapse ~15 mechanisms into 8 orthogonal algebras over one Knowledge Lattice:
 ## Pass 14 — Constructive Evolution, Sovereignty, Universal Performance, Living Compiler
 
 - **Mission:** The permanent development philosophy — reconcile before replacing, preserve before deleting, own essential capabilities, perform across all architectures, stay current, shrink over time
-- Plan: `docs/plans/pass14_constructive_evolution.md`; catalog: `duo catalog` → `pass14`
+- Plan: `docs/archive/pass14_constructive_evolution.md`; catalog: `duo catalog` → `pass14`
 - `duo dev preserve` inventories stash / dirty work / valuable untracked / unique branches / prunable worktrees (Milestone 1)
 - Canonical owners: `src/git_preservation.zig` (Audit 1), `src/salvage_registry.zig` (Audit 2, seeded with real findings), `src/pass14_constructive_audit.zig` (14 audits), `src/pass14_catalog.zig`
 - **Delivered:** M1 (preservation report) + M2 (salvage registry with real drift findings: stale pass-name stubs still referenced by AGENTS.md, prunable worktrees, unmerged branch, untracked agent state)
@@ -131,7 +133,7 @@ Collapse ~15 mechanisms into 8 orthogonal algebras over one Knowledge Lattice:
 ## Pass 24 — Unified Calls, Lua Superset, Execution-Graph Concurrency
 
 - **Mission:** One design constitution reconciling call semantics (value vs invoke), permanent Lua 5.5 superset contract, shell boundaries, structured concurrency, automatic parallelism, streams, scheduling, hardware realization, and tooling
-- **Authority:** `docs/plans/pass24_execution_concurrency_lua_supremacy.md`; index: `docs/plans/lua_superset_concurrency_supremacy.md`
+- **Authority:** `docs/archive/pass24_execution_concurrency_lua_supremacy.md`; index: `docs/archive/lua_superset_concurrency_supremacy.md`
 - **Catalog:** `duo catalog` → `pass24`; owners: `src/pass24_catalog.zig`, `src/lua_superset_catalog.zig`, `src/pass24_gate.zig`
 - **Non-negotiable:** `a` is a value; `a()` / `a x` invoke; `[[` is Lua long-string; bare auto-call rejected
 - **P0 partial:** long-bracket gates, keyword compatibility (`then`/`do`/`local`), syntax classification
@@ -143,7 +145,7 @@ Collapse ~15 mechanisms into 8 orthogonal algebras over one Knowledge Lattice:
 ## Pass 25 — Native Semantic Unification, Lifetimes, Bidirectional Meta, Descriptor Reconciliation
 
 - **Mission:** One coherent model for descriptor construction (ordinary calls, no type parameters), inferred lifetimes/provenance, views/ownership/pointers, consumption-driven return realization, and bidirectional metaprogramming via semantic transactions — without fragmenting the language
-- **Authority:** `docs/plans/pass25_native_semantic_unification.md`; index: `docs/plans/pass25_semantic_unification_index.md`
+- **Authority:** `docs/archive/pass25_native_semantic_unification.md`; index: `docs/archive/pass25_semantic_unification_index.md`
 - **Catalog:** `duo catalog` → `pass25`; owners: `src/pass25_catalog.zig`, `src/pass25_gate.zig`, schema stubs in `pass25_semantic_category.zig`, `pass25_lifetime_model.zig`, `pass25_projection_model.zig`
 - **Builds on:** Pass 23 (metaprotocols, return consumption), Pass 24 (views + `@all` disjointness), Pass 22 (semantic graph), Pass 20 (provenance harness)
 - **Non-negotiable:** descriptors are ordinary values; no canonical bracket/angle generics; lifetimes are provenance not syntax; views not borrow syntax; reverse meta returns transactions
@@ -154,7 +156,7 @@ Collapse ~15 mechanisms into 8 orthogonal algebras over one Knowledge Lattice:
 ## Pass 26 — Foundational Closure (52 Seams + Two Unifiers)
 
 - **Mission:** Close foundational seams before adding capabilities — one canonical semantic rule per boundary
-- **Authority:** `docs/plans/pass26_foundational_semantic_closure.md`; index: `docs/plans/pass26_closure_index.md`
+- **Authority:** `docs/archive/pass26_foundational_semantic_closure.md`; index: `docs/archive/pass26_closure_index.md`
 - **Unifiers:** (1) semantic boundaries as first-class values; (2) semantic domains (nine kinds)
 - **Original five foundations (F1–F5):** operation IDs, protocol attachment, descriptor identity, boundaries, decision registry
 - **Extended Part II:** 30 additional seams (init, recursion, mutability, dynamic/GC, hashing, evidence, ABI, resources, …)
@@ -166,7 +168,7 @@ Collapse ~15 mechanisms into 8 orthogonal algebras over one Knowledge Lattice:
 ## Pass 27 — Proof Bundle & Honest Performance Evidence
 
 - **Mission:** Charter-grade proof bundles for every performance/metaprogramming claim
-- **Authority:** `docs/plans/pass27_proof_bundle.md`; index: `docs/plans/pass27_proof_index.md`
+- **Authority:** `docs/archive/pass27_proof_bundle.md`; index: `docs/archive/pass27_proof_index.md`
 - **P0 partial:** emission counters, backend×representation×runtime manifest, `.proof.json` on compile/bench, 10×3 matrix schema
 - **North star:** P27-PROOF-01 descriptor-generated Ward decoder (performance + metaprogramming)
 - **Validate:** `zig build pass27-gate` (alias `proof-bundle-gate`); P0 matrix: `zig build bench-proof-gate`
@@ -174,7 +176,7 @@ Collapse ~15 mechanisms into 8 orthogonal algebras over one Knowledge Lattice:
 ## Self-Hosting Foundation (Umbrella)
 
 - **Mission:** Language monoculture + graph-native compiler architecture (not a Zig port)
-- **Authority:** `docs/plans/self_hosting_foundation.md`
+- **Authority:** `docs/archive/self_hosting_foundation.md`
 - **Catalog:** `src/foundation_catalog.zig` — bootstrap S0→S3, IR layers IR-01..IR-09, gates F-G01..F-G10
 - **M0 partial:** schema gate + ledger anchors; completion requires all F-G01..F-G10 (most open/partial)
 - **Validate:** `zig build foundation-gate` (alias `self-hosting-foundation-gate`)

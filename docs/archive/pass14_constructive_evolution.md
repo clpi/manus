@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 14 — Constructive Evolution, Architectural Sovereignty, Universal Performance, and Living Compiler Development
 
 > **Mission:** Continuously evolve Duo toward the best known compiler and language

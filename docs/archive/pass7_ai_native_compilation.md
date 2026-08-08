@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 7 — AI-Native Compilation, Semantic Optimization Intelligence
 
 **Status:** Phase 0 bootstrap **partial** (2026-08-04) — `duo catalog` → `pass7` JSON fixed; `duo explain` live

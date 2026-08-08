@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 36/40/41 — Final semantic access (operational projection)
 
 Operational projection of the final semantic-access and projection calculus.

@@ -1,6 +1,8 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 48 — operational plan (the consolidation)
 
-Canonical spec: `docs/plans/duo_canonical_specification.md`
+Canonical spec: `docs/archive/duo_canonical_specification.md`
 Catalog: `src/pass48_catalog.zig` (schema `pass48-canonical-spec-v1`)
 Gate: `src/pass48_gate.zig` — 17 proofs, `zig build pass48-gate`
 

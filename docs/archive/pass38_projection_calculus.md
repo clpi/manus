@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 38 — Maximum Projection Calculus (operational projection)
 
 > **Renumbered 2026-08-05** from "Pass 36" to match Pass 40's S5 supersession
@@ -73,7 +75,7 @@ Tensor products move to explicit APIs (`Tensor.matmul(a, b)`), which
 | --- | --- |
 | Grammar forms | `parser.zig` `infix_prec` / `parse_one_attribute`, `pass21_canonical_grammar_closure.md` |
 | Resolution order | `sema.zig`, `semantic_graph.zig`, Pass 26 operation identity |
-| Semantic call object | Pass 24 unified call algebra (`docs/plans/pass24_unified_calls_concurrency_constitution.md`) |
+| Semantic call object | Pass 24 unified call algebra (`docs/archive/pass24_unified_calls_concurrency_constitution.md`) |
 | Projection provenance (§15.1) | Pass 34 `C2` descriptor identity, `C1` location |
 | Projection invalidation (§15.3) | Pass 34 `E10` incremental semantic invalidation |
 | Projection budget (§15.4) | Pass 34 `U10` compile budget planner, `E4` compile-time cost |

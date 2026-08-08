@@ -1,8 +1,10 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 1 — Identity: Lua Semantics with Progressive Compiler Knowledge
 
 > **Date:** 2026-08-04  
 > **Mission:** Duo is Lua with progressively stronger compiler knowledge — dynamic paths stay Lua-correct; typed paths lower to native C without `lua_Value`.  
-> **North star docs:** `docs/semantic_universe.md`, `docs/plans/semantic_graph_architecture.md`
+> **North star docs:** `docs/semantic_universe.md`, `docs/archive/semantic_graph_architecture.md`
 
 ## Audit export
 

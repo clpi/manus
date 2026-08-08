@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 10 — Public Repository Readiness, Information Density, Structural Coherence
 
 **Status:** active (2026-08-04)  
@@ -73,7 +75,7 @@ Initial inventory in `pass10_repo_audit.zig` — expand via A16:
 
 - Duplicate agent docs (`docs/AGENT_COORDINATION.md` vs `.agents/`)
 - `AGENTS.md` at root (relocate for public tree)
-- Pass-shaped plan docs (`docs/plans/pass2_convergence.md`, etc.) → archive
+- Pass-shaped plan docs (`docs/archive/pass2_convergence.md`, etc.) → archive
 - Missing canonical `docs/compiler.md`, `docs/language.md`
 - Untracked working-tree pollution (`.out`, `debug.log`, `wait*.sh`)
 

@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Duo HPLS Frontier — Pass 34 canonical spec (v2 summary)
 
 **HPLS** = high leverage × high attention × high compaction/performance × low syntax cost.

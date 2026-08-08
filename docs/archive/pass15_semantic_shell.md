@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 15 — The Semantic Shell
 
 > **Mission:** Make Duo the best shell and interactive computing environment ever built — by collapsing shell interaction into Duo's existing semantic foundations.

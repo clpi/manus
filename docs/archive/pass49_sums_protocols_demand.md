@@ -1,6 +1,8 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 49 — operational plan
 
-Canonical spec: `docs/plans/duo_sums_protocols_demand.md`
+Canonical spec: `docs/archive/duo_sums_protocols_demand.md`
 Catalog: `src/pass49_catalog.zig` (schema `pass49-sums-protocols-demand-v1`)
 Gate: `src/pass49_gate.zig` — 16 proofs, run by `zig build unit-test`
 

@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 25 — Native Semantic Unification, Bidirectional Metaprogramming, Lifetime Model, and Descriptor Reconciliation
 
 **Status:** M0 constitution (2026-08-05)  
@@ -16,7 +18,7 @@ duo catalog | jq '.pass25'
 
 | Area | Files |
 | --- | --- |
-| Constitution + catalog | `docs/plans/pass25_native_semantic_unification.md`, `src/pass25_catalog.zig` |
+| Constitution + catalog | `docs/archive/pass25_native_semantic_unification.md`, `src/pass25_catalog.zig` |
 | Gate proofs (M0) | `src/pass25_gate.zig` |
 | Semantic categories | `src/pass25_semantic_category.zig` |
 | Lifetime provenance | `src/pass25_lifetime_model.zig` |

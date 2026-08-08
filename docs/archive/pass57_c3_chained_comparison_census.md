@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 57 C3 — chained comparisons: the corpus census
 
 C3 asks whether `0 <= i < n` should graduate from the escape hatch into the

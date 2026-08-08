@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 26 — Foundational Semantic Closure
 
 > **Mission:** Close unresolved architectural seams before adding capabilities.  

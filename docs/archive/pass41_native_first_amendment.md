@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 41 — Native-First Amendment
 
 Amends: [`duo_universal_semantic_access.md`](duo_universal_semantic_access.md) (canon: Pass 36 algebra + Pass 40 surface),

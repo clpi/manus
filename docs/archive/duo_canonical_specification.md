@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Duo — Canonical Specification (SHC Edition)
 
 The consolidation. Everything concluded in Passes 34–47 folded into one

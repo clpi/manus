@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 38 — Maximum Projection Calculus
 
 > **Renumbered 2026-08-05.** This document was drafted as "Pass 36". Pass 40's

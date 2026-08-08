@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Archived — Pass 8 (short draft)
 
 **Status:** Historical redirect only.

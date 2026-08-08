@@ -1,3 +1,5 @@
+> **HISTORICAL — superseded by `docs/spec/pass100.md`. Not an architecture input.**
+
 # Pass 20 — Universal Cross-Language Metaprogramming Harness
 
 Make Duo immediately useful to projects written in any language — without requiring a rewrite.
