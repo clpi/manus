@@ -7,6 +7,7 @@ const Sema = @import("sema.zig").Sema;
 const native_req_support = @import("native_req_support.zig");
 const dnir = @import("duo_native_ir.zig");
 const c_signatures = @import("c_signatures.zig");
+const native_types = @import("types.zig");
 const dnir_lower = @import("dnir_lower.zig");
 const dnir_hardware = @import("dnir_hardware.zig");
 const semantic_graph = @import("semantic_graph.zig");
@@ -789,6 +790,10 @@ const Arm64Compiler = struct {
     cur_func_float: bool = false,
     /// Function returns f64 but is not a pure-f64 kernel (zero-param shell, etc.).
     cur_func_ret_float: bool = false,
+    /// The function's DECLARED return type. `cur_func_float` is derived from
+    /// parameters alone (`f64AbiParamSlots`), so on its own it cannot answer
+    /// what a `ret` should do — see the `.ret` arm.
+    cur_func_ret: native_types.ResolvedType = .any,
     cur_func_name: ?[]const u8 = null,
     /// When set, this function's f64 return is coerced to i64 for process exit.
     process_entry: ?[]const u8 = null,
@@ -1118,6 +1123,7 @@ const Arm64Compiler = struct {
         self.cur_ret_indirect_reg = null;
         self.cur_func_float = f.is_float_kernel;
         self.cur_func_ret_float = f.ret == .f64 and !f.is_float_kernel;
+        self.cur_func_ret = f.ret;
 
         const offset: u32 = @intCast(self.code.items.len);
         const link_name = try linkerSymbolName(self.alloc, f.name);
@@ -1638,7 +1644,22 @@ const Arm64Compiler = struct {
                 }
             },
             .ret => {
-                if (self.cur_func_float or ins.ty == .f64) {
+                // What comes BACK decides how it comes back. `cur_func_float`
+                // is `is_float_kernel`, computed by `f64AbiParamSlots` from
+                // PARAMETERS only — it means "this function's arguments arrive
+                // in d0-d7" and says nothing about the result. Treating it as a
+                // return property sent `f(p: Point): str` down the FP path
+                // whenever Point had f64 fields, and the string died in
+                // `evalDnirValueFp`. The i64-field spelling of the same
+                // function compiled fine, which is what made it look like a
+                // record bug rather than a return-classification one.
+                //
+                // So: the declared return type wins, and the kernel flag only
+                // decides when the return type is unknown.
+                const ret_via_fp = ins.ty == .f64 or
+                    self.cur_func_ret == .f64 or
+                    (self.cur_func_float and self.cur_func_ret == .any and ins.ty == .any);
+                if (ret_via_fp) {
                     const d = try self.evalDnirValueFp(temps, ins.lhs);
                     if (d != 0) try self.emitFmovReg(0, d);
                     if (self.needsProcessExitF64Coerce()) try self.emitFcvtzsX0FromD0();
