@@ -90,6 +90,42 @@ docs/book/
 # Agent/session state is not repository truth (Pass 10, Pass 13).
 .cursor/hooks/state/
 
+# Agent git worktrees. 1.7 GB at the time this line was written, sitting inside
+# the repository as UNTRACKED — which is one `git add -A` away from being
+# committed. .claude/settings.json stays tracked; only the worktrees are noise.
+.claude/worktrees/
+
+# Editor/merge leftovers. These were TRACKED until the release audit
+# (2026-08-08): src/codegen.zig.bak alone was 1.3 MB of a stale copy of the
+# file five agents are live in, and a .rej beside src/macro_expand.zig read as
+# an unresolved conflict shipped on purpose.
+*.bak
+*.orig
+*.rej
+
+# Root scratch that was tracked before the patterns above existed. Two-line
+# `pub fn main() !void {}` stubs, loose .wasm blobs, and repomix.md — a 1 MB
+# machine-generated dump of this same repository, which is a stale duplicate of
+# every file next to it.
+/repomix.md
+/d2.wasm
+/f6.wasm
+/test.duo
+/test2.duo
+/test.zig
+/run_test.zig
+/error_test.duo
+
+# Ad-hoc debug modules. Nothing in build.zig or src/ imports these.
+/src/_dbg.zig
+/src/_dbg2.zig
+/src/_alias_dbg.zig
+
+# Generated C. src/duo_lexer_tokenize.c is the one generated artifact that is
+# deliberately tracked (build.zig links it); its retired sibling is not — see
+# build.zig:linkProductionKeywordClassify.
+duo_keyword_classify.c
+
 # Session/agent control-plane state is not repository truth (epoch 2 audit).
 # Tracked files need enduring architectural roles; claims, leases and session
 # logs are stale within days. .agents/AGENT_COORDINATION.md is the durable

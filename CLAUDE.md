@@ -9,7 +9,24 @@ Duo is a Lua-superset language targeting native, WASM, and GPU. This repo is the
 - **WASI SDK**: installed via mise as `wasi-sdk@latest`
 - **Runtimes for testing**: `wasmtime`, `wasmer` (both installed via mise)
 
-Cross-compile to WASM: `zig build -Dtarget=wasm32-wasi` or `wasm32-wasip2`.
+Cross-compile a **Duo program** to WASM: `duo compile f.duo --target wasm32-wasi`
+(verified 2026-08-08 — builds and runs under wasmtime).
+
+Cross-compiling **the compiler itself** is a different thing and this line used
+to conflate them. Measured 2026-08-08, every target actually built:
+
+| target | result |
+|---|---|
+| `aarch64-macos` · `x86_64-macos` · `x86_64-linux-gnu` · `aarch64-linux-gnu` | **PASS** |
+| `x86_64-windows` · `wasm32-wasi` | **FAIL** — see `gaps/GAP-040.md` |
+
+Both failures have one cause: `src/duo_lexer_tokenize.c` is a tracked, generated
+artifact that `build.zig` links into every build, and it was generated for macOS
+(`#define _DARWIN_C_SOURCE`, `#include <ucontext.h>`, `popen`, `access`,
+`mkstemp`). Windows now fails on exactly that one include; wasm32-wasi on it plus
+the rest of the POSIX surface. The direct ARM64 Mach-O backend being
+macOS/aarch64-only is BY DESIGN and is not what any row failed on — the three
+green non-native targets all build through the C backend.
 
 ## Build commands
 

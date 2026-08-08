@@ -78,8 +78,8 @@ The compiler binary is installed to `zig-out/bin/duo`.
 
 ```
 duo compile <file>              compile to native binary
-duo init    [name]              create build.duo and src/main.duo
-duo build   [target]            build the default or named build.duo target
+duo init    [name]              scaffold src/main.duo            [see note]
+duo build   [target]            build the default or named target [see note]
 duo run     [file|target]       compile and run a file, or run a build target
 duo check   <file>              type-check only
 duo dump-c  <file>              print generated C to stdout
@@ -97,6 +97,18 @@ Options:
   --lib              library mode: export @export functions, skip _start
   -v, --verbose      show C compiler warnings
 ```
+
+> **Note — `duo init` / `duo build` do not work today (measured 2026-08-08).**
+> `duo init` writes one file, `src/main.duo`, and no `build.duo` (this section
+> used to claim both). The file it writes opens with `@build.project({…})`,
+> `@build.run({…})` and `@build.test({…})`, and the front end rejects every one
+> of them with `error: macro expansion error: UnknownMacro`. So a freshly
+> initialised project fails `duo check`, `duo build` and `duo run` — exit 1 on
+> all three — even though `duo init` itself exits 0 and prints
+> `next: duo build`. The inline project model in `src/build_framework.zig` has
+> unit-test coverage that drives the parser and sema directly, which is why the
+> break does not show up there. Compiling a file straight through
+> (`duo compile`, `duo run <file>`, `duo check <file>`) is unaffected.
 
 ## WASM compilation
 
@@ -119,45 +131,41 @@ zig build cross-bench
 
 Requires `lua` (≥5.4) and `luajit` on `$PATH`.
 
-### Latest results (macOS arm64, Apple M4)
+### Latest results
 
-| Benchmark       | Duo(s)   | C(s)     | Lua(s)   | LuaJIT(s) |
-|-----------------|----------|----------|----------|-----------|
-| Fibonacci(40)   | 0.000000 | 0.288751 | 6.573370 | 0.517967  |
-| Prime sieve     | 0.000200 | 0.017142 | 0.333939 | 0.079133  |
-| Mandelbrot      | 0.419117 | 0.471833 | 5.507780 | 1.200130  |
-| Grid matrix     | 0.009345 | 0.012224 | 1.266040 | 0.037441  |
-| N-body          | 0.081233 | 0.082203 | 1.433030 | 0.110827  |
-| String bytes    | 0.000000 | 0.000016 | 0.000966 | 0.000077  |
-| Table array     | 0.000000 | 0.000424 | 0.012642 | 0.001899  |
-| Trig sum        | 0.027639 | 0.033919 | 0.338133 | 0.048967  |
-| String chain    | 0.000000 | 0.000304 | 0.000538 | 0.000185  |
-| String hash     | 0.000280 | 0.000298 | 0.003356 | 0.000699  |
-| Math floor/max  | 0.001026 | 0.001183 | 0.324102 | 0.008983  |
-| Table max       | 0.000243 | 0.000476 | 0.015130 | 0.002814  |
-| Pow/sqrt        | 0.000001 | 0.001852 | 0.076918 | 0.020613  |
-| Binary search   | 0.011654 | 0.019723 | 0.187363 | 0.062691  |
-| Filter count    | 0.000106 | 0.000272 | 0.009515 | 0.001345  |
-| Dot product     | 0.000000 | 0.000892 | 0.019404 | 0.003015  |
-| Clamp sum       | 0.000000 | 0.001435 | 0.291557 | 0.008031  |
-| Bucket hash     | 0.000000 | 0.000154 | 0.016041 | 0.000860  |
-| EMA smooth      | 0.000000 | 0.012273 | 0.101396 | 0.013401  |
-| Token count     | 0.000000 | 0.000242 | 0.035289 | 0.001430  |
-| Config parse    | 0.000000 | 0.000384 | 0.030536 | 0.001460  |
-| Table lookup    | 0.000000 | 0.000443 | 0.017803 | 0.002167  |
-| Table churn     | 0.000000 | 0.000281 | 0.014745 | 0.002092  |
+**Withdrawn, 2026-08-08.** A results table used to sit here reporting a
+geometric-mean "Duo beats C by 4×", with eleven rows at `0.000000` explained as
+constant-folding and dead-code elimination.
 
-**Geometric mean speedup**: Duo beats C by 4× (Fibonacci is lowered to iterative), Lua by 105×, LuaJIT by 14×.
+That explanation was not true. Ten kernel substitutions were removed from the
+suite in one day: three returned **frozen literal answers** when the argument
+matched the benchmark (`if (steps == 5000000) return 9.378…e-08;` — no
+integration ran), and seven **computed the benchmark's constants** for programs
+that had stopped asking for them. Three harness defects hid it: a float
+comparator that compared magnitudes (so a sign flip differed by zero), a
+`RESULT_FAIL` flag that could not hold a value, and a timing collector that
+never seeded its minimum. `CLAUDE.md` §3 records the whole thing.
 
-Many benchmarks show 0.000000s because Duo's constant-folding and dead-code elimination reduce the workload at compile time (the compiler knows the result is unused in the timing path and eliminates the computation).
+The withdrawn numbers were produced by that suite, so they are not evidence
+and they are not reprinted here. Run `zig build bench` and
+`zig build cross-bench` yourself; the rules any future table must satisfy —
+no recognizer keyed on a function name, a literal or a loop bound; verify by
+value, never by "it compiled"; positive-control every zero — are in `CLAUDE.md`
+§3 and are not negotiable.
 
 ## CI/CD
 
 Every push runs:
 
 - `zig build` — compiler build
-- `zig build unit-test` — all 393 unit tests
+- `zig build unit-test` — Zig unit tests. **Currently red**: measured
+  2026-08-08 on `canonical-to-relation`, 1244/1302 pass, 54 fail, 4 crash, 14
+  leaks. The failures cluster in `mono`, `sema`, `pass*_gate` and codegen
+  string lowering. This line previously read "all 393 unit tests", which was
+  wrong about both the count and the colour.
 - `zig build test` — unit tests, compile-fail tests, and report-styling guard
+- `zig build agent-smoke` — tier-0 gate. **Green** as of the same measurement,
+  and it is the gate to trust before pushing.
 - WASM compilation smoke test
 - WASM codegen compatibility tests
 - WASI execution tests (wasmtime + wabt)
@@ -173,7 +181,7 @@ Run the full gate (correctness + timing):
 zig build bench
 ```
 
-This executes `scripts/run_benchmark.sh`, which:
+This executes `scripts/run_benchmark.duo`, which:
 
 1. Compiles `examples/benchmark.lua` with Duo and `examples/benchmark_c.c` with Clang (`-O3 -ffast-math -march=native -flto`).
 2. Verifies all 40 `RESULT <id> <value>` lines match between Duo and reference C.
@@ -187,8 +195,8 @@ This executes `scripts/run_benchmark.sh`, which:
 | `examples/benchmark.duo` | Mirror of `benchmark.lua` (same 40 workloads; kept in sync) |
 | `examples/benchmark_pure.lua` | Type-annotation-free variant (for Lua/LuaJIT runners) |
 | `examples/benchmark_c.c` | Reference C implementation with matching semantics |
-| `scripts/run_benchmark.sh` | Correctness + timing harness |
-| `scripts/run_cross_benchmark.sh` | Cross-language harness (Duo + C + Lua + LuaJIT) |
+| `scripts/run_benchmark.duo` | Correctness + timing harness |
+| `scripts/run_cross_benchmark.duo` | Cross-language harness (Duo + C + Lua + LuaJIT) |
 
 ### Benchmarks (high → practical stdlib)
 

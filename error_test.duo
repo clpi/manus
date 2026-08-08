@@ -1,3 +1,0 @@
-fun foo()
-  if x then
-  -- missing end

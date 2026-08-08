@@ -43,7 +43,9 @@ pub const Session = struct {
     }
 };
 
-var next_shell_session_id: std.atomic.Value(u64) = .init(1);
+// u32, not u64: wasm32 baseline has no 64-bit atomic RMW, and a per-process
+// shell session counter never approaches 2^32.
+var next_shell_session_id: std.atomic.Value(u32) = .init(1);
 
 pub fn newSession(alloc: std.mem.Allocator) !Session {
     const sid = next_shell_session_id.fetchAdd(1, .monotonic);
@@ -58,7 +60,12 @@ pub fn newSession(alloc: std.mem.Allocator) !Session {
 
 pub fn tempArtifactBasename(alloc: std.mem.Allocator, counter: usize, ext: []const u8) ![]u8 {
     if (builtin.os.tag == .windows) {
-        const temp = std.process.getEnvVarOwned(alloc, "TEMP") catch try alloc.dupe(u8, ".");
+        // std.process.getEnvVarOwned no longer exists in Zig master; the
+        // environment block is reached through std.process.Environ. This branch
+        // is Windows-only, so it had never been compiled before the
+        // cross-target matrix ran.
+        const environ: std.process.Environ = .{ .block = .global };
+        const temp = environ.getAlloc(alloc, "TEMP") catch try alloc.dupe(u8, ".");
         defer alloc.free(temp);
         return std.fmt.allocPrint(alloc, "{s}\\duo_shell_{d}.{s}", .{ temp, counter, ext });
     }

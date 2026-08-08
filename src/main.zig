@@ -2407,7 +2407,13 @@ fn do_shell(alloc: std.mem.Allocator, io: Io, verbose: bool) !void {
         term.printRaw("duo> ", .{});
     }
     while (true) {
-        const n = try std.posix.read(std.posix.STDIN_FILENO, buf[0..]);
+        // std.posix.STDIN_FILENO is a comptime_int, which does not coerce to
+        // Windows' *anyopaque fd_t; std.Io.File.stdin() picks the right handle
+        // per OS and is already this file's idiom for stdout/stderr.
+        const n = std.Io.File.stdin().readStreaming(io, &.{buf[0..]}) catch |err| switch (err) {
+            error.EndOfStream => 0,
+            else => return err,
+        };
         if (n == 0) {
             // EOF - run any remaining line
             if (line.items.len > 0) {
