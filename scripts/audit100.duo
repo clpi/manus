@@ -357,6 +357,14 @@ main(): i64
         "(^|[[:space:]])(if|for|while|elseif)[[:space:]].*[[:space:]]end[[:space:]]*$",
         "(^|[[:space:]])return[[:space:]]+[^[:space:]]",
     }
+    -- REBASELINED 2026-08-08. The ARM64 encoder work landed 46 encoders in
+    -- lib/std/compiler/arm64.duo (up from 9) plus a new 173-line
+    -- arm64check.duo differential. That is real new deny debt, NOT corpus
+    -- noise: arm64check.duo alone carries 56 snake / 68 underprefix / 75
+    -- upper, and every `encode_add_reg` is a LAW-ONE violation by construction.
+    -- The budgets move because the work is worth having; the debt is recorded
+    -- in gaps/ rather than laundered by a silent rebaseline.
+    --
     -- THE RATCHET. One budget per row, same order as `id`. Each number was
     -- measured on the canonical partition when the row landed. Lower a budget
     -- whenever you lower a count; raising one needs a sentence in the commit
@@ -390,7 +398,7 @@ main(): i64
     -- literal lowers to a raw int64_t* that `#` cannot measure and that gets a
     -- free() emitted at every `return` in the function — including the returns
     -- that come textually before it, which is a C compile error.
-    budgets: str = "13647 2034 1480 257 320 470 151 58 1930 441 164 119 224 36 2155 2222 3299"
+    budgets: str = "13785 2086 1561 259 322 473 152 58 1942 441 167 128 228 36 2173 2222 3313"
 
     -- Per-row: 1 = measure with string bodies INTACT. Only `concatlit` sets
     -- it, because its subject IS the string literal; stripping bodies takes
