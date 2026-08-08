@@ -123,6 +123,12 @@ pub const Node = struct {
     hardware_lowerings: semantic_algebra.HardwareSet = .{},
     /// Opaque link to AST for Phase 1 — graph mirrors, does not replace, AST yet.
     ast_ref: ?*anyopaque = null,
+    /// The binding this one is nested inside. THE scope fact: `stable_id` is
+    /// computed from the chain of names it walks, so a parameter `n` of `scale`
+    /// and a module function `n` are different identities even though they are
+    /// spelled the same. The `.contains` edge is a projection of this field —
+    /// `addChild` writes both from one call so they cannot disagree.
+    scope: NodeId = NodeId.invalid,
     /// Content-addressed durable ID (survives benign reparses when path+span match).
     stable_id: ?StableId = null,
     /// When true, `name` was allocated on the graph allocator and must be freed in deinit.
@@ -149,6 +155,16 @@ pub const SemanticGraph = struct {
     func_tail_results: std.StringHashMapUnmanaged(tail_result_demand.Resolution) = .empty,
     /// Pass 26 M1 — descriptor fingerprint interning at alias lift.
     descriptor_registry: pass26_descriptor_intern.Registry = undefined,
+    /// Node lookup keyed on `StableId.hash` — the semantic identity, never the
+    /// spelling. This is what a name-keyed index could not be: the earlier
+    /// `name_index` was removed because locals in different scopes collide on
+    /// their text, which forced `findByName` down to a linear scan. The key here
+    /// carries module, kind and scope chain, so those bindings are distinct
+    /// entries. Where two nodes genuinely share one identity (a repeated
+    /// transform application under one parent) the first wins, which is the
+    /// answer the linear scan gave. Derivative of `nodes`, never an owner:
+    /// `addNode` is the only writer.
+    id_index: std.AutoHashMapUnmanaged(u64, NodeId) = .empty,
 
     pub fn init(alloc: std.mem.Allocator) SemanticGraph {
         return .{
@@ -170,30 +186,81 @@ pub const SemanticGraph = struct {
         self.func_decls.deinit(self.alloc);
         self.func_tail_results.deinit(self.alloc);
         self.descriptor_registry.deinit();
+        self.id_index.deinit(self.alloc);
     }
 
-    fn stablePathForNode(node: *const Node, buf: []u8) []const u8 {
-        if (node.name) |name| return name;
-        return std.fmt.bufPrint(buf, "{s}:{d}:{d}", .{
+    /// The scope-qualified path of a binding: enclosing scope names outermost
+    /// first, dot-joined, ending in the node's own name (`scale.n`). This is the
+    /// string `StableId` hashes; the bare name is a rendering of it, not the
+    /// fact. The module node is skipped because `StableId.compute` already
+    /// hashes `module_path` — including it would only re-say the same thing and
+    /// would change every module-level identity for no gain.
+    pub fn stablePath(self: *const SemanticGraph, node: *const Node, buf: []u8) []const u8 {
+        var chain: [8]*const Node = undefined;
+        var depth: usize = 0;
+        var cur = node.scope;
+        while (cur.isValid() and depth < chain.len) {
+            const parent = self.get(cur) orelse break;
+            if (parent.kind == .module) break;
+            chain[depth] = parent;
+            depth += 1;
+            cur = parent.scope;
+        }
+        var len: usize = 0;
+        var i = depth;
+        while (i > 0) {
+            i -= 1;
+            const seg = chain[i].name orelse continue;
+            if (len + seg.len + 1 > buf.len) break;
+            @memcpy(buf[len..][0..seg.len], seg);
+            len += seg.len;
+            buf[len] = '.';
+            len += 1;
+        }
+        if (node.name) |name| {
+            if (len == 0) return name;
+            if (len + name.len > buf.len) return buf[0..len];
+            @memcpy(buf[len..][0..name.len], name);
+            return buf[0 .. len + name.len];
+        }
+        const tail = std.fmt.bufPrint(buf[len..], "{s}:{d}:{d}", .{
             nodeKindLabel(node.kind),
             node.span.start,
             node.span.end,
-        }) catch "anon";
+        }) catch return buf[0..len];
+        return buf[0 .. len + tail.len];
     }
 
     fn computeStableId(self: *const SemanticGraph, node: *const Node) StableId {
         var buf: [256]u8 = undefined;
-        const path = stablePathForNode(node, &buf);
+        const path = self.stablePath(node, &buf);
         return StableId.compute(self.module_path, node.kind, path, self.generation);
     }
 
     pub fn addNode(self: *SemanticGraph, node: Node) !NodeId {
         const id = NodeId{ .index = @intCast(self.nodes.items.len) };
         var n = node;
-        if (n.stable_id == null and self.module_path.len > 0) {
-            n.stable_id = self.computeStableId(&n);
-        }
+        // Computed unconditionally: an id that only exists when `module_path` is
+        // set is an id half the graph cannot be looked up by, and `findId` would
+        // silently answer null instead of the node it holds.
+        if (n.stable_id == null) n.stable_id = self.computeStableId(&n);
         try self.nodes.append(self.alloc, n);
+        if (n.stable_id) |sid| {
+            const slot = try self.id_index.getOrPut(self.alloc, sid.hash);
+            if (!slot.found_existing) slot.value_ptr.* = id;
+        }
+        return id;
+    }
+
+    /// Add `node` inside `parent`: records the scope fact and emits the
+    /// `.contains` edge that projects it. Both used to be written by hand at
+    /// every lift site, and the scope half was simply never written — which is
+    /// how a parameter and a module function came to share one identity.
+    pub fn addChild(self: *SemanticGraph, parent: NodeId, node: Node) !NodeId {
+        var n = node;
+        n.scope = parent;
+        const id = try self.addNode(n);
+        try self.addEdge(.{ .from = parent, .to = id, .kind = .contains });
         return id;
     }
 
@@ -206,10 +273,25 @@ pub const SemanticGraph = struct {
         return &self.nodes.items[id.index];
     }
 
-    /// Find the first node with a given name. O(n) scan.
-    /// NOTE: duplicate names exist (locals in different scopes). This returns
-    /// the first match. For production scale, replace with a scope-qualified
-    /// index (e.g. HashMap([]const u8, ArrayList(NodeId))).
+    /// Look a node up by its identity: kind plus scope-qualified path. O(1).
+    /// This is what callers who know what they are asking for should use —
+    /// `findByName` cannot distinguish a parameter from the function it shadows.
+    pub fn findId(self: *const SemanticGraph, kind: NodeKind, path: []const u8) ?NodeId {
+        const sid = StableId.compute(self.module_path, kind, path, self.generation);
+        return self.id_index.get(sid.hash);
+    }
+
+    /// The module-scope function named `name`. O(1), and kind-exact: a parameter
+    /// spelled the same can no longer answer for it.
+    pub fn findFunc(self: *const SemanticGraph, name: []const u8) ?NodeId {
+        return self.findId(.func, name);
+    }
+
+    /// Find the first node with a given name, whatever its kind or scope. O(n).
+    /// This is a QUESTION WITHOUT AN ANSWER when two bindings share a spelling,
+    /// and it silently returns the earlier one — prefer `findId`/`findFunc`,
+    /// which key on identity. Kept for callers that genuinely have only text
+    /// (diagnostics, `defsOf`).
     pub fn findByName(self: *const SemanticGraph, name: []const u8) ?NodeId {
         for (self.nodes.items, 0..) |node, i| {
             if (node.name) |n| {
@@ -231,6 +313,12 @@ pub const SemanticGraph = struct {
     /// key, and `stablePathForNode` still returns the bare name for a named
     /// node. It removes the cross-KIND collision, which is the half that
     /// corrupts the graph during its own lift.
+    ///
+    /// The scope-qualified key this comment asks for now exists: prefer
+    /// `findId`/`findFunc`, which are O(1) and distinguish a binding from one
+    /// nested inside it. This stays for the different question it answers —
+    /// "any node of this kind spelled this way, at any depth" — which an
+    /// exact-path lookup cannot express.
     pub fn findByNameOfKind(self: *const SemanticGraph, name: []const u8, kind: NodeKind) ?NodeId {
         for (self.nodes.items, 0..) |node, i| {
             if (node.kind != kind) continue;
@@ -266,14 +354,13 @@ pub const SemanticGraph = struct {
     ) !NodeId {
         const transform_name = semantic_algebra.shapeTransformId(op);
         std.debug.assert(transform_engine.isShapeTransform(transform_name));
-        const node_id = try self.addNode(.{
+        const node_id = try self.addChild(parent, .{
             .kind = .transform_app,
             .span = span,
             .name = transform_name,
             .knowledge = semantic_algebra.ShapeOp.resultingKnowledge(op, input_knowledge),
             .stage = .transform,
         });
-        try self.addEdge(.{ .from = parent, .to = node_id, .kind = .contains });
         try self.addEdge(.{ .from = node_id, .to = output_shape, .kind = .transform_output });
         transform_engine.logProvenance(
             self.alloc,
@@ -341,14 +428,13 @@ pub const SemanticGraph = struct {
             if (!semantic_algebra.callTransformEligible(op, site, shape)) continue;
             const transform_name = semantic_algebra.callTransformId(op);
             std.debug.assert(transform_engine.isCallTransform(transform_name));
-            const node_id = try self.addNode(.{
+            const node_id = try self.addChild(parent, .{
                 .kind = .transform_app,
                 .span = span,
                 .name = transform_name,
                 .knowledge = site.knowledge,
                 .stage = site.stage,
             });
-            try self.addEdge(.{ .from = parent, .to = node_id, .kind = .contains });
             try self.addEdge(.{ .from = node_id, .to = call_id, .kind = .transform_input });
             const hash = shape.identityHash();
             transform_engine.logProvenance(self.alloc, transform_name, .emit_call, hash, hash);
@@ -367,7 +453,7 @@ pub const SemanticGraph = struct {
             if (stmt.* != .func_decl) continue;
             const fd = &stmt.func_decl;
             if (fd.path.len != 1) continue;
-            const func_id = try self.addNode(.{
+            const func_id = try self.addChild(mod_id, .{
                 .kind = .func,
                 .span = .{
                     .file = file,
@@ -377,18 +463,16 @@ pub const SemanticGraph = struct {
                 .name = fd.path[0],
                 .ast_ref = @ptrCast(fd),
             });
-            try self.addEdge(.{ .from = mod_id, .to = func_id, .kind = .contains });
             try self.func_decls.put(self.alloc, fd.path[0], fd);
             if (tail_result_demand.blockTailResultWithDemand(&fd.func.body, tail_result_demand.demandFromRetType(fd.func.ret_type))) |tr| {
                 try self.func_tail_results.put(self.alloc, fd.path[0], tr);
             }
             for (fd.func.params) |param| {
-                const param_id = try self.addNode(.{
+                _ = try self.addChild(func_id, .{
                     .kind = .param,
                     .span = .{ .file = file, .start = 0, .end = 0 },
                     .name = param.name,
                 });
-                try self.addEdge(.{ .from = func_id, .to = param_id, .kind = .contains });
             }
         }
         return mod_id;
@@ -462,7 +546,7 @@ pub const SemanticGraph = struct {
                 u8,
                 semantic_algebra.formatDescriptorExprShort(desc_expr, &label_buf),
             );
-            const shape_id_node = try self.addNode(.{
+            const shape_id_node = try self.addChild(parent, .{
                 .kind = .table_shape,
                 .span = alias_span,
                 .name = ad.name,
@@ -482,7 +566,6 @@ pub const SemanticGraph = struct {
                 .descriptor_label = label,
                 .ast_ref = @ptrCast(ad),
             });
-            try self.addEdge(.{ .from = parent, .to = shape_id_node, .kind = .contains });
             try self.attachTableShapeTransforms(parent, alias_span, rt, sc, shape_id orelse 0, shape_id_node);
         }
     }
@@ -495,7 +578,7 @@ pub const SemanticGraph = struct {
             if (ed.type_params != null) continue;
             const rt = types.enumShapeFromAst(ed, self.alloc) catch continue;
             const shape_id = types.enumShapeIdentityHash(rt);
-            const shape_id_node = try self.addNode(.{
+            _ = try self.addChild(parent, .{
                 .kind = .enum_shape,
                 .span = .{
                     .file = file,
@@ -509,19 +592,13 @@ pub const SemanticGraph = struct {
                 .stage = .sema,
                 .ast_ref = @ptrCast(ed),
             });
-            try self.addEdge(.{ .from = parent, .to = shape_id_node, .kind = .contains });
         }
-    }
-
-    fn scopedBindingName(func_name: []const u8, binding: []const u8, buf: []u8) []const u8 {
-        return std.fmt.bufPrint(buf, "{s}::{s}", .{ func_name, binding }) catch binding;
     }
 
     fn liftTableShapeFromTypeExpr(
         self: *SemanticGraph,
         file: []const u8,
         func_id: NodeId,
-        func_name: []const u8,
         binding_name: []const u8,
         te: ast.TypeExpr,
         loc: ast.Loc,
@@ -536,19 +613,14 @@ pub const SemanticGraph = struct {
                 rt = types.resolve(te, null, self.alloc) catch return;
             },
             .named => |alias| {
-                var scope_buf: [128]u8 = undefined;
-                const local_name = scopedBindingName(func_name, binding_name, &scope_buf);
-                const owned_local = try self.alloc.dupe(u8, local_name);
-                const local_id = try self.addNode(.{
+                const local_id = try self.addChild(func_id, .{
                     .kind = .local,
                     .span = .{ .file = file, .start = loc.line, .end = loc.col },
-                    .name = owned_local,
-                    .owns_name = true,
+                    .name = binding_name,
                     .ast_ref = @ptrCast(@constCast(lname)),
                 });
-                try self.addEdge(.{ .from = func_id, .to = local_id, .kind = .contains });
                 if (self.findTableShape(alias) != null) {
-                    const shape_id = self.findByName(alias) orelse return;
+                    const shape_id = self.findId(.table_shape, alias) orelse return;
                     try self.addEdge(.{ .from = local_id, .to = shape_id, .kind = .type_of });
                 }
                 return;
@@ -560,13 +632,10 @@ pub const SemanticGraph = struct {
         const sc = types.tableStorageClass(rt) orelse .dynamic;
         const why = try self.alloc.dupe(u8, types.explainStorageClass(rt));
         const sid = types.tableShapeIdentityHash(rt);
-        var scope_buf: [128]u8 = undefined;
-        const binding_scope = scopedBindingName(func_name, binding_name, &scope_buf);
         var shape_buf: [144]u8 = undefined;
-        const shape_name = std.fmt.bufPrint(&shape_buf, "{s}@shape", .{binding_scope}) catch binding_scope;
+        const shape_name = std.fmt.bufPrint(&shape_buf, "{s}@shape", .{binding_name}) catch binding_name;
         const owned_shape = try self.alloc.dupe(u8, shape_name);
-        const owned_binding = try self.alloc.dupe(u8, binding_scope);
-        const shape_node_id = try self.addNode(.{
+        const shape_node_id = try self.addChild(func_id, .{
             .kind = .table_shape,
             .span = .{ .file = file, .start = loc.line, .end = loc.col },
             .name = owned_shape,
@@ -579,20 +648,17 @@ pub const SemanticGraph = struct {
             .stage = .sema,
             .ast_ref = if (inline_record) @ptrCast(@constCast(lname)) else null,
         });
-        try self.addEdge(.{ .from = func_id, .to = shape_node_id, .kind = .contains });
         try self.attachTableShapeTransforms(func_id, .{
             .file = file,
             .start = loc.line,
             .end = loc.col,
         }, rt, sc, sid, shape_node_id);
-        const local_id = try self.addNode(.{
+        const local_id = try self.addChild(func_id, .{
             .kind = .local,
             .span = .{ .file = file, .start = loc.line, .end = loc.col },
-            .name = owned_binding,
-            .owns_name = true,
+            .name = binding_name,
             .ast_ref = @ptrCast(@constCast(lname)),
         });
-        try self.addEdge(.{ .from = func_id, .to = local_id, .kind = .contains });
         try self.addEdge(.{ .from = local_id, .to = shape_node_id, .kind = .type_of });
     }
 
@@ -610,7 +676,6 @@ pub const SemanticGraph = struct {
                         try self.liftTableShapeFromTypeExpr(
                             file,
                             func_id,
-                            func_name,
                             lname.ident,
                             lname.typ,
                             lname.loc,
@@ -631,7 +696,7 @@ pub const SemanticGraph = struct {
                 .gen_for => |*g| try self.liftBindingsInStmts(file, func_id, func_name, g.body.stmts),
                 .func_decl => |*fd| {
                     if (fd.path.len == 1) {
-                        if (self.findByNameOfKind(fd.path[0], .func)) |nested_id| {
+                        if (self.findFunc(fd.path[0])) |nested_id| {
                             try self.liftBindingsInStmts(file, nested_id, fd.path[0], fd.func.body.stmts);
                         }
                     }
@@ -652,7 +717,7 @@ pub const SemanticGraph = struct {
             if (stmt.* != .func_decl) continue;
             const fd = &stmt.func_decl;
             if (fd.path.len != 1) continue;
-            const func_id = self.findByNameOfKind(fd.path[0], .func) orelse continue;
+            const func_id = self.findFunc(fd.path[0]) orelse continue;
             try self.liftBindingsInStmts(file, func_id, fd.path[0], fd.func.body.stmts);
         }
     }
@@ -674,7 +739,7 @@ pub const SemanticGraph = struct {
             switch (stmt.*) {
                 .func_decl => |*fd| {
                     const func_id = if (fd.path.len > 0)
-                        (self.findByName(fd.path[0]) orelse parent)
+                        (self.findFunc(fd.path[0]) orelse parent)
                     else
                         parent;
                     try self.liftCallsFromBlock(&fd.func.body, file, func_id);
@@ -802,7 +867,7 @@ pub const SemanticGraph = struct {
                             lowerings = semantic_algebra.hardwareLoweringsFromAttributes(fd.attributes);
                         }
                     }
-                    const pipe_id = try self.addNode(.{
+                    const pipe_id = try self.addChild(parent, .{
                         .kind = .pipeline,
                         .span = .{
                             .file = file,
@@ -815,17 +880,15 @@ pub const SemanticGraph = struct {
                         .stage = .sema,
                         .ast_ref = @ptrCast(@constCast(expr)),
                     });
-                    try self.addEdge(.{ .from = parent, .to = pipe_id, .kind = .contains });
                     const transform_name = semantic_algebra.pipelineTransformId(op);
                     if (transform_engine.isRegisteredTransform(transform_name)) {
-                        const transform_id = try self.addNode(.{
+                        const transform_id = try self.addChild(parent, .{
                             .kind = .transform_app,
                             .span = .{ .file = file, .start = loc.line, .end = loc.col },
                             .name = transform_name,
                             .knowledge = .observed,
                             .stage = .transform,
                         });
-                        try self.addEdge(.{ .from = parent, .to = transform_id, .kind = .contains });
                         try self.addEdge(.{ .from = transform_id, .to = pipe_id, .kind = .transform_output });
                     }
                 }
@@ -858,7 +921,7 @@ pub const SemanticGraph = struct {
         const call_loc = expr.loc();
         const call_name = shape.callee_name orelse shape.method_name;
         const site = self.callSiteForShape(shape);
-        const call_id = try self.addNode(.{
+        const call_id = try self.addChild(parent, .{
             .kind = .call,
             .span = .{
                 .file = file,
@@ -872,7 +935,6 @@ pub const SemanticGraph = struct {
             .stage = site.stage,
             .ast_ref = @ptrCast(@constCast(expr)),
         });
-        try self.addEdge(.{ .from = parent, .to = call_id, .kind = .contains });
         try self.attachCallTransforms(parent, call_id, site, shape, .{
             .file = file,
             .start = call_loc.line,
@@ -880,7 +942,7 @@ pub const SemanticGraph = struct {
         });
         // If we know the callee, add a use edge to its definition (if in graph).
         if (shape.callee_name) |callee| {
-            if (self.findByName(callee)) |def_id| {
+            if (self.findFunc(callee)) |def_id| {
                 try self.addEdge(.{ .from = call_id, .to = def_id, .kind = .use });
             }
         }
@@ -1050,18 +1112,14 @@ pub const SemanticGraph = struct {
 
     /// Lookup a table_shape node by alias name (Phase 1 query API).
     pub fn findTableShape(self: *const SemanticGraph, name: []const u8) ?*const Node {
-        const id = self.findByName(name) orelse return null;
-        const node = self.get(id) orelse return null;
-        if (node.kind != .table_shape) return null;
-        return node;
+        const id = self.findId(.table_shape, name) orelse return null;
+        return self.get(id);
     }
 
     /// Lookup an enum_shape node by enum name.
     pub fn findEnumShape(self: *const SemanticGraph, name: []const u8) ?*const Node {
-        const id = self.findByName(name) orelse return null;
-        const node = self.get(id) orelse return null;
-        if (node.kind != .enum_shape) return null;
-        return node;
+        const id = self.findId(.enum_shape, name) orelse return null;
+        return self.get(id);
     }
 
     pub fn nodeKindLabel(kind: NodeKind) []const u8 {
@@ -1119,9 +1177,17 @@ pub const SemanticGraph = struct {
         try buf.append(alloc, ']');
     }
 
-    fn shapeScopeLabel(name: []const u8) []const u8 {
-        if (std.mem.indexOf(u8, name, "::") != null) return "inline";
-        return "module";
+    /// True when `node` is declared directly at module scope. Four call sites
+    /// used to answer this by looking for "::" in the node's NAME, because a
+    /// scope-qualifying prefix baked into the spelling was the only record that
+    /// a binding was function-local. The scope is a field now.
+    pub fn atModuleScope(self: *const SemanticGraph, node: *const Node) bool {
+        const parent = self.get(node.scope) orelse return true;
+        return parent.kind == .module;
+    }
+
+    fn shapeScopeLabel(self: *const SemanticGraph, node: *const Node) []const u8 {
+        return if (self.atModuleScope(node)) "module" else "inline";
     }
 
     fn resolveTableShapeType(
@@ -1139,7 +1205,7 @@ pub const SemanticGraph = struct {
             }
             const ad: *const ast.AliasDef = @ptrCast(@alignCast(raw));
             if (node.name) |n| {
-                if (std.mem.indexOf(u8, n, "::") != null or std.mem.endsWith(u8, n, "@shape")) return null;
+                if (std.mem.endsWith(u8, n, "@shape")) return null;
             }
             var rt: types.ResolvedType = .any;
             if (ad.target) |tgt| {
@@ -1218,7 +1284,7 @@ pub const SemanticGraph = struct {
                 try out.appendSlice(alloc, ",\"storage_class\":\"");
                 try out.appendSlice(alloc, sc);
                 try out.appendSlice(alloc, "\",\"scope\":\"");
-                try out.appendSlice(alloc, if (node.name) |n| shapeScopeLabel(n) else "module");
+                try out.appendSlice(alloc, self.shapeScopeLabel(&node));
                 try out.appendSlice(alloc, "\",\"field_count\":");
                 try appendJsonInt(out, alloc, node.field_count);
                 if (node.shape_id) |sid| {
@@ -1365,7 +1431,7 @@ pub const SemanticGraph = struct {
             try out.appendSlice(alloc, "\",\"storage_class\":\"");
             try out.appendSlice(alloc, sc);
             try out.appendSlice(alloc, "\",\"scope\":\"");
-            try out.appendSlice(alloc, if (node.name) |n| shapeScopeLabel(n) else "module");
+            try out.appendSlice(alloc, self.shapeScopeLabel(&node));
             try out.appendSlice(alloc, "\",\"field_count\":");
             try appendJsonInt(out, alloc, node.field_count);
             if (node.shape_id) |sid| {
@@ -1710,7 +1776,7 @@ test "semantic_graph: liftFunctionBindings creates inline table_shape" {
     var g = SemanticGraph.init(alloc);
     defer g.deinit();
     _ = try g.liftModuleFull(&module, "test.duo");
-    const inline_shape = g.findTableShape("main::pt2@shape") orelse return error.TestExpectedEqual;
+    const inline_shape = g.findTableShape("main.pt2@shape") orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(types.StorageClass.native, inline_shape.storage_class.?);
     try std.testing.expectEqual(@as(u16, 2), inline_shape.field_count);
     try std.testing.expect(countTransformApps(&g, "shape.lift") >= 1);
@@ -1896,4 +1962,83 @@ test "semantic_graph: usersOf finds use edges" {
     try g.usersOf(a, &users);
     try std.testing.expectEqual(@as(usize, 1), users.items.len);
     try std.testing.expectEqual(b.index, users.items[0].index);
+}
+
+test "semantic_graph: identity lookup survives a param that shadows a function name" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const graph_query = @import("graph_query.zig");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // `scale` takes a parameter `n`; a module function is also called `n`. The
+    // param node is lifted first, so any first-textual-match lookup answers with
+    // it — and every consumer of that answer (DNIR provenance, region identity)
+    // inherits the wrong node.
+    const src =
+        \\scale(n: i64): i64
+        \\    n * 2
+        \\end
+        \\n(): i64
+        \\    7
+        \\end
+    ;
+    var lex = Lexer.init(src, "collide.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    const module = try parser.parse_module();
+
+    var g = SemanticGraph.init(alloc);
+    defer g.deinit();
+    _ = try g.liftModule(&module, "collide.duo");
+
+    // The hazard, stated: the text-only API still cannot tell them apart.
+    const by_text = g.findByName("n") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(NodeKind.param, g.get(by_text).?.kind);
+
+    // The identity API can, and answers with the function.
+    const by_id = g.findFunc("n") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(NodeKind.func, g.get(by_id).?.kind);
+    try std.testing.expect(by_id.index != by_text.index);
+
+    // …and the consumer that provenance and region identity are built on now
+    // reports the FUNCTION's hash, by value, not the parameter's.
+    const reported = graph_query.stableIdOf(&g, "n") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(g.get(by_id).?.stable_id.?.hash, reported);
+    try std.testing.expect(reported != g.get(by_text).?.stable_id.?.hash);
+}
+
+test "semantic_graph: same-named params in different functions get distinct ids" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\first(v: i64): i64
+        \\    v + 1
+        \\end
+        \\second(v: i64): i64
+        \\    v + 2
+        \\end
+    ;
+    var lex = Lexer.init(src, "params.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    const module = try parser.parse_module();
+
+    var g = SemanticGraph.init(alloc);
+    defer g.deinit();
+    _ = try g.liftModule(&module, "params.duo");
+
+    var seen: ?u64 = null;
+    var dup = false;
+    for (g.nodes.items) |node| {
+        if (node.kind != .param) continue;
+        const h = node.stable_id.?.hash;
+        if (seen) |s| {
+            if (s == h) dup = true;
+        } else seen = h;
+    }
+    try std.testing.expect(!dup);
 }

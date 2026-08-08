@@ -363,6 +363,13 @@ pub const CodeGen = struct {
     numeric_lua_scopes: std.ArrayList(std.StringHashMapUnmanaged(void)) = .empty,
     /// gap[027]: parameter names of the function being emitted. See is_param_name.
     current_params: std.StringHashMapUnmanaged(void) = .empty,
+    /// Index in `local_scopes` at which the function body being emitted begins.
+    /// `local_scopes` holds module-top-level bindings and function-body bindings
+    /// in one stack, and their STORAGE differs — a module-level `local x` lives
+    /// in `duo_g_x`, a function-body `local x` in a C local. Without the
+    /// boundary, `is_local_name` cannot tell which one a name reached, which is
+    /// why only parameters were allowed to shadow. Null outside a function body.
+    func_scope_base: ?usize = null,
     /// Sema-tracked field types for dynamic table locals (`t.x` after `t.x = n`).
     table_field_types: ?*const std.StringHashMapUnmanaged(RT) = null,
     concepts: ?*const std.StringHashMapUnmanaged(sema.ConceptInfo) = null,
@@ -999,6 +1006,19 @@ pub const CodeGen = struct {
         return self.current_params.contains(name);
     }
 
+    /// A binding declared inside the function body currently being emitted, so
+    /// its C storage is the local the declaration emitted under its own name.
+    /// LAW-SCOPE rung 1: this outranks a module global of the same spelling.
+    fn is_func_local_name(self: *CodeGen, name: []const u8) bool {
+        const base = self.func_scope_base orelse return false;
+        var i = self.local_scopes.items.len;
+        while (i > base) {
+            i -= 1;
+            if (self.local_scopes.items[i].contains(name)) return true;
+        }
+        return false;
+    }
+
     fn is_local_name(self: *CodeGen, name: []const u8) bool {
         var i = self.local_scopes.items.len;
         while (i > 0) {
@@ -1079,6 +1099,18 @@ pub const CodeGen = struct {
         var name_buf: [256]u8 = undefined;
         if (self.function_c_names.get(name)) |cname| {
             self.p("{s}", .{cname});
+        } else if (self.is_func_local_name(name)) {
+            // LAW-SCOPE rung 1. This branch used to sit below the `duo_g_`
+            // branches, so a function-body `local total` was DECLARED as
+            // `int64_t total = 7` and then READ as `duo_g_<mod>_total` — the
+            // module binding, a different value. It printed 100 where the
+            // language says 7, with no diagnostic: the declaration emitter and
+            // the use emitter each picked their own spelling for one binding.
+            if (self.is_dense_table_name(name)) {
+                self.p("__dt_{s}", .{name});
+            } else {
+                self.p("{s}", .{name});
+            }
         } else if (self.current_module_cname.len > 0 and blk: {
             var kb: [512]u8 = undefined;
             const k = std.fmt.bufPrint(&kb, "{s}|{s}", .{ self.current_module_cname, name }) catch break :blk false;
@@ -8570,9 +8602,15 @@ pub const CodeGen = struct {
         self.p(") {{\n", .{});
         self.indent = 1;
         try self.push_local_scope();
+        // Everything pushed from here on is function-body scope, whose storage
+        // is a C local; anything below `base` is module top level, whose storage
+        // is `duo_g_*`. `local_scopes` alone cannot distinguish them.
+        const outer_scope_base = self.func_scope_base;
+        self.func_scope_base = self.local_scopes.items.len - 1;
         try self.precollect_req_bindings_in_block(&fb.body);
         var scope_popped = false;
         defer {
+            self.func_scope_base = outer_scope_base;
             if (!scope_popped) self.pop_local_scope();
         }
         self.current_params.clearRetainingCapacity();
@@ -33387,4 +33425,48 @@ test "codegen: lua_num reads the double slot instead of recursing" {
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "return v.number_kind == 1 ? (double)v.as.ival : v.as.nval;") != null);
     try testing.expect(std.mem.indexOf(u8, output, ": lua_num(v);") == null);
+}
+
+test "codegen: a function-body local outranks a module global of the same name" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // `total` names two bindings. The declaration emitter gave the inner one a
+    // C local; the use emitter reached for `duo_g_<mod>_total`, the module
+    // binding. `inner()` returned 100 instead of 7 — one semantic binding, two
+    // spellings, no diagnostic.
+    var lex = Lexer.init(
+        \\global total: i64 = 100
+        \\inner(): i64
+        \\  local total: i64 = 7
+        \\  return total
+        \\end
+        \\main(): i64
+        \\  print(inner())
+        \\  print(total)
+        \\  return 0
+        \\end
+    , "shadow");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    // The declaration and the use must be the same symbol.
+    const body = std.mem.indexOf(u8, output, "int64_t total = 7;") orelse
+        return error.TestExpectedEqual;
+    const ret = std.mem.indexOfPos(u8, output, body, "return") orelse
+        return error.TestExpectedEqual;
+    try testing.expectEqualStrings("return total;", output[ret .. ret + "return total;".len]);
+    // …and the module binding still has its own storage, unrenamed.
+    try testing.expect(std.mem.indexOf(u8, output, "duo_g_total") != null);
 }

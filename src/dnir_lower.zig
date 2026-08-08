@@ -281,7 +281,7 @@ fn applyGraphToModule(
 
     const funcs: []dnir.Function = @constCast(m.functions);
     for (funcs) |*f| {
-        const id = graph.findByName(f.name) orelse continue;
+        const id = graph.findFunc(f.name) orelse continue;
         const node = graph.get(id) orelse continue;
         if (node.stable_id) |sid| f.graph_stable_id = sid.hash;
     }

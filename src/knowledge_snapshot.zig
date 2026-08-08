@@ -191,8 +191,7 @@ pub fn buildFromModule(
         for (g.nodes.items) |node| {
             if (node.kind != .table_shape) continue;
             const name = node.name orelse continue;
-            if (std.mem.indexOf(u8, name, "::") != null) continue;
-            if (std.mem.indexOf(u8, name, "@shape") != null) continue;
+            if (!g.atModuleScope(&node)) continue;
             var already = false;
             for (entities.items) |ent| {
                 if (ent.kind == .record and std.mem.eql(u8, ent.name, name)) {

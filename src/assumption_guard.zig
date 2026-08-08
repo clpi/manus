@@ -238,8 +238,7 @@ pub fn buildFromModule(
         for (g.nodes.items) |node| {
             if (node.kind != .table_shape) continue;
             const name = node.name orelse continue;
-            if (std.mem.indexOf(u8, name, "::") != null) continue;
-            if (std.mem.indexOf(u8, name, "@shape") != null) continue;
+            if (!g.atModuleScope(&node)) continue;
             const sc = node.storage_class orelse .dynamic;
             try appendShapeAssumption(alloc, &items, name, sc, node.shape_id);
         }

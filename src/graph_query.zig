@@ -25,7 +25,7 @@ pub fn calleesOf(
     var seen: std.StringHashMapUnmanaged(void) = .empty;
     defer seen.deinit(alloc);
 
-    const func_id = graph.findByName(func_name) orelse return try out.toOwnedSlice(alloc);
+    const func_id = graph.findFunc(func_name) orelse return try out.toOwnedSlice(alloc);
     for (graph.nodes.items, 0..) |node, i| {
         if (node.kind != .call) continue;
         const call_id = semantic_graph.NodeId{ .index = @intCast(i) };
@@ -55,7 +55,7 @@ pub fn callsIn(
         out.deinit(alloc);
     }
 
-    const func_id = graph.findByName(func_name) orelse return try out.toOwnedSlice(alloc);
+    const func_id = graph.findFunc(func_name) orelse return try out.toOwnedSlice(alloc);
     for (graph.nodes.items, 0..) |node, i| {
         if (node.kind != .call) continue;
         const call_id = semantic_graph.NodeId{ .index = @intCast(i) };
@@ -102,8 +102,18 @@ pub fn representationForRecord(graph: *const semantic_graph.SemanticGraph, name:
 }
 
 /// Stable semantic identity hash for a named graph entity (func, record, …).
+///
+/// Resolved by IDENTITY, in declaration-kind order, not by first textual match:
+/// a parameter spelled like the function it sits inside used to answer for it,
+/// and every consumer of the result — DNIR provenance, region identity, the
+/// gate that asserts the two agree — inherited that wrong node. The bare-name
+/// scan remains only as the last rung, for kinds with no module-scope
+/// declaration form.
 pub fn stableIdOf(graph: *const semantic_graph.SemanticGraph, name: []const u8) ?u64 {
-    const id = graph.findByName(name) orelse return null;
+    const id = graph.findFunc(name) orelse
+        graph.findId(.table_shape, name) orelse
+        graph.findId(.enum_shape, name) orelse
+        graph.findByName(name) orelse return null;
     const node = graph.get(id) orelse return null;
     return if (node.stable_id) |sid| sid.hash else null;
 }

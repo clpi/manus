@@ -84,11 +84,11 @@ pub fn buildFromDnirFunction(
     next_id += 1;
     try nodes.append(alloc, .{ .id = region_id, .kind = .region, .label = try alloc.dupe(u8, f.name) });
 
-    const func_stable_id: ?u64 = if (graph) |g| blk: {
-        const id = g.findByName(f.name) orelse break :blk null;
-        const node = g.get(id) orelse break :blk null;
-        break :blk if (node.stable_id) |sid| sid.hash else null;
-    } else null;
+    // One resolver for both ends of the identity check. `validateModuleRegions`
+    // re-derives this hash through `graph_query.stableIdOf` and errors when the
+    // two differ; deriving them here by a second, name-first route is how that
+    // check could fail on a name collision rather than on a real mismatch.
+    const func_stable_id: ?u64 = if (graph) |g| graph_query.stableIdOf(g, f.name) else null;
 
     var temp_node: std.AutoHashMapUnmanaged(u32, u32) = .empty;
     defer temp_node.deinit(alloc);
@@ -144,7 +144,7 @@ pub fn buildFromDnirFunction(
             if (kind == .call and ins.callee.len > 0) {
                 callee_owned = try alloc.dupe(u8, ins.callee);
                 if (graph) |g| {
-                    if (g.findByName(ins.callee)) |cid| {
+                    if (g.findFunc(ins.callee)) |cid| {
                         if (g.get(cid)) |cn| {
                             if (cn.stable_id) |sid| callee_stable = sid.hash;
                         }
