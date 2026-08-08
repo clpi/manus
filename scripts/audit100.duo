@@ -357,36 +357,54 @@ main(): i64
         "(^|[[:space:]])(if|for|while|elseif)[[:space:]].*[[:space:]]end[[:space:]]*$",
         "(^|[[:space:]])return[[:space:]]+[^[:space:]]",
     }
-    -- REBASELINED AGAIN 2026-08-08, and the whole delta is attributed per FILE
-    -- rather than assumed from the census. Eight rows went red; the canonical
-    -- set grew 442 -> 445. Counting each row per file at the previous baseline
-    -- and at HEAD, every point of every row lands in exactly four files:
+    -- REBASELINED 2026-08-08 (third time), same method as the last two: every
+    -- point counted PER FILE at the commit where the gate was last exactly at
+    -- budget (a34b10b) and again at HEAD. Seven rows went red; the canonical
+    -- set grew 445 -> 447. All 440 points land in exactly THREE files, and all
+    -- three are under `ext/ward/`:
     --
-    --   row          delta   derived.duo  wart.duo  ward.duo  initbuildsmoke
-    --   snake          +76         7         29        39          0  (+1, below)
-    --   underprefix    +96        28         40         0         28
-    --   axis            +3         3          0         0          0
-    --   stdlib         +15        11          3         1          0
-    --   import          +1         0          0         1          0
-    --   concatlit      +80        13         44         4         19
-    --   oneline         +2         2          0         0          0
-    --   trailret       +30         7          9        10          4
+    --   row          delta   opcodes.duo  ward.duo  derived.duo
+    --   snake         +158        11        146          1
+    --   upper         +167         3        164          0
+    --   underprefix    +48        47          0          1
+    --   axis            +2         0          2          0
+    --   stdlib         +15        11          0          4
+    --   concatlit      +32        30          1          1
+    --   trailret       +18        15          1          2
     --
-    -- The first three are `ext/ward/bench/derived.duo` (new),
-    -- `ext/ward/bench/wart.duo` (new) and `ext/ward/src/ward.duo` (the real-call
-    -- JIT work) — new downstream measurement code, honest new debt, and not this
-    -- session's to edit. The fourth was `scripts/init_build_smoke.duo`, and it
-    -- was REPAIRED rather than budgeted: its 28 `_`-prefixed helpers were
-    -- renamed and its 19 `..`-beside-a-literal joins became interpolation,
-    -- which cleared 47 of the 302 points outright. Its remaining 4 `trailret`
-    -- hits are guard returns in an early-exit ladder, which this row's regex
-    -- cannot tell from the TRAILING return it is named for.
+    -- Nothing here is repairable as text, which is why it is budgeted and not
+    -- fixed:
     --
-    -- snake's 76th point is a single line: `run_compile_fail_tests.duo` gained
-    -- one `run_output("examples/layout_refinements_test.duo", …)` registration
-    -- while this was being measured. It is named here rather than absorbed,
-    -- because a one-line regression is the only kind anyone ever introduces and
-    -- an unattributed +1 is indistinguishable from one.
+    --   `ext/ward/src/ward.duo` carries 310 of the 440 points, and 164 upper +
+    --   146 snake of them are ONE generated block — the `OP_unreachable = 0`
+    --   … `OP_i64_extend32_s = 196` constants that `ext/ward/tools/opcodes.duo`
+    --   projects into it (6497d44, which is what took ward from 241 hand-typed
+    --   opcode predicates to 3). Editing those names by hand is undone by the
+    --   next projection run. The repair is in the projector's `_const()`
+    --   renderer, which is a naming decision across 184 sites inside another
+    --   session's live work, not a mechanical rename. Same shape as GAP-041,
+    --   where 46 flat `encode_add_reg` names are owed a level rather than 46
+    --   other flat names.
+    --
+    --   `ext/ward/tools/opcodes.duo` is the projector itself (new in 6497d44).
+    --   Its 47 underprefix points are `_agree` `_selfcheck` `_const` `_num`
+    --   `_isreserved` and friends — private helpers, and `_` is EXPORT CONTROL
+    --   in this compiler (codegen.zig drops `_`-prefixed names from module
+    --   exports), so stripping the prefix is a surface change, not a rename.
+    --
+    --   `ext/ward/bench/derived.duo` drifted by 9 points total.
+    --
+    -- This session DID repair one thing in that file rather than budget it, but
+    -- it was a different gate: its `getenv("DUO_ROOT", "/Users/clp/x/duo")`
+    -- default was failing public_safety_scan, and the replacement adds no deny
+    -- line (two comments, one `if`, one assignment — verified: the counts below
+    -- are byte-identical before and after that commit).
+    --
+    -- LOWERING was checked and there is nothing to lower. Every row not listed
+    -- above reads EXACTLY its budget — companion 259, accessor 322, directive
+    -- 152, ctor 58, import 442, foreignkw 167, arrow 128, luafn 228, mwrapper
+    -- 36, oneline 2224, nonduo 536. Zero slack anywhere, so the ratchet's other
+    -- direction had no work to do this time. It is still half the protocol.
     --
     -- No number below was raised without a file behind it. That is the whole
     -- difference between a rebaseline and a laundering, and the check that
@@ -398,8 +416,11 @@ main(): i64
     -- whenever you lower a count; raising one needs a sentence in the commit
     -- message saying why the ROW, not the code, was wrong.
     --
-    -- Measured 2026-08-08 over 445 canonical files, in the working tree, WITH
-    -- string bodies stripped. EXACT counts, no headroom. A previous revision
+    -- Measured 2026-08-08 over 446 scanned canonical files, in a DETACHED
+    -- WORKTREE at the pushed HEAD rather than in a working tree — three other
+    -- sessions had uncommitted edits while this was measured, and a budget
+    -- taken over those is phantom slack that nobody can reproduce from a clean
+    -- clone. WITH string bodies stripped. EXACT counts, no headroom. A previous revision
     -- carried +2 per row to absorb concurrent sessions; the +2 was dropped
     -- because it disarms the ratchet by exactly the amount that matters. The
     -- test that showed it: lowering `snake` by one below its count must fail
@@ -426,7 +447,7 @@ main(): i64
     -- literal lowers to a raw int64_t* that `#` cannot measure and that gets a
     -- free() emitted at every `return` in the function — including the returns
     -- that come textually before it, which is a C compile error.
-    budgets: str = "13861 2086 1629 259 322 476 152 58 1957 442 167 128 228 36 2234 2224 3343"
+    budgets: str = "14019 2253 1677 259 322 478 152 58 1972 442 167 128 228 36 2266 2224 3361"
 
     -- Per-row: 1 = measure with string bodies INTACT. Only `concatlit` sets
     -- it, because its subject IS the string literal; stripping bodies takes
