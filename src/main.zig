@@ -3112,7 +3112,24 @@ fn directLinkInputs(
     cc: []const u8,
 ) ![]const []const u8 {
     var inputs: std.ArrayListUnmanaged([]const u8) = .empty;
-    try inputs.append(alloc, "src/duo_keyword_classify.c");
+
+    // This file is GENERATED (see emitKeywordClassifyNativeCFile above), and it
+    // was deleted from the tree in 32643ed as monoglot-census work. The link
+    // line still named it, so every `--backend=direct --emit exe` compile died
+    // with `clang: no such file or directory: 'src/duo_keyword_classify.c'` —
+    // the direct ARM64 backend could not produce an executable at all, which
+    // took pass11-direct-smoke, pass11-spill-smoke and the native differential
+    // with it.
+    //
+    // Regenerating it is the right repair rather than restoring a checked-in
+    // artifact: a generated file absent from the tree is a build step that has
+    // not run yet, not an error. The census stays correct — nothing foreign is
+    // committed — and the backend keeps its keyword classifier.
+    const classify_c = "src/duo_keyword_classify.c";
+    if (Io.Dir.cwd().statFile(io, classify_c, .{})) |_| {} else |_| {
+        token_classify_gen.emitKeywordClassifyNativeCFile(alloc, io, classify_c) catch {};
+    }
+    try inputs.append(alloc, classify_c);
 
     var req = native_req_support.collectFromModule(alloc, mod) catch return inputs.toOwnedSlice(alloc);
     defer req.deinit(alloc);
