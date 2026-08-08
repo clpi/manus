@@ -6,8 +6,8 @@ concept HasXY
     y: f64
 end
 
-type Point = { x: f64, y: f64 }
-type Pair = { x: f64, y: f64 }
+Point: { x: f64, y: f64 }
+Pair: { x: f64, y: f64 }
 
 @comp.assert(@comp.satisfies(Point, "HasXY"))
 
@@ -20,7 +20,7 @@ type Pair = { x: f64, y: f64 }
     acc
 end)
 
-registry_line(meta) -> str
+registry_line(meta): str
     meta.name .. ";"
 end
 

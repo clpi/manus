@@ -834,8 +834,18 @@ pub const Sema = struct {
     fn mem_validate_type_arg(self: *Sema, fname: []const u8, args: []const *ast.Expr, index: usize) SemaError!void {
         if (index >= args.len) return;
         const arg = args[index];
+        // Canonical: a TYPE NAME value — `mem.store(i32)(p, v)`. Spec 2.10 G3
+        // makes a type an ordinary value, so the descriptor parameter is the
+        // type itself. The `"i32"` string spelling stays accepted while
+        // existing sources migrate.
+        if (arg.* == .name) {
+            if ((try self.mem_type_from_name(arg.name.ident)) == null) {
+                self.err(arg.*.loc(), "mem.{s} does not support memory type '{s}'", .{ fname, arg.name.ident });
+            }
+            return;
+        }
         if (arg.* != .string_lit) {
-            self.err(arg.*.loc(), "mem.{s} argument {d} must be a string type name", .{ fname, index + 1 });
+            self.err(arg.*.loc(), "mem.{s} argument {d} must be a type name", .{ fname, index + 1 });
             return;
         }
         const name = arg.string_lit.val;
@@ -2267,6 +2277,23 @@ pub const Sema = struct {
                 return .any;
             },
             .call => |c| {
+                // Canonical curried form `mem.store("i64")(ptr, val)`: the type
+                // selector is its own curry level and never shares a parameter
+                // list with values (Pass 48 §2.6 application schemas). Must be
+                // handled BEFORE anything type-checks `c.func`, or the inner
+                // `mem.store("i64")` is validated on its own and fails arity.
+                if (c.func.* == .call) {
+                    const inner = c.func.call;
+                    if (self.mem_intrinsic_name(inner.func)) |fname| {
+                        if (inner.args.len == 1) {
+                            var joined: std.ArrayList(*ast.Expr) = .empty;
+                            defer joined.deinit(self.alloc);
+                            try joined.append(self.alloc, inner.args[0]);
+                            try joined.appendSlice(self.alloc, c.args);
+                            return try self.check_mem_call(c.loc, fname, joined.items);
+                        }
+                    }
+                }
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__constexpr") and c.args.len == 1) {
                     return try self.check_expr(c.args[0]);
                 }

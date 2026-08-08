@@ -29,8 +29,8 @@ reduce(list: any, init: any, fn_ref: any): any
     fn.foldl(list, init, fn_ref)
 end
 
--- any_: return true if any element satisfies the predicate.
-any_(list: any, fn_ref: any): bool
+-- any: return true if any element satisfies the predicate.
+any(list: any, fn_ref: any): bool
     if list == nil return false end
     i = 1
     while i <= rawlen(list)
@@ -210,26 +210,3 @@ partition(list: any, fn_ref: any): any
     fn.partition(list, fn_ref)
 end
 
-M = {}
-M.map = map
-M.filter = filter
-M.reduce = reduce
-M.any = any_
-M.all = all
-M.find = find
-M.find_index = find_index
-M.count = count
-M.zip = zip
-M.zip_with = zip_with
-M.enumerate = enumerate
-M.flat_map = flat_map
-M.sliding_window = sliding_window
-M.take = take
-M.drop = drop
-M.unique = unique
-M.group_by = group_by
-M.min_by = min_by
-M.max_by = max_by
-M.sort_by = sort_by
-M.partition = partition
-M

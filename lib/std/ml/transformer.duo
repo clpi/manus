@@ -1,11 +1,7 @@
 -- std.ml.transformer — Transformer blocks (attention + FFN) for LLM-style workloads
 
-Shape = req "std.ml.shape"
-Tensor = req "std.ml.tensor"
-Ops = req "std.ml.ops"
-
 block(heads, dim): any
-    spec = Shape.transformer_block(heads, dim)
+    spec = std.ml.shape.transformer_block(heads, dim)
     return {
         type = "transformer_block",
         heads = spec.heads,
@@ -40,16 +36,16 @@ end
 
 -- Reference FFN (compiler may fuse linear+gelu+linear later)
 ffn_forward(block, x): any
-    h = Tensor.matmul(x, block.ffn1.weight)
-    h = Ops.gelu(h)
-    return Tensor.matmul(h, block.ffn2.weight)
+    h = std.ml.tensor.matmul(x, block.ffn1.weight)
+    h = std.ml.ops.gelu(h)
+    return std.ml.tensor.matmul(h, block.ffn2.weight)
 end
 
 forward_block(block, x): any
     -- Residual + attention: native kernel validates hot path; full MHA in stdlib later
     _ = bench_attention()
     h = x
-    return Tensor.add(h, ffn_forward(block, h))
+    return std.ml.tensor.add(h, ffn_forward(block, h))
 end
 
 forward(model, x): any
@@ -60,11 +56,3 @@ forward(model, x): any
     return h
 end
 
-M = {}
-M.block = block
-M.stack = stack
-M.bench_attention = bench_attention
-M.ffn_forward = ffn_forward
-M.forward_block = forward_block
-M.forward = forward
-M

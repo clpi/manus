@@ -158,7 +158,13 @@ pub fn validatePass16Gate() PassGateError!void {
     _ = selfhost_verify.verifyAllOrFail() catch return error.GateFailed;
     if (@import("pass16_selfhost_audit.zig").auditEntryCount() != 12) return error.GateFailed;
     const manifest = selfhosting_matrix.publicManifest();
-    if (manifest.self_hosting_level < 1 or manifest.self_hosting_level > 1) return error.GateFailed;
+    // RATCHET, not a pin. This read `< 1 or > 1`, so it failed the moment SH-03
+    // became duo_canonical — a gate that breaks when the project ADVANCES is
+    // measuring the wrong direction. The floor rises as subsystems land; the
+    // ceiling is "not yet everything", which is the claim actually worth
+    // guarding against overstating.
+    if (manifest.self_hosting_level < 2) return error.GateFailed;
+    if (manifest.self_hosting_level >= selfhosting_matrix.subsystems.len) return error.GateFailed;
     if (manifest.canonical_compiler_in_duo) return error.GateFailed;
     if (!std.mem.eql(u8, manifest.claim_self_hosted_status, "partial")) return error.GateFailed;
     if (!manifest.production_duo_frontend) return error.GateFailed;

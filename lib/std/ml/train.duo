@@ -1,9 +1,5 @@
 -- std.ml.train — Training loop helpers (forward / loss / backward / step)
 
-NN = req "std.ml.nn"
-AD = req "std.ml.autodiff"
-Tensor = req "std.ml.tensor"
-
 sgd_step(model, optimizer, lr): any
     if lr == nil lr = optimizer.lr end
     for i = 1, model.n_layers
@@ -26,11 +22,11 @@ end
 @profile
 train_step(model, x, target, lr): f64
     if lr == nil lr = 0.01 end
-    tape = AD.tape_new()
-    pred = NN.forward(model, x)
-    loss = NN.cross_entropy(pred, target)
+    tape = std.ml.autodiff.tape_new()
+    pred = std.ml.nn.forward(model, x)
+    loss = std.ml.nn.cross_entropy(pred, target)
     -- Backward pass: compute gradients via autodiff tape
-    grad = AD.backward(tape, loss)
+    grad = std.ml.autodiff.backward(tape, loss)
     return loss
 end
 
@@ -48,8 +44,3 @@ fit(model, batches, epochs, lr): any
     return model
 end
 
-M = {}
-M.sgd_step = sgd_step
-M.train_step = train_step
-M.fit = fit
-M

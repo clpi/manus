@@ -242,7 +242,7 @@ SORTED_CATEGORY = {
 }
 
 -- Candidate 1: branch chain (production).
-classify_branch_chain(w: str): i64
+fun classify_branch_chain(w: str): i64
     if w == "and" return 4 end
     if w == "break" return 5 end
     if w == "continue" return 6 end
@@ -301,7 +301,7 @@ classify_branch_chain(w: str): i64
 end
 
 -- Candidate 2: length bucket (filter then equality chain).
-classify_length_bucket(w: str): i64
+fun classify_length_bucket(w: str): i64
     n = string.len(w)
     if n == 2
         if w == "do" return 7 end
@@ -382,7 +382,7 @@ classify_length_bucket(w: str): i64
 end
 
 -- Candidate 3: sorted lookup (binary search over descriptor).
-classify_sorted_lookup(w: str): i64
+fun classify_sorted_lookup(w: str): i64
     lo = 1
     hi = 54
     while lo <= hi
@@ -399,15 +399,15 @@ end
 
 -- Production entry (mirrors token_semantic.production_classifier).
 @c.export("duo_keyword_classify")
-classify(w: str): i64
+fun classify(w: str): i64
     classify_branch_chain(w)
 end
 
-is_keyword(w: str): bool
+fun is_keyword(w: str): bool
     classify(w) != 0
 end
 
-category_of(id: i64): i64
+fun category_of(id: i64): i64
     i = 1
     while i <= KEYWORD_COUNT
         if SORTED_ID[i] == id return SORTED_CATEGORY[i] end
@@ -416,7 +416,7 @@ category_of(id: i64): i64
     0
 end
 
-spelling_of(id: i64): str
+fun spelling_of(id: i64): str
     i = 1
     while i <= KEYWORD_COUNT
         if SORTED_ID[i] == id return SORTED_TEXT[i] end

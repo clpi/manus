@@ -1,4 +1,4 @@
-type ByteCursor = { a: i64 }
+ByteCursor: { a: i64 }
 cursor_new(): ByteCursor
     { a = 1 }
 end

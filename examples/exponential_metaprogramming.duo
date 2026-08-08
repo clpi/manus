@@ -48,6 +48,6 @@ print("add(3.0, 4.0) = " .. add(3.0, 4.0))
 end)
 
 @derive(Getter)
-type Point = { x: f64, y: f64 }
+Point: { x: f64, y: f64 }
 
 print("all done")

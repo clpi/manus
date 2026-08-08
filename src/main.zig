@@ -2,6 +2,8 @@ const std = @import("std");
 const builtin = @import("builtin");
 const Io = std.Io;
 const Lexer = @import("lexer.zig").Lexer;
+const duo_lexer_bridge = @import("duo_lexer_bridge.zig");
+const duo_lexer_dispatch = @import("duo_lexer_dispatch.zig");
 const Parser = @import("parser.zig").Parser;
 const ast = @import("ast.zig");
 const Sema = @import("sema.zig").Sema;
@@ -2753,11 +2755,56 @@ fn alias_has_macro_syntax(alias: ast.AliasDef) bool {
     return false;
 }
 
+/// SH-03 production dispatch. When the tokenize authority is Duo, lex the whole
+/// source through `lib/std/compiler/lexer.duo` and drive the parser from that
+/// stream instead of the host scanner.
+///
+/// A Duo-side REJECTION is returned, not swallowed: the host scanner would
+/// reject the same source, and silently falling back would hide a real
+/// divergence behind a passing compile. Only an out-of-memory or
+/// buffer-sizing failure falls back, because those are host-side and say
+/// nothing about the source.
+fn routeThroughDuoLexer(
+    alloc: std.mem.Allocator,
+    lex: *Lexer,
+    src: []const u8,
+    src_path: []const u8,
+) !void {
+    if (duo_lexer_bridge.tokenizeAuthority() != .duo_native) return;
+    const z_src = std.mem.concatWithSentinel(alloc, u8, &.{src}, 0) catch return;
+    const z_file = std.mem.concatWithSentinel(alloc, u8, &.{src_path}, 0) catch return;
+    const arena = alloc.create(std.ArrayList(u8)) catch return;
+    arena.* = .empty;
+    const toks = duo_lexer_dispatch.tokenize(alloc, z_src, z_file, arena) catch |e| switch (e) {
+        error.OutOfMemory, error.BufferTooSmall => return,
+        else => {
+            lex.last_error_loc = .{
+                .file = src_path,
+                .line = duo_lexer_dispatch.errorLine(z_src, z_file),
+                .col = 1,
+            };
+            return e;
+        },
+    };
+    // The scan in duo_lexer_dispatch resolves token text against `z_src`, the
+    // NUL-terminated copy the C ABI requires. The parser holds the ORIGINAL
+    // `src`, and srcOffsetOf compares pointers — so text pointing into the copy
+    // is "not in the source" and attribute recovery fails. Rebase onto `src`;
+    // the copy is byte-identical, so the offsets carry over exactly.
+    for (toks) |*tok| {
+        if (tok.text.len == 0) continue;
+        const off = @intFromPtr(tok.text.ptr) - @intFromPtr(z_src.ptr);
+        if (off + tok.text.len <= src.len) tok.text = src[off .. off + tok.text.len];
+    }
+    lex.useDuoTokens(toks);
+}
+
 fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !ParsedModule {
     const src = try read_source(alloc, io, src_path);
     term.setSource(src_path, src);
 
     var lex = Lexer.init(src, src_path);
+    try routeThroughDuoLexer(alloc, &lex, src, src_path);
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = is_duo_source_path(src_path);
     var mod = parser.parse_module() catch |e| {
@@ -2808,7 +2855,12 @@ fn run_child_process(io: Io, argv: []const []const u8, label: []const u8, quiet:
         .argv = argv,
         .stdin = .inherit,
         .stdout = if (quiet) .ignore else .inherit,
-        .stderr = if (quiet) .ignore else .inherit,
+        // stderr is ALWAYS inherited, even when quiet. A toolchain child (cc,
+        // the native linker) is silent on success, so this costs nothing there
+        // — but discarding it left failures as a bare "native linker failed
+        // (exit 1)" with no cause, which is what made the SH-03 native-path
+        // failure undiagnosable.
+        .stderr = .inherit,
     });
     const result = try child.wait(io);
     switch (result) {
@@ -3996,6 +4048,7 @@ fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8, canonical: boo
     };
     term.setSource(src_path, src);
     var lex = Lexer.init(src, src_path);
+    try routeThroughDuoLexer(alloc, &lex, src, src_path);
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = is_duo_source_path(src_path);
     const mod = parser.parse_module() catch |err| {

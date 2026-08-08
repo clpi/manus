@@ -1,21 +1,19 @@
 -- std.csv — basic CSV parsing and formatting
 
-string = req "std.string"
-
 parse_line(line: any): any
         res = {}
-        len = string.len(line)
+        len = std.string.len(line)
         i = 1
         while i <= len
-            c = string.sub(line, i, i)
+            c = std.string.sub(line, i, i)
             if c == '"'
                 -- quoted field
                 field = ""
                 i += 1
                 while i <= len
-                    c2 = string.sub(line, i, i)
+                    c2 = std.string.sub(line, i, i)
                     if c2 == '"'
-                        if i + 1 <= len and string.sub(line, i + 1, i + 1) == '"'
+                        if i + 1 <= len and std.string.sub(line, i + 1, i + 1) == '"'
                             field = field .. '"'
                             i += 2
                         else
@@ -28,36 +26,36 @@ parse_line(line: any): any
                     end
                 end
                 table.insert(res, field)
-                if i <= len and string.sub(line, i, i) == ','
+                if i <= len and std.string.sub(line, i, i) == ','
                     i += 1
                 end
             else
                 -- unquoted field
                 start = i
-                while i <= len and string.sub(line, i, i) != ','
+                while i <= len and std.string.sub(line, i, i) != ','
                     i += 1
                 end
-                table.insert(res, string.sub(line, start, i - 1))
+                table.insert(res, std.string.sub(line, start, i - 1))
                 if i <= len
                     i += 1 -- skip comma
                 end
             end
         end
         -- Handle trailing comma
-        if len > 0 and string.sub(line, len, len) == ','
+        if len > 0 and std.string.sub(line, len, len) == ','
             table.insert(res, "")
         end
         res
 end
 
 parse(data: any): any
-    lines = string.split(data, "\n")
+    lines = std.string.split(data, "\n")
     res = {}
-    for _, line in ipairs(lines)
-        if string.len(line) > 0 and string.sub(line, string.len(line), string.len(line)) == "\r"
-            line = string.sub(line, 1, string.len(line) - 1)
+    for _, line in lines
+        if std.string.len(line) > 0 and std.string.sub(line, std.string.len(line), std.string.len(line)) == "\r"
+            line = std.string.sub(line, 1, std.string.len(line) - 1)
         end
-        if string.len(line) > 0
+        if std.string.len(line) > 0
             table.insert(res, parse_line(line))
         end
     end
@@ -65,9 +63,9 @@ parse(data: any): any
 end
 
 escape_field(field: any): any
-    s = tostring(field)
-    if string.find(s, ",") or string.find(s, '"') or string.find(s, "\n")
-        s = string.gsub(s, '"', '""')
+    s = to(str)(field)
+    if std.string.find(s, ",") or std.string.find(s, '"') or std.string.find(s, "\n")
+        s = std.string.gsub(s, '"', '""')
         return '"' .. s .. '"'
     end
     s
@@ -75,23 +73,17 @@ end
 
 format_line(row: any): any
     parts = {}
-    for _, v in ipairs(row)
+    for _, v in row
         table.insert(parts, escape_field(v))
     end
-    string.concat(parts, ",")
+    std.string.concat(parts, ",")
 end
 
 format(rows: any): any
     lines = {}
-    for _, row in ipairs(rows)
+    for _, row in rows
         table.insert(lines, format_line(row))
     end
-    string.concat(lines, "\n")
+    std.string.concat(lines, "\n")
 end
 
-M = {}
-M.parse_line = parse_line
-M.parse = parse
-M.format_line = format_line
-M.format = format
-M

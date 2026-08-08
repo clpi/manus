@@ -6,9 +6,9 @@ concept HasXY
     y: f64
 end
 
-type Point = { x: f64, y: f64 }
-type BadXY = { x: i64, y: f64 }
-type Pair = { x: f64, y: f64 }
+Point: { x: f64, y: f64 }
+BadXY: { x: i64, y: f64 }
+Pair: { x: f64, y: f64 }
 
 @comp.define.derive("TouchApi", generate(meta) -> str
     acc = ""
@@ -22,7 +22,7 @@ end)
 @comp.assert(@comp.satisfies(Point, "HasXY"))
 @comp.assert(not @comp.satisfies(BadXY, "HasXY"))
 
-registry_line(meta) -> str
+registry_line(meta): str
     meta.name .. ";"
 end
 
@@ -31,15 +31,15 @@ end
 
 TYPED_SWEEP = @comp.map("HasXY", registry_line)
 
-type UserV1 = { id: i64, nick: str }
-type UserV2 = { id: i64, email: str }
+UserV1: { id: i64, nick: str }
+UserV2: { id: i64, email: str }
 
 MIGRATION = @comp.diff(UserV1, UserV2)
 @c.emit(MIGRATION)
 
 print("=== exponential ceiling showcase ===")
 print("typed_sweep = " .. TYPED_SWEEP)
-print("migration_lines = " .. tostring(#MIGRATION))
-print("Point satisfies HasXY = " .. tostring(@comp.satisfies(Point, "HasXY")))
-print("BadXY satisfies HasXY = " .. tostring(@comp.satisfies(BadXY, "HasXY")))
+print("migration_lines = " .. to(str)(#MIGRATION))
+print("Point satisfies HasXY = " .. to(str)(@comp.satisfies(Point, "HasXY")))
+print("BadXY satisfies HasXY = " .. to(str)(@comp.satisfies(BadXY, "HasXY")))
 print("ok")

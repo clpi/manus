@@ -213,26 +213,26 @@ end
 -- Material Library
 -- ═══════════════════════════════════════════════════════════════
 
-material_library_new(): any
+library_new(): any
     {
         materials = {},
         default_materials = {},
     }
 end
 
-material_library_add(lib: any, name: str, material: any): void
+library_add(lib: any, name: str, material: any): void
     lib.materials[name] = material
 end
 
-material_library_get(lib: any, name: str): any
+library_get(lib: any, name: str): any
     lib.materials[name] or lib.default_materials["default"]
 end
 
-material_library_remove(lib: any, name: str): void
+library_remove(lib: any, name: str): void
     lib.materials[name] = nil
 end
 
-material_library_list(lib: any): any
+library_list(lib: any): any
     names = {}
     for name in lib.materials
         names[#names + 1] = name
@@ -241,25 +241,25 @@ material_library_list(lib: any): any
 end
 
 -- Default materials
-material_default_white(): any
+default_white(): any
     mat = material_new("default_white")
     mat.albedo = {r = 1, g = 1, b = 1}
     mat
 end
 
-material_default_gray(): any
+default_gray(): any
     mat = material_new("default_gray")
     mat.albedo = {r = 0.5, g = 0.5, b = 0.5}
     mat
 end
 
-material_default_black(): any
+default_black(): any
     mat = material_new("default_black")
     mat.albedo = {r = 0, g = 0, b = 0}
     mat
 end
 
-material_metal(color: any): any
+metal(color: any): any
     mat = material_new("metal")
     mat.albedo = color or {r = 0.8, g = 0.8, b = 0.8}
     mat.metallic = 1.0
@@ -267,7 +267,7 @@ material_metal(color: any): any
     mat
 end
 
-material_plastic(color: any): any
+plastic(color: any): any
     mat = material_new("plastic")
     mat.albedo = color or {r = 0.8, g = 0.2, b = 0.2}
     mat.metallic = 0.0
@@ -275,7 +275,7 @@ material_plastic(color: any): any
     mat
 end
 
-material_rubber(color: any): any
+rubber(color: any): any
     mat = material_new("rubber")
     mat.albedo = color or {r = 0.2, g = 0.2, b = 0.2}
     mat.metallic = 0.0
@@ -283,7 +283,7 @@ material_rubber(color: any): any
     mat
 end
 
-material_glass(): any
+glass(): any
     mat = material_new("glass")
     mat.albedo = {r = 1, g = 1, b = 1}
     mat.metallic = 0.0
@@ -292,7 +292,7 @@ material_glass(): any
     mat
 end
 
-material_emissive(color: any, strength: f64): any
+emissive(color: any, strength: f64): any
     mat = material_new("emissive")
     mat.albedo = {r = 0, g = 0, b = 0}
     mat.emissive = color or {r = 1, g = 1, b = 1}
@@ -349,40 +349,9 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
 -- Texture
-M.texture_new = texture_new
-M.texture_from_data = texture_from_data
-M.texture_get_pixel = texture_get_pixel
-M.texture_set_pixel = texture_set_pixel
-M.texture_sample = texture_sample
-M.texture_resize = texture_resize
-M.texture_flip_h = texture_flip_h
-M.texture_flip_v = texture_flip_v
 -- Procedural
-M.texture_checkerboard = texture_checkerboard
-M.texture_gradient = texture_gradient
 -- Material
-M.material_new = material_new
-M.material_set_albedo = material_set_albedo
-M.material_set_metallic = material_set_metallic
-M.material_set_emissive = material_set_emissive
-M.material_set_texture = material_set_texture
 -- Library
-M.library_new = material_library_new
-M.library_add = material_library_add
-M.library_get = material_library_get
-M.library_remove = material_library_remove
-M.library_list = material_library_list
 -- Defaults
-M.default_white = material_default_white
-M.default_gray = material_default_gray
-M.default_black = material_default_black
-M.metal = material_metal
-M.plastic = material_plastic
-M.rubber = material_rubber
-M.glass = material_glass
-M.emissive = material_emissive
 -- Shading
-M.pbr_shade = pbr_shade
-M

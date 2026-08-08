@@ -5,7 +5,7 @@
 -- Cache Configuration
 -- ═══════════════════════════════════════════════════════════════
 
-inference_cache_config_new(): any
+config_new(): any
     {
         max_size = 1000,
         ttl = 300,  -- seconds
@@ -15,17 +15,17 @@ inference_cache_config_new(): any
     }
 end
 
-inference_cache_config_set_max_size(config: any, max_size: i64): any
+config_set_max_size(config: any, max_size: i64): any
     config.max_size = max_size
     config
 end
 
-inference_cache_config_set_ttl(config: any, ttl: i64): any
+config_set_ttl(config: any, ttl: i64): any
     config.ttl = ttl
     config
 end
 
-inference_cache_config_set_eviction(config: any, policy: str): any
+config_set_eviction(config: any, policy: str): any
     config.eviction_policy = policy
     config
 end
@@ -34,7 +34,7 @@ end
 -- Inference Cache
 -- ═══════════════════════════════════════════════════════════════
 
-inference_cache_new(config: any): any
+cache_new(config: any): any
     {
         config = config,
         entries = {},
@@ -44,11 +44,11 @@ inference_cache_new(config: any): any
     }
 end
 
-inference_cache_key(model_name: str, input_hash: str): str
+cache_key(model_name: str, input_hash: str): str
     model_name .. ":" .. input_hash
 end
 
-inference_cache_get(cache: any, key: str): any
+cache_get(cache: any, key: str): any
     entry = cache.entries[key]
     if entry == nil
         cache.miss_count = cache.miss_count + 1
@@ -57,7 +57,7 @@ inference_cache_get(cache: any, key: str): any
 
     -- Check TTL
     if os.clock() - entry.timestamp > cache.config.ttl
-        inference_cache_evict(cache, key)
+        cache_evict(cache, key)
         cache.miss_count = cache.miss_count + 1
         return nil
     end
@@ -79,7 +79,7 @@ inference_cache_get(cache: any, key: str): any
     entry.value
 end
 
-inference_cache_set(cache: any, key: str, value: any): void
+cache_set(cache: any, key: str, value: any): void
     -- Check if already exists
     if cache.entries[key]
         cache.entries[key].value = value
@@ -103,7 +103,7 @@ inference_cache_set(cache: any, key: str, value: any): void
     table.insert(cache.access_order, 1, key)
 end
 
-inference_cache_evict(cache: any, key: str): void
+cache_evict(cache: any, key: str): void
     cache.entries[key] = nil
     for i, k in cache.access_order
         if k == key
@@ -116,15 +116,15 @@ end
 inference_cache_evict_oldest(cache: any): void
     if #cache.access_order == 0 return end
     key = cache.access_order[#cache.access_order]
-    inference_cache_evict(cache, key)
+    cache_evict(cache, key)
 end
 
-inference_cache_clear(cache: any): void
+cache_clear(cache: any): void
     cache.entries = {}
     cache.access_order = {}
 end
 
-inference_cache_stats(cache: any): any
+cache_stats(cache: any): any
     total = cache.hit_count + cache.miss_count
     {
         size = #cache.entries,
@@ -289,34 +289,8 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
 -- Config
-M.config_new = inference_cache_config_new
-M.config_set_max_size = inference_cache_config_set_max_size
-M.config_set_ttl = inference_cache_config_set_ttl
-M.config_set_eviction = inference_cache_config_set_eviction
 -- Inference Cache
-M.cache_new = inference_cache_new
-M.cache_key = inference_cache_key
-M.cache_get = inference_cache_get
-M.cache_set = inference_cache_set
-M.cache_evict = inference_cache_evict
-M.cache_clear = inference_cache_clear
-M.cache_stats = inference_cache_stats
 -- Attention Cache
-M.attention_cache_new = attention_cache_new
-M.attention_cache_append = attention_cache_append
-M.attention_cache_get = attention_cache_get
-M.attention_cache_reset = attention_cache_reset
-M.attention_cache_is_full = attention_cache_is_full
 -- Embedding Cache
-M.embedding_cache_new = embedding_cache_new
-M.embedding_cache_get = embedding_cache_get
-M.embedding_cache_set = embedding_cache_set
-M.embedding_cache_stats = embedding_cache_stats
 -- Result Cache
-M.result_cache_new = result_cache_new
-M.result_cache_get = result_cache_get
-M.result_cache_set = result_cache_set
-M.result_cache_clear = result_cache_clear
-M

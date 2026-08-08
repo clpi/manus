@@ -1,0 +1,94 @@
+-- Does every lib/std module survive being EMBEDDED, not merely self-checked?
+--
+-- `duo check` validates a module in isolation. That is a weak signal, and the
+-- gap is not small: measured 2026-08-07, lib/std self-check fails on **1** of
+-- 246 modules while the embed path fails on **38**. A module that self-checks
+-- clean can still be unreachable to every program that names it.
+--
+-- The distinction cost real work to learn. Two MOD-1 unwraps passed `duo check`
+-- and shipped broken (std.result, std.ml.optim, restored in ad39dfe), and
+-- lib/std/image/gif.duo once loaded cleanly while every byte it read was nil.
+-- So this gate exercises the AMBIENT PATH — `std.mod` from a fresh program —
+-- which is the thing callers actually do.
+--
+-- It is a RATCHET. The floor is the measured failure count; a run that fails
+-- MORE modules than the floor is a regression and fails the gate. When a module
+-- is repaired, lower the floor.
+--
+-- Deliberately not wired into build.zig: that is Zig, and the monoglot mandate
+-- says tooling is Duo. Run it with `duo run scripts/stdlib_embed_gate.duo`.
+
+-- Measured floor. Lower it when modules are repaired; never raise it to quiet
+-- the gate. Verified 2026-08-07: 30 of 246 — was 38, and the std.wasm.* family
+-- accounted for the drop. Note 30 rather than the 32 I predicted: modules
+-- outside that family depended on std.wasm transitively, so repairing one root
+-- freed more than the direct dependents. Estimate the floor and you will be
+-- wrong in both directions; run it and pin what it says.
+ceiling(): i64
+    30
+end
+
+-- Turn `lib/std/net/ws.duo` into the ambient path `std.net.ws`.
+module_path(file: str): str
+    inner = std.script.capture("printf '%s' \"" .. file .. "\" | sed 's|^lib/|std.|; s|/|.|g; s|\\.duo$||; s|^std\\.std\\.|std.|'")
+    std.script.chomp(inner)
+end
+
+-- A module is REACHABLE when a fresh program naming it compiles and runs.
+-- Naming it is enough: embedding pulls the whole module through codegen, which
+-- is where these failures live.
+reachable(mod: str): bool
+    src = "main(): void\n    print(" .. mod .. " != nil)\nend\n"
+    std.script.fs_write("/tmp/duo_embedgate.duo", src)
+    std.script.status("timeout 20 " .. std.script.duo_bin() .. " run /tmp/duo_embedgate.duo") == 0
+end
+
+main(): i64
+    listing = std.script.capture("find lib/std -name '*.duo' | sort")
+    total = 0
+    broken = 0
+    report = ""
+
+    n = string.len(listing)
+    start = 1
+    i = 1
+    while i <= n + 1
+        at_end = i > n
+        eol = false
+        if not at_end
+            eol = string.byte(listing, i) == 10
+        end
+        if at_end or eol
+            if i > start
+                file = string.sub(listing, start, i - 1)
+                mod = module_path(file)
+                total = total + 1
+                if not reachable(mod)
+                    broken = broken + 1
+                    report = report .. "  UNREACHABLE " .. mod .. "\n"
+                end
+            end
+            start = i + 1
+        end
+        i = i + 1
+    end
+
+    io.write(report)
+    print("stdlib_embed: " .. to(str)(broken) .. " unreachable of " .. to(str)(total)
+        .. " (ceiling " .. to(str)(ceiling()) .. ")")
+
+    if total == 0
+        print("stdlib_embed: FAIL (empty corpus)")
+        return 1
+    end
+    if broken > ceiling()
+        print("stdlib_embed: FAIL — more modules unreachable than the recorded floor")
+        return 1
+    end
+    if broken < ceiling()
+        print("stdlib_embed: modules repaired since the floor was set — LOWER ceiling() to "
+            .. to(str)(broken))
+    end
+    print("stdlib_embed: PASS")
+    0
+end

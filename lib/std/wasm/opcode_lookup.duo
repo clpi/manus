@@ -640,15 +640,3 @@ stack_push_for_index(idx: i64): i64
     STACK_PUSH[idx + 1]
 end
 
-M = {}
-M.GENERATOR_OWNER = GENERATOR_OWNER
-M.INSTRUCTION_COUNT = INSTRUCTION_COUNT
-M.generator_owner = generator_owner
-M.instruction_count = instruction_count
-M.opcode_for_index = opcode_for_index
-M.instruction_index_for_opcode = instruction_index_for_opcode
-M.semantic_id_for_index = semantic_id_for_index
-M.semantic_id_for_opcode = semantic_id_for_opcode
-M.immediate_form_for_index = immediate_form_for_index
-M.stack_pop_for_index = stack_pop_for_index
-M.stack_push_for_index = stack_push_for_index

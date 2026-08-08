@@ -4,7 +4,7 @@
 > **Status:** **CLOSED** (Profile A — C-backend default release)  
 > **Mission:** Convert known architecture into one honest, releasable compiler.  
 > **Catalog:** `duo catalog | jq '.pass11'`  
-> **Gate:** `bash scripts/pass11_gate.sh` or `zig build pass11-gate`
+> **Gate:** `bash zig build pass11-gate` or `zig build pass11-gate`
 
 ---
 

@@ -1,11 +1,11 @@
 -- std.table — table and array helper utilities
 
-std_table_len(t: any): any
+len(t: any): any
     if t == nil return 0 end
     rawlen(t)
 end
 
-std_table_keys(t: any): any
+keys(t: any): any
     out = {}
     if t == nil return out end
     for k, _ in t
@@ -14,7 +14,7 @@ std_table_keys(t: any): any
     out
 end
 
-std_table_values(t: any): any
+values(t: any): any
     out = {}
     if t == nil return out end
     for _, v in t
@@ -23,7 +23,7 @@ std_table_values(t: any): any
     out
 end
 
-std_table_clone(t: any): any
+clone(t: any): any
     out = {}
     if t == nil return out end
     for k, v in t
@@ -32,8 +32,8 @@ std_table_clone(t: any): any
     out
 end
 
-std_table_merge(a: any, b: any): any
-    out = std_table_clone(a)
+merge(a: any, b: any): any
+    out = clone(a)
     if b != nil
         for k, v in b
             out[k] = v
@@ -42,7 +42,7 @@ std_table_merge(a: any, b: any): any
     out
 end
 
-std_table_contains(list: any, value: any): bool
+contains(list: any, value: any): bool
     if list == nil return false end
     i = 1
     while i <= rawlen(list)
@@ -53,7 +53,7 @@ std_table_contains(list: any, value: any): bool
     false
 end
 
-std_table_index_of(list: any, value: any): any
+index_of(list: any, value: any): any
     if list == nil return 0 end
     i = 1
     while i <= rawlen(list)
@@ -64,7 +64,7 @@ std_table_index_of(list: any, value: any): any
     0
 end
 
-std_table_reverse(list: any): any
+reverse(list: any): any
     out = {}
     if list == nil return out end
     i = rawlen(list)
@@ -75,7 +75,7 @@ std_table_reverse(list: any): any
     out
 end
 
-std_table_map(list: any, fn: any): any
+map(list: any, fn: any): any
     out = {}
     if list == nil return out end
     i = 1
@@ -87,7 +87,7 @@ std_table_map(list: any, fn: any): any
     out
 end
 
-std_table_filter(list: any, fn: any): any
+filter(list: any, fn: any): any
     out = {}
     if list == nil return out end
     i = 1
@@ -101,7 +101,7 @@ std_table_filter(list: any, fn: any): any
     out
 end
 
-std_table_reduce(list: any, fn: any, init: any): any
+reduce(list: any, fn: any, init: any): any
     acc = init
     if list == nil return acc end
     i = 1
@@ -113,9 +113,9 @@ std_table_reduce(list: any, fn: any, init: any): any
     acc
 end
 
-std_table_clear(t: any): void
+clear(t: any): void
     if t == nil return end
-    ks = std_table_keys(t)
+    ks = keys(t)
     i = 1
     while i <= #ks
         rawset(t, ks[i], nil)
@@ -123,7 +123,7 @@ std_table_clear(t: any): void
     end
 end
 
-std_table_is_empty(t: any): bool
+is_empty(t: any): bool
     if t == nil return true end
     for _, v in t
         if v != nil return false end
@@ -131,7 +131,7 @@ std_table_is_empty(t: any): bool
     true
 end
 
-std_table_slice(t: any, start_idx: any, end_idx: any): any
+slice(t: any, start_idx: any, end_idx: any): any
     out = {}
     if t == nil return out end
     if start_idx == nil start_idx = 1 end
@@ -146,13 +146,13 @@ std_table_slice(t: any, start_idx: any, end_idx: any): any
     out
 end
 
-std_table_concat(t: any, sep: any): str
+concat(t: any, sep: any): str
     if t == nil return "" end
     if sep == nil sep = "" end
     table.concat(t, sep)
 end
 
-std_table_sort(list: any, cmp: any): void
+sort(list: any, cmp: any): void
     if list == nil return end
     if cmp == nil
         table.sort(list)
@@ -161,14 +161,14 @@ std_table_sort(list: any, cmp: any): void
     end
 end
 
-std_table_unpack(list: any, i: any, j: any): any
+unpack(list: any, i: any, j: any): any
     if list == nil return nil end
     if i == nil i = 1 end
     if j == nil j = rawlen(list) end
     table.unpack(list, i, j)
 end
 
-std_table_insert(list: any, pos: any, value: any): void
+insert(list: any, pos: any, value: any): void
     if list == nil return end
     if value == nil
         table.insert(list, pos)
@@ -177,13 +177,13 @@ std_table_insert(list: any, pos: any, value: any): void
     end
 end
 
-std_table_remove(list: any, pos: any): any
+remove(list: any, pos: any): any
     if list == nil return nil end
     if pos == nil pos = rawlen(list) end
     table.remove(list, pos)
 end
 
-std_table_count(list: any, fn: any): i64
+count(list: any, fn: any): i64
     c = 0
     if list == nil return c end
     if fn == nil return rawlen(list) end
@@ -195,7 +195,7 @@ std_table_count(list: any, fn: any): i64
     c
 end
 
-std_table_flat(list: any): any
+flat(list: any): any
     out = {}
     if list == nil return out end
     i = 1
@@ -215,14 +215,14 @@ std_table_flat(list: any): any
     out
 end
 
-std_table_unique(list: any): any
+unique(list: any): any
     out = {}
     if list == nil return out end
     seen = {}
     i = 1
     while i <= rawlen(list)
         v = list[i]
-        key = tostring(v)
+        key = to(str)(v)
         if not seen[key]
             seen[key] = true
             out[rawlen(out) + 1] = v
@@ -232,7 +232,7 @@ std_table_unique(list: any): any
     out
 end
 
-std_table_zip(lists: any): any
+zip(lists: any): any
     out = {}
     if lists == nil or rawlen(lists) == 0 return out end
     min_len = rawlen(lists[1])
@@ -257,7 +257,7 @@ std_table_zip(lists: any): any
     out
 end
 
-std_table_from_pairs(pairs: any): any
+from_pairs(pairs: any): any
     out = {}
     if pairs == nil return out end
     i = 1
@@ -271,7 +271,7 @@ std_table_from_pairs(pairs: any): any
     out
 end
 
-std_table_to_pairs(t: any): any
+to_pairs(t: any): any
     out = {}
     if t == nil return out end
     for k, v in t
@@ -280,7 +280,7 @@ std_table_to_pairs(t: any): any
     out
 end
 
-std_table_pick(t: any, keys: any): any
+pick(t: any, keys: any): any
     out = {}
     if t == nil or keys == nil return out end
     i = 1
@@ -294,7 +294,7 @@ std_table_pick(t: any, keys: any): any
     out
 end
 
-std_table_omit(t: any, keys: any): any
+omit(t: any, keys: any): any
     out = {}
     if t == nil return out end
     omit_set = {}
@@ -313,7 +313,7 @@ std_table_omit(t: any, keys: any): any
     out
 end
 
-std_table_find(list: any, fn: any): any
+find(list: any, fn: any): any
     if list == nil return nil end
     i = 1
     while i <= rawlen(list)
@@ -323,7 +323,7 @@ std_table_find(list: any, fn: any): any
     nil
 end
 
-std_table_every(list: any, fn: any): bool
+every(list: any, fn: any): bool
     if list == nil return true end
     i = 1
     while i <= rawlen(list)
@@ -333,7 +333,7 @@ std_table_every(list: any, fn: any): bool
     true
 end
 
-std_table_some(list: any, fn: any): bool
+some(list: any, fn: any): bool
     if list == nil return false end
     i = 1
     while i <= rawlen(list)
@@ -343,35 +343,3 @@ std_table_some(list: any, fn: any): bool
     false
 end
 
-M = {}
-M.len = std_table_len
-M.keys = std_table_keys
-M.values = std_table_values
-M.clone = std_table_clone
-M.merge = std_table_merge
-M.contains = std_table_contains
-M.index_of = std_table_index_of
-M.reverse = std_table_reverse
-M.map = std_table_map
-M.filter = std_table_filter
-M.reduce = std_table_reduce
-M.clear = std_table_clear
-M.is_empty = std_table_is_empty
-M.slice = std_table_slice
-M.concat = std_table_concat
-M.sort = std_table_sort
-M.unpack = std_table_unpack
-M.insert = std_table_insert
-M.remove = std_table_remove
-M.count = std_table_count
-M.flat = std_table_flat
-M.unique = std_table_unique
-M.zip = std_table_zip
-M.from_pairs = std_table_from_pairs
-M.to_pairs = std_table_to_pairs
-M.pick = std_table_pick
-M.omit = std_table_omit
-M.find = std_table_find
-M.every = std_table_every
-M.some = std_table_some
-M

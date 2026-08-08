@@ -22,5 +22,5 @@ end
 
 print("=== @comp.rewrite.bundle showcase ===")
 print("bundle = " .. @comp.rewrite.describe("algebraic"))
-print("rules = " .. tostring(@comp.rewrite.rulecount()))
-print("result = " .. tostring(sum()))
+print("rules = " .. to(str)(@comp.rewrite.rulecount()))
+print("result = " .. to(str)(sum()))

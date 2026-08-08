@@ -8,7 +8,7 @@ std = req "std"
 search_paths(pattern: str, paths: any): any
     hits: any = {}
     for i = 1, #paths
-        p = tostring(paths[i])
+        p = to(str)(paths[i])
         if string.find(p, pattern, 1, true)
             hits[#hits + 1] = p
         end

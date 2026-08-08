@@ -10,9 +10,9 @@ concept HasTag
     tag: str
 end
 
-type Point = { x: f64, y: f64, tag: str }
-type Pair = { x: f64, y: f64, tag: str }
-type Label = { tag: str }
+Point: { x: f64, y: f64, tag: str }
+Pair: { x: f64, y: f64, tag: str }
+Label: { tag: str }
 
 @comp.define.derive("PairApi", generate(meta) -> str
     acc = "/* pair " .. meta.name .. " */\n"
@@ -30,7 +30,7 @@ end)
 -- One @comp.ceiling line → O(types × fields) + O(types² × fields) C
 @c.emit(@comp.ceiling("HasXY", PairApi, "HasTag"))
 
-pair_sig(a, b) -> str
+pair_sig(a, b): str
     a.name .. "x" .. b.name .. ";"
 end
 

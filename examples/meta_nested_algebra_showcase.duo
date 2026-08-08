@@ -6,7 +6,7 @@
 
 -- Level A: match callback calls interpolate (original G-059 repro)
 TYPEDEFS = @comp.match("i32|i64|f64", fun(m)
-    @comp.interpolate("typedef {name} duo_t_{idx};\n", {name = m.pattern, idx = tostring(m.index)})
+    @comp.interpolate("typedef {name} duo_t_{idx};\n", {name = m.pattern, idx = to(str)(m.index)})
 end)
 
 -- Level B: match callback calls zip with folded-concat specs
@@ -23,9 +23,9 @@ concept HasXY
     y: f64
 end
 
-type Vec2 = { x: f64, y: f64 }
-type Vec3 = { x: f64, y: f64, z: f64 }
-type Pt = { x: f64, y: f64 }
+Vec2: { x: f64, y: f64 }
+Vec3: { x: f64, y: f64, z: f64 }
+Pt: { x: f64, y: f64 }
 
 SUBSETS = @comp.power("HasXY", fun(s)
     s.name .. ";"
@@ -44,7 +44,7 @@ has_f64_mul = @comp.str.contains(PAIRS, "f64_mul")
 
 ok = (TD_N == 3 and has_i32_add and has_i64_mul and has_f64_mul and CASCADE_N == 7)
 print("=== nested algebra showcase ===")
-print("typedef_lines = " .. tostring(TD_N) .. "  (expect 3)")
-print("nested_zip_ok = " .. tostring(has_i32_add and has_i64_mul and has_f64_mul))
-print("cascade_lines = " .. tostring(CASCADE_N) .. "  (expect 7 = 2^3-1)")
-print("RESULT nested_algebra_ok = " .. tostring(ok))
+print("typedef_lines = " .. to(str)(TD_N) .. "  (expect 3)")
+print("nested_zip_ok = " .. to(str)(has_i32_add and has_i64_mul and has_f64_mul))
+print("cascade_lines = " .. to(str)(CASCADE_N) .. "  (expect 7 = 2^3-1)")
+print("RESULT nested_algebra_ok = " .. to(str)(ok))

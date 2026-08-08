@@ -1,21 +1,64 @@
--- std.compiler.parser — SH-04 seed: a recursive-descent expression parser in Duo.
+-- std.compiler.parser — SH-04: a recursive-descent parser in Duo.
 --
--- This is the core shape of `src/parser.zig`: precedence climbing over a token
--- stream with recursive descent through the grammar levels, reduced to the
--- arithmetic subset that the direct backend can lower today.
+-- Three layers, in increasing fidelity to the production `src/parser.zig`:
 --
---   expr   := term   (('+' | '-') term)*
---   term   := factor (('*' | '/') factor)*
---   factor := NUMBER | '(' expr ')'
+--   L1  Character-driven expression parser (precedence climbing, mutual
+--       recursion, ABI-register record result). This is the part the direct
+--       ARM64 backend can lower today, and `eval` (below) is its exported
+--       proof entry point — keep it pristine.
+--   L2  Token-driven expression parser over the `std.compiler.lexer` token
+--       stream (`next`/`peek`), the interface `src/parser.zig` itself uses.
+--   L3  Statement-level recursive descent over the same token stream that
+--       produces s-expression syntax-graph projections (the spine of P16-WS5,
+--       the syntax graph). This layer moved SH-04 off seed_only.
 --
--- Mutual recursion between `parse_expr` and `parse_factor` is the point: a
--- recursive-descent parser is nothing but a cycle of such calls, and this proves
--- the cycle lowers to native ARM64. Results ride the ABI registers as a 2-field
--- record, so no step allocates.
+-- Bounded-subset grammar (L3), documented against `docs/GRAMMAR_SPEC.md`:
 --
--- What is NOT here yet, and is what keeps SH-04 at seed_only: statements,
--- declarations, types, attributes, and the token-stream interface to
--- std.compiler.lexer. This parses characters, not tokens.
+--   program := stmt*
+--   stmt    := 'fun' NAME '(' params ')' (':' type)? (('=' expr)? block | block)
+--            |  NAME '(' params ')' ...            (bare decl — requires a ':'
+--            |                                     annotation in params/return;
+--            |                                     untyped bare decls need 'fun')
+--            |  'if' expr (stmt|elseif|else)* 'end'
+--            |  'while' expr stmt* 'end'
+--            |  'return' expr?
+--            |  '@' directive                       (prefix @)
+--            |  NAME ('='|'+='|'-='|'*='|'/='|'%='|'^=') expr
+--            |  expr
+--   params  := (param (',' param)*)?
+--   param   := NAME (':' type)?
+--   type    := (NAME | i8..u64 | f32|f64|bool|void|str) ('.' ...)*
+--   expr    := or | or 'or' or ...
+--            | and 'and' and | cmp (('=='|'!='|'<='|'>='|'<'|'>') cmp)?
+--            | add (('+'|'-'|'..') add)* | term (('*'|'/'|'//'|'%') term)*
+--            | unary ('-'|'not') unary | postfix
+--            | primary ( '(' args ')' | '.' NAME | '@' NAME | STRING )*
+--   primary := INT | FLOAT | STRING | NAME | true|false|nil
+--            | '(' expr ')' | '{' desc '}' | 'if' expr ... 'end'
+--
+-- s-expression projections (the syntax-graph spine):
+--
+--   program := (program <stmt>...)
+--   name    := <source text>
+--   literal := <source text>                 42, 3.5, "hi", true, false, nil
+--   binop   := (+ l r) (- l r) (* l r) (/ l r) (// l r) (% l r) (.. l r)
+--              (= l r) (!= l r) (< l r) (<= l r) (> l r) (>= l r)
+--              (and l r) (or l r) (not x)    (== and != both project as '=')
+--   call    := (call <callee> <arg>...)      string-literal sugar included
+--   dot     := (dot <base> <name>)
+--   assign  := (assign <name> <expr>)        (+= etc.) → (assign-op <op> ...)
+--   fun     := (fun <name> (params (param n t)...) (ret <type>)? <body>...)
+--   if      := (if <cond> <stmt>... (elseif <cond> <stmt>...)* (else <stmt>...)?)
+--   while   := (while <cond> <stmt>...)
+--   return  := (return) | (return <expr>)
+--   at      := (at <name> <name-or-literal>...)      @comp.c.export("x")
+--   anchor  := (anchor <expr> <name>)                postfix foo@bar
+--   desc    := (desc <key> <value>...)               { x = 1, y = 2 }
+--
+-- Errors: any grammar violation sets `lx.has_error` and projects a `(error)`
+-- marker; `parse_status` reports 0 (clean) vs 1 (rejected) so the compile-fail
+-- corpus is a binary differential. Unsupported-but-valid Duo (match, enum,
+-- type, @comp.define...) rejects too — that is the bounded-subset boundary.
 
 -- A parse result: the value produced, and the position after it.
 Res: @{ val: i64, pos: i64 }
@@ -122,8 +165,1585 @@ end
 -- Returning just the value keeps the whole parser reachable from natively
 -- lowered code: the caller gets an i64 through x0 and the record never crosses
 -- the module boundary.
+-- GAP (Pass 59 FF-1): this one declaration stays in the bare form because
+-- `@comp.c.export` does not attach to a value-form binding — it degrades into a
+-- runtime call to an undefined `__c_export`. Minimal repro and status in
+-- docs/plans/pass60_gap_register.duo (GAP-12). Every other declaration in this file is
+-- canonical `name = (params): ret`.
 @comp.c.export("duo_parse_eval")
 eval(src: str): i64
     r = parse_expr(src, 1)
     return r.val
+end
+
+
+-- ── SH-04 step 2: the same grammar, driven by the TOKEN STREAM ──────────────
+--
+-- Everything above parses characters. That is what kept SH-04 at seed_only:
+-- a real parser consumes the lexer's tokens, and `std.compiler.lexer` is
+-- already proven token-for-token equal to `src/lexer.zig` (SH-03). These
+-- functions are the same precedence-climbing grammar re-expressed over
+-- `lexer.next` / `lexer.peek`, which is the interface `src/parser.zig` itself
+-- uses (`pk` / `adv`).
+--
+--   expr := term (('+' | '-') term)*
+--   term := factor (('*' | '/') factor)*
+--   factor := INT_LIT | '(' expr ')'
+--
+-- Operator dispatch is on `token.KIND_*` rather than on raw bytes, so adding a
+-- grammar level is a token-kind edit, not a character comparison.
+
+-- GAP: these two keep the graveyard `req` spelling. `req` brings the module's
+-- TYPE names into scope and the ambient root binding does not, so `lx: Lexer`
+-- and `t: Tok` fail to compile ("unknown type name 'duo_Lexer'"). Retyping the
+-- parameters to `any` would lose the native record lowering SH-04 depends on.
+-- Measured, not assumed; the dead spelling stays until ambient roots carry
+-- type names.
+lexer = req "std.compiler.lexer"
+token = req "std.compiler.token"
+
+-- factor := INT_LIT | '(' expr ')'
+-- Mutual recursion with parse_expr_tok, exactly as in the character version.
+parse_factor_tok = (lx: any): i64
+    t = lexer.next(lx)
+    if t.kind == token.KIND_INT_LIT
+        return t.int_val
+    end
+    if t.kind == token.KIND_LPAREN
+        v = parse_expr_tok(lx)
+        c = lexer.peek(lx)
+        if c.kind == token.KIND_RPAREN
+            _d = lexer.next(lx)
+        end
+        return v
+    end
+    0
+end
+
+-- term := factor (('*' | '/') factor)*
+parse_term_tok = (lx: any): i64
+    acc = parse_factor_tok(lx)
+    cont = 1
+    while cont == 1
+        p = lexer.peek(lx)
+        if p.kind == token.KIND_STAR
+            _a = lexer.next(lx)
+            acc = acc * parse_factor_tok(lx)
+        elseif p.kind == token.KIND_SLASH
+            _b = lexer.next(lx)
+            rhs = parse_factor_tok(lx)
+            if rhs != 0
+                acc = acc / rhs
+            end
+        else
+            cont = 0
+        end
+    end
+    acc
+end
+
+-- expr := term (('+' | '-') term)*
+parse_expr_tok = (lx: any): i64
+    acc = parse_term_tok(lx)
+    cont = 1
+    while cont == 1
+        p = lexer.peek(lx)
+        if p.kind == token.KIND_PLUS
+            _a = lexer.next(lx)
+            acc = acc + parse_term_tok(lx)
+        elseif p.kind == token.KIND_MINUS
+            _b = lexer.next(lx)
+            acc = acc - parse_term_tok(lx)
+        else
+            cont = 0
+        end
+    end
+    acc
+end
+
+-- Token-driven entry point: lex, then parse the token stream.
+eval_tokens = (src: str): i64
+    lx = lexer.new(src, "<expr>")
+    parse_expr_tok(lx)
+end
+
+
+-- ── SH-04 step 3 (L3): statement-level descent + s-expression projections ──
+--
+-- Grammar and projection formats are documented at the top of this file. The
+-- functions below are a single mutually recursive family: `proj_stmt` dispatches
+-- on the token kind, block parsers (`proj_body` / `proj_body_until_else`) loop
+-- `proj_stmt` until a block terminator, and `proj_expr` climbs precedence.
+-- Everything rides `lexer.next` / `lexer.peek` — no token array, no allocation
+-- beyond the strings being built.
+
+is_assign_kind = (k: i64): bool
+    if k == token.KIND_ASSIGN or k == token.KIND_PLUS_ASSIGN or k == token.KIND_MINUS_ASSIGN
+        return true
+    end
+    if k == token.KIND_STAR_ASSIGN or k == token.KIND_SLASH_ASSIGN or k == token.KIND_PERCENT_ASSIGN
+        return true
+    end
+    if k == token.KIND_CARET_ASSIGN
+        return true
+    end
+    false
+end
+
+is_type_kind = (k: i64): bool
+    if k == token.KIND_NAME
+        return true
+    end
+    if k >= token.KIND_I8 and k <= token.KIND_STR
+        return true
+    end
+    false
+end
+
+-- Mark the parse failed. `lx` is the lexer (a table on this path), so the flag
+-- persists through the recursion and is readable by `parse_status`.
+-- A parser must terminate on ANY input, including truncated and malformed
+-- source. Every loop below calls a sub-parser that is *supposed* to consume a
+-- token; when one does not -- at EOF, or on a token no arm handles -- the loop
+-- spins forever with no diagnostic and no output. Comparing the cursor across
+-- the call makes termination structural instead of depending on every arm being
+-- right, which is the assumption that actually failed: parsing lib/std/trace.duo
+-- did not finish in 10 minutes and no single construct reproduced it in
+-- isolation.
+-- Progress is `pos` AND `has_peeked` together, never `pos` alone.
+--
+-- `lexer.peek` lexes ahead: it advances `pos` and sets `has_peeked`. Consuming
+-- that token then clears `has_peeked` WITHOUT moving `pos` again. So a
+-- one-token statement — `break`, a bare name — leaves `pos` untouched and a
+-- pos-only check calls it a stall. That fired on every `break` in the corpus
+-- and cost 33 files when I put the same check in proj_if.
+stalled = (lx: Lexer, before: i64, peeked: bool): bool
+    -- Never at EOF. There the peek cannot advance `pos` and there is no token
+    -- left to clear `has_peeked`, so a FINAL one-token statement looks stalled
+    -- and gets dropped: a file whose last line is a bare name and which lacks a
+    -- trailing newline lost that statement. Every enclosing loop already
+    -- terminates on EOF, so refusing to fire here cannot reintroduce a spin.
+    if lexer.peek(lx).kind == token.KIND_EOF
+        return false
+    end
+    lx.pos == before and lx.has_peeked == peeked
+end
+
+-- A member name is an ordinary identifier even when the lexer classes it as a
+-- keyword: `a:match(p)`, `t.type`, `x:next()`. Data always wins the name, so the
+-- check is spelling, not token class — `match` lexes as its own kind and every
+-- `:match(...)` call in the corpus was rejected because of it.
+is_member_name = (t: Tok): bool
+    if #t.text == 0
+        return false
+    end
+    c: i64 = string.byte(t.text, 1)
+    is_ident_start_byte(c)
+end
+
+is_ident_start_byte = (c: i64): bool
+    (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or c == 95
+end
+
+mark_error = (lx: Lexer)
+    -- Record WHERE the parse first went wrong, not just that it did. A bare
+    -- boolean makes `parse_status` a yes/no oracle, which is enough to gate a
+    -- 55-case corpus and useless for driving coverage up: with 201 of 245
+    -- lib/std files rejected, the only question that matters is which construct
+    -- stopped each one. Only the first is kept — later marks are downstream of
+    -- the first and would just name recovery noise.
+    if not lx.has_error
+        lx.error_loc = lexer.peek(lx).loc
+    end
+    lx.has_error = true
+end
+
+-- Line of the first parse failure, or 0 when the source parses clean.
+parse_error_line = (src: str, file: str): i64
+    lx: Lexer = lexer.new(src, file)
+    _p = proj_program_lx(lx)
+    if lx.has_error
+        return lx.error_loc.line
+    end
+    0
+end
+
+-- `;` is a separator, not a statement. Skipped by the block loops rather than
+-- by proj_stmt: proj_stmt returns "" to mean "end of block", so a trailing `x =
+-- 1;` would consume the `;`, hit EOF, return "" and be reported as an error.
+skip_semis = (lx: Lexer)
+    while lexer.peek(lx).kind == token.KIND_SEMI
+        _s = lexer.next(lx)
+    end
+end
+
+-- Two-token lookahead, via the lexer's own save/restore state.
+peek2 = (lx: Lexer): Tok
+    st = lexer.save_state(lx)
+    _a = lexer.next(lx)
+    t = lexer.peek(lx)
+    lexer.restore_state(lx, st)
+    t
+end
+
+-- Join two projection fragments with a space, omitting empty fragments so no
+-- trailing-space artifacts leak into the sexpr.
+join = (a: str, b: str): str
+    if a == "" return b end
+    if b == "" return a end
+    a .. " " .. b
+end
+
+-- Re-quote a string-literal token text (the lexer strips the quotes).
+quote = (s: str): str
+    "\"" .. s .. "\""
+end
+
+-- Lookahead scan: does the parenthesised group at the cursor contain a `:`
+-- at depth 1 (a type annotation)? That is what separates a declaration
+-- `f(a: i64)` from a call `f(x)`.
+-- Does the group at the cursor open a value-form function (FF-1) rather than a
+-- parenthesised expression? Cursor is on `(`.
+--
+-- Two signals, the same pair the declaration discriminator uses: a parameter
+-- annotation inside the group, or a `:` immediately after the closing paren.
+-- `(a + b) * c` has neither and stays an expression.
+is_lambda_head = (lx: Lexer): bool
+    st = lexer.save_state(lx)
+    _lp = lexer.next(lx)
+    depth = 1
+    at_slot_start = true
+    found = false
+    while depth > 0
+        t = lexer.next(lx)
+        if t.kind == token.KIND_EOF break end
+        if t.kind == token.KIND_LPAREN
+            depth = depth + 1
+            at_slot_start = false
+        elseif t.kind == token.KIND_RPAREN
+            depth = depth - 1
+            at_slot_start = false
+        elseif t.kind == token.KIND_COMMA and depth == 1
+            at_slot_start = true
+        elseif t.kind == token.KIND_NAME and depth == 1 and at_slot_start
+            if lexer.peek(lx).kind == token.KIND_COLON
+                found = true
+                break
+            end
+            at_slot_start = false
+        else
+            at_slot_start = false
+        end
+    end
+    if not found and depth == 0
+        if lexer.peek(lx).kind == token.KIND_COLON
+            found = true
+        end
+    end
+    lexer.restore_state(lx, st)
+    found
+end
+
+-- The unannotated value-form: `() f(1)` and `(a, b) a < b`.
+--
+-- Neither spelling is a legal parenthesised expression — `()` is empty and
+-- `(a, b)` has a top-level comma — so recognising them costs no ambiguity.
+-- `(a)` deliberately stays an expression: it is a real parenthesised value and
+-- guessing lambda there would break arithmetic everywhere.
+is_bare_lambda_head = (lx: Lexer): bool
+    st = lexer.save_state(lx)
+    _lp = lexer.next(lx)
+    names = 0
+    commas = 0
+    plain = true
+    empty = false
+    if lexer.peek(lx).kind == token.KIND_RPAREN
+        empty = true
+    end
+    depth = 1
+    while depth > 0
+        t = lexer.next(lx)
+        if t.kind == token.KIND_EOF
+            plain = false
+            break
+        end
+        if t.kind == token.KIND_RPAREN
+            depth = depth - 1
+        elseif t.kind == token.KIND_LPAREN
+            depth = depth + 1
+            plain = false
+        elseif t.kind == token.KIND_NAME
+            names = names + 1
+        elseif t.kind == token.KIND_COMMA
+            commas = commas + 1
+        else
+            plain = false
+        end
+    end
+    lexer.restore_state(lx, st)
+    if empty
+        return true
+    end
+    plain and commas > 0 and names == commas + 1
+end
+
+-- Is the parenthesised group after the name a PARAMETER LIST (a declaration)
+-- rather than an argument list (a call)? GR-001 says the discriminator is a
+-- type annotation on a parameter.
+--
+-- Two wrong versions preceded this one, and both were found by the corpus
+-- number rather than by reading:
+--
+--   * The original arrived with the cursor on the NAME and consumed it as if it
+--     were the `(`, so every parameter colon sat at depth 2 and only a RETURN
+--     colon was ever seen. `f(d: i64): i64` was recognised; `f(d: i64)` — no
+--     return type — parsed as a call and swallowed its whole body.
+--   * Fixing only the off-by-one made ANY depth-1 colon count, so a call whose
+--     argument is a typed lambda, `f(x, (y: i64): i64 ...)`, matched on the
+--     lambda's return colon. Coverage went 58 -> 46.
+--
+-- So match the shape precisely: a colon directly after a NAME that sits at the
+-- start of a parameter slot — right after `(` or after a `,` at depth 1.
+params_have_colon = (lx: Lexer): bool
+    st = lexer.save_state(lx)
+    _n = lexer.next(lx)
+    _lp = lexer.next(lx)
+    depth = 1
+    at_slot_start = true
+    found = false
+    while depth > 0
+        t = lexer.next(lx)
+        if t.kind == token.KIND_EOF break end
+        if t.kind == token.KIND_LPAREN
+            depth = depth + 1
+            at_slot_start = false
+        elseif t.kind == token.KIND_RPAREN
+            depth = depth - 1
+            at_slot_start = false
+        elseif t.kind == token.KIND_COMMA and depth == 1
+            at_slot_start = true
+        elseif t.kind == token.KIND_NAME and depth == 1 and at_slot_start
+            if lexer.peek(lx).kind == token.KIND_COLON
+                found = true
+                break
+            end
+            at_slot_start = false
+        else
+            at_slot_start = false
+        end
+    end
+    -- GR-001 needs at least ONE type annotation, and a RETURN type counts:
+    -- `f(a, b): i64 ... end` is a declaration with unannotated parameters. The
+    -- original predicate matched this by accident (its off-by-one only ever saw
+    -- return colons); dropping it cost 12 files, so it is explicit now. The
+    -- colon must follow the CLOSING paren, which is why a call carrying a typed
+    -- lambda does not match — that colon is inside the group.
+    if not found and depth == 0
+        if lexer.peek(lx).kind == token.KIND_COLON
+            found = true
+        end
+    end
+    lexer.restore_state(lx, st)
+    found
+end
+
+-- One parameter: NAME (':' type)?.
+proj_param = (lx: Lexer): str
+    n = lexer.next(lx)
+    p = "(param " .. n.text
+    if lexer.peek(lx).kind == token.KIND_COLON
+        _c = lexer.next(lx)
+        p = p .. " " .. proj_type(lx)
+    end
+    p .. ")"
+end
+
+-- Comma-separated parameter list, consuming the closing ')'.
+proj_params = (lx: Lexer): str
+    acc = ""
+    while true
+        t = lexer.peek(lx)
+        if t.kind == token.KIND_RPAREN
+            _r = lexer.next(lx)
+            return acc
+        end
+        if t.kind == token.KIND_EOF
+            mark_error(lx)
+            return acc
+        end
+        before: i64 = lx.pos
+        peeked = lx.has_peeked
+        acc = join(acc, proj_param(lx))
+        if stalled(lx, before, peeked)
+            mark_error(lx)
+            return acc
+        end
+        if lexer.peek(lx).kind == token.KIND_COMMA
+            _c = lexer.next(lx)
+        end
+    end
+end
+
+-- Type reference: primitive keyword kinds or a NAME (record type).
+-- ONE type, optionally dotted: `i64`, `Lexer`, `std.str`.
+--
+-- This used to loop while the next token was a type kind, and `is_type_kind`
+-- accepts KIND_NAME — so a return type ran on into the body and swallowed its
+-- first token. `add(a: i64): i64 a end` projected `(ret i64 a)` with the body
+-- gone. It survived because the only typed cases in the corpus used the
+-- `= expr` body form, where `=` is not a type kind and stopped the run; every
+-- block-bodied typed function was mis-parsed.
+-- proj_params expects the `(` already consumed; this is the entry for callers
+-- holding the cursor on it.
+proj_params_from_lparen = (lx: Lexer): str
+    _lp = lexer.next(lx)
+    proj_params(lx)
+end
+
+proj_type = (lx: Lexer): str
+    t = lexer.peek(lx)
+    if is_type_kind(t.kind) == false
+        return ""
+    end
+    _n = lexer.next(lx)
+    acc = t.text
+    while lexer.peek(lx).kind == token.KIND_DOT
+        _d = lexer.next(lx)
+        seg = lexer.peek(lx)
+        if is_type_kind(seg.kind) == false
+            mark_error(lx)
+            return acc
+        end
+        _s = lexer.next(lx)
+        acc = acc .. "." .. seg.text
+    end
+    acc
+end
+
+-- Statements until 'end' (consumed). 'else'/'elseif' do not terminate here.
+proj_body = (lx: Lexer): str
+    acc = ""
+    while true
+        skip_semis(lx)
+        t = lexer.peek(lx)
+        if t.kind == token.KIND_END
+            _e = lexer.next(lx)
+            return acc
+        end
+        if t.kind == token.KIND_EOF
+            mark_error(lx)
+            return acc
+        end
+        before: i64 = lx.pos
+        peeked = lx.has_peeked
+        acc = join(acc, proj_stmt(lx))
+        if stalled(lx, before, peeked)
+            mark_error(lx)
+            return acc
+        end
+    end
+end
+
+-- Statements until 'end', 'else' or 'elseif' — for if/else block parsing.
+proj_body_until_else = (lx: Lexer): str
+    acc = ""
+    while true
+        skip_semis(lx)
+        t = lexer.peek(lx)
+        if t.kind == token.KIND_ELSE or t.kind == token.KIND_ELSEIF or t.kind == token.KIND_END or t.kind == token.KIND_EOF
+            return acc
+        end
+        before: i64 = lx.pos
+        peeked = lx.has_peeked
+        acc = join(acc, proj_stmt(lx))
+        if stalled(lx, before, peeked)
+            mark_error(lx)
+            return acc
+        end
+    end
+end
+
+-- fun NAME '(' params ')' (':' type)? (('=' expr) | body) ...
+-- `first` is the peeked token: either the 'fun'/'function' keyword (consumed,
+-- then the NAME is read) or the bare-declaration NAME itself.
+proj_fun_decl = (lx: Lexer, first: Tok): str
+    if first.kind == token.KIND_FUN or first.kind == token.KIND_FUNCTION
+        _k = lexer.next(lx)
+        n = lexer.next(lx)
+    else
+        n = lexer.next(lx)
+    end
+    _lp = lexer.next(lx)
+    params = proj_params(lx)
+    s = "(fun " .. n.text .. " (params"
+    if params != ""
+        s = s .. " " .. params
+    end
+    s = s .. ")"
+    if lexer.peek(lx).kind == token.KIND_COLON
+        _c = lexer.next(lx)
+        s = s .. " (ret " .. proj_type(lx) .. ")"
+    end
+    if lexer.peek(lx).kind == token.KIND_ASSIGN
+        _e = lexer.next(lx)
+        e = proj_expr(lx)
+        t = lexer.next(lx)
+        if t.kind != token.KIND_END
+            mark_error(lx)
+        end
+        return s .. " " .. e .. ")"
+    end
+    -- A BODILESS declaration: `@ffi("SSL_CTX_new")` then
+    -- `ssl_ctx_new(method: any): any` and nothing else. It has no body and no
+    -- `end`, so calling proj_body sent it hunting to EOF and took the rest of
+    -- the file with it — four modules (tls, onnx, sqlite, regex) failed
+    -- entirely on this.
+    --
+    -- Layout is the signal, as everywhere else: a body is indented, so a token
+    -- on a later line at column 1 is the next top-level construct, not this
+    -- declaration's body.
+    nxt = lexer.peek(lx)
+    if nxt.kind == token.KIND_EOF
+        return s .. ")"
+    end
+    if nxt.loc.line != first.loc.line and nxt.loc.col == 1 and nxt.kind != token.KIND_END
+        return s .. ")"
+    end
+    s .. " " .. proj_body(lx) .. ")"
+end
+
+-- fun '(' params ')' (':' type)? body 'end' — anonymous, expression position.
+proj_fun_expr = (lx: Lexer): str
+    _f = lexer.next(lx)
+    if lexer.peek(lx).kind != token.KIND_LPAREN
+        mark_error(lx)
+        return "(error)"
+    end
+    _lp = lexer.next(lx)
+    params = proj_params(lx)
+    s = "(lambda (params"
+    if params != ""
+        s = s .. " " .. params
+    end
+    s = s .. ")"
+    if lexer.peek(lx).kind == token.KIND_COLON
+        _c = lexer.next(lx)
+        s = s .. " (ret " .. proj_type(lx) .. ")"
+    end
+    body = proj_body(lx)
+    if body != ""
+        return s .. " " .. body .. ")"
+    end
+    s .. ")"
+end
+
+-- if expr ... ('elseif' expr ...)* ('else' ...)? 'end'
+proj_if = (lx: Lexer): str
+    _i = lexer.next(lx)
+    cond = proj_expr(lx)
+    s = "(if " .. cond
+    while true
+        skip_semis(lx)
+        t = lexer.peek(lx)
+        if t.kind == token.KIND_ELSEIF
+            _e = lexer.next(lx)
+            c2 = proj_expr(lx)
+            s = s .. " (elseif " .. c2
+            b = proj_body_until_else(lx)
+            if b != ""
+                s = s .. " " .. b
+            end
+            s = s .. ")"
+        elseif t.kind == token.KIND_ELSE
+            _e = lexer.next(lx)
+            s = s .. " (else"
+            b = proj_body_until_else(lx)
+            if b != ""
+                s = s .. " " .. b
+            end
+            s = s .. ")"
+        elseif t.kind == token.KIND_END
+            _e = lexer.next(lx)
+            return s .. ")"
+        elseif t.kind == token.KIND_EOF
+            mark_error(lx)
+            return s .. ")"
+        else
+            -- No `stalled` guard here, deliberately. `lexer.peek` lexes ahead
+            -- and advances `pos`, so for a one-token statement the cursor has
+            -- already moved before proj_stmt runs and the check fires
+            -- spuriously — it cost 33 files (184 -> 151) when I added it. The
+            -- arms above already consume or return on every terminator, so this
+            -- loop cannot spin the way the accumulating loops could.
+            s = s .. " " .. proj_stmt(lx)
+        end
+    end
+end
+
+-- while expr ... 'end'
+proj_while = (lx: Lexer): str
+    _w = lexer.next(lx)
+    cond = proj_expr(lx)
+    -- `while c do ... end` — proj_for already tolerated the optional `do`;
+    -- proj_while did not, so one `do` swallowed the loop's `end` and left the
+    -- enclosing function unterminated to the end of the file. That is why so
+    -- many blockers reported at EOF with nothing wrong at the reported line.
+    skip_do(lx)
+    body = proj_body(lx)
+    s = "(while " .. cond
+    if body != ""
+        s = s .. " " .. body
+    end
+    s .. ")"
+end
+
+-- `do` is optional in .duo and mandatory in .lua; the lexer feeds both, so the
+-- loop forms accept it and drop it rather than projecting it.
+skip_do = (lx: Lexer)
+    if lexer.peek(lx).kind == token.KIND_DO
+        _d = lexer.next(lx)
+    end
+end
+
+-- for NAME '=' expr ',' expr (',' expr)? body 'end'   -- numeric
+-- for NAME (',' NAME)* 'in' expr body 'end'           -- generic
+--
+-- Projected as '(for NAME (range A B [S]) body...)' and
+-- '(forin (names N...) EXPR body...)'. The `range` grouping is what keeps an
+-- optional step unambiguous: without it, a three-expression header and a
+-- two-expression header followed by a body statement project identically.
+proj_for = (lx: Lexer): str
+    _f = lexer.next(lx)
+    n1 = lexer.next(lx)
+    if n1.kind != token.KIND_NAME
+        mark_error(lx)
+        return "(for (error))"
+    end
+    if lexer.peek(lx).kind == token.KIND_ASSIGN
+        _a = lexer.next(lx)
+        start = proj_expr(lx)
+        if lexer.peek(lx).kind != token.KIND_COMMA
+            mark_error(lx)
+            return "(for (error))"
+        end
+        _c = lexer.next(lx)
+        rng = "(range " .. start .. " " .. proj_expr(lx)
+        if lexer.peek(lx).kind == token.KIND_COMMA
+            _c2 = lexer.next(lx)
+            rng = rng .. " " .. proj_expr(lx)
+        end
+        rng = rng .. ")"
+        skip_do(lx)
+        body = proj_body(lx)
+        s = "(for " .. n1.text .. " " .. rng
+        if body != ""
+            s = s .. " " .. body
+        end
+        return s .. ")"
+    end
+    names = n1.text
+    while lexer.peek(lx).kind == token.KIND_COMMA
+        _c = lexer.next(lx)
+        nx = lexer.next(lx)
+        if nx.kind != token.KIND_NAME
+            mark_error(lx)
+            return "(forin (error))"
+        end
+        names = names .. " " .. nx.text
+    end
+    if lexer.peek(lx).kind != token.KIND_IN
+        mark_error(lx)
+        return "(forin (error))"
+    end
+    _i = lexer.next(lx)
+    seq = proj_expr(lx)
+    skip_do(lx)
+    body = proj_body(lx)
+    s = "(forin (names " .. names .. ") " .. seq
+    if body != ""
+        s = s .. " " .. body
+    end
+    s .. ")"
+end
+
+-- return expr?
+proj_return = (lx: Lexer): str
+    _r = lexer.next(lx)
+    t = lexer.peek(lx)
+    if t.kind == token.KIND_END or t.kind == token.KIND_ELSE or t.kind == token.KIND_ELSEIF or t.kind == token.KIND_EOF
+        return "(return)"
+    end
+    -- `return nil, Error.Truncated` — correlated packs are the error idiom, so
+    -- a single-value return would reject most failure paths in the stdlib.
+    vals = proj_expr(lx)
+    while lexer.peek(lx).kind == token.KIND_COMMA
+        _c = lexer.next(lx)
+        vals = vals .. " " .. proj_expr(lx)
+    end
+    "(return " .. vals .. ")"
+end
+
+-- NAME ('=' | op-assign) expr
+proj_assign = (lx: Lexer, t: Tok): str
+    _n = lexer.next(lx)
+    op = lexer.next(lx)
+    rhs = proj_expr(lx)
+    if op.kind == token.KIND_ASSIGN
+        return "(assign " .. t.text .. " " .. rhs .. ")"
+    end
+    "(assign-op " .. op.text .. " " .. t.text .. " " .. rhs .. ")"
+end
+
+-- ('local'|'global') NAME (':' type)? ('=' expr)?
+proj_decl = (lx: Lexer): str
+    kw = lexer.next(lx)
+    n = lexer.next(lx)
+    if n.kind != token.KIND_NAME
+        mark_error(lx)
+        return "(error)"
+    end
+    s = "(" .. kw.text .. " " .. n.text
+    if lexer.peek(lx).kind == token.KIND_COLON
+        _c = lexer.next(lx)
+        s = s .. " (type " .. proj_type(lx) .. ")"
+    end
+    if lexer.peek(lx).kind == token.KIND_ASSIGN
+        _a = lexer.next(lx)
+        s = s .. " " .. proj_expr(lx)
+    end
+    s .. ")"
+end
+
+-- repeat body 'until' expr
+--
+-- The body is read with proj_stmt rather than proj_body because `repeat` closes
+-- on `until`, not `end`. proj_stmt returns "" at `end`/`else`/`elseif`, which
+-- would spin here, so an empty projection is treated as the error it is.
+proj_repeat = (lx: Lexer): str
+    _r = lexer.next(lx)
+    acc = ""
+    while true
+        skip_semis(lx)
+        t = lexer.peek(lx)
+        if t.kind == token.KIND_UNTIL
+            _u = lexer.next(lx)
+            s = "(repeat"
+            if acc != ""
+                s = s .. " " .. acc
+            end
+            return s .. " (until " .. proj_expr(lx) .. "))"
+        end
+        if t.kind == token.KIND_EOF
+            mark_error(lx)
+            return "(repeat (error))"
+        end
+        st = proj_stmt(lx)
+        if st == ""
+            mark_error(lx)
+            return "(repeat (error))"
+        end
+        acc = join(acc, st)
+    end
+end
+
+-- A statement starting with a NAME whose target is not a bare name:
+-- `t[i] = v`, `t.f = v`, `a, b = 1, 2`, or a plain expression statement.
+--
+-- The target is parsed as a postfix expression and the assignment operator is
+-- checked afterwards, rather than being predicted from lookahead — the target
+-- grammar is exactly the postfix grammar, so duplicating it would be the only
+-- other option and the two copies would drift.
+proj_target_or_expr = (lx: Lexer): str
+    -- Save first: if no assignment operator follows, this was never a target,
+    -- it was the head of an ordinary expression statement. Returning the
+    -- postfix alone truncated it — `a.x * b.x + a.y * b.y` as a statement
+    -- projected `(dot a x)` and dropped the rest. Rewind and let proj_expr
+    -- parse the whole thing rather than trying to resume mid-expression.
+    st = lexer.save_state(lx)
+    first = proj_postfix(lx)
+    if lexer.peek(lx).kind == token.KIND_COMMA
+        targets = first
+        while lexer.peek(lx).kind == token.KIND_COMMA
+            _c = lexer.next(lx)
+            targets = targets .. " " .. proj_postfix(lx)
+        end
+        if not is_assign_kind(lexer.peek(lx).kind)
+            -- A trailing `string.sub(buf, 1, n), nil` is a demand-returned PACK.
+            -- My first attempt projected EVERY comma list as one, which also
+            -- accepted a bare `a, b` mid-body — a corpus rejection — and coverage
+            -- fell 184 -> 151. The tail test is local after all: a pack is the
+            -- body's value, so `end` must follow it. A top-level `a, b` (EOF
+            -- follows, no consumer) stays rejected.
+            if lexer.peek(lx).kind == token.KIND_END
+                return "(pack " .. targets .. ")"
+            end
+            mark_error(lx)
+            return "(error)"
+        end
+        op = lexer.next(lx)
+        if op.kind != token.KIND_ASSIGN
+            mark_error(lx)
+            return "(error)"
+        end
+        vals = proj_expr(lx)
+        while lexer.peek(lx).kind == token.KIND_COMMA
+            _c2 = lexer.next(lx)
+            vals = vals .. " " .. proj_expr(lx)
+        end
+        return "(assign-multi (targets " .. targets .. ") (values " .. vals .. "))"
+    end
+    if is_assign_kind(lexer.peek(lx).kind)
+        op = lexer.next(lx)
+        rhs = proj_expr(lx)
+        if op.kind == token.KIND_ASSIGN
+            return "(assign " .. first .. " " .. rhs .. ")"
+        end
+        return "(assign-op " .. op.text .. " " .. first .. " " .. rhs .. ")"
+    end
+    lexer.restore_state(lx, st)
+    proj_expr(lx)
+end
+
+-- '@' directive: dotted names, then optional parenthesised arguments.
+proj_directive = (lx: Lexer): str
+    at = lexer.next(lx)
+    s = "(at"
+    -- A directive ends with its line. Without this the loop kept eating NAMEs
+    -- and swallowed the declaration it annotates: `@comp.c.export("duo_str_sub")`
+    -- on one line and `sub(s: str, ...)` on the next parsed as ONE directive,
+    -- taking the whole function with it. Every attribute-carrying declaration in
+    -- lib/std failed this way.
+    line = at.loc.line
+    while true
+        t = lexer.peek(lx)
+        if t.loc.line != line
+            return s .. ")"
+        end
+        if t.kind == token.KIND_NAME
+            _n = lexer.next(lx)
+            s = s .. " " .. t.text
+        elseif t.kind == token.KIND_DOT
+            _d = lexer.next(lx)
+        elseif t.kind == token.KIND_LPAREN
+            s = join(s, proj_arglist(lx))
+        elseif t.kind == token.KIND_STRING_LIT
+            _n = lexer.next(lx)
+            s = s .. " " .. quote(t.text)
+        else
+            return s .. ")"
+        end
+    end
+end
+
+-- '(' arg (',' arg)* ')'
+proj_arglist = (lx: Lexer): str
+    _lp = lexer.next(lx)
+    acc = ""
+    while true
+        t = lexer.peek(lx)
+        if t.kind == token.KIND_RPAREN
+            _r = lexer.next(lx)
+            return acc
+        end
+        if t.kind == token.KIND_EOF
+            mark_error(lx)
+            return acc
+        end
+        before: i64 = lx.pos
+        peeked = lx.has_peeked
+        acc = join(acc, proj_expr(lx))
+        if stalled(lx, before, peeked)
+            mark_error(lx)
+            return acc
+        end
+        if lexer.peek(lx).kind == token.KIND_COMMA
+            _c = lexer.next(lx)
+        end
+    end
+end
+
+-- '{' key (('=' | value)) (',' ...)* '}' — descriptor / table literal.
+proj_desc_body = (lx: Lexer): str
+    s = "(desc"
+    while true
+        t = lexer.peek(lx)
+        if t.kind == token.KIND_RBRACE
+            _r = lexer.next(lx)
+            return s .. ")"
+        end
+        if t.kind == token.KIND_EOF
+            mark_error(lx)
+            return s .. ")"
+        end
+        -- A NAME is only a key when `=` or `:` follows it; `{ a, b }` is two
+        -- positional elements that happen to be names. Deciding on the NAME
+        -- alone consumed the name and then projected the *next* element as its
+        -- value, silently shifting every entry.
+        keyed = false
+        if t.kind == token.KIND_NAME
+            k2 = peek2(lx)
+            if k2.kind == token.KIND_ASSIGN or k2.kind == token.KIND_COLON
+                keyed = true
+            end
+        end
+        -- `{ [0] = "trace", [k] = v }` — a computed key.
+        if t.kind == token.KIND_LBRACKET
+            _lb = lexer.next(lx)
+            k = proj_expr(lx)
+            rb = lexer.next(lx)
+            if rb.kind != token.KIND_RBRACKET
+                mark_error(lx)
+                return s .. ")"
+            end
+            if lexer.peek(lx).kind == token.KIND_ASSIGN
+                _e = lexer.next(lx)
+            end
+            s = s .. " (key " .. k .. " " .. proj_expr(lx) .. ")"
+        elseif keyed
+            _n = lexer.next(lx)
+            _e = lexer.next(lx)
+            s = s .. " " .. t.text
+            v = proj_expr(lx)
+            if v != ""
+                s = s .. " " .. v
+            end
+        else
+            before: i64 = lx.pos
+            peeked = lx.has_peeked
+        peeked = lx.has_peeked
+            s = s .. " (item " .. proj_expr(lx) .. ")"
+            if stalled(lx, before, peeked)
+                mark_error(lx)
+                return s .. ")"
+            end
+        end
+        if lexer.peek(lx).kind == token.KIND_COMMA
+            _c = lexer.next(lx)
+        end
+    end
+end
+
+-- Precedence-climbing expression projection, highest level first.
+proj_expr = (lx: Lexer): str
+    left = proj_and(lx)
+    while true
+        t = lexer.peek(lx)
+        if t.kind == token.KIND_OR
+            _o = lexer.next(lx)
+            left = "(or " .. left .. " " .. proj_and(lx) .. ")"
+        else
+            return left
+        end
+    end
+end
+
+proj_and = (lx: Lexer): str
+    left = proj_cmp(lx)
+    while true
+        t = lexer.peek(lx)
+        if t.kind == token.KIND_AND
+            _a = lexer.next(lx)
+            left = "(and " .. left .. " " .. proj_cmp(lx) .. ")"
+        else
+            return left
+        end
+    end
+end
+
+proj_cmp = (lx: Lexer): str
+    left = proj_bor(lx)
+    t = lexer.peek(lx)
+    op = "?"
+    if t.kind == token.KIND_EQ
+        op = "="
+    elseif t.kind == token.KIND_NEQ
+        -- `!=` used to fold into `=` here, so `a != b` and `a == b` projected
+        -- to the identical s-expression and no proof could tell them apart.
+        op = "!="
+    elseif t.kind == token.KIND_LEQ
+        op = "<="
+    elseif t.kind == token.KIND_GEQ
+        op = ">="
+    elseif t.kind == token.KIND_LT
+        op = "<"
+    elseif t.kind == token.KIND_GT
+        op = ">"
+    else
+        return left
+    end
+    _o = lexer.next(lx)
+    "(" .. op .. " " .. left .. " " .. proj_bor(lx) .. ")"
+end
+
+-- Bitwise levels, Lua precedence: `|` < `~` < `&` < shift < `..`/`+`.
+-- Four levels rather than one because a single level would left-associate
+-- `a & b | c` as `(a & b) | c` only by luck of token order; Ward's decoders are
+-- full of mixed masks and shifts and would be silently mis-parsed.
+proj_bor = (lx: Lexer): str
+    left = proj_bxor(lx)
+    while lexer.peek(lx).kind == token.KIND_PIPE
+        _o = lexer.next(lx)
+        left = "(| " .. left .. " " .. proj_bxor(lx) .. ")"
+    end
+    left
+end
+
+proj_bxor = (lx: Lexer): str
+    left = proj_band(lx)
+    while lexer.peek(lx).kind == token.KIND_TILDE
+        _o = lexer.next(lx)
+        left = "(~ " .. left .. " " .. proj_band(lx) .. ")"
+    end
+    left
+end
+
+proj_band = (lx: Lexer): str
+    left = proj_shift(lx)
+    while lexer.peek(lx).kind == token.KIND_AMP
+        _o = lexer.next(lx)
+        left = "(& " .. left .. " " .. proj_shift(lx) .. ")"
+    end
+    left
+end
+
+proj_shift = (lx: Lexer): str
+    left = proj_add(lx)
+    while true
+        t = lexer.peek(lx)
+        if t.kind == token.KIND_LSHIFT
+            _o = lexer.next(lx)
+            left = "(<< " .. left .. " " .. proj_add(lx) .. ")"
+        elseif t.kind == token.KIND_RSHIFT
+            _o = lexer.next(lx)
+            left = "(>> " .. left .. " " .. proj_add(lx) .. ")"
+        else
+            return left
+        end
+    end
+end
+
+proj_add = (lx: Lexer): str
+    left = proj_term(lx)
+    while true
+        t = lexer.peek(lx)
+        if t.kind == token.KIND_PLUS
+            _o = lexer.next(lx)
+            left = "(+ " .. left .. " " .. proj_term(lx) .. ")"
+        elseif t.kind == token.KIND_MINUS
+            _o = lexer.next(lx)
+            left = "(- " .. left .. " " .. proj_term(lx) .. ")"
+        elseif t.kind == token.KIND_CONCAT
+            _o = lexer.next(lx)
+            left = "(.. " .. left .. " " .. proj_term(lx) .. ")"
+        else
+            return left
+        end
+    end
+end
+
+proj_term = (lx: Lexer): str
+    left = proj_unary(lx)
+    while true
+        t = lexer.peek(lx)
+        if t.kind == token.KIND_STAR
+            _o = lexer.next(lx)
+            left = "(* " .. left .. " " .. proj_unary(lx) .. ")"
+        elseif t.kind == token.KIND_SLASH
+            _o = lexer.next(lx)
+            left = "(/ " .. left .. " " .. proj_unary(lx) .. ")"
+        elseif t.kind == token.KIND_IDIV
+            _o = lexer.next(lx)
+            left = "(// " .. left .. " " .. proj_unary(lx) .. ")"
+        elseif t.kind == token.KIND_PERCENT
+            _o = lexer.next(lx)
+            left = "(% " .. left .. " " .. proj_unary(lx) .. ")"
+        else
+            return left
+        end
+    end
+end
+
+proj_unary = (lx: Lexer): str
+    t = lexer.peek(lx)
+    if t.kind == token.KIND_MINUS
+        _o = lexer.next(lx)
+        return "(- " .. proj_unary(lx) .. ")"
+    end
+    if t.kind == token.KIND_NOT
+        _o = lexer.next(lx)
+        return "(not " .. proj_unary(lx) .. ")"
+    end
+    if t.kind == token.KIND_HASH
+        _o = lexer.next(lx)
+        return "(len " .. proj_unary(lx) .. ")"
+    end
+    -- Prefix `~` is bitwise NOT. It shares a token with the infix XOR handled in
+    -- proj_bxor; position decides, which is why the infix level cannot simply
+    -- consume it.
+    if t.kind == token.KIND_TILDE
+        _o = lexer.next(lx)
+        return "(bnot " .. proj_unary(lx) .. ")"
+    end
+    proj_pow(lx)
+end
+
+-- '^' binds tighter than unary minus and is right-associative, so `-a ^ b`
+-- is `-(a ^ b)` and `a ^ b ^ c` is `a ^ (b ^ c)`. Recursing into proj_unary on
+-- the right gives both.
+proj_pow = (lx: Lexer): str
+    base = proj_postfix(lx)
+    if lexer.peek(lx).kind == token.KIND_CARET
+        _o = lexer.next(lx)
+        return "(^ " .. base .. " " .. proj_unary(lx) .. ")"
+    end
+    base
+end
+
+proj_postfix = (lx: Lexer): str
+    base = proj_primary(lx)
+    while true
+        t = lexer.peek(lx)
+        if t.kind == token.KIND_LPAREN
+            base = "(call " .. join(base, proj_arglist(lx)) .. ")"
+        elseif t.kind == token.KIND_STRING_LIT
+            _s = lexer.next(lx)
+            base = "(call " .. base .. " " .. quote(t.text) .. ")"
+        elseif t.kind == token.KIND_DOT
+            _d = lexer.next(lx)
+            n = lexer.next(lx)
+            base = "(dot " .. base .. " " .. n.text .. ")"
+        elseif t.kind == token.KIND_LBRACKET
+            _lb = lexer.next(lx)
+            idx = proj_expr(lx)
+            rb = lexer.next(lx)
+            if rb.kind != token.KIND_RBRACKET
+                mark_error(lx)
+                return "(error)"
+            end
+            base = "(index " .. base .. " " .. idx .. ")"
+        elseif t.kind == token.KIND_COLON
+            -- `obj:m(args)`. The receiver is projected separately from the
+            -- name so a later pass can see the implicit self without
+            -- re-deriving it from a dotted path.
+            _c = lexer.next(lx)
+            m = lexer.next(lx)
+            if not is_member_name(m)
+                mark_error(lx)
+                return "(error)"
+            end
+            head = "(method " .. base .. " " .. m.text
+            if lexer.peek(lx).kind == token.KIND_STRING_LIT
+                sl = lexer.next(lx)
+                base = head .. " " .. quote(sl.text) .. ")"
+            else
+                if lexer.peek(lx).kind != token.KIND_LPAREN
+                    mark_error(lx)
+                    return "(error)"
+                end
+                -- `join`, not concatenation: a no-argument call must project as
+                -- `(method obj m)`, not `(method obj m )`.
+                base = join(head, proj_arglist(lx)) .. ")"
+            end
+        elseif t.kind == token.KIND_AT
+            _a = lexer.next(lx)
+            an = lexer.next(lx)
+            base = "(anchor " .. base .. " " .. an.text .. ")"
+        else
+            return base
+        end
+    end
+end
+
+proj_primary = (lx: Lexer): str
+    t = lexer.peek(lx)
+    if t.kind == token.KIND_INT_LIT or t.kind == token.KIND_FLOAT_LIT
+        _n = lexer.next(lx)
+        return t.text
+    end
+    if t.kind == token.KIND_STRING_LIT
+        _n = lexer.next(lx)
+        return quote(t.text)
+    end
+    if t.kind == token.KIND_NAME or t.kind == token.KIND_TRUE or t.kind == token.KIND_FALSE or t.kind == token.KIND_NIL
+        _n = lexer.next(lx)
+        return t.text
+    end
+    -- Type names are ordinary values. LAW-STRATA spells specialization as
+    -- `store(i32)("x")`, so `i32` has to parse in expression position like any
+    -- other binding; lexing it as a keyword is a tokenization detail, not a
+    -- semantic category.
+    if is_type_kind(t.kind)
+        _n = lexer.next(lx)
+        return t.text
+    end
+    if t.kind == token.KIND_IF
+        return proj_if(lx)
+    end
+    if t.kind == token.KIND_DOTS
+        _d = lexer.next(lx)
+        return "(varargs)"
+    end
+    -- `@` directives appear in expression position too: `return @c.emit(...)`,
+    -- `@as(i64, x)`. Same projection as the statement form.
+    if t.kind == token.KIND_AT
+        return proj_directive(lx)
+    end
+    -- A leading `.` is a lens on the ambient subject: `.pos`, `map(.name)`.
+    if t.kind == token.KIND_DOT
+        _d = lexer.next(lx)
+        n = lexer.next(lx)
+        if n.kind != token.KIND_NAME
+            mark_error(lx)
+            return "(error)"
+        end
+        return "(lens " .. n.text .. ")"
+    end
+    if t.kind == token.KIND_FUN or t.kind == token.KIND_FUNCTION
+        return proj_fun_expr(lx)
+    end
+    -- The compact value form has a single-expression body and NO `end`:
+    -- `f = (x) g(x)`, `spawn(() run(c))`. The annotated form is a block that
+    -- closes with `end`. Same construct, two body shapes, so they are parsed
+    -- separately rather than by guessing where the body stops.
+    -- Annotated first: `(): void` has empty parens, so the bare test matches it
+    -- too, and taking the bare path meant the `: void` was never read and the
+    -- body was parsed as a single expression instead of a block.
+    if t.kind == token.KIND_LPAREN and is_bare_lambda_head(lx) and not is_lambda_head(lx)
+        head_line = t.loc.line
+        params = proj_params_from_lparen(lx)
+        -- Layout decides the body shape, which is the canon's own rule: a
+        -- one-liner is a single expression and closes at the newline; a body
+        -- that starts on the next line is a block and closes with `end`.
+        -- `create(()\n    fn(1)\nend)` is the block form.
+        if lexer.peek(lx).loc.line != head_line
+            body = proj_body(lx)
+            if params != ""
+                return "(lambda (params " .. params .. ") " .. body .. ")"
+            end
+            if body != ""
+                return "(lambda (params) " .. body .. ")"
+            end
+            return "(lambda (params))"
+        end
+        body = proj_expr(lx)
+        if params != ""
+            return "(lambda (params " .. params .. ") " .. body .. ")"
+        end
+        return "(lambda (params) " .. body .. ")"
+    end
+    if t.kind == token.KIND_LPAREN and is_lambda_head(lx)
+        -- FF-1: `(x: t): r ... end` with no keyword. This is the canonical
+        -- function form, and the parser could not read it — including in
+        -- lib/std/compiler/parser.duo itself after its own FF-1 migration.
+        head_line = t.loc.line
+        params = proj_params_from_lparen(lx)
+        s2 = "(lambda (params"
+        if params != ""
+            s2 = s2 .. " " .. params
+        end
+        s2 = s2 .. ")"
+        if lexer.peek(lx).kind == token.KIND_COLON
+            _c = lexer.next(lx)
+            s2 = s2 .. " (ret " .. proj_type(lx) .. ")"
+        end
+        -- LAYOUT picks the body shape here too, not the presence of
+        -- annotations. `fh.close = (self: any) nil` is annotated AND a
+        -- one-liner; assuming annotated implied a block made proj_body hunt an
+        -- `end` that is not there, consume to EOF, and leave the enclosing
+        -- function unterminated — while still projecting a correct-looking
+        -- lambda, so only the error flag showed it.
+        if lexer.peek(lx).loc.line == head_line
+            e2 = proj_expr(lx)
+            -- The one-line form appears both ways: `(self: any) nil` with no
+            -- terminator and `(a: i64): i64 a end` with one. Take the `end` when
+            -- it is there rather than leaving it to dangle into the enclosing
+            -- block.
+            -- ...but only an `end` on the SAME line. `less = (a: any, b: any) a < b`
+            -- sits inside an `if`, and its terminator is on the next line and
+            -- belongs to the `if`. Eating that closed the wrong block and ran the
+            -- enclosing function to EOF.
+            if lexer.peek(lx).kind == token.KIND_END and lexer.peek(lx).loc.line == head_line
+                _e = lexer.next(lx)
+            end
+            return s2 .. " " .. e2 .. ")"
+        end
+        body = proj_body(lx)
+        if body != ""
+            return s2 .. " " .. body .. ")"
+        end
+        return s2 .. ")"
+    end
+    if t.kind == token.KIND_LPAREN
+        _lp = lexer.next(lx)
+        e = proj_expr(lx)
+        c = lexer.next(lx)
+        if c.kind == token.KIND_RPAREN
+            return e
+        end
+        mark_error(lx)
+        return "(error)"
+    end
+    if t.kind == token.KIND_LBRACE
+        _lb = lexer.next(lx)
+        return proj_desc_body(lx)
+    end
+    -- `[float]` — a sequence type in field position, e.g. `wq: [float]`.
+    if t.kind == token.KIND_LBRACKET
+        _lb = lexer.next(lx)
+        inner = proj_expr(lx)
+        rb = lexer.next(lx)
+        if rb.kind != token.KIND_RBRACKET
+            mark_error(lx)
+            return "(error)"
+        end
+        return "(seq " .. inner .. ")"
+    end
+    -- LAST refusal: an identifier-spelled keyword in CALL position is a name —
+    -- `type(nv)`, `error(msg)`. `type` has its own token kind because of
+    -- `type X = { ... }`, so every call to the builtin was a parse failure.
+    --
+    -- It must come after every keyword-specific arm above, not before: placed
+    -- earlier it swallowed `fun(a) a end` as a call to `fun` and cost 3 files.
+    if is_member_name(t) and peek2(lx).kind == token.KIND_LPAREN
+        _n = lexer.next(lx)
+        return t.text
+    end
+    _n = lexer.next(lx)
+    mark_error(lx)
+    "(error)"
+end
+
+-- One statement. Returns "" only for block terminators (which the block
+-- parsers consume) and EOF.
+-- After an expression statement, a comma list that closes at `end` is a
+-- demand-returned pack: `string.sub(buf, 1, n), nil`. The `end` is what makes it
+-- a tail — a comma list anywhere else is an error, which keeps a bare `a, b`
+-- rejected.
+tail_pack = (lx: Lexer, first: str): str
+    if lexer.peek(lx).kind != token.KIND_COMMA
+        return first
+    end
+    acc = first
+    while lexer.peek(lx).kind == token.KIND_COMMA
+        _c = lexer.next(lx)
+        acc = acc .. " " .. proj_expr(lx)
+    end
+    if lexer.peek(lx).kind == token.KIND_END
+        return "(pack " .. acc .. ")"
+    end
+    mark_error(lx)
+    "(error)"
+end
+
+-- concept NAME <signature>* end — a protocol's required surface. Each entry is
+-- a declaration HEADER with no body, so it cannot go through proj_fun_decl: the
+-- bodiless rule there keys on column 1, and these are indented.
+proj_concept = (lx: Lexer): str
+    _c = lexer.next(lx)
+    n = lexer.next(lx)
+    if not is_member_name(n)
+        mark_error(lx)
+        return "(concept (error))"
+    end
+    s = "(concept " .. n.text
+    while true
+        t = lexer.peek(lx)
+        if t.kind == token.KIND_END
+            _e = lexer.next(lx)
+            return s .. ")"
+        end
+        if t.kind == token.KIND_EOF
+            mark_error(lx)
+            return s .. ")"
+        end
+        nm = lexer.next(lx)
+        if not is_member_name(nm)
+            mark_error(lx)
+            return s .. ")"
+        end
+        if lexer.peek(lx).kind != token.KIND_LPAREN
+            mark_error(lx)
+            return s .. ")"
+        end
+        _lp = lexer.next(lx)
+        params = proj_params(lx)
+        sig = "(sig " .. nm.text .. " (params"
+        if params != ""
+            sig = sig .. " " .. params
+        end
+        sig = sig .. ")"
+        if lexer.peek(lx).kind == token.KIND_COLON
+            _co = lexer.next(lx)
+            sig = sig .. " (ret " .. proj_type(lx) .. ")"
+        end
+        s = s .. " " .. sig .. ")"
+    end
+end
+
+proj_stmt = (lx: Lexer): str
+    t = lexer.peek(lx)
+    if t.kind == token.KIND_EOF
+        return ""
+    end
+    if t.kind == token.KIND_END or t.kind == token.KIND_ELSE or t.kind == token.KIND_ELSEIF
+        return ""
+    end
+    if t.kind == token.KIND_FUN or t.kind == token.KIND_FUNCTION
+        return proj_fun_decl(lx, t)
+    end
+    if t.kind == token.KIND_IF
+        return proj_if(lx)
+    end
+    if t.kind == token.KIND_WHILE
+        return proj_while(lx)
+    end
+    if t.kind == token.KIND_FOR
+        return proj_for(lx)
+    end
+    if t.kind == token.KIND_RETURN
+        return proj_return(lx)
+    end
+    if t.kind == token.KIND_AT
+        return proj_directive(lx)
+    end
+    if t.kind == token.KIND_BREAK
+        _b = lexer.next(lx)
+        return "(break)"
+    end
+    if t.kind == token.KIND_REPEAT
+        return proj_repeat(lx)
+    end
+    if t.kind == token.KIND_CONCEPT
+        return proj_concept(lx)
+    end
+    -- `type X = { ... }` — the same descriptor body as `X: { ... }`, under the
+    -- older spelling lib/std/compiler/lexer.duo and ward still use.
+    --
+    -- Matched by SPELLING, not token kind: there is no KIND_TYPE. My first
+    -- version compared `t.kind` against the non-existent `token.KIND_TYPE`,
+    -- which is nil, and the branch then fired for every statement — including
+    -- `span: { ... }`, breaking a case that had worked for hours.
+    if t.text == "type" and peek2(lx).kind == token.KIND_NAME
+        _t = lexer.next(lx)
+        n = lexer.next(lx)
+        if not is_member_name(n)
+            mark_error(lx)
+            return "(typedecl (error))"
+        end
+        if lexer.peek(lx).kind != token.KIND_ASSIGN
+            mark_error(lx)
+            return "(typedecl (error))"
+        end
+        _a = lexer.next(lx)
+        if lexer.peek(lx).kind == token.KIND_AT
+            _at = lexer.next(lx)
+        end
+        -- Two shapes: a descriptor body, or a plain ALIAS (`type StableId = i64`).
+        -- Requiring a brace rejected the alias form and cost a lib/std file — the
+        -- coverage ratchet failed the build, which is exactly what it is for.
+        if lexer.peek(lx).kind != token.KIND_LBRACE
+            return "(typedecl " .. n.text .. " (type " .. proj_type(lx) .. "))"
+        end
+        _lb = lexer.next(lx)
+        return "(typedecl " .. n.text .. " " .. proj_desc_body(lx) .. ")"
+    end
+    if t.kind == token.KIND_DO
+        _d = lexer.next(lx)
+        body = proj_body(lx)
+        if body != ""
+            return "(do " .. body .. ")"
+        end
+        return "(do)"
+    end
+    if t.kind == token.KIND_LOCAL or t.kind == token.KIND_GLOBAL
+        return proj_decl(lx)
+    end
+    if t.kind == token.KIND_NAME
+        t2 = peek2(lx)
+        if t2.kind == token.KIND_COLON
+            -- `n: i64 = 5` — a binding carrying its shape. `:` is IS, `=` is
+            -- HOLDS, and the statement level has to read both.
+            --
+            -- Speculative, because `obj:m(1, 2)` starts identically: NAME then
+            -- `:`. Only the `=` after the type tells them apart, so commit to
+            -- the binding reading only once it appears and otherwise rewind to
+            -- the expression path. Committing early turned every method-call
+            -- statement into a broken binding.
+            bst = lexer.save_state(lx)
+            _n = lexer.next(lx)
+            _c = lexer.next(lx)
+            -- `span: { start: u32, ... }` and the staged `@{ ... }` form. `:` is
+            -- IS, so a brace on the right is a DESCRIPTOR declaration, not a
+            -- typed binding — this is the primary data-declaration form and the
+            -- parser had no production for it at all.
+            dt = lexer.peek(lx)
+            if dt.kind == token.KIND_AT
+                _at = lexer.next(lx)
+                dt = lexer.peek(lx)
+            end
+            if dt.kind == token.KIND_LBRACE
+                _lb = lexer.next(lx)
+                return "(descriptor " .. t.text .. " " .. proj_desc_body(lx) .. ")"
+            end
+            ty = proj_type(lx)
+            if lexer.peek(lx).kind == token.KIND_ASSIGN
+                _a = lexer.next(lx)
+                return "(bind " .. t.text .. " (type " .. ty .. ") " .. proj_expr(lx) .. ")"
+            end
+            lexer.restore_state(lx, bst)
+            return proj_expr(lx)
+        end
+        if t2.kind == token.KIND_LPAREN
+            if params_have_colon(lx)
+                return proj_fun_decl(lx, t)
+            end
+            return tail_pack(lx, proj_expr(lx))
+        end
+        if is_assign_kind(t2.kind)
+            return proj_assign(lx, t)
+        end
+        if t2.kind == token.KIND_DOT or t2.kind == token.KIND_LBRACKET or t2.kind == token.KIND_COMMA
+            return proj_target_or_expr(lx)
+        end
+        return tail_pack(lx, proj_expr(lx))
+    end
+    tail_pack(lx, proj_expr(lx))
+end
+
+-- Whole-program projection: '(program <stmt>...)'.
+proj_program_lx = (lx: Lexer): str
+    acc = ""
+    while true
+        skip_semis(lx)
+        t = lexer.peek(lx)
+        if t.kind == token.KIND_EOF
+            if acc == ""
+                return "(program)"
+            end
+            return "(program " .. acc .. ")"
+        end
+        before: i64 = lx.pos
+        peeked = lx.has_peeked
+        s = proj_stmt(lx)
+        if s == "" or stalled(lx, before, peeked)
+            mark_error(lx)
+            return "(program " .. acc .. ")"
+        end
+        acc = join(acc, s)
+    end
+end
+
+-- Public entries: s-expression projection and a clean/reject differential.
+proj_program = (src: str, file: str): str
+    lx: Lexer = lexer.new(src, file)
+    proj_program_lx(lx)
+end
+
+parse_status = (src: str, file: str): i64
+    lx: Lexer = lexer.new(src, file)
+    _p = proj_program_lx(lx)
+    if lx.has_error
+        return 1
+    end
+    0
 end

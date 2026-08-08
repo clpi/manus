@@ -1,8 +1,6 @@
-script = req "std.script"
-
 path = "/tmp/duo_nested_req_smoke.json"
-script.must("printf '{\"ok\":true,\"n\":7}' > " .. path)
-data = script.json_read_file(path)
+std.script.must("printf '{\"ok\":true,\"n\":7}' > " .. path)
+data = std.script.json_read_file(path)
 
 ok = data.ok == true and data.n == 7
 print("RESULT nested_std_req_ok = " .. ok)

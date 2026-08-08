@@ -1,0 +1,76 @@
+-- SH-10 — the C backend, proven by EXECUTION against SH-08.
+--
+-- For each expression: the folder computes a value, the backend emits C, `cc`
+-- compiles it, the binary runs, and its exit status must equal the folder's
+-- value masked to 8 bits.
+--
+--     comptime.fold(e)  ==  run(cc(emit_c(e)))
+--
+-- Two independent implementations of the same arithmetic. They share no code
+-- beyond the token shapes, so a bug would have to appear identically in a
+-- byte-scanning folder and in a C translation to slip through — which is what
+-- makes this a differential rather than a self-check, and why it is worth more
+-- than any number of hand-written expected values.
+--
+-- Exit: 0 all agree, else the failing case number. 90 if `cc` is unavailable,
+-- which is a skip and not a pass — a differential that silently degrades to
+-- "nothing ran" is the failure mode this whole session kept finding.
+
+global C = std.compiler.comptime
+global E = std.compiler.emit_c
+
+_check = (n: i64, expr: str): i64
+    want: i64 = C.fold(expr)
+    if not E.eval_ok(expr)
+        print("emit_c_proof: FAIL " .. to(str)(n) .. ": backend refused [" .. expr .. "]")
+        return n
+    end
+    got: i64 = E.eval_via_c(expr)
+    if got != want
+        print("emit_c_proof: FAIL " .. to(str)(n) .. ": [" .. expr .. "] C says "
+            .. to(str)(got) .. ", folder says " .. to(str)(want))
+        return n
+    end
+    0
+end
+
+main(): i64
+    -- toolchain check first: a skip must be visible, never a silent pass
+    if E.eval_via_c("1 + 1") != 2
+        print("emit_c_proof: SKIP — no working cc")
+        return 90
+    end
+
+    r: i64 = 0
+    r = _check(1, "2 + 3 * 4")
+    if r != 0 return r end
+    r = _check(2, "(2 + 3) * 4")
+    if r != 0 return r end
+    r = _check(3, "100 - 3 - 2")
+    if r != 0 return r end
+    r = _check(4, "7 % 3")
+    if r != 0 return r end
+    r = _check(5, "1 << 6")
+    if r != 0 return r end
+    r = _check(6, "255 & 0x0F")
+    if r != 0 return r end
+    r = _check(7, "1 | 6")
+    if r != 0 return r end
+    r = _check(8, "12 ~ 10")
+    if r != 0 return r end
+    r = _check(9, "200 / 4")
+    if r != 0 return r end
+    r = _check(10, "(1 << 6) - 1")
+    if r != 0 return r end
+
+    -- the backend must REFUSE what it cannot translate faithfully. `^` is
+    -- exponentiation in Duo and xor in C: emitting it as-is would compile and
+    -- return the wrong number, which is worse than refusing.
+    if E.program_for("2 ^ 8") != ""
+        print("emit_c_proof: FAIL 11: backend translated `^` instead of refusing")
+        return 11
+    end
+
+    print("emit_c_proof: 10 expressions — emitted C compiled, ran, and agreed with the folder")
+    0
+end

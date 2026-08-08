@@ -15,6 +15,30 @@ pub const ParseError = error{
     ExpectedToken,
 } || @import("lexer.zig").LexError || Allocator.Error;
 
+/// Source text of a primitive type keyword, so a type name can appear wherever
+/// an ordinary identifier can — table keys, field access, and so on. Type names
+/// are ORDINARY names that happen to denote types, not a separate universe of
+/// tokens; `{ i32 = 69 }` and `t.i32` must parse exactly like `{ foo = 69 }`
+/// and `t.foo`. Returns null for every non-type-keyword kind.
+fn typeKeywordName(kind: TK) ?[]const u8 {
+    return switch (kind) {
+        .kw_i8 => "i8",
+        .kw_i16 => "i16",
+        .kw_i32 => "i32",
+        .kw_i64 => "i64",
+        .kw_u8 => "u8",
+        .kw_u16 => "u16",
+        .kw_u32 => "u32",
+        .kw_u64 => "u64",
+        .kw_f32 => "f32",
+        .kw_f64 => "f64",
+        .kw_bool => "bool",
+        .kw_void => "void",
+        .kw_str => "str",
+        else => null,
+    };
+}
+
 fn findMatchingParen(s: []const u8, start: usize) usize {
     var depth: i32 = 1;
     var i: usize = start + 1;
@@ -1002,6 +1026,14 @@ pub const Parser = struct {
 
         const src = self.lex.cursor.bytes;
 
+        // Every offset below comes from pointer arithmetic against `src`, so
+        // one token whose text lives elsewhere poisons the whole span. Check
+        // the first one and refuse the span rather than compute a wrong one.
+        if (srcOffsetOf(src, first_tok.text) == null) {
+            term.locErr(first_tok.loc, "attribute arguments cannot be recovered from this token stream", .{});
+            return ParseError.UnexpectedToken;
+        }
+
         var start: usize = undefined;
         if (first_tok.kind == .string_lit) {
             const tok_start = @intFromPtr(first_tok.text.ptr) - @intFromPtr(src.ptr);
@@ -1029,7 +1061,10 @@ pub const Parser = struct {
                 depth -= 1;
                 if (depth == 0) break;
             }
-            const tok_start = @intFromPtr(tok.text.ptr) - @intFromPtr(src.ptr);
+            const tok_start = srcOffsetOf(src, tok.text) orelse {
+                term.locErr(tok.loc, "attribute arguments cannot be recovered from this token stream", .{});
+                return ParseError.UnexpectedToken;
+            };
             if (tok.kind == .string_lit) {
                 if (longBracketSpan(src, tok_start, tok.text.len)) |span| {
                     end = span.end;
@@ -1059,6 +1094,25 @@ pub const Parser = struct {
         while (i > 0 and src[i] == '=') : (i -= 1) eq += 1;
         if (src[i] != '[') return null;
         return eq + 2;
+    }
+
+    /// A token's byte offset within `src` — but only when its text genuinely
+    /// lies inside `src`.
+    ///
+    /// `parse_attribute_args` recovers source spans by subtracting pointers,
+    /// which silently assumes every token's `text` is a slice OF the source
+    /// buffer. That holds for the host scanner and does not hold under SH-03
+    /// production dispatch, where the token stream comes from the Duo lexer and
+    /// string text lives in a separate arena. The subtraction then yields a
+    /// meaningless offset — measured at 168958 against a 2787-byte source — and
+    /// the long-bracket scan indexed straight past the end and aborted.
+    ///
+    /// Returning null instead of a wrong number turns "crash" into "say so".
+    fn srcOffsetOf(src: []const u8, text: []const u8) ?usize {
+        const base = @intFromPtr(src.ptr);
+        const p = @intFromPtr(text.ptr);
+        if (p < base or p + text.len > base + src.len) return null;
+        return p - base;
     }
 
     fn skipLongBracketWsBack(src: []const u8, i: usize) usize {
@@ -1164,6 +1218,45 @@ pub const Parser = struct {
     }
 
     /// Parse `concept Name[T, ...] ... end` with required methods and fields.
+    /// Parse the tail of a required-method signature in a concept body, with the
+    /// method name already consumed: `[T](params) -> ret` / `[T](params): ret`.
+    /// Shared by the legacy `fun`-prefixed form and the canonical bare form.
+    fn parse_concept_method_sig(self: *Parser, name: []const u8) ParseError!ast.FuncSignature {
+        // Optional method type parameters: [T]
+        var method_type_params: ?[]ast.TypeExpr = null;
+        if (try self.eat(.lbracket) != null) {
+            var mtp_list: std.ArrayList(ast.TypeExpr) = .empty;
+            try mtp_list.append(self.alloc, try self.parse_type());
+            while (try self.eat(.comma) != null) {
+                try mtp_list.append(self.alloc, try self.parse_type());
+            }
+            _ = try self.expect(.rbracket);
+            method_type_params = try mtp_list.toOwnedSlice(self.alloc);
+        }
+
+        _ = try self.expect(.lparen);
+        var params: std.ArrayList(ast.FuncParam) = .empty;
+        if (!(try self.check(.rparen))) {
+            try params.append(self.alloc, try self.parse_param());
+            while (try self.eat(.comma) != null) {
+                try params.append(self.alloc, try self.parse_param());
+            }
+        }
+        _ = try self.expect(.rparen);
+
+        // Optional return type: -> type or : type
+        var ret_type: ast.TypeExpr = .inferred;
+        if (try self.eat(.arrow) != null or try self.eat(.colon) != null)
+            ret_type = try self.parse_type();
+
+        return .{
+            .name = name,
+            .params = try params.toOwnedSlice(self.alloc),
+            .ret_type = ret_type,
+            .type_params = method_type_params,
+        };
+    }
+
     fn parse_concept_def_with_attrs(self: *Parser, attrs: []ast.Attribute) ParseError!ast.Stmt {
         const l = (try self.adv()).loc; // consume `concept`
         const nm = try self.expect(.name);
@@ -1186,53 +1279,25 @@ pub const Parser = struct {
 
         while ((try self.pk()).kind != .kw_end and (try self.pk()).kind != .eof) {
             if ((try self.pk()).kind == .kw_fun or (try self.pk()).kind == .kw_function) {
-                // Required method: fun name(params) -> ret_type
+                // Legacy required method: `fun name(params) -> ret_type`. GR-001
+                // retires `fun`; the bare form below is canonical.
                 _ = try self.adv(); // consume `fun` or `function`
                 const method_name = try self.expect(.name);
-
-                // Optional method type parameters: [T]
-                var method_type_params: ?[]ast.TypeExpr = null;
-                if (try self.eat(.lbracket) != null) {
-                    var mtp_list: std.ArrayList(ast.TypeExpr) = .empty;
-                    try mtp_list.append(self.alloc, try self.parse_type());
-                    while (try self.eat(.comma) != null) {
-                        try mtp_list.append(self.alloc, try self.parse_type());
-                    }
-                    _ = try self.expect(.rbracket);
-                    method_type_params = try mtp_list.toOwnedSlice(self.alloc);
-                }
-
-                // Parse parameter list
-                _ = try self.expect(.lparen);
-                var params: std.ArrayList(ast.FuncParam) = .empty;
-                if (!(try self.check(.rparen))) {
-                    try params.append(self.alloc, try self.parse_param());
-                    while (try self.eat(.comma) != null) {
-                        try params.append(self.alloc, try self.parse_param());
-                    }
-                }
-                _ = try self.expect(.rparen);
-
-                // Optional return type: -> type or : type
-                var ret_type: ast.TypeExpr = .inferred;
-                if (try self.eat(.arrow) != null or try self.eat(.colon) != null)
-                    ret_type = try self.parse_type();
-
-                try methods.append(self.alloc, .{
-                    .name = method_name.text,
-                    .params = try params.toOwnedSlice(self.alloc),
-                    .ret_type = ret_type,
-                    .type_params = method_type_params,
-                });
+                try methods.append(self.alloc, try self.parse_concept_method_sig(method_name.text));
             } else if ((try self.pk()).kind == .name) {
-                // Required field: name: type
-                const field_name = try self.adv();
-                _ = try self.expect(.colon);
-                const field_type = try self.parse_type();
-                try fields.append(self.alloc, .{
-                    .name = field_name.text,
-                    .typ = field_type,
-                });
+                // Canonical bare member. `name(` / `name[` is a required method
+                // signature (GR-001 bare function); `name:` is a required field.
+                const member_name = try self.adv();
+                if ((try self.check(.lparen)) or (try self.check(.lbracket))) {
+                    try methods.append(self.alloc, try self.parse_concept_method_sig(member_name.text));
+                } else {
+                    _ = try self.expect(.colon);
+                    const field_type = try self.parse_type();
+                    try fields.append(self.alloc, .{
+                        .name = member_name.text,
+                        .typ = field_type,
+                    });
+                }
             } else {
                 // Skip unexpected tokens to avoid infinite loops
                 term.locErr((try self.pk()).loc, "unexpected token in concept body: '{s}'", .{
@@ -3659,20 +3724,73 @@ pub const Parser = struct {
                 const rest = s[i + 1 ..];
                 if (std.mem.indexOfScalar(u8, rest, '}')) |off| {
                     const ident = rest[0..off];
-                    if (ident.len > 0 and std.mem.allEqual(u8, ident, ident[0]) == false) {
+                    // Pass 59 STR-1. This used to also require
+                    // `allEqual(ident, ident[0]) == false`, i.e. "not every
+                    // character the same" — which silently declined to
+                    // interpolate any SINGLE-CHARACTER name, since one char is
+                    // trivially all-the-same. `"v={x}"` therefore printed the
+                    // literal text `v={x}` while `"v={val}"` printed the value,
+                    // and it failed as OUTPUT, never as an error. Single-letter
+                    // names (`{i}`, `{n}`, `{b}`) are the common case in exactly
+                    // the loops interpolation is for, so STR-1 was broken where
+                    // it matters most. The character loop below already
+                    // restricts this to a valid identifier, so the guard bought
+                    // nothing. Verified zero strings in lib/ examples/ scripts/
+                    // contain `{c}` or `{cc}`, so no existing literal changes
+                    // meaning.
+                    if (ident.len > 0) {
+                        // A DOTTED PATH is accepted, not just a bare name:
+                        // `"({p.x}, {p.y})"`. Restricting the hole to a single
+                        // identifier is what forced `..` chains for the most
+                        // common case there is — printing a field — so STR-1
+                        // could not actually replace them. Each `.` segment must
+                        // itself be a valid identifier, so `{a.}`, `{.x}` and
+                        // `{a..b}` stay literal rather than becoming a partial
+                        // parse. Leading-`.` lens holes (STR-4) are deliberately
+                        // NOT claimed here: they need an ambient subject, which
+                        // is a separate feature, and silently reading them as a
+                        // name would be worse than leaving them literal.
                         var valid = true;
+                        var seg_len: usize = 0;
                         for (ident) |c| {
-                            if (!((c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or (c >= '0' and c <= '9') or c == '_')) {
+                            if (c == '.') {
+                                if (seg_len == 0) {
+                                    valid = false;
+                                    break;
+                                }
+                                seg_len = 0;
+                                continue;
+                            }
+                            const alpha = (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or c == '_';
+                            const digit = c >= '0' and c <= '9';
+                            if (!alpha and !digit) {
                                 valid = false;
                                 break;
                             }
+                            // A segment may not START with a digit.
+                            if (seg_len == 0 and digit) {
+                                valid = false;
+                                break;
+                            }
+                            seg_len += 1;
                         }
-                        if (valid and !(ident[0] >= '0' and ident[0] <= '9')) {
+                        if (seg_len == 0) valid = false; // trailing '.'
+                        if (valid) {
                             if (start < i) {
                                 const lit = try self.alloc.dupe(u8, s[start..i]);
                                 try parts.append(self.alloc, try self.new_expr(.{ .string_lit = .{ .loc = loc, .val = lit } }));
                             }
-                            try parts.append(self.alloc, try self.new_expr(.{ .name = .{ .loc = loc, .ident = try self.alloc.dupe(u8, ident) } }));
+                            var seg_it = std.mem.splitScalar(u8, ident, '.');
+                            const head = seg_it.next().?;
+                            var hole = try self.new_expr(.{ .name = .{ .loc = loc, .ident = try self.alloc.dupe(u8, head) } });
+                            while (seg_it.next()) |seg| {
+                                hole = try self.new_expr(.{ .field = .{
+                                    .loc = loc,
+                                    .obj = hole,
+                                    .field = try self.alloc.dupe(u8, seg),
+                                } });
+                            }
+                            try parts.append(self.alloc, hole);
                             i += 1 + off + 1;
                             start = i;
                             continue;
@@ -3760,6 +3878,16 @@ pub const Parser = struct {
             .kw_match => self.parse_match_expr(),
             .dot => self.parse_field_projection(),
             .colon => self.parse_method_reference(),
+            // Canonical spec 2.10 (G3, de-magicking): "every std name is an
+            // ordinary definable value or a relation family with inspectable
+            // edges — no third category." A TYPE NAME is therefore a value in
+            // expression position, which is what makes the canonical relation
+            // spelling `to(str)` / `to(i64)` (spec 2.6) parseable at all.
+            .kw_i8, .kw_i16, .kw_i32, .kw_i64, .kw_u8, .kw_u16, .kw_u32,
+            .kw_u64, .kw_f32, .kw_f64, .kw_bool, .kw_void, .kw_str => blk: {
+                const type_tok = try self.adv();
+                break :blk self.new_expr(.{ .name = .{ .loc = type_tok.loc, .ident = type_tok.kind.spelling() } });
+            },
             else => {
                 term.locErr(tok.loc, "expected expression, got '{s}'", .{tok.kind.spelling()});
                 return ParseError.ExpectedToken;
@@ -4163,6 +4291,28 @@ pub const Parser = struct {
             switch (tok.kind) {
                 .dot => {
                     _ = try self.adv();
+                    // Pass 38 G6 / Pass 40: `value.@name` is SEMANTIC access —
+                    // the effective metatable entry for `name`, as opposed to
+                    // `value.name` which is the ordinary member. The two live on
+                    // one accessor with `@` selecting the semantic world, which
+                    // is why this belongs here rather than in a separate
+                    // production. Previously this path called expect_name_like
+                    // unconditionally and `p.@eq` died with
+                    // "expected 'name', got '@'" — recorded as the Phase 2
+                    // blocker in docs/plans/pass38_projection_calculus.md.
+                    //
+                    // Carried as an ordinary `.field` whose name keeps the `@`
+                    // sigil, so every existing field path still sees a plain
+                    // field and only the codegen arm that looks for the sigil
+                    // treats it semantically. Retrieval only: `p.@eq` is the
+                    // VALUE of the relation, never a receiver-bound call.
+                    if ((try self.pk()).kind == .at) {
+                        _ = try self.adv();
+                        const sem = try self.expect_name_like();
+                        const marked = try std.fmt.allocPrint(self.alloc, "@{s}", .{sem});
+                        e = try self.new_expr(.{ .field = .{ .loc = tok.loc, .obj = e, .field = marked } });
+                        continue;
+                    }
                     const fld = try self.expect_name_like();
                     e = try self.new_expr(.{ .field = .{ .loc = tok.loc, .obj = e, .field = fld } });
                 },
@@ -4429,22 +4579,24 @@ pub const Parser = struct {
                     }
                     try fields.append(self.alloc, .{ .positional = val });
                 }
-            } else if (tok.kind == .name) {
+            } else if (tok.kind == .name or typeKeywordName(tok.kind) != null) {
                 // Speculate: name '=' and name ':' Type '=' mean named fields;
-                // otherwise the entry is positional.
+                // otherwise the entry is positional. A type name is an ORDINARY
+                // name here, so `{ i32 = 69 }` parses like `{ foo = 69 }`.
+                const key_text = if (tok.kind == .name) tok.text else typeKeywordName(tok.kind).?;
                 const saved = self.lex.saveState();
                 _ = try self.adv();
                 if (try self.check(.assign)) {
                     _ = try self.adv();
                     const val = try self.parse_expr();
-                    try fields.append(self.alloc, .{ .named = .{ .key = tok.text, .val = val } });
+                    try fields.append(self.alloc, .{ .named = .{ .key = key_text, .val = val } });
                 } else if (try self.check(.colon)) {
                     _ = try self.adv();
                     _ = try self.parse_type();
                     if (try self.check(.assign)) {
                         _ = try self.adv();
                         const val = try self.parse_expr();
-                        try fields.append(self.alloc, .{ .named = .{ .key = tok.text, .val = val } });
+                        try fields.append(self.alloc, .{ .named = .{ .key = key_text, .val = val } });
                     } else {
                         self.lex.restoreState(saved);
                         const val = try self.parse_expr();
@@ -6237,6 +6389,67 @@ test "parse: simple concept with one method" {
     try testing.expect(cd.required_methods[0].ret_type == .named);
     try testing.expectEqualStrings("str", cd.required_methods[0].ret_type.named);
     try testing.expectEqual(@as(usize, 0), cd.required_fields.len);
+}
+
+test "parse: concept with bare (GR-001) method signatures" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // Canonical bare form as used by lib/std/mem.duo — no `fun` keyword.
+    const mod = try parseSource(
+        \\concept Allocator
+        \\    alloc(self, bytes: i64): any
+        \\    free(self, ptr: any): void
+        \\    total_allocated(self): i64
+        \\end
+    , &arena);
+    const cd = mod.body.stmts[0].concept_def;
+    try testing.expectEqualStrings("Allocator", cd.name);
+    try testing.expectEqual(@as(usize, 0), cd.required_fields.len);
+    try testing.expectEqual(@as(usize, 3), cd.required_methods.len);
+    try testing.expectEqualStrings("alloc", cd.required_methods[0].name);
+    try testing.expectEqual(@as(usize, 2), cd.required_methods[0].params.len);
+    try testing.expectEqualStrings("bytes", cd.required_methods[0].params[1].name);
+    try testing.expectEqualStrings("any", cd.required_methods[0].ret_type.named);
+    try testing.expectEqualStrings("free", cd.required_methods[1].name);
+    try testing.expectEqualStrings("total_allocated", cd.required_methods[2].name);
+    try testing.expectEqual(@as(usize, 1), cd.required_methods[2].params.len);
+    try testing.expectEqualStrings("i64", cd.required_methods[2].ret_type.named);
+}
+
+test "parse: concept mixing bare methods and required fields" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // `name(` is a method, `name:` is a field — the disambiguation must not
+    // regress the field form now that bare methods are accepted.
+    const mod = try parseSource(
+        \\concept Buffer
+        \\    capacity: i64
+        \\    push(self, byte: i64): void
+        \\    tag: str
+        \\end
+    , &arena);
+    const cd = mod.body.stmts[0].concept_def;
+    try testing.expectEqual(@as(usize, 1), cd.required_methods.len);
+    try testing.expectEqualStrings("push", cd.required_methods[0].name);
+    try testing.expectEqual(@as(usize, 2), cd.required_fields.len);
+    try testing.expectEqualStrings("capacity", cd.required_fields[0].name);
+    try testing.expectEqualStrings("i64", cd.required_fields[0].typ.named);
+    try testing.expectEqualStrings("tag", cd.required_fields[1].name);
+}
+
+test "parse: concept bare generic method signature" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\concept Mapper
+        \\    map[T](self, f: T): T
+        \\end
+    , &arena);
+    const cd = mod.body.stmts[0].concept_def;
+    try testing.expectEqual(@as(usize, 1), cd.required_methods.len);
+    try testing.expectEqualStrings("map", cd.required_methods[0].name);
+    try testing.expect(cd.required_methods[0].type_params != null);
+    try testing.expectEqualStrings("T", cd.required_methods[0].type_params.?[0].named);
 }
 
 test "parse: concept with generic type parameter" {

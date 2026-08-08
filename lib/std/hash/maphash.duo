@@ -3,8 +3,7 @@
 -- Uses a seed-based FNV-like approach to resist hash-collision attacks.
 
 make_seed(): i64
-    crypto_rand = req "std.crypto.rand"
-    bytes = crypto_rand.bytes(8)
+    bytes = std.crypto.rand.bytes(8)
     seed = 0
     i = 0
     while i < 8
@@ -25,22 +24,22 @@ end
 write(h: any, data: str): void
     h.hash = h.seed
     for i = 1, string.len(data)
-        h.hash = (h.hash * 31 + string.byte(data, i)) % (2^64)
+        h.hash = (h.hash * 31 + string.byte(data, i))
     end
 end
 
 write_byte(h: any, b: i64): void
-    h.hash = (h.hash * 31 + b) % (2^64)
+    h.hash = (h.hash * 31 + b)
 end
 
 sum(h: any): i64
-    h.hash % (2^64)
+    h.hash
 end
 
 hash_string(seed: i64, s: str): i64
     h = seed
     for i = 1, string.len(s)
-        h = (h * 31 + string.byte(s, i)) % (2^64)
+        h = (h * 31 + string.byte(s, i))
     end
     h
 end
@@ -48,18 +47,8 @@ end
 hash_bytes(seed: i64, data: str, off: i64, len: i64): i64
     h = seed
     for i = off, off + len - 1
-        h = (h * 31 + string.byte(data, i)) % (2^64)
+        h = (h * 31 + string.byte(data, i))
     end
     h
 end
 
-M = {}
-M.make_seed = make_seed
-M.new = new
-M.new_with_seed = new_with_seed
-M.write = write
-M.write_byte = write_byte
-M.sum = sum
-M.hash_string = hash_string
-M.hash_bytes = hash_bytes
-M

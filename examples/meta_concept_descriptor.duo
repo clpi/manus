@@ -21,8 +21,8 @@ shape = {
 
 -- Runtime concept checking
 print("Drawable name: " .. Drawable.name)
-print("satisfies Drawable: " .. tostring(meta.satisfies_concept(shape, Drawable)))
-print("satisfies Display: " .. tostring(meta.satisfies_concept(shape, derive.Display)))
+print("satisfies Drawable: " .. to(str)(meta.satisfies_concept(shape, Drawable)))
+print("satisfies Display: " .. to(str)(meta.satisfies_concept(shape, derive.Display)))
 
 -- Use : method syntax
 print("draw: " .. shape:draw())

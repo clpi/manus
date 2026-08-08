@@ -20,7 +20,6 @@ walk_to_line(bytes: str, stop_line: i64): i64
     1
 end
 
-os = req "std.os"
 fail = 0
 if walk_to_line("a\nb\nc", 3) != 0
     fail = 1
@@ -32,6 +31,6 @@ if walk_to_line("x", 1) != 0
     fail = 1
 end
 if fail != 0
-    os.exit(1)
+    std.os.exit(1)
 end
 print("pass16_source_cursor_proof: PASS")

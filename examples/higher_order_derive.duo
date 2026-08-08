@@ -14,7 +14,7 @@ end)
   acc = "/* Offsets for " .. meta.name .. " */\n"
   for i = 1, #meta.fields
     f = meta.fields[i]
-    acc = acc .. "// offset of " .. f.name .. " = " .. tostring(i - 1) .. "\n"
+    acc = acc .. "// offset of " .. f.name .. " = " .. to(str)(i - 1) .. "\n"
   end
   acc
 end)
@@ -31,11 +31,11 @@ end)
     end
   end
   self_src = @comp.derive.lookup("ComposeAll")
-  acc = acc .. "// ComposeAll source length: " .. tostring(#self_src) .. "\n"
+  acc = acc .. "// ComposeAll source length: " .. to(str)(#self_src) .. "\n"
   acc
 end)
 
 @derive(ComposeAll)
-type Point = { x: f64, y: f64 }
+Point: { x: f64, y: f64 }
 
 print("Higher-order derive composed")

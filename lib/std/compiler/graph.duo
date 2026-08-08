@@ -1,0 +1,130 @@
+-- SH-07 — the semantic graph, seed.
+--
+-- Pass 48 §3.2: one edge is a relationship between declared things. The
+-- smallest honest instance of that, computable today, is the module's own
+-- reference graph: NODES are top-level bindings, EDGES are references from one
+-- to another.
+--
+-- WHY THIS SHAPE FIRST. Pass 57 C2 / Pass 64 FF-19 make a file's top-level
+-- bindings its surface and `_`-prefixed ones private. That turns in-degree into
+-- a real question with a real answer: a `_private` binding with no references
+-- inside its own file is dead code, and nothing outside the file may reach it
+-- (scripts/module_surface_gate.duo enforces that half). A public binding with
+-- in-degree 0 is NOT dead — it is the surface — which is exactly why the
+-- private/public distinction has to exist before this query means anything.
+--
+-- So this is not a graph for its own sake: it is the first query the graph can
+-- answer that no other pass can.
+--
+-- Limits, stated: nodes are top-level only, and a reference is a NAME token not
+-- in member position. Nested scopes, shadowing and indirect reference through a
+-- table field are refinements, not corrections.
+
+-- GAP: these two stay on the graveyard `req` spelling because it brings the
+-- module's TYPE names into scope and the ambient root binding does not —
+-- `lx: Lexer` fails with "unknown type name 'duo_Lexer'". Everything else in
+-- this file uses ambient roots. Measured, not assumed.
+global lexer = req "std.compiler.lexer"
+global token = req "std.compiler.token"
+
+_has = (set: str, name: str): bool
+    needle = "|" .. name .. "|"
+    hn: i64 = #set
+    nn: i64 = #needle
+    i: i64 = 1
+    while i + nn - 1 <= hn
+        j: i64 = 0
+        hit = true
+        while j < nn
+            if string.byte(set, i + j) != string.byte(needle, j + 1)
+                hit = false
+                j = nn
+            end
+            j += 1
+        end
+        if hit
+            return true
+        end
+        i += 1
+    end
+    false
+end
+
+_add = (set: str, name: str): str
+    if _has(set, name)
+        return set
+    end
+    set .. name .. "|"
+end
+
+_is_private = (name: str): bool
+    #name > 1 and string.byte(name, 1) == 95
+end
+
+-- Top-level binding names, as "|a|b|". A binding is at top level when its name
+-- token sits in column 1 — the same layout signal the parser uses to recognise
+-- a bodiless declaration.
+nodes = (src: str, file: str): str
+    lx: Lexer = lexer.new(src, file)
+    acc = "|"
+    while true
+        t = lexer.next(lx)
+        if t.kind == token.KIND_EOF
+            break
+        end
+        if t.kind == token.KIND_NAME and t.loc.col == 1
+            nxt = lexer.peek(lx)
+            if nxt.kind == token.KIND_ASSIGN or nxt.kind == token.KIND_LPAREN or nxt.kind == token.KIND_COLON
+                acc = _add(acc, t.text)
+            end
+        end
+    end
+    acc
+end
+
+-- Private nodes with in-degree 0: declared `_name`, never referenced in the
+-- file that declares them, and unreachable from outside it by policy.
+dead_private = (src: str, file: str, report: bool): i64
+    declared = nodes(src, file)
+    lx: Lexer = lexer.new(src, file)
+    used = "|"
+    prev_kind: i64 = 0
+    prev_col: i64 = 0
+    while true
+        t = lexer.next(lx)
+        if t.kind == token.KIND_EOF
+            break
+        end
+        if t.kind == token.KIND_NAME and prev_kind != token.KIND_DOT and prev_kind != token.KIND_COLON
+            -- a declaration site is not a use of itself
+            decl_site = t.loc.col == 1
+            if not decl_site
+                used = _add(used, t.text)
+            end
+        end
+        prev_kind = t.kind
+        prev_col = t.loc.col
+    end
+
+    -- walk the declared set and count private names never used
+    n: i64 = #declared
+    count: i64 = 0
+    start: i64 = 2
+    i: i64 = 2
+    while i <= n
+        if string.byte(declared, i) == 124
+            if i > start
+                name = string.sub(declared, start, i - 1)
+                if _is_private(name) and not _has(used, name)
+                    count += 1
+                    if report
+                        print("  dead private " .. file .. ": " .. name)
+                    end
+                end
+            end
+            start = i + 1
+        end
+        i += 1
+    end
+    count
+end

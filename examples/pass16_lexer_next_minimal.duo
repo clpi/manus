@@ -1,10 +1,8 @@
--- MP4-B01 repro: minimal Lexer.next() call via embedded req module.
+-- MP4-B01 repro: minimal std.compiler.lexer.next() call via embedded req module.
 
 main(): i64
-    Lexer = req "std.compiler.lexer"
-    Token = req "std.compiler.token"
-    lex = Lexer.new("fun", "proof.duo")
-    tok = Lexer.next(lex)
-    if tok.kind != Token.KIND_FUN return 1 end
+    lex = std.compiler.lexer.new("fun", "proof.duo")
+    tok = std.compiler.lexer.next(lex)
+    if tok.kind != std.compiler.token.KIND_FUN return 1 end
     0
 end

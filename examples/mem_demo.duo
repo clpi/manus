@@ -35,9 +35,9 @@ end
 arena = arena_new(4096)
 ptr1 = arena_alloc(arena, 256)
 ptr2 = arena_alloc(arena, 512)
-print("Arena used: " .. tostring(arena_used(arena)))
+print("Arena used: " .. to(str)(arena_used(arena)))
 arena_free_all(arena)
-print("Arena after free: " .. tostring(arena_used(arena)))
+print("Arena after free: " .. to(str)(arena_used(arena)))
 
 -- Alignment utilities
 align_up(n: i64, alignment: i64): i64
@@ -58,7 +58,7 @@ is_power_of_two(n: i64): bool
     true
 end
 
-print("align_up(13, 8): " .. tostring(align_up(13, 8)))
-print("align_down(13, 8): " .. tostring(align_down(13, 8)))
-print("is_power_of_two(16): " .. tostring(is_power_of_two(16)))
-print("is_power_of_two(15): " .. tostring(is_power_of_two(15)))
+print("align_up(13, 8): " .. to(str)(align_up(13, 8)))
+print("align_down(13, 8): " .. to(str)(align_down(13, 8)))
+print("is_power_of_two(16): " .. to(str)(is_power_of_two(16)))
+print("is_power_of_two(15): " .. to(str)(is_power_of_two(15)))

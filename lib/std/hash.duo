@@ -41,9 +41,3 @@ simple(s: str): i64
     @as(i64, math.abs(h))
 end
 
-M = {}
-M.md5 = md5
-M.crc32 = crc32
-M.fnv1a = fnv1a
-M.simple = simple
-M

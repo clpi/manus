@@ -1,8 +1,6 @@
 -- std.ml.gguf — GGUF model file parser (for LLM inference in ward)
 -- GGUF is the standard format for quantized LLM weights (llama.cpp, etc.)
 
-Bit = req "std.bit"
-
 -- GGUF magic number
 GGUF_MAGIC = 0x46554747  -- "GGUF" in little-endian
 GGUF_VERSION_3 = 3
@@ -212,7 +210,7 @@ gguf_load(data: any): any
     end
     version = reader_u32_le(r)
     if version != GGUF_VERSION_3 and version != GGUF_VERSION_4
-        return nil, "unsupported GGUF version: " .. tostring(version)
+        return nil, "unsupported GGUF version: " .. to(str)(version)
     end
     n_tensors = reader_u64_le(r)
     n_kv = reader_u64_le(r)

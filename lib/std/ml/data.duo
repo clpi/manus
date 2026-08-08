@@ -61,10 +61,3 @@ iter_epoch(loader): any
     return batch(data, loader.batch_size)
 end
 
-M = {}
-M.batch = batch
-M.from_pairs = from_pairs
-M.shuffle = shuffle
-M.dataloader = dataloader
-M.iter_epoch = iter_epoch
-M

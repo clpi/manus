@@ -28,17 +28,7 @@ isyieldable(): bool
     coroutine.isyieldable()
 end
 
-co_close(co: any): any
+close(co: any): any
     coroutine.close(co)
 end
 
-M = {}
-M.create = create
-M.resume = resume
-M.yield = yield
-M.status = status
-M.running = running
-M.wrap = wrap
-M.isyieldable = isyieldable
-M.close = co_close
-M

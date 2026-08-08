@@ -5,7 +5,7 @@
 -- Generation Config
 -- ═══════════════════════════════════════════════════════════════
 
-generation_config_new(): any
+config_new(): any
     {
         max_tokens = 512,
         temperature = 1.0,
@@ -20,32 +20,32 @@ generation_config_new(): any
     }
 end
 
-generation_config_set_max_tokens(config: any, max_tokens: i64): any
+config_set_max_tokens(config: any, max_tokens: i64): any
     config.max_tokens = max_tokens
     config
 end
 
-generation_config_set_temperature(config: any, temperature: f64): any
+config_set_temperature(config: any, temperature: f64): any
     config.temperature = temperature
     config
 end
 
-generation_config_set_top_k(config: any, top_k: i64): any
+config_set_top_k(config: any, top_k: i64): any
     config.top_k = top_k
     config
 end
 
-generation_config_set_top_p(config: any, top_p: f64): any
+config_set_top_p(config: any, top_p: f64): any
     config.top_p = top_p
     config
 end
 
-generation_config_set_stop(config: any, stop: any): any
+config_set_stop(config: any, stop: any): any
     config.stop = stop
     config
 end
 
-generation_config_set_seed(config: any, seed: i64): any
+config_set_seed(config: any, seed: i64): any
     config.seed = seed
     config
 end
@@ -94,7 +94,7 @@ sample_top_k(logits: any, k: i64, temperature: f64): i64
     end
 
     -- Sort by logit descending
-    table.sort(indexed, fun(a: any, b: any): any a.logit > b.logit)
+    table.sort(indexed, (a: any, b: any): any a.logit > b.logit)
 
     -- Keep top k
     top_k = {}
@@ -126,7 +126,7 @@ sample_top_p(logits: any, top_p: f64, temperature: f64): i64
     for i = 1, #logits
         indexed[#indexed + 1] = {idx = i, logit = logits[i]}
     end
-    table.sort(indexed, fun(a: any, b: any): any a.logit > b.logit)
+    table.sort(indexed, (a: any, b: any): any a.logit > b.logit)
 
     -- Apply temperature and softmax
     scaled = {}
@@ -176,7 +176,7 @@ sample_beam_search(logits: any, beams: i64, sequence: any): any
         for i = 1, #logits
             indexed[#indexed + 1] = {idx = i, logit = logits[i]}
         end
-        table.sort(indexed, fun(a: any, b: any): any a.logit > b.logit)
+        table.sort(indexed, (a: any, b: any): any a.logit > b.logit)
 
         i = 1
         while i <= beams and i <= #indexed
@@ -196,7 +196,7 @@ sample_beam_search(logits: any, beams: i64, sequence: any): any
         for i = 1, #logits
             indexed[#indexed + 1] = {idx = i, logit = logits[i]}
         end
-        table.sort(indexed, fun(a: any, b: any): any a.logit > b.logit)
+        table.sort(indexed, (a: any, b: any): any a.logit > b.logit)
 
         top_n = math.min(beams, #indexed)
         i = 1
@@ -215,7 +215,7 @@ sample_beam_search(logits: any, beams: i64, sequence: any): any
     end
 
     -- Sort all candidates by score and keep top beams
-    table.sort(all_candidates, fun(a: any, b: any): any a.score > b.score)
+    table.sort(all_candidates, (a: any, b: any): any a.score > b.score)
     result = {}
     i = 1
     while i <= beams and i <= #all_candidates
@@ -286,16 +286,16 @@ check_stop_tokens(generated: any, stop_tokens: any): bool
     for stop in stop_tokens
         stop_len = #stop
         if #generated >= stop_len
-            match = true
+            matched = true
             i = 1
             while i <= stop_len
                 if generated[#generated - stop_len + i] != stop[i]
-                    match = false
+                    matched = false
                     break
                 end
                 i += 1
             end
-            if match return true end
+            if matched return true end
         end
     end
     false
@@ -351,7 +351,7 @@ top_k_logits(logits: any, k: i64): any
     for i = 1, #logits
         indexed[#indexed + 1] = {idx = i, logit = logits[i]}
     end
-    table.sort(indexed, fun(a: any, b: any): any a.logit > b.logit)
+    table.sort(indexed, (a: any, b: any): any a.logit > b.logit)
 
     result = {}
     i = 1
@@ -366,30 +366,8 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
 -- Config
-M.config_new = generation_config_new
-M.config_set_max_tokens = generation_config_set_max_tokens
-M.config_set_temperature = generation_config_set_temperature
-M.config_set_top_k = generation_config_set_top_k
-M.config_set_top_p = generation_config_set_top_p
-M.config_set_stop = generation_config_set_stop
-M.config_set_seed = generation_config_set_seed
 -- Sampling
-M.sample_greedy = sample_greedy
-M.sample_temperature = sample_temperature
-M.sample_top_k = sample_top_k
-M.sample_top_p = sample_top_p
-M.sample_beam_search = sample_beam_search
 -- Penalties
-M.apply_repetition_penalty = apply_repetition_penalty
-M.apply_frequency_penalty = apply_frequency_penalty
-M.apply_presence_penalty = apply_presence_penalty
 -- Stop conditions
-M.check_stop_tokens = check_stop_tokens
-M.check_stop_strings = check_stop_strings
 -- Utilities
-M.softmax = softmax
-M.sample_from_probs = sample_from_probs
-M.top_k_logits = top_k_logits
-M

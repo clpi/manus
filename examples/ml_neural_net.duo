@@ -84,12 +84,12 @@ print("  Architecture: 4 → 8 (ReLU) → 3 (Softmax)")
 output = nn_forward(input, w1, b1, w2, b2)
 
 print("  Output:")
-print("    P(class 1) = " .. tostring(output.data[1]))
-print("    P(class 2) = " .. tostring(output.data[2]))
-print("    P(class 3) = " .. tostring(output.data[3]))
+print("    P(class 1) = " .. to(str)(output.data[1]))
+print("    P(class 2) = " .. to(str)(output.data[2]))
+print("    P(class 3) = " .. to(str)(output.data[3]))
 
 sum = output.data[1] + output.data[2] + output.data[3]
 assert(math.abs(sum - 1.0) < 0.01, "softmax broken")
-print("    Sum = " .. tostring(sum) .. " ✓")
+print("    Sum = " .. to(str)(sum) .. " ✓")
 print("")
 print("✓ No Python. No PyTorch. Just Duo.")

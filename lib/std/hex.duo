@@ -16,7 +16,3 @@ decode(s: str): str
     table.concat(out)
 end
 
-M = {}
-M.encode = encode
-M.decode = decode
-M

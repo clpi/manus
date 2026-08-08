@@ -12,31 +12,31 @@ set_level(level: str): void
 end
 
 get_level(): str
-    for name, v in pairs(log_levels)
+    for name, v in log_levels
         if v == log_level return name end
     end
     "INFO"
 end
 
-std_log_debug(msg: str): void
+debug(msg: str): void
     if log_level <= 0
         io.write(string.format("[DEBUG] %s\n", msg))
     end
 end
 
-std_log_info(msg: str): void
+info(msg: str): void
     if log_level <= 1
         io.write(string.format("[INFO] %s\n", msg))
     end
 end
 
-std_log_warn(msg: str): void
+warn(msg: str): void
     if log_level <= 2
         io.write(string.format("[WARN] %s\n", msg))
     end
 end
 
-std_log_error(msg: str): void
+error(msg: str): void
     if log_level <= 3
         io.write(string.format("[ERROR] %s\n", msg))
     end
@@ -56,20 +56,10 @@ with_fields(level: str, fields: any, msg: str): void
     if level_val < log_level return end
     parts = {string.format("[%s] %s", string.upper(level), msg)}
     if fields != nil
-        for k, v in pairs(fields)
-            parts[rawlen(parts) + 1] = string.format("%s=%s", k, tostring(v))
+        for k, v in fields
+            parts[rawlen(parts) + 1] = string.format("%s=%s", k, to(str)(v))
         end
     end
     io.write(table.concat(parts, " ") .. "\n")
 end
 
-M = {}
-M.set_level = set_level
-M.get_level = get_level
-M.debug = std_log_debug
-M.info = std_log_info
-M.warn = std_log_warn
-M.error = std_log_error
-M.print = print
-M.with_fields = with_fields
-M

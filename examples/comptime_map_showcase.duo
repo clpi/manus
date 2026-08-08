@@ -6,18 +6,18 @@ concept HasXY
     y: f64
 end
 
-type Point = { x: f64, y: f64 }
-type Pair = { x: f64, y: f64 }
-type IdOnly = { id: i64 }
+Point: { x: f64, y: f64 }
+Pair: { x: f64, y: f64 }
+IdOnly: { id: i64 }
 
 @comp.assert(@comp.satisfies(Point, "HasXY"), "Point has x and y")
 @comp.assert(not @comp.satisfies(IdOnly, "HasXY"), "IdOnly lacks x/y")
 
-c_type_comment(meta) -> str
+c_type_comment(meta): str
     "/* " .. meta.name .. " */\n"
 end
 
-type_registry_line(meta) -> str
+type_registry_line(meta): str
     meta.name .. ";"
 end
 
@@ -26,6 +26,6 @@ end
 TYPE_MARKS = @comp.map("HasXY", type_registry_line)
 
 print("=== comptime_map showcase ===")
-print("satisfies Point = " .. tostring(@comp.satisfies(Point, "HasXY")))
+print("satisfies Point = " .. to(str)(@comp.satisfies(Point, "HasXY")))
 print("type_marks = " .. TYPE_MARKS)
 print("ok")

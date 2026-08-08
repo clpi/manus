@@ -1,0 +1,59 @@
+-- Pass 11 WP-04/15: direct-backend smoke (macOS AArch64 host only).
+--
+-- Duo replacement for scripts/pass11_direct_smoke.sh (monoglot census).
+
+_PROOF = "examples/pass11_record_proof.duo"
+_OUT = "/tmp/duo_pass11_direct_smoke.out"
+
+-- SKIP, not FAIL, off the supported host: this proof asserts a property of the
+-- aarch64-macos direct backend, and a Linux runner has nothing to say about it.
+_wrong_host(): bool
+    os_name = std.script.chomp(std.script.capture("uname -s"))
+    arch = std.script.chomp(std.script.capture("uname -m"))
+    if os_name != "Darwin"
+        print("pass11_direct_smoke: SKIP (requires macOS host)")
+        return true
+    end
+    if arch != "arm64"
+        print("pass11_direct_smoke: SKIP (requires AArch64 host)")
+        return true
+    end
+    false
+end
+
+main = (): i64
+    if _wrong_host() return 0 end
+
+    duo = "./zig-out/bin/duo"
+    if not std.script.fs_exists(duo)
+        zig = std.script.getenv_or("ZIG")
+        if zig == "" zig = "zig" end
+        if std.script.run(zig .. " build") != 0
+            print("pass11_direct_smoke: FAIL — zig build")
+            return 1
+        end
+    end
+
+    if not std.script.fs_exists(_PROOF)
+        print("pass11_direct_smoke: FAIL — missing " .. _PROOF)
+        return 1
+    end
+
+    cmd = duo .. " compile " .. _PROOF
+        .. " --backend=direct --target aarch64-macos --emit exe -o " .. _OUT
+    if std.script.run(cmd) != 0
+        print("pass11_direct_smoke: FAIL — direct compile")
+        return 1
+    end
+
+    -- The proof asserts by EXIT CODE and prints nothing on success, so the
+    -- status is the whole result. Running it is the point; compiling is not.
+    code = std.script.run(_OUT)
+    if code != 0
+        print("pass11_direct_smoke: FAIL — expected exit 0, got exit=" .. to(str)(code))
+        return 1
+    end
+
+    print("pass11_direct_smoke: PASS — direct compile + execute (exit=" .. to(str)(code) .. ")")
+    0
+end

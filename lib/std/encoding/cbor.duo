@@ -56,10 +56,10 @@ encode_value(v: any, buf: any): void
 end
 
 encode_number(n: f64, buf: any): void
-    if n >= 0 and math.floor(n) == n and n < 2^64
+    if n >= 0 and math.floor(n) == n and n < 1.8446744073709552e19
         -- Unsigned integer
         encode_uint(MT_UINT, math.floor(n), buf)
-    elseif n < 0 and math.floor(n) == n and n >= -(2^64)
+    elseif n < 0 and math.floor(n) == n and n >= -1.8446744073709552e19
         -- Negative integer: store as -1 - n
         encode_uint(MT_NEGINT, math.floor(-1 - n), buf)
     elseif math.floor(n) == n and math.abs(n) < 2^53
@@ -213,10 +213,10 @@ end
 
 encode_map(m: any, buf: any): void
     n = 0
-    for _ in pairs(m) do n += 1 end
+    for _ in m do n += 1 end
     buf[#buf + 1] = string.char(MT_MAP * 32 + encode_addinfo(n))
     encode_addinfo_bytes(n, buf)
-    for k, v in pairs(m)
+    for k, v in m
         encode_value(k, buf)
         encode_value(v, buf)
     end
@@ -246,7 +246,7 @@ end
 
 is_array(t: any): bool
     n = 0
-    for _ in pairs(t) do n += 1 end
+    for _ in t do n += 1 end
     return n == #t and n > 0
 end
 

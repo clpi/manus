@@ -3,7 +3,7 @@
 @c.include("fcntl.h")
 @c.include("unistd.h")
 
-rand_bytes(n: i64): any
+bytes(n: i64): any
     if n == nil or n <= 0 return {} end
     out = {}
     @c.emit([[{
@@ -21,9 +21,9 @@ rand_bytes(n: i64): any
     out
 end
 
-rand_hex(n: i64): str
+hex(n: i64): str
     if n == nil or n <= 0 return "" end
-    b = rand_bytes(n)
+    b = bytes(n)
     res = ""
     for i = 1, n
         res = res .. string.format("%02x", b[i])
@@ -31,7 +31,7 @@ rand_hex(n: i64): str
     res
 end
 
-rand_int(max: i64): i64
+int(max: i64): i64
     if max == nil or max <= 0 return 0 end
     r: i64 = 0
     @c.emit([[{
@@ -45,20 +45,13 @@ prime(bits: i64): i64
     2
 end
 
-rand_read(buf: any): i64
+read(buf: any): i64
     if buf == nil return 0 end
     n: i64 = rawlen(buf)
-    b = rand_bytes(n)
+    b = bytes(n)
     for i = 1, n
         buf[i] = b[i]
     end
     n
 end
 
-M = {}
-M.read = rand_read
-M.int = rand_int
-M.bytes = rand_bytes
-M.hex = rand_hex
-M.prime = prime
-M

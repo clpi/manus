@@ -1,13 +1,10 @@
 -- std.term — terminal styling helpers for Duo programs and build scripts
 
-color = req "std.color"
-string = req "std.string"
-
 global M = {}
 
-M.RESET = color.RESET
-M.BOLD = color.BOLD
-M.DIM = color.DIM
+M.RESET = std.color.RESET
+M.BOLD = std.color.BOLD
+M.DIM = std.color.DIM
 
 is_tty(): bool
     ok, val = pcall(os.getenv, "DUO_COLOR")
@@ -30,32 +27,32 @@ styled(prefix, text, suffix): str
 end
 
 bold(text: str): str
-    styled(color.BOLD, text, color.RESET)
+    styled(std.color.BOLD, text, std.color.RESET)
 end
 
 dim(text: str): str
-    styled(color.DIM, text, color.RESET)
+    styled(std.color.DIM, text, std.color.RESET)
 end
 
 green(text: str): str
-    color.green(text)
+    std.color.green(text)
 end
 
 red(text: str): str
-    color.red(text)
+    std.color.red(text)
 end
 
 yellow(text: str): str
-    color.yellow(text)
+    std.color.yellow(text)
 end
 
 cyan(text: str): str
-    color.blue(text)
+    std.color.blue(text)
 end
 
 banner(title: str): str
     if is_tty()
-        color.CYAN .. "╭─ " .. title .. color.RESET
+        std.color.CYAN .. "╭─ " .. title .. std.color.RESET
     else
         "== " .. title .. " =="
     end
@@ -63,7 +60,7 @@ end
 
 kv(key: str, value: str): str
     if is_tty()
-        color.DIM .. key .. color.RESET .. " " .. color.CYAN .. value .. color.RESET
+        std.color.DIM .. key .. std.color.RESET .. " " .. std.color.CYAN .. value .. std.color.RESET
     else
         key .. " " .. value
     end
@@ -71,7 +68,7 @@ end
 
 divider(): str
     if is_tty()
-        color.DIM .. "────────────────────────────────────────" .. color.RESET
+        std.color.DIM .. "────────────────────────────────────────" .. std.color.RESET
     else
         "----------------------------------------"
     end
@@ -79,7 +76,7 @@ end
 
 ok_msg(text: str): str
     if is_tty()
-        color.GREEN .. "✓ " .. text .. color.RESET
+        std.color.GREEN .. "✓ " .. text .. std.color.RESET
     else
         "ok: " .. text
     end
@@ -87,7 +84,7 @@ end
 
 err_msg(text: str): str
     if is_tty()
-        color.RED .. "● error: " .. text .. color.RESET
+        std.color.RED .. "● error: " .. text .. std.color.RESET
     else
         "error: " .. text
     end

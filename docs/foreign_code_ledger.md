@@ -27,12 +27,17 @@ Every row below is therefore debt by construction.
 
 | file | sites | class | role | replacement | deletion gate | status |
 | --- | ---: | --- | --- | --- | --- | --- |
-| `src/wasm/runtime.duo` | **275** | B | interpreter core: memory, stack, dispatch, SIMD | Duo over a v128/value substrate | see split below | **open** |
-| `src/wasm/module.duo` | 9 | B | decoder byte access | `std.bytes` / slice substrate | slice substrate lands in `lib/std` | open |
-| `src/ward.duo` | 2 | B | entry glue | Duo entry | S1 substrate | open |
-| `src/wasm/interp_ward.duo` | 1 | B | interp shim | fold into runtime | with runtime split | open |
-| `src/wasm/jit_ward.duo` | 1 | B | JIT shim | fold into `jit_arm64.duo` | with runtime split | open |
-| `src/wasm/jit_arm64.duo` | **0** | — | ARM64 template JIT | — | **n/a — already pure Duo** | **compliant** |
+| `src/ward.duo` | **0** | — | interpreter + ARM64 JIT, the build that ships | — | n/a | **compliant** |
+| `src/duo_lexer_tokenize.c` | 8952 lines | **A** | SH-03 bootstrap: the Duo lexer compiled to C, linked into the production binary so the compiler can tokenize with `lib/std/compiler/lexer.duo` | regenerate from `lib/std/compiler/host.duo`; deleted when a Duo-hosted compiler can build itself without a C stage | **S1 viability — the compiler no longer needs a C bootstrap** | **declared 2026-08-07** |
+| ~~`src/duo_keyword_classify.c`~~ | ~~72~~ | **A** | SH-02 bootstrap keyword table; declared its symbol `weak` so a full Duo artifact could override it | `src/duo_lexer_tokenize.c` provides the strong symbol (both generated from `lib/std/token/classify.duo`) | gate met — nothing linked the weak fallback | **DELETED 2026-08-07** |
+| `src/lexer.zig` | 1300 lines | **C** | SH-03 differential reference: no longer authoritative — `tokenizeAuthority()` returns `.duo_native` as of 2026-08-07. Retained because `src/duo_lexer_dispatch.zig` differentials the Duo token stream against it field for field on every test run | none needed; class C may persist | **never authoritative; delete when the differential is retired at S1 closure** | **declared 2026-08-07; non-authoritative** |
+| `src/wasm/jit_arm64.duo` | **0** | — | ARM64 template JIT | — | n/a | **compliant** |
+| `src/wasm/{op,wasi,simd,aot,jit,memory,stack,table,value}.duo` | **0** | — | C-free leaves | — | n/a | **compliant** |
+| ~~`src/wasm/runtime.duo`~~ | ~~278~~ | — | dead tree | — | — | **DELETED 2026-08-07** |
+| ~~`src/wasm/module.duo`~~ | ~~9~~ | — | dead tree | — | — | **DELETED 2026-08-07** |
+| ~~`src/main.duo`~~ | ~~5~~ | — | dead entry, did not compile | — | — | **DELETED 2026-08-07** |
+| ~~`src/wasm/interp_ward.duo`~~ | ~~1~~ | — | dead shim | — | — | **DELETED 2026-08-07** |
+| ~~`src/wasm/jit_ward.duo`~~ | ~~1~~ | — | dead shim | — | — | **DELETED 2026-08-07** |
 
 ### `runtime.duo` split (the 275)
 
@@ -44,6 +49,51 @@ Every row below is therefore debt by construction.
 **Note:** `jit_arm64.duo` is the existence proof that ward's hot path does not require C —
 a full ARM64 template JIT with zero `@c.emit`. The 118-site SIMD block was written against
 that precedent and violates it; it is the newest debt in the tree, not the oldest.
+
+### RESOLVED 2026-08-07 — ward is 100% C-free; the dead tree is retired
+
+All 294 `@c.emit` sites are **gone**. runtime.duo (278), module.duo (9),
+main.duo (5), interp_ward.duo and jit_ward.duo (1 each) were removed along with
+the entry/wrapper modules that required them. `src/` went from 28 tracked files
+to 14, and `bench/verify.sh` is unchanged at 42 PASS / 0 wrong on both engines
+with 34 modules JIT-compiled.
+
+This had been recorded as blocked by a parallel session holding uncommitted
+changes in `src/wasm/`. **That was too coarse.** Those three files —
+`jit_arm64.duo`, `op.duo`, `wasi.duo` — carry ZERO `@c.` directives and require
+only `std.*`; every C site was in a file nobody else was editing, and
+`runtime.duo` depended on *them*, not the reverse. All three were left untouched.
+
+The lesson: "the directory is blocked" was never true — only three files were,
+and they were not the ones holding the debt. Check the actual file set before
+concluding a cleanup is unreachable.
+
+### Historical: ward has TWO parallel runtimes, and the C is all in the dead one
+
+The `src/ward.duo` row previously read "2 sites". Both hits are inside **comments**
+that assert *"Pure Duo: no @c.emit"* — a grep false positive. `src/ward.duo` contains
+**zero** `@c.` directives of any kind. It is also the build that ships: 2978 lines,
+interpreter + ARM64 JIT, verified 20 PASS / 0 wrong against a wasmtime oracle.
+
+So ward carries two ~2900-line implementations of the same runtime:
+
+| tree | entry | lines | `@c.emit` | verified |
+|---|---|---:|---:|---|
+| `src/ward.duo` | standalone | 2978 | **0** | **20/20 vs wasmtime** |
+| `src/wasm/*.duo` | `src/main.duo` → `src.wasm` | 2890 | **275** | not exercised by `bench/verify.sh` |
+
+**All of ward's C debt lives in the tree that does not ship.** Retiring `src/wasm/`
+would delete every one of the 275 sites at a stroke and halve ward's line count —
+but it is an architectural call about which entry point is canonical, not a cleanup,
+so it needs an explicit decision rather than a unilateral delete.
+
+### Perf reality check (2026-08-07)
+
+`src/ward.duo`'s JIT covers **2 of 21** corpus modules (`hash`, `hash2b`); the other
+19 fall back to the interpreter because `jit_compile` bails on op 16 (`call`). Every
+ward-vs-wasmtime headline number to date was therefore measured on one of the only
+two modules the JIT handles. ward still wins **2.3-2.6x** on startup-bound modules,
+where its microsecond template-JIT compile beats Cranelift's milliseconds.
 
 ---
 
@@ -79,9 +129,8 @@ tested.
 
 | | count |
 | --- | ---: |
-| ward `@c.emit` sites (all debt) | **288** |
-| ...with a written replacement | 118 (SIMD — inert) |
-| ...compliant modules | `jit_arm64.duo` (0 sites) |
+| ward `@c.emit` sites (all debt) | **0 — RETIRED 2026-08-07** |
+| ...compliant modules | ALL of `src/` (14 files, zero `@c.` directives) |
 | duo S0 Zig files (class A) | 224 |
 | entries with a real deletion gate | ward SIMD, ward decoder, S0 |
 | entries **without** a deletion gate | remaining `scripts/*.sh` not in `removal_ledger.zig` |
@@ -90,8 +139,9 @@ tested.
 
 1. **Enforce the S0 freeze.** Nothing else in this ledger can progress while the bootstrap
    compiler does not build.
-2. **Wire in `simd.duo`.** The replacement is written; only the codegen failure blocks it.
-   Closes 118 of ward's 288 sites — 41% of ward's C debt in one change.
+2. ~~Wire in `simd.duo`.~~ **Moot.** ward's C debt was retired wholesale on
+   2026-08-07 by deleting the dead tree; the shipping `src/ward.duo` carries a
+   descriptor-driven SIMD executor (30 opcodes from 30 rows) with no C at all.
 3. **Slice/bytes substrate in `lib/std`.** Unblocks `module.duo` (9) and is §7 phase 1
    regardless.
 4. **Give `scripts/*.sh` a deletion gate** or accept it as permanent class-D.

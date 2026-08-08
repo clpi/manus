@@ -20,11 +20,6 @@ offset(s: str, n: int, i: int): any
     utf8.offset(s, n, i)
 end
 
-M = {}
-M.char = char
-M.charpattern = utf8.charpattern
-M.codes = codes
-M.codepoint = codepoint
-M.len = len
-M.offset = offset
-M
+-- The only export that was not already a top-level binding: an alias onto the
+-- host's pattern constant.
+charpattern = utf8.charpattern

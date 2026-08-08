@@ -118,9 +118,6 @@ end
 -- Uses HMAC-SHA256 as the underlying primitive
 -- ═══════════════════════════════════════════════════════════════
 
-hmac_mod = req "std.crypto.hmac"
-crypto = req "std.crypto"
-
 hmac_drbg_new(entropy: str, nonce: str, personalization: str): any
     -- V = 0x00 * 32, K = 0x00 * 32
     V = string.rep(string.char(0), 32)
@@ -130,13 +127,13 @@ hmac_drbg_new(entropy: str, nonce: str, personalization: str): any
     entropy_input = entropy .. nonce .. personalization
 
     -- Initial seeding: K = HMAC(K, V || 0x00 || entropy_input)
-    K = hmac_mod.hmac_sha256_bytes(K, V .. string.char(0) .. entropy_input)
+    K = std.crypto.hmac.hmac_sha256_bytes(K, V .. string.char(0) .. entropy_input)
     -- V = HMAC(K, V)
-    V = hmac_mod.hmac_sha256_bytes(K, V)
+    V = std.crypto.hmac.hmac_sha256_bytes(K, V)
 
     -- Additional entropy rounds
-    K = hmac_mod.hmac_sha256_bytes(K, V .. string.char(1) .. entropy_input)
-    V = hmac_mod.hmac_sha256_bytes(K, V)
+    K = std.crypto.hmac.hmac_sha256_bytes(K, V .. string.char(1) .. entropy_input)
+    V = std.crypto.hmac.hmac_sha256_bytes(K, V)
 
     {
         v = V,
@@ -151,7 +148,7 @@ hmac_drbg_generate(state: any, num_bytes: i64): str
 
     while remaining > 0
         -- V = HMAC(K, V)
-        state.v = hmac_mod.hmac_sha256_bytes(state.k, state.v)
+        state.v = std.crypto.hmac.hmac_sha256_bytes(state.k, state.v)
 
         -- Take min(remaining, 32) bytes from V
         take = remaining
@@ -166,14 +163,14 @@ end
 
 hmac_drbg_reseed(state: any, entropy: str): void
     -- K = HMAC(K, V || 0x00 || entropy)
-    state.k = hmac_mod.hmac_sha256_bytes(state.k, state.v .. string.char(0) .. entropy)
+    state.k = std.crypto.hmac.hmac_sha256_bytes(state.k, state.v .. string.char(0) .. entropy)
     -- V = HMAC(K, V)
-    state.v = hmac_mod.hmac_sha256_bytes(state.k, state.v)
+    state.v = std.crypto.hmac.hmac_sha256_bytes(state.k, state.v)
 
     -- K = HMAC(K, V || 0x01 || entropy)
-    state.k = hmac_mod.hmac_sha256_bytes(state.k, state.v .. string.char(1) .. entropy)
+    state.k = std.crypto.hmac.hmac_sha256_bytes(state.k, state.v .. string.char(1) .. entropy)
     -- V = HMAC(K, V)
-    state.v = hmac_mod.hmac_sha256_bytes(state.k, state.v)
+    state.v = std.crypto.hmac.hmac_sha256_bytes(state.k, state.v)
 
     state.reseed_counter = 0
 end
@@ -192,7 +189,7 @@ random_bytes(n: i64): str
         if #data == n return data end
     end
     -- Fallback: ChaCha20 with time-based entropy (not all zeros!)
-    time_seed = tostring(os.clock()) .. tostring(os.time()) .. tostring(math.random(1, 999999))
+    time_seed = to(str)(os.clock()) .. to(str)(os.time()) .. to(str)(math.random(1, 999999))
     key = {}
     i = 1
     while i <= 32
@@ -240,7 +237,7 @@ random_float(): f64
         val = (val << 8) | string.byte(bytes, i + 1)
         i += 1
     end
-    return val / (2^64)
+    return val / 1.8446744073709552e19
 end
 
 -- ═══════════════════════════════════════════════════════════════

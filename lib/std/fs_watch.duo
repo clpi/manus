@@ -6,15 +6,15 @@
 --   local kq = watch.create()
 --   local fd = watch.add_watch(kq, "/tmp/foo.txt", watch.flags_from_mask("write|delete"))
 --   local events = watch.poll(kq, 5000)  -- 5s timeout
---   if events ~= nil then
---     for _, ev in ipairs(events) do
---       print("fd=" .. tostring(ev.fd) .. " flags=" .. tostring(ev.flags))
+--   if events != nil then
+--     for _, ev in events do
+--       print("fd=" .. to(str)(ev.fd) .. " flags=" .. to(str)(ev.flags))
 --     end
 --   end
 --   watch.close(kq)
 --
 -- Polling fallback:
---   watch.poll_watch("/tmp/foo.txt", function(ev) print("changed!") end, 1000)
+--   watch.poll_watch("/tmp/foo.txt", (ev) print("changed!") end, 1000)
 
 -- ─────────────────────────────────────────────────────────────
 -- Platform detection
@@ -595,7 +595,7 @@ poll_watch(path: str, callback: any, interval_ms: int): void
     while true do
         -- Sleep for interval
         sec = interval_ms / 1000.0
-        os.execute("sleep " .. tostring(sec))
+        os.execute("sleep " .. to(str)(sec))
 
         cur_mtime = get_mtime(path)
         cur_exists = cur_mtime != ""
@@ -632,51 +632,7 @@ platform(): str
 end
 
 -- Expose constants for users
-M = {}
-
 -- Constants
-M.NOTE_DELETE  = NOTE_DELETE
-M.NOTE_WRITE   = NOTE_WRITE
-M.NOTE_EXTEND  = NOTE_EXTEND
-M.NOTE_ATTRIB  = NOTE_ATTRIB
-M.NOTE_LINK    = NOTE_LINK
-M.NOTE_RENAME  = NOTE_RENAME
-M.NOTE_REVOKE  = NOTE_REVOKE
-
-M.EVFILT_VNODE = EVFILT_VNODE
-M.EV_ADD       = EV_ADD
-M.EV_DELETE    = EV_DELETE
-M.EV_ENABLE    = EV_ENABLE
-M.EV_DISABLE   = EV_DISABLE
-M.EV_ONESHOT   = EV_ONESHOT
-M.EV_CLEAR     = EV_CLEAR
-
-M.IN_ACCESS        = IN_ACCESS
-M.IN_MODIFY        = IN_MODIFY
-M.IN_ATTRIB        = IN_ATTRIB
-M.IN_CLOSE_WRITE   = IN_CLOSE_WRITE
-M.IN_CLOSE_NOWRITE = IN_CLOSE_NOWRITE
-M.IN_OPEN          = IN_OPEN
-M.IN_MOVED_FROM    = IN_MOVED_FROM
-M.IN_MOVED_TO      = IN_MOVED_TO
-M.IN_CREATE        = IN_CREATE
-M.IN_DELETE        = IN_DELETE
-M.IN_DELETE_SELF   = IN_DELETE_SELF
-M.IN_MOVE_SELF     = IN_MOVE_SELF
-M.IN_ALL_EVENTS    = IN_ALL_EVENTS
-
 -- API
-M.create         = create
-M.add_watch      = add_watch
-M.remove_watch   = remove_watch
-M.poll           = poll
-M.close          = close
-M.flags_from_mask = flags_from_mask
-
 -- Polling fallback
-M.poll_watch     = poll_watch
-
 -- Platform info
-M.platform       = platform
-
-M

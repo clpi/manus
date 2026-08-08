@@ -3,7 +3,7 @@ json = req("std.json")
 io = req("std.io")
 
 print("Hello at startup")
-type Vector3 = { x: f64, y: f64, z: f64 }
+Vector3: { x: f64, y: f64, z: f64 }
 
 do_test()
     req_str = std.json.encode({a=1})

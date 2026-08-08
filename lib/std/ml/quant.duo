@@ -1,7 +1,5 @@
 -- std.ml.quant — Quantization helpers (f16, int8, int4, GPTQ-style)
 
-Tensor = req "std.ml.tensor"
-
 -- ═══════════════════════════════════════════════════════════════
 -- Symmetric INT8 Quantization
 -- ═══════════════════════════════════════════════════════════════
@@ -31,7 +29,7 @@ quantize_symmetric(t, bits): any
     q.scale = scale
     q.zero_point = 0
     q.bits = bits
-    q.dtype = "int" .. tostring(bits)
+    q.dtype = "int" .. to(str)(bits)
     q.data = {}
 
     if bits == 8
@@ -87,7 +85,7 @@ quantize_asymmetric(t, bits): any
     q.scale = scale
     q.zero_point = zero_point
     q.bits = bits
-    q.dtype = "uint" .. tostring(bits)
+    q.dtype = "uint" .. to(str)(bits)
     q.data = {}
 
     for i = 1, t.size
@@ -250,7 +248,7 @@ gptq_quantize(t, bits, block_size): any
     q.cols = t.cols
     q.size = t.size
     q.bits = bits
-    q.dtype = "gptq_int" .. tostring(bits)
+    q.dtype = "gptq_int" .. to(str)(bits)
     q.block_size = block_size
     q.scales = {}
     q.zeros = {}
@@ -335,7 +333,7 @@ amp_policy(): any
     }
 end
 
-quantization_stats(q): any
+stats(q): any
     -- Calculate compression ratio
     original_bits = 32
     compressed_bits = q.bits
@@ -364,23 +362,10 @@ quantization_stats(q): any
     }
 end
 
-M = {}
 -- Symmetric
-M.quantize_symmetric = quantize_symmetric
 -- Asymmetric
-M.quantize_asymmetric = quantize_asymmetric
 -- Dequantize
-M.dequantize = dequantize
 -- FP16
-M.fp16_encode = fp16_encode
-M.fp16_decode = fp16_decode
-M.tensor_to_fp16 = tensor_to_fp16
-M.tensor_from_fp16 = tensor_from_fp16
 -- GPTQ
-M.gptq_quantize = gptq_quantize
-M.gptq_dequantize = gptq_dequantize
 -- AMP
-M.amp_policy = amp_policy
 -- Stats
-M.stats = quantization_stats
-M

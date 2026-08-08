@@ -45,20 +45,20 @@ format_float(v: any, fmt: str, prec: any): str
         if prec < 0
             string.format("%e", v)
         else
-            string.format("%." .. tostring(prec) .. "e", v)
+            string.format("%." .. to(str)(prec) .. "e", v)
         end
     elseif fmt == "f"
         if prec < 0
             string.format("%f", v)
         else
-            string.format("%." .. tostring(prec) .. "f", v)
+            string.format("%." .. to(str)(prec) .. "f", v)
         end
     else
         -- 'g' or default
         if prec < 0
             string.format("%g", v)
         else
-            string.format("%." .. tostring(prec) .. "g", v)
+            string.format("%." .. to(str)(prec) .. "g", v)
         end
     end
 end
@@ -105,7 +105,7 @@ parse_int(s: str, base: any): any
 end
 
 -- atoi: convenience for parse_int(s, 10).
-parse_int_10(s: str): any
+atoi(s: str): any
     parse_int(s, 10)
 end
 
@@ -220,18 +220,15 @@ end
 
 -- append_bool: format a boolean as "true" or "false".
 format_bool(b: bool): str
-    if b "true" else "false" end
+    -- A guard, not `if b "true" else "false" end`. In the endless one-liner
+    -- form the clause must be SELF-DELIMITED (Pass 48 2.4), and `b "true"`
+    -- reads as PARENLESS APPLICATION -- the emitted C was
+    -- `b(lua_val_from_literal("true", ...))`, i.e. calling a bool
+    -- ("called object type 'bool' is not a function"), which took the module
+    -- down.
+    if b
+        return "true"
+    end
+    "false"
 end
 
-M = {}
-M.format_int = format_int
-M.itoa = itoa
-M.format_float = format_float
-M.parse_int = parse_int
-M.atoi = parse_int_10
-M.parse_float = parse_float
-M.parse_bool = parse_bool
-M.quote = quote
-M.unquote = unquote
-M.format_bool = format_bool
-M

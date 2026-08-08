@@ -20,10 +20,5 @@ spin_wait(): void
 end
 
 -- Re-export ML device placement helpers (@device runtime table)
-Device = req 'std.ml.device'
+device = req 'std.ml.device'
 
-M = {}
-M.fence = fence
-M.spin_wait = spin_wait
-M.device = Device
-M

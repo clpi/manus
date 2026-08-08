@@ -3,20 +3,40 @@
 -- Typed i64/float helpers that lower to branchless C or single-instruction
 -- intrinsics (@popcount, @clz, @ctz, @rotl).
 
+-- Guards, not `if a < b a else b end`. The endless one-liner clause must be
+-- SELF-DELIMITED (Pass 64 2.2), and the trailing `b a` reads as PARENLESS
+-- APPLICATION -- the clause became `a < b(a)`, calling the operand.
+--
+-- `fast_abs` below (`if x < 0 0 - x else x end`) is SAFE: its body begins with
+-- a numeric literal, so there is no application to mis-parse. The hazard is
+-- specifically a clause ending in a bare name followed by a body beginning
+-- with one.
 fast_min(a: i64, b: i64): i64
-    if a < b a else b end
+    if a < b
+        return a
+    end
+    b
 end
 
 fast_max(a: i64, b: i64): i64
-    if a > b a else b end
+    if a > b
+        return a
+    end
+    b
 end
 
 fast_minf(a: float, b: float): float
-    if a < b a else b end
+    if a < b
+        return a
+    end
+    b
 end
 
 fast_maxf(a: float, b: float): float
-    if a > b a else b end
+    if a > b
+        return a
+    end
+    b
 end
 
 fast_abs(x: i64): i64

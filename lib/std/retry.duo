@@ -16,7 +16,7 @@ end
 -- constant_backoff: always wait the same interval.
 constant_backoff(interval: float): any
     iv = interval
-    return function(attempt: any): any iv
+    return (attempt: any) iv
 end
 
 -- linear_backoff: wait increases linearly with attempt number.
@@ -25,7 +25,7 @@ linear_backoff(base: float, max_val: float): any
     if max_val == nil max_val = 30 end
     base_c = base
     max_c = max_val
-    return function(attempt: any): any
+    return (attempt: any): any
         wait = base_c * attempt
         if wait > max_c wait = max_c end
         wait
@@ -40,7 +40,7 @@ exponential_backoff(base: float, max_val: float, jitter: bool): any
     base_c = base
     max_c = max_val
     jitter_c = jitter
-    return function(attempt: any): any
+    return (attempt: any): any
         wait = base_c
         idx = 0
         while idx < attempt
@@ -70,7 +70,7 @@ do_retry(max_attempts: i64, backoff_fn: any, fn_ref: any): any
             return {ok = result, attempts = attempt}
         end
         if not ok
-            last_error = tostring(result)
+            last_error = to(str)(result)
         end
         if attempt < max_attempts
             wait = backoff_fn(attempt)
@@ -93,7 +93,7 @@ do_retry_bool(max_attempts: i64, backoff_fn: any, fn_ref: any): any
             return {ok = true, attempts = attempt}
         end
         if not ok
-            last_error = tostring(result)
+            last_error = to(str)(result)
         end
         if attempt < max_attempts
             wait = backoff_fn(attempt)
@@ -127,7 +127,7 @@ retry_if(max_attempts: i64, backoff_fn: any, condition: any, fn_ref: any): any
             return {ok = result, attempts = attempt}
         end
         if not ok
-            last_error = tostring(result)
+            last_error = to(str)(result)
             if not condition(last_error)
                 return {ok = nil, error = last_error, attempts = attempt}
             end
@@ -192,7 +192,7 @@ circuit_call(cb: any, fn_ref: any): any
     if cb.failures >= cb.threshold
         cb.state = "open"
     end
-    {ok = nil, error = tostring(result)}
+    {ok = nil, error = to(str)(result)}
 end
 
 -- circuit_state: return the current state of the circuit breaker.
@@ -222,18 +222,3 @@ circuit_stats(cb: any): any
     }
 end
 
-M = {}
-M.constant_backoff = constant_backoff
-M.linear_backoff = linear_backoff
-M.exponential_backoff = exponential_backoff
-M.do_retry = do_retry
-M.do_retry_bool = do_retry_bool
-M.retry = retry
-M.retry_with_backoff = retry_with_backoff
-M.retry_if = retry_if
-M.circuit_new = circuit_new
-M.circuit_call = circuit_call
-M.circuit_state = circuit_state
-M.circuit_reset = circuit_reset
-M.circuit_stats = circuit_stats
-M

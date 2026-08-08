@@ -102,49 +102,49 @@ s(prefix: str, text: str, suffix: str): str
     if prefix == nil prefix = "" end
     if suffix == nil suffix = M.RESET end
     if not tty()
-        return tostring(text)
+        return to(str)(text)
     end
-    return prefix .. tostring(text) .. suffix
+    return prefix .. to(str)(text) .. suffix
 end
 
 bold(text: str): str
-    return M.BOLD .. tostring(text) .. M.RESET
+    return M.BOLD .. to(str)(text) .. M.RESET
 end
 
 dim(text: str): str
-    return M.DIM .. tostring(text) .. M.RESET
+    return M.DIM .. to(str)(text) .. M.RESET
 end
 
 italic(text: str): str
-    return M.ITALIC .. tostring(text) .. M.RESET
+    return M.ITALIC .. to(str)(text) .. M.RESET
 end
 
 underline(text: str): str
-    return M.UNDERLINE .. tostring(text) .. M.RESET
+    return M.UNDERLINE .. to(str)(text) .. M.RESET
 end
 
 red(text: str): str
-    return M.RED .. tostring(text) .. M.RESET
+    return M.RED .. to(str)(text) .. M.RESET
 end
 
 green(text: str): str
-    return M.GREEN .. tostring(text) .. M.RESET
+    return M.GREEN .. to(str)(text) .. M.RESET
 end
 
 yellow(text: str): str
-    return M.YELLOW .. tostring(text) .. M.RESET
+    return M.YELLOW .. to(str)(text) .. M.RESET
 end
 
 blue(text: str): str
-    return M.BLUE .. tostring(text) .. M.RESET
+    return M.BLUE .. to(str)(text) .. M.RESET
 end
 
 magenta(text: str): str
-    return M.MAGENTA .. tostring(text) .. M.RESET
+    return M.MAGENTA .. to(str)(text) .. M.RESET
 end
 
 cyan(text: str): str
-    return M.CYAN .. tostring(text) .. M.RESET
+    return M.CYAN .. to(str)(text) .. M.RESET
 end
 
 -- ─── Value formatting ─────────────────────────────────────────────
@@ -152,19 +152,19 @@ tbl_summary(t: any): str
     if t == nil return "nil" end
     n = rawlen(t)
     if n > 0
-        return "array(" .. tostring(n) .. ")"
+        return "array(" .. to(str)(n) .. ")"
     end
     count = 0
     first = ""
     for k, _v in t
         count += 1
-        if count == 1 first = tostring(k) end
+        if count == 1 first = to(str)(k) end
     end
     if count == 0 return "{}" end
     if count <= 3
         return "{" .. first .. ", ...}"
     end
-    return "{" .. tostring(count) .. " keys}"
+    return "{" .. to(str)(count) .. " keys}"
 end
 
 pretty_val(value: any): str
@@ -173,25 +173,25 @@ pretty_val(value: any): str
     end
     t = type(value)
     if t:find("string") == 1
-        return green('"' .. tostring(value) .. '"')
+        return green('"' .. to(str)(value) .. '"')
     elseif t:find("number") == 1
-        return yellow(tostring(value))
+        return yellow(to(str)(value))
     elseif t:find("boolean") == 1
-        return magenta(tostring(value))
+        return magenta(to(str)(value))
     elseif t:find("function") == 1
         return cyan(italic("⟪fn⟫"))
     elseif t:find("table") == 1
         n = rawlen(value)
         if n > 0
-            return cyan("⟦array " .. tostring(n) .. "⟧")
+            return cyan("⟦array " .. to(str)(n) .. "⟧")
         end
         return cyan(italic("{" .. tbl_summary(value) .. "}"))
     end
-    return cyan(tostring(value))
+    return cyan(to(str)(value))
 end
 
 pretty_kv(k: str, v: any): str
-    return underline(tostring(k)) .. dim(" " .. M.G_KV_SEP .. " ") .. pretty_val(v)
+    return underline(to(str)(k)) .. dim(" " .. M.G_KV_SEP .. " ") .. pretty_val(v)
 end
 
 -- ─── Caller info ───────────────────────────────────────────────────
@@ -207,7 +207,7 @@ caller(level: int): str
     if src == nil src = "?" end
     loc = src
     if info.currentline and info.currentline > 0
-        loc = src .. dim(":") .. yellow(tostring(info.currentline))
+        loc = src .. dim(":") .. yellow(to(str)(info.currentline))
     end
     return magenta(italic(name_part)) .. dim(" " .. M.G_ARROW .. " ") .. underline(loc)
 end
@@ -216,9 +216,9 @@ end
 ts(): str
     secs = os.time()
     ms = math.floor((os.clock() * 1000) % 1000)
-    frac = "." .. tostring(ms)
-    if ms < 10 frac = ".00" .. tostring(ms)
-    elseif ms < 100 frac = ".0" .. tostring(ms)
+    frac = "." .. to(str)(ms)
+    if ms < 10 frac = ".00" .. to(str)(ms)
+    elseif ms < 100 frac = ".0" .. to(str)(ms)
     end
     return dim(os.date("%H:%M:%S", secs) .. frac)
 end
@@ -341,9 +341,9 @@ end
 _fmt_ms(ms: float): str
     whole = math.floor(ms)
     frac = math.floor((ms - whole) * 100)
-    frac_str = tostring(frac)
-    if frac < 10 frac_str = "0" .. tostring(frac) end
-    return tostring(whole) .. "." .. frac_str .. "ms"
+    frac_str = to(str)(frac)
+    if frac < 10 frac_str = "0" .. to(str)(frac) end
+    return to(str)(whole) .. "." .. frac_str .. "ms"
 end
 
 span(name: str, fields: any): any
@@ -470,18 +470,18 @@ pretty_repr(value: any, depth: int, seen: any): str
     if value == nil return "nil" end
     t = type(value)
     if t:find("string") == 1
-        return '"' .. tostring(value) .. '"'
+        return '"' .. to(str)(value) .. '"'
     elseif t:find("number") == 1
-        return tostring(value)
+        return to(str)(value)
     elseif t:find("boolean") == 1
-        return tostring(value)
+        return to(str)(value)
     elseif t:find("function") == 1
         return "<function>"
     elseif t:find("table") != 1
-        return tostring(value)
+        return to(str)(value)
     end
     -- table branch — use table identity (== by reference) stored in a
-    -- flat array, because the codegen's tostring(table) always returns
+    -- flat array, because the codegen's to(str)(table) always returns
     -- the bare type name "table" regardless of which table.
     if _seen(seen, value) return "<circular>" end
     _seen_add(seen, value)
@@ -502,7 +502,7 @@ pretty_repr(value: any, depth: int, seen: any): str
     end
     for k, v in value
         parts[rawlen(parts) + 1] = string.rep("  ", depth + 1) ..
-            tostring(k) .. " = " .. pretty_repr(v, depth + 1, seen)
+            to(str)(k) .. " = " .. pretty_repr(v, depth + 1, seen)
     end
     if rawlen(parts) == 0 return "{}" end
     return "{\n" .. table.concat(parts, "\n") .. "\n" ..
@@ -625,12 +625,12 @@ while i < 12
     info = debug.getinfo(i, "Snl")
     if info == nil break end
     fname = "?"
-    if info.name != nil fname = tostring(info.name) end
+    if info.name != nil fname = to(str)(info.name) end
     src = "?"
-    if info.short_src != nil src = tostring(info.short_src) end
+    if info.short_src != nil src = to(str)(info.short_src) end
     line = src
     if info.currentline != nil and tonumber(info.currentline) > 0
-        line = src .. ":" .. tostring(info.currentline)
+        line = src .. ":" .. to(str)(info.currentline)
     end
     print("  " .. magenta(italic(fname .. "()")) .. "  " .. underline(line))
     i += 1

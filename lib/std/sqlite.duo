@@ -20,101 +20,101 @@ SQLITE_NULL = 5
 -- The `any` type maps to lua_Value in C, which can hold opaque pointers.
 -- ===========================================================================
 
--- sqlite3_open(const char* filename, sqlite3** ppDb) -> int
+-- sqlite3_open(const char* filename, sqlite3** ppDb): int
 @ffi("sqlite3_open")
 sqlite3_open(path: str, db: any): int
 
--- sqlite3_close(sqlite3* db) -> int
+-- sqlite3_close(sqlite3* db): int
 @ffi("sqlite3_close")
 sqlite3_close(db: any): int
 
--- sqlite3_prepare_v2(sqlite3* db, const char* sql, int nByte, sqlite3_stmt** ppStmt, const char** pzTail) -> int
+-- sqlite3_prepare_v2(sqlite3* db, const char* sql, int nByte, sqlite3_stmt** ppStmt, const char** pzTail): int
 -- nByte = -1 means read until NUL terminator; pzTail and ppStmt are output pointers.
 @ffi("sqlite3_prepare_v2")
 sqlite3_prepare_v2(db: any, sql: str, nByte: int, stmt: any, pzTail: any): int
 
--- sqlite3_step(sqlite3_stmt* stmt) -> int
+-- sqlite3_step(sqlite3_stmt* stmt): int
 @ffi("sqlite3_step")
 sqlite3_step(stmt: any): int
 
--- sqlite3_finalize(sqlite3_stmt* stmt) -> int
+-- sqlite3_finalize(sqlite3_stmt* stmt): int
 @ffi("sqlite3_finalize")
 sqlite3_finalize(stmt: any): int
 
--- sqlite3_bind_int(sqlite3_stmt* stmt, int idx, int val) -> int
+-- sqlite3_bind_int(sqlite3_stmt* stmt, int idx, int val): int
 @ffi("sqlite3_bind_int")
 sqlite3_bind_int(stmt: any, idx: int, val: int): int
 
--- sqlite3_bind_int64(sqlite3_stmt* stmt, int idx, sqlite3_int64 val) -> int
+-- sqlite3_bind_int64(sqlite3_stmt* stmt, int idx, sqlite3_int64 val): int
 @ffi("sqlite3_bind_int64")
 sqlite3_bind_int64(stmt: any, idx: int, val: int): int
 
--- sqlite3_bind_double(sqlite3_stmt* stmt, int idx, double val) -> int
+-- sqlite3_bind_double(sqlite3_stmt* stmt, int idx, double val): int
 @ffi("sqlite3_bind_double")
 sqlite3_bind_double(stmt: any, idx: int, val: f64): int
 
--- sqlite3_bind_text(sqlite3_stmt* stmt, int idx, const char* val, int nByte, void(*)(void*)) -> int
+-- sqlite3_bind_text(sqlite3_stmt* stmt, int idx, const char* val, int nByte, void(*)(void*)): int
 -- nByte = -1 means NUL-terminated string; the destructor param is SQLITE_TRANSIENT = -1.
 @ffi("sqlite3_bind_text")
 sqlite3_bind_text(stmt: any, idx: int, val: str, nByte: int, destructor: int): int
 
--- sqlite3_bind_null(sqlite3_stmt* stmt, int idx) -> int
+-- sqlite3_bind_null(sqlite3_stmt* stmt, int idx): int
 @ffi("sqlite3_bind_null")
 sqlite3_bind_null(stmt: any, idx: int): int
 
--- sqlite3_column_int(sqlite3_stmt* stmt, int idx) -> int
+-- sqlite3_column_int(sqlite3_stmt* stmt, int idx): int
 @ffi("sqlite3_column_int")
 sqlite3_column_int(stmt: any, idx: int): int
 
--- sqlite3_column_int64(sqlite3_stmt* stmt, int idx) -> sqlite3_int64
+-- sqlite3_column_int64(sqlite3_stmt* stmt, int idx): sqlite3_int64
 @ffi("sqlite3_column_int64")
 sqlite3_column_int64(stmt: any, idx: int): int
 
--- sqlite3_column_double(sqlite3_stmt* stmt, int idx) -> double
+-- sqlite3_column_double(sqlite3_stmt* stmt, int idx): double
 @ffi("sqlite3_column_double")
 sqlite3_column_double(stmt: any, idx: int): f64
 
--- sqlite3_column_text(sqlite3_stmt* stmt, int idx) -> const unsigned char*
+-- sqlite3_column_text(sqlite3_stmt* stmt, int idx): const unsigned char*
 @ffi("sqlite3_column_text")
 sqlite3_column_text(stmt: any, idx: int): str
 
--- sqlite3_column_type(sqlite3_stmt* stmt, int idx) -> int
+-- sqlite3_column_type(sqlite3_stmt* stmt, int idx): int
 @ffi("sqlite3_column_type")
 sqlite3_column_type(stmt: any, idx: int): int
 
--- sqlite3_column_count(sqlite3_stmt* stmt) -> int
+-- sqlite3_column_count(sqlite3_stmt* stmt): int
 @ffi("sqlite3_column_count")
 sqlite3_column_count(stmt: any): int
 
--- sqlite3_column_name(sqlite3_stmt* stmt, int idx) -> const char*
+-- sqlite3_column_name(sqlite3_stmt* stmt, int idx): const char*
 @ffi("sqlite3_column_name")
 sqlite3_column_name(stmt: any, idx: int): str
 
--- sqlite3_exec(sqlite3* db, const char* sql, callback, arg, errmsg) -> int
+-- sqlite3_exec(sqlite3* db, const char* sql, callback, arg, errmsg): int
 -- callback and arg are NULL (0), errmsg is NULL (0) for simple execution.
 @ffi("sqlite3_exec")
 sqlite3_exec(db: any, sql: str, callback: int, arg: int, errmsg: int): int
 
--- sqlite3_errmsg(sqlite3* db) -> const char*
+-- sqlite3_errmsg(sqlite3* db): const char*
 @ffi("sqlite3_errmsg")
 sqlite3_errmsg(db: any): str
 
--- sqlite3_changes(sqlite3* db) -> int
+-- sqlite3_changes(sqlite3* db): int
 @ffi("sqlite3_changes")
 sqlite3_changes(db: any): int
 
--- sqlite3_last_insert_rowid(sqlite3* db) -> sqlite3_int64
+-- sqlite3_last_insert_rowid(sqlite3* db): sqlite3_int64
 @ffi("sqlite3_last_insert_rowid")
 sqlite3_last_insert_rowid(db: any): int
 
--- sqlite3_load_extension(sqlite3* db, const char* file, const char* proc, char** errmsg) -> int
+-- sqlite3_load_extension(sqlite3* db, const char* file, const char* proc, char** errmsg): int
 @ffi("sqlite3_load_extension")
 sqlite3_load_extension(db: any, path: str, proc: int, errmsg: int): int
 
 -- ===========================================================================
 -- Constants exported for user code
 -- ===========================================================================
-_const(name: str): int
+constant(name: str): int
     if name == "SQLITE_OK" return SQLITE_OK end
     if name == "SQLITE_ROW" return SQLITE_ROW end
     if name == "SQLITE_DONE" return SQLITE_DONE end
@@ -127,7 +127,7 @@ _const(name: str): int
 end
 
 -- ===========================================================================
--- API: open(path) -> connection handle
+-- API: open(path): connection handle
 -- Opens a SQLite database file. Use ":memory:" for an in-memory database.
 -- Returns a table wrapping the opaque db pointer and the original path.
 -- ===========================================================================
@@ -145,7 +145,7 @@ open(path: str): any
 end
 
 -- ===========================================================================
--- API: close(db) -> void
+-- API: close(db): void
 -- Closes the database connection and frees resources.
 -- ===========================================================================
 close(db: any): void
@@ -153,7 +153,7 @@ close(db: any): void
     if type(db) == "table"
         if db.closed return end
         db.closed = true
-        if db.handle != nil
+        if has(.handle)(db)
             sqlite3_close(db.handle)
         end
     else
@@ -163,7 +163,7 @@ close(db: any): void
 end
 
 -- ===========================================================================
--- API: execute(db, sql) -> error message or empty string
+-- API: execute(db, sql): error message or empty string
 -- Runs a DDL/DML statement via sqlite3_exec. Returns empty string on success,
 -- or the error message on failure.
 -- ===========================================================================
@@ -179,7 +179,7 @@ execute(db: any, sql: str): str
 end
 
 -- ===========================================================================
--- API: prepare(db, sql) -> statement handle (opaque pointer)
+-- API: prepare(db, sql): statement handle (opaque pointer)
 -- Compiles a SQL statement. Returns the opaque sqlite3_stmt* or nil on error.
 -- ===========================================================================
 prepare(db: any, sql: any): any
@@ -221,7 +221,7 @@ bind_null(stmt: any, idx: int): void
 end
 
 -- ===========================================================================
--- API: step(stmt) -> int
+-- API: step(stmt): int
 -- Advances the prepared statement. Returns SQLITE_ROW (100) if a row is
 -- available, SQLITE_DONE (101) if execution completed.
 -- ===========================================================================
@@ -261,7 +261,7 @@ column_name(stmt: any, idx: int): str
 end
 
 -- ===========================================================================
--- API: finalize(stmt) -> void
+-- API: finalize(stmt): void
 -- Destroys a prepared statement, freeing its resources.
 -- ===========================================================================
 finalize(stmt: any): void
@@ -271,7 +271,7 @@ finalize(stmt: any): void
 end
 
 -- ===========================================================================
--- API: errmsg(db) -> str
+-- API: errmsg(db): str
 -- Returns the most recent error message from the database connection.
 -- ===========================================================================
 errmsg(db: any): str
@@ -282,7 +282,7 @@ errmsg(db: any): str
 end
 
 -- ===========================================================================
--- API: changes(db) -> int
+-- API: changes(db): int
 -- Returns the number of rows modified by the most recent INSERT/UPDATE/DELETE.
 -- ===========================================================================
 changes(db: any): int
@@ -293,7 +293,7 @@ changes(db: any): int
 end
 
 -- ===========================================================================
--- API: last_insert_rowid(db) -> int (i64)
+-- API: last_insert_rowid(db): int (i64)
 -- Returns the rowid of the most recent successful INSERT.
 -- ===========================================================================
 last_insert_rowid(db: any): int
@@ -304,7 +304,7 @@ last_insert_rowid(db: any): int
 end
 
 -- ===========================================================================
--- API: load_extension(db, path) -> int
+-- API: load_extension(db, path): int
 -- Loads a SQLite extension. Returns SQLITE_OK (0) on success.
 -- ===========================================================================
 load_extension(db: any, path: str): int
@@ -315,7 +315,7 @@ load_extension(db: any, path: str): int
 end
 
 -- ===========================================================================
--- API: query(db, sql) -> table of rows
+-- API: query(db, sql): table of rows
 -- Convenience function: prepares, steps through all rows, and returns results
 -- as a table of rows. Each row is a table of {column_name = value} pairs.
 -- Column values are typed: INTEGER -> int, FLOAT -> f64, TEXT -> str, NULL -> nil.
@@ -365,37 +365,3 @@ end
 -- ===========================================================================
 -- Module export table
 -- ===========================================================================
-M = {}
-M.SQLITE_OK = SQLITE_OK
-M.SQLITE_ROW = SQLITE_ROW
-M.SQLITE_DONE = SQLITE_DONE
-M.SQLITE_INTEGER = SQLITE_INTEGER
-M.SQLITE_FLOAT = SQLITE_FLOAT
-M.SQLITE_TEXT = SQLITE_TEXT
-M.SQLITE_BLOB = SQLITE_BLOB
-M.SQLITE_NULL = SQLITE_NULL
-
-M.open = open
-M.close = close
-M.execute = execute
-M.prepare = prepare
-M.bind_int = bind_int
-M.bind_int64 = bind_int64
-M.bind_double = bind_double
-M.bind_text = bind_text
-M.bind_null = bind_null
-M.step = step
-M.column_int = column_int
-M.column_int64 = column_int64
-M.column_double = column_double
-M.column_text = column_text
-M.column_type = column_type
-M.column_count = column_count
-M.column_name = column_name
-M.finalize = finalize
-M.errmsg = errmsg
-M.changes = changes
-M.last_insert_rowid = last_insert_rowid
-M.load_extension = load_extension
-M.query = query
-M

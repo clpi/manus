@@ -120,7 +120,7 @@ impact-based validation, integration queue, and five-agent stress test all land.
 
 ```bash
 zig build pass13-gate   # dev CLI + coordination status + barrier bridge + catalog JSON
-bash scripts/pass13_gate.sh
+bash zig build pass13-gate
 ```
 
 ## Related plans

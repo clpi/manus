@@ -13,7 +13,7 @@ std_meta_typeof(x): str
     if type(x) != "table" return type(x) end
     if getmetatable(x) != nil
         mt = getmetatable(x)
-        if mt.type != nil return mt.type end
+        if has(.type)(mt) return mt.type end
     end
     "table"
 end
@@ -126,13 +126,13 @@ end
 
 satisfies_concept(val: any, concept_def: any): bool
     if val == nil or concept_def == nil return false end
-    if concept_def.required_fields != nil
+    if has(.required_fields)(concept_def)
         for _, f in concept_def.required_fields
             name = concept_member_name(f)
             if name == nil or val[name] == nil return false end
         end
     end
-    if concept_def.required_methods != nil
+    if has(.required_methods)(concept_def)
         for _, m in concept_def.required_methods
             name = concept_member_name(m)
             if name == nil or type(val[name]) != "function" return false end
@@ -168,13 +168,13 @@ make_concept(name: str, spec: any): any
     concept_methods = spec.required_methods
     if concept_methods == nil concept_methods = spec.methods end
     desc = {
-        @comp.duo.kind = "concept",
+        kind = "concept",
         name = name,
         required_fields = concept_member_list(concept_fields, "field"),
         required_methods = concept_member_list(concept_methods, "method"),
     }
     setmetatable(desc, {
-        @comp.duo.kind = "concept_metatable",
+        kind = "concept_metatable",
         type = "concept",
     })
     return desc
@@ -289,7 +289,7 @@ derive_display(val: any): str
     if type(val) == "boolean"
         if val return "true" else return "false" end
     end
-    if type(val) == "number" return tostring(val) end
+    if type(val) == "number" return to(str)(val) end
     if type(val) == "string" return val end
     if type(val) == "table"
         parts = {}
@@ -300,7 +300,7 @@ derive_display(val: any): str
         end
         return "{" .. table.concat(parts, ", ") .. "}"
     end
-    tostring(val)
+    to(str)(val)
 end
 
 derive_deep_clone(val: any): any
@@ -340,7 +340,7 @@ derive_hash(val: any): u64
         end
         return h
     end
-    string.len(tostring(val))
+    string.len(to(str)(val))
 end
 
 derive_ord(a: any, b: any): i64
@@ -350,14 +350,14 @@ derive_ord(a: any, b: any): i64
     if type(a) == "number" and type(b) == "number"
         if a < b return -1 else return 1 end
     end
-    sa = tostring(a)
-    sb = tostring(b)
+    sa = to(str)(a)
+    sb = to(str)(b)
     if sa < sb return -1 else return 1 end
 end
 
 derive_format(val: any, spec: str): str
     if spec == "d" or spec == "i"
-        return tostring(math.floor(val))
+        return to(str)(math.floor(val))
     end
     if spec == "f"
         return string.format("%f", val)
@@ -366,12 +366,12 @@ derive_format(val: any, spec: str): str
         return string.format("%x", math.floor(val))
     end
     if spec == "s"
-        return tostring(val)
+        return to(str)(val)
     end
     if spec == "t"
         return derive_display(val)
     end
-    tostring(val)
+    to(str)(val)
 end
 
 derive_len(val: any): i64
@@ -391,7 +391,10 @@ derive_contains(val: any, elem: any): bool
 end
 
 derive_iter(val: any): any
-    if type(val) != "table" return fun(): any nil end
+    if type(val) != "table"
+        empty = () nil
+        return empty
+    end
     val
 end
 
@@ -666,7 +669,7 @@ unique(t: any): any
     i = 1
     while i <= #t
         v = t[i]
-        key = tostring(v)
+        key = to(str)(v)
         if not seen[key]
             seen[key] = true
             n += 1
@@ -765,7 +768,7 @@ group_by(t: any, key_fn: any): any
     groups = {}
     i = 1
     while i <= #t
-        k = tostring(key_fn(t[i]))
+        k = to(str)(key_fn(t[i]))
         if groups[k] == nil groups[k] = {} end
         groups[k][rawlen(groups[k]) + 1] = t[i]
         i += 1
@@ -778,7 +781,7 @@ count_by(t: any, key_fn: any): any
     counts = {}
     i = 1
     while i <= #t
-        k = tostring(key_fn(t[i]))
+        k = to(str)(key_fn(t[i]))
         if counts[k] == nil counts[k] = 0 end
         counts[k] += 1
         i += 1
@@ -862,27 +865,41 @@ compose(...): any
     end
 end
 
--- partial: partially apply a function with leading args
-partial(f: any, ...): any
-    partial_args = {...}
-    return function(...)
-        all = {}
-        n = 0
-        i = 1
-        while i <= #partial_args
-            n += 1
-            all[n] = partial_args[i]
-            i += 1
-        end
-        extra = {...}
-        i = 1
-        while i <= #extra
-            n += 1
-            all[n] = extra[i]
-            i += 1
-        end
-        return f(table.unpack(all, 1, n))
+-- partial: partially apply a function with leading args.
+--
+-- The obvious shape — an inner `apply = (...)` closing over `f` and the bound
+-- args — does not lower: the C backend has no closure capture, so it emitted
+-- `use of undeclared identifier 'f'` / `'partial_args'` and the whole module
+-- failed to compile. The state therefore lives in a table and the callable is
+-- a `__call` metamethod, which receives that table as its first argument and so
+-- captures nothing.
+--
+-- `partial_invoke` is `_`-prefixed and unexported: it is this module's
+-- private surface (Pass 57 C2), reachable only through the value `partial`
+-- hands back.
+partial_invoke(self: any, ...): any
+    joined = {}
+    n = 0
+    i = 1
+    while i <= #self.args
+        n += 1
+        joined[n] = self.args[i]
+        i += 1
     end
+    extra = {...}
+    i = 1
+    while i <= #extra
+        n += 1
+        joined[n] = extra[i]
+        i += 1
+    end
+    return self.fn(table.unpack(joined, 1, n))
+end
+
+partial(f: any, ...): any
+    bound = { fn = f, args = {...} }
+    setmetatable(bound, { __call = partial_invoke })
+    return bound
 end
 
 -- tap: side-effecting pass-through
@@ -964,7 +981,7 @@ key_by(t: any, key_fn: any): any
     out = {}
     i = 1
     while i <= #t
-        k = tostring(key_fn(t[i]))
+        k = to(str)(key_fn(t[i]))
         out[k] = t[i]
         i += 1
     end
@@ -975,7 +992,7 @@ end
 invert(t: any): any
     out = {}
     for k, v in t
-        out[tostring(v)] = k
+        out[to(str)(v)] = k
     end
     out
 end
@@ -986,29 +1003,29 @@ end
 
 -- eq: build equality predicate
 eq(val: any): any
-    return fun(x: any): any x == val
+    return (x: any): any x == val
 end
 
 -- gt / lt / gte / lte: comparison predicates
 gt(val: any): any
-    return fun(x: any): any x > val
+    return (x: any): any x > val
 end
 
 lt(val: any): any
-    return fun(x: any): any x < val
+    return (x: any): any x < val
 end
 
 gte(val: any): any
-    return fun(x: any): any x >= val
+    return (x: any): any x >= val
 end
 
 lte(val: any): any
-    return fun(x: any): any x <= val
+    return (x: any): any x <= val
 end
 
 -- notf: negate a predicate
 notf(pred: any): any
-    return fun(x: any): any not pred(x)
+    return (x: any): any not pred(x)
 end
 
 -- andf / orf: combine predicates

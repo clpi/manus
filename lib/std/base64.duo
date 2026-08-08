@@ -10,7 +10,3 @@ decode(s: str): str
     crypto.base64_decode(s)
 end
 
-M = {}
-M.encode = encode
-M.decode = decode
-M

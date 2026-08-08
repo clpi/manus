@@ -19,11 +19,11 @@ assert(num.sum({1, 2, 3}) == 6, "sum")
 assert(num.mean({2, 4, 6}) == 4, "mean")
 
 xs = {1, 2, 3}
-ys = tbl.map(xs, fun(v) return v * 2 end)
+ys = tbl.map(xs, (v) return v * 2)
 assert(ys[2] == 4, "map")
-zs = tbl.filter(ys, fun(v) return v > 2 end)
+zs = tbl.filter(ys, (v) return v > 2)
 assert(rawlen(zs) == 2, "filter")
-assert(tbl.reduce(xs, fun(acc, v) return acc + v end, 0) == 6, "reduce")
+assert(tbl.reduce(xs, (acc, v) return acc + v, 0) == 6, "reduce")
 assert(tbl.contains(xs, 2), "contains")
 assert(tbl.index_of(xs, 3) == 3, "index_of")
 

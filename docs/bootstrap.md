@@ -5,7 +5,7 @@ Machine-readable state: `duo catalog` → `pass16.bootstrap_dag`.
 
 ## Current stage: S0
 
-**S0 (active):** Pinned Zig bootstrap via `mise` + `scripts/ci_zig_version.sh`.
+**S0 (active):** Pinned Zig bootstrap via `mise` + `scripts/ci_zig_version.duo`.
 `zig build` produces `zig-out/bin/duo`, which is the host compiler (Zig implementation).
 
 No Duo-built compiler binary exists in the production path yet.

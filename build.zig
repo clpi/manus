@@ -1,9 +1,31 @@
 const std = @import("std");
 
+/// SH-02 + SH-03 production seam. These travel together: any module that
+/// reaches `duo_lexer_bridge` reaches both the keyword table and the Duo lexer
+/// behind it, so linking them separately only produces undefined symbols later.
+///
+/// The Duo lexer artifact also defines a STRONG `duo_keyword_classify`, which
+/// overrides the weak one in src/duo_keyword_classify.c — that file was written
+/// weak for exactly this case.
 fn linkProductionKeywordClassify(b: *std.Build, mod: *std.Build.Module) void {
+    // src/duo_keyword_classify.c retired 2026-08-07: it declared
+    // duo_keyword_classify `weak` precisely so a full Duo artifact could
+    // override it, and src/duo_lexer_tokenize.c now provides the strong
+    // definition (both are generated from lib/std/token/classify.duo, so this
+    // is one source of truth, not two). Its ledger deletion gate — "delete once
+    // nothing links the weak fallback" — is met.
+    linkProductionDuoLexer(b, mod);
+    mod.link_libc = true;
+}
+
+/// SH-03 production dispatch: the Duo lexer, generated from
+/// lib/std/compiler/host.duo. Provides duo_lexer_tokenize_full and friends for
+/// src/duo_lexer_dispatch.zig, and a STRONG duo_keyword_classify that overrides
+/// the weak one above — which is why that one is weak.
+fn linkProductionDuoLexer(b: *std.Build, mod: *std.Build.Module) void {
     mod.addCSourceFile(.{
-        .file = b.path("src/duo_keyword_classify.c"),
-        .flags = &.{"-std=c11"},
+        .file = b.path("src/duo_lexer_tokenize.c"),
+        .flags = &.{ "-std=c11", "-w" },
     });
     mod.link_libc = true;
 }
@@ -34,9 +56,18 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run duo");
     run_step.dependOn(&run_cmd.step);
 
-    const test_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_compile_fail_tests.sh" });
+    const test_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/run_compile_fail_tests.duo" });
     test_cmd.setCwd(b.path("."));
     test_cmd.step.dependOn(b.getInstallStep());
+    // G11 — the language census ratchet. A number nobody runs is a number that
+    // drifts, which is how "no language but Duo" stayed a slogan instead of a
+    // list of twelve files.
+    const census_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/language_census.duo" });
+    census_cmd.setCwd(b.path("."));
+    census_cmd.step.dependOn(b.getInstallStep());
+    const census_step = b.step("language-census", "G11: count tracked non-Duo source; ratchets sh/py debt");
+    census_step.dependOn(&census_cmd.step);
+
     const test_step = b.step("test", "Run all tests (unit + compile-fail)");
     test_step.dependOn(&test_cmd.step);
 
@@ -55,7 +86,7 @@ pub fn build(b: *std.Build) void {
     const unit_test_step = b.step("unit-test", "Run Zig unit tests only");
     unit_test_step.dependOn(&run_unit_tests.step);
 
-    const no_ansi_reports_cmd = b.addSystemCommand(&.{ "bash", "scripts/assert_no_ansi_reports.sh" });
+    const no_ansi_reports_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/assert_no_ansi_reports.duo" });
     no_ansi_reports_cmd.setCwd(b.path("."));
     no_ansi_reports_cmd.step.dependOn(b.getInstallStep());
     const no_ansi_reports_step = b.step("no-ansi-reports", "Assert report ANSI/no-color styling contract");
@@ -64,7 +95,7 @@ pub fn build(b: *std.Build) void {
     report_styling_step.dependOn(&no_ansi_reports_cmd.step);
     test_step.dependOn(&no_ansi_reports_cmd.step);
 
-    const gpu_bench_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_gpu_benchmark.sh" });
+    const gpu_bench_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/run_gpu_benchmark.duo" });
     gpu_bench_cmd.setCwd(b.path("."));
     gpu_bench_cmd.step.dependOn(b.getInstallStep());
     const gpu_bench_step = b.step("gpu-bench", "Run Duo vs GPU Metal benchmark");
@@ -77,7 +108,7 @@ pub fn build(b: *std.Build) void {
     const bench_step = b.step("bench", "Run Duo vs C benchmark suite");
     bench_step.dependOn(&bench_cmd.step);
 
-    const cross_bench_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_cross_benchmark.sh" });
+    const cross_bench_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/run_cross_benchmark.duo" });
     cross_bench_cmd.setCwd(b.path("."));
     cross_bench_cmd.step.dependOn(b.getInstallStep());
     const cross_bench_step = b.step("cross-bench", "Run cross-language benchmark (Duo vs C vs Lua vs LuaJIT)");
@@ -89,7 +120,7 @@ pub fn build(b: *std.Build) void {
     const wasm_bench_step = b.step("wasm-bench", "Run WASM runtime benchmark (wasmtime, wazero, wasm3, iwasm, wasmer, spin)");
     wasm_bench_step.dependOn(&wasm_bench_cmd.step);
 
-    const ml_bench_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_ml_benchmark.sh" });
+    const ml_bench_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/run_ml_benchmark.duo" });
     ml_bench_cmd.setCwd(b.path("."));
     ml_bench_cmd.step.dependOn(b.getInstallStep());
     const ml_bench_step = b.step("ml-bench", "Run ML benchmark suite (Duo vs C)");
@@ -108,22 +139,32 @@ pub fn build(b: *std.Build) void {
     compile_size_bench_step.dependOn(&compile_size_bench_cmd.step);
 
     // Public safety pre-scan (Pass 10 A19)
-    const public_safety_cmd = b.addSystemCommand(&.{ "bash", "./scripts/public_safety_scan.sh" });
+    const public_safety_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/public_safety_scan.duo" });
     public_safety_cmd.setCwd(b.path("."));
     const public_safety_step = b.step("public-safety", "Scan tracked files for secrets and personal paths (Pass 10 A19)");
     public_safety_step.dependOn(&public_safety_cmd.step);
 
-    const repo_hygiene_cmd = b.addSystemCommand(&.{ "bash", "./scripts/repo_hygiene.sh" });
+    // Pass 57 A2 — one source, N projection targets, compared on a stdout
+    // fingerprint rather than exit status alone. native-differential compares
+    // only exit status (it sends stdout to /dev/null), so two backends that
+    // print different answers "agree" there as long as both exit 0.
+    const semantic_harness_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/semantic_harness.duo" });
+    semantic_harness_cmd.setCwd(b.path("."));
+    semantic_harness_cmd.step.dependOn(b.getInstallStep());
+    const semantic_harness_step = b.step("semantic-harness", "Every projection target must agree on stdout, not just exit status (Pass 57 A2)");
+    semantic_harness_step.dependOn(&semantic_harness_cmd.step);
+
+    const repo_hygiene_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/repo_hygiene.duo" });
     repo_hygiene_cmd.setCwd(b.path("."));
     const repo_hygiene_step = b.step("repo-hygiene", "Pass 11 WP-12: forbidden root artifacts and tracked agent noise");
     repo_hygiene_step.dependOn(&repo_hygiene_cmd.step);
 
-    const repro_cmd = b.addSystemCommand(&.{ "bash", "./scripts/reproducibility_smoke.sh" });
+    const repro_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/reproducibility_smoke.duo" });
     repro_cmd.setCwd(b.path("."));
     const repro_step = b.step("reproducibility-smoke", "Pass 11 WP-13: ReleaseFast compiler binary identity across clean rebuilds");
     repro_step.dependOn(&repro_cmd.step);
 
-    const pass11_direct_cmd = b.addSystemCommand(&.{ "bash", "./scripts/pass11_direct_smoke.sh" });
+    const pass11_direct_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/pass11_direct_smoke.duo" });
     pass11_direct_cmd.setCwd(b.path("."));
     pass11_direct_cmd.step.dependOn(b.getInstallStep());
     const pass11_direct_step = b.step("pass11-direct-smoke", "Pass 11: direct ARM64 record proof smoke (macOS AArch64 only)");
@@ -191,13 +232,13 @@ pub fn build(b: *std.Build) void {
     pass11_module_step.dependOn(&run_pass11_module_ward.step);
     pass11_module_step.dependOn(&pass11_module_catalog_cmd.step);
 
-    const pass11_blob_cmd = b.addSystemCommand(&.{ "bash", "./scripts/pass11_blob_object_smoke.sh" });
+    const pass11_blob_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/pass11_blob_object_smoke.duo" });
     pass11_blob_cmd.setCwd(b.path("."));
     pass11_blob_cmd.step.dependOn(b.getInstallStep());
     const pass11_blob_step = b.step("pass11-blob-object-smoke", "Pass 11 WP-05: byte blob direct Mach-O object (macOS AArch64 only)");
     pass11_blob_step.dependOn(&pass11_blob_cmd.step);
 
-    const pass11_spill_cmd = b.addSystemCommand(&.{ "bash", "./scripts/pass11_spill_smoke.sh" });
+    const pass11_spill_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/pass11_spill_smoke.duo" });
     pass11_spill_cmd.setCwd(b.path("."));
     pass11_spill_cmd.step.dependOn(b.getInstallStep());
     const pass11_spill_step = b.step("pass11-spill-smoke", "Pass 11 WP-03: register spill proof (macOS AArch64 only)");
@@ -506,13 +547,13 @@ pub fn build(b: *std.Build) void {
     const hpls_frontier_gate_step = b.step("hpls-frontier-gate", "Alias for pass34-gate");
     hpls_frontier_gate_step.dependOn(pass34_gate_step);
 
-    const native_diff_cmd = b.addSystemCommand(&.{ "bash", "scripts/native_differential.sh" });
+    const native_diff_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/native_differential.duo" });
     native_diff_cmd.step.dependOn(b.getInstallStep());
     native_diff_cmd.setCwd(b.path("."));
     const native_diff_step = b.step("native-differential", "Direct ARM64 backend must agree with the C backend on the native corpus");
     native_diff_step.dependOn(&native_diff_cmd.step);
 
-    const direct_link_cmd = b.addSystemCommand(&.{ "bash", "scripts/direct_module_link_proof.sh" });
+    const direct_link_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/direct_module_link_proof.duo" });
     direct_link_cmd.step.dependOn(b.getInstallStep());
     direct_link_cmd.setCwd(b.path("."));
     const direct_link_step = b.step("direct-module-link", "A direct-backend program must be able to call a req'd Duo module");
@@ -551,7 +592,7 @@ pub fn build(b: *std.Build) void {
     const pass48_gate_step = b.step("pass48-gate", "Pass 48 canonical specification consolidation proofs");
     pass48_gate_step.dependOn(&run_pass48_gate.step);
 
-    const idiom_cmd = b.addSystemCommand(&.{ "bash", "scripts/duo_idiom_gate.sh" });
+    const idiom_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/duo_idiom_gate.duo" });
     idiom_cmd.setCwd(b.path("."));
     const idiom_step = b.step("idiom-gate", "Every .duo file must use canonical Duo idioms");
     idiom_step.dependOn(&idiom_cmd.step);
@@ -578,13 +619,13 @@ pub fn build(b: *std.Build) void {
     const projection_gate_step = b.step("projection-gate", "Alias for pass36-gate");
     projection_gate_step.dependOn(pass36_gate_step);
 
-    const bench_proof_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_benchmark_proof_impl.sh" });
+    const bench_proof_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/run_benchmark_proof.duo" });
     bench_proof_cmd.setCwd(b.path("."));
     bench_proof_cmd.step.dependOn(b.getInstallStep());
     const bench_proof_step = b.step("bench-proof-gate", "P0 benchmark 3-profile correctness + proof artifacts");
     bench_proof_step.dependOn(&bench_proof_cmd.step);
 
-    const duo_idiom_cmd = b.addSystemCommand(&.{ "bash", "scripts/duo_idiom_gate.sh" });
+    const duo_idiom_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/duo_idiom_gate.duo" });
     duo_idiom_cmd.setCwd(b.path("."));
     duo_idiom_cmd.step.dependOn(b.getInstallStep());
     const duo_idiom_step = b.step("duo-idiom-gate", "Enforce compact idiomatic .duo in scripts/ and examples/");
@@ -668,6 +709,20 @@ pub fn build(b: *std.Build) void {
     pass16_lexer_corpus_proof.step.dependOn(b.getInstallStep());
     pass16_lexer_corpus_proof.setCwd(b.path("."));
 
+    // The token-for-token equality proof against src/lexer.zig — the evidence
+    // SH-03's "duo_canonical" claim rests on. It was NOT gated, and silently
+    // stopped running when lib/std/str.duo became a native-direct module: the
+    // Duo lexer still compiled, but `req "std.str"` failed at runtime, so the
+    // proof was unrunnable while the matrix still reported equality.
+    const pass16_lexer_fingerprint = b.addRunArtifact(exe);
+    // --backend=c deliberately: the NATIVE backend still fails to link this
+    // one ("native linker failed" at lexer.duo's @c.export sites). Gating the
+    // proof on the backend where it runs is worth more than not gating it at
+    // all; the native-path failure is tracked separately.
+    pass16_lexer_fingerprint.addArgs(&.{ "run", "--backend=c", "examples/pass16_lexer_fingerprint_differential.duo" });
+    pass16_lexer_fingerprint.step.dependOn(b.getInstallStep());
+    pass16_lexer_fingerprint.setCwd(b.path("."));
+
     const pass16_lexer_embed = b.addRunArtifact(exe);
     pass16_lexer_embed.addArgs(&.{ "run", "examples/pass16_lexer_embed_proof.duo" });
     pass16_lexer_embed.step.dependOn(b.getInstallStep());
@@ -678,14 +733,48 @@ pub fn build(b: *std.Build) void {
     pass16_lexer_tokenize.step.dependOn(b.getInstallStep());
     pass16_lexer_tokenize.setCwd(b.path("."));
 
+    // MP4-B02 — the state-faithful bulk tokenize entry. `duo_lexer_step`
+    // rebuilds a Lexer at a byte offset and so drops peek/hint state, which
+    // silently mis-lexes `fun f(): T =`; this runs the whole file on one Lexer
+    // and is differenced against the same fingerprint oracle.
+    // MP4-B02 — per-token text into a host arena, and the pinned divergence:
+    // Duo returns the raw source span for escaped strings, src/lexer.zig decodes.
+    const pass16_lexer_tokenize_text = b.addRunArtifact(exe);
+    pass16_lexer_tokenize_text.addArgs(&.{ "run", "examples/pass16_lexer_tokenize_text_proof.duo" });
+    pass16_lexer_tokenize_text.step.dependOn(b.getInstallStep());
+    pass16_lexer_tokenize_text.setCwd(b.path("."));
+
+    // MP4-B02 — token TEXT differential. The kind differential hashes only
+    // kinds, so text equivalence was unproven: either lexer could return wrong
+    // bytes for every string literal and stay green.
+    const pass16_lexer_text_diff = b.addRunArtifact(exe);
+    pass16_lexer_text_diff.addArgs(&.{ "run", "--backend=c", "examples/pass16_lexer_text_differential.duo" });
+    pass16_lexer_text_diff.step.dependOn(b.getInstallStep());
+    pass16_lexer_text_diff.setCwd(b.path("."));
+
+    const pass16_lexer_tokenize_all = b.addRunArtifact(exe);
+    pass16_lexer_tokenize_all.addArgs(&.{ "run", "examples/pass16_lexer_tokenize_all_proof.duo" });
+    pass16_lexer_tokenize_all.step.dependOn(b.getInstallStep());
+    pass16_lexer_tokenize_all.setCwd(b.path("."));
+
+    const pass16_parser_corpus = b.addRunArtifact(exe);
+    pass16_parser_corpus.addArgs(&.{ "run", "examples/pass16_parser_corpus_proof.duo" });
+    pass16_parser_corpus.step.dependOn(b.getInstallStep());
+    pass16_parser_corpus.setCwd(b.path("."));
+
     const pass16_m1_smoke_step = b.step("pass16-m1-smoke", "Pass 16 M1: keyword + cursor + lexer corpus + embed + tokenize proofs");
     pass16_m1_smoke_step.dependOn(&pass16_m1_diff.step);
     pass16_m1_smoke_step.dependOn(&pass16_m1_proof.step);
     pass16_m1_smoke_step.dependOn(&pass16_source_cursor_proof.step);
     pass16_m1_smoke_step.dependOn(&pass16_source_module_proof.step);
     pass16_m1_smoke_step.dependOn(&pass16_lexer_corpus_proof.step);
+    pass16_m1_smoke_step.dependOn(&pass16_lexer_fingerprint.step);
     pass16_m1_smoke_step.dependOn(&pass16_lexer_embed.step);
     pass16_m1_smoke_step.dependOn(&pass16_lexer_tokenize.step);
+    pass16_m1_smoke_step.dependOn(&pass16_lexer_text_diff.step);
+    pass16_m1_smoke_step.dependOn(&pass16_lexer_tokenize_all.step);
+    pass16_m1_smoke_step.dependOn(&pass16_lexer_tokenize_text.step);
+    pass16_m1_smoke_step.dependOn(&pass16_parser_corpus.step);
     pass16_m1_smoke_step.dependOn(&pass16_m1_verify.step);
     pass16_m1_smoke_step.dependOn(pass16_gate_step);
 
@@ -726,7 +815,7 @@ pub fn build(b: *std.Build) void {
     pass_gates_step.dependOn(passes_audit_step);
 
     // Agent-smoke gate (tier-0): public safety + coordination/stdlib/meta smokes
-    const agent_smoke_cmd = b.addSystemCommand(&.{ "bash", "scripts/duo_lock.sh", "--", "./zig-out/bin/duo", "run", "scripts/agent_smoke.duo" });
+    const agent_smoke_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/duo_lock.duo", "--", "./zig-out/bin/duo", "run", "scripts/agent_smoke.duo" });
     agent_smoke_cmd.setCwd(b.path("."));
     agent_smoke_cmd.step.dependOn(b.getInstallStep());
     const agent_smoke_step = b.step("agent-smoke", "Run tier-0 agent-smoke gate (public safety, coordination, stdlib, meta)");
@@ -748,7 +837,7 @@ pub fn build(b: *std.Build) void {
     const meta_smoke_step = b.step("meta-smoke", "Run G-061 tier-0 @comp.* metaprogramming smokes");
     meta_smoke_step.dependOn(b.getInstallStep());
     inline for (meta_smoke_paths) |path| {
-        const cmd = b.addSystemCommand(&.{ "bash", "scripts/duo_lock.sh", "--", "./zig-out/bin/duo", "run", path });
+        const cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/duo_lock.duo", "--", "./zig-out/bin/duo", "run", path });
         cmd.setCwd(b.path("."));
         meta_smoke_step.dependOn(&cmd.step);
     }
@@ -756,7 +845,7 @@ pub fn build(b: *std.Build) void {
     // G-061 strict dispatch gate: metaprogramming smoke under DUO_TRANSFORM_GATE=1
     const meta_gate_cmd = b.addSystemCommand(&.{
         "bash",                                                                                                                 "-c",
-        "DUO_TRANSFORM_GATE=1 DUO_PROVENANCE=1 scripts/duo_lock.sh -- ./zig-out/bin/duo run examples/metaprogramming_test.duo",
+        "DUO_TRANSFORM_GATE=1 DUO_PROVENANCE=1 ./zig-out/bin/duo run scripts/duo_lock.duo -- ./zig-out/bin/duo run examples/metaprogramming_test.duo",
     });
     meta_gate_cmd.setCwd(b.path("."));
     meta_gate_cmd.step.dependOn(b.getInstallStep());

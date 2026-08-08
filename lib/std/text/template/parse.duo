@@ -44,7 +44,3 @@ parse(template: any)
     return root
 end
 
-M = {}
-M.new_node = new_node
-M.parse = parse
-M

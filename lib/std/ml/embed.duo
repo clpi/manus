@@ -1,15 +1,13 @@
 -- std.ml.embed — Token embeddings, positional encodings, and RoPE
 -- Essential for transformer-based models (LLMs, ViTs, etc.)
 
-Tensor = req "std.ml.tensor"
-
 -- ═══════════════════════════════════════════════════════════════
 -- Token Embedding
 -- ═══════════════════════════════════════════════════════════════
 
 token_embedding(vocab_size: i64, embed_dim: i64): any
     scale = 1.0 / math.sqrt(embed_dim)
-    weights = Tensor.zeros(vocab_size, embed_dim)
+    weights = std.ml.tensor.zeros(vocab_size, embed_dim)
     for i = 1, weights.size
         weights.data[i] = (math.random() * 2 - 1) * scale
     end
@@ -30,14 +28,14 @@ token_embed_forward(layer: any, token_ids: any): any
         batch = #token_ids
         seq_len = #token_ids[1]
     end
-    result = Tensor.zeros(batch * seq_len, layer.embed_dim)
+    result = std.ml.tensor.zeros(batch * seq_len, layer.embed_dim)
     for i = 1, batch * seq_len
         id = token_ids[i]
         for j = 1, layer.embed_dim
             result.data[(i-1)*layer.embed_dim + j] = layer.weights.data[(id-1)*layer.embed_dim + j]
         end
     end
-    Tensor.reshape(result, batch * seq_len, layer.embed_dim)
+    std.ml.tensor.reshape(result, batch * seq_len, layer.embed_dim)
 end
 
 -- ═══════════════════════════════════════════════════════════════
@@ -45,7 +43,7 @@ end
 -- ═══════════════════════════════════════════════════════════════
 
 sinusoidal_encoding(max_len: i64, embed_dim: i64): any
-    pe = Tensor.zeros(max_len, embed_dim)
+    pe = std.ml.tensor.zeros(max_len, embed_dim)
     for pos = 0, max_len - 1
         for i = 0, math.floor(embed_dim / 2) - 1
             freq = 1.0 / math.pow(10000, (2 * i) / embed_dim)
@@ -64,7 +62,7 @@ sinusoidal_encoding(max_len: i64, embed_dim: i64): any
 end
 
 sinusoidal_forward(layer: any, seq_len: i64): any
-    Tensor.slice(layer.weights, 1, seq_len, 1, layer.embed_dim)
+    std.ml.tensor.slice(layer.weights, 1, seq_len, 1, layer.embed_dim)
 end
 
 -- ═══════════════════════════════════════════════════════════════
@@ -76,14 +74,14 @@ learned_positional_embedding(max_len: i64, embed_dim: i64): any
         type = "learned_positional",
         max_len = max_len,
         embed_dim = embed_dim,
-        weights = Tensor.rand(max_len, embed_dim),
+        weights = std.ml.tensor.rand(max_len, embed_dim),
     }
 end
 
 learned_positional_forward(layer: any, positions: any): any
     -- positions: list of 0-based position indices
     seq_len = #positions
-    result = Tensor.zeros(seq_len, layer.embed_dim)
+    result = std.ml.tensor.zeros(seq_len, layer.embed_dim)
     for i = 1, seq_len
         pos = positions[i] + 1  -- 1-indexed
         for j = 1, layer.embed_dim
@@ -102,7 +100,7 @@ rope_embedding(dim: i64, base: f64, max_seq_len: i64): any
     if max_seq_len == nil max_seq_len = 8192 end
 
     -- Precompute frequencies
-    freqs = Tensor.zeros(max_seq_len, dim)
+    freqs = std.ml.tensor.zeros(max_seq_len, dim)
     for pos = 0, max_seq_len - 1
         for i = 0, math.floor(dim / 2) - 1
             freq = 1.0 / math.pow(base, (2 * i) / dim)
@@ -127,7 +125,7 @@ rope_forward(layer: any, x: any, offset: i64): any
     -- Applies rotary embedding in-place conceptually
     seq_len = x.rows
     dim = x.cols
-    result = Tensor.zeros(seq_len, dim)
+    result = std.ml.tensor.zeros(seq_len, dim)
 
     for pos = 0, seq_len - 1
         abs_pos = pos + (offset or 0)
@@ -156,7 +154,7 @@ alibi_encoding(heads: i64, max_seq_len: i64): any
     end
 
     -- Precompute bias matrix
-    biases = Tensor.zeros(heads, max_seq_len)
+    biases = std.ml.tensor.zeros(heads, max_seq_len)
     for h = 1, heads
         for pos = 0, max_seq_len - 1
             biases.data[(h-1) * max_seq_len + pos + 1] = -slopes[h] * pos
@@ -175,7 +173,7 @@ end
 alibi_forward(layer: any, scores: any, seq_len: i64): any
     -- scores: [heads, seq_len, seq_len]
     -- Add ALiBi bias to attention scores
-    result = Tensor.copy(scores)
+    result = std.ml.tensor.copy(scores)
     for h = 1, layer.heads
         for i = 1, seq_len
             for j = 1, seq_len
@@ -224,19 +222,19 @@ embedding_forward(layer: any, token_ids: any, offset: i64): any
     -- Token embeddings
     x = token_embed_forward(layer.token, token_ids)
     -- Position embeddings
-    if layer.pos != nil
+    if has(.pos)(layer)
         if layer.pos_encoding == "rope"
             x = rope_forward(layer.pos, x, offset)
         elseif layer.pos_encoding == "sinusoidal"
             pos_enc = sinusoidal_forward(layer.pos, x.rows)
-            x = Tensor.add(x, pos_enc)
+            x = std.ml.tensor.add(x, pos_enc)
         elseif layer.pos_encoding == "learned"
             positions = {}
             for i = 0, x.rows - 1
                 positions[#positions + 1] = i
             end
             pos_enc = learned_positional_forward(layer.pos, positions)
-            x = Tensor.add(x, pos_enc)
+            x = std.ml.tensor.add(x, pos_enc)
         end
     end
     x
@@ -246,17 +244,3 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
-M.token_embedding = token_embedding
-M.token_embed_forward = token_embed_forward
-M.sinusoidal_encoding = sinusoidal_encoding
-M.sinusoidal_forward = sinusoidal_forward
-M.learned_positional_embedding = learned_positional_embedding
-M.learned_positional_forward = learned_positional_forward
-M.rope_embedding = rope_embedding
-M.rope_forward = rope_forward
-M.alibi_encoding = alibi_encoding
-M.alibi_forward = alibi_forward
-M.embedding_layer = embedding_layer
-M.embedding_forward = embedding_forward
-M

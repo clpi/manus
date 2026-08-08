@@ -22,7 +22,7 @@ need a leading digit) and the spelling is canonical.
 **Measured: the parse is exactly as ruled; the lowering is not.** `.src` becomes
 a closure and `#` is applied to *the closure itself* rather than composed into a
 lens, so the backend emits `strlen(<closure>)` and the C compiler rejects the
-type. `#p.src` on a named subject works. Filed as **GAP-026** — the rule is
+type. `#p.src` on a named subject works. Filed as **GAP-036** — the rule is
 right, the realization is missing, and today the form does not compile.
 
 ## 1. The completeness principle
@@ -115,7 +115,7 @@ absence is absence).
 these is a `name = ...` member inside a descriptor body, and a descriptor body
 accepts **type slots only**. `eq =` fails at the `=` with `expected '}', got
 'name'`, identically to `cmp`, `len`, `hash`, `call` (2.1) and `place` (2.2). One
-parse rule gates roughly twelve rows across five sections. Filed as **GAP-025**.
+parse rule gates roughly twelve rows across five sections. Filed as **GAP-035**.
 
 ### 2.4 Lifecycle — and `release` IS drop
 
@@ -267,12 +267,12 @@ passes.
 
 - **Do not write descriptor member bindings.** `call =`, `place(T) =`, `eq =`,
   `cmp =`, `len =`, `hash =`, slot defaults — none parse. This is one rule
-  (GAP-025), and when it lands most of §2 becomes writable at once.
+  (GAP-035), and when it lands most of §2 becomes writable at once.
 - **Do not write `point{ ... }` against a declared descriptor.** It compiles to
   a call to an undefined symbol. Brace application against a *function* works.
 - **Do not pass operator roots.** `add`, `concat`, `band` are undeclared
   identifiers; `fold(0, add)` has no surface. The tokens are fine.
-- **Do not write `#.src`.** Use `#p.src` on a named subject (GAP-026).
+- **Do not write `#.src`.** Use `#p.src` on a named subject (GAP-036).
 - **`to(str)`, `for v in t`, `t[k]`, `#s` and brace-calling a function are the
   registry surface that works.** Everything else in §2 is spec.
 - **Every family name is an ordinary undeclared identifier.** There is no
@@ -290,6 +290,6 @@ Run `duo run scripts/census/family.duo` before trusting any row.
   but the repo root.
 - `scripts/spec_conformance.duo` — the Pass 64 gate. `FF-13 t{...} shape` there
   is `CALL-1` here, measured independently and agreeing.
-- `GAP-025` descriptor bodies accept no member bindings · `GAP-026` `#.src`
+- `GAP-035` descriptor bodies accept no member bindings · `GAP-036` `#.src`
   mis-lowers · `GAP-027` zero is falsy, contradicting B-2 · `GAP-028` weak
   references, gated on E2.

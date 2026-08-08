@@ -170,7 +170,7 @@ Run `duo run scripts/census/modes.duo` before trusting any row.
 - `scripts/census/modes.duo` — the gate, floor pinned at 5/18.
 - `docs/plans/pass81_family_registry.md` §2.6 — `from` as the missing half of the
   `to`/`from` edge, measured there as `FROM-1`.
-- `GAP-025` — descriptor bodies accept type slots only. Blocks the `call` edge
+- `GAP-035` — descriptor bodies accept type slots only. Blocks the `call` edge
   that construction (rung 1) is defined in terms of.
 - `GAP-029` — no legal spelling for a string built from a call result. Filed from
   this diff; §1's concat ban and TMP-1 are jointly unsatisfiable while expression

@@ -1,0 +1,107 @@
+-- SH-11 — the native backend, end to end: LOWERED, ASSEMBLED, LINKED, RUN.
+--
+-- The encoder proof (pass16_arm64_proof.duo) shows single instructions match
+-- the system assembler. That is necessary and not sufficient: a backend can
+-- encode every instruction correctly and still lower an expression wrongly.
+-- So this lowers a whole expression to a function, builds it, runs it, and
+-- compares the answer to SH-08's folder.
+--
+--     expr -> arm64.asm_for -> xcrun clang -> ./a.out -> printed value
+--          \
+--           -> comptime.fold -> value
+--
+-- Same differential shape as SH-10's C backend, on the other target. The two
+-- implementations share nothing but the expression text: one walks bytes and
+-- computes, the other allocates registers and emits instructions the CPU runs.
+--
+-- Exit: 0 all agree, else the failing case. 90 for a missing toolchain — a
+-- visible SKIP, never a silent pass.
+
+global A = std.compiler.arm64
+global C = std.compiler.comptime
+
+global ASM = "/tmp/duo_a64_exec.s"
+global MAIN = "/tmp/duo_a64_exec_main.c"
+global EXE = "/tmp/duo_a64_exec.out"
+
+_build_and_run = (expr: str): str
+    asm_text = A.asm_for(expr)
+    if asm_text == ""
+        return ""
+    end
+    fh = io.open(ASM, "w")
+    if not fh
+        return ""
+    end
+    fh:write(asm_text)
+    fh:close()
+    mh = io.open(MAIN, "w")
+    if not mh
+        return ""
+    end
+    mh:write("#include <stdio.h>\nlong long duo_eval(void);\n"
+        .. "int main(void){ printf(\"%lld\\n\", duo_eval()); return 0; }\n")
+    mh:close()
+    cc = std.script.getenv("DUO_ARM64_CC", "xcrun clang")
+    if std.script.run(cc .. " -o " .. EXE .. " " .. MAIN .. " " .. ASM .. " 2>/dev/null") != 0
+        os.remove(ASM)
+        os.remove(MAIN)
+        return ""
+    end
+    out = std.script.capture(EXE)
+    os.remove(ASM)
+    os.remove(MAIN)
+    os.remove(EXE)
+    n: i64 = #out
+    while n > 0 and (string.byte(out, n) == 10 or string.byte(out, n) == 32)
+        n -= 1
+    end
+    string.sub(out, 1, n)
+end
+
+_check = (n: i64, expr: str): i64
+    got = _build_and_run(expr)
+    if got == ""
+        print("arm64_exec: FAIL " .. to(str)(n) .. ": could not build [" .. expr .. "]")
+        return n
+    end
+    want = to(str)(C.fold(expr))
+    if got != want
+        print("arm64_exec: FAIL " .. to(str)(n) .. ": [" .. expr .. "] native "
+            .. got .. ", folder " .. want)
+        return n
+    end
+    0
+end
+
+main(): i64
+    if _build_and_run("1 + 1") != "2"
+        print("arm64_exec: SKIP — no working assembler/linker")
+        return 90
+    end
+
+    r: i64 = 0
+    r = _check(1, "2 + 3 * 4")
+    if r != 0 return r end
+    r = _check(2, "(2 + 3) * 4")
+    if r != 0 return r end
+    r = _check(3, "100 - 30 - 7")
+    if r != 0 return r end
+    r = _check(4, "6 * 7")
+    if r != 0 return r end
+    r = _check(5, "1000 / 8")
+    if r != 0 return r end
+    r = _check(6, "2 * (3 + 4) * 5")
+    if r != 0 return r end
+    r = _check(7, "-5 + 12")
+    if r != 0 return r end
+    -- left-associativity of subtraction is where a naive stack codegen breaks
+    r = _check(8, "100 - 30 - 7 - 3")
+    if r != 0 return r end
+    -- and of division
+    r = _check(9, "1000 / 5 / 2")
+    if r != 0 return r end
+
+    print("arm64_exec: 9 expressions — lowered to ARM64, assembled, linked, ran, agreed")
+    0
+end

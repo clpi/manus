@@ -10,8 +10,8 @@ concept HasTag
     tag: str
 end
 
-type Point = { x: f64, y: f64, tag: str }
-type Pair = { x: f64, y: f64, tag: str }
+Point: { x: f64, y: f64, tag: str }
+Pair: { x: f64, y: f64, tag: str }
 
 @comp.define.derive("TouchApi", generate(meta) -> str
     acc = ""
@@ -25,7 +25,7 @@ end)
 -- One line: apply TouchApi to all HasXY types AND emit omni C (ceiling + sweep comment).
 @comp.burst("HasXY", TouchApi, "HasTag")
 
-mark(meta) -> str
+mark(meta): str
     meta.name .. ";"
 end
 
@@ -33,7 +33,7 @@ COMBOS = @comp.catalog("combinators")
 SWEEP = @comp.map("HasXY", mark)
 
 print("=== meta burst showcase ===")
-print("combinators_has_burst = " .. tostring(@comp.str.contains(COMBOS, "meta.burst")))
+print("combinators_has_burst = " .. to(str)(@comp.str.contains(COMBOS, "meta.burst")))
 print("sweep = " .. SWEEP)
 print("Point ok = true")
 print("ok")

@@ -213,18 +213,18 @@ end
 -- Particle System
 -- ═══════════════════════════════════════════════════════════════
 
-particle_system_new(): any
+system_new(): any
     {
         emitters = {},
         max_particles = 10000,
     }
 end
 
-particle_system_add_emitter(system: any, emitter: any): void
+system_add_emitter(system: any, emitter: any): void
     system.emitters[#system.emitters + 1] = emitter
 end
 
-particle_system_update(system: any, delta_time: f64): void
+system_update(system: any, delta_time: f64): void
     total_particles = 0
     for emitter in system.emitters
         emitter_update(emitter, delta_time)
@@ -232,7 +232,7 @@ particle_system_update(system: any, delta_time: f64): void
     end
 end
 
-particle_system_get_all_particles(system: any): any
+system_get_all_particles(system: any): any
     particles = {}
     for emitter in system.emitters
         for p in emitter_get_particles(emitter)
@@ -242,13 +242,13 @@ particle_system_get_all_particles(system: any): any
     particles
 end
 
-particle_system_clear(system: any): void
+system_clear(system: any): void
     for emitter in system.emitters
         emitter_clear(emitter)
     end
 end
 
-particle_system_total_count(system: any): i64
+system_total_count(system: any): i64
     count = 0
     for emitter in system.emitters
         count += emitter_particle_count(emitter)
@@ -260,7 +260,7 @@ end
 -- Preset Configurations
 -- ═══════════════════════════════════════════════════════════════
 
-emitter_fire(): any
+fire(): any
     config = emitter_config_new()
     config.direction = {x = 0, y = 1, z = 0}
     config.spread = {x = 0.2, y = 0.1, z = 0.2}
@@ -278,7 +278,7 @@ emitter_fire(): any
     config
 end
 
-emitter_smoke(): any
+smoke(): any
     config = emitter_config_new()
     config.direction = {x = 0, y = 1, z = 0}
     config.spread = {x = 0.3, y = 0.2, z = 0.3}
@@ -295,7 +295,7 @@ emitter_smoke(): any
     config
 end
 
-emitter_rain(): any
+rain(): any
     config = emitter_config_new()
     config.position = {x = 0, y = 10, z = 0}
     config.spread = {x = 20, y = 0, z = 20}
@@ -313,7 +313,7 @@ emitter_rain(): any
     config
 end
 
-emitter_sparkle(): any
+sparkle(): any
     config = emitter_config_new()
     config.spread = {x = 0.5, y = 0.5, z = 0.5}
     config.speed = {min = 0.1, max = 0.5}
@@ -333,37 +333,8 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
 -- Particle
-M.particle_new = particle_new
 -- Emitter Config
-M.emitter_config_new = emitter_config_new
-M.emitter_config_set_position = emitter_config_set_position
-M.emitter_config_set_spread = emitter_config_set_spread
-M.emitter_config_set_speed = emitter_config_set_speed
-M.emitter_config_set_lifetime = emitter_config_set_lifetime
-M.emitter_config_set_colors = emitter_config_set_colors
-M.emitter_config_set_rate = emitter_config_set_rate
-M.emitter_config_set_burst = emitter_config_set_burst
-M.emitter_config_set_gravity = emitter_config_set_gravity
 -- Emitter
-M.emitter_new = emitter_new
-M.emitter_emit = emitter_emit
-M.emitter_update = emitter_update
-M.emitter_get_particles = emitter_get_particles
-M.emitter_clear = emitter_clear
-M.emitter_set_active = emitter_set_active
-M.emitter_particle_count = emitter_particle_count
 -- System
-M.system_new = particle_system_new
-M.system_add_emitter = particle_system_add_emitter
-M.system_update = particle_system_update
-M.system_get_all_particles = particle_system_get_all_particles
-M.system_clear = particle_system_clear
-M.system_total_count = particle_system_total_count
 -- Presets
-M.fire = emitter_fire
-M.smoke = emitter_smoke
-M.rain = emitter_rain
-M.sparkle = emitter_sparkle
-M

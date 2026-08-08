@@ -1,16 +1,16 @@
 -- std.fmt — formatting utilities
 
-std_fmt_int(v: any): str
+int(v: any): str
     if v == nil return "nil" end
-    tostring(v)
+    to(str)(v)
 end
 
-std_fmt_float(v: any, precision: i64): str
+float(v: any, precision: i64): str
     if v == nil return "nil" end
     if precision == nil
         string.format("%g", v)
     end
-    string.format("%." .. tostring(precision) .. "f", v)
+    string.format("%." .. to(str)(precision) .. "f", v)
 end
 
 to_str(v: any): str
@@ -20,7 +20,15 @@ end
 
 boolean(v: any): str
     if v == nil return "false" end
-    if v "true" else "false" end
+    -- A guard, not `if v "true" else "false" end`. The endless one-liner clause
+    -- must be SELF-DELIMITED (Pass 48 2.4), and `v "true"` reads as PARENLESS
+    -- APPLICATION -- it called `v("true")` and returned that. Because `v` is
+    -- `any` the bogus call TYPE-CHECKS, so unlike strconv's `b: bool` version
+    -- this compiled and shipped: boolean(true) returned "false".
+    if v
+        return "true"
+    end
+    "false"
 end
 
 hex(v: any): str
@@ -36,7 +44,7 @@ bin(v: any): str
         "0b0"
     end
     while n > 0
-        table.insert(digits, 1, tostring(n % 2))
+        table.insert(digits, 1, to(str)(n % 2))
         n = math.floor(n / 2)
     end
     "0b" .. table.concat(digits)
@@ -60,7 +68,7 @@ pad(s: str, width: i64, pad_char: str): str
     s .. pad_str
 end
 
-std_fmt_trunc(s: str, width: i64): str
+trunc(s: str, width: i64): str
     if s == nil return "" end
     if width == nil return s end
     len = string.len(s)
@@ -81,16 +89,16 @@ format(fmt: str, args: any): str
                 spec = fmt:sub(i + 1, j - 1)
                 v = args[arg_idx]
                 if spec == ""
-                    out = out .. tostring(v)
+                    out = out .. to(str)(v)
                 elseif string.sub(spec, 1, 2) == ":."
                     prec = tonumber(string.sub(spec, 3))
                     if prec and tonumber(v)
-                        out = out .. string.format("%." .. tostring(prec) .. "f", v)
+                        out = out .. string.format("%." .. to(str)(prec) .. "f", v)
                     else
-                        out = out .. tostring(v)
+                        out = out .. to(str)(v)
                     end
                 else
-                    out = out .. tostring(v)
+                    out = out .. to(str)(v)
                 end
                 arg_idx = arg_idx + 1
                 i = j + 1
@@ -115,7 +123,7 @@ end
 bytes(size: any): str
     if size == nil return "0 B" end
     if size < 1024
-        return tostring(size) .. " B"
+        return to(str)(size) .. " B"
     elseif size < 1024 * 1024
         return string.format("%.1f KB", size / 1024)
     elseif size < 1024 * 1024 * 1024
@@ -131,7 +139,7 @@ join(parts: any, sep: str): str
     strs = {}
     i = 1
     while i <= rawlen(parts)
-        strs[rawlen(strs) + 1] = tostring(parts[i])
+        strs[rawlen(strs) + 1] = to(str)(parts[i])
         i += 1
     end
     table.concat(strs, sep)
@@ -145,7 +153,7 @@ repr(v: any): str
     elseif t == "boolean"
         if v return "true" else return "false" end
     elseif t == "number"
-        return tostring(v)
+        return to(str)(v)
     elseif t == "table"
         parts = {}
         n = rawlen(v)
@@ -157,29 +165,13 @@ repr(v: any): str
             end
             return "{" .. table.concat(parts, ", ") .. "}"
         else
-            for k, val in pairs(v)
-                parts[rawlen(parts) + 1] = tostring(k) .. "=" .. repr(val)
+            for k, val in v
+                parts[rawlen(parts) + 1] = to(str)(k) .. "=" .. repr(val)
             end
             return "{" .. table.concat(parts, ", ") .. "}"
         end
     else
-        return tostring(v)
+        return to(str)(v)
     end
 end
 
-M = {}
-M.int = std_fmt_int
-M.float = std_fmt_float
-M.to_str = to_str
-M.boolean = boolean
-M.hex = hex
-M.bin = bin
-M.trim = trim
-M.pad = pad
-M.trunc = std_fmt_trunc
-M.format = format
-M.println = println
-M.bytes = bytes
-M.join = join
-M.repr = repr
-M

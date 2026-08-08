@@ -1,0 +1,64 @@
+-- SH-05 — the canonicalizer's two properties, proven over the whole lib/std
+-- corpus rather than over hand-written cases.
+--
+-- A canonicalizer is correct exactly when it changes layout and nothing else.
+-- SH-04 makes that checkable, because the parser now accepts 245/245 of lib/std:
+--
+--   MEANING   proj_program(canonicalize(src)) == proj_program(src)
+--   FIXPOINT  canonicalize(canonicalize(src)) == canonicalize(src)
+--
+-- Neither property is interesting on three toy inputs; both are load-bearing
+-- across 245 real modules, which is the only reason this proof is shaped as a
+-- corpus sweep. A projection oracle that rejected a third of the corpus could
+-- not have carried it.
+--
+-- Exit code: 0 all pass, 1 a meaning change, 2 a fixpoint failure, 3 empty
+-- corpus. The failing path prints the file, so a break is named rather than
+-- counted.
+
+global P = std.compiler.parser
+global F = std.compiler.fmt
+
+main(): i64
+    listing = std.script.capture("find " .. std.script.getenv("DUO_ROOT", ".")
+        .. "/lib/std -name '*.duo' 2>/dev/null | grep -v '/os/linux.duo'")
+    n: i64 = #listing
+    checked: i64 = 0
+    start: i64 = 1
+    i: i64 = 1
+    while i <= n + 1
+        at_end = i > n
+        eol = false
+        if not at_end
+            eol = string.byte(listing, i) == 10
+        end
+        if at_end or eol
+            if i > start
+                path = string.sub(listing, start, i - 1)
+                fh = io.open(path, "r")
+                if fh
+                    src = fh:read("a")
+                    fh:close()
+                    once = F.canonicalize(src)
+                    if P.proj_program(once, path) != P.proj_program(src, path)
+                        print("MEANING CHANGED: " .. path)
+                        return 1
+                    end
+                    if F.canonicalize(once) != once
+                        print("NOT A FIXPOINT: " .. path)
+                        return 2
+                    end
+                    checked += 1
+                end
+            end
+            start = i + 1
+        end
+        i += 1
+    end
+    if checked == 0
+        print("formatter_proof: FAIL (empty corpus)")
+        return 3
+    end
+    print("formatter_proof: " .. to(str)(checked) .. " files — meaning preserved, fixpoint reached")
+    0
+end

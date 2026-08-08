@@ -66,9 +66,3 @@ next_part(r: any)
     return p
 end
 
-M = {}
-M.parse_boundary = parse_boundary
-M.new_reader = new_reader
-M.next_part = next_part
-M.parse_headers = parse_headers
-M

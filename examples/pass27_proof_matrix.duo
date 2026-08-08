@@ -163,10 +163,10 @@ end
 
 main(): i64
     fib_res: i64 = fib(32)
-    print("RESULT fib " .. tostring(fib_res))
+    print("RESULT fib " .. to(str)(fib_res))
 
     prime_res: i64 = count_primes(10000)
-    print("RESULT primes " .. tostring(prime_res))
+    print("RESULT primes " .. to(str)(prime_res))
 
     mandel: i64 = 0
     y: i64 = -20
@@ -178,28 +178,28 @@ main(): i64
         end
         y = y + 1
     end
-    print("RESULT mandel " .. tostring(mandel))
+    print("RESULT mandel " .. to(str)(mandel))
 
     grid_res: f64 = compute_grid_sum(200)
-    print("RESULT grid " .. tostring(grid_res))
+    print("RESULT grid " .. to(str)(grid_res))
 
     nbody_res: f64 = simulate_nbody(50000)
-    print("RESULT nbody " .. tostring(nbody_res))
+    print("RESULT nbody " .. to(str)(nbody_res))
 
     tbl_res: i64 = table_array_sum(50000)
-    print("RESULT table_sum " .. tostring(tbl_res))
+    print("RESULT table_sum " .. to(str)(tbl_res))
 
     trig_res: f64 = trig_sum(500000)
-    print("RESULT trig " .. tostring(trig_res))
+    print("RESULT trig " .. to(str)(trig_res))
 
     hash_res: i64 = rolling_hash(80000)
-    print("RESULT hash " .. tostring(hash_res))
+    print("RESULT hash " .. to(str)(hash_res))
 
     dot_res: f64 = dot2d(50000)
-    print("RESULT dot " .. tostring(dot_res))
+    print("RESULT dot " .. to(str)(dot_res))
 
     xor_res: i64 = reduce_xor(65535)
-    print("RESULT xor " .. tostring(xor_res))
+    print("RESULT xor " .. to(str)(xor_res))
 
     0
 end

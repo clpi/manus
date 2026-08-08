@@ -73,19 +73,3 @@ img_at(img: any, x: i64, y: i64): any
     )
 end
 
-M = {}
-M.pt = pt
-M.rect = rect
-M.rect_dx = rect_dx
-M.rect_dy = rect_dy
-M.rect_empty = rect_empty
-M.rect_inset = rect_inset
-M.rect_union = rect_union
-M.rect_intersect = rect_intersect
-M.rect_overlaps = rect_overlaps
-M.new_rgba = new_rgba
-M.new_gray = new_gray
-M.img_set = img_set
-M.img_at = img_at
-M.color = color
-M

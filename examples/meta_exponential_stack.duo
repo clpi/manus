@@ -10,9 +10,9 @@ concept HasTag
     tag: str
 end
 
-type Point = { x: f64, y: f64, tag: str }
-type Pair = { x: f64, y: f64, tag: str }
-type Label = { tag: str }
+Point: { x: f64, y: f64, tag: str }
+Pair: { x: f64, y: f64, tag: str }
+Label: { tag: str }
 
 @comp.define.derive("TouchApi", generate(meta) -> str
     acc = ""
@@ -25,11 +25,11 @@ end)
 
 @comp.derive.all("HasXY", TouchApi)
 
-pair_sig(a, b) -> str
+pair_sig(a, b): str
     a.name .. "x" .. b.name .. ";"
 end
 
-mark(meta) -> str
+mark(meta): str
     meta.name .. ";"
 end
 

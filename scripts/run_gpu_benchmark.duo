@@ -1,0 +1,86 @@
+-- run_gpu_benchmark.duo — build and run the GPU (Metal) vs CPU matmul benchmark.
+--
+-- Duo replacement for scripts/run_gpu_benchmark.sh (monoglot census).
+--
+-- Requirements: macOS with a Metal-capable GPU, Xcode command line tools, and
+-- a built Duo compiler. OPT-IN — not part of the CI gate.
+--
+-- examples/metal_compute.m stays Objective-C: it is a Metal SHADER HOST, and
+-- Duo has no Metal binding. That is a fact-loss ledger row, not something this
+-- script can fix by shelling differently.
+
+_OUT_DIR = "/tmp/duo_gpu_bench"
+_EX = "examples"
+
+-- No ANSI here. The repo has an assert_no_ansi_reports gate, and a benchmark
+-- whose output is scraped should not carry escape codes; the shell version's
+-- colours were the only thing lost in this port.
+_step(msg: str): void
+    print(msg)
+end
+
+main = (): i64
+    print("=== Duo GPU (Metal) Benchmark ===")
+    print("")
+
+    if std.script.chomp(std.script.capture("uname")) != "Darwin"
+        print("SKIP: This benchmark requires macOS with Metal support. Skipping gracefully.")
+        return 0
+    end
+
+    duo = "./zig-out/bin/duo"
+    if not std.script.fs_exists(duo)
+        print("ERROR: Duo compiler not found at " .. duo)
+        print("  Run 'zig build' first")
+        return 1
+    end
+
+    std.script.run("mkdir -p " .. _OUT_DIR)
+    sdk = std.script.chomp(std.script.capture("xcrun --show-sdk-path"))
+
+    _step("[1/3] Compiling Metal helper (metal_compute.m)...")
+    rc = std.script.run("clang -c " .. _EX .. "/metal_compute.m -o " .. _OUT_DIR
+        .. "/metal_compute.o -isysroot " .. sdk .. " -O2 -fobjc-arc")
+    if rc != 0
+        print("ERROR: Metal helper failed to compile")
+        return 1
+    end
+    print("      -> " .. _OUT_DIR .. "/metal_compute.o")
+
+    _step("[2/3] Compiling bench_gpu_metal.duo...")
+    csrc = _OUT_DIR .. "/bench_gpu_metal.c"
+    -- dump-c writes to STDOUT, so the redirect is the output path. A failure
+    -- here leaves an empty .c that clang would reject with a confusing error,
+    -- which is why the status is checked before clang runs.
+    if std.script.run(duo .. " dump-c " .. _EX .. "/bench_gpu_metal.duo > " .. csrc) != 0
+        print("ERROR: duo dump-c failed")
+        return 1
+    end
+    print("      -> Generated C: " .. csrc)
+
+    bin = _OUT_DIR .. "/bench_gpu_metal"
+    rc = std.script.run("clang " .. csrc .. " " .. _OUT_DIR .. "/metal_compute.o -o " .. bin
+        .. " -isysroot " .. sdk .. " -framework Metal -framework Foundation -O3 -ffast-math -lm")
+    if rc != 0
+        print("ERROR: benchmark failed to link")
+        return 1
+    end
+    print("      -> Binary: " .. bin)
+
+    print("")
+    _step("[3/3] Running benchmark...")
+    print("-----------------------------------------------")
+    -- `run`, not `status`: status routes the child's output to /dev/null to
+    -- read its code back, and the benchmark's numbers ARE the deliverable.
+    -- Zero-vs-nonzero is all this needs, which is exactly what run can give.
+    code = std.script.run(bin)
+    print("-----------------------------------------------")
+    if code != 0
+        print("ERROR: benchmark failed (nonzero exit)")
+        return 1
+    end
+
+    print("")
+    print("Done.")
+    0
+end

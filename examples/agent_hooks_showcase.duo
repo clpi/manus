@@ -2,15 +2,13 @@
 -- Run: duo run examples/agent_hooks_showcase.duo
 -- Gate: scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/agent_smoke.duo
 
-agent = req "std.agent"
-
-HOOKS: str = agent.hook_index()
-DISCOVER: str = agent.discover()
-LADDER: str = agent.scaling_ladder()
-DEDUPE: str = agent.dedupe_policy()
-GAPS: str = agent.gaps_index()
-POLICY: str = agent.native_policy()
-GATES: str = agent.build_gates()
+HOOKS: str = std.agent.hook_index()
+DISCOVER: str = std.agent.discover()
+LADDER: str = std.agent.scaling_ladder()
+DEDUPE: str = std.agent.dedupe_policy()
+GAPS: str = std.agent.gaps_index()
+POLICY: str = std.agent.native_policy()
+GATES: str = std.agent.build_gates()
 
 has_map = string.find(DISCOVER, "comp.map") != nil or string.find(DISCOVER, "meta.map") != nil
 has_burst = string.find(DISCOVER, "comp.burst") != nil or string.find(DISCOVER, "meta.burst") != nil
@@ -22,7 +20,7 @@ has_no_lua = string.find(POLICY, "NO lua_Value") != nil
 has_tier0 = string.find(GATES, "agent_smoke.duo") != nil
 has_comp_alias = string.find(DISCOVER, "comp.agent.catalog") != nil
 
-HINT = agent.multiplier_for("derive traits for all types")
+HINT = std.agent.multiplier_for("derive traits for all types")
 has_derive_hint = string.find(HINT, "@comp.derive") != nil
 
 ok = has_map
@@ -37,18 +35,18 @@ ok = ok and has_comp_alias
 ok = ok and has_derive_hint
 
 print("=== agent hooks showcase ===")
-print("discover_has_map = " .. tostring(has_map))
-print("discover_has_burst = " .. tostring(has_burst))
-print("ladder_has_power = " .. tostring(has_power))
-print("hooks_has_coord = " .. tostring(has_coord))
-print("dedupe_has_claim = " .. tostring(has_dedupe))
-print("gaps_index_ok = " .. tostring(has_gaps))
-print("native_policy_ok = " .. tostring(has_no_lua))
-print("build_gates_ok = " .. tostring(has_tier0))
-print("comp_alias_ok = " .. tostring(has_comp_alias))
-print("derive_hint_ok = " .. tostring(has_derive_hint))
+print("discover_has_map = " .. to(str)(has_map))
+print("discover_has_burst = " .. to(str)(has_burst))
+print("ladder_has_power = " .. to(str)(has_power))
+print("hooks_has_coord = " .. to(str)(has_coord))
+print("dedupe_has_claim = " .. to(str)(has_dedupe))
+print("gaps_index_ok = " .. to(str)(has_gaps))
+print("native_policy_ok = " .. to(str)(has_no_lua))
+print("build_gates_ok = " .. to(str)(has_tier0))
+print("comp_alias_ok = " .. to(str)(has_comp_alias))
+print("derive_hint_ok = " .. to(str)(has_derive_hint))
 print("multiplier_hint = " .. HINT)
-print("RESULT agent_hooks_ok = " .. tostring(ok))
+print("RESULT agent_hooks_ok = " .. to(str)(ok))
 if not ok
     error("agent hook discovery failed")
 end

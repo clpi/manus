@@ -3,7 +3,7 @@
 
 OUT = @comp.match("alpha|beta", fun(m)
     @comp.fixpoint(m.pattern, fun(s)
-        "tag=" .. m.pattern .. " iter=" .. tostring(s.iteration) .. "\n"
+        "tag=" .. m.pattern .. " iter=" .. to(str)(s.iteration) .. "\n"
     end, 2)
 end)
 
@@ -13,5 +13,5 @@ HAS_BETA1 = @comp.str.contains(OUT, "tag=beta iter=1")
 
 ok = (LINES == 4 and HAS_ALPHA and HAS_BETA1)
 print("=== match → fixpoint cascade ===")
-print("line_count = " .. tostring(LINES) .. "  (expect 4 = 2 patterns × 2 iterations)")
-print("RESULT match_fixpoint_ok = " .. tostring(ok))
+print("line_count = " .. to(str)(LINES) .. "  (expect 4 = 2 patterns × 2 iterations)")
+print("RESULT match_fixpoint_ok = " .. to(str)(ok))

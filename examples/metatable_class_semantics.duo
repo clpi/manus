@@ -36,7 +36,7 @@ Vector.__contains = fun(self: any, value: any): bool
 end
 
 Vector.__tostring = fun(self: any): str
-    "Vector(" .. tostring(self.x) .. ", " .. tostring(self.y) .. ")"
+    "Vector(" .. to(str)(self.x) .. ", " .. to(str)(self.y) .. ")"
 end
 
 v = Vector(2, 3)
@@ -55,15 +55,15 @@ proxy.answer = 21
 
 fallback = setmetatable({}, {
     __index = fun(self: any, key: any): any
-        "missing:" .. tostring(key)
+        "missing:" .. to(str)(key)
     end,
 })
 
-print(tostring(v))
-print(tostring(sum))
-print(tostring(v == w))
-print(tostring(#v))
-print(tostring(4 in v))
-print(tostring(proxy.answer))
+print(to(str)(v))
+print(to(str)(sum))
+print(to(str)(v == w))
+print(to(str)(#v))
+print(to(str)(4 in v))
+print(to(str)(proxy.answer))
 print(fallback.anything)
-print(tostring(getmetatable(v)))
+print(to(str)(getmetatable(v)))

@@ -10,7 +10,7 @@ end
 
 -- Standard require pattern
 sync = req "std.sync"
-print("sync module loaded: " .. tostring(type(sync)))
+print("sync module loaded: " .. to(str)(type(sync)))
 
 -- req can be used as a function name
 my_req(module: str): str

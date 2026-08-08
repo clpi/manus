@@ -10,9 +10,9 @@ concept HasXY
     y: f64
 end
 
-type Vec2 = { x: f64, y: f64 }
-type Vec3 = { x: f64, y: f64, z: f64 }
-type Pt = { x: f64, y: f64 }
+Vec2: { x: f64, y: f64 }
+Vec3: { x: f64, y: f64, z: f64 }
+Pt: { x: f64, y: f64 }
 
 -- Folded concat builds zip specs (fold_meta_string_expr binop ..).
 TYPES = "i32|" .. "i64|" .. "f64"
@@ -47,6 +47,6 @@ CASCADE_LINES = @comp.str.countlines(CASCADE)
 
 ok = (PAIR_COUNT == 6 and CASCADE_LINES == 7 and TYPE_AXES == 3 and OP_AXES == 2)
 print("=== RESULT ===")
-print("cascade_ok = " .. tostring(ok))
-print("RESULT cascade_pairs " .. tostring(PAIR_COUNT))
-print("RESULT cascade_lines " .. tostring(CASCADE_LINES))
+print("cascade_ok = " .. to(str)(ok))
+print("RESULT cascade_pairs " .. to(str)(PAIR_COUNT))
+print("RESULT cascade_lines " .. to(str)(CASCADE_LINES))

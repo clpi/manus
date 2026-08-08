@@ -344,14 +344,3 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
-M.bpe_new = bpe_new
-M.bpe_add_token = bpe_add_token
-M.bpe_learn = bpe_learn
-M.bpe_encode = bpe_encode
-M.bpe_decode = bpe_decode
-M.wordpiece_encode = wordpiece_encode
-M.simple_tokenize = simple_tokenize
-M.token_frequencies = token_frequencies
-M.top_k_tokens = top_k_tokens
-M

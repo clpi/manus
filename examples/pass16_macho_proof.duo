@@ -1,0 +1,92 @@
+-- SH-12 — the object writer, proven by LINKING AND RUNNING what it emits.
+--
+-- The writer produces a Mach-O ARM64 relocatable object: header, segment
+-- command, section, symbol table, string table. The proof hands it to the
+-- system linker against a C `main` that calls the exported symbol, runs the
+-- result, and checks the value.
+--
+--     encode -> macho.object_hex -> xxd -> clang -o exe main.c obj.o -> run
+--
+-- There is no way for a wrong object to print the right number. A bad offset, a
+-- mis-sized load command, or a symbol table the linker cannot read means it
+-- does not link — or links and crashes. That is the whole reason to prove a
+-- container format this way rather than by inspecting fields.
+--
+-- SH-11 proved the instruction ENCODINGS against the assembler and the LOWERING
+-- against execution. This proves the CONTAINER. Together: a native path with no
+-- assembler in it.
+--
+-- Exit: 0 pass, 1..N failing case, 90 toolchain missing (a visible SKIP).
+
+global A = std.compiler.arm64
+global M = std.compiler.macho
+
+global HEX = "/tmp/duo_macho_proof.hex"
+global OBJ = "/tmp/duo_macho_proof.o"
+global MAIN = "/tmp/duo_macho_proof_main.c"
+global EXE = "/tmp/duo_macho_proof.out"
+
+-- Emit an object returning `value`, link it, run it, return what it printed.
+_roundtrip = (value: i64): str
+    code = M.words_to_bytes({ A.encode_movz(0, value), A.encode_ret() })
+    fh = io.open(HEX, "w")
+    if not fh
+        return ""
+    end
+    fh:write(M.object_hex("duo_eval", code))
+    fh:close()
+    -- `xxd` is transport, not authorship: a Duo `str` is NUL-terminated and
+    -- cannot carry binary, and there is no byte-buffer-to-file API. The object
+    -- is composed in Duo; only the hex-to-bytes step is shelled out.
+    if std.script.run("tr -d '\\n' < " .. HEX .. " | xxd -r -p > " .. OBJ) != 0
+        return ""
+    end
+    mh = io.open(MAIN, "w")
+    if not mh
+        return ""
+    end
+    mh:write("#include <stdio.h>\nlong long duo_eval(void);\n"
+        .. "int main(void){ printf(\"%lld\\n\", duo_eval()); return 0; }\n")
+    mh:close()
+    cc = std.script.getenv("DUO_ARM64_CC", "xcrun clang")
+    if std.script.run(cc .. " -o " .. EXE .. " " .. MAIN .. " " .. OBJ .. " 2>/dev/null") != 0
+        return ""
+    end
+    out = std.script.capture(EXE)
+    n: i64 = #out
+    while n > 0 and (string.byte(out, n) == 10 or string.byte(out, n) == 32)
+        n -= 1
+    end
+    string.sub(out, 1, n)
+end
+
+_check = (n: i64, value: i64): i64
+    got = _roundtrip(value)
+    if got != to(str)(value)
+        print("macho_proof: FAIL " .. to(str)(n) .. ": object returned [" .. got
+            .. "], expected " .. to(str)(value))
+        return n
+    end
+    0
+end
+
+main(): i64
+    if _roundtrip(1) != "1"
+        print("macho_proof: SKIP — no working linker/xxd")
+        return 90
+    end
+
+    r: i64 = 0
+    r = _check(1, 42)
+    if r != 0 return r end
+    r = _check(2, 0)
+    if r != 0 return r end
+    r = _check(3, 4242)
+    if r != 0 return r end
+    -- the top of the MOVZ 16-bit immediate range, where a mis-sized field shows
+    r = _check(4, 65535)
+    if r != 0 return r end
+
+    print("macho_proof: 4 objects emitted from Duo — linked by the system linker and ran")
+    0
+end

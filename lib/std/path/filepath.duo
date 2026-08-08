@@ -33,7 +33,7 @@ clean(path: str): str
         i = nxt + 1
     end
     stack = {}
-    for _, part in ipairs(parts) do
+    for _, part in parts do
         if part == ".."
             table.remove(stack)
         elseif part != "." and part != ""
@@ -84,13 +84,3 @@ is_abs(path: str): bool
     false
 end
 
-M = {}
-M.separator = separator
-M.list_separator = list_separator
-M.is_separator = is_separator
-M.clean = clean
-M.ext = ext
-M.base = base
-M.dir = dir
-M.is_abs = is_abs
-M

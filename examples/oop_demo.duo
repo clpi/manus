@@ -28,12 +28,12 @@ point = {
     end,
 }
 
-print("Point: (" .. tostring(point.x) .. ", " .. tostring(point.y) .. ")")
-print("Distance: " .. tostring(point.distance(point)))
+print("Point: (" .. to(str)(point.x) .. ", " .. to(str)(point.y) .. ")")
+print("Distance: " .. to(str)(point.distance(point)))
 
 point.move(point, 1.0, 2.0)
-print("After move: (" .. tostring(point.x) .. ", " .. tostring(point.y) .. ")")
-print("New distance: " .. tostring(point.distance(point)))
+print("After move: (" .. to(str)(point.x) .. ", " .. to(str)(point.y) .. ")")
+print("New distance: " .. to(str)(point.distance(point)))
 
 -- ── Inheritance via metatables (extends pattern) ────────────────────────────
 
@@ -43,7 +43,7 @@ Point_base(x: f64, y: f64): any
         x = x,
         y = y,
         describe = fun(self): str
-            "Point(" .. tostring(self.x) .. ", " .. tostring(self.y) .. ")"
+            "Point(" .. to(str)(self.x) .. ", " .. to(str)(self.y) .. ")"
         end,
     }
 end
@@ -54,8 +54,8 @@ Point3D_base(x: f64, y: f64, z: f64): any
     setmetatable(
         { z = z,
           describe = fun(self): str
-            "Point3D(" .. tostring(self.x) .. ", " .. tostring(self.y)
-                .. ", " .. tostring(self.z) .. ")"
+            "Point3D(" .. to(str)(self.x) .. ", " .. to(str)(self.y)
+                .. ", " .. to(str)(self.z) .. ")"
           end,
         },
         { __index = base }
@@ -84,10 +84,10 @@ counter = Counter_new()
 counter.increment(counter)
 counter.increment(counter)
 counter.increment(counter)
-print("Counter: " .. tostring(counter.value(counter)))
+print("Counter: " .. to(str)(counter.value(counter)))
 
 counter.decrement(counter)
-print("After decrement: " .. tostring(counter.value(counter)))
+print("After decrement: " .. to(str)(counter.value(counter)))
 
 -- ── Concepts with table types ──────────────────────────────────────────────
 
@@ -102,7 +102,7 @@ end
 -- A shape that implements both concepts
 shape = {}
 shape.describe = fun(self): str
-    "Circle(radius=" .. tostring(self.radius) .. ")"
+    "Circle(radius=" .. to(str)(self.radius) .. ")"
 end
 shape.measure = fun(self, unit: str): f64
     area = 3.14159 * self.radius * self.radius
@@ -115,7 +115,7 @@ end
 shape.radius = 5.0
 
 print(shape.describe(shape))
-print("Area (mm): " .. tostring(shape.measure(shape, "mm")))
+print("Area (mm): " .. to(str)(shape.measure(shape, "mm")))
 
 -- ── Default function parameter values ───────────────────────────────────────
 
@@ -137,7 +137,7 @@ end
 print(greet())
 print(greet("Duo"))
 print(greet("Solo", "Hi"))
-print("3^2 = " .. tostring(power(3.0)))
-print("2^10 = " .. tostring(power(2.0, 10.0)))
+print("3^2 = " .. to(str)(power(3.0)))
+print("2^10 = " .. to(str)(power(2.0, 10.0)))
 
 print("\n=== OOP Demo Complete ===")

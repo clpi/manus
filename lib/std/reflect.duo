@@ -3,7 +3,7 @@
 
 -- type_of: return a type descriptor string for a value.
 -- Returns one of: "nil", "boolean", "number", "string", "table", "function".
-std_reflect_typeof(v: any): str
+typeof(v: any): str
     return type(v)
 end
 
@@ -85,7 +85,7 @@ end
 -- to_string: convert v to a string.
 to_string(v: any): str
     if v == nil return "" end
-    tostring(v)
+    to(str)(v)
 end
 
 -- to_bool: convert v to a boolean.
@@ -98,7 +98,7 @@ to_bool(v: any): bool
 end
 
 -- fields: return the key-value pairs of a table as an array of {key, value, type}.
-std_reflect_fields(v: any): any
+fields(v: any): any
     if v == nil or type(v) != "table" return {} end
     out = {}
     for k, val in v
@@ -193,26 +193,3 @@ call(fn: any, args: any): any
     fn(table.unpack(args))
 end
 
-M = {}
-M.typeof = std_reflect_typeof
-M.kind = kind
-M.size = size
-M.is_nil = is_nil
-M.is_valid = is_valid
-M.can_int = can_int
-M.to_int = to_int
-M.to_float = to_float
-M.to_string = to_string
-M.to_bool = to_bool
-M.fields = std_reflect_fields
-M.field_names = field_names
-M.field_by_name = field_by_name
-M.set_field = set_field
-M.elem = elem
-M.len = len
-M.deep_equal = deep_equal
-M.deep_copy = deep_copy
-M.map_keys = map_keys
-M.map_values = map_values
-M.call = call
-M

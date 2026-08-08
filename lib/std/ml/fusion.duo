@@ -44,8 +44,3 @@ fuse_sequential(model): any
     return { type = "sequential", layers = fused, n_layers = fi }
 end
 
-M = {}
-M.rules = rules
-M.can_fuse = can_fuse
-M.fuse_sequential = fuse_sequential
-M

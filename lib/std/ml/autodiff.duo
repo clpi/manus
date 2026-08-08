@@ -3,9 +3,6 @@
 -- Pair with `@autodiff` on loss functions; compiler marks bodies for future
 -- comptime reverse-mode. This module provides a working tape today.
 
-Tensor = req "std.ml.tensor"
-NN = req "std.ml.nn"
-
 tape_new(): any
     return { ops = {}, n = 0 }
 end
@@ -23,7 +20,7 @@ end
 backward_relu(tape, idx, grad_out): any
     op = tape.ops[idx]
     x = op.inputs[1]
-    g = Tensor.zeros(x.rows, x.cols)
+    g = std.ml.tensor.zeros(x.rows, x.cols)
     for i = 1, x.size
         if x.data[i] > 0
             g.data[i] = grad_out.data[i]
@@ -39,10 +36,10 @@ backward_linear(tape, idx, grad_out): any
     x = op.inputs[1]
     layer = op.inputs[2]
     -- dW = x^T @ grad_out, db = sum(grad_out), dx = grad_out @ W^T
-    dx = Tensor.matmul(grad_out, Tensor.transpose(layer.weight))
+    dx = std.ml.tensor.matmul(grad_out, std.ml.tensor.transpose(layer.weight))
     if layer.grad_weight == nil
-        layer.grad_weight = Tensor.zeros(layer.in_features, layer.out_features)
-        layer.grad_bias = Tensor.zeros(1, layer.out_features)
+        layer.grad_weight = std.ml.tensor.zeros(layer.in_features, layer.out_features)
+        layer.grad_bias = std.ml.tensor.zeros(1, layer.out_features)
     end
     for j = 1, layer.out_features
         gb = 0.0
@@ -68,7 +65,7 @@ backward_softmax(tape, idx, grad_out): any
     op = tape.ops[idx]
     y = op.output  -- softmax output from forward pass
     n = y.rows * y.cols
-    g = Tensor.zeros(y.rows, y.cols)
+    g = std.ml.tensor.zeros(y.rows, y.cols)
     -- Compute sum(grad_out * y) for each row
     for row = 1, y.rows
         dot = 0.0
@@ -116,10 +113,3 @@ grad(loss_fn, wrt): any
     return { fn = loss_fn, wrt = wrt }
 end
 
-M = {}
-M.tape_new = tape_new
-M.tape_push = tape_push
-M.backward = backward
-M.grad_check = grad_check
-M.grad = grad
-M

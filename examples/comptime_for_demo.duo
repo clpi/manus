@@ -1,7 +1,7 @@
 -- @comp.for folding in @(expr): sum of indices
 
 SUM0_5 = @(@comp.for(0, 5, "%i"))
-print("@comp.for(0, 5, '%i') = " .. tostring(SUM0_5))
+print("@comp.for(0, 5, '%i') = " .. to(str)(SUM0_5))
 
 COUNT3 = @(@comp.for(0, 3, "1"))
-print("@comp.for(0, 3, '1') count = " .. tostring(COUNT3))
+print("@comp.for(0, 3, '1') count = " .. to(str)(COUNT3))

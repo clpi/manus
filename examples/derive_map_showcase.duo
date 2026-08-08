@@ -6,8 +6,8 @@ concept HasXY
     y: f64
 end
 
-type Point = { x: f64, y: f64 }
-type Pair = { x: f64, y: f64 }
+Point: { x: f64, y: f64 }
+Pair: { x: f64, y: f64 }
 
 @comp.define.derive("TouchApi", generate(meta) -> str
     acc = "/* " .. meta.name .. " touch API */\n"
@@ -23,5 +23,5 @@ end)
 API_LEN = @comp.derive("HasXY", TouchApi)
 
 print("=== derive_map showcase ===")
-print("generated_bytes = " .. tostring(#API_LEN))
+print("generated_bytes = " .. to(str)(#API_LEN))
 print("ok")

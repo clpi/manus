@@ -1,0 +1,89 @@
+-- SH-08 — constant folding, differentialed against the host compiler.
+--
+-- Every expected value below is the SAME expression, written in Duo, evaluated
+-- by the host. Nothing here is a number I typed:
+--
+--     check("2 + 3 * 4", 2 + 3 * 4)
+--
+-- So a case cannot encode my arithmetic mistakes — only a real disagreement
+-- between the Duo folder and the host. That distinction is not academic for
+-- precedence: a hand-written table is written by the same person who wrote the
+-- parser, and it agrees with the bug. `2 ^ 3 ^ 2` is 512 if `^` is
+-- right-associative and 64 if it is not, and the host settles it.
+--
+-- Exit code is the failing case number; 0 means the folder and the host agree
+-- on every one.
+
+global C = std.compiler.comptime
+
+check = (n: i64, src: str, expect: i64): i64
+    if C.fold(src) != expect
+        print("comptime_proof: FAIL case " .. to(str)(n) .. ": " .. src
+            .. " folded " .. to(str)(C.fold(src)) .. ", host says " .. to(str)(expect))
+        return n
+    end
+    0
+end
+
+main(): i64
+    r: i64 = 0
+
+    -- precedence and associativity
+    r = check(1, "2 + 3 * 4", 2 + 3 * 4)
+    if r != 0 return r end
+    r = check(2, "(2 + 3) * 4", (2 + 3) * 4)
+    if r != 0 return r end
+    r = check(3, "10 - 3 - 2", 10 - 3 - 2)
+    if r != 0 return r end
+    -- right-associative, and the case a hand-written table gets wrong
+    r = check(4, "2 ^ 3 ^ 2", 2 ^ 3 ^ 2)
+    if r != 0 return r end
+    r = check(5, "100 / 5 / 2", 100 / 5 / 2)
+    if r != 0 return r end
+
+    -- unary
+    r = check(6, "-3 + 10", -3 + 10)
+    if r != 0 return r end
+    r = check(7, "-(3 + 10)", -(3 + 10))
+    if r != 0 return r end
+
+    -- bitwise, and the ladder between them
+    r = check(8, "255 & 0x0F", 255 & 0x0F)
+    if r != 0 return r end
+    r = check(9, "1 | 6", 1 | 6)
+    if r != 0 return r end
+    r = check(10, "12 ~ 10", 12 ~ 10)
+    if r != 0 return r end
+    r = check(11, "1 << 10", 1 << 10)
+    if r != 0 return r end
+    r = check(12, "1024 >> 3", 1024 >> 3)
+    if r != 0 return r end
+    r = check(13, "1 | 2 & 3", 1 | 2 & 3)
+    if r != 0 return r end
+    r = check(14, "3 + 1 << 2", 3 + 1 << 2)
+    if r != 0 return r end
+
+    -- modulo and hex
+    r = check(15, "7 % 3", 7 % 3)
+    if r != 0 return r end
+    r = check(16, "0xFF + 1", 0xFF + 1)
+    if r != 0 return r end
+
+    -- `foldable` must refuse what it cannot fold, or a caller cannot tell a
+    -- legitimate 0 from a refusal
+    if not C.foldable("1 + 2")
+        print("comptime_proof: FAIL case 17: foldable rejected a closed expression")
+        return 17
+    end
+    if C.foldable("1 + x")
+        print("comptime_proof: FAIL case 18: foldable accepted a name")
+        return 18
+    end
+    if C.foldable("(1 + 2")
+        print("comptime_proof: FAIL case 19: foldable accepted an unclosed paren")
+        return 19
+    end
+
+    print("comptime_proof: 16 host differentials + 3 refusals — folder agrees with the host")
+    0
+end

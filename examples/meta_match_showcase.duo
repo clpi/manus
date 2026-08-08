@@ -4,7 +4,7 @@
 
 -- Basic: generate typed typedefs from pattern alternatives
 typedefs = @comp.match("i32|i64|f64|str", fun(m)
-    "typedef " .. m.pattern .. " variant_" .. tostring(m.index) .. ";\n"
+    "typedef " .. m.pattern .. " variant_" .. to(str)(m.index) .. ";\n"
 end)
 print("=== @comp.match: typed typedefs ===")
 print(typedefs)
@@ -18,7 +18,7 @@ print(ops)
 
 -- Compose with @comp.each: match → split → annotate each fragment
 annotated = @comp.each(ops, fun(f)
-    "/* fragment " .. tostring(f.index) .. ": " .. f.name .. " */\n"
+    "/* fragment " .. to(str)(f.index) .. ": " .. f.name .. " */\n"
 end)
 print("=== @comp.match + @comp.each: composition ===")
 print(annotated)

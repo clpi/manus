@@ -2,59 +2,59 @@
 -- Binary I/O: io.read(n) reads exactly n bytes from stdin (LSP Content-Length framing)
 -- io.read("*l") reads a line, io.read("*a") reads all remaining input
 
-std_io_open(filename: str, mode: str): any
+open(filename: str, mode: str): any
     io.open(filename, mode)
 end
 
-std_io_popen(prog: str, mode: str): any
+popen(prog: str, mode: str): any
     io.popen(prog, mode)
 end
 
-std_io_read(file: any, arg: any): any
+read(file: any, arg: any): any
     file:read(arg)
 end
 
-std_io_write(file: any, arg: any): any
+write(file: any, arg: any): any
     file:write(arg)
 end
 
-std_io_close(file: any): void
+close(file: any): void
     file:close()
 end
 
-std_io_flush(file: any): void
+flush(file: any): void
     file:flush()
 end
 
-std_io_lines(filename: str): any
+lines(filename: str): any
     io.lines(filename)
 end
 
-std_io_input(file: any): any
+input(file: any): any
     io.input(file)
 end
 
-std_io_output(file: any): any
+output(file: any): any
     io.output(file)
 end
 
-std_io_tmpfile(): any
+tmpfile(): any
     io.tmpfile()
 end
 
-std_io_type(obj: any): any
+type(obj: any): any
     io.type(obj)
 end
 
 -- read_bytes: read exactly n bytes from a file or stdin.
 -- For LSP JSON-RPC: read header with read("*l"), extract Content-Length,
 -- then read_bytes(len) to get the body.
-std_io_read_bytes(file: any, n: int): str
+read_bytes(file: any, n: int): str
     file:read(n)
 end
 
 -- write_bytes: write a string/bytes to a file or stdout.
-std_io_write_bytes(file: any, data: str): void
+write_bytes(file: any, data: str): void
     file:write(data)
 end
 
@@ -63,29 +63,12 @@ end
 -- `str` coerced that nil into the four-character string "nil". Every caller
 -- testing `line == nil` then looped forever — this is what made the Duo MCP
 -- servers hang instead of completing a handshake.
-std_io_read_line(file: any): any
+read_line(file: any): any
     file:read("*l")
 end
 
 -- read_all: same — nil at EOF must survive as nil.
-std_io_read_all(file: any): any
+read_all(file: any): any
     file:read("*a")
 end
 
-M = {}
-M.open = std_io_open
-M.popen = std_io_popen
-M.read = std_io_read
-M.write = std_io_write
-M.close = std_io_close
-M.flush = std_io_flush
-M.lines = std_io_lines
-M.input = std_io_input
-M.output = std_io_output
-M.tmpfile = std_io_tmpfile
-M.type = std_io_type
-M.read_bytes = std_io_read_bytes
-M.write_bytes = std_io_write_bytes
-M.read_line = std_io_read_line
-M.read_all = std_io_read_all
-M

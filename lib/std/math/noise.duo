@@ -5,7 +5,7 @@
 -- Permutation Table
 -- ═══════════════════════════════════════════════════════════════
 
-perlin_permutation_new(seed: i64): any
+permutation_new(seed: i64): any
     perm = {}
     i = 0
     while i < 256
@@ -55,7 +55,7 @@ perlin_grad_2d(hash: i64, x: f64, y: f64): f64
     return -x - y
 end
 
-perlin_noise_2d(perm: any, x: f64, y: f64): f64
+perlin_2d(perm: any, x: f64, y: f64): f64
     xi = math.floor(x) & 255
     yi = math.floor(y) & 255
     xf = x - math.floor(x)
@@ -89,7 +89,7 @@ perlin_grad_3d(hash: i64, x: f64, y: f64, z: f64): f64
     u + v
 end
 
-perlin_noise_3d(perm: any, x: f64, y: f64, z: f64): f64
+perlin_3d(perm: any, x: f64, y: f64, z: f64): f64
     xi = math.floor(x) & 255
     yi = math.floor(y) & 255
     zi = math.floor(z) & 255
@@ -130,7 +130,7 @@ SIMPLEX_GRAD2 = {
     {1, 0}, {-1, 0}, {0, 1}, {0, -1},
 }
 
-simplex_noise_2d(perm: any, x: f64, y: f64): f64
+simplex_2d(perm: any, x: f64, y: f64): f64
     -- Skewing factors
     F2 = 0.5 * (math.sqrt(3) - 1)
     G2 = (3 - math.sqrt(3)) / 6
@@ -207,7 +207,7 @@ fbm_2d(perm: any, x: f64, y: f64, octaves: i64, lacunarity: f64, gain: f64): f64
 
     i = 0
     while i < octaves
-        value += amplitude * perlin_noise_2d(perm, x * frequency, y * frequency)
+        value += amplitude * perlin_2d(perm, x * frequency, y * frequency)
         max_value += amplitude
         amplitude *= gain
         frequency *= lacunarity
@@ -229,7 +229,7 @@ fbm_3d(perm: any, x: f64, y: f64, z: f64, octaves: i64, lacunarity: f64, gain: f
 
     i = 0
     while i < octaves
-        value += amplitude * perlin_noise_3d(perm, x * frequency, y * frequency, z * frequency)
+        value += amplitude * perlin_3d(perm, x * frequency, y * frequency, z * frequency)
         max_value += amplitude
         amplitude *= gain
         frequency *= lacunarity
@@ -243,7 +243,7 @@ end
 -- Ridged Noise
 -- ═══════════════════════════════════════════════════════════════
 
-ridged_noise_2d(perm: any, x: f64, y: f64, octaves: i64, lacunarity: f64, gain: f64): f64
+ridged_2d(perm: any, x: f64, y: f64, octaves: i64, lacunarity: f64, gain: f64): f64
     if octaves == nil octaves = 6 end
     if lacunarity == nil lacunarity = 2 end
     if gain == nil gain = 0.5 end
@@ -255,7 +255,7 @@ ridged_noise_2d(perm: any, x: f64, y: f64, octaves: i64, lacunarity: f64, gain: 
 
     i = 0
     while i < octaves
-        n = 1 - math.abs(perlin_noise_2d(perm, x * frequency, y * frequency))
+        n = 1 - math.abs(perlin_2d(perm, x * frequency, y * frequency))
         n *= n
         value += amplitude * n
         max_value += amplitude
@@ -282,7 +282,7 @@ end
 -- Voronoi Noise
 -- ═══════════════════════════════════════════════════════════════
 
-voronoi_noise_2d(x: f64, y: f64, seed: i64): any
+voronoi_2d(x: f64, y: f64, seed: i64): any
     xi = math.floor(x)
     yi = math.floor(y)
 
@@ -329,13 +329,13 @@ end
 -- Worley Noise
 -- ═══════════════════════════════════════════════════════════════
 
-worley_noise_2d(x: f64, y: f64, seed: i64): f64
-    result = voronoi_noise_2d(x, y, seed)
+worley_2d(x: f64, y: f64, seed: i64): f64
+    result = voronoi_2d(x, y, seed)
     result.distance
 end
 
 worley_edge_2d(x: f64, y: f64, seed: i64): f64
-    result = voronoi_noise_2d(x, y, seed)
+    result = voronoi_2d(x, y, seed)
     result.edge
 end
 
@@ -343,24 +343,11 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
 -- Permutation
-M.permutation_new = perlin_permutation_new
 -- Perlin
-M.perlin_2d = perlin_noise_2d
-M.perlin_3d = perlin_noise_3d
 -- Simplex
-M.simplex_2d = simplex_noise_2d
 -- FBM
-M.fbm_2d = fbm_2d
-M.fbm_3d = fbm_3d
 -- Ridged
-M.ridged_2d = ridged_noise_2d
 -- Domain Warping
-M.domain_warp_2d = domain_warp_2d
 -- Voronoi
-M.voronoi_2d = voronoi_noise_2d
 -- Worley
-M.worley_2d = worley_noise_2d
-M.worley_edge_2d = worley_edge_2d
-M

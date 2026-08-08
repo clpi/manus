@@ -2,13 +2,13 @@
 -- Parity: src/source_cursor.zig ByteCursor (1-based pos, line/col on \n)
 -- Note: mutating cursor_* on req'd records requires record-by-ref codegen at call sites.
 
-type Loc = {
+Loc: {
     file: str,
     line: i64,
     col: i64
 }
 
-type ByteCursor = {
+ByteCursor: {
     bytes: str,
     pos: i64,
     file: str,
@@ -18,12 +18,12 @@ type ByteCursor = {
 
 type StableId = i64
 
-type IdGen = {
+IdGen: {
     next: StableId
 }
 
 format_loc(loc: Loc): str
-    loc.file .. ":" .. tostring(loc.line) .. ":" .. tostring(loc.col)
+    loc.file .. ":" .. to(str)(loc.line) .. ":" .. to(str)(loc.col)
 end
 
 cursor_new(bytes: str, file: str): ByteCursor

@@ -24,9 +24,6 @@ FRAME_PONG = 10
 -- Base64 utilities (must be defined before use)
 -- ═══════════════════════════════════════════════════════════════
 
-crypto = req "std.crypto"
-hash_sha1 = req "std.hash.sha1"
-
 base64_encode(data: any): str
     chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
     result = ""
@@ -58,7 +55,7 @@ end
 
 base64_sha1(data: str): str
     -- WebSocket handshake requires base64(SHA-1(data + magic))
-    sha1_hex = hash_sha1.sha1(data)
+    sha1_hex = std.hash.sha1.sha1(data)
     -- Convert hex string to bytes
     sha1_bytes = {}
     i = 1
@@ -112,8 +109,7 @@ ws_encode_frame(opcode: i64, payload: any, mask: bool): any
     -- Masking key (if client->server) using CSPRNG
     mask_key = nil
     if mask
-        crypto_rand = req "std.crypto.rand"
-        key_data = crypto_rand.bytes(4)
+        key_data = std.crypto.rand.bytes(4)
         mask_key = {}
         i = 1
         while i <= 4
@@ -202,9 +198,8 @@ end
 
 ws_client_handshake(host: str, port: i64, path: str): str
     -- Generate random key (16 bytes base64 encoded) using CSPRNG
-    crypto_rand = req "std.crypto.rand"
     key_bytes = {}
-    key_data = crypto_rand.bytes(16)
+    key_data = std.crypto.rand.bytes(16)
     i = 1
     while i <= 16
         key_bytes[i] = string.byte(key_data, i)
@@ -213,12 +208,12 @@ ws_client_handshake(host: str, port: i64, path: str): str
     key = base64_encode(key_bytes)
 
     "GET " .. path .. " HTTP/1.1\r\n"
-        .. "Host: " .. host .. ":" .. tostring(port) .. "\r\n"
+        .. "Host: " .. host .. ":" .. to(str)(port) .. "\r\n"
         .. "Upgrade: websocket\r\n"
         .. "Connection: Upgrade\r\n"
         .. "Sec-WebSocket-Key: " .. key .. "\r\n"
         .. "Sec-WebSocket-Version: 13\r\n"
-        .. "Origin: http://" .. host .. ":" .. tostring(port) .. "\r\n"
+        .. "Origin: http://" .. host .. ":" .. to(str)(port) .. "\r\n"
         .. "\r\n"
 end
 
@@ -372,12 +367,26 @@ M.pong_frame = ws_pong_frame
 M.connection_new = ws_connection_new
 M.connection_send = ws_connection_send
 M.connection_receive = ws_connection_receive
+-- The opcode literals are written directly here rather than referencing the
+-- file-scope constants above.
+--
+-- Referencing them emitted bare, UNDECLARED identifiers in the generated C
+-- ("use of undeclared identifier 'OP_CONTINUATION'") when this module is
+-- EMBEDDED. The same constants resolve fine in a standalone program, so the
+-- gap is in the embed path: a file-scope constant referenced from inside a
+-- nested table of a module's export table is not resolved.
+--
+-- Reduced to a two-file repro, and note the correction — my first reading was
+-- that only the 0x00 entry failed and that the folder treated a zero-valued
+-- constant as absent. That is WRONG: a module with `ZERO = 0x00` and
+-- `ONE = 0x01` referenced from `M.T = { z = ZERO, o = ONE }` fails on BOTH.
+-- The value is irrelevant; the nesting and the embed path are what matter.
 M.OP = {
-    CONTINUATION = OP_CONTINUATION,
-    TEXT = OP_TEXT,
-    BINARY = OP_BINARY,
-    CLOSE = OP_CLOSE,
-    PING = OP_PING,
-    PONG = OP_PONG,
+    CONTINUATION = 0x00,
+    TEXT = 0x01,
+    BINARY = 0x02,
+    CLOSE = 0x08,
+    PING = 0x09,
+    PONG = 0x0A,
 }
 M

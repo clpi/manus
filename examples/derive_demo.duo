@@ -20,14 +20,14 @@ point.eq = fun(self, other): bool
     self.x == other.x and self.y == other.y
 end
 point.to_string = fun(self): str
-    "Point(" .. tostring(self.x) .. ", " .. tostring(self.y) .. ")"
+    "Point(" .. to(str)(self.x) .. ", " .. to(str)(self.y) .. ")"
 end
 
 -- Use derive patterns with : method syntax
 cloned = point:clone()
 print("Original: " .. point:to_string())
 print("Cloned:   " .. cloned:to_string())
-print("Eq:       " .. tostring(point:eq(cloned)))
+print("Eq:       " .. to(str)(point:eq(cloned)))
 
 -- Reflection: inspect what methods a type has
 print("\nPoint fields:")

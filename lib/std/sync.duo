@@ -1,192 +1,180 @@
--- std.sync — cooperative scheduler and typed channels (Requirement 19.7)
--- Implements a round-robin coroutine scheduler with bounded/unbounded channels.
--- All operations are single-threaded; for multi-core use std.concurrent.
-
-global __sync_run_queue = {}  -- list of {co=coroutine} ready to run
-
--- Spawn a task (coroutine). Returns immediately; call run() to drive it.
-fun spawn(fn: any, ...args): any
-    local args_list = {args}
-    local co = coroutine.create(fun() return fn(table.unpack(args_list)) end)
-    __sync_run_queue[#__sync_run_queue + 1] = {co = co}
+global __sync_run_queue = {}
+spawn(fn: any, ...args): any
+  args_list = {
+    args
+  }
+  co = coroutine.create(()
+    fn(table.unpack(args_list))
+  end)
+  __sync_run_queue[#__sync_run_queue + 1] = {
+    co = co
+  }
+  return nil
+end
+yield(): void
+  coroutine.yield()
+end
+run(): void
+  while #__sync_run_queue > 0
+    task = table.remove(__sync_run_queue, 1)
+    ok, err = coroutine.resume(task.co)
+    if not ok
+      io.write("sync: task error: " .. to(str)(err) .. "\n")
+    elseif coroutine.status(task.co) == "suspended"
+      __sync_run_queue[#__sync_run_queue + 1] = task
+    end
+  end
+end
+step(): bool
+  if #__sync_run_queue == 0
+    return false
+  end
+  task = table.remove(__sync_run_queue, 1)
+  ok, err = coroutine.resume(task.co)
+  if not ok
+    io.write("sync: task error: " .. to(str)(err) .. "\n")
+  elseif coroutine.status(task.co) == "suspended"
+    __sync_run_queue[#__sync_run_queue + 1] = task
+  end
+  return #__sync_run_queue > 0
+end
+channel(capacity: i64): any
+  return {
+    _cap = capacity or 0,
+    _queue = {},
+    _send_waiters = {},
+    _recv_waiters = {},
+    _closed = false
+  }
+end
+channel_send(ch: any, val: any): void
+  if ch._closed
+    error("send on closed channel")
+  end
+  if #ch._recv_waiters > 0
+    w = table.remove(ch._recv_waiters, 1)
+    w._slot[1] = val
+    w._slot[2] = true
+    __sync_run_queue[#__sync_run_queue + 1] = w
+  end
+  if ch._cap == 0 or #ch._queue < ch._cap
+    ch._queue[#ch._queue + 1] = val
+    return
+  end
+  co = coroutine.running()
+  entry = {
+    co = co,
+    _val = val
+  }
+  ch._send_waiters[#ch._send_waiters + 1] = entry
+  coroutine.yield()
+end
+channel_recv(ch: any): any
+  if #ch._queue > 0
+    val = table.remove(ch._queue, 1)
+    if #ch._send_waiters > 0
+      w = table.remove(ch._send_waiters, 1)
+      ch._queue[#ch._queue + 1] = w._val
+      __sync_run_queue[#__sync_run_queue + 1] = w
+    end
+    return val
+  end
+  if ch._closed
     return nil
+  end
+  co = coroutine.running()
+  slot = {
+    _val = nil
+  }
+  entry = {
+    co = co,
+    _slot = slot
+  }
+  ch._recv_waiters[#ch._recv_waiters + 1] = entry
+  coroutine.yield()
+  return slot._val
 end
-
--- Yield the current coroutine back to the scheduler.
-fun yield(): void
-    coroutine.yield()
-end
-
--- Run all spawned tasks to completion (cooperative round-robin).
-fun run(): void
-    while #__sync_run_queue > 0
-        local task = table.remove(__sync_run_queue, 1)
-        local ok, err = coroutine.resume(task.co)
-        if not ok then
-            io.write("sync: task error: " .. tostring(err) .. "\n")
-        elseif coroutine.status(task.co) == "suspended" then
-            __sync_run_queue[#__sync_run_queue + 1] = task
-        end
+channel_try_recv(ch: any): any
+  if #ch._queue > 0
+    val = table.remove(ch._queue, 1)
+    if #ch._send_waiters > 0
+      w = table.remove(ch._send_waiters, 1)
+      ch._queue[#ch._queue + 1] = w._val
+      __sync_run_queue[#__sync_run_queue + 1] = w
     end
+    return val
+  end
+  return nil
 end
-
--- Run a single step of the scheduler. Returns true if tasks remain.
-fun step(): bool
-    if #__sync_run_queue == 0 then return false end
-    local task = table.remove(__sync_run_queue, 1)
-    local ok, err = coroutine.resume(task.co)
-    if not ok then
-        io.write("sync: task error: " .. tostring(err) .. "\n")
-    elseif coroutine.status(task.co) == "suspended" then
-        __sync_run_queue[#__sync_run_queue + 1] = task
+channel_close(ch: any): void
+  ch._closed = true
+  for _, w in ch._recv_waiters
+    w._slot[1] = nil
+    w._slot[2] = true
+    __sync_run_queue[#__sync_run_queue + 1] = w
+  end
+  ch._recv_waiters = {}
+end
+channel_drain(ch: any): any
+  out = {}
+  while #ch._queue > 0
+    out[#out + 1] = table.remove(ch._queue, 1)
+  end
+  return out
+end
+waitgroup_new(): any
+  {
+    count = 0,
+    waiters = {}
+  }
+end
+waitgroup_add(wg: any, n: i64): void
+  if n == nil
+    n = 1
+  end
+  wg.count = wg.count + n
+end
+waitgroup_done(wg: any): void
+  wg.count = wg.count - 1
+  if wg.count <= 0
+    for _, w in wg.waiters
+      __sync_run_queue[#__sync_run_queue + 1] = w
     end
-    return #__sync_run_queue > 0
+    wg.waiters = {}
+  end
 end
-
--- Create a channel with optional capacity (0 = unbounded).
-fun channel(capacity: i64): any
-    return {
-        _cap          = capacity or 0,
-        _queue        = {},
-        _send_waiters = {},   -- {co, _val} suspended senders
-        _recv_waiters = {},   -- {co, _slot} suspended receivers
-        _closed       = false,
-    }
+waitgroup_wait(wg: any): void
+  if wg.count <= 0
+    return
+  end
+  co = coroutine.running()
+  wg.waiters[#wg.waiters + 1] = {
+    co = co
+  }
+  coroutine.yield()
 end
-
--- Send a value; blocks (yields) if channel is full.
-fun channel_send(ch: any, val: any): void
-    if ch._closed then error("send on closed channel") end
-    -- Wake a waiting receiver directly.
-    if #ch._recv_waiters > 0 then
-        local w = table.remove(ch._recv_waiters, 1)
-        w._slot[1] = val
-        w._slot[2] = true
-        __sync_run_queue[#__sync_run_queue + 1] = w
-    end
-    -- Buffer has space (or unbounded).
-    if ch._cap == 0 or #ch._queue < ch._cap then
-        ch._queue[#ch._queue + 1] = val
-        return
-    end
-    -- Full: suspend sender.
-    local co = coroutine.running()
-    local entry = {co = co, _val = val}
-    ch._send_waiters[#ch._send_waiters + 1] = entry
-    coroutine.yield()
+once(fn: any): any
+  {
+    fn = fn,
+    done = false
+  }
 end
-
--- Receive a value; blocks (yields) if channel is empty.
-fun channel_recv(ch: any): any
-    -- Data ready.
-    if #ch._queue > 0 then
-        local val = table.remove(ch._queue, 1)
-        -- Wake a pending sender.
-        if #ch._send_waiters > 0 then
-            local w = table.remove(ch._send_waiters, 1)
-            ch._queue[#ch._queue + 1] = w._val
-            __sync_run_queue[#__sync_run_queue + 1] = w
-        end
-        return val
-    end
-    if ch._closed then return nil end
-    -- Empty: suspend receiver.
-    local co = coroutine.running()
-    local slot = {_val = nil}
-    local entry = {co = co, _slot = slot}
-    ch._recv_waiters[#ch._recv_waiters + 1] = entry
-    coroutine.yield()
-    return slot._val
+once_do(o: any): void
+  if o.done
+    return
+  end
+  o.fn()
+  o.done = true
 end
-
--- Non-blocking receive; returns nil immediately if empty.
-fun channel_try_recv(ch: any): any
-    if #ch._queue > 0 then
-        local val = table.remove(ch._queue, 1)
-        if #ch._send_waiters > 0 then
-            local w = table.remove(ch._send_waiters, 1)
-            ch._queue[#ch._queue + 1] = w._val
-            __sync_run_queue[#__sync_run_queue + 1] = w
-        end
-        return val
-    end
-    return nil
-end
-
--- Close a channel; wakes all waiting receivers with nil.
-fun channel_close(ch: any): void
-    ch._closed = true
-    for _, w in ipairs(ch._recv_waiters)
-        w._slot[1] = nil
-        w._slot[2] = true
-        __sync_run_queue[#__sync_run_queue + 1] = w
-    end
-    ch._recv_waiters = {}
-end
-
--- Drain: receive all pending values without blocking.
-fun channel_drain(ch: any): any
-    local out = {}
-    while #ch._queue > 0
-        out[#out + 1] = table.remove(ch._queue, 1)
-    end
-    return out
-end
-
--- ═══════════════════════════════════════════════════════════════
--- WaitGroup — similar to Go's sync.WaitGroup
--- ═══════════════════════════════════════════════════════════════
-
-fun waitgroup_new(): any
-    {count = 0, waiters = {}}
-end
-
-fun waitgroup_add(wg: any, n: i64): void
-    if n == nil then n = 1 end
-    wg.count += n
-end
-
-fun waitgroup_done(wg: any): void
-    wg.count -= 1
-    if wg.count <= 0 then
-        -- Wake all waiters
-        for _, w in ipairs(wg.waiters)
-            __sync_run_queue[#__sync_run_queue + 1] = w
-        end
-        wg.waiters = {}
-    end
-end
-
-fun waitgroup_wait(wg: any): void
-    if wg.count <= 0 then return end
-    local co = coroutine.running()
-    wg.waiters[#wg.waiters + 1] = {co = co}
-    coroutine.yield()
-end
-
--- ═══════════════════════════════════════════════════════════════
--- Once — execute a function exactly once
--- ═══════════════════════════════════════════════════════════════
-
-fun once(fn: any): any
-    {fn = fn, done = false}
-end
-
-fun once_do(o: any): void
-    if o.done then return end
-    o.fn()
-    o.done = true
-end
-
-local M = {}
-M.spawn         = spawn
-M.yield         = yield
-M.run           = run
-M.step          = step
-M.channel       = channel
-M.channel_new   = channel   -- legacy compat
-M.channel_send  = channel_send
-M.channel_recv  = channel_recv
+M = {}
+M.spawn = spawn
+M.yield = yield
+M.run = run
+M.step = step
+M.channel = channel
+M.channel_new = channel
+M.channel_send = channel_send
+M.channel_recv = channel_recv
 M.channel_try_recv = channel_try_recv
 M.channel_close = channel_close
 M.channel_drain = channel_drain
@@ -194,6 +182,6 @@ M.waitgroup_new = waitgroup_new
 M.waitgroup_add = waitgroup_add
 M.waitgroup_done = waitgroup_done
 M.waitgroup_wait = waitgroup_wait
-M.once          = once
-M.once_do       = once_do
+M.once = once
+M.once_do = once_do
 return M

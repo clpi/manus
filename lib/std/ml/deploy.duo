@@ -1,8 +1,5 @@
 -- std.ml.deploy — Edge / WASM / static-binary deploy helpers
 
-Quant = req "std.ml.quant"
-Device = req "std.ml.device"
-
 static_binary_opts(): any
     return {
         target = "native",
@@ -24,56 +21,52 @@ end
 edge_pipeline(model): any
     return {
         type = "edge_pipeline",
-        quant = Quant.amp_policy(),
-        device = Device.wasm_simd(),
+        quant = std.ml.quant.amp_policy(),
+        device = std.ml.device.wasm_simd(),
         steps = { "quantize", "strip", "wasm" },
         model = model,
     }
 end
 
 -- Metadata for ONNX / safetensors export
-OnnxExport = req "std.ml.export"
-io = req "std.io"
-json_mod = req "std.encoding.json"
-
 export_onnx(model, path): any
     -- Build ONNX model from Duo model's layers
-    graph = OnnxExport.onnx_graph_new(model.name or "model")
+    graph = std.ml.export.onnx_graph_new(model.name or "model")
     -- Export layers as ONNX nodes
     for layer in model.layers
         if layer.type == "linear"
-            OnnxExport.onnx_graph_add_node(graph, "MatMul", {layer.name .. "_input", layer.name .. "_weight"}, {layer.name .. "_output"}, layer.name)
-            OnnxExport.onnx_graph_add_initializer(graph, layer.name .. "_weight", {layer.in_features, layer.out_features}, layer.weight)
+            std.ml.export.onnx_graph_add_node(graph, "MatMul", {layer.name .. "_input", layer.name .. "_weight"}, {layer.name .. "_output"}, layer.name)
+            std.ml.export.onnx_graph_add_initializer(graph, layer.name .. "_weight", {layer.in_features, layer.out_features}, layer.weight)
             if layer.bias
-                OnnxExport.onnx_graph_add_node(graph, "Add", {layer.name .. "_output", layer.name .. "_bias"}, {layer.name .. "_final"}, layer.name .. "_add_bias")
-                OnnxExport.onnx_graph_add_initializer(graph, layer.name .. "_bias", {layer.out_features}, layer.bias)
+                std.ml.export.onnx_graph_add_node(graph, "Add", {layer.name .. "_output", layer.name .. "_bias"}, {layer.name .. "_final"}, layer.name .. "_add_bias")
+                std.ml.export.onnx_graph_add_initializer(graph, layer.name .. "_bias", {layer.out_features}, layer.bias)
             end
         elseif layer.type == "relu"
-            OnnxExport.onnx_graph_add_node(graph, "Relu", {layer.name .. "_input"}, {layer.name .. "_output"}, layer.name)
+            std.ml.export.onnx_graph_add_node(graph, "Relu", {layer.name .. "_input"}, {layer.name .. "_output"}, layer.name)
         elseif layer.type == "softmax"
-            OnnxExport.onnx_graph_add_node(graph, "Softmax", {layer.name .. "_input"}, {layer.name .. "_output"}, layer.name)
+            std.ml.export.onnx_graph_add_node(graph, "Softmax", {layer.name .. "_input"}, {layer.name .. "_output"}, layer.name)
         elseif layer.type == "embedding"
-            OnnxExport.onnx_graph_add_initializer(graph, layer.name .. "_weight", {layer.vocab_size, layer.embed_dim}, layer.weight)
-            OnnxExport.onnx_graph_add_node(graph, "Gather", {layer.name .. "_weight", layer.name .. "_input"}, {layer.name .. "_output"}, layer.name)
+            std.ml.export.onnx_graph_add_initializer(graph, layer.name .. "_weight", {layer.vocab_size, layer.embed_dim}, layer.weight)
+            std.ml.export.onnx_graph_add_node(graph, "Gather", {layer.name .. "_weight", layer.name .. "_input"}, {layer.name .. "_output"}, layer.name)
         end
     end
     -- Set input/output specs
-    OnnxExport.onnx_graph_add_input(graph, "input", {nil}, "float32")
-    OnnxExport.onnx_graph_add_output(graph, "output", {nil}, "float32")
-    onnx_model = OnnxExport.onnx_model_new(graph, model.opset or 17)
-    OnnxExport.onnx_model_save(onnx_model, path)
+    std.ml.export.onnx_graph_add_input(graph, "input", {nil}, "float32")
+    std.ml.export.onnx_graph_add_output(graph, "output", {nil}, "float32")
+    onnx_model = std.ml.export.onnx_model_new(graph, model.opset or 17)
+    std.ml.export.onnx_model_save(onnx_model, path)
 end
 
 load_safetensors(path: str): any
-    f = io.open(path, "rb")
+    f = std.io.open(path, "rb")
     if f == nil
         return {ok = false, error = "Cannot open file: " .. path}
     end
 
     -- Read 8-byte header length prefix
-    len_bytes = io.read(f, 8)
+    len_bytes = std.io.read(f, 8)
     if len_bytes == nil or string.len(len_bytes) < 8
-        io.close(f)
+        std.io.close(f)
         return {ok = false, error = "Invalid safetensors: missing header length"}
     end
 
@@ -86,13 +79,13 @@ load_safetensors(path: str): any
     end
 
     -- Read header JSON
-    header_json = io.read(f, header_len)
-    io.close(f)
+    header_json = std.io.read(f, header_len)
+    std.io.close(f)
     if header_json == nil
         return {ok = false, error = "Invalid safetensors: cannot read header"}
     end
 
-    header = json_mod.decode(header_json)
+    header = std.encoding.json.decode(header_json)
     if header == nil
         return {ok = false, error = "Invalid safetensors: bad header JSON"}
     end
@@ -112,10 +105,3 @@ load_safetensors(path: str): any
     {ok = true, path = path, tensors = tensors, header = header}
 end
 
-M = {}
-M.static_binary_opts = static_binary_opts
-M.wasm_opts = wasm_opts
-M.edge_pipeline = edge_pipeline
-M.export_onnx = export_onnx
-M.load_safetensors = load_safetensors
-M

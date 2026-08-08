@@ -9,7 +9,7 @@ png_mod = req "std.image.png"
 -- Image I/O
 -- ═══════════════════════════════════════════════════════════════
 
-image_load(path: str): any
+load(path: str): any
     f = io.open(path, "rb")
     if f == nil
         return {ok = false, error = "Cannot open file: " .. path}
@@ -23,12 +23,12 @@ image_load(path: str): any
     if png_result.error
         return {ok = false, error = png_result.error}
     end
-    img = image_new(png_result.width, png_result.height, png_result.channels)
+    img = new(png_result.width, png_result.height, png_result.channels)
     img.data = png_result.data
     {ok = true, image = img, format = "png"}
 end
 
-image_save(image: any, path: str, format: str): any
+save(image: any, path: str, format: str): any
     fmt = format or "png"
     if fmt != "png"
         return {ok = false, error = "Unsupported format: " .. fmt .. " (only png supported)"}
@@ -46,7 +46,7 @@ image_save(image: any, path: str, format: str): any
     {ok = true, path = path, format = "png"}
 end
 
-image_new(width: i64, height: i64, channels: i64): any
+new(width: i64, height: i64, channels: i64): any
     data = {}
     total = width * height * channels
     i = 1
@@ -62,7 +62,7 @@ image_new(width: i64, height: i64, channels: i64): any
     }
 end
 
-image_get_pixel(image: any, x: i64, y: i64): any
+get_pixel(image: any, x: i64, y: i64): any
     if x < 0 or x >= image.width or y < 0 or y >= image.height
         return nil
     end
@@ -76,7 +76,7 @@ image_get_pixel(image: any, x: i64, y: i64): any
     pixel
 end
 
-image_set_pixel(image: any, x: i64, y: i64, pixel: any): void
+set_pixel(image: any, x: i64, y: i64, pixel: any): void
     if x < 0 or x >= image.width or y < 0 or y >= image.height
         return
     end
@@ -92,10 +92,10 @@ end
 -- Image Conversion
 -- ═══════════════════════════════════════════════════════════════
 
-image_to_rgba(image: any): any
+to_rgba(image: any): any
     if image.channels == 4 return image end
 
-    result = image_new(image.width, image.height, 4)
+    result = new(image.width, image.height, 4)
     y = 0
     while y < image.height
         x = 0
@@ -120,8 +120,8 @@ image_to_rgba(image: any): any
     result
 end
 
-image_to_grayscale(image: any): any
-    result = image_new(image.width, image.height, 1)
+to_grayscale(image: any): any
+    result = new(image.width, image.height, 1)
     y = 0
     while y < image.height
         x = 0
@@ -145,8 +145,8 @@ end
 -- Image Resize
 -- ═══════════════════════════════════════════════════════════════
 
-image_resize_nearest(image: any, new_width: i64, new_height: i64): any
-    result = image_new(new_width, new_height, image.channels)
+resize_nearest(image: any, new_width: i64, new_height: i64): any
+    result = new(new_width, new_height, image.channels)
     x_ratio = image.width / new_width
     y_ratio = image.height / new_height
 
@@ -156,9 +156,9 @@ image_resize_nearest(image: any, new_width: i64, new_height: i64): any
         while x < new_width
             src_x = math.floor(x * x_ratio)
             src_y = math.floor(y * y_ratio)
-            pixel = image_get_pixel(image, src_x, src_y)
+            pixel = get_pixel(image, src_x, src_y)
             if pixel
-                image_set_pixel(result, x, y, pixel)
+                set_pixel(result, x, y, pixel)
             end
             x += 1
         end
@@ -167,8 +167,8 @@ image_resize_nearest(image: any, new_width: i64, new_height: i64): any
     result
 end
 
-image_resize_bilinear(image: any, new_width: i64, new_height: i64): any
-    result = image_new(new_width, new_height, image.channels)
+resize_bilinear(image: any, new_width: i64, new_height: i64): any
+    result = new(new_width, new_height, image.channels)
     x_ratio = image.width / new_width
     y_ratio = image.height / new_height
 
@@ -186,10 +186,10 @@ image_resize_bilinear(image: any, new_width: i64, new_height: i64): any
             fx = src_x - x0
             fy = src_y - y0
 
-            p00 = image_get_pixel(image, x0, y0)
-            p10 = image_get_pixel(image, x1, y0)
-            p01 = image_get_pixel(image, x0, y1)
-            p11 = image_get_pixel(image, x1, y1)
+            p00 = get_pixel(image, x0, y0)
+            p10 = get_pixel(image, x1, y0)
+            p01 = get_pixel(image, x0, y1)
+            p11 = get_pixel(image, x1, y1)
 
             if p00 and p10 and p01 and p11
                 pixel = {}
@@ -203,7 +203,7 @@ image_resize_bilinear(image: any, new_width: i64, new_height: i64): any
                     )
                     c += 1
                 end
-                image_set_pixel(result, x, y, pixel)
+                set_pixel(result, x, y, pixel)
             end
             x += 1
         end
@@ -216,8 +216,8 @@ end
 -- Image Filters
 -- ═══════════════════════════════════════════════════════════════
 
-image_blur(image: any, radius: i64): any
-    result = image_new(image.width, image.height, image.channels)
+blur(image: any, radius: i64): any
+    result = new(image.width, image.height, image.channels)
     kernel_size = 2 * radius + 1
     kernel_area = kernel_size * kernel_size
 
@@ -236,7 +236,7 @@ image_blur(image: any, radius: i64): any
             while ky <= radius
                 kx = -radius
                 while kx <= radius
-                    pixel = image_get_pixel(image, x + kx, y + ky)
+                    pixel = get_pixel(image, x + kx, y + ky)
                     if pixel
                         c = 1
                         while c <= image.channels
@@ -255,7 +255,7 @@ image_blur(image: any, radius: i64): any
                 pixel[c] = math.floor(sum[c] / kernel_area)
                 c += 1
             end
-            image_set_pixel(result, x, y, pixel)
+            set_pixel(result, x, y, pixel)
             x += 1
         end
         y += 1
@@ -263,9 +263,9 @@ image_blur(image: any, radius: i64): any
     result
 end
 
-image_sharpen(image: any, strength: f64): any
+sharpen(image: any, strength: f64): any
     -- Sharpen kernel: [0, -1, 0; -1, 5, -1; 0, -1, 0]
-    result = image_new(image.width, image.height, image.channels)
+    result = new(image.width, image.height, image.channels)
     kernel = {
         {0, -1 * strength, 0},
         {-1 * strength, 1 + 4 * strength, -1 * strength},
@@ -287,7 +287,7 @@ image_sharpen(image: any, strength: f64): any
             while ky <= 2
                 kx = 0
                 while kx <= 2
-                    pixel = image_get_pixel(image, x + kx - 1, y + ky - 1)
+                    pixel = get_pixel(image, x + kx - 1, y + ky - 1)
                     if pixel
                         c = 1
                         while c <= image.channels
@@ -306,7 +306,7 @@ image_sharpen(image: any, strength: f64): any
                 pixel[c] = math.max(0, math.min(255, math.floor(sum[c])))
                 c += 1
             end
-            image_set_pixel(result, x, y, pixel)
+            set_pixel(result, x, y, pixel)
             x += 1
         end
         y += 1
@@ -314,8 +314,8 @@ image_sharpen(image: any, strength: f64): any
     result
 end
 
-image_adjust_brightness(image: any, factor: f64): any
-    result = image_new(image.width, image.height, image.channels)
+adjust_brightness(image: any, factor: f64): any
+    result = new(image.width, image.height, image.channels)
     i = 1
     while i <= #result.data
         result.data[i] = math.max(0, math.min(255, math.floor(image.data[i] * factor)))
@@ -324,8 +324,8 @@ image_adjust_brightness(image: any, factor: f64): any
     result
 end
 
-image_adjust_contrast(image: any, factor: f64): any
-    result = image_new(image.width, image.height, image.channels)
+adjust_contrast(image: any, factor: f64): any
+    result = new(image.width, image.height, image.channels)
     i = 1
     while i <= #result.data
         value = image.data[i]
@@ -339,18 +339,3 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
-M.new = image_new
-M.get_pixel = image_get_pixel
-M.set_pixel = image_set_pixel
-M.to_rgba = image_to_rgba
-M.to_grayscale = image_to_grayscale
-M.resize_nearest = image_resize_nearest
-M.resize_bilinear = image_resize_bilinear
-M.blur = image_blur
-M.sharpen = image_sharpen
-M.adjust_brightness = image_adjust_brightness
-M.adjust_contrast = image_adjust_contrast
-M.load = image_load
-M.save = image_save
-M

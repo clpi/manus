@@ -15,7 +15,7 @@ print("\n-- 1. Compile-time evaluation --")
 
 -- Arithmetic at compile time
 COMPUTE_RESULT = @(42 * 10 + 8)
-print("42 * 10 + 8 = " .. tostring(COMPUTE_RESULT))
+print("42 * 10 + 8 = " .. to(str)(COMPUTE_RESULT))
 
 -- String operations at compile time
 GREETING = @("Hello" .. ", " .. "Duo!")
@@ -29,8 +29,8 @@ print("BUILD_MODE = " .. BUILD_MODE)
 -- Compile-time constants
 MAX_BUFFER = @(64 * 1024)
 PI_APPROX = @(3.14159)
-print("MAX_BUFFER = " .. tostring(MAX_BUFFER))
-print("PI_APPROX = " .. tostring(PI_APPROX))
+print("MAX_BUFFER = " .. to(str)(MAX_BUFFER))
+print("PI_APPROX = " .. to(str)(PI_APPROX))
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 2. TYPE INTROSPECTION: @comp.type.name, @comp.type.id, @comp.type.is, @comp.type.info
@@ -48,13 +48,13 @@ print("type_name(f) = " .. @comp.type.name(f))
 
 id1: i64 = @comp.type.id(x)
 id2: i64 = @comp.type.id(s)
-print("type_id(x) = " .. tostring(id1))
-print("type_id(s) = " .. tostring(id2))
-print("type_ids_differ = " .. tostring(id1 != id2))
+print("type_id(x) = " .. to(str)(id1))
+print("type_id(s) = " .. to(str)(id2))
+print("type_ids_differ = " .. to(str)(id1 != id2))
 
-print("is_type(x, i64) = " .. tostring(@comp.type.is(x, "i64")))
-print("is_type(s, str) = " .. tostring(@comp.type.is(s, "str")))
-print("is_type(x, str) = " .. tostring(@comp.type.is(x, "str")))
+print("is_type(x, i64) = " .. to(str)(@comp.type.is(x, "i64")))
+print("is_type(s, str) = " .. to(str)(@comp.type.is(s, "str")))
+print("is_type(x, str) = " .. to(str)(@comp.type.is(x, "str")))
 
 print("typeinfo(x) = " .. @comp.type.info(x))
 
@@ -64,12 +64,12 @@ print("typeinfo(x) = " .. @comp.type.info(x))
 
 print("\n-- 3. Memory layout --")
 
-print("sizeof(i64) = " .. tostring(@sizeof(i64)))
-print("sizeof(f64) = " .. tostring(@sizeof(f64)))
-print("sizeof(i32) = " .. tostring(@sizeof(i32)))
-print("sizeof(bool) = " .. tostring(@sizeof(bool)))
-print("alignof(i64) = " .. tostring(@alignof(i64)))
-print("alignof(f64) = " .. tostring(@alignof(f64)))
+print("sizeof(i64) = " .. to(str)(@sizeof(i64)))
+print("sizeof(f64) = " .. to(str)(@sizeof(f64)))
+print("sizeof(i32) = " .. to(str)(@sizeof(i32)))
+print("sizeof(bool) = " .. to(str)(@sizeof(bool)))
+print("alignof(i64) = " .. to(str)(@alignof(i64)))
+print("alignof(f64) = " .. to(str)(@alignof(f64)))
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 4. STATIC ASSERTIONS: @comp.assert
@@ -89,11 +89,11 @@ print("\n-- 5. Type casting --")
 
 -- @as(Type, expr) — cast expression to type
 val_f: f64 = @as(f64, 42)
-print("@as(f64, 42) = " .. tostring(val_f))
+print("@as(f64, 42) = " .. to(str)(val_f))
 
 -- @comp.as.type(expr, "type") — reversed argument order (string type name)
 val_i: i64 = @comp.as.type(3.14, "int64_t")
-print("@comp.as.type(3.14, 'int64_t') = " .. tostring(val_i))
+print("@comp.as.type(3.14, 'int64_t') = " .. to(str)(val_i))
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 6. BIT INTRINSICS: @popcount, @ctz, @clz, @bswap
@@ -102,10 +102,10 @@ print("@comp.as.type(3.14, 'int64_t') = " .. tostring(val_i))
 print("\n-- 6. Bit intrinsics --")
 
 bits: i64 = 0xFF00
-print("popcount(0xFF00) = " .. tostring(@popcount(bits)))
-print("ctz(0xFF00) = " .. tostring(@ctz(bits)))
-print("clz(0xFF00) = " .. tostring(@clz(bits)))
-print("bswap(0xFF00) = " .. tostring(@bswap(bits)))
+print("popcount(0xFF00) = " .. to(str)(@popcount(bits)))
+print("ctz(0xFF00) = " .. to(str)(@ctz(bits)))
+print("clz(0xFF00) = " .. to(str)(@clz(bits)))
+print("bswap(0xFF00) = " .. to(str)(@bswap(bits)))
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 7. BRANCH HINTS: @likely, @unlikely
@@ -157,7 +157,7 @@ counter.value = fun(self): i64
     self._val
 end
 counter.to_string = fun(self): str
-    "Counter(" .. tostring(self._val) .. ")"
+    "Counter(" .. to(str)(self._val) .. ")"
 end
 
 -- Use : method syntax
@@ -165,7 +165,7 @@ counter:increment()
 counter:increment()
 counter:increment()
 print("Counter: " .. counter:to_string())
-print("Counter value: " .. tostring(counter:value()))
+print("Counter value: " .. to(str)(counter:value()))
 
 -- @satisfies — compile-time concept check on table modules (fun T:method syntax)
 M = {}
@@ -174,7 +174,7 @@ M:hash(): i64
 end
 
 @comp.assert(not @satisfies(M, "Printable"), "M lacks to_string")
-print("@satisfies(M, Printable) = " .. tostring(@satisfies(M, "Printable")))
+print("@satisfies(M, Printable) = " .. to(str)(@satisfies(M, "Printable")))
 
 Ctable = {}
 Ctable:increment(): void
@@ -183,7 +183,7 @@ Ctable:value(): i64
     0
 end
 @comp.assert(@satisfies(Ctable, "Counter"), "Ctable satisfies Counter")
-print("@satisfies(Ctable, Counter) = " .. tostring(@satisfies(Ctable, "Counter")))
+print("@satisfies(Ctable, Counter) = " .. to(str)(@satisfies(Ctable, "Counter")))
 
 -- Generic constraints: compile-time check + monomorphic dispatch
 concept Hashable
@@ -200,11 +200,11 @@ fun bump<T: Hashable>(target: T): i64
 end
 
 @comp.assert(@satisfies(Bump, "Hashable"), "Bump satisfies Hashable")
-print("bump(Bump) = " .. tostring(bump(Bump)))
+print("bump(Bump) = " .. to(str)(bump(Bump)))
 
 -- Concept introspection: required members as compile-time table
 hashable_members = @comp.concepts.methods("Hashable")
-print("@comp.concepts.methods('Hashable') count = " .. tostring(#hashable_members))
+print("@comp.concepts.methods('Hashable') count = " .. to(str)(#hashable_members))
 
 -- Multi-concept: T: A + B — see examples/multi_concept.duo
 
@@ -235,10 +235,10 @@ print("\n-- 10. @derive --")
 -- Default  → TypeName.default()
 
 @derive(Display, Eq, Add, Sub, Mul, Neg, Len, Hash, Clone, Default)
-type Vec2 = { x: f64, y: f64 }
+Vec2: { x: f64, y: f64 }
 
 @derive(Div, Rem)
-type Rat = { num: f64, den: f64 }
+Rat: { num: f64, den: f64 }
 
 -- Derived Enum
 @derive("Display", "Eq")
@@ -250,10 +250,10 @@ end
 
 c1 = Color.Red
 c2 = Color.Green
-print("Enum c1 = " .. tostring(c1))
-print("Enum c2 = " .. tostring(c2))
-print("c1 == c1: " .. tostring(c1 == c1))
-print("c1 == c2: " .. tostring(c1 == c2))
+print("Enum c1 = " .. to(str)(c1))
+print("Enum c2 = " .. to(str)(c2))
+print("c1 == c1: " .. to(str)(c1 == c1))
+print("c1 == c2: " .. to(str)(c1 == c2))
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 11. @derive Division and Modulo
@@ -277,15 +277,15 @@ vector_mt.__add = fun(a, b)
 end
 
 vector_mt.__tostring = fun(self)
-    "Vec(" .. tostring(self.x) .. ", " .. tostring(self.y) .. ")"
+    "Vec(" .. to(str)(self.x) .. ", " .. to(str)(self.y) .. ")"
 end
 
 v1 = vector_mt.new(1, 2)
 v2 = vector_mt.new(3, 4)
 v3 = v1 + v2
-print("v1 = " .. tostring(v1))
-print("v2 = " .. tostring(v2))
-print("v1 + v2 = " .. tostring(v3))
+print("v1 = " .. to(str)(v1))
+print("v2 = " .. to(str)(v2))
+print("v1 + v2 = " .. to(str)(v3))
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 13. COMPILE-TIME STRING OPERATIONS
@@ -296,7 +296,7 @@ print("\n-- 13. Compile-time string operations --")
 upper = @(string.upper("hello world"))
 len = @(string.len("duo language"))
 print("comptime upper = " .. upper)
-print("comptime len = " .. tostring(len))
+print("comptime len = " .. to(str)(len))
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 14. HAS METAMETHOD CHECK
@@ -304,8 +304,8 @@ print("comptime len = " .. tostring(len))
 
 print("\n-- 14. Has metamethod --")
 
-print("v1 has __add = " .. tostring(@comp.has.metamethod(v1, "__add")))
-print("v1 has __mul = " .. tostring(@comp.has.metamethod(v1, "__mul")))
+print("v1 has __add = " .. to(str)(@comp.has.metamethod(v1, "__add")))
+print("v1 has __mul = " .. to(str)(@comp.has.metamethod(v1, "__mul")))
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 15. COMPILE-TIME DIAGNOSTICS
@@ -327,8 +327,8 @@ print("\n-- 17. Type aliases --")
 -- but the underlying C type is what matters for assignment
 uid: i64 = 12345
 sc: f64 = 98.6
-print("UserId(12345) = " .. tostring(uid))
-print("Score(98.6) = " .. tostring(sc))
+print("UserId(12345) = " .. to(str)(uid))
+print("Score(98.6) = " .. to(str)(sc))
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- SUMMARY

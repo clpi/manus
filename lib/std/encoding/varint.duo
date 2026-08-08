@@ -3,15 +3,12 @@
 --   1. Base-128 varint (protobuf-style, unsigned)
 --   2. ZigZag encoding (maps signed to unsigned for better compression)
 --   3. LEB128 (DWARF/ELF style, signed and unsigned)
-
-M = {}
-
 -- ═══════════════════════════════════════════════════════════════
 -- Base-128 Varint (protobuf-style, unsigned)
 -- Each byte: 7 bits of data + 1 continuation bit (high bit)
 -- ═══════════════════════════════════════════════════════════════
 
-write_varint(buf: any, value: i64): void
+write(buf: any, value: i64): void
     while value >= 0x80
         buf[#buf + 1] = string.char((value & 0x7F) | 0x80)
         value = value >> 7
@@ -19,7 +16,7 @@ write_varint(buf: any, value: i64): void
     buf[#buf + 1] = string.char(value)
 end
 
-read_varint(data: str, pos: any): i64
+read(data: str, pos: any): i64
     result = 0
     shift = 0
     while true
@@ -40,7 +37,7 @@ read_varint(data: str, pos: any): i64
     return result
 end
 
-varint_size(value: i64): i64
+size(value: i64): i64
     if value < 0x80 return 1 end
     if value < 0x4000 return 2 end
     if value < 0x200000 return 3 end
@@ -67,12 +64,12 @@ zigzag_decode(value: i64): i64
     return (value >> 1) ~ -(value & 1)
 end
 
-write_zigzag_varint(buf: any, value: i64): void
-    write_varint(buf, zigzag_encode(value))
+write_zigzag(buf: any, value: i64): void
+    write(buf, zigzag_encode(value))
 end
 
-read_zigzag_varint(data: str, pos: any): i64
-    return zigzag_decode(read_varint(data, pos))
+read_zigzag(data: str, pos: any): i64
+    return zigzag_decode(read(data, pos))
 end
 
 -- ═══════════════════════════════════════════════════════════════
@@ -154,15 +151,3 @@ end
 -- ═══════════════════════════════════════════════════════════════
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
-
-M.write = write_varint
-M.read = read_varint
-M.size = varint_size
-M.zigzag_encode = zigzag_encode
-M.zigzag_decode = zigzag_decode
-M.write_zigzag = write_zigzag_varint
-M.read_zigzag = read_zigzag_varint
-M.write_leb128 = write_leb128
-M.read_leb128 = read_leb128
-M.write_signed_leb128 = write_signed_leb128
-M.read_signed_leb128 = read_signed_leb128

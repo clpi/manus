@@ -11,7 +11,7 @@ fields_map(fields: any, tmpl: str): str
         row = tmpl
         row = string.gsub(row, "%n", f.name)
         row = string.gsub(row, "%t", f.type)
-        row = string.gsub(row, "%i", tostring(i - 1))
+        row = string.gsub(row, "%i", to(str)(i - 1))
         acc = acc .. row
     end
     acc

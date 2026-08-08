@@ -37,17 +37,17 @@ end
 
 global TMPDIR_TEST: str = string.gsub(tostring(s.fs_tmpdir()), "\n", "")
 
-write_src(name: str, src: str) -> str
+write_src(name: str, src: str): str
     path: str = tostring(s.path_join(TMPDIR_TEST, name))
     s.fs_write(path, src)
     return path
 end
 
-dump_native(file: str) -> str
+dump_native(file: str): str
     return tostring(s.capture(DUO .. " dump-c " .. file))
 end
 
-dump_wasm(file: str) -> str
+dump_wasm(file: str): str
     return tostring(s.capture(DUO .. " dump-c " .. file .. " --target wasm32-wasi"))
 end
 

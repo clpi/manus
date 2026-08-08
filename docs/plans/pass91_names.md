@@ -60,7 +60,7 @@ whose canonical Epoch 2 destination is a **descriptor method**
 (`cursor: { peek = () … }`), because §0.6 rules that methods travel with values
 and its own recognizer denies `alias.fn(subject, …)`.
 
-Descriptor member bindings do not parse (GAP-025). So for the dominant class,
+Descriptor member bindings do not parse (GAP-035). So for the dominant class,
 renaming to a bare word **trades a naming violation for an ALIAS-CALL
 violation** — it moves the diff from one deny row to another rather than
 reducing the count.
@@ -70,7 +70,7 @@ reducing the count.
 the denied `new`), `string.len`/`string.byte` (denied namespace), `tostring`
 (denied), `..` beside literals (denied), and an `M = {}` wrapper (erased). Its
 canonical rewrite is one `cursor` descriptor with `peek`/`advance`/`eof`
-members — and that is precisely the form GAP-025 blocks.
+members — and that is precisely the form GAP-035 blocks.
 
 **What remains genuinely unblocked** is the subset that is not subject-first:
 fields, locals, constants, and free functions over primitives. That is real, and
@@ -142,7 +142,7 @@ branch:
 | Gate | Score | Blocking mechanism |
 | --- | --- | --- |
 | `spec_conformance.duo` (Pass 64) | 15/29 | mixed |
-| `census/family.duo` (Pass 81) | 10/38 | descriptor member bindings (GAP-025) |
+| `census/family.duo` (Pass 81) | 10/38 | descriptor member bindings (GAP-035) |
 | `census/modes.duo` (Pass 86) | 5/18 | `from` absent; descriptor construction broken |
 | `census/lawone.duo` (Pass 88) | 6/19 | sequence surface absent; overloads (GAP-030) |
 | `census/privacy.duo` (Pass 90) | 5/9 | 3 of 5 decomposition targets absent |
@@ -156,7 +156,7 @@ than canonical surface.
 
 Four mechanisms account for most of the rest:
 
-1. **Descriptor member bindings** (GAP-025) — one parse rule gating ~12 rows
+1. **Descriptor member bindings** (GAP-035) — one parse rule gating ~12 rows
    across five sections, and `E2-9`'s `:sibling()` call sits behind it too.
 2. **Descriptor construction realization** — `point{…}` emits an undefined
    symbol; the constructor ladder's first rung.

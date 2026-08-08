@@ -1,0 +1,119 @@
+-- Pass 16 MP4-B02 — `duo_lexer_tokenize_text` carries per-token TEXT, and pins
+-- the RAW-span contract both lexers share.
+--
+-- `duo_lexer_tokenize_all` is enough to fingerprint a stream but not to drive a
+-- parser: the host needs each token's text. Check 6 pins the escape contract,
+-- which is subtle enough that I got it wrong once in both directions.
+--
+-- The text arena belongs to the HOST (a second address argument), so the
+-- no-writable-__DATA constraint in lexer.duo's header still holds: nothing is
+-- allocated Duo-side beyond what std.str already does.
+--
+-- The kind stream is differenced against `duo_lexer_kind_fingerprint`, the same
+-- oracle `pass16_lexer_fingerprint_differential` proves equal to src/lexer.zig.
+-- Checking the text against itself would prove nothing about equivalence.
+--
+-- Called through a `req` binding, not the dotted `std.compiler.lexer` path: the
+-- dotted form round-trips str arguments through `lua_to_str` and diverges on
+-- exactly the escape-carrying inputs this proof depends on.
+--
+-- Exit code is the failing check number; 0 means text marshalling matches the
+-- raw-span contract src/lexer.zig also implements.
+
+L = req "std.compiler.lexer"
+
+-- Fold the kinds written by the text-carrying entry (stride 6).
+fold_text(src: str): u64
+    b = mem.alloc(4096 * 8)
+    t = mem.alloc(8192)
+    mem.zero(b, 4096 * 8)
+    mem.zero(t, 8192)
+    n: i64 = L.duo_lexer_tokenize_text(src, "c.duo", mem.addr(b), 500, mem.addr(t), 8000)
+    h: u64 = 0
+    i: i64 = 0
+    while i < n
+        h = h * 31 + mem.read_i64(b, (i * 6) * 8)
+        i += 1
+    end
+    h
+end
+
+-- The kind stream must still match the host oracle with text carried alongside.
+kinds_agree(): i64
+    if fold_text("") != L.duo_lexer_kind_fingerprint("", "c.duo") return 1 end
+    if fold_text("abc + 42") != L.duo_lexer_kind_fingerprint("abc + 42", "c.duo") return 2 end
+    if fold_text("fun add(a: i64): i64 = a + 1 end") != L.duo_lexer_kind_fingerprint("fun add(a: i64): i64 = a + 1 end", "c.duo") return 3 end
+    if fold_text("-- line\nfun") != L.duo_lexer_kind_fingerprint("-- line\nfun", "c.duo") return 4 end
+    0
+end
+
+-- An identifier's text arrives byte-for-byte in the host arena.
+identifier_text(): i64
+    b = mem.alloc(4096 * 8)
+    t = mem.alloc(8192)
+    mem.zero(b, 4096 * 8)
+    mem.zero(t, 8192)
+    n: i64 = L.duo_lexer_tokenize_text("abc + 42", "c.duo", mem.addr(b), 500, mem.addr(t), 8000)
+    if n != 4 return 5 end
+    if mem.read_i64(b, (0 * 6 + 5) * 8) != 3 return 5 end
+    if mem.read_byte(t, 0) != 97 return 5 end
+    if mem.read_byte(t, 1) != 98 return 5 end
+    if mem.read_byte(t, 2) != 99 return 5 end
+    -- int_val still carried
+    if mem.read_i64(b, (2 * 6 + 3) * 8) != 42 return 5 end
+    0
+end
+
+-- THE LOAD-BEARING CHECK, and it asserts AGREEMENT — but only after I got the
+-- direction wrong twice, so the reasoning is recorded here.
+--
+-- Source `"a\nb"` is six bytes; the token text is the RAW four-byte span
+-- a, backslash, n, b. `read_str` advances past escapes to validate them, then
+-- returns `strm.sub` of the source. **`src/lexer.zig` does the same**: its
+-- string token carries `cursor.bytes[start..index]`, the raw span.
+--
+-- `decode_lua_short_string` exists in lexer.zig but the LEXER never calls it —
+-- `src/parser.zig` does (lines ~3753 and ~4425), when it builds the literal.
+-- Decoding is a PARSER-stage concern in the host, and the lexer boundary is
+-- raw on both sides.
+--
+-- I misread that, "fixed" a divergence that did not exist by decoding inside
+-- the Duo lexer, and thereby introduced one. Reverted. The lesson: a utility
+-- being public and well-tested does not mean the layer under test calls it —
+-- check the call sites, and prefer a differential over reading the code.
+escaped_string_is_raw_span_matching_zig(): i64
+    b = mem.alloc(4096 * 8)
+    t = mem.alloc(8192)
+    mem.zero(b, 4096 * 8)
+    mem.zero(t, 8192)
+    n: i64 = L.duo_lexer_tokenize_text("\"a\\nb\"", "c.duo", mem.addr(b), 500, mem.addr(t), 8000)
+    if n != 2 return 6 end
+    -- four raw bytes: the lexer does not decode, and neither does the host's
+    if mem.read_i64(b, (0 * 6 + 5) * 8) != 4 return 6 end
+    if mem.read_byte(t, 0) != 97 return 6 end
+    if mem.read_byte(t, 1) != 92 return 6 end
+    if mem.read_byte(t, 2) != 110 return 6 end
+    if mem.read_byte(t, 3) != 98 return 6 end
+    0
+end
+
+-- Both capacity guards refuse rather than overrun.
+guards(): i64
+    b = mem.alloc(4096 * 8)
+    t = mem.alloc(8192)
+    mem.zero(b, 4096 * 8)
+    mem.zero(t, 8192)
+    if L.duo_lexer_tokenize_text("a b c d", "c.duo", mem.addr(b), 2, mem.addr(t), 8000) != -1 return 7 end
+    if L.duo_lexer_tokenize_text("abcdef ghijkl", "c.duo", mem.addr(b), 500, mem.addr(t), 4) != -1 return 8 end
+    0
+end
+
+main(): i64
+    r = kinds_agree()
+    if r != 0 return r end
+    r2 = identifier_text()
+    if r2 != 0 return r2 end
+    r3 = escaped_string_is_raw_span_matching_zig()
+    if r3 != 0 return r3 end
+    guards()
+end

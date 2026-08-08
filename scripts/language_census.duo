@@ -1,0 +1,75 @@
+-- G11 — the language census, as a ratchet.
+--
+-- "No language but Duo in the repo" was a slogan until it was counted. Counting
+-- it turns the goal into a list of names, and separates the three very different
+-- things that were being added together:
+--
+--   COMPILER      src/*.zig — the host compiler. Retires subsystem by subsystem
+--                 as the self-hosting matrix advances; SH-02 and SH-03 are
+--                 canonical today. Not debt, a schedule.
+--   SANCTIONED    the bootstrap ledger (generated C: the compiled Duo lexer and
+--                 keyword table), .lua fixtures (Duo is a Lua superset, so Lua
+--                 is INPUT), and C test fixtures. Canon XI: generated artifacts
+--                 are outputs and the ledger only shrinks.
+--   (all three categories above were LIVENESS-CHECKED, not taken on their
+--   labels — that check retired 7 dead C/H files and 1 dead script. For lua
+--   it changed nothing and that is the finding: 12 examples/*.lua have no
+--   inbound reference, but they are DEMONSTRATIONS that Duo runs Lua, which
+--   is the superset claim's evidence. Unreferenced is not unused when the
+--   file IS the artifact.)
+--
+--   DEBT          .sh and .py — authored source in a foreign language, with no
+--                 sanction at all. This is the number that should reach zero,
+--                 and the only one this gate ratchets.
+--
+-- Counts TRACKED files. Untracked scratch is not in the repo, and conflating
+-- the two inflated an earlier reading of this by 29 files.
+--
+-- SIZE THE DEBT BY REFERENCES, NOT LINES — and exclude .claude/worktrees.
+-- Line count (155-439 each) measures effort to port, not whether porting is the
+-- right verb: test_wasm_wast.sh was 287 lines and referenced by nothing, so it
+-- was a delete. Raw greps also over-count — most hits for the rest land in
+-- .claude/worktrees/ copies of this repo. Excluding those, the nine remaining
+-- are live via build.zig and .github/workflows/ci.yml.
+--
+-- CENSUS_FLOOR (default 6) ratchets: retiring a script lowers it, adding one
+-- fails. Exit 0 pass, 1 over the ceiling, 3 the census could not run.
+
+_count = (pattern: str): i64
+    out = std.script.capture("cd " .. std.script.getenv("DUO_ROOT", ".")
+        .. " && git ls-files | grep -c -E '" .. pattern .. "' 2>/dev/null")
+    n: i64 = #out
+    while n > 0 and (string.byte(out, n) == 10 or string.byte(out, n) == 32)
+        n -= 1
+    end
+    to(i64)(string.sub(out, 1, n))
+end
+
+main(): i64
+    duo: i64 = _count("\\.duo$")
+    if duo == 0
+        print("language_census: FAIL — no .duo files found; census did not run")
+        return 3
+    end
+
+    zig: i64 = _count("\\.zig$")
+    lua: i64 = _count("\\.lua$")
+    csrc: i64 = _count("\\.(c|h)$")
+    debt: i64 = _count("\\.(sh|py)$")
+
+    print("language census (tracked files)")
+    print("  duo         " .. to(str)(duo) .. "   authored source")
+    print("  zig         " .. to(str)(zig) .. "   host compiler — retires with the matrix")
+    print("  lua         " .. to(str)(lua) .. "   superset fixtures — INPUT, not source")
+    print("  c/h         " .. to(str)(csrc) .. "   bootstrap ledger + fixtures — sanctioned")
+    print("  sh/py       " .. to(str)(debt) .. "   DEBT — the number that must reach zero")
+
+    ceiling: i64 = to(i64)(std.script.getenv("CENSUS_FLOOR", "6"))
+    if debt > ceiling
+        print("language_census: FAIL — sh/py debt " .. to(str)(debt)
+            .. " exceeds the ratchet " .. to(str)(ceiling))
+        return 1
+    end
+    print("language_census: PASS (debt " .. to(str)(debt) .. " <= " .. to(str)(ceiling) .. ")")
+    0
+end

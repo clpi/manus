@@ -1,0 +1,78 @@
+-- Pass 11 WP-12: repository hygiene gate (forbidden root artifacts).
+--
+-- Duo replacement for scripts/repo_hygiene.sh, closing removal-ledger entry
+-- RL-12, whose gate reads "repo_hygiene.duo + zig build repo-hygiene".
+--
+-- Every rule here exists because the artifact it names actually got committed
+-- once. The root file literally called "-" was a 1 MB accident from the Pass 10
+-- audit; the tracked `_*.out` probes are what agent sessions leave behind.
+--
+-- Failures are counted, never short-circuited: a hygiene gate that stops at the
+-- first hit makes you re-run it once per problem.
+
+-- git ls-files is the authority on what is TRACKED. A file existing on disk is
+-- not a violation — only a tracked one ships.
+_tracked(pattern: str): bool
+    out = std.script.capture("git ls-files " .. pattern .. " 2>/dev/null | head -1")
+    std.script.chomp(out) != ""
+end
+
+_report(bad: bool, msg: str): bool
+    if bad
+        io.write("repo_hygiene: FAIL — " .. msg .. "\n")
+    end
+    bad
+end
+
+main = (): i64
+    fails = 0
+
+    -- Root file literally named "-" (1 MB accident from the Pass 10 audit).
+    if _report(std.script.fs_exists("-"), "root file '-' must be removed")
+        fails += 1
+    end
+
+    -- Tracked benchmark scratch: should not be in a release tree.
+    for _i, f in {".all_bench_output.log", ".run_all_bench_cmds.sh"}
+        if _report(_tracked(f), "tracked scratch file " .. f .. " (git rm or archive)")
+            fails += 1
+        end
+    end
+
+    -- Root probe binaries from agent sessions. Untracked ones count too: these
+    -- are litter on disk, not just in the index.
+    probes = std.script.chomp(std.script.capture("ls _*.out 2>/dev/null | head -1"))
+    if _report(probes != "", "root _*.out probe binaries present (delete or gitignore)")
+        fails += 1
+    end
+
+    -- Tracked *.out must never ship; local gitignored copies are fine.
+    if _report(_tracked("'*.out'"), "tracked *.out files in repository (git rm)")
+        fails += 1
+    end
+
+    -- Tracked benchmark / reference binaries.
+    for _i, f in {"benchmark_c", "benchmark_c_fastmath", "benchmark_c_zigcc", "default.profraw"}
+        if _report(_tracked(f), "tracked build artifact " .. f .. " (git rm)")
+            fails += 1
+        end
+    end
+
+    -- The local Duo cache must not be tracked.
+    if _report(_tracked(".duo/"), "tracked .duo/ cache directory (git rm -r --cached .duo/)")
+        fails += 1
+    end
+
+    -- Agent-local settings must not be tracked.
+    for _i, d in {".poolside", ".serena", ".antigravitycli", ".kiro", ".junie"}
+        if _report(_tracked(d), "tracked agent-local directory " .. d .. "/")
+            fails += 1
+        end
+    end
+
+    if fails != 0
+        return 1
+    end
+    print("repo_hygiene: PASS")
+    0
+end

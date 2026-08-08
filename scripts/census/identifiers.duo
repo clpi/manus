@@ -113,7 +113,7 @@ main(): i64
     -- 2 destination is a descriptor method (`cursor: { peek = () … }`), because
     -- §0.6 says methods travel with values and §0.6's own recognizer denies
     -- `alias.fn(subject, …)`. Descriptor member bindings do not parse
-    -- (GAP-025), so that destination does not exist. Renaming such a function
+    -- (GAP-035), so that destination does not exist. Renaming such a function
     -- to a bare word trades a NAMING violation for an ALIAS-CALL violation --
     -- it moves the diff from one deny row to another.
     subject = occurrences("^[a-z][a-z0-9]*(_[a-z][a-z0-9]*)+\\([a-z]+: [A-Za-z]")
@@ -134,7 +134,7 @@ main(): i64
     print("")
     print("  cutting the other way — by SITE SHAPE, not by name shape:")
     print("    subject-first fns  {subject}   canonical destination is a descriptor")
-    print("                          method — GAP-025, does not parse")
+    print("                          method — GAP-035, does not parse")
     print("")
     print("  That second number is the one that governs. A destination form")
     print("  compiling in isolation is not the same as a SITE being repairable:")

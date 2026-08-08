@@ -1,0 +1,99 @@
+-- Pass 16 MP4-B02 — `duo_lexer_tokenize_all` is the state-faithful, O(n)
+-- tokenize entry that production dispatch needs.
+--
+-- WHY A NEW ENTRY. `duo_lexer_step(src, file, pos)` looks like a streaming
+-- cursor but is not one: it rebuilds a `Lexer` at a byte offset, discarding
+-- `has_peeked` / `peeked_token` and the hint state the type carries. A
+-- step-driven walk therefore agrees with the oracle on simple sources and
+-- SILENTLY MIS-LEXES context-sensitive ones — bisected to the `=` in
+-- `fun add(a: i64): i64 =`. `tokenize_all` runs the whole file on ONE `Lexer`,
+-- so the stream is state-faithful by construction, stays O(n), and needs no
+-- opaque-cursor ABI.
+--
+-- WHAT IS PROVEN. The kinds written into the host buffer fold to the same value
+-- as `duo_lexer_kind_fingerprint`, which is itself the number
+-- `pass16_lexer_fingerprint_differential` proves equal to `src/lexer.zig`. That
+-- is what ties this to the host oracle; folding the buffer against itself would
+-- prove nothing. The corpus below deliberately includes the shape the step
+-- model got wrong, plus escapes and a newline.
+--
+-- The call is made through a `req` binding, NOT the dotted `std.compiler.lexer`
+-- path: the dotted form round-trips every `str` argument through `lua_to_str`
+-- and diverges on exactly these escape/newline entries.
+--
+-- Exit code is the failing check number; 0 means the buffer stream agrees.
+
+L = req "std.compiler.lexer"
+
+-- Fold the kinds `tokenize_all` wrote, with the mixer the fingerprint uses.
+fold_buf(src: str): u64
+    b = mem.alloc(4096 * 8)
+    mem.zero(b, 4096 * 8)
+    n: i64 = L.duo_lexer_tokenize_all(src, "c.duo", mem.addr(b), 1000)
+    h: u64 = 0
+    i: i64 = 0
+    while i < n
+        h = h * 31 + mem.read_i64(b, (i * 4) * 8)
+        i += 1
+    end
+    h
+end
+
+token_count(src: str): i64
+    b = mem.alloc(4096 * 8)
+    mem.zero(b, 4096 * 8)
+    n: i64 = L.duo_lexer_tokenize_all(src, "c.duo", mem.addr(b), 1000)
+    n
+end
+
+-- The buffered stream must equal the oracle on every shape, including the one
+-- the step model diverged on.
+agrees(): i64
+    if fold_buf("") != L.duo_lexer_kind_fingerprint("", "c.duo") return 1 end
+    if fold_buf("x") != L.duo_lexer_kind_fingerprint("x", "c.duo") return 2 end
+    if fold_buf("42 + 1") != L.duo_lexer_kind_fingerprint("42 + 1", "c.duo") return 3 end
+    -- the shape `duo_lexer_step` got wrong
+    if fold_buf("fun add(a: i64): i64 = a + 1 end") != L.duo_lexer_kind_fingerprint("fun add(a: i64): i64 = a + 1 end", "c.duo") return 4 end
+    if fold_buf("\"hi\" 'there'") != L.duo_lexer_kind_fingerprint("\"hi\" 'there'", "c.duo") return 5 end
+    if fold_buf("-- line\nfun") != L.duo_lexer_kind_fingerprint("-- line\nfun", "c.duo") return 6 end
+    if fold_buf("a == b ~= c") != L.duo_lexer_kind_fingerprint("a == b ~= c", "c.duo") return 7 end
+    0
+end
+
+-- Counts, so an empty or truncated buffer cannot pass the fold vacuously.
+counts(): i64
+    if token_count("") != 1 return 8 end
+    if token_count("x") != 2 return 9 end
+    if token_count("42 + 1") != 4 return 10 end
+    if token_count("fun add(a: i64): i64 = a + 1 end") != 15 return 11 end
+    0
+end
+
+-- The line field must track newlines rather than being uniformly 1, and the
+-- capacity guard must refuse rather than overrun.
+fields(): i64
+    b = mem.alloc(4096 * 8)
+    mem.zero(b, 4096 * 8)
+    n: i64 = L.duo_lexer_tokenize_all("a\nb", "c.duo", mem.addr(b), 1000)
+    if n != 3 return 12 end
+    if mem.read_i64(b, (0 * 4 + 1) * 8) != 1 return 13 end
+    if mem.read_i64(b, (1 * 4 + 1) * 8) != 2 return 14 end
+    -- int_val of `42` is carried through
+    b2 = mem.alloc(4096 * 8)
+    mem.zero(b2, 4096 * 8)
+    L.duo_lexer_tokenize_all("42", "c.duo", mem.addr(b2), 1000)
+    if mem.read_i64(b2, (0 * 4 + 3) * 8) != 42 return 15 end
+    -- cap too small -> -1, not a partial write
+    b3 = mem.alloc(4096 * 8)
+    mem.zero(b3, 4096 * 8)
+    if L.duo_lexer_tokenize_all("a b c d", "c.duo", mem.addr(b3), 2) != -1 return 16 end
+    0
+end
+
+main(): i64
+    r = agrees()
+    if r != 0 return r end
+    r2 = counts()
+    if r2 != 0 return r2 end
+    fields()
+end

@@ -8,12 +8,8 @@ searchpath(name: str, path: str, sep: str, rep: str): any
     package.searchpath(name, path, sep, rep)
 end
 
-M = {}
-M.loadlib = loadlib
-M.searchpath = searchpath
-M.config = package.config
-M.cpath = package.cpath
-M.path = package.path
-M.loaded = package.loaded
-M.preload = package.preload
-M
+config = package.config
+cpath = package.cpath
+path = package.path
+loaded = package.loaded
+preload = package.preload

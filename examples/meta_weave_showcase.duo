@@ -2,7 +2,7 @@
 -- Run: duo run examples/meta_weave_showcase.duo
 
 mark(meta): str
-    "/* weave[" .. meta.source_module .. "] " .. meta.name .. " (" .. tostring(meta.index) .. "/" .. tostring(meta.count) .. ") */\n"
+    "/* weave[" .. meta.source_module .. "] " .. meta.name .. " (" .. to(str)(meta.index) .. "/" .. to(str)(meta.count) .. ") */\n"
 end
 
 CODE = @comp.weave("examples/weave_types", "HasXY", mark)

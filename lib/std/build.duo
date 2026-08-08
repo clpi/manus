@@ -1,7 +1,5 @@
 -- std.build — build system helpers and environment info
 
-term = req "std.term"
-
 global _project = { name = "duo-app", version = "0.1.0", default = "app" }
 global _targets = {}
 
@@ -39,9 +37,9 @@ project(cfg: any): any
     if cfg == nil
         _project
     else
-        if cfg.name != nil _project.name = cfg.name end
-        if cfg.version != nil _project.version = cfg.version end
-        if cfg.default != nil _project.default = cfg.default end
+        if has(.name)(cfg) _project.name = cfg.name end
+        if has(.version)(cfg) _project.version = cfg.version end
+        if has(.default)(cfg) _project.default = cfg.default end
         _project
     end
 end
@@ -73,7 +71,7 @@ default_target(): str
 end
 
 find(name: str): any
-    for _, t in ipairs(_targets)
+    for _, t in _targets
         if t.name == name
             t
         end
@@ -83,10 +81,10 @@ end
 
 command(t: any): str
     cmd = "duo compile " .. t.src
-    if t.out != nil cmd = cmd .. " -o " .. t.out end
-    if t.opt != nil cmd = cmd .. " " .. t.opt end
-    if t.target != nil and t.target != "native" cmd = cmd .. " --target " .. t.target end
-    if t.cc != nil cmd = cmd .. " --cc " .. t.cc end
+    if has(.out)(t) cmd = cmd .. " -o " .. t.out end
+    if has(.opt)(t) cmd = cmd .. " " .. t.opt end
+    if has(.target)(t) and t.target != "native" cmd = cmd .. " --target " .. t.target end
+    if has(.cc)(t) cmd = cmd .. " --cc " .. t.cc end
     if t.pgo cmd = cmd .. " --pgo" end
     if t.shared_memory cmd = cmd .. " --shared-memory" end
     if t.load_chunk cmd = cmd .. " --load-chunk" end
@@ -99,35 +97,17 @@ clean(): i64
 end
 
 log_target(t: any): void
-    print(term.banner("build target"))
-    print(term.kv("name", t.name))
-    print(term.kv("source", t.src))
-    if t.out != nil print(term.kv("output", t.out)) end
-    print(term.kv("command", command(t)))
+    print(std.term.banner("build target"))
+    print(std.term.kv("name", t.name))
+    print(std.term.kv("source", t.src))
+    if has(.out)(t) print(std.term.kv("output", t.out)) end
+    print(std.term.kv("command", command(t)))
 end
 
 log_project(): void
-    print(term.banner("duo project"))
-    print(term.kv("name", _project.name))
-    print(term.kv("version", _project.version))
-    print(term.kv("default", _project.default))
+    print(std.term.banner("duo project"))
+    print(std.term.kv("name", _project.name))
+    print(std.term.kv("version", _project.version))
+    print(std.term.kv("default", _project.default))
 end
 
-M = {}
-M.info = info
-M.platform = platform
-M.arch = arch
-M.target = target
-M.is_debug = is_debug
-M.env = env
-M.project = project
-M.exe = exe
-M.lib = lib
-M.targets = targets
-M.default_target = default_target
-M.find = find
-M.command = command
-M.clean = clean
-M.log_target = log_target
-M.log_project = log_project
-M

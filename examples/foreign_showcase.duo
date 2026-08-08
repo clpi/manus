@@ -10,4 +10,4 @@ total(): i64
 end
 
 print("=== @foreign showcase ===")
-print("result = " .. tostring(total()))
+print("result = " .. to(str)(total()))

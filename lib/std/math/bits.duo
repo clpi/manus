@@ -229,29 +229,3 @@ sub_32(x: i64, y: i64): any
     {diff = d, borrow = 0}
 end
 
-M = {}
-M.leading_zeros_8 = leading_zeros_8
-M.leading_zeros_32 = leading_zeros_32
-M.leading_zeros_64 = leading_zeros_64
-M.trailing_zeros_8 = trailing_zeros_8
-M.trailing_zeros_32 = trailing_zeros_32
-M.trailing_zeros_64 = trailing_zeros_64
-M.ones_count_8 = ones_count_8
-M.ones_count_32 = ones_count_32
-M.ones_count_64 = ones_count_64
-M.len_8 = len_8
-M.len_32 = len_32
-M.len_64 = len_64
-M.rotate_left_8 = rotate_left_8
-M.rotate_left_32 = rotate_left_32
-M.rotate_left_64 = rotate_left_64
-M.rotate_right_32 = rotate_right_32
-M.rotate_right_64 = rotate_right_64
-M.reverse_8 = reverse_8
-M.reverse_32 = reverse_32
-M.reverse_bytes_32 = reverse_bytes_32
-M.reverse_bytes_64 = reverse_bytes_64
-M.mul_32 = mul_32
-M.add_32 = add_32
-M.sub_32 = sub_32
-M

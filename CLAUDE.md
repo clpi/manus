@@ -61,3 +61,215 @@ docs/plans/            Active implementation plans (passN_*.md)
 
 See `AGENTS.md` for full agent design targets. Coordinate via `duo_agent_gaps_update()`.
 See `.agents/AGENT_COORDINATION.md` for active work tracking.
+
+## HOT LIST — the five current failures (auto-ranked; fix these on sight)
+1. THE M PATTERN IS DEAD. A file IS the module. Never `M = {}` / `M.f = ...`
+   / final `M`. Write top-level bindings; `_name` for private. (The
+   canonicalizer will erase your wrapper anyway — MOD-1.)
+2. No `req`/`require`. Ambient roots: `std.mem.copy`; `{ f } = wire.x`.
+3. Last expression IS the result. No `result = ...` + return; `return` is
+   early-exit/contract only.
+4. Pipelines: vs:filter(.active):map(.score) — not manual accumulate loops.
+5. Interpolation: "({p.x}, {p.y})" — never `..` chains; sinks on hot paths.
+
+> **Measured against the compiler, 2026-08-07.** Rules 1–3 are real and
+> actionable today. Rules 4 and 5 are partly aspirational, and following them
+> literally produces WORSE code than the vestige they replace:
+>
+> - **Rule 4's surface does not exist.** `t:push(v)` compiles clean and drops
+>   the element; `c:join(", ")` returns nil; `vs:map(.x)` is a compile error.
+>   `table.insert`/`table.concat` still work. See GAP-14 — this is a stop-work
+>   item, not a style note.
+> - **Rule 5 works for names and fields** (`"{x}"`, `"{p.x}"`) and NOT for
+>   expression holes (`"{i + 1}"` emits the brace text literally, no
+>   diagnostic). See GAP-11.
+> - **Rule 1 is real, and MOD-1 does not exist yet** — 19 of 246 lib/std
+>   modules still carry the wrapper, and removing it is a hand edit today.
+>
+> Run `duo run scripts/spec_conformance.duo` before trusting any row. The whole
+> point of that gate is that these failures are silent.
+
+## Duo — agent contract (Pass 64, supersedes 59/60/61)
+
+Pass 64 is the canon. Where any prior pass disagrees, Pass 64 wins (AR-1:
+the canon is queried live; archives are history).
+
+```
+0. MONOGLOT     Never create a non-Duo file. Build, CI, benchmarks, tooling —
+                all Duo. A gap is a GAP record, never a .c/.py/.sh file.
+                "C would be faster" = fact-loss ledger row, not code.
+1. NO FOREIGN   Duo has NO function/class/import/match/try/trait/macro syntax.
+                Lua is foreign too: no require, no local, no M = {} pattern,
+                no table.*/string.*/pairs/pcall/setmetatable.
+2. QUERY FIRST  Before writing any function/table/branch/helper, run the
+                leverage ladder (Pass 64 Part VI). Query rewrite[idiom],
+                derive[...], the tries. Stopping early is the violation.
+                Never invent — no answer = spec gap = report it.
+3. DEMAND       The last expression is the result. return = early exit or
+                contract only. Nothing physical without consumption.
+4. ONE EDGE     Declare once; project everywhere. Never implement both ends,
+                parallel renderers, hand dispatch, or foreign twins.
+5. COMPACT      One-liners where one semantic unit fits. Emit canonical
+                layout; fighting the formatter means your FORM is wrong.
+6. PIPELINES    map/filter/fold/find with sections and lenses. Loops only for
+                cursors, cross-iteration state, effect ordering, exit
+                protocols beyond find/take.
+7. SUBJECT      subject:member(args); operators over explicit relations;
+                strata always: store(i32)("x"), never store(i32, "x").
+8. STRINGS      "{expr}" interpolation always; format(sink) on hot paths;
+                .. only concatenates strings that already exist.
+9. WITNESS      Every claim measured or marked. Read your manifest delta.
+```
+
+### Rules that the compiler cannot honour yet — measured, filed, not guessed
+
+Rule 7 says report gaps rather than invent. These three are filed in
+`docs/plans/pass60_gap_register.duo` with minimal repros. Until they close,
+the canonical form named by the rule produces **silently wrong output or a
+crash**, so the listed interim spelling is the correct one to write.
+
+- **GAP-11 (rule 2 / STR-1)** — MOSTLY CLOSED 2026-08-07 (commit 8ced8f8).
+  Re-measured after the fix, so the interim advice below is narrower than it
+  was: **write interpolation, not `..` chains, for names and fields.**
+  - `"{x}"` single-character hole — **works**. The root cause was a guard
+    requiring "not every character the same", which one character trivially
+    is, so every single-letter hole was skipped. `{i}`, `{n}`, `{b}` are the
+    common case in exactly the loops interpolation is for.
+  - `"{p.x}"`, `"{d.inner.z}"` dotted paths — **work** (added in the same
+    commit). This covers the golden corpus's `"{p.x}, {p.y}"` and
+    `"line {lx.line}"`.
+  - `"{count}"` on an i64, and f64/str — **work**, in `main` and in typed
+    `: str` functions alike. Verified; the earlier "fails to compile" note
+    did not reproduce.
+  - STILL LITERAL, no diagnostic: **expression holes** — `"{i + 1}"`,
+    `"{to(str)(i)}"`. Also leading-`.` lens holes `"{.kind}"` (STR-4), which
+    need an ambient subject and are deliberately unclaimed rather than
+    misread as a name.
+  - Malformed holes stay literal by design: `{a.}`, `{.x}`, `{a..b}`, `{1x}`.
+  Interim: `..` chains ONLY for expression holes.
+- **GAP-19 (wasm output) — `--emit wasm` does not emit wasm.** Measured
+  2026-08-07 while converting ward's three `.c` WASM benchmark fixtures to Duo
+  (the monoglot census). Both routes fail:
+  - `duo compile x.duo --emit wasm -o out.wasm` produces a **Mach-O ARM64
+    executable**. Magic bytes `cf fa ed fe`, not `00 61 73 6d`; wasmtime
+    rejects it with "input bytes aren't valid utf-8". It reports
+    `ok compile` — the wrong format is silent, same class as GAP-15 where
+    `--emit obj`/`dylib` also emit executables.
+  - `duo compile x.duo --target wasm32-wasi ...` (the spelling
+    `lib/std/ml/deploy.duo:17` documents) fails with **`use of undeclared
+    identifier 'duo_test_jmp'`** — a runtime symbol missing from the wasm
+    build.
+
+  The Duo source is otherwise ready and semantically verified: it reproduces
+  the fixture's hash EXACTLY (200M-iteration FNV loop → 1899277430, matching
+  `ward/bench/hash.wasm` under wasmtime). Only the output format blocks it, so
+  ward's last three non-Duo files stay `.c` until this closes. They are test
+  INPUT compiled to `.wasm`, not ward source — ward's own code is 100% Duo.
+- **GAP-16 (STR-1) — interpolation has NO ESCAPE.** There is no way to spell a
+  literal `{name}` in a Duo string. Any program whose DATA is Duo source
+  containing holes — a code generator, a conformance corpus, a doc example —
+  has its own data rewritten by the compiler. Not hypothetical: the first run
+  of `scripts/spec_conformance.duo` failed with "use of undeclared identifier
+  'x'" because the STR-1 row's test PROGRAM was interpolated as if it were the
+  harness's own source. Interim: build the brace (`"{" .. "x}"`). This is the
+  same class as the blanket `~=` pass that once rewrote a lexer's own corpus
+  data — a brace inside a string a program means to EMIT is not a hole, and
+  nothing in the language currently lets you say so.
+- **GAP-14 (Pass 61 LV-4..7, PIPE-1) — DO NOT APPLY THE LV SEQUENCE ROWS YET.**
+  The pinned sequence surface (`map filter fold each find any all count take
+  drop sort sort_by max_by min_by join push pop sum`) is **not implemented**.
+  Measured 2026-08-07, all 15 probed resolve to nothing. Two of them fail
+  SILENTLY, which is why this is a stop-work item rather than a note:
+  - `a:push(5); a:push(6)` compiles clean and leaves `#a == 0` — **data loss,
+    no diagnostic**.
+  - `c:join(", ")` returns **nil**, not the joined string.
+  - `vs:map(.name)` is a compile error (the honest failure of the three).
+  Meanwhile the vestiges those rows tell you to delete WORK: `table.concat(c,
+  ", ")` returns `"x, y"`. So applying LV-4/LV-6 today replaces correct code
+  with silently wrong code, and PIPE-1 has no surface to stand on.
+  Interim: keep `table.insert`/`table.concat`/`table.sort` and manual loops
+  until the surface lands. LV-8 (`for v in t`), LV-10 (`x:to(str)`) and LV-13
+  (`#s`) are verified working — those rows are safe to apply now.
+
+  **Do not fix this the obvious way — it was tried and reverted 2026-08-07.**
+  Projecting `t:push(v)` onto `table.insert(t, v)` in codegen's `.method_call`
+  arm (mirroring how `p:to(str)` projects onto `to(str)(p)`) makes all three
+  work — `push` appends, `join` joins, `pop` pops, verified — but it **breaks
+  LAW-CALL**. A table carrying its own member,
+  `t = { push = mypush }; t:push(9)`, is hijacked by the projection: the
+  generated C emits `lua_tbl_insert(t, 9, nil)` on the line after
+  `lua_table_set_raw_lit(t, "push", ...)`, and the user's function is never
+  called. That trades silent data loss for silent member hijacking, which is
+  not an improvement. Guarding with `user_owns_name` is NOT sufficient — that
+  sees free functions and locals, not table MEMBERS.
+  A correct fix needs one of: receiver-shape knowledge proving the member is
+  absent, or a runtime-guarded dispatch (member if present, else project).
+  The real fix is probably to implement the surface as actual members rather
+  than a codegen projection, so data-wins holds by construction.
+- **GAP-15 (SH-03) — ARTIFACT SIDE FIXED 2026-08-07; host dispatch still open.**
+  The entry was wrong twice before being right. It said `@c.export` symbols have
+  INTERNAL linkage and the Duo lexer "cannot be linked at all" — measured, every
+  entry point is `T` under both the bare and mangled names, and a C host links
+  it clean. I then said the blocker was "no init entry", which was closer but
+  still not the mechanism.
+
+  **The mechanism, and the fix (src/codegen.zig).** `lib_mode` emitted an
+  `__attribute__((constructor))` initialiser only for `wasm32-wasi`; for native
+  targets it emitted NOTHING. So a Duo module built with `--lib` linked clean
+  and then died on the first call, because `package`, `string`, `table`, `io`,
+  `os`, `net` and the module registry were initialised only inside `main`, which
+  a library does not have. Native lib mode now emits the same constructor.
+  Measured, same module, same C host:
+
+      before   link=0, run=139 (SIGSEGV)
+      after    link=0, run=0 — "HOST -> Duo lexer, first token kind = 14"
+
+  14 is KIND_FUN for "fun add". A C program calls the Duo lexer today.
+
+  **What is verified for the next step:**
+  - `duo compile lib/std/compiler/lexer.duo --backend=c --lib --emit obj` emits
+    8975 lines with the constructor and no `main`.
+  - That object needs 105 external symbols, ALL libc — no host collisions.
+  - Adding it to build.zig beside `src/duo_keyword_classify.c` (the SH-02
+    precedent) builds and links clean, and every gate stays green.
+
+  **What is NOT done, and why it was backed out.** Calling the seam from ZIG
+  panics — `panic: access of union field`, SIGABRT inside the call — while the
+  identical call from a C host works. Unisolated. Rather than check in 8975
+  lines of generated C behind a seam that cannot be proved from the host side,
+  the artifact, the build.zig entry and the bridge `extern` were reverted; only
+  the codegen fix is committed. Reproduce with the four bullets above; the
+  remaining work is that panic, then `src/lexer.zig` consuming the 4-i64
+  records, then `tokenizeAuthority()`.
+
+- **GAP-12 (rule 1 / FF-1)** — `@comp.c.export` does not attach to a
+  value-form binding; it degrades into a call to an undefined `__c_export`.
+  Interim: the one exported declaration per module stays bare, commented.
+- **GAP-13 (FF-10 / "no req")** — ambient `std.str.sub(...)` and
+  `{ sub } = std.str` on a native-direct module **crash at startup**: exit 128,
+  no output, before `main` runs. Interim: `global x = req "std.mod"`.
+- **GAP-16 (SH-04 parser non-termination) — FIXED 2026-08-07.** The walk of
+  `lib/std/**.duo` spun forever. Cause: loops that could iterate without
+  consuming a token (a sub-parser returning at EOF, or on a token no arm
+  handles), so `join(acc, "")` made no progress. Fixed structurally with a
+  `stalled(lx, before)` cursor check on the six accumulating loops rather than
+  by hunting triggers — no single construct reproduced it in isolation, only
+  the accumulated 750-line prefix did. Corpus walk went 7 files -> 245.
+  **First SH-04 coverage number: 44/245 lib/std files parse clean (18%).**
+  `scripts/parser_corpus_coverage.duo` is the tool; it terminates, so it is
+  committed.
+- **GAP-17 (lexer error aborts the process)** — `UnterminatedString` in
+  `lib/std/os/linux.duo` kills the whole run instead of returning a rejection,
+  so one bad file truncates any corpus walk and silently shrinks the
+  denominator. The coverage tool skips that file visibly rather than absorbing
+  the loss. A lexer error should be a rejection the caller can count.
+- **GAP-18 (MOD-1 on alias-style modules)** — the M pattern in lib/std is
+  mostly a RENAMING table: `M = {}` then `M.clamp = std_math_clamp`, i.e. the
+  top-level binding is `std_math_clamp` and the surface name is `clamp`.
+  Unwrapping it per MOD-1 therefore means hoist **and rename**, not just delete
+  the wrapper — and the rename collides. Tried on lib/std/math.duo (22 members):
+  the file still `duo check`s clean but any consumer fails with 20 C errors,
+  because names like `min`/`max`/`sum` collide once they lose their prefix.
+  Reverted. MOD-1's "members hoist to top-level bindings" needs a collision
+  policy (prefix retention, `_` privacy, or renaming consumers) before it can be
+  applied to this corpus. 37 files affected.

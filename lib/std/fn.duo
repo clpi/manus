@@ -9,7 +9,7 @@ identity(x: any): any
 end
 
 -- constant: return the value (for use as a function body).
-constant_val(v: any): any
+constant(v: any): any
     v
 end
 
@@ -282,71 +282,42 @@ sort_by(list: any, fn_ref: any): void
     end
 end
 
--- pipe: compose functions left-to-right (pipe(f, g)(x) = g(f(x))).
+-- GAP: pipe/pipe3/negate/curry2 cannot be expressed in Duo today.
+-- Each needs a returned lambda to CAPTURE the enclosing function's parameters
+-- (f1/f2/fn_ref) and then CALL them. Two independent compiler gaps block that:
+--   1. a lambda does not capture an enclosing PARAMETER -- the generated C says
+--      "use of undeclared identifier 'f2'";
+--   2. a function arriving as a parameter is not callable at all.
+-- They were also written as NESTED BARE DECLARATIONS, which do not parse (GR-001
+-- is file-scope), and pipe/pipe3 both named their inner function `composed`,
+-- which collides at module scope ("redefinition of std_fn__composed__lua").
+--
+-- Why they are stubbed rather than left as they were: while they failed to
+-- PARSE, `emit_embedded_module` failed for the whole file, so std.fn was
+-- unusable -- and std.iter and std.go, which require it, were down purely as
+-- collateral. Three modules were unreachable to protect four functions that
+-- could not run under any spelling. They return nil until the capture gap
+-- closes, so the rest of the module is reachable.
 pipe(f1: any, f2: any): any
-    composed(x: any): any
-        f2(f1(x))
-    end
-    composed
+    nil
 end
 
--- pipe3: compose three functions.
 pipe3(f1: any, f2: any, f3: any): any
-    composed(x: any): any
-        f3(f2(f1(x)))
-    end
-    composed
+    nil
 end
 
--- negate: return a function that negates the predicate.
 negate(fn_ref: any): any
-    negated(x: any): any
-        not fn_ref(x)
-    end
-    negated
+    nil
 end
 
--- curry2: convert a 2-arg function to a chain of 1-arg calls.
 curry2(fn_ref: any): any
-    curried(a: any): any
-        partial(b: any): any
-            fn_ref(a, b)
-        end
-        partial
-    end
-    curried
+    nil
 end
 
 -- clamp: clamp value between min and max.
-clamp_val(v: any, lo: any, hi: any): any
+clamp(v: any, lo: any, hi: any): any
     if v < lo return lo end
     if v > hi return hi end
     v
 end
 
-M = {}
-M.identity = identity
-M.constant = constant_val
-M.noop = noop
-M.foldl = foldl
-M.foldr = foldr
-M.map_filter = map_filter
-M.group_by = group_by
-M.unique_by = unique_by
-M.take_while = take_while
-M.drop_while = drop_while
-M.chunk = chunk
-M.interleave = interleave
-M.transpose = transpose
-M.count_by = count_by
-M.flatten = flatten
-M.partition = partition
-M.min_by = min_by
-M.max_by = max_by
-M.sort_by = sort_by
-M.pipe = pipe
-M.pipe3 = pipe3
-M.negate = negate
-M.curry2 = curry2
-M.clamp = clamp_val
-M

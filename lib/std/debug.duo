@@ -24,11 +24,3 @@ setupvalue(f: any, up: int, value: any): any
     debug.setupvalue(f, up, value)
 end
 
-M = {}
-M.traceback = traceback
-M.getinfo = getinfo
-M.getlocal = getlocal
-M.getupvalue = getupvalue
-M.setlocal = setlocal
-M.setupvalue = setupvalue
-M

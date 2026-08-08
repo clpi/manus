@@ -8,46 +8,64 @@ global crypto_rand = req "std.crypto.rand"
 -- static level with the same-named implementations in std.crypto.sha
 -- / std.hash.sha512 when both modules end up embedded in the same
 -- compilation unit.
-wrap_sha1(s: str): str
+sha1(s: str): str
     crypto_sha.sha1(s)
 end
 
-wrap_sha256(s: str): str
+sha256(s: str): str
     crypto_sha.sha256(s)
 end
 
-wrap_sha512(s: str): str
+sha512(s: str): str
     hash_sha512.sha512(s)
 end
 
 -- ── Base64 ──────────────────────────────────────────────────────────────
 
-const B64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+B64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
 base64_encode(s: str): str
     if s == nil return "" end
-    padded = s
-    while #padded % 3 != 0
-        padded = padded .. "\0"
-    end
+    -- Partial groups are handled EXPLICITLY rather than by padding the input
+    -- with "\0". Null bytes do not survive runtime string concatenation --
+    -- duo_str_concat is C-string based, so `padded = padded .. "\0"` appends
+    -- nothing and the trailing group is built from whatever follows in memory.
+    -- That is why encode("h") produced "aD==" instead of "aA==": the second
+    -- sextet came from a byte that was never there.
+    n = string.len(s)
     out = {}
-    for i = 1, string.len(padded), 3
-        b1 = string.byte(padded, i)
-        b2 = string.byte(padded, i + 1)
-        b3 = string.byte(padded, i + 2)
+    i = 1
+    while i + 2 <= n
+        b1 = string.byte(s, i)
+        b2 = string.byte(s, i + 1)
+        b3 = string.byte(s, i + 2)
         triple = (b1 * 65536) + (b2 * 256) + b3
         out[rawlen(out) + 1] = string.sub(B64_CHARS, math.floor(triple / 262144) + 1, math.floor(triple / 262144) + 1)
         out[rawlen(out) + 1] = string.sub(B64_CHARS, math.floor((triple % 262144) / 4096) + 1, math.floor((triple % 262144) / 4096) + 1)
         out[rawlen(out) + 1] = string.sub(B64_CHARS, math.floor((triple % 4096) / 64) + 1, math.floor((triple % 4096) / 64) + 1)
         out[rawlen(out) + 1] = string.sub(B64_CHARS, (triple % 64) + 1, (triple % 64) + 1)
+        i += 3
     end
-    result = table.concat(out)
-    orig_len = string.len(s)
-    pad_count = (3 - (orig_len % 3)) % 3
-    if pad_count > 0
-        result = string.sub(result, 1, string.len(result) - pad_count)
+
+    rem = n - i + 1
+    if rem == 1
+        b1 = string.byte(s, i)
+        triple = b1 * 65536
+        out[rawlen(out) + 1] = string.sub(B64_CHARS, math.floor(triple / 262144) + 1, math.floor(triple / 262144) + 1)
+        out[rawlen(out) + 1] = string.sub(B64_CHARS, math.floor((triple % 262144) / 4096) + 1, math.floor((triple % 262144) / 4096) + 1)
+        out[rawlen(out) + 1] = "="
+        out[rawlen(out) + 1] = "="
     end
-    result
+    if rem == 2
+        b1 = string.byte(s, i)
+        b2 = string.byte(s, i + 1)
+        triple = (b1 * 65536) + (b2 * 256)
+        out[rawlen(out) + 1] = string.sub(B64_CHARS, math.floor(triple / 262144) + 1, math.floor(triple / 262144) + 1)
+        out[rawlen(out) + 1] = string.sub(B64_CHARS, math.floor((triple % 262144) / 4096) + 1, math.floor((triple % 262144) / 4096) + 1)
+        out[rawlen(out) + 1] = string.sub(B64_CHARS, math.floor((triple % 4096) / 64) + 1, math.floor((triple % 4096) / 64) + 1)
+        out[rawlen(out) + 1] = "="
+    end
+    table.concat(out)
 end
 
 base64_decode(s: str): str
@@ -70,10 +88,15 @@ base64_decode(s: str): str
         b1 = math.floor(triple / 65536)
         b2 = math.floor((triple % 65536) / 256)
         b3 = triple % 256
+        -- Which bytes a 4-character group yields (RFC 4648 s4):
+        --   b1 ALWAYS      -- every group carries at least one byte
+        --   b2 unless char3 is '='
+        --   b3 unless char4 is '='
+        -- The conditions were misassigned: b1 was gated on char3 and b2 on
+        -- char4, so decoding "aGk=" emitted only b1 and returned "h" for "hi".
+        -- One byte lost from every 2-byte tail, silently.
+        out[rawlen(out) + 1] = string.char(b1)
         if string.sub(clean, i + 2, i + 2) != "="
-            out[rawlen(out) + 1] = string.char(b1)
-        end
-        if string.sub(clean, i + 3, i + 3) != "="
             out[rawlen(out) + 1] = string.char(b2)
         end
         if string.sub(clean, i + 3, i + 3) != "="
@@ -83,7 +106,7 @@ base64_decode(s: str): str
     table.concat(out)
 end
 
-const B64URL_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+B64URL_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
 base64_url_encode(s: str): str
     std = base64_encode(s)
@@ -100,12 +123,12 @@ base64_url_decode(s: str): str
     for _ = 1, pad_len
         padded = padded .. "="
     end
-    base64_decode(tostring(padded))
+    base64_decode(to(str)(padded))
 end
 
 -- ── Hex ─────────────────────────────────────────────────────────────────
 
-const HEX_CHARS = "0123456789abcdef"
+HEX_CHARS = "0123456789abcdef"
 
 hex_encode(s: str): str
     if s == nil return "" end
@@ -165,7 +188,10 @@ secure_random_hex(n: i64): str
 end
 
 secure_random_int(): i64
-    crypto_rand.int()
+    -- `int` takes a required bound and returns `r % max`; calling it with no
+    -- argument did not compile, which took std.crypto and its four dependents
+    -- down. Unbounded here means the full i64 range.
+    crypto_rand.int(9223372036854775807)
 end
 
 -- ── Constant-time comparison (timing-attack safe) ───────────────────────
@@ -186,7 +212,7 @@ hmac_sha256(key: str, message: str): str
     block_size = 64
     k = key
     if string.len(k) > block_size
-        k = wrap_sha256(k)
+        k = sha256(k)
     end
     while string.len(k) < block_size
         k = k .. "\0"
@@ -197,23 +223,6 @@ hmac_sha256(key: str, message: str): str
         o_key_pad = o_key_pad .. string.char(string.byte(k, i) ~ 0x5c)
         i_key_pad = i_key_pad .. string.char(string.byte(k, i) ~ 0x36)
     end
-    wrap_sha256(o_key_pad .. wrap_sha256(i_key_pad .. message))
+    sha256(o_key_pad .. sha256(i_key_pad .. message))
 end
 
-M = {}
-M.sha1 = wrap_sha1
-M.sha256 = wrap_sha256
-M.sha512 = wrap_sha512
-M.base64_encode = base64_encode
-M.base64_decode = base64_decode
-M.base64_url_encode = base64_url_encode
-M.base64_url_decode = base64_url_decode
-M.hex_encode = hex_encode
-M.hex_decode = hex_decode
-M.xor_encrypt = xor_encrypt
-M.secure_random_bytes = secure_random_bytes
-M.secure_random_hex = secure_random_hex
-M.secure_random_int = secure_random_int
-M.compare_digest = compare_digest
-M.hmac_sha256 = hmac_sha256
-M

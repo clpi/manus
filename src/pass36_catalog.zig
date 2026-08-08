@@ -169,7 +169,12 @@ pub const grammar_rules: []const GrammarRule = &.{
     .{ .id = "G3", .form = "@name(args)", .meaning = "invocation through the current world", .status = .recorded, .blocked_by = "NONE", .parens_required = false },
     .{ .id = "G4", .form = "@name(param)(subject)", .meaning = "two-group application spine", .status = .recorded, .blocked_by = "NONE", .parens_required = false },
     .{ .id = "G5", .form = "@name param", .meaning = "parenless first group, atomic argument only", .status = .recorded, .blocked_by = "NONE", .parens_required = false },
-    .{ .id = "G6", .form = "value.@name", .meaning = "semantic member access; retrieval, never binding", .status = .recorded, .blocked_by = "NONE", .parens_required = false },
+    // First form of the calculus to actually exist in the compiler (2026-08-07).
+    // The parser accepts `@` after `.` in the postfix chain and carries the
+    // sigil in the field name; codegen lowers it to the `__name` metafield per
+    // §8.5. Proven by examples/pass38_semantic_access_g6.duo (5 checks, fails
+    // by exit status, negative control verified).
+    .{ .id = "G6", .form = "value.@name", .meaning = "semantic member access; retrieval, never binding", .status = .implemented, .blocked_by = "NONE", .parens_required = false },
     .{ .id = "G7", .form = "@name = value", .meaning = "statement position: lexical world binding", .status = .recorded, .blocked_by = "NONE", .parens_required = false },
     .{ .id = "G8", .form = "{ @name = value }", .meaning = "table literal: descriptor slot declaration", .status = .recorded, .blocked_by = "NONE", .parens_required = false },
     .{ .id = "G9", .form = "value.@name = value", .meaning = "assignment at the value's own level", .status = .recorded, .blocked_by = "NONE", .parens_required = false },
@@ -737,7 +742,8 @@ pub fn writePass36Json(w: *std.Io.Writer, _: std.mem.Allocator) !void {
         \\    "completion_gate_count":{d},
         \\    "execution_phase_count":{d},
         \\    "supersession_count":{d},
-        \\    "phase0_status":"recorded_only"
+        \\    "implemented_grammar_forms":{d},
+        \\    "phase0_status":"{s}"
         \\  }}
     ,
         .{
@@ -768,8 +774,33 @@ pub fn writePass36Json(w: *std.Io.Writer, _: std.mem.Allocator) !void {
             completion_gates.len,
             execution_phases.len,
             supersessions.len,
+            implementedGrammarForms(),
+            phase0Status(),
         },
     );
+}
+
+/// How many of the recorded grammar forms the compiler actually accepts.
+pub fn implementedGrammarForms() usize {
+    var n: usize = 0;
+    for (grammar_rules) |g| {
+        if (g.status == .implemented) n += 1;
+    }
+    return n;
+}
+
+/// `phase0_status` used to be the hardcoded string "recorded_only", which meant
+/// the catalog reported Phase 0 forever — including after a form was
+/// implemented. It is derived now, so the number cannot drift from the table
+/// above: the JSON is a projection of the records, not a parallel claim about
+/// them. Same failure this repo already hit with `TOKENIZE_EXPORTS`, where a
+/// hand-maintained list disagreed with the symbols that actually existed and
+/// nobody noticed for as long as it stayed short.
+pub fn phase0Status() []const u8 {
+    const n = implementedGrammarForms();
+    if (n == 0) return "recorded_only";
+    if (n == grammar_rules.len) return "grammar_complete";
+    return "partially_implemented";
 }
 
 test "pass36_catalog: record counts" {

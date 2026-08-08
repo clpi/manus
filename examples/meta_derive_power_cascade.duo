@@ -6,12 +6,12 @@ concept HasXY
     y: f64
 end
 
-type Vec2 = { x: f64, y: f64 }
-type Vec3 = { x: f64, y: f64, z: f64 }
-type Pt = { x: f64, y: f64 }
+Vec2: { x: f64, y: f64 }
+Vec3: { x: f64, y: f64, z: f64 }
+Pt: { x: f64, y: f64 }
 
 @comp.define.derive("SubsetStub", generate(meta) -> str
-    "/* subset " .. meta.name .. " mask=" .. tostring(meta.mask) .. " */\n"
+    "/* subset " .. meta.name .. " mask=" .. to(str)(meta.mask) .. " */\n"
 end)
 
 FRAGS = @comp.match("HasXY|Ordered", fun(c)
@@ -23,5 +23,5 @@ HAS_SUBSET = @comp.str.contains(FRAGS, "subset Vec2")
 
 ok = (LINES >= 7 and HAS_SUBSET)
 print("=== match → derive.power cascade ===")
-print("fragment_lines = " .. tostring(LINES) .. "  (expect >= 7 from HasXY power-set)")
-print("RESULT derive_power_cascade_ok = " .. tostring(ok))
+print("fragment_lines = " .. to(str)(LINES) .. "  (expect >= 7 from HasXY power-set)")
+print("RESULT derive_power_cascade_ok = " .. to(str)(ok))

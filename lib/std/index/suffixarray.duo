@@ -1,11 +1,9 @@
 -- std.index.suffixarray — suffix array for substring search (mirrors Go's index/suffixarray)
 -- Builds a suffix array (sorted list of all suffixes) for efficient substring search.
 
-string = req "std.string"
-
 build(data: str): any
     if data == nil return {data = "", sa = {}} end
-    n = string.len(data)
+    n = std.string.len(data)
     sa = {}
     for i = 1, n
         sa[i] = i
@@ -14,8 +12,8 @@ build(data: str): any
     for i = 1, n
         j = i
         while j > 1
-            a = string.sub(data, sa[j - 1])
-            b = string.sub(data, sa[j])
+            a = std.string.sub(data, sa[j - 1])
+            b = std.string.sub(data, sa[j])
             if a <= b break end
             sa[j - 1], sa[j] = sa[j], sa[j - 1]
             j -= 1
@@ -27,8 +25,8 @@ end
 lookup(sa_obj: any, pattern: str): any
     data = sa_obj.data
     sa = sa_obj.sa
-    n = string.len(data)
-    plen = string.len(pattern)
+    n = std.string.len(data)
+    plen = std.string.len(pattern)
     if plen == 0 or n == 0 return {} end
     results = {}
     -- Binary search for first occurrence
@@ -36,12 +34,12 @@ lookup(sa_obj: any, pattern: str): any
     hi = n
     while lo <= hi
         mid = math.floor((lo + hi) / 2)
-        suffix = string.sub(data, sa[mid])
+        suffix = std.string.sub(data, sa[mid])
         cmp = 0
-        if string.len(suffix) < plen
+        if std.string.len(suffix) < plen
             if suffix < pattern cmp = -1 else cmp = 1 end
         else
-            prefix = string.sub(suffix, 1, plen)
+            prefix = std.string.sub(suffix, 1, plen)
             if prefix < pattern cmp = -1 elseif prefix > pattern cmp = 1 end
         end
         if cmp < 0
@@ -54,12 +52,12 @@ lookup(sa_obj: any, pattern: str): any
     hi = n
     while lo <= hi
         mid = math.floor((lo + hi) / 2)
-        suffix = string.sub(data, sa[mid])
+        suffix = std.string.sub(data, sa[mid])
         cmp = 0
-        if string.len(suffix) < plen
+        if std.string.len(suffix) < plen
             if suffix > pattern cmp = 1 else cmp = -1 end
         else
-            prefix = string.sub(suffix, 1, plen)
+            prefix = std.string.sub(suffix, 1, plen)
             if prefix > pattern cmp = 1 elseif prefix < pattern cmp = -1 end
         end
         if cmp <= 0
@@ -83,9 +81,3 @@ contains(sa_obj: any, pattern: str): bool
     rawlen(lookup(sa_obj, pattern)) > 0
 end
 
-M = {}
-M.build = build
-M.lookup = lookup
-M.find_all = find_all
-M.contains = contains
-M

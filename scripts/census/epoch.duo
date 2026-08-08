@@ -84,7 +84,7 @@ main(): i64
     record("E2-8 consume binding pack", "fetch(n: i64): i64\n    n\nend\nmain(): void\n    if v = fetch(5)\n        print(v)\n    end\nend\n", "5")
 
     -- §0.6 / §1 SIGILS. Leading `:` is the sibling call inside a method; the
-    -- descriptor body is where it lives, so this row is downstream of GAP-025.
+    -- descriptor body is where it lives, so this row is downstream of GAP-035.
     record("E2-9 :sibling() in method", "lexer: {\n    pos: u32\n    peek = () .pos\n    next = () :peek()\n}\nmain(): void\n    print(\"declared\")\nend\n", "declared")
 
     -- §3 the CLOSED parenless inventory: f "str" and f{…} only.

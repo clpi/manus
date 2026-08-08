@@ -49,12 +49,3 @@ stack(): str
     debug_mod.traceback()
 end
 
-M = {}
-M.num_cpu = num_cpu
-M.caller = caller
-M.gc = gc
-M.gomaxprocs = gomaxprocs
-M.version = version
-M.mem_stats = mem_stats
-M.stack = stack
-M

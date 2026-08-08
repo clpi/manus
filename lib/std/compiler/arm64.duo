@@ -1,0 +1,222 @@
+-- SH-11 — the ARM64 encoder, seed.
+--
+-- SH-11 is the direct native backend row. It has no Duo implementation; ward's
+-- JIT proves the approach works, but ward is a WASM runtime, not the compiler's
+-- backend, and its encoder is not reusable from here.
+--
+-- WHAT MAKES THIS CHECKABLE, and it is the strongest oracle available anywhere
+-- in this stack: the system assembler already knows every encoding. So the
+-- proof assembles the SAME instruction with `xcrun clang` and compares the four
+-- bytes it produces against the four bytes this encoder produces.
+--
+--     "add x0, x1, x2" -> clang -> object -> otool -> 0x8b020020
+--                      \
+--                       -> encode_add_reg(0, 1, 2) -> 0x8b020020
+--
+-- Nothing about that comparison can be fudged by me. A hand-written table of
+-- expected encodings is a transcription of the ARM manual by the same person
+-- who transcribed it into the encoder, and it agrees with the transcription
+-- error. The assembler does not.
+--
+-- Scope: the register-register integer forms the compiler emits first — add,
+-- sub, mul, and/orr/eor, mov, and ret. Loads, stores, branches and immediates
+-- follow the same shape and the same proof; the instrument is the deliverable.
+
+-- ARM64 is little-endian and fixed-width: every instruction is exactly 4 bytes.
+-- The encoder returns the 32-bit word; byte order is the caller's concern, and
+-- the proof handles it explicitly rather than burying it here.
+
+-- Data-processing (register): sf=1 for the 64-bit forms.
+--   ADD Xd, Xn, Xm  =  0x8B000000 | Rm<<16 | Rn<<5 | Rd
+encode_add_reg = (d: i64, n: i64, m: i64): i64
+    0x8B000000 | (m << 16) | (n << 5) | d
+end
+
+--   SUB Xd, Xn, Xm  =  0xCB000000 | ...
+encode_sub_reg = (d: i64, n: i64, m: i64): i64
+    0xCB000000 | (m << 16) | (n << 5) | d
+end
+
+--   MUL Xd, Xn, Xm is MADD Xd, Xn, Xm, XZR — Ra=31 in bits 10..14
+encode_mul_reg = (d: i64, n: i64, m: i64): i64
+    0x9B000000 | (m << 16) | (31 << 10) | (n << 5) | d
+end
+
+--   AND Xd, Xn, Xm
+encode_and_reg = (d: i64, n: i64, m: i64): i64
+    0x8A000000 | (m << 16) | (n << 5) | d
+end
+
+--   ORR Xd, Xn, Xm
+encode_orr_reg = (d: i64, n: i64, m: i64): i64
+    0xAA000000 | (m << 16) | (n << 5) | d
+end
+
+--   EOR Xd, Xn, Xm
+encode_eor_reg = (d: i64, n: i64, m: i64): i64
+    0xCA000000 | (m << 16) | (n << 5) | d
+end
+
+-- MOV Xd, Xm is ORR Xd, XZR, Xm — the alias the assembler prints back as `mov`
+encode_mov_reg = (d: i64, m: i64): i64
+    encode_orr_reg(d, 31, m)
+end
+
+--   MOVZ Xd, #imm16 (no shift)
+encode_movz = (d: i64, imm: i64): i64
+    0xD2800000 | ((imm & 0xFFFF) << 5) | d
+end
+
+--   RET (Xn defaults to X30)
+encode_ret = (): i64
+    0xD65F0000 | (30 << 5)
+end
+
+-- The instruction word as 8 lowercase hex digits, most significant first —
+-- the form `otool -t` prints. The proof compares like with like rather than
+-- reformatting one side into the other, because a formatting mismatch that
+-- happens to cancel is exactly the kind of agreement that proves nothing.
+word_to_hex = (w: i64): str
+    digits = "0123456789abcdef"
+    out = ""
+    i: i64 = 7
+    while i >= 0
+        d: i64 = (w >> (i * 4)) & 0xF
+        out = out .. string.sub(digits, d + 1, d + 1)
+        i -= 1
+    end
+    out
+end
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Expression codegen: a whole function, not one instruction.
+--
+-- Single-instruction encoding is only half a backend. This lowers a closed
+-- integer expression to a complete ARM64 function body using a register stack
+-- (x9..x15, all caller-saved), so the proof can ASSEMBLE, LINK AND RUN it and
+-- compare the result to SH-08's folder — the same differential as SH-10, on the
+-- other backend.
+--
+-- Emitting assembly text rather than object bytes is deliberate at this stage:
+-- the system assembler is a better oracle than a hand-rolled Mach-O writer is a
+-- deliverable, and SH-12 (object writers) is where the byte layout belongs. The
+-- encodings above are what a direct emitter would use; this proves the SHAPE of
+-- the lowering is right before the container work starts.
+
+global _asm: str = ""
+global _reg: i64 = 9
+global _src2: str = ""
+global _p2: i64 = 1
+global _bad2: bool = false
+
+_emit = (line: str): void
+    _asm = _asm .. "    " .. line .. "\n"
+end
+
+_at2 = (): i64
+    if _p2 > #_src2
+        return 0
+    end
+    string.byte(_src2, _p2)
+end
+
+_ws2 = (): void
+    while _p2 <= #_src2 and (_at2() == 32 or _at2() == 9)
+        _p2 += 1
+    end
+end
+
+_eat2 = (a: i64): bool
+    _ws2()
+    if _at2() != a
+        return false
+    end
+    _p2 += 1
+    true
+end
+
+-- Each level leaves its result in a freshly allocated register and returns it.
+_g_prim = (): i64
+    _ws2()
+    if _eat2(40)
+        r: i64 = _g_expr()
+        if not _eat2(41)
+            _bad2 = true
+        end
+        return r
+    end
+    if _eat2(45)
+        r2: i64 = _g_prim()
+        _emit("neg x" .. to(str)(r2) .. ", x" .. to(str)(r2))
+        return r2
+    end
+    v: i64 = 0
+    if not (_at2() >= 48 and _at2() <= 57)
+        _bad2 = true
+        return _reg
+    end
+    while _p2 <= #_src2 and _at2() >= 48 and _at2() <= 57
+        v = v * 10 + (_at2() - 48)
+        _p2 += 1
+    end
+    d: i64 = _reg
+    _reg += 1
+    if _reg > 15
+        _bad2 = true
+    end
+    _emit("mov x" .. to(str)(d) .. ", #" .. to(str)(v))
+    d
+end
+
+_g_term = (): i64
+    left: i64 = _g_prim()
+    while true
+        _ws2()
+        if _eat2(42)
+            r: i64 = _g_prim()
+            _emit("mul x" .. to(str)(left) .. ", x" .. to(str)(left) .. ", x" .. to(str)(r))
+            _reg -= 1
+        elseif _eat2(47)
+            r2: i64 = _g_prim()
+            _emit("sdiv x" .. to(str)(left) .. ", x" .. to(str)(left) .. ", x" .. to(str)(r2))
+            _reg -= 1
+        else
+            return left
+        end
+    end
+end
+
+_g_expr = (): i64
+    left: i64 = _g_term()
+    while true
+        _ws2()
+        if _eat2(43)
+            r: i64 = _g_term()
+            _emit("add x" .. to(str)(left) .. ", x" .. to(str)(left) .. ", x" .. to(str)(r))
+            _reg -= 1
+        elseif _eat2(45)
+            r2: i64 = _g_term()
+            _emit("sub x" .. to(str)(left) .. ", x" .. to(str)(left) .. ", x" .. to(str)(r2))
+            _reg -= 1
+        else
+            return left
+        end
+    end
+end
+
+-- A complete assembly unit exporting `_duo_eval`, returning the expression's
+-- value in x0 per the ARM64 C ABI.
+asm_for = (expr: str): str
+    _asm = ""
+    _reg = 9
+    _src2 = expr
+    _p2 = 1
+    _bad2 = false
+    r: i64 = _g_expr()
+    _ws2()
+    if _bad2 or _p2 <= #_src2
+        return ""
+    end
+    body = _asm .. "    mov x0, x" .. to(str)(r) .. "\n    ret\n"
+    ".text\n.global _duo_eval\n.align 2\n_duo_eval:\n" .. body
+end

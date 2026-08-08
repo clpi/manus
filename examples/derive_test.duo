@@ -2,15 +2,15 @@
 -- Tests auto-generated metamethods from @derive attributes
 
 @derive(Display, Eq, Add, Sub, Neg, Len, Default)
-type Vec2 = { x: f64, y: f64 }
+Vec2: { x: f64, y: f64 }
 
 -- Construct instances
 a = { x = 3.0, y = 4.0 }
 b = { x = 1.0, y = 2.0 }
 
 -- Test basic field access
-print("a.x = " .. tostring(a.x))
-print("a.y = " .. tostring(a.y))
-print("b.x = " .. tostring(b.x))
+print("a.x = " .. to(str)(a.x))
+print("a.y = " .. to(str)(a.y))
+print("b.x = " .. to(str)(b.x))
 
 print("ALL DERIVE TESTS PASSED")

@@ -18,6 +18,6 @@ FIRST_BYTES: str = @embed("examples/cross_compiler_harness.duo")
 print("embedded starts with: " .. string.sub(FIRST_BYTES, 1, 2))
 
 len: i64 = @c.call("strlen", BUILD_ID)
-print("BUILD_ID length = " .. tostring(len))
+print("BUILD_ID length = " .. to(str)(len))
 
 print("=== done ===")

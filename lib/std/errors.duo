@@ -10,7 +10,7 @@ end
 
 -- newf: create a new error with formatted message.
 newf(fmt: any): any
-    return {message = tostring(fmt), cause = nil, kind = "error"}
+    return {message = to(str)(fmt), cause = nil, kind = "error"}
 end
 
 -- wrap: create a new error wrapping an existing one (adds context).
@@ -21,7 +21,7 @@ end
 
 -- wrapf: wrap with a formatted message.
 wrapf(err: any, fmt: any): any
-    msg = tostring(fmt)
+    msg = to(str)(fmt)
     if err == nil return new(msg) end
     return {message = msg, cause = err, kind = "wrapped"}
 end
@@ -71,7 +71,7 @@ join(...errs): any
         e = errs[i]
         if e != nil
             msg = e.message
-            if msg == nil msg = tostring(e) end
+            if msg == nil msg = to(str)(e) end
             parts[rawlen(parts) + 1] = msg
         end
         i += 1
@@ -85,22 +85,10 @@ to_str(err: any): str
     if err == nil return "" end
     if type(err) == "string" return err end
     msg = err.message
-    if msg == nil msg = tostring(err) end
-    if err.cause != nil
+    if msg == nil msg = to(str)(err) end
+    if has(.cause)(err)
         msg = msg .. " -> " .. to_str(err.cause)
     end
     msg
 end
 
-M = {}
-M.new = new
-M.newf = newf
-M.wrap = wrap
-M.wrapf = wrapf
-M.is = is
-M.as = as
-M.unwrap = unwrap
-M.message = message
-M.join = join
-M.to_str = to_str
-M

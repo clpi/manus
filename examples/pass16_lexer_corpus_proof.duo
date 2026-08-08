@@ -1,7 +1,7 @@
 -- Pass 16 MP-04 — M1 lexer corpus keyword kinds (classify projection; host lexer differential in gate).
 
-Classify = req "std.token.classify"
-Token = req "std.compiler.token"
+global Classify = std.token.classify
+global Token = std.compiler.token
 
 main(): i64
     if Classify.classify("fun") != Token.KIND_FUN return 1 end

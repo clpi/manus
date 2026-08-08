@@ -8,11 +8,11 @@
 -- provides flat wrapper functions.  This module binds those via @ffi.
 --
 -- API:
---   load(model_path)    -> session handle (opaque, use `any`)
---   run(session, inputs) -> outputs table  (inputs = {name = float_array})
---   close(session)     -> void
+--   load(model_path): session handle (opaque, use `any`)
+--   run(session, inputs): outputs table  (inputs = {name = float_array})
+--   close(session): void
 --   info(session)      -> {inputs = [...], outputs = [...]}
---   embedding(session, text) -> float array (convenience for sentence-transformers)
+--   embedding(session, text): float array (convenience for sentence-transformers)
 --
 -- Build:
 --   duo compile myapp.duo --link onnxruntime
@@ -27,43 +27,43 @@
 -- The `any` type maps to opaque C pointers (void*, OrtEnv*, OrtSession*, etc.)
 -- ===========================================================================
 
--- duo_onnx_init(const char* model_path) -> void* (session handle)
+-- duo_onnx_init(const char* model_path): void* (session handle)
 @ffi("duo_onnx_init")
 duo_onnx_init(model_path: str): any
 
 -- duo_onnx_run(void* session, const char* input_name,
 --              const float* input_data, size_t input_len,
 --              const char* output_name,
---              float* output_data, size_t* output_len) -> int
+--              float* output_data, size_t* output_len): int
 @ffi("duo_onnx_run")
 duo_onnx_run(session: any, input_name: str, input_data: any, input_len: int,
                  output_name: str, output_data: any, output_len: any): int
 
--- duo_onnx_close(void* session) -> void
+-- duo_onnx_close(void* session): void
 @ffi("duo_onnx_close")
 duo_onnx_close(session: any): void
 
--- duo_onnx_input_count(void* session) -> int
+-- duo_onnx_input_count(void* session): int
 @ffi("duo_onnx_input_count")
 duo_onnx_input_count(session: any): int
 
--- duo_onnx_output_count(void* session) -> int
+-- duo_onnx_output_count(void* session): int
 @ffi("duo_onnx_output_count")
 duo_onnx_output_count(session: any): int
 
--- duo_onnx_input_name(void* session, int idx, char* buf, int buf_len) -> int
+-- duo_onnx_input_name(void* session, int idx, char* buf, int buf_len): int
 @ffi("duo_onnx_input_name")
 duo_onnx_input_name(session: any, idx: int, buf: str, buf_len: int): int
 
--- duo_onnx_output_name(void* session, int idx, char* buf, int buf_len) -> int
+-- duo_onnx_output_name(void* session, int idx, char* buf, int buf_len): int
 @ffi("duo_onnx_output_name")
 duo_onnx_output_name(session: any, idx: int, buf: str, buf_len: int): int
 
--- duo_onnx_input_shape(void* session, int idx, int64_t* dims, int max_dims) -> int
+-- duo_onnx_input_shape(void* session, int idx, int64_t* dims, int max_dims): int
 @ffi("duo_onnx_input_shape")
 duo_onnx_input_shape(session: any, idx: int, dims: any, max_dims: int): int
 
--- duo_onnx_output_shape(void* session, int idx, int64_t* dims, int max_dims) -> int
+-- duo_onnx_output_shape(void* session, int idx, int64_t* dims, int max_dims): int
 @ffi("duo_onnx_output_shape")
 duo_onnx_output_shape(session: any, idx: int, dims: any, max_dims: int): int
 
@@ -117,6 +117,31 @@ read_shape(session: any, idx: int, is_input: bool): any
     shape
 end
 
+-- Append every leaf of a nested table into st.out, in order.
+--
+-- This was a NESTED BARE DECLARATION (`flatten(t: any): void ... end`) inside
+-- flatten_array. GR-001 bare declarations are file-scope only, so it never
+-- parsed and took the module down with "expected function arguments".
+--
+-- Hoisted with explicit state rather than made a lambda: it is RECURSIVE and it
+-- MUTATES two enclosing locals (`out`, `oi`). A lambda captures neither, and a
+-- named function cannot call itself from a local binding either.
+onnx_flatten_into(st: any, t: any): void
+    n = rawlen(t)
+    if n == 0 return end
+    i = 1
+    while i <= n
+        v = t[i]
+        if type(v) == "table"
+            onnx_flatten_into(st, v)
+        else
+            st.out[st.oi] = v
+            st.oi += 1
+        end
+        i += 1
+    end
+end
+
 -- flatten_array: convert a nested duo table into a flat float array.
 -- e.g. {{1.0, 2.0}, {3.0, 4.0}} -> {1.0, 2.0, 3.0, 4.0}
 flatten_array(data: any): any
@@ -126,30 +151,12 @@ flatten_array(data: any): any
     if type(data) != "table"
         return {}
     end
-    out = {}
-    oi = 1
-
-    flatten(t: any): void
-        n = rawlen(t)
-        if n == 0 return end
-        i = 1
-        while i <= n
-            v = t[i]
-            if type(v) == "table"
-                flatten(v)
-            else
-                out[oi] = v
-                oi += 1
-            end
-            i += 1
-        end
-    end
-
-    flatten(data)
+    st = { out = {}, oi = 1 }
+    onnx_flatten_into(st, data)
 
     -- Compute total element count
-    count = rawlen(out)
-    return {data = out, len = count}
+    count = rawlen(st.out)
+    return {data = st.out, len = count}
 end
 
 -- ===========================================================================
@@ -172,7 +179,7 @@ close(session: any): void
     if type(session) == "table"
         if session.closed return end
         session.closed = true
-        if session.handle != nil
+        if has(.handle)(session)
             duo_onnx_close(session.handle)
         end
     else
@@ -342,10 +349,3 @@ end
 -- Module export
 -- ===========================================================================
 
-M = {}
-M.load = load
-M.run = run
-M.close = close
-M.info = info
-M.embedding = embedding
-M

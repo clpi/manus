@@ -229,7 +229,3 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
-M.compress = compress
-M.decompress = decompress
-M

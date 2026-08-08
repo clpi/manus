@@ -14,9 +14,9 @@ concept HasId
     id: i64
 end
 
-type Point = { x: f64, y: f64, tag: str, id: i64 }
-type Pair = { x: f64, y: f64, tag: str, id: i64 }
-type Label = { tag: str, id: i64 }
+Point: { x: f64, y: f64, tag: str, id: i64 }
+Pair: { x: f64, y: f64, tag: str, id: i64 }
+Label: { tag: str, id: i64 }
 
 @comp.define.derive("TripleApi", generate(meta) -> str
     if meta.right != nil
@@ -36,7 +36,7 @@ end)
 -- One line: derive.all + quadratic product emit + cubic derive tensor emit
 @comp.transcend("HasXY", TripleApi, "HasTag", "HasId")
 
-triple_sig(a, b, c) -> str
+triple_sig(a, b, c): str
     a.name .. "x" .. b.name .. "x" .. c.name .. ";"
 end
 
@@ -44,7 +44,7 @@ TENSOR = @comp.tensor("HasXY", "HasTag", "HasId", triple_sig)
 COMBOS = @comp.catalog("combinators")
 
 print("=== meta transcend showcase ===")
-print("has_transcend = " .. tostring(@comp.str.contains(COMBOS, "meta.transcend")))
+print("has_transcend = " .. to(str)(@comp.str.contains(COMBOS, "meta.transcend")))
 print("tensor = " .. TENSOR)
 print("Point ok = true")
 print("ok")

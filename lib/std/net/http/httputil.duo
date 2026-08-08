@@ -5,7 +5,7 @@ dump_request(req: any): str
     if req == nil return "" end
     out = {req.method or "GET", " ", req.path or "/", " HTTP/1.1\r\n"}
     if req.headers
-        for k, v in pairs(req.headers)
+        for k, v in req.headers
             out[rawlen(out) + 1] = k .. ": " .. v .. "\r\n"
         end
     end
@@ -16,9 +16,9 @@ end
 
 dump_response(resp: any): str
     if resp == nil return "" end
-    out = {"HTTP/1.1 ", tostring(resp.status or 200), " OK\r\n"}
+    out = {"HTTP/1.1 ", to(str)(resp.status or 200), " OK\r\n"}
     if resp.headers
-        for k, v in pairs(resp.headers)
+        for k, v in resp.headers
             out[rawlen(out) + 1] = k .. ": " .. v .. "\r\n"
         end
     end
@@ -31,8 +31,3 @@ reverse_proxy(target: str): any
     {target = target}
 end
 
-M = {}
-M.dump_request = dump_request
-M.dump_response = dump_response
-M.reverse_proxy = reverse_proxy
-M

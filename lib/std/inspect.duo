@@ -21,19 +21,27 @@ end
 std_inspect_hash(value: any): str
     if value == nil return "nil" end
     t = type(value)
-    if t != "table" return t .. ":" .. tostring(value) end
+    if t != "table" return t .. ":" .. to(str)(value) end
     parts = {}
     ks = {}
     for k, v in value
-        ks[rawlen(ks) + 1] = tostring(k)
+        ks[rawlen(ks) + 1] = to(str)(k)
     end
     std_inspect_sort_strings(ks)
     i = 1
+    -- `key`/`val`, not `k`/`v`: those two names are the LOOP VARIABLES of the
+    -- `for k, v in value` above, and reusing them here emits an assignment with
+    -- no declaration ("use of undeclared identifier 'k'"). A for-loop variable
+    -- is not re-introducible in the enclosing scope after the loop ends.
     while i <= rawlen(ks)
-        k = ks[i]
-        v = value[tonumber(k)]
-        if v == nil v = value[k] end
-        parts[rawlen(parts) + 1] .. k .. "=" .. std_inspect_hash(v)
+        key = ks[i]
+        val = value[tonumber(key)]
+        if val == nil val = value[key] end
+        -- `=` not `..`: this line was a concat EXPRESSION with no assignment,
+        -- so `parts` never grew and std_inspect_hash returned "{}" for every
+        -- input. It compiled, and it produced a plausible-looking empty table
+        -- rather than an error.
+        parts[rawlen(parts) + 1] = key .. "=" .. std_inspect_hash(val)
         i += 1
     end
     "{" .. table.concat(parts, ",") .. "}"
@@ -49,7 +57,7 @@ std_inspect_to_str(value: any, indent: any, seen: any): str
         return '"' .. value .. '"'
     end
     if t == "number"
-        return tostring(value)
+        return to(str)(value)
     end
     if t == "boolean"
         if value return "true" end
@@ -59,9 +67,9 @@ std_inspect_to_str(value: any, indent: any, seen: any): str
         return "<function>"
     end
     if t != "table"
-        return tostring(value)
+        return to(str)(value)
     end
-    ptr = tostring(value)
+    ptr = to(str)(value)
     if seen[ptr] != nil return "<circular>" end
     seen[ptr] = true
     n = rawlen(value)
@@ -88,7 +96,7 @@ std_inspect_to_str(value: any, indent: any, seen: any): str
     i = 1
     while i <= rawlen(pairs_list)
         pair = pairs_list[i]
-        key_str = tostring(pair.k)
+        key_str = to(str)(pair.k)
         if type(pair.k) == "string"
             key_str = pair.k
         end
@@ -127,7 +135,7 @@ std_inspect_diff(a: any, b: any, prefix: any, diffs: any): void
     end
     for k, v in a
         path = k
-        if prefix != "" path = prefix .. "." .. tostring(k) end
+        if prefix != "" path = prefix .. "." .. to(str)(k) end
         if b[k] == nil
             diffs[rawlen(diffs) + 1] = {path = path, kind = "removed", old = v}
         else
@@ -137,7 +145,7 @@ std_inspect_diff(a: any, b: any, prefix: any, diffs: any): void
     for k, v in b
         if a[k] == nil
             path = k
-            if prefix != "" path = prefix .. "." .. tostring(k) end
+            if prefix != "" path = prefix .. "." .. to(str)(k) end
             diffs[rawlen(diffs) + 1] = {path = path, kind = "added", new = v}
         end
     end
@@ -205,16 +213,16 @@ diff_summary(a: any, b: any): str
         d = diffs[i]
         line = d.kind .. " " .. d.path
         if d.kind == "changed"
-            line = line .. ": " .. tostring(d.old) .. " -> " .. tostring(d.new)
+            line = line .. ": " .. to(str)(d.old) .. " -> " .. to(str)(d.new)
         elseif d.kind == "added"
-            line = line .. ": " .. tostring(d.new)
+            line = line .. ": " .. to(str)(d.new)
         elseif d.kind == "removed"
-            line = line .. ": " .. tostring(d.old)
+            line = line .. ": " .. to(str)(d.old)
         end
         parts[rawlen(parts) + 1] = line
         i += 1
     end
-    tostring(rawlen(diffs)) .. " difference(s):\n" .. table.concat(parts, "\n")
+    to(str)(rawlen(diffs)) .. " difference(s):\n" .. table.concat(parts, "\n")
 end
 
 -- type_name: get a descriptive type name for a value.
@@ -223,12 +231,12 @@ type_name(value: any): str
     t = type(value)
     if t == "table"
         n = rawlen(value)
-        if n > 0 return "array[" .. tostring(n) .. "]" end
+        if n > 0 return "array[" .. to(str)(n) .. "]" end
         count = 0
         for _ck, _cv in value
             count += 1
         end
-        if count > 0 return "table[" .. tostring(count) .. "]" end
+        if count > 0 return "table[" .. to(str)(count) .. "]" end
         return "table"
     end
     return t
@@ -256,7 +264,7 @@ keys_of(t: any): any
     out = {}
     if t == nil or type(t) != "table" return out end
     for kk, _kv in t
-        out[rawlen(out) + 1] = tostring(kk)
+        out[rawlen(out) + 1] = to(str)(kk)
     end
     std_inspect_sort_strings(out)
     out
@@ -266,22 +274,22 @@ end
 summary(value: any): str
     if value == nil return "nil" end
     t = type(value)
-    if t != "table" return t .. ": " .. tostring(value) end
+    if t != "table" return t .. ": " .. to(str)(value) end
     n = rawlen(value)
     if n > 0
-        return "array(" .. tostring(n) .. " elements)"
+        return "array(" .. to(str)(n) .. " elements)"
     end
     count = 0
     first_key = nil
     for k, v in value
         count += 1
-        if first_key == nil first_key = tostring(k) end
+        if first_key == nil first_key = to(str)(k) end
     end
     if count == 0 return "empty table" end
     if count <= 3
-        return "table(" .. tostring(count) .. " keys: " .. first_key .. " ...)"
+        return "table(" .. to(str)(count) .. " keys: " .. first_key .. " ...)"
     end
-    return "table(" .. tostring(count) .. " keys)"
+    return "table(" .. to(str)(count) .. " keys)"
 end
 
 -- caller_info: return info about the calling function.
@@ -314,7 +322,6 @@ stack_trace(level: any, max_depth: any, pretty: any): str
             color_ok = true
         end
     end
-    C_RESET, C_DIM, C_CYAN, C_MAGENTA, C_YELLOW, C_UNDER, C_ITALIC
     if color_ok
         C_RESET  = "\x1b[0m"
         C_DIM    = "\x1b[2m"
@@ -339,14 +346,14 @@ stack_trace(level: any, max_depth: any, pretty: any): str
                     C_MAGENTA .. C_ITALIC .. fname .. "()" .. C_RESET
             loc = src
             if info.currentline and info.currentline > 0
-                loc = src .. C_DIM .. ":" .. C_RESET .. C_YELLOW .. tostring(info.currentline) .. C_RESET
+                loc = src .. C_DIM .. ":" .. C_RESET .. C_YELLOW .. to(str)(info.currentline) .. C_RESET
             end
             frame = frame .. "  " .. C_DIM .. "⟨" .. C_RESET ..
                     C_UNDER .. loc .. C_RESET .. C_DIM .. "⟩" .. C_RESET
         else
             frame = fname .. "()"
             if info.currentline and info.currentline > 0
-                frame = frame .. " [" .. src .. ":" .. tostring(info.currentline) .. "]"
+                frame = frame .. " [" .. src .. ":" .. to(str)(info.currentline) .. "]"
             else
                 frame = frame .. " [" .. src .. "]"
             end
@@ -357,16 +364,3 @@ stack_trace(level: any, max_depth: any, pretty: any): str
     table.concat(lines, "\n")
 end
 
-M = {}
-M.to_str = to_str
-M.deep_equal = deep_equal
-M.deep_hash = deep_hash
-M.diff = diff
-M.diff_summary = diff_summary
-M.type_name = type_name
-M.size = size
-M.keys_of = keys_of
-M.summary = summary
-M.caller_info = caller_info
-M.stack_trace = stack_trace
-M

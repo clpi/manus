@@ -16,7 +16,7 @@ pid(): str
         end
     end
     -- Fallback: use Lua's os.execute to capture $$
-    handle = io.popen("echo $$")
+    handle = io.popen("echo $$", "r")
     if handle
         result = io.read(handle, "*l")
         io.close(handle)
@@ -26,7 +26,7 @@ pid(): str
 end
 
 spawn(cmd: str): i64
-    handle = io.popen(cmd .. " 2>&1 & echo $!")
+    handle = io.popen(cmd .. " 2>&1 & echo $!", "r")
     if handle
         pid_str = io.read(handle, "*l")
         io.close(handle)
@@ -38,17 +38,11 @@ spawn(cmd: str): i64
 end
 
 kill(pid: str): void
-    os.execute("kill " .. tostring(pid) .. " 2>/dev/null")
+    os.execute("kill " .. to(str)(pid) .. " 2>/dev/null")
 end
 
-mproc_wait(pid: str): void
+wait(pid: str): void
     -- Use waitpid via os.execute for the given PID
-    os.execute("wait " .. tostring(pid) .. " 2>/dev/null")
+    os.execute("wait " .. to(str)(pid) .. " 2>/dev/null")
 end
 
-M = {}
-M.pid = pid
-M.spawn = spawn
-M.kill = kill
-M.wait = mproc_wait
-M

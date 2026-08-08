@@ -55,14 +55,3 @@ to_gray(c: any): any
     gray(0)
 end
 
-M = {}
-M.rgba = rgba
-M.nrgba = nrgba
-M.gray = gray
-M.model_rgba = model_rgba
-M.model_nrgba = model_nrgba
-M.model_gray = model_gray
-M.to_rgba = to_rgba
-M.to_nrgba = to_nrgba
-M.to_gray = to_gray
-M

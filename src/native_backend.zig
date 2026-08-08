@@ -609,6 +609,21 @@ fn findModuleFunction(mod: *const ast.Module, name: []const u8) ?*const ast.Func
 /// functions export uniformly. Prefer an explicit `@export` zero-arg i64/void/f64 entry,
 /// else a sole eligible zero-arg function, else a function literally named `main`.
 /// When `override` is set (`--entry`), it must name an eligible zero-arg function.
+/// Does the module have a file-scope BODY — statements that do something, as
+/// opposed to declarations that merely bind?
+///
+/// This is the difference between a script and a library-shaped module, and it
+/// decides whether the sole-zero-arg-function entry heuristic below is safe.
+/// Bindings (`local`/`const`/`global`/`func`) and pure type/interface
+/// declarations are not a program; calls, control flow and assignments are.
+fn moduleHasFileScopeProgram(mod: *const ast.Module) bool {
+    for (mod.body.stmts) |*stmt| switch (stmt.*) {
+        .call_stmt, .expr_stmt, .assign, .do_block, .while_loop, .repeat_loop, .if_stmt, .num_for, .gen_for, .ret, .match_stmt, .try_stmt, .defer_stmt => return true,
+        else => {},
+    };
+    return false;
+}
+
 pub fn pickNativeEntrySymbol(mod: *const ast.Module) ?[]const u8 {
     var sole: ?[]const u8 = null;
     var sole_count: usize = 0;
@@ -625,7 +640,32 @@ pub fn pickNativeEntrySymbol(mod: *const ast.Module) ?[]const u8 {
         sole_count += 1;
     }
     if (named_main) |m| return m;
-    if (sole_count == 1) return sole;
+    // The sole-zero-arg-function rule is an INFERENCE, not a declaration, and
+    // it is only sound when there is no file-scope body to lose. A script like
+    //
+    //     w = (): i64
+    //         42
+    //     end
+    //     print("before")
+    //     print(w())
+    //
+    // has exactly one zero-arg i64 function, so this used to promote `w` to the
+    // process entry — which silently DISCARDED both prints and made the
+    // program's exit status 42. No diagnostic, and the C backend printed the
+    // right thing, so the two backends disagreed on what the program even was.
+    // The native-differential harness compares exit status only, so it did not
+    // catch this either.
+    //
+    // That is what `examples/native_abi_smoke.duo` was failing on: its
+    // `use_native()` was the sole zero-arg i64 function, so the smoke test
+    // exited 30 (the sum, as a status) having never run its own assertion. The
+    // @native ABI it exists to test was working the whole time.
+    //
+    // `main`, `@export` and `--entry` are DELIBERATE and still win above; only
+    // the inference is refused here, which falls back to the C emit bootstrap
+    // under `--backend=auto` and to an honest "no linker entry" under
+    // `--backend=direct`.
+    if (sole_count == 1 and !moduleHasFileScopeProgram(mod)) return sole;
     return null;
 }
 
@@ -1495,6 +1535,64 @@ const Arm64Compiler = struct {
                 self.releaseReg(one);
                 if (!Arm64Compiler.regIsPinned(pinned, base)) self.releaseReg(base);
                 if (ins.result) |t| try temps.put(self.alloc, t, len);
+            },
+            .print_value => {
+                // Native observable output — the construct that used to force
+                // the C-emit bootstrap fallback. `print` lowers to libc
+                // puts/printf (Mach-O `_puts`/`_printf` externs), so a program
+                // whose only dynamic surface is output stays sovereign machine
+                // code. `.ty` selects the call shape:
+                //   .str  → puts(v)                 (puts appends \n, Lua print shape)
+                //   .i64  → printf("%lld\n", v)
+                //   .f64  → printf("%f\n", v)
+                //   else  → printf("\n")            (zero-arg print → blank line;
+                //           puts would append its own \n and print two lines)
+                // ABI (Apple arm64 variadic convention): printf's variadic
+                // arguments are passed ON THE STACK at the caller's sp, not in
+                // x1/d0 (verified against xcrun clang -S output and raw asm:
+                // passing in x1 prints garbage, storing at [sp,#0] prints
+                // correctly). So the arg is parked in x2 (volatile — survives
+                // the save) and stored at [sp,#0] after reserving the vararg
+                // slot. w8 is NOT needed (Apple's printf ignores the AAPCS
+                // FP-count register for the stack convention).
+                var fmt_sym: u32 = 0;
+                switch (ins.ty) {
+                    .str => {
+                        const reg = try self.evalDnirValue(temps, ins.lhs);
+                        if (reg != 0) try self.emitMovReg(0, reg);
+                        self.releaseDnirTemp(pinned, ins.lhs, reg);
+                        fmt_sym = 0;
+                    },
+                    .i64 => {
+                        const reg = try self.evalDnirValue(temps, ins.lhs);
+                        if (reg != 2) try self.emitMovReg(2, reg);
+                        self.releaseDnirTemp(pinned, ins.lhs, reg);
+                        fmt_sym = try self.internString("%lld\n");
+                    },
+                    .f64 => switch (ins.lhs) {
+                        // Literal: materialize the bit pattern directly into
+                        // x2 (same trick compileExprFp uses) — no FP reg.
+                        .f64 => |n| try self.emitMovImm(2, @bitCast(n)),
+                        else => {
+                            const d = try self.evalDnirValueFp(temps, ins.lhs);
+                            try self.emitFmovToGpr(2, d);
+                        },
+                    },
+                    else => fmt_sym = try self.internString("\n"),
+                }
+                if (ins.ty == .f64) fmt_sym = try self.internString("%f\n");
+                if (fmt_sym != 0) try self.emitAdrpAdd(0, fmt_sym);
+                const save = try self.emitSaveCallerRegs();
+                if (ins.ty == .i64 or ins.ty == .f64) {
+                    // Reserve a 16-byte slot so sp stays 16-byte aligned at the
+                    // call; the vararg goes at [sp,#0], [sp,#8] is padding.
+                    try self.emitSubSp(16);
+                    try self.emitStrSp(2, 0);
+                }
+                try self.ensureExternalSymbol(if (ins.ty == .str) "puts" else "printf");
+                try self.emitBl(if (ins.ty == .str) "puts" else "printf");
+                if (ins.ty == .i64 or ins.ty == .f64) try self.emitAddSp(16);
+                try self.emitRestoreCallerRegs(save);
             },
             .alloc_slots => {
                 const t = ins.result orelse return error.UnsupportedProgram;
@@ -3877,6 +3975,56 @@ test "native backend: pickNativeEntrySymbol prefers export then sole zero-arg" {
     try std.testing.expectEqualStrings("run", pickNativeEntrySymbol(&mod5).?);
 }
 
+// The sole-zero-arg-function rule is an inference. When the module has a
+// file-scope BODY, that body is the program, and promoting a helper to the
+// process entry silently deletes it — `print("before"); print(w())` produced no
+// output at all and exited 42. This is the regression test for that: same sole
+// function, with and without a body.
+test "native backend: sole-zero-arg entry is refused when a file-scope body exists" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // No file-scope body: the inference is sound, and still applies.
+    var lex_lib = Lexer.init(
+        \\w(): i64
+        \\    42
+        \\end
+    , "libshaped.duo");
+    var parser_lib = Parser.init(&lex_lib, alloc);
+    parser_lib.duo_mode = true;
+    const mod_lib = try parser_lib.parse_module();
+    try std.testing.expectEqualStrings("w", pickNativeEntrySymbol(&mod_lib).?);
+
+    // Same sole function, but the file-scope statements ARE the program.
+    var lex_script = Lexer.init(
+        \\w(): i64
+        \\    42
+        \\end
+        \\print("before")
+        \\print(w())
+    , "script.duo");
+    var parser_script = Parser.init(&lex_script, alloc);
+    parser_script.duo_mode = true;
+    const mod_script = try parser_script.parse_module();
+    try std.testing.expect(pickNativeEntrySymbol(&mod_script) == null);
+
+    // A DECLARED entry still wins over the body — `main` is deliberate.
+    var lex_main = Lexer.init(
+        \\main(): i64
+        \\    0
+        \\end
+        \\print("side effect")
+    , "declared_main.duo");
+    var parser_main = Parser.init(&lex_main, alloc);
+    parser_main.duo_mode = true;
+    const mod_main = try parser_main.parse_module();
+    try std.testing.expectEqualStrings("main", pickNativeEntrySymbol(&mod_main).?);
+
+    // As does an explicit --entry override.
+    try std.testing.expectEqualStrings("w", resolveNativeEntrySymbol(&mod_script, "w").?);
+}
+
 test "native backend: f64 process entry coerces d0 to x0 exit code" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
@@ -4549,7 +4697,7 @@ test "native backend assembly lists helper call labels" {
     try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tbl _add\n") != null);
 }
 
-test "native backend rejects unsupported dynamic body" {
+test "native backend lowers sovereign print (no DNB007 fallback)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -4566,11 +4714,11 @@ test "native backend rejects unsupported dynamic body" {
     defer sem.deinit();
     try sem.check_module(&mod);
 
-    // Still refused — but as DNB007, not DNB001. `print` is a boxed-runtime
-    // function with no native symbol, so "undefined symbol" names the actual
-    // obstruction; "program is outside the subset" pointed at the wrong phase
-    // and sent investigations hunting through the lowering rules instead.
-    try std.testing.expectError(error.UnknownSymbol, emitObject(alloc, &mod, "native-object"));
+    // `print` is sovereign native output now: the direct backend lowers it to
+    // Mach-O `_printf`/`_puts` externs instead of rejecting with DNB007
+    // ("undefined symbol"). Emitting the object proves the DNIR path fires.
+    const obj = try emitObject(alloc, &mod, "native-object");
+    try std.testing.expect(obj.len > 0);
 }
 
 test "native backend Pass 11 sealed record proof (integer main + f64 kernel)" {

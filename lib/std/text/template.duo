@@ -27,7 +27,7 @@ render(tmpl: str, data: any): str
             expr = string.gsub(string.sub(tmpl, i + 2, close - 1), "^%s+", "")
             expr = string.gsub(expr, "%s+$", "")
             result = eval_expr(expr, data)
-            out[rawlen(out) + 1] = tostring(result)
+            out[rawlen(out) + 1] = to(str)(result)
             i = close + 2
         else
             out[rawlen(out) + 1] = string.sub(tmpl, i, i)
@@ -149,7 +149,7 @@ render_blocks(tmpl: str, data: any, start: i64): str
                             k += 1
                         end
                         -- also iterate hash parts
-                        for hk, hv in pairs(collection)
+                        for hk, hv in collection
                             if type(hk) != "number"
                                 item = hv
                                 if type(hv) != "table"
@@ -201,7 +201,7 @@ render_blocks(tmpl: str, data: any, start: i64): str
                 if block_end == nil i = n + 1 end
             else
                 result = eval_expr(expr, data)
-                out[rawlen(out) + 1] = tostring(result)
+                out[rawlen(out) + 1] = to(str)(result)
                 i = close + 2
             end
         else

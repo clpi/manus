@@ -55,7 +55,7 @@ distance.measure = fun(self, unit: str): f64
     mag
 end
 distance.label = fun(self): str
-    "Distance(" .. tostring(self.x) .. ", " .. tostring(self.y) .. ")"
+    "Distance(" .. to(str)(self.x) .. ", " .. to(str)(self.y) .. ")"
 end
 
 -- ── Section 3: Meta Blocks (@ compile-time evaluation) ─────────────────────
@@ -70,7 +70,7 @@ IS_DEBUG = @(false)
 derive_clone(val)
     if type(val) != "table" return val end
     c = {}
-    for k, v in pairs(val) do c[k] = v end
+    for k, v in val do c[k] = v end
     c
 end
 
@@ -79,25 +79,25 @@ derive_display(val): str
     if type(val) == "boolean"
         if val return "true" else return "false" end
     end
-    if type(val) == "number" return tostring(val) end
+    if type(val) == "number" return to(str)(val) end
     if type(val) == "string" return val end
     if type(val) == "table"
         parts = {}
-        for k, v in pairs(val) do
+        for k, v in val do
             if type(k) == "string"
                 parts[#parts + 1] = k .. ": " .. derive_display(v)
             end
         end
         return "{" .. table.concat(parts, ", ") .. "}"
     end
-    tostring(val)
+    to(str)(val)
 end
 
 -- ── Section 5: Memory Allocators ───────────────────────────────────────────
 
 demo_arena(): void
     arena = { _bufs = {}, _offset = 0, _capacity = 4096, _total = 0 }
-    print("Arena created, capacity: " .. tostring(arena._capacity))
+    print("Arena created, capacity: " .. to(str)(arena._capacity))
 end
 
 demo_pool(): void
@@ -118,16 +118,16 @@ end
 
 demo_reflection(val): void
     print("typeof: " .. type(val))
-    print("is_nil: " .. tostring(val == nil))
-    print("is_str: " .. tostring(type(val) == "string"))
-    print("is_number: " .. tostring(type(val) == "number"))
-    print("is_table: " .. tostring(type(val) == "table"))
-    print("is_func: " .. tostring(type(val) == "function"))
+    print("is_nil: " .. to(str)(val == nil))
+    print("is_str: " .. to(str)(type(val) == "string"))
+    print("is_number: " .. to(str)(type(val) == "number"))
+    print("is_table: " .. to(str)(type(val) == "table"))
+    print("is_func: " .. to(str)(type(val) == "function"))
 
     if type(val) == "table"
         count = 0
-        for _k, _v in pairs(val) do count += 1 end
-        print("Field count: " .. tostring(count))
+        for _k, _v in val do count += 1 end
+        print("Field count: " .. to(str)(count))
     end
 end
 
@@ -174,40 +174,40 @@ print("=== Duo Full Feature Demo ===")
 
 -- Functions
 print("\n-- Functions --")
-print("identity(42): " .. tostring(identity(42)))
+print("identity(42): " .. to(str)(identity(42)))
 print("identity('hello'): " .. identity("hello"))
 
 pair = make_pair(1, "one")
-print("pair: " .. tostring(pair.first) .. " => " .. pair.second)
+print("pair: " .. to(str)(pair.first) .. " => " .. pair.second)
 
 x, y = swap(10, 20)
-print("swap(10, 20): " .. tostring(x) .. ", " .. tostring(y))
+print("swap(10, 20): " .. to(str)(x) .. ", " .. to(str)(y))
 
 -- Early returns
 print("\n-- Early Returns --")
 print("classify(-5): " .. classify(-5))
 print("classify(0): " .. classify(0))
 print("classify(42): " .. classify(42))
-print("validate_input(nil): " .. tostring(validate_input(nil)))
-print("validate_input(501): " .. tostring(validate_input(501)))
-print("validate_input(50): " .. tostring(validate_input(50)))
+print("validate_input(nil): " .. to(str)(validate_input(nil)))
+print("validate_input(501): " .. to(str)(validate_input(501)))
+print("validate_input(50): " .. to(str)(validate_input(50)))
 
 -- Safe div with early return
-print("safe_div(10, 2): " .. tostring(safe_div(10, 2)))
-print("safe_div(10, 0): " .. tostring(safe_div(10, 0)))
+print("safe_div(10, 2): " .. to(str)(safe_div(10, 2)))
+print("safe_div(10, 0): " .. to(str)(safe_div(10, 0)))
 
 -- Meta blocks
 print("\n-- Meta Blocks --")
-print("MAX_ITEMS: " .. tostring(MAX_ITEMS))
-print("BUFFER_SIZE: " .. tostring(BUFFER_SIZE))
+print("MAX_ITEMS: " .. to(str)(MAX_ITEMS))
+print("BUFFER_SIZE: " .. to(str)(BUFFER_SIZE))
 print("APP_NAME: " .. APP_NAME)
-print("IS_DEBUG: " .. tostring(IS_DEBUG))
+print("IS_DEBUG: " .. to(str)(IS_DEBUG))
 
 -- Concepts
 print("\n-- Concepts --")
 print("Distance label: " .. distance:label())
-print("Distance measure (m): " .. tostring(distance:measure("m")))
-print("Distance measure (km): " .. tostring(distance:measure("km")))
+print("Distance measure (m): " .. to(str)(distance:measure("m")))
+print("Distance measure (km): " .. to(str)(distance:measure("km")))
 
 -- Derive
 print("\n-- Derive --")
@@ -231,7 +231,7 @@ demo_reflection({ a = 1, b = 2 })
 
 -- Return types
 print("\n-- Return Types --")
-print("typed_add(5, 3): " .. tostring(typed_add(5, 3)))
-print("untyped_add(5, 3): " .. tostring(untyped_add(5, 3)))
+print("typed_add(5, 3): " .. to(str)(typed_add(5, 3)))
+print("untyped_add(5, 3): " .. to(str)(untyped_add(5, 3)))
 
 print("\n=== All demos complete ===")

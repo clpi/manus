@@ -122,7 +122,7 @@ multiplier_for(goal: str): str
 end
 
 build_gates(): str
-    "tier0: ./scripts/public_safety_scan.sh && scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/agent_smoke.duo\n" ..
+    "tier0: ./zig-out/bin/duo run scripts/public_safety_scan.duo && scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/agent_smoke.duo\n" ..
     "tier1: scripts/duo_lock.sh -- zig build unit-test --summary all\n" ..
     "tier2: scripts/duo_lock.sh -- zig build test\n" ..
     "tier3: scripts/duo_lock.sh -- zig build bench  (claim benchmarks/perf; never parallel tier3)"
@@ -141,13 +141,13 @@ recipes(): str
     "N types one macro: @comp.derive.all(\"Concept\", MyDerive)\n" ..
     "N×M type pairs: @comp.derive.product(\"A\", \"B\", MyDerive)\n" ..
     "Max file emit: @comp.burst(\"A\", MyDerive, \"B\")\n" ..
-    "User macro: @comp.define.derive(\"Name\", fun generate(meta) -> str ... end)\n" ..
+    "User macro: @comp.define.derive(\"Name\", fun generate(meta): str ... end)\n" ..
     "Bundle traits: @comp.derive.bundle(\"Numeric\") on type\n" ..
     "Fixed-size subsets: @comp.choose(\"Concept\", 2, fn) — controlled O(n choose k) expansion\n" ..
     "Pipeline family: @comp.pipeline({ variants = \"name:ctype:init | ...\" })\n" ..
     "Compose combinators: @comp.each(@comp.power(\"C\", fn), fn2) — chains two exponential stages\n" ..
     "Constraint cartesian: @comp.generate({ ops/types/template block }) — O(ops×types)\n" ..
-    "Declarative scheme: @comp.scheme(\"type T {...} | fn f(...) -> T\", template)\n" ..
+    "Declarative scheme: @comp.scheme(\"type T {...} | fn f(...): T\", template)\n" ..
     "Generate→each: @comp.each(@comp.generate(spec, body), fn) — re-expand each cartesian fragment\n" ..
     "Scheme→each: @comp.each(@comp.scheme(decls, tmpl), fn) — declarative units → fragments\n" ..
     "Full stack: examples/meta_generative_stack_showcase.duo — template/generate/scheme → each\n" ..
@@ -160,6 +160,7 @@ end
 smoke_targets(): any
     {
         "examples/agent_hooks_showcase.duo",
+        "examples/wasm_opcode_projection_proof.duo",
         "examples/script_lock_smoke.duo",
         "examples/nested_std_req_smoke.duo",
         "examples/json_direct_iteration_smoke.duo",

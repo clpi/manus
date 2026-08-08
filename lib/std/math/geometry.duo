@@ -408,9 +408,10 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
+-- MOD-1: the file IS the module. Identity re-exports deleted; the few
+-- exports that carried real content are ordinary top-level bindings now.
 -- 2D Vec
-M.vec2 = {
+vec2 = {
     new = vec2_new,
     add = vec2_add,
     sub = vec2_sub,
@@ -427,28 +428,10 @@ M.vec2 = {
     perpendicular = vec2_perpendicular,
     angle = vec2_angle,
 }
+
 -- 2D Shapes
-M.point_new = point_new
-M.segment_new = segment_new
-M.segment_length = segment_length
-M.segment_midpoint = segment_midpoint
-M.line_new = line_new
-M.line_from_points = line_from_points
-M.ray_new = ray_new
-M.circle_new = circle_new
-M.circle_area = circle_area
-M.circle_perimeter = circle_perimeter
-M.rect_new = rect_new
-M.rect_area = rect_area
-M.rect_perimeter = rect_perimeter
-M.rect_contains_point = rect_contains_point
-M.rect_intersects = rect_intersects
-M.polygon_new = polygon_new
-M.polygon_area = polygon_area
-M.polygon_perimeter = polygon_perimeter
-M.polygon_contains_point = polygon_contains_point
 -- 3D Vec
-M.vec3 = {
+vec3 = {
     new = vec3_new,
     add = vec3_add,
     sub = vec3_sub,
@@ -460,26 +443,7 @@ M.vec3 = {
     distance = vec3_distance,
     lerp = vec3_lerp,
 }
+
 -- 3D Shapes
-M.plane_new = plane_new
-M.plane_from_points = plane_from_points
-M.plane_distance_to_point = plane_distance_to_point
-M.aabb_new = aabb_new
-M.aabb_center = aabb_center
-M.aabb_size = aabb_size
-M.aabb_contains_point = aabb_contains_point
-M.aabb_intersects = aabb_intersects
-M.sphere_new = sphere_new
-M.sphere_contains_point = sphere_contains_point
-M.sphere_intersects_sphere = sphere_intersects_sphere
 -- Intersections
-M.line_segment_intersection = line_segment_intersection
-M.ray_sphere_intersection = ray_sphere_intersection
-M.ray_plane_intersection = ray_plane_intersection
 -- Triangles
-M.triangle_new = triangle_new
-M.triangle_area = triangle_area
-M.triangle_normal = triangle_normal
-M.triangle_centroid = triangle_centroid
-M.triangle_barycentric = triangle_barycentric
-M

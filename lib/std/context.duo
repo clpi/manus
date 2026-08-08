@@ -9,12 +9,12 @@
 -- inline where they are needed.
 
 -- background: the root context (never cancelled, no deadline).
-background_ctx(): void
+background_ctx(): any
     {deadline = nil, cancelled = false, parent = nil, key = "background", done = false}
 end
 
 -- todo: a placeholder context for when no context is decided yet.
-todo_ctx(): void
+todo_ctx(): any
     {deadline = nil, cancelled = false, parent = nil, key = "todo", done = false}
 end
 
@@ -29,7 +29,7 @@ with_deadline(parent: any, deadline: any): any
     if parent == nil parent = background_ctx() end
     -- inherit the earlier deadline
     d = deadline
-    if parent.deadline != nil and parent.deadline < d d = parent.deadline end
+    if has(.deadline)(parent) and parent.deadline < d d = parent.deadline end
     {deadline = d, cancelled = false, parent = parent, done = false}
 end
 
@@ -72,7 +72,7 @@ deadline(ctx: any): any
     if ctx == nil return nil end
     cur = ctx
     while cur != nil
-        if cur.deadline != nil return cur.deadline end
+        if has(.deadline)(cur) return cur.deadline end
         cur = cur.parent
     end
     nil
@@ -114,17 +114,5 @@ value(ctx: any, key: any): any
     nil
 end
 
-M = {}
-M.background = background_ctx()
-M.todo = todo_ctx()
-M.with_cancel = with_cancel
-M.with_deadline = with_deadline
-M.with_timeout = with_timeout
-M.with_value = with_value
-M.cancel = cancel
-M.is_cancelled = is_cancelled
-M.deadline = deadline
-M.done = done
-M.err = err
-M.value = value
-M
+background = background_ctx()
+todo = todo_ctx()

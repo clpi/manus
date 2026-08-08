@@ -1,13 +1,13 @@
 -- Does the SELF-HOSTED parser accept what the Zig parser rejects?
 --
--- GAP-025 records that a descriptor body accepts type slots only: any
+-- GAP-035 records that a descriptor body accepts type slots only: any
 -- `name = …` member fails at the `=` with "expected '}', got 'name'". That
 -- one parse rule gates roughly twelve census rows and, per the identifier
 -- recognizer, the canonical destination for 2140 subject-first functions.
 --
 -- But `lib/std/compiler/parser.duo`'s proj_desc_body decides a key on either
 -- ASSIGN or COLON following a NAME -- which is exactly the member binding the
--- Zig parser refuses. If the Duo parser already accepts the form, then GAP-025
+-- Zig parser refuses. If the Duo parser already accepts the form, then GAP-035
 -- is a ZIG-parser gap rather than a language gap, and the repair lives in Duo
 -- source where the standing directive wants it.
 --
@@ -36,12 +36,12 @@ main(): i64
     -- nothing below is a measurement of the member-binding question.
     accepts("control: type-slot body", "point: {\n    x: i64\n    y: i64\n}\n")
 
-    -- The GAP-025 forms, one per family the Zig parser gates.
-    accepts("GAP-025 call member", "handle: {\n    fd: i64\n    call = (spec) spec\n}\n")
-    accepts("GAP-025 eq member", "p: {\n    x: i64\n    eq = (a, b) a.x == b.x\n}\n")
-    accepts("GAP-025 len member", "p: {\n    n: i64\n    len = (self) self.n\n}\n")
-    accepts("GAP-025 slot default", "p: {\n    x: i64 = 42\n}\n")
-    accepts("GAP-025 place(T) member", "s: {\n    place = (self, i) i\n}\n")
+    -- The GAP-035 forms, one per family the Zig parser gates.
+    accepts("GAP-035 call member", "handle: {\n    fd: i64\n    call = (spec) spec\n}\n")
+    accepts("GAP-035 eq member", "p: {\n    x: i64\n    eq = (a, b) a.x == b.x\n}\n")
+    accepts("GAP-035 len member", "p: {\n    n: i64\n    len = (self) self.n\n}\n")
+    accepts("GAP-035 slot default", "p: {\n    x: i64 = 42\n}\n")
+    accepts("GAP-035 place(T) member", "s: {\n    place = (self, i) i\n}\n")
 
     -- The Epoch 2 forms the Zig parser also refuses.
     accepts("E2 inline case-set", "kind: {\n    name\n    number\n    eof\n}\n")
@@ -50,7 +50,7 @@ main(): i64
     io.write(report)
     print("selfhost: {ok}/{seen} accepted by the Duo parser")
     print("")
-    print("  Read against GAP-025: every accepted row is a form the ZIG parser")
+    print("  Read against GAP-035: every accepted row is a form the ZIG parser")
     print("  rejects. Where the Duo parser accepts, the gap is in the bootstrap")
     print("  compiler, not in the language — and the repair belongs in Duo.")
     0

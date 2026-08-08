@@ -160,93 +160,93 @@ s(prefix: str, text: str, suffix: str): str
     if prefix == nil prefix = "" end
     if suffix == nil suffix = M.RESET end
     if not tty()
-        return tostring(text)
+        return to(str)(text)
     end
-    return prefix .. tostring(text) .. suffix
+    return prefix .. to(str)(text) .. suffix
 end
 
 bold(text: str): str
-    return M.BOLD .. tostring(text) .. M.RESET
+    return M.BOLD .. to(str)(text) .. M.RESET
 end
 
 dim(text: str): str
-    return M.DIM .. tostring(text) .. M.RESET
+    return M.DIM .. to(str)(text) .. M.RESET
 end
 
 italic(text: str): str
-    return M.ITALIC .. tostring(text) .. M.RESET
+    return M.ITALIC .. to(str)(text) .. M.RESET
 end
 
 underline(text: str): str
-    return M.UNDERLINE .. tostring(text) .. M.RESET
+    return M.UNDERLINE .. to(str)(text) .. M.RESET
 end
 
 strikethrough(text: str): str
-    return M.STRIKE .. tostring(text) .. M.RESET
+    return M.STRIKE .. to(str)(text) .. M.RESET
 end
 
 reverse(text: str): str
-    return M.REVERSE .. tostring(text) .. M.RESET
+    return M.REVERSE .. to(str)(text) .. M.RESET
 end
 
 blink(text: str): str
-    return M.BLINK .. tostring(text) .. M.RESET
+    return M.BLINK .. to(str)(text) .. M.RESET
 end
 
 red(text: str): str
-    return M.RED .. tostring(text) .. M.RESET
+    return M.RED .. to(str)(text) .. M.RESET
 end
 
 green(text: str): str
-    return M.GREEN .. tostring(text) .. M.RESET
+    return M.GREEN .. to(str)(text) .. M.RESET
 end
 
 yellow(text: str): str
-    return M.YELLOW .. tostring(text) .. M.RESET
+    return M.YELLOW .. to(str)(text) .. M.RESET
 end
 
 blue(text: str): str
-    return M.BLUE .. tostring(text) .. M.RESET
+    return M.BLUE .. to(str)(text) .. M.RESET
 end
 
 magenta(text: str): str
-    return M.MAGENTA .. tostring(text) .. M.RESET
+    return M.MAGENTA .. to(str)(text) .. M.RESET
 end
 
 cyan(text: str): str
-    return M.CYAN .. tostring(text) .. M.RESET
+    return M.CYAN .. to(str)(text) .. M.RESET
 end
 
 bright_red(text: str): str
-    return M.BRIGHT_RED .. tostring(text) .. M.RESET
+    return M.BRIGHT_RED .. to(str)(text) .. M.RESET
 end
 
 bright_green(text: str): str
-    return M.BRIGHT_GREEN .. tostring(text) .. M.RESET
+    return M.BRIGHT_GREEN .. to(str)(text) .. M.RESET
 end
 
 bright_yellow(text: str): str
-    return M.BRIGHT_YELLOW .. tostring(text) .. M.RESET
+    return M.BRIGHT_YELLOW .. to(str)(text) .. M.RESET
 end
 
 bright_blue(text: str): str
-    return M.BRIGHT_BLUE .. tostring(text) .. M.RESET
+    return M.BRIGHT_BLUE .. to(str)(text) .. M.RESET
 end
 
 bright_magenta(text: str): str
-    return M.BRIGHT_MAGENTA .. tostring(text) .. M.RESET
+    return M.BRIGHT_MAGENTA .. to(str)(text) .. M.RESET
 end
 
 bright_cyan(text: str): str
-    return M.BRIGHT_CYAN .. tostring(text) .. M.RESET
+    return M.BRIGHT_CYAN .. to(str)(text) .. M.RESET
 end
 
 bright_white(text: str): str
-    return M.BRIGHT_WHITE .. tostring(text) .. M.RESET
+    return M.BRIGHT_WHITE .. to(str)(text) .. M.RESET
 end
 
 gray(text: str): str
-    return M.BRIGHT_BLACK .. tostring(text) .. M.RESET
+    return M.BRIGHT_BLACK .. to(str)(text) .. M.RESET
 end
 
 -- ─── Compound semantic styles ─────────────────────────────────────
@@ -254,139 +254,139 @@ end
 -- Each one paints a single concept — use them to build readable output.
 
 sem_success(text: str): str
-    return M.BOLD .. M.GREEN .. tostring(text) .. M.RESET
+    return M.BOLD .. M.GREEN .. to(str)(text) .. M.RESET
 end
 
 sem_failure(text: str): str
-    return M.BOLD .. M.RED .. tostring(text) .. M.RESET
+    return M.BOLD .. M.RED .. to(str)(text) .. M.RESET
 end
 
 sem_caution(text: str): str
-    return M.BOLD .. M.YELLOW .. tostring(text) .. M.RESET
+    return M.BOLD .. M.YELLOW .. to(str)(text) .. M.RESET
 end
 
 sem_identity(text: str): str
-    return M.ITALIC .. M.MAGENTA .. tostring(text) .. M.RESET
+    return M.ITALIC .. M.MAGENTA .. to(str)(text) .. M.RESET
 end
 
 sem_location(text: str): str
-    return M.UNDERLINE .. tostring(text) .. M.RESET
+    return M.UNDERLINE .. to(str)(text) .. M.RESET
 end
 
 sem_meta(text: str): str
-    return M.DIM .. tostring(text) .. M.RESET
+    return M.DIM .. to(str)(text) .. M.RESET
 end
 
 sem_payload(text: str): str
-    return M.BOLD .. tostring(text) .. M.RESET
+    return M.BOLD .. to(str)(text) .. M.RESET
 end
 
 sem_deleted(text: str): str
-    return M.STRIKE .. M.RED .. tostring(text) .. M.RESET
+    return M.STRIKE .. M.RED .. to(str)(text) .. M.RESET
 end
 
 sem_added(text: str): str
-    return M.BOLD .. M.GREEN .. tostring(text) .. M.RESET
+    return M.BOLD .. M.GREEN .. to(str)(text) .. M.RESET
 end
 
 sem_changed_old(text: str): str
-    return M.DIM .. M.RED .. tostring(text) .. M.RESET
+    return M.DIM .. M.RED .. to(str)(text) .. M.RESET
 end
 
 sem_changed_new(text: str): str
-    return M.BOLD .. M.GREEN .. tostring(text) .. M.RESET
+    return M.BOLD .. M.GREEN .. to(str)(text) .. M.RESET
 end
 
 sem_type(text: str): str
-    return M.ITALIC .. M.CYAN .. tostring(text) .. M.RESET
+    return M.ITALIC .. M.CYAN .. to(str)(text) .. M.RESET
 end
 
 sem_constant(text: str): str
-    return M.BOLD .. M.BRIGHT_CYAN .. tostring(text) .. M.RESET
+    return M.BOLD .. M.BRIGHT_CYAN .. to(str)(text) .. M.RESET
 end
 
 sem_hex(text: str): str
-    return M.BRIGHT_BLACK .. M.UNDERLINE .. tostring(text) .. M.RESET
+    return M.BRIGHT_BLACK .. M.UNDERLINE .. to(str)(text) .. M.RESET
 end
 
 sem_size(text: str): str
-    return M.BRIGHT_YELLOW .. tostring(text) .. M.RESET
+    return M.BRIGHT_YELLOW .. to(str)(text) .. M.RESET
 end
 
 sem_percent(text: str): str
-    return M.BRIGHT_MAGENTA .. tostring(text) .. M.RESET
+    return M.BRIGHT_MAGENTA .. to(str)(text) .. M.RESET
 end
 
 sem_time_fast(text: str): str
-    return M.DIM .. M.GREEN .. tostring(text) .. M.RESET
+    return M.DIM .. M.GREEN .. to(str)(text) .. M.RESET
 end
 
 sem_time_normal(text: str): str
-    return M.YELLOW .. tostring(text) .. M.RESET
+    return M.YELLOW .. to(str)(text) .. M.RESET
 end
 
 sem_time_slow(text: str): str
-    return M.BOLD .. M.RED .. tostring(text) .. M.RESET
+    return M.BOLD .. M.RED .. to(str)(text) .. M.RESET
 end
 
 sem_attention(text: str): str
-    return M.REVERSE .. M.BOLD .. tostring(text) .. M.RESET
+    return M.REVERSE .. M.BOLD .. to(str)(text) .. M.RESET
 end
 
 sem_deprecated(text: str): str
-    return M.STRIKE .. M.DIM .. tostring(text) .. M.RESET
+    return M.STRIKE .. M.DIM .. to(str)(text) .. M.RESET
 end
 
 sem_key(text: str): str
-    return M.UNDERLINE .. M.CYAN .. tostring(text) .. M.RESET
+    return M.UNDERLINE .. M.CYAN .. to(str)(text) .. M.RESET
 end
 
 sem_nil(text: str): str
-    return M.DIM .. M.ITALIC .. tostring(text) .. M.RESET
+    return M.DIM .. M.ITALIC .. to(str)(text) .. M.RESET
 end
 
 sem_string_val(text: str): str
-    return M.GREEN .. tostring(text) .. M.RESET
+    return M.GREEN .. to(str)(text) .. M.RESET
 end
 
 sem_number_val(text: str): str
-    return M.YELLOW .. tostring(text) .. M.RESET
+    return M.YELLOW .. to(str)(text) .. M.RESET
 end
 
 sem_bool_val(text: str): str
-    return M.MAGENTA .. tostring(text) .. M.RESET
+    return M.MAGENTA .. to(str)(text) .. M.RESET
 end
 
 sem_table_val(text: str): str
-    return M.CYAN .. tostring(text) .. M.RESET
+    return M.CYAN .. to(str)(text) .. M.RESET
 end
 
 sem_function_val(text: str): str
-    return M.ITALIC .. M.CYAN .. tostring(text) .. M.RESET
+    return M.ITALIC .. M.CYAN .. to(str)(text) .. M.RESET
 end
 
 sem_breakpoint(text: str): str
-    return M.REVERSE .. M.RED .. M.BOLD .. tostring(text) .. M.RESET
+    return M.REVERSE .. M.RED .. M.BOLD .. to(str)(text) .. M.RESET
 end
 
 sem_banner_line(text: str): str
-    return M.BOLD .. M.CYAN .. tostring(text) .. M.RESET
+    return M.BOLD .. M.CYAN .. to(str)(text) .. M.RESET
 end
 
 sem_frame(text: str): str
-    return M.BRIGHT_BLACK .. tostring(text) .. M.RESET
+    return M.BRIGHT_BLACK .. to(str)(text) .. M.RESET
 end
 
 sem_numbering(text: str): str
-    return M.DIM .. M.BRIGHT_BLACK .. tostring(text) .. M.RESET
+    return M.DIM .. M.BRIGHT_BLACK .. to(str)(text) .. M.RESET
 end
 
 sem_diff_hunk(text: str): str
-    return M.BOLD .. M.BRIGHT_WHITE .. tostring(text) .. M.RESET
+    return M.BOLD .. M.BRIGHT_WHITE .. to(str)(text) .. M.RESET
 end
 
 sem_context_line(text: str): str
-    return M.DIM .. tostring(text) .. M.RESET
+    return M.DIM .. to(str)(text) .. M.RESET
 end
 
 -- ─── Value formatting ─────────────────────────────────────────────
@@ -394,19 +394,19 @@ tbl_summary(t: any): str
     if t == nil return "nil" end
     n = rawlen(t)
     if n > 0
-        return "array(" .. tostring(n) .. ")"
+        return "array(" .. to(str)(n) .. ")"
     end
     count = 0
     first = ""
     for k, _v in t
         count += 1
-        if count == 1 first = tostring(k) end
+        if count == 1 first = to(str)(k) end
     end
     if count == 0 return "{}" end
     if count <= 3
         return "{" .. first .. ", ...}"
     end
-    return "{" .. tostring(count) .. " keys}"
+    return "{" .. to(str)(count) .. " keys}"
 end
 
 pretty_val(value: any): str
@@ -415,25 +415,25 @@ pretty_val(value: any): str
     end
     t = type(value)
     if t:find("string") == 1
-        return sem_string_val('"' .. tostring(value) .. '"')
+        return sem_string_val('"' .. to(str)(value) .. '"')
     elseif t:find("number") == 1
-        return sem_number_val(tostring(value))
+        return sem_number_val(to(str)(value))
     elseif t:find("boolean") == 1
-        return sem_bool_val(tostring(value))
+        return sem_bool_val(to(str)(value))
     elseif t:find("function") == 1
         return sem_function_val("⟪fn⟫")
     elseif t:find("table") == 1
         n = rawlen(value)
         if n > 0
-            return sem_table_val("⟦array " .. tostring(n) .. "⟧")
+            return sem_table_val("⟦array " .. to(str)(n) .. "⟧")
         end
         return sem_table_val(italic("{" .. tbl_summary(value) .. "}"))
     end
-    return tostring(value)
+    return to(str)(value)
 end
 
 pretty_kv(k: str, v: any): str
-    return sem_key(tostring(k)) .. dim(" " .. M.G_KV_SEP .. " ") .. pretty_val(v)
+    return sem_key(to(str)(k)) .. dim(" " .. M.G_KV_SEP .. " ") .. pretty_val(v)
 end
 
 -- ─── Contextual formatters ───────────────────────────────────────
@@ -452,7 +452,7 @@ end
 
 fmt_hex(value: any): str
     n = tonumber(value)
-    if n == nil return tostring(value) end
+    if n == nil return to(str)(value) end
     neg = false
     if n < 0 neg = true; n = -n end
     hex = _to_hex(math.floor(n))
@@ -462,39 +462,39 @@ end
 
 fmt_size(bytes: any): str
     n = tonumber(bytes)
-    if n == nil return tostring(bytes) end
+    if n == nil return to(str)(bytes) end
     if n < 1024
-        return sem_size(tostring(n) .. "B")
+        return sem_size(to(str)(n) .. "B")
     elseif n < 1048576
         whole = math.floor(n / 1024)
         frac = math.floor((n - whole * 1024) * 10 / 1024)
-        return sem_size(tostring(whole) .. "." .. tostring(frac) .. "KB")
+        return sem_size(to(str)(whole) .. "." .. to(str)(frac) .. "KB")
     elseif n < 1073741824
         whole = math.floor(n / 1048576)
         frac = math.floor((n - whole * 1048576) * 10 / 1048576)
-        return sem_size(tostring(whole) .. "." .. tostring(frac) .. "MB")
+        return sem_size(to(str)(whole) .. "." .. to(str)(frac) .. "MB")
     else
         whole = math.floor(n / 1073741824)
         frac = math.floor((n - whole * 1073741824) * 10 / 1073741824)
-        return sem_size(tostring(whole) .. "." .. tostring(frac) .. "GB")
+        return sem_size(to(str)(whole) .. "." .. to(str)(frac) .. "GB")
     end
 end
 
 fmt_pct(value: any): str
     n = tonumber(value)
-    if n == nil return tostring(value) end
+    if n == nil return to(str)(value) end
     whole = math.floor(n)
     frac = math.floor((n - whole) * 100 + 0.5)
     if frac >= 100 frac = 99 end
-    frac_str = tostring(frac)
-    if frac < 10 frac_str = "0" .. tostring(frac) end
-    return sem_percent(tostring(whole) .. "." .. frac_str .. "%")
+    frac_str = to(str)(frac)
+    if frac < 10 frac_str = "0" .. to(str)(frac) end
+    return sem_percent(to(str)(whole) .. "." .. frac_str .. "%")
 end
 
 fmt_count(n: any): str
     num = tonumber(n)
-    if num == nil return tostring(n) end
-    return sem_number_val(tostring(num))
+    if num == nil return to(str)(n) end
+    return sem_number_val(to(str)(num))
 end
 
 fmt_bool(b: any): str
@@ -507,11 +507,11 @@ fmt_nil(): str
 end
 
 fmt_ref(id: any): str
-    return sem_hex(tostring(id))
+    return sem_hex(to(str)(id))
 end
 
 fmt_path(path: str): str
-    return sem_location(tostring(path))
+    return sem_location(to(str)(path))
 end
 
 -- ─── Caller info ───────────────────────────────────────────────────
@@ -527,7 +527,7 @@ caller(level: int): str
     if src == nil src = "?" end
     loc = src
     if info.currentline and info.currentline > 0
-        loc = src .. dim(":") .. yellow(tostring(info.currentline))
+        loc = src .. dim(":") .. yellow(to(str)(info.currentline))
     end
     return sem_identity(name_part) .. dim(" " .. M.G_ARROW .. " ") .. sem_location(loc)
 end
@@ -536,9 +536,9 @@ end
 ts(): str
     secs = os.time()
     ms = math.floor((os.clock() * 1000) % 1000)
-    frac = "." .. tostring(ms)
-    if ms < 10 frac = ".00" .. tostring(ms)
-    elseif ms < 100 frac = ".0" .. tostring(ms)
+    frac = "." .. to(str)(ms)
+    if ms < 10 frac = ".00" .. to(str)(ms)
+    elseif ms < 100 frac = ".0" .. to(str)(ms)
     end
     return sem_meta(os.date("%H:%M:%S", secs) .. frac)
 end
@@ -583,9 +583,9 @@ end
 _fmt_dur(ms: float): str
     whole = math.floor(ms)
     frac = math.floor((ms - whole) * 100)
-    frac_str = tostring(frac)
-    if frac < 10 frac_str = "0" .. tostring(frac) end
-    raw = tostring(whole) .. "." .. frac_str .. "ms"
+    frac_str = to(str)(frac)
+    if frac < 10 frac_str = "0" .. to(str)(frac) end
+    raw = to(str)(whole) .. "." .. frac_str .. "ms"
     if ms < 1
         return sem_time_fast(raw)
     elseif ms < 16
@@ -741,18 +741,18 @@ end
 
 assert_ok(condition: bool, msg: str): void
     if condition
-        print(sem_success(M.G_CHECK .. " " .. tostring(msg or "ok")))
+        print(sem_success(M.G_CHECK .. " " .. to(str)(msg or "ok")))
     else
-        print(sem_failure(M.G_CROSS_MARK .. " " .. tostring(msg or "assertion failed")))
+        print(sem_failure(M.G_CROSS_MARK .. " " .. to(str)(msg or "assertion failed")))
     end
 end
 
 assert_eq(actual: any, expected: any, msg: str): void
     if actual == expected
-        print(sem_success(M.G_CHECK .. " " .. tostring(msg or "eq")))
+        print(sem_success(M.G_CHECK .. " " .. to(str)(msg or "eq")))
     else
         parts = {}
-        parts[rawlen(parts) + 1] = sem_failure(M.G_CROSS_MARK .. " " .. tostring(msg or "eq"))
+        parts[rawlen(parts) + 1] = sem_failure(M.G_CROSS_MARK .. " " .. to(str)(msg or "eq"))
         parts[rawlen(parts) + 1] = dim("expected")
         parts[rawlen(parts) + 1] = sem_changed_new(pretty_val(expected))
         parts[rawlen(parts) + 1] = dim("got")
@@ -800,7 +800,7 @@ print_diff(label: str, diffs: any): void
         i += 1
     end
     print(dim(M.BOX_BL .. string.rep(M.G_DASH, 50)))
-    print(dim("  " .. tostring(n) .. " difference(s)"))
+    print(dim("  " .. to(str)(n) .. " difference(s)"))
 end
 
 -- ─── Checkpoint / milestone markers ───────────────────────────────
@@ -810,7 +810,7 @@ checkpoint(label: str): void
     parts = {}
     parts[rawlen(parts) + 1] = ind
     parts[rawlen(parts) + 1] = sem_constant(M.G_SNAPSHOT)
-    parts[rawlen(parts) + 1] = sem_payload(tostring(label or "checkpoint"))
+    parts[rawlen(parts) + 1] = sem_payload(to(str)(label or "checkpoint"))
     if trace_show_ts
         parts[rawlen(parts) + 1] = dim("[") .. ts() .. dim("]")
     end
@@ -828,7 +828,7 @@ milestone(label: str, value: any): void
     parts = {}
     parts[rawlen(parts) + 1] = ind
     parts[rawlen(parts) + 1] = sem_constant(M.G_STAR)
-    parts[rawlen(parts) + 1] = sem_identity(tostring(label or "milestone"))
+    parts[rawlen(parts) + 1] = sem_identity(to(str)(label or "milestone"))
     if value != nil
         parts[rawlen(parts) + 1] = dim(M.G_ARROW)
         parts[rawlen(parts) + 1] = pretty_val(value)
@@ -846,7 +846,7 @@ watch(name: str, value: any): void
     parts = {}
     parts[rawlen(parts) + 1] = ind
     parts[rawlen(parts) + 1] = dim(M.G_SEED)
-    parts[rawlen(parts) + 1] = sem_key(tostring(name))
+    parts[rawlen(parts) + 1] = sem_key(to(str)(name))
     parts[rawlen(parts) + 1] = dim("→")
     parts[rawlen(parts) + 1] = pretty_val(value)
     if trace_show_ts
@@ -861,7 +861,7 @@ event(name: str, fields: any): void
     ind = span_indent()
     parts = {}
     parts[rawlen(parts) + 1] = ind
-    parts[rawlen(parts) + 1] = sem_type(M.G_PROPEL .. " " .. tostring(name))
+    parts[rawlen(parts) + 1] = sem_type(M.G_PROPEL .. " " .. to(str)(name))
     if fields != nil and type(fields) == "table"
         for k, v in fields
             parts[rawlen(parts) + 1] = pretty_kv(k, v)
@@ -982,15 +982,15 @@ pretty_repr(value: any, depth: int, seen: any): str
     if value == nil return "nil" end
     t = type(value)
     if t:find("string") == 1
-        return '"' .. tostring(value) .. '"'
+        return '"' .. to(str)(value) .. '"'
     elseif t:find("number") == 1
-        return tostring(value)
+        return to(str)(value)
     elseif t:find("boolean") == 1
-        return tostring(value)
+        return to(str)(value)
     elseif t:find("function") == 1
         return "<function>"
     elseif t:find("table") != 1
-        return tostring(value)
+        return to(str)(value)
     end
     if _seen(seen, value) return "<circular>" end
     _seen_add(seen, value)
@@ -1011,7 +1011,7 @@ pretty_repr(value: any, depth: int, seen: any): str
     end
     for k, v in value
         parts[rawlen(parts) + 1] = string.rep("  ", depth + 1) ..
-            tostring(k) .. " = " .. pretty_repr(v, depth + 1, seen)
+            to(str)(k) .. " = " .. pretty_repr(v, depth + 1, seen)
     end
     if rawlen(parts) == 0 return "{}" end
     return "{\n" .. table.concat(parts, "\n") .. "\n" ..
@@ -1035,7 +1035,7 @@ dump(label: str, value: any): void
             if ch == "\n"
                 seg = string.sub(rendered, line_start, i - 1)
                 if seg != ""
-                    print(dim(M.BOX_V .. " ") .. sem_numbering(tostring(line_num) .. " ") .. cyan(seg))
+                    print(dim(M.BOX_V .. " ") .. sem_numbering(to(str)(line_num) .. " ") .. cyan(seg))
                     line_num += 1
                 end
                 line_start = i + 1
@@ -1043,7 +1043,7 @@ dump(label: str, value: any): void
             i += 1
         end
         if line_start <= n
-            print(dim(M.BOX_V .. " ") .. sem_numbering(tostring(line_num) .. " ") ..
+            print(dim(M.BOX_V .. " ") .. sem_numbering(to(str)(line_num) .. " ") ..
                   cyan(string.sub(rendered, line_start)))
         end
     end
@@ -1059,16 +1059,16 @@ table_print(label: str, t: any): void
     ind = span_indent()
     n = rawlen(t)
     if n > 0
-        print(ind .. bold(label) .. dim(" [" .. tostring(n) .. " items]"))
+        print(ind .. bold(label) .. dim(" [" .. to(str)(n) .. " items]"))
         i = 1
         while i <= n
-            print(ind .. dim(M.G_PIPE .. " ") .. sem_numbering(tostring(i) .. " ") .. pretty_val(t[i]))
+            print(ind .. dim(M.G_PIPE .. " ") .. sem_numbering(to(str)(i) .. " ") .. pretty_val(t[i]))
             i += 1
         end
     else
         print(ind .. bold(label) .. dim(" {"))
         for k, v in t
-            print(ind .. dim(M.G_PIPE .. " ") .. sem_key(tostring(k)) ..
+            print(ind .. dim(M.G_PIPE .. " ") .. sem_key(to(str)(k)) ..
                   dim(" = ") .. pretty_val(v))
         end
         print(ind .. dim("}"))

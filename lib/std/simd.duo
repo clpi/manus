@@ -23,10 +23,3 @@ add4(a: v4f64, b: v4f64): v4f64
     a + b
 end
 
-M = {}
-M.dot_f32 = dot_f32
-M.dot_f64 = dot_f64
-M.matmul_f32 = matmul_f32
-M.matmul_f64 = matmul_f64
-M.add4 = add4
-M

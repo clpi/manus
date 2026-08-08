@@ -1,7 +1,7 @@
 -- std.slices — slice helper utilities (mirrors Go 1.21 slices package)
 -- All functions prefixed with std_slices_ to avoid C name collisions.
 
-std_slices_clip(arr: any, n: i64): any
+clip(arr: any, n: i64): any
     if arr == nil return arr end
     len = rawlen(arr)
     if n >= len return arr end
@@ -14,7 +14,7 @@ std_slices_clip(arr: any, n: i64): any
     arr
 end
 
-std_slices_clone(arr: any): any
+clone(arr: any): any
     if arr == nil return {} end
     out = {}
     i = 1
@@ -25,10 +25,10 @@ std_slices_clone(arr: any): any
     out
 end
 
-std_slices_compact(arr: any, eq: any): any
+compact(arr: any, eq: any): any
     if arr == nil return {} end
     n = rawlen(arr)
-    if n <= 1 return std_slices_clone(arr) end
+    if n <= 1 return clone(arr) end
     out = {}
     out[1] = arr[1]
     j = 1
@@ -43,7 +43,7 @@ std_slices_compact(arr: any, eq: any): any
     out
 end
 
-std_slices_contains(arr: any, v: any): bool
+contains(arr: any, v: any): bool
     if arr == nil return false end
     i = 1
     while i <= rawlen(arr)
@@ -53,7 +53,7 @@ std_slices_contains(arr: any, v: any): bool
     false
 end
 
-std_slices_index(arr: any, v: any): i64
+index(arr: any, v: any): i64
     if arr == nil return 0 - 1 end
     i = 1
     while i <= rawlen(arr)
@@ -63,7 +63,7 @@ std_slices_index(arr: any, v: any): i64
     0 - 1
 end
 
-std_slices_index_func(arr: any, f: any): i64
+index_func(arr: any, f: any): i64
     if arr == nil return 0 - 1 end
     i = 1
     while i <= rawlen(arr)
@@ -73,7 +73,7 @@ std_slices_index_func(arr: any, f: any): i64
     0 - 1
 end
 
-std_slices_insert(arr: any, i: i64, v: any): any
+insert(arr: any, i: i64, v: any): any
     if arr == nil arr = {} end
     n = rawlen(arr)
     if i < 1 i = 1 end
@@ -93,10 +93,10 @@ std_slices_insert(arr: any, i: i64, v: any): any
     out
 end
 
-std_slices_delete(arr: any, i: i64): any
+delete(arr: any, i: i64): any
     if arr == nil return {} end
     n = rawlen(arr)
-    if i < 1 or i > n return std_slices_clone(arr) end
+    if i < 1 or i > n return clone(arr) end
     out = {}
     j = 1
     while j <= n
@@ -108,7 +108,7 @@ std_slices_delete(arr: any, i: i64): any
     out
 end
 
-std_slices_delete_func(arr: any, f: any): any
+delete_func(arr: any, f: any): any
     if arr == nil return {} end
     out = {}
     i = 1
@@ -121,7 +121,7 @@ std_slices_delete_func(arr: any, f: any): any
     out
 end
 
-std_slices_reverse(arr: any): void
+reverse(arr: any): void
     if arr == nil return end
     n = rawlen(arr)
     i = 1
@@ -133,7 +133,7 @@ std_slices_reverse(arr: any): void
     end
 end
 
-std_slices_replace(arr: any, i: i64, j: i64, v: any): any
+replace(arr: any, i: i64, j: i64, v: any): any
     if arr == nil arr = {} end
     n = rawlen(arr)
     if i < 1 i = 1 end
@@ -154,11 +154,11 @@ std_slices_replace(arr: any, i: i64, j: i64, v: any): any
     out
 end
 
-std_slices_grow(arr: any, n: i64): any
+grow(arr: any, n: i64): any
     arr
 end
 
-std_slices_binary_search(arr: any, v: any, less: any): any
+binary_search(arr: any, v: any, less: any): any
     if arr == nil return 0, false end
     lo = 0
     hi = rawlen(arr)
@@ -175,7 +175,7 @@ std_slices_binary_search(arr: any, v: any, less: any): any
     return lo + 1, false
 end
 
-std_slices_max(arr: any, less: any): any
+max(arr: any, less: any): any
     if arr == nil return nil end
     n = rawlen(arr)
     if n == 0 return nil end
@@ -188,7 +188,7 @@ std_slices_max(arr: any, less: any): any
     m
 end
 
-std_slices_min(arr: any, less: any): any
+min(arr: any, less: any): any
     if arr == nil return nil end
     n = rawlen(arr)
     if n == 0 return nil end
@@ -201,7 +201,7 @@ std_slices_min(arr: any, less: any): any
     m
 end
 
-std_slices_sorted(arr: any, less: any): bool
+sorted(arr: any, less: any): bool
     if arr == nil return true end
     n = rawlen(arr)
     i = 2
@@ -212,7 +212,7 @@ std_slices_sorted(arr: any, less: any): bool
     true
 end
 
-std_slices_chunk(arr: any, n: i64): any
+chunk(arr: any, n: i64): any
     if arr == nil return {} end
     if n == nil or n < 1 n = 1 end
     out = {}
@@ -230,22 +230,3 @@ std_slices_chunk(arr: any, n: i64): any
     out
 end
 
-M = {}
-M.clip = std_slices_clip
-M.clone = std_slices_clone
-M.compact = std_slices_compact
-M.contains = std_slices_contains
-M.index = std_slices_index
-M.index_func = std_slices_index_func
-M.insert = std_slices_insert
-M.delete = std_slices_delete
-M.delete_func = std_slices_delete_func
-M.reverse = std_slices_reverse
-M.replace = std_slices_replace
-M.grow = std_slices_grow
-M.binary_search = std_slices_binary_search
-M.max = std_slices_max
-M.min = std_slices_min
-M.sorted = std_slices_sorted
-M.chunk = std_slices_chunk
-M

@@ -33,7 +33,7 @@ M.EPOLLET = 0x80000000
 
 -- C shim functions for Linux syscalls
 
-@c.emit('''
+@c.emit([[
 static int duo_epoll_create(int maxevents) {
     return epoll_create1(0);
 }
@@ -109,7 +109,7 @@ static int duo_write(int fd, const void *buf, size_t count) {
 static int duo_close(int fd) {
     return close(fd);
 }
-''')
+]])
 
 -- ═══════════════════════════════════════════════════════════════
 -- epoll
@@ -122,7 +122,7 @@ end
 epoll_create(max_events: i64): any
     fd = @ffi("duo_epoll_create", i64, {i64})(max_events)
     if fd < 0
-        error("epoll_create failed: " .. tostring(fd))
+        error("epoll_create failed: " .. to(str)(fd))
     end
     {
         fd = fd,
@@ -202,7 +202,7 @@ M.IN_MOVE_SELF = 0x00000800
 inotify_new(): any
     fd = @ffi("duo_inotify_init", i64, {i64})(0)
     if fd < 0
-        error("inotify_init failed: " .. tostring(fd))
+        error("inotify_init failed: " .. to(str)(fd))
     end
     {
         fd = fd,
@@ -317,7 +317,7 @@ mmap_sync(mmap: any): any
 end
 
 mmap_unmap(mmap: any): void
-    if mmap.ptr != nil
+    if has(.ptr)(mmap)
         @ffi("duo_munmap", i64, {any, i64})(mmap.ptr, mmap.size)
         mmap.ptr = nil
     end

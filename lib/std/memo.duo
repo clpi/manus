@@ -1,42 +1,26 @@
--- std.memo — memoization utilities
-
 table_new(): any
-    {}
+  {}
 end
-
 table_get(m: any, key: any): any
-    m[key]
+  m[key]
 end
-
 table_set(m: any, key: any, value: any): void
-    m[key] = value
+  m[key] = value
 end
-
 table_has(m: any, key: any): bool
-    m[key] != nil
+  m[key] != nil
 end
-
 wrap(fn: any): any
-    cache = {}
-    return fun(x: any): any
-        if cache[x] == nil
-            cache[x] = fn(x)
-        end
-        cache[x]
+  cache = {}
+  return (x: any): any
+    if cache[x] == nil
+      cache[x] = fn(x)
     end
+    cache[x]
+  end
 end
-
 clear(m: any): void
-    for k, _ in pairs(m)
-        m[k] = nil
-    end
+  for k, _ in m
+    m[k] = nil
+  end
 end
-
-M = {}
-M.table_new = table_new
-M.table_get = table_get
-M.table_set = table_set
-M.table_has = table_has
-M.wrap = wrap
-M.clear = clear
-M

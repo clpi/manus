@@ -300,30 +300,3 @@ lru_stats(c: any): any
     {hits = c.hits, misses = c.misses, hit_rate = rate, size = rawlen(c.order), capacity = c.capacity}
 end
 
-M = {}
-M.simple_new = simple_new
-M.simple_get = simple_get
-M.simple_set = simple_set
-M.simple_has = simple_has
-M.simple_delete = simple_delete
-M.simple_clear = simple_clear
-M.simple_size = simple_size
-M.simple_stats = simple_stats
-M.ttl_new = ttl_new
-M.ttl_get = ttl_get
-M.ttl_set = ttl_set
-M.ttl_has = ttl_has
-M.ttl_delete = ttl_delete
-M.ttl_clear = ttl_clear
-M.ttl_purge_expired = ttl_purge_expired
-M.ttl_size = ttl_size
-M.lru_new = lru_new
-M.lru_get = lru_get
-M.lru_set = lru_set
-M.lru_has = lru_has
-M.lru_delete = lru_delete
-M.lru_clear = lru_clear
-M.lru_size = lru_size
-M.lru_evict = lru_evict
-M.lru_stats = lru_stats
-M

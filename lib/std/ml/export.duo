@@ -1,9 +1,6 @@
 -- std.ml.export — Model export (ONNX, PyTorch, etc.)
 -- For saving trained models to standard formats.
 
-io = req "std.io"
-json_mod = req "std.encoding.json"
-
 -- ═══════════════════════════════════════════════════════════════
 -- ONNX Export
 -- ═══════════════════════════════════════════════════════════════
@@ -23,7 +20,7 @@ onnx_graph_add_node(graph: any, op_type: str, inputs: any, outputs: any, name: s
         op_type = op_type,
         inputs = inputs,
         outputs = outputs,
-        name = name or "node_" .. tostring(#graph.nodes),
+        name = name or "node_" .. to(str)(#graph.nodes),
     }
 end
 
@@ -85,17 +82,17 @@ onnx_model_encode(model: any): any
         producer_version = model.producer_version,
         graph = graph_summary,
     }
-    json_mod.encode(payload)
+    std.encoding.json.encode(payload)
 end
 
 onnx_model_save(model: any, path: str): any
     data = onnx_model_encode(model)
-    f = io.open(path, "w")
+    f = std.io.open(path, "w")
     if f == nil
         return {ok = false, error = "Cannot create file: " .. path}
     end
-    io.write(f, data)
-    io.close(f)
+    std.io.write(f, data)
+    std.io.close(f)
     {ok = true, path = path, size = string.len(data)}
 end
 
@@ -124,13 +121,13 @@ pytorch_state_dict_save(state_dict: any, path: str): any
             data_len = tensor.size or 0,
         }
     end
-    encoded = json_mod.encode(payload)
-    f = io.open(path, "w")
+    encoded = std.encoding.json.encode(payload)
+    f = std.io.open(path, "w")
     if f == nil
         return {ok = false, error = "Cannot create file: " .. path}
     end
-    io.write(f, encoded)
-    io.close(f)
+    std.io.write(f, encoded)
+    std.io.close(f)
     {ok = true, path = path, size = string.len(encoded)}
 end
 
@@ -165,7 +162,7 @@ safetensors_encode(st: any): any
         }
         offset += tensor.size
     end
-    header_json = json_mod.encode(header)
+    header_json = std.encoding.json.encode(header)
     {
         format = "safetensors",
         header = header_json,
@@ -176,15 +173,15 @@ end
 
 safetensors_save(st: any, path: str): any
     data = safetensors_encode(st)
-    f = io.open(path, "w")
+    f = std.io.open(path, "w")
     if f == nil
         return {ok = false, error = "Cannot create file: " .. path}
     end
     -- Write 8-byte header length prefix, then header JSON
     header_len = data.header_size
-    io.write(f, string.pack("<I8", header_len))
-    io.write(f, data.header)
-    io.close(f)
+    std.io.write(f, string.pack("<I8", header_len))
+    std.io.write(f, data.header)
+    std.io.close(f)
     {ok = true, path = path, size = 8 + data.header_size + data.data_size}
 end
 
@@ -225,7 +222,7 @@ gguf_writer_encode(gw: any): any
             shape = tensor.shape,
         }
     end
-    encoded = json_mod.encode(payload)
+    encoded = std.encoding.json.encode(payload)
     {
         format = "gguf",
         version = 3,
@@ -236,12 +233,12 @@ end
 
 gguf_writer_save(gw: any, path: str): any
     data = gguf_writer_encode(gw)
-    f = io.open(path, "w")
+    f = std.io.open(path, "w")
     if f == nil
         return {ok = false, error = "Cannot create file: " .. path}
     end
-    io.write(f, data.data)
-    io.close(f)
+    std.io.write(f, data.data)
+    std.io.close(f)
     {ok = true, path = path, size = data.size}
 end
 
@@ -277,33 +274,8 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
 -- ONNX
-M.onnx_graph_new = onnx_graph_new
-M.onnx_graph_add_node = onnx_graph_add_node
-M.onnx_graph_add_input = onnx_graph_add_input
-M.onnx_graph_add_output = onnx_graph_add_output
-M.onnx_graph_add_initializer = onnx_graph_add_initializer
-M.onnx_model_new = onnx_model_new
-M.onnx_model_encode = onnx_model_encode
-M.onnx_model_save = onnx_model_save
 -- PyTorch
-M.pytorch_state_dict_new = pytorch_state_dict_new
-M.pytorch_state_dict_add = pytorch_state_dict_add
-M.pytorch_state_dict_save = pytorch_state_dict_save
 -- SafeTensors
-M.safetensors_new = safetensors_new
-M.safetensors_add_tensor = safetensors_add_tensor
-M.safetensors_encode = safetensors_encode
-M.safetensors_save = safetensors_save
 -- GGUF
-M.gguf_writer_new = gguf_writer_new
-M.gguf_writer_add_tensor = gguf_writer_add_tensor
-M.gguf_writer_add_metadata = gguf_writer_add_metadata
-M.gguf_writer_encode = gguf_writer_encode
-M.gguf_writer_save = gguf_writer_save
 -- Conversion
-M.convert_onnx_to_safetensors = convert_onnx_to_safetensors
-M.convert_pytorch_to_onnx = convert_pytorch_to_onnx
-M.convert_gguf_to_safetensors = convert_gguf_to_safetensors
-M

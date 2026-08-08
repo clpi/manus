@@ -23,7 +23,7 @@ send_mail(addr: str, from: str, to: any, msg: str): any
     recipients = ""
     i = 1
     while i <= rawlen(to)
-        recipients = recipients .. " " .. shell_escape(tostring(to[i]))
+        recipients = recipients .. " " .. shell_escape(to(str)(to[i]))
         i += 1
     end
     cmd = "sendmail -f " .. safe_from .. recipients
@@ -56,7 +56,7 @@ send_mail_auth(addr: str, auth: any, from: str, to: any, msg: str): any
     end
     -- Sanitize host to prevent shell injection
     safe_host = shell_escape(host)
-    url = "smtp://" .. safe_host .. ":" .. tostring(port)
+    url = "smtp://" .. safe_host .. ":" .. to(str)(port)
     cmd = "curl -s --url " .. url
     if auth != nil and auth.username != nil
         -- Sanitize credentials
@@ -68,7 +68,7 @@ send_mail_auth(addr: str, auth: any, from: str, to: any, msg: str): any
     cmd = cmd .. " --mail-from " .. safe_from
     i = 1
     while i <= rawlen(to)
-        cmd = cmd .. " --mail-rcpt " .. shell_escape(tostring(to[i]))
+        cmd = cmd .. " --mail-rcpt " .. shell_escape(to(str)(to[i]))
         i += 1
     end
     cmd = cmd .. " -T -"
@@ -88,17 +88,11 @@ new_message(headers: any, body: str): str
     if headers == nil headers = {} end
     if body == nil body = "" end
     out = {}
-    for k, v in pairs(headers)
-        out[rawlen(out) + 1] = k .. ": " .. tostring(v) .. "\r\n"
+    for k, v in headers
+        out[rawlen(out) + 1] = k .. ": " .. to(str)(v) .. "\r\n"
     end
     out[rawlen(out) + 1] = "\r\n"
     out[rawlen(out) + 1] = body
     table.concat(out)
 end
 
-M = {}
-M.send_mail = send_mail
-M.plain_auth = plain_auth
-M.send_mail_auth = send_mail_auth
-M.new_message = new_message
-M

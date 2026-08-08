@@ -27,7 +27,7 @@ SIGWINCH = 28
 -- Signal Handler Registry
 -- ═══════════════════════════════════════════════════════════════
 
-signal_handler_new(): any
+handler_new(): any
     {
         handlers = {},
         default_handlers = {},
@@ -36,23 +36,23 @@ signal_handler_new(): any
     }
 end
 
-signal_register(handler: any, sig: i64, callback: any): void
+register(handler: any, sig: i64, callback: any): void
     handler.handlers[sig] = callback
 end
 
-signal_unregister(handler: any, sig: i64): void
+unregister(handler: any, sig: i64): void
     handler.handlers[sig] = nil
 end
 
-signal_block(handler: any, sig: i64): void
+block(handler: any, sig: i64): void
     handler.blocked[sig] = true
 end
 
-signal_unblock(handler: any, sig: i64): void
+unblock(handler: any, sig: i64): void
     handler.blocked[sig] = nil
 end
 
-signal_emit(handler: any, sig: i64): void
+emit(handler: any, sig: i64): void
     if handler.blocked[sig]
         handler.signal_queue[#handler.signal_queue + 1] = sig
         return
@@ -63,7 +63,7 @@ signal_emit(handler: any, sig: i64): void
     end
 end
 
-signal_process_queue(handler: any): void
+process_queue(handler: any): void
     while #handler.signal_queue > 0
         sig = handler.signal_queue[1]
         table.remove(handler.signal_queue, 1)
@@ -77,7 +77,7 @@ end
 -- Signal Utilities
 -- ═══════════════════════════════════════════════════════════════
 
-signal_name(sig: i64): str
+name(sig: i64): str
     names = {
         [SIGHUP] = "SIGHUP",
         [SIGINT] = "SIGINT",
@@ -100,7 +100,7 @@ signal_name(sig: i64): str
     names[sig] or "UNKNOWN"
 end
 
-signal_from_name(name: str): i64
+from_name(name: str): i64
     names = {
         HUP = SIGHUP,
         INT = SIGINT,
@@ -128,15 +128,15 @@ signal_from_name(name: str): i64
     names[clean] or 0
 end
 
-signal_is_fatal(sig: i64): bool
+is_fatal(sig: i64): bool
     sig == SIGKILL or sig == SIGTERM or sig == SIGHUP
 end
 
-signal_is_stop(sig: i64): bool
+is_stop(sig: i64): bool
     sig == SIGSTOP or sig == SIGTSTP or sig == SIGTTIN or sig == SIGTTOU
 end
 
-signal_is_continue(sig: i64): bool
+is_continue(sig: i64): bool
     sig == SIGCONT
 end
 
@@ -144,9 +144,9 @@ end
 -- Graceful Shutdown Handler
 -- ═══════════════════════════════════════════════════════════════
 
-shutdown_handler_new(): any
+shutdown_new(): any
     {
-        handler = signal_handler_new(),
+        handler = handler_new(),
         shutdown_hooks = {},
         is_shutting_down = false,
         shutdown_timeout = 30,
@@ -175,17 +175,17 @@ end
 
 shutdown_setup(sh: any): void
     -- Register signal handlers for graceful shutdown
-    signal_register(sh.handler, SIGTERM, function(sig)
+    register(sh.handler, SIGTERM, function(sig)
         print("Received SIGTERM, shutting down...")
         shutdown_trigger(sh)
     end)
 
-    signal_register(sh.handler, SIGINT, function(sig)
+    register(sh.handler, SIGINT, function(sig)
         print("Received SIGINT, shutting down...")
         shutdown_trigger(sh)
     end)
 
-    signal_register(sh.handler, SIGHUP, function(sig)
+    register(sh.handler, SIGHUP, function(sig)
         print("Received SIGHUP, reloading...")
     end)
 end
@@ -194,43 +194,7 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
 -- Constants
-M.SIGHUP = SIGHUP
-M.SIGINT = SIGINT
-M.SIGQUIT = SIGQUIT
-M.SIGKILL = SIGKILL
-M.SIGUSR1 = SIGUSR1
-M.SIGUSR2 = SIGUSR2
-M.SIGPIPE = SIGPIPE
-M.SIGALRM = SIGALRM
-M.SIGTERM = SIGTERM
-M.SIGSTOP = SIGSTOP
-M.SIGCONT = SIGCONT
-M.SIGCHLD = SIGCHLD
-M.SIGTSTP = SIGTSTP
-M.SIGTTIN = SIGTTIN
-M.SIGTTOU = SIGTTOU
-M.SIGPROF = SIGPROF
-M.SIGWINCH = SIGWINCH
 -- Handler
-M.handler_new = signal_handler_new
-M.register = signal_register
-M.unregister = signal_unregister
-M.block = signal_block
-M.unblock = signal_unblock
-M.emit = signal_emit
-M.process_queue = signal_process_queue
 -- Utilities
-M.name = signal_name
-M.from_name = signal_from_name
-M.is_fatal = signal_is_fatal
-M.is_stop = signal_is_stop
-M.is_continue = signal_is_continue
 -- Shutdown
-M.shutdown_new = shutdown_handler_new
-M.shutdown_register = shutdown_register
-M.shutdown_trigger = shutdown_trigger
-M.shutdown_is_active = shutdown_is_active
-M.shutdown_setup = shutdown_setup
-M

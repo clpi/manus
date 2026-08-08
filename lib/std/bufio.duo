@@ -40,7 +40,7 @@ reader_read_line(r: any): any
         -- no newline yet, try to fill
         old_len = string.len(string.sub(r.buf, r.pos))
         reader_fill(r)
-        if r.err != nil
+        if has(.err)(r)
             -- return whatever is left
             left = string.sub(r.buf, r.pos)
             if string.len(left) > 0
@@ -57,7 +57,7 @@ end
 reader_read_bytes(r: any, n: i64): any
     while string.len(string.sub(r.buf, r.pos)) < n
         reader_fill(r)
-        if r.err != nil
+        if has(.err)(r)
             left = string.sub(r.buf, r.pos)
             if string.len(left) > 0
                 r.pos = string.len(r.buf) + 1
@@ -80,7 +80,7 @@ end
 reader_read_byte(r: any): any
     while r.pos > string.len(r.buf)
         reader_fill(r)
-        if r.err != nil return 0, false end
+        if has(.err)(r) return 0, false end
     end
     b = string.byte(r.buf, r.pos)
     r.pos = r.pos + 1
@@ -97,7 +97,7 @@ end
 reader_peek(r: any, n: i64): any
     while string.len(string.sub(r.buf, r.pos)) < n
         reader_fill(r)
-        if r.err != nil break end
+        if has(.err)(r) break end
     end
     string.sub(r.buf, r.pos, r.pos + n - 1)
 end
@@ -191,21 +191,3 @@ writer_close(w: any): any
     w
 end
 
-M = {}
-M.new_reader = new_reader
-M.reader_read_line = reader_read_line
-M.reader_read_bytes = reader_read_bytes
-M.reader_read_string = reader_read_string
-M.reader_read_byte = reader_read_byte
-M.reader_unread_byte = reader_unread_byte
-M.reader_peek = reader_peek
-M.new_scanner = new_scanner
-M.scanner_scan = scanner_scan
-M.scanner_text = scanner_text
-M.scanner_bytes = scanner_bytes
-M.new_writer = new_writer
-M.writer_write = writer_write
-M.writer_write_byte = writer_write_byte
-M.writer_flush = writer_flush
-M.writer_close = writer_close
-M

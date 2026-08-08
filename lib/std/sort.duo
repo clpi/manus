@@ -112,7 +112,7 @@ ints_desc(arr: any): void
 end
 
 std_sort_less_str(a: any, b: any): bool
-    return tostring(a) < tostring(b)
+    return to(str)(a) < to(str)(b)
 end
 
 strings(arr: any): void
@@ -196,16 +196,3 @@ slice(arr: any, from: any, to: any, less: any): void
     std_sort_quicksort(arr, from, to, less)
 end
 
-M = {}
-M.sort = sort
-M.stable = stable
-M.ints = ints
-M.ints_desc = ints_desc
-M.strings = strings
-M.is_sorted = is_sorted
-M.search = search
-M.search_sorted = search_sorted
-M.reverse = reverse
-M.swap = swap
-M.slice = slice
-M

@@ -5,8 +5,8 @@ concept HasN
     n: i64
 end
 
-type CounterA = { n: i64 }
-type CounterB = { n: i64, tag: str }
+CounterA: { n: i64 }
+CounterB: { n: i64, tag: str }
 
 @comp.define.derive("CountApi", generate(meta) -> str
     "static inline int64_t duo_" .. meta.name .. "_get_n(const duo_" .. meta.name .. "* v) { return v->n; }\n"
@@ -22,7 +22,7 @@ end)
     init = "0",
 })
 
-registry_line(meta) -> str
+registry_line(meta): str
     meta.name .. ";"
 end
 
@@ -36,7 +36,7 @@ total(): i64
 end
 
 print("=== exponential pipeline showcase ===")
-print("sum 1..100 = " .. tostring(total()))
+print("sum 1..100 = " .. to(str)(total()))
 print("typed_sweep = " .. TYPED)
-print("derive_bytes = " .. tostring(#DERIVED))
+print("derive_bytes = " .. to(str)(#DERIVED))
 print("ok")

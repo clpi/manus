@@ -31,7 +31,7 @@ accepted source
 | `src/pass27_gate.zig` | M0 native gate |
 | `src/pass27_benchmark_evidence.zig` | Counters + 3-backend matrix + `.proof.json` writer |
 | `src/main.zig` | Emits `{generated.c}.proof.json` when `DUO_EMIT_PROOF=1` or bench mode |
-| `scripts/run_benchmark_proof.sh` | 3-profile matrix gate (`zig build bench-proof-gate`) |
+| `scripts/run_benchmark_proof.duo` | 3-profile matrix gate (`zig build bench-proof-gate`) |
 | `examples/pass27_proof_matrix.duo` | Ten-benchmark C-path proof source |
 | `examples/pass27_proof_matrix_direct.duo` | Direct ARM64 micro proof (zero-box) |
 | `src/native_barrier_checks.zig` | Low-level pattern scan bridge |

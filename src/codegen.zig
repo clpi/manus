@@ -41,6 +41,31 @@ var native_diag_tag: ?[]const u8 = null;
 /// True when the module body assigns `name` at top level (e.g. `M = {}`).
 /// Such a global stays live even in native-direct modules: its field writes and
 /// the module's `return M` are still emitted, so its declaration must survive.
+/// True when every top-level assignment to `name` is a `req`/`require` call —
+/// i.e. the binding is only ever declared, never re-assigned. Used ONLY by the
+/// embedded-module initializer skip; `module_top_level_assigns` keeps its
+/// existing meaning for every other caller.
+fn req_decl_is_sole_assignment(mod: *const ast.Module, name: []const u8) bool {
+    var saw_decl = false;
+    for (mod.body.stmts) |*stmt| {
+        if (stmt.* != .assign) continue;
+        const a = &stmt.assign;
+        for (a.targets, 0..) |t, i| {
+            if (t.* != .name or !std.mem.eql(u8, t.name.ident, name)) continue;
+            if (i >= a.values.len) return false;
+            const v = a.values[i];
+            if (v.* != .call) return false;
+            const c = &v.call;
+            if (c.func.* != .name) return false;
+            const fname = c.func.name.ident;
+            if (!std.mem.eql(u8, fname, "req") and !std.mem.eql(u8, fname, "require")) return false;
+            if (c.args.len != 1 or c.args[0].* != .string_lit) return false;
+            saw_decl = true;
+        }
+    }
+    return saw_decl;
+}
+
 fn module_top_level_assigns(mod: *const ast.Module, name: []const u8) bool {
     for (mod.body.stmts) |*stmt| {
         switch (stmt.*) {
@@ -123,6 +148,10 @@ pub const CodeGen = struct {
     native_dense_module_tables: std.StringHashMapUnmanaged(NativeDenseModuleTable) = .empty,
     /// Function-local `t = {}` lowered to `t_items[]` + `t_len` (no lua tables).
     native_str_list_locals: std.StringHashMapUnmanaged(void) = .empty,
+    /// Names in the current block that must NOT take the `t_items[]` lowering
+    /// because they are used as keyed tables (`t.field = v` / `t["k"] = v`).
+    /// Populated per-block before emission; see `note_str_list_disqualifications`.
+    str_list_disqualified: std.StringHashMapUnmanaged(void) = .empty,
     /// Local binding name → embedded module C symbol prefix (from `X = req "path"`).
     req_module_bindings: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// Req bindings that omit `lua_require` / `duo_g_*` storage (native-direct embedded modules).
@@ -139,6 +168,12 @@ pub const CodeGen = struct {
     /// directory's init.duo); the second must register the cname that actually
     /// exists, not a fresh one derived from its own name.
     embedded_module_paths: std.StringArrayHashMapUnmanaged([]const u8) = .empty,
+    /// Embedded module path -> whether it was actually emitted in native-scalar
+    /// mode. Producer and consumer used to decide this independently and could
+    /// disagree: a table-exporting module emitted a real lua table while its
+    /// consumer still flattened `m.x` to a native `mod__x` symbol that nothing
+    /// defined. This is the single record both sides now read.
+    embedded_module_native: std.StringHashMapUnmanaged(bool) = .empty,
     trace_embed: bool = true,
     /// Names reassigned inside conditionally-executed code. Their declaration
     /// initializer must never be folded against, so binding them is refused.
@@ -581,6 +616,7 @@ pub const CodeGen = struct {
                 .repeat_loop => |*rl| try self.poison_assigned_in_block(&rl.body),
                 .num_for => |*nf| try self.poison_assigned_in_block(&nf.body),
                 .gen_for => |*gf| try self.poison_assigned_in_block(&gf.body),
+                .func_decl => |*fd| try self.poison_assigned_in_block(&fd.func.body),
                 .if_stmt => |*is| {
                     try self.poison_assigned_in_block(&is.then);
                     for (is.elseifs) |*ei| try self.poison_assigned_in_block(&ei.body);
@@ -1073,9 +1109,16 @@ pub const CodeGen = struct {
             try self.emit_expr(obj);
             self.p("->{s}", .{field});
         } else if (obj.* == .field) {
-            const use_arrow = self.field_base_is_native_record_ptr(obj.field.obj);
             try self.emit_native_field_access(obj.field.obj, obj.field.field);
-            if (use_arrow) self.p("->{s}", .{field}) else self.p(".{s}", .{field});
+            // A nested record field is embedded BY VALUE (`duo_rec_X inr;`), not
+            // a pointer, so every hop after the root uses `.`: `o->inr.a`, never
+            // `o->inr->a`. Deciding this from whether the ROOT is a pointer
+            // param emitted `->` for all hops and produced "member reference
+            // type ... is not a pointer" — which is what made a record holding
+            // a record uncallable across a module boundary, and is why
+            // std.compiler.lexer (Lexer holds Tok and Loc) could not drive
+            // SH-04's token parser.
+            self.p(".{s}", .{field});
         } else {
             try self.emit_expr(obj);
             self.p(".{s}", .{field});
@@ -1464,6 +1507,35 @@ pub const CodeGen = struct {
         }
         if (e.* == .call) {
             const c = e.call;
+            // `to(T)(v)` yields T. Without this the type is unknown and a
+            // chained projection (`x:to(i64):to(str)`) cannot resolve its
+            // second receiver — the edge knows its own target, so say so.
+            if (c.func.* == .call and c.func.call.func.* == .name and
+                std.mem.eql(u8, c.func.call.func.name.ident, "to") and
+                c.func.call.args.len == 1 and c.func.call.args[0].* == .name)
+            {
+                if (self.mem_type_from_name(c.func.call.args[0].name.ident)) |t| return t;
+                if (std.mem.eql(u8, c.func.call.args[0].name.ident, "str")) return .str;
+            }
+        }
+        // `len(x)` yields what `#x` yields — one edge, one result type.
+        if (e.* == .call and e.call.func.* == .name and
+            std.mem.eql(u8, e.call.func.name.ident, "len") and e.call.args.len == 1 and
+            !self.user_owns_name("len"))
+        {
+            var lu = ast.Expr{ .unop = .{ .loc = e.call.loc, .op = .len, .operand = e.call.args[0] } };
+            return self.expr_type(&lu);
+        }
+        // Same edge, receiver-first spelling: `v:to(T)` also yields T.
+        if (e.* == .method_call) {
+            const mc = e.method_call;
+            if (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1 and mc.args[0].* == .name) {
+                if (self.mem_type_from_name(mc.args[0].name.ident)) |t| return t;
+                if (std.mem.eql(u8, mc.args[0].name.ident, "str")) return .str;
+            }
+        }
+        if (e.* == .call) {
+            const c = e.call;
             if (self.enum_eq_call_result_type(c.func, c.args)) |t| return t;
             if (self.enum_display_call_result_type(c.func, c.args)) |t| return t;
             if (self.mem_call_result_type(c.func, c.args)) |t| return t;
@@ -1827,6 +1899,62 @@ pub const CodeGen = struct {
 
     fn is_native_str_list_local(self: *const CodeGen, name: []const u8) bool {
         return self.native_str_list_locals.contains(name);
+    }
+
+    fn is_str_list_disqualified(self: *const CodeGen, name: []const u8) bool {
+        return self.str_list_disqualified.contains(name);
+    }
+
+    /// Record `name` as ineligible for the `t_items[]` + `t_len` lowering.
+    fn disqualify_str_list(self: *CodeGen, name: []const u8) !void {
+        if (self.str_list_disqualified.contains(name)) return;
+        const owned = try self.alloc.dupe(u8, name);
+        try self.str_list_disqualified.put(self.alloc, owned, {});
+    }
+
+    /// Walk a block (including nested blocks) and disqualify every `t = {}`
+    /// candidate that is later used as a *keyed* table — `t.field = v` or
+    /// `t["k"] = v`. The `t_items[]` lowering only models positional string
+    /// appends, so without this scan a module like `M = {}; M.OP_nop = 1`
+    /// silently lowers `M` to an array and emits its field writes against a
+    /// table that was never declared.
+    fn note_str_list_disqualifications(self: *CodeGen, blk: *const ast.Block) E!void {
+        for (blk.stmts) |*stmt| try self.scan_stmt_for_keyed_table_use(stmt);
+    }
+
+    fn scan_stmt_for_keyed_table_use(self: *CodeGen, stmt: *const ast.Stmt) E!void {
+        switch (stmt.*) {
+            .assign => |*as| {
+                for (as.targets) |t| try self.scan_expr_for_keyed_table_use(t);
+            },
+            .if_stmt => |*is| {
+                try self.note_str_list_disqualifications(&is.then);
+                for (is.elseifs) |*ei| try self.note_str_list_disqualifications(&ei.body);
+                if (is.else_body) |*eb| try self.note_str_list_disqualifications(eb);
+            },
+            .while_loop => |*ws| try self.note_str_list_disqualifications(&ws.body),
+            .repeat_loop => |*rs| try self.note_str_list_disqualifications(&rs.body),
+            .num_for => |*fs| try self.note_str_list_disqualifications(&fs.body),
+            .gen_for => |*fs| try self.note_str_list_disqualifications(&fs.body),
+            .do_block => |*db| try self.note_str_list_disqualifications(&db.body),
+            else => {},
+        }
+    }
+
+    fn scan_expr_for_keyed_table_use(self: *CodeGen, expr: *const ast.Expr) E!void {
+        switch (expr.*) {
+            // `t.field = v` — named key, never a positional append.
+            .field => |f| {
+                if (f.obj.* == .name) try self.disqualify_str_list(f.obj.name.ident);
+            },
+            // `t["k"] = v` — string key, likewise not positional.
+            .index => |ix| {
+                if (ix.obj.* == .name and ix.key.* == .string_lit) {
+                    try self.disqualify_str_list(ix.obj.name.ident);
+                }
+            },
+            else => {},
+        }
     }
 
     fn func_expr_type(self: *CodeGen, fb: *const ast.FuncBody) RT {
@@ -2249,6 +2377,12 @@ pub const CodeGen = struct {
 
     fn mem_type_arg(self: *CodeGen, args: []const *ast.Expr, index: usize) ?RT {
         if (index >= args.len) return null;
+        // Canonical: a TYPE NAME value — `mem.store(i32)(p, v)`. Spec 2.10 G3
+        // makes a type an ordinary value, so the descriptor parameter is the
+        // type itself, not a string naming it. The `"i32"` string form is the
+        // graveyarded spelling, still accepted so existing sources build while
+        // they migrate.
+        if (args[index].* == .name) return self.mem_type_from_name(args[index].name.ident);
         if (args[index].* != .string_lit) return null;
         return self.mem_type_from_name(args[index].string_lit.val);
     }
@@ -2270,6 +2404,19 @@ pub const CodeGen = struct {
     }
 
     fn mem_call_result_type(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?RT {
+        // LAW-STRATA curried form: `mem.load(f64)(p)`. The descriptor group
+        // carries the type, so the result type must be read from the INNER
+        // group — otherwise the call infers `any` and the consuming site wraps
+        // a native double in lua_to_num.
+        if (func.* == .call and func.call.args.len == 1 and func.call.func.* != .call) {
+            const inner = func.call;
+            var buf: [8]*ast.Expr = undefined;
+            if (args.len + 1 <= buf.len) {
+                buf[0] = inner.args[0];
+                for (args, 0..) |a, i| buf[i + 1] = a;
+                return self.mem_call_result_type(inner.func, buf[0 .. args.len + 1]);
+            }
+        }
         const fname = self.mem_intrinsic_name(func) orelse return null;
         if (std.mem.eql(u8, fname, "alloc") or std.mem.eql(u8, fname, "calloc") or
             std.mem.eql(u8, fname, "byte_add"))
@@ -2575,6 +2722,47 @@ pub const CodeGen = struct {
 
     // ── Module entry ──────────────────────────────────────────────────────────
 
+    /// True when module-level code materializes a real table: some name is bound
+    /// to a table literal AND receives named/string-keyed writes
+    /// (`M = {}` / `M.x = 1`). Such a module emits `lua_table_set_str_lit`, so it
+    /// needs the lua runtime — native-scalar mode would emit `void* M = NULL`
+    /// and silently drop every field write. Deliberately NOT scoped to the tail
+    /// expression: `lib/std/wasm/ward_mvp_opcodes.duo` has no tail at all and
+    /// still exports a table.
+    fn module_materializes_table(mod: *const ast.Module) bool {
+        for (mod.body.stmts) |*outer| {
+            if (outer.* != .assign) continue;
+            for (outer.assign.targets, 0..) |t0, ti| {
+                if (t0.* != .name) continue;
+                if (ti >= outer.assign.values.len or outer.assign.values[ti].* != .table) continue;
+                // A non-empty literal already materializes the table; an empty
+                // one only does so if fields are written to it afterwards.
+                if (outer.assign.values[ti].table.fields.len > 0) return true;
+                if (module_has_keyed_write(mod, t0.name.ident)) return true;
+            }
+        }
+        return false;
+    }
+
+    fn module_has_keyed_write(mod: *const ast.Module, name: []const u8) bool {
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .assign) continue;
+            for (stmt.assign.targets) |t| {
+                switch (t.*) {
+                    .field => |f| {
+                        if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, name)) return true;
+                    },
+                    .index => |ix| {
+                        if (ix.obj.* == .name and ix.key.* == .string_lit and
+                            std.mem.eql(u8, ix.obj.name.ident, name)) return true;
+                    },
+                    else => {},
+                }
+            }
+        }
+        return false;
+    }
+
     pub fn can_emit_native_scalar_module(self: *CodeGen, mod: *const ast.Module) bool {
         if (native_diag) std.debug.print("[native-diag] CALLED duo_mode={} target={s} load={} lib={} test={} bench={}\n", .{ self.duo_mode, self.target, self.load_chunk, self.lib_mode, self.test_mode, self.bench_mode });
         // Pass 11 WP-01: bench_mode no longer forces boxing by default.
@@ -2616,6 +2804,18 @@ pub const CodeGen = struct {
                 native_diag_fail("mod-tail");
                 return false;
             }
+            // A module whose exported value is a table built by keyed writes
+            // (`M = {}` / `M.x = 1` / … / `M`) has to materialize a real table,
+            // so it needs the lua runtime. Under native-scalar mode the producer
+            // emitted `void* M = NULL` and dropped every field write, while the
+            // CONSUMER flattened `m.x` to a native symbol (`mod__x`) that was
+            // never defined — which is why a constants module could not be
+            // `req`d at all, including duo's own
+            // lib/std/wasm/ward_mvp_opcodes.duo.
+        }
+        if (module_materializes_table(mod)) {
+            native_diag_fail("keyed-table-export");
+            return false;
         }
 
         for (mod.body.stmts) |*stmt| {
@@ -4418,7 +4618,18 @@ pub const CodeGen = struct {
         if (!self.load_chunk and self.moduleNeedsLuaRuntime()) {
             self.pl("int duo_argc; char** duo_argv;", .{});
         }
-        if (!std.mem.eql(u8, self.target, "wasm32-wasi") and self.moduleNeedsLuaRuntime()) {
+        // Declared on EVERY target, wasm32-wasi included. The `!wasm32-wasi`
+        // guard that used to be here suppressed the declaration while leaving
+        // its USE in place: lua_assert's runtime preamble calls
+        // `longjmp(duo_test_jmp, 1)` unconditionally, so every program needing
+        // the Lua runtime failed to compile for wasm with "use of undeclared
+        // identifier 'duo_test_jmp'" — including examples/benchmark_wasm.lua,
+        // the source scripts/run_wasm_benchmark.sh itself builds.
+        //
+        // Declaring it costs one unused jmp_buf. The longjmp is reachable only
+        // under `duo_test_runner_active`, which a wasm build never sets, so
+        // wasi-libc's limited setjmp support is never exercised.
+        if (self.moduleNeedsLuaRuntime()) {
             self.pl("jmp_buf duo_test_jmp;", .{});
         }
         if (self.test_mode) {
@@ -4866,6 +5077,15 @@ pub const CodeGen = struct {
         self.emitted_closures.clearRetainingCapacity();
         self.emitted_closure_structs.clearRetainingCapacity();
         try self.collect_closures_module(mod, &self.all_closures);
+        // Names a function body assigns cannot be folded against their
+        // file-scope initializer. This must run before ANY body is emitted:
+        // functions are emitted ahead of the top-level walk, so poisoning
+        // discovered during that walk arrives too late. Without it, `n = 0` plus
+        // a `bump()` doing `n = n + 1` left a sibling `get(): i64` compiling to
+        // `return 0` — wrong, and only for native scalars.
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* == .func_decl) try self.poison_assigned_in_block(&stmt.func_decl.func.body);
+        }
         if (self.duo_mode) {
             try self.emit_required_modules(mod);
         }
@@ -4977,8 +5197,20 @@ pub const CodeGen = struct {
         // (string, table, math, package, ...) are set up before any export is
         // invoked by the host.
         if (self.lib_mode) {
-            if (std.mem.eql(u8, self.target, "wasm32-wasi")) {
-                self.p("__attribute__((constructor)) static void duo_wasm_initialize(void) {{\n", .{});
+            // SH-03: a library needs its runtime globals initialised before any
+            // export is called, on EVERY target — not only wasm.  Native lib
+            // mode used to emit no initialiser at all, so a C host that linked a
+            // Duo module and called an `@c.export` entry segfaulted on
+            // uninitialised globals: the object linked clean (`nm` shows `T`),
+            // then died on the first call.  That is what blocked SH-03, one
+            // level under the "symbols aren't exported" reading it was filed as.
+            //
+            // A constructor is the whole fix: it runs when the object is loaded,
+            // so the host needs no init call and the ABI is unchanged.
+            if (self.moduleNeedsLuaRuntime()) {
+                const is_wasm = std.mem.eql(u8, self.target, "wasm32-wasi");
+                const init_name = if (is_wasm) "duo_wasm_initialize" else "duo_lib_initialize";
+                self.p("__attribute__((constructor)) static void {s}(void) {{\n", .{init_name});
                 self.indent = 1;
                 self.pl("package = lua_package_init();", .{});
                 self.pl("math = lua_math_init();", .{});
@@ -4986,8 +5218,17 @@ pub const CodeGen = struct {
                 self.pl("debug = lua_debug_init();", .{});
                 self.pl("string = lua_string_init();", .{});
                 self.pl("table = lua_table_init();", .{});
+                // These have no wasi implementation; main() gates them the same way.
+                if (!is_wasm) {
+                    self.pl("coroutine = lua_coroutine_init();", .{});
+                    self.pl("io = lua_io_init();", .{});
+                    self.pl("os = lua_os_init();", .{});
+                }
                 self.pl("jit = lua_jit_init();", .{});
                 self.pl("ffi = lua_ffi_init();", .{});
+                if (!is_wasm) {
+                    self.pl("net = duo_net_init();", .{});
+                }
                 self.pl("duo_modules = lua_table_new();", .{});
                 self.pl("duo_register_modules();", .{});
                 self.pl("_VERSION = lua_val_from_str(\"Lua 5.5\");", .{});
@@ -9179,6 +9420,13 @@ pub const CodeGen = struct {
                     for (is.elseifs) |*ei| try self.poison_assigned_in_block(&ei.body);
                     if (is.else_body) |*eb| try self.poison_assigned_in_block(eb);
                 },
+                // A function body is the most conditionally-executed construct
+                // there is: it runs on every call, in an order this pass cannot
+                // know. Without this, `n = 0` followed by a `bump()` that does
+                // `n = n + 1` left `n` foldable, and a sibling `get(): i64`
+                // reading it compiled to `return 0` — silently wrong, and only
+                // for native scalars (a `str` was never folded, so it worked).
+                .func_decl => |*fd| try self.poison_assigned_in_block(&fd.func.body),
                 else => {},
             }
         }
@@ -9186,6 +9434,7 @@ pub const CodeGen = struct {
 
     fn emit_block_stmts(self: *CodeGen, blk: *const ast.Block, tail_mode: BlockTailMode) E!void {
         try self.poison_conditionally_assigned(blk);
+        try self.note_str_list_disqualifications(blk);
         var i: usize = 0;
         while (i < blk.stmts.len) {
             if (try self.try_emit_fused_mandel_benchmark(blk.stmts[i..], &i)) continue;
@@ -10255,7 +10504,8 @@ pub const CodeGen = struct {
                                 }
                             }
                             if (!self.moduleNeedsLuaRuntime() and effective_tt == .any and i < as.values.len and
-                                as.values[i].* == .table and as.values[i].table.fields.len == 0)
+                                as.values[i].* == .table and as.values[i].table.fields.len == 0 and
+                                !self.is_str_list_disqualified(name))
                             {
                                 try self.note_local(name);
                                 try self.note_local_type(name, .any);
@@ -10764,6 +11014,42 @@ pub const CodeGen = struct {
                     self.expr_type(nf.start);
                 const vt2 = if (vt == .any) RT.i64 else vt;
                 try self.note_local_type(nf.var_name, vt2);
+                // The continuation test MUST follow the step's sign. This was an
+                // unconditional `<=`, so `for i = 4, 1, -1` emitted
+                // `for (int64_t i = 4; i <= 1; i += (-1))` and ran ZERO times —
+                // every descending loop silently did nothing. It went unnoticed
+                // because the DIRECT ARM64 backend lowers the same loop
+                // correctly, so examples/native_for_smoke.duo (which compiles
+                // native) passed while the C backend was wrong. That is exactly
+                // the backend divergence scripts/semantic_harness.duo exists to
+                // catch, and it took the harness to surface it.
+                const step_negative: ?bool = if (nf.step) |s| num_for_step_negative(s) else false;
+                var closed_scope = false;
+                if (step_negative == null) {
+                    // Sign unknown until run time. Lua evaluates `stop` and
+                    // `step` exactly ONCE, so they are hoisted into temps rather
+                    // than re-evaluated in the condition — an expression with a
+                    // side effect must not fire per iteration. The temps live in
+                    // their own C block, so a nested loop reusing the same loop
+                    // variable name simply shadows, which is well defined. The
+                    // block opens BEFORE the vectorization pragma below: a
+                    // `#pragma clang loop` must be immediately followed by the
+                    // loop itself, and an intervening `{` is a hard error.
+                    closed_scope = true;
+                    self.p("{{\n", .{});
+                    self.indent += 1;
+                    self.ind();
+                    self.typ(vt2);
+                    self.p(" __dfor_stop_{s} = ", .{nf.var_name});
+                    try self.emit_num_for_bound(nf.stop, vt2);
+                    self.p(";\n", .{});
+                    self.ind();
+                    self.typ(vt2);
+                    self.p(" __dfor_step_{s} = ", .{nf.var_name});
+                    try self.emit_num_for_bound(nf.step.?, vt2);
+                    self.p(";\n", .{});
+                    self.ind();
+                }
                 // Emit vectorization hint for simple counted loops in typed code.
                 // Stronger pragma when sema detects reduction/accumulation loops.
                 if (self.current_ret.is_native()) {
@@ -10787,10 +11073,18 @@ pub const CodeGen = struct {
                 self.typ(vt2);
                 self.p(" {s} = ", .{nf.var_name});
                 try self.emit_num_for_bound(nf.start, vt2);
-                self.p("; {s} <= ", .{nf.var_name});
-                try self.emit_num_for_bound(nf.stop, vt2);
-                self.p("; {s} += ", .{nf.var_name});
-                if (nf.step) |s| try self.emit_num_for_bound(s, vt2) else self.p("1", .{});
+                self.p("; ", .{});
+                if (step_negative) |neg| {
+                    self.p("{s} {s} ", .{ nf.var_name, if (neg) ">=" else "<=" });
+                    try self.emit_num_for_bound(nf.stop, vt2);
+                    self.p("; {s} += ", .{nf.var_name});
+                    if (nf.step) |s| try self.emit_num_for_bound(s, vt2) else self.p("1", .{});
+                } else {
+                    self.p("__dfor_step_{s} > 0 ? {s} <= __dfor_stop_{s} : {s} >= __dfor_stop_{s}", .{
+                        nf.var_name, nf.var_name, nf.var_name, nf.var_name, nf.var_name,
+                    });
+                    self.p("; {s} += __dfor_step_{s}", .{ nf.var_name, nf.var_name });
+                }
                 self.p(") {{\n", .{});
                 self.indent += 1;
                 try self.push_break_scope();
@@ -10798,6 +11092,10 @@ pub const CodeGen = struct {
                 try self.emit_block(&nf.body);
                 self.indent -= 1;
                 self.pl("}}", .{});
+                if (closed_scope) {
+                    self.indent -= 1;
+                    self.pl("}}", .{});
+                }
             },
             .gen_for => |*gf| {
                 const IterMode = enum { generic, direct_table, explicit_pairs, explicit_ipairs };
@@ -11702,6 +12000,10 @@ pub const CodeGen = struct {
                         if (try self.try_emit_req_module_const_field(mod_cname, f.field, want)) return true;
                     }
                 }
+                // §2.7 ambient namespace: `std.a.b.C` is a static path and folds.
+                if (f.obj.* == .field) {
+                    if (try self.try_emit_ambient_module_const_field(f.obj, f.field, want)) return true;
+                }
                 const obj_rt = self.expr_type(f.obj);
                 if (self.type_lowers_native(obj_rt)) {
                     try self.emit_native_field_access(f.obj, f.field);
@@ -12598,9 +12900,39 @@ pub const CodeGen = struct {
                     self.p("(void*)0", .{});
                     return;
                 }
+                // 2.10 G3: a primitive type name in VALUE position is a
+                // descriptor value. Last resort — every compile-time use of a
+                // type name (`to(T)(v)`, `mem.store(T)`, a type annotation)
+                // resolves the name earlier and never reaches here, so this only
+                // fires where the program genuinely wants the type as data.
+                if (primitive_descriptor_name(n.ident)) |canon| {
+                    self.emit_primitive_descriptor(canon);
+                    return;
+                }
                 self.emit_var_name(n.ident);
             },
             .field => |f| {
+                // Pass 38 G6: `value.@name` — SEMANTIC access. The parser keeps
+                // the `@` sigil in the field name so only this arm treats it
+                // specially and every other field path is untouched.
+                //
+                // §1.3 defines it as the effective metatable entry, and §8.5
+                // maps `@x` onto Lua's `__x`, which is exactly what
+                // `lua_get_metafield_lit` already reads — so this is one lookup
+                // against machinery that exists, not a new dispatch mechanism.
+                // Retrieval, never binding: `p.@eq` is the VALUE of the
+                // relation. It yields nil when the relation is absent rather
+                // than erroring, matching §9's rule that an unconsumed
+                // projection is a graph fact and not an emitted symbol.
+                if (f.field.len > 1 and f.field[0] == '@') {
+                    const sem = f.field[1..];
+                    var lua_name_buf: [128]u8 = undefined;
+                    const lua_name = std.fmt.bufPrint(&lua_name_buf, "__{s}", .{sem}) catch sem;
+                    self.p("lua_get_metafield_lit(", .{});
+                    try self.emit_as_lua_value(f.obj);
+                    self.p(", \"{s}\", {d}u, {d})", .{ lua_name, calc_lua_hash(lua_name), lua_name.len });
+                    return;
+                }
                 // Enum variant access: `Color.Green` -> the C enum constant
                 if (f.obj.* == .name and self.enum_has_payload.contains(f.obj.name.ident)) {
                     const ename = f.obj.name.ident;
@@ -12624,6 +12956,32 @@ pub const CodeGen = struct {
                 if (f.obj.* == .name) {
                     if (self.req_module_bindings.get(f.obj.name.ident)) |mod_cname| {
                         if (try self.try_emit_req_module_const_field(mod_cname, f.field, self.expr_type(expr))) return;
+                    }
+                }
+                // §2.7 ambient namespace: `std.a.b.C` is a static path and folds.
+                if (f.obj.* == .field) {
+                    if (try self.try_emit_ambient_module_const_field(f.obj, f.field, self.expr_type(expr))) return;
+                }
+                // §2.7: when the path itself NAMES A MODULE (`std.json`) there is
+                // no `std` variable to walk from — emitting one produced
+                // "use of undeclared identifier 'std'". Resolve it exactly as a
+                // `req` binding does, so the caller's own field access
+                // (`.encode`) then reads the module table as usual. Runs after
+                // the const fold so a folded symbol still wins, and only when the
+                // path resolves to a real module file, leaving `a.b` untouched.
+                if (self.duo_mode) {
+                    var mbuf: [512]u8 = undefined;
+                    if (ambient_dotted_path(expr, &mbuf)) |mod_path| {
+                        if (std.mem.startsWith(u8, mod_path, "std.") and
+                            self.find_module_file_for_req(mod_path) != null)
+                        {
+                            self.p("lua_require(lua_val_from_literal(\"{s}\", {d}, {d}))", .{
+                                mod_path,
+                                calc_lua_hash(mod_path),
+                                mod_path.len,
+                            });
+                            return;
+                        }
                     }
                 }
                 const obj_rt = self.expr_type(f.obj);
@@ -13548,6 +13906,24 @@ pub const CodeGen = struct {
             },
             .method_call => |mc| {
                 const ot = self.expr_type(mc.obj);
+
+                // LAW-CALL generalized (spec 4.2, S13): a `:` invocation
+                // resolves ordinary members FIRST — data always wins the name —
+                // then a relation family with a receiver-bindable role,
+                // normalizing to the SAME edge: `p:to(str)` === `to(str)(p)`.
+                // Restricted to scalar receivers, where no user member can
+                // exist, so the data-wins rule is preserved by construction.
+                // Retrieval stays anchored (`p@to` is the value; `p:to(str)`
+                // is the act).
+                if (mc.args.len == 1 and std.mem.eql(u8, mc.method, "to") and
+                    (ot.is_numeric() or ot == .str or ot == .bool))
+                {
+                    var fam = ast.Expr{ .name = .{ .loc = mc.loc, .ident = "to" } };
+                    var inner_args = [_]*ast.Expr{mc.args[0]};
+                    var inner = ast.Expr{ .call = .{ .loc = mc.loc, .func = &fam, .args = inner_args[0..] } };
+                    var outer_args = [_]*ast.Expr{mc.obj};
+                    if (try self.maybe_emit_stdlib_call(&inner, outer_args[0..], self.expr_type(expr))) return;
+                }
 
                 // ═══════════════════════════════════════════════════════════
                 // Zero-cost metatable dispatch: if we know the object's type
@@ -16729,9 +17105,204 @@ pub const CodeGen = struct {
         return false;
     }
 
+    /// One lowering for both orientations of the conversion edge (A3 ONE EDGE,
+    /// 3.2: "orientations to/from share one edge"). `target` names the
+    /// destination descriptor; `value` is the single runtime operand.
+    fn emit_convert_edge(self: *CodeGen, target: []const u8, loc: ast.Loc, value: *ast.Expr, result_rt: RT) E!bool {
+        var one = [_]*ast.Expr{value};
+        if (std.mem.eql(u8, target, "str")) {
+            var synth = ast.Expr{ .name = .{ .loc = loc, .ident = "tostring" } };
+            return try self.maybe_emit_stdlib_call(&synth, one[0..], result_rt);
+        }
+        if (std.mem.eql(u8, target, "f64") or std.mem.eql(u8, target, "f32")) {
+            var synth = ast.Expr{ .name = .{ .loc = loc, .ident = "tonumber" } };
+            return try self.maybe_emit_stdlib_call(&synth, one[0..], result_rt);
+        }
+        // Integer targets lower to the native C conversion, which truncates
+        // toward zero — no boxed call in between.
+        if (std.mem.eql(u8, target, "i64") or std.mem.eql(u8, target, "i32") or
+            std.mem.eql(u8, target, "i16") or std.mem.eql(u8, target, "i8"))
+        {
+            // A native C cast is only valid when the SOURCE is already numeric.
+            // Applied to a `str` it cast the `const char*` and produced a
+            // POINTER VALUE silently (`to(i64)("42")` -> 4338831547), and
+            // applied to an `any` it did not compile at all ("operand of type
+            // 'lua_Value' where arithmetic or pointer type is required"). Both
+            // route through the boxed numeric conversion instead, which parses
+            // strings — the same conversion `tonumber` is a projection of, so
+            // the edge has one meaning regardless of what flows into it.
+            const src = self.expr_type(value);
+            if (result_rt == .any) self.p("lua_val_from_int(", .{});
+            if (src == .str or src == .any) {
+                self.p("((int64_t)lua_to_num(", .{});
+                try self.emit_as_lua_value(value);
+                self.p("))", .{});
+            } else {
+                self.p("((int64_t)(", .{});
+                try self.emit_expr(value);
+                self.p("))", .{});
+            }
+            if (result_rt == .any) self.p(")", .{});
+            return true;
+        }
+        return false;
+    }
+
+    /// LAW-CALL's "data always wins the name", enforced by SCOPE LOOKUP rather
+    /// than by guessing from operand types. A relation family may only be
+    /// projected onto a bare name when the program has not bound that name
+    /// itself — `lib/std/reflect.duo` and `lib/std/utf8.duo` both define their
+    /// own `len`, and an unguarded projection silently hijacked them.
+    fn user_owns_name(self: *CodeGen, name: []const u8) bool {
+        if (self.func_decls.contains(name)) return true;
+        if (self.func_bodies.contains(name)) return true;
+        var i = self.local_scopes.items.len;
+        while (i > 0) {
+            i -= 1;
+            if (self.local_scopes.items[i].contains(name)) return true;
+        }
+        return false;
+    }
+
+    /// Spec 2.10 G3 (de-magicking): a primitive type name is an ORDINARY VALUE,
+    /// not a third category. `to(str)(x)` used to work only because the call
+    /// emitter pattern-matched the AST shape and never evaluated `str` — the
+    /// moment the same name reached value position (`t = str`, `print(str)`,
+    /// `str.from(i64)(v)`) codegen emitted a bare C identifier and clang said
+    /// "use of undeclared identifier 'str'". That is exactly the "third
+    /// category" the de-magicking test forbids.
+    ///
+    /// The set here is deliberately the LEXER KEYWORD set (`typeKeywordName` in
+    /// parser.zig), not `mem_type_from_name`'s wider alias list. `str`/`i64` are
+    /// reserved words, so no program can bind them and no projection can hijack
+    /// a user name; `string`, `ptr`, `isize`, `usize` are ordinary identifiers a
+    /// program MAY bind, so they stay out.
+    /// Whether a numeric `for` step is a statically-known NEGATIVE value.
+    /// null means the sign is only knowable at run time, which the caller
+    /// handles with a hoisted runtime test rather than guessing.
+    fn num_for_step_negative(e: *const ast.Expr) ?bool {
+        return switch (e.*) {
+            .int_lit => |x| x.val < 0,
+            .float_lit => |x| x.val < 0,
+            .unop => |u| if (u.op == .neg) blk: {
+                const inner = num_for_step_negative(u.operand) orelse break :blk null;
+                break :blk !inner;
+            } else null,
+            else => null,
+        };
+    }
+
+    fn primitive_descriptor_name(name: []const u8) ?[]const u8 {
+        for ([_][]const u8{
+            "i8",  "i16", "i32",  "i64",
+            "u8",  "u16", "u32",  "u64",
+            "f32", "f64", "bool", "void",
+            "str",
+        }) |t| {
+            if (std.mem.eql(u8, name, t)) return t;
+        }
+        return null;
+    }
+
+    /// The runtime form of a descriptor. Its identity IS its canonical name, so
+    /// two spellings of the same type are one value and `to(str) == to(str)`
+    /// holds without a registry. Compile-time uses (`to(T)(v)`, `mem.store(T)`)
+    /// intercept the name before this ever runs, so a descriptor only
+    /// materializes when the program actually treats it as data.
+    fn emit_primitive_descriptor(self: *CodeGen, canon: []const u8) void {
+        self.p("lua_val_from_literal(\"{s}\", {d}, {d})", .{
+            canon, calc_lua_hash(canon), canon.len,
+        });
+    }
+
     fn maybe_emit_stdlib_call(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr, result_rt: RT) E!bool {
+        // `has(.lens)(subject)` — the presence FAMILY (2.8): subject is the
+        // container, parameter is the lens. A lens parses to a lambda over
+        // `__proj_v`, so presence is just "apply the lens, test for nil".
+        // Demand is real: 110 sites in lib/ spell this `x.field != nil`.
+        if (func.* == .call) {
+            const hf = func.call;
+            if (hf.func.* == .name and std.mem.eql(u8, hf.func.name.ident, "has") and
+                hf.args.len == 1 and args.len == 1 and !self.user_owns_name("has"))
+            {
+                // The lens is a lambda over `__proj_v`; take its field directly
+                // rather than materializing and invoking the closure (A4 DEMAND
+                // — nothing physical unless consumed).
+                if (hf.args[0].* == .func_expr) {
+                    if (pipeline_projection_field_name(hf.args[0].func_expr)) |fname| {
+                        var fexpr = ast.Expr{ .field = .{ .loc = hf.loc, .obj = args[0], .field = fname } };
+                        // Presence is a bool; box it when the consuming site
+                        // expects a lua_Value.
+                        if (result_rt == .any) self.p("lua_val_from_bool(", .{});
+                        self.p("((", .{});
+                        try self.emit_as_lua_value(&fexpr);
+                        self.p(").type != VAL_NIL)", .{});
+                        if (result_rt == .any) self.p(")", .{});
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // `T:from(S)(v)` — the REVERSE ORIENTATION of the conversion edge
+        // (2.6 spells it `str:from(point)(raw)`): the TARGET is the receiver,
+        // the SOURCE is the descriptor group. Same edge as `to(T)(v)`.
+        if (func.* == .method_call) {
+            const recv = func.method_call;
+            if (std.mem.eql(u8, recv.method, "from") and recv.obj.* == .name and args.len == 1) {
+                if (try self.emit_convert_edge(recv.obj.name.ident, recv.loc, args[0], result_rt)) return true;
+            }
+        }
+        // Same edge, DOT spelling. Gate 6 requires `to(str)` and `str.from(T)`
+        // to be one edge with one id, and canonical Duo writes `.` not `:` —
+        // without this arm `str.from(...)` fell through to a table lookup on the
+        // descriptor and died. Two groups (`str.from(i64)(42)`, the source
+        // descriptor named explicitly per gate 6) and one group
+        // (`str.from(42)`, the source inferred from the value) both lower
+        // through emit_convert_edge, so all four spellings are one lowering.
+        if (func.* == .call and func.call.func.* == .field and args.len == 1) {
+            const fld = func.call.func.field;
+            if (std.mem.eql(u8, fld.field, "from") and fld.obj.* == .name and func.call.args.len == 1) {
+                if (try self.emit_convert_edge(fld.obj.name.ident, fld.loc, args[0], result_rt)) return true;
+            }
+        }
+        if (func.* == .field and args.len == 1) {
+            const fld = func.field;
+            if (std.mem.eql(u8, fld.field, "from") and fld.obj.* == .name) {
+                if (try self.emit_convert_edge(fld.obj.name.ident, fld.loc, args[0], result_rt)) return true;
+            }
+        }
+        // Canonical relation family `to` (spec 2.6): `to(T)(v)` is the curried
+        // conversion — `to(str)(x)`, `to(i64)(x)`. Spec 2.10's de-magicking test
+        // (G3) requires every std name to be an ordinary value or a relation
+        // family with inspectable edges, "no third category", so the
+        // Lua-inherited tostring/tonumber are PROJECTIONS of `to` rather than
+        // builtins of their own. The canonical spelling is the one to write;
+        // the vestiges remain only as aliases.
+        if (func.* == .call) {
+            const inner = func.call;
+            const fam_to = inner.func.* == .name and std.mem.eql(u8, inner.func.name.ident, "to");
+            // `from` is NOT resolvable standalone: 2.6 spells it
+            // `str:from(point)(raw)` — the TARGET is the receiver, the source
+            // is the descriptor group. It therefore arrives through method
+            // projection below, never as a bare call, so there is nothing to
+            // guess from demand here.
+            if (fam_to and inner.args.len == 1 and inner.args[0].* == .name and args.len == 1) {
+                // Same edge as `T:from(S)(v)` — one lowering, two spellings.
+                if (try self.emit_convert_edge(inner.args[0].name.ident, inner.func.name.loc, args[0], result_rt)) return true;
+            }
+        }
         if (func.* != .name) return false;
         const name = func.name.ident;
+        // `len` relation family (2.6). `#x` is its OPERATOR projection (2.1)
+        // and `s:len()` already has a specialized typed-string lowering that
+        // owns the receiver form — so only the operation-first spelling is
+        // added here, and only when the program has not bound `len` itself.
+        if (std.mem.eql(u8, name, "len") and args.len == 1 and !self.user_owns_name("len")) {
+            var u = ast.Expr{ .unop = .{ .loc = func.name.loc, .op = .len, .operand = args[0] } };
+            try self.emit_expr(&u);
+            return true;
+        }
         if (std.mem.eql(u8, name, "assert")) {
             self.p("lua_assert(", .{});
             if (args.len > 0) {
@@ -17177,7 +17748,7 @@ pub const CodeGen = struct {
     }
 
     /// True when `emit_expr(e)` produces a pointer into a boxed lua_String
-    /// (whose length header duo_str_len can read): generic lua_Value-emitting
+    /// (whose length header duo_str_len_hdr can read): generic lua_Value-emitting
     /// exprs coerced via lua_to_str, or recognized stdlib string-module calls
     /// (string.char/sub/rep/...) that lower through lua_str_* and are unwrapped
     /// with lua_to_str. Plain native strings (concat, params, native calls,
@@ -17323,6 +17894,37 @@ pub const CodeGen = struct {
     }
 
     fn maybe_emit_mem_call(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr, result_rt: RT) E!bool {
+        // LAW-STRATA (spec 4.2): every application group is single-kind —
+        // descriptor/semantic parameters never share a group with runtime
+        // operands. The canonical spelling is `mem.store(i32)(p, v)`, never
+        // `mem.store(i32, p, v)`; the curry boundary IS the specialization
+        // boundary, visibly. Splice the descriptor group back onto the operand
+        // group so the existing lowering serves the canonical form.
+        if (func.* == .call and func.call.args.len == 1 and func.call.func.* != .call) {
+            const inner = func.call;
+            var buf: [8]*ast.Expr = undefined;
+            if (args.len + 1 <= buf.len) {
+                buf[0] = inner.args[0];
+                for (args, 0..) |a, i| buf[i + 1] = a;
+                return try self.maybe_emit_mem_call(inner.func, buf[0 .. args.len + 1], result_rt);
+            }
+        }
+        // Canonical curried form: `mem.store("i64")(ptr, val)`. A type selector
+        // is its own curry level and must never share a parameter list with
+        // values (Pass 48 §2.6 application schemas; idiom 2, operation-first
+        // invocation). Normalize `f(type)(rest…)` to the flat `f(type, rest…)`
+        // vector the emitters below already take, so both spellings lower
+        // identically and the canonical one costs nothing.
+        if (func.* == .call) {
+            const inner = func.call;
+            if (self.mem_intrinsic_name(inner.func) != null and inner.args.len == 1) {
+                var joined: std.ArrayList(*ast.Expr) = .empty;
+                defer joined.deinit(self.alloc);
+                try joined.append(self.alloc, inner.args[0]);
+                try joined.appendSlice(self.alloc, args);
+                return try self.maybe_emit_mem_call(inner.func, joined.items, result_rt);
+            }
+        }
         const fname = self.mem_intrinsic_name(func) orelse return false;
 
         if (std.mem.eql(u8, fname, "alloc")) {
@@ -18034,15 +18636,15 @@ pub const CodeGen = struct {
             if (self.expr_type(args[0]) == .str) {
                 // Boxed strings (lua_to_str(...) of a boxed value or a recognized
                 // stdlib string call) carry a lua_String header whose len
-                // duo_str_len reads directly. Plain native strings (concat
+                // duo_str_len_hdr reads directly. Plain native strings (concat
                 // results, params, native calls, literals) are NOT lua_String-
                 // backed — reading the header reads garbage, so use strlen.
                 const is_boxed = self.expr_is_boxed_string_ptr(args[0]);
                 if (result_rt.is_numeric()) {
                     var buf: [64]u8 = undefined;
-                    self.p("(({s}){s}(", .{ result_rt.c_type(&buf), if (is_boxed) "duo_str_len" else "strlen" });
+                    self.p("(({s}){s}(", .{ result_rt.c_type(&buf), if (is_boxed) "duo_str_len_hdr" else "strlen" });
                 } else {
-                    self.p("((int64_t){s}(", .{if (is_boxed) "duo_str_len" else "strlen"});
+                    self.p("((int64_t){s}(", .{if (is_boxed) "duo_str_len_hdr" else "strlen"});
                 }
                 try self.emit_expr(args[0]);
                 self.p("))", .{});
@@ -19168,6 +19770,18 @@ pub const CodeGen = struct {
                     const mod_name = std.fmt.bufPrint(&buf, "std.{s}", .{f.field}) catch unreachable;
                     try names.append(self.alloc, try self.alloc.dupe(u8, mod_name));
                     try names.append(self.alloc, try self.alloc.dupe(u8, "std"));
+                } else if (f.obj.* == .field) {
+                    // A nested ambient path names a module at a depth the
+                    // two-level case above cannot see: `std.net.url` lives one
+                    // hop below `std.net`. Offer the whole dotted path at every
+                    // hop and let module resolution keep the one that names a
+                    // real file — an unresolvable name is skipped downstream.
+                    var dbuf: [512]u8 = undefined;
+                    if (ambient_dotted_path(expr, &dbuf)) |dotted| {
+                        if (std.mem.startsWith(u8, dotted, "std.")) {
+                            try names.append(self.alloc, try self.alloc.dupe(u8, dotted));
+                        }
+                    }
                 }
                 try self.collect_require_names(f.obj, names);
             },
@@ -19234,6 +19848,11 @@ pub const CodeGen = struct {
                 else => {},
             }
         }
+        // A block's trailing expression is NOT in `stmts`, so a program whose
+        // only statement is a bare call (`print(std.json.encode(x))`) collected
+        // nothing and the module was never registered. Every other walker in
+        // this file already descends into `tail_expr`; this one did not.
+        if (block.tail_expr) |tail| try self.collect_require_names(tail, names);
     }
 
     fn find_module_path(self: *CodeGen, base_dir: []const u8, mod_name: []const u8) ?[]const u8 {
@@ -19559,6 +20178,14 @@ pub const CodeGen = struct {
     /// True when a req target is a stdlib/user module that will embed to native C (compile-time).
     fn req_module_is_native_direct(self: *CodeGen, req_path: []const u8) bool {
         if (!self.duo_mode) return false;
+        // If the module has already been embedded, trust how it was ACTUALLY
+        // emitted rather than re-deciding. A table-exporting module is not
+        // native-direct: its members live in a runtime lua table.
+        if (self.find_module_file_for_req(req_path)) |mod_path| {
+            if (self.embedded_module_native.get(mod_path)) |emitted_native| {
+                return emitted_native;
+            }
+        }
         if (self.embedded_req_is_native(req_path)) return true;
         return self.find_module_file_for_req(req_path) != null;
     }
@@ -19711,6 +20338,15 @@ pub const CodeGen = struct {
         while (it.next()) |entry| {
             const name = entry.key_ptr.*;
             if (self.req_native_direct.contains(name) and !module_top_level_assigns(mod, name)) continue;
+            // `module_top_level_assigns` counts a binding's OWN `X = req "..."`
+            // as an assignment, so the skip above is unreachable for every req
+            // binding and a spurious `lua_require` is emitted beside storage the
+            // declaration loop already skipped ("module not found: std.str").
+            // Narrow, initializer-only test: if the binding's sole top-level
+            // assignment IS its req declaration, there is nothing to initialize.
+            // Deliberately does NOT change `module_top_level_assigns` — that
+            // predicate is shared, and two attempts to alter it broke the tree.
+            if (self.req_native_direct.contains(name) and req_decl_is_sole_assignment(mod, name)) continue;
             const path = req_binding_path_for_name(mod, name) orelse continue;
             // A module that was embedded has its definitions inlined and its
             // functions called directly, so no runtime require is needed. Emitting
@@ -19965,12 +20601,68 @@ pub const CodeGen = struct {
         return self.lookup_req_module_dense_table(mod_cname, f.field);
     }
 
+    /// Flatten a `name.a.b` spine into "name.a.b". Returns null for anything
+    /// that is not a pure name/field chain, or that overflows `buf`.
+    fn ambient_dotted_path(expr: *const ast.Expr, buf: []u8) ?[]const u8 {
+        var parts: [12][]const u8 = undefined;
+        var n: usize = 0;
+        var cur = expr;
+        while (cur.* == .field) {
+            if (n >= parts.len) return null;
+            parts[n] = cur.field.field;
+            n += 1;
+            cur = cur.field.obj;
+        }
+        if (cur.* != .name or n == 0) return null;
+        var w: usize = 0;
+        const root = cur.name.ident;
+        if (root.len > buf.len) return null;
+        @memcpy(buf[0..root.len], root);
+        w = root.len;
+        var i: usize = n;
+        while (i > 0) {
+            i -= 1;
+            if (w + 1 + parts[i].len > buf.len) return null;
+            buf[w] = '.';
+            w += 1;
+            @memcpy(buf[w..][0..parts[i].len], parts[i]);
+            w += parts[i].len;
+        }
+        return buf[0..w];
+    }
+
+    /// Spec §2.7: an ambient namespace path is a STATIC path and must fold to a
+    /// direct reference, not a runtime `lua_table_get_str_lit` walk through
+    /// `duo_g_std`. `std.a.b.C` folds to the same `<cname>__C` symbol the `req`
+    /// binding path already produces — so the canonical spelling stops being
+    /// slower than the graveyard one.
+    fn try_emit_ambient_module_const_field(self: *CodeGen, f_obj: *const ast.Expr, field: []const u8, result_rt: RT) E!bool {
+        if (!self.duo_mode) return false;
+        var pbuf: [512]u8 = undefined;
+        const mod_path = ambient_dotted_path(f_obj, &pbuf) orelse return false;
+        if (!std.mem.startsWith(u8, mod_path, "std.")) return false;
+        const mod_file = self.find_module_file_for_req(mod_path) orelse return false;
+        // Only fold when the module is already embedded — the folded symbol has
+        // to exist. Collection of ambient paths is a separate concern.
+        if (!self.embedded_module_paths.contains(mod_file)) return false;
+        const cname = self.module_c_name(mod_path) catch return false;
+        defer self.alloc.free(cname);
+        return try self.try_emit_req_module_const_field(cname, field, result_rt);
+    }
+
     fn try_emit_req_module_const_field(
         self: *CodeGen,
         mod_cname: []const u8,
         field: []const u8,
         result_rt: RT,
     ) E!bool {
+        // Only a module emitted in native-scalar mode folds its constants into
+        // `<mod>__<field>` symbols. A module whose export is a real table has no
+        // such symbols — fall through to the table read instead of emitting a
+        // reference to something that was never defined.
+        if (self.embedded_module_native.get(mod_cname)) |emitted_native| {
+            if (!emitted_native) return false;
+        }
         var sym_buf: [384]u8 = undefined;
         // A cross-module const field read assumes the target is a folded
         // `static const <mod>__<field>`. When that module instead emitted real
@@ -20126,8 +20818,12 @@ pub const CodeGen = struct {
                 break :blk by_ptr;
             };
             if (pass_by_ptr) {
-                self.p("&", .{});
-                try self.emit_expr(arg);
+                if (arg.* == .name and self.expr_is_native_record_ptr_param(arg)) {
+                    try self.emit_expr(arg);
+                } else {
+                    self.p("&", .{});
+                    try self.emit_expr(arg);
+                }
             } else {
                 try self.emit_arg_for_param(arg, pt, true);
             }
@@ -20659,6 +21355,18 @@ pub const CodeGen = struct {
         // shared module state visible to every function in the module.
         self.current_module = &submod;
         self.native_scalar_mode = self.can_emit_native_scalar_module(&submod);
+        // Record what we actually chose, so consumers resolve `m.x` the same way
+        // this module emits it (see `req_module_is_native_direct`).
+        // The keys MUST be duped: callers free `cname` (`defer alloc.free(cname)`
+        // in `collect_req_dep_cb`), and storing the caller's slice left a
+        // dangling key that panicked the compiler on the next lookup.
+        if (self.alloc.dupe(u8, path)) |k| {
+            self.embedded_module_native.put(self.alloc, k, self.native_scalar_mode) catch {};
+        } else |_| {}
+        // Also key by C name: the const-field folding path only has the cname.
+        if (self.alloc.dupe(u8, cname)) |k| {
+            self.embedded_module_native.put(self.alloc, k, self.native_scalar_mode) catch {};
+        } else |_| {}
         self.mixed_scalar_mode = false;
         self.native_scalar_funcs = .empty;
         if (!self.native_scalar_mode and self.compute_native_scalar_funcs(&submod)) {
@@ -20951,6 +21659,18 @@ pub const CodeGen = struct {
         };
         self.emit_embedded_module_req_binding_inits(&submod) catch |e| {
             term.err("emit_embedded_module: req binding init failed: {}", .{e});
+            return false;
+        };
+        // A module body is emitted statement-by-statement below, NOT through
+        // `emit_block_stmts`, so the str-list disqualification scan that runs
+        // for function blocks never fired here. Without it, `M = {}` followed by
+        // `M.field = v` was speculatively lowered to `M_items[]` + `M_len` and
+        // the field writes then targeted a table that was never declared —
+        // emitting `lua_table_set_str_lit((void*)0, ...)`. That made every
+        // constants-style module (including duo's own
+        // lib/std/wasm/ward_mvp_opcodes.duo) impossible to `req`.
+        self.note_str_list_disqualifications(&submod.body) catch |e| {
+            term.err("emit_embedded_module: disqualification scan failed: {}", .{e});
             return false;
         };
         // Initialize table-valued submodule constants
@@ -21912,7 +22632,7 @@ const duo_runtime =
     \\    return strlen(lua_to_str(v));
     \\}
     \\
-    \\static inline size_t duo_str_len(const char* s) {
+    \\static inline size_t duo_str_len_hdr(const char* s) {
     \\    if (!s) return 0;
     \\    lua_String* h = (lua_String*)((char*)s - offsetof(lua_String, data));
     \\    return h->len;
@@ -24011,6 +24731,11 @@ const duo_runtime =
     \\    if (cached.type != VAL_NIL) return cached;
     \\    lua_Value mod = lua_val_nil();
     \\    lua_Value preload = lua_table_get_raw_lit(package, "preload");
+    \\    /* A NATIVE-DIRECT module registers a nil-returning stub: its exports are
+    \\     * C symbols reached by folded field calls, so there is no table to bind.
+    \\     * Track that the registry HAD an entry, so registered-but-nil is treated
+    \\     * as success rather than "module not found". */
+    \\    int _duo_mod_registered = 0;
     \\    lua_Value pre = lua_table_get_raw(preload, name_val);
     \\    if (pre.type == VAL_FUNC || pre.type == VAL_CLOSURE) {
     \\        mod = lua_invoke(pre, 0, NULL);
@@ -24028,6 +24753,7 @@ const duo_runtime =
     \\    else {
     \\        mod = lua_table_get(duo_modules, name_val);
     \\        if (mod.type == VAL_FUNC || mod.type == VAL_CLOSURE) {
+    \\            _duo_mod_registered = 1;
     \\            mod = lua_invoke(mod, 0, NULL);
     \\        }
     \\    }
@@ -24104,6 +24830,12 @@ const duo_runtime =
     \\                if (err.type != VAL_NIL) lua_error(err);
     \\            }
     \\        }
+    \\    }
+    \\    if (mod.type == VAL_NIL && _duo_mod_registered) {
+    \\        /* Registered, and its module function legitimately produced no
+    \\         * table. Cache and return nil rather than raising. */
+    \\        lua_table_set_raw(loaded_tbl, name_val, mod);
+    \\        return mod;
     \\    }
     \\    if (mod.type == VAL_NIL) {
     \\        /* Name the module: a bare "module not found" gives the caller no
@@ -28428,7 +29160,7 @@ test "codegen: string.len uses byte length for char(0) (Wasm opcode 0x00)" {
     try cg.emit_module(&module);
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "strlen(lua_to_str(lua_str_char") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "duo_str_len(lua_to_str(lua_str_char") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_str_len_hdr(lua_to_str(lua_str_char") != null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_Value wn = ") == null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_Value ch = ") == null);
 }

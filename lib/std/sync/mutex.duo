@@ -62,15 +62,3 @@ end
 wunlock(m: any): void
     m.write_locked = false
 end
-
-M = {}
-M.new_mutex = new_mutex
-M.lock = lock
-M.unlock = unlock
-M.try_lock = try_lock
-M.new_rwmutex = new_rwmutex
-M.rlock = rlock
-M.runlock = runlock
-M.wlock = wlock
-M.wunlock = wunlock
-M

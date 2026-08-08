@@ -6,12 +6,12 @@ concept HasXY
     y: i64
 end
 
-type Vec2 = { x: i64, y: i64 }
-type Vec3 = { x: i64, y: i64, z: i64 }
-type Pt = { x: i64, y: i64 }
-type Ray = { x: i64, y: i64, dx: i64, dy: i64 }
+Vec2: { x: i64, y: i64 }
+Vec3: { x: i64, y: i64, z: i64 }
+Pt: { x: i64, y: i64 }
+Ray: { x: i64, y: i64, dx: i64, dy: i64 }
 
-combo_sig(meta) -> str
+combo_sig(meta): str
     meta.name .. ";"
 end
 
@@ -28,8 +28,8 @@ count_semis(s: str): i64
     n
 end
 
-stamp(frag) -> str
-    "[" .. tostring(frag.index) .. "/" .. tostring(frag.count) .. "]" .. frag.name .. "\n"
+stamp(frag): str
+    "[" .. to(str)(frag.index) .. "/" .. to(str)(frag.count) .. "]" .. frag.name .. "\n"
 end
 
 EXPANDED: str = @comp.each(CHOOSE2, stamp)
@@ -48,9 +48,9 @@ print("=== @comp.choose showcase ===")
 print("choose2 = " .. CHOOSE2)
 print("choose3 = " .. CHOOSE3)
 print("expanded = " .. EXPANDED)
-print("choose2 fragments = " .. tostring(choose2_count) .. "  (expect 6 = C(4,2))")
-print("choose3 fragments = " .. tostring(choose3_count) .. "  (expect 4 = C(4,3))")
-print("RESULT choose_ok = " .. tostring(ok))
+print("choose2 fragments = " .. to(str)(choose2_count) .. "  (expect 6 = C(4,2))")
+print("choose3 fragments = " .. to(str)(choose3_count) .. "  (expect 4 = C(4,3))")
+print("RESULT choose_ok = " .. to(str)(ok))
 if not ok
     error("choose combinator failed")
 end

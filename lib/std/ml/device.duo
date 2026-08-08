@@ -81,14 +81,3 @@ place(stages): any
     return { type = "placement", stages = stages }
 end
 
-M = {}
-M.cpu = cpu
-M.auto = auto
-M.metal = metal
-M.cuda = cuda
-M.webgpu = webgpu
-M.wasm_simd = wasm_simd
-M.best = best
-M.on = on
-M.place = place
-M

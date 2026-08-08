@@ -105,20 +105,8 @@ remove_file(archive_path: str, file_path: str): bool
     proc.exec(cmd) == 0
 end
 
-test_archive(archive_path: str): bool
+test(archive_path: str): bool
     cmd = "unzip -t " .. archive_path .. " 2>/dev/null"
     proc.exec(cmd) == 0
 end
 
-M = {}
-M.create = create
-M.create_files = create_files
-M.extract = extract
-M.extract_overwrite = extract_overwrite
-M.list = list
-M.list_detailed = list_detailed
-M.info = info
-M.add_file = add_file
-M.remove_file = remove_file
-M.test = test_archive
-M

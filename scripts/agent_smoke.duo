@@ -1,14 +1,22 @@
 -- Agent tier-0 gate — Duo-native scripting (replaces bash logic; bash wrapper optional).
 -- Safe for parallel agent sessions; does NOT run bench/ml-bench/gpu-bench.
 -- Run: duo run scripts/agent_smoke.duo
--- Or:  scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/agent_smoke.duo
+-- Or:  duo run scripts/duo_lock.duo -- ./zig-out/bin/duo run scripts/agent_smoke.duo
 
 agent = req "std.agent"
 script = req "std.script"
 os = req "std.os"
 
-if not script.ok("./scripts/public_safety_scan.sh")
+if not script.ok("./zig-out/bin/duo run scripts/public_safety_scan.duo")
     print("agent-smoke: public_safety_scan FAIL")
+    os.exit(1)
+end
+
+-- Pass 57 C2 — exports are scope. No module may reach through another module's
+-- `_`-prefixed surface. The gate carries its own positive control, so a clean
+-- report is evidence rather than an absence of output.
+if not script.ok("./zig-out/bin/duo run scripts/module_surface_gate.duo")
+    print("agent-smoke: module_surface_gate FAIL")
     os.exit(1)
 end
 
