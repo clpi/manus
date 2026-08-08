@@ -4212,6 +4212,11 @@ pub const CodeGen = struct {
                     // place and drifts together or not at all (gap[034]).
                     // Paired with the dnir_lower arm: the three mem primitives
                     // that are plain libc rather than typed-pointer surface.
+                    if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "math") and
+                        call.args.len == 1)
+                    {
+                        break :blk self.expr_is_native_scalar(call.args[0]);
+                    }
                     if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "mem")) {
                         const nargs = call.args.len;
                         const ok_mem = (std.mem.eql(u8, f.field, "alloc") and nargs == 1) or

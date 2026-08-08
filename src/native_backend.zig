@@ -1344,8 +1344,20 @@ const Arm64Compiler = struct {
                 if (ins.ty == .f64) {
                     const d = try self.evalDnirValueFp(temps, ins.lhs);
                     if (ins.result) |slot| {
-                        try pinned.put(self.alloc, slot, d);
-                        try temps.put(self.alloc, slot, d);
+                        // Same rule the integer path below documents: a local
+                        // keeps ONE register for its whole lifetime. This arm
+                        // REBOUND the slot to whatever register the value
+                        // happened to be in, so a consumer emitted against the
+                        // local's original home read a register the store never
+                        // wrote — `r = math.sqrt(x)` put the result in d1 and
+                        // the comparison read d9.
+                        const home = pinned.get(slot) orelse temps.get(slot) orelse d;
+                        if (home != d) {
+                            try self.emitFmovReg(home, d);
+                            self.releaseFpReg(d);
+                        }
+                        try pinned.put(self.alloc, slot, home);
+                        try temps.put(self.alloc, slot, home);
                     } else {
                         self.releaseFpReg(d);
                     }
@@ -1468,11 +1480,24 @@ const Arm64Compiler = struct {
             },
             .call_extern, .call_direct => {
                 if (ins.ty == .f64) {
+                    // Move the ARGUMENT into d0. Every other call arm moves its
+                    // first operand into the parameter register; this one called
+                    // straight through, so a libm call ran on whatever was in d0.
+                    if (ins.lhs != .void) {
+                        const arg_d = try self.evalDnirValueFp(temps, ins.lhs);
+                        if (arg_d != 0) try self.emitFmovReg(0, arg_d);
+                        self.releaseFpReg(arg_d);
+                    }
                     if (ins.op == .call_extern) try self.ensureExternalSymbol(ins.callee);
                     const save = try self.emitSaveCallerRegs();
                     try self.emitBl(ins.callee);
                     try self.emitRestoreCallerRegs(save);
                     self.used_fp_regs[0] = true;
+                    // The result stays in d0: that IS the ARM64 return register,
+                    // and a copy-out here breaks the f64 return ABI (caught by
+                    // "native backend lowers Pass 4 milestone with f64 return in
+                    // d0"). A consumer that needs it to survive a later call is
+                    // served by store_local giving the LOCAL a stable home.
                     if (ins.result) |t| try temps.put(self.alloc, t, 0);
                 } else if (self.cur_func_float) {
                     if (ins.lhs != .void) {

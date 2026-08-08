@@ -726,7 +726,22 @@ fn exprCallConsumption(expr: *const ast.Expr) types.ReturnConsumption {
 }
 
 fn exprReturnsF64(ctx: *LowerCtx, expr: *const ast.Expr) bool {
-    if (expr.* != .call or expr.call.func.* != .name) return false;
+    if (expr.* != .call) return false;
+    // `math.sqrt(x)` and friends are libm: f64 in, f64 out. Without this the
+    // binding `r: f64 = math.sqrt(x)` stores through the INTEGER path — the
+    // assembly showed `fmov d1, d0` for the result and then `mov x9, x1` for
+    // the store, so the f64 local was never written and the consumer read a
+    // register nothing had touched.
+    //
+    // Third time this exact lesson: a producer the type tracker does not know
+    // about breaks every consumer downstream. exprIsStr needed it for
+    // string.char, then again for concat; this is the f64 twin.
+    if (expr.call.func.* == .field) {
+        const f = expr.call.func.field;
+        if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "math") and
+            expr.call.args.len == 1) return true;
+    }
+    if (expr.call.func.* != .name) return false;
     return ctx.f64_kernels.contains(expr.call.func.name.ident);
 }
 
@@ -1869,6 +1884,19 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
                 try ctx.emit(.{ .op = .store_index, .ty = .any, .lhs = .{ .temp = buf }, .rhs = .{ .i64 = 1 }, .third = code });
                 try ctx.emit(.{ .op = .store_index, .ty = .any, .lhs = .{ .temp = buf }, .rhs = .{ .i64 = 2 }, .third = .{ .i64 = 0 } });
                 return .{ .temp = buf };
+            }
+            if (std.mem.eql(u8, f.obj.name.ident, "math") and c.args.len == 1) {
+                const fname = f.field;
+                const known = std.mem.eql(u8, fname, "sqrt") or std.mem.eql(u8, fname, "sin") or
+                    std.mem.eql(u8, fname, "cos") or std.mem.eql(u8, fname, "fabs") or
+                    std.mem.eql(u8, fname, "floor") or std.mem.eql(u8, fname, "ceil");
+                if (known) {
+                    const arg = try lowerExpr(ctx, c.args[0]);
+                    try ensureExtern(ctx, "math", fname, fname);
+                    const t = ctx.freshTemp();
+                    try ctx.emit(.{ .op = .call_extern, .result = t, .callee = fname, .lhs = arg, .ty = .f64 });
+                    return .{ .temp = t };
+                }
             }
             if (std.mem.eql(u8, f.obj.name.ident, "mem")) {
                 if (std.mem.eql(u8, f.field, "alloc") and c.args.len == 1) {
