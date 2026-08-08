@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(duo run*)",
+      "Bash(duo build*)",
+      "Bash(wasmtime*)",
+      "Bash(wasmer*)",
+      "Bash(zig version)",
+      "Bash(git status)",
+      "Bash(git diff*)",
+      "Bash(git log*)"
+    ],
+    "deny": []
+  }
+}
