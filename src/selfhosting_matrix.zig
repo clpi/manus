@@ -292,9 +292,21 @@ test "selfhosting_matrix: writeMatrixJson emits parseable JSON" {
     try std.testing.expect(parsed.value.object.get("manifest").? == .object);
 }
 
-test "selfhosting_matrix: honest manifest level 1 keyword component" {
+// Pins the RELATIONSHIP, not a magic number. This test asserted
+// `self_hosting_level == 1` and so had to be edited the moment SH-03 became
+// canonical — a test that must be rewritten whenever the thing it measures
+// moves is measuring the wrong thing. It now fails only if the manifest and the
+// rows disagree, which is the property worth protecting.
+test "selfhosting_matrix: the manifest is a projection of the rows" {
     const m = publicManifest();
-    try std.testing.expectEqual(@as(u8, 1), m.self_hosting_level);
+    try std.testing.expectEqual(
+        @as(u8, @intCast(countByStatus(.duo_canonical))),
+        m.self_hosting_level,
+    );
+    // Non-zero and short of the whole matrix: the honest middle this project is
+    // actually in. SH-02 (keyword table) and SH-03 (lexer) are canonical today.
+    try std.testing.expect(m.self_hosting_level >= 2);
+    try std.testing.expect(m.self_hosting_level < subsystems.len);
     try std.testing.expect(!m.canonical_compiler_in_duo);
     try std.testing.expect(m.production_duo_frontend);
     try std.testing.expect(std.mem.eql(u8, m.claim_self_hosted_status, "partial"));
