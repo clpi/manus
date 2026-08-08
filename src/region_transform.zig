@@ -40,10 +40,40 @@ pub fn calleeConstI64Return(m: dnir.Module, callee: []const u8) ?i64 {
         if (!std.mem.eql(u8, f.name, callee)) continue;
         if (f.params.len != 0) return null;
         if (f.blocks.len != 1) return null;
+        // A SINGLE BLOCK IS NOT A SINGLE EXIT. DNIR keeps `br`/`br_if`/
+        // `br_if_not` and several `ret`s inside one block, so `blocks.len == 1`
+        // does not mean straight-line code. Returning the FIRST constant `ret`
+        // therefore inlined the value of a branch that may never be taken:
+        //
+        //     f(): i64
+        //         if 1 != 1 return 41 end
+        //         9
+        //     end
+        //
+        // `f` itself lowered correctly (the ARM64 for it branches and returns
+        // 9), but every CALLER was folded to the literal 41 — `main` did not
+        // even emit the call. Any guard clause returned its guard value
+        // unconditionally, which is one of the most common shapes in the
+        // language; the C backend was unaffected, so the two backends silently
+        // disagreed. Found via examples/pass16_lexer_text_differential.duo.
+        //
+        // Fold only a function that is genuinely one straight line to one
+        // constant exit: no control flow at all, exactly one `ret`, and that
+        // `ret` carrying an i64 immediate.
+        var found: ?i64 = null;
         for (f.blocks[0].instrs) |ins| {
-            if (ins.op == .ret and ins.lhs == .i64) return ins.lhs.i64;
+            switch (ins.op) {
+                .br, .br_if, .br_if_not => return null,
+                .ret_record => return null,
+                .ret => {
+                    if (found != null) return null;
+                    if (ins.lhs != .i64) return null;
+                    found = ins.lhs.i64;
+                },
+                else => {},
+            }
         }
-        return null;
+        return found;
     }
     return null;
 }
