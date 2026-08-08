@@ -112,7 +112,6 @@ fn refuseWith(src: std.builtin.SourceLocation, note: []const u8) Error {
     return error.UnsupportedProgram;
 }
 
-
 pub fn directDiagnostic(err: Error, target: []const u8) DirectDiag {
     _ = target;
     return switch (err) {
@@ -809,6 +808,21 @@ const Arm64Compiler = struct {
     spill_offsets: std.ArrayList(u16) = .empty,
     spill_reg_count: u5 = 0,
     raw_blobs: std.ArrayList(RawBlobSymbol) = .empty,
+    /// Arguments staged for the NEXT call's variadic tail. Apple's ARM64 ABI
+    /// diverges from AAPCS64 here: every argument past a variadic function's
+    /// last NAMED parameter travels on the STACK, 8-byte aligned, never in
+    /// x0..x7. A `mov_arg` marked `.field = "vararg"` lands here instead of in
+    /// a parameter register, and the call flushes the list to [sp, #i*8].
+    pending_varargs: [8]VarArg = @splat(.{}),
+    pending_vararg_count: u5 = 0,
+
+    const VarArg = struct {
+        reg: u5 = 0,
+        /// The register was allocated for this argument alone (an immediate or
+        /// a string address), so the call must hand it back. A `.temp`/`.local`
+        /// register is owned by the slot map and outlives the call.
+        scratch: bool = false,
+    };
 
     const CallPatch = struct {
         offset: u32,
@@ -1081,6 +1095,11 @@ const Arm64Compiler = struct {
         self.cur_func_name = f.name;
         self.locals.clearRetainingCapacity();
         self.fp_locals.clearRetainingCapacity();
+        // A staged variadic tail belongs to exactly one call. Carrying a
+        // leftover across a function boundary would push a stale register onto
+        // the next call's memory-argument area, so clear it with the rest of
+        // the per-function register state.
+        self.pending_vararg_count = 0;
         self.used_regs = @splat(false);
         self.used_fp_regs = @splat(false);
         self.returned = false;
@@ -1327,6 +1346,29 @@ const Arm64Compiler = struct {
                 }
             },
             .mov_arg => {
+                // `.field = "vararg"` means `result` is a VARIADIC-tail index,
+                // not a parameter register. See `pending_varargs`: on Apple
+                // ARM64 the tail is passed in memory, so staging it in x3 (as
+                // the plain arm below would) leaves snprintf reading whatever
+                // the stack happened to hold — the four-argument
+                // `snprintf(buf, 24, "%lld", n)` printed a pointer, while the
+                // three-argument `snprintf(buf, 24, "AB")` was already correct.
+                if (std.mem.eql(u8, ins.field, "vararg")) {
+                    const idx: u5 = @intCast(ins.result orelse return refuse(@src()));
+                    if (idx >= self.pending_varargs.len) return refuse(@src());
+                    const vreg = try self.evalDnirValue(temps, ins.lhs);
+                    const owned = switch (ins.lhs) {
+                        .local, .temp => true,
+                        else => false,
+                    };
+                    self.used_regs[vreg] = true;
+                    self.pending_varargs[idx] = .{
+                        .reg = vreg,
+                        .scratch = !owned and !Arm64Compiler.regIsPinned(pinned, vreg),
+                    };
+                    if (idx + 1 > self.pending_vararg_count) self.pending_vararg_count = idx + 1;
+                    return;
+                }
                 const slot: u5 = @intCast(ins.result orelse return refuse(@src()));
                 const reg = try self.evalDnirValue(temps, ins.lhs);
                 if (reg != slot) try self.emitMovReg(slot, reg);
@@ -1486,7 +1528,9 @@ const Arm64Compiler = struct {
                     }
                     if (ins.op == .call_extern) try self.ensureExternalSymbol(ins.callee);
                     const save = try self.emitSaveCallerRegs();
+                    const vbytes = try self.emitPushVarargs();
                     try self.emitBl(ins.callee);
+                    try self.emitPopVarargs(vbytes);
                     try self.emitRestoreCallerRegs(save);
                     self.used_fp_regs[0] = true;
                     // The result stays in d0: that IS the ARM64 return register,
@@ -1503,7 +1547,9 @@ const Arm64Compiler = struct {
                     }
                     if (ins.op == .call_extern) try self.ensureExternalSymbol(ins.callee);
                     const save = try self.emitSaveCallerRegs();
+                    const vbytes = try self.emitPushVarargs();
                     try self.emitBl(ins.callee);
+                    try self.emitPopVarargs(vbytes);
                     try self.emitRestoreCallerRegs(save);
                     self.used_fp_regs[0] = true;
                     if (ins.result) |t| try temps.put(self.alloc, t, 0);
@@ -1523,7 +1569,9 @@ const Arm64Compiler = struct {
                     }
                     if (ins.op == .call_extern) try self.ensureExternalSymbol(ins.callee);
                     const save = try self.emitSaveCallerRegs();
+                    const vbytes = try self.emitPushVarargs();
                     try self.emitBl(ins.callee);
+                    try self.emitPopVarargs(vbytes);
                     try self.emitRestoreCallerRegs(save);
                     if (ins.record.len > 0) {
                         if (f64RecordDesc(self.f64_records, .{ .named = ins.record })) |frec| {
@@ -3274,6 +3322,36 @@ const Arm64Compiler = struct {
         return save_set;
     }
 
+    /// Lay the staged variadic tail out at [sp, #0], [sp, #8], … and return the
+    /// number of bytes sp moved by. Emitted AFTER `emitSaveCallerRegs`, so the
+    /// callee's memory-argument area starts exactly at sp — which is what
+    /// `va_arg` reads on Apple ARM64 — while the save area sits above it and
+    /// stays addressable at its original offsets once sp is restored.
+    fn emitPushVarargs(self: *Arm64Compiler) Error!u16 {
+        if (self.pending_vararg_count == 0) return 0;
+        var bytes: u16 = @as(u16, self.pending_vararg_count) * 8;
+        if ((bytes % 16) != 0) bytes += 8;
+        try self.emitSubSp(bytes);
+        var i: u5 = 0;
+        while (i < self.pending_vararg_count) : (i += 1) {
+            try self.emitStrSp(self.pending_varargs[i].reg, @as(u16, i) * 8);
+        }
+        return bytes;
+    }
+
+    /// Undo `emitPushVarargs` and clear the staging list. Registers allocated
+    /// solely to carry a tail argument go back to the pool here; a `.temp` or
+    /// `.local` register belongs to the slot map and is left alone.
+    fn emitPopVarargs(self: *Arm64Compiler, bytes: u16) Error!void {
+        if (bytes > 0) try self.emitAddSp(bytes);
+        var i: u5 = 0;
+        while (i < self.pending_vararg_count) : (i += 1) {
+            if (self.pending_varargs[i].scratch) self.releaseReg(self.pending_varargs[i].reg);
+            self.pending_varargs[i] = .{};
+        }
+        self.pending_vararg_count = 0;
+    }
+
     fn emitRestoreCallerRegs(self: *Arm64Compiler, save_set: SaveSet) Error!void {
         var offset: u16 = 0;
         var i: u5 = 0;
@@ -4494,6 +4572,51 @@ test "native backend lowers qualified multi-arg call with mov_arg ABI slots" {
     const obj = try emitObject(alloc, &mod, "native-object");
     try std.testing.expect(std.mem.indexOf(u8, obj, "_math_add") != null);
     try std.testing.expect(obj.len > 0);
+}
+
+test "native backend passes a variadic tail argument on the stack, not in x3" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lex = Lexer.init(
+        \\main(): i64
+        \\    s = to(str)(42)
+        \\    return #s
+        \\end
+    , "to_str_vararg.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var mod = try parser.parse_module();
+    var sem = Sema.init(alloc);
+    defer sem.deinit();
+    sem.duo_mode = true;
+    try sem.check_module(&mod);
+
+    const listing = try emitAssembly(alloc, &mod, "native-asm");
+    defer alloc.free(listing);
+
+    const main_pos = std.mem.indexOf(u8, listing, "_main:") orelse return error.TestExpectedEqual;
+    const bl_off = std.mem.indexOf(u8, listing[main_pos..], "bl _snprintf") orelse return error.TestExpectedEqual;
+    const staging = listing[main_pos .. main_pos + bl_off];
+
+    // The three NAMED parameters travel in registers, as AAPCS64 says.
+    try std.testing.expect(std.mem.indexOf(u8, staging, "mov x0,") != null);
+    try std.testing.expect(std.mem.indexOf(u8, staging, "mov x1,") != null);
+    try std.testing.expect(std.mem.indexOf(u8, staging, "mov x2,") != null);
+
+    // The tail argument does NOT. Apple's ARM64 ABI reads it from memory at
+    // sp, so a fourth register argument is silently ignored: `snprintf(buf,
+    // 24, "%lld", n)` staged into x3 assembles correctly and prints a POINTER.
+    try std.testing.expect(std.mem.indexOf(u8, staging, "mov x3,") == null);
+
+    // Immediately before the branch: reserve the memory-argument area and
+    // write the tail into its first slot.
+    const tail = staging[staging.len - 40 ..];
+    try std.testing.expect(std.mem.indexOf(u8, tail, "sub sp, sp, #16") != null);
+    try std.testing.expect(std.mem.indexOf(u8, tail, ", [sp, #0]") != null);
 }
 
 test "native backend lowers if elseif else branches" {

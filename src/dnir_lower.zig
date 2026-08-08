@@ -1164,6 +1164,14 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
         //     undefined `string_byte` symbol.
         .call => |c| switch (c.func.*) {
             .name => |n| ctx.str_returns.contains(n.ident),
+            // `to(str)(n)` — the relation surface's own producer of str. It is
+            // spelled as a call whose CALLEE is a call, so neither the
+            // declared-return arm nor the `string.char` arm sees it, and every
+            // consumer downstream (`#s`, `s[i]`, `..`) refused its result.
+            .call => |inner| c.args.len == 1 and inner.func.* == .name and
+                std.mem.eql(u8, inner.func.name.ident, "to") and
+                inner.args.len == 1 and inner.args[0].* == .name and
+                std.mem.eql(u8, inner.args[0].name.ident, "str"),
             .field => |f| f.obj.* == .name and
                 std.mem.eql(u8, f.obj.name.ident, "string") and
                 std.mem.eql(u8, f.field, "char"),
@@ -1907,10 +1915,79 @@ fn scalarCallLhs(ctx: *LowerCtx, args: []const *ast.Expr) Error!dnir.Value {
     return .void;
 }
 
+/// Whether `expr` is provably an integer, which is the constant the `"%lld"`
+/// emitter below assumes. It is a POSITIVE test on purpose: "not f64 and not
+/// str" accepted a table base and a pointer, and `to(str)` on either printed
+/// the ADDRESS in decimal — a plausible-looking string with no relation to the
+/// value. Anything this cannot prove declines to the general path.
+fn exprIsIntegral(ctx: *LowerCtx, expr: *const ast.Expr) bool {
+    if (exprTouchesF64(ctx, expr)) return false;
+    if (exprIsStr(ctx, expr)) return false;
+    return switch (expr.*) {
+        .int_lit, .true_lit, .false_lit => true,
+        // `#s` is a length and `s[i]` is a byte — both integers.
+        .unop => |u| if (u.op == .len)
+            exprIsStr(ctx, u.operand)
+        else
+            exprIsIntegral(ctx, u.operand),
+        .binop => |b| b.op != .concat and
+            exprIsIntegral(ctx, b.lhs) and exprIsIntegral(ctx, b.rhs),
+        .index => true,
+        // A plain call to a function that returns neither str nor f64 nor a
+        // record. `exprTouchesF64` above already excluded the float kernels.
+        .call => |cc| cc.func.* == .name and
+            !ctx.str_returns.contains(cc.func.name.ident) and
+            !ctx.func_record_returns.contains(cc.func.name.ident),
+        .name => |n| blk: {
+            const slot = ctx.locals.get(n.ident) orelse break :blk false;
+            break :blk !ctx.f64_slots.contains(slot) and
+                !ctx.str_slots.contains(slot) and
+                !ctx.ptr_slots.contains(slot) and
+                !nameIsPositionalTable(ctx, n.ident);
+        },
+        else => false,
+    };
+}
+
+/// `to(str)(n)` — integer to decimal text. malloc(24) + snprintf(buf, 24,
+/// "%lld", n): three named arguments in x0..x2 and the value in the VARIADIC
+/// TAIL, which on Apple ARM64 travels on the stack.
+fn lowerToStr(ctx: *LowerCtx, c: anytype) Error!?dnir.Value {
+    if (c.args.len != 1) return null;
+    if (c.func.* != .call) return null;
+    const inner = c.func.call;
+    if (inner.func.* != .name or !std.mem.eql(u8, inner.func.name.ident, "to")) return null;
+    if (inner.args.len != 1 or inner.args[0].* != .name) return null;
+    if (!std.mem.eql(u8, inner.args[0].name.ident, "str")) return null;
+    // Decline rather than mis-lower. `"%lld"` is a constant this emitter
+    // ASSUMES, and it held for exactly one argument shape: `to(str)(1.5)`
+    // printed 4378777232 and `to(str)("hi")` printed 4343729785 — both the
+    // operand's ADDRESS, both indistinguishable from a real answer.
+    if (!exprIsIntegral(ctx, c.args[0])) return null;
+
+    const n = try lowerExpr(ctx, c.args[0]);
+    try ensureExtern(ctx, "mem", "alloc", "malloc");
+    try ensureExtern(ctx, "string", "format", "snprintf");
+    const buf = ctx.freshTemp();
+    try ctx.emit(.{ .op = .call_extern, .result = buf, .callee = "malloc", .lhs = .{ .i64 = 24 } });
+    try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = .{ .temp = buf } });
+    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = .{ .i64 = 24 } });
+    try ctx.emit(.{ .op = .mov_arg, .result = 2, .lhs = .{ .str = "%lld" } });
+    // `n` is past snprintf's last NAMED parameter, so it is a VARIADIC-tail
+    // argument. Apple's ARM64 ABI passes that tail on the stack, not in x3;
+    // `.field = "vararg"` tells the backend to stage it there. Staging it as
+    // an ordinary fourth register argument assembles to textbook-correct code
+    // and still prints a pointer, because snprintf never reads x3.
+    try ctx.emit(.{ .op = .mov_arg, .result = 0, .field = "vararg", .lhs = n });
+    try ctx.emit(.{ .op = .call_extern, .callee = "snprintf" });
+    return .{ .temp = buf };
+}
+
 fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnConsumption) Error!dnir.Value {
     if (expr.* != .call) return bail(@src());
     const c = expr.call;
     const discard = consumption == .discard;
+    if (try lowerToStr(ctx, c)) |v| return v;
     if (c.func.* == .field) {
         const f = c.func.field;
         if (f.obj.* == .name) {
@@ -2519,6 +2596,59 @@ test "dnir_lower: multi-arg i64 call_direct uses mov_arg" {
     }
     try std.testing.expect(saw_call);
     try std.testing.expect(mov_args == 2);
+}
+
+test "dnir_lower: to(str)(n) stages the value as a variadic tail argument" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\main(): i64
+        \\    s = to(str)(42)
+        \\    return #s
+        \\end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "to_str.duo");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    const mod = try parser.parse_module();
+    const m = try lowerModule(alloc, &mod);
+    var named: u32 = 0;
+    var varargs: u32 = 0;
+    var saw_snprintf = false;
+    for (m.functions) |f| {
+        if (!std.mem.eql(u8, f.name, "main")) continue;
+        for (f.blocks[0].instrs) |ins| {
+            if (ins.op == .call_extern and std.mem.eql(u8, ins.callee, "snprintf")) saw_snprintf = true;
+            if (ins.op != .mov_arg) continue;
+            if (std.mem.eql(u8, ins.field, "vararg")) varargs += 1 else named += 1;
+        }
+    }
+    try std.testing.expect(saw_snprintf);
+    // buf, size, format in registers; the value in the tail. Staging all four
+    // in x0..x3 is what made snprintf print a pointer.
+    try std.testing.expectEqual(@as(u32, 3), named);
+    try std.testing.expectEqual(@as(u32, 1), varargs);
+}
+
+test "dnir_lower: to(str) declines a non-integer argument rather than mis-lowering" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\main(): i64
+        \\    x: f64 = 1.5
+        \\    s = to(str)(x)
+        \\    return #s
+        \\end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "to_str_f64.duo");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    const mod = try parser.parse_module();
+    // `"%lld"` is a constant the emitter assumes; an f64 there printed the
+    // operand's ADDRESS. The whole program leaves the subset instead.
+    try std.testing.expectError(error.UnsupportedConstruct, lowerModule(alloc, &mod));
 }
 
 test "dnir_lower: f64 kernel call with record variable" {
