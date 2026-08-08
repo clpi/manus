@@ -103,6 +103,12 @@ pub const Op = enum {
     /// runtime call, so a tokenizer built on `string.len` stays inside the
     /// direct backend subset.
     str_len,
+    /// `print(v)` — observable native output. `.ty` selects the call shape:
+    /// `.str` → `puts(v)`; `.i64` → `printf("%lld\n", v)`; `.f64` →
+    /// `printf("%f\n", v)`; `.void` lhs → a blank line. `puts`/`printf` are
+    /// libc externs (Mach-O `_puts`/`_printf`), so a program's first output
+    /// no longer forces the C-emit bootstrap fallback.
+    print_value,
 };
 
 pub const Value = union(enum) {
@@ -249,6 +255,7 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
                     .hw_spin,
                     .hw_unary,
                     .str_len,
+                    .print_value,
                     => {},
                 }
             }
