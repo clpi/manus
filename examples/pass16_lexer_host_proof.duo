@@ -185,13 +185,13 @@ _check_values = (n: i64, label: str, src: str): i64
     want = _native_values(src, SRC)
     got = _foreign_values(src, SRC)
     if got == ""
-        print("lexer_host: FAIL " .. to(str)(n) .. " (" .. label .. "): no values from host")
+        print("lexer_host: FAIL {n} ({label}): no values from host")
         return n
     end
     if got != want
-        print("lexer_host: FAIL " .. to(str)(n) .. " (" .. label .. ") — kind:int:float*1e6")
-        print("  in-process: " .. want)
-        print("  foreign   : " .. got)
+        print("lexer_host: FAIL {n} ({label}) — kind:int:float*1e6")
+        print("  in-process: {want}")
+        print("  foreign   : {got}")
         return n
     end
     0
@@ -211,8 +211,7 @@ _check_float = (n: i64, src: str, want: f64): i64
     lex = L.new(src, "lit.duo")
     tok = L.next_tok(lex)
     if tok.float_val != want
-        print("lexer_host: FAIL " .. to(str)(n) .. ": [" .. src .. "] lexed float_val "
-            .. to(str)(tok.float_val) .. ", the host compiler says " .. to(str)(want))
+        print("lexer_host: FAIL {n}: [{src}] lexed float_val {tok.float_val}, the host compiler says {want}")
         return n
     end
     0
@@ -222,8 +221,7 @@ _check_int = (n: i64, src: str, want: i64): i64
     lex = L.new(src, "lit.duo")
     tok = L.next_tok(lex)
     if tok.int_val != want
-        print("lexer_host: FAIL " .. to(str)(n) .. ": [" .. src .. "] lexed int_val "
-            .. to(str)(tok.int_val) .. ", the host compiler says " .. to(str)(want))
+        print("lexer_host: FAIL {n}: [{src}] lexed int_val {tok.int_val}, the host compiler says {want}")
         return n
     end
     0
@@ -233,13 +231,13 @@ _check = (n: i64, label: str, src: str): i64
     want = _native_kinds(src, SRC)
     got = _foreign_kinds(src, SRC)
     if got == ""
-        print("lexer_host: FAIL " .. to(str)(n) .. " (" .. label .. "): host produced nothing")
+        print("lexer_host: FAIL {n} ({label}): host produced nothing")
         return n
     end
     if got != want
-        print("lexer_host: FAIL " .. to(str)(n) .. " (" .. label .. ")")
-        print("  in-process: " .. want)
-        print("  foreign   : " .. got)
+        print("lexer_host: FAIL {n} ({label})")
+        print("  in-process: {want}")
+        print("  foreign   : {got}")
         return n
     end
     0

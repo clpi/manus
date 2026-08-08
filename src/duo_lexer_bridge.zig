@@ -8,6 +8,10 @@ const std = @import("std");
 const lexer = @import("lexer.zig");
 const duo_keyword_bridge = @import("duo_keyword_bridge.zig");
 
+/// SH-03 production dispatch: rebuilding host `Token`s from the Duo lexer's
+/// record buffer. Imported here so the seam and its consumer travel together.
+pub const dispatch = @import("duo_lexer_dispatch.zig");
+
 pub const SCHEMA_VERSION = "duo-lexer-bridge-v0";
 
 pub const TokenizeAuthority = enum {
@@ -172,4 +176,8 @@ test "duo_lexer_bridge: the whole-file tokenize entries carry location" {
     try std.testing.expect(found_all);
     try std.testing.expect(found_text);
     try std.testing.expect(found_full);
+}
+
+test "duo_lexer_bridge: the dispatch consumer is analyzed with the seam" {
+    std.testing.refAllDecls(dispatch);
 }

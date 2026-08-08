@@ -1,9 +1,29 @@
 const std = @import("std");
 
+/// SH-02 + SH-03 production seam. These travel together: any module that
+/// reaches `duo_lexer_bridge` reaches both the keyword table and the Duo lexer
+/// behind it, so linking them separately only produces undefined symbols later.
+///
+/// The Duo lexer artifact also defines a STRONG `duo_keyword_classify`, which
+/// overrides the weak one in src/duo_keyword_classify.c — that file was written
+/// weak for exactly this case.
 fn linkProductionKeywordClassify(b: *std.Build, mod: *std.Build.Module) void {
     mod.addCSourceFile(.{
         .file = b.path("src/duo_keyword_classify.c"),
         .flags = &.{"-std=c11"},
+    });
+    linkProductionDuoLexer(b, mod);
+    mod.link_libc = true;
+}
+
+/// SH-03 production dispatch: the Duo lexer, generated from
+/// lib/std/compiler/host.duo. Provides duo_lexer_tokenize_full and friends for
+/// src/duo_lexer_dispatch.zig, and a STRONG duo_keyword_classify that overrides
+/// the weak one above — which is why that one is weak.
+fn linkProductionDuoLexer(b: *std.Build, mod: *std.Build.Module) void {
+    mod.addCSourceFile(.{
+        .file = b.path("src/duo_lexer_tokenize.c"),
+        .flags = &.{ "-std=c11", "-w" },
     });
     mod.link_libc = true;
 }
