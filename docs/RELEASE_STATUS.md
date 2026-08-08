@@ -60,11 +60,12 @@ returned true for a failing command in this repo before.
 | tier-0 agent gate | `zig build agent-smoke` | **PASS**, exit 0 |
 | public safety (Pass 10 A19) | `duo run scripts/public_safety_scan.duo` | **PASS**, exit 0 |
 | repo hygiene | `zig build repo-hygiene` | **PASS**, exit 0 |
-| Pass 100 deny table | `zig build audit100` | **PASS at `9ef2e68` after a rebaseline** — it was RED on 7 rows; see below |
+| Pass 100 deny table | `zig build audit100` | **RED at `1bb304f`** — 2 rows over budget (`oneline` 2268/2258, `trailret` 3417/3415); see below |
 | project loop on a clean dir | `zig build init-build-smoke` | **PASS**, exit 0 |
 | lexer TEXT differential | `duo run --backend=c examples/pass16_lexer_text_differential.duo` | exit 0 |
 | lexer FINGERPRINT differential | `duo run --backend=c examples/pass16_lexer_fingerprint_differential.duo` | exit 0 |
-| Zig unit tests | `zig build unit-test` | **RED** — see §3 |
+| Zig unit tests | `zig build unit-test` | **GREEN at `1bb304f`** — 1317/1317, 0 leaks, exit 0; see §3 |
+| direct/C native differential | `zig build native-differential` | **GREEN at `1bb304f`** — 63 agree / 0 diverge, exit 0; see §3a |
 | Duo-vs-C benchmark | `zig build bench` | **RED by its own criterion** — 12 measured wins, 12 folded, 16 losses; see §4 |
 | language census (G11) | `zig build language-census` | **PASS**, exit 0 — and it now counts `.js`, which it never did; see §7.8 |
 
@@ -145,30 +146,139 @@ too: `snake`'s budget set one below its count fails with exit 1.
 
 ---
 
-## 3. Unit tests — RED, 23 failures and 2 leaks
+## 3. Unit tests — GREEN, 1317/1317, 0 leaks
 
-`zig build unit-test`, measured at `ea04a35` in a clean detached worktree:
+`zig build unit-test`, measured at `1bb304f` in a detached worktree with
+`zig-out/bin/duo` already built (eight tests shell out to it; a missing binary
+reports a false 8-test improvement):
 
 ```
-1286 / 1309 tests passed   (23 failed)   2 leaks   0 crashes
+before   1293 / 1316 tests passed   (23 failed)   2 leaks     exit 1
+after    1317 / 1317 tests passed   ( 0 failed)   0 leaks     exit 0
 ```
 
-The 23 failures, by cluster and by what each actually asserts:
+Both numbers were taken at the **same HEAD**, with and without the change, and
+compared by failing-test NAME SET rather than by count.
 
-| n | cluster | characterisation |
-|---:|---|---|
-| 7 | `codegen.test.codegen: *` | Each asserts an **exact generated-C substring** — e.g. `double num = lua_to_num(lua_val_from_literal("42"`, `int64_t n = ((int64_t)lua_to_num(split()))`, `const char* pairs = "AlphaxBeta;"`. The emitter has moved off those spellings. Same family as the ~30 fixtures already repaired this week (`b3b8e71`, `d4fe158`, `a2e0f17`, `c35c4d4`); these are the residue. **The test pins the old text; whether the new text is correct has not been verified per-case.** |
-| 7 | `pass4_native_tests` (3), `pass5_foreign_tests` (2), `pass5_golden_tests` (1), `pass4_boxed_inventory` (1) | The native-struct-field and foreign-C-header path: `Point` designated initializers, `distance2` linking and returning 25, `point.h → SIM` golden ids, and the boxing-count inventory disagreeing with the catalog. |
-| 5 | `meta_transform_tests` (4), `parser` (1) | G-061 tier-1 combinators and the `\|>` pipeline surface — parsing combinators as expressions in block bodies, compile parity across three sites, and `@c.emit` with a combinator argument. **Live work**: this is the same surface the directive-erasure session is editing. |
-| 2 | `dnir_lower` | Trailing compound assignment (`x += …` as the last statement) must return the assigned local / the updated field slot; it does not. |
-| 2 | `native_backend` (1), `git_preservation` (1) | Assembly-listing emission for arithmetic; a read-only git preservation report that must free cleanly. |
+The previous entry read "23 failures, 2 leaks" and characterised them by what
+each test asserts. That characterisation was half right: it called seven of them
+"the emitter moved off those spellings", and for four of the seven it had. For
+the rest, **the test was reporting a real defect**. The triage, by cause:
 
-The 2 leaks: `c_sim_import: point.h → SIM entities` and
-`native_barrier_checks: pass12_m1 branch_chain body passes no_boxing` (1
-allocation, 5542 bytes).
+### (a) genuinely broken code — 8 tests, 7 distinct defects, all fixed
 
-**Nobody has claimed these are all cosmetic and this document does not.** The
-`dnir_lower` pair and the `pass4`/`pass5` group describe behaviour, not text.
+| defect | evidence | fix |
+|---|---|---|
+| **trailing compound assignment evaluated twice** in the direct backend. The statement `x *= 2` lowered, then the tail-return lowered `x * 2` **again** against the updated `x`. | `twice(5)` → direct **20**, C **10**; `v.x += amt` → direct **11**, C **8** | `tail_result_demand` now carries the assignment TARGET on `.tail_compound_assignment` (and recognises the FIELD form, which was classified as an ordinary tail assignment); `dnir_lower` returns that slot instead of re-evaluating. Both now agree with C by value. |
+| **module-scope literal descriptors emitted boxed into a no-runtime TU.** `Kind = @{ eof = 0, ident = 1 }` became `static lua_Value duo_g_Kind` in a translation unit that had just decided to declare no lua runtime. | 4 native-differential fixtures failed to compile at all — see §3a | `native_const_descriptors`: the keyed twin of `native_dense_module_tables`. `Kind.ident` folds to its literal, the binding gets no storage. Guarded by a "never used bare, written exactly once" scan whose walker returns *decline* for any construct it does not model. |
+| **record literal at a native record parameter emitted a boxed table.** `distance2({ x = 3.0, y = 4.0 })` built a `lua_table_new_with_capacity` for a `duo_rec_*` parameter. | generated C did not compile | designated initializer `&((duo_rec_T){ .x = …, .y = … })`. The pointer branch already had this arm; it was unreachable because the by-pointer branch ran first. Binary now exits **25**. |
+| **foreign C functions received Duo's record-by-pointer convention.** `extern double distance2(CPoint)` was called as `distance2(&p)`. | clang: "passing 'CPoint *' to parameter of incompatible type 'CPoint'" | a `ParamAbi` on the argument emitter; a callee in `foreign_functions` keeps the ABI its header declared. The linking test now builds and the binary **returns 25**. |
+| **nine combinators were unreachable through the unified dispatcher.** `meta_dispatch.combinators` declared arities that contradict the hooks it fronts (`__comptimeproduct` said 2 against a 3-argument hook; `__metahyper` said 2 against 6). `dispatchAtSite` checks the table *before* the hook, so the fold silently never ran and the generated C called an undeclared `__comptimeproduct`. | `const char* pairs = lua_to_str(({ … lua_invoke(__comptimeproduct, …) }))` | arities corrected for all nine, plus a test that cross-checks every hook form against the table, with a positive control. |
+| **a block's tail expression was never type-checked.** `check_block` walked `stmts` and skipped `tail_expr`, so nothing in it reached `type_map`. | `pick(1.5, 2)` monomorphised to `duo_pick_any` when it was the module's LAST statement and to `duo_pick_f64` when any statement followed — the same call, two specializations, decided by position | `check_block_with_implicit_return` now checks the tail expression for its types (the return-type check stays owned by the function-body path). |
+| **`fun(x) expr end` did not parse when the body was on one line.** The multi-line branch consumes its `end`; the single-line branch did not, so a lambda argument died on "expected ')', got 'end'" while the identical body split over three lines parsed. | `@comp.match("a\|b", fun(m) m.pattern .. "\n" end)` | consume a trailing `end` **on the same line** as the body. The line test is the disambiguation: an `end` on a later line still belongs to the enclosing block. |
+
+Fixing the parse then exposed a **segfault** (a new failure mode, not a
+regression the count would have shown): `derive_registry`'s built-in table is a
+process-lifetime singleton that kept whichever allocator first reached it. In
+the compiler that arena outlives the compile; in the test binary the next test's
+`hasNativeDerive` read a freed hash-map header. Both derive singletons now use a
+process-lifetime allocator.
+
+### (b) the test asserted law Pass 100 / the compiler has retired — 1 test
+
+`codegen: typed global builtins unbox boxed runtime results` required
+`double num = lua_to_num(lua_val_from_literal("42"` — the old fold that bypassed
+`tonumber` entirely — and **forbade** `lua_to_num(tonumber(`. The rule it was
+pinning is gone on purpose: `builtin_return_type` types `tonumber` as `.any`
+because **it is a conversion that can fail**, and the old fold turned
+`tonumber("abc")` into 0 before any caller could test it. The test now asserts
+the current lowering. Verified by value: `tonumber("42")` → 42,
+`tonumber(42.0)` → 42, `tonumber("abc") or -1.0` → **-1** (the nil survives).
+
+### (c) the test itself was wrong — 8 tests
+
+Three were **use-after-free or leak in the test**, not in the compiler:
+`pass5_golden` and `c_sim_import` both did `aw.deinit(); aw = .init(…)` while a
+slice still pointed into the old buffer — `pass5_golden` compared against
+poisoned memory and printed a wall of `U` (0x55) as "expected", `c_sim_import`
+leaked 1382 bytes; `native_barrier_checks` freed `out.stdout` and not
+`out.stderr` (4588 bytes). **Those were the two leaks.**
+
+The rest asserted a proxy that had stopped tracking the property:
+
+- `git_preservation` asserted `report.stash_count == 0` — a rule about a
+  **checkout**, not about the code. Two stashes in a developer's tree turned it
+  red while the reporter worked perfectly. It now asserts the §5.2 contract in
+  both directions (a stash present ⇔ a `stash` finding), which is meaningful in
+  any checkout.
+- `native_backend … assembly listing for arithmetic` required a `mul` from
+  `x = 6; y = 7; x * y` — two compile-time constants, which fold to
+  `mov x9, #42`. The assertion was requiring a de-optimization. The fixture now
+  multiplies two **parameters**; verified by value (exits 42).
+- `pass4 … full milestone asm` asked `emitAssembly` for the f64→int process
+  entry wrapper. Only `emitAssemblyForExecutable` emits an entry point; the
+  listing was correctly not producing one. Confirmed against the real object:
+  `otool -tV` shows `fcvtzs x0, d0` and the binary exits 25.
+- `dnir_lower … updated field slot` identified "the field slot" as `local != 0
+  and local != 1`. Under the exploded-record model a one-field record parameter
+  owns slot 0, so that named a slot which cannot exist. It now compares the
+  `ret` against the `store_local` it must return.
+- two `codegen` tests pinned `lua_table_get_str_num` where the emitter spells the
+  Pass 34 L2 marker `duo_fallback_get_num` — a **verbatim `#define`** of that
+  function. One pinned the call spelling of an `any`-returning callee that is now
+  reached through `lua_invoke` (which is what populates the `lua_mret_*` buffer
+  the same test's other rows read). Verified by value: that fixture prints 42.
+- `parser … @c.emit is expr_stmt not directive` asserted `stmts[0]`; a lone
+  module-level expression is the module's **tail result**, so `stmts` is empty
+  and the call is in `tail_expr`. The property — a call to `__emit`, never a
+  directive — is now asserted wherever it lands.
+- `meta_transform … |> lowers to direct C call` scanned the **whole translation
+  unit** for `lua_invoke(`, which the runtime prelude defines and calls. It could
+  never pass for any module that keeps the runtime. Now scoped to the entry body,
+  with a positive control that the slice contains the call.
+- `pass4_boxed_inventory` kept a **second copy** of the catalog's counts "in sync
+  by hand". They had diverged (1889 vs 1887, neither matching the file), and
+  because the test asserted in sequence, three further counts had drifted
+  unnoticed behind the first. It now aliases `pass4_catalog.boxed_inventory`,
+  reports every drifted row rather than the first, and carries a positive control.
+
+**No test was deleted or skipped.** The suite grew by one (the combinator-arity
+cross-check), 1316 → 1317.
+
+---
+
+## 3a. Native differential — GREEN, 63 agree / 0 diverge
+
+`zig build native-differential` at `1bb304f`:
+
+```
+before   59 agree, 4 diverge, 5 unsupported    exit 1
+after    63 agree, 0 diverge, 5 unsupported    exit 0
+```
+
+The four divergences — `canon3_descriptor_enum`, `canon4_descriptor_in_record`,
+`tokenizer`, `tokenizer_selfscan` — were all the **same** defect, and it was in
+the **C backend**, which is the corpus's oracle: a module-scope literal
+descriptor (`Kind = @{ eof = 0, ident = 1 }`) was emitted as
+`static lua_Value duo_g_Kind` into a translation unit that had already chosen
+native lowering and therefore declared no lua runtime. Ten clang errors, starting
+with `unknown type name 'lua_Value'`.
+
+The direct backend has folded these to immediates since `DNB007`; the C backend
+now does the same, so the two agree structurally as well as by value. Verified
+by value on both backends, not by "it compiled":
+
+| fixture | C | direct |
+|---|---:|---:|
+| `canon3_descriptor_enum` | 42 | 42 |
+| `canon4_descriptor_in_record` | 7 | 7 |
+| `tokenizer` | 162 | 162 |
+| `tokenizer_selfscan` | 26 | 26 |
+
+`canon3`'s generated C contains **zero** `lua_` occurrences and reads
+`return ((((int64_t)1) + ((int64_t)3)) + 38);` — the descriptor folded, not
+boxed. `tokenizer`'s is likewise zero, which is what its header comment claims
+and what was previously untrue on this backend.
 
 ---
 
@@ -523,10 +633,15 @@ trie + relations; offside parsing + canonicalizer.
 
 Stated plainly, no hedging.
 
-1. **The unit test suite is red.** 23 failures, 2 leaks. At least four of them
-   (`dnir_lower` ×2, `pass5_foreign` ×2) describe behaviour rather than emitted
-   text. Shipping a compiler whose own test suite is red is a decision, not an
-   oversight, and it should be made deliberately.
+1. **`audit100` is red at `1bb304f`** — 2 rows over budget (`oneline`
+   2268/2258, `trailret` 3417/3415), not attributed and not budgeted. Measured
+   both with and without this pass's compiler change at the same HEAD: the two
+   runs print identical counts, so the overage belongs to `.duo` work landed
+   since the last rebaseline, not to the compiler diff. The gate reads
+   `.duo` files only.
+   *(The unit test suite was item 1 here with "23 failures, 2 leaks". It is now
+   green — 1317/1317, 0 leaks — and so is the native differential, 63/0. See
+   §3 and §3a; seven real compiler defects came out of that triage.)*
 2. **The benchmark gate is red**: 12 measured wins, **12 folded**, 16 losses,
    and at least one Duo build folded on 27 of the 40 rows. The suite proves
    **correctness** (40/40 against reference C). It does not currently prove a
@@ -607,8 +722,11 @@ Stated plainly, no hedging.
 ## What IS ready
 
 The compiler builds for six targets with zero errors and produces artifacts for
-all six. The tier-0 gate, hygiene, public safety, the Pass 100 deny table, the
-clean-directory project loop, the G11 language census and both lexer
+all six. **Both correctness gates are green: `zig build unit-test` at 1317/1317
+with zero leaks, and `zig build native-differential` at 63 agree / 0 diverge.**
+The tier-0 gate, hygiene, public safety, the
+clean-directory project loop, the G11 language census, the Pass 100 §22
+capability table and both lexer
 differentials are green. `duo init`
 → `check` → `build` → `run` works on an empty directory and is gated. All 40
 benchmark correctness rows agree with reference C. **The benchmark suite now
