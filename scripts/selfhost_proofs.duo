@@ -45,7 +45,16 @@ end
 main(): i64
     print("selfhost proofs — Duo compiler subsystems, in dependency order")
 
-    -- The parser first: three later rows use its projection as their oracle, so
+    -- SH-03 first, because it is the only row that leaves the process. Every
+    -- other proof calls Duo from Duo, which shows a subsystem is IMPLEMENTED;
+    -- this one links a C host against the artifact and shows it is CALLABLE.
+    -- It also builds the artifact, so a break here is a build break, not a
+    -- lexer break, and the rows below stay interpretable.
+    if not _row("SH-03", "host dispatch ", "examples/pass16_lexer_host_proof.duo")
+        return 3
+    end
+
+    -- The parser next: three later rows use its projection as their oracle, so
     -- a failure here invalidates them rather than merely accompanying them.
     if not _row("SH-04", "parser        ", "examples/pass16_parser_corpus_proof.duo")
         return 4
@@ -89,6 +98,7 @@ main(): i64
         return 14
     end
 
-    print("selfhost proofs: 11 rows — 10 against an oracle that is not the author, SH-13 fixtures only")
+    print("selfhost proofs: 12 rows — 11 against an oracle that is not the author, SH-13 fixtures only")
+    print("                 SH-03 is the only row that leaves the process")
     0
 end

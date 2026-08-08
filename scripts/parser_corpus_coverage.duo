@@ -9,7 +9,7 @@
 --
 -- 2026-08-07: 44/245 when this number first existed, then 245/245 the same day.
 --
--- It GATES now. `PARSER_COVERAGE_FLOOR` (default 245) is a ratchet: the number
+-- It GATES now. `PARSER_COVERAGE_FLOOR` (default 255) is a ratchet: the number
 -- only goes up. Every regression this session was invisible to the 55-case
 -- projection proof and visible only here — a guard that silently dropped 33
 -- files, a speculation that truncated expression statements, a lambda arm that
@@ -72,7 +72,7 @@ main(): i64
     -- GAP-11: numeric holes do not interpolate, so the tallies stay a chain.
     print("parser_coverage: " .. to(str)(ok) .. "/" .. to(str)(total)
         .. " lib/std files parse clean")
-    floor: i64 = to(i64)(std.script.getenv("PARSER_COVERAGE_FLOOR", "245"))
+    floor: i64 = to(i64)(std.script.getenv("PARSER_COVERAGE_FLOOR", "255"))
     if total == 0
         print("parser_coverage: FAIL (empty corpus)")
         return 1
