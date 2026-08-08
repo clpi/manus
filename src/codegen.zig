@@ -2151,6 +2151,10 @@ pub const CodeGen = struct {
         if (self.expr_type(obj) != .str and obj.* != .string_lit) return null;
         if (std.mem.eql(u8, method, "byte")) {
             if (obj.* == .string_lit and args.len >= 1 and args[0].* == .int_lit) return .i64;
+            // gap[025]: `s:byte(i)` on a str receiver is an i64 byte read, same
+            // as string.byte(s, i). Without this it typed as .any and the
+            // native lowering above could not be selected.
+            if (args.len == 1 and self.expr_type(obj) == .str) return .i64;
             return null;
         }
         return self.string_builtin_result_type(method, args);
@@ -14137,6 +14141,25 @@ pub const CodeGen = struct {
                             try self.emit_expr(mc.obj);
                             self.p("))", .{});
                         }
+                        return;
+                    }
+                    // gap[025]: the general native lowering for `s:byte(i)`.
+                    // Only the constant-folded literal case existed below, so
+                    // every other receiver-face byte read in a native function
+                    // fell through to duo_fatal("unlowered native string
+                    // method") — which is why converting lexer.duo's
+                    // string.byte sites changed the token TEXT fingerprint while
+                    // parse_status, the artifact build and the field-for-field
+                    // differential all stayed green. Emits what the namespace
+                    // form already emits: 1-based index, unsigned byte.
+                    if (std.mem.eql(u8, mc.method, "byte") and mc.args.len == 1 and
+                        self.expr_type(mc.obj) == .str and mc.obj.* != .string_lit)
+                    {
+                        self.p("((int64_t)(unsigned char)(", .{});
+                        try self.emit_expr(mc.obj);
+                        self.p("[", .{});
+                        try self.emit_expr(mc.args[0]);
+                        self.p(" - 1]))", .{});
                         return;
                     }
                     if (std.mem.eql(u8, mc.method, "byte") and
