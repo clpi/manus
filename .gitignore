@@ -86,3 +86,6 @@ docs/book/
 /bench_c
 /bench_simd_matmul_c
 /default.profraw
+
+# Agent/session state is not repository truth (Pass 10, Pass 13).
+.cursor/hooks/state/
