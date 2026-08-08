@@ -33,6 +33,19 @@
 -- scripts/spec_conformance.duo had its own test programs interpolated as if
 -- they were harness source.
 --
+-- STRING BODIES ARE STRIPPED, PER ROW. Same argument, one level down. The rows
+-- are about the SHAPE OF DUO CODE, and a `"const T*"` inside an @comp.c.emit
+-- payload is not Duo code — it is data the compiler hands to a C compiler.
+-- Counting it applies pressure toward something no edit can reach: measured
+-- 2026-08-08, `foreignkw` read 324 with string bodies in and 164 with them
+-- out, so HALF that row was unrepairable by definition.
+--
+-- The strip is per-row and not global because one row's noise is another
+-- row's subject: `concatlit` asks whether `..` sits beside a string literal,
+-- and a global strip deletes the literal it is looking for. So each row
+-- carries a `keeps_strings` flag; today exactly one row sets it, and that row
+-- is the control — its count must NOT move when this strip is introduced.
+--
 -- Exit 0 pass · 1 a row exceeded budget or a file is unclassified · 3 the gate
 -- could not run (no rules, no files, no canonical set — a confident 0 is
 -- usually a broken gate, so every zero here is positive-controlled).
@@ -41,6 +54,17 @@
 
 _SELF = "scripts/audit100.duo"
 _LIST = "/tmp/duo_audit100_canonical.list"
+
+-- The string-body strip, as a shell fragment. Two passes, in this order:
+-- drop escaped quotes (`\"`) so they cannot close a body early, then drop
+-- every `"…"` body. Built from named pieces rather than one escaped literal
+-- because the literal spelling is `s/\\"//g` and writing that through two
+-- levels of quoting is how a gate ends up silently matching nothing.
+_Q = "'"
+_DQ = "\""
+_BSBS = "\\\\"
+_STRIP = " | sed -e " .. _Q .. "s/" .. _BSBS .. _DQ .. "//g" .. _Q
+    .. " -e " .. _Q .. "s/" .. _DQ .. "[^" .. _DQ .. "]*" .. _DQ .. "//g" .. _Q
 
 _lines(s: str): any
     out = {}
@@ -98,23 +122,40 @@ _is_class(c: str): bool
         or c == "negative" or c == "historical" or c == "generated"
 end
 
--- Count lines matching `pat` across the canonical list, comments stripped.
-_hits(pat: str): i64
+-- Count lines matching `pat` across the canonical list, comments always
+-- stripped. `keep` is 1 for the rows whose subject IS a string literal; every
+-- other row also has string BODIES stripped, so it measures Duo code rather
+-- than payloads the compiler hands to a C compiler.
+_hits(pat: str, keep: i64): i64
     q: str = "'"
+    strip: str = _STRIP
+    if keep != 0
+        strip = ""
+    end
     cmd: str = ("tr '\\n' '\\0' < " .. _LIST
         .. " | xargs -0 cat 2>/dev/null"
         .. " | grep -v -E " .. q .. "^[[:space:]]*--" .. q
+        .. strip
         .. " | grep -c -E " .. q .. pat .. q)
     to(i64)(std.script.chomp(std.script.capture(cmd)))
 end
 
-_show(pat: str): void
+_show(pat: str, keep: i64): void
     q: str = "'"
-    -- Same comment strip as _hits, applied after the match so the paths
-    -- survive; otherwise SHOW lists lines the count does not.
+    -- SHOW must agree with the count or it sends people to lines the ratchet
+    -- never saw. Both filters therefore run here too, applied AFTER the match
+    -- so the `path:line:` prefix survives — sed cannot damage it, there are no
+    -- quotes in a path — and then the pattern is re-checked against the
+    -- stripped text so anything that only matched inside a string body drops.
+    strip: str = _STRIP
+    if keep != 0
+        strip = ""
+    end
     cmd: str = ("tr '\\n' '\\0' < " .. _LIST
         .. " | xargs -0 grep -n -E " .. q .. pat .. q .. " 2>/dev/null"
         .. " | grep -v -E " .. q .. ":[0-9][0-9]*:[[:space:]]*--" .. q
+        .. strip
+        .. " | grep -E " .. q .. pat .. q
         .. " | head -20")
     io.write(std.script.capture(cmd))
 end
@@ -242,10 +283,25 @@ main(): i64
 
     -- Positive control: a pattern that MUST hit. If this reads 0, the pipeline
     -- is broken and every other 0 in this report is a lie.
-    control: i64 = _hits("[a-zA-Z]")
+    control: i64 = _hits("[a-zA-Z]", 1)
     if control == 0
         print("audit100: FAIL — control pattern matched 0 lines across "
             .. to(str)(listed) .. " canonical files; the grep pipeline is broken")
+        return 3
+    end
+
+    -- Positive control for the string-body strip itself. A sed that silently
+    -- matched nothing would leave every row's count unchanged and look like a
+    -- clean result. `..` beside a quote is the one thing the strip must be
+    -- able to delete, so kept and stripped MUST disagree here. If they agree,
+    -- the strip is a no-op and every stripped count below is unearned.
+    concat: str = "[" .. "\"" .. "][[:space:]]*\\.\\.|\\.\\.[[:space:]]*[" .. "\"" .. "]"
+    kept: i64 = _hits(concat, 1)
+    razed: i64 = _hits(concat, 0)
+    if kept <= razed
+        print("audit100: FAIL — string-body strip is a no-op: `..` beside a"
+            .. " quote reads " .. to(str)(kept) .. " kept and " .. to(str)(razed)
+            .. " stripped. Every stripped row below would be unearned.")
         return 3
     end
 
@@ -304,22 +360,51 @@ main(): i64
     -- whenever you lower a count; raising one needs a sentence in the commit
     -- message saying why the ROW, not the code, was wrong.
     --
-    -- Measured 2026-08-08 on the canonical partition, plus 2 per row. The
-    -- headroom is not fudge and it is not a licence: four sessions were
-    -- editing canonical files while this was measured, and a ratchet that goes
-    -- red because somebody else saved a file is a ratchet that gets muted.
-    -- Two lines of slack on a row of 14318 costs no pressure. Tighten every
-    -- row to its exact count at the next quiet measurement.
+    -- Measured 2026-08-08 over 441 canonical files, in the working tree, WITH
+    -- string bodies stripped. EXACT counts, no headroom. A previous revision
+    -- carried +2 per row to absorb concurrent sessions; the +2 was dropped
+    -- because it disarms the ratchet by exactly the amount that matters. The
+    -- test that showed it: lowering `snake` by one below its count must fail
+    -- the gate, and it does (exit 1). Under +2 slack the same one-line
+    -- regression passes, and a one-line regression is the only kind anyone
+    -- ever introduces.
+    --
+    -- The gate reads the WORKING TREE on purpose — it should see your diff
+    -- before you commit it. The cost is that these numbers are a measurement
+    -- of a moving object: three rows drifted (snake +40, underprefix +2,
+    -- trailret +1) between two runs minutes apart while another session was
+    -- editing canonical files. So RE-MEASURE IMMEDIATELY BEFORE COMMITTING,
+    -- and read a red row on a dirty tree as somebody's in-flight work rather
+    -- than a fault. Whoever adds a deny line moves the budget in the same
+    -- commit, and says why.
+    --
+    -- These are lower than the pre-strip baseline because the strip removed
+    -- noise no edit could ever have cleared: on this same 441-file list,
+    -- foreignkw 330 -> 164, directive 267 -> 151, arrow 177 -> 119. Those
+    -- rows were asking for repairs that did not exist. concatlit is unchanged
+    -- at 2155 by design — see `keeps` below.
     --
     -- Held as a string, not a table of integers, because a dense numeric table
     -- literal lowers to a raw int64_t* that `#` cannot measure and that gets a
     -- free() emitted at every `return` in the function — including the returns
     -- that come textually before it, which is a C compile error.
-    budgets: str = "14320 2298 1459 263 332 475 269 60 1925 475 326 179 232 38 2105 2224 3440"
+    budgets: str = "13687 2034 1482 257 320 470 151 58 1930 441 164 119 224 36 2155 2222 3300"
+
+    -- Per-row: 1 = measure with string bodies INTACT. Only `concatlit` sets
+    -- it, because its subject IS the string literal; stripping bodies takes
+    -- that row from 2155 to 1, which would read as a triumph and mean nothing.
+    -- Every other row is about the shape of Duo code, so a `const T*` inside
+    -- an emit payload is not evidence against it.
+    keeps: str =    "0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0"
 
     if _field(budgets, #id) == "" or _field(budgets, #id + 1) != ""
         print("audit100: FAIL — the budget row does not have exactly "
             .. to(str)(#id) .. " entries; the ratchet is out of step")
+        return 3
+    end
+    if _field(keeps, #id) == "" or _field(keeps, #id + 1) != ""
+        print("audit100: FAIL — the keeps row does not have exactly "
+            .. to(str)(#id) .. " entries; the strip is out of step")
         return 3
     end
 
@@ -334,7 +419,7 @@ main(): i64
     total = 0
     i: i64 = 1
     while i <= #id
-        c: i64 = _hits(pat[i])
+        c: i64 = _hits(pat[i], to(i64)(_field(keeps, i)))
         total += c
         flag: str = "  "
         b: i64 = to(i64)(_field(budgets, i))
@@ -345,7 +430,7 @@ main(): i64
         print("  " .. flag .. " " .. _pad(id[i], 12) .. _pad(to(str)(c), 8)
             .. _pad(to(str)(b), 9) .. note[i])
         if show == id[i]
-            _show(pat[i])
+            _show(pat[i], to(i64)(_field(keeps, i)))
         end
         i += 1
     end
@@ -353,7 +438,7 @@ main(): i64
     -- The one §1 row that is about files, not lines.
     nonduo: i64 = to(i64)(std.script.chomp(std.script.capture(
         "cd " .. root .. " && git ls-files | grep -c -v -E " .. q .. "\\.(duo|md)$" .. q)))
-    nonduo_budget = 562
+    nonduo_budget = 560
     if nonduo > nonduo_budget
         over += 1
         print("  !! " .. _pad("nonduo", 12) .. _pad(to(str)(nonduo), 8)
