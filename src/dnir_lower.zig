@@ -578,8 +578,35 @@ fn isStrType(t: ast.TypeExpr) bool {
     return t == .named and std.mem.eql(u8, t.named, "str");
 }
 
+/// A tail call that yields nothing — its value is not a result, it is an effect.
+///
+/// DEMAND (rule 3) makes the last expression of a block its result, which is
+/// right for every expression that HAS one. `print` does not: it is a void
+/// runtime global, so an if-body ending in `print(" ")` is a discarded
+/// statement that happens to sit in tail position.
+///
+/// Syntactic rather than type-directed because `LowerCtx` carries no type map;
+/// this is the one builtin whose voidness is unconditional. A general rule
+/// wants the callee's declared return type, which arrives with the same work
+/// that would let user `: void` functions land here too.
+fn isVoidTailCall(expr: *const ast.Expr) bool {
+    const callee = switch (expr.*) {
+        .call => |c| c.func,
+        else => return false,
+    };
+    return callee.* == .name and std.mem.eql(u8, callee.name.ident, "print");
+}
+
 fn tryEmitTailDemandReturn(ctx: *LowerCtx, block: *const ast.Block) Error!bool {
     const r = tail_result_demand.blockTailResult(block) orelse return false;
+    // gap[033]: emitting `ret` here made `if c print(" ") end` compile to
+    // `return print(" ")`, returning whatever register the void call left —
+    // exit 59, and 224 with an else, where the C backend exits 0. Lower it as
+    // the effect it is and report "no return", so the branch falls through.
+    if (isVoidTailCall(r.expr)) {
+        _ = try lowerExprCons(ctx, r.expr, .discard);
+        return false;
+    }
     const ret_ty: RT = if (exprIsF64(ctx, r.expr)) .f64 else .any;
     if (r.expr.* == .table and ctx.ret_record != null) {
         try lowerRecordReturn(ctx, r.expr);

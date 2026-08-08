@@ -3294,14 +3294,14 @@ pub const CodeGen = struct {
             // a function or in a `while` body lands on `.call_stmt` and is
             // admitted. One construct, two answers, decided by how deep it sits.
             //
-            // Widening this to `call_stmt_is_native_scalar` was TRIED AND REVERTED
-            // 2026-08-07: it compiles, and the binary is WRONG. `main(): i64`
-            // ending `if c print(" ") end` then `0` exits 59 (and 224 with an
-            // else) where the C backend exits 0 — the discarded print's result is
-            // left as the block's value and leaks into the return. The precheck
-            // cannot widen here until the native backend lowers a void tail call
-            // as a discarded statement; the fix belongs there, not in the gate.
-            if (!self.expr_is_native_scalar(expr)) return false;
+            // Widening this to `call_stmt_is_native_scalar` (a strict superset —
+            // it delegates to the expression predicate for everything that is not
+            // a call) FIRST produced wrong binaries: exit 59, and 224 with an
+            // else, where C exits 0, because dnir_lower emitted `return print(…)`
+            // and returned whatever register the void call left. That is fixed at
+            // the source (isVoidTailCall lowers it as the effect it is), so the
+            // gate and the lowering now agree and this widening is sound.
+            if (!self.call_stmt_is_native_scalar(expr)) return false;
         }
         for (block.stmts) |*stmt| {
             if (!self.stmt_is_native_scalar(stmt, allow_return)) return false;
