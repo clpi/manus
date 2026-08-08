@@ -72,10 +72,40 @@ fn bailWith(src: std.builtin.SourceLocation, note: []const u8) Error {
     return error.UnsupportedConstruct;
 }
 
-const empty_module_consts: std.StringHashMapUnmanaged(i64) = .empty;
-const empty_str_returns: std.StringHashMapUnmanaged(void) = .empty;
+/// Module-level compile-time bindings, split by the DNIR value they fold to.
+///
+/// `ints` came first and was the whole table; a module-level STRING constant
+/// had nowhere to live, so `return SEMANTIC_OWNER` fell through the `.name`
+/// arm's integer lookup and bailed. `dnir.Value` has carried a `.str` variant
+/// all along — a string literal already lowers to one — so the gap was the
+/// constant table, not the value representation.
+///
+/// Two maps rather than a tagged union because every consumer knows which kind
+/// it wants: `exprIsStr` asks only `strs`, the numeric-for step asks only
+/// `ints`, and a union would make each of them re-check a tag they can't act on.
+///
+/// String VALUES are not duped: they point into the AST, exactly like the
+/// `.string_lit` arm's `s.val`, and the AST outlives lowering. Keys are duped
+/// because the `Name.field` spelling is formatted, not borrowed.
+const ModuleConsts = struct {
+    ints: std.StringHashMapUnmanaged(i64) = .empty,
+    strs: std.StringHashMapUnmanaged([]const u8) = .empty,
 
-/// Collect top-level integer bindings so a function body can fold them.
+    fn deinit(self: *ModuleConsts, alloc: std.mem.Allocator) void {
+        var it = self.ints.iterator();
+        while (it.next()) |e| alloc.free(e.key_ptr.*);
+        self.ints.deinit(alloc);
+        var sit = self.strs.iterator();
+        while (sit.next()) |e| alloc.free(e.key_ptr.*);
+        self.strs.deinit(alloc);
+    }
+};
+
+const empty_module_consts: ModuleConsts = .{};
+const empty_str_returns: std.StringHashMapUnmanaged(void) = .empty;
+const empty_fp_params: std.StringHashMapUnmanaged([]bool) = .empty;
+
+/// Collect top-level constant bindings so a function body can fold them.
 ///
 /// `N = 3` and the canonical enum form `Kind = @{ eof = 0, ident = 1 }` are
 /// module-level values; nothing registered them as locals, so `Kind.ident`
@@ -84,13 +114,10 @@ const empty_str_returns: std.StringHashMapUnmanaged(void) = .empty;
 fn collectModuleConsts(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
-) Error!std.StringHashMapUnmanaged(i64) {
-    var map: std.StringHashMapUnmanaged(i64) = .empty;
-    errdefer {
-        var it = map.iterator();
-        while (it.next()) |e| alloc.free(e.key_ptr.*);
-        map.deinit(alloc);
-    }
+) Error!ModuleConsts {
+    var out: ModuleConsts = .{};
+    errdefer out.deinit(alloc);
+    const map = &out.ints;
     for (mod.body.stmts) |*stmt| {
         var name: ?[]const u8 = null;
         var val: ?*const ast.Expr = null;
@@ -124,6 +151,10 @@ fn collectModuleConsts(
             try map.put(alloc, try alloc.dupe(u8, n), iv);
             continue;
         }
+        if (v.* == .string_lit) {
+            try out.strs.put(alloc, try alloc.dupe(u8, n), v.string_lit.val);
+            continue;
+        }
         // `@{ ... }` is the canonical descriptor spelling and parses as a
         // `.compile` unop wrapping the table, so unwrap before reading fields.
         const tbl = switch (v.*) {
@@ -136,12 +167,18 @@ fn collectModuleConsts(
                 .named => |x| x,
                 else => continue,
             };
-            const fv = intLiteralStep(nf.val) orelse continue;
-            const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ n, nf.key });
-            try map.put(alloc, key, fv);
+            if (intLiteralStep(nf.val)) |fv| {
+                const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ n, nf.key });
+                try map.put(alloc, key, fv);
+                continue;
+            }
+            if (nf.val.* == .string_lit) {
+                const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ n, nf.key });
+                try out.strs.put(alloc, key, nf.val.string_lit.val);
+            }
         }
     }
-    return map;
+    return out;
 }
 
 pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.Module {
@@ -150,11 +187,7 @@ pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.
     defer req.deinit(alloc);
 
     var module_consts = try collectModuleConsts(alloc, mod);
-    defer {
-        var mc_it = module_consts.iterator();
-        while (mc_it.next()) |e| alloc.free(e.key_ptr.*);
-        module_consts.deinit(alloc);
-    }
+    defer module_consts.deinit(alloc);
 
     var records: std.ArrayList(dnir.RecordDesc) = .empty;
     errdefer {
@@ -177,6 +210,35 @@ pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.
     // (string.char, concat, math via exprReturnsF64, now str-returning calls).
     var str_returns: std.StringHashMapUnmanaged(void) = .empty;
     defer str_returns.deinit(alloc);
+
+    // GAP-056: which ABI slots each callee expects in v0..v7, so the CALLER
+    // marshals into the register file the CALLEE reads from. Keyed by
+    // `funcExportName` — the same string `lowerCall` emits as the callee — so a
+    // spliced `T.count` resolves as readily as a bare `count`.
+    var fp_params: std.StringHashMapUnmanaged([]bool) = .empty;
+    defer {
+        var fp_it = fp_params.iterator();
+        while (fp_it.next()) |e| {
+            alloc.free(e.key_ptr.*);
+            alloc.free(e.value_ptr.*);
+        }
+        fp_params.deinit(alloc);
+    }
+    for (mod.body.stmts) |*stmt| {
+        if (stmt.* != .func_decl) continue;
+        const fd = &stmt.func_decl;
+        if (!shouldIncludeFuncDecl(fd)) continue;
+        if (!functionEligible(fd, records.items)) continue;
+        const slots = f64AbiParamSlots(fd, records.items) orelse continue;
+        if (slots == 0 or slots > 8) continue;
+        const key = try funcExportName(alloc, fd);
+        if (fp_params.contains(key)) {
+            alloc.free(key);
+            continue;
+        }
+        try fp_params.put(alloc, key, try paramSlotIsFp(alloc, fd, records.items));
+    }
+
     for (mod.body.stmts) |*stmt| {
         if (stmt.* != .func_decl) continue;
         const fd = &stmt.func_decl;
@@ -231,7 +293,7 @@ pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.
             if (skipped == null) skipped = if (fd.path.len > 0) fd.path[0] else "?";
             continue;
         }
-        const f = try lowerFunction(alloc, fd, records.items, &req, &externs, &func_record_returns, &f64_kernels, &str_returns, &module_consts);
+        const f = try lowerFunction(alloc, fd, records.items, &req, &externs, &func_record_returns, &f64_kernels, &fp_params, &str_returns, &module_consts);
         try functions.append(alloc, f);
     }
     if (functions.items.len == 0) return bail(@src());
@@ -363,6 +425,49 @@ fn isF64Record(recs: []const dnir.RecordDesc, t: ast.TypeExpr) ?dnir.RecordDesc 
     return r;
 }
 
+/// One entry per ABI argument SLOT: true when the slot travels in v0..v7.
+///
+/// GAP-056. `emitScalarCallArgs` marshalled every argument with `mov_arg`, which
+/// writes x0..x7, no matter what the callee declared. `p(x: f64, y: f64): i64`
+/// compiled to a flawless callee (`fcmp d0, d1`) fed by a caller that had put
+/// both doubles in x0/x1, so the comparison read whatever d0/d1 happened to
+/// hold: `p(3.5, 1.5)` answered 1 where C answered 9. It compiled, ran, and
+/// exited cleanly with the wrong number.
+///
+/// The caller-side set that DID exist, `f64_kernels`, additionally required an
+/// f64 RETURN, while the callee-side `is_float_kernel` flag does not — that
+/// disagreement is the entire bug. Both ends now derive from this one function.
+///
+/// Per-SLOT rather than a single all-or-nothing answer because AAPCS64 counts
+/// the two register files separately: `f(a: i64, b: f64, c: i64)` is x0, d0, x1
+/// — not x0, d1, x2. A shared counter is right for uniform signatures and
+/// quietly wrong for every mixture. Mixed signatures are refused by
+/// `functionEligible` today, so this is correct by construction rather than by
+/// an invariant that has to hold somewhere else.
+///
+/// Caller owns the returned slice. Null when a record parameter is not one this
+/// pass can explode, which is the same refusal the eligibility check makes.
+fn paramSlotIsFp(
+    alloc: std.mem.Allocator,
+    fd: *const ast.FuncDecl,
+    recs: []const dnir.RecordDesc,
+) Error![]bool {
+    var list: std.ArrayListUnmanaged(bool) = .empty;
+    errdefer list.deinit(alloc);
+    for (fd.func.params) |p| {
+        if (isFloatType(p.typ)) {
+            try list.append(alloc, true);
+        } else if (isF64Record(recs, p.typ)) |r| {
+            try list.appendNTimes(alloc, true, r.fields.len);
+        } else if (findRecordName(recs, p.typ)) |r| {
+            try list.appendNTimes(alloc, false, r.fields.len);
+        } else {
+            try list.append(alloc, false);
+        }
+    }
+    return list.toOwnedSlice(alloc);
+}
+
 fn f64AbiParamSlots(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc) ?usize {
     var slots: usize = 0;
     for (fd.func.params) |p| {
@@ -413,7 +518,7 @@ fn functionEligible(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc) bool
                 if (r.fields.len > max_reg_record_fields) return false;
                 continue;
             }
-            if (!isIntType(p.typ) and !isStrType(p.typ) and !typeIsPtr(p.typ)) return false;
+            if (!isIntType(p.typ) and !isBoolType(p.typ) and !isStrType(p.typ) and !typeIsPtr(p.typ)) return false;
         }
         return true;
     }
@@ -421,8 +526,8 @@ fn functionEligible(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc) bool
         const slots = f64AbiParamSlots(fd, recs) orelse return false;
         return slots <= 8;
     }
-    if (!isIntType(fd.func.ret_type) and !isStrType(fd.func.ret_type) and
-        !isVoidType(fd.func.ret_type)) return false;
+    if (!isIntType(fd.func.ret_type) and !isBoolType(fd.func.ret_type) and
+        !isStrType(fd.func.ret_type) and !isVoidType(fd.func.ret_type)) return false;
     // An all-f64 parameter list with an INT return was refused, while the same
     // parameters with an f64 return were accepted by the branch above. AAPCS
     // puts floats in v0..v7 and integers in x0..x7 — separate register files —
@@ -440,7 +545,7 @@ fn functionEligible(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc) bool
         }
         // `ptr` rides x0..x7 like an i64 — it is the base address of a
         // memory-backed positional table (SH-04).
-        if (!isIntType(p.typ) and !isStrType(p.typ) and !typeIsPtr(p.typ)) return false;
+        if (!isIntType(p.typ) and !isBoolType(p.typ) and !isStrType(p.typ) and !typeIsPtr(p.typ)) return false;
     }
     return true;
 }
@@ -499,6 +604,12 @@ pub const LowerCtx = struct {
     externs: *std.ArrayList(dnir.Extern),
     func_record_returns: *std.StringHashMapUnmanaged([]const u8),
     f64_kernels: *const std.StringHashMapUnmanaged(void),
+    /// GAP-056: per-callee ABI slot classes, so a caller marshals f64 arguments
+    /// into v0..v7 instead of x0..x7. Empty means no callee needs FP slots.
+    fp_params: *const std.StringHashMapUnmanaged([]bool) = &empty_fp_params,
+    /// GAP-056: this function's own f64 parameters are homed in d0..d7, so
+    /// staging an outgoing f64 argument would overwrite one of them.
+    self_fp_params: bool = false,
     /// Functions declared `: str`, so a consumer recognizes a call's result.
     str_returns: *const std.StringHashMapUnmanaged(void) = &empty_str_returns,
     /// When set, tail/table returns lower to `ret_record` for this record name.
@@ -517,7 +628,7 @@ pub const LowerCtx = struct {
     /// Module-level integer constants, keyed `Name` or `Name.field`. Populated
     /// from top-level `N = <int>` and `N = @{ f = <int>, ... }` bindings, which
     /// are otherwise invisible inside a function body.
-    module_consts: *const std.StringHashMapUnmanaged(i64) = &empty_module_consts,
+    module_consts: *const ModuleConsts = &empty_module_consts,
     /// Names bound to compile-time-known i64 literals (for numeric for step, etc.).
     const_ints: std.StringHashMapUnmanaged(i64) = .empty,
     next_temp: u32 = 0,
@@ -566,8 +677,9 @@ fn lowerFunction(
     externs: *std.ArrayList(dnir.Extern),
     func_record_returns: *std.StringHashMapUnmanaged([]const u8),
     f64_kernels: *const std.StringHashMapUnmanaged(void),
+    fp_params: *const std.StringHashMapUnmanaged([]bool),
     str_returns: *const std.StringHashMapUnmanaged(void),
-    module_consts: *const std.StringHashMapUnmanaged(i64),
+    module_consts: *const ModuleConsts,
 ) Error!dnir.Function {
     var ctx: LowerCtx = .{
         .alloc = alloc,
@@ -576,6 +688,11 @@ fn lowerFunction(
         .externs = externs,
         .func_record_returns = func_record_returns,
         .f64_kernels = f64_kernels,
+        .fp_params = fp_params,
+        .self_fp_params = blk: {
+            const slots = f64AbiParamSlots(fd, records) orelse break :blk false;
+            break :blk slots > 0;
+        },
         .str_returns = str_returns,
         .module_consts = module_consts,
         .ret_record = if (findRecordName(records, fd.func.ret_type)) |r| r.name else null,
@@ -683,6 +800,23 @@ fn isIntType(t: ast.TypeExpr) bool {
     return t == .named and (std.mem.eql(u8, t.named, "i64") or std.mem.eql(u8, t.named, "i32"));
 }
 
+/// `bool` rides an integer register like any other scalar.
+///
+/// It was absent from the eligibility predicate entirely, so one `bool`
+/// parameter refused the WHOLE module (lowerModule requires every function to
+/// lower) — `branch_sum(cond: bool): i64` reported DNB002 while the identical
+/// function taking `i64` lowered. Nothing downstream needed teaching: `true`
+/// and `false` already lower to `.i64` 1 and 0, `resolveType` already maps the
+/// name to `RT.bool`, and the backend routes every non-`.f64` parameter through
+/// x0..x7. Only the gate was missing.
+///
+/// Kept SEPARATE from `isIntType` rather than folded into it: `isIntType` also
+/// answers "may this be a record field kind" and "may this be a numeric-for
+/// index", and a boolean loop counter is not a thing this admits by accident.
+fn isBoolType(t: ast.TypeExpr) bool {
+    return t == .named and std.mem.eql(u8, t.named, "bool");
+}
+
 fn isStrType(t: ast.TypeExpr) bool {
     return t == .named and std.mem.eql(u8, t.named, "str");
 }
@@ -767,7 +901,9 @@ fn compoundTargetSlot(ctx: *LowerCtx, target: *const ast.Expr) ?u32 {
 }
 
 fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error!void {
-    for (block.stmts) |*stmt| try lowerStmt(ctx, stmt, allow_return);
+    for (block.stmts, 0..) |*stmt, i| {
+        try lowerStmt(ctx, stmt, allow_return and stmtIsTailSlot(block, i));
+    }
     if (allow_return) _ = try tryEmitTailDemandReturn(ctx, block);
 }
 
@@ -946,15 +1082,46 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
 }
 
 fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error!bool {
-    for (block.stmts) |*stmt| {
+    for (block.stmts, 0..) |*stmt, i| {
+        const tail_here = allow_return and stmtIsTailSlot(block, i);
         if (stmt.* == .ret) {
-            try lowerStmt(ctx, stmt, allow_return);
+            try lowerStmt(ctx, stmt, tail_here);
             return true;
         }
-        try lowerStmt(ctx, stmt, allow_return);
+        try lowerStmt(ctx, stmt, tail_here);
     }
     if (allow_return) return try tryEmitTailDemandReturn(ctx, block);
     return false;
+}
+
+/// Whether statement `i` occupies the slot the block's result comes out of.
+///
+/// `allow_return` means "this block's value is the function's answer", and it
+/// was handed to EVERY statement in the block rather than only the last one.
+/// The `.if_stmt` arm passes it straight into each branch body, so a branch
+/// whose last statement is an assignment had that assignment rewritten into a
+/// `return` by `tryEmitTailDemandReturn` — correct when the `if` really is the
+/// block's tail, a miscompile when anything follows it:
+///
+///     r: i64 = 0
+///     if r == 0
+///         r = 5        -- lowered to `mov x0, #5 ; ret`
+///     end
+///     r = r + 100      -- unreachable
+///     print(r)         -- unreachable
+///
+/// printed nothing and returned 5, where the C backend printed 105. The whole
+/// remainder of the enclosing block was dead code behind a `ret` that the
+/// branch had no business emitting. `while_loop` already forced `false` here
+/// for the same reason, with the same comment; the `if` arm needed the rule
+/// too, but conditionally, because an `if` CAN be a block's tail.
+///
+/// A trailing `tail_expr` is by definition the last thing in the block, so when
+/// one is present NO statement is the tail slot — the branches join and the
+/// tail expression is what returns.
+fn stmtIsTailSlot(block: *const ast.Block, i: usize) bool {
+    if (block.tail_expr != null) return false;
+    return i + 1 == block.stmts.len;
 }
 
 fn intLiteralStep(expr: *const ast.Expr) ?i64 {
@@ -1214,8 +1381,22 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
             else => false,
         },
         .name => |n| blk: {
-            const slot = ctx.locals.get(n.ident) orelse break :blk false;
+            // A module-level string constant is not a local, so the slot lookup
+            // below can never see it. Without this arm the VALUE lowered fine
+            // and every consumer still read it as an integer: `print(OWNER)`
+            // chose `%lld` and printed the pointer, and `OWNER != "x"` compared
+            // addresses. The type answer has to follow the value.
+            const slot = ctx.locals.get(n.ident) orelse
+                break :blk ctx.module_consts.strs.contains(n.ident);
             break :blk ctx.str_slots.contains(slot);
+        },
+        // `Kind.owner` where the descriptor field holds a string literal — the
+        // qualified spelling of the same module-level constant.
+        .field => |f| blk: {
+            if (f.obj.* != .name) break :blk false;
+            var buf: [512]u8 = undefined;
+            const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ f.obj.name.ident, f.field }) catch break :blk false;
+            break :blk ctx.module_consts.strs.contains(key);
         },
         else => false,
     };
@@ -1272,7 +1453,7 @@ fn lowerRecordCallAssign(ctx: *LowerCtx, name: []const u8, callee: []const u8, a
     // `args[0]` meant a record-returning call silently dropped every later
     // argument: `scan_one(src, pos)` reached the callee with `pos` never
     // written, so it read whatever the caller happened to leave in x1.
-    const arg0 = try scalarCallLhs(ctx, args);
+    const arg0 = try scalarCallLhs(ctx, args, callee);
     try ctx.emit(.{ .op = .call_direct, .callee = callee, .lhs = arg0, .record = rec_name, .field = name });
     const rec_slot = ctx.freshTemp();
     try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), rec_slot);
@@ -1457,21 +1638,56 @@ fn lowerRecordLiteralAssign(ctx: *LowerCtx, name: []const u8, table: *const ast.
     if (table.* != .table) return bail(@src());
     const rec_slot = ctx.freshTemp();
     try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), rec_slot);
+    try lowerRecordLiteralFields(ctx, name, table);
+    const rec_name = inferRecordNameFromTable(ctx.records, table) orelse "";
+    try ctx.emit(.{ .op = .init_record, .result = rec_slot, .record = rec_name });
+}
+
+/// Write one local per field under `prefix`, recursing through nested records.
+///
+/// Explosion keys a field as `"<prefix>.<field>"`, and a field whose value is
+/// itself a record literal simply extends the prefix: `o = { i = { x = 40 } }`
+/// stores `o.i.x`. Before this, the inner `{ x = 40 }` was handed to
+/// `lowerExpr`, which has no `.table` arm, so a record holding a record refused
+/// the whole module.
+///
+/// The recursion carries no depth limit because the key is what bounds it — a
+/// record type cannot contain itself by value, so the nesting is as finite as
+/// the type declarations that produced it.
+///
+/// Field order comes from the LITERAL here, which is safe only because these
+/// are keyed locals rather than ABI slots: `o.y` names the same storage no
+/// matter where `y` was written. A record crossing a function boundary takes
+/// its order from the DESCRIPTOR instead — that is `recordFieldOrder`'s job,
+/// not this one, and conflating the two is the field-ordering miscompile this
+/// backend has already had twice.
+fn lowerRecordLiteralFields(ctx: *LowerCtx, prefix: []const u8, table: *const ast.Expr) Error!void {
+    if (table.* != .table) return bail(@src());
     for (table.table.fields) |fld| {
         const nf = switch (fld) {
             .named => |n| n,
             else => return bail(@src()),
         };
+        const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ prefix, nf.key });
+        if (nf.val.* == .table) {
+            // A nested record owns no storage of its own — only its leaves do.
+            // The marker slot exists so `isRecordLocalName` and the field-key
+            // lookups can still see that `o.i` is a bound record name.
+            const sub_slot = ctx.freshTemp();
+            try ctx.locals.put(ctx.alloc, fk, sub_slot);
+            try lowerRecordLiteralFields(ctx, fk, nf.val);
+            const sub_name = inferRecordNameFromTable(ctx.records, nf.val) orelse "";
+            try ctx.emit(.{ .op = .init_record, .result = sub_slot, .record = sub_name });
+            continue;
+        }
         const v = try lowerExpr(ctx, nf.val);
         const fslot = ctx.freshTemp();
-        const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ name, nf.key });
         try ctx.locals.put(ctx.alloc, fk, fslot);
         const store_ty: RT = if (exprIsF64(ctx, nf.val)) .f64 else .any;
         if (store_ty == .f64) try ctx.f64_slots.put(ctx.alloc, fslot, {});
+        if (exprIsStr(ctx, nf.val)) try ctx.str_slots.put(ctx.alloc, fslot, {});
         try ctx.emit(.{ .op = .store_local, .result = fslot, .lhs = v, .ty = store_ty });
     }
-    const rec_name = inferRecordNameFromTable(ctx.records, table) orelse "";
-    try ctx.emit(.{ .op = .init_record, .result = rec_slot, .record = rec_name });
 }
 
 /// Match a table literal's named fields to a module record descriptor.
@@ -1679,7 +1895,8 @@ fn lowerExprCons(
         .name => |n| blk: {
             const slot = ctx.locals.get(n.ident) orelse {
                 // Not a local — a module-level integer constant folds here.
-                if (ctx.module_consts.get(n.ident)) |mv| break :blk dnir.Value{ .i64 = mv };
+                if (ctx.module_consts.ints.get(n.ident)) |mv| break :blk dnir.Value{ .i64 = mv };
+                if (ctx.module_consts.strs.get(n.ident)) |sv| break :blk dnir.Value{ .str = sv };
                 return bailWith(@src(), n.ident);
             };
             if (ctx.f64_slots.contains(slot)) {
@@ -1930,7 +2147,50 @@ fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const a
     return .{ .temp = t };
 }
 
-fn emitScalarCallArgs(ctx: *LowerCtx, args: []const *ast.Expr) Error!void {
+/// Refuse an f64 argument list this pass cannot stage without destroying a live
+/// value. GAP-056, second half.
+///
+/// Putting f64 arguments in v0..v7 (above) is necessary and not sufficient. The
+/// backend homes f64 LOCALS in d0..d7 as well, so staging an argument overwrites
+/// whatever local already lives in that register, and the staging is a parallel
+/// move performed one register at a time:
+///
+///     p: f64 = 9.0        -- homed in d0
+///     print(one(2.0))     -- stages d0 <- 2.0, destroying p
+///     print(one(p))       -- reads the clobbered d0: 222, C says 111
+///
+/// The same shape one argument wider swaps two registers through each other and
+/// passes `(4.0, 4.0)` for `two(4.0, p)`. Nothing in this pass can see the home
+/// assignment that decides whether a given call collides, so nothing here can
+/// order the moves safely — that belongs with the register allocator in
+/// `native_backend.zig`, which owns both the homes and the staging.
+///
+/// What IS provable here is the absence of the hazard: if this function has no
+/// f64 parameters and has bound no f64 local yet, then no live value occupies
+/// d0..d7, and immediate operands are materialised directly into their slot with
+/// `fmov` rather than copied out of a register. Those calls stage safely. Every
+/// other shape is refused, so the module falls back to the C backend with a
+/// correct answer instead of running with a plausible wrong one.
+fn requireSafeFpStaging(ctx: *LowerCtx, values: []const dnir.Value, fp_slots: []const bool) Error!void {
+    if (ctx.self_fp_params) return bail(@src());
+    if (ctx.f64_slots.count() != 0) return bail(@src());
+    for (values, 0..) |v, i| {
+        if (i >= fp_slots.len or !fp_slots[i]) continue;
+        if (v != .f64) return bail(@src());
+    }
+}
+
+/// Whether this callee takes at least one argument in v0..v7.
+fn calleeWantsFpSlots(ctx: *LowerCtx, callee: ?[]const u8) bool {
+    const name = callee orelse return false;
+    const slots = ctx.fp_params.get(name) orelse return false;
+    for (slots) |is_fp| {
+        if (is_fp) return true;
+    }
+    return false;
+}
+
+fn emitScalarCallArgs(ctx: *LowerCtx, args: []const *ast.Expr, callee: ?[]const u8) Error!void {
     if (args.len == 0) return;
     if (args.len > 8) return bail(@src());
 
@@ -1972,9 +2232,25 @@ fn emitScalarCallArgs(ctx: *LowerCtx, args: []const *ast.Expr) Error!void {
         values[count] = try lowerExpr(ctx, arg);
         count += 1;
     }
+    // GAP-056: place each slot in the register FILE its callee reads from.
+    // AAPCS64 numbers the two files independently, so they get independent
+    // cursors: `f(a: i64, b: f64, c: i64)` is x0, d0, x1.
+    const fp_slots: []const bool = if (callee) |name|
+        ctx.fp_params.get(name) orelse &.{}
+    else
+        &.{};
+    if (fp_slots.len > 0) try requireSafeFpStaging(ctx, values[0..count], fp_slots);
+    var gp: u32 = 0;
+    var fp: u32 = 0;
     var i: u32 = 0;
     while (i < count) : (i += 1) {
-        try ctx.emit(.{ .op = .mov_arg, .result = i, .lhs = values[i] });
+        if (i < fp_slots.len and fp_slots[i]) {
+            try ctx.emit(.{ .op = .fp_mov_arg, .result = fp, .lhs = values[i] });
+            fp += 1;
+        } else {
+            try ctx.emit(.{ .op = .mov_arg, .result = gp, .lhs = values[i] });
+            gp += 1;
+        }
     }
 }
 
@@ -1996,8 +2272,16 @@ fn scalarRecordForName(ctx: *LowerCtx, name: []const u8) ?dnir.RecordDesc {
     return null;
 }
 
-fn scalarCallLhs(ctx: *LowerCtx, args: []const *ast.Expr) Error!dnir.Value {
+fn scalarCallLhs(ctx: *LowerCtx, args: []const *ast.Expr, callee: ?[]const u8) Error!dnir.Value {
     if (args.len == 0) return .void;
+    // GAP-056, one-argument form. A lone argument is normally handed back as the
+    // call's `.lhs`, which the backend stages in x0 — right for an integer,
+    // wrong for a double. `p1(x: f64): i64` was as broken as the two-argument
+    // case and would have survived a fix aimed only at the loop below.
+    if (calleeWantsFpSlots(ctx, callee)) {
+        try emitScalarCallArgs(ctx, args, callee);
+        return .void;
+    }
     if (args.len == 1) {
         const arg = args[0];
         if (arg.* == .table) {
@@ -2008,7 +2292,7 @@ fn scalarCallLhs(ctx: *LowerCtx, args: []const *ast.Expr) Error!dnir.Value {
         // A lone record argument still expands to several slots, so it needs the
         // multi-slot path rather than the single-value one.
         if (arg.* == .name and scalarRecordForName(ctx, arg.name.ident) != null) {
-            try emitScalarCallArgs(ctx, args);
+            try emitScalarCallArgs(ctx, args, callee);
             return .void;
         }
         // A lone table argument is passed as its base address, which means
@@ -2021,7 +2305,7 @@ fn scalarCallLhs(ctx: *LowerCtx, args: []const *ast.Expr) Error!dnir.Value {
         }
         return try lowerExpr(ctx, arg);
     }
-    try emitScalarCallArgs(ctx, args);
+    try emitScalarCallArgs(ctx, args, callee);
     return .void;
 }
 
@@ -2127,7 +2411,7 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
             if (flattenNames(ctx.alloc, f.obj, &pbuf) catch false) {
                 if (ctx.req.exportSymbolByPath(ctx.alloc, pbuf.items, f.field)) |sym| {
                     try ensureExtern(ctx, pbuf.items, f.field, sym);
-                    const arg0 = try scalarCallLhs(ctx, c.args);
+                    const arg0 = try scalarCallLhs(ctx, c.args, null);
                     if (discard) {
                         try ctx.emit(.{ .op = .call_direct, .callee = sym, .lhs = arg0 });
                         return .void;
@@ -2262,7 +2546,7 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
                 // below. Lowering only `c.args[0]` silently dropped every later
                 // argument, so `Lexer.new("fun", "proof.duo")` reached the callee
                 // with one argument and garbage in x1.
-                const arg0 = try scalarCallLhs(ctx, c.args);
+                const arg0 = try scalarCallLhs(ctx, c.args, null);
                 if (discard) {
                     try ctx.emit(.{
                         .op = .call_extern,
@@ -2308,7 +2592,7 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
             }
             // Static module member: math.add(a, b) → call_direct math.add
             const qualified = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ f.obj.name.ident, f.field });
-            const arg0 = try scalarCallLhs(ctx, c.args);
+            const arg0 = try scalarCallLhs(ctx, c.args, qualified);
             if (discard) {
                 try ctx.emit(.{ .op = .call_direct, .callee = qualified, .lhs = arg0 });
                 return .void;
@@ -2329,7 +2613,7 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
         if (std.mem.eql(u8, callee, "print")) {
             return lowerPrint(ctx, c.args);
         }
-        const arg0 = try scalarCallLhs(ctx, c.args);
+        const arg0 = try scalarCallLhs(ctx, c.args, callee);
         if (discard) {
             try ctx.emit(.{
                 .op = .call_direct,
@@ -2469,7 +2753,8 @@ fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
         // Module-level descriptor constant: `Kind.ident` folds to an immediate.
         const mk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ fld.obj.name.ident, fld.field });
         defer ctx.alloc.free(mk);
-        if (ctx.module_consts.get(mk)) |mv| return .{ .i64 = mv };
+        if (ctx.module_consts.ints.get(mk)) |mv| return .{ .i64 = mv };
+        if (ctx.module_consts.strs.get(mk)) |sv| return .{ .str = sv };
         if (ctx.req.constant(fld.obj.name.ident, fld.field)) |val| {
             const t = ctx.freshTemp();
             try ctx.emit(.{ .op = .const_req, .result = t, .req_alias = fld.obj.name.ident, .field = fld.field, .lhs = .{ .i64 = val } });
@@ -2478,6 +2763,30 @@ fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
         const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ fld.obj.name.ident, fld.field });
         defer ctx.alloc.free(key);
         if (ctx.locals.get(key)) |slot| return .{ .local = slot };
+    }
+    // `o.i.x` — a read through a NESTED record. The explosion wrote the leaf
+    // under the dotted key `o.i.x`, so the whole chain resolves to one local
+    // and costs nothing at runtime.
+    //
+    // Bailing when the chain does not resolve is the point of this arm. The
+    // fallthrough below sets `req_alias` to "" for any non-name base, emitting
+    // a `load_field` against an empty object — an address this pass cannot
+    // name. A refusal sends the module to the C backend intact; the alternative
+    // is a load from nowhere.
+    if (fld.obj.* == .field) {
+        var path: std.ArrayList(u8) = .empty;
+        defer path.deinit(ctx.alloc);
+        if (try flattenNames(ctx.alloc, expr, &path)) {
+            if (ctx.locals.get(path.items)) |slot| {
+                if (ctx.f64_slots.contains(slot)) {
+                    const ft = ctx.freshTemp();
+                    try ctx.emit(.{ .op = .load_local, .result = ft, .lhs = .{ .local = slot }, .ty = .f64 });
+                    return .{ .temp = ft };
+                }
+                return .{ .local = slot };
+            }
+        }
+        return bail(@src());
     }
     const t = ctx.freshTemp();
     const base: []const u8 = if (fld.obj.* == .name) fld.obj.name.ident else "";
