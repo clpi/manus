@@ -32403,7 +32403,9 @@ test "codegen: closure programs emit runtime JIT tables" {
     const alloc = arena.allocator();
     var lex = Lexer.init(
         \\local n = 10
-        \\local f = function(x) return x + n end
+        \\local f = function(x)
+        \\    return x + n
+        \\end
         \\print(f(1))
     , "test");
     var parser = Parser.init(&lex, alloc);

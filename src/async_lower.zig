@@ -682,7 +682,7 @@ const Harness = struct {
 
 test "async: non-async functions are not lowered" {
     var h = try Harness.run(
-        \\fun f(x: i64) -> i64 return x end
+        \\fun f(x: i64): i64 x
     );
     defer h.deinit();
 

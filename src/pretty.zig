@@ -1025,7 +1025,7 @@ test "pretty: jit closure source" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    const mod = try parseSource(alloc, "local f = function(x) return x end\n");
+    const mod = try parseSource(alloc, "local f = function(x)\n    return x\nend\n");
     const expr = mod.body.stmts[0].local_decl.inits[0];
     const fb = switch (expr.*) {
         .func_expr => |f| f,
@@ -1041,7 +1041,9 @@ test "pretty: jit closure source with upvalue" {
     const alloc = arena.allocator();
     var mod = try parseSource(alloc,
         \\local n = 1
-        \\local f = function(x) return x + n end
+        \\local f = function(x)
+        \\    return x + n
+        \\end
         \\
     );
     var semantic = @import("sema.zig").Sema.init(alloc);

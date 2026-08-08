@@ -839,7 +839,7 @@ const Harness = struct {
 
 test "mono: identical type args reuse a single specialization" {
     var h = try Harness.run(
-        \\fun id<T>(x: T) -> T return x end
+        \\fun id<T>(x: T): T x
         \\local a: i64 = id(1)
         \\local b: i64 = id(2)
     );
@@ -858,7 +858,7 @@ test "mono: identical type args reuse a single specialization" {
 
 test "mono: distinct type args produce distinct specializations" {
     var h = try Harness.run(
-        \\fun id<T>(x: T) -> T return x end
+        \\fun id<T>(x: T): T x
         \\local a: i64 = id(1)
         \\local b: f64 = id(2.0)
         \\local c: str = id("hi")
@@ -875,7 +875,7 @@ test "mono: distinct type args produce distinct specializations" {
 
 test "mono: mangled names are deterministic and type-tagged" {
     var h = try Harness.run(
-        \\fun id<T>(x: T) -> T return x end
+        \\fun id<T>(x: T): T x
         \\local a: i64 = id(1)
     );
     defer h.deinit();
@@ -890,7 +890,7 @@ test "mono: mangled names are deterministic and type-tagged" {
 
 test "mono: non-generic functions produce no specializations" {
     var h = try Harness.run(
-        \\fun add(a: i64, b: i64) -> i64 return a + b end
+        \\fun add(a: i64, b: i64): i64 a + b
         \\local x: i64 = add(1, 2)
     );
     defer h.deinit();
@@ -903,7 +903,7 @@ test "mono: non-generic functions produce no specializations" {
 
 test "mono: explicit @specialize directive creates specialization without call site" {
     var h = try Harness.run(
-        \\fun id<T>(x: T) -> T return x end
+        \\fun id<T>(x: T): T x
         \\@specialize(id, i64)
     );
     defer h.deinit();
@@ -920,7 +920,7 @@ test "mono: explicit @specialize directive creates specialization without call s
 
 test "mono: explicit @specialize parses nested generic type arguments" {
     var h = try Harness.run(
-        \\fun id<T>(x: T) -> T return x end
+        \\fun id<T>(x: T): T x
         \\@specialize(id, Result[i64, str])
     );
     defer h.deinit();
@@ -938,7 +938,7 @@ test "mono: explicit @specialize parses nested generic type arguments" {
 
 test "mono: substitution map resolves a type parameter to its concrete type" {
     var h = try Harness.run(
-        \\fun id<T>(x: T) -> T return x end
+        \\fun id<T>(x: T): T x
         \\local a: i64 = id(1)
     );
     defer h.deinit();
@@ -957,7 +957,7 @@ test "mono: substitution map resolves a type parameter to its concrete type" {
 
 test "mono: substitution resolves type parameters inside generic applications" {
     var h = try Harness.run(
-        \\fun id<T>(x: T) -> T return x end
+        \\fun id<T>(x: T): T x
         \\local a: i64 = id(1)
     );
     defer h.deinit();
@@ -979,7 +979,7 @@ test "mono: substitution resolves type parameters inside generic applications" {
 
 test "mono: substitution resolves type parameters inside function and record types" {
     var h = try Harness.run(
-        \\fun id<T>(x: T) -> T return x end
+        \\fun id<T>(x: T): T x
         \\local a: i64 = id(1)
     );
     defer h.deinit();
@@ -1072,8 +1072,8 @@ test "mono: unification infers parameters inside function and record types" {
 
 test "mono: nested generic calls inherit the specialized parameter type" {
     var h = try Harness.run(
-        \\fun inner<U>(x: U) -> U return x end
-        \\fun outer<T>(x: T) -> T return inner(x) end
+        \\fun inner<U>(x: U): U x
+        \\fun outer<T>(x: T): T inner(x)
         \\local value: i64 = outer(1)
     );
     defer h.deinit();
@@ -1108,7 +1108,7 @@ test "mono: recursive generic calls reuse the active specialization" {
 
 test "mono: nested generic calls inherit specialized local annotations" {
     var h = try Harness.run(
-        \\fun inner<U>(x: U) -> U return x end
+        \\fun inner<U>(x: U): U x
         \\fun outer<T>(x: T) -> T
         \\    local y: T = x
         \\    return inner(y)

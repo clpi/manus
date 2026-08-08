@@ -11383,8 +11383,8 @@ test "sema: overload resolution selects by argument types (no ambiguity)" {
     // Two overloads of `f` distinguished by parameter type. A call with an
     // i64 argument resolves unambiguously to the i64 overload (Requirement 12).
     const src =
-        \\fun f(x: i64) -> i64 return x end
-        \\fun f(x: str) -> str return x end
+        \\fun f(x: i64): i64 x
+        \\fun f(x: str): str x
         \\local r: i64 = f(1)
     ;
     var lex = Lexer.init(src, "test");
