@@ -34,6 +34,7 @@ epoch-2 conflicts cite the rule ID, use the canonical spelling, and proceed.
 The audit's P0 list, none of which is complete:
 
 - [x] Pass 100 named as sole authority; `CLAUDE.md` regenerated to epoch 2
+- [x] the spec itself committed at `docs/spec/pass100.md` (it was referenced but absent)
 - [ ] `audit100` built from the deny table so the spec becomes executable pressure
 - [ ] every `.duo` corpus file classified
       canonical / compatibility / foreign / negative / historical / generated,
