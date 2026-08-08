@@ -3,10 +3,7 @@
 -- This module provides compile, match, find, find_all, replace, and helpers
 -- using the PCRE2 C library (libpcre2-8, the 8-bit code unit width variant).
 --
--- The ovector reading helper requires a trivial C shim linked alongside:
---   size_t duo_read_size_t(const void* p, size_t i) {
---       return ((const size_t*)p)[i];
---   }
+-- Ovector reads are native: see _read_size_t below. No C shim to link.
 
 -- ===========================================================================
 -- PCRE2 FFI declarations (bodyless — extern C symbols)
@@ -36,10 +33,18 @@ pcre2_substring_replace_byname_8(code: any, subject: str, length: int, replaceme
 @ffi("pcre2_get_error_message_8")
 pcre2_get_error_message_8(errcode: int, buffer: str, buf_size: int): int
 
--- C shim for reading size_t values from a raw pointer by index.
--- See module header comment for the one-line C implementation.
-@ffi("duo_read_size_t")
-duo_read_size_t(ptr: any, index: int): i64
+-- PCRE2's ovector is an array of PCRE2_SIZE (size_t), laid out as pairs:
+-- [start0, end0, start1, end1, ...]. This reads one element by index.
+--
+-- This used to be an @ffi binding to a C shim (lib/std/duo_regex_shim.c),
+-- because Duo could not dereference a raw pointer at an index from user-level
+-- code. It can now: a `*i64` parameter indexed with `p[i]` lowers to the C
+-- `p[i]` directly, with no boxing — the same lowering
+-- examples/native_indexing pins in the property-11 codegen suite. The shim and
+-- the manual "compile this .c alongside your program" step are both gone.
+_read_size_t(p: *i64, i: i64): i64
+    return p[i]
+end
 
 -- ===========================================================================
 -- PCRE2 constants (option flags)
@@ -75,8 +80,8 @@ end
 read_ovector_pair(ovptr: any, pair_index: int): any
     s_off = pair_index * 2
     e_off = s_off + 1
-    s_val = duo_read_size_t(ovptr, s_off)
-    e_val = duo_read_size_t(ovptr, e_off)
+    s_val = _read_size_t(ovptr, s_off)
+    e_val = _read_size_t(ovptr, e_off)
     return {start = s_val, end_ = e_val}
 end
 
