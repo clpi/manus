@@ -11,6 +11,13 @@
 --                 keyword table), .lua fixtures (Duo is a Lua superset, so Lua
 --                 is INPUT), and C test fixtures. Canon XI: generated artifacts
 --                 are outputs and the ledger only shrinks.
+--   (all three categories above were LIVENESS-CHECKED, not taken on their
+--   labels — that check retired 7 dead C/H files and 1 dead script. For lua
+--   it changed nothing and that is the finding: 12 examples/*.lua have no
+--   inbound reference, but they are DEMONSTRATIONS that Duo runs Lua, which
+--   is the superset claim's evidence. Unreferenced is not unused when the
+--   file IS the artifact.)
+--
 --   DEBT          .sh and .py — authored source in a foreign language, with no
 --                 sanction at all. This is the number that should reach zero,
 --                 and the only one this gate ratchets.
