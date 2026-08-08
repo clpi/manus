@@ -190,7 +190,14 @@ pub fn route(
     // the source" and attribute recovery fails. Rebase onto `src`; the copy is
     // byte-identical, so the offsets carry over exactly.
     for (toks) |*tok| {
-        if (tok.text.len == 0) continue;
+        // A ZERO-LENGTH token still has a position, and skipping it here left
+        // `""` pointing into `zsrc`. srcOffsetOf then bounds-checks that
+        // pointer against `src`, fails, and parse_attribute_args refuses the
+        // whole attribute — which took out six corpus files (gap[052]) with a
+        // diagnostic that named the empty literal rather than the rebase.
+        //
+        // The offset is valid regardless of length; only the slicing needs the
+        // bound. Rebase every token.
         const off = @intFromPtr(tok.text.ptr) - @intFromPtr(zsrc.ptr);
         if (off + tok.text.len <= src.len) tok.text = src[off .. off + tok.text.len];
     }
