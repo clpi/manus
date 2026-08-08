@@ -26,7 +26,7 @@
 -- the VIOLATION still compiles. The forms Pass 91 needs as repair
 -- DESTINATIONS score 2 of 3 -- HOME and CONTEXT work, LEVEL does not.
 baseline(): i64
-    5
+    7
 end
 
 implemented = 0
@@ -80,8 +80,17 @@ main(): i64
     -- LEVEL is the destination the canon's own corpus uses: §XIII's shc/lex.duo
     -- was respelled `read(number)(lx, b)` and `read(symbol)(lx, b)` in this
     -- regeneration. It is also the destination for the largest class of names.
-    record("P91-1 LEVEL read(number)(x)", "read(kind: str): any\n    (x: i64): i64\n        x + 1\n    end\nend\nmain(): void\n    print(read(\"number\")(1))\nend\n", "2")
-    record("P91-2 LEVEL descriptor operand", "number: { v: i64 }\nread(k: any): any\n    (x: i64): i64\n        x + 1\n    end\nend\nmain(): void\n    print(read(number)(1))\nend\n", "2")
+    -- CORRECTED. These two rows first used `read` as the family name, straight
+    -- from the canon's own repair table (`read_number -> read(number)`), and
+    -- both read MISSING. That was NOT the level surface failing -- it is a name
+    -- collision: the C backend emits an unmangled `static read`, which clashes
+    -- with POSIX `read(2)`. Spelled with any non-libc name the LEVEL form
+    -- works, so all THREE Pass 91 destinations are live and the repair is far
+    -- more reachable than the first measurement said. See gap[31].
+    record("P91-1 LEVEL key(x)", "scan(kind: str): any\n    (x: i64): i64\n        x + 1\n    end\nend\nmain(): void\n    print(scan(\"number\")(1))\nend\n", "2")
+    record("P91-2 LEVEL descriptor operand", "number: { v: i64 }\nscan(k: any): any\n    (x: i64): i64\n        x + 1\n    end\nend\nmain(): void\n    print(scan(number)(1))\nend\n", "2")
+    -- The collision itself, pinned: the canon's own repair NAME is unbuildable.
+    record("P91-6 `read` as a binding", "read(n: i64): i64\n    n + 1\nend\nmain(): void\n    print(read(1))\nend\n", "2")
     -- HOME: the namespace destination. `utf8.valid`, `wire.header`,
     -- `token.kind` -- a member reached through its owner.
     record("P91-3 HOME ns.member", "utf8 = { valid = (s: str): bool #s > 0 }\nmain(): void\n    print(utf8.valid(\"a\"))\nend\n", "true")

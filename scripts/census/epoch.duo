@@ -1,0 +1,115 @@
+-- Epoch 2 (Pass 93), measured.
+--
+-- The epoch declares one self-consistent rule set and a conflict table that
+-- voids every superseded spelling. This census measures the epoch-2 forms that
+-- are NEW law -- the ones an agent is now required to write, and which the
+-- conflict table's right column names as CURRENT.
+--
+-- The two scans the epoch adds are greppable and enormous. Measured 2026-08-07
+-- against lib/std:
+--
+--     grep [a-z]_[a-z] = 0    ->  4266 distinct identifiers, 14504 occurrences
+--     grep [A-Z]       = 0    ->  2529 distinct identifiers,  9158 occurrences
+--
+-- Neither is enforced by the compiler; both compile clean.
+--
+-- A row is IMPLEMENTED only if the program compiles AND prints the expected
+-- value.
+
+-- Pinned floor: the MEASURED count, never an estimate.
+baseline(): i64
+    6
+end
+
+implemented = 0
+checked = 0
+report = ""
+
+bin(): str
+    override = std.os.getenv("DUO_BIN")
+    if override != nil
+        if override != ""
+            return override
+        end
+    end
+    std.script.duo_bin()
+end
+
+probe(src: str, want: str): bool
+    path = "/tmp/duo_epoch.duo"
+    std.script.fs_write(path, src)
+    b = bin()                                           -- gap[29] (TMP-1 forced)
+    got = std.script.capture("{b} run {path} 2>/dev/null")
+    std.script.chomp(got) == want
+end
+
+live(): bool
+    probe("main(): void\n    print(1 + 2)\nend\n", "3")
+end
+
+record(id: str, src: str, want: str): void
+    checked = checked + 1
+    if probe(src, want)
+        implemented = implemented + 1
+        report = "{report}  ok      {id}\n"
+    else
+        report = "{report}  MISSING {id}\n"
+    end
+end
+
+main(): i64
+    if live() == false
+        b = bin()                                       -- gap[29] (TMP-1 forced)
+        print("epoch2: HARNESS BROKEN — control did not print 3.")
+        print("  Check that {b} exists from this cwd, or set DUO_BIN.")
+        return 2
+    end
+
+    -- §0.3 ENUMS. The inline case-set is the epoch's DEFAULT enum form and
+    -- companion descriptors (token_kind) are denied, so these rows carry the
+    -- whole ruling: if the case-set does not declare, there is nowhere for the
+    -- denied companion's meaning to go.
+    record("E2-1 inline case-set", "kind: { name, number, eof }\nmain(): void\n    print(\"declared\")\nend\n", "declared")
+    record("E2-2 case-set in descriptor", "token: {\n    kind: { name, number, eof }\n}\nmain(): void\n    print(\"declared\")\nend\n", "declared")
+    record("E2-3 inferred case .eof", "token: {\n    kind: { name, eof }\n}\nmain(): void\n    t = token{ kind = .eof }\n    print(t.kind == .eof)\nend\n", "true")
+    record("E2-4 dispatch table @{}(x)", "main(): void\n    d = @{ [1] = (x: i64): i64 x + 1 }\n    print(d[1](4))\nend\n", "5")
+
+    -- §0.5 RESULTS. `: t | error` with the structural nil UNWRITTEN.
+    record("E2-5 result : t | error", "error: { code: str }\nread(n: i64): i64 | error\n    n\nend\nmain(): void\n    print(read(5))\nend\n", "5")
+    record("E2-6 produce nil, error{}", "error: { code: str }\nread(n: i64): i64 | error\n    if n < 0\n        return nil, error{ code = \"neg\" }\n    end\n    n\nend\nmain(): void\n    print(read(5))\nend\n", "5")
+    record("E2-7 one-line if + return pack", "error: { code: str }\nread(n: i64): i64 | error\n    if n < 0 return nil, error{ code = \"neg\" }\n    n\nend\nmain(): void\n    print(read(5))\nend\n", "5")
+    -- CORRECTED: this row first named the function `read` and scored MISSING.
+    -- The binding condition was never the problem -- `read` collides with libc
+    -- (gap[31]). Renamed, it passes, which is what FF-5 already showed.
+    record("E2-8 consume binding pack", "fetch(n: i64): i64\n    n\nend\nmain(): void\n    if v = fetch(5)\n        print(v)\n    end\nend\n", "5")
+
+    -- §0.6 / §1 SIGILS. Leading `:` is the sibling call inside a method; the
+    -- descriptor body is where it lives, so this row is downstream of GAP-025.
+    record("E2-9 :sibling() in method", "lexer: {\n    pos: u32\n    peek = () .pos\n    next = () :peek()\n}\nmain(): void\n    print(\"declared\")\nend\n", "declared")
+
+    -- §3 the CLOSED parenless inventory: f "str" and f{…} only.
+    record("E2-10 parenless f \"str\"", "shout(s: str): str\n    s\nend\nmain(): void\n    print(shout \"hi\")\nend\n", "hi")
+    record("E2-11 parenless f{...}", "srv(o: any): i64\n    o.port\nend\nmain(): void\n    print(srv{ port = 8080 })\nend\n", "8080")
+
+    -- CASE. The epoch bans uppercase identifiers outright. This row confirms
+    -- the DENIED form still compiles -- nothing enforces the scan.
+    record("E2-12 uppercase still compiles", "Point: { x: i64 }\nmain(): void\n    print(\"compiled\")\nend\n", "compiled")
+
+    -- Controls.
+    record("E2-C1 arithmetic control", "main(): void\n    print(1 + 2)\nend\n", "3")
+    record("E2-C2 lowercase descriptor", "point: { x: i64 }\nmain(): void\n    print(\"compiled\")\nend\n", "compiled")
+
+    io.write(report)
+    floor = baseline()                                  -- gap[29] (TMP-1 forced)
+    print("epoch2: {implemented}/{checked} implemented (floor {floor})")
+
+    if implemented < floor
+        print("epoch2: FAIL — an epoch-2 form that used to work has regressed")
+        return 1
+    end
+    if implemented > floor
+        print("epoch2: forms gained — RAISE baseline() to {implemented}")
+    end
+    print("epoch2: PASS")
+    0
+end

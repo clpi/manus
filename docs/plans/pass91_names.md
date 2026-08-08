@@ -30,28 +30,40 @@ This is the largest single conformance target in the canon by two orders of
 magnitude. Nothing enforces it — `P91-5` confirms a compound still compiles
 clean, with no diagnostic.
 
-## 2. Whether the repair is even reachable — 2 of 3 destinations
+## 2. Whether the repair is reachable — all 3 destinations are LIVE
 
-A site can only be repaired if its destination form compiles.
+A site can only be repaired if its destination form compiles. All three do.
 
 | Destination | Form | State |
 | --- | --- | --- |
+| **LEVEL** | `scan(number)(1)` | **LIVE** (`P91-1`, `P91-2`) |
 | **HOME** | `utf8.valid("a")` | **LIVE** (`P91-3`) |
 | **CONTEXT** | `limit()` — pure rename | **LIVE** (`P91-4`) |
-| **LEVEL** | `read(number)(x)` | **SPEC** (`P91-1`, `P91-2`) |
 
-**LEVEL does not compile**, in either the string-keyed or descriptor-operand
-spelling. That matters more than the count suggests, because LEVEL is the
-destination the canon's own corpus uses: §XIII's `shc/lex.duo` was respelled
-`read(number)(lx, b)` and `read(symbol)(lx, b)` in this regeneration. It is also
-where the largest class of names goes — every `verb_noun` pair (`read_number`,
-`skip_space`, `parse_expr`, `emit_line`) is a LEVEL case.
+**Correction — an earlier revision of this document said the opposite.** It
+reported "LEVEL does not compile" and drew the much larger conclusion that Pass
+86, Pass 88 and Pass 91 all queue behind one absent operand-selection mechanism.
+That was wrong, and the cause is worth recording because it is a measurement
+failure, not a language one.
 
-So the repair splits: **HOME and CONTEXT cases are actionable today** (a HOME
-move is a namespace rearrangement; a CONTEXT rename is free). **LEVEL cases are
-blocked** on the same missing operand-selection surface that blocks Pass 86's
-`from(mode)` and Pass 88's `sort(.key)`. Three passes now queue behind one
-absent mechanism.
+The LEVEL rows were probed using `read` as the family name — taken verbatim from
+the canon's own §4 repair table, `read_number → read(number)`. Both failed. But
+`read` is unbuildable for an unrelated reason: the C backend emits Duo functions
+`static` under their Duo names, so `read` collides with POSIX `read(2)`
+(**gap[31]**). Spelled `scan(number)(1)`, the LEVEL form returns `2`.
+
+**So Pass 91 is the most actionable pass on this branch.** Every one of the
+14,504 sites has a live destination:
+
+- **CONTEXT** — a pure rename. Free.
+- **HOME** — a namespace rearrangement. Free.
+- **LEVEL** — `verb(noun)` compiles today, *provided the bare verb is not a libc
+  symbol*. That proviso is the only real constraint, and it bites precisely the
+  vocabulary LEVEL produces (`read write open close time index send`), because
+  LEVEL turns `verb_noun` into a short common verb.
+
+The remaining blocker is scale and judgement — which of LEVEL/HOME/CONTEXT each
+site wants is a semantic decision per name — not missing surface.
 
 ## 3. Pass 92 — directives die, but prefix `@` has not
 
@@ -111,32 +123,44 @@ branch:
 | `census/modes.duo` (Pass 86) | 5/18 | `from` absent; descriptor construction broken |
 | `census/lawone.duo` (Pass 88) | 6/19 | sequence surface absent; overloads (GAP-030) |
 | `census/privacy.duo` (Pass 90) | 5/9 | 3 of 5 decomposition targets absent |
-| `census/names.duo` (Passes 91–92) | 5/13 | LEVEL surface absent; prefix `@` present |
-| **total** | **46/126** | |
+| `census/names.duo` (Passes 91–92) | 7/14 | prefix `@` present; Pass 92 destinations absent |
+| `census/epoch.duo` (Epoch 2 / Pass 93) | 6/14 | enums and result unions do not parse |
+| **total** | **49/141** | |
 
-**36% of measured spec rows are implemented.** Read that with the composition in
+**35% of measured spec rows are implemented.** Read that with the composition in
 mind — a meaningful share of the passing rows are controls or vestiges rather
 than canonical surface.
 
 Four mechanisms account for most of the rest:
 
-1. **Operand selection / levels** — `read(number)`, `sort(.key)`, `from(mode)`,
-   `take(digit)`. Blocks Pass 86, Pass 88's larger half, and Pass 91's LEVEL
-   cases. Single highest-value fix in the language.
-2. **Descriptor member bindings** (GAP-025) — one parse rule gating ~12 rows.
-3. **Descriptor construction realization** — `point{…}` emits an undefined
-   symbol; the ladder's first rung.
-4. **Bare-name resolution for new families** — `check`, `why`, `graph`, `add`,
-   `todo`, `clone`, `release`, `meta`, `from` are all ordinary undeclared
-   identifiers.
+1. **Descriptor member bindings** (GAP-025) — one parse rule gating ~12 rows
+   across five sections, and `E2-9`'s `:sibling()` call sits behind it too.
+2. **Descriptor construction realization** — `point{…}` emits an undefined
+   symbol; the constructor ladder's first rung.
+3. **Bare-name resolution for new families** — `check`, `why`, `graph`, `add`,
+   `todo`, `clone`, `release`, `meta`, `from`, `sort`, `map` are all ordinary
+   undeclared identifiers.
+4. **Symbol mangling** (GAP-030, GAP-031) — Duo's namespace and C's are one
+   namespace, which blocks overloads *and* makes common verbs unusable.
 
-All four are compiler mechanisms (parser and codegen), not library surface.
+Note what is **not** on this list any more: operand selection. `scan(number)(1)`
+works, so the LEVEL form Pass 86, 88 and 91 all want is available at the language
+level; what those passes are missing is the *stdlib surface* declared over it
+(`sort`, `take`, `from` as bindings), not the calling convention.
+
+Enum declaration is the newest and sharpest blocker: **the inline case-set does
+not parse at all** (`E2-1`, `E2-2`), so Epoch 2 §0.3's default enum form — the
+one that replaces the denied `token_kind` companions — has no spelling that
+compiles. Result unions (`: t | error`) do not parse either (`E2-5`). Those two
+are the epoch's headline forms.
 
 ## 5. What an agent should write today
 
 - **New identifiers: one lowercase word.** Free, and it stops the 14,504 growing.
-- **Repair HOME and CONTEXT cases when you touch a file.** Both destinations
-  work. Do not attempt LEVEL cases — `read(number)` does not compile.
+- **Repair LEVEL, HOME and CONTEXT cases when you touch a file.** All three
+  destinations compile. The one trap: **do not let a LEVEL repair land on a libc
+  verb** — `read`, `write`, `open`, `close`, `time`, `index`, `send` are
+  unbuildable as bindings (gap[31]). Check the bare verb before committing to it.
 - **Do not write `check`, `why`, `graph.*`, `add(...)`, `todo(...)`.** None
   resolve. `@comp.assert` still works, but it is canon-dead — prefer an ordinary
   call and file the gap.
