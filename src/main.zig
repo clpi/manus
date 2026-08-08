@@ -2770,44 +2770,17 @@ fn alias_has_macro_syntax(alias: ast.AliasDef) bool {
 /// source through `lib/std/compiler/lexer.duo` and drive the parser from that
 /// stream instead of the host scanner.
 ///
-/// A Duo-side REJECTION is returned, not swallowed: the host scanner would
-/// reject the same source, and silently falling back would hide a real
-/// divergence behind a passing compile. Only an out-of-memory or
-/// buffer-sizing failure falls back, because those are host-side and say
-/// nothing about the source.
+/// The body moved to `duo_lexer_dispatch.route` so codegen's module-embed paths
+/// route through the SAME entry. While it lived here as a private helper the
+/// driver tokenized through Duo and codegen's embed paths did not, which meant
+/// one compilation ran two scanners.
 fn routeThroughDuoLexer(
     alloc: std.mem.Allocator,
     lex: *Lexer,
     src: []const u8,
     src_path: []const u8,
 ) !void {
-    if (duo_lexer_bridge.tokenizeAuthority() != .duo_native) return;
-    const z_src = std.mem.concatWithSentinel(alloc, u8, &.{src}, 0) catch return;
-    const z_file = std.mem.concatWithSentinel(alloc, u8, &.{src_path}, 0) catch return;
-    const arena = alloc.create(std.ArrayList(u8)) catch return;
-    arena.* = .empty;
-    const toks = duo_lexer_dispatch.tokenize(alloc, z_src, z_file, arena) catch |e| switch (e) {
-        error.OutOfMemory, error.BufferTooSmall => return,
-        else => {
-            lex.last_error_loc = .{
-                .file = src_path,
-                .line = duo_lexer_dispatch.errorLine(z_src, z_file),
-                .col = 1,
-            };
-            return e;
-        },
-    };
-    // The scan in duo_lexer_dispatch resolves token text against `z_src`, the
-    // NUL-terminated copy the C ABI requires. The parser holds the ORIGINAL
-    // `src`, and srcOffsetOf compares pointers — so text pointing into the copy
-    // is "not in the source" and attribute recovery fails. Rebase onto `src`;
-    // the copy is byte-identical, so the offsets carry over exactly.
-    for (toks) |*tok| {
-        if (tok.text.len == 0) continue;
-        const off = @intFromPtr(tok.text.ptr) - @intFromPtr(z_src.ptr);
-        if (off + tok.text.len <= src.len) tok.text = src[off .. off + tok.text.len];
-    }
-    lex.useDuoTokens(toks);
+    return duo_lexer_dispatch.route(alloc, lex, src, src_path);
 }
 
 fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !ParsedModule {

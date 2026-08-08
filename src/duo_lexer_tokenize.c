@@ -446,6 +446,10 @@ static inline void lua_mret_store(int n, ...) {
 }
 
 extern lua_Value duo_invoke_closure(int id, lua_Closure* cl, int argc, lua_Value* argv);
+/* Reserved closure id for the gmatch cursor (gap[035]). Generated closure
+ * ids are assigned from 0 upward, so a negative id can never collide. */
+#define DUO_GMATCH_CLOSURE_ID (-9001)
+static lua_Value duo_gmatch_step(lua_Closure* cl);
 
 typedef lua_Value (*duo_ArgvFn)(int, lua_Value* argv);
 duo_ArgvFn duo_lookup_argv(void* f);
@@ -458,6 +462,11 @@ static inline lua_Value lua_invoke(lua_Value f, int argc, lua_Value* argv) {
     if (f.type == VAL_CLOSURE && f.as.tval) {
         lua_mret_clear();
         lua_Closure* cl = (lua_Closure*)f.as.tval;
+        if (cl->id == DUO_GMATCH_CLOSURE_ID) {
+            lua_Value r = duo_gmatch_step(cl);
+            lua_mret_push(r);
+            return r;
+        }
         return duo_invoke_closure(cl->id, cl, argc, argv);
     }
     if (f.type == VAL_FUNC && f.as.fval) {
@@ -2052,8 +2061,69 @@ static inline const char* lua_to_display_str(lua_Value v) {
     return lua_to_str(v);
 }
 
+static inline int duo_radix_space(int c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f';
+}
+
+/* tonumber(v): a CONVERSION THAT CAN FAIL, and says so. It used to be
+ * lua_val_from_num(lua_to_num(v)), and lua_to_num answers 0 for anything it
+ * cannot read — so tonumber("abc"), tonumber(nil) and tonumber(true) all
+ * came back as the number 0, and every `if n != nil` guard written against
+ * them was dead code. Now: a number is itself, a string must be a COMPLETE
+ * numeral (leading/trailing space allowed, nothing else), and everything
+ * else is nil. "12abc" is nil, not 12. */
 static inline lua_Value tonumber(lua_Value v) {
-    return lua_val_from_num(lua_to_num(v));
+    if (v.type == VAL_NUMBER) return v;
+    if (v.type != VAL_STRING) return lua_val_nil();
+    const char* s = v.as.sval;
+    if (s == NULL) return lua_val_nil();
+    const char* p = s;
+    while (duo_radix_space((unsigned char)*p)) p++;
+    const char* body = p;
+    if (*body == '+' || *body == '-') body++;
+    /* strtod also reads "inf"/"nan"/"infinity"; Lua's tonumber does not.
+     * A numeral has to start with a digit or a decimal point. */
+    if (!((*body >= '0' && *body <= '9') || *body == '.')) return lua_val_nil();
+    char* ep = NULL;
+    double d = strtod(p, &ep);
+    if (ep == NULL || ep == p) return lua_val_nil();
+    while (duo_radix_space((unsigned char)*ep)) ep++;
+    if (*ep != '\0') return lua_val_nil();
+    return lua_val_from_num(d);
+}
+
+/* tonumber(s, base): read s as an integer literal in `base` (2..36).
+ * The whole string must be consumed, digits are case-insensitive, and a
+ * malformed string is `nil` — not 0, which would be indistinguishable
+ * from a legitimate "0". */
+static inline lua_Value tonumber_base(lua_Value v, lua_Value base_v) {
+    if (base_v.type == VAL_NIL) return tonumber(v);
+    int64_t base = (int64_t)lua_to_num(base_v);
+    if (base < 2 || base > 36) return lua_val_nil();
+    if (v.type != VAL_STRING) return lua_val_nil();
+    const char* s = v.as.sval;
+    while (duo_radix_space((unsigned char)*s)) s++;
+    int neg = 0;
+    if (*s == '-') { neg = 1; s++; }
+    else if (*s == '+') s++;
+    int64_t acc = 0;
+    int digits = 0;
+    while (*s) {
+        int c = (unsigned char)*s;
+        int d;
+        if (c >= '0' && c <= '9') d = c - '0';
+        else if (c >= 'a' && c <= 'z') d = c - 'a' + 10;
+        else if (c >= 'A' && c <= 'Z') d = c - 'A' + 10;
+        else break;
+        if (d >= base) break;
+        acc = acc * base + d;
+        digits++;
+        s++;
+    }
+    if (digits == 0) return lua_val_nil();
+    while (duo_radix_space((unsigned char)*s)) s++;
+    if (*s) return lua_val_nil();
+    return lua_val_from_int(neg ? -acc : acc);
 }
 
 static inline lua_Value type(lua_Value v) {
@@ -2168,13 +2238,24 @@ static inline lua_Value lua_str_sub(lua_Value s, lua_Value start_val, lua_Value 
     return lua_val_from_str_len(str + start - 1, (size_t)sublen);
 }
 
+/* A byte code point carried as a lua number. Casting the double straight
+ * to `char` is undefined once the value exceeds CHAR_MAX, and the folder
+ * turned that into a literal 0 — string.char(200) produced "" while
+ * string.char(127) produced its byte. Land in a wide integer first, then
+ * take the low 8 bits, which is defined for every input. */
+static inline char duo_byte_of_num(lua_Value v) {
+    double d = lua_to_num(v);
+    if (!(d >= -2147483648.0 && d <= 2147483647.0)) return 0;
+    return (char)(unsigned char)(((int32_t)d) & 0xFF);
+}
+
 static inline lua_Value lua_str_char(lua_Value a1, lua_Value a2, lua_Value a3, lua_Value a4) {
     int len = 0;
     char buf[5] = {0};
-    if (a1.type != VAL_NIL) buf[len++] = (char)lua_to_num(a1);
-    if (a2.type != VAL_NIL) buf[len++] = (char)lua_to_num(a2);
-    if (a3.type != VAL_NIL) buf[len++] = (char)lua_to_num(a3);
-    if (a4.type != VAL_NIL) buf[len++] = (char)lua_to_num(a4);
+    if (a1.type != VAL_NIL) buf[len++] = duo_byte_of_num(a1);
+    if (a2.type != VAL_NIL) buf[len++] = duo_byte_of_num(a2);
+    if (a3.type != VAL_NIL) buf[len++] = duo_byte_of_num(a3);
+    if (a4.type != VAL_NIL) buf[len++] = duo_byte_of_num(a4);
     return lua_val_from_str_len(buf, (size_t)len);
 }
 
@@ -2269,7 +2350,7 @@ static inline lua_Value lua_str_format(lua_Value fmt_val, lua_Value a1, lua_Valu
                 duo_fmt_widen_ll(fmtb, spec_len);
                 p += sprintf(p, fmtb, (unsigned long long)lua_intval(arg));
             } else if (spec == 'c') {
-                *p++ = (char)lua_to_num(arg);
+                *p++ = duo_byte_of_num(arg);
             } else if (spec == '%') {
                 *p++ = '%';
             } else {
@@ -3886,6 +3967,19 @@ static inline lua_Value lua_str_gsub(lua_Value s_val, lua_Value pat_val, lua_Val
     return lua_mret_get(0);
 }
 
+/* One cursor PER gmatch. There used to be a single file-static
+ * GmatchState shared by the whole program, so a gmatch opened inside
+ * another gmatch's loop body overwrote the outer cursor: the inner
+ * iterator ran to exhaustion and set active = 0, the outer loop then read
+ * that same flag on its next step and stopped. Three lines x four words
+ * came out as four words total, with no diagnostic (gap[035]).
+ *
+ * The cursor rides inside the iterator VALUE, so iterator identity IS
+ * cursor identity and nesting depth is unbounded. The value is a closure
+ * with a reserved id — the prefix here is layout-compatible with
+ * lua_Closure (header, id, nup) exactly as the generated duo_closure_N
+ * structs are — and lua_invoke, the single dispatch point for both
+ * VAL_FUNC and VAL_CLOSURE, recognises that id and steps the cursor. */
 typedef struct {
     char* s;
     char* pat;
@@ -3893,36 +3987,57 @@ typedef struct {
     size_t pos;
     int active;
 } GmatchState;
-static GmatchState gmatch_state = { NULL, NULL, 0, 0, 0 };
 
-static lua_Value lua_str_gmatch_iter(lua_Value _unused) {
-    (void)_unused;
-    if (!gmatch_state.active || !gmatch_state.s || !gmatch_state.pat) return lua_val_nil();
-    size_t slen = gmatch_state.slen;
-    if (gmatch_state.pos > slen) { gmatch_state.active = 0; return lua_val_nil(); }
+typedef struct {
+    duo_ObjHeader header;
+    int id;
+    int nup;
+    GmatchState st;
+} DuoGmatchIter;
+
+/* The source and pattern copies are released the moment the iteration
+ * ends, which is the common path; the iterator object itself stays alive
+ * because Lua lets an exhausted iterator be called again and answer nil. */
+static void duo_gmatch_finish(GmatchState* g) {
+    g->active = 0;
+    if (g->s) { free(g->s); g->s = NULL; }
+    if (g->pat) { free(g->pat); g->pat = NULL; }
+}
+
+static lua_Value duo_gmatch_step(lua_Closure* cl) {
+    GmatchState* g = &((DuoGmatchIter*)(void*)cl)->st;
+    if (!g->active || !g->s || !g->pat) return lua_val_nil();
+    size_t slen = g->slen;
+    if (g->pos > slen) { duo_gmatch_finish(g); return lua_val_nil(); }
     size_t ms = 0, me = 0;
-    if (!duo_lp_find_at(gmatch_state.s, slen, gmatch_state.pat, gmatch_state.pos, &ms, &me)) {
-        gmatch_state.active = 0;
+    if (!duo_lp_find_at(g->s, slen, g->pat, g->pos, &ms, &me)) {
+        duo_gmatch_finish(g);
         return lua_val_nil();
     }
     size_t mlen = me - ms;
-    gmatch_state.pos = me;
-    if (me == ms && gmatch_state.pos < slen) gmatch_state.pos++;
-    return lua_val_from_str_len(gmatch_state.s + ms, mlen);
+    g->pos = me;
+    if (me == ms && g->pos < slen) g->pos++;
+    return lua_val_from_str_len(g->s + ms, mlen);
 }
 
 static inline lua_Value lua_str_gmatch(lua_Value s_val, lua_Value pat_val, lua_Value init_val) {
     (void)init_val;
-    if (gmatch_state.s) free(gmatch_state.s);
-    if (gmatch_state.pat) free(gmatch_state.pat);
-    gmatch_state.slen = lua_str_byte_len(s_val);
-    gmatch_state.s = malloc(gmatch_state.slen + 1);
-    memcpy(gmatch_state.s, lua_to_str(s_val), gmatch_state.slen);
-    gmatch_state.s[gmatch_state.slen] = '\0';
-    gmatch_state.pat = strdup(lua_to_str(pat_val));
-    gmatch_state.pos = 0;
-    gmatch_state.active = 1;
-    return lua_val_from_func(lua_str_gmatch_iter);
+    DuoGmatchIter* it = (DuoGmatchIter*)calloc(1, sizeof(DuoGmatchIter));
+    if (!it) return lua_val_nil();
+    it->header.refcount = 1;
+    it->header.flags = 0;
+    it->header.type_tag = VAL_CLOSURE;
+    it->id = DUO_GMATCH_CLOSURE_ID;
+    it->nup = 0;
+    GmatchState* g = &it->st;
+    g->slen = lua_str_byte_len(s_val);
+    g->s = malloc(g->slen + 1);
+    memcpy(g->s, lua_to_str(s_val), g->slen);
+    g->s[g->slen] = '\0';
+    g->pat = strdup(lua_to_str(pat_val));
+    g->pos = 0;
+    g->active = 1;
+    return lua_val_from_closure((lua_Closure*)(void*)it);
 }
 
 static inline lua_Value lua_str_dump(lua_Value f_val, lua_Value strip_val) {
@@ -6488,7 +6603,7 @@ int64_t _r = std_compiler_lexer___int_of(_p0);
 static inline int64_t std_compiler_lexer___int_of(const char* text) {
     int64_t n = ((int64_t)strlen(text));
     if ((((n > 2) && (((int64_t)(unsigned char)(text[1 - 1])) == 48)) && ((((int64_t)(unsigned char)(text[2 - 1])) == 120) || (((int64_t)(unsigned char)(text[2 - 1])) == 88)))) {
-        int64_t v = 0;
+        uint64_t v = ((uint64_t)(0));
         int64_t i = 3;
         while ((i <= n)) {
             int64_t c = ((int64_t)(unsigned char)(text[i - 1]));
@@ -6502,7 +6617,7 @@ static inline int64_t std_compiler_lexer___int_of(const char* text) {
             } else {
                 return v;
             }
-                        v = ((v * 16) + d);
+                        v = ((uint64_t)(((v * 16) + d)));
                         i = (i + 1);
         }
         return v;

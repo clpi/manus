@@ -36,6 +36,31 @@ const backend_identity = @import("backend_identity.zig");
 const dynamic_boundary = @import("dynamic_boundary.zig");
 const pass23_protocol_registry = @import("pass23_protocol_registry.zig");
 
+/// SH-03: an embedded module tokenizes through the SAME lexer the compile
+/// driver uses.
+///
+/// `duo_lexer_bridge.tokenizeAuthority()` has been `.duo_native` since
+/// 2026-08-07, but only `main.zig`'s driver consulted it. Every module-embed
+/// path below built its own `Lexer` and ran the host scanner, so a single
+/// compilation tokenized the entry point with `lib/std/compiler/lexer.duo` and
+/// its `req`-ed modules with `src/lexer.zig`. Two scanners deciding one
+/// compilation is the shape that hides a divergence — the embed decision and
+/// the driver would disagree about a source and nothing would report it.
+///
+/// Returns false on a Duo-side REJECTION. That is a malformed source, and the
+/// caller must decline the embed rather than continue on a stream it did not
+/// get; the host scanner would reject the same bytes a few lines later, in
+/// parse, where the diagnostic is worse.
+fn routeEmbedThroughDuoLexer(
+    alloc: Allocator,
+    lex: *@import("lexer.zig").Lexer,
+    src: []const u8,
+    path: []const u8,
+) bool {
+    @import("duo_lexer_dispatch.zig").route(alloc, lex, src, path) catch return false;
+    return true;
+}
+
 pub var native_diag: bool = false;
 var native_diag_tag: ?[]const u8 = null;
 /// True when the module body assigns `name` at top level (e.g. `M = {}`).
@@ -3337,6 +3362,7 @@ pub const CodeGen = struct {
             const sub_src = Io.Dir.readFileAlloc(Io.Dir.cwd(), self.io, mod_path, self.alloc, .unlimited) catch return false;
             defer self.alloc.free(sub_src);
             var sub_lex = @import("lexer.zig").Lexer.init(sub_src, mod_path);
+            if (!routeEmbedThroughDuoLexer(self.alloc, &sub_lex, sub_src, mod_path)) return false;
             var sub_parser = @import("parser.zig").Parser.init(&sub_lex, self.alloc);
             // The embed path must parse a `.duo` module in the same dialect the
             // standalone path uses. Without this, duo-mode-only syntax (bare
@@ -21055,6 +21081,7 @@ pub const CodeGen = struct {
                 };
                 defer self.alloc.free(sub_src);
                 var sub_lex = @import("lexer.zig").Lexer.init(sub_src, mod_path.?);
+                if (!routeEmbedThroughDuoLexer(self.alloc, &sub_lex, sub_src, mod_path.?)) continue;
                 var sub_parser = @import("parser.zig").Parser.init(&sub_lex, self.alloc);
                 sub_parser.duo_mode = std.mem.endsWith(u8, mod_path.?, ".duo");
                 // The embed path must parse a `.duo` module in the same dialect the
@@ -21294,6 +21321,7 @@ pub const CodeGen = struct {
         const src = Io.Dir.readFileAlloc(cwd, self.io, path, self.alloc, .unlimited) catch return false;
         defer self.alloc.free(src);
         var lex = @import("lexer.zig").Lexer.init(src, path);
+        if (!routeEmbedThroughDuoLexer(self.alloc, &lex, src, path)) return false;
         var parser = @import("parser.zig").Parser.init(&lex, self.alloc);
         // Embedded .duo files must be parsed with the Duo grammar. Without this
         // they are parsed in Lua-compat mode, where forms like one-line function
@@ -21344,6 +21372,7 @@ pub const CodeGen = struct {
             const sub_src = Io.Dir.readFileAlloc(Io.Dir.cwd(), self.io, mod_path, self.alloc, .unlimited) catch return false;
             defer self.alloc.free(sub_src);
             var sub_lex = @import("lexer.zig").Lexer.init(sub_src, mod_path);
+            if (!routeEmbedThroughDuoLexer(self.alloc, &sub_lex, sub_src, mod_path)) return false;
             var sub_parser = @import("parser.zig").Parser.init(&sub_lex, self.alloc);
             // The embed path must parse a `.duo` module in the same dialect the
             // standalone path uses. Without this, duo-mode-only syntax (bare
@@ -22338,6 +22367,7 @@ pub const CodeGen = struct {
         // must live for the duration of code generation.
 
         var lex = @import("lexer.zig").Lexer.init(src, path);
+        if (!routeEmbedThroughDuoLexer(self.alloc, &lex, src, path)) return false;
         var parser = @import("parser.zig").Parser.init(&lex, self.alloc);
         // Embedded .duo files must be parsed with the Duo grammar. Without this
         // they are parsed in Lua-compat mode, where forms like one-line function

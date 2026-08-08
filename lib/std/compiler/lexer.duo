@@ -387,7 +387,21 @@ end
 _int_of(text: str): i64
     n: i64 = #text
     if n > 2 and text:byte(1) == 48 and (text:byte(2) == 120 or text:byte(2) == 88)
-        v: i64 = 0
+        -- gap[042]: ACCUMULATE UNSIGNED, for the same reason the decimal path
+        -- below does. gap[024] fixed only the decimal accumulator; this one
+        -- stayed `i64`, so `v * 16` on any hex literal at or above 2^63 was
+        -- signed overflow and the compiler ABORTED lexing the file:
+        --
+        --     panic: signed integer overflow: 576460752303423488 * 16 cannot
+        --     be represented in type 'int64_t'
+        --
+        -- `lib/std/heap.duo` writes `0xcbf29ce484222325` (the FNV-1a offset
+        -- basis) and `0xFFFFFFFFFFFFFFFF`; `lib/std/encoding/varint.duo` and
+        -- `lib/std/ml/gguf.duo` write `0x8000000000000000`. src/lexer.zig
+        -- already treats a hex literal as a BIT PATTERN — it retries as u64
+        -- and bitcasts — so accumulating unsigned here is what makes the two
+        -- lexers agree rather than a new convention.
+        v: u64 = 0
         i: i64 = 3
         while i <= n
             c: i64 = text:byte(i)

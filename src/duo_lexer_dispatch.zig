@@ -145,6 +145,58 @@ pub fn tokenize(
     return tokens;
 }
 
+/// Drive `lex` from the Duo lexer's token stream instead of the host scanner.
+///
+/// This is the ONE production routing entry. It used to live in main.zig as a
+/// private helper, which is why the compile driver tokenized through Duo while
+/// codegen's module-embed paths — which build their own `Lexer` + `Parser` to
+/// decide native embedding and to emit required modules — still ran the host
+/// scanner. Two scanners deciding one compilation is exactly the shape that
+/// hides a divergence: the driver would accept a source the embed path lexed
+/// differently, and nothing would report it.
+///
+/// A Duo-side REJECTION is returned, not swallowed: the host scanner would
+/// reject the same source, and silently falling back would hide a real
+/// divergence behind a passing compile. Only an out-of-memory or buffer-sizing
+/// failure falls back to the host scanner, because those are host-side and say
+/// nothing about the source.
+///
+/// Allocations are not freed. The tokens, their NUL-terminated source copy and
+/// the transport arena must outlive `lex`, and every caller's `lex` outlives
+/// the function that owns the allocator — so freeing here would dangle. The
+/// leak is bounded by the number of modules in one compilation, the same order
+/// as the driver's own, and a compile is a process.
+pub fn route(
+    alloc: std.mem.Allocator,
+    lex: *lexer.Lexer,
+    src: []const u8,
+    file: []const u8,
+) !void {
+    if (@import("duo_lexer_bridge.zig").tokenizeAuthority() != .duo_native) return;
+    const zsrc = std.mem.concatWithSentinel(alloc, u8, &.{src}, 0) catch return;
+    const zfile = std.mem.concatWithSentinel(alloc, u8, &.{file}, 0) catch return;
+    const arena = alloc.create(std.ArrayList(u8)) catch return;
+    arena.* = .empty;
+    const toks = tokenize(alloc, zsrc, zfile, arena) catch |e| switch (e) {
+        error.OutOfMemory, error.BufferTooSmall => return,
+        else => {
+            lex.last_error_loc = .{ .file = file, .line = errorLine(zsrc, zfile), .col = 1 };
+            return e;
+        },
+    };
+    // The scan above resolves token text against `zsrc`, the NUL-terminated
+    // copy the C ABI requires. The parser holds the ORIGINAL `src`, and
+    // srcOffsetOf compares pointers — so text pointing into the copy is "not in
+    // the source" and attribute recovery fails. Rebase onto `src`; the copy is
+    // byte-identical, so the offsets carry over exactly.
+    for (toks) |*tok| {
+        if (tok.text.len == 0) continue;
+        const off = @intFromPtr(tok.text.ptr) - @intFromPtr(zsrc.ptr);
+        if (off + tok.text.len <= src.len) tok.text = src[off .. off + tok.text.len];
+    }
+    lex.useDuoTokens(toks);
+}
+
 /// The ABI contract, asserted rather than assumed. A layout change in the Duo
 /// lexer must fail here, at the seam, instead of silently shifting every field.
 pub fn validateStride() !void {
@@ -271,6 +323,43 @@ test "duo_lexer_dispatch: corpus-data-as-literals tokenizes identically" {
         "h = 0 s = \"a\\tb\\nc\\\\d\" n = #s",
     };
     for (cases) |case| try differential(a, case, "proof.duo");
+}
+
+// gap[042]. GAP-024 fixed `_int_of`'s DECIMAL accumulator and left the HEX one
+// as `i64`, so `v * 16` on a hex literal at or above 2^63 was signed overflow
+// and the Duo lexer ABORTED THE PROCESS rather than returning a token.
+//
+// Nothing caught it because no differential case contained such a literal —
+// lib/std does (`0xcbf29ce484222325` in heap.duo, `0x8000000000000000` in
+// encoding/varint.duo and ml/gguf.duo), but only the compile DRIVER routed
+// through the Duo lexer and a driver never lexes the stdlib. It surfaced the
+// moment codegen's module-embed paths were routed through the same lexer.
+//
+// These three are the literals actually in the tree, plus the boundary either
+// side of it. Field-for-field, so a wrong VALUE fails as loudly as an abort.
+test "duo_lexer_dispatch: gap[042] — hex literals at and above 2^63" {
+    const a = std.testing.allocator;
+    const cases = [_][:0]const u8{
+        "h = 0xcbf29ce484222325",
+        "m = 0xFFFFFFFFFFFFFFFF",
+        "s = 0x8000000000000000",
+        "b = 0x7FFFFFFFFFFFFFFF",
+        "x = 0xff y = 0x10 z = 0x0",
+    };
+    for (cases) |case| try differential(a, case, "hex.duo");
+}
+
+// The same literal, asserted by VALUE rather than by agreement, so a change
+// that broke BOTH lexers identically would still fail here. 0xcbf29ce484222325
+// is 14695981039346656037, which as an i64 bit pattern is -3750763034362895579.
+test "duo_lexer_dispatch: gap[042] — the FNV offset basis carries its bits" {
+    const a = std.testing.allocator;
+    var arena: std.ArrayList(u8) = .empty;
+    defer arena.deinit(a);
+    const toks = try tokenize(a, "0xcbf29ce484222325", "hex.duo", &arena);
+    defer a.free(toks);
+    try std.testing.expectEqual(lexer.TokenKind.int_lit, toks[0].kind);
+    try std.testing.expectEqual(@as(i64, -3750763034362895579), toks[0].int_val);
 }
 
 // GAP-024, found while probing GAP-023 and NOT its cause: the host lexer
