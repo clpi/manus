@@ -427,8 +427,22 @@ is_lambda_head = (lx: Lexer): bool
             at_slot_start = true
         elseif t.kind == token.KIND_NAME and depth == 1 and at_slot_start
             if lexer.peek(lx).kind == token.KIND_COLON
-                found = true
-                break
+                -- gap[028]: `:` here is a parameter annotation ONLY if it is not
+                -- a RECEIVER FACE. `(t:byte(2) == 120)` is an ordinary
+                -- parenthesised expression, and reading its `:` as an
+                -- annotation made the whole group a lambda head — so every
+                -- receiver face inside parentheses failed to parse, while the
+                -- host parser accepted it. Same discrimination the host makes
+                -- in colon_is_method_call: `: name (` is a call, not a shape.
+                inner = lexer.save_state(lx)
+                _c = lexer.next(lx)
+                m = lexer.next(lx)
+                is_face = m.kind == token.KIND_NAME and lexer.peek(lx).kind == token.KIND_LPAREN
+                lexer.restore_state(lx, inner)
+                if not is_face
+                    found = true
+                    break
+                end
             end
             at_slot_start = false
         else
