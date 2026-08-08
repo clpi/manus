@@ -73,6 +73,7 @@ fn bailWith(src: std.builtin.SourceLocation, note: []const u8) Error {
 }
 
 const empty_module_consts: std.StringHashMapUnmanaged(i64) = .empty;
+const empty_str_returns: std.StringHashMapUnmanaged(void) = .empty;
 
 /// Collect top-level integer bindings so a function body can fold them.
 ///
@@ -169,6 +170,13 @@ pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.
 
     var f64_kernels: std.StringHashMapUnmanaged(void) = .empty;
     defer f64_kernels.deinit(alloc);
+    // Functions declared `: str`. Same shape as f64_kernels and for the same
+    // reason: a PRODUCER the type tracker does not know about breaks every
+    // consumer downstream. `msg = format(...)` then `#msg` bailed because the
+    // local never entered str_slots -- the fourth time this exact gap has bitten
+    // (string.char, concat, math via exprReturnsF64, now str-returning calls).
+    var str_returns: std.StringHashMapUnmanaged(void) = .empty;
+    defer str_returns.deinit(alloc);
     for (mod.body.stmts) |*stmt| {
         if (stmt.* != .func_decl) continue;
         const fd = &stmt.func_decl;
@@ -178,6 +186,9 @@ pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.
             if (f64AbiParamSlots(fd, records.items)) |slots| {
                 if (slots > 0) try f64_kernels.put(alloc, fd.path[0], {});
             }
+        }
+        if (isStrType(fd.func.ret_type) and fd.path.len > 0) {
+            try str_returns.put(alloc, fd.path[0], {});
         }
     }
 
@@ -220,7 +231,7 @@ pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.
             if (skipped == null) skipped = if (fd.path.len > 0) fd.path[0] else "?";
             continue;
         }
-        const f = try lowerFunction(alloc, fd, records.items, &req, &externs, &func_record_returns, &f64_kernels, &module_consts);
+        const f = try lowerFunction(alloc, fd, records.items, &req, &externs, &func_record_returns, &f64_kernels, &str_returns, &module_consts);
         try functions.append(alloc, f);
     }
     if (functions.items.len == 0) return bail(@src());
@@ -454,6 +465,8 @@ pub const LowerCtx = struct {
     externs: *std.ArrayList(dnir.Extern),
     func_record_returns: *std.StringHashMapUnmanaged([]const u8),
     f64_kernels: *const std.StringHashMapUnmanaged(void),
+    /// Functions declared `: str`, so a consumer recognizes a call's result.
+    str_returns: *const std.StringHashMapUnmanaged(void) = &empty_str_returns,
     /// When set, tail/table returns lower to `ret_record` for this record name.
     ret_record: ?[]const u8 = null,
     /// Local slots that hold f64 values inside integer kernels.
@@ -519,6 +532,7 @@ fn lowerFunction(
     externs: *std.ArrayList(dnir.Extern),
     func_record_returns: *std.StringHashMapUnmanaged([]const u8),
     f64_kernels: *const std.StringHashMapUnmanaged(void),
+    str_returns: *const std.StringHashMapUnmanaged(void),
     module_consts: *const std.StringHashMapUnmanaged(i64),
 ) Error!dnir.Function {
     var ctx: LowerCtx = .{
@@ -528,6 +542,7 @@ fn lowerFunction(
         .externs = externs,
         .func_record_returns = func_record_returns,
         .f64_kernels = f64_kernels,
+        .str_returns = str_returns,
         .module_consts = module_consts,
         .ret_record = if (findRecordName(records, fd.func.ret_type)) |r| r.name else null,
     };
@@ -1107,15 +1122,21 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
     return switch (expr.*) {
         .string_lit => true,
         .binop => |bb| bb.op == .concat and exprIsStr(ctx, bb.lhs) and exprIsStr(ctx, bb.rhs),
-        // `string.char(n)` PRODUCES a str. Without this the local it binds to
-        // never enters str_slots, so the very next `string.byte(s, 1)` does not
-        // recognize its own argument and falls through to an undefined
-        // `string_byte` symbol — a producer the type tracker does not know
-        // about breaks every consumer downstream.
-        .call => |c| c.func.* == .field and
-            c.func.field.obj.* == .name and
-            std.mem.eql(u8, c.func.field.obj.name.ident, "string") and
-            std.mem.eql(u8, c.func.field.field, "char"),
+        // Two producers of str, one arm. A producer the type tracker does not
+        // know about breaks every consumer downstream, so both belong here:
+        //   * a call to a function declared `: str` — without it,
+        //     `m = mk(...)` then `#m` bails because the local never entered
+        //     str_slots;
+        //   * `string.char(n)` — without it the very next `string.byte(s, 1)`
+        //     does not recognize its own argument and falls through to an
+        //     undefined `string_byte` symbol.
+        .call => |c| switch (c.func.*) {
+            .name => |n| ctx.str_returns.contains(n.ident),
+            .field => |f| f.obj.* == .name and
+                std.mem.eql(u8, f.obj.name.ident, "string") and
+                std.mem.eql(u8, f.field, "char"),
+            else => false,
+        },
         .name => |n| blk: {
             const slot = ctx.locals.get(n.ident) orelse break :blk false;
             break :blk ctx.str_slots.contains(slot);
