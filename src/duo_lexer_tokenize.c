@@ -5924,7 +5924,7 @@ static inline int64_t std_compiler_lexer__peek_char(duo_rec_ee59e87b0435b6d1 *se
     if ((self->pos > ((int64_t)strlen(self->src)))) {
         return 0;
     }
-    return ((int64_t)(unsigned char)(self->src[self->pos - 1]));
+    return ((int64_t)lua_to_num(lua_str_byte(lua_val_from_str(self->src), lua_val_from_int((int64_t)(self->pos)), lua_val_nil())));
 }
 
 static lua_Value std_compiler_lexer__peek_char2__lua(lua_Value _a0) {
@@ -5964,7 +5964,7 @@ static inline int64_t std_compiler_lexer__peek_char2(duo_rec_ee59e87b0435b6d1 *s
     if (((self->pos + 1) > ((int64_t)strlen(self->src)))) {
         return 0;
     }
-    return ((int64_t)(unsigned char)(self->src[(self->pos + 1) - 1]));
+    return ((int64_t)lua_to_num(lua_str_byte(lua_val_from_str(self->src), lua_val_from_int((int64_t)((self->pos + 1))), lua_val_nil())));
 }
 
 static lua_Value std_compiler_lexer__adv__lua(lua_Value _a0) {
@@ -6004,9 +6004,9 @@ static lua_Value std_compiler_lexer__adv(duo_rec_ee59e87b0435b6d1 *self) {
     if ((self->pos > ((int64_t)strlen(self->src)))) {
         return lua_val_nil();
     }
-    int64_t c = ((int64_t)(unsigned char)(self->src[self->pos - 1]));
+    lua_Value c = lua_str_byte(lua_val_from_str(self->src), lua_val_from_int((int64_t)(self->pos)), lua_val_nil());
     self->pos = (self->pos + 1);
-    if ((c == 10)) {
+    if (lua_eq(c, lua_val_from_int((int64_t)(10)))) {
         self->line = (self->line + 1);
         self->col = 1;
     } else {
@@ -6089,16 +6089,16 @@ lua_table_set_raw_lit(_a0, "hint_7", 3029469142, 6, lua_val_from_str(_p0.hint_7)
 
 static inline int64_t std_compiler_lexer__long_bracket_level(duo_rec_ee59e87b0435b6d1 *self) {
     int64_t i = self->pos;
-    if (((i > ((int64_t)strlen(self->src))) || (((int64_t)(unsigned char)(self->src[i - 1])) != 91))) {
+    if (((i > ((int64_t)strlen(self->src))) || lua_neq(lua_str_byte(lua_val_from_str(self->src), lua_val_from_int((int64_t)(i)), lua_val_nil()), lua_val_from_int((int64_t)(91))))) {
         return (-1);
     }
         i = (i + 1);
     int64_t lvl = INT64_C(0);
-    while (((i <= ((int64_t)strlen(self->src))) && (((int64_t)(unsigned char)(self->src[i - 1])) == 61))) {
+    while (((i <= ((int64_t)strlen(self->src))) && lua_eq(lua_str_byte(lua_val_from_str(self->src), lua_val_from_int((int64_t)(i)), lua_val_nil()), lua_val_from_int((int64_t)(61))))) {
                 lvl = (lvl + 1);
                 i = (i + 1);
     }
-    if (((i > ((int64_t)strlen(self->src))) || (((int64_t)(unsigned char)(self->src[i - 1])) != 91))) {
+    if (((i > ((int64_t)strlen(self->src))) || lua_neq(lua_str_byte(lua_val_from_str(self->src), lua_val_from_int((int64_t)(i)), lua_val_nil()), lua_val_from_int((int64_t)(91))))) {
         return (-1);
     }
     return lvl;
@@ -6267,7 +6267,7 @@ static lua_Value std_compiler_lexer__skip_ws(duo_rec_ee59e87b0435b6d1 *self) {
                 }
                 if ((is_triple && (self->hint_count < 8))) {
                     const char* comment_text = std_str__sub(self->src, start, (self->pos - 1));
-                    if (((((int64_t)strlen(comment_text)) > 0) && (((int64_t)(unsigned char)(comment_text[1 - 1])) == 64))) {
+                    if (((((int64_t)strlen(comment_text)) > 0) && lua_eq(lua_str_byte(lua_val_from_str(comment_text), lua_val_from_int((int64_t)(1)), lua_val_nil()), lua_val_from_int((int64_t)(64))))) {
                         const char* h = std_str__sub(comment_text, 2, (-1));
                         if ((self->hint_count == 0)) {
                             self->hint_0 = h;
@@ -6490,11 +6490,11 @@ int64_t _r = std_compiler_lexer___int_of(_p0);
 
 static inline int64_t std_compiler_lexer___int_of(const char* text) {
     int64_t n = ((int64_t)strlen(text));
-    if ((((n > 2) && (((int64_t)(unsigned char)(text[1 - 1])) == 48)) && ((((int64_t)(unsigned char)(text[2 - 1])) == 120) || (((int64_t)(unsigned char)(text[2 - 1])) == 88)))) {
+    if ((((n > 2) && lua_eq(lua_str_byte(lua_val_from_str(text), lua_val_from_int((int64_t)(1)), lua_val_nil()), lua_val_from_int((int64_t)(48)))) && (lua_eq(lua_str_byte(lua_val_from_str(text), lua_val_from_int((int64_t)(2)), lua_val_nil()), lua_val_from_int((int64_t)(120))) || lua_eq(lua_str_byte(lua_val_from_str(text), lua_val_from_int((int64_t)(2)), lua_val_nil()), lua_val_from_int((int64_t)(88)))))) {
         int64_t v = 0;
         int64_t i = 3;
         while ((i <= n)) {
-            int64_t c = ((int64_t)(unsigned char)(text[i - 1]));
+            int64_t c = ((int64_t)lua_to_num(lua_str_byte(lua_val_from_str(text), lua_val_from_int((int64_t)(i)), lua_val_nil())));
             int64_t d = 0;
             if (((c >= 48) && (c <= 57))) {
                                 d = (c - 48);
@@ -6513,7 +6513,7 @@ static inline int64_t std_compiler_lexer___int_of(const char* text) {
     int64_t v = 0;
     int64_t i = 1;
     while ((i <= n)) {
-        int64_t c = ((int64_t)(unsigned char)(text[i - 1]));
+        int64_t c = ((int64_t)lua_to_num(lua_str_byte(lua_val_from_str(text), lua_val_from_int((int64_t)(i)), lua_val_nil())));
         if (((c < 48) || (c > 57))) {
             return v;
         }
@@ -6864,7 +6864,7 @@ static inline duo_rec_59c700cbb43a8f9d std_compiler_lexer__next_tok(duo_rec_ee59
             .float_val = 0e0
         };
     } else if ((c == 124)) {
-        if (((self->pos <= ((int64_t)strlen(self->src))) && (((int64_t)(unsigned char)(self->src[self->pos - 1])) == 62))) {
+        if (((self->pos <= ((int64_t)strlen(self->src))) && lua_eq(lua_str_byte(lua_val_from_str(self->src), lua_val_from_int((int64_t)(self->pos)), lua_val_nil()), lua_val_from_int((int64_t)(62))))) {
             self->pos = (self->pos + 1);
             return (duo_rec_59c700cbb43a8f9d){
                 .kind = ((int64_t)duo_fallback_get_num(15, lua_require(lua_val_from_literal("std.compiler.token", 1585571154, 18)), "KIND_PIPE_GT", 4015069894u, 12)),
@@ -7458,7 +7458,7 @@ __attribute__((export_name("duo_lexer_tokenize_text"), visibility("default"))) i
         }
         int64_t k = 0;
         while ((k < tlen)) {
-            *(uint8_t*)((uint8_t*)(tbuf) + ((toff + k))) = (uint8_t)(((int64_t)(unsigned char)(tok.text[(k + 1) - 1])));
+            *(uint8_t*)((uint8_t*)(tbuf) + ((toff + k))) = (uint8_t)((int64_t)lua_to_num(lua_str_byte(lua_val_from_str(tok.text), lua_val_from_int((int64_t)((k + 1))), lua_val_nil())));
                         k = (k + 1);
         }
         *(int64_t*)((uint8_t*)(buf) + (((n * 6) * 8))) = (int64_t)(tok.kind);
@@ -7532,7 +7532,7 @@ __attribute__((export_name("duo_lexer_tokenize_full"), visibility("default"))) i
         }
         int64_t k = 0;
         while ((k < tlen)) {
-            *(uint8_t*)((uint8_t*)(tbuf) + ((toff + k))) = (uint8_t)(((int64_t)(unsigned char)(tok.text[(k + 1) - 1])));
+            *(uint8_t*)((uint8_t*)(tbuf) + ((toff + k))) = (uint8_t)((int64_t)lua_to_num(lua_str_byte(lua_val_from_str(tok.text), lua_val_from_int((int64_t)((k + 1))), lua_val_nil())));
                         k = (k + 1);
         }
         *(int64_t*)((uint8_t*)(buf) + (((n * 7) * 8))) = (int64_t)(tok.kind);
@@ -7627,7 +7627,7 @@ __attribute__((export_name("duo_lexer_text_fingerprint"), visibility("default"))
                 h = ((uint64_t)(((h * 31) + tl)));
         int64_t bi = 1;
         while ((bi <= tl)) {
-                        h = ((uint64_t)(((h * 31) + ((int64_t)(unsigned char)(tok.text[bi - 1])))));
+                        h = ((uint64_t)lua_to_num(lua_add(lua_val_from_int((int64_t)((h * 31))), lua_str_byte(lua_val_from_str(tok.text), lua_val_from_int((int64_t)(bi)), lua_val_nil()))));
                         bi = (bi + 1);
         }
         if ((tok.kind == ((int64_t)duo_fallback_get_num(2, lua_require(lua_val_from_literal("std.compiler.token", 1585571154, 18)), "KIND_EOF", 2960843910u, 8)))) {
