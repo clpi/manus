@@ -3172,30 +3172,63 @@ pub const CodeGen = struct {
         return false;
     }
 
+    /// One `name = <table literal>` module-level binding: does it materialize a
+    /// runtime table? Split out of `module_materializes_table` so the `assign`
+    /// and `global_decl` spellings of the same binding cannot answer differently
+    /// — which they did, and it broke every consumer of `global M = {}`.
+    fn binding_materializes_table(mod: *const ast.Module, name: []const u8, value: *const ast.Expr) bool {
+        if (value.* != .table) return false;
+        // A non-empty literal already materializes the table; an empty
+        // one only does so if fields are written to it afterwards.
+        //
+        // EXCEPT a positional blob of integer literals with no keyed
+        // write anywhere — `wasm_header = { 0x00, 0x61, … }`. The hazard
+        // this guard exists for is the KEYED producer/consumer mismatch
+        // (the producer emits `void* M = NULL` and drops the field
+        // writes while the consumer flattens `m.x` to an undefined
+        // `mod__x`). A positional constant has no field symbols to
+        // mismatch, and dnir_lower has had a memory-backed positional
+        // table representation since SH-04 landed (alloc_slots + ptr).
+        // So this arm was rejecting a shape both ends already handle.
+        if (value.table.fields.len > 0) {
+            if (!table_is_positional_int_blob(value) or module_has_keyed_write(mod, name)) return true;
+            return false;
+        }
+        return module_has_keyed_write(mod, name);
+    }
+
     fn module_materializes_table(mod: *const ast.Module) bool {
         for (mod.body.stmts) |*outer| {
-            if (outer.* != .assign) continue;
-            for (outer.assign.targets, 0..) |t0, ti| {
-                if (t0.* != .name) continue;
-                if (ti >= outer.assign.values.len or outer.assign.values[ti].* != .table) continue;
-                // A non-empty literal already materializes the table; an empty
-                // one only does so if fields are written to it afterwards.
+            switch (outer.*) {
+                .assign => |as| {
+                    for (as.targets, 0..) |t0, ti| {
+                        if (t0.* != .name) continue;
+                        if (ti >= as.values.len) continue;
+                        if (binding_materializes_table(mod, t0.name.ident, as.values[ti])) return true;
+                    }
+                },
+                // `global M = {}` + `M.x = 1` + tail `M` is the MOD-1 wrapper
+                // shape, and it lives in 42 stdlib modules (std.color, std.term,
+                // std.trace, std.mcp, …). This walk only ever looked at `.assign`,
+                // which was harmless while `stmt_is_native_scalar` refused every
+                // `global_decl` outright — the outer gate hid the hole. The moment
+                // `global x = req "…"` was allowed through (it is the declared
+                // spelling of an `assign` the precheck already took), the hole
+                // opened: `std.color` chose native-scalar, emitted no storage for
+                // `M`, and every consumer failed to compile with "use of
+                // undeclared identifier `duo_g_std_color_M`" — the exact
+                // producer/consumer mismatch the comment above describes.
                 //
-                // EXCEPT a positional blob of integer literals with no keyed
-                // write anywhere — `wasm_header = { 0x00, 0x61, … }`. The hazard
-                // this guard exists for is the KEYED producer/consumer mismatch
-                // (the producer emits `void* M = NULL` and drops the field
-                // writes while the consumer flattens `m.x` to an undefined
-                // `mod__x`). A positional constant has no field symbols to
-                // mismatch, and dnir_lower has had a memory-backed positional
-                // table representation since SH-04 landed (alloc_slots + ptr).
-                // So this arm was rejecting a shape both ends already handle.
-                if (outer.assign.values[ti].table.fields.len > 0) {
-                    if (!table_is_positional_int_blob(outer.assign.values[ti]) or
-                        module_has_keyed_write(mod, t0.name.ident)) return true;
-                    continue;
-                }
-                if (module_has_keyed_write(mod, t0.name.ident)) return true;
+                // Caught by a hand-written probe (`req "std.color"`; read a
+                // field), NOT by the 80-program corpus differential, which stayed
+                // green because no example reqs a table-exporting stdlib module.
+                .global_decl => |gd| {
+                    for (gd.names, 0..) |gname, gi| {
+                        if (gi >= gd.inits.len) continue;
+                        if (binding_materializes_table(mod, gname.ident, gd.inits[gi])) return true;
+                    }
+                },
+                else => {},
             }
         }
         return false;
@@ -3824,6 +3857,28 @@ pub const CodeGen = struct {
                         if (self.req_module_is_native_direct(path)) continue;
                         native_diag_fail("global-decl-req-nonnative");
                         break :blk false;
+                    }
+                    // `global C = std.compiler.comptime` — a MODULE binding
+                    // written as an ambient dotted path instead of a `req`
+                    // string. `init_is_native_scalar` says yes (an ambient path
+                    // is a static path and folds), but the binding still names a
+                    // module, so the same producer/consumer mismatch applies:
+                    // measured, `lib/std/compiler/rewrite.duo` chose native-scalar
+                    // and emitted `use of undeclared identifier
+                    // duo_g_std_compiler_rewrite_C` plus four boxed-value type
+                    // errors. It is the `req` case above wearing different
+                    // syntax, so it takes the same predicate.
+                    // Refused outright rather than routed through
+                    // `req_module_is_native_direct`, which answers TRUE for any
+                    // path that merely RESOLVES to a file (its last line is
+                    // `find_module_file_for_req(...) != null`) and so cannot
+                    // distinguish a native dependency from a runtime one here.
+                    var abuf: [256]u8 = undefined;
+                    if (ambient_dotted_path(expr, &abuf)) |dotted| {
+                        if (self.find_module_file_for_req(dotted) != null) {
+                            native_diag_fail("global-decl-module-path");
+                            break :blk false;
+                        }
                     }
                     const hint: RT = if (i < gd.names.len) self.resolve_binding_type(&gd.names[i]) else .any;
                     if (!self.init_is_native_scalar(expr, hint)) {
