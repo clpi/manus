@@ -25,7 +25,7 @@
 -- .claude/worktrees/ copies of this repo. Excluding those, the nine remaining
 -- are live via build.zig and .github/workflows/ci.yml.
 --
--- CENSUS_FLOOR (default 8) ratchets: retiring a script lowers it, adding one
+-- CENSUS_FLOOR (default 7) ratchets: retiring a script lowers it, adding one
 -- fails. Exit 0 pass, 1 over the ceiling, 3 the census could not run.
 
 _count = (pattern: str): i64
@@ -57,7 +57,7 @@ main(): i64
     print("  c/h         " .. to(str)(csrc) .. "   bootstrap ledger + fixtures — sanctioned")
     print("  sh/py       " .. to(str)(debt) .. "   DEBT — the number that must reach zero")
 
-    ceiling: i64 = to(i64)(std.script.getenv("CENSUS_FLOOR", "8"))
+    ceiling: i64 = to(i64)(std.script.getenv("CENSUS_FLOOR", "7"))
     if debt > ceiling
         print("language_census: FAIL — sh/py debt " .. to(str)(debt)
             .. " exceeds the ratchet " .. to(str)(ceiling))
