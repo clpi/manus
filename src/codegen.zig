@@ -2206,6 +2206,37 @@ pub const CodeGen = struct {
         return true;
     }
 
+    /// gap[021]: `and`/`or` return an OPERAND (B-3), and only `false`/`nil` are
+    /// falsy (B-2). C's `&&`/`||` return the boolean 0/1, so lowering a numeric
+    /// `and`/`or` onto them destroyed the operand — `a or 1.5` on `a: f64 = 2.5`
+    /// yielded 1.0, and `x or default` is the canon's own coalescing spelling.
+    ///
+    /// A native numeric has no nil and no false representation, so it is always
+    /// truthy and the selection is decided statically: `a or b` IS `a` (and `b`
+    /// is short-circuited away, never evaluated), `a and b` IS `b` with `a` still
+    /// evaluated for its effects. Each operand is therefore written exactly once.
+    fn try_emit_native_and_or_operand(self: *CodeGen, b: anytype, expr: *const ast.Expr) E!bool {
+        if (b.op != .@"and" and b.op != .@"or") return false;
+        if (!self.expr_type(b.lhs).is_numeric()) return false;
+        if (!self.expr_type(b.rhs).is_numeric()) return false;
+        // Only claim the form when the result is consumed natively; a boxed
+        // result still belongs to `lua_and`/`lua_or`, which are already correct.
+        if (!self.expr_type(expr).is_numeric()) return false;
+
+        if (b.op == .@"or") {
+            self.p("(", .{});
+            try self.emit_expr(b.lhs);
+            self.p(")", .{});
+        } else {
+            self.p("((void)(", .{});
+            try self.emit_expr(b.lhs);
+            self.p("), (", .{});
+            try self.emit_expr(b.rhs);
+            self.p("))", .{});
+        }
+        return true;
+    }
+
     /// Result type of a `math.<fn>(...)` builtin call, or null if `func` is not
     /// a recognized math builtin. `max`/`min`/`abs` are integer-typed when their
     /// arguments are integers (matching the integer emit in maybe_emit_math_call);
@@ -14863,6 +14894,8 @@ pub const CodeGen = struct {
                 if (try self.try_emit_lua_and_or_ternary(b)) {
                     return;
                 } else if (try self.try_emit_native_tonumber_or(b)) {
+                    return;
+                } else if (try self.try_emit_native_and_or_operand(b, expr)) {
                     return;
                 } else if ((b.op == .@"and" or b.op == .@"or") and !self.moduleNeedsLuaRuntime()) {
                     const op_str: []const u8 = if (b.op == .@"and") " && " else " || ";
