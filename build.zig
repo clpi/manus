@@ -586,6 +586,18 @@ pub fn build(b: *std.Build) void {
     const native_diff_step = b.step("native-differential", "Direct ARM64 backend must agree with the C backend on the native corpus");
     native_diff_step.dependOn(&native_diff_cmd.step);
 
+    // Pass 100 §22's generated capability table. It reads the SAME corpus
+    // native-differential gates and reports the whole ladder — described,
+    // parsed, checked, C path, direct-native, differentially proven, canonical
+    // — by running the compiler at each rung rather than by asserting a list.
+    // It is a report, not a second gate: it fails only when it could not have
+    // measured anything.
+    const capability_table_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/capability_table.duo" });
+    capability_table_cmd.step.dependOn(b.getInstallStep());
+    capability_table_cmd.setCwd(b.path("."));
+    const capability_table_step = b.step("capability-table", "Pass 100 §22: derive the described->canonical ladder from the native corpus");
+    capability_table_step.dependOn(&capability_table_cmd.step);
+
     const direct_link_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/direct_module_link_proof.duo" });
     direct_link_cmd.step.dependOn(b.getInstallStep());
     direct_link_cmd.setCwd(b.path("."));

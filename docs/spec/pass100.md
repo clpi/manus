@@ -694,8 +694,33 @@ blocks-total is the project's first honest number, and §13 is not exempt.
 > differential corpus all execute. The correct replacement is a GENERATED
 > capability table — described → parsed → semantically checked → C path →
 > direct-native → differentially proven → canonical — populated from the
-> native differential corpus rather than asserted. That is owed; until it
-> lands, prefer the measured claim over this line.
+> native differential corpus rather than asserted.
+>
+> **That table now exists: `zig build capability-table`**
+> (`scripts/capability_table.duo`). It runs the compiler once per rung per
+> fixture over the same corpus `native-differential` gates, so no cell is a
+> claim someone maintains. Do not paste its numbers here — read them from a
+> run, because a number transcribed into prose is exactly the drift this
+> section was written about. Two things the first runs established, which are
+> properties of the method rather than the status of the day:
+>
+> - `canonical` came out **59**, and `scripts/native_differential.duo`
+>   independently reports **59 agree**. Two derivations, one number, neither
+>   reading the other. That agreement is what makes the table evidence; if the
+>   two ever disagree, one of them is lying and the disagreement says which
+>   rung to look at.
+> - The `described` rung — does the fixture say what it proves — is the one
+>   the corpus is worst at, and it is the first rung. Evidence that runs but
+>   does not speak is how a corpus decays into folklore.
+>
+> The table's own first version was wrong, and the way it was wrong is the
+> lesson: its `parsed` rung ran `duo fmt` on the fixture, `duo fmt` rewrites in
+> place, and `duo fmt` deletes comments (gap[048]). One run reformatted all 68
+> corpus files, which broke 13 of them and stripped the `-- expect: N` headers
+> `native_only/` depends on — and the table then reported 46 instead of 59 and
+> `described` 0 instead of 16, confidently, from evidence it had destroyed
+> itself. **A measurement must not be able to write to what it measures.** It
+> now copies first.
 
 ## 23. Entailments (the theorems 0.1 owes)
 
