@@ -383,6 +383,42 @@ mechanism has not been independently re-audited in this pass.**
 
 ## 5. Ward — the in-repo WASM runtime
 
+> **SUPERSEDED 2026-08-08 by `zig build ward-test` and `bench/six.duo`.**
+> The two-workload table below was too small a sample to support what was
+> claimed from it. Measured across SIX workloads that do real work, **ward is
+> first on one, and that one is a tie**:
+>
+> | workload | ward | wart | wasmtime | first |
+> |---|---:|---:|---:|---|
+> | `hash` (run) | **368** | n/a | 374 | ward — a TIE, 1.6% |
+> | `hash2b` (run) | 3805 | n/a | **3693** | wasmtime |
+> | `brtable` (_start) | 424 | **11** | 15 | wart, **38×** |
+> | `hot` (_start) | 313 | **19** | 21 | wart, **16×** |
+> | `hot_big` (_start) | 3277 | 134 | **112** | wasmtime, **29×** |
+> | `loop_f64` (_start) | **cannot run** | **13** | 27 | wart |
+>
+> Every loss is a module the JIT declines, falling back to the interpreter.
+> **55 of 61 measured rows sit below a 40 ms process-startup floor and are
+> attributed to nobody** — a table with exactly that shape was published from
+> this repository and withdrawn, so the harness now refuses to score them.
+>
+> **The test suite found a correctness bug that invalidates any earlier ward
+> number.** Linear memory was a hardcoded ONE PAGE with every effective address
+> masked `& 0xFFFF`, folding a two-page module's upper half onto its lower half:
+> 16 of 128 rows differed from wasmtime, and **seven wasi-libc modules emitted
+> nothing while exiting 0**. Both engines now size memory from the memory
+> section. Also: every walker started at byte 9, so ward would execute a file
+> whose magic had been destroyed and print the right answer for it — caught only
+> because a positive control was written to fail.
+>
+> Current suite: **128 rows, 122 PASS, 0 DIFF, 2 UNSUPPORTED (budgeted), exit 0**,
+> every row differenced against wasmtime BY VALUE.
+>
+> Open and architectural: the JIT cannot call an imported function, because
+> `lib/std/jit.duo` exposes no primitive yielding a host function address — so
+> any `_start` reaching `fd_write`/`proc_exit` falls to the interpreter.
+
+
 Ward (`ext/ward/`, ~5000 lines of pure Duo, zero `@c.emit`) is the downstream
 application that proves Duo builds systems software. Compiled for this
 measurement in **41.8 s** via `duo compile src/ward.duo --backend=c --emit exe`.
