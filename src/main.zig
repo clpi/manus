@@ -20,6 +20,8 @@ const debug_trace = @import("debug_trace.zig");
 const build_framework = @import("build_framework.zig");
 const ml_kernels = @import("ml_kernels.zig");
 const native_backend = @import("native_backend.zig");
+const dnir_lower = @import("dnir_lower.zig");
+const codegen_mod = @import("codegen.zig");
 const backend_identity = @import("backend_identity.zig");
 const pass27_benchmark_evidence = @import("pass27_benchmark_evidence.zig");
 const pass34_representation_manifest = @import("pass34_representation_manifest.zig");
@@ -3178,17 +3180,33 @@ fn reportDirectBackendError(io: Io, err: anyerror, target: []const u8, trace: ?*
     term.err("direct backend: {s}", .{msg});
     term.hint("{s}", .{native_backend.unsupportedReason(target)});
     // A DNB001 says only "outside the subset" — it never says *which* of the
-    // ~57 `return error.UnsupportedConstruct` sites fired, so narrowing one
-    // meant bisecting the .duo source by hand. Zig already records where an
-    // error was returned; dumping that trace names the exact bail site. Opt-in
-    // because it is debug output, and empty in ReleaseFast where the compiler
-    // elides return traces entirely.
+    // ~60 lowering bail sites fired, so narrowing one meant bisecting the .duo
+    // source by hand, and the 60-program DNB001 bucket could not be ranked.
+    // The return-trace route was tried first and does not work: it prints
+    // "(empty stack trace)" even in Debug, because the error is caught and
+    // re-raised before reaching here. So each site records itself instead
+    // (dnir_lower.bail), and the site is printed unconditionally — it is one
+    // line, and it is the difference between a worklist and a guess.
+    // Not gated on `err` — by the time the error reaches here it has been
+    // remapped (lowering's UnsupportedConstruct surfaces as the backend's
+    // UnsupportedProgram), so the gate is the recorded site itself, which
+    // lowerModule clears on entry so a stale one cannot be attributed.
+    if (dnir_lower.bail_site.line != 0) {
+        const at = dnir_lower.bail_site;
+        term.hint("bail site: {s}() at dnir_lower.zig:{d}", .{ at.fn_name, at.line });
+    } else {
+        // No lowering site means the program never reached DNIR: the
+        // native-scalar precheck disqualified the whole module first. That is
+        // the majority case, and it used to be entirely silent.
+        var rbuf: [64]u8 = undefined;
+        if (codegen_mod.native_scalar_reason(&rbuf)) |why| {
+            term.hint("bail site: native-scalar precheck — {s}", .{why});
+        }
+    }
     if (std.c.getenv("DUO_DNIR_TRACE") != null) {
         if (trace) |st| {
             term.hint("DUO_DNIR_TRACE: lowering bailed at —", .{});
             std.debug.dumpErrorReturnTrace(st);
-        } else {
-            term.hint("DUO_DNIR_TRACE: no return trace (build with -Doptimize=Debug)", .{});
         }
     }
     _ = io;
@@ -3292,6 +3310,7 @@ fn do_compile(
     native_scalar_precheck.populate_record_aliases(&ps.mod) catch {};
     native_scalar_precheck.populate_enum_defs(&ps.mod) catch {};
     native_scalar_precheck.populate_func_bodies(&ps.mod) catch {};
+    codegen_mod.native_scalar_reason_reset();
     const native_scalar_candidate = native_scalar_precheck.can_emit_native_scalar_module(&ps.mod);
 
     const effective_machine_target: ?[]const u8 = if (wantsMachineLowering(backend_mode, target))

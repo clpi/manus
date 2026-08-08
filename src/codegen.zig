@@ -94,10 +94,59 @@ fn module_top_level_assigns(mod: *const ast.Module, name: []const u8) bool {
 }
 
 fn native_diag_fail(tag: []const u8) void {
-    if (!native_diag) return;
-    if (native_diag_tag != null) return;
+    // First recorder wins across BOTH slots. The hand-written tags sit on the
+    // outer walk (`assign-value`, `func-body`) and fire on the way out, after
+    // the inner predicate that actually refused — so without this cross-check
+    // the coarse tag would overwrite the precise reason and every rejection
+    // would report "some statement", which is what it reported before.
+    if (native_diag_tag != null or native_scalar_fail_line != 0) return;
     native_diag_tag = tag;
-    std.debug.print("[native-diag] first fail: {s}\n", .{tag});
+    if (native_diag) std.debug.print("[native-diag] first fail: {s}\n", .{tag});
+}
+
+/// Why the native-scalar precheck refused, readable without DUO_NATIVE_DIAG.
+///
+/// The tag was recorded only when the env var was set, so the DNB001 a user
+/// actually sees carried no reason — and this precheck, not the DNIR lowering,
+/// is what rejects the large majority of programs (measured: 54 of 62 DNB001s
+/// across examples/ never reach a `dnir_lower.bail` site at all, because
+/// main.zig short-circuits to error.UnsupportedProgram before calling the
+/// backend). Recording is a pointer store, so it now happens always and only
+/// the printing is gated.
+///
+/// `nofit` covers the ~15 disqualifiers that never called `native_diag_fail`:
+/// most of the precheck is one-line `if (cond) return false`, where inventing
+/// a hand-written tag per line is exactly the drift `@src()` avoids.
+var native_scalar_fail_line: u32 = 0;
+
+fn nofit(src: std.builtin.SourceLocation) bool {
+    if (native_scalar_fail_line == 0 and native_diag_tag == null) native_scalar_fail_line = src.line;
+    return false;
+}
+
+/// A reason that has to name a specific node kind or symbol.
+///
+/// Backed by a fixed buffer rather than the allocator because this runs inside
+/// a `bool` predicate with no error path, and one live reason at a time is the
+/// whole contract (first recorder wins).
+var native_diag_buf: [96]u8 = undefined;
+
+fn native_diag_fail_fmt(comptime fmt: []const u8, args: anytype) void {
+    if (native_diag_tag != null or native_scalar_fail_line != 0) return;
+    const s = std.fmt.bufPrint(&native_diag_buf, fmt, args) catch return;
+    native_diag_tag = s;
+    if (native_diag) std.debug.print("[native-diag] first fail: {s}\n", .{s});
+}
+
+pub fn native_scalar_reason(buf: []u8) ?[]const u8 {
+    if (native_diag_tag) |t| return t;
+    if (native_scalar_fail_line == 0) return null;
+    return std.fmt.bufPrint(buf, "codegen.zig:{d}", .{native_scalar_fail_line}) catch null;
+}
+
+pub fn native_scalar_reason_reset() void {
+    native_diag_tag = null;
+    native_scalar_fail_line = 0;
 }
 
 pub const CodeGenError = error{
@@ -2807,11 +2856,11 @@ pub const CodeGen = struct {
         // Only --bench-backend=c-dynamic explicitly selects the boxed path.
         if (self.bench_mode and self.bench_backend == .c_dynamic) {
             native_diag_fail("bench-c-dynamic");
-            return false;
+            return nofit(@src());
         }
         if (self.bench_mode and self.bench_backend == .direct) {
             native_diag_fail("bench-direct-via-codegen");
-            return false;
+            return nofit(@src());
         }
         // `lib_mode` is deliberately NOT disqualifying here. It was excluded because
         // `--lib` existed for wasm WAST testing, and the target guard immediately
@@ -2821,7 +2870,7 @@ pub const CodeGen = struct {
         // needs (SH-03 / MP4-B02).
         if (self.load_chunk or self.test_mode) {
             native_diag_fail("guard-mode");
-            return false;
+            return nofit(@src());
         }
         if (!std.mem.eql(u8, self.target, "native") and
             !std.mem.eql(u8, self.target, "native-object") and
@@ -2831,16 +2880,16 @@ pub const CodeGen = struct {
             !std.mem.eql(u8, self.target, "native-dylib"))
         {
             native_diag_fail("guard-target");
-            return false;
+            return nofit(@src());
         }
         if (!self.duo_mode) {
             native_diag_fail("guard-duo");
-            return false;
+            return nofit(@src());
         }
         if (mod.body.tail_expr) |expr| {
             if (!self.call_stmt_is_native_scalar(expr)) {
                 native_diag_fail("mod-tail");
-                return false;
+                return nofit(@src());
             }
             // A module whose exported value is a table built by keyed writes
             // (`M = {}` / `M.x = 1` / … / `M`) has to materialize a real table,
@@ -2853,58 +2902,58 @@ pub const CodeGen = struct {
         }
         if (module_materializes_table(mod)) {
             native_diag_fail("keyed-table-export");
-            return false;
+            return nofit(@src());
         }
 
         for (mod.body.stmts) |*stmt| {
             switch (stmt.*) {
                 .func_decl => |fd| {
-                    if (fd.path.len != 1) return false;
-                    if (fd.func.vararg or fd.func.vararg_name != null) return false;
-                    if (fd.func.is_async) return false;
+                    if (fd.path.len != 1) return nofit(@src());
+                    if (fd.func.vararg or fd.func.vararg_name != null) return nofit(@src());
+                    if (fd.func.is_async) return nofit(@src());
                     // Test/bench/debug/trace directives require the full runtime.
-                    if (@import("directives.zig").attrsMarkTest(fd.attributes)) return false;
-                    if (@import("directives.zig").attrsWantBench(fd.attributes)) return false;
-                    if (@import("directives.zig").attrsHaveDebug(fd.attributes)) return false;
+                    if (@import("directives.zig").attrsMarkTest(fd.attributes)) return nofit(@src());
+                    if (@import("directives.zig").attrsWantBench(fd.attributes)) return nofit(@src());
+                    if (@import("directives.zig").attrsHaveDebug(fd.attributes)) return nofit(@src());
                     // Allow closures and methods — they compile to C functions.
-                    if (fd.func.type_params != null) return false;
-                    if (!self.type_expr_is_native_scalar(fd.func.ret_type)) return false;
+                    if (fd.func.type_params != null) return nofit(@src());
+                    if (!self.type_expr_is_native_scalar(fd.func.ret_type)) return nofit(@src());
                     for (fd.func.params) |param| {
-                        if (param.default_val != null) return false;
-                        if (!self.type_expr_is_native_scalar(param.typ)) return false;
+                        if (param.default_val != null) return nofit(@src());
+                        if (!self.type_expr_is_native_scalar(param.typ)) return nofit(@src());
                     }
                     if (!self.block_is_native_scalar(fd.func.body, true)) {
                         native_diag_fail("func-body");
-                        return false;
+                        return nofit(@src());
                     }
                 },
                 .const_decl => |cd| {
                     if (!self.type_expr_is_native_scalar(cd.typ) and cd.typ != .inferred) {
                         native_diag_fail("const-typ-nonnative");
-                        return false;
+                        return nofit(@src());
                     }
                     if (!self.expr_is_native_scalar(cd.val)) {
                         native_diag_fail("const-val-expr");
-                        return false;
+                        return nofit(@src());
                     }
                 },
                 .local_decl, .assign, .call_stmt, .expr_stmt, .while_loop, .if_stmt, .num_for, .do_block, .ret, .brk, .cont => {
                     if (!self.stmt_is_native_scalar(stmt, false)) {
                         native_diag_fail("mod-top-stmt");
                         if (native_diag) std.debug.print("[native-diag]   stmt kind: {s}\n", .{@tagName(stmt.*)});
-                        return false;
+                        return nofit(@src());
                     }
                 },
                 .repeat_loop, .gen_for, .match_stmt, .label_stmt, .goto_stmt, .global_decl => {
                     if (!self.stmt_is_native_scalar(stmt, false)) {
                         native_diag_fail("mod-top-stmt");
                         if (native_diag) std.debug.print("[native-diag]   stmt kind: {s}\n", .{@tagName(stmt.*)});
-                        return false;
+                        return nofit(@src());
                     }
                 },
                 .try_stmt, .defer_stmt => {
                     native_diag_fail("mod-top-try-defer");
-                    return false;
+                    return nofit(@src());
                 },
                 .macro_def => {},
                 .cinclude => {},
@@ -3837,8 +3886,11 @@ pub const CodeGen = struct {
     fn expr_is_native_scalar(self: *CodeGen, expr: *const ast.Expr) bool {
         return switch (expr.*) {
             .true_lit, .false_lit, .int_lit, .float_lit, .string_lit => true,
-            .nil => false,
-            .name => |name| !is_runtime_global(name.ident),
+            .nil => nofit(@src()),
+            .name => |name| if (is_runtime_global(name.ident)) blk: {
+                native_diag_fail_fmt("runtime-global:{s}", .{name.ident});
+                break :blk false;
+            } else true,
             .binop => |bin| self.expr_is_native_scalar(bin.lhs) and self.expr_is_native_scalar(bin.rhs),
             .unop => |un| un.op != .compile and self.expr_is_native_scalar(un.operand),
             .field => |field| blk: {
@@ -3875,6 +3927,7 @@ pub const CodeGen = struct {
                     };
                     break :blk true;
                 }
+                native_diag_fail("dynamic-table");
                 break :blk false;
             },
             .call => |call| blk: {
@@ -3898,7 +3951,10 @@ pub const CodeGen = struct {
                     // @c.emit / __emit / __asm: raw C injection — always native scalar.
                     if (std.mem.eql(u8, call.func.name.ident, "__emit") or
                         std.mem.eql(u8, call.func.name.ident, "__asm")) break :blk true;
-                    if (is_runtime_global(call.func.name.ident)) break :blk false;
+                    if (is_runtime_global(call.func.name.ident)) {
+                        native_diag_fail_fmt("runtime-global-call:{s}", .{call.func.name.ident});
+                        break :blk false;
+                    }
                 }
                 if (!self.expr_is_native_scalar(call.func)) break :blk false;
                 const param_hints = self.call_param_types(call.func);
@@ -3911,8 +3967,7 @@ pub const CodeGen = struct {
                     self.type_lowers_native(rt);
             },
             else => {
-                native_diag_fail("expr-unhandled");
-                if (native_diag) std.debug.print("[native-diag]   expr kind: {s}\n", .{@tagName(expr.*)});
+                native_diag_fail_fmt("expr-unhandled:{s}", .{@tagName(expr.*)});
                 return false;
             },
         };
@@ -12842,6 +12897,42 @@ pub const CodeGen = struct {
         }
     }
 
+    /// `#x` where the operand's type is `.any` (untyped / boxed).
+    ///
+    /// With the Lua runtime present this is `lua_len_num`, which dispatches on
+    /// the boxed tag: table length, string length, 0 for nil. Both `.any` arms
+    /// of the `.len` unop used to emit that call unconditionally, but the
+    /// runtime preamble that DEFINES `lua_len_num` is emitted only when
+    /// `moduleNeedsLuaRuntime()` holds. A full-native module therefore got the
+    /// call with no declaration, and clang rejected the whole file with "call
+    /// to undeclared function 'lua_len_num'" — examples/nil_init_smoke.duo,
+    /// hence `zig build agent-smoke`, died there. Same declaration/use
+    /// asymmetry as the `duo_test_jmp` one fixed above.
+    ///
+    /// There the fix was to declare the symbol on every target. Here it cannot
+    /// be: `lua_len_num` takes a `lua_Value`, and a full-native module has no
+    /// `lua_Value` type, so declaring it would drag the entire boxed runtime
+    /// back in to serve one length. The call goes instead.
+    ///
+    /// The `.any` bindings full-native mode actually emits are the `void*` a
+    /// nil-initialised local starts as — `x = nil` then `x = "hi"`, which is
+    /// exactly the smoke test — and what later lands in one is a C string.
+    /// Native-list and dense-module shapes are recognised by their own arms
+    /// before reaching here. `strlen` is the native reading of the same edge,
+    /// and the NULL guard reproduces `lua_len_num`'s own answer for an operand
+    /// that is still nil: 0.
+    fn emit_any_len(self: *CodeGen, operand: *const ast.Expr) E!void {
+        if (self.moduleNeedsLuaRuntime()) {
+            self.p("lua_len_num(", .{});
+            try self.emit_expr(operand);
+            self.p(")", .{});
+            return;
+        }
+        self.p("({{ const char* _duo_lenv = (const char*)(", .{});
+        try self.emit_expr(operand);
+        self.p("); _duo_lenv ? (int64_t)strlen(_duo_lenv) : (int64_t)0; }})", .{});
+    }
+
     fn emit_expr(self: *CodeGen, expr: *const ast.Expr) E!void {
         switch (expr.*) {
             .quote, .unquote, .macro_call => self.p("/* unexpanded macro expression */ lua_val_nil()", .{}),
@@ -14826,9 +14917,7 @@ pub const CodeGen = struct {
                                         if (u.operand.* == .name and self.is_native_str_list_local(u.operand.name.ident)) {
                                             self.p("{s}_len", .{u.operand.name.ident});
                                         } else {
-                                            self.p("lua_len_num(", .{});
-                                            try self.emit_expr(u.operand);
-                                            self.p(")", .{});
+                                            try self.emit_any_len(u.operand);
                                         }
                                     },
                                     .bnot => {
@@ -14867,9 +14956,7 @@ pub const CodeGen = struct {
                             }
                             // Untyped operands recover the numeric length
                             // directly while preserving __len dispatch.
-                            self.p("lua_len_num(", .{});
-                            try self.emit_expr(u.operand);
-                            self.p(")", .{});
+                            try self.emit_any_len(u.operand);
                         },
                         .bnot => {
                             self.p("lua_bnot(", .{});

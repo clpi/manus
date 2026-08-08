@@ -20,6 +20,35 @@ pub const Error = error{
     OutOfMemory,
 };
 
+/// Which of the ~60 bail sites fired, so DNB001 can name a construct.
+///
+/// DNB001 was one undifferentiated bucket: 60 of 72 native bails across
+/// examples/ reported "outside the direct backend subset" and nothing more,
+/// which makes the worklist unorderable — you cannot tell whether supporting
+/// the next construct buys 30 programs or 1. The ambient mechanism was already
+/// wired (`DUO_DNIR_TRACE=1` dumps Zig's error return trace at
+/// src/main.zig:3186) and yields "(empty stack trace)" even in Debug, because
+/// the error is caught and re-raised before reaching the reporter.
+///
+/// So the site records itself on the way out. `@src()` makes this mechanical
+/// and unforgeable — no hand-authored tag can drift from the code it labels,
+/// and a site added later is instrumented by construction if it goes through
+/// `bail`. The pair is a plain global rather than lowering state because it is
+/// diagnostic-only and read exactly once, immediately after the failing call,
+/// on a path that is already single-threaded per compilation.
+pub var bail_site: std.builtin.SourceLocation = .{
+    .module = "",
+    .file = "",
+    .fn_name = "",
+    .line = 0,
+    .column = 0,
+};
+
+fn bail(src: std.builtin.SourceLocation) Error {
+    bail_site = src;
+    return error.UnsupportedConstruct;
+}
+
 const empty_module_consts: std.StringHashMapUnmanaged(i64) = .empty;
 
 /// Collect top-level integer bindings so a function body can fold them.
@@ -83,6 +112,7 @@ fn collectModuleConsts(
 }
 
 pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.Module {
+    bail_site.line = 0;
     var req = try native_req_support.collectFromModule(alloc, mod);
     defer req.deinit(alloc);
 
@@ -153,8 +183,8 @@ pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.
         const f = try lowerFunction(alloc, fd, records.items, &req, &externs, &func_record_returns, &f64_kernels, &module_consts);
         try functions.append(alloc, f);
     }
-    if (functions.items.len == 0) return error.UnsupportedConstruct;
-    if (functions.items.len != countModuleFunctions(mod)) return error.UnsupportedConstruct;
+    if (functions.items.len == 0) return bail(@src());
+    if (functions.items.len != countModuleFunctions(mod)) return bail(@src());
 
     const result = dnir.Module{
         .functions = try functions.toOwnedSlice(alloc),
@@ -573,7 +603,7 @@ fn isReqCall(expr: *const ast.Expr) bool {
 }
 
 fn lowerFieldAssignTarget(ctx: *LowerCtx, obj: *const ast.Expr, field_name: []const u8, value: *const ast.Expr) Error!void {
-    if (obj.* != .name) return error.UnsupportedConstruct;
+    if (obj.* != .name) return bail(@src());
     const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ obj.name.ident, field_name });
     defer ctx.alloc.free(fk);
     const v = try lowerExprCons(ctx, value, .single);
@@ -611,7 +641,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             // with more names than inits. The `i < ld.inits.len` guard kept it from
             // crashing, but silently left every name past the first unassigned —
             // a miscompile, which is worse than a refusal. Decline instead.
-            if (ld.names.len != ld.inits.len and ld.inits.len == 1) return error.UnsupportedConstruct;
+            if (ld.names.len != ld.inits.len and ld.inits.len == 1) return bail(@src());
             for (ld.names, 0..) |*ln, i| {
                 if (i < ld.inits.len) {
                     try lowerAssignTarget(ctx, ln.ident, ld.inits[i]);
@@ -629,13 +659,13 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             // construct instead: DNIR lowering fails, the module falls back to the
             // C backend, and the program still compiles. Pass 42 §3.1 (correlated
             // packs with a native ABI) is what will let this lower here.
-            if (as.targets.len != as.values.len) return error.UnsupportedConstruct;
+            if (as.targets.len != as.values.len) return bail(@src());
             for (as.targets, as.values) |target, value| {
                 switch (target.*) {
                     .name => |n| try lowerAssignTarget(ctx, n.ident, value),
                     .field => |f| try lowerFieldAssignTarget(ctx, f.obj, f.field, value),
                     .index => |ix| try lowerIndexAssignTarget(ctx, ix.obj, ix.key, value),
-                    else => return error.UnsupportedConstruct,
+                    else => return bail(@src()),
                 }
             }
         },
@@ -717,7 +747,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
         .call_stmt => |cs| {
             _ = try lowerExprCons(ctx, cs.expr, .discard);
         },
-        else => return error.UnsupportedConstruct,
+        else => return bail(@src()),
     }
 }
 
@@ -749,24 +779,24 @@ fn resolveIntStep(ctx: *LowerCtx, step: *const ast.Expr) Error!i64 {
     if (step.* == .name) {
         if (ctx.const_ints.get(step.name.ident)) |v| return v;
     }
-    return error.UnsupportedConstruct;
+    return bail(@src());
 }
 
 fn lowerNumFor(ctx: *LowerCtx, loop: anytype) Error!void {
-    if (loop.var_typ != .inferred and !isIntType(loop.var_typ)) return error.UnsupportedConstruct;
+    if (loop.var_typ != .inferred and !isIntType(loop.var_typ)) return bail(@src());
     const step_lit: ?i64 = if (loop.step) |step| resolveIntStep(ctx, step) catch null else 1;
     if (step_lit == null) {
         try lowerRuntimeNumFor(ctx, loop);
         return;
     }
     const step = step_lit.?;
-    if (step == 0) return error.UnsupportedConstruct;
+    if (step == 0) return bail(@src());
     try lowerConstNumFor(ctx, loop, step);
 }
 
 fn lowerConstNumFor(ctx: *LowerCtx, loop: anytype, step_lit: i64) Error!void {
     try lowerAssignTarget(ctx, loop.var_name, loop.start);
-    const i_slot = ctx.locals.get(loop.var_name) orelse return error.UnsupportedConstruct;
+    const i_slot = ctx.locals.get(loop.var_name) orelse return bail(@src());
     const head_idx: u32 = @intCast(ctx.instrs.items.len);
     const cond_temp = ctx.freshTemp();
     const cmp_op: dnir.BinOpTag = if (step_lit > 0) .leq else .geq;
@@ -797,7 +827,7 @@ fn lowerConstNumFor(ctx: *LowerCtx, loop: anytype, step_lit: i64) Error!void {
 
 fn lowerRuntimeNumFor(ctx: *LowerCtx, loop: anytype) Error!void {
     try lowerAssignTarget(ctx, loop.var_name, loop.start);
-    const i_slot = ctx.locals.get(loop.var_name) orelse return error.UnsupportedConstruct;
+    const i_slot = ctx.locals.get(loop.var_name) orelse return bail(@src());
 
     const stop_key = try ctx.alloc.dupe(u8, "__dnir_stop");
     const stop_slot = ctx.freshTemp();
@@ -929,9 +959,9 @@ fn materializeTableSlots(ctx: *LowerCtx, name: []const u8) Error!u32 {
     }
     const len_key = try std.fmt.allocPrint(ctx.alloc, "{s}.len", .{name});
     defer ctx.alloc.free(len_key);
-    const len_slot = ctx.locals.get(len_key) orelse return error.UnsupportedConstruct;
-    const len = ctx.table_lens.get(len_slot) orelse return error.UnsupportedConstruct;
-    if (len <= 0 or len > 4096) return error.UnsupportedConstruct;
+    const len_slot = ctx.locals.get(len_key) orelse return bail(@src());
+    const len = ctx.table_lens.get(len_slot) orelse return bail(@src());
+    if (len <= 0 or len > 4096) return bail(@src());
 
     const base = ctx.freshTemp();
     try ctx.emit(.{ .op = .alloc_slots, .result = base, .lhs = .{ .i64 = len } });
@@ -939,7 +969,7 @@ fn materializeTableSlots(ctx: *LowerCtx, name: []const u8) Error!u32 {
     while (i <= len) : (i += 1) {
         const elem_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{d}", .{ name, i });
         defer ctx.alloc.free(elem_key);
-        const elem_slot = ctx.locals.get(elem_key) orelse return error.UnsupportedConstruct;
+        const elem_slot = ctx.locals.get(elem_key) orelse return bail(@src());
         try ctx.emit(.{
             .op = .store_index,
             .ty = .i64,
@@ -1041,14 +1071,14 @@ fn lowerRecordCallAssign(ctx: *LowerCtx, name: []const u8, callee: []const u8, a
 /// base pointer and a computed offset, which is the native table-lowering
 /// milestone. Constant indexing is the slice that fits the proven subset today.
 fn lowerPositionalTableAssign(ctx: *LowerCtx, name: []const u8, table: *const ast.Expr) Error!void {
-    if (table.* != .table) return error.UnsupportedConstruct;
+    if (table.* != .table) return bail(@src());
     const t_slot = ctx.freshTemp();
     try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), t_slot);
     var idx: usize = 1;
     for (table.table.fields) |fld| {
         const val = switch (fld) {
             .positional => |v| v,
-            else => return error.UnsupportedConstruct,
+            else => return bail(@src()),
         };
         const v = try lowerExpr(ctx, val);
         const eslot = ctx.freshTemp();
@@ -1084,7 +1114,7 @@ fn lowerIndexAssignTarget(
     key_expr: *const ast.Expr,
     value: *const ast.Expr,
 ) Error!void {
-    if (obj.* != .name) return error.UnsupportedConstruct;
+    if (obj.* != .name) return bail(@src());
     const table_name = obj.name.ident;
 
     // Memory-backed table: a real scaled store, so writes through a shared base
@@ -1105,7 +1135,7 @@ fn lowerIndexAssignTarget(
     if (intLiteralStep(key_expr)) |n| {
         const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{d}", .{ table_name, n });
         defer ctx.alloc.free(key);
-        const slot = ctx.locals.get(key) orelse return error.UnsupportedConstruct;
+        const slot = ctx.locals.get(key) orelse return bail(@src());
         const v = try lowerExprCons(ctx, value, .single);
         try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = v, .ty = .any });
         return;
@@ -1113,9 +1143,9 @@ fn lowerIndexAssignTarget(
 
     const len_key = try std.fmt.allocPrint(ctx.alloc, "{s}.len", .{table_name});
     defer ctx.alloc.free(len_key);
-    const len_slot = ctx.locals.get(len_key) orelse return error.UnsupportedConstruct;
-    const len = ctx.table_lens.get(len_slot) orelse return error.UnsupportedConstruct;
-    if (len == 0 or len > 32) return error.UnsupportedConstruct;
+    const len_slot = ctx.locals.get(len_key) orelse return bail(@src());
+    const len = ctx.table_lens.get(len_slot) orelse return bail(@src());
+    if (len == 0 or len > 32) return bail(@src());
 
     // Evaluate index and value once, before any store, so a select-chain cannot
     // re-run side effects per candidate slot.
@@ -1128,7 +1158,7 @@ fn lowerIndexAssignTarget(
     while (i <= len) : (i += 1) {
         const elem_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{d}", .{ table_name, i });
         defer ctx.alloc.free(elem_key);
-        const elem_slot = ctx.locals.get(elem_key) orelse return error.UnsupportedConstruct;
+        const elem_slot = ctx.locals.get(elem_key) orelse return bail(@src());
 
         const cmp = ctx.freshTemp();
         try ctx.emit(.{
@@ -1163,9 +1193,9 @@ fn lowerIndexAssignTarget(
 fn lowerDynamicIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const ast.Expr) Error!dnir.Value {
     const len_key = try std.fmt.allocPrint(ctx.alloc, "{s}.len", .{table_name});
     defer ctx.alloc.free(len_key);
-    const len_slot = ctx.locals.get(len_key) orelse return error.UnsupportedConstruct;
-    const len = ctx.table_lens.get(len_slot) orelse return error.UnsupportedConstruct;
-    if (len == 0 or len > 32) return error.UnsupportedConstruct;
+    const len_slot = ctx.locals.get(len_key) orelse return bail(@src());
+    const len = ctx.table_lens.get(len_slot) orelse return bail(@src());
+    if (len == 0 or len > 32) return bail(@src());
 
     const idx_slot = ctx.freshTemp();
     try ctx.emit(.{ .op = .store_local, .result = idx_slot, .lhs = try lowerExpr(ctx, key_expr), .ty = .any });
@@ -1177,7 +1207,7 @@ fn lowerDynamicIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const as
     while (i <= len) : (i += 1) {
         const elem_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{d}", .{ table_name, i });
         defer ctx.alloc.free(elem_key);
-        const elem_slot = ctx.locals.get(elem_key) orelse return error.UnsupportedConstruct;
+        const elem_slot = ctx.locals.get(elem_key) orelse return bail(@src());
 
         const cmp = ctx.freshTemp();
         try ctx.emit(.{
@@ -1206,13 +1236,13 @@ fn tableIsPositional(table: *const ast.Expr) bool {
 }
 
 fn lowerRecordLiteralAssign(ctx: *LowerCtx, name: []const u8, table: *const ast.Expr) Error!void {
-    if (table.* != .table) return error.UnsupportedConstruct;
+    if (table.* != .table) return bail(@src());
     const rec_slot = ctx.freshTemp();
     try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), rec_slot);
     for (table.table.fields) |fld| {
         const nf = switch (fld) {
             .named => |n| n,
-            else => return error.UnsupportedConstruct,
+            else => return bail(@src()),
         };
         const v = try lowerExpr(ctx, nf.val);
         const fslot = ctx.freshTemp();
@@ -1257,14 +1287,14 @@ fn tableMatchesRecord(table: *const ast.Expr, rec: dnir.RecordDesc) bool {
 
 /// Lower inline table literal as a temp record value for call arguments.
 fn lowerInlineRecordArg(ctx: *LowerCtx, table: *const ast.Expr, rec_name: []const u8) Error!dnir.Value {
-    if (table.* != .table) return error.UnsupportedConstruct;
+    if (table.* != .table) return bail(@src());
     const rec_slot = ctx.freshTemp();
     const anon = try std.fmt.allocPrint(ctx.alloc, "__rec{d}", .{rec_slot});
     defer ctx.alloc.free(anon);
     for (table.table.fields) |fld| {
         const nf = switch (fld) {
             .named => |n| n,
-            else => return error.UnsupportedConstruct,
+            else => return bail(@src()),
         };
         const v = try lowerExpr(ctx, nf.val);
         const fslot = ctx.freshTemp();
@@ -1296,7 +1326,7 @@ fn emitF64RecordFieldsFromName(ctx: *LowerCtx, name: []const u8, slot: *u32) Err
         if (!all_f64 or !recordFieldsPresent(ctx, name, rec)) continue;
         for (rec.fields) |fname| {
             const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ name, fname });
-            const field_slot = ctx.locals.get(key) orelse return error.UnsupportedConstruct;
+            const field_slot = ctx.locals.get(key) orelse return bail(@src());
             ctx.alloc.free(key);
             const t = ctx.freshTemp();
             try ctx.emit(.{
@@ -1307,7 +1337,7 @@ fn emitF64RecordFieldsFromName(ctx: *LowerCtx, name: []const u8, slot: *u32) Err
             });
             try ctx.emit(.{ .op = .fp_mov_arg, .result = slot.*, .lhs = .{ .temp = t } });
             slot.* += 1;
-            if (slot.* > 8) return error.UnsupportedConstruct;
+            if (slot.* > 8) return bail(@src());
         }
         return true;
     }
@@ -1315,7 +1345,7 @@ fn emitF64RecordFieldsFromName(ctx: *LowerCtx, name: []const u8, slot: *u32) Err
 }
 
 fn lowerRecordReturn(ctx: *LowerCtx, table: *const ast.Expr) Error!void {
-    if (table.* != .table) return error.UnsupportedConstruct;
+    if (table.* != .table) return bail(@src());
     var vals: [8]dnir.Value = undefined;
     var ni: usize = 0;
     while (ni < vals.len) : (ni += 1) vals[ni] = .void;
@@ -1323,9 +1353,9 @@ fn lowerRecordReturn(ctx: *LowerCtx, table: *const ast.Expr) Error!void {
     for (table.table.fields) |fld| {
         const nf = switch (fld) {
             .named => |n| n,
-            else => return error.UnsupportedConstruct,
+            else => return bail(@src()),
         };
-        if (count >= vals.len) return error.UnsupportedConstruct;
+        if (count >= vals.len) return bail(@src());
         vals[count] = try lowerExpr(ctx, nf.val);
         count += 1;
     }
@@ -1358,7 +1388,7 @@ fn lowerExprCons(
             const slot = ctx.locals.get(n.ident) orelse {
                 // Not a local — a module-level integer constant folds here.
                 if (ctx.module_consts.get(n.ident)) |mv| break :blk dnir.Value{ .i64 = mv };
-                return error.UnsupportedConstruct;
+                return bail(@src());
             };
             if (ctx.f64_slots.contains(slot)) {
                 const t = ctx.freshTemp();
@@ -1385,14 +1415,14 @@ fn lowerExprCons(
                 try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "strlen", .lhs = arg });
                 break :blk dnir.Value{ .temp = t };
             }
-            return error.UnsupportedConstruct;
+            return bail(@src());
         },
         .index => |ix| blk: {
             // `t[2]` on a positional table resolves to the element's own local,
             // so a constant index costs nothing at runtime. A non-constant index
             // needs a base pointer and computed offset — the native table
             // milestone — and is refused rather than mis-lowered.
-            if (ix.obj.* != .name) return error.UnsupportedConstruct;
+            if (ix.obj.* != .name) return bail(@src());
             // A memory-backed table indexes for real: one scaled load, constant
             // or not. This is the path that makes a shared token array work.
             if (ptrSlotOf(ctx, ix.obj)) |base| {
@@ -1411,7 +1441,7 @@ fn lowerExprCons(
                 break :blk try lowerDynamicIndex(ctx, ix.obj.name.ident, ix.key);
             const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{d}", .{ ix.obj.name.ident, n });
             defer ctx.alloc.free(key);
-            const slot = ctx.locals.get(key) orelse return error.UnsupportedConstruct;
+            const slot = ctx.locals.get(key) orelse return bail(@src());
             if (ctx.f64_slots.contains(slot)) {
                 const t = ctx.freshTemp();
                 try ctx.emit(.{ .op = .load_local, .result = t, .lhs = .{ .local = slot }, .ty = .f64 });
@@ -1425,9 +1455,9 @@ fn lowerExprCons(
             if (dnir_hardware.parseIntrinsic(mc.name)) |hw| {
                 return try lowerHwIntrinsic(ctx, hw, mc.args);
             }
-            return error.UnsupportedConstruct;
+            return bail(@src());
         },
-        else => error.UnsupportedConstruct,
+        else => bail(@src()),
     };
 }
 
@@ -1470,7 +1500,7 @@ fn lowerShortCircuit(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *
     // kernel call, a float literal, an f64 slot — the AST backend already lowers
     // the whole `cond and a or b` ternary correctly against f64 records, and
     // taking it over here regressed Pass 11 WP-04. Refusing keeps that fallback.
-    if (exprTouchesF64(ctx, lhs) or exprTouchesF64(ctx, rhs)) return error.UnsupportedConstruct;
+    if (exprTouchesF64(ctx, lhs) or exprTouchesF64(ctx, rhs)) return bail(@src());
 
     const slot = ctx.freshTemp();
     try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = try lowerExpr(ctx, lhs), .ty = .any });
@@ -1510,7 +1540,7 @@ fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const a
             .gt => .gt,
             .leq => .leq,
             .geq => .geq,
-            else => return error.UnsupportedConstruct,
+            else => return bail(@src()),
         },
         .lhs = try lowerExpr(ctx, lhs),
         .rhs = try lowerExpr(ctx, rhs),
@@ -1521,7 +1551,7 @@ fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const a
 
 fn emitScalarCallArgs(ctx: *LowerCtx, args: []const *ast.Expr) Error!void {
     if (args.len == 0) return;
-    if (args.len > 8) return error.UnsupportedConstruct;
+    if (args.len > 8) return bail(@src());
 
     // Two phases, deliberately. `mov_arg` writes x0..x7, and evaluating a later
     // argument may itself contain a call that clobbers them: in
@@ -1538,10 +1568,10 @@ fn emitScalarCallArgs(ctx: *LowerCtx, args: []const *ast.Expr) Error!void {
         if (arg.* == .name) {
             if (scalarRecordForName(ctx, arg.name.ident)) |rec| {
                 for (rec.fields) |fname| {
-                    if (count >= 8) return error.UnsupportedConstruct;
+                    if (count >= 8) return bail(@src());
                     const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ arg.name.ident, fname });
                     defer ctx.alloc.free(key);
-                    const field_slot = ctx.locals.get(key) orelse return error.UnsupportedConstruct;
+                    const field_slot = ctx.locals.get(key) orelse return bail(@src());
                     values[count] = .{ .local = field_slot };
                     count += 1;
                 }
@@ -1551,13 +1581,13 @@ fn emitScalarCallArgs(ctx: *LowerCtx, args: []const *ast.Expr) Error!void {
             // to be materialized into frame memory first — the elements are
             // registers until something needs a pointer to them.
             if (nameIsPositionalTable(ctx, arg.name.ident)) {
-                if (count >= 8) return error.UnsupportedConstruct;
+                if (count >= 8) return bail(@src());
                 values[count] = .{ .local = try materializeTableSlots(ctx, arg.name.ident) };
                 count += 1;
                 continue;
             }
         }
-        if (count >= 8) return error.UnsupportedConstruct;
+        if (count >= 8) return bail(@src());
         values[count] = try lowerExpr(ctx, arg);
         count += 1;
     }
@@ -1615,7 +1645,7 @@ fn scalarCallLhs(ctx: *LowerCtx, args: []const *ast.Expr) Error!dnir.Value {
 }
 
 fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnConsumption) Error!dnir.Value {
-    if (expr.* != .call) return error.UnsupportedConstruct;
+    if (expr.* != .call) return bail(@src());
     const c = expr.call;
     const discard = consumption == .discard;
     if (c.func.* == .field) {
@@ -1691,6 +1721,9 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
         if (ctx.f64_kernels.contains(callee)) {
             return try lowerF64KernelCall(ctx, callee, c.args);
         }
+        if (std.mem.eql(u8, callee, "print")) {
+            return lowerPrint(ctx, c.args);
+        }
         const arg0 = try scalarCallLhs(ctx, c.args);
         if (discard) {
             try ctx.emit(.{
@@ -1709,11 +1742,43 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
         });
         return .{ .temp = t };
     }
-    return error.UnsupportedConstruct;
+    return bail(@src());
+}
+
+/// `print(v)` — sovereign native output (DNIR `print_value`). Zero-arg prints a
+/// blank line; one typed scalar arg lowers to `puts`/`printf` in the backend.
+/// Unsupported arg shapes (multi-arg, tables, records) fall through to the AST
+/// path, which reports the honest DNB001 — the direct subset still refuses
+/// rather than boxing.
+fn lowerPrint(ctx: *LowerCtx, args: []const *ast.Expr) Error!dnir.Value {
+    if (args.len == 0) {
+        try ctx.emit(.{ .op = .print_value });
+        return .void;
+    }
+    if (args.len != 1) return bail(@src());
+    const arg = args[0];
+    const v = try lowerExpr(ctx, arg);
+    const ty: RT = if (exprIsStr(ctx, arg)) .str else if (exprIsF64Value(ctx, arg)) .f64 else .i64;
+    try ctx.emit(.{ .op = .print_value, .lhs = v, .ty = ty });
+    return .void;
+}
+
+/// True when a `print` argument is a known f64 value: float literal, an f64
+/// local slot, or a recognized f64 kernel call.
+fn exprIsF64Value(ctx: *LowerCtx, expr: *const ast.Expr) bool {
+    return switch (expr.*) {
+        .float_lit => true,
+        .name => |n| blk: {
+            const slot = ctx.locals.get(n.ident) orelse break :blk false;
+            break :blk ctx.f64_slots.contains(slot);
+        },
+        .call => exprReturnsF64(ctx, expr),
+        else => false,
+    };
 }
 
 fn lowerF64KernelCall(ctx: *LowerCtx, callee: []const u8, args: []const *ast.Expr) Error!dnir.Value {
-    if (args.len == 0) return error.UnsupportedConstruct;
+    if (args.len == 0) return bail(@src());
     var slot: u32 = 0;
     for (args) |arg| {
         switch (arg.*) {
@@ -1725,28 +1790,28 @@ fn lowerF64KernelCall(ctx: *LowerCtx, callee: []const u8, args: []const *ast.Exp
                     const val = switch (fld) {
                         .named => |nf| nf.val,
                         .positional => |v| v,
-                        else => return error.UnsupportedConstruct,
+                        else => return bail(@src()),
                     };
                     try ctx.emit(.{ .op = .fp_mov_arg, .result = slot, .lhs = try lowerExpr(ctx, val) });
                     slot += 1;
-                    if (slot > 8) return error.UnsupportedConstruct;
+                    if (slot > 8) return bail(@src());
                 }
             },
             .name => |n| {
                 if (try emitF64RecordFieldsFromName(ctx, n.ident, &slot)) {} else {
                     try ctx.emit(.{ .op = .fp_mov_arg, .result = slot, .lhs = try lowerExpr(ctx, arg) });
                     slot += 1;
-                    if (slot > 8) return error.UnsupportedConstruct;
+                    if (slot > 8) return bail(@src());
                 }
             },
             else => {
                 try ctx.emit(.{ .op = .fp_mov_arg, .result = slot, .lhs = try lowerExpr(ctx, arg) });
                 slot += 1;
-                if (slot > 8) return error.UnsupportedConstruct;
+                if (slot > 8) return bail(@src());
             },
         }
     }
-    if (slot == 0) return error.UnsupportedConstruct;
+    if (slot == 0) return bail(@src());
     const t = ctx.freshTemp();
     try ctx.emit(.{ .op = .call_direct, .result = t, .callee = callee, .ty = .f64 });
     return .{ .temp = t };
@@ -1763,7 +1828,7 @@ fn lowerHwIntrinsic(ctx: *LowerCtx, hw: dnir.HwIntrinsic, args: []const *const a
             return .{ .i64 = 0 };
         },
         .popcount, .clz, .ctz => {
-            if (args.len != 1) return error.UnsupportedConstruct;
+            if (args.len != 1) return bail(@src());
             const t = ctx.freshTemp();
             try ctx.emit(.{
                 .op = .hw_unary,
@@ -1773,7 +1838,7 @@ fn lowerHwIntrinsic(ctx: *LowerCtx, hw: dnir.HwIntrinsic, args: []const *const a
             });
             return .{ .temp = t };
         },
-        .none => error.UnsupportedConstruct,
+        .none => bail(@src()),
     };
 }
 
@@ -1786,7 +1851,7 @@ fn ensureExtern(ctx: *LowerCtx, alias: []const u8, field: []const u8, sym: []con
 }
 
 fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
-    if (expr.* != .field) return error.UnsupportedConstruct;
+    if (expr.* != .field) return bail(@src());
     const fld = expr.field;
     if (fld.obj.* == .name) {
         // Module-level descriptor constant: `Kind.ident` folds to an immediate.
