@@ -3209,6 +3209,30 @@ pub const Parser = struct {
         // parse_suffixed_expr breaks on ':' when followed by a type-like token.
         if (first.* == .name and nxt.kind == .colon) {
             _ = try self.adv(); // consume ':'
+            // Pass 92 deleted prefix-`@`, so the canonical spelling of a
+            // case-set is `kind: { name, number, eof }` — Pass 100 §7 and the
+            // golden `token`/`lexer` in §20 are written that way. The machinery
+            // already exists (parse_descriptor_table handles bare cases AND
+            // `circle(r: f64)` payloads); only the `@` gate kept it unreachable,
+            // which is why `kind: @{ … }` checks clean and `kind: { … }` does
+            // not. gap[025].
+            //
+            // Routed on LOOKAHEAD, not unconditionally: `{ x: i64, y: i64 }` is
+            // a record type and must keep going to parse_type. A case-set is a
+            // name followed by `,` or `(` — a record field always has `:`.
+            if ((try self.pk()).kind == .lbrace) caseset: {
+                const saved = self.lex.saveState();
+                _ = try self.adv();
+                var is_caseset = false;
+                if ((try self.pk()).kind == .name) {
+                    _ = try self.adv();
+                    const after = (try self.pk()).kind;
+                    is_caseset = after == .comma or after == .lparen;
+                }
+                self.lex.restoreState(saved);
+                if (!is_caseset) break :caseset;
+                return try self.stmt_from_descriptor(first.name.ident, first.loc());
+            }
             // Pass 3: `Color: @{ Red, Green, Blue }` keywordless enum descriptor
             if ((try self.pk()).kind == .at) {
                 _ = try self.adv();
