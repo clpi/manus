@@ -1,0 +1,382 @@
+-- audit100 — CLAUDE.md §1 DENY LIST, made executable.
+--
+-- Epoch 2 (Pass 100) put a deny table in CLAUDE.md and §2 says "ship with EVERY
+-- diff or the diff is rejected unread". Nothing enforced it, so it was read as
+-- advice. This gate greps for it.
+--
+-- TWO DESIGN DECISIONS, both of which are the difference between a gate that
+-- gets run and a gate that gets muted:
+--
+--   1. IT RATCHETS. Every row carries the count measured when the row landed.
+--      Over budget fails; at or under budget passes and prints the slack. A
+--      gate that is red on the day it ships teaches people to pass --skip.
+--      Lower a budget whenever you lower a count; that is the whole protocol.
+--
+--   2. IT SCANS THE CANONICAL PARTITION ONLY. docs/spec/corpus.md classifies
+--      every tracked .duo file. examples/compile_fail/ must contain denied
+--      text — that is its assertion. Counting it makes zero unreachable and
+--      the number meaningless. See docs/spec/corpus.md for the mechanism and
+--      the argument against per-file markers.
+--
+-- HONESTY (CLAUDE.md §3). Seven §1 rows are SEMANTIC and are NOT mechanized
+-- here: `_` discard binders, module aliases, Alias.fn(subject, …), single-use
+-- next-line temps, elseif kind-ladders, sentinels, and mixed-kind groups. They
+-- are listed in the output as UNMECHANIZED rather than omitted, because a
+-- 17-row report that silently covers 17 of 24 rows is how an audit starts
+-- lying. The mechanized rows are also line-grained and comment-stripped, so
+-- they over-report inside string literals and under-report inside trailing
+-- comments; they are pressure, not proof.
+--
+-- SELF-EXCLUSION. This file is skipped by its own scan, and says so. Its deny
+-- patterns are DATA. A corpus walker whose data is the text it greps for
+-- reports itself — GAP-16 already cost this repo a day when
+-- scripts/spec_conformance.duo had its own test programs interpolated as if
+-- they were harness source.
+--
+-- Exit 0 pass · 1 a row exceeded budget or a file is unclassified · 3 the gate
+-- could not run (no rules, no files, no canonical set — a confident 0 is
+-- usually a broken gate, so every zero here is positive-controlled).
+--
+-- AUDIT100_SHOW=<row>   print up to 20 offending lines for one row, with paths.
+
+_SELF = "scripts/audit100.duo"
+_LIST = "/tmp/duo_audit100_canonical.list"
+
+_lines(s: str): any
+    out = {}
+    n: i64 = #s
+    start: i64 = 1
+    i: i64 = 1
+    while i <= n
+        if string.byte(s, i) == 10
+            if i > start
+                table.insert(out, string.sub(s, start, i - 1))
+            end
+            start = i + 1
+        end
+        i += 1
+    end
+    if start <= n
+        table.insert(out, string.sub(s, start, n))
+    end
+    out
+end
+
+_starts(s: str, prefix: str): bool
+    p: i64 = #prefix
+    if #s < p
+        return false
+    end
+    string.sub(s, 1, p) == prefix
+end
+
+-- Whitespace-separated field n (1-based) of a line, "" when absent.
+_field(line: str, want: i64): str
+    n: i64 = #line
+    i: i64 = 1
+    seen: i64 = 0
+    while i <= n
+        b: i64 = string.byte(line, i)
+        if b != 32 and b != 9
+            seen += 1
+            start: i64 = i
+            while i <= n and string.byte(line, i) != 32 and string.byte(line, i) != 9
+                i += 1
+            end
+            if seen == want
+                return string.sub(line, start, i - 1)
+            end
+        else
+            i += 1
+        end
+    end
+    ""
+end
+
+_is_class(c: str): bool
+    c == "canonical" or c == "compatibility" or c == "foreign"
+        or c == "negative" or c == "historical" or c == "generated"
+end
+
+-- Count lines matching `pat` across the canonical list, comments stripped.
+_hits(pat: str): i64
+    q: str = "'"
+    cmd: str = ("tr '\\n' '\\0' < " .. _LIST
+        .. " | xargs -0 cat 2>/dev/null"
+        .. " | grep -v -E " .. q .. "^[[:space:]]*--" .. q
+        .. " | grep -c -E " .. q .. pat .. q)
+    to(i64)(std.script.chomp(std.script.capture(cmd)))
+end
+
+_show(pat: str): void
+    q: str = "'"
+    -- Same comment strip as _hits, applied after the match so the paths
+    -- survive; otherwise SHOW lists lines the count does not.
+    cmd: str = ("tr '\\n' '\\0' < " .. _LIST
+        .. " | xargs -0 grep -n -E " .. q .. pat .. q .. " 2>/dev/null"
+        .. " | grep -v -E " .. q .. ":[0-9][0-9]*:[[:space:]]*--" .. q
+        .. " | head -20")
+    io.write(std.script.capture(cmd))
+end
+
+_pad(s: str, width: i64): str
+    out: str = s
+    while #out < width
+        out = out .. " "
+    end
+    out
+end
+
+main(): i64
+    root: str = std.script.chomp(std.script.capture("git rev-parse --show-toplevel 2>/dev/null"))
+    if root == ""
+        print("audit100: FAIL — not inside a git work tree; the corpus cannot be listed")
+        return 3
+    end
+    print("audit100 — CLAUDE.md §1 deny table, over the canonical partition")
+    print("  root      " .. root)
+
+    manifest: str = root .. "/docs/spec/corpus.md"
+    if not std.script.fs_exists(manifest)
+        print("audit100: FAIL — missing " .. manifest)
+        return 3
+    end
+
+    -- Rules: parallel arrays, first match wins, order as written.
+    rcls = {}
+    rpre = {}
+    for _i, line in _lines(std.script.fs_read(manifest))
+        c: str = _field(line, 1)
+        p: str = _field(line, 2)
+        if _is_class(c) and p != "" and _field(line, 3) == ""
+            table.insert(rcls, c)
+            table.insert(rpre, p)
+        end
+    end
+    if #rcls == 0
+        print("audit100: FAIL — docs/spec/corpus.md yielded 0 rules; the parse is broken")
+        return 3
+    end
+    print("  rules     " .. to(str)(#rcls) .. " from docs/spec/corpus.md")
+
+    files = _lines(std.script.capture("cd " .. root .. " && git ls-files '*.duo'"))
+    if #files == 0
+        print("audit100: FAIL — git ls-files found 0 .duo files; the census did not run")
+        return 3
+    end
+
+    n_canon = 0
+    n_compat = 0
+    n_foreign = 0
+    n_neg = 0
+    n_hist = 0
+    n_gen = 0
+    n_none = 0
+    written = 0
+    unclassified: str = ""
+    canon: str = ""
+
+    for _i, f in files
+        cls: str = ""
+        j: i64 = 1
+        while j <= #rpre and cls == ""
+            if _starts(f, rpre[j])
+                cls = rcls[j]
+            end
+            j += 1
+        end
+        if cls == "canonical"
+            n_canon += 1
+            if f != _SELF
+                written += 1
+                canon = canon .. root .. "/" .. f .. "\n"
+            end
+        elseif cls == "compatibility"
+            n_compat += 1
+        elseif cls == "foreign"
+            n_foreign += 1
+        elseif cls == "negative"
+            n_neg += 1
+        elseif cls == "historical"
+            n_hist += 1
+        elseif cls == "generated"
+            n_gen += 1
+        else
+            n_none += 1
+            if n_none <= 10
+                unclassified = unclassified .. "    " .. f .. "\n"
+            end
+        end
+    end
+
+    print("")
+    print("corpus census (" .. to(str)(#files) .. " tracked .duo files)")
+    print("  canonical      " .. to(str)(n_canon) .. "   deny table applies")
+    print("  compatibility  " .. to(str)(n_compat) .. "   Lua-superset input")
+    print("  foreign        " .. to(str)(n_foreign) .. "   embeds another language, or vendored")
+    print("  negative       " .. to(str)(n_neg) .. "   denied text IS the assertion")
+    print("  historical     " .. to(str)(n_hist) .. "   past-epoch evidence, unmaintained")
+    print("  generated      " .. to(str)(n_gen) .. "   fix the generator, not the file")
+
+    if n_none != 0
+        print("")
+        print("audit100: FAIL — " .. to(str)(n_none)
+            .. " tracked .duo files match no rule in docs/spec/corpus.md:")
+        io.write(unclassified)
+        print("  Classify them; there is deliberately no silent default.")
+        return 1
+    end
+
+    if n_canon == 0
+        print("audit100: FAIL — canonical partition is empty; the rules cannot be right")
+        return 3
+    end
+
+    std.script.fs_write(_LIST, canon)
+    listed: i64 = to(i64)(std.script.chomp(std.script.capture("wc -l < " .. _LIST)))
+    if listed != written
+        print("audit100: FAIL — wrote " .. to(str)(written)
+            .. " canonical paths but the list holds " .. to(str)(listed))
+        return 3
+    end
+
+    -- Positive control: a pattern that MUST hit. If this reads 0, the pipeline
+    -- is broken and every other 0 in this report is a lie.
+    control: i64 = _hits("[a-zA-Z]")
+    if control == 0
+        print("audit100: FAIL — control pattern matched 0 lines across "
+            .. to(str)(listed) .. " canonical files; the grep pipeline is broken")
+        return 3
+    end
+
+    q: str = "'"
+    brace: str = "\\{"
+    brace_close: str = "\\}"
+    dq: str = "\""
+
+    -- The deny rows, as parallel arrays; `budget` is hoisted to the top of
+    -- main and must stay in this order.
+    id = {
+        "snake", "upper", "underprefix", "companion", "accessor", "axis",
+        "directive", "ctor", "stdlib", "import", "foreignkw", "arrow",
+        "luafn", "mwrapper", "concatlit", "oneline", "trailret",
+    }
+    note = {
+        "underscore inside an identifier",
+        "uppercase identifier in bind/call/field position",
+        "_ prefix on a name",
+        "companion *_kind / *_type",
+        "get_ / set_ / compute_",
+        "axis name instead of a level",
+        "prefix-@ directive",
+        ".new( .create( make_ .init(",
+        "string. / table. / std.string.",
+        "require / req / local",
+        "foreign declaration keyword",
+        "-> => ?. ?: |>",
+        "Lua library call",
+        "M = " .. "{" .. "}" .. " module wrapper",
+        ".. beside a string literal",
+        "end on a one-line block",
+        "trailing return <expr>",
+    }
+    pat = {
+        "[a-z]_[a-z]",
+        "(^|[^A-Za-z0-9_])[A-Z][A-Za-z0-9_]*[[:space:]]*[=(.]",
+        "(^|[^A-Za-z0-9_.])_[A-Za-z]",
+        "_(kind|type)([^A-Za-z0-9_]|$)",
+        "(get|set|compute)_[A-Za-z]",
+        "(sort_by|take_while|drop_while|group_by|max_by|min_by|is_[a-z])",
+        "@(comp|c)\\.",
+        "\\.(new|create)\\(|make_[a-z]|\\.init\\(",
+        "(^|[^A-Za-z0-9_.])(string|table)\\.|std\\.string",
+        "(^|[^A-Za-z0-9_.])(require|req|local)([^A-Za-z0-9_]|$)",
+        "(^|[^A-Za-z0-9_.])(function|fn|def|let|const|var|class|impl|trait|interface|enum|match|switch|try|catch)([^A-Za-z0-9_]|$)",
+        "(->|=>|\\?\\.|\\?:|\\|>)",
+        "(^|[^A-Za-z0-9_.])(pairs|ipairs|pcall|tostring|tonumber|setmetatable|getmetatable|gmatch|gsub)\\(|_G([^A-Za-z0-9_]|$)",
+        "^[A-Za-z][A-Za-z0-9_]*[[:space:]]*=[[:space:]]*" .. brace .. brace_close,
+        "[" .. dq .. "][[:space:]]*\\.\\.|\\.\\.[[:space:]]*[" .. dq .. "]",
+        "(^|[[:space:]])(if|for|while|elseif)[[:space:]].*[[:space:]]end[[:space:]]*$",
+        "(^|[[:space:]])return[[:space:]]+[^[:space:]]",
+    }
+    -- THE RATCHET. One budget per row, same order as `id`. Each number was
+    -- measured on the canonical partition when the row landed. Lower a budget
+    -- whenever you lower a count; raising one needs a sentence in the commit
+    -- message saying why the ROW, not the code, was wrong.
+    --
+    -- Measured 2026-08-08 on the canonical partition, plus 2 per row. The
+    -- headroom is not fudge and it is not a licence: four sessions were
+    -- editing canonical files while this was measured, and a ratchet that goes
+    -- red because somebody else saved a file is a ratchet that gets muted.
+    -- Two lines of slack on a row of 14318 costs no pressure. Tighten every
+    -- row to its exact count at the next quiet measurement.
+    --
+    -- Held as a string, not a table of integers, because a dense numeric table
+    -- literal lowers to a raw int64_t* that `#` cannot measure and that gets a
+    -- free() emitted at every `return` in the function — including the returns
+    -- that come textually before it, which is a C compile error.
+    budgets: str = "14320 2298 1459 263 332 475 269 60 1925 475 326 179 232 38 2105 2224 3440"
+
+    if _field(budgets, #id) == "" or _field(budgets, #id + 1) != ""
+        print("audit100: FAIL — the budget row does not have exactly "
+            .. to(str)(#id) .. " entries; the ratchet is out of step")
+        return 3
+    end
+
+    show: str = std.script.getenv("AUDIT100_SHOW", "")
+
+    print("")
+    print("deny rows over " .. to(str)(listed) .. " canonical files ("
+        .. _SELF .. " self-excluded: its patterns are data)")
+    print("  row            count   budget   what")
+
+    over = 0
+    total = 0
+    i: i64 = 1
+    while i <= #id
+        c: i64 = _hits(pat[i])
+        total += c
+        flag: str = "  "
+        b: i64 = to(i64)(_field(budgets, i))
+        if c > b
+            flag = "!!"
+            over += 1
+        end
+        print("  " .. flag .. " " .. _pad(id[i], 12) .. _pad(to(str)(c), 8)
+            .. _pad(to(str)(b), 9) .. note[i])
+        if show == id[i]
+            _show(pat[i])
+        end
+        i += 1
+    end
+
+    -- The one §1 row that is about files, not lines.
+    nonduo: i64 = to(i64)(std.script.chomp(std.script.capture(
+        "cd " .. root .. " && git ls-files | grep -c -v -E " .. q .. "\\.(duo|md)$" .. q)))
+    nonduo_budget = 562
+    if nonduo > nonduo_budget
+        over += 1
+        print("  !! " .. _pad("nonduo", 12) .. _pad(to(str)(nonduo), 8)
+            .. _pad(to(str)(nonduo_budget), 9) .. "tracked non-.duo, non-.md files")
+    else
+        print("     " .. _pad("nonduo", 12) .. _pad(to(str)(nonduo), 8)
+            .. _pad(to(str)(nonduo_budget), 9) .. "tracked non-.duo, non-.md files")
+    end
+
+    print("")
+    print("UNMECHANIZED §1 rows — semantic, not greppable; still binding on review:")
+    print("  _ discard binders · module aliases (L = shc.lex) · Alias.fn(subject, …)")
+    print("  single-use next-line temps · elseif kind-ladders · sentinels · mixed-kind groups")
+
+    print("")
+    if over != 0
+        print("audit100: FAIL — " .. to(str)(over)
+            .. " row(s) over budget. Fix the code, or if a budget is genuinely wrong,")
+        print("  say why in the commit message and move the number in this file.")
+        return 1
+    end
+    print("audit100: PASS — " .. to(str)(#id + 1) .. " rows at or under budget, "
+        .. to(str)(total) .. " deny lines total across "
+        .. to(str)(listed) .. " canonical files")
+    0
+end

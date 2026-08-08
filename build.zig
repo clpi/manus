@@ -171,6 +171,17 @@ pub fn build(b: *std.Build) void {
     const repo_hygiene_step = b.step("repo-hygiene", "Pass 11 WP-12: forbidden root artifacts and tracked agent noise");
     repo_hygiene_step.dependOn(&repo_hygiene_cmd.step);
 
+    // audit100 -- CLAUDE.md section 1's deny table, executable. It scans the
+    // canonical partition of docs/spec/corpus.md only, because compile_fail
+    // fixtures are SUPPOSED to contain the denied text, and it ratchets off
+    // measured budgets rather than gating at zero, because a gate that is red
+    // on the day it ships is a gate people learn to skip.
+    const audit100_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/audit100.duo" });
+    audit100_cmd.setCwd(b.path("."));
+    audit100_cmd.step.dependOn(b.getInstallStep());
+    const audit100_step = b.step("audit100", "Pass 100 deny table over the canonical .duo corpus; ratchets each row");
+    audit100_step.dependOn(&audit100_cmd.step);
+
     const repro_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/reproducibility_smoke.duo" });
     repro_cmd.setCwd(b.path("."));
     const repro_step = b.step("reproducibility-smoke", "Pass 11 WP-13: ReleaseFast compiler binary identity across clean rebuilds");
