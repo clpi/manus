@@ -726,7 +726,7 @@ fn tryEmitTailDemandReturn(ctx: *LowerCtx, block: *const ast.Block) Error!bool {
         return false;
     }
     const ret_ty: RT = if (exprIsF64(ctx, r.expr)) .f64 else .any;
-    if (r.expr.* == .table and ctx.ret_record != null) {
+    if (ctx.ret_record != null and (r.expr.* == .table or isRecordLocalName(ctx, r.expr))) {
         try lowerRecordReturn(ctx, r.expr);
         return true;
     }
@@ -919,7 +919,9 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
         .ret => |r| {
             if (r.vals.len == 0) {
                 try ctx.emit(.{ .op = .ret, .lhs = .{ .i64 = 0 } });
-            } else if (r.vals[0].* == .table) {
+            } else if (r.vals[0].* == .table or
+                (ctx.ret_record != null and isRecordLocalName(ctx, r.vals[0])))
+            {
                 try lowerRecordReturn(ctx, r.vals[0]);
             } else {
                 const ret_ty: RT = if (exprIsF64(ctx, r.vals[0])) .f64 else .any;
@@ -1560,12 +1562,54 @@ fn emitF64RecordFieldsFromName(ctx: *LowerCtx, name: []const u8, slot: *u32) Err
     return false;
 }
 
+/// Does this name refer to a local of the function's RETURN record type?
+/// Checked by the presence of its first exploded field slot, which is the same
+/// evidence `lowerRecordReturn` then relies on — so the dispatch cannot admit
+/// a shape the arm would refuse.
+fn isRecordLocalName(ctx: *LowerCtx, e: *const ast.Expr) bool {
+    if (e.* != .name) return false;
+    const rec_name = ctx.ret_record orelse return false;
+    const rec = findRecordName(ctx.records, .{ .named = rec_name }) orelse return false;
+    if (rec.fields.len == 0) return false;
+    var buf: [256]u8 = undefined;
+    const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ e.name.ident, rec.fields[0] }) catch return false;
+    return ctx.locals.get(key) != null;
+}
+
 fn lowerRecordReturn(ctx: *LowerCtx, table: *const ast.Expr) Error!void {
-    if (table.* != .table) return bail(@src());
     const rec_name = ctx.ret_record orelse return bail(@src());
     const rec = findRecordName(ctx.records, .{ .named = rec_name }) orelse return bail(@src());
     const count: u32 = @intCast(rec.fields.len);
     if (count == 0 or count > max_record_fields) return bail(@src());
+
+    // `return r` where `r` is a record-typed LOCAL rather than a literal.
+    //
+    // A record local is stored EXPLODED — one local per field, keyed
+    // "name.field" — and those slots already hold the values (reading `r.a`
+    // works). They only need gathering in DESCRIPTOR order, the same order the
+    // literal path below is careful to use.
+    if (table.* == .name) {
+        const base = table.name.ident;
+        const nvals = try ctx.alloc.alloc(dnir.Value, count);
+        errdefer ctx.alloc.free(nvals);
+        for (rec.fields, 0..) |fname, i| {
+            const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ base, fname });
+            defer ctx.alloc.free(key);
+            const slot = ctx.locals.get(key) orelse return bailWith(@src(), fname);
+            nvals[i] = .{ .local = slot };
+        }
+        try ctx.emit(.{
+            .op = .ret_record,
+            .record = rec_name,
+            .lhs = nvals[0],
+            .rhs = if (count > 1) nvals[1] else .void,
+            .third = if (count > 2) nvals[2] else .void,
+            .vals = nvals,
+            .result = count,
+        });
+        return;
+    }
+    if (table.* != .table) return bail(@src());
 
     // Order by the DESCRIPTOR, not by the literal.
     //
