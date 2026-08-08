@@ -9,7 +9,7 @@ DUO = "env DUO_BUILD_REPORT=plain " .. DUO
 
 global any_failed: i64 = 0
 
-pass(msg: str)
+pass(msg: str): void
     s.echo("OK:   " .. msg)
 end
 
