@@ -84,7 +84,7 @@ pub fn build(b: *std.Build) void {
     report_styling_step.dependOn(&no_ansi_reports_cmd.step);
     test_step.dependOn(&no_ansi_reports_cmd.step);
 
-    const gpu_bench_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_gpu_benchmark.sh" });
+    const gpu_bench_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/run_gpu_benchmark.duo" });
     gpu_bench_cmd.setCwd(b.path("."));
     gpu_bench_cmd.step.dependOn(b.getInstallStep());
     const gpu_bench_step = b.step("gpu-bench", "Run Duo vs GPU Metal benchmark");
