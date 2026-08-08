@@ -38,6 +38,7 @@ Lexer: {
     peeked_token: Tok,
     has_error: bool,
     error_loc: Loc,
+    error_code: i64,
     hint_count: i64,
     hint_0: str,
     hint_1: str,
@@ -62,6 +63,7 @@ new(src: str, file: str): Lexer
         peeked_token = dummy_tok,
         has_error = false,
         error_loc = dummy_loc,
+        error_code = 0,
         hint_count = 0,
         hint_0 = "",
         hint_1 = "",
@@ -160,6 +162,25 @@ long_bracket_level(self: Lexer): i64
     lvl
 end
 
+-- GAP-017: a lexer error is a REJECTION the caller can count, not a process
+-- abort. `error(...)` killed the whole run, so one bad file truncated any corpus
+-- walk and silently shrank the denominator — and it made production dispatch
+-- impossible, because routing the compiler through this lexer would have turned
+-- every malformed source into a bare abort with no location.
+--
+-- Codes mirror src/lexer.zig's LexError order so the host maps them directly:
+--   1 UnterminatedString  2 UnterminatedLongString  3 InvalidEscape
+--   4 UnexpectedChar
+-- First error wins: later failures are consequences of the first, and reporting
+-- the last one points at the wrong place.
+_fail(self: Lexer, code: i64)
+    if not self.has_error
+        self.has_error = true
+        self.error_code = code
+        self.error_loc = cur_loc(self)
+    end
+end
+
 skip_long(self: Lexer, level: i64)
     adv(self)
     i = 0
@@ -184,7 +205,7 @@ skip_long(self: Lexer, level: i64)
             adv(self)
         end
     end
-    error("UnterminatedLongString")
+    _fail(self, 2)
 end
 
 skip_ws(self: Lexer)
@@ -269,7 +290,8 @@ read_long_str(self: Lexer, level: i64): str
             adv(self)
         end
     end
-    error("UnterminatedLongString")
+    _fail(self, 2)
+    ""
 end
 
 read_str(self: Lexer, quote: i64): str
@@ -282,15 +304,22 @@ read_str(self: Lexer, quote: i64): str
             adv(self)
             return s
         end
-        if c == 10 or c == 13 error("UnterminatedString") end
+        if c == 10 or c == 13
+            _fail(self, 1)
+            return ""
+        end
         if c == 92
             adv(self)
-            if self.pos > string.len(self.src) error("UnterminatedString") end
+            if self.pos > string.len(self.src)
+                _fail(self, 1)
+                return ""
+            end
             esc = peek_char(self)
             if esc == 120
                 adv(self)
                 if self.pos > string.len(self.src) or not is_hex(peek_char(self))
-                    error("InvalidEscape")
+                    _fail(self, 3)
+                    return ""
                 end
                 adv(self)
                 if self.pos <= string.len(self.src) and is_hex(peek_char(self))
@@ -298,16 +327,23 @@ read_str(self: Lexer, quote: i64): str
                 end
             elseif esc == 117
                 adv(self)
-                if peek_char(self) != 123 error("InvalidEscape") end
+                if peek_char(self) != 123
+                    _fail(self, 3)
+                    return ""
+                end
                 adv(self)
                 has_digit = false
                 while self.pos <= string.len(self.src) and peek_char(self) != 125
-                    if not is_hex(peek_char(self)) error("InvalidEscape") end
+                    if not is_hex(peek_char(self))
+                        _fail(self, 3)
+                        return ""
+                    end
                     has_digit = true
                     adv(self)
                 end
                 if not has_digit or self.pos > string.len(self.src) or peek_char(self) != 125
-                    error("InvalidEscape")
+                    _fail(self, 3)
+                    return ""
                 end
                 adv(self)
             elseif esc == 122
@@ -332,7 +368,8 @@ read_str(self: Lexer, quote: i64): str
             adv(self)
         end
     end
-    error("UnterminatedString")
+    _fail(self, 1)
+    ""
 end
 
 read_num(self: Lexer): Tok
@@ -602,7 +639,8 @@ next_tok(self: Lexer): Tok
     elseif c == 96
         return { kind = std.compiler.token.KIND_BACKTICK, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     else
-        error("UnexpectedChar")
+        _fail(self, 4)
+        return { kind = std.compiler.token.KIND_EOF, loc = l, text = "", int_val = 0, float_val = 0.0 }
     end
 end
 
@@ -724,6 +762,21 @@ end
 -- Returns the token count, or -1 if `cap` or `txtcap` is too small — never a
 -- truncated stream, because a short read that looks like a short file is the
 -- one failure a parser cannot detect.
+-- The rejection's location, for a host that has just been handed a negative
+-- code. Re-lexes: this is the cold path, taken once per failed file.
+@c.export("duo_lexer_error_line")
+duo_lexer_error_line(src: str, file: str): i64
+    lex = new(src, file)
+    n: i64 = 0
+    while n < 10000000
+        tok = next_tok(lex)
+        n += 1
+        if lex.has_error return lex.error_loc.line end
+        if tok.kind == std.compiler.token.KIND_EOF return 0 end
+    end
+    0
+end
+
 @c.export("duo_lexer_tokenize_full")
 duo_lexer_tokenize_full(src: str, file: str, out: i64, cap: i64, txt: i64, txtcap: i64): i64
     lex = new(src, file)
@@ -749,6 +802,11 @@ duo_lexer_tokenize_full(src: str, file: str, out: i64, cap: i64, txt: i64, txtca
         mem.write_f64(buf, (n * 7 + 6) * 8, tok.float_val)
         toff = toff + tlen
         n += 1
+        -- GAP-017: a rejection is returned, not raised. Negative codes are
+        -- offset by 100 so they cannot collide with -1 (buffer too small):
+        -- -101 UnterminatedString, -102 UnterminatedLongString,
+        -- -103 InvalidEscape, -104 UnexpectedChar.
+        if lex.has_error return 0 - 100 - lex.error_code end
         if tok.kind == std.compiler.token.KIND_EOF return n end
     end
     -1
@@ -766,6 +824,7 @@ duo_lexer_tokenize_all(src: str, file: str, out: i64, cap: i64): i64
         mem.write_i64(buf, (n * 4 + 2) * 8, tok.loc.col)
         mem.write_i64(buf, (n * 4 + 3) * 8, tok.int_val)
         n += 1
+        if lex.has_error return 0 - 100 - lex.error_code end
         if tok.kind == std.compiler.token.KIND_EOF return n end
     end
     -1

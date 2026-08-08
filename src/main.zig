@@ -2,6 +2,8 @@ const std = @import("std");
 const builtin = @import("builtin");
 const Io = std.Io;
 const Lexer = @import("lexer.zig").Lexer;
+const duo_lexer_bridge = @import("duo_lexer_bridge.zig");
+const duo_lexer_dispatch = @import("duo_lexer_dispatch.zig");
 const Parser = @import("parser.zig").Parser;
 const ast = @import("ast.zig");
 const Sema = @import("sema.zig").Sema;
@@ -2753,11 +2755,46 @@ fn alias_has_macro_syntax(alias: ast.AliasDef) bool {
     return false;
 }
 
+/// SH-03 production dispatch. When the tokenize authority is Duo, lex the whole
+/// source through `lib/std/compiler/lexer.duo` and drive the parser from that
+/// stream instead of the host scanner.
+///
+/// A Duo-side REJECTION is returned, not swallowed: the host scanner would
+/// reject the same source, and silently falling back would hide a real
+/// divergence behind a passing compile. Only an out-of-memory or
+/// buffer-sizing failure falls back, because those are host-side and say
+/// nothing about the source.
+fn routeThroughDuoLexer(
+    alloc: std.mem.Allocator,
+    lex: *Lexer,
+    src: []const u8,
+    src_path: []const u8,
+) !void {
+    if (duo_lexer_bridge.tokenizeAuthority() != .duo_native) return;
+    const z_src = std.mem.concatWithSentinel(alloc, u8, &.{src}, 0) catch return;
+    const z_file = std.mem.concatWithSentinel(alloc, u8, &.{src_path}, 0) catch return;
+    const arena = alloc.create(std.ArrayList(u8)) catch return;
+    arena.* = .empty;
+    const toks = duo_lexer_dispatch.tokenize(alloc, z_src, z_file, arena) catch |e| switch (e) {
+        error.OutOfMemory, error.BufferTooSmall => return,
+        else => {
+            lex.last_error_loc = .{
+                .file = src_path,
+                .line = duo_lexer_dispatch.errorLine(z_src, z_file),
+                .col = 1,
+            };
+            return e;
+        },
+    };
+    lex.useDuoTokens(toks);
+}
+
 fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !ParsedModule {
     const src = try read_source(alloc, io, src_path);
     term.setSource(src_path, src);
 
     var lex = Lexer.init(src, src_path);
+    try routeThroughDuoLexer(alloc, &lex, src, src_path);
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = is_duo_source_path(src_path);
     var mod = parser.parse_module() catch |e| {
@@ -4001,6 +4038,7 @@ fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8, canonical: boo
     };
     term.setSource(src_path, src);
     var lex = Lexer.init(src, src_path);
+    try routeThroughDuoLexer(alloc, &lex, src, src_path);
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = is_duo_source_path(src_path);
     const mod = parser.parse_module() catch |err| {

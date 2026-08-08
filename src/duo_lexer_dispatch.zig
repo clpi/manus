@@ -35,10 +35,31 @@ extern fn duo_lexer_tokenize_full(
 /// decodes rather than hard-coding it.
 extern fn duo_lexer_host_stride() i64;
 
+/// GAP-017 closed: the Duo lexer returns a REJECTION rather than aborting the
+/// process. Negative returns are offset by 100 so they cannot be confused with
+/// -1 (buffer too small), and the codes mirror `lexer.LexError`'s order.
+extern fn duo_lexer_error_line(src: [*:0]const u8, file: [*:0]const u8) i64;
+
+fn lexErrorFromCode(code: i64) lexer.LexError {
+    return switch (code) {
+        -101 => lexer.LexError.UnterminatedString,
+        -102 => lexer.LexError.UnterminatedLongString,
+        -103 => lexer.LexError.InvalidEscape,
+        -104 => lexer.LexError.UnexpectedChar,
+        else => lexer.LexError.UnexpectedChar,
+    };
+}
+
+/// Line of the rejection, for a caller holding a negative code. Cold path.
+pub fn errorLine(src: [:0]const u8, file: [:0]const u8) u32 {
+    const line = duo_lexer_error_line(src.ptr, file.ptr);
+    return if (line > 0) @intCast(line) else 1;
+}
+
 pub const DispatchError = error{
     BufferTooSmall,
     OutOfMemory,
-};
+} || lexer.LexError;
 
 /// Tokenize `src` through the Duo lexer, returning host `Token`s.
 ///
@@ -68,7 +89,11 @@ pub fn tokenize(
         @intCast(@intFromPtr(text_arena.items.ptr)),
         @intCast(text_arena.items.len),
     );
-    if (n < 0) return DispatchError.BufferTooSmall;
+    if (n == -1) return DispatchError.BufferTooSmall;
+    // A malformed source is a rejection the caller reports, not a truncated
+    // stream — a short read that looks like a short file is the one failure a
+    // parser cannot detect.
+    if (n < 0) return lexErrorFromCode(n);
 
     const count: usize = @intCast(n);
     const tokens = try allocator.alloc(lexer.Token, count);
@@ -180,4 +205,26 @@ test "duo_lexer_dispatch: float literals carry their value" {
     defer a.free(toks);
     try std.testing.expectEqual(lexer.TokenKind.float_lit, toks[0].kind);
     try std.testing.expectEqual(@as(f64, 1.5), toks[0].float_val);
+}
+
+// GAP-017's regression test. Before the fix these aborted the process, so the
+// compiler could not be routed through this lexer at all: every malformed
+// source would have become a bare abort with no location instead of a
+// diagnostic. Each must now be a catchable error.
+test "duo_lexer_dispatch: malformed sources reject instead of aborting" {
+    const a = std.testing.allocator;
+    var arena: std.ArrayList(u8) = .empty;
+    defer arena.deinit(a);
+    try std.testing.expectError(
+        lexer.LexError.UnterminatedString,
+        tokenize(a, "s = \"unterminated", "bad.duo", &arena),
+    );
+    try std.testing.expectError(
+        lexer.LexError.UnterminatedLongString,
+        tokenize(a, "s = [[unterminated", "bad.duo", &arena),
+    );
+}
+
+test "duo_lexer_dispatch: a rejection carries its line" {
+    try std.testing.expectEqual(@as(u32, 2), errorLine("x = 1\ns = \"bad", "bad.duo"));
 }

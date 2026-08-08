@@ -211,12 +211,46 @@ pub const Lexer = struct {
     pending_hints: [8]?[]const u8 = .{ null, null, null, null, null, null, null, null },
     pending_hint_count: u8 = 0,
 
+    /// SH-03 production dispatch. When non-null, tokens come from the DUO lexer
+    /// (lib/std/compiler/lexer.duo, via src/duo_lexer_dispatch.zig) and this
+    /// struct is a cursor over that stream rather than a scanner. The host
+    /// scanner below stays intact and stays the differential oracle.
+    ///
+    /// The caller owns the slice and its text arena; `useDuoTokens` does not
+    /// copy. Set by the compile driver in main.zig, which has an allocator —
+    /// `init` deliberately keeps its allocator-free signature so the ~30
+    /// existing call sites and every test are unaffected.
+    duo_tokens: ?[]const Token = null,
+    duo_index: usize = 0,
+
     pub fn init(src: []const u8, file: []const u8) Lexer {
         return .{
             .cursor = source_cursor.ProductionCursor.init(src, file),
             .peeked = null,
             .last_error_loc = null,
         };
+    }
+
+    /// Drive this lexer from a Duo-produced token stream.
+    pub fn useDuoTokens(self: *Lexer, toks: []const Token) void {
+        self.duo_tokens = toks;
+        self.duo_index = 0;
+        self.peeked = null;
+    }
+
+    /// Whether this lexer is tokenizing through Duo rather than the host scanner.
+    pub fn isDuoBacked(self: *const Lexer) bool {
+        return self.duo_tokens != null;
+    }
+
+    /// One token from the Duo stream. Past the end it repeats EOF, matching the
+    /// host scanner, which keeps returning `.eof` rather than erroring.
+    fn duo_next(self: *Lexer) Token {
+        const toks = self.duo_tokens.?;
+        if (self.duo_index >= toks.len) return toks[toks.len - 1];
+        const tok = toks[self.duo_index];
+        self.duo_index += 1;
+        return tok;
     }
 
     fn cur_loc(self: *Lexer) Loc {
@@ -718,6 +752,7 @@ pub const Lexer = struct {
             self.peeked = null;
             return tok;
         }
+        if (self.duo_tokens != null) return self.duo_next();
         return self.next_tok() catch |err| {
             self.last_error_loc = self.cur_loc();
             return err;
@@ -725,6 +760,10 @@ pub const Lexer = struct {
     }
 
     pub fn peek(self: *Lexer) LexError!Token {
+        if (self.peeked == null and self.duo_tokens != null) {
+            self.peeked = self.duo_next();
+            return self.peeked.?;
+        }
         if (self.peeked == null) {
             self.peeked = self.next_tok() catch |err| {
                 self.last_error_loc = self.cur_loc();
@@ -735,13 +774,18 @@ pub const Lexer = struct {
     }
 
     /// Save lexer state for speculative parsing / look-ahead.
-    pub const State = struct { pos: usize, line: u32, col: u32, peeked: ?Token };
+    /// `duo_index` is part of the snapshot: on the Duo path the stream position
+    /// is the index, not the cursor, so restoring only `pos` would rewind the
+    /// scanner and leave the token stream where it was — a silent desync on
+    /// every backtrack.
+    pub const State = struct { pos: usize, line: u32, col: u32, peeked: ?Token, duo_index: usize = 0 };
     pub fn saveState(self: *const Lexer) State {
         return .{
             .pos = self.cursor.index,
             .line = self.cursor.line,
             .col = self.cursor.col,
             .peeked = self.peeked,
+            .duo_index = self.duo_index,
         };
     }
 
@@ -751,6 +795,7 @@ pub const Lexer = struct {
         self.cursor.line = state.line;
         self.cursor.col = state.col;
         self.peeked = state.peeked;
+        self.duo_index = state.duo_index;
     }
 
     /// Check whether a token kind is a primitive type keyword (i8..f64, bool, void, str).
