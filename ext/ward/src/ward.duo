@@ -878,8 +878,14 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   fr   = mem.alloc(64 * 8 * 8)
   ftab = mem.alloc(4096 * 4 * 8)
   tpar = mem.alloc(4096 * 2 * 8)
-  ltgt = mem.alloc(64 * 8)
-  lelse = mem.alloc(64 * 8)
+  -- LABEL STACK. One shared buffer across every frame, because `lsp` is not
+  -- reset on a call: a callee's labels sit above its caller's. That made 64
+  -- entries a GLOBAL ceiling rather than a per-frame one, so a recursion only
+  -- 32 frames deep exhausted it and `fib(34)` exited 70 on the interpreter
+  -- while the jit answered it correctly. Sized to the frame cap instead:
+  -- 64 frames x 64 labels.
+  ltgt = mem.alloc(64 * 64 * 8)
+  lelse = mem.alloc(64 * 64 * 8)
   gl   = mem.alloc(64 * 8)
   -- A declared minimum is what a runtime must actually provide, but this one
   -- allocates eagerly, so an absurd minimum has to be refused rather than
@@ -905,8 +911,8 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   mem.zero(fr, 64 * 8 * 8)
   mem.zero(ftab, 4096 * 4 * 8)
   mem.zero(tpar, 4096 * 2 * 8)
-  mem.zero(ltgt, 64 * 8)
-  mem.zero(lelse, 64 * 8)
+  mem.zero(ltgt, 64 * 64 * 8)
+  mem.zero(lelse, 64 * 64 * 8)
   mem.zero(gl, 64 * 8)
   mem.zero(lin, linsz)
   mem.zero(himm, 256)
@@ -1394,7 +1400,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           sp = sp
         end
       elseif op == OP_loop
-        if lsp >= 63
+        if lsp >= 64 * 64 - 1
           return bail(op, pc)
         end
         pc += 1
@@ -1556,7 +1562,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       elseif op == OP_block or op == OP_if_
         -- block (0x02) / if (0x04): branch target is just past the matching
         -- `end`. Scan forward tracking nesting; also record the `else` for `if`.
-        if lsp >= 63
+        if lsp >= 64 * 64 - 1
           return bail(op, pc)
         end
         pc += 1                       -- blocktype
@@ -2900,6 +2906,52 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
             hk += 1
           end
           sp -= 3
+        elseif sub <= 3
+          -- 0..3: i32.trunc_sat_f32/f64_s/u. SATURATING, which is the whole
+          -- difference from the 168..171 family: NaN answers 0 and an
+          -- out-of-range magnitude clamps to the end of the target range where
+          -- the trapping form would trap. `benchmarks/wasm_rt/loop_f64` is one
+          -- `i32.trunc_sat_f64_s`, and without it ward could not run that
+          -- module on EITHER engine.
+          --
+          -- 4..7, the i64 family, are deliberately NOT here: the u64 upper half
+          -- has no Duo value to clamp against, so the bound itself would be
+          -- wrong. They keep falling to `bail`, which names them.
+          if sp < 1
+            return bail(op, pc)
+          end
+          qraw: i64 = mem.read_i64(st, sp * 8)
+          mem.write_i64(fb, 0, qraw)
+          qsrc: f64 = 0.0
+          if sub <= 1
+            qf: f32 = mem.load(f32)(fb)
+            qsrc = qf
+          else
+            qsrc = mem.load(f64)(fb)
+          end
+          qv: i64 = 0
+          if qsrc == qsrc
+            if sub == 0 or sub == 2
+              if qsrc <= -2147483648.0
+                qv = -2147483648
+              elseif qsrc >= 2147483647.0
+                qv = 2147483647
+              else
+                mem.store(i64)(fb, qsrc)
+                qv = mem.read_i64(fb, 0)
+              end
+            else
+              if qsrc <= 0.0
+                qv = 0
+              elseif qsrc >= 4294967295.0
+                qv = 4294967295
+              else
+                mem.store(i64)(fb, qsrc)
+                qv = mem.read_i64(fb, 0)
+              end
+            end
+          end
+          mem.write_i64(st, sp * 8, qv & M32)
         else
           return bail(op, pc)
         end
@@ -3231,6 +3283,22 @@ locreg(idx: i64, cf: i64): i64
   10 + idx
 end
 
+-- Materialize a 64-bit absolute value into register `rd`: MOVZ then three
+-- MOVKs. Returns the new word cursor.
+--
+-- ALWAYS four words, even for a small value, and that is the point: the
+-- host-call sequence below computes its own branch offsets arithmetically, so
+-- every piece of it has to have a length that does not depend on the address
+-- being materialized. A "smart" version that skipped zero halfwords would make
+-- those offsets wrong for exactly the addresses that happen to be small.
+movabs(code: any, n: i64, rd: i64, v: i64): i64
+  jitm.w32(code, n, 0xD2800000 | ((v & 0xFFFF) << 5) | rd)
+  jitm.w32(code, n + 1, 0xF2800000 | (1 << 21) | (((v >> 16) & 0xFFFF) << 5) | rd)
+  jitm.w32(code, n + 2, 0xF2800000 | (2 << 21) | (((v >> 32) & 0xFFFF) << 5) | rd)
+  jitm.w32(code, n + 3, 0xF2800000 | (3 << 21) | (((v >> 48) & 0xFFFF) << 5) | rd)
+  n + 4
+end
+
 -- Compile the module's entry body and every function it can reach into `code`;
 -- returns word count, or -1 if an unsupported opcode is hit (caller falls back
 -- to the interpreter).
@@ -3342,6 +3410,29 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
   mem.zero(jct, 1024 * 8)
   mem.zero(jrw, 64 * 8)
   mem.zero(jspr, 64 * 8)
+  -- ── imported functions ───────────────────────────────────────────────
+  -- Per FUNCTION import, in import order: whether the field name is one the
+  -- host can actually perform, and the type index that fixes its arity. The
+  -- interpreter has kept both since it learned to emit a module's real output;
+  -- the JIT had neither, which is why every `call` below `jimp` bailed the
+  -- WHOLE module and every wasi-libc `_start` ran interpreted.
+  jimk = mem.alloc(256 * 8)
+  jimx = mem.alloc(256 * 8)
+  mem.zero(jimk, 256 * 8)
+  mem.zero(jimx, 256 * 8)
+  -- Scratch for the emitted host-call sequence. `write` clobbers x0..x17, so
+  -- the loop state cannot live in registers; it lives here and the sequence
+  -- re-materializes this address after every call. Cold path -- executed once
+  -- per `fd_write`, never inside a kernel.
+  jsc = mem.alloc(64)
+  mem.zero(jsc, 64)
+  jsca: i64 = mem.addr(jsc)
+  -- The host addresses emitted code branches to. `std.jit.sym` answers 0 for a
+  -- name this host has not linked, and every use below checks: an absent
+  -- symbol declines the body to the interpreter, it does not emit a branch to
+  -- address zero.
+  jwr: i64 = jitm.sym("write")
+  jex: i64 = jitm.sym("exit")
   jqn: i64 = 0
   jqh: i64 = 0
   jcn: i64 = 0
@@ -3400,10 +3491,25 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         jla: i64 = uleb_val(s, jij, mlen)
         jij = uleb_end(s, jij, mlen) + jla
         jfl: i64 = uleb_val(s, jij, mlen)
-        jij = uleb_end(s, jij, mlen) + jfl
+        jfs: i64 = uleb_end(s, jij, mlen)
+        jij = jfs + jfl
         jkd: i64 = string.byte(s, jij)
         jij += 1
         if jkd == 0
+          -- Identify the import by FIELD NAME, byte for byte the same test the
+          -- interpreter applies, so the two engines agree on which imports
+          -- carry a host effect and which are stubs. `jfs` is the field-name
+          -- start, captured before the name was skipped.
+          jisf: i64 = 0
+          if jfl == 8
+            if string.byte(s, jfs) == 102 and string.byte(s, jfs + 1) == 100 and string.byte(s, jfs + 3) == 119
+              jisf = 1
+            end
+          end
+          if jimp < 256
+            mem.write_i64(jimk, jimp * 8, jisf)
+            mem.write_i64(jimx, jimp * 8, uleb_val(s, jij, mlen))
+          end
           jimp += 1
           jij = uleb_end(s, jij, mlen)
         elseif jkd == 1
@@ -3731,34 +3837,65 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         -- and let Rd stay the real stack register — that folds the `local.get`
         -- MOV away too, and those MOVs are ON the dependency chain (measured
         -- 3.8% for removing a single one).
+        -- BOTH alias channels, and the second one is not decoration. A fold
+        -- that consulted only `ali_slot` read the STALE stack register for a
+        -- slot aliased on the second channel, and then the pending alias
+        -- overwrote the folded result at the next materialization -- so
+        -- `local.get 3; i32.const 8; i32.add` produced local 3, not local 3 + 8.
+        -- That is wasi-libc's `write` building its iovec pointer, and it was
+        -- invisible for as long as an imported call bailed the whole module.
         fs: i64 = sp - 1
         if ali_slot == sp - 1 fs = ali_reg end
+        if ali2_slot == sp - 1
+          fs = ali2_reg
+        end
         jitm.w32(code, n, 0x53000000 | (v << 16) | (31 << 10) | (fs << 5) | (sp - 1))
         if ali_slot == sp - 1 ali_slot = -1 end
+        if ali2_slot == sp - 1
+          ali2_slot = -1
+        end
         n += 1
         pc += 1
       elseif sp >= 1 and nx == 116 and v >= 1 and v <= 31
         -- LSL Wt, Wt, #v   (UBFM Wt, Wt, #(-v mod 32), #(31-v))
         fs2: i64 = sp - 1
         if ali_slot == sp - 1 fs2 = ali_reg end
+        if ali2_slot == sp - 1
+          fs2 = ali2_reg
+        end
         jitm.w32(code, n, 0x53000000 | (((32 - v) & 31) << 16) | ((31 - v) << 10) | (fs2 << 5) | (sp - 1))
         if ali_slot == sp - 1 ali_slot = -1 end
+        if ali2_slot == sp - 1
+          ali2_slot = -1
+        end
         n += 1
         pc += 1
       elseif sp >= 1 and nx == 106 and v <= 4095
         -- ADD Wt, Wt, #v
         fs3: i64 = sp - 1
         if ali_slot == sp - 1 fs3 = ali_reg end
+        if ali2_slot == sp - 1
+          fs3 = ali2_reg
+        end
         jitm.w32(code, n, 0x11000000 | (v << 10) | (fs3 << 5) | (sp - 1))
         if ali_slot == sp - 1 ali_slot = -1 end
+        if ali2_slot == sp - 1
+          ali2_slot = -1
+        end
         n += 1
         pc += 1
       elseif sp >= 1 and nx == 107 and v <= 4095
         -- SUB Wt, Wt, #v
         fs4: i64 = sp - 1
         if ali_slot == sp - 1 fs4 = ali_reg end
+        if ali2_slot == sp - 1
+          fs4 = ali2_reg
+        end
         jitm.w32(code, n, 0x51000000 | (v << 10) | (fs4 << 5) | (sp - 1))
         if ali_slot == sp - 1 ali_slot = -1 end
+        if ali2_slot == sp - 1
+          ali2_slot = -1
+        end
         n += 1
         pc += 1
       else
@@ -4742,8 +4879,24 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       if nxu != 11 and nxu != 5
         return jitbail("reachable code after unreachable", op, pc)
       end
-      jitm.w32(code, n, 0xD4200000)
-      n += 1
+      -- A trap must LOOK THE SAME on both engines. This used to emit `BRK #0`,
+      -- which raises SIGTRAP and leaves the shell reporting 133, where the
+      -- interpreter's `bailtrap` exits 71. Nothing in the corpus reached it, so
+      -- the divergence was invisible -- and it stopped being unreachable the
+      -- moment imported calls started compiling, because wasi-libc's
+      -- `__wasi_proc_exit` ends on exactly this opcode. Call the host's `exit`
+      -- with the interpreter's status instead; fall back to BRK only if the
+      -- host has no such symbol, which is a stall, never a wrong answer.
+      if jex != 0
+        jitm.w32(code, n, 0x52800000 | (71 << 5))
+        n += 1
+        n = movabs(code, n, 17, jex)
+        jitm.w32(code, n, 0xD63F0000 | (17 << 5))
+        n += 1
+      else
+        jitm.w32(code, n, 0xD4200000)
+        n += 1
+      end
       last_alu = -1
       last_cset = -1
 
@@ -5053,9 +5206,177 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       cidx: i64 = uleb_val(s, off + pc, off + blen)
       pc = uleb_end(s, off + pc, off + blen) - off
       cfx: i64 = cidx - jimp
-      if cfx < 0 or cfx >= jnf
-        return jitbail("call target is an IMPORTED function, which the jit cannot reach", op, pc)
+      if cfx >= jnf
+        return jitbail("call target is above the function section", op, pc)
       end
+      if cfx < 0
+      -- ── IMPORTED FUNCTION ────────────────────────────────────────────────
+      -- This was the architectural blocker, and it was in `std.jit`, not here:
+      -- alloc/w32/seal/call* let Duo emit code and ENTER it, and nothing let
+      -- emitted code LEAVE it. So a body that reached an import took the WHOLE
+      -- module to the interpreter -- which is every wasi-libc `_start`, because
+      -- `_start` reaches `fd_write` to print its answer. `hot`, `hot_big` and
+      -- `brtable` all bailed here, at body offset 9, on the first `call`.
+      --
+      -- `std.jit.sym` now answers with a host function address, so the effect
+      -- is emitted: materialize the address into x17 and `BLR` it. Dispatch is
+      -- on the import's FIELD NAME -- the same byte test the interpreter
+      -- applies -- and every import that is not one ward can perform keeps the
+      -- interpreter's stub shape, so the two engines cannot disagree about a
+      -- module. Nothing here reads a module name, a function index or an input
+      -- size.
+      imk: i64 = 0
+      imy: i64 = 0
+      if cidx < 256
+        imk = mem.read_i64(jimk, cidx * 8)
+        imy = mem.read_i64(jimx, cidx * 8)
+      end
+      imnp: i64 = mem.read_i64(jtp, imy * 8)
+      imnr: i64 = mem.read_i64(jtr, imy * 8)
+      if imk == 1 and imnp == 4 and imnr == 1 and sp >= 4 and jwr != 0
+        -- fd_write(fd, iovs, iovslen, nwritten) -> errno.
+        --
+        -- Everything the caller holds in a caller-saved register has to survive
+        -- the BL by hand, exactly as the real-call path does it: the operand
+        -- slots below the four arguments, plus any local that landed in
+        -- x0..x17. Locals in x19..x26 and the two bases in x27/x28 are
+        -- callee-saved and libc preserves them.
+        isp: i64 = 0
+        iv: i64 = 0
+        while iv < lbase + curloc
+          ir: i64 = locreg(iv, cf)
+          if ir <= 17
+            mem.write_i64(jspr, isp * 8, ir)
+            isp += 1
+          end
+          iv += 1
+        end
+        iov: i64 = 0
+        while iov < sp - 4
+          mem.write_i64(jspr, isp * 8, iov)
+          isp += 1
+          iov += 1
+        end
+        if isp > 64
+          return jitbail("more than 64 registers to spill across an imported call", op, pc)
+        end
+        isq: i64 = 0
+        while isq < isp
+          jitm.w32(code, n, 0xF81F0FE0 | mem.read_i64(jspr, isq * 8))
+          n += 1
+          isq += 1
+        end
+        -- `write` clobbers x0..x17, so NONE of the loop state can live in a
+        -- register across it. It lives in a 64-byte scratch block whose address
+        -- is baked in, and the sequence re-materializes that address after every
+        -- call. Slots: 0 fd, 8 iovec base, 16 count, 24 index, 32 total,
+        -- 40 nwritten, 48 cursor, 56 remaining.
+        --
+        -- Fixed shape, so every branch offset below is arithmetic rather than a
+        -- patch: prologue 16 words at +0, outer head 20 at +16, inner
+        -- write-until-drained loop 27 at +36, epilogue 8 at +63.
+        ib: i64 = n
+        ia: i64 = sp - 4
+        n = movabs(code, n, 16, jsca)
+        jitm.w32(code, n, 0x2A0003E0 | (ia << 16))
+        jitm.w32(code, n + 1, 0xF9000000 | (16 << 5))
+        jitm.w32(code, n + 2, 0x2A0003E0 | ((ia + 1) << 16))
+        jitm.w32(code, n + 3, 0x8B000000 | (0 << 16) | (28 << 5))
+        jitm.w32(code, n + 4, 0xF9000000 | (1 << 10) | (16 << 5))
+        jitm.w32(code, n + 5, 0x2A0003E0 | ((ia + 2) << 16))
+        jitm.w32(code, n + 6, 0xF9000000 | (2 << 10) | (16 << 5))
+        jitm.w32(code, n + 7, 0x2A0003E0 | ((ia + 3) << 16))
+        jitm.w32(code, n + 8, 0x8B000000 | (0 << 16) | (28 << 5))
+        jitm.w32(code, n + 9, 0xF9000000 | (5 << 10) | (16 << 5))
+        jitm.w32(code, n + 10, 0xF9000000 | (3 << 10) | (16 << 5) | 31)
+        jitm.w32(code, n + 11, 0xF9000000 | (4 << 10) | (16 << 5) | 31)
+        n += 12
+        -- outer: for each iovec, take its (offset, length) pair
+        n = movabs(code, n, 16, jsca)
+        jitm.w32(code, n, 0xF9400000 | (3 << 10) | (16 << 5))
+        jitm.w32(code, n + 1, 0xF9400000 | (2 << 10) | (16 << 5) | 1)
+        jitm.w32(code, n + 2, 0xEB00001F | (1 << 16))
+        jitm.w32(code, n + 3, 0x54000000 | (40 << 5) | 10)
+        jitm.w32(code, n + 4, 0xF9400000 | (1 << 10) | (16 << 5) | 2)
+        jitm.w32(code, n + 5, 0x8B000000 | (0 << 16) | (3 << 10) | (2 << 5) | 2)
+        jitm.w32(code, n + 6, 0xB9400000 | (2 << 5) | 3)
+        jitm.w32(code, n + 7, 0xB9400000 | (1 << 10) | (2 << 5) | 4)
+        jitm.w32(code, n + 8, 0x8B000000 | (3 << 16) | (28 << 5) | 3)
+        jitm.w32(code, n + 9, 0xF9000000 | (6 << 10) | (16 << 5) | 3)
+        jitm.w32(code, n + 10, 0xF9000000 | (7 << 10) | (16 << 5) | 4)
+        jitm.w32(code, n + 11, 0xF9400000 | (4 << 10) | (16 << 5) | 5)
+        jitm.w32(code, n + 12, 0x8B000000 | (4 << 16) | (5 << 5) | 5)
+        jitm.w32(code, n + 13, 0xF9000000 | (4 << 10) | (16 << 5) | 5)
+        jitm.w32(code, n + 14, 0x91000000 | (1 << 10))
+        jitm.w32(code, n + 15, 0xF9000000 | (3 << 10) | (16 << 5))
+        n += 16
+        -- inner: a short write is a REAL outcome on a pipe, so drain the iovec
+        -- rather than assuming one call moved all of it. Zero or negative ends
+        -- the whole sequence with what has been counted so far.
+        n = movabs(code, n, 16, jsca)
+        jitm.w32(code, n, 0xF9400000 | (7 << 10) | (16 << 5) | 2)
+        jitm.w32(code, n + 1, 0xF100001F | (2 << 5))
+        jitm.w32(code, n + 2, 0x54000000 | ((-26 & 0x7FFFF) << 5) | 13)
+        jitm.w32(code, n + 3, 0xF9400000 | (16 << 5))
+        jitm.w32(code, n + 4, 0xF9400000 | (6 << 10) | (16 << 5) | 1)
+        n += 5
+        n = movabs(code, n, 17, jwr)
+        jitm.w32(code, n, 0xD63F0000 | (17 << 5))
+        n += 1
+        n = movabs(code, n, 16, jsca)
+        jitm.w32(code, n, 0xF100001F)
+        jitm.w32(code, n + 1, 0x54000000 | (8 << 5) | 13)
+        jitm.w32(code, n + 2, 0xF9400000 | (6 << 10) | (16 << 5) | 1)
+        jitm.w32(code, n + 3, 0x8B000000 | (0 << 16) | (1 << 5) | 1)
+        jitm.w32(code, n + 4, 0xF9000000 | (6 << 10) | (16 << 5) | 1)
+        jitm.w32(code, n + 5, 0xF9400000 | (7 << 10) | (16 << 5) | 2)
+        jitm.w32(code, n + 6, 0xCB000000 | (0 << 16) | (2 << 5) | 2)
+        jitm.w32(code, n + 7, 0xF9000000 | (7 << 10) | (16 << 5) | 2)
+        jitm.w32(code, n + 8, 0x14000000 | (-26 & 0x3FFFFFF))
+        n += 9
+        -- epilogue: report the byte count and answer errno 0, which is what the
+        -- interpreter's arm answers too
+        n = movabs(code, n, 16, jsca)
+        jitm.w32(code, n, 0xF9400000 | (4 << 10) | (16 << 5))
+        jitm.w32(code, n + 1, 0xF9400000 | (5 << 10) | (16 << 5) | 1)
+        jitm.w32(code, n + 2, 0xB9000000 | (1 << 5))
+        jitm.w32(code, n + 3, 0x2A1F03E0 | ia)
+        n += 4
+        if n - ib != 71
+          return jitbail("host-call sequence is not the length its branch offsets assume", op, pc)
+        end
+        isr: i64 = isp - 1
+        while isr >= 0
+          jitm.w32(code, n, 0xF84107E0 | mem.read_i64(jspr, isr * 8))
+          n += 1
+          isr -= 1
+        end
+        sp = sp - 3
+      else
+        -- Every other import: consume the declared parameters and leave the
+        -- declared results as zero. Byte for byte the interpreter's stub, so a
+        -- module calling an import ward cannot perform still runs, and runs the
+        -- same way on both engines. `proc_exit` is this shape -- one parameter,
+        -- no result, no emitted instruction at all.
+        if imnp > sp
+          return jitbail("imported call passes more arguments than are on the stack", op, pc)
+        end
+        sp = sp - imnp
+        imz: i64 = 0
+        while imz < imnr
+          if sp > 8
+            return jitbail("operand stack shape", op, pc)
+          end
+          jitm.w32(code, n, 0x2A1F03E0 | sp)
+          n += 1
+          sp += 1
+          imz += 1
+        end
+      end
+      last_alu = -1
+      last_cset = -1
+
+      else
       cnl: i64 = mem.read_i64(jft, (cfx * 6 + 2) * 8)
       cnp: i64 = mem.read_i64(jft, (cfx * 6 + 3) * 8)
       cnr: i64 = mem.read_i64(jft, (cfx * 6 + 5) * 8)
@@ -5198,6 +5519,38 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_alu = -1
       last_cset = -1
       end
+      end
+
+    elseif op == OP_prefix_fc
+      -- 0xFC prefix, sub-opcode LEB. Only 0..3 -- the i32 trunc_sat family --
+      -- have an arm, and they are one instruction each: ARM64's FCVTZS/FCVTZU
+      -- ARE saturating, with exactly wasm's NaN-to-zero and clamp-to-range
+      -- behaviour, so no range test is emitted at all. Every other sub-opcode
+      -- declines and the interpreter runs the body.
+      fsub: i64 = string.byte(s, off + pc)
+      pc += 1
+      if fsub > 3 or sp < 1
+        return jitbail("no jit arm for this 0xFC sub-opcode", op, pc)
+      end
+      fsq: i64 = sp - 1
+      if fsub <= 1
+        jitm.w32(code, n, 0x1E270000 | (fsq << 5) | 1)
+      else
+        jitm.w32(code, n, 0x9E670000 | (fsq << 5) | 1)
+      end
+      n += 1
+      fcv: i64 = 0x1E780000
+      if fsub == 0
+        fcv = 0x1E380000
+      elseif fsub == 1
+        fcv = 0x1E390000
+      elseif fsub == 3
+        fcv = 0x1E790000
+      end
+      jitm.w32(code, n, fcv | (1 << 5) | fsq)
+      n += 1
+      last_alu = -1
+      last_cset = -1
 
     else
       return jitbail("no jit arm for this opcode", op, pc)

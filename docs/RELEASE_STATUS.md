@@ -552,22 +552,74 @@ mechanism has not been independently re-audited in this pass.**
 
 > **SUPERSEDED 2026-08-08 by `zig build ward-test` and `bench/six.duo`.**
 > The two-workload table below was too small a sample to support what was
-> claimed from it. Measured across SIX workloads that do real work, **ward is
-> first on one, and that one is a tie**:
+> claimed from it. Measured across SIX workloads that do real work:
 >
-> | workload | ward | wart | wasmtime | first |
-> |---|---:|---:|---:|---|
-> | `hash` (run) | **368** | n/a | 374 | ward — a TIE, 1.6% |
-> | `hash2b` (run) | 3805 | n/a | **3693** | wasmtime |
-> | `brtable` (_start) | 424 | **11** | 15 | wart, **38×** |
-> | `hot` (_start) | 313 | **19** | 21 | wart, **16×** |
-> | `hot_big` (_start) | 3277 | 134 | **112** | wasmtime, **29×** |
-> | `loop_f64` (_start) | **cannot run** | **13** | 27 | wart |
+> | workload | ward before | ward after | wart | wasmtime | first now |
+> |---|---:|---:|---:|---:|---|
+> | `hash` (run) | 379 | 371 | n/a | 374 | **a TIE** — see below |
+> | `hash2b` (run) | 3671 | 3678 | n/a | 3763 | **a TIE** — see below |
+> | `brtable` (_start) | 425 | **10** | 10 | 14 | startup floor, **39× faster** |
+> | `hot` (_start) | 313 | **18** | 17 | 19 | startup floor, **17× faster** |
+> | `hot_big` (_start) | 3301 | **133** | 132 | **111** | wasmtime — **24× faster**, level with wart |
+> | `loop_f64` (_start) | **cannot run** | **8** | 8 | 12 | ward |
 >
-> Every loss is a module the JIT declines, falling back to the interpreter.
-> **55 of 61 measured rows sit below a 40 ms process-startup floor and are
-> attributed to nobody** — a table with exactly that shape was published from
-> this repository and withdrawn, so the harness now refuses to score them.
+> ms, min of 3, interleaved, every runtime verified against wasmtime BY VALUE
+> before it is timed. Before and after taken on the same machine in the same
+> session with the same harness.
+>
+> **`hash` and `hash2b` are TIES and neither is a win.** Three runs of the same
+> pair disagree about the winner: `hash2b` read ward 3671 / wasmtime 3613, then
+> 3763 / 3699, then 3678 / 3763 — the sign flips inside about 2 % of
+> run-to-run drift. `hash` is the same picture at 1 %. Anyone quoting either as
+> "ward beats wasmtime" is quoting noise; this is the second time that has to be
+> written down about `hash`.
+>
+> **Ward is still not first on `hot_big`** (133 ms against wasmtime's 111, ~20 %)
+> and that is the only workload here where it loses to a real number rather than
+> to the startup floor. Four of the six were losses of 16–38× before this pass.
+>
+> ### What changed: the JIT can now leave its own code buffer
+>
+> The blocker was in `lib/std/jit.duo`, not in ward. `alloc`/`w32`/`seal`/`call*`
+> let Duo emit code and ENTER it, and **nothing let emitted code LEAVE it** — so
+> a body that reached an imported function took the whole module to the
+> interpreter, which is every wasi-libc `_start`, because `_start` reaches
+> `fd_write` to print its answer. `WARD_JIT_TRACE=1` named it on all three:
+> `jit declined -- call target is an IMPORTED function, which the jit cannot
+> reach -- opcode 16 (call) at body offset 9`.
+>
+> `std.jit.sym(name)` (a `dlsym` against everything already mapped) now answers
+> with a host function address, and ward's JIT emits the WASI effect inline:
+> materialize the address, `BLR` it. Dispatch is on the import's FIELD NAME —
+> byte for byte the test the interpreter already applied — and every import ward
+> cannot perform keeps the interpreter's stub shape, so the two engines cannot
+> disagree about a module. **No module name, function index or input size is an
+> input to any of it.**
+>
+> Compiling those bodies immediately exposed **a latent wrong-answer bug in the
+> JIT**: the constant-fold path consulted only the FIRST of two local-alias
+> channels, so `local.get 3; i32.const 8; i32.add` produced local 3 rather than
+> local 3 + 8 — that is wasi-libc's `write` building its iovec pointer, and it
+> made `hot`/`hot_big`/`brtable` print NOTHING while exiting 0 and reporting
+> `engine=jit-arm64`. It was unreachable for as long as an imported call bailed
+> the whole module. Both channels are read now.
+>
+> Three smaller gaps closed with it:
+> - `i32.trunc_sat_f32/f64_s/u` (`0xFC` 0..3), on **both** engines — ARM64's
+>   `FCVTZS`/`FCVTZU` already saturate exactly as wasm specifies, so the JIT arm
+>   is one instruction. `loop_f64` could not run on either engine without it.
+>   The i64 family (0xFC 4..7) still bails honestly: u64's upper half has no Duo
+>   value to clamp against.
+> - The interpreter's label stack was ONE shared buffer of 64 entries across all
+>   frames, so 64 was a GLOBAL ceiling and a recursion 32 frames deep exhausted
+>   it — `fib(34)` exited 70 on the interpreter while the JIT answered it. Sized
+>   to the frame cap (64 × 64). Verified by value: both engines now answer
+>   5702887, as wasmtime does.
+> - A JIT `unreachable` was `BRK #0` (SIGTRAP, shell status 133) where the
+>   interpreter exits 71. Nothing reached it before; wasi-libc's
+>   `__wasi_proc_exit` ends on exactly that opcode, so compiling imported calls
+>   made it reachable. It now calls the host's `exit` with the interpreter's
+>   status.
 >
 > **The test suite found a correctness bug that invalidates any earlier ward
 > number.** Linear memory was a hardcoded ONE PAGE with every effective address
@@ -578,12 +630,24 @@ mechanism has not been independently re-audited in this pass.**
 > whose magic had been destroyed and print the right answer for it — caught only
 > because a positive control was written to fail.
 >
-> Current suite: **128 rows, 122 PASS, 0 DIFF, 2 UNSUPPORTED (budgeted), exit 0**,
-> every row differenced against wasmtime BY VALUE.
+> Current suite: **128 rows, 124 PASS, 0 DIFF, 0 UNSUPPORTED, exit 0** (was 122
+> PASS / 2 UNSUPPORTED), every row differenced against wasmtime BY VALUE, and
+> **the JIT compiles 47 of the 64 rows it is asked for, up from 36**. All five
+> of the suite's controls were re-fired and still exit 3.
 >
-> Open and architectural: the JIT cannot call an imported function, because
-> `lib/std/jit.duo` exposes no primitive yielding a host function address — so
-> any `_start` reaching `fd_write`/`proc_exit` falls to the interpreter.
+> Still open, and named rather than implied:
+> - **`call_indirect` (0x11) has no JIT arm** — 10 of the 18 remaining refusals
+>   across the whole fixture corpus, and now the single largest coverage gap. It
+>   is NOT cheap: it needs the element segments seeded into a runtime table, a
+>   function-index → compiled-address map that cannot be filled until after the
+>   call-patch phase, every table-reachable function queued for compilation, and
+>   a runtime type check. Every module it blocks sits under the 40 ms startup
+>   floor, so it buys coverage, not a measured number.
+> - `hot_big` at ~20 % behind wasmtime is code-generation quality, not a bail:
+>   the JIT compiles it.
+> - `hash`/`hash2b` JIT and are ties; `i32.load` with an offset above 16 MiB
+>   still declines on three fixtures.
+> - `prefix.simd` (0xFD) and `i32.extend8_s` have no JIT arm (2 fixtures each).
 
 
 Ward (`ext/ward/`, ~5000 lines of pure Duo, zero `@c.emit`) is the downstream
@@ -636,6 +700,12 @@ the JIT it prints `engine=interp`. **The JIT does not engage on this module at
 all**; ward falls back to the interpreter, and the JIT and interpreter rows are
 within 1 % of each other (3305 / 3349 ms) because they are the same code path.
 
+> **This paragraph is HISTORY as of the §5 block above.** The JIT does engage
+> on `hot_big.wasm` now — it prints `engine=jit-arm64` and the module reads
+> 133 ms, 24× faster and level with wart. It is still ~20 % behind wasmtime,
+> which is code-generation quality rather than a refusal. The 3305 ms figure
+> must not be quoted as current.
+
 `docs/performance.md` still contains tables showing ward at **0.21 s** on this
 exact workload, "beating wasm3 by 2.2× and iwasm by 2.0×". Those numbers were
 real when taken, and they measured
@@ -656,8 +726,11 @@ aliases and has no liveness model. The superseding stamps are in place in
   than wart in aggregate (103 %), and `bench/wart.duo` exits non-zero saying so.
 - Pass 101 §4 derived-lines ratio, target ≥ 80 %: **9 %** (up from 0 %).
   **UNMET**, and the harness exits non-zero saying so.
-- **ward has no running test suite.** `test/main.duo` requires three modules
-  that do not exist and does not parse; `bench/verify.duo` is doing that job.
+- **`zig build ward-test` is the suite** — 128 rows, **124 PASS, 0 DIFF, 0
+  UNSUPPORTED**, exit 0, every row differenced against wasmtime by value, and
+  the JIT compiles 47 of the 64 rows it is asked for (36 before this pass).
+  `test/main.duo` is still dead: it requires three modules that do not exist
+  and does not parse.
 - 1406 lines under `ext/ward/src/wasm/` are dead code.
 
 ---
@@ -712,10 +785,15 @@ Stated plainly, no hedging.
    returning the benchmark's own answer for programs that had stopped asking**
    — proved by perturbation and repaired this pass; the before/after values are
    in §4.
-3. **Ward is slower than every reference runtime on workload B and tied on
-   workload A.** Its JIT does not engage on `hot_big.wasm`. Two of Pass 101 §4's
-   criteria are formally UNMET and their harnesses exit non-zero saying so. Ward
-   also has no running test suite.
+3. **Ward is not fastest on `hot_big`** — 133 ms against wasmtime's 111, ~20 %,
+   with the JIT engaged. That is the only one of the six measured workloads
+   where it loses to a real number rather than to the 40 ms startup floor; four
+   of the six were 16–38× losses before this pass, and `hash`/`hash2b` are
+   ties inside run-to-run drift, not wins (§5). `call_indirect` still has no JIT
+   arm and is the largest remaining coverage gap. Two of Pass 101 §4's criteria
+   are formally UNMET and their harnesses exit non-zero saying so.
+   *(Ward's "no running test suite" was item 3 here. It now has one:
+   `zig build ward-test`, 128 rows, 124 PASS, 0 DIFF, exit 0.)*
 4. **Cross-execution is unproven.** Six targets build; one was run. There is no
    evidence any non-host binary works.
 5. **The Pass 100 surface does not exist** (GAP-025). `CLAUDE.md` §0 describes a

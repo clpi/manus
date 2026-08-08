@@ -1,5 +1,97 @@
 # ward — handoff
 
+## 2026-08-08 (latest) — the JIT can leave its own code buffer
+
+The named architectural blocker is closed, and it was **in `lib/std/jit.duo`,
+not in ward**. `alloc`/`w32`/`seal`/`call*` let Duo emit code and ENTER it;
+nothing let emitted code LEAVE it. So a body reaching an imported function took
+the whole module to the interpreter — which is every wasi-libc `_start`, because
+`_start` reaches `fd_write` to print its answer. The trace said so on all three
+losing modules, at the same offset:
+
+```
+ward: jit declined -- call target is an IMPORTED function, which the jit
+      cannot reach -- opcode 16 (call) at body offset 9
+```
+
+`std.jit.sym(name)` now yields a host function address (`dlsym` against what is
+already mapped; 0 for a name the host has not linked, and every caller checks).
+ward's JIT emits the WASI effect inline: materialize the address into x17, `BLR`
+it. Dispatch is on the import's FIELD NAME — byte for byte the test `run_body`
+already applied — and every import ward cannot perform keeps the interpreter's
+stub shape, so the two engines cannot disagree about a module. **No module name,
+function index or input size is an input to any of it.**
+
+`fd_write` is 71 emitted words at a fixed shape (so every branch offset is
+arithmetic, not a patch): prologue, an outer loop over the iovec array, an inner
+loop that drains each iovec because a short `write` is a real outcome on a pipe,
+and an epilogue that reports the byte count and answers errno 0. `write`
+clobbers x0..x17, so the loop state lives in a 64-byte scratch block whose
+address is baked in and re-materialized after every call. Cold path — once per
+`fd_write`, never inside a kernel.
+
+### Six workloads, before and after (ms, min of 3, interleaved, verified by value)
+
+| workload | before | after | wart | wasmtime | first now |
+|---|---:|---:|---:|---:|---|
+| `hash` (run) | 379 | 371 | n/a | 374 | **TIE** |
+| `hash2b` (run) | 3671 | 3678 | n/a | 3763 | **TIE** |
+| `brtable` (_start) | 425 | **10** | 10 | 14 | startup floor, 39× faster |
+| `hot` (_start) | 313 | **18** | 17 | 19 | startup floor, 17× faster |
+| `hot_big` (_start) | 3301 | **133** | 132 | **111** | wasmtime — 24× faster, level with wart |
+| `loop_f64` (_start) | **cannot run** | **8** | 8 | 12 | ward |
+
+**`hash` and `hash2b` are TIES.** Three runs disagree about the winner —
+`hash2b` read 3671/3613, then 3763/3699, then 3678/3763 — the sign flips inside
+about 2 % of drift. Do not quote either as a win. **`hot_big` is still ~20 %
+behind wasmtime**, and that is codegen quality now, not a refusal.
+
+### The wrong-answer bug compiling those bodies exposed
+
+`hot`/`hot_big`/`brtable` first came back printing NOTHING while exiting 0 and
+reporting `engine=jit-arm64`. The constant-fold path consulted only the FIRST of
+the JIT's two local-alias channels, so `local.get 3; i32.const 8; i32.add`
+produced local 3 instead of local 3 + 8 — which is wasi-libc's `write` building
+its iovec pointer, so `fd_write` was handed the wrong pair and wrote zero bytes.
+Latent for as long as an imported call bailed the whole module. All four
+immediate folds read both channels now.
+
+### Three smaller gaps closed with it
+
+- **`i32.trunc_sat_f32/f64_s/u`** (0xFC 0..3) on **both** engines. ARM64's
+  `FCVTZS`/`FCVTZU` already saturate exactly as wasm specifies — NaN to zero,
+  clamp to range — so the JIT arm is one instruction and emits no range test.
+  `loop_f64` could not run on either engine without it. 0xFC 4..7 (the i64
+  family) still bail honestly: u64's upper half has no Duo value to clamp
+  against, so the bound itself would be wrong.
+- **The interpreter's label stack was a GLOBAL ceiling.** `ltgt`/`lelse` were
+  one shared 64-entry buffer across every frame and `lsp` is not reset on a
+  call, so a recursion 32 frames deep exhausted it: `fib(34)` exited 70 on the
+  interpreter while the JIT answered it correctly. Sized to the frame cap
+  (64 × 64). Both engines now answer 5702887, as wasmtime does.
+- **A JIT `unreachable` was `BRK #0`** (SIGTRAP, status 133) where the
+  interpreter's `bailtrap` exits 71. Nothing reached it before; wasi-libc's
+  `__wasi_proc_exit` ends on exactly that opcode, so compiling imported calls
+  made it reachable. It now calls the host's `exit` with the interpreter's
+  status, and falls back to `BRK` only if the host has no `exit` symbol.
+
+### Suite
+
+**128 rows, 124 PASS, 0 DIFF, 0 UNSUPPORTED, exit 0** (was 122 PASS / 2
+UNSUPPORTED). **The JIT compiles 47 of the 64 rows it is asked for, up from 36.**
+All five controls re-fired and still exit 3.
+
+### The largest remaining gap: `call_indirect`
+
+10 of the 18 remaining refusals across the whole fixture corpus. It is **not**
+cheap: it needs the element segments seeded into a runtime table, a
+function-index → compiled-address map that cannot be filled until after the
+call-patch phase, every table-reachable function queued for compilation, and a
+runtime type check. Every module it blocks sits under the 40 ms startup floor,
+so it buys coverage, not a measured number. The rest: `i32.load` with an offset
+above 16 MiB (3), `prefix.simd` (2), `i32.extend8_s` (2), one `return` inside an
+inlined body.
+
 ## 2026-08-08 (late) — ward has a test suite, and it found eight real bugs
 
 `test/conform.duo` is the suite. `zig build ward-test` is the step. It runs

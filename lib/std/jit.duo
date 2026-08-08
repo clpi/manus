@@ -10,6 +10,7 @@
 
 @c.emit([[
 #include <sys/mman.h>
+#include <dlfcn.h>
 #if defined(__APPLE__)
 extern void sys_icache_invalidate(void *start, size_t len);
 #endif
@@ -83,6 +84,28 @@ end
 
 release(buf: any, bytes: i64): void
     @c.emit("munmap(buf.as.tval, (size_t)bytes)")
+end
+
+-- Address of a host function already loaded in this process, or 0 when the
+-- host does not export that name.
+--
+-- This is the primitive the other nine could not substitute for. alloc/w32/
+-- seal/call* let Duo emit code and ENTER it; nothing let emitted code LEAVE
+-- it. A JIT whose generated code cannot reach a host routine can only compile
+-- self-contained arithmetic -- the moment a body calls out (an imported
+-- function, an allocator, a syscall) the whole compilation has to be abandoned
+-- and the consumer falls back to its interpreter. `sym` closes that: materialize
+-- the returned address into a register and `BLR` it.
+--
+-- It resolves by NAME against everything already mapped, so it never widens
+-- what a process can reach: a name the host has not linked answers 0, and the
+-- caller must check. It says nothing about the signature -- the emitted code is
+-- what fixes the ABI, exactly as `call0/1/2` do at the other end.
+-- `return` is load-bearing here and is NOT the denied trailing-return: written
+-- as a bare tail expression this answers 0 for every name, exactly as its nine
+-- siblings above would. Verified by value against a symbol the host does have.
+sym(name: str): i64
+    return @c.emit("(int64_t)(intptr_t)dlsym(RTLD_DEFAULT, name)")
 end
 
 -- True when this build targets an architecture std.jit can emit for.

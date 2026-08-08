@@ -589,7 +589,49 @@ main(): i64
     -- the unit. Zero slack is the expected steady state of a ratchet whose
     -- budgets are set to exact counts — but it has to be checked rather than
     -- assumed, because "no slack" and "nobody looked" print the same.
-    budgets: str = "14081 2254 1847 259 322 481 152 58 2028 442 167 128 228 36 2429 2258 3415"
+    -- 2026-08-08, SEVENTH pass: a rebaseline of FOUR rows, +30 points, and
+    -- every one of them attributes to the two files one diff touched. Counted
+    -- per file with this gate's own two filters (drop `^\s*--` lines, strip
+    -- string bodies) against `git show HEAD:<path>` and the working copy:
+    --
+    --   row          delta   ext/ward/src/ward.duo   lib/std/jit.duo
+    --   snake         +20             20                    0
+    --   directive      +1              0                    1
+    --   stdlib         +2              2                    0
+    --   trailret       +7              6                    1
+    --
+    -- `oneline` went +8 on the same diff and was PAID rather than budgeted:
+    -- the eight new `if ali2_slot == sp - 1 … end` guards were written as
+    -- one-liners to match the `ali_slot` lines beside them, and were expanded
+    -- to three lines each. The row reads its budget again. That is the half of
+    -- the protocol that gets skipped, so it is named.
+    --
+    -- What the other 30 are, and why none is repairable as text:
+    --
+    --   snake +20   `mem.read_i64` / `mem.write_i64` (13), `last_alu` /
+    --               `last_cset` (4), `uleb_end`, `uleb_val`. Every one is a
+    --               call to an EXISTING std or file-local name. Renaming them
+    --               is a std.mem surface change, not a diff-local repair.
+    --   stdlib +2   two `string.byte(...)` lines. ward reads its module image
+    --               a byte at a time and there are 60-odd of these already;
+    --               `s[i]` is the Pass 100 spelling and does not compile on a
+    --               `str` today (GAP-025).
+    --   trailret +7 six `return jitbail(…)` plus one `return bail(…)`, all
+    --               EARLY returns from inside a branch, which is the file's
+    --               refusal idiom at 56 existing sites. An early return is not
+    --               a tail return and cannot become a bare tail expression.
+    --   directive +1  the `@c.emit` that IS `std.jit.sym`. std.jit is nine
+    --               other `@c.emit` primitives and exists precisely to hold
+    --               the things pure Duo cannot express; a tenth is the point
+    --               of the file, not drift in it. Written as a bare tail
+    --               expression it answers 0 for every symbol — checked by
+    --               value, which is why the `return` is there and commented.
+    --
+    -- No row moved that this diff did not touch: the other thirteen rows and
+    -- `nonduo` read EXACTLY their budgets both before and after, over the same
+    -- 450 canonical files, so LOWERING again had no work. Measured twice with
+    -- `AUDIT100_LIST` pointed at a private path, same counts both runs.
+    budgets: str = "14101 2254 1847 259 322 481 153 58 2030 442 167 128 228 36 2429 2258 3422"
 
     -- Per-row: 1 = measure with string bodies INTACT. Only `concatlit` sets
     -- it, because its subject IS the string literal; stripping bodies takes
