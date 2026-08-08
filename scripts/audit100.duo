@@ -390,7 +390,7 @@ main(): i64
     -- literal lowers to a raw int64_t* that `#` cannot measure and that gets a
     -- free() emitted at every `return` in the function — including the returns
     -- that come textually before it, which is a C compile error.
-    budgets: str = "13687 2034 1482 257 320 470 151 58 1930 441 164 119 224 36 2155 2222 3300"
+    budgets: str = "13647 2034 1480 257 320 470 151 58 1930 441 164 119 224 36 2155 2222 3299"
 
     -- Per-row: 1 = measure with string bodies INTACT. Only `concatlit` sets
     -- it, because its subject IS the string literal; stripping bodies takes
