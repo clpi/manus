@@ -85,8 +85,19 @@ docs/archive/          historical evidence; never an architecture input
 
 ## Key invariants
 
-- `@` is the single prefix for ALL compile-time operations in .duo files (`@comp.*`)
-- NO underscores in `@`-directive names: `@comp.foo.bar`, never `@comp.foo_bar`
+- **Prefix `@` does not exist.** Directives are not a Duo feature; §0.2 of the
+  epoch-2 section below is the rule. This slot used to read "`@` is the single
+  prefix for ALL compile-time operations (`@comp.*`)", which contradicted §0.2
+  in the same file, and agents cited whichever half suited the diff.
+  What is still TRUE is narrower and belongs here as a *compatibility* note:
+  the compiler still accepts `@comp.*` and ~46 `@`-attributes, and some of
+  them are load-bearing (`@c.emit` generates `src/duo_lexer_tokenize.c`, which
+  the compiler links and tokenizes itself with). So: **do not add new `@`
+  spellings, and do not delete existing ones to lower a grep count.** The
+  census, the migration order, and what each one secretly stores are in
+  `docs/directive_erasure.md`.
+- If you must touch a legacy `@`-name, still no underscores: `@comp.foo.bar`,
+  never `@comp.foo_bar`
 - Zero Lua boxed values in the hot path — all values must be native C ABI or direct registers
 - Every perf change must pass `zig build bench` with no regressions
 
