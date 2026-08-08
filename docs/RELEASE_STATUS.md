@@ -282,19 +282,33 @@ and what was previously untrue on this backend.
 
 ---
 
-## 4. Benchmark position — 16 measured wins / 11 folded / 13 losses
+## 4. Benchmark position — 17 measured wins / 11 folded / 12 losses
 
-`zig build bench` re-measured **2026-08-08 after the frozen-kernel removal
-below**, with the harness carrying this pass's classifier. `BENCH_MANIFEST
-backend=c-specialized representation=specialized runtime=dynamic
-intermediate=generated-c external_compiler=clang`.
+`zig build bench` re-measured **2026-08-08 after the SECOND verification pass**
+(the frozen-kernel removals below, plus the fourteen recognisers repaired in
+"The second verification pass"), with the harness carrying this pass's
+classifier. `BENCH_MANIFEST backend=c-specialized representation=specialized
+runtime=dynamic intermediate=generated-c external_compiler=clang`.
 
-The previous reading at `9ef2e68` was **12 wins / 12 folded / 16 losses**.
-Table lookup moved from *folded* to *loss* because its substitution was
-retired: Duo now runs the kernel, in 0.000667 s against reference C's
-0.000359 s, where it previously reported 1e-06 s and computed nothing. **A row
-getting slower here is the correct outcome** — the folded count is supposed to
-fall as real work starts running.
+Readings, in order: `9ef2e68` **12 / 12 / 16**, the first frozen-kernel removal
+**16 / 11 / 13**, this pass **17 / 11 / 12**. The split moved by one row and the
+movement is inside timing noise (Math floor/max, 0.001183 s against C's
+0.001145 s); do not read it as a gain. What the numbers actually say is that
+fourteen more recognisers stopped answering questions the program had not
+asked, and only two rows paid for it in time:
+
+| row | before | after | reference C | why |
+|---|---:|---:|---:|---|
+| Matrix multiply (`.lua`) | 1.7e-05 s | 0.194821 s | 0.138315 s | the closed form is gone; the loop runs |
+| Game of Life (`.lua`) | 3.8e-05 s | 0.154521 s | 0.00279 s | ditto — and the `.duo` build, which never folded, is 0.018326 s, so the eight-fold gap between the two Duo builds is an untyped-Lua lowering gap, not this change |
+
+Both were already *losses*, so the verdict split is unaffected; they are now
+losses that were measured rather than losses that were mis-measured. Everything
+else moved by less than the run-to-run spread — notably **N-body cost nothing**
+(0.080289 s folded → 0.080504 s running, against C's 0.080328 s), which is the
+clearest evidence in the table that the frozen emitter was never buying speed.
+**A row getting slower here is the correct outcome** — the folded count is
+supposed to fall as real work starts running.
 
 **Correctness: all 40 `RESULT` rows match reference C, for both
 `examples/benchmark.lua` and `examples/benchmark.duo`.** That is the load-
@@ -537,6 +551,114 @@ Gates at the same commit: `zig build unit-test` **1319/1319, 0 leaks, exit 0**
 added), `zig build native-differential` **63 agree / 0 diverge, exit 0**,
 `zig build agent-smoke` **PASS**, and **all 40 `RESULT` rows still match
 reference C for both `.lua` and `.duo`**.
+
+### The second verification pass (2026-08-08) — the other 33
+
+The paragraph above says "the rest are either algorithm-general or still
+unaudited". **They were not algorithm-general.** Twenty of the remaining
+thirty-three were put through the same procedure — a matched single-constant
+edit to SCRATCH copies of `examples/benchmark.lua`, `examples/benchmark.duo`
+and `examples/benchmark_c.c`, never the repo files, then a diff of all 40
+`RESULT` rows — and **fourteen of them were wrong**. In every "Duo, before"
+cell the number is the UNPERTURBED benchmark's own answer, returned for a
+program that had stopped asking for it, with no diagnostic.
+
+Both mirrors must be perturbed, not one: nine of the fourteen fire only on the
+`.lua` build, because the `.duo` mirror's `t = {}` is not a `local_decl` and
+several detectors require one.
+
+| recogniser | perturbation | reference C | Duo, before | action |
+|---|---|---:|---:|---|
+| `use_prime_sieve` | `count + 1` → `count + 3` | 28776 | **9592** | TIGHTENED |
+| `use_sieve_native` | `count + 1` → `count + 2` | 297866 | **148933** | TIGHTENED |
+| `use_collatz_inline` | `steps + 1` → `steps + 2` | 124269590 | **62134795** | TIGHTENED |
+| `use_mandel_iter_native` | `\|z\|² > 4.0` → `> 9.0` | 139326644 | **139309713** | TIGHTENED |
+| `use_math_pow_sqrt` | `i % 997` → `i % 991` | 4207750.1057316875 | **4210999.7579276264** | TIGHTENED |
+| `use_string_len_chain` | `rep("a", 1000)` → `1003` | 5042500 | **5027500** | TIGHTENED |
+| `use_string_hash_scan` | `h * 31` → `h * 29` | 259528709 | **931358510** | TIGHTENED |
+| `use_string_byte_scan` | scan from index 1 → 2 | 2067416 | **2067500** | TIGHTENED |
+| `use_string_token_count` | `count + 1` → `count + 2` | 300000 | **150000** | TIGHTENED |
+| `use_string_delim_byte_sum` | `sum + c` → `sum + c * 2` | 22760000 | **11380000** | TIGHTENED |
+| `use_ring_buf_inline` | `(i*31) % 1e5` → `(i*29)` | 249996800812 | **249996800868** | TIGHTENED |
+| `use_prefix_sum_inline` | `(i*3) % 1000` → `% 997` | 995991549 | **999000000** | TIGHTENED |
+| `use_run_len_inline` | 6-run literal → 8-run | 400000 | **300000** | GENERALISED |
+| `use_grid_sum_inline` | `+ i + 1` → `+ i + 2` in `eval_A` | 16.532160577387746 | **17.532160530720734** | DELETED |
+| `use_nbody_native` | `dt = 0.001` → `0.002` | −5.2691163432427857e-08 | **−9.3782588805879641e-08** | DELETED |
+| `use_life_native` | seed `% 3` → `% 4` | 980 | **170** | DELETED |
+| `use_matmul_native` | `b` fill `*7` → `*5` | 18810000000 | **19602000000** | DELETED |
+| `use_sparse_dot_inline` | (never fires; detector checks nothing) | — | — | DELETED |
+
+**Six proved genuinely general and were left alone**, which is why the
+procedure is worth running rather than assuming: `use_dense_table_identity_sum`
+(`t[i] = i` → `i * 2` declines), `use_dense_table_mod997_sum` (`*13` → `*11`
+declines), `use_bitcount_inline` and `use_ack_inline` (no constant assumed),
+`use_string_token_count`'s and `use_string_delim_byte_sum`'s literal handling
+(both already read the literal; it was the LOOP that was frozen), and the whole
+`use_dense_table_{square,quadratic,…,faulhaber}_sum` polynomial family, which
+composes the fill and reduction polynomials symbolically out of the AST.
+
+One perturbation proved **nothing** and had to be redone, which is the same
+class of error as a gate reporting a confident zero: `prefix_sum`'s `(i*3) %
+1000` → `(i*7) % 1000` leaves the answer unchanged, because 3 and 7 are both
+coprime to 1000 and `(i*k) % 1000` is then a permutation of the same residues.
+Changing the MODULUS is what discriminates. **Check that a perturbation moves
+the reference C row before concluding anything from the Duo row.**
+
+Why some were deleted rather than tightened:
+
+- **`use_grid_sum_inline`** keyed on a FUNCTION NAME — `detect_grid_sum_inline`
+  returned true for any nested `while` whose body accumulated a call to
+  something called `eval_A`. `CLAUDE.md` §3 forbids that outright, and
+  `detect_naive_fib_pattern` had already been repaired for it. The emitter then
+  printed `eval_A`'s body, which the detector never looked at and could not
+  have, `eval_A` being a different function. There is no template to tighten to
+  from inside `compute_grid_sum`.
+- **`use_sparse_dot_inline`**'s detector established nothing whatsoever: two
+  empty table constructors and any `<expr> * 16` inside a `while`, after which
+  the emitter printed n(n+1)(n+2)/6 without ever looking at the accumulator. It
+  does not even fire on the benchmark (which multiplies by a `stride` binding,
+  not the literal), so the only programs it could ever have answered were user
+  programs, all of them wrongly.
+- **`use_nbody_native`, `use_life_native`, `use_matmul_native`** are verbatim
+  transcriptions of one program each — sixteen initial values plus two
+  timesteps; a 128×128 board plus the seed `(i * 31337) % 3`; a 200×200 problem
+  plus both operand fills. A predicate accepting only those constants would not
+  be a substitution for any program but the benchmark. Reading them out of the
+  AST is the repair that would restore the speed honestly; until someone does
+  that, the general path runs the loop the source wrote. **N-body shows what
+  that costs: nothing** (0.080504 s against C's 0.080328 s).
+
+`use_run_len_inline` is the one row that was **generalised rather than gated**.
+`emit_run_len_inline_body` printed `n * 6`; the 6 was the run count of the
+benchmark's own literal, read from nowhere, and `detect_run_len_inline` asked
+only for SOME `string.rep` binding and SOME `a() ~= b()` comparison. Both
+coefficients now come out of the literal — `n * <within-chunk changes> +
+(n - 1) * <wrap change> + 1` — and the emitted C for the benchmark is
+`n * 5 + (n - 1) * 1 + 1`, the same 6n as before, now derived. A unit test that
+required the frozen `n > 0 ? n * 6 : 1` to be PRESENT had its polarity
+inverted, and a positive control on an 8-run literal was added beside it.
+
+**Native promotion is unchanged**, verified by value in the emitted C for both
+mirrors: every `use_*` gated in this pass reads a `shape_*` local in the
+`or`-chains feeding `promote_native_i64_signature` /
+`promote_native_f64_signature`, and a signature-by-signature diff of
+`/tmp/duo_benchmark.c` before and after shows the only change anywhere is that
+`simulate_nbody` lost its `hot` attribute (it keeps `always_inline`).
+`compute_grid_sum` is still `double compute_grid_sum(int64_t size)`, `life` is
+still `int64_t life(int64_t steps)`, `matmul` and `sparse_dot` are unchanged.
+
+Counted after this pass: **44 `use_*` flags reach codegen**, of which **five are
+now permanently false** (their emitters are deleted, and they are out of
+`pattern_hot`), and **25 carry a `verify_*` predicate** (was 11). Of the
+remainder, six are established algorithm-general by the perturbations above and
+the rest are lowering switches rather than closed forms (`use_dense_table`,
+`use_simd_reduction`, `use_force_always_inline`, `use_fp_strict_always_inline`).
+
+Gates at this commit: `zig build unit-test` **exit 0**, `zig build
+native-differential` **63 agree / 0 diverge, exit 0**, `zig build agent-smoke`
+**PASS**, **all 40 `RESULT` rows match reference C for both `.lua` and
+`.duo`**. `scripts/audit100.duo` fails 5 rows over budget both before and after
+this change — it is not a regression from it.
 
 This matters more here than it would elsewhere, because a table with exactly
 this shape was published and withdrawn.

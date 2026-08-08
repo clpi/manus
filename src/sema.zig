@@ -3558,9 +3558,28 @@ pub const Sema = struct {
         }
         fb.is_typed = (all_typed or (ret_t.is_native() and params_native)) and !has_vararg;
         fb.use_iterative_fib = detect_naive_fib_pattern(fb, self.current_func_name);
-        fb.use_prime_sieve = detect_trial_division_primes(fb);
+        const shape_prime_sieve = detect_trial_division_primes(fb);
+        fb.use_prime_sieve = shape_prime_sieve and verify_prime_sieve(fb);
         try detect_string_scan_loops(fb);
-        fb.use_grid_sum_inline = detect_grid_sum_inline(fb);
+        const shape_string_byte_scan = fb.use_string_byte_scan;
+        const shape_string_hash_scan = fb.use_string_hash_scan;
+        fb.use_string_byte_scan = shape_string_byte_scan and verify_string_byte_scan(fb);
+        fb.use_string_hash_scan = shape_string_hash_scan and verify_string_hash_scan(fb);
+        // `use_grid_sum_inline` is retired. `detect_grid_sum_inline` returned
+        // true for any nested while loop whose body accumulated a call to a
+        // function NAMED `eval_A` — a recogniser keyed on an identifier, which
+        // CLAUDE.md §3 forbids outright and which `detect_naive_fib_pattern`
+        // was already repaired for. The emitter then printed
+        // `1.0 / ((i+j)*(i+j+1)/2 + i + 1)`, eval_A's body, which the detector
+        // never looked at and could not have: eval_A is a DIFFERENT function.
+        // Measured with `+ i + 1` -> `+ i + 2` in eval_A: reference C reports
+        // 16.532160577387746, this returned 17.532160530720734 — the
+        // unperturbed benchmark's own sum. There is no template to tighten to
+        // from inside compute_grid_sum, so the substitution goes; the general
+        // path lowers the real nested loop and the real call. The shape still
+        // promotes the f64 signature below.
+        const shape_grid_sum_inline = detect_grid_sum_inline(fb);
+        fb.use_grid_sum_inline = false;
         // `use_dense_table_max` is never claimed, and as of this pass neither
         // its detector nor its emitter exists any more. The emitter ignored the
         // table entirely: it returned a literal 100002 above a threshold and
@@ -3584,8 +3603,10 @@ pub const Sema = struct {
         fb.use_dense_table_mod997_sum = detect_dense_table_mod997_sum(fb);
         detect_dense_table_sum_patterns(fb);
         const shape_math_floor_max = fb.is_typed and detect_math_floor_max(fb);
-        fb.use_math_pow_sqrt = fb.is_typed and detect_math_pow_sqrt(fb);
-        fb.use_string_len_chain = fb.is_typed and detect_string_len_chain(fb);
+        const shape_math_pow_sqrt = fb.is_typed and detect_math_pow_sqrt(fb);
+        fb.use_math_pow_sqrt = shape_math_pow_sqrt and verify_math_pow_sqrt(fb);
+        const shape_string_len_chain = fb.is_typed and detect_string_len_chain(fb);
+        fb.use_string_len_chain = shape_string_len_chain and verify_string_len_chain(fb);
         // ── Frozen-kernel emitters: SHAPE selects promotion, TEMPLATE selects
         // the closed-form body. See the `verify_*` block above
         // detect_binary_search_dense: each of these emitters prints constants
@@ -3616,37 +3637,82 @@ pub const Sema = struct {
         // period fold verified", and the shape keeps the f64 promotion.
         const shape_ema_smooth = detect_ema_smooth(fb);
         fb.use_ema_smooth = shape_ema_smooth and verify_ema_period_fold(fb);
-        fb.use_string_token_count = detect_string_token_count(fb);
-        fb.use_string_delim_byte_sum = detect_string_delim_byte_sum(fb);
-        fb.use_trig_sum_recur = fb.is_typed and fb.params.len == 1 and detect_trig_sum_recur(fb);
-        fb.use_mandel_iter_native = fb.is_typed and fb.params.len == 2 and detect_mandel_iter_native(fb);
-        fb.use_nbody_native = fb.is_typed and fb.params.len == 1 and detect_nbody_native(fb);
+        const shape_string_token_count = detect_string_token_count(fb);
+        fb.use_string_token_count = shape_string_token_count and verify_string_token_count(fb);
+        const shape_string_delim_byte_sum = detect_string_delim_byte_sum(fb);
+        fb.use_string_delim_byte_sum = shape_string_delim_byte_sum and verify_string_delim_byte_sum(fb);
+        const shape_trig_sum_recur = fb.is_typed and fb.params.len == 1 and detect_trig_sum_recur(fb);
+        fb.use_trig_sum_recur = shape_trig_sum_recur and verify_trig_sum_recur(fb);
+        const shape_mandel_iter_native = fb.is_typed and fb.params.len == 2 and detect_mandel_iter_native(fb);
+        fb.use_mandel_iter_native = shape_mandel_iter_native and verify_mandel_iter_native(fb);
+        // `use_nbody_native` is retired. emit_nbody_native_body is a verbatim
+        // transcription of ONE three-body system: sixteen initial values, the
+        // 0.001 timestep and the 0.001 softening, none re-read from the source.
+        // Measured with `dt = 0.001` -> `0.002`: reference C reports
+        // -5.2691163432427857e-08, this returned -9.3782588805879641e-08, the
+        // unperturbed benchmark's own answer. A predicate that accepted only
+        // those seventeen constants and that exact 22-statement update would
+        // not be a substitution for any program but this one, so the emitter
+        // goes and the general path integrates the loop the source wrote. The
+        // shape still promotes the f64 signature and still forces inlining.
+        const shape_nbody_native = fb.is_typed and fb.params.len == 1 and detect_nbody_native(fb);
+        fb.use_nbody_native = false;
         if (fb.use_mandel_iter_native) {} // native body only; no always_inline (fast-math breaks fp boundaries)
-        if (fb.use_nbody_native or shape_ema_smooth) fb.use_force_always_inline = true;
+        if (shape_nbody_native or shape_ema_smooth) fb.use_force_always_inline = true;
 
         // Benchmarks 24-40 native pattern detections
         const shape_gcd_inline = detect_gcd_inline(fb);
         fb.use_gcd_inline = shape_gcd_inline and verify_gcd_inline(fb);
-        fb.use_collatz_inline = detect_collatz_inline(fb);
+        const shape_collatz_inline = detect_collatz_inline(fb);
+        fb.use_collatz_inline = shape_collatz_inline and verify_collatz_inline(fb);
         const shape_xor_fold_inline = detect_xor_fold_inline(fb);
         fb.use_xor_fold_inline = shape_xor_fold_inline and verify_xor_fold_inline(fb);
         fb.use_bitcount_inline = detect_bitcount_inline(fb);
         const shape_cordic_inline = detect_cordic_inline(fb);
         fb.use_cordic_inline = shape_cordic_inline and verify_cordic_inline(fb);
         fb.use_ack_inline = detect_ack_inline(fb);
-        fb.use_matmul_native = detect_matmul_native(fb);
-        fb.use_prefix_sum_inline = detect_prefix_sum_inline(fb);
-        fb.use_ring_buf_inline = detect_ring_buf_inline(fb);
+        // `use_matmul_native` is retired. emit_matmul_native_body prints a
+        // 200x200 problem whose two operand fills are `i % 100` and
+        // `(i * 7) % 100`, all four numbers frozen and none re-read. Measured
+        // with the b fill changed to `(i * 5) % 100`: reference C reports
+        // 18810000000, this returned 19602000000, the unperturbed benchmark's
+        // answer. Reading the size and both fill polynomials out of the AST is
+        // the repair that would keep the speed; until then the general path
+        // multiplies the matrices the source declared.
+        const shape_matmul_native = detect_matmul_native(fb);
+        fb.use_matmul_native = false;
+        const shape_prefix_sum_inline = detect_prefix_sum_inline(fb);
+        fb.use_prefix_sum_inline = shape_prefix_sum_inline and verify_prefix_sum_inline(fb);
+        const shape_ring_buf_inline = detect_ring_buf_inline(fb);
+        fb.use_ring_buf_inline = shape_ring_buf_inline and verify_ring_buf_inline(fb);
         const shape_cond_swap_inline = detect_cond_swap_inline(fb);
-        fb.use_sieve_native = detect_sieve_native(fb);
+        const shape_sieve_native = detect_sieve_native(fb);
+        fb.use_sieve_native = shape_sieve_native and verify_sieve_native(fb);
         const shape_fenwick_native = detect_fenwick_native(fb);
         fb.use_fenwick_native = shape_fenwick_native and verify_fenwick_native(fb);
         const shape_interp_inline = detect_interp_inline(fb);
         fb.use_interp_inline = shape_interp_inline and verify_interp_inline(fb);
-        fb.use_run_len_inline = detect_run_len_inline(fb);
-        fb.use_sparse_dot_inline = detect_sparse_dot_inline(fb);
+        const shape_run_len_inline = detect_run_len_inline(fb);
+        fb.use_run_len_inline = shape_run_len_inline and verify_run_len_inline(fb);
+        // `use_sparse_dot_inline` is retired. Its detector established NOTHING
+        // about what the function computes: two empty table constructors and
+        // any `<expr> * 16` anywhere in a while loop, and the emitter then
+        // printed n(n+1)(n+2)/6 — the benchmark's dot product — without ever
+        // looking at the accumulator. It does not even fire on the benchmark
+        // (which multiplies by a `stride` binding, not the literal 16), so the
+        // only programs it could ever have answered were user programs, all of
+        // them wrongly. There is no template to tighten to.
+        const shape_sparse_dot_inline = detect_sparse_dot_inline(fb);
+        fb.use_sparse_dot_inline = false;
         const shape_leven_native = detect_leven_native(fb);
-        fb.use_life_native = detect_life_native(fb);
+        // `use_life_native` is retired. emit_life_native_body prints a 128x128
+        // board seeded by `(i * 31337) % 3 == 0` — the width, the height and
+        // both seed constants frozen, none re-read. Measured with the seed
+        // changed to `% 4`: reference C reports 980, this returned 170, the
+        // unperturbed benchmark's own population. Reading W, H and the seed out
+        // of the AST is the repair that would keep the speed.
+        const shape_life_native = detect_life_native(fb);
+        fb.use_life_native = false;
         fb.use_simd_reduction = fb.is_typed and detect_simd_reduction(fb);
 
         // NOTE: the frozen-kernel rows below deliberately read `shape_*`, not
@@ -3658,21 +3724,21 @@ pub const Sema = struct {
         // the template.
         if (shape_binary_search_dense or shape_filter_count_mod or shape_dot_product_identity or
             shape_dot_product_dense or shape_clamp_mod_sum or shape_mod_histogram_sum or
-            shape_table_lookup_sum or fb.use_dense_table_mod997_sum or fb.use_string_token_count or
-            fb.use_string_delim_byte_sum or fb.use_dense_table_sum or
+            shape_table_lookup_sum or fb.use_dense_table_mod997_sum or shape_string_token_count or
+            shape_string_delim_byte_sum or fb.use_dense_table_sum or
             fb.use_dense_table_faulhaber_sum or fb.use_dense_table_decic_sum or fb.use_dense_table_nonic_sum or fb.use_dense_table_octic_sum or fb.use_dense_table_septic_sum or fb.use_dense_table_sextic_sum or fb.use_dense_table_quintic_sum or fb.use_dense_table_quartic_sum or fb.use_dense_table_cubic_sum or fb.use_dense_table_quadratic_sum or fb.use_dense_table_square_sum or
-            fb.use_dense_table_identity_sum or fb.use_string_byte_scan or fb.use_string_hash_scan or
-            fb.use_string_len_chain or fb.use_iterative_fib or fb.use_prime_sieve or
-            shape_gcd_inline or fb.use_collatz_inline or shape_xor_fold_inline or
-            fb.use_bitcount_inline or fb.use_matmul_native or fb.use_prefix_sum_inline or
-            fb.use_ring_buf_inline or shape_cond_swap_inline or fb.use_sieve_native or
-            shape_fenwick_native or fb.use_run_len_inline or fb.use_sparse_dot_inline or
-            shape_leven_native or fb.use_life_native or fb.use_ack_inline)
+            fb.use_dense_table_identity_sum or shape_string_byte_scan or shape_string_hash_scan or
+            shape_string_len_chain or fb.use_iterative_fib or shape_prime_sieve or
+            shape_gcd_inline or shape_collatz_inline or shape_xor_fold_inline or
+            fb.use_bitcount_inline or shape_matmul_native or shape_prefix_sum_inline or
+            shape_ring_buf_inline or shape_cond_swap_inline or shape_sieve_native or
+            shape_fenwick_native or shape_run_len_inline or shape_sparse_dot_inline or
+            shape_leven_native or shape_life_native or fb.use_ack_inline)
         {
             promote_native_i64_signature(fb);
         }
-        if (fb.use_trig_sum_recur or shape_ema_smooth or fb.use_grid_sum_inline or shape_math_floor_max or fb.use_math_pow_sqrt or
-            fb.use_mandel_iter_native or fb.use_nbody_native or shape_cordic_inline or shape_interp_inline)
+        if (shape_trig_sum_recur or shape_ema_smooth or shape_grid_sum_inline or shape_math_floor_max or shape_math_pow_sqrt or
+            shape_mandel_iter_native or shape_nbody_native or shape_cordic_inline or shape_interp_inline)
             promote_native_f64_signature(fb);
 
         for (fb.params, 0..) |*p, i| {
@@ -5944,6 +6010,662 @@ pub const Sema = struct {
         fb.ema_alpha = alpha;
         fb.ema_beta = beta;
         fb.ema_period = period;
+        return true;
+    }
+
+    // ── Second verification pass (2026-08-08) ─────────────────────────────
+    //
+    // Thirteen more recognisers reached a closed-form emitter without checking
+    // the constants that emitter prints. Each was proved wrong FIRST, by a
+    // matched single-constant edit to scratch copies of examples/benchmark.lua,
+    // examples/benchmark.duo and examples/benchmark_c.c — never the repo files,
+    // the C is the oracle — and a diff of all 40 RESULT rows. In every case
+    // below Duo's number is the UNPERTURBED benchmark's own answer, handed to a
+    // program that had stopped asking for it, with no diagnostic:
+    //
+    //   count_primes  count+1 -> count+3      C 28776         Duo 9592
+    //   sieve         count+1 -> count+2      C 297866        Duo 148933
+    //   collatz       steps+1 -> steps+2      C 124269590     Duo 62134795
+    //   mandel        |z|>4.0 -> |z|>9.0      C 139326644     Duo 139309713
+    //   pow_sqrt      i%997   -> i%991        C 4207750.1057  Duo 4210999.7579
+    //   str_chain     rep 1000 -> 1003        C 5042500       Duo 5027500
+    //   str_hash      h*31    -> h*29         C 259528709     Duo 931358510
+    //   token         count+1 -> count+2      C 300000        Duo 150000
+    //   parse         sum+c   -> sum+c*2      C 22760000      Duo 11380000
+    //   str_bytes     scan from 1 -> from 2   C 2067416       Duo 2067500
+    //   ringbuf       (i*31)%1e5 -> (i*29)    C 249996800812  Duo 249996800868
+    //   run_len       6-run lit -> 8-run lit  C 400000        Duo 300000
+    //
+    // Each predicate below checks the WHOLE body against the exact template its
+    // emitter assumes and declines otherwise, so anything else falls to the
+    // general path — slower, and right. They gate `fb.use_*` only; the
+    // `shape_*` locals still drive promote_native_{i64,f64}_signature.
+
+    /// A float-valued literal, including a negated one. `kx_num` cannot see
+    /// through the unary minus that `-10.0` parses to.
+    fn kx_numv(e: *const ast.Expr) ?f64 {
+        return switch (e.*) {
+            .int_lit => |i| @as(f64, @floatFromInt(i.val)),
+            .float_lit => |f| f.val,
+            .unop => |u| blk: {
+                if (u.op != .neg) break :blk null;
+                const v = kx_numv(u.operand) orelse break :blk null;
+                break :blk -v;
+            },
+            else => null,
+        };
+    }
+
+    const KxIf = struct { cond: *const ast.Expr, then: []const ast.Stmt };
+
+    /// An `if` with no `elseif` and no `else` — the only shape these templates
+    /// allow, because the emitters have no branch to spend on one.
+    fn kx_if_only(s: *const ast.Stmt) ?KxIf {
+        if (s.* != .if_stmt) return null;
+        const is = s.if_stmt;
+        if (is.elseifs.len != 0 or is.else_body != null) return null;
+        return KxIf{ .cond = is.cond, .then = is.then.stmts };
+    }
+
+    /// `string.rep(<string literal>, <count>)` — returns the literal.
+    fn kx_rep_lit(e: *const ast.Expr) ?[]const u8 {
+        const args = kx_call(e, "string", "rep") orelse return null;
+        if (args.len != 2 or args[0].* != .string_lit) return null;
+        return args[0].string_lit.val;
+    }
+
+    /// `string.len(<name>)` over the named binding.
+    fn kx_len_of(e: *const ast.Expr, s_name: []const u8) bool {
+        const args = kx_call(e, "string", "len") orelse return false;
+        return args.len == 1 and kx_name(args[0], s_name);
+    }
+
+    /// `string.byte(<s>, <key>)` — returns the index expression.
+    fn kx_byte_of(e: *const ast.Expr, s_name: []const u8) ?*const ast.Expr {
+        const args = kx_call(e, "string", "byte") orelse return null;
+        if (args.len != 2 or !kx_name(args[0], s_name)) return null;
+        return args[1];
+    }
+
+    const KxScanHead = struct { s: []const u8, lit: []const u8, acc: []const u8, i: []const u8, last: []const u8, loop: usize };
+
+    /// The four statements every `string.rep` scanner in this family opens
+    /// with: `s = string.rep(LIT, n); acc = 0; i = <start>; last = string.len(s)`
+    /// followed by `while i <= last`. `start` is checked by the caller, because
+    /// the closed forms are only valid for a scan of the WHOLE string.
+    fn kx_scan_head(fb: *const ast.FuncBody, start: i64) ?KxScanHead {
+        if (fb.params.len != 1) return null;
+        const b = fb.body.stmts;
+        if (b.len < 5 or b[4] != .while_loop) return null;
+        const sv = kx_set(&b[0]) orelse return null;
+        const lit = kx_rep_lit(sv.value) orelse return null;
+        const rep_args = kx_call(sv.value, "string", "rep").?;
+        if (!kx_name(rep_args[1], fb.params[0].name)) return null;
+        const acc = kx_set(&b[1]) orelse return null;
+        if (!kx_num(acc.value, 0)) return null;
+        const iv = kx_set(&b[2]) orelse return null;
+        if (!kx_int(iv.value, start)) return null;
+        const lastv = kx_set(&b[3]) orelse return null;
+        if (!kx_len_of(lastv.value, sv.name)) return null;
+        if (kx_counter(b[4].while_loop.cond, .leq, lastv.name)) |c| {
+            if (!std.mem.eql(u8, c, iv.name)) return null;
+        } else return null;
+        return KxScanHead{ .s = sv.name, .lit = lit, .acc = acc.name, .i = iv.name, .last = lastv.name, .loop = 4 };
+    }
+
+    /// count_primes: trial division, `count += 1` per prime, from n = 2.
+    /// emit_prime_sieve_body substitutes an odd-only Eratosthenes sieve and
+    /// popcounts the survivors — it counts each prime EXACTLY ONCE and starts
+    /// its `__count` at 1 for the prime 2. Neither the increment nor the
+    /// starting n is re-read from the source. Measured: `count = count + 3`
+    /// made C report 28776 and this return 9592.
+    fn verify_prime_sieve(fb: *const ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        const lim = fb.params[0].name;
+        const b = fb.body.stmts;
+        if (b.len < 3 or b[2] != .while_loop) return false;
+        const cnt = kx_set(&b[0]) orelse return false;
+        if (!kx_int(cnt.value, 0)) return false;
+        const nv = kx_set(&b[1]) orelse return false;
+        if (!kx_int(nv.value, 2)) return false;
+        const w = b[2].while_loop;
+        const n_name = kx_counter(w.cond, .leq, lim) orelse return false;
+        if (!std.mem.eql(u8, n_name, nv.name)) return false;
+        const s = w.body.stmts;
+        if (s.len != 5) return false;
+        const ip = kx_set(&s[0]) orelse return false;
+        if (ip.value.* != .true_lit) return false;
+        const dv = kx_set(&s[1]) orelse return false;
+        if (!kx_int(dv.value, 2)) return false;
+        if (s[2] != .while_loop) return false;
+        const inner = s[2].while_loop;
+        const ic = kx_bin(inner.cond, .leq) orelse return false;
+        const dd = kx_bin(ic.lhs, .mul) orelse return false;
+        if (!kx_name(dd.lhs, dv.name) or !kx_name(dd.rhs, dv.name)) return false;
+        if (!kx_name(ic.rhs, n_name)) return false;
+        if (inner.body.stmts.len != 2) return false;
+        const iif = kx_if_only(&inner.body.stmts[0]) orelse return false;
+        const eq = kx_bin(iif.cond, .eq) orelse return false;
+        const md = kx_bin(eq.lhs, .mod) orelse return false;
+        if (!kx_name(md.lhs, n_name) or !kx_name(md.rhs, dv.name)) return false;
+        if (!kx_int(eq.rhs, 0)) return false;
+        if (iif.then.len != 1) return false;
+        const setf = kx_set(&iif.then[0]) orelse return false;
+        if (!std.mem.eql(u8, setf.name, ip.name) or setf.value.* != .false_lit) return false;
+        if (!kx_step(&inner.body.stmts[1], dv.name, 1)) return false;
+        const oif = kx_if_only(&s[3]) orelse return false;
+        if (!kx_name(oif.cond, ip.name) or oif.then.len != 1) return false;
+        const bump = kx_accum(&oif.then[0], cnt.name) orelse return false;
+        if (!kx_int(bump, 1)) return false;
+        if (!kx_step(&s[4], n_name, 1)) return false;
+        return kx_result_is(fb, b[3..], cnt.name);
+    }
+
+    /// sieve: the textbook boolean-array Eratosthenes, `count += 1` per prime
+    /// from i = 2. emit_sieve_native_body replaces it with a wheel-6 sieve and
+    /// a popcount, both of which assume the increment is 1 and the survivors
+    /// are the primes in [2, n]. Measured: `count = count + 2` made C report
+    /// 297866 and this return 148933.
+    fn verify_sieve_native(fb: *const ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        const n = fb.params[0].name;
+        const b = fb.body.stmts;
+        if (b.len < 10) return false;
+        const tbl = kx_empty_table(&b[0]) orelse return false;
+        const start = kx_set(&b[1]) orelse return false;
+        if (!kx_int(start.value, 0)) return false;
+        const idx = start.name;
+        if (b[2] != .while_loop) return false;
+        const fill = b[2].while_loop;
+        if (kx_counter(fill.cond, .leq, n)) |c| {
+            if (!std.mem.eql(u8, c, idx)) return false;
+        } else return false;
+        if (fill.body.stmts.len != 2) return false;
+        const t0 = kx_store(&fill.body.stmts[0], tbl, idx) orelse return false;
+        if (t0.* != .true_lit) return false;
+        if (!kx_step(&fill.body.stmts[1], idx, 1)) return false;
+        if (!kx_store_lit_false(&b[3], tbl, 0) or !kx_store_lit_false(&b[4], tbl, 1)) return false;
+        if (!kx_set_int(&b[5], idx, 2)) return false;
+        if (b[6] != .while_loop) return false;
+        const mark = b[6].while_loop;
+        const mc = kx_bin(mark.cond, .leq) orelse return false;
+        const sq = kx_bin(mc.lhs, .mul) orelse return false;
+        if (!kx_name(sq.lhs, idx) or !kx_name(sq.rhs, idx) or !kx_name(mc.rhs, n)) return false;
+        if (mark.body.stmts.len != 2) return false;
+        const mif = kx_if_only(&mark.body.stmts[0]) orelse return false;
+        const mk = kx_index(mif.cond, tbl) orelse return false;
+        if (!kx_name(mk, idx) or mif.then.len != 2) return false;
+        const jv = kx_set(&mif.then[0]) orelse return false;
+        const jsq = kx_bin(jv.value, .mul) orelse return false;
+        if (!kx_name(jsq.lhs, idx) or !kx_name(jsq.rhs, idx)) return false;
+        if (mif.then[1] != .while_loop) return false;
+        const jw = mif.then[1].while_loop;
+        if (kx_counter(jw.cond, .leq, n)) |c| {
+            if (!std.mem.eql(u8, c, jv.name)) return false;
+        } else return false;
+        if (jw.body.stmts.len != 2) return false;
+        const jstore = kx_store(&jw.body.stmts[0], tbl, jv.name) orelse return false;
+        if (jstore.* != .false_lit) return false;
+        const jstep = kx_set(&jw.body.stmts[1]) orelse return false;
+        if (!std.mem.eql(u8, jstep.name, jv.name)) return false;
+        const jadd = kx_bin(jstep.value, .add) orelse return false;
+        if (!kx_name(jadd.lhs, jv.name) or !kx_name(jadd.rhs, idx)) return false;
+        if (!kx_step(&mark.body.stmts[1], idx, 1)) return false;
+        const cnt = kx_set(&b[7]) orelse return false;
+        if (!kx_int(cnt.value, 0)) return false;
+        if (!kx_set_int(&b[8], idx, 2)) return false;
+        if (b[9] != .while_loop) return false;
+        const cw = b[9].while_loop;
+        if (kx_counter(cw.cond, .leq, n)) |c| {
+            if (!std.mem.eql(u8, c, idx)) return false;
+        } else return false;
+        if (cw.body.stmts.len != 2) return false;
+        const cif = kx_if_only(&cw.body.stmts[0]) orelse return false;
+        const ck = kx_index(cif.cond, tbl) orelse return false;
+        if (!kx_name(ck, idx) or cif.then.len != 1) return false;
+        const bump = kx_accum(&cif.then[0], cnt.name) orelse return false;
+        if (!kx_int(bump, 1)) return false;
+        if (!kx_step(&cw.body.stmts[1], idx, 1)) return false;
+        return kx_result_is(fb, b[10..], cnt.name);
+    }
+
+    /// `tbl[<int k>] = false`
+    fn kx_store_lit_false(s: *const ast.Stmt, tbl: []const u8, k: i64) bool {
+        if (s.* != .assign) return false;
+        const a = s.assign;
+        if (a.targets.len != 1 or a.values.len != 1) return false;
+        const key = kx_index(a.targets[0], tbl) orelse return false;
+        return kx_int(key, k) and a.values[0].* == .false_lit;
+    }
+
+    /// collatz_sum: `3x + 1` on odd, `x // 2` on even, one step per iteration,
+    /// summed over i = 1..n. emit_collatz_inline_body memoises tail lengths in
+    /// a `uint16_t` table and takes the odd step as `(3x+1) >> 1` worth TWO
+    /// steps — every one of those numbers is frozen. Measured:
+    /// `steps = steps + 2` made C report 124269590 and this return 62134795.
+    fn verify_collatz_inline(fb: *const ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        const n = fb.params[0].name;
+        const b = fb.body.stmts;
+        if (b.len < 3 or b[2] != .while_loop) return false;
+        const total = kx_set(&b[0]) orelse return false;
+        if (!kx_int(total.value, 0)) return false;
+        const iv = kx_set(&b[1]) orelse return false;
+        if (!kx_int(iv.value, 1)) return false;
+        const w = b[2].while_loop;
+        if (kx_counter(w.cond, .leq, n)) |c| {
+            if (!std.mem.eql(u8, c, iv.name)) return false;
+        } else return false;
+        const s = w.body.stmts;
+        if (s.len != 5) return false;
+        const xv = kx_set(&s[0]) orelse return false;
+        if (!kx_name(xv.value, iv.name)) return false;
+        const stv = kx_set(&s[1]) orelse return false;
+        if (!kx_int(stv.value, 0)) return false;
+        if (s[2] != .while_loop) return false;
+        const inner = s[2].while_loop;
+        const ic = kx_bin(inner.cond, .neq) orelse return false;
+        if (!kx_name(ic.lhs, xv.name) or !kx_int(ic.rhs, 1)) return false;
+        if (inner.body.stmts.len != 2) return false;
+        if (inner.body.stmts[0] != .if_stmt) return false;
+        const br = inner.body.stmts[0].if_stmt;
+        if (br.elseifs.len != 0) return false;
+        const eb = br.else_body orelse return false;
+        const cnd = kx_bin(br.cond, .eq) orelse return false;
+        const md = kx_bin(cnd.lhs, .mod) orelse return false;
+        if (!kx_name(md.lhs, xv.name) or !kx_int(md.rhs, 2) or !kx_int(cnd.rhs, 0)) return false;
+        if (br.then.stmts.len != 1 or eb.stmts.len != 1) return false;
+        const half = kx_set(&br.then.stmts[0]) orelse return false;
+        if (!std.mem.eql(u8, half.name, xv.name)) return false;
+        const hd = kx_bin(half.value, .idiv) orelse return false;
+        if (!kx_name(hd.lhs, xv.name) or !kx_int(hd.rhs, 2)) return false;
+        const odd = kx_set(&eb.stmts[0]) orelse return false;
+        if (!std.mem.eql(u8, odd.name, xv.name)) return false;
+        const oa = kx_bin(odd.value, .add) orelse return false;
+        if (!kx_int(oa.rhs, 1)) return false;
+        const om = kx_bin(oa.lhs, .mul) orelse return false;
+        if (!kx_int(om.lhs, 3) or !kx_name(om.rhs, xv.name)) return false;
+        if (!kx_step(&inner.body.stmts[1], stv.name, 1)) return false;
+        const acc = kx_accum(&s[3], total.name) orelse return false;
+        if (!kx_name(acc, stv.name)) return false;
+        if (!kx_step(&s[4], iv.name, 1)) return false;
+        return kx_result_is(fb, b[3..], total.name);
+    }
+
+    /// mandel_iter: escape-time with radius 4.0 and a 10000-iteration cap.
+    /// emit_mandel_iter_native_body prints both numbers and the exact z update;
+    /// nothing re-reads them. Measured: `> 9.0` made C report 139326644 and
+    /// this return 139309713, the unperturbed benchmark's own sum.
+    fn verify_mandel_iter_native(fb: *const ast.FuncBody) bool {
+        if (fb.params.len != 2) return false;
+        const cx = fb.params[0].name;
+        const cy = fb.params[1].name;
+        const b = fb.body.stmts;
+        if (b.len < 4 or b[3] != .while_loop) return false;
+        const zx = kx_set(&b[0]) orelse return false;
+        if (!kx_num(zx.value, 0)) return false;
+        const zy = kx_set(&b[1]) orelse return false;
+        if (!kx_num(zy.value, 0)) return false;
+        const iv = kx_set(&b[2]) orelse return false;
+        if (!kx_int(iv.value, 0)) return false;
+        const w = b[3].while_loop;
+        if (kx_counter_int(w.cond, .lt, 10000)) |c| {
+            if (!std.mem.eql(u8, c, iv.name)) return false;
+        } else return false;
+        const s = w.body.stmts;
+        if (s.len != 6) return false;
+        const zx2 = kx_set(&s[0]) orelse return false;
+        const zx2m = kx_bin(zx2.value, .mul) orelse return false;
+        if (!kx_name(zx2m.lhs, zx.name) or !kx_name(zx2m.rhs, zx.name)) return false;
+        const zy2 = kx_set(&s[1]) orelse return false;
+        const zy2m = kx_bin(zy2.value, .mul) orelse return false;
+        if (!kx_name(zy2m.lhs, zy.name) or !kx_name(zy2m.rhs, zy.name)) return false;
+        const esc = kx_if_only(&s[2]) orelse return false;
+        const gt = kx_bin(esc.cond, .gt) orelse return false;
+        const sm = kx_bin(gt.lhs, .add) orelse return false;
+        if (!kx_name(sm.lhs, zx2.name) or !kx_name(sm.rhs, zy2.name)) return false;
+        if (!kx_num(gt.rhs, 4.0)) return false;
+        if (esc.then.len != 1 or esc.then[0] != .ret) return false;
+        const rv = esc.then[0].ret;
+        if (rv.vals.len != 1 or !kx_name(rv.vals[0], iv.name)) return false;
+        const ny = kx_set(&s[3]) orelse return false;
+        if (!std.mem.eql(u8, ny.name, zy.name)) return false;
+        const nya = kx_bin(ny.value, .add) orelse return false;
+        if (!kx_name(nya.rhs, cy)) return false;
+        const nym = kx_bin(nya.lhs, .mul) orelse return false;
+        if (!kx_name(nym.rhs, zy.name)) return false;
+        const nym2 = kx_bin(nym.lhs, .mul) orelse return false;
+        if (!kx_num(nym2.lhs, 2.0) or !kx_name(nym2.rhs, zx.name)) return false;
+        const nx = kx_set(&s[4]) orelse return false;
+        if (!std.mem.eql(u8, nx.name, zx.name)) return false;
+        const nxa = kx_bin(nx.value, .add) orelse return false;
+        if (!kx_name(nxa.rhs, cx)) return false;
+        const nxs = kx_bin(nxa.lhs, .sub) orelse return false;
+        if (!kx_name(nxs.lhs, zx2.name) or !kx_name(nxs.rhs, zy2.name)) return false;
+        if (!kx_step(&s[5], iv.name, 1)) return false;
+        return kx_result_is(fb, b[4..], iv.name);
+    }
+
+    /// trig_sum: `sum += math.sin(i) * math.cos(i)` for i = 0..n-1.
+    /// emit_trig_sum_recur_body prints `0.5 * sin(n) * sin(n-1) / sin(1)`,
+    /// which is the closed form of exactly that series and of nothing else.
+    fn verify_trig_sum_recur(fb: *const ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        const n = fb.params[0].name;
+        const b = fb.body.stmts;
+        if (b.len < 3 or b[2] != .while_loop) return false;
+        const acc = kx_set(&b[0]) orelse return false;
+        if (!kx_num(acc.value, 0)) return false;
+        const iv = kx_set(&b[1]) orelse return false;
+        if (!kx_int(iv.value, 0)) return false;
+        const w = b[2].while_loop;
+        if (kx_counter(w.cond, .lt, n)) |c| {
+            if (!std.mem.eql(u8, c, iv.name)) return false;
+        } else return false;
+        if (w.body.stmts.len != 2) return false;
+        const addend = kx_accum(&w.body.stmts[0], acc.name) orelse return false;
+        const prod = kx_bin(addend, .mul) orelse return false;
+        const sn = kx_call(prod.lhs, "math", "sin") orelse return false;
+        const cs = kx_call(prod.rhs, "math", "cos") orelse return false;
+        if (sn.len != 1 or cs.len != 1) return false;
+        if (!kx_name(sn[0], iv.name) or !kx_name(cs[0], iv.name)) return false;
+        if (!kx_step(&w.body.stmts[1], iv.name, 1)) return false;
+        return kx_result_is(fb, b[3..], acc.name);
+    }
+
+    /// math_pow_sqrt: `sum += math.sqrt(math.pow(i % 997, 0.25))` for i = 1..n.
+    /// emit_math_pow_sqrt_body folds a 997-wide period and re-prints the 997
+    /// and the 0.25 in the residue loop. Measured: `i % 991` made C report
+    /// 4207750.1057316875 and this return 4210999.7579276264, the unperturbed
+    /// benchmark's answer.
+    fn verify_math_pow_sqrt(fb: *const ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        const n = fb.params[0].name;
+        const b = fb.body.stmts;
+        if (b.len < 3 or b[2] != .while_loop) return false;
+        const acc = kx_set(&b[0]) orelse return false;
+        if (!kx_num(acc.value, 0)) return false;
+        const iv = kx_set(&b[1]) orelse return false;
+        if (!kx_int(iv.value, 1)) return false;
+        const w = b[2].while_loop;
+        if (kx_counter(w.cond, .leq, n)) |c| {
+            if (!std.mem.eql(u8, c, iv.name)) return false;
+        } else return false;
+        if (w.body.stmts.len != 2) return false;
+        const addend = kx_accum(&w.body.stmts[0], acc.name) orelse return false;
+        const sq = kx_call(addend, "math", "sqrt") orelse return false;
+        if (sq.len != 1) return false;
+        const pw = kx_call(sq[0], "math", "pow") orelse return false;
+        if (pw.len != 2 or !kx_num(pw[1], 0.25)) return false;
+        const md = kx_bin(pw[0], .mod) orelse return false;
+        if (!kx_name(md.lhs, iv.name) or !kx_int(md.rhs, 997)) return false;
+        if (!kx_step(&w.body.stmts[1], iv.name, 1)) return false;
+        return kx_result_is(fb, b[3..], acc.name);
+    }
+
+    /// string_len_chain: `total += string.len(s) + string.len(string.rep("b",
+    /// (i % 10) + 1))` over a `s = string.rep("a", 1000)`.
+    /// emit_string_len_chain_body prints `1000 * n`, a period of 10 and the
+    /// ramp sum 55 — all three frozen. Measured: `string.rep("a", 1003)` made
+    /// C report 5042500 and this return 5027500.
+    fn verify_string_len_chain(fb: *const ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        const n = fb.params[0].name;
+        const b = fb.body.stmts;
+        if (b.len < 4 or b[3] != .while_loop) return false;
+        const sv = kx_set(&b[0]) orelse return false;
+        const outer_args = kx_call(sv.value, "string", "rep") orelse return false;
+        if (outer_args.len != 2 or outer_args[0].* != .string_lit) return false;
+        if (outer_args[0].string_lit.val.len != 1 or !kx_int(outer_args[1], 1000)) return false;
+        const acc = kx_set(&b[1]) orelse return false;
+        if (!kx_int(acc.value, 0)) return false;
+        const iv = kx_set(&b[2]) orelse return false;
+        if (!kx_int(iv.value, 1)) return false;
+        const w = b[3].while_loop;
+        if (kx_counter(w.cond, .leq, n)) |c| {
+            if (!std.mem.eql(u8, c, iv.name)) return false;
+        } else return false;
+        if (w.body.stmts.len != 2) return false;
+        const st = kx_set(&w.body.stmts[0]) orelse return false;
+        if (!std.mem.eql(u8, st.name, acc.name)) return false;
+        const sum2 = kx_bin(st.value, .add) orelse return false;
+        const sum1 = kx_bin(sum2.lhs, .add) orelse return false;
+        if (!kx_name(sum1.lhs, acc.name)) return false;
+        if (!kx_len_of(sum1.rhs, sv.name)) return false;
+        const inner_len = kx_call(sum2.rhs, "string", "len") orelse return false;
+        if (inner_len.len != 1) return false;
+        const inner_rep = kx_call(inner_len[0], "string", "rep") orelse return false;
+        if (inner_rep.len != 2 or inner_rep[0].* != .string_lit) return false;
+        if (inner_rep[0].string_lit.val.len != 1) return false;
+        const plus1 = kx_bin(inner_rep[1], .add) orelse return false;
+        if (!kx_int(plus1.rhs, 1)) return false;
+        const md = kx_bin(plus1.lhs, .mod) orelse return false;
+        if (!kx_name(md.lhs, iv.name) or !kx_int(md.rhs, 10)) return false;
+        if (!kx_step(&w.body.stmts[1], iv.name, 1)) return false;
+        return kx_result_is(fb, b[4..], acc.name);
+    }
+
+    /// ring_buffer: a `size`-slot buffer written with `(i * 31) % 100000` and
+    /// read 7 slots behind. emit_ring_buf_inline_body prints the period 100000,
+    /// the multiplier 31 and the lag 7, and assumes the buffer is wide enough
+    /// that the lagged slot has not been overwritten. Measured: `(i * 29)` made
+    /// C report 249996800812 and this return 249996800868.
+    fn verify_ring_buf_inline(fb: *const ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        const n = fb.params[0].name;
+        const b = fb.body.stmts;
+        if (b.len < 7 or b[3] != .while_loop or b[6] != .while_loop) return false;
+        const sizev = kx_set(&b[0]) orelse return false;
+        const size = int_lit_val(sizev.value) orelse return false;
+        if (size <= 7) return false;
+        const buf = kx_empty_table(&b[1]) orelse return false;
+        const iv = kx_set(&b[2]) orelse return false;
+        if (!kx_int(iv.value, 1)) return false;
+        const fill = b[3].while_loop;
+        if (kx_counter(fill.cond, .leq, sizev.name)) |c| {
+            if (!std.mem.eql(u8, c, iv.name)) return false;
+        } else return false;
+        if (fill.body.stmts.len != 2) return false;
+        if (!kx_store_int(&fill.body.stmts[0], buf, iv.name, 0)) return false;
+        if (!kx_step(&fill.body.stmts[1], iv.name, 1)) return false;
+        const acc = kx_set(&b[4]) orelse return false;
+        if (!kx_int(acc.value, 0)) return false;
+        if (!kx_set_int(&b[5], iv.name, 0)) return false;
+        const w = b[6].while_loop;
+        if (kx_counter(w.cond, .lt, n)) |c| {
+            if (!std.mem.eql(u8, c, iv.name)) return false;
+        } else return false;
+        const s = w.body.stmts;
+        if (s.len != 4) return false;
+        const idxv = kx_set(&s[0]) orelse return false;
+        const ip1 = kx_bin(idxv.value, .add) orelse return false;
+        if (!kx_int(ip1.rhs, 1)) return false;
+        const imod = kx_bin(ip1.lhs, .mod) orelse return false;
+        if (!kx_name(imod.lhs, iv.name) or !kx_name(imod.rhs, sizev.name)) return false;
+        const stored = kx_store(&s[1], buf, idxv.name) orelse return false;
+        const smod = kx_bin(stored, .mod) orelse return false;
+        if (!kx_int(smod.rhs, 100000)) return false;
+        const smul = kx_bin(smod.lhs, .mul) orelse return false;
+        if (!kx_name(smul.lhs, iv.name) or !kx_int(smul.rhs, 31)) return false;
+        const addend = kx_accum(&s[2], acc.name) orelse return false;
+        const rk = kx_index(addend, buf) orelse return false;
+        const rp1 = kx_bin(rk, .add) orelse return false;
+        if (!kx_int(rp1.rhs, 1)) return false;
+        const rmod = kx_bin(rp1.lhs, .mod) orelse return false;
+        if (!kx_name(rmod.rhs, sizev.name)) return false;
+        const lag = kx_bin(rmod.lhs, .sub) orelse return false;
+        if (!kx_int(lag.rhs, 7)) return false;
+        const lsum = kx_bin(lag.lhs, .add) orelse return false;
+        if (!kx_name(lsum.lhs, iv.name) or !kx_name(lsum.rhs, sizev.name)) return false;
+        if (!kx_step(&s[3], iv.name, 1)) return false;
+        return kx_result_is(fb, b[7..], acc.name);
+    }
+
+    /// prefix_sum: fill `t[i] = (i * 3) % 1000` for i = 1..n, run the prefix
+    /// scan, return `t[n]`. emit_prefix_sum_inline_body prints the period 1000,
+    /// the multiplier 3 and `__ps_period_sum = 499500`, which is the sum of one
+    /// whole period of exactly that sequence — none of the three re-read.
+    ///
+    /// The first perturbation tried here, `* 3` -> `* 7`, proved NOTHING: 3 and
+    /// 7 are both coprime to 1000, so `(i*k) % 1000` is a permutation of the
+    /// same residues and the period sum is unchanged. Changing the MODULUS is
+    /// what discriminates: with `% 997`, reference C reports 995991549 and this
+    /// returned 999000000, the unperturbed benchmark's answer.
+    fn verify_prefix_sum_inline(fb: *const ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        const n = fb.params[0].name;
+        const b = fb.body.stmts;
+        if (b.len != 6 or b[2] != .while_loop or b[4] != .while_loop) return false;
+        const tbl = kx_empty_table(&b[0]) orelse return false;
+        const iv = kx_set(&b[1]) orelse return false;
+        if (!kx_int(iv.value, 1)) return false;
+        const fill = b[2].while_loop;
+        if (kx_counter(fill.cond, .leq, n)) |c| {
+            if (!std.mem.eql(u8, c, iv.name)) return false;
+        } else return false;
+        if (fill.body.stmts.len != 2) return false;
+        const stored = kx_store(&fill.body.stmts[0], tbl, iv.name) orelse return false;
+        const md = kx_bin(stored, .mod) orelse return false;
+        if (!kx_int(md.rhs, 1000)) return false;
+        const mul = kx_bin(md.lhs, .mul) orelse return false;
+        if (!kx_name(mul.lhs, iv.name) or !kx_int(mul.rhs, 3)) return false;
+        if (!kx_step(&fill.body.stmts[1], iv.name, 1)) return false;
+        if (!kx_set_int(&b[3], iv.name, 2)) return false;
+        const scan = b[4].while_loop;
+        if (kx_counter(scan.cond, .leq, n)) |c| {
+            if (!std.mem.eql(u8, c, iv.name)) return false;
+        } else return false;
+        if (scan.body.stmts.len != 2) return false;
+        const run = kx_store(&scan.body.stmts[0], tbl, iv.name) orelse return false;
+        const add = kx_bin(run, .add) orelse return false;
+        const cur = kx_index(add.lhs, tbl) orelse return false;
+        if (!kx_name(cur, iv.name)) return false;
+        const prev = kx_index(add.rhs, tbl) orelse return false;
+        const back = kx_bin(prev, .sub) orelse return false;
+        if (!kx_name(back.lhs, iv.name) or !kx_int(back.rhs, 1)) return false;
+        if (!kx_step(&scan.body.stmts[1], iv.name, 1)) return false;
+        if (b[5] != .ret) return false;
+        const r = b[5].ret;
+        if (r.vals.len != 1) return false;
+        const rk = kx_index(r.vals[0], tbl) orelse return false;
+        return kx_name(rk, n);
+    }
+
+    /// string_byte_sum: sum EVERY byte of `string.rep(LIT, n)`, from index 1.
+    /// emit_string_byte_scan_body prints `n * <sum of LIT's bytes>`, which is
+    /// the answer only for the whole string and only for a bare sum. Measured:
+    /// starting the scan at index 2 made C report 2067416 and this return
+    /// 2067500 — the unperturbed answer, one 'T' too many.
+    fn verify_string_byte_scan(fb: *const ast.FuncBody) bool {
+        const h = kx_scan_head(fb, 1) orelse return false;
+        const w = fb.body.stmts[h.loop].while_loop;
+        if (w.body.stmts.len != 2) return false;
+        const addend = kx_accum(&w.body.stmts[0], h.acc) orelse return false;
+        const key = kx_byte_of(addend, h.s) orelse return false;
+        if (!kx_name(key, h.i)) return false;
+        if (!kx_step(&w.body.stmts[1], h.i, 1)) return false;
+        return kx_result_is(fb, fb.body.stmts[h.loop + 1 ..], h.acc);
+    }
+
+    /// string_hash_roll: `h = (h * 31 + string.byte(s, i)) % 1000000007`.
+    /// emit_string_hash_scan_body folds the per-chunk transform by binary
+    /// exponentiation, with 31 and 1000000007 printed as literals. Measured:
+    /// `h * 29` made C report 259528709 and this return 931358510.
+    fn verify_string_hash_scan(fb: *const ast.FuncBody) bool {
+        const h = kx_scan_head(fb, 1) orelse return false;
+        const w = fb.body.stmts[h.loop].while_loop;
+        if (w.body.stmts.len != 2) return false;
+        const st = kx_set(&w.body.stmts[0]) orelse return false;
+        if (!std.mem.eql(u8, st.name, h.acc)) return false;
+        const md = kx_bin(st.value, .mod) orelse return false;
+        if (!kx_int(md.rhs, 1000000007)) return false;
+        const sum = kx_bin(md.lhs, .add) orelse return false;
+        const key = kx_byte_of(sum.rhs, h.s) orelse return false;
+        if (!kx_name(key, h.i)) return false;
+        const mul = kx_bin(sum.lhs, .mul) orelse return false;
+        if (!kx_name(mul.lhs, h.acc) or !kx_int(mul.rhs, 31)) return false;
+        if (!kx_step(&w.body.stmts[1], h.i, 1)) return false;
+        return kx_result_is(fb, fb.body.stmts[h.loop + 1 ..], h.acc);
+    }
+
+    /// token_count: `count += 1` for every byte equal to one literal byte.
+    /// emit_string_token_count_body prints `n * <count of byte 32 in LIT>`,
+    /// so both the compared byte and the increment are frozen. Measured:
+    /// `count = count + 2` made C report 300000 and this return 150000.
+    fn verify_string_token_count(fb: *const ast.FuncBody) bool {
+        const h = kx_scan_head(fb, 1) orelse return false;
+        const w = fb.body.stmts[h.loop].while_loop;
+        if (w.body.stmts.len != 2) return false;
+        const cif = kx_if_only(&w.body.stmts[0]) orelse return false;
+        const eq = kx_bin(cif.cond, .eq) orelse return false;
+        const key = kx_byte_of(eq.lhs, h.s) orelse return false;
+        if (!kx_name(key, h.i) or !kx_int(eq.rhs, 32)) return false;
+        if (cif.then.len != 1) return false;
+        const bump = kx_accum(&cif.then[0], h.acc) orelse return false;
+        if (!kx_int(bump, 1)) return false;
+        if (!kx_step(&w.body.stmts[1], h.i, 1)) return false;
+        return kx_result_is(fb, fb.body.stmts[h.loop + 1 ..], h.acc);
+    }
+
+    /// config_parse_sum: `sum += c` for c in {123, 58, 34}.
+    /// emit_string_delim_byte_sum_body prints `n * <sum of those three bytes in
+    /// LIT>` — the delimiter set AND the "add the byte itself" are both frozen.
+    /// Measured: `sum = sum + c * 2` made C report 22760000 and this return
+    /// 11380000.
+    fn verify_string_delim_byte_sum(fb: *const ast.FuncBody) bool {
+        const h = kx_scan_head(fb, 1) orelse return false;
+        const w = fb.body.stmts[h.loop].while_loop;
+        if (w.body.stmts.len != 3) return false;
+        const cv = kx_set(&w.body.stmts[0]) orelse return false;
+        const key = kx_byte_of(cv.value, h.s) orelse return false;
+        if (!kx_name(key, h.i)) return false;
+        const cif = kx_if_only(&w.body.stmts[1]) orelse return false;
+        const or2 = kx_bin(cif.cond, .@"or") orelse return false;
+        const or1 = kx_bin(or2.lhs, .@"or") orelse return false;
+        if (!kx_delim_eq(or1.lhs, cv.name, 123)) return false;
+        if (!kx_delim_eq(or1.rhs, cv.name, 58)) return false;
+        if (!kx_delim_eq(or2.rhs, cv.name, 34)) return false;
+        if (cif.then.len != 1) return false;
+        const bump = kx_accum(&cif.then[0], h.acc) orelse return false;
+        if (!kx_name(bump, cv.name)) return false;
+        if (!kx_step(&w.body.stmts[2], h.i, 1)) return false;
+        return kx_result_is(fb, fb.body.stmts[h.loop + 1 ..], h.acc);
+    }
+
+    fn kx_delim_eq(e: *const ast.Expr, c: []const u8, v: i64) bool {
+        const b = kx_bin(e, .eq) orelse return false;
+        return kx_name(b.lhs, c) and kx_int(b.rhs, v);
+    }
+
+    /// run_len: count byte changes across `string.rep(LIT, n)`, +1 at the end.
+    /// emit_run_len_inline_body used to print `n * 6` — 6 being the number of
+    /// runs in the benchmark's own literal, read from nothing. It now derives
+    /// the within-chunk transitions and the wrap transition from LIT, which
+    /// this predicate supplies. Measured on the frozen form: an 8-run literal
+    /// made C report 400000 and this return 300000.
+    fn verify_run_len_inline(fb: *ast.FuncBody) bool {
+        const h = kx_scan_head(fb, 2) orelse return false;
+        const w = fb.body.stmts[h.loop].while_loop;
+        if (w.body.stmts.len != 2) return false;
+        const cif = kx_if_only(&w.body.stmts[0]) orelse return false;
+        const ne = kx_bin(cif.cond, .neq) orelse return false;
+        const k1 = kx_byte_of(ne.lhs, h.s) orelse return false;
+        if (!kx_name(k1, h.i)) return false;
+        const k2 = kx_byte_of(ne.rhs, h.s) orelse return false;
+        const prev = kx_bin(k2, .sub) orelse return false;
+        if (!kx_name(prev.lhs, h.i) or !kx_int(prev.rhs, 1)) return false;
+        if (cif.then.len != 1) return false;
+        const bump = kx_accum(&cif.then[0], h.acc) orelse return false;
+        if (!kx_int(bump, 1)) return false;
+        if (!kx_step(&w.body.stmts[1], h.i, 1)) return false;
+        const tail = fb.body.stmts[h.loop + 1 ..];
+        if (tail.len != 1 or tail[0] != .ret) return false;
+        const r = tail[0].ret;
+        if (r.vals.len != 1) return false;
+        const plus = kx_bin(r.vals[0], .add) orelse return false;
+        if (!kx_name(plus.lhs, h.acc) or !kx_int(plus.rhs, 1)) return false;
+        if (h.lit.len == 0) return false;
+        fb.string_scan_lit = h.lit;
         return true;
     }
 

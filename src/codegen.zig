@@ -7875,7 +7875,7 @@ pub const CodeGen = struct {
         // detected as recognizable algorithm shapes and get native C bodies.
         // Auto-apply `hot` so the C compiler places them in the hot text
         // section and applies more aggressive optimization even without PGO.
-        const pattern_hot = !cold_attr and !noinline_attr and (fb.use_iterative_fib or fb.use_prime_sieve or fb.use_grid_sum_inline or
+        const pattern_hot = !cold_attr and !noinline_attr and (fb.use_iterative_fib or fb.use_prime_sieve or
             fb.use_dense_table or fb.use_dense_table_sum or
             fb.use_dense_table_identity_sum or fb.use_dense_table_mod997_sum or
             fb.use_dot_product_identity or fb.use_dot_product_dense or
@@ -7888,9 +7888,8 @@ pub const CodeGen = struct {
             fb.use_xor_fold_inline or fb.use_bitcount_inline or fb.use_cordic_inline or
             fb.use_ack_inline or fb.use_prefix_sum_inline or fb.use_ring_buf_inline or
             fb.use_interp_inline or fb.use_run_len_inline or
-            fb.use_sparse_dot_inline or fb.use_life_native or
             fb.use_sieve_native or fb.use_fenwick_native or fb.use_mandel_iter_native or
-            fb.use_nbody_native or fb.use_matmul_native or fb.use_trig_sum_recur);
+            fb.use_trig_sum_recur);
 
         if ((inline_attr or fb.is_typed) and !noinline_attr) {
             self.p("static inline ", .{});
@@ -8784,8 +8783,6 @@ pub const CodeGen = struct {
             try self.emit_binary_search_dense_body(fb.params[0].name, ret);
         } else if (fb.use_prime_sieve and fb.params.len == 1) {
             try self.emit_prime_sieve_body(fb.params[0].name, ret);
-        } else if (fb.use_grid_sum_inline and fb.params.len == 1) {
-            try self.emit_grid_sum_inline_body(fb.params[0].name, ret);
         } else if (fb.use_string_token_count and fb.params.len == 1 and fb.string_scan_lit != null) {
             try self.emit_string_token_count_body(fb.params[0].name, fb.string_scan_lit.?, ret);
         } else if (fb.use_string_delim_byte_sum and fb.params.len == 1 and fb.string_scan_lit != null) {
@@ -8804,12 +8801,8 @@ pub const CodeGen = struct {
             try self.emit_fenwick_native_body(fb.params[0].name, ret);
         } else if (fb.use_interp_inline and fb.params.len == 1) {
             try self.emit_interp_inline_body(fb.params[0].name, ret);
-        } else if (fb.use_run_len_inline and fb.params.len == 1) {
-            try self.emit_run_len_inline_body(fb.params[0].name, ret);
-        } else if (fb.use_sparse_dot_inline and fb.params.len == 1) {
-            try self.emit_sparse_dot_inline_body(fb.params[0].name, ret);
-        } else if (fb.use_life_native and fb.params.len == 1) {
-            try self.emit_life_native_body(fb.params[0].name, ret);
+        } else if (fb.use_run_len_inline and fb.params.len == 1 and fb.string_scan_lit != null) {
+            try self.emit_run_len_inline_body(fb.params[0].name, fb.string_scan_lit.?, ret);
         } else if (fb.use_dense_table_identity_sum and fb.params.len == 1) {
             try self.emit_dense_table_identity_sum_body(fb.params[0].name, ret);
         } else if (fb.use_dense_table_mod997_sum and fb.params.len == 1) {
@@ -8836,8 +8829,6 @@ pub const CodeGen = struct {
             try self.emit_trig_sum_recur_body(fb.params[0].name, ret);
         } else if (fb.use_mandel_iter_native and fb.params.len == 2) {
             try self.emit_mandel_iter_native_body(fb.params[0].name, fb.params[1].name, ret);
-        } else if (fb.use_nbody_native and fb.params.len == 1) {
-            try self.emit_nbody_native_body(fb.params[0].name, ret);
         } else if (fb.use_gcd_inline and fb.params.len == 1) {
             try self.emit_gcd_inline_body(fb.params[0].name, ret);
         } else if (fb.use_collatz_inline and fb.params.len == 1) {
@@ -8850,8 +8841,6 @@ pub const CodeGen = struct {
             try self.emit_cordic_inline_body(fb.params[0].name, ret);
         } else if (fb.use_ack_inline and fb.params.len == 2) {
             try self.emit_ack_inline_body(fb.params[0].name, fb.params[1].name, ret);
-        } else if (fb.use_matmul_native and fb.params.len == 1) {
-            try self.emit_matmul_native_body(fb.params[0].name, ret);
         } else {
             emitted_normal_body = true;
             try self.emit_hoisted_dense_decls();
@@ -9816,28 +9805,6 @@ pub const CodeGen = struct {
         self.pl("return __b;", .{});
     }
 
-    fn emit_grid_sum_inline_body(self: *CodeGen, size: []const u8, ret: RT) E!void {
-        // There used to be a `if (size == 5000) return 17.532160530720734;`
-        // line here, the same defect that was removed from emit_nbody_native_body:
-        // the benchmark's own argument answered with a frozen copy of the
-        // benchmark's own output, so the 25,000,000-iteration double loop below
-        // never ran and the "Grid matrix" row timed 0 seconds against C's 0.011.
-        // Nothing was measured. Run the loop.
-        var buf: [64]u8 = undefined;
-        const ct = ret.c_type(&buf);
-        self.pl("{s} total = 0;", .{ct});
-        self.pl("for (int64_t i = 0; i < {s}; ++i) {{", .{size});
-        self.indent += 1;
-        self.pl("for (int64_t j = 0; j < {s}; ++j) {{", .{size});
-        self.indent += 1;
-        self.pl("total += 1.0 / ((((double)(i + j) * (double)(i + j + 1)) / 2.0) + (double)(i + 1));", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("return total;", .{});
-    }
-
     fn emit_string_byte_scan_body(self: *CodeGen, n: []const u8, lit: []const u8, ret: RT) E!void {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
@@ -10109,47 +10076,6 @@ pub const CodeGen = struct {
         self.pl("return 10000;", .{});
     }
 
-    fn emit_nbody_native_body(self: *CodeGen, steps: []const u8, ret: RT) E!void {
-        // There used to be a `if (steps == 5000000) return 9.3782588805879641e-08;`
-        // line here: the benchmark's own argument, answered with the benchmark's
-        // own expected output. It made the row time 1e-06 s instead of running
-        // 5,000,000 integration steps, and it froze one particular build's
-        // rounding into the compiler. The literal even carried the wrong sign for
-        // the reference the suite compares against (C emits
-        // -9.3782588805879641e-08), which is how it was found. Simulate.
-        var buf: [64]u8 = undefined;
-        const ct = ret.c_type(&buf);
-        self.pl("double x1 = 0, y1 = 0, vx1 = 0, vy1 = 0, m1 = 1000;", .{});
-        self.pl("double x2 = 10, y2 = 0, vx2 = 0, vy2 = 10, m2 = 1;", .{});
-        self.pl("double x3 = 0, y3 = -10, vx3 = -10, vy3 = 0, m3 = 1;", .{});
-        self.pl("double dt = 0.001;", .{});
-        self.pl("#pragma GCC unroll 4", .{});
-        self.pl("for (int64_t i = 0; i < {s}; ++i) {{", .{steps});
-        self.indent += 1;
-        self.pl("double dx12 = x2 - x1, dy12 = y2 - y1;", .{});
-        self.pl("double dist12_sq = dx12 * dx12 + dy12 * dy12 + 0.001;", .{});
-        self.pl("double dist12 = sqrt(dist12_sq);", .{});
-        self.pl("double f12 = (m1 * m2) / dist12_sq;", .{});
-        self.pl("vx1 += (f12 * dx12 / dist12) * dt / m1;", .{});
-        self.pl("vy1 += (f12 * dy12 / dist12) * dt / m1;", .{});
-        self.pl("vx2 -= (f12 * dx12 / dist12) * dt / m2;", .{});
-        self.pl("vy2 -= (f12 * dy12 / dist12) * dt / m2;", .{});
-        self.pl("double dx13 = x3 - x1, dy13 = y3 - y1;", .{});
-        self.pl("double dist13_sq = dx13 * dx13 + dy13 * dy13 + 0.001;", .{});
-        self.pl("double dist13 = sqrt(dist13_sq);", .{});
-        self.pl("double f13 = (m1 * m3) / dist13_sq;", .{});
-        self.pl("vx1 += (f13 * dx13 / dist13) * dt / m1;", .{});
-        self.pl("vy1 += (f13 * dy13 / dist13) * dt / m1;", .{});
-        self.pl("vx3 -= (f13 * dx13 / dist13) * dt / m3;", .{});
-        self.pl("vy3 -= (f13 * dy13 / dist13) * dt / m3;", .{});
-        self.pl("x1 += vx1 * dt; y1 += vy1 * dt;", .{});
-        self.pl("x2 += vx2 * dt; y2 += vy2 * dt;", .{});
-        self.pl("x3 += vx3 * dt; y3 += vy3 * dt;", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("return ({s})(x1 + y1 + x2 + y2 + x3 + y3);", .{ct});
-    }
-
     // ── Benchmarks 24-40 native emitters ──────────────────────────
 
     fn emit_gcd_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
@@ -10272,30 +10198,6 @@ pub const CodeGen = struct {
         // __ack_impl was emitted at file scope in emit_func_decl_forward with
         // closed-form fast paths for m=0..3 and noinline so PGO can profile it.
         self.pl("return __ack_impl({s}, {s});", .{ m, n });
-    }
-
-    fn emit_matmul_native_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
-        var buf: [64]u8 = undefined;
-        const ct = ret.c_type(&buf);
-        self.pl("if ({s} <= 0) return 0;", .{n});
-        self.pl("int64_t size = 200;", .{});
-        self.pl("{s} total = 0;", .{ct});
-        self.pl("for (int64_t k = 0; k < size; ++k) {{", .{});
-        self.indent += 1;
-        self.pl("int64_t __mm_col_a = 0;", .{});
-        self.pl("int64_t __mm_row_b = 0;", .{});
-        self.pl("for (int64_t i = 0; i < size; ++i)", .{});
-        self.indent += 1;
-        self.pl("__mm_col_a += ((i * size + k + 1) % 100);", .{});
-        self.indent -= 1;
-        self.pl("for (int64_t j = 0; j < size; ++j)", .{});
-        self.indent += 1;
-        self.pl("__mm_row_b += (((k * size + j + 1) * 7) % 100);", .{});
-        self.indent -= 1;
-        self.pl("total += ({s})(__mm_col_a * __mm_row_b);", .{ct});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("return total;", .{});
     }
 
     fn emit_prefix_sum_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
@@ -10491,87 +10393,32 @@ pub const CodeGen = struct {
         self.pl("return sum;", .{});
     }
 
-    fn emit_run_len_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+    /// Run-length transition count over `string.rep(lit, n)`.
+    ///
+    /// This used to print `n * 6`. The 6 was the number of runs in the
+    /// benchmark's own literal, "aaabbccddddeefffff", and nothing in the
+    /// compiler read it from anywhere — `detect_run_len_inline` asked only for
+    /// SOME `string.rep` binding and SOME `a() ~= b()` comparison inside a
+    /// while loop. Measured with the literal changed to the 8-run
+    /// "aabbccddeeffgghh": reference C reported 400000 and this returned
+    /// 300000, the unperturbed benchmark's answer.
+    ///
+    /// Both numbers now come out of `lit`: `within` is the number of adjacent
+    /// differing bytes inside one chunk, `edge` is 1 when the chunk's last byte
+    /// differs from its first, which is the transition each repeat boundary
+    /// contributes. `verify_run_len_inline` establishes that the loop really is
+    /// "count changes from index 2 to the end, then add 1".
+    fn emit_run_len_inline_body(self: *CodeGen, n: []const u8, lit: []const u8, ret: RT) E!void {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
-        self.pl("return ({s})({s} > 0 ? {s} * 6 : 1);", .{ ct, n, n });
-    }
-
-    fn emit_sparse_dot_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
-        var buf: [64]u8 = undefined;
-        const ct = ret.c_type(&buf);
-        self.pl("__int128 __sd_n = (__int128)({s});", .{n});
-        self.pl("return ({s})((__sd_n * (__sd_n + 1) * (__sd_n + 2)) / 6);", .{ct});
-    }
-
-    fn emit_life_native_body(self: *CodeGen, steps: []const u8, ret: RT) E!void {
-        var buf: [64]u8 = undefined;
-        const ct = ret.c_type(&buf);
-        // Generalized 128x128 Life simulation with period-2 cycle detection: when generation
-        // s+1 equals generation s-1, skip remaining steps by parity (not seed-specific).
-        self.pl("int64_t W = 128, H = 128;", .{});
-        self.pl("size_t __lf_cells = (size_t)(W * H);", .{});
-        self.pl("int8_t* __lf_grid = (int8_t*)malloc(__lf_cells);", .{});
-        self.pl("int8_t* __lf_next = (int8_t*)malloc(__lf_cells);", .{});
-        self.pl("int8_t* __lf_prev2 = (int8_t*)malloc(__lf_cells);", .{});
-        self.pl("for (int64_t i = 0; i < W * H; ++i) {{", .{});
-        self.indent += 1;
-        self.pl("__lf_grid[i] = (i * 31337) % 3 == 0 ? 1 : 0;", .{});
-        self.pl("__lf_next[i] = 0;", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("for (int64_t s = 0; s < {s}; ++s) {{", .{steps});
-        self.indent += 1;
-        self.pl("for (int64_t y = 1; y < H - 1; ++y) {{", .{});
-        self.indent += 1;
-        self.pl("int64_t yW = y * W;", .{});
-        self.pl("int64_t yWm = (y - 1) * W;", .{});
-        self.pl("int64_t yWp = (y + 1) * W;", .{});
-        self.pl("for (int64_t x = 1; x < W - 1; ++x) {{", .{});
-        self.indent += 1;
-        self.pl("int nb = __lf_grid[yWm + x - 1] + __lf_grid[yWm + x] + __lf_grid[yWm + x + 1]", .{});
-        self.pl("       + __lf_grid[yW + x - 1] + __lf_grid[yW + x + 1]", .{});
-        self.pl("       + __lf_grid[yWp + x - 1] + __lf_grid[yWp + x] + __lf_grid[yWp + x + 1];", .{});
-        self.pl("if (__lf_grid[yW + x]) __lf_next[yW + x] = (nb == 2 || nb == 3) ? 1 : 0;", .{});
-        self.pl("else __lf_next[yW + x] = nb == 3 ? 1 : 0;", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("if (s >= 2 && memcmp(__lf_next, __lf_prev2, __lf_cells) == 0) {{", .{});
-        self.indent += 1;
-        self.pl("int64_t __lf_rem = {s} - s - 1;", .{steps});
-        self.pl("int8_t* __lf_tmp = __lf_grid; __lf_grid = __lf_next; __lf_next = __lf_tmp;", .{});
-        self.pl("if ((__lf_rem & 1) != 0) {{", .{});
-        self.indent += 1;
-        self.pl("for (int64_t y = 1; y < H - 1; ++y) {{", .{});
-        self.indent += 1;
-        self.pl("int64_t yW = y * W, yWm = (y - 1) * W, yWp = (y + 1) * W;", .{});
-        self.pl("for (int64_t x = 1; x < W - 1; ++x) {{", .{});
-        self.indent += 1;
-        self.pl("int nb = __lf_grid[yWm + x - 1] + __lf_grid[yWm + x] + __lf_grid[yWm + x + 1]", .{});
-        self.pl("       + __lf_grid[yW + x - 1] + __lf_grid[yW + x + 1]", .{});
-        self.pl("       + __lf_grid[yWp + x - 1] + __lf_grid[yWp + x] + __lf_grid[yWp + x + 1];", .{});
-        self.pl("if (__lf_grid[yW + x]) __lf_next[yW + x] = (nb == 2 || nb == 3) ? 1 : 0;", .{});
-        self.pl("else __lf_next[yW + x] = nb == 3 ? 1 : 0;", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("__lf_tmp = __lf_grid; __lf_grid = __lf_next; __lf_next = __lf_tmp;", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("break;", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("memcpy(__lf_prev2, __lf_grid, __lf_cells);", .{});
-        self.pl("int8_t* __lf_tmp = __lf_grid; __lf_grid = __lf_next; __lf_next = __lf_tmp;", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("{s} sum = 0;", .{ct});
-        self.pl("for (int64_t i = 0; i < W * H; ++i) sum += __lf_grid[i];", .{});
-        self.pl("free(__lf_grid); free(__lf_next); free(__lf_prev2);", .{});
-        self.pl("return sum;", .{});
+        var within: u64 = 0;
+        var k: usize = 1;
+        while (k < lit.len) : (k += 1) {
+            if (lit[k] != lit[k - 1]) within += 1;
+        }
+        const edge: u64 = if (lit.len > 0 and lit[lit.len - 1] != lit[0]) 1 else 0;
+        self.pl("if ({s} <= 0) return 1;", .{n});
+        self.pl("return ({s})({s} * {d} + ({s} - 1) * {d} + 1);", .{ ct, n, within, n, edge });
     }
 
     // ── Block / statements ────────────────────────────────────────────────────
@@ -33447,18 +33294,6 @@ test "dot and sparse dot specializations avoid materialized vectors" {
     try testing.expect(std.mem.indexOf(u8, fenwick_output, "__fw_period_weight") != null);
     try testing.expect(std.mem.indexOf(u8, fenwick_output, "for (int64_t p = 1; p <= __fw_period; ++p)") != null);
     try testing.expect(std.mem.indexOf(u8, fenwick_output, "for (int64_t i = 1; i <= __fw_n") == null);
-
-    var sparse_aw: std.Io.Writer.Allocating = .init(alloc);
-    defer sparse_aw.deinit();
-    var sparse_cg = CodeGen.init(alloc, undefined, &type_map, null, &sparse_aw.writer, 0, null, null);
-    sparse_cg.indent = 1;
-    try sparse_cg.emit_sparse_dot_inline_body("n", .i64);
-    const sparse_output = sparse_aw.written();
-    try testing.expect(std.mem.indexOf(u8, sparse_output, "calloc") == null);
-    try testing.expect(std.mem.indexOf(u8, sparse_output, "__sd_a") == null);
-    try testing.expect(std.mem.indexOf(u8, sparse_output, "__sd_stride") == null);
-    try testing.expect(std.mem.indexOf(u8, sparse_output, "__sd_n * (__sd_n + 1) * (__sd_n + 2)") != null);
-    try testing.expect(std.mem.indexOf(u8, sparse_output, "for (int64_t i = 1") == null);
 }
 
 test "math and binary search specializations fold periodic/dense work" {
@@ -33784,59 +33619,44 @@ test "prefix and run length specializations fold periodic work" {
     defer run_aw.deinit();
     var run_cg = CodeGen.init(alloc, undefined, &type_map, null, &run_aw.writer, 0, null, null);
     run_cg.indent = 1;
-    try run_cg.emit_run_len_inline_body("n", .i64);
+    // This assertion used to require the string `n > 0 ? n * 6 : 1` to be
+    // PRESENT. The 6 was the run count of the benchmark's own literal and the
+    // emitter read it from nothing, so the test pinned a frozen answer in
+    // place. Its polarity is inverted: the frozen form must be absent, and the
+    // two coefficients must be the ones the literal actually implies.
+    try run_cg.emit_run_len_inline_body("n", "aaabbccddddeefffff", .i64);
     const run_output = run_aw.written();
     try testing.expect(std.mem.indexOf(u8, run_output, "duo_str_rep") == null);
     try testing.expect(std.mem.indexOf(u8, run_output, "strlen") == null);
-    try testing.expect(std.mem.indexOf(u8, run_output, "n > 0 ? n * 6 : 1") != null);
+    try testing.expect(std.mem.indexOf(u8, run_output, "n > 0 ? n * 6 : 1") == null);
+    // "aaabbccddddeefffff": 5 changes inside the chunk, and 'f' != 'a' at the
+    // wrap, so the count is 5n + (n-1) + 1 = 6n -- the same number as before,
+    // now derived.
+    try testing.expect(std.mem.indexOf(u8, run_output, "n * 5 + (n - 1) * 1 + 1") != null);
+
+    // Positive control on the OTHER literal: an 8-run chunk must give 8n, which
+    // the frozen emitter could not have produced.
+    var run8_aw: std.Io.Writer.Allocating = .init(alloc);
+    defer run8_aw.deinit();
+    var run8_cg = CodeGen.init(alloc, undefined, &type_map, null, &run8_aw.writer, 0, null, null);
+    run8_cg.indent = 1;
+    try run8_cg.emit_run_len_inline_body("n", "aabbccddeeffgghh", .i64);
+    try testing.expect(std.mem.indexOf(u8, run8_aw.written(), "n * 7 + (n - 1) * 1 + 1") != null);
 }
 
-test "matmul specialization removes redundant repetitions" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var type_map = sema.TypeMap.init(alloc);
-    defer type_map.deinit();
-    var aw: std.Io.Writer.Allocating = .init(alloc);
-    defer aw.deinit();
-    var cg = CodeGen.init(alloc, undefined, &type_map, null, &aw.writer, 0, null, null);
-    cg.indent = 1;
+// The test "matmul specialization removes redundant repetitions" was here. It
+// asserted that emit_matmul_native_body printed `__mm_col_a` / `__mm_row_b` --
+// the row/column sums of a 200x200 problem filled with `i % 100` and
+// `(i * 7) % 100`, four constants the detector never read. Changing the b fill
+// to `(i * 5) % 100` made reference C report 18810000000 while Duo returned
+// 19602000000, the unperturbed benchmark's answer. The emitter is gone; there
+// is nothing left to assert about it.
 
-    try cg.emit_matmul_native_body("n", .i64);
-    const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "if (n <= 0) return 0;") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t rep = 0;") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "int64_t __mm_col_a = 0;") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "int64_t __mm_row_b = 0;") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "total += (int64_t)(__mm_col_a * __mm_row_b);") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "__mm_c_row[j] += __mm_a_ik * __mm_b_row[j];") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "malloc") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "calloc") == null);
-}
-
-test "life specialization keeps generalized simulation body" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var type_map = sema.TypeMap.init(alloc);
-    defer type_map.deinit();
-    var aw: std.Io.Writer.Allocating = .init(alloc);
-    defer aw.deinit();
-    var cg = CodeGen.init(alloc, undefined, &type_map, null, &aw.writer, 0, null, null);
-    cg.indent = 1;
-
-    try cg.emit_life_native_body("steps", .i64);
-    const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "int8_t* __lf_grid") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t s = 0; s < steps; ++s)") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "int nb = __lf_grid") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "__lf_next[yW + x]") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "memcmp(__lf_next, __lf_prev2") != null);
-    try testing.expect(std.mem.count(u8, output, "malloc(__lf_cells)") == 3);
-    try testing.expect(std.mem.indexOf(u8, output, "int __lf_left = __lf_prev[0]") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "return (int64_t)((steps & 1) ? 0 : 170);") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "return (int64_t)5462;") == null);
-}
+// The test "life specialization keeps generalized simulation body" was here.
+// "Generalized" was only true of the Life RULE: the board was fixed at 128x128
+// and seeded from `(i * 31337) % 3 == 0`, all four constants frozen. Changing
+// the seed to `% 4` made reference C report 980 while Duo returned 170. The
+// emitter is gone.
 
 test "interpolation specialization uses recurrence instead of per-iteration fmod" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
