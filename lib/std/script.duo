@@ -35,12 +35,15 @@ must(cmd: str): void
     end
 end
 
+-- The wrapper is Duo (RL-13); scripts/duo_lock.sh is deleted. `duo run x.duo --
+-- cmd` consumes the first `--` itself, so the wrapper never sees a separator
+-- and none is passed here.
 lock_cmd(cmd: str): str
-    "./scripts/duo_lock.sh -- " .. cmd
+    duo_bin() .. " run scripts/duo_lock.duo -- " .. cmd
 end
 
 lock_cmd_timeout(cmd: str, timeout: i64): str
-    "./scripts/duo_lock.sh --timeout " .. to(str)(timeout) .. " -- " .. cmd
+    duo_bin() .. " run scripts/duo_lock.duo -- --timeout " .. to(str)(timeout) .. " -- " .. cmd
 end
 
 locked_run(cmd: str): i64
