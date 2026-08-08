@@ -286,6 +286,14 @@ pub const FuncBody = struct {
     dense_table_caps: []const []const u8 = &.{},
     /// Parallel to `dense_tables`: true = float table (double*), false = int (int64_t*).
     dense_table_floats: []const bool = &.{},
+    /// Parallel to `dense_tables`: true when the matching `dense_table_caps`
+    /// entry is a valid C *integer* expression at the allocation point (every
+    /// leaf an integer literal or a name known to hold a native number). The cap
+    /// is only a reservation — the dense accessors grow on demand — so a false
+    /// here costs a few reallocs, never correctness. It exists because
+    /// `f(n: any)` produced `calloc((n) + 1, …)` on a `lua_Value`, which is a
+    /// hard C compile error.
+    dense_table_cap_safe: []const bool = &.{},
     // set by sema: emit C-style 0-based string scan loops
     use_string_byte_scan: bool = false,
     use_string_hash_scan: bool = false,
