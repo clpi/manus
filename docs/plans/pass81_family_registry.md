@@ -1,7 +1,7 @@
 # Pass 81 — The Family Registry: Every Protocol Point, Concluded
 
 > **Status:** canon (supersedes Pass 79 §IV.1's accumulated list).
-> **Measured against the compiler 2026-08-07** by `scripts/family_registry_census.duo`.
+> **Measured against the compiler 2026-08-07** by `scripts/census/family.duo`.
 > **10 of 38 rows implemented, and five of those ten are controls or vestiges.**
 > The family surface with any realization today is four rows.
 
@@ -281,11 +281,11 @@ passes.
   you wrote canon that does not exist yet. That is the whole reason this
   document carries a measured column.
 
-Run `duo run scripts/family_registry_census.duo` before trusting any row.
+Run `duo run scripts/census/family.duo` before trusting any row.
 
 ## 7. Related
 
-- `scripts/family_registry_census.duo` — the gate. Ratchet, floor pinned at the
+- `scripts/census/family.duo` — the gate. Ratchet, floor pinned at the
   measured 10/38. Set `DUO_BIN` to an absolute path when running from anywhere
   but the repo root.
 - `scripts/spec_conformance.duo` — the Pass 64 gate. `FF-13 t{...} shape` there

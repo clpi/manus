@@ -46,7 +46,7 @@ end
 -- Not `std.script.duo_bin()` directly: that path is RELATIVE
 -- (`./zig-out/bin/duo`), this probe swallows stderr, and getenv returns "" not
 -- nil on a miss -- so a wrong cwd reports every row MISSING and reads exactly
--- like a language that implements nothing. See scripts/family_registry_census.duo.
+-- like a language that implements nothing. See scripts/census/family.duo.
 probe(id: str, src: str, want: str): bool
     path = "/tmp/duo_p86.duo"
     std.script.fs_write(path, src)
@@ -58,7 +58,7 @@ end
 -- The control: the smallest program the language cannot fail. Runs before any
 -- row is recorded, on its own exit path, so a broken harness never reads as a
 -- regression.
-harness_live(): bool
+live(): bool
     probe("control", "main(): void\n    print(1 + 2)\nend\n", "3")
 end
 
@@ -73,7 +73,7 @@ record(id: str, src: str, want: str): void
 end
 
 main(): i64
-    if harness_live() == false
+    if live() == false
         b = bin()                                    -- GAP-029 (TMP-1 forced)
         print("pass86: HARNESS BROKEN — control `print(1 + 2)` did not print 3.")
         print("  Check that {b} exists from this cwd, or set DUO_BIN.")

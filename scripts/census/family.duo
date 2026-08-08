@@ -82,7 +82,7 @@ end
 -- print, nothing below it measures the language, and a count would be a lie.
 -- Checked before any row is recorded, and reported on its own exit path so a
 -- broken harness never reads as a regression.
-harness_live(): bool
+live(): bool
     probe("control", "main(): void\n    print(1 + 2)\nend\n", "3")
 end
 
@@ -97,7 +97,7 @@ record(id: str, src: str, want: str): void
 end
 
 main(): i64
-    if harness_live() == false
+    if live() == false
         print("family_registry: HARNESS BROKEN — the control `print(1 + 2)` did not")
         b = bin()                                       -- GAP-029 (TMP-1 forced)
         print("  print 3, so no row below measures the language. Check that {b}")

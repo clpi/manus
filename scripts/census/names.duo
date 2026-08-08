@@ -1,0 +1,133 @@
+-- Passes 91 and 92, measured: the identifier decomposition and the death of
+-- directives.
+--
+-- Pass 91 revokes the domain-compound exemption. Every interior `_` must
+-- decompose to a LEVEL (read(number)), a HOME (utf8.valid) or CONTEXT (limit,
+-- where shift is ambient). The audit scan is greppable and absolute:
+--
+--     grep `[a-z]_[a-z]` = 0
+--
+-- Measured 2026-08-07, lib/std alone: 4266 DISTINCT such identifiers across
+-- 14504 occurrences; scripts/ and examples/ add 1546 more distinct. The scan
+-- demands zero. That is the largest single conformance target in the canon, and
+-- the rows below decide whether it is even reachable: a repair is only
+-- available if its destination form COMPILES.
+--
+-- Pass 92 deletes the directive concept and removes prefix `@` from the
+-- grammar. Its decomposition targets are ordinary bindings, so they are
+-- measurable the same way.
+--
+-- A row is IMPLEMENTED only if the program compiles AND prints the expected
+-- value.
+
+-- Pinned floor: the MEASURED count, never an estimate. Verified 2026-08-07 at
+-- 5/13, and read the composition: one is the arithmetic control, one is the
+-- surviving bare-`@` anchor, and one (P91-5) is a row that reads ok because
+-- the VIOLATION still compiles. The forms Pass 91 needs as repair
+-- DESTINATIONS score 2 of 3 -- HOME and CONTEXT work, LEVEL does not.
+baseline(): i64
+    5
+end
+
+implemented = 0
+checked = 0
+report = ""
+
+bin(): str
+    override = std.os.getenv("DUO_BIN")
+    if override != nil
+        if override != ""
+            return override
+        end
+    end
+    std.script.duo_bin()
+end
+
+probe(src: str, want: str): bool
+    path = "/tmp/duo_p91.duo"
+    std.script.fs_write(path, src)
+    b = bin()                                           -- gap[29] (TMP-1 forced)
+    got = std.script.capture("{b} run {path} 2>/dev/null")
+    std.script.chomp(got) == want
+end
+
+live(): bool
+    probe("main(): void\n    print(1 + 2)\nend\n", "3")
+end
+
+record(id: str, src: str, want: str): void
+    checked = checked + 1
+    if probe(src, want)
+        implemented = implemented + 1
+        report = "{report}  ok      {id}\n"
+    else
+        report = "{report}  MISSING {id}\n"
+    end
+end
+
+main(): i64
+    if live() == false
+        b = bin()                                       -- gap[29] (TMP-1 forced)
+        print("pass91/92: HARNESS BROKEN — control did not print 3.")
+        print("  Check that {b} exists from this cwd, or set DUO_BIN.")
+        return 2
+    end
+
+    -- PASS 91 — the three decomposition destinations. Every one of the 14504
+    -- sites must land in one of these, so a destination that does not compile
+    -- is a site that cannot be repaired.
+    --
+    -- LEVEL is the destination the canon's own corpus uses: §XIII's shc/lex.duo
+    -- was respelled `read(number)(lx, b)` and `read(symbol)(lx, b)` in this
+    -- regeneration. It is also the destination for the largest class of names.
+    record("P91-1 LEVEL read(number)(x)", "read(kind: str): any\n    (x: i64): i64\n        x + 1\n    end\nend\nmain(): void\n    print(read(\"number\")(1))\nend\n", "2")
+    record("P91-2 LEVEL descriptor operand", "number: { v: i64 }\nread(k: any): any\n    (x: i64): i64\n        x + 1\n    end\nend\nmain(): void\n    print(read(number)(1))\nend\n", "2")
+    -- HOME: the namespace destination. `utf8.valid`, `wire.header`,
+    -- `token.kind` -- a member reached through its owner.
+    record("P91-3 HOME ns.member", "utf8 = { valid = (s: str): bool #s > 0 }\nmain(): void\n    print(utf8.valid(\"a\"))\nend\n", "true")
+    -- CONTEXT: pure rename to a single word. Always available; needs nothing.
+    record("P91-4 CONTEXT single word", "limit(): i64\n    63\nend\nmain(): void\n    print(limit())\nend\n", "63")
+    -- The form Pass 91 REVOKES. Pass 90 recorded it as permitted spelling; that
+    -- is superseded. This row asserts the canon's scan -- an interior `_` must
+    -- not be needed -- by checking the compound still compiles, which it does.
+    -- It reads ok and that is the PROBLEM: nothing enforces the scan.
+    record("P91-5 compound still compiles", "shift_limit(): i64\n    63\nend\nmain(): void\n    print(shift_limit())\nend\n", "63")
+
+    -- PASS 92 — directives die. Each former directive's destination.
+    record("P92-1 check(c)", "main(): void\n    print(check != nil)\nend\n", "true")
+    record("P92-2 why(q)(subject)", "main(): void\n    print(why != nil)\nend\n", "true")
+    record("P92-3 graph.descriptors", "main(): void\n    print(graph.descriptors != nil)\nend\n", "true")
+    record("P92-4 add(module) family", "main(): void\n    print(add != nil)\nend\n", "true")
+    record("P92-5 todo(gap[23])", "main(): void\n    print(todo != nil)\nend\n", "true")
+    -- Prefix `@` is REMOVED from the grammar. Probing that with `@assert` or
+    -- `@descriptors` PROVES NOTHING: those names are unknown macros, so the
+    -- program is rejected with "macro expansion error: UnknownMacro" -- the
+    -- FORM parsed fine and the name was the problem. An earlier revision of
+    -- this census scored both as ok and would have recorded Pass 92 as more
+    -- conformant than it is.
+    --
+    -- The honest probe uses a macro that EXISTS. `@comp.assert(true)` compiles
+    -- and prints -- so prefix `@` is fully alive, and `@comp.*` is not
+    -- "deleted/unresolved" either. This row reads MISSING, correctly.
+    record("P92-6 prefix @ removed", "main(): void\n    @comp.assert(true)\n    print(\"live\")\nend\n", "")
+    -- The DYAD must survive: bare `@` applied to a table is the scope anchor,
+    -- and was never staging. Really exercised, not merely mentioned.
+    record("P92-7 bare @{} scope anchor", "main(): void\n    self = { x = 1, y = 2 }\n    r = @{ ..self, x = 9 }\n    print(r.x)\nend\n", "9")
+
+    -- Controls.
+    record("P91-C1 arithmetic control", "main(): void\n    print(1 + 2)\nend\n", "3")
+
+    io.write(report)
+    floor = baseline()                                  -- gap[29] (TMP-1 forced)
+    print("pass91/92: {implemented}/{checked} implemented (floor {floor})")
+
+    if implemented < floor
+        print("pass91/92: FAIL — a form that used to work has regressed")
+        return 1
+    end
+    if implemented > floor
+        print("pass91/92: forms gained — RAISE baseline() to {implemented}")
+    end
+    print("pass91/92: PASS")
+    0
+end

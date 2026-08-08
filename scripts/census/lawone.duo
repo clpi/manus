@@ -39,7 +39,7 @@ implemented = 0
 checked = 0
 report = ""
 
--- See scripts/family_registry_census.duo for why this is not
+-- See scripts/census/family.duo for why this is not
 -- `std.script.duo_bin()` directly, and GAP-029 for why the temporary below is
 -- forced rather than chosen.
 bin(): str
@@ -60,7 +60,7 @@ probe(src: str, want: str): bool
     std.script.chomp(got) == want
 end
 
-harness_live(): bool
+live(): bool
     probe("main(): void\n    print(1 + 2)\nend\n", "3")
 end
 
@@ -75,7 +75,7 @@ record(id: str, src: str, want: str): void
 end
 
 main(): i64
-    if harness_live() == false
+    if live() == false
         b = bin()                                    -- GAP-029 (TMP-1 forced)
         print("pass88: HARNESS BROKEN — control `print(1 + 2)` did not print 3.")
         print("  Check that {b} exists from this cwd, or set DUO_BIN.")

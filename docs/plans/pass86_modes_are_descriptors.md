@@ -1,7 +1,7 @@
 # Pass 86 — Modes Are Descriptors: `from(mode)` Replaces Compound Names
 
 > **Status:** canon (amends Pass 85 Rung 3 in place).
-> **Measured against the compiler 2026-08-07** by `scripts/pass86_constructor_census.duo`.
+> **Measured against the compiler 2026-08-07** by `scripts/census/modes.duo`.
 > **5 of 18 rows implemented, two of which are the `to(str)` controls.**
 > **`from` does not exist in any spelling. Neither does the ladder's first rung.**
 > The naming rule is therefore correct and **currently unapplicable** — see §5.
@@ -163,11 +163,11 @@ stop-work item for the same reason.
 - **Refinement types declare** — `hex = str & hex_valid` resolves. Mode *types*
   can be built ahead of the `from` level that will consume them.
 
-Run `duo run scripts/pass86_constructor_census.duo` before trusting any row.
+Run `duo run scripts/census/modes.duo` before trusting any row.
 
 ## 7. Related
 
-- `scripts/pass86_constructor_census.duo` — the gate, floor pinned at 5/18.
+- `scripts/census/modes.duo` — the gate, floor pinned at 5/18.
 - `docs/plans/pass81_family_registry.md` §2.6 — `from` as the missing half of the
   `to`/`from` edge, measured there as `FROM-1`.
 - `GAP-025` — descriptor bodies accept type slots only. Blocks the `call` edge

@@ -2,7 +2,7 @@
 
 > **Status:** canon. Final on the character — supersedes Pass 88 §1 and the
 > author amendment that restored it. **There is no `_` prefix.**
-> **Measured 2026-08-07** by `scripts/pass90_privacy_census.duo`. **5 of 9.**
+> **Measured 2026-08-07** by `scripts/census/privacy.duo`. **5 of 9.**
 > All three of the ruling's arguments are **empirically confirmed**. Three of
 > privacy's five decomposition targets **do not exist yet**.
 
@@ -49,7 +49,7 @@ codegen. Not the same category.
 | Row | Form | State |
 | --- | --- | --- |
 | `P90-1` | `_helper` and `helper` both declare and call, in-module | **LIVE** — identical |
-| `P90-2` | interior `_` compound — `shift_limit()` | **LIVE** — pure spelling, preserved |
+| `P90-2` | ~~interior `_` compound preserved~~ → **CONTEXT repair** — `limit()` | **LIVE** — see note |
 
 Within a module the prefix is completely inert: both forms declare, both call,
 nothing differs. That is exactly what made it look like harmless convention for
@@ -131,7 +131,12 @@ instructions from adjacent laws.
 
 - **No `_` prefix on new bindings.** Nest the helper in its consumer's scope —
   that works now and is the ruling's own first answer.
-- **Interior `_` is fine** — `shift_limit`, `read_number`. Pure spelling.
+- **Interior `_` is NOT fine — superseded by Pass 91.** This doc originally
+  preserved it as pure spelling. Pass 91 revoked the domain-compound exemption:
+  every interior `_` decomposes to a LEVEL (`read(number)`), a HOME
+  (`utf8.valid`), or CONTEXT (`shift_limit` → `limit`, in the scope where
+  `shift` is ambient). Audit scan: `grep [a-z]_[a-z]` = 0. Measured, the LEVEL
+  destination does not compile — see `docs/plans/pass91_names.md`.
 - **Do not bulk-strip the 44 yet.** It is a surface change, not a rename: all 44
   become exported, one (`fs_watch.duo`) is a same-file hard error, and 3 of the
   5 replacement mechanisms don't exist. Strip the single-consumer cases by
@@ -139,11 +144,11 @@ instructions from adjacent laws.
 - **Sequence against Pass 88.** `_is_digit` / `is_digit` / `digit` is touched by
   both purges.
 
-Run `duo run scripts/pass90_privacy_census.duo` before trusting any row.
+Run `duo run scripts/census/privacy.duo` before trusting any row.
 
 ## 7. Related
 
-- `scripts/pass90_privacy_census.duo` — the gate, floor pinned at the measured 5/9.
+- `scripts/census/privacy.duo` — the gate, floor pinned at the measured 5/9.
 - `docs/plans/pass88_lawone.md` — the predicate half; its §1 amendment is
   reversed here.
 - `GAP-030` — duplicate declarations, which the `fs_watch.duo` collision hits.

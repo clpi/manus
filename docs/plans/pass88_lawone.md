@@ -1,7 +1,7 @@
 # Pass 88 — LAW-ONE: The Underscore Purge
 
 > **Status:** canon, **as amended**. §1 (privacy) is retracted — see below.
-> **Measured 2026-08-07** by `scripts/pass88_lawone_census.duo`. **6 of 19.**
+> **Measured 2026-08-07** by `scripts/census/lawone.duo`. **6 of 19.**
 > The pass splits cleanly into an actionable half and a blocked half, and the
 > actionable half **collides at 25 of 71 sites**.
 
@@ -157,11 +157,11 @@ renaming — but the stage facts a harness would read do not exist.
   unenforced — but because it silently creates a live binding you can read back.
   Use selective destructuring, which works.
 
-Run `duo run scripts/pass88_lawone_census.duo` before trusting any row.
+Run `duo run scripts/census/lawone.duo` before trusting any row.
 
 ## 6. Related
 
-- `scripts/pass88_lawone_census.duo` — the gate, floor pinned at the measured
+- `scripts/census/lawone.duo` — the gate, floor pinned at the measured
   6/19. Note the floor was first *guessed* at 6 and measured 5; the gate reported
   a regression that had not happened until two rejection rows were corrected to
   assert empty stdout rather than the `"ABSENT"` sentinel, which can never read

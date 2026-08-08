@@ -53,7 +53,7 @@ probe(src: str, want: str): bool
     std.script.chomp(got) == want
 end
 
-harness_live(): bool
+live(): bool
     probe("main(): void\n    print(1 + 2)\nend\n", "3")
 end
 
@@ -68,7 +68,7 @@ record(id: str, src: str, want: str): void
 end
 
 main(): i64
-    if harness_live() == false
+    if live() == false
         b = bin()                                       -- GAP-029 (TMP-1 forced)
         print("pass90: HARNESS BROKEN — control `print(1 + 2)` did not print 3.")
         print("  Check that {b} exists from this cwd, or set DUO_BIN.")
@@ -80,7 +80,12 @@ main(): i64
     -- like harmless convention. P90-2 pins the interior compound as legal
     -- spelling, which Pass 90 explicitly preserves.
     record("P90-1 `_x` inert within module", "_helper(n: i64): i64\n    n + 1\nend\nhelper(n: i64): i64\n    n + 2\nend\nmain(): void\n    print(_helper(1))\n    print(helper(1))\nend\n", "2\n3")
-    record("P90-2 interior `_` is spelling", "shift_limit(): i64\n    63\nend\nmain(): void\n    print(shift_limit())\nend\n", "63")
+    -- SUPERSEDED BY PASS 91. This row asserted interior `_` as permitted
+    -- spelling ("shift_limit is fine"). Pass 91 revoked the domain-compound
+    -- exemption entirely -- the audit scan is now `grep [a-z]_[a-z]` = 0 -- so
+    -- the row now asserts the CONTEXT repair Pass 91 names for exactly this
+    -- example: shift_limit -> limit, in the scope where shift is ambient.
+    record("P90-2 CONTEXT repair (Pass 91)", "limit(): i64\n    63\nend\nmain(): void\n    print(limit())\nend\n", "63")
 
     -- THE DECOMPOSITION — what each of privacy's jobs is handed to. These are
     -- the rows that decide whether the ruling is affordable, because deleting a
