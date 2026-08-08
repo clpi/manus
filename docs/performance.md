@@ -11897,6 +11897,28 @@ at the epilogue, so the cache never spans a branch. Ordering matters: producers 
 | iwasm | 1.17s | **2.4x slower** |
 | ward interpreter | 4.05s | 8.4x slower |
 
+> **SUPERSEDED 2026-08-08 — this table does not describe the ward that ships.**
+> Re-measured against today's binary on the same kernel: ward **3.4s, on the
+> INTERPRETER** (the JIT never engages), wasm3 0.77s, iwasm 0.74s, wasmtime
+> 0.12s. ward is **4.5x slower than wasm3** — the opposite of the sentence
+> below. The computed value is right (2331661441, matching wasmtime); only the
+> claim is wrong.
+>
+> Cause: the JIT that produced these numbers is `ext/ward/src/wasm/jit_arm64.duo`,
+> and it is DEAD CODE. Its host modules (`src/main.duo`, `src/cli.duo`,
+> `src/wasm/runtime.duo`, `src/wasm/init.duo`) were deleted; nothing requires it
+> — `grep -c jit_arm64 ext/ward/src/ward.duo` returns 0. The shipping JIT is
+> `jit_compile` inside `src/ward.duo`, which tracks two register aliases and has
+> no liveness model. A faster architecture was measured, then removed, and the
+> measurement outlived it.
+>
+> This is the §3 MEASUREMENT HONESTY failure mode in its quietest form: no
+> fabricated recognizer, no frozen literal, just a true table about a binary
+> that no longer exists. The repair is the one §3 already prescribes — a claim
+> must name the artifact it was measured on. See `ext/ward/HANDOFF.md` and
+> `ext/ward/bench/wart.duo`, the first harness that compares ward to wart at all
+> (result: ward ~3% SLOWER, aggregate 103%).
+
 ward now beats wasm3 and iwasm outright. The remaining 3x to wasmtime/wasmer is
 register allocation: this is a template JIT with one cached stack slot; they do full
 regalloc over a real IR. Next steps in order: (1) widen the opcode set — `call`,
@@ -11933,6 +11955,8 @@ something, so the JIT currently only covers leaf kernels.
 | ward interpreter | 4.05s |
 
 ward beats wasm3 and iwasm by ~1.9x and is ~11x faster than its own interpreter.
+(SUPERSEDED 2026-08-08 — same cause as the hot_big table above: this measured
+the deleted `jit_arm64.duo` architecture, not the shipping one.)
 
 Benchmarks whose hot functions contain `call` (so they still interpret):
 
