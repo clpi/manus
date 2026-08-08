@@ -78,6 +78,20 @@ pub fn refusalNote() ?[]const u8 {
     return refusal_note_buf[0..refusal_note_len];
 }
 
+/// Same treatment for the OTHER refusal error. `UndefinedName` means a slot or
+/// temp had no register, and which one is the entire finding — exactly as
+/// `UnknownSymbol` turned out to be two different problems wearing one code
+/// once the symbol was printed.
+fn undefinedAt(src: std.builtin.SourceLocation, kind: []const u8, id: u32) Error {
+    refusal_site = src;
+    const w = std.fmt.bufPrint(&refusal_note_buf, "{s} {d} has no register", .{ kind, id }) catch {
+        refusal_note_len = 0;
+        return error.UndefinedName;
+    };
+    refusal_note_len = w.len;
+    return error.UndefinedName;
+}
+
 fn refuseWith(src: std.builtin.SourceLocation, note: []const u8) Error {
     refusal_site = src;
     const n = @min(note.len, refusal_note_buf.len);
@@ -1307,7 +1321,7 @@ const Arm64Compiler = struct {
                         .local => |s| s,
                         else => return refuse(@src()),
                     };
-                    const d = pinned.get(slot) orelse temps.get(slot) orelse return error.UndefinedName;
+                    const d = pinned.get(slot) orelse temps.get(slot) orelse return undefinedAt(@src(), "local", slot);
                     if (ins.result) |t| try temps.put(self.alloc, t, d);
                 } else {
                     const reg = try self.evalDnirValue(temps, ins.lhs);
@@ -1845,7 +1859,7 @@ const Arm64Compiler = struct {
                 }
                 return error.UndefinedName;
             },
-            .temp => |t| temps.get(t) orelse return error.UndefinedName,
+            .temp => |t| temps.get(t) orelse return undefinedAt(@src(), "temp", t),
             .record => return refuse(@src()),
         };
     }
@@ -1858,8 +1872,8 @@ const Arm64Compiler = struct {
                 try self.emitFmovImmFp(d, n);
                 break :blk d;
             },
-            .local => |slot| temps.get(slot) orelse error.UndefinedName,
-            .temp => |t| temps.get(t) orelse error.UndefinedName,
+            .local => |slot| temps.get(slot) orelse undefinedAt(@src(), "local", slot),
+            .temp => |t| temps.get(t) orelse undefinedAt(@src(), "temp", t),
             // An integer immediate in a float position. `(col - WIDTH / 2) *
             // 3.5 / WIDTH` folds `WIDTH / 2` to an i64 constant and then wants
             // it as a double; there is no fmov for an arbitrary integer, so it
@@ -1884,7 +1898,7 @@ const Arm64Compiler = struct {
                 try self.emitFmovImmFp(d, n);
                 break :blk d;
             },
-            .temp => |t| temps.get(t) orelse error.UndefinedName,
+            .temp => |t| temps.get(t) orelse undefinedAt(@src(), "temp", t),
             else => refuse(@src()),
         };
     }
