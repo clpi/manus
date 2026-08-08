@@ -54,7 +54,7 @@ Authoritative rules: [GRAMMAR_SPEC.md](GRAMMAR_SPEC.md). `@const` and `@comptime
 
 - **Supported:** Lua-compatible syntax, typed native lowering, `@comp.*` registry entries with tests, benchmark suite
 - **Experimental:** semantic graph tooling, Ward Wasm runtime integration, some `@comp.*` combinators
-- **Planned:** see [roadmap](src/roadmap.md) and pass plans under `docs/plans/` (historical milestones)
+- **Planned:** see [roadmap](src/roadmap.md) and pass plans under `docs/archive/` (historical milestones)
 
 ## Compiler
 

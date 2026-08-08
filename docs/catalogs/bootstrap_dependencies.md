@@ -1,7 +1,7 @@
 # Bootstrap & Dependency Catalog (Pass 4)
 
 > Track every dependency that influences Duo semantics, representation, optimization, or self-hosting.
-> **Plan:** [`docs/plans/pass4_native_end_to_end.md`](../plans/pass4_native_end_to_end.md)
+> **Plan:** [`docs/archive/pass4_native_end_to_end.md`](../archive/pass4_native_end_to_end.md)
 
 | ID | Dependency | Version | Classification | Build/Runtime | Purpose | Semantic influence | Replacement stage | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |

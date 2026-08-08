@@ -1,7 +1,7 @@
 # Architectural Convergence Catalog
 
 > **Pass 3 reference.** Duplicated mechanisms → unified foundations.  
-> **Pass 6 audit:** [`docs/plans/pass6_architectural_reconciliation.md`](../plans/pass6_architectural_reconciliation.md)  
+> **Pass 6 audit:** [`docs/archive/pass6_architectural_reconciliation.md`](../archive/pass6_architectural_reconciliation.md)  
 > **JSON:** `duo catalog` → `pass6` + `duo algebra` (`convergence` array)
 
 | Duplicated Today | Unified Foundation | Status |
@@ -23,4 +23,4 @@
 
 **Dependency order:** knowledge lattice → shape facts → descriptors → call specialization → representation → explanations.
 
-See also: [`docs/plans/pass2_foundational_convergence.md`](../plans/pass2_foundational_convergence.md)
+See also: [`docs/archive/pass2_foundational_convergence.md`](../archive/pass2_foundational_convergence.md)

@@ -4,7 +4,7 @@
 
 Duo is an experimental Lua-derived ahead-of-time language and compiler **written in Zig** (not self-hosted). Its **default backend emits C** and invokes Clang or `zig cc` to produce native binaries and Wasm. Duo includes aggressive typed specialization for `.duo` programs and an **experimental direct ARM64 Mach-O backend** for a restricted scalar subset (`--backend=direct`).
 
-**Honest status:** Pass 11 Profile A (C-backend default) is **closed** — run `zig build pass11-gate`. Self-hosting, universal direct native compilation, and globally zero-boxing semantics remain **out of scope**. See `duo catalog | jq '.pass11'` and [docs/plans/pass11_release_proof.md](docs/plans/pass11_release_proof.md).
+**Honest status:** Pass 11 Profile A (C-backend default) is **closed** — run `zig build pass11-gate`. Self-hosting, universal direct native compilation, and globally zero-boxing semantics remain **out of scope**. See `duo catalog | jq '.pass11'` and [docs/archive/pass11_release_proof.md](docs/archive/pass11_release_proof.md).
 
 ## Documentation
 

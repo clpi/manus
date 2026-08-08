@@ -1,6 +1,6 @@
 # Foreign Code Elimination Ledger
 
-> Required by **§9** of `docs/plans/duo_self_hosting_foundation.md`.
+> Required by **§9** of `docs/archive/duo_self_hosting_foundation.md`.
 >
 > Every non-Duo file or embedded-C region declares: role, authority, replacement,
 > prerequisites, migration stage, deletion gate, status.

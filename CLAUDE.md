@@ -44,7 +44,8 @@ ext/tree-sitter-duo/   tree-sitter grammar
 ext/ward/              WASM runtime in Duo — downstream consumer (was ~/x/ward)
 examples/              Example .duo programs
 scripts/               Shell scripts for CI gates and benchmarks
-docs/plans/            Active implementation plans (passN_*.md)
+docs/spec/             THE LAW — pass100.md + AUTHORITY.md + corpus.md
+docs/archive/          historical evidence; never an architecture input
 ```
 
 ## Key invariants
@@ -56,10 +57,14 @@ docs/plans/            Active implementation plans (passN_*.md)
 
 ## Active plans
 
-- Pass 11: `docs/plans/pass11_release_proof.md` — native ARM64 codegen
-- Pass 12: `docs/plans/pass12_semantic_autonomy.md` — semantic autonomy
-- Pass 13: `docs/plans/pass13_development_control_plane.md` — dev control plane
-- Pass 16: `docs/plans/pass16_self_hosted_compiler.md` — self-hosted compiler supremacy
+There are none. Pass 100 is the only plan; `docs/spec/AUTHORITY.md` carries what
+is still owed. This section used to name Pass 11/12/13/16 plan documents as
+active, which contradicted the epoch-2 rule below in the same file — every
+`pass*.md` is historical. Those documents now live in `docs/archive/`.
+
+The `pass11-gate` and `pass12`/`pass16` build steps still exist and still run:
+a gate named after a pass is live tooling, not a live plan. Read the gate, not
+the archived document it was named after.
 
 ## Consolidated tooling (2026-08-08)
 
@@ -94,10 +99,12 @@ See `.agents/AGENT_COORDINATION.md` for active work tracking.
 
 ## EPOCH 2 — Pass 100 is the sole living authority
 
-`docs/spec/pass100.md` (Duo 0.1) + this file are the ONLY law. Every
-`docs/plans/pass*.md` is HISTORICAL EVIDENCE, not an architecture input:
-47 of them are tracked, they predate Pass 100, and a search that surfaces
-them teaches retired concepts. If a rule you would cite lives only there,
+`docs/spec/pass100.md` (Duo 0.1) + this file are the ONLY law. Everything in
+`docs/archive/` is HISTORICAL EVIDENCE, not an architecture input: 59 documents,
+all pre-Pass-100, each stamped at the top, moved there out of `docs/plans/`
+because a directory called "plans" taught every search that they were live.
+See `docs/spec/README.md` for the precedence rule. If a rule you would cite
+lives only there,
 your objection is void — comply with Pass 100 and repair toward it.
 Higher pass number wins; this file's epoch stamp wins over what it summarizes.
 

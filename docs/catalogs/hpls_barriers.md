@@ -1,7 +1,7 @@
 # HPLS Frontier barrier index (Pass 34 v2)
 
 Machine-readable catalog: `src/pass34_catalog.zig` (`pass34-hpls-catalog-v1`)  
-Plan: [`docs/plans/pass34_hpls_frontier.md`](../plans/pass34_hpls_frontier.md)  
+Plan: [`docs/archive/pass34_hpls_frontier.md`](../archive/pass34_hpls_frontier.md)  
 Gate: `zig build pass34-gate`
 
 ## Tier counts (53 records)

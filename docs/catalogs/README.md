@@ -2,7 +2,7 @@
 
 > **Machine-readable export:** `duo catalog` (JSON)  
 > **Pass 2 algebras:** `duo algebra` (JSON)  
-> **Plan:** [`docs/plans/pass3_directive_grammar_convergence.md`](../plans/pass3_directive_grammar_convergence.md)
+> **Plan:** [`docs/archive/pass3_directive_grammar_convergence.md`](../archive/pass3_directive_grammar_convergence.md)
 
 | Catalog | File | CLI field |
 | --- | --- | --- |
@@ -11,7 +11,7 @@
 | Grammar compactness | [`grammar_compactness.md`](grammar_compactness.md) | `grammar_forms` |
 | Convergence map | [`convergence.md`](convergence.md) | `pass6.duplications` |
 | Rejected ideas | [`rejected_ideas.md`](rejected_ideas.md) | `pass6` plan + catalog |
-| Pass 6 audit | [`../plans/pass6_architectural_reconciliation.md`](../plans/pass6_architectural_reconciliation.md) | `pass6` |
+| Pass 6 audit | [`../archive/pass6_architectural_reconciliation.md`](../archive/pass6_architectural_reconciliation.md) | `pass6` |
 | Performance barriers | [`performance_barriers.md`](performance_barriers.md) | — |
 
 **Agent rule:** Do not maintain parallel handwritten directive lists. Update these files

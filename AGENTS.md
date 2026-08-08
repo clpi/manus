@@ -136,17 +136,17 @@ Duo MUST achieve compile, runtime, and startup speeds that are better than ANY p
 
 **Read first:** [`docs/AGENT_ALIGNMENT.md`](docs/AGENT_ALIGNMENT.md) (2-min compass).
 
-**Full plan:** [`docs/plans/semantic_graph_architecture.md`](docs/plans/semantic_graph_architecture.md).
+**Full plan:** [`docs/archive/semantic_graph_architecture.md`](docs/archive/semantic_graph_architecture.md).
 
 **Architecture passes (read in order):**
-- Pass 2: [`docs/plans/pass2_foundational_convergence.md`](docs/plans/pass2_foundational_convergence.md) — 8 algebras
-- Pass 3: [`docs/plans/pass3_directive_grammar_convergence.md`](docs/plans/pass3_directive_grammar_convergence.md) — grammar/directives
-- Pass 4: [`docs/plans/pass4_native_end_to_end.md`](docs/plans/pass4_native_end_to_end.md) — native backend
-- Pass 5: [`docs/plans/pass5_semantic_interchange.md`](docs/plans/pass5_semantic_interchange.md) — cross-language
-- Pass 6: [`docs/plans/pass6_architectural_reconciliation.md`](docs/plans/pass6_architectural_reconciliation.md) — architectural reconciliation
-- Pass 7: [`docs/plans/pass7_ai_native_compilation.md`](docs/plans/pass7_ai_native_compilation.md) — AI-native compilation
-- Pass 8: [`docs/plans/pass8_persistent_semantic_computing.md`](docs/plans/pass8_persistent_semantic_computing.md) — persistent semantic computing
-- Pass 9: [`docs/plans/pass9_ward_readiness.md`](docs/plans/pass9_ward_readiness.md) — Ward readiness & runtime supremacy
+- Pass 2: [`docs/archive/pass2_foundational_convergence.md`](docs/archive/pass2_foundational_convergence.md) — 8 algebras
+- Pass 3: [`docs/archive/pass3_directive_grammar_convergence.md`](docs/archive/pass3_directive_grammar_convergence.md) — grammar/directives
+- Pass 4: [`docs/archive/pass4_native_end_to_end.md`](docs/archive/pass4_native_end_to_end.md) — native backend
+- Pass 5: [`docs/archive/pass5_semantic_interchange.md`](docs/archive/pass5_semantic_interchange.md) — cross-language
+- Pass 6: [`docs/archive/pass6_architectural_reconciliation.md`](docs/archive/pass6_architectural_reconciliation.md) — architectural reconciliation
+- Pass 7: [`docs/archive/pass7_ai_native_compilation.md`](docs/archive/pass7_ai_native_compilation.md) — AI-native compilation
+- Pass 8: [`docs/archive/pass8_persistent_semantic_computing.md`](docs/archive/pass8_persistent_semantic_computing.md) — persistent semantic computing
+- Pass 9: [`docs/archive/pass9_ward_readiness.md`](docs/archive/pass9_ward_readiness.md) — Ward readiness & runtime supremacy
 
 **Catalogs:** [`docs/catalogs/keywords.md`](docs/catalogs/keywords.md) | [`docs/catalogs/directives.md`](docs/catalogs/directives.md) | [`docs/catalogs/grammar_compactness.md`](docs/catalogs/grammar_compactness.md) | [`docs/catalogs/native_barriers.md`](docs/catalogs/native_barriers.md)
 
@@ -199,7 +199,7 @@ These rules are authoritative. Compiler, stdlib, docs, and all agents must stay 
 - **Canonical ≠ exclusive.** Prefer denser Duo forms in new code; permanently accept Lua-canonical equivalents (`then`, `do`, `local function`, parenthesized calls).
 - **Call model:** bare `a` = value reference; `a()` / `a x` = invoke; shell zero-arg commands only in explicit command regions (Pass 15) — never global bare-name invocation.
 - **Deprecation threshold:** genuine conflict + no reliable disambiguation + blocks higher-value capability + exact migration + documented exception. Token reduction alone is insufficient.
-- Full constitution: `docs/plans/pass24_execution_concurrency_lua_supremacy.md`. Matrix: `docs/catalogs/lua_superset_compatibility.md`. Gate: `zig build lua-superset-gate`.
+- Full constitution: `docs/archive/pass24_execution_concurrency_lua_supremacy.md`. Matrix: `docs/catalogs/lua_superset_compatibility.md`. Gate: `zig build lua-superset-gate`.
 
 ## Duo Language Conventions
 
@@ -268,7 +268,7 @@ When writing `.duo` files, follow these conventions:
 ### Agent documentation protocol
 
 1. **Before any work:** read `.agents/AGENT_COORDINATION.md` and `AGENTS.md`; for perf/codegen also `docs/performance.md`.
-2. **Claim** your area in `.agents/AGENT_COORDINATION.md` before editing shared surfaces.
+2. **Claim** your area in the untracked `.agents/session/` before editing shared surfaces, and name it in the commit message either way.
 3. **After** performance or codegen work: append a dated section to `docs/performance.md` with commands run, files touched, measured ratios, and rejected experiments.
 4. **After** syntax/semantic fixes: update the semantics table if status changes.
 5. **Hardware / low-level**: prefer `.duo` + `@comp.c.emit` / `@comp.asm` / `@comp.device` in `lib/std/hardware.duo` and `lib/std/ml/device.duo` when Lua grammar blocks optimization; do not add Lua-only benchmark gaming.
@@ -325,7 +325,7 @@ All agents must follow the rules in this file. Before starting work, read the fu
 conflict, or clear the tree for a parallel agent — the stash hides work from
 `git status`, all other agents keep building against stale copies, and it caused
 one full 23-file rescue (2026-08-01). Commit early on a branch, coordinate via
-claims in `.agents/AGENT_COORDINATION.md`, or export a visible `.patch` file.
+claims in `.agents/session/`, or export a visible `.patch` file.
 `git stash list` must stay EMPTY.
 
 ## Companion Repositories

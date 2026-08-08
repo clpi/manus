@@ -19,6 +19,6 @@
 | REJ-011 | Separate "agent IR" JSON format | N+1 interchange formats; coordination cost | Extend SIM schema versions (`sim-v1`, …) | 2026-08-04 |
 | REJ-012 | Bidirectional C→Duo source rewriting (Pass 5 scope) | Implementation import deferred; risks semantic loss | Foreign descriptors + direct native call (P5-M1) | 2026-08-04 |
 
-**Process:** New rejections append rows here and reference in `docs/plans/pass6_architectural_reconciliation.md` session notes.
+**Process:** New rejections append rows here and reference in `docs/archive/pass6_architectural_reconciliation.md` session notes.
 
 **Pass 26 extension:** Open architectural tensions and decision statuses live in `src/pass26_decision_registry.zig` (`P26-D*`). Query `duo catalog | jq '.pass26'` before proposing syntax variants. **Machine-readable decisions (statuses, superseded items):** `duo catalog` → `pass26` / `src/pass26_contradiction_registry.zig` (Pass 26 F5).
