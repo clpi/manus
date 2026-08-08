@@ -1829,7 +1829,7 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
             // seconds as a float and C's returns ticks, so lowering it to the
             // libc symbol would change what the program measures — a silent
             // semantic swap, not a lowering.
-            // `mem.alloc/free/read` are libc, not a runtime. alloc and free are
+            // `mem.alloc/free/zero/addr` are libc, not a runtime. alloc and free are
             // single-argument extern calls -- the same shape `#s` uses for
             // strlen -- and `mem.read(p, i)` is a byte load, the same shape
             // `string.byte` uses. The rest of the family (cast, load with a
@@ -1864,12 +1864,23 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
                     try ctx.emit(.{ .op = .call_extern, .callee = "free", .lhs = ptr });
                     return .void;
                 }
-                if (std.mem.eql(u8, f.field, "read") and c.args.len == 2) {
-                    const base = try lowerExpr(ctx, c.args[0]);
-                    const idx = try lowerExpr(ctx, c.args[1]);
-                    const t = ctx.freshTemp();
-                    try ctx.emit(.{ .op = .load_index, .result = t, .lhs = base, .rhs = idx });
-                    return .{ .temp = t };
+                // `mem.zero(p, n)` is memset(p, 0, n) — three arguments through
+                // mov_arg, the same marshalling concat proved works for two.
+                if (std.mem.eql(u8, f.field, "zero") and c.args.len == 2) {
+                    const ptr = try lowerExpr(ctx, c.args[0]);
+                    const n = try lowerExpr(ctx, c.args[1]);
+                    try ensureExtern(ctx, "mem", "zero", "memset");
+                    try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = ptr });
+                    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = .{ .i64 = 0 } });
+                    try ctx.emit(.{ .op = .mov_arg, .result = 2, .lhs = n });
+                    try ctx.emit(.{ .op = .call_extern, .callee = "memset" });
+                    return .void;
+                }
+                // `mem.addr(x)` on a pointer-shaped value IS that value: a str
+                // is already a `const char*` and an alloc result is already the
+                // address. No instruction, just the identity.
+                if (std.mem.eql(u8, f.field, "addr") and c.args.len == 1) {
+                    return try lowerExpr(ctx, c.args[0]);
                 }
             }
             if (std.mem.eql(u8, f.obj.name.ident, "os") and
