@@ -60,13 +60,13 @@ returned true for a failing command in this repo before.
 | tier-0 agent gate | `zig build agent-smoke` | **PASS**, exit 0 |
 | public safety (Pass 10 A19) | `duo run scripts/public_safety_scan.duo` | **PASS**, exit 0 |
 | repo hygiene | `zig build repo-hygiene` | **PASS**, exit 0 |
-| Pass 100 deny table | `zig build audit100` | **RED at `1bb304f`** — 2 rows over budget (`oneline` 2268/2258, `trailret` 3417/3415); see below |
+| Pass 100 deny table | `zig build audit100` | **PASS at `568905d`** — 18 rows at or under budget; the two red rows were repaired at source, see below |
 | project loop on a clean dir | `zig build init-build-smoke` | **PASS**, exit 0 |
 | lexer TEXT differential | `duo run --backend=c examples/pass16_lexer_text_differential.duo` | exit 0 |
 | lexer FINGERPRINT differential | `duo run --backend=c examples/pass16_lexer_fingerprint_differential.duo` | exit 0 |
 | Zig unit tests | `zig build unit-test` | **GREEN at `1bb304f`** — 1317/1317, 0 leaks, exit 0; see §3 |
 | direct/C native differential | `zig build native-differential` | **GREEN at `1bb304f`** — 63 agree / 0 diverge, exit 0; see §3a |
-| Duo-vs-C benchmark | `zig build bench` | **RED by its own criterion** — 12 measured wins, 11 folded, 17 losses; see §4 |
+| Duo-vs-C benchmark | `zig build bench` | **RED by its own criterion** — 16 measured wins, 11 folded, 13 losses; see §4 |
 | language census (G11) | `zig build language-census` | **PASS**, exit 0 — and it now counts `.js`, which it never did; see §7.8 |
 
 Two notes on how those greens were obtained, because both are the kind of thing
@@ -282,7 +282,7 @@ and what was previously untrue on this backend.
 
 ---
 
-## 4. Benchmark position — 12 measured wins / 11 folded / 17 losses
+## 4. Benchmark position — 16 measured wins / 11 folded / 13 losses
 
 `zig build bench` re-measured **2026-08-08 after the frozen-kernel removal
 below**, with the harness carrying this pass's classifier. `BENCH_MANIFEST
@@ -304,9 +304,9 @@ bearing fact and it is green.
 
 | verdict | rows | meaning |
 |---|---:|---|
-| **measured wins** | **12** | Duo ran the kernel and was faster |
+| **measured wins** | **16** | Duo ran the kernel and was faster |
 | **folded** | **11** | EVALUATED, NOT RUN — closed form, not codegen. **Not a win.** |
-| losses | 17 | reference C was faster |
+| losses | 13 | reference C was faster |
 
 `zig build bench` **exits 1**. It did before, on the losses; it would now
 exit 1 on the folded rows alone, because a row whose kernel did not execute has
@@ -315,9 +315,51 @@ not beaten anything and the gate's criterion is "beat or tie C on every test".
 Folded: Fibonacci(40), Table array, Filter count, Clamp sum, Bucket hash, EMA
 smooth, Table churn, XOR fold, Fenwick tree, Bitcount, CORDIC sin.
 
-C wins: String hash, Math floor/max, Table max, Pow/sqrt, Dot product, **Table
-lookup**, Token count, Config parse, Matrix multiply, Prefix sum, Ring buffer,
-Cond swap, Ackermann, Levenshtein, Run-length, Sparse dot, Game of Life.
+C wins: Math floor/max, Table max, Pow/sqrt, Dot product, **Table lookup**,
+Matrix multiply, Prefix sum, Ring buffer, Cond swap, Ackermann, Levenshtein,
+Sparse dot, Game of Life.
+
+### Four rows moved off that list at `568905d`, and it was not the codegen
+
+String hash, Token count, Config parse and Run-length were losing **entirely
+inside `string.rep`**, not in any loop. `token_count`'s emitted inner loop is
+already character-for-character what reference C writes — `while (i <= last) {
+if ((int64_t)(unsigned char)(s[i-1]) == 32) count++; i++; }` over a
+`const char*`, no boxing, no bounds check — and the row still read 0.001445
+against C's 0.000353. Timed by component: building the 850 KB string is
+0.00003 s and hashing it to INTERN it is 0.00103 s. The intern hash was 35x the
+work it was guarding, paid on every string a program builds whether or not
+anything looks it up again.
+
+Long strings now hash a bounded sample (first 16 bytes, last 16, plus a
+`(len >> 5) + 1` stride) instead of every byte; ≤ 32 bytes is unchanged and
+bit-identical. Every consumer confirms with a length check and a `memcmp`, so
+sampling can cost a probe and never an answer.
+
+A/B at ONE base (`447deab`), both arms, whole suite, two isolated worktrees:
+
+| row | without | with | reference C |
+|---|---:|---:|---:|
+| String hash | 0.000390 | 0.000302 | 0.000304 |
+| Token count | 0.001445 | 0.000356 | 0.000348 |
+| Config parse | 0.001262 | 0.000470 | 0.000433 |
+| Run-length | 0.001424 | 0.000302 | 0.000304 |
+| **verdict** | **12 / 11 / 17** | **16 / 11 / 13** | — |
+
+**Stated plainly: three of the four flips are the `5e-05 s` tie epsilon, not a
+win.** Duo is still 2 % behind C on Token count and 9 % behind on Config parse;
+only String hash and Run-length are level. The 4–5x is real and it fires for
+any program that builds a large string — the *verdict* movement is the epsilon
+this section already names as an honesty hole.
+
+The first version of that change sampled on a bare stride anchored at 0, which
+never reaches the last `len mod step` bytes: counted against the emitted
+`calc_hash`, 500 JSON records sharing a 4 KB header and differing in a trailing
+id produced **1 distinct hash**. Correctness survived (the `memcmp` confirm),
+but the pool degenerated to a linear scan — the exact cost the sampling existed
+to remove. The two 16-byte windows are what fix it: 500/500, and a bucket
+spread matching full FNV-1a. `zig build hash-agreement` differences the
+compile-time and runtime halves of the hash and is wired into `agent-smoke`.
 
 ### The rule, and why it is not a list of row names
 
@@ -763,16 +805,26 @@ trie + relations; offside parsing + canonicalizer.
 
 Stated plainly, no hedging.
 
-1. **`audit100` is red at `1bb304f`** — 2 rows over budget (`oneline`
-   2268/2258, `trailret` 3417/3415), not attributed and not budgeted. Measured
-   both with and without this pass's compiler change at the same HEAD: the two
-   runs print identical counts, so the overage belongs to `.duo` work landed
-   since the last rebaseline, not to the compiler diff. The gate reads
-   `.duo` files only.
+1. ~~**`audit100` is red**~~ — **CLOSED.** It was red at `1bb304f` on
+   `oneline` 2268/2258 and `trailret` 3417/3415, and it was red **at the
+   rebaseline commit itself**, not from work landed after it. Attributed per
+   file at `1bb304f` and again at `a6e35e8`, in two detached worktrees with
+   private list paths: all 12 points, both rows, are
+   `scripts/capability_matrix.duo` (oneline 10 → 0, trailret 14 → 12) and no
+   other canonical file moved a line. `ce4a313` paid it at source. No budget
+   was raised. What replaces this item is smaller and worth keeping in view:
+   **the gate could report a confident zero on sixteen of its seventeen rows.**
+   Its string-body strip had one control, `kept <= razed`, which catches a
+   strip that deletes NOTHING and cannot catch a strip that deletes everything
+   by erroring — a broken `sed` makes `razed` 0, which satisfies the control
+   *harder*. Measured by perturbation: exit 0, "18 rows at or under budget",
+   snake 0, upper 0, underprefix 0. Fixed at `f7c0c74` by running the
+   `[a-zA-Z]` control through the STRIPPED pipeline too; `AUDIT100_LIST` now
+   overrides the fixed `/tmp` path §9 blames for a lost measurement.
    *(The unit test suite was item 1 here with "23 failures, 2 leaks". It is now
    green — 1317/1317, 0 leaks — and so is the native differential, 63/0. See
    §3 and §3a; seven real compiler defects came out of that triage.)*
-2. **The benchmark gate is red**: 12 measured wins, **11 folded**, 17 losses,
+2. **The benchmark gate is red**: 16 measured wins, **11 folded**, 13 losses,
    and at least one Duo build folded on 25 of the 40 rows. The suite proves
    **correctness** (40/40 against reference C). It does not currently prove a
    speed claim. The suite now labels the folded rows itself and prints the
