@@ -115,7 +115,7 @@ pub fn tokenizeAuthority() TokenizeAuthority {
     // corrupting the stream), field-for-field differential, GAP-017 rejections,
     // GAP-022 source-slice text. The routing in main.zig stays in place and
     // inert under .host_zig.
-    return .host_zig;
+    return .duo_native;
 }
 
 /// Keyword leg is Duo-native in production (MP-02 closed).
@@ -129,7 +129,7 @@ pub fn lookupKeyword(text: []const u8) ?lexer.TokenKind {
 }
 
 pub fn validateProductionSplit() !void {
-    if (tokenizeAuthority() != .host_zig) return error.UnexpectedTokenizeAuthority;
+    if (tokenizeAuthority() != .duo_native) return error.UnexpectedTokenizeAuthority;
     if (keywordAuthority() != .duo_native) return error.UnexpectedKeywordAuthority;
     if (lookupKeyword("fun") != .kw_fun) return error.KeywordBridgeFailed;
     if (lookupKeyword("notkw") != null) return error.KeywordBridgeFailed;
@@ -151,7 +151,7 @@ pub fn writeBridgeJson(w: *std.Io.Writer) !void {
 
 test "duo_lexer_bridge: production split" {
     try validateProductionSplit();
-    try std.testing.expect(tokenizeAuthority() == .host_zig);
+    try std.testing.expect(tokenizeAuthority() == .duo_native);
     try std.testing.expect(keywordAuthority() == .duo_native);
 }
 

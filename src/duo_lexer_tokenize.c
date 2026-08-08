@@ -5619,6 +5619,8 @@ static inline const char* std_compiler_lexer__read_long_str(duo_rec_ee59e87b0435
 static lua_Value std_compiler_lexer__read_long_str__lua2(lua_Value _a0, lua_Value _a1);
 static inline const char* std_compiler_lexer__read_str(duo_rec_ee59e87b0435b6d1 *self, int64_t quote);
 static lua_Value std_compiler_lexer__read_str__lua2(lua_Value _a0, lua_Value _a1);
+static inline int64_t std_compiler_lexer___int_of(const char* text);
+static lua_Value std_compiler_lexer___int_of__lua(lua_Value _a0);
 static inline duo_rec_59c700cbb43a8f9d std_compiler_lexer__read_num(duo_rec_ee59e87b0435b6d1 *self);
 static lua_Value std_compiler_lexer__read_num__lua(lua_Value _a0);
 static inline duo_rec_59c700cbb43a8f9d std_compiler_lexer__next_tok(duo_rec_ee59e87b0435b6d1 *self);
@@ -6480,6 +6482,47 @@ static inline const char* std_compiler_lexer__read_str(duo_rec_ee59e87b0435b6d1 
     return "";
 }
 
+static lua_Value std_compiler_lexer___int_of__lua(lua_Value _a0) {
+const char* _p0 = lua_to_str(_a0);
+int64_t _r = std_compiler_lexer___int_of(_p0);
+    return lua_val_from_int((int64_t)(_r));
+}
+
+static inline int64_t std_compiler_lexer___int_of(const char* text) {
+    int64_t n = ((int64_t)strlen(text));
+    if ((((n > 2) && (((int64_t)(unsigned char)(text[1 - 1])) == 48)) && ((((int64_t)(unsigned char)(text[2 - 1])) == 120) || (((int64_t)(unsigned char)(text[2 - 1])) == 88)))) {
+        int64_t v = 0;
+        int64_t i = 3;
+        while ((i <= n)) {
+            int64_t c = ((int64_t)(unsigned char)(text[i - 1]));
+            int64_t d = 0;
+            if (((c >= 48) && (c <= 57))) {
+                                d = (c - 48);
+            } else if (((c >= 97) && (c <= 102))) {
+                                d = (c - 87);
+            } else if (((c >= 65) && (c <= 70))) {
+                                d = (c - 55);
+            } else {
+                return v;
+            }
+                        v = ((v * 16) + d);
+                        i = (i + 1);
+        }
+        return v;
+    }
+    int64_t v = 0;
+    int64_t i = 1;
+    while ((i <= n)) {
+        int64_t c = ((int64_t)(unsigned char)(text[i - 1]));
+        if (((c < 48) || (c > 57))) {
+            return v;
+        }
+                v = ((v * 10) + (c - 48));
+                i = (i + 1);
+    }
+    return v;
+}
+
 static lua_Value std_compiler_lexer__read_num__lua(lua_Value _a0) {
 duo_rec_ee59e87b0435b6d1 _p0 = (duo_rec_ee59e87b0435b6d1){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_59c700cbb43a8f9d){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)), .hint_count = ((int64_t)lua_table_get_str_num(_a0, "hint_count", 3572354132u, 10)), .hint_0 = lua_to_str(lua_table_get_raw_str_lit(_a0, "hint_0", 3079801999u, 6)), .hint_1 = lua_to_str(lua_table_get_raw_str_lit(_a0, "hint_1", 3063024380u, 6)), .hint_2 = lua_to_str(lua_table_get_raw_str_lit(_a0, "hint_2", 3113357237u, 6)), .hint_3 = lua_to_str(lua_table_get_raw_str_lit(_a0, "hint_3", 3096579618u, 6)), .hint_4 = lua_to_str(lua_table_get_raw_str_lit(_a0, "hint_4", 3012691523u, 6)), .hint_5 = lua_to_str(lua_table_get_raw_str_lit(_a0, "hint_5", 2995913904u, 6)), .hint_6 = lua_to_str(lua_table_get_raw_str_lit(_a0, "hint_6", 3046246761u, 6)), .hint_7 = lua_to_str(lua_table_get_raw_str_lit(_a0, "hint_7", 3029469142u, 6)),};
 duo_rec_59c700cbb43a8f9d _r = std_compiler_lexer__read_num(&_p0);
@@ -6599,7 +6642,7 @@ static inline duo_rec_59c700cbb43a8f9d std_compiler_lexer__read_num(duo_rec_ee59
             .kind = ((int64_t)duo_fallback_get_num(1, lua_require(lua_val_from_literal("std.compiler.token", 1585571154, 18)), "KIND_INT_LIT", 4051439267u, 12)),
             .loc = l,
             .text = text,
-            .int_val = ((int64_t)lua_to_num(lua_val_from_str(text))),
+            .int_val = std_compiler_lexer___int_of(text),
             .float_val = 0e0
         };
     }

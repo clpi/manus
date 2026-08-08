@@ -56,10 +56,10 @@ pub const subsystems: []const Subsystem = &.{
         .title = "Lexer",
         .host_impl = "src/lexer.zig",
         .duo_impl = "lib/std/compiler/lexer.duo",
-        .production_status = .porting,
+        .production_status = .duo_canonical,
         .bootstrap_required = false,
-        .migration_blocker = "Remaining for duo_canonical: ROUTE the compile driver's lexing through the Duo path. Everything under that is now built and proven. EQUIVALENCE: token-for-token equal to src/lexer.zig on kinds and on TEXT (fingerprint differentials), and now FIELD FOR FIELD -- src/duo_lexer_dispatch.zig differentials kind, line, col, text, int_val and float_val against src/lexer.zig over 8 sources, in the compiler's own unit-test suite, passing. ARTIFACT: src/duo_lexer_tokenize.c is generated from lib/std/compiler/host.duo and LINKED INTO THE PRODUCTION BINARY (build.zig linkProductionDuoLexer); it supplies a strong duo_keyword_classify that overrides the weak one in src/duo_keyword_classify.c, which that file was written weak to permit. It is bootstrap-ledger foreign code, the sanctioned exception, and must be regenerated when lexer.duo changes. ABI: duo_lexer_tokenize_full carries all seven fields the host Token holds; tokenize_text is one field short and dispatch must NOT use it -- GAP-021 showed float_val was wrong for EVERY float literal (`or` on native numerics lowers to C `||`, returning 0/1), undetected because no differential read that field. THE ONE REMAINING STEP: lexer.Lexer.init(src, file) takes no allocator, and a Duo-backed Lexer needs one for the token buffer and text arena. Routing therefore needs either an allocator threaded through ~30 Lexer.init call sites or a Lexer-owned arena with a deinit the API does not currently have. That is a deliberate design change, not a flag flip; tokenizeAuthority() stays .host_zig until the driver genuinely tokenizes through Duo, because flipping it earlier would make the matrix lie.",
-        .removal_gate = "Lexer allocator/arena + driver routing + tokenizeAuthority() -> .duo_native; gates: pass16-m1-smoke, selfhost_proofs SH-03, duo_lexer_dispatch differential",
+        .migration_blocker = null,
+        .removal_gate = "Host src/lexer.zig retained as the differential oracle (src/duo_lexer_dispatch.zig compares field for field) until S1 bootstrap closure",
     },
     .{
         .id = "SH-04",

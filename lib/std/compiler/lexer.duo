@@ -372,6 +372,51 @@ read_str(self: Lexer, quote: i64): str
     ""
 end
 
+-- GAP-023/024: exact decimal and hex to i64, never through f64.
+--
+-- `to(i64)("4810305713451201937")` yields 4810305713451201536 — the value is
+-- 63 bits and an f64 mantissa carries 53, so the conversion rounds to a
+-- multiple of 512. That is a SILENT wrong number in a token, and it made the
+-- Duo lexer disagree with src/lexer.zig on every integer literal above 2^53:
+-- the two fingerprint proofs were the only programs that had one, which is why
+-- they were the only two that regressed under production dispatch.
+--
+-- Digits accumulate in i64 directly. Values beyond i64 wrap rather than
+-- rejecting; that is the same shape the rest of the compiler carries today and
+-- is recorded in GAP-024 rather than fixed here.
+_int_of(text: str): i64
+    n: i64 = string.len(text)
+    if n > 2 and string.byte(text, 1) == 48 and (string.byte(text, 2) == 120 or string.byte(text, 2) == 88)
+        v: i64 = 0
+        i: i64 = 3
+        while i <= n
+            c: i64 = string.byte(text, i)
+            d: i64 = 0
+            if c >= 48 and c <= 57
+                d = c - 48
+            elseif c >= 97 and c <= 102
+                d = c - 87
+            elseif c >= 65 and c <= 70
+                d = c - 55
+            else
+                return v
+            end
+            v = v * 16 + d
+            i += 1
+        end
+        return v
+    end
+    v: i64 = 0
+    i: i64 = 1
+    while i <= n
+        c: i64 = string.byte(text, i)
+        if c < 48 or c > 57 return v end
+        v = v * 10 + (c - 48)
+        i += 1
+    end
+    v
+end
+
 read_num(self: Lexer): Tok
     l = cur_loc(self)
     start = self.pos
@@ -449,7 +494,7 @@ read_num(self: Lexer): Tok
     if is_float
         return { kind = std.compiler.token.KIND_FLOAT_LIT, loc = l, text = text, int_val = 0, float_val = to(f64)(text) }
     else
-        return { kind = std.compiler.token.KIND_INT_LIT, loc = l, text = text, int_val = to(i64)(text), float_val = 0.0 }
+        return { kind = std.compiler.token.KIND_INT_LIT, loc = l, text = text, int_val = _int_of(text), float_val = 0.0 }
     end
 end
 
