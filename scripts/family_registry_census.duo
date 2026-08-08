@@ -1,0 +1,223 @@
+-- Pass 81 — the family registry, measured.
+--
+-- Why this exists. Pass 81 rules that every point where a value's descriptor
+-- can customize behavior IS a relation family, and that every point where it
+-- deliberately cannot is a listed non-family with a reason: "there is no third
+-- state". That is a claim about the LANGUAGE. This file is the claim about the
+-- COMPILER, and the two do not currently agree.
+--
+-- The registry names roughly thirty families. Measured 2026-08-07, almost none
+-- of them exist as surface. That is not an argument against the registry — a
+-- spec is allowed to run ahead of its compiler, and Pass 64 Part VIII already
+-- settled that policy. It is an argument against writing registry forms into
+-- .duo files today, which is exactly the mistake LV-4 and STR-1 cost this repo
+-- twice: an agent following the spec literally produced WORSE code than the
+-- vestige the spec told it to delete, and nothing failed to warn it.
+--
+-- Same rule as spec_conformance: a row is IMPLEMENTED only if the program
+-- compiles AND prints the expected value. "Compiles" is not evidence. Every
+-- family name in this registry currently behaves EXACTLY like an identifier
+-- that was never spelled anywhere -- `release`, `place`, `format`, `meta`,
+-- `add`, `concat`, `band`, `iter`, `from`, `scan`, `clone`, `copy` and `ref`
+-- all reach the C compiler as "use of undeclared identifier", the same
+-- diagnostic as a control name typed at random. There is no Duo-level
+-- diagnostic and no reserved surface. A row that merely checked for a compile
+-- error could not tell a family apart from a typo.
+--
+-- Raise the floor when rows go green; never lower it to quiet the gate.
+
+-- Pinned floor: the MEASURED count, never an estimate. Verified 2026-08-07 at
+-- 10/38, and read the composition before reading the number as encouraging:
+-- five of the ten are CONTROLS or vestiges (`#p.src`, `#"hello"`, `1 + 2`,
+-- `setmetatable`, and the two non-family rows that hold). The family surface
+-- that actually has a realization is four rows -- brace application against a
+-- function, the default table place, `to(str)`, and `for v in t`.
+baseline(): i64
+    10
+end
+
+-- An open brace, built rather than written. Interpolation has no escape
+-- (GAP-16), so a file whose data is Duo source containing `{name}` would have
+-- its own corpus rewritten before it ever reached the compiler. Descriptor
+-- probes are made of braces, so this is not a corner case here.
+lb(): str
+    "{"
+end
+
+fails = 0
+implemented = 0
+checked = 0
+report = ""
+
+-- The binary, resolved so that a wrong cwd cannot be mistaken for a language
+-- result. `std.script.duo_bin()` is the RELATIVE path `./zig-out/bin/duo`, and
+-- `probe` sends stderr to /dev/null, so running this gate from any directory
+-- without a `zig-out` reports every single row MISSING and no reason why. That
+-- is not hypothetical -- the first run of this file scored 0/38 from a
+-- worktree, controls included, and the number looked exactly like a language
+-- with no families rather than a harness with no compiler.
+-- `std.os.getenv` returns the EMPTY STRING for an unset variable, not nil. A
+-- `!= nil` guard therefore passes on a miss and hands back "", which builds the
+-- command " run /tmp/..." -- broken from every directory including the repo
+-- root, and reported as a language result. Caught only because the harness
+-- guard below echoes the path it resolved. Check the emptiness, not the nil.
+bin(): str
+    override = std.os.getenv("DUO_BIN")
+    if override != nil
+        if override != ""
+            return override
+        end
+    end
+    std.script.duo_bin()
+end
+
+probe(id: str, src: str, want: str): bool
+    path = "/tmp/duo_famreg.duo"
+    std.script.fs_write(path, src)
+    got = std.script.capture(bin() .. " run " .. path .. " 2>/dev/null")
+    trimmed = std.script.chomp(got)
+    if trimmed == want
+        return true
+    end
+    return false
+end
+
+-- The control: the smallest program the language cannot fail. If THIS does not
+-- print, nothing below it measures the language, and a count would be a lie.
+-- Checked before any row is recorded, and reported on its own exit path so a
+-- broken harness never reads as a regression.
+harness_live(): bool
+    probe("control", "main(): void\n    print(1 + 2)\nend\n", "3")
+end
+
+record(id: str, src: str, want: str): void
+    checked = checked + 1
+    if probe(id, src, want)
+        implemented = implemented + 1
+        report = report .. "  ok      " .. id .. "\n"
+    else
+        report = report .. "  MISSING " .. id .. "\n"
+    end
+end
+
+main(): i64
+    if harness_live() == false
+        print("family_registry: HARNESS BROKEN — the control `print(1 + 2)` did not")
+        print("  print 3, so no row below measures the language. Check that " .. bin())
+        print("  exists from this cwd, or set DUO_BIN to an absolute path.")
+        return 2
+    end
+
+    -- §0 — the opening question. `#.src` is ruled canonical: the `len`
+    -- operator applied to an anchored-scope lens, "the length of my src".
+    -- The PARSE is exactly as ruled -- no ambiguity, `.src` cannot be a
+    -- numeral. The LOWERING is not: `.src` becomes a closure and `#` is
+    -- applied to the closure itself rather than composed into a lens, so the
+    -- backend emits `strlen(<closure>)` and the C compiler rejects the type.
+    -- The composed form is what the rule promises, so that is what this row
+    -- asserts.
+    record("LENS-1 #.src composes", "f(p: any): i64\n    #.src\nend\nmain(): void\n    print(f({ src = \"abc\" }))\nend\n", "3")
+    record("LENS-2 #p.src control", "main(): void\n    p = { src = \"abc\" }\n    print(#p.src)\nend\n", "3")
+
+    -- §2.1 — call, and construction as the descriptor's own call edge.
+    -- CALL-4 is the one that works, and it is worth being precise about what
+    -- it proves: brace application against a FUNCTION is a real call edge and
+    -- it dispatches. Against a DESCRIPTOR the default shape-directed fill has
+    -- no realization at all -- codegen emits a call to `point(...)` and never
+    -- defines `point`. Deleting `init` in favour of the call edge is sound;
+    -- the edge just has no default today.
+    record("CALL-1 descriptor shape fill", "point: { x: i64, y: i64 }\nmain(): void\n    p = point{ x = 3, y = 4 }\n    print(p.x)\nend\n", "3")
+    record("CALL-2 descriptor call edge", "h: {\n    fd: i64\n    call = (spec) @" .. lb() .. " fd = spec.n + 6 }\n}\nmain(): void\n    print(h{ n = 1 }.fd)\nend\n", "7")
+    record("CALL-3 callable record", "t = { call = (self, a) a + 8 }\nmain(): void\n    print(t(1))\nend\n", "9")
+    record("CALL-4 function brace call", "srv(o: any): i64\n    o.port\nend\nmain(): void\n    print(srv{ port = 8080 })\nend\n", "8080")
+
+    -- §2.2 — place: one keyed-place edge, load/store/update/borrow projected.
+    record("PLACE-1 place(T) edge", "s: {\n    place(i64) = (self, i) i + 4\n}\nmain(): void\n    print(s{}[1])\nend\n", "5")
+    record("PLACE-2 default table place", "main(): void\n    t = { 10, 20 }\n    print(t[2])\nend\n", "20")
+    record("PLACE-3 get projection", "main(): void\n    t = { a = 1 }\n    print(t:get(\"a\"))\nend\n", "1")
+
+    -- §2.3 — identity, structure, sizing. Every one of these is a `name = ...`
+    -- member inside a descriptor body, and THAT is the single blocker: a
+    -- descriptor body accepts type slots only. `eq =` fails at the `=` with
+    -- "expected '}', got 'name'", identically to `cmp`, `len`, `hash` and a
+    -- slot default. One parse rule gates most of the registry.
+    record("EQ-1 eq family", "p: {\n    x: i64\n    eq = (a, b) a.x == b.x\n}\nmain(): void\n    print(p{ x = 1 } == p{ x = 1 })\nend\n", "true")
+    record("CMP-1 cmp family", "p: {\n    x: i64\n    cmp = (a, b) a.x - b.x\n}\nmain(): void\n    print(p{ x = 1 } < p{ x = 2 })\nend\n", "true")
+    record("LEN-1 len family", "p: {\n    n: i64\n    len = (self) self.n\n}\nmain(): void\n    print(#p{ n = 3 })\nend\n", "3")
+    record("LEN-2 #s builtin control", "main(): void\n    print(#\"hello\")\nend\n", "5")
+    record("HASH-1 hash family", "main(): void\n    print(hash(\"a\") != nil)\nend\n", "true")
+    record("DEFAULT-1 slot default", "p: { x: i64 = 42 }\nmain(): void\n    print(p{}.x)\nend\n", "42")
+
+    -- §2.4 — lifecycle. `release` is the drop family that absorbs both of
+    -- Lua's `__gc` and `__close`; none of the four names resolve.
+    record("CLONE-1 clone", "main(): void\n    print(clone({ x = 1 }).x)\nend\n", "1")
+    record("COPY-1 copy", "main(): void\n    print(copy({ x = 1 }).x)\nend\n", "1")
+    record("REF-1 ref/deref", "main(): void\n    print(deref(ref({ x = 1 })).x)\nend\n", "1")
+    record("RELEASE-1 release", "main(): void\n    print(release != nil)\nend\n", "true")
+
+    -- §2.5 — meta(level) replacing get/setmetatable. Note `setmetatable`
+    -- itself still resolves (the G6 row in spec_conformance depends on it),
+    -- so this is a registry surface that has not landed on top of a vestige
+    -- that has not been retired -- both ends live at once.
+    record("META-1 meta(instance)", "main(): void\n    print(meta(instance)({ x = 1 }) != nil)\nend\n", "true")
+    record("META-2 meta(descriptor)", "main(): void\n    print(meta(descriptor)({ x = 1 }) != nil)\nend\n", "true")
+    record("META-3 setmetatable vestige", "main(): void\n    p = {}\n    setmetatable(p, {})\n    print(\"live\")\nend\n", "live")
+
+    -- §2.6 — rendering, data, extraction. `to` landed; its oriented partner
+    -- `from` did not, which is notable because §2.6 rules them ONE edge.
+    record("TO-1 to(str)", "main(): void\n    print(to(str)(42))\nend\n", "42")
+    record("FROM-1 from(str)", "main(): void\n    print(from(str)(i64)(\"42\"))\nend\n", "42")
+    record("FORMAT-1 format(style)", "main(): void\n    print(format(display)(42))\nend\n", "42")
+    record("ENCODE-1 encode", "main(): void\n    print(encode != nil)\nend\n", "true")
+    record("SCAN-1 scan", "main(): void\n    print(scan != nil)\nend\n", "true")
+
+    -- §2.7 — iteration. `for` consumes the iter pack; the family is not
+    -- addressable by name, so `iter(reverse)` has nothing to parameterize.
+    record("ITER-1 for v in t", "main(): void\n    t = { 10, 20 }\n    s = 0\n    for v in t\n        s = s + v\n    end\n    print(s)\nend\n", "30")
+    record("ITER-2 iter(reverse)", "main(): void\n    f = 0\n    for v in iter(reverse)({ 10, 20 })\n        f = v\n        break\n    end\n    print(f)\nend\n", "20")
+
+    -- §2.8 — the operator roots. The rule is that all are passable VALUES
+    -- (`fold(0, add)`). The operator TOKENS work; the bindings behind them
+    -- are not nameable, so no root can be passed anywhere.
+    record("OP-1 add as value", "main(): void\n    f = add\n    print(f(1, 2))\nend\n", "3")
+    record("OP-2 fold(0, add)", "main(): void\n    print(fold(0, add)({ 1, 2, 3 }))\nend\n", "6")
+    record("OP-3 concat root", "main(): void\n    print(concat(\"a\", \"b\"))\nend\n", "ab")
+    record("OP-4 band root", "main(): void\n    print(band(3, 1))\nend\n", "1")
+    record("OP-5 + token control", "main(): void\n    print(1 + 2)\nend\n", "3")
+
+    -- §2.9 — the concurrency point, recorded by Pass 81 as the family it WILL
+    -- be and gated on the concurrency floor. This row is expected to be
+    -- MISSING and is here so the day it lands is dated.
+    record("CONC-1 suspend/resume", "main(): void\n    print(suspend != nil)\nend\n", "true")
+
+    -- §3 — the non-families. These are the rows that assert something is NOT
+    -- hookable, and they matter more than they look: a registry that only
+    -- tests what should exist cannot catch a rule the compiler quietly broke.
+    --
+    -- NF-1 is such a break, and it is a DIVERGENCE, not a missing feature.
+    -- §3 rules truthiness structural and fixed: "false/nil falsy, forever".
+    -- Measured, `if 0` does not take its branch. `if 1` and `if ""` do, and
+    -- `if false` does not, so the control rows are sound and the reading is
+    -- unambiguous: zero is falsy today. Either the compiler contradicts the
+    -- one rule §3 calls structural, or B-2 means something narrower than it
+    -- says. Filed as GAP-023 rather than guessed at here -- this is a ruling,
+    -- and rulings are the author's.
+    record("NF-1 zero is truthy (B-2)", "main(): void\n    if 0\n        print(\"yes\")\n    end\nend\n", "yes")
+    record("NF-2 false is falsy", "main(): void\n    if false\n        print(\"no\")\n    end\n    print(\"ok\")\nend\n", "ok")
+    record("NF-3 empty string truthy", "main(): void\n    if \"\"\n        print(\"yes\")\n    end\nend\n", "yes")
+
+    io.write(report)
+    print("family_registry: " .. to(str)(implemented) .. "/" .. to(str)(checked)
+        .. " implemented (floor " .. to(str)(baseline()) .. ")")
+
+    if implemented < baseline()
+        print("family_registry: FAIL — a family surface that used to work has regressed")
+        return 1
+    end
+    if implemented > baseline()
+        print("family_registry: families gained since the floor was set — RAISE baseline() to "
+            .. to(str)(implemented) .. " and narrow the interim advice in docs/plans/pass81_family_registry.md")
+    end
+    print("family_registry: PASS")
+    0
+end
