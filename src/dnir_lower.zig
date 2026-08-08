@@ -1528,6 +1528,26 @@ fn lowerExprCons(
             // so a constant index costs nothing at runtime. A non-constant index
             // needs a base pointer and computed offset — the native table
             // milestone — and is refused rather than mis-lowered.
+            // Pass 101 §2: `s[i]` IS the byte, 0-based — there is no string
+            // library, only a string descriptor. This is the CANONICAL byte
+            // access, and it did not lower while the deny-listed
+            // `string.byte(s, i)` did. Sixth instance of that pattern this
+            // session, after string.byte, s:byte, @{…}, mem and math.
+            //
+            // The index is emitted as `i + 1` because the backend's byte load
+            // computes `base + (idx - 1)` for string.byte's 1-based convention.
+            // Normalizing here keeps ONE origin in the backend rather than
+            // giving it a second — the same decision the byte STORE required,
+            // where two origins on one opcode would be a wrong address.
+            if (exprIsStr(ctx, ix.obj)) {
+                const sbase = try lowerExpr(ctx, ix.obj);
+                const raw = try lowerExpr(ctx, ix.key);
+                const one = ctx.freshTemp();
+                try ctx.emit(.{ .op = .binop, .result = one, .binop = .add, .lhs = raw, .rhs = .{ .i64 = 1 } });
+                const t = ctx.freshTemp();
+                try ctx.emit(.{ .op = .load_index, .result = t, .lhs = sbase, .rhs = .{ .temp = one } });
+                break :blk dnir.Value{ .temp = t };
+            }
             if (ix.obj.* != .name) return bail(@src());
             // A memory-backed table indexes for real: one scaled load, constant
             // or not. This is the path that makes a shared token array work.
