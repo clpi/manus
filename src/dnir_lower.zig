@@ -1450,6 +1450,7 @@ fn lowerExprCons(
             break :blk dnir.Value{ .local = slot };
         },
         .call => try lowerCall(ctx, expr, consumption),
+        .method_call => try lowerCall(ctx, try faceAsCall(ctx, expr), consumption),
         .field => try lowerField(ctx, expr),
         .macro_call => |mc| {
             if (dnir_hardware.parseIntrinsic(mc.name)) |hw| {
@@ -1459,6 +1460,40 @@ fn lowerExprCons(
         },
         else => bail(@src()),
     };
+}
+
+/// Normalize the canonical receiver face `a:m(x)` into the call form the rest
+/// of this file already lowers.
+///
+/// ONE EDGE: `a:m(x)` and `m(a, x)` are the same edge written from the two ends
+/// — declaration spelling versus call spelling. Rather than teach every arm
+/// below about receivers, the face is rewritten once here and every existing
+/// lowering applies unchanged. Without it, `.method_call` fell into the `else`
+/// bail, so the spelling the canon mandates everywhere (rule 6, FACE-CALL) was
+/// the one shape that could not lower natively — `s:byte(1)` bailed while
+/// `string.byte(s, 1)`, which the deny list forbids, lowered to an indexed load.
+///
+/// String primitives rebuild the `string.m(a, …)` field form specifically,
+/// because their lowering is an indexed load / length scan keyed on that
+/// shape, not a call to a symbol that exists.
+fn faceAsCall(ctx: *LowerCtx, expr: *const ast.Expr) Error!*const ast.Expr {
+    const mc = expr.method_call;
+    const args = try ctx.alloc.alloc(*ast.Expr, mc.args.len + 1);
+    args[0] = mc.obj;
+    @memcpy(args[1..], mc.args);
+
+    const func = try ctx.alloc.create(ast.Expr);
+    if (exprIsStr(ctx, mc.obj)) {
+        const recv = try ctx.alloc.create(ast.Expr);
+        recv.* = .{ .name = .{ .loc = mc.loc, .ident = "string" } };
+        func.* = .{ .field = .{ .loc = mc.loc, .obj = recv, .field = mc.method } };
+    } else {
+        func.* = .{ .name = .{ .loc = mc.loc, .ident = mc.method } };
+    }
+
+    const call = try ctx.alloc.create(ast.Expr);
+    call.* = .{ .call = .{ .loc = mc.loc, .func = func, .args = args } };
+    return call;
 }
 
 /// Whether any part of `expr` involves f64. `exprIsF64` only inspects the node

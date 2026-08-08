@@ -3934,10 +3934,23 @@ pub const CodeGen = struct {
                 if (self.req_call_expr_is_native_direct(expr)) break :blk true;
                 if (call.func.* == .field) {
                     const f = call.func.field;
-                    if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "string") and
-                        std.mem.eql(u8, f.field, "len") and call.args.len == 1)
-                    {
-                        break :blk self.expr_is_native_scalar(call.args[0]);
+                    // The precheck is a conservative approximation of what the
+                    // backend can lower, and it had drifted: dnir_lower gained a
+                    // `string.byte(s, i)` arm (an indexed load, no runtime call,
+                    // added so a tokenizer's inner loop stays native) and this
+                    // gate in front of it still admitted only `string.len`. So
+                    // every module using the byte read was disqualified before
+                    // reaching the lowering that supports it — 12 programs in
+                    // examples/ alone. Both spellings are listed together here
+                    // so the pair cannot drift apart again.
+                    if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "string")) {
+                        if (std.mem.eql(u8, f.field, "len") and call.args.len == 1) {
+                            break :blk self.expr_is_native_scalar(call.args[0]);
+                        }
+                        if (std.mem.eql(u8, f.field, "byte") and call.args.len == 2) {
+                            break :blk self.expr_is_native_scalar(call.args[0]) and
+                                self.expr_is_native_scalar(call.args[1]);
+                        }
                     }
                     if (f.obj.* == .name) {
                         if (self.req_module_bindings.get(f.obj.name.ident)) |mod_cname| {
@@ -3965,6 +3978,42 @@ pub const CodeGen = struct {
                 const rt = self.expr_type(expr);
                 break :blk rt.is_numeric() or rt == .bool or rt == .str or rt == .void or rt == .any or
                     self.type_lowers_native(rt);
+            },
+            // gap[025] / FACE-CALL: the canonical `subject:member(args)`.
+            //
+            // The precheck had no `.method_call` arm at all, so every receiver
+            // face fell into `else` and disqualified its whole module. The
+            // spelling rule 6 mandates everywhere was the one shape the native
+            // path could not see: `s:byte(1)` reported expr-unhandled:method_call
+            // while the vestige `string.byte(s, 1)` reported runtime-global:string
+            // — writing canonical Duo bought no native coverage over the form the
+            // deny list forbids.
+            //
+            // Admit exactly the three shapes `expr_type` (above) can already
+            // resolve, so the precheck never promises the emitter more than it
+            // can lower: a string primitive, a receiver face over a free
+            // function, and the `to(T)` conversion edge.
+            .method_call => |mc| blk: {
+                if (!self.expr_is_native_scalar(mc.obj)) break :blk false;
+                for (mc.args) |arg| {
+                    if (!self.expr_is_native_scalar(arg)) break :blk false;
+                }
+                const resolvable = self.string_method_result_type(mc.method, mc.obj, mc.args) != null or
+                    self.func_decls.get(mc.method) != null or
+                    fd: {
+                        var tbuf: [256]u8 = undefined;
+                        break :fd self.func_decls.get(self.mangled_name(mc.method, &tbuf)) != null;
+                    } or
+                    (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1);
+                if (!resolvable) {
+                    native_diag_fail_fmt("method-unresolved:{s}", .{mc.method});
+                    break :blk false;
+                }
+                const rt = self.expr_type(expr);
+                if (rt.is_numeric() or rt == .bool or rt == .str or rt == .void or
+                    self.type_lowers_native(rt)) break :blk true;
+                native_diag_fail_fmt("method-ret:{s}", .{mc.method});
+                break :blk false;
             },
             else => {
                 native_diag_fail_fmt("expr-unhandled:{s}", .{@tagName(expr.*)});
