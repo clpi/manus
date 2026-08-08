@@ -18,15 +18,33 @@ to conflate them. Measured 2026-08-08, every target actually built:
 | target | result |
 |---|---|
 | `aarch64-macos` · `x86_64-macos` · `x86_64-linux-gnu` · `aarch64-linux-gnu` | **PASS** |
-| `x86_64-windows` · `wasm32-wasi` | **FAIL** — see `gaps/GAP-040.md` |
+| `x86_64-windows` · `wasm32-wasi` | **PASS** as of 2026-08-08 — GAP-040 closed |
 
-Both failures have one cause: `src/duo_lexer_tokenize.c` is a tracked, generated
-artifact that `build.zig` links into every build, and it was generated for macOS
-(`#define _DARWIN_C_SOURCE`, `#include <ucontext.h>`, `popen`, `access`,
-`mkstemp`). Windows now fails on exactly that one include; wasm32-wasi on it plus
-the rest of the POSIX surface. The direct ARM64 Mach-O backend being
-macOS/aarch64-only is BY DESIGN and is not what any row failed on — the three
-green non-native targets all build through the C backend.
+Both used to fail for one reason: `src/duo_lexer_tokenize.c` is a tracked,
+generated artifact that `build.zig` links into every build, and it was generated
+on macOS, so its prelude froze with the POSIX arm taken. The generator now emits
+the UNION of the arms under `#ifdef __wasm__` / `#elif defined(_WIN32)` /
+`#else`, so the arm is chosen by the compiler that consumes the file rather than
+by the target the generator was pointed at. **Regenerate the artifact whenever
+you change the prelude emitter or `lib/std/compiler/host.duo`** — editing
+`lib/std/compiler/lexer.duo` alone does nothing, the compiler links the
+generated C:
+
+```bash
+duo compile lib/std/compiler/host.duo --backend=c --lib -o /tmp/h.o
+cp /tmp/duo_host.c src/duo_lexer_tokenize.c   # the C is a side effect in /tmp
+```
+
+then re-run both lexer differentials and `agent-smoke`.
+
+The direct ARM64 Mach-O backend being macOS/aarch64-only is BY DESIGN and was
+never what a row failed on — every non-native target builds through the C
+backend.
+
+Building is not running. `wasm32-wasi` links and `duo check` answers correctly
+under wasmtime, but it needs `--dir` preopens (without them WASI answers errno 8
+= EBADF at startup — a missing grant, not a defect), and `duo run` cannot
+compile there because compiling spawns a C compiler.
 
 ## Build commands
 
