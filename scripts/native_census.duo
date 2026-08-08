@@ -19,7 +19,7 @@
 -- level: that is the C-emitter-fixture signature, and it is a property of the
 -- program's purpose, not of the backend's maturity.
 --
--- NATIVE_FLOOR (default 85) ratchets: a fix raises it, a regression fails the
+-- NATIVE_FLOOR (default 88) ratchets: a fix raises it, a regression fails the
 -- gate. Exit 0 pass, 1 below the floor, 3 the census could not run.
 
 _sh = (cmd: str): str
@@ -76,7 +76,7 @@ main(): i64
     print("  unreachable   " .. to(str)(unreachable) .. "   C-emitter fixtures; native is not a goal for these")
     print("  reachable     " .. to(str)(reachable) .. "   the denominator that can reach 100%")
 
-    floor: i64 = to(i64)(std.script.getenv("NATIVE_FLOOR", "85"))
+    floor: i64 = to(i64)(std.script.getenv("NATIVE_FLOOR", "88"))
     if ok < floor
         print("native_census: FAIL — native " .. to(str)(ok)
             .. " fell below the ratchet " .. to(str)(floor))
