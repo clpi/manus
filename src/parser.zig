@@ -1672,6 +1672,7 @@ pub const Parser = struct {
         var has_literal_arg = false;
         var has_table_literal_arg = false;
         var has_infix_operator = false;
+        var rparen_line: u32 = 0;
         var prev: TK = .eof;
         while (paren_depth > 0) {
             const tok = try self.pk();
@@ -1698,7 +1699,10 @@ pub const Parser = struct {
                     }
                 },
                 .lparen => paren_depth += 1,
-                .rparen => paren_depth -= 1,
+                .rparen => {
+                    paren_depth -= 1;
+                    if (paren_depth == 0) rparen_line = tok.loc.line;
+                },
                 .lbracket => bracket_depth += 1,
                 .rbracket => {
                     if (bracket_depth > 0) bracket_depth -= 1;
@@ -1786,7 +1790,22 @@ pub const Parser = struct {
         // statement-level call like `print(p)` followed by any further statement
         // is swallowed as `print = (p) <rest of file> end`.
         if (depth1_tokens == 1 and depth1_names == 1 and !typed_or_vararg and !has_comma) {
-            return false;
+            if (!allow_untyped_comma) return false;
+            // On the EXPRESSION/assign path this guard was over-applied. `(other)`
+            // after an `=` is ambiguous between a grouping paren and a
+            // one-parameter lambda, and returning false unconditionally resolved
+            // it to "grouping" every time — so `Person:greet = (other) "Hey " ..
+            // other` silently degraded from a func_decl to a local_decl. It still
+            // passed `duo check`; only the C backend failed, and only at link
+            // time. Two untyped params were never affected because has_comma
+            // takes a different exit above, which is why this looked like a
+            // method-specific bug rather than an arity-1 one.
+            //
+            // Resolve it the way parse_func_body already resolves
+            // block-vs-expression: by LINE. A body starts on the same line as the
+            // `)`; a grouping paren ends its statement there. `v = (x)` followed
+            // by a statement on the next line therefore stays a grouping paren.
+            if (after.loc.line != rparen_line) return false;
         }
         // …and the same holds for *any* untyped argument list, not just a single
         // name. GR-001 requires a bare declaration to carry at least one typed
