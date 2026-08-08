@@ -299,6 +299,16 @@ pub const FuncBody = struct {
     /// buffer, so it is never allocated and never freed; it only rebinds the
     /// `(pointer, capacity)` pair of whatever it was assigned from.
     dense_table_alias: []const bool = &.{},
+    /// Parallel to `dense_tables`: true when the binding that creates the table
+    /// sits inside a nested block (a loop or branch), not at the top level of
+    /// the body. Such a name cannot be declared at its binding site — the
+    /// matching `free` is emitted at the function's return, where a
+    /// block-scoped C declaration is not in scope, and re-declaring it once per
+    /// iteration would allocate a buffer per iteration with nothing to free
+    /// them. The declaration is hoisted to the function prologue instead and
+    /// the binding lowers to a *reset* of the one buffer (see
+    /// `duo_dt_reset_*`), which is what `t = {}` means: an empty table again.
+    dense_table_hoisted: []const bool = &.{},
     // set by sema: emit C-style 0-based string scan loops
     use_string_byte_scan: bool = false,
     use_string_hash_scan: bool = false,
@@ -333,7 +343,6 @@ pub const FuncBody = struct {
     use_dense_table_faulhaber_sum: bool = false,
     dense_table_sum_coeffs: [13]i64 = @splat(0),
     use_dense_table_identity_sum: bool = false,
-    use_math_floor_max: bool = false,
     use_math_pow_sqrt: bool = false,
     use_string_len_chain: bool = false,
     use_binary_search_dense: bool = false,
@@ -371,13 +380,11 @@ pub const FuncBody = struct {
     use_matmul_native: bool = false,
     use_prefix_sum_inline: bool = false,
     use_ring_buf_inline: bool = false,
-    use_cond_swap_inline: bool = false,
     use_sieve_native: bool = false,
     use_fenwick_native: bool = false,
     use_interp_inline: bool = false,
     use_run_len_inline: bool = false,
     use_sparse_dot_inline: bool = false,
-    use_leven_native: bool = false,
     /// set by sema: for-loop reduction pattern — stronger vectorize pragma in codegen
     use_simd_reduction: bool = false,
     /// `@device(.auto|.metal|…)` — backend selection hint for ML kernels

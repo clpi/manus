@@ -3455,7 +3455,7 @@ pub const Sema = struct {
         fb.use_table_lookup_sum = detect_table_lookup_sum(fb);
         fb.use_dense_table_mod997_sum = detect_dense_table_mod997_sum(fb);
         detect_dense_table_sum_patterns(fb);
-        fb.use_math_floor_max = fb.is_typed and detect_math_floor_max(fb);
+        const shape_math_floor_max = fb.is_typed and detect_math_floor_max(fb);
         fb.use_math_pow_sqrt = fb.is_typed and detect_math_pow_sqrt(fb);
         fb.use_string_len_chain = fb.is_typed and detect_string_len_chain(fb);
         // ── Frozen-kernel emitters: SHAPE selects promotion, TEMPLATE selects
@@ -3495,7 +3495,7 @@ pub const Sema = struct {
         fb.use_matmul_native = detect_matmul_native(fb);
         fb.use_prefix_sum_inline = detect_prefix_sum_inline(fb);
         fb.use_ring_buf_inline = detect_ring_buf_inline(fb);
-        fb.use_cond_swap_inline = detect_cond_swap_inline(fb);
+        const shape_cond_swap_inline = detect_cond_swap_inline(fb);
         fb.use_sieve_native = detect_sieve_native(fb);
         const shape_fenwick_native = detect_fenwick_native(fb);
         fb.use_fenwick_native = shape_fenwick_native and verify_fenwick_native(fb);
@@ -3503,7 +3503,7 @@ pub const Sema = struct {
         fb.use_interp_inline = shape_interp_inline and verify_interp_inline(fb);
         fb.use_run_len_inline = detect_run_len_inline(fb);
         fb.use_sparse_dot_inline = detect_sparse_dot_inline(fb);
-        fb.use_leven_native = detect_leven_native(fb);
+        const shape_leven_native = detect_leven_native(fb);
         fb.use_life_native = detect_life_native(fb);
         fb.use_simd_reduction = fb.is_typed and detect_simd_reduction(fb);
 
@@ -3523,13 +3523,13 @@ pub const Sema = struct {
             fb.use_string_len_chain or fb.use_iterative_fib or fb.use_prime_sieve or
             shape_gcd_inline or fb.use_collatz_inline or fb.use_xor_fold_inline or
             fb.use_bitcount_inline or fb.use_matmul_native or fb.use_prefix_sum_inline or
-            fb.use_ring_buf_inline or fb.use_cond_swap_inline or fb.use_sieve_native or
+            fb.use_ring_buf_inline or shape_cond_swap_inline or fb.use_sieve_native or
             shape_fenwick_native or fb.use_run_len_inline or fb.use_sparse_dot_inline or
-            fb.use_leven_native or fb.use_life_native or fb.use_ack_inline)
+            shape_leven_native or fb.use_life_native or fb.use_ack_inline)
         {
             promote_native_i64_signature(fb);
         }
-        if (fb.use_trig_sum_recur or fb.use_ema_smooth or fb.use_grid_sum_inline or fb.use_math_floor_max or fb.use_math_pow_sqrt or
+        if (fb.use_trig_sum_recur or fb.use_ema_smooth or fb.use_grid_sum_inline or shape_math_floor_max or fb.use_math_pow_sqrt or
             fb.use_mandel_iter_native or fb.use_nbody_native or shape_cordic_inline or shape_interp_inline)
             promote_native_f64_signature(fb);
 
@@ -7595,6 +7595,26 @@ pub const Sema = struct {
                 .neg, .bnot, .len => true,
                 else => false,
             },
+            // `tmp = t[i]` — reading a slot back out. This arm did not exist,
+            // so the conditional-swap shape
+            //     tmp = t[i]; t[i] = t[i + 1]; t[i + 1] = tmp
+            // could not use the native array path: `tmp` was unproven, and
+            // storing it disqualified `t`. Note the *direct* form
+            // `t[i + 1] = t[i]` was already accepted, because
+            // `dense_check_non_numeric` lets a bare `.index` fall through to
+            // its permissive `else` — so the two halves of the same rule
+            // disagreed, and only the spelling that went through a local lost.
+            //
+            // Answering "yes, always" would align them and be wrong:
+            // `x = t["k"]; u[i] = x` on a table of strings would then store 0.
+            // What a read is worth is what the table holds, so this asks that
+            // instead — every store into `t` is numeric, and `t` is bound in
+            // this body to nothing but a numeric table literal, which is what
+            // makes the store list complete.
+            .index => |idx| blk: {
+                if (idx.obj.* != .name) break :blk false;
+                break :blk table_reads_numeric(fb, idx.obj.name.ident, in_flight, depth);
+            },
             .call => |c| blk: {
                 if (c.func.* == .name) {
                     const nm = c.func.name.ident;
@@ -7609,6 +7629,141 @@ pub const Sema = struct {
             },
             else => false,
         };
+    }
+
+    /// True when reading any slot of the table `name` yields a number.
+    ///
+    /// Two things have to hold. Every binding of `name` in this body is a table
+    /// literal whose fields are numeric literals (usually `{}`) — that is what
+    /// makes the store list below *complete*, and it is why a table arriving
+    /// from a call or a parameter is refused: its other slots are unknown. And
+    /// every store into it stores a number.
+    ///
+    /// `in_flight` carries `name` through the recursion, so the `t[i]` inside
+    /// `t[j] = t[i]` contributes nothing instead of looping — the same fixpoint
+    /// reading `numeric_name_rec` already uses for `i = i + 1`.
+    fn table_reads_numeric(
+        fb: *const ast.FuncBody,
+        name: []const u8,
+        in_flight: *[8][]const u8,
+        depth: usize,
+    ) bool {
+        if (depth >= in_flight.len) return false;
+        for (in_flight[0..depth]) |n| if (std.mem.eql(u8, n, name)) return true;
+        for (fb.params) |p| if (std.mem.eql(u8, p.name, name)) return false;
+        var bound = false;
+        if (!block_binds_only_numeric_table(&fb.body, name, &bound, 0)) return false;
+        if (!bound) return false;
+        in_flight[depth] = name;
+        var stored = false;
+        if (!block_table_stores_numeric(fb, &fb.body, name, &stored, in_flight, depth + 1, 0)) return false;
+        return stored;
+    }
+
+    /// Every binding of `name` is a table literal with numeric-literal fields.
+    /// `bound` reports whether one was seen at all.
+    fn block_binds_only_numeric_table(
+        blk: *const ast.Block,
+        name: []const u8,
+        bound: *bool,
+        depth: usize,
+    ) bool {
+        if (depth > 24) return false;
+        const value_ok = struct {
+            fn f(e: *const ast.Expr) bool {
+                if (e.* != .table) return false;
+                for (e.table.fields) |fld| {
+                    const v = switch (fld) {
+                        .positional => |val| val,
+                        else => return false,
+                    };
+                    if (v.* != .int_lit and v.* != .float_lit) return false;
+                }
+                return true;
+            }
+        }.f;
+        for (blk.stmts) |*s| {
+            switch (s.*) {
+                .local_decl => |*ld| {
+                    for (ld.names, 0..) |n, i| {
+                        if (!std.mem.eql(u8, n.ident, name)) continue;
+                        if (i >= ld.inits.len or !value_ok(ld.inits[i])) return false;
+                        bound.* = true;
+                    }
+                },
+                .assign => |*as| {
+                    for (as.targets, 0..) |t, i| {
+                        if (t.* != .name or !std.mem.eql(u8, t.name.ident, name)) continue;
+                        if (i >= as.values.len or !value_ok(as.values[i])) return false;
+                        bound.* = true;
+                    }
+                },
+                .num_for => |*nf| {
+                    if (std.mem.eql(u8, nf.var_name, name)) return false;
+                    if (!block_binds_only_numeric_table(&nf.body, name, bound, depth + 1)) return false;
+                },
+                .gen_for => |*gf| {
+                    for (gf.vars) |v| if (std.mem.eql(u8, v, name)) return false;
+                    if (!block_binds_only_numeric_table(&gf.body, name, bound, depth + 1)) return false;
+                },
+                .if_stmt => |*is| {
+                    if (!block_binds_only_numeric_table(&is.then, name, bound, depth + 1)) return false;
+                    for (is.elseifs) |*ei| if (!block_binds_only_numeric_table(&ei.body, name, bound, depth + 1)) return false;
+                    if (is.else_body) |*eb| if (!block_binds_only_numeric_table(eb, name, bound, depth + 1)) return false;
+                },
+                .while_loop => |*wl| if (!block_binds_only_numeric_table(&wl.body, name, bound, depth + 1)) return false,
+                .repeat_loop => |*rl| if (!block_binds_only_numeric_table(&rl.body, name, bound, depth + 1)) return false,
+                .do_block => |*db| if (!block_binds_only_numeric_table(&db.body, name, bound, depth + 1)) return false,
+                else => {},
+            }
+        }
+        return true;
+    }
+
+    /// Every `name[k] = v` in this body stores a numeric `v`. `stored` reports
+    /// whether one was seen at all.
+    ///
+    /// `depth` indexes `in_flight` and `block_depth` bounds the walk; they are
+    /// deliberately separate, as in `block_orders_against_number`. Conflating
+    /// them spends the eight-name budget on block nesting: `cond_swap`'s swap
+    /// sits inside `if` inside `while` inside `while`, which lands the store
+    /// scan at index 8 and answers "not numeric" for a table that plainly is.
+    fn block_table_stores_numeric(
+        fb: *const ast.FuncBody,
+        blk: *const ast.Block,
+        name: []const u8,
+        stored: *bool,
+        in_flight: *[8][]const u8,
+        depth: usize,
+        block_depth: usize,
+    ) bool {
+        if (block_depth > 24) return false;
+        for (blk.stmts) |*s| {
+            switch (s.*) {
+                .assign => |*as| {
+                    for (as.targets, 0..) |t, i| {
+                        if (t.* != .index) continue;
+                        const idx = t.index;
+                        if (idx.obj.* != .name or !std.mem.eql(u8, idx.obj.name.ident, name)) continue;
+                        if (i >= as.values.len) return false;
+                        stored.* = true;
+                        if (!expr_is_numeric_valued(fb, as.values[i], in_flight, depth)) return false;
+                    }
+                },
+                .if_stmt => |*is| {
+                    if (!block_table_stores_numeric(fb, &is.then, name, stored, in_flight, depth, block_depth + 1)) return false;
+                    for (is.elseifs) |*ei| if (!block_table_stores_numeric(fb, &ei.body, name, stored, in_flight, depth, block_depth + 1)) return false;
+                    if (is.else_body) |*eb| if (!block_table_stores_numeric(fb, eb, name, stored, in_flight, depth, block_depth + 1)) return false;
+                },
+                .while_loop => |*wl| if (!block_table_stores_numeric(fb, &wl.body, name, stored, in_flight, depth, block_depth + 1)) return false,
+                .repeat_loop => |*rl| if (!block_table_stores_numeric(fb, &rl.body, name, stored, in_flight, depth, block_depth + 1)) return false,
+                .do_block => |*db| if (!block_table_stores_numeric(fb, &db.body, name, stored, in_flight, depth, block_depth + 1)) return false,
+                .num_for => |*nf| if (!block_table_stores_numeric(fb, &nf.body, name, stored, in_flight, depth, block_depth + 1)) return false,
+                .gen_for => |*gf| if (!block_table_stores_numeric(fb, &gf.body, name, stored, in_flight, depth, block_depth + 1)) return false,
+                else => {},
+            }
+        }
+        return true;
     }
 
     /// `cond and a or b` — Lua's conditional expression. Its value is `a` or
@@ -8013,6 +8168,127 @@ pub const Sema = struct {
         }
     }
 
+    /// The name a statement binds to a dense-eligible table literal, or null.
+    /// Encodes the same rule the top-level scan in `detect_dense_table` uses:
+    /// an empty table always, a literal one only when every field is a
+    /// positional numeric literal.
+    fn table_binding_name(stmt: *const ast.Stmt) ?[]const u8 {
+        var name: []const u8 = "";
+        var init_expr: *const ast.Expr = undefined;
+        if (stmt.* == .local_decl) {
+            const ld = stmt.local_decl;
+            if (ld.names.len != 1 or ld.inits.len != 1) return null;
+            name = ld.names[0].ident;
+            init_expr = ld.inits[0];
+        } else if (stmt.* == .assign) {
+            const as = stmt.assign;
+            if (as.targets.len != 1 or as.values.len != 1) return null;
+            if (as.targets[0].* != .name) return null;
+            name = as.targets[0].name.ident;
+            init_expr = as.values[0];
+        } else return null;
+        if (init_expr.* != .table) return null;
+        if (init_expr.table.fields.len == 0) return name;
+        for (init_expr.table.fields) |f| {
+            const v = switch (f) {
+                .positional => |val| val,
+                else => return null,
+            };
+            if (v.* != .int_lit and v.* != .float_lit) return null;
+        }
+        return name;
+    }
+
+    /// True when some binding of `name` anywhere in this body binds it to
+    /// something that is neither a table literal nor another name.
+    ///
+    /// Hoisting merges every block-scoped occurrence of a name into one
+    /// function-scoped buffer, so it is only sound when every binding of the
+    /// name creates a table (or renames one). `t = 5` in a sibling block would
+    /// otherwise share storage with the `t = {}` in this one.
+    fn name_bound_to_non_table(blk: *const ast.Block, name: []const u8, depth: usize) bool {
+        if (depth > 24) return true;
+        for (blk.stmts) |*s| {
+            switch (s.*) {
+                .local_decl => |*ld| {
+                    for (ld.names, 0..) |nm, i| {
+                        if (!std.mem.eql(u8, nm.ident, name)) continue;
+                        if (i >= ld.inits.len) return true;
+                        if (ld.inits[i].* != .table and ld.inits[i].* != .name) return true;
+                    }
+                },
+                .assign => |*as| {
+                    for (as.targets, 0..) |tgt, i| {
+                        if (tgt.* != .name or !std.mem.eql(u8, tgt.name.ident, name)) continue;
+                        if (i >= as.values.len) return true;
+                        if (as.values[i].* != .table and as.values[i].* != .name) return true;
+                    }
+                },
+                .if_stmt => |*is| {
+                    if (name_bound_to_non_table(&is.then, name, depth + 1)) return true;
+                    for (is.elseifs) |*ei| if (name_bound_to_non_table(&ei.body, name, depth + 1)) return true;
+                    if (is.else_body) |*eb| if (name_bound_to_non_table(eb, name, depth + 1)) return true;
+                },
+                .while_loop => |*wl| if (name_bound_to_non_table(&wl.body, name, depth + 1)) return true,
+                .repeat_loop => |*rl| if (name_bound_to_non_table(&rl.body, name, depth + 1)) return true,
+                .do_block => |*db| if (name_bound_to_non_table(&db.body, name, depth + 1)) return true,
+                .num_for => |*nf| {
+                    if (std.mem.eql(u8, nf.var_name, name)) return true;
+                    if (name_bound_to_non_table(&nf.body, name, depth + 1)) return true;
+                },
+                .gen_for => |*gf| {
+                    for (gf.vars) |v| if (std.mem.eql(u8, v, name)) return true;
+                    if (name_bound_to_non_table(&gf.body, name, depth + 1)) return true;
+                },
+                else => {},
+            }
+        }
+        return false;
+    }
+
+    /// Table bindings that sit inside a nested block rather than at the top
+    /// level of the body. They qualify by exactly the same rules; the only
+    /// difference is that codegen has to hoist the declaration out of the block
+    /// (`dense_table_hoisted`), because the matching `free` is emitted at the
+    /// function's return.
+    fn collect_nested_table_bindings(
+        fb: *const ast.FuncBody,
+        blk: *const ast.Block,
+        names: *std.ArrayList([]const u8),
+        hoisted: *std.ArrayList([]const u8),
+        alloc: std.mem.Allocator,
+        depth: usize,
+    ) SemaError!void {
+        if (depth > 24) return;
+        for (blk.stmts) |*s| {
+            if (depth > 0) {
+                if (table_binding_name(s)) |name| {
+                    var known = false;
+                    for (names.items) |n| {
+                        if (std.mem.eql(u8, n, name)) known = true;
+                    }
+                    if (!known and !name_bound_to_non_table(&fb.body, name, 0)) {
+                        try names.append(alloc, name);
+                        try hoisted.append(alloc, name);
+                    }
+                }
+            }
+            switch (s.*) {
+                .if_stmt => |*is| {
+                    try collect_nested_table_bindings(fb, &is.then, names, hoisted, alloc, depth + 1);
+                    for (is.elseifs) |*ei| try collect_nested_table_bindings(fb, &ei.body, names, hoisted, alloc, depth + 1);
+                    if (is.else_body) |*eb| try collect_nested_table_bindings(fb, eb, names, hoisted, alloc, depth + 1);
+                },
+                .while_loop => |*wl| try collect_nested_table_bindings(fb, &wl.body, names, hoisted, alloc, depth + 1),
+                .repeat_loop => |*rl| try collect_nested_table_bindings(fb, &rl.body, names, hoisted, alloc, depth + 1),
+                .do_block => |*db| try collect_nested_table_bindings(fb, &db.body, names, hoisted, alloc, depth + 1),
+                .num_for => |*nf| try collect_nested_table_bindings(fb, &nf.body, names, hoisted, alloc, depth + 1),
+                .gen_for => |*gf| try collect_nested_table_bindings(fb, &gf.body, names, hoisted, alloc, depth + 1),
+                else => {},
+            }
+        }
+    }
+
     /// Drops any name that is joined by a `x = y` assignment to a name that did
     /// not qualify. The two sides share one `(pointer, capacity)` pair, so they
     /// have to agree on the representation or neither can use it.
@@ -8226,6 +8502,15 @@ pub const Sema = struct {
                 try table_names.append(alloc, name);
             }
         }
+
+        // …and the same bindings inside a nested block. `prev = {}` written
+        // inside a `while` is the same declaration as one written at the top
+        // level; only the C scope of the emitted buffer differs, and codegen
+        // hoists that (see `dense_table_hoisted`).
+        var hoisted_names: std.ArrayList([]const u8) = .empty;
+        defer hoisted_names.deinit(alloc);
+        try collect_nested_table_bindings(fb, &fb.body, &table_names, &hoisted_names, alloc, 0);
+
         if (table_names.items.len == 0) return;
 
         // Alias locals. `tmp = grid` binds a second name to the same array; the
@@ -8412,15 +8697,36 @@ pub const Sema = struct {
 
         // Populate the multi-table lists.
         fb.dense_tables = try alloc.dupe([]const u8, qualifying.items);
+        const hoist_buf = try alloc.alloc(bool, qualifying.items.len);
+        for (qualifying.items, 0..) |tname, idx| {
+            hoist_buf[idx] = false;
+            for (hoisted_names.items) |hn| {
+                if (std.mem.eql(u8, hn, tname)) hoist_buf[idx] = true;
+            }
+        }
+        fb.dense_table_hoisted = hoist_buf;
         const caps_buf = try alloc.alloc([]const u8, qualifying.items.len);
         const cap_safe_buf = try alloc.alloc(bool, qualifying.items.len);
         for (qualifying.items, 0..) |tname, idx| {
-            if (try solve_index_bound(alloc, fb, tname)) |solved| {
+            const solved_bound = try solve_index_bound(alloc, fb, tname);
+            if (solved_bound) |solved| {
                 caps_buf[idx] = solved.str;
                 cap_safe_buf[idx] = solved.safe;
             } else {
                 caps_buf[idx] = cap;
                 cap_safe_buf[idx] = cap_safe;
+            }
+            // A hoisted table is re-emptied once per binding, and the reset
+            // costs O(capacity) — so its capacity has to come from what the
+            // program actually indexes (`solve_index_bound`), never from the
+            // fallback that guesses a loop bound. `leven(200000)` reserves
+            // 200001 slots under that guess and then zeroes 1.6MB per
+            // iteration for a table that uses 14. With no solved bound,
+            // reserve nothing: the accessors grow on demand, so the capacity
+            // converges on what the program touches.
+            if (hoist_buf[idx] and (solved_bound == null or !cap_safe_buf[idx])) {
+                caps_buf[idx] = "";
+                cap_safe_buf[idx] = false;
             }
         }
         fb.dense_table_caps = caps_buf;

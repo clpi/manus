@@ -7608,7 +7608,7 @@ pub const CodeGen = struct {
             fb.use_dense_table or fb.use_dense_table_max or fb.use_dense_table_sum or
             fb.use_dense_table_identity_sum or fb.use_dense_table_mod997_sum or
             fb.use_dot_product_identity or fb.use_dot_product_dense or
-            fb.use_binary_search_dense or fb.use_math_floor_max or fb.use_math_pow_sqrt or
+            fb.use_binary_search_dense or fb.use_math_pow_sqrt or
             fb.use_string_byte_scan or fb.use_string_hash_scan or fb.use_string_token_count or
             fb.use_string_delim_byte_sum or fb.use_string_len_chain or
             fb.use_ema_smooth or fb.use_ema_period_fold or
@@ -7616,8 +7616,8 @@ pub const CodeGen = struct {
             fb.use_table_lookup_sum or fb.use_gcd_inline or fb.use_collatz_inline or
             fb.use_xor_fold_inline or fb.use_bitcount_inline or fb.use_cordic_inline or
             fb.use_ack_inline or fb.use_prefix_sum_inline or fb.use_ring_buf_inline or
-            fb.use_cond_swap_inline or fb.use_interp_inline or fb.use_run_len_inline or
-            fb.use_sparse_dot_inline or fb.use_leven_native or fb.use_life_native or
+            fb.use_interp_inline or fb.use_run_len_inline or
+            fb.use_sparse_dot_inline or fb.use_life_native or
             fb.use_sieve_native or fb.use_fenwick_native or fb.use_mandel_iter_native or
             fb.use_nbody_native or fb.use_matmul_native or fb.use_trig_sum_recur);
 
@@ -8521,8 +8521,6 @@ pub const CodeGen = struct {
             try self.emit_prefix_sum_inline_body(fb.params[0].name, ret);
         } else if (fb.use_ring_buf_inline and fb.params.len == 1) {
             try self.emit_ring_buf_inline_body(fb.params[0].name, ret);
-        } else if (fb.use_cond_swap_inline and fb.params.len == 1) {
-            try self.emit_cond_swap_inline_body(fb.params[0].name, ret);
         } else if (fb.use_sieve_native and fb.params.len == 1) {
             try self.emit_sieve_native_body(fb.params[0].name, ret);
         } else if (fb.use_fenwick_native and fb.params.len == 1) {
@@ -8533,8 +8531,6 @@ pub const CodeGen = struct {
             try self.emit_run_len_inline_body(fb.params[0].name, ret);
         } else if (fb.use_sparse_dot_inline and fb.params.len == 1) {
             try self.emit_sparse_dot_inline_body(fb.params[0].name, ret);
-        } else if (fb.use_leven_native and fb.params.len == 1) {
-            try self.emit_leven_native_body(fb.params[0].name, ret);
         } else if (fb.use_life_native and fb.params.len == 1) {
             try self.emit_life_native_body(fb.params[0].name, ret);
         } else if (fb.use_dense_table_identity_sum and fb.params.len == 1) {
@@ -8547,8 +8543,6 @@ pub const CodeGen = struct {
             try self.emit_dense_table_sum_body(fb.dense_table.?, fb.dense_table_cap.?, fb.params[0].name, ret);
         } else if (fb.use_dense_table_max and fb.params.len == 1 and fb.dense_table != null and fb.dense_table_cap != null) {
             try self.emit_dense_table_max_body(fb.dense_table.?, fb.dense_table_cap.?, fb.params[0].name, ret);
-        } else if (fb.use_math_floor_max and fb.params.len == 1) {
-            try self.emit_math_floor_max_body(fb.params[0].name, ret);
         } else if (fb.use_math_pow_sqrt and fb.params.len == 1) {
             try self.emit_math_pow_sqrt_body(fb.params[0].name, ret);
         } else if (fb.use_string_len_chain and fb.params.len == 1) {
@@ -8587,6 +8581,7 @@ pub const CodeGen = struct {
             try self.emit_matmul_native_body(fb.params[0].name, ret);
         } else {
             emitted_normal_body = true;
+            try self.emit_hoisted_dense_decls();
             try self.emit_block_stmts(&fb.body, .implicit_return);
         }
         if (emitted_normal_body and !self.block_fallthrough_returns(&fb.body)) {
@@ -9162,6 +9157,49 @@ pub const CodeGen = struct {
         return false;
     }
 
+    /// True when the buffer for `name` is declared in the function prologue
+    /// rather than at its binding site, because the binding sits inside a
+    /// nested block. See `ast.FuncBody.dense_table_hoisted`.
+    fn dense_table_is_hoisted(self: *CodeGen, name: []const u8) bool {
+        const fb = self.current_func_body orelse return false;
+        for (fb.dense_tables, 0..) |dt, i| {
+            if (!std.mem.eql(u8, name, dt)) continue;
+            return i < fb.dense_table_hoisted.len and fb.dense_table_hoisted[i];
+        }
+        return false;
+    }
+
+    /// The prologue half of the hoist: one `(pointer, capacity)` pair per
+    /// nested-bound dense table, declared where the `free` at the return can
+    /// see it. The binding itself becomes `duo_dt_reset_*` (see
+    /// `emit_dense_table_reset`), so there is exactly one buffer per name for
+    /// the whole call however many times the block runs.
+    fn emit_hoisted_dense_decls(self: *CodeGen) E!void {
+        const fb = self.current_func_body orelse return;
+        for (fb.dense_tables, 0..) |name, i| {
+            if (i >= fb.dense_table_hoisted.len or !fb.dense_table_hoisted[i]) continue;
+            const info = self.dense_table_info(name);
+            try self.note_local_type(name, .any);
+            try self.note_local(name);
+            try self.note_comptime_unavailable(name);
+            try self.emit_dense_table_decl(name, info, 0);
+        }
+    }
+
+    /// `t = {}` on a hoisted name: keep the buffer, empty it. The dense
+    /// accessors already read an unwritten slot as 0, so zeroing the reserved
+    /// region *is* "a fresh empty table" — and it costs the same O(capacity)
+    /// the per-iteration allocation it replaces would have cost, without the
+    /// allocation and without the leak.
+    fn emit_dense_table_reset(self: *CodeGen, name: []const u8, info: DenseInfo, min_slots: usize) void {
+        var need: []const u8 = "0";
+        var buf: [24]u8 = undefined;
+        if (min_slots > 0) {
+            need = std.fmt.bufPrint(&buf, "{d}", .{min_slots + 1}) catch "0";
+        }
+        self.pl("duo_dt_reset_{s}(&__dt_{s}, &__dtc_{s}, {s});", .{ info.sfx(), name, name, need });
+    }
+
     /// True when `cap` is a plain identifier naming a local of boxed type in a
     /// module that has the lua runtime — the `f(n: any)` shape.
     fn cap_is_boxed_local(self: *CodeGen, cap: []const u8) bool {
@@ -9327,19 +9365,6 @@ pub const CodeGen = struct {
         self.indent -= 1;
         self.pl("}}", .{});
         self.pl("return mx;", .{});
-    }
-
-    fn emit_math_floor_max_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
-        var buf: [64]u8 = undefined;
-        const ct = ret.c_type(&buf);
-        self.pl("{s} __fm_period = 0;", .{ct});
-        self.pl("for (int64_t i = 0; i < 100; ++i) __fm_period += floor((double)i * 0.73 + 0.5);", .{});
-        self.pl("int64_t __fm_full = {s} / 100;", .{n});
-        self.pl("int64_t __fm_rem = {s} % 100;", .{n});
-        self.pl("{s} acc = __fm_full * __fm_period + 7300 * ((__fm_full * (__fm_full - 1)) / 2) + 73 * __fm_full * __fm_rem;", .{ct});
-        self.pl("for (int64_t i = 0; i < __fm_rem; ++i) acc += floor((double)i * 0.73 + 0.5);", .{});
-        self.pl("{s} peak = {s} > 0 ? floor((double)({s} - 1) * 0.73 + 0.5) : 0;", .{ ct, n, n });
-        self.pl("return acc + peak;", .{});
     }
 
     fn emit_trig_sum_recur_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
@@ -9774,22 +9799,6 @@ pub const CodeGen = struct {
         self.pl("return sum;", .{});
     }
 
-    fn emit_cond_swap_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
-        var buf: [64]u8 = undefined;
-        const ct = ret.c_type(&buf);
-        self.pl("const int64_t __cs_period = 10007;", .{});
-        self.pl("const int64_t __cs_period_sum = (__cs_period * (__cs_period - 1)) / 2;", .{});
-        self.pl("int64_t __cs_full = {s} / __cs_period;", .{n});
-        self.pl("int64_t __cs_rem = {s} % __cs_period;", .{n});
-        self.pl("{s} sum = ({s})(__cs_full * __cs_period_sum);", .{ ct, ct });
-        self.pl("for (int64_t i = 1; i <= __cs_rem; ++i) {{", .{});
-        self.indent += 1;
-        self.pl("sum += (i * 17) % __cs_period;", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("return sum;", .{});
-    }
-
     fn emit_sieve_native_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
@@ -9966,50 +9975,6 @@ pub const CodeGen = struct {
         const ct = ret.c_type(&buf);
         self.pl("__int128 __sd_n = (__int128)({s});", .{n});
         self.pl("return ({s})((__sd_n * (__sd_n + 1) * (__sd_n + 2)) / 6);", .{ct});
-    }
-
-    fn emit_leven_native_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
-        var buf: [64]u8 = undefined;
-        const ct = ret.c_type(&buf);
-        self.pl("const int64_t len_a = 12, len_b = 13;", .{});
-        self.pl("const int64_t __lv_period = 26;", .{});
-        self.pl("int64_t __lv_vals[26];", .{});
-        self.pl("{s} __lv_period_sum = 0;", .{ct});
-        self.pl("for (int64_t rep = 0; rep < __lv_period; ++rep) {{", .{});
-        self.indent += 1;
-        self.pl("int64_t prev[14];", .{});
-        self.pl("int64_t curr[14];", .{});
-        self.pl("for (int64_t j = 0; j <= len_b; ++j) prev[j] = j;", .{});
-        self.pl("for (int64_t i = 1; i <= len_a; ++i) {{", .{});
-        self.indent += 1;
-        self.pl("curr[0] = i;", .{});
-        self.pl("register int64_t a_char_base = (rep * 7 + i * 3);", .{});
-        self.pl("for (int64_t j = 1; j <= len_b; ++j) {{", .{});
-        self.indent += 1;
-        self.pl("int64_t a_char = a_char_base % 26;", .{});
-        self.pl("int64_t b_char = (rep * 13 + j * 5) % 26;", .{});
-        self.pl("int64_t cost = a_char != b_char ? 1 : 0;", .{});
-        self.pl("int64_t del = prev[j] + 1;", .{});
-        self.pl("int64_t ins = curr[j - 1] + 1;", .{});
-        self.pl("int64_t sub = prev[j - 1] + cost;", .{});
-        self.pl("int64_t mn = del;", .{});
-        self.pl("if (ins < mn) mn = ins;", .{});
-        self.pl("if (sub < mn) mn = sub;", .{});
-        self.pl("curr[j] = mn;", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("for (int64_t j = 0; j <= len_b; ++j) prev[j] = curr[j];", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("__lv_vals[rep] = prev[len_b];", .{});
-        self.pl("__lv_period_sum += prev[len_b];", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("int64_t __lv_full = {s} / __lv_period;", .{n});
-        self.pl("int64_t __lv_rem = {s} % __lv_period;", .{n});
-        self.pl("{s} sum = ({s})(__lv_full * __lv_period_sum);", .{ ct, ct });
-        self.pl("for (int64_t i = 0; i < __lv_rem; ++i) sum += __lv_vals[i];", .{});
-        self.pl("return sum;", .{});
     }
 
     fn emit_life_native_body(self: *CodeGen, steps: []const u8, ret: RT) E!void {
@@ -10743,6 +10708,25 @@ pub const CodeGen = struct {
         };
     }
 
+    /// `while i < n` where `n` is an `any` parameter lowers to
+    /// `lua_lt(lua_val_from_int(i), n)` — one boxing and one type test per
+    /// iteration, and a loop C cannot reason about. The test is on `n` alone
+    /// (the other side is already known to be a number), and `n` does not
+    /// change while the loop runs, so it can be answered once before it.
+    ///
+    /// This returns the operands when that is safe, and the caller emits
+    ///     const bool __lb_num = n.type == VAL_NUMBER;
+    ///     const double __lb_v = __lb_num ? lua_num(n) : 0;
+    ///     while (__lb_num ? ((double)(i) < __lb_v) : <original>) …
+    /// which is not an approximation: `lua_lt`'s own fast path is
+    /// `lua_num(a) < lua_num(b)` under exactly this condition, and anything
+    /// else — a metamethod, a raise — still goes through the original call.
+    /// The invariant condition is what lets the C compiler unswitch the loop
+    /// into a native one and a boxed one.
+    /// True when the block creates a function value anywhere — a closure that
+    /// could capture and then rebind a local behind an analysis that only looks
+    /// at assignments. Conservative on purpose: it answers yes for a nested
+    /// function that captures nothing.
     fn emit_stmt(self: *CodeGen, stmt: *const ast.Stmt) E!void {
         switch (stmt.*) {
             .macro_def => {},
@@ -10829,7 +10813,11 @@ pub const CodeGen = struct {
                         const info = self.dense_table_info(lname.ident);
                         const fields = ld.inits[i].table.fields;
                         self.ind();
-                        try self.emit_dense_table_decl(lname.ident, info, fields.len);
+                        if (self.dense_table_is_hoisted(lname.ident)) {
+                            self.emit_dense_table_reset(lname.ident, info, fields.len);
+                        } else {
+                            try self.emit_dense_table_decl(lname.ident, info, fields.len);
+                        }
                         for (fields, 0..) |f, f_idx| {
                             const val = switch (f) {
                                 .positional => |v| v,
@@ -11373,6 +11361,30 @@ pub const CodeGen = struct {
                             }
                             continue;
                         }
+                    }
+
+                    // `t = {}` on a hoisted dense table: the buffer was declared
+                    // in the prologue, so this rebinding is a reset of it, not
+                    // a second declaration.
+                    if (tgt.* == .name and i < as.values.len and as.values[i].* == .table and
+                        self.is_dense_table_name(tgt.name.ident) and
+                        self.dense_table_is_hoisted(tgt.name.ident))
+                    {
+                        const dt = tgt.name.ident;
+                        const info = self.dense_table_info(dt);
+                        const fields = as.values[i].table.fields;
+                        self.emit_dense_table_reset(dt, info, fields.len);
+                        for (fields, 0..) |f, f_idx| {
+                            const val = switch (f) {
+                                .positional => |v| v,
+                                else => break,
+                            };
+                            self.ind();
+                            self.p("duo_dt_set_{s}(&__dt_{s}, &__dtc_{s}, {d}, ", .{ info.sfx(), dt, dt, f_idx + 1 });
+                            try self.emit_dense_value(val, info);
+                            self.p(");\n", .{});
+                        }
+                        continue;
                     }
 
                     // `grid = next_grid` on two already-declared dense tables:
@@ -23175,6 +23187,10 @@ const duo_dense_runtime =
     \\static inline void duo_dt_reserve_##sfx(ty** p, int64_t* cap, int64_t need) { \
     \\    if (need > *cap) duo_dt_grow_##sfx(p, cap, need);                         \
     \\}                                                                             \
+    \\static inline void duo_dt_reset_##sfx(ty** p, int64_t* cap, int64_t need) {   \
+    \\    if (need > *cap) duo_dt_grow_##sfx(p, cap, need);                         \
+    \\    if (*p) memset(*p, 0, (size_t)*cap * sizeof(ty));                         \
+    \\}                                                                             \
     \\static inline void duo_dt_set_##sfx(ty** p, int64_t* cap, int64_t i, ty x) {  \
     \\    if (__builtin_expect((uint64_t)i >= (uint64_t)*cap, 0)) {                 \
     \\        if (i < 0) return;                                                    \
@@ -32640,25 +32656,6 @@ test "bitcount specialization counts set bits by bit ranges" {
     try testing.expect(std.mem.indexOf(u8, output, "for (int64_t i = 1; i <= n") == null);
 }
 
-test "cond swap specialization computes swap-invariant sum directly" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var type_map = sema.TypeMap.init(alloc);
-    defer type_map.deinit();
-    var aw: std.Io.Writer.Allocating = .init(alloc);
-    defer aw.deinit();
-    var cg = CodeGen.init(alloc, undefined, &type_map, null, &aw.writer, 0, null, null);
-    cg.indent = 1;
-
-    try cg.emit_cond_swap_inline_body("n", .i64);
-    const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "malloc") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "__cs_period_sum") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t i = 1; i <= __cs_rem; ++i)") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "sum += (i * 17) % __cs_period;") != null);
-}
-
 test "sieve native specialization uses wheel-6 byte flags" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -32732,25 +32729,6 @@ test "prime sieve specialization uses odd-only byte flags" {
     try testing.expect(std.mem.indexOf(u8, output, "__builtin_popcountll(__prime_chunk)") != null);
     try testing.expect(std.mem.indexOf(u8, output, "__prime_count_idx = 0") != null);
     try testing.expect(std.mem.indexOf(u8, output, "__prime_count_end = ((limit - 1) >> 1) + 1") != null);
-}
-
-test "leven native specialization reuses 26 repetition phases" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var type_map = sema.TypeMap.init(alloc);
-    defer type_map.deinit();
-    var aw: std.Io.Writer.Allocating = .init(alloc);
-    defer aw.deinit();
-    var cg = CodeGen.init(alloc, undefined, &type_map, null, &aw.writer, 0, null, null);
-    cg.indent = 1;
-
-    try cg.emit_leven_native_body("n", .i64);
-    const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "const int64_t __lv_period = 26;") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "int64_t __lv_vals[26];") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t rep = 0; rep < __lv_period; ++rep)") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "sum = (int64_t)(__lv_full * __lv_period_sum);") != null);
 }
 
 test "cordic specialization reuses 1000 angle phases" {
@@ -32842,16 +32820,6 @@ test "math and binary search specializations fold periodic/dense work" {
     const alloc = arena.allocator();
     var type_map = sema.TypeMap.init(alloc);
     defer type_map.deinit();
-
-    var math_aw: std.Io.Writer.Allocating = .init(alloc);
-    defer math_aw.deinit();
-    var math_cg = CodeGen.init(alloc, undefined, &type_map, null, &math_aw.writer, 0, null, null);
-    math_cg.indent = 1;
-    try math_cg.emit_math_floor_max_body("n", .f64);
-    const math_output = math_aw.written();
-    try testing.expect(std.mem.indexOf(u8, math_output, "__fm_full = n / 100") != null);
-    try testing.expect(std.mem.indexOf(u8, math_output, "i < __fm_rem") != null);
-    try testing.expect(std.mem.indexOf(u8, math_output, "i < n") == null);
 
     var trig_aw: std.Io.Writer.Allocating = .init(alloc);
     defer trig_aw.deinit();
