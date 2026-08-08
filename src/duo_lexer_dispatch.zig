@@ -260,20 +260,27 @@ test "duo_lexer_dispatch: a rejection carries its line" {
     try std.testing.expectEqual(@as(u32, 2), errorLine("x = 1\ns = \"bad", "bad.duo"));
 }
 
-// GAP-023's first isolation step, WITHOUT file IO: this Zig version has no
-// std.fs.cwd(), and the first attempt at reading the proof files did not compile
-// — which made an empty failure list look like a passing test. The sources below
-// are the shapes those proofs are built from (corpus data held as string
-// literals, escapes included), inline so the test cannot silently skip.
-//
-// This is weaker than differencing the real files and is NOT sufficient to
-// eliminate the tokenization hypothesis; see gaps/GAP-023.md.
+// GAP-023: do the shapes those proofs are built from — corpus data held as
+// string literals, escapes included — tokenize identically? This compiles and
+// runs (the first attempt used std.fs.cwd(), which this Zig version lacks, so it
+// never built and its empty failure list read as a pass).
 test "duo_lexer_dispatch: corpus-data-as-literals tokenizes identically" {
     const a = std.testing.allocator;
     const cases = [_][:0]const u8{
         "corpus = { \"a == b ~= c\", \"-- line\\nfun\", \"\\\"hi\\\" 'there'\" }",
         "h = 0 s = \"a\\tb\\nc\\\\d\" n = #s",
-        "expected_text_fingerprint = 13636438360258349679",
     };
     for (cases) |case| try differential(a, case, "proof.duo");
+}
+
+// GAP-024, found while probing GAP-023 and NOT its cause: the host lexer
+// overflows on a u64 literal above i64 max, which is a value Duo's u64 can
+// represent. This is a real divergence in its own right; it does NOT explain the
+// two regressing proofs, whose u64 fingerprint appears only in a COMMENT.
+//
+// Left failing on purpose — it is the only thing that makes the divergence
+// visible, and deleting it to keep a count green restores the blindness.
+test "duo_lexer_dispatch: GAP-024 — u64 literal above i64 max" {
+    const a = std.testing.allocator;
+    try differential(a, "fingerprint = 13636438360258349679", "u64.duo");
 }
