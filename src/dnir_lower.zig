@@ -1091,6 +1091,7 @@ fn materializeTableSlots(ctx: *LowerCtx, name: []const u8) Error!u32 {
 fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
     return switch (expr.*) {
         .string_lit => true,
+        .binop => |bb| bb.op == .concat and exprIsStr(ctx, bb.lhs) and exprIsStr(ctx, bb.rhs),
         // `string.char(n)` PRODUCES a str. Without this the local it binds to
         // never enters str_slots, so the very next `string.byte(s, 1)` does not
         // recognize its own argument and falls through to an undefined
@@ -1662,7 +1663,36 @@ fn lowerShortCircuit(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *
     return .{ .local = slot };
 }
 
+fn lowerConcat(ctx: *LowerCtx, lhs: *const ast.Expr, rhs: *const ast.Expr) Error!dnir.Value {
+    const a = try lowerExpr(ctx, lhs);
+    const b = try lowerExpr(ctx, rhs);
+    try ensureExtern(ctx, "string", "len", "strlen");
+    try ensureExtern(ctx, "mem", "alloc", "malloc");
+    try ensureExtern(ctx, "string", "copy", "strcpy");
+    try ensureExtern(ctx, "string", "cat", "strcat");
+    const la = ctx.freshTemp();
+    try ctx.emit(.{ .op = .call_extern, .result = la, .callee = "strlen", .lhs = a });
+    const lb = ctx.freshTemp();
+    try ctx.emit(.{ .op = .call_extern, .result = lb, .callee = "strlen", .lhs = b });
+    const sum = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = sum, .binop = .add, .lhs = .{ .temp = la }, .rhs = .{ .temp = lb } });
+    const total = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = total, .binop = .add, .lhs = .{ .temp = sum }, .rhs = .{ .i64 = 1 } });
+    const buf = ctx.freshTemp();
+    try ctx.emit(.{ .op = .call_extern, .result = buf, .callee = "malloc", .lhs = .{ .temp = total } });
+    try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = .{ .temp = buf } });
+    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = a });
+    try ctx.emit(.{ .op = .call_extern, .callee = "strcpy" });
+    try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = .{ .temp = buf } });
+    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = b });
+    try ctx.emit(.{ .op = .call_extern, .callee = "strcat" });
+    return .{ .temp = buf };
+}
+
 fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const ast.Expr) Error!dnir.Value {
+    if (op == .concat and exprIsStr(ctx, lhs) and exprIsStr(ctx, rhs)) {
+        return try lowerConcat(ctx, lhs, rhs);
+    }
     const f64_op = exprIsF64(ctx, lhs) or exprIsF64(ctx, rhs);
     const t = ctx.freshTemp();
     try ctx.emit(.{
