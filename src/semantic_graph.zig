@@ -189,12 +189,42 @@ pub const SemanticGraph = struct {
         self.id_index.deinit(self.alloc);
     }
 
+    /// True when the node's NAME addresses it: at most one node of this kind can
+    /// carry that name under one parent, so scope chain + name is already a whole
+    /// identity, and `findId`/`findFunc` can rebuild the path from a name alone.
+    /// Those three kinds are exactly the ones `findId` is ever called with.
+    ///
+    /// Everything else is an OCCURRENCE, and a parent may hold many spelled
+    /// alike. Measured on 302 files of `lib/std` + `tools`: a name-only path left
+    /// 14267 of 35304 nodes sharing an id with another node — 11292 transform_app,
+    /// 2971 call, 4 local. `_int_of` in `lib/std/compiler/lexer.duo` declares `v`,
+    /// `i` and `c` in two sibling blocks, and blocks are not scope nodes, so the
+    /// function is the parent of both copies; four calls to one callee in one body
+    /// collapse the same way, and the six `call.*` transform nodes hanging off
+    /// each collapse with them. That is the defect the scope chain fixed one level
+    /// up, still live one level down.
+    ///
+    /// The discriminator is the span, because both identity schemes already in the
+    /// tree use it — `pass26_descriptor_intern.declarationIdentityHash` hashes
+    /// line+col, and the anonymous branch at the bottom of this function prints
+    /// `kind:start:end`. A third rule (an ordinal, say) would be stable under
+    /// edits above the node and unstable under reordering; span is the opposite
+    /// trade, and it is the one the rest of the tree already made.
+    fn nameAddressable(kind: NodeKind) bool {
+        return switch (kind) {
+            .module, .source_file, .func, .param, .type_node, .concept, .table_shape, .enum_shape => true,
+            .local, .call, .directive, .transform_app, .comptime_value, .emit_artifact, .pipeline => false,
+        };
+    }
+
     /// The scope-qualified path of a binding: enclosing scope names outermost
     /// first, dot-joined, ending in the node's own name (`scale.n`). This is the
     /// string `StableId` hashes; the bare name is a rendering of it, not the
     /// fact. The module node is skipped because `StableId.compute` already
     /// hashes `module_path` — including it would only re-say the same thing and
     /// would change every module-level identity for no gain.
+    ///
+    /// An occurrence node ends in `name@line:col` instead — see `nameAddressable`.
     pub fn stablePath(self: *const SemanticGraph, node: *const Node, buf: []u8) []const u8 {
         var chain: [8]*const Node = undefined;
         var depth: usize = 0;
@@ -218,10 +248,18 @@ pub const SemanticGraph = struct {
             len += 1;
         }
         if (node.name) |name| {
-            if (len == 0) return name;
-            if (len + name.len > buf.len) return buf[0..len];
-            @memcpy(buf[len..][0..name.len], name);
-            return buf[0 .. len + name.len];
+            if (nameAddressable(node.kind)) {
+                if (len == 0) return name;
+                if (len + name.len > buf.len) return buf[0..len];
+                @memcpy(buf[len..][0..name.len], name);
+                return buf[0 .. len + name.len];
+            }
+            const occ = std.fmt.bufPrint(buf[len..], "{s}@{d}:{d}", .{
+                name,
+                node.span.start,
+                node.span.end,
+            }) catch return buf[0..len];
+            return buf[0 .. len + occ.len];
         }
         const tail = std.fmt.bufPrint(buf[len..], "{s}:{d}:{d}", .{
             nodeKindLabel(node.kind),
@@ -2041,4 +2079,95 @@ test "semantic_graph: same-named params in different functions get distinct ids"
         } else seen = h;
     }
     try std.testing.expect(!dup);
+}
+
+test "semantic_graph: four calls to one callee in one body are four identities" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // Scope-qualifying the path fixed the level above this one: `run`'s calls no
+    // longer collide with another function's. Inside `run` they still did — the
+    // path was `run.double` four times over, one StableId for four call sites.
+    // Measured across lib/std + tools: 2971 of 8462 call nodes, and 11292 of
+    // 15830 transform_app nodes hanging off them.
+    const src =
+        \\double(x: i64): i64
+        \\    return x * 2
+        \\end
+        \\run(a: i64): i64
+        \\    return double(a) + double(a) + double(a) + double(a)
+        \\end
+    ;
+    var lex = Lexer.init(src, "calls.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    const module = try parser.parse_module();
+
+    var g = SemanticGraph.init(alloc);
+    defer g.deinit();
+    _ = try g.liftModuleWithCalls(&module, "calls.duo");
+
+    var seen: std.AutoHashMapUnmanaged(u64, void) = .empty;
+    defer seen.deinit(alloc);
+    var calls: usize = 0;
+    for (g.nodes.items) |node| {
+        if (node.kind != .call) continue;
+        calls += 1;
+        try seen.put(alloc, node.stable_id.?.hash, {});
+    }
+    // Positive control on the count: a zero here would make the identity
+    // assertion below vacuously true.
+    try std.testing.expectEqual(@as(usize, 4), calls);
+    try std.testing.expectEqual(@as(usize, 4), seen.count());
+
+    // The name-addressable half is unmoved: `run` is still reachable by name,
+    // which is what `findId` and every provenance consumer depend on.
+    const run_id = g.findFunc("run") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(NodeKind.func, g.get(run_id).?.kind);
+}
+
+test "semantic_graph: same-named locals in sibling blocks are distinct identities" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // `_int_of` in `lib/std/compiler/lexer.duo` is the real instance: `v`, `i`
+    // and `c` are declared in two sibling blocks of ONE function. Blocks are not
+    // scope nodes, so both copies hang off the function and a name-only path
+    // gave them one id apiece. The task brief said this collision did not exist
+    // because locals were already qualified `owner::name` — that qualifies by
+    // owning FUNCTION, which is exactly the granularity that misses this.
+    const src =
+        \\alias point = { x: f64, y: f64 }
+        \\pick(n: i64): i64
+        \\    if n > 0
+        \\        v: point = { x = 1.0, y = 2.0 }
+        \\        return 1
+        \\    end
+        \\    v: point = { x = 3.0, y = 4.0 }
+        \\    return 2
+        \\end
+    ;
+    var lex = Lexer.init(src, "blocks.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    const module = try parser.parse_module();
+
+    var g = SemanticGraph.init(alloc);
+    defer g.deinit();
+    _ = try g.liftModuleFull(&module, "blocks.duo");
+
+    var hashes: std.ArrayListUnmanaged(u64) = .empty;
+    defer hashes.deinit(alloc);
+    for (g.nodes.items) |node| {
+        if (node.kind != .local) continue;
+        const name = node.name orelse continue;
+        if (!std.mem.eql(u8, name, "v")) continue;
+        try hashes.append(alloc, node.stable_id.?.hash);
+    }
+    try std.testing.expectEqual(@as(usize, 2), hashes.items.len);
+    try std.testing.expect(hashes.items[0] != hashes.items[1]);
 }
