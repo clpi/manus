@@ -13,6 +13,7 @@ const meta_module = @import("meta_module.zig");
 const type_diff = @import("type_diff.zig");
 const rewrite_rules = @import("rewrite_rules.zig");
 const c_signatures = @import("c_signatures.zig");
+const directives = @import("directives.zig");
 
 const RT = types.ResolvedType;
 
@@ -112,25 +113,17 @@ pub const DeriveAllRule = struct {
 };
 
 pub fn parseDeriveAllDirective(alloc: std.mem.Allocator, raw: []const u8) !?DeriveAllRule {
-    const trimmed = std.mem.trim(u8, raw, " \t\r\n");
-    if (trimmed.len < 3 or trimmed[0] != '"') return null;
-    var end: usize = 1;
-    while (end < trimmed.len) : (end += 1) {
-        if (trimmed[end] == '\\' and end + 1 < trimmed.len) {
-            end += 1;
-            continue;
-        }
-        if (trimmed[end] == '"') break;
-    }
-    if (end >= trimmed.len) return null;
-    const concept_spec = try alloc.dupe(u8, trimmed[1..end]);
-    const rest = std.mem.trim(u8, trimmed[end + 1 ..], " \t\r\n,");
+    var it = directives.attrArgs(raw);
+    // A hand-rolled scanner here demanded `"` as the very first byte, so the
+    // single-quoted spelling of a concept was dropped without a diagnostic.
+    const first = it.next() orelse return null;
+    if (!first.quoted or first.text.len == 0) return null;
+    const concept_spec = try alloc.dupe(u8, first.text);
+    errdefer alloc.free(concept_spec);
+
+    const rest = std.mem.trim(u8, raw[it.pos..], " \t\r\n,");
     if (rest.len == 0) return .{ .concept_spec = concept_spec, .derive_names = &.{} };
-    const derive_names = derive_bundles.expandTraitsFromRawArgs(alloc, rest) catch blk: {
-        const single = derive_bundles.trimArg(rest);
-        if (single.len == 0) return null;
-        break :blk try alloc.dupe([]const u8, &[_][]const u8{try alloc.dupe(u8, single)});
-    };
+    const derive_names = try derive_bundles.expandTraitsFromRawArgs(alloc, rest);
     return .{ .concept_spec = concept_spec, .derive_names = derive_names };
 }
 
@@ -140,21 +133,58 @@ pub const OmniRule = struct {
     concept_b: []const u8,
 };
 
-fn extractQuotedString(alloc: std.mem.Allocator, raw: []const u8) !?struct { value: []const u8, rest: []const u8 } {
-    const trimmed = std.mem.trim(u8, raw, " \t\r\n,");
-    if (trimmed.len < 3 or trimmed[0] != '"') return null;
-    var end: usize = 1;
-    while (end < trimmed.len) : (end += 1) {
-        if (trimmed[end] == '\\' and end + 1 < trimmed.len) {
-            end += 1;
-            continue;
-        }
-        if (trimmed[end] == '"') break;
+/// `("ConceptA", Derive…, "ConceptB"[, "ConceptC"…])` — the one shape that
+/// `@comp.omni`, `@comp.transcend`, `@comp.infinity` and `@comp.hyper` all
+/// write, differing only in how many trailing concepts they take.
+///
+/// Four copies of this used to walk the raw text looking for the next `"` with
+/// `mem.indexOf`, which is a SUBSTRING search: it cannot tell a quote that
+/// opens the next concept from a quote inside the derive slot, and it rejects
+/// the single-quoted spelling outright. Here the quoting is a property of a
+/// TOKEN — `AttrArg.quoted` — so the derive run simply ends at the first
+/// quoted argument.
+const ConceptChain = struct {
+    /// concepts[0] is the leading concept; [1..1+tail] are the trailing ones.
+    concepts: [5][]const u8,
+    derive_names: []const []const u8,
+};
+
+fn parseConceptChain(alloc: std.mem.Allocator, raw: []const u8, tail: usize) !?ConceptChain {
+    std.debug.assert(tail + 1 <= 5);
+    var args: [16]directives.AttrArg = undefined;
+    var n: usize = 0;
+    var it = directives.attrArgs(raw);
+    while (it.next()) |arg| : (n += 1) {
+        if (n == args.len) break;
+        args[n] = arg;
     }
-    if (end >= trimmed.len) return null;
-    const value = try alloc.dupe(u8, trimmed[1..end]);
-    const rest = std.mem.trim(u8, trimmed[end + 1 ..], " \t\r\n,");
-    return .{ .value = value, .rest = rest };
+    if (n == 0 or !args[0].quoted or args[0].text.len == 0) return null;
+
+    var i: usize = 1;
+    while (i < n and !args[i].quoted) : (i += 1) {}
+    const derive_count = i - 1;
+    if (derive_count == 0) return null;
+    if (n - i < tail) return null;
+
+    var chain: ConceptChain = .{ .concepts = .{ "", "", "", "", "" }, .derive_names = &.{} };
+    var owned: usize = 0;
+    errdefer for (chain.concepts[0..owned]) |c| alloc.free(c);
+    chain.concepts[0] = try alloc.dupe(u8, args[0].text);
+    owned = 1;
+    for (0..tail) |k| {
+        if (args[i + k].text.len == 0) return null;
+        chain.concepts[1 + k] = try alloc.dupe(u8, args[i + k].text);
+        owned = 2 + k;
+    }
+
+    var seeds: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer seeds.deinit(alloc);
+    for (args[1 .. 1 + derive_count]) |d| {
+        if (d.text.len > 0) try seeds.append(alloc, d.text);
+    }
+    if (seeds.items.len == 0) return null;
+    chain.derive_names = try derive_bundles.expandTraits(alloc, seeds.items);
+    return chain;
 }
 
 pub const TranscendRule = struct {
@@ -166,91 +196,23 @@ pub const TranscendRule = struct {
 
 /// Parse `@meta.transcend("ConceptA", Derive, "ConceptB", "ConceptC")` args.
 pub fn parseTranscendDirective(alloc: std.mem.Allocator, raw: []const u8) !?TranscendRule {
-    const trimmed = std.mem.trim(u8, raw, " \t\r\n");
-    const part_a = try extractQuotedString(alloc, trimmed) orelse return null;
-    const concept_a = part_a.value;
-    errdefer alloc.free(concept_a);
-
-    var tail = std.mem.trim(u8, part_a.rest, " \t\r\n,");
-    const quote_b = std.mem.indexOf(u8, tail, "\"") orelse {
-        alloc.free(concept_a);
-        return null;
-    };
-    const derive_raw = std.mem.trim(u8, tail[0..quote_b], " \t\r\n,");
-    if (derive_raw.len == 0) {
-        alloc.free(concept_a);
-        return null;
-    }
-
-    const part_b = try extractQuotedString(alloc, tail[quote_b..]) orelse {
-        alloc.free(concept_a);
-        return null;
-    };
-    const concept_b = part_b.value;
-    errdefer alloc.free(concept_b);
-
-    const part_c = try extractQuotedString(alloc, part_b.rest) orelse {
-        alloc.free(concept_a);
-        return null;
-    };
-    const concept_c = part_c.value;
-
-    const derive_owned = try alloc.dupe(u8, derive_raw);
-    defer alloc.free(derive_owned);
-    const derive_names = derive_bundles.expandTraitsFromRawArgs(alloc, derive_owned) catch blk: {
-        const single = derive_bundles.trimArg(derive_raw);
-        if (single.len == 0) {
-            alloc.free(concept_a);
-            alloc.free(concept_b);
-            alloc.free(concept_c);
-            return null;
-        }
-        break :blk try alloc.dupe([]const u8, &[_][]const u8{try alloc.dupe(u8, single)});
-    };
+    const chain = try parseConceptChain(alloc, raw, 2) orelse return null;
     return .{
-        .concept_a = concept_a,
-        .derive_names = derive_names,
-        .concept_b = concept_b,
-        .concept_c = concept_c,
+        .concept_a = chain.concepts[0],
+        .derive_names = chain.derive_names,
+        .concept_b = chain.concepts[1],
+        .concept_c = chain.concepts[2],
     };
 }
 
 /// Parse `@meta.emit.omni("ConceptA", Derive, "ConceptB")` directive args.
 pub fn parseOmniDirective(alloc: std.mem.Allocator, raw: []const u8) !?OmniRule {
-    const trimmed = std.mem.trim(u8, raw, " \t\r\n");
-    const part_a = try extractQuotedString(alloc, trimmed) orelse return null;
-    const concept_a = part_a.value;
-    errdefer alloc.free(concept_a);
-
-    var tail = std.mem.trim(u8, part_a.rest, " \t\r\n,");
-    const quote_pos = std.mem.indexOf(u8, tail, "\"") orelse {
-        alloc.free(concept_a);
-        return null;
+    const chain = try parseConceptChain(alloc, raw, 1) orelse return null;
+    return .{
+        .concept_a = chain.concepts[0],
+        .derive_names = chain.derive_names,
+        .concept_b = chain.concepts[1],
     };
-    const derive_raw = std.mem.trim(u8, tail[0..quote_pos], " \t\r\n,");
-    if (derive_raw.len == 0) {
-        alloc.free(concept_a);
-        return null;
-    }
-
-    const part_b = try extractQuotedString(alloc, tail[quote_pos..]) orelse {
-        alloc.free(concept_a);
-        return null;
-    };
-    const concept_b = part_b.value;
-
-    const derive_owned = try alloc.dupe(u8, derive_raw);
-    defer alloc.free(derive_owned);
-    const derive_names = derive_bundles.expandTraitsFromRawArgs(alloc, derive_owned) catch blk: {
-        const single = derive_bundles.trimArg(derive_raw);
-        if (single.len == 0) {
-            alloc.free(concept_a);
-            alloc.free(concept_b);
-            return null;
-        }
-        break :blk try alloc.dupe([]const u8, &[_][]const u8{try alloc.dupe(u8, single)});
-    };
-    return .{ .concept_a = concept_a, .derive_names = derive_names, .concept_b = concept_b };
 }
 
 pub fn collectDeriveAllRules(host: Host) ![]DeriveAllRule {
@@ -1170,139 +1132,26 @@ pub const InfinityRule = struct {
 
 /// Parse `@meta.infinity("ConceptA", Derive, "ConceptB", "ConceptC", "ConceptD")` args.
 pub fn parseInfinityDirective(alloc: std.mem.Allocator, raw: []const u8) !?InfinityRule {
-    const trimmed = std.mem.trim(u8, raw, " \t\r\n");
-    const part_a = try extractQuotedString(alloc, trimmed) orelse return null;
-    const concept_a = part_a.value;
-    errdefer alloc.free(concept_a);
-
-    var tail = std.mem.trim(u8, part_a.rest, " \t\r\n,");
-    const quote_b = std.mem.indexOf(u8, tail, "\"") orelse {
-        alloc.free(concept_a);
-        return null;
-    };
-    const derive_raw = std.mem.trim(u8, tail[0..quote_b], " \t\r\n,");
-    if (derive_raw.len == 0) {
-        alloc.free(concept_a);
-        return null;
-    }
-
-    const part_b = try extractQuotedString(alloc, tail[quote_b..]) orelse {
-        alloc.free(concept_a);
-        return null;
-    };
-    const concept_b = part_b.value;
-    errdefer alloc.free(concept_b);
-
-    const part_c = try extractQuotedString(alloc, part_b.rest) orelse {
-        alloc.free(concept_a);
-        alloc.free(concept_b);
-        return null;
-    };
-    const concept_c = part_c.value;
-    errdefer alloc.free(concept_c);
-
-    const part_d = try extractQuotedString(alloc, part_c.rest) orelse {
-        alloc.free(concept_a);
-        alloc.free(concept_b);
-        alloc.free(concept_c);
-        return null;
-    };
-    const concept_d = part_d.value;
-
-    const derive_owned = try alloc.dupe(u8, derive_raw);
-    defer alloc.free(derive_owned);
-    const derive_names = derive_bundles.expandTraitsFromRawArgs(alloc, derive_owned) catch blk: {
-        const single = derive_bundles.trimArg(derive_raw);
-        if (single.len == 0) {
-            alloc.free(concept_a);
-            alloc.free(concept_b);
-            alloc.free(concept_c);
-            alloc.free(concept_d);
-            return null;
-        }
-        break :blk try alloc.dupe([]const u8, &[_][]const u8{try alloc.dupe(u8, single)});
-    };
+    const chain = try parseConceptChain(alloc, raw, 3) orelse return null;
     return .{
-        .concept_a = concept_a,
-        .derive_names = derive_names,
-        .concept_b = concept_b,
-        .concept_c = concept_c,
-        .concept_d = concept_d,
+        .concept_a = chain.concepts[0],
+        .derive_names = chain.derive_names,
+        .concept_b = chain.concepts[1],
+        .concept_c = chain.concepts[2],
+        .concept_d = chain.concepts[3],
     };
 }
 
 /// Parse `@meta.hyper("ConceptA", Derive, "ConceptB", "ConceptC", "ConceptD", "ConceptE")` args.
 pub fn parseHyperDirective(alloc: std.mem.Allocator, raw: []const u8) !?HyperRule {
-    const trimmed = std.mem.trim(u8, raw, " \t\r\n");
-    const part_a = try extractQuotedString(alloc, trimmed) orelse return null;
-    const concept_a = part_a.value;
-    errdefer alloc.free(concept_a);
-
-    var tail = std.mem.trim(u8, part_a.rest, " \t\r\n,");
-    const quote_b = std.mem.indexOf(u8, tail, "\"") orelse {
-        alloc.free(concept_a);
-        return null;
-    };
-    const derive_raw = std.mem.trim(u8, tail[0..quote_b], " \t\r\n,");
-    if (derive_raw.len == 0) {
-        alloc.free(concept_a);
-        return null;
-    }
-
-    const part_b = try extractQuotedString(alloc, tail[quote_b..]) orelse {
-        alloc.free(concept_a);
-        return null;
-    };
-    const concept_b = part_b.value;
-    errdefer alloc.free(concept_b);
-
-    const part_c = try extractQuotedString(alloc, part_b.rest) orelse {
-        alloc.free(concept_a);
-        alloc.free(concept_b);
-        return null;
-    };
-    const concept_c = part_c.value;
-    errdefer alloc.free(concept_c);
-
-    const part_d = try extractQuotedString(alloc, part_c.rest) orelse {
-        alloc.free(concept_a);
-        alloc.free(concept_b);
-        alloc.free(concept_c);
-        return null;
-    };
-    const concept_d = part_d.value;
-    errdefer alloc.free(concept_d);
-
-    const part_e = try extractQuotedString(alloc, part_d.rest) orelse {
-        alloc.free(concept_a);
-        alloc.free(concept_b);
-        alloc.free(concept_c);
-        alloc.free(concept_d);
-        return null;
-    };
-    const concept_e = part_e.value;
-
-    const derive_owned = try alloc.dupe(u8, derive_raw);
-    defer alloc.free(derive_owned);
-    const derive_names = derive_bundles.expandTraitsFromRawArgs(alloc, derive_owned) catch blk: {
-        const single = derive_bundles.trimArg(derive_raw);
-        if (single.len == 0) {
-            alloc.free(concept_a);
-            alloc.free(concept_b);
-            alloc.free(concept_c);
-            alloc.free(concept_d);
-            alloc.free(concept_e);
-            return null;
-        }
-        break :blk try alloc.dupe([]const u8, &[_][]const u8{try alloc.dupe(u8, single)});
-    };
+    const chain = try parseConceptChain(alloc, raw, 4) orelse return null;
     return .{
-        .concept_a = concept_a,
-        .derive_names = derive_names,
-        .concept_b = concept_b,
-        .concept_c = concept_c,
-        .concept_d = concept_d,
-        .concept_e = concept_e,
+        .concept_a = chain.concepts[0],
+        .derive_names = chain.derive_names,
+        .concept_b = chain.concepts[1],
+        .concept_c = chain.concepts[2],
+        .concept_d = chain.concepts[3],
+        .concept_e = chain.concepts[4],
     };
 }
 
@@ -2676,20 +2525,19 @@ pub fn emitUserDefinedDerives(
     for (attrs) |attr| {
         const type_attr = meta_module.normalizeTypeAttribute(attr.name);
         if (std.mem.eql(u8, type_attr, "derive")) {
-            const raw = attr.args orelse continue;
-            var it = std.mem.splitScalar(u8, raw, ',');
-            while (it.next()) |part| {
-                const name = derive_bundles.trimArg(part);
-                if (name.len == 0) continue;
-                pending.append(host.alloc, name) catch continue;
+            var it = directives.attrArgs(attr.args);
+            while (it.next()) |arg| {
+                if (arg.text.len == 0) continue;
+                pending.append(host.alloc, arg.text) catch continue;
             }
         } else if (std.mem.eql(u8, type_attr, "derive.bundle")) {
             const raw = attr.args orelse continue;
+            // `pending` holds these slices until after the attribute loop, so
+            // the expansion cannot be freed at the end of this branch — it was,
+            // and a second `@derive.bundle` on the same type then reused the
+            // block and rewrote the first bundle's names out from under it.
             const traits = derive_bundles.expandTraitsFromRawArgs(host.alloc, raw) catch continue;
-            defer {
-                for (traits) |t| host.alloc.free(t);
-                host.alloc.free(traits);
-            }
+            defer host.alloc.free(traits);
             for (traits) |t| pending.append(host.alloc, t) catch {};
         }
     }
@@ -3037,6 +2885,45 @@ test "meta_codegen: concept intersection parsing" {
     try std.testing.expectEqual(@as(usize, 2), names.len);
     try std.testing.expectEqualStrings("HasXY", names[0]);
     try std.testing.expectEqualStrings("HasId", names[1]);
+}
+
+test "meta_codegen: a single-quoted concept reads the same as a double-quoted one" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const single = (try parseDeriveAllDirective(alloc, "'HasXY', TouchApi")) orelse
+        return error.DirectiveSilentlyDropped;
+    try std.testing.expectEqualStrings("HasXY", single.concept_spec);
+
+    const double = (try parseDeriveAllDirective(alloc, "\"HasXY\", TouchApi")) orelse
+        return error.DirectiveSilentlyDropped;
+    try std.testing.expectEqualStrings("HasXY", double.concept_spec);
+
+    // Positive control: a bare first argument is still not a concept.
+    try std.testing.expect((try parseDeriveAllDirective(alloc, "HasXY, TouchApi")) == null);
+}
+
+test "meta_codegen: the concept chain ends its derive run at the first quoted argument" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // The corpus spelling: a trailing bare argument past the last concept is
+    // surplus and must not be read as one.
+    const omni = (try parseOmniDirective(alloc, "\"HasXY\", PairApi, \"HasTag\", registry_line")) orelse
+        return error.DirectiveSilentlyDropped;
+    try std.testing.expectEqualStrings("HasXY", omni.concept_a);
+    try std.testing.expectEqualStrings("HasTag", omni.concept_b);
+    try std.testing.expectEqual(@as(usize, 1), omni.derive_names.len);
+    try std.testing.expectEqualStrings("PairApi", omni.derive_names[0]);
+
+    const inf = (try parseInfinityDirective(alloc, "'HasXY', QuadApi, 'HasTag', 'HasId', 'HasExtra'")) orelse
+        return error.DirectiveSilentlyDropped;
+    try std.testing.expectEqualStrings("HasExtra", inf.concept_d);
+
+    // Positive control: too few trailing concepts is still a dropped directive.
+    try std.testing.expect((try parseInfinityDirective(alloc, "\"HasXY\", QuadApi, \"HasTag\"")) == null);
 }
 
 const MAX_GRAMMAR_EXPANSIONS: usize = 256;

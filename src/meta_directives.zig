@@ -128,52 +128,22 @@ fn registerLua(alloc: std.mem.Allocator, raw: []const u8) !void {
 
 fn registerDefineDerive(alloc: std.mem.Allocator, raw: []const u8) !void {
     // @meta.define.derive("Name", fun generate(meta) -> str ... end)
+    //
+    // The second argument is a MACRO BODY, not an argument list: it may hold
+    // top-level commas of its own, so only the FIRST argument is tokenized and
+    // everything past that comma is taken verbatim. `ArgIter.pos` marks the
+    // resume point, which is why this needs no scanner of its own.
     const trimmed = std.mem.trim(u8, raw, " \t\r\n");
     if (trimmed.len == 0) return;
 
-    // Split on the comma ending the first quoted derive name. Do not scan the
-    // whole macro body for commas — generated C in strings contains '(' and ')'.
-    const cp: ?usize = blk: {
-        if (trimmed.len >= 2 and trimmed[0] == '"') {
-            var i: usize = 1;
-            while (i < trimmed.len) : (i += 1) {
-                if (trimmed[i] == '\\' and i + 1 < trimmed.len) {
-                    i += 1;
-                    continue;
-                }
-                if (trimmed[i] == '"') {
-                    var j = i + 1;
-                    while (j < trimmed.len and std.mem.indexOf(u8, " \t\r\n", &[_]u8{trimmed[j]}) != null) : (j += 1) {}
-                    if (j < trimmed.len and trimmed[j] == ',') break :blk j;
-                    break :blk null;
-                }
-            }
-        }
-        if (trimmed.len >= 2 and trimmed[0] == '\'') {
-            var i: usize = 1;
-            while (i < trimmed.len) : (i += 1) {
-                if (trimmed[i] == '\\' and i + 1 < trimmed.len) {
-                    i += 1;
-                    continue;
-                }
-                if (trimmed[i] == '\'') {
-                    var j = i + 1;
-                    while (j < trimmed.len and std.mem.indexOf(u8, " \t\r\n", &[_]u8{trimmed[j]}) != null) : (j += 1) {}
-                    if (j < trimmed.len and trimmed[j] == ',') break :blk j;
-                    break :blk null;
-                }
-            }
-        }
-        break :blk std.mem.indexOfScalar(u8, trimmed, ',');
-    };
-    const comma = cp orelse return;
-    const name_raw = std.mem.trim(u8, trimmed[0..comma], " \t\r\n");
-    const func_raw = std.mem.trim(u8, trimmed[comma + 1 ..], " \t\r\n");
-
-    const name = directives.extractCRawCode(name_raw);
+    var it = directives.attrArgs(trimmed);
+    const name_arg = it.next() orelse return;
+    if (it.pos >= trimmed.len) return; // no comma: nothing to register
+    const name = name_arg.text;
     if (name.len == 0) return;
 
-    const func_source = if (func_raw.len >= 2 and func_raw[0] == '"' and func_raw[func_raw.len - 1] == '"')
+    const func_raw = std.mem.trim(u8, trimmed[it.pos..], " \t\r\n");
+    const func_source = if (directives.isRawCEmitLiteral(func_raw))
         directives.extractCRawCode(func_raw)
     else
         func_raw;
@@ -215,16 +185,18 @@ pub fn deinitModuleDeriveRegistry() void {
 const derive_registry = @import("derive_registry.zig");
 
 fn registerRewrite(alloc: std.mem.Allocator, raw: []const u8) !void {
-    const parts = try parseQuotedArgs(alloc, raw);
-    defer {
-        for (parts) |p| alloc.free(p);
-        alloc.free(parts);
+    // @rewrite("name", "pattern", "replacement" [, priority])
+    var parts: [4][]const u8 = .{ "", "", "", "" };
+    var n: usize = 0;
+    var it = directives.attrArgs(raw);
+    while (it.next()) |arg| : (n += 1) {
+        if (n >= parts.len) break;
+        parts[n] = arg.text;
     }
-    if (parts.len < 3) return;
-    const priority: i32 = if (parts.len >= 4)
-        std.fmt.parseInt(i32, parts[3], 10) catch 0
-    else
-        0;
+    if (n < 3) return;
+    const priority: i32 = if (n >= 4) std.fmt.parseInt(i32, parts[3], 10) catch 0 else 0;
+    // `registerRule` copies into its own registry, so these borrowed slices
+    // outlive nothing — the old reader duplicated every argument for no reason.
     try rewrite_rules.registerRule(alloc, parts[0], parts[1], parts[2], priority);
 }
 
@@ -237,27 +209,31 @@ fn registerEmitFile(alloc: std.mem.Allocator, raw: []const u8) !void {
     // @c.emit_file("{ path = "file.h", content = "int x;" }")
     // or @c.emit_file("path.h", "int x;")
     const trimmed = std.mem.trim(u8, raw, " \t\r\n");
-    var path: ?[]const u8 = null;
-    var content: ?[]const u8 = null;
 
     if (trimmed.len > 0 and trimmed[0] == '{') {
         var map = try directives.parseAttrArgs(alloc, trimmed);
         defer map.deinit(alloc);
-        path = map.get("path");
-        content = map.get("content");
-    } else {
-        // Two positional args: path, content
-        var parts = std.mem.splitScalar(u8, trimmed, ',');
-        path = std.mem.trim(u8, parts.next() orelse "", " \t\r\n\"");
-        content = std.mem.trim(u8, parts.next() orelse "", " \t\r\n\"");
+        const path = map.get("path") orelse return;
+        const content = map.get("content") orelse return;
+        c_signatures.registerEmitFile(
+            alloc,
+            directives.extractCRawCode(path),
+            directives.extractCRawCode(content),
+        ) catch {};
+        return;
     }
 
-    if (path == null or content == null) return;
-
-    const resolved_path = directives.extractCRawCode(path.?);
-    const resolved_content = directives.extractCRawCode(content.?);
-
-    c_signatures.registerEmitFile(alloc, resolved_path, resolved_content) catch {};
+    // Two positional args: path, content. A plain `splitScalar(',')` used to
+    // cut the CONTENT at its first comma, so `@c.emit.file("h.h", "int a, b;")`
+    // wrote the file `int a`. The tokenizer keeps a quoted argument whole;
+    // `extractCRawCode` still unwraps the `[[ … ]]` spelling of a body.
+    const path = directives.attrArg(trimmed, 0) orelse return;
+    const content = directives.attrArg(trimmed, 1) orelse return;
+    c_signatures.registerEmitFile(
+        alloc,
+        directives.extractCRawCode(path.raw),
+        directives.extractCRawCode(content.raw),
+    ) catch {};
 }
 
 fn registerDeclsFromC(alloc: std.mem.Allocator, c_code: []const u8) !void {
@@ -280,40 +256,6 @@ fn freeDecls(alloc: std.mem.Allocator, decls: []const c_header_parse.CDecl) void
         alloc.free(d.params);
     }
     alloc.free(decls);
-}
-
-fn parseQuotedArgs(alloc: std.mem.Allocator, raw: []const u8) ![]const []const u8 {
-    var out: std.ArrayListUnmanaged([]const u8) = .empty;
-    errdefer {
-        for (out.items) |s| alloc.free(s);
-        out.deinit(alloc);
-    }
-    var i: usize = 0;
-    while (i < raw.len) {
-        while (i < raw.len and (raw[i] == ' ' or raw[i] == '\t' or raw[i] == '\r' or raw[i] == '\n' or raw[i] == ',')) : (i += 1) {}
-        if (i >= raw.len) break;
-        if (raw[i] != '"' and raw[i] != '\'') {
-            const start = i;
-            while (i < raw.len and raw[i] != ',' and raw[i] != ' ' and raw[i] != '\t') : (i += 1) {}
-            try out.append(alloc, try alloc.dupe(u8, std.mem.trim(u8, raw[start..i], " \t\r\n")));
-            continue;
-        }
-        const quote = raw[i];
-        i += 1;
-        const start = i;
-        while (i < raw.len) {
-            if (raw[i] == '\\' and i + 1 < raw.len) {
-                i += 2;
-                continue;
-            }
-            if (raw[i] == quote) break;
-            i += 1;
-        }
-        if (i >= raw.len) return error.UnterminatedString;
-        try out.append(alloc, try alloc.dupe(u8, raw[start..i]));
-        i += 1;
-    }
-    return out.toOwnedSlice(alloc);
 }
 
 pub fn isMetaModuleDirective(name: []const u8) bool {
@@ -340,6 +282,17 @@ test "meta_directives: register rewrite rule" {
     defer rewrite_rules.clearRegistry();
     try registerRewrite(alloc, "\"mul_two\", \"($1 * 2)\", \"$1 << 1\", 5");
     try std.testing.expectEqual(@as(usize, 1), rewrite_rules.ruleCount());
+}
+
+test "meta_directives: emit.file content keeps a comma inside its quoted argument" {
+    const alloc = std.testing.allocator;
+    c_signatures.clearEmitFiles();
+    defer c_signatures.clearEmitFiles();
+    try registerEmitFile(alloc, "\"hdr.h\", \"int a, b;\"");
+    try std.testing.expectEqualStrings("int a, b;", c_signatures.emitFilesMap().get("hdr.h").?);
+    // Positive control: the table spelling reaches the same registry entry.
+    try registerEmitFile(alloc, "{ path = \"tbl.h\", content = \"int c, d;\" }");
+    try std.testing.expectEqualStrings("int c, d;", c_signatures.emitFilesMap().get("tbl.h").?);
 }
 
 test "meta_directives: register rewrite bundle" {

@@ -2,6 +2,7 @@
 const std = @import("std");
 const meta_module = @import("meta_module.zig");
 const ast = @import("ast.zig");
+const directives = @import("directives.zig");
 
 fn isDeriveBundleAttr(name: []const u8) bool {
     const norm = meta_module.normalizeTypeAttribute(name);
@@ -94,12 +95,13 @@ pub fn deinitUserRegistry() void {
     }
 }
 
+/// Normalize ONE already-isolated token — a bundle-table entry, or a name a
+/// caller holds on its own. It is NOT an argument-list reader: everything that
+/// starts from `attr.args` goes through `directives.attrArgs` instead, and the
+/// tokens that come back are already normalized this way.
 pub fn trimArg(raw: []const u8) []const u8 {
     const trimmed = std.mem.trim(u8, raw, " \t\r\n");
-    if (trimmed.len >= 2 and trimmed[0] == '"' and trimmed[trimmed.len - 1] == '"') {
-        return trimmed[1 .. trimmed.len - 1];
-    }
-    if (trimmed.len >= 2 and trimmed[0] == '\'' and trimmed[trimmed.len - 1] == '\'') {
+    if (trimmed.len >= 2 and (trimmed[0] == '"' or trimmed[0] == '\'') and trimmed[trimmed.len - 1] == trimmed[0]) {
         return trimmed[1 .. trimmed.len - 1];
     }
     return trimmed;
@@ -163,10 +165,9 @@ pub fn expandTraits(alloc: std.mem.Allocator, seeds: []const []const u8) ![]cons
 pub fn expandTraitsFromRawArgs(alloc: std.mem.Allocator, raw: []const u8) ![]const []const u8 {
     var seeds: std.ArrayListUnmanaged([]const u8) = .empty;
     defer seeds.deinit(alloc);
-    var it = std.mem.splitScalar(u8, raw, ',');
-    while (it.next()) |part| {
-        const name = trimArg(part);
-        if (name.len > 0) try seeds.append(alloc, name);
+    var it = directives.attrArgs(raw);
+    while (it.next()) |arg| {
+        if (arg.text.len > 0) try seeds.append(alloc, arg.text);
     }
     return expandTraits(alloc, seeds.items);
 }
@@ -199,16 +200,14 @@ pub fn bundleHasTrait(bundle_name: []const u8, trait: []const u8) bool {
 pub fn attributesHaveTrait(attrs: []const ast.Attribute, trait: []const u8) bool {
     for (attrs) |attr| {
         if (std.mem.eql(u8, attr.name, "derive")) {
-            const raw = attr.args orelse continue;
-            var it = std.mem.splitScalar(u8, raw, ',');
-            while (it.next()) |part| {
-                if (std.mem.eql(u8, trimArg(part), trait)) return true;
+            var it = directives.attrArgs(attr.args);
+            while (it.next()) |arg| {
+                if (std.mem.eql(u8, arg.text, trait)) return true;
             }
         } else if (isDeriveBundleAttr(attr.name)) {
-            const raw = attr.args orelse continue;
-            var it = std.mem.splitScalar(u8, raw, ',');
-            while (it.next()) |part| {
-                if (bundleHasTrait(part, trait)) return true;
+            var it = directives.attrArgs(attr.args);
+            while (it.next()) |arg| {
+                if (bundleHasTrait(arg.text, trait)) return true;
             }
         }
     }
@@ -226,18 +225,15 @@ pub fn deriveTraitCount(attrs: []const ast.Attribute) usize {
     var count: usize = 0;
     for (attrs) |attr| {
         if (std.mem.eql(u8, attr.name, "derive")) {
-            const raw = attr.args orelse continue;
-            var it = std.mem.splitScalar(u8, raw, ',');
-            while (it.next()) |part| {
-                if (trimArg(part).len > 0) count += 1;
+            var it = directives.attrArgs(attr.args);
+            while (it.next()) |arg| {
+                if (arg.text.len > 0) count += 1;
             }
         } else if (isDeriveBundleAttr(attr.name)) {
-            const raw = attr.args orelse continue;
-            var it = std.mem.splitScalar(u8, raw, ',');
-            while (it.next()) |part| {
-                const name = trimArg(part);
-                if (name.len == 0) continue;
-                if (rawTraitsForBundle(name)) |traits| count += traits.len;
+            var it = directives.attrArgs(attr.args);
+            while (it.next()) |arg| {
+                if (arg.text.len == 0) continue;
+                if (rawTraitsForBundle(arg.text)) |traits| count += traits.len;
             }
         }
     }
@@ -245,51 +241,16 @@ pub fn deriveTraitCount(attrs: []const ast.Attribute) usize {
 }
 
 pub fn registerUserBundleFromRaw(alloc: std.mem.Allocator, raw: []const u8) !void {
-    const trimmed = std.mem.trim(u8, raw, " \t\r\n");
-    if (trimmed.len == 0) return;
-
-    var depth: i32 = 0;
-    var quote: ?u8 = null;
-    var comma_pos: ?usize = null;
-    var i: usize = 0;
-    while (i < trimmed.len) {
-        const c = trimmed[i];
-        if (quote) |q| {
-            if (c == '\\' and i + 1 < trimmed.len) {
-                i += 2;
-                continue;
-            }
-            if (c == q) quote = null;
-            i += 1;
-            continue;
-        }
-        switch (c) {
-            '"', '\'' => quote = c,
-            '(', '[', '{' => depth += 1,
-            ')', ']', '}' => depth -= 1,
-            ',' => {
-                if (depth == 0) {
-                    comma_pos = i;
-                    break;
-                }
-            },
-            else => {},
-        }
-        i += 1;
-    }
-
-    const cp = comma_pos orelse return error.InvalidBundle;
-    const name = trimArg(trimArg(trimmed[0..cp]));
-    const traits_raw = std.mem.trim(u8, trimmed[cp + 1 ..], " \t\r\n");
-    if (name.len == 0 or traits_raw.len == 0) return error.InvalidBundle;
+    var it = directives.attrArgs(raw);
+    const name_arg = it.next() orelse return error.InvalidBundle;
+    const name = name_arg.text;
+    if (name.len == 0) return error.InvalidBundle;
 
     var traits: std.ArrayListUnmanaged([]const u8) = .empty;
     errdefer traits.deinit(alloc);
-    var it = std.mem.splitScalar(u8, traits_raw, ',');
-    while (it.next()) |part| {
-        const t = trimArg(part);
-        if (t.len == 0) continue;
-        try traits.append(alloc, try alloc.dupe(u8, t));
+    while (it.next()) |arg| {
+        if (arg.text.len == 0) continue;
+        try traits.append(alloc, try alloc.dupe(u8, arg.text));
     }
     if (traits.items.len == 0) return error.InvalidBundle;
     initUserRegistry(alloc);
@@ -334,6 +295,18 @@ test "derive_bundles: register user bundle with nested bundle members" {
     try registerUserBundleFromRaw(alloc, "\"Api\", CStruct, GetterBundle, Debug");
     try std.testing.expect(bundleHasTrait("Api", "Display"));
     try std.testing.expect(bundleHasTrait("Api", "CStruct"));
+}
+
+// A derive name may carry its own argument list. Five readers here used to
+// split the attribute text on every comma, so `@derive(Tensor(2, 3))` counted
+// as TWO traits named `Tensor(2` and `3)` — neither of which exists.
+test "derive_bundles: a derive name with its own argument list is ONE trait" {
+    const attrs = [_]ast.Attribute{.{ .name = "derive", .args = "Tensor(2, 3)" }};
+    try std.testing.expectEqual(@as(usize, 1), deriveTraitCount(&attrs));
+    try std.testing.expect(attributesHaveTrait(&attrs, "Tensor(2, 3)"));
+    // Positive control: the plain multi-trait list still counts every entry.
+    const plain = [_]ast.Attribute{.{ .name = "derive", .args = "Eq, Ord, Hash" }};
+    try std.testing.expectEqual(@as(usize, 3), deriveTraitCount(&plain));
 }
 
 test "derive_bundles: expandTraits deduplicates" {

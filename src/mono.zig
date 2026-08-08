@@ -36,6 +36,7 @@ const debug_trace = @import("debug_trace.zig");
 const ast = @import("ast.zig");
 const types = @import("types.zig");
 const sema_mod = @import("sema.zig");
+const directives = @import("directives.zig");
 const Lexer = @import("lexer.zig").Lexer;
 const Parser = @import("parser.zig").Parser;
 
@@ -570,10 +571,11 @@ pub const Monomorphizer = struct {
     }
 
     fn recordExplicitSpecialization(self: *Self, raw_args: []const u8) !void {
-        const parts = try splitTopLevelArgs(self.alloc, raw_args);
-        defer self.alloc.free(parts);
-        if (parts.len == 0) return;
-        const name = parts[0];
+        var it = directives.attrArgs(raw_args);
+        // `@specialize("id", i64)` names the same generic as `@specialize(id, i64)`.
+        // A private splitter used to hand back the quotes still attached, so the
+        // quoted spelling looked up a generic called `"id"` and found nothing.
+        const name = (it.next() orelse return).text;
         if (name.len == 0) return;
         const template = self.generics.get(name) orelse return;
         const type_params = template.type_params orelse &.{};
@@ -581,9 +583,9 @@ pub const Monomorphizer = struct {
 
         var type_args: std.ArrayListUnmanaged(RT) = .empty;
         errdefer type_args.deinit(self.alloc);
-        for (parts[1..]) |part| {
-            if (part.len == 0) continue;
-            try type_args.append(self.alloc, try self.directiveType(part));
+        while (it.next()) |arg| {
+            if (arg.text.len == 0) continue;
+            try type_args.append(self.alloc, try self.directiveType(arg.text));
         }
         if (type_args.items.len != type_params.len) {
             type_args.deinit(self.alloc);
@@ -715,41 +717,6 @@ pub const Monomorphizer = struct {
 };
 
 // ── Free helpers ────────────────────────────────────────────────────────────
-
-fn splitTopLevelArgs(alloc: Allocator, raw: []const u8) ![]const []const u8 {
-    var args: std.ArrayListUnmanaged([]const u8) = .empty;
-    errdefer args.deinit(alloc);
-
-    var start: usize = 0;
-    var depth: usize = 0;
-    var quote: ?u8 = null;
-    var i: usize = 0;
-    while (i < raw.len) : (i += 1) {
-        const c = raw[i];
-        if (quote) |q| {
-            if (c == '\\') {
-                i += 1;
-            } else if (c == q) {
-                quote = null;
-            }
-            continue;
-        }
-        switch (c) {
-            '"', '\'' => quote = c,
-            '(', '[', '{' => depth += 1,
-            ')', ']', '}' => {
-                if (depth > 0) depth -= 1;
-            },
-            ',' => if (depth == 0) {
-                try args.append(alloc, std.mem.trim(u8, raw[start..i], " \t\r\n"));
-                start = i + 1;
-            },
-            else => {},
-        }
-    }
-    try args.append(alloc, std.mem.trim(u8, raw[start..], " \t\r\n"));
-    return args.toOwnedSlice(alloc);
-}
 
 fn typeParamName(tp: ast.TypeExpr) []const u8 {
     return switch (tp) {
@@ -1123,4 +1090,20 @@ test "mono: nested generic calls inherit specialized local annotations" {
     const inner_specs = try mono.getSpecializations("inner");
     try testing.expectEqual(@as(usize, 1), inner_specs.len);
     try testing.expect(inner_specs[0].type_args[0] == .str);
+}
+
+test "mono: a quoted @specialize target names the same generic as a bare one" {
+    var h = try Harness.run(
+        \\@specialize("id", i64)
+        \\fun id<T>(x: T): T
+        \\    x
+        \\end
+    );
+    defer h.deinit();
+
+    var mono = Monomorphizer.init(h.arena.allocator(), &h.sema.type_map);
+    try mono.run(&h.mod);
+    try testing.expectEqual(@as(usize, 1), mono.count());
+    const specs = try mono.getSpecializations("id");
+    try testing.expect(specs[0].type_args[0] == .i64);
 }
