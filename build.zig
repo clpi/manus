@@ -68,6 +68,18 @@ pub fn build(b: *std.Build) void {
     const census_step = b.step("language-census", "G11: count tracked non-Duo source; ratchets sh/py debt");
     census_step.dependOn(&census_cmd.step);
 
+    // The native census. Same reasoning as G11 one level down: "native 100%"
+    // was a slogan because nothing measured it honestly. `duo compile` falls
+    // back to the C backend and still reports ok, so only --backend=direct is
+    // an answer -- and the ratio has to be over the REACHABLE set, because a
+    // compiler proof fixture that exists to drive the C emitter can never be
+    // native and counting it turns a 90% ceiling into a 61% failure.
+    const native_census_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/native_census.duo" });
+    native_census_cmd.setCwd(b.path("."));
+    native_census_cmd.step.dependOn(b.getInstallStep());
+    const native_census_step = b.step("native-census", "native coverage over the reachable set; ratchets NATIVE_FLOOR");
+    native_census_step.dependOn(&native_census_cmd.step);
+
     const test_step = b.step("test", "Run all tests (unit + compile-fail)");
     test_step.dependOn(&test_cmd.step);
 
@@ -102,7 +114,7 @@ pub fn build(b: *std.Build) void {
     gpu_bench_step.dependOn(&gpu_bench_cmd.step);
     test_step.dependOn(&gpu_bench_cmd.step);
 
-    const bench_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_benchmark.sh" });
+    const bench_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/run_benchmark.duo" });
     bench_cmd.setCwd(b.path("."));
     bench_cmd.step.dependOn(b.getInstallStep());
     const bench_step = b.step("bench", "Run Duo vs C benchmark suite");

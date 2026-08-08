@@ -241,7 +241,12 @@ duo_bench_res = capture_results("Duo benchmark.lua", "/tmp/duo_bench.out")
 duo_bench_duo_res = capture_results("Duo benchmark.duo", "/tmp/duo_bench_duo.out")
 c_bench_res = capture_results("reference C benchmark", "/tmp/c_bench.out")
 
-RESULT_FAIL = false
+-- `global` is load-bearing. As a BARE top-level binding this stayed false
+-- through both reassignments below: the suite printed real mismatches and then
+-- "All 40 benchmark results match reference C" on the same run. RESULT_FAIL_FLAG
+-- further down was already declared global and always worked, which is the
+-- contrast that named the cause.
+global RESULT_FAIL: bool = false
 if not compare_results("Duo .lua", duo_bench_res, c_bench_res)
     RESULT_FAIL = true
 end
@@ -264,19 +269,19 @@ s.must("sed -i '' '1i\\\nlocal ok, t = pcall(require, \"timer\"); if ok and type
 
 print("")
 print("=== Duo (Lua AOT) ===")
-DUO_TIMES = collect_min_times("/tmp/duo_bench.out")
+global DUO_TIMES = collect_min_times("/tmp/duo_bench.out")
 
 print("=== Duo (.duo AOT) ===")
-DUO_FILE_TIMES = collect_min_times("/tmp/duo_bench_duo.out")
+global DUO_FILE_TIMES = collect_min_times("/tmp/duo_bench_duo.out")
 
 print("=== Reference C ===")
-C_TIMES = collect_min_times("/tmp/c_bench.out")
+global C_TIMES = collect_min_times("/tmp/c_bench.out")
 
 print("=== LuaJIT ===")
-LUAJIT_TIMES = collect_min_times("LUA_CPATH=\"/tmp/?.so;;\" luajit /tmp/lua_bench.lua")
+global LUAJIT_TIMES = collect_min_times("LUA_CPATH=\"/tmp/?.so;;\" luajit /tmp/lua_bench.lua")
 
 print("=== Lua 5.5 ===")
-LUA55_TIMES = collect_min_times("LUA_CPATH=\"/tmp/?.so;;\" lua /tmp/lua_bench.lua")
+global LUA55_TIMES = collect_min_times("LUA_CPATH=\"/tmp/?.so;;\" lua /tmp/lua_bench.lua")
 
 RUN_NELUA_BENCH = s.getenv_or("RUN_NELUA_BENCH")
 NELUA_TIMES = {}
