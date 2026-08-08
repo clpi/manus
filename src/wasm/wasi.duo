@@ -9,7 +9,7 @@ global string_mod = req "std.string"
 -- ═══════════════════════════════════════════════════════════════
 -- WASI errno codes
 -- ═══════════════════════════════════════════════════════════════
-const ERRNO = {
+ERRNO = {
   success = 0, badf = 8, inval = 28, nosys = 52, overflow = 61,
   perm = 63, io = 29, noent = 44, exist = 20, again = 6,
 }
@@ -206,13 +206,27 @@ end
 -- ═══════════════════════════════════════════════════════════════
 -- WASI Preview 2 stubs (component model host bindings)
 -- ═══════════════════════════════════════════════════════════════
-fun wasi_p2_io_poll(rt, args)       ERRNO.success end
-fun wasi_p2_io_streams(rt, args)    ERRNO.success end
-fun wasi_p2_clocks(rt, args)        wasi_clock_time_get(rt, args) end
-fun wasi_p2_random(rt, args)        wasi_random_get(rt, args) end
-fun wasi_p2_filesystem(rt, args)    ERRNO.nosys end
-fun wasi_p2_sockets(rt, args)       ERRNO.nosys end
-fun wasi_p2_http(rt, args)          ERRNO.nosys end
+fun wasi_p2_io_poll(rt, args)
+  ERRNO.success
+end
+fun wasi_p2_io_streams(rt, args)
+  ERRNO.success
+end
+fun wasi_p2_clocks(rt, args)
+  wasi_clock_time_get(rt, args)
+end
+fun wasi_p2_random(rt, args)
+  wasi_random_get(rt, args)
+end
+fun wasi_p2_filesystem(rt, args)
+  ERRNO.nosys
+end
+fun wasi_p2_sockets(rt, args)
+  ERRNO.nosys
+end
+fun wasi_p2_http(rt, args)
+  ERRNO.nosys
+end
 
 -- ═══════════════════════════════════════════════════════════════
 -- Registration table

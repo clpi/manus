@@ -19,7 +19,7 @@ DTYPE = {
   fp16 = 0, fp32 = 1, ["u8"] = 2, ["i32"] = 3, bf16 = 4, ["i64"] = 5,
 }
 
-type Config = {
+Config: {
   n_embd: i64,
   n_head: i64,
   n_layer: i64,
@@ -28,7 +28,7 @@ type Config = {
   eps: float
 }
 
-type LayerWeights = {
+LayerWeights: {
   wq: [float],
   wk: [float],
   wv: [float],
