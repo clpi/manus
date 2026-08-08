@@ -1,0 +1,324 @@
+-- Cross-language benchmark: Duo (Lua AOT) vs C vs Lua vs LuaJIT.
+--
+-- Duo replacement for scripts/run_cross_benchmark.sh (monoglot census).
+--
+-- examples/benchmark_c.c and examples/benchmark_pure.lua stay as they are:
+-- they are the OTHER LANGUAGES being measured. Converting them would delete
+-- the comparison this script exists to make.
+--
+-- The shell version carried five awk programs (time extraction, result
+-- extraction, min-of-N, strict compare, loose compare, geometric mean). All of
+-- them are ordinary Duo here, which is the point -- the arithmetic a benchmark
+-- reports should be readable in the same language as the benchmark.
+
+_BENCHES = 23
+_RUNS = 3
+_OUT = "/tmp/duo_cross_bench"
+
+_names = {
+    "Fibonacci(40)", "Prime sieve", "Mandelbrot", "Grid matrix", "N-body",
+    "String bytes", "Table array", "Trig sum", "String chain", "String hash",
+    "Math floor/max", "Table max", "Pow/sqrt", "Binary search", "Filter count",
+    "Dot product", "Clamp sum", "Bucket hash", "EMA smooth", "Token count",
+    "Config parse", "Table lookup", "Table churn",
+}
+
+_fail = 0
+
+_env_or(n: str, d: str): str
+    v = std.script.getenv_or(n)
+    if v == "" return d end
+    v
+end
+
+_pad(s: str, w: i64): str
+    out = s
+    while #out < w
+        out = out .. " "
+    end
+    out
+end
+
+_lpad(s: str, w: i64): str
+    out = s
+    while #out < w
+        out = " " .. out
+    end
+    out
+end
+
+-- Six decimals, from integer millionths. `to(str)` on an f64 does not compile
+-- (it lowers to an undeclared `tostring`), so every float shown here is
+-- assembled from integers. Matches the shell version's %10.6f.
+_f6(x: f64): str
+    n = to(i64)(x * 1000000.0 + 0.5)
+    whole = n / 1000000
+    frac = n % 1000000
+    fs = to(str)(frac)
+    while #fs < 6
+        fs = "0" .. fs
+    end
+    to(str)(whole) .. "." .. fs
+end
+
+-- `to(f64)` is NOT a validating parse: to(f64)("Fibonacci(40)"), to(f64)("Time")
+-- and to(f64)("seconds") all return 0.0, not nil. Testing `!= nil` to find "the
+-- first numeric field" therefore matched the benchmark's NAME and reported
+-- 0.000000 for all four languages -- a table that looks like a measurement
+-- instead of a parse failure. This is the shell awk's
+-- ^[0-9]+(\.[0-9]+)?(e-?[0-9]+)?$ written out.
+_numeric(s: str): bool
+    if s == "" return false end
+    seen_digit = false
+    i = 1
+    while i <= #s
+        c = std.string.sub(s, i, i)
+        if c >= "0" and c <= "9"
+            seen_digit = true
+        else
+            if c != "." and c != "-" and c != "+" and c != "e" and c != "E"
+                return false
+            end
+        end
+        i = i + 1
+    end
+    seen_digit
+end
+
+_lines(text: str): any
+    out = {}
+    for _i, l in std.string.split(text, "\n")
+        t = std.script.chomp(l)
+        if t != ""
+            out[#out + 1] = t
+        end
+    end
+    out
+end
+
+-- "RESULT <name> <value>" -> a name->value table. This is the correctness
+-- channel; the timing channel is separate and must not be confused with it.
+_results(text: str): any
+    r = {}
+    for _i, l in _lines(text)
+        if std.string.sub(l, 1, 7) == "RESULT "
+            parts = std.string.split(l, " ")
+            if #parts >= 3
+                r[parts[2]] = parts[3]
+            end
+        end
+    end
+    r
+end
+
+-- Every numeric field on a line mentioning "Time". The shell awk took the
+-- FIRST numeric field, so this does too -- taking the last would silently
+-- pick up an iteration count on some lines.
+_times(text: str): any
+    ts = {}
+    for _i, l in _lines(text)
+        if std.string.find(l, "Time", 1, true) != nil
+            -- The benchmark separates its fields with TABS, not spaces:
+            -- "Fibonacci(40) Time \t9.99e-07\tseconds". Splitting on " " alone
+            -- yielded one unsplittable field per line, every time parsed as
+            -- nil, and a table of 0.000000 across all four languages -- which
+            -- looks like a measurement rather than a parse failure.
+            for _j, w in std.string.split(std.string.gsub(l, "\t", " "), " ")
+                if #ts < _BENCHES and _numeric(w)
+                    ts[#ts + 1] = to(f64)(w)
+                    break
+                end
+            end
+        end
+    end
+    ts
+end
+
+-- Minimum across runs, per benchmark slot. The MINIMUM, not the mean: slow
+-- samples are machine noise.
+_min_times(cmd: str): any
+    best = {}
+    r = 0
+    while r < _RUNS
+        ts = _times(std.script.capture(cmd .. " 2>/dev/null"))
+        i = 1
+        while i <= #ts
+            if best[i] == nil or ts[i] < best[i]
+                best[i] = ts[i]
+            end
+            i = i + 1
+        end
+        r = r + 1
+    end
+    best
+end
+
+_is_int(s: str): bool
+    v = to(f64)(s)
+    if v == nil return false end
+    to(f64)(to(i64)(v)) == v
+end
+
+-- Strict: integers must match exactly, floats within 1e-4. Duo must agree with
+-- reference C or the gate fails -- that is the whole contract.
+_compare_strict(ref: any, got: any): void
+    bad = 0
+    for k, a in ref
+        b = got[k]
+        if b != nil
+            if _is_int(a) and _is_int(b)
+                if a != b
+                    print("    MISMATCH " .. k .. ":" .. a .. " vs" .. b)
+                    bad = bad + 1
+                end
+            else
+                d = to(f64)(a) - to(f64)(b)
+                if d < 0.0 d = -d end
+                if d > 0.0001
+                    print("    FLOAT DIFF " .. k .. ":" .. a .. " vs" .. b)
+                    bad = bad + 1
+                end
+            end
+        end
+    end
+    if bad == 0
+        print("    PASS")
+    else
+        _fail = 1
+    end
+end
+
+-- Loose: Lua and LuaJIT are reported, never gating. Their float formatting
+-- differs legitimately, so only integers are compared.
+_compare_loose(label: str, ref: any, got: any): void
+    print("  C vs " .. label .. ":")
+    bad = 0
+    for k, a in ref
+        b = got[k]
+        if b != nil and _is_int(a) and _is_int(b) and a != b
+            print("    MISMATCH " .. k .. ":" .. a .. " vs" .. b)
+            bad = bad + 1
+        end
+    end
+    if bad == 0 print("    PASS") end
+end
+
+main = (): i64
+    duo = "./zig-out/bin/duo"
+    cc = _env_or("CC", "clang")
+    lua = _env_or("LUA", "lua")
+    luajit = _env_or("LUAJIT", "luajit")
+
+    if not std.script.fs_exists(duo)
+        print("Building Duo compiler...")
+        if std.script.run("zig build") != 0
+            print("cross_benchmark: FAIL — zig build")
+            return 1
+        end
+    end
+
+    std.script.run("rm -rf " .. _OUT .. " && mkdir -p " .. _OUT)
+
+    print("Compiling Duo binary...")
+    if std.script.run(duo .. " compile examples/benchmark.lua -o " .. _OUT .. "/duo.out 2>/dev/null") != 0
+        print("cross_benchmark: FAIL — Duo binary did not compile")
+        return 1
+    end
+
+    print("Compiling reference C binary...")
+    sdk = std.script.chomp(std.script.capture("xcrun --sdk macosx --show-sdk-path 2>/dev/null"))
+    cflags = "-O3 -ffast-math -march=native -flto -fomit-frame-pointer -funroll-loops"
+        .. " -ffp-contract=fast -fno-trapping-math -fno-math-errno -ffunction-sections"
+        .. " -fdata-sections -Wl,-dead_strip -std=c99 -lm"
+    ccmd = "SDKROOT=" .. sdk .. " " .. cc .. " " .. cflags .. " -o " .. _OUT
+        .. "/c.out examples/benchmark_c.c"
+    if std.script.run(ccmd) != 0
+        print("cross_benchmark: FAIL — reference C did not compile")
+        return 1
+    end
+
+    -- Lua 5.5 removed math.pow; the corpus still calls it. Rewritten to `^`
+    -- into a temp copy rather than edited in place -- the corpus is shared
+    -- with the LuaJIT run and with other harnesses.
+    fixed = _OUT .. "/benchmark_pure.lua"
+    std.script.run("sed 's/math\\.pow(\\(.*\\), \\(.*\\))/\\1 ^ \\2/g' examples/benchmark_pure.lua > " .. fixed)
+
+    print("==============================================")
+    print("     Cross-Language Performance Benchmark     ")
+    print("==============================================")
+    print("")
+    print("=== Correctness (RESULT lines vs reference C) ===")
+
+    ref = _results(std.script.capture(_OUT .. "/c.out 2>/dev/null"))
+    dres = _results(std.script.capture(_OUT .. "/duo.out 2>/dev/null"))
+
+    print("  C vs Duo:")
+    _compare_strict(ref, dres)
+
+    _compare_loose("Lua", ref, _results(std.script.capture(lua .. " " .. fixed .. " 2>/dev/null")))
+    _compare_loose("LuaJIT", ref, _results(std.script.capture(luajit .. " " .. fixed .. " 2>/dev/null")))
+
+    if _fail != 0
+        print("")
+        print("Cross-language benchmark FAILED: Duo must match reference C.")
+        return 1
+    end
+
+    print("")
+    print("=== Timing (minimum of 3 runs, seconds) ===")
+    print("  Timing Duo...")
+    dt = _min_times(_OUT .. "/duo.out")
+    print("  Timing C...")
+    ct = _min_times(_OUT .. "/c.out")
+    print("  Timing Lua...")
+    lt = _min_times(lua .. " " .. fixed)
+    print("  Timing LuaJIT...")
+    jt = _min_times(luajit .. " " .. fixed)
+
+    print("")
+    print(_pad("Benchmark", 16) .. " " .. _lpad("Duo(s)", 10) .. " " .. _lpad("C(s)", 10)
+        .. " " .. _lpad("Lua(s)", 10) .. " " .. _lpad("LuaJIT", 10))
+    print(_pad("----------------", 16) .. " " .. _lpad("----------", 10) .. " "
+        .. _lpad("----------", 10) .. " " .. _lpad("----------", 10) .. " "
+        .. _lpad("----------", 10))
+
+    dc = 0.0
+    dl = 0.0
+    dj = 0.0
+    cnt = 0
+    i = 1
+    while i <= _BENCHES
+        d = dt[i]
+        c = ct[i]
+        l = lt[i]
+        j = jt[i]
+        if d != nil and c != nil and l != nil and j != nil
+            name = _names[i]
+            if name == nil name = "bench-" .. to(str)(i) end
+            print(_pad(name, 16) .. " " .. _lpad(_f6(d), 10) .. " " .. _lpad(_f6(c), 10)
+                .. " " .. _lpad(_f6(l), 10) .. " " .. _lpad(_f6(j), 10))
+            -- Geometric mean of the ratios: the mean of logs, exponentiated.
+            -- An arithmetic mean of speedups is dominated by whichever
+            -- benchmark happens to be most lopsided.
+            if d > 0.0 and c > 0.0
+                dc = dc + std.math.log(c / d)
+                dl = dl + std.math.log(l / d)
+                dj = dj + std.math.log(j / d)
+                cnt = cnt + 1
+            end
+        end
+        i = i + 1
+    end
+
+    print("")
+    print("=== Summary (geometric mean speedup) ===")
+    if cnt == 0
+        print("no comparable benchmarks")
+        return 1
+    end
+    n = to(f64)(cnt)
+    print("Duo vs C:       " .. to(str)(to(i64)(std.math.exp(dc / n) + 0.5)) .. "x faster")
+    print("Duo vs Lua:     " .. to(str)(to(i64)(std.math.exp(dl / n) + 0.5)) .. "x faster")
+    print("Duo vs LuaJIT:  " .. to(str)(to(i64)(std.math.exp(dj / n) + 0.5)) .. "x faster")
+    0
+end

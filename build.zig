@@ -106,7 +106,7 @@ pub fn build(b: *std.Build) void {
     const bench_step = b.step("bench", "Run Duo vs C benchmark suite");
     bench_step.dependOn(&bench_cmd.step);
 
-    const cross_bench_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_cross_benchmark.sh" });
+    const cross_bench_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/run_cross_benchmark.duo" });
     cross_bench_cmd.setCwd(b.path("."));
     cross_bench_cmd.step.dependOn(b.getInstallStep());
     const cross_bench_step = b.step("cross-bench", "Run cross-language benchmark (Duo vs C vs Lua vs LuaJIT)");
