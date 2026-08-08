@@ -23,7 +23,8 @@ const native_backend = @import("native_backend.zig");
 const dnir_lower = @import("dnir_lower.zig");
 const codegen_mod = @import("codegen.zig");
 
-/// How many runtime-linked modules refused the direct path, when that is why.
+/// How many linked Duo module objects call the lua runtime, when that is why
+/// the direct path was refused. Zero means the link graph was not the reason.
 var link_refusal: usize = 0;
 const backend_identity = @import("backend_identity.zig");
 const pass27_benchmark_evidence = @import("pass27_benchmark_evidence.zig");
@@ -3627,13 +3628,30 @@ fn rerootCallsInExpr(
     }
 }
 
+/// `needs_runtime`, when non-null, receives the EMITTER'S OWN verdict on the C
+/// it just wrote: false when the module lowered fully native (no `lua_*`), true
+/// when any part of it went through the boxed runtime.
+///
+/// Asking the emitter rather than inspecting the text is the whole point. The
+/// hazard this answers (gap[023]) is a native `main` linking a C-emitted module
+/// object that expects a `package` nobody initialised, and the property that
+/// decides it — "did this module emit runtime calls" — is a decision codegen
+/// makes and records, not one a caller can re-derive from the source.
 fn emitReqModuleC(
     alloc: std.mem.Allocator,
     io: Io,
     mod_src_path: []const u8,
     out_c_path: []const u8,
     target: []const u8,
+    needs_runtime: ?*bool,
 ) !void {
+    // The refusal recorder is global and "first recorder wins" holds only
+    // within one module. This emit is a whole CodeGen over somebody else's
+    // module; without this the dependency's reason survives into the driver and
+    // is printed as the PROGRAM's bail site.
+    const outer_reason = codegen_mod.native_scalar_reason_save();
+    defer codegen_mod.native_scalar_reason_restore(&outer_reason);
+
     var ps = try parse_and_check(alloc, io, mod_src_path);
     defer ps.sem.deinit();
 
@@ -3668,6 +3686,7 @@ fn emitReqModuleC(
     cg.foreign_functions = &ps.sem.foreign_functions;
     try cg.emit_module(&ps.mod);
     try aw.writer.flush();
+    if (needs_runtime) |slot| slot.* = !cg.usesFullNativeLowering();
 
     try Io.Dir.writeFile(Io.Dir.cwd(), io, .{ .sub_path = out_c_path, .data = aw.written() });
 }
@@ -3710,13 +3729,19 @@ fn compileReqModuleObject(
 /// file per `req`'d module that exports native symbols. `-Dmain=` renames each
 /// module's synthesized entry point — only the program's own object may define
 /// `main`, and the direct object is machine code, so the define cannot reach it.
+/// `runtime_needing`, when non-null, is set to how many of the returned link
+/// inputs are module objects whose C emit went through the Lua runtime. That
+/// count — not the input count — is what a native `main` cannot host, because a
+/// native main never runs `lua_package_init`. See the `too_many_modules` site.
 fn directLinkInputs(
     alloc: std.mem.Allocator,
     io: Io,
     mod: *const ast.Module,
     target: []const u8,
     cc: []const u8,
+    runtime_needing: ?*usize,
 ) ![]const []const u8 {
+    if (runtime_needing) |slot| slot.* = 0;
     var inputs: std.ArrayListUnmanaged([]const u8) = .empty;
 
     // This file is GENERATED (see emitKeywordClassifyNativeCFile above), and it
@@ -3748,7 +3773,11 @@ fn directLinkInputs(
     for (sources.items) |sp| {
         const stem = std.fs.path.stem(sp);
         const out_c = try std.fmt.allocPrint(alloc, "/tmp/duo_reqmod_{s}.c", .{stem});
-        emitReqModuleC(alloc, io, sp, out_c, target) catch {
+        // Default TRUE, so a module whose emit does not answer is counted as
+        // needing the runtime. The unsafe direction of this predicate is a
+        // SIGSEGV in a linked binary, so silence has to mean "refuse".
+        var mod_needs_runtime = true;
+        emitReqModuleC(alloc, io, sp, out_c, target, &mod_needs_runtime) catch {
             if (term.trace) term.traceStep("req-module-c-failed", .{});
             continue;
         };
@@ -3771,6 +3800,9 @@ fn directLinkInputs(
                 _ = inputs.orderedRemove(0);
             }
             try inputs.append(alloc, out_o);
+            if (mod_needs_runtime) {
+                if (runtime_needing) |slot| slot.* += 1;
+            }
         } else {
             if (term.trace) term.traceStep("req-module-object-skipped", .{});
         }
@@ -3813,8 +3845,8 @@ fn reportDirectBackendError(io: Io, err: anyerror, target: []const u8, trace: ?*
         var rbuf: [64]u8 = undefined;
         if (codegen_mod.native_scalar_reason(&rbuf)) |why| {
             term.hint("bail site: native-scalar precheck — {s}", .{why});
-        } else if (link_refusal > 1) {
-            term.hint("bail site: direct link — {d} runtime-linked modules (max 1)", .{link_refusal});
+        } else if (link_refusal > 0) {
+            term.hint("bail site: direct link — {d} linked module object(s) call the lua runtime", .{link_refusal});
         } else if (native_backend.refusal_site.line != 0) {
             // Third layer: the module lowered to DNIR and the ARM64 emitter
             // refused it. Reported last because it is the only one reachable
@@ -4004,22 +4036,18 @@ fn do_compile(
                     // is the CALLEE. Measured -- it is true for the program
                     // above, which still segfaulted.
                     //
-                    // The honest signal is whether this native executable has to
-                    // link Duo module objects at all. Those objects are C-emitted
-                    // and expect the runtime; if any exist, a native main cannot
-                    // host them.
-                    // directLinkInputs ALWAYS appends the generated keyword
-                    // classifier, so "empty" is never the test -- gating on
-                    // `.len == 0` declined every direct compile, scalar programs
-                    // included. Anything BEYOND that baseline is a Duo module
-                    // object, added only when `exportingModuleSources` is
-                    // non-empty, and those objects are the ones that expect a
-                    // runtime a native main never starts.
+                    // The honest signal is whether any Duo module object this
+                    // native executable links CALLS THE RUNTIME. Not whether one
+                    // exists -- see the `too_many_modules` note below, where
+                    // counting them refused the supported case for two days --
+                    // but whether its C emit went through `lua_*` at all.
+                    // `directLinkInputs` asks the emitter that wrote each object
+                    // and reports the count.
                     // Absorb plain-Duo `req` modules into this object BEFORE
                     // the link graph is measured. A module that splices in is
                     // no longer a link input, so doing this first is also what
-                    // keeps the "max 1 runtime-linked module" ceiling from
-                    // counting dependencies that no longer need an object.
+                    // keeps the runtime-needing count from charging for
+                    // dependencies that no longer need an object.
                     //
                     // THE SPLICE BELONGS TO THIS OBJECT AND NOTHING ELSE. It
                     // rewrites `ps.mod` in place, and `ps.mod` is also what the
@@ -4042,7 +4070,8 @@ fn do_compile(
                     const pre_splice_stmts = ps.mod.body.stmts;
                     const spliced = spliceReqModules(alloc, io, &ps.mod) catch 0;
                     if (spliced != 0 and term.trace) term.traceStep("req-splice", .{});
-                    const runtime_linked_modules = try directLinkInputs(alloc, io, &ps.mod, mt, cc);
+                    var runtime_needing_modules: usize = 0;
+                    const runtime_linked_modules = try directLinkInputs(alloc, io, &ps.mod, mt, cc, &runtime_needing_modules);
                     // Three ways to end up here and only two of them had a
                     // reason attached. The precheck records its own, the
                     // backend now records its own, and this arm's SECOND
@@ -4050,14 +4079,49 @@ fn do_compile(
                     // silent third: a module that passes the precheck and would
                     // lower fine is refused for a link-graph property, and the
                     // DNB001 named nothing at all.
-                    const too_many_modules = runtime_linked_modules.len > 1;
-                    if (too_many_modules) link_refusal = runtime_linked_modules.len;
+                    //
+                    // COUNTING THE OBJECTS WAS THE WRONG QUESTION. `.len > 1`
+                    // means "any Duo module object at all beyond the generated
+                    // classifier", and that refused the one cross-module shape
+                    // the direct backend was BUILT for: a module exporting C
+                    // symbols, called through a `bl` with a relocation.
+                    // `examples/duo_emit_machine_code.duo` is that shape, and
+                    // `zig build direct-module-link` — the gate whose entire
+                    // job is to prove it — could not pass at all from the
+                    // moment gap[023] landed until now, because `std.emit` is
+                    // one object and one is already over the ceiling.
+                    //
+                    // The hazard gap[023] actually measured is narrower: a
+                    // linked module object that CALLS THE RUNTIME (`lua_require`
+                    // reading a zeroed `package`). `std.emit` emits no `lua_*`
+                    // at all — its own header says so — so linking it into a
+                    // native main is exactly as safe as the classifier.
+                    // So ask the emitter which kind of object it wrote, and
+                    // count only the ones that need a runtime nobody starts.
+                    //
+                    // THE OLD `.len > 1` STAYS AS A CONJUNCT, deliberately, so
+                    // this change can only ever ACCEPT MORE. Dropping it cost
+                    // three programs immediately — `pass16_m1_lexer_proof`,
+                    // `native_only/lexer_native`, `native_only/parser_blocks` —
+                    // and the reason is the `token/classify.duo` swap in
+                    // directLinkInputs: that module's object REPLACES the
+                    // generated classifier at inputs[0], so the link line still
+                    // has exactly one entry. Its C is 1774 `lua_*` calls, so the
+                    // runtime-needing count says 1 and the object count says
+                    // "no change from baseline". They disagree, the three
+                    // programs have been shipping on the second answer, and
+                    // deciding which is right is a question about that swap, not
+                    // about this predicate. Keeping both conditions preserves
+                    // the accepted set exactly and adds only the runtime-free
+                    // objects — which is the whole intended change.
+                    const too_many_modules = runtime_needing_modules > 0 and runtime_linked_modules.len > 1;
+                    if (too_many_modules) link_refusal = runtime_needing_modules;
                     const obj_result = if (native_scalar_candidate and !too_many_modules)
                         native_backend.emitObjectForExecutable(alloc, &ps.mod, entry)
                     else
                         @as(@TypeOf(native_backend.emitObjectForExecutable(alloc, &ps.mod, entry)), error.UnsupportedProgram);
                     if (obj_result) |obj| {
-                        const direct_extra = try directLinkInputs(alloc, io, &ps.mod, mt, cc);
+                        const direct_extra = try directLinkInputs(alloc, io, &ps.mod, mt, cc, null);
                         const obj_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_native.o", .{std.fs.path.stem(src_path)});
                         const cwd = Io.Dir.cwd();
                         try Io.Dir.writeFile(cwd, io, .{ .sub_path = obj_path, .data = obj });

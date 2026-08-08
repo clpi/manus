@@ -185,6 +185,47 @@ pub fn native_scalar_reason_reset() void {
     native_scalar_fail_line = 0;
 }
 
+/// A saved refusal reason, so a nested emit cannot steal the outer one.
+///
+/// The recorder is a pair of globals and "first recorder wins" is its whole
+/// contract — which holds only within ONE module. `directLinkInputs` runs a
+/// full CodeGen over each `req`'d module, and that inner run records the
+/// MODULE's reason into the same globals. When the program itself was clean,
+/// the driver then printed the dependency's reason as the program's:
+/// `parse.duo`, three lines with no `any` in them, was refused with
+/// "param-type:any" — the tag belonged to `std.compiler.parser`.
+///
+/// The tag is copied by VALUE because `native_diag_fail_fmt` writes through a
+/// single fixed buffer; holding the slice across a nested emit would restore a
+/// pointer to whatever the nested run wrote there.
+pub const NativeScalarReason = struct {
+    buf: [96]u8 = undefined,
+    len: usize = 0,
+    have_tag: bool = false,
+    line: u32 = 0,
+};
+
+pub fn native_scalar_reason_save() NativeScalarReason {
+    var s: NativeScalarReason = .{};
+    s.line = native_scalar_fail_line;
+    if (native_diag_tag) |t| {
+        s.have_tag = true;
+        s.len = @min(t.len, s.buf.len);
+        @memcpy(s.buf[0..s.len], t[0..s.len]);
+    }
+    return s;
+}
+
+pub fn native_scalar_reason_restore(s: *const NativeScalarReason) void {
+    native_scalar_fail_line = s.line;
+    if (!s.have_tag) {
+        native_diag_tag = null;
+        return;
+    }
+    @memcpy(native_diag_buf[0..s.len], s.buf[0..s.len]);
+    native_diag_tag = native_diag_buf[0..s.len];
+}
+
 pub const CodeGenError = error{
     Unsupported,
     InternalError,
@@ -3333,7 +3374,18 @@ pub const CodeGen = struct {
                     // Allow closures and methods — they compile to C functions.
                     if (fd.func.type_params != null) return nofit(@src());
                     if (!self.type_expr_is_native_scalar(contract_ret(&fd.func))) {
-                        native_diag_fail_fmt("ret-type:{s}", .{typeLabel(fd.func.ret_type)});
+                        // The tag has to name what the PREDICATE saw, not what
+                        // the source spells. `contract_ret` answers `.inferred`
+                        // for a fallible contract, so `scan(b: i64): i64 | error`
+                        // reported "ret-type:i64" — a type that is perfectly
+                        // native — and sent a reader to the wrong line. What
+                        // disqualifies it is the result pack, which has no
+                        // native ABI yet.
+                        if (fd.func.ret_fallible) {
+                            native_diag_fail_fmt("ret-pack:{s}|error", .{typeLabel(fd.func.ret_type)});
+                        } else {
+                            native_diag_fail_fmt("ret-type:{s}", .{typeLabel(fd.func.ret_type)});
+                        }
                         return nofit(@src());
                     }
                     for (fd.func.params) |param| {
