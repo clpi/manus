@@ -97,6 +97,13 @@ pub const Parser = struct {
     /// `tmp = a[i]; a[i] = a[j]; a[j] = tmp` is three statements on one
     /// rendered line and its second and third columns render nothing.
     prev_line: u32 = 0,
+    /// One past the last column of the most recently consumed token, on
+    /// `prev_line`. ADJACENCY is a grammar fact in Duo — `>>=` is `>>` with an
+    /// `=` glued to it (§20's leb128 encoder), and §4 draws the same line
+    /// through `.`: `a.b` glued is DATA ACCESS, a leading `.` is the anchor
+    /// walk. Nothing else in the parser can recover that, because a Loc
+    /// carries no end.
+    prev_end_col: u32 = 0,
     /// Set by `parse_type` when the type just read carried a `| alt`
     /// alternative other than `nil`. Read only where a FUNCTION CONTRACT is
     /// parsed — the one position Pass 100 §8 gives the union a meaning:
@@ -390,7 +397,35 @@ pub const Parser = struct {
     fn adv(self: *Parser) ParseError!Token {
         const tok = try self.lex.next();
         self.prev_line = tok.loc.line;
+        self.prev_end_col = tok.loc.col + @as(u32, @intCast(tok.text.len));
         return tok;
+    }
+
+    /// Whether `tok` is written with no gap after the token just consumed.
+    /// §4 gives `.` two readings and separates them by POSITION: `a.b` is data
+    /// access, ` .b` is the leading anchor walk. Only the source spacing tells
+    /// them apart, so this is the same adjacency test `peek_glued_assign` uses
+    /// for `>>=` — one rule, two spellings.
+    fn glued_to_prev(self: *Parser, tok: Token) bool {
+        return tok.loc.line == self.prev_line and tok.loc.col == self.prev_end_col;
+    }
+
+    /// `@` with nothing after it to name: the BARE anchor of §2, as opposed to
+    /// every prefix spelling (`@comp.…`, `@c.emit`, `@{ … }`), which reads a
+    /// name or a table. Argument-list closers only — the position §20 writes
+    /// it in — so this cannot reinterpret an existing attribute.
+    fn at_is_bare_anchor(self: *Parser) ParseError!bool {
+        const saved = self.lex.saveState();
+        const saved_line = self.prev_line;
+        const saved_end = self.prev_end_col;
+        defer {
+            self.lex.restoreState(saved);
+            self.prev_line = saved_line;
+            self.prev_end_col = saved_end;
+        }
+        _ = try self.adv();
+        const nxt = (try self.pk()).kind;
+        return nxt == .rparen or nxt == .comma;
     }
 
     fn expect(self: *Parser, kind: TK) ParseError!Token {
@@ -758,7 +793,17 @@ pub const Parser = struct {
             },
             .name => {
                 const t = try self.adv();
-                if (try self.eat(.colon) != null) {
+                // `T: Concept` is a constraint on the type just named, so it is
+                // written beside it. On a NEW line the `:` is the next
+                // statement's, and §20's `token` slot is exactly that case:
+                //
+                //     token = (): token | error
+                //         :skip(space)
+                //
+                // The alternative `error` swallowed the sibling call as its
+                // constraint, so the body began one statement late and the
+                // failure surfaced as an offside error two lines further down.
+                if ((try self.pk()).loc.line == t.loc.line and try self.eat(.colon) != null) {
                     return try self.parse_constrained_type_param(t.text);
                 }
                 return .{ .named = t.text };
@@ -2522,6 +2567,15 @@ pub const Parser = struct {
             .pipe,
             .kw_function,
             .kw_fun,
+            // §20's `skip = (p) while b = :peek() and p(b) .pos += 1`. A loop
+            // is the one statement with no expression spelling, so a one-line
+            // callable body that is a loop can only be written this way.
+            // Before this the group scanned as a GROUPING paren, `skip = (p)`
+            // bound the parameter name as a value and the loop became a
+            // sibling statement — `duo check` clean, `use of undeclared
+            // identifier 'p'` out of the C backend.
+            .kw_while,
+            .kw_for,
             => true,
             else => false,
         };
@@ -2649,7 +2703,19 @@ pub const Parser = struct {
         // Accept either `-> type` or `: type` for the return type.
         var ret_type: ast.TypeExpr = .inferred;
         var ret_fallible = false;
-        if (try self.eat(.arrow) != null or try self.eat(.colon) != null) {
+        // The contract belongs to the HEADER, so it is written on the header's
+        // line (§3: statements end at newline, and a signature is not a
+        // continuation). Without the line test the leading `:m()` sibling call
+        // of §20's `token` slot —
+        //
+        //     token = ()
+        //         :skip(space)
+        //
+        // — had its `:` eaten as the return-type colon and `skip(space)` read
+        // as the contract, so the body silently began one statement late and
+        // surfaced as an offside error pointing at the NEXT line.
+        const contract_here = (try self.pk()).loc.line == rparen_tok.loc.line;
+        if (contract_here and (try self.eat(.arrow) != null or try self.eat(.colon) != null)) {
             self.union_alternative_seen = false;
             ret_type = try self.parse_type();
             ret_fallible = self.union_alternative_seen;
@@ -2670,6 +2736,16 @@ pub const Parser = struct {
             try self.close_block(l, self.last_layout.offside);
             break :blk b;
         } else blk: {
+            // A one-line body that is a LOOP is a statement, not an expression
+            // (§20 `skip = (p) while … .pos += 1`). Restricted to `while`/`for`
+            // deliberately: `if` on one line stays the expression-if of §6
+            // (`peek = () if .pos < #.src .src[.pos] else nil`), so this cannot
+            // change what any existing one-line `if` body means.
+            if (body_tok.kind == .kw_while or body_tok.kind == .kw_for) {
+                const stmts = try self.alloc.alloc(ast.Stmt, 1);
+                stmts[0] = try self.parse_stmt();
+                break :blk ast.Block{ .loc = body_tok.loc, .stmts = stmts, .tail_expr = null };
+            }
             if (try self.func_body_should_use_expr_stmt()) {
                 const stmt = try self.parse_expr_stmt();
                 break :blk switch (stmt) {
@@ -4821,7 +4897,23 @@ pub const Parser = struct {
                 const name_tok = try self.adv();
                 break :blk self.new_expr(.{ .name = .{ .loc = name_tok.loc, .ident = name_tok.text } });
             },
-            .at => self.parse_macro_call_expr(),
+            .at => blk: {
+                // §2, the @ DYAD — **bare `@` NAMES** the anchor. §20's lexer
+                // hands it to a callable it retrieved from a table:
+                // `if r = read[b] return r(@)`. The anchor of a slot body is
+                // its receiver, which `parse_descriptor_slot` already binds as
+                // the first parameter, so naming it is the whole lowering —
+                // no new node, and nothing downstream re-derives a stance.
+                //
+                // Recognised only where there is NOTHING for `@` to name (an
+                // argument-list closer), so every prefix spelling still
+                // reaches the macro path with its bytes untouched.
+                if (try self.at_is_bare_anchor()) {
+                    const l = (try self.adv()).loc;
+                    break :blk self.new_expr(.{ .name = .{ .loc = l, .ident = "self" } });
+                }
+                break :blk self.parse_macro_call_expr();
+            },
             .lparen => blk: {
                 if (try self.starts_parenthesized_func_expr()) {
                     const l = (try self.pk()).loc;
@@ -4962,8 +5054,12 @@ pub const Parser = struct {
             },
         });
 
-        // Support chained projections: .a.b.c
-        while ((try self.pk()).kind == .dot) {
+        // Support chained projections: .a.b.c — GLUED, the same rule the
+        // suffix loop applies. `.a .b` is TWO leading walks, which is what
+        // §20's `if .pos < #.src .src[.pos] else nil` writes: without the
+        // adjacency test this loop swallows the then-expression into the
+        // condition and the `else` has nothing in front of it.
+        while ((try self.pk()).kind == .dot and self.glued_to_prev(try self.pk())) {
             const chain_dot = try self.adv();
             const chain_field = try self.expect_name_like();
             accessor = try self.new_expr(.{
@@ -5058,7 +5154,11 @@ pub const Parser = struct {
 
     fn parse_if_expr_after_if(self: *Parser, l: ast.Loc, consume_end: bool) ParseError!*ast.Expr {
         const cond = try self.parse_expr();
-        _ = try self.eat(.kw_then);
+        // Pass 100 §6: `kind = if tok.keyword keyword else name` — the
+        // expression-if IS the ternary, and like every other one-liner it is
+        // terminated by the newline (§3.3), not by a closer. `then` is what
+        // tells the two dialects apart, so it is recorded rather than dropped.
+        const saw_then = (try self.eat(.kw_then)) != null;
         const then_expr = try self.parse_expr();
 
         var else_expr: *ast.Expr = undefined;
@@ -5077,7 +5177,20 @@ pub const Parser = struct {
         } else {
             else_expr = try self.new_expr(.{ .nil = l });
         }
-        if (consume_end) _ = try self.expect(.kw_end);
+        if (consume_end) {
+            // A written `end` is "accepted and deleted" (§3.4), never demanded,
+            // for the endless form. The legacy `if c then a else b end` keeps
+            // demanding it, so no file that writes `then` can move; and the
+            // endless form only ever eats an `end` sitting on the `if`'s OWN
+            // line, so an `end` that closes an ENCLOSING block is never
+            // swallowed — that mis-parse would silently retarget a closer.
+            if (saw_then) {
+                _ = try self.expect(.kw_end);
+            } else {
+                const closer = try self.pk();
+                if (closer.kind == .kw_end and closer.loc.line == l.line) _ = try self.adv();
+            }
+        }
         return self.new_expr(.{ .if_expr = try self.new_if_expr(l, cond, then_expr, else_expr) });
     }
 
@@ -5346,6 +5459,15 @@ pub const Parser = struct {
             const tok = try self.pk();
             switch (tok.kind) {
                 .dot => {
+                    // §4, and §20's `peek = () if .pos < #.src .src[.pos] else nil`:
+                    // `#.src .src[.pos]` is a comparison against `#.src` followed
+                    // by the one-line then-expression, not `#((.src).src[.pos])`.
+                    // A `.` with a gap in front of it is the LEADING anchor walk
+                    // and starts a fresh expression; only a glued `.` continues
+                    // the one on the left. Without this the two stances of `.`
+                    // are indistinguishable inside a line and the longer parse
+                    // always wins, which is how the then-expression was eaten.
+                    if (!self.glued_to_prev(tok)) break;
                     _ = try self.adv();
                     // Pass 100 §2 THE ANCHOR gives the anchor exactly three
                     // stances — bare `@` NAMES it, leading `.` WALKS from it,
