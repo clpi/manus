@@ -8998,6 +8998,20 @@ pub const CodeGen = struct {
         }
     }
 
+    /// A dense slot holds a native `int64_t`/`double`. The value being stored can
+    /// still be a boxed expression — `t[i] = n - i + 1` where `n` is an `any`
+    /// parameter lowers to `lua_add(lua_sub(n, …), …)`. Unbox it here rather than
+    /// disqualifying the table: the arithmetic has already forced a number.
+    fn emit_dense_value(self: *CodeGen, val: *const ast.Expr, info: DenseInfo) E!void {
+        if (self.expr_type(val).is_numeric()) {
+            try self.emit_expr(val);
+            return;
+        }
+        self.p("({s})lua_to_num(", .{info.elem()});
+        try self.emit_as_lua_value(val);
+        self.p(")", .{});
+    }
+
     fn is_dense_table_index(self: *CodeGen, obj: *const ast.Expr) bool {
         if (obj.* != .name) return false;
         const name = obj.name.ident;
@@ -10609,7 +10623,7 @@ pub const CodeGen = struct {
                             };
                             self.ind();
                             self.p("duo_dt_set_{s}(&__dt_{s}, &__dtc_{s}, {d}, ", .{ info.sfx(), lname.ident, lname.ident, f_idx + 1 });
-                            try self.emit_expr(val);
+                            try self.emit_dense_value(val, info);
                             self.p(");\n", .{});
                         }
                         try self.note_comptime_unavailable(lname.ident);
@@ -11003,7 +11017,7 @@ pub const CodeGen = struct {
                                     };
                                     self.ind();
                                     self.p("duo_dt_set_{s}(&__dt_{s}, &__dtc_{s}, {d}, ", .{ info.sfx(), name, name, f_idx + 1 });
-                                    try self.emit_expr(val);
+                                    try self.emit_dense_value(val, info);
                                     self.p(");\n", .{});
                                 }
                                 try self.note_comptime_unavailable(name);
@@ -11163,7 +11177,7 @@ pub const CodeGen = struct {
                                 self.p("duo_dt_set_{s}(&__dt_{s}, &__dtc_{s}, ", .{ info.sfx(), dt, dt });
                                 try self.emit_i64_index_key(idx.key);
                                 self.p(", ", .{});
-                                if (i < as.values.len) try self.emit_expr(as.values[i]) else self.p("0", .{});
+                                if (i < as.values.len) try self.emit_dense_value(as.values[i], info) else self.p("0", .{});
                                 self.p(");\n", .{});
                             }
                         } else if (self.expr_is_dynamic_table(idx.obj)) {

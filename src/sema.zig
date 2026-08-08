@@ -3443,7 +3443,15 @@ pub const Sema = struct {
         fb.use_prime_sieve = detect_trial_division_primes(fb);
         try detect_string_scan_loops(fb);
         fb.use_grid_sum_inline = detect_grid_sum_inline(fb);
-        fb.use_dense_table_max = fb.use_dense_table and detect_dense_table_max(fb);
+        // `use_dense_table_max` is never claimed. Its emitter
+        // (`emit_dense_table_max_body`) ignores the table entirely: it returns a
+        // literal 100002 above a threshold and otherwise recomputes
+        // `(i * 17) % 100003` — one specific fill expression — instead of reading
+        // what the loop actually stored. Its detector only checks that *some*
+        // `t[i] > m` comparison exists, so any user maximum-of-an-array loop got
+        // that answer. The general dense array path lowers the real loop.
+        fb.use_dense_table_max = false;
+        _ = &detect_dense_table_max;
         fb.use_table_lookup_sum = detect_table_lookup_sum(fb);
         fb.use_dense_table_mod997_sum = detect_dense_table_mod997_sum(fb);
         detect_dense_table_sum_patterns(fb);
@@ -4583,9 +4591,14 @@ pub const Sema = struct {
             if (degree == 1 and reduced.coeffs[1] == 1 and reduced.coeffs[0] == 0) {
                 fb.use_dense_table_identity_sum = true;
             } else if (degree == 1) {
-                fb.use_dense_table_sum = true;
-                fb.dense_table_sum_mul = reduced.coeffs[1];
-                fb.dense_table_sum_add = reduced.coeffs[0];
+                // NOT claimed. `emit_dense_table_sum_body` — the only consumer of
+                // `use_dense_table_sum` — fills the array with `t[i] = i` and
+                // never reads `dense_table_sum_mul`/`_add`, so it answers the
+                // identity for every non-identity polynomial it is handed:
+                // `t[i] = i * 2; s += t[i]` over 1..10 returned 55, not 110. The
+                // identity case above is the only one it actually computes, and
+                // that one has its own closed-form emitter. Falling through here
+                // lowers the loop for real, through the dense array path.
             } else if (degree == 2 and reduced.coeffs[2] == 1 and reduced.coeffs[1] == 0 and reduced.coeffs[0] == 0) {
                 fb.use_dense_table_square_sum = true;
             } else if (degree == 2) {
@@ -6749,58 +6762,166 @@ pub const Sema = struct {
     /// Returns true for: numeric for-loop variables, integer literal locals,
     /// and function parameters with numeric type annotations.
     fn is_known_numeric_name(fb: *const ast.FuncBody, name: []const u8) bool {
-        // Check numeric for-loop variables (i = 1, n)
-        for (fb.body.stmts) |*stmt| {
-            if (stmt.* == .num_for) {
-                const nf = stmt.num_for;
-                if (std.mem.eql(u8, nf.var_name, name)) return true;
-            }
-        }
-        // Check function parameters with numeric type annotations
+        var in_flight: [8][]const u8 = undefined;
+        return numeric_name_rec(fb, name, &in_flight, 0);
+    }
+
+    /// A name holds a number when *every* binding of it in this body binds a
+    /// numeric expression.
+    ///
+    /// The old rule was "some top-level `local_decl` initialises it with a
+    /// numeric literal". Duo has no `local`, so a while-loop cursor is spelled
+    /// `i = 1` / `i += 1` — two `.assign` statements — and matched nothing. That
+    /// is why `t[i]` inside a `while` loop never reached the dense (native
+    /// array) representation while the identical loop written `for i = 1, n`
+    /// did: the *loop form*, not the table, decided the representation.
+    ///
+    /// `in_flight` breaks the `i = i + 1` cycle: a self-reference contributes
+    /// nothing, which is the standard fixpoint reading — `i` is numeric if its
+    /// other bindings are.
+    fn numeric_name_rec(fb: *const ast.FuncBody, name: []const u8, in_flight: *[8][]const u8, depth: usize) bool {
+        if (depth >= in_flight.len) return false;
+        for (in_flight[0..depth]) |n| if (std.mem.eql(u8, n, name)) return true;
+
+        // A numeric-for control variable is numeric by construction.
+        if (block_declares_num_for(&fb.body, name, 0)) return true;
+
+        // A parameter's value comes from the caller: only the annotation vouches
+        // for it. `any` (and no annotation) does not.
         for (fb.params) |p| {
-            if (std.mem.eql(u8, p.name, name)) {
-                // Parameters with array/int/float type annotations are numeric
-                if (p.typ == .array) return true;
-                if (p.typ == .named) {
-                    const tn = p.typ.named;
-                    if (std.mem.eql(u8, tn, "int") or
-                        std.mem.eql(u8, tn, "i32") or
-                        std.mem.eql(u8, tn, "i64") or
-                        std.mem.eql(u8, tn, "float") or
-                        std.mem.eql(u8, tn, "double") or
-                        std.mem.eql(u8, tn, "f32") or
-                        std.mem.eql(u8, tn, "f64") or
-                        std.mem.eql(u8, tn, "u32") or
-                        std.mem.eql(u8, tn, "u64")) return true;
-                }
-            }
+            if (!std.mem.eql(u8, p.name, name)) continue;
+            if (p.typ == .array) return true;
+            if (p.typ != .named) return false;
+            const tn = p.typ.named;
+            return std.mem.eql(u8, tn, "int") or std.mem.eql(u8, tn, "i8") or
+                std.mem.eql(u8, tn, "i16") or std.mem.eql(u8, tn, "i32") or
+                std.mem.eql(u8, tn, "i64") or std.mem.eql(u8, tn, "u8") or
+                std.mem.eql(u8, tn, "u16") or std.mem.eql(u8, tn, "u32") or
+                std.mem.eql(u8, tn, "u64") or std.mem.eql(u8, tn, "float") or
+                std.mem.eql(u8, tn, "double") or std.mem.eql(u8, tn, "f32") or
+                std.mem.eql(u8, tn, "f64");
         }
-        // Check local declarations with integer/float literal initializers
-        for (fb.body.stmts) |*stmt| {
-            if (stmt.* == .local_decl) {
-                const ld = stmt.local_decl;
-                if (ld.names.len == 1 and ld.inits.len == 1) {
-                    if (std.mem.eql(u8, ld.names[0].ident, name)) {
-                        const init_e = ld.inits[0];
-                        if (init_e.* == .int_lit or init_e.* == .float_lit) return true;
-                        // Arithmetic on known-numeric names is numeric
-                        if (init_e.* == .binop) {
-                            // Conservative: only accept if both sides are names/int/float
-                            // (avoids recursion into unknown calls)
-                            const b = init_e.binop;
-                            if (b.op != .concat) {
-                                const lhs_ok = b.lhs.* == .int_lit or b.lhs.* == .float_lit or
-                                    (b.lhs.* == .name and is_known_numeric_name(fb, b.lhs.name.ident));
-                                const rhs_ok = b.rhs.* == .int_lit or b.rhs.* == .float_lit or
-                                    (b.rhs.* == .name and is_known_numeric_name(fb, b.rhs.name.ident));
-                                if (lhs_ok and rhs_ok) return true;
-                            }
-                        }
-                    }
-                }
+
+        in_flight[depth] = name;
+        var seen = false;
+        if (!block_bindings_numeric(fb, &fb.body, name, &seen, in_flight, depth + 1)) return false;
+        return seen;
+    }
+
+    fn block_declares_num_for(blk: *const ast.Block, name: []const u8, depth: usize) bool {
+        if (depth > 24) return false;
+        for (blk.stmts) |*s| {
+            switch (s.*) {
+                .num_for => |*nf| {
+                    if (std.mem.eql(u8, nf.var_name, name)) return true;
+                    if (block_declares_num_for(&nf.body, name, depth + 1)) return true;
+                },
+                .if_stmt => |*is| {
+                    if (block_declares_num_for(&is.then, name, depth + 1)) return true;
+                    for (is.elseifs) |*ei| if (block_declares_num_for(&ei.body, name, depth + 1)) return true;
+                    if (is.else_body) |*eb| if (block_declares_num_for(eb, name, depth + 1)) return true;
+                },
+                .while_loop => |*wl| if (block_declares_num_for(&wl.body, name, depth + 1)) return true,
+                .repeat_loop => |*rl| if (block_declares_num_for(&rl.body, name, depth + 1)) return true,
+                .do_block => |*db| if (block_declares_num_for(&db.body, name, depth + 1)) return true,
+                .gen_for => |*gf| if (block_declares_num_for(&gf.body, name, depth + 1)) return true,
+                else => {},
             }
         }
         return false;
+    }
+
+    /// Walks every binding of `name` in `blk`. Returns false as soon as one
+    /// binds a non-numeric expression; sets `seen` when at least one was found.
+    fn block_bindings_numeric(
+        fb: *const ast.FuncBody,
+        blk: *const ast.Block,
+        name: []const u8,
+        seen: *bool,
+        in_flight: *[8][]const u8,
+        depth: usize,
+    ) bool {
+        if (depth > 24) return false;
+        for (blk.stmts) |*s| {
+            switch (s.*) {
+                .local_decl => |*ld| {
+                    for (ld.names, 0..) |n, i| {
+                        if (!std.mem.eql(u8, n.ident, name)) continue;
+                        if (i >= ld.inits.len) return false;
+                        seen.* = true;
+                        if (!expr_is_numeric_valued(fb, ld.inits[i], in_flight, depth)) return false;
+                    }
+                },
+                .assign => |*as| {
+                    for (as.targets, 0..) |t, i| {
+                        if (t.* != .name or !std.mem.eql(u8, t.name.ident, name)) continue;
+                        if (i >= as.values.len) return false;
+                        seen.* = true;
+                        if (!expr_is_numeric_valued(fb, as.values[i], in_flight, depth)) return false;
+                    }
+                },
+                .gen_for => |*gf| {
+                    // A generic-for control variable takes whatever the iterator
+                    // yields — unknown.
+                    for (gf.vars) |v| if (std.mem.eql(u8, v, name)) return false;
+                    if (!block_bindings_numeric(fb, &gf.body, name, seen, in_flight, depth + 1)) return false;
+                },
+                .if_stmt => |*is| {
+                    if (!block_bindings_numeric(fb, &is.then, name, seen, in_flight, depth + 1)) return false;
+                    for (is.elseifs) |*ei| if (!block_bindings_numeric(fb, &ei.body, name, seen, in_flight, depth + 1)) return false;
+                    if (is.else_body) |*eb| if (!block_bindings_numeric(fb, eb, name, seen, in_flight, depth + 1)) return false;
+                },
+                .while_loop => |*wl| if (!block_bindings_numeric(fb, &wl.body, name, seen, in_flight, depth + 1)) return false,
+                .repeat_loop => |*rl| if (!block_bindings_numeric(fb, &rl.body, name, seen, in_flight, depth + 1)) return false,
+                .do_block => |*db| if (!block_bindings_numeric(fb, &db.body, name, seen, in_flight, depth + 1)) return false,
+                .num_for => |*nf| if (!block_bindings_numeric(fb, &nf.body, name, seen, in_flight, depth + 1)) return false,
+                else => {},
+            }
+        }
+        return true;
+    }
+
+    /// Whether evaluating `expr` yields a number.
+    ///
+    /// Arithmetic and bitwise operators are numeric *regardless of their
+    /// operands*: in Lua they either produce a number or raise. That is what
+    /// lets `t[i] = n - i + 1` qualify when `n` is an `any` parameter — the
+    /// subtraction has already forced `n` to a number by the time the value
+    /// reaches the table.
+    fn expr_is_numeric_valued(
+        fb: *const ast.FuncBody,
+        expr: *const ast.Expr,
+        in_flight: *[8][]const u8,
+        depth: usize,
+    ) bool {
+        return switch (expr.*) {
+            .int_lit, .float_lit => true,
+            .name => |n| numeric_name_rec(fb, n.ident, in_flight, depth),
+            .binop => |b| switch (b.op) {
+                .add, .sub, .mul, .div, .idiv, .mod, .pow, .band, .bor, .bxor, .lshift, .rshift => true,
+                // `a and b` / `a or b` yield one of the operands.
+                .@"and", .@"or" => expr_is_numeric_valued(fb, b.lhs, in_flight, depth) and
+                    expr_is_numeric_valued(fb, b.rhs, in_flight, depth),
+                else => false,
+            },
+            .unop => |u| switch (u.op) {
+                .neg, .bnot, .len => true,
+                else => false,
+            },
+            .call => |c| blk: {
+                if (c.func.* == .name) {
+                    const nm = c.func.name.ident;
+                    break :blk std.mem.eql(u8, nm, "tonumber") or std.mem.eql(u8, nm, "floor") or
+                        std.mem.eql(u8, nm, "ceil") or std.mem.eql(u8, nm, "abs") or
+                        std.mem.eql(u8, nm, "sqrt") or std.mem.eql(u8, nm, "min") or
+                        std.mem.eql(u8, nm, "max");
+                }
+                if (c.func.* == .field and c.func.field.obj.* == .name and
+                    std.mem.eql(u8, c.func.field.obj.name.ident, "math")) break :blk true;
+                break :blk false;
+            },
+            else => false,
+        };
     }
 
     fn dense_check_non_numeric(fb: *const ast.FuncBody, expr: *const ast.Expr, non_numeric_out: *bool) void {
@@ -6829,13 +6950,21 @@ pub const Sema = struct {
                     non_numeric_out.* = true;
                 }
             },
-            .binop => |b| {
-                if (b.op == .concat) {
-                    non_numeric_out.* = true;
-                } else {
+            .binop => |b| switch (b.op) {
+                // Arithmetic and bitwise operators yield a number whatever the
+                // operands are — in Lua they coerce or raise, they never produce
+                // a string or a table. So `t[(y-1)*W + x] = n - i + 1` has a
+                // numeric key and a numeric value even when `n` is an `any`
+                // parameter. Recursing into the operands here is what made every
+                // `any`-parameterised kernel fail the dense check.
+                .add, .sub, .mul, .div, .idiv, .mod, .pow, .band, .bor, .bxor, .lshift, .rshift => {},
+                // `a and b` / `a or b` evaluate to one of the operands.
+                .@"and", .@"or" => {
                     dense_check_non_numeric(fb, b.lhs, non_numeric_out);
                     dense_check_non_numeric(fb, b.rhs, non_numeric_out);
-                }
+                },
+                // concat is a string; the comparisons are booleans.
+                else => non_numeric_out.* = true,
             },
             .call => |c| {
                 if (c.func.* == .name) {
@@ -7079,35 +7208,107 @@ pub const Sema = struct {
         return false;
     }
 
-    fn solve_index_bound(alloc: std.mem.Allocator, fb: *const ast.FuncBody, tname: []const u8) !?[]const u8 {
+    const SolvedCap = struct { str: []const u8, safe: bool };
+
+    /// True when a parameter of this name is annotated with a type that lowers
+    /// to a native C scalar. `any` (and an unannotated param) lowers to
+    /// `lua_Value`, which cannot appear in a C integer expression.
+    fn param_is_native_numeric(fb: *const ast.FuncBody, name: []const u8) bool {
+        for (fb.params) |p| {
+            if (!std.mem.eql(u8, p.name, name)) continue;
+            if (p.typ != .named) return false;
+            const tn = p.typ.named;
+            return std.mem.eql(u8, tn, "int") or std.mem.eql(u8, tn, "i8") or
+                std.mem.eql(u8, tn, "i16") or std.mem.eql(u8, tn, "i32") or
+                std.mem.eql(u8, tn, "i64") or std.mem.eql(u8, tn, "u8") or
+                std.mem.eql(u8, tn, "u16") or std.mem.eql(u8, tn, "u32") or
+                std.mem.eql(u8, tn, "u64") or std.mem.eql(u8, tn, "float") or
+                std.mem.eql(u8, tn, "double") or std.mem.eql(u8, tn, "f32") or
+                std.mem.eql(u8, tn, "f64");
+        }
+        return false;
+    }
+
+    /// Whether `format_expr_c` renders this expression as a valid C *integer*
+    /// expression. Only a bare name can fail: it renders as the C identifier,
+    /// whose type is whatever the local or parameter is. Everything else renders
+    /// as a literal, as an explicitly-cast `lua_to_num(...)`, or as `0`.
+    fn cap_expr_is_native(fb: *const ast.FuncBody, expr: *const ast.Expr) bool {
+        return switch (expr.*) {
+            .name => |n| param_is_native_numeric(fb, n.ident) or is_local_num_const(fb, n.ident),
+            .binop => |b| cap_expr_is_native(fb, b.lhs) and cap_expr_is_native(fb, b.rhs),
+            else => true,
+        };
+    }
+
+    /// True when `name` is a function-local bound *only* to numeric literals.
+    /// Such a local is emitted as a native C scalar, so it is safe in a cap
+    /// expression. A name with no binding in this body (a global, an upvalue) is
+    /// not vouched for.
+    fn is_local_num_const(fb: *const ast.FuncBody, name: []const u8) bool {
+        var found = false;
+        for (fb.body.stmts) |*stmt| {
+            var nm: []const u8 = "";
+            var init_e: *const ast.Expr = undefined;
+            if (stmt.* == .local_decl) {
+                const ld = stmt.local_decl;
+                if (ld.names.len != 1 or ld.inits.len != 1) continue;
+                nm = ld.names[0].ident;
+                init_e = ld.inits[0];
+            } else if (stmt.* == .assign) {
+                const as = stmt.assign;
+                if (as.targets.len != 1 or as.values.len != 1) continue;
+                if (as.targets[0].* != .name) continue;
+                nm = as.targets[0].name.ident;
+                init_e = as.values[0];
+            } else continue;
+            if (!std.mem.eql(u8, nm, name)) continue;
+            if (init_e.* != .int_lit and init_e.* != .float_lit) return false;
+            found = true;
+        }
+        return found;
+    }
+
+    fn solve_index_bound(alloc: std.mem.Allocator, fb: *const ast.FuncBody, tname: []const u8) !?SolvedCap {
         var has_nested = false;
         var outer_limit: ?[]const u8 = null;
         var inner_limit: ?[]const u8 = null;
+        var outer_safe = true;
+        var inner_safe = true;
         for (fb.body.stmts) |*s| {
             if (s.* == .num_for) {
                 const nf = s.num_for;
                 if (nf.stop.* == .binop and nf.stop.binop.op == .sub) {
                     outer_limit = try format_expr_c(alloc, nf.stop.binop.lhs);
+                    outer_safe = cap_expr_is_native(fb, nf.stop.binop.lhs);
                 } else {
                     outer_limit = try format_expr_c(alloc, nf.stop);
+                    outer_safe = cap_expr_is_native(fb, nf.stop);
                 }
                 for (nf.body.stmts) |*s2| {
                     if (s2.* == .num_for) {
                         const nf2 = s2.num_for;
                         inner_limit = try format_expr_c(alloc, nf2.stop);
+                        inner_safe = cap_expr_is_native(fb, nf2.stop);
                         has_nested = true;
                     }
                 }
             }
         }
         if (has_nested and outer_limit != null and inner_limit != null) {
-            return try std.fmt.allocPrint(alloc, "{s} * {s}", .{ outer_limit.?, inner_limit.? });
+            return .{
+                .str = try std.fmt.allocPrint(alloc, "{s} * {s}", .{ outer_limit.?, inner_limit.? }),
+                .safe = outer_safe and inner_safe,
+            };
         }
         for (fb.body.stmts) |*s| {
             if (s.* == .num_for) {
                 const nf = s.num_for;
                 if (block_assigns_to_table(&nf.body, tname)) {
-                    return try format_expr_c(alloc, nf.stop);
+                    return .{
+                        .str = try format_expr_c(alloc, nf.stop),
+                        .safe = cap_expr_is_native(fb, nf.stop),
+                    };
                 }
             }
         }
@@ -7166,6 +7367,13 @@ pub const Sema = struct {
         if (table_names.items.len == 0) return;
 
         var cap: []const u8 = "";
+        // Whether `cap` is a valid C *integer* expression at the allocation
+        // point. A `lua_Value` parameter name is not, and emitting it was a hard
+        // C compile error ("invalid operands to binary expression") — so
+        // `f(n: any)` holding a table could not be compiled at all. The dense
+        // accessors grow on demand, so an unsafe cap now only means no
+        // up-front reservation.
+        var cap_safe = true;
         var param_is_bound = false;
         if (fb.params.len == 1) {
             const pcap = fb.params[0].name;
@@ -7183,7 +7391,10 @@ pub const Sema = struct {
                     }
                 }
             }
-            if (param_is_bound) cap = pcap;
+            if (param_is_bound) {
+                cap = pcap;
+                cap_safe = param_is_native_numeric(fb, pcap);
+            }
         }
 
         if (!param_is_bound) {
@@ -7206,6 +7417,7 @@ pub const Sema = struct {
                 if (init_expr.* != .table) continue;
                 if (init_expr.table.fields.len == 0) continue;
                 cap = try std.fmt.allocPrint(alloc, "{d}", .{init_expr.table.fields.len});
+                cap_safe = true;
                 found_lit_cap = true;
                 break;
             }
@@ -7213,7 +7425,8 @@ pub const Sema = struct {
                 var found_any_cap = false;
                 for (table_names.items) |tname| {
                     if (try solve_index_bound(alloc, fb, tname)) |solved| {
-                        cap = solved;
+                        cap = solved.str;
+                        cap_safe = solved.safe;
                         found_any_cap = true;
                         break;
                     }
@@ -7244,6 +7457,7 @@ pub const Sema = struct {
                             // happens before the local decl is emitted.
                             const val = ld2.inits[0].int_lit.val;
                             cap = try std.fmt.allocPrint(alloc, "{d}", .{val});
+                            cap_safe = true;
                         }
                     }
                 }
@@ -7310,10 +7524,18 @@ pub const Sema = struct {
         // Populate the multi-table lists.
         fb.dense_tables = try alloc.dupe([]const u8, qualifying.items);
         const caps_buf = try alloc.alloc([]const u8, qualifying.items.len);
+        const cap_safe_buf = try alloc.alloc(bool, qualifying.items.len);
         for (qualifying.items, 0..) |tname, idx| {
-            caps_buf[idx] = (try solve_index_bound(alloc, fb, tname)) orelse cap;
+            if (try solve_index_bound(alloc, fb, tname)) |solved| {
+                caps_buf[idx] = solved.str;
+                cap_safe_buf[idx] = solved.safe;
+            } else {
+                caps_buf[idx] = cap;
+                cap_safe_buf[idx] = cap_safe;
+            }
         }
         fb.dense_table_caps = caps_buf;
+        fb.dense_table_cap_safe = cap_safe_buf;
         fb.dense_table_floats = try alloc.dupe(bool, qualifying_floats.items);
 
         // Set backward-compat single-table fields from the first qualifying table.
