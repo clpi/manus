@@ -1470,6 +1470,90 @@ pub const CodeGen = struct {
         return self.try_emit_static_method_call(table_name, method, null, args);
     }
 
+    /// gap[032]: `recv:sub(i, j)` where the receiver's static type is `any`.
+    ///
+    /// The receiver's runtime type decides. A string takes the string face; a
+    /// table takes the ordinary member lookup, unchanged, so a table carrying
+    /// its own `sub` still wins its own name (LAW-CALL). The receiver and every
+    /// argument are bound to temporaries first, so each is evaluated exactly
+    /// once no matter which arm runs.
+    ///
+    /// Names already claimed by the file and str-buf faces in the `any` arm
+    /// (`get`, `set`, `read`, `write`, `len`, `close`, ...) are deliberately
+    /// absent — this only covers faces that have no other meaning on `any`.
+    fn try_emit_guarded_string_face(
+        self: *CodeGen,
+        method: []const u8,
+        obj: *ast.Expr,
+        args: []const *ast.Expr,
+    ) E!bool {
+        if (!self.moduleNeedsLuaRuntime()) return false;
+        const Face = struct { name: []const u8, cfn: []const u8, arity: usize };
+        const faces = [_]Face{
+            .{ .name = "sub", .cfn = "lua_str_sub", .arity = 3 },
+            .{ .name = "byte", .cfn = "lua_str_byte", .arity = 3 },
+            .{ .name = "rep", .cfn = "lua_str_rep", .arity = 3 },
+            .{ .name = "gsub", .cfn = "lua_str_gsub", .arity = 3 },
+            .{ .name = "gmatch", .cfn = "lua_str_gmatch", .arity = 3 },
+            .{ .name = "find", .cfn = "lua_str_find", .arity = 4 },
+            .{ .name = "match", .cfn = "lua_str_match", .arity = 2 },
+            .{ .name = "split", .cfn = "lua_str_split", .arity = 2 },
+            .{ .name = "starts_with", .cfn = "lua_str_starts_with", .arity = 2 },
+            .{ .name = "ends_with", .cfn = "lua_str_ends_with", .arity = 2 },
+            .{ .name = "lower", .cfn = "lua_str_lower", .arity = 1 },
+            .{ .name = "upper", .cfn = "lua_str_upper", .arity = 1 },
+            .{ .name = "reverse", .cfn = "lua_str_reverse", .arity = 1 },
+        };
+        var face: ?Face = null;
+        for (faces) |f| {
+            if (std.mem.eql(u8, f.name, method)) {
+                face = f;
+                break;
+            }
+        }
+        const f = face orelse return false;
+        // A face taking more arguments than the string form accepts is not the
+        // string form at all; leave it to the member path.
+        if (args.len + 1 > f.arity) return false;
+
+        const hash = calc_lua_hash(method);
+        self.p("({{\n", .{});
+        self.indent += 1;
+        self.ind();
+        self.p("lua_Value __self = ", .{});
+        try self.emit_as_lua_value(obj);
+        self.p(";\n", .{});
+        for (args, 0..) |arg, i| {
+            self.ind();
+            self.p("lua_Value __a{d} = ", .{i});
+            try self.emit_as_lua_value(arg);
+            self.p(";\n", .{});
+        }
+        self.ind();
+        self.p("__self.type == VAL_STRING ? {s}(__self", .{f.cfn});
+        var i: usize = 1;
+        while (i < f.arity) : (i += 1) {
+            if (i - 1 < args.len) self.p(", __a{d}", .{i - 1}) else self.p(", lua_val_nil()", .{});
+        }
+        self.p(") : ({{\n", .{});
+        self.indent += 1;
+        self.ind();
+        self.p("lua_Value __fn = lua_table_get_str_lit(__self, \"{s}\", {d}u, {d});\n", .{ method, hash, method.len });
+        self.ind();
+        self.p("lua_Value __argv[{d}] = {{__self", .{args.len + 1});
+        for (args, 0..) |_, j| self.p(", __a{d}", .{j});
+        self.p("}};\n", .{});
+        self.ind();
+        self.p("lua_invoke(__fn, {d}, __argv);\n", .{args.len + 1});
+        self.indent -= 1;
+        self.ind();
+        self.p("}});\n", .{});
+        self.indent -= 1;
+        self.ind();
+        self.p("}})", .{});
+        return true;
+    }
+
     /// Emit a C parameter declaration. Function and fixed-array types need the
     /// identifier inside the declarator (`ret (*name)(args)`, `T name[N]`), so
     /// they cannot use the ordinary `type` followed by `name` emission.
@@ -3087,10 +3171,28 @@ pub const CodeGen = struct {
         // `native_scalar_funcs` membership — that predicate is much broader, and
         // requiring it of every function knocked `lexer.duo --lib` off the native
         // path entirely (1761 lines / 0 lua_Value became 8332 / 1066).
-        if (moduleHasReturnPack(mod)) return false;
-        if (self.moduleHasBoxedFuncSignature(mod)) return false;
-        if (!self.req_deps_are_native_direct(mod)) return false;
-        return self.module_top_level_is_native(mod);
+        // These four were the SILENT PATH. The instrumentation pass covered the
+        // body of can_emit_native_scalar_module but not this tail, so a module
+        // refused here cleared every gate that names itself and produced a
+        // DNB001 with no bail site at all — the one remaining case of the
+        // original undifferentiated bucket.
+        if (moduleHasReturnPack(mod)) {
+            native_diag_fail("return-pack");
+            return false;
+        }
+        if (self.moduleHasBoxedFuncSignature(mod)) {
+            native_diag_fail("boxed-func-signature");
+            return false;
+        }
+        if (!self.req_deps_are_native_direct(mod)) {
+            native_diag_fail("req-dep-not-native");
+            return false;
+        }
+        if (!self.module_top_level_is_native(mod)) {
+            native_diag_fail("module-top-level");
+            return false;
+        }
+        return true;
     }
 
     /// Substrate-native emits no lua runtime at all, so no function SIGNATURE in
@@ -14346,6 +14448,25 @@ pub const CodeGen = struct {
                     if (self.static_dispatch_type_for_expr(mc.obj, mc.method)) |tname| {
                         if (try self.try_emit_static_method_call(tname, mc.method, mc.obj, mc.args)) return;
                     }
+                    // gap[032]: a receiver face on an `any` receiver returned
+                    // nil, silently. The receiver fell straight through to the
+                    // table-member dispatch at the bottom of this branch, and a
+                    // string has no members — so `cur.s:byte(i)` looked "byte"
+                    // up on a string, found nil, invoked nil, and produced nil
+                    // with no diagnostic. A table FIELD is `any`, so every site
+                    // the corpus-wide string.byte (299) and string.sub (369)
+                    // sweeps converted whose receiver was a field went
+                    // quiet-wrong: std.json.decode returned the number 0 and
+                    // std.wasm.decode read every opcode as 0.
+                    //
+                    // The repair is the runtime-guarded dispatch gap[014] named
+                    // as the only correct shape: if the receiver IS a string at
+                    // run time take the string face, otherwise take the member
+                    // path unchanged. Data still wins the name by construction,
+                    // because a string cannot carry a member — a table with its
+                    // own `sub` is never hijacked, which is what sank the
+                    // unconditional projection tried for gap[014].
+                    if (try self.try_emit_guarded_string_face(mc.method, mc.obj, mc.args)) return;
                     if (std.mem.eql(u8, mc.method, "put") or std.mem.eql(u8, mc.method, "write")) {
                         self.p("lua_file_write_method(", .{});
                         try self.emit_expr(mc.obj);

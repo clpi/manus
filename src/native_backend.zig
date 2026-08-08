@@ -131,6 +131,7 @@ pub fn isNativeSharedTarget(target: []const u8) bool {
 }
 
 pub fn emitObject(alloc: std.mem.Allocator, mod: *const ast.Module, target: []const u8) Error![]u8 {
+    refusal_site.line = 0;
     if (!isNativeObjectTarget(target)) return error.UnsupportedTarget;
     return emitObjectMode(alloc, mod, null);
 }
@@ -160,6 +161,7 @@ fn emitObjectMode(alloc: std.mem.Allocator, mod: *const ast.Module, process_entr
 }
 
 pub fn emitAssembly(alloc: std.mem.Allocator, mod: *const ast.Module, target: []const u8) Error![]u8 {
+    refusal_site.line = 0;
     if (!isNativeAsmTarget(target)) return error.UnsupportedTarget;
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) {
         return error.UnsupportedTarget;
@@ -1258,7 +1260,7 @@ const Arm64Compiler = struct {
                 if (ins.result) |t| try temps.put(self.alloc, t, reg);
             },
             .fp_mov_arg => {
-                const d_slot: u5 = @intCast(ins.result orelse return error.UnsupportedProgram);
+                const d_slot: u5 = @intCast(ins.result orelse return refuse(@src()));
                 self.used_fp_regs[d_slot] = true;
                 switch (ins.lhs) {
                     .f64 => |n| try self.emitFmovImmFp(d_slot, n),
@@ -1270,7 +1272,7 @@ const Arm64Compiler = struct {
                 }
             },
             .mov_arg => {
-                const slot: u5 = @intCast(ins.result orelse return error.UnsupportedProgram);
+                const slot: u5 = @intCast(ins.result orelse return refuse(@src()));
                 const reg = try self.evalDnirValue(temps, ins.lhs);
                 if (reg != slot) try self.emitMovReg(slot, reg);
                 // Same rule as the single-argument path: a register still owned
@@ -1786,7 +1788,7 @@ const Arm64Compiler = struct {
             },
             .local => |slot| temps.get(slot) orelse error.UndefinedName,
             .temp => |t| temps.get(t) orelse error.UndefinedName,
-            else => error.UnsupportedProgram,
+            else => refuse(@src()),
         };
     }
 
@@ -1798,7 +1800,7 @@ const Arm64Compiler = struct {
                 break :blk d;
             },
             .temp => |t| temps.get(t) orelse error.UndefinedName,
-            else => error.UnsupportedProgram,
+            else => refuse(@src()),
         };
     }
 
@@ -2764,7 +2766,7 @@ const Arm64Compiler = struct {
                 self.used_fp_regs[0] = true;
                 break :blk @as(u5, 0);
             },
-            else => error.UnsupportedProgram,
+            else => refuse(@src()),
         };
     }
 
@@ -2859,7 +2861,7 @@ const Arm64Compiler = struct {
                     self.releaseReg(src);
                     break :blk dst;
                 },
-                else => error.UnsupportedProgram,
+                else => refuse(@src()),
             },
             .binop => |bin| blk: {
                 if (try self.tryEmitLuaAndOrTernary(bin.op, bin.lhs, bin.rhs)) |ternary_reg| {
@@ -2981,7 +2983,7 @@ const Arm64Compiler = struct {
                 try self.emitMovReg(dst, 0);
                 break :blk dst;
             },
-            else => error.UnsupportedProgram,
+            else => refuse(@src()),
         };
     }
 

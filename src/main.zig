@@ -3182,6 +3182,10 @@ fn reportDirectBackendError(io: Io, err: anyerror, target: []const u8, trace: ?*
     const msg = native_backend.describeError(err, target, &buf);
     term.err("direct backend: {s}", .{msg});
     term.hint("{s}", .{native_backend.unsupportedReason(target)});
+    // The error NAME, always. Three layers now record their own bail site and a
+    // module could still clear all three, which left "outside the subset" with
+    // no way to tell whether the refusal was even the one being instrumented.
+    term.hint("refused with: {s}", .{@errorName(err)});
     // A DNB001 says only "outside the subset" — it never says *which* of the
     // ~60 lowering bail sites fired, so narrowing one meant bisecting the .duo
     // source by hand, and the 60-program DNB001 bucket could not be ranked.
