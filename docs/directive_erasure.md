@@ -1,6 +1,7 @@
 # Directive erasure — survey and repair order
 
-Status: SURVEY. No erasure has been performed. This document is the plan.
+Status: SURVEY + one landed step. **Step 3 (group C, record layout) is done** —
+see "Step 3 landed" below. Everything else is still plan.
 
 Pass 100 says: *there is no prefix `@`; directives do not exist.* The compiler
 still has an `ast.Attribute` system, a `--- @hint` comment channel, a
@@ -271,11 +272,11 @@ it, and it is the change that converts "a string a pass re-parses" into "a value
 the graph can hold". Doing this before any fact migration means each migration
 is a move, not a rewrite.
 
-**3. Migrate group C (layout) into the descriptor relation.** Smallest real
-migration, because `types.zig:51 inferStorageClass` is already the relation.
-Route `@packed`/`@align`/`@ffi` through the descriptor's refinement, drop the
-`explicit` override for `@sealed`/`@native`/`@guarded`. Single consumer file
-(`types.zig`), two call sites in sema.
+**3. Migrate group C (layout) into the descriptor relation.** ✅ **LANDED** —
+see "Step 3 landed" below. It went ahead of step 2 because the layout facts are
+the one group whose payload was *already* typed at the destination
+(`table_type.is_packed`, `.align_n`, `.storage_class`), so it did not need the
+`ast.Attribute.args` typing that steps 4/5/7 do.
 
 **4. Unify the effect set.** Capability (1). Fold `nopanic` into
 `semantic_algebra.EffectSet`, delete `sema.zig:59 has_nopanic_attr` and
@@ -351,3 +352,168 @@ design risk: **step 1**, deleting group F.
   silently-ignored name.
 - Whether `@sealed` in *function* position (permitted at `directives.zig`) does
   anything; only the *type* position consumer at `types.zig:84` was found.
+
+---
+
+# The surface this survey does not cover: `@comp.*` is not an attribute
+
+Everything above is the **`ast.Attribute`** surface — 46 recognized names, one
+`Attribute { name, args }` record, ~70 `std.mem.eql` reads. That is the surface
+the audit read, and it is the one worth migrating first.
+
+It is not the largest `@` population in `.duo` source. Counted at `489bc1b`:
+
+| surface | spellings | representation | consumers |
+|---|---|---|---|
+| **A** declaration attributes (this survey) | 46 | `ast.Attribute` | 19 `.zig` files |
+| **B** meta-module expression builtins | **556** public paths | rewritten to `__comptime*` **call expressions** — never `ast.Attribute` | `comptime.zig`, `codegen.zig` |
+| **C** module-level directive statements | `@build.*` `@debug.*` `@c.include` `@c.emit` | `ast.Stmt.directive` (wraps an `Attribute`) | 10 switch sites |
+| **D** `--- @hint` comments | any of A | lexer `pending_hints` → `Attribute` | `lexer.zig`, `parser.zig` |
+| **E** legacy underscore aliases | 55 | parser-only rename into B | `legacy_directives.zig` |
+
+Surface **B is the large number and the small problem.** Those 556 public paths
+in `meta_module.zig` collapse to **193 canonical paths** — `meta.` / `comp.` /
+`compiler.` are three spellings of one thing — and then to **144 internal
+targets**. They are already *call expressions* in the AST, not annotations. So
+migrating B is a **re-homing** job, not a representation change: `@comp.map(…)`
+is a call whose callee is resolved by a static table instead of by the trie.
+Pass 100 §17 names the destination — `check`, `why(q)(subject)`, `graph.*`, the
+`add` family — and §19 says that lives behind one graph service, which does not
+exist yet.
+
+**Consequence for sequencing:** nothing in steps 1-9 above reduces the
+`@comp.*` count, and that is correct. Renaming 193 paths off the sigil while
+they are still resolved by the same static table would be cosmetic conformance
+and would leave exactly the two-ontology state this document's "The trap"
+section warns about. B moves when the graph service lands, and E dies with it.
+
+Reproduce the counts:
+
+```
+grep -c '\.public = ' src/meta_module.zig                       # 627 rows
+grep -oE '\.public = "[a-z0-9._]+"' src/meta_module.zig \
+  | sed 's/.*"\(.*\)"/\1/' | sort -u | wc -l                    # 556 public
+... | sed -E 's/^(meta|comp|compiler)\.//' | sort -u | wc -l    # 193 canonical
+grep -oE '\.internal = "[a-z0-9_]+"' src/meta_module.zig | sort -u | wc -l   # 144
+```
+
+---
+
+# Step 3 landed — record layout is a refinement edge
+
+Pass 100 §11 calls packed/aligned/endian/at-address **layout facts**, and
+LAW-STRATA makes `&` the refinement edge that carries them. The group C
+attributes were storing exactly those facts through a string-keyed detour into
+fields that already existed on the resolved type.
+
+```
+@packed                                    global gp: { x: i8, y: i64 }
+@align(16)                          →          & packed & align(16)
+global gp: { x: i8, y: i64 }                   = { x = 1, y = 2 }
+    = { x = 1, y = 2 }
+```
+
+## What changed
+
+| file | change |
+|---|---|
+| `src/ast.zig` | `TypeExpr.Layout` + `TypeExpr.StorageWord`; `RecordType.layout` |
+| `src/parser.zig` | `parse_layout_refinements()` — `&` refinements after a record type |
+| `src/types.zig` | `layoutFromAttrs(base, attrs)` + `applyLayout(t, layout)`; `applyTableShapeAttrs` rewritten as a two-line call through them; `resolve`'s `.record` branch reads `rec.layout` |
+| `src/codegen.zig` | `alias_record_type`'s record branch merges `target.record.layout` with `ad.attributes` in **one** application |
+
+`Layout` is now the single home for the fact. `applyTableShapeAttrs` is the
+adapter **in the permitted direction only**: `ast.Attribute` → `Layout`.
+Nothing converts a refinement back into an attribute — which is precisely the
+"two ontologies" trap this document warns about, and the reason the adapter
+runs one way.
+
+Accepted refinements: `packed`, `align(n)`, `sealed`, `native`, `guarded`,
+`ffi("name")` — exactly the set `applyTableShapeAttrs` handled, so the collapse
+is total for records rather than partial. `sema.zig:76
+apply_record_layout_attrs` needed no change: it resolves the annotation through
+`types.resolve` first, so refinement facts already reach it.
+
+## Why it cannot change existing behaviour
+
+`&` after a type was a syntax error before this, so no existing program can be
+re-interpreted. An unrecognised name after `&` restores the lexer and leaves
+the `&` unconsumed, producing the same diagnostic as before. Refinements whose
+fact has **no home yet** — `& le`, `& be`, `& at(a)`, `& volatile`,
+`& positive` — are therefore *rejected*, not silently accepted and ignored:
+
+```
+$ duo check le.duo          # 'Pt: { x: i8, y: i64 } & le'
+error: parse failed: ExpectedToken
+```
+
+That is deliberate. `ResolvedType` has no endian, address or volatility fact,
+and accepting the syntax without the fact would be a silent lie of exactly the
+kind group F above is condemned for.
+
+`Layout.align_given` exists because the attribute path treats `@align(garbage)`
+as *clear to null*, not as *leave alone*. A plain `?usize` would have silently
+changed that.
+
+## Proof
+
+Both spellings compiled and their emitted C diffed:
+
+```
+$ diff /tmp/duo_attr.c  /tmp/duo_refine.c    # binding form     → empty
+$ diff /tmp/duo_aattr.c /tmp/duo_arefine.c   # descriptor form  → empty
+```
+
+**Byte-identical C**, including
+`typedef struct __attribute__((packed)) __attribute__((aligned(16)))`, and the
+same program output. Verified by value, not by "it compiled".
+
+Gates, measured at the same HEAD with and without the change:
+
+| gate | before | after |
+|---|---|---|
+| `agent-smoke` | exit 0 | exit 0 |
+| `repo-hygiene` | exit 0 | exit 0 |
+| `pass16_lexer_fingerprint_differential` | exit 0 | exit 0 |
+| `pass16_lexer_text_differential` | exit 0 | exit 0 |
+| `run_compile_fail_tests` FAIL set | 11 | **same 11**, name-for-name |
+| `unit-test` | 1244/1302, 54 fail 4 crash | 1246/1304, 54 fail 4 crash — **identical failing name set** |
+
+The unit suite is red at this HEAD for unrelated reasons, so the evidence is
+the failing *name set*, not the count. Two tests were added and both pass, one
+of them a positive control against `applyLayout` being a no-op.
+
+Fixture: `examples/layout_refinements_test.duo`, gated by
+`scripts/run_compile_fail_tests.duo` (run by `zig build test`).
+Positive-controlled: changing its expected output to `999` produces
+`FAIL: examples/layout_refinements_test.duo output mismatch`, so the row
+genuinely executes.
+
+> Found while positive-controlling, and worth fixing separately:
+> `run_compile_fail_tests.duo` prints its `FAIL:` lines but **never prints its
+> `OK:` lines** — `grep -c '^OK:'` is 0 while 100+ rows pass. The assertions do
+> run. But nobody should read that script's output as a pass count.
+
+## The old spelling was not deleted
+
+`@packed` / `@align` / `@sealed` / `@native` / `@guarded` still parse and still
+work, and `examples/layout_attrs_test.duo` still proves it. Pass 100 forbids
+the directive, not the fact, and removing a working spelling to move a grep
+count is not the goal — ontology collapse is, and the ontology is now one.
+
+**Real corpus cost of retiring the spelling later: zero.** `@packed` / `@align`
+on a *record* have **no uses in `lib/`, `tools/` or `ext/`** — the two
+`lib/tools/ext` grep hits are an LSP completion snippet string
+(`tools/lsp/src/server.duo:1767`). The only writers are
+`examples/layout_attrs_test.duo` and a raw-string test module in
+`scripts/test_property_11.duo:129`.
+
+## What step 3 did NOT cover
+
+**Enum layout.** `@packed` / `@align` / `@ffi` on an `enum_def` store the same
+facts into `enum_type.is_packed/.align_n/.ffi_name`, but the code is duplicated
+three times by hand — `sema.zig:3832`, `codegen.zig:6104`, `codegen.zig:6847` —
+and none of it routes through `types.zig`. It is the obvious next slice: the
+three hand-rolled loops collapse onto `Layout` the same way. Left out to keep
+this hunk minimal, and because both `codegen.zig` sites sit inside enum
+emission another session is editing.

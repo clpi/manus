@@ -60,39 +60,72 @@ pub fn inferStorageClass(
     return .dynamic;
 }
 
-/// Apply layout/shape attributes (`@packed`, `@align`, `@ffi`, `@sealed`, `@native`).
-pub fn applyTableShapeAttrs(t: *ResolvedType, attributes: []const ast.Attribute) void {
-    if (t.* != .table_type) return;
-    var explicit: StorageClass = t.table_type.storage_class;
+/// Read the layout facts a legacy `@packed` / `@align(n)` / `@ffi("x")` /
+/// `@sealed` / `@native` / `@guarded` attribute list was storing, starting
+/// from `base` (the refinement-spelled facts already carried by the
+/// descriptor). The adaptation runs OLD → NEW only: nothing ever converts a
+/// refinement back into an `ast.Attribute`.
+pub fn layoutFromAttrs(base: ast.TypeExpr.Layout, attributes: []const ast.Attribute) ast.TypeExpr.Layout {
+    var layout = base;
     for (attributes) |attr| {
         if (std.mem.eql(u8, attr.name, "packed")) {
-            t.table_type.is_packed = true;
+            layout.is_packed = true;
         } else if (std.mem.eql(u8, attr.name, "align")) {
             if (attr.args) |args_str| {
-                t.table_type.align_n = std.fmt.parseInt(usize, args_str, 10) catch null;
+                layout.align_given = true;
+                layout.align_n = std.fmt.parseInt(usize, args_str, 10) catch null;
             }
         } else if (std.mem.eql(u8, attr.name, "ffi")) {
             if (attr.args) |args_str| {
                 if (args_str.len >= 2 and args_str[0] == '"' and args_str[args_str.len - 1] == '"') {
-                    t.table_type.ffi_name = args_str[1 .. args_str.len - 1];
+                    layout.ffi = args_str[1 .. args_str.len - 1];
                 } else {
-                    t.table_type.ffi_name = args_str;
+                    layout.ffi = args_str;
                 }
             }
         } else if (std.mem.eql(u8, attr.name, "sealed")) {
-            t.table_type.is_sealed = true;
-            explicit = .sealed;
+            layout.sealed = true;
+            layout.storage = .sealed;
         } else if (std.mem.eql(u8, attr.name, "native")) {
-            explicit = .native;
+            layout.storage = .native;
         } else if (std.mem.eql(u8, attr.name, "guarded")) {
-            explicit = .guarded;
+            layout.storage = .guarded;
         }
     }
+    return layout;
+}
+
+/// The single place layout facts land on a resolved table type. Both spellings
+/// (`& packed` refinement, `@packed` attribute) arrive here as one `Layout`.
+pub fn applyLayout(t: *ResolvedType, layout: ast.TypeExpr.Layout) void {
+    if (t.* != .table_type) return;
+    if (layout.is_packed) t.table_type.is_packed = true;
+    if (layout.align_given) t.table_type.align_n = layout.align_n;
+    if (layout.ffi) |name| t.table_type.ffi_name = name;
+    if (layout.sealed) t.table_type.is_sealed = true;
+    const explicit: StorageClass = switch (layout.storage orelse {
+        t.table_type.storage_class = inferStorageClass(
+            t.table_type.fields,
+            t.table_type.is_sealed,
+            t.table_type.storage_class,
+        );
+        return;
+    }) {
+        .native => .native,
+        .guarded => .guarded,
+        .sealed => .sealed,
+    };
     t.table_type.storage_class = inferStorageClass(
         t.table_type.fields,
         t.table_type.is_sealed,
         explicit,
     );
+}
+
+/// Apply layout/shape attributes (`@packed`, `@align`, `@ffi`, `@sealed`, `@native`).
+pub fn applyTableShapeAttrs(t: *ResolvedType, attributes: []const ast.Attribute) void {
+    if (t.* != .table_type) return;
+    applyLayout(t, layoutFromAttrs(.{}, attributes));
 }
 
 /// Resolved storage class for introspection (table types and named aliases).
@@ -1264,7 +1297,10 @@ pub fn resolve(te: ast.TypeExpr, sema: ?*anyopaque, alloc: std.mem.Allocator) !R
                 };
             }
             var out_rt = ResolvedType{ .table_type = .{ .fields = fields } };
-            out_rt.table_type.storage_class = inferStorageClass(fields, false, .dynamic);
+            // `applyLayout` with a default Layout is exactly the old
+            // `inferStorageClass(fields, false, .dynamic)`: a fresh table_type
+            // has storage_class `.dynamic` and is_sealed `false`.
+            applyLayout(&out_rt, rec.layout);
             return out_rt;
         },
         .constrained => |cp| {
@@ -1479,6 +1515,60 @@ test "applyTableShapeAttrs: @sealed sets sealed class" {
     applyTableShapeAttrs(&resolved, &attrs);
     try testing.expect(resolved.table_type.is_sealed);
     try testing.expectEqual(StorageClass.sealed, resolved.table_type.storage_class);
+}
+
+test "layout: the refinement spelling and the attribute spelling are one fact" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // Same descriptor, two spellings. `@packed @align(8) @sealed` (attributes,
+    // via ast.Attribute) against `& packed & align(8) & sealed` (refinement
+    // edges carried on the descriptor). Ontology collapse means the resolved
+    // facts are equal — not merely compatible.
+    const attr_fields = try alloc.alloc(FieldType, 1);
+    attr_fields[0] = .{ .name = "x", .typ = .f64 };
+    var from_attrs: ResolvedType = .{ .table_type = .{ .fields = attr_fields } };
+    applyTableShapeAttrs(&from_attrs, &[_]ast.Attribute{
+        .{ .name = "packed", .args = null },
+        .{ .name = "align", .args = "8" },
+        .{ .name = "sealed", .args = null },
+    });
+
+    const refined_fields = try alloc.alloc(FieldType, 1);
+    refined_fields[0] = .{ .name = "x", .typ = .f64 };
+    var from_refinements: ResolvedType = .{ .table_type = .{ .fields = refined_fields } };
+    applyLayout(&from_refinements, .{
+        .is_packed = true,
+        .align_given = true,
+        .align_n = 8,
+        .sealed = true,
+        .storage = .sealed,
+    });
+
+    try testing.expectEqual(from_attrs.table_type.is_packed, from_refinements.table_type.is_packed);
+    try testing.expectEqual(from_attrs.table_type.align_n, from_refinements.table_type.align_n);
+    try testing.expectEqual(from_attrs.table_type.is_sealed, from_refinements.table_type.is_sealed);
+    try testing.expectEqual(from_attrs.table_type.storage_class, from_refinements.table_type.storage_class);
+
+    // Positive control: the assertions above would also pass if applyLayout
+    // were a no-op and both sides stayed at their defaults. They are not.
+    try testing.expect(from_refinements.table_type.is_packed);
+    try testing.expectEqual(@as(?usize, 8), from_refinements.table_type.align_n);
+    try testing.expectEqual(StorageClass.sealed, from_refinements.table_type.storage_class);
+}
+
+test "layout: an empty attribute list still re-infers storage class" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const fields = try alloc.alloc(FieldType, 1);
+    fields[0] = .{ .name = "x", .typ = .f64 };
+    var resolved: ResolvedType = .{ .table_type = .{ .fields = fields } };
+    applyTableShapeAttrs(&resolved, &.{});
+    // Rewriting applyTableShapeAttrs in terms of applyLayout must not lose the
+    // unconditional inferStorageClass call the old body ended with.
+    try testing.expectEqual(StorageClass.native, resolved.table_type.storage_class);
 }
 
 test "resolve: inline record type infers native storage" {

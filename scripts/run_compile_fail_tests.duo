@@ -134,6 +134,7 @@ run_output("examples/metamethod_iter.duo", "60\n")
 run_output("examples/metamethod_pairs_ipairs.lua", "15\n15\n")
 run_output("examples/typed_string_builtins.duo", "abc\n42\nabc42\n7\n3\n")
 run_output("examples/layout_attrs_test.duo", "6\n")
+run_output("examples/layout_refinements_test.duo", "6\n")
 run_output("examples/native_record_params.duo", "4\n12\n")
 
 run_duo_ok("Property 11 test passes", "scripts/test_property_11.duo")

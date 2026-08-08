@@ -3617,7 +3617,7 @@ test "meta_codegen: comptimeTemplateHook named callback" {
     const record_aliases: std.StringHashMapUnmanaged(RT) = .empty;
     const alias_defs: std.StringHashMapUnmanaged(*const ast.AliasDef) = .empty;
     var lex = @import("lexer.zig").Lexer.init(
-        \\fun cb(m) "/* " .. m.name .. ":" .. m.ctype .. " */\n" end
+        \\fun cb(m) "/* " .. m.name .. ":" .. m.ctype .. " */\n"
     , "test");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     var module = try parser.parse_module();

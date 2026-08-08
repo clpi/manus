@@ -38,6 +38,32 @@ pub const TypeExpr = union(enum) {
 
     pub const RecordType = struct {
         fields: []RecordField,
+        /// Layout facts written as refinement edges on the descriptor itself:
+        /// `{ x: i8, y: i64 } & packed & align(8)`. Pass 100 §11 ("layout
+        /// facts") and LAW-STRATA (`&` = the refinement edge). This is NOT an
+        /// attribute list: it is the one fact the old `@packed` / `@align(n)`
+        /// attributes were secretly storing, now held where the descriptor is.
+        layout: Layout = .{},
+    };
+
+    /// Which storage class a refinement names explicitly. `null` means the
+    /// class stays inferred from the fields.
+    pub const StorageWord = enum { native, guarded, sealed };
+
+    /// The complete set of layout facts a record descriptor can carry. Both
+    /// the refinement spelling (`& packed`) and the legacy attribute spelling
+    /// (`@packed`) resolve to a value of this type — one ontology, and the
+    /// legacy spelling adapts INTO it, never the other way round.
+    pub const Layout = struct {
+        is_packed: bool = false,
+        /// `align_given` distinguishes "no alignment stated" from "alignment
+        /// stated but unparseable", which the attribute path treats as a
+        /// clear-to-null. Dropping the distinction would change behaviour.
+        align_given: bool = false,
+        align_n: ?usize = null,
+        ffi: ?[]const u8 = null,
+        sealed: bool = false,
+        storage: ?StorageWord = null,
     };
 
     pub const GenericType = struct {

@@ -251,6 +251,56 @@ pub const Parser = struct {
         return base;
     }
 
+    /// `& packed`, `& align(8)`, `& sealed`, `& native`, `& guarded`,
+    /// `& ffi("name")` — the refinement edge of LAW-STRATA carrying Pass 100
+    /// §11 layout facts on a record descriptor.
+    ///
+    /// Strictly additive: `&` after a type was a syntax error before this, so
+    /// no existing program can change meaning. An unrecognised name after `&`
+    /// restores the lexer and leaves the `&` unconsumed, which produces the
+    /// same diagnostic it produced before — refinements whose fact has no home
+    /// yet (`& le`, `& positive`) are still rejected rather than silently
+    /// accepted and ignored.
+    fn parse_layout_refinements(self: *Parser) ParseError!ast.TypeExpr.Layout {
+        var layout: ast.TypeExpr.Layout = .{};
+        while ((try self.pk()).kind == .amp) {
+            const saved = self.lex.saveState();
+            _ = try self.adv();
+            const name_tok = try self.pk();
+            if (name_tok.kind != .name) {
+                self.lex.restoreState(saved);
+                break;
+            }
+            _ = try self.adv();
+            const name = name_tok.text;
+            var args: ?[]const u8 = null;
+            if ((try self.pk()).kind == .lparen) {
+                _ = try self.adv();
+                args = try self.parse_attribute_args();
+                _ = try self.expect(.rparen);
+            }
+            if (std.mem.eql(u8, name, "packed")) {
+                layout.is_packed = true;
+            } else if (std.mem.eql(u8, name, "align")) {
+                layout.align_given = true;
+                layout.align_n = if (args) |a| std.fmt.parseInt(usize, a, 10) catch null else null;
+            } else if (std.mem.eql(u8, name, "ffi")) {
+                if (args) |a| layout.ffi = strip_quotes(a);
+            } else if (std.mem.eql(u8, name, "sealed")) {
+                layout.sealed = true;
+                layout.storage = .sealed;
+            } else if (std.mem.eql(u8, name, "native")) {
+                layout.storage = .native;
+            } else if (std.mem.eql(u8, name, "guarded")) {
+                layout.storage = .guarded;
+            } else {
+                self.lex.restoreState(saved);
+                break;
+            }
+        }
+        return layout;
+    }
+
     fn parse_type_primary(self: *Parser) ParseError!ast.TypeExpr {
         const tok = try self.pk();
         return switch (tok.kind) {
@@ -418,6 +468,7 @@ pub const Parser = struct {
                 _ = try self.expect(.rbrace);
                 const rt = try self.alloc.create(ast.TypeExpr.RecordType);
                 rt.* = .{ .fields = try fields.toOwnedSlice(self.alloc) };
+                rt.layout = try self.parse_layout_refinements();
                 return .{ .record = rt };
             },
             else => {

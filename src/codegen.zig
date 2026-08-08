@@ -2904,7 +2904,11 @@ pub const CodeGen = struct {
                     .align_n = null,
                     .ffi_name = null,
                 } };
-                self.apply_binding_record_attrs(&rt, ad.attributes);
+                // This branch builds the table type by hand instead of going
+                // through `types.resolve`, so the descriptor's own refinement
+                // facts have to be read here. One application, attributes
+                // layered on top of refinements.
+                types.applyLayout(&rt, types.layoutFromAttrs(target.record.layout, ad.attributes));
                 if (rt == .table_type and rt.table_type.storage_class == .dynamic and self.record_type_lowers_native(rt)) {
                     rt.table_type.storage_class = .native;
                 }

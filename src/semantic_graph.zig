@@ -1791,8 +1791,8 @@ test "semantic_graph: pass26 pure alias interning shares fingerprint and slot" {
     defer arena.deinit();
     const alloc = arena.allocator();
     var lex = Lexer.init(
-        \\PairA = { first: i32, second: str }
-        \\PairB = { first: i32, second: str }
+        \\PairA: { first: i32, second: str }
+        \\PairB: { first: i32, second: str }
     , "test.duo");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
