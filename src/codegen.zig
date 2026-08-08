@@ -5422,24 +5422,23 @@ pub const CodeGen = struct {
             self.p("#pragma GCC optimize(\"no-fast-math\")\n", .{});
             self.p("static inline __attribute__((always_inline)) int64_t duo_mandel_benchmark_sum(void) {{\n", .{});
             self.p("    double __mandel_cx[201];\n", .{});
-            self.p("    double __mandel_cx_sq[201];\n", .{});
+            // `x / 100.0` — NOT `x * 0.01`. 0.01 is not representable, so the
+            // product differs from the correctly-rounded quotient by an ulp for
+            // many x, and an ulp of cx moves the escape count of a boundary
+            // point by hundreds of iterations. The source says divide.
             self.p("    for (int __mandel_xi = 0; __mandel_xi <= 200; ++__mandel_xi) {{\n", .{});
-            self.p("        double __mandel_cx_val = (double)(__mandel_xi - 100) * 0.01;\n", .{});
-            self.p("        __mandel_cx[__mandel_xi] = __mandel_cx_val;\n", .{});
-            self.p("        __mandel_cx_sq[__mandel_xi] = __mandel_cx_val * __mandel_cx_val;\n", .{});
+            self.p("        __mandel_cx[__mandel_xi] = (double)(__mandel_xi - 100) / 100.0;\n", .{});
             self.p("    }}\n", .{});
             self.p("    int64_t sum_iters = 0;\n", .{});
-            self.p("    // exploit symmetry about the real axis: f(cx,cy) == f(cx,-cy)\n", .{});
+            self.p("    // exploit symmetry about the real axis: f(cx,cy) == f(cx,-cy).\n", .{});
+            self.p("    // Exact in floating point: negating cy negates zy at every\n", .{});
+            self.p("    // step and leaves zx and zx*zx + zy*zy bit-identical.\n", .{});
             self.p("    for (int64_t y = 0; y <= 100; ++y) {{\n", .{});
-            self.p("        double cy = (double)y * 0.01;\n", .{});
-            self.p("        double cy_sq = cy * cy;\n", .{});
+            self.p("        double cy = (double)y / 100.0;\n", .{});
             self.p("        int64_t row_sum = 0;\n", .{});
             self.p("        for (int __mandel_xi = 0; __mandel_xi <= 200; ++__mandel_xi) {{\n", .{});
             self.p("            double cx = __mandel_cx[__mandel_xi];\n", .{});
-            self.p("            double cx_sq = __mandel_cx_sq[__mandel_xi];\n", .{});
-            self.p("            double q = (cx - 0.25) * (cx - 0.25) + cy_sq;\n", .{});
-            self.p("            if (q * (q + (cx - 0.25)) < 0.25 * cy_sq) {{ row_sum += 10000; continue; }}\n", .{});
-            self.p("            if ((cx + 1.0) * (cx + 1.0) + cy_sq < 0.0625) {{ row_sum += 10000; continue; }}\n", .{});
+            // No cardioid / bulb early-out: see emit_mandel_iter_native_body.
             self.p("            double zx = 0, zy = 0;\n", .{});
             self.p("            int64_t i = 0;\n", .{});
             self.p("            #pragma GCC unroll 8\n", .{});
@@ -9102,11 +9101,16 @@ pub const CodeGen = struct {
 
     fn emit_mandel_iter_native_body(self: *CodeGen, cx: []const u8, cy: []const u8, ret: RT) E!void {
         _ = ret;
-        self.pl("double cx_sq = {s} * {s};", .{ cx, cx });
-        self.pl("double cy_sq = {s} * {s};", .{ cy, cy });
-        self.pl("double q = ({s} - 0.25) * ({s} - 0.25) + cy_sq;", .{ cx, cx });
-        self.pl("if (q * (q + ({s} - 0.25)) < 0.25 * cy_sq) return 10000;", .{cx});
-        self.pl("if (({s} + 1.0) * ({s} + 1.0) + cy_sq < 0.0625) return 10000;", .{ cx, cx });
+        // No cardioid / period-2-bulb early-out here. It is exact mathematics —
+        // a point inside either region never escapes, so 10000 is the right
+        // answer — but the extra live doubles ahead of the loop change which
+        // -ffast-math reassociation clang picks for `zx2 - zy2 + cx`, and the
+        // escape-time count of a boundary point is a discontinuous function of
+        // that last bit. Measured: 19 of the 40401 grid points came out
+        // different, summing to 139308337 against the reference's 139309713.
+        // Deleting these five lines makes the emitted kernel character-for-
+        // character the arithmetic the .duo source asks for, and the sum agrees
+        // with C exactly.
         self.pl("double zx = 0, zy = 0;", .{});
         self.pl("#pragma GCC unroll 8", .{});
         self.pl("for (int64_t i = 0; i < 10000; ++i) {{", .{});
@@ -9121,7 +9125,13 @@ pub const CodeGen = struct {
     }
 
     fn emit_nbody_native_body(self: *CodeGen, steps: []const u8, ret: RT) E!void {
-        self.pl("if ({s} == 5000000) return 9.3782588805879641e-08;", .{steps});
+        // There used to be a `if (steps == 5000000) return 9.3782588805879641e-08;`
+        // line here: the benchmark's own argument, answered with the benchmark's
+        // own expected output. It made the row time 1e-06 s instead of running
+        // 5,000,000 integration steps, and it froze one particular build's
+        // rounding into the compiler. The literal even carried the wrong sign for
+        // the reference the suite compares against (C emits
+        // -9.3782588805879641e-08), which is how it was found. Simulate.
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
         self.pl("double x1 = 0, y1 = 0, vx1 = 0, vy1 = 0, m1 = 1000;", .{});
@@ -18186,7 +18196,38 @@ pub const CodeGen = struct {
         if (e.* != .call or e.call.func.* != .field) return false;
         const f = e.call.func.field;
         if (f.obj.* != .name or !self.expr_is_recognized_stdlib_module(f.obj.name.ident)) return false;
+        // ... EXCEPT when that stdlib string call is itself lowered natively.
+        // string.rep/sub/lower/upper/reverse have native emitters that return a
+        // bare malloc'd char* with no lua_String in front of it, so reading the
+        // header off one is an out-of-bounds read of whatever the allocator left
+        // 8 bytes earlier. `string.len(string.rep("b", 3))` returned 0, and the
+        // benchmark's str_chain row returned a DIFFERENT wrong total on every
+        // run (17641902 / 17642000 against C's 5027500).
+        if (self.stdlib_string_call_emits_native_cstr(e)) return false;
         return self.expr_type(e) == .str;
+    }
+
+    /// True when a `string.*` call is lowered by try_emit_native_string_call /
+    /// try_emit_native_string_transform to a plain `char*` (duo_str_rep,
+    /// duo_str_sub_cstr, duo_str_{lower,upper,reverse}_cstr) rather than through
+    /// lua_str_* unwrapped with lua_to_str. Mirrors the admission conditions in
+    /// those two emitters; keep the two in step.
+    fn stdlib_string_call_emits_native_cstr(self: *CodeGen, e: *const ast.Expr) bool {
+        if (e.* != .call or e.call.func.* != .field) return false;
+        const f = e.call.func.field;
+        if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "string")) return false;
+        if (self.expr_type(e) != .str) return false;
+        const args = e.call.args;
+        if (std.mem.eql(u8, f.field, "rep")) {
+            if (args.len < 2 or args.len > 3) return false;
+            const pat_t = self.expr_type(args[0]);
+            const cnt_t = self.expr_type(args[1]);
+            return (pat_t == .str or args[0].* == .string_lit) and cnt_t.is_integer();
+        }
+        if (std.mem.eql(u8, f.field, "lower") or std.mem.eql(u8, f.field, "upper") or
+            std.mem.eql(u8, f.field, "reverse")) return args.len == 1;
+        if (std.mem.eql(u8, f.field, "sub")) return args.len >= 2 and args.len <= 3;
+        return false;
     }
 
     fn expr_emits_lua_value(self: *CodeGen, e: *const ast.Expr) bool {
