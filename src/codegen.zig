@@ -208,6 +208,13 @@ pub const CodeGen = struct {
     /// Serial for the per-loop temporaries `while_bound_hoist` introduces, so
     /// two hoisted loops in one function cannot collide on a name.
     while_bound_serial: usize = 0,
+    /// Serial for the per-loop temporaries `loop_version_plan` introduces.
+    loop_version_serial: usize = 0,
+    /// True while emitting the FAST arm of a versioned loop: every dense-table
+    /// index in scope has been proved inside `[0, cap)` by a guard the loop is
+    /// nested under, so the accessors emit raw indexing. Saved and restored
+    /// around the arm; nothing else may set it.
+    dense_unchecked: bool = false,
     local_scopes: std.ArrayList(std.StringHashMapUnmanaged(RT)) = .empty,
     comptime_scopes: std.ArrayList(std.StringHashMapUnmanaged(comptime_eval.Value)) = .empty,
     close_scopes: std.ArrayList(std.ArrayListUnmanaged([]const u8)) = .empty,
@@ -3755,6 +3762,12 @@ pub const CodeGen = struct {
                     return false;
                 }
             },
+            .global_decl => |gd| {
+                if (gd.names.len != gd.inits.len and gd.inits.len == 1) {
+                    native_diag_fail("return-pack-global-decl");
+                    return false;
+                }
+            },
             else => {},
         }
         return switch (stmt.*) {
@@ -3773,6 +3786,48 @@ pub const CodeGen = struct {
                     const hint: RT = if (i < ld.names.len) self.resolve_binding_type(&ld.names[i]) else .any;
                     if (!self.init_is_native_scalar(expr, hint)) {
                         native_diag_fail("local-decl-init");
+                        break :blk false;
+                    }
+                }
+                break :blk true;
+            },
+            // `global x = req "…"` is the DECLARED spelling of `x = req "…"`,
+            // which the `.assign` arm below has always accepted. The two were
+            // never distinguished anywhere downstream — `req_binding_path_for_name`
+            // and `stmt_declares_name` both read the arms side by side — but this
+            // switch had no `.global_decl` case at all, so it fell to
+            // `else => false` and disqualified the whole module. That is GAP-034
+            // drift in its purest form: `lib/std/compiler/lexer.duo` line 7 is
+            // `global strm = req "std.str"` and that one line refused native
+            // lowering for every program that embeds the Duo lexer.
+            //
+            // `global *` (implicit global-by-default for a whole block) is NOT
+            // accepted: it declares no names to check and changes name resolution
+            // for statements the precheck has already walked.
+            .global_decl => |gd| blk: {
+                if (gd.star) {
+                    native_diag_fail("global-star");
+                    break :blk false;
+                }
+                for (gd.names) |gname| {
+                    if (gname.attrib != null or gname.attributes.len != 0) {
+                        native_diag_fail("global-decl-attrib");
+                        break :blk false;
+                    }
+                    if (gname.typ != .inferred and !self.type_expr_is_native_scalar(gname.typ)) {
+                        native_diag_fail("global-decl-typ");
+                        break :blk false;
+                    }
+                }
+                for (gd.inits, 0..) |expr, i| {
+                    if (req_path_from_expr(expr)) |path| {
+                        if (self.req_module_is_native_direct(path)) continue;
+                        native_diag_fail("global-decl-req-nonnative");
+                        break :blk false;
+                    }
+                    const hint: RT = if (i < gd.names.len) self.resolve_binding_type(&gd.names[i]) else .any;
+                    if (!self.init_is_native_scalar(expr, hint)) {
+                        native_diag_fail_fmt("global-decl-init:{s}", .{@tagName(expr.*)});
                         break :blk false;
                     }
                 }
@@ -11040,6 +11095,398 @@ pub const CodeGen = struct {
         return .{ .cop = cop, .id = self.while_bound_serial };
     }
 
+    /// The counter's coefficient in an affine index expression, as
+    /// `konst * factor[0] * factor[1] * …`. The factors are loop-invariant
+    /// sub-expressions of the index (`k * size + j + 1` has coefficient `size`),
+    /// so the coefficient is not always a compile-time number — but it is always
+    /// computable once, before the loop, from expressions the index already
+    /// contains. Its SIGN can be unknown at compile time; `duo_dt_range_ok`
+    /// takes the min and max of the two endpoints and so does not need it.
+    const LvCoeff = struct {
+        konst: i64,
+        factors: [4]*const ast.Expr = undefined,
+        nfactors: u8 = 0,
+
+        fn zero() LvCoeff {
+            return .{ .konst = 0 };
+        }
+        fn is_zero(self: LvCoeff) bool {
+            return self.konst == 0;
+        }
+        fn push(self: LvCoeff, f: *const ast.Expr) ?LvCoeff {
+            if (self.nfactors >= self.factors.len) return null;
+            var out = self;
+            out.factors[out.nfactors] = f;
+            out.nfactors += 1;
+            return out;
+        }
+    };
+
+    /// One dense-table read or write the loop performs, with the index
+    /// expression as written and its coefficient in the loop counter.
+    const DenseRange = struct {
+        table: []const u8,
+        key: *const ast.Expr,
+        coeff: LvCoeff,
+    };
+
+    const LvScan = struct {
+        ok: bool = true,
+        ivar: []const u8,
+        root: *const ast.Block,
+        checks: std.ArrayList(DenseRange) = .empty,
+        /// An index or the bound read module-global storage. Only a call can
+        /// write that behind an analysis that looks at assignments, so this is
+        /// paired with `has_call` below rather than refused outright — `life`'s
+        /// grid row is `(y * W) + x` with `y` a module global.
+        uses_global: bool = false,
+        has_call: bool = false,
+    };
+
+    /// GAP-039: `duo_dt_get_*` costs one compare and one select PER ELEMENT, and
+    /// no C compiler will remove it — the monotonicity of `cap` across a
+    /// `realloc` that may fail is not something LLVM will carry (tested; feeding
+    /// it the facts moved Table max 0.00101 -> 0.00098, i.e. nothing).
+    ///
+    /// So the elimination is done here, by loop versioning. For a loop whose
+    /// counter only ever increases by a positive constant, every dense index in
+    /// the body is affine in that counter, and the counter's range has a
+    /// computable upper bound, one runtime guard before the loop decides whether
+    /// EVERY index the loop can produce lands inside `[0, cap)`. If it does, the
+    /// fast arm indexes the backing store directly; if it does not — or if any
+    /// part of the shape is not provable — the checked arm runs, unchanged.
+    ///
+    /// This proves the index rather than assuming it. Emitting raw `__dt_T[i]`
+    /// unconditionally is the fixed-capacity overrun the grow-on-demand runtime
+    /// exists to prevent, and a use-after-free has shipped in this area once.
+    ///
+    /// Returns the accesses to guard, or null when the loop does not qualify.
+    /// The caller owns the list.
+    fn loop_version_plan(self: *CodeGen, wl: anytype, hoisted: bool) E!?std.ArrayList(DenseRange) {
+        // Already inside a proved arm: the enclosing guard covers this body too.
+        if (self.dense_unchecked) return null;
+        if (self.current_func_body == null) return null;
+        if (wl.cond.* != .binop) return null;
+        const b = wl.cond.binop;
+        if (b.op != .lt and b.op != .leq) return null;
+        if (b.lhs.* != .name) return null;
+        // The counter has to BE the C `int64_t` the index arithmetic uses.
+        if (self.expr_type(b.lhs) != .i64) return null;
+        const ivar = b.lhs.name.ident;
+        if (self.is_global_name(ivar)) return null;
+
+        // The counter must move by a positive constant, exactly once, as the
+        // LAST statement of the body. That placement is what makes the loop
+        // condition an upper bound on the counter INSIDE the body: an increment
+        // in the middle would let an access see `bound + step`.
+        if (wl.body.stmts.len == 0) return null;
+        const last = &wl.body.stmts[wl.body.stmts.len - 1];
+        if (!self.lv_is_positive_step(last, ivar)) return null;
+        for (wl.body.stmts[0 .. wl.body.stmts.len - 1]) |*s| {
+            if (self.stmt_assigns_name(s, ivar)) return null;
+        }
+
+        var st = LvScan{ .ivar = ivar, .root = &wl.body };
+        errdefer st.checks.deinit(self.alloc);
+
+        // The bound is read once into the guard and again on every iteration, so
+        // it has to be pure; and it has to be a sound upper bound, so it has to
+        // be loop-invariant. The boxed form is already established by
+        // `while_bound_hoist`; the native form is checked here.
+        if (!hoisted) {
+            if (!self.expr_type(b.rhs).is_integer()) return null;
+            if (!self.lv_pure_invariant(b.rhs, &st, false)) return null;
+        }
+
+        try self.lv_scan_block(&wl.body, &st);
+        if (st.uses_global and st.has_call) st.ok = false;
+        if (!st.ok or st.checks.items.len == 0) {
+            st.checks.deinit(self.alloc);
+            return null;
+        }
+        return st.checks;
+    }
+
+    /// `i = i + K` / `i = K + i` with `K` a positive integer literal.
+    fn lv_is_positive_step(self: *CodeGen, s: *const ast.Stmt, ivar: []const u8) bool {
+        _ = self;
+        if (s.* != .assign) return false;
+        const as = s.assign;
+        if (as.targets.len != 1 or as.values.len != 1) return false;
+        if (as.targets[0].* != .name) return false;
+        if (!std.mem.eql(u8, as.targets[0].name.ident, ivar)) return false;
+        const v = as.values[0];
+        if (v.* != .binop or v.binop.op != .add) return false;
+        const l = v.binop.lhs;
+        const r = v.binop.rhs;
+        if (l.* == .name and std.mem.eql(u8, l.name.ident, ivar) and r.* == .int_lit) {
+            return r.int_lit.val > 0;
+        }
+        if (r.* == .name and std.mem.eql(u8, r.name.ident, ivar) and l.* == .int_lit) {
+            return l.int_lit.val > 0;
+        }
+        return false;
+    }
+
+    /// Side-effect free AND unchanged for the whole loop: names/int literals
+    /// joined by `+ - *` only. `allow_ivar` admits the one name that does
+    /// change. A module global is admitted but recorded, because only a call can
+    /// write one behind this analysis — see `LvScan.uses_global`.
+    fn lv_pure_invariant(self: *CodeGen, e: *const ast.Expr, st: *LvScan, allow_ivar: bool) bool {
+        return switch (e.*) {
+            .int_lit => true,
+            .name => |n| blk2: {
+                if (std.mem.eql(u8, n.ident, st.ivar)) break :blk2 allow_ivar;
+                if (self.is_dense_table_name(n.ident)) break :blk2 false;
+                if (self.block_assigns_name(st.root, n.ident)) break :blk2 false;
+                if (self.is_global_name(n.ident)) st.uses_global = true;
+                break :blk2 true;
+            },
+            .binop => |bo| switch (bo.op) {
+                .add, .sub, .mul => self.lv_pure_invariant(bo.lhs, st, allow_ivar) and
+                    self.lv_pure_invariant(bo.rhs, st, allow_ivar),
+                else => false,
+            },
+            .unop => |u| u.op == .neg and self.lv_pure_invariant(u.operand, st, allow_ivar),
+            else => false,
+        };
+    }
+
+    /// The coefficient of `ivar` in an affine index expression, or null when the
+    /// expression is not affine in it. Two coefficient-bearing terms can only be
+    /// added when both are plain numbers — `i*p + i*q` would need the sum of two
+    /// symbolic products, which this does not build. `/` and `%` are simply not
+    /// affine, which is why `(i % size) + 1` (the ring buffer) never reaches the
+    /// fast arm.
+    fn lv_coeff(self: *CodeGen, e: *const ast.Expr, ivar: []const u8) ?LvCoeff {
+        switch (e.*) {
+            .int_lit => return LvCoeff.zero(),
+            .name => |n| return if (std.mem.eql(u8, n.ident, ivar)) LvCoeff{ .konst = 1 } else LvCoeff.zero(),
+            .unop => |u| {
+                if (u.op != .neg) return null;
+                var c = self.lv_coeff(u.operand, ivar) orelse return null;
+                const r = @subWithOverflow(@as(i64, 0), c.konst);
+                if (r[1] != 0) return null;
+                c.konst = r[0];
+                return c;
+            },
+            .binop => |bo| {
+                const l = self.lv_coeff(bo.lhs, ivar) orelse return null;
+                const r = self.lv_coeff(bo.rhs, ivar) orelse return null;
+                switch (bo.op) {
+                    .add, .sub => {
+                        var rr = r;
+                        if (bo.op == .sub) {
+                            const neg = @subWithOverflow(@as(i64, 0), rr.konst);
+                            if (neg[1] != 0) return null;
+                            rr.konst = neg[0];
+                        }
+                        if (l.is_zero()) return rr;
+                        if (rr.is_zero()) return l;
+                        if (l.nfactors != 0 or rr.nfactors != 0) return null;
+                        const s = @addWithOverflow(l.konst, rr.konst);
+                        return if (s[1] != 0) null else LvCoeff{ .konst = s[0] };
+                    },
+                    .mul => {
+                        if (l.is_zero() and r.is_zero()) return LvCoeff.zero();
+                        // Exactly one side carries the counter; the other side
+                        // multiplies its coefficient.
+                        const carrier = if (l.is_zero()) r else l;
+                        const other = if (l.is_zero()) bo.lhs else bo.rhs;
+                        if (!l.is_zero() and !r.is_zero()) return null;
+                        if (lv_const_int(other)) |k| {
+                            const s = @mulWithOverflow(carrier.konst, k);
+                            if (s[1] != 0) return null;
+                            var out = carrier;
+                            out.konst = s[0];
+                            return out;
+                        }
+                        return carrier.push(other);
+                    },
+                    else => return null,
+                }
+            },
+            else => return null,
+        }
+    }
+
+    /// Structural equality over the index grammar `lv_pure_invariant` admits, so
+    /// the same access appearing twice in a body guards once.
+    fn lv_key_eq(a: *const ast.Expr, b: *const ast.Expr) bool {
+        return switch (a.*) {
+            .int_lit => |x| b.* == .int_lit and b.int_lit.val == x.val,
+            .name => |x| b.* == .name and std.mem.eql(u8, b.name.ident, x.ident),
+            .unop => |x| b.* == .unop and b.unop.op == x.op and lv_key_eq(x.operand, b.unop.operand),
+            .binop => |x| b.* == .binop and b.binop.op == x.op and
+                lv_key_eq(x.lhs, b.binop.lhs) and lv_key_eq(x.rhs, b.binop.rhs),
+            else => false,
+        };
+    }
+
+    fn lv_const_int(e: *const ast.Expr) ?i64 {
+        switch (e.*) {
+            .int_lit => |v| return v.val,
+            .unop => |u| {
+                if (u.op != .neg) return null;
+                const x = lv_const_int(u.operand) orelse return null;
+                const r = @subWithOverflow(@as(i64, 0), x);
+                return if (r[1] != 0) null else r[0];
+            },
+            .binop => |bo| {
+                const l = lv_const_int(bo.lhs) orelse return null;
+                const r = lv_const_int(bo.rhs) orelse return null;
+                const s = switch (bo.op) {
+                    .add => @addWithOverflow(l, r),
+                    .sub => @subWithOverflow(l, r),
+                    .mul => @mulWithOverflow(l, r),
+                    else => return null,
+                };
+                return if (s[1] != 0) null else s[0];
+            },
+            else => return null,
+        }
+    }
+
+    fn lv_scan_block(self: *CodeGen, blk: *const ast.Block, st: *LvScan) E!void {
+        for (blk.stmts) |*s| {
+            if (!st.ok) return;
+            try self.lv_scan_stmt(s, st);
+        }
+    }
+
+    fn lv_scan_stmt(self: *CodeGen, s: *const ast.Stmt, st: *LvScan) E!void {
+        if (!st.ok) return;
+        switch (s.*) {
+            .assign => |as| {
+                for (as.targets) |t| try self.lv_scan_target(t, st);
+                for (as.values) |v| try self.lv_scan_expr(v, st);
+            },
+            .local_decl => |ld| {
+                for (ld.names) |n| {
+                    if (self.is_dense_table_name(n.ident)) st.ok = false;
+                }
+                for (ld.inits) |v| try self.lv_scan_expr(v, st);
+            },
+            .const_decl => |cd| {
+                if (self.is_dense_table_name(cd.ident)) st.ok = false;
+                try self.lv_scan_expr(cd.val, st);
+            },
+            .call_stmt => |c| try self.lv_scan_expr(c.expr, st),
+            .expr_stmt => |c| try self.lv_scan_expr(c.expr, st),
+            .ret => |r| for (r.vals) |v| try self.lv_scan_expr(v, st),
+            .brk, .cont => {},
+            .do_block => |db| try self.lv_scan_block(&db.body, st),
+            .while_loop => |w| {
+                try self.lv_scan_expr(w.cond, st);
+                try self.lv_scan_block(&w.body, st);
+            },
+            .repeat_loop => |r| {
+                try self.lv_scan_block(&r.body, st);
+                try self.lv_scan_expr(r.cond, st);
+            },
+            .if_stmt => |is| {
+                if (is.binding != null) st.ok = false;
+                try self.lv_scan_expr(is.cond, st);
+                try self.lv_scan_block(&is.then, st);
+                for (is.elseifs) |ei| {
+                    try self.lv_scan_expr(ei.cond, st);
+                    try self.lv_scan_block(&ei.body, st);
+                }
+                if (is.else_body) |eb| try self.lv_scan_block(&eb, st);
+            },
+            .num_for => |nf| {
+                try self.lv_scan_expr(nf.start, st);
+                try self.lv_scan_expr(nf.stop, st);
+                if (nf.step) |sp| try self.lv_scan_expr(sp, st);
+                try self.lv_scan_block(&nf.body, st);
+            },
+            // Everything else — a nested function, a label, a `goto`, a
+            // directive — is refused rather than modelled. The walker declines
+            // for any construct it does not understand.
+            else => st.ok = false,
+        }
+    }
+
+    fn lv_scan_target(self: *CodeGen, t: *const ast.Expr, st: *LvScan) E!void {
+        if (t.* == .index and self.is_dense_table_index(t.index.obj)) {
+            try self.lv_record_dense(t.index.obj.name.ident, t.index.key, st);
+            return;
+        }
+        try self.lv_scan_expr(t, st);
+    }
+
+    fn lv_record_dense(self: *CodeGen, table: []const u8, key: *const ast.Expr, st: *LvScan) E!void {
+        // The key has to be an integer expression: the guard evaluates the same
+        // expression the body will, and a boxed key would go through
+        // `lua_to_num` with a rounding step the affine argument does not model.
+        if (!self.expr_type(key).is_integer()) {
+            st.ok = false;
+            return;
+        }
+        if (!self.lv_pure_invariant(key, st, true)) {
+            st.ok = false;
+            return;
+        }
+        const coeff = self.lv_coeff(key, st.ivar) orelse {
+            st.ok = false;
+            return;
+        };
+        for (st.checks.items) |c| {
+            if (std.mem.eql(u8, c.table, table) and lv_key_eq(c.key, key)) return;
+        }
+        try st.checks.append(self.alloc, .{ .table = table, .key = key, .coeff = coeff });
+    }
+
+    fn lv_scan_expr(self: *CodeGen, e: *const ast.Expr, st: *LvScan) E!void {
+        if (!st.ok) return;
+        switch (e.*) {
+            .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit => {},
+            .name => |n| {
+                // A dense table named outside an index position would escape the
+                // proof — and sema already refuses to make such a table dense,
+                // so reaching here means the shape is not the one modelled.
+                if (self.is_dense_table_name(n.ident)) st.ok = false;
+            },
+            .index => |idx| {
+                if (self.is_dense_table_index(idx.obj)) {
+                    try self.lv_record_dense(idx.obj.name.ident, idx.key, st);
+                    return;
+                }
+                try self.lv_scan_expr(idx.obj, st);
+                try self.lv_scan_expr(idx.key, st);
+            },
+            .field => |f| try self.lv_scan_expr(f.obj, st),
+            .call => |c| {
+                st.has_call = true;
+                try self.lv_scan_expr(c.func, st);
+                for (c.args) |a| try self.lv_scan_expr(a, st);
+            },
+            .method_call => |m| {
+                st.has_call = true;
+                try self.lv_scan_expr(m.obj, st);
+                for (m.args) |a| try self.lv_scan_expr(a, st);
+            },
+            .binop => |bo| {
+                try self.lv_scan_expr(bo.lhs, st);
+                try self.lv_scan_expr(bo.rhs, st);
+            },
+            .unop => |u| try self.lv_scan_expr(u.operand, st),
+            .sequence => |sq| for (sq.exprs) |x| try self.lv_scan_expr(x, st),
+            .table => |t| {
+                for (t.fields) |f| switch (f) {
+                    .positional => |v| try self.lv_scan_expr(v, st),
+                    .named => |kv| try self.lv_scan_expr(kv.val, st),
+                    .indexed => |kv| {
+                        try self.lv_scan_expr(kv.key, st);
+                        try self.lv_scan_expr(kv.val, st);
+                    },
+                    else => st.ok = false,
+                };
+            },
+            else => st.ok = false,
+        }
+    }
+
     fn block_assigns_name(self: *CodeGen, blk: *const ast.Block, name: []const u8) bool {
         for (blk.stmts) |*s| {
             if (self.stmt_assigns_name(s, name)) return true;
@@ -11118,6 +11565,108 @@ pub const CodeGen = struct {
     /// could capture and then rebind a local behind an analysis that only looks
     /// at assignments. Conservative on purpose: it answers yes for a nested
     /// function that captures nothing.
+    fn emit_while_core(self: *CodeGen, wl: anytype, hoist: ?WhileBound, fast_bound: ?usize) E!void {
+        self.ind();
+        self.p("while (", .{});
+        if (fast_bound) |lid| {
+            // Reached only under a loop-versioning guard, which has already
+            // established that `__lvhi` is the LAST counter value the original
+            // condition admits — exactly, not conservatively. See
+            // `duo_dt_hi_num`: inside [0, 1e15] every int64 converts to double
+            // without rounding, so `(double)i <= d` and `i <= (int64_t)d` accept
+            // the same integers, and the strict form subtracts the one value an
+            // integral bound differs by. The slow arm keeps the original test.
+            try self.emit_expr(wl.cond.binop.lhs);
+            self.p(" <= __lvhi{d}", .{lid});
+        } else if (hoist) |h| {
+            self.p("__wb_ok{d} ? ((double)(", .{h.id});
+            try self.emit_expr(wl.cond.binop.lhs);
+            self.p(") {s} __wb_n{d}) : (", .{ h.cop, h.id });
+            try self.emit_expr(wl.cond);
+            self.p(")", .{});
+        } else if (self.expr_type(wl.cond) == .any) {
+            self.p("lua_to_bool(", .{});
+            try self.emit_expr(wl.cond);
+            self.p(")", .{});
+        } else {
+            try self.emit_expr(wl.cond);
+        }
+        self.p(") {{\n", .{});
+        self.indent += 1;
+        try self.push_break_scope();
+        defer self.pop_break_scope();
+        try self.emit_block(&wl.body);
+        self.indent -= 1;
+        self.pl("}}", .{});
+    }
+
+    /// The two arms of GAP-039's loop versioning. The guard is the whole proof:
+    /// it is evaluated where the counter still holds its entry value, so each
+    /// index expression can be emitted verbatim and read as "this index, at the
+    /// low end of the range". The high end follows from the coefficient.
+    ///
+    /// `__lvhi` is an UPPER BOUND on the counter, never an estimate of it. For a
+    /// boxed bound the loop compares `(double)i` against a double, so the bound
+    /// is only usable when it is a number in `[0, 1e15]`: below 2^53 every
+    /// int64 converts to double exactly, so `(double)i <= d` implies
+    /// `i <= (int64_t)d`, and anything outside that window declines to the
+    /// checked arm via `INT64_MIN`.
+    ///
+    /// The loop CONDITION is identical in both arms — only the accessors differ.
+    fn emit_versioned_while(self: *CodeGen, wl: anytype, hoist: ?WhileBound, checks: []const DenseRange) E!void {
+        const lid = self.loop_version_serial;
+        self.loop_version_serial += 1;
+
+        self.ind();
+        self.p("int64_t __lvlo{d} = ", .{lid});
+        try self.emit_expr(wl.cond.binop.lhs);
+        self.p("; int64_t __lvhi{d} = ", .{lid});
+        const strict = if (wl.cond.binop.op == .lt) "true" else "false";
+        if (hoist) |h| {
+            self.p("duo_dt_hi_num(__wb_ok{d}, __wb_n{d}, {s});\n", .{ h.id, h.id, strict });
+        } else {
+            self.p("duo_dt_hi_int((int64_t)(", .{});
+            try self.emit_expr(wl.cond.binop.rhs);
+            self.p("), {s});\n", .{strict});
+        }
+
+        self.ind();
+        // `INT64_MIN` is `duo_dt_hi_*`'s refusal, and it is tested here rather
+        // than left to `duo_dt_range_ok`: a counter that started at `INT64_MIN`
+        // would make the range empty and the guard pass on one index while the
+        // real loop ran on.
+        self.p("if (__lvhi{d} != INT64_MIN", .{lid});
+        for (checks) |c| {
+            self.p(" && ", .{});
+            self.p("duo_dt_range_ok(__dtc_{s}, (", .{c.table});
+            try self.emit_dense_key(c.key);
+            self.p("), ", .{});
+            var oi: u8 = 0;
+            while (oi < c.coeff.nfactors) : (oi += 1) self.p("duo_dt_mulsat(", .{});
+            self.p("{d}", .{c.coeff.konst});
+            for (c.coeff.factors[0..c.coeff.nfactors]) |f| {
+                self.p(", (int64_t)(", .{});
+                try self.emit_expr(f);
+                self.p("))", .{});
+            }
+            self.p(", __lvlo{d}, __lvhi{d})", .{ lid, lid });
+        }
+        self.p(") {{\n", .{});
+        self.indent += 1;
+        {
+            const saved = self.dense_unchecked;
+            self.dense_unchecked = true;
+            defer self.dense_unchecked = saved;
+            try self.emit_while_core(wl, hoist, lid);
+        }
+        self.indent -= 1;
+        self.pl("}} else {{", .{});
+        self.indent += 1;
+        try self.emit_while_core(wl, hoist, null);
+        self.indent -= 1;
+        self.pl("}}", .{});
+    }
+
     fn emit_stmt(self: *CodeGen, stmt: *const ast.Stmt) E!void {
         switch (stmt.*) {
             .macro_def => {},
@@ -11821,11 +12370,22 @@ pub const CodeGen = struct {
                             if (idx.obj.* == .name) {
                                 const dt = idx.obj.name.ident;
                                 const info = self.dense_table_info(dt);
-                                self.p("duo_dt_set_{s}(&__dt_{s}, &__dtc_{s}, ", .{ info.sfx(), dt, dt });
-                                try self.emit_dense_key(idx.key);
-                                self.p(", ", .{});
-                                if (i < as.values.len) try self.emit_dense_value(as.values[i], info) else self.p("0", .{});
-                                self.p(");\n", .{});
+                                // Under a loop-versioning guard the index is
+                                // proved inside [0, cap), so the store can
+                                // neither grow the buffer nor move it.
+                                if (self.dense_unchecked) {
+                                    self.p("__dt_{s}[", .{dt});
+                                    try self.emit_dense_key(idx.key);
+                                    self.p("] = ", .{});
+                                    if (i < as.values.len) try self.emit_dense_value(as.values[i], info) else self.p("0", .{});
+                                    self.p(";\n", .{});
+                                } else {
+                                    self.p("duo_dt_set_{s}(&__dt_{s}, &__dtc_{s}, ", .{ info.sfx(), dt, dt });
+                                    try self.emit_dense_key(idx.key);
+                                    self.p(", ", .{});
+                                    if (i < as.values.len) try self.emit_dense_value(as.values[i], info) else self.p("0", .{});
+                                    self.p(");\n", .{});
+                                }
                             }
                         } else if (self.expr_is_dynamic_table(idx.obj)) {
                             is_table_assign = true;
@@ -12181,28 +12741,13 @@ pub const CodeGen = struct {
                         try self.emit_expr(wl.cond.binop.rhs);
                         self.p(") : 0.0;\n", .{});
                     }
-                    self.ind();
-                    self.p("while (", .{});
-                    if (hoist) |h| {
-                        self.p("__wb_ok{d} ? ((double)(", .{h.id});
-                        try self.emit_expr(wl.cond.binop.lhs);
-                        self.p(") {s} __wb_n{d}) : (", .{ h.cop, h.id });
-                        try self.emit_expr(wl.cond);
-                        self.p(")", .{});
-                    } else if (self.expr_type(wl.cond) == .any) {
-                        self.p("lua_to_bool(", .{});
-                        try self.emit_expr(wl.cond);
-                        self.p(")", .{});
+                    var plan = try self.loop_version_plan(wl, hoist != null);
+                    if (plan) |*checks| {
+                        defer checks.deinit(self.alloc);
+                        try self.emit_versioned_while(wl, hoist, checks.items);
                     } else {
-                        try self.emit_expr(wl.cond);
+                        try self.emit_while_core(wl, hoist, null);
                     }
-                    self.p(") {{\n", .{});
-                    self.indent += 1;
-                    try self.push_break_scope();
-                    defer self.pop_break_scope();
-                    try self.emit_block(&wl.body);
-                    self.indent -= 1;
-                    self.pl("}}", .{});
                 }
             },
             .repeat_loop => |*rl| {
@@ -13288,6 +13833,12 @@ pub const CodeGen = struct {
                     } else {
                         self.p("(", .{});
                     }
+                    if (self.dense_unchecked) {
+                        self.p("__dt_{s}[", .{dt});
+                        try self.emit_dense_key(idx.key);
+                        self.p("])", .{});
+                        return true;
+                    }
                     self.p("duo_dt_get_{s}(__dt_{s}, __dtc_{s}, ", .{ info.sfx(), dt, dt });
                     try self.emit_dense_key(idx.key);
                     self.p("))", .{});
@@ -14357,6 +14908,12 @@ pub const CodeGen = struct {
                     if (idx.obj.* == .name) {
                         const dt = idx.obj.name.ident;
                         const info = self.dense_table_info(dt);
+                        if (self.dense_unchecked) {
+                            self.p("__dt_{s}[", .{dt});
+                            try self.emit_dense_key(idx.key);
+                            self.p("]", .{});
+                            return;
+                        }
                         self.p("duo_dt_get_{s}(__dt_{s}, __dtc_{s}, ", .{ info.sfx(), dt, dt });
                         try self.emit_dense_key(idx.key);
                         self.p(")", .{});
@@ -23514,12 +24071,24 @@ const duo_dense_runtime =
     \\#include <stdlib.h>
     \\#include <string.h>
     \\#include <stdint.h>
+    \\#include <stdbool.h>
     \\
-    \\#define DUO_DT_DECL(ty, sfx)                                                  \
+    \\#define DUO_DT_DECL(ty, sfx)                                                \
     \\static inline void duo_dt_grow_##sfx(ty** p, int64_t* cap, int64_t need) {    \
     \\    int64_t c = *cap ? *cap : 8;                                              \
+    \\    ty* np;                                                                   \
     \\    while (c < need) c *= 2;                                                  \
-    \\    ty* np = (ty*)realloc(*p, (size_t)c * sizeof(ty));                        \
+    \\    /* First allocation: calloc, not realloc+memset. The zeroing is required  \
+    \\       (an unwritten slot reads as Lua nil, i.e. 0 in arithmetic), but a      \
+    \\       fresh calloc of several MB is served from zero pages the process       \
+    \\       never has to touch, while the memset writes every byte up front. */    \
+    \\    if (*p == NULL) {                                                         \
+    \\        np = (ty*)calloc((size_t)c, sizeof(ty));                              \
+    \\        if (!np) return;                                                      \
+    \\        *p = np; *cap = c;                                                    \
+    \\        return;                                                               \
+    \\    }                                                                         \
+    \\    np = (ty*)realloc(*p, (size_t)c * sizeof(ty));                            \
     \\    if (!np) return;                                                          \
     \\    memset(np + *cap, 0, (size_t)(c - *cap) * sizeof(ty));                    \
     \\    *p = np; *cap = c;                                                        \
@@ -23541,6 +24110,49 @@ const duo_dense_runtime =
     \\}                                                                             \
     \\static inline ty duo_dt_get_##sfx(ty* p, int64_t cap, int64_t i) {            \
     \\    return __builtin_expect((uint64_t)i < (uint64_t)cap, 1) ? p[i] : (ty)0;   \
+    \\}
+    \\/* Loop versioning guard. An index that is affine in the loop counter takes  */
+    \\/* its extreme values at the counter's extremes, so checking the two ends    */
+    \\/* checks every iteration. `at_lo` is the index expression evaluated where   */
+    \\/* the counter still holds `lo`; the other end is `at_lo + coeff*(hi-lo)`.   */
+    \\/* `hi` is an UPPER BOUND on the counter, never an estimate of it: too large */
+    \\/* only declines to the checked arm, too small would be an overrun. Overflow */
+    \\/* anywhere, or an empty range, declines. */
+    \\/* A coefficient can be a product of loop-invariant terms. Overflow in that */
+    \\/* product yields INT64_MIN, which makes `duo_dt_range_ok` decline for every */
+    \\/* span but zero — and a zero span is a single iteration, whose only index   */
+    \\/* is `at_lo`, which is checked directly. */
+    \\static inline int64_t duo_dt_mulsat(int64_t a, int64_t b) {
+    \\    int64_t r;
+    \\    return __builtin_mul_overflow(a, b, &r) ? INT64_MIN : r;
+    \\}
+    \\/* Largest counter value a `while i < e` / `i <= e` loop can reach, for a    */
+    \\/* native integer bound. INT64_MIN means "no usable bound" and declines.     */
+    \\static inline int64_t duo_dt_hi_int(int64_t e, bool strict) {
+    \\    if (!strict) return e;
+    \\    return e == INT64_MIN ? INT64_MIN : e - 1;
+    \\}
+    \\/* The same, for the boxed bound the hoisted `while` compares as a double.   */
+    \\/* Outside [0, 1e15] this declines: below 2^53 every int64 converts to double */
+    \\/* exactly, so within that window `(double)i <= d` really does imply         */
+    \\/* `i <= (int64_t)d`. NaN takes the same exit as a negative bound.           */
+    \\static inline int64_t duo_dt_hi_num(bool ok, double d, bool strict) {
+    \\    int64_t t;
+    \\    if (!ok || !(d >= 0.0) || d > 1e15) return INT64_MIN;
+    \\    t = (int64_t)d;
+    \\    if (strict && (double)t == d) t -= 1;
+    \\    return t;
+    \\}
+    \\static inline bool duo_dt_range_ok(int64_t cap, int64_t at_lo, int64_t coeff,
+    \\                                   int64_t lo, int64_t hi) {
+    \\    int64_t span, delta, at_hi, mn, mx;
+    \\    if (hi < lo) return false;
+    \\    if (__builtin_sub_overflow(hi, lo, &span)) return false;
+    \\    if (__builtin_mul_overflow(coeff, span, &delta)) return false;
+    \\    if (__builtin_add_overflow(at_lo, delta, &at_hi)) return false;
+    \\    mn = at_lo < at_hi ? at_lo : at_hi;
+    \\    mx = at_lo > at_hi ? at_lo : at_hi;
+    \\    return mn >= 0 && mx < cap;
     \\}
     \\DUO_DT_DECL(int64_t, i64)
     \\DUO_DT_DECL(double, f64)
@@ -33398,6 +34010,80 @@ test "table max scan lowers the real comparison, never a frozen maximum" {
     , &aw);
     try testing.expect(std.mem.indexOf(u8, out, "100002") == null);
     try testing.expect(std.mem.indexOf(u8, out, "mx") != null);
+}
+
+test "loop versioning: an affine index gets a guarded unchecked arm, a modular one does not" {
+    // GAP-039. The proof is the guard, so what this pins is that the guard is
+    // PRESENT whenever the unchecked accessor is, and that the checked arm
+    // survives beside it — never the unchecked form on its own.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var aw1: std.Io.Writer.Allocating = .init(alloc);
+    defer aw1.deinit();
+    const affine = try kernel_c_for_test(alloc,
+        \\function scan(n)
+        \\    local t = {}
+        \\    local i = 1
+        \\    while i <= n do
+        \\        t[i] = i * 17
+        \\        i = i + 1
+        \\    end
+        \\    local s = 0
+        \\    i = 2
+        \\    while i <= n do
+        \\        s = s + t[i] + t[i - 1]
+        \\        i = i + 1
+        \\    end
+        \\    return s
+        \\end
+        \\print(scan(10))
+    , &aw1);
+    // The fast arm indexes the buffer directly…
+    try testing.expect(std.mem.indexOf(u8, affine, "__dt_t[") != null);
+    // …only under a range guard…
+    try testing.expect(std.mem.indexOf(u8, affine, "duo_dt_range_ok(__dtc_t") != null);
+    try testing.expect(std.mem.indexOf(u8, affine, "duo_dt_hi_num") != null);
+    // …and the checked accessor is still emitted for the other arm.
+    try testing.expect(std.mem.indexOf(u8, affine, "duo_dt_get_i64(__dt_t") != null);
+
+    // Negative control, same shape, one non-affine index: `(i % size) + 1` does
+    // not take its extremes at the loop's extremes, so no arm may be unchecked.
+    var aw2: std.Io.Writer.Allocating = .init(alloc);
+    defer aw2.deinit();
+    const modular = try kernel_c_for_test(alloc,
+        \\function ring(n)
+        \\    local size = 8
+        \\    local buf = {}
+        \\    local i = 1
+        \\    while i <= size do
+        \\        buf[i] = 0
+        \\        i = i + 1
+        \\    end
+        \\    local s = 0
+        \\    i = 0
+        \\    while i < n do
+        \\        buf[(i % size) + 1] = i
+        \\        s = s + buf[(i % size) + 1]
+        \\        i = i + 1
+        \\    end
+        \\    return s
+        \\end
+        \\print(ring(10))
+    , &aw2);
+    try testing.expect(std.mem.indexOf(u8, modular, "duo_dt_get_i64(__dt_buf") != null);
+    // The fill loop above IS affine, so the file legitimately contains a guard;
+    // what must be absent is any raw index of the modular table beyond it.
+    var scan_at: usize = 0;
+    var raw_reads: usize = 0;
+    while (std.mem.indexOfPos(u8, modular, scan_at, "__dt_buf[")) |at| {
+        raw_reads += 1;
+        scan_at = at + 1;
+    }
+    // Exactly the two the fill loop's own guard proves — the modular loop's
+    // four accesses stay checked.
+    try testing.expect(raw_reads <= 1);
 }
 
 test "tightened kernel recognisers fold the template and decline everything else" {

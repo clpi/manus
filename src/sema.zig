@@ -4699,7 +4699,14 @@ pub const Sema = struct {
             var loop_poly_fill: ?DenseTablePolyFill = null;
 
             for (wl.body.stmts) |*s| {
-                if (s.* != .assign) continue;
+                // The closed form below sums the WHOLE range, so the loop has to
+                // BE the whole range. A body statement this walk does not model
+                // — an `if`, a `break`, a `return`, a call — can cut the range
+                // short or add a term, and skipping it answered a question the
+                // program had stopped asking: `while i <= n do if i > 5 break
+                // end sum += t[i] i += 1 end` returned n(n+1)/2 for n = 50, i.e.
+                // 1275 where the program asks for 15.
+                if (s.* != .assign) return;
                 const as = s.assign;
                 const n = @min(as.targets.len, as.values.len);
                 var ii: usize = 0;
