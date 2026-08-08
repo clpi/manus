@@ -9,7 +9,7 @@
 --
 -- 2026-08-07: 44/245 when this number first existed, then 245/245 the same day.
 --
--- It GATES now. `PARSER_COVERAGE_FLOOR` (default 255) is a ratchet: the number
+-- It GATES now. `PARSER_COVERAGE_FLOOR` (default 256) is a ratchet: the number
 -- only goes up. Every regression this session was invisible to the 55-case
 -- projection proof and visible only here — a guard that silently dropped 33
 -- files, a speculation that truncated expression statements, a lambda arm that
@@ -22,10 +22,11 @@
 --     a token, now fixed structurally by the `stalled` guard in parser.duo. A
 --     scripts/ entry that hangs is worse than no measurement, because the next
 --     agent wires it into a gate.
---   * `lib/std/os/linux.duo` is skipped. A lexer error (`UnterminatedString`)
---     aborts the whole process rather than returning a rejection, so one bad
---     file would truncate the run and silently shrink the denominator. The skip
---     is visible here rather than hidden in the number.
+--   * `lib/std/os/linux.duo` is NO LONGER skipped. GAP-017 is closed: a lexer
+--     error is now a rejection the caller can count, not a process abort, so a
+--     bad file costs one row instead of truncating the run. The skip existed
+--     only to keep that truncation visible; with the cause gone, the file
+--     rejoins the denominator.
 --
 -- `req` rather than an ambient root: GAP-13 — ambient `std.str.sub` on a
 -- native-direct module crashes at startup with no output.
@@ -34,7 +35,7 @@ global P = std.compiler.parser
 
 corpus = (): str
     std.script.capture("find " .. std.script.getenv("DUO_ROOT", ".")
-        .. "/lib/std -name '*.duo' 2>/dev/null | grep -v '/os/linux.duo'")
+        .. "/lib/std -name '*.duo' 2>/dev/null")
 end
 
 main(): i64
@@ -72,7 +73,7 @@ main(): i64
     -- GAP-11: numeric holes do not interpolate, so the tallies stay a chain.
     print("parser_coverage: " .. to(str)(ok) .. "/" .. to(str)(total)
         .. " lib/std files parse clean")
-    floor: i64 = to(i64)(std.script.getenv("PARSER_COVERAGE_FLOOR", "255"))
+    floor: i64 = to(i64)(std.script.getenv("PARSER_COVERAGE_FLOOR", "256"))
     if total == 0
         print("parser_coverage: FAIL (empty corpus)")
         return 1
