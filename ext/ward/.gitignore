@@ -2,3 +2,17 @@
 .DS_Store
 *.bak
 zig-out/
+.duo/cache/
+
+# Build artifacts. Nine of these were tracked until 2026-08-08 (~3.4 MB of stale
+# binaries: ward, ward-bin, ward_new, ward_test, ward_test_baseline,
+# ward_test_new, zig-out/bin/main, plus debug.log and run_body.bin). A stale
+# `./ward` sitting next to the source is the exact shape of the measurement bug
+# this project keeps getting caught by, so the build output goes to /tmp and the
+# harnesses take WARD_BIN.
+/ward
+/ward-bin
+/ward_new
+/ward_test*
+/debug.log
+/run_body.bin

@@ -1,18 +1,111 @@
-# ward — handoff (2026-08-06, evening)
+# ward — handoff
 
-Everything below is **measured**, via `./bench/run.duo`. The previous handoff's
-numbers were not reproducible; two separate "it passes the whole corpus" results
-turned out to be the same measurement bug (see "The trap").
+Everything below is **measured**. The 2026-08-06 handoff's numbers were not
+reproducible; two separate "it passes the whole corpus" results turned out to be
+the same measurement bug (see "The trap"). Sections below the "state" block are
+the bug lore from that session and are still accurate as CAUSES — the coverage
+counts they quote (`8/18`, `11/18`) are superseded by the table here.
 
-## State
+## State, re-measured 2026-08-08
 
-`src/ward.duo` (1177 lines, pure Duo, zero `@c.emit`) **builds clean in ~1.0 s**:
+Measured at `981b1f0`. `src/ward.duo` — 4976 lines, 4004 of them code; pure Duo,
+zero `@c.emit` — builds clean in **~35 s** (the 2026-08-06 handoff's
+"1177 lines / ~1.0 s" is four times out of date):
 
 ```
 duo compile src/ward.duo --backend=c --emit exe -o /tmp/ward
 ```
 
+**Conformance, `duo run bench/verify.duo` against wasmtime, 44 modules:**
+
+| engine | PASS | OK(void) | UNSUPPORTED/DIFF | jit-compiled |
+| --- | ---: | ---: | ---: | ---: |
+| `interp` | 43 | 1 | 0 | — |
+| `jit` | 43 | 1 | 0 | 35/44 |
+
+The corpus grew 18 -> 44 modules since the last handoff, so this is not
+"11/18 became 43/44" on the same set. What it does mean is that **every module
+in bench/ that has a wasmtime reference now matches it**, on both engines.
+
+**That result is not fabricated, and here is the check that says so.** A
+44-module fixture corpus is exactly what a recognizer keyed on a literal would
+pass, so 24 kernels with seeded-random constants, loop bounds and instruction
+mixes were generated fresh and differenced against wasmtime: **24/24 agree**
+(12 i32, 6 f64, 6 i64+memory+call). Separately, every benchmark answer value was
+grepped for in `src/ward.duo`: the only two hits (`4037913`, `70000`) are in
+comments describing past bugs. `bench/wart.duo` regenerates the arbitrary-kernel
+check on demand.
+
+**Speed.** Interleaved, min-of-N wall clock. `bench/wart.duo` produces this
+table; do not quote a number that did not come out of a harness.
+
+| workload | ward JIT | wart | wasmtime | ward/wart |
+| --- | ---: | ---: | ---: | ---: |
+| 6 generated kernels, 100M iters | 205-229 ms | 203-211 ms | 190-200 ms | **103%** |
+| FNV 200M (hand-written `.wat`) | 390 ms | 386 ms | 327 ms | **101%** |
+| `bench/hash.wasm` `run` export | 388 ms | not reachable | 392 ms | — |
+| `benchmarks/wasm_rt/hot_big.wasm` | 3400 ms (**interp**) | — | 119 ms | — |
+
+So: **ward is ~1-3% slower than wart, not faster.** Pass 101 §4 asks for
+measurably faster; that criterion is UNMET and `bench/wart.duo` exits non-zero
+saying so. ward is at parity with wasmtime on `hash.wasm`, 19% behind it on the
+same kernel written by hand, and **28x** behind it on `hot_big.wasm`, where the
+JIT does not engage at all and ward falls back to the interpreter.
+
+**Derived-lines ratio (Pass 101 §4, target >= 80%): `0%`.** Measured by
+`duo run bench/derived.duo`, which positive-controls its own marker detection
+before reporting, because a scanner that reports 0 is usually broken. 4004
+shipped code lines, 0 projected from a descriptor, and 241 lines whose dispatch
+predicate hard-codes a WASM opcode number that
+`lib/std/wasm/ward_mvp_opcodes.duo` already holds.
+
 Every parser / hang / `#s` / boxing blocker from earlier handoffs is **resolved**.
+
+## `src/wasm/*.duo` is DEAD CODE — 1406 lines of it
+
+`src/ward.duo` is self-contained: its only `req` is `std.jit`. Nothing in the
+repo requires anything under `src/wasm/`, and the modules that used to
+(`src/main.duo`, `src/cli.duo`, `src/wasm/runtime.duo`, `src/wasm/init.duo`)
+were deleted. `test/main.duo` still requires `src.wasm`, `src.edge` and
+`src.lib`, none of which exist, and it fails to parse besides — **ward has no
+running test suite**; `bench/verify.duo` is doing that job.
+
+This matters most for `src/wasm/jit_arm64.duo` (701 lines). It is the
+**virtual-stack register-allocating JIT** landed in `55668dc` and written up in
+`docs/performance.md` — `vs_pop` / `vs_alloc_not` / `flush_tos`, pinned locals
+in x23..x28. It is a genuinely more advanced code generator than the one that
+ships, and it is unreachable: its host modules are gone. The shipping JIT is
+`jit_compile` inside `src/ward.duo` (lines 2712-4418, 1366 code lines), which
+tracks two register aliases and has no liveness model.
+
+**Do not treat `docs/performance.md`'s ward numbers as this ward's numbers.**
+Its `hot_big` table (ward JIT 0.21 s, "beats wasm3 by 2.2x and iwasm by 2.0x")
+was produced by that deleted architecture. Re-run today against the shipping
+binary: ward **3.4 s on the interpreter**, wasm3 0.77 s, iwasm 0.74 s,
+wasmtime 0.12 s — ward is **4.5x slower than wasm3**, the opposite of the claim.
+The value is right (2331661441, matching wasmtime); only the claim is wrong.
+
+## wart IS a usable baseline now — with one hard limit
+
+The 2026-08-06 note below ("There is no local wart baseline") is **out of date**.
+`~/x/wart/zig-out/bin/wart` runs; the `ldp xzr, xzr` SIGILL is fixed in that
+repo's **uncommitted** working tree (`src/wasm/jit_arm64.zig`,
+`src/wasm/runtime.zig`, `src/util/fmt.zig` are all modified against `ad10076`).
+That repo is READ-ONLY here, so the baseline depends on an unpushed diff — if a
+future session finds wart SIGILLing again, that is why.
+
+The limit: **`wart run` can only invoke `_start`, and prints nothing for a
+function that returns a value.** Of the 44 modules in `bench/`, 24 export only
+`run` (wart cannot reach them) and of the 17 exporting `_start` only 2 print
+anything. So wart's ANSWER is observable for **2 of 44** fixtures, and any
+ward-vs-wart row built on the other 42 is timing two runtimes with no evidence
+either computed the right thing.
+
+`bench/wart.duo` is the repair: generate the kernel, ask wasmtime for the value,
+then emit a second module whose `_start` traps unless the value matches. wart's
+exit status becomes a value check and ward's `-1` bail becomes one too. It
+runs a deliberately-wrong assert first and refuses to report if either runtime
+accepts it.
 
 ## The trap that invalidated two benchmark sweeps
 
@@ -53,7 +146,11 @@ need restructuring.
 Verified: `wart_simple` (`42 + 58` through a 2-param callee) returns **100**,
 and hash.wasm is unchanged at `1899277430`. Imported/WASI functions still bail.
 
-## Measured coverage: 11/18 VERIFIED (11/16 of modules that have a wasmtime reference) (use bench/verify.duo)
+## Measured coverage: 11/18 VERIFIED — SUPERSEDED, see the 2026-08-08 table above (43/44)
+
+Everything from here down is the 2026-08-06 session's record. The BUGS and their
+causes are still correct and still worth reading; the coverage counts and the
+speed table are not current.
 
 ## THE CONVERSION FAMILY (168-187)
 
@@ -246,18 +343,21 @@ Floats dominate — they are the next unlock, not exotic opcodes:
 `-1` means ward genuinely could not execute it (unsupported opcode / stack
 underflow). So the limiter is **opcode coverage**, not the decoder.
 
-## Speed, on the one workload that stresses it
+## Speed, on the one workload that stresses it — SUPERSEDED
 
-| runtime | `hash.wasm` |
-| --- | --- |
-| ward `jit-arm64` | **0.45 s** |
-| ward `interp` | 5.26 s |
-| wasmtime | **0.436 s** |
-| wart | **SIGILL** |
+| runtime | `hash.wasm` | re-measured 2026-08-08 |
+| --- | --- | --- |
+| ward `jit-arm64` | **0.45 s** | 0.382 s |
+| ward `interp` | 5.26 s | **7.10 s** |
+| wasmtime | **0.436 s** | 0.384 s |
+| wart | **SIGILL** | runs, but cannot invoke `run` |
 
-ward's JIT is ~3% behind wasmtime here. The interpreter runs ~38M iters/s.
+Note the interpreter went **backwards**, 5.26 s -> 7.10 s, while the JIT
+improved. That is the cost of the dispatch growing from 20 opcodes to 170
+hard-coded predicates on one `if`/`elseif` ladder, and it is the same fact the
+derived-lines ratio is measuring from the other side.
 
-## There is no local wart baseline
+## There is no local wart baseline — NO LONGER TRUE, see above
 
 `wart` @ `bab0ea2` **SIGILLs on 17 of 18 modules in its own `bench/wasm/`
 corpus** on this ARM64 Mac. `wart inspect`/`verify` work, so the decoder is fine
@@ -281,15 +381,25 @@ Also note: wart's `build.zig` rejects `-Doptimize`; use **`-Drelease=true`**.
 
 Opcode coverage, counted:
 
-| layer | ops |
-| --- | --- |
-| `src/ward.duo` — the binary that actually works | **20** |
-| `src/wasm/op.duo` — separate 8398-line tree, not what builds | 151 |
-| duo canonical descriptors (`duo wasm-tables emit`) | **63** |
-| full spec (MVP + SIMD + bulk/ref + WASI/WASIX) | ~450+ |
+| layer | ops | re-counted 2026-08-08 |
+| --- | --- | --- |
+| `src/ward.duo` — the binary that actually works | **20** | **170 distinct opcodes**, 241 hard-coded predicates, 19 of them behind a NAME |
+| `src/wasm/op.duo` — separate 8398-line tree, not what builds | 151 | 162 lines, dead code |
+| duo canonical descriptors (`duo wasm-tables emit`) | **63** | 63, unchanged |
+| full spec (MVP + SIMD + bulk/ref + WASI/WASIX) | ~450+ | unchanged |
 
-ward's 20 constants are a hand-copied subset of a 63-op subset. Hand-writing the
-remaining ~430 across interpreter arms *and* JIT emitters is the thing to avoid.
+The 2026-08-06 note said ward's 20 constants were a hand-copied subset of a
+63-op subset, and that hand-writing the rest "across interpreter arms *and* JIT
+emitters is the thing to avoid." **That is exactly what happened.** ward now
+hard-codes 170 distinct opcode numbers, only 19 of which are bound to a name at
+the top of the file; the other 151 are bare integers inside dispatch
+predicates. `bench/derived.duo` reports the ratio and fails the gate at 0%.
+
+Also worth knowing before attempting the projection: `duo wasm-tables emit` is
+NOT currently idempotent against repo style — re-running it rewrites
+`lib/std/wasm/opcode_lookup.duo` with `then`-keyword `if` bodies, which the
+Pass 100 §1 deny list forbids. The generator has to be fixed before it can be
+the source of truth (and it lives in `src/`, which ward does not own).
 
 **Next: project dispatch from one canonical table** via `@comp.define.derive`
 rather than growing three hand-maintained copies. Two constraints:
