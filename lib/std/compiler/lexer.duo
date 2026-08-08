@@ -113,17 +113,17 @@ end
 
 peek_char(self: Lexer): i64
     if self.pos > #self.src return 0 end
-    string.byte(self.src, self.pos)
+    self.src:byte(self.pos)
 end
 
 peek_char2(self: Lexer): i64
     if self.pos + 1 > #self.src return 0 end
-    string.byte(self.src, self.pos + 1)
+    self.src:byte(self.pos + 1)
 end
 
 adv(self: Lexer)
     if self.pos > #self.src return end
-    c = string.byte(self.src, self.pos)
+    c = self.src:byte(self.pos)
     self.pos = self.pos + 1
     if c == 10
         self.line = self.line + 1
@@ -151,14 +151,14 @@ end
 
 long_bracket_level(self: Lexer): i64
     i = self.pos
-    if i > #self.src or string.byte(self.src, i) != 91 return -1 end
+    if i > #self.src or self.src:byte(i) != 91 return -1 end
     i = i + 1
     lvl = 0
-    while i <= #self.src and string.byte(self.src, i) == 61
+    while i <= #self.src and self.src:byte(i) == 61
         lvl = lvl + 1
         i = i + 1
     end
-    if i > #self.src or string.byte(self.src, i) != 91 return -1 end
+    if i > #self.src or self.src:byte(i) != 91 return -1 end
     lvl
 end
 
@@ -234,7 +234,7 @@ skip_ws(self: Lexer)
                 end
                 if is_triple and self.hint_count < 8
                     comment_text = strm.sub(self.src, start, self.pos - 1)
-                    if #comment_text > 0 and string.byte(comment_text, 1) == 64
+                    if #comment_text > 0 and comment_text:byte(1) == 64
                         h = strm.sub(comment_text, 2, -1)
                         if self.hint_count == 0 self.hint_0 = h
                         elseif self.hint_count == 1 self.hint_1 = h
@@ -386,11 +386,11 @@ end
 -- is recorded in GAP-024 rather than fixed here.
 _int_of(text: str): i64
     n: i64 = #text
-    if n > 2 and string.byte(text, 1) == 48 and (string.byte(text, 2) == 120 or string.byte(text, 2) == 88)
+    if n > 2 and text:byte(1) == 48 and (text:byte(2) == 120 or text:byte(2) == 88)
         v: i64 = 0
         i: i64 = 3
         while i <= n
-            c: i64 = string.byte(text, i)
+            c: i64 = text:byte(i)
             d: i64 = 0
             if c >= 48 and c <= 57
                 d = c - 48
@@ -409,7 +409,7 @@ _int_of(text: str): i64
     v: i64 = 0
     i: i64 = 1
     while i <= n
-        c: i64 = string.byte(text, i)
+        c: i64 = text:byte(i)
         if c < 48 or c > 57 return v end
         v = v * 10 + (c - 48)
         i += 1
@@ -578,7 +578,7 @@ next_tok(self: Lexer): Tok
     elseif c == 38
         return { kind = std.compiler.token.KIND_AMP, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 124
-        if self.pos <= #self.src and string.byte(self.src, self.pos) == 62
+        if self.pos <= #self.src and self.src:byte(self.pos) == 62
             self.pos = self.pos + 1
             return { kind = std.compiler.token.KIND_PIPE_GT, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
@@ -779,7 +779,7 @@ duo_lexer_tokenize_text(src: str, file: str, out: i64, cap: i64, txt: i64, txtca
         if toff + tlen > txtcap return -1 end
         k: i64 = 0
         while k < tlen
-            mem.write_byte(tbuf, toff + k, string.byte(tok.text, k + 1))
+            mem.write_byte(tbuf, toff + k, tok.text:byte(k + 1))
             k += 1
         end
         mem.write_i64(buf, (n * 6) * 8, tok.kind)
@@ -835,7 +835,7 @@ duo_lexer_tokenize_full(src: str, file: str, out: i64, cap: i64, txt: i64, txtca
         if toff + tlen > txtcap return -1 end
         k: i64 = 0
         while k < tlen
-            mem.write_byte(tbuf, toff + k, string.byte(tok.text, k + 1))
+            mem.write_byte(tbuf, toff + k, tok.text:byte(k + 1))
             k += 1
         end
         mem.write_i64(buf, (n * 7) * 8, tok.kind)
@@ -909,7 +909,7 @@ duo_lexer_text_fingerprint(src: str, file: str): u64
         h = h * 31 + tl
         bi: i64 = 1
         while bi <= tl
-            h = h * 31 + string.byte(tok.text, bi)
+            h = h * 31 + tok.text:byte(bi)
             bi += 1
         end
         if tok.kind == std.compiler.token.KIND_EOF return h end
