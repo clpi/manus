@@ -186,7 +186,15 @@ pub fn emitObject(alloc: std.mem.Allocator, mod: *const ast.Module, target: []co
 /// Like `emitObject`, but when `process_entry` is set the named zero-arg function
 /// gets `fcvtzs x0, d0` on f64 returns so native executables receive an i64 exit code.
 pub fn emitObjectForExecutable(alloc: std.mem.Allocator, mod: *const ast.Module, process_entry: []const u8) Error![]u8 {
-    refusal_site.line = 0;
+    // Seed the site with THIS function rather than clearing it. A refusal that
+    // never reaches a `refuse()` call then reports "refused inside
+    // emitObjectForExecutable, untagged" instead of reporting nothing — which
+    // is what examples/pass23_canonical_syntax.duo does today: precheck true
+    // (confirmed with DUO_NATIVE_DIAG), one linked module, backend called, and
+    // every report branch falsy. Silence is the one answer a diagnostic must
+    // never give.
+    refusal_site = @src();
+    refusal_note_len = 0;
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) {
         return error.UnsupportedTarget;
     }
