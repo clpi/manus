@@ -294,6 +294,11 @@ pub const FuncBody = struct {
     /// `f(n: any)` produced `calloc((n) + 1, …)` on a `lua_Value`, which is a
     /// hard C compile error.
     dense_table_cap_safe: []const bool = &.{},
+    /// Parallel to `dense_tables`: true when the entry is an *alias* — a name
+    /// bound by `tmp = grid` rather than by a table literal. An alias owns no
+    /// buffer, so it is never allocated and never freed; it only rebinds the
+    /// `(pointer, capacity)` pair of whatever it was assigned from.
+    dense_table_alias: []const bool = &.{},
     // set by sema: emit C-style 0-based string scan loops
     use_string_byte_scan: bool = false,
     use_string_hash_scan: bool = false,

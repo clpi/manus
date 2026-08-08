@@ -9039,6 +9039,52 @@ pub const CodeGen = struct {
         self.p(")", .{});
     }
 
+    /// `tmp = grid` makes two names hold one buffer, so an unguarded second
+    /// `free` of the same pointer is a double free. Free distinct pointers only;
+    /// the list is a handful of names, so the pairwise test is free at runtime
+    /// and disappears entirely when nothing aliases.
+    fn emit_dense_frees(self: *CodeGen, names: []const []const u8) void {
+        for (names, 0..) |n, i| {
+            if (i == 0) {
+                self.pl("free(__dt_{s});", .{n});
+                continue;
+            }
+            self.ind();
+            self.p("if (", .{});
+            for (names[0..i], 0..) |m, j| {
+                if (j > 0) self.p(" && ", .{});
+                self.p("__dt_{s} != __dt_{s}", .{ n, m });
+            }
+            self.p(") free(__dt_{s});\n", .{n});
+        }
+    }
+
+    /// Every dense table of the current function that owns a buffer, primary
+    /// first. Aliases are excluded: they hold a copy of some owner's pointer, so
+    /// freeing them would be a double free — and an alias declared inside a loop
+    /// is not even in scope at the return.
+    fn dense_table_names(self: *CodeGen, buf: *std.ArrayList([]const u8)) E!void {
+        if (self.dense_table) |dt| {
+            if (!self.dense_table_is_alias(dt)) try buf.append(self.alloc, dt);
+        }
+        if (self.current_func_body) |fb| {
+            for (fb.dense_tables, 0..) |dt, i| {
+                if (self.dense_table) |primary| if (std.mem.eql(u8, dt, primary)) continue;
+                if (i < fb.dense_table_alias.len and fb.dense_table_alias[i]) continue;
+                try buf.append(self.alloc, dt);
+            }
+        }
+    }
+
+    fn dense_table_is_alias(self: *CodeGen, name: []const u8) bool {
+        const fb = self.current_func_body orelse return false;
+        for (fb.dense_tables, 0..) |dt, i| {
+            if (!std.mem.eql(u8, name, dt)) continue;
+            return i < fb.dense_table_alias.len and fb.dense_table_alias[i];
+        }
+        return false;
+    }
+
     /// True when `cap` is a plain identifier naming a local of boxed type in a
     /// module that has the lua runtime — the `f(n: any)` shape.
     fn cap_is_boxed_local(self: *CodeGen, cap: []const u8) bool {
@@ -10140,19 +10186,16 @@ pub const CodeGen = struct {
                 return std.mem.eql(u8, dt, rname) or expr_references_name(e, dt);
             }
         };
-        if (self.dense_table) |dt| {
-            if (!frees_dense.skip(expr, dt, ret_name)) {
-                self.pl("free(__dt_{s});", .{dt});
+        {
+            var all: std.ArrayList([]const u8) = .empty;
+            defer all.deinit(self.alloc);
+            try self.dense_table_names(&all);
+            var free_list: std.ArrayList([]const u8) = .empty;
+            defer free_list.deinit(self.alloc);
+            for (all.items) |dt| {
+                if (!frees_dense.skip(expr, dt, ret_name)) try free_list.append(self.alloc, dt);
             }
-        }
-        // Free additional dense tables from the multi-table list.
-        if (self.current_func_body) |fb| {
-            for (fb.dense_tables) |dt| {
-                if (self.dense_table) |primary| if (std.mem.eql(u8, dt, primary)) continue;
-                if (!frees_dense.skip(expr, dt, ret_name)) {
-                    self.pl("free(__dt_{s});", .{dt});
-                }
-            }
+            self.emit_dense_frees(free_list.items);
         }
         // error() is noreturn — emit lua_error directly without return
         if (expr.* == .call and expr.call.func.* == .name and
@@ -11046,6 +11089,18 @@ pub const CodeGen = struct {
                             }
                             if (self.is_dense_table_name(name)) {
                                 const info = self.dense_table_info(name);
+                                // `tmp = grid`: bind the same (pointer, capacity)
+                                // pair rather than allocating a second buffer.
+                                if (i < as.values.len and as.values[i].* == .name and
+                                    self.is_dense_table_name(as.values[i].name.ident))
+                                {
+                                    const src = as.values[i].name.ident;
+                                    try self.note_local_type(name, .any);
+                                    try self.note_local(name);
+                                    self.pl("{s}* __dt_{s} = __dt_{s}; int64_t __dtc_{s} = __dtc_{s};", .{ info.elem(), name, src, name, src });
+                                    try self.note_comptime_unavailable(name);
+                                    continue;
+                                }
                                 const fields: []const ast.TableField =
                                     if (i < as.values.len and as.values[i].* == .table) as.values[i].table.fields else &.{};
                                 try self.note_local_type(name, .any);
@@ -11187,6 +11242,20 @@ pub const CodeGen = struct {
                             }
                             continue;
                         }
+                    }
+
+                    // `grid = next_grid` on two already-declared dense tables:
+                    // the capacity travels with the pointer, so the default
+                    // single-name assignment (which would move only `__dt_`)
+                    // would leave the two out of step.
+                    if (tgt.* == .name and i < as.values.len and as.values[i].* == .name and
+                        self.is_dense_table_name(tgt.name.ident) and
+                        self.is_dense_table_name(as.values[i].name.ident))
+                    {
+                        const dst = tgt.name.ident;
+                        const src = as.values[i].name.ident;
+                        self.pl("__dt_{s} = __dt_{s}; __dtc_{s} = __dtc_{s};", .{ dst, src, dst, src });
+                        continue;
                     }
 
                     var is_table_assign = false;
@@ -11338,19 +11407,16 @@ pub const CodeGen = struct {
                         try returned_dts.put(val.name.ident, {});
                     }
                 }
-                if (self.dense_table) |dt| {
-                    if (!returned_dts.contains(dt)) {
-                        self.pl("free(__dt_{s});", .{dt});
+                {
+                    var all: std.ArrayList([]const u8) = .empty;
+                    defer all.deinit(self.alloc);
+                    try self.dense_table_names(&all);
+                    var free_list: std.ArrayList([]const u8) = .empty;
+                    defer free_list.deinit(self.alloc);
+                    for (all.items) |dt| {
+                        if (!returned_dts.contains(dt)) try free_list.append(self.alloc, dt);
                     }
-                }
-                // Free additional dense tables from the multi-table list.
-                if (self.current_func_body) |fb| {
-                    for (fb.dense_tables) |dt| {
-                        if (self.dense_table) |primary| if (std.mem.eql(u8, dt, primary)) continue;
-                        if (!returned_dts.contains(dt)) {
-                            self.pl("free(__dt_{s});", .{dt});
-                        }
-                    }
+                    self.emit_dense_frees(free_list.items);
                 }
                 if (r.vals.len == 0) {
                     if (self.emitting_main_driver) {
@@ -12624,6 +12690,22 @@ pub const CodeGen = struct {
                     self.p("{s}[", .{nd.c_symbol});
                     try self.emit_expr(idx.key);
                     self.p("]", .{});
+                    return true;
+                }
+                // A dense table is a native array, not a `lua_Value` — this arm
+                // would otherwise hand `__dt_t` to `lua_table_get_i64_num`.
+                if (self.is_dense_table_index(idx.obj)) {
+                    const dt = idx.obj.name.ident;
+                    const info = self.dense_table_info(dt);
+                    if (want.is_numeric()) {
+                        var buf: [64]u8 = undefined;
+                        self.p("(({s})", .{want.c_type(&buf)});
+                    } else {
+                        self.p("(", .{});
+                    }
+                    self.p("duo_dt_get_{s}(__dt_{s}, __dtc_{s}, ", .{ info.sfx(), dt, dt });
+                    try self.emit_dense_key(idx.key);
+                    self.p("))", .{});
                     return true;
                 }
                 if (self.is_native_dense_module_index(idx.obj)) return false;

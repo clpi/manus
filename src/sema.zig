@@ -6685,6 +6685,12 @@ pub const Sema = struct {
         for (blk.stmts) |*s| {
             switch (s.*) {
                 .assign => |*as| {
+                    // `tmp = grid` / `grid = next_grid` — a rename, not an
+                    // escape. Both sides stay inside this body and both are
+                    // lowered to the same `(pointer, capacity)` pair, so the
+                    // bare-name disqualifier below must not see it.
+                    if (as.targets.len == 1 and as.values.len == 1 and
+                        as.targets[0].* == .name and as.values[0].* == .name) continue;
                     for (as.targets) |tgt| {
                         if (tgt.* != .index) continue;
                         const idx = tgt.index;
@@ -6981,8 +6987,12 @@ pub const Sema = struct {
             .binop => |b| switch (b.op) {
                 .add, .sub, .mul, .div, .idiv, .mod, .pow, .band, .bor, .bxor, .lshift, .rshift => true,
                 // `a and b` / `a or b` yield one of the operands.
-                .@"and", .@"or" => expr_is_numeric_valued(fb, b.lhs, in_flight, depth) and
-                    expr_is_numeric_valued(fb, b.rhs, in_flight, depth),
+                .@"and", .@"or" => if (ternary_arms(expr)) |arms|
+                    expr_is_numeric_valued(fb, arms[0], in_flight, depth) and
+                        expr_is_numeric_valued(fb, arms[1], in_flight, depth)
+                else
+                    expr_is_numeric_valued(fb, b.lhs, in_flight, depth) and
+                        expr_is_numeric_valued(fb, b.rhs, in_flight, depth),
                 else => false,
             },
             .unop => |u| switch (u.op) {
@@ -7003,6 +7013,18 @@ pub const Sema = struct {
             },
             else => false,
         };
+    }
+
+    /// `cond and a or b` — Lua's conditional expression. Its value is `a` or
+    /// `b`, never `cond`: if `cond` is falsy the `and` yields that falsy value,
+    /// which the `or` then discards for `b`. So the type of the whole thing is
+    /// decided by the two arms, and the condition (a comparison, i.e. a boolean)
+    /// must not be allowed to poison it. Returns `.{ a, b }`.
+    fn ternary_arms(expr: *const ast.Expr) ?[2]*const ast.Expr {
+        if (expr.* != .binop or expr.binop.op != .@"or") return null;
+        const lhs = expr.binop.lhs;
+        if (lhs.* != .binop or lhs.binop.op != .@"and") return null;
+        return .{ lhs.binop.rhs, expr.binop.rhs };
     }
 
     fn dense_check_non_numeric(fb: *const ast.FuncBody, expr: *const ast.Expr, non_numeric_out: *bool) void {
@@ -7041,8 +7063,13 @@ pub const Sema = struct {
                 .add, .sub, .mul, .div, .idiv, .mod, .pow, .band, .bor, .bxor, .lshift, .rshift => {},
                 // `a and b` / `a or b` evaluate to one of the operands.
                 .@"and", .@"or" => {
-                    dense_check_non_numeric(fb, b.lhs, non_numeric_out);
-                    dense_check_non_numeric(fb, b.rhs, non_numeric_out);
+                    if (ternary_arms(expr)) |arms| {
+                        dense_check_non_numeric(fb, arms[0], non_numeric_out);
+                        dense_check_non_numeric(fb, arms[1], non_numeric_out);
+                    } else {
+                        dense_check_non_numeric(fb, b.lhs, non_numeric_out);
+                        dense_check_non_numeric(fb, b.rhs, non_numeric_out);
+                    }
                 },
                 // concat is a string; the comparisons are booleans.
                 else => non_numeric_out.* = true,
@@ -7350,6 +7377,164 @@ pub const Sema = struct {
         return found;
     }
 
+    /// Appends every plain name assigned directly from a name already in
+    /// `names` — `tmp = grid`. Called to a fixpoint so a three-way rotation
+    /// closes.
+    fn collect_alias_targets(
+        blk: *const ast.Block,
+        names: *std.ArrayList([]const u8),
+        alloc: std.mem.Allocator,
+        depth: usize,
+    ) SemaError!void {
+        if (depth > 24) return;
+        for (blk.stmts) |*s| {
+            switch (s.*) {
+                .assign => |*as| {
+                    if (as.targets.len != 1 or as.values.len != 1) continue;
+                    if (as.targets[0].* != .name or as.values[0].* != .name) continue;
+                    const dst = as.targets[0].name.ident;
+                    const src = as.values[0].name.ident;
+                    var src_known = false;
+                    var dst_known = false;
+                    for (names.items) |n| {
+                        if (std.mem.eql(u8, n, src)) src_known = true;
+                        if (std.mem.eql(u8, n, dst)) dst_known = true;
+                    }
+                    if (src_known and !dst_known) try names.append(alloc, dst);
+                },
+                .if_stmt => |*is| {
+                    try collect_alias_targets(&is.then, names, alloc, depth + 1);
+                    for (is.elseifs) |*ei| try collect_alias_targets(&ei.body, names, alloc, depth + 1);
+                    if (is.else_body) |*eb| try collect_alias_targets(eb, names, alloc, depth + 1);
+                },
+                .while_loop => |*wl| try collect_alias_targets(&wl.body, names, alloc, depth + 1),
+                .repeat_loop => |*rl| try collect_alias_targets(&rl.body, names, alloc, depth + 1),
+                .do_block => |*db| try collect_alias_targets(&db.body, names, alloc, depth + 1),
+                .num_for => |*nf| try collect_alias_targets(&nf.body, names, alloc, depth + 1),
+                .gen_for => |*gf| try collect_alias_targets(&gf.body, names, alloc, depth + 1),
+                else => {},
+            }
+        }
+    }
+
+    /// Drops any name that is joined by a `x = y` assignment to a name that did
+    /// not qualify. The two sides share one `(pointer, capacity)` pair, so they
+    /// have to agree on the representation or neither can use it.
+    fn prune_split_alias_groups(
+        fb: *const ast.FuncBody,
+        qualifying: *std.ArrayList([]const u8),
+        floats: *std.ArrayList(bool),
+        alias: *std.ArrayList(bool),
+    ) void {
+        var changed = true;
+        var rounds: usize = 0;
+        while (changed and rounds < 8) : (rounds += 1) {
+            changed = false;
+            var i: usize = 0;
+            while (i < qualifying.items.len) {
+                if (alias_partner_missing(&fb.body, qualifying, qualifying.items[i], 0)) {
+                    _ = qualifying.orderedRemove(i);
+                    _ = floats.orderedRemove(i);
+                    _ = alias.orderedRemove(i);
+                    changed = true;
+                } else i += 1;
+            }
+        }
+    }
+
+    /// Aliased names share one buffer, so one `double*`/`int64_t*` decision has
+    /// to cover the whole group. Float wins: an int stored into a double slot
+    /// keeps its value, the reverse truncates.
+    fn unify_alias_group_floats(
+        fb: *const ast.FuncBody,
+        qualifying: *const std.ArrayList([]const u8),
+        floats: *std.ArrayList(bool),
+    ) void {
+        var rounds: usize = 0;
+        while (rounds < 8) : (rounds += 1) {
+            var changed = false;
+            for (qualifying.items, 0..) |a, i| {
+                if (!floats.items[i]) continue;
+                for (qualifying.items, 0..) |b, j| {
+                    if (i == j or floats.items[j]) continue;
+                    if (names_aliased(&fb.body, a, b, 0)) {
+                        floats.items[j] = true;
+                        changed = true;
+                    }
+                }
+            }
+            if (!changed) break;
+        }
+    }
+
+    fn names_aliased(blk: *const ast.Block, a: []const u8, b: []const u8, depth: usize) bool {
+        if (depth > 24) return false;
+        for (blk.stmts) |*s| {
+            switch (s.*) {
+                .assign => |*as| {
+                    if (as.targets.len != 1 or as.values.len != 1) continue;
+                    if (as.targets[0].* != .name or as.values[0].* != .name) continue;
+                    const dst = as.targets[0].name.ident;
+                    const src = as.values[0].name.ident;
+                    if ((std.mem.eql(u8, dst, a) and std.mem.eql(u8, src, b)) or
+                        (std.mem.eql(u8, dst, b) and std.mem.eql(u8, src, a))) return true;
+                },
+                .if_stmt => |*is| {
+                    if (names_aliased(&is.then, a, b, depth + 1)) return true;
+                    for (is.elseifs) |*ei| if (names_aliased(&ei.body, a, b, depth + 1)) return true;
+                    if (is.else_body) |*eb| if (names_aliased(eb, a, b, depth + 1)) return true;
+                },
+                .while_loop => |*wl| if (names_aliased(&wl.body, a, b, depth + 1)) return true,
+                .repeat_loop => |*rl| if (names_aliased(&rl.body, a, b, depth + 1)) return true,
+                .do_block => |*db| if (names_aliased(&db.body, a, b, depth + 1)) return true,
+                .num_for => |*nf| if (names_aliased(&nf.body, a, b, depth + 1)) return true,
+                .gen_for => |*gf| if (names_aliased(&gf.body, a, b, depth + 1)) return true,
+                else => {},
+            }
+        }
+        return false;
+    }
+
+    fn alias_partner_missing(
+        blk: *const ast.Block,
+        qualifying: *const std.ArrayList([]const u8),
+        name: []const u8,
+        depth: usize,
+    ) bool {
+        if (depth > 24) return false;
+        for (blk.stmts) |*s| {
+            switch (s.*) {
+                .assign => |*as| {
+                    if (as.targets.len != 1 or as.values.len != 1) continue;
+                    if (as.targets[0].* != .name or as.values[0].* != .name) continue;
+                    const dst = as.targets[0].name.ident;
+                    const src = as.values[0].name.ident;
+                    const involves_dst = std.mem.eql(u8, dst, name);
+                    const involves_src = std.mem.eql(u8, src, name);
+                    if (!involves_dst and !involves_src) continue;
+                    const other = if (involves_dst) src else dst;
+                    var found = false;
+                    for (qualifying.items) |q| {
+                        if (std.mem.eql(u8, q, other)) found = true;
+                    }
+                    if (!found) return true;
+                },
+                .if_stmt => |*is| {
+                    if (alias_partner_missing(&is.then, qualifying, name, depth + 1)) return true;
+                    for (is.elseifs) |*ei| if (alias_partner_missing(&ei.body, qualifying, name, depth + 1)) return true;
+                    if (is.else_body) |*eb| if (alias_partner_missing(eb, qualifying, name, depth + 1)) return true;
+                },
+                .while_loop => |*wl| if (alias_partner_missing(&wl.body, qualifying, name, depth + 1)) return true,
+                .repeat_loop => |*rl| if (alias_partner_missing(&rl.body, qualifying, name, depth + 1)) return true,
+                .do_block => |*db| if (alias_partner_missing(&db.body, qualifying, name, depth + 1)) return true,
+                .num_for => |*nf| if (alias_partner_missing(&nf.body, qualifying, name, depth + 1)) return true,
+                .gen_for => |*gf| if (alias_partner_missing(&gf.body, qualifying, name, depth + 1)) return true,
+                else => {},
+            }
+        }
+        return false;
+    }
+
     fn solve_index_bound(alloc: std.mem.Allocator, fb: *const ast.FuncBody, tname: []const u8) !?SolvedCap {
         var has_nested = false;
         var outer_limit: ?[]const u8 = null;
@@ -7446,6 +7631,21 @@ pub const Sema = struct {
             }
         }
         if (table_names.items.len == 0) return;
+
+        // Alias locals. `tmp = grid` binds a second name to the same array; the
+        // two-buffer kernels rotate three names that way (`tmp = g; g = h;
+        // h = tmp`). A bare-name use of a table otherwise disqualifies it — that
+        // rule exists so a dense table can never escape — but a plain
+        // name-to-name assignment inside the same body does not let it escape,
+        // it just renames it. `alias_from` is the index in `table_names` at which
+        // the alias-only names begin: they carry no allocation of their own.
+        const alias_from = table_names.items.len;
+        var round: usize = 0;
+        while (round < 4) : (round += 1) {
+            const before = table_names.items.len;
+            try collect_alias_targets(&fb.body, &table_names, alloc, 0);
+            if (table_names.items.len == before) break;
+        }
 
         var cap: []const u8 = "";
         // Whether `cap` is a valid C *integer* expression at the allocation
@@ -7550,7 +7750,9 @@ pub const Sema = struct {
         defer qualifying.deinit(alloc);
         var qualifying_floats: std.ArrayList(bool) = .empty;
         defer qualifying_floats.deinit(alloc);
-        for (table_names.items) |tname| {
+        var qualifying_alias: std.ArrayList(bool) = .empty;
+        defer qualifying_alias.deinit(alloc);
+        for (table_names.items, 0..) |tname, t_i| {
             // Check for loop init pattern for this table.
             if (fb.body.stmts.len >= 2) {
                 if (fb.body.stmts[1] == .while_loop) {
@@ -7595,12 +7797,22 @@ pub const Sema = struct {
             }
             const literal_count = positional_numeric_literal_count(fb, tname);
             if (literal_count > 0) assigns += literal_count;
-            if ((assigns > 0 or has_loop_init) and ok) {
+            const is_alias_only = t_i >= alias_from;
+            if ((assigns > 0 or has_loop_init or is_alias_only) and ok) {
                 try qualifying.append(alloc, tname);
                 try qualifying_floats.append(alloc, has_float_assign);
+                try qualifying_alias.append(alloc, is_alias_only);
             }
         }
         if (qualifying.items.len == 0) return;
+
+        // An alias pair has to agree on the representation: `tmp = grid` lowers
+        // to one pointer assignment, so if either side stayed boxed neither can
+        // be dense. Drop such groups whole.
+        prune_split_alias_groups(fb, &qualifying, &qualifying_floats, &qualifying_alias);
+        if (qualifying.items.len == 0) return;
+        // …and on the element type, for the same reason.
+        unify_alias_group_floats(fb, &qualifying, &qualifying_floats);
 
         // Populate the multi-table lists.
         fb.dense_tables = try alloc.dupe([]const u8, qualifying.items);
@@ -7618,6 +7830,7 @@ pub const Sema = struct {
         fb.dense_table_caps = caps_buf;
         fb.dense_table_cap_safe = cap_safe_buf;
         fb.dense_table_floats = try alloc.dupe(bool, qualifying_floats.items);
+        fb.dense_table_alias = try alloc.dupe(bool, qualifying_alias.items);
 
         // Set backward-compat single-table fields from the first qualifying table.
         // Only set use_dense_table for integer tables (float tables use the
