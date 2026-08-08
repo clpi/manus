@@ -260,27 +260,20 @@ test "duo_lexer_dispatch: a rejection carries its line" {
     try std.testing.expectEqual(@as(u32, 2), errorLine("x = 1\ns = \"bad", "bad.duo"));
 }
 
-// GAP-023's first isolation step. The two proofs that regress under
-// .duo_native carry lexer corpus data as string literals, so the hypothesis was
-// that the compiler lexing ITSELF with Duo changes how that data is read. This
-// feeds those exact files through the differential: if the streams agree, the
-// divergence is NOT in tokenization and the hypothesis is dead.
-test "duo_lexer_dispatch: GAP-023 — the regressing proofs tokenize identically" {
+// GAP-023's first isolation step, WITHOUT file IO: this Zig version has no
+// std.fs.cwd(), and the first attempt at reading the proof files did not compile
+// — which made an empty failure list look like a passing test. The sources below
+// are the shapes those proofs are built from (corpus data held as string
+// literals, escapes included), inline so the test cannot silently skip.
+//
+// This is weaker than differencing the real files and is NOT sufficient to
+// eliminate the tokenization hypothesis; see gaps/GAP-023.md.
+test "duo_lexer_dispatch: corpus-data-as-literals tokenizes identically" {
     const a = std.testing.allocator;
-    const files = [_][]const u8{
-        "examples/pass16_lexer_fingerprint_differential.duo",
-        "examples/pass16_lexer_text_differential.duo",
+    const cases = [_][:0]const u8{
+        "corpus = { \"a == b ~= c\", \"-- line\\nfun\", \"\\\"hi\\\" 'there'\" }",
+        "h = 0 s = \"a\\tb\\nc\\\\d\" n = #s",
+        "expected_text_fingerprint = 13636438360258349679",
     };
-    var checked: usize = 0;
-    for (files) |path| {
-        const f = std.fs.cwd().openFile(path, .{}) catch continue;
-        defer f.close();
-        const text = f.readToEndAllocOptions(a, 1 << 22, null, .of(u8), 0) catch continue;
-        defer a.free(text);
-        try differential(a, text, "proof.duo");
-        checked += 1;
-    }
-    // Without this the test passes by skipping both files — the silent pass this
-    // whole seam keeps producing.
-    try std.testing.expectEqual(files.len, checked);
+    for (cases) |case| try differential(a, case, "proof.duo");
 }
