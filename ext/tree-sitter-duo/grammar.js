@@ -29,6 +29,21 @@
  * `lib/std/token/classify.duo`. Dropping a rule here alone desynchronises the
  * front-ends; retiring one is a language decision, not a grammar edit.
  *
+ * ONE rule was retired, and only because the corpus said so: `type_definition`
+ * (`type X = T`) has ZERO statement-initial uses against 231 for `type(`, and
+ * a tree-sitter keyword token beats `identifier` in every state that admits
+ * both, so as long as `'type'` was spelled here `type(obj: any): any` could
+ * not parse as the declaration it is. `duo check` accepts both spellings; the
+ * exclusion was this grammar's lexer, not the language's. See the note at the
+ * rule's former site.
+ *
+ * `macro` is NOT added, and that is a decision rather than an omission. Pass
+ * 100 §15 graveyards macro syntax outright, three tracked files use it, and
+ * the unquote it needs (`,x` inside a quoted body) would have to live in
+ * `expression` — which would make every comma-separated argument list in the
+ * other 756 files ambiguous. Three files is not worth that, and the spec is
+ * not asking for it.
+ *
  * It BUILDS as of 2026-08-08. It did not before: `tree-sitter generate`
  * exited 1 on an unresolved conflict on `return_statement` ('return' • '(' —
  * an argument list versus a bare `return` followed by a parenthesised
@@ -37,32 +52,48 @@
  * conflict, so no editor on this tree had a working parser at all. The repair
  * is `prec.right` on `return_statement` plus the `conflicts:` entries below,
  * each one proven necessary by dropping it and re-running the generator — all
- * 46 of them, re-proved after every change in this pass.
+ * 94 of them, re-proved after every change in this pass.
  *
- * What it recognises, MEASURED over the 748 tracked `.duo` files with
- * `tree-sitter parse --paths`, counting a file as recognised only when its
- * tree has no ERROR / MISSING / UNEXPECTED node:
+ * What it recognises, MEASURED with `tree-sitter parse --paths` over every
+ * tracked `.duo` file, counting a file as recognised only when its tree has no
+ * ERROR / MISSING / UNEXPECTED node:
  *
- *   75  (10.0 %)  before this pass
- *  226  (30.2 %)  + `bare_function_declaration`         — GR-001
- *  422  (56.4 %)  + `!=` `&` `~` `|>` and `+= -= *= /= %= ^=`
- *  494  (66.0 %)  + `function_value_expression`         — `f = (x: i64): i64 … end`
- *  599  (80.0 %)  + N-segment `@` directives, `@{ … }`, expression args
- *  635  (84.8 %)  + shebang, `;`, long strings containing `]`
- *  656  (87.7 %)  + `->` results, default parameters, `.field` projection
- *  670  (89.5 %)  + bodyless `@ffi` declarations, `alias N = T`, `M:name()`
- *  697  (93.1 %)  + function values as directive arguments, `<T: Bound>`
- *  702  (93.8 %)  + `[T]` / `Tensor[a, b, c]`, and Lua's `f "s"` / `f { … }`
+ *   75/748  (10.0 %)  before any of this
+ *  702/748  (93.8 %)  after the first pass (nine steps, listed in GAP-049)
+ *  705/759  (93.0 %)  the same grammar, re-measured on a corpus grown by 11
+ *  711/759  (93.7 %)  + newline as the separator inside `{ … }` — §7 X8
+ *  724/759  (95.3 %)  + expression-body lambda and the `()` block form — §5
+ *  733/759  (96.5 %)  + binding conditions (§6), value-list tails, `type(x)`
+ *  739/759  (97.3 %)  + tuple/applied/attributed types, case sets, `p.@eq`
+ *  743/759  (97.8 %)  + `..` spread, levelled long strings, open `match` arms
+ *  744/759  (98.0 %)  + unannotated declarations in directive arguments
  *
- * The 46 files still failing are a long tail of one to four files each: the
- * expression-body lambda (`(v) return v * 2`, 11), `type` used as both a
- * keyword and a function name (5, and the two spellings are mutually
- * exclusive), `macro … \`do`, and the `#` / `//` comment openers.
+ * THE ORACLE FOR THIS PASS WAS `duo check`, NOT THE CORPUS. Every construct
+ * above was first put to the compiler in isolation, and a rule was added only
+ * where the compiler accepts the form. That is what kept three plausible
+ * clusters OUT: `(v) return v * 2` is rejected (`expected ')', got 'return'`),
+ * so the expression-body lambda takes an expression and nothing else; and `#`
+ * and `//` line comments are rejected at LEX time (`UnexpectedChar`), so the
+ * two files that use them do not compile and this grammar is right to refuse
+ * them. Recognising them would have made the editor accept programs the
+ * compiler does not.
  *
  * A file with no ERROR node is not the same as a CORRECT tree, and this count
  * does not claim it is. `require "x"` parsed as two unrelated statements in 95
  * files without ever producing an error node; it is fixed here, and the
- * recognition number could not see either the defect or the repair.
+ * recognition number could not see either the defect or the repair. The same
+ * blindness is still live in one place: THREE OR MORE STACKED BODYLESS
+ * DECLARATIONS degrade after the second — `@ffi("a")\nf1(): i64` repeated
+ * reads the third onward as loose expression statements. It is tree-sitter's
+ * GLR version budget, not a missing rule (the "declaration whose body has not
+ * started" reading survives to EOF and one version is spent per declaration),
+ * it behaves identically on the pristine `HEAD` grammar, and it is what keeps
+ * `lib/std/fs_watch.duo` and `examples/benchmark.duo` unrecognised.
+ *
+ * `zig build tree-sitter-coverage` is the gate. It runs the generator, fails
+ * on a non-zero exit AND on an "unnecessary conflicts" warning, measures the
+ * corpus, ratchets on a ceiling of unrecognised files, and positive-controls
+ * its own detector on every run.
  *
  * Counted, until then, as one of three tracked `.js` files in the G11 debt
  * line (`scripts/language_census.duo`, ratchet `CENSUS_JS_FLOOR`). Editing
@@ -88,7 +119,7 @@ module.exports = grammar({
   // statement, so the LR(1) item set genuinely cannot decide these without
   // lookahead past the conflict point. Each entry below was proven NECESSARY:
   // a script drops one at a time and re-runs `tree-sitter generate`, and all
-  // 46 are still required for it to exit 0. See gaps/GAP-049.
+  // 94 are still required for it to exit 0. See gaps/GAP-049.
   conflicts: $ => [
     // statement head vs expression statement
     [$.struct_definition, $.expression],
@@ -105,6 +136,17 @@ module.exports = grammar({
     // dynamic precedence on `call_expression` attaches it.
     [$.expression, $.call_expression],
     [$.match_arm, $.expression_statement, $.call_expression],
+    // `{ f (x) }` / `{ f "s" }` — with the newline as separator, an element
+    // followed by `(`/a string is a CALL or two adjacent elements. Same fork
+    // as the statement case, same resolution: `call_expression` carries the
+    // dynamic precedence and attaches.
+    [$.table_entry, $.call_expression],
+    // `{ a\n [k] = v }` — a bracket-keyed entry, or `a[k]` indexed and then
+    // assigned. Only what follows the `]` decides.
+    [$.table_entry, $.index_expression],
+    [$.table_entry, $.expression],
+    [$.spread_entry, $.call_expression],
+    [$.spread_entry, $.index_expression],
     [$.call_expression, $.parenthesized_expression],
     // GR-001: `f(` is a declaration head or a call, decided only at the `:`
     // that annotates a parameter or the result — past the conflict point.
@@ -121,22 +163,73 @@ module.exports = grammar({
     [$.function_name, $.expression],
     [$.function_name, $.jai_type_definition, $.typed_binding, $.expression],
     [$.function_name, $.catch_clause, $.expression],
+    // `M:hash(…)` — a method declaration NAME, or `M:` annotating a value
+    // whose type is the applied `hash(…)`.
+    [$.function_name, $.applied_type],
+    // `f(a, b)` in TYPE position — the parameter list of a function type, or
+    // a tuple of two types. The `->` after the `)` is what decides.
+    // `f(): result(x)` — the result type applied to arguments, or the plain
+    // named result followed by a call in the body.
+    [$.applied_type, $.named_type],
+    // `Map<K, V>` — a generic type, or the plain name followed by `<`.
+    [$.named_type, $.generic_type],
+    // `*T & packed` — the `&` attaches to the whole pointer type or to `T`.
+    [$.type_attribute],
+    [$.attributed_type, $.pointer_type],
+    [$.attributed_type, $.optional_type],
+    [$.attributed_type, $.array_type],
+    [$.attributed_type, $.function_type],
     // A signature with a body, or a bodyless declaration whose statements
     // happen to follow. `bare_function_declaration` carries the dynamic
     // precedence, so a body wins wherever one closes with `end`.
     [$.bare_function_declaration, $.foreign_declaration],
+    // A directive's unannotated declaration argument shares its opening
+    // parenthesis with the annotated signature both other declaration forms use.
+    [$.directive_function, $._annotated_signature],
     // `f(...)` — a vararg PARAMETER (`zip(...): any`) or a call forwarding the
     // enclosing vararg. Only the `): type` after the paren tells them apart.
     [$.vararg_parameter, $.vararg],
     // `f(a, b)` — an unannotated PARAMETER list awaiting `): type`, or an
     // argument list of bare identifiers. Same token, decided after the `)`.
-    [$._plain_parameter, $.expression],
+    // A lambda's parameter list uses the general `parameter`, which is a
+    // superset of GR-001's `_plain_parameter`; both are live until the token
+    // after the `)` says which signature this was.
+    [$.parameter, $._plain_parameter],
+    [$.parameter, $._plain_parameter, $.expression],
+    // `() f()` — a zero-parameter lambda over the call, or the `()` block form
+    // whose first statement is the call. The `end` is what decides, and it is
+    // arbitrarily far away.
+    [$.expression_statement, $.lambda_expression],
+    [$.expression_statement, $.lambda_expression, $.call_expression],
+    // `f()` — a zero-argument CALL, or the head of the `()` block form whose
+    // body has not started yet.
+    [$.function_value_expression, $.call_expression],
+    [$.function_value_expression, $.lambda_expression, $.call_expression],
+    [$.assignment, $.lambda_expression],
+    // `a, b` — a value LIST standing as a statement, or the left side of an
+    // assignment whose `=` has not arrived yet.
+    [$.assignment, $.expression_statement, $.lambda_expression],
+    [$.assignment, $.expression_statement, $.call_expression],
+    // `if v, e = f()` — a binding CONDITION, or an expression list that is
+    // about to be assigned. Identical until after the `=`.
+    [$.binding_condition, $.call_expression],
+    [$.compound_assignment, $.lambda_expression],
+    [$.lambda_expression, $.call_expression],
+    [$.lambda_expression, $.method_call_expression],
+    [$.lambda_expression, $.index_expression],
+    [$.lambda_expression, $.try_expression],
+    [$.lambda_expression, $.unwrap_expression],
+    // `(a: i64): i64 …` — an annotated signature awaiting a block body and an
+    // `end`, or a lambda whose one-expression body starts right here. Only
+    // reaching the `end` (or not) tells them apart.
+    [$._annotated_signature, $.lambda_expression],
+    [$._annotated_signature, $.lambda_expression, $.call_expression],
+    [$.parameter, $._typed_parameter],
+    [$.parameter, $._typed_parameter, $.expression],
     // `f(a: …)` — an annotated PARAMETER or the receiver of a method call
     // argument, `f(a:greet())`. The `:` is shared; the type is not.
-    [$._typed_parameter, $.expression],
     // `f()` immediately followed by `(): i64 … end` — a call, or a call whose
     // argument is a function VALUE. Only the token after the `)` decides.
-    [$._annotated_signature, $.call_expression],
     // unterminated statement lists — where does the body stop
     [$.do_block, $.while_loop],
     [$.do_block, $.numeric_for],
@@ -150,11 +243,45 @@ module.exports = grammar({
     [$.literal_pattern, $.nil],
     [$.literal_pattern, $.boolean],
     [$.binding_pattern, $.expression],
+    // `case Circle(r) …` with the `then` now optional — a variant PATTERN, or
+    // a binding pattern followed by a one-expression arm that happens to be a
+    // call.
+    [$.binding_pattern, $.variant_pattern],
     [$.variant_pattern, $.expression],
     [$.table_pattern, $.table_constructor],
+    // `{ a = ... b }` — a rest PATTERN binding `b`, or the vararg value
+    // followed by the next newline-separated element.
+    [$.rest_pattern, $.vararg],
     [$.match_statement, $.match_expression],
     [$.expression_statement, $.match_arm],
     [$.match_arm, $.index_expression],
+    // An arm with no `then` and no `end` is closed by the next `case`/`else`
+    // or by the `match`'s own `end`, and which of those it was is only known
+    // once that token arrives.
+    [$.match_arm],
+    [$.do_block, $.match_arm],
+    [$.repeat_loop, $.index_expression],
+    [$.expression_statement, $.index_expression],
+    // A `match` arm that writes neither `then` nor its own `end` leaves the
+    // statement list open, so EVERY statement-final expression in it is
+    // ambiguous with a postfix continuation on the next line — `x = f()` then
+    // `[k]` is either an index on `f()` or a new statement. This is the same
+    // family as the `do_block`/`while_loop` entries above; it is larger only
+    // because an arm can hold any statement.
+    [$.assignment, $.index_expression],
+    [$.assignment, $.expression_statement, $.index_expression],
+    [$.compound_assignment, $.index_expression],
+    [$.local_declaration, $.index_expression],
+    [$.const_declaration, $.index_expression],
+    [$.global_declaration, $.index_expression],
+    [$.return_statement, $.index_expression],
+    [$.typed_binding, $.index_expression],
+    // `case p if f(x)` — the arm's GUARD, or an `if` statement opening the
+    // arm's body. Both are `if` followed by a condition; only the absence of
+    // an `end` tells them apart.
+    [$.guard, $.index_expression],
+    [$.if_statement, $.guard],
+    [$.if_statement, $.guard, $.call_expression],
     // prefix operators bind before the LR item is decided
     [$.binary_expression, $.unary_expression],
     [$.binary_expression, $.contains_expression],
@@ -190,7 +317,6 @@ module.exports = grammar({
       $.compound_assignment,
       $.typed_binding,
       $.jai_type_definition,
-      $.type_definition,
       $.struct_definition,
       $.do_block,
       $.if_statement,
@@ -236,12 +362,30 @@ module.exports = grammar({
         // A directive argument may be a whole function: 22 tracked files write
         // `@comp.define.derive("Name", generate(meta) -> str … end)`, where the
         // second argument is a NAMED declaration, not an expression.
-        commaSep(choice($.expression, $.bare_function_declaration)),
+        commaSep(choice($.expression, $.bare_function_declaration, $.directive_function)),
         ')',
       ))),
       // @(expr) — compile-time evaluation
       seq('@', '(', $.expression, ')'),
     )),
+
+    // `@comp.define.derive("Printable", generate(type_info) … end)` — a
+    // declaration with NO annotation anywhere, which GR-001 forbids in
+    // statement position because it would make a declaration candidate out of
+    // every ordinary call. Inside a directive's argument list that objection
+    // does not apply: a call reading exists but cannot complete, because the
+    // statements that follow are not arguments. So the rule is REACHABLE ONLY
+    // HERE — it is not in `statement` and not in `expression` — and the
+    // exclusion that protects 791 call sites is untouched.
+    directive_function: $ => seq(
+      field('name', $.function_name),
+      '(',
+      commaSep(choice($.parameter, $.vararg_parameter)),
+      ')',
+      optional(seq($._result_arrow, field('result', $.type))),
+      repeat($.statement),
+      'end',
+    ),
 
     // Right-associative so the path is GREEDY: `@comp.type.name(x)` is one
     // three-segment directive, not `@comp` with a field access hanging off it.
@@ -333,7 +477,7 @@ module.exports = grammar({
 
     if_statement: $ => seq(
       'if',
-      $.expression,
+      choice($.binding_condition, $.expression),
       optional('then'),
       repeat($.statement),
       repeat($.elseif_clause),
@@ -343,9 +487,36 @@ module.exports = grammar({
 
     elseif_clause: $ => seq(
       'elseif',
-      $.expression,
+      choice($.binding_condition, $.expression),
       optional('then'),
       repeat($.statement),
+    ),
+
+    // ── Condition ───────────────────────────────────────────────────────────
+    //
+    // Pass 100 §6: "binding condition IS the pattern match".
+    //
+    //   if v = f() use(v) else report(err)
+    //   if v, err = parse(s) use(v) else log(err)      correlated refinement
+    //   while b = cursor:next() mix(b)                 consumption loop
+    //
+    // A condition is therefore a BINDING or an expression, and the three
+    // §6 fixtures (`examples/spec100/consume.duo`, `guard.duo`,
+    // `examples/pass42_binding_conditions_proof.duo`) all open with one.
+    // `duo check` accepts every form above.
+    //
+    // What this does NOT express is the guard chain's split. Pass 100 §6 says
+    // `while b = pull() and small(b)` binds `b` to `pull()` alone and treats
+    // the `and` as a correlated guard; here the `and` is inside the bound
+    // expression, because `expression` already owns `and` at prec.left(10) and
+    // excluding it would need a parallel expression hierarchy. The file is
+    // recognised and the tree is well formed; the binding EXTENT is a
+    // semantic fact this grammar does not carry, and `guard.duo` says
+    // outright that the distinction has to be checked by value.
+    binding_condition: $ => seq(
+      commaSep1($.identifier),
+      '=',
+      $.expression,
     ),
 
     else_clause: $ => seq(
@@ -357,7 +528,7 @@ module.exports = grammar({
 
     while_loop: $ => seq(
       'while',
-      $.expression,
+      choice($.binding_condition, $.expression),
       optional('do'),
       repeat($.statement),
       'end',
@@ -586,7 +757,13 @@ module.exports = grammar({
 
     // ── Expression statement ────────────────────────────────────────────────
 
-    expression_statement: $ => $.expression,
+    // `best_len, best_offset` and `buf:sub(1, n), nil` — a comma-separated
+    // VALUE list standing as the last statement of a body. Pass 100 §5 makes
+    // it the normal way to return a pair (`parse = (lx): ast | error`, the
+    // last expression realized through one direct edge), and there is no
+    // `return` to mark it. `duo check` accepts it; this grammar had only the
+    // single-expression form, so a two-value tail was an error node.
+    expression_statement: $ => commaSep1($.expression),
 
     // ── Match statement ─────────────────────────────────────────────────────
 
@@ -602,12 +779,25 @@ module.exports = grammar({
         'case',
         $.pattern,
         optional($.guard),
-        choice('then', 'do'),
-        choice(
-          $.expression,
-          seq(repeat($.statement), 'end'),
-        ),
+        // `then`/`do` is OPTIONAL, and so is the arm's own `end`. Both
+        // spellings are live in the corpus and both compile:
+        //
+        //   case 0x7F "int32_t"                 one expression, no ceremony
+        //   case 0 -- u8
+        //     val, new_pos = read(data, pos), pos + 1
+        //   case Circle(r) then … end           the fully written form
+        //
+        // An arm with neither `then` nor `end` is closed by the NEXT `case`,
+        // by `else`, or by the `match`'s own `end` — the same self-delimiting
+        // clause rule Pass 100 §6 gives `if`, and the reason this needs a
+        // `conflicts:` entry of its own: where the arm stops is not decidable
+        // until the token that stops it arrives.
+        optional(choice('then', 'do')),
+        repeat($.statement),
+        optional('end'),
       ),
+      // The default arm of a `match`, spelled with `else` rather than `_`.
+      seq('else', repeat($.statement), optional('end')),
       seq(
         $.pattern,
         optional($.guard),
@@ -776,15 +966,27 @@ module.exports = grammar({
       ),
     ),
 
-    // ── Type definition (type Name = Type) ──────────────────────────────────
-
-    type_definition: $ => seq(
-      optional($._attribute_list),
-      'type',
-      $.identifier,
-      '=',
-      $.type,
-    ),
+    // ── Type definition (type Name = Type) — REMOVED ────────────────────────
+    //
+    // `type` is a plain identifier in Duo, and reserving it here was what made
+    // `type(x)` unparseable. The removal is measured, not assumed:
+    //
+    //   `type X = T` statement-initial, over the tracked corpus:    0
+    //   `type(` as a call or declaration head:                    231
+    //
+    // and both authorities agree with the count — CLAUDE.md §1 denies
+    // `type X = type(` by name, and Pass 100 §15 lists `type` among the
+    // keywords that are retiring (`local self type req new init end`). So the
+    // canonical reading of a file that writes `type(obj: any): any` is a
+    // DECLARATION of a function called `type`, which is what `lib/std/io.duo`,
+    // `lib/std/meta.duo` and `lib/std/reflect.duo` all mean by it.
+    //
+    // This is the one rule this pass removed, and it is removed rather than
+    // kept-and-shadowed because a tree-sitter keyword token wins over
+    // `identifier` in every state that admits both: as long as `'type'` is
+    // spelled anywhere in the grammar, `type(x)` cannot lex as a call.
+    // `duo check` accepts both spellings, so the exclusion is this grammar's
+    // lexer, not the language's.
 
     // ── Jai-like type definition (Name: { fields }) ─────────────────────────
 
@@ -846,6 +1048,47 @@ module.exports = grammar({
       $.generic_type,
       $.function_type,
       $.record_type,
+      $.tuple_type,
+      $.applied_type,
+      $.attributed_type,
+      // `ptr: *@c.type("void")` — a directive standing in TYPE position, which
+      // is where a foreign type comes from. `duo check` accepts it and the
+      // directive's own rule already parses the arguments.
+      $.attribute,
+    ),
+
+    // `fun gguf_read_string(data, pos): (str, i64)` — a result that is a PAIR.
+    // Pass 100 §5's return contract routinely carries two values
+    // (`: ast | error`, `: u64 | error`), and the parenthesised spelling is
+    // what `ext/ward/src/nn/init.duo` writes for it.
+    tuple_type: $ => seq(
+      '(',
+      commaSep1($.type),
+      ')',
+    ),
+
+    // `tags: list(str)` — a type CONSTRUCTOR applied with parentheses. Pass
+    // 100 §15 graveyards `<T>` generics syntax, so the family form
+    // (`list(str)`, `map(str, i64)`) is the surviving spelling and
+    // `examples/spec100/level.duo` is its fixture.
+    applied_type: $ => seq(
+      $.identifier,
+      '(',
+      commaSep1($.type),
+      ')',
+    ),
+
+    // `{ x: i8, y: i64 } & packed & align(16)` — layout attributes hung off a
+    // type with `&`. `examples/layout_refinements_test.duo` is the fixture and
+    // the compiler accepts it.
+    attributed_type: $ => prec.left(seq(
+      $.type,
+      repeat1(seq('&', $.type_attribute)),
+    )),
+
+    type_attribute: $ => seq(
+      $.identifier,
+      optional(seq('(', commaSep($.expression), ')')),
     ),
 
     named_type: $ => $.identifier,
@@ -886,17 +1129,32 @@ module.exports = grammar({
     // `{ x: f64, y: f64 }` and its Pass 100 spelling `@{ x: f64, y: f64 }`.
     // CLAUDE.md §0.4 names `@{ … }` as the descriptor form; 25 tracked files
     // open a record with it and this grammar had no `@` here at all.
+    // The separator is the NEWLINE and the comma is the optional one. Pass 100
+    // §7 X8 — ">=2 named fields -> one per line, always" — makes the one-per-
+    // line spelling mandatory for a record of two or more fields, so a record
+    // type that carries no comma at all is the CANONICAL one, not a variant.
+    // `examples/spec100/x8.duo` is the fixture and `duo check` accepts it; this
+    // grammar stopped at the first missing comma. Extras already eat the
+    // newline, so the separator is simply optional here.
+    //
+    // `commaSep1` -> `sepBy` also makes the EMPTY record (`alias M = {}`,
+    // `type Empty = {}`) legal, which it is: a concept with no requirements is
+    // satisfied by everything, which is what those two fixtures are testing.
     record_type: $ => seq(
       optional('@'),
       '{',
-      commaSep1($.record_field),
+      sepBy(choice($.record_field, $.spread_entry)),
       '}',
     ),
 
+    // The type is OPTIONAL because a bare name is a CASE, not an untyped
+    // field: `Direction: @{ North, South, East, West }` is CLAUDE.md §0.3's
+    // "case-set inline at the field", and it is how `examples/architecture_
+    // proof.duo` and `examples/pass3_syntax_showcase.duo` spell an enum now
+    // that `enum … end` is denied. `duo check` accepts it.
     record_field: $ => seq(
       $.identifier,
-      ':',
-      $.type,
+      optional(seq(':', $.type)),
     ),
 
     // ── Expressions ─────────────────────────────────────────────────────────
@@ -912,12 +1170,14 @@ module.exports = grammar({
       $.unary_expression,
       $.function_expression,
       $.function_value_expression,
+      $.lambda_expression,
       $.table_constructor,
       $.descriptor_constructor,
       $.attribute,
       $.field_projection,
       $.index_expression,
       $.field_expression,
+      $.semantic_field_expression,
       $.call_expression,
       $.method_call_expression,
       $.try_expression,
@@ -978,14 +1238,20 @@ module.exports = grammar({
     // alternation rather than a lookahead because tree-sitter's token DFA has
     // none; it stays non-greedy across two long strings in one file precisely
     // because `]]` can never be consumed as body.
-    long_string: $ => token(seq(
-      '[',
-      repeat('='),
-      '[',
-      repeat(choice(/[^\]]/, seq(']', /[^\]]/))),
-      ']',
-      repeat('='),
-      ']',
+    // One alternative PER LEVEL, not one rule with `repeat('=')`, because the
+    // closing delimiter has to be excluded from the body and a single token
+    // DFA cannot remember how many `=` it opened with. With the level fixed,
+    // each body is stated as "any character, or a `]` not followed by the rest
+    // of MY closer" — so `[=[contains ]] without ending]=]`
+    // (`examples/control_defaults_mem.duo`) keeps its `]]` as body text, which
+    // the level-agnostic version could not do.
+    //
+    // Levels 0 and 1 are what the corpus uses (108 `[[` and 1 `[=[`); level 2
+    // is here so the next one does not reopen this.
+    long_string: $ => token(choice(
+      seq('[[', repeat(choice(/[^\]]/, /\][^\]]/)), ']]'),
+      seq('[=[', repeat(choice(/[^\]]/, /\][^=]/, /\]=[^\]]/)), ']=]'),
+      seq('[==[', repeat(choice(/[^\]]/, /\][^=]/, /\]=[^=]/, /\]==[^\]]/)), ']==]'),
     )),
 
     vararg: $ => '...',
@@ -1056,23 +1322,80 @@ module.exports = grammar({
     // annotation requirement as the bare declaration, and for the same reason:
     // without it `x = (a) f() end` is indistinguishable from a parenthesised
     // expression followed by two more statements.
-    function_value_expression: $ => seq(
-      $._annotated_signature,
-      repeat($.statement),
-      'end',
+    function_value_expression: $ => choice(
+      seq($._annotated_signature, repeat($.statement), 'end'),
+      // `pull = ()\n  pos = pos + 1\n  src[pos]\nend` — ZERO parameters, so
+      // there is nothing to annotate and `_annotated_signature` cannot reach
+      // it. It needs no dynamic precedence and no exclusion because `()` is
+      // not a parenthesized expression: an empty paren pair in value position
+      // can only be a signature. `examples/spec100/consume.duo` and
+      // `guard.duo` are the §6 fixtures, and `lib/std/sync.duo` writes the
+      // same thing as an argument (`coroutine.create(() … end)`).
+      //
+      // `prec.dynamic(-1)`, and it is load-bearing. Without it
+      // `_platform = detect_platform()` on one line and ordinary statements
+      // below it also reads as `detect_platform` followed by a zero-parameter
+      // function VALUE whose body runs to the next stray `end` — a reading
+      // that stays alive to the end of the file and took two whole modules
+      // (`lib/std/fs_watch.duo`, `examples/benchmark.duo`) down to a single
+      // file-wide ERROR node. A `(` that can attach to the expression on its
+      // left is a CALL; this arm only wins where nothing precedes it.
+      prec.dynamic(-1, seq('(', ')', repeat($.statement), 'end')),
     ),
+
+    // ── Expression-body function value ──────────────────────────────────────
+    //
+    // `less = (a, b) a < b`, `fh.close = (self: any) nil`,
+    // `cmp or ((a, b) a < b)`, `small = (n) n < 7`. Pass 100 §5 states it as
+    // law — "A one-expression body IS one line (mandatory)" — so this is the
+    // canonical spelling of a one-expression function and `… end` is the
+    // variant, not the other way round.
+    //
+    // The body is an EXPRESSION and nothing else. `(v) return v * 2` is NOT
+    // accepted, and that is not an omission: `duo check` rejects it
+    // (`expected ')', got 'return'`), Pass 100 §15 graveyards the trailing
+    // `return expr`, and the three tracked files that write it therefore stay
+    // unrecognised because they do not compile. The compiler was used as the
+    // oracle for every arm here rather than the corpus, so the grammar cannot
+    // drift into accepting what the language does not.
+    //
+    // `prec.dynamic(-1)` is what keeps it from eating ordinary code. `(a) - 1`
+    // is a subtraction, not a lambda over `-1`; `(f)(x)` is a call, not a
+    // lambda over `(x)`. Both readings are structurally valid and GLR keeps
+    // both alive, so the lambda has to LOSE by default and win only where no
+    // other reading exists — which is exactly the `(a, b) …` / `() …` /
+    // `(x: T) …` shapes, none of which can be a parenthesized expression.
+    // Static `prec` cannot express this: it would resolve at the `(`, before
+    // the token that decides has been seen.
+    lambda_expression: $ => prec.dynamic(-1, seq(
+      '(',
+      commaSep(choice($.parameter, $.vararg_parameter)),
+      ')',
+      optional(seq($._result_arrow, field('result', $.type))),
+      field('body', $.expression),
+    )),
 
     // ── Table constructor ───────────────────────────────────────────────────
 
+    // Same newline-is-the-separator rule as `record_type`, and for the same
+    // reason: `config = { name = "duo"\n version = "0.5.0" }` and
+    // `nn { linear(784, 256)\n relu\n softmax }` are both accepted by
+    // `duo check` and both stopped this grammar at the first missing comma.
+    // A string KEY (`["a"] = 1` written as `"a" = 1`) is here too — one
+    // tracked file writes it and the compiler takes it.
     table_constructor: $ => seq(
       '{',
-      commaSep(choice(
-        seq($.identifier, '=', $.expression),
-        seq('[', $.expression, ']', '=', $.expression),
-        $.expression,
-      )),
-      optional(','),
+      sepBy(choice($.table_entry, $.spread_entry)),
       '}',
+    ),
+
+    table_entry: $ => choice(
+      seq(choice($.identifier, $.string), '=', $.expression),
+      // `hobbies: [string] = { … }` — an entry that declares its own type.
+      // `examples/file_scoped_guy.duo` writes a whole record this way.
+      seq($.identifier, ':', field('type', $.type), '=', $.expression),
+      seq('[', $.expression, ']', '=', $.expression),
+      $.expression,
     ),
 
     // ── Field projection / method reference ─────────────────────────────────
@@ -1095,15 +1418,16 @@ module.exports = grammar({
     descriptor_constructor: $ => seq(
       '@',
       '{',
-      commaSep(choice(
-        seq($.identifier, '=', $.expression),
-        seq('[', $.expression, ']', '=', $.expression),
-        seq('..', $.expression),
-        $.expression,
-      )),
-      optional(','),
+      sepBy(choice($.table_entry, $.spread_entry)),
       '}',
     ),
+
+    // `@{ ..self, x = nx }` — CLAUDE.md §0.4's update form — and the same
+    // spelling in a plain `{ ..defaults, color = "red" }` and in a record TYPE
+    // (`Sprite: @{ ..Named, ..Colored, x: f64 }`, composition by inclusion).
+    // One rule, because it is one construct: take everything from that, then
+    // override.
+    spread_entry: $ => seq('..', $.expression),
 
     // ── Postfix expressions ─────────────────────────────────────────────────
 
@@ -1120,6 +1444,17 @@ module.exports = grammar({
     field_expression: $ => prec(1, seq(
       $.expression,
       '.',
+      $.identifier,
+    )),
+
+    // `p.@eq` — reaching the DESCRIPTOR's own surface rather than a data
+    // field. CLAUDE.md §0.2 keeps bare `@` as "my descriptor" after the
+    // directive prefix was retired, and `examples/pass38_semantic_access_g6.
+    // duo` reads `p.@eq` to prove the semantic is present.
+    semantic_field_expression: $ => prec(1, seq(
+      $.expression,
+      '.',
+      '@',
       $.identifier,
     )),
 
@@ -1215,4 +1550,11 @@ function commaSep(rule) {
 
 function commaSep1(rule) {
   return seq(rule, repeat(seq(',', rule)));
+}
+
+// Pass 100 §7 X8: the NEWLINE is the canonical separator inside a braced group
+// and the comma is the optional one. `extras` already consumes the newline, so
+// "optional comma between elements, optional trailing comma" is the whole rule.
+function sepBy(rule) {
+  return optional(seq(rule, repeat(seq(optional(','), rule)), optional(',')));
 }

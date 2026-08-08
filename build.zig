@@ -234,6 +234,17 @@ pub fn build(b: *std.Build) void {
     const repo_hygiene_step = b.step("repo-hygiene", "Pass 11 WP-12: forbidden root artifacts and tracked agent noise");
     repo_hygiene_step.dependOn(&repo_hygiene_cmd.step);
 
+    // tree-sitter-coverage -- Pass 100 section 19's editor front-end, measured.
+    // Runs the generator (failing if it exits non-zero, which the nvim setup
+    // script used to swallow), parses every tracked .duo file, and ratchets off
+    // a ceiling on UNRECOGNISED files. It positive-controls its own detector on
+    // every run against a valid file and a deliberately broken one, because a
+    // coverage counter that cannot fail reports a number that proves nothing.
+    const ts_coverage_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/tree_sitter_coverage.duo" });
+    ts_coverage_cmd.setCwd(b.path("."));
+    const ts_coverage_step = b.step("tree-sitter-coverage", "tree-sitter generates, and recognises a ratcheted share of the .duo corpus (GAP-049)");
+    ts_coverage_step.dependOn(&ts_coverage_cmd.step);
+
     // audit100 -- CLAUDE.md section 1's deny table, executable. It scans the
     // canonical partition of docs/spec/corpus.md only, because compile_fail
     // fixtures are SUPPOSED to contain the denied text, and it ratchets off

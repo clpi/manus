@@ -43,8 +43,13 @@
   "extends"
   "private"
   "comptime"
-  "type"
 ] @keyword
+
+; `type` is NOT here. It is not a keyword in Duo — `type X = T` has zero uses
+; in the tracked corpus against 231 for `type(`, Pass 100 §15 lists it among
+; the keywords that are retiring, and the `type_definition` rule was removed
+; from the grammar so that `type(obj: any): any` can parse as the declaration
+; it is. Highlighting it as a keyword would contradict the tree.
 
 ; ── Types ─────────────────────────────────────────────────────────────────────
 ;
@@ -163,8 +168,12 @@
   "."
   (identifier) @property)
 
-(table_constructor
-  (identifier) @property)
+; A table's entries are `table_entry` nodes now that the newline is a legal
+; separator, so the key is the entry's FIRST child. The anchor is what keeps
+; this off the value: `{ a = b }` highlights `a`, not `b`, which the old
+; `(table_constructor (identifier))` could not distinguish.
+(table_entry
+  . (identifier) @property)
 
 (table_pattern_entry
   (identifier) @property)
