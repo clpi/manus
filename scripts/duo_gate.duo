@@ -1,0 +1,256 @@
+-- duo_gate.duo — global concurrency guard for Duo multi-agent builds.
+--
+-- Duo replacement for scripts/duo_gate.sh (monoglot census).
+--
+-- Problem (G-057): duo_lock serializes *build steps* but does NOT cap total
+-- concurrent duo/clang/cc1 processes system-wide. A parallel agent's non-locked
+-- compiles can exhaust the per-user maxproc limit, stalling ALL agents (EAGAIN
+-- on every posix_spawn — even `echo`), risking a forced reboot.
+--
+-- Solution: a counting semaphore capping total simultaneous heavy processes
+-- system-wide, not just serialized build steps.
+--
+-- Usage:
+--   duo run scripts/duo_gate.duo -- <cmd...>
+--   duo run scripts/duo_gate.duo -- --timeout 120 -- <cmd...>
+--   duo run scripts/duo_gate.duo -- status
+--   duo run scripts/duo_gate.duo -- config
+--
+-- Environment: DUO_GATE_MAX, DUO_GATE_DIR, DUO_GATE_WAIT, DUO_GATE_PROC_PAT.
+
+_env_or(n: str, d: str): str
+    v = std.script.getenv_or(n)
+    if v == "" return d end
+    v
+end
+
+_sh(cmd: str): str
+    std.script.chomp(std.script.capture(cmd))
+end
+
+_num(s: str, fallback: i64): i64
+    v = to(i64)(s)
+    if v == nil return fallback end
+    v
+end
+
+_gate_dir(): str
+    _env_or("DUO_GATE_DIR", "/tmp/duo-gate")
+end
+
+_proc_pat(): str
+    _env_or("DUO_GATE_PROC_PAT", "duo|clang|cc1|zig|ld|ld64")
+end
+
+_maxproc(): i64
+    _num(_sh("sysctl -n kern.maxprocperuid 2>/dev/null"), 2666)
+end
+
+_cpus(): i64
+    _num(_sh("sysctl -n hw.logicalcpu 2>/dev/null"), 4)
+end
+
+-- Default cap: maxproc/4, clamped to [4, 16]. The clamp matters more than the
+-- ratio -- on a box with a huge maxproc, maxproc/4 would be no cap at all.
+_gate_max(): i64
+    override = std.script.getenv_or("DUO_GATE_MAX")
+    if override != "" return _num(override, 8) end
+    cap = _maxproc() / 4
+    if cap < 4 return 4 end
+    if cap > 16 return 16 end
+    cap
+end
+
+_count_heavy(): i64
+    _num(_sh("ps -u $(id -u) -o comm= 2>/dev/null | grep -E '(" .. _proc_pat()
+        .. ")' | grep -v grep | wc -l | tr -d ' '"), 0)
+end
+
+_total_procs(): i64
+    _num(_sh("ps -u $(id -u) -o pid= 2>/dev/null | wc -l | tr -d ' '"), 0)
+end
+
+-- 1-minute load average. macOS returns "{ 1.23 2.34 3.45 }" from sysctl;
+-- Linux has it in /proc/loadavg. Truncated to an integer for comparison, as
+-- the shell version did.
+_loadavg_int(): i64
+    if std.script.fs_exists("/proc/loadavg")
+        return _num(_sh("awk '{print $1}' /proc/loadavg 2>/dev/null | cut -d. -f1"), 0)
+    end
+    _num(_sh("sysctl -n vm.loadavg 2>/dev/null | sed 's/[{}]//g' | awk '{print $1}' | cut -d. -f1"), 0)
+end
+
+-- Returns "" when it is safe to fork, otherwise the REASON. Returning the
+-- reason rather than a bool is why the shell version had to call this twice
+-- (once for the status, once to capture stderr for the message).
+_block_reason(): str
+    procs = _count_heavy()
+    cap = _gate_max()
+    if procs >= cap
+        return "heavy procs (" .. to(str)(procs) .. ") >= gate cap (" .. to(str)(cap) .. ")"
+    end
+
+    -- 8x cores, not 1x: macOS load average includes uninterruptible I/O wait
+    -- and memory pressure, which inflates it well above the Linux meaning.
+    -- This only trips during genuine exhaustion; the proc count above is the
+    -- primary EAGAIN guard.
+    cpus = _cpus()
+    limit = cpus * 8
+    load1 = _loadavg_int()
+    if load1 > limit
+        return "load avg (" .. to(str)(load1) .. ") > " .. to(str)(limit)
+            .. " (8x " .. to(str)(cpus) .. " cores)"
+    end
+
+    total = _total_procs()
+    plimit = _maxproc() * 80 / 100
+    if total > plimit
+        return "total user procs (" .. to(str)(total) .. ") > 80% of maxproc ("
+            .. to(str)(plimit) .. ")"
+    end
+    ""
+end
+
+_slot_file(pid: str): str
+    _gate_dir() .. "/slot_" .. pid
+end
+
+-- Slots older than 30 minutes belonged to a process that died without
+-- releasing. Left alone they leak the cap to zero and every agent blocks
+-- forever.
+_cleanup_stale(): void
+    d = _gate_dir()
+    if not std.script.fs_exists(d) return end
+    now = _num(_sh("date +%s"), 0)
+    out = std.script.capture("ls " .. d .. "/slot_* 2>/dev/null")
+    for _i, line in std.string.split(out, "\n")
+        f = std.script.chomp(line)
+        if f != ""
+            ts = _num(_sh("cut -d' ' -f2 " .. f .. " 2>/dev/null"), 0)
+            if ts != 0 and now - ts > 1800
+                std.script.run("rm -f " .. f .. " 2>/dev/null")
+            end
+        end
+    end
+end
+
+_status(): void
+    print("duo_gate status:")
+    print("  heavy procs (" .. _proc_pat() .. "): " .. to(str)(_count_heavy()))
+    print("  gate cap (GATE_MAX):               " .. to(str)(_gate_max()))
+    print("  system load (1-min):               " .. to(str)(_loadavg_int()))
+    print("  total user procs:                  " .. to(str)(_total_procs())
+        .. " / " .. to(str)(_maxproc()))
+    r = _block_reason()
+    if r == ""
+        print("  state:                             OK")
+    else
+        print("  state:                             BLOCKED (" .. r .. ")")
+    end
+    n = _num(_sh("ls -1 " .. _gate_dir() .. "/slot_* 2>/dev/null | wc -l | tr -d ' '"), 0)
+    print("  active gate slots:                 " .. to(str)(n))
+end
+
+_config(): void
+    print("duo_gate config:")
+    print("  GATE_MAX:     " .. to(str)(_gate_max()))
+    print("  GATE_DIR:     " .. _gate_dir())
+    print("  GATE_WAIT:    " .. _env_or("DUO_GATE_WAIT", "1800"))
+    print("  PROC_PAT:     " .. _proc_pat())
+    print("  maxproc:      " .. to(str)(_maxproc()))
+    print("  cpus:         " .. to(str)(_cpus()))
+end
+
+main = (): i64
+    args = std.os.args()
+    n = #args
+    if n == 0
+        print("duo_gate: no command given (usage: duo_gate.duo [--timeout N] -- <cmd...>)")
+        return 64
+    end
+
+    if args[1] == "status"
+        _status()
+        return 0
+    end
+    if args[1] == "config"
+        _config()
+        return 0
+    end
+
+    timeout = _num(_env_or("DUO_GATE_WAIT", "1800"), 1800)
+    i = 1
+    if args[i] == "--timeout"
+        if i + 1 > n
+            print("duo_gate: --timeout needs a value")
+            return 64
+        end
+        timeout = _num(args[i + 1], timeout)
+        i = i + 2
+    end
+    -- `duo run script.duo -- cmd` consumes the first `--` itself, so a leading
+    -- separator is tolerated and never required. Same asymmetry that made
+    -- duo_lock.duo reject every invocation before RL-13.
+    if i <= n and args[i] == "--"
+        i = i + 1
+    end
+    if i > n
+        print("duo_gate: no command given (usage: duo_gate.duo [--timeout N] -- <cmd...>)")
+        return 64
+    end
+
+    parts = {}
+    while i <= n
+        parts[#parts + 1] = args[i]
+        i = i + 1
+    end
+    cmd = table.concat(parts, " ")
+
+    _cleanup_stale()
+    std.script.run("mkdir -p " .. _gate_dir() .. " 2>/dev/null")
+
+    -- Backoff: 2s, then 5s past 30s, then 10s past 120s. A tight poll under
+    -- fork pressure is itself a fork per iteration.
+    waited = 0
+    reason = _block_reason()
+    while reason != ""
+        if waited >= timeout
+            print("duo_gate: timed out after " .. to(str)(timeout)
+                .. "s waiting for fork safety (" .. reason .. ")")
+            _cleanup_stale()
+            return 75
+        end
+        step = 2
+        if waited > 30 step = 5 end
+        if waited > 120 step = 10 end
+        std.script.run("sleep " .. to(str)(step))
+        waited = waited + step
+        reason = _block_reason()
+    end
+
+    pid = _sh("echo $PPID")
+    slot = _slot_file(pid)
+    std.script.run("printf '%s %s %s\\n' " .. pid .. " $(date +%s) " .. to(str)(timeout)
+        .. " > " .. slot .. " 2>/dev/null")
+
+    std.script.env_set("DUO_GATE_HELD", "1")
+
+    -- The gated command must keep BOTH its output and its exact exit code.
+    -- `run` passes output through but collapses every nonzero status to 1;
+    -- `status` is exact but sends the output to /dev/null. Neither alone is
+    -- correct for a wrapper, so the code is routed through a file while the
+    -- command inherits the terminal.
+    rcfile = _gate_dir() .. "/rc_" .. pid
+    std.script.run(cmd .. "; echo $? > " .. rcfile)
+    rc = _num(_sh("cat " .. rcfile .. " 2>/dev/null"), 1)
+    std.script.run("rm -f " .. slot .. " " .. rcfile .. " 2>/dev/null")
+
+    -- os.exit, not `return rc`: a nonzero returned from `main` does NOT become
+    -- the process exit status under `duo run`. Measured — a gated `exit 7`
+    -- reported 0 to the caller, so every failure inside the gate looked like a
+    -- success to whatever invoked it.
+    if rc != 0
+        os.exit(rc)
+    end
+    0
+end
