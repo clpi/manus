@@ -8,10 +8,12 @@ const std = @import("std");
 /// overrides the weak one in src/duo_keyword_classify.c — that file was written
 /// weak for exactly this case.
 fn linkProductionKeywordClassify(b: *std.Build, mod: *std.Build.Module) void {
-    mod.addCSourceFile(.{
-        .file = b.path("src/duo_keyword_classify.c"),
-        .flags = &.{"-std=c11"},
-    });
+    // src/duo_keyword_classify.c retired 2026-08-07: it declared
+    // duo_keyword_classify `weak` precisely so a full Duo artifact could
+    // override it, and src/duo_lexer_tokenize.c now provides the strong
+    // definition (both are generated from lib/std/token/classify.duo, so this
+    // is one source of truth, not two). Its ledger deletion gate — "delete once
+    // nothing links the weak fallback" — is met.
     linkProductionDuoLexer(b, mod);
     mod.link_libc = true;
 }
