@@ -4036,6 +4036,16 @@ pub const CodeGen = struct {
                     // reaching the lowering that supports it — 12 programs in
                     // examples/ alone. Both spellings are listed together here
                     // so the pair cannot drift apart again.
+                    // Paired with the dnir_lower arm: `os.exit(n)` lowers to
+                    // libc `exit`, so the gate must stop calling it a runtime
+                    // global. Kept adjacent to the string rows so the whole set
+                    // of "runtime-global name, native lowering" pairs is in one
+                    // place and drifts together or not at all (gap[034]).
+                    if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "os") and
+                        std.mem.eql(u8, f.field, "exit") and call.args.len == 1)
+                    {
+                        break :blk self.expr_is_native_scalar(call.args[0]);
+                    }
                     if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "string")) {
                         if (std.mem.eql(u8, f.field, "len") and call.args.len == 1) {
                             break :blk self.expr_is_native_scalar(call.args[0]);

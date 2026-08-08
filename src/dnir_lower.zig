@@ -1732,6 +1732,22 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
     if (c.func.* == .field) {
         const f = c.func.field;
         if (f.obj.* == .name) {
+            // `os.exit(n)` is libc `exit` — a plain extern call, the same shape
+            // `#s` already uses for strlen. It was refused only because `os` is
+            // a runtime global by name, not because the call needs a runtime.
+            //
+            // Deliberately just this one. `os.clock` is NOT here: Lua's returns
+            // seconds as a float and C's returns ticks, so lowering it to the
+            // libc symbol would change what the program measures — a silent
+            // semantic swap, not a lowering.
+            if (std.mem.eql(u8, f.obj.name.ident, "os") and
+                std.mem.eql(u8, f.field, "exit") and c.args.len == 1)
+            {
+                const arg = try lowerExpr(ctx, c.args[0]);
+                try ensureExtern(ctx, "os", "exit", "exit");
+                try ctx.emit(.{ .op = .call_extern, .callee = "exit", .lhs = arg });
+                return .void;
+            }
             if (ctx.req.exportSymbol(f.obj.name.ident, f.field)) |sym| {
                 try ensureExtern(ctx, f.obj.name.ident, f.field, sym);
                 // Marshal through scalarCallLhs like the static-module path
