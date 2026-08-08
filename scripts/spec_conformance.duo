@@ -104,8 +104,14 @@ main(): i64
     record("STR-1 field hole", "main(): void\n    p = { x = 4 }\n    print(\"" .. lb() .. "p.x}\")\nend\n", "4")
     record("STR-1 expr hole", "main(): void\n    i = 1\n    print(\"" .. lb() .. "i + 1}\")\nend\n", "2")
 
-    -- PART II 2.1 / Pass 38 — access and relations
-    record("G6 value.@name", "e(a: any, b: any): bool\n    true\nend\nmain(): void\n    p = {}\n    setmetatable(p, { __eq = e })\n    print(p.@eq != nil)\nend\n", "true")
+    -- PART II 2.1 / Pass 38 — access and relations.
+    --
+    -- The "G6 value.@name" row that stood here asserted the graveyard form
+    -- PRESENT while the row below asserted it ABSENT — two rows of one suite
+    -- demanding opposite answers about one spelling, which is the conflict in
+    -- miniature. Pass 100 §2 settles it: the anchor has three stances and
+    -- `.@name` is not among them. The row is retired, not flipped; the ABSENT
+    -- row below is the one that carries the ruling.
     record("FF-14 strata curry", "main(): void\n    print(to(str)(42))\nend\n", "42")
     record("FF-12 subject-first", "main(): void\n    print((42):to(str))\nend\n", "42")
     record("primitive as value", "main(): void\n    t = str\n    print(t)\nend\n", "str")
@@ -135,12 +141,14 @@ main(): i64
     record("P48 anchor X@to(T)", "main(): void\n    print(i64@to(str) != nil)\nend\n", "true")
 
     -- `value.@name` is IN PASS 48'S GRAVEYARD (Part VI), alongside `point:@to`
-    -- and `Point.@to`. It is implemented anyway — I added it in 7af9a66 working
-    -- from the Pass 38 catalog, which Pass 48 supersedes. This row therefore
-    -- asserts the form is ABSENT, and it FAILS on purpose until the parser
-    -- change is reverted or the graveyard ruling is revisited. A conformance
-    -- suite that only tests what should exist cannot catch a form that should
-    -- not.
+    -- and `Point.@to`. It was implemented anyway — added in 7af9a66 from the
+    -- Pass 38 catalog, which Pass 48 supersedes — so this row asserted the form
+    -- ABSENT and FAILED on purpose for a day. It passes now: the parser rejects
+    -- `.@name` outright and codegen's metafield re-derivation went with it.
+    --
+    -- Keep the row. A conformance suite that only tests what should exist
+    -- cannot catch a form that should not, and this row is the reason the
+    -- wrong-value spelling had a name to be closed under.
     record("GRAVEYARD .@name absent", "e(a: any, b: any): bool\n    true\nend\nmain(): void\n    p = {}\n    setmetatable(p, { __eq = e })\n    print(p.@eq == nil)\nend\n", "ABSENT")
 
     -- Pass 67 §4 — face rows that DO work, pinned so they cannot regress.

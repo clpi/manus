@@ -123,6 +123,12 @@ run_fail("examples/compile_fail/multi_concept_fail.duo", "does not satisfy conce
 -- shallow shape, and that has to be an error rather than a second parse.
 run_fail("examples/compile_fail/offside_misindent.duo", "indentation matches no block")
 run_fail("examples/compile_fail/offside_end_column.duo", "closes a block opened at column")
+-- Pass 100 §2 — the anchor has THREE stances and `.@name` is not one of them.
+-- This row is a rejection and not a corpus value fixture on purpose: the form
+-- shipped a wrong VALUE (`p.@x` = nil beside `p.x` = 3, both checking clean),
+-- and a wrong value that type-checks is exactly the thing a value fixture
+-- cannot pin. See docs/anchor_stance_conflict.md row 3.
+run_fail("examples/compile_fail/anchor_metafield.duo", "is not an anchor stance")
 
 -- Pass 100 §1 — deny-table rows enforced at the .duo surface. Each row is a
 -- pair — the .duo file must be rejected, and its byte-identical .lua twin must

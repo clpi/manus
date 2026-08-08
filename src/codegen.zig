@@ -14714,27 +14714,16 @@ pub const CodeGen = struct {
                 self.emit_var_name(n.ident);
             },
             .field => |f| {
-                // Pass 38 G6: `value.@name` — SEMANTIC access. The parser keeps
-                // the `@` sigil in the field name so only this arm treats it
-                // specially and every other field path is untouched.
+                // The `f.field[0] == '@'` arm that used to stand here read the
+                // anchor stance out of an identifier's SPELLING and emitted a
+                // boxed `lua_get_metafield_lit` for it. Pass 100 §2 gives the
+                // anchor three stances and `.@name` is none of them, so the
+                // parser now rejects the form outright and nothing produces a
+                // field name carrying the sigil. The re-derivation is gone with
+                // it: codegen consumes a decided fact, it does not recover one
+                // from a string. (It was also the row that answered `nil` for
+                // `p.@x` where `p.x` answered 3, both checking clean.)
                 //
-                // §1.3 defines it as the effective metatable entry, and §8.5
-                // maps `@x` onto Lua's `__x`, which is exactly what
-                // `lua_get_metafield_lit` already reads — so this is one lookup
-                // against machinery that exists, not a new dispatch mechanism.
-                // Retrieval, never binding: `p.@eq` is the VALUE of the
-                // relation. It yields nil when the relation is absent rather
-                // than erroring, matching §9's rule that an unconsumed
-                // projection is a graph fact and not an emitted symbol.
-                if (f.field.len > 1 and f.field[0] == '@') {
-                    const sem = f.field[1..];
-                    var lua_name_buf: [128]u8 = undefined;
-                    const lua_name = std.fmt.bufPrint(&lua_name_buf, "__{s}", .{sem}) catch sem;
-                    self.p("lua_get_metafield_lit(", .{});
-                    try self.emit_as_lua_value(f.obj);
-                    self.p(", \"{s}\", {d}u, {d})", .{ lua_name, calc_lua_hash(lua_name), lua_name.len });
-                    return;
-                }
                 // Enum variant access: `Color.Green` -> the C enum constant
                 if (f.obj.* == .name and self.enum_has_payload.contains(f.obj.name.ident)) {
                     const ename = f.obj.name.ident;

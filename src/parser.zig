@@ -5269,27 +5269,42 @@ pub const Parser = struct {
             switch (tok.kind) {
                 .dot => {
                     _ = try self.adv();
-                    // Pass 38 G6 / Pass 40: `value.@name` is SEMANTIC access —
-                    // the effective metatable entry for `name`, as opposed to
-                    // `value.name` which is the ordinary member. The two live on
-                    // one accessor with `@` selecting the semantic world, which
-                    // is why this belongs here rather than in a separate
-                    // production. Previously this path called expect_name_like
-                    // unconditionally and `p.@eq` died with
-                    // "expected 'name', got '@'" — recorded as the Phase 2
-                    // blocker in docs/plans/pass38_projection_calculus.md.
+                    // Pass 100 §2 THE ANCHOR gives the anchor exactly three
+                    // stances — bare `@` NAMES it, leading `.` WALKS from it,
+                    // postfix `X@rel` MOVES it — and `.@name` is none of them.
+                    // It came in from the Pass 38 catalog (7af9a66) and Pass 48
+                    // put it in the GRAVEYARD alongside `point:@to` and
+                    // `Point.@to`; `scripts/spec_conformance.duo` has carried a
+                    // row asserting the form ABSENT, failing on purpose, ever
+                    // since.
                     //
-                    // Carried as an ordinary `.field` whose name keeps the `@`
-                    // sigil, so every existing field path still sees a plain
-                    // field and only the codegen arm that looks for the sigil
-                    // treats it semantically. Retrieval only: `p.@eq` is the
-                    // VALUE of the relation, never a receiver-bound call.
+                    // WHAT IT SHIPPED. The parser stored the stance in a
+                    // LEADING CHARACTER of the field name (`"@x"`), sema never
+                    // looked, and codegen re-derived the intent by string-
+                    // comparing that character and emitting a boxed metafield
+                    // read. A native record has no metatable, so
+                    //
+                    //     p: point = { x = 3, y = 4 }
+                    //     a = p.x        -- 3
+                    //     b = p.@x       -- nil
+                    //
+                    // both CHECKED CLEAN and one of them answered the wrong
+                    // value silently. That is the worst failure class there is:
+                    // two spellings of one anchor, disagreeing, with no
+                    // diagnostic anywhere in the pipeline.
+                    //
+                    // So the form is a diagnostic, decided here — the parser is
+                    // the canonical syntax graph and owns which stance a sigil
+                    // is. Codegen's `f.field[0] == '@'` arm went with it: with
+                    // no producer left, a re-derivation from an identifier's
+                    // spelling is dead weight that can only come back to life
+                    // by accident.
                     if ((try self.pk()).kind == .at) {
-                        _ = try self.adv();
-                        const sem = try self.expect_name_like();
-                        const marked = try std.fmt.allocPrint(self.alloc, "@{s}", .{sem});
-                        e = try self.new_expr(.{ .field = .{ .loc = tok.loc, .obj = e, .field = marked } });
-                        continue;
+                        const at_tok = try self.adv();
+                        const sem = self.expect_name_like() catch "name";
+                        term.locErr(at_tok.loc, "'.@{s}' is not an anchor stance", .{sem});
+                        term.locHint(at_tok.loc, "§2 gives the anchor three stances: bare '@' names it, leading '.' walks from it, postfix 'X@{s}' moves it. Walk to the member with '.{s}'", .{ sem, sem });
+                        return ParseError.UnexpectedToken;
                     }
                     const fld = try self.expect_name_like();
                     // `token.kind` names the case-set an inline field declared

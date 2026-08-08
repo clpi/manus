@@ -58,7 +58,10 @@ pub const boxed_inventory = struct {
     // runtime-text tests used to pin.
     pub const lua_value_refs: usize = 1882;
     pub const lua_invoke_refs: usize = 72;
-    pub const emit_as_lua_value_refs: usize = 188;
+    // 188 -> 187: the `.@name` metafield arm boxed its receiver to read a
+    // `__name` entry off it. Pass 100 §2 gives the anchor three stances and
+    // `.@` is none of them, so the arm is gone and one boxing site with it.
+    pub const emit_as_lua_value_refs: usize = 187;
     pub const module_needs_lua_runtime_refs: usize = 58;
     pub const primary_file: []const u8 = "src/codegen.zig";
 };

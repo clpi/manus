@@ -1,0 +1,21 @@
+-- Pass 100 §2 THE ANCHOR — `.@name` is not one of the three stances.
+--
+-- This fixture is a REJECTION fixture and not a value fixture because the form
+-- it pins cannot be measured by a value: that is precisely how it shipped. On
+-- a native record `p.@x` answered `nil` where `p.x` answered `3`, and BOTH
+-- passed `duo check` — the parser stored the stance in the leading character
+-- of a field name, sema never looked, and codegen re-derived intent from that
+-- character and emitted a boxed metafield read against a value that has no
+-- metatable. A wrong value that type-checks leaves nothing for a corpus
+-- fixture to compare, so the pin has to be the diagnostic.
+--
+-- §2 settles the anchor as one concept in three stances: bare `@` NAMES it,
+-- leading `.` WALKS from it, postfix `X@rel` MOVES it. `.@` is a fourth
+-- spelling of a concept that has exactly three, which A3 ONE EDGE forbids.
+
+point: { x: i64, y: i64 }
+
+main(): void
+    p: point = { x = 3, y = 4 }
+    print(p.@x)
+end

@@ -129,15 +129,15 @@ anchor is unreachable, and what it reaches instead is a tensor operator.
 
 ---
 
-## Row 3 — `.@name`: the same anchor, spelled with a dot, answering a different value
+## Row 3 — `.@name`: the same anchor, spelled with a dot, answering a different value  *(RECONCILED)*
 
-**Parser believes:** `p.@x` is a `field` node whose *field name is the string*
+**Parser believed:** `p.@x` is a `field` node whose *field name is the string*
 `"@x"`. The stance is stored in a leading character of an identifier.
 
-**Sema believes:** it is an ordinary field access, and does not check it against
+**Sema believed:** it is an ordinary field access, and does not check it against
 the record's declared fields.
 
-**Codegen believes:** re-derives the stance from that string —
+**Codegen believed:** re-derives the stance from that string —
 `if (f.field.len > 1 and f.field[0] == '@')` (one site, `codegen.zig`) — and
 emits `lua_get_metafield_lit` against a BOXED value.
 
@@ -150,15 +150,54 @@ a = p.x
 b = p.@x
 ```
 
-`duo check` → clean. Running it prints
+`duo check` → clean. Running it printed
 
 ```
 3
 nil
 ```
 
-A native record has no metatable, so the retrieval answers `nil` rather than
-failing. Nothing anywhere in the pipeline says the two spellings name one fact.
+A native record has no metatable, so the retrieval answered `nil` rather than
+failing. Nothing anywhere in the pipeline said the two spellings name one fact.
+
+### The decision
+
+**`.@name` is a diagnostic.** §2 gives the anchor exactly three stances and this
+is not one of them; §0.2 says prefix `@` does not exist. It was never a ruling
+in dispute either — Pass 48 put `value.@name` in the GRAVEYARD alongside
+`point:@to` and `Point.@to`, and `scripts/spec_conformance.duo` has carried a
+row asserting the form ABSENT, *failing on purpose*, since the day the form
+landed. The same file also carried a row asserting it PRESENT. Two rows of one
+conformance suite demanded opposite answers about one spelling; that row is
+retired and the ABSENT row now passes.
+
+### The mechanism
+
+The parser rejects `.@` where it used to build the sigil-carrying field name,
+and codegen's `f.field[0] == '@'` arm is deleted with it — with no producer, a
+re-derivation from an identifier's spelling is dead weight that can only come
+back by accident. Sema is untouched, as in row 1a. `emit_as_lua_value` sites go
+188 → 187 (`src/pass4_catalog.zig`), and `pass36_catalog` G6 goes
+`.implemented` → `.recorded`, putting `implementedGrammarForms()` back to the
+honest 0.
+
+### The fixture
+
+`examples/compile_fail/anchor_metafield.duo` + a `run_fail` row asserting the
+message `is not an anchor stance`. **Deliberately not a `forms` value fixture**:
+the failure mode was a wrong value that type-checked, so there is no value for a
+corpus fixture to compare — that is exactly what made it the dangerous row. The
+pin has to be the diagnostic.
+
+Before: `duo check` clean, program prints `3` then `nil`.
+After: `row3.duo:4:7: error: '.@x' is not an anchor stance`, with a hint naming
+the three stances and pointing at `.x`.
+
+`examples/pass38_semantic_access_g6.duo` is deleted — its entire subject was the
+retired form. `ext/tree-sitter-duo/grammar.js` still carries a
+`semantic_field_expression` rule; a grammar that accepts more than the compiler
+is a lint rather than a wrong value, and that file has a live owner, so it is
+left as named follow-up.
 
 ---
 

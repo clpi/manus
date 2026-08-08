@@ -169,12 +169,17 @@ pub const grammar_rules: []const GrammarRule = &.{
     .{ .id = "G3", .form = "@name(args)", .meaning = "invocation through the current world", .status = .recorded, .blocked_by = "NONE", .parens_required = false },
     .{ .id = "G4", .form = "@name(param)(subject)", .meaning = "two-group application spine", .status = .recorded, .blocked_by = "NONE", .parens_required = false },
     .{ .id = "G5", .form = "@name param", .meaning = "parenless first group, atomic argument only", .status = .recorded, .blocked_by = "NONE", .parens_required = false },
-    // First form of the calculus to actually exist in the compiler (2026-08-07).
-    // The parser accepts `@` after `.` in the postfix chain and carries the
-    // sigil in the field name; codegen lowers it to the `__name` metafield per
-    // §8.5. Proven by examples/pass38_semantic_access_g6.duo (5 checks, fails
-    // by exit status, negative control verified).
-    .{ .id = "G6", .form = "value.@name", .meaning = "semantic member access; retrieval, never binding", .status = .implemented, .blocked_by = "NONE", .parens_required = false },
+    // WAS `.implemented` for one day (2026-08-07 → 2026-08-08). Pass 100 §2
+    // gives the anchor three stances — bare `@` names it, leading `.` walks
+    // from it, postfix `X@rel` moves it — and `value.@name` is none of them;
+    // Pass 48 had already put it in the graveyard next to `point:@to`. What it
+    // shipped in between was a wrong VALUE: `p.@x` answered nil where `p.x`
+    // answered 3, both checking clean, because the stance rode in the leading
+    // character of a field name and codegen re-derived it from that spelling
+    // against a record with no metatable. The parser rejects the form now, so
+    // this row is `recorded` again — and `implementedGrammarForms()` is back to
+    // 0, which is the honest count.
+    .{ .id = "G6", .form = "value.@name", .meaning = "semantic member access; retrieval, never binding", .status = .recorded, .blocked_by = "NONE", .parens_required = false },
     .{ .id = "G7", .form = "@name = value", .meaning = "statement position: lexical world binding", .status = .recorded, .blocked_by = "NONE", .parens_required = false },
     .{ .id = "G8", .form = "{ @name = value }", .meaning = "table literal: descriptor slot declaration", .status = .recorded, .blocked_by = "NONE", .parens_required = false },
     .{ .id = "G9", .form = "value.@name = value", .meaning = "assignment at the value's own level", .status = .recorded, .blocked_by = "NONE", .parens_required = false },
