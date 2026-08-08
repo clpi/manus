@@ -19,8 +19,24 @@
 --   file IS the artifact.)
 --
 --   DEBT          .sh and .py — authored source in a foreign language, with no
---                 sanction at all. This is the number that should reach zero,
---                 and the only one this gate ratchets.
+--                 sanction at all. This is the number that should reach zero.
+--
+--   JS DEBT       .js — the SAME category, split out only so the sh/py series
+--                 stays comparable with what this gate has reported before.
+--                 It is listed separately because it was not listed AT ALL:
+--                 .js matched none of the five patterns above, so three
+--                 tracked JavaScript files — 982 lines — were invisible to a
+--                 census whose headline is "no language but Duo", and
+--                 docs/RELEASE_STATUS.md could describe the census as
+--                 "otherwise clean" without either statement being checked.
+--                 The largest of them, ext/tree-sitter-duo/grammar.js (804
+--                 lines, 90 rules), is what Pass 100 §19 calls "a generated
+--                 grammar projection (output, never authored)" and it is
+--                 authored. See gaps/GAP-049. A file that is genuinely
+--                 generated belongs in SANCTIONED with its generator named;
+--                 none of these three has one, so all three are debt.
+--
+-- Both debt lines ratchet. Neither may rise.
 --
 -- Counts TRACKED files. Untracked scratch is not in the repo, and conflating
 -- the two inflated an earlier reading of this by 29 files.
@@ -32,8 +48,9 @@
 -- .claude/worktrees/ copies of this repo. Excluding those, the nine remaining
 -- are live via build.zig and .github/workflows/ci.yml.
 --
--- CENSUS_FLOOR (default 2) ratchets: retiring a script lowers it, adding one
--- fails. Exit 0 pass, 1 over the ceiling, 3 the census could not run.
+-- CENSUS_FLOOR (default 1) and CENSUS_JS_FLOOR (default 3) ratchet: retiring a
+-- file lowers the ceiling, adding one fails. Exit 0 pass, 1 over a ceiling, 3
+-- the census could not run.
 
 _count = (pattern: str): i64
     out = std.script.capture("cd " .. std.script.getenv("DUO_ROOT", ".")
@@ -56,6 +73,7 @@ main(): i64
     lua: i64 = _count("\\.lua$")
     csrc: i64 = _count("\\.(c|h)$")
     debt: i64 = _count("\\.(sh|py)$")
+    js: i64 = _count("\\.js$")
 
     print("language census (tracked files)")
     print("  duo         " .. to(str)(duo) .. "   authored source")
@@ -63,13 +81,30 @@ main(): i64
     print("  lua         " .. to(str)(lua) .. "   superset fixtures — INPUT, not source")
     print("  c/h         " .. to(str)(csrc) .. "   bootstrap ledger + fixtures — sanctioned")
     print("  sh/py       " .. to(str)(debt) .. "   DEBT — the number that must reach zero")
+    print("  js          " .. to(str)(js) .. "   DEBT — authored, none generated; gaps/GAP-049")
 
-    ceiling: i64 = to(i64)(std.script.getenv("CENSUS_FLOOR", "2"))
+    over: i64 = 0
+    -- LOWERED 2 -> 1: the count fell to 1 on its own, and the half of a ratchet
+    -- nobody remembers is lowering the budget when the count drops. One point
+    -- of headroom is one script somebody adds unnoticed.
+    ceiling: i64 = to(i64)(std.script.getenv("CENSUS_FLOOR", "1"))
     if debt > ceiling
         print("language_census: FAIL — sh/py debt " .. to(str)(debt)
             .. " exceeds the ratchet " .. to(str)(ceiling))
+        over += 1
+    end
+    -- Set to the count on the day .js was first counted, not to a round number
+    -- above it. A ceiling with headroom is a licence to add one more.
+    jscap: i64 = to(i64)(std.script.getenv("CENSUS_JS_FLOOR", "3"))
+    if js > jscap
+        print("language_census: FAIL — js debt " .. to(str)(js)
+            .. " exceeds the ratchet " .. to(str)(jscap))
+        over += 1
+    end
+    if over > 0
         return 1
     end
-    print("language_census: PASS (debt " .. to(str)(debt) .. " <= " .. to(str)(ceiling) .. ")")
+    print("language_census: PASS (sh/py " .. to(str)(debt) .. " <= " .. to(str)(ceiling)
+        .. ", js " .. to(str)(js) .. " <= " .. to(str)(jscap) .. ")")
     0
 end

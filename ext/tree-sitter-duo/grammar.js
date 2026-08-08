@@ -5,6 +5,38 @@
  * native C and WebAssembly.
  *
  * Based on the lexer tokens from src/lexer.zig and AST from src/ast.zig.
+ *
+ * ── STATUS: AUTHORED. It is not supposed to be. ──────────────────────────────
+ *
+ * Pass 100 §19 lists tree-sitter as "a generated grammar projection (output,
+ * never authored)". These 90 rules are hand-written, so this file is a live
+ * violation of the spec it describes, and it is the largest non-Duo authored
+ * source in the repository.
+ *
+ * It is NOT converted, and not deleted, because the surface it would be
+ * generated FROM does not exist: there is no declarative production registry
+ * in Duo. `lib/std/compiler/parser.duo` is an imperative recursive-descent
+ * parser over a bounded subset (~12 productions), `docs/GRAMMAR_SPEC.md` is
+ * prose, and `duo token-tables emit` is lexical only. See gaps/GAP-049 for the
+ * three missing pieces and the order they have to land in.
+ *
+ * Second reason it cannot simply be regenerated: the rules below still spell a
+ * PRE-PASS-100 surface — match / enum / try / catch / concept / optional types
+ * / local / const / function — every one of which CLAUDE.md §1 denies by name.
+ * Projecting this file from Pass 100 descriptors would change which programs
+ * the editors recognise, which is a language decision downstream of GAP-025.
+ *
+ * And it does not currently BUILD: `tree-sitter generate` exits 1 here with an
+ * unresolved conflict on `return_statement` ('return' • '(' — call argument
+ * list versus a bare `return` followed by a parenthesised statement). Checked
+ * against the pristine HEAD copy too, so it is not new. The `src/grammar.json`
+ * beside this file is output from a tree-sitter that resolved it; the CLI
+ * installed here does not. Treat that JSON as the live artifact and this file
+ * as its stale source, not the other way round.
+ *
+ * Counted, until then, as one of three tracked `.js` files in the G11 debt
+ * line (`scripts/language_census.duo`, ratchet `CENSUS_JS_FLOOR`). Editing
+ * this comment does not make the file generated.
  */
 
 module.exports = grammar({

@@ -458,7 +458,46 @@ main(): i64
     -- literal lowers to a raw int64_t* that `#` cannot measure and that gets a
     -- free() emitted at every `return` in the function — including the returns
     -- that come textually before it, which is a C compile error.
-    budgets: str = "14020 2253 1678 259 322 478 152 58 1972 442 167 128 228 36 2266 2224 3361"
+    -- REBASELINED 2026-08-08 (fourth time), measured at `9ef2e68` in a DETACHED
+    -- WORKTREE, and with `_LIST` pointed at an isolated path — the first
+    -- attempt at this measurement read `/tmp/duo_audit100_canonical.list`
+    -- while a concurrent session's run in the main tree was rewriting it, and
+    -- reported that tree's counts under this tree's `root` banner. That is the
+    -- same class as every other lesson here: a fixed path in /tmp is a shared
+    -- mutable surface, and `_LIST` is one. Re-measure in isolation or the
+    -- numbers are somebody else's.
+    --
+    -- Seven rows were over. Every point attributes to exactly TWO sources, and
+    -- they are kept apart on purpose:
+    --
+    --   row          delta   capability_table.duo   this commit
+    --   snake         +19            +24                 -5
+    --   upper          +1              0                 +1
+    --   underprefix   +70            +69                 +1
+    --   stdlib         +2             +1                 +1
+    --   concatlit     +49            +29                +20
+    --   oneline       +11            +11                  0
+    --   trailret       +5             +5                  0
+    --
+    --   `scripts/capability_table.duo` is new in 6c66d3b and landed 139 deny
+    --   points across six rows without moving a budget — the protocol failure
+    --   this gate exists to catch, and it caught it. Budgeted here rather than
+    --   rewritten, because it is another session's live file; the debt is
+    --   named, not absorbed silently.
+    --
+    --   `scripts/run_benchmark.duo` + `scripts/language_census.duo` are this
+    --   commit's fold classifier and js census row. The classifier was written
+    --   down to the deny table rather than budgeted at its first draft: it
+    --   started at +108 across eight rows and came to +18/-5 by naming things
+    --   one lowercase word (`folded`, `cutoff`, `ratio`, `tick`, `say`,
+    --   `probe`, `measured`, `folds`, `losses`), routing every duration
+    --   through ONE `string.format`, and expanding one-line `if`s. The `snake`
+    --   row goes DOWN because renaming `duo_file` -> `duofile` cleared five
+    --   pre-existing hits that were not this commit's to begin with. What is
+    --   left is irreducible: +20 concatlit is a report that interpolates
+    --   numbers into prose, +1 upper is assigning the pre-existing
+    --   RESULT_FAIL_FLAG, +1 underprefix is calling the pre-existing `_count`.
+    budgets: str = "14039 2254 1748 259 322 478 152 58 1974 442 167 128 228 36 2315 2235 3366"
 
     -- Per-row: 1 = measure with string bodies INTACT. Only `concatlit` sets
     -- it, because its subject IS the string literal; stripping bodies takes

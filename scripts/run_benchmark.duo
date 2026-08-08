@@ -18,6 +18,18 @@ trim(text: str): str
 end
 
 global ROOT = trim(s.capture("git rev-parse --show-toplevel"))
+
+-- Everything this script says about the fold classifier goes out through the
+-- SAME channel as the results table. `print` from a compiled Duo script is
+-- buffered and the shelled-out `printf` the table uses is not, so a caveat
+-- written with `print` lands in a different part of the transcript from the
+-- numbers it qualifies -- which is exactly how a win count gets quoted without
+-- the caveat attached to it.
+say(line: str): i64
+    s.must("printf \"%s\\n\" \"" .. line .. "\"")
+    0
+end
+
 global DUO = tostring(s.getenv_or("DUO"))
 if string.len(DUO) == 0
     DUO = ROOT .. "/zig-out/bin/duo"
@@ -244,10 +256,135 @@ capture_results(label: str, cmd: str): table
     res
 end
 
+-- ── The folded-row classifier ───────────────────────────────────────────────
+--
+-- A benchmark row is supposed to answer "is the code Duo GENERATED fast?".
+-- It answers that only if the kernel actually RAN. Two observable signatures
+-- say it did not:
+--
+--   R1  the Duo duration is at or under `cutoff`, this harness's reporting
+--       floor, so there is no significant digit in it to compare with;
+--   R2  the Duo duration beats reference C by more than `ratio`.
+--       Both sides reach clang -O3 through PGO from the same source algorithm,
+--       so a CODEGEN difference cannot open a gap of that size. An ASYMPTOTIC
+--       difference can, and that is exactly what a closed-form substitution
+--       is: the compiler evaluated the benchmark instead of running it.
+--
+-- Such a row measures whether a human wrote a closed form. It is not a win and
+-- it is reported as `folded`, never as `Duo`.
+--
+-- NOTHING HERE KEYS ON A ROW. No benchmark name, no expected value, no loop
+-- bound reaches this code; the only inputs are the row's own two durations.
+-- The same rule would fire for arbitrary user code of the same shape, which is
+-- the test CLAUDE.md §3 sets for any recogniser in this repository.
+--
+-- `tick` is a property of the INSTRUMENT, not a constant fitted to the results:
+-- reference C prints every duration with printf("%f") -- six decimal places --
+-- so the smallest non-zero duration this harness can report at all is 1e-06 s.
+-- `cutoff` is ten of those quanta; under ten ticks a duration carries no
+-- significant digit. The summary prints the smallest positive duration actually
+-- observed, so a reader can check that assumed resolution against the run
+-- instead of taking it on the comment.
+--
+-- Named `cutoff` rather than `floor` on purpose: `floor` is an unmangled libc
+-- symbol and a file-scope binding of that name is a link hazard here.
+global tick: f64 = 0.000001
+global cutoff: f64 = 0.00001
+global ratio: f64 = 100.0
+
+-- gap[019]: a value read out of a table is `any`, and `any` arithmetic
+-- truncates the field to int64 first, which would turn every sub-second
+-- duration into 0 and fold the entire table. Both durations are taken as f64
+-- PARAMETERS so everything below is native f64. Verified by value, not by
+-- shape: 0.0002 handed through an f64 parameter and multiplied by 100.0 comes
+-- back 0.02, and the ratio arm answers accordingly.
+--
+-- No early return: both clauses are evaluated every call, so neither can be
+-- silently unreachable behind the other.
+folded(dt: f64, ct: f64): bool
+    out = false
+    if dt <= cutoff
+        out = true
+    end
+    if ct > cutoff and ct >= dt * ratio
+        out = true
+    end
+    out
+end
+
+-- One place formats a duration, so one line in this file names a Lua library.
+sec(v: f64): str
+    string.format("%g", v)
+end
+
+yesno(b: bool): str
+    out = "no"
+    if b
+        out = "yes"
+    end
+    out
+end
+
+probe(label: str, dt: f64, ct: f64, want: bool): i64
+    got = folded(dt, ct)
+    mark = "  ok  "
+    bad: i64 = 0
+    if got != want
+        mark = "BROKEN"
+        bad = 1
+    end
+    say(mark .. "  " .. label .. "  duo=" .. sec(dt) .. "  c=" .. sec(ct)
+        .. "  folded=" .. yesno(got) .. "  want=" .. yesno(want))
+    bad
+end
+
+-- POSITIVE CONTROL, run before any benchmark data exists. A classifier that
+-- never fires is indistinguishable from one that is broken -- this repository
+-- has already shipped a capability table reporting 46/0 and a gate reporting
+-- 0/N from evidence neither of them could have read. So the rule is fired on
+-- synthetic points first, and each point pins one edge:
+--
+--   rows 1-3 walk the cutoff clause up to the cutoff;   row 4 clears the cutoff
+--   and is caught by the RATIO ALONE, which is what proves the two clauses
+--   independent;
+--   row 5 holds C fixed and moves Duo across the ratio, so 4 and 5 bracket
+--   `ratio` from both sides;   rows 6-7 hold the ratio at 10 and 5, far below
+--   the fold ratio, and move Duo across the CUTOFF, so they bracket `cutoff`
+--   with the ratio clause disabled -- without that pair the cutoff could be
+--   moved two orders of magnitude and the ratio clause would silently cover
+--   for it, which is a perturbation this table was checked against;
+--   rows 8-9 are genuine wins (2x and 50x) and must NOT fire; row 11 is a
+--   loss and must not fire either.
+control(): i64
+    bad: i64 = 0
+    say("=== fold classifier control (synthetic; no benchmark data in scope) ===")
+    bad = bad + probe("zero against real work        ", 0.0,      0.01,   true)
+    bad = bad + probe("one tick against real work    ", 0.000001, 0.01,   true)
+    bad = bad + probe("exactly at the cutoff         ", 0.00001,  0.01,   true)
+    bad = bad + probe("above cutoff, ratio 500       ", 0.00002,  0.01,   true)
+    bad = bad + probe("above cutoff, ratio 50        ", 0.0002,   0.01,   false)
+    bad = bad + probe("at the cutoff, ratio only 10  ", 0.00001,  0.0001, true)
+    bad = bad + probe("just over cutoff, ratio only 5", 0.00002,  0.0001, false)
+    bad = bad + probe("genuine win, 2x               ", 0.005,    0.01,   false)
+    bad = bad + probe("genuine win, 50x              ", 0.0001,   0.005,  false)
+    bad = bad + probe("both sides under the cutoff   ", 0.0,      0.0,    true)
+    bad = bad + probe("slower than C                 ", 0.02,     0.01,   false)
+    bad
+end
+
+if control() != 0
+    say("")
+    say("Benchmark failed: the fold classifier disagrees with its own control table.")
+    os.exit(1)
+end
+say("fold classifier control: 11/11 agree (cutoff=" .. sec(cutoff)
+    .. "s = 10 x " .. sec(tick) .. "s reporting resolution; ratio=" .. sec(ratio) .. "x)")
+say("")
+
 print("=== Correctness (RESULT lines) ===")
-duo_bench_res = capture_results("Duo benchmark.lua", "/tmp/duo_bench.out")
-duo_bench_duo_res = capture_results("Duo benchmark.duo", "/tmp/duo_bench_duo.out")
-c_bench_res = capture_results("reference C benchmark", "/tmp/c_bench.out")
+duobenchres = capture_results("Duo benchmark.lua", "/tmp/duo_bench.out")
+duobenchduores = capture_results("Duo benchmark.duo", "/tmp/duo_bench_duo.out")
+cbenchres = capture_results("reference C benchmark", "/tmp/c_bench.out")
 
 -- `global` is load-bearing. As a BARE top-level binding this stayed false
 -- through both reassignments below: the suite printed real mismatches and then
@@ -255,10 +392,10 @@ c_bench_res = capture_results("reference C benchmark", "/tmp/c_bench.out")
 -- further down was already declared global and always worked, which is the
 -- contrast that named the cause.
 global RESULT_FAIL: bool = false
-if not compare_results("Duo .lua", duo_bench_res, c_bench_res)
+if not compare_results("Duo .lua", duobenchres, cbenchres)
     RESULT_FAIL = true
 end
-if not compare_results("Duo .duo", duo_bench_duo_res, c_bench_res)
+if not compare_results("Duo .duo", duobenchduores, cbenchres)
     RESULT_FAIL = true
 end
 
@@ -280,7 +417,7 @@ print("=== Duo (Lua AOT) ===")
 global DUO_TIMES = collect_min_times("/tmp/duo_bench.out")
 
 print("=== Duo (.duo AOT) ===")
-global DUO_FILE_TIMES = collect_min_times("/tmp/duo_bench_duo.out")
+global DUOFILETIMES = collect_min_times("/tmp/duo_bench_duo.out")
 
 print("=== Reference C ===")
 global C_TIMES = collect_min_times("/tmp/c_bench.out")
@@ -312,6 +449,23 @@ global NAMES = {
 
 global RESULT_FAIL_FLAG: i64 = 0
 
+-- The three-way split. `measured` is the only one of these that is a win.
+global measured: i64 = 0
+global folds: i64 = 0
+global losses: i64 = 0
+-- Instrument checks, printed with the summary rather than assumed:
+-- the smallest positive Duo duration anywhere in the table (which is what the
+-- assumed reporting resolution has to be consistent with), and a negative
+-- control on real data -- the C column classified against ITSELF, a ratio of
+-- exactly 1, must never be called folded on any row where C did real work.
+global least: f64 = 1000000.0
+global impossible: i64 = 0
+-- Rows where AT LEAST ONE of the two Duo builds is folded. The verdict column
+-- uses the slower build, so it only says `folded` when both are; this counter
+-- is the wider number, and the gap between them is rows where one build ran
+-- the kernel and the other evaluated it.
+global partial: i64 = 0
+
 FAIL = false
 print("")
 print("══════════════════════════════════════════════════════════════════════════════")
@@ -326,7 +480,7 @@ for i = 1, BENCHES
     if name == nil name = "bench-" .. tostring(i) end
     
     d = DUO_TIMES[i]
-    duo_file = DUO_FILE_TIMES[i]
+    duofile = DUOFILETIMES[i]
     c = C_TIMES[i]
     lj = LUAJIT_TIMES[i]
     l5 = LUA55_TIMES[i]
@@ -339,22 +493,61 @@ for i = 1, BENCHES
     end
     
     c_wins = 1
-    if d != nil and duo_file != nil and c != nil
-        if (d <= c + eps) and (duo_file <= c + eps)
+    if d != nil and duofile != nil and c != nil
+        if (d <= c + eps) and (duofile <= c + eps)
             c_wins = 0
         end
     end
     
+    if d != nil and duofile != nil and c != nil
+        luadur: f64 = d
+        filedur: f64 = duofile
+        cdur: f64 = c
+        if folded(luadur, cdur) or folded(filedur, cdur)
+            partial = partial + 1
+        end
+    end
+
+    -- Verdict. `folded` only ever reclassifies a row that would otherwise have
+    -- been called a Duo win, so the loss column is unaffected by the rule.
     winner = "Duo"
     if c_wins == 1
         winner = "C"
+        losses = losses + 1
         RESULT_FAIL_FLAG = 1
+    else
+        -- The SLOWER of the two Duo builds decides. A row is folded only when
+        -- BOTH the .lua and the .duo build failed to run it; if either one did
+        -- real work the row stays a measured win. That is the conservative
+        -- direction -- this under-reports folding rather than over-reporting
+        -- it, so the number below is a floor on the problem, not a ceiling.
+        slower: f64 = d
+        if duofile > slower
+            slower = duofile
+        end
+        ct: f64 = c
+        if slower > 0.0 and slower < least
+            least = slower
+        end
+        if ct > cutoff and folded(ct, ct)
+            impossible = impossible + 1
+        end
+        if folded(slower, ct)
+            -- EVALUATED, NOT RUN. Not a win: the pass/fail criterion is
+            -- "Duo must beat or tie C on every test", and a row whose kernel
+            -- did not execute has not beaten anything.
+            winner = "folded"
+            folds = folds + 1
+            RESULT_FAIL_FLAG = 1
+        else
+            measured = measured + 1
+        end
     end
     d_fmt = "N/A"
     if d != nil d_fmt = string.format("%g", d) end
     
-    duo_file_fmt = "N/A"
-    if duo_file != nil duo_file_fmt = string.format("%g", duo_file) end
+    duofilefmt = "N/A"
+    if duofile != nil duofilefmt = string.format("%g", duofile) end
     
     c_fmt = "N/A"
     if c != nil c_fmt = string.format("%g", c) end
@@ -368,15 +561,39 @@ for i = 1, BENCHES
     n_fmt = "N/A"
     if n != nil n_fmt = string.format("%g", n) end
     
-    s.must("printf \"%-16s %12s %12s %12s %12s %12s %12s %8s\\n\" \"" .. name .. "\" \"" .. d_fmt .. "\" \"" .. duo_file_fmt .. "\" \"" .. c_fmt .. "\" \"" .. lj_fmt .. "\" \"" .. l5_fmt .. "\" \"" .. n_fmt .. "\" \"" .. winner .. "\"")
+    s.must("printf \"%-16s %12s %12s %12s %12s %12s %12s %8s\\n\" \"" .. name .. "\" \"" .. d_fmt .. "\" \"" .. duofilefmt .. "\" \"" .. c_fmt .. "\" \"" .. lj_fmt .. "\" \"" .. l5_fmt .. "\" \"" .. n_fmt .. "\" \"" .. winner .. "\"")
 end
 
+say("")
+say("-- Speed verdict, three ways --------------------------------------------------")
+say("  measured wins  " .. to(str)(measured) .. "   Duo ran the kernel and was faster")
+say("  folded         " .. to(str)(folds) .. "   EVALUATED, NOT RUN - closed form, not codegen; NOT a win")
+say("  losses         " .. to(str)(losses) .. "   reference C was faster")
+say("")
+say("  fold rule: Duo time <= " .. sec(cutoff)
+    .. "s (10 x the " .. sec(tick)
+    .. "s reporting resolution), OR C >= " .. sec(ratio)
+    .. "x the Duo time while C is above that floor.")
+say("  No row name, expected value or loop bound is an input to it.")
+say("  smallest positive Duo duration in this table: " .. sec(least) .. "s")
+say("  rows with AT LEAST ONE Duo build folded: " .. to(str)(partial)
+    .. " of " .. to(str)(BENCHES) .. " - the verdict column folds a row only when")
+say("  BOTH builds are folded, so the folded count above is a FLOOR, not a ceiling.")
+if impossible != 0
+    say("  CONTROL FAILED: the rule fired on the C column against itself on "
+        .. to(str)(impossible) .. " row(s); a ratio of 1 can never be a fold.")
+    os.exit(1)
+end
+say("  negative control on real data: the rule fires on 0 rows when the C column")
+say("  is classified against itself.")
+
 if RESULT_FAIL_FLAG == 1
-    print("")
-    print("❌ Benchmark failed: Duo .lua and .duo must beat or tie reference C on every test.")
+    say("")
+    say("FAIL: Duo .lua and .duo must beat or tie reference C on every test, and the")
+    say("      beating must be MEASURED. Folded rows count against this verdict.")
     os.exit(1)
 end
 
 print("══════════════════════════════════════════════════════════════════════════════")
-print("✓ All benchmarks: results match and Duo .lua/.duo >= C")
+print("✓ All benchmarks: results match and Duo .lua/.duo >= C on measured time")
 print("══════════════════════════════════════════════════════════════════════════════")
