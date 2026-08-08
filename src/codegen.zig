@@ -169,6 +169,9 @@ pub const CodeGen = struct {
     /// generated driver), so module-scope bindings promoted to module globals
     /// are emitted as `duo_g_*` assignments instead of driver locals.
     at_module_top_level: bool = false,
+    /// Serial for the per-loop temporaries `while_bound_hoist` introduces, so
+    /// two hoisted loops in one function cannot collide on a name.
+    while_bound_serial: usize = 0,
     local_scopes: std.ArrayList(std.StringHashMapUnmanaged(RT)) = .empty,
     comptime_scopes: std.ArrayList(std.StringHashMapUnmanaged(comptime_eval.Value)) = .empty,
     close_scopes: std.ArrayList(std.ArrayListUnmanaged([]const u8)) = .empty,
@@ -10582,6 +10585,57 @@ pub const CodeGen = struct {
         return block_references_name(blk, name) and !self.block_assigns_name(blk, name);
     }
 
+    const WhileBound = struct { cop: []const u8, id: usize };
+
+    /// Counter types the hoisted arm reproduces EXACTLY. `u64` is deliberately
+    /// absent: the boxed arm spells the counter `lua_val_from_int((int64_t)(i))`,
+    /// so a u64 past i64 max wraps negative there, while `(double)(i)` on the
+    /// fast arm keeps it positive. Everything listed converts to double the
+    /// same way through both arms.
+    fn rt_is_native_numeric(t: RT) bool {
+        return switch (t) {
+            .i8, .i16, .i32, .i64, .u8, .u16, .u32, .f32, .f64 => true,
+            else => false,
+        };
+    }
+
+    /// A `while` whose bound is a boxed value pays a boxed compare per
+    /// iteration: `lua_lt(lua_val_from_int((int64_t)(i)), n)` re-boxes the
+    /// counter every time and re-dispatches on `n`'s tag. That also hides the
+    /// trip count from the C compiler, so the loop keeps a memory-resident
+    /// counter instead of a register one.
+    ///
+    /// When the bound is a NAME the loop body never assigns, and which is not
+    /// global storage, nothing inside the loop can change its tag -- so the
+    /// dispatch can be decided ONCE, before the loop, and the C compiler
+    /// unswitches the invariant flag out of the body.
+    ///
+    /// This is a specialisation, not a narrowing. `lua_lt`/`lua_leq` on two
+    /// VAL_NUMBERs is exactly `lua_num(a) OP lua_num(b)` -- a double compare --
+    /// so the fast arm reproduces the runtime's own semantics, including the
+    /// past-2^53 rounding. A bound that is not a number (a string, a `__lt`
+    /// metamethod) still takes the original call, unchanged.
+    fn while_bound_hoist(self: *CodeGen, wl: anytype) ?WhileBound {
+        if (wl.cond.* != .binop) return null;
+        const b = wl.cond.binop;
+        const cop = switch (b.op) {
+            .lt => "<",
+            .leq => "<=",
+            else => return null,
+        };
+        // Counter on the left, bound on the right, both bare names. Requiring
+        // names rather than expressions keeps the two arms free of duplicated
+        // side effects -- the condition is emitted twice.
+        if (b.lhs.* != .name or b.rhs.* != .name) return null;
+        if (!(self.expr_type(b.rhs) == .any)) return null;
+        if (!rt_is_native_numeric(self.expr_type(b.lhs))) return null;
+        // Global storage can be written by anything the body calls. A local or
+        // a parameter only changes through an assignment we can see.
+        if (self.is_global_name(b.rhs.name.ident)) return null;
+        if (self.block_assigns_name(&wl.body, b.rhs.name.ident)) return null;
+        return .{ .cop = cop, .id = self.while_bound_serial };
+    }
+
     fn block_assigns_name(self: *CodeGen, blk: *const ast.Block, name: []const u8) bool {
         for (blk.stmts) |*s| {
             if (self.stmt_assigns_name(s, name)) return true;
@@ -11662,9 +11716,25 @@ pub const CodeGen = struct {
                         self.pl("}}", .{});
                     }
                 } else {
+                    const hoist = self.while_bound_hoist(wl);
+                    if (hoist) |h| {
+                        self.while_bound_serial += 1;
+                        self.ind();
+                        self.p("bool __wb_ok{d} = (", .{h.id});
+                        try self.emit_expr(wl.cond.binop.rhs);
+                        self.p(".type == VAL_NUMBER); double __wb_n{d} = __wb_ok{d} ? lua_num(", .{ h.id, h.id });
+                        try self.emit_expr(wl.cond.binop.rhs);
+                        self.p(") : 0.0;\n", .{});
+                    }
                     self.ind();
                     self.p("while (", .{});
-                    if (self.expr_type(wl.cond) == .any) {
+                    if (hoist) |h| {
+                        self.p("__wb_ok{d} ? ((double)(", .{h.id});
+                        try self.emit_expr(wl.cond.binop.lhs);
+                        self.p(") {s} __wb_n{d}) : (", .{ h.cop, h.id });
+                        try self.emit_expr(wl.cond);
+                        self.p(")", .{});
+                    } else if (self.expr_type(wl.cond) == .any) {
                         self.p("lua_to_bool(", .{});
                         try self.emit_expr(wl.cond);
                         self.p(")", .{});
