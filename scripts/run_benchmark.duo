@@ -7,9 +7,14 @@ if string.len(DUO_BUILD_REPORT) == 0
     s.env_set("DUO_BUILD_REPORT", "plain")
 end
 
-trim(s: str): str
-    if string.sub(s, -1) == "\n" return string.sub(s, 1, #s - 1) end
-    s
+-- gap[027]: the parameter must NOT be named `s` — a parameter does not shadow
+-- a global of the same name, so `s` here resolved to the module global above and
+-- this file would not compile at all.
+--
+-- gap[014] keeps the body manual: `text:trim()` resolves and returns nil.
+trim(text: str): str
+    if string.sub(text, -1) == "\n" return string.sub(text, 1, #text - 1) end
+    text
 end
 
 global ROOT = trim(s.capture("git rev-parse --show-toplevel"))
