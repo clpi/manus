@@ -448,10 +448,51 @@ pub const CodeGen = struct {
         return std.fmt.bufPrint(buf, "{s}__{s}", .{ self.current_module_cname, name }) catch name;
     }
 
+    /// The compile-time half of the runtime's `calc_hash`. The two MUST agree
+    /// bit for bit: a literal's hash is baked into the emitted C
+    /// (`lua_val_from_literal(s, <hash>, len)`) and later compared against a
+    /// hash the runtime computed, so a divergence is a silent lookup miss, not
+    /// a crash. An edit here is an edit to `duo_runtime`'s `calc_hash` and to
+    /// `sema.calc_lua_hash` in the same commit; `duo run
+    /// examples/hash_agreement.duo` differences all three.
+    ///
+    /// Strings of 32 bytes or fewer hash EVERY byte, exactly as before. That
+    /// keeps every identifier, field name and metamethod key bit-identical,
+    /// including the ones baked into the tracked generated
+    /// `src/duo_lexer_tokenize.c`, whose longest literal is 32 bytes and which
+    /// carries its own copy of this function and its own string pool.
+    ///
+    /// Longer strings sample at most 33 bytes on a stride, and mix the length
+    /// in. Hashing every byte of a long string is O(n) down a serial dependent
+    /// multiply chain, and it is paid on the way IN to the intern pool -- on
+    /// every string a program builds, whether or not anything ever looks it up
+    /// again. Measured: FNV-1a over the 850 KB that
+    /// `string.rep("alpha beta gamma ", 50000)` produces costs 1.03 ms, while
+    /// BUILDING that string costs 0.03 ms. The hash was 35x the work it was
+    /// guarding, and it is why four string benchmark rows lost to reference C
+    /// whose emitted inner loops were character-for-character identical to C's.
+    /// Lua 5.1 used exactly this rule (`step = (l >> 5) + 1`) for exactly this
+    /// reason.
+    ///
+    /// This is a HASH, not an identity. Every consumer confirms with a length
+    /// check and a `memcmp` -- the intern pool in `lua_val_from_str_len`, the
+    /// table key path in `lua_string_key_eq_lit`. Sampling can cost a probe. It
+    /// cannot produce a wrong answer.
     fn calc_lua_hash(s: []const u8) u32 {
         var h: u32 = 2166136261;
-        for (s) |c| {
-            h ^= @as(u32, c);
+        if (s.len <= 32) {
+            for (s) |c| {
+                h ^= @as(u32, c);
+                h = h *% 16777619;
+            }
+            return h;
+        }
+        h ^= @as(u32, @truncate(s.len));
+        h = h *% 16777619;
+        const step: usize = (s.len >> 5) + 1;
+        var i: usize = 0;
+        while (i < s.len) : (i += step) {
+            h ^= @as(u32, s[i]);
             h = h *% 16777619;
         }
         return h;
@@ -24031,9 +24072,32 @@ const duo_runtime =
     \\    return lua_val_from_num(r);
     \\}
     \\
+    \\/* Hash for the string intern pool and for table string keys. MUST match
+    \\ * `calc_lua_hash` in src/codegen.zig and src/sema.zig bit for bit -- the
+    \\ * compiler bakes literal hashes into this file's call sites.
+    \\ *
+    \\ * <= 32 bytes: every byte, unchanged, so identifier and field-name hashes
+    \\ * are bit-identical to what they have always been.
+    \\ *
+    \\ * > 32 bytes: at most 33 samples on a stride, plus the length. Hashing a
+    \\ * long string in full is O(n) down a dependent multiply chain and is paid
+    \\ * on the way INTO the pool, for every string a program builds. FNV-1a over
+    \\ * an 850 KB string measured 1.03 ms against 0.03 ms to build it. Lua 5.1
+    \\ * used this same rule. Callers confirm with len + memcmp, so a sampled
+    \\ * collision costs a probe and never an answer. */
     \\static inline uint32_t calc_hash(const char* s, size_t len) {
     \\    uint32_t h = 2166136261u;
-    \\    for (size_t i = 0; i < len; i++) {
+    \\    if (len <= 32) {
+    \\        for (size_t i = 0; i < len; i++) {
+    \\            h ^= (uint32_t)(unsigned char)s[i];
+    \\            h *= 16777619u;
+    \\        }
+    \\        return h;
+    \\    }
+    \\    h ^= (uint32_t)len;
+    \\    h *= 16777619u;
+    \\    size_t step = (len >> 5) + 1;
+    \\    for (size_t i = 0; i < len; i += step) {
     \\        h ^= (uint32_t)(unsigned char)s[i];
     \\        h *= 16777619u;
     \\    }
@@ -24095,6 +24159,76 @@ const duo_runtime =
     \\        }
     \\        free(old_keys);
     \\    free(old_vals);
+    \\    }
+    \\    return v;
+    \\}
+    \\
+    \\/* Intern a string the caller has ALREADY built inside a `lua_String`
+    \\ * allocation, transferring ownership. `ns->len` and `ns->data[0..len]` must
+    \\ * be filled; the NUL and the hash are written here. On a pool hit the
+    \\ * caller's block is freed and the resident value is returned.
+    \\ *
+    \\ * This exists because the build-then-intern path copied every long string
+    \\ * TWICE: a producer such as `string.rep` malloc'd the full result, filled
+    \\ * it, handed it to `lua_val_from_str_len`, which malloc'd a second block
+    \\ * the same size and memcpy'd into it, and the producer then freed the
+    \\ * first. For an 850 KB result that is 1.7 MB of pointless traffic and two
+    \\ * allocator round trips. `lua_val_from_str_len` is deliberately left
+    \\ * alone: it allocates only on a MISS, which is the right trade for the
+    \\ * short identifier strings that dominate its call sites. */
+    \\static inline lua_Value lua_val_adopt_str_len(lua_String* ns) {
+    \\    if (!ns) return lua_val_from_str_len("", 0);
+    \\    if (!string_pool) {
+    \\        string_pool = malloc(sizeof(lua_Table));
+    \\        string_pool->capacity = 64;
+    \\        string_pool->hash_keys = calloc(string_pool->capacity, sizeof(lua_Value));
+    \\        string_pool->hash_vals = calloc(string_pool->capacity, sizeof(lua_Value));
+    \\        string_pool->count = 0;
+    \\        string_pool->array_size = 0;
+    \\        string_pool->array = NULL;
+    \\    }
+    \\    size_t len = ns->len;
+    \\    ns->data[len] = '\0';
+    \\    uint32_t h = calc_hash(ns->data, len);
+    \\    uint32_t idx = h & (string_pool->capacity - 1);
+    \\    while (string_pool->hash_keys[idx].type != VAL_NIL) {
+    \\        const char* ks = string_pool->hash_keys[idx].as.sval;
+    \\        lua_String* kstr = (lua_String*)((char*)ks - offsetof(lua_String, data));
+    \\        if (kstr->len == len && memcmp(ks, ns->data, len) == 0) {
+    \\            free(ns);
+    \\            return string_pool->hash_keys[idx];
+    \\        }
+    \\        idx = (idx + 1) & (string_pool->capacity - 1);
+    \\    }
+    \\    duo_gc_note_alloc(sizeof(lua_String) + len + 1);
+    \\    ns->hash = h;
+    \\    lua_Value v;
+    \\    v.type = VAL_STRING;
+    \\    v.as.sval = ns->data;
+    \\    string_pool->hash_keys[idx] = v;
+    \\    string_pool->hash_vals[idx] = v;
+    \\    string_pool->count++;
+    \\    if (string_pool->count > string_pool->capacity * 0.7) {
+    \\        int old_cap = string_pool->capacity;
+    \\        lua_Value* old_keys = string_pool->hash_keys;
+    \\        lua_Value* old_vals = string_pool->hash_vals;
+    \\        string_pool->capacity *= 2;
+    \\        string_pool->hash_keys = calloc(string_pool->capacity, sizeof(lua_Value));
+    \\        string_pool->hash_vals = calloc(string_pool->capacity, sizeof(lua_Value));
+    \\        string_pool->count = 0;
+    \\        for (int i = 0; i < old_cap; i++) {
+    \\            if (old_keys[i].type != VAL_NIL) {
+    \\                const char* s2 = old_keys[i].as.sval;
+    \\                lua_String* s2h = (lua_String*)((char*)s2 - offsetof(lua_String, data));
+    \\                uint32_t idx2 = s2h->hash & (string_pool->capacity - 1);
+    \\                while (string_pool->hash_keys[idx2].type != VAL_NIL) idx2 = (idx2 + 1) & (string_pool->capacity - 1);
+    \\                string_pool->hash_keys[idx2] = old_keys[i];
+    \\                string_pool->hash_vals[idx2] = old_vals[i];
+    \\                string_pool->count++;
+    \\            }
+    \\        }
+    \\        free(old_keys);
+    \\        free(old_vals);
     \\    }
     \\    return v;
     \\}
@@ -25678,8 +25812,13 @@ const duo_runtime =
     \\    size_t slen = lua_str_byte_len(s);
     \\    size_t seplen = sep_val.type == VAL_NIL ? 0 : lua_str_byte_len(sep_val);
     \\    size_t total_len = slen * n + seplen * (n - 1);
-    \\    char* res = malloc(total_len + 1);
-    \\    char* p = res;
+    \\    /* Built straight into the interned block. This used to fill a scratch
+    \\     * malloc and hand it to lua_val_from_str_len, which copied the whole
+    \\     * thing again into a block of its own. */
+    \\    lua_String* ns = (lua_String*)malloc(sizeof(lua_String) + total_len + 1);
+    \\    if (!ns) return lua_val_lit("");
+    \\    ns->len = total_len;
+    \\    char* p = ns->data;
     \\    for (int i = 0; i < n; i++) {
     \\        if (i > 0 && seplen > 0) {
     \\            memcpy(p, sep, seplen);
@@ -25688,10 +25827,7 @@ const duo_runtime =
     \\        memcpy(p, str, slen);
     \\        p += slen;
     \\    }
-    \\    res[total_len] = '\0';
-    \\    lua_Value out = lua_val_from_str_len(res, total_len);
-    \\    free(res);
-    \\    return out;
+    \\    return lua_val_adopt_str_len(ns);
     \\}
     \\
     \\/* Widen a printf spec to 64 bits: insert "ll" before the conversion char.
@@ -29223,8 +29359,19 @@ test "runtime: concat copies precomputed lengths" {
 
 test "runtime: sized string constructors avoid strlen reinterning" {
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "lua_Value out = lua_val_from_str_len(res, len);") != null);
-    try testing.expect(std.mem.indexOf(u8, duo_runtime, "lua_Value out = lua_val_from_str_len(res, total_len);") != null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "free(res);\n    return out;") != null);
+    // `lua_str_rep` used to be the second row here, pinned as
+    // `lua_val_from_str_len(res, total_len)`. It no longer builds a scratch
+    // buffer at all: it fills the interned block directly and hands ownership
+    // to `lua_val_adopt_str_len`, which is strictly stronger than what this
+    // test was asking for -- the sized constructor is now zero copies, not one.
+    // The property is what is asserted, so state it in both directions.
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "return lua_val_adopt_str_len(ns);") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "lua_Value out = lua_val_from_str_len(res, total_len);") == null);
+    // Ownership transfer is only safe if the adopter frees on a pool hit and
+    // keeps the block otherwise. Both arms, or this is a leak or a double free.
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "            free(ns);\n") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "    ns->hash = h;\n") != null);
 }
 
 test "runtime: known-length string results avoid duplicate allocation" {
@@ -29305,8 +29452,9 @@ test "runtime: substring match helpers intern directly from source slices" {
 test "runtime: string lower frees temporary after interning" {
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "lua_Value out = lua_val_from_str_len(res, len);") != null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "free(res);\n    return out;") != null);
-    try testing.expect(std.mem.indexOf(u8, duo_runtime, "lua_Value out = lua_val_from_str_len(res, total_len);") != null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "lua_Value out = lua_val_from_str_len(res, total_size);") != null);
+    // The `total_len` row that used to sit here was `lua_str_rep`, which has no
+    // temporary left to free -- see the sized-constructor test above.
 }
 
 test "runtime: io writes use byte lengths instead of C string formatting" {

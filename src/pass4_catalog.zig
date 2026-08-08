@@ -51,7 +51,12 @@ pub const first_milestone = Milestone{
 /// aliases this struct rather than restating it. Update when the test reports
 /// drift; it now prints every drifted row, not just the first.
 pub const boxed_inventory = struct {
-    pub const lua_value_refs: usize = 1876;
+    // 1876 -> 1882: `lua_val_adopt_str_len` interns a string the caller has
+    // already built in place, so a producer no longer copies a long result into
+    // a second allocation of the same size. Seven `lua_Value` mentions arrive
+    // with the new runtime function; one leaves with the `lua_str_rep` line two
+    // runtime-text tests used to pin.
+    pub const lua_value_refs: usize = 1882;
     pub const lua_invoke_refs: usize = 72;
     pub const emit_as_lua_value_refs: usize = 188;
     pub const module_needs_lua_runtime_refs: usize = 58;

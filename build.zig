@@ -914,6 +914,19 @@ pub fn build(b: *std.Build) void {
     agent_smoke_step.dependOn(&agent_smoke_cmd.step);
     test_step.dependOn(agent_smoke_step);
 
+    // The compile-time string hash (codegen/sema `calc_lua_hash`) and the
+    // runtime one (`calc_hash` in the emitted prelude) are written twice and
+    // must agree bit for bit; a divergence splits the intern pool and shows up
+    // as a wrong answer, not an error. Long strings hash a SAMPLE, so the two
+    // spellings are no longer trivially the same loop. This fixture differences
+    // them on both sides of the 32-byte boundary and carries its own controls.
+    const hash_agreement_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "examples/hash_agreement.duo" });
+    hash_agreement_cmd.setCwd(b.path("."));
+    hash_agreement_cmd.step.dependOn(b.getInstallStep());
+    const hash_agreement_step = b.step("hash-agreement", "Compile-time vs runtime string hash must agree (intern pool)");
+    hash_agreement_step.dependOn(&hash_agreement_cmd.step);
+    agent_smoke_step.dependOn(&hash_agreement_cmd.step);
+
     // G-061 tier-0 metaprogramming smokes (combinator dispatch + derive bundles)
     const meta_smoke_paths = [_][]const u8{
         "examples/metaprogramming_test.duo",

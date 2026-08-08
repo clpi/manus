@@ -8201,10 +8201,22 @@ pub const Sema = struct {
         return 0;
     }
 
+    /// Must agree bit for bit with `codegen.calc_lua_hash` and with the
+    /// runtime's `calc_hash`; see the long note on the codegen copy for why
+    /// long strings are sampled rather than hashed in full.
     fn calc_lua_hash(s: []const u8) u32 {
         var h: u32 = 2166136261;
-        for (s) |c| {
-            h = (h ^ c) *% 16777619;
+        if (s.len <= 32) {
+            for (s) |c| {
+                h = (h ^ c) *% 16777619;
+            }
+            return h;
+        }
+        h = (h ^ @as(u32, @truncate(s.len))) *% 16777619;
+        const step: usize = (s.len >> 5) + 1;
+        var i: usize = 0;
+        while (i < s.len) : (i += step) {
+            h = (h ^ s[i]) *% 16777619;
         }
         return h;
     }
