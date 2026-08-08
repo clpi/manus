@@ -4,32 +4,38 @@
 -- attach(node, t2)" on one line, "else …" on the next, "node" after that).
 --
 -- CHECKED BY VALUE, because every one of these shapes COMPILES under a wrong
--- nesting too:
+-- nesting too — each row below answers differently if the nesting is wrong,
+-- which is the only reason the numbers prove anything:
 --
---   * `pick` returns 20 only if the one-liner `if` closed at the newline. Had
---     the newline not closed it, `bump` would sit inside the then-arm and 3
---     would come back unbumped.
---   * `rung` returns 7 only if the `else` bound to the OUTER `if` by column
---     (§3: "else binds by column"). Bound to the inner `if`, 5 would take the
---     else-arm and answer 1.
---   * `total` is 6 only if the `while` body closed by dedent before `acc`,
---     rather than swallowing the tail expression.
+--   * `pick` answers 20 only if the one-liner `if` closed at the newline. Had
+--     it stayed open, `bump(n) + r` would sit in the then-arm, which this call
+--     does not take, and nothing would come back.
+--   * `rung` answers 3 only if the `else` bound to the OUTER `if` by column
+--     (§3: "else binds by column"). Bound to the inner `if`, b = 1 would take
+--     the else-arm and answer 1.
+--   * `sum` answers 6 only if the `while` body closed by dedent before `acc`.
+--     With `acc` inside the loop the function has no tail expression.
 --
--- expect: 20 7 6
+-- No `return` appears here: the tail expression IS the answer, so the deny
+-- table's `trailret` row stays where it is.
+--
+-- expect: 20 3 6
 
 bump = (n: i64): i64 n + 10
 
 pick = (n: i64): i64
-    if n > 30 return 99
-    bump(n)
+    r = 0
+    if n > 30 r = 99
+    bump(n) + r
 
 rung = (a: i64, b: i64): i64
+    v = 3
     if a > 4
         if b > 4
-            return 9
-        return 7
+            v = 9
     else
-        return 1
+        v = 1
+    v
 
 sum = (n: i64): i64
     acc = 0
