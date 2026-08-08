@@ -1,8 +1,15 @@
--- SH-11 — the ARM64 encoder, seed.
+-- SH-11 — the ARM64 encoder.
 --
--- SH-11 is the direct native backend row. It has no Duo implementation; ward's
--- JIT proves the approach works, but ward is a WASM runtime, not the compiler's
--- backend, and its encoder is not reusable from here.
+-- SH-11 is the direct native backend row, host-implemented in
+-- src/native_backend.zig. This is its Duo side.
+--
+-- This header used to say SH-11 "has no Duo implementation" and that ward's
+-- encoder "is not reusable from here". Both were wrong, and the second one was
+-- load-bearing: it is what kept 700 lines of working Duo ARM64 emission parked
+-- in a downstream WASM runtime while this file stopped at arithmetic. The
+-- encoders are not reusable as CODE — ward's are welded to its operand stack —
+-- but the encodings transcribe fine, which is the whole of what was needed.
+-- See the lift note below.
 --
 -- WHAT MAKES THIS CHECKABLE, and it is the strongest oracle available anywhere
 -- in this stack: the system assembler already knows every encoding. So the
@@ -18,9 +25,14 @@
 -- who transcribed it into the encoder, and it agrees with the transcription
 -- error. The assembler does not.
 --
--- Scope: the register-register integer forms the compiler emits first — add,
--- sub, mul, and/orr/eor, mov, and ret. Loads, stores, branches and immediates
--- follow the same shape and the same proof; the instrument is the deliverable.
+-- Scope: 46 encoders — the register-register integer forms, plus the loads,
+-- stores, immediates, branches and frame pairs lifted from ward. Not yet here:
+-- any floating-point or SIMD form, PC-relative addressing (adrp/adr, which a
+-- real code emitter needs for constants and symbols), and the load/store pair
+-- forms other than the pre/post-index stack push and pop.
+--
+-- The proof lives in std.compiler.arm64check, not in this file: a stdlib module
+-- that shells out to a C toolchain merely to be imported is a liability.
 
 -- ARM64 is little-endian and fixed-width: every instruction is exactly 4 bytes.
 -- The encoder returns the 32-bit word; byte order is the caller's concern, and
@@ -84,9 +96,9 @@ end
 -- Every form below is re-proved here against the system assembler anyway
 -- (std.compiler.arm64check), because "ward runs it" and "this is the encoding
 -- the assembler agrees with" are different claims and only the second one is
--- checkable from this file. All 41 cases agreed on the first run, which is a
--- statement about ward's encoders having been executed, not about care taken
--- transcribing them.
+-- checkable from this file. 9 encoders became 46, checked by 50 cases, and all
+-- 50 agreed on the first run — a statement about ward's encoders having been
+-- executed, not about care taken transcribing them.
 --
 -- The gap this closes: the register-register set above cannot express a
 -- function. No loads, no stores, no immediates, no branches, no frame. Those

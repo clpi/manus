@@ -1,7 +1,8 @@
 -- SH-11 — the ARM64 encoder differential, against the SYSTEM ASSEMBLER.
 --
--- std.compiler.arm64 grew from 8 register-register encoders to 41 forms by
--- transcribing ext/ward/src/wasm/jit_arm64.duo. A transcription is exactly the
+-- std.compiler.arm64 grew from 9 register-register encoders to 46 by
+-- transcribing ext/ward/src/wasm/jit_arm64.duo; the 50 cases below check them
+-- (some forms twice, with different operands). A transcription is exactly the
 -- kind of change that looks right and is wrong in one nibble, so it does not
 -- get to be believed on inspection.
 --
