@@ -73,7 +73,12 @@ print("alignof(i64) = " .. to(str)(align_i64))
 -- ═══════════════════════════════════════════════════════════════
 
 obj = {}
-setmetatable(obj, { __index = function(t, k) return "default" end })
+-- Value-form lambda, not `function(t, k) return ... end`: Duo rejects a `return`
+-- inside a one-line anonymous function body ("expected expression, got
+-- 'return'"), and the last expression IS the result, so the return was never
+-- needed. This parse failure is what made the whole file — and
+-- scripts/run_compile_size_benchmark.sh, which compiles it — fail to build.
+setmetatable(obj, { __index = (t, k) "default" })
 print("has __index = " .. to(str)(@comp.has.metamethod(obj, "__index")))
 print("has __add = " .. to(str)(@comp.has.metamethod(obj, "__add")))
 
