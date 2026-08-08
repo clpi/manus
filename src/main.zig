@@ -3005,6 +3005,508 @@ fn machineTargetForBackend(target: []const u8) []const u8 {
 /// writes to a file and returns errors instead of exiting: a dependency that
 /// cannot be lowered must not kill the build — it just leaves the link to fail
 /// with an honest undefined symbol.
+/// Absorb `req`-imported Duo modules into the program's OWN native object.
+///
+/// The prior cross-module story had exactly one shape: a module marked its
+/// functions with `@comp.c.export`, `directLinkInputs` built a C object from
+/// it, and the linker joined the two. A module written in plain canonical Duo
+/// — no directives, which is what Pass 100 asks for — exported nothing, got no
+/// object, and every call into it died in `patchCalls` as an undefined symbol.
+/// `std.wasm.instruction` is the representative case: four accessors, all bare
+/// declarations, all unreachable from native code.
+///
+/// The fix needs no new naming scheme, because one already lines up. A call
+/// `T.count()` lowers to callee `"T.count"` (dnir_lower `lowerCall`), and a
+/// declaration whose `path` is `["T", "count"]` exports as `"T.count"`
+/// (`funcExportName`), which `shouldIncludeFuncDecl` already admits for any
+/// non-method with `path.len >= 2`. Re-rooting each spliced declaration's path
+/// under the alias therefore makes definition and call site agree by
+/// construction — no mangling, and no change to the backend at all.
+///
+/// Deliberately conservative: anything this cannot prove safe leaves the module
+/// unspliced, which restores the previous honest bail rather than risking a
+/// wrong program.
+///   * a module that DOES export C symbols is skipped — it supplies its own
+///     object, and splicing it too would be a duplicate-symbol link error;
+///   * a module top-level name that collides with one already in the program is
+///     skipped, since the splice would otherwise silently change which
+///     definition wins;
+///   * only top-level `func_decl`, `const_decl` and non-`req` `global_decl`
+///     come across. Statements with side effects at module scope are not
+///     hoisted into a program that never asked to run them.
+///
+/// Intra-module calls need one rewrite: inside the module, `count()` calls
+/// `double()` by bare name, but the spliced declaration is now `T.double`.
+/// `rerootCallsInBlock` renames exactly those bare calls that resolve to a
+/// spliced sibling, and leaves everything else — locals, builtins, libc — alone.
+///
+/// The parsed module is intentionally never deinitialized: the spliced AST
+/// nodes are borrowed straight into the caller's module and outlive any scope
+/// here. `duo` is a short-lived process, so leaking the module's semantic state
+/// is the cheap correct choice next to deep-copying every node.
+fn spliceReqModules(
+    alloc: std.mem.Allocator,
+    io: Io,
+    mod: *ast.Module,
+) !usize {
+    var req = native_req_support.collectFromModule(alloc, mod) catch return 0;
+    defer req.deinit(alloc);
+
+    var pairs: std.ArrayListUnmanaged(native_req_support.Context.AliasSource) = .empty;
+    defer pairs.deinit(alloc);
+    req.aliasSources(alloc, &pairs) catch return 0;
+    if (pairs.items.len == 0) return 0;
+
+    // Every top-level name the program already binds. A spliced module may not
+    // shadow any of them.
+    var taken: std.StringHashMapUnmanaged(void) = .empty;
+    defer taken.deinit(alloc);
+    for (mod.body.stmts) |st| try collectTopLevelNames(alloc, st, &taken);
+
+    var added: std.ArrayListUnmanaged(ast.Stmt) = .empty;
+    defer added.deinit(alloc);
+
+    for (pairs.items) |pair| {
+        if (req.moduleExportsSymbols(pair.alias)) continue;
+
+        // `pair.alias` and `pair.source_path` are borrowed from `req`, which
+        // this function's own `defer` frees — and the alias is written straight
+        // into a spliced declaration's `path`, which outlives that. It read as
+        // garbage in the bail message, which is the lucky version; the unlucky
+        // version is a symbol name that still looks plausible.
+        const alias = try alloc.dupe(u8, pair.alias);
+        const source_path = try alloc.dupe(u8, pair.source_path);
+
+        // Splice only what the program actually CALLS, plus whatever those
+        // functions reach inside the module. Absorbing a whole module made a
+        // program depend on the lowerability of code it never invokes:
+        // `req_module_constant.duo` wants one folded integer out of
+        // `std.compiler.token` and regressed the moment every unrelated
+        // function in that module had to lower too.
+        var wanted: std.StringHashMapUnmanaged(void) = .empty;
+        defer wanted.deinit(alloc);
+        try collectDottedCallsInBlock(&mod.body, alias, &wanted, alloc);
+        if (wanted.count() == 0) continue;
+
+        const ps = parse_and_check(alloc, io, source_path) catch continue;
+
+        // Two passes: learn the module's function names first, so an intra-module
+        // call can be recognised even when it precedes the callee's declaration.
+        var siblings: std.StringHashMapUnmanaged(void) = .empty;
+        defer siblings.deinit(alloc);
+        for (ps.mod.body.stmts) |st| {
+            if (st != .func_decl) continue;
+            const fd = st.func_decl;
+            if (fd.is_local or fd.method or fd.path.len != 1) continue;
+            try siblings.put(alloc, fd.path[0], {});
+        }
+
+        // Close `wanted` over intra-module calls: a called function drags in
+        // the siblings IT calls, and theirs, until nothing new appears.
+        while (true) {
+            var grew = false;
+            for (ps.mod.body.stmts) |st| {
+                if (st != .func_decl) continue;
+                const fd = st.func_decl;
+                if (fd.path.len != 1 or !wanted.contains(fd.path[0])) continue;
+                var reached: std.StringHashMapUnmanaged(void) = .empty;
+                defer reached.deinit(alloc);
+                try collectBareCallsInBlock(&fd.func.body, &siblings, &reached, alloc);
+                var it = reached.iterator();
+                while (it.next()) |e| {
+                    if (wanted.contains(e.key_ptr.*)) continue;
+                    try wanted.put(alloc, e.key_ptr.*, {});
+                    grew = true;
+                }
+            }
+            if (!grew) break;
+        }
+
+        // Only the names actually being spliced can collide. Judging the whole
+        // module made an unrelated same-named constant veto a splice that would
+        // never have touched it.
+        var conflict = false;
+        for (ps.mod.body.stmts) |st| {
+            const name = topLevelName(st) orelse continue;
+            if (st == .func_decl and !wanted.contains(name)) continue;
+            if (taken.contains(name)) {
+                conflict = true;
+                break;
+            }
+        }
+        if (conflict) {
+            if (term.trace) term.traceStep("req-splice-name-collision", .{});
+            continue;
+        }
+
+        for (ps.mod.body.stmts) |st| {
+            switch (st) {
+                .func_decl => |fd| {
+                    if (fd.is_local or fd.method or fd.path.len != 1) continue;
+                    if (!wanted.contains(fd.path[0])) continue;
+                    var copy = fd;
+                    const path = try alloc.alloc([]const u8, 2);
+                    path[0] = alias;
+                    path[1] = fd.path[0];
+                    copy.path = path;
+                    rerootCallsInBlock(&copy.func.body, alias, &siblings, alloc) catch {};
+                    try added.append(alloc, .{ .func_decl = copy });
+                },
+                .const_decl => try added.append(alloc, st),
+                // A module constant is spelled four ways in Duo — `const X: T =`,
+                // `global X =`, `local X =`, and the bare `X = 4` that most of
+                // lib/std actually uses. Carrying only the first two missed
+                // `TYPE_COUNT = 4` entirely, so the spliced function referencing
+                // it bailed on an unresolved name rather than on anything real.
+                //
+                // The literal test is what keeps this safe: a binding to a
+                // literal is a definition, but `X = boot()` is a side effect at
+                // module scope, and hoisting that into a program that never
+                // required the module to RUN would change behaviour.
+                .global_decl => |gd| {
+                    if (allInitsAreLiteral(gd.inits) and !anyInitIsReq(gd.inits)) {
+                        try added.append(alloc, st);
+                    }
+                },
+                .local_decl => |ld| {
+                    if (allInitsAreLiteral(ld.inits) and !anyInitIsReq(ld.inits)) {
+                        try added.append(alloc, st);
+                    }
+                },
+                .assign => |as| {
+                    if (as.targets.len == as.values.len and
+                        allTargetsArePlainNames(as.targets) and
+                        allInitsAreLiteral(as.values) and
+                        !anyInitIsReq(as.values))
+                    {
+                        try added.append(alloc, st);
+                    }
+                },
+                else => {},
+            }
+        }
+        for (ps.mod.body.stmts) |st| {
+            if (topLevelName(st)) |n| try taken.put(alloc, n, {});
+        }
+    }
+
+    if (added.items.len == 0) return 0;
+
+    const merged = try alloc.alloc(ast.Stmt, mod.body.stmts.len + added.items.len);
+    // Spliced declarations go FIRST. A module-level constant the program reads
+    // must already be bound when the program's own statements run.
+    @memcpy(merged[0..added.items.len], added.items);
+    @memcpy(merged[added.items.len ..], mod.body.stmts);
+    mod.body.stmts = merged;
+    return added.items.len;
+}
+
+/// One AST walk, two questions, because they differ only in what counts as a
+/// hit and duplicating a twenty-arm statement walker to ask the second one is
+/// how the two drift apart later.
+///
+///   * `alias` set   — collect `<alias>.<field>(…)`: what the PROGRAM calls
+///                     into a module, i.e. what a splice must supply.
+///   * `alias` null  — collect bare calls naming a member of `siblings`: what
+///                     a spliced function reaches for INSIDE its own module.
+const CallScan = struct {
+    alias: ?[]const u8,
+    siblings: *const std.StringHashMapUnmanaged(void),
+    out: *std.StringHashMapUnmanaged(void),
+    alloc: std.mem.Allocator,
+
+    fn hit(self: *const CallScan, c: anytype) std.mem.Allocator.Error!void {
+        if (self.alias) |a| {
+            const f = c.func;
+            if (f.* != .field) return;
+            if (f.field.obj.* != .name) return;
+            if (!std.mem.eql(u8, f.field.obj.name.ident, a)) return;
+            try self.out.put(self.alloc, f.field.field, {});
+        } else {
+            if (c.func.* != .name) return;
+            if (!self.siblings.contains(c.func.name.ident)) return;
+            try self.out.put(self.alloc, c.func.name.ident, {});
+        }
+    }
+};
+
+const empty_name_set: std.StringHashMapUnmanaged(void) = .empty;
+
+/// Names called as `<alias>.<field>(…)` anywhere in the program.
+fn collectDottedCallsInBlock(
+    block: *const ast.Block,
+    alias: []const u8,
+    out: *std.StringHashMapUnmanaged(void),
+    alloc: std.mem.Allocator,
+) std.mem.Allocator.Error!void {
+    var scan = CallScan{ .alias = alias, .siblings = &empty_name_set, .out = out, .alloc = alloc };
+    try collectBareCallsInBlock2(block, &scan);
+}
+
+/// Bare calls inside a module that name one of the module's own functions.
+fn collectBareCallsInBlock(
+    block: *const ast.Block,
+    siblings: *const std.StringHashMapUnmanaged(void),
+    out: *std.StringHashMapUnmanaged(void),
+    alloc: std.mem.Allocator,
+) std.mem.Allocator.Error!void {
+    var scan = CallScan{ .alias = null, .siblings = siblings, .out = out, .alloc = alloc };
+    try collectBareCallsInBlock2(block, &scan);
+}
+
+fn collectBareCallsInBlock2(block: *const ast.Block, scan: *CallScan) std.mem.Allocator.Error!void {
+    for (block.stmts) |*st| try collectBareCallsInStmt(st, scan);
+    if (block.tail_expr) |te| try collectBareCallsInExpr(te, scan);
+}
+
+fn collectBareCallsInStmt(
+    st: *const ast.Stmt,
+    scan: *CallScan,
+) std.mem.Allocator.Error!void {
+    switch (st.*) {
+        .local_decl => |d| for (d.inits) |e| try collectBareCallsInExpr(e, scan),
+        .global_decl => |d| for (d.inits) |e| try collectBareCallsInExpr(e, scan),
+        .const_decl => |d| try collectBareCallsInExpr(d.val, scan),
+        .assign => |d| {
+            for (d.targets) |e| try collectBareCallsInExpr(e, scan);
+            for (d.values) |e| try collectBareCallsInExpr(e, scan);
+        },
+        .call_stmt => |d| try collectBareCallsInExpr(d.expr, scan),
+        .expr_stmt => |d| try collectBareCallsInExpr(d.expr, scan),
+        .do_block => |d| try collectBareCallsInBlock2(&d.body, scan),
+        .while_loop => |d| {
+            try collectBareCallsInExpr(d.cond, scan);
+            try collectBareCallsInBlock2(&d.body, scan);
+        },
+        .repeat_loop => |d| {
+            try collectBareCallsInBlock2(&d.body, scan);
+            try collectBareCallsInExpr(d.cond, scan);
+        },
+        .if_stmt => |d| {
+            if (d.binding) |b| try collectBareCallsInExpr(b.expr, scan);
+            try collectBareCallsInExpr(d.cond, scan);
+            try collectBareCallsInBlock2(&d.then, scan);
+            for (d.elseifs) |ei| {
+                try collectBareCallsInExpr(ei.cond, scan);
+                try collectBareCallsInBlock2(&ei.body, scan);
+            }
+            if (d.else_body) |eb| try collectBareCallsInBlock2(&eb, scan);
+        },
+        .num_for => |d| {
+            try collectBareCallsInExpr(d.start, scan);
+            try collectBareCallsInExpr(d.stop, scan);
+            if (d.step) |s| try collectBareCallsInExpr(s, scan);
+            try collectBareCallsInBlock2(&d.body, scan);
+        },
+        .gen_for => |d| {
+            for (d.iters) |e| try collectBareCallsInExpr(e, scan);
+            try collectBareCallsInBlock2(&d.body, scan);
+        },
+        .ret => |d| for (d.vals) |e| try collectBareCallsInExpr(e, scan),
+        .func_decl => |fd| try collectBareCallsInBlock2(&fd.func.body, scan),
+        else => {},
+    }
+}
+
+fn collectBareCallsInExpr(
+    e: *const ast.Expr,
+    scan: *CallScan,
+) std.mem.Allocator.Error!void {
+    switch (e.*) {
+        .call => |c| {
+            try scan.hit(c);
+            try collectBareCallsInExpr(c.func, scan);
+            for (c.args) |a| try collectBareCallsInExpr(a, scan);
+        },
+        .method_call => |mc| {
+            try collectBareCallsInExpr(mc.obj, scan);
+            for (mc.args) |a| try collectBareCallsInExpr(a, scan);
+        },
+        .binop => |b| {
+            try collectBareCallsInExpr(b.lhs, scan);
+            try collectBareCallsInExpr(b.rhs, scan);
+        },
+        .unop => |u| try collectBareCallsInExpr(u.operand, scan),
+        .index => |ix| {
+            try collectBareCallsInExpr(ix.obj, scan);
+            try collectBareCallsInExpr(ix.key, scan);
+        },
+        .field => |f| try collectBareCallsInExpr(f.obj, scan),
+        else => {},
+    }
+}
+
+/// A literal is a definition with no side effect, so hoisting it into the
+/// program that spliced the module cannot change what the program does.
+fn exprIsLiteral(e: *const ast.Expr) bool {
+    return switch (e.*) {
+        .int_lit, .float_lit, .string_lit, .true_lit, .false_lit => true,
+        .unop => |u| u.operand.* == .int_lit or u.operand.* == .float_lit,
+        else => false,
+    };
+}
+
+fn allInitsAreLiteral(inits: []const *ast.Expr) bool {
+    if (inits.len == 0) return false;
+    for (inits) |e| {
+        if (!exprIsLiteral(e)) return false;
+    }
+    return true;
+}
+
+fn anyInitIsReq(inits: []const *ast.Expr) bool {
+    for (inits) |e| {
+        if (reqPathOfExpr(e) != null) return true;
+    }
+    return false;
+}
+
+fn allTargetsArePlainNames(targets: []const *ast.Expr) bool {
+    if (targets.len == 0) return false;
+    for (targets) |t| {
+        if (t.* != .name) return false;
+    }
+    return true;
+}
+
+fn reqPathOfExpr(e: *const ast.Expr) ?[]const u8 {
+    if (e.* != .call) return null;
+    const c = e.call;
+    if (c.func.* != .name or !std.mem.eql(u8, c.func.name.ident, "req")) return null;
+    if (c.args.len != 1 or c.args[0].* != .string_lit) return null;
+    return c.args[0].string_lit.val;
+}
+
+fn topLevelName(st: ast.Stmt) ?[]const u8 {
+    return switch (st) {
+        .func_decl => |fd| if (fd.path.len == 1) fd.path[0] else null,
+        .const_decl => |cd| cd.ident,
+        .global_decl => |gd| if (gd.names.len == 1) gd.names[0].ident else null,
+        .local_decl => |ld| if (ld.names.len == 1) ld.names[0].ident else null,
+        // The bare `X = 4` binding form. Without this row it was invisible to
+        // the collision check, so a spliced module could shadow a program's own
+        // constant of the same name and quietly win.
+        .assign => |as| if (as.targets.len == 1 and as.targets[0].* == .name)
+            as.targets[0].name.ident
+        else
+            null,
+        else => null,
+    };
+}
+
+fn collectTopLevelNames(
+    alloc: std.mem.Allocator,
+    st: ast.Stmt,
+    out: *std.StringHashMapUnmanaged(void),
+) !void {
+    if (topLevelName(st)) |n| try out.put(alloc, n, {});
+}
+
+/// Rewrite bare calls to a spliced sibling so they name the re-rooted symbol.
+fn rerootCallsInBlock(
+    block: *ast.Block,
+    alias: []const u8,
+    siblings: *const std.StringHashMapUnmanaged(void),
+    alloc: std.mem.Allocator,
+) std.mem.Allocator.Error!void {
+    for (block.stmts) |*st| try rerootCallsInStmt(st, alias, siblings, alloc);
+    if (block.tail_expr) |te| try rerootCallsInExpr(te, alias, siblings, alloc);
+}
+
+fn rerootCallsInStmt(
+    st: *ast.Stmt,
+    alias: []const u8,
+    siblings: *const std.StringHashMapUnmanaged(void),
+    alloc: std.mem.Allocator,
+) std.mem.Allocator.Error!void {
+    switch (st.*) {
+        .local_decl => |*d| for (d.inits) |e| try rerootCallsInExpr(e, alias, siblings, alloc),
+        .global_decl => |*d| for (d.inits) |e| try rerootCallsInExpr(e, alias, siblings, alloc),
+        .const_decl => |*d| try rerootCallsInExpr(d.val, alias, siblings, alloc),
+        .assign => |*d| {
+            for (d.targets) |e| try rerootCallsInExpr(e, alias, siblings, alloc);
+            for (d.values) |e| try rerootCallsInExpr(e, alias, siblings, alloc);
+        },
+        .call_stmt => |*d| try rerootCallsInExpr(d.expr, alias, siblings, alloc),
+        .expr_stmt => |*d| try rerootCallsInExpr(d.expr, alias, siblings, alloc),
+        .do_block => |*d| try rerootCallsInBlock(&d.body, alias, siblings, alloc),
+        .while_loop => |*d| {
+            try rerootCallsInExpr(d.cond, alias, siblings, alloc);
+            try rerootCallsInBlock(&d.body, alias, siblings, alloc);
+        },
+        .repeat_loop => |*d| {
+            try rerootCallsInBlock(&d.body, alias, siblings, alloc);
+            try rerootCallsInExpr(d.cond, alias, siblings, alloc);
+        },
+        .if_stmt => |*d| {
+            if (d.binding) |b| try rerootCallsInExpr(b.expr, alias, siblings, alloc);
+            try rerootCallsInExpr(d.cond, alias, siblings, alloc);
+            try rerootCallsInBlock(&d.then, alias, siblings, alloc);
+            for (d.elseifs) |*ei| {
+                try rerootCallsInExpr(ei.cond, alias, siblings, alloc);
+                try rerootCallsInBlock(&ei.body, alias, siblings, alloc);
+            }
+            if (d.else_body) |*eb| try rerootCallsInBlock(eb, alias, siblings, alloc);
+        },
+        .num_for => |*d| {
+            try rerootCallsInExpr(d.start, alias, siblings, alloc);
+            try rerootCallsInExpr(d.stop, alias, siblings, alloc);
+            if (d.step) |s| try rerootCallsInExpr(s, alias, siblings, alloc);
+            try rerootCallsInBlock(&d.body, alias, siblings, alloc);
+        },
+        .gen_for => |*d| {
+            for (d.iters) |e| try rerootCallsInExpr(e, alias, siblings, alloc);
+            try rerootCallsInBlock(&d.body, alias, siblings, alloc);
+        },
+        .ret => |*d| for (d.vals) |e| try rerootCallsInExpr(e, alias, siblings, alloc),
+        .func_decl => |*fd| try rerootCallsInBlock(&fd.func.body, alias, siblings, alloc),
+        else => {},
+    }
+}
+
+fn rerootCallsInExpr(
+    e: *ast.Expr,
+    alias: []const u8,
+    siblings: *const std.StringHashMapUnmanaged(void),
+    alloc: std.mem.Allocator,
+) std.mem.Allocator.Error!void {
+    switch (e.*) {
+        .call => |*c| {
+            if (c.func.* == .name and siblings.contains(c.func.name.ident)) {
+                // Rewrite `double(x)` to the field access `T.double(x)` — the
+                // exact shape `lowerCall` turns into callee `"T.double"`.
+                const obj = try alloc.create(ast.Expr);
+                obj.* = .{ .name = .{ .loc = c.func.name.loc, .ident = alias } };
+                const fld = try alloc.create(ast.Expr);
+                fld.* = .{ .field = .{
+                    .loc = c.func.name.loc,
+                    .obj = obj,
+                    .field = c.func.name.ident,
+                } };
+                c.func = fld;
+            } else {
+                try rerootCallsInExpr(c.func, alias, siblings, alloc);
+            }
+            for (c.args) |a| try rerootCallsInExpr(a, alias, siblings, alloc);
+        },
+        .method_call => |*mc| {
+            try rerootCallsInExpr(mc.obj, alias, siblings, alloc);
+            for (mc.args) |a| try rerootCallsInExpr(a, alias, siblings, alloc);
+        },
+        .binop => |*b| {
+            try rerootCallsInExpr(b.lhs, alias, siblings, alloc);
+            try rerootCallsInExpr(b.rhs, alias, siblings, alloc);
+        },
+        .unop => |*u| try rerootCallsInExpr(u.operand, alias, siblings, alloc),
+        .index => |*ix| {
+            try rerootCallsInExpr(ix.obj, alias, siblings, alloc);
+            try rerootCallsInExpr(ix.key, alias, siblings, alloc);
+        },
+        .field => |*f| try rerootCallsInExpr(f.obj, alias, siblings, alloc),
+        else => {},
+    }
+}
+
 fn emitReqModuleC(
     alloc: std.mem.Allocator,
     io: Io,
@@ -3393,6 +3895,13 @@ fn do_compile(
                     // object, added only when `exportingModuleSources` is
                     // non-empty, and those objects are the ones that expect a
                     // runtime a native main never starts.
+                    // Absorb plain-Duo `req` modules into this object BEFORE
+                    // the link graph is measured. A module that splices in is
+                    // no longer a link input, so doing this first is also what
+                    // keeps the "max 1 runtime-linked module" ceiling from
+                    // counting dependencies that no longer need an object.
+                    const spliced = spliceReqModules(alloc, io, &ps.mod) catch 0;
+                    if (spliced != 0 and term.trace) term.traceStep("req-splice", .{});
                     const runtime_linked_modules = try directLinkInputs(alloc, io, &ps.mod, mt, cc);
                     // Three ways to end up here and only two of them had a
                     // reason attached. The precheck records its own, the

@@ -1,0 +1,22 @@
+-- Fixture module for the direct backend's `req` splice (see spliceReqModules
+-- in src/main.zig). Deliberately plain canonical Duo: no directives, and no
+-- `@comp.c.export`, so it gets no object of its own and a caller can only
+-- reach it if the splice absorbs it into the caller's native object.
+--
+-- Shape is chosen to exercise three things at once: a module-level constant
+-- read by a module function, a function called directly from the program, and
+-- a function reachable only TRANSITIVELY (`twice` -> `bump`), which is what
+-- the splice's call-closure has to discover.
+BASE = 40
+
+bump(n: i64): i64
+    n + 1
+end
+
+twice(n: i64): i64
+    bump(bump(n))
+end
+
+answer(): i64
+    BASE + twice(0)
+end

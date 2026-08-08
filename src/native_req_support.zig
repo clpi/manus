@@ -80,6 +80,36 @@ pub const Context = struct {
         return meta.exports.get(field);
     }
 
+    /// One `req` binding: the local alias and the `.duo` file it names.
+    pub const AliasSource = struct { alias: []const u8, source_path: []const u8 };
+
+    /// Every `req` binding that resolved to a readable `.duo` file, paired with
+    /// the alias the caller uses. `exportingModuleSources` answers a different
+    /// question — which modules need a SEPARATE object — and deliberately skips
+    /// modules with no `@comp.c.export`. Those are exactly the modules the
+    /// direct backend can absorb into its own object instead, so the splice
+    /// needs the unfiltered list.
+    pub fn aliasSources(
+        self: *const Context,
+        alloc: std.mem.Allocator,
+        out: *std.ArrayListUnmanaged(AliasSource),
+    ) !void {
+        var it = self.bindings.iterator();
+        while (it.next()) |e| {
+            const meta = self.modules.get(e.value_ptr.*) orelse continue;
+            const sp = meta.source_path orelse continue;
+            try out.append(alloc, .{ .alias = e.key_ptr.*, .source_path = sp });
+        }
+    }
+
+    /// True when this module supplies its own object via `@comp.c.export`, so
+    /// splicing it would duplicate every symbol at link time.
+    pub fn moduleExportsSymbols(self: *const Context, alias: []const u8) bool {
+        const mc = self.bindings.get(alias) orelse return false;
+        const meta = self.modules.get(mc) orelse return false;
+        return meta.exports.count() != 0;
+    }
+
     /// `.duo` files that define `@comp.c.export` symbols. A direct-backend call
     /// into one of these lowers to a relocation, so the linker needs an object
     /// built from each file — without them the link fails on undefined
