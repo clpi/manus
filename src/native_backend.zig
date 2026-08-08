@@ -82,6 +82,18 @@ pub fn refusalNote() ?[]const u8 {
 /// temp had no register, and which one is the entire finding — exactly as
 /// `UnknownSymbol` turned out to be two different problems wearing one code
 /// once the symbol was printed.
+/// Same as `undefinedAt` but for the keyed maps (fp_locals, fp_stack_slots,
+/// locals), where the KEY is the finding rather than a slot number.
+fn undefinedKey(src: std.builtin.SourceLocation, kind: []const u8, key: []const u8) Error {
+    refusal_site = src;
+    const w = std.fmt.bufPrint(&refusal_note_buf, "{s} '{s}' has no register", .{ kind, key }) catch {
+        refusal_note_len = 0;
+        return error.UndefinedName;
+    };
+    refusal_note_len = w.len;
+    return error.UndefinedName;
+}
+
 fn undefinedAt(src: std.builtin.SourceLocation, kind: []const u8, id: u32) Error {
     refusal_site = src;
     const w = std.fmt.bufPrint(&refusal_note_buf, "{s} {d} has no register", .{ kind, id }) catch {
@@ -1608,7 +1620,7 @@ const Arm64Compiler = struct {
                 const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, ins.field });
                 defer self.alloc.free(key);
                 if (self.cur_func_float) {
-                    const d = self.fp_locals.get(key) orelse return error.UndefinedName;
+                    const d = self.fp_locals.get(key) orelse return undefinedKey(@src(), "fp local", key);
                     if (ins.result) |t| try temps.put(self.alloc, t, d);
                 } else {
                     const reg = try self.loadStackField(key);
@@ -2221,19 +2233,19 @@ const Arm64Compiler = struct {
     }
 
     fn loadStackField(self: *Arm64Compiler, key: []const u8) Error!u5 {
-        const slot = self.fp_stack_slots.get(key) orelse return error.UndefinedName;
+        const slot = self.fp_stack_slots.get(key) orelse return undefinedKey(@src(), "fp stack slot", key);
         const reg = try self.allocReg();
         try self.emitLdrSp(reg, slot.off);
         return reg;
     }
 
     fn storeStackField(self: *Arm64Compiler, key: []const u8, val_reg: u5) Error!void {
-        const slot = self.fp_stack_slots.get(key) orelse return error.UndefinedName;
+        const slot = self.fp_stack_slots.get(key) orelse return undefinedKey(@src(), "fp stack slot", key);
         try self.emitStrSp(val_reg, slot.off);
     }
 
     fn loadFpStackField(self: *Arm64Compiler, key: []const u8) Error!u5 {
-        const slot = self.fp_stack_slots.get(key) orelse return error.UndefinedName;
+        const slot = self.fp_stack_slots.get(key) orelse return undefinedKey(@src(), "fp stack slot", key);
         if (!slot.float) return refuse(@src());
         const d = try self.allocFpReg();
         try self.emitLdrSpFp(d, slot.off);
@@ -2960,7 +2972,7 @@ const Arm64Compiler = struct {
                     try self.emitBlobPtr(reg, sym_idx);
                     break :blk reg;
                 }
-                const reg = self.locals.get(name.ident) orelse return error.UndefinedName;
+                const reg = self.locals.get(name.ident) orelse return undefinedKey(@src(), "local", name.ident);
                 break :blk try self.bindNewLocalReg(reg);
             },
             .field => |f| blk: {
