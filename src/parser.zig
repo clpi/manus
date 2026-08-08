@@ -127,6 +127,17 @@ pub const Parser = struct {
     /// `token.kind.eof` reaches the cases the descriptor body declared.
     caseset_homes: std.StringHashMapUnmanaged([]const u8) = .empty,
 
+    /// `<case>` -> the case-set that declares it, so a leading `.` in
+    /// DESCRIPTOR-EXPECTED POSITION resolves to a case (§0.3, §2 THE ANCHOR).
+    /// `""` records a name TWO case-sets claim: an ambiguous `.eof` is a
+    /// diagnostic, never a silent pick of whichever parsed first.
+    ///
+    /// This map is the parse's own record of what it declared, in the same
+    /// shape as `relation_edges` and `caseset_homes` beside it. It is not a
+    /// registry consulted by other subsystems — sema and codegen never read it,
+    /// they read the resolved `field` node it produces.
+    caseset_cases: std.StringHashMapUnmanaged([]const u8) = .empty,
+
     pub fn init(lex: *Lexer, alloc: Allocator) Parser {
         return .{ .lex = lex, .alloc = alloc };
     }
@@ -3676,11 +3687,24 @@ pub const Parser = struct {
                     else => unreachable,
                 }
             }
+            const case_slice = try variants.toOwnedSlice(self.alloc);
+            // Record the cases this case-set declares, so `== .eof` resolves.
+            // A name a SECOND case-set claims is marked ambiguous rather than
+            // overwritten: two homes for one spelling is exactly the state
+            // where a silent pick would produce a wrong value.
+            for (case_slice) |v| {
+                const gop = try self.caseset_cases.getOrPut(self.alloc, v.name);
+                if (gop.found_existing) {
+                    if (!std.mem.eql(u8, gop.value_ptr.*, name)) gop.value_ptr.* = "";
+                } else {
+                    gop.value_ptr.* = name;
+                }
+            }
             return ast.Stmt{ .enum_def = .{
                 .loc = loc,
                 .name = name,
                 .type_params = null,
-                .variants = try variants.toOwnedSlice(self.alloc),
+                .variants = case_slice,
                 .attributes = &.{},
             } };
         }
@@ -4272,7 +4296,10 @@ pub const Parser = struct {
             if (tok.kind == .at and tok.loc.line > e.loc().line) break;
             if (inf.left <= min_prec) break;
             _ = try self.adv();
-            const rhs = try self.parse_prec(inf.right);
+            const rhs = if (try self.at_anchor_case(inf.op))
+                try self.parse_anchor_case()
+            else
+                try self.parse_prec(inf.right);
             e = try self.new_expr(.{ .binop = .{
                 .loc = e.loc(),
                 .op = inf.op,
@@ -4445,7 +4472,10 @@ pub const Parser = struct {
                     else => {},
                 }
             }
-            const rhs = try self.parse_prec(inf.right);
+            const rhs = if (try self.at_anchor_case(inf.op))
+                try self.parse_anchor_case()
+            else
+                try self.parse_prec(inf.right);
             lhs = try self.new_expr(.{ .binop = .{
                 .loc = lhs.loc(),
                 .op = inf.op,
@@ -4736,9 +4766,76 @@ pub const Parser = struct {
         };
     }
 
+    /// DESCRIPTOR-EXPECTED POSITION, as a POSITION and not as a shape: the
+    /// operator just consumed is an equality and the very next token is `.`.
+    /// Gated on the parse having SEEN a case-set, so a file that declares none
+    /// keeps the element stance it had and this cannot turn working code into a
+    /// diagnostic.
+    fn at_anchor_case(self: *Parser, op: ast.BinOp) ParseError!bool {
+        if (op != .eq and op != .neq) return false;
+        if (self.caseset_cases.count() == 0) return false;
+        return (try self.pk()).kind == .dot;
+    }
+
+    /// Pass 100 §2 THE ANCHOR — **leading `.` WALKS from the anchor**, and which
+    /// anchor it walks from is decided BY POSITION: method scope → my field
+    /// (`.pos`); argument position → each element (`map(.x)`); **descriptor-
+    /// expected position → the case** (`tok.kind == .eof`). This is that third
+    /// stance, and it is the one the parser used to get wrong in a way nothing
+    /// downstream could correct.
+    ///
+    /// THE DEFECT THIS CLOSES. `parse_field_projection` had exactly one rule for
+    /// every leading `.` — build the lambda `(__proj_v) __proj_v.name` — because
+    /// the position was never consulted. Sema then re-decided from SHAPE, and
+    /// its shape rule for `==` admits any two operands, so `k == .eof` CHECKED
+    /// CLEAN and reached the C backend as
+    ///
+    ///     if ((k == lua_val_from_closure((lua_Closure*)duo_make_closure_0())))
+    ///
+    /// — an enum compared against a closure, rejected by the C compiler with
+    /// "invalid operands to binary expression". Two subsystems each held a fact
+    /// about one token and the facts disagreed; A3 ONE EDGE forbids that.
+    ///
+    /// The decision now lives in ONE place. The parser is the canonical syntax
+    /// graph: it knows the position (it just consumed `==`) and it knows the
+    /// cases, because it declared them itself in `stmt_from_descriptor`. So it
+    /// resolves the stance here and hands sema a `field` node that is already a
+    /// case access — the same node `token.kind.eof` produces by hand, which is
+    /// the spelling the golden `caseset` fixture has been passing on. Sema and
+    /// codegen consume the resolved fact; neither re-derives it, and there is
+    /// nothing left for them to disagree about.
+    ///
+    /// Diagnostic, never a guess. An unknown case and an ambiguous case are
+    /// separate messages: the second is the one that would otherwise silently
+    /// pick a home, which is a wrong VALUE rather than a failed build.
+    fn parse_anchor_case(self: *Parser) ParseError!*ast.Expr {
+        const dot = try self.expect(.dot);
+        const case = try self.expect_name_like();
+        const home = self.caseset_cases.get(case) orelse {
+            term.locErr(dot.loc, "'.{s}' names no case", .{case});
+            term.locHint(dot.loc, "a leading '.' in comparison position is a case of a declared case-set", .{});
+            return ParseError.UnexpectedToken;
+        };
+        if (home.len == 0) {
+            term.locErr(dot.loc, "'.{s}' is a case of more than one case-set", .{case});
+            term.locHint(dot.loc, "name the home it belongs to, as in 'token.kind.{s}'", .{case});
+            return ParseError.UnexpectedToken;
+        }
+        return self.new_expr(.{ .field = .{
+            .loc = dot.loc,
+            .obj = try self.new_expr(.{ .name = .{ .loc = dot.loc, .ident = home } }),
+            .field = case,
+        } });
+    }
+
     /// Parse `.name` or `.a.b.c` as a field projection: desugars to `(__v) __v.name`
     /// or `(__v) __v.a.b.c`. Only fires at expression-start (where `.` is currently invalid),
     /// so this is backward-compatible. Enables `users:map(.name)` syntax.
+    ///
+    /// This is the SECOND anchor stance (argument position → each element). It
+    /// is still the fallback for every position the parser has not yet been
+    /// taught, including method scope — see `parse_anchor_case` for the stance
+    /// that is settled and the remainder that is not.
     fn parse_field_projection(self: *Parser) ParseError!*ast.Expr {
         const dot_tok = try self.adv(); // consume the leading `.`
         const first_field = try self.expect_name_like();

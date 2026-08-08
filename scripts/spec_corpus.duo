@@ -46,7 +46,7 @@ fixtures = "examples/spec100"
 -- what happens otherwise: a floor written from memory reported a regression
 -- that had not happened. Run the gate, read the number, pin the number.
 blockfloor = 2
-formfloor = 10
+formfloor = 11
 
 fence = "^```"
 
