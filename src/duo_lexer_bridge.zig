@@ -47,6 +47,7 @@ pub const KEYWORD_PRODUCTION_PATH = duo_keyword_bridge.PRODUCTION_PATH;
 /// Note: `@c.export` sets the *wasm* export name; the native symbol is the Duo
 /// function name, so each Duo function is named exactly what C must see.
 pub const TOKENIZE_EXPORTS = [_][]const u8{
+    "duo_lexer_tokenize_full",
     "duo_lexer_tokenize_text",
     "duo_lexer_tokenize_all",
     "duo_lexer_step",
@@ -136,8 +137,9 @@ test "duo_lexer_bridge: production split" {
 // quarter. Pin it so re-expanding it is a deliberate, visible act rather than
 // documentation drift — the two names below are the only `@c.export`s in
 // lib/std/compiler/lexer.duo, verified against its generated C.
-test "duo_lexer_bridge: seam is exactly the five real lexer.duo exports" {
+test "duo_lexer_bridge: seam is exactly the six real lexer.duo exports" {
     const expected = [_][]const u8{
+        "duo_lexer_tokenize_full",
         "duo_lexer_tokenize_text",
         "duo_lexer_tokenize_all",
         "duo_lexer_step",
@@ -155,11 +157,19 @@ test "duo_lexer_bridge: seam is exactly the five real lexer.duo exports" {
 test "duo_lexer_bridge: the whole-file tokenize entries carry location" {
     var found_all = false;
     var found_text = false;
+    var found_full = false;
     for (TOKENIZE_EXPORTS) |sym| {
         if (std.mem.eql(u8, sym, "duo_lexer_tokenize_all")) found_all = true;
         if (std.mem.eql(u8, sym, "duo_lexer_tokenize_text")) found_text = true;
+        if (std.mem.eql(u8, sym, "duo_lexer_tokenize_full")) found_full = true;
     }
     // tokenize_all: kind, line, col, int_val. tokenize_text: + text_off, text_len.
+    // tokenize_full: + float_val — the ONLY entry carrying everything the host
+    // `Token` holds, and therefore the only one production dispatch may use.
+    // Dispatch built on tokenize_text would drop float_val silently; that field
+    // was wrong for every float literal until GAP-021, undetected precisely
+    // because no differential read it.
     try std.testing.expect(found_all);
     try std.testing.expect(found_text);
+    try std.testing.expect(found_full);
 }

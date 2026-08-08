@@ -396,12 +396,23 @@ read_num(self: Lexer): Tok
     end
     
     text = strm.sub(self.src, start, self.pos - 1)
+    -- `to(f64)`/`to(i64)`, NOT `tonumber(text) or 0.0`. The `or` truncated the
+    -- float: `tonumber("1.5")` is 1.5, and `tonumber("1.5") or 0.0` is **1**.
+    -- Measured 2026-08-07, filed as GAP-021.
+    --
+    -- Nothing caught it for as long as it existed, because float_val is the one
+    -- token field no differential reads — the kind fingerprint hashes kinds, the
+    -- text fingerprint hashes text. Every float literal in the language lexed to
+    -- its integer part, silently. That is why duo_lexer_tokenize_full carries the
+    -- field: dispatch on tokenize_text would have shipped this.
+    --
+    -- The fallback is dropped rather than re-spelled: this branch is reached only
+    -- after read_number has already scanned a well-formed literal, so `or 0.0`
+    -- was defending an unreachable case while corrupting the reachable one.
     if is_float
-        v = tonumber(text) or 0.0
-        return { kind = std.compiler.token.KIND_FLOAT_LIT, loc = l, text = text, int_val = 0, float_val = v }
+        return { kind = std.compiler.token.KIND_FLOAT_LIT, loc = l, text = text, int_val = 0, float_val = to(f64)(text) }
     else
-        v = tonumber(text) or 0
-        return { kind = std.compiler.token.KIND_INT_LIT, loc = l, text = text, int_val = v, float_val = 0.0 }
+        return { kind = std.compiler.token.KIND_INT_LIT, loc = l, text = text, int_val = to(i64)(text), float_val = 0.0 }
     end
 end
 
@@ -694,6 +705,48 @@ duo_lexer_tokenize_text(src: str, file: str, out: i64, cap: i64, txt: i64, txtca
         mem.write_i64(buf, (n * 6 + 3) * 8, tok.int_val)
         mem.write_i64(buf, (n * 6 + 4) * 8, toff)
         mem.write_i64(buf, (n * 6 + 5) * 8, tlen)
+        toff = toff + tlen
+        n += 1
+        if tok.kind == std.compiler.token.KIND_EOF return n end
+    end
+    -1
+end
+
+-- The PRODUCTION DISPATCH entry: everything the host `Token` carries, in one
+-- pass. `tokenize_text` is one field short of that — it drops `float_val`, so a
+-- host driven by it would silently mis-read every float literal while every
+-- kind-based differential stayed green. That is the same shape as the token-TEXT
+-- gap this file already records, so the field is carried rather than recomputed.
+--
+-- SEVEN slots per token, byte offsets, `float_val` written as f64 bits:
+--     0 kind   1 line   2 col   3 int_val   4 text_off   5 text_len   6 float_val
+--
+-- Returns the token count, or -1 if `cap` or `txtcap` is too small — never a
+-- truncated stream, because a short read that looks like a short file is the
+-- one failure a parser cannot detect.
+@c.export("duo_lexer_tokenize_full")
+duo_lexer_tokenize_full(src: str, file: str, out: i64, cap: i64, txt: i64, txtcap: i64): i64
+    lex = new(src, file)
+    buf = mem.ptr_from_addr(i64, out)
+    tbuf = mem.ptr_from_addr(i64, txt)
+    n: i64 = 0
+    toff: i64 = 0
+    while n < cap
+        tok = next_tok(lex)
+        tlen: i64 = strm.len(tok.text)
+        if toff + tlen > txtcap return -1 end
+        k: i64 = 0
+        while k < tlen
+            mem.write_byte(tbuf, toff + k, string.byte(tok.text, k + 1))
+            k += 1
+        end
+        mem.write_i64(buf, (n * 7) * 8, tok.kind)
+        mem.write_i64(buf, (n * 7 + 1) * 8, tok.loc.line)
+        mem.write_i64(buf, (n * 7 + 2) * 8, tok.loc.col)
+        mem.write_i64(buf, (n * 7 + 3) * 8, tok.int_val)
+        mem.write_i64(buf, (n * 7 + 4) * 8, toff)
+        mem.write_i64(buf, (n * 7 + 5) * 8, tlen)
+        mem.write_f64(buf, (n * 7 + 6) * 8, tok.float_val)
         toff = toff + tlen
         n += 1
         if tok.kind == std.compiler.token.KIND_EOF return n end
