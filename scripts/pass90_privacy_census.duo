@@ -1,0 +1,111 @@
+-- Pass 90 — the last underscore, measured.
+--
+-- The ruling: there is no `_` prefix; names carry zero semantics, visibility
+-- included. Privacy's jobs decompose to structure that already exists.
+--
+-- Pass 90's three arguments are not aspirational -- all three are MEASURABLE,
+-- and all three hold:
+--
+--   1. "Renaming becomes a semantics change." Literally true. Dropping the
+--      prefix changes a module's EXPORT SET.
+--   2. "It is name-sniffing magic." The special case exists, at one line:
+--      src/codegen.zig:20852 -- `if (!force_export and name[0] == '_') return;`
+--      inside add_module_export. Not derivable from any operator law.
+--   3. "The graph would store spelling as semantics." That line IS the graph
+--      treating identifier bytes as a visibility fact.
+--
+-- So the prefix was never convention. It is a live mechanism, and the purge is
+-- NOT a pure rename -- it enlarges the export set of every module it touches.
+-- That is the finding this census exists to pin.
+--
+-- A row is IMPLEMENTED only if the program compiles AND prints the expected
+-- value.
+
+-- Pinned floor: the MEASURED count, never an estimate. Verified 2026-08-07 at
+-- 5/9. Read the composition: of the FIVE decomposition targets the ruling hands
+-- privacy's jobs to, only TWO exist -- nested scope (single consumer) and
+-- refinements (invariants). The module protocol face, sealing, the dependents()
+-- query and the @modules stage are all absent, so three of privacy's five jobs
+-- currently have no owner at all.
+baseline(): i64
+    5
+end
+
+implemented = 0
+checked = 0
+report = ""
+
+bin(): str
+    override = std.os.getenv("DUO_BIN")
+    if override != nil
+        if override != ""
+            return override
+        end
+    end
+    std.script.duo_bin()
+end
+
+probe(src: str, want: str): bool
+    path = "/tmp/duo_p90.duo"
+    std.script.fs_write(path, src)
+    b = bin()                                           -- GAP-029 (TMP-1 forced)
+    got = std.script.capture("{b} run {path} 2>/dev/null")
+    std.script.chomp(got) == want
+end
+
+harness_live(): bool
+    probe("main(): void\n    print(1 + 2)\nend\n", "3")
+end
+
+record(id: str, src: str, want: str): void
+    checked = checked + 1
+    if probe(src, want)
+        implemented = implemented + 1
+        report = "{report}  ok      {id}\n"
+    else
+        report = "{report}  MISSING {id}\n"
+    end
+end
+
+main(): i64
+    if harness_live() == false
+        b = bin()                                       -- GAP-029 (TMP-1 forced)
+        print("pass90: HARNESS BROKEN — control `print(1 + 2)` did not print 3.")
+        print("  Check that {b} exists from this cwd, or set DUO_BIN.")
+        return 2
+    end
+
+    -- THE PREFIX ITSELF. P90-1 shows the prefix is inert WITHIN a module --
+    -- both forms declare, both call, nothing differs. That is what made it look
+    -- like harmless convention. P90-2 pins the interior compound as legal
+    -- spelling, which Pass 90 explicitly preserves.
+    record("P90-1 `_x` inert within module", "_helper(n: i64): i64\n    n + 1\nend\nhelper(n: i64): i64\n    n + 2\nend\nmain(): void\n    print(_helper(1))\n    print(helper(1))\nend\n", "2\n3")
+    record("P90-2 interior `_` is spelling", "shift_limit(): i64\n    63\nend\nmain(): void\n    print(shift_limit())\nend\n", "63")
+
+    -- THE DECOMPOSITION — what each of privacy's jobs is handed to. These are
+    -- the rows that decide whether the ruling is affordable, because deleting a
+    -- mechanism is only safe once its replacements exist.
+    record("P90-3 single consumer: nested scope", "outer(n: i64): i64\n    inner = (m: i64): i64 m + 1\n    inner(n)\nend\nmain(): void\n    print(outer(1))\nend\n", "2")
+    record("P90-4 module contract: mod@api", "api = { f }\nmain(): void\n    print(std@api != nil)\nend\n", "true")
+    record("P90-5 invariants: refinement", "positive(n: i64): bool\n    n > 0\nend\nport = i64 & positive\nmain(): void\n    print(port != nil)\nend\n", "true")
+    record("P90-6 invariants: sealing", "main(): void\n    print(seal != nil)\nend\n", "true")
+    record("P90-7 dependents() query", "main(): void\n    print(dependents != nil)\nend\n", "true")
+    record("P90-8 topology: @modules stage", "main(): void\n    print(@modules != nil)\nend\n", "true")
+
+    -- Controls.
+    record("P90-C1 arithmetic control", "main(): void\n    print(1 + 2)\nend\n", "3")
+
+    io.write(report)
+    floor = baseline()                                  -- GAP-029 (TMP-1 forced)
+    print("pass90: {implemented}/{checked} implemented (floor {floor})")
+
+    if implemented < floor
+        print("pass90: FAIL — a decomposition target that used to work has regressed")
+        return 1
+    end
+    if implemented > floor
+        print("pass90: forms gained — RAISE baseline() to {implemented}")
+    end
+    print("pass90: PASS")
+    0
+end

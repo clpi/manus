@@ -4,11 +4,16 @@
 -- axis, mode, stage or variant an identifier might encode is expressed
 -- STRUCTURALLY. Names are left with one job.
 --
--- AMENDMENT (author, 2026-08-07): `_` prefix is OK for private. Pass 88 §1 as
--- first written struck `_name` privacy in favour of namespace topology; that is
--- retracted. The 44 `_`-prefixed bindings in lib/std are NOT violations, and
--- this census carries no row against them. What remains of the pass: the `_`
--- discard binder (§2), stage markers (§3), and the axis-compound purge (§4).
+-- HISTORY, because this file changed its mind twice in one day and the reason
+-- matters more than the conclusion. Pass 88 §1 struck `_name` privacy; an
+-- author amendment then restored it ("`_` prefix is OK for private"); Pass 90
+-- reversed that restoration permanently. **There is no `_` prefix.** The 44
+-- `_`-prefixed bindings in lib/std ARE violations, and Pass 90 supplies the
+-- decomposition that replaces them. See docs/plans/pass90_last_underscore.md
+-- for the measurement that settled it: the prefix is not convention, it is a
+-- name-sniffing special case at src/codegen.zig:20852 that silently controls
+-- module export. This census carries no privacy row -- Pass 90 owns that -- and
+-- keeps §2 discards, §3 stage markers, and the §4 axis-compound purge.
 --
 -- The pass divides sharply into two halves, and the census exists to keep them
 -- apart:
@@ -37,7 +42,7 @@ report = ""
 -- See scripts/family_registry_census.duo for why this is not
 -- `std.script.duo_bin()` directly, and GAP-029 for why the temporary below is
 -- forced rather than chosen.
-_bin(): str
+bin(): str
     override = std.os.getenv("DUO_BIN")
     if override != nil
         if override != ""
@@ -47,21 +52,21 @@ _bin(): str
     std.script.duo_bin()
 end
 
-_probe(src: str, want: str): bool
+probe(src: str, want: str): bool
     path = "/tmp/duo_p88.duo"
     std.script.fs_write(path, src)
-    b = _bin()                                          -- GAP-029 (TMP-1 forced)
+    b = bin()                                        -- GAP-029 (TMP-1 forced)
     got = std.script.capture("{b} run {path} 2>/dev/null")
     std.script.chomp(got) == want
 end
 
-_harness_live(): bool
-    _probe("main(): void\n    print(1 + 2)\nend\n", "3")
+harness_live(): bool
+    probe("main(): void\n    print(1 + 2)\nend\n", "3")
 end
 
-_record(id: str, src: str, want: str): void
+record(id: str, src: str, want: str): void
     checked = checked + 1
-    if _probe(src, want)
+    if probe(src, want)
         implemented = implemented + 1
         report = "{report}  ok      {id}\n"
     else
@@ -70,8 +75,8 @@ _record(id: str, src: str, want: str): void
 end
 
 main(): i64
-    if _harness_live() == false
-        b = _bin()                                      -- GAP-029 (TMP-1 forced)
+    if harness_live() == false
+        b = bin()                                    -- GAP-029 (TMP-1 forced)
         print("pass88: HARNESS BROKEN — control `print(1 + 2)` did not print 3.")
         print("  Check that {b} exists from this cwd, or set DUO_BIN.")
         return 2
@@ -80,21 +85,21 @@ main(): i64
     -- §4 PREDICATES — the actionable half. A predicate named as a bare concept
     -- noun must serve all four roles the law claims for it. Three of the four
     -- need no new surface, which is why this half is a rename and not a wait.
-    _record("P88-1 bare predicate as guard", "digit(b: i64): bool\n    b >= 48 and b <= 57\nend\nmain(): void\n    if digit(53)\n        print(\"yes\")\n    end\nend\n", "yes")
-    _record("P88-2 bare predicate as value", "digit(b: i64): bool\n    b >= 48\nend\nmain(): void\n    p = digit\n    print(p != nil)\nend\n", "true")
-    _record("P88-3 predicate as refinement", "digit(b: i64): bool\n    b >= 48\nend\nbyte = i64 & digit\nmain(): void\n    print(byte != nil)\nend\n", "true")
-    _record("P88-4 predicate as filter operand", "digit(b: i64): bool\n    b >= 48\nend\nmain(): void\n    xs = { 49, 50 }\n    print(#xs:take(digit))\nend\n", "2")
+    record("P88-1 bare predicate as guard", "digit(b: i64): bool\n    b >= 48 and b <= 57\nend\nmain(): void\n    if digit(53)\n        print(\"yes\")\n    end\nend\n", "yes")
+    record("P88-2 bare predicate as value", "digit(b: i64): bool\n    b >= 48\nend\nmain(): void\n    p = digit\n    print(p != nil)\nend\n", "true")
+    record("P88-3 predicate as refinement", "digit(b: i64): bool\n    b >= 48\nend\nbyte = i64 & digit\nmain(): void\n    print(byte != nil)\nend\n", "true")
+    record("P88-4 predicate as filter operand", "digit(b: i64): bool\n    b >= 48\nend\nmain(): void\n    xs = { 49, 50 }\n    print(#xs:take(digit))\nend\n", "2")
 
     -- §4 OPERAND SELECTION — one name, edge chosen by operand KIND. Every row
     -- here needs the sequence surface, which GAP-014 records as absent.
-    _record("P88-5 sort() natural", "main(): void\n    xs = { 2, 1 }\n    print(xs:sort()[1])\nend\n", "1")
-    _record("P88-6 sort(.key) lens", "main(): void\n    xs = { { k = 2 }, { k = 1 } }\n    print(xs:sort(.k)[1].k)\nend\n", "1")
-    _record("P88-7 max(.score) lens", "main(): void\n    xs = { { s = 1 }, { s = 9 } }\n    print(xs:max(.s).s)\nend\n", "9")
-    _record("P88-8 take(5) count", "main(): void\n    xs = { 1, 2, 3 }\n    print(#xs:take(2))\nend\n", "2")
-    _record("P88-9 until(space)", "space(b: i64): bool\n    b == 32\nend\nmain(): void\n    xs = { 65, 32 }\n    print(#xs:until(space))\nend\n", "1")
-    _record("P88-10 group(.dept)", "main(): void\n    xs = { { d = 1 } }\n    print(#xs:group(.d))\nend\n", "1")
-    _record("P88-11 zip", "main(): void\n    a = { 1 }\n    print(#a:zip({ 2 }))\nend\n", "1")
-    _record("P88-12 iterate", "main(): void\n    print(iterate != nil)\nend\n", "true")
+    record("P88-5 sort() natural", "main(): void\n    xs = { 2, 1 }\n    print(xs:sort()[1])\nend\n", "1")
+    record("P88-6 sort(.key) lens", "main(): void\n    xs = { { k = 2 }, { k = 1 } }\n    print(xs:sort(.k)[1].k)\nend\n", "1")
+    record("P88-7 max(.score) lens", "main(): void\n    xs = { { s = 1 }, { s = 9 } }\n    print(xs:max(.s).s)\nend\n", "9")
+    record("P88-8 take(5) count", "main(): void\n    xs = { 1, 2, 3 }\n    print(#xs:take(2))\nend\n", "2")
+    record("P88-9 until(space)", "space(b: i64): bool\n    b == 32\nend\nmain(): void\n    xs = { 65, 32 }\n    print(#xs:until(space))\nend\n", "1")
+    record("P88-10 group(.dept)", "main(): void\n    xs = { { d = 1 } }\n    print(#xs:group(.d))\nend\n", "1")
+    record("P88-11 zip", "main(): void\n    a = { 1 }\n    print(#a:zip({ 2 }))\nend\n", "1")
+    record("P88-12 iterate", "main(): void\n    print(iterate != nil)\nend\n", "true")
 
     -- §2 DISCARDS — "binding a name to ignore it is the anti-pattern; not
     -- binding it is the language." P88-13 asserts the LAW: the `_` binder must
@@ -105,12 +110,12 @@ main(): i64
     -- "ABSENT" sentinel spec_conformance uses can never read ok, which makes a
     -- SATISFIED law display as MISSING -- wrong for a row whose whole point is
     -- that the language already forbids something.
-    _record("P88-13 `_` binder rejected", "main(): void\n    _ = 5\n    print(\"live\")\nend\n", "")
-    _record("P88-14 selective destructure", "main(): void\n    user = { name = \"a\", age = 2 }\n    { name } = user\n    print(name)\nend\n", "a")
+    record("P88-13 `_` binder rejected", "main(): void\n    _ = 5\n    print(\"live\")\nend\n", "")
+    record("P88-14 selective destructure", "main(): void\n    user = { name = \"a\", age = 2 }\n    { name } = user\n    print(name)\nend\n", "a")
 
     -- §3 STAGE — a check is stage-structural wherever it appears, so `check`
     -- must be a binding rather than a filename convention.
-    _record("P88-15 check() is a binding", "main(): void\n    print(check != nil)\nend\n", "true")
+    record("P88-15 check() is a binding", "main(): void\n    print(check != nil)\nend\n", "true")
 
     -- THE COLLISION ROWS — the reason this pass cannot be applied wholesale.
     -- 25 of 71 `is_*` bases in lib/std already name a top-level binding, and
@@ -128,12 +133,12 @@ main(): i64
     -- front end promises an overload the backend cannot deliver. Filed as
     -- GAP-030; it is the row that decides whether the predicate rename has ANY
     -- safe path, because typed overloads would have been that path.
-    _record("P88-16 same-sig dup rejected", "ok(v: i64): i64\n    v\nend\nok(r: i64): bool\n    r > 0\nend\nmain(): void\n    print(ok(5))\nend\n", "")
-    _record("P88-17 distinct-sig overload", "ok(v: i64): i64\n    v\nend\nok(r: str): i64\n    #r\nend\nmain(): void\n    print(ok(5))\nend\n", "5")
+    record("P88-16 same-sig dup rejected", "ok(v: i64): i64\n    v\nend\nok(r: i64): bool\n    r > 0\nend\nmain(): void\n    print(ok(5))\nend\n", "")
+    record("P88-17 distinct-sig overload", "ok(v: i64): i64\n    v\nend\nok(r: str): i64\n    #r\nend\nmain(): void\n    print(ok(5))\nend\n", "5")
 
     -- Controls.
-    _record("P88-C1 arithmetic control", "main(): void\n    print(1 + 2)\nend\n", "3")
-    _record("P88-C2 len control", "main(): void\n    print(#\"hello\")\nend\n", "5")
+    record("P88-C1 arithmetic control", "main(): void\n    print(1 + 2)\nend\n", "3")
+    record("P88-C2 len control", "main(): void\n    print(#\"hello\")\nend\n", "5")
 
     io.write(report)
     floor = baseline()                                  -- GAP-029 (TMP-1 forced)

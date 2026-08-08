@@ -33,7 +33,7 @@ report = ""
 -- result can be spelled only as a denied `..` chain or a denied single-use
 -- temporary (TMP-1). The temporary is the lesser violation because it is
 -- correct; the `..` chain is merely permitted-looking. Cited, not hidden.
-_bin(): str
+bin(): str
     override = std.os.getenv("DUO_BIN")
     if override != nil
         if override != ""
@@ -47,10 +47,10 @@ end
 -- (`./zig-out/bin/duo`), this probe swallows stderr, and getenv returns "" not
 -- nil on a miss -- so a wrong cwd reports every row MISSING and reads exactly
 -- like a language that implements nothing. See scripts/family_registry_census.duo.
-_probe(id: str, src: str, want: str): bool
+probe(id: str, src: str, want: str): bool
     path = "/tmp/duo_p86.duo"
     std.script.fs_write(path, src)
-    b = _bin()                                          -- GAP-029 (TMP-1 forced)
+    b = bin()                                        -- GAP-029 (TMP-1 forced)
     got = std.script.capture("{b} run {path} 2>/dev/null")
     std.script.chomp(got) == want
 end
@@ -58,13 +58,13 @@ end
 -- The control: the smallest program the language cannot fail. Runs before any
 -- row is recorded, on its own exit path, so a broken harness never reads as a
 -- regression.
-_harness_live(): bool
-    _probe("control", "main(): void\n    print(1 + 2)\nend\n", "3")
+harness_live(): bool
+    probe("control", "main(): void\n    print(1 + 2)\nend\n", "3")
 end
 
-_record(id: str, src: str, want: str): void
+record(id: str, src: str, want: str): void
     checked = checked + 1
-    if _probe(id, src, want)
+    if probe(id, src, want)
         implemented = implemented + 1
         report = "{report}  ok      {id}\n"
     else
@@ -73,44 +73,44 @@ _record(id: str, src: str, want: str): void
 end
 
 main(): i64
-    if _harness_live() == false
-        b = _bin()                                      -- GAP-029 (TMP-1 forced)
+    if harness_live() == false
+        b = bin()                                    -- GAP-029 (TMP-1 forced)
         print("pass86: HARNESS BROKEN — control `print(1 + 2)` did not print 3.")
         print("  Check that {b} exists from this cwd, or set DUO_BIN.")
         return 2
     end
 
     -- §1 — the corrected table. Both faces of the same edge.
-    _record("P86-1 mode_value:to(target)", "polar: { r: f64, theta: f64 }\npoint: { x: f64, y: f64 }\nmain(): void\n    print(polar{ r = 1.0, theta = 0.0 }:to(point).x)\nend\n", "1")
-    _record("P86-2 target:from(mode)(args)", "polar: { r: f64, theta: f64 }\npoint: { x: f64, y: f64 }\nmain(): void\n    print(point:from(polar)(1.0, 0.0).x)\nend\n", "1")
-    _record("P86-3 from(hex) refinement mode", "main(): void\n    print(color:from(hex)(\"#fa0\") != nil)\nend\n", "true")
-    _record("P86-4 from(ms) unit mode", "main(): void\n    print(duration:from(ms)(150) != nil)\nend\n", "true")
-    _record("P86-5 150 * ms units", "main(): void\n    print(150 * ms)\nend\n", "150")
+    record("P86-1 mode_value:to(target)", "polar: { r: f64, theta: f64 }\npoint: { x: f64, y: f64 }\nmain(): void\n    print(polar{ r = 1.0, theta = 0.0 }:to(point).x)\nend\n", "1")
+    record("P86-2 target:from(mode)(args)", "polar: { r: f64, theta: f64 }\npoint: { x: f64, y: f64 }\nmain(): void\n    print(point:from(polar)(1.0, 0.0).x)\nend\n", "1")
+    record("P86-3 from(hex) refinement mode", "main(): void\n    print(color:from(hex)(\"#fa0\") != nil)\nend\n", "true")
+    record("P86-4 from(ms) unit mode", "main(): void\n    print(duration:from(ms)(150) != nil)\nend\n", "true")
+    record("P86-5 150 * ms units", "main(): void\n    print(150 * ms)\nend\n", "150")
     -- The PERMITTED form: an atomic noun naming a value, nothing smuggled.
     -- Annotated deliberately -- an unannotated `(n) n` is the GR-001 bare
     -- function trap and fails for a reason that has nothing to do with Pass 86.
     -- This row scored MISSING on its first run for exactly that reason.
-    _record("P86-6 atomic noun static", "m = { identity = (n: i64): i64 n }\nmain(): void\n    print(m.identity(3))\nend\n", "3")
+    record("P86-6 atomic noun static", "m = { identity = (n: i64): i64 n }\nmain(): void\n    print(m.identity(3))\nend\n", "3")
 
     -- §2 — the algebra the decomposition is FOR. These are the rows that carry
     -- the argument; a `from(mode)` without them is a rename, not a ruling.
-    _record("P86-7 from(mode) as a section", "polar: { r: f64 }\npoint: { x: f64 }\nmain(): void\n    f = point:from(polar)\n    print(f != nil)\nend\n", "true")
-    _record("P86-8 map(point:from(polar))", "polar: { r: f64 }\npoint: { x: f64 }\nmain(): void\n    ps = {}\n    print(#ps:map(point:from(polar)))\nend\n", "0")
-    _record("P86-9 point@from enumeration", "point: { x: f64 }\nmain(): void\n    print(point@from != nil)\nend\n", "true")
-    _record("P86-10 from(a & b) composed mode", "polar: { r: f64 }\nnormalized: { n: f64 }\npoint: { x: f64 }\nmain(): void\n    print(point:from(polar & normalized) != nil)\nend\n", "true")
-    _record("P86-11 refinement type decl", "hex_valid(s: str): bool\n    true\nend\nhex = str & hex_valid\nmain(): void\n    print(hex != nil)\nend\n", "true")
-    _record("P86-12 lift(seq)", "main(): void\n    print(lift != nil)\nend\n", "true")
+    record("P86-7 from(mode) as a section", "polar: { r: f64 }\npoint: { x: f64 }\nmain(): void\n    f = point:from(polar)\n    print(f != nil)\nend\n", "true")
+    record("P86-8 map(point:from(polar))", "polar: { r: f64 }\npoint: { x: f64 }\nmain(): void\n    ps = {}\n    print(#ps:map(point:from(polar)))\nend\n", "0")
+    record("P86-9 point@from enumeration", "point: { x: f64 }\nmain(): void\n    print(point@from != nil)\nend\n", "true")
+    record("P86-10 from(a & b) composed mode", "polar: { r: f64 }\nnormalized: { n: f64 }\npoint: { x: f64 }\nmain(): void\n    print(point:from(polar & normalized) != nil)\nend\n", "true")
+    record("P86-11 refinement type decl", "hex_valid(s: str): bool\n    true\nend\nhex = str & hex_valid\nmain(): void\n    print(hex != nil)\nend\n", "true")
+    record("P86-12 lift(seq)", "main(): void\n    print(lift != nil)\nend\n", "true")
 
     -- §3 — the rest of the constructor ladder, so the whole rung set is dated.
-    _record("P86-13 desc{ positional }", "lexer: { src: str, name: str }\nmain(): void\n    l = lexer{ \"a\", \"lit.duo\" }\n    print(l.name)\nend\n", "lit.duo")
-    _record("P86-14 subject:to(descriptor)", "temp: { deg: f64 }\nmain(): void\n    c = 20.0\n    print(c:to(temp) != nil)\nend\n", "true")
-    _record("P86-15 f(): T | Error pack", "openish(p: str): str | nil\n    p\nend\nmain(): void\n    print(openish(\"x\"))\nend\n", "x")
-    _record("P86-16 spread revision", "main(): void\n    self = { x = 1, y = 2 }\n    r = @{ ..self, x = 9 }\n    print(r.x)\nend\n", "9")
+    record("P86-13 desc{ positional }", "lexer: { src: str, name: str }\nmain(): void\n    l = lexer{ \"a\", \"lit.duo\" }\n    print(l.name)\nend\n", "lit.duo")
+    record("P86-14 subject:to(descriptor)", "temp: { deg: f64 }\nmain(): void\n    c = 20.0\n    print(c:to(temp) != nil)\nend\n", "true")
+    record("P86-15 f(): T | Error pack", "openish(p: str): str | nil\n    p\nend\nmain(): void\n    print(openish(\"x\"))\nend\n", "x")
+    record("P86-16 spread revision", "main(): void\n    self = { x = 1, y = 2 }\n    r = @{ ..self, x = 9 }\n    print(r.x)\nend\n", "9")
 
     -- Controls. These two are the anchor of the whole ruling: `to` exists in
     -- both faces, `from` exists in neither, and Pass 86 rules them ONE edge.
-    _record("P86-C1 to(str) section face", "main(): void\n    print(to(str)(42))\nend\n", "42")
-    _record("P86-C2 subject:to(str) face", "main(): void\n    print((42):to(str))\nend\n", "42")
+    record("P86-C1 to(str) section face", "main(): void\n    print(to(str)(42))\nend\n", "42")
+    record("P86-C2 subject:to(str) face", "main(): void\n    print((42):to(str))\nend\n", "42")
 
     io.write(report)
     floor = baseline()                                  -- GAP-029 (TMP-1 forced)

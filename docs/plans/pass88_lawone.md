@@ -15,12 +15,16 @@
 > operand-selected edge, refinement, lens, demand. (The digit separator
 > `1_000_000` is exempt: purely visual, zero semantics.)
 
-**AMENDMENT (author, 2026-08-07): `_` prefix is OK for private.** Pass 88 §1 as
-first written struck `_name` privacy in favour of namespace topology. That is
-retracted. The **44 `_`-prefixed bindings in `lib/std` are not violations**, and
-no census row is filed against them. The law's remaining reach is the `_` discard
-binder (§2 below), stage markers (§3), and the axis-compound purge (§4) — and
-"there is no semantic `_`" narrows to "no semantic `_` *inside* a name".
+**SUPERSEDED — see `docs/plans/pass90_last_underscore.md`.** This section
+recorded an author amendment ("`_` prefix is OK for private") that restored the
+prefix Pass 88 §1 struck. **Pass 90 reverses that restoration permanently: there
+is no `_` prefix.** The 44 `_`-prefixed bindings in `lib/std` **are** violations
+again, and Pass 90 measured why the question was never cosmetic — the prefix is a
+name-sniffing special case at `src/codegen.zig:20852` that silently controls
+module export, so dropping it is a *surface change*, not a rename.
+
+Pass 88's own reach is unaffected: the `_` discard binder (§2), stage markers
+(§3), and the axis-compound purge (§4). Privacy belongs to Pass 90.
 
 ## 1. What splits this pass in two
 
