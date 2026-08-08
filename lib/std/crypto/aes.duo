@@ -447,7 +447,7 @@ string_to_bytes(s: str): any
     bytes = {}
     i = 1
     while i <= #s
-        bytes[#bytes + 1] = string.byte(s, i)
+        bytes[#bytes + 1] = s:byte(i)
         i += 1
     end
     bytes

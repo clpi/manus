@@ -82,7 +82,7 @@ reader_read_byte(r: any): any
         reader_fill(r)
         if has(.err)(r) return 0, false end
     end
-    b = string.byte(r.buf, r.pos)
+    b = r.buf:byte(r.pos)
     r.pos = r.pos + 1
     return b, true
 end

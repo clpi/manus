@@ -271,7 +271,7 @@ generate_connection_id(): any
     data = crypto_rand.bytes(8)
     i = 1
     while i <= 8
-        bytes[i] = string.byte(data, i)
+        bytes[i] = data:byte(i)
         i += 1
     end
     bytes

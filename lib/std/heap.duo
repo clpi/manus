@@ -196,7 +196,7 @@ bloom_hash(data: any, seed: i64): i64
     if type(data) == "string" n = #data end
     while i <= n
         if type(data) == "string"
-            byte = string.byte(data, i)
+            byte = data:byte(i)
         else
             byte = data[i]
         end

@@ -43,7 +43,7 @@ _has = (set: str, name: str): bool
         j: i64 = 0
         hit = true
         while j < nn
-            if string.byte(hay, i + j) != string.byte(needle, j + 1)
+            if hay:byte(i + j) != needle:byte(j + 1)
                 hit = false
                 j = nn
             end

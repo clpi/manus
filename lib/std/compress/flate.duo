@@ -30,10 +30,10 @@ decompress(data: any)
     i = 1
     n = #data
     while i <= n
-        b = string.byte(data, i)
+        b = data:byte(i)
         if b == 0xFE
             if i + 2 > n break end
-            run = string.byte(data, i + 1)
+            run = data:byte(i + 1)
             ch = string.sub(data, i + 2, i + 2)
             out[rawlen(out) + 1] = string.rep(ch, run)
             i += 3

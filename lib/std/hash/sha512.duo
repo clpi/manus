@@ -60,11 +60,11 @@ end
 wide_from_bytes(data: str, off: i64): any
     hi = 0
     for k = 0, 3
-        hi = (hi * 256 + string.byte(data, off + k)) % (4294967296)
+        hi = (hi * 256 + data:byte(off + k)) % (4294967296)
     end
     lo = 0
     for k = 0, 3
-        lo = (lo * 256 + string.byte(data, off + 4 + k)) % (4294967296)
+        lo = (lo * 256 + data:byte(off + 4 + k)) % (4294967296)
     end
     {hi = hi, lo = lo}
 end

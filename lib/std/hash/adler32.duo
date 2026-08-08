@@ -7,7 +7,7 @@ end
 update(state: any, data: str): void
     if data == nil return end
     for i = 1, #data
-        state.s1 = (state.s1 + string.byte(data, i)) % 65521
+        state.s1 = (state.s1 + data:byte(i)) % 65521
         state.s2 = (state.s2 + state.s1) % 65521
     end
 end

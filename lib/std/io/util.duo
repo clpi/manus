@@ -68,7 +68,7 @@ temp_file(): any
     rand_bytes = crypto_rand.bytes(8)
     i = 1
     while i <= 8
-        rand_hex = rand_hex .. string.format("%02x", string.byte(rand_bytes, i))
+        rand_hex = rand_hex .. string.format("%02x", rand_bytes:byte(i))
         i += 1
     end
     path = "/tmp/duo_" .. to(str)(os.time()) .. "_" .. rand_hex
@@ -83,7 +83,7 @@ temp_dir(): str
     rand_bytes = crypto_rand.bytes(8)
     i = 1
     while i <= 8
-        rand_hex = rand_hex .. string.format("%02x", string.byte(rand_bytes, i))
+        rand_hex = rand_hex .. string.format("%02x", rand_bytes:byte(i))
         i += 1
     end
     path = "/tmp/duo_dir_" .. to(str)(os.time()) .. "_" .. rand_hex

@@ -36,10 +36,10 @@ chacha20_block(key: any, counter: i64, nonce: any): any
     i = 0
     while i < 8
         off = i * 4
-        state[#state + 1] = string.byte(key, off + 1) |
-            (string.byte(key, off + 2) << 8) |
-            (string.byte(key, off + 3) << 16) |
-            (string.byte(key, off + 4) << 24)
+        state[#state + 1] = key:byte(off + 1) |
+            (key:byte(off + 2) << 8) |
+            (key:byte(off + 3) << 16) |
+            (key:byte(off + 4) << 24)
         i += 1
     end
     -- Counter
@@ -48,10 +48,10 @@ chacha20_block(key: any, counter: i64, nonce: any): any
     i = 0
     while i < 3
         off = i * 4
-        state[#state + 1] = string.byte(nonce, off + 1) |
-            (string.byte(nonce, off + 2) << 8) |
-            (string.byte(nonce, off + 3) << 16) |
-            (string.byte(nonce, off + 4) << 24)
+        state[#state + 1] = nonce:byte(off + 1) |
+            (nonce:byte(off + 2) << 8) |
+            (nonce:byte(off + 3) << 16) |
+            (nonce:byte(off + 4) << 24)
         i += 1
     end
 
@@ -104,7 +104,7 @@ chacha20_crypt(key: str, nonce: str, data: str): str
         block = chacha20_block(key, counter, nonce12)
         i = 1
         while i <= 64 and pos <= #data
-            out[#out + 1] = string.char(string.byte(data, pos) ~ string.byte(block, i))
+            out[#out + 1] = string.char(data:byte(pos) ~ block:byte(i))
             pos += 1
             i += 1
         end
@@ -194,7 +194,7 @@ random_bytes(n: i64): str
     i = 1
     while i <= 32
         if i <= #time_seed
-            key[i] = string.byte(time_seed, i)
+            key[i] = time_seed:byte(i)
         else
             key[i] = (i * 7 + 13) % 256  -- deterministic but non-zero
         end
@@ -204,7 +204,7 @@ random_bytes(n: i64): str
     i = 1
     while i <= 12
         if i <= #time_seed
-            nonce[i] = string.byte(time_seed, ((i - 1) % #time_seed) + 1) ~ i
+            nonce[i] = time_seed:byte(((i - 1) % #time_seed) + 1) ~ i
         else
             nonce[i] = (i * 11 + 3) % 256
         end
@@ -222,7 +222,7 @@ random_int(min: i64, max: i64): i64
     val = 0
     i = 0
     while i < 8
-        val = (val << 8) | string.byte(bytes, i + 1)
+        val = (val << 8) | bytes:byte(i + 1)
         i += 1
     end
     return min + (val % range)
@@ -234,7 +234,7 @@ random_float(): f64
     val = 0
     i = 0
     while i < 8
-        val = (val << 8) | string.byte(bytes, i + 1)
+        val = (val << 8) | bytes:byte(i + 1)
         i += 1
     end
     return val / 1.8446744073709552e19

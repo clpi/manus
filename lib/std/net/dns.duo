@@ -75,7 +75,7 @@ name_encode(name: str): any
     bytes[#bytes + 1] = label_len
     i = pos
     while i < dot_pos
-      bytes[#bytes + 1] = string.byte(name, i)
+      bytes[#bytes + 1] = name:byte(i)
       i = i + 1
     end
     pos = dot_pos + 1
@@ -124,7 +124,7 @@ end
 query_new(name: str, qtype: i64): any
   crypto_rand = req("std.crypto.rand")
   id_bytes = crypto_rand.bytes(2)
-  query_id = string.byte(id_bytes, 1) << 8 | string.byte(id_bytes, 2)
+  query_id = id_bytes:byte(1) << 8 | id_bytes:byte(2)
   {
     header = header_new(query_id, 0, 0, 0, 0, 1, 0, 0, 0),
     question = {

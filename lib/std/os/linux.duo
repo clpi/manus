@@ -237,14 +237,14 @@ inotify_read(inotify: any): any
     events = {}
     pos = 1
     while pos + 15 < n
-        wd = string.byte(buf, pos) | (string.byte(buf, pos + 1) << 8) |
-            (string.byte(buf, pos + 2) << 16) | (string.byte(buf, pos + 3) << 24)
-        cookie = string.byte(buf, pos + 4) | (string.byte(buf, pos + 5) << 8) |
-            (string.byte(buf, pos + 6) << 16) | (string.byte(buf, pos + 7) << 24)
-        mask = string.byte(buf, pos + 8) | (string.byte(buf, pos + 9) << 8) |
-            (string.byte(buf, pos + 10) << 16) | (string.byte(buf, pos + 11) << 24)
-        name_len = string.byte(buf, pos + 12) | (string.byte(buf, pos + 13) << 8) |
-            (string.byte(buf, pos + 14) << 16) | (string.byte(buf, pos + 15) << 24)
+        wd = buf:byte(pos) | (buf:byte(pos + 1) << 8) |
+            (buf:byte(pos + 2) << 16) | (buf:byte(pos + 3) << 24)
+        cookie = buf:byte(pos + 4) | (buf:byte(pos + 5) << 8) |
+            (buf:byte(pos + 6) << 16) | (buf:byte(pos + 7) << 24)
+        mask = buf:byte(pos + 8) | (buf:byte(pos + 9) << 8) |
+            (buf:byte(pos + 10) << 16) | (buf:byte(pos + 11) << 24)
+        name_len = buf:byte(pos + 12) | (buf:byte(pos + 13) << 8) |
+            (buf:byte(pos + 14) << 16) | (buf:byte(pos + 15) << 24)
         name = ""
         if name_len > 0
             name = buf:sub(pos + 16, pos + 15 + name_len)
@@ -368,7 +368,7 @@ eventfd_read(eventfd: any): any
     value = 0
     i = 7
     while i >= 0
-        value = (value << 8) | string.byte(buf, 8 - i)
+        value = (value << 8) | buf:byte(8 - i)
         i -= 1
     end
     {ok = true, value = value}
@@ -415,7 +415,7 @@ timerfd_read(timerfd: any): any
     expirations = 0
     i = 7
     while i >= 0
-        expirations = (expirations << 8) | string.byte(buf, 8 - i)
+        expirations = (expirations << 8) | buf:byte(8 - i)
         i -= 1
     end
     {ok = true, expirations = expirations}

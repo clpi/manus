@@ -7,7 +7,7 @@ make_seed(): i64
     seed = 0
     i = 0
     while i < 8
-        seed = (seed << 8) | string.byte(bytes, i + 1)
+        seed = (seed << 8) | bytes:byte(i + 1)
         i += 1
     end
     seed
@@ -24,7 +24,7 @@ end
 write(h: any, data: str): void
     h.hash = h.seed
     for i = 1, #data
-        h.hash = (h.hash * 31 + string.byte(data, i))
+        h.hash = (h.hash * 31 + data:byte(i))
     end
 end
 
@@ -39,7 +39,7 @@ end
 hash_string(seed: i64, s: str): i64
     h = seed
     for i = 1, #s
-        h = (h * 31 + string.byte(s, i))
+        h = (h * 31 + s:byte(i))
     end
     h
 end
@@ -47,7 +47,7 @@ end
 hash_bytes(seed: i64, data: str, off: i64, len: i64): i64
     h = seed
     for i = off, off + len - 1
-        h = (h * 31 + string.byte(data, i))
+        h = (h * 31 + data:byte(i))
     end
     h
 end

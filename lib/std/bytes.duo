@@ -10,7 +10,7 @@ end
 -- Read one byte at current position, advance cursor
 read_byte(buf: any): i64
     if buf.pos > buf.len return -1 end
-    b = string.byte(buf.data, buf.pos)
+    b = buf.data:byte(buf.pos)
     buf.pos = buf.pos + 1
     return b
 end
@@ -18,10 +18,10 @@ end
 -- Read a u32 (little-endian) from cursor
 read_u32_le(buf: any): i64
     if buf.pos + 3 > buf.len return -1 end
-    b0 = string.byte(buf.data, buf.pos)
-    b1 = string.byte(buf.data, buf.pos + 1)
-    b2 = string.byte(buf.data, buf.pos + 2)
-    b3 = string.byte(buf.data, buf.pos + 3)
+    b0 = buf.data:byte(buf.pos)
+    b1 = buf.data:byte(buf.pos + 1)
+    b2 = buf.data:byte(buf.pos + 2)
+    b3 = buf.data:byte(buf.pos + 3)
     buf.pos = buf.pos + 4
     return b0 + b1 * 256 + b2 * 65536 + b3 * 16777216
 end
@@ -29,8 +29,8 @@ end
 -- Read a u16 (little-endian) from cursor
 read_u16_le(buf: any): i64
     if buf.pos + 1 > buf.len return -1 end
-    b0 = string.byte(buf.data, buf.pos)
-    b1 = string.byte(buf.data, buf.pos + 1)
+    b0 = buf.data:byte(buf.pos)
+    b1 = buf.data:byte(buf.pos + 1)
     buf.pos = buf.pos + 2
     return b0 + b1 * 256
 end
@@ -41,7 +41,7 @@ read_leb128_u(buf: any): i64
     shift = 0
     while true do
         if buf.pos > buf.len return -1 end
-        b = string.byte(buf.data, buf.pos)
+        b = buf.data:byte(buf.pos)
         buf.pos = buf.pos + 1
         result = result + ((b % 128) * (2 ^ shift))
         if b < 128 return result end
@@ -57,7 +57,7 @@ read_leb128_s(buf: any): i64
     shift = 0
     while true do
         if buf.pos > buf.len return -1 end
-        b = string.byte(buf.data, buf.pos)
+        b = buf.data:byte(buf.pos)
         buf.pos = buf.pos + 1
         result = result + ((b % 128) * (2 ^ shift))
         shift = shift + 7

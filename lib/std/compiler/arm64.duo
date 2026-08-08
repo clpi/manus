@@ -117,7 +117,7 @@ _at2 = (): i64
     if _p2 > #_src2
         return 0
     end
-    string.byte(_src2, _p2)
+    _src2:byte(_p2)
 end
 
 _ws2 = (): void

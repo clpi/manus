@@ -326,7 +326,7 @@ id(): i64
     s = to(str)(co)
     h = 5381
     for i = 1, #s
-        h = (h * 33 + string.byte(s, i)) % 4294967296
+        h = (h * 33 + s:byte(i)) % 4294967296
     end
     h
 end

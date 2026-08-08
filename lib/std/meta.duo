@@ -329,7 +329,7 @@ derive_hash(val: any): u64
     if type(val) == "string"
         h = 5381
         for i = 1, #val
-            h = (h * 33 + string.byte(val, i)) % 4294967296
+            h = (h * 33 + val:byte(i)) % 4294967296
         end
         return h
     end

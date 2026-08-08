@@ -36,15 +36,15 @@ base64_encode(data: any): str
         if i + 2 <= #data b2 = data[i + 2] end
 
         triplet = (b0 << 16) | (b1 << 8) | b2
-        result = result .. string.char(string.byte(chars, ((triplet >> 18) & 0x3F) + 1))
-        result = result .. string.char(string.byte(chars, ((triplet >> 12) & 0x3F) + 1))
+        result = result .. string.char(chars:byte(((triplet >> 18) & 0x3F) + 1))
+        result = result .. string.char(chars:byte(((triplet >> 12) & 0x3F) + 1))
         if i + 1 <= #data
-            result = result .. string.char(string.byte(chars, ((triplet >> 6) & 0x3F) + 1))
+            result = result .. string.char(chars:byte(((triplet >> 6) & 0x3F) + 1))
         else
             result = result .. "="
         end
         if i + 2 <= #data
-            result = result .. string.char(string.byte(chars, (triplet & 0x3F) + 1))
+            result = result .. string.char(chars:byte((triplet & 0x3F) + 1))
         else
             result = result .. "="
         end
@@ -71,7 +71,7 @@ base64_encode_string(s: str): str
     bytes = {}
     i = 1
     while i <= #s
-        bytes[#bytes + 1] = string.byte(s, i)
+        bytes[#bytes + 1] = s:byte(i)
         i += 1
     end
     base64_encode(bytes)
@@ -113,7 +113,7 @@ ws_encode_frame(opcode: i64, payload: any, mask: bool): any
         mask_key = {}
         i = 1
         while i <= 4
-            mask_key[i] = string.byte(key_data, i)
+            mask_key[i] = key_data:byte(i)
             bytes[#bytes + 1] = mask_key[i]
             i += 1
         end
@@ -202,7 +202,7 @@ ws_client_handshake(host: str, port: i64, path: str): str
     key_data = std.crypto.rand.bytes(16)
     i = 1
     while i <= 16
-        key_bytes[i] = string.byte(key_data, i)
+        key_bytes[i] = key_data:byte(i)
         i += 1
     end
     key = base64_encode(key_bytes)
@@ -247,7 +247,7 @@ ws_text_frame(text: str): any
     bytes = {}
     i = 1
     while i <= #text
-        bytes[#bytes + 1] = string.byte(text, i)
+        bytes[#bytes + 1] = text:byte(i)
         i += 1
     end
     ws_encode_frame(OP_TEXT, bytes, false)
@@ -264,7 +264,7 @@ ws_close_frame(code: i64, reason: str): any
     if reason
         i = 1
         while i <= #reason
-            payload[#payload + 1] = string.byte(reason, i)
+            payload[#payload + 1] = reason:byte(i)
             i += 1
         end
     end

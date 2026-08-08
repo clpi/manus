@@ -27,7 +27,7 @@ end
 
 update(state: any, data: str): void
     for i = 1, #data
-        b = string.byte(data, i)
+        b = data:byte(i)
         if state.kind == "fnv1a"
             state.hash = (state.hash ~ b) % (2^32)
             state.hash = (state.hash * fnv_prime32) % (2^32)
@@ -53,7 +53,7 @@ end
 
 update64(state: any, data: str): void
     for i = 1, #data
-        b = string.byte(data, i)
+        b = data:byte(i)
         if state.kind == "fnv1a"
             state.hash_lo = (state.hash_lo ~ b) % (2^32)
         else

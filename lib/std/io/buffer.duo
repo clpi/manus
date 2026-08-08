@@ -35,7 +35,7 @@ buffered_reader_fill(br: any): any
         end
         i = 1
         while i <= #chunk
-            br.buffer[i] = string.byte(chunk, i)
+            br.buffer[i] = chunk:byte(i)
             i += 1
         end
         br.buffer_len = #chunk
@@ -223,7 +223,7 @@ end
 writer_write_string(bw: any, s: str): any
     i = 1
     while i <= #s
-        result = writer_write_byte(bw, string.byte(s, i))
+        result = writer_write_byte(bw, s:byte(i))
         if not result.ok return result end
         i += 1
     end

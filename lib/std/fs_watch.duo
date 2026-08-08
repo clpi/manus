@@ -460,14 +460,14 @@ poll(kq: int, timeout_ms: int): any
             -- Parse ident (bytes 0-7, little-endian u64)
             ident = 0
             for b = 0, 7 do
-                byte_val = string.byte(tmp, b + 1)
+                byte_val = tmp:byte(b + 1)
                 ident = ident | (byte_val << (b * 8))
             end
 
             -- Parse fflags (bytes 12-15, little-endian u32)
             fflags = 0
             for b = 0, 3 do
-                byte_val = string.byte(tmp, 12 + b + 1)
+                byte_val = tmp:byte(12 + b + 1)
                 fflags = fflags | (byte_val << (b * 8))
             end
 
@@ -512,19 +512,19 @@ poll(kq: int, timeout_ms: int): any
             -- wd (4 bytes, little-endian)
             wd = 0
             for b = 0, 3 do
-                wd = wd | (string.byte(data, pos + b) << (b * 8))
+                wd = wd | (data:byte(pos + b) << (b * 8))
             end
 
             -- mask (4 bytes, little-endian)
             mask = 0
             for b = 0, 3 do
-                mask = mask | (string.byte(data, pos + 4 + b) << (b * 8))
+                mask = mask | (data:byte(pos + 4 + b) << (b * 8))
             end
 
             -- len (4 bytes, offset 12, little-endian) — name length
             name_len = 0
             for b = 0, 3 do
-                name_len = name_len | (string.byte(data, pos + 12 + b) << (b * 8))
+                name_len = name_len | (data:byte(pos + 12 + b) << (b * 8))
             end
 
             if wd > 0

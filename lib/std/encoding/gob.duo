@@ -114,11 +114,11 @@ end
 -- decode: internal decoder.
 decode(p: any): any
     if p.pos > #p.s return nil end
-    tag = string.byte(p.s, p.pos)
+    tag = p.s:byte(p.pos)
     p.pos = p.pos + 1
     if tag == TAG_NIL return nil end
     if tag == TAG_BOOL
-        b = string.byte(p.s, p.pos)
+        b = p.s:byte(p.pos)
         p.pos = p.pos + 1
         return b != 0
     end
@@ -127,7 +127,7 @@ decode(p: any): any
     end
     if tag == TAG_FLOAT
         start = p.pos
-        while p.pos <= #p.s and string.byte(p.s, p.pos) != 0
+        while p.pos <= #p.s and p.s:byte(p.pos) != 0
             p.pos = p.pos + 1
         end
         s = string.sub(p.s, start, p.pos - 1)
@@ -169,7 +169,7 @@ end
 decode_int(p: any): i64
     v = 0
     while p.pos <= #p.s
-        b = string.byte(p.s, p.pos)
+        b = p.s:byte(p.pos)
         p.pos = p.pos + 1
         v = v * 256 + b
         if b < 128 break end

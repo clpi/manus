@@ -39,7 +39,7 @@ sha1(s: str): str
         j = 0
         while j < 16
             off = block * 64 + j * 4 + 1
-            w[j + 1] = string.byte(msg, off) * 16777216 + string.byte(msg, off + 1) * 65536 + string.byte(msg, off + 2) * 256 + string.byte(msg, off + 3)
+            w[j + 1] = msg:byte(off) * 16777216 + msg:byte(off + 1) * 65536 + msg:byte(off + 2) * 256 + msg:byte(off + 3)
             w[j + 1] = w[j + 1] % (2^32)
             j += 1
         end
@@ -124,7 +124,7 @@ sha256(s: str): str
         j = 0
         while j < 16
             off = block * 64 + j * 4 + 1
-            w[j + 1] = string.byte(msg, off) * 16777216 + string.byte(msg, off + 1) * 65536 + string.byte(msg, off + 2) * 256 + string.byte(msg, off + 3)
+            w[j + 1] = msg:byte(off) * 16777216 + msg:byte(off + 1) * 65536 + msg:byte(off + 2) * 256 + msg:byte(off + 3)
             w[j + 1] = w[j + 1] % (2^32)
             j += 1
         end

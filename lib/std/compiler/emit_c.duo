@@ -38,7 +38,7 @@ _expr_to_c = (src: str): str
     out = ""
     i: i64 = 1
     while i <= n
-        c: i64 = string.byte(src, i)
+        c: i64 = src:byte(i)
         if c == 94
             -- `^` is exponentiation in Duo and xor in C. Emitting it unchanged
             -- would COMPILE and return the wrong number, which is strictly
@@ -51,12 +51,12 @@ _expr_to_c = (src: str): str
             -- spells that `^`. Position decides, exactly as it does in the
             -- parser and the folder: a `~` after an operand is infix.
             j: i64 = i - 1
-            while j >= 1 and string.byte(src, j) == 32
+            while j >= 1 and src:byte(j) == 32
                 j -= 1
             end
             prev: i64 = 0
             if j >= 1
-                prev = string.byte(src, j)
+                prev = src:byte(j)
             end
             infix = (prev >= 48 and prev <= 57) or prev == 41
                 or (prev >= 97 and prev <= 122) or (prev >= 65 and prev <= 90)

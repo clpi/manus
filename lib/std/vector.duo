@@ -33,7 +33,7 @@ hash32(s: str): i64
     n = #s
     i = 1
     while i <= n
-        h = (h * 33 + string.byte(s, i)) % 4294967296
+        h = (h * 33 + s:byte(i)) % 4294967296
         i = i + 1
     end
     h
@@ -48,7 +48,7 @@ tokens(text: str): any
     i = 1
     cur = ""
     while i <= n
-        c = string.byte(text, i)
+        c = text:byte(i)
         is_digit = c >= 48 and c <= 57
         is_upper = c >= 65 and c <= 90
         is_lower = c >= 97 and c <= 122

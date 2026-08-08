@@ -63,7 +63,7 @@ _fold_once = (src: str): str
     in_comment = false
     i: i64 = 1
     while i <= n
-        c: i64 = string.byte(src, i)
+        c: i64 = src:byte(i)
         if in_comment
             out = out .. string.sub(src, i, i)
             if c == 10
@@ -72,7 +72,7 @@ _fold_once = (src: str): str
             i += 1
         elseif in_long
             out = out .. string.sub(src, i, i)
-            if c == 93 and i + 1 <= n and string.byte(src, i + 1) == 93
+            if c == 93 and i + 1 <= n and src:byte(i + 1) == 93
                 out = out .. "]"
                 in_long = false
                 i += 1
@@ -87,11 +87,11 @@ _fold_once = (src: str): str
                 quote = 0
             end
             i += 1
-        elseif c == 45 and i + 1 <= n and string.byte(src, i + 1) == 45
+        elseif c == 45 and i + 1 <= n and src:byte(i + 1) == 45
             in_comment = true
             out = out .. "--"
             i += 2
-        elseif c == 91 and i + 1 <= n and string.byte(src, i + 1) == 91
+        elseif c == 91 and i + 1 <= n and src:byte(i + 1) == 91
             in_long = true
             out = out .. "[["
             i += 2
@@ -102,7 +102,7 @@ _fold_once = (src: str): str
         else
             prev_ok = true
             if i > 1
-                p2: i64 = string.byte(src, i - 1)
+                p2: i64 = src:byte(i - 1)
                 if (p2 >= 97 and p2 <= 122) or (p2 >= 65 and p2 <= 90) or (p2 >= 48 and p2 <= 57) or p2 == 95 or p2 == 46
                     prev_ok = false
                 end
@@ -117,7 +117,7 @@ _fold_once = (src: str): str
             -- its proofs are the deliverable; the shape can widen behind them.
             after_assign = false
             if i > 2
-                if string.byte(src, i - 1) == 32 and string.byte(src, i - 2) == 61
+                if src:byte(i - 1) == 32 and src:byte(i - 2) == 61
                     after_assign = true
                 end
             end
@@ -125,11 +125,11 @@ _fold_once = (src: str): str
             folded = false
             if starts and prev_ok
                 e: i64 = i
-                while e <= n and _is_expr_byte(string.byte(src, e))
+                while e <= n and _is_expr_byte(src:byte(e))
                     e += 1
                 end
                 e -= 1
-                while e > i and string.byte(src, e) == 32
+                while e > i and src:byte(e) == 32
                     e -= 1
                 end
                 -- and it must end the line, so the run cannot swallow a
@@ -137,7 +137,7 @@ _fold_once = (src: str): str
                 tail_ok = false
                 if e + 1 > n
                     tail_ok = true
-                elseif string.byte(src, e + 1) == 10
+                elseif src:byte(e + 1) == 10
                     tail_ok = true
                 end
                 if tail_ok and e > i

@@ -73,7 +73,7 @@ end
 skip_spaces = (src: str, pos: i64): i64
     n = #src
     i = pos
-    while i <= n and string.byte(src, i) == 32
+    while i <= n and src:byte(i) == 32
         i = i + 1
     end
     i
@@ -91,19 +91,19 @@ parse_factor = (src: str, pos: i64): Res
     if i > n
         return { val = 0, pos = i }
     end
-    c = string.byte(src, i)
+    c = src:byte(i)
     if c == 40
         inner: Res = parse_expr(src, i + 1)
         j = skip_spaces(src, inner.pos)
-        if j <= n and string.byte(src, j) == 41
+        if j <= n and src:byte(j) == 41
             return { val = inner.val, pos = j + 1 }
         end
         return { val = inner.val, pos = j }
     end
     acc = 0
     j = i
-    while j <= n and is_digit(string.byte(src, j)) == 1
-        acc = acc * 10 + string.byte(src, j) - 48
+    while j <= n and is_digit(src:byte(j)) == 1
+        acc = acc * 10 + src:byte(j) - 48
         j = j + 1
     end
     { val = acc, pos = j }
@@ -116,7 +116,7 @@ parse_term = (src: str, pos: i64): Res
     acc = left.val
     i = skip_spaces(src, left.pos)
     while i <= n
-        op = string.byte(src, i)
+        op = src:byte(i)
         if op == 42
             rhs: Res = parse_factor(src, i + 1)
             acc = acc * rhs.val
@@ -141,7 +141,7 @@ parse_expr = (src: str, pos: i64): Res
     acc = left.val
     i = skip_spaces(src, left.pos)
     while i <= n
-        op = string.byte(src, i)
+        op = src:byte(i)
         if op == 43
             rhs: Res = parse_term(src, i + 1)
             acc = acc + rhs.val
@@ -337,7 +337,7 @@ is_member_name = (t: Tok): bool
     if #t.text == 0
         return false
     end
-    c: i64 = string.byte(t.text, 1)
+    c: i64 = t.text:byte(1)
     is_ident_start_byte(c)
 end
 

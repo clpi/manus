@@ -57,7 +57,7 @@ _name16 = (s: str): str
     i: i64 = 1
     while i <= 16
         if i <= #s
-            out = out .. _u8(string.byte(s, i))
+            out = out .. _u8(s:byte(i))
         else
             out = out .. _u8(0)
         end
@@ -99,7 +99,7 @@ object_hex = (symbol: str, code: str): str
     si: i64 = 1
     strtab = strtab .. _u8(95)
     while si <= #symbol
-        strtab = strtab .. _u8(string.byte(symbol, si))
+        strtab = strtab .. _u8(symbol:byte(si))
         si += 1
     end
     strtab = strtab .. _u8(0)

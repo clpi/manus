@@ -23,7 +23,7 @@ read(data: str, pos: any): i64
         if pos[1] > #data
             error("varint: unexpected end of data")
         end
-        byte = string.byte(data, pos[1])
+        byte = data:byte(pos[1])
         pos[1] += 1
         result = result | ((byte & 0x7F) << shift)
         if byte < 0x80
@@ -96,7 +96,7 @@ read_leb128(data: str, pos: any): i64
         if pos[1] > #data
             error("leb128: unexpected end of data")
         end
-        byte = string.byte(data, pos[1])
+        byte = data:byte(pos[1])
         pos[1] += 1
         result = result | ((byte & 0x7F) << shift)
         if byte < 0x80
@@ -131,7 +131,7 @@ read_signed_leb128(data: str, pos: any): i64
         if pos[1] > #data
             error("signed leb128: unexpected end of data")
         end
-        byte = string.byte(data, pos[1])
+        byte = data:byte(pos[1])
         pos[1] += 1
         result = result | ((byte & 0x7F) << shift)
         shift += 7

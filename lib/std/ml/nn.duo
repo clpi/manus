@@ -134,7 +134,7 @@ forward_dropout(layer, x): any
         -- Extract bit from mask bytes
         byte_idx = math.floor(i / 8)
         bit_idx = i % 8
-        mask_byte = string.byte(mask_bytes, byte_idx + 1) or 0
+        mask_byte = mask_bytes:byte(byte_idx + 1) or 0
         bit_set = (mask_byte >> bit_idx) & 1
         if bit_set == 1
             result.data[i] = x.data[i] * scale

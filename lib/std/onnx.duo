@@ -325,7 +325,7 @@ embedding(session: any, text: str): any
     token_ids = {}
     i = 1
     while i <= n
-        token_ids[i] = tonumber(string.byte(text, i))
+        token_ids[i] = tonumber(text:byte(i))
         i += 1
     end
 

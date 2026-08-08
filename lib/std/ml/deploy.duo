@@ -74,7 +74,7 @@ load_safetensors(path: str): any
     header_len = 0
     i = 1
     while i <= 8
-        header_len = header_len + string.byte(len_bytes, i) * (2 ^ ((i - 1) * 8))
+        header_len = header_len + len_bytes:byte(i) * (2 ^ ((i - 1) * 8))
         i += 1
     end
 

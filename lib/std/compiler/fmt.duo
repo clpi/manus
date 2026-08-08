@@ -46,7 +46,7 @@ canonicalize = (src: str): str
         return src
     end
     e: i64 = n
-    while e > 0 and string.byte(src, e) == 10
+    while e > 0 and src:byte(e) == 10
         e -= 1
     end
     if e == 0

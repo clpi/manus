@@ -4,7 +4,7 @@ constant_time_compare(x: str, y: str): bool
     if #x != #y return false end
     v = 0
     for i = 1, #x
-        v = v | (string.byte(x, i) ~ string.byte(y, i))
+        v = v | (x:byte(i) ~ y:byte(i))
     end
     return v == 0
 end

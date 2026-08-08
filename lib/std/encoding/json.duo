@@ -23,7 +23,7 @@ marshal(v: any): str
         i = 1
         while i <= #v
             ch = string.sub(v, i, i)
-            b = string.byte(v, i)
+            b = v:byte(i)
             if ch == "\""
                 out[rawlen(out) + 1] = "\\\""
             elseif ch == "\\"
@@ -78,7 +78,7 @@ marshal(v: any): str
                 j = 1
                 while j <= #k
                     ch = string.sub(k, j, j)
-                    b = string.byte(k, j)
+                    b = k:byte(j)
                     if ch == "\""
                         key_out[rawlen(key_out) + 1] = "\\\""
                     elseif ch == "\\"
@@ -107,7 +107,7 @@ end
 -- skip_ws: skip whitespace in the parser.
 skip_ws(p: any): void
     while p.pos <= #p.s
-        b = string.byte(p.s, p.pos)
+        b = p.s:byte(p.pos)
         if b == 32 or b == 9 or b == 10 or b == 13
             p.pos = p.pos + 1
         else

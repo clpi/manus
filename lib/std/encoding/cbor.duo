@@ -263,7 +263,7 @@ decode_value(data: str, pos: any): any
     if pos[1] > #data
         error("cbor: unexpected end of data")
     end
-    byte = string.byte(data, pos[1])
+    byte = data:byte(pos[1])
     pos[1] += 1
 
     major = math.floor(byte / 32)
@@ -296,33 +296,33 @@ end
 decode_uint(addinfo: i64, data: str, pos: any): i64
     if addinfo < 24 return addinfo end
     if addinfo == 24
-        v = string.byte(data, pos[1])
+        v = data:byte(pos[1])
         pos[1] += 1
         return v
     end
     if addinfo == 25
-        b0 = string.byte(data, pos[1])
-        b1 = string.byte(data, pos[1] + 1)
+        b0 = data:byte(pos[1])
+        b1 = data:byte(pos[1] + 1)
         pos[1] += 2
         return b0 * 256 + b1
     end
     if addinfo == 26
-        b0 = string.byte(data, pos[1])
-        b1 = string.byte(data, pos[1] + 1)
-        b2 = string.byte(data, pos[1] + 2)
-        b3 = string.byte(data, pos[1] + 3)
+        b0 = data:byte(pos[1])
+        b1 = data:byte(pos[1] + 1)
+        b2 = data:byte(pos[1] + 2)
+        b3 = data:byte(pos[1] + 3)
         pos[1] += 4
         return b0 * 16777216 + b1 * 65536 + b2 * 256 + b3
     end
     if addinfo == 27
-        b0 = string.byte(data, pos[1])
-        b1 = string.byte(data, pos[1] + 1)
-        b2 = string.byte(data, pos[1] + 2)
-        b3 = string.byte(data, pos[1] + 3)
-        b4 = string.byte(data, pos[1] + 4)
-        b5 = string.byte(data, pos[1] + 5)
-        b6 = string.byte(data, pos[1] + 6)
-        b7 = string.byte(data, pos[1] + 7)
+        b0 = data:byte(pos[1])
+        b1 = data:byte(pos[1] + 1)
+        b2 = data:byte(pos[1] + 2)
+        b3 = data:byte(pos[1] + 3)
+        b4 = data:byte(pos[1] + 4)
+        b5 = data:byte(pos[1] + 5)
+        b6 = data:byte(pos[1] + 6)
+        b7 = data:byte(pos[1] + 7)
         pos[1] += 8
         hi = b0 * 16777216 + b1 * 65536 + b2 * 256 + b3
         lo = b4 * 16777216 + b5 * 65536 + b6 * 256 + b7
@@ -351,7 +351,7 @@ decode_array(addinfo: i64, data: str, pos: any): any
         arr = {}
         while true
             if pos[1] > #data break end
-            byte = string.byte(data, pos[1])
+            byte = data:byte(pos[1])
             if byte == 0xFF
                 pos[1] += 1
                 break
@@ -376,7 +376,7 @@ decode_map(addinfo: i64, data: str, pos: any): any
         m = {}
         while true
             if pos[1] > #data break end
-            byte = string.byte(data, pos[1])
+            byte = data:byte(pos[1])
             if byte == 0xFF
                 pos[1] += 1
                 break
@@ -406,30 +406,30 @@ decode_special(addinfo: i64, data: str, pos: any): any
     if addinfo == 23 return nil end    -- undefined
     if addinfo == 25
         -- float16
-        b0 = string.byte(data, pos[1])
-        b1 = string.byte(data, pos[1] + 1)
+        b0 = data:byte(pos[1])
+        b1 = data:byte(pos[1] + 1)
         pos[1] += 2
         return decode_float16(b0, b1)
     end
     if addinfo == 26
         -- float32
-        b0 = string.byte(data, pos[1])
-        b1 = string.byte(data, pos[1] + 1)
-        b2 = string.byte(data, pos[1] + 2)
-        b3 = string.byte(data, pos[1] + 3)
+        b0 = data:byte(pos[1])
+        b1 = data:byte(pos[1] + 1)
+        b2 = data:byte(pos[1] + 2)
+        b3 = data:byte(pos[1] + 3)
         pos[1] += 4
         return decode_float32(b0, b1, b2, b3)
     end
     if addinfo == 27
         -- float64
-        b0 = string.byte(data, pos[1])
-        b1 = string.byte(data, pos[1] + 1)
-        b2 = string.byte(data, pos[1] + 2)
-        b3 = string.byte(data, pos[1] + 3)
-        b4 = string.byte(data, pos[1] + 4)
-        b5 = string.byte(data, pos[1] + 5)
-        b6 = string.byte(data, pos[1] + 6)
-        b7 = string.byte(data, pos[1] + 7)
+        b0 = data:byte(pos[1])
+        b1 = data:byte(pos[1] + 1)
+        b2 = data:byte(pos[1] + 2)
+        b3 = data:byte(pos[1] + 3)
+        b4 = data:byte(pos[1] + 4)
+        b5 = data:byte(pos[1] + 5)
+        b6 = data:byte(pos[1] + 6)
+        b7 = data:byte(pos[1] + 7)
         pos[1] += 8
         return decode_float64(b0, b1, b2, b3, b4, b5, b6, b7)
     end

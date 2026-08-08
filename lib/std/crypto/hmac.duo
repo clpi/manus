@@ -21,7 +21,7 @@ hmac(hash_fn: any, key: str, message: str, block_size: i64): str
     outer_pad = ""
     i = 1
     while i <= block_size
-        k = string.byte(key, i)
+        k = key:byte(i)
         inner_pad = inner_pad .. string.char(k ~ 0x36)
         outer_pad = outer_pad .. string.char(k ~ 0x5C)
         i += 1
@@ -73,7 +73,7 @@ equal(a: str, b: str): bool
     result = 0
     i = 1
     while i <= #a
-        result = result | (string.byte(a, i) ~ string.byte(b, i))
+        result = result | (a:byte(i) ~ b:byte(i))
         i += 1
     end
     result == 0

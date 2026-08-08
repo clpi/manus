@@ -42,7 +42,7 @@ _at = (): i64
     if _pos > #_src
         return 0
     end
-    string.byte(_src, _pos)
+    _src:byte(_pos)
 end
 
 _skip_ws = (): void
@@ -79,7 +79,7 @@ _eat = (a: i64, b: i64): bool
     if b == 0
         nxt: i64 = 0
         if _pos + 1 <= #_src
-            nxt = string.byte(_src, _pos + 1)
+            nxt = _src:byte(_pos + 1)
         end
         if a == 60 and nxt == 60
             return false
@@ -93,7 +93,7 @@ _eat = (a: i64, b: i64): bool
     if _pos + 1 > #_src
         return false
     end
-    if string.byte(_src, _pos + 1) != b
+    if _src:byte(_pos + 1) != b
         return false
     end
     _pos += 2
@@ -103,7 +103,7 @@ end
 _number = (): i64
     _skip_ws()
     if _at() == 48 and _pos + 1 <= #_src
-        n2: i64 = string.byte(_src, _pos + 1)
+        n2: i64 = _src:byte(_pos + 1)
         if n2 == 120 or n2 == 88
             _pos += 2
             v: i64 = 0

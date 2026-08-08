@@ -3,11 +3,11 @@
 
 decompress(data: any)
     if data == nil or #data < 2 return "" end
-    cmf = string.byte(data, 1)
-    flg = string.byte(data, 2)
+    cmf = data:byte(1)
+    flg = data:byte(2)
     if cmf % 16 != 8 return "" end
     if (cmf * 256 + flg) % 31 != 0 return "" end
-    dlen = string.byte(data, 2)
+    dlen = data:byte(2)
     if dlen % 32 >= 8 return "" end
     deflate_start = 3
     if deflate_start > #data return "" end

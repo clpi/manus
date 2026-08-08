@@ -2,7 +2,7 @@
 
 is_gzipped(data: any)
     if data == nil or #data < 2 return false end
-    return string.byte(data, 1) == 31 and string.byte(data, 2) == 139
+    return data:byte(1) == 31 and data:byte(2) == 139
 end
 
 gunzip(data: any)

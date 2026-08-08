@@ -37,7 +37,7 @@ end
 
 read_byte(c): i64
     if c.pos > c.len return -1 end
-    b = string.byte(c.data, c.pos)
+    b = c.data:byte(c.pos)
     c.pos = c.pos + 1
     b
 end
