@@ -24739,13 +24739,24 @@ const duo_runtime =
     \\    return lua_val_from_str_len(str + start - 1, (size_t)sublen);
     \\}
     \\
+    \\/* A byte code point carried as a lua number. Casting the double straight
+    \\ * to `char` is undefined once the value exceeds CHAR_MAX, and the folder
+    \\ * turned that into a literal 0 — string.char(200) produced "" while
+    \\ * string.char(127) produced its byte. Land in a wide integer first, then
+    \\ * take the low 8 bits, which is defined for every input. */
+    \\static inline char duo_byte_of_num(lua_Value v) {
+    \\    double d = lua_to_num(v);
+    \\    if (!(d >= -2147483648.0 && d <= 2147483647.0)) return 0;
+    \\    return (char)(unsigned char)(((int32_t)d) & 0xFF);
+    \\}
+    \\
     \\static inline lua_Value lua_str_char(lua_Value a1, lua_Value a2, lua_Value a3, lua_Value a4) {
     \\    int len = 0;
     \\    char buf[5] = {0};
-    \\    if (a1.type != VAL_NIL) buf[len++] = (char)lua_to_num(a1);
-    \\    if (a2.type != VAL_NIL) buf[len++] = (char)lua_to_num(a2);
-    \\    if (a3.type != VAL_NIL) buf[len++] = (char)lua_to_num(a3);
-    \\    if (a4.type != VAL_NIL) buf[len++] = (char)lua_to_num(a4);
+    \\    if (a1.type != VAL_NIL) buf[len++] = duo_byte_of_num(a1);
+    \\    if (a2.type != VAL_NIL) buf[len++] = duo_byte_of_num(a2);
+    \\    if (a3.type != VAL_NIL) buf[len++] = duo_byte_of_num(a3);
+    \\    if (a4.type != VAL_NIL) buf[len++] = duo_byte_of_num(a4);
     \\    return lua_val_from_str_len(buf, (size_t)len);
     \\}
     \\
@@ -24840,7 +24851,7 @@ const duo_runtime =
     \\                duo_fmt_widen_ll(fmtb, spec_len);
     \\                p += sprintf(p, fmtb, (unsigned long long)lua_intval(arg));
     \\            } else if (spec == 'c') {
-    \\                *p++ = (char)lua_to_num(arg);
+    \\                *p++ = duo_byte_of_num(arg);
     \\            } else if (spec == '%') {
     \\                *p++ = '%';
     \\            } else {
