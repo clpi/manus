@@ -2786,6 +2786,16 @@ fn routeThroughDuoLexer(
             return e;
         },
     };
+    // The scan in duo_lexer_dispatch resolves token text against `z_src`, the
+    // NUL-terminated copy the C ABI requires. The parser holds the ORIGINAL
+    // `src`, and srcOffsetOf compares pointers — so text pointing into the copy
+    // is "not in the source" and attribute recovery fails. Rebase onto `src`;
+    // the copy is byte-identical, so the offsets carry over exactly.
+    for (toks) |*tok| {
+        if (tok.text.len == 0) continue;
+        const off = @intFromPtr(tok.text.ptr) - @intFromPtr(z_src.ptr);
+        if (off + tok.text.len <= src.len) tok.text = src[off .. off + tok.text.len];
+    }
     lex.useDuoTokens(toks);
 }
 

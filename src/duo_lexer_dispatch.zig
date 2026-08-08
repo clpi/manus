@@ -99,14 +99,45 @@ pub fn tokenize(
     const tokens = try allocator.alloc(lexer.Token, count);
     errdefer allocator.free(tokens);
 
+    // GAP-022: token text must be a slice INTO THE SOURCE, not into the arena.
+    // The parser recovers absolute offsets by pointer arithmetic against
+    // `tok.text.ptr` (parse_attribute_args), so arena-backed text yields garbage
+    // — index 26286 into a 188-byte file.
+    //
+    // No ABI change is needed to fix it. The field-for-field differential
+    // against src/lexer.zig proves Duo's token text is byte-identical to the
+    // host's, and the host's text IS a source slice — so every token's text is a
+    // literal substring of the source and its offset is recoverable. Tokens
+    // arrive in order, so one forward scan finds each in amortized O(n) without
+    // the lexer publishing anything new.
+    //
+    // The arena is now only the transport buffer the ABI requires; nothing
+    // points into it after this loop.
+    var cursor: usize = 0;
     for (tokens, 0..) |*tok, i| {
         const r = records[i * RECORD_SLOTS ..][0..RECORD_SLOTS];
         const off: usize = @intCast(r[4]);
         const len: usize = @intCast(r[5]);
+        const copied = text_arena.items[off .. off + len];
+
+        // Zero-length text (EOF) has no position to find; anchor it at the
+        // cursor so it still points into the source rather than nowhere.
+        const src_text: []const u8 = if (len == 0)
+            src[cursor..cursor]
+        else if (std.mem.indexOfPos(u8, src, cursor, copied)) |at| blk: {
+            cursor = at + len;
+            break :blk src[at .. at + len];
+        } else
+            // Unreachable while the differential holds. Falling back to the
+            // copy keeps the token CORRECT if it ever stops holding — a wrong
+            // pointer is worse than a non-source one, and the differential is
+            // what catches the latter.
+            copied;
+
         tok.* = .{
             .kind = @enumFromInt(r[0]),
             .loc = .{ .file = file, .line = @intCast(r[1]), .col = @intCast(r[2]) },
-            .text = text_arena.items[off .. off + len],
+            .text = src_text,
             .int_val = r[3],
             .float_val = @bitCast(r[6]),
         };

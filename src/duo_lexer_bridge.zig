@@ -95,6 +95,26 @@ pub const TOKENIZE_EXPORT_PROOF = "examples/pass16_lexer_tokenize_export_proof.d
 /// leg already does through `src/duo_keyword_classify.c` — that precedent, not a
 /// missing capability, is the remaining work.
 pub fn tokenizeAuthority() TokenizeAuthority {
+    // GAP-022 is CLOSED — token text now points into the source and the parser's
+    // offset arithmetic works. Measured with the flag on: the compile-fail suite
+    // is BYTE-IDENTICAL to the host-authority baseline (10 failures, same rows),
+    // parser coverage 256/256, selfhost proofs 12/12, repo-hygiene pass, and
+    // examples/layout_attrs_test.duo — which panicked before — checks clean.
+    //
+    // Still .host_zig for a NARROWER, un-isolated reason, recorded so the next
+    // attempt starts here (GAP-023): with the flag on, two proofs regress —
+    //     examples/pass16_lexer_fingerprint_differential.duo   exit 3
+    //     examples/pass16_lexer_text_differential.duo          exit 3
+    // plus unit tests c_sim_import and native_barrier_checks. Both proofs carry
+    // LEXER CORPUS DATA as string literals, so they are the programs most
+    // sensitive to how the compiler lexes string literals — which is exactly
+    // what changes when the compiler lexes itself with the Duo lexer. That is a
+    // strong hypothesis, NOT a diagnosis; it has not been isolated.
+    //
+    // Everything else is done: artifact linked, dispatch live (verified by
+    // corrupting the stream), field-for-field differential, GAP-017 rejections,
+    // GAP-022 source-slice text. The routing in main.zig stays in place and
+    // inert under .host_zig.
     return .host_zig;
 }
 
