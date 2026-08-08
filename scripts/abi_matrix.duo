@@ -25,8 +25,9 @@
 -- both backends, never by "it compiled" — a bail is reported separately and is
 -- not a failure here, because a refusal is honest and a wrong answer is not.
 --
--- MISCOMPILE_CEILING ratchets DOWNWARD (default 4, the gap[056] family known at
--- filing). Any new wrong answer fails the gate. Fixing one should lower the
+-- MISCOMPILE_CEILING ratchets DOWNWARD. It shipped at 4 -- the gap[056]
+-- family -- and reached 0 the same day, so the gate is now a floor at zero:
+-- ANY wrong answer fails it. Any new wrong answer fails the gate. Fixing one should lower the
 -- ceiling in the same commit, exactly as NATIVE_FLOOR ratchets up.
 
 _sh = (cmd: str): str
@@ -104,7 +105,7 @@ main(): i64
         print(_sh("cat /tmp/duo_abi_matrix/wrong.txt 2>/dev/null"))
     end
 
-    ceiling: i64 = to(i64)(std.script.getenv("MISCOMPILE_CEILING", "4"))
+    ceiling: i64 = to(i64)(std.script.getenv("MISCOMPILE_CEILING", "0"))
     if wrong > ceiling
         print("abi_matrix: FAIL — " .. to(str)(wrong)
             .. " wrong answers exceeds the ceiling " .. to(str)(ceiling))
