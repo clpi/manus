@@ -15,9 +15,15 @@
 --      counting them made a 90% ceiling look like a 61% failure.
 --
 -- So the census reports three numbers, and the RATIO IS OVER THE REACHABLE SET.
--- A program is unreachable when it binds a `std.compiler.*` module at top
--- level: that is the C-emitter-fixture signature, and it is a property of the
--- program's purpose, not of the backend's maturity.
+-- A program is unreachable when it binds a `std.compiler.*` module — EITHER as
+-- `global A = std.compiler.arm64` OR as `L = req "std.compiler.lexer"`. Both
+-- spellings mean the same thing: this program's purpose is exercising the
+-- compiler's own emitter, which is not a native-lowering target.
+--
+-- The `req` spelling was missed at first, and four compiler proofs sat in the
+-- BAIL bucket looking like a worklist row (`mod-top-stmt:global_decl`) when
+-- they were never reachable. A denominator is only honest if its exclusion
+-- rule covers every spelling of the thing being excluded.
 --
 -- NATIVE_FLOOR (default 88) ratchets: a fix raises it, a regression fails the
 -- gate. Exit 0 pass, 1 below the floor, 3 the census could not run.
@@ -43,7 +49,7 @@ _sweep = (): str
         .. "  out=$($duo compile --backend=direct \"$f\" -o /tmp/_census.bin 2>&1); "
         .. "  case \"$out\" in *'ok compile'*) ok=$((ok+1)); continue;; esac; "
         .. "  case \"$out\" in *DNB*) : ;; *) noent=$((noent+1)); continue;; esac; "
-        .. "  if grep -q '^global [A-Za-z_]* = std.compiler\\.' \"$f\"; then "
+        .. "  if grep -qE '^global [A-Za-z_]* = std.compiler\\.|= *req *\"std.compiler' \"$f\"; then "
         .. "    un=$((un+1)); else bail=$((bail+1)); fi; "
         .. "done; echo \"$ok $bail $un $noent\"")
 end
