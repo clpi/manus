@@ -1915,7 +1915,7 @@ const Arm64Compiler = struct {
                     try self.ensureRegLive(r);
                     return r;
                 }
-                return error.UndefinedName;
+                return undefinedAt(@src(), "local", slot);
             },
             .temp => |t| temps.get(t) orelse return undefinedAt(@src(), "temp", t),
             .record => return refuse(@src()),
@@ -2330,7 +2330,10 @@ const Arm64Compiler = struct {
             offs[n] = entry.value_ptr.*.off;
             n += 1;
         }
-        if (n == 0) return error.UndefinedName;
+        // Zero record fields resolved. Naming it matters: this reads as a
+        // missing symbol but is really "the record has no field offsets", and
+        // the two want different fixes.
+        if (n == 0) return undefinedKey(@src(), "record", "no field offsets resolved");
         // Insertion sort (n <= 8).
         var i: usize = 1;
         while (i < n) : (i += 1) {
