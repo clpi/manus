@@ -1,0 +1,206 @@
+-- WASI execution test harness.
+--
+-- Duo replacement for scripts/test_wasm_execution.sh (monoglot census).
+--
+-- For every program below: compile to .wasm via `duo compile --target
+-- wasm32-wasi`, run under wasmtime, assert stdout EXACTLY, and (where wabt is
+-- present) check module structure — memory export, _start export,
+-- wasi_snapshot_preview1 imports, and the absence of the deprecated
+-- __wasi_unstable ABI.
+--
+-- The corpus is .lua and .duo INPUT compiled to wasm, not harness source.
+--
+-- Requirements: wasmtime, and optionally wabt (wasm-validate, wasm-objdump).
+-- Run after `zig build`.
+
+_TMP = "/tmp/duo_wasm_exec_test"
+
+_pass = 0
+_fail = 0
+_skip = 0
+
+_ok(m: str): void
+    print("  PASS: " .. m)
+    _pass = _pass + 1
+end
+
+_bad(m: str): void
+    print("  FAIL: " .. m)
+    _fail = _fail + 1
+end
+
+_skipped(m: str, why: str): void
+    print("  SKIP: " .. m .. " (" .. why .. ")")
+    _skip = _skip + 1
+end
+
+_have(t: str): bool
+    std.script.chomp(std.script.capture("command -v " .. t .. " 2>/dev/null")) != ""
+end
+
+_env_or(n: str, d: str): str
+    v = std.script.getenv_or(n)
+    if v == "" return d end
+    v
+end
+
+_stem(p: str): str
+    std.script.chomp(std.script.capture("basename " .. p .. " | sed 's/\\.[^.]*$//'"))
+end
+
+-- Compile to wasm. Returns the .wasm path, or "" on failure. Compiler stderr
+-- is kept so a failure can name its cause instead of just "compile failed".
+_compile(duo: str, src: str): str
+    w = _TMP .. "/" .. _stem(src) .. ".wasm"
+    if std.script.run(duo .. " compile " .. src .. " --target wasm32-wasi -o " .. w
+        .. " 2>" .. _TMP .. "/err") != 0
+        return ""
+    end
+    if not std.script.fs_exists(w)
+        -- GAP-19's shape: the compiler can report success and write nothing,
+        -- or write the wrong format. Existence is checked separately from the
+        -- exit status for exactly that reason.
+        return ""
+    end
+    w
+end
+
+_contains(hay: str, needle: str): bool
+    std.string.find(hay, needle, 1, true) != nil
+end
+
+_assert_output(duo: str, wasmtime: str, label: str, src: str, expected: str): void
+    if not _have(wasmtime)
+        _skipped(label, "wasmtime not found")
+        return
+    end
+    w = _compile(duo, src)
+    if w == ""
+        head = std.script.chomp(std.script.capture("head -3 " .. _TMP .. "/err 2>/dev/null"))
+        _bad(label .. " — compile failed: " .. head)
+        return
+    end
+    actual = std.script.chomp(std.script.capture(wasmtime .. " run " .. w .. " 2>/dev/null"))
+    if actual == expected
+        _ok(label)
+    else
+        _bad(label .. " — output mismatch")
+        print("      expected: " .. std.string.gsub(expected, "\n", "\\n"))
+        print("      got:      " .. std.string.gsub(actual, "\n", "\\n"))
+    end
+end
+
+_assert_structure(duo: str, wasmtime: str, objdump: str, label: str, src: str): void
+    if not _have(wasmtime)
+        _skipped(label .. " (structure: compile)", "wasmtime not found")
+        return
+    end
+    w = _compile(duo, src)
+    if w == ""
+        _bad(label .. " (structure) — compile failed")
+        return
+    end
+
+    if _have("wasm-validate")
+        if std.script.run("wasm-validate " .. w .. " 2>/dev/null") == 0
+            _ok(label .. " — wasm-validate: well-formed module")
+        else
+            _bad(label .. " — wasm-validate: malformed module")
+        end
+    end
+
+    if not _have(objdump)
+        _skipped(label .. " (structure checks)", "wasm-objdump not found")
+        return
+    end
+
+    d = std.script.capture(objdump .. " -x " .. w .. " 2>/dev/null")
+    if _contains(d, "memory") _ok(label .. " — exports memory")
+    else _bad(label .. " — missing memory export") end
+    if _contains(d, "_start") _ok(label .. " — exports _start")
+    else _bad(label .. " — missing _start export") end
+    if _contains(d, "wasi_snapshot_preview1") _ok(label .. " — imports wasi_snapshot_preview1")
+    else _bad(label .. " — missing wasi_snapshot_preview1 imports") end
+    -- Inverted on purpose: finding this is the FAILURE.
+    if _contains(d, "__wasi_unstable") _bad(label .. " — unexpected __wasi_unstable import")
+    else _ok(label .. " — no deprecated __wasi_unstable ABI") end
+end
+
+main = (): i64
+    duo = _env_or("DUO", "./zig-out/bin/duo")
+    wasmtime = _env_or("WASMTIME", "wasmtime")
+    objdump = _env_or("WASM_OBJDUMP", "wasm-objdump")
+
+    std.script.run("rm -rf " .. _TMP .. " && mkdir -p " .. _TMP)
+
+    print("=== WASI Execution Tests ===")
+
+    -- src, label, expected stdout, and whether to also check module structure.
+    cases = {
+        { "examples/wasm/hello.lua", "hello.lua: print two lines",
+          "hello wasm\nfrom duo!", true },
+        { "examples/wasm/arithmetic.lua", "arithmetic.lua: basic ops",
+          "3\n12\n3\n5\n256\n2", false },
+        { "examples/wasm/strings.lua", "strings.lua: string ops",
+          "hello\n5\nhello world\nHELLO\nhel\nababab", false },
+        { "examples/wasm/tables.lua", "tables.lua: ipairs + numeric for",
+          "10\n20\n30\n15", true },
+        { "examples/wasm/fib.lua", "fib.lua: fib(10)=55 then fib(0..5)",
+          "55\n0\n1\n1\n2\n3\n5", true },
+        { "examples/wasm/typed_fib.duo", "typed_fib.duo: fib(10)=55 fib(15)=610",
+          "55\n610", true },
+        { "examples/wasm/math_funcs.lua", "math_funcs.lua: math stdlib",
+          "42\n5\n2\n3\n4\n4\ninteger\nfloat", false },
+        { "examples/hello.lua", "examples/hello.lua: greet output",
+          "Hello from duo!\nHello, world!", true },
+    }
+
+    for _i, c in cases
+        print("")
+        print("--- " .. c[2] .. " ---")
+        if not std.script.fs_exists(c[1])
+            _bad(c[2] .. " — missing source " .. c[1])
+        else
+            _assert_output(duo, wasmtime, c[2], c[1], c[3])
+            if c[4]
+                _assert_structure(duo, wasmtime, objdump, _stem(c[1]), c[1])
+            end
+        end
+    end
+
+    -- A validate sweep over the WHOLE corpus, not just the eight cases above.
+    -- The named cases assert behaviour; this asserts that nothing in
+    -- examples/wasm/ compiles to a malformed module, including files no case
+    -- mentions — which is how a new example gets covered the day it lands.
+    print("")
+    print("--- wasm-validate sweep over examples/wasm/ ---")
+    if not (_have("wasm-validate") and _have(wasmtime))
+        _skipped("wasm-validate sweep", "wasm-validate or wasmtime not available")
+    else
+        listing = std.script.capture("ls examples/wasm/*.lua examples/wasm/*.duo 2>/dev/null")
+        for _i, line in std.string.split(listing, "\n")
+            src = std.script.chomp(line)
+            if src != ""
+                base = std.script.chomp(std.script.capture("basename " .. src))
+                w = _compile(duo, src)
+                if w == ""
+                    _bad("compile: " .. base)
+                else
+                    if std.script.run("wasm-validate " .. w .. " 2>/dev/null") == 0
+                        _ok("wasm-validate: " .. base)
+                    else
+                        _bad("wasm-validate: " .. base .. " — invalid module")
+                    end
+                end
+            end
+        end
+    end
+
+    print("")
+    print("=== Results: " .. to(str)(_pass) .. " passed, " .. to(str)(_fail) .. " failed, "
+        .. to(str)(_skip) .. " skipped ===")
+    if _fail > 0
+        os.exit(1)
+    end
+    0
+end
