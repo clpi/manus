@@ -207,16 +207,25 @@ pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.
         try func_record_returns.put(alloc, try alloc.dupe(u8, export_name), try alloc.dupe(u8, rec.name));
     }
 
+    var skipped: ?[]const u8 = null;
     for (mod.body.stmts) |*stmt| {
         if (stmt.* != .func_decl) continue;
         const fd = &stmt.func_decl;
         if (!shouldIncludeFuncDecl(fd)) continue;
-        if (!functionEligible(fd, records.items)) continue;
+        // Name the function that was refused. "the counts do not match" is a
+        // true statement about a module and a useless one about a fix: every
+        // one of these bails means exactly one declaration was ineligible, and
+        // which one is the entire finding.
+        if (!functionEligible(fd, records.items)) {
+            if (skipped == null) skipped = if (fd.path.len > 0) fd.path[0] else "?";
+            continue;
+        }
         const f = try lowerFunction(alloc, fd, records.items, &req, &externs, &func_record_returns, &f64_kernels, &module_consts);
         try functions.append(alloc, f);
     }
     if (functions.items.len == 0) return bail(@src());
-    if (functions.items.len != countModuleFunctions(mod)) return bail(@src());
+    if (functions.items.len != countModuleFunctions(mod))
+        return bailWith(@src(), skipped orelse "?");
 
     const result = dnir.Module{
         .functions = try functions.toOwnedSlice(alloc),
@@ -372,6 +381,15 @@ fn functionEligible(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc) bool
     }
     if (!isIntType(fd.func.ret_type) and !isStrType(fd.func.ret_type) and
         !isVoidType(fd.func.ret_type)) return false;
+    // An all-f64 parameter list with an INT return was refused, while the same
+    // parameters with an f64 return were accepted by the branch above. AAPCS
+    // puts floats in v0..v7 and integers in x0..x7 — separate register files —
+    // so the return class and the parameter classes are independent, and there
+    // was never a reason to couple them. `mandel(cx: f64, cy: f64): i64` is the
+    // shape: a float kernel that answers with a count.
+    if (f64AbiParamSlots(fd, recs)) |slots| {
+        if (slots > 0) return slots <= 8;
+    }
     if (fd.func.params.len > 8) return false;
     for (fd.func.params) |p| {
         if (findRecordName(recs, p.typ)) |_| continue;
