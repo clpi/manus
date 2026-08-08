@@ -1788,6 +1788,19 @@ const Arm64Compiler = struct {
             },
             .local => |slot| temps.get(slot) orelse error.UndefinedName,
             .temp => |t| temps.get(t) orelse error.UndefinedName,
+            // An integer immediate in a float position. `(col - WIDTH / 2) *
+            // 3.5 / WIDTH` folds `WIDTH / 2` to an i64 constant and then wants
+            // it as a double; there is no fmov for an arbitrary integer, so it
+            // materializes into a GP register and converts. scvtf already
+            // existed for exactly this and nothing reached it from here.
+            .i64 => |n| blk: {
+                const x = try self.allocReg();
+                try self.emitMovImm(x, n);
+                const d = try self.allocFpReg();
+                try self.emitScvtfFromGpr(d, x);
+                self.releaseReg(x);
+                break :blk d;
+            },
             else => refuse(@src()),
         };
     }
