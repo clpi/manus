@@ -118,7 +118,7 @@ pub fn build(b: *std.Build) void {
     const wasm_bench_step = b.step("wasm-bench", "Run WASM runtime benchmark (wasmtime, wazero, wasm3, iwasm, wasmer, spin)");
     wasm_bench_step.dependOn(&wasm_bench_cmd.step);
 
-    const ml_bench_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_ml_benchmark.sh" });
+    const ml_bench_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/run_ml_benchmark.duo" });
     ml_bench_cmd.setCwd(b.path("."));
     ml_bench_cmd.step.dependOn(b.getInstallStep());
     const ml_bench_step = b.step("ml-bench", "Run ML benchmark suite (Duo vs C)");
