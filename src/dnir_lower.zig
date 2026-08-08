@@ -338,7 +338,8 @@ fn functionEligible(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc) bool
         const slots = f64AbiParamSlots(fd, recs) orelse return false;
         return slots <= 8;
     }
-    if (!isIntType(fd.func.ret_type) and !isStrType(fd.func.ret_type)) return false;
+    if (!isIntType(fd.func.ret_type) and !isStrType(fd.func.ret_type) and
+        !isVoidType(fd.func.ret_type)) return false;
     if (fd.func.params.len > 8) return false;
     for (fd.func.params) |p| {
         if (findRecordName(recs, p.typ)) |_| continue;
@@ -519,6 +520,15 @@ fn lowerFunction(
 
     try lowerBlock(&ctx, &fd.func.body, true);
 
+    // A void body has no tail result to return from, so nothing emitted `ret`
+    // and the backend's "did this function return?" check failed the module.
+    // The value is never read by any caller; it exists so the epilogue runs.
+    if (isVoidType(fd.func.ret_type)) {
+        const ends_in_ret = ctx.instrs.items.len > 0 and
+            ctx.instrs.items[ctx.instrs.items.len - 1].op == .ret;
+        if (!ends_in_ret) try ctx.emit(.{ .op = .ret, .lhs = .{ .i64 = 0 }, .ty = .any });
+    }
+
     var params: std.ArrayList(dnir.Param) = .empty;
     defer params.deinit(alloc);
     for (fd.func.params) |par| {
@@ -576,6 +586,15 @@ fn isIntType(t: ast.TypeExpr) bool {
 
 fn isStrType(t: ast.TypeExpr) bool {
     return t == .named and std.mem.eql(u8, t.named, "str");
+}
+
+/// `: void` — a function that exists for its effects.
+///
+/// Rejecting these made a whole MODULE ineligible, not just the function:
+/// lowerModule requires every function to lower, so one `render(): void`
+/// alongside natively-lowerable helpers bailed the lot (mandelbrot, test_sql).
+fn isVoidType(t: ast.TypeExpr) bool {
+    return t == .named and std.mem.eql(u8, t.named, "void");
 }
 
 /// A tail call that yields nothing — its value is not a result, it is an effect.
