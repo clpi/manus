@@ -50,7 +50,7 @@ main(): i64
     print("  c/h         " .. to(str)(csrc) .. "   bootstrap ledger + fixtures — sanctioned")
     print("  sh/py       " .. to(str)(debt) .. "   DEBT — the number that must reach zero")
 
-    ceiling: i64 = to(i64)(std.script.getenv("CENSUS_FLOOR", "12"))
+    ceiling: i64 = to(i64)(std.script.getenv("CENSUS_FLOOR", "11"))
     if debt > ceiling
         print("language_census: FAIL — sh/py debt " .. to(str)(debt)
             .. " exceeds the ratchet " .. to(str)(ceiling))

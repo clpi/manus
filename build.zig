@@ -57,6 +57,15 @@ pub fn build(b: *std.Build) void {
     const test_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/run_compile_fail_tests.duo" });
     test_cmd.setCwd(b.path("."));
     test_cmd.step.dependOn(b.getInstallStep());
+    // G11 — the language census ratchet. A number nobody runs is a number that
+    // drifts, which is how "no language but Duo" stayed a slogan instead of a
+    // list of twelve files.
+    const census_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/language_census.duo" });
+    census_cmd.setCwd(b.path("."));
+    census_cmd.step.dependOn(b.getInstallStep());
+    const census_step = b.step("language-census", "G11: count tracked non-Duo source; ratchets sh/py debt");
+    census_step.dependOn(&census_cmd.step);
+
     const test_step = b.step("test", "Run all tests (unit + compile-fail)");
     test_step.dependOn(&test_cmd.step);
 
