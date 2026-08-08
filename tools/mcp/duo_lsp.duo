@@ -1,7 +1,7 @@
 #!/usr/bin/env duo
 -- duo-mcp/duo_lsp.duo — MCP server: language intelligence, @comp.* catalog, diagnostics.
 -- Pure Duo (replaces duo_lsp_mcp.py). Run from the Duo repo root:
---   duo run /Users/clp/x/duo-mcp/duo_lsp.duo
+--   duo run <DUO_ROOT>/tools/mcp/duo_lsp.duo
 
 mcp = req "std.mcp"
 shared = req "duo_shared"
@@ -591,7 +591,7 @@ mcp.register_tool("duo_agent_session_start", "Session bootstrap: load coordinati
             "duo_complexity(path='comp.map') to query complexity",
             "duo_next_combinators(path='comp.map') to get suggestions",
             "duo_multiplier_opportunities(file_path='file.duo') to find opportunities",
-            "scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/agent_smoke.duo",
+            "cd " .. sx.getenv("DUO_ROOT", ".") .. " && ./zig-out/bin/duo run scripts/duo_lock.duo -- ./zig-out/bin/duo run scripts/agent_smoke.duo",
         },
         coordination_excerpt = string.sub(coord, 1, 4000),
         canonical_excerpt = string.sub(canon, 1, 2000),

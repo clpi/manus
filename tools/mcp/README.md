@@ -20,18 +20,18 @@ Implementation lives here; `duo/scripts/mcp/` is only a routing README.
   "mcpServers": {
     "duo-bench": {
       "command": "duo",
-      "args": ["run", "/Users/clp/x/duo/scripts/mcp/duo_bench.duo"],
-      "env": { "DUO_ROOT": "/Users/clp/x/duo" }
+      "args": ["run", "<DUO_ROOT>/scripts/mcp/duo_bench.duo"],
+      "env": { "DUO_ROOT": "<DUO_ROOT>" }
     },
     "duo-lsp": {
       "command": "duo",
-      "args": ["run", "/Users/clp/x/duo/scripts/mcp/duo_lsp.duo"],
-      "env": { "DUO_ROOT": "/Users/clp/x/duo" }
+      "args": ["run", "<DUO_ROOT>/scripts/mcp/duo_lsp.duo"],
+      "env": { "DUO_ROOT": "<DUO_ROOT>" }
     },
     "zls": {
       "command": "duo",
-      "args": ["run", "/Users/clp/x/duo/scripts/mcp/zls.duo"],
-      "env": { "DUO_ROOT": "/Users/clp/x/duo" }
+      "args": ["run", "<DUO_ROOT>/scripts/mcp/zls.duo"],
+      "env": { "DUO_ROOT": "<DUO_ROOT>" }
     }
   }
 }
@@ -40,9 +40,9 @@ Implementation lives here; `duo/scripts/mcp/` is only a routing README.
 Or use the entry points here:
 ```json
 {
-  "duo-bench": { "command": "duo", "args": ["run", "/Users/clp/x/duo-mcp/duo_bench.duo"] },
-  "duo-lsp":  { "command": "duo", "args": ["run", "/Users/clp/x/duo-mcp/duo_lsp.duo"] },
-  "zls":      { "command": "duo", "args": ["run", "/Users/clp/x/duo-mcp/zls.duo"] }
+  "duo-bench": { "command": "duo", "args": ["run", "<DUO_ROOT>/tools/mcp/duo_bench.duo"] },
+  "duo-lsp":  { "command": "duo", "args": ["run", "<DUO_ROOT>/tools/mcp/duo_lsp.duo"] },
+  "zls":      { "command": "duo", "args": ["run", "<DUO_ROOT>/tools/mcp/zls.duo"] }
 }
 ```
 

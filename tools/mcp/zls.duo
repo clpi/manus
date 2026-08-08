@@ -1,7 +1,7 @@
 #!/usr/bin/env duo
 -- duo-mcp/zls.duo — MCP server: Zig LSP bridge (zls subprocess).
 -- Pure Duo (replaces zls_mcp.py). Run from the Duo repo root:
---   duo run /Users/clp/x/duo-mcp/zls.duo
+--   duo run <DUO_ROOT>/tools/mcp/zls.duo
 -- Spawns `zls` as a subprocess, forwards MCP tool calls to zls LSP requests.
 
 mcp = req "std.mcp"

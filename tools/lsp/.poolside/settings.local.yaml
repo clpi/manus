@@ -20,4 +20,4 @@ tools:
             - mkdir *
 paths:
     allow:
-        - path: /Users/clp/x/duo/**
+        - path: <DUO_ROOT>/**

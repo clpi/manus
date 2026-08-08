@@ -190,7 +190,7 @@ fun audit_boxing(source: str): any
     fs.write_file(tmp, source)
     -- full path default: "duo" is not on PATH (was the root cause of the 68-char error output).
     -- NOTE: os.getenv(name, default) ignores its 2nd arg (Lua 5.1 runtime) — use sx.getenv.
-    bin = sx.getenv("DUO_BIN", "/Users/clp/x/duo/zig-out/bin/duo")
+    bin = sx.getenv("DUO_BIN", sx.getenv("DUO_ROOT", ".") .. "/zig-out/bin/duo")
     c = sx.capture(bin .. " dump-c " .. tmp .. " 2>&1") or ""
     needles = { ["lua_invoke("] = 1, ["lua_table_get_str_lit("] = 1, ["lua_Value "] = 1, ["lua_table_new("] = 1, ["lua_val_from_"] = 1, ["lua_to_str("] = 1, ["lua_to_int("] = 1 }
     hits_csv = ""

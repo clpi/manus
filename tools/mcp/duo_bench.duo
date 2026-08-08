@@ -1,6 +1,6 @@
 #!/usr/bin/env duo
 -- duo-mcp/duo_bench.duo — MCP server: benchmarks, build gates, perf audit, coordination.
--- Pure Duo. Run from the Duo repo root: duo run /Users/clp/x/duo-mcp/duo_bench.duo
+-- Pure Duo. Run from the Duo repo root: duo run tools/mcp/duo_bench.duo
 
 mcp = req "std.mcp"
 shared = req "duo_shared"
@@ -404,12 +404,12 @@ mcp.register_tool("duo_embed_symbols", {
     fs    = req "std.fs"
     sx    = req "std.script"
     vec   = req "std.vector"
-    ipath = "/Users/clp/x/duo/docs/symbol_index.json"
+    ipath = sx.getenv("DUO_ROOT", ".") .. "/docs/symbol_index.json"
     k     = args.top_k or 10
     sc    = args.scope or "all"
 
     if args.force_rebuild or not fs.exists(ipath)
-        rc = sx.run("cd /Users/clp/x/duo && scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/build_symbol_index.duo -- " .. ipath)
+        rc = sx.run("cd <DUO_ROOT> && cd " .. sx.getenv("DUO_ROOT", ".") .. " && ./zig-out/bin/duo run scripts/duo_lock.duo -- ./zig-out/bin/duo run scripts/build_symbol_index.duo -- " .. ipath)
         if rc ~= 0
             return jm.encode({ error = "symbol index build failed", exit_code = rc })
         end
@@ -493,7 +493,7 @@ mcp.register_tool("duo_semantic_snapshot", {
     },
     required = { "file_path" },
 }, fun(args)
-    cmd = "/Users/clp/x/duo/zig-out/bin/duo sim " .. (args.file_path or "") .. " 2>/dev/null"
+    cmd = sx.getenv("DUO_ROOT", ".") .. "/zig-out/bin/duo sim " .. (args.file_path or "") .. " 2>/dev/null"
     f = io.popen(cmd, "r")
     if f == nil then return "{\"error\":\"popen failed\"}" end
     output = f:read("*a")

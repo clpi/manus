@@ -1,5 +1,5 @@
 ev = req "duo_eval"
-bin = os.getenv("DUO_BIN", "/Users/clp/x/duo/zig-out/bin/duo")
+bin = os.getenv("DUO_BIN", "./zig-out/bin/duo")
 print("bin=[" .. bin .. "]")
 fs = req "std.fs"
 fs.write_file("/tmp/duo_eval_audit.duo", "fun add_i32(a: i32, b: i32): i32 a + b end\n")

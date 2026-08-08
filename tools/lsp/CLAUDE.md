@@ -44,7 +44,7 @@ Add to your editor's LSP config:
 ```json
 {
   "duo": {
-    "command": "/Users/clp/x/duo/zig-out/bin/duo",
+    "command": "<DUO_ROOT>/zig-out/bin/duo",
     "args": ["lsp"],
     "filetypes": ["duo"]
   }

@@ -27,13 +27,13 @@ duo run zls.duo         # Zig compiler source navigation (wraps zls subprocess)
   "mcpServers": {
     "duo-bench": {
       "command": "duo",
-      "args": ["run", "/Users/clp/x/duo-mcp/duo_bench.duo"],
-      "env": { "DUO_ROOT": "/Users/clp/x/duo" }
+      "args": ["run", "<DUO_ROOT>/tools/mcp/duo_bench.duo"],
+      "env": { "DUO_ROOT": "<DUO_ROOT>" }
     },
     "duo-lsp": {
       "command": "duo",
-      "args": ["run", "/Users/clp/x/duo-mcp/duo_lsp.duo"],
-      "env": { "DUO_ROOT": "/Users/clp/x/duo" }
+      "args": ["run", "<DUO_ROOT>/tools/mcp/duo_lsp.duo"],
+      "env": { "DUO_ROOT": "<DUO_ROOT>" }
     }
   }
 }
