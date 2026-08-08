@@ -171,7 +171,7 @@ pub fn proveFactorialTailDemandSema(alloc: std.mem.Allocator) GateError!void {
 pub fn proveDescriptorCallConstructor(alloc: std.mem.Allocator) GateError!void {
     const src =
         \\Point: @{ x: f64, y: f64 }
-        \\Slice = (Element)
+        \\Slice = (Element: any): any
         \\    Element
         \\end
         \\Bytes = Slice(Point)
