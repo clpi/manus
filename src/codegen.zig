@@ -2937,6 +2937,36 @@ pub const CodeGen = struct {
     /// and silently drop every field write. Deliberately NOT scoped to the tail
     /// expression: `lib/std/wasm/ward_mvp_opcodes.duo` has no tail at all and
     /// still exports a table.
+    /// True when any function anywhere in the module lowers a table to the dense
+    /// (native array) representation, so the module needs `duo_dense_runtime`.
+    fn module_has_dense_table(mod: *const ast.Module) bool {
+        return block_has_dense_table(&mod.body, 0);
+    }
+
+    fn block_has_dense_table(blk: *const ast.Block, depth: u8) bool {
+        if (depth > 16) return true; // give up conservatively: emit the helpers
+        for (blk.stmts) |*s| {
+            switch (s.*) {
+                .func_decl => |*fd| {
+                    if (fd.func.dense_tables.len > 0) return true;
+                    if (block_has_dense_table(&fd.func.body, depth + 1)) return true;
+                },
+                .if_stmt => |*is| {
+                    if (block_has_dense_table(&is.then, depth + 1)) return true;
+                    for (is.elseifs) |*ei| if (block_has_dense_table(&ei.body, depth + 1)) return true;
+                    if (is.else_body) |*eb| if (block_has_dense_table(eb, depth + 1)) return true;
+                },
+                .while_loop => |*wl| if (block_has_dense_table(&wl.body, depth + 1)) return true,
+                .repeat_loop => |*rl| if (block_has_dense_table(&rl.body, depth + 1)) return true,
+                .do_block => |*db| if (block_has_dense_table(&db.body, depth + 1)) return true,
+                .num_for => |*nf| if (block_has_dense_table(&nf.body, depth + 1)) return true,
+                .gen_for => |*gf| if (block_has_dense_table(&gf.body, depth + 1)) return true,
+                else => {},
+            }
+        }
+        return false;
+    }
+
     fn module_materializes_table(mod: *const ast.Module) bool {
         for (mod.body.stmts) |*outer| {
             if (outer.* != .assign) continue;
@@ -4203,6 +4233,9 @@ pub const CodeGen = struct {
                         if (std.mem.eql(u8, f.field, "len") and call.args.len == 1) {
                             break :blk self.expr_is_native_scalar(call.args[0]);
                         }
+                        if (std.mem.eql(u8, f.field, "char") and call.args.len == 1) {
+                            break :blk self.expr_is_native_scalar(call.args[0]);
+                        }
                         if (std.mem.eql(u8, f.field, "byte") and call.args.len == 2) {
                             break :blk self.expr_is_native_scalar(call.args[0]) and
                                 self.expr_is_native_scalar(call.args[1]);
@@ -5300,6 +5333,13 @@ pub const CodeGen = struct {
             self.p("    v8i32 one = (v8i32){{1, 1, 1, 1, 1, 1, 1, 1}};\n", .{});
             self.p("    return a * c + b * (one - c);\n", .{});
             self.p("}}\n", .{});
+        }
+        // Emitted ahead of (and independently of) the lua runtime: a dense table
+        // can occur in a native-scalar module that never links the boxed value
+        // representation at all.
+        if (module_has_dense_table(mod)) {
+            self.p("{s}", .{duo_dense_runtime});
+            self.nl();
         }
         if (self.moduleNeedsLuaRuntime()) {
             self.p("#include <locale.h>\n", .{});
@@ -8916,6 +8956,48 @@ pub const CodeGen = struct {
         return false;
     }
 
+    const DenseInfo = struct {
+        is_float: bool,
+        cap: []const u8,
+        cap_safe: bool,
+        fn elem(self: DenseInfo) []const u8 {
+            return if (self.is_float) "double" else "int64_t";
+        }
+        fn sfx(self: DenseInfo) []const u8 {
+            return if (self.is_float) "f64" else "i64";
+        }
+    };
+
+    fn dense_table_info(self: *CodeGen, name: []const u8) DenseInfo {
+        if (self.current_func_body) |fb| {
+            for (fb.dense_tables, 0..) |dt, i| {
+                if (!std.mem.eql(u8, name, dt)) continue;
+                return .{
+                    .is_float = i < fb.dense_table_floats.len and fb.dense_table_floats[i],
+                    .cap = if (i < fb.dense_table_caps.len) fb.dense_table_caps[i] else "0",
+                    .cap_safe = i < fb.dense_table_cap_safe.len and fb.dense_table_cap_safe[i],
+                };
+            }
+        }
+        return .{ .is_float = false, .cap = "0", .cap_safe = false };
+    }
+
+    /// `int64_t* __dt_t` + `int64_t __dtc_t` (its capacity), plus a best-effort
+    /// reservation. The pair is what the bounds-safe accessors in
+    /// `duo_dense_runtime` take; the reservation only avoids reallocs, so an
+    /// unusable cap expression is skipped rather than emitted and mistyped.
+    fn emit_dense_table_decl(self: *CodeGen, name: []const u8, info: DenseInfo, min_slots: usize) E!void {
+        try self.guardNoAlloc("dense_table.alloc");
+        self.pl("{s}* __dt_{s} = NULL; int64_t __dtc_{s} = 0;", .{ info.elem(), name, name });
+        if (info.cap_safe and info.cap.len > 0) {
+            self.ind();
+            self.pl("duo_dt_reserve_{s}(&__dt_{s}, &__dtc_{s}, (int64_t)({s}) + 1);", .{ info.sfx(), name, name, info.cap });
+        } else if (min_slots > 0) {
+            self.ind();
+            self.pl("duo_dt_reserve_{s}(&__dt_{s}, &__dtc_{s}, {d});", .{ info.sfx(), name, name, min_slots + 1 });
+        }
+    }
+
     fn is_dense_table_index(self: *CodeGen, obj: *const ast.Expr) bool {
         if (obj.* != .name) return false;
         const name = obj.name.ident;
@@ -10516,30 +10598,19 @@ pub const CodeGen = struct {
                         }
                     }
                     if (i < ld.inits.len and ld.inits[i].* == .table and self.is_dense_table_name(lname.ident)) {
-                        var t_idx: ?usize = null;
-                        if (self.current_func_body) |fb| {
-                            for (fb.dense_tables, 0..) |dt, dt_idx| {
-                                if (std.mem.eql(u8, lname.ident, dt)) {
-                                    t_idx = dt_idx;
-                                    break;
-                                }
-                            }
-                        }
-                        const is_float = if (t_idx) |idx| self.current_func_body.?.dense_table_floats[idx] else false;
-                        const cap_val = if (t_idx) |idx| self.current_func_body.?.dense_table_caps[idx] else "1000";
-                        const elem_type: []const u8 = if (is_float) "double" else "int64_t";
+                        const info = self.dense_table_info(lname.ident);
+                        const fields = ld.inits[i].table.fields;
                         self.ind();
-                        try self.guardNoAlloc("dense_table.calloc");
-                        self.pl("{s}* __dt_{s} = ({s}*)calloc(({s}) + 1, sizeof({s}));", .{ elem_type, lname.ident, elem_type, cap_val, elem_type });
-                        for (ld.inits[i].table.fields, 0..) |f, f_idx| {
+                        try self.emit_dense_table_decl(lname.ident, info, fields.len);
+                        for (fields, 0..) |f, f_idx| {
                             const val = switch (f) {
                                 .positional => |v| v,
                                 else => break,
                             };
                             self.ind();
-                            self.p("__dt_{s}[{d}] = ", .{ lname.ident, f_idx + 1 });
+                            self.p("duo_dt_set_{s}(&__dt_{s}, &__dtc_{s}, {d}, ", .{ info.sfx(), lname.ident, lname.ident, f_idx + 1 });
                             try self.emit_expr(val);
-                            self.p(";\n", .{});
+                            self.p(");\n", .{});
                         }
                         try self.note_comptime_unavailable(lname.ident);
                         continue;
@@ -10920,32 +10991,20 @@ pub const CodeGen = struct {
                                 }
                             }
                             if (self.is_dense_table_name(name)) {
-                                var t_idx: ?usize = null;
-                                if (self.current_func_body) |fb| {
-                                    for (fb.dense_tables, 0..) |dt, dt_idx| {
-                                        if (std.mem.eql(u8, name, dt)) {
-                                            t_idx = dt_idx;
-                                            break;
-                                        }
-                                    }
-                                }
-                                const is_float = if (t_idx) |idx| self.current_func_body.?.dense_table_floats[idx] else false;
-                                const cap_val = if (t_idx) |idx| self.current_func_body.?.dense_table_caps[idx] else "1000";
-                                const elem_type: []const u8 = if (is_float) "double" else "int64_t";
+                                const info = self.dense_table_info(name);
+                                const fields: []const ast.TableField =
+                                    if (i < as.values.len and as.values[i].* == .table) as.values[i].table.fields else &.{};
                                 try self.note_local_type(name, .any);
-                                try self.guardNoAlloc("dense_table.calloc");
-                                self.p("{s}* __dt_{s} = ({s}*)calloc(({s}) + 1, sizeof({s}));\n", .{ elem_type, name, elem_type, cap_val, elem_type });
-                                if (i < as.values.len and as.values[i].* == .table) {
-                                    for (as.values[i].table.fields, 0..) |f, f_idx| {
-                                        const val = switch (f) {
-                                            .positional => |v| v,
-                                            else => break,
-                                        };
-                                        self.ind();
-                                        self.p("__dt_{s}[{d}] = ", .{ name, f_idx + 1 });
-                                        try self.emit_expr(val);
-                                        self.p(";\n", .{});
-                                    }
+                                try self.emit_dense_table_decl(name, info, fields.len);
+                                for (fields, 0..) |f, f_idx| {
+                                    const val = switch (f) {
+                                        .positional => |v| v,
+                                        else => break,
+                                    };
+                                    self.ind();
+                                    self.p("duo_dt_set_{s}(&__dt_{s}, &__dtc_{s}, {d}, ", .{ info.sfx(), name, name, f_idx + 1 });
+                                    try self.emit_expr(val);
+                                    self.p(");\n", .{});
                                 }
                                 try self.note_comptime_unavailable(name);
                                 continue;
@@ -11100,11 +11159,12 @@ pub const CodeGen = struct {
                             is_table_assign = true;
                             if (idx.obj.* == .name) {
                                 const dt = idx.obj.name.ident;
-                                self.p("__dt_{s}[", .{dt});
-                                try self.emit_expr(idx.key);
-                                self.p("] = ", .{});
+                                const info = self.dense_table_info(dt);
+                                self.p("duo_dt_set_{s}(&__dt_{s}, &__dtc_{s}, ", .{ info.sfx(), dt, dt });
+                                try self.emit_i64_index_key(idx.key);
+                                self.p(", ", .{});
                                 if (i < as.values.len) try self.emit_expr(as.values[i]) else self.p("0", .{});
-                                self.p(";\n", .{});
+                                self.p(");\n", .{});
                             }
                         } else if (self.expr_is_dynamic_table(idx.obj)) {
                             is_table_assign = true;
@@ -13568,9 +13628,10 @@ pub const CodeGen = struct {
                 if (self.is_dense_table_index(idx.obj)) {
                     if (idx.obj.* == .name) {
                         const dt = idx.obj.name.ident;
-                        self.p("__dt_{s}[", .{dt});
-                        try self.emit_expr(idx.key);
-                        self.p("]", .{});
+                        const info = self.dense_table_info(dt);
+                        self.p("duo_dt_get_{s}(__dt_{s}, __dtc_{s}, ", .{ info.sfx(), dt, dt });
+                        try self.emit_i64_index_key(idx.key);
+                        self.p(")", .{});
                         return;
                     }
                 }
@@ -22782,6 +22843,58 @@ fn runtimeMetafieldLitReassignLine(
         \\    {s} = lua_get_metafield_lit({s}, "{s}", {d}u, {d});
     , .{ var_name, obj_expr, lua_mm, hash, lua_mm.len });
 }
+
+/// Backing store for the dense (native array) table representation.
+///
+/// A dense table used to be a bare `calloc(cap + 1)` where `cap` came from a
+/// static guess in sema (`solve_index_bound`, or "the single parameter that
+/// bounds some loop"). When the guess was too small — `life(steps)` guessing
+/// `steps` for a `W*H` grid — every store past it corrupted the heap silently.
+/// That hazard is what kept the detection predicate narrow, which is why almost
+/// no ordinary indexed table code reached the native representation.
+///
+/// These accessors make the representation safe *by construction*: the store
+/// grows geometrically on demand and the load returns 0 for an out-of-range read
+/// (Lua's `nil` coerced to a number, which is what the boxed path yields in the
+/// same arithmetic context). The static cap survives only as a *reservation*, so
+/// getting it wrong costs a realloc, never memory safety.
+const duo_dense_runtime =
+    \\/* --- Duo dense (native array) table backing --- */
+    \\#ifndef DUO_DT_DEFINED
+    \\#define DUO_DT_DEFINED
+    \\#include <stdlib.h>
+    \\#include <string.h>
+    \\#include <stdint.h>
+    \\
+    \\#define DUO_DT_DECL(ty, sfx)                                                  \
+    \\static inline void duo_dt_grow_##sfx(ty** p, int64_t* cap, int64_t need) {    \
+    \\    int64_t c = *cap ? *cap : 8;                                              \
+    \\    while (c < need) c *= 2;                                                  \
+    \\    ty* np = (ty*)realloc(*p, (size_t)c * sizeof(ty));                        \
+    \\    if (!np) return;                                                          \
+    \\    memset(np + *cap, 0, (size_t)(c - *cap) * sizeof(ty));                    \
+    \\    *p = np; *cap = c;                                                        \
+    \\}                                                                             \
+    \\static inline void duo_dt_reserve_##sfx(ty** p, int64_t* cap, int64_t need) { \
+    \\    if (need > *cap) duo_dt_grow_##sfx(p, cap, need);                         \
+    \\}                                                                             \
+    \\static inline void duo_dt_set_##sfx(ty** p, int64_t* cap, int64_t i, ty x) {  \
+    \\    if (__builtin_expect((uint64_t)i >= (uint64_t)*cap, 0)) {                 \
+    \\        if (i < 0) return;                                                    \
+    \\        duo_dt_grow_##sfx(p, cap, i + 1);                                     \
+    \\        if ((uint64_t)i >= (uint64_t)*cap) return;                            \
+    \\    }                                                                         \
+    \\    (*p)[i] = x;                                                              \
+    \\}                                                                             \
+    \\static inline ty duo_dt_get_##sfx(ty* p, int64_t cap, int64_t i) {            \
+    \\    return __builtin_expect((uint64_t)i < (uint64_t)cap, 1) ? p[i] : (ty)0;   \
+    \\}
+    \\DUO_DT_DECL(int64_t, i64)
+    \\DUO_DT_DECL(double, f64)
+    \\#undef DUO_DT_DECL
+    \\#endif
+    \\
+;
 
 const duo_runtime =
     \\/* --- Duo Runtime Support --- */

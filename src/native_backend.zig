@@ -1748,7 +1748,32 @@ const Arm64Compiler = struct {
                 self.releaseDnirTemp(pinned, ins.lhs, base);
                 self.releaseDnirTemp(pinned, ins.rhs, idx);
             } else if (op == .store_index) {
-                return refuse(@src());
+                // Byte-width store: the mirror of the byte load below, sharing
+                // ONE index origin (`base + (i - 1)`) so a raw buffer
+                // normalizes at the lowering instead of giving the backend a
+                // second convention.
+                //
+                // releaseDnirTemp, NOT releaseReg — the same discipline the
+                // scaled path above documents. A base that came from a slot is
+                // still live in `temps`, and string.char emits two stores off
+                // the SAME base: releasing it after the first handed the
+                // register straight to the second store's index constant, and
+                // the write went through an address instead of a pointer.
+                // That was the segfault.
+                const sbase = try self.evalDnirValue(temps, ins.lhs);
+                const sidx = try self.evalDnirValue(temps, ins.rhs);
+                const sval = try self.evalDnirValue(temps, ins.third);
+                const sone = try self.allocReg();
+                try self.emitMovImm(sone, 1);
+                const saddr = try self.allocReg();
+                try self.emitSubReg(saddr, sidx, sone);
+                try self.emitAddReg(saddr, sbase, saddr);
+                self.releaseReg(sone);
+                try self.emitStrb(sval, saddr);
+                self.releaseReg(saddr);
+                self.releaseDnirTemp(pinned, ins.lhs, sbase);
+                self.releaseDnirTemp(pinned, ins.rhs, sidx);
+                self.releaseDnirTemp(pinned, ins.third, sval);
             } else {
                 // `string.byte(s, i)`: Duo indexes strings from 1, C pointers
                 // from 0, so the byte lives at `base + (i - 1)`.
@@ -3282,6 +3307,15 @@ const Arm64Compiler = struct {
             "str x{d}, [x{d}, x{d}, lsl #3]",
             .{ src, base, idx },
         );
+    }
+
+    /// STRB, immediate, unsigned offset — the write half of the pair emitLdrb
+    /// has had all along. Same addressing form: 0x39000000 against LDRB's
+    /// 0x39400000.
+    fn emitStrb(self: *Arm64Compiler, src: u5, base: u5) Error!void {
+        try self.ensureRegLive(base);
+        try self.ensureRegLive(src);
+        try self.emitFmt(0x39000000 | (@as(u32, base) << 5) | @as(u32, src), "strb w{d}, [x{d}]", .{ src, base });
     }
 
     fn emitLdrb(self: *Arm64Compiler, dst: u5, base: u5) Error!void {

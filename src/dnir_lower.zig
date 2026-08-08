@@ -1091,6 +1091,15 @@ fn materializeTableSlots(ctx: *LowerCtx, name: []const u8) Error!u32 {
 fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
     return switch (expr.*) {
         .string_lit => true,
+        // `string.char(n)` PRODUCES a str. Without this the local it binds to
+        // never enters str_slots, so the very next `string.byte(s, 1)` does not
+        // recognize its own argument and falls through to an undefined
+        // `string_byte` symbol — a producer the type tracker does not know
+        // about breaks every consumer downstream.
+        .call => |c| c.func.* == .field and
+            c.func.field.obj.* == .name and
+            std.mem.eql(u8, c.func.field.obj.name.ident, "string") and
+            std.mem.eql(u8, c.func.field.field, "char"),
         .name => |n| blk: {
             const slot = ctx.locals.get(n.ident) orelse break :blk false;
             break :blk ctx.str_slots.contains(slot);
@@ -1797,6 +1806,20 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
             // type argument, store, copy, zero) is a TYPED POINTER surface that
             // needs a pointer type in DNIR; these three do not, and were
             // refused only because `mem` is a runtime global by name.
+            // `string.char(n)` — malloc(2), the character, the NUL. Allocation
+            // was never the blocker; the byte-width STORE was. Indices are
+            // 1-BASED because store_index shares one origin with the byte load.
+            if (std.mem.eql(u8, f.obj.name.ident, "string") and
+                std.mem.eql(u8, f.field, "char") and c.args.len == 1)
+            {
+                const code = try lowerExpr(ctx, c.args[0]);
+                try ensureExtern(ctx, "mem", "alloc", "malloc");
+                const buf = ctx.freshTemp();
+                try ctx.emit(.{ .op = .call_extern, .result = buf, .callee = "malloc", .lhs = .{ .i64 = 2 } });
+                try ctx.emit(.{ .op = .store_index, .ty = .any, .lhs = .{ .temp = buf }, .rhs = .{ .i64 = 1 }, .third = code });
+                try ctx.emit(.{ .op = .store_index, .ty = .any, .lhs = .{ .temp = buf }, .rhs = .{ .i64 = 2 }, .third = .{ .i64 = 0 } });
+                return .{ .temp = buf };
+            }
             if (std.mem.eql(u8, f.obj.name.ident, "mem")) {
                 if (std.mem.eql(u8, f.field, "alloc") and c.args.len == 1) {
                     const n = try lowerExpr(ctx, c.args[0]);
