@@ -9076,6 +9076,31 @@ pub const CodeGen = struct {
         }
     }
 
+    fn func_has_dense_alias(self: *CodeGen) bool {
+        const fb = self.current_func_body orelse return false;
+        for (fb.dense_table_alias) |a| if (a) return true;
+        return false;
+    }
+
+    /// True when `e` reads any dense table of this function. Once an alias
+    /// exists, `expr_references_name(e, dt)` is not enough on its own: `al = g`
+    /// makes `__dt_al` and `__dt_g` the same pointer, so `return al[0]` reading
+    /// after `free(__dt_g)` is a use-after-free that mentions neither `g` nor a
+    /// bare table name. Pointer identity is not knowable statically here, so any
+    /// mention of any dense name suppresses every free — the same trade the
+    /// non-alias case already makes (leak a function-local, bounded allocation
+    /// rather than read freed memory).
+    fn expr_reads_any_dense(self: *CodeGen, e: *const ast.Expr) bool {
+        const fb = self.current_func_body orelse return false;
+        for (fb.dense_tables) |dt| {
+            if (expr_references_name(e, dt)) return true;
+        }
+        if (self.dense_table) |dt| {
+            if (expr_references_name(e, dt)) return true;
+        }
+        return false;
+    }
+
     fn dense_table_is_alias(self: *CodeGen, name: []const u8) bool {
         const fb = self.current_func_body orelse return false;
         for (fb.dense_tables, 0..) |dt, i| {
@@ -10192,8 +10217,11 @@ pub const CodeGen = struct {
             try self.dense_table_names(&all);
             var free_list: std.ArrayList([]const u8) = .empty;
             defer free_list.deinit(self.alloc);
-            for (all.items) |dt| {
-                if (!frees_dense.skip(expr, dt, ret_name)) try free_list.append(self.alloc, dt);
+            const aliased_read = self.func_has_dense_alias() and self.expr_reads_any_dense(expr);
+            if (!aliased_read) {
+                for (all.items) |dt| {
+                    if (!frees_dense.skip(expr, dt, ret_name)) try free_list.append(self.alloc, dt);
+                }
             }
             self.emit_dense_frees(free_list.items);
         }
@@ -11413,8 +11441,22 @@ pub const CodeGen = struct {
                     try self.dense_table_names(&all);
                     var free_list: std.ArrayList([]const u8) = .empty;
                     defer free_list.deinit(self.alloc);
-                    for (all.items) |dt| {
-                        if (!returned_dts.contains(dt)) try free_list.append(self.alloc, dt);
+                    var reads_dense = false;
+                    for (r.vals) |val| {
+                        if (self.expr_reads_any_dense(val)) reads_dense = true;
+                    }
+                    if (!(self.func_has_dense_alias() and reads_dense)) {
+                        for (all.items) |dt| {
+                            if (returned_dts.contains(dt)) continue;
+                            // `return t[1] + t[2]` reads the buffer after this
+                            // point; the bare-name test alone does not see that.
+                            var referenced = false;
+                            for (r.vals) |val| {
+                                if (expr_references_name(val, dt)) referenced = true;
+                            }
+                            if (referenced) continue;
+                            try free_list.append(self.alloc, dt);
+                        }
                     }
                     self.emit_dense_frees(free_list.items);
                 }
