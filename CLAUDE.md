@@ -38,6 +38,9 @@ src/
   pass*.zig             Compiler passes (pass3 = parse, pass4 = boxed IR, pass11 = native, pass12 = semantic)
   tests.zig             Test harness
 lib/std/               Duo standard library (.duo files)
+tools/lsp/             LSP server — 100% Duo (was ~/x/duo-lsp)
+tools/mcp/             MCP servers: duo_bench, duo_lsp, zls — 100% Duo (was ~/x/duo-mcp)
+ext/tree-sitter-duo/   tree-sitter grammar
 examples/              Example .duo programs
 scripts/               Shell scripts for CI gates and benchmarks
 docs/plans/            Active implementation plans (passN_*.md)
@@ -56,6 +59,26 @@ docs/plans/            Active implementation plans (passN_*.md)
 - Pass 12: `docs/plans/pass12_semantic_autonomy.md` — semantic autonomy
 - Pass 13: `docs/plans/pass13_development_control_plane.md` — dev control plane
 - Pass 16: `docs/plans/pass16_self_hosted_compiler.md` — self-hosted compiler supremacy
+
+## Consolidated tooling (2026-08-08)
+
+`duo-lsp` and `duo-mcp` were merged in with `git subtree add` — full history,
+not squashed, so `git log tools/lsp` reaches the original commits. Both were
+already 100% Duo, which the language census confirms: `.duo` went 668 -> 715
+with no new sh/py debt.
+
+They live here because they VERSION-LOCK to the compiler. `duo-mcp` shipped a
+call passing three arguments to a two-argument function — Lua drops the extra
+silently, Duo lowers to a direct C call where it is a hard error. Out of tree
+that surfaces when someone next runs the MCP server; in tree it is caught by
+duo's gates on the commit that changes lowering.
+
+`ward` (~/x/ward) stays SEPARATE on purpose: it is the downstream consumer that
+proves Duo builds real systems software, and it has to build the way any
+external user does — against a released duo binary. Vendoring it would turn
+that evidence into a test fixture. `wart` (~/x/wart) also stays separate: it is
+the Zig reference implementation ward is measured against, and an oracle should
+not share a repo with the thing it validates.
 
 ## Agent coordination
 
