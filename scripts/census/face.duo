@@ -1,0 +1,113 @@
+-- Pass 95 — FACE-CALL, measured.
+--
+-- "Declarations are edges; calls are projections." You declare at the trie
+-- (operation-first) and call at the value (subject-first). A call spelling that
+-- mirrors its declaration is the tell.
+--
+-- The pass names its own vector precisely: agents mirrored declaration
+-- spellings into call positions because THE CORPUS TAUGHT THEM TO --
+-- `read(number)(lx, b)` sat in the golden lexer. That makes this measurable in
+-- a way most style rules are not: the question is whether the five rows of the
+-- taxonomy each have a working spelling, because a row with no working spelling
+-- is a row agents will keep getting wrong no matter what the canon says.
+--
+-- A row is IMPLEMENTED only if the program compiles AND prints the expected
+-- value.
+
+-- Pinned floor: the MEASURED count, never an estimate.
+-- Verified 2026-08-07 at 5/11. Read which rows: the two `to(str)` faces and
+-- `print` pass, and P95-11 passes only because the STRUCK injection form still
+-- compiles. Row 5 -- DECLARATION at the trie -- does not, which means the
+-- asymmetry FACE-CALL states has only its call half in the language today.
+baseline(): i64
+    5
+end
+
+implemented = 0
+checked = 0
+report = ""
+
+bin(): str
+    override = std.os.getenv("DUO_BIN")
+    if override != nil
+        if override != ""
+            return override
+        end
+    end
+    std.script.duo_bin()
+end
+
+probe(src: str, want: str): bool
+    path = "/tmp/duo_p95.duo"
+    std.script.fs_write(path, src)
+    b = bin()                                           -- gap[29] (TMP-1 forced)
+    out = std.script.capture("{b} run {path} 2>/dev/null")   -- gap[34]
+    std.script.chomp(out) == want
+end
+
+live(): bool
+    probe("main(): void\n    print(1 + 2)\nend\n", "3")
+end
+
+record(id: str, src: str, want: str): void
+    checked = checked + 1
+    if probe(src, want)
+        implemented = implemented + 1
+        report = "{report}  ok      {id}\n"
+    else
+        report = "{report}  MISSING {id}\n"
+    end
+end
+
+main(): i64
+    if live() == false
+        print("pass95: HARNESS BROKEN — control did not print 3.")
+        return 2
+    end
+
+    -- ROW 1 — SUBJECT IN HAND. The receiver face, mandatory and (per §3)
+    -- auto-rewritten by L2. This is the row the whole pass is about.
+    record("P95-1 row1 v:to(str)", "main(): void\n    print((42):to(str))\nend\n", "42")
+    record("P95-2 row1 lx:read(n)(b) shape", "lexer: { pos: u32 }\nmain(): void\n    print(\"shape\")\nend\n", "shape")
+    record("P95-3 row1 xs:sort(cmp)", "main(): void\n    xs = { 2, 1 }\n    print(xs:sort()[1])\nend\n", "1")
+    record("P95-4 row1 key:hash()", "main(): void\n    print((\"k\"):hash() != nil)\nend\n", "true")
+
+    -- ROW 2 — CALLABLE AS VALUE. The operation was retrieved, so applying it is
+    -- correct and there is nothing for `:` to resolve through. The pass makes
+    -- this the teaching CONTRAST to row 1, so it must work.
+    record("P95-5 row2 retrieved callable", "main(): void\n    t = @{ [1] = (x: i64): i64 x + 1 }\n    r = t[1]\n    print(r(4))\nend\n", "5")
+
+    -- ROW 3 — PASS POSITION. Bare name / section / lens as an argument.
+    record("P95-6 row3 section arg", "apply(f: any, v: i64): i64\n    f(v)\nend\nmain(): void\n    print(apply(to(str), 42) != nil)\nend\n", "true")
+    record("P95-7 row3 map(to(str))", "main(): void\n    xs = { 1 }\n    print(#xs:map(to(str)))\nend\n", "1")
+
+    -- ROW 4 — WORLD ACTION. The subject is the world and the world is ambient,
+    -- so operands are not subjects and no receiver face exists.
+    record("P95-8 row4 print(x)", "main(): void\n    print(\"world\")\nend\n", "world")
+    record("P95-9 row4 file.open(path)", "main(): void\n    print(file != nil)\nend\n", "true")
+
+    -- ROW 5 — DECLARATION at the trie, operation-first. This row must exist
+    -- for the asymmetry to BE an asymmetry: if only one spelling parses, the
+    -- law is describing a distinction the language cannot make.
+    record("P95-10 row5 to(str)(T) = decl", "point: { x: i64 }\nto(str)(point) = (p) \"pt\"\nmain(): void\n    print(\"declared\")\nend\n", "declared")
+
+    -- THE AMENDMENT: the injection exemption is struck. `sort(items, cmp)` was
+    -- row 1 wearing row 3's clothes. This row asserts the DENIED form is what
+    -- the canon now says it is -- and it currently still compiles, so nothing
+    -- enforces the strike.
+    record("P95-11 struck injection form", "sort(xs: any, cmp: any): i64\n    1\nend\nmain(): void\n    print(sort({ 1 }, nil))\nend\n", "1")
+
+    io.write(report)
+    floor = baseline()                                  -- gap[29] (TMP-1 forced)
+    print("pass95: {implemented}/{checked} implemented (floor {floor})")
+
+    if implemented < floor
+        print("pass95: FAIL — a face row that used to work has regressed")
+        return 1
+    end
+    if implemented > floor
+        print("pass95: forms gained — RAISE baseline() to {implemented}")
+    end
+    print("pass95: PASS")
+    0
+end

@@ -1,0 +1,18 @@
+-- Diagnostic: what does the self-hosted parser actually PRODUCE for a slot
+-- default? A rejection tells you a form failed; it does not tell you where.
+-- This prints the s-expression projection so the failure point is visible
+-- rather than inferred -- the same discipline that caught gap[31].
+
+parser = std.compiler.parser
+
+main(): i64
+    plain = parser.proj_program("p: {\n    x: i64\n}\n", "probe.duo")
+    print("plain:   {plain}")
+
+    slot = parser.proj_program("p: {\n    x: i64 = 42\n}\n", "probe.duo")
+    print("default: {slot}")
+
+    sib = parser.proj_program("lexer: {\n    pos: u32\n    next = () :peek()\n}\n", "probe.duo")
+    print("sibling: {sib}")
+    0
+end
