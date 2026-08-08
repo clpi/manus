@@ -18,6 +18,7 @@
 -- unavailable — a visible SKIP, never a silent pass.
 
 global A = std.compiler.arm64
+global C = std.compiler.arm64check
 
 global ASM = "/tmp/duo_arm64_proof.s"
 global OBJ = "/tmp/duo_arm64_proof.o"
@@ -66,6 +67,20 @@ main(): i64
     if _assemble("ret") == ""
         print("arm64_proof: SKIP — no working assembler")
         return 90
+    end
+
+    -- The 46-encoder differential: every encoder assembled by clang and
+    -- compared word for word. `checked()` is asserted separately because a
+    -- suite that checks NOTHING also reports zero failures -- the confident-zero
+    -- failure mode this repo has shipped before.
+    cr: i64 = C.run()
+    if cr != 0
+        print("arm64_proof: FAIL — arm64check reported a mismatch")
+        return cr
+    end
+    if C.checked() != 50
+        print("arm64_proof: FAIL — arm64check ran the wrong number of cases")
+        return 91
     end
 
     r: i64 = 0
