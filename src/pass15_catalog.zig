@@ -6,7 +6,7 @@ const shell_host = @import("shell_host.zig");
 const pass15_shell_audit = @import("pass15_shell_audit.zig");
 
 pub const SCHEMA_VERSION = "pass15-catalog-v0";
-pub const PLAN_PATH = "docs/plans/pass15_semantic_shell.md";
+pub const PLAN_PATH = "docs/archive/pass15_semantic_shell.md";
 pub const VERTICAL_PROOF_PATH = "examples/pass15_vertical_proof.duo";
 
 pub const Workstream = struct {
@@ -49,7 +49,7 @@ pub const Milestone = struct {
 };
 
 pub const milestones: []const Milestone = &.{
-    .{ .id = "P15-M0", .title = "Plan + catalog + landscape audit + native gate", .status = "done", .owner = "docs/plans/pass15_semantic_shell.md" },
+    .{ .id = "P15-M0", .title = "Plan + catalog + landscape audit + native gate", .status = "done", .owner = "docs/archive/pass15_semantic_shell.md" },
     .{ .id = "P15-M1", .title = "Command descriptor schema + duo.* built-ins", .status = "partial", .owner = "src/command_descriptor.zig" },
     .{ .id = "P15-M2", .title = "Persistent semantic session + canonical export", .status = "partial", .owner = "src/shell_session.zig" },
     .{ .id = "P15-M3", .title = "Cross-platform shell host + explicit shell()", .status = "partial", .owner = "src/shell_host.zig" },

@@ -4,7 +4,7 @@ const command_descriptor = @import("command_descriptor.zig");
 const pass15_catalog = @import("pass15_catalog.zig");
 
 pub const SCHEMA_VERSION = "pass19-catalog-v0";
-pub const PLAN_PATH = "docs/plans/pass19_unified_semantic_experience.md";
+pub const PLAN_PATH = "docs/archive/pass19_unified_semantic_experience.md";
 pub const VERTICAL_PROOF_PATH = "examples/pass19_vertical_proof.duo";
 
 pub const Workstream = struct {

@@ -2,8 +2,8 @@
 const std = @import("std");
 
 pub const SCHEMA_VERSION = "pass26-catalog-v1";
-pub const PLAN_PATH = "docs/plans/pass26_foundational_semantic_closure.md";
-pub const INDEX_PATH = "docs/plans/pass26_closure_index.md";
+pub const PLAN_PATH = "docs/archive/pass26_foundational_semantic_closure.md";
+pub const INDEX_PATH = "docs/archive/pass26_closure_index.md";
 
 pub const Priority = enum {
     immediate,

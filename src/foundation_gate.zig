@@ -21,8 +21,8 @@ pub fn validateFoundationCatalog() GateError!void {
 }
 
 pub fn proveCanonicalDocLinked() GateError!void {
-    if (!std.mem.eql(u8, foundation_catalog.CANONICAL_SPEC_PATH, "docs/plans/duo_self_hosting_foundation.md")) return error.GateFailed;
-    if (!std.mem.eql(u8, foundation_catalog.PLAN_PATH, "docs/plans/self_hosting_foundation.md")) return error.GateFailed;
+    if (!std.mem.eql(u8, foundation_catalog.CANONICAL_SPEC_PATH, "docs/archive/duo_self_hosting_foundation.md")) return error.GateFailed;
+    if (!std.mem.eql(u8, foundation_catalog.PLAN_PATH, "docs/archive/self_hosting_foundation.md")) return error.GateFailed;
     var threaded = std.Io.Threaded.init(std.heap.page_allocator, .{});
     const io = threaded.io();
     const cwd = std.Io.Dir.cwd();

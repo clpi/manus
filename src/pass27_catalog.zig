@@ -2,8 +2,8 @@
 const std = @import("std");
 
 pub const SCHEMA_VERSION = "pass27-catalog-v0";
-pub const PLAN_PATH = "docs/plans/pass27_proof_bundle.md";
-pub const INDEX_PATH = "docs/plans/pass27_proof_index.md";
+pub const PLAN_PATH = "docs/archive/pass27_proof_bundle.md";
+pub const INDEX_PATH = "docs/archive/pass27_proof_index.md";
 
 pub const Priority = enum {
     p0,

@@ -17,8 +17,8 @@
 const std = @import("std");
 
 pub const SCHEMA_VERSION = "pass40-semantic-access-catalog-v2";
-pub const CANONICAL_PATH = "docs/plans/duo_universal_semantic_access.md";
-pub const PLAN_PATH = "docs/plans/pass36_universal_semantic_access.md";
+pub const CANONICAL_PATH = "docs/archive/duo_universal_semantic_access.md";
+pub const PLAN_PATH = "docs/archive/pass36_universal_semantic_access.md";
 
 // ── Semantic levels ───────────────────────────────────────────────────────────
 

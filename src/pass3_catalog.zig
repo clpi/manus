@@ -33,13 +33,13 @@ const pass19_catalog = @import("pass19_catalog.zig");
 const passes_audit = @import("passes_audit.zig");
 
 pub const CatalogPaths = struct {
-    pub const plan = "docs/plans/pass3_directive_grammar_convergence.md";
+    pub const plan = "docs/archive/pass3_directive_grammar_convergence.md";
     pub const keywords = "docs/catalogs/keywords.md";
     pub const directives = "docs/catalogs/directives.md";
     pub const grammar = "docs/catalogs/grammar_compactness.md";
     pub const convergence = "docs/catalogs/convergence.md";
     pub const performance = "docs/catalogs/performance_barriers.md";
-    pub const pass2 = "docs/plans/pass2_foundational_convergence.md";
+    pub const pass2 = "docs/archive/pass2_foundational_convergence.md";
 };
 
 pub const Workstream = struct {

@@ -104,7 +104,7 @@ fn countDone(comptime field: []const u8, items: anytype) usize {
 
 pub fn writePass12Json(w: *std.Io.Writer) !void {
     try w.print(
-        \\"pass12":{{"pass":12,"mission":"Semantic autonomy and proof-carrying AI development","schema":"{s}","plan":"docs/plans/pass12_semantic_autonomy.md","governing_rules":["AI proposes; Duo proves","Reuse existing foundations","Every operation bounded","Claims are semantic objects"],"pass11_prerequisite":"{s}","goals":[
+        \\"pass12":{{"pass":12,"mission":"Semantic autonomy and proof-carrying AI development","schema":"{s}","plan":"docs/archive/pass12_semantic_autonomy.md","governing_rules":["AI proposes; Duo proves","Reuse existing foundations","Every operation bounded","Claims are semantic objects"],"pass11_prerequisite":"{s}","goals":[
     , .{ SCHEMA_VERSION, pass11_catalog.selected_release_profile.name() });
     for (goals, 0..) |g, i| {
         if (i > 0) try w.print(",", .{});

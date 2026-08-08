@@ -3,8 +3,8 @@ const std = @import("std");
 const sim = @import("sim.zig");
 
 pub const CatalogPaths = struct {
-    pub const plan = "docs/plans/pass5_semantic_interchange.md";
-    pub const pass4 = "docs/plans/pass4_native_end_to_end.md";
+    pub const plan = "docs/archive/pass5_semantic_interchange.md";
+    pub const pass4 = "docs/archive/pass4_native_end_to_end.md";
     pub const semantic_universe = "docs/semantic_universe.md";
     pub const milestone_c = "examples/pass5/fixtures/point.h";
     pub const milestone_duo = "examples/pass4_native_milestone.duo";

@@ -11,8 +11,8 @@
 const std = @import("std");
 
 pub const SCHEMA_VERSION = "pass49-sums-protocols-demand-v1";
-pub const CANONICAL_PATH = "docs/plans/duo_sums_protocols_demand.md";
-pub const PLAN_PATH = "docs/plans/pass49_sums_protocols_demand.md";
+pub const CANONICAL_PATH = "docs/archive/duo_sums_protocols_demand.md";
+pub const PLAN_PATH = "docs/archive/pass49_sums_protocols_demand.md";
 
 /// Surface forms this pass is allowed to use. The whole point of Pass 49 is that
 /// this list is closed: a construct carried by anything else is a new production.

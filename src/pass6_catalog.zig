@@ -3,11 +3,11 @@ const std = @import("std");
 const pass4_catalog = @import("pass4_catalog.zig");
 
 pub const CatalogPaths = struct {
-    pub const plan = "docs/plans/pass6_architectural_reconciliation.md";
+    pub const plan = "docs/archive/pass6_architectural_reconciliation.md";
     pub const convergence = "docs/catalogs/convergence.md";
     pub const semantic_universe = "docs/semantic_universe.md";
-    pub const pass2 = "docs/plans/pass2_foundational_convergence.md";
-    pub const pass5 = "docs/plans/pass5_semantic_interchange.md";
+    pub const pass2 = "docs/archive/pass2_foundational_convergence.md";
+    pub const pass5 = "docs/archive/pass5_semantic_interchange.md";
     pub const rejected = "docs/catalogs/rejected_ideas.md";
 };
 

@@ -8,9 +8,9 @@ const transform_engine = @import("transform_engine.zig");
 pub const SCHEMA_VERSION = "pass1-catalog-v0";
 
 pub const CatalogPaths = struct {
-    pub const plan = "docs/plans/pass1_identity.md";
+    pub const plan = "docs/archive/pass1_identity.md";
     pub const semantic_universe = "docs/semantic_universe.md";
-    pub const graph_architecture = "docs/plans/semantic_graph_architecture.md";
+    pub const graph_architecture = "docs/archive/semantic_graph_architecture.md";
     pub const transform_engine = "src/transform_engine.zig";
     pub const meta_dispatch = "src/meta_dispatch.zig";
     pub const semantic_graph = "src/semantic_graph.zig";

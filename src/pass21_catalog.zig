@@ -3,7 +3,7 @@ const std = @import("std");
 const pass21_keyword_registry = @import("pass21_keyword_registry.zig");
 
 pub const SCHEMA_VERSION = "pass21-catalog-v0";
-pub const PLAN_PATH = "docs/plans/pass21_canonical_grammar_closure.md";
+pub const PLAN_PATH = "docs/archive/pass21_canonical_grammar_closure.md";
 pub const GRAMMAR_SPEC = "docs/GRAMMAR_SPEC.md";
 pub const KEYWORD_CATALOG = "docs/catalogs/keywords.md";
 

@@ -10,7 +10,7 @@ const wasm_semantic_gen = @import("wasm_semantic_gen.zig");
 pub const SCHEMA_VERSION = "pass9-catalog-v0";
 
 pub const CatalogPaths = struct {
-    pub const plan = "docs/plans/pass9_ward_readiness.md";
+    pub const plan = "docs/archive/pass9_ward_readiness.md";
     pub const pass8 = pass8_catalog.CatalogPaths.plan;
     pub const ward_repo = "~/x/ward";
     pub const wart_repo = "~/x/wart";

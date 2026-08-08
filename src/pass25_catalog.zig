@@ -2,8 +2,8 @@
 const std = @import("std");
 
 pub const SCHEMA_VERSION = "pass25-catalog-v0";
-pub const PLAN_PATH = "docs/plans/pass25_native_semantic_unification.md";
-pub const INDEX_PATH = "docs/plans/pass25_semantic_unification_index.md";
+pub const PLAN_PATH = "docs/archive/pass25_native_semantic_unification.md";
+pub const INDEX_PATH = "docs/archive/pass25_semantic_unification_index.md";
 
 pub const Workstream = struct {
     id: []const u8,
@@ -16,7 +16,7 @@ pub const Workstream = struct {
 
 /// Pass 25 §28 implementation ordering.
 pub const workstreams: []const Workstream = &.{
-    .{ .id = "P25-WS0", .title = "Constitution + syntax audit + rejected-syntax registry", .status = "partial", .priority = 0, .owner = "docs/plans/pass25_native_semantic_unification.md", .plan_section = "§0–§2, §24" },
+    .{ .id = "P25-WS0", .title = "Constitution + syntax audit + rejected-syntax registry", .status = "partial", .priority = 0, .owner = "docs/archive/pass25_native_semantic_unification.md", .plan_section = "§0–§2, §24" },
     .{ .id = "P25-WS1", .title = "Descriptor construction as ordinary calls", .status = "partial", .priority = 1, .owner = "src/sema.zig + src/types.zig", .plan_section = "§3" },
     .{ .id = "P25-WS2", .title = "No type parameters; stage as call property", .status = "open", .priority = 2, .owner = "src/sema.zig + src/mono.zig", .plan_section = "§4" },
     .{ .id = "P25-WS3", .title = "Tail-assignment return + consumption realization", .status = "partial", .priority = 3, .owner = "src/dnir_lower.zig + src/semantic_graph.zig", .plan_section = "§5" },

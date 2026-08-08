@@ -5,7 +5,7 @@ const selfhosting_matrix = @import("selfhosting_matrix.zig");
 const pass16_selfhost_audit = @import("pass16_selfhost_audit.zig");
 
 pub const SCHEMA_VERSION = "pass16-catalog-v0";
-pub const PLAN_PATH = "docs/plans/pass16_self_hosted_compiler.md";
+pub const PLAN_PATH = "docs/archive/pass16_self_hosted_compiler.md";
 pub const BOOTSTRAP_DOC = "docs/bootstrap.md";
 pub const M1_PROOF_PATH = "examples/pass16_m1_lexer_proof.duo";
 

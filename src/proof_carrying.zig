@@ -23,7 +23,7 @@ pub const seed_capabilities: []const Capability = &.{
     .{ .id = "cap.cli.compile", .description = "CLI compile orchestration", .status = .supported, .owner = "src/main.zig" },
     .{ .id = "cap.cli.backend_direct", .description = "Explicit --backend=direct selection", .status = .partial, .owner = "src/main.zig" },
     .{ .id = "cap.native_backend.arm64", .description = "Direct ARM64 Mach-O subset", .status = .experimental, .owner = "src/native_backend.zig" },
-    .{ .id = "cap.bootstrap.duo_chain", .description = "Zig seed → Duo B → Duo C bootstrap", .status = .planned, .owner = "docs/plans/pass11_release_proof.md" },
+    .{ .id = "cap.bootstrap.duo_chain", .description = "Zig seed → Duo B → Duo C bootstrap", .status = .planned, .owner = "docs/archive/pass11_release_proof.md" },
     .{ .id = "cap.repr.native_scalar", .description = "Full native_scalar module without lua runtime", .status = .partial, .owner = "src/codegen.zig" },
     .{ .id = "cap.bench.c_specialized", .description = "Benchmark profile c-specialized (default)", .status = .partial, .owner = "src/backend_identity.zig" },
     .{ .id = "cap.bench.correctness", .description = "Benchmark RESULT correctness gate", .status = .supported, .owner = "scripts/run_benchmark.sh" },

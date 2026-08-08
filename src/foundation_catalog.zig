@@ -7,8 +7,8 @@ const std = @import("std");
 const ir_layer_registry = @import("ir_layer_registry.zig");
 
 pub const SCHEMA_VERSION = "foundation-catalog-v0";
-pub const CANONICAL_SPEC_PATH = "docs/plans/duo_self_hosting_foundation.md";
-pub const PLAN_PATH = "docs/plans/self_hosting_foundation.md";
+pub const CANONICAL_SPEC_PATH = "docs/archive/duo_self_hosting_foundation.md";
+pub const PLAN_PATH = "docs/archive/self_hosting_foundation.md";
 
 pub const BootstrapStage = struct {
     id: []const u8,

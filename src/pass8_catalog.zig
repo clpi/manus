@@ -7,7 +7,7 @@ const assumption_guard = @import("assumption_guard.zig");
 const evidence_record = @import("evidence_record.zig");
 
 pub const CatalogPaths = struct {
-    pub const plan = "docs/plans/pass8_persistent_semantic_computing.md";
+    pub const plan = "docs/archive/pass8_persistent_semantic_computing.md";
     pub const pass7 = pass7_catalog.CatalogPaths.plan;
     pub const semantic_universe = "docs/semantic_universe.md";
 };

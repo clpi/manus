@@ -3,7 +3,7 @@ const std = @import("std");
 const backend_identity = @import("backend_identity.zig");
 
 pub const SCHEMA_VERSION = "pass27-proof-bundle-v0";
-pub const PLAN_PATH = "docs/plans/pass27_proof_bundle.md";
+pub const PLAN_PATH = "docs/archive/pass27_proof_bundle.md";
 
 /// Mandatory pipeline stages (ecosystem charter proof bundle).
 pub const PipelineStage = enum {

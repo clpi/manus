@@ -93,7 +93,7 @@ fn countCriteriaMet() usize {
 
 pub fn writePass11Json(w: *std.Io.Writer) !void {
     try w.print(
-        \\"pass11":{{"pass":11,"mission":"Canonical compiler closure and release proof","schema":"{s}","release_profile":"{s}","closure_status":"{s}","closure_profile":"{s}","closure_date":"{s}","default_backend":"auto","plan":"docs/plans/pass11_release_proof.md","gate":"scripts/pass11_gate.sh","work_packages":[
+        \\"pass11":{{"pass":11,"mission":"Canonical compiler closure and release proof","schema":"{s}","release_profile":"{s}","closure_status":"{s}","closure_profile":"{s}","closure_date":"{s}","default_backend":"auto","plan":"docs/archive/pass11_release_proof.md","gate":"scripts/pass11_gate.sh","work_packages":[
     , .{ SCHEMA_VERSION, selected_release_profile.name(), closure_status, closure_profile, closure_date });
     for (work_packages, 0..) |wp, i| {
         if (i > 0) try w.print(",", .{});

@@ -2,7 +2,7 @@
 const std = @import("std");
 
 pub const SCHEMA_VERSION = "pass22-catalog-v0";
-pub const PLAN_PATH = "docs/plans/pass22_compiler_architecture_expansion.md";
+pub const PLAN_PATH = "docs/archive/pass22_compiler_architecture_expansion.md";
 
 pub const Workstream = struct {
     id: []const u8,

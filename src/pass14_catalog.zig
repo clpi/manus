@@ -17,7 +17,7 @@ const repo_metrics = @import("repo_metrics.zig");
 const compat_layer_projection = @import("compat_layer_projection.zig");
 
 pub const SCHEMA_VERSION = "pass14-catalog-v0";
-pub const PLAN_PATH = "docs/plans/pass14_constructive_evolution.md";
+pub const PLAN_PATH = "docs/archive/pass14_constructive_evolution.md";
 
 pub const Pillar = struct {
     id: []const u8,

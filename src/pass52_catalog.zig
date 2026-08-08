@@ -11,8 +11,8 @@
 const std = @import("std");
 
 pub const SCHEMA_VERSION = "pass52-no-magic-v1";
-pub const CANONICAL_PATH = "docs/plans/duo_no_magic.md";
-pub const PLAN_PATH = "docs/plans/pass52_no_magic.md";
+pub const CANONICAL_PATH = "docs/archive/duo_no_magic.md";
+pub const PLAN_PATH = "docs/archive/pass52_no_magic.md";
 
 /// The de-magicking test, verbatim. G3 carries this.
 pub const DEMAGICKING_TEST =

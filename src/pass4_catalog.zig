@@ -2,7 +2,7 @@
 const std = @import("std");
 
 pub const CatalogPaths = struct {
-    pub const plan = "docs/plans/pass4_native_end_to_end.md";
+    pub const plan = "docs/archive/pass4_native_end_to_end.md";
     pub const performance = "docs/catalogs/performance_barriers.md";
     pub const bootstrap = "docs/catalogs/bootstrap_dependencies.md";
     pub const milestone = "examples/pass4_native_milestone.duo";

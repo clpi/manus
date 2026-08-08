@@ -5,7 +5,7 @@ const pass13_dev_audit = @import("pass13_dev_audit.zig");
 const presentation_record = @import("presentation_record.zig");
 
 pub const SCHEMA_VERSION = "pass13-catalog-v0";
-pub const PLAN_PATH = "docs/plans/pass13_development_control_plane.md";
+pub const PLAN_PATH = "docs/archive/pass13_development_control_plane.md";
 
 pub const Workstream = struct {
     id: []const u8,

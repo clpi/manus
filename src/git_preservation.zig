@@ -410,7 +410,7 @@ pub fn writePreservationReportJson(w: *std.Io.Writer, report: PreservationReport
 
 test "git_preservation: isValuableUntracked filters caches, keeps source" {
     try std.testing.expect(isValuableUntracked("src/foo.zig"));
-    try std.testing.expect(isValuableUntracked("docs/plans/pass14_constructive_evolution.md"));
+    try std.testing.expect(isValuableUntracked("docs/archive/pass14_constructive_evolution.md"));
     // CLAUDE.md ends in .md -> flagged valuable so it is *noticed*; its
     // disposition (agent-local isolate) is recorded in the salvage registry.
     try std.testing.expect(isValuableUntracked("CLAUDE.md"));

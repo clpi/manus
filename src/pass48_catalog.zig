@@ -11,8 +11,8 @@
 const std = @import("std");
 
 pub const SCHEMA_VERSION = "pass48-canonical-spec-v1";
-pub const CANONICAL_PATH = "docs/plans/duo_canonical_specification.md";
-pub const PLAN_PATH = "docs/plans/pass48_canonical_specification.md";
+pub const CANONICAL_PATH = "docs/archive/duo_canonical_specification.md";
+pub const PLAN_PATH = "docs/archive/pass48_canonical_specification.md";
 
 /// The authority rule, verbatim. Conflicts win *and get recorded*; silence
 /// leaves the source pass normative.

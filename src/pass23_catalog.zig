@@ -3,7 +3,7 @@ const std = @import("std");
 const pass23_protocol_registry = @import("pass23_protocol_registry.zig");
 
 pub const SCHEMA_VERSION = "pass23-catalog-v0";
-pub const PLAN_PATH = "docs/plans/pass23_unified_metaprotocols.md";
+pub const PLAN_PATH = "docs/archive/pass23_unified_metaprotocols.md";
 
 pub const Workstream = struct {
     id: []const u8,
@@ -15,7 +15,7 @@ pub const Workstream = struct {
 
 /// Pass 23 implementation workstreams (repository-grounded).
 pub const workstreams: []const Workstream = &.{
-    .{ .id = "P23-WS0", .title = "Repository truth map + migration inventory", .status = "partial", .priority = 0, .owner = "docs/plans/pass23_unified_metaprotocols.md" },
+    .{ .id = "P23-WS0", .title = "Repository truth map + migration inventory", .status = "partial", .priority = 0, .owner = "docs/archive/pass23_unified_metaprotocols.md" },
     .{ .id = "P23-WS1", .title = "Protocol identity registry (Lua aliases + kernel)", .status = "partial", .priority = 1, .owner = "src/pass23_protocol_registry.zig + src/protocol_kernel.zig + src/codegen.zig" },
     .{ .id = "P23-WS2", .title = "Canonical function syntax (assign + func_expr)", .status = "partial", .priority = 2, .owner = "src/parser.zig" },
     .{ .id = "P23-WS3", .title = "Methods/receiver policy (: vs . assignment)", .status = "partial", .priority = 3, .owner = "src/parser.zig + src/sema.zig" },

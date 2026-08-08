@@ -5,7 +5,7 @@ const contract_model = @import("contract_model.zig");
 const assumption_guard = @import("assumption_guard.zig");
 
 pub const CatalogPaths = struct {
-    pub const plan = "docs/plans/pass7_ai_native_compilation.md";
+    pub const plan = "docs/archive/pass7_ai_native_compilation.md";
     pub const pass6 = pass6_catalog.CatalogPaths.plan;
     pub const semantic_universe = "docs/semantic_universe.md";
     pub const agent_alignment = "docs/AGENT_ALIGNMENT.md";

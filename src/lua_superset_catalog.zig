@@ -6,7 +6,7 @@
 const std = @import("std");
 
 pub const SCHEMA_VERSION = "lua-superset-catalog-v0";
-pub const PLAN_PATH = "docs/plans/pass24_execution_concurrency_lua_supremacy.md";
+pub const PLAN_PATH = "docs/archive/pass24_execution_concurrency_lua_supremacy.md";
 
 /// Syntax classification taxonomy (§1.1).
 pub const SyntaxClass = enum {

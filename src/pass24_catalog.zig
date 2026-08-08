@@ -3,9 +3,9 @@ const std = @import("std");
 const lua_superset_catalog = @import("lua_superset_catalog.zig");
 
 pub const SCHEMA_VERSION = "pass24-catalog-v0";
-pub const PLAN_PATH = "docs/plans/pass24_unified_calls_concurrency_constitution.md";
+pub const PLAN_PATH = "docs/archive/pass24_unified_calls_concurrency_constitution.md";
 pub const COMPAT_MATRIX = "docs/catalogs/lua_superset_compatibility.md";
-pub const INDEX_PATH = "docs/plans/lua_superset_concurrency_supremacy.md";
+pub const INDEX_PATH = "docs/archive/lua_superset_concurrency_supremacy.md";
 
 pub const SyntaxClass = lua_superset_catalog.SyntaxClass;
 
@@ -20,7 +20,7 @@ pub const Workstream = struct {
 
 /// Pass 24 §10 implementation ordering (P0–P9).
 pub const workstreams: []const Workstream = &.{
-    .{ .id = "P24-WS0", .title = "Constitution + ambiguity fixtures registry", .status = "partial", .priority = 0, .owner = "docs/plans/pass24_unified_calls_concurrency_constitution.md", .plan_section = "§0–§2" },
+    .{ .id = "P24-WS0", .title = "Constitution + ambiguity fixtures registry", .status = "partial", .priority = 0, .owner = "docs/archive/pass24_unified_calls_concurrency_constitution.md", .plan_section = "§0–§2" },
     .{ .id = "P24-WS1", .title = "Lua superset P0: long brackets, classification, gates", .status = "partial", .priority = 1, .owner = "src/lua_superset_catalog.zig + lua_superset_gate.zig", .plan_section = "§3" },
     .{ .id = "P24-WS2", .title = "Lua 5.5 corpus + differential reference testing", .status = "open", .priority = 2, .owner = "src/lua_superset_corpus.zig + tests/lua55/", .plan_section = "§3.5" },
     .{ .id = "P24-WS3", .title = "Call architecture: value vs invoke, parenless, command context", .status = "partial", .priority = 3, .owner = "src/pass24_call_model.zig + src/parser.zig", .plan_section = "§2" },

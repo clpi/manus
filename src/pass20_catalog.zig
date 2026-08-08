@@ -3,8 +3,8 @@ const std = @import("std");
 const pass20_import_strength = @import("pass20_import_strength.zig");
 
 pub const SCHEMA_VERSION = "pass20-catalog-v0";
-pub const PLAN_PATH = "docs/plans/pass20_universal_metaprogramming_harness.md";
-pub const FOUNDATION_PASS = "docs/plans/pass5_semantic_interchange.md";
+pub const PLAN_PATH = "docs/archive/pass20_universal_metaprogramming_harness.md";
+pub const FOUNDATION_PASS = "docs/archive/pass5_semantic_interchange.md";
 
 pub const Workstream = struct {
     id: []const u8,

@@ -5,8 +5,8 @@
 //! Human index: docs/catalogs/hpls_barriers.md
 const std = @import("std");
 pub const SCHEMA_VERSION = "pass34-hpls-catalog-v1";
-pub const PLAN_PATH = "docs/plans/duo_hpls_frontier.md";
-pub const CANONICAL_PATH = "docs/plans/duo_hpls_frontier.md";
+pub const PLAN_PATH = "docs/archive/duo_hpls_frontier.md";
+pub const CANONICAL_PATH = "docs/archive/duo_hpls_frontier.md";
 pub const INDEX_PATH = "docs/catalogs/hpls_barriers.md";
 /// The incumbent T8 supersedes: a regex-over-text idiom linter. Per the
 /// convergence rule, T8 closes only when this implementation is deleted.

@@ -244,7 +244,7 @@ pub fn summarizePass1() PassSummary {
 pub fn summarizePass2() PassSummary {
     var counts: StatusCounts = .{};
     for (semantic_algebra.convergence_catalog) |e| countStatus(semantic_algebra.statusName(e.status), &counts);
-    return makeSummary(2, "convergence_algebra", "Foundational convergence — eight algebras unified", .foundation, "docs/plans/pass2_foundational_convergence.md", counts, null, "Export via `duo algebra`");
+    return makeSummary(2, "convergence_algebra", "Foundational convergence — eight algebras unified", .foundation, "docs/archive/pass2_foundational_convergence.md", counts, null, "Export via `duo algebra`");
 }
 
 pub fn summarizePass3() PassSummary {
@@ -303,7 +303,7 @@ pub fn summarizePass11() PassSummary {
     var counts: StatusCounts = .{};
     for (pass11_catalog.work_packages) |wp| countStatus(wp.status, &counts);
     for (pass11_catalog.completion_criteria) |c| countStatus(c.status, &counts);
-    return makeSummary(11, "release_proof", "Canonical compiler closure and release proof (Profile A)", .closure, "docs/plans/pass11_release_proof.md", counts, pass11_catalog.closure_status, "Profile A closed; Profile B WPs deferred");
+    return makeSummary(11, "release_proof", "Canonical compiler closure and release proof (Profile A)", .closure, "docs/archive/pass11_release_proof.md", counts, pass11_catalog.closure_status, "Profile A closed; Profile B WPs deferred");
 }
 
 pub fn summarizePass12() PassSummary {
@@ -312,7 +312,7 @@ pub fn summarizePass12() PassSummary {
     for (pass12_catalog.workstreams) |ws| countStatus(ws.status, &counts);
     for (pass12_catalog.milestones) |m| countStatus(m.status, &counts);
     for (pass12_catalog.success_criteria) |c| countStatus(c.status, &counts);
-    return makeSummary(12, "semantic_autonomy", "Semantic autonomy — proof-carrying transforms, M1/M2 milestones", .active, "docs/plans/pass12_semantic_autonomy.md", counts, null, "M1 done; M2 partial; native gate wired");
+    return makeSummary(12, "semantic_autonomy", "Semantic autonomy — proof-carrying transforms, M1/M2 milestones", .active, "docs/archive/pass12_semantic_autonomy.md", counts, null, "M1 done; M2 partial; native gate wired");
 }
 
 pub fn summarizePass13() PassSummary {

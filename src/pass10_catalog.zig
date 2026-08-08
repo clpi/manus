@@ -6,7 +6,7 @@ const pass10_repo_audit = @import("pass10_repo_audit.zig");
 pub const SCHEMA_VERSION = "pass10-catalog-v0";
 
 pub const CatalogPaths = struct {
-    pub const plan = "docs/plans/pass10_public_repository_readiness.md";
+    pub const plan = "docs/archive/pass10_public_repository_readiness.md";
     pub const pass9 = pass9_catalog.CatalogPaths.plan;
     pub const matrix_owner = "src/pass10_repo_audit.zig";
 };
