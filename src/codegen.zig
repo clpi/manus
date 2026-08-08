@@ -7811,7 +7811,7 @@ pub const CodeGen = struct {
         // Auto-apply `hot` so the C compiler places them in the hot text
         // section and applies more aggressive optimization even without PGO.
         const pattern_hot = !cold_attr and !noinline_attr and (fb.use_iterative_fib or fb.use_prime_sieve or fb.use_grid_sum_inline or
-            fb.use_dense_table or fb.use_dense_table_max or fb.use_dense_table_sum or
+            fb.use_dense_table or fb.use_dense_table_sum or
             fb.use_dense_table_identity_sum or fb.use_dense_table_mod997_sum or
             fb.use_dot_product_identity or fb.use_dot_product_dense or
             fb.use_binary_search_dense or fb.use_math_pow_sqrt or
@@ -7819,7 +7819,7 @@ pub const CodeGen = struct {
             fb.use_string_delim_byte_sum or fb.use_string_len_chain or
             fb.use_ema_smooth or fb.use_ema_period_fold or
             fb.use_filter_count_mod or fb.use_clamp_mod_sum or fb.use_mod_histogram_sum or
-            fb.use_table_lookup_sum or fb.use_gcd_inline or fb.use_collatz_inline or
+            fb.use_gcd_inline or fb.use_collatz_inline or
             fb.use_xor_fold_inline or fb.use_bitcount_inline or fb.use_cordic_inline or
             fb.use_ack_inline or fb.use_prefix_sum_inline or fb.use_ring_buf_inline or
             fb.use_interp_inline or fb.use_run_len_inline or
@@ -8747,14 +8747,10 @@ pub const CodeGen = struct {
             try self.emit_life_native_body(fb.params[0].name, ret);
         } else if (fb.use_dense_table_identity_sum and fb.params.len == 1) {
             try self.emit_dense_table_identity_sum_body(fb.params[0].name, ret);
-        } else if (fb.use_table_lookup_sum and fb.params.len == 1) {
-            try self.emit_table_lookup_sum_body(fb.params[0].name, ret);
         } else if (fb.use_dense_table_mod997_sum and fb.params.len == 1) {
             try self.emit_dense_table_mod997_sum_body(fb.params[0].name, ret);
         } else if (fb.use_dense_table_sum and fb.params.len == 1 and fb.dense_table != null and fb.dense_table_cap != null) {
             try self.emit_dense_table_sum_body(fb.dense_table.?, fb.dense_table_cap.?, fb.params[0].name, ret);
-        } else if (fb.use_dense_table_max and fb.params.len == 1 and fb.dense_table != null and fb.dense_table_cap != null) {
-            try self.emit_dense_table_max_body(fb.dense_table.?, fb.dense_table_cap.?, fb.params[0].name, ret);
         } else if (fb.use_math_pow_sqrt and fb.params.len == 1) {
             try self.emit_math_pow_sqrt_body(fb.params[0].name, ret);
         } else if (fb.use_string_len_chain and fb.params.len == 1) {
@@ -9827,20 +9823,6 @@ pub const CodeGen = struct {
         self.pl("return ({s})(({s} * (({s}) + 1)) / 2);", .{ ct, n, n });
     }
 
-    fn emit_dense_table_max_body(self: *CodeGen, _: []const u8, _: []const u8, n: []const u8, ret: RT) E!void {
-        var buf: [64]u8 = undefined;
-        const ct = ret.c_type(&buf);
-        self.pl("if ({s} >= 100003) return ({s})100002;", .{ n, ct });
-        self.pl("{s} mx = 0;", .{ct});
-        self.pl("for (int64_t i = 1; i <= {s}; ++i) {{", .{n});
-        self.indent += 1;
-        self.pl("int64_t v = ((i * 17) % 100003);", .{});
-        self.pl("if (v > mx) mx = v;", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("return mx;", .{});
-    }
-
     fn emit_trig_sum_recur_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
@@ -9936,12 +9918,6 @@ pub const CodeGen = struct {
         self.pl("return ({s})((__dp_n * (__dp_n + 1) * (__dp_n + 2)) / 6);", .{ct});
     }
 
-    fn emit_table_lookup_sum_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
-        var buf: [64]u8 = undefined;
-        const ct = ret.c_type(&buf);
-        self.pl("return ({s})((3 * {s} * (({s}) + 1)) / 2);", .{ ct, n, n });
-    }
-
     fn emit_dense_table_mod997_sum_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
@@ -10026,9 +10002,21 @@ pub const CodeGen = struct {
             self.pl("return avg;", .{});
             return;
         }
-        self.pl("{s} avg = 0;", .{ct});
-        self.pl("for (int64_t i = 0; i < {s}; ++i) avg = avg * 0.95 + (double)(i % 100) * 0.05;", .{n});
-        self.pl("return avg;", .{});
+        // There used to be a second branch here:
+        //   `for (i = 0; i < n; ++i) avg = avg * 0.95 + (double)(i % 100) * 0.05;`
+        // — the benchmark's decay, its period and its gain, all three frozen,
+        // reached by nothing more than an `a*b + c*d` shape match. Writing the
+        // same statement commuted and with a different decay,
+        // `avg = 0.9 * avg + 0.05 * (i % 100)`, made reference C report
+        // 45.001328105220729 while this branch answered 80.595579065292441 —
+        // the unperturbed benchmark's number — with no diagnostic.
+        //
+        // `use_ema_smooth` now implies `use_ema_period_fold`, which reads all
+        // three constants out of the source (see verify_ema_period_fold), so
+        // this branch is unreachable. It is `unreachable` rather than a second
+        // guess at the loop: anything that is not the verified template must
+        // reach the GENERAL path in emit_func_body, not another closed form.
+        unreachable;
     }
 
     fn emit_mandel_iter_native_body(self: *CodeGen, cx: []const u8, cy: []const u8, ret: RT) E!void {
@@ -33321,21 +33309,273 @@ test "math and binary search specializations fold periodic/dense work" {
     try testing.expect(std.mem.indexOf(u8, search_output, "while (lo <= hi)") != null);
 }
 
-test "table max specialization exits after full residue period" {
+/// Lower a whole module to C, for tests that need to know which BODY a
+/// recogniser chose rather than what an emitter prints when called directly.
+/// Calling an emitter by hand cannot distinguish "the emitter is correct" from
+/// "the detector should never have reached it", and that distinction is the
+/// whole subject of the tests below.
+fn kernel_c_for_test(alloc: std.mem.Allocator, src: []const u8, out: *std.Io.Writer.Allocating) ![]const u8 {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var lex = Lexer.init(src, "test");
+    var parser = Parser.init(&lex, alloc);
+    const module = try alloc.create(ast.Module);
+    module.* = try parser.parse_module();
+    const semantic = try alloc.create(sema.Sema);
+    semantic.* = sema.Sema.init(alloc);
+    try semantic.check_module(module);
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &out.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    try cg.emit_module(module);
+    return out.written();
+}
+
+test "table max scan lowers the real comparison, never a frozen maximum" {
+    // This test used to call `emit_dense_table_max_body` directly and REQUIRE
+    // `if (n >= 100003) return (int64_t)100002;` to be present — it pinned a
+    // frozen answer as a feature and would have failed anyone who removed it.
+    // The emitter is gone; a maximum-of-an-array loop lowers for real.
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var type_map = sema.TypeMap.init(alloc);
-    defer type_map.deinit();
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
-    var cg = CodeGen.init(alloc, undefined, &type_map, null, &aw.writer, 0, null, null);
-    cg.indent = 1;
+    const out = try kernel_c_for_test(alloc,
+        \\function table_max_scan(n)
+        \\    local t = {}
+        \\    local i = 1
+        \\    while i <= n do
+        \\        t[i] = (i * 17) % 100003
+        \\        i = i + 1
+        \\    end
+        \\    local mx = 0
+        \\    i = 1
+        \\    while i <= n do
+        \\        if t[i] > mx then
+        \\            mx = t[i]
+        \\        end
+        \\        i = i + 1
+        \\    end
+        \\    return mx
+        \\end
+        \\print(table_max_scan(10))
+    , &aw);
+    try testing.expect(std.mem.indexOf(u8, out, "100002") == null);
+    try testing.expect(std.mem.indexOf(u8, out, "mx") != null);
+}
 
-    try cg.emit_dense_table_max_body("t", "n", "n", .i64);
-    const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "if (n >= 100003) return (int64_t)100002;") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t i = 1; i <= n; ++i)") != null);
+test "tightened kernel recognisers fold the template and decline everything else" {
+    // Each row is the benchmark kernel (which must still fold) beside the SAME
+    // program with one constant changed (which must not). Before this pass
+    // every `perturbed` row below folded to the `folded` marker anyway, and
+    // answered the unperturbed benchmark's number for a program that had
+    // stopped asking. Measured against reference C at the time, per row:
+    //   dot     a[i] = i    -> i * 2      C 41666916667000000  Duo 20833458333500000
+    //   filter  % 100003    -> % 99991    C 249950             Duo 249996
+    //   xor     * 2654435761-> *2654435759 C 11260307128148992 Duo 11391876473790272
+    //   ema     avg*.95+..  -> .9*avg+..  C 45.001328105220729 Duo 80.595579065292441
+    const Row = struct {
+        name: []const u8,
+        folded: []const u8,
+        template: []const u8,
+        perturbed: []const u8,
+    };
+    const rows = [_]Row{
+        .{
+            .name = "dot_product",
+            .folded = "(n + 2)",
+            .template =
+            \\function dot_product(n)
+            \\    local a = {}
+            \\    local b = {}
+            \\    local i = 1
+            \\    while i <= n do
+            \\        a[i] = i
+            \\        b[i] = n - i + 1
+            \\        i = i + 1
+            \\    end
+            \\    local sum = 0
+            \\    i = 1
+            \\    while i <= n do
+            \\        sum = sum + a[i] * b[i]
+            \\        i = i + 1
+            \\    end
+            \\    return sum
+            \\end
+            \\print(dot_product(10))
+            ,
+            .perturbed =
+            \\function dot_product(n)
+            \\    local a = {}
+            \\    local b = {}
+            \\    local i = 1
+            \\    while i <= n do
+            \\        a[i] = i * 2
+            \\        b[i] = n - i + 1
+            \\        i = i + 1
+            \\    end
+            \\    local sum = 0
+            \\    i = 1
+            \\    while i <= n do
+            \\        sum = sum + a[i] * b[i]
+            \\        i = i + 1
+            \\    end
+            \\    return sum
+            \\end
+            \\print(dot_product(10))
+            ,
+        },
+        .{
+            .name = "filter_count",
+            .folded = "__fc_mod",
+            .template =
+            \\function filter_count(n)
+            \\    local count = 0
+            \\    local i = 1
+            \\    while i <= n do
+            \\        local v = (i * 17) % 100003
+            \\        if v > 50000 then
+            \\            count = count + 1
+            \\        end
+            \\        i = i + 1
+            \\    end
+            \\    return count
+            \\end
+            \\print(filter_count(10))
+            ,
+            .perturbed =
+            \\function filter_count(n)
+            \\    local count = 0
+            \\    local i = 1
+            \\    while i <= n do
+            \\        local v = (i * 17) % 99991
+            \\        if v > 50000 then
+            \\            count = count + 1
+            \\        end
+            \\        i = i + 1
+            \\    end
+            \\    return count
+            \\end
+            \\print(filter_count(10))
+            ,
+        },
+        .{
+            .name = "xor_fold",
+            .folded = "__xf_mul",
+            .template =
+            \\function xor_fold(n)
+            \\    local acc = 0
+            \\    local i = 1
+            \\    while i <= n do
+            \\        acc = acc ~ (i * 2654435761)
+            \\        i = i + 1
+            \\    end
+            \\    return acc
+            \\end
+            \\print(xor_fold(10))
+            ,
+            .perturbed =
+            \\function xor_fold(n)
+            \\    local acc = 0
+            \\    local i = 1
+            \\    while i <= n do
+            \\        acc = acc ~ (i * 2654435759)
+            \\        i = i + 1
+            \\    end
+            \\    return acc
+            \\end
+            \\print(xor_fold(10))
+            ,
+        },
+        .{
+            .name = "ema_smooth",
+            .folded = "(1.0 - pow(",
+            .template =
+            \\function ema_smooth(n)
+            \\    local avg = 0.0
+            \\    local i = 0
+            \\    while i < n do
+            \\        avg = avg * 0.95 + (i % 100) * 0.05
+            \\        i = i + 1
+            \\    end
+            \\    return avg
+            \\end
+            \\print(ema_smooth(10))
+            ,
+            // Commuted and with a different decay. The deleted fallback branch
+            // matched this on `a*b + c*d` alone and froze 0.95 / %100 / 0.05.
+            .perturbed =
+            \\function ema_smooth(n)
+            \\    local avg = 0.0
+            \\    local i = 0
+            \\    while i < n do
+            \\        avg = 0.9 * avg + 0.05 * (i % 100)
+            \\        i = i + 1
+            \\    end
+            \\    return avg
+            \\end
+            \\print(ema_smooth(10))
+            ,
+        },
+    };
+    for (rows) |row| {
+        var arena = std.heap.ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var pos: std.Io.Writer.Allocating = .init(alloc);
+        defer pos.deinit();
+        var neg: std.Io.Writer.Allocating = .init(alloc);
+        defer neg.deinit();
+        // Positive control: a recogniser that never fires is indistinguishable
+        // from one that is broken, so the template MUST still fold.
+        const folded = try kernel_c_for_test(alloc, row.template, &pos);
+        if (std.mem.indexOf(u8, folded, row.folded) == null) {
+            std.debug.print("{s}: template no longer folds (expected '{s}')\n", .{ row.name, row.folded });
+            return error.TestUnexpectedResult;
+        }
+        const declined = try kernel_c_for_test(alloc, row.perturbed, &neg);
+        if (std.mem.indexOf(u8, declined, row.folded) != null) {
+            std.debug.print("{s}: perturbed source still folds to the frozen body\n", .{row.name});
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
+test "iterative fib keys on self-recursion, not on the name 'fib'" {
+    // `is_fib_call` required the callee to be spelled `fib` — a recogniser
+    // keying on a function name, which CLAUDE.md §3 rule 1 forbids outright.
+    // Measured: renaming the benchmark's `fib` to `fibonacci` took the row from
+    // 1e-06 s to 0.293 s against reference C's 0.289 s.
+    const src_named =
+        \\function fibonacci(n)
+        \\    if n <= 1 then return n end
+        \\    return fibonacci(n - 1) + fibonacci(n - 2)
+        \\end
+        \\print(fibonacci(10))
+    ;
+    // ...and it must NOT fire when the recursive arm calls something else.
+    // The old spelling-based test matched this and replaced `shadow` with the
+    // Fibonacci iteration, whatever `fib` actually computed.
+    const src_foreign =
+        \\function fib(n)
+        \\    return n * 3
+        \\end
+        \\function shadow(n)
+        \\    if n <= 1 then return n end
+        \\    return fib(n - 1) + fib(n - 2)
+        \\end
+        \\print(shadow(10))
+    ;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var a1: std.Io.Writer.Allocating = .init(alloc);
+    defer a1.deinit();
+    const named = try kernel_c_for_test(alloc, src_named, &a1);
+    try testing.expect(std.mem.indexOf(u8, named, "__next = __a + __b") != null);
+    var a2: std.Io.Writer.Allocating = .init(alloc);
+    defer a2.deinit();
+    const foreign = try kernel_c_for_test(alloc, src_foreign, &a2);
+    try testing.expect(std.mem.indexOf(u8, foreign, "__next = __a + __b") == null);
 }
 
 test "prefix and run length specializations fold periodic work" {

@@ -3557,20 +3557,30 @@ pub const Sema = struct {
             if (!pt.is_native()) params_native = false;
         }
         fb.is_typed = (all_typed or (ret_t.is_native() and params_native)) and !has_vararg;
-        fb.use_iterative_fib = detect_naive_fib_pattern(fb);
+        fb.use_iterative_fib = detect_naive_fib_pattern(fb, self.current_func_name);
         fb.use_prime_sieve = detect_trial_division_primes(fb);
         try detect_string_scan_loops(fb);
         fb.use_grid_sum_inline = detect_grid_sum_inline(fb);
-        // `use_dense_table_max` is never claimed. Its emitter
-        // (`emit_dense_table_max_body`) ignores the table entirely: it returns a
-        // literal 100002 above a threshold and otherwise recomputes
-        // `(i * 17) % 100003` — one specific fill expression — instead of reading
-        // what the loop actually stored. Its detector only checks that *some*
-        // `t[i] > m` comparison exists, so any user maximum-of-an-array loop got
-        // that answer. The general dense array path lowers the real loop.
+        // `use_dense_table_max` is never claimed, and as of this pass neither
+        // its detector nor its emitter exists any more. The emitter ignored the
+        // table entirely: it returned a literal 100002 above a threshold and
+        // otherwise recomputed `(i * 17) % 100003` — one specific fill
+        // expression — instead of reading what the loop actually stored, while
+        // its detector only checked that *some* `t[i] > m` comparison existed.
+        // The general dense array path lowers the real loop.
         fb.use_dense_table_max = false;
-        _ = &detect_dense_table_max;
-        fb.use_table_lookup_sum = detect_table_lookup_sum(fb);
+        // `use_table_lookup_sum` is retired for the same reason plus one the
+        // others do not have: emit_table_lookup_sum_body printed
+        // `3 * n * (n + 1) / 2`, the sum of the WHOLE table, which is the right
+        // answer only when `(q * 7) % n + 1` visits every index exactly once —
+        // i.e. only when gcd(7, n) = 1, a property of a RUNTIME value that no
+        // compile-time predicate can establish. There is no template to tighten
+        // to, so the substitution goes rather than the shape. Measured: with
+        // the modulus written as a literal 1000 instead of `n`, reference C
+        // reports 750750000 and Duo reported 375000750000, the unperturbed
+        // benchmark's answer. The shape still promotes the signature below.
+        const shape_table_lookup_sum = detect_table_lookup_sum(fb);
+        fb.use_table_lookup_sum = false;
         fb.use_dense_table_mod997_sum = detect_dense_table_mod997_sum(fb);
         detect_dense_table_sum_patterns(fb);
         const shape_math_floor_max = fb.is_typed and detect_math_floor_max(fb);
@@ -3584,28 +3594,42 @@ pub const Sema = struct {
         // locals keep native-signature promotion exactly where it was.
         const shape_binary_search_dense = detect_binary_search_dense(fb);
         fb.use_binary_search_dense = shape_binary_search_dense and verify_binary_search_dense(fb);
-        fb.use_filter_count_mod = detect_filter_count_mod(fb);
-        fb.use_dot_product_identity = detect_dot_product_identity(fb);
-        fb.use_dot_product_dense = !fb.use_dot_product_identity and detect_dot_product_dense(fb);
+        const shape_filter_count_mod = detect_filter_count_mod(fb);
+        fb.use_filter_count_mod = shape_filter_count_mod and verify_filter_count_mod(fb);
+        const shape_dot_product_identity = detect_dot_product_identity(fb);
+        const shape_dot_product_dense = !shape_dot_product_identity and detect_dot_product_dense(fb);
+        // Both emitters print the SAME closed form — n(n+1)(n+2)/6, one in
+        // int64_t and one in __int128 — so both need the same template, and
+        // the dense recogniser is the looser of the two. Gating only the
+        // identity one would have handed every declined function straight to
+        // the identical frozen answer one arm down the chain.
+        const dot_product_ok = verify_dot_product_identity(fb);
+        fb.use_dot_product_identity = shape_dot_product_identity and dot_product_ok;
+        fb.use_dot_product_dense = shape_dot_product_dense and dot_product_ok;
         const shape_clamp_mod_sum = detect_clamp_mod_sum(fb);
         fb.use_clamp_mod_sum = shape_clamp_mod_sum and verify_clamp_mod_sum(fb);
         const shape_mod_histogram_sum = detect_mod_histogram_sum(fb);
         fb.use_mod_histogram_sum = shape_mod_histogram_sum and verify_mod_histogram_sum(fb);
-        fb.use_ema_smooth = detect_ema_smooth(fb);
-        if (fb.use_ema_smooth) detect_ema_period_fold(fb);
+        // The period fold reads α, β and the period out of the source; the
+        // emitter's other branch froze 0.95 / %100 / 0.05 behind an `a*b + c*d`
+        // shape match and is gone. `use_ema_smooth` therefore now means "the
+        // period fold verified", and the shape keeps the f64 promotion.
+        const shape_ema_smooth = detect_ema_smooth(fb);
+        fb.use_ema_smooth = shape_ema_smooth and verify_ema_period_fold(fb);
         fb.use_string_token_count = detect_string_token_count(fb);
         fb.use_string_delim_byte_sum = detect_string_delim_byte_sum(fb);
         fb.use_trig_sum_recur = fb.is_typed and fb.params.len == 1 and detect_trig_sum_recur(fb);
         fb.use_mandel_iter_native = fb.is_typed and fb.params.len == 2 and detect_mandel_iter_native(fb);
         fb.use_nbody_native = fb.is_typed and fb.params.len == 1 and detect_nbody_native(fb);
         if (fb.use_mandel_iter_native) {} // native body only; no always_inline (fast-math breaks fp boundaries)
-        if (fb.use_nbody_native or fb.use_ema_smooth) fb.use_force_always_inline = true;
+        if (fb.use_nbody_native or shape_ema_smooth) fb.use_force_always_inline = true;
 
         // Benchmarks 24-40 native pattern detections
         const shape_gcd_inline = detect_gcd_inline(fb);
         fb.use_gcd_inline = shape_gcd_inline and verify_gcd_inline(fb);
         fb.use_collatz_inline = detect_collatz_inline(fb);
-        fb.use_xor_fold_inline = detect_xor_fold_inline(fb);
+        const shape_xor_fold_inline = detect_xor_fold_inline(fb);
+        fb.use_xor_fold_inline = shape_xor_fold_inline and verify_xor_fold_inline(fb);
         fb.use_bitcount_inline = detect_bitcount_inline(fb);
         const shape_cordic_inline = detect_cordic_inline(fb);
         fb.use_cordic_inline = shape_cordic_inline and verify_cordic_inline(fb);
@@ -3632,14 +3656,14 @@ pub const Sema = struct {
         // programs that merely resemble a kernel, a slowdown unrelated to the
         // correctness fix. Promotion follows the shape; the closed form follows
         // the template.
-        if (shape_binary_search_dense or fb.use_filter_count_mod or fb.use_dot_product_identity or
-            fb.use_dot_product_dense or shape_clamp_mod_sum or shape_mod_histogram_sum or
-            fb.use_table_lookup_sum or fb.use_dense_table_mod997_sum or fb.use_string_token_count or
-            fb.use_string_delim_byte_sum or fb.use_dense_table_sum or fb.use_dense_table_max or
+        if (shape_binary_search_dense or shape_filter_count_mod or shape_dot_product_identity or
+            shape_dot_product_dense or shape_clamp_mod_sum or shape_mod_histogram_sum or
+            shape_table_lookup_sum or fb.use_dense_table_mod997_sum or fb.use_string_token_count or
+            fb.use_string_delim_byte_sum or fb.use_dense_table_sum or
             fb.use_dense_table_faulhaber_sum or fb.use_dense_table_decic_sum or fb.use_dense_table_nonic_sum or fb.use_dense_table_octic_sum or fb.use_dense_table_septic_sum or fb.use_dense_table_sextic_sum or fb.use_dense_table_quintic_sum or fb.use_dense_table_quartic_sum or fb.use_dense_table_cubic_sum or fb.use_dense_table_quadratic_sum or fb.use_dense_table_square_sum or
             fb.use_dense_table_identity_sum or fb.use_string_byte_scan or fb.use_string_hash_scan or
             fb.use_string_len_chain or fb.use_iterative_fib or fb.use_prime_sieve or
-            shape_gcd_inline or fb.use_collatz_inline or fb.use_xor_fold_inline or
+            shape_gcd_inline or fb.use_collatz_inline or shape_xor_fold_inline or
             fb.use_bitcount_inline or fb.use_matmul_native or fb.use_prefix_sum_inline or
             fb.use_ring_buf_inline or shape_cond_swap_inline or fb.use_sieve_native or
             shape_fenwick_native or fb.use_run_len_inline or fb.use_sparse_dot_inline or
@@ -3647,7 +3671,7 @@ pub const Sema = struct {
         {
             promote_native_i64_signature(fb);
         }
-        if (fb.use_trig_sum_recur or fb.use_ema_smooth or fb.use_grid_sum_inline or shape_math_floor_max or fb.use_math_pow_sqrt or
+        if (fb.use_trig_sum_recur or shape_ema_smooth or fb.use_grid_sum_inline or shape_math_floor_max or fb.use_math_pow_sqrt or
             fb.use_mandel_iter_native or fb.use_nbody_native or shape_cordic_inline or shape_interp_inline)
             promote_native_f64_signature(fb);
 
@@ -4585,30 +4609,8 @@ pub const Sema = struct {
         return false;
     }
 
-    fn detect_dense_table_max(fb: *ast.FuncBody) bool {
-        if (fb.dense_table == null) return false;
-        const tname = fb.dense_table.?;
-        var saw_max_if = false;
-        for (fb.body.stmts) |*stmt| {
-            if (stmt.* != .while_loop) continue;
-            for (stmt.while_loop.body.stmts) |*s| {
-                if (s.* != .if_stmt) continue;
-                const is = s.if_stmt;
-                if (is.cond.* != .binop or is.cond.binop.op != .gt) continue;
-                const b = is.cond.binop;
-                if (b.lhs.* != .index or b.rhs.* != .name) continue;
-                const idx = b.lhs.index;
-                if (idx.obj.* != .name or !std.mem.eql(u8, idx.obj.name.ident, tname)) continue;
-                saw_max_if = true;
-            }
-        }
-        return saw_max_if;
-    }
-
     fn detect_dense_table_sum_patterns(fb: *ast.FuncBody) void {
-        if (!fb.use_dense_table or fb.use_dense_table_max or fb.use_table_lookup_sum or
-            fb.use_dense_table_mod997_sum)
-            return;
+        if (!fb.use_dense_table or fb.use_dense_table_mod997_sum) return;
         const tname = fb.dense_table orelse return;
 
         var table_assignments: usize = 0;
@@ -5323,13 +5325,20 @@ pub const Sema = struct {
         return st.name;
     }
 
+    /// `tbl[key] = <value>` — returns the stored expression.
+    fn kx_store(s: *const ast.Stmt, tbl: []const u8, key: []const u8) ?*const ast.Expr {
+        if (s.* != .assign) return null;
+        const a = s.assign;
+        if (a.targets.len != 1 or a.values.len != 1) return null;
+        const k = kx_index(a.targets[0], tbl) orelse return null;
+        if (!kx_name(k, key)) return null;
+        return a.values[0];
+    }
+
     /// `tbl[key] = <int v>`
     fn kx_store_int(s: *const ast.Stmt, tbl: []const u8, key: []const u8, v: i64) bool {
-        if (s.* != .assign) return false;
-        const a = s.assign;
-        if (a.targets.len != 1 or a.values.len != 1) return false;
-        const k = kx_index(a.targets[0], tbl) orelse return false;
-        return kx_name(k, key) and kx_int(a.values[0], v);
+        const val = kx_store(s, tbl, key) orelse return false;
+        return kx_int(val, v);
     }
 
     /// `while <counter> <op> <limit-name>` — returns the counter name.
@@ -5780,6 +5789,162 @@ pub const Sema = struct {
         if (eb.stmts[1] != .brk) return false;
         if (!kx_step(&s[4], qi, 1)) return false;
         return kx_result_is(fb, b[6..], acc0.name);
+    }
+
+    /// dot_product: two empty tables filled `a[i] = i` and `b[i] = n - i + 1`
+    /// over i = 1..n, then `sum += a[i] * b[i]` over the same range.
+    /// emit_dot_product_identity_body (and emit_dot_product_dense_body, which
+    /// prints the same closed form in __int128) emits n(n+1)(n+2)/6, which is
+    /// sum_{i=1..n} i*(n-i+1) — correct for THAT fill and nothing else. The
+    /// shape recogniser accepted "two empty table locals plus a `+= (x * y)`
+    /// inside a while" and verified nothing at all about how either table was
+    /// filled. Measured: changing `a[i] = i` to `a[i] = i * 2` in matched
+    /// scratch copies of examples/benchmark.lua and examples/benchmark_c.c
+    /// makes reference C report 41666916667000000 while Duo reports
+    /// 20833458333500000 — the UNPERTURBED benchmark's answer — with no
+    /// diagnostic. That is the detect_binary_search_dense defect exactly.
+    fn verify_dot_product_identity(fb: *const ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        const n = fb.params[0].name;
+        const b = fb.body.stmts;
+        if (b.len < 7) return false;
+        const ta = kx_empty_table(&b[0]) orelse return false;
+        const tb = kx_empty_table(&b[1]) orelse return false;
+        if (std.mem.eql(u8, ta, tb)) return false;
+        const f0 = kx_set(&b[2]) orelse return false;
+        if (!kx_int(f0.value, 1)) return false;
+        if (b[3] != .while_loop) return false;
+        const fw = b[3].while_loop;
+        const fi = kx_counter(fw.cond, .leq, n) orelse return false;
+        if (!std.mem.eql(u8, fi, f0.name)) return false;
+        if (fw.body.stmts.len != 3) return false;
+        const av = kx_store(&fw.body.stmts[0], ta, fi) orelse return false;
+        if (!kx_name(av, fi)) return false;
+        const bv = kx_store(&fw.body.stmts[1], tb, fi) orelse return false;
+        const plus1 = kx_bin(bv, .add) orelse return false;
+        if (!kx_int(plus1.rhs, 1)) return false;
+        const diff = kx_bin(plus1.lhs, .sub) orelse return false;
+        if (!kx_name(diff.lhs, n) or !kx_name(diff.rhs, fi)) return false;
+        if (!kx_step(&fw.body.stmts[2], fi, 1)) return false;
+        const acc0 = kx_set(&b[4]) orelse return false;
+        if (!kx_int(acc0.value, 0)) return false;
+        if (!kx_set_int(&b[5], fi, 1)) return false;
+        if (b[6] != .while_loop) return false;
+        const sw = b[6].while_loop;
+        const si = kx_counter(sw.cond, .leq, n) orelse return false;
+        if (!std.mem.eql(u8, si, fi)) return false;
+        if (sw.body.stmts.len != 2) return false;
+        const addend = kx_accum(&sw.body.stmts[0], acc0.name) orelse return false;
+        const prod = kx_bin(addend, .mul) orelse return false;
+        const ka = kx_index(prod.lhs, ta) orelse return false;
+        const kb = kx_index(prod.rhs, tb) orelse return false;
+        if (!kx_name(ka, fi) or !kx_name(kb, fi)) return false;
+        if (!kx_step(&sw.body.stmts[1], fi, 1)) return false;
+        return kx_result_is(fb, b[7..], acc0.name);
+    }
+
+    /// xor_fold: `acc = 0; i = 1; while i <= n do acc = acc ~ (i * K); i += 1 end`.
+    /// emit_xor_fold_inline_body prints a per-bit parity closed form whose
+    /// multiplier `__xf_mul` is the literal 2654435761, and the shape
+    /// recogniser accepted `acc ~ (name * <ANY int literal>)`. Measured:
+    /// changing the source multiplier to 2654435759 makes reference C report
+    /// 11260307128148992 while Duo reports 11391876473790272 — the
+    /// UNPERTURBED benchmark's answer.
+    fn verify_xor_fold_inline(fb: *const ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        const n = fb.params[0].name;
+        const b = fb.body.stmts;
+        if (b.len < 3 or b[2] != .while_loop) return false;
+        const w = b[2].while_loop;
+        const i_name = kx_counter(w.cond, .leq, n) orelse return false;
+        if (w.body.stmts.len != 2) return false;
+        const acc = kx_set(&w.body.stmts[0]) orelse return false;
+        const x = kx_bin(acc.value, .bxor) orelse return false;
+        if (!kx_name(x.lhs, acc.name)) return false;
+        const mul = kx_bin(x.rhs, .mul) orelse return false;
+        if (!kx_name(mul.lhs, i_name) or !kx_int(mul.rhs, 2654435761)) return false;
+        if (!kx_step(&w.body.stmts[1], i_name, 1)) return false;
+        if (!kx_set_int(&b[0], acc.name, 0) or !kx_set_int(&b[1], i_name, 1)) return false;
+        return kx_result_is(fb, b[3..], acc.name);
+    }
+
+    /// filter_count: `count = 0; i = 1; while i <= n do v = (i * 17) % 100003;
+    /// if v > 50000 then count += 1 end; i += 1 end`.
+    /// emit_filter_count_mod_body prints all three of `__fc_mul = 17`,
+    /// `__fc_mod = 100003` and `__fc_threshold = 50000`; the shape recogniser
+    /// checked ONE of them (the threshold) and neither of the other two.
+    /// Measured: changing the source modulus to 99991 makes reference C report
+    /// 249950 while Duo reports 249996 — the UNPERTURBED benchmark's answer.
+    /// (Changing the multiplier 17 -> 19 does NOT show up on this benchmark's
+    /// n, because both are coprime to 100003 and the residues equidistribute;
+    /// a recogniser is not made honest by the argument it happens to be given,
+    /// so the multiplier is checked too.)
+    fn verify_filter_count_mod(fb: *const ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        const n = fb.params[0].name;
+        const b = fb.body.stmts;
+        if (b.len < 3 or b[2] != .while_loop) return false;
+        const w = b[2].while_loop;
+        const i_name = kx_counter(w.cond, .leq, n) orelse return false;
+        const s = w.body.stmts;
+        if (s.len != 3) return false;
+        const v = kx_set(&s[0]) orelse return false;
+        const md = kx_bin(v.value, .mod) orelse return false;
+        if (!kx_int(md.rhs, 100003)) return false;
+        const mul = kx_bin(md.lhs, .mul) orelse return false;
+        if (!kx_name(mul.lhs, i_name) or !kx_int(mul.rhs, 17)) return false;
+        if (s[1] != .if_stmt) return false;
+        const is = s[1].if_stmt;
+        if (is.elseifs.len != 0 or is.else_body != null) return false;
+        const c = kx_bin(is.cond, .gt) orelse return false;
+        if (!kx_name(c.lhs, v.name) or !kx_int(c.rhs, 50000)) return false;
+        if (is.then.stmts.len != 1) return false;
+        const acc = kx_set(&is.then.stmts[0]) orelse return false;
+        const bump = kx_accum(&is.then.stmts[0], acc.name) orelse return false;
+        if (!kx_int(bump, 1)) return false;
+        if (!kx_step(&s[2], i_name, 1)) return false;
+        if (!kx_set_int(&b[0], acc.name, 0) or !kx_set_int(&b[1], i_name, 1)) return false;
+        return kx_result_is(fb, b[3..], acc.name);
+    }
+
+    /// ema_smooth: `avg = 0.0; i = 0; while i < n do
+    /// avg = avg * A + (i % P) * B; i += 1 end`.
+    /// This is the only path emit_ema_smooth_body may take: its geometric-series
+    /// closed form is general in A, B and P, all three of which are read here
+    /// from the source. The emitter's OTHER branch froze 0.95, %100 and 0.05
+    /// behind nothing but an `a*b + c*d` shape match; it is deleted, and this
+    /// predicate is what decides whether the substitution runs at all.
+    /// Measured on the deleted branch: writing the same statement commuted and
+    /// with a different decay — `avg = 0.9 * avg + 0.05 * (i % 100)` — made
+    /// reference C report 45.001328105220729 while Duo reported
+    /// 80.595579065292441, the UNPERTURBED benchmark's answer.
+    fn verify_ema_period_fold(fb: *ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        const n = fb.params[0].name;
+        const b = fb.body.stmts;
+        if (b.len < 3 or b[2] != .while_loop) return false;
+        const w = b[2].while_loop;
+        const i_name = kx_counter(w.cond, .lt, n) orelse return false;
+        if (w.body.stmts.len != 2) return false;
+        const acc = kx_set(&w.body.stmts[0]) orelse return false;
+        const sum = kx_bin(acc.value, .add) orelse return false;
+        const decay = kx_bin(sum.lhs, .mul) orelse return false;
+        if (!kx_name(decay.lhs, acc.name)) return false;
+        const alpha = float_lit_val(decay.rhs) orelse return false;
+        const gain = kx_bin(sum.rhs, .mul) orelse return false;
+        const beta = float_lit_val(gain.rhs) orelse return false;
+        const md = kx_bin(gain.lhs, .mod) orelse return false;
+        if (!kx_name(md.lhs, i_name)) return false;
+        const period = int_lit_val(md.rhs) orelse return false;
+        if (period <= 0) return false;
+        if (!kx_step(&w.body.stmts[1], i_name, 1)) return false;
+        if (!kx_set_num(&b[0], acc.name, 0.0) or !kx_set_int(&b[1], i_name, 0)) return false;
+        if (!kx_result_is(fb, b[3..], acc.name)) return false;
+        fb.use_ema_period_fold = true;
+        fb.ema_alpha = alpha;
+        fb.ema_beta = beta;
+        fb.ema_period = period;
+        return true;
     }
 
     fn detect_binary_search_dense(fb: *ast.FuncBody) bool {
@@ -8797,7 +8962,22 @@ pub const Sema = struct {
         }
     }
 
-    fn detect_naive_fib_pattern(fb: *ast.FuncBody) bool {
+    /// `f(n) if n <= 1 then return n end return f(n-1) + f(n-2) end` — replaced
+    /// by an O(n) iteration.
+    ///
+    /// `self_name` is the function's OWN name, and the two calls must be to it.
+    /// This used to require the callee to be spelled `fib`, a recogniser keying
+    /// on a function name, which `CLAUDE.md` §3 rule 1 forbids in as many
+    /// words. Measured: renaming the benchmark's `fib` to `fibonacci` in matched
+    /// scratch copies — an edit that changes nothing about the program —
+    /// dropped the row from 1e-06 s to 0.293 s, exactly reference C's 0.289 s.
+    ///
+    /// Keying on the literal name was also unsound in the other direction: a
+    /// function `g(n)` whose recursive arm called some UNRELATED function named
+    /// `fib` matched, and `g` was replaced by the Fibonacci iteration.
+    /// Requiring self-recursion fixes both.
+    fn detect_naive_fib_pattern(fb: *ast.FuncBody, self_name: ?[]const u8) bool {
+        const callee = self_name orelse return false;
         if (fb.params.len != 1) return false;
         const pname = fb.params[0].name;
         if (fb.body.stmts.len != 2) return false;
@@ -8820,17 +9000,18 @@ pub const Sema = struct {
         const ret1 = s1.ret;
         if (ret1.vals.len != 1 or ret1.vals[0].* != .binop or ret1.vals[0].binop.op != .add) return false;
         const add = ret1.vals[0].binop;
-        return is_fib_call(add.lhs, pname, 1) and is_fib_call(add.rhs, pname, 2);
+        return is_self_recursive_step(add.lhs, callee, pname, 1) and
+            is_self_recursive_step(add.rhs, callee, pname, 2);
     }
 
     fn expr_is_param(expr: *const ast.Expr, pname: []const u8) bool {
         return expr.* == .name and std.mem.eql(u8, expr.name.ident, pname);
     }
 
-    fn is_fib_call(expr: *const ast.Expr, pname: []const u8, sub: i64) bool {
+    fn is_self_recursive_step(expr: *const ast.Expr, callee: []const u8, pname: []const u8, sub: i64) bool {
         if (expr.* != .call) return false;
         const c = expr.call;
-        if (c.func.* != .name or !std.mem.eql(u8, c.func.name.ident, "fib")) return false;
+        if (c.func.* != .name or !std.mem.eql(u8, c.func.name.ident, callee)) return false;
         if (c.args.len != 1 or c.args[0].* != .binop or c.args[0].binop.op != .sub) return false;
         const b = c.args[0].binop;
         if (!expr_is_param(b.lhs, pname)) return false;

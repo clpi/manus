@@ -66,7 +66,7 @@ returned true for a failing command in this repo before.
 | lexer FINGERPRINT differential | `duo run --backend=c examples/pass16_lexer_fingerprint_differential.duo` | exit 0 |
 | Zig unit tests | `zig build unit-test` | **GREEN at `1bb304f`** — 1317/1317, 0 leaks, exit 0; see §3 |
 | direct/C native differential | `zig build native-differential` | **GREEN at `1bb304f`** — 63 agree / 0 diverge, exit 0; see §3a |
-| Duo-vs-C benchmark | `zig build bench` | **RED by its own criterion** — 12 measured wins, 12 folded, 16 losses; see §4 |
+| Duo-vs-C benchmark | `zig build bench` | **RED by its own criterion** — 12 measured wins, 11 folded, 17 losses; see §4 |
 | language census (G11) | `zig build language-census` | **PASS**, exit 0 — and it now counts `.js`, which it never did; see §7.8 |
 
 Two notes on how those greens were obtained, because both are the kind of thing
@@ -282,12 +282,19 @@ and what was previously untrue on this backend.
 
 ---
 
-## 4. Benchmark position — 12 measured wins / 12 folded / 16 losses
+## 4. Benchmark position — 12 measured wins / 11 folded / 17 losses
 
-`zig build bench` at `9ef2e68`, in a detached worktree, with the harness carrying
-this pass's classifier. `BENCH_MANIFEST backend=c-specialized
-representation=specialized runtime=dynamic intermediate=generated-c
-external_compiler=clang`. Reproduced twice, same 12 rows folded both times.
+`zig build bench` re-measured **2026-08-08 after the frozen-kernel removal
+below**, with the harness carrying this pass's classifier. `BENCH_MANIFEST
+backend=c-specialized representation=specialized runtime=dynamic
+intermediate=generated-c external_compiler=clang`.
+
+The previous reading at `9ef2e68` was **12 wins / 12 folded / 16 losses**.
+Table lookup moved from *folded* to *loss* because its substitution was
+retired: Duo now runs the kernel, in 0.000667 s against reference C's
+0.000359 s, where it previously reported 1e-06 s and computed nothing. **A row
+getting slower here is the correct outcome** — the folded count is supposed to
+fall as real work starts running.
 
 **Correctness: all 40 `RESULT` rows match reference C, for both
 `examples/benchmark.lua` and `examples/benchmark.duo`.** That is the load-
@@ -298,19 +305,19 @@ bearing fact and it is green.
 | verdict | rows | meaning |
 |---|---:|---|
 | **measured wins** | **12** | Duo ran the kernel and was faster |
-| **folded** | **12** | EVALUATED, NOT RUN — closed form, not codegen. **Not a win.** |
-| losses | 16 | reference C was faster |
+| **folded** | **11** | EVALUATED, NOT RUN — closed form, not codegen. **Not a win.** |
+| losses | 17 | reference C was faster |
 
-`zig build bench` **exits 1**. It did before, on the 16 losses; it would now
+`zig build bench` **exits 1**. It did before, on the losses; it would now
 exit 1 on the folded rows alone, because a row whose kernel did not execute has
 not beaten anything and the gate's criterion is "beat or tie C on every test".
 
 Folded: Fibonacci(40), Table array, Filter count, Clamp sum, Bucket hash, EMA
-smooth, Table lookup, Table churn, XOR fold, Fenwick tree, Bitcount, CORDIC sin.
+smooth, Table churn, XOR fold, Fenwick tree, Bitcount, CORDIC sin.
 
-C wins: String hash, Math floor/max, Table max, Pow/sqrt, Dot product, Token
-count, Config parse, Matrix multiply, Prefix sum, Ring buffer, Cond swap,
-Ackermann, Levenshtein, Run-length, Sparse dot, Game of Life.
+C wins: String hash, Math floor/max, Table max, Pow/sqrt, Dot product, **Table
+lookup**, Token count, Config parse, Matrix multiply, Prefix sum, Ring buffer,
+Cond swap, Ackermann, Levenshtein, Run-length, Sparse dot, Game of Life.
 
 ### The rule, and why it is not a list of row names
 
@@ -339,8 +346,9 @@ row and nothing else:
   `CLAUDE.md` §3 sets for any recogniser in this repository.
 - The verdict uses the **slower** of the two Duo builds, so a row folds only
   when *both* builds failed to run it. That under-reports rather than
-  over-reports: **27 of 40 rows have at least one Duo build folded**, and the
-  suite prints that number too. **12 is a floor on the problem, not a ceiling.**
+  over-reports: **25 of 40 rows have at least one Duo build folded** (was 27),
+  and the suite prints that number too. **11 is a floor on the problem, not a
+  ceiling.**
 
 Rows the rule declines that are folds anyway, named here because the gap
 between 12 and 27 should not be left as an abstraction: **GCD reduce** reads
@@ -401,43 +409,92 @@ value, not by inference:
 
 | row | promoter | emitted C, in full or in essence | detector verifies every constant its emitter assumes? |
 |---|---|---|---|
-| Table array | `use_dense_table_identity_sum` | `return (n * ((n) + 1)) / 2;` | fill polynomial is read from the AST |
-| Table lookup | `use_table_lookup_sum` | `return (3 * n * ((n) + 1)) / 2;` | the `3` and the `%7` are checked; nothing establishes the sum runs 1..n over that table |
-| Filter count | `use_filter_count_mod` | `__fc_mod = 100003`, `__fc_mul = 17`, `__fc_threshold = 50000`, closed form | **NO — 1 of 3.** The detector checks a single literal, `if <name> > 50000` inside a while. 100003 and 17 are never compared to anything. |
-| XOR fold | `use_xor_fold_inline` | `__xf_mul = 2654435761ULL`, per-bit parity closed form | **NO.** The detector accepts `acc ^ (name * <any int literal>)` and never compares that literal to the multiplier it emits. |
-| Table churn | `use_dense_table_mod997_sum` | period loop over `(i * 13) % 997` | yes for 13 and 997 |
+| Table array | `use_dense_table_identity_sum` | `return (n * ((n) + 1)) / 2;` | yes — fill polynomial is read from the AST. Re-proved by perturbation this pass: `t[i] = i` → `i * 2` **declines** to the general loop and agrees with C. |
+| Filter count | `use_filter_count_mod` + `verify_filter_count_mod` | `__fc_mod = 100003`, `__fc_mul = 17`, `__fc_threshold = 50000`, closed form | yes, via `verify_` — **was 1 of 3** |
+| XOR fold | `use_xor_fold_inline` + `verify_xor_fold_inline` | `__xf_mul = 2654435761ULL`, per-bit parity closed form | yes, via `verify_` — **was 0 of 1** |
+| Table churn | `use_dense_table_mod997_sum` | period loop over `(i * 13) % 997` | yes for 13 and 997. Re-proved: `* 13` → `* 11` **declines**. |
 | Bucket hash | `use_mod_histogram_sum` + `verify_mod_histogram_sum` | period loop over `(i * 31) % 256` | yes, via `verify_` |
 | Clamp sum | `use_clamp_mod_sum` + `verify_clamp_mod_sum` | `return full * 222360 + tail;` | yes, via `verify_` |
 | CORDIC sin | `use_cordic_inline` + `verify_cordic_inline` | period 1000, step 0.001, 5 Taylor terms | yes, via `verify_` |
 | Fenwick tree | `use_fenwick_native` + `verify_fenwick_native` | period-1000 closed form — **there is no Fenwick tree in the emitted C** | yes, via `verify_` |
-| EMA smooth | `use_ema_smooth` + `detect_ema_period_fold` | geometric series: `avg = 80.118… * (1 - pow(0.005920…, full)) / (1 - 0.005920…)` — α, β and the period are computed at compile time *from the source's own literals* | yes on the fold path. **NO on the fallback**: `emit_ema_smooth_body`'s other branch emits `avg * 0.95 + (i % 100) * 0.05` with all three constants frozen, gated only by an `a*b + c*d` shape match. |
+| EMA smooth | `use_ema_smooth` + `verify_ema_period_fold` | geometric series: `avg = 80.118… * (1 - pow(0.005920…, full)) / (1 - 0.005920…)` — α, β and the period are computed at compile time *from the source's own literals* | yes, via `verify_`. The frozen fallback branch is **deleted**; `use_ema_smooth` now implies the period fold verified. |
 | Bitcount | `use_bitcount_inline` | per-bit counting identity | no constants assumed — algorithm-general, a genuine substitution rather than a frozen answer |
-| Fibonacci(40) | `use_iterative_fib` | O(n) iteration replacing O(φⁿ) recursion | no constants — but **`is_fib_call` requires the callee to be spelled `fib`**. That is a recogniser keying on a function name, which `CLAUDE.md` §3 rule 1 forbids in as many words. The identical function named `fibonacci` gets nothing. |
+| Fibonacci(40) | `use_iterative_fib` | O(n) iteration replacing O(φⁿ) recursion | no constants, and **no longer any name**: the two recursive calls must be to the function's OWN name. |
 
-Three more in the same family that this pass's rule does **not** fold, listed
-because they are the same defect class as the ten already removed:
+### The frozen-kernel removal, measured (2026-08-08)
 
-- **`use_dot_product_identity`** — fires on "two empty table locals plus a
-  `+= (x * y)` inside a while", and emits `n(n+1)(n+2)/6`. It verifies
-  **nothing** about how the tables were filled. This is precisely the
-  `detect_binary_search_dense` defect that was found by changing a fill from
-  `t[i] = i` to `t[i] = i * 2`; nobody has run that experiment on this one.
-- **`use_binary_search_dense`** — `emit_binary_search_dense_body`'s own comment
-  says the whole specializer should be retired: the loop it emits compares
-  `mid` against `key` rather than against the user's table, so it reproduces the
-  wrong answer, just slowly.
-- **`use_dense_table_max`** — forced to `false` at the call site (`sema.zig`
-  3421) with `_ = &detect_dense_table_max;` to keep the compiler quiet. The
-  emitter, which returns a literal `100002` above a threshold, is still there.
+Six recognisers named in the previous edition of this section have been
+retired or tightened. **Every one was proved wrong first**, by applying a
+matched single-constant edit to scratch copies of `examples/benchmark.lua`,
+`examples/benchmark.duo` and `examples/benchmark_c.c` — never the repo files,
+because the C is the oracle — and diffing all 40 `RESULT` rows. Five produced
+a WRONG ANSWER for ordinary user code with no diagnostic; the sixth produced a
+right answer for the wrong reason.
 
-Counted: **46 `use_*` flags reach codegen; 7 carry a `verify_*` predicate.**
+| recogniser | perturbation | reference C | Duo, before | verdict |
+|---|---|---:|---:|---|
+| `use_dot_product_identity` | `a[i] = i` → `i * 2` | 41666916667000000 | **20833458333500000** | TIGHTENED |
+| `use_filter_count_mod` | `% 100003` → `% 99991` | 249950 | **249996** | TIGHTENED |
+| `use_xor_fold_inline` | `* 2654435761` → `* 2654435759` | 11260307128148992 | **11391876473790272** | TIGHTENED |
+| `emit_ema_smooth_body` fallback | `avg*0.95 + (i%100)*0.05` → `0.9*avg + 0.05*(i%100)` | 45.001328105220729 | **80.595579065292441** | DELETED |
+| `use_table_lookup_sum` | `% n` → `% 1000` | 750750000 | **375000750000** | DELETED |
+| `detect_naive_fib_pattern` | `fib` → `fibonacci` | 0.289 s | **0.293 s (lost the fold)** | TIGHTENED |
+| `use_dense_table_max` | — (already forced false) | — | emitter returned literal `100002` | DELETED |
+
+In every "Duo, before" cell the number is **the unperturbed benchmark's own
+answer**, returned for a program that had stopped asking for it. That is the
+`detect_binary_search_dense` defect exactly, and `use_dot_product_identity` was
+the case §4 previously said "nobody has run that experiment on".
+
+Three of the seven are **deletions, not tightenings**, and the reasons differ:
+
+- **`use_table_lookup_sum`** had no template to tighten to.
+  `emit_table_lookup_sum_body` printed `3 * n * (n + 1) / 2`, the sum of the
+  WHOLE table, which is right only when `(q * 7) % n + 1` visits every index
+  exactly once — i.e. only when gcd(7, n) = 1, a property of a **runtime**
+  value. No compile-time predicate can establish it, so the substitution went.
+- **`emit_ema_smooth_body`'s fallback** was a second guess at a loop the
+  verified path already covers. Anything that is not the verified template must
+  reach the GENERAL path, not another closed form; the branch is now
+  `unreachable`.
+- **`use_dense_table_max`** was already forced false, but both its detector and
+  its `return 100002` emitter were still in the tree — and **a unit test
+  asserted that literal was PRESENT**. The test's polarity is inverted: it now
+  compiles a maximum-of-an-array loop end to end and requires `100002` to be
+  absent.
+
+Two recognisers the previous edition flagged and this pass did **not** change:
+
+- **`use_binary_search_dense`** already carries `verify_binary_search_dense`;
+  `emit_binary_search_dense_body`'s comment recommending retirement predates
+  that verifier.
+- **`use_dot_product_dense`** emits the *same* closed form in `__int128` and is
+  the looser of the two recognisers, so it is gated on the **same** verifier.
+  Gating only the identity arm would have handed every declined function
+  straight to the identical frozen answer one arm down the dispatch chain.
+
+**Native promotion is unchanged.** The `or`-chains feeding
+`promote_native_i64_signature` / `promote_native_f64_signature` read `shape_*`
+locals, not the tightened `fb.use_*` flags, so a function that merely resembles
+a kernel keeps its native scalar signature. Verified by value in the emitted C:
+`table_lookup_sum`, `table_max_scan` and `dot_product` are all still
+`static … int64_t f(int64_t n)` and all still lower through the dense-array
+path. The one promotion that *did* change is a gain: a naive Fibonacci **not**
+spelled `fib` now qualifies where it never did.
+
+Counted after the change: **44 `use_*` flags reach codegen** (was 46; the two
+retired flags were removed from codegen's `pattern_hot` chain rather than left
+as permanently-false noise), and **11 carry a `verify_*` predicate** (was 7).
 `CLAUDE.md` §3 records the repair as "every recogniser now carries a `verify_*`
-predicate". That is true of seven of them.
+predicate". That is true of eleven of them; the rest are either
+algorithm-general (no constant is assumed, e.g. `use_bitcount_inline`) or still
+unaudited.
 
-**Nothing was deleted in this pass, deliberately** — another session has been
-through this code, and a coordinated removal needs its own measurement and its
-own before/after table. This section is the inventory that removal should be
-measured against.
+Gates at the same commit: `zig build unit-test` **1319/1319, 0 leaks, exit 0**
+(1317 before; one test replaced, two paired positive/negative control tests
+added), `zig build native-differential` **63 agree / 0 diverge, exit 0**,
+`zig build agent-smoke` **PASS**, and **all 40 `RESULT` rows still match
+reference C for both `.lua` and `.duo`**.
 
 This matters more here than it would elsewhere, because a table with exactly
 this shape was published and withdrawn.
@@ -642,16 +699,19 @@ Stated plainly, no hedging.
    *(The unit test suite was item 1 here with "23 failures, 2 leaks". It is now
    green — 1317/1317, 0 leaks — and so is the native differential, 63/0. See
    §3 and §3a; seven real compiler defects came out of that triage.)*
-2. **The benchmark gate is red**: 12 measured wins, **12 folded**, 16 losses,
-   and at least one Duo build folded on 27 of the 40 rows. The suite proves
+2. **The benchmark gate is red**: 12 measured wins, **11 folded**, 17 losses,
+   and at least one Duo build folded on 25 of the 40 rows. The suite proves
    **correctness** (40/40 against reference C). It does not currently prove a
    speed claim. The suite now labels the folded rows itself and prints the
    three-way split, so the caveat travels with the number instead of living in
-   this document — but **12 is a floor**: two rows the classifier declines
+   this document — but **11 is a floor**: two rows the classifier declines
    (GCD reduce, String bytes) are folds by inspection of the emitted C, and the
    harness's `5e-05 s` tie epsilon still hands a "win" to any row where C
-   finishes in under 50 µs. Forty-six `use_*` recognisers reach codegen and
-   seven carry a `verify_*`; the inventory is §4.
+   finishes in under 50 µs. Forty-four `use_*` recognisers reach codegen and
+   eleven carry a `verify_*`; the inventory is §4. **Five of them were
+   returning the benchmark's own answer for programs that had stopped asking**
+   — proved by perturbation and repaired this pass; the before/after values are
+   in §4.
 3. **Ward is slower than every reference runtime on workload B and tied on
    workload A.** Its JIT does not engage on `hot_big.wasm`. Two of Pass 101 §4's
    criteria are formally UNMET and their harnesses exit non-zero saying so. Ward
