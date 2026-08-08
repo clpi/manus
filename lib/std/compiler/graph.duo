@@ -95,7 +95,17 @@ dead_private = (src: str, file: str, report: bool): i64
         if t.kind == token.KIND_EOF
             break
         end
-        if t.kind == token.KIND_NAME and prev_kind != token.KIND_DOT and prev_kind != token.KIND_COLON
+        -- gap[025]: a RECEIVER FACE is a reference. `self:_fail(2)` calls the
+        -- top-level `_fail`, so excluding names after `:` made every converted
+        -- call site invisible and reported live privates as unreachable.
+        --
+        -- `.` stays excluded: `a.b` is field access, not a call face.
+        --
+        -- The residual error is in the SAFE direction. A genuine member call
+        -- `a:m()` now also marks a same-named top-level binding as used, so the
+        -- query can MISS a dead private — it can no longer invent one, which is
+        -- the failure that would delete live code.
+        if t.kind == token.KIND_NAME and prev_kind != token.KIND_DOT
             -- a declaration site is not a use of itself
             decl_site = t.loc.col == 1
             if not decl_site

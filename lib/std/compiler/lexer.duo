@@ -177,60 +177,60 @@ _fail(self: Lexer, code: i64)
     if not self.has_error
         self.has_error = true
         self.error_code = code
-        self.error_loc = cur_loc(self)
+        self.error_loc = self:cur_loc()
     end
 end
 
 skip_long(self: Lexer, level: i64)
-    adv(self)
+    self:adv()
     i = 0
     while i < level
-        adv(self)
+        self:adv()
         i = i + 1
     end
-    adv(self)
+    self:adv()
     while self.pos <= string.len(self.src)
-        if peek_char(self) == 93
+        if self:peek_char() == 93
             eq = 0
-            adv(self)
-            while peek_char(self) == 61
-                adv(self)
+            self:adv()
+            while self:peek_char() == 61
+                self:adv()
                 eq = eq + 1
             end
-            if eq == level and peek_char(self) == 93
-                adv(self)
+            if eq == level and self:peek_char() == 93
+                self:adv()
                 return
             end
         else
-            adv(self)
+            self:adv()
         end
     end
-    _fail(self, 2)
+    self:_fail(2)
 end
 
 skip_ws(self: Lexer)
     while self.pos <= string.len(self.src)
-        c = peek_char(self)
+        c = self:peek_char()
         if c == 32 or c == 9 or c == 13 or c == 10
-            adv(self)
-        elseif c == 35 and peek_char2(self) == 33 and self.pos == 1
-            while self.pos <= string.len(self.src) and peek_char(self) != 10
-                adv(self)
+            self:adv()
+        elseif c == 35 and self:peek_char2() == 33 and self.pos == 1
+            while self.pos <= string.len(self.src) and self:peek_char() != 10
+                self:adv()
             end
-        elseif c == 45 and peek_char2(self) == 45
+        elseif c == 45 and self:peek_char2() == 45
             self.pos = self.pos + 2
             self.col = self.col + 2
-            lvl = long_bracket_level(self)
+            lvl = self:long_bracket_level()
             if lvl >= 0
-                skip_long(self, lvl)
+                self:skip_long(lvl)
             else
-                is_triple = (self.pos <= string.len(self.src) and peek_char(self) == 45)
+                is_triple = (self.pos <= string.len(self.src) and self:peek_char() == 45)
                 if is_triple
-                    adv(self)
+                    self:adv()
                 end
                 start = self.pos
-                while self.pos <= string.len(self.src) and peek_char(self) != 10
-                    adv(self)
+                while self.pos <= string.len(self.src) and self:peek_char() != 10
+                    self:adv()
                 end
                 if is_triple and self.hint_count < 8
                     comment_text = strm.sub(self.src, start, self.pos - 1)
@@ -256,119 +256,119 @@ skip_ws(self: Lexer)
 end
 
 read_long_str(self: Lexer, level: i64): str
-    adv(self)
+    self:adv()
     i = 0
     while i < level
-        adv(self)
+        self:adv()
         i = i + 1
     end
-    adv(self)
-    if peek_char(self) == 10
-        adv(self)
-    elseif peek_char(self) == 13
-        adv(self)
-        if peek_char(self) == 10
-            adv(self)
+    self:adv()
+    if self:peek_char() == 10
+        self:adv()
+    elseif self:peek_char() == 13
+        self:adv()
+        if self:peek_char() == 10
+            self:adv()
         end
     end
     start = self.pos
     while self.pos <= string.len(self.src)
-        if peek_char(self) == 93
+        if self:peek_char() == 93
             close_start = self.pos
-            adv(self)
+            self:adv()
             eq = 0
-            while peek_char(self) == 61
-                adv(self)
+            while self:peek_char() == 61
+                self:adv()
                 eq = eq + 1
             end
-            if eq == level and peek_char(self) == 93
+            if eq == level and self:peek_char() == 93
                 content = strm.sub(self.src, start, close_start - 1)
-                adv(self)
+                self:adv()
                 return content
             end
         else
-            adv(self)
+            self:adv()
         end
     end
-    _fail(self, 2)
+    self:_fail(2)
     ""
 end
 
 read_str(self: Lexer, quote: i64): str
-    adv(self)
+    self:adv()
     start = self.pos
     while self.pos <= string.len(self.src)
-        c = peek_char(self)
+        c = self:peek_char()
         if c == quote
             s = strm.sub(self.src, start, self.pos - 1)
-            adv(self)
+            self:adv()
             return s
         end
         if c == 10 or c == 13
-            _fail(self, 1)
+            self:_fail(1)
             return ""
         end
         if c == 92
-            adv(self)
+            self:adv()
             if self.pos > string.len(self.src)
-                _fail(self, 1)
+                self:_fail(1)
                 return ""
             end
-            esc = peek_char(self)
+            esc = self:peek_char()
             if esc == 120
-                adv(self)
-                if self.pos > string.len(self.src) or not is_hex(peek_char(self))
-                    _fail(self, 3)
+                self:adv()
+                if self.pos > string.len(self.src) or not is_hex(self:peek_char())
+                    self:_fail(3)
                     return ""
                 end
-                adv(self)
-                if self.pos <= string.len(self.src) and is_hex(peek_char(self))
-                    adv(self)
+                self:adv()
+                if self.pos <= string.len(self.src) and is_hex(self:peek_char())
+                    self:adv()
                 end
             elseif esc == 117
-                adv(self)
-                if peek_char(self) != 123
-                    _fail(self, 3)
+                self:adv()
+                if self:peek_char() != 123
+                    self:_fail(3)
                     return ""
                 end
-                adv(self)
+                self:adv()
                 has_digit = false
-                while self.pos <= string.len(self.src) and peek_char(self) != 125
-                    if not is_hex(peek_char(self))
-                        _fail(self, 3)
+                while self.pos <= string.len(self.src) and self:peek_char() != 125
+                    if not is_hex(self:peek_char())
+                        self:_fail(3)
                         return ""
                     end
                     has_digit = true
-                    adv(self)
+                    self:adv()
                 end
-                if not has_digit or self.pos > string.len(self.src) or peek_char(self) != 125
-                    _fail(self, 3)
+                if not has_digit or self.pos > string.len(self.src) or self:peek_char() != 125
+                    self:_fail(3)
                     return ""
                 end
-                adv(self)
+                self:adv()
             elseif esc == 122
-                adv(self)
+                self:adv()
                 while self.pos <= string.len(self.src)
-                    ws = peek_char(self)
+                    ws = self:peek_char()
                     if ws == 32 or ws == 9 or ws == 13 or ws == 10
-                        adv(self)
+                        self:adv()
                     else
                         break
                     end
                 end
             elseif esc == 13
-                adv(self)
-                if self.pos <= string.len(self.src) and peek_char(self) == 10
-                    adv(self)
+                self:adv()
+                if self.pos <= string.len(self.src) and self:peek_char() == 10
+                    self:adv()
                 end
             else
-                adv(self)
+                self:adv()
             end
         else
-            adv(self)
+            self:adv()
         end
     end
-    _fail(self, 1)
+    self:_fail(1)
     ""
 end
 
@@ -418,61 +418,61 @@ _int_of(text: str): i64
 end
 
 read_num(self: Lexer): Tok
-    l = cur_loc(self)
+    l = self:cur_loc()
     start = self.pos
     is_float = false
     
-    c1 = peek_char(self)
-    c2 = peek_char2(self)
+    c1 = self:peek_char()
+    c2 = self:peek_char2()
     if c1 == 48 and (c2 == 120 or c2 == 88)
-        adv(self)
-        adv(self)
-        while is_hex(peek_char(self))
-            adv(self)
+        self:adv()
+        self:adv()
+        while is_hex(self:peek_char())
+            self:adv()
         end
-        if peek_char(self) == 46
+        if self:peek_char() == 46
             is_float = true
-            adv(self)
-            while is_hex(peek_char(self))
-            adv(self)
+            self:adv()
+            while is_hex(self:peek_char())
+            self:adv()
         end
         end
-        p = peek_char(self)
+        p = self:peek_char()
         if p == 112 or p == 80
             is_float = true
-            adv(self)
-            sgn = peek_char(self)
+            self:adv()
+            sgn = self:peek_char()
             if sgn == 43 or sgn == 45
-                adv(self)
+                self:adv()
             end
-            while is_digit(peek_char(self))
-                adv(self)
+            while is_digit(self:peek_char())
+                self:adv()
             end
         end
     else
-        while is_digit(peek_char(self))
-            adv(self)
+        while is_digit(self:peek_char())
+            self:adv()
         end
-        if peek_char(self) == 46
-            n = peek_char2(self)
+        if self:peek_char() == 46
+            n = self:peek_char2()
             if is_digit(n)
                 is_float = true
-                adv(self)
-                while is_digit(peek_char(self))
-            adv(self)
+                self:adv()
+                while is_digit(self:peek_char())
+            self:adv()
         end
             end
         end
-        e = peek_char(self)
+        e = self:peek_char()
         if e == 101 or e == 69
             is_float = true
-            adv(self)
-            sgn = peek_char(self)
+            self:adv()
+            sgn = self:peek_char()
             if sgn == 43 or sgn == 45
-                adv(self)
+                self:adv()
             end
-            while is_digit(peek_char(self))
-                adv(self)
+            while is_digit(self:peek_char())
+                self:adv()
             end
         end
     end
@@ -499,24 +499,24 @@ read_num(self: Lexer): Tok
 end
 
 next_tok(self: Lexer): Tok
-    skip_ws(self)
+    self:skip_ws()
     if self.pos > string.len(self.src)
-        return { kind = std.compiler.token.KIND_EOF, loc = cur_loc(self), text = "", int_val = 0, float_val = 0.0 }
+        return { kind = std.compiler.token.KIND_EOF, loc = self:cur_loc(), text = "", int_val = 0, float_val = 0.0 }
     end
     
-    l = cur_loc(self)
-    c = peek_char(self)
+    l = self:cur_loc()
+    c = self:peek_char()
     
-    if is_digit(c) or (c == 46 and is_digit(peek_char2(self)))
-        return read_num(self)
+    if is_digit(c) or (c == 46 and is_digit(self:peek_char2()))
+        return self:read_num()
     end
     
     if is_alpha(c) or c == 95
         start = self.pos
         while self.pos <= string.len(self.src)
-            p = peek_char(self)
+            p = self:peek_char()
             if is_alnum(p) or p == 95
-                adv(self)
+                self:adv()
             else
                 break
             end
@@ -530,48 +530,48 @@ next_tok(self: Lexer): Tok
     end
     
     if c == 39 or c == 34
-        s = read_str(self, c)
+        s = self:read_str(c)
         return { kind = std.compiler.token.KIND_STRING_LIT, loc = l, text = s, int_val = 0, float_val = 0.0 }
     end
     
     if c == 91
-        lvl = long_bracket_level(self)
+        lvl = self:long_bracket_level()
         if lvl >= 0
-            s = read_long_str(self, lvl)
+            s = self:read_long_str(lvl)
             return { kind = std.compiler.token.KIND_STRING_LIT, loc = l, text = s, int_val = 0, float_val = 0.0 }
         end
     end
     
-    adv(self)
+    self:adv()
     p = self.pos
     
     if c == 43
-        if peek_char(self) == 61
-            adv(self)
+        if self:peek_char() == 61
+            self:adv()
             return { kind = std.compiler.token.KIND_PLUS_ASSIGN, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         return { kind = std.compiler.token.KIND_PLUS, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 42
-        if peek_char(self) == 61
-            adv(self)
+        if self:peek_char() == 61
+            self:adv()
             return { kind = std.compiler.token.KIND_STAR_ASSIGN, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         return { kind = std.compiler.token.KIND_STAR, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 37
-        if peek_char(self) == 61
-            adv(self)
+        if self:peek_char() == 61
+            self:adv()
             return { kind = std.compiler.token.KIND_PERCENT_ASSIGN, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         return { kind = std.compiler.token.KIND_PERCENT, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 94
-        if peek_char(self) == 61
-            adv(self)
+        if self:peek_char() == 61
+            self:adv()
             return { kind = std.compiler.token.KIND_CARET_ASSIGN, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         return { kind = std.compiler.token.KIND_CARET, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 35
-        if peek_char(self) == 35
-            adv(self)
+        if self:peek_char() == 35
+            self:adv()
             return { kind = std.compiler.token.KIND_HASH_HASH, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         return { kind = std.compiler.token.KIND_HASH, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
@@ -600,74 +600,74 @@ next_tok(self: Lexer): Tok
     elseif c == 44
         return { kind = std.compiler.token.KIND_COMMA, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 45
-        if peek_char(self) == 61
-            adv(self)
+        if self:peek_char() == 61
+            self:adv()
             return { kind = std.compiler.token.KIND_MINUS_ASSIGN, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        if peek_char(self) == 62
-            adv(self)
+        if self:peek_char() == 62
+            self:adv()
             return { kind = std.compiler.token.KIND_ARROW, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         return { kind = std.compiler.token.KIND_MINUS, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 47
-        if peek_char(self) == 61
-            adv(self)
+        if self:peek_char() == 61
+            self:adv()
             return { kind = std.compiler.token.KIND_SLASH_ASSIGN, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        if peek_char(self) == 47
-            adv(self)
+        if self:peek_char() == 47
+            self:adv()
             return { kind = std.compiler.token.KIND_IDIV, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         return { kind = std.compiler.token.KIND_SLASH, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 46
-        if peek_char(self) == 46
-            adv(self)
-            if peek_char(self) == 46
-                adv(self)
+        if self:peek_char() == 46
+            self:adv()
+            if self:peek_char() == 46
+                self:adv()
                 return { kind = std.compiler.token.KIND_DOTS, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
             end
             return { kind = std.compiler.token.KIND_CONCAT, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         return { kind = std.compiler.token.KIND_DOT, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 61
-        if peek_char(self) == 61
-            adv(self)
+        if self:peek_char() == 61
+            self:adv()
             return { kind = std.compiler.token.KIND_EQ, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        if peek_char(self) == 62
-            adv(self)
+        if self:peek_char() == 62
+            self:adv()
             return { kind = std.compiler.token.KIND_FAT_ARROW, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         return { kind = std.compiler.token.KIND_ASSIGN, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 126
-        if peek_char(self) == 61
-            adv(self)
+        if self:peek_char() == 61
+            self:adv()
             return { kind = std.compiler.token.KIND_NEQ, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         return { kind = std.compiler.token.KIND_TILDE, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 60
-        if peek_char(self) == 61
-            adv(self)
+        if self:peek_char() == 61
+            self:adv()
             return { kind = std.compiler.token.KIND_LEQ, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        if peek_char(self) == 60
-            adv(self)
+        if self:peek_char() == 60
+            self:adv()
             return { kind = std.compiler.token.KIND_LSHIFT, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         return { kind = std.compiler.token.KIND_LT, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 62
-        if peek_char(self) == 61
-            adv(self)
+        if self:peek_char() == 61
+            self:adv()
             return { kind = std.compiler.token.KIND_GEQ, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        if peek_char(self) == 62
-            adv(self)
+        if self:peek_char() == 62
+            self:adv()
             return { kind = std.compiler.token.KIND_RSHIFT, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         return { kind = std.compiler.token.KIND_GT, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 58
-        if peek_char(self) == 58
-            adv(self)
+        if self:peek_char() == 58
+            self:adv()
             return { kind = std.compiler.token.KIND_DCOLON, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         return { kind = std.compiler.token.KIND_COLON, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
@@ -676,15 +676,15 @@ next_tok(self: Lexer): Tok
     elseif c == 63
         return { kind = std.compiler.token.KIND_QUESTION, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 33
-        if peek_char(self) == 61
-            adv(self)
+        if self:peek_char() == 61
+            self:adv()
             return { kind = std.compiler.token.KIND_NEQ, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         return { kind = std.compiler.token.KIND_BANG, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 96
         return { kind = std.compiler.token.KIND_BACKTICK, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     else
-        _fail(self, 4)
+        self:_fail(4)
         return { kind = std.compiler.token.KIND_EOF, loc = l, text = "", int_val = 0, float_val = 0.0 }
     end
 end
@@ -695,12 +695,12 @@ next(self: Lexer): Tok
         self.has_peeked = false
         return tok
     end
-    return next_tok(self)
+    return self:next_tok()
 end
 
 peek(self: Lexer): Tok
     if not self.has_peeked
-        self.peeked_token = next_tok(self)
+        self.peeked_token = self:next_tok()
         self.has_peeked = true
     end
     self.peeked_token
