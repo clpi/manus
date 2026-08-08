@@ -1,5 +1,6 @@
 /// Compile-time metaprogramming hooks: concept sweeps, derive maps, cartesian products.
 const std = @import("std");
+const builtin = @import("builtin");
 const ast = @import("ast.zig");
 const sema = @import("sema.zig");
 const types = @import("types.zig");
@@ -824,7 +825,12 @@ pub fn comptimeProductHook(host: Host, concept_a: []const u8, concept_b: []const
     errdefer buf.deinit(alloc);
 
     const n = left.items.len * right.items.len;
-    const parallel = callback == .func and n > 1;
+    // `std.Thread.spawn` is a hard `@compileError` on a single-threaded target,
+    // so the fan-out has to be excluded at COMPTIME, not merely skipped at
+    // runtime — wasm32-wasi baseline is single-threaded and this one call was
+    // the last Zig-side blocker in the cross-target matrix (GAP-040). The
+    // `else` branch below computes the same product serially.
+    const parallel = !builtin.single_threaded and callback == .func and n > 1;
     if (parallel) {
         const results = alloc.alloc(?[]const u8, n) catch return null;
         defer {

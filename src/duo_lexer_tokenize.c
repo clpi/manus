@@ -13,8 +13,61 @@
 #include <sys/time.h>
 #include <ctype.h>
 #include <limits.h>
+#ifdef __wasm__
+// WASM stubs for missing POSIX features
+typedef int jmp_buf[1];
+#define setjmp(j) 0
+#define longjmp(j, v) do { (void)(j); (void)(v); } while(0)
+struct lua_Thread;
+typedef struct { struct { void* ss_sp; size_t ss_size; } uc_stack; struct lua_Thread* uc_link; } ucontext_t;
+#define getcontext(u) (-1)
+#define makecontext(u, f, c) do { } while(0)
+#define swapcontext(o, n) do { } while(0)
+static inline FILE* popen(const char* c, const char* m) { (void)c; (void)m; return NULL; }
+static inline int pclose(FILE* f) { (void)f; return -1; }
+static inline int mkstemp(char* t) { (void)t; return -1; }
+static inline int close(int fd) { (void)fd; return 0; }
+static inline int unlink(const char* p) { (void)p; return 0; }
+#define L_tmpnam 256
+#define X_OK 1
+#define R_OK 4
+static inline int access(const char* p, int m) { (void)p; (void)m; return -1; }
+#define RTLD_NOW  2
+#define RTLD_LOCAL 0
+static inline void* dlopen(const char* p, int m) { (void)p; (void)m; return NULL; }
+static inline void* dlsym(void* h, const char* s) { (void)h; (void)s; return NULL; }
+static inline const char* dlerror(void) { return "dlopen not supported in WASM"; }
+static inline int dlclose(void* h) { (void)h; return 0; }
+static inline int duo_wasm_system(const char* c) { (void)c; return -1; }
+#define system(c) duo_wasm_system(c)
+static inline char* duo_wasm_tmpnam(char* b) { (void)b; return (char*)0; }
+#define tmpnam(b) duo_wasm_tmpnam(b)
+static inline FILE* duo_wasm_tmpfile(void) { return (FILE*)0; }
+#define tmpfile() duo_wasm_tmpfile()
+#elif defined(_WIN32)
+// Windows stubs for missing POSIX features. mingw-w64 already
+// carries popen/pclose/access/R_OK/X_OK/mkstemp/close/unlink/
+// L_tmpnam via <unistd.h>, so only ucontext and dlfcn are absent.
+#include <setjmp.h>
+struct lua_Thread;
+typedef struct { struct { void* ss_sp; size_t ss_size; } uc_stack; struct lua_Thread* uc_link; } ucontext_t;
+#define getcontext(u) (-1)
+#define makecontext(u, f, c) do { } while(0)
+#define swapcontext(o, n) do { } while(0)
+typedef int (__stdcall *duo_win_farproc)(void);
+__declspec(dllimport) void* __stdcall LoadLibraryA(const char*);
+__declspec(dllimport) duo_win_farproc __stdcall GetProcAddress(void*, const char*);
+__declspec(dllimport) int __stdcall FreeLibrary(void*);
+#define RTLD_NOW  2
+#define RTLD_LOCAL 0
+static inline void* dlopen(const char* p, int m) { (void)m; return LoadLibraryA(p); }
+static inline void* dlsym(void* h, const char* s) { return (void*)GetProcAddress(h, s); }
+static inline const char* dlerror(void) { return "LoadLibrary failed"; }
+static inline int dlclose(void* h) { return FreeLibrary(h) ? 0 : -1; }
+#else
 #include <setjmp.h>
 #include <ucontext.h>
+#endif
 int duo_tests_failed = 0;
 int duo_test_runner_active = 0;
 const char* duo_test_current = NULL;
@@ -22,14 +75,16 @@ int duo_argc; char** duo_argv;
 jmp_buf duo_test_jmp;
 #ifndef __wasm__
 #include <unistd.h>
-#include <dlfcn.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#ifndef _WIN32
+#include <dlfcn.h>
 #include <sys/socket.h>
 #include <sys/mman.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#endif
 #endif
 #ifndef DUO_ML_KERNELS_PRELUDE
 #define DUO_ML_KERNELS_PRELUDE
@@ -5358,7 +5413,7 @@ static inline lua_Value lua_ffi_init(void) {
     return m;
 }
 /* ── Network (TCP, UDP, HTTP) ── */
-#ifndef __wasm__
+#if !defined(__wasm__) && !defined(_WIN32)
 static lua_Value duo_net_tcp_connect(lua_Value host_v, lua_Value port_v) {
     const char* h = (host_v.type == VAL_STRING) ? host_v.as.sval : "127.0.0.1";
     char port_s[8];
@@ -6837,8 +6892,8 @@ static inline duo_rec_59c700cbb43a8f9d std_compiler_lexer__next_tok(duo_rec_ee59
         const char* text = std_str__sub(self->src, start, (self->pos - 1));
         lua_Value kind = ({
             lua_Value __fn = lua_table_get_str_lit(lua_require(lua_val_from_literal("std.token.classify", 3538043015, 18)), "classify", 3210751535u, 8);
-            lua_Value __argv[1] = {lua_val_from_str(text)};
-            lua_invoke(__fn, 1, __argv);
+            lua_Value duo_args[1] = {lua_val_from_str(text)};
+            lua_invoke(__fn, 1, duo_args);
         });
         if (lua_eq(kind, lua_val_from_int((int64_t)(0)))) {
                         kind = lua_table_get_str_lit(lua_require(lua_val_from_literal("std.compiler.token", 1585571154, 18)), "KIND_NAME", 3568535119u, 9);
@@ -9058,8 +9113,8 @@ int64_t _r = duo_lexer_host_probe(_p0, _p1);
 __attribute__((export_name("duo_lexer_host_probe"), visibility("default"))) int64_t duo_lexer_host_probe(int64_t out, int64_t cap) {
     return ((int64_t)lua_to_num(({
         lua_Value __fn = lua_table_get_str_lit(lua_require(lua_val_from_literal("std.compiler.lexer", 937198785, 18)), "duo_lexer_tokenize_all", 584968230u, 22);
-        lua_Value __argv[4] = {lua_val_from_literal("fun add(a: i64): i64 = a + 1 end", 1892414832, 32), lua_val_from_literal("probe.duo", 3251057903, 9), lua_val_from_int((int64_t)(out)), lua_val_from_int((int64_t)(cap))};
-        lua_invoke(__fn, 4, __argv);
+        lua_Value duo_args[4] = {lua_val_from_literal("fun add(a: i64): i64 = a + 1 end", 1892414832, 32), lua_val_from_literal("probe.duo", 3251057903, 9), lua_val_from_int((int64_t)(out)), lua_val_from_int((int64_t)(cap))};
+        lua_invoke(__fn, 4, duo_args);
     })));
 }
 

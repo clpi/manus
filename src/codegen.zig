@@ -1568,11 +1568,17 @@ pub const CodeGen = struct {
         self.ind();
         self.p("lua_Value __fn = lua_table_get_str_lit(__self, \"{s}\", {d}u, {d});\n", .{ method, hash, method.len });
         self.ind();
-        self.p("lua_Value __argv[{d}] = {{__self", .{args.len + 1});
+        // `duo_args`, not `__argv`: mingw-w64's <stdlib.h> defines `__argv` as
+        // `(*__p___argv())`, so every emitted call site expanded into a
+        // function-call initializer and x86_64-windows died with "conflicting
+        // types for '__p___argv'". A leading `__` is reserved for the
+        // implementation in every C translation unit; the platform was within
+        // its rights and the generator was not. (GAP-040)
+        self.p("lua_Value duo_args[{d}] = {{__self", .{args.len + 1});
         for (args, 0..) |_, j| self.p(", __a{d}", .{j});
         self.p("}};\n", .{});
         self.ind();
-        self.p("lua_invoke(__fn, {d}, __argv);\n", .{args.len + 1});
+        self.p("lua_invoke(__fn, {d}, duo_args);\n", .{args.len + 1});
         self.indent -= 1;
         self.ind();
         self.p("}});\n", .{});
@@ -5060,7 +5066,16 @@ pub const CodeGen = struct {
             self.p("#include <ctype.h>\n", .{});
             self.p("#include <limits.h>\n", .{});
         }
-        if (std.mem.eql(u8, self.target, "wasm32-wasi")) {
+        // Portability shim. Every arm is selected by the C PREPROCESSOR, not by
+        // the target this generator happened to be pointed at, so one emitted
+        // .c file compiles on every host. GAP-040: `src/duo_lexer_tokenize.c`
+        // is a tracked generated artifact that build.zig links into EVERY
+        // cross-build, and it was frozen with the POSIX arm taken — which is
+        // why x86_64-windows died on `ucontext.h` and wasm32-wasi on that plus
+        // the rest of the POSIX surface. Emitting the union under guards makes
+        // the artifact honestly target-independent, which is what checking it
+        // in already implied.
+        if (std.mem.eql(u8, self.target, "wasm32-wasi") or !native_scalar_plain) {
             self.p("#ifdef __wasm__\n", .{});
             self.p("// WASM stubs for missing POSIX features\n", .{});
             self.p("typedef int jmp_buf[1];\n", .{});
@@ -5088,10 +5103,45 @@ pub const CodeGen = struct {
             self.p("static inline void* dlsym(void* h, const char* s) {{ (void)h; (void)s; return NULL; }}\n", .{});
             self.p("static inline const char* dlerror(void) {{ return \"dlopen not supported in WASM\"; }}\n", .{});
             self.p("static inline int dlclose(void* h) {{ (void)h; return 0; }}\n", .{});
-            self.p("#endif\n", .{});
-        } else if (!native_scalar_plain) {
+            // wasi-libc DECLARES these three and ships no definition, so they
+            // pass the compile and then fail at wasm-ld with "undefined
+            // symbol". Macros rather than `static inline` definitions: a
+            // static definition after the header's extern declaration is a
+            // hard error. Each answers a FAILURE, never a plausible success.
+            self.p("static inline int duo_wasm_system(const char* c) {{ (void)c; return -1; }}\n", .{});
+            self.p("#define system(c) duo_wasm_system(c)\n", .{});
+            self.p("static inline char* duo_wasm_tmpnam(char* b) {{ (void)b; return (char*)0; }}\n", .{});
+            self.p("#define tmpnam(b) duo_wasm_tmpnam(b)\n", .{});
+            self.p("static inline FILE* duo_wasm_tmpfile(void) {{ return (FILE*)0; }}\n", .{});
+            self.p("#define tmpfile() duo_wasm_tmpfile()\n", .{});
+            self.p("#elif defined(_WIN32)\n", .{});
+            self.p("// Windows stubs for missing POSIX features. mingw-w64 already\n", .{});
+            self.p("// carries popen/pclose/access/R_OK/X_OK/mkstemp/close/unlink/\n", .{});
+            self.p("// L_tmpnam via <unistd.h>, so only ucontext and dlfcn are absent.\n", .{});
+            self.p("#include <setjmp.h>\n", .{});
+            self.p("struct lua_Thread;\n", .{});
+            self.p("typedef struct {{ struct {{ void* ss_sp; size_t ss_size; }} uc_stack; struct lua_Thread* uc_link; }} ucontext_t;\n", .{});
+            self.p("#define getcontext(u) (-1)\n", .{});
+            self.p("#define makecontext(u, f, c) do {{ }} while(0)\n", .{});
+            self.p("#define swapcontext(o, n) do {{ }} while(0)\n", .{});
+            // Real dynamic loading — LoadLibraryA is the Win32 equivalent, so
+            // this is a working port and not a nil-returning stub. Declared by
+            // hand rather than via <windows.h>, whose macros collide with
+            // generated identifiers.
+            self.p("typedef int (__stdcall *duo_win_farproc)(void);\n", .{});
+            self.p("__declspec(dllimport) void* __stdcall LoadLibraryA(const char*);\n", .{});
+            self.p("__declspec(dllimport) duo_win_farproc __stdcall GetProcAddress(void*, const char*);\n", .{});
+            self.p("__declspec(dllimport) int __stdcall FreeLibrary(void*);\n", .{});
+            self.p("#define RTLD_NOW  2\n", .{});
+            self.p("#define RTLD_LOCAL 0\n", .{});
+            self.p("static inline void* dlopen(const char* p, int m) {{ (void)m; return LoadLibraryA(p); }}\n", .{});
+            self.p("static inline void* dlsym(void* h, const char* s) {{ return (void*)GetProcAddress(h, s); }}\n", .{});
+            self.p("static inline const char* dlerror(void) {{ return \"LoadLibrary failed\"; }}\n", .{});
+            self.p("static inline int dlclose(void* h) {{ return FreeLibrary(h) ? 0 : -1; }}\n", .{});
+            self.p("#else\n", .{});
             self.p("#include <setjmp.h>\n", .{});
             self.p("#include <ucontext.h>\n", .{});
+            self.p("#endif\n", .{});
         }
         if (self.moduleNeedsLuaRuntime()) {
             self.pl("int duo_tests_failed = 0;", .{});
@@ -5124,14 +5174,19 @@ pub const CodeGen = struct {
         if (self.moduleNeedsLuaRuntime()) {
             self.p("#ifndef __wasm__\n", .{});
             self.p("#include <unistd.h>\n", .{});
-            self.p("#include <dlfcn.h>\n", .{});
             self.p("#include <fcntl.h>\n", .{});
             self.p("#include <sys/stat.h>\n", .{});
+            // mingw-w64 has the three above but none of the six below; the
+            // sockets surface is stubbed for _WIN32 the same way it already is
+            // for wasm, at the guard around the net block.
+            self.p("#ifndef _WIN32\n", .{});
+            self.p("#include <dlfcn.h>\n", .{});
             self.p("#include <sys/socket.h>\n", .{});
             self.p("#include <sys/mman.h>\n", .{});
             self.p("#include <netinet/in.h>\n", .{});
             self.p("#include <arpa/inet.h>\n", .{});
             self.p("#include <netdb.h>\n", .{});
+            self.p("#endif\n", .{});
             self.p("#endif\n", .{});
         }
         if (self.moduleNeedsLuaRuntime()) {
@@ -13566,14 +13621,14 @@ pub const CodeGen = struct {
         self.ind();
         self.p("lua_Value __fn = lua_table_get_str_lit(__self, \"{s}\", {d}u, {d});\n", .{ f.field, hash, f.field.len });
         self.ind();
-        self.p("lua_Value __argv[{d}] = {{__self", .{c.args.len + 1});
+        self.p("lua_Value duo_args[{d}] = {{__self", .{c.args.len + 1});
         for (c.args) |arg| {
             self.p(", ", .{});
             try self.emit_as_lua_value(arg);
         }
         self.p("}};\n", .{});
         self.ind();
-        self.p("lua_invoke(__fn, {d}, __argv);\n", .{c.args.len + 1});
+        self.p("lua_invoke(__fn, {d}, duo_args);\n", .{c.args.len + 1});
         self.indent -= 1;
         self.ind();
         self.p("}})", .{});
@@ -14634,14 +14689,14 @@ pub const CodeGen = struct {
                         if (c.args.len == 0) {
                             self.pl("lua_Value __r = {s}__argv(0, NULL);", .{argv_cname});
                         } else {
-                            self.p("lua_Value __argv[{d}] = {{", .{c.args.len});
+                            self.p("lua_Value duo_args[{d}] = {{", .{c.args.len});
                             for (c.args, 0..) |arg, i| {
                                 if (i > 0) self.p(", ", .{});
                                 try self.emit_as_lua_value(arg);
                             }
                             self.p("}};\n", .{});
                             self.ind();
-                            self.p("lua_Value __r = {s}__argv({d}, __argv);\n", .{ argv_cname, c.args.len });
+                            self.p("lua_Value __r = {s}__argv({d}, duo_args);\n", .{ argv_cname, c.args.len });
                         }
                         self.ind();
                         self.p("__r;\n", .{});
@@ -14739,7 +14794,7 @@ pub const CodeGen = struct {
                     if (invoke_argc == 0) {
                         self.pl("lua_invoke(__fn, 0, NULL);", .{});
                     } else {
-                        self.p("lua_Value __argv[{d}] = {{", .{invoke_argc});
+                        self.p("lua_Value duo_args[{d}] = {{", .{invoke_argc});
                         for (0..invoke_argc) |i| {
                             if (i > 0) self.p(", ", .{});
                             if (i < c.args.len) {
@@ -14750,7 +14805,7 @@ pub const CodeGen = struct {
                         }
                         self.p("}};\n", .{});
                         self.ind();
-                        self.p("lua_invoke(__fn, {d}, __argv);\n", .{invoke_argc});
+                        self.p("lua_invoke(__fn, {d}, duo_args);\n", .{invoke_argc});
                     }
                     self.indent -= 1;
                     self.ind();
@@ -14778,14 +14833,14 @@ pub const CodeGen = struct {
                     if (c.args.len == 0) {
                         self.pl("lua_invoke(__fn, 0, NULL);", .{});
                     } else {
-                        self.p("lua_Value __argv[{d}] = {{", .{c.args.len});
+                        self.p("lua_Value duo_args[{d}] = {{", .{c.args.len});
                         for (c.args, 0..) |arg, i| {
                             if (i > 0) self.p(", ", .{});
                             try self.emit_as_lua_value(arg);
                         }
                         self.p("}};\n", .{});
                         self.ind();
-                        self.p("lua_invoke(__fn, {d}, __argv);\n", .{c.args.len});
+                        self.p("lua_invoke(__fn, {d}, duo_args);\n", .{c.args.len});
                     }
                     self.indent -= 1;
                     self.ind();
@@ -15025,7 +15080,7 @@ pub const CodeGen = struct {
                         self.ind();
                         self.p("lua_Value __fn = lua_table_get_str_lit(__self, \"{s}\", {d}u, {d});\n", .{ mc.method, hash, mc.method.len });
                         self.ind();
-                        self.p("lua_Value __argv[{d}] = {{__self", .{mc.args.len + 1});
+                        self.p("lua_Value duo_args[{d}] = {{__self", .{mc.args.len + 1});
                         for (mc.args, 0..) |arg, i| {
                             _ = i;
                             self.p(", ", .{});
@@ -15033,7 +15088,7 @@ pub const CodeGen = struct {
                         }
                         self.p("}};\n", .{});
                         self.ind();
-                        self.p("lua_invoke(__fn, {d}, __argv);\n", .{mc.args.len + 1});
+                        self.p("lua_invoke(__fn, {d}, duo_args);\n", .{mc.args.len + 1});
                         self.indent -= 1;
                         self.ind();
                         self.p("}})", .{});
@@ -15135,14 +15190,14 @@ pub const CodeGen = struct {
                         self.ind();
                         self.p("lua_Value __fn = lua_table_get_str_lit(__self, \"{s}\", {d}u, {d});\n", .{ mc.method, hash, mc.method.len });
                         self.ind();
-                        self.p("lua_Value __argv[{d}] = {{__self", .{mc.args.len + 1});
+                        self.p("lua_Value duo_args[{d}] = {{__self", .{mc.args.len + 1});
                         for (mc.args) |arg| {
                             self.p(", ", .{});
                             try self.emit_as_lua_value(arg);
                         }
                         self.p("}};\n", .{});
                         self.ind();
-                        self.p("lua_invoke(__fn, {d}, __argv);\n", .{mc.args.len + 1});
+                        self.p("lua_invoke(__fn, {d}, duo_args);\n", .{mc.args.len + 1});
                         self.indent -= 1;
                         self.ind();
                         self.p("}})", .{});
@@ -28392,7 +28447,7 @@ const duo_runtime =
     \\    return m;
     \\}
     \\/* ── Network (TCP, UDP, HTTP) ── */
-    \\#ifndef __wasm__
+    \\#if !defined(__wasm__) && !defined(_WIN32)
     \\static lua_Value duo_net_tcp_connect(lua_Value host_v, lua_Value port_v) {
     \\    const char* h = (host_v.type == VAL_STRING) ? host_v.as.sval : "127.0.0.1";
     \\    char port_s[8];
