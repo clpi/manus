@@ -17,8 +17,11 @@
 -- value.
 
 -- Pinned floor: the MEASURED count, never an estimate.
+-- Raised 6 -> 8 on 2026-08-07: both X8 rows. The inline form always worked; the
+-- CANONICAL one-field-per-line form was a parse error until the record arm
+-- learned to continue on a following NAME.
 baseline(): i64
-    6
+    8
 end
 
 implemented = 0
@@ -94,6 +97,16 @@ main(): i64
     -- CASE. The epoch bans uppercase identifiers outright. This row confirms
     -- the DENIED form still compiles -- nothing enforces the scan.
     record("E2-12 uppercase still compiles", "Point: { x: i64 }\nmain(): void\n    print(\"compiled\")\nend\n", "compiled")
+
+    -- §2 X8 LAYOUT. "Two or more NAMED fields go one per line, always" is the
+    -- canonical descriptor spelling — named fields are independent facts. It
+    -- was a PARSE ERROR until 2026-08-07: parse_type_primary's record arm
+    -- required a comma between fields and then expected `}`, so the mandated
+    -- layout failed with "expected '}', got 'name'" while the inline comma form
+    -- compiled. Every census row here had used the inline form, so nothing
+    -- caught it. Fixed by letting a following NAME continue the field list.
+    record("E2-13 X8 one field per line", "point: {\n    x: i64\n    y: i64\n}\nmain(): void\n    print(\"declared\")\nend\n", "declared")
+    record("E2-14 X8 inline comma form", "point: { x: i64, y: i64 }\nmain(): void\n    print(\"declared\")\nend\n", "declared")
 
     -- Controls.
     record("E2-C1 arithmetic control", "main(): void\n    print(1 + 2)\nend\n", "3")

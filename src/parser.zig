@@ -406,7 +406,16 @@ pub const Parser = struct {
                             .typ = ft,
                             .loc = fl,
                         });
-                        if (try self.eat(.comma) == null) break;
+                        if (try self.eat(.comma) == null) {
+                            // X8 is the canonical descriptor layout: two or more
+                            // NAMED fields go one per line, always, with no
+                            // separator — named fields are independent facts.
+                            // Requiring a comma made that spelling a parse error
+                            // ("expected '}', got 'name'"), so the mandated form
+                            // did not compile while the inline comma form did.
+                            // A following NAME continues the field list.
+                            if (!(try self.check(.name))) break;
+                        }
                     }
                 }
                 _ = try self.expect(.rbrace);
