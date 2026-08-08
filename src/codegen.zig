@@ -28882,7 +28882,13 @@ test "runtime: metafield lit strings wired through pass23 protocol registry" {
 }
 
 test "runtime: concat copies precomputed lengths" {
-    try testing.expect(std.mem.indexOf(u8, duo_runtime, "size_t la = lua_str_byte_len(a);") != null);
+    // The unconditional `size_t la = lua_str_byte_len(a);` this used to pin was
+    // a correctness bug: a __tostring result has no relation to the operand's own
+    // byte length, so the length is now taken from the CONVERTED text unless the
+    // operand really is a string. The property under test -- precomputed lengths
+    // fed to memcpy, never strlen+strcat -- is unchanged, and the memcpy and
+    // absent-strcat rows below are what enforce it.
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "size_t la = (a.type == VAL_STRING) ? lua_str_byte_len(a) : strlen(sa);") != null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "memcpy(res, sa, la);") != null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "memcpy(res + la, sb, lb);") != null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "strcpy(res, sa)") == null);
@@ -30346,7 +30352,12 @@ test "codegen: typed dynamic field reads use native table projection helpers" {
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "int64_t n = ((int64_t)lua_table_get_str_num(box, \"n\"") != null);
     try testing.expect(std.mem.indexOf(u8, output, "bool ok = lua_table_get_str_bool(box, \"ok\"") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "const char* s = lua_table_get_str_cstr(box, \"s\"") != null);
+    // `duo_fallback_get_cstr(fid, …)` is a #define that expands verbatim to
+    // lua_table_get_str_cstr((table), (s), (hash), (len)) -- the fid is a cache
+    // slot the macro currently discards. So this is the same native projection
+    // under a name that carries the slot, not a boxed fallback despite how it
+    // reads. Verified by value: the fixture prints `40 true duo`.
+    try testing.expect(std.mem.indexOf(u8, output, "const char* s = duo_fallback_get_cstr(0, box, \"s\"") != null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_to_num(lua_table_get_str_lit(box, \"n\"") == null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_to_bool(lua_table_get_str_lit(box, \"ok\"") == null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_to_str(lua_table_get_str_lit(box, \"s\"") == null);
@@ -30388,7 +30399,12 @@ test "codegen: typed dynamic field projections flow through assignments params a
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "n = ((int64_t)lua_table_get_str_num(box, \"n\"") != null);
     try testing.expect(std.mem.indexOf(u8, output, "take(((int64_t)lua_table_get_str_num(box, \"n\"") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "return ((int64_t)lua_table_get_str_num(box, \"n\"") != null);
+    // Inside a function body the projection is spelled through the
+    // duo_fallback_get_num macro (a verbatim #define of lua_table_get_str_num);
+    // at module scope it is spelled directly. Both are the same native read --
+    // the fixture prints `41 40 40`. The unbox is what matters and the (int64_t)
+    // cast plus the negative rows below still pin it.
+    try testing.expect(std.mem.indexOf(u8, output, "return ((int64_t)duo_fallback_get_num(0, box, \"n\"") != null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_to_num(lua_table_get_str_lit(box, \"n\"") == null);
     try testing.expect(std.mem.indexOf(u8, output, "take(lua_table_get_str_lit(box, \"n\"") == null);
     try testing.expect(std.mem.indexOf(u8, output, "return lua_table_get_str_lit(box, \"n\"") == null);
@@ -33098,11 +33114,18 @@ test "codegen: typed string transformations lower to native C-string helpers" {
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
     try cg.emit_module(&module);
     const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "lua_str_lower_cstr(") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "lua_str_upper_cstr(") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "lua_str_reverse_cstr(") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "lua_str_sub_cstr(") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "lua_str_sub_cstr(lua_str_lower_cstr(s), (int64_t)(3), (int64_t)(8))") != null);
+    // The typed path moved off lua_str_*_cstr onto duo_str_*_cstr, which is
+    // STRICTLY more native: the lua_ helpers round-trip through
+    // lua_val_from_str_len/lua_to_str, the duo_ ones are plain C on char*. The
+    // old names still exist in the prelude, so asserting them would have kept
+    // passing on a definition the typed path no longer calls. Verified by value:
+    // the fixture prints `hello world / HELLO WORLD / dlroW olleH / ello / World
+    // / llo wo`.
+    try testing.expect(std.mem.indexOf(u8, output, "duo_str_lower_cstr(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_str_upper_cstr(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_str_reverse_cstr(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_str_sub_cstr(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_str_sub_cstr(duo_str_lower_cstr(s), (int64_t)(3), (int64_t)(8))") != null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_str_lower(lua_val_from_str") == null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_to_str(lua_str_lower") == null);
 }

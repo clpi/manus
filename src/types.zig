@@ -1824,7 +1824,12 @@ test "CallShape: explain produces readable output" {
     };
     var buf: [256]u8 = undefined;
     const explanation = shape.explain(&buf);
-    try testing.expect(std.mem.indexOf(u8, explanation, "direct call") != null);
+    // "direct call" became "direct parenthesized call" when CallShape grew an
+    // invocation_form field and explain() started printing it. The form is real
+    // output, not noise, so the test asserts the two words it actually cares
+    // about rather than re-pinning a whole prefix that will move again.
+    try testing.expect(std.mem.indexOf(u8, explanation, "direct") != null);
+    try testing.expect(std.mem.indexOf(u8, explanation, "call") != null);
     try testing.expect(std.mem.indexOf(u8, explanation, "scale") != null);
     try testing.expect(std.mem.indexOf(u8, explanation, "1 known") != null);
     try testing.expect(std.mem.indexOf(u8, explanation, "single return") != null);
