@@ -130,9 +130,26 @@ there rather than citing this file.
 
 ## Known stale references
 
-`src/*.zig` carries 93 string constants naming the old `docs/plans/...` paths
-(for example `src/pass36_catalog.zig`, `src/foundation_gate.zig`,
-`src/pass25_tail_result_model.zig`). They are inert string literals compared
-against each other, not filesystem reads, so the build is unaffected — verified
-green after this move. They are stale pointers to be corrected by whoever next
-owns `src/`, not by this archive.
+`src/*.zig` names these documents in 93 places. An earlier revision of this
+README claimed they were "inert string literals compared against each other, not
+filesystem reads, so the build is unaffected." **That was wrong, and it broke six
+unit-test gates.** Three gates call `cwd.access()` on the path and fail with
+`FileNotFound` when it does not resolve:
+
+| Gate | Constant it accesses |
+| --- | --- |
+| `src/foundation_gate.zig:29-30` | `foundation_catalog.CANONICAL_SPEC_PATH`, `PLAN_PATH` |
+| `src/pass34_gate.zig:273-274` | `pass34_catalog.PLAN_PATH`, `INDEX_PATH` |
+| `src/pass36_gate.zig:396-397` | `pass36_catalog.CANONICAL_PATH`, `PLAN_PATH` |
+
+`src/foundation_gate.zig:24-25` additionally re-states the two paths as literals
+and `mem.eql`-compares them against the catalog constants, so those four strings
+must move together or the equality check fails instead.
+
+The lesson, recorded because it cost a red build: **a doc move is verified
+against everything that NAMES the file, not just against the file.** `zig build`
+alone does not catch this — `zig build unit-test` does. Grep for the path.
+
+All 50 distinct paths `src/` names have identical basenames under
+`docs/archive/`, so the repair is mechanical: rewrite `docs/plans/` to
+`docs/archive/` throughout `src/`.
