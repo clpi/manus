@@ -1,0 +1,108 @@
+-- Pass 91 / Epoch 2 — the identifier recognizer.
+--
+-- The epoch ships two greppable scans that must reach zero:
+--
+--     grep [a-z]_[a-z] outside numerals = 0
+--     grep [A-Z] in identifiers         = 0
+--
+-- A raw count is not actionable -- 14504 sites is a number you cannot start on.
+-- This triages them into the buckets the canon's own repair table names, and
+-- flags the one bucket that is a TRAP, so the sweep can be run in order of
+-- safety rather than alphabetically.
+--
+-- This is the recognizer Pass 86 §4 asked codex to gain, generalized by Pass 91
+-- to every interior `_` rather than just constructor modes. It REPORTS; it does
+-- not rewrite. Automatic renaming is not safe here: 25 of Pass 88's predicate
+-- bases collide with existing bindings, one of Pass 90's collides same-file,
+-- and gap[31] means a LEVEL repair landing on a libc verb produces a silent
+-- miscompile rather than an error. Those three facts are why this ships as a
+-- triage tool and the sweep stays a human-reviewed edit.
+--
+-- Shelling out through std.script.capture is the established corpus-walk
+-- pattern here (scripts/parser_corpus_coverage.duo enumerates with `find`).
+-- MONOGLOT is about the FILES being Duo, which they are.
+
+root(): str
+    std.script.getenv("DUO_ROOT", ".")
+end
+
+-- One counted grep over lib/std. `pat` is an extended-regex; the pipeline
+-- de-duplicates so every number below is DISTINCT identifiers, not occurrences.
+-- The `out` binding is not decoration: chaining `:to(i64)` directly onto the
+-- capture call makes the compiler take the PRECEDING binding as the body's
+-- result ("return type mismatch: expected 'i64', got 'str'", pointing at the
+-- `cmd` line). Bound, the tail is unambiguous.
+distinct(pat: str): i64
+    r = root()                                          -- gap[29] (TMP-1 forced)
+    cmd = "grep -rhoE '{pat}' --include='*.duo' {r}/lib/std/ | sort -u | wc -l"
+    out = std.script.chomp(std.script.capture(cmd))
+    to(i64)(out)
+end
+
+occurrences(pat: str): i64
+    r = root()                                          -- gap[29] (TMP-1 forced)
+    cmd = "grep -rhoE '{pat}' --include='*.duo' {r}/lib/std/ | wc -l"
+    out = std.script.chomp(std.script.capture(cmd))
+    to(i64)(out)
+end
+
+-- Every interior-underscore identifier. This is the scan's denominator.
+compound(): str
+    "\\b[a-z][a-z0-9]*(_[a-z][a-z0-9]*)+\\b"
+end
+
+main(): i64
+    total = distinct(compound())
+    sites = occurrences(compound())
+
+    -- Positive control. A scan that reports zero because its pattern is wrong
+    -- looks exactly like a corpus that conforms, and this file's whole job is
+    -- to report a large number honestly.
+    if total == 0
+        print("identifiers: SCAN BROKEN — zero compounds found in lib/std.")
+        print("  The corpus is known to contain thousands; check DUO_ROOT and")
+        print("  that grep -E is available. A confident zero is the failure")
+        print("  mode this control exists to catch.")
+        return 2
+    end
+
+    -- The TRAP bucket. gap[31]: Duo functions are emitted as unmangled static C
+    -- symbols, so a LEVEL repair whose bare verb is a libc symbol either fails
+    -- to build or -- where arities match -- silently binds the C function.
+    -- These must be repaired to a non-colliding verb, never mechanically.
+    hazard = distinct("\\b(read|write|open|close|time|index|link|free|exit|stat|send|recv|kill|wait)_[a-z][a-z0-9]*\\b")
+
+    -- Pass 88's predicate purge: is_x -> x. 25 of these collide with an
+    -- existing binding; 4 collide same-file against their own constructor.
+    predicate = distinct("\\bis_[a-z][a-z0-9]*\\b")
+
+    -- Pass 88's axis compounds: sort_by -> sort, take_while -> take. Blocked on
+    -- the sequence surface, which does not exist.
+    axis = distinct("\\b[a-z][a-z0-9]*_(by|while|until)\\b")
+
+    -- Pass 86's constructor modes: from_x / of_x -> :from(mode).
+    mode = distinct("\\b([a-z][a-z0-9]*_)?from_[a-z][a-z0-9]*\\b")
+
+    -- The case scan, Epoch 2's other absolute.
+    upper = distinct("\\b[A-Z][A-Za-z0-9_]*\\b")
+    uppersites = occurrences("\\b[A-Z][A-Za-z0-9_]*\\b")
+
+    rest = total - hazard - predicate - axis - mode
+
+    print("identifier census — lib/std, Epoch 2 scans")
+    print("")
+    print("  interior `_`   {total} distinct / {sites} sites   (scan demands 0)")
+    print("  uppercase      {upper} distinct / {uppersites} sites   (scan demands 0)")
+    print("")
+    print("  triage of the interior-`_` set:")
+    print("    libc-verb TRAP   {hazard}   gap[31] — repair by hand, never sweep")
+    print("    is_ predicates   {predicate}   Pass 88 — 25 collide, 4 same-file")
+    print("    axis compounds   {axis}   Pass 88 — blocked on the sequence surface")
+    print("    from_ modes      {mode}   Pass 86 — blocked, `from` does not resolve")
+    print("    remainder        {rest}   LEVEL / HOME / CONTEXT — all three compile")
+    print("")
+    print("  The remainder is the actionable bucket: every destination form is")
+    print("  live (scan(number)(1), utf8.valid, limit). What it needs is a")
+    print("  per-name judgement, not a missing mechanism.")
+    0
+end
