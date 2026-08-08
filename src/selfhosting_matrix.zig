@@ -203,14 +203,26 @@ pub const Manifest = struct {
     claim_self_hosted_status: []const u8,
 };
 
+/// DERIVED from the rows, not hand-maintained. It was hardcoded at
+/// `self_hosting_level = 1` and stayed there while SH-03 became canonical, which
+/// is the same drift that made this file's SH-03 blocker wrong twice. The rows
+/// are the one fact; the manifest is a projection of them.
 pub fn publicManifest() Manifest {
+    const canonical = countByStatus(.duo_canonical);
     return .{
-        .self_hosting_level = 1,
-        .canonical_compiler_in_duo = false,
+        .self_hosting_level = @intCast(canonical),
+        // True only when every subsystem is Duo-canonical — the honest reading
+        // of "the canonical compiler is written in Duo".
+        .canonical_compiler_in_duo = canonical == subsystems.len,
         .bootstrap_stage_reached = "S0",
         .production_duo_frontend = true,
         .silent_c_fallback = true,
-        .claim_self_hosted_status = "partial",
+        .claim_self_hosted_status = if (canonical == subsystems.len)
+            "complete"
+        else if (canonical > 0)
+            "partial"
+        else
+            "none",
     };
 }
 
