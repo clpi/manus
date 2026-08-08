@@ -808,6 +808,14 @@ const Arm64Compiler = struct {
     /// Backing store for `dnirRetRecordVals`'s lhs/rhs/third fallback.
     ret_record_scratch: [3]dnir.Value = @splat(.void),
     fp_locals: std.StringHashMapUnmanaged(u5) = .empty,
+    /// Which `temps` entries hold an FP register. `temps` is ONE map for two
+    /// register files and the reader picks the file, which worked only by
+    /// numeric accident: GP values came from x9-x28 and FP values from d0-d7,
+    /// so a register number implied its file. Moving FP values to d16-d30 (to
+    /// get them out of the argument-staging range) made the ranges overlap and
+    /// the accident vanished — `i < 100` began emitting `fcmp d10, d18` against
+    /// x10's number. See gap[058].
+    fp_temps: std.AutoHashMapUnmanaged(u32, void) = .empty,
     used_fp_regs: [32]bool = @splat(false),
     /// Stack slots for sealed record fields (f64 or i64): "c.pos" -> slot meta.
     fp_stack_slots: std.StringHashMapUnmanaged(StackSlot) = .empty,
@@ -907,6 +915,7 @@ const Arm64Compiler = struct {
         self.strings.deinit(self.alloc);
         self.string_map.deinit(self.alloc);
         self.fp_locals.deinit(self.alloc);
+        self.fp_temps.deinit(self.alloc);
         self.fp_stack_slots.deinit(self.alloc);
         self.slot_bases.deinit(self.alloc);
         self.f64_kernel_names.deinit(self.alloc);
@@ -1116,6 +1125,7 @@ const Arm64Compiler = struct {
         self.cur_func_name = f.name;
         self.locals.clearRetainingCapacity();
         self.fp_locals.clearRetainingCapacity();
+        self.fp_temps.clearRetainingCapacity();
         // A staged variadic tail belongs to exactly one call. Carrying a
         // leftover across a function boundary would push a stale register onto
         // the next call's memory-argument area, so clear it with the rest of
@@ -1174,6 +1184,7 @@ const Arm64Compiler = struct {
                     } else dreg;
                     try self.fp_locals.put(self.alloc, p.name, home);
                     try temps.put(self.alloc, slot, home);
+                    try self.markFpTemp(slot);
                     dreg += 1;
                 } else if (p.record) |rec_name| {
                     const rec = f64RecordDesc(self.f64_records, .{ .named = rec_name }) orelse return refuse(@src());
@@ -1386,6 +1397,7 @@ const Arm64Compiler = struct {
                 };
                 try self.emitFmovImmFp(d, val);
                 if (ins.result) |t| try temps.put(self.alloc, t, d);
+                try self.markFpTemp(ins.result);
             },
             .const_str => {
                 const reg = try self.allocReg();
@@ -1439,20 +1451,30 @@ const Arm64Compiler = struct {
                 if (reg != slot) self.releaseDnirTemp(pinned, ins.lhs, reg);
             },
             .load_local => {
-                if (ins.ty == .f64) {
+                // Same rule as the store: the slot's register FILE is a fact
+                // about the slot, not about this instruction's type tag.
+                if (ins.ty == .f64 or self.valueIsFp(ins.lhs)) {
                     const slot: u32 = switch (ins.lhs) {
                         .local => |s| s,
                         else => return refuse(@src()),
                     };
                     const d = pinned.get(slot) orelse temps.get(slot) orelse return undefinedAt(@src(), "local", slot);
                     if (ins.result) |t| try temps.put(self.alloc, t, d);
+                    try self.markFpTemp(ins.result);
                 } else {
                     const reg = try self.evalDnirValue(temps, ins.lhs);
                     if (ins.result) |t| try temps.put(self.alloc, t, reg);
                 }
             },
             .store_local => {
-                if (ins.ty == .f64) {
+                // Dispatch on what the VALUE is, not only on how the
+                // instruction is typed. `x2: f64 = x * x` arrived with a
+                // non-f64 `ty`, so the store took the integer path and emitted
+                // `mov x9, x18` — a general-purpose move of an FP register's
+                // NUMBER. The later `fadd` then read d9 instead of d18 and
+                // mandelbrot's escape test never fired, answering 100 for a
+                // point that escapes at 5.
+                if (ins.ty == .f64 or self.valueIsFp(ins.lhs)) {
                     const d = try self.evalDnirValueFp(temps, ins.lhs);
                     if (ins.result) |slot| {
                         // Same rule the integer path below documents: a local
@@ -1469,6 +1491,13 @@ const Arm64Compiler = struct {
                         }
                         try pinned.put(self.alloc, slot, home);
                         try temps.put(self.alloc, slot, home);
+                        // FP-ness has to travel through the local, not just
+                        // through the temp. `x2: f64 = x * x` stores an FP temp
+                        // into a slot; without this the later `x2 + y2 > 4.0`
+                        // saw two operands it believed were integers, took the
+                        // GP comparison path, and never fired — mandelbrot ran
+                        // all 100 iterations and answered 100 instead of 5.
+                        try self.markFpTemp(slot);
                     } else {
                         self.releaseFpReg(d);
                     }
@@ -1519,6 +1548,7 @@ const Arm64Compiler = struct {
                         if (alhs != adst) self.releaseFpReg(alhs);
                         if (arhs != adst) self.releaseFpReg(arhs);
                         if (ins.result) |t| try temps.put(self.alloc, t, adst);
+                        try self.markFpTemp(ins.result);
                         break :blk;
                     }
                     const lhs = try self.evalDnirValueFp(temps, ins.lhs);
@@ -1541,8 +1571,23 @@ const Arm64Compiler = struct {
                     // looks like a register-space confusion and is not: the
                     // branch above does the same thing for the same reason, and
                     // a comparison's consumer reads an integer.
+                    // ...but only when the OPERANDS are floats. Being inside a
+                    // float kernel says nothing about `i < 100`, whose operands
+                    // are both integers. Comparing them with `fcmp` read the GP
+                    // register NUMBER as an FP register — `i` lives in x10 and
+                    // the loop condition became `fcmp d10, d18` — so the branch
+                    // was decided by unrelated float state and mandelbrot's
+                    // inner loop never terminated (gap[058]).
+                    //
+                    // `valueIsFp` answers from `fp_temps` instead of from the
+                    // function's kind. One FP operand is enough: an integer on
+                    // the other side is converted by `evalDnirValueFp` with
+                    // `scvtf`, which is what makes `zx*zx + zy*zy < 4.0` — the
+                    // shape this arm was written for — still work.
                     const cmp_op = dnirBinOpToAst(ins.binop);
-                    if (isComparison(cmp_op)) {
+                    if (isComparison(cmp_op) and
+                        (self.valueIsFp(ins.lhs) or self.valueIsFp(ins.rhs)))
+                    {
                         const clhs = try self.evalDnirValueFp(temps, ins.lhs);
                         const crhs = try self.evalDnirValueFp(temps, ins.rhs);
                         const cdst = try self.allocReg();
@@ -1551,6 +1596,19 @@ const Arm64Compiler = struct {
                         self.releaseFpReg(clhs);
                         self.releaseFpReg(crhs);
                         if (ins.result) |t| try temps.put(self.alloc, t, cdst);
+                        break :blk;
+                    }
+                    // An all-integer comparison inside a float kernel is an
+                    // ordinary integer comparison. Nothing about the enclosing
+                    // function changes that.
+                    if (isComparison(cmp_op)) {
+                        const ilhs = try self.evalDnirValue(temps, ins.lhs);
+                        const irhs = try self.evalDnirValue(temps, ins.rhs);
+                        const idst = try self.allocReg();
+                        try self.emitCompareOrBinop(idst, ilhs, irhs, cmp_op);
+                        if (!Arm64Compiler.regIsPinned(pinned, ilhs)) self.releaseReg(ilhs);
+                        if (!Arm64Compiler.regIsPinned(pinned, irhs)) self.releaseReg(irhs);
+                        if (ins.result) |t| try temps.put(self.alloc, t, idst);
                         break :blk;
                     }
                     const lhs = try self.evalDnirValueFp(temps, ins.lhs);
@@ -1566,6 +1624,7 @@ const Arm64Compiler = struct {
                     if (lhs != dst) self.releaseFpReg(lhs);
                     if (rhs != dst) self.releaseFpReg(rhs);
                     if (ins.result) |t| try temps.put(self.alloc, t, dst);
+                    try self.markFpTemp(ins.result);
                 } else {
                     const lhs = try self.evalDnirValue(temps, ins.lhs);
                     const rhs = try self.evalDnirValue(temps, ins.rhs);
@@ -1594,6 +1653,7 @@ const Arm64Compiler = struct {
                     try self.emitPopVarargs(vbytes);
                     try self.emitRestoreCallerRegs(save);
                     self.used_fp_regs[0] = true;
+                    try self.markFpTemp(ins.result);
                     // The result stays in d0: that IS the ARM64 return register,
                     // and a copy-out here breaks the f64 return ABI (caught by
                     // "native backend lowers Pass 4 milestone with f64 return in
@@ -1801,6 +1861,7 @@ const Arm64Compiler = struct {
                 if (self.cur_func_float) {
                     const d = self.fp_locals.get(key) orelse return undefinedKey(@src(), "fp local", key);
                     if (ins.result) |t| try temps.put(self.alloc, t, d);
+                    try self.markFpTemp(ins.result);
                 } else {
                     const reg = try self.loadStackField(key);
                     if (ins.result) |t| try temps.put(self.alloc, t, reg);
@@ -3731,6 +3792,23 @@ const Arm64Compiler = struct {
     // FDIV=0x1E601800, FMOV <Dd>,<Dn>=0x1E604000. (0x1EE0xxxx is HALF-precision,
     // a trap from miscounting the type field.) Register layout matches the
     // integer 2-source ops: Rm=rhs (bits 16-20), Rn=lhs (bits 5-9), Rd (0-4).
+    /// Record that a temp/slot holds an FP register.
+    fn markFpTemp(self: *Arm64Compiler, id: ?u32) Error!void {
+        const t = id orelse return;
+        try self.fp_temps.put(self.alloc, t, {});
+    }
+
+    /// Whether this operand is resident in the FP file. An `.f64` immediate
+    /// counts: it materialises with `fmov`, not `mov`.
+    fn valueIsFp(self: *const Arm64Compiler, v: dnir.Value) bool {
+        return switch (v) {
+            .f64 => true,
+            .temp => |t| self.fp_temps.contains(t),
+            .local => |sl| self.fp_temps.contains(sl),
+            else => false,
+        };
+    }
+
     /// The FP VALUE range: d16-d30. Deliberately disjoint from d0-d7.
     ///
     /// This mirrors `allocRegExcluding`, which starts at x9 precisely so that a
