@@ -16,7 +16,7 @@ add_flag(parser, short_or_long: str, long_or_help: str, help: str)
     short_opt = nil
     long_opt = nil
     desc = help
-    if long_or_help and string.sub(long_or_help, 1, 1) == "-"
+    if long_or_help and long_or_help:sub(1, 1) == "-"
         short_opt = short_or_long
         long_opt = long_or_help
     else
@@ -35,7 +35,7 @@ add_option(parser, short_or_long: str, long_or_help: str, help: str)
     short_opt = nil
     long_opt = nil
     desc = help
-    if long_or_help and string.sub(long_or_help, 1, 1) == "-"
+    if long_or_help and long_or_help:sub(1, 1) == "-"
         short_opt = short_or_long
         long_opt = long_or_help
     else
@@ -62,12 +62,12 @@ parse_with(parser, args: any): any
         if v == "--" and not stop_options
             stop_options = true
             i = i + 1
-        elseif not stop_options and string.sub(v, 1, 2) == "--"
-            name = string.sub(v, 3)
+        elseif not stop_options and v:sub(1, 2) == "--"
+            name = v:sub(3)
             eq = string.find(name, "=")
             if eq
-                key = string.sub(name, 1, eq - 1)
-                val = string.sub(name, eq + 1)
+                key = name:sub(1, eq - 1)
+                val = name:sub(eq + 1)
                 opts[key] = val
                 i = i + 1
             else
@@ -100,9 +100,9 @@ parse_with(parser, args: any): any
                     i = i + 1
                 end
             end
-        elseif not stop_options and string.sub(v, 1, 1) == "-" and #v > 1
-            name = string.sub(v, 2, 2)
-            rest = string.sub(v, 3)
+        elseif not stop_options and v:sub(1, 1) == "-" and #v > 1
+            name = v:sub(2, 2)
+            rest = v:sub(3)
             short_opt = "-" .. name
             matched = false
             for _, opt in parser.options

@@ -11,7 +11,7 @@ decompress(data: any)
     if dlen % 32 >= 8 return "" end
     deflate_start = 3
     if deflate_start > #data return "" end
-    deflate_data = string.sub(data, deflate_start)
+    deflate_data = data:sub(deflate_start)
     flate_mod = req("std.compress.flate")
     return flate_mod.decompress(deflate_data)
 end

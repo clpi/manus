@@ -51,8 +51,8 @@ send_mail_auth(addr: str, auth: any, from: str, to: any, msg: str): any
     port = 25
     colon = string.find(addr, ":", 1, true)
     if colon != nil
-        host = string.sub(addr, 1, colon - 1)
-        port = tonumber(string.sub(addr, colon + 1))
+        host = addr:sub(1, colon - 1)
+        port = tonumber(addr:sub(colon + 1))
     end
     -- Sanitize host to prevent shell injection
     safe_host = shell_escape(host)

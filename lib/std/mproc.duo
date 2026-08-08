@@ -11,7 +11,7 @@ pid(): str
         if line
             space_idx = string.find(line, " ")
             if space_idx
-                return string.sub(line, 1, space_idx - 1)
+                return line:sub(1, space_idx - 1)
             end
         end
     end

@@ -52,5 +52,5 @@ canonicalize = (src: str): str
     if e == 0
         return ""
     end
-    string.sub(src, 1, e) .. "\n"
+    src:sub(1, e) .. "\n"
 end

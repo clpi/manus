@@ -224,8 +224,8 @@ run(cmd: str, args: any): any
     code = 0
     last_nl = string.find(raw, "\n[^\n]*$")
     if last_nl
-        stdout = string.sub(raw, 1, last_nl - 1)
-        exit_str = string.sub(raw, last_nl + 1)
+        stdout = raw:sub(1, last_nl - 1)
+        exit_str = raw:sub(last_nl + 1)
         code = tonumber(string.match(exit_str, "%d+")) or 0
     end
 
@@ -258,8 +258,8 @@ run_with_input(cmd: str, args: any, input: str): any
     code = 0
     last_nl = string.find(raw, "\n[^\n]*$")
     if last_nl
-        stdout = string.sub(raw, 1, last_nl - 1)
-        exit_str = string.sub(raw, last_nl + 1)
+        stdout = raw:sub(1, last_nl - 1)
+        exit_str = raw:sub(last_nl + 1)
         code = tonumber(string.match(exit_str, "%d+")) or 0
     end
 

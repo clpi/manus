@@ -22,7 +22,7 @@ marshal(v: any): str
         out = {"\""}
         i = 1
         while i <= #v
-            ch = string.sub(v, i, i)
+            ch = v:sub(i, i)
             b = v:byte(i)
             if ch == "\""
                 out[rawlen(out) + 1] = "\\\""
@@ -77,7 +77,7 @@ marshal(v: any): str
                 key_out = {"\""}
                 j = 1
                 while j <= #k
-                    ch = string.sub(k, j, j)
+                    ch = k:sub(j, j)
                     b = k:byte(j)
                     if ch == "\""
                         key_out[rawlen(key_out) + 1] = "\\\""
@@ -125,13 +125,13 @@ parse_value(p: any): any
         p.err = "unexpected end of input"
         return nil
     end
-    ch = string.sub(p.s, p.pos, p.pos)
+    ch = p.s:sub(p.pos, p.pos)
     if ch == "{"
         -- parse object
         p.pos = p.pos + 1
         obj = {}
         skip_ws(p)
-        if p.pos <= #p.s and string.sub(p.s, p.pos, p.pos) == "}"
+        if p.pos <= #p.s and p.s:sub(p.pos, p.pos) == "}"
             p.pos = p.pos + 1
             return obj
         end
@@ -141,7 +141,7 @@ parse_value(p: any): any
                 p.err = "unterminated object"
                 return nil
             end
-            if string.sub(p.s, p.pos, p.pos) != "\""
+            if p.s:sub(p.pos, p.pos) != "\""
                 p.err = "expected string key"
                 return nil
             end
@@ -149,7 +149,7 @@ parse_value(p: any): any
             p.pos = p.pos + 1
             key_out = {}
             while p.pos <= #p.s
-                kch = string.sub(p.s, p.pos, p.pos)
+                kch = p.s:sub(p.pos, p.pos)
                 if kch == "\""
                     p.pos = p.pos + 1
                     break
@@ -160,7 +160,7 @@ parse_value(p: any): any
                         p.err = "unterminated string escape"
                         return nil
                     end
-                    esc = string.sub(p.s, p.pos, p.pos)
+                    esc = p.s:sub(p.pos, p.pos)
                     if esc == "n" key_out[rawlen(key_out) + 1] = "\n"
                     elseif esc == "t" key_out[rawlen(key_out) + 1] = "\t"
                     elseif esc == "r" key_out[rawlen(key_out) + 1] = "\r"
@@ -175,7 +175,7 @@ parse_value(p: any): any
             end
             key = table.concat(key_out)
             skip_ws(p)
-            if p.pos > #p.s or string.sub(p.s, p.pos, p.pos) != ":"
+            if p.pos > #p.s or p.s:sub(p.pos, p.pos) != ":"
                 p.err = "expected colon"
                 return nil
             end
@@ -188,7 +188,7 @@ parse_value(p: any): any
                 p.err = "unterminated object"
                 return nil
             end
-            och = string.sub(p.s, p.pos, p.pos)
+            och = p.s:sub(p.pos, p.pos)
             if och == "}"
                 p.pos = p.pos + 1
                 return obj
@@ -206,7 +206,7 @@ parse_value(p: any): any
         p.pos = p.pos + 1
         arr = {}
         skip_ws(p)
-        if p.pos <= #p.s and string.sub(p.s, p.pos, p.pos) == "]"
+        if p.pos <= #p.s and p.s:sub(p.pos, p.pos) == "]"
             p.pos = p.pos + 1
             return arr
         end
@@ -219,7 +219,7 @@ parse_value(p: any): any
                 p.err = "unterminated array"
                 return nil
             end
-            ach = string.sub(p.s, p.pos, p.pos)
+            ach = p.s:sub(p.pos, p.pos)
             if ach == "]"
                 p.pos = p.pos + 1
                 return arr
@@ -237,7 +237,7 @@ parse_value(p: any): any
         p.pos = p.pos + 1
         out = {}
         while p.pos <= #p.s
-            sch = string.sub(p.s, p.pos, p.pos)
+            sch = p.s:sub(p.pos, p.pos)
             if sch == "\""
                 p.pos = p.pos + 1
                 return table.concat(out)
@@ -248,7 +248,7 @@ parse_value(p: any): any
                     p.err = "unterminated string escape"
                     return nil
                 end
-                esc = string.sub(p.s, p.pos, p.pos)
+                esc = p.s:sub(p.pos, p.pos)
                 if esc == "n" out[rawlen(out) + 1] = "\n"
                 elseif esc == "r" out[rawlen(out) + 1] = "\r"
                 elseif esc == "t" out[rawlen(out) + 1] = "\t"
@@ -258,7 +258,7 @@ parse_value(p: any): any
                 elseif esc == "b" out[rawlen(out) + 1] = string.char(8)
                 elseif esc == "f" out[rawlen(out) + 1] = string.char(12)
                 elseif esc == "u"
-                    hex = string.sub(p.s, p.pos + 1, p.pos + 4)
+                    hex = p.s:sub(p.pos + 1, p.pos + 4)
                     code = tonumber(hex, 16)
                     if code == nil
                         p.err = "invalid unicode escape"
@@ -278,7 +278,7 @@ parse_value(p: any): any
         return nil
     end
     if ch == "t"
-        if string.sub(p.s, p.pos, p.pos + 3) == "true"
+        if p.s:sub(p.pos, p.pos + 3) == "true"
             p.pos = p.pos + 4
             return true
         end
@@ -286,7 +286,7 @@ parse_value(p: any): any
         return nil
     end
     if ch == "f"
-        if string.sub(p.s, p.pos, p.pos + 4) == "false"
+        if p.s:sub(p.pos, p.pos + 4) == "false"
             p.pos = p.pos + 5
             return false
         end
@@ -294,7 +294,7 @@ parse_value(p: any): any
         return nil
     end
     if ch == "n"
-        if string.sub(p.s, p.pos, p.pos + 3) == "null"
+        if p.s:sub(p.pos, p.pos + 3) == "null"
             p.pos = p.pos + 4
             return nil
         end
@@ -303,16 +303,16 @@ parse_value(p: any): any
     end
     if ch == "-" or (ch >= "0" and ch <= "9")
         start = p.pos
-        if string.sub(p.s, p.pos, p.pos) == "-" p.pos = p.pos + 1 end
+        if p.s:sub(p.pos, p.pos) == "-" p.pos = p.pos + 1 end
         while p.pos <= #p.s
-            nch = string.sub(p.s, p.pos, p.pos)
+            nch = p.s:sub(p.pos, p.pos)
             if (nch >= "0" and nch <= "9") or nch == "." or nch == "e" or nch == "E" or nch == "+" or nch == "-"
                 p.pos = p.pos + 1
             else
                 break
             end
         end
-        num_str = string.sub(p.s, start, p.pos - 1)
+        num_str = p.s:sub(start, p.pos - 1)
         nv = tonumber(num_str)
         if nv == nil
             p.err = "invalid number"
@@ -347,11 +347,11 @@ marshal_indent(v: any, indent: str): str
     i = 1
     in_string = false
     while i <= #jstr
-        ch = string.sub(jstr, i, i)
+        ch = jstr:sub(i, i)
         if in_string
             out[rawlen(out) + 1] = ch
             if ch == "\\" and i < #jstr
-                out[rawlen(out) + 1] = string.sub(jstr, i + 1, i + 1)
+                out[rawlen(out) + 1] = jstr:sub(i + 1, i + 1)
                 i += 2
             elseif ch == "\""
                 in_string = false

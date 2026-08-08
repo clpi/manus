@@ -18,11 +18,11 @@ end
 parse(url: str): any
   scheme = "http"
   rest = url
-  if string.sub(rest, 1, 7) == "http://"
-    rest = string.sub(rest, 8)
-  elseif string.sub(rest, 1, 8) == "https://"
+  if rest:sub(1, 7) == "http://"
+    rest = rest:sub(8)
+  elseif rest:sub(1, 8) == "https://"
     scheme = "https"
-    rest = string.sub(rest, 9)
+    rest = rest:sub(9)
   end
   default_port = 80
   if scheme == "https"
@@ -32,20 +32,20 @@ parse(url: str): any
   path = "/"
   slash_pos = string.find(rest, "/")
   if slash_pos
-    host = string.sub(rest, 1, slash_pos - 1)
-    path = string.sub(rest, slash_pos)
+    host = rest:sub(1, slash_pos - 1)
+    path = rest:sub(slash_pos)
   end
   colon_pos = string.find(host, ":")
   port = default_port
   if colon_pos
-    port = tonumber(string.sub(host, colon_pos + 1)) or default_port
-    host = string.sub(host, 1, colon_pos - 1)
+    port = tonumber(host:sub(colon_pos + 1)) or default_port
+    host = host:sub(1, colon_pos - 1)
   end
   query = ""
   q_pos = string.find(path, "?")
   if q_pos
-    query = string.sub(path, q_pos + 1)
-    path = string.sub(path, 1, q_pos - 1)
+    query = path:sub(q_pos + 1)
+    path = path:sub(1, q_pos - 1)
   end
   {
     scheme = scheme,

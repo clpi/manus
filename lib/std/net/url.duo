@@ -8,7 +8,7 @@ escape(s: str): str
     while i <= #s
         b = s:byte(i)
         if (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or (b >= 48 and b <= 57) or b == 45 or b == 46 or b == 95 or b == 126
-            out[rawlen(out) + 1] = string.sub(s, i, i)
+            out[rawlen(out) + 1] = s:sub(i, i)
         elseif b == 32
             out[rawlen(out) + 1] = "+"
         else
@@ -27,7 +27,7 @@ path_escape(s: str): str
     while i <= #s
         b = s:byte(i)
         if (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or (b >= 48 and b <= 57) or b == 45 or b == 46 or b == 95 or b == 126 or b == 47
-            out[rawlen(out) + 1] = string.sub(s, i, i)
+            out[rawlen(out) + 1] = s:sub(i, i)
         else
             out[rawlen(out) + 1] = string.format("%%%02X", b)
         end
@@ -42,9 +42,9 @@ unescape(s: str): str
     out = {}
     i = 1
     while i <= #s
-        ch = string.sub(s, i, i)
+        ch = s:sub(i, i)
         if ch == "%" and i + 2 <= #s
-            hex = string.sub(s, i + 1, i + 2)
+            hex = s:sub(i + 1, i + 2)
             code = tonumber(hex, 16)
             if code != nil
                 out[rawlen(out) + 1] = string.char(code)
@@ -71,13 +71,13 @@ parse_query(query: str): any
     start = 1
     i = 1
     while i <= #query
-        if string.sub(query, i, i) == "&"
-            parts[rawlen(parts) + 1] = string.sub(query, start, i - 1)
+        if query:sub(i, i) == "&"
+            parts[rawlen(parts) + 1] = query:sub(start, i - 1)
             start = i + 1
         end
         i += 1
     end
-    parts[rawlen(parts) + 1] = string.sub(query, start)
+    parts[rawlen(parts) + 1] = query:sub(start)
     j = 1
     while j <= rawlen(parts)
         pair = parts[j]
@@ -85,8 +85,8 @@ parse_query(query: str): any
         k = ""
         v = ""
         if eq != nil
-            k = unescape(string.sub(pair, 1, eq - 1))
-            v = unescape(string.sub(pair, eq + 1))
+            k = unescape(pair:sub(1, eq - 1))
+            v = unescape(pair:sub(eq + 1))
         else
             k = unescape(pair)
             v = ""
@@ -123,49 +123,49 @@ parse(raw_url: str): any
     scheme = ""
     colon = string.find(url, "://", 1, true)
     if colon != nil
-        scheme = string.sub(url, 1, colon - 1)
-        url = string.sub(url, colon + 3)
+        scheme = url:sub(1, colon - 1)
+        url = url:sub(colon + 3)
     else
         colon2 = string.find(url, ":", 1, true)
         slash = string.find(url, "/", 1, true)
         if colon2 != nil and (slash == nil or colon2 < slash)
-            scheme = string.sub(url, 1, colon2 - 1)
-            url = string.sub(url, colon2 + 1)
+            scheme = url:sub(1, colon2 - 1)
+            url = url:sub(colon2 + 1)
         end
     end
     fragment = ""
     hash = string.find(url, "#", 1, true)
     if hash != nil
-        fragment = string.sub(url, hash + 1)
-        url = string.sub(url, 1, hash - 1)
+        fragment = url:sub(hash + 1)
+        url = url:sub(1, hash - 1)
     end
     raw_query = ""
     query = nil
     qmark = string.find(url, "?", 1, true)
     if qmark != nil
-        raw_query = string.sub(url, qmark + 1)
+        raw_query = url:sub(qmark + 1)
         query = parse_query(raw_query)
-        url = string.sub(url, 1, qmark - 1)
+        url = url:sub(1, qmark - 1)
     end
     user = ""
     at = string.find(url, "@", 1, true)
     if at != nil
-        user = string.sub(url, 1, at - 1)
-        url = string.sub(url, at + 1)
+        user = url:sub(1, at - 1)
+        url = url:sub(at + 1)
     end
     host = url
     port = nil
     slash_pos = string.find(url, "/", 1, true)
     if slash_pos != nil
-        host = string.sub(url, 1, slash_pos - 1)
-        url = string.sub(url, slash_pos)
+        host = url:sub(1, slash_pos - 1)
+        url = url:sub(slash_pos)
     else
         url = ""
     end
     colon_pos = string.find(host, ":", 1, true)
     if colon_pos != nil
-        port = tonumber(string.sub(host, colon_pos + 1))
-        host = string.sub(host, 1, colon_pos - 1)
+        port = tonumber(host:sub(colon_pos + 1))
+        host = host:sub(1, colon_pos - 1)
     end
     if url == "" url = "/" end
     {scheme = scheme, host = host, port = port, path = url, query = query, raw_query = raw_query, fragment = fragment, user = user}
@@ -175,7 +175,7 @@ end
 resolve(base: str, ref: str): str
     if ref == nil or ref == "" return base end
     if string.find(ref, "://", 1, true) != nil return ref end
-    if string.sub(ref, 1, 1) == "/"
+    if ref:sub(1, 1) == "/"
         base_url = parse(base)
         result = base_url.scheme .. "://"
         if base_url.user != "" result = result .. base_url.user .. "@" end
@@ -195,7 +195,7 @@ resolve(base: str, ref: str): str
     end
     new_path = ref
     if last_slash != nil
-        new_path = string.sub(base_path, 1, last_slash) .. ref
+        new_path = base_path:sub(1, last_slash) .. ref
     end
     result = base_url.scheme .. "://"
     if base_url.user != "" result = result .. base_url.user .. "@" end

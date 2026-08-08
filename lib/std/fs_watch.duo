@@ -171,8 +171,8 @@ flags_from_mask(mask: str): int
             token = rest
             rest = ""
         else
-            token = string.sub(rest, 1, pos - 1)
-            rest = string.sub(rest, pos + 1)
+            token = rest:sub(1, pos - 1)
+            rest = rest:sub(pos + 1)
         end
         -- Trim whitespace
         token = string.gsub(token, "^%s+", "")

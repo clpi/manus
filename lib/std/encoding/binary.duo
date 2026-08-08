@@ -174,8 +174,8 @@ put_u16_le(s: str, offset: i64, v: i64): str
     prefix = ""
     mid = encode_u16_le(v)
     suffix = ""
-    if offset > 1 prefix = string.sub(s, 1, offset - 1) end
-    if offset + 1 < #s suffix = string.sub(s, offset + 2) end
+    if offset > 1 prefix = s:sub(1, offset - 1) end
+    if offset + 1 < #s suffix = s:sub(offset + 2) end
     prefix .. mid .. suffix
 end
 
@@ -183,8 +183,8 @@ put_u32_le(s: str, offset: i64, v: i64): str
     prefix = ""
     mid = encode_u32_le(v)
     suffix = ""
-    if offset > 1 prefix = string.sub(s, 1, offset - 1) end
-    if offset + 3 < #s suffix = string.sub(s, offset + 4) end
+    if offset > 1 prefix = s:sub(1, offset - 1) end
+    if offset + 3 < #s suffix = s:sub(offset + 4) end
     prefix .. mid .. suffix
 end
 

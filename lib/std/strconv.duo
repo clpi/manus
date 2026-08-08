@@ -18,7 +18,7 @@ format_int(v: any, base: any): str
     end
     out = {}
     while n > 0
-        out[rawlen(out) + 1] = string.sub(digits, (n % base) + 1, (n % base) + 1)
+        out[rawlen(out) + 1] = digits:sub((n % base) + 1, (n % base) + 1)
         n = math.floor(n / base)
     end
     s = ""
@@ -71,20 +71,20 @@ parse_int(s: str, base: any): any
     s = string.gsub(s, "^%s+", "")
     s = string.gsub(s, "%s+$", "")
     neg = false
-    if string.sub(s, 1, 1) == "-"
+    if s:sub(1, 1) == "-"
         neg = true
-        s = string.sub(s, 2)
-    elseif string.sub(s, 1, 1) == "+"
-        s = string.sub(s, 2)
+        s = s:sub(2)
+    elseif s:sub(1, 1) == "+"
+        s = s:sub(2)
     end
     if base == nil or base == 0
         base = 10
-        if string.sub(s, 1, 2) == "0x" or string.sub(s, 1, 2) == "0X"
+        if s:sub(1, 2) == "0x" or s:sub(1, 2) == "0X"
             base = 16
-            s = string.sub(s, 3)
-        elseif string.sub(s, 1, 1) == "0" and #s > 1
+            s = s:sub(3)
+        elseif s:sub(1, 1) == "0" and #s > 1
             base = 8
-            s = string.sub(s, 2)
+            s = s:sub(2)
         end
     end
     if base < 2 or base > 36 return 0, false end
@@ -92,7 +92,7 @@ parse_int(s: str, base: any): any
     val = 0
     i = 1
     while i <= #s
-        ch = string.lower(string.sub(s, i, i))
+        ch = string.lower(s:sub(i, i))
         pos = string.find(digits, ch, 1, true)
         if pos == nil return 0, false end
         d = pos - 1
@@ -116,11 +116,11 @@ parse_float(s: str): any
     s = string.gsub(s, "%s+$", "")
     -- accept optional sign
     neg = false
-    if string.sub(s, 1, 1) == "-"
+    if s:sub(1, 1) == "-"
         neg = true
-        s = string.sub(s, 2)
-    elseif string.sub(s, 1, 1) == "+"
-        s = string.sub(s, 2)
+        s = s:sub(2)
+    elseif s:sub(1, 1) == "+"
+        s = s:sub(2)
     end
     -- match numeric pattern: digits . digits [eE [+-] digits]
     -- Use Lua pattern to validate
@@ -152,7 +152,7 @@ quote(s: str): str
     out = {"\""}
     i = 1
     while i <= #s
-        ch = string.sub(s, i, i)
+        ch = s:sub(i, i)
         b = s:byte(i)
         if ch == "\\"
             out[rawlen(out) + 1] = "\\\\"
@@ -180,18 +180,18 @@ unquote(s: str): str
     if s == nil return "" end
     n = #s
     if n < 2 return s end
-    first = string.sub(s, 1, 1)
-    last = string.sub(s, n, n)
+    first = s:sub(1, 1)
+    last = s:sub(n, n)
     inner = s
     if (first == "\"" and last == "\"") or (first == "'" and last == "'")
-        inner = string.sub(s, 2, n - 1)
+        inner = s:sub(2, n - 1)
     end
     out = {}
     i = 1
     while i <= #inner
-        ch = string.sub(inner, i, i)
+        ch = inner:sub(i, i)
         if ch == "\\" and i < #inner
-            nxt = string.sub(inner, i + 1, i + 1)
+            nxt = inner:sub(i + 1, i + 1)
             if nxt == "n"
                 out[rawlen(out) + 1] = "\n"
             elseif nxt == "t"

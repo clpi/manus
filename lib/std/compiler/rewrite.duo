@@ -65,13 +65,13 @@ _fold_once = (src: str): str
     while i <= n
         c: i64 = src:byte(i)
         if in_comment
-            out = out .. string.sub(src, i, i)
+            out = out .. src:sub(i, i)
             if c == 10
                 in_comment = false
             end
             i += 1
         elseif in_long
-            out = out .. string.sub(src, i, i)
+            out = out .. src:sub(i, i)
             if c == 93 and i + 1 <= n and src:byte(i + 1) == 93
                 out = out .. "]"
                 in_long = false
@@ -79,9 +79,9 @@ _fold_once = (src: str): str
             end
             i += 1
         elseif quote != 0
-            out = out .. string.sub(src, i, i)
+            out = out .. src:sub(i, i)
             if c == 92 and i + 1 <= n
-                out = out .. string.sub(src, i + 1, i + 1)
+                out = out .. src:sub(i + 1, i + 1)
                 i += 1
             elseif c == quote
                 quote = 0
@@ -97,7 +97,7 @@ _fold_once = (src: str): str
             i += 2
         elseif c == 34 or c == 39
             quote = c
-            out = out .. string.sub(src, i, i)
+            out = out .. src:sub(i, i)
             i += 1
         else
             prev_ok = true
@@ -141,7 +141,7 @@ _fold_once = (src: str): str
                     tail_ok = true
                 end
                 if tail_ok and e > i
-                    cand = string.sub(src, i, e)
+                    cand = src:sub(i, e)
                     if C.foldable(cand)
                         v: i64 = C.fold(cand)
                         rep = to(str)(v)
@@ -154,7 +154,7 @@ _fold_once = (src: str): str
                 end
             end
             if not folded
-                out = out .. string.sub(src, i, i)
+                out = out .. src:sub(i, i)
                 i += 1
             end
         end

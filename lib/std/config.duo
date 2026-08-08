@@ -159,8 +159,8 @@ load_env(cfg: any): void
     prefix_len = #prefix
     for k, v in env_data
         if prefix_len > 0
-            if string.sub(k, 1, prefix_len) == prefix
-                rest = string.sub(k, prefix_len + 1)
+            if k:sub(1, prefix_len) == prefix
+                rest = k:sub(prefix_len + 1)
                 dot_key = string.lower(rest)
                 dot_key = string.gsub(dot_key, "_", ".")
                 deep_set(cfg.values, dot_key, v)

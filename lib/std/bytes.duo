@@ -75,7 +75,7 @@ end
 -- Read N bytes as a substring
 read_bytes(buf: any, n: i64): str
     if buf.pos + n - 1 > buf.len return "" end
-    result = string.sub(buf.data, buf.pos, buf.pos + n - 1)
+    result = buf.data:sub(buf.pos, buf.pos + n - 1)
     buf.pos = buf.pos + n
     return result
 end

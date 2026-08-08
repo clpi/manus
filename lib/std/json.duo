@@ -54,9 +54,9 @@ escape(s: any): str
         elseif b < 32
             hi = math.floor(b / 16) + 1
             lo = (b % 16) + 1
-            out[rawlen(out) + 1] = "\\u00" .. string.sub(hex, hi, hi) .. string.sub(hex, lo, lo)
+            out[rawlen(out) + 1] = "\\u00" .. hex:sub(hi, hi) .. hex:sub(lo, lo)
         else
-            out[rawlen(out) + 1] = string.sub(s, i, i)
+            out[rawlen(out) + 1] = s:sub(i, i)
         end
         i += 1
     end
@@ -183,7 +183,7 @@ json_string(cur): any
             elseif e == 102
                 out[rawlen(out) + 1] = string.char(12)
             elseif e == 117
-                hex = string.sub(s, cur.i + 1, cur.i + 4)
+                hex = s:sub(cur.i + 1, cur.i + 4)
                 cp = json_hex4(hex)
                 out[rawlen(out) + 1] = json_utf8_char(cp)
                 cur.i = cur.i + 4
@@ -203,7 +203,7 @@ json_string(cur): any
                 if b2 == 34 or b2 == 92 break end
                 cur.i = cur.i + 1
             end
-            out[rawlen(out) + 1] = string.sub(s, start, cur.i - 1)
+            out[rawlen(out) + 1] = s:sub(start, cur.i - 1)
         end
     end
     table.concat(out)
@@ -221,7 +221,7 @@ json_number(cur): any
             break
         end
     end
-    num_str = string.sub(s, start, cur.i - 1)
+    num_str = s:sub(start, cur.i - 1)
     tonumber(num_str)
 end
 

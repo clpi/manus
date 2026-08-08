@@ -40,7 +40,7 @@ scan_ident(sc: any): any
     while sc.pos <= #sc.src and is_ident_part(sc.src:byte(sc.pos))
         sc.pos = sc.pos + 1
     end
-    sc.tok = string.sub(sc.src, start, sc.pos - 1)
+    sc.tok = sc.src:sub(start, sc.pos - 1)
     sc.kind = IDENT
     sc
 end
@@ -75,7 +75,7 @@ scan_number(sc: any): any
             end
         end
     end
-    sc.tok = string.sub(sc.src, start, sc.pos - 1)
+    sc.tok = sc.src:sub(start, sc.pos - 1)
     if is_float
         sc.kind = FLOAT
     else
@@ -92,7 +92,7 @@ scan_string(sc: any): any
     while sc.pos <= #sc.src
         b = sc.src:byte(sc.pos)
         if b == quote
-            sc.tok = string.sub(sc.src, start, sc.pos - 1)
+            sc.tok = sc.src:sub(start, sc.pos - 1)
             sc.pos = sc.pos + 1
             sc.kind = STRING
             return sc
@@ -104,7 +104,7 @@ scan_string(sc: any): any
         end
     end
     -- unterminated string
-    sc.tok = string.sub(sc.src, start)
+    sc.tok = sc.src:sub(start)
     sc.kind = STRING
     sc
 end
@@ -116,7 +116,7 @@ scan_comment(sc: any): any
     while sc.pos <= #sc.src and sc.src:byte(sc.pos) != 10
         sc.pos = sc.pos + 1
     end
-    sc.tok = string.sub(sc.src, start, sc.pos - 1)
+    sc.tok = sc.src:sub(start, sc.pos - 1)
     sc.kind = COMMENT
     sc
 end
@@ -169,7 +169,7 @@ scan(sc: any): i64
         return scan_string(sc)
     end
     -- punctuation (single char)
-    sc.tok = string.sub(sc.src, sc.pos, sc.pos)
+    sc.tok = sc.src:sub(sc.pos, sc.pos)
     sc.kind = PUNCT
     sc.pos = sc.pos + 1
     PUNCT

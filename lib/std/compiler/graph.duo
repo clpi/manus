@@ -124,7 +124,7 @@ dead_private = (src: str, file: str, report: bool): i64
     while i <= n
         if declared:byte(i) == 124
             if i > start
-                name = string.sub(declared, start, i - 1)
+                name = declared:sub(start, i - 1)
                 if _is_private(name) and not _has(used, name)
                     count += 1
                     if report

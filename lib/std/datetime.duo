@@ -207,7 +207,7 @@ end
 format(d: any, layout: str): str
     r = layout
     year4 = to(str)(d.year)
-    year2 = string.sub(year4, #year4 - 1)
+    year2 = year4:sub(#year4 - 1)
     r = string.gsub(r, "YYYY", year4)
     r = string.gsub(r, "YY", year2)
     r = string.gsub(r, "MM", dt_pad2(d.month))
@@ -296,15 +296,15 @@ end
 -- We pre-declare variables so the codegen emits proper C declarations.
 
 dt_parse_digit2(s: str, pos: any): any
-    val = tonumber(string.sub(s, pos, pos)) * 10 + tonumber(string.sub(s, pos + 1, pos + 1))
+    val = tonumber(s:sub(pos, pos)) * 10 + tonumber(s:sub(pos + 1, pos + 1))
     return val, pos + 2
 end
 
 dt_parse_digit4(s: str, pos: any): any
-    val = tonumber(string.sub(s, pos, pos)) * 1000
-    val += tonumber(string.sub(s, pos + 1, pos + 1)) * 100
-    val += tonumber(string.sub(s, pos + 2, pos + 2)) * 10
-    val += tonumber(string.sub(s, pos + 3, pos + 3))
+    val = tonumber(s:sub(pos, pos)) * 1000
+    val += tonumber(s:sub(pos + 1, pos + 1)) * 100
+    val += tonumber(s:sub(pos + 2, pos + 2)) * 10
+    val += tonumber(s:sub(pos + 3, pos + 3))
     return val, pos + 4
 end
 
@@ -313,23 +313,23 @@ parse_iso8601(s: str): any
     year = 0
     pos = 1
     year, pos = dt_parse_digit4(s, 1)
-    if string.sub(s, pos, pos) != "-" return nil end
+    if s:sub(pos, pos) != "-" return nil end
     month = 0
     month, pos = dt_parse_digit2(s, pos + 1)
-    if string.sub(s, pos, pos) != "-" return nil end
+    if s:sub(pos, pos) != "-" return nil end
     day = 0
     day, pos = dt_parse_digit2(s, pos + 1)
     hour = 0
     minute = 0
     second = 0
     if #s >= pos + 2
-        sep = string.sub(s, pos, pos)
+        sep = s:sub(pos, pos)
         if sep == "T" or sep == " "
             hour, pos = dt_parse_digit2(s, pos + 1)
-            if string.sub(s, pos, pos) == ":"
+            if s:sub(pos, pos) == ":"
                 minute, pos = dt_parse_digit2(s, pos + 1)
             end
-            if string.sub(s, pos, pos) == ":"
+            if s:sub(pos, pos) == ":"
                 second, pos = dt_parse_digit2(s, pos + 1)
             end
         end
@@ -347,10 +347,10 @@ parse_time(s: str): any
     hour, pos = dt_parse_digit2(s, 1)
     minute = 0
     second = 0
-    if string.sub(s, pos, pos) == ":"
+    if s:sub(pos, pos) == ":"
         minute, pos = dt_parse_digit2(s, pos + 1)
     end
-    if string.sub(s, pos, pos) == ":"
+    if s:sub(pos, pos) == ":"
         second, pos = dt_parse_digit2(s, pos + 1)
     end
     new(0, 1, 1, hour, minute, second)

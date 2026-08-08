@@ -444,7 +444,7 @@ _to_hex(n: int): str
     result = ""
     while n > 0
         d = math.floor(n % 16) + 1
-        result = string.sub(digits, d, d) .. result
+        result = digits:sub(d, d) .. result
         n = math.floor(n / 16)
     end
     return result
@@ -1031,9 +1031,9 @@ dump(label: str, value: any): void
         line_start = 1
         line_num = 1
         while i <= n
-            ch = string.sub(rendered, i, i)
+            ch = rendered:sub(i, i)
             if ch == "\n"
-                seg = string.sub(rendered, line_start, i - 1)
+                seg = rendered:sub(line_start, i - 1)
                 if seg != ""
                     print(dim(M.BOX_V .. " ") .. sem_numbering(to(str)(line_num) .. " ") .. cyan(seg))
                     line_num += 1
@@ -1044,7 +1044,7 @@ dump(label: str, value: any): void
         end
         if line_start <= n
             print(dim(M.BOX_V .. " ") .. sem_numbering(to(str)(line_num) .. " ") ..
-                  cyan(string.sub(rendered, line_start)))
+                  cyan(rendered:sub(line_start)))
         end
     end
 end

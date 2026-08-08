@@ -17,7 +17,7 @@ reader_fill(r: any): any
         r.err = "EOF"
         return r
     end
-    r.buf = string.sub(r.buf, r.pos) .. chunk
+    r.buf = r.buf:sub(r.pos) .. chunk
     r.pos = 1
     r
 end
@@ -26,23 +26,23 @@ end
 reader_read_line(r: any): any
     while true
         -- look for newline in remaining buffer
-        remaining = string.sub(r.buf, r.pos)
+        remaining = r.buf:sub(r.pos)
         nl = string.find(remaining, "\n", 1, true)
         if nl != nil
-            line = string.sub(remaining, 1, nl - 1)
+            line = remaining:sub(1, nl - 1)
             -- strip trailing \r
-            if #line > 0 and string.sub(line, #line, #line) == "\r"
-                line = string.sub(line, 1, #line - 1)
+            if #line > 0 and line:sub(#line, #line) == "\r"
+                line = line:sub(1, #line - 1)
             end
             r.pos = r.pos + nl
             return line, true
         end
         -- no newline yet, try to fill
-        old_len = string.len(string.sub(r.buf, r.pos))
+        old_len = string.len(r.buf:sub(r.pos))
         reader_fill(r)
         if has(.err)(r)
             -- return whatever is left
-            left = string.sub(r.buf, r.pos)
+            left = r.buf:sub(r.pos)
             if #left > 0
                 r.pos = #r.buf + 1
                 return left, true
@@ -55,10 +55,10 @@ end
 
 -- reader_read_bytes: read n bytes. Returns (bytes, ok).
 reader_read_bytes(r: any, n: i64): any
-    while string.len(string.sub(r.buf, r.pos)) < n
+    while string.len(r.buf:sub(r.pos)) < n
         reader_fill(r)
         if has(.err)(r)
-            left = string.sub(r.buf, r.pos)
+            left = r.buf:sub(r.pos)
             if #left > 0
                 r.pos = #r.buf + 1
                 return left, true
@@ -66,7 +66,7 @@ reader_read_bytes(r: any, n: i64): any
             return "", false
         end
     end
-    data = string.sub(r.buf, r.pos, r.pos + n - 1)
+    data = r.buf:sub(r.pos, r.pos + n - 1)
     r.pos = r.pos + n
     return data, true
 end
@@ -95,11 +95,11 @@ end
 
 -- reader_peek: peek n bytes without consuming them.
 reader_peek(r: any, n: i64): any
-    while string.len(string.sub(r.buf, r.pos)) < n
+    while string.len(r.buf:sub(r.pos)) < n
         reader_fill(r)
         if has(.err)(r) break end
     end
-    string.sub(r.buf, r.pos, r.pos + n - 1)
+    r.buf:sub(r.pos, r.pos + n - 1)
 end
 
 -- ----- Scanner -----
@@ -114,10 +114,10 @@ end
 scanner_scan(s: any): bool
     if s.done return false end
     while true
-        remaining = string.sub(s.buf, s.pos)
+        remaining = s.buf:sub(s.pos)
         pos = string.find(remaining, s.delim, 1, true)
         if pos != nil
-            s.token = string.sub(remaining, 1, pos - 1)
+            s.token = remaining:sub(1, pos - 1)
             s.pos = s.pos + pos + #s.delim - 1
             return true
         end
@@ -125,7 +125,7 @@ scanner_scan(s: any): bool
         chunk = s.fh:read(s.size)
         if chunk == nil
             s.done = true
-            left = string.sub(s.buf, s.pos)
+            left = s.buf:sub(s.pos)
             if #left > 0
                 s.token = left
                 s.pos = #s.buf + 1
@@ -133,7 +133,7 @@ scanner_scan(s: any): bool
             end
             return false
         end
-        s.buf = string.sub(s.buf, s.pos) .. chunk
+        s.buf = s.buf:sub(s.pos) .. chunk
         s.pos = 1
     end
     false

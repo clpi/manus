@@ -18,19 +18,19 @@ render(tmpl: str, data: any): str
     n = #tmpl
     while i <= n
         -- look for {{ 
-        if i + 1 <= n and string.sub(tmpl, i, i + 1) == "{{"
+        if i + 1 <= n and tmpl:sub(i, i + 1) == "{{"
             close = string.find(tmpl, "}}", i + 2, true)
             if close == nil
-                out[rawlen(out) + 1] = string.sub(tmpl, i)
+                out[rawlen(out) + 1] = tmpl:sub(i)
                 break
             end
-            expr = string.gsub(string.sub(tmpl, i + 2, close - 1), "^%s+", "")
+            expr = string.gsub(tmpl:sub(i + 2, close - 1), "^%s+", "")
             expr = string.gsub(expr, "%s+$", "")
             result = eval_expr(expr, data)
             out[rawlen(out) + 1] = to(str)(result)
             i = close + 2
         else
-            out[rawlen(out) + 1] = string.sub(tmpl, i, i)
+            out[rawlen(out) + 1] = tmpl:sub(i, i)
             i += 1
         end
     end
@@ -40,19 +40,19 @@ end
 -- eval_expr: evaluate a template expression against data.
 eval_expr(expr: str, data: any): any
     -- handle range
-    if string.sub(expr, 1, 6) == "range "
+    if expr:sub(1, 6) == "range "
         -- this is handled in the block parser, not here
         return ""
     end
     -- handle if
-    if string.sub(expr, 1, 3) == "if "
+    if expr:sub(1, 3) == "if "
         return ""
     end
     -- handle end
     if expr == "end" return "" end
     -- handle field access: .key or .key.subkey
-    if string.sub(expr, 1, 1) == "."
-        path = string.sub(expr, 2)
+    if expr:sub(1, 1) == "."
+        path = expr:sub(2)
         return resolve_path(path, data)
     end
     -- literal
@@ -71,8 +71,8 @@ resolve_path(path: str, data: any): any
             parts[rawlen(parts) + 1] = rest
             break
         end
-        parts[rawlen(parts) + 1] = string.sub(rest, 1, dot - 1)
-        rest = string.sub(rest, dot + 1)
+        parts[rawlen(parts) + 1] = rest:sub(1, dot - 1)
+        rest = rest:sub(dot + 1)
     end
     cur = data
     i = 1
@@ -99,17 +99,17 @@ render_blocks(tmpl: str, data: any, start: i64): str
     i = start
     n = #tmpl
     while i <= n
-        if i + 1 <= n and string.sub(tmpl, i, i + 1) == "{{"
+        if i + 1 <= n and tmpl:sub(i, i + 1) == "{{"
             close = string.find(tmpl, "}}", i + 2, true)
             if close == nil
-                out[rawlen(out) + 1] = string.sub(tmpl, i)
+                out[rawlen(out) + 1] = tmpl:sub(i)
                 break
             end
-            expr = string.gsub(string.sub(tmpl, i + 2, close - 1), "^%s+", "")
+            expr = string.gsub(tmpl:sub(i + 2, close - 1), "^%s+", "")
             expr = string.gsub(expr, "%s+$", "")
             -- range block
-            if string.sub(expr, 1, 6) == "range "
-                key = string.gsub(string.sub(expr, 7), "^%.", "")
+            if expr:sub(1, 6) == "range "
+                key = string.gsub(expr:sub(7), "^%.", "")
                 collection = data[key]
                 -- find matching {{end}}
                 depth = 1
@@ -117,12 +117,12 @@ render_blocks(tmpl: str, data: any, start: i64): str
                 block_start = j
                 block_end = nil
                 while j <= n
-                    if j + 1 <= n and string.sub(tmpl, j, j + 1) == "{{"
+                    if j + 1 <= n and tmpl:sub(j, j + 1) == "{{"
                         c2 = string.find(tmpl, "}}", j + 2, true)
                         if c2 != nil
-                            inner = string.gsub(string.sub(tmpl, j + 2, c2 - 1), "^%s+", "")
+                            inner = string.gsub(tmpl:sub(j + 2, c2 - 1), "^%s+", "")
                             inner = string.gsub(inner, "%s+$", "")
-                            if string.sub(inner, 1, 6) == "range "
+                            if inner:sub(1, 6) == "range "
                                 depth += 1
                             elseif inner == "end"
                                 depth -= 1
@@ -140,7 +140,7 @@ render_blocks(tmpl: str, data: any, start: i64): str
                     end
                 end
                 if block_end != nil and collection != nil
-                    block_text = string.sub(tmpl, block_start, block_end - 1)
+                    block_text = tmpl:sub(block_start, block_end - 1)
                     k = 1
                     if type(collection) == "table"
                         -- iterate array part
@@ -162,8 +162,8 @@ render_blocks(tmpl: str, data: any, start: i64): str
                 end
                 i = block_end + 2
                 if block_end == nil i = n + 1 end
-            elseif string.sub(expr, 1, 3) == "if "
-                key = string.gsub(string.sub(expr, 4), "^%.", "")
+            elseif expr:sub(1, 3) == "if "
+                key = string.gsub(expr:sub(4), "^%.", "")
                 cond = data[key]
                 -- find matching {{end}}
                 depth = 1
@@ -171,12 +171,12 @@ render_blocks(tmpl: str, data: any, start: i64): str
                 block_start = j
                 block_end = nil
                 while j <= n
-                    if j + 1 <= n and string.sub(tmpl, j, j + 1) == "{{"
+                    if j + 1 <= n and tmpl:sub(j, j + 1) == "{{"
                         c2 = string.find(tmpl, "}}", j + 2, true)
                         if c2 != nil
-                            inner = string.gsub(string.sub(tmpl, j + 2, c2 - 1), "^%s+", "")
+                            inner = string.gsub(tmpl:sub(j + 2, c2 - 1), "^%s+", "")
                             inner = string.gsub(inner, "%s+$", "")
-                            if string.sub(inner, 1, 3) == "if "
+                            if inner:sub(1, 3) == "if "
                                 depth += 1
                             elseif inner == "end"
                                 depth -= 1
@@ -194,7 +194,7 @@ render_blocks(tmpl: str, data: any, start: i64): str
                     end
                 end
                 if block_end != nil and cond != nil and cond != false
-                    block_text = string.sub(tmpl, block_start, block_end - 1)
+                    block_text = tmpl:sub(block_start, block_end - 1)
                     out[rawlen(out) + 1] = render_blocks(block_text, data, 1)
                 end
                 i = block_end + 2
@@ -205,7 +205,7 @@ render_blocks(tmpl: str, data: any, start: i64): str
                 i = close + 2
             end
         else
-            out[rawlen(out) + 1] = string.sub(tmpl, i, i)
+            out[rawlen(out) + 1] = tmpl:sub(i, i)
             i += 1
         end
     end

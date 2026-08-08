@@ -130,13 +130,13 @@ decode(p: any): any
         while p.pos <= #p.s and p.s:byte(p.pos) != 0
             p.pos = p.pos + 1
         end
-        s = string.sub(p.s, start, p.pos - 1)
+        s = p.s:sub(start, p.pos - 1)
         p.pos = p.pos + 1  -- skip null terminator
         return tonumber(s)
     end
     if tag == TAG_STRING
         len = decode_int(p)
-        s = string.sub(p.s, p.pos, p.pos + len - 1)
+        s = p.s:sub(p.pos, p.pos + len - 1)
         p.pos = p.pos + len
         return s
     end

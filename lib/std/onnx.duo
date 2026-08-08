@@ -91,7 +91,7 @@ read_name(session: any, idx: int, is_input: bool): str
     if rc < 0
         return ""
     end
-    string.sub(buf, 1, rc)
+    buf:sub(1, rc)
 end
 
 -- read_shape: query input or output shape at idx into a duo array.

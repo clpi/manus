@@ -70,7 +70,7 @@ error_message(errcode: int): str
     if rc < 0
         return "PCRE2 error " .. to(str)(errcode)
     end
-    string.sub(buf, 1, rc)
+    buf:sub(1, rc)
 end
 
 -- read_ovector_pair: read a single (start, end) pair from the ovector pointer
@@ -91,7 +91,7 @@ quote(s: str): str
     i = 1
     n = #s
     while i <= n
-        ch = string.sub(s, i, i)
+        ch = s:sub(i, i)
         -- Escape: . + * ? ( ) [ ] { } ^ $ | \ -
         if ch == "." or ch == "+" or ch == "*" or ch == "?" or
            ch == "(" or ch == ")" or ch == "[" or ch == "]" or
@@ -164,7 +164,7 @@ match_str(code: any, subject: str): any
     s = p.start + 1
     e = p.end_
     if e <= s return "" end
-    string.sub(subject, s, e - 1)
+    subject:sub(s, e - 1)
 end
 
 -- find: find the first match in subject starting from init (1-based).
@@ -237,7 +237,7 @@ replace(code: any, subject: str, replacement: str): str
         e = r.end_
         -- Append text before this match (1-based, up to s-1)
         if s > last
-            out = out .. string.sub(subject, last, s - 1)
+            out = out .. subject:sub(last, s - 1)
         end
         -- Append replacement
         out = out .. replacement
@@ -247,7 +247,7 @@ replace(code: any, subject: str, replacement: str): str
     end
     -- Append trailing text
     if last <= slen
-        out = out .. string.sub(subject, last)
+        out = out .. subject:sub(last)
     end
     out
 end

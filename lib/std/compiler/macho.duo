@@ -36,7 +36,7 @@ _u8 = (v: i64): str
     b: i64 = v & 0xFF
     hi: i64 = (b >> 4) & 0xF
     lo: i64 = b & 0xF
-    string.sub(digits, hi + 1, hi + 1) .. string.sub(digits, lo + 1, lo + 1)
+    digits:sub(hi + 1, hi + 1) .. digits:sub(lo + 1, lo + 1)
 end
 
 _u16 = (v: i64): str

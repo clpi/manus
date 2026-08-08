@@ -73,7 +73,7 @@ trunc(s: str, width: i64): str
     if width == nil return s end
     len = #s
     if len <= width return s end
-    string.sub(s, 1, width)
+    s:sub(1, width)
 end
 
 format(fmt: str, args: any): str
@@ -90,8 +90,8 @@ format(fmt: str, args: any): str
                 v = args[arg_idx]
                 if spec == ""
                     out = out .. to(str)(v)
-                elseif string.sub(spec, 1, 2) == ":."
-                    prec = tonumber(string.sub(spec, 3))
+                elseif spec:sub(1, 2) == ":."
+                    prec = tonumber(spec:sub(3))
                     if prec and tonumber(v)
                         out = out .. string.format("%." .. to(str)(prec) .. "f", v)
                     else

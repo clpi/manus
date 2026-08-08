@@ -6,10 +6,10 @@ compress(data: any)
     i = 1
     n = #data
     while i <= n
-        ch = string.sub(data, i, i)
+        ch = data:sub(i, i)
         run = 1
         j = i + 1
-        while j <= n and string.sub(data, j, j) == ch and run < 255
+        while j <= n and data:sub(j, j) == ch and run < 255
             run += 1
             j += 1
         end
@@ -34,11 +34,11 @@ decompress(data: any)
         if b == 0xFE
             if i + 2 > n break end
             run = data:byte(i + 1)
-            ch = string.sub(data, i + 2, i + 2)
+            ch = data:sub(i + 2, i + 2)
             out[rawlen(out) + 1] = string.rep(ch, run)
             i += 3
         else
-            out[rawlen(out) + 1] = string.sub(data, i, i)
+            out[rawlen(out) + 1] = data:sub(i, i)
             i += 1
         end
     end

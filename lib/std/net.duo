@@ -8,11 +8,11 @@
 parse_url(url: str): any
     scheme = "http"
     rest = url
-    if string.sub(rest, 1, 7) == "http://"
-        rest = string.sub(rest, 8)
-    elseif string.sub(rest, 1, 8) == "https://"
+    if rest:sub(1, 7) == "http://"
+        rest = rest:sub(8)
+    elseif rest:sub(1, 8) == "https://"
         scheme = "https"
-        rest = string.sub(rest, 9)
+        rest = rest:sub(9)
     end
     default_port = 80
     if scheme == "https" default_port = 443 end
@@ -20,14 +20,14 @@ parse_url(url: str): any
     path = "/"
     slash_pos = string.find(rest, "/")
     if slash_pos
-        host = string.sub(rest, 1, slash_pos - 1)
-        path = string.sub(rest, slash_pos)
+        host = rest:sub(1, slash_pos - 1)
+        path = rest:sub(slash_pos)
     end
     colon_pos = string.find(host, ":")
     port = default_port
     if colon_pos
-        port = tonumber(string.sub(host, colon_pos + 1)) or default_port
-        host = string.sub(host, 1, colon_pos - 1)
+        port = tonumber(host:sub(colon_pos + 1)) or default_port
+        host = host:sub(1, colon_pos - 1)
     end
     {scheme = scheme, host = host, port = port, path = path}
 end
@@ -87,7 +87,7 @@ http_request(method: str, url: str, body: str, headers: any): any
     sep = string.find(raw, "\r\n\r\n", 1, true)
     resp_b = raw
     if sep
-        resp_b = string.sub(raw, sep + 4)
+        resp_b = raw:sub(sep + 4)
     end
     {body = resp_b, status = status}
 end

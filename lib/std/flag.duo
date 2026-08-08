@@ -54,12 +54,12 @@ parse(fs: any, argv: any): any
             break
         end
         -- long flag: --name or --name=value
-        if string.sub(arg, 1, 2) == "--"
-            rest = string.sub(arg, 3)
+        if arg:sub(1, 2) == "--"
+            rest = arg:sub(3)
             eq = string.find(rest, "=", 1, true)
             if eq != nil
-                fname = string.sub(rest, 1, eq - 1)
-                fval = string.sub(rest, eq + 1)
+                fname = rest:sub(1, eq - 1)
+                fval = rest:sub(eq + 1)
             else
                 fname = rest
                 fval = nil
@@ -92,13 +92,13 @@ parse(fs: any, argv: any): any
                     f.value = fval
                 end
             end
-        elseif string.sub(arg, 1, 1) == "-" and #arg > 1
+        elseif arg:sub(1, 1) == "-" and #arg > 1
             -- short flag: -name or -name=value
-            rest = string.sub(arg, 2)
+            rest = arg:sub(2)
             eq = string.find(rest, "=", 1, true)
             if eq != nil
-                fname = string.sub(rest, 1, eq - 1)
-                fval = string.sub(rest, eq + 1)
+                fname = rest:sub(1, eq - 1)
+                fval = rest:sub(eq + 1)
             else
                 fname = rest
                 fval = nil

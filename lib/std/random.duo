@@ -162,7 +162,7 @@ uuid_v4ish(): str
         else
             -- Use single random call to get one hex character
             idx = math.random(1, 16)
-            parts[i] = string.sub(hex_chars, idx, idx)
+            parts[i] = hex_chars:sub(idx, idx)
         end
         i += 1
     end

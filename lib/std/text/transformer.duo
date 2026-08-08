@@ -60,7 +60,7 @@ capitalize(s: str): str
     if #s == 0 return s end
     first = s:byte(1)
     if first >= 97 and first <= 122
-        return string.char(first - 32) .. string.sub(s, 2)
+        return string.char(first - 32) .. s:sub(2)
     end
     s
 end
@@ -86,7 +86,7 @@ trim(s: str): str
         finish -= 1
     end
 
-    string.sub(s, start, finish)
+    s:sub(start, finish)
 end
 
 trim_left(s: str): str
@@ -96,7 +96,7 @@ trim_left(s: str): str
         if c != 32 and c != 9 and c != 10 and c != 13 break end
         start += 1
     end
-    string.sub(s, start)
+    s:sub(start)
 end
 
 trim_right(s: str): str
@@ -106,7 +106,7 @@ trim_right(s: str): str
         if c != 32 and c != 9 and c != 10 and c != 13 break end
         finish -= 1
     end
-    string.sub(s, 1, finish)
+    s:sub(1, finish)
 end
 
 compress_whitespace(s: str): str
@@ -161,7 +161,7 @@ remove_accents(s: str): str
         found = false
         for pattern, replacement in accents
             plen = #pattern
-            if string.sub(s, i, i + plen - 1) == pattern
+            if s:sub(i, i + plen - 1) == pattern
                 result = result .. replacement
                 i += plen
                 found = true
@@ -357,7 +357,7 @@ replace(s: str, old: str, new: str): str
     i = 1
     old_len = #old
     while i <= #s
-        if string.sub(s, i, i + old_len - 1) == old
+        if s:sub(i, i + old_len - 1) == old
             result = result .. new
             i += old_len
         else
@@ -377,7 +377,7 @@ count_occurrences(s: str, pattern: str): i64
     i = 1
     pat_len = #pattern
     while i <= #s
-        if string.sub(s, i, i + pat_len - 1) == pattern
+        if s:sub(i, i + pat_len - 1) == pattern
             count += 1
             i += pat_len
         else

@@ -32,7 +32,7 @@ bpe_learn(bpe: any, corpus: any, num_merges: i64): void
     freqs = {}
     i = 1
     while i <= #corpus
-        ch = string.sub(corpus, i, i)
+        ch = corpus:sub(i, i)
         if freqs[ch] == nil freqs[ch] = 0 end
         freqs[ch] = freqs[ch] + 1
         i += 1
@@ -47,7 +47,7 @@ bpe_learn(bpe: any, corpus: any, num_merges: i64): void
     words = {}
     i = 1
     while i <= #corpus
-        ch = string.sub(corpus, i, i)
+        ch = corpus:sub(i, i)
         words[#words + 1] = bpe.vocab[ch]
         i += 1
     end
@@ -85,14 +85,14 @@ bpe_learn(bpe: any, corpus: any, num_merges: i64): void
         parts = {}
         idx = 1
         while idx <= #best_pair
-            if string.sub(best_pair, idx, idx) == ","
+            if best_pair:sub(idx, idx) == ","
                 break
             end
-            parts[#parts + 1] = string.sub(best_pair, idx, idx)
+            parts[#parts + 1] = best_pair:sub(idx, idx)
             idx += 1
         end
         left = table.concat(parts)
-        right = string.sub(best_pair, idx + 1)
+        right = best_pair:sub(idx + 1)
         new_token = left .. right
         bpe_add_token(bpe, new_token)
 
@@ -125,7 +125,7 @@ bpe_encode(bpe: any, text: str): any
     tokens = {}
     i = 1
     while i <= #text
-        ch = string.sub(text, i, i)
+        ch = text:sub(i, i)
         if bpe.vocab[ch] != nil
             tokens[#tokens + 1] = bpe.vocab[ch]
         else
@@ -142,12 +142,12 @@ bpe_encode(bpe: any, text: str): any
         parts = {}
         idx = 1
         while idx <= #merge
-            if string.sub(merge, idx, idx) == "," break end
-            parts[#parts + 1] = string.sub(merge, idx, idx)
+            if merge:sub(idx, idx) == "," break end
+            parts[#parts + 1] = merge:sub(idx, idx)
             idx += 1
         end
         left = table.concat(parts)
-        right = string.sub(merge, idx + 1)
+        right = merge:sub(idx + 1)
         new_token = left .. right
         left_id = bpe.vocab[left]
         right_id = bpe.vocab[right]
@@ -198,7 +198,7 @@ wordpiece_encode(vocab: any, text: str, max_word_len: i64): any
     word = ""
     i = 1
     while i <= #text
-        ch = string.sub(text, i, i)
+        ch = text:sub(i, i)
         if ch == " " or ch == "\t" or ch == "\n"
             if #word > 0
                 words[#words + 1] = word
@@ -223,12 +223,12 @@ wordpiece_encode(vocab: any, text: str, max_word_len: i64): any
             found = false
             end_pos = #chars
             while end_pos > 0
-                sub = string.sub(chars, 1, end_pos)
+                sub = chars:sub(1, end_pos)
                 if end_pos == #chars
                     -- Whole word or prefix
                     if vocab[sub] != nil
                         word_tokens[#word_tokens + 1] = sub
-                        chars = string.sub(chars, end_pos + 1)
+                        chars = chars:sub(end_pos + 1)
                         found = true
                         break
                     end
@@ -237,7 +237,7 @@ wordpiece_encode(vocab: any, text: str, max_word_len: i64): any
                     sub_with_prefix = "##" .. sub
                     if vocab[sub_with_prefix] != nil
                         word_tokens[#word_tokens + 1] = sub_with_prefix
-                        chars = string.sub(chars, end_pos + 1)
+                        chars = chars:sub(end_pos + 1)
                         found = true
                         break
                     end
@@ -267,7 +267,7 @@ simple_tokenize(text: str): any
     current = ""
     i = 1
     while i <= #text
-        ch = string.sub(text, i, i)
+        ch = text:sub(i, i)
         -- Check if punctuation
         is_punct = ch == "." or ch == "," or ch == "!" or ch == "?"
             or ch == ";" or ch == ":" or ch == "(" or ch == ")"

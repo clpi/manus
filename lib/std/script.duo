@@ -214,7 +214,7 @@ path_join(a: str, b: str): str
     if a == "" return b end
     if b == "" return a end
     sep = "/"
-    if string.sub(a, -1) == sep
+    if a:sub(-1) == sep
         return a .. b
     end
     a .. sep .. b
@@ -224,46 +224,46 @@ path_basename(p: str): str
     -- Find last /
     pos = 0
     for i = #p, 1, -1
-        if string.sub(p, i, i) == "/"
+        if p:sub(i, i) == "/"
             pos = i
             break
         end
     end
     if pos == 0 return p end
-    string.sub(p, pos + 1)
+    p:sub(pos + 1)
 end
 
 path_dirname(p: str): str
     pos = 0
     for i = #p, 1, -1
-        if string.sub(p, i, i) == "/"
+        if p:sub(i, i) == "/"
             pos = i
             break
         end
     end
     if pos == 0 return "." end
     if pos == 1 return "/" end
-    string.sub(p, 1, pos - 1)
+    p:sub(1, pos - 1)
 end
 
 path_ext(p: str): str
     base = path_basename(p)
     pos = 0
     for i = #base, 1, -1
-        if string.sub(base, i, i) == "."
+        if base:sub(i, i) == "."
             pos = i
             break
         end
     end
     if pos == 0 return "" end
-    string.sub(base, pos)
+    base:sub(pos)
 end
 
 path_stem(p: str): str
     base = path_basename(p)
     ext = path_ext(base)
     if ext == "" return base end
-    string.sub(base, 1, #base - #ext)
+    base:sub(1, #base - #ext)
 end
 
 -- === File system ===
@@ -328,7 +328,7 @@ chomp(s: str): str
     while n > 0 and s:byte(n) == 10
         n = n - 1
     end
-    string.sub(s, 1, n)
+    s:sub(1, n)
 end
 
 -- Both of these returned the temp path WITH capture's trailing newline, so

@@ -30,13 +30,13 @@ parse(template: any)
                 if ni i = ni + 1 end
             else
                 text_node = new_node("text")
-                text_node.text = string.sub(template, i, i)
+                text_node.text = template:sub(i, i)
                 root.children[rawlen(root.children) + 1] = text_node
                 i += 1
             end
         else
             text_node = new_node("text")
-            text_node.text = string.sub(template, i)
+            text_node.text = template:sub(i)
             root.children[rawlen(root.children) + 1] = text_node
             break
         end

@@ -15,18 +15,18 @@ end
 
 color_hex(hex_str: str): any
     s = hex_str
-    if string.sub(s, 1, 1) == "#" s = string.sub(s, 2) end
+    if s:sub(1, 1) == "#" s = s:sub(2) end
     if #s == 6
-        r = tonumber(string.sub(s, 1, 2), 16) / 255
-        g = tonumber(string.sub(s, 3, 4), 16) / 255
-        b = tonumber(string.sub(s, 5, 6), 16) / 255
+        r = tonumber(s:sub(1, 2), 16) / 255
+        g = tonumber(s:sub(3, 4), 16) / 255
+        b = tonumber(s:sub(5, 6), 16) / 255
         return {r = r, g = g, b = b, a = 1.0}
     end
     if #s == 8
-        r = tonumber(string.sub(s, 1, 2), 16) / 255
-        g = tonumber(string.sub(s, 3, 4), 16) / 255
-        b = tonumber(string.sub(s, 5, 6), 16) / 255
-        a = tonumber(string.sub(s, 7, 8), 16) / 255
+        r = tonumber(s:sub(1, 2), 16) / 255
+        g = tonumber(s:sub(3, 4), 16) / 255
+        b = tonumber(s:sub(5, 6), 16) / 255
+        a = tonumber(s:sub(7, 8), 16) / 255
         return {r = r, g = g, b = b, a = a}
     end
     {r = 0, g = 0, b = 0, a = 1.0}

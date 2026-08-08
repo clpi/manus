@@ -982,7 +982,7 @@ proj_target_or_expr = (lx: Lexer): str
             targets = targets .. " " .. proj_postfix(lx)
         end
         if not is_assign_kind(lexer.peek(lx).kind)
-            -- A trailing `string.sub(buf, 1, n), nil` is a demand-returned PACK.
+            -- A trailing `buf:sub(1, n), nil` is a demand-returned PACK.
             -- My first attempt projected EVERY comma list as one, which also
             -- accepted a bare `a, b` mid-body — a corpus rejection — and coverage
             -- fell 184 -> 151. The tail test is local after all: a pack is the
@@ -1530,7 +1530,7 @@ end
 -- One statement. Returns "" only for block terminators (which the block
 -- parsers consume) and EOF.
 -- After an expression statement, a comma list that closes at `end` is a
--- demand-returned pack: `string.sub(buf, 1, n), nil`. The `end` is what makes it
+-- demand-returned pack: `buf:sub(1, n), nil`. The `end` is what makes it
 -- a tail — a comma list anywhere else is an error, which keeps a bare `a, b`
 -- rejected.
 tail_pack = (lx: Lexer, first: str): str

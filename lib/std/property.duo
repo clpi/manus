@@ -10,7 +10,7 @@ std_property_parse(path: str): any
     current = ""
     i = 1
     while i <= #path
-        ch = string.sub(path, i, i)
+        ch = path:sub(i, i)
         if ch == "."
             if current != ""
                 parts[rawlen(parts) + 1] = current

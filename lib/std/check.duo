@@ -127,7 +127,7 @@ end
 assert_starts_with(str_val: any, prefix: any, message: any): bool
     if str_val == nil str_val = "" end
     if prefix == nil prefix = "" end
-    if string.sub(str_val, 1, #prefix) == prefix return true end
+    if str_val:sub(1, #prefix) == prefix return true end
     msg = "expected string to start with '" .. prefix .. "'"
     if message != nil msg = message .. " — " .. msg end
     error(msg)
@@ -139,7 +139,7 @@ assert_ends_with(str_val: any, suffix: any, message: any): bool
     if suffix == nil suffix = "" end
     n = #suffix
     if n == 0 return true end
-    if string.sub(str_val, -n) == suffix return true end
+    if str_val:sub(-n) == suffix return true end
     msg = "expected string to end with '" .. suffix .. "'"
     if message != nil msg = message .. " — " .. msg end
     error(msg)

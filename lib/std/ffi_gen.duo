@@ -68,8 +68,8 @@ parse_c_declarations(source: str, prefix: str, excludes: any, includes: any): an
     for _, line in lines
         line = string.gsub(line, "^%s+", "")
         line = string.gsub(line, "%s+$", "")
-        if string.sub(line, 1, 1) != "#"
-           and string.sub(line, 1, 2) != "//"
+        if line:sub(1, 1) != "#"
+           and line:sub(1, 2) != "//"
            and not string.match(line, "^typedef")
            and not string.match(line, "^struct ")
            and not string.match(line, "^enum ")
@@ -77,13 +77,13 @@ parse_c_declarations(source: str, prefix: str, excludes: any, includes: any): an
            and not string.match(line, "^#")
             ret_type, name, params = string.match(line, "^(%S+)%s+(%w+)%s*%((.-)%)%s*;")
             if ret_type and name
-                if prefix == "" or string.sub(name, 1, #prefix) == prefix
+                if prefix == "" or name:sub(1, #prefix) == prefix
                     if not excludes[name]
                         include_match = true
                         if includes
                             include_match = false
                             for _, inc in includes
-                                if string.sub(name, 1, #inc) == inc
+                                if name:sub(1, #inc) == inc
                                     include_match = true
                                     break
                                 end

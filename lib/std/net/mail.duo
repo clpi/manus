@@ -9,12 +9,12 @@ parse_address(s: str): any
     if lt != nil
         gt = string.find(s, ">", lt + 1, true)
         if gt == nil return nil end
-        addr = string.sub(s, lt + 1, gt - 1)
-        name = string.sub(s, 1, lt - 1)
+        addr = s:sub(lt + 1, gt - 1)
+        name = s:sub(1, lt - 1)
         name = string.gsub(name, "^%s+", "")
         name = string.gsub(name, "%s+$", "")
-        if #name >= 2 and string.sub(name, 1, 1) == "\"" and string.sub(name, #name, #name) == "\""
-            name = string.sub(name, 2, #name - 1)
+        if #name >= 2 and name:sub(1, 1) == "\"" and name:sub(#name, #name) == "\""
+            name = name:sub(2, #name - 1)
         end
         return {name = name, address = addr}
     end
@@ -32,16 +32,16 @@ parse_address_list(s: str): any
     start = 1
     i = 1
     while i <= #s
-        ch = string.sub(s, i, i)
+        ch = s:sub(i, i)
         if ch == "<" depth += 1 end
         if ch == ">" depth -= 1 end
         if ch == "," and depth == 0
-            parts[rawlen(parts) + 1] = string.sub(s, start, i - 1)
+            parts[rawlen(parts) + 1] = s:sub(start, i - 1)
             start = i + 1
         end
         i += 1
     end
-    parts[rawlen(parts) + 1] = string.sub(s, start)
+    parts[rawlen(parts) + 1] = s:sub(start)
     i = 1
     while i <= rawlen(parts)
         addr = parse_address(parts[i])
@@ -68,9 +68,9 @@ split_lines(s: str): any
     i = 1
     while i <= #s
         if s:byte(i) == 10
-            line = string.sub(s, start, i - 1)
+            line = s:sub(start, i - 1)
             if #line > 0 and line:byte(#line) == 13
-                line = string.sub(line, 1, #line - 1)
+                line = line:sub(1, #line - 1)
             end
             out[rawlen(out) + 1] = line
             start = i + 1
@@ -78,7 +78,7 @@ split_lines(s: str): any
         i += 1
     end
     if start <= #s
-        out[rawlen(out) + 1] = string.sub(s, start)
+        out[rawlen(out) + 1] = s:sub(start)
     end
     out
 end
@@ -94,11 +94,11 @@ read_message(raw: str): any
         if sep == nil
             return {headers = {}, body = raw}
         end
-        header_block = string.sub(raw, 1, sep - 1)
-        body = string.sub(raw, sep + 2)
+        header_block = raw:sub(1, sep - 1)
+        body = raw:sub(sep + 2)
     else
-        header_block = string.sub(raw, 1, sep - 1)
-        body = string.sub(raw, sep + 4)
+        header_block = raw:sub(1, sep - 1)
+        body = raw:sub(sep + 4)
     end
     headers = {}
     lines = split_lines(header_block)
@@ -107,7 +107,7 @@ read_message(raw: str): any
     i = 1
     while i <= rawlen(lines)
         line = lines[i]
-        if string.sub(line, 1, 1) == " " or string.sub(line, 1, 1) == "\t"
+        if line:sub(1, 1) == " " or line:sub(1, 1) == "\t"
             cur_val = cur_val .. " " .. string.gsub(line, "^%s+", "")
         else
             if cur_key != nil
@@ -115,8 +115,8 @@ read_message(raw: str): any
             end
             colon = string.find(line, ":", 1, true)
             if colon != nil
-                cur_key = string.sub(line, 1, colon - 1)
-                cur_val = string.sub(line, colon + 1)
+                cur_key = line:sub(1, colon - 1)
+                cur_val = line:sub(colon + 1)
             else
                 cur_key = nil
             end

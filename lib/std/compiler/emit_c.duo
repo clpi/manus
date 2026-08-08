@@ -67,7 +67,7 @@ _expr_to_c = (src: str): str
             end
             i += 1
         else
-            out = out .. string.sub(src, i, i)
+            out = out .. src:sub(i, i)
             i += 1
         end
     end

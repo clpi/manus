@@ -6,7 +6,7 @@ end
 
 std_string_starts_with(s: any, prefix: any): bool
     if s == nil or prefix == nil return false end
-    string.sub(s, 1, #prefix) == prefix
+    s:sub(1, #prefix) == prefix
 end
 
 std_string_ends_with(s: any, suffix: any): bool
@@ -14,7 +14,7 @@ std_string_ends_with(s: any, suffix: any): bool
     n = #suffix
     if n == 0 return true end
     if n > #s return false end
-    string.sub(s, -n, -1) == suffix
+    s:sub(-n, -1) == suffix
 end
 
 std_string_contains(s: any, needle: any): bool
@@ -30,34 +30,34 @@ std_string_trim(s: any): any
     if s == nil return "" end
     first = 1
     last = #s
-    while first <= last and std_string_is_space(string.sub(s, first, first))
+    while first <= last and std_string_is_space(s:sub(first, first))
         first += 1
     end
-    while last >= first and std_string_is_space(string.sub(s, last, last))
+    while last >= first and std_string_is_space(s:sub(last, last))
         last -= 1
     end
     if last < first return "" end
-    string.sub(s, first, last)
+    s:sub(first, last)
 end
 
 std_string_ltrim(s: any): any
     if s == nil return "" end
     first = 1
     last = #s
-    while first <= last and std_string_is_space(string.sub(s, first, first))
+    while first <= last and std_string_is_space(s:sub(first, first))
         first += 1
     end
-    string.sub(s, first)
+    s:sub(first)
 end
 
 std_string_rtrim(s: any): any
     if s == nil return "" end
     last = #s
-    while last >= 1 and std_string_is_space(string.sub(s, last, last))
+    while last >= 1 and std_string_is_space(s:sub(last, last))
         last -= 1
     end
     if last < 1 return "" end
-    string.sub(s, 1, last)
+    s:sub(1, last)
 end
 
 std_string_split(s: any, sep: any): any
@@ -65,7 +65,7 @@ std_string_split(s: any, sep: any): any
     if s == nil return out end
     if sep == nil or sep == ""
         for i = 1, #s
-            out[rawlen(out) + 1] = string.sub(s, i, i)
+            out[rawlen(out) + 1] = s:sub(i, i)
         end
         return out
     end
@@ -76,8 +76,8 @@ std_string_split(s: any, sep: any): any
             out[rawlen(out) + 1] = rest
             break
         end
-        out[rawlen(out) + 1] = string.sub(rest, 1, pos - 1)
-        rest = string.sub(rest, pos + #sep)
+        out[rawlen(out) + 1] = rest:sub(1, pos - 1)
+        rest = rest:sub(pos + #sep)
     end
     out
 end
@@ -118,7 +118,7 @@ end
 
 std_string_capitalize(s: any): any
     if s == nil or s == "" return "" end
-    string.upper(string.sub(s, 1, 1)) .. string.lower(string.sub(s, 2))
+    string.upper(s:sub(1, 1)) .. string.lower(s:sub(2))
 end
 
 std_string_pad_left(s: any, width: any, pad: any): any
@@ -178,13 +178,13 @@ end
 std_string_char_at(s: any, index: any): any
     if s == nil or index == nil return "" end
     if index < 1 or index > #s return "" end
-    string.sub(s, index, index)
+    s:sub(index, index)
 end
 
 std_string_trim_prefix(s: any, prefix: any): any
     if s == nil or prefix == nil return s or "" end
     if std_string_starts_with(s, prefix)
-        return string.sub(s, #prefix + 1)
+        return s:sub(#prefix + 1)
     end
     s
 end
@@ -192,7 +192,7 @@ end
 std_string_trim_suffix(s: any, suffix: any): any
     if s == nil or suffix == nil return s or "" end
     if std_string_ends_with(s, suffix)
-        return string.sub(s, 1, #s - #suffix)
+        return s:sub(1, #s - #suffix)
     end
     s
 end
@@ -224,8 +224,8 @@ std_string_split_n(s: any, sep: any, n: any): any
             out[rawlen(out) + 1] = rest
             return out
         end
-        out[rawlen(out) + 1] = string.sub(rest, 1, pos - 1)
-        rest = string.sub(rest, pos + #sep)
+        out[rawlen(out) + 1] = rest:sub(1, pos - 1)
+        rest = rest:sub(pos + #sep)
         count += 1
     end
     out[rawlen(out) + 1] = rest
@@ -237,7 +237,7 @@ std_string_to_title_case(s: any): any
     result = ""
     capitalize_next = true
     for i = 1, #s
-        ch = string.sub(s, i, i)
+        ch = s:sub(i, i)
         if ch == " " or ch == "-" or ch == "_"
             result = result .. ch
             capitalize_next = true

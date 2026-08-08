@@ -60,7 +60,7 @@ base64_sha1(data: str): str
     sha1_bytes = {}
     i = 1
     while i <= #sha1_hex
-        hex_pair = string.sub(sha1_hex, i, i + 1)
+        hex_pair = sha1_hex:sub(i, i + 1)
         sha1_bytes[#sha1_bytes + 1] = tonumber(hex_pair, 16)
         i += 2
     end

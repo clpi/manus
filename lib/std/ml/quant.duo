@@ -126,7 +126,7 @@ dequantize(q): any
         end
     else
         for i = 1, q.size
-            if q.dtype and string.sub(q.dtype, 1, 4) == "uint"
+            if q.dtype and q.dtype:sub(1, 4) == "uint"
                 result.data[i] = (q.data[i] - q.zero_point) * q.scale
             else
                 result.data[i] = q.data[i] * q.scale

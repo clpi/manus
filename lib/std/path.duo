@@ -7,10 +7,10 @@ join(a: str, b: str): str
     if b == ""
         return a
     end
-    if string.sub(b, 1, 1) == "/"
+    if b:sub(1, 1) == "/"
         return b
     end
-    if string.sub(a, -1, -1) == "/"
+    if a:sub(-1, -1) == "/"
         return a .. b
     end
     a .. "/" .. b
@@ -21,14 +21,14 @@ basename(p: str): str
         ""
     end
     i = #p
-    while i > 1 and string.sub(p, i, i) == "/"
+    while i > 1 and p:sub(i, i) == "/"
         i -= 1
     end
     last = i
-    while i > 1 and string.sub(p, i - 1, i - 1) != "/"
+    while i > 1 and p:sub(i - 1, i - 1) != "/"
         i -= 1
     end
-    string.sub(p, i, last)
+    p:sub(i, last)
 end
 
 dirname(p: str): str
@@ -36,27 +36,27 @@ dirname(p: str): str
         "."
     end
     i = #p
-    while i > 1 and string.sub(p, i, i) == "/"
+    while i > 1 and p:sub(i, i) == "/"
         i -= 1
     end
-    while i > 1 and string.sub(p, i - 1, i - 1) != "/"
+    while i > 1 and p:sub(i - 1, i - 1) != "/"
         i -= 1
     end
     if i <= 1
-        if string.sub(p, 1, 1) == "/"
+        if p:sub(1, 1) == "/"
             return "/"
         end
         return "."
     end
-    string.sub(p, 1, i - 1)
+    p:sub(1, i - 1)
 end
 
 extname(p: str): str
     base = basename(p)
     i = #base
     while i > 1
-        if string.sub(base, i, i) == "."
-            string.sub(base, i, #base)
+        if base:sub(i, i) == "."
+            base:sub(i, #base)
         end
         i -= 1
     end
@@ -65,7 +65,7 @@ end
 
 is_absolute(p: str): bool
     if p == nil or p == "" return false end
-    string.sub(p, 1, 1) == "/"
+    p:sub(1, 1) == "/"
 end
 
 normalize(p: str): str
@@ -73,8 +73,8 @@ normalize(p: str): str
     while string.find(p, "//")
         p = string.gsub(p, "//", "/")
     end
-    if p != "/" and string.sub(p, -1, -1) == "/"
-        p = string.sub(p, 1, -2)
+    if p != "/" and p:sub(-1, -1) == "/"
+        p = p:sub(1, -2)
     end
     p
 end

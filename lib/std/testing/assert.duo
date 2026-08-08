@@ -280,7 +280,7 @@ assert_string_contains(ctx: any, got: str, expected: str, msg: str): void
 end
 
 assert_string_starts_with(ctx: any, got: str, expected: str, msg: str): void
-    if string.sub(got, 1, #expected) == expected
+    if got:sub(1, #expected) == expected
         ctx.passed += 1
     else
         ctx.failed += 1
@@ -294,7 +294,7 @@ assert_string_starts_with(ctx: any, got: str, expected: str, msg: str): void
 end
 
 assert_string_ends_with(ctx: any, got: str, expected: str, msg: str): void
-    if string.sub(got, -#expected) == expected
+    if got:sub(-#expected) == expected
         ctx.passed += 1
     else
         ctx.failed += 1

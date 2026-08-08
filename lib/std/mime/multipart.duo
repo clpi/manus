@@ -33,28 +33,28 @@ next_part(r: any)
         while pos <= #r.data
             d1, e = string.find(r.data, sep, pos, true)
             if e == nil break end
-            if string.sub(r.data, e + 1, e + 1) == "-" break end
-            if string.sub(r.data, e + 1, e + 1) == "\r" e += 2 else e += 1 end
+            if r.data:sub(e + 1, e + 1) == "-" break end
+            if r.data:sub(e + 1, e + 1) == "\r" e += 2 else e += 1 end
             d2, hdr_end = string.find(r.data, "\r\n\r\n", e, true)
             if hdr_end == nil d2, hdr_end = string.find(r.data, "\n\n", e, true) end
             if hdr_end == nil break end
-            hdr = string.sub(r.data, e, hdr_end - 1)
+            hdr = r.data:sub(e, hdr_end - 1)
             body_start = hdr_end + 1
-            if string.sub(r.data, hdr_end - 1, hdr_end) == "\n\n" body_start = hdr_end else body_start = hdr_end + 2 end
+            if r.data:sub(hdr_end - 1, hdr_end) == "\n\n" body_start = hdr_end else body_start = hdr_end + 2 end
             next_sep = string.find(r.data, "\r\n" .. sep, body_start, true)
             if next_sep == nil next_sep = string.find(r.data, "\n" .. sep, body_start, true) end
             if next_sep == nil
                 next_sep2 = string.find(r.data, end_sep, body_start, true)
                 if next_sep2 == nil break end
-                part_body = string.sub(r.data, body_start, next_sep2 - 1)
+                part_body = r.data:sub(body_start, next_sep2 - 1)
                 r.parts[rawlen(r.parts) + 1] = {headers = parse_headers(hdr), body = part_body}
                 break
             end
-            part_body = string.sub(r.data, body_start, next_sep - 1)
-            if string.sub(part_body, #part_body - 1) == "\r\n"
-                part_body = string.sub(part_body, 1, #part_body - 2)
-            elseif string.sub(part_body, #part_body) == "\n"
-                part_body = string.sub(part_body, 1, #part_body - 1)
+            part_body = r.data:sub(body_start, next_sep - 1)
+            if part_body:sub(#part_body - 1) == "\r\n"
+                part_body = part_body:sub(1, #part_body - 2)
+            elseif part_body:sub(#part_body) == "\n"
+                part_body = part_body:sub(1, #part_body - 1)
             end
             r.parts[rawlen(r.parts) + 1] = {headers = parse_headers(hdr), body = part_body}
             pos = next_sep + 1
