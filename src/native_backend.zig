@@ -39,6 +39,33 @@ pub const DirectDiag = struct {
     message: []const u8,
 };
 
+/// Which of the 75 backend refusals fired.
+///
+/// The third and last layer to get this. dnir_lower and the native-scalar
+/// precheck now name their bail sites, so a DNB001 that prints NO site at all
+/// means the module lowered fine and the ARM64 emitter refused it — as opaque
+/// as the original single bucket, one layer down. `@src()` for the same reason
+/// as the others: a hand-written tag drifts from the line it labels, a source
+/// location cannot.
+///
+/// Only `return` sites are rewritten. `error.UnsupportedProgram` also appears
+/// as a SWITCH PRONG in describeError, and a prong must be comptime — a first
+/// pass that rewrote every occurrence turned those into `refuse(@src()) =>`
+/// and failed with "unable to evaluate comptime expression".
+pub var refusal_site: std.builtin.SourceLocation = .{
+    .module = "",
+    .file = "",
+    .fn_name = "",
+    .line = 0,
+    .column = 0,
+};
+
+fn refuse(src: std.builtin.SourceLocation) Error {
+    refusal_site = src;
+    return error.UnsupportedProgram;
+}
+
+
 pub fn directDiagnostic(err: Error, target: []const u8) DirectDiag {
     _ = target;
     return switch (err) {
@@ -111,6 +138,7 @@ pub fn emitObject(alloc: std.mem.Allocator, mod: *const ast.Module, target: []co
 /// Like `emitObject`, but when `process_entry` is set the named zero-arg function
 /// gets `fcvtzs x0, d0` on f64 returns so native executables receive an i64 exit code.
 pub fn emitObjectForExecutable(alloc: std.mem.Allocator, mod: *const ast.Module, process_entry: []const u8) Error![]u8 {
+    refusal_site.line = 0;
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) {
         return error.UnsupportedTarget;
     }
@@ -491,7 +519,7 @@ fn validateFunction(
         return error.InvalidMainSignature;
     }
     for (fd.func.params) |param| {
-        if (param.default_val != null) return error.UnsupportedProgram;
+        if (param.default_val != null) return refuse(@src());
     }
     const ret_float = returnsFloat(fd.func.ret_type);
     const ret_int = returnsInteger(fd.func.ret_type);
@@ -500,7 +528,7 @@ fn validateFunction(
         return error.InvalidMainSignature;
     }
     if (ret_scal) {
-        if (fd.func.params.len > 8) return error.UnsupportedProgram;
+        if (fd.func.params.len > 8) return refuse(@src());
         for (fd.func.params) |param| {
             if (!isIntegerAnnotation(param.typ) and !(param.typ == .named and std.mem.eql(u8, param.typ.named, "str"))) {
                 return error.InvalidMainSignature;
@@ -513,7 +541,7 @@ fn validateFunction(
         if (slots > 8) return error.InvalidMainSignature;
         return;
     }
-    if (fd.func.params.len > 8) return error.UnsupportedProgram;
+    if (fd.func.params.len > 8) return refuse(@src());
     for (fd.func.params) |param| {
         // `str` is a `const char*` — an integer-class argument that rides x0..x7
         // exactly like an i64. The record-returning path above already accepts
@@ -1030,14 +1058,14 @@ const Arm64Compiler = struct {
                     try temps.put(self.alloc, slot, dreg);
                     dreg += 1;
                 } else if (p.record) |rec_name| {
-                    const rec = f64RecordDesc(self.f64_records, .{ .named = rec_name }) orelse return error.UnsupportedProgram;
+                    const rec = f64RecordDesc(self.f64_records, .{ .named = rec_name }) orelse return refuse(@src());
                     for (rec.field_names) |fname| {
                         self.used_fp_regs[dreg] = true;
                         const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ p.name, fname });
                         try self.fp_locals.put(self.alloc, key, dreg);
                         dreg += 1;
                     }
-                } else return error.UnsupportedProgram;
+                } else return refuse(@src());
             }
         } else {
             // x0..x7 are both the argument registers and the return-value
@@ -1061,7 +1089,7 @@ const Arm64Compiler = struct {
                 }
                 var k: u32 = 0;
                 while (k < slots_for_param) : (k += 1) {
-                    if (slot_cursor >= 8) return error.UnsupportedProgram;
+                    if (slot_cursor >= 8) return refuse(@src());
                     const slot = slot_cursor;
                     const arg_reg: u5 = @intCast(slot);
                     if (body_has_call) {
@@ -1138,11 +1166,11 @@ const Arm64Compiler = struct {
                     if (ins.op != .alloc_slots) continue;
                     const t = ins.result orelse continue;
                     const n: u16 = switch (ins.lhs) {
-                        .i64 => |v| if (v > 0 and v <= 4096) @intCast(v) else return error.UnsupportedProgram,
-                        else => return error.UnsupportedProgram,
+                        .i64 => |v| if (v > 0 and v <= 4096) @intCast(v) else return refuse(@src()),
+                        else => return refuse(@src()),
                     };
                     const bytes: u16 = @intCast(std.mem.alignForward(usize, @as(usize, n) * 8, 16));
-                    if (@as(u32, slots_frame) + bytes > 32752) return error.UnsupportedProgram;
+                    if (@as(u32, slots_frame) + bytes > 32752) return refuse(@src());
                     try self.slot_bases.put(self.alloc, t, slots_frame);
                     slots_frame += bytes;
                 }
@@ -1180,7 +1208,7 @@ const Arm64Compiler = struct {
         // Sentinel: branch_target may equal instr count (fall-through past if-block).
         try code_offsets.append(self.alloc, @intCast(self.code.items.len));
         for (branch_patches.items) |p| {
-            if (p.target_instr >= code_offsets.items.len) return error.UnsupportedProgram;
+            if (p.target_instr >= code_offsets.items.len) return refuse(@src());
             const target_off = code_offsets.items[p.target_instr];
             if (p.is_cond) {
                 try self.patchCondBranch(p.patch_off, target_off);
@@ -1188,12 +1216,12 @@ const Arm64Compiler = struct {
                 try self.patchB(p.patch_off, target_off);
             }
         }
-        if (!self.returned) return error.UnsupportedProgram;
+        if (!self.returned) return refuse(@src());
         // Falling off the end of a function is never recoverable at runtime:
         // execution continues into whatever symbol the linker placed next
         // (here, straight into _duo_keyword_classify → SIGSEGV). Refuse instead
         // of emitting it, so the honest DNB001 path reports the gap.
-        if (!tail_terminates) return error.UnsupportedProgram;
+        if (!tail_terminates) return refuse(@src());
     }
 
     fn compileDnirInstr(
@@ -1208,7 +1236,7 @@ const Arm64Compiler = struct {
                 const reg = try self.allocReg();
                 const val: i64 = switch (ins.lhs) {
                     .i64 => |v| v,
-                    else => if (ins.op == .const_req) ins.lhs.i64 else return error.UnsupportedProgram,
+                    else => if (ins.op == .const_req) ins.lhs.i64 else return refuse(@src()),
                 };
                 try self.emitMovImm(reg, val);
                 if (ins.result) |t| try temps.put(self.alloc, t, reg);
@@ -1217,7 +1245,7 @@ const Arm64Compiler = struct {
                 const d = try self.allocFpReg();
                 const val: f64 = switch (ins.lhs) {
                     .f64 => |v| v,
-                    else => return error.UnsupportedProgram,
+                    else => return refuse(@src()),
                 };
                 try self.emitFmovImmFp(d, val);
                 if (ins.result) |t| try temps.put(self.alloc, t, d);
@@ -1254,7 +1282,7 @@ const Arm64Compiler = struct {
                 if (ins.ty == .f64) {
                     const slot: u32 = switch (ins.lhs) {
                         .local => |s| s,
-                        else => return error.UnsupportedProgram,
+                        else => return refuse(@src()),
                     };
                     const d = pinned.get(slot) orelse temps.get(slot) orelse return error.UndefinedName;
                     if (ins.result) |t| try temps.put(self.alloc, t, d);
@@ -1294,7 +1322,7 @@ const Arm64Compiler = struct {
             .binop => {
                 if (ins.ty == .f64) {
                     const ast_op = dnirBinOpToAst(ins.binop);
-                    if (!isComparison(ast_op)) return error.UnsupportedProgram;
+                    if (!isComparison(ast_op)) return refuse(@src());
                     const lhs = try self.evalDnirValueFp(temps, ins.lhs);
                     const rhs = try self.evalDnirValueFp(temps, ins.rhs);
                     const dst = try self.allocReg();
@@ -1310,7 +1338,7 @@ const Arm64Compiler = struct {
                         .sub => try self.emitFsubReg(dst, lhs, rhs),
                         .mul => try self.emitFmulReg(dst, lhs, rhs),
                         .div => try self.emitFdivReg(dst, lhs, rhs),
-                        else => return error.UnsupportedProgram,
+                        else => return refuse(@src()),
                     }
                     if (lhs != dst) self.releaseFpReg(lhs);
                     if (rhs != dst) self.releaseFpReg(rhs);
@@ -1383,7 +1411,7 @@ const Arm64Compiler = struct {
                         } else if (scalRecordDesc(self.scal_records, .{ .named = ins.record })) |rec| {
                             const base = if (ins.field.len > 0) ins.field else "rec";
                             try self.assignRecordFromAbiRegs(base, rec);
-                        } else return error.UnsupportedProgram;
+                        } else return refuse(@src());
                     }
                     const dst = try self.allocReg();
                     try self.emitMovReg(dst, 0);
@@ -1398,7 +1426,7 @@ const Arm64Compiler = struct {
                     } else if (scalRecordDesc(self.scal_records, .{ .named = ins.record })) |rec| {
                         const base = if (ins.field.len > 0) ins.field else "rec";
                         try self.assignRecordFromAbiRegs(base, rec);
-                    } else return error.UnsupportedProgram;
+                    } else return refuse(@src());
                 }
             },
             .ret => {
@@ -1595,8 +1623,8 @@ const Arm64Compiler = struct {
                 try self.emitRestoreCallerRegs(save);
             },
             .alloc_slots => {
-                const t = ins.result orelse return error.UnsupportedProgram;
-                const off = self.slot_bases.get(t) orelse return error.UnsupportedProgram;
+                const t = ins.result orelse return refuse(@src());
+                const off = self.slot_bases.get(t) orelse return refuse(@src());
                 const dst = try self.allocReg();
                 try self.emitAddSpImm(dst, off);
                 try temps.put(self.alloc, t, dst);
@@ -1632,7 +1660,7 @@ const Arm64Compiler = struct {
                 self.releaseDnirTemp(pinned, ins.lhs, base);
                 self.releaseDnirTemp(pinned, ins.rhs, idx);
             } else if (op == .store_index) {
-                return error.UnsupportedProgram;
+                return refuse(@src());
             } else {
                 // `string.byte(s, i)`: Duo indexes strings from 1, C pointers
                 // from 0, so the byte lives at `base + (i - 1)`.
@@ -1654,12 +1682,12 @@ const Arm64Compiler = struct {
             .hw_fence => {
                 if (dnir_hardware.arm64FixedWord(.fence)) |word| {
                     try self.emit(word, "dmb ish");
-                } else return error.UnsupportedProgram;
+                } else return refuse(@src());
             },
             .hw_spin => {
                 if (dnir_hardware.arm64FixedWord(.spin_wait)) |word| {
                     try self.emit(word, "yield");
-                } else return error.UnsupportedProgram;
+                } else return refuse(@src());
             },
             .hw_unary => {
                 const src = try self.evalDnirValue(temps, ins.lhs);
@@ -1668,7 +1696,7 @@ const Arm64Compiler = struct {
                 if (!Arm64Compiler.regIsPinned(pinned, src)) self.releaseReg(src);
                 if (ins.result) |t| try temps.put(self.alloc, t, dst);
             },
-            else => return error.UnsupportedProgram,
+            else => return refuse(@src()),
         }
     }
 
@@ -1685,10 +1713,10 @@ const Arm64Compiler = struct {
             self.releaseReg(tmp);
             return;
         }
-        const word = dnir_hardware.arm64UnaryWord(hw, dst, src) orelse return error.UnsupportedProgram;
+        const word = dnir_hardware.arm64UnaryWord(hw, dst, src) orelse return refuse(@src());
         const mnem = switch (hw) {
             .clz => "clz",
-            else => return error.UnsupportedProgram,
+            else => return refuse(@src()),
         };
         try self.emitFmt(word, "{s} x{d}, x{d}", .{ mnem, dst, src });
     }
@@ -1744,7 +1772,7 @@ const Arm64Compiler = struct {
                 return error.UndefinedName;
             },
             .temp => |t| temps.get(t) orelse return error.UndefinedName,
-            .record => return error.UnsupportedProgram,
+            .record => return refuse(@src()),
         };
     }
 
@@ -1795,7 +1823,7 @@ const Arm64Compiler = struct {
                 try self.emitMsubReg(dst, q, rhs, lhs);
                 self.releaseReg(q);
             },
-            else => return error.UnsupportedProgram,
+            else => return refuse(@src()),
         }
     }
 
@@ -1881,7 +1909,7 @@ const Arm64Compiler = struct {
                         dreg += 1;
                     }
                 } else {
-                    return error.UnsupportedProgram;
+                    return refuse(@src());
                 }
             }
         } else {
@@ -1894,7 +1922,7 @@ const Arm64Compiler = struct {
         }
 
         try self.compileBlock(fd.func.body, fd.func.ret_type);
-        if (!self.returned) return error.UnsupportedProgram;
+        if (!self.returned) return refuse(@src());
     }
 
     fn emit(self: *Arm64Compiler, word: u32, asm_line: []const u8) Error!void {
@@ -2031,10 +2059,10 @@ const Arm64Compiler = struct {
     fn assignRecordTable(self: *Arm64Compiler, base: []const u8, expr: *const ast.Expr) Error!void {
         const table = switch (expr.*) {
             .table => |t| t,
-            else => return error.UnsupportedProgram,
+            else => return refuse(@src()),
         };
         const n = table.fields.len;
-        if (n == 0 or n > 8) return error.UnsupportedProgram;
+        if (n == 0 or n > 8) return refuse(@src());
         const raw_frame: u16 = @intCast(n * 8);
         const frame: u16 = @intCast(std.mem.alignForward(u16, raw_frame, 16));
         try self.emitSubSp(frame);
@@ -2044,7 +2072,7 @@ const Arm64Compiler = struct {
             const val: *const ast.Expr = switch (fld) {
                 .named => |nf| nf.val,
                 .positional => |v| v,
-                else => return error.UnsupportedProgram,
+                else => return refuse(@src()),
             };
             const is_float = val.* == .float_lit;
             const off: u16 = @intCast(i * 8);
@@ -2059,7 +2087,7 @@ const Arm64Compiler = struct {
             const key = switch (fld) {
                 .named => |nf| try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, nf.key }),
                 .positional => try std.fmt.allocPrint(self.alloc, "{s}.{d}", .{ base, i }),
-                else => return error.UnsupportedProgram,
+                else => return refuse(@src()),
             };
             try self.fp_stack_slots.put(self.alloc, key, .{ .off = off, .float = is_float });
             i += 1;
@@ -2080,7 +2108,7 @@ const Arm64Compiler = struct {
 
     fn loadFpStackField(self: *Arm64Compiler, key: []const u8) Error!u5 {
         const slot = self.fp_stack_slots.get(key) orelse return error.UndefinedName;
-        if (!slot.float) return error.UnsupportedProgram;
+        if (!slot.float) return refuse(@src());
         const d = try self.allocFpReg();
         try self.emitLdrSpFp(d, slot.off);
         return d;
@@ -2089,11 +2117,11 @@ const Arm64Compiler = struct {
     fn emitF64KernelCall(self: *Arm64Compiler, expr: *const ast.Expr) Error!u5 {
         const call = switch (expr.*) {
             .call => |c| c,
-            else => return error.UnsupportedProgram,
+            else => return refuse(@src()),
         };
-        if (call.func.* != .name) return error.UnsupportedProgram;
+        if (call.func.* != .name) return refuse(@src());
         const name = call.func.name.ident;
-        if (self.f64_kernel_names.get(name) == null) return error.UnsupportedProgram;
+        if (self.f64_kernel_names.get(name) == null) return refuse(@src());
         var d_slot: u5 = 0;
         for (call.args) |arg| {
             try self.emitFpCallArgInt(arg, &d_slot);
@@ -2132,7 +2160,7 @@ const Arm64Compiler = struct {
         var it = self.fp_stack_slots.iterator();
         while (it.next()) |entry| {
             if (!std.mem.startsWith(u8, entry.key_ptr.*, prefix)) continue;
-            if (n >= offs.len) return error.UnsupportedProgram;
+            if (n >= offs.len) return refuse(@src());
             offs[n] = entry.value_ptr.*.off;
             n += 1;
         }
@@ -2173,7 +2201,7 @@ const Arm64Compiler = struct {
         for (fields) |fld| {
             const val = switch (fld) {
                 .named => |nf| nf.val,
-                else => return error.UnsupportedProgram,
+                else => return refuse(@src()),
             };
             const d = try self.compileExprFp(val);
             if (d != d_slot.*) try self.emitFmovReg(d_slot.*, d);
@@ -2244,7 +2272,7 @@ const Arm64Compiler = struct {
             self.returned = true;
             return;
         }
-        return error.UnsupportedProgram;
+        return refuse(@src());
     }
 
     fn compileStmtBlock(self: *Arm64Compiler, block: ast.Block) Error!bool {
@@ -2268,13 +2296,13 @@ const Arm64Compiler = struct {
     fn compileStmt(self: *Arm64Compiler, stmt: *const ast.Stmt, allow_new_locals: bool) Error!void {
         switch (stmt.*) {
             .local_decl => |ld| {
-                if (!allow_new_locals) return error.UnsupportedProgram;
-                if (ld.names.len != ld.inits.len) return error.UnsupportedProgram;
+                if (!allow_new_locals) return refuse(@src());
+                if (ld.names.len != ld.inits.len) return refuse(@src());
                 for (ld.names, 0..) |name, i| {
                     if (ld.inits[i].* == .call and ld.inits[i].call.func.* == .name) {
                         if (self.func_record_returns.get(ld.inits[i].call.func.name.ident)) |rec| {
                             const call = ld.inits[i].call;
-                            if (call.args.len > 8) return error.UnsupportedProgram;
+                            if (call.args.len > 8) return refuse(@src());
                             for (call.args, 0..) |arg, j| {
                                 const arg_reg = try self.compileExpr(arg);
                                 const abi_reg: u5 = @intCast(j);
@@ -2292,21 +2320,21 @@ const Arm64Compiler = struct {
                         try self.assignRecordTable(name.ident, ld.inits[i]);
                         continue;
                     }
-                    if (!isIntegerAnnotation(name.typ) and name.typ != .inferred) return error.UnsupportedProgram;
+                    if (!isIntegerAnnotation(name.typ) and name.typ != .inferred) return refuse(@src());
                     const reg = try self.compileExpr(ld.inits[i]);
                     const local_reg = try self.bindNewLocalReg(reg);
                     try self.locals.put(self.alloc, name.ident, local_reg);
                 }
             },
             .assign => |as| {
-                if (as.targets.len != as.values.len) return error.UnsupportedProgram;
+                if (as.targets.len != as.values.len) return refuse(@src());
                 for (as.targets, 0..) |target, i| {
                     const val = as.values[i];
                     switch (target.*) {
                         .name => |target_name| {
                             if (val.* == .call and val.call.func.* == .name) {
                                 if (self.func_record_returns.get(val.call.func.name.ident)) |rec| {
-                                    if (val.call.args.len > 8) return error.UnsupportedProgram;
+                                    if (val.call.args.len > 8) return refuse(@src());
                                     for (val.call.args, 0..) |arg, ai| {
                                         const arg_reg = try self.compileExpr(arg);
                                         const abi_reg: u5 = @intCast(ai);
@@ -2336,14 +2364,14 @@ const Arm64Compiler = struct {
                             }
                         },
                         .field => |f| {
-                            if (f.obj.* != .name) return error.UnsupportedProgram;
+                            if (f.obj.* != .name) return refuse(@src());
                             const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ f.obj.name.ident, f.field });
                             defer self.alloc.free(key);
                             const new_reg = try self.compileExpr(val);
                             try self.storeStackField(key, new_reg);
                             self.releaseReg(new_reg);
                         },
-                        else => return error.UnsupportedProgram,
+                        else => return refuse(@src()),
                     }
                 }
             },
@@ -2355,7 +2383,7 @@ const Arm64Compiler = struct {
                     self.returned = true;
                     return;
                 }
-                if (ret.vals.len != 1) return error.UnsupportedProgram;
+                if (ret.vals.len != 1) return refuse(@src());
                 try self.emitReturnExpr(ret.vals[0]);
             },
             .expr_stmt => |expr_stmt| {
@@ -2370,18 +2398,18 @@ const Arm64Compiler = struct {
             .while_loop => |while_loop| try self.compileWhile(while_loop),
             .num_for => |num_for| try self.compileNumFor(num_for),
             .brk => {
-                if (self.loops.items.len == 0) return error.UnsupportedProgram;
+                if (self.loops.items.len == 0) return refuse(@src());
                 const loop = self.loops.items[self.loops.items.len - 1];
                 const off = try self.emitB(loop.end_label);
                 try self.loops.items[self.loops.items.len - 1].break_patches.append(self.alloc, off);
             },
             .cont => {
-                if (self.loops.items.len == 0) return error.UnsupportedProgram;
+                if (self.loops.items.len == 0) return refuse(@src());
                 const loop = self.loops.items[self.loops.items.len - 1];
                 const off = try self.emitB(loop.continue_label);
                 try self.loops.items[self.loops.items.len - 1].continue_patches.append(self.alloc, off);
             },
-            else => return error.UnsupportedProgram,
+            else => return refuse(@src()),
         }
     }
 
@@ -2456,7 +2484,7 @@ const Arm64Compiler = struct {
     }
 
     fn compileNumFor(self: *Arm64Compiler, num_for: anytype) Error!void {
-        if (!isIntegerAnnotation(num_for.var_typ) and num_for.var_typ != .inferred) return error.UnsupportedProgram;
+        if (!isIntegerAnnotation(num_for.var_typ) and num_for.var_typ != .inferred) return refuse(@src());
         const start_reg = try self.compileExpr(num_for.start);
         const stop_reg = try self.compileExpr(num_for.stop);
         const step_reg = if (num_for.step) |step| try self.compileExpr(step) else blk: {
@@ -2535,7 +2563,7 @@ const Arm64Compiler = struct {
     fn emitRecordReturnFromTable(self: *Arm64Compiler, fields: []const ast.TableField, desc: ScalRecordDesc) Error!void {
         var reg_idx: u5 = 0;
         for (desc.field_names) |fname| {
-            const val = findTableFieldValue(fields, fname) orelse return error.UnsupportedProgram;
+            const val = findTableFieldValue(fields, fname) orelse return refuse(@src());
             const r = try self.compileExpr(val);
             if (r != reg_idx) try self.emitMovReg(reg_idx, r);
             self.releaseReg(r);
@@ -2548,7 +2576,7 @@ const Arm64Compiler = struct {
 
     fn assignRecordFromAbiRegs(self: *Arm64Compiler, base: []const u8, desc: ScalRecordDesc) Error!void {
         const n = desc.field_names.len;
-        if (n == 0 or n > 8) return error.UnsupportedProgram;
+        if (n == 0 or n > 8) return refuse(@src());
 
         // The slot is reserved once per record local, not once per execution.
         // This code runs again on every loop iteration, and emitting `sub sp`
@@ -2582,7 +2610,7 @@ const Arm64Compiler = struct {
 
     fn assignF64RecordFromFpAbiRegs(self: *Arm64Compiler, base: []const u8, desc: F64RecordDesc) Error!void {
         const n = desc.field_names.len;
-        if (n == 0 or n > 8) return error.UnsupportedProgram;
+        if (n == 0 or n > 8) return refuse(@src());
         const raw_frame: u16 = @intCast(n * 8);
         const frame: u16 = @intCast(std.mem.alignForward(u16, raw_frame, 16));
         try self.emitSubSp(frame);
@@ -2640,7 +2668,7 @@ const Arm64Compiler = struct {
         if (f.obj.* != .name) return null;
         const alias = f.obj.name.ident;
         const sym = self.req_ctx.exportSymbol(alias, f.field) orelse return null;
-        if (call.args.len > 8) return error.UnsupportedProgram;
+        if (call.args.len > 8) return refuse(@src());
         for (call.args, 0..) |arg, i| {
             const arg_reg = try self.compileExpr(arg);
             const abi_reg: u5 = @intCast(i);
@@ -2673,7 +2701,7 @@ const Arm64Compiler = struct {
             return;
         }
         if (self.cur_func_ret_float) {
-            const d = try self.tryCompileF64Subexpr(expr) orelse return error.UnsupportedProgram;
+            const d = try self.tryCompileF64Subexpr(expr) orelse return refuse(@src());
             if (d != 0) try self.emitFmovReg(0, d);
             if (self.needsProcessExitF64Coerce()) try self.emitFcvtzsX0FromD0();
             try self.restoreStackFrame();
@@ -2704,7 +2732,7 @@ const Arm64Compiler = struct {
             },
             .name => |name| self.fp_locals.get(name.ident) orelse error.UndefinedName,
             .field => |f| blk: {
-                if (f.obj.* != .name) return error.UnsupportedProgram;
+                if (f.obj.* != .name) return refuse(@src());
                 const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ f.obj.name.ident, f.field });
                 break :blk self.fp_locals.get(key) orelse error.UndefinedName;
             },
@@ -2717,12 +2745,12 @@ const Arm64Compiler = struct {
                     .sub => try self.emitFsubReg(dst, lhs, rhs),
                     .mul => try self.emitFmulReg(dst, lhs, rhs),
                     .div, .idiv => try self.emitFdivReg(dst, lhs, rhs),
-                    else => return error.UnsupportedProgram,
+                    else => return refuse(@src()),
                 }
                 break :blk dst;
             },
             .call => |call| blk: {
-                if (call.func.* != .name) return error.UnsupportedProgram;
+                if (call.func.* != .name) return refuse(@src());
                 if (self.f64_kernel_names.get(call.func.name.ident)) |_| {
                     break :blk try self.emitF64KernelCall(expr);
                 }
@@ -2746,7 +2774,7 @@ const Arm64Compiler = struct {
                 for (t.fields) |fld| {
                     const val = switch (fld) {
                         .named => |nf| nf.val,
-                        else => return error.UnsupportedProgram,
+                        else => return refuse(@src()),
                     };
                     const d = try self.compileExprFp(val);
                     if (d != d_slot.*) try self.emitFmovReg(d_slot.*, d);
@@ -2810,7 +2838,7 @@ const Arm64Compiler = struct {
                 break :blk try self.bindNewLocalReg(reg);
             },
             .field => |f| blk: {
-                if (f.obj.* != .name) return error.UnsupportedProgram;
+                if (f.obj.* != .name) return refuse(@src());
                 if (try self.tryCompileReqFieldAccess(f.obj.name.ident, f.field)) |reg| break :blk reg;
                 const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ f.obj.name.ident, f.field });
                 defer self.alloc.free(key);
@@ -2847,7 +2875,7 @@ const Arm64Compiler = struct {
                         try self.emitFcmpReg(d_lhs, d_rhs);
                         try self.emitCsetFp(dst, conditionForComparison(bin.op));
                     } else {
-                        return error.UnsupportedProgram;
+                        return refuse(@src());
                     }
                     break :blk dst;
                 }
@@ -2903,7 +2931,7 @@ const Arm64Compiler = struct {
                     .lshift => try self.emitLslReg(dst, lhs, rhs),
                     .rshift => try self.emitAsrReg(dst, lhs, rhs),
                     .eq, .neq, .lt, .gt, .leq, .geq => try self.emitCompareResult(dst, lhs, rhs, conditionForComparison(bin.op)),
-                    else => return error.UnsupportedProgram,
+                    else => return refuse(@src()),
                 }
                 self.releaseReg(lhs);
                 self.releaseReg(rhs);
@@ -2912,11 +2940,11 @@ const Arm64Compiler = struct {
             .call => |call| blk: {
                 if (call.func.* == .field) {
                     if (try self.tryCompileReqFieldCall(expr)) |req_reg| break :blk req_reg;
-                    return error.UnsupportedProgram;
+                    return refuse(@src());
                 }
-                if (call.func.* != .name) return error.UnsupportedProgram;
+                if (call.func.* != .name) return refuse(@src());
                 if (std.mem.eql(u8, call.func.name.ident, "__native_load_u8")) {
-                    if (call.args.len != 2) return error.UnsupportedProgram;
+                    if (call.args.len != 2) return refuse(@src());
                     const base = try self.compileExpr(call.args[0]);
                     const off = try self.compileExpr(call.args[1]);
                     const dst = try self.emitLoadU8Intrinsic(base, off);
@@ -2931,7 +2959,7 @@ const Arm64Compiler = struct {
                     break :blk xdst;
                 }
                 const rec_ret = self.func_record_returns.get(call.func.name.ident);
-                if (call.args.len > 8) return error.UnsupportedProgram;
+                if (call.args.len > 8) return refuse(@src());
                 for (call.args, 0..) |arg, i| {
                     const arg_reg = try self.compileExpr(arg);
                     const abi_reg: u5 = @intCast(i);
@@ -3124,7 +3152,7 @@ const Arm64Compiler = struct {
 
     /// `add xd, sp, #imm` — materialize the address of a frame slot region.
     fn emitAddSpImm(self: *Arm64Compiler, dst: u5, bytes: u16) Error!void {
-        if (bytes > 4095) return error.UnsupportedProgram;
+        if (bytes > 4095) return refuse(@src());
         try self.emitFmt(
             0x910003e0 | (@as(u32, bytes) << 10) | @as(u32, dst),
             "add x{d}, sp, #{d}",
@@ -3591,7 +3619,7 @@ fn emitArm64Module(alloc: std.mem.Allocator, mod: *const ast.Module, process_ent
                 defer region_graph.freeModuleRegions(alloc, rs);
                 region_graph.validateModuleRegions(rs, &graph, dnir_mod, alloc) catch {
                     if (region_schedule.regionGateStrictEnabled()) {
-                        return error.UnsupportedProgram;
+                        return refuse(@src());
                     }
                 };
                 if (realization.buildDeferredFromGraph(alloc, &graph, "<native>")) |plan_val| {

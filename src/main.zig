@@ -22,6 +22,9 @@ const ml_kernels = @import("ml_kernels.zig");
 const native_backend = @import("native_backend.zig");
 const dnir_lower = @import("dnir_lower.zig");
 const codegen_mod = @import("codegen.zig");
+
+/// How many runtime-linked modules refused the direct path, when that is why.
+var link_refusal: usize = 0;
 const backend_identity = @import("backend_identity.zig");
 const pass27_benchmark_evidence = @import("pass27_benchmark_evidence.zig");
 const pass34_representation_manifest = @import("pass34_representation_manifest.zig");
@@ -3205,6 +3208,14 @@ fn reportDirectBackendError(io: Io, err: anyerror, target: []const u8, trace: ?*
         var rbuf: [64]u8 = undefined;
         if (codegen_mod.native_scalar_reason(&rbuf)) |why| {
             term.hint("bail site: native-scalar precheck — {s}", .{why});
+        } else if (link_refusal > 1) {
+            term.hint("bail site: direct link — {d} runtime-linked modules (max 1)", .{link_refusal});
+        } else if (native_backend.refusal_site.line != 0) {
+            // Third layer: the module lowered to DNIR and the ARM64 emitter
+            // refused it. Reported last because it is the only one reachable
+            // once both earlier gates have passed.
+            const rs = native_backend.refusal_site;
+            term.hint("bail site: {s}() at native_backend.zig:{d}", .{ rs.fn_name, rs.line });
         }
     }
     if (std.c.getenv("DUO_DNIR_TRACE") != null) {
@@ -3315,6 +3326,7 @@ fn do_compile(
     native_scalar_precheck.populate_enum_defs(&ps.mod) catch {};
     native_scalar_precheck.populate_func_bodies(&ps.mod) catch {};
     codegen_mod.native_scalar_reason_reset();
+    link_refusal = 0;
     const native_scalar_candidate = native_scalar_precheck.can_emit_native_scalar_module(&ps.mod);
 
     const effective_machine_target: ?[]const u8 = if (wantsMachineLowering(backend_mode, target))
@@ -3395,7 +3407,16 @@ fn do_compile(
                     // non-empty, and those objects are the ones that expect a
                     // runtime a native main never starts.
                     const runtime_linked_modules = try directLinkInputs(alloc, io, &ps.mod, mt, cc);
-                    const obj_result = if (native_scalar_candidate and runtime_linked_modules.len <= 1)
+                    // Three ways to end up here and only two of them had a
+                    // reason attached. The precheck records its own, the
+                    // backend now records its own, and this arm's SECOND
+                    // condition — more than one runtime-linked module — was a
+                    // silent third: a module that passes the precheck and would
+                    // lower fine is refused for a link-graph property, and the
+                    // DNB001 named nothing at all.
+                    const too_many_modules = runtime_linked_modules.len > 1;
+                    if (too_many_modules) link_refusal = runtime_linked_modules.len;
+                    const obj_result = if (native_scalar_candidate and !too_many_modules)
                         native_backend.emitObjectForExecutable(alloc, &ps.mod, entry)
                     else
                         @as(@TypeOf(native_backend.emitObjectForExecutable(alloc, &ps.mod, entry)), error.UnsupportedProgram);
