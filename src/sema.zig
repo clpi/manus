@@ -197,18 +197,6 @@ pub const FuncSignature = struct {
     is_vararg: bool,
 };
 
-/// A record of a generic instantiation site, tracked for the monomorphizer (Requirement 4.1, 4.3).
-pub const InstantiationRecord = struct {
-    /// Name of the generic type/function being instantiated.
-    generic_name: []const u8,
-    /// The resolved type arguments at this instantiation site.
-    type_args: []const RT,
-    /// A stable key for specialization caching (hash of generic_name + type_args).
-    specialization_key: u64,
-    /// Source location of the instantiation.
-    loc: ast.Loc,
-};
-
 pub const Sema = struct {
     alloc: Allocator,
     scope: Scope,
@@ -231,14 +219,12 @@ pub const Sema = struct {
     /// is not generic.
     generic_func_arities: std.StringHashMapUnmanaged(?usize) = .{},
     /// Tracked generic instantiation sites for the monomorphizer (Requirement 4.1, 4.3).
-    instantiation_sites: std.ArrayListUnmanaged(InstantiationRecord) = .empty,
     /// Updated on assignments, queried on field reads. Keys are
     /// `{func}.{table}.{field}` for top-level functions, or `{table}.{field}` otherwise.
     table_field_types: std.StringHashMapUnmanaged(RT) = .{},
     /// Metatable type tracking: maps variable name → known metatable fields.
     /// Populated when setmetatable(x, mt) is called and mt is a table literal
     /// with known __index. Enables compile-time method resolution.
-    metatable_types: std.StringHashMapUnmanaged(RT) = .{},
     /// Methods registered via `fun Table:method()` at module scope.
     table_methods: std.StringHashMapUnmanaged(std.ArrayListUnmanaged([]const u8)) = .{},
     errors: u32,
@@ -408,7 +394,6 @@ pub const Sema = struct {
             .current_ret = .void,
             .next_closure_id = 0,
             .table_field_types = .empty,
-            .metatable_types = .empty,
         };
     }
 
@@ -516,12 +501,10 @@ pub const Sema = struct {
         self.overloads.deinit(self.alloc);
         self.alias_defs.deinit(self.alloc);
         self.generic_func_arities.deinit(self.alloc);
-        self.instantiation_sites.deinit(self.alloc);
         self.test_entries.deinit(self.alloc);
         self.build_directives.deinit(self.alloc);
         self.debug_directives.deinit(self.alloc);
         self.escape_names.deinit(self.alloc);
-        self.metatable_types.deinit(self.alloc);
         self.table_field_types.deinit(self.alloc);
         var tm_it = self.table_methods.iterator();
         while (tm_it.next()) |entry| {
@@ -1405,9 +1388,6 @@ pub const Sema = struct {
         try self.check_block(&mod.body);
         if (self.duo_mode) try self.snapshotModuleBindings();
         self.scope.pop();
-        if (self.info_enabled and self.instantiation_sites.items.len > 0) {
-            term.infoMsg("recorded {d} generic instantiation site(s) for monomorphization", .{self.instantiation_sites.items.len});
-        }
     }
 
     fn registerForeignScopeNames(self: *Sema) !void {
@@ -2548,18 +2528,6 @@ pub const Sema = struct {
                     self.err(c.loc, "function is marked @comp.compile.only and cannot be called at runtime", .{});
                 }
                 for (c.args) |arg| _ = try self.check_expr(arg);
-
-                // Track metatable associations for compile-time method resolution
-                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "setmetatable") and c.args.len == 2) {
-                    // If first arg is a named variable, track its metatable type
-                    if (c.args[0].* == .name) {
-                        const var_name = c.args[0].name.ident;
-                        // If second arg is a table literal, extract __index info
-                        if (c.args[1].* == .table) {
-                            self.metatable_types.put(self.alloc, var_name, .any) catch {};
-                        }
-                    }
-                }
 
                 // Built-in module return types
                 if (self.mem_intrinsic_name(c.func)) |fname| {
@@ -4175,19 +4143,15 @@ pub const Sema = struct {
             }
         }
 
-        const args_slice = try type_args.toOwnedSlice(self.alloc);
-        var key: u64 = std.hash.Wyhash.hash(0, name);
-        for (args_slice) |a| {
-            var buf: [64]u8 = undefined;
-            const s = std.fmt.bufPrint(&buf, "{}", .{a}) catch "";
-            key = key ^ std.hash.Wyhash.hash(key, s);
-        }
-        try self.instantiation_sites.append(self.alloc, .{
-            .generic_name = name,
-            .type_args = args_slice,
-            .specialization_key = key,
-            .loc = loc,
-        });
+        // The specialization key and the collected type args existed only to
+        // build an InstantiationRecord nothing read. mono.zig keeps its own
+        // registry (mono.zig:176-184) and never consulted this one. The
+        // constraint CHECKING above is the real work of this function and stays.
+        //
+        // No deinit here: `type_args` already has one at its declaration. The
+        // original code called toOwnedSlice, which TRANSFERRED ownership and
+        // made that defer a no-op. Removing the transfer without noticing the
+        // defer is a double free — it cost three unit-test crashes.
     }
 
     /// Collect the named field keys from a table-literal initializer
