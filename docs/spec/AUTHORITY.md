@@ -48,8 +48,13 @@ The audit's P0 list:
       rewriting deliberate compatibility fixtures (`docs/spec/corpus.md`)
 - [x] superseded pass documents removed from the search path: 59 moved
       `docs/plans/` → `docs/archive/`, stamped, indexed, precedence rule written
-- [ ] tracked session/agent state removed; `.agents/AGENT_COORDINATION.md` is
-      4619 lines of mutable markdown acting as a control plane
+- [x] tracked session/agent state removed; `.agents/AGENT_COORDINATION.md` went
+      4619 lines → 102 (subsystem/owner map, gate table, four protocol rules).
+      The original is frozen verbatim at
+      `docs/history/agent-coordination-2026-07-to-08.md`, historical evidence
+      on the same footing as `docs/archive/`. The five MCP write sites that
+      grew it now target the gitignored `.agents/session/`; reducing the
+      document without moving the writers would have regrown it in a week
 - [ ] `@`-directive ontology replaced by graph/world facts (`ast.Attribute`,
       `has_*_attr`, layout attrs, `@comp.*` parsing all still structural)
 - [ ] stable semantic identity across scope/module/codegen — textual names are
