@@ -1,0 +1,88 @@
+-- The native census — coverage over the REACHABLE set, not the file count.
+--
+-- "Native 100%" was unmeasurable, for three reasons this gate fixes.
+--
+--   1. `duo compile` FALLS BACK to the C backend and reports `ok compile`, so a
+--      naive sweep scores ~100% and means nothing. Only --backend=direct is an
+--      honest native answer.
+--   2. Most files under examples/ have no entry point at all. Counting them as
+--      failures put the real number at 1/60 in an earlier reading; the real
+--      denominator is the programs that BUILD, not the files that exist.
+--   3. Some programs cannot be native BY CONSTRUCTION. A compiler proof fixture
+--      whose body is `global C = std.compiler.emit_c` exists to drive the C
+--      emitter — asking it to compile to native ARM64 is asking a test of the C
+--      backend to stop using the C backend. 14 of them are in the corpus, and
+--      counting them made a 90% ceiling look like a 61% failure.
+--
+-- So the census reports three numbers, and the RATIO IS OVER THE REACHABLE SET.
+-- A program is unreachable when it binds a `std.compiler.*` module at top
+-- level: that is the C-emitter-fixture signature, and it is a property of the
+-- program's purpose, not of the backend's maturity.
+--
+-- NATIVE_FLOOR (default 85) ratchets: a fix raises it, a regression fails the
+-- gate. Exit 0 pass, 1 below the floor, 3 the census could not run.
+
+_sh = (cmd: str): str
+    std.script.capture("cd " .. std.script.getenv("DUO_ROOT", ".") .. " && " .. cmd)
+end
+
+_num = (out: str): i64
+    n: i64 = #out
+    while n > 0 and (out:byte(n) == 10 or out:byte(n) == 32)
+        n -= 1
+    end
+    to(i64)(string.sub(out, 1, n))
+end
+
+-- One shell pass. Each program is compiled with the direct backend; the three
+-- buckets are printed as a single line of counts so Duo parses numbers, not
+-- process output.
+_sweep = (): str
+    _sh("duo=./zig-out/bin/duo; ok=0; bail=0; un=0; noent=0; "
+        .. "for f in $(find examples -name '*.duo' | grep -v compile_fail); do "
+        .. "  out=$($duo compile --backend=direct \"$f\" -o /tmp/_census.bin 2>&1); "
+        .. "  case \"$out\" in *'ok compile'*) ok=$((ok+1)); continue;; esac; "
+        .. "  case \"$out\" in *DNB*) : ;; *) noent=$((noent+1)); continue;; esac; "
+        .. "  if grep -q '^global [A-Za-z_]* = std.compiler\\.' \"$f\"; then "
+        .. "    un=$((un+1)); else bail=$((bail+1)); fi; "
+        .. "done; echo \"$ok $bail $un $noent\"")
+end
+
+main(): i64
+    counts = _sweep()
+    if #counts == 0
+        print("native_census: FAIL — sweep produced no output; census did not run")
+        return 3
+    end
+
+    ok: i64 = _num(string.match(counts, "^%d+"))
+    rest = string.gsub(counts, "^%d+%s+", "")
+    bail: i64 = _num(string.match(rest, "^%d+"))
+    rest2 = string.gsub(rest, "^%d+%s+", "")
+    unreachable: i64 = _num(string.match(rest2, "^%d+"))
+
+    -- Positive control. A census whose numerator AND denominator are both zero
+    -- is broken, not perfect — the exact failure mode that made an earlier
+    -- language gate report a confident 0/N from a worktree.
+    if ok == 0
+        print("native_census: FAIL — 0 programs compiled natively; the sweep is broken")
+        return 3
+    end
+
+    reachable: i64 = ok + bail
+    print("native census (--backend=direct over examples/, compile_fail excluded)")
+    print("  native        " .. to(str)(ok) .. "   lowered to ARM64")
+    print("  bail          " .. to(str)(bail) .. "   reachable, not yet lowered — the worklist")
+    print("  unreachable   " .. to(str)(unreachable) .. "   C-emitter fixtures; native is not a goal for these")
+    print("  reachable     " .. to(str)(reachable) .. "   the denominator that can reach 100%")
+
+    floor: i64 = to(i64)(std.script.getenv("NATIVE_FLOOR", "85"))
+    if ok < floor
+        print("native_census: FAIL — native " .. to(str)(ok)
+            .. " fell below the ratchet " .. to(str)(floor))
+        return 1
+    end
+    print("native_census: PASS (native " .. to(str)(ok) .. " >= " .. to(str)(floor)
+        .. ", " .. to(str)(reachable - ok) .. " reachable programs remain)")
+    0
+end
