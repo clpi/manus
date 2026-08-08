@@ -178,7 +178,7 @@ pub fn emitDuoOpcodeLookup(w: *std.Io.Writer) !void {
         \\}
         \\
         \\opcode_for_index(idx: i64): i64
-        \\    if idx < 0 or idx >= INSTRUCTION_COUNT then return -1 end
+        \\    if idx < 0 or idx >= INSTRUCTION_COUNT return -1 end
         \\    INSTRUCTION_OPCODES[idx + 1]
         \\end
         \\
@@ -191,35 +191,35 @@ pub fn emitDuoOpcodeLookup(w: *std.Io.Writer) !void {
         \\end
         \\
         \\instruction_index_for_opcode(op: i64): i64
-        \\    if op < 0 or op > 255 then return -1 end
+        \\    if op < 0 or op > 255 return -1 end
         \\    idx = OPCODE_TO_INDEX[op + 1]
-        \\    if idx < 0 then return -1 end
+        \\    if idx < 0 return -1 end
         \\    idx
         \\end
         \\
         \\semantic_id_for_index(idx: i64): str
-        \\    if idx < 0 or idx >= INSTRUCTION_COUNT then return "" end
+        \\    if idx < 0 or idx >= INSTRUCTION_COUNT return "" end
         \\    INSTRUCTION_IDS[idx + 1]
         \\end
         \\
         \\semantic_id_for_opcode(op: i64): str
         \\    idx = instruction_index_for_opcode(op)
-        \\    if idx < 0 then return "" end
+        \\    if idx < 0 return "" end
         \\    INSTRUCTION_IDS[idx + 1]
         \\end
         \\
         \\immediate_form_for_index(idx: i64): str
-        \\    if idx < 0 or idx >= INSTRUCTION_COUNT then return "none" end
+        \\    if idx < 0 or idx >= INSTRUCTION_COUNT return "none" end
         \\    IMMEDIATE_FORMS[idx + 1]
         \\end
         \\
         \\stack_pop_for_index(idx: i64): i64
-        \\    if idx < 0 or idx >= INSTRUCTION_COUNT then return 0 end
+        \\    if idx < 0 or idx >= INSTRUCTION_COUNT return 0 end
         \\    STACK_POP[idx + 1]
         \\end
         \\
         \\stack_push_for_index(idx: i64): i64
-        \\    if idx < 0 or idx >= INSTRUCTION_COUNT then return 0 end
+        \\    if idx < 0 or idx >= INSTRUCTION_COUNT return 0 end
         \\    STACK_PUSH[idx + 1]
         \\end
         \\
