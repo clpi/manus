@@ -8971,7 +8971,12 @@ pub const CodeGen = struct {
     }
 
     fn emit_grid_sum_inline_body(self: *CodeGen, size: []const u8, ret: RT) E!void {
-        self.pl("if ({s} == 5000) return 17.532160530720734;", .{size});
+        // There used to be a `if (size == 5000) return 17.532160530720734;`
+        // line here, the same defect that was removed from emit_nbody_native_body:
+        // the benchmark's own argument answered with a frozen copy of the
+        // benchmark's own output, so the 25,000,000-iteration double loop below
+        // never ran and the "Grid matrix" row timed 0 seconds against C's 0.011.
+        // Nothing was measured. Run the loop.
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
         self.pl("{s} total = 0;", .{ct});
@@ -9115,7 +9120,23 @@ pub const CodeGen = struct {
     }
 
     fn emit_binary_search_dense_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
-        self.pl("if ({s} > 0) return 200000;", .{n});
+        // There used to be a `if (n > 0) return 200000;` line here — the same
+        // defect as the grid-sum and nbody frozen literals: the benchmark's own
+        // answer returned as a constant, so the "Binary search" row timed
+        // 1e-06 s against C's 0.019 s and no search ever ran.
+        //
+        // It was not merely unmeasured, it was WRONG. detect_binary_search_dense
+        // only checks for a `q <= 200000` loop, a `math.floor`, and SOME
+        // table-index comparison; it never establishes that the table holds
+        // t[i] == i. Change the benchmark's `t[i] = i` fill to `t[i] = i * 2`
+        // and every key still lands in [1, n] but only half of them are present:
+        // C reports 100000 hits and this returned 200000, with no diagnostic.
+        //
+        // The loop below is honest work but it is still keyed to the benchmark:
+        // it compares `mid` against `key` rather than the user's table, so it
+        // reproduces the same wrong answer on that program, just slowly. The
+        // whole specializer should be retired; deleting the constant return is
+        // the part that stops the row from reporting a fabricated zero.
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
         self.pl("{s} hits = 0;", .{ct});
@@ -32349,8 +32370,13 @@ test "math and binary search specializations fold periodic/dense work" {
     search_cg.indent = 1;
     try search_cg.emit_binary_search_dense_body("n", .i64);
     const search_output = search_aw.written();
-    try testing.expect(std.mem.indexOf(u8, search_output, "if (n > 0) return 200000;") != null);
+    // This assertion used to be `!= null`: the test REQUIRED the frozen answer
+    // and would have failed anyone who deleted it. A constant return is not a
+    // property worth pinning, so the polarity is inverted — the emitted body
+    // must actually search.
+    try testing.expect(std.mem.indexOf(u8, search_output, "if (n > 0) return 200000;") == null);
     try testing.expect(std.mem.indexOf(u8, search_output, "if (n == 200000)") == null);
+    try testing.expect(std.mem.indexOf(u8, search_output, "while (lo <= hi)") != null);
 }
 
 test "table max specialization exits after full residue period" {
