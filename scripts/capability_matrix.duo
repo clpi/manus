@@ -58,15 +58,18 @@
 -- NO ENTRY POINT IS NOT A FAILURE. Most files under examples/ are fragments
 -- with nothing to link; the direct backend says `no linker entry` and the C
 -- backend happily synthesises a main from the top-level statements, which is
--- why the two disagree on 112 files that have no bug in them. They are counted
+-- why the two disagree on 118 files that have no bug in them. They are counted
 -- in their own bucket. Counting them as native failures is what put an earlier
 -- reading of native coverage at 1/60.
 --
--- RECONCILES WITH scripts/native_census.duo, deliberately: `native` here is its
--- `native`, and `c path (native bail)` plus the four programs that bail while
--- also failing the C path is its `bail` + `unreachable`. If those two sweeps
--- ever part company, one of them has broken, and knowing that is worth more
--- than either number alone.
+-- RECONCILES WITH scripts/native_census.duo, and this was CHECKED rather than
+-- assumed, on 2026-08-08 against the same binary. `native` here is its
+-- `native`: 89 = 89. `c path (native bail)` 47 plus the 5 programs that bail
+-- while also failing the C path is 52, which is its `bail` 40 + `unreachable`
+-- 12. Two sweeps written months apart, over the same corpus, by different
+-- routes, landing on the same partition is the only reason to believe either.
+-- If they ever part company, one of them has broken, and finding out which is
+-- worth more than either number alone.
 --
 -- SISTER REPORT. scripts/capability_table.duo runs the same rungs one fixture
 -- at a time over examples/native_differential, to answer "which CAPABILITIES
@@ -133,15 +136,37 @@ end
 -- Grouped one phase per literal rather than one shell line per literal: the
 -- phases are what a reader needs to check, and 30 concatenations of one line
 -- each hide them.
+--
+-- `DUO_SEMANTIC_CACHE=0` IS LOAD-BEARING, and it is the most expensive thing
+-- this file learned. `duo check` writes `.duo/cache/semantic/state.json` — ONE
+-- file, relative to the working directory — so eight parallel probes share one
+-- semantic cache and corrupt each other's reads. Two -P 8 sweeps minutes apart
+-- disagreed on SIX programs, and not only at the backends:
+-- `p09_closure.duo` read `0000000` in one sweep and `0110000` in the next, so
+-- `duo check` itself was flipping and `parsed` and `checked` were flaky too.
+-- With the cache off, two sweeps are byte-identical, and the numbers go UP —
+-- checked 282 -> 285, c path 240 -> 246 — because the contention was producing
+-- FALSE FAILURES, the direction that quietly understates a capability report.
+--
+-- THE FIX IS NOT AN ISOLATED WORKING DIRECTORY, which was tried first and is
+-- worse. It makes the sweep deterministic too, but `req "std.compiler.token"`
+-- resolves relative to the CWD, so three native_only fixtures lose their
+-- module and `native` reads 86 where native_census reads 89. A measurement
+-- that has to disagree with the neighbouring gate to be reproducible has
+-- picked the wrong isolation. Cache off, repo root, both properties hold.
+--
+-- If you ever make this sweep faster, re-run it twice and DIFF THE RECORDS
+-- before believing either run. This class of fault does not announce itself;
+-- it just reports a slightly worse compiler than you have.
 probetext(duo: str, tprefix: str): str
-    "f=\"$1\"\nd={duo}\nt={work}/w$$\ndes=0\ngrep -q \"^--\" \"$f\" && des=1\n"
+    "f=\"$1\"\nd={duo}\nt={work}/w$$\nexport DUO_SEMANTIC_CACHE=0\n"
+    .. "des=0\ngrep -q \"^--\" \"$f\" && des=1\n"
     .. "oc=$($d check \"$f\" 2>&1); cr=$?\npar=1\n"
     .. "case \"$oc\" in *\"parse failed\"*) par=0;; esac\n"
     .. "chk=0\nif [ $cr -eq 0 ]; then chk=1; fi\n"
     .. "xc=$($d compile --backend=c \"$f\" -o $t.c 2>&1); crc=$?\n"
-    .. "xd=$($d compile --backend=direct \"$f\" -o $t.d 2>&1); drc=$?\n"
-    .. "cpa=0\nif [ $crc -eq 0 ]; then cpa=1; fi\n"
-    .. "nat=0\nif [ $drc -eq 0 ]; then nat=1; fi\n"
+    .. "xd=$($d compile --backend=direct \"$f\" -o $t.d 2>&1); drc=$?\ncpa=0\n"
+    .. "if [ $crc -eq 0 ]; then cpa=1; fi\nnat=0\nif [ $drc -eq 0 ]; then nat=1; fi\n"
     .. "ent=0\ncase \"$xd\" in *\"no linker entry\"*) ent=1;; esac\n"
     -- A miscompiled loop does not fail, it spins; 124 is the timeout marker,
     -- and a run that timed out has no answer, which is not agreement.
@@ -170,9 +195,10 @@ end
 -- native_differential blocks on the corpus root and on native_only/; it prints
 -- unsupported/ and known_divergent/ as frontier reporting and passes anyway.
 blocking(path: str): bool
-    if string.find(path, "/unsupported/", 1, true) != nil return false end
-    if string.find(path, "/known_divergent/", 1, true) != nil return false end
-    string.find(path, "/native_differential/", 1, true) != nil
+    incorpus = string.find(path, "/native_differential/", 1, true) != nil
+    frontier = string.find(path, "/unsupported/", 1, true) != nil
+        or string.find(path, "/known_divergent/", 1, true) != nil
+    incorpus and not frontier
 end
 
 note(path: str, why: str): void
@@ -195,14 +221,30 @@ tally(rec: str): void
     can = prv and blocking(path)
 
     ntotal = ntotal + 1
-    if des ndescribed = ndescribed + 1 end
-    if par nparsed = nparsed + 1 end
-    if chk nchecked = nchecked + 1 end
-    if cpa ncpath = ncpath + 1 end
-    if nat nnative = nnative + 1 end
-    if prv nproven = nproven + 1 end
-    if can ncanonical = ncanonical + 1 end
-    if ent nnoentry = nnoentry + 1 end
+    if des
+        ndescribed = ndescribed + 1
+    end
+    if par
+        nparsed = nparsed + 1
+    end
+    if chk
+        nchecked = nchecked + 1
+    end
+    if cpa
+        ncpath = ncpath + 1
+    end
+    if nat
+        nnative = nnative + 1
+    end
+    if prv
+        nproven = nproven + 1
+    end
+    if can
+        ncanonical = ncanonical + 1
+    end
+    if ent
+        nnoentry = nnoentry + 1
+    end
 
     -- Highest rung reached. Each program lands in exactly one bucket, and the
     -- C-path bucket is split because "compiles to C, nothing to link" and
@@ -317,6 +359,11 @@ main = (): i64
         return 3
     end
 
+    -- The workers inherit this process's working directory — the repo root,
+    -- which `find {root}` above already depends on — so a relative compiler
+    -- path is the same path the rest of this file uses. An earlier revision
+    -- absolutised it, which was only needed by the isolated-directory design
+    -- the comment on probetext explains was wrong.
     std.script.fs_write(probepath, probetext(duo, tprefix))
     std.script.run(
         "xargs -P {jobs} -n 1 sh {probepath} < {listpath} > {recordpath} 2>/dev/null")
@@ -419,7 +466,7 @@ main = (): i64
     -- session, so it is a live number and not a constant: raise it when you
     -- raise it.
     provenfloor: i64 = to(i64)(envor("CAPMATRIX_PROVEN_FLOOR", "79"))
-    checkedfloor: i64 = to(i64)(envor("CAPMATRIX_CHECKED_FLOOR", "282"))
+    checkedfloor: i64 = to(i64)(envor("CAPMATRIX_CHECKED_FLOOR", "285"))
     pf = to(str)(provenfloor)
     cf = to(str)(checkedfloor)
     pn = to(str)(nproven)
