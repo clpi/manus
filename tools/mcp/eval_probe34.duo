@@ -1,0 +1,19 @@
+eval = req "duo_eval"
+json = req "std.json"
+
+src = "fun add_i32(a: i32, b: i32): i32 a + b end\nfun add_i64(a: i64, b: i64): i64 a + b end\nfun add_f32(a: f32, b: f32): f32 a + b end\nfun add_f64(a: f64, b: f64): f64 a + b end\nfun mul_i32(a: i32, b: i32): i32 a * b end\nfun mul_i64(a: i64, b: i64): i64 a * b end"
+
+records = eval.extract_records(src)
+print("records=[" .. tostring(records) .. "]")
+
+eq = eval.detect_eq_count(records)
+print("eq_count=" .. tostring(eq) .. " type=" .. type(eq))
+
+families = eval.detect_op_families(records)
+print("families=[" .. tostring(families) .. "]")
+
+audit = eval.audit_boxing(src)
+print("audit=" .. json.encode(audit))
+
+chains = eval.detect_dispatch_chains(src)
+print("chains=[" .. tostring(chains) .. "]")

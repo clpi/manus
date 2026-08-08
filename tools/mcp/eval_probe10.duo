@@ -1,0 +1,15 @@
+eval = req "duo_eval"
+src = [[
+fun add_i32(a: i32, b: i32): i32 a + b end
+fun add_i64(a: i64, b: i64): i64 a + b end
+fun mul_f32(a: f32, b: f32): f32 a * b end
+fun eq_zero(x: i32): bool x == 0 end
+fun eq_one(x: i32): bool x == 1 end
+]]
+r = eval.extract_records(src)
+print("extract=[" .. tostring(r) .. "]")
+print("fcount=[" .. tostring(eval.count_lines_str(r)) .. "]")
+print("families=[" .. tostring(eval.detect_op_families(r)) .. "]")
+print("eq=[" .. tostring(eval.detect_eq_count(r)) .. "]")
+print("dispatch=[" .. tostring(eval.detect_dispatch_chains(src)) .. "]")
+print("nl=[" .. tostring(eval.count_newlines(src)) .. "]")

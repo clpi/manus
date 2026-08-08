@@ -1,0 +1,25 @@
+ev = req "duo_eval"
+sample = [[
+fun add_i32(a: i32, b: i32): i32 a + b end
+fun add_i64(a: i64, b: i64): i64 a + b end
+fun add_f64(a: f64, b: f64): f64 a + b end
+]]
+r = ev.extract_records(sample)
+print("records=[" .. r .. "]")
+f = ev.detect_op_families(r)
+print("families=[" .. f .. "]")
+res = ev.evaluate(sample, "collapse typed add family with @comp.generate")
+print("function_count=" .. res.analysis.function_count)
+print("op_families=" .. res.analysis.op_families)
+print("eq_functions=" .. res.analysis.eq_functions)
+print("dispatch_arms=" .. res.analysis.dispatch_arms)
+print("combinator_count=" .. res.metrics.combinator_count)
+print("exponential=" .. tostring(res.metrics.exponential))
+print("intermediary_loc=" .. res.metrics.intermediary_loc)
+print("boxing_total_chars=" .. res.native_boxing_audit.total_chars)
+print("boxing_native_clean=" .. tostring(res.native_boxing_audit.native_clean))
+print("transforms=" .. res.transforms_applied)
+if res.duo_intermediary ~= nil and res.duo_intermediary ~= "" then
+    print("--- intermediary ---")
+    print(string.sub(res.duo_intermediary, 1, 400))
+end

@@ -1,0 +1,12 @@
+ev = req "duo_eval"
+print("1 loaded")
+r = ev.extract_records("fun add_i32(a: i32, b: i32): i32 a + b end\nfun add_f64(a: f64, b: f64): f64 a + b end\n")
+print("2 records=[" .. r .. "]")
+n = ev.count_lines_str(r)
+print("3 count=" .. n)
+f = ev.detect_op_families(r)
+print("4 families=[" .. f .. "]")
+d = ev.detect_dispatch_chains("if x == \"a\" then elseif y == \"b\" then end")
+print("5 dispatch=" .. d)
+q = ev.detect_eq_count("fun eq_x(a: i64, b: i64): bool a == b end\n")
+print("6 eq=" .. q)

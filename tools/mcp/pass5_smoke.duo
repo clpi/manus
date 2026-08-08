@@ -1,0 +1,20 @@
+-- Pass 5 MCP shared helper smoke (run from duo repo root via duo-mcp).
+shared = req "duo_shared"
+json = req "std.json"
+
+preview = shared.foreign_import_preview("examples/pass5/fixtures/point.h", "examples/pass5")
+if not preview.ok
+    error("foreign_import_preview failed: " .. (preview.error or "?"))
+end
+
+catalog = shared.pass5_catalog()
+if not catalog.ok
+    error("pass5_catalog failed")
+end
+
+lookup = shared.foreign_entity_lookup("examples/pass5/c_point_smoke.duo", "CPoint")
+if not lookup.ok
+    error("foreign_entity_lookup CPoint failed: " .. (lookup.error or "?"))
+end
+
+print("pass5 mcp smoke ok entities=" .. tostring(preview.entity_count))

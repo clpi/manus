@@ -1,0 +1,21 @@
+eval = req "duo_eval"
+src = "fun add_i32(a: i32, b: i32): i32 a + b end\nfun add_i64(a: i64, b: i64): i64 a + b end\nfun add_f32(a: f32, b: f32): f32 a + b end\nfun add_f64(a: f64, b: f64): f64 a + b end\nfun mul_i32(a: i32, b: i32): i32 a * b end\nfun mul_i64(a: i64, b: i64): i64 a * b end"
+src_n = src .. "\n"
+
+-- Test: call parse_fun_header_str inside gmatch loop
+count = 0
+for ln in string.gmatch(src_n, "([^\n]*)\n") do
+    rec = eval.parse_fun_header_str(ln)
+    count = count + 1
+    print("[" .. count .. "] rec=[" .. tostring(rec) .. "]")
+end
+print("count=" .. count)
+
+-- Test: call string.match inside gmatch loop (which also uses pattern engine)
+count2 = 0
+for ln in string.gmatch(src_n, "([^\n]*)\n") do
+    m = string.match(ln, "^fun%s+([%w_]+)")
+    count2 = count2 + 1
+    print("m[" .. count2 .. "]=[" .. tostring(m) .. "]")
+end
+print("count2=" .. count2)

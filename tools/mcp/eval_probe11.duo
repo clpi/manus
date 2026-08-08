@@ -1,0 +1,7 @@
+eval = req "duo_eval"
+json = req "std.json"
+r = eval.extract_records("fun add_i32(a: i32, b: i32): i32 a + b end\nfun add_i64(a: i64, b: i64): i64 a + b end")
+fcount = eval.count_lines_str(r)
+print("fcount typecheck [" .. tostring(fcount) .. "]")
+t = { a = fcount, b = eval.detect_eq_count(r), c = 5 }
+print(json.encode(t))

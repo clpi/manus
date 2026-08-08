@@ -1,0 +1,25 @@
+-- Test: gmatch with various patterns
+s = "a,b,c"
+print("Testing gmatch([\"a,b,c\"], \"[^\"]+\"):")
+for part in string.gmatch(s, "[^,]+") do
+    print("  part=[" .. tostring(part) .. "]")
+end
+
+-- Also test with string.find which also uses duo_lp_find_at
+print()
+print("Testing find([\"a,b,c\"], \"[^\"]+\"):")
+p1, p2 = string.find(s, "[^,]+")
+print("  p1=" .. tostring(p1) .. " p2=" .. tostring(p2))
+
+-- Test match
+print()
+print("Testing match([\"a,b,c\"], \"[^\"]+\"):")
+m = string.match(s, "[^,]+")
+print("  m=[" .. tostring(m) .. "]")
+
+-- Test with a literal (no magic)
+print()
+print("Testing gmatch([\"abcabc\"], \"abc\"):")
+for part in string.gmatch("abcabc", "abc") do
+    print("  part=[" .. tostring(part) .. "]")
+end

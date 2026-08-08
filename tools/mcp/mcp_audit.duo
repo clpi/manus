@@ -1,0 +1,21 @@
+mcp = req "std.mcp"
+shared = req "duo_shared"
+script = req "std.script"
+json_mod = req "std.json"
+paths = {
+    "examples/meta_template_showcase.duo",
+    "examples/meta_generate_showcase.duo",
+    "examples/meta_scheme_showcase.duo",
+    "examples/meta_grammar_showcase.duo",
+    "examples/meta_weave_showcase.duo",
+    "examples/meta_power_permute_showcase.duo",
+    "examples/meta_choose_showcase.duo",
+}
+passed = 0
+failed = 0
+for i = 1, #paths
+    r = shared.audit_native_boxing(paths[i])
+    if r.pass then passed = passed + 1 else failed = failed + 1 end
+    print(paths[i] .. ": pass=" .. tostring(r.pass) .. " violations=" .. tostring(r.comptime_violation_count))
+end
+print("Passed: " .. tostring(passed) .. ", Failed: " .. tostring(failed))

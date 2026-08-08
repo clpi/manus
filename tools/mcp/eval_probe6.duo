@@ -1,0 +1,9 @@
+ev = req "duo_eval"
+bin = os.getenv("DUO_BIN", "/Users/clp/x/duo/zig-out/bin/duo")
+print("bin=[" .. bin .. "]")
+fs = req "std.fs"
+fs.write_file("/tmp/duo_eval_audit.duo", "fun add_i32(a: i32, b: i32): i32 a + b end\n")
+sx = req "std.script"
+c = sx.capture(bin .. " dump-c /tmp/duo_eval_audit.duo 2>&1")
+print("c_len=" .. string.len(c))
+print("c_first=[" .. string.sub(c, 1, 50) .. "]")

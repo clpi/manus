@@ -1,0 +1,21 @@
+-- 40-char lines
+line1 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+line2 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+src = line1 .. "\n" .. line2 .. "\n"
+print("len=" .. string.len(src))
+count = 0
+for ln in string.gmatch(src, "([^\n]*)\n") do
+    count = count + 1
+end
+print("count_40=" .. count)
+
+-- 50-char lines
+line3 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+line4 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+src2 = line3 .. "\n" .. line4 .. "\n"
+print("len2=" .. string.len(src2))
+count2 = 0
+for ln in string.gmatch(src2, "([^\n]*)\n") do
+    count2 = count2 + 1
+end
+print("count_50=" .. count2)

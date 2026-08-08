@@ -1,0 +1,6 @@
+eval = req "duo_eval"
+lines = {"fun add_i32(a: i32, b: i32): i32 a + b end", "fun add_i64(a: i64, b: i64): i64 a + b end", "fun mul_f32(a: f32, b: f32): f32 a * b end"}
+for _, ln in lines do
+    rec = eval.parse_fun_header_str(ln)
+    print("ln=[" .. ln .. "] rec=[" .. tostring(rec) .. "]")
+end

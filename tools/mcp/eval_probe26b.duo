@@ -1,0 +1,13 @@
+src = "AAA\nBBB"
+src2 = src .. "\n"
+print("len=" .. string.len(src2))
+
+p1, p2 = string.find(src2, "\n", 1, true)
+print("nl1=" .. tostring(p1) .. "," .. tostring(p2))
+
+count = 0
+for ln in string.gmatch(src2, "([^\n]*)\n") do
+    count = count + 1
+    print("got[" .. count .. "]=[" .. ln .. "]")
+end
+print("count=" .. count)

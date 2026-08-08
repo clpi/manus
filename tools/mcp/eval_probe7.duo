@@ -1,0 +1,22 @@
+ev = req "duo_eval"
+sample = [[
+fun add_i32(a: i32, b: i32): i32 a + b end
+fun add_i64(a: i64, b: i64): i64 a + b end
+fun add_f64(a: f64, b: f64): f64 a + b end
+]]
+print("step1")
+records = ev.extract_records(sample)
+print("step2 records=[" .. records .. "]")
+fcount = ev.count_lines_str(records)
+print("step3 fcount=" .. fcount)
+families = ev.detect_op_families(records)
+print("step4 families=[" .. families .. "]")
+fcnt = ev.count_lines_str(families)
+print("step5 fcnt=" .. fcnt)
+eq = ev.detect_eq_count(records)
+print("step6 eq=" .. eq)
+disp = ev.detect_dispatch_chains(sample)
+print("step7 disp=" .. disp)
+aud = ev.audit_boxing(sample)
+print("step8 audit=" .. aud.total_chars)
+print("step9 done")
