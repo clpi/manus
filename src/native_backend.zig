@@ -6,6 +6,7 @@ const Parser = @import("parser.zig").Parser;
 const Sema = @import("sema.zig").Sema;
 const native_req_support = @import("native_req_support.zig");
 const dnir = @import("duo_native_ir.zig");
+const c_signatures = @import("c_signatures.zig");
 const dnir_lower = @import("dnir_lower.zig");
 const dnir_hardware = @import("dnir_hardware.zig");
 const semantic_graph = @import("semantic_graph.zig");
@@ -3425,9 +3426,28 @@ const Arm64Compiler = struct {
             // the *program* was outside the subset, when lowering had in fact
             // fully succeeded and only relocation failed; that misdirects every
             // investigation to the wrong phase.
-            if (std.c.getenv("DUO_DNIR_TRACE") != null) {
-                std.debug.print("DUO_DNIR_TRACE: unresolved call target '{s}'\n", .{patch.target});
+            // A well-known libc/libm name is not an undefined symbol, it is an
+            // EXTERNAL one that nothing registered. `puts` and `llabs` reach
+            // patchCalls as plain direct calls -- the emitter registers an
+            // extern when it knows it is emitting one, and these arrive through
+            // paths that do not -- so relocation failed on a symbol the linker
+            // would have resolved without complaint. c_signatures already knows
+            // the set; consulting it here turns three DNB007s into links.
+            if (c_signatures.c_call_result_type(patch.target) != null) {
+                try self.ensureExternalSymbol(patch.target);
+                if (self.extern_symbols.get(patch.target)) |sym_index| {
+                    try self.relocations.append(self.alloc, .{ .offset = patch.offset, .symbol_index = sym_index });
+                    continue;
+                }
             }
+            // The symbol name was behind DUO_DNIR_TRACE, so the largest row in
+            // the bail histogram (6 programs) said only "undefined symbol" and
+            // named nothing. Every other refusal path reports unconditionally
+            // now; this one has no reason to be different.
+            refusal_site = @src();
+            const n = @min(patch.target.len, refusal_note_buf.len);
+            @memcpy(refusal_note_buf[0..n], patch.target[0..n]);
+            refusal_note_len = n;
             return error.UnknownSymbol;
         }
     }

@@ -124,6 +124,7 @@ pub fn c_call_result_type(fname: []const u8) ?RT {
         .{ .names = [_][]const u8{
             "llabs",  "labs",    "abs",     "strlen",   "strcmp", "strncmp", "memcmp",
             "printf", "fprintf", "sprintf", "snprintf", "atoi",   "atol",    "getchar",
+            "puts",   "fputs",   "putchar",
             "close",  "read",    "write",   "fcntl",    "open",   "dup",     "lseek",
             "clock",  "time",    "getpid",  "fork",     "wait",   "waitpid",
         }, .rt = RT.i64 },
