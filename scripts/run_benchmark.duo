@@ -92,7 +92,7 @@ global BENCHES: i64 = 40
 -- 1. NESTED gmatch IS BROKEN. Iterating words with a gmatch inside a gmatch
 --    over lines yields 4 of 12 words on a 3-line fixture -- the inner
 --    iterator corrupts the outer one. The old body did exactly that, so it
---    returned 2 times for a 40-benchmark run. -- gap[030]
+--    returned 2 times for a 40-benchmark run. -- gap[035]
 -- 2. tonumber DOES NOT RETURN nil ON NON-NUMBERS. tonumber("Fibonacci(40)")
 --    and tonumber("Time") both return 0, so the "first word that parses as a
 --    number" scan accepted the FIRST word of every line and recorded 0. Every
