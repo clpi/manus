@@ -3193,7 +3193,11 @@ fn reportDirectBackendError(io: Io, err: anyerror, target: []const u8, trace: ?*
     // lowerModule clears on entry so a stale one cannot be attributed.
     if (dnir_lower.bail_site.line != 0) {
         const at = dnir_lower.bail_site;
-        term.hint("bail site: {s}() at dnir_lower.zig:{d}", .{ at.fn_name, at.line });
+        if (dnir_lower.bailNote()) |note| {
+            term.hint("bail site: {s}() at dnir_lower.zig:{d} — {s}", .{ at.fn_name, at.line, note });
+        } else {
+            term.hint("bail site: {s}() at dnir_lower.zig:{d}", .{ at.fn_name, at.line });
+        }
     } else {
         // No lowering site means the program never reached DNIR: the
         // native-scalar precheck disqualified the whole module first. That is

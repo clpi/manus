@@ -46,6 +46,29 @@ pub var bail_site: std.builtin.SourceLocation = .{
 
 fn bail(src: std.builtin.SourceLocation) Error {
     bail_site = src;
+    bail_note_len = 0;
+    return error.UnsupportedConstruct;
+}
+
+/// What the site was looking at, when the site alone is not enough.
+///
+/// A source location says WHERE lowering stopped, never WHAT is missing — the
+/// `lowerBinop` site read as "no bitwise ops" when both blocked programs
+/// actually used `..`. For a site whose whole content is "this name did not
+/// resolve", the name IS the finding.
+var bail_note_buf: [96]u8 = undefined;
+var bail_note_len: usize = 0;
+
+pub fn bailNote() ?[]const u8 {
+    if (bail_note_len == 0) return null;
+    return bail_note_buf[0..bail_note_len];
+}
+
+fn bailWith(src: std.builtin.SourceLocation, note: []const u8) Error {
+    bail_site = src;
+    const n = @min(note.len, bail_note_buf.len);
+    @memcpy(bail_note_buf[0..n], note[0..n]);
+    bail_note_len = n;
     return error.UnsupportedConstruct;
 }
 
@@ -82,6 +105,15 @@ fn collectModuleConsts(
                     name = ld.names[0].ident;
                     val = ld.inits[0];
                 }
+            },
+            // `const WIDTH: i64 = 80` — the DECLARED form of the same thing
+            // `WIDTH = 80` says, and the only one of the three that was not
+            // collected. So a module using the explicit spelling had every
+            // reference to it fail to resolve in lowering (mandelbrot bailed on
+            // `HEIGHT`), while the bare assignment folded fine.
+            .const_decl => |cd| {
+                name = cd.ident;
+                val = cd.val;
             },
             else => {},
         }
@@ -1434,7 +1466,7 @@ fn lowerExprCons(
             const slot = ctx.locals.get(n.ident) orelse {
                 // Not a local — a module-level integer constant folds here.
                 if (ctx.module_consts.get(n.ident)) |mv| break :blk dnir.Value{ .i64 = mv };
-                return bail(@src());
+                return bailWith(@src(), n.ident);
             };
             if (ctx.f64_slots.contains(slot)) {
                 const t = ctx.freshTemp();
