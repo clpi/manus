@@ -222,7 +222,16 @@ The rules that follow, and they are not negotiable:
   The test: would this fire for arbitrary user code of the same shape? If not,
   it is measuring a human's C, not Duo's codegen.
 - **A detector must verify every constant its emitter assumes**, and decline to
-  the general path otherwise.
+  the general path otherwise. This is the RULE, not the state: measured
+  2026-08-08, **46 `use_*` flags reach codegen and 7 carry a `verify_*`**.
+  Known-unverified include `use_dot_product_identity` (emits n(n+1)(n+2)/6
+  verifying NOTHING about the fill -- the identical defect that made
+  `detect_binary_search_dense` answer 200000 where C answered 100000),
+  `use_xor_fold_inline` (0 of 1 constants), `use_filter_count_mod` (1 of 3), and
+  `detect_naive_fib_pattern`, whose `is_fib_call` requires the callee to be
+  SPELLED `fib` -- keying on a function name, which rule 1 above forbids
+  outright. Inventory in docs/RELEASE_STATUS.md. Treat any `use_*` row as
+  suspect until its detector is read.
 - **Verify by VALUE, never by "it compiled" or by shape.** `tostring(d)`
   reported `d=table` for a decoder returning an EMPTY table, and a bisect built
   on that was wrong. Assert contents.
