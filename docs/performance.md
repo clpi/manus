@@ -11736,6 +11736,51 @@ Rejected: keeping `duo_str_len` on all `.str` operands (unsound — the Pass 11 
 
 ---
 
+## 2026-08-07 (opencode) — sovereign native `print` (DNIR `.print_value`)
+
+Kill-C step: `print` — the construct that used to force the C-emit bootstrap
+fallback (DNB007) — now lowers to Mach-O `_printf`/`_puts` externs in the direct
+ARM64 backend. The default `auto` path compiles `print(42)`/`print("hi")`/
+`print(1.5)`/`print()` to pure machine code: 60 ms compile, zero generated C,
+zero `lua_Value` in the binary.
+
+Commands:
+```sh
+./zig-out/bin/duo compile --backend direct /tmp/np_i64.duo -o /tmp/np_i64.out && /tmp/np_i64.out   # 42
+zig build direct-module-link     # PASS (now includes the print diff proof)
+zig build pass16-m1-smoke        # PASS
+zig build unit-test              # 1225/1284 (55 fail / 4 crash = pre-existing baseline)
+```
+
+Files: `src/duo_native_ir.zig` (`.print_value` op + whitelist),
+`src/dnir_lower.zig` (`lowerPrint`, `exprIsF64Value`), `src/native_backend.zig`
+(emitter + replaced DNB007-asserting unit test), `scripts/direct_module_link_proof.sh`
+(print diff section).
+
+**The ABI finding (why `print(42)` printed 6522764800):** Apple's arm64 variadic
+ABI passes printf's varargs ON THE STACK at the caller's sp — NOT in x1/d0.
+`xcrun clang -O0 -S` for `printf("%lld\n", 42)` emits `mov x9, sp; str x8, [x9]`
+with no register arg and no w8 setup. Raw-asm repro: passing 42 in x1 printed
+garbage; storing it at `[sp,#0]` printed 42. w8 (AAPCS FP-arg count) is not read
+by Apple's printf for the stack convention. Emitted call shape:
+`sub sp,#16; str x2,[sp,#0]; bl _printf; add sp,#16` (arg parked in volatile x2
+so it survives the callee-saved-register save; 16-byte alignment kept).
+
+**Second bug:** `puts` appends its own `\n`, so the zero-arg `print()` blank-line
+case via `puts("\n")` printed TWO newlines. Fixed by routing the blank case
+through `printf("\n")`. `print("hi")` keeps `puts` (Lua print shape: value + \n).
+
+Measured: print compile 57–60 ms (vs 1170 ms for the req'd-parser proof —
+irrelevant scale, but machine-first print is the point); output exactly
+`42\nhi\n1.500000\n\n` on the diff proof.
+
+Rejected (documented negative experiments): passing i64 varargs in x1 with
+`w8=0` (garbage — x1 is not read); passing f64 in d0 (0.000000); setting w8 to
+the FP-arg count (no effect — Apple ignores it); `puts("\n")` for the blank line
+(puts's own trailing newline double-printed); `$(cat ...)` output comparison in
+the shell proof (command substitution strips trailing newlines — used `cmp` on
+files instead).
+
 ## 2026-08-05 (claude) — ward head-to-head harness + first real WASM-runtime numbers
 
 **New suite:** `benchmarks/wasm_rt/` (`bench.c`, `run.sh`). Unlike `zig build wasm-bench`
