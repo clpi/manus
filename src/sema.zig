@@ -6786,26 +6786,107 @@ pub const Sema = struct {
         // A numeric-for control variable is numeric by construction.
         if (block_declares_num_for(&fb.body, name, 0)) return true;
 
-        // A parameter's value comes from the caller: only the annotation vouches
-        // for it. `any` (and no annotation) does not.
+        // A parameter's value comes from the caller, so the annotation vouches
+        // for it — or, failing that, an ordered comparison in the body does.
         for (fb.params) |p| {
             if (!std.mem.eql(u8, p.name, name)) continue;
             if (p.typ == .array) return true;
-            if (p.typ != .named) return false;
-            const tn = p.typ.named;
-            return std.mem.eql(u8, tn, "int") or std.mem.eql(u8, tn, "i8") or
-                std.mem.eql(u8, tn, "i16") or std.mem.eql(u8, tn, "i32") or
-                std.mem.eql(u8, tn, "i64") or std.mem.eql(u8, tn, "u8") or
-                std.mem.eql(u8, tn, "u16") or std.mem.eql(u8, tn, "u32") or
-                std.mem.eql(u8, tn, "u64") or std.mem.eql(u8, tn, "float") or
-                std.mem.eql(u8, tn, "double") or std.mem.eql(u8, tn, "f32") or
-                std.mem.eql(u8, tn, "f64");
+            if (p.typ == .named) {
+                const tn = p.typ.named;
+                if (std.mem.eql(u8, tn, "int") or std.mem.eql(u8, tn, "i8") or
+                    std.mem.eql(u8, tn, "i16") or std.mem.eql(u8, tn, "i32") or
+                    std.mem.eql(u8, tn, "i64") or std.mem.eql(u8, tn, "u8") or
+                    std.mem.eql(u8, tn, "u16") or std.mem.eql(u8, tn, "u32") or
+                    std.mem.eql(u8, tn, "u64") or std.mem.eql(u8, tn, "float") or
+                    std.mem.eql(u8, tn, "double") or std.mem.eql(u8, tn, "f32") or
+                    std.mem.eql(u8, tn, "f64")) return true;
+            }
+            in_flight[depth] = name;
+            return block_orders_against_number(fb, &fb.body, name, in_flight, depth + 1, 0);
         }
 
         in_flight[depth] = name;
         var seen = false;
         if (!block_bindings_numeric(fb, &fb.body, name, &seen, in_flight, depth + 1)) return false;
         return seen;
+    }
+
+    /// True when the body contains `name < e` (or <=, >, >=) with `e` a known
+    /// number. Lua raises on an ordered comparison between a number and a
+    /// non-number, so reaching such a comparison proves `name` is a number —
+    /// which is exactly what `while i <= n` establishes about an `any`
+    /// parameter, and what `return t[n]` then needs in order to index a native
+    /// array. Comparison is the only operator that proves it: arithmetic would
+    /// accept the numeric *string* `"10"`, whose Lua table key is not 10.
+    fn block_orders_against_number(
+        fb: *const ast.FuncBody,
+        blk: *const ast.Block,
+        name: []const u8,
+        in_flight: *[8][]const u8,
+        depth: usize,
+        block_depth: usize,
+    ) bool {
+        if (block_depth > 24) return false;
+        for (blk.stmts) |*s| {
+            const conds: []const ?*const ast.Expr = switch (s.*) {
+                .while_loop => |*wl| &.{wl.cond},
+                .repeat_loop => |*rl| &.{rl.cond},
+                .if_stmt => |*is| &.{is.cond},
+                .num_for => |*nf| &.{ nf.start, nf.stop },
+                else => &.{},
+            };
+            for (conds) |c| {
+                if (c) |e| if (expr_orders_against_number(fb, e, name, in_flight, depth)) return true;
+            }
+            const body: ?*const ast.Block = switch (s.*) {
+                .while_loop => |*wl| &wl.body,
+                .repeat_loop => |*rl| &rl.body,
+                .do_block => |*db| &db.body,
+                .num_for => |*nf| &nf.body,
+                .gen_for => |*gf| &gf.body,
+                else => null,
+            };
+            if (body) |b| if (block_orders_against_number(fb, b, name, in_flight, depth, block_depth + 1)) return true;
+            if (s.* == .if_stmt) {
+                const is = &s.if_stmt;
+                if (block_orders_against_number(fb, &is.then, name, in_flight, depth, block_depth + 1)) return true;
+                for (is.elseifs) |*ei| {
+                    if (expr_orders_against_number(fb, ei.cond, name, in_flight, depth)) return true;
+                    if (block_orders_against_number(fb, &ei.body, name, in_flight, depth, block_depth + 1)) return true;
+                }
+                if (is.else_body) |*eb| {
+                    if (block_orders_against_number(fb, eb, name, in_flight, depth, block_depth + 1)) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    fn expr_orders_against_number(
+        fb: *const ast.FuncBody,
+        expr: *const ast.Expr,
+        name: []const u8,
+        in_flight: *[8][]const u8,
+        depth: usize,
+    ) bool {
+        switch (expr.*) {
+            .binop => |b| {
+                switch (b.op) {
+                    .lt, .leq, .gt, .geq => {
+                        if (b.lhs.* == .name and std.mem.eql(u8, b.lhs.name.ident, name) and
+                            expr_is_numeric_valued(fb, b.rhs, in_flight, depth)) return true;
+                        if (b.rhs.* == .name and std.mem.eql(u8, b.rhs.name.ident, name) and
+                            expr_is_numeric_valued(fb, b.lhs, in_flight, depth)) return true;
+                    },
+                    else => {},
+                }
+                if (expr_orders_against_number(fb, b.lhs, name, in_flight, depth)) return true;
+                if (expr_orders_against_number(fb, b.rhs, name, in_flight, depth)) return true;
+            },
+            .unop => |u| return expr_orders_against_number(fb, u.operand, name, in_flight, depth),
+            else => {},
+        }
+        return false;
     }
 
     fn block_declares_num_for(blk: *const ast.Block, name: []const u8, depth: usize) bool {

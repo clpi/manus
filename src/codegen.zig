@@ -8992,10 +8992,37 @@ pub const CodeGen = struct {
         if (info.cap_safe and info.cap.len > 0) {
             self.ind();
             self.pl("duo_dt_reserve_{s}(&__dt_{s}, &__dtc_{s}, (int64_t)({s}) + 1);", .{ info.sfx(), name, name, info.cap });
+        } else if (self.cap_is_boxed_local(info.cap)) {
+            // The cap is a single boxed local/parameter that sema proved holds a
+            // number. It cannot appear in a C integer expression as-is, but it
+            // can be unboxed — and reserving up front is worth roughly 2x on a
+            // fill loop, because growth also has to zero each new region.
+            self.ind();
+            self.pl("duo_dt_reserve_{s}(&__dt_{s}, &__dtc_{s}, (int64_t)lua_to_num({s}) + 1);", .{ info.sfx(), name, name, info.cap });
         } else if (min_slots > 0) {
             self.ind();
             self.pl("duo_dt_reserve_{s}(&__dt_{s}, &__dtc_{s}, {d});", .{ info.sfx(), name, name, min_slots + 1 });
         }
+    }
+
+    /// A dense index is a C `int64_t`. The key expression can still be boxed —
+    /// `t[n]` where `n` is an `any` parameter — so coerce rather than leaving a
+    /// `lua_Value` in an integer parameter position.
+    fn emit_dense_key(self: *CodeGen, key: *const ast.Expr) E!void {
+        const kt = self.expr_type(key);
+        if (kt.is_integer()) {
+            try self.emit_expr(key);
+            return;
+        }
+        if (kt.is_numeric()) {
+            self.p("(int64_t)(", .{});
+            try self.emit_expr(key);
+            self.p(")", .{});
+            return;
+        }
+        self.p("(int64_t)lua_to_num(", .{});
+        try self.emit_as_lua_value(key);
+        self.p(")", .{});
     }
 
     /// A dense slot holds a native `int64_t`/`double`. The value being stored can
@@ -9010,6 +9037,19 @@ pub const CodeGen = struct {
         self.p("({s})lua_to_num(", .{info.elem()});
         try self.emit_as_lua_value(val);
         self.p(")", .{});
+    }
+
+    /// True when `cap` is a plain identifier naming a local of boxed type in a
+    /// module that has the lua runtime — the `f(n: any)` shape.
+    fn cap_is_boxed_local(self: *CodeGen, cap: []const u8) bool {
+        if (cap.len == 0 or !self.moduleNeedsLuaRuntime()) return false;
+        for (cap, 0..) |c, i| {
+            const ok = (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or c == '_' or
+                (i > 0 and c >= '0' and c <= '9');
+            if (!ok) return false;
+        }
+        const t = self.local_type(cap) orelse return false;
+        return t == .any;
     }
 
     fn is_dense_table_index(self: *CodeGen, obj: *const ast.Expr) bool {
@@ -11175,7 +11215,7 @@ pub const CodeGen = struct {
                                 const dt = idx.obj.name.ident;
                                 const info = self.dense_table_info(dt);
                                 self.p("duo_dt_set_{s}(&__dt_{s}, &__dtc_{s}, ", .{ info.sfx(), dt, dt });
-                                try self.emit_i64_index_key(idx.key);
+                                try self.emit_dense_key(idx.key);
                                 self.p(", ", .{});
                                 if (i < as.values.len) try self.emit_dense_value(as.values[i], info) else self.p("0", .{});
                                 self.p(");\n", .{});
@@ -13644,7 +13684,7 @@ pub const CodeGen = struct {
                         const dt = idx.obj.name.ident;
                         const info = self.dense_table_info(dt);
                         self.p("duo_dt_get_{s}(__dt_{s}, __dtc_{s}, ", .{ info.sfx(), dt, dt });
-                        try self.emit_i64_index_key(idx.key);
+                        try self.emit_dense_key(idx.key);
                         self.p(")", .{});
                         return;
                     }
