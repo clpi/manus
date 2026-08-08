@@ -203,10 +203,18 @@ _collect_min_times_impl(cmd: str, min_times: table): table
     for i = 1, runs
         out = s.capture("cd " .. ROOT .. " && " .. cmd .. " 2>/dev/null")
         times = extract_times(out)
+        -- DO NOT round-trip through tonumber here. `tonumber(nil)` returns 0,
+        -- not nil -- gap[031] -- so `m = tonumber(min_times[j])` on an unset
+        -- slot gave 0, `m == nil` was false, and `t < 0` is false for every
+        -- positive duration. The minimum was therefore NEVER SEEDED: min_times
+        -- stayed empty, every row printed N/A, every winner defaulted to C, and
+        -- the suite reported Duo losing all 40 benchmarks on timing it had not
+        -- collected. extract_times already returns numbers, so compare the raw
+        -- values and let an unset slot actually read as nil.
         for j = 1, #times
-            t = tonumber(times[j])
-            m = tonumber(min_times[j])
-            if m == nil or (t != nil and t < m)
+            t = times[j]
+            m = min_times[j]
+            if m == nil or t < m
                 min_times[j] = t
             end
         end
