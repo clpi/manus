@@ -29,7 +29,7 @@ end
 NAMES = @comp.map("HasXY", type_sig)
 
 -- Stage 2: @comp.each splits that output and re-expands each fragment.
-expand(frag): str
+expand(frag: str): str
     "/* each[" .. to(str)(frag.index) .. "/" .. to(str)(frag.count) .. "] = " .. frag.name .. " */\n"
 end
 
@@ -51,7 +51,7 @@ end
 
 SUBSETS = @comp.power("HasXY", subset_sig)
 
-stamp(frag): str
+stamp(frag: str): str
     "/* pow[" .. to(str)(frag.index) .. "/" .. to(str)(frag.count) .. "] " .. frag.name .. " */\n"
 end
 

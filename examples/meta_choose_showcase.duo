@@ -28,7 +28,7 @@ count_semis(s: str): i64
     n
 end
 
-stamp(frag): str
+stamp(frag: str): str
     "[" .. to(str)(frag.index) .. "/" .. to(str)(frag.count) .. "]" .. frag.name .. "\n"
 end
 
