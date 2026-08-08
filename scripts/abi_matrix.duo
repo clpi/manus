@@ -31,7 +31,8 @@
 -- so in the same commit — the mirror of how NATIVE_FLOOR ratchets up.
 
 _sh = (cmd: str): str
-    std.script.capture("cd " .. std.script.getenv("DUO_ROOT", ".") .. " && " .. cmd)
+    root = std.script.getenv("DUO_ROOT", ".")
+    std.script.capture("cd {root} && {cmd}")
 end
 
 _num = (out: str): i64
@@ -49,26 +50,35 @@ end
 --   1. no comparison, constant i64 return   — isolates plain argument passing
 --   2. comparison, i64 return               — argument passing + fcmp
 --   3. comparison, str return               — the return-classification path
+-- The shell program is ONE long-bracket literal. It was a 19-line `..` chain,
+-- which put 37 hits on audit100's `concatlit` row — a gate that enforces the
+-- deny table has no business violating it, and §0.7 is explicit: `..` joins
+-- existing string BINDINGS, interpolation does the rest. A long bracket also
+-- deletes a whole class of quoting bug, since the shell's own `"` and `$` need
+-- no escaping inside one.
+_script = [[
+duo=./zig-out/bin/duo; d=/tmp/duo_abi_matrix; rm -rf $d; mkdir -p $d; i=0;
+for ps in 'a: i64|f(7)' 'a: f64|f(3.5)' 'a: i64, b: f64|f(7, 3.5)' \
+          'a: f64, b: i64|f(3.5, 7)' 'a: f64, b: f64|f(3.5, 1.5)' \
+          'a: i64, b: f64, c: i64, d: f64|f(1, 2.5, 3, 4.5)' \
+          'a: f64, b: i64, c: f64|f(2.5, 9, 1.5)'; do
+  P=${ps%%|*}; A=${ps##*|}
+  case "$P" in 'a: f64'*) C='a > 1.0';; *) C='a > 1';; esac
+  i=$((i+1)); printf 'f(%s): i64\n    return 42\nend\n\nmain(): i64\n    return %s\nend\n' "$P" "$A" > $d/t$i.duo
+  i=$((i+1)); printf 'f(%s): i64\n    if %s return 9 end\n    return 1\nend\n\nmain(): i64\n    return %s\nend\n' "$P" "$C" "$A" > $d/t$i.duo
+  i=$((i+1)); printf 'f(%s): str\n    if %s return "yes" end\n    return "no"\nend\n\nmain(): i64\n    return #%s\nend\n' "$P" "$C" "$A" > $d/t$i.duo
+done
+ok=0; wrong=0; bail=0; noc=0
+for f in $d/t*.duo; do
+  if $duo compile --backend=c "$f" -o $d/c.bin >/dev/null 2>&1; then cv=$($d/c.bin; echo $?); else noc=$((noc+1)); continue; fi
+  if $duo compile --backend=direct "$f" -o $d/x.bin >/dev/null 2>&1; then dv=$($d/x.bin; echo $?); else bail=$((bail+1)); continue; fi
+  if [ "$cv" = "$dv" ]; then ok=$((ok+1)); else wrong=$((wrong+1)); echo "$(basename $f) c=$cv direct=$dv" >> $d/wrong.txt; fi
+done
+echo "$ok $wrong $bail $noc"
+]]
+
 _sweep = (): str
-    _sh("duo=./zig-out/bin/duo; d=/tmp/duo_abi_matrix; rm -rf $d; mkdir -p $d; "
-        .. "i=0; "
-        .. "for ps in 'a: i64|f(7)' 'a: f64|f(3.5)' 'a: i64, b: f64|f(7, 3.5)' "
-        .. "'a: f64, b: i64|f(3.5, 7)' 'a: f64, b: f64|f(3.5, 1.5)' "
-        .. "'a: i64, b: f64, c: i64, d: f64|f(1, 2.5, 3, 4.5)' "
-        .. "'a: f64, b: i64, c: f64|f(2.5, 9, 1.5)'; do "
-        .. "  P=${ps%%|*}; A=${ps##*|}; "
-        .. "  case \"$P\" in 'a: f64'*) C='a > 1.0';; *) C='a > 1';; esac; "
-        .. "  i=$((i+1)); printf 'f(%s): i64\\n    return 42\\nend\\n\\nmain(): i64\\n    return %s\\nend\\n' \"$P\" \"$A\" > $d/t$i.duo; "
-        .. "  i=$((i+1)); printf 'f(%s): i64\\n    if %s return 9 end\\n    return 1\\nend\\n\\nmain(): i64\\n    return %s\\nend\\n' \"$P\" \"$C\" \"$A\" > $d/t$i.duo; "
-        .. "  i=$((i+1)); printf 'f(%s): str\\n    if %s return \\\"yes\\\" end\\n    return \\\"no\\\"\\nend\\n\\nmain(): i64\\n    return #%s\\nend\\n' \"$P\" \"$C\" \"$A\" > $d/t$i.duo; "
-        .. "done; "
-        .. "ok=0; wrong=0; bail=0; noc=0; "
-        .. "for f in $d/t*.duo; do "
-        .. "  if $duo compile --backend=c \"$f\" -o $d/c.bin >/dev/null 2>&1; then cv=$($d/c.bin; echo $?); else noc=$((noc+1)); continue; fi; "
-        .. "  if $duo compile --backend=direct \"$f\" -o $d/x.bin >/dev/null 2>&1; then dv=$($d/x.bin; echo $?); else bail=$((bail+1)); continue; fi; "
-        .. "  if [ \"$cv\" = \"$dv\" ]; then ok=$((ok+1)); else wrong=$((wrong+1)); "
-        .. "    echo \"$(basename $f) c=$cv direct=$dv\" >> $d/wrong.txt; fi; "
-        .. "done; echo \"$ok $wrong $bail $noc\"")
+    _sh(_script)
 end
 
 main(): i64
@@ -94,11 +104,15 @@ main(): i64
         return 3
     end
 
+    okstr = to(str)(ok)
+    wrongstr = to(str)(wrong)
+    bailstr = to(str)(bail)
+    nocstr = to(str)(noc)
     print("ABI shape matrix (generated call shapes, C backend as oracle)")
-    print("  agree         " .. to(str)(ok) .. "   both backends returned the same value")
-    print("  MISCOMPILE    " .. to(str)(wrong) .. "   direct compiled and answered WRONG")
-    print("  bail          " .. to(str)(bail) .. "   direct refused — honest, not a failure")
-    print("  no oracle     " .. to(str)(noc) .. "   C could not build the shape; judged by nothing")
+    print("  agree         {okstr}   both backends returned the same value")
+    print("  MISCOMPILE    {wrongstr}   direct compiled and answered WRONG")
+    print("  bail          {bailstr}   direct refused — honest, not a failure")
+    print("  no oracle     {nocstr}   C could not build the shape; judged by nothing")
 
     if wrong > 0
         print("")
@@ -107,15 +121,15 @@ main(): i64
 
     ceiling: i64 = to(i64)(std.script.getenv("MISCOMPILE_CEILING", "0"))
     if wrong > ceiling
-        print("abi_matrix: FAIL — " .. to(str)(wrong)
-            .. " wrong answers exceeds the ceiling " .. to(str)(ceiling))
+        ceilstr = to(str)(ceiling)
+        print("abi_matrix: FAIL — {wrongstr} wrong answers exceeds the ceiling {ceilstr}")
         return 1
     end
     if wrong < ceiling
-        print("abi_matrix: PASS — " .. to(str)(wrong) .. " wrong, BELOW the ceiling "
-            .. to(str)(ceiling) .. ". Lower MISCOMPILE_CEILING in this commit.")
+        ceilstr2 = to(str)(ceiling)
+        print("abi_matrix: PASS — {wrongstr} wrong, BELOW the ceiling {ceilstr2}. Lower MISCOMPILE_CEILING in this commit.")
         return 0
     end
-    print("abi_matrix: PASS (" .. to(str)(wrong) .. " known wrong at the ceiling; see gap[056])")
+    print("abi_matrix: PASS ({wrongstr} known wrong at the ceiling; see gap[056])")
     0
 end
