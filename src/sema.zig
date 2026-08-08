@@ -8213,8 +8213,16 @@ pub const Sema = struct {
             return h;
         }
         h = (h ^ @as(u32, @truncate(s.len))) *% 16777619;
-        const step: usize = (s.len >> 5) + 1;
         var i: usize = 0;
+        while (i < 16) : (i += 1) {
+            h = (h ^ s[i]) *% 16777619;
+        }
+        i = s.len - 16;
+        while (i < s.len) : (i += 1) {
+            h = (h ^ s[i]) *% 16777619;
+        }
+        const step: usize = (s.len >> 5) + 1;
+        i = 0;
         while (i < s.len) : (i += step) {
             h = (h ^ s[i]) *% 16777619;
         }

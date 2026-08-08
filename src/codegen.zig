@@ -462,17 +462,31 @@ pub const CodeGen = struct {
     /// `src/duo_lexer_tokenize.c`, whose longest literal is 32 bytes and which
     /// carries its own copy of this function and its own string pool.
     ///
-    /// Longer strings sample at most 33 bytes on a stride, and mix the length
-    /// in. Hashing every byte of a long string is O(n) down a serial dependent
-    /// multiply chain, and it is paid on the way IN to the intern pool -- on
-    /// every string a program builds, whether or not anything ever looks it up
-    /// again. Measured: FNV-1a over the 850 KB that
+    /// Longer strings sample the first 16 bytes, the LAST 16 bytes and at most
+    /// 33 more on a stride, and mix the length in -- at most 65 mixes for any
+    /// length. Hashing every byte of a long string is O(n) down a serial
+    /// dependent multiply chain, and it is paid on the way IN to the intern
+    /// pool -- on every string a program builds, whether or not anything ever
+    /// looks it up again. Measured: FNV-1a over the 850 KB that
     /// `string.rep("alpha beta gamma ", 50000)` produces costs 1.03 ms, while
     /// BUILDING that string costs 0.03 ms. The hash was 35x the work it was
     /// guarding, and it is why four string benchmark rows lost to reference C
     /// whose emitted inner loops were character-for-character identical to C's.
-    /// Lua 5.1 used exactly this rule (`step = (l >> 5) + 1`) for exactly this
-    /// reason.
+    /// Lua 5.1's `luaS_newlstr` sampled on a `step = (l >> 5) + 1` stride for
+    /// exactly this reason.
+    ///
+    /// THE TWO 16-BYTE WINDOWS ARE NOT DECORATION. A bare stride anchored at 0
+    /// leaves an unsampled tail -- for an 850 KB string the last 26 KB, for a
+    /// 503-byte string the last 6 bytes -- so records that share a prefix and
+    /// differ in a suffix all hash the SAME. Counted: 500 JSON records with a
+    /// 4 KB shared header and a distinct 6-digit id produce **1** distinct
+    /// hash under a bare stride and 500 under this rule; the 200 long keys in
+    /// `examples/hash_agreement.duo` produce **3** and 200. Correctness never
+    /// depended on it -- the memcmp confirm keeps those keys distinct either
+    /// way -- but a pool that puts 500 ordinary keys in one bucket has turned
+    /// an O(1) intern into an O(n) one, which is the cost this change exists
+    /// to remove. Bucket spread now matches full FNV-1a (152 vs 146 of 200
+    /// buckets at capacity 256).
     ///
     /// This is a HASH, not an identity. Every consumer confirms with a length
     /// check and a `memcmp` -- the intern pool in `lua_val_from_str_len`, the
@@ -489,8 +503,18 @@ pub const CodeGen = struct {
         }
         h ^= @as(u32, @truncate(s.len));
         h = h *% 16777619;
-        const step: usize = (s.len >> 5) + 1;
         var i: usize = 0;
+        while (i < 16) : (i += 1) {
+            h ^= @as(u32, s[i]);
+            h = h *% 16777619;
+        }
+        i = s.len - 16;
+        while (i < s.len) : (i += 1) {
+            h ^= @as(u32, s[i]);
+            h = h *% 16777619;
+        }
+        const step: usize = (s.len >> 5) + 1;
+        i = 0;
         while (i < s.len) : (i += step) {
             h ^= @as(u32, s[i]);
             h = h *% 16777619;
@@ -24079,12 +24103,17 @@ const duo_runtime =
     \\ * <= 32 bytes: every byte, unchanged, so identifier and field-name hashes
     \\ * are bit-identical to what they have always been.
     \\ *
-    \\ * > 32 bytes: at most 33 samples on a stride, plus the length. Hashing a
+    \\ * > 32 bytes: the first 16 bytes, the LAST 16 bytes, and at most 33 more on
+    \\ * a stride, plus the length -- 65 mixes at most, for any length. Hashing a
     \\ * long string in full is O(n) down a dependent multiply chain and is paid
     \\ * on the way INTO the pool, for every string a program builds. FNV-1a over
-    \\ * an 850 KB string measured 1.03 ms against 0.03 ms to build it. Lua 5.1
-    \\ * used this same rule. Callers confirm with len + memcmp, so a sampled
-    \\ * collision costs a probe and never an answer. */
+    \\ * an 850 KB string measured 1.03 ms against 0.03 ms to build it.
+    \\ *
+    \\ * The tail window is load-bearing: a stride anchored at 0 never reaches the
+    \\ * last (len mod step) bytes, so 500 records sharing a 4 KB header and
+    \\ * differing in a trailing id hash to ONE value. Correctness survives that
+    \\ * -- callers confirm with len + memcmp -- but the pool degenerates to a
+    \\ * linear scan, which is the very cost this sampling exists to remove. */
     \\static inline uint32_t calc_hash(const char* s, size_t len) {
     \\    uint32_t h = 2166136261u;
     \\    if (len <= 32) {
@@ -24096,6 +24125,14 @@ const duo_runtime =
     \\    }
     \\    h ^= (uint32_t)len;
     \\    h *= 16777619u;
+    \\    for (size_t i = 0; i < 16; i++) {
+    \\        h ^= (uint32_t)(unsigned char)s[i];
+    \\        h *= 16777619u;
+    \\    }
+    \\    for (size_t i = len - 16; i < len; i++) {
+    \\        h ^= (uint32_t)(unsigned char)s[i];
+    \\        h *= 16777619u;
+    \\    }
     \\    size_t step = (len >> 5) + 1;
     \\    for (size_t i = 0; i < len; i += step) {
     \\        h ^= (uint32_t)(unsigned char)s[i];
