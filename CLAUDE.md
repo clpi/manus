@@ -41,6 +41,7 @@ lib/std/               Duo standard library (.duo files)
 tools/lsp/             LSP server — 100% Duo (was ~/x/duo-lsp)
 tools/mcp/             MCP servers: duo_bench, duo_lsp, zls — 100% Duo (was ~/x/duo-mcp)
 ext/tree-sitter-duo/   tree-sitter grammar
+ext/ward/              WASM runtime in Duo — downstream consumer (was ~/x/ward)
 examples/              Example .duo programs
 scripts/               Shell scripts for CI gates and benchmarks
 docs/plans/            Active implementation plans (passN_*.md)
@@ -73,12 +74,18 @@ silently, Duo lowers to a direct C call where it is a hard error. Out of tree
 that surfaces when someone next runs the MCP server; in tree it is caught by
 duo's gates on the commit that changes lowering.
 
-`ward` (~/x/ward) stays SEPARATE on purpose: it is the downstream consumer that
-proves Duo builds real systems software, and it has to build the way any
-external user does — against a released duo binary. Vendoring it would turn
-that evidence into a test fixture. `wart` (~/x/wart) also stays separate: it is
-the Zig reference implementation ward is measured against, and an oracle should
-not share a repo with the thing it validates.
+`ward` merged in too (2026-08-08, `ext/ward`, 47 commits with history). I had
+argued for keeping it out — it is the downstream consumer that proves Duo
+builds real systems software, and building against a RELEASED binary is what
+makes that evidence rather than a test fixture. That argument still holds and
+is the thing to watch: if ward starts depending on unreleased compiler
+behaviour, the proof quietly weakens. The census says it is 100% Duo (.duo 715
+-> 737, c/h and sh/py both unchanged), so nothing foreign came with it.
+
+`wart` (~/x/wart) stays separate: it is the Zig reference implementation ward
+is measured against, and an oracle should not share a repo with the thing it
+validates. It is also owned by cloud sessions and had uncommitted JIT work at
+time of writing.
 
 ## Agent coordination
 
