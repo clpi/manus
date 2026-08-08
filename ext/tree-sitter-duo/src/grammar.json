@@ -1219,46 +1219,50 @@
       ]
     },
     "return_statement": {
-      "type": "SEQ",
-      "members": [
-        {
-          "type": "STRING",
-          "value": "return"
-        },
-        {
-          "type": "CHOICE",
-          "members": [
-            {
-              "type": "SEQ",
-              "members": [
-                {
-                  "type": "SYMBOL",
-                  "name": "expression"
-                },
-                {
-                  "type": "REPEAT",
-                  "content": {
-                    "type": "SEQ",
-                    "members": [
-                      {
-                        "type": "STRING",
-                        "value": ","
-                      },
-                      {
-                        "type": "SYMBOL",
-                        "name": "expression"
-                      }
-                    ]
+      "type": "PREC_RIGHT",
+      "value": 0,
+      "content": {
+        "type": "SEQ",
+        "members": [
+          {
+            "type": "STRING",
+            "value": "return"
+          },
+          {
+            "type": "CHOICE",
+            "members": [
+              {
+                "type": "SEQ",
+                "members": [
+                  {
+                    "type": "SYMBOL",
+                    "name": "expression"
+                  },
+                  {
+                    "type": "REPEAT",
+                    "content": {
+                      "type": "SEQ",
+                      "members": [
+                        {
+                          "type": "STRING",
+                          "value": ","
+                        },
+                        {
+                          "type": "SYMBOL",
+                          "name": "expression"
+                        }
+                      ]
+                    }
                   }
-                }
-              ]
-            },
-            {
-              "type": "BLANK"
-            }
-          ]
-        }
-      ]
+                ]
+              },
+              {
+                "type": "BLANK"
+              }
+            ]
+          }
+        ]
+      }
     },
     "break_statement": {
       "type": "STRING",
@@ -4078,7 +4082,152 @@
       "name": "comment"
     }
   ],
-  "conflicts": [],
+  "conflicts": [
+    [
+      "jai_type_definition",
+      "typed_binding",
+      "expression"
+    ],
+    [
+      "struct_definition",
+      "expression"
+    ],
+    [
+      "typed_binding",
+      "call_expression"
+    ],
+    [
+      "assignment",
+      "call_expression"
+    ],
+    [
+      "local_declaration",
+      "call_expression"
+    ],
+    [
+      "const_declaration",
+      "call_expression"
+    ],
+    [
+      "global_declaration",
+      "call_expression"
+    ],
+    [
+      "return_statement",
+      "call_expression"
+    ],
+    [
+      "repeat_loop",
+      "call_expression"
+    ],
+    [
+      "expression_statement",
+      "call_expression"
+    ],
+    [
+      "call_expression",
+      "parenthesized_expression"
+    ],
+    [
+      "do_block",
+      "while_loop"
+    ],
+    [
+      "do_block",
+      "numeric_for"
+    ],
+    [
+      "do_block",
+      "generic_for"
+    ],
+    [
+      "statement",
+      "try_statement"
+    ],
+    [
+      "catch_clause"
+    ],
+    [
+      "catch_clause",
+      "expression"
+    ],
+    [
+      "binding_name"
+    ],
+    [
+      "literal_pattern",
+      "expression"
+    ],
+    [
+      "literal_pattern",
+      "nil"
+    ],
+    [
+      "literal_pattern",
+      "boolean"
+    ],
+    [
+      "binding_pattern",
+      "expression"
+    ],
+    [
+      "variant_pattern",
+      "expression"
+    ],
+    [
+      "table_pattern",
+      "table_constructor"
+    ],
+    [
+      "match_statement",
+      "match_expression"
+    ],
+    [
+      "expression_statement",
+      "match_arm"
+    ],
+    [
+      "match_arm",
+      "index_expression"
+    ],
+    [
+      "binary_expression",
+      "unary_expression"
+    ],
+    [
+      "binary_expression",
+      "contains_expression"
+    ],
+    [
+      "binary_expression",
+      "unary_expression",
+      "contains_expression"
+    ],
+    [
+      "call_expression",
+      "await_expression"
+    ],
+    [
+      "field_expression",
+      "await_expression"
+    ],
+    [
+      "index_expression",
+      "await_expression"
+    ],
+    [
+      "method_call_expression",
+      "await_expression"
+    ],
+    [
+      "try_expression",
+      "await_expression"
+    ],
+    [
+      "unwrap_expression",
+      "await_expression"
+    ]
+  ],
   "precedences": [],
   "externals": [],
   "inline": [],

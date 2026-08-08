@@ -148,15 +148,29 @@ main = (): i64
     std.script.fs_write(after_dir .. "/duo.lua", _NVIM_LUA)
     print("  ok created " .. after_dir .. "/duo.lua")
 
+    -- A generator that RUNS and FAILS is not an optional step, and this block
+    -- used to report it as one: `>/dev/null 2>&1` threw away the diagnostic and
+    -- `-- tree-sitter generate failed` read exactly like the `-- not found`
+    -- line above it. The grammar had not built in some time and nothing said
+    -- so. A missing CLI is still optional (another machine may not have it);
+    -- a failing generate is now fatal, and prints what the generator said.
     print("-> Setting up tree-sitter-duo...")
+    broken = 0
     if std.script.chomp(std.script.capture("command -v tree-sitter 2>/dev/null")) == ""
         print("  -- tree-sitter-cli not found (npm i -g tree-sitter-cli)")
     else
         ts = duo_root .. "/ext/tree-sitter-duo"
-        if std.script.run("cd " .. ts .. " && tree-sitter generate >/dev/null 2>&1") == 0
+        -- No redirect. The generator names the exact rule and lookahead it
+        -- could not resolve, and that text IS the repair instruction; sending
+        -- it to /dev/null is what made this invisible.
+        code = std.script.run("cd {ts} && tree-sitter generate")
+        if code == 0
             print("  ok grammar generated")
         else
-            print("  -- tree-sitter generate failed")
+            broken = 1
+            print("  FAIL tree-sitter generate exited {code} in {ts}")
+            print("  the editors have NO working parser until this exits 0.")
+            print("  see gaps/GAP-049.")
         end
     end
 
@@ -169,17 +183,23 @@ main = (): i64
     _install(q .. "/injections.scm", queries, "injections")
 
     print("")
-    print("=== Setup Complete ===")
-    print("")
-    print("Add to your shell profile:")
-    print("  export PATH=\"$HOME/x/duo/zig-out/bin:$HOME/x/duo-lsp:$PATH\"")
-    print("")
-    print("Neovim keybindings (in .duo files):")
-    print("  <leader>dr  — Run current file")
-    print("  <leader>dc  — Check/lint current file")
-    print("  <leader>dd  — Dump generated C")
-    print("  <leader>df  — Format file")
-    print("")
-    print("LSP features: diagnostics, hover, go-to-definition, completions")
-    0
+    if broken == 1
+        print("=== Setup FAILED — tree-sitter generate did not exit 0 ===")
+        print("")
+        print("Neovim will highlight nothing in .duo files until it does.")
+    else
+        print("=== Setup Complete ===")
+        print("")
+        print("Add to your shell profile:")
+        print("  export PATH=\"$HOME/x/duo/zig-out/bin:$HOME/x/duo-lsp:$PATH\"")
+        print("")
+        print("Neovim keybindings (in .duo files):")
+        print("  <leader>dr  — Run current file")
+        print("  <leader>dc  — Check/lint current file")
+        print("  <leader>dd  — Dump generated C")
+        print("  <leader>df  — Format file")
+        print("")
+        print("LSP features: diagnostics, hover, go-to-definition, completions")
+    end
+    broken
 end

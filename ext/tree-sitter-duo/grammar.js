@@ -26,13 +26,22 @@
  * Projecting this file from Pass 100 descriptors would change which programs
  * the editors recognise, which is a language decision downstream of GAP-025.
  *
- * And it does not currently BUILD: `tree-sitter generate` exits 1 here with an
- * unresolved conflict on `return_statement` ('return' • '(' — call argument
- * list versus a bare `return` followed by a parenthesised statement). Checked
- * against the pristine HEAD copy too, so it is not new. The `src/grammar.json`
- * beside this file is output from a tree-sitter that resolved it; the CLI
- * installed here does not. Treat that JSON as the live artifact and this file
- * as its stale source, not the other way round.
+ * It BUILDS again as of 2026-08-08. It did not before: `tree-sitter generate`
+ * exited 1 on an unresolved conflict on `return_statement` ('return' • '(' —
+ * an argument list versus a bare `return` followed by a parenthesised
+ * statement), and the tracked `src/grammar.json` beside this file was NOT a
+ * usable fallback: regenerating from that JSON alone fails with the identical
+ * conflict, so no editor on this tree had a working parser at all. The repair
+ * is `prec.right` on `return_statement` plus the 36 `conflicts:` entries
+ * below, each one proven necessary by dropping it and re-running the generator.
+ *
+ * What it recognises, MEASURED rather than assumed, now that a parser exists:
+ * 75 of 748 tracked `.duo` files parse without an ERROR node — 10 %. 423 of
+ * the 673 failures are one rule this file does not have: the BARE function
+ * declaration `fib(n: any)` / `_env_or(n: str, d: str): str` (GR-001), which
+ * is the canonical Pass 100 form. Adding it is the language decision GAP-049
+ * defers to the descriptor work, not a bug fix, so it is recorded rather than
+ * patched here.
  *
  * Counted, until then, as one of three tracked `.js` files in the G11 debt
  * line (`scripts/language_census.duo`, ratchet `CENSUS_JS_FLOOR`). Editing
@@ -52,6 +61,54 @@ module.exports = grammar({
     $.expression,
     $.type,
     $.pattern,
+  ],
+
+  // Duo statements are not separated by a terminator and an expression is a
+  // statement, so the LR(1) item set genuinely cannot decide these without
+  // lookahead past the conflict point. Each entry below was proven NECESSARY:
+  // a script drops one at a time and re-runs `tree-sitter generate`, and all
+  // 36 are still required for it to exit 0. See gaps/GAP-049.
+  conflicts: $ => [
+    // statement head vs expression statement
+    [$.jai_type_definition, $.typed_binding, $.expression],
+    [$.struct_definition, $.expression],
+    [$.typed_binding, $.call_expression],
+    [$.assignment, $.call_expression],
+    [$.local_declaration, $.call_expression],
+    [$.const_declaration, $.call_expression],
+    [$.global_declaration, $.call_expression],
+    [$.return_statement, $.call_expression],
+    [$.repeat_loop, $.call_expression],
+    [$.expression_statement, $.call_expression],
+    [$.call_expression, $.parenthesized_expression],
+    // unterminated statement lists — where does the body stop
+    [$.do_block, $.while_loop],
+    [$.do_block, $.numeric_for],
+    [$.do_block, $.generic_for],
+    [$.statement, $.try_statement],
+    [$.catch_clause],
+    [$.catch_clause, $.expression],
+    [$.binding_name],
+    // pattern position overlaps expression position
+    [$.literal_pattern, $.expression],
+    [$.literal_pattern, $.nil],
+    [$.literal_pattern, $.boolean],
+    [$.binding_pattern, $.expression],
+    [$.variant_pattern, $.expression],
+    [$.table_pattern, $.table_constructor],
+    [$.match_statement, $.match_expression],
+    [$.expression_statement, $.match_arm],
+    [$.match_arm, $.index_expression],
+    // prefix operators bind before the LR item is decided
+    [$.binary_expression, $.unary_expression],
+    [$.binary_expression, $.contains_expression],
+    [$.binary_expression, $.unary_expression, $.contains_expression],
+    [$.call_expression, $.await_expression],
+    [$.field_expression, $.await_expression],
+    [$.index_expression, $.await_expression],
+    [$.method_call_expression, $.await_expression],
+    [$.try_expression, $.await_expression],
+    [$.unwrap_expression, $.await_expression],
   ],
 
   // ── Rules ──────────────────────────────────────────────────────────────────
@@ -273,10 +330,10 @@ module.exports = grammar({
 
     // ── Return ──────────────────────────────────────────────────────────────
 
-    return_statement: $ => seq(
+    return_statement: $ => prec.right(seq(
       'return',
       optional(commaSep1($.expression)),
-    ),
+    )),
 
     // ── Break ───────────────────────────────────────────────────────────────
 

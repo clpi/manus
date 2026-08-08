@@ -133,3 +133,12 @@ duo_keyword_classify.c
 .agents/session/
 .agents/claims/
 .cursor/skills/
+
+# tree-sitter's generated parser. `tree-sitter generate` writes parser.c (6 MB
+# of C), node-types.json and a vendored tree_sitter/ header dir beside the
+# tracked grammar.json. None of it is source and none of it may enter a
+# monoglot repo by way of a sweeping `git add`. grammar.js + src/grammar.json
+# stay tracked; see gaps/GAP-049.
+/ext/tree-sitter-duo/src/parser.c
+/ext/tree-sitter-duo/src/node-types.json
+/ext/tree-sitter-duo/src/tree_sitter/
