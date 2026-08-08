@@ -205,6 +205,19 @@ test "pass7_catalog: writePass7Json emits valid structure" {
     try std.testing.expect(std.mem.indexOf(u8, out, "P7-M1") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "knowledge_snapshot") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "contract.pure") != null);
+    // This JSON is the only thing that reads contract_model.catalog, so the
+    // honest `wired` values have to survive the trip. contract.sealed is
+    // catalogued-only (see the behavior tests in contract_model.zig): it must
+    // not leave here claiming to be wired.
+    const sealed = std.mem.indexOf(u8, out, "\"contract.sealed\"") orelse
+        return error.TestExpectedEqual;
+    const sealed_row = out[sealed..@min(sealed + 220, out.len)];
+    try std.testing.expect(std.mem.indexOf(u8, sealed_row, "\"wired\":false") != null);
+    // Positive control for that scan: a wired row in the same shape reads true.
+    const noalloc = std.mem.indexOf(u8, out, "\"contract.noalloc\"") orelse
+        return error.TestExpectedEqual;
+    const noalloc_row = out[noalloc..@min(noalloc + 220, out.len)];
+    try std.testing.expect(std.mem.indexOf(u8, noalloc_row, "\"wired\":true") != null);
     // Milestones array must close before readiness arrays (regression: missing ']')
     const ms = std.mem.indexOf(u8, out, "\"milestones\":[") orelse return error.TestExpectedEqual;
     const ai = std.mem.indexOf(u8, out, "\"ai_target_readiness\":[") orelse return error.TestExpectedEqual;
