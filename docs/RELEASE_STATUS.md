@@ -66,7 +66,7 @@ returned true for a failing command in this repo before.
 | lexer FINGERPRINT differential | `duo run --backend=c examples/pass16_lexer_fingerprint_differential.duo` | exit 0 |
 | Zig unit tests | `zig build unit-test` | **GREEN at `1bb304f`** — 1317/1317, 0 leaks, exit 0; see §3 |
 | direct/C native differential | `zig build native-differential` | **GREEN at `1bb304f`** — 63 agree / 0 diverge, exit 0; see §3a |
-| Duo-vs-C benchmark | `zig build bench` | **RED by its own criterion** — 16 measured wins, 11 folded, 13 losses; see §4 |
+| Duo-vs-C benchmark | `zig build bench` | **RED by its own criterion** — 18 measured wins, 11 folded, 11 losses at `ec41494`, and the split is not stable to ±1; see §4 |
 | language census (G11) | `zig build language-census` | **PASS**, exit 0 — and it now counts `.js`, which it never did; see §7.8 |
 
 Two notes on how those greens were obtained, because both are the kind of thing
@@ -282,7 +282,144 @@ and what was previously untrue on this backend.
 
 ---
 
-## 4. Benchmark position — 17 measured wins / 11 folded / 12 losses
+## 4. Benchmark position — 18 measured wins / 11 folded / 11 losses
+
+**Re-measured at `ec41494` (loop versioning, below): five consecutive runs read
+18 / 18 / 20 / 19 / 18 measured wins, median 18 / 11 / 11, against 17 / 11 / 12
+before.** The split is not a stable integer and this document should stop
+pretending otherwise: two rows now sit ON the harness's own tie epsilon and
+cross it run to run. Only one row moved for certain.
+
+| row | before | after (median of 5) | reference C | verdict over 5 runs |
+|---|---:|---:|---:|---|
+| Matrix multiply | 0.197116 | 0.141703 | 0.142625 | **Duo 5/5** — the one certain flip |
+| Dot product | 0.000770 | 0.000707 | 0.000668 | Duo 3/5 — 6 % behind, inside the `5e-05` epsilon |
+| Prefix sum | 0.006608 | 0.002405 | 0.002342 | Duo 3/5 — 3 % behind, inside the 5 % epsilon |
+| Cond swap | 0.000835 | 0.000235 | 0.000204 | C 5/5, but 3.6x closer |
+| Table max | 0.000947 | 0.000500 | 0.000336 | C 5/5, 1.9x closer |
+| Ring buffer | 0.009272 | 0.005140 | 0.003554 | C 5/5, 1.8x closer |
+| Levenshtein | 0.053683 | 0.025180 | 0.023995 | C 5/5, 2.1x closer |
+| Game of Life | 0.018488 | 0.012455 | 0.002832 | C 5/5, 1.5x closer |
+
+**Dot product and Prefix sum are NOT claimed as wins.** Both are within
+`max(c * 0.05, 5e-05)` of reference C, which is the tie epsilon this section
+already names as an honesty hole; the row-count moves because of the epsilon,
+not because Duo got faster than C. What did happen is that both went from 15 %
+and 190 % behind to 6 % and 3 % behind. Correctness is unchanged and green: all
+40 `RESULT` rows still match reference C for `.lua` and `.duo`.
+
+### GAP-039 — the per-element bounds check, closed by loop versioning
+
+`duo_dt_get_i64` was one compare and one select per element, and GAP-039 had
+already established by experiment that no C compiler removes it: hoisting the
+loop bound AND reserving the buffer from the same SSA value, so `cap >= n+1`
+and `i <= n` are visible together, moved Table max `0.00101 -> 0.00098`. LLVM
+will not carry the monotonicity of `cap` across a `realloc` that may fail.
+
+`src/codegen.zig` now proves the index instead. For a `while` whose counter
+moves by a positive constant as the **last** statement of the body, whose bound
+is loop-invariant and pure, and every one of whose dense-table indices is
+affine in that counter, one guard before the loop decides whether every index
+the loop can produce lands inside `[0, cap)` — and the body is emitted twice,
+unchecked under the guard and unchanged beside it:
+
+```c
+int64_t __lvlo9 = i; int64_t __lvhi9 = duo_dt_hi_num(__wb_ok9, __wb_n9, false);
+if (__lvhi9 != INT64_MIN && duo_dt_range_ok(__dtc_t, (i), 1, __lvlo9, __lvhi9)
+                         && duo_dt_range_ok(__dtc_t, (i - 1), 1, __lvlo9, __lvhi9)) {
+    while (i <= __lvhi9) { __dt_t[i] = (__dt_t[i] + __dt_t[(i - 1)]); i = (i + 1); }
+} else {
+    while (__wb_ok9 ? ((double)(i) <= __wb_n9) : (lua_leq(lua_val_from_int(i), n)))
+        duo_dt_set_i64(&__dt_t, &__dtc_t, i,
+            (duo_dt_get_i64(__dt_t, __dtc_t, i) + duo_dt_get_i64(__dt_t, __dtc_t, (i - 1))));
+    …
+}
+```
+
+Four properties are what make this a proof rather than a hope, and each was the
+thing that could have gone wrong:
+
+- **`at_lo` is the index expression emitted VERBATIM**, at a point where the
+  counter still holds its entry value. Nothing is substituted into the
+  expression emitter — which matters because `emit_expr` delegates binops to
+  half a dozen specialised emitters, and a substitution hook that missed one
+  would have produced a guard for a different index than the loop uses. The
+  other endpoint follows arithmetically from the coefficient.
+- **`__lvhi` is an upper bound, never an estimate.** Too large only declines to
+  the checked arm; too small would be an overrun. The boxed form declines
+  outside `[0, 1e15]`, because only below 2^53 does every int64 convert to
+  double exactly, which is what makes `(double)i <= d` and `i <= (int64_t)d`
+  accept the same integers.
+- **Every arithmetic step in the guard is `__builtin_*_overflow`-checked** and
+  declines on overflow, including a coefficient that is itself a runtime
+  product (`k * size + j + 1`).
+- **Under the guard no store can grow the buffer**, so the pointer cannot move
+  — which is also what lets the fast arm drop the boxed loop condition.
+
+`(i % size) + 1` is not affine and never reaches the fast arm; the ring buffer
+row is therefore untouched by versioning, as GAP-039 predicted. Sparse dot
+indexes through a body-local (`idx = (i-1)*stride + 1`) and also declines.
+
+**Attribution, from ONE emitted `/tmp/duo_bmH.c` built three ways** with the
+suite's own flags and PGO, min of 3, all 40 `RESULT` rows identical across the
+three binaries — so the only difference is the arm taken:
+
+| row | as shipped | guard forced to decline | ratio |
+|---|---:|---:|---:|
+| Cond swap | 0.000245 | 0.000912 | **3.72x** |
+| Prefix sum | 0.002661 | 0.007273 | **2.73x** |
+| Levenshtein | 0.027166 | 0.054352 | **2.00x** |
+| Table max | 0.000573 | 0.000947 | **1.65x** |
+| Matrix multiply | 0.145824 | 0.228003 | **1.56x** |
+| Game of Life | 0.014169 | 0.019169 | **1.35x** |
+| Dot product | 0.000818 | 0.001095 | **1.34x** |
+
+Rows with no dense loop at all move by up to ±0.2x between those two PGO
+builds — Sparse dot read 0.0201 against 0.0164, in the wrong direction. **That
+is the noise floor of this A/B and it is not small.** Every figure in the table
+clears it; nothing below 1.3x is claimed.
+
+Separately, `duo_dt_grow` now `calloc`s its **first** allocation instead of
+`realloc` + `memset`. The zeroing is required (an unwritten slot reads as Lua
+nil, i.e. 0 in arithmetic) but a fresh calloc is served from zero pages the
+process never touches. Isolated the same way — same file, that branch disabled
+— it is worth **2.12x on Ring buffer** (0.005284 against 0.011208) and nothing
+anywhere else, because Ring buffer is the row that reserves `n+1` = 5,000,001
+slots for a 1024-element buffer. GAP-039 named that over-reservation; this does
+not fix it, it makes it cheap.
+
+**Memory safety was checked, not assumed.** The whole suite, compiled from the
+emitted C with `-fsanitize=address,undefined`: exit 0, 40 `RESULT` rows, no
+diagnostics. (Its integer rows match the optimised build exactly; the six float
+rows differ, because the sanitiser build carries neither `-ffast-math` nor
+`-march=native`.) Five adversarial programs were written for the guard
+specifically and each returns the boxed path's answer: growth past the
+reservation, an index that runs below zero, an early `break`, a zero trip
+count, and a step-3 loop whose index runs **backwards** through the array
+(coefficient −1, which is the case the runtime min/max in `duo_dt_range_ok`
+exists for).
+
+**That last set found a live fabrication**, which is the argument for writing
+them. `detect_dense_table_sum_patterns` walked the loop it was summing with
+`if (s.* != .assign) continue` — it skipped every statement it did not model.
+So `while i <= n do if i > 5 break end sum += t[i] i += 1 end` returned
+**1275** for n = 50, the closed form over the whole range, where the program
+asks for 15. It now declines on any body statement the walk does not model.
+This is the same defect class as the thirty-three removals below, found by an
+adversarial test rather than by a perturbation sweep, and it is a reason to
+keep writing them: the sweep perturbs constants, and this one was control flow.
+
+### What is left on the ten remaining losses
+
+| row | blocker | architectural? |
+|---|---|---|
+| Game of Life | **element width.** Reference C declares the grid `int8_t` (16 KB, vectorises 16-wide, fits L1); Duo dense tables are `int64_t` only (128 KB, 2-wide). Versioning bought 1.35x and the remaining 5x is the 8x data width. | yes — needs a narrowed dense element type, its own gap |
+| Sparse dot | the index goes through a body-local (`idx = (i-1)*stride + 1`), so it is not affine **as written**. Forward-substituting a single-assignment loop-local would reach it, and would have to prove no use precedes the assignment. | no |
+| Ring buffer | `(i % size) + 1` is genuinely not affine. Would need a modular-range analysis, or a reservation solved from the fill loop rather than the parameter. | no, but it is a different analysis |
+| Table max | 1.9x closer and still 1.5x behind. Both loops now emit what C emits; what is left has not been localised. | unknown — not yet measured |
+| Ackermann | boxed arithmetic on `any` parameters. Patching its self-calls to direct C calls was tried and made it slower. | no |
+| Levenshtein | 2.1x closer, now 5 % behind; a 14-entry boxed prev/curr still rebuilt 200,000 times. | no |
+| Pow/sqrt, Table lookup | untouched by this work; no dense loop of the modelled shape. | not investigated |
 
 `zig build bench` re-measured **2026-08-08 after the SECOND verification pass**
 (the frozen-kernel removals below, plus the fourteen recognisers repaired in
