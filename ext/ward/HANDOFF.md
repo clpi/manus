@@ -86,6 +86,47 @@ accident of the 16-bit address wrap.
 `call_indirect` (0x11) still has no JIT arm, and `ltgt` is still ONE shared
 label buffer across frames.
 
+## 2026-08-08 (late) — six runtimes, 61 rows, and where ward is not first
+
+`duo run bench/six.duo`, N=3 interleaved, min of 3, machine otherwise idle.
+Nothing is timed until it has been differenced against wasmtime, so a cell that
+disagrees or cannot be reached is `WRONG` / `err` / `n/a` and never a number.
+
+**55 of 61 rows are below a 40 ms startup floor and are attributed to nobody.**
+Most fixtures here finish in single-digit milliseconds: that number is process
+startup — ward is a 208 KB static binary, wasmtime builds a JIT before it runs
+anything — and counting it as a win is the same defect as the withdrawn table in
+this repo's README, where 13 of 24 "wins" read at or below timer resolution. The
+floor keys on measured time, never on a module name or an input size, and it
+requires BOTH the fastest runtime AND ward to be under it, because otherwise
+`brtable` (ward 424 ms, wart 11 ms) would have been filed as startup noise.
+
+Of the **6 rows that do measurable work, ward is first on 1**:
+
+| workload | ward | wart | wasmtime | wasmer | wasm3 | iwasm | first |
+|---|---:|---:|---:|---:|---:|---:|---|
+| `hash` (run) | **368** | n/a | 374 | n/a | 1099 | 1672 | ward — a TIE |
+| `hash2b` (run) | 3805 | n/a | **3693** | n/a | 11294 | 16987 | wasmtime |
+| `brtable` (_start) | 424 | **11** | 15 | 25 | 18 | 21 | wart |
+| `hot` (_start) | 313 | **19** | 21 | 31 | 73 | 70 | wart |
+| `hot_big` (_start) | 3277 | 134 | **112** | 122 | 736 | 727 | wasmtime |
+| `loop_f64` (_start) | n/a | **13** | 27 | 42 | 24 | 23 | wart |
+
+**`hash` at 368 vs wasmtime 374 is a tie inside drift (1.6%), not a win**, and
+no claim otherwise may be restored. The four unambiguous losses are `brtable`
+(38x behind wart), `hot` (16x), `hot_big` (29x behind wasmtime) and `loop_f64`
+(ward cannot run it at all — opcode 252). All four are modules the JIT declines,
+which is the same story as §hot_big above: ward's interpreter is roughly 20-30x
+off a compiling runtime, and everything ward "wins" is a row where no runtime
+did enough work to measure.
+
+Three CLI facts the harness had to learn, each of which produced a bogus row
+first: wasm3 writes its `Result:` line to **stderr**; iwasm prints **hex** with
+a `:i32` suffix; `wart run` can only enter `_start`, so 27 `run`-only fixtures
+are `n/a` for it and that is not a loss. iwasm reads `WRONG` on the wart_*
+corpus and wasm3 `err` on the wasi_rt printf fixtures — those are the runtimes'
+own limits, recorded rather than smoothed over.
+
 Everything below is **measured**. The 2026-08-06 handoff's numbers were not
 reproducible; two separate "it passes the whole corpus" results turned out to be
 the same measurement bug (see "The trap"). Sections below the "state" block are

@@ -257,9 +257,12 @@ main(): i64
     -- binary and wasmtime builds a JIT before it runs anything. Counting those
     -- as wins is the same defect as the withdrawn table in this repo's README,
     -- where 13 of 24 "wins" read at or below timer resolution. A row whose
-    -- FASTEST runtime is under the floor is reported and shown but attributed
-    -- to nobody. This is a resolution rule, not a per-module one: it keys on the
-    -- measured time, never on a name, an index or an input size.
+    -- fastest AND ward's own time are both under it is reported and shown but
+    -- attributed to nobody. Both halves are needed: keying on the fastest alone
+    -- called `brtable` startup-dominated while ward spent 442 ms on it against
+    -- wart's 12 -- which is precisely the loss the row exists to show. This is a
+    -- resolution rule, not a per-module one: it keys on the measured time, never
+    -- on a name, an index or an input size.
     floor: i64 = to(i64)(std.script.getenv("FLOOR_MS", "40"))
     startup = 0
 
@@ -347,12 +350,18 @@ main(): i64
 
                     best = -1
                     bestr = "-"
+                    -- ward's own time, needed by the startup floor below and
+                    -- taken from the same pass that renders the cells
+                    wardms: i64 = floor
                     cells = ""
                     for _k, r in {"ward", "wart", "wasmtime", "wasmer", "wasm3", "iwasm"}
                         w = 9
                         if r == "wasmtime" w = 10 end
                         if okrt[r]
                             v = _min_of(t[r], n)
+                            if r == "ward"
+                                wardms = v
+                            end
                             cells = cells .. _lpad(to(str)(v), w)
                             if best < 0 or v < best
                                 best = v
@@ -373,7 +382,7 @@ main(): i64
                         end
                     end
                     rows += 1
-                    if best < floor
+                    if best < floor and wardms < floor
                         startup += 1
                         bestr = bestr .. " (startup)"
                     elseif bestr == "ward"
