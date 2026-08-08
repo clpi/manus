@@ -98,17 +98,20 @@ Options:
   -v, --verbose      show C compiler warnings
 ```
 
-> **Note — `duo init` / `duo build` do not work today (measured 2026-08-08).**
-> `duo init` writes one file, `src/main.duo`, and no `build.duo` (this section
-> used to claim both). The file it writes opens with `@build.project({…})`,
-> `@build.run({…})` and `@build.test({…})`, and the front end rejects every one
-> of them with `error: macro expansion error: UnknownMacro`. So a freshly
-> initialised project fails `duo check`, `duo build` and `duo run` — exit 1 on
-> all three — even though `duo init` itself exits 0 and prints
-> `next: duo build`. The inline project model in `src/build_framework.zig` has
-> unit-test coverage that drives the parser and sema directly, which is why the
-> break does not show up there. Compiling a file straight through
-> (`duo compile`, `duo run <file>`, `duo check <file>`) is unaffected.
+> **Note — `duo init` writes one file, and the loop works (re-measured
+> 2026-08-08, later the same day).** This note previously read "`duo init` /
+> `duo build` do not work today": the template `duo init` wrote opened with
+> `@build.project({…})` / `@build.run({…})` / `@build.test({…})`, which the
+> front end rejected as `error: macro expansion error: UnknownMacro`, so a
+> freshly initialised project failed `duo check`, `duo build` and `duo run`.
+> That was fixed in `00cb79e` and is now gated: `zig build init-build-smoke`
+> runs init → check → build → run → test on a clean directory on every CI run.
+> Verified again by hand for this release: in an empty directory `duo init`
+> exits 0, `duo check` prints `✓ checked — no errors`, `duo build` produces
+> `zig-out/bin/duo-app`, and `duo run` prints `hello from Duo` — all exit 0.
+>
+> Still true: `duo init` writes **only** `src/main.duo` and no `build.duo`
+> (this section used to claim both).
 
 ## WASM compilation
 
@@ -158,11 +161,16 @@ value, never by "it compiled"; positive-control every zero — are in `CLAUDE.md
 Every push runs:
 
 - `zig build` — compiler build
-- `zig build unit-test` — Zig unit tests. **Currently red**: measured
-  2026-08-08 on `canonical-to-relation`, 1244/1302 pass, 54 fail, 4 crash, 14
-  leaks. The failures cluster in `mono`, `sema`, `pass*_gate` and codegen
-  string lowering. This line previously read "all 393 unit tests", which was
-  wrong about both the count and the colour.
+- `zig build unit-test` — Zig unit tests. **Currently red**: re-measured
+  2026-08-08 at `ea04a35` in a clean detached worktree, **1286/1309 pass, 23
+  fail, 0 crash, 2 leaks** (the earlier reading of 1244/1302 with 54 fail and 4
+  crash was taken before that day's fixture repairs). The 23 cluster as: 7
+  codegen tests asserting an exact generated-C substring the emitter has moved
+  off, 7 in the `pass4`/`pass5` native-struct and foreign-C-header path, 5 in
+  the G-061 tier-1 combinator / `|>` surface, 2 in `dnir_lower` trailing
+  compound assignment, and 2 singletons. See `docs/RELEASE_STATUS.md`. This
+  line previously read "all 393 unit tests", which was wrong about both the
+  count and the colour.
 - `zig build test` — unit tests, compile-fail tests, and report-styling guard
 - `zig build agent-smoke` — tier-0 gate. **Green** as of the same measurement,
   and it is the gate to trust before pushing.
