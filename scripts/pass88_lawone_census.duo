@@ -1,0 +1,151 @@
+-- Pass 88 — LAW-ONE, measured.
+--
+-- The law: every binding names exactly one semantic concept; every boundary,
+-- axis, mode, stage or variant an identifier might encode is expressed
+-- STRUCTURALLY. Names are left with one job.
+--
+-- AMENDMENT (author, 2026-08-07): `_` prefix is OK for private. Pass 88 §1 as
+-- first written struck `_name` privacy in favour of namespace topology; that is
+-- retracted. The 44 `_`-prefixed bindings in lib/std are NOT violations, and
+-- this census carries no row against them. What remains of the pass: the `_`
+-- discard binder (§2), stage markers (§3), and the axis-compound purge (§4).
+--
+-- The pass divides sharply into two halves, and the census exists to keep them
+-- apart:
+--
+--   §4's PREDICATE half is a pure RENAME -- `is_digit` -> `digit` needs no
+--   compiler surface at all, so unlike Pass 86 it is actionable today. Except
+--   where it collides, which is the finding below.
+--
+--   §4's OPERAND-SELECTION half (`sort_by(.key)` -> `sort(.key)`, one name with
+--   operand-selected edges) needs a sequence surface that does not exist. The
+--   LV rows in spec_conformance already measure `map`/`filter`/`push`/`join` as
+--   missing; respelling a surface that is absent changes nothing.
+--
+-- A row is IMPLEMENTED only if the program compiles AND prints the expected
+-- value.
+
+-- Pinned floor: the MEASURED count, never an estimate.
+baseline(): i64
+    6
+end
+
+implemented = 0
+checked = 0
+report = ""
+
+-- See scripts/family_registry_census.duo for why this is not
+-- `std.script.duo_bin()` directly, and GAP-029 for why the temporary below is
+-- forced rather than chosen.
+_bin(): str
+    override = std.os.getenv("DUO_BIN")
+    if override != nil
+        if override != ""
+            return override
+        end
+    end
+    std.script.duo_bin()
+end
+
+_probe(src: str, want: str): bool
+    path = "/tmp/duo_p88.duo"
+    std.script.fs_write(path, src)
+    b = _bin()                                          -- GAP-029 (TMP-1 forced)
+    got = std.script.capture("{b} run {path} 2>/dev/null")
+    std.script.chomp(got) == want
+end
+
+_harness_live(): bool
+    _probe("main(): void\n    print(1 + 2)\nend\n", "3")
+end
+
+_record(id: str, src: str, want: str): void
+    checked = checked + 1
+    if _probe(src, want)
+        implemented = implemented + 1
+        report = "{report}  ok      {id}\n"
+    else
+        report = "{report}  MISSING {id}\n"
+    end
+end
+
+main(): i64
+    if _harness_live() == false
+        b = _bin()                                      -- GAP-029 (TMP-1 forced)
+        print("pass88: HARNESS BROKEN — control `print(1 + 2)` did not print 3.")
+        print("  Check that {b} exists from this cwd, or set DUO_BIN.")
+        return 2
+    end
+
+    -- §4 PREDICATES — the actionable half. A predicate named as a bare concept
+    -- noun must serve all four roles the law claims for it. Three of the four
+    -- need no new surface, which is why this half is a rename and not a wait.
+    _record("P88-1 bare predicate as guard", "digit(b: i64): bool\n    b >= 48 and b <= 57\nend\nmain(): void\n    if digit(53)\n        print(\"yes\")\n    end\nend\n", "yes")
+    _record("P88-2 bare predicate as value", "digit(b: i64): bool\n    b >= 48\nend\nmain(): void\n    p = digit\n    print(p != nil)\nend\n", "true")
+    _record("P88-3 predicate as refinement", "digit(b: i64): bool\n    b >= 48\nend\nbyte = i64 & digit\nmain(): void\n    print(byte != nil)\nend\n", "true")
+    _record("P88-4 predicate as filter operand", "digit(b: i64): bool\n    b >= 48\nend\nmain(): void\n    xs = { 49, 50 }\n    print(#xs:take(digit))\nend\n", "2")
+
+    -- §4 OPERAND SELECTION — one name, edge chosen by operand KIND. Every row
+    -- here needs the sequence surface, which GAP-014 records as absent.
+    _record("P88-5 sort() natural", "main(): void\n    xs = { 2, 1 }\n    print(xs:sort()[1])\nend\n", "1")
+    _record("P88-6 sort(.key) lens", "main(): void\n    xs = { { k = 2 }, { k = 1 } }\n    print(xs:sort(.k)[1].k)\nend\n", "1")
+    _record("P88-7 max(.score) lens", "main(): void\n    xs = { { s = 1 }, { s = 9 } }\n    print(xs:max(.s).s)\nend\n", "9")
+    _record("P88-8 take(5) count", "main(): void\n    xs = { 1, 2, 3 }\n    print(#xs:take(2))\nend\n", "2")
+    _record("P88-9 until(space)", "space(b: i64): bool\n    b == 32\nend\nmain(): void\n    xs = { 65, 32 }\n    print(#xs:until(space))\nend\n", "1")
+    _record("P88-10 group(.dept)", "main(): void\n    xs = { { d = 1 } }\n    print(#xs:group(.d))\nend\n", "1")
+    _record("P88-11 zip", "main(): void\n    a = { 1 }\n    print(#a:zip({ 2 }))\nend\n", "1")
+    _record("P88-12 iterate", "main(): void\n    print(iterate != nil)\nend\n", "true")
+
+    -- §2 DISCARDS — "binding a name to ignore it is the anti-pattern; not
+    -- binding it is the language." P88-13 asserts the LAW: the `_` binder must
+    -- be ABSENT. It currently reads MISSING, which means `_` is accepted as an
+    -- ordinary name -- there is nothing structural stopping the anti-pattern.
+    -- Rejection is asserted as EMPTY stdout: compile progress goes to stderr,
+    -- which the probe suppresses, so a refused program captures "". The
+    -- "ABSENT" sentinel spec_conformance uses can never read ok, which makes a
+    -- SATISFIED law display as MISSING -- wrong for a row whose whole point is
+    -- that the language already forbids something.
+    _record("P88-13 `_` binder rejected", "main(): void\n    _ = 5\n    print(\"live\")\nend\n", "")
+    _record("P88-14 selective destructure", "main(): void\n    user = { name = \"a\", age = 2 }\n    { name } = user\n    print(name)\nend\n", "a")
+
+    -- §3 STAGE — a check is stage-structural wherever it appears, so `check`
+    -- must be a binding rather than a filename convention.
+    _record("P88-15 check() is a binding", "main(): void\n    print(check != nil)\nend\n", "true")
+
+    -- THE COLLISION ROWS — the reason this pass cannot be applied wholesale.
+    -- 25 of 71 `is_*` bases in lib/std already name a top-level binding, and
+    -- lib/std/result.duo declares BOTH `ok(value)` and `is_ok(r)` -- constructor
+    -- and predicate, same file, same arity, both `any`. Dropping the prefix
+    -- redeclares the constructor.
+    --
+    -- P88-16 asserts the same-signature case is REJECTED, which it is: the
+    -- front end accepts both declarations as overloads and the CALL fails with
+    -- "ambiguous call to overloaded function". Loud, and correct.
+    --
+    -- P88-17 asserts distinct signatures DO resolve. They do not: the front end
+    -- accepts the overload and the C backend emits two functions of the same
+    -- name -- "conflicting types for 'ok'", "redefinition of 'ok__lua'". The
+    -- front end promises an overload the backend cannot deliver. Filed as
+    -- GAP-030; it is the row that decides whether the predicate rename has ANY
+    -- safe path, because typed overloads would have been that path.
+    _record("P88-16 same-sig dup rejected", "ok(v: i64): i64\n    v\nend\nok(r: i64): bool\n    r > 0\nend\nmain(): void\n    print(ok(5))\nend\n", "")
+    _record("P88-17 distinct-sig overload", "ok(v: i64): i64\n    v\nend\nok(r: str): i64\n    #r\nend\nmain(): void\n    print(ok(5))\nend\n", "5")
+
+    -- Controls.
+    _record("P88-C1 arithmetic control", "main(): void\n    print(1 + 2)\nend\n", "3")
+    _record("P88-C2 len control", "main(): void\n    print(#\"hello\")\nend\n", "5")
+
+    io.write(report)
+    floor = baseline()                                  -- GAP-029 (TMP-1 forced)
+    print("pass88: {implemented}/{checked} implemented (floor {floor})")
+
+    if implemented < floor
+        print("pass88: FAIL — a LAW-ONE form that used to work has regressed")
+        return 1
+    end
+    if implemented > floor
+        print("pass88: forms gained — RAISE baseline() to {implemented}")
+    end
+    print("pass88: PASS")
+    0
+end
