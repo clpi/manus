@@ -18,7 +18,7 @@
 
 -- Pinned floor: the MEASURED count, never an estimate.
 baseline(): i64
-    2
+    3
 end
 
 implemented = 0
@@ -75,6 +75,12 @@ main(): i64
     record("P94-5 to(i64) tolerates noise", "main(): void\n    print(to(i64)(\"42\\n\"))\nend\n", "42")
     record("P94-6 to(i64) plain", "main(): void\n    print(to(i64)(\"42\"))\nend\n", "42")
     record("P94-7 s:trim()", "main(): void\n    print(\"  a  \":trim())\nend\n", "a")
+    -- gap[038]: a miss on a SEALED descriptor must diagnose, not yield nil.
+    -- `s:trim()` and `s:bogusmethod()` both print nil today, so a §IX-listed
+    -- method and a typo are indistinguishable — and §IX's curated repairs
+    -- (`gsub → replace/rebuild`) can never fire, because there is no miss
+    -- detection to hang them on. This row asserts the REJECTION.
+    record("P94-12 sealed miss diagnoses", "main(): void\n    print((\"hi\"):bogusmethod())\nend\n", "")
 
     -- §1 CDR. The declared contract is the demand: a body whose last
     -- expression is a str, under a `: i64` contract, realizes AS i64 with one
