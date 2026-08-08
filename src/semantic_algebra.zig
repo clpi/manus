@@ -8,6 +8,7 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 const types = @import("types.zig");
+const directives = @import("directives.zig");
 
 // ── 13. Knowledge Lattice ───────────────────────────────────────────────────
 
@@ -240,12 +241,13 @@ pub fn collectDeriveTraitNames(
     for (attributes) |attr| {
         const key = effectAttrKey(attr.name);
         if (!std.mem.eql(u8, key, "derive")) continue;
-        const raw = attr.args orelse continue;
-        var it = std.mem.splitScalar(u8, raw, ',');
-        while (it.next()) |part| {
-            const trimmed = std.mem.trim(u8, part, " \t\"");
-            if (trimmed.len == 0) continue;
-            try names.append(alloc, try alloc.dupe(u8, trimmed));
+        // `@derive(Display, Eq)` and `@derive("Display", "Eq")` are one shape:
+        // a positional list. The shared tokenizer splits it, so a comma inside
+        // a quoted trait argument no longer severs the name.
+        var it = directives.attrArgs(attr.args);
+        while (it.next()) |arg| {
+            if (arg.text.len == 0) continue;
+            try names.append(alloc, try alloc.dupe(u8, arg.text));
         }
     }
     return names.toOwnedSlice(alloc);
@@ -445,6 +447,20 @@ fn effectAttrKey(name: []const u8) []const u8 {
     return s;
 }
 
+/// Does `@device(...)` name a GPU?
+///
+/// Two consumers used to answer this and they disagreed. `effectSetFromAttributes`
+/// compared the whole trimmed token against `"metal"`, which the corpus never
+/// writes — every real site spells it `@device(.metal)`, so the effect was a
+/// FALSE NEGATIVE at all 6 GPU call sites. `hardwareLoweringsFromAttributes`
+/// substring-searched for `"cuda"`, so `@device(cuda_helper)` was a FALSE
+/// POSITIVE. Both now read the one spelling table in `directives`.
+fn attrIsGpuDevice(args: ?[]const u8) bool {
+    const tag = directives.attrTag(args) orelse return false;
+    const target = directives.deviceFromTag(tag) orelse return false;
+    return directives.deviceIsGpu(target);
+}
+
 /// Infer callee effects from function/type attributes (`@pure`, `@noalloc`, device hints).
 pub fn effectSetFromAttributes(attrs: []const ast.Attribute) EffectSet {
     var set = EffectSet.empty();
@@ -454,18 +470,7 @@ pub fn effectSetFromAttributes(attrs: []const ast.Attribute) EffectSet {
         if (std.mem.eql(u8, key, "pure")) has_pure = true;
         if (std.mem.eql(u8, key, "noalloc")) set = set.add(.noalloc);
         if (std.mem.eql(u8, key, "device")) {
-            if (attr.args) |args| {
-                // Substring matching made `@device("cuda_helper")` and
-                // `@device(not_metal)` register as GPU targets. The argument is
-                // a single device NAME, so compare the whole trimmed token.
-                const dev = std.mem.trim(u8, args, " \t\r\n\"'");
-                if (std.mem.eql(u8, dev, "cuda") or
-                    std.mem.eql(u8, dev, "metal") or
-                    std.mem.eql(u8, dev, "webgpu"))
-                {
-                    set = set.add(.gpu);
-                }
-            }
+            if (attrIsGpuDevice(attr.args)) set = set.add(.gpu);
         }
         if (std.mem.eql(u8, key, "compile.thread")) set = set.add(.async_suspend);
         if (std.mem.eql(u8, key, "compile.only")) set = set.add(.build);
@@ -538,14 +543,7 @@ pub fn hardwareLoweringsFromAttributes(attrs: []const ast.Attribute) HardwareSet
             set = set.add(.simd);
         }
         if (std.mem.eql(u8, key, "device")) {
-            if (attr.args) |args| {
-                if (std.mem.indexOf(u8, args, "cuda") != null or
-                    std.mem.indexOf(u8, args, "metal") != null or
-                    std.mem.indexOf(u8, args, "webgpu") != null)
-                {
-                    set = set.add(.gpu);
-                }
-            }
+            if (attrIsGpuDevice(attr.args)) set = set.add(.gpu);
         }
     }
     return set;
@@ -675,7 +673,7 @@ pub const convergence_catalog: []const ConvergenceEntry = &.{
     .{
         .id = "knowledge_lattice",
         .legacy_mechanisms = &.{
-            "known type", "known value", "known shape", "StorageClass",
+            "known type",    "known value",        "known shape", "StorageClass",
             "comptime fold", "native_scalar_mode",
         },
         .unified_algebra = "KnowledgeLevel lattice (unknown→native)",
@@ -1148,6 +1146,47 @@ test "effectSetFromAttributes: pure and noalloc" {
     };
     const effects = effectSetFromAttributes(&attrs);
     try std.testing.expect(effects.contains(.pure));
+}
+
+test "device attribute: the corpus spelling reaches both consumers" {
+    // `@device(.metal)` is how every real site writes it. The effect set used
+    // to compare the whole token against "metal" and therefore never fired;
+    // the hardware set substring-matched and did. They must now agree.
+    const attrs = [_]ast.Attribute{.{ .name = "device", .args = ".metal" }};
+    try std.testing.expect(effectSetFromAttributes(&attrs).contains(.gpu));
+    try std.testing.expect(hardwareLoweringsFromAttributes(&attrs).bits & HardwareFacet.gpu.bit() != 0);
+}
+
+test "device attribute: a name that merely contains a device is not one" {
+    // `indexOf(args, "cuda")` made this a GPU function.
+    const attrs = [_]ast.Attribute{.{ .name = "device", .args = "cuda_helper" }};
+    try std.testing.expect(!effectSetFromAttributes(&attrs).contains(.gpu));
+    try std.testing.expect(hardwareLoweringsFromAttributes(&attrs).bits & HardwareFacet.gpu.bit() == 0);
+}
+
+test "device attribute: undotted and quoted spellings agree with dotted" {
+    inline for (.{ ".cuda", "cuda", "\"cuda\"" }) |spelling| {
+        const attrs = [_]ast.Attribute{.{ .name = "device", .args = spelling }};
+        try std.testing.expect(effectSetFromAttributes(&attrs).contains(.gpu));
+    }
+    // Positive control: a CPU device must not read as GPU through any of them.
+    const cpu = [_]ast.Attribute{.{ .name = "device", .args = ".cpu" }};
+    try std.testing.expect(!effectSetFromAttributes(&cpu).contains(.gpu));
+}
+
+test "collectDeriveTraitNames: quoted and bare lists give the same names" {
+    const alloc = std.testing.allocator;
+    inline for (.{ "Display, Eq", "\"Display\", \"Eq\"" }) |spelling| {
+        const attrs = [_]ast.Attribute{.{ .name = "derive", .args = spelling }};
+        const names = try collectDeriveTraitNames(&attrs, alloc);
+        defer {
+            for (names) |n| alloc.free(n);
+            alloc.free(names);
+        }
+        try std.testing.expectEqual(@as(usize, 2), names.len);
+        try std.testing.expectEqualStrings("Display", names[0]);
+        try std.testing.expectEqualStrings("Eq", names[1]);
+    }
 }
 
 test "callSiteFromShapeWithEffects: callee pure propagates" {

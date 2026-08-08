@@ -26,6 +26,7 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 const types = @import("types.zig");
+const directives = @import("directives.zig");
 const sema_mod = @import("sema.zig");
 
 const Allocator = std.mem.Allocator;
@@ -420,13 +421,11 @@ fn isClose(attrib: ?[]const u8) bool {
 fn hasArcFalse(attributes: []const ast.Attribute) bool {
     for (attributes) |attr| {
         if (std.mem.eql(u8, attr.name, "arc")) {
-            if (attr.args) |args| {
-                // `attr.args` is RAW SOURCE TEXT between the parens, so
-                // `@arc( false )` arrives as " false " and an exact compare
-                // silently answers "arc is enabled". Trim before deciding;
-                // quotes too, since `@arc("false")` is the same intent.
-                const t = std.mem.trim(u8, args, " \t\r\n\"'");
-                if (std.mem.eql(u8, t, "false")) return true;
+            // `attr.args` is RAW SOURCE TEXT between the parens, so an exact
+            // `mem.eql(args, "false")` read `@arc( false )` as "arc enabled".
+            // `attrFlag` is the shared reader; nothing here re-parses.
+            if (directives.attrFlag(attr.args)) |on| {
+                if (!on) return true;
             }
         }
     }

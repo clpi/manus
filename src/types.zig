@@ -1,5 +1,6 @@
 const std = @import("std");
 const ast = @import("ast.zig");
+const directives = @import("directives.zig");
 
 /// A single variant within an enum type.
 pub const EnumVariantType = struct {
@@ -73,16 +74,15 @@ pub fn layoutFromAttrs(base: ast.TypeExpr.Layout, attributes: []const ast.Attrib
         } else if (std.mem.eql(u8, attr.name, "align")) {
             if (attr.args) |args_str| {
                 layout.align_given = true;
-                layout.align_n = std.fmt.parseInt(usize, args_str, 10) catch null;
+                // `parseInt` on the untrimmed source text read `@align( 8 )`
+                // as garbage and CLEARED the alignment. `attrInt` trims first.
+                layout.align_n = directives.attrInt(usize, args_str);
             }
         } else if (std.mem.eql(u8, attr.name, "ffi")) {
-            if (attr.args) |args_str| {
-                if (args_str.len >= 2 and args_str[0] == '"' and args_str[args_str.len - 1] == '"') {
-                    layout.ffi = args_str[1 .. args_str.len - 1];
-                } else {
-                    layout.ffi = args_str;
-                }
-            }
+            // The foreign name is the FIRST positional. A hand-rolled
+            // whole-string quote test kept the rest of the signature in it:
+            // `@ffi("memcpy", void, {any})` yielded `"memcpy", void, {any}`.
+            if (directives.attrText(attr.args)) |name| layout.ffi = name;
         } else if (std.mem.eql(u8, attr.name, "sealed")) {
             layout.sealed = true;
             layout.storage = .sealed;
@@ -93,6 +93,29 @@ pub fn layoutFromAttrs(base: ast.TypeExpr.Layout, attributes: []const ast.Attrib
         }
     }
     return layout;
+}
+
+test "layoutFromAttrs: the ffi fact is the foreign NAME, not the argument list" {
+    // `@ffi("memcpy", void, {any, any, i64})` is the corpus shape. A whole-string
+    // quote test failed on it and stored the entire argument list as the name.
+    const attrs = [_]ast.Attribute{.{ .name = "ffi", .args = "\"memcpy\", void, {any, any, i64}" }};
+    const layout = layoutFromAttrs(.{}, &attrs);
+    try testing.expectEqualStrings("memcpy", layout.ffi.?);
+
+    // Bare and single-argument spellings resolve to the same fact.
+    const bare = [_]ast.Attribute{.{ .name = "ffi", .args = "\"llabs\"" }};
+    try testing.expectEqualStrings("llabs", layoutFromAttrs(.{}, &bare).ffi.?);
+}
+
+test "layoutFromAttrs: align survives spacing and declines garbage" {
+    try testing.expectEqual(@as(?usize, 16), layoutFromAttrs(.{}, &[_]ast.Attribute{
+        .{ .name = "align", .args = " 16 " },
+    }).align_n);
+    // `align_given` stays true so the fact reads as "asked for, unreadable"
+    // rather than "never asked" — the distinction `applyLayout` depends on.
+    const bad = layoutFromAttrs(.{}, &[_]ast.Attribute{.{ .name = "align", .args = "sixteen" }});
+    try testing.expect(bad.align_given);
+    try testing.expectEqual(@as(?usize, null), bad.align_n);
 }
 
 /// The single place layout facts land on a resolved table type. Both spellings

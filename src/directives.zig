@@ -104,9 +104,21 @@ pub fn unescapeCRawCode(alloc: std.mem.Allocator, raw: []const u8) ![]const u8 {
                 // Only unescape \\" -> " and \\\\ -> \\ — these are the Lua
                 // string escapes that interfere with C code emission.
                 // Leave \n, \t, \r, etc. as-is — they're valid C escapes.
-                '"' => { buf[j] = '"'; i += 2; j += 1; },
-                '\\' => { buf[j] = '\\'; i += 2; j += 1; },
-                else => { buf[j] = raw[i]; i += 1; j += 1; },
+                '"' => {
+                    buf[j] = '"';
+                    i += 2;
+                    j += 1;
+                },
+                '\\' => {
+                    buf[j] = '\\';
+                    i += 2;
+                    j += 1;
+                },
+                else => {
+                    buf[j] = raw[i];
+                    i += 1;
+                    j += 1;
+                },
             }
         } else {
             buf[j] = raw[i];
@@ -171,6 +183,139 @@ pub fn attrsWantBench(attrs: []const ast.Attribute) bool {
     return false;
 }
 
+// ── The one place attribute argument text is interpreted ─────────────────────
+//
+// `ast.Attribute.args` is RAW SOURCE TEXT between the parens. Six consumers
+// used to re-parse it and each guessed at a different syntax: `parseInt` on the
+// whole string, `mem.eql(args, "false")`, `indexOf(args, "cuda")`,
+// `indexOf(raw, ".metal")`. The guesses disagreed with each other and with the
+// corpus — see the migrated call sites for the four bugs that produced.
+//
+// One tokenizer answers all of it. `attrArgs` is the POSITIONAL view
+// (`@device(.metal)`, `@align(8)`, `@derive(Eq, Ord)`); `parseAttrArgs` is the
+// MAP view (`@build.exe{ name = "app" }`) and is itself built on the tokenizer.
+// Nothing outside this file may look at `attr.args` and decide what it means.
+
+/// One positional argument, split at a comma that is not inside quotes or
+/// brackets.
+pub const AttrArg = struct {
+    /// Trimmed, still carrying its quotes if the source wrote any.
+    raw: []const u8,
+    /// One layer of `"` / `'` quoting removed. A quoted argument is verbatim:
+    /// nothing inside the quotes is trimmed.
+    text: []const u8,
+    quoted: bool,
+
+    /// The enum-case spelling the corpus actually uses: `.metal` and `metal`
+    /// and `"metal"` all read as `metal`. Compare the WHOLE result — a
+    /// substring test here is what made `@device("cuda_helper")` a GPU target.
+    pub fn tag(self: AttrArg) []const u8 {
+        if (!self.quoted and self.text.len >= 2 and self.text[0] == '.') return self.text[1..];
+        return self.text;
+    }
+};
+
+pub const ArgIter = struct {
+    src: []const u8,
+    pos: usize = 0,
+
+    pub fn next(self: *ArgIter) ?AttrArg {
+        while (self.pos < self.src.len) {
+            const start = self.pos;
+            var i = start;
+            var depth: usize = 0;
+            var quote: u8 = 0;
+            while (i < self.src.len) {
+                const c = self.src[i];
+                if (quote != 0) {
+                    if (c == '\\' and i + 1 < self.src.len) {
+                        i += 2;
+                        continue;
+                    }
+                    if (c == quote) quote = 0;
+                    i += 1;
+                    continue;
+                }
+                if (c == ',' and depth == 0) break;
+                switch (c) {
+                    '"', '\'' => quote = c,
+                    '(', '[', '{' => depth += 1,
+                    ')', ']', '}' => {
+                        if (depth > 0) depth -= 1;
+                    },
+                    else => {},
+                }
+                i += 1;
+            }
+            const piece = self.src[start..i];
+            self.pos = if (i < self.src.len) i + 1 else self.src.len;
+            const arg = normalizeArg(piece);
+            if (arg.raw.len == 0) continue;
+            return arg;
+        }
+        return null;
+    }
+};
+
+fn normalizeArg(piece: []const u8) AttrArg {
+    const raw = std.mem.trim(u8, piece, " \t\r\n");
+    if (raw.len >= 2 and (raw[0] == '"' or raw[0] == '\'') and raw[raw.len - 1] == raw[0]) {
+        return .{ .raw = raw, .text = raw[1 .. raw.len - 1], .quoted = true };
+    }
+    return .{ .raw = raw, .text = raw, .quoted = false };
+}
+
+/// Iterate the positional arguments of an attribute argument list.
+pub fn attrArgs(raw: ?[]const u8) ArgIter {
+    return .{ .src = raw orelse "" };
+}
+
+/// Positional argument `index`, or null when the list is shorter.
+pub fn attrArg(raw: ?[]const u8, index: usize) ?AttrArg {
+    var it = attrArgs(raw);
+    var n: usize = 0;
+    while (it.next()) |arg| : (n += 1) {
+        if (n == index) return arg;
+    }
+    return null;
+}
+
+/// First positional argument as text, unquoted. `@ffi("memcpy", void, {any})`
+/// answers `memcpy`, not the whole argument list.
+pub fn attrText(raw: ?[]const u8) ?[]const u8 {
+    const arg = attrArg(raw, 0) orelse return null;
+    if (arg.text.len == 0) return null;
+    return arg.text;
+}
+
+/// First positional argument as an enum-case tag. See `AttrArg.tag`.
+pub fn attrTag(raw: ?[]const u8) ?[]const u8 {
+    const arg = attrArg(raw, 0) orelse return null;
+    const t = arg.tag();
+    if (t.len == 0) return null;
+    return t;
+}
+
+/// First positional argument as an integer. `@align( 8 )` answers 8; an
+/// exact-text `parseInt` on the untrimmed source answered null.
+pub fn attrInt(comptime T: type, raw: ?[]const u8) ?T {
+    const t = attrText(raw) orelse return null;
+    const body = std.mem.trim(u8, t, " \t\r\n()");
+    if (body.len == 0) return null;
+    return std.fmt.parseInt(T, body, 10) catch null;
+}
+
+/// First positional argument as a boolean. `@arc(false)`, `@arc( false )` and
+/// `@arc("false")` are one intent; anything else answers null rather than
+/// silently reading as `true`.
+pub fn attrFlag(raw: ?[]const u8) ?bool {
+    const t = attrText(raw) orelse return null;
+    const body = std.mem.trim(u8, t, " \t\r\n");
+    if (std.mem.eql(u8, body, "false")) return false;
+    if (std.mem.eql(u8, body, "true")) return true;
+    return null;
+}
+
 pub fn parseAttrArgs(alloc: std.mem.Allocator, raw: ?[]const u8) ParseError!ArgMap {
     var map: ArgMap = .{};
     errdefer map.deinit(alloc);
@@ -178,27 +323,30 @@ pub fn parseAttrArgs(alloc: std.mem.Allocator, raw: ?[]const u8) ParseError!ArgM
     const trimmed = std.mem.trim(u8, text, " \t\r\n");
     if (trimmed.len == 0) return map;
 
-    // Quoted string positional: @test("integration")
-    if (trimmed.len >= 2 and trimmed[0] == '"' and trimmed[trimmed.len - 1] == '"') {
-        const s = try alloc.dupe(u8, trimmed[1 .. trimmed.len - 1]);
-        try map.entries.put(alloc, "name", s);
+    // Table literal: { name = "app", src = "main.duo", iterations = 1000 }
+    if (std.mem.startsWith(u8, trimmed, "{") and std.mem.endsWith(u8, trimmed, "}")) {
+        try parseKvArgs(alloc, trimmed[1 .. trimmed.len - 1], &map);
         return map;
     }
 
-    // Table literal: { name = "app", src = "main.duo", iterations = 1000 }
-    if (std.mem.startsWith(u8, trimmed, "{") and std.mem.endsWith(u8, trimmed, "}")) {
-        try parseTableArgs(alloc, trimmed[1 .. trimmed.len - 1], &map);
+    const first = attrArg(trimmed, 0) orelse return map;
+
+    // Quoted string positional: @test("integration")
+    if (first.quoted) {
+        const key = try alloc.dupe(u8, "name");
+        const s = try alloc.dupe(u8, first.text);
+        try map.entries.put(alloc, key, s);
         return map;
     }
 
     // key=value pairs: iterations=1000, warmup=10
-    if (std.mem.indexOfScalar(u8, trimmed, '=') != null) {
+    if (topLevelEq(first.raw) != null) {
         try parseKvArgs(alloc, trimmed, &map);
         return map;
     }
 
     // Bare integer positional (iterations)
-    if (std.fmt.parseInt(u32, trimmed, 10)) |n| {
+    if (std.fmt.parseInt(u32, first.text, 10)) |n| {
         const key = try alloc.dupe(u8, "iterations");
         const val = try std.fmt.allocPrint(alloc, "{d}", .{n});
         try map.entries.put(alloc, key, val);
@@ -207,33 +355,47 @@ pub fn parseAttrArgs(alloc: std.mem.Allocator, raw: ?[]const u8) ParseError!ArgM
 
     // Bare identifier positional (tag/name)
     const key = try alloc.dupe(u8, "name");
-    const val = try alloc.dupe(u8, trimmed);
+    const val = try alloc.dupe(u8, first.text);
     try map.entries.put(alloc, key, val);
     return map;
 }
 
-fn parseKvArgs(alloc: std.mem.Allocator, text: []const u8, map: *ArgMap) ParseError!void {
-    var parts = std.mem.splitScalar(u8, text, ',');
-    while (parts.next()) |part| {
-        const piece = std.mem.trim(u8, part, " \t\r\n");
-        if (piece.len == 0) continue;
-        const eq = std.mem.indexOfScalar(u8, piece, '=') orelse continue;
-        const key = std.mem.trim(u8, piece[0..eq], " \t");
-        const val_raw = std.mem.trim(u8, piece[eq + 1 ..], " \t");
-        const val = try unquote(alloc, val_raw);
-        const key_dup = try alloc.dupe(u8, key);
-        try map.entries.put(alloc, key_dup, val);
+/// Index of an `=` that is not inside quotes or brackets.
+fn topLevelEq(piece: []const u8) ?usize {
+    var i: usize = 0;
+    var depth: usize = 0;
+    var quote: u8 = 0;
+    while (i < piece.len) {
+        const c = piece[i];
+        if (quote != 0) {
+            if (c == '\\' and i + 1 < piece.len) {
+                i += 2;
+                continue;
+            }
+            if (c == quote) quote = 0;
+            i += 1;
+            continue;
+        }
+        switch (c) {
+            '"', '\'' => quote = c,
+            '(', '[', '{' => depth += 1,
+            ')', ']', '}' => {
+                if (depth > 0) depth -= 1;
+            },
+            '=' => if (depth == 0) return i,
+            else => {},
+        }
+        i += 1;
     }
+    return null;
 }
 
-fn parseTableArgs(alloc: std.mem.Allocator, body: []const u8, map: *ArgMap) ParseError!void {
-    var parts = std.mem.splitScalar(u8, body, ',');
-    while (parts.next()) |part| {
-        const piece = std.mem.trim(u8, part, " \t\r\n");
-        if (piece.len == 0) continue;
-        const eq = std.mem.indexOfScalar(u8, piece, '=') orelse continue;
-        const key = std.mem.trim(u8, piece[0..eq], " \t");
-        const val_raw = std.mem.trim(u8, piece[eq + 1 ..], " \t");
+fn parseKvArgs(alloc: std.mem.Allocator, text: []const u8, map: *ArgMap) ParseError!void {
+    var it = attrArgs(text);
+    while (it.next()) |arg| {
+        const eq = topLevelEq(arg.raw) orelse continue;
+        const key = std.mem.trim(u8, arg.raw[0..eq], " \t");
+        const val_raw = std.mem.trim(u8, arg.raw[eq + 1 ..], " \t");
         const val = try unquote(alloc, val_raw);
         const key_dup = try alloc.dupe(u8, key);
         try map.entries.put(alloc, key_dup, val);
@@ -241,14 +403,7 @@ fn parseTableArgs(alloc: std.mem.Allocator, body: []const u8, map: *ArgMap) Pars
 }
 
 fn unquote(alloc: std.mem.Allocator, raw: []const u8) ParseError![]const u8 {
-    const trimmed = std.mem.trim(u8, raw, " \t");
-    if (trimmed.len >= 2 and trimmed[0] == '"' and trimmed[trimmed.len - 1] == '"') {
-        return try alloc.dupe(u8, trimmed[1 .. trimmed.len - 1]);
-    }
-    if (trimmed.len >= 2 and trimmed[0] == '\'' and trimmed[trimmed.len - 1] == '\'') {
-        return try alloc.dupe(u8, trimmed[1 .. trimmed.len - 1]);
-    }
-    return try alloc.dupe(u8, trimmed);
+    return try alloc.dupe(u8, normalizeArg(raw).text);
 }
 
 pub fn parseTestOptions(alloc: std.mem.Allocator, attrs: []const ast.Attribute) ParseError!TestOptions {
@@ -308,24 +463,39 @@ pub fn parseTestOptions(alloc: std.mem.Allocator, attrs: []const ast.Attribute) 
     return opts;
 }
 
-/// Parse `@device(.auto)` / `@device(.metal)` argument string.
+/// `@device(.auto)` / `@device(.metal)` / `@device(cpu)` — one enum case.
+/// This used to substring-search the raw text for `".metal"`, which made
+/// `@device(x.metal.helper)` a Metal target. `attrTag` compares the whole
+/// argument, and `deviceFromTag` is the single spelling table both this and
+/// `semantic_algebra` read.
 pub fn parseDeviceTarget(args: ?[]const u8) ast.DeviceTarget {
-    const raw = std.mem.trim(u8, args orelse "", " \t\r\n");
-    if (raw.len == 0) return .auto;
-    if (std.mem.indexOf(u8, raw, ".metal") != null) return .metal;
-    if (std.mem.indexOf(u8, raw, ".cuda") != null) return .cuda;
-    if (std.mem.indexOf(u8, raw, ".webgpu") != null) return .webgpu;
-    if (std.mem.indexOf(u8, raw, ".wasm") != null) return .wasm;
-    if (std.mem.indexOf(u8, raw, ".tpu") != null) return .tpu;
-    if (std.mem.indexOf(u8, raw, ".cpu") != null) return .cpu;
-    if (std.mem.indexOf(u8, raw, ".auto") != null) return .auto;
-    return .auto;
+    return deviceFromTag(attrTag(args) orelse return .auto) orelse .auto;
+}
+
+/// The device spelling table. Null means "not a device this compiler knows",
+/// which is what `@device("cuda_helper")` must answer.
+pub fn deviceFromTag(tag: []const u8) ?ast.DeviceTarget {
+    if (std.mem.eql(u8, tag, "metal")) return .metal;
+    if (std.mem.eql(u8, tag, "cuda")) return .cuda;
+    if (std.mem.eql(u8, tag, "webgpu")) return .webgpu;
+    if (std.mem.eql(u8, tag, "wasm")) return .wasm;
+    if (std.mem.eql(u8, tag, "tpu")) return .tpu;
+    if (std.mem.eql(u8, tag, "cpu")) return .cpu;
+    if (std.mem.eql(u8, tag, "auto")) return .auto;
+    return null;
+}
+
+/// True when the device runs the body on a GPU. One answer, so the effect set
+/// and the hardware set cannot disagree the way they did.
+pub fn deviceIsGpu(target: ast.DeviceTarget) bool {
+    return switch (target) {
+        .metal, .cuda, .webgpu => true,
+        .none, .cpu, .auto, .wasm, .tpu => false,
+    };
 }
 
 pub fn parseUnrollCount(args: ?[]const u8) ?u32 {
-    const raw = std.mem.trim(u8, args orelse "", " \t\r\n()");
-    if (raw.len == 0) return null;
-    return std.fmt.parseInt(u32, raw, 10) catch null;
+    return attrInt(u32, args);
 }
 
 /// Apply ML-related function attributes from `@device`, `@autodiff`, etc.
@@ -439,6 +609,45 @@ test "directives: parse table args" {
     defer map.deinit(alloc);
     try std.testing.expectEqualStrings("app", map.get("name").?);
     try std.testing.expectEqualStrings("42", map.get("iterations").?);
+}
+
+test "directives: positional split respects quotes and brackets" {
+    var it = attrArgs("\"duo_read\", i64, {i64, str, i64}");
+    const a = it.next().?;
+    try std.testing.expectEqualStrings("duo_read", a.text);
+    try std.testing.expect(a.quoted);
+    try std.testing.expectEqualStrings("i64", it.next().?.text);
+    try std.testing.expectEqualStrings("{i64, str, i64}", it.next().?.text);
+    try std.testing.expect(it.next() == null);
+}
+
+test "directives: attrTag reads every device spelling the corpus writes" {
+    try std.testing.expectEqualStrings("metal", attrTag(".metal").?);
+    try std.testing.expectEqualStrings("cpu", attrTag("cpu").?);
+    try std.testing.expectEqualStrings("auto", attrTag("\"auto\"").?);
+    // Positive control: a longer name is NOT the device it contains.
+    try std.testing.expect(deviceFromTag(attrTag("cuda_helper").?) == null);
+    try std.testing.expectEqual(ast.DeviceTarget.cuda, deviceFromTag(attrTag(".cuda").?).?);
+}
+
+test "directives: attrInt and attrFlag ignore surrounding noise" {
+    try std.testing.expectEqual(@as(usize, 8), attrInt(usize, " 8 ").?);
+    try std.testing.expectEqual(@as(u32, 4), parseUnrollCount("(4)").?);
+    try std.testing.expect(attrInt(u32, "nope") == null);
+    try std.testing.expectEqual(false, attrFlag(" false ").?);
+    try std.testing.expectEqual(false, attrFlag("\"false\"").?);
+    try std.testing.expectEqual(true, attrFlag("true").?);
+    // Neither true nor false: answer null rather than defaulting to on.
+    try std.testing.expect(attrFlag("maybe") == null);
+    try std.testing.expect(attrFlag(null) == null);
+}
+
+test "directives: a comma inside a value no longer splits the map" {
+    const alloc = std.testing.allocator;
+    var map = try parseAttrArgs(alloc, "{ name = \"a, b\", iterations = 3 }");
+    defer map.deinit(alloc);
+    try std.testing.expectEqualStrings("a, b", map.get("name").?);
+    try std.testing.expectEqual(@as(u32, 3), map.getU32("iterations", 0));
 }
 
 test "directives: dotted test names" {
