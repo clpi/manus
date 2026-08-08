@@ -32,7 +32,7 @@ pub const entries: []const Entry = &.{
     .{ .id = "RL-04", .host_path = "src/parser.zig", .subsystem_id = "SH-04", .duo_replacement = null, .eligibility = .after_m2, .removal_gate = "Duo-native parser kernel + syntax graph" },
     .{ .id = "RL-05", .host_path = "src/codegen.zig (canonical path)", .subsystem_id = "SH-10", .duo_replacement = null, .eligibility = .after_m3, .removal_gate = "Duo-native backend on one target" },
     .{ .id = "RL-06", .host_path = "build.zig orchestration", .subsystem_id = "SH-14", .duo_replacement = null, .eligibility = .after_bootstrap_closure, .removal_gate = "S2 is canonical compiler" },
-    .{ .id = "RL-14", .host_path = "scripts/run_benchmark.sh", .subsystem_id = "FC-D", .duo_replacement = "scripts/run_benchmark.duo", .eligibility = .after_m1, .removal_gate = "bench suite via duo run; bash fallback deleted" },
+    .{ .id = "RL-14", .host_path = "scripts/run_benchmark.sh", .subsystem_id = "FC-D", .duo_replacement = "scripts/run_benchmark.duo", .eligibility = .after_m1, .removal_gate = "bench suite via duo run; bash fallback deleted -- HALF MET (measured 2026-08-07): scripts/run_benchmark.duo EXISTS (308 lines vs the shell 335) but is wired NOWHERE; build.zig:103 still runs `bash scripts/run_benchmark.sh`. Finishing is one line plus one verification run, not a port" },
 };
 
 pub fn writeLedgerJson(w: *std.Io.Writer) !void {
