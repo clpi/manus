@@ -181,8 +181,42 @@ fn collectReqBindingsFromBlock(
         }
         const a = alias orelse continue;
         const v = val orelse continue;
-        const path = reqPathFromExpr(v) orelse continue;
+        // A module is bound two ways, and only one was recognised here.
+        // `Token = req "std.compiler.token"` is a CALL; the ambient
+        // `Token = std.compiler.token` is a dotted NAME, and it was invisible.
+        // So `Token.KIND_FUN` had no module to fold from and reached the
+        // backend as a record field access, dying on a stack slot that never
+        // existed. The consumer side already worked — `lowerField` consults
+        // `ctx.req.constant` — so this collector was the whole gap.
+        var ambient = false;
+        const path = reqPathFromExpr(v) orelse blk: {
+            const p = ambientModulePath(alloc, v) orelse continue;
+            ambient = true;
+            break :blk p;
+        };
         const mod_cname = try duo_module_names.moduleCName(alloc, path);
+        // For the ambient spelling, require that the path actually names a
+        // module FILE. `p.x` on a record local is also a dotted name, and
+        // without this it would be recorded as a module binding — quietly
+        // shadowing a real field access. The `req` spelling keeps its old
+        // behaviour: it is an explicit declaration of intent, so a missing
+        // file there stays a link-time error rather than a silent skip.
+        if (ambient) {
+            var probe = try loadModuleMeta(alloc, path, mod_cname);
+            if (probe.source_path == null) {
+                probe.deinit(alloc);
+                alloc.free(mod_cname);
+                continue;
+            }
+            const owned_alias = try alloc.dupe(u8, a);
+            try ctx.bindings.put(alloc, owned_alias, mod_cname);
+            if (ctx.modules.contains(mod_cname)) {
+                probe.deinit(alloc);
+                continue;
+            }
+            try ctx.modules.put(alloc, try alloc.dupe(u8, mod_cname), probe);
+            continue;
+        }
         const owned_alias = try alloc.dupe(u8, a);
         try ctx.bindings.put(alloc, owned_alias, mod_cname);
         if (ctx.modules.contains(mod_cname)) continue;
@@ -273,6 +307,20 @@ fn reqPathFromExpr(expr: *const ast.Expr) ?[]const u8 {
         .string_lit => |s| s.val,
         else => null,
     };
+}
+
+/// `Token = std.compiler.token` — a module named by a bare dotted path rather
+/// than by `req`. Requires at least one dot, so a plain `X = Y` alias cannot
+/// pass as a module path. The caller still checks that the path resolves to a
+/// real file before trusting it.
+fn ambientModulePath(alloc: std.mem.Allocator, e: *const ast.Expr) ?[]const u8 {
+    if (e.* != .field) return null;
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(alloc);
+    const ok = dottedPath(alloc, e, &buf) catch return null;
+    if (!ok) return null;
+    if (std.mem.indexOfScalar(u8, buf.items, '.') == null) return null;
+    return alloc.dupe(u8, buf.items) catch null;
 }
 
 fn loadModuleMeta(alloc: std.mem.Allocator, req_path: []const u8, mod_cname: []const u8) !ModuleMeta {
