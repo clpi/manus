@@ -62,6 +62,26 @@ pub var refusal_site: std.builtin.SourceLocation = .{
 
 fn refuse(src: std.builtin.SourceLocation) Error {
     refusal_site = src;
+    refusal_note_len = 0;
+    return error.UnsupportedProgram;
+}
+
+/// What the refusal was looking at. Same reasoning as dnir_lower's bailNote:
+/// a source location says where the emitter stopped, never what it could not
+/// emit, and for a switch over opcodes the opcode IS the finding.
+var refusal_note_buf: [64]u8 = undefined;
+var refusal_note_len: usize = 0;
+
+pub fn refusalNote() ?[]const u8 {
+    if (refusal_note_len == 0) return null;
+    return refusal_note_buf[0..refusal_note_len];
+}
+
+fn refuseWith(src: std.builtin.SourceLocation, note: []const u8) Error {
+    refusal_site = src;
+    const n = @min(note.len, refusal_note_buf.len);
+    @memcpy(refusal_note_buf[0..n], note[0..n]);
+    refusal_note_len = n;
     return error.UnsupportedProgram;
 }
 
@@ -1321,7 +1341,7 @@ const Arm64Compiler = struct {
                     }
                 }
             },
-            .binop => {
+            .binop => blk: {
                 if (ins.ty == .f64) {
                     const ast_op = dnirBinOpToAst(ins.binop);
                     if (!isComparison(ast_op)) return refuse(@src());
@@ -1332,6 +1352,31 @@ const Arm64Compiler = struct {
                     try self.emitCsetFp(dst, conditionForComparison(ast_op));
                     if (ins.result) |t| try temps.put(self.alloc, t, dst);
                 } else if (self.cur_func_float) {
+                    // A COMPARISON here answers with a boolean, not a double,
+                    // so it belongs in a GP register via fcmp+cset — exactly
+                    // what the `ins.ty == .f64` branch above already does. That
+                    // branch is only selected when the instruction is TYPED
+                    // f64, and an integer-valued comparison over float operands
+                    // is not, so `zx*zx + zy*zy < 4.0` inside a float kernel
+                    // reached this arm, which emits only arithmetic, and was
+                    // refused with `lt`.
+                    //
+                    // Putting a GP index into `temps` inside a float function
+                    // looks like a register-space confusion and is not: the
+                    // branch above does the same thing for the same reason, and
+                    // a comparison's consumer reads an integer.
+                    const cmp_op = dnirBinOpToAst(ins.binop);
+                    if (isComparison(cmp_op)) {
+                        const clhs = try self.evalDnirValueFp(temps, ins.lhs);
+                        const crhs = try self.evalDnirValueFp(temps, ins.rhs);
+                        const cdst = try self.allocReg();
+                        try self.emitFcmpReg(clhs, crhs);
+                        try self.emitCsetFp(cdst, conditionForComparison(cmp_op));
+                        self.releaseFpReg(clhs);
+                        self.releaseFpReg(crhs);
+                        if (ins.result) |t| try temps.put(self.alloc, t, cdst);
+                        break :blk;
+                    }
                     const lhs = try self.evalDnirValueFp(temps, ins.lhs);
                     const rhs = try self.evalDnirValueFp(temps, ins.rhs);
                     const dst = try self.allocFpReg();
@@ -1340,7 +1385,7 @@ const Arm64Compiler = struct {
                         .sub => try self.emitFsubReg(dst, lhs, rhs),
                         .mul => try self.emitFmulReg(dst, lhs, rhs),
                         .div => try self.emitFdivReg(dst, lhs, rhs),
-                        else => return refuse(@src()),
+                        else => return refuseWith(@src(), @tagName(ins.binop)),
                     }
                     if (lhs != dst) self.releaseFpReg(lhs);
                     if (rhs != dst) self.releaseFpReg(rhs);

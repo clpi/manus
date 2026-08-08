@@ -3219,7 +3219,11 @@ fn reportDirectBackendError(io: Io, err: anyerror, target: []const u8, trace: ?*
             // refused it. Reported last because it is the only one reachable
             // once both earlier gates have passed.
             const rs = native_backend.refusal_site;
-            term.hint("bail site: {s}() at native_backend.zig:{d}", .{ rs.fn_name, rs.line });
+            if (native_backend.refusalNote()) |n| {
+                term.hint("bail site: {s}() at native_backend.zig:{d} — {s}", .{ rs.fn_name, rs.line, n });
+            } else {
+                term.hint("bail site: {s}() at native_backend.zig:{d}", .{ rs.fn_name, rs.line });
+            }
         }
     }
     if (std.c.getenv("DUO_DNIR_TRACE") != null) {
