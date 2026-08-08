@@ -79,6 +79,12 @@ pub const Parser = struct {
     duo_mode: bool = false,
     /// Nesting inside function bodies; bare `name()` func decls are module-scope only.
     func_body_depth: u32 = 0,
+    /// GAP-16 — nesting inside a `@`-directive argument list, where a string
+    /// literal is DATA handed to the compiler rather than runtime source text.
+    /// `@comp.interpolate("int64_t {name}()...")` owns those braces itself; if
+    /// STR-1 claims them first the template is rewritten into a `..` chain over
+    /// undeclared locals and the directive never sees a literal to fold.
+    directive_arg_depth: u32 = 0,
 
     deferred_hint_attrs: std.ArrayList(ast.Attribute) = .empty,
 
@@ -3737,7 +3743,7 @@ pub const Parser = struct {
 
     /// Pass 23 §9 — `{ident}` in string literals desugar to `..` concat at parse time (duo_mode).
     fn desugar_string_interpolation(self: *Parser, loc: ast.Loc, s: []const u8) ParseError!*ast.Expr {
-        if (!self.duo_mode or std.mem.indexOfScalar(u8, s, '{') == null) {
+        if (self.directive_arg_depth > 0 or !self.duo_mode or std.mem.indexOfScalar(u8, s, '{') == null) {
             return self.new_expr(.{ .string_lit = .{ .loc = loc, .val = s } });
         }
         var parts: std.ArrayList(*ast.Expr) = .empty;
@@ -4131,6 +4137,11 @@ pub const Parser = struct {
 
         _ = try self.expect(.lparen);
         var args: std.ArrayList(*ast.Expr) = .empty;
+        // A `@`-directive's arguments are compile-time data, so `{...}` inside
+        // them belongs to the directive, not to STR-1 interpolation. See
+        // `directive_arg_depth`.
+        self.directive_arg_depth += 1;
+        defer self.directive_arg_depth -= 1;
         if (!(try self.check(.rparen))) {
             try args.append(self.alloc, try self.parse_expr());
             while (try self.eat(.comma) != null) {

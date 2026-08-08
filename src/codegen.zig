@@ -3088,8 +3088,32 @@ pub const CodeGen = struct {
         // requiring it of every function knocked `lexer.duo --lib` off the native
         // path entirely (1761 lines / 0 lua_Value became 8332 / 1066).
         if (moduleHasReturnPack(mod)) return false;
+        if (self.moduleHasBoxedFuncSignature(mod)) return false;
         if (!self.req_deps_are_native_direct(mod)) return false;
         return self.module_top_level_is_native(mod);
+    }
+
+    /// Substrate-native emits no lua runtime at all, so no function SIGNATURE in
+    /// the module may mention `lua_Value`. A parameter or return typed `any`
+    /// lowers to exactly that, and the prototype is emitted for every top-level
+    /// function whether or not it is reached — so a module with a typed native
+    /// `main` beside a `g(f: any): str` helper claimed substrate-native and then
+    /// emitted `static inline const char* g(lua_Value f);` against a runtime it
+    /// had just decided not to declare: "unknown type name 'lua_Value'".
+    ///
+    /// This is deliberately a signature check and nothing more. Requiring
+    /// `native_scalar_funcs` membership would also inspect bodies, which is the
+    /// much broader predicate the comment above rejects.
+    fn moduleHasBoxedFuncSignature(self: *CodeGen, mod: *const ast.Module) bool {
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .func_decl) continue;
+            const fd = &stmt.func_decl;
+            if (fd.func.ret_type != .inferred and !self.type_expr_is_native_scalar(fd.func.ret_type)) return true;
+            for (fd.func.params) |param| {
+                if (!self.type_expr_is_native_scalar(param.typ)) return true;
+            }
+        }
+        return false;
     }
 
     /// Transitive req targets are native-direct embeddable modules (lua_require not required).
@@ -4880,6 +4904,27 @@ pub const CodeGen = struct {
         self.p("    memcpy(out, a, la); memcpy(out + la, b, lb); out[la + lb] = '\\0';\n", .{});
         self.p("    return out;\n", .{});
         self.p("}}\n", .{});
+        // duo_str_from_* — native display conversion. The boxed backend renders a
+        // value with `lua_to_str`, which a full-native module does not have; these
+        // reproduce its exact formats ("%lld", "%.17g", "true"/"false") so the two
+        // backends print the same text for the same value.
+        self.p("static inline char* duo_str_from_i64(int64_t v) {{\n", .{});
+        self.p("    char b[32];\n", .{});
+        self.p("    int n = snprintf(b, sizeof(b), \"%lld\", (long long)v);\n", .{});
+        self.p("    char* out = (char*)malloc((size_t)n + 1);\n", .{});
+        self.p("    if (!out) return (char*)\"\";\n", .{});
+        self.p("    memcpy(out, b, (size_t)n + 1);\n", .{});
+        self.p("    return out;\n", .{});
+        self.p("}}\n", .{});
+        self.p("static inline char* duo_str_from_f64(double v) {{\n", .{});
+        self.p("    char b[48];\n", .{});
+        self.p("    int n = snprintf(b, sizeof(b), \"%.17g\", v);\n", .{});
+        self.p("    char* out = (char*)malloc((size_t)n + 1);\n", .{});
+        self.p("    if (!out) return (char*)\"\";\n", .{});
+        self.p("    memcpy(out, b, (size_t)n + 1);\n", .{});
+        self.p("    return out;\n", .{});
+        self.p("}}\n", .{});
+        self.p("static inline char* duo_str_from_bool(int v) {{ return (char*)(v ? \"true\" : \"false\"); }}\n", .{});
         // duo_str_rep — native string repetition (replaces lua_str_rep in native_scalar_mode)
         self.p("static inline char* duo_str_rep(const char* s, int64_t n) {{\n", .{});
         self.p("    if (n <= 0) {{ char* e = (char*)malloc(1); if (e) e[0] = '\\0'; return e; }}\n", .{});
@@ -4934,7 +4979,10 @@ pub const CodeGen = struct {
         self.p("    res[len] = '\\0'; return res;\n", .{});
         self.p("}}\n", .{});
         self.p("static inline __attribute__((noreturn)) void duo_fatal(const char* msg) {{\n", .{});
-        self.p("    fprintf(stderr, \"%%s\\n\", msg);\n", .{});
+        // `self.p` is std.fmt, which does not treat `%` specially, so the old
+        // `%%s` reached C as a literal `%%s`: duo_fatal printed "%s" and threw
+        // the message away. One `%` is what C needs here.
+        self.p("    fprintf(stderr, \"%s\\n\", msg);\n", .{});
         self.p("    abort();\n", .{});
         self.p("}}\n", .{});
         if (self.native_scalar_needs_int_floor_helpers(mod)) {
@@ -10649,6 +10697,23 @@ pub const CodeGen = struct {
                                     const module_scope = self.current_module_cname.len > 0 and
                                         self.current_func_name == null;
                                     if (module_scope) continue;
+                                    // …and the main translation unit has the same
+                                    // hole when it carries no lua runtime. The
+                                    // globals loop in `emit_module` already skips
+                                    // storage for an `.any` req binding under
+                                    // `!tu_needs_lua_runtime` (a no-lua TU cannot
+                                    // spell `lua_Value`, and a native-direct req
+                                    // resolves to C symbols). The initializer was
+                                    // not skipped with it, so the driver emitted
+                                    // `duo_g_WardOps = lua_require("…")` — an
+                                    // undeclared global assigned from an undeclared
+                                    // function, for a binding nothing reads. Mirror
+                                    // the declaration's condition exactly.
+                                    if (!self.tu_needs_lua_runtime) {
+                                        if (self.global_type(name)) |gt| {
+                                            if (gt == .any) continue;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -12681,6 +12746,37 @@ pub const CodeGen = struct {
         return self.expr_type(expr) == .str and !self.expr_emits_lua_value(expr);
     }
 
+    /// Render a native scalar as a C string, for the contexts where the boxed
+    /// backend would have called `lua_to_str`.
+    ///
+    /// A full-native module has no `lua_Value` and no `lua_*` runtime, so the
+    /// display conversion has to be spelled in plain C. Emitting the boxed call
+    /// anyway is the declaration/use asymmetry that produced
+    /// "call to undeclared function 'lua_to_str'" and then, because C treats an
+    /// implicit declaration as returning `int`, a second `-Wint-conversion`
+    /// error when the result was handed to `duo_str_concat`. The formats below
+    /// mirror `lua_to_str` exactly so both backends print the same text.
+    fn emit_native_display_cstr(self: *CodeGen, expr: *const ast.Expr) E!void {
+        const t = self.expr_type(expr);
+        if (t == .str) {
+            try self.emit_expr(expr);
+        } else if (t == .bool) {
+            self.p("duo_str_from_bool(", .{});
+            try self.emit_expr(expr);
+            self.p(")", .{});
+        } else if (t.is_float()) {
+            self.p("duo_str_from_f64((double)(", .{});
+            try self.emit_expr(expr);
+            self.p("))", .{});
+        } else if (t.is_integer()) {
+            self.p("duo_str_from_i64((int64_t)(", .{});
+            try self.emit_expr(expr);
+            self.p("))", .{});
+        } else {
+            try self.emit_expr(expr);
+        }
+    }
+
     fn emit_native_str_concat_left_fold(self: *CodeGen, parts: []const *const ast.Expr, count: usize) E!void {
         if (count == 1) {
             try self.emit_expr(parts[0]);
@@ -14645,10 +14741,14 @@ pub const CodeGen = struct {
                     if (try self.try_emit_native_str_concat(expr)) {
                         return;
                     } else if (!self.moduleNeedsLuaRuntime()) {
+                        // Both operands must reach `duo_str_concat` as `char*`.
+                        // Emitting them raw passed an int64_t where a
+                        // `const char*` was expected, so `"n = " .. n` on a
+                        // typed integer was a -Wint-conversion error.
                         self.p("duo_str_concat(", .{});
-                        try self.emit_expr(b.lhs);
+                        try self.emit_native_display_cstr(b.lhs);
                         self.p(", ", .{});
-                        try self.emit_expr(b.rhs);
+                        try self.emit_native_display_cstr(b.rhs);
                         self.p(")", .{});
                     } else {
                         self.p("lua_concat(", .{});
@@ -17887,6 +17987,17 @@ pub const CodeGen = struct {
                     }
                 }
             }
+            // `tostring` / `to(str)` in a full-native module: there is no
+            // `lua_Value` to box into and no `tostring`/`lua_to_str` declared,
+            // so emit the plain-C conversion instead of a call that cannot link.
+            if (!self.moduleNeedsLuaRuntime()) {
+                if (args.len > 0) {
+                    try self.emit_native_display_cstr(args[0]);
+                } else {
+                    self.p("\"nil\"", .{});
+                }
+                return true;
+            }
             const want_cstr = result_rt == .str;
             if (want_cstr) self.p("lua_to_str(", .{});
             self.p("tostring(", .{});
@@ -20559,7 +20670,17 @@ pub const CodeGen = struct {
         // it anyway ("use of undeclared identifier duo_mod_*").
         parser.duo_mode = std.mem.endsWith(u8, path, ".duo");
         const submod = parser.parse_module() catch return false;
-        return !module_ast_blocks_full_native_ast(&submod);
+        if (module_ast_blocks_full_native_ast(&submod)) return false;
+        // A dependency that materializes a table export is reached through
+        // `lua_require` + `lua_table_get_str_lit` — the caller cannot read
+        // `Inst.EXAMPLE_IDS` without the runtime. This is the same predicate
+        // `can_emit_native_scalar_module` applies to the module itself
+        // ("keyed-table-export"); it was missing on the dependency edge, so a
+        // typed `main` that reqd such a module still chose full-native and then
+        // emitted `duo_g_Inst = lua_require(...)` with neither the symbol nor
+        // the function declared.
+        if (module_materializes_table(&submod)) return false;
+        return true;
     }
 
     fn req_deps_allow_full_native(self: *CodeGen, mod: *const ast.Module) bool {
@@ -20858,6 +20979,22 @@ pub const CodeGen = struct {
                 .int_lit, .float_lit, .true_lit, .false_lit => return val,
                 else => return null,
             }
+        }
+        return null;
+    }
+
+    /// The `str` companion to `embedded_module_scalar_const_assign`. Separate
+    /// on purpose: that predicate is also read as "this constant folds into an
+    /// int", and its callers wrap the result in `lua_val_from_int`.
+    fn embedded_module_str_const_assign(mod: *const ast.Module, name: []const u8) ?*const ast.Expr {
+        for (mod.body.stmts) |*stmt| {
+            const as = switch (stmt.*) {
+                .assign => |*a| a,
+                else => continue,
+            };
+            if (as.targets.len != 1 or as.values.len != 1 or as.targets[0].* != .name) continue;
+            if (!std.mem.eql(u8, as.targets[0].name.ident, name)) continue;
+            return if (as.values[0].* == .string_lit) as.values[0] else null;
         }
         return null;
     }
@@ -21703,6 +21840,22 @@ pub const CodeGen = struct {
                 const scalar_const_init = embedded_module_scalar_const_assign(&submod, entry.key_ptr.*);
                 if (scalar_const_init != null and
                     !module_functions_reference_name(&submod, entry.key_ptr.*)) continue;
+                // The same defect one type over. `CANONICAL_OWNER = "…"` is not a
+                // *scalar* const, so it got storage from this loop and its
+                // initializer from nowhere: a native-direct embedded module emits
+                // no init thunk, and the top-level assign that would have run it
+                // is never reached. `canonical_owner()` therefore returned NULL
+                // and the caller's `strcmp` segfaulted — a wrong answer at
+                // runtime, not a compile error. A string literal is as foldable
+                // into the declaration as an int one.
+                //
+                // Deliberately kept out of `scalar_const_init` itself: that
+                // predicate also drives the skip above and the module return
+                // table, which wraps whatever it matches in `lua_val_from_int`.
+                const str_const_init: ?*const ast.Expr = if (scalar_const_init == null)
+                    embedded_module_str_const_assign(&submod, entry.key_ptr.*)
+                else
+                    null;
                 // A native-direct req binding normally needs no variable (uses
                 // resolve to C symbols), but a `global x = req "..."` that the
                 // body reads through an `.any`-typed field access still emits
@@ -21740,7 +21893,7 @@ pub const CodeGen = struct {
                     // declaration. `embedded_module_scalar_const_assign` only ever
                     // returns int/float/true/false literals, so this cannot reorder
                     // or duplicate a side effect.
-                    if (scalar_const_init) |ce| {
+                    if (scalar_const_init orelse str_const_init) |ce| {
                         self.p(" = ", .{});
                         self.emit_expr(ce) catch |e| {
                             term.err("emit_embedded_module: const init emit failed for {s}: {}", .{ entry.key_ptr.*, e });
