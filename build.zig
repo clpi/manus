@@ -551,7 +551,7 @@ pub fn build(b: *std.Build) void {
     const native_diff_step = b.step("native-differential", "Direct ARM64 backend must agree with the C backend on the native corpus");
     native_diff_step.dependOn(&native_diff_cmd.step);
 
-    const direct_link_cmd = b.addSystemCommand(&.{ "bash", "scripts/direct_module_link_proof.sh" });
+    const direct_link_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/direct_module_link_proof.duo" });
     direct_link_cmd.step.dependOn(b.getInstallStep());
     direct_link_cmd.setCwd(b.path("."));
     const direct_link_step = b.step("direct-module-link", "A direct-backend program must be able to call a req'd Duo module");
