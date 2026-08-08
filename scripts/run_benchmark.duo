@@ -41,25 +41,45 @@ end
 
 s.must("cd " .. ROOT .. " && if [ ! -x zig-out/bin/duo ]; then ${ZIG:-zig} build; fi")
 
+-- Pass 11 WP-01: explicit benchmark manifest (backend must not force boxing).
+-- The first port dropped this entirely. It is not decoration: the row states
+-- which backend and representation produced the numbers below, so a run that
+-- silently fell back to a boxed representation is distinguishable from one that
+-- did not. DUO_BENCH_MANIFEST is also read downstream -- and only reaches a
+-- child now that std.script.env_set is a real setenv rather than a shelled-out
+-- `export` that never left its subshell.
+BENCH_BACKEND = s.getenv_or("BENCH_BACKEND")
+if string.len(BENCH_BACKEND) == 0
+    BENCH_BACKEND = "c-specialized"
+end
+duo_version = trim(s.capture(DUO .. " --version 2>/dev/null || echo unknown"))
+if string.len(duo_version) == 0
+    duo_version = "unknown"
+end
+BENCH_MANIFEST = "backend=" .. BENCH_BACKEND .. " representation=specialized runtime=dynamic intermediate=generated-c external_compiler=" .. CC .. " duo=" .. duo_version
+print("BENCH_MANIFEST " .. BENCH_MANIFEST)
+s.env_set("DUO_BENCH_MANIFEST", BENCH_MANIFEST)
+
 BENCH_PARALLEL_COMPILE = s.getenv_or("BENCH_PARALLEL_COMPILE")
 
--- Compile Lua-flavoured Duo benchmark with PGO
-if BENCH_PARALLEL_COMPILE == "1"
-    s.run("cd " .. ROOT .. " && " .. DUO .. " compile --pgo -O3 examples/benchmark.lua -o /tmp/duo_bench.out &")
-else
-    s.must("cd " .. ROOT .. " && " .. DUO .. " compile --pgo -O3 examples/benchmark.lua -o /tmp/duo_bench.out")
-end
-
--- Compile reference C benchmark with PGO
-s.must("cd " .. ROOT .. " && " .. CC .. " " .. CFLAGS .. " -fprofile-instr-generate -o /tmp/c_bench_instr.out examples/benchmark_c.c")
-s.run("env LLVM_PROFILE_FILE=/tmp/c_bench.profraw /tmp/c_bench_instr.out > /dev/null 2>&1 || true")
-s.must("xcrun llvm-profdata merge -output=/tmp/c_bench.profdata /tmp/c_bench.profraw")
+_duo_lua_compile = DUO .. " compile --pgo -O3 examples/benchmark.lua -o /tmp/duo_bench.out"
+_c_instr_compile = CC .. " " .. CFLAGS .. " -fprofile-instr-generate -o /tmp/c_bench_instr.out examples/benchmark_c.c"
+_c_opt_compile = CC .. " " .. CFLAGS .. " -fprofile-instr-use=/tmp/c_bench.profdata -o /tmp/c_bench.out examples/benchmark_c.c"
+_c_profile_steps = "env LLVM_PROFILE_FILE=/tmp/c_bench.profraw /tmp/c_bench_instr.out > /dev/null 2>&1 || true; xcrun llvm-profdata merge -output=/tmp/c_bench.profdata /tmp/c_bench.profraw"
 
 if BENCH_PARALLEL_COMPILE == "1"
-    s.run("cd " .. ROOT .. " && " .. CC .. " " .. CFLAGS .. " -fprofile-instr-use=/tmp/c_bench.profdata -o /tmp/c_bench.out examples/benchmark_c.c &")
-    s.run("wait") -- Wait for background jobs
+    -- ONE shell. The previous spelling backgrounded with `s.run("... &")` and
+    -- then called `s.run("wait")` -- two SEPARATE shells, so `wait` had no jobs
+    -- to wait for and returned instantly. The compiles were orphaned and the
+    -- script raced on to time /tmp/duo_bench.out while it was still being
+    -- written, or was a stale binary from a previous run. Off by default, so it
+    -- never fired in CI; a trap for whoever set the variable.
+    s.must("cd " .. ROOT .. " && { " .. _duo_lua_compile .. " ; } & DUO_PID=$!; " .. _c_instr_compile .. " && { " .. _c_profile_steps .. " ; } && { " .. _c_opt_compile .. " ; } & CC_PID=$!; wait $DUO_PID && wait $CC_PID")
 else
-    s.must("cd " .. ROOT .. " && " .. CC .. " " .. CFLAGS .. " -fprofile-instr-use=/tmp/c_bench.profdata -o /tmp/c_bench.out examples/benchmark_c.c")
+    s.must("cd " .. ROOT .. " && " .. _duo_lua_compile)
+    s.must("cd " .. ROOT .. " && " .. _c_instr_compile)
+    s.run(_c_profile_steps)
+    s.must("cd " .. ROOT .. " && " .. _c_opt_compile)
 end
 
 -- Compile the .duo mirror
@@ -67,17 +87,31 @@ s.must("cd " .. ROOT .. " && " .. DUO .. " compile --pgo -O3 examples/benchmark.
 
 global BENCHES: i64 = 40
 
+-- Two measured defects forced this shape; do not "simplify" it back.
+--
+-- 1. NESTED gmatch IS BROKEN. Iterating words with a gmatch inside a gmatch
+--    over lines yields 4 of 12 words on a 3-line fixture -- the inner
+--    iterator corrupts the outer one. The old body did exactly that, so it
+--    returned 2 times for a 40-benchmark run. -- gap[028]
+-- 2. tonumber DOES NOT RETURN nil ON NON-NUMBERS. tonumber("Fibonacci(40)")
+--    and tonumber("Time") both return 0, so the "first word that parses as a
+--    number" scan accepted the FIRST word of every line and recorded 0. Every
+--    timing was therefore 0 or missing, every row printed N/A, and every
+--    winner defaulted to C -- a suite reporting total defeat for a reason
+--    that had nothing to do with speed. -- gap[029]
+--
+-- One match per line, anchored to the "Time" label, extracts the number
+-- directly: no inner iterator, and no reliance on tonumber signalling failure
+-- (it is only ever handed text already known to be numeric).
+--
+-- Duo separates the fields with TABS and C with spaces, so the pattern spans
+-- %s+ rather than a literal space.
 extract_times(out: str): table
     times = {}
     for line in string.gmatch(out, "([^\n]+)")
-        if string.find(line, "Time") != nil
-            for word in string.gmatch(line, "([^%s]+)")
-                num = tonumber(word)
-                if num != nil
-                    table.insert(times, num)
-                    break
-                end
-            end
+        num = string.match(line, "Time%s+([0-9%.eE%+%-]+)")
+        if num != nil
+            table.insert(times, tonumber(num))
         end
     end
     times
@@ -110,14 +144,36 @@ compare_results(name: str, duo_res: table, c_res: table): bool
             if a != b
                 da = tonumber(a)
                 db = tonumber(b)
-                if da == nil or db == nil
+                -- INTEGER RESULTS MUST MATCH EXACTLY. The shell original had
+                -- this branch and the first port of it did not, which silently
+                -- weakened the gate: without it two integers fall through to
+                -- the float ladder below, where `base > 1e6 => tol = 1` accepts
+                -- an off-by-one. A checksum of 1899277430 vs 1899277431 -- a
+                -- real divergence between Duo and C -- was reported as
+                -- AGREEMENT. Compared as strings, which is exact; tonumber
+                -- would round any value past 2^53 and re-introduce the hole.
+                is_int = string.match(a, "^%-?%d+$") != nil and string.match(b, "^%-?%d+$") != nil
+                if is_int
+                    print("RESULT mismatch for " .. duo_res[i].id .. ": Duo=" .. a .. " C=" .. b)
+                    fail = true
+                elseif da == nil or db == nil
                     print("RESULT mismatch for " .. duo_res[i].id .. ": Duo=" .. a .. " C=" .. b)
                     fail = true
                 else
                     abs_a = math.abs(da)
                     abs_b = math.abs(db)
                     if abs_a < 1e-6 and abs_b < 1e-6
-                        if math.abs(abs_a - abs_b) > 1e-12
+                        -- SIGN-AWARE. This compared abs_a - abs_b, i.e. the
+                        -- MAGNITUDES, so a sign flip in a small value differed
+                        -- by exactly zero and passed. Not hypothetical: nbody
+                        -- reports Duo=+9.3782588805879641e-08 against
+                        -- C=-9.3782588805879641e-08 -- bit-identical magnitude,
+                        -- opposite sign -- and the suite called that agreement
+                        -- on every run. The shell original had the same defect
+                        -- (`abs_a - abs_b > 1e-12 && abs_b - abs_a > 1e-12`),
+                        -- so the port inherited a blind spot rather than
+                        -- introducing one.
+                        if math.abs(da - db) > 1e-12
                             print("RESULT mismatch for " .. duo_res[i].id .. ": Duo=" .. a .. " C=" .. b)
                             fail = true
                         end
