@@ -48,7 +48,22 @@ pub const entries: []const Entry = &.{
     // not after_m1. 3 outlives even that.
     .{ .id = "RL-02", .host_path = "src/lexer.zig (full)", .subsystem_id = "SH-03", .duo_replacement = "lib/std/compiler/lexer.duo", .eligibility = .after_m2, .removal_gate = "Scanner already retired from production (M1 met, incl. req-ed modules). Held by the token type home + Parser's driver object, so it falls with RL-04; then retained as the field-for-field oracle" },
     .{ .id = "RL-03", .host_path = "src/token_semantic.zig", .subsystem_id = "SH-02", .duo_replacement = "lib/std/token/classify.duo + descriptor", .eligibility = .retain_oracle, .removal_gate = "Keep as differential oracle post-M1" },
-    .{ .id = "RL-04", .host_path = "src/parser.zig", .subsystem_id = "SH-04", .duo_replacement = null, .eligibility = .after_m2, .removal_gate = "Duo-native parser kernel + syntax graph" },
+    // RL-04's `duo_replacement` was null, which read as "nothing exists yet".
+    // `lib/std/compiler/parser.duo` does exist and reaches 257/257 on lib/std.
+    // Naming it is more honest than the null, and the gate now says what that
+    // number is worth — measured in gaps/GAP-046.md, not asserted:
+    //
+    //   * The coverage walk counts ACCEPTANCE, not fidelity, and its denominator
+    //     is lib/std. Elsewhere in this repo: ward 21/24, tools 35/48.
+    //   * lib/std is 100% partly because it uses NONE of match, enum, const,
+    //     defer, or `: T | error` — that last one is Pass 100 §0.5.
+    //   * Of 40 host-parser constructs probed, 26 accept, 14 reject, and two of
+    //     the 26 project the WRONG tree (`nn { … }`, `x as i64`) while counting
+    //     as passes.
+    //   * The structural half: src/parser.zig builds an AST that sema and
+    //     codegen consume; parser.duo builds an s-expression STRING. No grammar
+    //     coverage makes a projector substitutable for `Parser.init`.
+    .{ .id = "RL-04", .host_path = "src/parser.zig", .subsystem_id = "SH-04", .duo_replacement = "lib/std/compiler/parser.duo (projection only)", .eligibility = .after_m2, .removal_gate = "Duo-native parser kernel + syntax graph. Grammar half measured in gap[046]: 257/257 on lib/std but 26/40 constructs, 2 of them misprojected, and no `: T | error`. Structural half untouched: parser.duo emits sexpr TEXT, not the AST sema and codegen consume" },
     .{ .id = "RL-05", .host_path = "src/codegen.zig (canonical path)", .subsystem_id = "SH-10", .duo_replacement = null, .eligibility = .after_m3, .removal_gate = "Duo-native backend on one target" },
     .{ .id = "RL-06", .host_path = "build.zig orchestration", .subsystem_id = "SH-14", .duo_replacement = null, .eligibility = .after_bootstrap_closure, .removal_gate = "S2 is canonical compiler" },
 };

@@ -213,6 +213,19 @@ positives = {
     { "type Loc = {\n    file: str,\n    line: i64\n}\n", "(program (typedecl Loc (desc file str line i64)))" },
     { "type StableId = i64", "(program (typedecl StableId (type i64)))" },
     { "type W = {\n    wq: [float]\n}\n", "(program (typedecl W (desc wq (seq float))))" },
+    -- gap[046]: a statement-level call whose ARGUMENT is a face call. `NAME ':'
+    -- NAME` is also what a typed parameter looks like, so `params_have_colon`
+    -- read this as a bare declaration of `f` and the statement was rejected.
+    -- The four rows below are the whole discrimination, and all four must stay:
+    -- the first two are the calls that were wrong, and the last two are the
+    -- declarations the fix must NOT stop recognising — an annotated parameter
+    -- whose type is a plain name, and one that is a builtin scalar. Drop either
+    -- of the last two and the fix silently turns every bare declaration into a
+    -- call.
+    { "f(a:b(1))", "(program (call f (method a b 1)))" },
+    { "assert(d:sub(1, 4) == \"G\", \"n\")", "(program (call assert (= (method d sub 1 4) \"G\") \"n\"))" },
+    { "g(p: point)\n  p\nend", "(program (fun g (params (param p point)) p))" },
+    { "h(n: i64)\n  n\nend", "(program (fun h (params (param n i64)) n))" },
 }
 
 fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",

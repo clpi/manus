@@ -538,10 +538,33 @@ params_have_colon = (lx: Lexer): bool
             at_slot_start = true
         elseif t.kind == token.KIND_NAME and depth == 1 and at_slot_start
             if lexer.peek(lx).kind == token.KIND_COLON
-                found = true
-                break
+                _c = lexer.next(lx)
+                -- gap[046]: a FACE CALL in argument position spells the same
+                -- three tokens a typed parameter does — NAME ':' NAME — so
+                -- `f(a:b(1))` matched here and was projected as a declaration
+                -- of `f`, which then failed. It only ever showed up as a
+                -- REJECTED FILE, never as a wrong projection, and lib/std has
+                -- no statement-level call carrying a face argument, so the
+                -- 257/257 ratchet was blind to it while ward's
+                -- `assert(data:sub(1, 4) == "GGUF", ...)` was one of its three
+                -- rejections.
+                --
+                -- What follows the colon separates them: a parameter's type is
+                -- a type name (`a: i64`, `a: point`), while a face call's
+                -- method name is immediately applied (`a:b(`). Only the
+                -- applied form is excluded, and it is excluded by CONTINUING
+                -- the scan rather than by answering false — a bare declaration
+                -- whose first parameter type is applied still matches on its
+                -- return colon below.
+                if lexer.peek(lx).kind == token.KIND_NAME and peek2(lx).kind == token.KIND_LPAREN
+                    at_slot_start = false
+                else
+                    found = true
+                    break
+                end
+            else
+                at_slot_start = false
             end
-            at_slot_start = false
         else
             at_slot_start = false
         end
