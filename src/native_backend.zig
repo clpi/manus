@@ -857,6 +857,14 @@ const Arm64Compiler = struct {
     const SaveSet = struct {
         regs: [20]u5 = @splat(0),
         count: u5 = 0,
+        /// Live FP VALUE registers (d16-d30). Every d register is caller-saved
+        /// on AAPCS64, so without this no float survives a call — which is why
+        /// widening the FP pool before adding this hung mandelbrot (gap[057]).
+        /// d0-d7 are NOT saved, matching the integer side's decision not to save
+        /// x0-x8: those are argument and result registers, and saving the result
+        /// register would clobber the value the call just produced.
+        fp_regs: [16]u5 = @splat(0),
+        fp_count: u5 = 0,
         stack_bytes: u16 = 0,
     };
 
@@ -1140,20 +1148,44 @@ const Arm64Compiler = struct {
         defer pinned.deinit(self.alloc);
 
         if (f.is_float_kernel) {
+            // Exactly the move the integer path below makes, and for exactly
+            // the same reason. d0-d7 are BOTH the f64 argument registers and
+            // the staging registers for an outgoing call, so a parameter left
+            // in its incoming register is destroyed the moment the body calls
+            // anything: `p: f64 = 9.0; one(2.0)` overwrote p's home, and
+            // `two(4.0, p)` swapped two registers through each other and passed
+            // (4.0, 4.0). The integer side solved this long ago by copying
+            // parameters out of x0-x7 into the x9+ value range; the FP side
+            // never did, and lowering papered over it by REFUSING such calls
+            // (`requireSafeFpStaging`).
+            //
+            // Leaf functions keep the incoming register and pay nothing, which
+            // is both free and safe: with no call there is no staging.
+            const fp_body_has_call = dnirFunctionHasCall(f);
             var dreg: u5 = 0;
             for (f.params, 0..) |p, i| {
                 const slot: u32 = @intCast(i);
                 if (p.ty == .f64) {
                     self.used_fp_regs[dreg] = true;
-                    try self.fp_locals.put(self.alloc, p.name, dreg);
-                    try temps.put(self.alloc, slot, dreg);
+                    const home = if (fp_body_has_call) blk: {
+                        const h = try self.allocFpReg();
+                        try self.emitFmovReg(h, dreg);
+                        break :blk h;
+                    } else dreg;
+                    try self.fp_locals.put(self.alloc, p.name, home);
+                    try temps.put(self.alloc, slot, home);
                     dreg += 1;
                 } else if (p.record) |rec_name| {
                     const rec = f64RecordDesc(self.f64_records, .{ .named = rec_name }) orelse return refuse(@src());
                     for (rec.field_names) |fname| {
                         self.used_fp_regs[dreg] = true;
+                        const home = if (fp_body_has_call) blk: {
+                            const h = try self.allocFpReg();
+                            try self.emitFmovReg(h, dreg);
+                            break :blk h;
+                        } else dreg;
                         const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ p.name, fname });
-                        try self.fp_locals.put(self.alloc, key, dreg);
+                        try self.fp_locals.put(self.alloc, key, home);
                         dreg += 1;
                     }
                 } else return refuse(@src());
@@ -3392,7 +3424,14 @@ const Arm64Compiler = struct {
                 save_set.count += 1;
             }
         }
-        var slots: u16 = @as(u16, save_set.count) + 1;
+        var fpr: u5 = fp_value_reg_base;
+        while (fpr < fp_value_reg_base + fp_value_reg_count) : (fpr += 1) {
+            if (self.used_fp_regs[fpr]) {
+                save_set.fp_regs[save_set.fp_count] = fpr;
+                save_set.fp_count += 1;
+            }
+        }
+        var slots: u16 = @as(u16, save_set.count) + 1 + @as(u16, save_set.fp_count);
         if ((slots % 2) != 0) slots += 1;
         save_set.stack_bytes = slots * 8;
         try self.emitSubSp(save_set.stack_bytes);
@@ -3405,6 +3444,15 @@ const Arm64Compiler = struct {
             try self.emitStrSp(save_set.regs[i], offset);
         }
         try self.emitStrSp(30, @as(u16, save_set.count) * 8);
+        // FP block sits after the GP block and x30.
+        var fo: u16 = (@as(u16, save_set.count) + 1) * 8;
+        var j: u5 = 0;
+        while (j < save_set.fp_count) : ({
+            j += 1;
+            fo += 8;
+        }) {
+            try self.emitStrSpFp(save_set.fp_regs[j], fo);
+        }
         return save_set;
     }
 
@@ -3448,6 +3496,14 @@ const Arm64Compiler = struct {
             try self.emitLdrSp(save_set.regs[i], offset);
         }
         try self.emitLdrSp(30, @as(u16, save_set.count) * 8);
+        var fo: u16 = (@as(u16, save_set.count) + 1) * 8;
+        var j: u5 = 0;
+        while (j < save_set.fp_count) : ({
+            j += 1;
+            fo += 8;
+        }) {
+            try self.emitLdrSpFp(save_set.fp_regs[j], fo);
+        }
         try self.emitAddSp(save_set.stack_bytes);
     }
 
@@ -3675,11 +3731,47 @@ const Arm64Compiler = struct {
     // FDIV=0x1E601800, FMOV <Dd>,<Dn>=0x1E604000. (0x1EE0xxxx is HALF-precision,
     // a trap from miscounting the type field.) Register layout matches the
     // integer 2-source ops: Rm=rhs (bits 16-20), Rn=lhs (bits 5-9), Rd (0-4).
+    /// The FP VALUE range: d16-d30. Deliberately disjoint from d0-d7.
+    ///
+    /// This mirrors `allocRegExcluding`, which starts at x9 precisely so that a
+    /// value never lives in an argument or result register. The FP allocator
+    /// started at d0 instead, so values lived in the staging registers and were
+    /// destroyed by any outgoing call — the defect `requireSafeFpStaging` in
+    /// dnir_lower.zig currently refuses programs to avoid.
+    ///
+    /// d16-d31 are the caller-saved half of the FP file, so using them costs no
+    /// prologue work. d8-d15 are deliberately skipped: they are CALLEE-saved
+    /// (their low 64 bits must be preserved), so taking one without a
+    /// prologue/epilogue save is a silent ABI violation rather than a refusal.
+    /// d31 is left out as the staging scratch for a spill/restore that needs a
+    /// register of its own.
+    ///
+    /// An earlier attempt simply widened the old d0-d7 pool to include d16-d31
+    /// WITHOUT moving values out of the argument range or adding caller-save.
+    /// That turned mandelbrot's honest DNB003 refusal into an infinite loop
+    /// (gap[057]): more registers only meant the program got far enough to be
+    /// wrong. Order matters — values out of the argument range first, then
+    /// caller-save, then capacity.
+    /// CAPACITY IS DELIBERATELY UNCHANGED AT EIGHT. d24-d30 are free and this
+    /// loop could take them in one character, and it must not yet.
+    ///
+    /// `releaseFpReg` is still a no-op, so this is not allocation with liveness
+    /// — it is a monotonic cursor, and every extra register only buys a longer
+    /// run before the same wall. Widening it to 15 made
+    /// `examples/mandelbrot.duo` compile and then HANG, producing no output,
+    /// which is strictly worse than the DNB003 refusal it replaced. That is the
+    /// second time capacity has been taken before correctness here (gap[057]
+    /// records the first).
+    ///
+    /// So: same eight registers, different eight registers. The move that
+    /// mattered was OUT of the argument range, not upward in count. Raising
+    /// this bound is step three of three, and step two is liveness.
+    const fp_value_reg_base: u5 = 16;
+    const fp_value_reg_count: u5 = 8;
+
     fn allocFpReg(self: *Arm64Compiler) Error!u5 {
-        // d0-d7 are caller-saved; params occupy the low ones, scratch takes the
-        // next free. Sufficient for leaf kernels with a handful of f64 params.
-        var reg: u5 = 0;
-        while (reg < 8) : (reg += 1) {
+        var reg: u5 = fp_value_reg_base;
+        while (reg < fp_value_reg_base + fp_value_reg_count) : (reg += 1) {
             if (!self.used_fp_regs[reg]) {
                 self.used_fp_regs[reg] = true;
                 return reg;

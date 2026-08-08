@@ -27,8 +27,8 @@
 --
 -- MISCOMPILE_CEILING ratchets DOWNWARD. It shipped at 4 -- the gap[056]
 -- family -- and reached 0 the same day, so the gate is now a floor at zero:
--- ANY wrong answer fails it. Any new wrong answer fails the gate. Fixing one should lower the
--- ceiling in the same commit, exactly as NATIVE_FLOOR ratchets up.
+-- ANY wrong answer fails it, and a future fix that lowers it further should do
+-- so in the same commit — the mirror of how NATIVE_FLOOR ratchets up.
 
 _sh = (cmd: str): str
     std.script.capture("cd " .. std.script.getenv("DUO_ROOT", ".") .. " && " .. cmd)

@@ -2147,38 +2147,19 @@ fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const a
     return .{ .temp = t };
 }
 
-/// Refuse an f64 argument list this pass cannot stage without destroying a live
-/// value. GAP-056, second half.
+/// FP argument staging was UNSAFE until the backend stopped homing f64 values in
+/// the staging registers, and this is the note left where the guard used to be.
 ///
-/// Putting f64 arguments in v0..v7 (above) is necessary and not sufficient. The
-/// backend homes f64 LOCALS in d0..d7 as well, so staging an argument overwrites
-/// whatever local already lives in that register, and the staging is a parallel
-/// move performed one register at a time:
+/// d0-d7 are both the f64 argument registers and the staging registers, and the
+/// backend homed f64 params and locals there, so `p: f64 = 9.0; one(2.0)`
+/// destroyed p's home and `two(4.0, p)` swapped two registers through each other
+/// and passed (4.0, 4.0). This pass cannot see home assignments, so it could not
+/// order the moves; it refused the shapes it could not prove safe instead.
 ///
-///     p: f64 = 9.0        -- homed in d0
-///     print(one(2.0))     -- stages d0 <- 2.0, destroying p
-///     print(one(p))       -- reads the clobbered d0: 222, C says 111
-///
-/// The same shape one argument wider swaps two registers through each other and
-/// passes `(4.0, 4.0)` for `two(4.0, p)`. Nothing in this pass can see the home
-/// assignment that decides whether a given call collides, so nothing here can
-/// order the moves safely — that belongs with the register allocator in
-/// `native_backend.zig`, which owns both the homes and the staging.
-///
-/// What IS provable here is the absence of the hazard: if this function has no
-/// f64 parameters and has bound no f64 local yet, then no live value occupies
-/// d0..d7, and immediate operands are materialised directly into their slot with
-/// `fmov` rather than copied out of a register. Those calls stage safely. Every
-/// other shape is refused, so the module falls back to the C backend with a
-/// correct answer instead of running with a plausible wrong one.
-fn requireSafeFpStaging(ctx: *LowerCtx, values: []const dnir.Value, fp_slots: []const bool) Error!void {
-    if (ctx.self_fp_params) return bail(@src());
-    if (ctx.f64_slots.count() != 0) return bail(@src());
-    for (values, 0..) |v, i| {
-        if (i >= fp_slots.len or !fp_slots[i]) continue;
-        if (v != .f64) return bail(@src());
-    }
-}
+/// `allocFpReg` now allocates from d16-d30 and parameters are copied out of
+/// d0-d7 on entry whenever the body can call — the same move the integer side
+/// has always made out of x0-x7 into x9+. Values and staging no longer share
+/// registers, so the hazard is gone at its source and the refusal is retired.
 
 /// Whether this callee takes at least one argument in v0..v7.
 fn calleeWantsFpSlots(ctx: *LowerCtx, callee: ?[]const u8) bool {
@@ -2239,7 +2220,6 @@ fn emitScalarCallArgs(ctx: *LowerCtx, args: []const *ast.Expr, callee: ?[]const 
         ctx.fp_params.get(name) orelse &.{}
     else
         &.{};
-    if (fp_slots.len > 0) try requireSafeFpStaging(ctx, values[0..count], fp_slots);
     var gp: u32 = 0;
     var fp: u32 = 0;
     var i: u32 = 0;
