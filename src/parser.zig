@@ -251,6 +251,41 @@ pub const Parser = struct {
         return base;
     }
 
+    /// A descriptor field's shape, plus LEVEL application: `tags: seq(str)`.
+    ///
+    /// Pass 100 §4 gives `( )` to APPLY — "functions, dispatch tables,
+    /// descriptors=construction, levels" — and §7/§16 spell the container
+    /// families that way (`seq(str)`). `seq[str]` is the retrieval spelling
+    /// and keeps working; both land on the same `.generic` node.
+    ///
+    /// Deliberately scoped to field position rather than folded into
+    /// `parse_type`. A `(` after a type is meaningful elsewhere:
+    /// `f = (x: i64) (x + 1)` is a legal one-line body whose parameter shape
+    /// is followed by a parenthesised expression, and a global rule would
+    /// swallow it. Inside `name: shape` the only legal continuations are `,`,
+    /// `}` or the next field, so a `(` here can be nothing else.
+    fn parse_field_type(self: *Parser) ParseError!ast.TypeExpr {
+        var base = try self.parse_type();
+        while ((try self.pk()).kind == .lparen) {
+            _ = try self.adv();
+            var params: std.ArrayList(ast.TypeExpr) = .empty;
+            if (!(try self.check(.rparen))) {
+                try params.append(self.alloc, try self.parse_field_type());
+                while (try self.eat(.comma) != null) {
+                    try params.append(self.alloc, try self.parse_field_type());
+                }
+            }
+            _ = try self.expect(.rparen);
+            const base_ptr = try self.alloc.create(ast.TypeExpr);
+            base_ptr.* = base;
+            base = .{ .generic = .{
+                .base = base_ptr,
+                .params = try params.toOwnedSlice(self.alloc),
+            } };
+        }
+        return base;
+    }
+
     /// `& packed`, `& align(8)`, `& sealed`, `& native`, `& guarded`,
     /// `& ffi("name")` — the refinement edge of LAW-STRATA carrying Pass 100
     /// §11 layout facts on a record descriptor.
@@ -456,13 +491,24 @@ pub const Parser = struct {
                         const fl = (try self.pk()).loc;
                         const fn_tok = try self.expect(.name);
                         _ = try self.expect(.colon);
-                        const ft = try self.parse_type();
+                        const ft = try self.parse_field_type();
                         try fields.append(self.alloc, ast.RecordField{
                             .name = fn_tok.text,
                             .typ = ft,
                             .loc = fl,
                         });
-                        if (try self.eat(.comma) == null) break;
+                        if (try self.eat(.comma) == null) {
+                            // X8 (Pass 100 §7): "≥2 named fields → one per
+                            // line, always". So the newline IS the canonical
+                            // separator and the comma is the optional one —
+                            // the golden `user` and `token` descriptors of §20
+                            // are written without commas and did not parse.
+                            //
+                            // Unambiguous: §3 makes a newline insignificant
+                            // inside an open `{`, so the only tokens that may
+                            // follow a field are `}` or the next field's name.
+                            if (!(try self.check(.name))) break;
+                        }
                     }
                 }
                 _ = try self.expect(.rbrace);
@@ -3116,7 +3162,7 @@ pub const Parser = struct {
                     });
                 } else if (try self.check(.colon)) {
                     _ = try self.adv();
-                    const typ = try self.parse_type();
+                    const typ = try self.parse_field_type();
                     if (try self.eat(.assign) != null) _ = try self.parse_expr(); // default, consumed
                     try entries.append(self.alloc, .{ .field = .{
                         .loc = field_loc,

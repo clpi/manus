@@ -1,0 +1,12 @@
+-- Pass 100 §4 gives `( )` to APPLY, levels included, and §7/§16 spell the
+-- container families that way: the golden `user` of §20 carries `tags:
+-- seq(str)`. Only the retrieval spelling `list[str]` parsed. Both now reach
+-- the same descriptor; `list` rather than `seq` because seq's own lowering is
+-- a separate, older gap and this fixture is about the spelling.
+-- expect: 7
+user: {
+    id: i64
+    tags: list(str)
+}
+u: user = { id = 7 }
+print(u.id)
