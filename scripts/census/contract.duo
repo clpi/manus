@@ -1,0 +1,105 @@
+-- Pass 94 — contract-directed realization, and the death of std.script.
+--
+-- This pass indicts code in this very directory. Every census here is built on
+-- `std.script.capture` / `chomp` / `fs_write` / `duo_bin`, and Pass 94 deletes
+-- that namespace as a junk drawer -- bundled by MOOD (writing a script) rather
+-- than by subject, the same crime as std.string one level up.
+--
+-- So the question is not whether the ruling is right. It is whether the
+-- replacements EXIST, because five working gates depend on the answer:
+--
+--   capture(cmd)        -> sh(cmd).out        (consumption IS the capture)
+--   chomp(s)            -> dissolved          (numeric edges tolerate noise)
+--   out:to(i64) under   -> erased             (CDR: the contract is the demand)
+--     a `: i64` contract
+--
+-- A row is IMPLEMENTED only if the program compiles AND prints the expected
+-- value.
+
+-- Pinned floor: the MEASURED count, never an estimate.
+baseline(): i64
+    2
+end
+
+implemented = 0
+checked = 0
+report = ""
+
+bin(): str
+    override = std.os.getenv("DUO_BIN")
+    if override != nil
+        if override != ""
+            return override
+        end
+    end
+    std.script.duo_bin()
+end
+
+probe(src: str, want: str): bool
+    path = "/tmp/duo_p94.duo"
+    std.script.fs_write(path, src)
+    b = bin()                                           -- gap[29] (TMP-1 forced)
+    got = std.script.capture("{b} run {path} 2>/dev/null")
+    std.script.chomp(got) == want
+end
+
+live(): bool
+    probe("main(): void\n    print(1 + 2)\nend\n", "3")
+end
+
+record(id: str, src: str, want: str): void
+    checked = checked + 1
+    if probe(src, want)
+        implemented = implemented + 1
+        report = "{report}  ok      {id}\n"
+    else
+        report = "{report}  MISSING {id}\n"
+    end
+end
+
+main(): i64
+    if live() == false
+        print("pass94: HARNESS BROKEN — control did not print 3.")
+        return 2
+    end
+
+    -- §3 THE PROCESS WORLD. `sh` with demand-selected observation is the
+    -- replacement for the whole of std.script's shell surface.
+    record("P94-1 sh(cmd) resolves", "main(): void\n    print(sh != nil)\nend\n", "true")
+    record("P94-2 sh(cmd).out", "main(): void\n    print(sh(\"echo hi\").out)\nend\n", "hi")
+    record("P94-3 sh(cmd).code", "main(): void\n    print(sh(\"true\").code)\nend\n", "0")
+    record("P94-4 parenless sh \"cmd\"", "main(): void\n    sh \"true\"\n    print(\"ran\")\nend\n", "ran")
+
+    -- §3 CHOMP DISSOLVES: the numeric edge must tolerate surrounding
+    -- whitespace, because that is the ONLY reason chomp existed.
+    record("P94-5 to(i64) tolerates noise", "main(): void\n    print(to(i64)(\"42\\n\"))\nend\n", "42")
+    record("P94-6 to(i64) plain", "main(): void\n    print(to(i64)(\"42\"))\nend\n", "42")
+    record("P94-7 s:trim()", "main(): void\n    print(\"  a  \":trim())\nend\n", "a")
+
+    -- §1 CDR. The declared contract is the demand: a body whose last
+    -- expression is a str, under a `: i64` contract, realizes AS i64 with one
+    -- direct edge. This is the ruling that erases the `:to` I wrote.
+    record("P94-8 CDR str body under : i64", "count(s: str): i64\n    s\nend\nmain(): void\n    print(count(\"42\"))\nend\n", "42")
+    -- The guardrail, which must NOT be eroded: a BARE position never coerces.
+    record("P94-9 bare position no coerce", "main(): void\n    x = \"42\"\n    print(x + 1)\nend\n", "")
+
+    -- §2 THE IMPORT CANON. Bodies speak in bare names, destructured once.
+    record("P94-10 destructured import", "{ getenv } = std.os\nmain(): void\n    print(getenv != nil)\nend\n", "true")
+    -- And the receiver face LAW-CALL wanted before any of this: capture's
+    -- result was chomp's SUBJECT.
+    record("P94-11 receiver face chain", "main(): void\n    print(\"  a  \":trim():len())\nend\n", "1")
+
+    io.write(report)
+    floor = baseline()                                  -- gap[29] (TMP-1 forced)
+    print("pass94: {implemented}/{checked} implemented (floor {floor})")
+
+    if implemented < floor
+        print("pass94: FAIL — a Pass 94 form that used to work has regressed")
+        return 1
+    end
+    if implemented > floor
+        print("pass94: forms gained — RAISE baseline() to {implemented}")
+    end
+    print("pass94: PASS")
+    0
+end

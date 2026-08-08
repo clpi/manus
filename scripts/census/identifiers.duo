@@ -28,21 +28,35 @@ end
 
 -- One counted grep over lib/std. `pat` is an extended-regex; the pipeline
 -- de-duplicates so every number below is DISTINCT identifiers, not occurrences.
--- The `out` binding is not decoration: chaining `:to(i64)` directly onto the
--- capture call makes the compiler take the PRECEDING binding as the body's
--- result ("return type mismatch: expected 'i64', got 'str'", pointing at the
--- `cmd` line). Bound, the tail is unambiguous.
+-- Pass 94 repaired these two bodies, as far as the compiler allows.
+--
+--   chomp     DISSOLVED. It existed only because shell capture appends a
+--             newline. Measured (contract.duo P94-5): `to(i64)("42\n")` is 42
+--             -- the numeric edge already tolerates surrounding noise, so the
+--             call and its temporary both go.
+--   capture   NOT repairable yet. The ruling is `sh(cmd).out`, where consuming
+--             .out IS the capture. `sh` does not resolve (P94-1..P94-4 all
+--             MISSING), so the activity namespace survives here under protest.
+--             -- gap[34]
+--   the path  Destructured once at the top per the import canon, so the bodies
+--             speak in bare names rather than reading like a filesystem.
+--   :to(T)    NOT erasable. CDR would delete it under the `: i64` contract, but
+--             contract-directed realization does not run (P94-8 MISSING), and
+--             the receiver face `out:to(i64)` miscompiles (gap[32]) -- so the
+--             section face stays, explicitly.
+{ capture } = std.script
+
 distinct(pat: str): i64
     r = root()                                          -- gap[29] (TMP-1 forced)
     cmd = "grep -rhoE '{pat}' --include='*.duo' {r}/lib/std/ | sort -u | wc -l"
-    out = std.script.chomp(std.script.capture(cmd))
+    out = capture(cmd)                                  -- gap[32] (TMP-1 forced)
     to(i64)(out)
 end
 
 occurrences(pat: str): i64
     r = root()                                          -- gap[29] (TMP-1 forced)
     cmd = "grep -rhoE '{pat}' --include='*.duo' {r}/lib/std/ | wc -l"
-    out = std.script.chomp(std.script.capture(cmd))
+    out = capture(cmd)                                  -- gap[32] (TMP-1 forced)
     to(i64)(out)
 end
 
