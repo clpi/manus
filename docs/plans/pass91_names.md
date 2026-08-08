@@ -52,8 +52,31 @@ the canon's own §4 repair table, `read_number → read(number)`. Both failed. B
 `static` under their Duo names, so `read` collides with POSIX `read(2)`
 (**gap[31]**). Spelled `scan(number)(1)`, the LEVEL form returns `2`.
 
-**So Pass 91 is the most actionable pass on this branch.** Every one of the
-14,504 sites has a live destination:
+**Second correction — "most actionable" was also too strong.** All three
+destination *forms* compile, but a form compiling in isolation is not the same
+as a *site* being repairable. Measured, **2,140 of the compound identifiers are
+top-level functions taking a typed first parameter** — subject-first functions,
+whose canonical Epoch 2 destination is a **descriptor method**
+(`cursor: { peek = () … }`), because §0.6 rules that methods travel with values
+and its own recognizer denies `alias.fn(subject, …)`.
+
+Descriptor member bindings do not parse (GAP-025). So for the dominant class,
+renaming to a bare word **trades a naming violation for an ALIAS-CALL
+violation** — it moves the diff from one deny row to another rather than
+reducing the count.
+
+`lib/std/compiler/source.duo` is the worked example: 99 lines carrying `type X =`
+(denied), four uppercase type names (denied), `cursor_new` (interior `_` *and*
+the denied `new`), `string.len`/`string.byte` (denied namespace), `tostring`
+(denied), `..` beside literals (denied), and an `M = {}` wrapper (erased). Its
+canonical rewrite is one `cursor` descriptor with `peek`/`advance`/`eof`
+members — and that is precisely the form GAP-025 blocks.
+
+**What remains genuinely unblocked** is the subset that is not subject-first:
+fields, locals, constants, and free functions over primitives. That is real, and
+it is a minority of the 4,266.
+
+The destination table above still holds for those:
 
 - **CONTEXT** — a pure rename. Free.
 - **HOME** — a namespace rearrangement. Free.

@@ -87,6 +87,23 @@ main(): i64
     upper = distinct("\\b[A-Z][A-Za-z0-9_]*\\b")
     uppersites = occurrences("\\b[A-Z][A-Za-z0-9_]*\\b")
 
+    -- THE BLOCKED MAJORITY, and the correction this file exists to carry.
+    --
+    -- An earlier revision reported the remainder as "actionable, all three
+    -- destinations compile". That measured the destination forms IN ISOLATION
+    -- -- `scan(number)(1)`, `utf8.valid`, `limit` each compile -- and not
+    -- against real sites. Against real sites the dominant class is blocked.
+    --
+    -- A top-level compound-named function taking a typed first parameter is a
+    -- SUBJECT-FIRST function: `cursor_peek(c: ByteCursor)`. Its canonical Epoch
+    -- 2 destination is a descriptor method (`cursor: { peek = () … }`), because
+    -- §0.6 says methods travel with values and §0.6's own recognizer denies
+    -- `alias.fn(subject, …)`. Descriptor member bindings do not parse
+    -- (GAP-025), so that destination does not exist. Renaming such a function
+    -- to a bare word trades a NAMING violation for an ALIAS-CALL violation --
+    -- it moves the diff from one deny row to another.
+    subject = occurrences("^[a-z][a-z0-9]*(_[a-z][a-z0-9]*)+\\([a-z]+: [A-Za-z]")
+
     rest = total - hazard - predicate - axis - mode
 
     print("identifier census — lib/std, Epoch 2 scans")
@@ -99,10 +116,16 @@ main(): i64
     print("    is_ predicates   {predicate}   Pass 88 — 25 collide, 4 same-file")
     print("    axis compounds   {axis}   Pass 88 — blocked on the sequence surface")
     print("    from_ modes      {mode}   Pass 86 — blocked, `from` does not resolve")
-    print("    remainder        {rest}   LEVEL / HOME / CONTEXT — all three compile")
+    print("    remainder        {rest}   LEVEL / HOME / CONTEXT destinations")
     print("")
-    print("  The remainder is the actionable bucket: every destination form is")
-    print("  live (scan(number)(1), utf8.valid, limit). What it needs is a")
-    print("  per-name judgement, not a missing mechanism.")
+    print("  cutting the other way — by SITE SHAPE, not by name shape:")
+    print("    subject-first fns  {subject}   canonical destination is a descriptor")
+    print("                          method — GAP-025, does not parse")
+    print("")
+    print("  That second number is the one that governs. A destination form")
+    print("  compiling in isolation is not the same as a SITE being repairable:")
+    print("  renaming a subject-first function to a bare word trades a naming")
+    print("  violation for an ALIAS-CALL violation. The sweep is unblocked only")
+    print("  for names that are not subject-first functions.")
     0
 end
