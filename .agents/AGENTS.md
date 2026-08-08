@@ -116,14 +116,14 @@ The framework must be MORE logical and capable than Jai's #run, Rust's proc macr
 - **Canonical index (`.agents/AGENT_CANONICAL.md`):** single router for ALL agents/CLIs — do not duplicate buffers.
 - **Known agents (2026-08):** Devin, oh-my-pi, Codex, Claude Code, Agy, Ollama, Hermes, kiro-cli, Cursor/agent, OpenCode, Pool, Kilo (`kilo`), Kimi Code (`kimi` — `sudo npm install -g kimi-code --allow-scripts=keytar`), Junie, Trae, Qoder/qodercli.
 - **Serena note:** appears in Cursor when wax project is open (project-plugin cache artefact). Not a Duo tool — dismiss it.
-- **Context Buffer (`.agents/AGENT_COORDINATION.md`):** ALL agents MUST read/update at session start — file claims, resource tiers, sprint goals, build status, gap findings, delegation, and hooks.
-- **Gaps Buffer (`.agents/AGENT_COORDINATION.md#cross-agent-gap-buffer`):** canonical section for expressiveness, native-lowering, perf, scripting, backend gaps; `@comp.agent.gaps()` / `std.agent.gaps_index()`; MCP `duo_agent_gaps_read` / `duo_agent_gaps_update`.
+- **Coordination (`.agents/AGENT_COORDINATION.md`):** durable subsystem/owner map and protocol rules. READ it; do not append to it. Live claims and session scratch go in the untracked `.agents/session/`.
+- **Gaps (`gaps/GAP-0NN.md`):** one file per gap. Check the directory immediately before claiming a number — parallel sessions collide on it. Entries filed before 2026-08-08 are in `docs/history/agent-coordination-2026-07-to-08.md`.
   - Read via MCP tool `duo_coordination_buffer` (duo-lsp MCP) or `duo_coordination_read` (duo-bench MCP).
   - Update via MCP tool `duo_coordination_update` with action (claim/release/complete/status/note/block), agent_id, detail, files.
   - BEFORE editing any file: claim it. Do NOT edit files another agent has locked.
   - AFTER finishing: release the file and mark the task complete.
   - BEFORE running `zig build`/`zig build bench`/`zig build test`: check the buffer for active builds. Serialize builds to prevent machine freeze.
-- **Default gate:** `scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/agent_smoke.duo` (serialized; no bench).
+- **Default gate:** `duo run scripts/duo_lock.duo -- ./zig-out/bin/duo run scripts/agent_smoke.duo` (serialized; no bench).
 - **Agent hooks:** `@comp.agent.catalog()`, `@comp.agent.ladder()`, `@comp.agent.hooks()`, `@comp.agent.dedupe()`, `@comp.agent.gaps()`; stdlib `std.agent`.
 
 ### 8. MCP Server Infrastructure (Agent Tooling)
@@ -264,7 +264,7 @@ When writing `.duo` files, follow these conventions:
 2. **Claim** your area in `.agents/AGENT_COORDINATION.md` via `duo_coordination_update(action="claim", agent_id=..., detail=..., files=...)` before editing shared surfaces.
 3. **After** performance or codegen work: append a dated section to `docs/performance.md` with commands run, files touched, measured ratios, and rejected experiments.
 4. **After** syntax/semantic fixes: update the semantics table if status changes.
-5. **Default verify:** `scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/agent_smoke.duo` (not full bench unless you hold the benchmarks claim).
+5. **Default verify:** `duo run scripts/duo_lock.duo -- ./zig-out/bin/duo run scripts/agent_smoke.duo` (not full bench unless you hold the benchmarks claim).
 6. **Hardware / low-level**: prefer `.duo` + `@comp.c.emit` / `@comp.asm` / `@comp.device` in `lib/std/hardware.duo` and `lib/std/ml/device.duo` when Lua grammar blocks optimization; do not add Lua-only benchmark gaming.
 
 ### Open gaps (2026-07-29)

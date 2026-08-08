@@ -8,18 +8,20 @@
 | Purpose | Path | MCP read | MCP write |
 | --- | --- | --- | --- |
 | **Alignment compass** (read first, 2 min) | `docs/AGENT_ALIGNMENT.md` | — | update at phase boundaries |
-| **Coordination** (claims, build tiers, session log) | `.agents/AGENT_COORDINATION.md` | `duo_coordination_read` / `duo_coordination_buffer` | `duo_coordination_update` |
-| **Gaps / findings** (P0–P2, delegation) | `.agents/AGENT_COORDINATION.md#cross-agent-gap-buffer` | `duo_agent_gaps_read` / `duo_agent_gaps_buffer` | `duo_agent_gaps_update` |
+| **Coordination** (subsystems, owners, protocol) | `.agents/AGENT_COORDINATION.md` | read it | hand-edit only — MCP writes go to the untracked `.agents/session/` |
+| **Gaps / findings** | `gaps/GAP-0NN.md`, one file per gap | — | new file; check the directory first, numbers collide |
 | **Performance ledger** | `docs/performance.md` | `duo_perf_ledger` | append manually after bench work |
 | **Agent rules** | `AGENTS.md` | — | update only for protocol changes |
 | **Architecture plan** (semantic universe) | `docs/semantic_universe.md` | — | update at phase boundaries |
 | **Grammar spec** (surface syntax evolution) | `docs/GRAMMAR_SPEC.md` | `duo_grammar_spec_read` | `duo_grammar_spec_update` |
 | **Directive hierarchy** (`@comp.*` dotted paths) | `docs/DIRECTIVE_HIERARCHY.md` | `duo_directive_hierarchy_read` | — |
 | **MCP / multi-agent setup** | `.agents/AGENT_INTEGRATION.md` | — | update when MCP config changes |
-| **MCP servers (canonical code)** | `/Users/clp/x/duo-mcp/` | all `duo_*` tools | edit only in duo-mcp repo |
+| **MCP servers (canonical code)** | `tools/mcp/` | all `duo_*` tools | merged in-tree 2026-08-08; version-locked to the compiler |
 | **End-user agent hooks** (writing IN Duo) | `docs/agent_hooks.md` | `duo_meta_catalog`, `duo_meta_ladder` | — |
 
-**Redirects (not canonical):** `DUO_AGENT_COORDINATION.md` (repo root) and `.agents/AGENT_GAPS.md` → coordination doc only.
+**Law:** `CLAUDE.md` is operative; `docs/spec/pass100.md` and `docs/spec/AUTHORITY.md` back it. The archived pass documents are historical evidence and may not be cited as authority.
+
+**Redirects (not canonical):** `docs/AGENT_COORDINATION.md` and `docs/AGENT_GAPS.md` → the files above.
 
 **PROTOCOL — `git stash` is BANNED (2026-08-01).** Never stash work to reach a
 "clean tree" or dodge a conflict; it silently hides work from `git status` and
@@ -33,9 +35,9 @@ or export a visible `.patch` file. `git stash list` must stay EMPTY.
 3. Read **`AGENTS.md`** — non-negotiables (perf, native, Lua, `@comp.*`).
 4. Call **`duo_agent_session_start(agent_id="your-id")`** (duo-bench MCP) — loads buffers + open P0 count.
 5. **Claim** work: **`duo_coordination_update(action="claim", ...)`** before editing shared files.
-6. Builds: **`duo_agent_smoke()`** or **`scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/agent_smoke.duo`** (tier-0 default).
+6. Builds: **`duo_agent_smoke()`** or **`duo run scripts/duo_lock.duo -- ./zig-out/bin/duo run scripts/agent_smoke.duo`** (tier-0 default; `duo_lock.sh` was retired by RL-13).
 7. Native audit: **`duo_audit_metaprogramming_smokes()`** after generative/meta work; **`duo_audit_native_boxing(path)`** for targeted checks.
-8. New gap: **`duo_agent_gaps_update(action="open", ...)`** or append Cross-Agent Gap Buffer.
+8. New gap: a new `gaps/GAP-0NN.md`.
 9. Delegate P0/P1: **`duo_agent_delegate(gap_id, agent_id, status)`**.
 
 ## Comptime hooks (in Duo source)

@@ -8,7 +8,11 @@ script = req "std.script"
 json_mod = req "std.json"
 
 ROOT = os.getenv("DUO_ROOT", os.getenv("PWD", "."))
-COORD_PATH = ROOT .. "/.agents/AGENT_COORDINATION.md"
+-- Session state, NOT repository truth. These tools APPEND — five write sites
+-- below — which is how .agents/AGENT_COORDINATION.md grew to 4619 tracked
+-- lines and became a control plane. .agents/session/ is gitignored; the
+-- durable document it replaced stays hand-maintained and small.
+COORD_PATH = ROOT .. "/.agents/session/coordination.md"
 PERF_PATH = ROOT .. "/docs/performance.md"
 CANON_PATH = ROOT .. "/.agents/AGENT_CANONICAL.md"
 DUO_BIN = os.getenv("DUO_BIN", ROOT .. "/zig-out/bin/duo")
@@ -385,7 +389,7 @@ fun bench_regressions(bench_output: str, bench_type: str): any
     if bt == "" then bt = "bench" end
     if out == nil then out = "" end
     if out == "" then
-        out = script.capture("scripts/duo_lock.sh -- zig build " .. bt .. " 2>&1")
+        out = script.capture("duo run scripts/duo_lock.duo -- zig build " .. bt .. " 2>&1")
     end
     pass_full = "All benchmarks: results match"
     pass_correct = "benchmark results match reference C"

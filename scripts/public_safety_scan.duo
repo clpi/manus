@@ -34,9 +34,12 @@ path_rg(): str
 end
 
 -- Agent/plan/ledger paths legitimately carry local paths; production docs and
--- source do not.
+-- source do not. `docs/history/` joins that list for the same reason
+-- `docs/plans/` is on it: both are frozen historical evidence quoting sessions
+-- verbatim, and rewriting a quotation to launder a path would make the record
+-- less true, not more safe.
 path_excludes(): str
-    "^(\\.agents/|\\.cursor/|\\.poolside/|\\.vscode/|docs/AGENT_|docs/plans/|docs/performance\\.md|scripts/mcp/|AGENTS\\.md|CLAUDE\\.md)"
+    "^(\\.agents/|\\.cursor/|\\.poolside/|\\.vscode/|docs/AGENT_|docs/history/|docs/plans/|docs/performance\\.md|scripts/mcp/|AGENTS\\.md|CLAUDE\\.md)"
 end
 
 main(): i64

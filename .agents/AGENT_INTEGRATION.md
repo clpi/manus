@@ -66,18 +66,18 @@ All agents share the same 3 MCP servers via stdio (no HTTP, no browser tabs, no 
 
 1. **At session start:** Call `duo_agent_session_start` (duo-bench MCP); read `.agents/AGENT_CANONICAL.md`
 2. **Before editing files:** Claim files via `duo_coordination_update(action="claim")`
-3. **Before building:** Check `scripts/duo_lock.sh status` — serialize builds
+3. **Before building:** Check `duo run scripts/duo_lock.duo status` — serialize builds
 4. **After benchmark changes:** Append to `docs/performance.md`
-5. **When discovering gaps:** Use `duo_agent_gaps_update` or append to `.agents/AGENT_COORDINATION.md#cross-agent-gap-buffer`
+5. **When discovering gaps:** write a new `gaps/GAP-0NN.md` — check the directory first, numbers collide across sessions
 6. **After finishing:** Release claims via `duo_coordination_update(action="release")`
 
 ## Build Safety (Prevents Machine Freeze)
 
-ALL builds must run under `scripts/duo_lock.sh`:
+ALL builds must run under `scripts/duo_lock.duo`:
 ```
-scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/agent_smoke.duo   # tier-0
-scripts/duo_lock.sh -- zig build unit-test --summary all     # tier-1
-scripts/duo_lock.sh -- zig build bench                       # tier-3 (claim perf row first!)
+duo run scripts/duo_lock.duo -- ./zig-out/bin/duo run scripts/agent_smoke.duo   # tier-0
+duo run scripts/duo_lock.duo -- zig build unit-test --summary all     # tier-1
+duo run scripts/duo_lock.duo -- zig build bench                       # tier-3 (claim perf row first!)
 ```
 
 ## Duo as Scripting Language

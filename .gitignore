@@ -89,3 +89,11 @@ docs/book/
 
 # Agent/session state is not repository truth (Pass 10, Pass 13).
 .cursor/hooks/state/
+
+# Session/agent control-plane state is not repository truth (epoch 2 audit).
+# Tracked files need enduring architectural roles; claims, leases and session
+# logs are stale within days. .agents/AGENT_COORDINATION.md is the durable
+# document; everything mutable lives here and stays out of the index.
+.agents/session/
+.agents/claims/
+.cursor/skills/

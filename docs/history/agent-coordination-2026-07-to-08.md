@@ -1,3 +1,44 @@
+<!-- FROZEN 2026-08-08. Do not append. -->
+
+# ARCHIVE — the agent coordination buffer, 2026-07-31 to 2026-08-08
+
+**HISTORICAL EVIDENCE, not authority.** Same standing as `docs/plans/pass*.md`
+under [`docs/spec/AUTHORITY.md`](../spec/AUTHORITY.md): this records how the work
+arrived where it is. Nothing here may be cited as a rule. Where it disagrees
+with `CLAUDE.md`, `CLAUDE.md` wins, and a great deal of it predates Pass 100.
+
+## Why it was frozen
+
+This file was 4619 lines of mutable markdown functioning as a **control plane**:
+claims, leases, build-tier policy, an open-gap queue and a reverse-chronological
+session log, all tracked in git and all rewritten by every session. An external
+audit's finding was that tracked files need enduring architectural roles, not
+session ownership — markdown may EXPLAIN a control plane but must not BE one.
+
+It was moved rather than deleted because roughly two thirds of it is real
+engineering history: root causes with generated C, reverted attempts and the
+reason they were reverted, and measurements. That is worth keeping and worth
+not appending to.
+
+## Where its jobs went
+
+| Job it was doing | Where it lives now |
+|---|---|
+| durable subsystem/owner map, protocol rules | `.agents/AGENT_COORDINATION.md` (small, stable) |
+| open gaps and findings | `gaps/GAP-0NN.md`, one file per gap |
+| live claims and leases | untracked `.agents/session/` — session state is not repository truth |
+| session log | nowhere. A commit log already records what happened, with diffs |
+
+## Reading it
+
+Entries run **newest first** within each section. The substantive material is
+concentrated in the two gap buffers and the dated session entries; the claim
+tables and build-tier sections are stale by construction and several of them
+name commands that no longer exist (`scripts/duo_lock.sh` was retired by RL-13;
+`~/x/duo-mcp` and `~/x/ward` were merged into `tools/mcp` and `ext/ward`).
+
+---
+
 # Duo Agent Coordination Buffer
 
 > **MANDATORY for every agent.** Read at session start, before any edit or build.
