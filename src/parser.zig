@@ -2395,6 +2395,128 @@ pub const Parser = struct {
         } };
     }
 
+    /// Pass 100 §6 — THE CONSUMPTION LOOP, plus Pass 101 GUARD CHAINS:
+    ///
+    ///     while b = cursor:next() mix(b)
+    ///     while b = :peek() and p(b) .pos += 1
+    ///
+    /// `while` is the only clause that lacked the binding condition `if`
+    /// already had, so `while b = …` was the diagnostic "expected expression,
+    /// got '='" — which is why the golden `leb128` and `lexer` of §20 stop on
+    /// their first loop.
+    ///
+    /// Desugars into the existing AST rather than growing a second loop node:
+    ///
+    ///     while true
+    ///         b = <expr>
+    ///         if b <then body> else break
+    ///
+    /// The chain nests instead of hoisting, because §6 says the links are
+    /// CORRELATED: in `while a = f() and p(a) and b = g(a)`, `g(a)` must not
+    /// run when `p(a)` failed. Each link owns the remainder as its `then`.
+    ///
+    /// The bound expression is parsed ABOVE `and`'s precedence, which is the
+    /// whole content of the guard-chain rule: `b = :peek() and p(b)` binds
+    /// `b` to `:peek()`, not to the conjunction. `or` is left below the cut
+    /// and therefore does not chain, per §6.
+    ///
+    /// Strictly additive — every form here was a parse error before, so no
+    /// existing program changes meaning. `if` is deliberately NOT changed in
+    /// the same hunk: there `name = expr and guard` already parses and binds
+    /// the conjunction, so re-cutting it is a semantic change to live code,
+    /// not a new surface. Filed separately.
+    fn parse_while_consumption(self: *Parser, l: ast.Loc) ParseError!?ast.Stmt {
+        if ((try self.pk()).kind != .name) return null;
+        const saved = self.lex.saveState();
+        const first = try self.adv();
+        if ((try self.pk()).kind != .assign) {
+            self.lex.restoreState(saved);
+            return null;
+        }
+        _ = try self.adv(); // consume '='
+
+        const Link = struct { name: ?[]const u8, loc: ast.Loc, expr: *ast.Expr };
+        var links: std.ArrayList(Link) = .empty;
+        try links.append(self.alloc, .{
+            .name = first.text,
+            .loc = first.loc,
+            .expr = try self.parse_prec(5),
+        });
+        while (try self.eat(.kw_and) != null) {
+            const nxt = try self.pk();
+            if (nxt.kind == .name) {
+                const link_saved = self.lex.saveState();
+                const nm = try self.adv();
+                if ((try self.pk()).kind == .assign) {
+                    _ = try self.adv();
+                    try links.append(self.alloc, .{
+                        .name = nm.text,
+                        .loc = nm.loc,
+                        .expr = try self.parse_prec(5),
+                    });
+                    continue;
+                }
+                self.lex.restoreState(link_saved);
+            }
+            try links.append(self.alloc, .{
+                .name = null,
+                .loc = nxt.loc,
+                .expr = try self.parse_prec(5),
+            });
+        }
+
+        try self.eat_deprecated(.kw_do);
+        var inner = try self.parse_block();
+        _ = try self.expect(.kw_end);
+
+        var i = links.items.len;
+        while (i > 0) {
+            i -= 1;
+            const link = links.items[i];
+            var brk_stmts = try self.alloc.alloc(ast.Stmt, 1);
+            brk_stmts[0] = .{ .brk = link.loc };
+            const cond: *ast.Expr = if (link.name) |nm|
+                try self.new_expr(.{ .name = .{ .loc = link.loc, .ident = nm } })
+            else
+                link.expr;
+            const guard = ast.Stmt{ .if_stmt = .{
+                .loc = link.loc,
+                .binding = null,
+                .cond = cond,
+                .then = inner,
+                .elseifs = &.{},
+                .else_body = .{ .loc = link.loc, .stmts = brk_stmts },
+            } };
+            if (link.name) |nm| {
+                var names: std.ArrayList(ast.LocalName) = .empty;
+                try names.append(self.alloc, .{
+                    .ident = nm,
+                    .typ = .inferred,
+                    .attrib = null,
+                    .attributes = &.{},
+                    .loc = link.loc,
+                });
+                var inits: std.ArrayList(*ast.Expr) = .empty;
+                try inits.append(self.alloc, link.expr);
+                var stmts = try self.alloc.alloc(ast.Stmt, 2);
+                stmts[0] = .{ .local_decl = .{
+                    .loc = link.loc,
+                    .names = try names.toOwnedSlice(self.alloc),
+                    .inits = try inits.toOwnedSlice(self.alloc),
+                } };
+                stmts[1] = guard;
+                inner = .{ .loc = link.loc, .stmts = stmts };
+            } else {
+                var stmts = try self.alloc.alloc(ast.Stmt, 1);
+                stmts[0] = guard;
+                inner = .{ .loc = link.loc, .stmts = stmts };
+            }
+        }
+
+        const true_lit = try self.new_expr(.{ .true_lit = l });
+        return ast.Stmt{ .while_loop = .{ .loc = l, .cond = true_lit, .body = inner } };
+    }
+
     fn parse_while(self: *Parser) ParseError!ast.Stmt {
         const l = (try self.adv()).loc;
         // `while let pattern = expr do ... end` — desugars to while + match
@@ -2420,6 +2542,7 @@ pub const Parser = struct {
             const true_lit = try self.new_expr(.{ .true_lit = l });
             return ast.Stmt{ .while_loop = .{ .loc = l, .cond = true_lit, .body = inner_body } };
         }
+        if (try self.parse_while_consumption(l)) |stmt| return stmt;
         const cond = try self.parse_expr();
         try self.eat_deprecated(.kw_do);
         const body = try self.parse_block();
