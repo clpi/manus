@@ -1972,6 +1972,40 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
                 }
                 // `mem.zero(p, n)` is memset(p, 0, n) — three arguments through
                 // mov_arg, the same marshalling concat proved works for two.
+                // `mem.read_byte(p, off)` and `mem.read_i64(p, off)` are indexed
+                // loads — the same shape `string.byte` and `s[i]` already use.
+                // The byte one goes through the BYTE-width arm (`.ty = .any`),
+                // the i64 one through the scaled 8-byte arm (`.ty = .i64`);
+                // that distinction is the whole difference between them.
+                //
+                // Both offsets are BYTE offsets from the caller's view, and the
+                // backend's byte path computes `base + (i - 1)`, so the byte
+                // read normalizes with +1 here exactly as `s[i]` does. The i64
+                // arm scales by 8, so its offset is divided first.
+                if (std.mem.eql(u8, f.field, "read_byte") and c.args.len == 2) {
+                    const base = try lowerExpr(ctx, c.args[0]);
+                    const off = try lowerExpr(ctx, c.args[1]);
+                    const one = ctx.freshTemp();
+                    try ctx.emit(.{ .op = .binop, .result = one, .binop = .add, .lhs = off, .rhs = .{ .i64 = 1 } });
+                    const t = ctx.freshTemp();
+                    try ctx.emit(.{ .op = .load_index, .result = t, .lhs = base, .rhs = .{ .temp = one } });
+                    return .{ .temp = t };
+                }
+                // `mem.read_i64(p, byteoff)` is the SCALED load: the backend's
+                // `.ty = .i64` indexed access computes `[base, idx, lsl #3]`,
+                // i.e. it multiplies by 8 itself. The caller passes a BYTE
+                // offset, so divide here rather than teaching the backend a
+                // second addressing mode. A non-8-aligned offset is already
+                // undefined for an i64 read, so the division loses nothing real.
+                if (std.mem.eql(u8, f.field, "read_i64") and c.args.len == 2) {
+                    const base = try lowerExpr(ctx, c.args[0]);
+                    const off = try lowerExpr(ctx, c.args[1]);
+                    const idx = ctx.freshTemp();
+                    try ctx.emit(.{ .op = .binop, .result = idx, .binop = .div, .lhs = off, .rhs = .{ .i64 = 8 } });
+                    const t = ctx.freshTemp();
+                    try ctx.emit(.{ .op = .load_index, .result = t, .ty = .i64, .lhs = base, .rhs = .{ .temp = idx } });
+                    return .{ .temp = t };
+                }
                 if (std.mem.eql(u8, f.field, "zero") and c.args.len == 2) {
                     const ptr = try lowerExpr(ctx, c.args[0]);
                     const n = try lowerExpr(ctx, c.args[1]);

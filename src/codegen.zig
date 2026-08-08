@@ -4338,6 +4338,8 @@ pub const CodeGen = struct {
                         const nargs = call.args.len;
                         const ok_mem = (std.mem.eql(u8, f.field, "alloc") and nargs == 1) or
                             (std.mem.eql(u8, f.field, "free") and nargs == 1) or
+                            (std.mem.eql(u8, f.field, "read_byte") and nargs == 2) or
+                            (std.mem.eql(u8, f.field, "read_i64") and nargs == 2) or
                             (std.mem.eql(u8, f.field, "zero") and nargs == 2) or
                             (std.mem.eql(u8, f.field, "addr") and nargs == 1);
                         if (ok_mem) {
