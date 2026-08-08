@@ -36,7 +36,7 @@ escape(s: any): str
     i = 1
     hex = "0123456789abcdef"
     while i <= n
-        b = s:byte(i)
+        b = string.byte(s, i)
         if b == 34
             out[rawlen(out) + 1] = "\\\""
         elseif b == 92
@@ -54,9 +54,9 @@ escape(s: any): str
         elseif b < 32
             hi = math.floor(b / 16) + 1
             lo = (b % 16) + 1
-            out[rawlen(out) + 1] = "\\u00" .. hex:sub(hi, hi) .. hex:sub(lo, lo)
+            out[rawlen(out) + 1] = "\\u00" .. string.sub(hex, hi, hi) .. string.sub(hex, lo, lo)
         else
-            out[rawlen(out) + 1] = s:sub(i, i)
+            out[rawlen(out) + 1] = string.sub(s, i, i)
         end
         i += 1
     end
@@ -109,7 +109,7 @@ json_skip_ws(cur: any)
     s = cur.s
     n = #s
     while cur.i <= n
-        b = s:byte(cur.i)
+        b = string.byte(s, cur.i)
         if b == 32 or b == 9 or b == 10 or b == 13
             cur.i = cur.i + 1
         else
@@ -122,7 +122,7 @@ json_hex4(s): i64
     v = 0
     i = 1
     while i <= 4
-        b = s:byte(i)
+        b = string.byte(s, i)
         d = 0
         if b >= 48 and b <= 57
             d = b - 48
@@ -158,14 +158,14 @@ json_string(cur): any
     n = #s
     out = {}
     while cur.i <= n
-        b = s:byte(cur.i)
+        b = string.byte(s, cur.i)
         if b == 34
             cur.i = cur.i + 1
             return table.concat(out)
         end
         if b == 92
             cur.i = cur.i + 1
-            e = s:byte(cur.i)
+            e = string.byte(s, cur.i)
             if e == 110
                 out[rawlen(out) + 1] = "\n"
             elseif e == 116
@@ -183,7 +183,7 @@ json_string(cur): any
             elseif e == 102
                 out[rawlen(out) + 1] = string.char(12)
             elseif e == 117
-                hex = s:sub(cur.i + 1, cur.i + 4)
+                hex = string.sub(s, cur.i + 1, cur.i + 4)
                 cp = json_hex4(hex)
                 out[rawlen(out) + 1] = json_utf8_char(cp)
                 cur.i = cur.i + 4
@@ -199,11 +199,11 @@ json_string(cur): any
             start = cur.i
             cur.i = cur.i + 1
             while cur.i <= n
-                b2 = s:byte(cur.i)
+                b2 = string.byte(s, cur.i)
                 if b2 == 34 or b2 == 92 break end
                 cur.i = cur.i + 1
             end
-            out[rawlen(out) + 1] = s:sub(start, cur.i - 1)
+            out[rawlen(out) + 1] = string.sub(s, start, cur.i - 1)
         end
     end
     table.concat(out)
@@ -214,14 +214,14 @@ json_number(cur): any
     start = cur.i
     n = #s
     while cur.i <= n
-        b = s:byte(cur.i)
+        b = string.byte(s, cur.i)
         if (b >= 48 and b <= 57) or b == 45 or b == 43 or b == 46 or b == 101 or b == 69
             cur.i = cur.i + 1
         else
             break
         end
     end
-    num_str = s:sub(start, cur.i - 1)
+    num_str = string.sub(s, start, cur.i - 1)
     tonumber(num_str)
 end
 
@@ -229,12 +229,12 @@ json_value(cur): any
     json_skip_ws(cur)
     s = cur.s
     if cur.i > #s return nil end
-    b = s:byte(cur.i)
+    b = string.byte(s, cur.i)
     if b == 123
         cur.i = cur.i + 1
         obj = {}
         json_skip_ws(cur)
-        if cur.s:byte(cur.i) == 125
+        if string.byte(cur.s, cur.i) == 125
             cur.i = cur.i + 1
             return obj
         end
@@ -246,7 +246,7 @@ json_value(cur): any
             val = json_value(cur)
             obj[key] = val
             json_skip_ws(cur)
-            b2 = cur.s:byte(cur.i)
+            b2 = string.byte(cur.s, cur.i)
             if b2 == 44
                 cur.i = cur.i + 1
             elseif b2 == 125
@@ -263,7 +263,7 @@ json_value(cur): any
         arr = {}
         arrn = 0
         json_skip_ws(cur)
-        if cur.s:byte(cur.i) == 93
+        if string.byte(cur.s, cur.i) == 93
             cur.i = cur.i + 1
             return arr
         end
@@ -272,7 +272,7 @@ json_value(cur): any
             arrn = arrn + 1
             arr[arrn] = val
             json_skip_ws(cur)
-            b2 = cur.s:byte(cur.i)
+            b2 = string.byte(cur.s, cur.i)
             if b2 == 44
                 cur.i = cur.i + 1
             elseif b2 == 93
