@@ -32,8 +32,11 @@
 -- `setmetatable`, and the two non-family rows that hold). The family surface
 -- that actually has a realization is four rows -- brace application against a
 -- function, the default table place, `to(str)`, and `for v in t`.
+-- Raised 10 -> 11 on 2026-08-07: CALL-1, descriptor shape fill. Construction is
+-- the descriptor's own `call` edge and its default realization is the record
+-- itself; emitting a CALL to a name no function owns was the defect.
 baseline(): i64
-    10
+    11
 end
 
 -- On braces in probe DATA. Interpolation has no escape (GAP-16), so a file

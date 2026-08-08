@@ -13102,6 +13102,29 @@ pub const CodeGen = struct {
                 }
             },
             .call => |c| {
+                // Descriptor construction: `point{ x = 1, y = 2 }`.
+                //
+                // Pass 81 §2.1 rules construction the descriptor's OWN `call`
+                // edge, whose default realization is shape-directed fill —
+                // `init` is deleted precisely because construction is already
+                // an edge. But no function named `point` exists, so the brace
+                // call lowered to `point(({ ... }))` and the C compiler said
+                // "call to undeclared function 'point'". The constructor
+                // ladder's FIRST rung did not compile (FF-13, CALL-1, P86-1).
+                //
+                // The default fill IS the table: a descriptor applied to a
+                // record literal yields that record. Only names registered as
+                // record aliases take this path, so an ordinary function called
+                // with a table operand (`srv{ port = 8080 }`, CALL-4, which has
+                // always worked) is untouched.
+                if (c.func.* == .name and c.args.len == 1 and c.args[0].* == .table) {
+                    if (self.record_aliases.get(c.func.name.ident)) |alias_rt| {
+                        if (alias_rt == .table_type) {
+                            try self.emit_expr(c.args[0]);
+                            return;
+                        }
+                    }
+                }
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__constexpr") and c.args.len == 1) {
                     try self.emit_comptime_expr(c.args[0], self.expr_type(expr) == .any);
                     return;

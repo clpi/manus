@@ -30,7 +30,7 @@
 -- Verified 2026-08-07: 15/29 -- three of the gain are FF-1 rows that were
 -- never broken, only mis-probed. See the FF-1 note in main().
 baseline(): i64
-    16
+    17
 end
 
 -- An open brace, built rather than written. Interpolation has NO ESCAPE: there
