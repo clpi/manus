@@ -324,7 +324,14 @@ pub const CodeGen = struct {
     /// (matched on `.tag`). Populated by `emit_enum_decls` (Task 12.6).
     enum_has_payload: std.StringHashMapUnmanaged(bool) = .empty,
     enum_defs: std.StringHashMapUnmanaged(*const ast.EnumDef) = .empty,
-    alias_defs: std.StringHashMapUnmanaged(*const ast.AliasDef) = .empty,
+    /// `name --is--> descriptor`. The SAME type Sema uses (`sema.AliasRegistry`),
+    /// with the same derivation and the same membership decisions — CodeGen no
+    /// longer re-derives or re-decides anything about aliases. This instance is a
+    /// second SCOPE of that one record, not a second answer: during embedded
+    /// module emission it holds the parent module's descriptors unioned with the
+    /// submodule's, which the submodule's throwaway `Sema` cannot express. See
+    /// `sema.AliasRegistry` and `docs/registry_collapse.md` rows 1 and 2.
+    alias_defs: sema.AliasRegistry = .{},
     record_aliases: std.StringHashMapUnmanaged(RT) = .empty,
     function_c_names: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// Methods associated with alias types (collected from `fun TypeName:method()` declarations).
@@ -662,7 +669,7 @@ pub const CodeGen = struct {
             .alloc = self.alloc,
             .mod = self.current_module,
             .record_aliases = &self.record_aliases,
-            .alias_defs = &self.alias_defs,
+            .alias_defs = &self.alias_defs.map,
             .concepts = self.concepts,
             .bindings = self.comptime_bindings(),
             .options = self.comptime_eval_options(),
@@ -6586,11 +6593,9 @@ pub const CodeGen = struct {
     }
 
     pub fn populate_alias_defs(self: *CodeGen, mod: *ast.Module) E!void {
-        for (mod.body.stmts) |*stmt| {
-            if (stmt.* != .alias_def) continue;
-            const ad = &stmt.alias_def;
-            try self.alias_defs.put(self.alloc, ad.name, ad);
-        }
+        // The alias scan that used to live here was a byte-for-byte fork of the
+        // one in `Sema.check_module`. There is now one derivation, in sema.
+        try self.alias_defs.collect(self.alloc, mod);
         // Associate func_decl methods (fun TypeName:method or fun TypeName.method)
         // with their alias type for zero-cost dispatch and auto-metatable generation.
         for (mod.body.stmts) |*stmt| {
@@ -17530,12 +17535,9 @@ pub const CodeGen = struct {
         };
         if (type_name) |tname| {
             if (self.alias_defs.get(tname)) |alias_def| {
-                for (alias_def.methods) |m| {
-                    const mname = if (m.path.len > 0) m.path[m.path.len - 1] else "";
-                    if (std.mem.eql(u8, mname, method_name)) {
-                        self.p("true", .{});
-                        return;
-                    }
+                if (sema.AliasRegistry.hasmethod(alias_def, method_name)) {
+                    self.p("true", .{});
+                    return;
                 }
             }
         }
@@ -17573,76 +17575,28 @@ pub const CodeGen = struct {
         const concepts = self.concepts orelse return null;
         const concept = concepts.get(concept_name) orelse return null;
 
-        const aliasHasField = struct {
-            fn check(ad: *const ast.AliasDef, field_name: []const u8) bool {
-                for (ad.fields) |f| {
-                    if (std.mem.eql(u8, f.name, field_name)) return true;
-                }
-                if (ad.target) |target| {
-                    switch (target) {
-                        .record => |rec| {
-                            for (rec.fields) |f| {
-                                if (std.mem.eql(u8, f.name, field_name)) return true;
-                            }
-                        },
-                        else => {},
-                    }
-                }
-                return false;
-            }
-        }.check;
-
+        // One decision procedure, shared with `Sema.type_satisfies_concept`.
+        // This function used to carry its own copy of the descriptor field walk
+        // and its own two-branch satisfaction loop, and the copy had drifted: the
+        // `.name` branch consulted the descriptor OR the `fun T:m()` method list,
+        // never both, so a concept met jointly by a descriptor's fields and a
+        // separately-declared method answered `false` here and `true` in sema.
+        // Both now ask `sema.AliasRegistry.satisfies`.
         if (args[0].* == .name) {
             const type_name = args[0].name.ident;
-            if (self.alias_defs.get(type_name)) |ad| {
-                for (concept.required_fields) |req_field| {
-                    if (!aliasHasField(ad, req_field.name)) return false;
-                }
-                for (concept.required_methods) |req_method| {
-                    var found = aliasHasField(ad, req_method.name);
-                    if (!found) {
-                        for (ad.methods) |m| {
-                            const mname = if (m.path.len > 0) m.path[m.path.len - 1] else "";
-                            if (std.mem.eql(u8, mname, req_method.name)) {
-                                found = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (!found) return false;
-                }
-                return true;
-            }
-            const table_name = type_name;
-            const methods = if (self.table_methods) |tm| tm.get(table_name) else null;
-            if (methods != null) {
-                for (concept.required_fields) |req_field| {
-                    var found = false;
-                    if (methods) |ms| {
-                        for (ms.items) |m| {
-                            if (std.mem.eql(u8, m, req_field.name)) {
-                                found = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (!found) return false;
-                }
-                for (concept.required_methods) |req_method| {
-                    var found = false;
-                    if (methods) |ms| {
-                        for (ms.items) |m| {
-                            if (std.mem.eql(u8, m, req_method.name)) {
-                                found = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (!found) return false;
-                }
-                return true;
-            }
-            return null;
+            const alias_def = self.alias_defs.get(type_name);
+            const methods: ?[]const []const u8 = if (self.table_methods) |tm|
+                if (tm.get(type_name)) |ms| ms.items else null
+            else
+                null;
+            // Nothing known about this name — no answer, as before.
+            if (alias_def == null and methods == null) return null;
+            return sema.AliasRegistry.satisfies(
+                alias_def,
+                methods,
+                .{ .@"struct" = .{ .name = type_name } },
+                concept,
+            );
         }
 
         const rt = self.expr_type(args[0]);
@@ -17652,47 +17606,14 @@ pub const CodeGen = struct {
             else => null,
         };
         const alias_def = if (type_name) |tname| self.alias_defs.get(tname) else null;
-
-        for (concept.required_fields) |req_field| {
-            var found = false;
-            if (alias_def) |ad| {
-                if (aliasHasField(ad, req_field.name)) found = true;
-            }
-            if (!found and rt == .table_type) {
-                for (rt.table_type.fields) |rec_field| {
-                    if (std.mem.eql(u8, rec_field.name, req_field.name)) {
-                        found = true;
-                        break;
-                    }
-                }
-            }
-            if (!found) return false;
-        }
-        for (concept.required_methods) |req_method| {
-            var found = false;
-            if (alias_def) |ad| {
-                if (aliasHasField(ad, req_method.name)) found = true;
-                if (!found) {
-                    for (ad.methods) |m| {
-                        const mname = if (m.path.len > 0) m.path[m.path.len - 1] else "";
-                        if (std.mem.eql(u8, mname, req_method.name)) {
-                            found = true;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (!found and rt == .table_type) {
-                for (rt.table_type.fields) |rec_field| {
-                    if (std.mem.eql(u8, rec_field.name, req_method.name)) {
-                        found = true;
-                        break;
-                    }
-                }
-            }
-            if (!found) return false;
-        }
-        return true;
+        const methods: ?[]const []const u8 = if (type_name) |tname|
+            if (self.table_methods) |tm|
+                if (tm.get(tname)) |ms| ms.items else null
+            else
+                null
+        else
+            null;
+        return sema.AliasRegistry.satisfies(alias_def, methods, rt, concept);
     }
 
     /// __field_type(T, "name") — returns C type name of a field as string literal
