@@ -3386,7 +3386,7 @@ pub const CodeGen = struct {
                     else
                         .any;
                     if (!self.init_is_native_scalar(value, hint)) {
-                        native_diag_fail("assign-value");
+                        native_diag_fail_fmt("assign-value:{s}", .{if (value.* == .unop) @tagName(value.unop.op) else @tagName(value.*)});
                         break :blk false;
                     }
                 }
@@ -3903,7 +3903,39 @@ pub const CodeGen = struct {
                 break :blk false;
             } else true,
             .binop => |bin| self.expr_is_native_scalar(bin.lhs) and self.expr_is_native_scalar(bin.rhs),
-            .unop => |un| un.op != .compile and self.expr_is_native_scalar(un.operand),
+            .unop => |un| blk: {
+                // `Kind = @{ eof = 0, ident = 1 }` — the canonical enum
+                // descriptor. dnir_lower.collectModuleConsts already folds this
+                // exact shape into module constants (its doc names it), but the
+                // gate in front rejected every `.compile` unop outright, so the
+                // canonical spelling disqualified its module. Same drift as
+                // string.byte: the lowering had grown past the precheck.
+                //
+                // Narrow on purpose — only a table of named integer literals,
+                // which is what the folder consumes. Any other compile-time
+                // construct still needs the boxed path.
+                if (un.op == .compile) {
+                    if (un.operand.* != .table) {
+                        native_diag_fail("compile-nontable");
+                        break :blk false;
+                    }
+                    for (un.operand.table.fields) |fld| {
+                        const nf = switch (fld) {
+                            .named => |x| x,
+                            else => {
+                                native_diag_fail("descriptor-field-unnamed");
+                                break :blk false;
+                            },
+                        };
+                        if (nf.val.* != .int_lit) {
+                            native_diag_fail("descriptor-field-nonint");
+                            break :blk false;
+                        }
+                    }
+                    break :blk true;
+                }
+                break :blk self.expr_is_native_scalar(un.operand);
+            },
             .field => |field| blk: {
                 if (self.expr_is_req_module_const_field(expr)) break :blk true;
                 break :blk self.expr_is_native_scalar(field.obj);
