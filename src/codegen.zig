@@ -4180,6 +4180,20 @@ pub const CodeGen = struct {
                     // global. Kept adjacent to the string rows so the whole set
                     // of "runtime-global name, native lowering" pairs is in one
                     // place and drifts together or not at all (gap[034]).
+                    // Paired with the dnir_lower arm: the three mem primitives
+                    // that are plain libc rather than typed-pointer surface.
+                    if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "mem")) {
+                        const nargs = call.args.len;
+                        const ok_mem = (std.mem.eql(u8, f.field, "alloc") and nargs == 1) or
+                            (std.mem.eql(u8, f.field, "free") and nargs == 1) or
+                            (std.mem.eql(u8, f.field, "read") and nargs == 2);
+                        if (ok_mem) {
+                            for (call.args) |a| {
+                                if (!self.expr_is_native_scalar(a)) break :blk false;
+                            }
+                            break :blk true;
+                        }
+                    }
                     if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "os") and
                         std.mem.eql(u8, f.field, "exit") and call.args.len == 1)
                     {

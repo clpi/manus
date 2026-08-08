@@ -1790,6 +1790,35 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
             // seconds as a float and C's returns ticks, so lowering it to the
             // libc symbol would change what the program measures — a silent
             // semantic swap, not a lowering.
+            // `mem.alloc/free/read` are libc, not a runtime. alloc and free are
+            // single-argument extern calls -- the same shape `#s` uses for
+            // strlen -- and `mem.read(p, i)` is a byte load, the same shape
+            // `string.byte` uses. The rest of the family (cast, load with a
+            // type argument, store, copy, zero) is a TYPED POINTER surface that
+            // needs a pointer type in DNIR; these three do not, and were
+            // refused only because `mem` is a runtime global by name.
+            if (std.mem.eql(u8, f.obj.name.ident, "mem")) {
+                if (std.mem.eql(u8, f.field, "alloc") and c.args.len == 1) {
+                    const n = try lowerExpr(ctx, c.args[0]);
+                    try ensureExtern(ctx, "mem", "alloc", "malloc");
+                    const t = ctx.freshTemp();
+                    try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "malloc", .lhs = n });
+                    return .{ .temp = t };
+                }
+                if (std.mem.eql(u8, f.field, "free") and c.args.len == 1) {
+                    const ptr = try lowerExpr(ctx, c.args[0]);
+                    try ensureExtern(ctx, "mem", "free", "free");
+                    try ctx.emit(.{ .op = .call_extern, .callee = "free", .lhs = ptr });
+                    return .void;
+                }
+                if (std.mem.eql(u8, f.field, "read") and c.args.len == 2) {
+                    const base = try lowerExpr(ctx, c.args[0]);
+                    const idx = try lowerExpr(ctx, c.args[1]);
+                    const t = ctx.freshTemp();
+                    try ctx.emit(.{ .op = .load_index, .result = t, .lhs = base, .rhs = idx });
+                    return .{ .temp = t };
+                }
+            }
             if (std.mem.eql(u8, f.obj.name.ident, "os") and
                 std.mem.eql(u8, f.field, "exit") and c.args.len == 1)
             {
