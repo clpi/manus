@@ -142,6 +142,12 @@ pub const Instr = struct {
     record: []const u8 = "",
     /// Third ABI slot for 3-field record returns.
     third: Value = .void,
+    /// Every field value of a `ret_record`, in DESCRIPTOR order, one entry per
+    /// declared field. `lhs`/`rhs`/`third` mirror the first three so an older
+    /// consumer reads the same values, but they cannot express a fourth: a
+    /// 5-field record return wrote x0..x2 and left the caller reading whatever
+    /// x3/x4 happened to hold. Fields beyond the third exist only here.
+    vals: []const Value = &.{},
     /// Label index for branch ops (resolved by backend).
     branch_target: u32 = 0,
     /// Hardware intrinsic for `hw_unary` / metadata on fence-family ops.

@@ -375,13 +375,44 @@ fn f64AbiParamSlots(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc) ?usi
     return slots;
 }
 
+/// A record crossing a function boundary is exploded into one field per
+/// argument register, and there are eight of them (x0..x7). Eight is therefore
+/// the register file, not a conservative cap.
+pub const max_reg_record_fields = 8;
+
+/// Past `max_reg_record_fields` a record return uses the AAPCS64 indirect-result
+/// convention: the CALLER reserves the buffer and passes its address in x8, and
+/// the callee writes the fields through it. Bounded so the caller's frame
+/// reservation stays a small `sub sp` immediate.
+pub const max_record_fields = 32;
+
+/// True when a record return must use the x8 indirect-result convention rather
+/// than the x0..x7 explosion.
+pub fn recordReturnIsIndirect(rec: dnir.RecordDesc) bool {
+    return rec.fields.len > max_reg_record_fields;
+}
+
 fn functionEligible(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc) bool {
     if (fd.func.vararg or fd.func.vararg_name != null) return false;
     if (findRecordName(recs, fd.func.ret_type)) |rec| {
-        if (rec.fields.len == 0 or rec.fields.len > 8) return false;
+        if (rec.fields.len == 0 or rec.fields.len > max_record_fields) return false;
+        // An f64 record rides v0..v7 as a homogeneous float aggregate; there is
+        // no indirect form for it here, so its own eight stays a hard limit.
+        if (isF64Record(recs, fd.func.ret_type)) |_| {
+            if (rec.fields.len > max_reg_record_fields) return false;
+        }
         for (fd.func.params) |p| {
-            if (isF64Record(recs, p.typ)) |_| continue;
-            if (findRecordName(recs, p.typ)) |_| continue;
+            // A record PARAMETER is still one field per argument register —
+            // only the RETURN gained an indirect form. Admitting a wide record
+            // here would explode past x7 and read caller garbage.
+            if (isF64Record(recs, p.typ)) |r| {
+                if (r.fields.len > max_reg_record_fields) return false;
+                continue;
+            }
+            if (findRecordName(recs, p.typ)) |r| {
+                if (r.fields.len > max_reg_record_fields) return false;
+                continue;
+            }
             if (!isIntType(p.typ) and !isStrType(p.typ) and !typeIsPtr(p.typ)) return false;
         }
         return true;
@@ -403,7 +434,10 @@ fn functionEligible(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc) bool
     }
     if (fd.func.params.len > 8) return false;
     for (fd.func.params) |p| {
-        if (findRecordName(recs, p.typ)) |_| continue;
+        if (findRecordName(recs, p.typ)) |r| {
+            if (r.fields.len > max_reg_record_fields) return false;
+            continue;
+        }
         // `ptr` rides x0..x7 like an i64 — it is the base address of a
         // memory-backed positional table (SH-04).
         if (!isIntType(p.typ) and !isStrType(p.typ) and !typeIsPtr(p.typ)) return false;
@@ -421,7 +455,7 @@ fn collectRecords(alloc: std.mem.Allocator, out: *std.ArrayList(dnir.RecordDesc)
             .record => |r| r,
             else => continue,
         };
-        if (rec.fields.len == 0 or rec.fields.len > 8) continue;
+        if (rec.fields.len == 0 or rec.fields.len > max_record_fields) continue;
         var names: std.ArrayListUnmanaged([]const u8) = .empty;
         errdefer names.deinit(alloc);
         var kinds: std.ArrayListUnmanaged(dnir.FieldKind) = .empty;
@@ -1528,27 +1562,59 @@ fn emitF64RecordFieldsFromName(ctx: *LowerCtx, name: []const u8, slot: *u32) Err
 
 fn lowerRecordReturn(ctx: *LowerCtx, table: *const ast.Expr) Error!void {
     if (table.* != .table) return bail(@src());
-    var vals: [8]dnir.Value = undefined;
-    var ni: usize = 0;
-    while (ni < vals.len) : (ni += 1) vals[ni] = .void;
-    var count: u32 = 0;
+    const rec_name = ctx.ret_record orelse return bail(@src());
+    const rec = findRecordName(ctx.records, .{ .named = rec_name }) orelse return bail(@src());
+    const count: u32 = @intCast(rec.fields.len);
+    if (count == 0 or count > max_record_fields) return bail(@src());
+
+    // Order by the DESCRIPTOR, not by the literal.
+    //
+    // The consumer reads field i out of ABI slot i (or buffer offset i*8), and
+    // the descriptor is the only thing that agrees with it. Walking the
+    // literal's own order instead meant `return { c = 3, a = 1, b = 2 }` for
+    // `@{ a, b, c }` shipped 3 in the slot the caller reads as `a`. Every
+    // literal that happened to be written in declaration order hid it.
+    const vals = try ctx.alloc.alloc(dnir.Value, count);
+    errdefer ctx.alloc.free(vals);
+    var seen = try ctx.alloc.alloc(bool, count);
+    defer ctx.alloc.free(seen);
+    @memset(seen, false);
     for (table.table.fields) |fld| {
         const nf = switch (fld) {
             .named => |n| n,
             else => return bail(@src()),
         };
-        if (count >= vals.len) return bail(@src());
-        vals[count] = try lowerExpr(ctx, nf.val);
-        count += 1;
+        const idx = fieldIndexIn(rec, nf.key) orelse return bailWith(@src(), nf.key);
+        // A field written twice would leave the earlier expression's side
+        // effects in the stream with no home; a field written once is the
+        // whole contract here.
+        if (seen[idx]) return bailWith(@src(), nf.key);
+        vals[idx] = try lowerExpr(ctx, nf.val);
+        seen[idx] = true;
     }
+    // A partially-written buffer is the exact failure this convention has to
+    // rule out: the caller reads all `count` slots either way, so an omitted
+    // field is caller-visible garbage rather than a missing value.
+    for (seen, 0..) |s, i| {
+        if (!s) return bailWith(@src(), rec.fields[i]);
+    }
+
     try ctx.emit(.{
         .op = .ret_record,
-        .record = ctx.ret_record orelse "",
+        .record = rec_name,
         .lhs = vals[0],
         .rhs = if (count > 1) vals[1] else .void,
         .third = if (count > 2) vals[2] else .void,
+        .vals = vals,
         .result = count,
     });
+}
+
+fn fieldIndexIn(rec: dnir.RecordDesc, name: []const u8) ?usize {
+    for (rec.fields, 0..) |f, i| {
+        if (std.mem.eql(u8, f, name)) return i;
+    }
+    return null;
 }
 
 fn lowerExpr(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
@@ -3334,4 +3400,75 @@ test "dnir_lower: if binding assigns before branch" {
     try std.testing.expect(saw_get_call);
     try std.testing.expect(saw_v_store);
     try std.testing.expect(br_after_store);
+}
+
+test "dnir_lower: ret_record carries every field in DESCRIPTOR order" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // The literal is written OUT of declaration order on purpose. The consumer
+    // reads field i from ABI slot i (or buffer offset i*8), so the descriptor
+    // is the only ordering that agrees with it; walking the literal's own order
+    // shipped `c`'s value in the slot the caller reads as `a`.
+    const src =
+        \\rec: @{ a: i64, b: i64, c: i64, d: i64, e: i64 }
+        \\mk(): rec
+        \\    return { c = 30, e = 50, a = 10, d = 40, b = 20 }
+        \\end
+        \\main(): i64
+        \\    0
+        \\end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "retorder.duo");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    const mod = try parser.parse_module();
+    const m = try lowerModule(alloc, &mod);
+
+    var saw = false;
+    for (m.functions) |f| {
+        for (f.blocks) |b| {
+            for (b.instrs) |ins| {
+                if (ins.op != .ret_record) continue;
+                saw = true;
+                // One entry per DECLARED field, not per written field.
+                try std.testing.expectEqual(@as(usize, 5), ins.vals.len);
+                const want = [_]i64{ 10, 20, 30, 40, 50 };
+                for (ins.vals, want) |v, w| {
+                    try std.testing.expectEqual(w, v.i64);
+                }
+            }
+        }
+    }
+    try std.testing.expect(saw);
+}
+
+test "dnir_lower: a nine-field record return is eligible, a nine-field param is not" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const wide = "big: @{ a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64, i: i64 }\n";
+    const lit = "{ a = 1, b = 2, c = 3, d = 4, e = 5, f = 6, g = 7, h = 8, i = 9 }";
+
+    // Nine fields RETURNED: the x8 indirect-result convention covers it.
+    {
+        const src = wide ++ "mk(): big\n    return " ++ lit ++ "\nend\nmain(): i64\n    0\nend\n";
+        var lex = @import("lexer.zig").Lexer.init(src, "wideret.duo");
+        var parser = @import("parser.zig").Parser.init(&lex, alloc);
+        parser.duo_mode = true;
+        const mod = try parser.parse_module();
+        const m = try lowerModule(alloc, &mod);
+        try std.testing.expectEqual(@as(usize, 2), m.functions.len);
+    }
+
+    // Nine fields PASSED: still one field per argument register, and there is
+    // no ninth. Refusing beats exploding past x7 into caller garbage.
+    {
+        const src = wide ++ "take(v: big): i64\n    return v.a\nend\nmain(): i64\n    0\nend\n";
+        var lex = @import("lexer.zig").Lexer.init(src, "wideparam.duo");
+        var parser = @import("parser.zig").Parser.init(&lex, alloc);
+        parser.duo_mode = true;
+        const mod = try parser.parse_module();
+        try std.testing.expectError(error.UnsupportedConstruct, lowerModule(alloc, &mod));
+    }
 }

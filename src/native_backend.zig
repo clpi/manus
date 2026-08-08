@@ -794,6 +794,14 @@ const Arm64Compiler = struct {
     process_entry: ?[]const u8 = null,
     cur_func_ret_record: ?ScalRecordDesc = null,
     cur_func_ret_f64_record: ?F64RecordDesc = null,
+    /// Where this function parked the AAPCS64 indirect-result pointer it was
+    /// handed in x8. Only set when `cur_func_ret_record` is wider than the
+    /// argument register file. x8 is caller-saved, so a body containing any
+    /// call would lose it; `emitSaveCallerRegs` preserves x9..x28, which is why
+    /// the pointer moves there on entry rather than being read at `ret`.
+    cur_ret_indirect_reg: ?u5 = null,
+    /// Backing store for `dnirRetRecordVals`'s lhs/rhs/third fallback.
+    ret_record_scratch: [3]dnir.Value = @splat(.void),
     fp_locals: std.StringHashMapUnmanaged(u5) = .empty,
     used_fp_regs: [32]bool = @splat(false),
     /// Stack slots for sealed record fields (f64 or i64): "c.pos" -> slot meta.
@@ -1107,6 +1115,7 @@ const Arm64Compiler = struct {
         self.stack_frame_bytes = 0;
         self.cur_func_ret_record = if (f.ret_record) |rn| scalRecordDesc(self.scal_records, .{ .named = rn }) else null;
         self.cur_func_ret_f64_record = if (f.ret_record) |rn| f64RecordDesc(self.f64_records, .{ .named = rn }) else null;
+        self.cur_ret_indirect_reg = null;
         self.cur_func_float = f.is_float_kernel;
         self.cur_func_ret_float = f.ret == .f64 and !f.is_float_kernel;
 
@@ -1152,6 +1161,16 @@ const Arm64Compiler = struct {
             // `n - 2`. Copy parameters into the caller-saved range when the body
             // can call; leaf functions keep the incoming register and pay nothing.
             const body_has_call = dnirFunctionHasCall(f);
+            // Claim the indirect-result pointer FIRST, while x8 still holds what
+            // the caller put there. Everything after this can call, and x8 does
+            // not survive a call.
+            if (self.cur_func_ret_record) |rec| {
+                if (rec.field_names.len > dnir_lower.max_reg_record_fields) {
+                    const home = try self.allocReg();
+                    try self.emitMovReg(home, 8);
+                    self.cur_ret_indirect_reg = home;
+                }
+            }
             // A record parameter occupies one ABI slot per field, so slots are
             // not 1:1 with parameters; walk a cursor. This mirrors how the
             // lowerer assigns `p.field` locals.
@@ -1210,7 +1229,11 @@ const Arm64Compiler = struct {
                         else => continue,
                     }
                     const rec = scalRecordDesc(self.scal_records, .{ .named = ins.record }) orelse continue;
-                    if (rec.field_names.len == 0 or rec.field_names.len > 8) continue;
+                    // A record wider than the argument file is returned
+                    // INDIRECTLY, and this reservation is the buffer the callee
+                    // writes through — so it has to be made here too, not only
+                    // for the records that arrive in x0..x7.
+                    if (rec.field_names.len == 0 or rec.field_names.len > dnir_lower.max_record_fields) continue;
                     const base = if (ins.field.len > 0) ins.field else "rec";
                     const probe = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, rec.field_names[0] });
                     defer self.alloc.free(probe);
@@ -1568,12 +1591,21 @@ const Arm64Compiler = struct {
                         self.releaseDnirTemp(pinned, ins.lhs, arg_reg);
                     }
                     if (ins.op == .call_extern) try self.ensureExternalSymbol(ins.callee);
+                    // The indirect-result pointer has to be materialized BEFORE
+                    // `emitSaveCallerRegs`, which moves `sp` down by its own
+                    // save area. `add x8, sp, #off` computed inside that window
+                    // would name a slot in the save area instead of the buffer.
+                    const indirect = try self.indirectResultBuffer(ins);
+                    if (indirect) |off| try self.emitAddSpImm(8, off);
                     const save = try self.emitSaveCallerRegs();
                     const vbytes = try self.emitPushVarargs();
                     try self.emitBl(ins.callee);
                     try self.emitPopVarargs(vbytes);
                     try self.emitRestoreCallerRegs(save);
-                    if (ins.record.len > 0) {
+                    // An indirect return has already landed: the callee wrote
+                    // the caller's buffer through x8, so there is nothing in
+                    // x0..x7 to copy out.
+                    if (ins.record.len > 0 and indirect == null) {
                         if (f64RecordDesc(self.f64_records, .{ .named = ins.record })) |frec| {
                             const base = if (ins.field.len > 0) ins.field else "rec";
                             try self.assignF64RecordFromFpAbiRegs(base, frec);
@@ -1593,8 +1625,15 @@ const Arm64Compiler = struct {
                         const base = if (ins.field.len > 0) ins.field else "rec";
                         try self.assignF64RecordFromFpAbiRegs(base, frec);
                     } else if (scalRecordDesc(self.scal_records, .{ .named = ins.record })) |rec| {
-                        const base = if (ins.field.len > 0) ins.field else "rec";
-                        try self.assignRecordFromAbiRegs(base, rec);
+                        // A wide record never arrived in x0..x7. It is either
+                        // the buffer a callee just filled through x8, or a
+                        // literal whose fields already live in their own
+                        // locals; copying eight argument registers over it
+                        // would overwrite real data with call debris.
+                        if (rec.field_names.len <= dnir_lower.max_reg_record_fields) {
+                            const base = if (ins.field.len > 0) ins.field else "rec";
+                            try self.assignRecordFromAbiRegs(base, rec);
+                        }
                     } else return refuse(@src());
                 }
             },
@@ -1624,8 +1663,27 @@ const Arm64Compiler = struct {
                     (ins.record.len > 0 and f64RecordDesc(self.f64_records, .{ .named = ins.record }) != null))
                 {
                     try self.emitRetF64RecordFromDnir(temps, ins);
+                } else if (self.cur_ret_indirect_reg) |buf| {
+                    // AAPCS64 indirect result: the caller reserved the buffer
+                    // and handed us its address in x8 (parked in `buf` on
+                    // entry). Write every field through it. There is no
+                    // parallel-move hazard here — a store cannot clobber a
+                    // source register — but a field left UNWRITTEN is worse
+                    // than a wrong register, because the caller reads the slot
+                    // regardless and sees whatever the frame held. The lowerer
+                    // guarantees one value per declared field; assert the count
+                    // rather than trust it.
+                    const vals = try self.dnirRetRecordVals(ins);
+                    const rec = self.cur_func_ret_record orelse return refuse(@src());
+                    if (vals.len != rec.field_names.len) return refuse(@src());
+                    for (vals, 0..) |v, i| {
+                        const src = try self.evalDnirValue(temps, v);
+                        const off: u16 = @intCast(i * 8);
+                        try self.emitStrBaseImm(src, buf, off);
+                        if (!Arm64Compiler.regIsPinned(pinned, src)) self.releaseReg(src);
+                    }
                 } else {
-                    // Returning a record is a PARALLEL move into x0..x2, not a
+                    // Returning a record is a PARALLEL move into x0..x7, not a
                     // sequential one. Writing x0 first and then reading a later
                     // field that still lives in x0 — a parameter, typically —
                     // substitutes the value just stored: `{ kind = 1, start = pos }`
@@ -1635,19 +1693,18 @@ const Arm64Compiler = struct {
                     // (allocReg hands out x9+, so it can never alias an ABI
                     // destination), then commit. Redundant `mov`s here are folded
                     // by the peephole; a wrong answer is not recoverable.
-                    var srcs: [3]u5 = .{ 0, 0, 0 };
-                    var n: usize = 1;
-                    srcs[0] = try self.evalDnirValue(temps, ins.lhs);
-                    if (ins.rhs != .void) {
-                        srcs[1] = try self.evalDnirValue(temps, ins.rhs);
-                        n = 2;
-                    }
-                    if (ins.third != .void) {
-                        srcs[2] = try self.evalDnirValue(temps, ins.third);
-                        n = 3;
-                    }
+                    //
+                    // This used to read `lhs`/`rhs`/`third` and stop, so a
+                    // 4th..8th field was simply never returned while the caller
+                    // still copied x0..x7 out — `{ a=1 … e=5 }` handed back
+                    // whatever x4 held. Walk every field.
+                    const vals = try self.dnirRetRecordVals(ins);
+                    const n = vals.len;
+                    if (n == 0 or n > dnir_lower.max_reg_record_fields) return refuse(@src());
+                    var srcs: [dnir_lower.max_reg_record_fields]u5 = @splat(0);
+                    var staged: [dnir_lower.max_reg_record_fields]u5 = @splat(0);
+                    for (vals, 0..) |v, i| srcs[i] = try self.evalDnirValue(temps, v);
 
-                    var staged: [3]u5 = .{ 0, 0, 0 };
                     var i: usize = 0;
                     while (i < n) : (i += 1) {
                         staged[i] = try self.allocReg();
@@ -2175,9 +2232,17 @@ const Arm64Compiler = struct {
         self.used_regs[victim] = false;
     }
 
+    /// x18 is Apple's PLATFORM REGISTER. AAPCS64 leaves it to the platform and
+    /// Apple's arm64 ABI reserves it outright — "don't use this register" —
+    /// so it is not part of the allocatable pool even though it sits in the
+    /// middle of x9..x28. The pool could always reach it under pressure; a
+    /// record return staging eight fields at once reaches it reliably.
+    const platform_reserved_reg: u5 = 18;
+
     fn allocRegExcluding(self: *Arm64Compiler, exclude: ?u5) Error!u5 {
         var reg: u5 = 9;
         while (reg < 29) : (reg += 1) {
+            if (reg == platform_reserved_reg) continue;
             if (exclude != null and reg == exclude.?) continue;
             if (!self.used_regs[reg]) {
                 self.used_regs[reg] = true;
@@ -3397,6 +3462,58 @@ const Arm64Compiler = struct {
         self.releaseReg(reg);
     }
 
+    /// `str xs, [xbase, #imm]` — 8-byte store at a constant offset from an
+    /// arbitrary base. `emitStrSp` is the same encoding pinned to x31/sp; the
+    /// indirect-result buffer lives at a pointer the caller chose, so the base
+    /// has to be a register.
+    fn emitStrBaseImm(self: *Arm64Compiler, src: u5, base: u5, offset: u16) Error!void {
+        if (offset % 8 != 0 or offset / 8 > 4095) return refuse(@src());
+        try self.ensureRegLive(base);
+        try self.ensureRegLive(src);
+        try self.emitFmt(
+            0xf9000000 | ((@as(u32, offset) / 8) << 10) | (@as(u32, base) << 5) | @as(u32, src),
+            "str x{d}, [x{d}, #{d}]",
+            .{ src, base, offset },
+        );
+    }
+
+    /// Every field value of a `ret_record`, in descriptor order.
+    ///
+    /// `vals` is authoritative when the lowerer set it. The `lhs`/`rhs`/`third`
+    /// fallback exists for DNIR built by hand in tests, and stops at three for
+    /// the same reason it always did — there is no fourth inline slot.
+    fn dnirRetRecordVals(self: *Arm64Compiler, ins: dnir.Instr) Error![]const dnir.Value {
+        if (ins.vals.len > 0) return ins.vals;
+        var n: usize = 0;
+        self.ret_record_scratch[0] = ins.lhs;
+        n = 1;
+        if (ins.rhs != .void) {
+            self.ret_record_scratch[1] = ins.rhs;
+            n = 2;
+        }
+        if (ins.third != .void) {
+            self.ret_record_scratch[2] = ins.third;
+            n = 3;
+        }
+        return self.ret_record_scratch[0..n];
+    }
+
+    /// The frame offset of the buffer this call must fill through x8, or null
+    /// when the call returns in registers (or returns no record at all).
+    fn indirectResultBuffer(self: *Arm64Compiler, ins: dnir.Instr) Error!?u16 {
+        if (ins.record.len == 0) return null;
+        const rec = scalRecordDesc(self.scal_records, .{ .named = ins.record }) orelse return null;
+        if (rec.field_names.len <= dnir_lower.max_reg_record_fields) return null;
+        const base = if (ins.field.len > 0) ins.field else "rec";
+        const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, rec.field_names[0] });
+        defer self.alloc.free(key);
+        // The prologue pre-pass reserves one region per record base. If it did
+        // not, there is no buffer to point x8 at and the callee would write
+        // through whatever x8 held on entry — refuse rather than emit that.
+        const slot = self.fp_stack_slots.get(key) orelse return refuse(@src());
+        return slot.off;
+    }
+
     /// `add xd, sp, #imm` — materialize the address of a frame slot region.
     fn emitAddSpImm(self: *Arm64Compiler, dst: u5, bytes: u16) Error!void {
         if (bytes > 4095) return refuse(@src());
@@ -3796,6 +3913,7 @@ fn freeDnirModule(alloc: std.mem.Allocator, m: dnir.Module) void {
                 if (ins.req_alias.len > 0) alloc.free(ins.req_alias);
                 if (ins.field.len > 0) alloc.free(ins.field);
                 if (ins.record.len > 0) alloc.free(ins.record);
+                if (ins.vals.len > 0) alloc.free(ins.vals);
             }
             alloc.free(b.instrs);
         }
@@ -5280,6 +5398,109 @@ test "Pass 11 WP-03: register spills with >20 live locals" {
     try std.testing.expect(std.mem.indexOf(u8, listing, "\tstr x") != null);
     try std.testing.expect(std.mem.indexOf(u8, listing, "\tldr x") != null);
     try std.testing.expect(std.mem.indexOf(u8, listing, "lua_") == null);
+
+    const obj = try emitObject(alloc, &mod, "native-object");
+    defer alloc.free(obj);
+    try std.testing.expect(obj.len > 0);
+}
+
+test "record return wider than x0..x7 uses the AAPCS64 x8 indirect result" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // Nine i64 fields: one more than the argument register file, so the record
+    // cannot be exploded and the caller must hand over a buffer address.
+    // Verified by VALUE, not only by shape: the same program built with
+    // `--emit exe` reads all nine fields back (11,22,…,99) and agrees with
+    // `--backend=c` field for field.
+    const source =
+        \\big: @{ a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64, i: i64 }
+        \\mk(): big
+        \\    return { a = 11, b = 22, c = 33, d = 44, e = 55, f = 66, g = 77, h = 88, i = 99 }
+        \\end
+        \\main(): i64
+        \\    v = mk()
+        \\    return v.a + v.i
+        \\end
+    ;
+    var lex = Lexer.init(source, "indirect_ret.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var mod = try parser.parse_module();
+    var sem = Sema.init(alloc);
+    defer sem.deinit();
+    sem.duo_mode = true;
+    try sem.check_module(&mod);
+
+    const listing = try emitAssembly(alloc, &mod, "native-asm");
+    defer alloc.free(listing);
+
+    // Caller: reserve the buffer and point x8 at it BEFORE the branch.
+    const x8_setup = std.mem.indexOf(u8, listing, "add x8, sp,") orelse
+        return error.MissingIndirectResultPointer;
+    const call_site = std.mem.indexOf(u8, listing, "\tbl _mk\n") orelse
+        return error.MissingCall;
+    try std.testing.expect(x8_setup < call_site);
+
+    // Callee: park x8 while it is still live, then write through the parked
+    // copy. `mov x9, x8` is the parking move; the last field lands at +64.
+    try std.testing.expect(std.mem.indexOf(u8, listing, ", x8\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, listing, ", #64]\n") != null);
+
+    // And it is genuinely indirect: nothing is returned in the argument file.
+    const mk_start = std.mem.indexOf(u8, listing, "_mk:\n") orelse return error.MissingCallee;
+    const mk_body = listing[mk_start..call_site];
+    try std.testing.expect(std.mem.indexOf(u8, mk_body, "mov x0,") == null);
+
+    const obj = try emitObject(alloc, &mod, "native-object");
+    defer alloc.free(obj);
+    try std.testing.expect(obj.len > 0);
+}
+
+test "an eight-field record return still explodes into x0..x7" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // The no-regression control for the register path, and the case that was
+    // silently WRONG: `ret_record` carried three values in lhs/rhs/third and
+    // stopped, while the caller copied x0..x7 out regardless — so field five
+    // onward was whatever the frame left behind. Exercised by value: this
+    // program exits 18 (1*10 + 8) under both backends; it exited 10 before.
+    const source =
+        \\eight: @{ a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64 }
+        \\mk(): eight
+        \\    return { a = 1, b = 2, c = 3, d = 4, e = 5, f = 6, g = 7, h = 8 }
+        \\end
+        \\main(): i64
+        \\    v = mk()
+        \\    return v.a * 10 + v.h
+        \\end
+    ;
+    var lex = Lexer.init(source, "explode8.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var mod = try parser.parse_module();
+    var sem = Sema.init(alloc);
+    defer sem.deinit();
+    sem.duo_mode = true;
+    try sem.check_module(&mod);
+
+    const listing = try emitAssembly(alloc, &mod, "native-asm");
+    defer alloc.free(listing);
+
+    // Every one of the eight ABI registers is written, including the eighth.
+    try std.testing.expect(std.mem.indexOf(u8, listing, "mov x7,") != null);
+    // And no indirect buffer is set up — this path stays in registers.
+    try std.testing.expect(std.mem.indexOf(u8, listing, "add x8, sp,") == null);
+    // x18 is Apple's reserved platform register; eight staged fields is the
+    // pressure that used to reach it.
+    try std.testing.expect(std.mem.indexOf(u8, listing, "x18") == null);
 
     const obj = try emitObject(alloc, &mod, "native-object");
     defer alloc.free(obj);
