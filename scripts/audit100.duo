@@ -375,8 +375,8 @@ main(): i64
     -- Nothing here is repairable as text, which is why it is budgeted and not
     -- fixed:
     --
-    --   `ext/ward/src/ward.duo` carries 310 of the 440 points, and 164 upper +
-    --   146 snake of them are ONE generated block — the `OP_unreachable = 0`
+    --   `ext/ward/src/ward.duo` carries 314 of the 440 points, and 310 of those
+    --   (164 upper + 146 snake) are ONE generated block — the `OP_unreachable = 0`
     --   … `OP_i64_extend32_s = 196` constants that `ext/ward/tools/opcodes.duo`
     --   projects into it (6497d44, which is what took ward from 241 hand-typed
     --   opcode predicates to 3). Editing those names by hand is undone by the
@@ -395,10 +395,21 @@ main(): i64
     --   `ext/ward/bench/derived.duo` drifted by 9 points total.
     --
     -- This session DID repair one thing in that file rather than budget it, but
-    -- it was a different gate: its `getenv("DUO_ROOT", "/Users/clp/x/duo")`
-    -- default was failing public_safety_scan, and the replacement adds no deny
+    -- it was a different gate: its `getenv("DUO_ROOT", <an absolute path under
+    -- one author's home directory>)` default was failing public_safety_scan
+    -- (Pass 10 A19), and the replacement adds no deny
     -- line (two comments, one `if`, one assignment — verified: the counts below
     -- are byte-identical before and after that commit).
+    --
+    -- +2 MORE, landed while this was being written, and named rather than
+    -- absorbed: `fd10b39` (RL-04, a face call in a statement-level argument was
+    -- read as a declaration) added one `snake` point and one `underprefix`
+    -- point, both in `lib/std/compiler/parser.duo` (snake 315 -> 316,
+    -- underprefix 116 -> 117). Nothing else in that commit or its two siblings
+    -- moved any row. A one-line regression is the only kind anyone ever
+    -- introduces, so an unattributed +1 is indistinguishable from one — which
+    -- is exactly why the ratchet caught these two and why they are written down
+    -- instead of rounded into the table above.
     --
     -- LOWERING was checked and there is nothing to lower. Every row not listed
     -- above reads EXACTLY its budget — companion 259, accessor 322, directive
@@ -447,7 +458,7 @@ main(): i64
     -- literal lowers to a raw int64_t* that `#` cannot measure and that gets a
     -- free() emitted at every `return` in the function — including the returns
     -- that come textually before it, which is a C compile error.
-    budgets: str = "14019 2253 1677 259 322 478 152 58 1972 442 167 128 228 36 2266 2224 3361"
+    budgets: str = "14020 2253 1678 259 322 478 152 58 1972 442 167 128 228 36 2266 2224 3361"
 
     -- Per-row: 1 = measure with string bodies INTACT. Only `concatlit` sets
     -- it, because its subject IS the string literal; stripping bodies takes
