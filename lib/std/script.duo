@@ -190,8 +190,22 @@ getenv_or(name: str): str
     v
 end
 
+-- This SHELLED OUT (`must("export NAME='v'")`) and was therefore a silent
+-- no-op: `export` runs in the child std.os.execute spawns, and a child cannot
+-- mutate its parent's environment. `must` only checks export's exit status,
+-- which is always 0 -- so every caller got a success it never received.
+--
+-- What it broke, measured: scripts/duo_lock.duo publishes DUO_LOCK_HELD=1 so a
+-- nested locked_run inside the wrapped command takes the early-return in
+-- build_lock_acquire instead of re-acquiring a lock this process already holds.
+-- With the no-op that variable never reached the child, so any nesting would
+-- block until the 1800s timeout. Nothing in-tree nests today (agent_smoke does
+-- not), which is exactly why this survived: a latent self-deadlock behind a
+-- setter that reported success.
+--
+-- std.os.setenv is the real call and already existed.
 env_set(name: str, value: str): void
-    must("export " .. name .. "='" .. value .. "'")
+    std.os.setenv(name, value, true)
 end
 
 -- === Path manipulation (makes Duo ergonomic vs Python os.path) ===
