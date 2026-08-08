@@ -1,77 +1,109 @@
-#!/usr/bin/env duo
-global s = req "std.script"
+-- Property 11: the C backend emits C that a strict compiler accepts.
+--
+-- Duo replacement for scripts/test_property_11.sh (monoglot census).
+--
+-- Nine modules go through `duo dump-c` and then `clang -fsyntax-only -Wall
+-- -Wextra -pedantic -std=c11`. Two of them additionally assert on the SHAPE of
+-- the generated C: a native pointer index and a typed function parameter must
+-- stay direct C, not degrade into boxed runtime calls.
+--
+-- The corpus is deliberately written in the OLD surface -- `function ... -> t`,
+-- `local`, `then`, `while ... do`, `type X =`, `string.sub`, `tostring`. Those
+-- are deny-list forms for new Duo, and that is exactly why they belong here:
+-- this gate exists to prove the compiler still lowers what it accepts. Do not
+-- "modernise" the corpus; it would stop testing the legacy paths.
+--
+-- The sources are [[raw strings]], which take no interpolation. That matters:
+-- every record literal below contains braces, and in an ordinary string
+-- `{ x = 1, y = 2 }` would be read as a hole and rewritten (GAP-16 -- the same
+-- class of self-inflicted corpus damage that broke spec_conformance once).
 
-s.echo("[Property 11] Testing C codegen...")
+_TMP = "/tmp/duo-prop11"
 
-s.echo("1")
-global ROOT: str = tostring(s.path_dirname(s.path_dirname(s.capture("pwd"))))
-s.echo("2")
-if tostring(s.getenv_or("PWD")) != ""
-    ROOT = tostring(s.getenv_or("PWD"))
-end
+_fails = 0
 
-s.echo("3")
-global TMP_DIR: str = string.gsub(s.fs_tmpdir(), "\n", "")
-s.echo("4: " .. TMP_DIR)
-
-global CLANG: str = "clang"
-s.echo("5")
-uname = s.capture("uname -s")
-s.echo("6")
-if uname == "Darwin\n"
-    CLANG = "xcrun clang"
-end
-s.echo("7")
-
-check_module(name: str, code: str): void
-    s.echo("  checking " .. name .. "...")
-    duo_file = s.path_join(TMP_DIR, name .. ".duo")
-    c_file = s.path_join(TMP_DIR, name .. ".c")
-    clang_log = s.path_join(TMP_DIR, name .. ".clang.log")
-    
-    s.fs_write(duo_file, code)
-    s.must(ROOT .. "/zig-out/bin/duo dump-c " .. duo_file .. " > " .. c_file)
-    
-    cmd = CLANG .. " -Wall -Wextra -pedantic -std=c11 -Wno-unused-variable -Wno-strict-prototypes -fsyntax-only " .. c_file .. " > " .. clang_log .. " 2>&1"
-    if not s.ok(cmd)
-        s.echo(s.fs_read(clang_log))
-        os.exit(1)
+_clang(): str
+    if std.script.chomp(std.script.capture("uname")) == "Darwin"
+        return "xcrun clang"
     end
-    s.echo("  ok " .. name)
+    "clang"
 end
 
-check_module("arithmetic", [[
-add(a: i64, b: i64): i64
+-- Emit one module and syntax-check its C. Returns the generated .c path, or
+-- "" if the module did not survive. Failures are COUNTED, not fatal: the
+-- shell version ran under `set -e` and aborted on the first bad module, so a
+-- run told you about one failure at a time.
+_check_module(name: str, src: str, cc: str): str
+    duo_file = _TMP .. "/" .. name .. ".duo"
+    c_file = _TMP .. "/" .. name .. ".c"
+    log = _TMP .. "/" .. name .. ".clang.log"
+
+    std.script.fs_write(duo_file, src)
+    if std.script.run("./zig-out/bin/duo dump-c " .. duo_file .. " > " .. c_file .. " 2>/dev/null") != 0
+        print("FAIL " .. name .. ": duo dump-c failed")
+        _fails = _fails + 1
+        return ""
+    end
+
+    cmd = cc .. " -Wall -Wextra -pedantic -std=c11 -Wno-unused-variable"
+        .. " -Wno-strict-prototypes -fsyntax-only " .. c_file .. " > " .. log .. " 2>&1"
+    if std.script.run(cmd) != 0
+        print("FAIL " .. name .. ": generated C does not compile")
+        print(std.script.capture("head -6 " .. log))
+        _fails = _fails + 1
+        return ""
+    end
+
+    print("ok   " .. name)
+    c_file
+end
+
+-- A shape assertion on the emitted C. `grep -F` -- fixed string, no regex --
+-- because these patterns contain `(*f)` and `[i]`.
+_c_contains(path: str, needle: str, why: str): void
+    if path == "" return end
+    n = std.script.chomp(std.script.capture(
+        "grep -Fc \"" .. needle .. "\" " .. path .. " 2>/dev/null"))
+    if n == "" or n == "0"
+        print("FAIL " .. why)
+        _fails = _fails + 1
+    end
+end
+
+main = (): i64
+    print("[Property 11] Testing C codegen...")
+    std.script.run("rm -rf " .. _TMP .. " && mkdir -p " .. _TMP)
+    cc = _clang()
+
+    _check_module("arithmetic", [[function add(a: i64, b: i64) -> i64
   return a + b
 end
 
-mix(a: i64, b: i64): i64
-  x: i64 = add(a, b)
-  y: i64 = (x * 3) - (b // 2)
+function mix(a: i64, b: i64) -> i64
+  local x: i64 = add(a, b)
+  local y: i64 = (x * 3) - (b // 2)
   return y % 97
 end
 
-result: i64 = mix(40, 2)
-]])
+local result: i64 = mix(40, 2)
+]], cc)
 
-check_module("floats_and_branches", [[
-scale(x: f64, n: i64): f64
-  if n > 10
+    _check_module("floats_and_branches", [[function scale(x: f64, n: i64) -> f64
+  if n > 10 then
     return x * 2.5
-  elseif n == 10
+  elseif n == 10 then
     return x + 1.25
   end
   return x / 2.0
 end
 
-a: f64 = scale(3.0, 12)
-b: bool = a > 1.0
-]])
+local a: f64 = scale(3.0, 12)
+local b: bool = a > 1.0
+]], cc)
 
-check_module("loops", [[
-sum_to(n: i64): i64
-  acc: i64 = 0
-  i: i64 = 1
+    _check_module("loops", [[function sum_to(n: i64) -> i64
+  local acc: i64 = 0
+  local i: i64 = 1
   while i <= n do
     acc = acc + i
     i = i + 1
@@ -79,91 +111,90 @@ sum_to(n: i64): i64
   return acc
 end
 
-total: i64 = sum_to(16)
-]])
+local total: i64 = sum_to(16)
+]], cc)
 
-check_module("strings", [[
-middle(s: str): str
+    _check_module("strings", [[function middle(s: str): str
   return string.sub(s, 2, 4)
 end
 
-label(n: i64): str
-  s: str = tostring(n)
+function label(n: i64): str
+  local s: str = tostring(n)
   return middle("abcdef") .. s
 end
 
-out: str = label(42)
-]])
+local out: str = label(42)
+]], cc)
 
-check_module("records_and_globals", [[
-@packed
+    _check_module("records_and_globals", [[@packed
 @align(16)
 global gp: { x: i8, y: i64 } = { x = 1, y = 2 }
 
-sum_point(): i64
+function sum_point(): i64
   @packed
   @align(8)
-  p: { x: i8, y: i64 } = { x = 3, y = 4 }
+  local p: { x: i8, y: i64 } = { x = 3, y = 4 }
   return gp.y + p.y
 end
 
-n: i64 = sum_point()
-]])
+local n: i64 = sum_point()
+]], cc)
 
-check_module("record_alias_params", [[
-Point: { x: i64, y: i64 }
+    _check_module("record_alias_params", [[type Point = { x: i64, y: i64 }
 
-get_y(p: { x: i64, y: i64 }): i64
+function get_y(p: { x: i64, y: i64 }) -> i64
   return p.y
 end
 
-sum_point(p: Point): i64
+function sum_point(p: Point) -> i64
   return p.x + p.y
 end
 
-p: Point = { x = 5, y = 7 }
-a: i64 = get_y({ x = 3, y = 4 })
-b: i64 = sum_point(p)
-]])
+local p: Point = { x = 5, y = 7 }
+local a: i64 = get_y({ x = 3, y = 4 })
+local b: i64 = sum_point(p)
+]], cc)
 
-check_module("bitwise", [[
-bits(a: i64, b: i64, s: i64): i64
-  x: i64 = (a & b) | (a ~ b)
-  y: i64 = (a & 65535) << s
-  z: i64 = y >> s
+    _check_module("bitwise", [[function bits(a: i64, b: i64, s: i64) -> i64
+  local x: i64 = (a & b) | (a ~ b)
+  local y: i64 = (a & 65535) << s
+  local z: i64 = y >> s
   return x + z + (~b)
 end
 
-n: i64 = bits(123456, 7890, 3)
-]])
+local n: i64 = bits(123456, 7890, 3)
+]], cc)
 
-check_module("native_indexing", [[
-pointer_read(xs: *i32, i: i64): i32
+    -- A pointer index must stay a typed C index. If this degrades into a
+    -- boxed runtime call the module still COMPILES, which is why the shape is
+    -- asserted and not merely the exit status.
+    ni = _check_module("native_indexing", [[function pointer_read(xs: *i32, i: i64) -> i32
   return xs[i]
 end
-]])
+]], cc)
+    _c_contains(ni, "return xs[i];",
+        "native pointer indexing did not remain a direct typed C index")
 
-if not s.ok("grep -Fq 'return xs[i];' " .. TMP_DIR .. "/native_indexing.c")
-    s.echo("native pointer indexing did not remain a direct typed C index")
-    os.exit(1)
-end
-
-check_module("typed_function_values", [[
-increment(x: i32): i32
+    tf = _check_module("typed_function_values", [[function increment(x: i32) -> i32
   return x + 1
 end
 
-apply(f: (i32) -> i32, x: i32) -> i32
+function apply(f: (i32) -> i32, x: i32) -> i32
   return f(x)
 end
 
-result: i32 = apply(increment, 41)
-]])
+local result: i32 = apply(increment, 41)
+]], cc)
+    _c_contains(tf, "int32_t (*f)(int32_t)",
+        "typed function parameter did not remain a direct native C pointer")
+    _c_contains(tf, "return f(x);",
+        "typed function call did not remain a direct native C call")
 
-if not s.ok("grep -Fq 'int32_t (*f)(int32_t)' " .. TMP_DIR .. "/typed_function_values.c") or not s.ok("grep -Fq 'return f(x);' " .. TMP_DIR .. "/typed_function_values.c")
-    s.echo("typed function parameter/call did not remain direct native C")
-    os.exit(1)
+    print("")
+    if _fails > 0
+        print("[Property 11] FAIL — " .. to(str)(_fails) .. " module(s)/assertion(s) failed")
+        return 1
+    end
+    print("[Property 11] SUCCESS")
+    0
 end
-
-s.echo("[Property 11] SUCCESS")
-s.run("rm -rf " .. TMP_DIR)
