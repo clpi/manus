@@ -184,7 +184,7 @@ player_update(player: any, delta_time: f64): any
 
     -- Handle end of clip
     if player.current_time > clip.duration
-        if clip.curves and nxt(clip.curves)
+        if clip.curves and next(clip.curves)
             -- Check if any curve loops
             for curve in clip.curves
                 if curve.loop

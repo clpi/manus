@@ -606,6 +606,28 @@ pub const Sema = struct {
         term.locErr(loc, fmt, args);
     }
 
+    /// gap[026]: relation families are declared at the trie, not as functions,
+    /// so a call like `has(.err)(r)` resolves through the ladder rather than
+    /// through scope. Without this the undeclared-call guard rejects 80 of 256
+    /// lib/std modules — measured, and the reason the guard is not just a
+    /// scope lookup.
+    fn is_relation_family(name: []const u8) bool {
+        const cat = @import("pass48_catalog.zig");
+        for (cat.std_relation_families) |f| {
+            if (std.mem.eql(u8, name, f)) return true;
+        }
+        for (cat.shc_relation_families) |f| {
+            if (std.mem.eql(u8, name, f)) return true;
+        }
+        // `has` is named by Pass 81 §2.2 as projecting over `place` beside
+        // `get`/`set`, but pass48_catalog.std_relation_families lists only those
+        // two. Measured: without this, the guard rejects 20 lib/std modules that
+        // legitimately call `has(.err)(r)`. Listed here rather than added to the
+        // catalog so a catalog-count gate is not silently moved.
+        if (std.mem.eql(u8, name, "has")) return true;
+        return false;
+    }
+
     fn warn_msg(self: *Sema, loc: ast.Loc, comptime fmt: []const u8, args: anytype) void {
         self.warnings += 1;
         term.locWarn(loc, fmt, args);
@@ -2497,6 +2519,23 @@ pub const Sema = struct {
                     }
                     if (std.mem.eql(u8, callee, "pairs") or std.mem.eql(u8, callee, "ipairs")) {
                         self.warn_msg(c.func.name.loc, "'{s}' is deprecated; iterate tables directly with 'for value in table' or 'for key, value in table'", .{callee});
+                    }
+                    // gap[026]: a call to a name nothing declares. This must run
+                    // BEFORE `check_expr(c.func)` below, because that path
+                    // silently defines any unresolved name as an implicit local
+                    // (sema.zig ~2206) and the C compiler becomes the first
+                    // thing to object — `duo check` reported success on programs
+                    // that could not compile.
+                    //
+                    // Top-level forward references are safe: check_module
+                    // pre-registers every top-level binding before check_block,
+                    // so they resolve here.
+                    if (self.scope.lookup(callee) == null and
+                        !self.is_builtin_global(callee) and
+                        !is_relation_family(callee) and
+                        self.foreign_functions.get(callee) == null)
+                    {
+                        self.err(c.func.name.loc, "call to undeclared function '{s}'", .{callee});
                     }
                 }
                 const ft = try self.check_expr(c.func);
