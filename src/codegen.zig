@@ -2939,15 +2939,13 @@ pub const CodeGen = struct {
                 },
                 .local_decl, .assign, .call_stmt, .expr_stmt, .while_loop, .if_stmt, .num_for, .do_block, .ret, .brk, .cont => {
                     if (!self.stmt_is_native_scalar(stmt, false)) {
-                        native_diag_fail("mod-top-stmt");
-                        if (native_diag) std.debug.print("[native-diag]   stmt kind: {s}\n", .{@tagName(stmt.*)});
+                        native_diag_fail_fmt("mod-top-stmt:{s}", .{@tagName(stmt.*)});
                         return nofit(@src());
                     }
                 },
                 .repeat_loop, .gen_for, .match_stmt, .label_stmt, .goto_stmt, .global_decl => {
                     if (!self.stmt_is_native_scalar(stmt, false)) {
-                        native_diag_fail("mod-top-stmt");
-                        if (native_diag) std.debug.print("[native-diag]   stmt kind: {s}\n", .{@tagName(stmt.*)});
+                        native_diag_fail_fmt("mod-top-stmt:{s}", .{@tagName(stmt.*)});
                         return nofit(@src());
                     }
                 },
@@ -3290,6 +3288,19 @@ pub const CodeGen = struct {
                 native_diag_fail("block-tail-no-return");
                 return false;
             }
+            // gap[033]: DEMAND (rule 3) makes an if-body's last call the block's
+            // TAIL EXPRESSION, so `print(".")` inside an `if` is checked here and
+            // rejected as a runtime global, while the identical call at the top of
+            // a function or in a `while` body lands on `.call_stmt` and is
+            // admitted. One construct, two answers, decided by how deep it sits.
+            //
+            // Widening this to `call_stmt_is_native_scalar` was TRIED AND REVERTED
+            // 2026-08-07: it compiles, and the binary is WRONG. `main(): i64`
+            // ending `if c print(" ") end` then `0` exits 59 (and 224 with an
+            // else) where the C backend exits 0 — the discarded print's result is
+            // left as the block's value and leaks into the return. The precheck
+            // cannot widen here until the native backend lowers a void tail call
+            // as a discarded statement; the fix belongs there, not in the gate.
             if (!self.expr_is_native_scalar(expr)) return false;
         }
         for (block.stmts) |*stmt| {
