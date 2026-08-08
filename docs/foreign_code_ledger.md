@@ -28,6 +28,9 @@ Every row below is therefore debt by construction.
 | file | sites | class | role | replacement | deletion gate | status |
 | --- | ---: | --- | --- | --- | --- | --- |
 | `src/ward.duo` | **0** | — | interpreter + ARM64 JIT, the build that ships | — | n/a | **compliant** |
+| `src/duo_lexer_tokenize.c` | 8952 lines | **A** | SH-03 bootstrap: the Duo lexer compiled to C, linked into the production binary so the compiler can tokenize with `lib/std/compiler/lexer.duo` | regenerate from `lib/std/compiler/host.duo`; deleted when a Duo-hosted compiler can build itself without a C stage | **S1 viability — the compiler no longer needs a C bootstrap** | **declared 2026-08-07** |
+| `src/duo_keyword_classify.c` | 72 lines | **A** | SH-02 bootstrap: the keyword table compiled to C; declares its symbol `weak` so the SH-03 artifact's strong definition overrides it | superseded IN PLACE by `src/duo_lexer_tokenize.c`, which already provides the strong symbol | **delete once nothing links the weak fallback** — measurable today | **declared 2026-08-07; retirable** |
+| `src/lexer.zig` | 1300 lines | **C** | SH-03 differential reference: no longer authoritative — `tokenizeAuthority()` returns `.duo_native` as of 2026-08-07. Retained because `src/duo_lexer_dispatch.zig` differentials the Duo token stream against it field for field on every test run | none needed; class C may persist | **never authoritative; delete when the differential is retired at S1 closure** | **declared 2026-08-07; non-authoritative** |
 | `src/wasm/jit_arm64.duo` | **0** | — | ARM64 template JIT | — | n/a | **compliant** |
 | `src/wasm/{op,wasi,simd,aot,jit,memory,stack,table,value}.duo` | **0** | — | C-free leaves | — | n/a | **compliant** |
 | ~~`src/wasm/runtime.duo`~~ | ~~278~~ | — | dead tree | — | — | **DELETED 2026-08-07** |
