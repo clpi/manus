@@ -2279,7 +2279,6 @@ pub const CodeGen = struct {
     /// not a recognized string builtin. This mirrors Sema's builtin typing and
     /// lets emit choose native `str`/integer paths without relying on type_map.
     fn string_builtin_result_type(self: *CodeGen, fname: []const u8, args: []const *ast.Expr) ?RT {
-        _ = self;
         if (std.mem.eql(u8, fname, "len") or
             std.mem.eql(u8, fname, "packsize"))
             return .i64;
@@ -2299,6 +2298,13 @@ pub const CodeGen = struct {
             return .bool;
         if (std.mem.eql(u8, fname, "byte")) {
             if (args.len >= 2 and args[0].* == .string_lit and args[1].* == .int_lit) return .i64;
+            // A `str` receiver with an integer index lowers to a raw
+            // `(int64_t)(unsigned char)s[i - 1]` byte read (see the emit in
+            // try_emit_native_string_call). Typing that .any made `print` wrap
+            // an int64_t in lua_to_display_str, which does not compile — the
+            // static shape has to name what the emitter actually produces.
+            if (args.len >= 2 and self.expr_type(args[0]) == .str and
+                self.expr_type(args[1]).is_integer()) return .i64;
             return null;
         }
         return null;
@@ -32517,6 +32523,70 @@ test "codegen: typed string transformations lower to native C-string helpers" {
     try testing.expect(std.mem.indexOf(u8, output, "lua_str_sub_cstr(lua_str_lower_cstr(s), (int64_t)(3), (int64_t)(8))") != null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_str_lower(lua_val_from_str") == null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_to_str(lua_str_lower") == null);
+}
+
+test "codegen: gap[021] native and/or yields the operand, not a C boolean" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local a: f64 = 2.5
+        \\local r: f64 = a or 1.5
+        \\local n: i64 = 7
+        \\local j: i64 = n or 3
+        \\local u: f64 = a and 4.25
+        \\print(r, j, u)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    // A native numeric is always truthy (B-2), so `or` IS the left operand and
+    // `and` IS the right one. C's `||`/`&&` would have collapsed both to 1.
+    try testing.expect(std.mem.indexOf(u8, output, "(a || 1.5e0)") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "(n || 3)") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "(a && 4.25e0)") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "double r = (a)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t j = (n)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "double u = ((void)(a), (4.25e0))") != null);
+}
+
+test "codegen: tonumber carries its base, and string.byte on a str types as i64" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local s: str = "abc"
+        \\print(tonumber("ff", 16))
+        \\print(string.byte(s, 1))
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "tonumber_base(") != null);
+    // string.byte on a `str` receiver emits a raw byte read; print must format
+    // it as an integer rather than hand an int64_t to lua_to_display_str.
+    try testing.expect(std.mem.indexOf(u8, output, "lua_to_display_str(((int64_t)(unsigned char)") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_byte_of_num(") != null);
 }
 
 test "codegen: __type_shape reports native for all-scalar typed records" {
