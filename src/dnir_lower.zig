@@ -1536,7 +1536,7 @@ fn lowerExprCons(
                 try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "strlen", .lhs = arg });
                 break :blk dnir.Value{ .temp = t };
             }
-            return bail(@src());
+            return bailWith(@src(), @tagName(u.op));
         },
         .index => |ix| blk: {
             // `t[2]` on a positional table resolves to the element's own local,
@@ -1745,7 +1745,7 @@ fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const a
             .gt => .gt,
             .leq => .leq,
             .geq => .geq,
-            else => return bail(@src()),
+            else => return bailWith(@src(), @tagName(op)),
         },
         .lhs = try lowerExpr(ctx, lhs),
         .rhs = try lowerExpr(ctx, rhs),
