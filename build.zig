@@ -182,6 +182,16 @@ pub fn build(b: *std.Build) void {
     const audit100_step = b.step("audit100", "Pass 100 deny table over the canonical .duo corpus; ratchets each row");
     audit100_step.dependOn(&audit100_cmd.step);
 
+    // The first sixty seconds of a new user's life, gated. src/build_framework.zig's
+    // tests drive parser+sema in-process and stayed green while `duo init` emitted a
+    // src/main.duo that `duo check`, `duo build` and `duo run` all rejected. Only a
+    // gate that shells the real CLI into a real scratch directory can see that.
+    const init_build_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/init_build_smoke.duo" });
+    init_build_cmd.setCwd(b.path("."));
+    init_build_cmd.step.dependOn(b.getInstallStep());
+    const init_build_step = b.step("init-build-smoke", "duo init -> check -> build -> run -> test on a clean directory");
+    init_build_step.dependOn(&init_build_cmd.step);
+
     const repro_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/reproducibility_smoke.duo" });
     repro_cmd.setCwd(b.path("."));
     const repro_step = b.step("reproducibility-smoke", "Pass 11 WP-13: ReleaseFast compiler binary identity across clean rebuilds");

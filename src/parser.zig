@@ -653,6 +653,13 @@ pub const Parser = struct {
                 // Standalone module directives (@comp.define.derive, @comp.pipeline, …)
                 // are complete statements — do not require a following declaration.
                 if (meta_module.isStandaloneModuleStatement(qualified)) return true;
+                // `@build.*` is module scope BY CONSTRUCTION — `validateFunctionAttrs`
+                // rejects it on a function outright. It therefore never attaches to a
+                // declaration, and requiring one below meant a file whose `@build.project`
+                // was followed by another `@build.*` (or by any non-declaration) fell
+                // through to expression position and lowered to `.macro_call` — the
+                // `UnknownMacro` that made `duo init`'s own template unbuildable.
+                if (is_build) return true;
                 // `@comp.hint.fence()` / `@comp.bit.popcount(n)` at statement scope are
                 // expression calls (DNIR hardware path), not standalone module directives.
                 // Only treat as directive when a declaration follows (@comp.derive on a decl).
