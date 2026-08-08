@@ -602,7 +602,20 @@ pub const Lexer = struct {
                         return LexError.InvalidNumber;
                     break :blk @as(i64, @bitCast(unsigned));
                 }
-            } else std.fmt.parseInt(i64, text, 10) catch return LexError.InvalidNumber;
+            } else if (std.fmt.parseInt(i64, text, 10)) |signed| blk2: {
+                break :blk2 signed;
+            } else |_| blk2: {
+                // gap[024]: same reinterpretation the hex path above already
+                // does, and for the same reason. A decimal literal in
+                // (i64max, u64max] is a valid u64 that i64 cannot hold, and
+                // rejecting it made the two lexers disagree on the one
+                // construct the fingerprint proofs are built from. Token.int_val
+                // is i64, so the VALUE is carried as its bit pattern — exactly
+                // as `0xcbf29ce484222325` already was.
+                const unsigned = std.fmt.parseInt(u64, text, 10) catch
+                    return LexError.InvalidNumber;
+                break :blk2 @as(i64, @bitCast(unsigned));
+            };
             return Token{ .kind = .int_lit, .loc = l, .text = text, .int_val = v };
         }
     }

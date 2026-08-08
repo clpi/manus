@@ -625,6 +625,11 @@ pub const Sema = struct {
         // legitimately call `has(.err)(r)`. Listed here rather than added to the
         // catalog so a catalog-count gate is not silently moved.
         if (std.mem.eql(u8, name, "has")) return true;
+        // `__`-prefixed names are compiler intrinsics (__native_load_u8,
+        // __sizeof, __typeof, the __comptime* family). They are recognised in
+        // the call handler by name, never declared in scope, so the undeclared
+        // -call guard must not see them. Caught by pass11_wasm_blob_direct.
+        if (std.mem.startsWith(u8, name, "__")) return true;
         return false;
     }
 
