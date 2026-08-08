@@ -1026,6 +1026,14 @@ pub const Parser = struct {
 
         const src = self.lex.cursor.bytes;
 
+        // Every offset below comes from pointer arithmetic against `src`, so
+        // one token whose text lives elsewhere poisons the whole span. Check
+        // the first one and refuse the span rather than compute a wrong one.
+        if (srcOffsetOf(src, first_tok.text) == null) {
+            term.locErr(first_tok.loc, "attribute arguments cannot be recovered from this token stream", .{});
+            return ParseError.UnexpectedToken;
+        }
+
         var start: usize = undefined;
         if (first_tok.kind == .string_lit) {
             const tok_start = @intFromPtr(first_tok.text.ptr) - @intFromPtr(src.ptr);
@@ -1053,7 +1061,10 @@ pub const Parser = struct {
                 depth -= 1;
                 if (depth == 0) break;
             }
-            const tok_start = @intFromPtr(tok.text.ptr) - @intFromPtr(src.ptr);
+            const tok_start = srcOffsetOf(src, tok.text) orelse {
+                term.locErr(tok.loc, "attribute arguments cannot be recovered from this token stream", .{});
+                return ParseError.UnexpectedToken;
+            };
             if (tok.kind == .string_lit) {
                 if (longBracketSpan(src, tok_start, tok.text.len)) |span| {
                     end = span.end;
@@ -1083,6 +1094,25 @@ pub const Parser = struct {
         while (i > 0 and src[i] == '=') : (i -= 1) eq += 1;
         if (src[i] != '[') return null;
         return eq + 2;
+    }
+
+    /// A token's byte offset within `src` — but only when its text genuinely
+    /// lies inside `src`.
+    ///
+    /// `parse_attribute_args` recovers source spans by subtracting pointers,
+    /// which silently assumes every token's `text` is a slice OF the source
+    /// buffer. That holds for the host scanner and does not hold under SH-03
+    /// production dispatch, where the token stream comes from the Duo lexer and
+    /// string text lives in a separate arena. The subtraction then yields a
+    /// meaningless offset — measured at 168958 against a 2787-byte source — and
+    /// the long-bracket scan indexed straight past the end and aborted.
+    ///
+    /// Returning null instead of a wrong number turns "crash" into "say so".
+    fn srcOffsetOf(src: []const u8, text: []const u8) ?usize {
+        const base = @intFromPtr(src.ptr);
+        const p = @intFromPtr(text.ptr);
+        if (p < base or p + text.len > base + src.len) return null;
+        return p - base;
     }
 
     fn skipLongBracketWsBack(src: []const u8, i: usize) usize {
