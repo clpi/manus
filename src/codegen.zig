@@ -2041,14 +2041,17 @@ pub const CodeGen = struct {
                 const else_t = self.expr_type(ie.else_expr);
                 break :blk if (then_t.eql(else_t)) then_t else .any;
             },
-            .call => |c| blk: {
-                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "tonumber")) break :blk .f64;
-                break :blk null;
-            },
+            // A bare `tonumber(...)` is deliberately NOT structurally numeric.
+            // It answers nil for a string that is not a complete numeral, and
+            // claiming `.f64` here made the emit declare the destination a
+            // native double and wrap the call in `lua_to_num(...)` — so the nil
+            // collapsed to 0 before any `!= nil` test could run (gap[031]).
+            // `tonumber(s) or d` is still read as numeric, in the `or` arm
+            // below, because that form consumes the nil itself.
             .binop => |b| blk: {
                 if (b.op == .@"or" or b.op == .@"and") {
-                    const lt = self.structural_expr_type(b.lhs) orelse self.expr_type(b.lhs);
-                    const rt = self.structural_expr_type(b.rhs) orelse self.expr_type(b.rhs);
+                    const lt = self.numeric_operand_type(b.lhs);
+                    const rt = self.numeric_operand_type(b.rhs);
                     if (lt.is_numeric() and rt.is_numeric()) {
                         break :blk if (lt == .f64 or rt == .f64) .f64 else .i64;
                     }
@@ -2057,6 +2060,15 @@ pub const CodeGen = struct {
             },
             else => null,
         };
+    }
+
+    /// The type an operand of `and`/`or` contributes to the numeric-result
+    /// decision. `tonumber(x)` counts as `.f64` HERE and nowhere else: the
+    /// short-circuit form is the one place the nil is consumed on the spot.
+    fn numeric_operand_type(self: *CodeGen, e: *const ast.Expr) RT {
+        if (e.* == .call and e.call.func.* == .name and
+            std.mem.eql(u8, e.call.func.name.ident, "tonumber")) return .f64;
+        return self.structural_expr_type(e) orelse self.expr_type(e);
     }
 
     fn register_native_str_list_local(self: *CodeGen, name: []const u8) !void {
@@ -2483,7 +2495,14 @@ pub const CodeGen = struct {
         if (std.mem.eql(u8, name, "type") or
             std.mem.eql(u8, name, "tostring"))
             return .str;
-        if (std.mem.eql(u8, name, "tonumber")) return .f64;
+        // `tonumber` is a conversion that CAN FAIL: it answers nil for a string
+        // that is not a complete numeral, and for anything that is not a string
+        // or a number. Typing it `.f64` made every unannotated result a native
+        // double, so the emit wrapped the call in `lua_to_num(...)` and the nil
+        // became 0 before any caller could test it. `.any` keeps the nil
+        // reachable; an explicit `: f64` annotation still coerces, which is the
+        // caller asking for a number and getting one.
+        if (std.mem.eql(u8, name, "tonumber")) return .any;
         if (std.mem.eql(u8, name, "rawlen")) return .i64;
         if (std.mem.eql(u8, name, "rawequal") or
             std.mem.eql(u8, name, "pcall") or
@@ -5674,11 +5693,20 @@ pub const CodeGen = struct {
             //
             // A constructor is the whole fix: it runs when the object is loaded,
             // so the host needs no init call and the ABI is unchanged.
+            //
+            // The constructor also runs THIS module's file-scope body. The
+            // registration call above initialises every REQUIRED module and
+            // stopped there, so the primary module — the one the artifact is
+            // named after — was the single module in the link unit that was
+            // never initialised. Its file-scope bindings are emitted as
+            // statements inside `main`, and lib mode returns before `main`
+            // exists. A scalar global then read back as 0 and a table global as
+            // NULL, neither with a diagnostic (gap[020]).
+            const is_wasm = std.mem.eql(u8, self.target, "wasm32-wasi");
+            const init_name = if (is_wasm) "duo_wasm_initialize" else "duo_lib_initialize";
+            self.p("__attribute__((constructor)) static void {s}(void) {{\n", .{init_name});
+            self.indent = 1;
             if (self.moduleNeedsLuaRuntime()) {
-                const is_wasm = std.mem.eql(u8, self.target, "wasm32-wasi");
-                const init_name = if (is_wasm) "duo_wasm_initialize" else "duo_lib_initialize";
-                self.p("__attribute__((constructor)) static void {s}(void) {{\n", .{init_name});
-                self.indent = 1;
                 self.pl("package = lua_package_init();", .{});
                 self.pl("math = lua_math_init();", .{});
                 self.pl("utf8 = lua_utf8_init();", .{});
@@ -5699,9 +5727,10 @@ pub const CodeGen = struct {
                 self.pl("duo_modules = lua_table_new();", .{});
                 self.pl("duo_register_modules();", .{});
                 self.pl("_VERSION = lua_val_from_str(\"Lua 5.5\");", .{});
-                self.indent = 0;
-                self.p("}}\n", .{});
             }
+            try self.emit_file_scope_body(mod);
+            self.indent = 0;
+            self.p("}}\n", .{});
             return;
         }
 
@@ -5743,6 +5772,47 @@ pub const CodeGen = struct {
             self.pl("_VERSION = lua_val_from_str(\"Lua 5.5\");", .{});
         }
 
+        try self.emit_file_scope_body(mod);
+        if (self.load_chunk) {
+            self.pl("return lua_val_nil();", .{});
+        } else if (self.test_mode) {
+            self.pl("return (duo_tests_failed > 0) ? 1 : 0;", .{});
+        } else {
+            if (self.moduleNeedsLuaRuntime()) self.pl("duo_run_gc_finalizers();", .{});
+            if (find_top_level_func(mod, "main")) |mfd| {
+                // A user-defined top-level `main` is the entry point: call it
+                // and, when it returns a native scalar, use it as the exit code.
+                // Skip the auto-call when module scope already invokes main.
+                if (mfd.func.params.len == 0 and !module_scope_calls_main(mod)) {
+                    const mret = self.resolve_type(mfd.func.ret_type);
+                    if (mret.is_numeric() or mret == .bool) {
+                        self.pl("return (int)duo_entry_main();", .{});
+                    } else {
+                        self.pl("(void)duo_entry_main();", .{});
+                        self.pl("return 0;", .{});
+                    }
+                } else {
+                    self.pl("return 0;", .{});
+                }
+            } else {
+                self.pl("return 0;", .{});
+            }
+        }
+        self.indent = 0;
+        self.p("}}\n", .{});
+    }
+
+    /// The module's file-scope body: table-const initialisers, alias
+    /// metatables, then every top-level statement and the tail expression.
+    ///
+    /// This is the module's INITIALISATION, and it has exactly one emitter
+    /// because it has two callers. It used to be inlined in `main` only, and
+    /// `--lib` returns before emitting `main` — so the primary module of a
+    /// library artifact was the one module in the link unit whose file-scope
+    /// bindings were never assigned. A `global g: i64 = seed()` read back as 0
+    /// with no diagnostic, and a module-table global read back as NULL and
+    /// segfaulted on the first export call (gap[020]).
+    fn emit_file_scope_body(self: *CodeGen, mod: *ast.Module) E!void {
         // Initialize table-valued top-level constants
         for (mod.body.stmts) |*stmt| {
             if (stmt.* == .const_decl and stmt.const_decl.val.* == .table) {
@@ -5814,33 +5884,6 @@ pub const CodeGen = struct {
             }
         }
         self.pop_local_scope();
-        if (self.load_chunk) {
-            self.pl("return lua_val_nil();", .{});
-        } else if (self.test_mode) {
-            self.pl("return (duo_tests_failed > 0) ? 1 : 0;", .{});
-        } else {
-            if (self.moduleNeedsLuaRuntime()) self.pl("duo_run_gc_finalizers();", .{});
-            if (find_top_level_func(mod, "main")) |mfd| {
-                // A user-defined top-level `main` is the entry point: call it
-                // and, when it returns a native scalar, use it as the exit code.
-                // Skip the auto-call when module scope already invokes main.
-                if (mfd.func.params.len == 0 and !module_scope_calls_main(mod)) {
-                    const mret = self.resolve_type(mfd.func.ret_type);
-                    if (mret.is_numeric() or mret == .bool) {
-                        self.pl("return (int)duo_entry_main();", .{});
-                    } else {
-                        self.pl("(void)duo_entry_main();", .{});
-                        self.pl("return 0;", .{});
-                    }
-                } else {
-                    self.pl("return 0;", .{});
-                }
-            } else {
-                self.pl("return 0;", .{});
-            }
-        }
-        self.indent = 0;
-        self.p("}}\n", .{});
     }
 
     fn find_top_level_func(mod: *const ast.Module, name: []const u8) ?*const ast.FuncDecl {
@@ -23251,6 +23294,10 @@ const duo_runtime =
     \\}
     \\
     \\extern lua_Value duo_invoke_closure(int id, lua_Closure* cl, int argc, lua_Value* argv);
+    \\/* Reserved closure id for the gmatch cursor (gap[035]). Generated closure
+    \\ * ids are assigned from 0 upward, so a negative id can never collide. */
+    \\#define DUO_GMATCH_CLOSURE_ID (-9001)
+    \\static lua_Value duo_gmatch_step(lua_Closure* cl);
     \\
     \\typedef lua_Value (*duo_ArgvFn)(int, lua_Value* argv);
     \\duo_ArgvFn duo_lookup_argv(void* f);
@@ -23263,6 +23310,11 @@ const duo_runtime =
     \\    if (f.type == VAL_CLOSURE && f.as.tval) {
     \\        lua_mret_clear();
     \\        lua_Closure* cl = (lua_Closure*)f.as.tval;
+    \\        if (cl->id == DUO_GMATCH_CLOSURE_ID) {
+    \\            lua_Value r = duo_gmatch_step(cl);
+    \\            lua_mret_push(r);
+    \\            return r;
+    \\        }
     \\        return duo_invoke_closure(cl->id, cl, argc, argv);
     \\    }
     \\    if (f.type == VAL_FUNC && f.as.fval) {
@@ -24923,12 +24975,35 @@ const duo_runtime =
     \\    return lua_to_str(v);
     \\}
     \\
-    \\static inline lua_Value tonumber(lua_Value v) {
-    \\    return lua_val_from_num(lua_to_num(v));
-    \\}
-    \\
     \\static inline int duo_radix_space(int c) {
     \\    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f';
+    \\}
+    \\
+    \\/* tonumber(v): a CONVERSION THAT CAN FAIL, and says so. It used to be
+    \\ * lua_val_from_num(lua_to_num(v)), and lua_to_num answers 0 for anything it
+    \\ * cannot read — so tonumber("abc"), tonumber(nil) and tonumber(true) all
+    \\ * came back as the number 0, and every `if n != nil` guard written against
+    \\ * them was dead code. Now: a number is itself, a string must be a COMPLETE
+    \\ * numeral (leading/trailing space allowed, nothing else), and everything
+    \\ * else is nil. "12abc" is nil, not 12. */
+    \\static inline lua_Value tonumber(lua_Value v) {
+    \\    if (v.type == VAL_NUMBER) return v;
+    \\    if (v.type != VAL_STRING) return lua_val_nil();
+    \\    const char* s = v.as.sval;
+    \\    if (s == NULL) return lua_val_nil();
+    \\    const char* p = s;
+    \\    while (duo_radix_space((unsigned char)*p)) p++;
+    \\    const char* body = p;
+    \\    if (*body == '+' || *body == '-') body++;
+    \\    /* strtod also reads "inf"/"nan"/"infinity"; Lua's tonumber does not.
+    \\     * A numeral has to start with a digit or a decimal point. */
+    \\    if (!((*body >= '0' && *body <= '9') || *body == '.')) return lua_val_nil();
+    \\    char* ep = NULL;
+    \\    double d = strtod(p, &ep);
+    \\    if (ep == NULL || ep == p) return lua_val_nil();
+    \\    while (duo_radix_space((unsigned char)*ep)) ep++;
+    \\    if (*ep != '\0') return lua_val_nil();
+    \\    return lua_val_from_num(d);
     \\}
     \\
     \\/* tonumber(s, base): read s as an integer literal in `base` (2..36).
@@ -26810,6 +26885,19 @@ const duo_runtime =
     \\    return lua_mret_get(0);
     \\}
     \\
+    \\/* One cursor PER gmatch. There used to be a single file-static
+    \\ * GmatchState shared by the whole program, so a gmatch opened inside
+    \\ * another gmatch's loop body overwrote the outer cursor: the inner
+    \\ * iterator ran to exhaustion and set active = 0, the outer loop then read
+    \\ * that same flag on its next step and stopped. Three lines x four words
+    \\ * came out as four words total, with no diagnostic (gap[035]).
+    \\ *
+    \\ * The cursor rides inside the iterator VALUE, so iterator identity IS
+    \\ * cursor identity and nesting depth is unbounded. The value is a closure
+    \\ * with a reserved id — the prefix here is layout-compatible with
+    \\ * lua_Closure (header, id, nup) exactly as the generated duo_closure_N
+    \\ * structs are — and lua_invoke, the single dispatch point for both
+    \\ * VAL_FUNC and VAL_CLOSURE, recognises that id and steps the cursor. */
     \\typedef struct {
     \\    char* s;
     \\    char* pat;
@@ -26817,36 +26905,57 @@ const duo_runtime =
     \\    size_t pos;
     \\    int active;
     \\} GmatchState;
-    \\static GmatchState gmatch_state = { NULL, NULL, 0, 0, 0 };
     \\
-    \\static lua_Value lua_str_gmatch_iter(lua_Value _unused) {
-    \\    (void)_unused;
-    \\    if (!gmatch_state.active || !gmatch_state.s || !gmatch_state.pat) return lua_val_nil();
-    \\    size_t slen = gmatch_state.slen;
-    \\    if (gmatch_state.pos > slen) { gmatch_state.active = 0; return lua_val_nil(); }
+    \\typedef struct {
+    \\    duo_ObjHeader header;
+    \\    int id;
+    \\    int nup;
+    \\    GmatchState st;
+    \\} DuoGmatchIter;
+    \\
+    \\/* The source and pattern copies are released the moment the iteration
+    \\ * ends, which is the common path; the iterator object itself stays alive
+    \\ * because Lua lets an exhausted iterator be called again and answer nil. */
+    \\static void duo_gmatch_finish(GmatchState* g) {
+    \\    g->active = 0;
+    \\    if (g->s) { free(g->s); g->s = NULL; }
+    \\    if (g->pat) { free(g->pat); g->pat = NULL; }
+    \\}
+    \\
+    \\static lua_Value duo_gmatch_step(lua_Closure* cl) {
+    \\    GmatchState* g = &((DuoGmatchIter*)(void*)cl)->st;
+    \\    if (!g->active || !g->s || !g->pat) return lua_val_nil();
+    \\    size_t slen = g->slen;
+    \\    if (g->pos > slen) { duo_gmatch_finish(g); return lua_val_nil(); }
     \\    size_t ms = 0, me = 0;
-    \\    if (!duo_lp_find_at(gmatch_state.s, slen, gmatch_state.pat, gmatch_state.pos, &ms, &me)) {
-    \\        gmatch_state.active = 0;
+    \\    if (!duo_lp_find_at(g->s, slen, g->pat, g->pos, &ms, &me)) {
+    \\        duo_gmatch_finish(g);
     \\        return lua_val_nil();
     \\    }
     \\    size_t mlen = me - ms;
-    \\    gmatch_state.pos = me;
-    \\    if (me == ms && gmatch_state.pos < slen) gmatch_state.pos++;
-    \\    return lua_val_from_str_len(gmatch_state.s + ms, mlen);
+    \\    g->pos = me;
+    \\    if (me == ms && g->pos < slen) g->pos++;
+    \\    return lua_val_from_str_len(g->s + ms, mlen);
     \\}
     \\
     \\static inline lua_Value lua_str_gmatch(lua_Value s_val, lua_Value pat_val, lua_Value init_val) {
     \\    (void)init_val;
-    \\    if (gmatch_state.s) free(gmatch_state.s);
-    \\    if (gmatch_state.pat) free(gmatch_state.pat);
-    \\    gmatch_state.slen = lua_str_byte_len(s_val);
-    \\    gmatch_state.s = malloc(gmatch_state.slen + 1);
-    \\    memcpy(gmatch_state.s, lua_to_str(s_val), gmatch_state.slen);
-    \\    gmatch_state.s[gmatch_state.slen] = '\0';
-    \\    gmatch_state.pat = strdup(lua_to_str(pat_val));
-    \\    gmatch_state.pos = 0;
-    \\    gmatch_state.active = 1;
-    \\    return lua_val_from_func(lua_str_gmatch_iter);
+    \\    DuoGmatchIter* it = (DuoGmatchIter*)calloc(1, sizeof(DuoGmatchIter));
+    \\    if (!it) return lua_val_nil();
+    \\    it->header.refcount = 1;
+    \\    it->header.flags = 0;
+    \\    it->header.type_tag = VAL_CLOSURE;
+    \\    it->id = DUO_GMATCH_CLOSURE_ID;
+    \\    it->nup = 0;
+    \\    GmatchState* g = &it->st;
+    \\    g->slen = lua_str_byte_len(s_val);
+    \\    g->s = malloc(g->slen + 1);
+    \\    memcpy(g->s, lua_to_str(s_val), g->slen);
+    \\    g->s[g->slen] = '\0';
+    \\    g->pat = strdup(lua_to_str(pat_val));
+    \\    g->pos = 0;
+    \\    g->active = 1;
+    \\    return lua_val_from_closure((lua_Closure*)(void*)it);
     \\}
     \\
     \\static inline lua_Value lua_str_dump(lua_Value f_val, lua_Value strip_val) {
@@ -28663,21 +28772,31 @@ test "runtime: string library reuses stored byte lengths" {
 
 test "runtime: gmatch iterator carries source length" {
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "size_t slen;") != null);
-    try testing.expect(std.mem.indexOf(u8, duo_runtime, "size_t slen = gmatch_state.slen;") != null);
-    try testing.expect(std.mem.indexOf(u8, duo_runtime, "gmatch_state.slen = lua_str_byte_len(s_val);") != null);
-    try testing.expect(std.mem.indexOf(u8, duo_runtime, "memcpy(gmatch_state.s, lua_to_str(s_val), gmatch_state.slen);") != null);
-    try testing.expect(std.mem.indexOf(u8, duo_runtime, "size_t slen = strlen(gmatch_state.s);") == null);
-    try testing.expect(std.mem.indexOf(u8, duo_runtime, "gmatch_state.s = strdup(lua_to_str(s_val));") == null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "size_t slen = g->slen;") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "g->slen = lua_str_byte_len(s_val);") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "memcpy(g->s, lua_to_str(s_val), g->slen);") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "size_t slen = strlen(g->s);") == null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "g->s = strdup(lua_to_str(s_val));") == null);
+}
+
+test "runtime: each gmatch owns its cursor" {
+    // gap[035]: a single file-static cursor made an inner gmatch terminate the
+    // outer one. The cursor now lives in the iterator value, so there must be
+    // no program-wide GmatchState and the step must read it through the closure.
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "static GmatchState gmatch_state") == null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "GmatchState st;") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "GmatchState* g = &((DuoGmatchIter*)(void*)cl)->st;") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "it->id = DUO_GMATCH_CLOSURE_ID;") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "if (cl->id == DUO_GMATCH_CLOSURE_ID) {") != null);
 }
 
 test "runtime: substring match helpers intern directly from source slices" {
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "return lua_val_from_str_len(str + start - 1, (size_t)sublen);") != null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "return lua_val_from_str_len(s + ms, me - ms);") != null);
-    try testing.expect(std.mem.indexOf(u8, duo_runtime, "return lua_val_from_str_len(gmatch_state.s + ms, mlen);") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "return lua_val_from_str_len(g->s + ms, mlen);") != null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "char* res = malloc(sublen + 1);") == null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "char* out = malloc(mlen + 1);") == null);
-    try testing.expect(std.mem.indexOf(u8, duo_runtime, "memcpy(out, s + ms, mlen);") == null);
-    try testing.expect(std.mem.indexOf(u8, duo_runtime, "memcpy(out, gmatch_state.s + ms, mlen);") == null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "memcpy(out, g->s + ms, mlen);") == null);
 }
 
 test "runtime: string lower frees temporary after interning" {

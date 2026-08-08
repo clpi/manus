@@ -1705,7 +1705,17 @@ proj_stmt = (lx: Lexer): str
                 return "(bind " .. t.text .. " (type " .. ty .. ") " .. proj_expr(lx) .. ")"
             end
             lexer.restore_state(lx, bst)
-            return proj_expr(lx)
+            -- tail_pack, not a bare proj_expr. This is the rewind path, taken
+            -- when NAME `:` turned out to be a receiver face rather than a
+            -- binding shape, and it was the ONE arm of the NAME dispatch that
+            -- did not offer the comma continuation the other three do. So
+            -- `b:sub(1, n), nil` — a demand-returned pack whose first element
+            -- is a face — parsed `b:sub(1, n)`, returned with the comma still
+            -- unread, and the block loop rejected the statement. `b, nil` and
+            -- `string.sub(b, 1, n), nil` were accepted the whole time, which is
+            -- why this read as a face defect rather than a missing production
+            -- (gap[029]).
+            return tail_pack(lx, proj_expr(lx))
         end
         if t2.kind == token.KIND_LPAREN
             if params_have_colon(lx)

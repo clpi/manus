@@ -5,7 +5,7 @@
 -- the `duo_canonical` column. This proof closes that gap by leaving the
 -- process boundary entirely:
 --
---     lib/std/compiler/host.duo --lib --emit obj   ->  a linkable artifact
+--     lib/std/compiler/host.duo --lib              ->  a linkable artifact
 --     a C `main` that knows nothing but the ABI    ->  links against it
 --     ./exe <file>                                 ->  prints kind,kind,...
 --                                                            |
@@ -251,7 +251,11 @@ main(): i64
     -- 1. Build the artifact from the anchor module, not from lexer.duo. That
     --    distinction is the fix; see lib/std/compiler/host.duo.
     build = duo .. " compile " .. root .. "/lib/std/compiler/host.duo"
-        .. " --backend=c --lib --emit obj -o " .. ART .. " > /dev/null 2>&1"
+        -- No `--emit obj`: `obj` and `dylib` are machine targets now and the C
+        -- backend is refused for them ("C emit is bootstrap-only"), so that
+        -- spelling failed the build and this proof reported 91 without ever
+        -- reaching the seam. `--lib` alone already yields the linkable dylib.
+        .. " --backend=c --lib -o " .. ART .. " > /dev/null 2>&1"
     if std.script.run(build) != 0
         print("lexer_host: FAIL — artifact did not build")
         return 91
