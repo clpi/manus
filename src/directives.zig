@@ -1,5 +1,10 @@
-/// Compiler directive registry and attribute parsing for @test.*, @build.*,
-/// @time, @bench, and related debugging/benchmark annotations.
+/// Attribute parsing for @test.*, @build.*, @time, @bench, and related
+/// debugging/benchmark annotations.
+///
+/// EPOCH 2: every predicate here answers a question that Pass 100 wants asked
+/// of the graph instead. See `docs/directive_erasure.md` for the per-directive
+/// edge fact each one is standing in for, and the order in which they go.
+/// Do not add new names here — add the fact to its owning relation.
 const std = @import("std");
 const ast = @import("ast.zig");
 const meta_module = @import("meta_module.zig");
@@ -43,10 +48,6 @@ pub const TestOptions = struct {
     iterations: u32 = 1,
     warmup: u32 = 0,
 };
-
-pub fn attrNameEq(attr: ast.Attribute, name: []const u8) bool {
-    return std.mem.eql(u8, attr.name, name);
-}
 
 /// `@c.emit`, `@c.include`, etc. — C interface metaprogramming under the `@` prefix.
 pub fn isCInterfaceDirective(name: []const u8) bool {
@@ -153,44 +154,11 @@ pub fn attrsHaveDebug(attrs: []const ast.Attribute) bool {
     return false;
 }
 
-/// Parsed options from `@debug({ ... })` / `@trace({ ... })` module directives.
-pub const DebugOptions = struct {
-    channels: ?[]const u8 = null,
-    scopes: ?[]const u8 = null,
-    depth: ?u32 = null,
-    message: ?[]const u8 = null,
-};
-
-pub fn parseDebugOptions(alloc: std.mem.Allocator, attrs: []const ast.Attribute) ParseError!DebugOptions {
-    var opts: DebugOptions = .{};
-    for (attrs) |attr| {
-        if (!isDebugDirective(attr.name)) continue;
-        var map = try parseAttrArgs(alloc, attr.args);
-        defer map.deinit(alloc);
-        if (map.get("channels")) |v| opts.channels = try alloc.dupe(u8, v);
-        if (map.get("scopes")) |v| opts.scopes = try alloc.dupe(u8, v);
-        if (map.get("depth")) |_| opts.depth = map.getU32("depth", 8);
-        if (map.get("message")) |v| opts.message = try alloc.dupe(u8, v);
-        if (map.get("msg")) |v| opts.message = try alloc.dupe(u8, v);
-    }
-    return opts;
-}
-
 /// Whether this attribute marks a function as a test case (including @bench on tests).
 pub fn attrsMarkTest(attrs: []const ast.Attribute) bool {
     for (attrs) |attr| {
         if (isTestDirective(attr.name)) return true;
         if (isBenchDirective(attr.name)) return true;
-    }
-    return false;
-}
-
-pub fn attrsWantTiming(attrs: []const ast.Attribute) bool {
-    for (attrs) |attr| {
-        if (isTimeDirective(attr.name)) return true;
-        if (attrHasPrefix(attr, "test.time")) return true;
-        if (isBenchDirective(attr.name)) return true;
-        if (attrHasPrefix(attr, "test.bench")) return true;
     }
     return false;
 }
@@ -464,16 +432,6 @@ pub fn validateModuleDirective(attr: ast.Attribute) ?[]const u8 {
     if (std.mem.eql(u8, attr.name, "specialize")) return null;
     return attr.name;
 }
-
-/// Human-readable registry of supported directives (for docs / `--help`).
-pub const registry_json =
-    \\{"test":["test","test.unit","test.integration","test.e2e","test.skip","test.only","test.flaky","test.should_panic","test.bench","test.time"],
-    \\ "build":["build.project","build.stage","build.command","build.exe","build.lib","build.test","build.run","build.bench","build.check","build.fmt","build.clean"],
-    \\ "bench":["bench","bench(iterations=N,warmup=N)"],
-    \\ "time":["time","time(label=\"...\")"],
-    \\ "ml":["device(.auto|.cpu|.metal|.cuda|.webgpu|.wasm|.tpu)","autodiff","differentiable","profile","unroll(N)"],
-    \\ "debug":["trace","debug","debug.sema","debug.codegen","debug.types","debug.parse","trace.mono"]}
-;
 
 test "directives: parse table args" {
     const alloc = std.testing.allocator;
