@@ -1,6 +1,179 @@
 # ward — handoff
 
-## 2026-08-08 (latest) — the JIT can leave its own code buffer
+## 2026-08-08 (latest) — `call_indirect` compiles, and it found a wrong answer
+
+`call_indirect` (0x11) has a JIT arm. It was 10 of the 18 refusals across both
+fixture corpora and the largest coverage gap left; **it is 0 of the 17 now.**
+
+### The design, and why it could not be an emit-time fold
+
+A direct `call` becomes a `BL` whose displacement is patched once the callee has
+an address. `call_indirect` has no such target: it is `table[i]`, chosen at run
+time. The shape that works:
+
+- **`jidt`, a dispatch table**, 16 bytes per slot — the callee's absolute code
+  address, then its declared type index. It is `mem.alloc`ed **before** any body
+  is compiled, so its address is a constant the emitter bakes in (`std.jit.addr`,
+  below), and **filled after the call-patch phase**, which is the earliest moment
+  every body has an address. That ordering is the whole reason this is a third
+  phase and not a fold.
+- **Element segments are seeded** into `jtbl` by the same walk `run_body` uses,
+  plus `jtoc`, a per-slot OCCUPIED flag. `jtoc` is not bookkeeping: funcidx 0 is
+  a real function, so a zeroed table cannot say "empty" by value.
+- **Every table-reachable function is queued**, on the FIRST `call_indirect`
+  rather than up front — queuing eagerly would drag a module that merely owns a
+  table to the interpreter whenever some function nothing dispatches to has an
+  opcode with no arm.
+- **A table slot naming an IMPORTED function declines the module.** Dispatching
+  one would mean resolving a host effect by field name at run time, which this
+  emitter cannot do, and emitting a branch anyway is how you get a wrong call.
+
+Emitted per call site, with each condition inverted to skip a fixed-length
+inline trap block (so every offset is arithmetic, never a patch):
+
+```
+MOV  w17, w{idx}          ; u32 index, zero-extended
+MOVZ x16, #tablesize
+CMP  x17, x16
+B.LO +1+T   / TRAP        ; 1. index past the table
+MOVZ/MOVK x16, #jidt      ; four words, always
+ADD  x17, x16, x17, LSL #4
+LDR  x16, [x17, #8]
+CMP  x16, #typeidx
+B.EQ +1+T   / TRAP        ; 2. SIGNATURE MISMATCH
+LDR  x16, [x17]
+CBNZ x16, +1+T / TRAP     ; 3. slot names nothing this compilation produced
+<args slide to x0..>
+BLR  x16
+```
+
+`TRAP` is the same six words `unreachable` emits — the host's `exit` with the
+interpreter's status 71 — so a trap is byte-identical on both engines.
+
+### The type check is not optional, and here is the proof it was missing
+
+**The interpreter had no signature check either.** Four probe modules, each one
+line of `.wat`, run against wasmtime and against ward before and after:
+
+| probe | wasmtime | ward BEFORE | ward AFTER (jit and interp) |
+|---|---|---|---|
+| correct call through the table | `11` | `11`, exit 0 | `11`, exit 0 |
+| slot's signature ≠ call site's | trap | exit **70** (ward's own bail) | **trap, exit 71** |
+| index past the table | trap | exit **70** | **trap, exit 71** |
+| element never initialised | trap | **`11`, exit 0** | **trap, exit 71** |
+| signature mismatch, callee reachable | trap | **`11`, exit 0** | **trap, exit 71** |
+
+The last two rows are the point. **ward answered `11` and exited 0 for two
+programs every conforming runtime traps on** — a plausible number for a call
+that must not happen, which is this repo's named failure class. The
+never-initialised row is the one `jtoc` exists for; the mismatch row is the one
+the type check exists for. Both are fixed on BOTH engines: the interpreter
+compares `fty[callee]` against the call site's `imm2` and `bailtrap`s, exactly
+as the emitted `CMP` does.
+
+Reproduce (the probes are four `.wat` files, kept here rather than in `bench/`
+because a trapping module gives wasmtime a non-zero status and `conform`'s
+oracle would silently skip it):
+
+```wat
+(module
+  (type $t0 (func (param i32) (result i32)))
+  (type $t2 (func (param i32 i32) (result i32)))
+  (func $a (type $t0) (i32.const 11))
+  (func $c (type $t2) (i32.const 33))
+  (table 4 funcref)
+  (elem (i32.const 0) $a $c)
+  (func (export "run") (result i32)
+    (call_indirect (type $t2) (i32.const 7) (i32.const 8) (i32.const 0))))
+```
+
+### Coverage, before and after
+
+Refusal census over both corpora, `WARD_JIT_TRACE=1` at every fixture and entry
+shape:
+
+| refusal | before | after |
+|---|---:|---:|
+| `call_indirect` has no jit arm | **10** | **0** |
+| body needs more locals than the register file has | 0 | 6 |
+| `return` inside an inlined body | 1 | 4 |
+| memory offset above 16 MiB | 3 | 3 |
+| `prefix.simd` | 2 | 2 |
+| `i32.extend8_s` | 2 | 2 |
+| **total** | **18** | **17** |
+
+**Read that honestly.** The opcode is closed; nine of the ten modules did not
+start compiling. They are wasi-libc `_start`s, and queuing their table-reachable
+callees exposed the NEXT blocker in each: six need a callee with more than 17
+locals (this JIT has no spill model — locals are registers), three hit a
+`return` inside an inlined body. Those are the two things to attack next and
+neither is small. What did move: `bench/ward_call_indirect.wasm` compiles where
+it fell back, plus the new fixture below.
+
+**No timing claim.** Every module `call_indirect` blocked sits under the 40 ms
+process-startup floor this repo established, so there is nothing to measure and
+nothing is quoted. `ward_call_indirect.wasm` runs in 0.075 ms.
+
+### New fixture
+
+`bench/ward_call_indirect_typed.wasm` — 1000 iterations dispatching through a
+4-entry table with TWO distinct signatures in the same body and a computed
+index, so both the matching path of the type check and both arities are
+exercised. ward answers 1034562941 on both engines; so does wasmtime. Source:
+
+```wat
+(module
+  (type $u (func (param i32) (result i32)))
+  (type $b (func (param i32 i32) (result i32)))
+  (func $inc (type $u) (i32.add (local.get 0) (i32.const 1)))
+  (func $dbl (type $u) (i32.mul (local.get 0) (i32.const 3)))
+  (func $add (type $b) (i32.add (local.get 0) (local.get 1)))
+  (func $sub (type $b) (i32.sub (local.get 0) (local.get 1)))
+  (table 4 funcref)
+  (elem (i32.const 0) $inc $dbl $add $sub)
+  (func (export "run") (result i32)
+    (local $i i32) (local $acc i32)
+    (local.set $acc (i32.const 1))
+    (block $done (loop $l
+      (br_if $done (i32.ge_u (local.get $i) (i32.const 1000)))
+      (local.set $acc (call_indirect (type $u) (local.get $acc)
+        (i32.and (local.get $i) (i32.const 1))))
+      (local.set $acc (call_indirect (type $b) (local.get $acc) (local.get $i)
+        (i32.or (i32.const 2)
+          (i32.and (i32.shr_u (local.get $i) (i32.const 1)) (i32.const 1)))))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $l)))
+    (local.get $acc)))
+```
+
+### `std.jit.addr`
+
+One new primitive, and the second one emitted code needed: `sym` let it reach a
+HOST function, `addr` lets it reach ITS OWN through a table. `mem.addr` cannot
+answer for these buffers — `jit.alloc` returns a `VAL_BUFFER` and casting that
+struct to an integer is a C type error. Like `sym`, the `return` is load-bearing
+and is not the denied trailing-return: as a bare tail expression it answers 0
+for every buffer.
+
+### Still open on `call_indirect`
+
+- The nine wasi-libc modules above, blocked one layer down.
+- `table.set` / `table.init` / `table.copy` / `table.fill` at run time: the JIT
+  has no arm for any of them, so it declines the module and the interpreter runs
+  it. That is why the emitted dispatch table can be static. The interpreter's
+  copies of those ops now carry `toc` alongside `tbl` so its own occupancy stays
+  right.
+- `0xFC` 4..7, the `i64.trunc_sat` family, are still open and were deliberately
+  NOT taken in this pass. The JIT half is one instruction (`FCVTZS`/`FCVTZU`
+  with `sf=1` saturate exactly as wasm specifies, same as the i32 family). The
+  INTERPRETER half is not: the unsigned bound is 2^64-1, which has no Duo i64
+  value to clamp against, and the [2^63, 2^64) window has to be assembled
+  through a bias. Shipping the JIT half alone would put the two engines on
+  different answers for a case **no fixture in either corpus exercises**, so
+  there would be nothing to verify it against. Do both halves with fixtures, or
+  neither.
+
+## 2026-08-08 — the JIT can leave its own code buffer
 
 The named architectural blocker is closed, and it was **in `lib/std/jit.duo`,
 not in ward**. `alloc`/`w32`/`seal`/`call*` let Duo emit code and ENTER it;

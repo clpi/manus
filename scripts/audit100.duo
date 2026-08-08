@@ -631,7 +631,71 @@ main(): i64
     -- `nonduo` read EXACTLY their budgets both before and after, over the same
     -- 450 canonical files, so LOWERING again had no work. Measured twice with
     -- `AUDIT100_LIST` pointed at a private path, same counts both runs.
-    budgets: str = "14101 2254 1847 259 322 481 153 58 2030 442 167 128 228 36 2429 2258 3422"
+    --
+    -- 2026-08-08, ward's `call_indirect` jit arm. Five rows move, and every
+    -- point is attributed to one of TWO files. Measured the way the entries
+    -- below were: the gate was run at exactly its budgets first (it was), then
+    -- with `lib/std/jit.duo` alone reverted to HEAD, and the difference is that
+    -- file's share. The `.wasm` fixture is counted separately in `nonduo`.
+    --
+    --   row          delta   ward.duo  jit.duo   ward_call_indirect_typed.wasm
+    --   snake        +52     +52       0         —
+    --   upper        +2      +2        0         —
+    --   directive    +1      0         +1        —
+    --   stdlib       +1      +1        0         —
+    --   trailret     +15     +14       +1        —
+    --   nonduo       +1      —         —         +1
+    --
+    -- Why none of it is repairable as text:
+    --
+    -- Every line below was counted through this gate's OWN filters (full-line
+    -- comments dropped, then string bodies stripped) rather than by eyeballing
+    -- the diff, which matters: a first pass at this attribution blamed comment
+    -- prose for the `upper` row, and comment prose is dropped before any row
+    -- is counted, so it can never contribute a point. The real sources:
+    --
+    --   snake +52   `mem.write_i64` (19), `mem.read_i64` (16), `uleb_end`
+    --               (10), `uleb_val` (8), `last_alu` / `last_cset` (2) and
+    --               `OP_call_indirect` (1). Every one is a call to an EXISTING
+    --               std or file-local name, or the wasm opcode's own spelling.
+    --               Renaming the std ones is a std.mem surface change, not a
+    --               diff-local repair -- the same finding the entry below
+    --               reached about the same calls in the same file.
+    --   upper +2    `B.LO` and `B.EQ`, TRAILING comments on two emit lines
+    --               (this gate strips full-line comments, not trailing ones).
+    --               They name the ARM64 branch each word encodes, uppercase
+    --               because that is how the file spells every mnemonic
+    --               (`BLR`, `MOVZ`, `CMP`, `FCVTZS`); these two are the only
+    --               ones carrying a `.`, which is what the pattern reads as a
+    --               field access. Same class as GAP-041.
+    --   stdlib +1   one `string.byte`, reading the table section's flags byte,
+    --               beside 51 existing ones. `s[i]` is the Pass 100 spelling
+    --               and does not compile on a `str` today (GAP-025).
+    --   trailret+15 fourteen `return jitbail(...)` / `return bailtrap(pc)` in
+    --               ward.duo and one `return @c.emit(...)` in std.jit. All the
+    --               ward ones are EARLY returns from inside a branch, which is
+    --               this file's refusal idiom at 56 existing sites; an early
+    --               return is not a tail return and cannot become a bare tail
+    --               expression. The std.jit one is `addr`, the eleventh
+    --               `@c.emit` primitive in a file that exists to hold what
+    --               pure Duo cannot express -- and, exactly as its sibling
+    --               `sym` documents, written as a bare tail expression it
+    --               answers 0 for every buffer. Verified by value.
+    --   directive+1 that same `@c.emit`, counted once more from the other row.
+    --   nonduo +1   `ext/ward/bench/ward_call_indirect_typed.wasm`, a fixture,
+    --               i.e. INPUT. Its `.wat` source is in `ext/ward/HANDOFF.md`
+    --               rather than tracked beside it, because `bench/` tracks no
+    --               `.wat` and adding the convention would cost a second row.
+    --
+    -- 2026-08-08, tree-sitter repair: `concatlit` 2429 -> 2428, RATCHETED DOWN.
+    -- `scripts/setup-nvim.duo` built the generator command as
+    -- `"cd " .. ts .. " && tree-sitter generate ..."`; it is `"cd {ts} && …"`
+    -- now, which is the Pass 100 §0.7 spelling and one fewer `..` beside a
+    -- literal. One file, one line, and the downward half of the ratchet is the
+    -- half that gets skipped. No other row moved: the remaining sixteen and
+    -- `nonduo` read EXACTLY their budgets over the same 450 canonical files
+    -- before and after, measured twice with `AUDIT100_LIST` at a private path.
+    budgets: str = "14153 2256 1847 259 322 481 154 58 2031 442 167 128 228 36 2428 2258 3437"
 
     -- Per-row: 1 = measure with string bodies INTACT. Only `concatlit` sets
     -- it, because its subject IS the string literal; stripping bodies takes
@@ -685,7 +749,11 @@ main(): i64
     -- non-.duo files were deleted elsewhere, and "lower a budget whenever you
     -- lower a count" is the half of the ratchet that nobody remembers to do —
     -- 24 points of unearned headroom is 24 files somebody could add unnoticed.
-    nonduo_budget = 536
+    -- 537 as of 2026-08-08: `ext/ward/bench/ward_call_indirect_typed.wasm`,
+    -- the fixture that holds ward's new call_indirect jit arm to a value on
+    -- both engines. A fixture is INPUT, which is the category this row cannot
+    -- distinguish -- see the attribution block above.
+    nonduo_budget = 537
     if nonduo > nonduo_budget
         over += 1
         print("  !! " .. _pad("nonduo", 12) .. _pad(to(str)(nonduo), 8)

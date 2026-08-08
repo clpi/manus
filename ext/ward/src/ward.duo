@@ -877,6 +877,14 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   lo   = mem.alloc(64 * 64 * 8)
   fr   = mem.alloc(64 * 8 * 8)
   ftab = mem.alloc(4096 * 4 * 8)
+  -- Declared TYPE INDEX per defined function, which `ftab` never kept because
+  -- nothing asked: a direct `call` names its callee and the validator has
+  -- already agreed about the signature. `call_indirect` names a TABLE SLOT,
+  -- and wasm requires the runtime to compare the slot's actual signature
+  -- against the one written at the call site and TRAP when they differ. Ward
+  -- did not compare, so a mismatched slot silently entered the wrong function
+  -- with the wrong argument shape -- a wrong answer, not a refusal.
+  fty  = mem.alloc(4096 * 8)
   tpar = mem.alloc(4096 * 2 * 8)
   -- LABEL STACK. One shared buffer across every frame, because `lsp` is not
   -- reset on a call: a callee's labels sit above its caller's. That made 64
@@ -899,6 +907,12 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   fb   = mem.alloc(16)
   dseg = mem.alloc(64 * 2 * 8)
   tbl  = mem.alloc(4096 * 8)
+  -- Slot occupancy, tracked separately: funcidx 0 is a real function, so a zeroed table cannot
+  -- say "empty" by value -- without this, every slot an element segment did
+  -- not reach would dispatch to function 0 instead of trapping, which wasm
+  -- requires. The jit carries the identical array so the two engines cannot
+  -- disagree about an uninitialised element.
+  toc  = mem.alloc(4096 * 8)
   vstk = mem.alloc(1024 * 16)
   eseg = mem.alloc(64 * 2 * 8)
   vwid = mem.alloc(256)
@@ -910,6 +924,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   mem.zero(lo, 64 * 64 * 8)
   mem.zero(fr, 64 * 8 * 8)
   mem.zero(ftab, 4096 * 4 * 8)
+  mem.zero(fty, 4096 * 8)
   mem.zero(tpar, 4096 * 2 * 8)
   mem.zero(ltgt, 64 * 64 * 8)
   mem.zero(lelse, 64 * 64 * 8)
@@ -919,6 +934,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   mem.zero(fb, 16)
   mem.zero(dseg, 64 * 2 * 8)
   mem.zero(tbl, 4096 * 8)
+  mem.zero(toc, 4096 * 8)
   mem.zero(vstk, 1024 * 16)
   mem.zero(eseg, 64 * 2 * 8)
   mem.zero(vwid, 256)
@@ -1056,10 +1072,15 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       gv += 1
     end
     npf: i64 = 0
+    -- -1, not 0: a function whose type the walk could not read must not read
+    -- as "type 0", because type 0 is a real signature and the call_indirect
+    -- check would then wave it through.
+    mem.write_i64(fty, fv * 8, -1)
     if gq > 0
       tix: i64 = uleb_val(img, gq, n)
       gq = uleb_end(img, gq, n)
       npf = mem.read_i64(tpar, (tix * 2) * 8)
+      mem.write_i64(fty, fv * 8, tix)
     end
     -- offsets are relative to the copied code section
     mem.write_i64(ftab, (fv * 4) * 8, rq - cd_off)
@@ -1158,6 +1179,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         eq2 = uleb_end(img, eq2, n)
         if emode == 0 and eoff + ek < 4096
           mem.write_i64(tbl, (eoff + ek) * 8, efn)
+          mem.write_i64(toc, (eoff + ek) * 8, 1)
         end
         ek += 1
       end
@@ -1941,11 +1963,35 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         end
         tsl: i64 = mem.read_i64(st, sp * 8) & M32
         sp -= 1
+        -- An index past the table is a wasm TRAP, not an interpreter limit.
+        -- It used to `bail` (exit 70, "unsupported operand shape"), which reads
+        -- as ward's gap when it is the module's own out-of-range call, and it
+        -- put the two engines on different exit statuses for the same program.
         if tsl >= tbsize
-          return bail(op, pc)
+          return bailtrap(pc)
+        end
+        -- An element no segment and no table op ever wrote is a null funcref,
+        -- and calling one traps. It used to read as funcidx 0, i.e. a real
+        -- function -- the same class of silent wrong call as a missing
+        -- signature check, one level further out.
+        if mem.read_i64(toc, tsl * 8) != 1
+          return bailtrap(pc)
         end
         gx: i64 = mem.read_i64(tbl, tsl * 8) - nimp
-        if gx < 0 or gx >= nfn or depth >= 63
+        if gx < 0 or gx >= nfn
+          return bailtrap(pc)
+        end
+        -- Signature check: `imm2` is the type the call site was validated
+        -- against; `fty[gx]` is the type the callee actually declares. wasm
+        -- requires a trap when they differ, and skipping it is not a missing
+        -- feature -- it is a silent call into the wrong function with the
+        -- wrong argument shape, which is the failure class this file has spent
+        -- a week removing. Compared by INDEX, which is exact here because a
+        -- module's type section is deduplicated by construction.
+        if mem.read_i64(fty, gx * 8) != imm2
+          return bailtrap(pc)
+        end
+        if depth >= 63
           return bail(op, pc)
         end
         mem.write_i64(fr, (depth * 8) * 8, pc)
@@ -2746,6 +2792,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           ti3: i64 = mem.read_i64(st, (sp - 1) * 8) & M32
           if ti3 < 4096
             mem.write_i64(tbl, ti3 * 8, tv2)
+            mem.write_i64(toc, ti3 * 8, 1)
           end
           sp -= 2
         end
@@ -2844,6 +2891,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           tk: i64 = 0
           while tk < tln and tds + tk < 4096
             mem.write_i64(tbl, (tds + tk) * 8, uleb_val(img, eb2, n))
+            mem.write_i64(toc, (tds + tk) * 8, 1)
             eb2 = uleb_end(img, eb2, n)
             tk += 1
           end
@@ -2861,6 +2909,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
             yk: i64 = 0
             while yk < yln and yds + yk < 4096 and ysr + yk < 4096
               mem.write_i64(tbl, (yds + yk) * 8, mem.read_i64(tbl, (ysr + yk) * 8))
+              mem.write_i64(toc, (yds + yk) * 8, mem.read_i64(toc, (ysr + yk) * 8))
               yk += 1
             end
           else
@@ -2868,6 +2917,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
             while yk2 >= 0
               if yds + yk2 < 4096 and ysr + yk2 < 4096
                 mem.write_i64(tbl, (yds + yk2) * 8, mem.read_i64(tbl, (ysr + yk2) * 8))
+                mem.write_i64(toc, (yds + yk2) * 8, mem.read_i64(toc, (ysr + yk2) * 8))
               end
               yk2 -= 1
             end
@@ -2903,6 +2953,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           hk: i64 = 0
           while hk < hln and hds + hk < 4096
             mem.write_i64(tbl, (hds + hk) * 8, hvl)
+            mem.write_i64(toc, (hds + hk) * 8, 1)
             hk += 1
           end
           sp -= 3
@@ -3299,6 +3350,24 @@ movabs(code: any, n: i64, rd: i64, v: i64): i64
   n + 4
 end
 
+-- Emit a wasm trap, the same body the `unreachable` arm emits: exit with the
+-- status the interpreter's `bailtrap` uses, so a trap looks identical on both
+-- engines, falling back to `BRK #0` only when the host exports no `exit`.
+--
+-- FIXED LENGTH by construction -- 6 words with `exit`, 1 without -- because
+-- every branch that skips a trap block computes its offset arithmetically.
+-- `movabs` is four words for the same reason and for the same caller.
+jittrap(code: any, n: i64, jex: i64): i64
+  if jex == 0
+    jitm.w32(code, n, 0xD4200000)
+    return n + 1
+  end
+  jitm.w32(code, n, 0x52800000 | (71 << 5))
+  m: i64 = movabs(code, n + 1, 17, jex)
+  jitm.w32(code, m, 0xD63F0000 | (17 << 5))
+  m + 1
+end
+
 -- Compile the module's entry body and every function it can reach into `code`;
 -- returns word count, or -1 if an unsupported opcode is hit (caller falls back
 -- to the interpreter).
@@ -3433,6 +3502,41 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
   -- address zero.
   jwr: i64 = jitm.sym("write")
   jex: i64 = jitm.sym("exit")
+  -- ── call_indirect ────────────────────────────────────────────────────
+  -- `jtbl` is the module's function table (slot -> funcidx), read from the
+  -- table + element sections exactly as `run_body` reads them. `jfty` is the
+  -- declared TYPE INDEX per defined function, which is what the signature
+  -- check compares against.
+  --
+  -- `jidt` is the DISPATCH TABLE the emitted code actually reads: two i64 per
+  -- slot, the absolute code address of the compiled callee and its type index.
+  -- It is a separate allocation because its address has to be a CONSTANT the
+  -- emitter can bake in, while its CONTENTS cannot be known until every body
+  -- has been compiled and the call-patch phase has run. That ordering is the
+  -- whole reason this could not be done at emit time.
+  --
+  -- `jtoc` marks a slot as occupied, and is needed because funcidx 0 is a real
+  -- function, so a zeroed table cannot say "empty" by value: without it, an
+  -- element segment that leaves slots untouched would dispatch them to
+  -- function 0. wasm requires an uninitialised element to trap, and the
+  -- interpreter carries the same array for the same reason.
+  jtbl = mem.alloc(4096 * 8)
+  jtoc = mem.alloc(4096 * 8)
+  jfty = mem.alloc(256 * 8)
+  jidt = mem.alloc(4096 * 2 * 8)
+  mem.zero(jtbl, 4096 * 8)
+  mem.zero(jtoc, 4096 * 8)
+  mem.zero(jfty, 256 * 8)
+  mem.zero(jidt, 4096 * 2 * 8)
+  jidta: i64 = mem.addr(jidt)
+  jtbz: i64 = 0
+  jtbo: i64 = 0
+  jelo: i64 = 0
+  -- 1 once the table-reachable functions have been queued. They are queued on
+  -- the FIRST `call_indirect` rather than up front: a module that owns a table
+  -- but never dispatches through it must not be dragged to the interpreter
+  -- because some function nothing calls has an opcode with no arm.
+  jtbq: i64 = 0
   jqn: i64 = 0
   jqh: i64 = 0
   jcn: i64 = 0
@@ -3458,6 +3562,10 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       jfo = jsi
     elseif jsid == 10
       jco = jsi
+    elseif jsid == 4
+      jtbo = jsi
+    elseif jsid == 9
+      jelo = jsi
     elseif jsid == 5
       -- memory section: count, then per-memory limits (flags byte, min uleb,
       -- optional max). Only the first memory exists in MVP wasm.
@@ -3570,11 +3678,16 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       end
       jpf: i64 = 0
       jpr: i64 = 0
+      -- Type INDEX, kept for the call_indirect signature check. -1 when the
+      -- function section did not name one, so an unreadable entry can never be
+      -- mistaken for type 0, which is a real signature.
+      mem.write_i64(jfty, jfv * 8, -1)
       if jgq > 0
         jtix: i64 = uleb_val(s, jgq, mlen)
         jgq = uleb_end(s, jgq, mlen)
         jpf = mem.read_i64(jtp, jtix * 8)
         jpr = mem.read_i64(jtr, jtix * 8)
+        mem.write_i64(jfty, jfv * 8, jtix)
       end
       -- Leafness by byte scan. An immediate that happens to equal 0x10 can read
       -- as a call, which only ever makes a body look NON-leaf: that costs
@@ -3597,6 +3710,58 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       mem.write_i64(jft, (jfv * 6 + 5) * 8, jpr)
       jcq = jbt + jbs
       jfv += 1
+    end
+  end
+
+  -- ── table + element segments ─────────────────────────────────────────
+  -- Read exactly as `run_body` reads them, and for the same reason it does it
+  -- inline: BUG B forbids handing a pointer local across a Duo function
+  -- boundary, so the walk lives with the tables it fills.
+  if jtbo > 0
+    jntb: i64 = uleb_val(s, jtbo, mlen)
+    jtq3: i64 = uleb_end(s, jtbo, mlen)
+    if jntb > 0
+      jtq3 += 1                        -- reftype byte
+      jtfl: i64 = string.byte(s, jtq3)
+      jtq3 += 1
+      jtbz = uleb_val(s, jtq3, mlen)
+      jtq3 = uleb_end(s, jtq3, mlen)
+      if jtfl == 1
+        jtq3 = uleb_end(s, jtq3, mlen) -- max
+      end
+    end
+  end
+  if jtbz > 4096
+    jtbz = 4096
+  end
+  if jelo > 0
+    jnel: i64 = uleb_val(s, jelo, mlen)
+    jeq3: i64 = uleb_end(s, jelo, mlen)
+    jev: i64 = 0
+    while jev < jnel and jeq3 <= mlen
+      jemd: i64 = uleb_val(s, jeq3, mlen)
+      jeq3 = uleb_end(s, jeq3, mlen)
+      jeof: i64 = 0
+      if jemd == 0
+        jeq3 += 1                      -- i32.const
+        jeof = uleb_val(s, jeq3, mlen)
+        jeq3 = uleb_end(s, jeq3, mlen) + 1   -- + 0x0B
+      elseif jemd == 1 or jemd == 3
+        jeq3 += 1                      -- elemkind byte
+      end
+      jecn: i64 = uleb_val(s, jeq3, mlen)
+      jeq3 = uleb_end(s, jeq3, mlen)
+      jek: i64 = 0
+      while jek < jecn and jeq3 <= mlen
+        jefn: i64 = uleb_val(s, jeq3, mlen)
+        jeq3 = uleb_end(s, jeq3, mlen)
+        if jemd == 0 and jeof + jek < 4096
+          mem.write_i64(jtbl, (jeof + jek) * 8, jefn)
+          mem.write_i64(jtoc, (jeof + jek) * 8, 1)
+        end
+        jek += 1
+      end
+      jev += 1
     end
   end
 
@@ -5521,6 +5686,178 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       end
       end
 
+    elseif op == OP_call_indirect
+      -- ── call_indirect ──────────────────────────────────────────────────
+      -- The largest coverage gap left in this JIT: 10 of the 18 refusals
+      -- across both fixture corpora, and every wasi-libc `_start` that routes
+      -- a call through a function pointer.
+      --
+      -- A direct `call` becomes a `BL` whose displacement is patched once the
+      -- callee has an address. Here the target is not a constant at all -- it
+      -- is `table[i]`, chosen at run time -- so there is nothing a
+      -- displacement could name. The shape is instead:
+      --
+      --   `jidt` (a DISPATCH TABLE, 16 bytes per slot: code address, then the
+      --   callee's declared type index) is allocated BEFORE compiling, so its
+      --   address is a constant this emitter can bake in. It is FILLED after
+      --   the call-patch phase, which is the earliest point at which every
+      --   body has an address. Emitted code loads the pair, checks it, and
+      --   `BLR`s the address.
+      --
+      -- Three checks, every one of them trapping, emitted inline with the condition
+      -- inverted to skip over the trap:
+      --
+      --   1. index >= table size            -- wasm: trap
+      --   2. slot type != the call site's   -- wasm: trap
+      --   3. slot address == 0              -- the callee was not compiled
+      --
+      -- Check 2 is the one that must not be skipped. Without it a slot holding
+      -- a function of a DIFFERENT signature is entered with the wrong argument
+      -- shape and the wrong return width, and the result is a plausible wrong
+      -- number rather than a refusal -- the exact failure mode this runtime
+      -- has spent the week removing. It compares type INDICES, which is exact
+      -- because a module's type section is deduplicated by construction, and
+      -- it is the same comparison the interpreter now makes.
+      cti: i64 = uleb_val(s, off + pc, off + blen)
+      pc = uleb_end(s, off + pc, off + blen) - off
+      pc = uleb_end(s, off + pc, off + blen) - off     -- tableidx, unused
+      if cti < 0 or cti > 4095
+        return jitbail("call_indirect type index above the CMP immediate", op, pc)
+      end
+      if jtbz < 1
+        return jitbail("call_indirect on a module with no table", op, pc)
+      end
+      if jtbz > 65535
+        return jitbail("table larger than one MOVZ immediate", op, pc)
+      end
+      xnp: i64 = mem.read_i64(jtp, cti * 8)
+      xnr: i64 = mem.read_i64(jtr, cti * 8)
+      if sp < xnp + 1 or xnp > 8
+        return jitbail("call_indirect passes more than 8 arguments, or the operand stack is short", op, pc)
+      end
+      if jcn >= 1024
+        return jitbail("the call-patch table is full", op, pc)
+      end
+      -- Queue every function the table can reach, ONCE, on the first
+      -- call_indirect in the module. Doing it up front would drag a module
+      -- that merely owns a table to the interpreter whenever some function
+      -- nothing dispatches to has an opcode with no arm.
+      if jtbq == 0
+        jtbq = 1
+        xti: i64 = 0
+        while xti < jtbz
+          xfn: i64 = mem.read_i64(jtbl, xti * 8) - jimp
+          if mem.read_i64(jtoc, xti * 8) == 1 and xfn < 0
+            -- An imported function reachable through the table would have to
+            -- be dispatched by field name at run time, which this emitter
+            -- cannot do. Decline the module rather than emit a branch that
+            -- would enter the wrong code.
+            return jitbail("a table slot names an imported function", op, pc)
+          end
+          if mem.read_i64(jtoc, xti * 8) == 1 and xfn >= 0 and xfn < jnf and mem.read_i64(jqs, xfn * 8) == 0
+            if jqn >= 256
+              return jitbail("more than 256 functions queued for compilation", op, pc)
+            end
+            mem.write_i64(jqs, xfn * 8, 1)
+            mem.write_i64(jq, jqn * 8, xfn)
+            jqn += 1
+          end
+          xti += 1
+        end
+      end
+      -- Spill everything caller-saved, exactly as the direct-call path does.
+      -- The operand slots below the ARGUMENTS are spilled; the index slot on
+      -- top (sp-1) is not, and must be read into scratch before the argument
+      -- slide overwrites x0..
+      xsp: i64 = 0
+      xlv: i64 = 0
+      while xlv < lbase + curloc
+        xlr: i64 = locreg(xlv, cf)
+        if xlr <= 17
+          mem.write_i64(jspr, xsp * 8, xlr)
+          xsp += 1
+        end
+        xlv += 1
+      end
+      xov: i64 = 0
+      while xov < sp - 1 - xnp
+        mem.write_i64(jspr, xsp * 8, xov)
+        xsp += 1
+        xov += 1
+      end
+      if xsp > 64
+        return jitbail("more than 64 registers to spill across a call", op, pc)
+      end
+      xsi: i64 = 0
+      while xsi < xsp
+        jitm.w32(code, n, 0xF81F0FE0 | mem.read_i64(jspr, xsi * 8))
+        n += 1
+        xsi += 1
+      end
+      -- The trap block is a fixed-length sequence, so every branch that skips
+      -- it is arithmetic rather than a patch. Same body as `unreachable`:
+      -- exit with the interpreter's trap status, or BRK if the host has no
+      -- `exit` symbol.
+      xtl: i64 = 1
+      if jex != 0
+        xtl = 6
+      end
+      -- 1. index (u32, so a 32-bit MOV zero-extends it) against the table size
+      jitm.w32(code, n, 0x2A0003E0 | ((sp - 1) << 16) | 17)
+      n += 1
+      jitm.w32(code, n, 0xD2800000 | (jtbz << 5) | 16)
+      n += 1
+      jitm.w32(code, n, 0xEB000000 | (16 << 16) | (17 << 5) | 31)
+      n += 1
+      jitm.w32(code, n, 0x54000000 | ((1 + xtl) << 5) | 3)          -- B.LO
+      n += 1
+      n = jittrap(code, n, jex)
+      -- 2. address of the slot, then its declared type against this call site
+      n = movabs(code, n, 16, jidta)
+      jitm.w32(code, n, 0x8B000000 | (17 << 16) | (4 << 10) | (16 << 5) | 17)
+      n += 1
+      jitm.w32(code, n, 0xF9400000 | (1 << 10) | (17 << 5) | 16)
+      n += 1
+      jitm.w32(code, n, 0xF1000000 | (cti << 10) | (16 << 5) | 31)
+      n += 1
+      jitm.w32(code, n, 0x54000000 | ((1 + xtl) << 5) | 0)          -- B.EQ
+      n += 1
+      n = jittrap(code, n, jex)
+      -- 3. the compiled address; zero means the slot names nothing this
+      -- compilation produced, which must trap rather than branch to 0
+      jitm.w32(code, n, 0xF9400000 | (17 << 5) | 16)
+      n += 1
+      jitm.w32(code, n, 0xB5000000 | ((1 + xtl) << 5) | 16)         -- CBNZ
+      n += 1
+      n = jittrap(code, n, jex)
+      -- Arguments slide down to x0..x{xnp-1}. Ascending is safe for the same
+      -- reason it is on the direct path: at step i the destination is x{i} and
+      -- every remaining source is strictly above it.
+      xag: i64 = 0
+      while xag < xnp
+        if sp - 1 - xnp + xag != xag
+          jitm.w32(code, n, 0xAA0003E0 | ((sp - 1 - xnp + xag) << 16) | xag)
+          n += 1
+        end
+        xag += 1
+      end
+      jitm.w32(code, n, 0xD63F0000 | (16 << 5))                     -- BLR x16
+      n += 1
+      -- Result out of x0 before the restores, or the first pop lands on it.
+      if xnr == 1 and sp - 1 - xnp != 0
+        jitm.w32(code, n, 0xAA0003E0 | (0 << 16) | (sp - 1 - xnp))
+        n += 1
+      end
+      xsj: i64 = xsp - 1
+      while xsj >= 0
+        jitm.w32(code, n, 0xF84107E0 | mem.read_i64(jspr, xsj * 8))
+        n += 1
+        xsj -= 1
+      end
+      sp = sp - 1 - xnp + xnr
+      last_alu = -1
+      last_cset = -1
+
     elseif op == OP_prefix_fc
       -- 0xFC prefix, sub-opcode LEB. Only 0..3 -- the i32 trunc_sat family --
       -- have an arm, and they are one instruction each: ARM64's FCVTZS/FCVTZU
@@ -5665,6 +6002,40 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
     end
     jitm.w32(code, cw, 0x94000000 | ((ca - cw) & 0x03FFFFFF))
     jci += 1
+  end
+
+  -- ── fill the call_indirect dispatch table ────────────────────────────
+  -- This is the phase that could not be an emit-time fold: only now does
+  -- every body have an address. `jqa` holds a WORD offset into the code
+  -- buffer, so the absolute address is the buffer's base plus four times it.
+  --
+  -- A slot no element segment initialised keeps address 0 and type -1, and the
+  -- emitted checks trap on both. So does a slot naming an imported function,
+  -- which the queue pass above has already declined the module over.
+  if jtbq == 1
+    jcba: i64 = jitm.addr(code)
+    if jcba == 0
+      return jitbail("the code buffer has no address to build a dispatch table from", -1, pc)
+    end
+    jdi: i64 = 0
+    while jdi < jtbz
+      mem.write_i64(jidt, (jdi * 2 + 1) * 8, -1)
+      if mem.read_i64(jtoc, jdi * 8) == 1
+        jdf: i64 = mem.read_i64(jtbl, jdi * 8) - jimp
+        if jdf >= 0 and jdf < jnf
+          jda: i64 = mem.read_i64(jqa, jdf * 8)
+          if jda <= 0
+            -- Unreachable by construction: every occupied slot was queued
+            -- above and every queued body writes `jqa`. Kept as a control --
+            -- a zero here would otherwise become a branch to address 0.
+            return jitbail("a table-reachable function was never compiled", -1, pc)
+          end
+          mem.write_i64(jidt, (jdi * 2) * 8, jcba + jda * 4)
+          mem.write_i64(jidt, (jdi * 2 + 1) * 8, mem.read_i64(jfty, jdf * 8))
+        end
+      end
+      jdi += 1
+    end
   end
   n
 end

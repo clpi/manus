@@ -108,6 +108,24 @@ sym(name: str): i64
     return @c.emit("(int64_t)(intptr_t)dlsym(RTLD_DEFAULT, name)")
 end
 
+-- Base address of a buffer `alloc` returned, or 0 if it refused the mapping.
+--
+-- `sym` let emitted code reach a HOST function; this lets it reach ITS OWN
+-- functions through a table rather than a fixed branch. A wasm `call_indirect`
+-- resolves a table slot to a function index at run time, so the branch target
+-- is not a constant and no `BL` displacement can express it: the emitter has to
+-- bake in the address of a dispatch table it fills after every body has an
+-- address, and load the target from there. `mem.addr` cannot answer for these
+-- buffers -- `alloc` hands back a VAL_BUFFER, and casting that struct to an
+-- integer is a C type error, not an address.
+--
+-- `return` is load-bearing for the same reason it is on `sym`: written as a
+-- bare tail expression this answers 0 for every buffer. Verified by value
+-- against a buffer whose first word was then written through the address.
+addr(buf: any): i64
+    return @c.emit("(int64_t)(intptr_t)buf.as.tval")
+end
+
 -- True when this build targets an architecture std.jit can emit for.
 arch(): str
     return @c.emit("duo_jit_arch()")

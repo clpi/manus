@@ -592,6 +592,55 @@ mechanism has not been independently re-audited in this pass.**
 
 ## 5. Ward — the in-repo WASM runtime
 
+> **2026-08-08, later still — `call_indirect` compiles, and closing it exposed
+> a wrong answer that had been there all along.**
+>
+> The named largest coverage gap is closed as an opcode: `call_indirect` was
+> **10 of the 18** JIT refusals across both fixture corpora and is **0 of the
+> 17** now. Suite: **130 rows, 126 PASS, 0 DIFF, 0 UNSUPPORTED, exit 0**, all
+> five controls still exiting 3, and the JIT compiles **49 of the 65** rows it
+> is asked for (47 of 64 before).
+>
+> **Read the coverage number honestly.** Nine of the ten modules did NOT start
+> compiling. They are wasi-libc `_start`s, and queuing their table-reachable
+> callees — which soundness requires — exposed the next blocker in each: six
+> need a function with more than 17 locals (this JIT has no spill model; locals
+> are registers), three hit a `return` inside an inlined body. Both are real
+> work and neither is small. What moved is `bench/ward_call_indirect.wasm`,
+> which compiles where it fell back, plus one new fixture. **No timing claim is
+> made**: every module `call_indirect` blocked sits under the 40 ms
+> process-startup floor, so there is nothing to measure.
+>
+> **The wrong answer.** Neither engine checked the callee's signature, and the
+> table could not represent an uninitialised element (funcidx 0 is a real
+> function, so a zeroed table says "function 0" where wasm says "null"). Two
+> one-line `.wat` probes that every conforming runtime traps on:
+>
+> | probe | wasmtime | ward BEFORE | ward AFTER, both engines |
+> |---|---|---|---|
+> | signature mismatch, callee reachable | trap | **`11`, exit 0** | trap, exit 71 |
+> | element never initialised | trap | **`11`, exit 0** | trap, exit 71 |
+> | index past the table | trap | exit 70 (ward's own bail) | trap, exit 71 |
+> | correct call through the table | `11` | `11` | `11` |
+>
+> ward answered a plausible number and exited 0 for a call that must not
+> happen. Both engines now compare the callee's declared type index against the
+> call site's and trap, and both carry a per-slot occupancy flag. The emitted
+> code makes the same three checks inline. Probe sources are in
+> `ext/ward/HANDOFF.md`.
+>
+> One new `std.jit` primitive, `addr(buf)`: `sym` let emitted code reach a HOST
+> function, `addr` lets it reach its own through a table. The dispatch table's
+> address must be a constant the emitter bakes in while its contents cannot be
+> known until after the call-patch phase, which is why this is a third
+> compilation phase rather than a fold.
+>
+> Still deliberately NOT taken: `0xFC` 4..7, the `i64.trunc_sat` family. The
+> JIT half is one instruction; the interpreter half needs a 2^64-1 clamp with
+> no Duo i64 value to express it, and **no fixture in either corpus exercises
+> it**, so shipping the JIT half alone would put the two engines on different
+> answers for a case nothing verifies. Both halves with fixtures, or neither.
+
 > **SUPERSEDED 2026-08-08 by `zig build ward-test` and `bench/six.duo`.**
 > The two-workload table below was too small a sample to support what was
 > claimed from it. Measured across SIX workloads that do real work:
