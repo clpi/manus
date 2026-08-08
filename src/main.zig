@@ -3329,7 +3329,53 @@ fn do_compile(
         } else {
             if (native_backend.isNativeExecutableTarget(mt)) {
                 if (native_backend.resolveNativeEntrySymbol(&ps.mod, entry_override)) |entry| {
-                    const obj_result = native_backend.emitObjectForExecutable(alloc, &ps.mod, entry);
+                    // A NATIVE `main` DOES NOT INITIALISE THE LUA RUNTIME. The
+                    // C backend's main opens with `package = lua_package_init()`;
+                    // the direct backend emits no equivalent, and it cannot --
+                    // lua_package_init is `static inline`, so there is no symbol
+                    // for machine code to call.
+                    //
+                    // That is fine for a module that needs no runtime, and fatal
+                    // for one that does. Measured: a program calling into
+                    // lib/std/compiler/lexer.duo linked and then SIGSEGV'd,
+                    //
+                    //     main -> duo_lexer_text_fingerprint -> next_tok
+                    //          -> lua_require -> lua_table_get_raw_str_lit
+                    //          -> KERN_INVALID_ADDRESS at 0x68
+                    //
+                    // because `next_tok` performs a runtime require and read the
+                    // module registry out of a zeroed `package`. The callee is
+                    // @c.export'd with a plain C ABI, so the direct backend
+                    // happily emitted the call without knowing the callee needs
+                    // a runtime nobody started.
+                    //
+                    // `native_scalar_candidate` is exactly the "runs without the
+                    // Lua runtime" predicate, computed above and, until now,
+                    // first consulted 160 lines BELOW this block -- so the
+                    // machine-code path never asked. Declining here is the A8
+                    // way back down: under `auto` this falls through to the C
+                    // emit, which initialises the runtime and passes.
+                    // `native_scalar_candidate` alone is NOT the predicate: it
+                    // judges THIS module, and the module that needs the runtime
+                    // is the CALLEE. Measured -- it is true for the program
+                    // above, which still segfaulted.
+                    //
+                    // The honest signal is whether this native executable has to
+                    // link Duo module objects at all. Those objects are C-emitted
+                    // and expect the runtime; if any exist, a native main cannot
+                    // host them.
+                    // directLinkInputs ALWAYS appends the generated keyword
+                    // classifier, so "empty" is never the test -- gating on
+                    // `.len == 0` declined every direct compile, scalar programs
+                    // included. Anything BEYOND that baseline is a Duo module
+                    // object, added only when `exportingModuleSources` is
+                    // non-empty, and those objects are the ones that expect a
+                    // runtime a native main never starts.
+                    const runtime_linked_modules = try directLinkInputs(alloc, io, &ps.mod, mt, cc);
+                    const obj_result = if (native_scalar_candidate and runtime_linked_modules.len <= 1)
+                        native_backend.emitObjectForExecutable(alloc, &ps.mod, entry)
+                    else
+                        @as(@TypeOf(native_backend.emitObjectForExecutable(alloc, &ps.mod, entry)), error.UnsupportedProgram);
                     if (obj_result) |obj| {
                         const direct_extra = try directLinkInputs(alloc, io, &ps.mod, mt, cc);
                         const obj_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_native.o", .{std.fs.path.stem(src_path)});
