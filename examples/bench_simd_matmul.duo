@@ -1,7 +1,10 @@
 -- bench_simd_matmul.duo
 -- Benchmarks the builtin simd.matmul_f32 against a baseline C compiler.
 
-run_bench()
+-- Value form with an annotation. A bare `run_bench()` with no type annotation
+-- parses as a CALL, not a declaration (GR-001), which orphaned the closing
+-- `end` at the bottom of the file and made the whole benchmark unparseable.
+_run_bench = (): void
     print("STARTING")
     n = 512
 
@@ -58,4 +61,7 @@ run_bench()
     print("Checksum:", checksum)
 end
 
-run_bench()
+main = (): i64
+    _run_bench()
+    0
+end
