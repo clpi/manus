@@ -52,12 +52,29 @@ saying so. ward is at parity with wasmtime on `hash.wasm`, 19% behind it on the
 same kernel written by hand, and **28x** behind it on `hot_big.wasm`, where the
 JIT does not engage at all and ward falls back to the interpreter.
 
-**Derived-lines ratio (Pass 101 §4, target >= 80%): `0%`.** Measured by
-`duo run bench/derived.duo`, which positive-controls its own marker detection
-before reporting, because a scanner that reports 0 is usually broken. 4004
-shipped code lines, 0 projected from a descriptor, and 241 lines whose dispatch
-predicate hard-codes a WASM opcode number that
-`lib/std/wasm/ward_mvp_opcodes.duo` already holds.
+**Derived-lines ratio (Pass 101 §4, target >= 80%): `9%`** — was `0%` before
+2026-08-08. Measured by `duo run bench/derived.duo`, which positive-controls
+its own marker detection before reporting, because a scanner that reports 0 is
+usually broken.
+
+| | before | after |
+| --- | ---: | ---: |
+| shipped code lines | 4004 | 4365 |
+| derived code lines | 0 | 418 |
+| ratio | 0% | **9%** |
+| hand-encoded opcode predicates | 241 | **3** |
+
+The 3 are known false positives on a `f64op` width flag and are deliberately
+left in as the scanner's floor: `bench/derived.duo` now FAILS if that count
+reads below 3, because a detector tuned until it says 0 cannot be told apart
+from a broken one.
+
+**9%, not 80%.** The 80% criterion is still UNMET and the harness still exits
+non-zero saying so. What closed is the population Pass 101 actually names —
+opcode numbers hard-coded across the interpreter arms *and* the JIT emitters.
+The remaining ~3900 hand-written lines are the interpreter and JIT *semantics*
+(what each arm does), not format facts; projecting those is a rewrite, not a
+table, and nothing here pretends otherwise.
 
 Every parser / hang / `#s` / boxing blocker from earlier handoffs is **resolved**.
 
@@ -383,29 +400,59 @@ Opcode coverage, counted:
 
 | layer | ops | re-counted 2026-08-08 |
 | --- | --- | --- |
-| `src/ward.duo` — the binary that actually works | **20** | **170 distinct opcodes**, 241 hard-coded predicates, 19 of them behind a NAME |
+| `src/ward.duo` — the binary that actually works | **20** | **184 opcodes, all projected**; 3 hard-coded predicates left, all false positives |
+| `ext/ward/tools/opcodes.duo` — ward's descriptor, new | — | 184 rows; answerable to duo's canonical 63 |
 | `src/wasm/op.duo` — separate 8398-line tree, not what builds | 151 | 162 lines, dead code |
 | duo canonical descriptors (`duo wasm-tables emit`) | **63** | 63, unchanged |
 | full spec (MVP + SIMD + bulk/ref + WASI/WASIX) | ~450+ | unchanged |
 
 The 2026-08-06 note said ward's 20 constants were a hand-copied subset of a
 63-op subset, and that hand-writing the rest "across interpreter arms *and* JIT
-emitters is the thing to avoid." **That is exactly what happened.** ward now
-hard-codes 170 distinct opcode numbers, only 19 of which are bound to a name at
-the top of the file; the other 151 are bare integers inside dispatch
-predicates. `bench/derived.duo` reports the ratio and fails the gate at 0%.
+emitters is the thing to avoid." **That is exactly what happened**, and it was
+repaired the same day: ward had grown to 170 distinct hard-coded opcode
+numbers, only 19 of them behind a name, the other 151 bare integers inside
+dispatch predicates. All 184 are now projected — see below.
 
-Also worth knowing before attempting the projection: `duo wasm-tables emit` is
-NOT currently idempotent against repo style — re-running it rewrites
-`lib/std/wasm/opcode_lookup.duo` with `then`-keyword `if` bodies, which the
-Pass 100 §1 deny list forbids. The generator has to be fixed before it can be
-the source of truth (and it lives in `src/`, which ward does not own).
+### The projection landed, 2026-08-08
 
-**Next: project dispatch from one canonical table** via `@comp.define.derive`
-rather than growing three hand-maintained copies. Two constraints:
+**`duo wasm-tables emit` is idempotent now.** It used to re-write
+`lib/std/wasm/opcode_lookup.duo` with `then`-keyword `if` bodies that Pass 100
+§1 forbids, so the file could not be regenerated without failing the deny list
+— eight lines, all in a Zig multiline literal in `src/wasm_semantic_gen.zig`.
+Fixed there; two consecutive `duo wasm-tables emit` runs on a clean tree now
+produce no diff. Positive-controlled: perturb the file first and the same
+`git diff` check does fire, and the re-emit restores the canonical text.
 
-1. The current generator is `src/wasm_semantic_gen.zig` — **Zig**, which
-   collides with the standing "no zig no c only duo" directive. The table needs
-   to move into Duo.
-2. Cross-file module embedding is currently broken in duo, so the projection
-   has to stay **single-file** inside `ward.duo` for now.
+**ward's opcode dispatch is projected from a descriptor.**
+`tools/opcodes.duo` holds the table (184 opcodes, 24 ALU rows, 20 CMP rows)
+and writes four `-- derived(ward.opcodes.*)` regions into `src/ward.duo`:
+
+```
+duo run tools/opcodes.duo                     # project
+WARD_DERIVE_CHECK=1 duo run tools/opcodes.duo # fail if src/ward.duo drifted
+```
+
+It is not a second source of truth: it re-parses
+`lib/std/wasm/ward_mvp_opcodes.duo` and refuses to project on any disagreement
+over the 63 opcodes duo's canonical table holds (it reports the count it
+checked — 63 — so a parser that matched nothing cannot read as unanimous).
+ward needs 170, which is why the extension lives here. Both gates are
+negative-controlled: perturbing a derived line makes `--check` fail, and
+mis-typing an opcode in `tools/opcodes.duo` makes the projection refuse.
+
+363 numeric literals across 231 dispatch predicates became derived names.
+`bail`/`bailop` now print the name too — `opcode 252 (prefix.fc)`, verified by
+value against a `i32.trunc_sat_f32_s` probe — which is the ranked-worklist
+signal a bare number never gave.
+
+No conformance or speed cost: 43/44 on both engines before and after,
+jit-compiled unchanged at 35/44, `hash.wasm` JIT 0.37 s both, `fib.wasm`
+interp 0.63 s -> 0.59 s.
+
+Two constraints still shape this, and both held:
+
+1. The upstream generator is `src/wasm_semantic_gen.zig` — **Zig**, which
+   collides with the standing "no zig no c only duo" directive. `tools/` is
+   Duo; only the eight-word `then` fix touched the Zig.
+2. Cross-file module embedding is still broken in duo, so the projection
+   writes **into** `ward.duo` rather than being required from it.

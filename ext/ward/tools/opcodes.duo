@@ -1,0 +1,544 @@
+-- ward's WASM opcode descriptor table, and the projection that writes it into
+-- src/ward.duo.
+--
+--   duo run tools/opcodes.duo          -- project; rewrites src/ward.duo
+--   duo run tools/opcodes.duo --check  -- fail if the projection is stale
+--
+-- WHY THIS EXISTS. ward used to hard-code 170 distinct opcode numbers across
+-- 241 dispatch predicates -- in the interpreter ladder AND, independently,
+-- in the JIT's ALU_OPS / CMP_OPS tables. The 2026-08-06 handoff named that
+-- exact failure ("hand-writing the rest across interpreter arms *and* JIT
+-- emitters is the thing to avoid") and it happened anyway, because there was
+-- nothing to hand-write *from* on the ward side: duo's canonical table
+-- (lib/std/wasm/ward_mvp_opcodes.duo) stops at 63 ops and ward needs 170.
+--
+-- So OPS below is the descriptor, and every opcode number ward compiles
+-- against is projected from it. An opcode number now appears ONCE in this
+-- repo per fact, not once per consumer.
+--
+-- THIS TABLE IS NOT A SECOND SOURCE OF TRUTH. `_agree` checks every row that
+-- lib/std/wasm/ward_mvp_opcodes.duo also carries against that file, parsed at
+-- run time, and refuses to project on any disagreement. duo's canonical table
+-- stays the authority for the 63 it holds; OPS extends it and is answerable
+-- to it. That check is negative-controlled by `_selfcheck` -- a table that
+-- cannot disagree is not a check.
+--
+-- MONOGLOT: this is .duo, not the .py that used to do this job (deleted
+-- 2026-08-07 after it silently read a /tmp path that no longer existed) and
+-- not the .zig generator that owns lib/std/wasm/.
+
+-- {opcode, canonical wasm name}. Ordered by opcode; the projection preserves
+-- this order, which is what makes re-running a no-op.
+OPS = {
+    {0, "unreachable"},
+    {1, "nop"},
+    {2, "block"},
+    {3, "loop"},
+    {4, "if"},
+    {5, "else"},
+    {11, "end"},
+    {12, "br"},
+    {13, "br_if"},
+    {14, "br_table"},
+    {15, "return"},
+    {16, "call"},
+    {17, "call_indirect"},
+    {26, "drop"},
+    {27, "select"},
+    {32, "local.get"},
+    {33, "local.set"},
+    {34, "local.tee"},
+    {35, "global.get"},
+    {36, "global.set"},
+    {37, "table.get"},
+    {38, "table.set"},
+    {40, "i32.load"},
+    {41, "i64.load"},
+    {42, "f32.load"},
+    {43, "f64.load"},
+    {44, "i32.load8_s"},
+    {45, "i32.load8_u"},
+    {46, "i32.load16_s"},
+    {47, "i32.load16_u"},
+    {48, "i64.load8_s"},
+    {49, "i64.load8_u"},
+    {50, "i64.load16_s"},
+    {51, "i64.load16_u"},
+    {52, "i64.load32_s"},
+    {53, "i64.load32_u"},
+    {54, "i32.store"},
+    {55, "i64.store"},
+    {56, "f32.store"},
+    {57, "f64.store"},
+    {58, "i32.store8"},
+    {59, "i32.store16"},
+    {60, "i64.store8"},
+    {61, "i64.store16"},
+    {62, "i64.store32"},
+    {63, "memory.size"},
+    {64, "memory.grow"},
+    {65, "i32.const"},
+    {66, "i64.const"},
+    {67, "f32.const"},
+    {68, "f64.const"},
+    {69, "i32.eqz"},
+    {70, "i32.eq"},
+    {71, "i32.ne"},
+    {72, "i32.lt_s"},
+    {73, "i32.lt_u"},
+    {74, "i32.gt_s"},
+    {75, "i32.gt_u"},
+    {76, "i32.le_s"},
+    {77, "i32.le_u"},
+    {78, "i32.ge_s"},
+    {79, "i32.ge_u"},
+    {80, "i64.eqz"},
+    {81, "i64.eq"},
+    {82, "i64.ne"},
+    {83, "i64.lt_s"},
+    {84, "i64.lt_u"},
+    {85, "i64.gt_s"},
+    {86, "i64.gt_u"},
+    {87, "i64.le_s"},
+    {88, "i64.le_u"},
+    {89, "i64.ge_s"},
+    {90, "i64.ge_u"},
+    {91, "f32.eq"},
+    {92, "f32.ne"},
+    {93, "f32.lt"},
+    {94, "f32.gt"},
+    {95, "f32.le"},
+    {96, "f32.ge"},
+    {97, "f64.eq"},
+    {98, "f64.ne"},
+    {99, "f64.lt"},
+    {100, "f64.gt"},
+    {101, "f64.le"},
+    {102, "f64.ge"},
+    {103, "i32.clz"},
+    {104, "i32.ctz"},
+    {105, "i32.popcnt"},
+    {106, "i32.add"},
+    {107, "i32.sub"},
+    {108, "i32.mul"},
+    {109, "i32.div_s"},
+    {110, "i32.div_u"},
+    {111, "i32.rem_s"},
+    {112, "i32.rem_u"},
+    {113, "i32.and"},
+    {114, "i32.or"},
+    {115, "i32.xor"},
+    {116, "i32.shl"},
+    {117, "i32.shr_s"},
+    {118, "i32.shr_u"},
+    {119, "i32.rotl"},
+    {120, "i32.rotr"},
+    {121, "i64.clz"},
+    {122, "i64.ctz"},
+    {123, "i64.popcnt"},
+    {124, "i64.add"},
+    {125, "i64.sub"},
+    {126, "i64.mul"},
+    {127, "i64.div_s"},
+    {128, "i64.div_u"},
+    {129, "i64.rem_s"},
+    {130, "i64.rem_u"},
+    {131, "i64.and"},
+    {132, "i64.or"},
+    {133, "i64.xor"},
+    {134, "i64.shl"},
+    {135, "i64.shr_s"},
+    {136, "i64.shr_u"},
+    {137, "i64.rotl"},
+    {138, "i64.rotr"},
+    {139, "f32.abs"},
+    {140, "f32.neg"},
+    {141, "f32.ceil"},
+    {142, "f32.floor"},
+    {143, "f32.trunc"},
+    {144, "f32.nearest"},
+    {145, "f32.sqrt"},
+    {146, "f32.add"},
+    {147, "f32.sub"},
+    {148, "f32.mul"},
+    {149, "f32.div"},
+    {150, "f32.min"},
+    {151, "f32.max"},
+    {152, "f32.copysign"},
+    {153, "f64.abs"},
+    {154, "f64.neg"},
+    {155, "f64.ceil"},
+    {156, "f64.floor"},
+    {157, "f64.trunc"},
+    {158, "f64.nearest"},
+    {159, "f64.sqrt"},
+    {160, "f64.add"},
+    {161, "f64.sub"},
+    {162, "f64.mul"},
+    {163, "f64.div"},
+    {164, "f64.min"},
+    {165, "f64.max"},
+    {166, "f64.copysign"},
+    {167, "i32.wrap_i64"},
+    {168, "i32.trunc_f32_s"},
+    {169, "i32.trunc_f32_u"},
+    {170, "i32.trunc_f64_s"},
+    {171, "i32.trunc_f64_u"},
+    {172, "i64.extend_i32_s"},
+    {173, "i64.extend_i32_u"},
+    {174, "i64.trunc_f32_s"},
+    {175, "i64.trunc_f32_u"},
+    {176, "i64.trunc_f64_s"},
+    {177, "i64.trunc_f64_u"},
+    {178, "f32.convert_i32_s"},
+    {179, "f32.convert_i32_u"},
+    {180, "f32.convert_i64_s"},
+    {181, "f32.convert_i64_u"},
+    {182, "f32.demote_f64"},
+    {183, "f64.convert_i32_s"},
+    {184, "f64.convert_i32_u"},
+    {185, "f64.convert_i64_s"},
+    {186, "f64.convert_i64_u"},
+    {187, "f64.promote_f32"},
+    {188, "i32.reinterpret_f32"},
+    {189, "i64.reinterpret_f64"},
+    {190, "f32.reinterpret_i32"},
+    {191, "f64.reinterpret_i64"},
+    {192, "i32.extend8_s"},
+    {193, "i32.extend16_s"},
+    {194, "i64.extend8_s"},
+    {195, "i64.extend16_s"},
+    {196, "i64.extend32_s"},
+    {208, "ref.null"},
+    {209, "ref.is_null"},
+    {210, "ref.func"},
+    {252, "prefix.fc"},
+    {253, "prefix.simd"},
+}
+
+-- JIT projections. Both are keyed by NAME, so the opcode number they used to
+-- repeat now comes from OPS. A name that is not in OPS is a hard error.
+
+-- ARM64 base word for the one shared ALU emit path.
+ALUWORD = {
+    {"i32.add", 0x0B000000},
+    {"i32.sub", 0x4B000000},
+    {"i32.mul", 0x1B007C00},
+    {"i32.div_s", 0x1AC00C00},
+    {"i32.div_u", 0x1AC00800},
+    {"i32.and", 0x0A000000},
+    {"i32.or", 0x2A000000},
+    {"i32.xor", 0x4A000000},
+    {"i32.shl", 0x1AC02000},
+    {"i32.shr_s", 0x1AC02800},
+    {"i32.shr_u", 0x1AC02400},
+    {"i32.rotr", 0x1AC02C00},
+    {"i64.add", 0x8B000000},
+    {"i64.sub", 0xCB000000},
+    {"i64.mul", 0x9B007C00},
+    {"i64.div_s", 0x9AC00C00},
+    {"i64.div_u", 0x9AC00800},
+    {"i64.and", 0x8A000000},
+    {"i64.or", 0xAA000000},
+    {"i64.xor", 0xCA000000},
+    {"i64.shl", 0x9AC02000},
+    {"i64.shr_s", 0x9AC02800},
+    {"i64.shr_u", 0x9AC02400},
+    {"i64.rotr", 0x9AC02C00},
+}
+
+-- ARM64 condition code fed to CSET. The i64 rows reuse the i32 conditions on a
+-- 64-bit CMP; the CSET stays 32-bit because a wasm compare yields i32.
+CMPCOND = {
+    {"i32.eq", 0},
+    {"i32.ne", 1},
+    {"i32.lt_s", 11},
+    {"i32.lt_u", 3},
+    {"i32.gt_s", 12},
+    {"i32.gt_u", 8},
+    {"i32.le_s", 13},
+    {"i32.le_u", 9},
+    {"i32.ge_s", 10},
+    {"i32.ge_u", 2},
+    {"i64.eq", 0},
+    {"i64.ne", 1},
+    {"i64.lt_s", 11},
+    {"i64.lt_u", 3},
+    {"i64.gt_s", 12},
+    {"i64.gt_u", 8},
+    {"i64.le_s", 13},
+    {"i64.le_u", 9},
+    {"i64.ge_s", 10},
+    {"i64.ge_u", 2},
+}
+
+-- Duo keywords cannot be bare identifiers, so those four names take a trailing
+-- underscore. The set matches lib/std/wasm/ward_mvp_opcodes.duo exactly, which
+-- is what lets `_agree` compare the two files name-for-name.
+_reserved = {"if", "else", "end", "return"}
+
+_isreserved(name: str): bool
+    for _i, k in _reserved
+        if k == name
+            return true
+        end
+    end
+    false
+end
+
+-- "i32.load8_s" -> "OP_i32_load8_s"; "if" -> "OP_if_".
+_const(name: str): str
+    out = ""
+    i = 1
+    while i <= string.len(name)
+        c = string.sub(name, i, i)
+        if c == "."
+            out = out .. "_"
+        else
+            out = out .. c
+        end
+        i += 1
+    end
+    if _isreserved(name)
+        out = out .. "_"
+    end
+    "OP_" .. out
+end
+
+_num(name: str): i64
+    for _i, row in OPS
+        if row[2] == name
+            return row[1]
+        end
+    end
+    -1
+end
+
+_pad(s: str, w: i64): str
+    out = s
+    while string.len(out) < w
+        out = out .. " "
+    end
+    out
+end
+
+_hex8(v: i64): str
+    digits = "0123456789ABCDEF"
+    out = ""
+    i = 0
+    while i < 8
+        nyb = (v >> (28 - i * 4)) & 15
+        out = out .. string.sub(digits, nyb + 1, nyb + 1)
+        i += 1
+    end
+    "0x" .. out
+end
+
+-- ── the four projected bodies ────────────────────────────────────────────
+
+_body_consts(): str
+    out = ""
+    for _i, row in OPS
+        out = out .. _const(row[2]) .. " = " .. to(str)(row[1]) .. "\n"
+    end
+    out
+end
+
+_body_names(): str
+    out = "OP_NAMES = {\n"
+    for _i, row in OPS
+        out = out .. "  {" .. _pad(to(str)(row[1]) .. ",", 5) .. " \"" .. row[2] .. "\"},\n"
+    end
+    out .. "}\n"
+end
+
+_body_alu(): str
+    out = "ALU_OPS = {\n"
+    for _i, row in ALUWORD
+        out = out .. "  {" .. _pad(_const(row[1]) .. ",", 22) .. " " .. _hex8(row[2])
+            .. "},\n"
+    end
+    out .. "}\n"
+end
+
+_body_cmp(): str
+    out = "CMP_OPS = {\n"
+    for _i, row in CMPCOND
+        out = out .. "  {" .. _pad(_const(row[1]) .. ",", 16) .. " " .. to(str)(row[2]) .. "},\n"
+    end
+    out .. "}\n"
+end
+
+-- ── region rewrite ───────────────────────────────────────────────────────
+--
+-- Replaces the text between `-- derived(<tag>) begin` and `-- derived end`,
+-- markers included in neither. Byte-exact round trip when the body is already
+-- current, which is the whole idempotency property; `_selfcheck` proves the
+-- round trip rather than assuming it.
+_render(text: str, tag: str, body: str): str
+    open = "-- derived(" .. tag .. ") begin"
+    out = ""
+    inside = false
+    seen = 0
+    for _i, line in std.string.split(text, "\n")
+        t = std.string.trim(line)
+        if string.find(t, open, 1, true) == 1
+            inside = true
+            seen += 1
+            out = out .. line .. "\n" .. body
+        elseif t == "-- derived end"
+            inside = false
+            out = out .. line .. "\n"
+        elseif not inside
+            out = out .. line .. "\n"
+        end
+    end
+    if seen != 1
+        print("*** region '" .. tag .. "' appears " .. to(str)(seen) .. " times, expected 1 ***")
+        os.exit(1)
+    end
+    -- Splitting a "…\n"-terminated text yields a trailing empty element, which
+    -- the loop turned back into a newline. Drop it so the round trip is exact.
+    string.sub(out, 1, string.len(out) - 1)
+end
+
+-- ── answerability to duo's canonical table ───────────────────────────────
+--
+-- Parses lib/std/wasm/ward_mvp_opcodes.duo (63 ops, emitted by
+-- `duo wasm-tables emit`) and demands OPS agree on every one. Reported as a
+-- count, not a boolean, because a parser that matched nothing would otherwise
+-- read as unanimous agreement.
+_agree(path: str): i64
+    text = std.script.fs_read(path)
+    checked = 0
+    for _i, line in std.string.split(text, "\n")
+        nm = string.match(line, "^(OP_[%w_]+) = (%d+)$")
+        if nm != nil
+            want = to(i64)(string.match(line, "= (%d+)$"))
+            got = -1
+            for _j, row in OPS
+                if _const(row[2]) == nm
+                    got = row[1]
+                end
+            end
+            if got != want
+                print("*** " .. nm .. ": canonical table says " .. to(str)(want)
+                    .. ", tools/opcodes.duo says " .. to(str)(got) .. " ***")
+                os.exit(1)
+            end
+            checked += 1
+        end
+    end
+    checked
+end
+
+-- ── controls ─────────────────────────────────────────────────────────────
+--
+-- Three things could each read "green" while broken, so each gets a probe that
+-- must FAIL for the harness to trust the one that must pass.
+_selfcheck(): bool
+    -- 1. the region rewriter round-trips a buffer byte for byte
+    src = "a\n-- derived(t) begin\nold\n-- derived end\nb\n"
+    if _render(src, "t", "old\n") != src
+        print("selfcheck: _render is not an identity on an already-current body")
+        return false
+    end
+    -- 2. and actually replaces when the body differs
+    if _render(src, "t", "new\n") != "a\n-- derived(t) begin\nnew\n-- derived end\nb\n"
+        print("selfcheck: _render did not replace the region body")
+        return false
+    end
+    -- 3. name mangling, including the reserved-word suffix
+    if _const("i32.load8_s") != "OP_i32_load8_s"
+        print("selfcheck: _const mangled i32.load8_s wrongly")
+        return false
+    end
+    if _const("end") != "OP_end_"
+        print("selfcheck: _const did not suffix the reserved word `end`")
+        return false
+    end
+    -- 4. the number lookup rejects an unknown name instead of inventing one
+    if _num("i32.nonesuch") != -1
+        print("selfcheck: _num invented a number for an unknown opcode")
+        return false
+    end
+    if _num("i32.add") != 106
+        print("selfcheck: _num lost a known opcode")
+        return false
+    end
+    if _hex8(0x0B000000) != "0x0B000000"
+        print("selfcheck: _hex8 is not round-tripping")
+        return false
+    end
+    true
+end
+
+-- Every JIT row must resolve through OPS. This is the property that makes OPS
+-- the single source: a row that could not resolve would otherwise be silently
+-- dropped from the projected table and the JIT would just stop compiling that
+-- opcode -- which is invisible, because the JIT falls back to the interpreter
+-- and the correctness gate stays green.
+_resolve(): bool
+    ok = true
+    for _i, row in ALUWORD
+        if _num(row[1]) < 0
+            print("*** ALUWORD row '" .. row[1] .. "' is not in OPS ***")
+            ok = false
+        end
+    end
+    for _i, row in CMPCOND
+        if _num(row[1]) < 0
+            print("*** CMPCOND row '" .. row[1] .. "' is not in OPS ***")
+            ok = false
+        end
+    end
+    ok
+end
+
+main(): i64
+    if not _selfcheck()
+        print("*** projection harness is BROKEN; its output would not be evidence ***")
+        return 1
+    end
+    if not _resolve()
+        return 1
+    end
+
+    root = std.script.getenv("DUO_ROOT", "/Users/clp/x/duo")
+    canon = root .. "/lib/std/wasm/ward_mvp_opcodes.duo"
+    n = _agree(canon)
+    if n == 0
+        print("*** parsed 0 rows out of " .. canon .. "; the agreement check is broken ***")
+        return 1
+    end
+    print("agrees with duo's canonical table on " .. to(str)(n) .. " opcode(s)")
+
+    target = "src/ward.duo"
+    before = std.script.fs_read(target)
+    after = _render(before, "ward.opcodes.constants", _body_consts())
+    after = _render(after, "ward.opcodes.names", _body_names())
+    after = _render(after, "ward.opcodes.aluword", _body_alu())
+    after = _render(after, "ward.opcodes.cmpcond", _body_cmp())
+
+    -- Mode selection is an ENV VAR, not argv: duo-compiled binaries do not
+    -- populate Lua's `arg`, and an argv-driven flag would silently take the
+    -- write path in a gate that meant to check.
+    if std.script.getenv("WARD_DERIVE_CHECK", "") != ""
+        if after != before
+            print("*** " .. target .. " is STALE against tools/opcodes.duo ***")
+            print("    run: duo run tools/opcodes.duo")
+            return 1
+        end
+        print(target .. " is current (" .. to(str)(#OPS) .. " opcodes, "
+            .. to(str)(#ALUWORD) .. " alu rows, " .. to(str)(#CMPCOND) .. " cmp rows)")
+        return 0
+    end
+
+    if after == before
+        print(target .. " already current -- no write")
+        return 0
+    end
+    std.script.fs_write(target, after)
+    print("projected " .. to(str)(#OPS) .. " opcodes into " .. target)
+    0
+end

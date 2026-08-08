@@ -16,18 +16,24 @@ iom = req "std.io"
 
 -- ward WASM interpreter — PURE DUO, zero @c.emit/@c.include.
 --
--- Opcode constants below come from the Pass 12 M2 descriptor chain
--- (src/wasm_semantic_gen.zig -> `duo wasm-tables emit` ->
--- lib/std/wasm/ward_mvp_opcodes.duo), which stays the single source of truth.
--- They are inlined rather than required because requiring a std module
--- currently fails to compile (BUG C: export table references DCE'd symbols).
+-- EVERY OPCODE NUMBER IN THIS FILE IS PROJECTED, NOT TYPED. The four
+-- `-- derived(ward.opcodes.*)` regions below are written by
+-- `duo run tools/opcodes.duo` from the descriptor table in that file, and
+-- `WARD_DERIVE_CHECK=1 duo run tools/opcodes.duo` exits non-zero if they have
+-- drifted. Do not edit inside a derived region; edit the descriptor and
+-- re-project.
 --
--- The scripts/gen_interp.py that used to re-emit them was deleted 2026-08-07:
--- it read a /tmp/run_body.bin that no longer exists, wrote a
--- src/wasm/interp_v2.duo that was never committed and is referenced nowhere,
--- and matched the table with `^M\.(OP_\w+)` — a shape the table no longer has,
--- since ward_mvp_opcodes.duo is now bare top-level bindings. Regenerate with
--- `duo wasm-tables emit` and copy the constants across.
+-- tools/opcodes.duo is in turn answerable to duo's canonical table
+-- (src/wasm_semantic_gen.zig -> `duo wasm-tables emit` ->
+-- lib/std/wasm/ward_mvp_opcodes.duo): it re-parses that file and refuses to
+-- project on any disagreement over the 63 opcodes it holds. ward needs 170,
+-- which is why the extension table lives here rather than there.
+--
+-- The constants are inlined rather than required because requiring a std
+-- module currently fails to compile (BUG C: export table references DCE'd
+-- symbols). The scripts/gen_interp.py that used to re-emit them was deleted
+-- 2026-08-07: it read a /tmp/run_body.bin that no longer existed and matched
+-- the table with `^M\.(OP_\w+)`, a shape the table had already lost.
 --
 -- Codegen constraints (filed 2026-08-05, src/codegen.zig locked):
 --   BUG A  a branch may not end on a void call -> explicit non-void tail.
@@ -42,26 +48,193 @@ iom = req "std.io"
 -- Shape: ONE hoisted LEB128 decode (was 6 copies), binops share operand
 -- fetch/stack adjust (was 15 near-identical blocks), hot opcodes tested first.
 
+-- derived(ward.opcodes.constants) begin -- regenerate: duo run tools/opcodes.duo
+OP_unreachable = 0
+OP_nop = 1
+OP_block = 2
 OP_loop = 3
+OP_if_ = 4
+OP_else_ = 5
 OP_end_ = 11
 OP_br = 12
 OP_br_if = 13
+OP_br_table = 14
 OP_return_ = 15
+OP_call = 16
+OP_call_indirect = 17
+OP_drop = 26
+OP_select = 27
 OP_local_get = 32
 OP_local_set = 33
 OP_local_tee = 34
+OP_global_get = 35
+OP_global_set = 36
+OP_table_get = 37
+OP_table_set = 38
+OP_i32_load = 40
+OP_i64_load = 41
+OP_f32_load = 42
+OP_f64_load = 43
+OP_i32_load8_s = 44
+OP_i32_load8_u = 45
+OP_i32_load16_s = 46
+OP_i32_load16_u = 47
+OP_i64_load8_s = 48
+OP_i64_load8_u = 49
+OP_i64_load16_s = 50
+OP_i64_load16_u = 51
+OP_i64_load32_s = 52
+OP_i64_load32_u = 53
+OP_i32_store = 54
+OP_i64_store = 55
+OP_f32_store = 56
+OP_f64_store = 57
+OP_i32_store8 = 58
+OP_i32_store16 = 59
+OP_i64_store8 = 60
+OP_i64_store16 = 61
+OP_i64_store32 = 62
+OP_memory_size = 63
+OP_memory_grow = 64
 OP_i32_const = 65
+OP_i64_const = 66
+OP_f32_const = 67
+OP_f64_const = 68
 OP_i32_eqz = 69
+OP_i32_eq = 70
 OP_i32_ne = 71
+OP_i32_lt_s = 72
 OP_i32_lt_u = 73
+OP_i32_gt_s = 74
+OP_i32_gt_u = 75
+OP_i32_le_s = 76
+OP_i32_le_u = 77
+OP_i32_ge_s = 78
+OP_i32_ge_u = 79
+OP_i64_eqz = 80
+OP_i64_eq = 81
+OP_i64_ne = 82
+OP_i64_lt_s = 83
+OP_i64_lt_u = 84
+OP_i64_gt_s = 85
+OP_i64_gt_u = 86
+OP_i64_le_s = 87
+OP_i64_le_u = 88
+OP_i64_ge_s = 89
+OP_i64_ge_u = 90
+OP_f32_eq = 91
+OP_f32_ne = 92
+OP_f32_lt = 93
+OP_f32_gt = 94
+OP_f32_le = 95
+OP_f32_ge = 96
+OP_f64_eq = 97
+OP_f64_ne = 98
+OP_f64_lt = 99
+OP_f64_gt = 100
+OP_f64_le = 101
+OP_f64_ge = 102
+OP_i32_clz = 103
+OP_i32_ctz = 104
+OP_i32_popcnt = 105
 OP_i32_add = 106
 OP_i32_sub = 107
 OP_i32_mul = 108
+OP_i32_div_s = 109
+OP_i32_div_u = 110
+OP_i32_rem_s = 111
+OP_i32_rem_u = 112
 OP_i32_and = 113
 OP_i32_or = 114
 OP_i32_xor = 115
 OP_i32_shl = 116
+OP_i32_shr_s = 117
 OP_i32_shr_u = 118
+OP_i32_rotl = 119
+OP_i32_rotr = 120
+OP_i64_clz = 121
+OP_i64_ctz = 122
+OP_i64_popcnt = 123
+OP_i64_add = 124
+OP_i64_sub = 125
+OP_i64_mul = 126
+OP_i64_div_s = 127
+OP_i64_div_u = 128
+OP_i64_rem_s = 129
+OP_i64_rem_u = 130
+OP_i64_and = 131
+OP_i64_or = 132
+OP_i64_xor = 133
+OP_i64_shl = 134
+OP_i64_shr_s = 135
+OP_i64_shr_u = 136
+OP_i64_rotl = 137
+OP_i64_rotr = 138
+OP_f32_abs = 139
+OP_f32_neg = 140
+OP_f32_ceil = 141
+OP_f32_floor = 142
+OP_f32_trunc = 143
+OP_f32_nearest = 144
+OP_f32_sqrt = 145
+OP_f32_add = 146
+OP_f32_sub = 147
+OP_f32_mul = 148
+OP_f32_div = 149
+OP_f32_min = 150
+OP_f32_max = 151
+OP_f32_copysign = 152
+OP_f64_abs = 153
+OP_f64_neg = 154
+OP_f64_ceil = 155
+OP_f64_floor = 156
+OP_f64_trunc = 157
+OP_f64_nearest = 158
+OP_f64_sqrt = 159
+OP_f64_add = 160
+OP_f64_sub = 161
+OP_f64_mul = 162
+OP_f64_div = 163
+OP_f64_min = 164
+OP_f64_max = 165
+OP_f64_copysign = 166
+OP_i32_wrap_i64 = 167
+OP_i32_trunc_f32_s = 168
+OP_i32_trunc_f32_u = 169
+OP_i32_trunc_f64_s = 170
+OP_i32_trunc_f64_u = 171
+OP_i64_extend_i32_s = 172
+OP_i64_extend_i32_u = 173
+OP_i64_trunc_f32_s = 174
+OP_i64_trunc_f32_u = 175
+OP_i64_trunc_f64_s = 176
+OP_i64_trunc_f64_u = 177
+OP_f32_convert_i32_s = 178
+OP_f32_convert_i32_u = 179
+OP_f32_convert_i64_s = 180
+OP_f32_convert_i64_u = 181
+OP_f32_demote_f64 = 182
+OP_f64_convert_i32_s = 183
+OP_f64_convert_i32_u = 184
+OP_f64_convert_i64_s = 185
+OP_f64_convert_i64_u = 186
+OP_f64_promote_f32 = 187
+OP_i32_reinterpret_f32 = 188
+OP_i64_reinterpret_f64 = 189
+OP_f32_reinterpret_i32 = 190
+OP_f64_reinterpret_i64 = 191
+OP_i32_extend8_s = 192
+OP_i32_extend16_s = 193
+OP_i64_extend8_s = 194
+OP_i64_extend16_s = 195
+OP_i64_extend32_s = 196
+OP_ref_null = 208
+OP_ref_is_null = 209
+OP_ref_func = 210
+OP_prefix_fc = 252
+OP_prefix_simd = 253
+-- derived end
+
 M32 = 0xFFFFFFFF
 
 
@@ -317,11 +490,219 @@ end
 -- 63-entry ceiling at recursion depth 34. Naming the wrong cause would have
 -- sent the next reader to write an arm that already exists.
 
+-- opcode -> canonical wasm text name, for the bail diagnostics only. Off every
+-- hot path: a linear scan is reached exactly once, immediately before exit.
+--
+-- This is what turns a corpus sweep into a ranked worklist. `unimplemented
+-- opcode 158` sends the reader to a table; `unimplemented opcode 158
+-- (f64.nearest)` names the arm to write, and f64.nearest is precisely the gap
+-- that cost this project a session when it presented as `result=nan`.
+-- derived(ward.opcodes.names) begin -- regenerate: duo run tools/opcodes.duo
+OP_NAMES = {
+  {0,    "unreachable"},
+  {1,    "nop"},
+  {2,    "block"},
+  {3,    "loop"},
+  {4,    "if"},
+  {5,    "else"},
+  {11,   "end"},
+  {12,   "br"},
+  {13,   "br_if"},
+  {14,   "br_table"},
+  {15,   "return"},
+  {16,   "call"},
+  {17,   "call_indirect"},
+  {26,   "drop"},
+  {27,   "select"},
+  {32,   "local.get"},
+  {33,   "local.set"},
+  {34,   "local.tee"},
+  {35,   "global.get"},
+  {36,   "global.set"},
+  {37,   "table.get"},
+  {38,   "table.set"},
+  {40,   "i32.load"},
+  {41,   "i64.load"},
+  {42,   "f32.load"},
+  {43,   "f64.load"},
+  {44,   "i32.load8_s"},
+  {45,   "i32.load8_u"},
+  {46,   "i32.load16_s"},
+  {47,   "i32.load16_u"},
+  {48,   "i64.load8_s"},
+  {49,   "i64.load8_u"},
+  {50,   "i64.load16_s"},
+  {51,   "i64.load16_u"},
+  {52,   "i64.load32_s"},
+  {53,   "i64.load32_u"},
+  {54,   "i32.store"},
+  {55,   "i64.store"},
+  {56,   "f32.store"},
+  {57,   "f64.store"},
+  {58,   "i32.store8"},
+  {59,   "i32.store16"},
+  {60,   "i64.store8"},
+  {61,   "i64.store16"},
+  {62,   "i64.store32"},
+  {63,   "memory.size"},
+  {64,   "memory.grow"},
+  {65,   "i32.const"},
+  {66,   "i64.const"},
+  {67,   "f32.const"},
+  {68,   "f64.const"},
+  {69,   "i32.eqz"},
+  {70,   "i32.eq"},
+  {71,   "i32.ne"},
+  {72,   "i32.lt_s"},
+  {73,   "i32.lt_u"},
+  {74,   "i32.gt_s"},
+  {75,   "i32.gt_u"},
+  {76,   "i32.le_s"},
+  {77,   "i32.le_u"},
+  {78,   "i32.ge_s"},
+  {79,   "i32.ge_u"},
+  {80,   "i64.eqz"},
+  {81,   "i64.eq"},
+  {82,   "i64.ne"},
+  {83,   "i64.lt_s"},
+  {84,   "i64.lt_u"},
+  {85,   "i64.gt_s"},
+  {86,   "i64.gt_u"},
+  {87,   "i64.le_s"},
+  {88,   "i64.le_u"},
+  {89,   "i64.ge_s"},
+  {90,   "i64.ge_u"},
+  {91,   "f32.eq"},
+  {92,   "f32.ne"},
+  {93,   "f32.lt"},
+  {94,   "f32.gt"},
+  {95,   "f32.le"},
+  {96,   "f32.ge"},
+  {97,   "f64.eq"},
+  {98,   "f64.ne"},
+  {99,   "f64.lt"},
+  {100,  "f64.gt"},
+  {101,  "f64.le"},
+  {102,  "f64.ge"},
+  {103,  "i32.clz"},
+  {104,  "i32.ctz"},
+  {105,  "i32.popcnt"},
+  {106,  "i32.add"},
+  {107,  "i32.sub"},
+  {108,  "i32.mul"},
+  {109,  "i32.div_s"},
+  {110,  "i32.div_u"},
+  {111,  "i32.rem_s"},
+  {112,  "i32.rem_u"},
+  {113,  "i32.and"},
+  {114,  "i32.or"},
+  {115,  "i32.xor"},
+  {116,  "i32.shl"},
+  {117,  "i32.shr_s"},
+  {118,  "i32.shr_u"},
+  {119,  "i32.rotl"},
+  {120,  "i32.rotr"},
+  {121,  "i64.clz"},
+  {122,  "i64.ctz"},
+  {123,  "i64.popcnt"},
+  {124,  "i64.add"},
+  {125,  "i64.sub"},
+  {126,  "i64.mul"},
+  {127,  "i64.div_s"},
+  {128,  "i64.div_u"},
+  {129,  "i64.rem_s"},
+  {130,  "i64.rem_u"},
+  {131,  "i64.and"},
+  {132,  "i64.or"},
+  {133,  "i64.xor"},
+  {134,  "i64.shl"},
+  {135,  "i64.shr_s"},
+  {136,  "i64.shr_u"},
+  {137,  "i64.rotl"},
+  {138,  "i64.rotr"},
+  {139,  "f32.abs"},
+  {140,  "f32.neg"},
+  {141,  "f32.ceil"},
+  {142,  "f32.floor"},
+  {143,  "f32.trunc"},
+  {144,  "f32.nearest"},
+  {145,  "f32.sqrt"},
+  {146,  "f32.add"},
+  {147,  "f32.sub"},
+  {148,  "f32.mul"},
+  {149,  "f32.div"},
+  {150,  "f32.min"},
+  {151,  "f32.max"},
+  {152,  "f32.copysign"},
+  {153,  "f64.abs"},
+  {154,  "f64.neg"},
+  {155,  "f64.ceil"},
+  {156,  "f64.floor"},
+  {157,  "f64.trunc"},
+  {158,  "f64.nearest"},
+  {159,  "f64.sqrt"},
+  {160,  "f64.add"},
+  {161,  "f64.sub"},
+  {162,  "f64.mul"},
+  {163,  "f64.div"},
+  {164,  "f64.min"},
+  {165,  "f64.max"},
+  {166,  "f64.copysign"},
+  {167,  "i32.wrap_i64"},
+  {168,  "i32.trunc_f32_s"},
+  {169,  "i32.trunc_f32_u"},
+  {170,  "i32.trunc_f64_s"},
+  {171,  "i32.trunc_f64_u"},
+  {172,  "i64.extend_i32_s"},
+  {173,  "i64.extend_i32_u"},
+  {174,  "i64.trunc_f32_s"},
+  {175,  "i64.trunc_f32_u"},
+  {176,  "i64.trunc_f64_s"},
+  {177,  "i64.trunc_f64_u"},
+  {178,  "f32.convert_i32_s"},
+  {179,  "f32.convert_i32_u"},
+  {180,  "f32.convert_i64_s"},
+  {181,  "f32.convert_i64_u"},
+  {182,  "f32.demote_f64"},
+  {183,  "f64.convert_i32_s"},
+  {184,  "f64.convert_i32_u"},
+  {185,  "f64.convert_i64_s"},
+  {186,  "f64.convert_i64_u"},
+  {187,  "f64.promote_f32"},
+  {188,  "i32.reinterpret_f32"},
+  {189,  "i64.reinterpret_f64"},
+  {190,  "f32.reinterpret_i32"},
+  {191,  "f64.reinterpret_i64"},
+  {192,  "i32.extend8_s"},
+  {193,  "i32.extend16_s"},
+  {194,  "i64.extend8_s"},
+  {195,  "i64.extend16_s"},
+  {196,  "i64.extend32_s"},
+  {208,  "ref.null"},
+  {209,  "ref.is_null"},
+  {210,  "ref.func"},
+  {252,  "prefix.fc"},
+  {253,  "prefix.simd"},
+}
+-- derived end
+
+opname(op: i64): str
+  i: i64 = 1
+  while i <= #OP_NAMES
+    row = OP_NAMES[i]
+    if row[1] == op
+      return "(" .. row[2] .. ")"
+    end
+    i += 1
+  end
+  "(unknown)"
+end
+
 -- A guard inside an arm that DOES exist refused: operand-stack underflow, a
 -- label/frame depth ceiling, a memory bound. The opcode is named because it
 -- localises the refusal, not because the opcode is missing.
 bail(op: i64, pos: i64): i64
-  iom.err("ward: cannot execute opcode " .. to(str)(op) .. " at body offset " .. to(str)(pos) .. " (unsupported operand shape, or an interpreter limit inside its arm)\n")
+  iom.err("ward: cannot execute opcode " .. to(str)(op) .. " " .. opname(op) .. " at body offset " .. to(str)(pos) .. " (unsupported operand shape, or an interpreter limit inside its arm)\n")
   os.exit(70)
   -1
 end
@@ -329,7 +710,7 @@ end
 -- No arm at all. This is the ranked-worklist signal the old `-1` swallowed: a
 -- corpus sweep now reports exactly which opcodes to implement next.
 bailop(op: i64, pos: i64): i64
-  iom.err("ward: unimplemented opcode " .. to(str)(op) .. " at body offset " .. to(str)(pos) .. "\n")
+  iom.err("ward: unimplemented opcode " .. to(str)(op) .. " " .. opname(op) .. " at body offset " .. to(str)(pos) .. "\n")
   os.exit(70)
   -1
 end
@@ -552,12 +933,12 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       iop: i64 = string.byte(img, gq2)
       gq2 += 1
       gval: i64 = 0
-      if iop == 65 or iop == 66
+      if iop == OP_i32_const or iop == OP_i64_const
         gval = uleb_val(img, gq2, n)
         gq2 = uleb_end(img, gq2, n)
-      elseif iop == 67
+      elseif iop == OP_f32_const
         gq2 += 4
-      elseif iop == 68
+      elseif iop == OP_f64_const
         gq2 += 8
       end
       gq2 += 1                      -- 0x0B end-of-init-expr
@@ -839,7 +1220,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         r = a & b
       elseif op == OP_i32_shl
         r = ((a & (M32 >> (b & 31))) << (b & 31)) & M32
-      elseif op == 117
+      elseif op == OP_i32_shr_s
         -- i32.shr_s: arithmetic shift of the SIGN-EXTENDED 32-bit value. Also
         -- previously unhandled inside this range, i.e. silently 0.
         sa: i64 = a & M32
@@ -940,14 +1321,14 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
             if (a2 & M32) < (b2 & M32)
               r2 = 1
             end
-          elseif op == 70
+          elseif op == OP_i32_eq
             -- i32.eq. This range (69..73) SWALLOWED it: the inner chain had no
             -- arm, so it fell through to `r2 = 0` and every `x == y` was false.
             -- Same silent-zero shape as the div/rem range bug.
             if (a2 & M32) == (b2 & M32)
               r2 = 1
             end
-          elseif op == 72
+          elseif op == OP_i32_lt_s
             -- i32.lt_s. Also swallowed here, before its own arm further down.
             as2: i64 = a2 & M32
             bs2: i64 = b2 & M32
@@ -1012,7 +1393,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           pc = cur_end
         end
 
-      elseif op == 16
+      elseif op == OP_call
         -- call: `imm2` already holds the decoded function index (opcode 16 is
         -- registered in `himm`). Imported/WASI functions are not executable
         -- here yet, so bail rather than jumping into a body that isn't ours.
@@ -1111,7 +1492,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         cur_end = mem.read_i64(ftab, (fx * 4 + 1) * 8)
         end
 
-      elseif op == 35
+      elseif op == OP_global_get
         -- global.get (immediate already decoded into imm2 via himm)
         if imm2 < 0 or imm2 >= 64
           return bail(op, pc)
@@ -1119,7 +1500,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         sp += 1
         mem.write_i64(st, sp * 8, mem.read_i64(gl, imm2 * 8))
 
-      elseif op == 36
+      elseif op == OP_global_set
         -- global.set
         if sp < 1 or imm2 < 0 or imm2 >= 64
           return bail(op, pc)
@@ -1127,7 +1508,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         mem.write_i64(gl, imm2 * 8, mem.read_i64(st, sp * 8))
         sp -= 1
 
-      elseif op == 2 or op == 4
+      elseif op == OP_block or op == OP_if_
         -- block (0x02) / if (0x04): branch target is just past the matching
         -- `end`. Scan forward tracking nesting; also record the `else` for `if`.
         if lsp >= 63
@@ -1259,7 +1640,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         mem.write_i64(ltgt, lsp * 8, sc)
         mem.write_i64(lelse, lsp * 8, epc)
         lsp += 1
-        if op == 4
+        if op == OP_if_
           if sp < 1
             return bail(op, pc)
           end
@@ -1275,7 +1656,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           end
         end
 
-      elseif op == 5
+      elseif op == OP_else_
         -- else: reached only by falling out of the taken `if` arm; skip to end
         if lsp < 1
           return bail(op, pc)
@@ -1283,7 +1664,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         pc = mem.read_i64(ltgt, (lsp - 1) * 8)
         lsp -= 1
 
-      elseif op == 14
+      elseif op == OP_br_table
         -- br_table: count, then count+1 target depths; index from the stack
         if sp < 1
           return bail(op, pc)
@@ -1339,14 +1720,14 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         end
         pc = tgt4
 
-      elseif op >= 103 and op <= 105
+      elseif op >= OP_i32_clz and op <= OP_i32_popcnt
         -- i32.clz / ctz / popcnt
         if sp < 1
           return bail(op, pc)
         end
         xv: i64 = mem.read_i64(st, sp * 8) & M32
         rr: i64 = 0
-        if op == 103
+        if op == OP_i32_clz
           if xv == 0
             rr = 32
           else
@@ -1356,7 +1737,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
               bi -= 1
             end
           end
-        elseif op == 104
+        elseif op == OP_i32_ctz
           if xv == 0
             rr = 32
           else
@@ -1376,7 +1757,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         mem.write_i64(st, sp * 8, rr)
         sp = sp
 
-      elseif (op >= 40 and op <= 43) or (op >= 44 and op <= 53)
+      elseif (op >= OP_i32_load and op <= OP_f64_load) or (op >= OP_i32_load8_s and op <= OP_i64_load32_u)
         -- i32.load (0x28) + sub-width loads 8_s/8_u/16_s/16_u (0x2C..0x2F).
         -- Width and sign are descriptor data, not separate arms: one byte loop
         -- serves all five, so a new width is a table edit rather than a branch.
@@ -1406,11 +1787,11 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         --   4B 40 (i32) 42 (f32) 52/53 (i64 s/u)
         --   8B 41 (i64) 43 (f64)
         wl: i64 = 4
-        if op == 44 or op == 45 or op == 48 or op == 49
+        if op == OP_i32_load8_s or op == OP_i32_load8_u or op == OP_i64_load8_s or op == OP_i64_load8_u
           wl = 1
-        elseif op == 46 or op == 47 or op == 50 or op == 51
+        elseif op == OP_i32_load16_s or op == OP_i32_load16_u or op == OP_i64_load16_s or op == OP_i64_load16_u
           wl = 2
-        elseif op == 41 or op == 43
+        elseif op == OP_i64_load or op == OP_f64_load
           wl = 8
         end
         if av2 + wl > 65536
@@ -1425,7 +1806,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           kl += 1
         end
         lv: i64 = mem.read_i64(fb, 0)
-        if op == 44 or op == 46 or op == 48 or op == 50 or op == 52
+        if op == OP_i32_load8_s or op == OP_i32_load16_s or op == OP_i64_load8_s or op == OP_i64_load16_s or op == OP_i64_load32_s
           -- signed sub-width: sign-extend from the loaded width
           if wl == 1 and lv >= 128
             lv = lv - 256
@@ -1438,13 +1819,13 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           end
         end
         -- i32-typed results occupy 32 bits; i64/f64 keep the full slot.
-        if op == 40 or (op >= 44 and op <= 47)
+        if op == OP_i32_load or (op >= OP_i32_load8_s and op <= OP_i32_load16_u)
           lv = lv & M32
         end
         mem.write_i64(st, sp * 8, lv)
         sp = sp                        -- BUG A: arm must not end on a void call
 
-      elseif (op >= 54 and op <= 62)
+      elseif (op >= OP_i32_store and op <= OP_i64_store32)
         -- All 9 stores; width is data:
         --   1B 58 (i32.store8)  60 (i64.store8)
         --   2B 59               61
@@ -1472,11 +1853,11 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         sv2: i64 = mem.read_i64(st, sp * 8)
         ad2: i64 = (mem.read_i64(st, (sp - 1) * 8) + offs) & 0xFFFF
         ws: i64 = 4
-        if op == 58 or op == 60
+        if op == OP_i32_store8 or op == OP_i64_store8
           ws = 1
-        elseif op == 59 or op == 61
+        elseif op == OP_i32_store16 or op == OP_i64_store16
           ws = 2
-        elseif op == 55 or op == 57
+        elseif op == OP_i64_store or op == OP_f64_store
           ws = 8
         end
         if ad2 + ws > 65536
@@ -1493,7 +1874,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         sp = sp
         sp -= 2
 
-      elseif op == 17
+      elseif op == OP_call_indirect
         -- call_indirect: `imm2` holds the type index (op 17 is registered in
         -- `himm`); a table index LEB follows and must be consumed here or `pc`
         -- desyncs. The callee comes off the operand stack and is resolved
@@ -1544,14 +1925,14 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         pc = mem.read_i64(ftab, (gx * 4) * 8)
         cur_end = mem.read_i64(ftab, (gx * 4 + 1) * 8)
 
-      elseif op == 26
+      elseif op == OP_drop
         -- drop
         if sp < 1
           return bail(op, pc)
         end
         sp -= 1
 
-      elseif op == 66
+      elseif op == OP_i64_const
         -- i64.const: signed LEB128, up to 10 bytes, NO 32-bit mask (an i64
         -- fills the whole stack slot).
         shq: i64 = 0
@@ -1574,7 +1955,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         mem.write_i64(st, sp * 8, vq)
         sp = sp
 
-      elseif op == 124 or op == 125 or op == 126 or op == 131 or op == 132 or op == 133 or op == 134 or op == 135 or op == 136
+      elseif op == OP_i64_add or op == OP_i64_sub or op == OP_i64_mul or op == OP_i64_and or op == OP_i64_or or op == OP_i64_xor or op == OP_i64_shl or op == OP_i64_shr_s or op == OP_i64_shr_u
         -- i64 ALU: add sub mul and or xor shl shr_s shr_u.
         -- No masking: i64 results already occupy the full slot. Shifts use 63.
         if sp < 2
@@ -1584,21 +1965,21 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         aq: i64 = mem.read_i64(st, (sp - 1) * 8)
         sp -= 1
         rq: i64 = 0
-        if op == 124
+        if op == OP_i64_add
           rq = aq + bq
-        elseif op == 125
+        elseif op == OP_i64_sub
           rq = aq - bq
-        elseif op == 126
+        elseif op == OP_i64_mul
           rq = aq * bq
-        elseif op == 131
+        elseif op == OP_i64_and
           rq = aq & bq
-        elseif op == 132
+        elseif op == OP_i64_or
           rq = aq | bq
-        elseif op == 133
+        elseif op == OP_i64_xor
           rq = aq ~ bq
-        elseif op == 134
+        elseif op == OP_i64_shl
           rq = aq << (bq & 63)
-        elseif op == 135
+        elseif op == OP_i64_shr_s
           rq = aq >> (bq & 63)
         else
           -- shr_u: logical shift. Duo i64 is signed, so a negative value must
@@ -1618,7 +1999,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         mem.write_i64(st, sp * 8, rq)
         sp = sp
 
-      elseif op == 80
+      elseif op == OP_i64_eqz
         -- i64.eqz
         if sp < 1
           return bail(op, pc)
@@ -1630,7 +2011,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         mem.write_i64(st, sp * 8, zq)
         sp = sp
 
-      elseif op >= 81 and op <= 90
+      elseif op >= OP_i64_eq and op <= OP_i64_ge_u
         -- i64 comparisons: eq ne lt_s lt_u gt_s gt_u le_s le_u ge_s ge_u.
         -- Unsigned forms cannot use the signed operators directly: when the two
         -- operands differ in sign bit, the one with the bit set is the larger
@@ -1653,25 +2034,25 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           end
         end
         rw: i64 = 0
-        if op == 81 and aw == bw
+        if op == OP_i64_eq and aw == bw
           rw = 1
-        elseif op == 82 and aw != bw
+        elseif op == OP_i64_ne and aw != bw
           rw = 1
-        elseif op == 83 and lt_signed == 1
+        elseif op == OP_i64_lt_s and lt_signed == 1
           rw = 1
-        elseif op == 84 and lt_unsigned == 1
+        elseif op == OP_i64_lt_u and lt_unsigned == 1
           rw = 1
-        elseif op == 85 and lt_signed == 0 and aw != bw
+        elseif op == OP_i64_gt_s and lt_signed == 0 and aw != bw
           rw = 1
-        elseif op == 86 and lt_unsigned == 0 and aw != bw
+        elseif op == OP_i64_gt_u and lt_unsigned == 0 and aw != bw
           rw = 1
-        elseif op == 87 and (lt_signed == 1 or aw == bw)
+        elseif op == OP_i64_le_s and (lt_signed == 1 or aw == bw)
           rw = 1
-        elseif op == 88 and (lt_unsigned == 1 or aw == bw)
+        elseif op == OP_i64_le_u and (lt_unsigned == 1 or aw == bw)
           rw = 1
-        elseif op == 89 and lt_signed == 0
+        elseif op == OP_i64_ge_s and lt_signed == 0
           rw = 1
-        elseif op == 90 and lt_unsigned == 0
+        elseif op == OP_i64_ge_u and lt_unsigned == 0
           rw = 1
         end
         -- `sp` was ALREADY decremented above, so the result slot is `sp`, not
@@ -1681,20 +2062,20 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         mem.write_i64(st, sp * 8, rw)
         sp = sp
 
-      elseif op == 167 or op == 172 or op == 173
+      elseif op == OP_i32_wrap_i64 or op == OP_i64_extend_i32_s or op == OP_i64_extend_i32_u
         -- i32.wrap_i64 / i64.extend_i32_s / i64.extend_i32_u
         if sp < 1
           return bail(op, pc)
         end
         xw: i64 = mem.read_i64(st, sp * 8)
         yw: i64 = xw & M32
-        if op == 172 and yw >= 0x80000000
+        if op == OP_i64_extend_i32_s and yw >= 0x80000000
           yw = yw - 0x100000000
         end
         mem.write_i64(st, sp * 8, yw)
         sp = sp
 
-      elseif op >= 188 and op <= 191
+      elseif op >= OP_i32_reinterpret_f32 and op <= OP_f64_reinterpret_i64
         -- i32.reinterpret_f32 / i64.reinterpret_f64 / f32.reinterpret_i32 /
         -- f64.reinterpret_i64. Floats already sit on the operand stack as
         -- their raw bit pattern, so reinterpreting is the identity; only the
@@ -1702,13 +2083,13 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         if sp < 1
           return bail(op, pc)
         end
-        if op == 188 or op == 190
+        if op == OP_i32_reinterpret_f32 or op == OP_f32_reinterpret_i32
           rb: i64 = mem.read_i64(st, sp * 8) & M32
           mem.write_i64(st, sp * 8, rb)
         end
         sp = sp
 
-      elseif op == 27
+      elseif op == OP_select
         -- select: c = top, then b, then a; result = c != 0 ? a : b
         if sp < 3
           return bail(op, pc)
@@ -1723,7 +2104,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         mem.write_i64(st, (sp - 2) * 8, rsel)
         sp -= 2
 
-      elseif op == 119 or op == 120
+      elseif op == OP_i32_rotl or op == OP_i32_rotr
         -- i32.rotl / i32.rotr
         if sp < 2
           return bail(op, pc)
@@ -1731,7 +2112,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         brot: i64 = mem.read_i64(st, sp * 8) & 31
         arot: i64 = mem.read_i64(st, (sp - 1) * 8) & M32
         lsh: i64 = brot
-        if op == 120
+        if op == OP_i32_rotr
           lsh = (32 - brot) & 31
         end
         rsh: i64 = (32 - lsh) & 31
@@ -1742,7 +2123,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         mem.write_i64(st, (sp - 1) * 8, vrot)
         sp -= 1
 
-      elseif (op >= 109 and op <= 112) or (op >= 127 and op <= 130)
+      elseif (op >= OP_i32_div_s and op <= OP_i32_rem_u) or (op >= OP_i64_div_s and op <= OP_i64_rem_u)
         -- div_s / div_u / rem_s / rem_u for BOTH widths in one arm: the only
         -- difference is the 32-bit mask, so width is data, not a second copy.
         --   109-112 i32    127-130 i64
@@ -1750,7 +2131,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           return bail(op, pc)
         end
         n32: i64 = 0
-        if op <= 112
+        if op <= OP_i32_rem_u
           n32 = 1
         end
         bd: i64 = mem.read_i64(st, sp * 8)
@@ -1800,7 +2181,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         mem.write_i64(st, (sp - 1) * 8, rd)
         sp -= 1
 
-      elseif op == 72 or op == 74 or op == 76 or op == 78
+      elseif op == OP_i32_lt_s or op == OP_i32_gt_s or op == OP_i32_le_s or op == OP_i32_ge_s
         -- signed i32 comparisons: lt_s gt_s le_s ge_s
         if sp < 2
           return bail(op, pc)
@@ -1814,19 +2195,19 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           bc -= 0x100000000
         end
         rc: i64 = 0
-        if op == 72 and ac < bc
+        if op == OP_i32_lt_s and ac < bc
           rc = 1
-        elseif op == 74 and ac > bc
+        elseif op == OP_i32_gt_s and ac > bc
           rc = 1
-        elseif op == 76 and ac <= bc
+        elseif op == OP_i32_le_s and ac <= bc
           rc = 1
-        elseif op == 78 and ac >= bc
+        elseif op == OP_i32_ge_s and ac >= bc
           rc = 1
         end
         mem.write_i64(st, (sp - 1) * 8, rc)
         sp -= 1
 
-      elseif op == 68
+      elseif op == OP_f64_const
         -- f64.const: 8 raw little-endian bytes. Floats live on the operand
         -- stack as their BIT PATTERN in the existing i64 slot, so nothing
         -- about the stack representation changes -- `fb` is the bitcast.
@@ -1845,7 +2226,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         sp += 1
         mem.write_i64(st, sp * 8, bq)
 
-      elseif op == 67
+      elseif op == OP_f32_const
         -- f32.const: 4 raw little-endian bytes
         mem.write_i64(fb, 0, 0)
         kw: i64 = 0
@@ -1858,11 +2239,11 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         sp += 1
         mem.write_i64(st, sp * 8, bw)
 
-      elseif op >= 153 and op <= 166
+      elseif op >= OP_f64_abs and op <= OP_f64_copysign
         -- f64 unary (153-159) and binary (160-166) in ONE arm: they share the
         -- bitcast in/out, so only the operator itself differs.
         ar: i64 = 2
-        if op <= 159
+        if op <= OP_f64_sqrt
           ar = 1
         end
         if sp < ar
@@ -1877,44 +2258,44 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         end
         dr: f64 = 0.0
         ok: i64 = 1
-        if op == 160
+        if op == OP_f64_add
           dr = da + db
-        elseif op == 161
+        elseif op == OP_f64_sub
           dr = da - db
-        elseif op == 162
+        elseif op == OP_f64_mul
           dr = da * db
-        elseif op == 163
+        elseif op == OP_f64_div
           dr = da / db
-        elseif op == 164
+        elseif op == OP_f64_min
           dr = da
           if db < da
             dr = db
           end
-        elseif op == 165
+        elseif op == OP_f64_max
           dr = da
           if db > da
             dr = db
           end
-        elseif op == 153
+        elseif op == OP_f64_abs
           dr = db
           if db < 0.0
             dr = 0.0 - db
           end
-        elseif op == 154
+        elseif op == OP_f64_neg
           dr = 0.0 - db
-        elseif op == 156
+        elseif op == OP_f64_floor
           dr = math.floor(db)
-        elseif op == 155
+        elseif op == OP_f64_ceil
           dr = math.ceil(db)
-        elseif op == 159
+        elseif op == OP_f64_sqrt
           dr = math.sqrt(db)
-        elseif op == 157
+        elseif op == OP_f64_trunc
           -- f64.trunc: toward ZERO, so floor for positives, ceil for negatives.
           dr = math.floor(db)
           if db < 0.0
             dr = math.ceil(db)
           end
-        elseif op == 158
+        elseif op == OP_f64_nearest
           -- f64.nearest: IEEE roundTiesToEven, NOT floor(x + 0.5). The tie case
           -- must land on the even integer (2.5 -> 2, 3.5 -> 4).
           dfl: f64 = math.floor(db)
@@ -1928,7 +2309,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
               dr = dfl + 1.0
             end
           end
-        elseif op == 166
+        elseif op == OP_f64_copysign
           -- f64.copysign: magnitude of a, sign of b
           dr = da
           if da < 0.0
@@ -1947,12 +2328,12 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         mem.write_i64(st, (sp - ar + 1) * 8, mem.read_i64(fb, 0))
         sp = sp - ar + 1
 
-      elseif op >= 139 and op <= 152
+      elseif op >= OP_f32_abs and op <= OP_f32_copysign
         -- f32 unary (139-145) and binary (146-152), mirroring the f64 arm.
         -- The slot holds the 32-bit pattern; mem.load(f32)(fb) reads the low
         -- 4 bytes, so the same scratch buffer serves both widths.
         sr: i64 = 2
-        if op <= 145
+        if op <= OP_f32_sqrt
           sr = 1
         end
         if sp < sr
@@ -1967,43 +2348,43 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         end
         er: f32 = 0.0
         eok: i64 = 1
-        if op == 146
+        if op == OP_f32_add
           er = ea + eb
-        elseif op == 147
+        elseif op == OP_f32_sub
           er = ea - eb
-        elseif op == 148
+        elseif op == OP_f32_mul
           er = ea * eb
-        elseif op == 149
+        elseif op == OP_f32_div
           er = ea / eb
-        elseif op == 150
+        elseif op == OP_f32_min
           er = ea
           if eb < ea
             er = eb
           end
-        elseif op == 151
+        elseif op == OP_f32_max
           er = ea
           if eb > ea
             er = eb
           end
-        elseif op == 139
+        elseif op == OP_f32_abs
           er = eb
           if eb < 0.0
             er = 0.0 - eb
           end
-        elseif op == 140
+        elseif op == OP_f32_neg
           er = 0.0 - eb
-        elseif op == 145
+        elseif op == OP_f32_sqrt
           er = math.sqrt(eb)
-        elseif op == 141
+        elseif op == OP_f32_ceil
           er = math.ceil(eb)
-        elseif op == 142
+        elseif op == OP_f32_floor
           er = math.floor(eb)
-        elseif op == 143
+        elseif op == OP_f32_trunc
           er = math.floor(eb)
           if eb < 0.0
             er = math.ceil(eb)
           end
-        elseif op == 144
+        elseif op == OP_f32_nearest
           efl: f32 = math.floor(eb)
           efr: f32 = eb - efl
           er = efl
@@ -2015,7 +2396,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
               er = efl + 1.0
             end
           end
-        elseif op == 152
+        elseif op == OP_f32_copysign
           er = ea
           if ea < 0.0
             er = 0.0 - ea
@@ -2034,7 +2415,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         mem.write_i64(st, (sp - sr + 1) * 8, mem.read_i64(fb, 0))
         sp = sp - sr + 1
 
-      elseif op >= 91 and op <= 96
+      elseif op >= OP_f32_eq and op <= OP_f32_ge
         -- f32 comparisons -> i32 0/1
         if sp < 2
           return bail(op, pc)
@@ -2044,23 +2425,23 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         mem.write_i64(fb, 0, mem.read_i64(st, (sp - 1) * 8))
         ga: f32 = mem.load(f32)(fb)
         gr: i64 = 0
-        if op == 91 and ga == gb
+        if op == OP_f32_eq and ga == gb
           gr = 1
-        elseif op == 92 and ga != gb
+        elseif op == OP_f32_ne and ga != gb
           gr = 1
-        elseif op == 93 and ga < gb
+        elseif op == OP_f32_lt and ga < gb
           gr = 1
-        elseif op == 94 and ga > gb
+        elseif op == OP_f32_gt and ga > gb
           gr = 1
-        elseif op == 95 and ga <= gb
+        elseif op == OP_f32_le and ga <= gb
           gr = 1
-        elseif op == 96 and ga >= gb
+        elseif op == OP_f32_ge and ga >= gb
           gr = 1
         end
         mem.write_i64(st, (sp - 1) * 8, gr)
         sp -= 1
 
-      elseif op >= 97 and op <= 102
+      elseif op >= OP_f64_eq and op <= OP_f64_ge
         -- f64 comparisons -> i32 0/1
         if sp < 2
           return bail(op, pc)
@@ -2070,23 +2451,23 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         mem.write_i64(fb, 0, mem.read_i64(st, (sp - 1) * 8))
         ca: f64 = mem.load(f64)(fb)
         cr: i64 = 0
-        if op == 97 and ca == cb
+        if op == OP_f64_eq and ca == cb
           cr = 1
-        elseif op == 98 and ca != cb
+        elseif op == OP_f64_ne and ca != cb
           cr = 1
-        elseif op == 99 and ca < cb
+        elseif op == OP_f64_lt and ca < cb
           cr = 1
-        elseif op == 100 and ca > cb
+        elseif op == OP_f64_gt and ca > cb
           cr = 1
-        elseif op == 101 and ca <= cb
+        elseif op == OP_f64_le and ca <= cb
           cr = 1
-        elseif op == 102 and ca >= cb
+        elseif op == OP_f64_ge and ca >= cb
           cr = 1
         end
         mem.write_i64(st, (sp - 1) * 8, cr)
         sp -= 1
 
-      elseif op == 183
+      elseif op == OP_f64_convert_i32_s
         -- f64.convert_i32_s: reinterpret the top slot from a signed i32 to
         -- f64 bits. (i32.trunc_f64_* needs an f64->i64 narrowing Duo has no
         -- operator for, so it stays unimplemented rather than guessed at.)
@@ -2100,7 +2481,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         mem.store(f64)(fb, iv * 1.0)
         mem.write_i64(st, sp * 8, mem.read_i64(fb, 0))
 
-      elseif op == 70 or op == 75 or op == 77 or op == 79
+      elseif op == OP_i32_eq or op == OP_i32_gt_u or op == OP_i32_le_u or op == OP_i32_ge_u
         -- i32 eq / gt_u / le_u / ge_u -- the unsigned comparisons the original
         -- chain skipped. i32.ge_u alone appears 15x in the corpus.
         if sp < 2
@@ -2109,19 +2490,19 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         ub: i64 = mem.read_i64(st, sp * 8) & M32
         ua: i64 = mem.read_i64(st, (sp - 1) * 8) & M32
         ur: i64 = 0
-        if op == 70 and ua == ub
+        if op == OP_i32_eq and ua == ub
           ur = 1
-        elseif op == 75 and ua > ub
+        elseif op == OP_i32_gt_u and ua > ub
           ur = 1
-        elseif op == 77 and ua <= ub
+        elseif op == OP_i32_le_u and ua <= ub
           ur = 1
-        elseif op == 79 and ua >= ub
+        elseif op == OP_i32_ge_u and ua >= ub
           ur = 1
         end
         mem.write_i64(st, (sp - 1) * 8, ur)
         sp -= 1
 
-      elseif op >= 168 and op <= 187
+      elseif op >= OP_i32_trunc_f32_s and op <= OP_f64_promote_f32
         -- Numeric conversions. 167/172/173 (wrap, extend_i32_s/u) are handled
         -- by their own arm earlier in this chain, so this covers the rest:
         --   168-171 i32.trunc_f32/f64_s/u     174-177 i64.trunc_f32/f64_s/u
@@ -2131,23 +2512,23 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           return bail(op, pc)
         end
         raw: i64 = mem.read_i64(st, sp * 8)
-        if op == 182
+        if op == OP_f32_demote_f64
           mem.write_i64(fb, 0, raw)
           dv2: f64 = mem.load(f64)(fb)
           mem.write_i64(fb, 0, 0)
           mem.store(f32)(fb, dv2)
           mem.write_i64(st, sp * 8, mem.read_i64(fb, 0))
-        elseif op == 187
+        elseif op == OP_f64_promote_f32
           mem.write_i64(fb, 0, raw)
           ev2: f32 = mem.load(f32)(fb)
           mem.store(f64)(fb, ev2)
           mem.write_i64(st, sp * 8, mem.read_i64(fb, 0))
-        elseif op >= 178
+        elseif op >= OP_f32_convert_i32_s
           -- integer -> float
           iv2: i64 = raw
-          if op == 178 or op == 179 or op == 183 or op == 184
+          if op == OP_f32_convert_i32_s or op == OP_f32_convert_i32_u or op == OP_f64_convert_i32_s or op == OP_f64_convert_i32_u
             iv2 = raw & M32
-            if op == 178 or op == 183
+            if op == OP_f32_convert_i32_s or op == OP_f64_convert_i32_s
               if iv2 >= 0x80000000
                 iv2 = iv2 - 0x100000000
               end
@@ -2155,7 +2536,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           end
           fv2: f64 = iv2 * 1.0
           mem.write_i64(fb, 0, 0)
-          if op <= 181
+          if op <= OP_f32_convert_i64_u
             mem.store(f32)(fb, fv2)
           else
             mem.store(f64)(fb, fv2)
@@ -2165,7 +2546,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           -- float -> integer, truncating TOWARD ZERO (not floor: -2.7 -> -2)
           mem.write_i64(fb, 0, raw)
           src: f64 = 0.0
-          if op == 168 or op == 169 or op == 174 or op == 175
+          if op == OP_i32_trunc_f32_s or op == OP_i32_trunc_f32_u or op == OP_i64_trunc_f32_s or op == OP_i64_trunc_f32_u
             sf: f32 = mem.load(f32)(fb)
             src = sf
           else
@@ -2180,13 +2561,13 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           -- is not yet spellable (see the filed P0).
           mem.store(i64)(fb, src)
           ti: i64 = mem.read_i64(fb, 0)
-          if op <= 171
+          if op <= OP_i32_trunc_f64_u
             ti = ti & M32
           end
           mem.write_i64(st, sp * 8, ti)
         end
 
-      elseif op >= 121 and op <= 123
+      elseif op >= OP_i64_clz and op <= OP_i64_popcnt
         -- i64.clz / ctz / popcnt. Same shape as the i32 arm with width 64;
         -- kept separate only because the i32 arm masks with M32.
         if sp < 1
@@ -2195,13 +2576,13 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         yv: i64 = mem.read_i64(st, sp * 8)
         cr2: i64 = 0
         bq2: i64 = 0
-        if op == 121
+        if op == OP_i64_clz
           bq2 = 63
           while bq2 >= 0 and ((yv >> bq2) & 1) == 0
             cr2 += 1
             bq2 -= 1
           end
-        elseif op == 122
+        elseif op == OP_i64_ctz
           while bq2 < 64 and ((yv >> bq2) & 1) == 0
             cr2 += 1
             bq2 += 1
@@ -2215,7 +2596,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         mem.write_i64(st, sp * 8, cr2)
         sp = sp
 
-      elseif op == 137 or op == 138
+      elseif op == OP_i64_rotl or op == OP_i64_rotr
         -- i64.rotl / rotr
         if sp < 2
           return bail(op, pc)
@@ -2223,7 +2604,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         br2: i64 = mem.read_i64(st, sp * 8) & 63
         ar2: i64 = mem.read_i64(st, (sp - 1) * 8)
         ls2: i64 = br2
-        if op == 138
+        if op == OP_i64_rotr
           ls2 = (64 - br2) & 63
         end
         vr2: i64 = ar2
@@ -2234,7 +2615,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         mem.write_i64(st, (sp - 1) * 8, vr2)
         sp -= 1
 
-      elseif op >= 192 and op <= 196
+      elseif op >= OP_i32_extend8_s and op <= OP_i64_extend32_s
         -- sign-extension ops; the source WIDTH is data:
         --   192 i32.extend8_s  193 i32.extend16_s
         --   194 i64.extend8_s  195 i64.extend16_s  196 i64.extend32_s
@@ -2242,9 +2623,9 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           return bail(op, pc)
         end
         we: i64 = 1
-        if op == 193 or op == 195
+        if op == OP_i32_extend16_s or op == OP_i64_extend16_s
           we = 2
-        elseif op == 196
+        elseif op == OP_i64_extend32_s
           we = 4
         end
         ev3: i64 = mem.read_i64(st, sp * 8)
@@ -2264,18 +2645,18 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
             ev3 = ev3 - 4294967296
           end
         end
-        if op <= 193
+        if op <= OP_i32_extend16_s
           ev3 = ev3 & M32
         end
         mem.write_i64(st, sp * 8, ev3)
         sp = sp
 
-      elseif op == 63 or op == 64
+      elseif op == OP_memory_size or op == OP_memory_grow
         -- memory.size / memory.grow. ward's linear memory is a fixed 64 KiB =
         -- exactly one page, so size is 1 and grow always refuses (-1), which is
         -- a legal wasm answer rather than a bail.
         pc += 1                        -- memidx byte
-        if op == 63
+        if op == OP_memory_size
           sp += 1
           mem.write_i64(st, sp * 8, 1)
         else
@@ -2288,14 +2669,14 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           mem.write_i64(st, sp * 8, gf)
         end
 
-      elseif op == 37 or op == 38
+      elseif op == OP_table_get or op == OP_table_set
         -- table.get (37) / table.set (38); tableidx immediate is in imm2's
         -- position but these are not in himm, so consume it here.
         while pc < cur_end and mem.read_byte(code, pc) >= 0x80
           pc += 1
         end
         pc += 1
-        if op == 37
+        if op == OP_table_get
           if sp < 1
             return bail(op, pc)
           end
@@ -2316,7 +2697,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           sp -= 2
         end
 
-      elseif op == 252
+      elseif op == OP_prefix_fc
         -- 0xFC prefix: bulk memory and table ops. Sub-opcode is a LEB.
         -- Immediates here are single-byte LEBs in practice: sub-opcodes are
         -- 8..17, memidx is 0, and segment indices are small. A multi-byte
@@ -2476,7 +2857,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           return bail(op, pc)
         end
 
-      elseif op == 253
+      elseif op == OP_prefix_simd
         -- 0xFD SIMD with FULL 128-bit values. ward's operand stack is 64-bit,
         -- so a v128 lives in a side store (`vstk`, 16 bytes per entry) and the
         -- stack slot holds its INDEX. That keeps one-slot stack discipline —
@@ -2624,14 +3005,14 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           return bail(op, pc)
         end
 
-      elseif op >= 208 and op <= 210
+      elseif op >= OP_ref_null and op <= OP_ref_func
         -- reference types. A null ref is -1: the table stores FUNCTION INDICES
         -- and 0 is a valid one, so 0 cannot double as null.
-        if op == 208
+        if op == OP_ref_null
           pc += 1                       -- reftype byte
           sp += 1
           mem.write_i64(st, sp * 8, 0 - 1)
-        elseif op == 209
+        elseif op == OP_ref_is_null
           if sp < 1
             return bail(op, pc)
           end
@@ -2647,12 +3028,12 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           mem.write_i64(st, sp * 8, rf)
         end
 
-      elseif op == 1
+      elseif op == OP_nop
         -- nop. Never reached the dispatch before, so any module containing a
         -- single `nop` bailed with -1 no matter what else it used.
         sp = sp
 
-      elseif op == 0
+      elseif op == OP_unreachable
         -- unreachable: a genuine trap, not an unimplemented opcode.
         return bailtrap(pc)
 
@@ -2689,65 +3070,67 @@ end
 
 
 -- ALU ops are one code path driven by a table: opcode -> ARM64 base word.
--- Adding an op is one row, not a new branch.
+-- Adding an op is one row in tools/opcodes.duo, not a new branch here -- and
+-- the opcode number is the SAME binding the interpreter dispatches on, so the
+-- two can no longer drift the way they did while both were typed by hand.
+--
+-- i64 forms are the same ARM64 instructions with sf=1 (bit 31).
+-- derived(ward.opcodes.aluword) begin -- regenerate: duo run tools/opcodes.duo
 ALU_OPS = {
-  {106, 0x0B000000},   -- i32.add   ADD  Wd, Wn, Wm
-  {107, 0x4B000000},   -- i32.sub   SUB
-  {108, 0x1B007C00},   -- i32.mul   MADD Wd, Wn, Wm, WZR
-  {113, 0x0A000000},   -- i32.and   AND
-  {114, 0x2A000000},   -- i32.or    ORR
-  {115, 0x4A000000},   -- i32.xor   EOR
-  {116, 0x1AC02000},   -- i32.shl   LSLV
-  {118, 0x1AC02400},   -- i32.shr_u LSRV
-  -- i64 forms are the same instructions with sf=1 (bit 31). Opcodes follow the
-  -- family projection: i64 ALU base 121 + the shared INT_ALU index, so
-  -- add=124, sub=125, mul=126, and=131, or=132, xor=133, shl=134, shr_u=136.
-  {124, 0x8B000000},   -- i64.add   ADD  Xd, Xn, Xm
-  {125, 0xCB000000},   -- i64.sub   SUB
-  {126, 0x9B007C00},   -- i64.mul   MADD Xd, Xn, Xm, XZR
-  {131, 0x8A000000},   -- i64.and   AND
-  {132, 0xAA000000},   -- i64.or    ORR
-  {133, 0xCA000000},   -- i64.xor   EOR
-  {134, 0x9AC02000},   -- i64.shl   LSLV
-  {136, 0x9AC02400},   -- i64.shr_u LSRV
-  -- single-instruction shifts and divides, both widths
-  {117, 0x1AC02800},   -- i32.shr_s ASRV
-  {135, 0x9AC02800},   -- i64.shr_s ASRV
-  {109, 0x1AC00C00},   -- i32.div_s SDIV
-  {110, 0x1AC00800},   -- i32.div_u UDIV
-  {127, 0x9AC00C00},   -- i64.div_s SDIV
-  {128, 0x9AC00800},   -- i64.div_u UDIV
-  {120, 0x1AC02C00},   -- i32.rotr  RORV
-  {138, 0x9AC02C00},   -- i64.rotr  RORV
+  {OP_i32_add,            0x0B000000},
+  {OP_i32_sub,            0x4B000000},
+  {OP_i32_mul,            0x1B007C00},
+  {OP_i32_div_s,          0x1AC00C00},
+  {OP_i32_div_u,          0x1AC00800},
+  {OP_i32_and,            0x0A000000},
+  {OP_i32_or,             0x2A000000},
+  {OP_i32_xor,            0x4A000000},
+  {OP_i32_shl,            0x1AC02000},
+  {OP_i32_shr_s,          0x1AC02800},
+  {OP_i32_shr_u,          0x1AC02400},
+  {OP_i32_rotr,           0x1AC02C00},
+  {OP_i64_add,            0x8B000000},
+  {OP_i64_sub,            0xCB000000},
+  {OP_i64_mul,            0x9B007C00},
+  {OP_i64_div_s,          0x9AC00C00},
+  {OP_i64_div_u,          0x9AC00800},
+  {OP_i64_and,            0x8A000000},
+  {OP_i64_or,             0xAA000000},
+  {OP_i64_xor,            0xCA000000},
+  {OP_i64_shl,            0x9AC02000},
+  {OP_i64_shr_s,          0x9AC02800},
+  {OP_i64_shr_u,          0x9AC02400},
+  {OP_i64_rotr,           0x9AC02C00},
 }
+-- derived end
 
--- Comparisons: opcode -> ARM64 condition code used by CSET.
+-- Comparisons: opcode -> ARM64 condition code used by CSET. i64 rows reuse the
+-- i32 conditions on a 64-bit CMP; the CSET stays 32-bit because a wasm compare
+-- yields i32 whatever its operands were.
+-- derived(ward.opcodes.cmpcond) begin -- regenerate: duo run tools/opcodes.duo
 CMP_OPS = {
-  {70, 0},   -- i32.eq   EQ
-  {71, 1},   -- i32.ne   NE
-  {73, 3},   -- i32.lt_u CC (unsigned lower)
-  {75, 8},   -- i32.gt_u HI
-  {77, 9},   -- i32.le_u LS
-  {79, 2},   -- i32.ge_u CS
-  -- i64 compares: same conditions, 64-bit CMP. The CSET stays 32-bit because a
-  -- wasm comparison yields i32 whatever its operands were.
-  {81, 0},   -- i64.eq
-  {82, 1},   -- i64.ne
-  {84, 3},   -- i64.lt_u
-  {86, 8},   -- i64.gt_u
-  {88, 9},   -- i64.le_u
-  {90, 2},   -- i64.ge_u
-  -- SIGNED compares. Omitting these was an asymmetry, not a decision: LT=0xB,
-  -- GT=0xC, LE=0xD, GE=0xA. i64.lt_s (83) was blocking wart_i64_bench.
-  {72, 11},  -- i32.lt_s
-  {74, 12},  -- i32.gt_s
-  {76, 13},  -- i32.le_s
-  {78, 10},  -- i32.ge_s
-  {83, 11},  -- i64.lt_s
-  {85, 12},  -- i64.gt_s
-  {87, 13},  -- i64.le_s
-  {89, 10},  -- i64.ge_s
+  {OP_i32_eq,       0},
+  {OP_i32_ne,       1},
+  {OP_i32_lt_s,     11},
+  {OP_i32_lt_u,     3},
+  {OP_i32_gt_s,     12},
+  {OP_i32_gt_u,     8},
+  {OP_i32_le_s,     13},
+  {OP_i32_le_u,     9},
+  {OP_i32_ge_s,     10},
+  {OP_i32_ge_u,     2},
+  {OP_i64_eq,       0},
+  {OP_i64_ne,       1},
+  {OP_i64_lt_s,     11},
+  {OP_i64_lt_u,     3},
+  {OP_i64_gt_s,     12},
+  {OP_i64_gt_u,     8},
+  {OP_i64_le_s,     13},
+  {OP_i64_le_u,     9},
+  {OP_i64_ge_s,     10},
+  {OP_i64_ge_u,     2},
 }
+-- derived end
 
 alu_word(op: i64): i64
   i: i64 = 1
@@ -3221,30 +3604,30 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
     -- exactly like i32.const and the integer ALU. Materialising it emitted a
     -- MOV that sat ON the float dependency chain.
     fkeep: i64 = 0
-    if op == 67 or op == 68 or (op >= 146 and op <= 151) or (op >= 160 and op <= 165)
+    if op == OP_f32_const or op == OP_f64_const or (op >= OP_f32_add and op <= OP_f32_max) or (op >= OP_f64_add and op <= OP_f64_max)
       fkeep = 1
     end
     -- Flush the float cache before ANY opcode that could read the stale GP
     -- register. Only local.get, float consts and float binops are known safe;
     -- everything else materialises first. Conservative on purpose — a stale
     -- local read as an integer is a silent wrong answer.
-    if fcl >= 0 and not (op == 32 or fkeep == 1)
+    if fcl >= 0 and not (op == OP_local_get or fkeep == 1)
       jitm.w32(code, n, 0x9E660000 | (2 << 5) | fcl)
       n += 1
       fcl = -1
     end
-    if ali_slot >= 0 and not (op == 65 or op == 32 or fkeep == 1 or (aw != 0 and sp >= 2))
+    if ali_slot >= 0 and not (op == OP_i32_const or op == OP_local_get or fkeep == 1 or (aw != 0 and sp >= 2))
       jitm.w32(code, n, 0xAA0003E0 | (ali_reg << 16) | ali_slot)
       n += 1
       ali_slot = -1
     end
-    if ali2_slot >= 0 and not (op == 65 or op == 32 or fkeep == 1 or (aw != 0 and sp >= 2))
+    if ali2_slot >= 0 and not (op == OP_i32_const or op == OP_local_get or fkeep == 1 or (aw != 0 and sp >= 2))
       jitm.w32(code, n, 0xAA0003E0 | (ali2_reg << 16) | ali2_slot)
       n += 1
       ali2_slot = -1
     end
 
-    if op == 65
+    if op == OP_i32_const
       -- i32.const -> MOVZ/MOVK into the next stack register, UNLESS the very
       -- next opcode has an ARM64 immediate form. ARM64 encodes the shift/add
       -- amount in the instruction, so a folded constant needs no register and
@@ -3331,7 +3714,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         sp += 1
       end
 
-    elseif op == 111 or op == 112 or op == 129 or op == 130
+    elseif op == OP_i32_rem_s or op == OP_i32_rem_u or op == OP_i64_rem_s or op == OP_i64_rem_u
       -- rem_s / rem_u, both widths. ARM64 has no remainder instruction, so
       -- divide into a scratch register and multiply back:
       --   t = a / b ;  a = a - t * b   (MSUB)
@@ -3345,11 +3728,11 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       t4: i64 = sp
       dvw: i64 = 0x1AC00800
       msw: i64 = 0x1B008000
-      if op == 129 or op == 130
+      if op == OP_i64_rem_s or op == OP_i64_rem_u
         dvw = 0x9AC00800
         msw = 0x9B008000
       end
-      if op == 111 or op == 129
+      if op == OP_i32_rem_s or op == OP_i64_rem_s
         dvw = dvw | 0x00000400          -- SDIV rather than UDIV
       end
       jitm.w32(code, n, dvw | (b4 << 16) | (a4 << 5) | t4)
@@ -3359,12 +3742,12 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       sp -= 1
       last_alu = -1
 
-    elseif op == 67 or op == 68
+    elseif op == OP_f32_const or op == OP_f64_const
       -- f32.const / f64.const. The immediate is RAW little-endian IEEE754, not
       -- a LEB. ward keeps floats on the operand stack as their BIT PATTERN, so
       -- a float constant is just an integer constant — no FP register needed.
       fw: i64 = 4
-      if op == 68
+      if op == OP_f64_const
         fw = 8
       end
       fv: i64 = 0
@@ -3397,7 +3780,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       end
       sp += 1
 
-    elseif (op >= 146 and op <= 151) or (op >= 160 and op <= 165)
+    elseif (op >= OP_f32_add and op <= OP_f32_max) or (op >= OP_f64_add and op <= OP_f64_max)
       -- f32/f64 add/sub/mul/div. Floats live in GP registers as bit patterns,
       -- so the value is moved into an FP scratch register, operated on, and
       -- moved back. That costs two FMOVs per op but needs NO second register
@@ -3439,7 +3822,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         end
       end
       f64op: i64 = 0
-      if op >= 160
+      if op >= OP_f64_add
         f64op = 1
       end
       vix: i64 = op - 146
@@ -3527,7 +3910,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         last_cset = -1
       end
 
-    elseif op == 66
+    elseif op == OP_i64_const
       -- i64.const -> up to four MOVZ/MOVK into the next stack register, in the
       -- 64-bit forms (0xD2.. / 0xF2..). The value is a SIGNED LEB of up to ten
       -- bytes, so it is decoded here rather than through `uleb_val`.
@@ -3562,7 +3945,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       end
       sp += 1
 
-    elseif op == 32
+    elseif op == OP_local_get
       -- local.get: do NOT copy the local into a stack register. Record that the
       -- pushed slot IS the local's register and let the consuming ALU op read it
       -- directly. Unlike the constant/shift folds, the MOV removed here sits ON
@@ -3593,7 +3976,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       end
       sp += 1
 
-    elseif op == 33 or op == 34
+    elseif op == OP_local_set or op == OP_local_tee
       -- local.set / local.tee -> MOV Wlocal, Wtop
       idx2: i64 = uleb_val(s, off + pc, off + blen) + lbase
       pc = uleb_end(s, off + pc, off + blen) - off
@@ -3610,7 +3993,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         last_alu = -1
         -- `tee` leaves the value on the stack too — it now lives in the local
         -- register, so record that as the slot's alias rather than copying back.
-        if op == 34
+        if op == OP_local_tee
           ali_slot = sp - 1
           ali_reg = rgo
         end
@@ -3618,7 +4001,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         jitm.w32(code, n, 0xAA0003E0 | ((sp - 1) << 16) | rgo)
         n += 1
       end
-      if op == 33
+      if op == OP_local_set
         sp -= 1
       end
 
@@ -3657,7 +4040,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       a2: i64 = sp - 2
       b2: i64 = sp - 1
       cmpw: i64 = 0x6B00001F
-      if op >= 80 and op <= 90
+      if op >= OP_i64_eqz and op <= OP_i64_ge_u
         cmpw = 0xEB00001F
       end
       jitm.w32(code, n, cmpw | (b2 << 16) | (a2 << 5))
@@ -3668,7 +4051,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_cc = cc
       sp -= 1
 
-    elseif op == 69
+    elseif op == OP_i32_eqz
       -- i32.eqz -> CMP Wt, #0 ; CSET Wt, EQ
       t: i64 = sp - 1
       jitm.w32(code, n, 0x7100001F | (t << 5))
@@ -3678,7 +4061,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_cset = n - 1
       last_cc = 0
 
-    elseif op >= 167 and op <= 191
+    elseif op >= OP_i32_wrap_i64 and op <= OP_f64_reinterpret_i64
       -- the conversion block. Unary throughout: the operand slot is reused for
       -- the result. int<->int is one instruction; int->float and float->int are
       -- two (the FP unit reads/writes a GP register directly for SCVTF/FCVTZS,
@@ -3687,23 +4070,23 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         return -1
       end
       cv: i64 = sp - 1
-      if op == 167 or op == 173
+      if op == OP_i32_wrap_i64 or op == OP_i64_extend_i32_u
         -- i32.wrap_i64 / i64.extend_i32_u: a 32-bit MOV truncates and
         -- zero-extends in the same instruction
         jitm.w32(code, n, 0x2A0003E0 | (cv << 16) | cv)
         n += 1
-      elseif op == 172
+      elseif op == OP_i64_extend_i32_s
         jitm.w32(code, n, 0x93407C00 | (cv << 5) | cv)   -- SXTW
         n += 1
-      elseif op >= 188
+      elseif op >= OP_i32_reinterpret_f32
         -- reinterpret is FREE here: ward keeps floats in GP registers as bit
         -- patterns, so this is the identity. Only the 32-bit forms clear the
         -- high half.
-        if op == 188 or op == 190
+        if op == OP_i32_reinterpret_f32 or op == OP_f32_reinterpret_i32
           jitm.w32(code, n, 0x2A0003E0 | (cv << 16) | cv)
           n += 1
         end
-      elseif op == 182
+      elseif op == OP_f32_demote_f64
         -- f32.demote_f64
         jitm.w32(code, n, 0x9E670000 | (cv << 5))
         n += 1
@@ -3711,7 +4094,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         n += 1
         jitm.w32(code, n, 0x1E260000 | cv)
         n += 1
-      elseif op == 187
+      elseif op == OP_f64_promote_f32
         -- f64.promote_f32
         jitm.w32(code, n, 0x1E270000 | (cv << 5))
         n += 1
@@ -3719,27 +4102,27 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         n += 1
         jitm.w32(code, n, 0x9E660000 | cv)
         n += 1
-      elseif op >= 178 and op <= 186
+      elseif op >= OP_f32_convert_i32_s and op <= OP_f64_convert_i64_u
         -- int -> float: SCVTF/UCVTF reads the GP register directly
         cw: i64 = 0x1E220000                       -- f32 <- i32, signed
-        if op == 179
+        if op == OP_f32_convert_i32_u
           cw = 0x1E230000
-        elseif op == 180
+        elseif op == OP_f32_convert_i64_s
           cw = 0x9E220000
-        elseif op == 181
+        elseif op == OP_f32_convert_i64_u
           cw = 0x9E230000
-        elseif op == 183
+        elseif op == OP_f64_convert_i32_s
           cw = 0x1E620000
-        elseif op == 184
+        elseif op == OP_f64_convert_i32_u
           cw = 0x1E630000
-        elseif op == 185
+        elseif op == OP_f64_convert_i64_s
           cw = 0x9E620000
-        elseif op == 186
+        elseif op == OP_f64_convert_i64_u
           cw = 0x9E630000
         end
         jitm.w32(code, n, cw | (cv << 5))
         n += 1
-        if op >= 183
+        if op >= OP_f64_convert_i32_s
           jitm.w32(code, n, 0x9E660000 | cv)
           n += 1
         else
@@ -3749,7 +4132,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       else
         -- float -> int, truncating toward zero
         srcf32: i64 = 0
-        if op == 168 or op == 169 or op == 174 or op == 175
+        if op == OP_i32_trunc_f32_s or op == OP_i32_trunc_f32_u or op == OP_i64_trunc_f32_s or op == OP_i64_trunc_f32_u
           srcf32 = 1
         end
         if srcf32 == 1
@@ -3759,19 +4142,19 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         end
         n += 1
         tw: i64 = 0x1E380000
-        if op == 169
+        if op == OP_i32_trunc_f32_u
           tw = 0x1E390000
-        elseif op == 170
+        elseif op == OP_i32_trunc_f64_s
           tw = 0x1E780000
-        elseif op == 171
+        elseif op == OP_i32_trunc_f64_u
           tw = 0x1E790000
-        elseif op == 174
+        elseif op == OP_i64_trunc_f32_s
           tw = 0x9E380000
-        elseif op == 175
+        elseif op == OP_i64_trunc_f32_u
           tw = 0x9E390000
-        elseif op == 176
+        elseif op == OP_i64_trunc_f64_s
           tw = 0x9E780000
-        elseif op == 177
+        elseif op == OP_i64_trunc_f64_u
           tw = 0x9E790000
         end
         jitm.w32(code, n, tw | cv)
@@ -3780,7 +4163,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_alu = -1
       last_cset = -1
 
-    elseif (op >= 91 and op <= 102)
+    elseif (op >= OP_f32_eq and op <= OP_f64_ge)
       -- f32/f64 compares: FCMP then CSET. The conditions are the IEEE ones, so
       -- an unordered (NaN) operand yields false for lt/gt/le/ge and true for
       -- ne, matching wasm: eq=EQ, ne=NE, lt=MI, gt=GT, le=LS, ge=GE.
@@ -3790,7 +4173,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       ca: i64 = sp - 2
       cb: i64 = sp - 1
       c64: i64 = 0
-      if op >= 97
+      if op >= OP_f64_eq
         c64 = 1
       end
       cix: i64 = op - 91
@@ -3831,7 +4214,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_cc = fcc
       last_alu = -1
 
-    elseif op == 139 or op == 140 or op == 153 or op == 154
+    elseif op == OP_f32_abs or op == OP_f32_neg or op == OP_f64_abs or op == OP_f64_neg
       -- f32/f64 abs and neg are SIGN-BIT operations, so in the bit-pattern
       -- representation they are integer masking with NO FP register at all:
       -- abs clears the sign bit, neg flips it. That removes two shuttle moves
@@ -3841,12 +4224,12 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       end
       na: i64 = sp - 1
       nt: i64 = sp
-      if op == 153 or op == 154
+      if op == OP_f64_abs or op == OP_f64_neg
         jitm.w32(code, n, 0xD2800000 | nt)
         n += 1
         jitm.w32(code, n, 0xF2E00000 | (0x8000 << 5) | nt)
         n += 1
-        if op == 153
+        if op == OP_f64_abs
           jitm.w32(code, n, 0x8A200000 | (nt << 16) | (na << 5) | na)
         else
           jitm.w32(code, n, 0xCA000000 | (nt << 16) | (na << 5) | na)
@@ -3857,7 +4240,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         n += 1
         jitm.w32(code, n, 0x72A00000 | (0x8000 << 5) | nt)
         n += 1
-        if op == 139
+        if op == OP_f32_abs
           jitm.w32(code, n, 0x0A200000 | (nt << 16) | (na << 5) | na)
         else
           jitm.w32(code, n, 0x4A000000 | (nt << 16) | (na << 5) | na)
@@ -3867,7 +4250,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_alu = -1
       last_cset = -1
 
-    elseif (op >= 141 and op <= 145) or (op >= 155 and op <= 159)
+    elseif (op >= OP_f32_ceil and op <= OP_f32_sqrt) or (op >= OP_f64_ceil and op <= OP_f64_sqrt)
       -- f32/f64 abs/neg/ceil/floor/trunc/nearest/sqrt: one FP-source op, using
       -- the same GP<->FP shuttle as the binops. Offsets are the ARM64 opcode
       -- field, identical for single and double; only the type base differs.
@@ -3877,7 +4260,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       uf: i64 = sp - 1
       ubase: i64 = 0x1E200000
       uix: i64 = op - 139
-      if op >= 153
+      if op >= OP_f64_abs
         ubase = 0x1E600000
         uix = op - 153
       end
@@ -3913,7 +4296,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_alu = -1
       last_cset = -1
 
-    elseif op == 69 or op == 80
+    elseif op == OP_i32_eqz or op == OP_i64_eqz
       -- i32.eqz / i64.eqz: compare against zero, then CSET EQ. Unary, so the
       -- operand slot is reused for the result.
       if sp < 1
@@ -3921,7 +4304,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       end
       ez: i64 = sp - 1
       ezw: i64 = 0x7100001F
-      if op == 80
+      if op == OP_i64_eqz
         ezw = 0xF100001F
       end
       jitm.w32(code, n, ezw | (ez << 5))
@@ -3932,7 +4315,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_cc = 0
       last_alu = -1
 
-    elseif (op >= 44 and op <= 53) or (op >= 58 and op <= 62)
+    elseif (op >= OP_i32_load8_s and op <= OP_i64_load32_u) or (op >= OP_i32_store8 and op <= OP_i64_store32)
       -- sub-width loads and stores. Same effective-address form as the full
       -- width ops; only the size, signedness and offset scale differ.
       if jdata != 0
@@ -3946,16 +4329,16 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       ssz: i64 = 1
       ssg: i64 = 0
       sx64: i64 = 0
-      if op == 44 or op == 46 or op == 48 or op == 50 or op == 52
+      if op == OP_i32_load8_s or op == OP_i32_load16_s or op == OP_i64_load8_s or op == OP_i64_load16_s or op == OP_i64_load32_s
         ssg = 1
       end
-      if op == 46 or op == 47 or op == 50 or op == 51 or op == 59 or op == 61
+      if op == OP_i32_load16_s or op == OP_i32_load16_u or op == OP_i64_load16_s or op == OP_i64_load16_u or op == OP_i32_store16 or op == OP_i64_store16
         ssz = 2
       end
-      if op == 52 or op == 53 or op == 62
+      if op == OP_i64_load32_s or op == OP_i64_load32_u or op == OP_i64_store32
         ssz = 4
       end
-      if op >= 48 and op <= 53
+      if op >= OP_i64_load8_s and op <= OP_i64_load32_u
         sx64 = 1
       end
       if soff - (soff // ssz) * ssz != 0 or soff // ssz > 4095
@@ -3967,7 +4350,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       elseif ssz == 4
         sbase = 0xB9000000
       end
-      if op >= 58
+      if op >= OP_i32_store8
         if sp < 2
           return -1
         end
@@ -3999,7 +4382,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_alu = -1
       last_cset = -1
 
-    elseif op == 40 or op == 41 or op == 42 or op == 43 or op == 54 or op == 55 or op == 56 or op == 57
+    elseif op == OP_i32_load or op == OP_i64_load or op == OP_f32_load or op == OP_f64_load or op == OP_i32_store or op == OP_i64_store or op == OP_f32_store or op == OP_f64_store
       -- i32/i64/f32/f64 load and store. Both immediates (align, then offset)
       -- are LEBs. The dynamic address is an UNSIGNED i32 already zero-extended
       -- in its register, because every 32-bit ARM64 op clears the top half, so
@@ -4012,7 +4395,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       moff: i64 = uleb_val(s, off + pc, off + blen)
       pc = uleb_end(s, off + pc, off + blen) - off
       wide: i64 = 0
-      if op == 41 or op == 43 or op == 55 or op == 57
+      if op == OP_i64_load or op == OP_f64_load or op == OP_i64_store or op == OP_f64_store
         wide = 1
       end
       -- the scaled immediate form needs a naturally aligned offset in range
@@ -4023,7 +4406,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       if moff - (moff // sc) * sc != 0 or moff // sc > 4095
         return -1
       end
-      if op >= 54
+      if op >= OP_i32_store
         -- store: [addr, value]
         if sp < 2
           return -1
@@ -4056,7 +4439,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_alu = -1
       last_cset = -1
 
-    elseif op == 27
+    elseif op == OP_select
       -- select: [a, b, c] -> c != 0 ? a : b. CMP against zero then CSEL, so no
       -- branch is emitted at all.
       if sp < 3
@@ -4073,13 +4456,13 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_alu = -1
       last_cset = -1
 
-    elseif op == 35 or op == 36
+    elseif op == OP_global_get or op == OP_global_set
       gidx: i64 = uleb_val(s, off + pc, off + blen)
       pc = uleb_end(s, off + pc, off + blen) - off
       if gidx > 4095
         return -1
       end
-      if op == 35
+      if op == OP_global_get
         if sp > 8
           return -1
         end
@@ -4097,7 +4480,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_alu = -1
       last_cset = -1
 
-    elseif op == 63
+    elseif op == OP_memory_size
       -- memory.size: the JIT is handed a fixed ONE-page (65536 byte) buffer,
       -- so this is the constant 1. memory.grow (64) has no arm and still bails
       -- — growing would need a real allocator behind the base pointer.
@@ -4109,7 +4492,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       n += 1
       sp += 1
 
-    elseif op == 103 or op == 104 or op == 105 or op == 121 or op == 122 or op == 123
+    elseif op == OP_i32_clz or op == OP_i32_ctz or op == OP_i32_popcnt or op == OP_i64_clz or op == OP_i64_ctz or op == OP_i64_popcnt
       -- clz / ctz / popcnt, both widths. ARM64 has CLZ but no count-trailing,
       -- so ctz is RBIT+CLZ. popcnt has no integer form at all: it goes through
       -- the vector unit as CNT over bytes then ADDV to sum the lanes, reusing
@@ -4119,7 +4502,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       end
       bq: i64 = sp - 1
       b64: i64 = 0
-      if op >= 121
+      if op >= OP_i64_clz
         b64 = 1
       end
       bk2: i64 = op - 103
@@ -4158,7 +4541,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_alu = -1
       last_cset = -1
 
-    elseif op == 119 or op == 137
+    elseif op == OP_i32_rotl or op == OP_i64_rotl
       -- rotl. ARM64 rotates RIGHT only, and RORV takes the shift amount modulo
       -- the width from the low bits of its register, so negating the amount
       -- turns a right rotate into a left one with no explicit `width - n`.
@@ -4167,7 +4550,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       end
       ra: i64 = sp - 2
       rb: i64 = sp - 1
-      if op == 137
+      if op == OP_i64_rotl
         jitm.w32(code, n, 0xCB0003E0 | (rb << 16) | rb)
         n += 1
         jitm.w32(code, n, 0x9AC02C00 | (rb << 16) | (ra << 5) | ra)
@@ -4182,7 +4565,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_alu = -1
       last_cset = -1
 
-    elseif op == 152 or op == 166
+    elseif op == OP_f32_copysign or op == OP_f64_copysign
       -- copysign. ward keeps floats as BIT PATTERNS in GP registers, so this is
       -- pure integer masking: clear the sign bit of a, take b's, OR them. No FP
       -- register is touched -- another dividend of the representation.
@@ -4192,7 +4575,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       pa: i64 = sp - 2
       pb: i64 = sp - 1
       pt: i64 = sp
-      if op == 166
+      if op == OP_f64_copysign
         jitm.w32(code, n, 0xD2800000 | pt)
         n += 1
         jitm.w32(code, n, 0xF2E00000 | (0x8000 << 5) | pt)
@@ -4219,17 +4602,17 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_alu = -1
       last_cset = -1
 
-    elseif op == 1
+    elseif op == OP_nop
       -- nop: emits nothing
 
-    elseif op == 26
+    elseif op == OP_drop
       -- drop: the value simply stops being referenced
       if sp < 1
         return -1
       end
       sp -= 1
 
-    elseif op == 4
+    elseif op == OP_if_
       -- if: pop the condition and branch PAST the then-arm when it is zero.
       -- The target is the matching `else` or `end`, neither emitted yet, so the
       -- branch word is remembered in `lelsw` and patched there. The label is a
@@ -4249,7 +4632,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_alu = -1
       last_cset = -1
 
-    elseif op == 5
+    elseif op == OP_else_
       -- else: end of the then-arm. Jump over the else-arm (patched at `end`),
       -- then point the `if`'s conditional branch here.
       if ldep < 1
@@ -4277,7 +4660,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_alu = -1
       last_cset = -1
 
-    elseif op == 2
+    elseif op == OP_block
       -- block: a FORWARD label. Its target is the matching `end`, so branches
       -- to it are recorded and patched there.
       pc += 1
@@ -4289,7 +4672,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       mem.write_i64(lelsw, ldep * 8, 0)
       ldep += 1
 
-    elseif op == 3
+    elseif op == OP_loop
       -- loop: header is here, so branches to it resolve immediately
       pc += 1
       if ldep >= 32
@@ -4301,7 +4684,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       mem.write_i64(lelsw, ldep * 8, 0)
       ldep += 1
 
-    elseif op == 13
+    elseif op == OP_br_if
       -- br_if 0 -> CBNZ Wtop, <loop head>  (backward, offset known now)
       d3: i64 = uleb_val(s, off + pc, off + blen)
       pc = uleb_end(s, off + pc, off + blen) - off
@@ -4344,7 +4727,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         n += 1
       end
 
-    elseif op == 11
+    elseif op == OP_end_
       -- end: closes a label. Every forward branch that targeted this block is
       -- now resolvable, so patch the placeholders to land here. imm19 sits in
       -- bits 5..23 of both B.cond and CBNZ, so one mask serves both.
@@ -4386,7 +4769,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         end
       end
 
-    elseif op == 12
+    elseif op == OP_br
       -- br: unconditional. Backward to a loop head resolves now; forward to a
       -- block end is a placeholder patched at `end`, exactly like br_if, but the
       -- offset lives in imm26 rather than imm19 so the patch records the form.
@@ -4420,7 +4803,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         return -1
       end
 
-    elseif op == 14
+    elseif op == OP_br_table
       -- br_table: a small dense switch. Emitted as a compare chain rather than
       -- a jump table -- these tables are tiny (the corpus one has three
       -- targets), and a chain reuses the existing label resolution instead of
@@ -4488,7 +4871,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_alu = -1
       last_cset = -1
 
-    elseif op == 15
+    elseif op == OP_return_
       -- return. At label depth zero it is simply "stop compiling this body".
       -- Deeper in, the rest of the function still has to be emitted (silently
       -- dropping it made wart_compute_bench hang once `if` stopped bailing), so
@@ -4520,7 +4903,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         last_cset = -1
       end
 
-    elseif op == 16
+    elseif op == OP_call
       -- call: INLINE a leaf callee. A real call needs a frame and spill
       -- machinery this template JIT does not have, but splicing a leaf body
       -- costs nothing at run time -- and `call` is what four of the six

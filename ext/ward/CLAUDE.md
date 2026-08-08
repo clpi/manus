@@ -60,6 +60,27 @@ duo run bench/perf.duo        # interleaved median wall clock vs wasmtime
 All of them take `WARD_BIN` (default `/tmp/ward`). `bench/run.duo` builds ward;
 the others expect it to exist.
 
+## Opcode numbers are PROJECTED — never type one
+
+```bash
+duo run tools/opcodes.duo                     # rewrite the derived regions
+WARD_DERIVE_CHECK=1 duo run tools/opcodes.duo # gate: fail if ward.duo drifted
+```
+
+`tools/opcodes.duo` is the descriptor. It writes four
+`-- derived(ward.opcodes.*)` regions in `src/ward.duo`: the `OP_*` constants,
+the `OP_NAMES` diagnostic table, and the JIT's `ALU_OPS` / `CMP_OPS`. **Do not
+edit inside a derived region** — add a row to the descriptor and re-project.
+
+It is answerable to duo's canonical table: it re-parses
+`lib/std/wasm/ward_mvp_opcodes.duo` and refuses to project on any disagreement
+over the 63 opcodes that file holds. ward needs 184, which is the only reason
+an extension table exists here at all.
+
+Before this landed, the same opcode number was typed by hand in the
+interpreter ladder AND again in the JIT emitter tables — 241 predicates, which
+is exactly the drift the 2026-08-06 handoff warned against.
+
 ## Rules this project learned the hard way
 
 - **"ward produced a result" is NOT coverage.** A harness that counted any

@@ -76,11 +76,42 @@ end
 -- already carries: an opcode number used as a dispatch predicate. This is the
 -- specific population Pass 101 names, so it is reported on its own rather than
 -- folded into "everything hand-written".
+--
+-- Two qualifications, both added 2026-08-08 when the population went 241 -> 2
+-- and the leftovers turned out to be noise rather than debt:
+--
+--   * a line INSIDE a derived region is skipped. A projected line does not
+--     hard-code anything -- it is the output of the descriptor, by the same
+--     marker contract the ratio above uses. Without this, projecting the table
+--     made the count go UP, because `OP_nop = 1` and `OP_loop = 3` match the
+--     pattern on the lowercase "op" buried in their own names.
+--   * the operator must be a COMPARISON. `fop = 0x3800` assigns an ARM64
+--     instruction field; it is an assignment, not a dispatch predicate, and
+--     the ARM64 encoding is not a fact any wasm descriptor carries.
+--
+-- What is deliberately NOT filtered: `f64op == 1`, three times, where `f64op`
+-- is a width flag and 1 is not an opcode. Tuning the pattern until it read
+-- exactly 0 would leave a detector that cannot be told apart from a broken
+-- one. Those three are a live floor: see 3, and the scanner is still looking.
+-- If this ever reports 0, suspect the scanner before celebrating.
 _format_facts(text: str): i64
     n = 0
+    inside = false
     for _i, line in std.string.split(text, "\n")
-        if _is_code(line)
-            if string.match(line, "op%s*[=><]=?%s*0?x?%x") != nil
+        t = std.string.trim(line)
+        if string.match(t, "^%-%- derived%(") != nil
+            inside = true
+        elseif t == "-- derived end"
+            inside = false
+        elseif _is_code(line) and not inside
+            -- `==` `>=` `<=` / `!=` / bare `<` `>`. Three alternatives rather
+            -- than one because a single class would also admit the bare `=` of
+            -- an assignment, which is the case being excluded.
+            if string.match(line, "op%s*[=><]=%s*0?x?%x") != nil
+                n += 1
+            elseif string.match(line, "op%s*!=%s*0?x?%x") != nil
+                n += 1
+            elseif string.match(line, "op%s*[<>]%s*0?x?%x") != nil
                 n += 1
             end
         end
@@ -100,6 +131,18 @@ _selfcheck(): bool
     end
     if _part(r, 2) != 2
         print("selfcheck: expected 2 derived lines, got " .. to(str)(_part(r, 2)))
+        return false
+    end
+
+    -- The opcode-predicate counter gets the same treatment, and it needs it
+    -- more: it was tightened after the projection landed, and a filter added
+    -- to make a number go DOWN has to prove it still counts the thing it is
+    -- for. Four lines, one of each verdict.
+    facts = "if op == 106\nfop = 0x3800\n-- derived(t) begin\nOP_nop = 1\n-- derived end\nif op >= 40\n"
+    f = _format_facts(facts)
+    if f != 2
+        print("selfcheck: expected 2 opcode predicates in the probe, got " .. to(str)(f))
+        print("  (the probe holds one `==`, one `>=`, one assignment, one derived line)")
         return false
     end
     true
@@ -153,7 +196,14 @@ main(): i64
     facts = _format_facts(std.script.fs_read(built))
     print("")
     print("hand-encoded WASM opcode predicates in the shipped file: " .. to(str)(facts))
-    print("  every one of these is a fact lib/std/wasm/ward_mvp_opcodes.duo already holds.")
+    print("  was 241 on 2026-08-08, before the dispatch was projected from")
+    print("  tools/opcodes.duo. The residue is 3 known false positives on the")
+    print("  `f64op` width flag, kept as the scanner's floor -- see the comment")
+    print("  on _format_facts. A reading of 0 means the scanner broke.")
+    if facts < 3
+        print("*** opcode-predicate scanner reads below its known floor; it is broken ***")
+        return 1
+    end
 
     if derived * 100 < code * 80
         print("")
