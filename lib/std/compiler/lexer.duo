@@ -112,17 +112,17 @@ consume_hints(self: Lexer): any
 end
 
 peek_char(self: Lexer): i64
-    if self.pos > string.len(self.src) return 0 end
+    if self.pos > #self.src return 0 end
     string.byte(self.src, self.pos)
 end
 
 peek_char2(self: Lexer): i64
-    if self.pos + 1 > string.len(self.src) return 0 end
+    if self.pos + 1 > #self.src return 0 end
     string.byte(self.src, self.pos + 1)
 end
 
 adv(self: Lexer)
-    if self.pos > string.len(self.src) return end
+    if self.pos > #self.src return end
     c = string.byte(self.src, self.pos)
     self.pos = self.pos + 1
     if c == 10
@@ -151,14 +151,14 @@ end
 
 long_bracket_level(self: Lexer): i64
     i = self.pos
-    if i > string.len(self.src) or string.byte(self.src, i) != 91 return -1 end
+    if i > #self.src or string.byte(self.src, i) != 91 return -1 end
     i = i + 1
     lvl = 0
-    while i <= string.len(self.src) and string.byte(self.src, i) == 61
+    while i <= #self.src and string.byte(self.src, i) == 61
         lvl = lvl + 1
         i = i + 1
     end
-    if i > string.len(self.src) or string.byte(self.src, i) != 91 return -1 end
+    if i > #self.src or string.byte(self.src, i) != 91 return -1 end
     lvl
 end
 
@@ -189,7 +189,7 @@ skip_long(self: Lexer, level: i64)
         i = i + 1
     end
     self:adv()
-    while self.pos <= string.len(self.src)
+    while self.pos <= #self.src
         if self:peek_char() == 93
             eq = 0
             self:adv()
@@ -209,12 +209,12 @@ skip_long(self: Lexer, level: i64)
 end
 
 skip_ws(self: Lexer)
-    while self.pos <= string.len(self.src)
+    while self.pos <= #self.src
         c = self:peek_char()
         if c == 32 or c == 9 or c == 13 or c == 10
             self:adv()
         elseif c == 35 and self:peek_char2() == 33 and self.pos == 1
-            while self.pos <= string.len(self.src) and self:peek_char() != 10
+            while self.pos <= #self.src and self:peek_char() != 10
                 self:adv()
             end
         elseif c == 45 and self:peek_char2() == 45
@@ -224,17 +224,17 @@ skip_ws(self: Lexer)
             if lvl >= 0
                 self:skip_long(lvl)
             else
-                is_triple = (self.pos <= string.len(self.src) and self:peek_char() == 45)
+                is_triple = (self.pos <= #self.src and self:peek_char() == 45)
                 if is_triple
                     self:adv()
                 end
                 start = self.pos
-                while self.pos <= string.len(self.src) and self:peek_char() != 10
+                while self.pos <= #self.src and self:peek_char() != 10
                     self:adv()
                 end
                 if is_triple and self.hint_count < 8
                     comment_text = strm.sub(self.src, start, self.pos - 1)
-                    if string.len(comment_text) > 0 and string.byte(comment_text, 1) == 64
+                    if #comment_text > 0 and string.byte(comment_text, 1) == 64
                         h = strm.sub(comment_text, 2, -1)
                         if self.hint_count == 0 self.hint_0 = h
                         elseif self.hint_count == 1 self.hint_1 = h
@@ -272,7 +272,7 @@ read_long_str(self: Lexer, level: i64): str
         end
     end
     start = self.pos
-    while self.pos <= string.len(self.src)
+    while self.pos <= #self.src
         if self:peek_char() == 93
             close_start = self.pos
             self:adv()
@@ -297,7 +297,7 @@ end
 read_str(self: Lexer, quote: i64): str
     self:adv()
     start = self.pos
-    while self.pos <= string.len(self.src)
+    while self.pos <= #self.src
         c = self:peek_char()
         if c == quote
             s = strm.sub(self.src, start, self.pos - 1)
@@ -310,19 +310,19 @@ read_str(self: Lexer, quote: i64): str
         end
         if c == 92
             self:adv()
-            if self.pos > string.len(self.src)
+            if self.pos > #self.src
                 self:_fail(1)
                 return ""
             end
             esc = self:peek_char()
             if esc == 120
                 self:adv()
-                if self.pos > string.len(self.src) or not is_hex(self:peek_char())
+                if self.pos > #self.src or not is_hex(self:peek_char())
                     self:_fail(3)
                     return ""
                 end
                 self:adv()
-                if self.pos <= string.len(self.src) and is_hex(self:peek_char())
+                if self.pos <= #self.src and is_hex(self:peek_char())
                     self:adv()
                 end
             elseif esc == 117
@@ -333,7 +333,7 @@ read_str(self: Lexer, quote: i64): str
                 end
                 self:adv()
                 has_digit = false
-                while self.pos <= string.len(self.src) and self:peek_char() != 125
+                while self.pos <= #self.src and self:peek_char() != 125
                     if not is_hex(self:peek_char())
                         self:_fail(3)
                         return ""
@@ -341,14 +341,14 @@ read_str(self: Lexer, quote: i64): str
                     has_digit = true
                     self:adv()
                 end
-                if not has_digit or self.pos > string.len(self.src) or self:peek_char() != 125
+                if not has_digit or self.pos > #self.src or self:peek_char() != 125
                     self:_fail(3)
                     return ""
                 end
                 self:adv()
             elseif esc == 122
                 self:adv()
-                while self.pos <= string.len(self.src)
+                while self.pos <= #self.src
                     ws = self:peek_char()
                     if ws == 32 or ws == 9 or ws == 13 or ws == 10
                         self:adv()
@@ -358,7 +358,7 @@ read_str(self: Lexer, quote: i64): str
                 end
             elseif esc == 13
                 self:adv()
-                if self.pos <= string.len(self.src) and self:peek_char() == 10
+                if self.pos <= #self.src and self:peek_char() == 10
                     self:adv()
                 end
             else
@@ -385,7 +385,7 @@ end
 -- rejecting; that is the same shape the rest of the compiler carries today and
 -- is recorded in GAP-024 rather than fixed here.
 _int_of(text: str): i64
-    n: i64 = string.len(text)
+    n: i64 = #text
     if n > 2 and string.byte(text, 1) == 48 and (string.byte(text, 2) == 120 or string.byte(text, 2) == 88)
         v: i64 = 0
         i: i64 = 3
@@ -500,7 +500,7 @@ end
 
 next_tok(self: Lexer): Tok
     self:skip_ws()
-    if self.pos > string.len(self.src)
+    if self.pos > #self.src
         return { kind = std.compiler.token.KIND_EOF, loc = self:cur_loc(), text = "", int_val = 0, float_val = 0.0 }
     end
     
@@ -513,7 +513,7 @@ next_tok(self: Lexer): Tok
     
     if is_alpha(c) or c == 95
         start = self.pos
-        while self.pos <= string.len(self.src)
+        while self.pos <= #self.src
             p = self:peek_char()
             if is_alnum(p) or p == 95
                 self:adv()
@@ -578,7 +578,7 @@ next_tok(self: Lexer): Tok
     elseif c == 38
         return { kind = std.compiler.token.KIND_AMP, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 124
-        if self.pos <= string.len(self.src) and string.byte(self.src, self.pos) == 62
+        if self.pos <= #self.src and string.byte(self.src, self.pos) == 62
             self.pos = self.pos + 1
             return { kind = std.compiler.token.KIND_PIPE_GT, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
@@ -905,7 +905,7 @@ duo_lexer_text_fingerprint(src: str, file: str): u64
     h: u64 = 0
     while true
         tok = next_tok(lex)
-        tl: i64 = string.len(tok.text)
+        tl: i64 = #tok.text
         h = h * 31 + tl
         bi: i64 = 1
         while bi <= tl
