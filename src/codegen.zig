@@ -1584,6 +1584,16 @@ pub const CodeGen = struct {
         if (e.* == .method_call) {
             const mc = e.method_call;
             if (self.string_method_result_type(mc.method, mc.obj, mc.args)) |t| return t;
+            // gap[025] / FACE-CALL: a receiver face over a FREE function has the
+            // callee's declared return type. Without this the method call types
+            // as `.any`, the caller wraps it in `lua_to_num(...)`, and the
+            // native projection cannot satisfy it — which is what layer 4 of
+            // this gap was. Read from the declaration rather than a table of
+            // method NAMES like the static-dispatch branch below (that list is
+            // the names-carry-semantics shape LAW-ONE denies).
+            if (self.func_decls.get(mc.method)) |fd| {
+                return self.resolve_type(fd.func.ret_type);
+            }
             if (self.static_dispatch_type_for_expr(mc.obj, mc.method)) |_| {
                 if (std.mem.eql(u8, mc.method, "increment") or
                     std.mem.eql(u8, mc.method, "decrement") or
@@ -14197,6 +14207,36 @@ pub const CodeGen = struct {
                 } else {
                     if (ot == .@"struct" and self.is_table_module(ot.@"struct".name)) {
                         if (try self.try_emit_table_module_method_call(ot.@"struct".name, mc.method, mc.args)) return;
+                    }
+                    // gap[025] / FACE-CALL: receiver face over a FREE function —
+                    // `lex:next()` where the module declares `next(self: Lexer)`.
+                    //
+                    // Without this the fallthrough builds a symbol from the
+                    // receiver's RENDERED TEXT: `zebra:bump()` emitted
+                    // `zebra__bump()`, a name nothing declares. Accepted by the
+                    // checker, dead in C — the gap[026] class.
+                    //
+                    // Data wins the name by construction: reached only after
+                    // member, alias-method and table-module dispatch decline,
+                    // which is the receiver-shape knowledge gap[014] required.
+                    if (self.func_decls.contains(mc.method) or self.func_bodies.contains(mc.method)) {
+                        const cname = if (self.function_c_names.get(mc.method)) |cn| cn else mc.method;
+                        self.p("{s}(", .{cname});
+                        const self_rt: ?RT = if (mc.obj.* == .name)
+                            self.local_type(mc.obj.name.ident) orelse self.record_aliases.get(mc.obj.name.ident)
+                        else
+                            null;
+                        if (self_rt) |rt| {
+                            try self.emit_arg_for_param(mc.obj, rt, true);
+                        } else {
+                            try self.emit_expr(mc.obj);
+                        }
+                        for (mc.args) |arg| {
+                            self.p(", ", .{});
+                            try self.emit_expr(arg);
+                        }
+                        self.p(")", .{});
+                        return;
                     }
                     try self.emit_expr(mc.obj);
                     self.p("__{s}(", .{mc.method});
