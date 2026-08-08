@@ -504,7 +504,14 @@ main(): i64
         return 1
     end
 
-    root = std.script.getenv("DUO_ROOT", "/Users/clp/x/duo")
+    -- NOT a hardcoded default. A personal path here is a public_safety_scan
+    -- failure (Pass 10 A19) and it is also wrong for everyone but one machine;
+    -- ask git where the checkout is instead. `_agree` below is the control:
+    -- a root that does not resolve parses 0 rows and the tool refuses.
+    root = std.script.getenv("DUO_ROOT", "")
+    if root == ""
+        root = std.script.chomp(std.script.capture("git rev-parse --show-toplevel 2>/dev/null"))
+    end
     canon = root .. "/lib/std/wasm/ward_mvp_opcodes.duo"
     n = _agree(canon)
     if n == 0
