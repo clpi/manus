@@ -26,12 +26,10 @@ stdio JSON-RPC. The server itself is written in Duo and compiled to a self-conta
 ## Layout
 
 ```
-duo-lsp            compiled binary (#!/usr/bin/env node not needed; self-contained)
+duo-lsp            compiled binary (self-contained; no node runtime)
 src/server.duo     LSP server implementation in Duo
-package.json       npm manifest (for tests)
-test/run-tests.js  unit tests (parser, scanner, text sync)
-test/smoke.js      end-to-end handshake against the real duo binary
-build.sh           build script: `duo compile -o duo-lsp src/server.duo`
+build.duo          build script: `duo compile -o duo-lsp src/server.duo`
+test/smoke.duo     end-to-end handshake against the real duo binary
 ```
 
 ## Resolving the `duo` compiler
@@ -57,10 +55,17 @@ export DUO_LSP_DUO_BIN="$PWD/zig-out/bin/duo"
 ### Tests
 
 ```sh
-cd ext/duo-lsp
-npm test            # unit tests: diagnostic parser + symbol scanner + sync
-npm run smoke       # full LSP handshake against the real duo binary
+duo run build.duo      # build the server binary
+duo run test/smoke.duo # full LSP handshake against the real duo binary
 ```
+
+There is no separate unit-test target. There used to be `lib/*.js` — a
+JavaScript reimplementation of the diagnostic parser, symbol scanner and text
+sync that `src/server.duo` already owns — plus `test/run-tests.js` exercising
+it. Nothing shipped that code, so its tests proved nothing about the server.
+The assertions worth keeping (nested declarations not leaking into the outline,
+comments not starting blocks, top-level calls not being declarations) now run
+against the actual binary over the protocol, in `test/smoke.duo`.
 
 The smoke test opens a `.lua` document with an undeclared global, asserts a
 diagnostic is published, requests document symbols / hover / completion, and shuts down

@@ -12,7 +12,7 @@ cd ~/x/duo && zig build -Doptimize=ReleaseFast
 ## Build & run
 
 ```bash
-./build.sh          # builds the LSP server binary using duo
+duo run build.duo   # builds the LSP server binary using duo
 duo run src/main.duo  # run directly with duo (dev mode)
 ```
 
@@ -21,12 +21,15 @@ The build script uses `DUO_LSP_DUO_BIN` env var to locate the `duo` binary, fall
 ## Source layout
 
 ```
-src/             Duo source for the LSP server
-lib/             Shared library code
-duo-lsp/         LSP protocol implementation
+src/server.duo   the LSP server (protocol, diagnostics, symbols, sync)
+build.duo        build script
+test/smoke.duo   end-to-end handshake against the real duo binary
 vendor → ~/x/duo/lib   Symlink to duo stdlib
-test/            Test files
 ```
+
+This repo is 100% Duo. `lib/*.js` and the Node test harness were deleted — the
+JS was a reimplementation of logic `src/server.duo` already owned, and nothing
+shipped it.
 
 ## LSP features
 
