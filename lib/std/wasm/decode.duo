@@ -37,10 +37,7 @@ end
 
 read_byte(c): i64
     if c.pos > c.len return -1 end
-    -- gap[032]: `c.data` is an `any` field, so the `:byte` face does not
-    -- resolve and yields nil with no diagnostic. Every opcode then read as 0
-    -- and decode_i32_const reported "bad_opcode" for a valid 0x41 stream.
-    b = string.byte(c.data, c.pos)
+    b = c.data:byte(c.pos)
     c.pos = c.pos + 1
     b
 end

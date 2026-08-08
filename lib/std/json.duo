@@ -234,7 +234,7 @@ json_value(cur): any
         cur.i = cur.i + 1
         obj = {}
         json_skip_ws(cur)
-        if string.byte(cur.s, cur.i) == 125
+        if cur.s:byte(cur.i) == 125
             cur.i = cur.i + 1
             return obj
         end
@@ -246,7 +246,7 @@ json_value(cur): any
             val = json_value(cur)
             obj[key] = val
             json_skip_ws(cur)
-            b2 = string.byte(cur.s, cur.i)
+            b2 = cur.s:byte(cur.i)
             if b2 == 44
                 cur.i = cur.i + 1
             elseif b2 == 125
@@ -263,7 +263,7 @@ json_value(cur): any
         arr = {}
         arrn = 0
         json_skip_ws(cur)
-        if string.byte(cur.s, cur.i) == 93
+        if cur.s:byte(cur.i) == 93
             cur.i = cur.i + 1
             return arr
         end
@@ -272,7 +272,7 @@ json_value(cur): any
             arrn = arrn + 1
             arr[arrn] = val
             json_skip_ws(cur)
-            b2 = string.byte(cur.s, cur.i)
+            b2 = cur.s:byte(cur.i)
             if b2 == 44
                 cur.i = cur.i + 1
             elseif b2 == 93
