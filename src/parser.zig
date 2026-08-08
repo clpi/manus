@@ -2344,6 +2344,39 @@ pub const Parser = struct {
             try self.eat_deprecated(.kw_do);
             const body = try self.parse_block();
             _ = try self.expect(.kw_end);
+
+            // `for i in range(0, n)` — "ranges own counting" (§3). `range` is a
+            // subjectless family (§IX) that did not exist, so the loop lowered
+            // to a call and the C compiler said "use of undeclared identifier
+            // 'range'". Desugared here into the numeric for, which already
+            // counts natively.
+            //
+            // The bound matters: `num_for` is inclusive, and B-1 rules ranges
+            // 0-BASED and HALF-OPEN, so `range(0, 3)` must yield 0,1,2 — hence
+            // `stop - 1`, not `stop`. Getting this wrong would have made
+            // FF-11 pass while silently running one iteration too many.
+            if (vars.items.len == 1 and iters.items.len == 1 and iters.items[0].* == .call) {
+                const rc = iters.items[0].call;
+                if (rc.func.* == .name and std.mem.eql(u8, rc.func.name.ident, "range") and rc.args.len == 2) {
+                    const one = try self.new_expr(.{ .int_lit = .{ .loc = l, .val = 1 } });
+                    const last = try self.new_expr(.{ .binop = .{
+                        .loc = l,
+                        .op = .sub,
+                        .lhs = rc.args[1],
+                        .rhs = one,
+                    } });
+                    return ast.Stmt{ .num_for = .{
+                        .loc = l,
+                        .var_name = vars.items[0],
+                        .var_typ = .{ .named = "i64" },
+                        .start = rc.args[0],
+                        .stop = last,
+                        .step = null,
+                        .body = body,
+                    } };
+                }
+            }
+
             return ast.Stmt{ .gen_for = .{
                 .loc = l,
                 .vars = try vars.toOwnedSlice(self.alloc),
