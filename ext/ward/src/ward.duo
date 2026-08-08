@@ -1,4 +1,5 @@
 jitm = req "std.jit"
+iom = req "std.io"
 
 -- ward — WASM runtime in Duo. Pure Duo: no @c.emit, no @c.include, no C.
 --
@@ -284,6 +285,71 @@ find_run_body(s: str, n: i64, want: str, wlen: i64, which: i64): i64
 end
 
 
+-- ── THE BAIL CONTRACT ────────────────────────────────────────────────────
+-- A refusal to execute must not look like a result.
+--
+-- `run_body` used to answer -1 for every opcode it could not execute, `main`
+-- printed `result=-1`, and the process EXITED 0. The source comment claimed the
+-- opcode was named on stderr; that diagnostic was never written, and there was
+-- no stderr surface in the Duo stdlib to write it with. So the only thing
+-- separating "ward computed this" from "ward gave up" was a caller remembering
+-- to grep stdout for a sentinel -- and -1 is a perfectly legal i64 result, so
+-- even that grep is wrong. bench/fib.wasm at fib(34) reaches this today.
+--
+-- -1 cannot be made unambiguous in band, and there is no out-of-band channel:
+-- BUG B still holds (a `mem.*` buffer cannot cross a Duo function boundary --
+-- verified 2026-08-08, it lowers to a boxed lua_Value and the C build fails).
+-- So the bail ENDS THE PROCESS at the site that detected it, where the opcode
+-- and the body offset are still in scope.
+--
+-- The contract, at the process boundary:
+--   exit 0   a result was computed; stdout carries `result=<v>`
+--   exit 1   usage, or the module could not be read or decoded
+--   exit 70  ward met an opcode or a shape it cannot execute
+--   exit 71  the module itself trapped (`unreachable`)
+-- Every nonzero exit writes one line to STDERR naming why. Nothing is printed
+-- to stdout on a failure, so `result=` on stdout now means a result.
+--
+-- Three helpers, not one, because the three are not the same claim and a
+-- diagnostic that guesses is worse than none. The first version of this said
+-- "unimplemented opcode 3" for fib(34) -- and opcode 3 is `loop`, which IS
+-- implemented; what actually happened was the shared label stack hitting its
+-- 63-entry ceiling at recursion depth 34. Naming the wrong cause would have
+-- sent the next reader to write an arm that already exists.
+
+-- A guard inside an arm that DOES exist refused: operand-stack underflow, a
+-- label/frame depth ceiling, a memory bound. The opcode is named because it
+-- localises the refusal, not because the opcode is missing.
+bail(op: i64, pos: i64): i64
+  iom.err("ward: cannot execute opcode " .. to(str)(op) .. " at body offset " .. to(str)(pos) .. " (unsupported operand shape, or an interpreter limit inside its arm)\n")
+  os.exit(70)
+  -1
+end
+
+-- No arm at all. This is the ranked-worklist signal the old `-1` swallowed: a
+-- corpus sweep now reports exactly which opcodes to implement next.
+bailop(op: i64, pos: i64): i64
+  iom.err("ward: unimplemented opcode " .. to(str)(op) .. " at body offset " .. to(str)(pos) .. "\n")
+  os.exit(70)
+  -1
+end
+
+-- `unreachable` is the MODULE trapping, which every conforming runtime does
+-- too. It is not a gap in ward and must not be counted as one.
+bailtrap(pos: i64): i64
+  iom.err("ward: wasm trap (unreachable) at body offset " .. to(str)(pos) .. "\n")
+  os.exit(71)
+  -1
+end
+
+-- The decoder gave up before any opcode was reached, so there is no opcode to
+-- name -- the module shape itself is what ward cannot handle.
+bailshape(why: str): i64
+  iom.err("ward: cannot decode module (" .. why .. ")\n")
+  os.exit(1)
+  -1
+end
+
 -- Interprets function `target` of the module image `img`.
 --
 -- It re-walks the module rather than being handed offsets, because BUG B
@@ -382,7 +448,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
     si += ssz
   end
   if cd_off <= 0
-    return -1
+    return bailshape("no code section")
   end
 
   code = mem.alloc(cd_len + 16)
@@ -674,7 +740,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   end
 
   if target < 0 or target >= nfn
-    return -1
+    return bailshape("target function index out of range")
   end
   sp: i64 = 0
   lsp: i64 = 0
@@ -736,7 +802,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       end
       imm = imm & M32
       if imm < 0 or imm >= 64
-        return -1
+        return bail(op, pc)
       end
       sp += 1
       mem.write_i64(st, sp * 8, mem.read_i64(lo, (lbase + imm) * 8))
@@ -750,7 +816,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       -- so `45 / 2` silently returned 0 instead of 22 and every module using
       -- integer division was quietly wrong. They have a dedicated arm below.
       if sp < 2
-        return -1
+        return bail(op, pc)
       end
       b: i64 = mem.read_i64(st, sp * 8)
       a: i64 = mem.read_i64(st, (sp - 1) * 8)
@@ -783,7 +849,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         r = (sa >> (b & 31)) & M32
       else
         -- An opcode inside the range with no arm must NOT quietly yield 0.
-        return -1
+        return bail(op, pc)
       end
       mem.write_i64(st, sp * 8, r)
       sp = sp
@@ -829,7 +895,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         if cv != 0
           lbi: i64 = lsp - 1 - imm2
           if lbi < 0 or lbi >= 64
-            return -1
+            return bail(op, pc)
           end
           tgt2: i64 = mem.read_i64(ltgt, lbi * 8)
           -- A BACKWARD target is a `loop` (re-entered, so its label stays);
@@ -848,7 +914,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         end
       elseif op == OP_local_set
         if sp < 1 or imm2 < 0 or imm2 >= 64
-          return -1
+          return bail(op, pc)
         end
         mem.write_i64(lo, (lbase + imm2) * 8, mem.read_i64(st, sp * 8))
         sp -= 1
@@ -896,14 +962,14 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
             end
           else
             -- An opcode inside the range with no arm must NOT quietly yield 0.
-            return -1
+            return bail(op, pc)
           end
           mem.write_i64(st, sp * 8, r2)
           sp = sp
         end
       elseif op == OP_loop
         if lsp >= 63
-          return -1
+          return bail(op, pc)
         end
         pc += 1
         mem.write_i64(ltgt, lsp * 8, pc)
@@ -925,7 +991,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       elseif op == OP_br
         lb: i64 = lsp - 1 - imm2
         if lb < 0 or lb >= 64
-          return -1
+          return bail(op, pc)
         end
         tgt3: i64 = mem.read_i64(ltgt, lb * 8)
         if tgt3 <= pc
@@ -992,7 +1058,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           ipn: i64 = mem.read_i64(tpar, (itx * 2) * 8)
           irn: i64 = mem.read_i64(tpar, (itx * 2 + 1) * 8)
           if ipn > sp
-            return -1
+            return bail(op, pc)
           end
           sp = sp - ipn
           iz: i64 = 0
@@ -1006,7 +1072,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         else
         fx: i64 = imm2 - nimp
         if fx < 0 or fx >= nfn or depth >= 63
-          return -1
+          return bail(op, pc)
         end
         mem.write_i64(fr, (depth * 8) * 8, pc)
         mem.write_i64(fr, (depth * 8 + 1) * 8, cur_end)
@@ -1018,7 +1084,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         npc: i64 = mem.read_i64(ftab, (fx * 4 + 3) * 8)
         nlc2: i64 = mem.read_i64(ftab, (fx * 4 + 2) * 8)
         if nb + 64 > 64 * 64 or npc > sp
-          return -1
+          return bail(op, pc)
         end
         -- Arguments sit on the operand stack with the LAST param on top, so
         -- fill the callee's locals downwards as they pop.
@@ -1048,7 +1114,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       elseif op == 35
         -- global.get (immediate already decoded into imm2 via himm)
         if imm2 < 0 or imm2 >= 64
-          return -1
+          return bail(op, pc)
         end
         sp += 1
         mem.write_i64(st, sp * 8, mem.read_i64(gl, imm2 * 8))
@@ -1056,7 +1122,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       elseif op == 36
         -- global.set
         if sp < 1 or imm2 < 0 or imm2 >= 64
-          return -1
+          return bail(op, pc)
         end
         mem.write_i64(gl, imm2 * 8, mem.read_i64(st, sp * 8))
         sp -= 1
@@ -1065,7 +1131,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         -- block (0x02) / if (0x04): branch target is just past the matching
         -- `end`. Scan forward tracking nesting; also record the `else` for `if`.
         if lsp >= 63
-          return -1
+          return bail(op, pc)
         end
         pc += 1                       -- blocktype
         d: i64 = 1
@@ -1195,7 +1261,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         lsp += 1
         if op == 4
           if sp < 1
-            return -1
+            return bail(op, pc)
           end
           cv2: i64 = mem.read_i64(st, sp * 8)
           sp -= 1
@@ -1212,7 +1278,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       elseif op == 5
         -- else: reached only by falling out of the taken `if` arm; skip to end
         if lsp < 1
-          return -1
+          return bail(op, pc)
         end
         pc = mem.read_i64(ltgt, (lsp - 1) * 8)
         lsp -= 1
@@ -1220,7 +1286,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       elseif op == 14
         -- br_table: count, then count+1 target depths; index from the stack
         if sp < 1
-          return -1
+          return bail(op, pc)
         end
         nt: i64 = 0
         shn: i64 = 0
@@ -1258,7 +1324,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         end
         lt2: i64 = lsp - 1 - chosen
         if lt2 < 0 or lt2 >= 64
-          return -1
+          return bail(op, pc)
         end
         -- Pop the label stack exactly as `br` does. This used to be
         -- `lsp = lsp - chosen`, one level too high, so any branch taken AFTER a
@@ -1276,7 +1342,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       elseif op >= 103 and op <= 105
         -- i32.clz / ctz / popcnt
         if sp < 1
-          return -1
+          return bail(op, pc)
         end
         xv: i64 = mem.read_i64(st, sp * 8) & M32
         rr: i64 = 0
@@ -1315,7 +1381,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         -- Width and sign are descriptor data, not separate arms: one byte loop
         -- serves all five, so a new width is a table edit rather than a branch.
         if sp < 1
-          return -1
+          return bail(op, pc)
         end
         while pc < cur_end and mem.read_byte(code, pc) >= 0x80
           pc += 1
@@ -1348,7 +1414,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           wl = 8
         end
         if av2 + wl > 65536
-          return -1
+          return bail(op, pc)
         end
         -- Assemble through the scratch buffer, never `| (byte << (k * 8))`:
         -- that form loses the low byte once the value exceeds 2^53.
@@ -1385,7 +1451,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         --   4B 54 (i32.store) 56 (f32.store) 62 (i64.store32)
         --   8B 55 (i64.store) 57 (f64.store)
         if sp < 2
-          return -1
+          return bail(op, pc)
         end
         while pc < cur_end and mem.read_byte(code, pc) >= 0x80
           pc += 1
@@ -1414,7 +1480,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           ws = 8
         end
         if ad2 + ws > 65536
-          return -1
+          return bail(op, pc)
         end
         -- Spill through the scratch buffer so the 8-byte case never needs a
         -- `>> 56`, which is where the shift/or form loses precision.
@@ -1439,16 +1505,16 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           pc += 1
         end
         if sp < 1
-          return -1
+          return bail(op, pc)
         end
         tsl: i64 = mem.read_i64(st, sp * 8) & M32
         sp -= 1
         if tsl >= tbsize
-          return -1
+          return bail(op, pc)
         end
         gx: i64 = mem.read_i64(tbl, tsl * 8) - nimp
         if gx < 0 or gx >= nfn or depth >= 63
-          return -1
+          return bail(op, pc)
         end
         mem.write_i64(fr, (depth * 8) * 8, pc)
         mem.write_i64(fr, (depth * 8 + 1) * 8, cur_end)
@@ -1460,7 +1526,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         gpc: i64 = mem.read_i64(ftab, (gx * 4 + 3) * 8)
         glc: i64 = mem.read_i64(ftab, (gx * 4 + 2) * 8)
         if gb2 + 64 > 64 * 64 or gpc > sp
-          return -1
+          return bail(op, pc)
         end
         kg: i64 = gpc - 1
         while kg >= 0
@@ -1481,7 +1547,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       elseif op == 26
         -- drop
         if sp < 1
-          return -1
+          return bail(op, pc)
         end
         sp -= 1
 
@@ -1512,7 +1578,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         -- i64 ALU: add sub mul and or xor shl shr_s shr_u.
         -- No masking: i64 results already occupy the full slot. Shifts use 63.
         if sp < 2
-          return -1
+          return bail(op, pc)
         end
         bq: i64 = mem.read_i64(st, sp * 8)
         aq: i64 = mem.read_i64(st, (sp - 1) * 8)
@@ -1555,7 +1621,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       elseif op == 80
         -- i64.eqz
         if sp < 1
-          return -1
+          return bail(op, pc)
         end
         zq: i64 = 0
         if mem.read_i64(st, sp * 8) == 0
@@ -1570,7 +1636,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         -- operands differ in sign bit, the one with the bit set is the larger
         -- unsigned value.
         if sp < 2
-          return -1
+          return bail(op, pc)
         end
         bw: i64 = mem.read_i64(st, sp * 8)
         aw: i64 = mem.read_i64(st, (sp - 1) * 8)
@@ -1618,7 +1684,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       elseif op == 167 or op == 172 or op == 173
         -- i32.wrap_i64 / i64.extend_i32_s / i64.extend_i32_u
         if sp < 1
-          return -1
+          return bail(op, pc)
         end
         xw: i64 = mem.read_i64(st, sp * 8)
         yw: i64 = xw & M32
@@ -1634,7 +1700,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         -- their raw bit pattern, so reinterpreting is the identity; only the
         -- 32-bit forms have to clear the high half.
         if sp < 1
-          return -1
+          return bail(op, pc)
         end
         if op == 188 or op == 190
           rb: i64 = mem.read_i64(st, sp * 8) & M32
@@ -1645,7 +1711,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       elseif op == 27
         -- select: c = top, then b, then a; result = c != 0 ? a : b
         if sp < 3
-          return -1
+          return bail(op, pc)
         end
         csel: i64 = mem.read_i64(st, sp * 8)
         bsel: i64 = mem.read_i64(st, (sp - 1) * 8)
@@ -1660,7 +1726,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       elseif op == 119 or op == 120
         -- i32.rotl / i32.rotr
         if sp < 2
-          return -1
+          return bail(op, pc)
         end
         brot: i64 = mem.read_i64(st, sp * 8) & 31
         arot: i64 = mem.read_i64(st, (sp - 1) * 8) & M32
@@ -1681,7 +1747,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         -- difference is the 32-bit mask, so width is data, not a second copy.
         --   109-112 i32    127-130 i64
         if sp < 2
-          return -1
+          return bail(op, pc)
         end
         n32: i64 = 0
         if op <= 112
@@ -1694,7 +1760,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           ad = ad & M32
         end
         if bd == 0
-          return -1
+          return bail(op, pc)
         end
         asi: i64 = ad
         bsi: i64 = bd
@@ -1737,7 +1803,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       elseif op == 72 or op == 74 or op == 76 or op == 78
         -- signed i32 comparisons: lt_s gt_s le_s ge_s
         if sp < 2
-          return -1
+          return bail(op, pc)
         end
         bc: i64 = mem.read_i64(st, sp * 8) & M32
         ac: i64 = mem.read_i64(st, (sp - 1) * 8) & M32
@@ -1800,7 +1866,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           ar = 1
         end
         if sp < ar
-          return -1
+          return bail(op, pc)
         end
         mem.write_i64(fb, 0, mem.read_i64(st, sp * 8))
         db: f64 = mem.load(f64)(fb)
@@ -1875,7 +1941,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           ok = 0
         end
         if ok == 0
-          return -1
+          return bail(op, pc)
         end
         mem.store(f64)(fb, dr)
         mem.write_i64(st, (sp - ar + 1) * 8, mem.read_i64(fb, 0))
@@ -1890,7 +1956,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           sr = 1
         end
         if sp < sr
-          return -1
+          return bail(op, pc)
         end
         mem.write_i64(fb, 0, mem.read_i64(st, sp * 8))
         eb: f32 = mem.load(f32)(fb)
@@ -1961,7 +2027,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           eok = 0
         end
         if eok == 0
-          return -1
+          return bail(op, pc)
         end
         mem.write_i64(fb, 0, 0)
         mem.store(f32)(fb, er)
@@ -1971,7 +2037,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       elseif op >= 91 and op <= 96
         -- f32 comparisons -> i32 0/1
         if sp < 2
-          return -1
+          return bail(op, pc)
         end
         mem.write_i64(fb, 0, mem.read_i64(st, sp * 8))
         gb: f32 = mem.load(f32)(fb)
@@ -1997,7 +2063,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       elseif op >= 97 and op <= 102
         -- f64 comparisons -> i32 0/1
         if sp < 2
-          return -1
+          return bail(op, pc)
         end
         mem.write_i64(fb, 0, mem.read_i64(st, sp * 8))
         cb: f64 = mem.load(f64)(fb)
@@ -2025,7 +2091,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         -- f64 bits. (i32.trunc_f64_* needs an f64->i64 narrowing Duo has no
         -- operator for, so it stays unimplemented rather than guessed at.)
         if sp < 1
-          return -1
+          return bail(op, pc)
         end
         iv: i64 = mem.read_i64(st, sp * 8) & M32
         if iv >= 2147483648
@@ -2038,7 +2104,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         -- i32 eq / gt_u / le_u / ge_u -- the unsigned comparisons the original
         -- chain skipped. i32.ge_u alone appears 15x in the corpus.
         if sp < 2
-          return -1
+          return bail(op, pc)
         end
         ub: i64 = mem.read_i64(st, sp * 8) & M32
         ua: i64 = mem.read_i64(st, (sp - 1) * 8) & M32
@@ -2062,7 +2128,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         --   178-181 f32.convert_i32/i64_s/u   183-186 f64.convert_i32/i64_s/u
         --   182 f32.demote_f64                187 f64.promote_f32
         if sp < 1
-          return -1
+          return bail(op, pc)
         end
         raw: i64 = mem.read_i64(st, sp * 8)
         if op == 182
@@ -2124,7 +2190,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         -- i64.clz / ctz / popcnt. Same shape as the i32 arm with width 64;
         -- kept separate only because the i32 arm masks with M32.
         if sp < 1
-          return -1
+          return bail(op, pc)
         end
         yv: i64 = mem.read_i64(st, sp * 8)
         cr2: i64 = 0
@@ -2152,7 +2218,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       elseif op == 137 or op == 138
         -- i64.rotl / rotr
         if sp < 2
-          return -1
+          return bail(op, pc)
         end
         br2: i64 = mem.read_i64(st, sp * 8) & 63
         ar2: i64 = mem.read_i64(st, (sp - 1) * 8)
@@ -2173,7 +2239,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         --   192 i32.extend8_s  193 i32.extend16_s
         --   194 i64.extend8_s  195 i64.extend16_s  196 i64.extend32_s
         if sp < 1
-          return -1
+          return bail(op, pc)
         end
         we: i64 = 1
         if op == 193 or op == 195
@@ -2214,7 +2280,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           mem.write_i64(st, sp * 8, 1)
         else
           if sp < 1
-            return -1
+            return bail(op, pc)
           end
           -- -1 as an unsigned i32. Bound to a typed local first: passing the
           -- `M32` const straight as an argument makes codegen box it.
@@ -2231,16 +2297,16 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         pc += 1
         if op == 37
           if sp < 1
-            return -1
+            return bail(op, pc)
           end
           ti2: i64 = mem.read_i64(st, sp * 8) & M32
           if ti2 >= 4096
-            return -1
+            return bail(op, pc)
           end
           mem.write_i64(st, sp * 8, mem.read_i64(tbl, ti2 * 8))
         else
           if sp < 2
-            return -1
+            return bail(op, pc)
           end
           tv2: i64 = mem.read_i64(st, sp * 8)
           ti3: i64 = mem.read_i64(st, (sp - 1) * 8) & M32
@@ -2261,13 +2327,13 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           -- memory.copy: two memidx bytes; stack dst, src, len
           pc += 2
           if sp < 3
-            return -1
+            return bail(op, pc)
           end
           cln: i64 = mem.read_i64(st, sp * 8) & M32
           csr: i64 = mem.read_i64(st, (sp - 1) * 8) & M32
           cds: i64 = mem.read_i64(st, (sp - 2) * 8) & M32
           if cds + cln > 65536 or csr + cln > 65536
-            return -1
+            return bail(op, pc)
           end
           -- copy direction matters when the ranges overlap
           if cds <= csr
@@ -2288,13 +2354,13 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           -- memory.fill: one memidx byte; stack dst, val, len
           pc += 1
           if sp < 3
-            return -1
+            return bail(op, pc)
           end
           fln: i64 = mem.read_i64(st, sp * 8) & M32
           fvl: i64 = mem.read_i64(st, (sp - 1) * 8) & 255
           fds: i64 = mem.read_i64(st, (sp - 2) * 8) & M32
           if fds + fln > 65536
-            return -1
+            return bail(op, pc)
           end
           fk: i64 = 0
           while fk < fln
@@ -2307,7 +2373,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           dix: i64 = mem.read_byte(code, pc)
           pc += 2
           if sp < 3 or dix >= 64
-            return -1
+            return bail(op, pc)
           end
           iln: i64 = mem.read_i64(st, sp * 8) & M32
           iso: i64 = mem.read_i64(st, (sp - 1) * 8) & M32
@@ -2329,7 +2395,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           eix: i64 = mem.read_byte(code, pc)
           pc += 2
           if sp < 3 or eix >= 64
-            return -1
+            return bail(op, pc)
           end
           tln: i64 = mem.read_i64(st, sp * 8) & M32
           tso: i64 = mem.read_i64(st, (sp - 1) * 8) & M32
@@ -2352,7 +2418,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           -- table.copy: two tableidx bytes; stack dst, src, len
           pc += 2
           if sp < 3
-            return -1
+            return bail(op, pc)
           end
           yln: i64 = mem.read_i64(st, sp * 8) & M32
           ysr: i64 = mem.read_i64(st, (sp - 1) * 8) & M32
@@ -2377,7 +2443,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           -- table.grow: tableidx; stack init, delta -> old size
           pc += 1
           if sp < 2
-            return -1
+            return bail(op, pc)
           end
           gdl: i64 = mem.read_i64(st, sp * 8) & M32
           sp -= 2
@@ -2395,7 +2461,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           -- table.fill: tableidx; stack dst, val, len
           pc += 1
           if sp < 3
-            return -1
+            return bail(op, pc)
           end
           hln: i64 = mem.read_i64(st, sp * 8) & M32
           hvl: i64 = mem.read_i64(st, (sp - 1) * 8)
@@ -2407,7 +2473,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           end
           sp -= 3
         else
-          return -1
+          return bail(op, pc)
         end
 
       elseif op == 253
@@ -2444,7 +2510,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           -- gives width and signedness; the lane replaces the vector on the
           -- stack, so `sp` is unchanged.
           if sp < 1
-            return -1
+            return bail(op, pc)
           end
           ew: i64 = mem.read_byte(extw, vsub)
           es: i64 = mem.read_byte(exts, vsub)
@@ -2473,7 +2539,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           -- descriptor above supplies the lane width and the kernel, so a new
           -- opcode is a ROW, not another branch -- 22 opcodes, one loop.
           if sp < 2
-            return -1
+            return bail(op, pc)
           end
           vwd: i64 = mem.read_byte(vwid, vsub)
           vkr: i64 = mem.read_byte(vker, vsub)
@@ -2555,7 +2621,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           mem.write_i64(st, (sp - 1) * 8, vri)
           sp -= 1
         else
-          return -1
+          return bail(op, pc)
         end
 
       elseif op >= 208 and op <= 210
@@ -2567,7 +2633,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           mem.write_i64(st, sp * 8, 0 - 1)
         elseif op == 209
           if sp < 1
-            return -1
+            return bail(op, pc)
           end
           rn: i64 = 0
           if mem.read_i64(st, sp * 8) == 0 - 1
@@ -2588,7 +2654,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
 
       elseif op == 0
         -- unreachable: a genuine trap, not an unimplemented opcode.
-        return -1
+        return bailtrap(pc)
 
       else
         -- Unimplemented opcode: its stack effect is unknown, so continuing
@@ -2597,7 +2663,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         -- Name the opcode on stderr. A bare -1 turned every gap into the same
         -- opaque result and made prioritising coverage work guesswork; this
         -- turns a corpus sweep directly into a ranked opcode worklist.
-        return -1
+        return bailop(op, pc)
       end
     end
   end
@@ -4741,9 +4807,13 @@ end
 main(): void
   path = os.getenv("WARD_WASM")
   invoke = os.getenv("WARD_INVOKE") or "run"
+  -- Every failure below goes to STDERR and exits nonzero. It used to `print`
+  -- to stdout and fall off the end of main, i.e. exit 0 -- so a harness that
+  -- ran ward on the wrong path got a clean exit status and no `result=` line,
+  -- and only noticed if it happened to be checking for one.
   if not path
-    print("ward: set WARD_WASM=<module.wasm> (WARD_INVOKE=<export>, default \"run\")")
-    return
+    iom.err("ward: set WARD_WASM=<module.wasm> (WARD_INVOKE=<export>, default \"run\")\n")
+    os.exit(1)
   end
   force_interp: i64 = 0
   if os.getenv("WARD_ENGINE") == "interp"
@@ -4752,8 +4822,8 @@ main(): void
 
   f = io.open(path, "rb")
   if not f
-    print("ward: cannot open " .. path)
-    return
+    iom.err("ward: cannot open " .. path .. "\n")
+    os.exit(1)
   end
   tRD0 = os.clock()
   bytes = f:read("*a")
@@ -4774,9 +4844,9 @@ main(): void
   -- handle it can desync. Validate before anything indexes the image, so a
   -- desync is a clean diagnostic rather than an out-of-bounds read.
   if blen <= 0 or boff < 0 or boff + blen > #bytes
-    print("ward: could not locate an exported `" .. invoke .. "` body in " .. path)
-    print("      (decoded offset=" .. to(str)(boff) .. " len=" .. to(str)(blen) .. " of " .. to(str)(#bytes) .. " bytes)")
-    return
+    iom.err("ward: could not locate an exported `" .. invoke .. "` body in " .. path .. "\n")
+    iom.err("      (decoded offset=" .. to(str)(boff) .. " len=" .. to(str)(blen) .. " of " .. to(str)(#bytes) .. " bytes)\n")
+    os.exit(1)
   end
 
   engine = "interp"

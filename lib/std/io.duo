@@ -2,6 +2,23 @@
 -- Binary I/O: io.read(n) reads exactly n bytes from stdin (LSP Content-Length framing)
 -- io.read("*l") reads a line, io.read("*a") reads all remaining input
 
+-- Write a diagnostic to STANDARD ERROR, unbuffered.
+--
+-- There was no stderr surface here at all, so a Duo program that wanted to
+-- report a failure had to `print` it -- onto the same stream as its RESULT. A
+-- caller then cannot tell a failure from a value without parsing prose, which
+-- is how a WASM runtime that REFUSED to execute a module went on looking like
+-- one that had executed it and got -1 (ext/ward, `run_body`).
+--
+-- Raw C rather than `io.stderr:write` so it survives native-scalar lowering: a
+-- module compiled with no boxed values has no `io` table to index, and the
+-- error path is exactly where a program must not depend on the slow path
+-- existing. `str` lowers to a C string, the same way `os.read_file` hands
+-- `path` straight to `fopen`.
+err(msg: str): void
+    @c.emit("(void)(fputs(msg, stderr), fflush(stderr))")
+end
+
 open(filename: str, mode: str): any
     io.open(filename, mode)
 end
