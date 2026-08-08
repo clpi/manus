@@ -195,7 +195,23 @@ pub const ResolvedTarget = struct {
 
 /// Unified entry: legacy name, structured triple, or wasm alias.
 pub fn resolveTargetInput(target: []const u8, emit: EmitKind) ?ResolvedTarget {
-    if (resolveLegacyTarget(target)) |r| return r;
+    if (resolveLegacyTarget(target)) |r| {
+        // A bare `native` is the only legacy name that says nothing about the
+        // output format, and resolveLegacyTarget hardcodes `.emit = .exe` for
+        // it — so `--emit asm` was overwritten before anything downstream could
+        // read it, and `duo compile --emit asm x.duo -o out.s` wrote a Mach-O
+        // EXECUTABLE while reporting `ok compile`. Every other legacy name
+        // (`native-asm`, `native-object`, …) names its own format and keeps it.
+        //
+        // Same family as gap[015] (--emit obj/dylib) and gap[019] (--emit
+        // wasm): the wrong format was silent.
+        if (r.legacy_name) |n| {
+            if (std.mem.eql(u8, n, "native") and emit != .exe) {
+                return .{ .triple = r.triple, .emit = emit, .legacy_name = null };
+            }
+        }
+        return r;
+    }
     return parseStructuredTarget(target, emit);
 }
 
