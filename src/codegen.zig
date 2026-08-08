@@ -18180,6 +18180,22 @@ pub const CodeGen = struct {
             if (want_cstr) self.p(")", .{});
             return true;
         } else if (std.mem.eql(u8, name, "tonumber")) {
+            // `tonumber(s, base)` is a DIFFERENT conversion from `tonumber(s)`:
+            // it reads `s` as an unsigned-radix integer literal. Every branch
+            // below is single-argument, and the fallback used to emit
+            // `tonumber(s)` and drop the base on the floor — so `tonumber("ff",
+            // 16)` decoded as decimal and produced 0. Route the two-argument
+            // form to its own runtime helper before any of them can claim it.
+            if (args.len >= 2) {
+                const coerced_base = self.emit_lua_result_coerce_prefix(result_rt);
+                self.p("tonumber_base(", .{});
+                try self.emit_as_lua_value(args[0]);
+                self.p(", ", .{});
+                try self.emit_as_lua_value(args[1]);
+                self.p(")", .{});
+                if (coerced_base) self.emit_lua_result_coerce_suffix(result_rt);
+                return true;
+            }
             if (!self.moduleNeedsLuaRuntime() and args.len == 1 and self.expr_type(args[0]) == .str) {
                 if (result_rt.is_integer()) self.p("((int64_t)(", .{});
                 self.p("strtod(", .{});
@@ -24571,6 +24587,44 @@ const duo_runtime =
     \\
     \\static inline lua_Value tonumber(lua_Value v) {
     \\    return lua_val_from_num(lua_to_num(v));
+    \\}
+    \\
+    \\static inline int duo_radix_space(int c) {
+    \\    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f';
+    \\}
+    \\
+    \\/* tonumber(s, base): read s as an integer literal in `base` (2..36).
+    \\ * The whole string must be consumed, digits are case-insensitive, and a
+    \\ * malformed string is `nil` — not 0, which would be indistinguishable
+    \\ * from a legitimate "0". */
+    \\static inline lua_Value tonumber_base(lua_Value v, lua_Value base_v) {
+    \\    if (base_v.type == VAL_NIL) return tonumber(v);
+    \\    int64_t base = (int64_t)lua_to_num(base_v);
+    \\    if (base < 2 || base > 36) return lua_val_nil();
+    \\    if (v.type != VAL_STRING) return lua_val_nil();
+    \\    const char* s = v.as.sval;
+    \\    while (duo_radix_space((unsigned char)*s)) s++;
+    \\    int neg = 0;
+    \\    if (*s == '-') { neg = 1; s++; }
+    \\    else if (*s == '+') s++;
+    \\    int64_t acc = 0;
+    \\    int digits = 0;
+    \\    while (*s) {
+    \\        int c = (unsigned char)*s;
+    \\        int d;
+    \\        if (c >= '0' && c <= '9') d = c - '0';
+    \\        else if (c >= 'a' && c <= 'z') d = c - 'a' + 10;
+    \\        else if (c >= 'A' && c <= 'Z') d = c - 'A' + 10;
+    \\        else break;
+    \\        if (d >= base) break;
+    \\        acc = acc * base + d;
+    \\        digits++;
+    \\        s++;
+    \\    }
+    \\    if (digits == 0) return lua_val_nil();
+    \\    while (duo_radix_space((unsigned char)*s)) s++;
+    \\    if (*s) return lua_val_nil();
+    \\    return lua_val_from_int(neg ? -acc : acc);
     \\}
     \\
     \\static inline lua_Value type(lua_Value v) {
