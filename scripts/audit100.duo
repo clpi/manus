@@ -37,14 +37,16 @@
 -- are about the SHAPE OF DUO CODE, and a `"const T*"` inside an @comp.c.emit
 -- payload is not Duo code — it is data the compiler hands to a C compiler.
 -- Counting it applies pressure toward something no edit can reach: measured
--- 2026-08-08, `foreignkw` read 324 with string bodies in and 164 with them
--- out, so HALF that row was unrepairable by definition.
+-- 2026-08-08 over 441 canonical files, `foreignkw` read 330 with string
+-- bodies in and 164 with them out, so HALF that row was unrepairable by
+-- definition.
 --
 -- The strip is per-row and not global because one row's noise is another
 -- row's subject: `concatlit` asks whether `..` sits beside a string literal,
 -- and a global strip deletes the literal it is looking for. So each row
--- carries a `keeps_strings` flag; today exactly one row sets it, and that row
--- is the control — its count must NOT move when this strip is introduced.
+-- carries a flag in `keeps`; today exactly one row sets it, and that row is
+-- the control — its count must NOT move when this strip is introduced, and
+-- it did not: 2155 before, 2155 after.
 --
 -- Exit 0 pass · 1 a row exceeded budget or a file is unclassified · 3 the gate
 -- could not run (no rules, no files, no canonical set — a confident 0 is
