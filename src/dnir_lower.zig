@@ -1983,6 +1983,23 @@ fn lowerToStr(ctx: *LowerCtx, c: anytype) Error!?dnir.Value {
     return .{ .temp = buf };
 }
 
+/// `a.b.c` -> "a.b.c" into `out`. False for anything not a pure name chain.
+fn flattenNames(alloc: std.mem.Allocator, e: *const ast.Expr, out: *std.ArrayList(u8)) !bool {
+    switch (e.*) {
+        .name => |n| {
+            try out.appendSlice(alloc, n.ident);
+            return true;
+        },
+        .field => |fl| {
+            if (!try flattenNames(alloc, fl.obj, out)) return false;
+            try out.append(alloc, '.');
+            try out.appendSlice(alloc, fl.field);
+            return true;
+        },
+        else => return false,
+    }
+}
+
 fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnConsumption) Error!dnir.Value {
     if (expr.* != .call) return bail(@src());
     const c = expr.call;
@@ -1990,6 +2007,27 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
     if (try lowerToStr(ctx, c)) |v| return v;
     if (c.func.* == .field) {
         const f = c.func.field;
+        // A DOTTED callee — `std.compiler.lexer.new` has `f.obj` as a `.field`,
+        // so the whole alias-based body below was skipped and the call fell to
+        // the generic bail. The module is now collected by
+        // native_req_support.collectDottedCallee, so resolve by PATH.
+        if (f.obj.* == .field) {
+            var pbuf: std.ArrayList(u8) = .empty;
+            defer pbuf.deinit(ctx.alloc);
+            if (flattenNames(ctx.alloc, f.obj, &pbuf) catch false) {
+                if (ctx.req.exportSymbolByPath(ctx.alloc, pbuf.items, f.field)) |sym| {
+                    try ensureExtern(ctx, pbuf.items, f.field, sym);
+                    const arg0 = try scalarCallLhs(ctx, c.args);
+                    if (discard) {
+                        try ctx.emit(.{ .op = .call_direct, .callee = sym, .lhs = arg0 });
+                        return .void;
+                    }
+                    const t = ctx.freshTemp();
+                    try ctx.emit(.{ .op = .call_direct, .result = t, .callee = sym, .lhs = arg0 });
+                    return .{ .temp = t };
+                }
+            }
+        }
         if (f.obj.* == .name) {
             // `os.exit(n)` is libc `exit` — a plain extern call, the same shape
             // `#s` already uses for strlen. It was refused only because `os` is

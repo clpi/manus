@@ -60,6 +60,20 @@ pub const Context = struct {
         return meta.constants.get(field);
     }
 
+    /// Resolve a callee named by a DOTTED PATH rather than a single alias.
+    /// `collectDottedCallee` loads the module; this finds its export.
+    pub fn exportSymbolByPath(
+        self: *const Context,
+        alloc: std.mem.Allocator,
+        path: []const u8,
+        field: []const u8,
+    ) ?[]const u8 {
+        const mc = duo_module_names.moduleCName(alloc, path) catch return null;
+        defer alloc.free(mc);
+        const meta = self.modules.get(mc) orelse return null;
+        return meta.exports.get(field);
+    }
+
     pub fn exportSymbol(self: *const Context, alias: []const u8, field: []const u8) ?[]const u8 {
         const mc = self.bindings.get(alias) orelse return null;
         const meta = self.modules.get(mc) orelse return null;
@@ -105,6 +119,7 @@ pub fn collectFromModule(alloc: std.mem.Allocator, mod: *const ast.Module) !Cont
     // Walk function bodies too. Aliases stay in one module-wide map, matching the
     // existing design; a re-bound alias resolves to its most recent binding.
     try collectReqBindingsFromBlock(alloc, &ctx, &mod.body);
+    try collectDottedCallsInBlock(alloc, &ctx, &mod.body);
     return ctx;
 }
 
@@ -143,6 +158,79 @@ fn collectReqBindingsFromBlock(
         if (ctx.modules.contains(mod_cname)) continue;
         const meta = try loadModuleMeta(alloc, path, mod_cname);
         try ctx.modules.put(alloc, try alloc.dupe(u8, mod_cname), meta);
+    }
+}
+
+/// Flatten `a.b.c` to "a.b.c". Null for anything that is not a pure chain of
+/// names, so an indexed or called segment cannot pass as a module path.
+fn dottedPath(alloc: std.mem.Allocator, e: *const ast.Expr, out: *std.ArrayList(u8)) !bool {
+    switch (e.*) {
+        .name => |n| {
+            try out.appendSlice(alloc, n.ident);
+            return true;
+        },
+        .field => |f| {
+            if (!try dottedPath(alloc, f.obj, out)) return false;
+            try out.append(alloc, '.');
+            try out.appendSlice(alloc, f.field);
+            return true;
+        },
+        else => return false,
+    }
+}
+
+/// Load the module named by a DOTTED CALLEE, e.g. `std.compiler.lexer.new(…)`.
+///
+/// Only `X = req "…"` bindings were ever collected, so an ambient dotted call
+/// resolved against an empty map. The split is ambiguous — `std.compiler.lexer`
+/// + `new`, or `std.compiler` + a nested `lexer.new` — and nothing in the AST
+/// says which, so the rule is LONGEST PREFIX THAT LOADS, stated here rather
+/// than discovered: a wrong split fails silently by simply not resolving.
+fn collectDottedCallee(alloc: std.mem.Allocator, ctx: *Context, callee: *const ast.Expr) !void {
+    if (callee.* != .field) return;
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(alloc);
+    if (!try dottedPath(alloc, callee.field.obj, &buf)) return;
+    if (std.mem.indexOfScalar(u8, buf.items, '.') == null) return; // single name: the alias path handles it
+    var path = buf.items;
+    while (true) {
+        const mod_cname = try duo_module_names.moduleCName(alloc, path);
+        if (ctx.modules.contains(mod_cname)) {
+            alloc.free(mod_cname);
+            return;
+        }
+        if (loadModuleMeta(alloc, path, mod_cname)) |meta| {
+            try ctx.modules.put(alloc, mod_cname, meta);
+            return;
+        } else |_| {
+            alloc.free(mod_cname);
+        }
+        const cut = std.mem.lastIndexOfScalar(u8, path, '.') orelse return;
+        path = path[0..cut];
+        if (std.mem.indexOfScalar(u8, path, '.') == null) return;
+    }
+}
+
+fn collectDottedCallsInBlock(alloc: std.mem.Allocator, ctx: *Context, block: *const ast.Block) !void {
+    for (block.stmts) |*stmt| {
+        switch (stmt.*) {
+            .func_decl => |fd| try collectDottedCallsInBlock(alloc, ctx, &fd.func.body),
+            .do_block => |db| try collectDottedCallsInBlock(alloc, ctx, &db.body),
+            .while_loop => |ws| try collectDottedCallsInBlock(alloc, ctx, &ws.body),
+            .local_decl => |ld| for (ld.inits) |e| {
+                if (e.* == .call) try collectDottedCallee(alloc, ctx, e.call.func);
+            },
+            .assign => |as| for (as.values) |e| {
+                if (e.* == .call) try collectDottedCallee(alloc, ctx, e.call.func);
+            },
+            .call_stmt => |cs| {
+                if (cs.expr.* == .call) try collectDottedCallee(alloc, ctx, cs.expr.call.func);
+            },
+            .ret => |r| for (r.vals) |e| {
+                if (e.* == .call) try collectDottedCallee(alloc, ctx, e.call.func);
+            },
+            else => {},
+        }
     }
 }
 
