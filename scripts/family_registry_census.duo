@@ -36,15 +36,14 @@ baseline(): i64
     10
 end
 
--- An open brace, built rather than written. Interpolation has no escape
--- (GAP-16), so a file whose data is Duo source containing `{name}` would have
--- its own corpus rewritten before it ever reached the compiler. Descriptor
--- probes are made of braces, so this is not a corner case here.
-lb(): str
-    "{"
-end
+-- On braces in probe DATA. Interpolation has no escape (GAP-16), so a file
+-- whose data is Duo source could have its own corpus rewritten before it ever
+-- reached the compiler. Measured: only a BARE `{name}` is a hole, so the brace
+-- forms these probes actually need -- `{ x: i64 }`, `@{ fd = ... }`,
+-- `@{ ..self, x = 9 }`, `{}` -- all survive written literally. No brace-builder
+-- is needed here; spec_conformance.duo needs one only because its rows test
+-- interpolation itself.
 
-fails = 0
 implemented = 0
 checked = 0
 report = ""
@@ -74,12 +73,9 @@ end
 probe(id: str, src: str, want: str): bool
     path = "/tmp/duo_famreg.duo"
     std.script.fs_write(path, src)
-    got = std.script.capture(bin() .. " run " .. path .. " 2>/dev/null")
-    trimmed = std.script.chomp(got)
-    if trimmed == want
-        return true
-    end
-    return false
+    b = bin()                                           -- GAP-029 (TMP-1 forced)
+    got = std.script.capture("{b} run {path} 2>/dev/null")
+    std.script.chomp(got) == want
 end
 
 -- The control: the smallest program the language cannot fail. If THIS does not
@@ -94,16 +90,17 @@ record(id: str, src: str, want: str): void
     checked = checked + 1
     if probe(id, src, want)
         implemented = implemented + 1
-        report = report .. "  ok      " .. id .. "\n"
+        report = "{report}  ok      {id}\n"
     else
-        report = report .. "  MISSING " .. id .. "\n"
+        report = "{report}  MISSING {id}\n"
     end
 end
 
 main(): i64
     if harness_live() == false
         print("family_registry: HARNESS BROKEN — the control `print(1 + 2)` did not")
-        print("  print 3, so no row below measures the language. Check that " .. bin())
+        b = bin()                                       -- GAP-029 (TMP-1 forced)
+        print("  print 3, so no row below measures the language. Check that {b}")
         print("  exists from this cwd, or set DUO_BIN to an absolute path.")
         return 2
     end
@@ -127,7 +124,7 @@ main(): i64
     -- defines `point`. Deleting `init` in favour of the call edge is sound;
     -- the edge just has no default today.
     record("CALL-1 descriptor shape fill", "point: { x: i64, y: i64 }\nmain(): void\n    p = point{ x = 3, y = 4 }\n    print(p.x)\nend\n", "3")
-    record("CALL-2 descriptor call edge", "h: {\n    fd: i64\n    call = (spec) @" .. lb() .. " fd = spec.n + 6 }\n}\nmain(): void\n    print(h{ n = 1 }.fd)\nend\n", "7")
+    record("CALL-2 descriptor call edge", "h: {\n    fd: i64\n    call = (spec) @{ fd = spec.n + 6 }\n}\nmain(): void\n    print(h{ n = 1 }.fd)\nend\n", "7")
     record("CALL-3 callable record", "t = { call = (self, a) a + 8 }\nmain(): void\n    print(t(1))\nend\n", "9")
     record("CALL-4 function brace call", "srv(o: any): i64\n    o.port\nend\nmain(): void\n    print(srv{ port = 8080 })\nend\n", "8080")
 
@@ -200,23 +197,23 @@ main(): i64
     -- `if false` does not, so the control rows are sound and the reading is
     -- unambiguous: zero is falsy today. Either the compiler contradicts the
     -- one rule §3 calls structural, or B-2 means something narrower than it
-    -- says. Filed as GAP-023 rather than guessed at here -- this is a ruling,
+    -- says. Filed as GAP-027 rather than guessed at here -- this is a ruling,
     -- and rulings are the author's.
     record("NF-1 zero is truthy (B-2)", "main(): void\n    if 0\n        print(\"yes\")\n    end\nend\n", "yes")
     record("NF-2 false is falsy", "main(): void\n    if false\n        print(\"no\")\n    end\n    print(\"ok\")\nend\n", "ok")
     record("NF-3 empty string truthy", "main(): void\n    if \"\"\n        print(\"yes\")\n    end\nend\n", "yes")
 
     io.write(report)
-    print("family_registry: " .. to(str)(implemented) .. "/" .. to(str)(checked)
-        .. " implemented (floor " .. to(str)(baseline()) .. ")")
+    floor = baseline()                                  -- GAP-029 (TMP-1 forced)
+    print("family_registry: {implemented}/{checked} implemented (floor {floor})")
 
-    if implemented < baseline()
+    if implemented < floor
         print("family_registry: FAIL — a family surface that used to work has regressed")
         return 1
     end
-    if implemented > baseline()
-        print("family_registry: families gained since the floor was set — RAISE baseline() to "
-            .. to(str)(implemented) .. " and narrow the interim advice in docs/plans/pass81_family_registry.md")
+    if implemented > floor
+        print("family_registry: families gained — RAISE baseline() to {implemented}")
+        print("  and narrow the interim advice in docs/plans/pass81_family_registry.md")
     end
     print("family_registry: PASS")
     0
