@@ -80,6 +80,23 @@ pub fn build(b: *std.Build) void {
     const native_census_step = b.step("native-census", "native coverage over the reachable set; ratchets NATIVE_FLOOR");
     native_census_step.dependOn(&native_census_cmd.step);
 
+    // The ABI shape matrix. The native differential judges the programs someone
+    // wrote; this one judges GENERATED call shapes, because a corpus grows by
+    // accident and an argument classifier is exactly the code that is right for
+    // the shapes you tested and wrong for the rest. It was added after the
+    // differential sat green at 81/2 over a backend that passed f64 arguments
+    // in GP registers (gap[056]) — no corpus program had the shape, so the gate
+    // was reporting corpus coverage and reading as correctness.
+    //
+    // MISCOMPILE_CEILING ratchets DOWNWARD, the mirror of NATIVE_FLOOR: a new
+    // wrong answer fails, and fixing one should lower the ceiling in the same
+    // commit or the gate goes slack.
+    const abi_matrix_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/abi_matrix.duo" });
+    abi_matrix_cmd.setCwd(b.path("."));
+    abi_matrix_cmd.step.dependOn(b.getInstallStep());
+    const abi_matrix_step = b.step("abi-matrix", "differential generated ABI call shapes; ratchets MISCOMPILE_CEILING down");
+    abi_matrix_step.dependOn(&abi_matrix_cmd.step);
+
     // Pass 100 §22's capability matrix. §22 answered "what works?" with a
     // Boolean and, for running, with "nothing" -- conservative rather than
     // honest, because a compiler does not implement a program, it carries it
