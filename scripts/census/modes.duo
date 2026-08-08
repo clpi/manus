@@ -19,8 +19,10 @@
 -- Pinned floor: the MEASURED count, never an estimate. Verified 2026-08-07 at
 -- 5/18, of which TWO are the `to(str)` controls -- the conversion edge Pass 86
 -- rules one half of. `from` is the missing half.
+-- Raised 5 -> 6 on 2026-08-07: P86-15, the `: t | nil` result pack. `nil` was
+-- not a type atom, so the canonical optional failed before the union arm ran.
 baseline(): i64
-    5
+    6
 end
 
 implemented = 0

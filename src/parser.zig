@@ -296,6 +296,17 @@ pub const Parser = struct {
                 _ = try self.adv();
                 return .{ .named = "void" };
             },
+            // `t | nil` is THE optional form (B-12: `| nil` only where nil is a
+            // success value; `T?` is in the graveyard). The union arm of
+            // parse_type already parsed and discarded right-hand alternatives —
+            // the structural nil is unwritten, so `i64 | nil` collapses to i64 —
+            // but `nil` itself was not a type atom, so the canonical optional
+            // failed with "expected type, got 'nil'" before the union arm ever
+            // ran. FF-17 has been measuring this.
+            .kw_nil => {
+                _ = try self.adv();
+                return .{ .named = "nil" };
+            },
             .kw_str => {
                 _ = try self.adv();
                 return .{ .named = "str" };
