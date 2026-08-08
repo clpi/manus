@@ -666,7 +666,11 @@ mcp.register_tool("duo_exponential_evaluate", "Analyze Duo source code for metap
     },
     required = { "code" },
 }, fun(args)
-    result = shared.exponential_evaluate(args.code, args.file_path, args.detail or 0)
+    -- `exponential_evaluate` takes (code, file_path) only — duo_shared.duo:583.
+    -- Lua silently drops the extra `detail` arg, but Duo lowers this to a direct
+    -- C call, where a third argument is a hard compile error. Dropping it here
+    -- preserves the behaviour the extra arg already had: none.
+    result = shared.exponential_evaluate(args.code, args.file_path)
     json_mod.encode(result)
 end)
 
