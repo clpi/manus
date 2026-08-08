@@ -406,7 +406,20 @@ _int_of(text: str): i64
         end
         return v
     end
-    v: i64 = 0
+    -- gap[024]: ACCUMULATE UNSIGNED. This was `v: i64`, and `v * 10` on a
+    -- literal above i64 max is signed overflow -- undefined behaviour that the
+    -- generated C traps on, so the COMPILER ABORTED (SIGABRT) rather than
+    -- lexing the file:
+    --
+    --     panic: signed integer overflow: 1363643836025834967 * 10 cannot be
+    --     represented in type 'int64_t'
+    --
+    -- reached from `print(tostring(13636438360258349679))` -- the u64 form of
+    -- the text fingerprint, an ordinary literal a program is entitled to write.
+    -- Unsigned multiplication wraps rather than trapping, so the accumulator
+    -- carries the full 64-bit range and the value lands in int_val with the
+    -- same bits the host lexer's parseInt(u64) produces.
+    v: u64 = 0
     i: i64 = 1
     while i <= n
         c: i64 = text:byte(i)
