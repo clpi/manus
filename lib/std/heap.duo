@@ -193,7 +193,7 @@ bloom_hash(data: any, seed: i64): i64
     h = 0xcbf29ce484222325 + seed
     i = 1
     n = #data
-    if type(data) == "string" n = string.len(data) end
+    if type(data) == "string" n = #data end
     while i <= n
         if type(data) == "string"
             byte = string.byte(data, i)

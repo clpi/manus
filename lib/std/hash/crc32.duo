@@ -18,7 +18,7 @@ new(): any
 end
 
 update(state: any, data: str): void
-    for i = 1, string.len(data)
+    for i = 1, #data
         idx = ((state.crc % (2^32)) ~ string.byte(data, i)) % 256
         state.crc = ((state.crc >> 8) ~ table[idx + 1]) % (2^32)
     end

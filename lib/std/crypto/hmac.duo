@@ -9,11 +9,11 @@ h = require "std.hash"
 hmac(hash_fn: any, key: str, message: str, block_size: i64): str
     if block_size == nil block_size = 64 end
     -- if key is longer than block_size, hash it
-    if string.len(key) > block_size
+    if #key > block_size
         key = hash_fn(key)
     end
     -- pad key to block_size
-    while string.len(key) < block_size
+    while #key < block_size
         key = key .. string.char(0)
     end
     -- create inner and outer pads
@@ -69,10 +69,10 @@ end
 
 -- equal: constant-time comparison of two hex strings (length-checked).
 equal(a: str, b: str): bool
-    if string.len(a) != string.len(b) return false end
+    if #a != #b return false end
     result = 0
     i = 1
-    while i <= string.len(a)
+    while i <= #a
         result = result | (string.byte(a, i) ~ string.byte(b, i))
         i += 1
     end

@@ -61,7 +61,7 @@ end
 pad(s: str, width: i64, pad_char: str): str
     if s == nil s = "" end
     if pad_char == nil pad_char = " " end
-    len = string.len(s)
+    len = #s
     w = width
     if w == nil or w <= len return s end
     pad_str = string.rep(pad_char, w - len)
@@ -71,7 +71,7 @@ end
 trunc(s: str, width: i64): str
     if s == nil return "" end
     if width == nil return s end
-    len = string.len(s)
+    len = #s
     if len <= width return s end
     string.sub(s, 1, width)
 end

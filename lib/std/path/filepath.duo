@@ -20,7 +20,7 @@ clean(path: str): str
     -- Handle . and ..
     parts = {}
     i = 1
-    len = string.len(result)
+    len = #result
     while i <= len do
         nxt = string.find(result, "/", i, true)
         if nxt == nil
@@ -53,7 +53,7 @@ end
 
 -- Base returns the last element of path.
 base(path: str): str
-    dot = string.len(path)
+    dot = #path
     while dot > 1 and string.sub(path, dot, dot) == "/" do
         dot -= 1
     end
@@ -66,7 +66,7 @@ end
 
 -- Dir returns the directory part of path.
 dir(path: str): str
-    dot = string.len(path)
+    dot = #path
     while dot > 1 and string.sub(path, dot, dot) == "/" do
         dot -= 1
     end
@@ -80,7 +80,7 @@ end
 -- IsAbs reports whether path is absolute.
 is_abs(path: str): bool
     if string.sub(path, 1, 1) == "/" return true end
-    if string.len(path) >= 2 and string.sub(path, 2, 2) == ":" return true end
+    if #path >= 2 and string.sub(path, 2, 2) == ":" return true end
     false
 end
 

@@ -16,7 +16,7 @@ load(path: str): any
     end
     raw = io.read(f, "*a")
     io.close(f)
-    if raw == nil or string.len(raw) == 0
+    if raw == nil or #raw == 0
         return {ok = false, error = "Empty file: " .. path}
     end
     png_result = png_mod.decode(raw)

@@ -89,7 +89,7 @@ end
 quote(s: str): str
     out = ""
     i = 1
-    n = string.len(s)
+    n = #s
     while i <= n
         ch = string.sub(s, i, i)
         -- Escape: . + * ? ( ) [ ] { } ^ $ | \ -
@@ -117,7 +117,7 @@ compile(pattern: str, options: int): any
     -- We pass table cells that the FFI layer treats as pointer-to-int.
     errcode_buf = {0}
     erroffset_buf = {0}
-    plen = string.len(pattern)
+    plen = #pattern
     code = pcre2_compile_8(pattern, plen, options, errcode_buf, erroffset_buf, nil)
     if code == nil
         return nil
@@ -132,7 +132,7 @@ regex_match(code: any, subject: str, startoffset: int): any
     if code == nil return nil end
     md = pcre2_match_data_create_from_pattern_8(code, nil)
     if md == nil return nil end
-    slen = string.len(subject)
+    slen = #subject
     rc = pcre2_match_8(code, subject, slen, startoffset, 0, md, nil)
     if rc < 0
         pcre2_match_data_free_8(md)
@@ -192,7 +192,7 @@ end
 find_all(code: any, subject: str): any
     if code == nil return {} end
     results = {}
-    slen = string.len(subject)
+    slen = #subject
     startoffset = 0
     while startoffset <= slen
         md = pcre2_match_data_create_from_pattern_8(code, nil)
@@ -225,7 +225,7 @@ end
 -- (which does single replacement and needs a pre-allocated buffer).
 replace(code: any, subject: str, replacement: str): str
     if code == nil return subject end
-    slen = string.len(subject)
+    slen = #subject
     results = find_all(code, subject)
     if rawlen(results) == 0 return subject end
     out = ""

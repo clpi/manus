@@ -5,7 +5,7 @@
 ByteCursor: @{ data: str, pos: i64, len: i64 }
 
 new(data: str): ByteCursor
-    ByteCursor { data = data, pos = 1, len = string.len(data) }
+    ByteCursor { data = data, pos = 1, len = #data }
 end
 
 remaining(c: ByteCursor): i64

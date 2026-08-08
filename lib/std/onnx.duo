@@ -317,7 +317,7 @@ embedding(session: any, text: str): any
 
     -- Simple character-level tokenization: convert each byte to a float.
     -- Real tokenizers (WordPiece, BPE, etc.) should be implemented separately.
-    n = string.len(text)
+    n = #text
     if n == 0
         return {}
     end

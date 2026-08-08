@@ -20,7 +20,7 @@ basename(p: str): str
     if p == ""
         ""
     end
-    i = string.len(p)
+    i = #p
     while i > 1 and string.sub(p, i, i) == "/"
         i -= 1
     end
@@ -35,7 +35,7 @@ dirname(p: str): str
     if p == ""
         "."
     end
-    i = string.len(p)
+    i = #p
     while i > 1 and string.sub(p, i, i) == "/"
         i -= 1
     end
@@ -53,10 +53,10 @@ end
 
 extname(p: str): str
     base = basename(p)
-    i = string.len(base)
+    i = #base
     while i > 1
         if string.sub(base, i, i) == "."
-            string.sub(base, i, string.len(base))
+            string.sub(base, i, #base)
         end
         i -= 1
     end

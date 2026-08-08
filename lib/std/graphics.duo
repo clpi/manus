@@ -16,13 +16,13 @@ end
 color_hex(hex_str: str): any
     s = hex_str
     if string.sub(s, 1, 1) == "#" s = string.sub(s, 2) end
-    if string.len(s) == 6
+    if #s == 6
         r = tonumber(string.sub(s, 1, 2), 16) / 255
         g = tonumber(string.sub(s, 3, 4), 16) / 255
         b = tonumber(string.sub(s, 5, 6), 16) / 255
         return {r = r, g = g, b = b, a = 1.0}
     end
-    if string.len(s) == 8
+    if #s == 8
         r = tonumber(string.sub(s, 1, 2), 16) / 255
         g = tonumber(string.sub(s, 3, 4), 16) / 255
         b = tonumber(string.sub(s, 5, 6), 16) / 255

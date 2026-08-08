@@ -122,10 +122,10 @@ H_init = {
 sha512(s: str): str
     if s == nil s = "" end
     msg = s .. string.char(0x80)
-    while string.len(msg) % 128 != 112
+    while #msg % 128 != 112
         msg = msg .. string.char(0)
     end
-    bit_len = string.len(s) * 8
+    bit_len = #s * 8
     for i = 1, 16
         msg = msg .. string.char((bit_len >> (16 - i) * 8) % 256)
     end
@@ -133,7 +133,7 @@ sha512(s: str): str
     for i = 1, 8
         H[i] = {hi = H_init[i].hi, lo = H_init[i].lo}
     end
-    for block = 0, string.len(msg) / 128 - 1
+    for block = 0, #msg / 128 - 1
         w = {}
         for j = 0, 15
             off: i64 = block * 128 + j * 8 + 1

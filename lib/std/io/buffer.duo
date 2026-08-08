@@ -34,12 +34,12 @@ buffered_reader_fill(br: any): any
             return {ok = true, bytes = 0}
         end
         i = 1
-        while i <= string.len(chunk)
+        while i <= #chunk
             br.buffer[i] = string.byte(chunk, i)
             i += 1
         end
-        br.buffer_len = string.len(chunk)
-        return {ok = true, bytes = string.len(chunk)}
+        br.buffer_len = #chunk
+        return {ok = true, bytes = #chunk}
     end
 
     -- Read from raw byte table (source.pos tracks read cursor)
@@ -111,7 +111,7 @@ reader_read_line(br: any): any
     while true
         result = reader_read_byte(br)
         if not result.ok
-            if string.len(line) > 0
+            if #line > 0
                 return {ok = true, line = line, eof = true}
             end
             return {ok = false, reason = result.reason}
@@ -222,12 +222,12 @@ end
 
 writer_write_string(bw: any, s: str): any
     i = 1
-    while i <= string.len(s)
+    while i <= #s
         result = writer_write_byte(bw, string.byte(s, i))
         if not result.ok return result end
         i += 1
     end
-    {ok = true, bytes = string.len(s)}
+    {ok = true, bytes = #s}
 end
 
 writer_bytes_written(bw: any): i64

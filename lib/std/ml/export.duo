@@ -93,7 +93,7 @@ onnx_model_save(model: any, path: str): any
     end
     std.io.write(f, data)
     std.io.close(f)
-    {ok = true, path = path, size = string.len(data)}
+    {ok = true, path = path, size = #data}
 end
 
 -- ═══════════════════════════════════════════════════════════════
@@ -128,7 +128,7 @@ pytorch_state_dict_save(state_dict: any, path: str): any
     end
     std.io.write(f, encoded)
     std.io.close(f)
-    {ok = true, path = path, size = string.len(encoded)}
+    {ok = true, path = path, size = #encoded}
 end
 
 -- ═══════════════════════════════════════════════════════════════
@@ -166,7 +166,7 @@ safetensors_encode(st: any): any
     {
         format = "safetensors",
         header = header_json,
-        header_size = string.len(header_json),
+        header_size = #header_json,
         data_size = offset,
     }
 end
@@ -227,7 +227,7 @@ gguf_writer_encode(gw: any): any
         format = "gguf",
         version = 3,
         data = encoded,
-        size = string.len(encoded),
+        size = #encoded,
     }
 end
 

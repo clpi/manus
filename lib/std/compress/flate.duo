@@ -4,7 +4,7 @@ compress(data: any)
     if data == nil or data == "" return "" end
     out = {}
     i = 1
-    n = string.len(data)
+    n = #data
     while i <= n
         ch = string.sub(data, i, i)
         run = 1
@@ -28,7 +28,7 @@ decompress(data: any)
     if data == nil or data == "" return "" end
     out = {}
     i = 1
-    n = string.len(data)
+    n = #data
     while i <= n
         b = string.byte(data, i)
         if b == 0xFE
@@ -59,7 +59,7 @@ writer_write(w: any, data: any)
 end
 
 writer_flush(w: any)
-    if string.len(w.buf) > 0
+    if #w.buf > 0
         w.fh:write(compress(w.buf))
         w.buf = ""
     end

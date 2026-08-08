@@ -1,7 +1,7 @@
 -- std.compress.gzip — Gzip decompression (mirrors Go's compress/gzip)
 
 is_gzipped(data: any)
-    if data == nil or string.len(data) < 2 return false end
+    if data == nil or #data < 2 return false end
     return string.byte(data, 1) == 31 and string.byte(data, 2) == 139
 end
 

@@ -59,7 +59,7 @@ base64_sha1(data: str): str
     -- Convert hex string to bytes
     sha1_bytes = {}
     i = 1
-    while i <= string.len(sha1_hex)
+    while i <= #sha1_hex
         hex_pair = string.sub(sha1_hex, i, i + 1)
         sha1_bytes[#sha1_bytes + 1] = tonumber(hex_pair, 16)
         i += 2
@@ -70,7 +70,7 @@ end
 base64_encode_string(s: str): str
     bytes = {}
     i = 1
-    while i <= string.len(s)
+    while i <= #s
         bytes[#bytes + 1] = string.byte(s, i)
         i += 1
     end
@@ -246,7 +246,7 @@ end
 ws_text_frame(text: str): any
     bytes = {}
     i = 1
-    while i <= string.len(text)
+    while i <= #text
         bytes[#bytes + 1] = string.byte(text, i)
         i += 1
     end
@@ -263,7 +263,7 @@ ws_close_frame(code: i64, reason: str): any
     payload[2] = code & 0xFF
     if reason
         i = 1
-        while i <= string.len(reason)
+        while i <= #reason
             payload[#payload + 1] = string.byte(reason, i)
             i += 1
         end

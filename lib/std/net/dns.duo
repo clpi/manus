@@ -65,7 +65,7 @@ end
 name_encode(name: str): any
   bytes = {}
   pos = 1
-  len = string.len(name)
+  len = #name
   while pos <= len
     dot_pos = string.find(name, ".", pos, true)
     if dot_pos == nil

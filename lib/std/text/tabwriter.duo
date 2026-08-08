@@ -16,7 +16,7 @@ write(w: any, s: str): any
     -- split on tabs
     i = 1
     start = 1
-    while i <= string.len(s)
+    while i <= #s
         if string.byte(s, i) == 9  -- tab
             w.cur_row[rawlen(w.cur_row) + 1] = string.sub(s, start, i - 1)
             start = i + 1
@@ -66,7 +66,7 @@ flush(w: any): str
             width = w.col_widths[c] + w.padding
             if width < w.minwidth width = w.minwidth end
             -- pad the cell
-            pad_len = width - string.len(cell)
+            pad_len = width - #cell
             if pad_len < 0 pad_len = 0 end
             line = line .. cell .. string.rep(w.padchar, pad_len)
             c += 1

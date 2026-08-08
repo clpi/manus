@@ -246,7 +246,7 @@ end
 size(value: any): i64
     if value == nil return 0 end
     t = type(value)
-    if t == "string" return string.len(value) end
+    if t == "string" return #value end
     if t == "table"
         n = rawlen(value)
         if n > 0 return n end

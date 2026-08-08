@@ -31,7 +31,7 @@ cursor_new(bytes: str, file: str): ByteCursor
 end
 
 cursor_eof(c: ByteCursor): bool
-    c.pos > string.len(c.bytes)
+    c.pos > #c.bytes
 end
 
 cursor_peek(c: ByteCursor): i64
@@ -42,14 +42,14 @@ cursor_peek(c: ByteCursor): i64
 end
 
 cursor_peek2(c: ByteCursor): i64
-    if c.pos + 1 > string.len(c.bytes)
+    if c.pos + 1 > #c.bytes
         return 0
     end
     string.byte(c.bytes, c.pos + 1)
 end
 
 cursor_remaining(c: ByteCursor): i64
-    n = string.len(c.bytes) - c.pos + 1
+    n = #c.bytes - c.pos + 1
     if n < 0
         return 0
     end

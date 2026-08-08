@@ -30,7 +30,7 @@ NGRAM_W = 1.0
 -- engine bugs in F-13813-5; pure arithmetic, lowers to native i64).
 hash32(s: str): i64
     h = 5381
-    n = string.len(s)
+    n = #s
     i = 1
     while i <= n
         h = (h * 33 + string.byte(s, i)) % 4294967296
@@ -44,7 +44,7 @@ end
 tokens(text: str): any
     out = {}
     if text == nil return out end
-    n = string.len(text)
+    n = #text
     i = 1
     cur = ""
     while i <= n
@@ -55,14 +55,14 @@ tokens(text: str): any
         if is_digit or is_upper or is_lower
             cur = cur .. string.char(c)
         else
-            if string.len(cur) >= 2
+            if #cur >= 2
                 out[#out + 1] = string.lower(cur)
             end
             cur = ""
         end
         i = i + 1
     end
-    if string.len(cur) >= 2
+    if #cur >= 2
         out[#out + 1] = string.lower(cur)
     end
     out
@@ -73,7 +73,7 @@ trigrams(token: str): any
     out = {}
     if token == nil return out end
     s = "^" .. token .. "$"
-    n = string.len(s)
+    n = #s
     if n < 3 return out end
     i = 1
     while i <= n - 2

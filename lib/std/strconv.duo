@@ -82,7 +82,7 @@ parse_int(s: str, base: any): any
         if string.sub(s, 1, 2) == "0x" or string.sub(s, 1, 2) == "0X"
             base = 16
             s = string.sub(s, 3)
-        elseif string.sub(s, 1, 1) == "0" and string.len(s) > 1
+        elseif string.sub(s, 1, 1) == "0" and #s > 1
             base = 8
             s = string.sub(s, 2)
         end
@@ -91,7 +91,7 @@ parse_int(s: str, base: any): any
     digits = "0123456789abcdefghijklmnopqrstuvwxyz"
     val = 0
     i = 1
-    while i <= string.len(s)
+    while i <= #s
         ch = string.lower(string.sub(s, i, i))
         pos = string.find(digits, ch, 1, true)
         if pos == nil return 0, false end
@@ -151,7 +151,7 @@ quote(s: str): str
     if s == nil return "\"\"" end
     out = {"\""}
     i = 1
-    while i <= string.len(s)
+    while i <= #s
         ch = string.sub(s, i, i)
         b = string.byte(s, i)
         if ch == "\\"
@@ -178,7 +178,7 @@ end
 -- unquote: remove surrounding quotes and interpret escape sequences.
 unquote(s: str): str
     if s == nil return "" end
-    n = string.len(s)
+    n = #s
     if n < 2 return s end
     first = string.sub(s, 1, 1)
     last = string.sub(s, n, n)
@@ -188,9 +188,9 @@ unquote(s: str): str
     end
     out = {}
     i = 1
-    while i <= string.len(inner)
+    while i <= #inner
         ch = string.sub(inner, i, i)
-        if ch == "\\" and i < string.len(inner)
+        if ch == "\\" and i < #inner
             nxt = string.sub(inner, i + 1, i + 1)
             if nxt == "n"
                 out[rawlen(out) + 1] = "\n"

@@ -2,7 +2,7 @@
 
 md5(s: str): str
     sum = 0
-    for i = 1, string.len(s)
+    for i = 1, #s
         sum = (sum + string.byte(s, i)) % (2^32)
     end
     string.format("%08x%08x%08x%08x", sum, sum * 2, sum * 3, sum * 4)
@@ -10,7 +10,7 @@ end
 
 crc32(s: str): str
     crc = 0xFFFFFFFF
-    for i = 1, string.len(s)
+    for i = 1, #s
         crc = crc ~ string.byte(s, i)
         for _ = 1, 8
             if crc % 2 == 1
@@ -26,7 +26,7 @@ end
 
 fnv1a(s: str): str
     hash = 0x811C9DC5
-    for i = 1, string.len(s)
+    for i = 1, #s
         hash = hash ~ string.byte(s, i)
         hash = (hash * 0x01000193) % (2^32)
     end
@@ -35,7 +35,7 @@ end
 
 simple(s: str): i64
     h = 0
-    for i = 1, string.len(s)
+    for i = 1, #s
         h = ((h << 5) - h + string.byte(s, i)) % (2^32)
     end
     @as(i64, math.abs(h))

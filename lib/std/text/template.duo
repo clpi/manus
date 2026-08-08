@@ -15,7 +15,7 @@ end
 render(tmpl: str, data: any): str
     out = {}
     i = 1
-    n = string.len(tmpl)
+    n = #tmpl
     while i <= n
         -- look for {{ 
         if i + 1 <= n and string.sub(tmpl, i, i + 1) == "{{"
@@ -97,7 +97,7 @@ end
 render_blocks(tmpl: str, data: any, start: i64): str
     out = {}
     i = start
-    n = string.len(tmpl)
+    n = #tmpl
     while i <= n
         if i + 1 <= n and string.sub(tmpl, i, i + 1) == "{{"
             close = string.find(tmpl, "}}", i + 2, true)

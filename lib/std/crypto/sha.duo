@@ -11,11 +11,11 @@ sha1(s: str): str
     if s == nil s = "" end
     -- padding: append 0x80, then zeros, then 64-bit length
     msg = s .. string.char(0x80)
-    while string.len(msg) % 64 != 56
+    while #msg % 64 != 56
         msg = msg .. string.char(0)
     end
     -- append length in bits as big-endian 64-bit
-    bit_len = string.len(s) * 8
+    bit_len = #s * 8
     -- high 32 bits (usually 0 for small inputs)
     msg = msg .. string.char(0, 0, 0, 0)
     -- low 32 bits
@@ -33,7 +33,7 @@ sha1(s: str): str
     h4 = 0xC3D2E1F0
     -- process each 64-byte block
     block = 0
-    nblocks = string.len(msg) / 64
+    nblocks = #msg / 64
     while block < nblocks
         w = {}
         j = 0
@@ -103,10 +103,10 @@ sha256(s: str): str
     }
     -- padding
     msg = s .. string.char(0x80)
-    while string.len(msg) % 64 != 56
+    while #msg % 64 != 56
         msg = msg .. string.char(0)
     end
-    bit_len = string.len(s) * 8
+    bit_len = #s * 8
     msg = msg .. string.char(0, 0, 0, 0)
     msg = msg .. string.char(
         (bit_len / 16777216) % 256,
@@ -118,7 +118,7 @@ sha256(s: str): str
     H0 = 0x6a09e667; H1 = 0xbb67ae85; H2 = 0x3c6ef372; H3 = 0xa54ff53a
     H4 = 0x510e527f; H5 = 0x9b05688c; H6 = 0x1f83d9ab; H7 = 0x5be0cd19
     block = 0
-    nblocks = string.len(msg) / 64
+    nblocks = #msg / 64
     while block < nblocks
         w = {}
         j = 0

@@ -84,7 +84,7 @@ bpe_learn(bpe: any, corpus: any, num_merges: i64): void
         -- Create new token
         parts = {}
         idx = 1
-        while idx <= string.len(best_pair)
+        while idx <= #best_pair
             if string.sub(best_pair, idx, idx) == ","
                 break
             end
@@ -124,7 +124,7 @@ bpe_encode(bpe: any, text: str): any
     -- Start with character tokens
     tokens = {}
     i = 1
-    while i <= string.len(text)
+    while i <= #text
         ch = string.sub(text, i, i)
         if bpe.vocab[ch] != nil
             tokens[#tokens + 1] = bpe.vocab[ch]
@@ -141,7 +141,7 @@ bpe_encode(bpe: any, text: str): any
     for merge in bpe.merges
         parts = {}
         idx = 1
-        while idx <= string.len(merge)
+        while idx <= #merge
             if string.sub(merge, idx, idx) == "," break end
             parts[#parts + 1] = string.sub(merge, idx, idx)
             idx += 1
@@ -197,10 +197,10 @@ wordpiece_encode(vocab: any, text: str, max_word_len: i64): any
     words = {}
     word = ""
     i = 1
-    while i <= string.len(text)
+    while i <= #text
         ch = string.sub(text, i, i)
         if ch == " " or ch == "\t" or ch == "\n"
-            if string.len(word) > 0
+            if #word > 0
                 words[#words + 1] = word
                 word = ""
             end
@@ -209,7 +209,7 @@ wordpiece_encode(vocab: any, text: str, max_word_len: i64): any
         end
         i += 1
     end
-    if string.len(word) > 0
+    if #word > 0
         words[#words + 1] = word
     end
 
@@ -219,12 +219,12 @@ wordpiece_encode(vocab: any, text: str, max_word_len: i64): any
         word_tokens = {}
         chars = w
         -- Try to find longest match from end
-        while string.len(chars) > 0
+        while #chars > 0
             found = false
-            end_pos = string.len(chars)
+            end_pos = #chars
             while end_pos > 0
                 sub = string.sub(chars, 1, end_pos)
-                if end_pos == string.len(chars)
+                if end_pos == #chars
                     -- Whole word or prefix
                     if vocab[sub] != nil
                         word_tokens[#word_tokens + 1] = sub
@@ -266,7 +266,7 @@ simple_tokenize(text: str): any
     tokens = {}
     current = ""
     i = 1
-    while i <= string.len(text)
+    while i <= #text
         ch = string.sub(text, i, i)
         -- Check if punctuation
         is_punct = ch == "." or ch == "," or ch == "!" or ch == "?"
@@ -275,12 +275,12 @@ simple_tokenize(text: str): any
             or ch == '"' or ch == "'"
 
         if ch == " " or ch == "\t" or ch == "\n"
-            if string.len(current) > 0
+            if #current > 0
                 tokens[#tokens + 1] = current
                 current = ""
             end
         elseif is_punct
-            if string.len(current) > 0
+            if #current > 0
                 tokens[#tokens + 1] = current
                 current = ""
             end
@@ -290,7 +290,7 @@ simple_tokenize(text: str): any
         end
         i += 1
     end
-    if string.len(current) > 0
+    if #current > 0
         tokens[#tokens + 1] = current
     end
     tokens

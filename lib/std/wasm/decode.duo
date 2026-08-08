@@ -32,7 +32,7 @@ cursor_substrate(): str
 end
 
 new_cursor(data): any
-    return { data = data, pos = 1, len = string.len(data) }
+    return { data = data, pos = 1, len = #data }
 end
 
 read_byte(c): i64

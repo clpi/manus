@@ -13,8 +13,8 @@ parse_address(s: str): any
         name = string.sub(s, 1, lt - 1)
         name = string.gsub(name, "^%s+", "")
         name = string.gsub(name, "%s+$", "")
-        if string.len(name) >= 2 and string.sub(name, 1, 1) == "\"" and string.sub(name, string.len(name), string.len(name)) == "\""
-            name = string.sub(name, 2, string.len(name) - 1)
+        if #name >= 2 and string.sub(name, 1, 1) == "\"" and string.sub(name, #name, #name) == "\""
+            name = string.sub(name, 2, #name - 1)
         end
         return {name = name, address = addr}
     end
@@ -31,7 +31,7 @@ parse_address_list(s: str): any
     depth = 0
     start = 1
     i = 1
-    while i <= string.len(s)
+    while i <= #s
         ch = string.sub(s, i, i)
         if ch == "<" depth += 1 end
         if ch == ">" depth -= 1 end
@@ -66,18 +66,18 @@ split_lines(s: str): any
     out = {}
     start = 1
     i = 1
-    while i <= string.len(s)
+    while i <= #s
         if string.byte(s, i) == 10
             line = string.sub(s, start, i - 1)
-            if string.len(line) > 0 and string.byte(line, string.len(line)) == 13
-                line = string.sub(line, 1, string.len(line) - 1)
+            if #line > 0 and string.byte(line, #line) == 13
+                line = string.sub(line, 1, #line - 1)
             end
             out[rawlen(out) + 1] = line
             start = i + 1
         end
         i += 1
     end
-    if start <= string.len(s)
+    if start <= #s
         out[rawlen(out) + 1] = string.sub(s, start)
     end
     out

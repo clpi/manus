@@ -2,7 +2,7 @@
 -- Uses the flate module for actual DEFLATE data
 
 decompress(data: any)
-    if data == nil or string.len(data) < 2 return "" end
+    if data == nil or #data < 2 return "" end
     cmf = string.byte(data, 1)
     flg = string.byte(data, 2)
     if cmf % 16 != 8 return "" end
@@ -10,7 +10,7 @@ decompress(data: any)
     dlen = string.byte(data, 2)
     if dlen % 32 >= 8 return "" end
     deflate_start = 3
-    if deflate_start > string.len(data) return "" end
+    if deflate_start > #data return "" end
     deflate_data = string.sub(data, deflate_start)
     flate_mod = req("std.compress.flate")
     return flate_mod.decompress(deflate_data)

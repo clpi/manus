@@ -37,7 +37,7 @@ end
 -- scan_ident: scan an identifier starting at current position.
 scan_ident(sc: any): any
     start = sc.pos
-    while sc.pos <= string.len(sc.src) and is_ident_part(string.byte(sc.src, sc.pos))
+    while sc.pos <= #sc.src and is_ident_part(string.byte(sc.src, sc.pos))
         sc.pos = sc.pos + 1
     end
     sc.tok = string.sub(sc.src, start, sc.pos - 1)
@@ -49,28 +49,28 @@ end
 scan_number(sc: any): any
     start = sc.pos
     is_float = false
-    while sc.pos <= string.len(sc.src) and is_digit(string.byte(sc.src, sc.pos))
+    while sc.pos <= #sc.src and is_digit(string.byte(sc.src, sc.pos))
         sc.pos = sc.pos + 1
     end
     -- check for decimal point
-    if sc.pos <= string.len(sc.src) and string.byte(sc.src, sc.pos) == 46
+    if sc.pos <= #sc.src and string.byte(sc.src, sc.pos) == 46
         is_float = true
         sc.pos = sc.pos + 1
-        while sc.pos <= string.len(sc.src) and is_digit(string.byte(sc.src, sc.pos))
+        while sc.pos <= #sc.src and is_digit(string.byte(sc.src, sc.pos))
             sc.pos = sc.pos + 1
         end
     end
     -- check for exponent
-    if sc.pos <= string.len(sc.src)
+    if sc.pos <= #sc.src
         b = string.byte(sc.src, sc.pos)
         if b == 101 or b == 69  -- 'e' or 'E'
             is_float = true
             sc.pos = sc.pos + 1
-            if sc.pos <= string.len(sc.src)
+            if sc.pos <= #sc.src
                 b = string.byte(sc.src, sc.pos)
                 if b == 43 or b == 45 sc.pos = sc.pos + 1 end  -- + or -
             end
-            while sc.pos <= string.len(sc.src) and is_digit(string.byte(sc.src, sc.pos))
+            while sc.pos <= #sc.src and is_digit(string.byte(sc.src, sc.pos))
                 sc.pos = sc.pos + 1
             end
         end
@@ -89,7 +89,7 @@ scan_string(sc: any): any
     quote = string.byte(sc.src, sc.pos)
     sc.pos = sc.pos + 1
     start = sc.pos
-    while sc.pos <= string.len(sc.src)
+    while sc.pos <= #sc.src
         b = string.byte(sc.src, sc.pos)
         if b == quote
             sc.tok = string.sub(sc.src, start, sc.pos - 1)
@@ -113,7 +113,7 @@ end
 scan_comment(sc: any): any
     start = sc.pos
     sc.pos = sc.pos + 2  -- skip prefix
-    while sc.pos <= string.len(sc.src) and string.byte(sc.src, sc.pos) != 10
+    while sc.pos <= #sc.src and string.byte(sc.src, sc.pos) != 10
         sc.pos = sc.pos + 1
     end
     sc.tok = string.sub(sc.src, start, sc.pos - 1)
@@ -123,13 +123,13 @@ end
 
 -- scan: advance to the next token. Returns the token kind (or EOF).
 scan(sc: any): i64
-    if sc.pos > string.len(sc.src)
+    if sc.pos > #sc.src
         sc.tok = ""
         sc.kind = EOF
         return EOF
     end
     -- skip whitespace but track newlines
-    while sc.pos <= string.len(sc.src)
+    while sc.pos <= #sc.src
         b = string.byte(sc.src, sc.pos)
         if b == 32 or b == 9
             sc.pos = sc.pos + 1
@@ -143,17 +143,17 @@ scan(sc: any): i64
             break
         end
     end
-    if sc.pos > string.len(sc.src)
+    if sc.pos > #sc.src
         sc.tok = ""
         sc.kind = EOF
         return EOF
     end
     b = string.byte(sc.src, sc.pos)
     -- comment
-    if b == 45 and sc.pos + 1 <= string.len(sc.src) and string.byte(sc.src, sc.pos + 1) == 45
+    if b == 45 and sc.pos + 1 <= #sc.src and string.byte(sc.src, sc.pos + 1) == 45
         return scan_comment(sc)
     end
-    if b == 47 and sc.pos + 1 <= string.len(sc.src) and string.byte(sc.src, sc.pos + 1) == 47
+    if b == 47 and sc.pos + 1 <= #sc.src and string.byte(sc.src, sc.pos + 1) == 47
         return scan_comment(sc)
     end
     -- identifier

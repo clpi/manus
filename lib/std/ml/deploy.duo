@@ -65,7 +65,7 @@ load_safetensors(path: str): any
 
     -- Read 8-byte header length prefix
     len_bytes = std.io.read(f, 8)
-    if len_bytes == nil or string.len(len_bytes) < 8
+    if len_bytes == nil or #len_bytes < 8
         std.io.close(f)
         return {ok = false, error = "Invalid safetensors: missing header length"}
     end

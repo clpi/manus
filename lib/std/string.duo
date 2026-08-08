@@ -1,19 +1,19 @@
 -- std.string — string helper utilities
 
 std_string_is_empty(s: any): bool
-    s == nil or string.len(s) == 0
+    s == nil or #s == 0
 end
 
 std_string_starts_with(s: any, prefix: any): bool
     if s == nil or prefix == nil return false end
-    string.sub(s, 1, string.len(prefix)) == prefix
+    string.sub(s, 1, #prefix) == prefix
 end
 
 std_string_ends_with(s: any, suffix: any): bool
     if s == nil or suffix == nil return false end
-    n = string.len(suffix)
+    n = #suffix
     if n == 0 return true end
-    if n > string.len(s) return false end
+    if n > #s return false end
     string.sub(s, -n, -1) == suffix
 end
 
@@ -29,7 +29,7 @@ end
 std_string_trim(s: any): any
     if s == nil return "" end
     first = 1
-    last = string.len(s)
+    last = #s
     while first <= last and std_string_is_space(string.sub(s, first, first))
         first += 1
     end
@@ -43,7 +43,7 @@ end
 std_string_ltrim(s: any): any
     if s == nil return "" end
     first = 1
-    last = string.len(s)
+    last = #s
     while first <= last and std_string_is_space(string.sub(s, first, first))
         first += 1
     end
@@ -52,7 +52,7 @@ end
 
 std_string_rtrim(s: any): any
     if s == nil return "" end
-    last = string.len(s)
+    last = #s
     while last >= 1 and std_string_is_space(string.sub(s, last, last))
         last -= 1
     end
@@ -64,7 +64,7 @@ std_string_split(s: any, sep: any): any
     out = {}
     if s == nil return out end
     if sep == nil or sep == ""
-        for i = 1, string.len(s)
+        for i = 1, #s
             out[rawlen(out) + 1] = string.sub(s, i, i)
         end
         return out
@@ -77,7 +77,7 @@ std_string_split(s: any, sep: any): any
             break
         end
         out[rawlen(out) + 1] = string.sub(rest, 1, pos - 1)
-        rest = string.sub(rest, pos + string.len(sep))
+        rest = string.sub(rest, pos + #sep)
     end
     out
 end
@@ -124,7 +124,7 @@ end
 std_string_pad_left(s: any, width: any, pad: any): any
     if s == nil s = "" end
     if pad == nil or pad == "" pad = " " end
-    n = width - string.len(s)
+    n = width - #s
     if n <= 0 return s end
     string.rep(pad, n) .. s
 end
@@ -132,7 +132,7 @@ end
 std_string_pad_right(s: any, width: any, pad: any): any
     if s == nil s = "" end
     if pad == nil or pad == "" pad = " " end
-    n = width - string.len(s)
+    n = width - #s
     if n <= 0 return s end
     s .. string.rep(pad, n)
 end
@@ -150,7 +150,7 @@ std_string_count(s: any, pat: any): i64
         pos = string.find(s, pat, start, true)
         if pos == nil break end
         c += 1
-        start = pos + string.len(pat)
+        start = pos + #pat
     end
     c
 end
@@ -177,14 +177,14 @@ end
 
 std_string_char_at(s: any, index: any): any
     if s == nil or index == nil return "" end
-    if index < 1 or index > string.len(s) return "" end
+    if index < 1 or index > #s return "" end
     string.sub(s, index, index)
 end
 
 std_string_trim_prefix(s: any, prefix: any): any
     if s == nil or prefix == nil return s or "" end
     if std_string_starts_with(s, prefix)
-        return string.sub(s, string.len(prefix) + 1)
+        return string.sub(s, #prefix + 1)
     end
     s
 end
@@ -192,7 +192,7 @@ end
 std_string_trim_suffix(s: any, suffix: any): any
     if s == nil or suffix == nil return s or "" end
     if std_string_ends_with(s, suffix)
-        return string.sub(s, 1, string.len(s) - string.len(suffix))
+        return string.sub(s, 1, #s - #suffix)
     end
     s
 end
@@ -225,7 +225,7 @@ std_string_split_n(s: any, sep: any, n: any): any
             return out
         end
         out[rawlen(out) + 1] = string.sub(rest, 1, pos - 1)
-        rest = string.sub(rest, pos + string.len(sep))
+        rest = string.sub(rest, pos + #sep)
         count += 1
     end
     out[rawlen(out) + 1] = rest
@@ -236,7 +236,7 @@ std_string_to_title_case(s: any): any
     if s == nil return "" end
     result = ""
     capitalize_next = true
-    for i = 1, string.len(s)
+    for i = 1, #s
         ch = string.sub(s, i, i)
         if ch == " " or ch == "-" or ch == "_"
             result = result .. ch

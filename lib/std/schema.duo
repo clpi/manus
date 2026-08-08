@@ -219,11 +219,11 @@ end
 
 check_string_constraints(v: str, s: any, path: str, errors: any): bool
     ok = true
-    if has(.min_length)(s) and string.len(v) < s.min_length
+    if has(.min_length)(s) and #v < s.min_length
         errors[rawlen(errors) + 1] = {path = path, message = "min length " .. to(str)(s.min_length)}
         ok = false
     end
-    if has(.max_length)(s) and string.len(v) > s.max_length
+    if has(.max_length)(s) and #v > s.max_length
         errors[rawlen(errors) + 1] = {path = path, message = "max length " .. to(str)(s.max_length)}
         ok = false
     end

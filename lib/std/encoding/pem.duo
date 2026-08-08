@@ -10,7 +10,7 @@ encode(b: any): str
     lines = {}
     lines[rawlen(lines) + 1] = "-----BEGIN " .. typ .. "-----"
     i = 1
-    while i <= string.len(b64)
+    while i <= #b64
         chunk = string.sub(b64, i, i + line_width - 1)
         lines[rawlen(lines) + 1] = chunk
         i += line_width
@@ -28,12 +28,12 @@ decode(data: str): any
     for line in string.gmatch(data, "[^\n]+")
         trimmed = string.trim(line)
         if string.sub(trimmed, 1, 11) == "-----BEGIN "
-            typ = string.sub(trimmed, 12, string.len(trimmed) - 5)
+            typ = string.sub(trimmed, 12, #trimmed - 5)
             begin_marker = trimmed
         elseif string.sub(trimmed, 1, 9) == "-----END "
             end_marker = trimmed
         elseif begin_marker != nil and end_marker == nil
-            if string.len(trimmed) > 0
+            if #trimmed > 0
                 b64_lines[rawlen(b64_lines) + 1] = trimmed
             end
         end

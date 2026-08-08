@@ -9,7 +9,7 @@ std_property_parse(path: str): any
     parts = {}
     current = ""
     i = 1
-    while i <= string.len(path)
+    while i <= #path
         ch = string.sub(path, i, i)
         if ch == "."
             if current != ""

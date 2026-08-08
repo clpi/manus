@@ -249,7 +249,7 @@ end
 string_to_bytes(s: str): any
     out = {}
     i = 1
-    while i <= string.len(s)
+    while i <= #s
         out[#out + 1] = string.byte(s, i)
         i += 1
     end

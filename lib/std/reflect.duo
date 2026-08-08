@@ -42,7 +42,7 @@ size(v: any): i64
         for _k, _v in v do count += 1 end
         return count
     end
-    if t == "string" return string.len(v) end
+    if t == "string" return #v end
     1
 end
 
@@ -136,7 +136,7 @@ end
 -- len: return the length of an array or string.
 len(v: any): i64
     if v == nil return 0 end
-    if type(v) == "string" return string.len(v) end
+    if type(v) == "string" return #v end
     if type(v) == "table" return rawlen(v) end
     0
 end

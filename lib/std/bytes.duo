@@ -4,7 +4,7 @@
 
 -- Create a byte buffer from a string (zero-copy view of string bytes)
 from_string(s: str): any
-    return { data = s, pos = 1, len = string.len(s) }
+    return { data = s, pos = 1, len = #s }
 end
 
 -- Read one byte at current position, advance cursor

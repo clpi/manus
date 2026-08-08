@@ -8,7 +8,7 @@
 lower(s: str): str
     result = ""
     i = 1
-    while i <= string.len(s)
+    while i <= #s
         c = string.byte(s, i)
         if c >= 65 and c <= 90  -- A-Z
             result = result .. string.char(c + 32)
@@ -23,7 +23,7 @@ end
 upper(s: str): str
     result = ""
     i = 1
-    while i <= string.len(s)
+    while i <= #s
         c = string.byte(s, i)
         if c >= 97 and c <= 122  -- a-z
             result = result .. string.char(c - 32)
@@ -39,7 +39,7 @@ title(s: str): str
     capitalize_next = true
     result = ""
     i = 1
-    while i <= string.len(s)
+    while i <= #s
         c = string.byte(s, i)
         if c == 32 or c == 9 or c == 10  -- whitespace
             capitalize_next = true
@@ -57,7 +57,7 @@ title(s: str): str
 end
 
 capitalize(s: str): str
-    if string.len(s) == 0 return s end
+    if #s == 0 return s end
     first = string.byte(s, 1)
     if first >= 97 and first <= 122
         return string.char(first - 32) .. string.sub(s, 2)
@@ -72,14 +72,14 @@ end
 trim(s: str): str
     -- Trim leading whitespace
     start = 1
-    while start <= string.len(s)
+    while start <= #s
         c = string.byte(s, start)
         if c != 32 and c != 9 and c != 10 and c != 13 break end
         start += 1
     end
 
     -- Trim trailing whitespace
-    finish = string.len(s)
+    finish = #s
     while finish >= start
         c = string.byte(s, finish)
         if c != 32 and c != 9 and c != 10 and c != 13 break end
@@ -91,7 +91,7 @@ end
 
 trim_left(s: str): str
     start = 1
-    while start <= string.len(s)
+    while start <= #s
         c = string.byte(s, start)
         if c != 32 and c != 9 and c != 10 and c != 13 break end
         start += 1
@@ -100,7 +100,7 @@ trim_left(s: str): str
 end
 
 trim_right(s: str): str
-    finish = string.len(s)
+    finish = #s
     while finish >= 1
         c = string.byte(s, finish)
         if c != 32 and c != 9 and c != 10 and c != 13 break end
@@ -113,7 +113,7 @@ compress_whitespace(s: str): str
     result = ""
     in_whitespace = false
     i = 1
-    while i <= string.len(s)
+    while i <= #s
         c = string.byte(s, i)
         if c == 32 or c == 9 or c == 10 or c == 13
             if not in_whitespace
@@ -156,11 +156,11 @@ remove_accents(s: str): str
 
     result = ""
     i = 1
-    while i <= string.len(s)
+    while i <= #s
         -- Try to match multi-byte characters
         found = false
         for pattern, replacement in accents
-            plen = string.len(pattern)
+            plen = #pattern
             if string.sub(s, i, i + plen - 1) == pattern
                 result = result .. replacement
                 i += plen
@@ -179,7 +179,7 @@ end
 remove_punctuation(s: str): str
     result = ""
     i = 1
-    while i <= string.len(s)
+    while i <= #s
         c = string.byte(s, i)
         -- Keep alphanumeric and spaces
         if (c >= 48 and c <= 57) or  -- 0-9
@@ -208,11 +208,11 @@ end
 -- ═══════════════════════════════════════════════════════════════
 
 word_count(s: str): i64
-    if string.len(s) == 0 return 0 end
+    if #s == 0 return 0 end
     count = 1
     in_word = true
     i = 1
-    while i <= string.len(s)
+    while i <= #s
         c = string.byte(s, i)
         if c == 32 or c == 9 or c == 10 or c == 13
             if in_word
@@ -229,13 +229,13 @@ word_count(s: str): i64
 end
 
 char_count(s: str): i64
-    string.len(s)
+    #s
 end
 
 sentence_count(s: str): i64
     count = 0
     i = 1
-    while i <= string.len(s)
+    while i <= #s
         c = string.byte(s, i)
         if c == 46 or c == 33 or c == 63  -- . ! ?
             count += 1
@@ -250,7 +250,7 @@ avg_word_length(s: str): f64
     if #words == 0 return 0.0 end
     total = 0
     for word in words
-        total += string.len(word)
+        total += #word
     end
     total / #words
 end
@@ -263,7 +263,7 @@ split_lines(s: str): any
     lines = {}
     current = ""
     i = 1
-    while i <= string.len(s)
+    while i <= #s
         c = string.byte(s, i)
         if c == 10  -- newline
             lines[#lines + 1] = current
@@ -275,7 +275,7 @@ split_lines(s: str): any
         end
         i += 1
     end
-    if string.len(current) > 0
+    if #current > 0
         lines[#lines + 1] = current
     end
     lines
@@ -285,10 +285,10 @@ split_words(s: str): any
     words = {}
     current = ""
     i = 1
-    while i <= string.len(s)
+    while i <= #s
         c = string.byte(s, i)
         if c == 32 or c == 9 or c == 10 or c == 13
-            if string.len(current) > 0
+            if #current > 0
                 words[#words + 1] = current
                 current = ""
             end
@@ -297,7 +297,7 @@ split_words(s: str): any
         end
         i += 1
     end
-    if string.len(current) > 0
+    if #current > 0
         words[#words + 1] = current
     end
     words
@@ -307,7 +307,7 @@ split_sentences(s: str): any
     sentences = {}
     current = ""
     i = 1
-    while i <= string.len(s)
+    while i <= #s
         c = string.byte(s, i)
         current = current .. string.char(c)
         if c == 46 or c == 33 or c == 63  -- . ! ?
@@ -327,22 +327,22 @@ split_tokens(s: str, max_length: i64): any
     tokens = {}
     current = ""
     for word in words
-        if string.len(current) + string.len(word) + 1 > max_length
-            if string.len(current) > 0
+        if #current + #word + 1 > max_length
+            if #current > 0
                 tokens[#tokens + 1] = current
                 current = word
             else
                 tokens[#tokens + 1] = word
             end
         else
-            if string.len(current) > 0
+            if #current > 0
                 current = current .. " " .. word
             else
                 current = word
             end
         end
     end
-    if string.len(current) > 0
+    if #current > 0
         tokens[#tokens + 1] = current
     end
     tokens
@@ -355,8 +355,8 @@ end
 replace(s: str, old: str, new: str): str
     result = ""
     i = 1
-    old_len = string.len(old)
-    while i <= string.len(s)
+    old_len = #old
+    while i <= #s
         if string.sub(s, i, i + old_len - 1) == old
             result = result .. new
             i += old_len
@@ -375,8 +375,8 @@ end
 count_occurrences(s: str, pattern: str): i64
     count = 0
     i = 1
-    pat_len = string.len(pattern)
-    while i <= string.len(s)
+    pat_len = #pattern
+    while i <= #s
         if string.sub(s, i, i + pat_len - 1) == pattern
             count += 1
             i += pat_len
@@ -393,7 +393,7 @@ end
 
 is_ascii(s: str): bool
     i = 1
-    while i <= string.len(s)
+    while i <= #s
         if string.byte(s, i) > 127 return false end
         i += 1
     end

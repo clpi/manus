@@ -5,7 +5,7 @@ escape(s: str): str
     if s == nil return "" end
     out = {}
     i = 1
-    while i <= string.len(s)
+    while i <= #s
         b = string.byte(s, i)
         if (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or (b >= 48 and b <= 57) or b == 45 or b == 46 or b == 95 or b == 126
             out[rawlen(out) + 1] = string.sub(s, i, i)
@@ -24,7 +24,7 @@ path_escape(s: str): str
     if s == nil return "" end
     out = {}
     i = 1
-    while i <= string.len(s)
+    while i <= #s
         b = string.byte(s, i)
         if (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or (b >= 48 and b <= 57) or b == 45 or b == 46 or b == 95 or b == 126 or b == 47
             out[rawlen(out) + 1] = string.sub(s, i, i)
@@ -41,9 +41,9 @@ unescape(s: str): str
     if s == nil return "" end
     out = {}
     i = 1
-    while i <= string.len(s)
+    while i <= #s
         ch = string.sub(s, i, i)
-        if ch == "%" and i + 2 <= string.len(s)
+        if ch == "%" and i + 2 <= #s
             hex = string.sub(s, i + 1, i + 2)
             code = tonumber(hex, 16)
             if code != nil
@@ -70,7 +70,7 @@ parse_query(query: str): any
     parts = {}
     start = 1
     i = 1
-    while i <= string.len(query)
+    while i <= #query
         if string.sub(query, i, i) == "&"
             parts[rawlen(parts) + 1] = string.sub(query, start, i - 1)
             start = i + 1

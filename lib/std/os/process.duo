@@ -167,7 +167,7 @@ read_stdout(proc: any): any
 
     if type(proc.stdout) == "userdata"
         data = proc.stdout:read("*a") or ""
-        return {data = data, eof = string.len(data) == 0}
+        return {data = data, eof = #data == 0}
     end
     {data = "", eof = true}
 end
@@ -179,7 +179,7 @@ read_stderr(proc: any): any
 
     if type(proc.stderr) == "userdata"
         data = proc.stderr:read("*a") or ""
-        return {data = data, eof = string.len(data) == 0}
+        return {data = data, eof = #data == 0}
     end
     {data = "", eof = true}
 end

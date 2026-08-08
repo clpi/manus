@@ -92,7 +92,7 @@ parse(fs: any, argv: any): any
                     f.value = fval
                 end
             end
-        elseif string.sub(arg, 1, 1) == "-" and string.len(arg) > 1
+        elseif string.sub(arg, 1, 1) == "-" and #arg > 1
             -- short flag: -name or -name=value
             rest = string.sub(arg, 2)
             eq = string.find(rest, "=", 1, true)

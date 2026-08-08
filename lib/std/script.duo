@@ -324,7 +324,7 @@ end
 -- single-line command's output is a value with a "\n" welded on -- fine to
 -- print, silently wrong the moment it is used as a PATH.
 chomp(s: str): str
-    n = string.len(s)
+    n = #s
     while n > 0 and string.byte(s, n) == 10
         n = n - 1
     end
