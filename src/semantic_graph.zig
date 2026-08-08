@@ -219,6 +219,28 @@ pub const SemanticGraph = struct {
         return null;
     }
 
+    /// Find a node by name AND kind.
+    ///
+    /// `findByName` returns the first match of ANY kind, which is silently
+    /// wrong rather than slow: measured on one file's graph, 14 names are
+    /// duplicated across kinds (`_add` is both a func and a call node). A
+    /// caller that wants "the function named f" and gets a call node has been
+    /// given a confident wrong answer.
+    ///
+    /// This does not solve semantic identity — that needs a scope-qualified
+    /// key, and `stablePathForNode` still returns the bare name for a named
+    /// node. It removes the cross-KIND collision, which is the half that
+    /// corrupts the graph during its own lift.
+    pub fn findByNameOfKind(self: *const SemanticGraph, name: []const u8, kind: NodeKind) ?NodeId {
+        for (self.nodes.items, 0..) |node, i| {
+            if (node.kind != kind) continue;
+            if (node.name) |n| {
+                if (std.mem.eql(u8, n, name)) return NodeId{ .index = @intCast(i) };
+            }
+        }
+        return null;
+    }
+
     pub fn usersOf(self: *const SemanticGraph, target: NodeId, buf: *std.ArrayListUnmanaged(NodeId)) !void {
         for (self.edges.items) |e| {
             if (e.to.index == target.index and e.kind == .use) {
@@ -609,7 +631,7 @@ pub const SemanticGraph = struct {
                 .gen_for => |*g| try self.liftBindingsInStmts(file, func_id, func_name, g.body.stmts),
                 .func_decl => |*fd| {
                     if (fd.path.len == 1) {
-                        if (self.findByName(fd.path[0])) |nested_id| {
+                        if (self.findByNameOfKind(fd.path[0], .func)) |nested_id| {
                             try self.liftBindingsInStmts(file, nested_id, fd.path[0], fd.func.body.stmts);
                         }
                     }
@@ -630,7 +652,7 @@ pub const SemanticGraph = struct {
             if (stmt.* != .func_decl) continue;
             const fd = &stmt.func_decl;
             if (fd.path.len != 1) continue;
-            const func_id = self.findByName(fd.path[0]) orelse continue;
+            const func_id = self.findByNameOfKind(fd.path[0], .func) orelse continue;
             try self.liftBindingsInStmts(file, func_id, fd.path[0], fd.func.body.stmts);
         }
     }
