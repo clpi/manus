@@ -18,7 +18,14 @@
 -- Counts TRACKED files. Untracked scratch is not in the repo, and conflating
 -- the two inflated an earlier reading of this by 29 files.
 --
--- CENSUS_FLOOR (default 12) ratchets: retiring a script lowers it, adding one
+-- SIZE THE DEBT BY REFERENCES, NOT LINES — and exclude .claude/worktrees.
+-- Line count (155-439 each) measures effort to port, not whether porting is the
+-- right verb: test_wasm_wast.sh was 287 lines and referenced by nothing, so it
+-- was a delete. Raw greps also over-count — most hits for the rest land in
+-- .claude/worktrees/ copies of this repo. Excluding those, the nine remaining
+-- are live via build.zig and .github/workflows/ci.yml.
+--
+-- CENSUS_FLOOR (default 9) ratchets: retiring a script lowers it, adding one
 -- fails. Exit 0 pass, 1 over the ceiling, 3 the census could not run.
 
 _count = (pattern: str): i64
