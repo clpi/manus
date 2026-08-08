@@ -68,3 +68,34 @@ places and inconsistent in others; the replacement is a GENERATED capability
 table — described → parsed → semantically checked → C path → direct-native →
 differentially proven → canonical — populated from the native differential
 corpus rather than asserted.
+
+## blocks-passing/blocks-total now has a reading (2026-08-08)
+
+§19 lists it as a metric and §22 calls it "the project's first honest number".
+It was never computed. `zig build spec-corpus` computes it, and reports a
+second number beside it:
+
+- **blocks** — §20's five golden files, EXTRACTED from `docs/spec/pass100.md`
+  on every run and checked verbatim. No tracked copy exists, because a tracked
+  copy of the spec's own text is a second source of truth whose drift is
+  invisible. Each failing block prints its exact diagnostic, so the report is
+  the ordered work list and not a score.
+- **forms** — one fixture per §20 construct in `examples/spec100/`, each
+  printing a value the fixture itself declares. This is the number that moves
+  while a block is still red. It is checked BY VALUE: the guard-chain fixture
+  compiles under either reading of `while b = f() and p(b)` and only the
+  printed total distinguishes them.
+
+Both ratchet from the measured baseline. Do not transcribe the numbers here —
+read them from a run, for the same reason §22's repository note gives.
+
+`gaps/GAP-025.md` carries the measured table: which block, which diagnostic,
+which construct, and three SPEC DEFECTS the corpus revealed about itself
+(a shebang below a comment; two `for` clauses nested on one line against §6;
+and two `audit100` deny rows that convict §20's own text).
+
+This does not replace `audit100`. That gate counts deny lines over the
+canonical corpus and is the LAGGING measure — how much old code still spells
+things the old way. `spec-corpus` is the LEADING one: whether the new spelling
+exists at all. §3 tells agents to pattern-match only from §20, so a block that
+does not compile is an instruction to write source the compiler rejects.
