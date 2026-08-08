@@ -10631,7 +10631,9 @@ test "sema: @implements on a record-typed binding (concept exists and matches)" 
         \\  each: () -> i64
         \\end
         \\@implements(Iterable)
-        \\local x: { each: () -> i64 } = { each = function() return 0 end }
+        \\local x: { each: () -> i64 } = { each = function()
+        \\    return 0
+        \\end }
     ;
     var lex = Lexer.init(src, "test");
     var p = Parser.init(&lex, alloc);
@@ -11152,7 +11154,7 @@ test "sema: @implements accepts meta.make_concept descriptor binding" {
         \\local p: { x: i64, y: i64, len: any } = {
         \\    x = 3,
         \\    y = 4,
-        \\    len = fun(self): i64 return 5 end,
+        \\    len = fun(self): i64 5,
         \\}
     ;
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
@@ -11176,7 +11178,7 @@ test "sema: @implements reports missing member from meta.make_concept descriptor
         \\@implements(PointLike)
         \\local p: { x: i64, len: any } = {
         \\    x = 3,
-        \\    len = fun(self): i64 return 5 end,
+        \\    len = fun(self): i64 5,
         \\}
     ;
     var arena = std.heap.ArenaAllocator.init(testing.allocator);

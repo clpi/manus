@@ -7007,7 +7007,7 @@ test "parse: @c.emit with combinator arg is expr_stmt not directive" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const mod = try parseDuoSource(
-        \\@c.emit(@comp.map("a", fun(t) t end))
+        \\@c.emit(@comp.map("a", fun(t) t))
     , &arena);
     try testing.expectEqual(@as(usize, 1), mod.body.stmts.len);
     try testing.expect(mod.body.stmts[0] == .expr_stmt);

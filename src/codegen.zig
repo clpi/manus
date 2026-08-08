@@ -30509,7 +30509,8 @@ test "codegen: typed fixed string and os calls unbox boxed runtime results" {
         \\local has_suffix: bool = ("duo-lang"):ends_with("lang")
         \\local formatted: str = string.format("%s", "duo")
         \\local packed: str = string.pack("i", 7)
-        \\local dumped: str = string.dump(function() end, false)
+        \\local dumped: str = string.dump(function()
+        \\end, false)
         \\local b: i64 = string.byte("duo", 2)
         \\local tmp: str = os.tmpname()
         \\print(has_prefix, has_suffix, formatted, packed, dumped, b, tmp)
@@ -30675,7 +30676,7 @@ test "codegen: __comptimeproduct folds concept cartesian product to native c str
         \\end
         \\type Alpha = { x: i64 }
         \\type Beta = { y: i64 }
-        \\local pairs: str = __comptimeproduct("HasA", "HasB", fun(a, b) a.name .. "x" .. b.name .. ";" end)
+        \\local pairs: str = __comptimeproduct("HasA", "HasB", fun(a, b) a.name .. "x" .. b.name .. ";")
         \\print(pairs)
     , "test.duo");
     var parser = Parser.init(&lex, alloc);
@@ -30877,8 +30878,8 @@ test "codegen: typed global builtins unbox boxed runtime results" {
         \\local slen: i64 = rawlen(s)
         \\local lit_len: i64 = rawlen("language")
         \\local same: bool = rawequal("x", "x")
-        \\local ok: bool = pcall(function() return 1 end)
-        \\local xok: bool = xpcall(function() return 1 end, function(e) return e end)
+        \\local ok: bool = pcall(function() 1)
+        \\local xok: bool = xpcall(function() 1, function(e) e)
         \\print(kind, num_kind, bool_kind, str_kind, nil_kind, text, num, native_cast, len, slen, lit_len, same, ok, xok)
     , "test");
     var parser = Parser.init(&lex, alloc);
