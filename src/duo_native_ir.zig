@@ -55,6 +55,11 @@ pub const BinOpTag = enum {
     gt,
     leq,
     geq,
+    band,
+    bor,
+    bxor,
+    shl,
+    shr,
 };
 
 pub const Op = enum {

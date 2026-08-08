@@ -1459,19 +1459,7 @@ const Arm64Compiler = struct {
                     const lhs = try self.evalDnirValue(temps, ins.lhs);
                     const rhs = try self.evalDnirValue(temps, ins.rhs);
                     const dst = try self.allocReg();
-                    const op: ast.BinOp = switch (ins.binop) {
-                        .add => .add,
-                        .sub => .sub,
-                        .mul => .mul,
-                        .div => .div,
-                        .mod => .mod,
-                        .eq => .eq,
-                        .neq => .neq,
-                        .lt => .lt,
-                        .gt => .gt,
-                        .leq => .leq,
-                        .geq => .geq,
-                    };
+                    const op: ast.BinOp = dnirBinOpToAst(ins.binop);
                     try self.emitCompareOrBinop(dst, lhs, rhs, op);
                     if (!Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
                     if (!Arm64Compiler.regIsPinned(pinned, rhs)) self.releaseReg(rhs);
@@ -1986,6 +1974,13 @@ const Arm64Compiler = struct {
                 try self.emitMsubReg(dst, q, rhs, lhs);
                 self.releaseReg(q);
             },
+            // Bitwise and shift, register forms. AArch64 encodes all five with
+            // the same field layout as add/sub, so they share one emitter.
+            .band => try self.emitBitReg(0x8a000000, "and", dst, lhs, rhs),
+            .bor => try self.emitBitReg(0xaa000000, "orr", dst, lhs, rhs),
+            .bxor => try self.emitBitReg(0xca000000, "eor", dst, lhs, rhs),
+            .lshift => try self.emitBitReg(0x9ac02000, "lsl", dst, lhs, rhs),
+            .rshift => try self.emitBitReg(0x9ac02400, "lsr", dst, lhs, rhs),
             else => return refuse(@src()),
         }
     }
@@ -3360,6 +3355,14 @@ const Arm64Compiler = struct {
         try self.emitFmt(0x39400000 | (@as(u32, base) << 5) | @as(u32, dst), "ldrb x{d}, [x{d}]", .{ dst, base });
     }
 
+    /// Bitwise and shift, register forms. Same field layout as add/sub:
+    /// opcode | (Rm << 16) | (Rn << 5) | Rd.
+    fn emitBitReg(self: *Arm64Compiler, op: u32, mnemonic: []const u8, dst: u5, lhs: u5, rhs: u5) Error!void {
+        try self.ensureRegLive(lhs);
+        try self.ensureRegLive(rhs);
+        try self.emitFmt(op | (@as(u32, rhs) << 16) | (@as(u32, lhs) << 5) | @as(u32, dst), "{s} x{d}, x{d}, x{d}", .{ mnemonic, dst, lhs, rhs });
+    }
+
     fn emitAddReg(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5) Error!void {
         try self.ensureRegLive(lhs);
         try self.ensureRegLive(rhs);
@@ -3612,6 +3615,11 @@ fn dnirBinOpToAst(tag: dnir.BinOpTag) ast.BinOp {
         .gt => .gt,
         .leq => .leq,
         .geq => .geq,
+        .band => .band,
+        .bor => .bor,
+        .bxor => .bxor,
+        .shl => .lshift,
+        .shr => .rshift,
     };
 }
 
