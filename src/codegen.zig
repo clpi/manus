@@ -2824,11 +2824,37 @@ pub const CodeGen = struct {
                 if (ti >= outer.assign.values.len or outer.assign.values[ti].* != .table) continue;
                 // A non-empty literal already materializes the table; an empty
                 // one only does so if fields are written to it afterwards.
-                if (outer.assign.values[ti].table.fields.len > 0) return true;
+                //
+                // EXCEPT a positional blob of integer literals with no keyed
+                // write anywhere — `wasm_header = { 0x00, 0x61, … }`. The hazard
+                // this guard exists for is the KEYED producer/consumer mismatch
+                // (the producer emits `void* M = NULL` and drops the field
+                // writes while the consumer flattens `m.x` to an undefined
+                // `mod__x`). A positional constant has no field symbols to
+                // mismatch, and dnir_lower has had a memory-backed positional
+                // table representation since SH-04 landed (alloc_slots + ptr).
+                // So this arm was rejecting a shape both ends already handle.
+                if (outer.assign.values[ti].table.fields.len > 0) {
+                    if (!table_is_positional_int_blob(outer.assign.values[ti]) or
+                        module_has_keyed_write(mod, t0.name.ident)) return true;
+                    continue;
+                }
                 if (module_has_keyed_write(mod, t0.name.ident)) return true;
             }
         }
         return false;
+    }
+
+    /// `{ 0x00, 0x61, … }` — every field positional, every value an integer
+    /// literal. A constant byte blob, not an exported record.
+    fn table_is_positional_int_blob(expr: *const ast.Expr) bool {
+        for (expr.table.fields) |fld| {
+            switch (fld) {
+                .positional => |pv| if (pv.* != .int_lit) return false,
+                else => return false,
+            }
+        }
+        return true;
     }
 
     fn module_has_keyed_write(mod: *const ast.Module, name: []const u8) bool {
