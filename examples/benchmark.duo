@@ -701,7 +701,7 @@ bitcount(n: i64): i64
         while x != 0 do
             c += (x & 1)
             x = x >> 1
-            end
+        end
         sum += c
         i += 1
     end

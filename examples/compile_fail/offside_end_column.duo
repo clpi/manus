@@ -1,0 +1,23 @@
+-- Pass 100 §3 — a written `end` is accepted and DELETED (§3.4), but under
+-- layout the two renderings have to agree about the same block.
+--
+-- Here they disagree. `visit` is indented as a sibling of the `if`'s body, so
+-- dedent closes the `if` before it; the `end` two lines down is then indented
+-- deeper than the `for` it would close. Read by indentation the `for` is
+-- outside the `if`; read by `end` it is inside. That is exactly the silent
+-- re-nesting offside is accused of, so it is a diagnostic instead — the closer
+-- must sit at its opener's column or not be written at all.
+--
+-- This shape was found in tracked source (lib/std/graphics/mesh.duo), where the
+-- `end`-only grammar absorbed it without a word.
+
+visit = (n: i64): i64 n
+
+walk = (n: i64, seen: i64): i64
+    if n > 0
+        seen = seen + 1
+    for i = 1, n
+            seen = seen + visit(i)
+        end
+    end
+    seen

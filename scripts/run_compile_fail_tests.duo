@@ -117,6 +117,12 @@ run_fail("examples/compile_fail/tensor_return_mismatch.duo", "return type mismat
 run_fail("examples/compile_fail/generic_concept_fail.duo", "does not satisfy concept 'Hashable'")
 run_fail("examples/compile_fail/satisfies_fail.duo", "Empty lacks hash")
 run_fail("examples/compile_fail/multi_concept_fail.duo", "does not satisfy concept 'Counter'")
+-- Pass 100 §3 — offside layout DIAGNOSES rather than re-nests. Both rows fail
+-- for indentation alone; both files are otherwise well-formed programs, which
+-- is the point: the only thing wrong with them is a rendering that matches no
+-- shallow shape, and that has to be an error rather than a second parse.
+run_fail("examples/compile_fail/offside_misindent.duo", "indentation matches no block")
+run_fail("examples/compile_fail/offside_end_column.duo", "closes a block opened at column")
 
 run_ok("tests/test.lua")
 run_ok("examples/hello.lua")

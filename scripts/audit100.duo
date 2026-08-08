@@ -695,7 +695,15 @@ main(): i64
     -- half that gets skipped. No other row moved: the remaining sixteen and
     -- `nonduo` read EXACTLY their budgets over the same 450 canonical files
     -- before and after, measured twice with `AUDIT100_LIST` at a private path.
-    budgets: str = "14153 2256 1847 259 322 481 154 58 2031 442 167 128 228 36 2428 2258 3437"
+    -- 2026-08-08, offside layout: `snake` 14153 -> 14154, MOVED UP by one, and
+    -- the arithmetic is +2 -1 so both halves are stated. The +2 is two new rows
+    -- in `scripts/run_compile_fail_tests.duo` asserting that a mis-indent and a
+    -- mis-aligned `end` DIAGNOSE; each row calls that gate's own `run_fail`
+    -- helper, whose name carries the underscore. Renaming the helper is a
+    -- different diff. The -1 is a stray duplicated `peeked = lx.has_peeked` in
+    -- `lib/std/compiler/parser.duo`, at an indentation the `end`-only grammar
+    -- absorbed silently — the offside diagnostic is what found it.
+    budgets: str = "14154 2256 1847 259 322 481 154 58 2031 442 167 128 228 36 2428 2258 3437"
 
     -- Per-row: 1 = measure with string bodies INTACT. Only `concatlit` sets
     -- it, because its subject IS the string literal; stripping bodies takes

@@ -1,0 +1,47 @@
+-- Pass 100 §3 — OFFSIDE LAYOUT: blocks close by dedent. No `end` is written
+-- anywhere below; every block here is closed by the column of the line after
+-- it, which is what §20's `shc/parse.duo` requires ("if t2, err = lx:token()
+-- attach(node, t2)" on one line, "else …" on the next, "node" after that).
+--
+-- CHECKED BY VALUE, because every one of these shapes COMPILES under a wrong
+-- nesting too:
+--
+--   * `pick` returns 20 only if the one-liner `if` closed at the newline. Had
+--     the newline not closed it, `bump` would sit inside the then-arm and 3
+--     would come back unbumped.
+--   * `rung` returns 7 only if the `else` bound to the OUTER `if` by column
+--     (§3: "else binds by column"). Bound to the inner `if`, 5 would take the
+--     else-arm and answer 1.
+--   * `total` is 6 only if the `while` body closed by dedent before `acc`,
+--     rather than swallowing the tail expression.
+--
+-- expect: 20 7 6
+
+bump = (n: i64): i64 n + 10
+
+pick = (n: i64): i64
+    if n > 30 return 99
+    bump(n)
+
+rung = (a: i64, b: i64): i64
+    if a > 4
+        if b > 4
+            return 9
+        return 7
+    else
+        return 1
+
+sum = (n: i64): i64
+    acc = 0
+    i = 1
+    while i <= n
+        acc = acc + i
+        i = i + 1
+    acc
+
+main = (): i64
+    p = pick(10)
+    r = rung(5, 1)
+    t = sum(3)
+    print("{p} {r} {t}")
+    0

@@ -88,8 +88,172 @@ pub const Parser = struct {
 
     deferred_hint_attrs: std.ArrayList(ast.Attribute) = .empty,
 
+    /// Pass 100 §3 — OFFSIDE LAYOUT: the frame of the block being parsed now,
+    /// and the frame of the block most recently finished. See `LayoutFrame`.
+    layout: LayoutFrame = .{},
+    last_layout: LayoutFrame = .{},
+    /// Line of the most recently consumed token. Layout speaks about LINE
+    /// STARTS only: `;` is the one-line induction tail (§4), so
+    /// `tmp = a[i]; a[i] = a[j]; a[j] = tmp` is three statements on one
+    /// rendered line and its second and third columns render nothing.
+    prev_line: u32 = 0,
+
     pub fn init(lex: *Lexer, alloc: Allocator) Parser {
         return .{ .lex = lex, .alloc = alloc };
+    }
+
+    /// Pass 100 §3 — **blocks close by dedent**. This is the layout layer.
+    ///
+    /// Deliberately NOT "make `end` optional with a pile of lookahead cases":
+    /// that keeps the wrong grammar underneath. `end` never existed in the
+    /// graph — block structure is edges and a closer token is a rendering
+    /// choice — so the grammar has to be layout-driven and `end` has to become
+    /// a token that is ACCEPTED AND DELETED (§3.4: a human resync anchor that
+    /// leaves the writing dialect when telemetry says resync usage is ~0).
+    ///
+    /// A frame records where the block's OPENER sits and where its BODY sits.
+    /// Those two columns are the whole rule:
+    ///
+    ///   * body on the opener's line → ONE-LINER; the newline closes it
+    ///     (`if b .pos += 1`, `while v >= 0x80 out:write(v); v >>= 7`).
+    ///   * body indented past the opener → OFFSIDE; statements continue at
+    ///     exactly `body_col`, the block closes on the first token left of it,
+    ///     and anything in between is a DIAGNOSTIC.
+    ///   * body NOT indented past the opener → LEGACY; the rendering carries no
+    ///     structure, so layout must not pretend to read any and only a written
+    ///     `end` closes the block.
+    ///
+    /// That last clause is what makes this strictly additive over the 748
+    /// tracked files that write `end`: a body flush with (or left of) its
+    /// opener is exactly the shape layout cannot speak about, so it is left
+    /// alone rather than guessed at.
+    ///
+    /// §3's argument for why offside is safe here and not in Python is that
+    /// Python's sin is *writer-inferred* structure — a mis-indent silently
+    /// means something else — while Duo's ceilings (100 cols, ≤2 call depth,
+    /// 0 nested if, no one-liner nesting) deny the deep shapes where that
+    /// happens. So **indentation matching no legal shallow shape is a
+    /// diagnostic, never an alternate parse**. That is `layout_misindent`, and
+    /// it is the load-bearing half: an offside parser that silently re-nests on
+    /// a mis-indent is worse than the status quo.
+    pub const LayoutFrame = struct {
+        /// The construct that opened the block (`if`, `while`, the first token
+        /// of a function declaration…). Zero column means "no opener": the
+        /// module block, and bodies whose closer is a bracket rather than a
+        /// rendering. THE OPENER'S COLUMN IS THE CLOSING THRESHOLD — a line
+        /// starting at or left of it has left the block.
+        open_line: u32 = 0,
+        open_col: u32 = 0,
+        /// The offside line: the column every statement of this block starts
+        /// at. Zero means "not yet established", which is the state of a block
+        /// whose body began inline on the opener's line — its offside line is
+        /// set by the first CONTINUATION line, if there is one.
+        body_col: u32 = 0,
+        /// Layout carries this block's structure. False = legacy shape, where
+        /// only a written `end` closes the block.
+        offside: bool = false,
+    };
+
+    /// Compute the layout frame for the block about to be parsed. `open` is the
+    /// loc of the token that opened it, or null for a block layout does not
+    /// govern.
+    fn open_layout(self: *Parser, open: ?ast.Loc) ParseError!LayoutFrame {
+        const first = try self.pk();
+        var f = LayoutFrame{};
+        const o = open orelse return f;
+        f.open_line = o.line;
+        f.open_col = o.col;
+        // An EMPTY block renders nothing, so it says nothing about layout.
+        switch (first.kind) {
+            .kw_end, .kw_else, .kw_elseif, .kw_until, .kw_catch, .eof => return f,
+            else => {},
+        }
+        if (first.loc.line == o.line) {
+            // Body begins inline: `if b .pos += 1`. The offside line is left
+            // unset — a continuation line indented past the opener still
+            // belongs to this block and gets to establish it.
+            f.offside = true;
+        } else if (first.loc.col > o.col) {
+            f.offside = true;
+            f.body_col = first.loc.col;
+        }
+        return f;
+    }
+
+    /// The offside decision at a statement boundary.
+    const LayoutVerdict = enum { keep, close, misindent };
+
+    fn layout_verdict(f: *LayoutFrame, tok: Token) LayoutVerdict {
+        if (!f.offside) return .keep;
+        // The opener's column is the threshold: at or left of it, this line has
+        // left the block, however deep the block's own body was.
+        if (tok.loc.col <= f.open_col) return .close;
+        if (f.body_col == 0) {
+            f.body_col = tok.loc.col;
+            return .keep;
+        }
+        if (tok.loc.col == f.body_col) return .keep;
+        // A TERMINATOR at an odd column is a disagreement between the two
+        // renderings, not a statement that matches no shape. Close here and let
+        // `close_block` name it precisely ("'end' at column 9 closes a block
+        // opened at column 5"), which is the message that points at the fix.
+        return switch (tok.kind) {
+            .kw_end, .kw_else, .kw_elseif, .kw_until, .kw_catch, .eof => .close,
+            else => .misindent,
+        };
+    }
+
+    /// §3's mandatory half. A statement indented past its block's offside line
+    /// continues nothing (the line above ended) and opens nothing (no construct
+    /// on that line opened a block), so there is no shallow shape it could
+    /// mean. Refusing to guess is what makes dedent-closing safe.
+    fn layout_misindent(f: LayoutFrame, tok: Token) ParseError {
+        term.locErr(tok.loc, "indentation matches no block: this line starts at column {d}, its block's statements start at column {d}", .{
+            tok.loc.col, f.body_col,
+        });
+        term.locHint(tok.loc, "blocks close by dedent; a line may only be indented further than the one above it when that line opened a block", .{});
+        return ParseError.UnexpectedToken;
+    }
+
+    /// Close a block that layout may have already closed. §3.4: a written `end`
+    /// is accepted and deleted. With no `end`, the frame must have closed the
+    /// block by layout; otherwise this is the original "expected 'end'"
+    /// diagnostic, unchanged.
+    fn close_block(self: *Parser, open: ast.Loc, offside: bool) ParseError!void {
+        const tok = try self.pk();
+        if (tok.kind == .kw_end) {
+            // Under layout the two renderings must AGREE. A LINE-LEADING `end`
+            // deeper than its opener means the writer indented a block
+            // differently than they closed it, and that disagreement is the one
+            // case where dedent-closing could otherwise pick a nesting the
+            // writer did not mean. It is a diagnostic, not a silent choice.
+            //
+            // A TRAILING `end` — one sharing a line with the statement before
+            // it, as in `else body = sub(body, 3) end` — is not rendering
+            // structure at all; its column is wherever the text happened to
+            // stop. Those say nothing and are accepted as written.
+            if (offside and tok.loc.line != self.prev_line and tok.loc.col > open.col) {
+                term.locErr(tok.loc, "'end' at column {d} closes a block opened at column {d}", .{ tok.loc.col, open.col });
+                term.locHint(tok.loc, "the block already closed by dedent; align this 'end' with its opener or remove it", .{});
+                return ParseError.UnexpectedToken;
+            }
+            _ = try self.adv();
+            return;
+        }
+        if (offside) return;
+        _ = try self.expect(.kw_end);
+    }
+
+    /// `else`/`elseif` BINDS BY COLUMN (§3 mechanics). Under layout an inner
+    /// `if` has already closed by dedent, so a clause left of this opener
+    /// belongs to an enclosing construct and must not be taken here. A clause
+    /// at or right of the opener binds — which is also what the `end`-closed
+    /// dialect did, so no existing file changes shape.
+    fn clause_binds(self: *Parser, open: ast.Loc, kind: TK, offside: bool) ParseError!bool {
+        const tok = try self.pk();
+        if (tok.kind != kind) return false;
+        if (!offside) return true;
+        return tok.loc.col >= open.col;
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -174,7 +338,9 @@ pub const Parser = struct {
     }
 
     fn adv(self: *Parser) ParseError!Token {
-        return self.lex.next();
+        const tok = try self.lex.next();
+        self.prev_line = tok.loc.line;
+        return tok;
     }
 
     fn expect(self: *Parser, kind: TK) ParseError!Token {
@@ -538,15 +704,38 @@ pub const Parser = struct {
         return ast.Module{ .file = tok.loc.file, .body = body };
     }
 
+    /// A block layout does not govern: the module body, and the bodies whose
+    /// closer is structural (a bracket) rather than a rendering.
     fn parse_block(self: *Parser) ParseError!ast.Block {
+        return self.parse_block_open(null);
+    }
+
+    /// Pass 100 §3 — a block opened by the construct at `open`, closed by
+    /// dedent. See `LayoutFrame`.
+    fn parse_block_at(self: *Parser, open: ast.Loc) ParseError!ast.Block {
+        return self.parse_block_open(open);
+    }
+
+    fn parse_block_open(self: *Parser, open: ?ast.Loc) ParseError!ast.Block {
         const saved_match_depth = self.match_arm_depth;
         self.match_arm_depth = 0;
         defer self.match_arm_depth = saved_match_depth;
+        const saved_layout = self.layout;
+        self.layout = try self.open_layout(open);
+        defer {
+            self.last_layout = self.layout;
+            self.layout = saved_layout;
+        }
         const l = (try self.pk()).loc;
         var stmts: std.ArrayList(ast.Stmt) = .empty;
         while (true) {
             while (try self.eat(.semi) != null) {}
             const tok = try self.pk();
+            if (stmts.items.len > 0 and tok.loc.line != self.prev_line) switch (layout_verdict(&self.layout, tok)) {
+                .keep => {},
+                .close => break,
+                .misindent => return layout_misindent(self.layout, tok),
+            };
             switch (tok.kind) {
                 .kw_end, .kw_else, .kw_elseif, .kw_until, .eof => break,
                 .kw_return => {
@@ -2087,8 +2276,11 @@ pub const Parser = struct {
         const body: ast.Block = if (blockish) blk: {
             self.func_body_depth += 1;
             defer self.func_body_depth -= 1;
-            const b = try self.parse_block();
-            _ = try self.expect(.kw_end);
+            // §3 — a function body's opener is the DECLARATION's own first
+            // token: `parse = (lx: lexer): ast | error` at column 1 owns a body
+            // at column 5, and the body closes when the file dedents back.
+            const b = try self.parse_block_at(l);
+            try self.close_block(l, self.last_layout.offside);
             break :blk b;
         } else blk: {
             if (try self.func_body_should_use_expr_stmt()) {
@@ -2224,6 +2416,50 @@ pub const Parser = struct {
         return ast.FuncParam{ .name = nm.text, .typ = typ, .default_val = default_val, .loc = nm.loc };
     }
 
+    const IfClauses = struct {
+        then: ast.Block,
+        elseifs: []ast.ElseIf,
+        else_body: ?ast.Block,
+    };
+
+    /// The then-body, the `elseif`/`else` chain, and the close — shared by all
+    /// four `if` forms (plain, `if name =`, `if a, b =`, `if let`) so layout is
+    /// decided in exactly one place.
+    ///
+    /// Pass 100 §3: each clause opens its OWN frame at its own keyword, so
+    /// `else return nil, error{…}` on one line is a one-liner body, while the
+    /// clause itself binds to this `if` BY COLUMN. The construct closes by
+    /// layout when any of its blocks was governed by layout; a written `end` is
+    /// accepted and deleted either way.
+    fn parse_if_clauses(self: *Parser, l: ast.Loc) ParseError!IfClauses {
+        try self.eat_deprecated(.kw_then);
+        const then_body = try self.parse_block_at(l);
+        var offside = self.last_layout.offside;
+        var elseifs: std.ArrayList(ast.ElseIf) = .empty;
+        var else_body: ?ast.Block = null;
+        while (true) {
+            if (try self.clause_binds(l, .kw_elseif, offside)) {
+                const kw = try self.adv();
+                const ec = try self.parse_expr();
+                try self.eat_deprecated(.kw_then);
+                const eb = try self.parse_block_at(kw.loc);
+                offside = offside or self.last_layout.offside;
+                try elseifs.append(self.alloc, ast.ElseIf{ .cond = ec, .body = eb });
+            } else if (try self.clause_binds(l, .kw_else, offside)) {
+                const kw = try self.adv();
+                else_body = try self.parse_block_at(kw.loc);
+                offside = offside or self.last_layout.offside;
+                break;
+            } else break;
+        }
+        try self.close_block(l, offside);
+        return .{
+            .then = then_body,
+            .elseifs = try elseifs.toOwnedSlice(self.alloc),
+            .else_body = else_body,
+        };
+    }
+
     /// Pass 42 §1.1 — `if a, b = expr ... end` (correlated return-pack binding).
     /// Returns null when the lookahead is not this form, leaving the caller to
     /// restore lexer state and try the single-name and plain-condition paths.
@@ -2250,23 +2486,7 @@ pub const Parser = struct {
         var inits: std.ArrayList(*ast.Expr) = .empty;
         errdefer inits.deinit(self.alloc);
         try inits.append(self.alloc, try self.parse_expr());
-        try self.eat_deprecated(.kw_then);
-        const then_body = try self.parse_block();
-
-        var elseifs: std.ArrayList(ast.ElseIf) = .empty;
-        var else_body: ?ast.Block = null;
-        while (true) {
-            if (try self.eat(.kw_elseif) != null) {
-                const ec = try self.parse_expr();
-                try self.eat_deprecated(.kw_then);
-                const eb = try self.parse_block();
-                try elseifs.append(self.alloc, ast.ElseIf{ .cond = ec, .body = eb });
-            } else if (try self.eat(.kw_else) != null) {
-                else_body = try self.parse_block();
-                break;
-            } else break;
-        }
-        _ = try self.expect(.kw_end);
+        const clauses = try self.parse_if_clauses(l);
 
         const first = names.items[0];
         const cond_ref = try self.new_expr(.{ .name = .{ .loc = first.loc, .ident = first.ident } });
@@ -2274,9 +2494,9 @@ pub const Parser = struct {
             .loc = l,
             .binding = null,
             .cond = cond_ref,
-            .then = then_body,
-            .elseifs = try elseifs.toOwnedSlice(self.alloc),
-            .else_body = else_body,
+            .then = clauses.then,
+            .elseifs = clauses.elseifs,
+            .else_body = clauses.else_body,
         } };
         const decl = ast.Stmt{ .local_decl = .{
             .loc = l,
@@ -2300,14 +2520,9 @@ pub const Parser = struct {
             const pattern = try self.parse_pattern();
             _ = try self.expect(.assign);
             const scrutinee = try self.parse_expr();
-            try self.eat_deprecated(.kw_then);
-            const then_body = try self.parse_block();
-            // Parse optional else
-            var else_body: ?ast.Block = null;
-            if (try self.eat(.kw_else) != null) {
-                else_body = try self.parse_block();
-            }
-            _ = try self.expect(.kw_end);
+            const clauses = try self.parse_if_clauses(l);
+            const then_body = clauses.then;
+            const else_body = clauses.else_body;
             // Build match arms
             var arms = try self.alloc.alloc(ast.MatchArm, if (else_body != null) 2 else 1);
             arms[0] = .{ .pattern = pattern, .guard = null, .body = then_body };
@@ -2339,59 +2554,29 @@ pub const Parser = struct {
             if ((try self.pk()).kind == .assign) {
                 _ = try self.adv();
                 const rhs = try self.parse_expr();
-                try self.eat_deprecated(.kw_then);
-                const then_body = try self.parse_block();
-                var elseifs: std.ArrayList(ast.ElseIf) = .empty;
-                var else_body: ?ast.Block = null;
-                while (true) {
-                    if (try self.eat(.kw_elseif) != null) {
-                        const ec = try self.parse_expr();
-                        try self.eat_deprecated(.kw_then);
-                        const eb = try self.parse_block();
-                        try elseifs.append(self.alloc, ast.ElseIf{ .cond = ec, .body = eb });
-                    } else if (try self.eat(.kw_else) != null) {
-                        else_body = try self.parse_block();
-                        break;
-                    } else break;
-                }
-                _ = try self.expect(.kw_end);
+                const clauses = try self.parse_if_clauses(l);
                 const cond_ref = try self.new_expr(.{ .name = .{ .loc = nm.loc, .ident = nm.text } });
                 return ast.Stmt{ .if_stmt = .{
                     .loc = l,
                     .binding = .{ .name = nm.text, .expr = rhs },
                     .cond = cond_ref,
-                    .then = then_body,
-                    .elseifs = try elseifs.toOwnedSlice(self.alloc),
-                    .else_body = else_body,
+                    .then = clauses.then,
+                    .elseifs = clauses.elseifs,
+                    .else_body = clauses.else_body,
                 } };
             } else {
                 self.lex.restoreState(saved);
             }
         }
         const cond = try self.parse_expr();
-        try self.eat_deprecated(.kw_then);
-        const then = try self.parse_block();
-        var elseifs: std.ArrayList(ast.ElseIf) = .empty;
-        var else_body: ?ast.Block = null;
-        while (true) {
-            if (try self.eat(.kw_elseif) != null) {
-                const ec = try self.parse_expr();
-                try self.eat_deprecated(.kw_then);
-                const eb = try self.parse_block();
-                try elseifs.append(self.alloc, ast.ElseIf{ .cond = ec, .body = eb });
-            } else if (try self.eat(.kw_else) != null) {
-                else_body = try self.parse_block();
-                break;
-            } else break;
-        }
-        _ = try self.expect(.kw_end);
+        const clauses = try self.parse_if_clauses(l);
         return ast.Stmt{ .if_stmt = .{
             .loc = l,
             .binding = null,
             .cond = cond,
-            .then = then,
-            .elseifs = try elseifs.toOwnedSlice(self.alloc),
-            .else_body = else_body,
+            .then = clauses.then,
+            .elseifs = clauses.elseifs,
+            .else_body = clauses.else_body,
         } };
     }
 
@@ -2466,8 +2651,8 @@ pub const Parser = struct {
         }
 
         try self.eat_deprecated(.kw_do);
-        var inner = try self.parse_block();
-        _ = try self.expect(.kw_end);
+        var inner = try self.parse_block_at(l);
+        try self.close_block(l, self.last_layout.offside);
 
         var i = links.items.len;
         while (i > 0) {
@@ -2526,8 +2711,8 @@ pub const Parser = struct {
             _ = try self.expect(.assign);
             const scrutinee = try self.parse_expr();
             try self.eat_deprecated(.kw_do);
-            const body = try self.parse_block();
-            _ = try self.expect(.kw_end);
+            const body = try self.parse_block_at(l);
+            try self.close_block(l, self.last_layout.offside);
             var break_arm_body_stmts = try self.alloc.alloc(ast.Stmt, 1);
             break_arm_body_stmts[0] = .{ .brk = l };
             var match_arms = try self.alloc.alloc(ast.MatchArm, 2);
@@ -2545,14 +2730,14 @@ pub const Parser = struct {
         if (try self.parse_while_consumption(l)) |stmt| return stmt;
         const cond = try self.parse_expr();
         try self.eat_deprecated(.kw_do);
-        const body = try self.parse_block();
-        _ = try self.expect(.kw_end);
+        const body = try self.parse_block_at(l);
+        try self.close_block(l, self.last_layout.offside);
         return ast.Stmt{ .while_loop = .{ .loc = l, .cond = cond, .body = body } };
     }
 
     fn parse_repeat(self: *Parser) ParseError!ast.Stmt {
         const l = (try self.adv()).loc;
-        const body = try self.parse_block();
+        const body = try self.parse_block_at(l);
         _ = try self.expect(.kw_until);
         const cond = try self.parse_expr();
         return ast.Stmt{ .repeat_loop = .{ .loc = l, .body = body, .cond = cond } };
@@ -2571,8 +2756,8 @@ pub const Parser = struct {
             var step: ?*ast.Expr = null;
             if (try self.eat(.comma) != null) step = try self.parse_expr();
             try self.eat_deprecated(.kw_do);
-            const body = try self.parse_block();
-            _ = try self.expect(.kw_end);
+            const body = try self.parse_block_at(l);
+            try self.close_block(l, self.last_layout.offside);
             return ast.Stmt{ .num_for = .{
                 .loc = l,
                 .var_name = first_name.text,
@@ -2595,8 +2780,8 @@ pub const Parser = struct {
             while (try self.eat(.comma) != null)
                 try iters.append(self.alloc, try self.parse_expr());
             try self.eat_deprecated(.kw_do);
-            const body = try self.parse_block();
-            _ = try self.expect(.kw_end);
+            const body = try self.parse_block_at(l);
+            try self.close_block(l, self.last_layout.offside);
             return ast.Stmt{ .gen_for = .{
                 .loc = l,
                 .vars = try vars.toOwnedSlice(self.alloc),
@@ -2608,8 +2793,8 @@ pub const Parser = struct {
 
     fn parse_do(self: *Parser) ParseError!ast.Stmt {
         const l = (try self.adv()).loc;
-        const body = try self.parse_block();
-        _ = try self.expect(.kw_end);
+        const body = try self.parse_block_at(l);
+        try self.close_block(l, self.last_layout.offside);
         return ast.Stmt{ .do_block = .{ .loc = l, .body = body } };
     }
 
@@ -2710,8 +2895,8 @@ pub const Parser = struct {
     /// ```
     fn parse_defer(self: *Parser) ParseError!ast.Stmt {
         const l = (try self.adv()).loc; // consume `defer`
-        const body = try self.parse_block();
-        _ = try self.expect(.kw_end);
+        const body = try self.parse_block_at(l);
+        try self.close_block(l, self.last_layout.offside);
         return ast.Stmt{ .defer_stmt = .{ .loc = l, .body = body } };
     }
 
@@ -3698,8 +3883,22 @@ pub const Parser = struct {
         }
 
         // Bash-style call: name arg1 arg2 ...
+        //
+        // Pass 100 §3 — STATEMENTS END AT NEWLINE (except inside an open
+        // `( [ {`, which this form has none of). The argument must therefore
+        // sit on the callee's own line. Without that test a block whose tail
+        // expression is a bare name swallows the next statement:
+        //
+        //     sum = (n: i64): i64
+        //         …
+        //         acc          -- tail expression
+        //
+        //     main = (): i64   -- was read as `acc(main)`, then `= …` failed
+        //
+        // which only became reachable once dedent could close `sum` without an
+        // `end` standing between the two lines.
         if (first.* == .name) {
-            const is_bash_arg = switch (nxt.kind) {
+            const is_bash_arg = nxt.loc.line == first.loc().line and switch (nxt.kind) {
                 .string_lit, .int_lit, .float_lit, .name => true,
                 else => false,
             };
@@ -3709,7 +3908,7 @@ pub const Parser = struct {
                 try args.append(self.alloc, try self.parse_parenless_call_arg());
                 while (true) {
                     const peek = try self.pk();
-                    const is_next = switch (peek.kind) {
+                    const is_next = peek.loc.line == first.loc().line and switch (peek.kind) {
                         .string_lit, .int_lit, .float_lit, .name => true,
                         else => false,
                     };
@@ -3982,8 +4181,8 @@ pub const Parser = struct {
             }) });
         } else if (sep.kind == .kw_do) {
             _ = try self.adv();
-            const body = try self.parse_block();
-            _ = try self.expect(.kw_end);
+            const body = try self.parse_block_at(l);
+            try self.close_block(l, self.last_layout.offside);
             return self.new_expr(.{ .func_expr = try self.new_fb(.{
                 .loc = l,
                 .params = try params.toOwnedSlice(self.alloc),
@@ -4180,8 +4379,7 @@ pub const Parser = struct {
             // edges — no third category." A TYPE NAME is therefore a value in
             // expression position, which is what makes the canonical relation
             // spelling `to(str)` / `to(i64)` (spec 2.6) parseable at all.
-            .kw_i8, .kw_i16, .kw_i32, .kw_i64, .kw_u8, .kw_u16, .kw_u32,
-            .kw_u64, .kw_f32, .kw_f64, .kw_bool, .kw_void, .kw_str => blk: {
+            .kw_i8, .kw_i16, .kw_i32, .kw_i64, .kw_u8, .kw_u16, .kw_u32, .kw_u64, .kw_f32, .kw_f64, .kw_bool, .kw_void, .kw_str => blk: {
                 const type_tok = try self.adv();
                 break :blk self.new_expr(.{ .name = .{ .loc = type_tok.loc, .ident = type_tok.kind.spelling() } });
             },

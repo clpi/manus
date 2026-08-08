@@ -18,7 +18,7 @@ mcp.register_tool("duo_bench_run", {
     sx = req "std.script"
     if args.bench_type == nil or args.bench_type == ""
         return "no bench type"
-        end
+    end
     locked = sx.lock_cmd("zig build " .. args.bench_type)
     rc = sx.run(locked)
     json_mod.encode({ exit_code = rc, passed = rc == 0, bench_type = args.bench_type })
@@ -142,7 +142,7 @@ mcp.register_tool("duo_audit_metaprogramming_smokes", {
         results[#results + 1] = r
         if r.pass
             passed = passed + 1 else failed = failed + 1
-            end
+        end
     end
     json_mod.encode({ total = #paths, passed = passed, failed = failed, results = results })
 end)
@@ -285,11 +285,11 @@ mcp.register_tool("duo_bench_regressions", {
     bo = args.bench_output
     if bo == nil
         bo = ""
-        end
+    end
     bt = args.bench_type
     if bt == nil
         bt = "bench"
-        end
+    end
     json_mod.encode(shared.bench_regressions(bo, bt))
 end)
 

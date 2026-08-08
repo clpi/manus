@@ -1147,7 +1147,6 @@ proj_desc_body = (lx: Lexer): str
         else
             before: i64 = lx.pos
             peeked = lx.has_peeked
-        peeked = lx.has_peeked
             s = s .. " (item " .. proj_expr(lx) .. ")"
             if stalled(lx, before, peeked)
                 mark_error(lx)

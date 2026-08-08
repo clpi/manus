@@ -478,7 +478,7 @@ end
 scene_traverse(node: any, callback: any): void
     if node.visible
         callback(node)
-    for child in node.children
+        for child in node.children
             scene_traverse(child, callback)
         end
     end

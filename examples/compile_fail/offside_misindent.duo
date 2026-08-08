@@ -1,0 +1,13 @@
+-- Pass 100 §3 — indentation matching no legal shallow shape is a DIAGNOSTIC,
+-- never an alternate parse. This is the half that makes dedent-closing safe:
+-- Python's failure mode is a mis-indent that silently MEANS something else.
+--
+-- `total = total + i` is indented past the block it sits in, and nothing on the
+-- line above opened a block, so it continues nothing and opens nothing. There
+-- is no shallow shape it could be. The parser must say so rather than pick one.
+
+sum = (n: i64): i64
+    total = 0
+    i = 1
+        total = total + i
+    total
