@@ -14,26 +14,30 @@
 -- Every assertion here is by VALUE, not by exit status alone: `duo run` must
 -- actually print the template's greeting and `duo test` must actually report a
 -- passing case. A compile that emits nothing exits 0 too.
+--
+-- Every shell string is interpolated, not concatenated: `..` beside a literal
+-- is a §1 deny row, and the `_`-prefixed helper names this file first carried
+-- were another. Both are lexical; neither changed a single assertion.
 
 -- Absolute, because every command below runs with cwd inside a scratch project.
 -- std.script.duo_bin() is RELATIVE ("./zig-out/bin/duo") and would resolve to
 -- nothing there, and std.os.execute would hand back a confident nonzero that
 -- reads as "the compiler is broken" rather than "the gate is".
-_root(): str
+cwd(): str
     std.script.chomp(std.script.capture("pwd"))
 end
 
-_bin(root: str): str
-    root .. "/zig-out/bin/duo"
+duobin(root: str): str
+    "{root}/zig-out/bin/duo"
 end
 
-_fail(msg: str): void
-    print("init_build_smoke: FAIL — " .. msg)
+fail(msg: str): void
+    print("init_build_smoke: FAIL — {msg}")
 end
 
 -- Run `cmd` with cwd set to `dir`, returning the exact exit status.
-_at(dir: str, cmd: str): i64
-    std.script.status("cd " .. dir .. " && " .. cmd)
+at(dir: str, cmd: str): i64
+    std.script.status("cd {dir} && {cmd}")
 end
 
 -- NOT std.script.exists: std.script's whole block of ergonomic aliases (exists,
@@ -43,90 +47,90 @@ end
 -- `if not exists(p)` is taken for present and absent paths alike -- the first
 -- draft of this gate reported "no duo binary" for a 7.3 MB binary at exactly
 -- that path. See gap[43].
-_present(path: str): bool
-    std.script.status("test -e " .. path) == 0
+present(path: str): bool
+    std.script.status("test -e {path}") == 0
 end
 
 -- Run `cmd` in `dir` and report whether its combined output contains `want`.
 -- Exit status alone cannot distinguish "the program ran and printed the right
 -- thing" from "the program was optimized down to nothing"; this can.
-_says(dir: str, cmd: str, want: str): bool
-    std.script.status("cd " .. dir .. " && " .. cmd .. " 2>&1 | grep -q " .. want) == 0
+says(dir: str, cmd: str, want: str): bool
+    std.script.status("cd {dir} && {cmd} 2>&1 | grep -q {want}") == 0
 end
 
 main = (): i64
-    root = _root()
-    bin = _bin(root)
+    root = cwd()
+    bin = duobin(root)
 
     -- Positive control on the gate itself. Without it a missing binary, or a
     -- status() that has stopped reporting failure, scores a silent 0/0 PASS.
-    if not _present(bin)
-        _fail("no duo binary at " .. bin .. " (run `zig build` first)")
+    if not present(bin)
+        fail("no duo binary at {bin} (run `zig build` first)")
         return 1
     end
     if std.script.status("false") == 0
-        _fail("positive control: status() reported success for `false`")
+        fail("positive control: status() reported success for `false`")
         return 1
     end
 
     work = std.script.chomp(std.script.capture("mktemp -d"))
     if work == ""
-        _fail("could not create a scratch directory")
+        fail("could not create a scratch directory")
         return 1
     end
-    proj = work .. "/demo"
-    std.script.run("mkdir -p " .. proj)
-    print("init_build_smoke: scratch " .. proj)
+    proj = "{work}/demo"
+    std.script.run("mkdir -p {proj}")
+    print("init_build_smoke: scratch {proj}")
 
     fails = 0
 
     -- 1. init must succeed AND leave the files it advertised.
-    if _at(proj, bin .. " init demo") != 0
-        _fail("duo init exited nonzero")
+    if at(proj, "{bin} init demo") != 0
+        fail("duo init exited nonzero")
         fails += 1
     end
-    if not _present(proj .. "/src/main.duo")
-        _fail("duo init did not write src/main.duo")
+    if not present("{proj}/src/main.duo")
+        fail("duo init did not write src/main.duo")
         fails += 1
     end
 
     -- 2. The generated template must satisfy the front end. This is the exact
     --    step that returned `macro expansion error: UnknownMacro`.
-    if _at(proj, bin .. " check src/main.duo") != 0
-        _fail("duo check rejected the file duo init just generated")
+    if at(proj, "{bin} check src/main.duo") != 0
+        fail("duo check rejected the file duo init just generated")
         fails += 1
     end
 
     -- 3. build must succeed and produce the binary it names.
-    if _at(proj, bin .. " build") != 0
-        _fail("duo build exited nonzero on a freshly initialized project")
+    if at(proj, "{bin} build") != 0
+        fail("duo build exited nonzero on a freshly initialized project")
         fails += 1
     end
-    if not _present(proj .. "/zig-out/bin/demo")
-        _fail("duo build reported success but wrote no zig-out/bin/demo")
+    if not present("{proj}/zig-out/bin/demo")
+        fail("duo build reported success but wrote no zig-out/bin/demo")
         fails += 1
     end
 
     -- 4. run must print the template's greeting, not merely exit 0.
-    if not _says(proj, bin .. " run", "'hello from Duo'")
-        _fail("duo run did not print the template's greeting")
+    if not says(proj, "{bin} run", "'hello from Duo'")
+        fail("duo run did not print the template's greeting")
         fails += 1
     end
 
     -- 5. test must actually execute the template's @test case.
-    if _at(proj, bin .. " test") != 0
-        _fail("duo test exited nonzero on a freshly initialized project")
+    if at(proj, "{bin} test") != 0
+        fail("duo test exited nonzero on a freshly initialized project")
         fails += 1
     end
-    if not _says(proj, bin .. " test", "'1 pass'")
-        _fail("duo test ran no passing case from the generated template")
+    if not says(proj, "{bin} test", "'1 pass'")
+        fail("duo test ran no passing case from the generated template")
         fails += 1
     end
 
-    std.script.run("rm -rf " .. work)
+    std.script.run("rm -rf {work}")
 
     if fails != 0
-        print("init_build_smoke: " .. to(str)(fails) .. " failing step(s)")
+        print("init_build_smoke: {fails} failing step(s)")
         return 1
     end
     print("init_build_smoke: PASS — init, check, build, run, test on a clean directory")
