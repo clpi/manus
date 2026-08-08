@@ -1,0 +1,59 @@
+-- Pass 100 §8 B-12 — the RESULT PACK under a declared contract.
+--
+-- `: i64 | error` declares the correlated pack `(value, nil) | (nil, error)`.
+-- The structural nil is UNWRITTEN, so the contract still names only the
+-- success type, and a nil in the value position is the declared shape of a
+-- failure rather than a type error. Before this the same three lines reported
+-- "return type mismatch: expected 'i64', got 'nil'" and §20's own leb128
+-- decoder could not be written.
+--
+-- Both PRODUCE spellings are here on purpose, because they reach the check
+-- through different callers:
+--
+--   return nil, "over"   the early exit §20's leb128 writes three times
+--   nil, "trunc"         the BARE TAIL pack — no `return` written, B-13 makes
+--                        the last expression the result
+--
+-- Checked BY VALUE in three places, because each one fails differently:
+--
+--   42     the success value, so the pack did not collapse to a failure arm
+--   over   the detail of an early `return nil, err`
+--   trunc  the detail of the bare tail pack
+--
+-- Consumed through the binding condition, the discharge the ladder names
+-- first: a failure selects the else arm, so a wrong correlation between the
+-- two positions shows up as the wrong branch rather than as a crash.
+-- expect: 42 over trunc
+
+scan = (b: i64): i64 | error
+    if b > 63
+        return nil, "over"
+    end
+    if b > 0
+        return b, nil
+    end
+    nil, "trunc"
+end
+
+main = (): i64
+    good = "?"
+    high = "?"
+    low = "?"
+    if v, e = scan(42)
+        good = "{v}"
+    else
+        good = "err {e}"
+    end
+    if v, e = scan(99)
+        high = "ok {v}"
+    else
+        high = e
+    end
+    if v, e = scan(0)
+        low = "ok {v}"
+    else
+        low = e
+    end
+    print("{good} {high} {low}")
+    0
+end

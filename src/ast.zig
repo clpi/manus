@@ -288,6 +288,13 @@ pub const FuncBody = struct {
     /// Lua 5.5 named vararg: function f(...args)
     vararg_name: ?[]const u8 = null,
     ret_type: TypeExpr,
+    /// Pass 100 §8 B-12 — the contract declared a FAILURE ALTERNATIVE
+    /// (`: u64 | error`). The structural nil is UNWRITTEN, so `ret_type` still
+    /// carries `u64` alone, and this records that what the function actually
+    /// returns is the correlated pack `(value, nil) | (nil, error)`. Without
+    /// it `return nil, error.overflow` reads as a plain `u64` return of nil and
+    /// sema rejects §20's own leb128 decoder.
+    ret_fallible: bool = false,
     body: Block,
     /// Generic type parameters: <T, U>
     type_params: ?[]TypeExpr = null,

@@ -703,7 +703,19 @@ main(): i64
     -- different diff. The -1 is a stray duplicated `peeked = lx.has_peeked` in
     -- `lib/std/compiler/parser.duo`, at an indentation the `end`-only grammar
     -- absorbed silently — the offside diagnostic is what found it.
-    budgets: str = "14154 2256 1847 259 322 481 154 58 2031 442 167 128 228 36 2428 2258 3437"
+    -- 2026-08-08, §20 construct fixtures: `trailret` 3437 -> 3439, RAISED, and
+    -- the reason is that this row convicts the SPEC. GAP-025 already recorded
+    -- it: §5 says "`return` = early exit or contract only", §20's leb128 block
+    -- writes `return nil, error.overflow` three times, and this regex —
+    -- `return[[:space:]]+[^[:space:]]` — cannot tell an early exit from a
+    -- trailing one. `examples/spec100/pack.duo` is the fixture for the result
+    -- pack (B-12) and its two `return nil, err` / `return v, nil` lines ARE
+    -- the canonical PRODUCE spelling; writing them another way to keep the
+    -- number still would make the fixture stop testing what §20 writes.
+    -- Nothing else moved: `oneline` reads exactly 2258 over the same corpus
+    -- with the four new fixtures in it, because every `if` in them is written
+    -- over multiple lines.
+    budgets: str = "14154 2256 1847 259 322 481 154 58 2031 442 167 128 228 36 2428 2258 3439"
 
     -- Per-row: 1 = measure with string bodies INTACT. Only `concatlit` sets
     -- it, because its subject IS the string literal; stripping bodies takes

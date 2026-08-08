@@ -97,6 +97,35 @@ pub const Parser = struct {
     /// `tmp = a[i]; a[i] = a[j]; a[j] = tmp` is three statements on one
     /// rendered line and its second and third columns render nothing.
     prev_line: u32 = 0,
+    /// Set by `parse_type` when the type just read carried a `| alt`
+    /// alternative other than `nil`. Read only where a FUNCTION CONTRACT is
+    /// parsed — the one position Pass 100 §8 gives the union a meaning:
+    /// `: u64 | error` is the failure pack, not a sum type.
+    union_alternative_seen: bool = false,
+
+    /// Pass 100 §9 — relation edges declared at a trie place with a LEVEL:
+    /// `decode(u64) = (cursor): u64 | error`. Keyed `"<name>\x00<level>"`, the
+    /// value being the flat symbol the edge was minted as. The level is a
+    /// descriptor-space key (LAW-STRATA), so it never becomes a runtime
+    /// parameter; it selects WHICH function the call site means, and this map
+    /// is how the call site `decode(u64)(v)` finds it again.
+    relation_edges: std.StringHashMapUnmanaged([]const u8) = .empty,
+
+    /// Pass 100 §0.3 / §7 — declarations a descriptor body produced on the
+    /// side and that must land BEFORE it. An inline case-set is a real
+    /// case-set, not a shape: `kind: { name, number, eof }` inside `token`
+    /// declares the enum and the field's type is that enum. `parse_block`
+    /// drains this ahead of the statement that filled it.
+    pending_hoists: std.ArrayList(ast.Stmt) = .empty,
+
+    /// The descriptor a body is being read for, so an inline case-set can take
+    /// its HOME as its name (§0.1: the qualifier moves to a HOME —
+    /// `token.kind`). Null outside a named descriptor body.
+    descriptor_home: ?[]const u8 = null,
+
+    /// `"<home>\x00<field>"` -> the minted enum name of an inline case-set, so
+    /// `token.kind.eof` reaches the cases the descriptor body declared.
+    caseset_homes: std.StringHashMapUnmanaged([]const u8) = .empty,
 
     pub fn init(lex: *Lexer, alloc: Allocator) Parser {
         return .{ .lex = lex, .alloc = alloc };
@@ -404,8 +433,21 @@ pub const Parser = struct {
             base_ptr.* = base;
             base = .{ .generic = .{ .base = base_ptr, .params = try params.toOwnedSlice(self.alloc) } };
         }
+        // Pass 100 §8 B-12 — `: u64 | error` DECLARES the failure pack. The
+        // alternative names the failure descriptor; the structural nil is
+        // UNWRITTEN. `TypeExpr` still has no union representation, so the
+        // alternatives are still discarded — but WHETHER one was written is
+        // exactly the fact the return-value check needs, and that is now kept
+        // instead of thrown away.
+        //
+        // Assigned after the loop so the OUTERMOST parse_type wins: an inner
+        // union (a generic argument, a record field) runs its own loop first
+        // and would otherwise leave the flag set for a contract carrying none.
+        var saw_alternative = false;
         while (try self.eat(.pipe) != null) {
-            _ = try self.parse_type_primary();
+            const alt = try self.parse_type_primary();
+            // `| nil` is the SUCCESS-nil spelling (B-12), not a failure edge.
+            if (!(alt == .named and std.mem.eql(u8, alt.named, "nil"))) saw_alternative = true;
             while (try self.eat(.lbracket) != null) {
                 if (!(try self.check(.rbracket))) {
                     _ = try self.parse_type();
@@ -414,6 +456,7 @@ pub const Parser = struct {
                 _ = try self.expect(.rbracket);
             }
         }
+        self.union_alternative_seen = saw_alternative;
         return base;
     }
 
@@ -430,6 +473,132 @@ pub const Parser = struct {
     /// is followed by a parenthesised expression, and a global rule would
     /// swallow it. Inside `name: shape` the only legal continuations are `,`,
     /// `}` or the next field, so a `(` here can be nothing else.
+    /// Pass 100 §9 / §20 — a RELATION SLOT in a descriptor body, with or
+    /// without a level:
+    ///
+    ///     token: {
+    ///         text: view
+    ///         format(sink) = (out) out:write("…")
+    ///     }
+    ///
+    /// The slot is an EDGE homed on the descriptor, so it is hoisted as an
+    /// ordinary function whose first parameter is the receiver typed by that
+    /// descriptor. That spelling already dispatches both ways: `format(sink)(t)`
+    /// through the relation-edge map, and — for an UNLEVELLED slot — the
+    /// receiver face `t:width(3)`, which codegen projects onto a free function
+    /// (gap[025], landed 2026-08-07). A LEVELLED receiver face `t:format(sink)`
+    /// has no resolution yet and is still gap[025].
+    ///
+    /// Returns true when a slot was consumed. `name(` is not enough to decide —
+    /// `tags: seq(str)` also has one — so the decision is made on the `=` that
+    /// follows the group, which is exactly what `parse_level_edge` tests.
+    fn parse_descriptor_slot(self: *Parser, name: []const u8, loc: ast.Loc) ParseError!bool {
+        const nxt = (try self.pk()).kind;
+        if (nxt != .lparen and nxt != .assign) return false;
+
+        var path: std.ArrayList([]const u8) = .empty;
+        try path.append(self.alloc, name);
+        var sym: []const u8 = name;
+        if (nxt == .lparen) {
+            sym = (try self.parse_level_edge(&path)) orelse return false;
+        } else {
+            // `name = (params) …` — an unlevelled slot. A `=` not followed by a
+            // parameter list is not a slot; leave it for the field diagnostic.
+            const saved = self.lex.saveState();
+            _ = try self.adv();
+            const opens = try self.check(.lparen);
+            self.lex.restoreState(saved);
+            if (!opens) return false;
+        }
+        _ = try self.expect(.assign);
+
+        const home = self.descriptor_home orelse {
+            term.locErr(loc, "relation slot '{s}' needs a named descriptor to be homed on", .{name});
+            return ParseError.UnexpectedToken;
+        };
+        var fb = try self.parse_func_body(loc);
+        // The receiver is the first parameter, typed by its home — the shape a
+        // receiver face and an operation-first call BOTH lower to.
+        var params: std.ArrayList(ast.FuncParam) = .empty;
+        try params.append(self.alloc, .{
+            .name = "self",
+            .typ = .{ .named = home },
+            .default_val = null,
+            .loc = loc,
+        });
+        try params.appendSlice(self.alloc, fb.params);
+        fb.params = try params.toOwnedSlice(self.alloc);
+
+        const fpath = try self.alloc.alloc([]const u8, 1);
+        fpath[0] = sym;
+        try self.pending_hoists.append(self.alloc, .{ .func_decl = .{
+            .loc = loc,
+            .path = fpath,
+            .method = false,
+            .is_local = false,
+            .func = fb,
+            .attributes = &.{},
+        } });
+        return true;
+    }
+
+    /// Pass 100 §0.3 / §7 — a CASE-SET written inline as a field's shape:
+    ///
+    ///     token: {
+    ///         kind: { name, number, string, symbol, eof }
+    ///         span: span
+    ///     }
+    ///
+    /// GAP-025 measured the 2026-08-07 case-set fix as reaching the
+    /// DECLARATION site only: `kind: { name, number, eof }` at top level
+    /// checks clean, and the identical text as a FIELD does not, because a
+    /// body's `name: …` runs through `parse_type`, which has no anonymous
+    /// case-set production. This is that production.
+    ///
+    /// It DECLARES rather than describes. The cases are hoisted as a real
+    /// enum named for the field's HOME (§0.1 — `token.kind`), the field's type
+    /// is that enum, and `token.kind.eof` reaches a case. A shape-only accept
+    /// would have made the golden `token` parse while `.eof` still meant
+    /// nothing, which is the failure mode §22 exists to prevent.
+    ///
+    /// Routed on the SAME LOOKAHEAD as the declaration site: a case is a name
+    /// followed by `,` or `(`; a record field always has `:`. So
+    /// `{ x: i64, y: i64 }` in field position is still a record type, and a
+    /// `(` after a field type is still level application (`tags: seq(str)`).
+    fn parse_inline_caseset(self: *Parser, field: []const u8, loc: ast.Loc) ParseError!?ast.TypeExpr {
+        if (!(try self.check(.lbrace))) return null;
+        const saved = self.lex.saveState();
+        _ = try self.adv();
+        var is_caseset = false;
+        if ((try self.pk()).kind == .name) {
+            _ = try self.adv();
+            const after = (try self.pk()).kind;
+            is_caseset = after == .comma or after == .lparen;
+        }
+        self.lex.restoreState(saved);
+        if (!is_caseset) return null;
+
+        const home = self.descriptor_home orelse field;
+        const name = if (self.descriptor_home == null)
+            field
+        else
+            try std.fmt.allocPrint(self.alloc, "{s}__{s}", .{ home, field });
+        const stmt = try self.stmt_from_descriptor(name, loc);
+        if (stmt != .enum_def) {
+            term.locErr(loc, "'{s}' mixes cases with typed fields; a case-set holds cases only", .{field});
+            return ParseError.UnexpectedToken;
+        }
+        try self.pending_hoists.append(self.alloc, stmt);
+        if (self.descriptor_home) |h| {
+            try self.caseset_homes.put(
+                self.alloc,
+                try std.fmt.allocPrint(self.alloc, "{s}\x00{s}", .{ h, field }),
+                name,
+            );
+        }
+        return ast.TypeExpr{ .named = name };
+    }
+
     fn parse_field_type(self: *Parser) ParseError!ast.TypeExpr {
         var base = try self.parse_type();
         while ((try self.pk()).kind == .lparen) {
@@ -656,8 +825,13 @@ pub const Parser = struct {
                     while (true) {
                         const fl = (try self.pk()).loc;
                         const fn_tok = try self.expect(.name);
+                        if (try self.parse_descriptor_slot(fn_tok.text, fl)) {
+                            if (try self.eat(.comma) == null and !(try self.check(.name))) break;
+                            continue;
+                        }
                         _ = try self.expect(.colon);
-                        const ft = try self.parse_field_type();
+                        const ft = (try self.parse_inline_caseset(fn_tok.text, fl)) orelse
+                            try self.parse_field_type();
                         try fields.append(self.alloc, ast.RecordField{
                             .name = fn_tok.text,
                             .typ = ft,
@@ -745,7 +919,15 @@ pub const Parser = struct {
                 },
                 else => {
                     try self.flush_module_hint_directives(&stmts);
-                    try stmts.append(self.alloc, try self.parse_stmt());
+                    const st = try self.parse_stmt();
+                    // Declarations the statement produced on the side land
+                    // BEFORE it: an inline case-set is the field's type, so the
+                    // enum has to exist by the time the descriptor names it.
+                    if (self.pending_hoists.items.len > 0) {
+                        try stmts.appendSlice(self.alloc, self.pending_hoists.items);
+                        self.pending_hoists.clearRetainingCapacity();
+                    }
+                    try stmts.append(self.alloc, st);
                 },
             }
         }
@@ -1869,6 +2051,90 @@ pub const Parser = struct {
         return result;
     }
 
+    /// The flat symbol a relation edge is minted as. `decode` at level `u64`
+    /// becomes `decode__u64` — the SAME `owner__member` shape codegen already
+    /// mints for module members and alias methods, so nothing new has to learn
+    /// how to spell it. It is never written in Duo source: the surface is
+    /// `decode(u64)`, and both the declaration and the call site pass through
+    /// this one function so they cannot drift.
+    fn relation_edge_symbol(self: *Parser, name: []const u8, level: []const u8) ParseError![]const u8 {
+        return std.fmt.allocPrint(self.alloc, "{s}__{s}", .{ name, level });
+    }
+
+    fn relation_edge_key(self: *Parser, name: []const u8, level: []const u8) ParseError![]const u8 {
+        return std.fmt.allocPrint(self.alloc, "{s}\x00{s}", .{ name, level });
+    }
+
+    /// Pass 100 §9 — `name(level) = (params) …`, a relation edge declared at a
+    /// trie place. Returns the minted symbol and consumes the LEVEL group only;
+    /// the caller consumes the `=` and parses the parameter list.
+    ///
+    /// The shape is recognised on three tokens and is unambiguous: a level
+    /// group holds exactly one descriptor name, and what follows it is `=`
+    /// then `(`. That was a parse error before this — a function body cannot
+    /// start with `=` — so no existing program changes meaning. `f(x: i64) = …`
+    /// is not this shape (the group carries an annotation, not a bare key) and
+    /// still reports as it did.
+    fn parse_level_edge(self: *Parser, path: *std.ArrayList([]const u8)) ParseError!?[]const u8 {
+        if (path.items.len != 1) return null;
+        if (!(try self.check(.lparen))) return null;
+        const saved = self.lex.saveState();
+        _ = try self.adv();
+        const key = try self.pk();
+        const level: []const u8 = if (key.kind == .name)
+            key.text
+        else if (typeKeywordName(key.kind)) |t|
+            t
+        else {
+            self.lex.restoreState(saved);
+            return null;
+        };
+        _ = try self.adv();
+        if (!(try self.check(.rparen))) {
+            self.lex.restoreState(saved);
+            return null;
+        }
+        _ = try self.adv();
+        if (!(try self.check(.assign))) {
+            self.lex.restoreState(saved);
+            return null;
+        }
+        _ = try self.adv();
+        const opens_params = try self.check(.lparen);
+        self.lex.restoreState(saved);
+        if (!opens_params) return null;
+        _ = try self.adv(); // '('
+        _ = try self.adv(); // level
+        _ = try self.adv(); // ')'
+        const sym = try self.relation_edge_symbol(path.items[0], level);
+        try self.relation_edges.put(self.alloc, try self.relation_edge_key(path.items[0], level), sym);
+        return sym;
+    }
+
+    /// The edge `name(level)` names, if this parse has seen it DECLARED.
+    ///
+    /// Nothing is guessed from the shape: only a `(name)` group whose key was
+    /// registered by `parse_level_edge` resolves, so `f(g)` where `f` is an
+    /// ordinary function keeps meaning "call f with g". The consequence, and
+    /// it is a real limit rather than an oversight: an edge declared in
+    /// ANOTHER module is not in this map, so `mod.decode(u64)(v)` does not
+    /// resolve yet. gap[025].
+    fn relation_edge_of(self: *Parser, callee: *ast.Expr, args: []*ast.Expr) ParseError!?[]const u8 {
+        if (self.relation_edges.count() == 0) return null;
+        if (callee.* != .name or args.len != 1 or args[0].* != .name) return null;
+        const key = try self.relation_edge_key(callee.name.ident, args[0].name.ident);
+        return self.relation_edges.get(key);
+    }
+
+    /// The enum an inline case-set declared under `<owner>.<field>`, if this
+    /// parse registered one. Nothing is inferred from the shape.
+    fn caseset_home_of(self: *Parser, owner: *ast.Expr, field: []const u8) ParseError!?[]const u8 {
+        if (self.caseset_homes.count() == 0) return null;
+        if (owner.* != .name) return null;
+        const key = try std.fmt.allocPrint(self.alloc, "{s}\x00{s}", .{ owner.name.ident, field });
+        return self.caseset_homes.get(key);
+    }
+
     fn parse_bare_func_decl_with_attrs(self: *Parser, is_local: bool, attrs: []ast.Attribute) ParseError!ast.Stmt {
         const l = (try self.pk()).loc;
         return self.parse_func_decl_after_first(is_local, attrs, l);
@@ -1889,6 +2155,29 @@ pub const Parser = struct {
                 method = true;
                 break;
             } else break;
+        }
+        // Pass 100 §9 — a RELATION EDGE declared at a trie place with a LEVEL:
+        //
+        //     decode(u64) = (cursor): u64 | error
+        //
+        // The first group is descriptor space (LAW-STRATA): `u64` is the key
+        // that selects WHICH edge of `decode` this is, never a runtime
+        // parameter. The second group is the parameter list. `parse_level_edge`
+        // recognises the shape and mints the edge's symbol; the call site
+        // `decode(u64)(v)` finds the same symbol through `relation_edges`.
+        if (try self.parse_level_edge(&path)) |edge| {
+            _ = try self.expect(.assign);
+            const efb = try self.parse_func_body(l);
+            const epath = try self.alloc.alloc([]const u8, 1);
+            epath[0] = edge;
+            return ast.Stmt{ .func_decl = .{
+                .loc = l,
+                .path = epath,
+                .method = false,
+                .is_local = is_local,
+                .func = efb,
+                .attributes = attrs,
+            } };
         }
         // @ffi functions are bodyless prototypes — parse signature only, no body/end.
         const is_ffi = blk: {
@@ -2265,8 +2554,12 @@ pub const Parser = struct {
         const rparen_tok = try self.expect(.rparen);
         // Accept either `-> type` or `: type` for the return type.
         var ret_type: ast.TypeExpr = .inferred;
-        if (try self.eat(.arrow) != null or try self.eat(.colon) != null)
+        var ret_fallible = false;
+        if (try self.eat(.arrow) != null or try self.eat(.colon) != null) {
+            self.union_alternative_seen = false;
             ret_type = try self.parse_type();
+            ret_fallible = self.union_alternative_seen;
+        }
 
         const had_do = try self.eat(.kw_do) != null;
         const body_tok = try self.pk();
@@ -2345,6 +2638,7 @@ pub const Parser = struct {
             .vararg = vararg,
             .vararg_name = vararg_name,
             .ret_type = ret_type,
+            .ret_fallible = ret_fallible,
             .body = body,
             .type_params = type_params,
         };
@@ -2392,8 +2686,12 @@ pub const Parser = struct {
         _ = try self.expect(.rparen);
         // Accept either `-> type` or `: type` for the return type.
         var ret_type: ast.TypeExpr = .inferred;
-        if (try self.eat(.arrow) != null or try self.eat(.colon) != null)
+        var ret_fallible = false;
+        if (try self.eat(.arrow) != null or try self.eat(.colon) != null) {
+            self.union_alternative_seen = false;
             ret_type = try self.parse_type();
+            ret_fallible = self.union_alternative_seen;
+        }
         // Bodyless function: empty body with no tail expression.
         return ast.FuncBody{
             .loc = l,
@@ -2401,6 +2699,7 @@ pub const Parser = struct {
             .vararg = vararg,
             .vararg_name = vararg_name,
             .ret_type = ret_type,
+            .ret_fallible = ret_fallible,
             .body = .{ .loc = l, .stmts = &.{}, .tail_expr = null },
             .type_params = type_params,
         };
@@ -3536,7 +3835,8 @@ pub const Parser = struct {
             }
             nxt = try self.pk();
         }
-        return nxt.kind == .assign or compound_assign_op(nxt.kind) != null;
+        if (nxt.kind == .assign or compound_assign_op(nxt.kind) != null) return true;
+        return (try self.peek_glued_assign(nxt)) != null;
     }
 
     /// Pass 23 §3 — `Type:method = (…) …` or `Type.method = (…) …` assign-form func decl.
@@ -3700,6 +4000,12 @@ pub const Parser = struct {
                 term.locErr(first.loc(), "expected '{{' after '@' in descriptor declaration", .{});
                 return ParseError.UnexpectedToken;
             }
+            // The descriptor being declared is the HOME any inline case-set in
+            // its body takes its name from (§0.1). Saved and restored rather
+            // than assigned, so a nested descriptor type does not steal it.
+            const saved_home = self.descriptor_home;
+            self.descriptor_home = first.name.ident;
+            defer self.descriptor_home = saved_home;
             const typ = try self.parse_type();
 
             // Jai-like type definition: `Name: { fields }` with no initializer
@@ -3754,8 +4060,10 @@ pub const Parser = struct {
         // ── Assignment or sequence expression ────────────────────────────────
         // Handle:  a = ...        a, b = ...        a += ...
         // Also:    a, b           (bare sequence — implicit multi-value return)
-        if (nxt.kind == .assign or compound_assign_op(nxt.kind) != null) {
-            // Single-target assignment:  name = expr  /  name += expr
+        const glued = try self.peek_glued_assign(nxt);
+        if (nxt.kind == .assign or compound_assign_op(nxt.kind) != null or glued != null) {
+            // Single-target assignment:  name = expr  /  name += expr  /
+            // name >>= expr (the operator and its `=` are two glued tokens)
             if (first.* == .name and nxt.kind == .assign) {
                 const saved = self.lex.saveState();
                 _ = try self.adv();
@@ -3777,6 +4085,8 @@ pub const Parser = struct {
                 }
             }
             _ = try self.adv(); // consume = or compound-assign
+            // `>>=` is TWO tokens; the second is the `=` glued to the operator.
+            if (glued != null) _ = try self.adv();
             // Check for `Name = struct ... end` — C-layout type definition
             if (first.* == .name and compound_assign_op(nxt.kind) == null) {
                 const next_tok = try self.pk();
@@ -3786,7 +4096,7 @@ pub const Parser = struct {
                 }
             }
             var values: std.ArrayList(*ast.Expr) = .empty;
-            if (compound_assign_op(nxt.kind)) |op| {
+            if (glued orelse compound_assign_op(nxt.kind)) |op| {
                 const rhs = if (self.match_arm_depth > 0)
                     try self.parse_match_scrutinee()
                 else
@@ -4018,6 +4328,42 @@ pub const Parser = struct {
             .pipe_gt => .{ .op = .pipeline, .left = 1, .right = 2 }, // a |> f (lowest prec, left-assoc)
             else => null,
         };
+    }
+
+    /// Pass 100 §20 — `v >>= 7`, `n <<= 1`, `m |= bit`, `m &= mask`.
+    ///
+    /// These four are the compound assignments the lexer has no token for:
+    /// `+= -= *= /= %= ^=` are single tokens, and `>>= <<= |= &=` arrive as an
+    /// operator followed by a separate `=`. GAP-025 recorded the fix as a
+    /// two-lexer change plus an artifact regeneration, because it assumed a
+    /// new TOKEN. It does not need one: `>>=` IS `>>` immediately followed by
+    /// `=`, and ADJACENCY is the whole rule — the `=` must start in the column
+    /// right after the operator ends, on the same line.
+    ///
+    /// Additive by construction: `target >> = rhs` was a parse error before
+    /// this ("expected expression, got '='"), so no program can change
+    /// meaning. Adjacency is what keeps it from claiming anything else — with
+    /// a space, `a >> = b` still reports exactly as it did.
+    ///
+    /// The lexers stay field-for-field identical and the generated
+    /// `src/duo_lexer_tokenize.c` does not move, which is the point: this is a
+    /// grammar fact, not a lexical one.
+    fn peek_glued_assign(self: *Parser, op: Token) ParseError!?ast.BinOp {
+        const bop: ast.BinOp = switch (op.kind) {
+            .rshift => .rshift,
+            .lshift => .lshift,
+            .pipe => .bor,
+            .amp => .band,
+            else => return null,
+        };
+        const saved = self.lex.saveState();
+        defer self.lex.restoreState(saved);
+        _ = try self.adv();
+        const eq = try self.pk();
+        if (eq.kind != .assign) return null;
+        if (eq.loc.line != op.loc.line) return null;
+        if (eq.loc.col != op.loc.col + @as(u32, @intCast(op.text.len))) return null;
+        return bop;
     }
 
     fn compound_assign_op(kind: TK) ?ast.BinOp {
@@ -4814,6 +5160,14 @@ pub const Parser = struct {
                         continue;
                     }
                     const fld = try self.expect_name_like();
+                    // `token.kind` names the case-set an inline field declared
+                    // (§0.1 HOME), so `token.kind.eof` reaches a case. Only a
+                    // pair this parse actually registered resolves; every other
+                    // `a.b` stays the field access it was.
+                    if (try self.caseset_home_of(e, fld)) |enum_name| {
+                        e = try self.new_expr(.{ .name = .{ .loc = tok.loc, .ident = enum_name } });
+                        continue;
+                    }
                     e = try self.new_expr(.{ .field = .{ .loc = tok.loc, .obj = e, .field = fld } });
                 },
                 .lbracket => {
@@ -4906,6 +5260,15 @@ pub const Parser = struct {
                         break;
                     }
                     const callargs = try self.parse_call_args();
+                    // Pass 100 §9 — `decode(u64)(v)`: the FIRST group is the
+                    // level, a descriptor-space key, so it selects the edge
+                    // rather than passing an argument. Resolved against the
+                    // edges this parse has actually seen declared, so a call
+                    // that is not a relation edge is left exactly as it was.
+                    if (try self.relation_edge_of(e, callargs)) |sym| {
+                        e = try self.new_expr(.{ .name = .{ .loc = tok.loc, .ident = sym } });
+                        continue;
+                    }
                     const form: ast.InvocationForm = if (tok.kind == .lparen) .parenthesized else .parenless;
                     e = try self.new_expr(.{ .call = .{ .loc = tok.loc, .func = e, .args = callargs, .form = form } });
                 },

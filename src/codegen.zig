@@ -1907,12 +1907,12 @@ pub const CodeGen = struct {
             // method NAMES like the static-dispatch branch below (that list is
             // the names-carry-semantics shape LAW-ONE denies).
             if (self.func_decls.get(mc.method)) |fd| {
-                return self.resolve_type(fd.func.ret_type);
+                return self.resolve_type(contract_ret(&fd.func));
             }
             {
                 var tbuf: [256]u8 = undefined;
                 if (self.func_decls.get(self.mangled_name(mc.method, &tbuf))) |fd| {
-                    return self.resolve_type(fd.func.ret_type);
+                    return self.resolve_type(contract_ret(&fd.func));
                 }
             }
             if (self.static_dispatch_type_for_expr(mc.obj, mc.method)) |_| {
@@ -2322,7 +2322,7 @@ pub const CodeGen = struct {
         // Closures are always runtime `lua_Value`s, never native fn pointers.
         if (fb.closure_id != null or fb.upvalues.len > 0) return .any;
         const ret = self.alloc.create(RT) catch return .any;
-        ret.* = self.resolve_type(fb.ret_type);
+        ret.* = self.resolve_type(contract_ret(fb));
         const params = self.alloc.alloc(RT, fb.params.len) catch {
             self.alloc.destroy(ret);
             return .any;
@@ -3332,7 +3332,7 @@ pub const CodeGen = struct {
                     if (@import("directives.zig").attrsHaveDebug(fd.attributes)) return nofit(@src());
                     // Allow closures and methods — they compile to C functions.
                     if (fd.func.type_params != null) return nofit(@src());
-                    if (!self.type_expr_is_native_scalar(fd.func.ret_type)) {
+                    if (!self.type_expr_is_native_scalar(contract_ret(&fd.func))) {
                         native_diag_fail_fmt("ret-type:{s}", .{typeLabel(fd.func.ret_type)});
                         return nofit(@src());
                     }
@@ -3521,7 +3521,7 @@ pub const CodeGen = struct {
         for (mod.body.stmts) |*stmt| {
             if (stmt.* != .func_decl) continue;
             const fd = &stmt.func_decl;
-            if (fd.func.ret_type != .inferred and !self.type_expr_is_native_scalar(fd.func.ret_type)) return true;
+            if (contract_ret(&fd.func) != .inferred and !self.type_expr_is_native_scalar(contract_ret(&fd.func))) return true;
             for (fd.func.params) |param| {
                 if (!self.type_expr_is_native_scalar(param.typ)) return true;
             }
@@ -3595,7 +3595,7 @@ pub const CodeGen = struct {
             if (@import("directives.zig").attrsWantBench(fd.attributes)) continue;
             if (@import("directives.zig").attrsHaveDebug(fd.attributes)) continue;
             if (fd.func.type_params != null) continue;
-            if (!self.type_expr_is_native_scalar(fd.func.ret_type)) continue;
+            if (!self.type_expr_is_native_scalar(contract_ret(&fd.func))) continue;
             var params_ok = true;
             for (fd.func.params) |param| {
                 if (param.default_val != null) {
@@ -3627,7 +3627,7 @@ pub const CodeGen = struct {
         if (@import("directives.zig").attrsWantBench(fd.attributes)) return false;
         if (@import("directives.zig").attrsHaveDebug(fd.attributes)) return false;
         if (fd.func.type_params != null) return false;
-        if (fd.func.ret_type != .inferred and !self.type_expr_is_native_scalar(fd.func.ret_type)) return false;
+        if (contract_ret(&fd.func) != .inferred and !self.type_expr_is_native_scalar(contract_ret(&fd.func))) return false;
         for (fd.func.params) |param| {
             if (param.default_val != null) return false;
             if (!self.type_expr_is_native_scalar(param.typ)) return false;
@@ -5047,7 +5047,7 @@ pub const CodeGen = struct {
                 (nf.step != null and self.expr_needs_native_scalar_stdbool_h(nf.step.?)) or
                 self.block_needs_native_scalar_stdbool_h(nf.body),
             .func_decl => |fd| blk: {
-                if (self.resolve_type(fd.func.ret_type) == .bool) break :blk true;
+                if (self.resolve_type(contract_ret(&fd.func)) == .bool) break :blk true;
                 for (fd.func.params) |param| {
                     if (self.resolve_type(param.typ) == .bool) break :blk true;
                     if (param.default_val) |expr| {
@@ -5779,11 +5779,19 @@ pub const CodeGen = struct {
         // emit the corresponding C struct typedefs at file scope. This must
         // run *before* the function forward-declarations so they can name
         // the record types in their signatures.
+        // Payload-free enums FIRST. A record field may be typed by a case-set
+        // (`token: { kind: { name, number, eof } … }` — Pass 100 §7), and the
+        // struct naming `duo_token__kind` was emitted before the typedef that
+        // defines it, so clang said "unknown type name". A payload-free enum
+        // names nothing but integers, so nothing it needs can be emitted after
+        // it; the split is safe in the other direction too, since a PAYLOAD
+        // enum may embed a record and therefore still comes second.
+        try self.emit_enum_decls(mod, .payload_free);
         try self.collect_and_emit_record_decls(mod);
 
         // Emit enum typedefs (and tag constants) before forward-declarations,
         // so function signatures can name `duo_<Enum>` types (Task 12.6).
-        try self.emit_enum_decls(mod);
+        try self.emit_enum_decls(mod, .payloaded);
 
         // Emit static metatable variable declarations for alias types with methods/@derive
         try self.emit_alias_metatable_decls(mod);
@@ -7190,11 +7198,18 @@ pub const CodeGen = struct {
     // Tag constants are emitted as `duo_<Enum>_tag_<Variant>` and matching is
     // done on `.tag`. Pattern conditions recurse into payload sub-patterns so
     // that literal and nested patterns are fully checked at match time.
-    fn emit_enum_decls(self: *CodeGen, mod: *ast.Module) E!void {
+    /// Which half of the enum declarations to emit. Split because a record
+    /// field can be typed by a payload-free case-set and a payload-carrying
+    /// enum can embed a record, so the two have opposite ordering needs
+    /// against `collect_and_emit_record_decls`.
+    const EnumPhase = enum { payload_free, payloaded };
+
+    fn emit_enum_decls(self: *CodeGen, mod: *ast.Module, phase: EnumPhase) E!void {
         for (mod.body.stmts) |*stmt| {
             if (stmt.* != .enum_def) continue;
             const ed = &stmt.enum_def;
             const has_payload = self.enum_has_payload.get(ed.name) orelse false;
+            if (has_payload != (phase == .payloaded)) continue;
 
             var is_packed = false;
             var align_n: ?usize = null;
@@ -7862,7 +7877,7 @@ pub const CodeGen = struct {
         if (func_ffi_name(fd.attributes) != null) {
             self.p("extern ", .{});
         }
-        const ret_raw = self.resolve_type(fb.ret_type);
+        const ret_raw = self.resolve_type(contract_ret(fb));
         const ret: RT = if (ret_raw == .any and self.skip_lua_thunk_emit()) .void else ret_raw;
         self.typ(ret);
         self.p(" {s}(", .{cname});
@@ -8656,7 +8671,7 @@ pub const CodeGen = struct {
         // is_typed may be false when params include .any (lua_Value), but .any
         // is lua-convertible so a thunk is still valid.
         if (!self.should_emit_lua_thunk(fb)) return;
-        const ret = self.resolve_type(fb.ret_type);
+        const ret = self.resolve_type(contract_ret(fb));
         var cname_buf: [128]u8 = undefined;
         const cname = self.emit_func_c_name(fd, &cname_buf);
         const nparams = fb.params.len;
@@ -8830,7 +8845,7 @@ pub const CodeGen = struct {
         // lua-convertible but not "native").
         try self.emit_lua_thunk(fd);
         if (fb.use_mandel_iter_native) self.mandel_native = true;
-        const ret_raw = self.resolve_type(fb.ret_type);
+        const ret_raw = self.resolve_type(contract_ret(fb));
         const ret: RT = if (ret_raw == .any and self.skip_lua_thunk_emit()) .void else ret_raw;
         if ((fb.vararg_name != null or fb.vararg) and (ret == .any or ret == .void)) {
             try self.emit_vararg_func_def(fd);
@@ -19132,6 +19147,22 @@ pub const CodeGen = struct {
         };
     }
 
+    /// Pass 100 §8 B-12 — the return type a contract LOWERS to.
+    ///
+    /// `: u64 | error` declares the correlated pack `(value, nil) | (nil,
+    /// error)`. A pack has no native scalar representation — `return nil,
+    /// error.overflow` out of an `int64_t` C function is a hard clang error —
+    /// so a fallible contract lowers dynamically even though the success type
+    /// stays written on the declaration and stays checked by sema.
+    ///
+    /// Identity for every contract without a failure alternative, which is
+    /// every one of the 748 tracked `.duo` files: `ret_fallible` is set only
+    /// by a `| alt` in return position, and that was a discarded no-op before.
+    /// So this cannot move any existing lowering.
+    fn contract_ret(fb: *const ast.FuncBody) ast.TypeExpr {
+        return if (fb.ret_fallible) .inferred else fb.ret_type;
+    }
+
     fn primitive_descriptor_name(name: []const u8) ?[]const u8 {
         for ([_][]const u8{
             "i8",  "i16", "i32",  "i64",
@@ -22745,7 +22776,7 @@ pub const CodeGen = struct {
         const body = self.func_bodies.get(mname);
         const ft: RT = if (body) |b| self.func_expr_type(b) else blk: {
             if (self.func_decls.get(mname)) |fd| {
-                const ret = self.resolve_type(fd.func.ret_type);
+                const ret = self.resolve_type(contract_ret(&fd.func));
                 const params = self.alloc.alloc(RT, fd.func.params.len) catch break :blk .any;
                 for (fd.func.params, 0..) |par, i| {
                     params[i] = self.resolve_type(par.typ);

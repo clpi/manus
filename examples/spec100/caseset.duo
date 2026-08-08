@@ -1,0 +1,44 @@
+-- Pass 100 §0.3 / §7 — a CASE-SET inline at a FIELD of a descriptor body.
+--
+--     token: {
+--         kind: { name, number, string, symbol, eof }
+--         span: i64
+--     }
+--
+-- GAP-025 measured the 2026-08-07 case-set fix as reaching the DECLARATION
+-- site only: the same text at top level checked clean, and as a FIELD it
+-- reported "expected ':', got ','" — a body's `name: …` ran through the type
+-- parser, which had no anonymous case-set production. §20's golden `token`
+-- opens with this line.
+--
+-- Verified BY VALUE, not by "it parsed". A case-set that parsed but declared
+-- nothing would leave every case equal — a degenerate zero — so this asserts
+-- one INEQUALITY (`eof` against `number`) and one EQUALITY (`number` against
+-- itself) and prints a total only a real case-set can produce. The cases are
+-- reached at `token.kind.<case>`: §0.1 moves the qualifier to a HOME, and
+-- `token.kind` is the home this case-set was declared at.
+-- expect: 9
+
+token: {
+    kind: { name, number, string, symbol, eof }
+    span: i64
+}
+
+main = (): i64
+    n = 0
+    k = token.kind.eof
+    if k == token.kind.eof
+        n = n + 1
+    end
+    if k == token.kind.number
+        n = n + 100
+    end
+    if token.kind.number == token.kind.number
+        n = n + 8
+    end
+    if token.kind.name == token.kind.symbol
+        n = n + 400
+    end
+    print("{n}")
+    0
+end

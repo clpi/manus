@@ -373,6 +373,11 @@ pub const Sema = struct {
     hints_enabled: bool = false,
     info_enabled: bool = false,
     current_ret: RT,
+    /// Pass 100 §8 B-12 — the contract being checked declared a FAILURE
+    /// alternative (`: u64 | error`), so what it returns is the correlated
+    /// pack `(value, nil) | (nil, error)`. A `nil` in the VALUE position is
+    /// then the declared shape of a failure, not a type error.
+    current_ret_fallible: bool = false,
     current_nopanic: bool = false,
     next_closure_id: u32 = 0,
     /// When true, module scope starts with implicit `global *` (plain .lua files).
@@ -531,6 +536,7 @@ pub const Sema = struct {
             .hints = 0,
             .infos = 0,
             .current_ret = .void,
+            .current_ret_fallible = false,
             .next_closure_id = 0,
             .table_field_types = .empty,
         };
@@ -1758,8 +1764,28 @@ pub const Sema = struct {
         };
     }
 
+    /// Pass 100 §8 B-12 — the return type a contract LOWERS to.
+    ///
+    /// `: u64 | error` declares the correlated pack `(value, nil) | (nil,
+    /// error)`, and Duo has no type for a pack. So the SIGNATURE a caller sees
+    /// is dynamic while the success type stays written on the declaration and
+    /// stays checked inside the body (`current_ret` below keeps it).
+    ///
+    /// Identity for every contract without a failure alternative — which is
+    /// all 748 tracked `.duo` files, since `ret_fallible` is set only by a
+    /// `| alt` in return position and that alternative used to be discarded.
+    fn contract_ret_expr(fb: *const ast.FuncBody) ast.TypeExpr {
+        return if (fb.ret_fallible) .inferred else fb.ret_type;
+    }
+
     fn check_return_value(self: *Sema, loc: ast.Loc, actual: RT) void {
         if (self.current_ret == .any or self.current_ret == .void or actual == .any) return;
+        // B-12: under a declared failure contract the value position holds the
+        // VALUE on success and `nil` on failure — `return nil, error.overflow`
+        // and the bare tail `nil, error.truncated` are the two spellings §20's
+        // leb128 decoder uses. Only `nil` is admitted, and only when a failure
+        // alternative was written; every other mismatch still reports.
+        if (self.current_ret_fallible and actual == .nil) return;
         if (!type_annotation_accepts_init(self.current_ret, actual)) {
             var want_buf: [128]u8 = undefined;
             var got_buf: [128]u8 = undefined;
@@ -2207,8 +2233,8 @@ pub const Sema = struct {
             }
         }
         var ret_t: RT = .any;
-        if (fb.ret_type != .inferred) {
-            ret_t = try self.resolve_type(fb.ret_type);
+        if (contract_ret_expr(fb) != .inferred) {
+            ret_t = try self.resolve_type(contract_ret_expr(fb));
         } else {
             all_typed = false;
         }
@@ -2223,8 +2249,10 @@ pub const Sema = struct {
 
         // Check body
         const prev_ret = self.current_ret;
+        const prev_fallible = self.current_ret_fallible;
         const prev_nopanic = self.current_nopanic;
-        self.current_ret = ret_t;
+        self.current_ret = if (fb.ret_fallible) (self.resolve_type(fb.ret_type) catch .any) else ret_t;
+        self.current_ret_fallible = fb.ret_fallible;
         // Anonymous function expressions don't carry @nopanic;
         // reset to false so inner expressions aren't incorrectly flagged.
         self.current_nopanic = false;
@@ -2238,6 +2266,7 @@ pub const Sema = struct {
         try self.check_block_with_implicit_return(&fb.body, true);
         self.scope.pop();
         self.current_ret = prev_ret;
+        self.current_ret_fallible = prev_fallible;
         self.current_nopanic = prev_nopanic;
 
         const ret_ptr = try self.alloc.create(RT);
@@ -3396,7 +3425,7 @@ pub const Sema = struct {
         for (fb.params) |*p| {
             if (p.typ == .inferred) all_typed = false;
         }
-        if (fb.ret_type == .inferred) all_typed = false;
+        if (contract_ret_expr(fb) == .inferred) all_typed = false;
         fb.is_typed = all_typed;
 
         if (self.duo_mode and self.hints_enabled and !all_typed and fd.path.len >= 1) {
@@ -3407,7 +3436,7 @@ pub const Sema = struct {
         for (fb.params, 0..) |*p, i| {
             param_types[i] = try self.resolve_type(p.typ);
         }
-        var ret_t = try self.resolve_type(fb.ret_type);
+        var ret_t = try self.resolve_type(contract_ret_expr(fb));
         directives.applyMlFuncAttrs(fd.attributes, fb);
 
         // Register the function before checking the body so recursive calls type-check.
@@ -3508,16 +3537,19 @@ pub const Sema = struct {
 
         // Pass 1: type-check with declared (or dynamic) signature to populate type_map.
         const prev_ret = self.current_ret;
+        const prev_fallible = self.current_ret_fallible;
         const prev_nopanic = self.current_nopanic;
         const prev_func_name = self.current_func_name;
         const prev_type_params = self.current_func_type_params;
-        self.current_ret = ret_t;
+        self.current_ret = if (fb.ret_fallible) (self.resolve_type(fb.ret_type) catch .any) else ret_t;
+        self.current_ret_fallible = fb.ret_fallible;
         // Check if this function has the @nopanic attribute
         self.current_nopanic = has_nopanic_attr(fd.attributes);
         self.current_func_name = if (fd.path.len == 1 and !fd.method) fd.path[0] else null;
         self.current_func_type_params = fb.type_params;
         defer {
             self.current_ret = prev_ret;
+            self.current_ret_fallible = prev_fallible;
             self.current_nopanic = prev_nopanic;
             self.current_func_name = prev_func_name;
             self.current_func_type_params = prev_type_params;
@@ -3550,7 +3582,7 @@ pub const Sema = struct {
         for (fb.params, 0..) |*p, i| {
             param_types[i] = try self.resolve_type(p.typ);
         }
-        ret_t = try self.resolve_type(fb.ret_type);
+        ret_t = try self.resolve_type(contract_ret_expr(fb));
         ret_ptr.* = ret_t;
         var params_native = true;
         for (param_types) |pt| {
@@ -3747,7 +3779,7 @@ pub const Sema = struct {
         for (fb.params, 0..) |*p, i| {
             param_types[i] = try self.resolve_type(p.typ);
         }
-        ret_t = try self.resolve_type(fb.ret_type);
+        ret_t = try self.resolve_type(contract_ret_expr(fb));
         params_native = true;
         for (param_types) |pt| {
             if (!pt.is_native()) params_native = false;
@@ -3779,7 +3811,8 @@ pub const Sema = struct {
 
         // Pass 3: re-check body with native types when specialized.
         if (fb.is_typed and !all_typed) {
-            self.current_ret = ret_t;
+            self.current_ret = if (fb.ret_fallible) (self.resolve_type(fb.ret_type) catch .any) else ret_t;
+            self.current_ret_fallible = fb.ret_fallible;
             for (fb.params) |*p| {
                 if (p.default_val) |default_val| _ = try self.check_expr(default_val);
             }

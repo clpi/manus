@@ -45,8 +45,8 @@ fixtures = "examples/spec100"
 -- MEASURED floors, never estimated. `scripts/spec_conformance.duo` records
 -- what happens otherwise: a floor written from memory reported a regression
 -- that had not happened. Run the gate, read the number, pin the number.
-blockfloor = 1
-formfloor = 5
+blockfloor = 2
+formfloor = 10
 
 fence = "^```"
 

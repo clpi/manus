@@ -1,0 +1,36 @@
+-- Pass 100 §9 — a RELATION EDGE declared at a trie place with a LEVEL.
+--
+--     decode(u64) = (cursor): u64 | error
+--
+-- The first group is descriptor space (LAW-STRATA): `u64` is the key that
+-- says WHICH edge of `decode` this is, never a runtime parameter. §20's
+-- leb128 block opens with exactly this line and used to stop the parser dead
+-- at "expected 'name', got 'u64'" — the level group was read as a parameter
+-- list and `u64` is not a parameter name.
+--
+-- TWO EDGES, and they must disagree. A single-edge implementation — one that
+-- erased the level and kept the last declaration — prints the same number
+-- twice, so the value distinguishes real keying from erasure. `wide` also
+-- shows the key is an ORDINARY NAME, not only a primitive: §9's keys are
+-- descriptors, and `to(hex)` is as legal as `to(str)`.
+-- expect: 42 141 1041
+
+step(u64) = (c: i64): i64
+    c + 1
+end
+
+step(u32) = (c: i64): i64
+    c + 100
+end
+
+step(wide) = (c: i64): i64
+    c + 1000
+end
+
+main = (): i64
+    a = step(u64)(41)
+    b = step(u32)(41)
+    c = step(wide)(41)
+    print("{a} {b} {c}")
+    0
+end
