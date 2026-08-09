@@ -1124,3 +1124,121 @@ features = law{
     holds = .demand
     fails = "a feature-configuration mini-language beside the language"
 }
+
+-- ═══ §38 · THE PERFORMANCE CONSTITUTION ════════════════════════════════════
+--
+-- NORTH STAR: duon source states MAXIMUM SEMANTICS; the compiler emits MINIMUM
+-- MACHINERY.
+--
+-- Performance, binary size, compile time, memory and specialization cost are
+-- REALIZATION OBJECTIVES, not benchmarks run afterwards. Every layer preserves
+-- enough semantic information for the compiler to optimize them JOINTLY rather
+-- than locally.
+
+perf.demand = law{
+    id    = "law.perf.demand"
+    kind  = .invariant
+    holds = .consumed
+    binds = {
+        "a descriptor, pack slot, iterator, error payload, closure environment,",
+        "schema projection, package fragment, wasm feature, debug record,",
+        "capability or intermediate collection EXISTS only if something consumes it",
+    }
+    fails = "materializing what nothing demanded"
+}
+
+perf.late = law{
+    id    = "law.perf.late"
+    kind  = .invariant
+    holds = .late
+    binds = {
+        "never choose representation before facts require it",
+        "descriptor identity, range, shape, lifetime, aliasing, target,",
+        "alignment, call shape, world and demand decide it — not the parser",
+    }
+    fails = "boxed because the front end could not yet know better"
+}
+
+-- Every dynamic mechanism carries the SAME ladder and an exact descent.
+-- Relation lookup, tables, closures, failures, packages, worlds, foreign
+-- values, wasm dispatch, lua metatables — one ladder, not one per subsystem.
+perf.ladder = {
+    "dynamic", "observed", "guarded", "sealed", "direct", "erased",
+}
+
+-- Budgeted GLOBALLY, never greedily. A specialization justifies its code
+-- growth or it is refused, and `why(skip)` answers.
+perf.worth = {
+    "hotness", "expected cycles saved", "guard cost", "compile cost",
+    "icache pressure", "binary growth", "duplication", "deopt probability",
+}
+
+-- THE INVERSE OPERATION, and the tree has no mechanism for it. Without
+-- re-generalization the compiler can derive billions of variants and has no way
+-- to recover compactness.
+perf.merge = law{
+    id    = "law.perf.merge"
+    kind  = .invariant
+    holds = .bidirectional
+    binds = {
+        "identical or near-identical specializations MERGE",
+        "cold paths differing under matching hot paths OUTLINE",
+        "realizations sharing machine structure DEDUPLICATE",
+        "speed and size are optimized together, never speed alone",
+    }
+}
+
+perf.explain = law{
+    id    = "law.perf.explain"
+    kind  = .invariant
+    holds = .why
+    binds = {
+        "why(realize) why(box) why(alloc) why(dispatch) why(inline)",
+        "all derive from the ONE fact graph",
+        "a retained cost the compiler cannot explain IS A GAP",
+    }
+}
+
+-- THE SIZE INVARIANT, and it is what makes "more featureful AND smaller" a
+-- statement rather than a contradiction:
+--
+--   FEATUREFULNESS is a property of the SEMANTIC GRAPH.
+--   BINARY SIZE is a property of DEMANDED REALIZATION.
+size.invariant = true
+
+-- Every emitted byte range is attributable to a semantic demand — the relation,
+-- what demanded it, its realization, and why it was retained. That is what
+-- `duon why size` reads, and it reports semantic causes rather than symbols.
+size.ledger = { "relation", "demanded by", "realization", "retained because" }
+
+-- Multi-objective cost. The build's world chooses the objective; these are
+-- ordinary descriptors, NOT compiler-mode kingdoms, so one deployment may
+-- optimize a hot kernel for speed and everything else for size.
+cost.facts = {
+    "cycles", "bytes", "compile", "peak", "allocations",
+    "misses", "footprint", "energy", "variance",
+}
+cost.objectives = { "speed", "size", "startup", "latency", "energy", "balanced" }
+
+-- MEASURED BASELINE 2026-08-08, so the ratios below start honest.
+--
+--   CLAUDE.md states the invariant "zero Lua boxed values in the hot path".
+--   Measured in the bootstrap: 1272 `lua_Value` sites, 4399 `lua_*` emission
+--   sites, 353 DISTINCT `lua_*` helpers. The invariant is aspirational and the
+--   number is not tracked by any gate.
+--
+--   Binary size attribution: NO byte of the compiler is attributable to a
+--   semantic demand today. `duon why size` does not exist.
+--
+--   RSR = 1 (gap[084]) and SER = 1 (gap[082]), so there is no specialization
+--   explosion to budget YET — which is the lucky ordering: the budget relation
+--   and `why(skip)` can be designed BEFORE the explosion rather than retrofitted
+--   onto it, which is the opposite of how every incumbent arrived.
+perf.ratios = {
+    "retention: realized facts / reachable semantic facts",
+    "erasure: constructs erased / constructs used",
+    "efficiency: measured speedup / added code bytes",
+    "compression: semantic values / physical runtime objects",
+    "density: demanded relations / binary kb",
+    "reuse: realized capabilities / distinct mechanisms",
+}
