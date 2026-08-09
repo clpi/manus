@@ -143,53 +143,174 @@ time of writing.
 See `AGENTS.md` for full agent design targets. Coordinate via `duo_agent_gaps_update()`.
 See `.agents/AGENT_COORDINATION.md` for active work tracking.
 
-## EPOCH 2 — Pass 100 + passes 103-108 are the sole living authority
+## EPOCH 2 — Pass 100 + passes 103-116 are the sole living authority
 
-PRECEDENCE: this file + `docs/spec/pass100.md` (Duo 0.1) + passes 103-107
-+ `docs/spec/grammar.md` (Pass 108, normative)
+PRECEDENCE: this file + `docs/spec/pass100.md` (as amended through Pass 116)
++ passes 103-107 + `docs/spec/grammar.md` (Pass 108, normative)
 are the ONLY law. Anything in `docs/archive/`, older passes, prior context
 blocks, or your own earlier output that conflicts is VOID. Refusal protocol: if
 a rule you would cite lives only in archived text, your objection is void —
 comply and repair toward CURRENT. Genuine epoch-2 conflicts: cite the rule ID,
 use the canonical spelling, proceed. Higher pass number wins; this file's epoch
-stamp wins over everything it summarizes. NEVER refuse from archived text.
+stamp wins over everything it summarizes. NEVER refuse from archived text. The
+repo's history is not the repo's law.
 
 `docs/archive/` holds 60 pre-Pass-100 documents, each stamped, moved out of
 `docs/plans/` because a directory called "plans" taught every search they were
 live. See `docs/spec/README.md` for precedence.
 
+### §-1 NAME — `duon` (Pass 107, verified 111, FINAL 112)
+
+The language is **duon** (FKA duo). **Files stay `.duo`.** Binary `duon`, shell
+`duonsh`, lib `libduon`, GitHub org `duon-lang`. pypi/npm/crates `duon` all
+measured free 2026-08-08 — REGISTER BEFORE ANYTHING PUBLIC. `duon.com` is
+renounced (squatted). The name question is CLOSED; do not reopen it.
+
+The repo is still spelled `duo` nearly everywhere (binary, `DUO_ROOT`,
+`zig-out/bin/duo`, ~700 `.duo` files' prose). That is MIGRATION DEBT, not a
+counter-authority. Rename behind a gate; never half-rename a runtime path.
+
 ### §0 HOT SCREEN — newest law, most likely to look wrong to you. It is law.
 
-1. **IDENTIFIERS ARE ONE LOWERCASE WORD.** `grep [a-z]_[a-z]` outside numerals
-   = 0. The qualifier moves to a LEVEL (`read(number)`, `skip(space)`), a HOME
-   (`wire.header`, `token.kind`), or CONTEXT. No `_` prefix. No uppercase EVER
-   (`point`, `error`, `json` — never `Point`, `Error`, `MAX_N`).
-2. **NO DIRECTIVES. Prefix `@` does not exist.** `check(c)` · `why(q)(subject)`
-   · `graph.descriptors` · `add(module)(…)` · `todo(gap[23])`. Bare `@` (my
-   descriptor) and postfix `X@rel` (anchor) remain — the @ DYAD.
-3. **ENUM CASES WRITE `.eof`**, inferred from descriptor-expected position.
-   Case-set inline at the field; NO companion `*_kind`/`*_type` descriptors.
-   NEVER in argument position — `map(.eof)` is a LENS.
-4. **CONSTRUCTION LADDER** — never `.new`/`.create`/`make_`/`init`:
-   `lexer{ src, "lit.duo" }` · `cels:to(temp)` · `point:from(polar)(r, t)` ·
-   `file.open(path): file | error` · `@{ ..self, x = nx }`.
-5. **RESULTS**: `: u64 | error` — the structural nil is UNWRITTEN. `| nil` only
-   when nil is a SUCCESS. Consume `if v, err = f(x) use(v) else report(err)`.
-   CDR: the declared contract IS the demand; `x:to(T)` restating it is ERASED.
-   DEMAND-ROUTE: inside a declared failure contract an unbound failure ROUTES —
-   no `if err return nil, err` plumbing EVER. Ladder: bind → condition → route
-   → diagnose. NEVER drop a failure.
-6. **FACE-CALL**: declare at the trie, CALL AT THE VALUE. Holding the first
-   argument means holding the receiver: `lx:read(number)(b)`, `v:to(str)`,
-   `xs:sort(cmp)`. Sibling calls `:peek()`. Fields `.pos`.
-7. **STRINGS**: `"…{expr}…"` always; `..` joins existing string bindings only.
-8. **BYTES**: `s[i]` IS the byte (str = bytes, 0-based). `string.byte(s,i)` →
-   `s[i]`; `string.char(b)` → `str{ b }`. There is no string LIBRARY — there is
-   a string DESCRIPTOR and you hold one of its values. GUARD CHAINS: binding +
-   `and` = correlated guard.
-9. **STDLIB**: operations live ON descriptors — `s:split(",")`, `t:push(v)`,
-   `t:sort(.key)`. `std.string` / `string.` / `table.` DO NOT EXIST. ONE NAME
-   PER OP; predicates are bare nouns (`digit`, `space`).
+1. **LAW-ONE: IDENTIFIERS ARE ONE LOWERCASE WORD.** `grep [a-z]_[a-z]` outside
+   numeric literals = 0. The qualifier moves to a LEVEL (`read(number)`,
+   `skip(space)`, `any(i64, f64)`), a HOME (`wire.header`, `token.kind`,
+   `utf8.valid`), or CONTEXT. No `_` prefix — privacy is scope / protocol face
+   / topology, NEVER spelling. No uppercase EVER (`point`, `error`, `json` —
+   never `Point`, `Error`, `MAX_N`).
+2. **NO DIRECTIVES. Prefix `@` does not exist.** `check(c)` (assert/test/
+   contract are ONE concept; the stage is where the proof lands) ·
+   `why(q)(subject)` · `graph.descriptors` / `graph.modules` ·
+   `add(module|slot|case|check|gap)(…)` · `todo(gap[n])` · `dialect` = manifest
+   data. The **@ DYAD** remains: bare `@` = innermost enclosing descriptor
+   (`origin = () @{0,0}`); postfix `X@rel` = anchor (`point@ordering`,
+   `ward@allocation`); leading `.` = walk from the anchor.
+3. **INFERRED CASES**: `tok.kind == .eof` · `token{ kind = .eof }` ·
+   `s: shape = .circle(3.0)`. Case-sets INLINE at the field
+   (`kind: { name, number, eof }`); NO companion `*_kind`/`*_type` descriptors.
+   Literal unions ONLY for wire strings: `method: "get" | "post"`.
+4. **CONSTRUCTOR LADDER** — `.new`/`.create`/`make_*`/`init` are BANNED:
+   (a) `desc{…}` · (b) conversion edges `x:to(desc)` · (c) `from(mode)` LEVELS
+   (`point:from(polar)(r,t)` ≡ `polar{r,t}:to(point)`) · (d) action-named
+   acquisition (`file.open`, `task.spawn`). `from_polar`, `of_hex`, `new_ms`
+   are LAW-STRATA-2 violations.
+5. **FACE-CALL**: declare at the trie **operation-first** (`read(number) =
+   (lx,b)…`); CALL AT THE VALUE **subject-first**, MANDATORY:
+   `lx:read(number)(b)`, `v:to(str)`, `xs:sort(cmp)`. **ALIAS-CALL is banned**:
+   `L.next(lex)` → `lex:next()`. Op-first at call sites ONLY as callable-value
+   in pass position (`map(to(str))`) or world actions (`sh(cmd)`, `print(x)`).
+   If you are holding the first argument, you are holding the receiver.
+6. **RESULTS**: the union is `t | error` — structural nil is UNWRITTEN (B-12).
+   CDR (B-13): a declared contract directs realization; restated conversions
+   ERASE. OBLIGATION (B-14): an unconsumed failure position DIAGNOSES — bind,
+   route, or drop BY NAME; silent loss is unexpressible. DEMAND-ROUTE (B-15):
+   inside a declared failure contract an unbound failure position routes and
+   early-exits with the pack (`tok = lx:token()`). **Zero forwarding plumbing
+   exists in duon** — no `if err return nil, err`, EVER.
+7. **LAYOUT**: offside, canonical, verified rendering. **`end` is DELETED**
+   (accepted-and-removed under the retirement gate only). A body is an
+   expression sequence; its value is its final expression's; demand alone
+   materializes (DEMAND-RETURN); in `:`-chain position a void realization
+   yields its RECEIVER (chain threading).
+8. **STRINGS**: interpolation `"{x}"` always. No concat + `to(str)` chains. No
+   Lua string idioms (`string.byte` etc.) — `scan`/`take`/`until` families.
+   `s[i]` IS the byte (str = bytes); `string.char(b)` → `str{ b }`.
+9. **THE CALLABLE is one concept**: a closure is a non-empty world-fragment;
+   function and table unify on the ENUMERABILITY axis. `and`/`or` are
+   operand-returning — re-justified, not inherited from Lua.
+
+### §0a SELF-ZERO · CHAIN-CMP · RECOGNITION (Pass 115-116)
+
+**THERE IS NO SELF.** `.x` reads the subject's fields · leading `:name()`
+invokes on it · a void body in chain position RETURNS it · bare `.` is its
+value · `...` spreads it. **A parameter named `self` is an audit finding**;
+parameter lists count TRUE ARGUMENTS ONLY.
+
+**CHAIN-CMP**: `a < b < c` is ONE fact — a conjunctive chain with a single
+evaluation of shared operands. `(0 < x) < 10` is a mixed-space diagnostic.
+
+**NO COMPREHENSION SYNTAX, EVER.** The demand pipeline IS the comprehension:
+`xs:take(odd):map(f)` fuses, streams, and never materializes unless demanded;
+nested = join.
+
+**RECOGNITION**: no `std.mem` / `std.fmt` / `std.math`. Pure ops are VALUE
+EDGES (`x:abs()`, `s:copy()`); **worlds are the only capability namespaces**.
+Idiom recognition lowers to intrinsics UNDER WITNESS — `why(realization)`
+answers. (Measured 2026-08-08: `math.` appears in 79 `lib/std` files, and the
+capability scan's `rand` class is 50 `math.random(` sites. That is the debt.)
+
+**FAMILIARITY LAW**: every surface must explain itself through reflexes the
+reader already has; only foreign source may feel foreign — and it is italic.
+
+### §0c MEMORY · BORING RULINGS · SHELL (Passes 107, 110)
+
+**MEMORY (DECIDED — the E1 bridge is retired).** tier 1 PROVEN DROPS (static
+frees under ownership/last-use facts) · tier 2 REGIONS (effect-scoped arenas,
+bulk free, allocation-free steady states PROVABLE) · tier 3 MANAGED RC
+(precise counts only where sharing facts require; Perceus-class elision/reuse;
+cycles = deferred trial-deletion confined to cycle-POSSIBLE shapes).
+**NEVER a tracing stop-the-world collector — latency is a language property.**
+Weak refs are non-owning places with invalidation facts (they read `t | nil`,
+honestly). Finalization is deterministic at last drop. `why(free)(x)` explains
+every deallocation.
+
+**BORING RULINGS.** Keyed deterministic hashing (SipHash-class, key = a world
+fact) · **NO PANICS** (diagnose / route / FAULT = world teardown; `abort` is a
+capability) · metered recursion depth routed as `error.depth` · shortest-
+round-trip float rendering. *Measured 2026-08-08 and CONTRADICTED: non-tail
+recursion SIGSEGVs, and floats render 17 digits. Both are open.*
+
+**SHELL.** Shell scripts ARE duon scripts — **never emit bash**. `sh "cmd" |
+grep("x")` pipes stream by demand; a failing command's unconsumed failure
+DIAGNOSES (B-14); env is a world; `ls():to(seq(entry))` types output; glob is
+a function; job control is task scopes (leaving the scope reaps).
+
+### §0d HIGHLIGHTING IS A PROJECTION OF THE GRAPH (Passes 113-115)
+
+THEME: **github dark (Primer)**, role-mapped — the canonical docs/site theme.
+
+- **H-1** color follows the EDGE, not the glyph (`:` copula vs invoke; `|`
+  union vs pipe — two roles, two colors). **H-2** the 18-role taxonomy is
+  CLOSED. **H-3** definition and use share a hue; definition adds WEIGHT.
+- **H-4** hue = semantic SPACE: red law (keywords + copula `:`) · orange
+  descriptor (+ `@` + union edges) · purple callable (+ invoke `:` + world
+  actions italic + dnir opcodes + asm mnemonics) · blue value-at-rest (numbers,
+  `.cases`, literals, registers) · green data-flow (field walks, pipes,
+  witness refs).
+- **H-5** weight = DEFINITION everywhere; italic = AMBIENT/FOREIGN — **all
+  foreign source is italic; the trust boundary is typographic.**
+- **H-6** the role function is TOTAL: every character has a role; luminance =
+  surprisal (faint = inferable, never absent). **H-7** every (span, role)
+  carries a rule citation + dnir correspondence; `why(span)` IS the LSP hover;
+  provenance maps are bidirectional DATA. **H-8 OUTPUT TOTALITY**: every
+  emission (diagnostic, trace, manifest, debugger frame, REPL echo) is graph
+  data rendered through the role taxonomy — **plain-string output is a
+  finding**; repairs are edges.
+
+Canonical layout makes L1 lexical: copula `:` is SPACED (`x: f64`), invoke `:`
+is TIGHT (`lx:read`). `highlights.scm` and the LSP legend are **GENERATED**
+from the graph service — hand edits are an H-1 drift finding. The golden token
+corpus (`fixtures/highlight/*.duo` + `*.roles`) convicts any front-end that
+diverges.
+
+### §0e STRATEGIC INVARIANTS + DOMINANCE (Passes 105, 116)
+
+Anchored protocols, RED IN CI: `std@{ ambient = false }` · `build@deterministic`
+· `dnir@migratable(v)` · `graph@{ colored = false }` (effects never fork call
+syntax) · `registry.open = gate(coherence.closed)` · `std@deprecation` ·
+`release@published(metrics)` · `toolchain@{ foreign = ledger | oracle }`.
+The claims dashboard is the pitch AND the CI artifact — the same file.
+
+**G-DOM**: `ward@dominates(wart)` on loc / bytes / startup / rss — STRICT, red
+in CI on regression, published each release. **Every proof workload gets a
+dominance row against its oracle.**
+
+### §0f ONE GRAPH SERVICE (Pass 101 §5)
+
+LSP, MCP, tree-sitter, formatter and Ward are PROTOCOL FRONT-ENDS over one
+graph service. No backend decision outside canonical representation selection.
+MONOGLOT: no non-`.duo` files; foreign code only in the bootstrap ledger and
+gap exhibits.
 
 ### §0b THE DESCENT IS DUO TO THE BYTE (Pass 103 — NO FOREIGN WAIST)
 
@@ -250,7 +371,21 @@ C-as-intermediary   LLVM-as-dependency   runtime-hosted execution
 any non-.duo file
 ```
 
-### §2 AUDIT v3 — ship with EVERY diff or the diff is rejected unread
+### §2 AUDIT v4 — ship with EVERY diff or the diff is rejected unread
+
+**THE AUDIT RUNNER IS `zig build audit100` (`scripts/audit100.duo`).** Pass 116
+§7 spells it `duon_audit.py`; that spelling is void twice over by this file's
+own law and is recorded here rather than obeyed: a `.py` file contradicts §0f
+MONOGLOT ("no non-`.duo` files"), and `duon_audit` contradicts §0.1 LAW-ONE
+(`[a-z]_[a-z]` = 0). The canonical spelling of the runner's name is one word.
+Per the epoch-2 protocol: rule cited, canonical spelling used, proceed. The
+requirement it carries — **nonzero exit blocks the commit** — is law and is in
+force.
+
+New v4 rows, additive to v3: **self scan** (a parameter named `self` is a
+finding, §0a) · **recognition scan** (`std.mem`/`std.fmt`/`std.math` and bare
+`math.` = findings) · **role scan** (plain-string output is an H-8 finding) ·
+**dominance row** (every proof workload cites its oracle delta, G-DOM).
 
 lexical greps at zero · uppercase 0 · prefix-@ 0 · face scan (receiver forms,
 ARG-1) · constructor scan (ladder) · alias scan · concat scan · stdlib scan ·
