@@ -399,6 +399,28 @@ main(): i64
             print("capability_scan: FAIL — ambient modules {reached} exceeds the ratchet {modcap}")
             over += 1
         end
+        -- gap[100] rung 5, the shippable increment. Full enforcement — `duo
+        -- check` REFUSING an ambient reach — cannot land while 616 sites still
+        -- make one; it would red the tree on the day it shipped, and a gate
+        -- nobody can run is not enforcement. What CAN land is the ratchet
+        -- extended to the column that had none: the 338 sites outside lib/std
+        -- were measured and printed but free to grow without limit, which is
+        -- how the 278-site budget came to cover 45% of the reach it named.
+        -- Set at the measured value, so it passes today and can only fall.
+        --
+        -- 341, not the 338 first measured: this session added three ambient
+        -- sites of its own, in scripts/fsmkdirproof.duo, worldreachproof.duo
+        -- and ambientfoldproof.duo, which reach std.os.exit to signal WHICH
+        -- direction failed. The ratchet caught them on its first run, which is
+        -- the whole point of holding a column instead of printing it. Named
+        -- here rather than absorbed silently — a budget raised without a reason
+        -- in the commit message is how the previous column stopped meaning
+        -- anything.
+        outcap: i64 = to(i64)(std.script.getenv("CAPABILITY_OUTSIDE_FLOOR", "341"))
+        if out > outcap
+            print("capability_scan: FAIL — ambient sites outside lib/std {out} exceeds the ratchet {outcap}")
+            print("  This column was REPORTED and unratcheted until gap[100]. It is held now.")
+            over += 1
         if over > 0
             print("  U1 is `nothing ships with ambient reach, ever`. Thread the world, or say in the commit message why the budget was wrong.")
             code = 1
