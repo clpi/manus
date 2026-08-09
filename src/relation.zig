@@ -41,12 +41,21 @@
 //! `law.architecture.owner`'s deny list — `*Registry`, `*Kernel` — were written
 //! against exactly this trajectory.
 //!
+//! RETIRED DEBT — descriptor and callable identities are no longer `[]const u8`.
+//! The store keys every edge on a stable semantic `Id` minted by `Names` from a
+//! key carrying KIND, spelling, ORIGIN (package + version), SCOPE (exported +
+//! owner) and LAWSET. The string survives ONLY as a rendering and lookup
+//! convenience: `Edge`, `Path` and `Relation.name` are the rendered face of
+//! `Fact`, `Route` and `Relation.id`, and no comparison in the algebra reads
+//! text. See "STABLE SEMANTIC IDENTITY" below for what each of the four
+//! text-key failure modes was and which of them this actually closes.
+//!
 //! KNOWN BOOTSTRAP DEBT, so it is measured rather than discovered later:
-//!   - descriptor and callable identities are `[]const u8`. Textual names doing
-//!     semantic-identity work is the root of a whole family of live bugs
-//!     (`law.identity.three`), and it breaks packages, renames, MCP,
-//!     refactoring, version coexistence and private descriptors. Stable
-//!     semantic ids retire it.
+//!   - the FRONT END still hands the store one origin, one lawset and one
+//!     scope, because duon has no package surface yet and `rename` has no
+//!     source form. Every discrimination below is proven at the store layer and
+//!     unreachable from a `.duo` file; that is the remaining half and it is
+//!     gap[103], not a claim this file makes.
 //!   - class legality is refused at CODEGEN, so `duo check` can approve what
 //!     compilation later rejects. Resolution, coherence and class legality
 //!     belong in SEMA, above realization. This is a direction violation and it
@@ -229,6 +238,269 @@ pub const Class = enum {
     }
 };
 
+// ── STABLE SEMANTIC IDENTITY (law.identity.three, constitution §21) ─────────
+//
+// THE LAW requires THREE identities and forbids collapsing them:
+//
+//     semantic     "what thing is this?"       stable across harmless edits
+//     content      "what payload right now?"   changes when the content changes
+//     incarnation  "which occurrence/build?"   never stable, that is the point
+//
+// WHAT WAS WRONG. The store keyed every edge on a descriptor's TEXT. Two
+// strings that were equal were one descriptor and two that differed were two,
+// which is wrong in BOTH directions the moment anything real exists:
+//
+//   packages   `micron` from a@1 and `micron` from b@1 are two descriptors, and
+//              a text key silently merges them into one.
+//   renames    spelling `micron` as `micrometre` is a harmless edit, and a text
+//              key destroys every edge that mentioned it.
+//   versions   a@1's `micron` and a@2's `micron` may carry different edges, and
+//              a text key cannot hold both at once.
+//   private    two modules' private `scratch` are two descriptors, and a text
+//              key lets one module's edge answer the other module's query.
+//
+// WHAT AN ID IS. A number minted by `Names` from a key carrying all four
+// discriminators plus the Lua firewall's — a Lua `number` and a duon `f64` may
+// share a spelling and are never the same thing, so LAWSET is an identity fact
+// before it is an optimizer fact. An `Id` holds no text on purpose: a copy
+// cannot go stale across a rename and cannot be byte-compared by accident.
+//
+// THE STRING SURVIVES ONLY AS RENDERING AND LOOKUP. `Edge` and `Path` are the
+// rendered face of `Fact` and `Route`; `Names.find` is the single quarantined
+// site where comparing bytes is correct, because resolving a SPELLING to an
+// identity is what a lookup IS. Everything from `Relation` down compares `Id`,
+// and `zig build relation-id` convicts the file if a byte comparison reappears
+// there — with the in-region count as the positive control, because a scanner
+// reporting zero findings is usually a broken scanner.
+
+/// Which LAWSET an identity belongs to (constitution §22). THE LUA FIREWALL:
+/// the substrate is shared and the lawset is not, so identity may not be.
+pub const Lawset = enum { duon, lua, c, wasm };
+
+/// What kind of thing an identity names. A descriptor `to` and a relation `to`
+/// share a spelling and nothing else.
+pub const Kind = enum { descriptor, callable, relation };
+
+/// WHERE the identity came from. Two packages, or two versions of one package,
+/// may each define a `micron`, and those are different descriptors.
+pub const Origin = struct {
+    /// "" is the compilation unit itself — the prelude graph, which is not a
+    /// package (§0h: std has no module tree and no import).
+    package: []const u8 = "",
+    version: []const u8 = "",
+
+    pub fn eq(a: Origin, b: Origin) bool {
+        return std.mem.eql(u8, a.package, b.package) and std.mem.eql(u8, a.version, b.version);
+    }
+};
+
+/// WHO can see it. A private descriptor is only ever the same thing as itself,
+/// so its owner participates in its identity — privacy is topology, never
+/// spelling (§0.1).
+pub const Scope = struct {
+    exported: bool = true,
+    owner: []const u8 = "",
+
+    pub fn eq(a: Scope, b: Scope) bool {
+        return a.exported == b.exported and std.mem.eql(u8, a.owner, b.owner);
+    }
+};
+
+/// The interning KEY — everything that makes two names DIFFERENT THINGS.
+pub const Name = struct {
+    kind: Kind,
+    text: []const u8,
+    origin: Origin = .{},
+    scope: Scope = .{},
+    lawset: Lawset = .duon,
+};
+
+/// A STABLE SEMANTIC IDENTITY. The number is the identity and there is no text
+/// in here, deliberately.
+pub const Id = struct {
+    n: u32,
+
+    pub const none: Id = .{ .n = std.math.maxInt(u32) };
+
+    pub fn eq(a: Id, b: Id) bool {
+        return a.n == b.n;
+    }
+
+    pub fn valid(self: Id) bool {
+        return self.n != none.n;
+    }
+};
+
+/// What the interner remembers about one identity.
+pub const Record = struct {
+    kind: Kind,
+    /// The CURRENT spelling. A rename edits THIS and nothing else, which is the
+    /// whole reason a rename is a harmless edit again.
+    text: []const u8,
+    /// The spelling the identity was MINTED under. Forensics and diagnostics
+    /// only — never a key, or a rename would mint a second identity.
+    minted: []const u8,
+    origin: Origin,
+    scope: Scope,
+    lawset: Lawset,
+    /// INCARNATION — which minting occurrence this is. Never stable across
+    /// builds; law.identity.three says that is the point, not a defect.
+    incarnation: u32,
+};
+
+/// The interner. Flat and scanned: a compilation unit's descriptor set is tens
+/// of names, and a scan keeps MINT ORDER = enumeration order, which is what
+/// makes `for src, conv in to[str]` reproducible.
+pub const Names = struct {
+    records: std.ArrayListUnmanaged(Record) = .empty,
+    /// Total mintings ever, including ones later renamed. Mints incarnations.
+    mintings: u32 = 0,
+
+    pub fn deinit(self: *Names, alloc: std.mem.Allocator) void {
+        self.records.deinit(alloc);
+    }
+
+    /// ── THE ONE QUARANTINED BYTE COMPARISON ─────────────────────────────────
+    /// Resolving a SPELLING to an identity is what a lookup IS, so this is the
+    /// only place in the store where text may be compared. `Origin.eq` and
+    /// `Scope.eq` above are part of the same key comparison and part of the
+    /// same quarantine. A `std.mem.eql` from `Relation` down is a finding.
+    pub fn find(self: *const Names, name: Name) ?Id {
+        for (self.records.items, 0..) |r, i| {
+            if (r.kind != name.kind) continue;
+            if (r.lawset != name.lawset) continue;
+            if (!r.origin.eq(name.origin)) continue;
+            if (!r.scope.eq(name.scope)) continue;
+            if (!std.mem.eql(u8, r.text, name.text)) continue;
+            return .{ .n = @intCast(i) };
+        }
+        return null;
+    }
+
+    /// The identity for a key, minting one on first sight. Idempotent: the same
+    /// key always answers with the same number, which is the half of the law
+    /// that stops the discriminators from being merely "always different".
+    pub fn intern(self: *Names, alloc: std.mem.Allocator, name: Name) !Id {
+        if (self.find(name)) |id| return id;
+        self.mintings += 1;
+        try self.records.append(alloc, .{
+            .kind = name.kind,
+            .text = name.text,
+            .minted = name.text,
+            .origin = name.origin,
+            .scope = name.scope,
+            .lawset = name.lawset,
+            .incarnation = self.mintings,
+        });
+        return .{ .n = @intCast(self.records.items.len - 1) };
+    }
+
+    /// THE LOOKUP CONVENIENCE the compiler front end uses today: one
+    /// compilation unit, one lawset, everything exported. This is the only
+    /// place the old text-keyed behaviour survives, and it survives as a
+    /// LOOKUP — it answers with an identity and never with a comparison.
+    pub fn lookup(self: *const Names, kind: Kind, spelling: []const u8) ?Id {
+        return self.find(.{ .kind = kind, .text = spelling });
+    }
+
+    pub fn at(self: *const Names, id: Id) ?Record {
+        if (!id.valid() or id.n >= self.records.items.len) return null;
+        return self.records.items[id.n];
+    }
+
+    /// The identity's CURRENT spelling, for rendering. Reading through the
+    /// interner rather than through a stored copy is what makes a rename
+    /// visible from every edge without any edge being touched.
+    pub fn text(self: *const Names, id: Id) []const u8 {
+        const r = self.at(id) orelse return "";
+        return r.text;
+    }
+
+    /// RENAME — the harmless edit. The identity does not move; only its
+    /// spelling does.
+    ///
+    /// A rename onto a spelling already taken under the same key is REFUSED.
+    /// Allowing it would collapse two semantic identities into one lookup,
+    /// which is the exact failure law.dedup names.
+    pub fn rename(self: *Names, id: Id, to: []const u8) !void {
+        const r = self.at(id) orelse return error.NoSuchIdentity;
+        if (self.find(.{ .kind = r.kind, .text = to, .origin = r.origin, .scope = r.scope, .lawset = r.lawset })) |taken| {
+            if (!taken.eq(id)) return error.NameTaken;
+            return;
+        }
+        self.records.items[id.n].text = to;
+    }
+
+    pub fn count(self: *const Names) usize {
+        return self.records.items.len;
+    }
+};
+
+/// The SEMANTIC identity of one relationship (A3, ONE EDGE): the family it
+/// belongs to and its two endpoints, all three as identities and none as text.
+/// Stable across a rename of any of the three, and across a redeclaration that
+/// swaps the realization — which is what "stable across harmless edits" means.
+pub const EdgeId = struct {
+    relation: Id,
+    src: Id,
+    dest: Id,
+
+    pub fn eq(a: EdgeId, b: EdgeId) bool {
+        return a.relation.eq(b.relation) and a.src.eq(b.src) and a.dest.eq(b.dest);
+    }
+};
+
+/// WHAT THE STORE HOLDS. `Edge` is this rendered for a reader.
+pub const Fact = struct {
+    id: EdgeId,
+    conv: Id,
+    props: Properties,
+    /// CONTENT identity — "what payload right now". Computed from the
+    /// endpoints, the realization and the facts, and NOT from the family, so
+    /// two families carrying the same conversion SHARE content while keeping
+    /// separate `id`s. That is law.dedup exactly: share content nodes, never
+    /// collapse semantic identity.
+    content: u64,
+    /// INCARNATION — which declaration in this family produced the fact now in
+    /// the store. Every redeclaration bumps it, including one that changes
+    /// nothing; an incarnation that were stable would not be one.
+    incarnation: u32,
+    loc: ast.Loc,
+};
+
+/// The content hash. Wyhash, matching `semantic_graph.zig`'s `StableId` — this
+/// is a host hash for a bootstrap store, not the language's keyed hashing rule.
+fn contentOf(src: Id, dest: Id, conv: Id, props: Properties) u64 {
+    var h = std.hash.Wyhash.init(0);
+    h.update(std.mem.asBytes(&src.n));
+    h.update(std.mem.asBytes(&dest.n));
+    h.update(std.mem.asBytes(&conv.n));
+    h.update(&[_]u8{
+        @intFromEnum(props.loss),
+        @intFromEnum(props.storage),
+        @intFromBool(props.failure),
+        @intFromBool(props.consumes),
+        @intFromBool(props.same_repr),
+    });
+    return h.final();
+}
+
+/// A derivation in identities. `Path` is this rendered.
+pub const Route = struct {
+    src: Id,
+    dest: Id,
+    mid: Id,
+    first: Fact,
+    second: Fact,
+    props: Properties,
+    admitted: bool,
+};
+
+/// The DECLARATION and RENDERING face of an edge — the spellings a declaration
+/// site carried, or the spellings the store currently renders a `Fact` with.
+/// Nothing in the algebra compares these fields; `declare` resolves them to
+/// identities once, on the way in, and every answer comes back out through
+/// `Relation.render`, which reads the interner's CURRENT text.
 pub const Edge = struct {
     dest: []const u8,
     src: []const u8,
@@ -274,35 +546,112 @@ pub const Path = struct {
 /// map — the enumeration order also stays declaration order, which is what
 /// makes `for src, conv in to[str]` reproducible.
 pub const Relation = struct {
-    /// The relation's own name — `to`, `eq`, `from` is NOT one: it is the SAME
-    /// edge read backwards (spec 2.6) and must never get a family of its own.
-    /// Held so a diagnostic can spell the relation it is talking about rather
-    /// than assuming.
+    /// The relation's own STABLE IDENTITY. `to` and `eq` are two identities,
+    /// and a package shipping its own `to` gets a third rather than colliding
+    /// with the prelude's.
+    id: Id = Id.none,
+    /// The relation's CURRENT spelling — rendering only, mirrored from the
+    /// interner and refreshed by `Store.rename`, so a diagnostic can spell the
+    /// relation it is talking about rather than assuming. `from` is NOT a
+    /// family: it is the SAME edge read backwards (spec 2.6).
     name: []const u8,
-    edges: std.ArrayListUnmanaged(Edge) = .empty,
+    /// The store's interner. HEAP-OWNED by `Store`, so a `Relation` moved by
+    /// an ArrayList growth keeps a valid pointer to it.
+    ///
+    /// NOT OPTIONAL AND WITHOUT A DEFAULT, deliberately: a relation with no
+    /// identity space is a nonsense value, and making it a COMPILE error to
+    /// construct one is stronger than a runtime branch and costs the callers
+    /// nothing — `Store.getOrCreate` is the only constructor either way. It
+    /// also keeps `declare`'s error set exactly what it was.
+    names: *Names,
+    facts: std.ArrayListUnmanaged(Fact) = .empty,
+    /// How many declarations this family has ever taken. Mints incarnations.
+    declarations: u32 = 0,
 
     pub fn deinit(self: *Relation, alloc: std.mem.Allocator) void {
-        self.edges.deinit(alloc);
+        self.facts.deinit(alloc);
     }
 
-    /// Land an edge. A redeclaration of the same (src, dest) REPLACES, so the
-    /// last declaration wins and a package may override an edge it inherits.
+    /// Land an edge FROM ITS DECLARED SPELLINGS. The spellings are resolved to
+    /// identities here, once, and nothing below this line compares text.
     pub fn declare(self: *Relation, alloc: std.mem.Allocator, e: Edge) !void {
-        for (self.edges.items) |*existing| {
-            if (std.mem.eql(u8, existing.src, e.src) and std.mem.eql(u8, existing.dest, e.dest)) {
-                existing.* = e;
+        const nm = self.names;
+        try self.declareBy(
+            alloc,
+            try nm.intern(alloc, .{ .kind = .descriptor, .text = e.src }),
+            try nm.intern(alloc, .{ .kind = .descriptor, .text = e.dest }),
+            try nm.intern(alloc, .{ .kind = .callable, .text = e.conv }),
+            e.props,
+            e.loc,
+        );
+    }
+
+    /// THE IDENTITY-NATIVE DECLARATION FACE. A redeclaration of the same
+    /// SEMANTIC edge replaces the fact — last declaration wins, so a package
+    /// may override an edge it inherits — and the semantic id SURVIVES while
+    /// content and incarnation both move. Three identities, none collapsed.
+    pub fn declareBy(
+        self: *Relation,
+        alloc: std.mem.Allocator,
+        src: Id,
+        dest: Id,
+        conv: Id,
+        props: Properties,
+        loc: ast.Loc,
+    ) !void {
+        self.declarations += 1;
+        const f = Fact{
+            .id = .{ .relation = self.id, .src = src, .dest = dest },
+            .conv = conv,
+            .props = props,
+            .content = contentOf(src, dest, conv, props),
+            .incarnation = self.declarations,
+            .loc = loc,
+        };
+        for (self.facts.items) |*existing| {
+            if (existing.id.eq(f.id)) {
+                existing.* = f;
                 return;
             }
         }
-        try self.edges.append(alloc, e);
+        try self.facts.append(alloc, f);
     }
 
-    /// The authored edge, if one was written.
-    pub fn direct(self: *const Relation, src: []const u8, dest: []const u8) ?Edge {
-        for (self.edges.items) |e| {
-            if (std.mem.eql(u8, e.src, src) and std.mem.eql(u8, e.dest, dest)) return e;
+    /// Render a held fact for a reader. The text comes from the interner, so a
+    /// rename shows up through every edge that mentions the renamed thing
+    /// without a single edge being rewritten.
+    pub fn render(self: *const Relation, f: Fact) Edge {
+        const nm = self.names;
+        return .{
+            .dest = nm.text(f.id.dest),
+            .src = nm.text(f.id.src),
+            .conv = nm.text(f.conv),
+            .props = f.props,
+            .loc = f.loc,
+        };
+    }
+
+    /// A descriptor spelling resolved to its identity in this store's default
+    /// origin, scope and lawset — the front end's single lookup face.
+    pub fn resolve(self: *const Relation, spelling: []const u8) ?Id {
+        return self.names.lookup(.descriptor, spelling);
+    }
+
+    /// The authored fact, if one was declared. Identity-native.
+    pub fn directBy(self: *const Relation, src: Id, dest: Id) ?Fact {
+        for (self.facts.items) |f| {
+            if (f.id.src.eq(src) and f.id.dest.eq(dest)) return f;
         }
         return null;
+    }
+
+    /// The authored edge, if one was written. Spellings in, rendering out; the
+    /// comparison in the middle is on identities.
+    pub fn direct(self: *const Relation, src: []const u8, dest: []const u8) ?Edge {
+        const s = self.resolve(src) orelse return null;
+        const d = self.resolve(dest) orelse return null;
+        const f = self.directBy(s, d) orelse return null;
+        return self.render(f);
     }
 
     /// THE COMPOSITION LAW. `a -> mid` composed with `mid -> b` derives `a -> b`.
@@ -318,42 +667,61 @@ pub const Relation = struct {
     /// Returns the path even when its facts REFUSE it, because the refusal is
     /// the more useful answer: the caller reports "there is a route and here is
     /// why you may not have it silently" instead of "no such conversion".
-    pub fn derive(self: *const Relation, src: []const u8, dest: []const u8) ?Path {
-        if (std.mem.eql(u8, src, dest)) return null;
-        var found: ?Path = null;
-        for (self.edges.items) |first| {
-            if (!std.mem.eql(u8, first.src, src)) continue;
-            // `first.dest` is the candidate hub.
-            for (self.edges.items) |second| {
-                if (!std.mem.eql(u8, second.dest, dest)) continue;
-                if (!std.mem.eql(u8, second.src, first.dest)) continue;
-                const path = Path{
+    pub fn routeBy(self: *const Relation, src: Id, dest: Id) ?Route {
+        if (src.eq(dest)) return null;
+        var found: ?Route = null;
+        for (self.facts.items) |first| {
+            if (!first.id.src.eq(src)) continue;
+            // `first.id.dest` is the candidate hub.
+            for (self.facts.items) |second| {
+                if (!second.id.dest.eq(dest)) continue;
+                if (!second.id.src.eq(first.id.dest)) continue;
+                const route = Route{
                     .src = src,
                     .dest = dest,
-                    .mid = first.dest,
+                    .mid = first.id.dest,
                     .first = first,
                     .second = second,
                     .props = Properties.meet(first.props, second.props),
                     .admitted = first.props.derivable() and second.props.derivable(),
                 };
-                // Prefer an admitted path; keep a refused one only to explain.
-                if (path.admitted) return path;
-                if (found == null) found = path;
+                // Prefer an admitted route; keep a refused one only to explain.
+                if (route.admitted) return route;
+                if (found == null) found = route;
             }
         }
         return found;
     }
 
+    /// The composition law's rendered face — spellings in, a readable `Path`
+    /// with its witness out.
+    pub fn derive(self: *const Relation, src: []const u8, dest: []const u8) ?Path {
+        const s = self.resolve(src) orelse return null;
+        const d = self.resolve(dest) orelse return null;
+        const r = self.routeBy(s, d) orelse return null;
+        const nm = self.names;
+        return .{
+            .src = nm.text(r.src),
+            .dest = nm.text(r.dest),
+            .mid = nm.text(r.mid),
+            .first = self.render(r.first),
+            .second = self.render(r.second),
+            .props = r.props,
+            .admitted = r.admitted,
+        };
+    }
+
     /// Enumeration is destination-keyed and demand-ordered: `to[str]` is every
     /// source that reaches `str`. Declaration order, so the loop is stable.
     pub fn intoDest(self: *const Relation, dest: []const u8, out: *std.ArrayListUnmanaged(Edge), alloc: std.mem.Allocator) !void {
-        for (self.edges.items) |e| {
-            if (std.mem.eql(u8, e.dest, dest)) try out.append(alloc, e);
+        const d = self.resolve(dest) orelse return;
+        for (self.facts.items) |f| {
+            if (f.id.dest.eq(d)) try out.append(alloc, self.render(f));
         }
     }
 
     pub fn authored(self: *const Relation) usize {
-        return self.edges.items.len;
+        return self.facts.items.len;
     }
 
     /// Every ordered pair the trie can answer that NOBODY WROTE. This is the
@@ -365,20 +733,17 @@ pub const Relation = struct {
     /// folding it into the headline is the exact dishonesty this gap was filed
     /// against.
     pub fn derivedCount(self: *const Relation, alloc: std.mem.Allocator, refused: *usize) !usize {
-        var descs: std.ArrayListUnmanaged([]const u8) = .empty;
+        var descs: std.ArrayListUnmanaged(Id) = .empty;
         defer descs.deinit(alloc);
-        for (self.edges.items) |e| {
-            try addUnique(&descs, alloc, e.src);
-            try addUnique(&descs, alloc, e.dest);
-        }
+        try self.endpoints(&descs, alloc);
         var derived: usize = 0;
         refused.* = 0;
         for (descs.items) |a| {
             for (descs.items) |b| {
-                if (std.mem.eql(u8, a, b)) continue;
-                if (self.direct(a, b) != null) continue;
-                const p = self.derive(a, b) orelse continue;
-                if (p.admitted) derived += 1 else refused.* += 1;
+                if (a.eq(b)) continue;
+                if (self.directBy(a, b) != null) continue;
+                const r = self.routeBy(a, b) orelse continue;
+                if (r.admitted) derived += 1 else refused.* += 1;
             }
         }
         return derived;
@@ -386,21 +751,29 @@ pub const Relation = struct {
 
     /// Distinct descriptors mentioned by any edge — the N that every published
     /// SER must carry. A ratio without its universe is not a measurement.
+    ///
+    /// Distinct BY IDENTITY, which is a correctness change and not only a
+    /// refactor: under the text key, two packages' `micron` counted once and
+    /// the ratio was computed over a universe that did not exist.
     pub fn universe(self: *const Relation, alloc: std.mem.Allocator) !usize {
-        var descs: std.ArrayListUnmanaged([]const u8) = .empty;
+        var descs: std.ArrayListUnmanaged(Id) = .empty;
         defer descs.deinit(alloc);
-        for (self.edges.items) |e| {
-            try addUnique(&descs, alloc, e.src);
-            try addUnique(&descs, alloc, e.dest);
-        }
+        try self.endpoints(&descs, alloc);
         return descs.items.len;
     }
 
-    fn addUnique(list: *std.ArrayListUnmanaged([]const u8), alloc: std.mem.Allocator, name: []const u8) !void {
-        for (list.items) |x| {
-            if (std.mem.eql(u8, x, name)) return;
+    fn endpoints(self: *const Relation, out: *std.ArrayListUnmanaged(Id), alloc: std.mem.Allocator) !void {
+        for (self.facts.items) |f| {
+            try addUnique(out, alloc, f.id.src);
+            try addUnique(out, alloc, f.id.dest);
         }
-        try list.append(alloc, name);
+    }
+
+    fn addUnique(list: *std.ArrayListUnmanaged(Id), alloc: std.mem.Allocator, id: Id) !void {
+        for (list.items) |x| {
+            if (x.eq(id)) return;
+        }
+        try list.append(alloc, id);
     }
 };
 
@@ -410,17 +783,78 @@ pub const Relation = struct {
 /// what keeps "add a family" a data fact rather than a code change.
 pub const Store = struct {
     families: std.ArrayListUnmanaged(Relation) = .empty,
+    /// The compilation unit's identity space, HEAP-OWNED so that a `Relation`
+    /// relocated by an ArrayList growth keeps a valid pointer to it. Identities
+    /// belong to the unit, not to a struct, so a `Store` copied by value shares
+    /// one identity space with its copy — which is the correct reading.
+    names: ?*Names = null,
 
     pub fn deinit(self: *Store, alloc: std.mem.Allocator) void {
         for (self.families.items) |*f| f.deinit(alloc);
         self.families.deinit(alloc);
+        if (self.names) |nm| {
+            nm.deinit(alloc);
+            alloc.destroy(nm);
+            self.names = null;
+        }
+    }
+
+    /// The identity space, created on first sight.
+    pub fn interner(self: *Store, alloc: std.mem.Allocator) !*Names {
+        if (self.names) |nm| return nm;
+        const nm = try alloc.create(Names);
+        nm.* = .{};
+        self.names = nm;
+        return nm;
+    }
+
+    pub fn intern(self: *Store, alloc: std.mem.Allocator, name: Name) !Id {
+        const nm = try self.interner(alloc);
+        return nm.intern(alloc, name);
+    }
+
+    /// A descriptor in the default origin, scope and lawset — what the front
+    /// end has to offer today.
+    pub fn descriptor(self: *Store, alloc: std.mem.Allocator, spelling: []const u8) !Id {
+        return self.intern(alloc, .{ .kind = .descriptor, .text = spelling });
+    }
+
+    pub fn callable(self: *Store, alloc: std.mem.Allocator, spelling: []const u8) !Id {
+        return self.intern(alloc, .{ .kind = .callable, .text = spelling });
+    }
+
+    /// An identity's CURRENT spelling, for rendering.
+    pub fn text(self: *const Store, id: Id) []const u8 {
+        const nm = self.names orelse return "";
+        return nm.text(id);
+    }
+
+    pub fn at(self: *const Store, id: Id) ?Record {
+        const nm = self.names orelse return null;
+        return nm.at(id);
+    }
+
+    /// RENAME. Edges are untouched — that is the whole point — and a family's
+    /// mirrored spelling is refreshed so diagnostics do not lie.
+    pub fn rename(self: *Store, id: Id, to: []const u8) !void {
+        const nm = self.names orelse return error.NoSuchIdentity;
+        try nm.rename(id, to);
+        for (self.families.items) |*f| {
+            if (f.id.eq(id)) f.name = nm.text(id);
+        }
     }
 
     /// The family by name, or null when nothing has declared one. `from` is
     /// deliberately NOT a family: it is the same edge read backwards.
     pub fn family(self: *const Store, name: []const u8) ?*const Relation {
+        const nm = self.names orelse return null;
+        const id = nm.lookup(.relation, name) orelse return null;
+        return self.familyBy(id);
+    }
+
+    pub fn familyBy(self: *const Store, id: Id) ?*const Relation {
         for (self.families.items) |*f| {
-            if (std.mem.eql(u8, f.name, name)) return f;
+            if (f.id.eq(id)) return f;
         }
         return null;
     }
@@ -429,8 +863,12 @@ pub const Store = struct {
     /// stable only until the NEXT `getOrCreate` reallocates the family list, so
     /// callers must not hold it across one.
     pub fn getOrCreate(self: *Store, alloc: std.mem.Allocator, name: []const u8) !*Relation {
-        if (self.family(name)) |f| return @constCast(f);
-        try self.families.append(alloc, .{ .name = name });
+        const nm = try self.interner(alloc);
+        const id = try nm.intern(alloc, .{ .kind = .relation, .text = name });
+        for (self.families.items) |*f| {
+            if (f.id.eq(id)) return f;
+        }
+        try self.families.append(alloc, .{ .id = id, .name = nm.text(id), .names = nm });
         return &self.families.items[self.families.items.len - 1];
     }
 
@@ -623,6 +1061,295 @@ test "a meet outside the six classes renders as facts, not a wrong class" {
     // printing `checked`. The facts print `failure view`.
     var fbuf: [64]u8 = undefined;
     try testing.expectEqualStrings("failure view", fmtBuf(p.props, &fbuf));
+}
+
+// ── law.identity.three ──────────────────────────────────────────────────────
+//
+// Every test below has a NEGATIVE TWIN in the same body: the discriminator is
+// shown to SEPARATE two things AND to KEEP one thing one thing. A test that
+// only proves separation cannot tell a working discriminator from an interner
+// that mints a fresh number every call.
+
+const testloc = ast.Loc{ .file = "relation_test", .line = 1, .col = 1 };
+
+fn declareIds(rel: *Relation, src: Id, dest: Id, conv: Id, c: Class) !void {
+    try rel.declareBy(testing.allocator, src, dest, conv, c.to_properties(), testloc);
+}
+
+test "an identity is minted once per key and reused — the control for every split below" {
+    var store = Store{};
+    defer store.deinit(testing.allocator);
+    const a = try store.descriptor(testing.allocator, "micron");
+    const b = try store.descriptor(testing.allocator, "micron");
+    try testing.expect(a.eq(b));
+    try testing.expectEqual(@as(usize, 1), store.names.?.count());
+
+    // NEGATIVE TWIN: a different spelling is a different identity, so the
+    // interner is not simply answering with a constant.
+    const c = try store.descriptor(testing.allocator, "inch");
+    try testing.expect(!a.eq(c));
+    try testing.expectEqual(@as(usize, 2), store.names.?.count());
+}
+
+test "packages: one spelling in two packages is two descriptors" {
+    var store = Store{};
+    defer store.deinit(testing.allocator);
+    const mine = try store.intern(testing.allocator, .{ .kind = .descriptor, .text = "micron", .origin = .{ .package = "a", .version = "1" } });
+    const theirs = try store.intern(testing.allocator, .{ .kind = .descriptor, .text = "micron", .origin = .{ .package = "b", .version = "1" } });
+    try testing.expect(!mine.eq(theirs));
+
+    // NEGATIVE TWIN: the same package is the same descriptor.
+    const again = try store.intern(testing.allocator, .{ .kind = .descriptor, .text = "micron", .origin = .{ .package = "a", .version = "1" } });
+    try testing.expect(mine.eq(again));
+}
+
+test "packages: two same-spelled hubs do NOT compose — the text key derived an edge that does not exist" {
+    // The sharpest form of the bug, as BEHAVIOUR rather than as an inequality.
+    // `inch -> micron(a)` and `micron(b) -> foot` share no descriptor, so there
+    // is no route from `inch` to `foot`. Keyed on text, both hops read
+    // "micron", the trie composed them, and the compiler emitted a conversion
+    // through two unrelated descriptors.
+    var store = Store{};
+    defer store.deinit(testing.allocator);
+    const to = try store.getOrCreate(testing.allocator, "to");
+
+    const inch = try store.descriptor(testing.allocator, "inch");
+    const foot = try store.descriptor(testing.allocator, "foot");
+    const conv = try store.callable(testing.allocator, "scale");
+    const hub_a = try store.intern(testing.allocator, .{ .kind = .descriptor, .text = "micron", .origin = .{ .package = "a", .version = "1" } });
+    const hub_b = try store.intern(testing.allocator, .{ .kind = .descriptor, .text = "micron", .origin = .{ .package = "b", .version = "1" } });
+
+    try declareIds(to, inch, hub_a, conv, .lossless);
+    try declareIds(to, hub_b, foot, conv, .lossless);
+    try testing.expect(to.routeBy(inch, foot) == null);
+
+    // Two hubs, so the universe is FOUR descriptors and nothing derives.
+    var refused: usize = 0;
+    try testing.expectEqual(@as(usize, 0), try to.derivedCount(testing.allocator, &refused));
+    try testing.expectEqual(@as(usize, 0), refused);
+    try testing.expectEqual(@as(usize, 4), try to.universe(testing.allocator));
+
+    // NEGATIVE TWIN: one hub, and the same two hops compose immediately. The
+    // refusal above is the identity split talking, not a broken `routeBy`.
+    const one = try store.getOrCreate(testing.allocator, "eq");
+    try declareIds(one, inch, hub_a, conv, .lossless);
+    try declareIds(one, hub_a, foot, conv, .lossless);
+    const r = one.routeBy(inch, foot) orelse return error.NoDerivation;
+    try testing.expect(r.admitted);
+    try testing.expect(r.mid.eq(hub_a));
+}
+
+test "versions: a@1's micron and a@2's micron coexist" {
+    var store = Store{};
+    defer store.deinit(testing.allocator);
+    const v1 = try store.intern(testing.allocator, .{ .kind = .descriptor, .text = "micron", .origin = .{ .package = "a", .version = "1" } });
+    const v2 = try store.intern(testing.allocator, .{ .kind = .descriptor, .text = "micron", .origin = .{ .package = "a", .version = "2" } });
+    try testing.expect(!v1.eq(v2));
+
+    // NEGATIVE TWIN: one version is one descriptor.
+    const v1again = try store.intern(testing.allocator, .{ .kind = .descriptor, .text = "micron", .origin = .{ .package = "a", .version = "1" } });
+    try testing.expect(v1.eq(v1again));
+}
+
+test "private: two modules' private scratch never answer each other" {
+    var store = Store{};
+    defer store.deinit(testing.allocator);
+    const mine = try store.intern(testing.allocator, .{ .kind = .descriptor, .text = "scratch", .scope = .{ .exported = false, .owner = "lexer" } });
+    const theirs = try store.intern(testing.allocator, .{ .kind = .descriptor, .text = "scratch", .scope = .{ .exported = false, .owner = "parser" } });
+    try testing.expect(!mine.eq(theirs));
+
+    // A private `scratch` is also not the EXPORTED `scratch`.
+    const public = try store.descriptor(testing.allocator, "scratch");
+    try testing.expect(!mine.eq(public));
+    try testing.expect(!theirs.eq(public));
+
+    // NEGATIVE TWIN: one owner is one descriptor.
+    const again = try store.intern(testing.allocator, .{ .kind = .descriptor, .text = "scratch", .scope = .{ .exported = false, .owner = "lexer" } });
+    try testing.expect(mine.eq(again));
+}
+
+test "lawset: a lua number and a duon number are two identities" {
+    // THE LUA FIREWALL as an identity fact. duon laws may never prove a Lua
+    // optimization, and the first place that has to hold is the identity that
+    // an edge is keyed on.
+    var store = Store{};
+    defer store.deinit(testing.allocator);
+    const native = try store.intern(testing.allocator, .{ .kind = .descriptor, .text = "number", .lawset = .duon });
+    const lua = try store.intern(testing.allocator, .{ .kind = .descriptor, .text = "number", .lawset = .lua });
+    try testing.expect(!native.eq(lua));
+
+    // NEGATIVE TWIN: one lawset is one descriptor.
+    const again = try store.intern(testing.allocator, .{ .kind = .descriptor, .text = "number", .lawset = .lua });
+    try testing.expect(lua.eq(again));
+}
+
+test "kind: a descriptor `to` and a relation `to` share a spelling and nothing else" {
+    var store = Store{};
+    defer store.deinit(testing.allocator);
+    const desc = try store.descriptor(testing.allocator, "to");
+    const call = try store.callable(testing.allocator, "to");
+    const fam = try store.intern(testing.allocator, .{ .kind = .relation, .text = "to" });
+    try testing.expect(!desc.eq(call));
+    try testing.expect(!desc.eq(fam));
+    try testing.expect(!call.eq(fam));
+
+    // NEGATIVE TWIN: one kind is one identity.
+    try testing.expect(desc.eq(try store.descriptor(testing.allocator, "to")));
+}
+
+test "renames: the spelling moves and the identity does not — every edge survives" {
+    var store = Store{};
+    defer store.deinit(testing.allocator);
+    const to = try store.getOrCreate(testing.allocator, "to");
+    try to.declare(testing.allocator, testEdge("micron", "inch", "stretch", .lossless));
+    try to.declare(testing.allocator, testEdge("inch", "micron", "shrink", .lossless));
+    try to.declare(testing.allocator, testEdge("micron", "milli", "swell", .lossless));
+    try to.declare(testing.allocator, testEdge("milli", "micron", "shrivel", .lossless));
+
+    const hub = to.resolve("micron") orelse return error.NoIdentity;
+    var refused: usize = 0;
+    const before = try to.derivedCount(testing.allocator, &refused);
+
+    try store.rename(hub, "micrometre");
+
+    // THE IDENTITY DID NOT MOVE, so the algebra did not notice.
+    try testing.expect(to.resolve("micrometre").?.eq(hub));
+    try testing.expectEqual(@as(usize, 4), to.authored());
+    try testing.expectEqual(before, try to.derivedCount(testing.allocator, &refused));
+    try testing.expectEqual(@as(usize, 0), refused);
+    try testing.expectEqual(@as(usize, 3), try to.universe(testing.allocator));
+    const path = to.derive("inch", "milli") orelse return error.NoDerivation;
+    try testing.expect(path.admitted);
+
+    // The RENDERING moved, everywhere, without an edge being rewritten.
+    try testing.expectEqualStrings("micrometre", path.mid);
+    try testing.expectEqualStrings("micrometre", to.direct("inch", "micrometre").?.dest);
+
+    // NEGATIVE TWIN: the OLD spelling stops answering. Without this the test
+    // would pass on an interner that simply added a second name for one id.
+    try testing.expect(to.resolve("micron") == null);
+    try testing.expect(to.direct("inch", "micron") == null);
+
+    // The minting spelling is kept for forensics and is never a key.
+    try testing.expectEqualStrings("micron", store.at(hub).?.minted);
+}
+
+test "renames: a rename onto an occupied spelling is REFUSED, never a merge" {
+    var store = Store{};
+    defer store.deinit(testing.allocator);
+    const inch = try store.descriptor(testing.allocator, "inch");
+    _ = try store.descriptor(testing.allocator, "foot");
+    try testing.expectError(error.NameTaken, store.rename(inch, "foot"));
+    try testing.expectEqualStrings("inch", store.text(inch));
+
+    // NEGATIVE TWIN: renaming onto a FREE spelling succeeds, and renaming an
+    // identity to the spelling it already has is a no-op rather than a clash
+    // with itself.
+    try store.rename(inch, "thumb");
+    try testing.expectEqualStrings("thumb", store.text(inch));
+    try store.rename(inch, "thumb");
+    try testing.expectEqualStrings("thumb", store.text(inch));
+}
+
+test "law.dedup: two families SHARE content and never share semantic identity" {
+    var store = Store{};
+    defer store.deinit(testing.allocator);
+    const to = try store.getOrCreate(testing.allocator, "to");
+    const eq = try store.getOrCreate(testing.allocator, "eq");
+    const i = try store.descriptor(testing.allocator, "i64");
+    const f = try store.descriptor(testing.allocator, "f64");
+    const conv = try store.callable(testing.allocator, "widen");
+
+    try declareIds(to, i, f, conv, .lossless);
+    try declareIds(eq, i, f, conv, .lossless);
+    const a = to.directBy(i, f).?;
+    const b = eq.directBy(i, f).?;
+
+    // CONTENT may be shared — the normalized subgraph is the same one.
+    try testing.expectEqual(a.content, b.content);
+    // SEMANTIC IDENTITY may NOT. `to` and `eq` are two relationships.
+    try testing.expect(!a.id.eq(b.id));
+
+    // NEGATIVE TWIN: change the payload and the content identity moves, so the
+    // equality above is a measurement and not a constant.
+    const other = try store.callable(testing.allocator, "promote");
+    try declareIds(eq, i, f, other, .lossless);
+    try testing.expect(eq.directBy(i, f).?.content != a.content);
+    // …and changing only the FACTS moves it too.
+    try declareIds(eq, i, f, conv, .checked);
+    try testing.expect(eq.directBy(i, f).?.content != a.content);
+}
+
+test "law.identity.three: a redeclaration keeps the edge, moves content, bumps incarnation" {
+    var store = Store{};
+    defer store.deinit(testing.allocator);
+    const to = try store.getOrCreate(testing.allocator, "to");
+    const i = try store.descriptor(testing.allocator, "i64");
+    const s = try store.descriptor(testing.allocator, "str");
+    const digits = try store.callable(testing.allocator, "digits");
+    const roman = try store.callable(testing.allocator, "roman");
+
+    try declareIds(to, i, s, digits, .lossless);
+    const first = to.directBy(i, s).?;
+    try declareIds(to, i, s, roman, .lossless);
+    const second = to.directBy(i, s).?;
+
+    try testing.expectEqual(@as(usize, 1), to.authored());
+    try testing.expect(first.id.eq(second.id)); // semantic: the same relationship
+    try testing.expect(first.content != second.content); // content: a new payload
+    try testing.expect(first.incarnation != second.incarnation); // incarnation: a new occurrence
+    try testing.expectEqual(@as(u32, 2), second.incarnation);
+
+    // NEGATIVE TWIN: redeclaring the IDENTICAL edge keeps semantic identity AND
+    // content, and STILL bumps the incarnation — an incarnation that held still
+    // would not be one.
+    try declareIds(to, i, s, roman, .lossless);
+    const third = to.directBy(i, s).?;
+    try testing.expect(second.id.eq(third.id));
+    try testing.expectEqual(second.content, third.content);
+    try testing.expectEqual(@as(u32, 3), third.incarnation);
+}
+
+test "the hub shape derives six edges nobody wrote — SER 2.00 at N = 4" {
+    // The unit twin of `examples/spec100/relation.duo`, which is what actually
+    // runs the compiler. This pins the STORE's numbers so a regression names
+    // the store rather than the fixture.
+    var store = Store{};
+    defer store.deinit(testing.allocator);
+    const to = try store.getOrCreate(testing.allocator, "to");
+    for ([_][3][]const u8{
+        .{ "micron", "inch", "stretch" },
+        .{ "inch", "micron", "shrink" },
+        .{ "micron", "milli", "swell" },
+        .{ "milli", "micron", "shrivel" },
+        .{ "micron", "foot", "expand" },
+        .{ "foot", "micron", "compress" },
+    }) |row| try to.declare(testing.allocator, testEdge(row[0], row[1], row[2], .lossless));
+
+    var refused: usize = 0;
+    try testing.expectEqual(@as(usize, 6), to.authored());
+    try testing.expectEqual(@as(usize, 6), try to.derivedCount(testing.allocator, &refused));
+    try testing.expectEqual(@as(usize, 0), refused);
+    try testing.expectEqual(@as(usize, 4), try to.universe(testing.allocator));
+}
+
+test "the SAME six edges narrowing derive NOTHING — the control for the six above" {
+    var store = Store{};
+    defer store.deinit(testing.allocator);
+    const to = try store.getOrCreate(testing.allocator, "to");
+    for ([_][3][]const u8{
+        .{ "micron", "inch", "stretch" },
+        .{ "inch", "micron", "shrink" },
+        .{ "micron", "milli", "swell" },
+        .{ "milli", "micron", "shrivel" },
+        .{ "micron", "foot", "expand" },
+        .{ "foot", "micron", "compress" },
+    }) |row| try to.declare(testing.allocator, testEdge(row[0], row[1], row[2], .narrowing));
+
+    var refused: usize = 0;
+    try testing.expectEqual(@as(usize, 0), try to.derivedCount(testing.allocator, &refused));
+    try testing.expectEqual(@as(usize, 6), refused);
+    try testing.expectEqual(@as(usize, 4), try to.universe(testing.allocator));
 }
 
 test "declFromAssign refuses an ordinary assignment" {

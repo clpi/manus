@@ -346,6 +346,20 @@ pub fn build(b: *std.Build) void {
     const ts_projection_step = b.step("treesitter-projection", "grammar.js regenerates byte-identically from scripts/treesitter_emit.duo (GAP-049)");
     ts_projection_step.dependOn(&ts_projection_cmd.step);
 
+    // c-floor -- constitution section 47, the three laws that make C a
+    // CANDIDATE rather than the ceiling, measured instead of asserted. Half the
+    // rows read the `c_floor` block of `duo explain` (the plan) and half run
+    // both backends and time them (the world); a row that disagrees is the
+    // finding. It is a step of its own rather than a row inside audit100
+    // because it COMPILES AND RUNS programs -- seconds, not milliseconds -- and
+    // because a measured loss for the native lowering is a legitimate PASS here
+    // (the floor working) while every audit100 row is a violation count.
+    const cfloor_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/cfloor.duo" });
+    cfloor_cmd.setCwd(b.path("."));
+    cfloor_cmd.step.dependOn(b.getInstallStep());
+    const cfloor_step = b.step("c-floor", "constitution §47: the C-equivalent realization is a costed candidate; plan vs measurement");
+    cfloor_step.dependOn(&cfloor_cmd.step);
+
     // audit100 -- CLAUDE.md section 1's deny table, executable. It scans the
     // canonical partition of docs/spec/corpus.md only, because compile_fail
     // fixtures are SUPPOSED to contain the denied text, and it ratchets off
@@ -589,6 +603,20 @@ pub fn build(b: *std.Build) void {
     spec_corpus_cmd.setCwd(b.path("."));
     const spec_corpus_step = b.step("spec-corpus", "Pass 100 §19/§20: golden corpus blocks-passing + per-construct fixtures, ratcheted");
     spec_corpus_step.dependOn(&spec_corpus_cmd.step);
+
+    // constitution §21 `law.identity.three` + `law.dedup`, gap[103]. The
+    // relation store keyed every edge on a descriptor's TEXT, which is wrong
+    // in both directions the moment packages, renames, versions or private
+    // descriptors exist. Two rows of checks, because the failure has two very
+    // different shapes: the fixtures pin SER and the printed answer BY VALUE,
+    // and a scan pins the quarantine — resolving a spelling is the one place a
+    // byte comparison is correct, and it lives in `Names`. The scan's zero
+    // carries its own positive control, because a blind scanner also reads 0.
+    const relation_id_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/relationid.duo" });
+    relation_id_cmd.step.dependOn(b.getInstallStep());
+    relation_id_cmd.setCwd(b.path("."));
+    const relation_id_step = b.step("relation-id", "constitution §21: relation-store semantic identity — SER by value + the byte-comparison quarantine");
+    relation_id_step.dependOn(&relation_id_cmd.step);
 
     // constitution §46 `law.nominal`, second clause: "a nominal descriptor over
     // a primitive costs no boxing". The spec-corpus row above proves the
