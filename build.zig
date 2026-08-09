@@ -97,6 +97,30 @@ pub fn build(b: *std.Build) void {
     const abi_matrix_step = b.step("abi-matrix", "differential generated ABI call shapes; ratchets MISCOMPILE_CEILING down");
     abi_matrix_step.dependOn(&abi_matrix_cmd.step);
 
+    // Pass 104 G-D3, the encode half. `abi-matrix` above is a G-D3-shaped gate
+    // one level up -- generated shapes, oracle-checked, per row -- and Pass 104
+    // §6 names it as the precedent to extend downward: "Generating ISA property
+    // tests per instruction is the same move one level down."
+    //
+    // `lib/std/target/arm64.duo` is the instruction set as DATA (Pass 103 §2):
+    // 45 forms, each a base word plus `field@hi:lo` layout facts, with ONE
+    // derived encoder over all of them and no per-instruction code. This step
+    // expands every row into 16 operand tuples, hands the assembler text to
+    // clang, disassembles the object, and compares 720 words byte for byte. The
+    // oracle is the external assembler and never this repository's own encoder
+    // -- a generated test that agrees with a wrong descriptor proves nothing.
+    //
+    // It found two on its first run: `rbit` was the 32-bit form under a ctz
+    // lowering that needs 64 (`@ctz(8)` answered 35 natively, 3 in C), and
+    // `scvtf` converted from a 32-bit GPR while both callers pass an x
+    // register. The gate carries three damaged descriptors as positive controls
+    // and exits 3 -- not 0 -- if any of them goes uncaught.
+    const isa_fidelity_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/isa_fidelity.duo" });
+    isa_fidelity_cmd.setCwd(b.path("."));
+    isa_fidelity_cmd.step.dependOn(b.getInstallStep());
+    const isa_fidelity_step = b.step("isa-fidelity", "Pass 104 G-D3: ARM64 descriptors encode what the oracle assembler encodes");
+    isa_fidelity_step.dependOn(&isa_fidelity_cmd.step);
+
     // Pass 100 §22's capability matrix. §22 answered "what works?" with a
     // Boolean and, for running, with "nothing" -- conservative rather than
     // honest, because a compiler does not implement a program, it carries it

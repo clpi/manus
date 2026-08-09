@@ -2257,7 +2257,15 @@ const Arm64Compiler = struct {
         }
         if (hw == .ctz) {
             const tmp = try self.allocReg();
-            try self.emitFmt(0x5ac00000 | (@as(u32, src) << 5) | @as(u32, tmp), "rbit x{d}, x{d}", .{ tmp, src });
+            // RBIT **64-bit** is 0xdac00000. This read 0x5ac00000 -- the 32-bit
+            // form -- until `zig build isa-fidelity` diffed the descriptor in
+            // lib/std/target/arm64.duo against clang. A 32-bit reverse writes
+            // w{tmp}, which zero-fills the top half of x{tmp}, so the `clz x`
+            // below counted those 32 zeros as well: `@ctz(8)` answered 35
+            // natively and 3 through the C backend. No corpus program takes ctz
+            // of anything, so the native differential could not see it; a
+            // generated per-instruction sweep could.
+            try self.emitFmt(0xdac00000 | (@as(u32, src) << 5) | @as(u32, tmp), "rbit x{d}, x{d}", .{ tmp, src });
             try self.emitFmt(0xdac01000 | (@as(u32, tmp) << 5) | @as(u32, dst), "clz x{d}, x{d}", .{ dst, tmp });
             self.releaseReg(tmp);
             return;
@@ -2642,7 +2650,12 @@ const Arm64Compiler = struct {
     }
 
     fn emitScvtfFromGpr(self: *Arm64Compiler, dreg: u5, xreg: u5) Error!void {
-        try self.emitFmt(0x1e620000 | (@as(u32, xreg) << 5) | @as(u32, dreg), "scvtf d{d}, x{d}", .{ dreg, xreg });
+        // SCVTF from a **64-bit** GPR is 0x9e620000. This read 0x1e620000, which
+        // is the 32-bit source form, while both callers hand it an x register:
+        // anything at or above 2^32 would have converted from its low half. The
+        // asm text said `scvtf d, x` either way, so only a byte-level oracle
+        // could tell the two apart -- `zig build isa-fidelity` is that oracle.
+        try self.emitFmt(0x9e620000 | (@as(u32, xreg) << 5) | @as(u32, dreg), "scvtf d{d}, x{d}", .{ dreg, xreg });
     }
 
     fn emitFmovToGpr(self: *Arm64Compiler, xreg: u5, dreg: u5) Error!void {
