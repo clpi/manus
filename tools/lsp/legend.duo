@@ -2,45 +2,34 @@
 --
 -- CLAUDE.md §0d: "`highlights.scm` and the LSP legend are GENERATED from the
 -- graph service — hand edits are an H-1 drift finding." This is the generator
--- for the LSP half. It reads the role taxonomy out of `docs/spec/roles.md` —
--- the ONE written-down scale — and rewrites the marked block in
--- `tools/lsp/src/server.duo`. Nothing here invents a role, orders one, or
--- renames one: every name emitted is a name the taxonomy document already
--- carries, and if the document stops carrying seventeen hued roles this
--- generator REFUSES to write rather than emit a legend it made up.
+-- for the LSP half, and it does not own a taxonomy. It asks the one the RULING
+-- settled on.
 --
--- Two lists come out, and the split matters:
+-- WHERE IT ASKS, AND WHY THAT CHANGED. This generator first read
+-- `docs/spec/roles.md` §2/§3 — 17 hued roles plus 13 the law required and left
+-- unhued. Two implementations had landed with opposite readings and gap[078]
+-- recorded the conflict rather than picking. §0d then RULED:
 --
---   closed   the CLOSED 17 of H-2/H-4 (roles.md §2). Coverage counts only
---            these. G-TOTAL wants 100% of non-whitespace bytes here.
---   unhued   the roles the law REQUIRES and assigns no hue (roles.md §3).
---            H-6 says the role function is total, so these must exist and be
---            emittable; §7 says they do not count toward coverage. Both.
+--     H-2 RULES CLOSURE, NOT A COUNT. FINE SPLITS ARE CARDS, NOT ROLES, and the
+--     discriminator is HUE — a split that changes hue is a role, a split within
+--     one hue is a card, EXCEPT where the law names a role outright (Pass 118
+--     §4 does, for the space walk). The ordinary binding is `place`.
 --
--- The legend the LSP publishes is closed ++ unhued, because a token type the
--- server emits must have an index in the legend the client was handed. The
--- boundary between them is emitted too, so the coverage counter can key on
--- the role set rather than on a byte total — the control CLAUDE.md §3 asks
--- for by name.
+-- So the winning enumeration is the one in `tools/lsp/src/highlight.duo`, and
+-- this file reads it through that file's own published interface —
+-- `hlmode=legend`, which prints `<index> <role> <modifier>` — rather than
+-- re-deriving it. One vocabulary, two consumers: `highlights.scm` for
+-- tree-sitter and this legend for the LSP, both out of the same table.
 --
--- WHY NOT read `scripts/role_scan.duo`. That file is the fixture-corpus gate,
--- not a service: it enumerates the same seventeen in a `hued()` predicate.
--- Deriving the legend from ANOTHER front end's copy would make two copies
--- agree with each other and neither with the law. Both derive from §2.
---
--- AND THE OTHER TAXONOMY — read gaps/GAP-078.md before changing anything here.
--- `tools/lsp/src/highlight.duo` landed the same day with a DIFFERENT closed
--- set: 18 members, `place` where §2 says `name`, `text` where §2 says
--- `literal`, the §0g fine splits demoted to "cards", no `ambiguous` member —
--- and it decides the copula/invoke split by SPACING where §5.1 decides it by
--- grammar.md R1. On `count:u32` the two answer differently. This generator
--- reads `docs/spec/roles.md` because that is the tracked spec in `docs/spec/`,
--- NOT because the question is settled. It is not settled, and until a ruling
--- lands in CLAUDE.md neither of these two may quietly become the other.
+-- WHAT THE GENERATOR STILL REFUSES TO DO. It does not invent, reorder or
+-- rename a role, and it will not write a legend at all if the source enumerates
+-- nothing. `zig build lsp-gate` re-derives this block on every run and fails if
+-- the committed copy drifted, so a hand edit is caught on the commit that makes
+-- it.
 --
 -- Run: duo run tools/lsp/legend.duo    (writes in place, prints what changed)
--- Exit 0 wrote or already current · 2 the taxonomy source could not be read
--- or did not enumerate seventeen hued roles — no file was touched.
+-- Exit 0 wrote or already current · 2 the taxonomy source could not be read or
+-- enumerated no roles at all — no file was touched.
 
 root = std.os.getenv("DUO_ROOT")
 if root == nil or root == ""
@@ -72,68 +61,37 @@ lines(s: str): any
     out
 end
 
--- The backticked word in a markdown table cell, "" when the cell carries none.
--- Deliberately narrow: it reads the FIRST backtick pair on the line and stops,
--- so a decider column full of citations cannot contribute a role name.
-ticked(row: str, from: i64): str
-    n = #row
-    i = from
-    while i <= n and row:byte(i) != 96
-        i = i + 1
-    end
-    if i > n
-        return ""
-    end
-    j = i + 1
-    while j <= n and row:byte(j) != 96
-        j = j + 1
-    end
-    if j > n
-        return ""
-    end
-    row:sub(i + 1, j - 1)
-end
-
--- A §2 row: `| <digits> | \`role\` | …`. The leading number is what separates a
--- role row from a header, a separator, or prose that happens to hold a table.
-numbered(row: str): str
-    n = #row
-    if n < 4 or row:byte(1) != 124
-        return ""
-    end
-    i = 2
-    while i <= n and row:byte(i) == 32
-        i = i + 1
-    end
+-- Field `want` of a space-separated record, "" when the record is shorter.
+-- `hlmode=legend` prints `<index> <role> <modifier>`, and a modifier of "-"
+-- means the role carries none.
+field(rec: str, want: i64): str
+    n = #rec
+    i = 1
     seen = 0
-    while i <= n and row:byte(i) >= 48 and row:byte(i) <= 57
-        seen = seen + 1
-        i = i + 1
+    start = 0
+    while i <= n
+        if rec:byte(i) == 32
+            i = i + 1
+        else
+            seen = seen + 1
+            start = i
+            while i <= n and rec:byte(i) != 32
+                i = i + 1
+            end
+            if seen == want
+                return rec:sub(start, i - 1)
+            end
+        end
     end
-    if seen == 0
-        return ""
-    end
-    ticked(row, i)
+    ""
 end
 
--- A §3 row: `| \`role\` | …`. First cell is the backticked name itself.
-firsttick(row: str): str
-    n = #row
-    if n < 4 or row:byte(1) != 124
-        return ""
-    end
-    i = 2
-    while i <= n and row:byte(i) == 32
-        i = i + 1
-    end
-    if i > n or row:byte(i) != 96
-        return ""
-    end
-    ticked(row, i)
+second(rec: str): str
+    field(rec, 2)
 end
 
-heading(row: str, want: str): bool
-    row:sub(1, #want) == want
+third(rec: str): str
+    field(rec, 3)
 end
 
 -- Literal substring search. Written out rather than reached for in std: the
@@ -166,10 +124,13 @@ findat(hay: str, needle: str): i64
 end
 
 main(): i64
-    src = "{root}/docs/spec/roles.md"
-    text = std.fs.read_file(src)
+    src = "{root}/tools/lsp/src/highlight.duo"
+    dump = "/tmp/duo-lsp-legend.txt"
+    os.execute("cd /tmp && hlmode=legend DUO_ROOT='" .. root .. "' '" .. root
+        .. "/zig-out/bin/duo' run '" .. src .. "' > '" .. dump .. "' 2>/dev/null")
+    text = std.fs.read_file(dump)
     if text == nil or text == ""
-        print("legend: FAIL — cannot read {src}")
+        print("legend: FAIL — {src} printed no legend under hlmode=legend")
         print("legend: the taxonomy is the SOURCE. Refusing to write a legend with no citation behind it.")
         std.os.exit(2)
         return 2
@@ -177,80 +138,73 @@ main(): i64
 
     rows = lines(text)
     closed = {}
-    unhued = {}
-    zone = 0
+    mods = {}
+    seen = {}
     i = 1
     while i <= #rows
         row = rows[i]
-        if heading(row, "## 2.")
-            zone = 2
-        elseif heading(row, "## 3.")
-            zone = 3
-        elseif heading(row, "## 4.")
-            zone = 0
-        elseif heading(row, "## ")
-            zone = 0
-        end
-        if zone == 2
-            got = numbered(row)
-            if got != ""
-                closed[#closed + 1] = got
-            end
-        end
-        if zone == 3
-            got = firsttick(row)
-            if got != ""
-                unhued[#unhued + 1] = got
+        nm = second(row)
+        md = third(row)
+        if nm != ""
+            closed[#closed + 1] = nm
+            if md != "" and md != "-" and seen[md] == nil
+                seen[md] = true
+                mods[#mods + 1] = md
             end
         end
         i = i + 1
     end
 
-    -- H-2 asserts the taxonomy is CLOSED AT 18 and roles.md §4 shows the
-    -- enumeration reaching 17. Seventeen is what the document can produce, so
-    -- seventeen is what this generator accepts; any other count means the
-    -- document moved and a human has to say what the legend should be.
+    -- H-2 rules CLOSURE, not a count (gaps/GAP-078.md), so no number is asserted
+    -- here. What this generator refuses is a legend with nothing behind it: an
+    -- empty enumeration, or one whose rows carry no modifier axis. A fixed count
+    -- would have refused the taxonomy the moment Pass 118 §4 named a nineteenth
+    -- role, which is exactly the event closure is supposed to survive.
     nclosed = #closed
-    nunhued = #unhued
-    if nclosed != 17
-        print("legend: FAIL — {src} §2 enumerates {nclosed} hued roles, not 17.")
-        print("legend: roles.md §4 does this arithmetic out loud. Fix the document, then regenerate.")
+    nmods = #mods
+    if nclosed == 0
+        print("legend: FAIL — {src} enumerates no roles at all under hlmode=legend.")
+        print("legend: the taxonomy is the SOURCE. Refusing to write an empty legend.")
         std.os.exit(2)
         return 2
     end
-    if nunhued == 0
-        print("legend: FAIL — {src} §3 enumerates no unhued roles; H-6 makes the role function total, so this cannot be empty.")
+    if nmods == 0
+        print("legend: FAIL — the source names no modifiers; H-3 weight and H-5 italic are axes and must reach the client.")
         std.os.exit(2)
         return 2
     end
 
     body = ""
     body = body .. opener .. "\n"
-    body = body .. "-- Source: docs/spec/roles.md §2 (the CLOSED 17 of H-2/H-4) and §3 (the roles\n"
-    body = body .. "-- the law requires and assigns no hue). Regenerate with:\n"
+    body = body .. "-- Source: tools/lsp/src/highlight.duo, read through its own `hlmode=legend`\n"
+    body = body .. "-- interface. gaps/GAP-078.md merged two taxonomies into that one: H-2 rules\n"
+    body = body .. "-- CLOSURE and no count, the fine splits are CARDS, the ordinary binding is\n"
+    body = body .. "-- `place`, and the string role is `literal`. Regenerate with:\n"
     body = body .. "--     duo run tools/lsp/legend.duo\n"
     body = body .. "-- `zig build lsp-gate` re-derives this block and fails if it drifted, so a\n"
     body = body .. "-- hand edit here is caught on the commit that makes it (H-1).\n"
     body = body .. "io.lsp.legend = {"
     i = 1
-    while i <= #closed
+    while i <= nclosed
         body = body .. "\"" .. closed[i] .. "\""
-        if i < #closed or #unhued > 0
-            body = body .. ", "
-        end
-        i = i + 1
-    end
-    i = 1
-    while i <= #unhued
-        body = body .. "\"" .. unhued[i] .. "\""
-        if i < #unhued
+        if i < nclosed
             body = body .. ", "
         end
         i = i + 1
     end
     body = body .. "}\n"
-    body = body .. "-- Roles 1.." .. to(str)(nclosed) .. " are the closed set coverage is measured over; the rest\n"
-    body = body .. "-- are roles.md §3 and do NOT count toward coverage (§7).\n"
+    body = body .. "io.lsp.mods = {"
+    i = 1
+    while i <= nmods
+        body = body .. "\"" .. mods[i] .. "\""
+        if i < nmods
+            body = body .. ", "
+        end
+        i = i + 1
+    end
+    body = body .. "}\n"
+    body = body .. "-- The role function is TOTAL (H-6): every legend member is coverable, and\n"
+    body = body .. "-- coverage is measured over ALL " .. to(str)(nclosed) .. " of them.\n"
     body = body .. "io.lsp.closed = " .. to(str)(nclosed) .. "\n"
     body = body .. closer
 
@@ -278,10 +232,10 @@ main(): i64
     out = head .. body .. tail
 
     if out == cur
-        print("legend: already current — {nclosed} hued + {nunhued} unhued roles from {src}")
+        print("legend: already current — {nclosed} roles + {nmods} modifiers from {src}")
         return 0
     end
     std.fs.write_file(target, out)
-    print("legend: wrote {nclosed} hued + {nunhued} unhued roles into {target}")
+    print("legend: wrote {nclosed} roles + {nmods} modifiers into {target}")
     0
 end

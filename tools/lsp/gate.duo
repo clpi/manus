@@ -46,12 +46,18 @@
 --     human would notice in a screenshot, and it moves exactly one integer in
 --     the asserted token array.
 --
--- TAXONOMY, AND WHOSE. The legend and token rows below assert the taxonomy in
--- `docs/spec/roles.md` §2/§3 and the R1 copula/invoke decider in §5.1.
--- `tools/lsp/src/highlight.duo` implements a DIFFERENT one — 18 members,
--- spacing-decided `:` — and the two give different answers on the fixture line
--- this gate asserts. gaps/GAP-078.md carries the conflict; do not "fix" a red
--- row here by adopting the other taxonomy without that ruling.
+-- TAXONOMY. The legend and token rows below assert the RULED one: CLAUDE.md
+-- §0d closes H-2 at 18 with the fine splits as CARDS rather than roles, names
+-- `place` as the eighteenth, and rules that grammar.md R1 decides `:` while
+-- spacing only renders it. `tools/lsp/legend.duo` generates the legend out of
+-- `tools/lsp/src/highlight.duo`, which owns the vocabulary; this gate asserts
+-- the generated result verbatim so a hand edit anywhere in that chain surfaces
+-- here. gaps/GAP-078.md is the record of the conflict that ruling settled.
+--
+-- G-TOTAL IS THREE NUMBERS (§0g), and the lens row below asserts all three:
+-- coverage MUST be 100%, ambiguity MUST be 0, provenance MUST be 100%. A front
+-- end that publishes coverage alone can report 100% while every role it emits
+-- is uncited.
 --
 -- LSPGATE_SERVER   drive a different server file (the controls use it).
 
@@ -153,12 +159,14 @@ end
 doc = "-- copula\\ntotal: f64\\ncount:u32\\nn = lx:read(number)\\n"
 uri = "file:///tmp/duo-lsp-gate/fixture.duo"
 
--- A second document, for the CDR half. The copula fixture declares every
--- contract it has, so it has nothing to infer and an inlay-hint check against
--- it would pass on an empty list — which is exactly what a dead handler
--- returns. This one declares a parameter and NOT a return, and binds a bare
--- literal, so both hint paths have something true to say.
-cdr = "scale(v: i64)\\n  v * 3\\nend\\ntotal = 7\\n"
+-- A second document, carrying the three things the copula fixture cannot show.
+-- It declares a parameter and NOT a return and binds a bare literal, so both
+-- inlay-hint paths have something true to say; it NESTS a declaration, so the
+-- document-symbol trie has depth to prove; and its last line puts a `|`
+-- outside shape position, where union (orange) and pipe (green) are two ROLES
+-- in two hues with no lexical rule between them — a real ambiguity, so the
+-- ambiguity counter is shown answering something other than zero.
+cdr = "outer(a: i64)\\n  helper(b: i64): i64\\n    b\\n  end\\n  helper(a)\\nend\\ntotal = 7\\nout = xs | ys\\n"
 cdruri = "file:///tmp/duo-lsp-gate/cdr.duo"
 
 msg(id: i64, method: str, params: str): str
@@ -202,6 +210,8 @@ main(): i64
             .. "\",\"languageId\":\"duo\",\"version\":1,\"text\":\"" .. cdr .. "\"}}")
         .. msg(7, "textDocument/inlayHint", "{\"textDocument\":{\"uri\":\"" .. cdruri .. "\"}}")
         .. msg(8, "textDocument/codeLens", "{\"textDocument\":{\"uri\":\"" .. uri .. "\"}}")
+        .. msg(10, "textDocument/documentSymbol", "{\"textDocument\":{\"uri\":\"" .. cdruri .. "\"}}")
+        .. msg(11, "textDocument/codeLens", "{\"textDocument\":{\"uri\":\"" .. cdruri .. "\"}}")
         .. msg(9, "textDocument/nosuch", "{}")
         .. msg(99, "shutdown", "{}")
         .. frame("{\"jsonrpc\":\"2.0\",\"method\":\"exit\"}")
@@ -228,17 +238,23 @@ main(): i64
             "absent from capabilities — a client will never send the request")
     end
 
-    -- The legend, EXACTLY, in order. It is GENERATED from docs/spec/roles.md
-    -- §2 and §3 by tools/lsp/legend.duo; a hand edit anywhere in that block is
+    -- The legend, EXACTLY, in order. It is GENERATED from the ONE taxonomy in
+    -- tools/lsp/src/highlight.duo by tools/lsp/legend.duo; a hand edit in it is
     -- an H-1 drift finding (CLAUDE.md §0d) and this row is where it surfaces.
     -- If the taxonomy legitimately moves, update this string ON PURPOSE.
-    legend = "\"tokenTypes\":[\"keyword\",\"copula\",\"descriptor\",\"anchor\",\"union\","
-        .. "\"callable\",\"invoke\",\"action\",\"opcode\",\"mnemonic\",\"number\",\"case\","
-        .. "\"literal\",\"register\",\"walk\",\"pipe\",\"witness\",\"bind\",\"update\","
-        .. "\"relation\",\"levelparen\",\"paramparen\",\"group\",\"brace\",\"bracket\","
-        .. "\"comma\",\"operator\",\"bor\",\"comment\",\"name\"]"
-    check(has(out, legend), "the semantic-token legend is the generated 17 + 13",
-        "the legend drifted from docs/spec/roles.md §2/§3 — regenerate with `duo run tools/lsp/legend.duo`")
+    legend = "\"tokenTypes\":[\"keyword\",\"copula\",\"operator\",\"layout\",\"descriptor\","
+        .. "\"union\",\"anchor\",\"retrieve\",\"invoke\",\"callable\",\"world\",\"foreign\","
+        .. "\"place\",\"number\",\"literal\",\"case\",\"comment\",\"walk\",\"pipe\"]"
+    check(has(out, legend), "the semantic-token legend is the merged CLOSED set, in order",
+        "the legend drifted from tools/lsp/src/highlight.duo — regenerate with `duo run tools/lsp/legend.duo`")
+    check(has(out, "\"tokenModifiers\":[\"declaration\",\"defaultlibrary\"]"),
+        "the legend carries H-3 weight and H-5 italic as modifiers",
+        "definition-adds-weight and ambient-is-italic are axes and must reach the client")
+    -- `ambiguous` is NOT a role and must never acquire an index. If it did, an
+    -- unresolved span could be TOKENIZED, and a token is a colour — which is
+    -- the guess G-TOTAL forbids, wearing the taxonomy as a disguise.
+    check(hasnot(out, "\"ambiguous\""), "the legend has no `ambiguous` member",
+        "an unresolved span could be given a colour; two candidates is a diagnostic, never a role")
 
     -- ── THE DIDCLOSE REGRESSION ──────────────────────────────────────────
     -- id 2 is asked immediately after a close. If the close crashed the
@@ -256,13 +272,15 @@ main(): i64
 
     check(has(out, "```duo\\ntotal: f64\\n```"), "hover answers by value",
         "the hover body does not carry the fixture's own declaration line")
-    check(has(out, "`why(span)` · role **name**"), "hover carries why(span) — the role at the cursor",
+    check(has(out, "`why(span)` · role **place** · card **bound** (closed set)"),
+        "hover carries why(span) — the role AND the card at the cursor",
         "H-7: every (span, role) carries a rule citation; the hover answered prose only")
-    -- `total` is an ordinary binding, and H-4 gives an ordinary binding NO hue
-    -- (roles.md §3: "`name` is the largest hole"). The honest citation is the
-    -- one that says so, and the hover must carry it rather than inventing a
-    -- rule that would make the token look decided.
-    check(has(out, "rule: roles.md §3"), "hover carries the rule that decided the role",
+    -- `total` is an ordinary binding. That is the role `place`, and the hover
+    -- must carry the ruling that named it — GAP-073 found the hole, GAP-078
+    -- ruled it, and this row is where the LSP proves it reads the merged
+    -- taxonomy rather than either of the two that disagreed.
+    check(has(out, "rule: gaps/GAP-078.md RULING — an ordinary binding is a PLACE"),
+        "hover carries the rule that decided the role",
         "H-7: the why-chain has no rule behind it")
 
     check(has(out, "{\"id\":5,\"result\":{\"uri\":\"" .. uri
@@ -275,17 +293,16 @@ main(): i64
     -- numbers: `count:u32` on line 2 is tight and groupless, so its `:` must
     -- come back as role 1 (copula) and not role 6 (invoke). Painting it purple
     -- moves one integer here and this row goes red.
-    tokens = "\"data\":[0,0,9,28,0,1,0,5,29,1,0,5,1,1,0,0,2,3,2,0,1,0,5,29,1,0,5,1,1,0,"
-        .. "0,1,3,2,0,1,0,1,29,1,0,2,1,17,0,0,2,2,29,0,0,2,1,6,0,0,1,4,5,0,0,5,6,29,0]"
+    -- Type ids index the GENERATED legend, so inserting `retrieve` at index 7
+    -- shifted every id above it by one: comment 15->16, place 11->12, invoke
+    -- 7->8, callable 8->9. That renumber is the legend doing its job — it is
+    -- generated, so a renumber costs nothing and a hand edit is caught.
+    tokens = "\"data\":[0,0,9,16,0,1,0,5,12,1,0,5,1,1,0,0,2,3,4,0,1,0,5,12,1,0,5,1,1,0,"
+        .. "0,1,3,4,0,1,0,1,12,1,0,2,1,2,0,0,2,2,12,0,0,2,1,8,0,0,1,4,9,0,0,4,1,3,0,"
+        .. "0,1,6,12,0,0,6,1,3,0]"
     check(has(out, tokens), "semanticTokens answers the corpus token stream exactly",
         "the token array moved; compare against fixtures/highlight/copula.roles.duo")
-    -- And the ambiguous spans send NO token. Line 4's two parens are
-    -- ambiguous(levelparen|paramparen) under roles.md §5.3, so the stream has
-    -- 13 tokens for 15 spans. A fallback role would make this 15 and would be
-    -- the guess G-TOTAL forbids wearing a different hat.
-    check(hasnot(out, ",20,0") and hasnot(out, ",21,0"),
-        "ambiguous spans emit NO token (mixed-space diagnostic, not a guess)",
-        "a levelparen/paramparen token appeared — the scanner guessed")
+
 
     -- ── inlay hints: CDR-inferred descriptors ────────────────────────────
     check(has(out, "\"id\":7"), "inlayHint answers",
@@ -300,12 +317,34 @@ main(): i64
     -- ── code lenses: lenses count witnesses ──────────────────────────────
     check(has(out, "\"id\":8"), "codeLens answers",
         "no response for id 8 — the handler killed the session")
-    check(has(out, "G-TOTAL — roles 13/43 bytes"), "the file lens counts the role census by value",
-        "the G-TOTAL witness count moved; 13 of 43 non-whitespace bytes carry a closed-17 role in this fixture")
-    check(has(out, "· ambiguity 2 spans"), "the file lens counts unresolved ambiguity",
-        "G-TOTAL wants 0; the fixture has 2, and a lens that says otherwise is not measuring")
+    -- ALL THREE §0g numbers, by value, in one string. Naming `place` is what
+    -- takes coverage from 20% to 100% on this fixture, and the two application
+    -- parens stay findings because their CARD (level vs param) is undecided
+    -- even though their ROLE is not — SPECIFICITY, which coverage alone misses.
+    check(has(out, "G-TOTAL — coverage 100% (43/43 bytes) · ambiguity 0 · provenance 100% · specificity findings 2 · unclaimed bytes 0"),
+        "the file lens reports all three G-TOTAL numbers by value",
+        "coverage/ambiguity/provenance moved on the golden copula fixture")
     check(has(out, "\"role\":\"witness\""), "every lens carries its (role, why, dnir) tuple",
         "H-8: a lens whose only payload is a title string is plain-text output")
+
+    -- AND THE AMBIGUITY COUNTER ANSWERS SOMETHING ELSE. A counter that reads 0
+    -- on every input is not measuring; the second document puts `|` outside
+    -- shape position, where union and pipe are two roles in two hues, and the
+    -- lens must say so.
+    check(has(out, "· ambiguity 4 ·"), "the ambiguity counter is live, not stuck at zero",
+        "`xs | ys` is union-or-pipe with no lexical rule between them and must be COUNTED, never guessed")
+
+    -- ── document symbols ARE the trie (§0g) ──────────────────────────────
+    -- This returned a flat list with a `containerName` hint, which every
+    -- client is free to ignore and all of them do. `helper` is declared inside
+    -- `outer`; it must come back as its CHILD, with its own name. Both halves
+    -- were broken: nothing indented was lifted at all, and what the `fun` path
+    -- did lift came back NAMED `un`, because the keyword was read off the
+    -- trimmed line and the remainder sliced out of the untrimmed one.
+    check(has(out, "\"children\":[{"), "documentSymbol nests — it IS the trie, not a flat list",
+        "no child anywhere in the response; `helper` is declared inside `outer`")
+    check(has(out, "\"name\":\"helper\""), "the nested symbol keeps its own name",
+        "an indented declaration came back mangled — head_keyword sliced the untrimmed line")
 
     -- ── THE IN-BAND POSITIVE CONTROL ─────────────────────────────────────
     -- An unknown method must come back as an ERROR, not as silence and not as
