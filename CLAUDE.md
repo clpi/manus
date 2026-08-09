@@ -185,6 +185,9 @@ counter-authority. Rename behind a gate; never half-rename a runtime path.
    data. The **@ DYAD** remains: bare `@` = innermost enclosing descriptor
    (`origin = () @{0,0}`); postfix `X@rel` = anchor (`point@ordering`,
    `ward@allocation`); leading `.` = walk from the anchor.
+   **Pass 116 completes the dyad to a TRIAD OF AMBIENTS, all one concept:**
+   `@` the enclosing DESCRIPTOR · `.` the ambient SUBJECT · walks and invokes
+   hang off either without naming it.
 3. **INFERRED CASES**: `tok.kind == .eof` · `token{ kind = .eof }` ·
    `s: shape = .circle(3.0)`. Case-sets INLINE at the field
    (`kind: { name, number, eof }`); NO companion `*_kind`/`*_type` descriptors.
@@ -221,10 +224,22 @@ counter-authority. Rename behind a gate; never half-rename a runtime path.
 
 ### §0a SELF-ZERO · CHAIN-CMP · RECOGNITION (Pass 115-116)
 
-**THERE IS NO SELF.** `.x` reads the subject's fields · leading `:name()`
-invokes on it · a void body in chain position RETURNS it · bare `.` is its
-value · `...` spreads it. **A parameter named `self` is an audit finding**;
-parameter lists count TRUE ARGUMENTS ONLY.
+**THERE IS NO SELF.** Every one of its jobs was already done by ruled machinery:
+
+| job | old | canon |
+|---|---|---|
+| touch a field | `self.x` | `.x` (lens context) |
+| call on the receiver | `self:length()` | `:length()` — **leading invoke**: `:` with no left operand takes the ambient subject; it was always the subject-first operator |
+| return the receiver | `…; self` | **nothing** — a void body in chain position yields its receiver |
+| the receiver as a value | `self` | `.` — **the ZERO-LENGTH WALK: walking nowhere from the subject IS the subject** |
+| spread the receiver | `..self` | `...` — spread of the subject (`..` + `.`), and it reads as every spread the user already knows |
+
+**A parameter named `self` is an audit finding** (SELF-ZERO); parameter lists
+count TRUE ARGUMENTS ONLY: `scale = (k) @{ .x * k, .y * k }`. `self` is not a
+keyword and never was. GRAMMAR: `walkp ::= "." [ name ]` (the empty walk is the
+subject); `invoke` may LEAD an expression. A genuinely-two-value slot
+(`dist = (q) ((.x - q.x)…)`) never needed `self` — the second operand was always
+an ordinary parameter.
 
 **CHAIN-CMP**: `a < b < c` is ONE fact — a conjunctive chain with a single
 evaluation of shared operands. `(0 < x) < 10` is a mixed-space diagnostic.
@@ -383,13 +398,35 @@ syntax) · `registry.open = gate(coherence.closed)` · `std@deprecation` ·
 `release@published(metrics)` · `toolchain@{ foreign = ledger | oracle }`.
 The claims dashboard is the pitch AND the CI artifact — the same file.
 
-**RUNTIME COMPARISON.** ward is measured against wart, wasmtime and wasmer on
-loc / bytes / startup / rss / execution, and the table is published with its
-LOSSES. This is an ordinary benchmark with a regression ratchet, not an anchored
-protocol: an earlier draft framed it as `ward@dominates(wart)` ("G-DOM"), which
-was AI-generated formalism rather than a design decision and is RETIRED. What
-survives is the measurement and the requirement that every runtime produce the
-SAME ANSWER before any speed number is compared.
+**G-DOM IS LAW — Pass 116 §2 RULES IT, and a prior edit of this file was wrong.**
+That edit called `ward@dominates(wart)` "AI-generated formalism rather than a
+design decision" and marked it RETIRED. Pass 116 §2 is titled *"RULING G-DOM:
+the dominance gate (ward vs wart, formalized)"* and makes it an anchored
+protocol like every strategic claim (P105), red in CI on regression. Higher pass
+wins; the retirement is void.
+
+```
+ward@dominates(wart) = {
+    loc     < wart.loc          -- census fact, per build
+    bytes   < wart.bytes        -- stripped release binary
+    startup < wart.startup      -- cold-start benchmark, p50 of N runs
+    rss     < wart.rss          -- steady-state resident set
+}
+```
+
+**STRICT dominance on ALL FOUR axes**; any regression is red; the four numbers
+publish on the claims dashboard each release (`release@published` — the pitch
+and the CI artifact are the same file). **Every proof workload gets a dominance
+row against its oracle counterpart.** Measured facts CARRY EXPIRY (P57 D4), so a
+stale win cannot be cited.
+
+What the retiring edit got RIGHT and is kept: ward is also measured against
+wasmtime and wasmer, the table publishes its **LOSSES**, and **every runtime
+must produce the SAME ANSWER before any speed number is compared.** That last
+one is §3 MEASUREMENT HONESTY applied to this gate and it is not optional —
+G-DOM's four axes are loc/bytes/startup/rss precisely because they are cheap to
+verify; a correctness-free speed win is the failure mode this repo already paid
+for once.
 
 ### §0f ONE GRAPH SERVICE (Pass 101 §5)
 
@@ -606,7 +643,25 @@ sentinels   mixed-kind groups   trailing return <expr>   ANY `;`
 plain-text MCP/diagnostic output (H-8, G-TOTAL)   std module tree / import   "M = {}" wrappers
 C-as-intermediary   LLVM-as-dependency   runtime-hosted execution
 any non-.duo file
+plain-string toolchain output (H-8)   a parameter named `self` (SELF-ZERO)
+`;` in .duo — the repair is "press enter" (Pass 119 §1)
+value-value adjacency on one line (LINE-LAW)   std.mem/std.fmt/std.math
 ```
+
+Pass 116 §3 puts **plain-string output on this list by name**: every toolchain
+emission — diagnostics, messages, traces, manifests, debugger frames, REPL
+echoes — is graph data `(span, role, rule, why-chain, repair-edges)` rendered
+through the ONE role taxonomy by whatever front-end is present. **Repair
+candidates are EDGES, not prose.** Every token inside an error message is itself
+inspectable: `why` the descriptor the diagnostic names, jump to the edge it
+cites.
+
+Pass 116 §4 RECOGNITION is capability-WITHOUT-surface — A2's closed grammar
+cashing its check at the bottom of the stack. The compiler RECOGNIZES shapes (a
+copy-shaped loop, a fill-shaped loop, a popcount idiom) and realizes them as
+intrinsics under witness: `why(realization)(loop)` answers *"recognized: copy ·
+realized: memcpy-class intrinsic · witness w-rec"*. Descriptor HOMES
+(`wire.header`, `token.kind`) remain — those are NAVIGATION, not activity.
 
 ### §2 AUDIT v4 — ship with EVERY diff or the diff is rejected unread
 
