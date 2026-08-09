@@ -4685,6 +4685,23 @@ pub const CodeGen = struct {
             // fallible return proves nothing.
             .call => |c| blk: {
                 if (c.func.* != .name) break :blk .any;
+                // APPLY-ONE (gap[092]): a DESCRIPTOR subject constructs, so
+                // there is no callee to read a return type off — the answer is
+                // the descriptor itself. Without this the precheck said `.any`
+                // and refused the whole module: `q = point{ … }` and
+                // `q: point = { … }` are one value by two spellings and they
+                // landed on OPPOSITE sides of the native gate. Measured
+                // 2026-08-09, the applied face emitted 6053 lines of boxed
+                // runtime where the typed binding emitted 128, while the
+                // construction site itself was already a compound literal in
+                // both — it was this predicate, not the emitter, that made the
+                // difference. Answered as `.@"struct"` rather than the record's
+                // `.table_type` because that is literally what `types.resolve`
+                // hands the typed binding, and the two spellings have to be
+                // indistinguishable from here on.
+                if (self.descriptor_application_type(c) != null) {
+                    break :blk RT{ .@"struct" = .{ .name = c.func.name.ident } };
+                }
                 var buf: [256]u8 = undefined;
                 const fd = self.func_decls.get(c.func.name.ident) orelse
                     self.func_decls.get(self.mangled_name(c.func.name.ident, &buf)) orelse
@@ -4700,6 +4717,28 @@ pub const CodeGen = struct {
     /// The precheck's own answer for a bare name, used only where `expr_type`
     /// gave up. Never widens a type sema was sure about.
     fn precheck_name_type(self: *CodeGen, e: *const ast.Expr) RT {
+        // A FIELD read off a name the precheck has proven. gap[092]: this is
+        // the second half of teaching the precheck about descriptor
+        // application, and without it the first half buys nothing — the
+        // refusal is raised on `q.x`, not on `q`, so knowing `q` is a `point`
+        // while still answering `.any` for `q.x` refuses exactly as before.
+        //
+        // Deliberately one level and names only. This predicate's whole
+        // discipline is that a third answer is a wrong number, and the record's
+        // own field list is the one place a field's type is already stated —
+        // nothing is reconstructed here.
+        if (e.* == .field and e.field.obj.* == .name) {
+            const obj = self.precheck_types.get(e.field.obj.name.ident) orelse return .any;
+            var rec = obj;
+            if (rec == .@"struct") {
+                rec = self.record_aliases.get(rec.@"struct".name) orelse return .any;
+            }
+            if (rec != .table_type) return .any;
+            for (rec.table_type.fields) |f| {
+                if (std.mem.eql(u8, f.name, e.field.field)) return f.typ;
+            }
+            return .any;
+        }
         if (e.* != .name) return .any;
         return self.precheck_types.get(e.name.ident) orelse .any;
     }
