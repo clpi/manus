@@ -304,6 +304,42 @@ discriminator above: `opcode`/`mnemonic` → `callable`, `register` → `place`,
 — **a genuine hole in the law**, not the implementation) and `;`, which Pass 119
 abolished, so a byte spelling one names no edge.
 
+**AMENDMENT 2026-08-08, on the full Pass 118 text.** The ruling above was made
+against §0d/§0g as summarized. Pass 118 §4 (the ceiling sweep) is more specific
+and WINS on the higher-pass rule — it names **SPACE WALK its own role**
+(`to[str]` is trie navigation, descriptor-tinted, carded). My hue discriminator
+would have made it a card inside `descriptor`; the law says role. **Take the
+law.** The discriminator still governs where the law is silent, and the `place`
+finding stands, but it is not superior to an explicit naming. Also from §4, all
+carded, none of them new roles: braces are a MATCHING STACK (construction/shape
+descriptor-tinted with matched closers; grouping stays faint — no unconditional
+tinting) · comma = **stratify** · `* ms` is the **unit edge**, edge-into-
+descriptor-space and NOT arithmetic · dnir `=` asserts, `->` flows, and every
+leftover identifier is a NAMED role (`d-i`, a fact name), never generic.
+
+**§4's "semicolon = sequence" is dnir/foreign only.** Pass 119 §1 DENIES `;` in
+duon — writing one is a diagnostic whose repair is "press enter". Both hold: the
+role exists for the notations that still have the token.
+
+**THE BINDINGS ARE NOT GOSPEL — the RULINGS are.** A pass's *rulings* are law
+(H-2 closes at 18; the role function is total; specificity is gated). The
+specific bindings a pass hands down — role codes (`t-bd`, `t-up`, `t-cmp`,
+`t-pl`, `t-pp`, `t-pu`, `t-yb`), which hue a given token takes, which split is a
+role versus a card — are PROPOSALS, and they are checked against what the graph
+can actually support. Where a binding and a measurement disagree, **the
+measurement wins and the binding is reported back as a finding.** This is not
+license to ignore the law; it is the difference between transcribing a table and
+implementing one. `place` was found this way: no pass named it, the law required
+totality, and the measurement said ordinary names had no hue.
+
+**STANDING RULE, so this is the last time it is asked: any token whose card
+cannot state a role MORE SPECIFIC than its lexical class is a G-TOTAL finding.**
+The gate measures SPECIFICITY, not just coverage. Per-language totalization is
+required and the generic "value" fallback survives ONLY where "a value in scope"
+is the true statement — ebnf bare words are NONTERMINAL REFERENCES pointing at
+their weighted definitions, asm leftovers are operands, foreign leftovers are
+trust-marked identifiers.
+
 - **H-1** color follows the EDGE, not the glyph (`:` copula vs invoke; `|`
   union vs pipe — two roles, two colors). **H-2** the 18-role taxonomy is
   CLOSED. **H-3** definition and use share a hue; definition adds WEIGHT.
@@ -353,15 +389,48 @@ gap exhibits.
 
 ### §0g G-TOTAL + FFI REGIMES (Pass 117)
 
-**G-TOTAL gates EVERY rendered artifact and front-end** — docs, tree-sitter,
-LSP, TTY, dnir, diagnostics, MCP:
+**G-TOTAL gates EVERY rendered artifact and front-end** — source, dnir,
+diagnostics, the grammar, foreign exhibits, debugger frames, REPL echoes, MCP
+responses. THREE gated numbers, below any threshold = RED CI:
 
-- role coverage = **100% of non-whitespace bytes**
-- **unresolved-ambiguity spans = 0.** Two candidates is a MIXED-SPACE
-  DIAGNOSTIC, never a guess.
-- every role carries its rule + why-chain
+```
+coverage   = role-covered non-whitespace bytes / total     MUST = 100%
+ambiguity  = spans with >1 candidate role unresolved       MUST = 0
+             (two candidates = a mixed-space DIAGNOSTIC, never a guess)
+provenance = roles carrying (rule citation, why-chain)     MUST = 100%
+```
+
 - **SPECIFICITY (Pass 118)**: a token whose card cannot beat its lexical class
   is a FINDING. Coverage alone is not the bar.
+- **The spec document passes its own gate.** Every renderer runs a totalization
+  pass with span-depth tracking.
+
+THE LAST SPLITS — what generic "operator" and "punctuation" were hiding. Each
+carries its card; nothing renders generic where the graph knows more:
+
+| was | now | meaning surfaced |
+|---|---|---|
+| `=` | **BIND** (`t-bd`, law-dim) | a binding ASSERTS a fact |
+| `+=` | **UPDATE** (`t-up`, flow) | one read-modify fact on a place, under ownership proof |
+| `==` `<` | **RELATION** (`t-cmp`) | a query; chains stay ONE fact (CHAIN-CMP underline) |
+| `(` | **LEVEL** (`t-pl`) | a stratum boundary — `read(number)`'s paren selects a realization edge |
+| `(` | **PARAMS** (`t-pp`, italic) | the callable's received places |
+| `(` | **GROUPING** (`t-pu`, faint) | precedence only — inferable |
+| `{` | **SHAPE/CONSTRUCT** (`t-yb`) | descriptor-space braces |
+| walk read | **walk WRITE** (+underline) | writing a place ≠ reading it |
+| literals | the card shows the DESCRIPTOR | CDR-inferred from the contract |
+
+ONE STREAM, N PROJECTIONS. The `(span, role, rule, why, dnir)` stream from the
+graph service is the ONLY source and every surface is an enumerated consumer,
+none exempt: tree-sitter (generated grammar + queries, nodes carry role
+metadata) · **LSP** (semantic tokens = full roles + modifiers · hover =
+`why(span)` · **inlay hints render CDR-inferred descriptors inline — the
+meaning that was demanded-away becomes visible on request** · code lenses count
+witnesses per slot · document symbols ARE the trie) · compiler messages /
+debugger / REPL (H-8; frames carry live provenance) · dnir (its textual form is
+role-total) · **MCP** (tuples, never plain text — *"the reviewer-compiler speaks
+structure to the agent, prose to no one"*) · TTY (ANSI roles from the same theme
+data).
 
 FINE SPLITS ARE LAW: `=` **binds** (asserts a fact) vs `+=` **update** edge vs
 `==` **relation** query · level parens = strata boundaries vs parameter parens
