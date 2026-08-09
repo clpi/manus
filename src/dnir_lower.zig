@@ -1433,6 +1433,9 @@ fn exprIsBoolish(ctx: *LowerCtx, expr: *const ast.Expr) bool {
             const slot = ctx.locals.get(n.ident) orelse break :blk false;
             break :blk ctx.bool_slots.contains(slot);
         },
+        // The expression-if is bool only when BOTH arms are — same rule the
+        // `and`/`or` arm above applies, and for the same reason.
+        .if_expr => |ie| exprIsBoolish(ctx, ie.then_expr) and exprIsBoolish(ctx, ie.else_expr),
         else => false,
     };
 }
@@ -1505,6 +1508,10 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
             const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ f.obj.name.ident, f.field }) catch break :blk false;
             break :blk ctx.module_consts.strs.contains(key);
         },
+        // The expression-if produces text only when BOTH arms do. One str arm
+        // and one integer arm is a slot whose type depends on the branch taken,
+        // which no consumer downstream can read correctly.
+        .if_expr => |ie| exprIsStr(ctx, ie.then_expr) and exprIsStr(ctx, ie.else_expr),
         else => false,
     };
 }
@@ -1611,6 +1618,47 @@ fn lowerPositionalTableAssign(ctx: *LowerCtx, name: []const u8, table: *const as
     try ctx.table_lens.put(ctx.alloc, len_slot, @intCast(idx - 1));
 }
 
+/// gap[063] — `abort()` when a dynamic index leaves a register-exploded table's
+/// range, instead of silently doing nothing.
+///
+/// A positional table lowered to registers has a FIXED capacity; a Duo table
+/// GROWS. The select-chain below matched no slot for an out-of-range index and
+/// simply fell through, so `t = { 0 }` followed by `t[i] = i` for i in 1..3 kept
+/// only the first write and the program printed 1 where the C oracle printed 6 —
+/// a wrong answer, reported as `ok compile`, exit 0. Nine ordinary lines.
+///
+/// The trap does not make the program work; it makes the limit OBSERVABLE. A
+/// program that stays inside the capacity — every fixture that motivated the
+/// select-chain does — never reaches it, and pays two compares. The real repair
+/// is a growable native table, which is a representation change, not a patch
+/// here; until then the choice is between a loud stop and a quiet lie.
+///
+/// Emitted for the STORE and for the dynamic READ, because the read has the same
+/// defect from the other side: an out-of-range read answered 0 where the table
+/// has no such element at all.
+fn emitIndexBoundsTrap(ctx: *LowerCtx, idx_slot: u32, len: i64) Error!void {
+    try ensureExtern(ctx, "os", "abort", "abort");
+
+    const lo = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = lo, .binop = .geq, .lhs = .{ .local = idx_slot }, .rhs = .{ .i64 = 1 } });
+    const lo_bad = ctx.instrs.items.len;
+    try ctx.emit(.{ .op = .br_if_not, .lhs = .{ .temp = lo }, .branch_target = 0 });
+
+    const hi = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = hi, .binop = .leq, .lhs = .{ .local = idx_slot }, .rhs = .{ .i64 = len } });
+    const hi_bad = ctx.instrs.items.len;
+    try ctx.emit(.{ .op = .br_if_not, .lhs = .{ .temp = hi }, .branch_target = 0 });
+
+    const skip = ctx.instrs.items.len;
+    try ctx.emit(.{ .op = .br, .branch_target = 0 });
+
+    const trap: u32 = @intCast(ctx.instrs.items.len);
+    ctx.instrs.items[lo_bad].branch_target = trap;
+    ctx.instrs.items[hi_bad].branch_target = trap;
+    try ctx.emit(.{ .op = .call_extern, .callee = "abort" });
+    ctx.instrs.items[skip].branch_target = @intCast(ctx.instrs.items.len);
+}
+
 /// `t[k] = v` on a positional table.
 ///
 /// The mirror of `lowerDynamicIndex`. A constant index stores straight into the
@@ -1620,8 +1668,8 @@ fn lowerPositionalTableAssign(ctx: *LowerCtx, name: []const u8, table: *const as
 /// fixed-size table genuinely *mutable*, which is what a bounded symbol table
 /// needs: declare into a slot, look it up later.
 ///
-/// An out-of-range index stores nowhere, rather than writing over an adjacent
-/// local.
+/// An out-of-range index TRAPS — see `emitIndexBoundsTrap`. It used to store
+/// nowhere, which is gap[063].
 fn lowerIndexAssignTarget(
     ctx: *LowerCtx,
     obj: *const ast.Expr,
@@ -1665,6 +1713,7 @@ fn lowerIndexAssignTarget(
     // re-run side effects per candidate slot.
     const idx_slot = ctx.freshTemp();
     try ctx.emit(.{ .op = .store_local, .result = idx_slot, .lhs = try lowerExpr(ctx, key_expr), .ty = .any });
+    try emitIndexBoundsTrap(ctx, idx_slot, len);
     const val_slot = ctx.freshTemp();
     try ctx.emit(.{ .op = .store_local, .result = val_slot, .lhs = try lowerExprCons(ctx, value, .single), .ty = .any });
 
@@ -1699,8 +1748,8 @@ fn lowerIndexAssignTarget(
 ///
 /// That is O(n) compares, which is the right trade for the small fixed-size
 /// tables a compiler actually uses — and it needs no memory traffic at all.
-/// An out-of-range index yields 0, matching the `nil`-ish reading of a missing
-/// positional entry rather than reading adjacent storage.
+/// An out-of-range index TRAPS (gap[063]); it used to yield 0, which reads as
+/// "a missing positional entry" and is indistinguishable from a stored zero.
 ///
 /// A genuinely dynamic, growable table still needs base-pointer addressing;
 /// this handles the fixed-length case, which is what fits in registers.
@@ -1713,6 +1762,7 @@ fn lowerDynamicIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const as
 
     const idx_slot = ctx.freshTemp();
     try ctx.emit(.{ .op = .store_local, .result = idx_slot, .lhs = try lowerExpr(ctx, key_expr), .ty = .any });
+    try emitIndexBoundsTrap(ctx, idx_slot, len);
 
     const out_slot = ctx.freshTemp();
     try ctx.emit(.{ .op = .store_local, .result = out_slot, .lhs = .{ .i64 = 0 }, .ty = .any });
@@ -2025,6 +2075,7 @@ fn lowerExprCons(
             try lowerShortCircuit(ctx, b.op, b.lhs, b.rhs)
         else
             try lowerBinop(ctx, b.op, b.lhs, b.rhs),
+        .if_expr => |ie| try lowerIfExpr(ctx, ie),
         .unop => |u| blk: {
             if (u.op == .neg and u.operand.* == .int_lit) {
                 break :blk dnir.Value{ .i64 = -u.operand.int_lit.val };
@@ -2156,6 +2207,10 @@ fn exprTouchesF64(ctx: *LowerCtx, expr: *const ast.Expr) bool {
             }
             break :blk false;
         },
+        // Either arm of an expression-if can carry the float, and both are
+        // reachable — so the whole expression touches f64 if either does.
+        .if_expr => |ie| exprTouchesF64(ctx, ie.cond) or
+            exprTouchesF64(ctx, ie.then_expr) or exprTouchesF64(ctx, ie.else_expr),
         else => false,
     };
 }
@@ -2198,6 +2253,45 @@ fn lowerShortCircuit(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *
     ctx.instrs.items[test_idx].branch_target = @intCast(ctx.instrs.items.len);
     try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = try lowerExpr(ctx, rhs), .ty = .any });
     ctx.instrs.items[skip_idx].branch_target = @intCast(ctx.instrs.items.len);
+    return .{ .local = slot };
+}
+
+/// `k = if n > 3 10 else 20` — §6's expression-if, which IS the ternary.
+///
+/// Same single-slot shape `lowerShortCircuit` uses, and for the same reason:
+/// the result has to be ONE value, so both arms store into one slot and the
+/// slot is the answer.
+///
+///   if !cond goto ELSE;  S = then;  goto END;  ELSE: S = else;  END:
+///
+/// f64 is refused rather than guessed, exactly as short-circuit refuses it: the
+/// slot is stored `.any`, and an f64 arm through an integer slot is a wrong
+/// number, not a bail. The AST backend already lowers the f64 ternary.
+fn lowerIfExpr(ctx: *LowerCtx, ie: *const ast.IfExpr) Error!dnir.Value {
+    if (exprTouchesF64(ctx, ie.cond) or
+        exprTouchesF64(ctx, ie.then_expr) or
+        exprTouchesF64(ctx, ie.else_expr)) return bailWith(@src(), "if-expr-f64");
+
+    const slot = ctx.freshTemp();
+    const cond = try lowerExpr(ctx, ie.cond);
+    const test_idx = ctx.instrs.items.len;
+    try ctx.emit(.{ .op = .br_if_not, .lhs = cond, .branch_target = 0 });
+
+    try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = try lowerExpr(ctx, ie.then_expr), .ty = .any });
+    const skip_idx = ctx.instrs.items.len;
+    try ctx.emit(.{ .op = .br, .branch_target = 0 });
+
+    ctx.instrs.items[test_idx].branch_target = @intCast(ctx.instrs.items.len);
+    try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = try lowerExpr(ctx, ie.else_expr), .ty = .any });
+    ctx.instrs.items[skip_idx].branch_target = @intCast(ctx.instrs.items.len);
+
+    // The slot inherits the arms' TYPE, not just their value. Without this a
+    // `if c "a" else "b"` lands in an untyped slot and every consumer
+    // downstream — `..`, `#s`, `s[i]` — reads the pointer as an integer.
+    if (exprIsStr(ctx, ie.then_expr) and exprIsStr(ctx, ie.else_expr))
+        try ctx.str_slots.put(ctx.alloc, slot, {});
+    if (exprIsBoolish(ctx, ie.then_expr) and exprIsBoolish(ctx, ie.else_expr))
+        try ctx.bool_slots.put(ctx.alloc, slot, {});
     return .{ .local = slot };
 }
 
@@ -2539,6 +2633,7 @@ fn exprIsIntegral(ctx: *LowerCtx, expr: *const ast.Expr) bool {
                 !ctx.ptr_slots.contains(slot) and
                 !nameIsPositionalTable(ctx, n.ident);
         },
+        .if_expr => |ie| exprIsIntegral(ctx, ie.then_expr) and exprIsIntegral(ctx, ie.else_expr),
         else => false,
     };
 }

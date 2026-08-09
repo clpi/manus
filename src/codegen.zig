@@ -4465,7 +4465,15 @@ pub const CodeGen = struct {
                     if (self.enum_is_payload_free(ename) and self.expr_is_native_scalar(arg)) continue;
                     return false;
                 }
-                if (!(rt.is_numeric() or rt == .bool or rt == .str) or !self.expr_is_native_scalar(arg)) return false;
+                if (!(rt.is_numeric() or rt == .bool or rt == .str)) {
+                    // Was a bare `return false`, so the reason never reached the
+                    // recorder and every one of these surfaced as the outer
+                    // "func-body" — a tag that names the whole body and points
+                    // at nothing.
+                    native_diag_fail_fmt("print-arg:{s}", .{@tagName(rt)});
+                    return false;
+                }
+                if (!self.expr_is_native_scalar(arg)) return false;
             }
             return true;
         }
@@ -4490,6 +4498,14 @@ pub const CodeGen = struct {
                 break :blk false;
             } else true,
             .binop => |bin| self.expr_is_native_scalar(bin.lhs) and self.expr_is_native_scalar(bin.rhs),
+            // §6 — `k = if n > 3 10 else 20`, the expression-if that IS the
+            // ternary. Paired with `dnir_lower.lowerIfExpr`, which lowers it to
+            // the same single-slot branch shape `and`/`or` already used; before
+            // that arm existed this had to refuse, and the refusal outlived it
+            // (gap[034], the precheck/lowering drift).
+            .if_expr => |ie| self.expr_is_native_scalar(ie.cond) and
+                self.expr_is_native_scalar(ie.then_expr) and
+                self.expr_is_native_scalar(ie.else_expr),
             .unop => |un| blk: {
                 // `Kind = @{ eof = 0, ident = 1 }` — the canonical enum
                 // descriptor. dnir_lower.collectModuleConsts already folds this
