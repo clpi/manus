@@ -7,9 +7,22 @@ src = "src"
 build-dir = "book"
 create-missing = false
 
+# `additional-js = ["theme/custom.js"]` was here and is gone with the file.
+# It registered a highlight.js language for `duo` and then re-highlighted every
+# `pre code.language-duo` block. It never highlighted one. Measured against the
+# assets mdbook 0.4.44 actually emits (the version .github/workflows/docs.yml
+# pins): the bundled highlight.js is 10.1.1, in which `highlightElement` DOES
+# NOT EXIST -- it arrived in 10.7 -- so the loop threw
+# `TypeError: window.hljs.highlightElement is not a function` on the first Duo
+# block of every page. And it could not have worked even without the throw:
+# mdbook loads `book.js` before `additional-js`, and book.js highlights every
+# block synchronously at parse time, so `registerLanguage('duo', ...)` ran after
+# the only pass that consults the registry. Deleting it changes nothing that
+# renders. Duo blocks are unhighlighted in the book today and remain so; the
+# non-JavaScript route to fixing that is an mdbook preprocessor, which can be a
+# Duo binary. See gaps/GAP-049.
 [output.html]
 default-theme = "light"
-additional-js = ["theme/custom.js"]
 
 [output.html.search]
 enable = true

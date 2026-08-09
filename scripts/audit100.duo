@@ -831,7 +831,26 @@ main(): i64
     -- capability-rows PASS · `zig build test` 43 OK / 3 FAIL, the same three
     -- steps that were failing before (compile-fail suite, gpu benchmark,
     -- no-ansi-reports) and none of them naming a file touched here.
-    budgets: str = "14121 2255 1815 259 322 479 154 58 2022 442 167 128 228 36 2425 2258 3437 6"
+    -- LOWERED 2026-08-08, four rows, all four paid by ONE file:
+    -- `scripts/language_census.duo` was rewritten in canonical style when the
+    -- zig ratchet was added to it, and the rewrite is what moved these. Each
+    -- delta was measured on that file alone with audit100's own regexes and its
+    -- own comment-strip/string-strip pipeline, before and after:
+    --
+    --   underprefix  1815 -> 1808   -7   `_count` -> `tally`, and its 6 call sites
+    --   stdlib       2022 -> 2020   -2   `string.byte`/`string.sub` -> `s:byte`/`s:sub`
+    --   concatlit    2425 -> 2411  -14   every `.. "…"` -> `"…{x}…"`
+    --   trailret     3437 -> 3437   -2   two `return 3` / `return 1` -> `std.os.exit`
+    --
+    -- `trailret` is NOT lowered even though this diff removed two points, and
+    -- that is deliberate rather than an oversight: the row reads 3441 against
+    -- 3437 and the +6 belongs to another session's `examples/boring/` and
+    -- `examples/table/` files, staged in the same tree. Measured directly —
+    -- those 42 files contribute 6 trailret and ZERO on every other row, so
+    -- without this diff the row would read 3443. Lowering it here would be
+    -- rebaselining someone else's red, which the note above forbids. It stays
+    -- at 3437 and stays red until whoever added those files pays or budgets it.
+    budgets: str = "14121 2255 1808 259 322 479 154 58 2020 442 167 128 228 36 2411 2258 3437 6"
 
     -- Per-row: 1 = measure with string bodies INTACT. Only `concatlit` sets
     -- it, because its subject IS the string literal; stripping bodies takes
@@ -991,7 +1010,16 @@ main(): i64
     -- input proving the superset still accepts it. Same precedent as the
     -- `.wasm` bench fixture above, and the same discipline: the budget moves
     -- only with the file it is moving for, named here.
-    nonduo_budget = 539
+    -- LOWERED 539 -> 537, 2026-08-08, and both points are named. The last two
+    -- tracked files in a foreign language that could be removed outright were:
+    --   -1  scripts/run_compile_size_benchmark.sh   ported to .duo; the last
+    --       tracked .sh in the repo, so the census sh/py row is now 0
+    --   -1  docs/theme/custom.js                    deleted, not ported: it
+    --       registered a highlight.js language after mdbook had already
+    --       highlighted the page and then called `highlightElement`, which does
+    --       not exist in the highlight.js 10.1.1 mdbook 0.4.44 ships. It threw
+    --       on every page and had never highlighted a block. See gaps/GAP-049.
+    nonduo_budget = 537
     if nonduo > nonduo_budget
         over += 1
         print("  !! " .. _pad("nonduo", 12) .. _pad(to(str)(nonduo), 8)

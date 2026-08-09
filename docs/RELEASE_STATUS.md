@@ -1450,6 +1450,27 @@ Stated plainly, no hedging.
      at 3 (`CENSUS_JS_FLOOR`). It is debt, not "generated", because a
      sanctioned generated artifact must name its generator and none of the
      three has one.
+
+     **Updated 2026-08-08 — the row is 2, and the sh/py row is 0.**
+     `docs/theme/custom.js` is deleted: measured against the assets
+     **mdbook 0.4.44** actually emits (the version CI pins), it called
+     `hljs.highlightElement`, which does not exist in the bundled highlight.js
+     **10.1.1**, and it registered its language after `book.js` had already run
+     the only highlight pass. It threw on every page and had never highlighted
+     a block; rebuilding the book without it changes exactly one `<script>` tag.
+     `CENSUS_JS_FLOOR` 3 → 2 in the same change.
+     `ext/vscode-duo/extension.js` stays, and stays JavaScript: VS Code loads
+     `package.json`'s `main` with Node's `require()` in the extension host and
+     hands `activate()` a live `vscode` API object, so there is no entry point
+     a Duo binary can occupy. Its repair is RELOCATION — `.gitmodules` already
+     declares `ext/vscode-duo` a submodule of the public `clpi/vscode-duo`,
+     while the files are tracked here directly. See `gaps/GAP-049`.
+     Separately, `scripts/run_compile_size_benchmark.sh` — the last tracked
+     `.sh`, and it carried two inline `python3` heredocs as well — is now
+     `scripts/run_compile_size_benchmark.duo`, so **sh/py is 0** and
+     `CENSUS_FLOOR` is 0. And the largest row in that census, `zig` at 237
+     files, was reported and enforced nothing; it now ratchets under
+     `CENSUS_ZIG_CEILING`, positive-controlled by value like the other two.
    - **It did not build, and now does.** `tree-sitter generate` exited 1 on an
      unresolved `return_statement` conflict (`'return' • '('`), verified
      against the pristine `HEAD` copy as well as the working tree, and the

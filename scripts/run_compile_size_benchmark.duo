@@ -3,8 +3,8 @@
 --
 -- Duo replacement for scripts/run_compile_size_benchmark.sh (monoglot census,
 -- G11). The shell version was the last tracked .sh in the repo and it carried
--- TWO foreign languages, not one: 260 lines of bash plus two inline python3
--- heredocs — one for the wall-clock timer, one for the ML float comparison.
+-- TWO foreign languages, not one: 439 lines of bash plus two inline python3
+-- heredocs (39 lines) — one the wall-clock timer, one the ML float comparison.
 -- Both are arithmetic, which is exactly what the census says belongs in Duo.
 --
 -- WHAT IS STILL SHELLED OUT, and why none of it is reasoning:

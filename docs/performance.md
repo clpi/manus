@@ -49,13 +49,13 @@ Many 40-benchmark rows show `0.000000s` because constant-folding and native emit
 
 | Command | Gate? | Workloads | Correctness | Timing rule | Scripts / sources |
 | --- | --- | --- | --- | --- | --- |
-| `zig build bench` | **YES (CI)** | 40 numeric/stdlib kernels | 40 `RESULT` lines vs `benchmark_c.c` | Min of 10 runs; Duo .lua **and** .duo must ≤ C + 5% (instantaneous rows exempt) | `scripts/run_benchmark.sh`, `examples/benchmark.{lua,duo}`, `examples/benchmark_c.c` |
-| `zig build ml-bench` | Soft (warn) | 5 ML kernels | 5 `RESULT` lines vs `bench_ml_c.c` | Min of 5 runs; 5% slack; warns on failure | `scripts/run_ml_benchmark.sh`, `examples/bench_ml.{duo}`, `examples/bench_ml_c.c` |
-| `zig build honest-bench` | Soft | 6 runtime-seeded observable workloads | `RESULT` checksums | Min of 5 runs; 3% slack | `scripts/run_honest_benchmark.sh`, `examples/bench_honest.{duo}`, `examples/bench_honest_c.c` |
-| `zig build compile-size-bench` | Soft | typed checksum, generated 1k/10k-line function-chain projects, ML binary-size sample | stdout checksum vs C for scalar/function-chain workloads; 5 ML `RESULT` rows with float tolerance | Min of 5 compile runs; reports only | `scripts/run_compile_size_benchmark.sh` |
-| `zig build cross-bench` | No | 23 subset of 40 | Partial | Min of 3 runs | `scripts/run_cross_benchmark.sh` — needs `lua`, `luajit` on PATH |
-| `zig build wasm-bench` | No | WASM runtimes | 40 runtime `RESULT` rows; first two compatible runtimes compared when available | Min of N runs; baseline regression check | `scripts/run_wasm_benchmark.sh` |
-| `scripts/run_gpu_benchmark.sh` | No (opt-in) | Metal matmul | — | — | macOS + Metal only |
+| `zig build bench` | **YES (CI)** | 40 numeric/stdlib kernels | 40 `RESULT` lines vs `benchmark_c.c` | Min of 10 runs; Duo .lua **and** .duo must ≤ C + 5% (instantaneous rows exempt) | `scripts/run_benchmark.duo`, `examples/benchmark.{lua,duo}`, `examples/benchmark_c.c` |
+| `zig build ml-bench` | Soft (warn) | 5 ML kernels | 5 `RESULT` lines vs `bench_ml_c.c` | Min of 5 runs; 5% slack; warns on failure | `scripts/run_ml_benchmark.duo`, `examples/bench_ml.{duo}`, `examples/bench_ml_c.c` |
+| `zig build honest-bench` | Soft | 6 runtime-seeded observable workloads | `RESULT` checksums | Min of 5 runs; 3% slack | `scripts/run_honest_benchmark.duo`, `examples/bench_honest.{duo}`, `examples/bench_honest_c.c` |
+| `zig build compile-size-bench` | Soft | typed checksum, generated 1k/10k-line function-chain projects, ML binary-size sample | stdout checksum vs C for scalar/function-chain workloads; 5 ML `RESULT` rows with float tolerance | Min of 5 compile runs; reports only | `scripts/run_compile_size_benchmark.duo` |
+| `zig build cross-bench` | No | 23 subset of 40 | Partial | Min of 3 runs | `scripts/run_cross_benchmark.duo` — needs `lua`, `luajit` on PATH |
+| `zig build wasm-bench` | No | WASM runtimes | 40 runtime `RESULT` rows; first two compatible runtimes compared when available | Min of N runs; baseline regression check | `scripts/run_wasm_benchmark.duo` |
+| `scripts/run_gpu_benchmark.duo` | No (opt-in) | Metal matmul | — | — | macOS + Metal only |
 
 ### 40-benchmark categories (hard gate)
 
