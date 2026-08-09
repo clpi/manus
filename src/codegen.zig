@@ -12314,7 +12314,18 @@ pub const CodeGen = struct {
                     }
                     // Literal-init table with all-int/float positional fields:
                     // emit a native static array instead of lua_table_new.
-                    if (i < ld.inits.len and ld.inits[i].* == .table and ld.inits[i].table.fields.len > 0) {
+                    //
+                    // EXPECT-APPLY (gap[110]) — unless DEMAND already settled
+                    // the representation. `law.pack.shape` puts that choice
+                    // after semantic resolution, so a pack sema realized as
+                    // descriptor FIELDS is not a candidate here: reading
+                    // `p: point = { 1.0, 2.0 }` as a 1-based array emitted
+                    // `double p[3]` and then `p.x` on it, which is not a
+                    // structure. The record path below is the one that serves
+                    // this shape, and it already reads positional fields.
+                    if (i < ld.inits.len and ld.inits[i].* == .table and ld.inits[i].table.fields.len > 0 and
+                        ld.inits[i].table.pack.realized != .fields)
+                    {
                         const fields = ld.inits[i].table.fields;
                         var all_literal = true;
                         var is_float = false;

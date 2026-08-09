@@ -291,6 +291,45 @@ pub const AliasRegistry = struct {
         return false;
     }
 
+    /// One field of a descriptor, read without caring which of the two storages
+    /// it came from. `AliasDef.fields` and a record TARGET's fields are separate
+    /// types that agree on exactly the pair below, and `hasfield` already reads
+    /// both — this is that same union, kept where `hasfield` is so the labelled
+    /// and the positional readings of one descriptor cannot drift apart.
+    pub const Fieldref = struct { name: []const u8, typ: ast.TypeExpr };
+
+    /// How many fields the descriptor declares. POSITION is a fact a pack
+    /// carries (c0 §44 `apply.carries` names labels AND order), so the count is
+    /// derived here rather than at each site that needs an arity.
+    pub fn fieldcount(def: *const ast.AliasDef) usize {
+        if (def.fields.len != 0) return def.fields.len;
+        if (def.target) |target| {
+            switch (target) {
+                .record => |rec| return rec.fields.len,
+                else => {},
+            }
+        }
+        return 0;
+    }
+
+    /// The `i`th field IN DECLARATION ORDER — the order a positional pack fills.
+    pub fn fieldat(def: *const ast.AliasDef, i: usize) ?Fieldref {
+        if (def.fields.len != 0) {
+            if (i >= def.fields.len) return null;
+            return .{ .name = def.fields[i].name, .typ = def.fields[i].typ };
+        }
+        if (def.target) |target| {
+            switch (target) {
+                .record => |rec| {
+                    if (i >= rec.fields.len) return null;
+                    return .{ .name = rec.fields[i].name, .typ = rec.fields[i].typ };
+                },
+                else => {},
+            }
+        }
+        return null;
+    }
+
     /// `descriptor --has--> method`, by the last segment of each method path.
     pub fn hasmethod(def: *const ast.AliasDef, name: []const u8) bool {
         for (def.methods) |m| {
@@ -2130,6 +2169,11 @@ pub const Sema = struct {
                                 }
                             }
                         }
+                        // EXPECT-APPLY (gap[110]) — the annotation IS the
+                        // demand, so this is the site where the omitted subject
+                        // is supplied. It runs after the mismatch checks above
+                        // so a genuine descriptor mismatch still reports as one.
+                        if (i < ld.inits.len) self.resolve_expected_application(lname.typ, ld.inits[i]);
                         t = ann;
                     }
                     const is_const = is_const_attrib(lname.attrib);
@@ -2637,6 +2681,118 @@ pub const Sema = struct {
         c.args[0].table.pack.realized = .fields;
 
         return RT{ .@"struct" = .{ .name = subject } };
+    }
+
+    /// EXPECT-APPLY — c0 §43 `law.brace`, §44 `apply.edge`. gap[110], owner
+    /// ruling 2026-08-09.
+    ///
+    /// The third and most INFERRED projection of the one application relation:
+    ///
+    ///     point{ x, y }    the descriptor is STATED       (APPLY-ONE, above)
+    ///     @{ x, y }        the descriptor is the AMBIENT one   (AT-APPLY)
+    ///     { x, y }         the descriptor is the EXPECTED one  — this
+    ///
+    /// `{…}` STAYS SEMANTICALLY NEUTRAL and nothing here makes a brace mean
+    /// "construct the expected descriptor". `pack.applied` is deliberately NOT
+    /// written: a bare pack remains a bare pack, and one that nobody demands a
+    /// descriptor from stays an ordinary positional value. What demand supplies
+    /// is the omitted SUBJECT, and the only thing recorded is the REALIZATION —
+    /// exactly where `law.pack.shape` puts it, "physical representation is
+    /// selected AFTER semantic resolution". That ordering is the whole fix.
+    ///
+    /// MEASURED before this (gap[110]): `p: point = { 1.0, 2.0 }` constructed
+    /// fine and then failed on READ with `call to undeclared function
+    /// 'lua_table_get_str_num'`. Neither the annotation nor the pack was at
+    /// fault — `point{ 1.0, 2.0 }` worked and `q: point = p` worked, so only
+    /// the JOIN was missing. With the pack left `.undecided`, the annotation was
+    /// resolved and then dropped, `detect_dense_table` read the
+    /// all-positional-literal shape as a native ARRAY, and `.x` took the dynamic
+    /// path. Recording `.fields` is what makes the demand visible to the
+    /// representation choice that used to run without it.
+    fn resolve_expected_application(self: *Sema, ann: ast.TypeExpr, init_expr: *ast.Expr) void {
+        if (ann != .named) return;
+        if (init_expr.* != .table) return;
+        const tbl = &init_expr.table;
+        // An APPLIED pack already carries its own subject (`point{…}`, `@{…}`)
+        // and was resolved by APPLY-ONE. This rung is only for the pack that
+        // omitted one.
+        if (tbl.pack.applied) return;
+        // ONCE, and for the same reason APPLY-ONE says so: sema reaches a
+        // binding's initializer more than once (inference, then the block walk),
+        // and without this every diagnostic below would report twice.
+        if (tbl.pack.realized != .undecided) return;
+
+        const subject = ann.named;
+        const def = self.alias_defs.get(subject) orelse return;
+        // A generic alias is EXPANDED, not applied; a nominal descriptor over a
+        // scalar (`feet: f64`) has no field pack to receive. Both decline to the
+        // general path rather than guessing — `law.brace`'s own "never a guess".
+        if (def.type_params != null) return;
+        const arity = AliasRegistry.fieldcount(def);
+        if (arity == 0) return;
+
+        // The pack must be able to SATISFY the descriptor demand, and a pack
+        // that cannot is a diagnostic rather than a miscompile. Before this,
+        // both rows below compiled silently to the wrong thing.
+        var positional: usize = 0;
+        for (tbl.fields) |tf| switch (tf) {
+            .named => |nf| {
+                if (!AliasRegistry.hasfield(def, nf.key)) {
+                    self.err(
+                        init_expr.loc(),
+                        "descriptor '{s}' has no field '{s}', so the expected pack carries a label the descriptor cannot receive",
+                        .{ subject, nf.key },
+                    );
+                }
+            },
+            .positional => positional += 1,
+            // `.spread` and `.indexed` carry edges whose arity is not known
+            // here. Declining is not the same as accepting: the pack simply
+            // does not resolve, and the general path answers as it always did.
+            else => return,
+        };
+        if (positional > arity) {
+            self.err(
+                init_expr.loc(),
+                "descriptor '{s}' declares {d} field(s), so the expected pack cannot place {d} positional value(s)",
+                .{ subject, arity, positional },
+            );
+            return;
+        }
+
+        // Each positional value fills the field at its OWN position, which is
+        // the same order `apply.carries` gives the stated form — so the two
+        // spellings cannot disagree about which value landed in which field.
+        var i: usize = 0;
+        for (tbl.fields) |tf| {
+            const val = switch (tf) {
+                .positional => |pv| pv,
+                else => continue,
+            };
+            defer i += 1;
+            const fref = AliasRegistry.fieldat(def, i) orelse continue;
+            const want = self.resolve_type(fref.typ) catch continue;
+            const got = self.type_map.get(val) orelse continue;
+            // CDR (B-13): a bare literal carries no descriptor of its own and
+            // the contract names it, so `x: f64` receiving `1` is admitted for
+            // the same reason `n: u8 = 3` is.
+            if (nominal_accepts_literal(want, val)) continue;
+            if (want == .any or got == .any or got == .nil) continue;
+            if (type_annotation_accepts_init(want, got)) continue;
+            var wbuf: [128]u8 = undefined;
+            var gbuf: [128]u8 = undefined;
+            self.err(
+                val.loc(),
+                "descriptor '{s}' field '{s}' is '{s}', so the expected pack cannot place a '{s}' there",
+                .{ subject, fref.name, want.duo_name(&wbuf), got.duo_name(&gbuf) },
+            );
+        }
+
+        // The demand is satisfied, so the representation follows it. This is the
+        // JOIN gap[110] named: the emitter already has a designated initializer
+        // for exactly this shape (`emit_record_initializer`, which reads named
+        // AND positional fields), and the annotated-value path already worked.
+        tbl.pack.realized = .fields;
     }
 
     fn check_expr_inner(self: *Sema, expr: *ast.Expr) SemaError!RT {
@@ -10020,6 +10176,10 @@ pub const Sema = struct {
             init_expr = as.values[0];
         } else return null;
         if (init_expr.* != .table) return null;
+        // EXPECT-APPLY (gap[110]) — same rule as `detect_dense_table`'s own
+        // scan: a pack whose realization demand already settled is not a
+        // candidate for the array representation.
+        if (init_expr.table.pack.realized == .fields) return null;
         if (init_expr.table.fields.len == 0) return name;
         for (init_expr.table.fields) |f| {
             const v = switch (f) {
@@ -10309,6 +10469,14 @@ pub const Sema = struct {
                 continue;
             }
             if (init_expr.* != .table) continue;
+            // EXPECT-APPLY (gap[110]) — a pack semantic resolution already
+            // realized as descriptor FIELDS has had its representation chosen
+            // by DEMAND. Reading it as a native array here is a second and
+            // later answer to a question `law.pack.shape` settles after
+            // resolution, and it is the exact route by which
+            // `p: point = { 1.0, 2.0 }` became an int64 array whose `.x` read
+            // emitted `lua_table_get_str_num`.
+            if (init_expr.table.pack.realized == .fields) continue;
             // Empty tables always qualify.
             if (init_expr.table.fields.len == 0) {
                 try table_names.append(alloc, name);

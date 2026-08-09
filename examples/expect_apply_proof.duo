@@ -1,0 +1,66 @@
+-- EXPECT-APPLY, the DESCRIPTOR supplied by DEMAND — c0 §43 `law.brace`, §44
+-- `apply.edge`. gap[110], the resolving half.
+--
+-- THE RULING (owner, 2026-08-09). Three source projections of ONE application
+-- relation, most explicit to most inferred:
+--
+--     point{ x, y }     the descriptor is STATED             APPLY-ONE
+--     @{ x, y }         the descriptor is the AMBIENT one    AT-APPLY
+--     { x, y }          the descriptor is the EXPECTED one   EXPECT-APPLY
+--
+-- with `{…}` staying SEMANTICALLY NEUTRAL. A bare pack remains a bare pack;
+-- demand supplies the omitted application subject at the application site
+-- (`expected point + pack{x,y} -> apply(point, pack)`).
+--
+-- MEASURED BEFORE THIS (gap[110]): `p: point = { 1.0, 2.0 }` printed `built`
+-- and then failed to compile on READ with `call to undeclared function
+-- 'lua_table_get_str_num'`. Neither half was at fault — the stated form worked
+-- and the annotated-value form worked — so only the JOIN was missing. The pack
+-- stayed `.undecided`, three separate representation choosers read the
+-- all-positional-literal shape as an ARRAY, and `.x` took the dynamic path.
+--
+-- Every row below asserts a VALUE. `zig build expect-apply` additionally reads
+-- the emitted C and requires the record initializer with NO dense-table
+-- runtime, which is `law.pack.shape`'s "a braced argument need not materialize
+-- a table" — a heap table prints the same digits a struct does.
+
+point: @{ x: f64, y: f64 }
+
+sum(p: point): f64
+    p.x + p.y
+
+main(): void
+    -- ROW 1 — EXPECT-APPLY by POSITION. The annotation is the demand and it
+    -- supplies the subject the pack omitted. This is the row gap[110] filed.
+    p: point = { 1.0, 2.0 }
+    print(p.x)
+    print(p.y)
+
+    -- ROW 2 — EXPECT-APPLY by LABEL. This spelling already worked before
+    -- gap[110] and is kept as the positive control for ROW 1: the two readings
+    -- of one descriptor must agree, and a fixture that only carries the broken
+    -- spelling cannot show that the repair left the working one alone.
+    q: point = { x = 3.0, y = 4.0 }
+    print(q.x)
+    print(q.y)
+
+    -- ROW 3 — the resolved value COMPOSES. It is an ordinary value of the
+    -- descriptor, so it goes where a value goes — here into a parameter typed
+    -- by that descriptor. A binding that only works at its own `=` is a
+    -- statement wearing an expression's clothes.
+    print(sum(p))
+
+    -- ROW 4 — REGRESSION, the annotated-value path gap[110] measured working.
+    -- `r` is annotated over an ALREADY-APPLIED value, not over a pack, so
+    -- EXPECT-APPLY must not touch it.
+    s = point{ 5.0, 6.0 }
+    r: point = s
+    print(r.y)
+
+    -- ROW 5 — THE NEGATIVE CONTROL, and the reason this is resolution rather
+    -- than a second constructor. A bare pack with NO demand stays an ordinary
+    -- positional value: `{…}` was not given the meaning "construct the expected
+    -- descriptor", so nothing here changed for the pack nobody asked about.
+    a = { 7, 8 }
+    print(a[1])
+    print(a[2])
