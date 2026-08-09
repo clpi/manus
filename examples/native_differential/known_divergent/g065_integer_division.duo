@@ -1,0 +1,53 @@
+-- gap[065]. `i64 / i64` is typed f64, against Pass 100 B-4, and the two
+-- backends resolve the mismatch differently — so THE C ORACLE IS WRONG HERE.
+--
+-- B-4: "division operand-selected: `i64/i64` truncates (overflow regime); any
+-- float => float; `%` matches; no `//`." Sema contradicts it directly, and
+-- `q: i64 = a / b` says so out loud: "initializer has type 'f64'".
+--
+-- That loud failure is what hid the quiet one. The natural spelling fails and
+-- gets rewritten; what COMPILES is `print(a / b)`, and there the C backend
+-- computes the quotient as a double and prints its BIT PATTERN as an integer:
+--
+--     7 / 2       c 4615063718147915776   (0x4008000000000000, the double 3.0)
+--     100 / 7     c 4624231760246491429
+--     7 / 0       c 9218868437227405312   (0x7FF0000000000000, +inf) — gap[064]
+--
+-- **The direct backend is CORRECT on every row.** It truncates, which is what
+-- B-4 says. This is the one place in the tree where the reference side is the
+-- wrong one, and Pass 103 §5 licenses the C backend as a CI ORACLE — so an
+-- oracle answering 4615063718147915776 for 7/2 is not an oracle for integer
+-- arithmetic, and every gate built on the comparison inherits the hole.
+--
+-- WHY THIS FILE IS IN `known_divergent/` AND NOT THE CORPUS. It must not block:
+-- the repair is in `src/sema.zig` (make `i64 / i64` have type `i64`) and the
+-- blast radius is 439 tracked `.duo` files containing a `/`. What it must do is
+-- STAY VISIBLE — printed on every `zig build native-differential` run — instead
+-- of decaying into folklore. The day sema is fixed, both columns agree and the
+-- gate says "now AGREES — promote it into the corpus", which is the signal.
+--
+-- DO NOT close this by teaching the C backend to print the double as an
+-- integer. That preserves the type error and makes both backends agree on the
+-- WRONG answer, which is strictly worse than disagreeing.
+--
+-- THE DIVERGENCE IS ON STDOUT, NOT ON EXIT STATUS, and that is not a stylistic
+-- choice. `a / b` cannot be RETURNED from a function declared `: i64` — that is
+-- the very type error this gap is about ("return type mismatch: expected 'i64',
+-- got 'f64'"). So the only shape that compiles is the one that prints, which is
+-- exactly why the defect escaped for so long: the loud failure hides the quiet
+-- one. This row is only watchable because the differential compares stdout
+-- (gap[067]); under the old status-only comparison it read as agreement.
+--
+-- The operands are ANNOTATED. Inferred ones make `print(a / b)` refuse native
+-- lowering outright (`print-arg:any`), which would park this row in the
+-- can't-compile bucket and hide the divergence it exists to publish.
+main(): i64
+    a: i64 = 7
+    b: i64 = 2
+    -- 7/2 -> 3 truncated. C prints the bits of the double 3.0.
+    print(a / b)
+    -- `%` must MATCH division (B-4). Under C, division truncates via a double
+    -- while `lua_imod_i64` FLOORS, so (a/b)*b + (a%b) == a is false for every
+    -- negative operand on the C path.
+    print(a % b)
+    0

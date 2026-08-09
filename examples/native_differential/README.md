@@ -52,8 +52,15 @@ the honest `DNB001` path reports the gap.
   honest capability gap, not a miscompilation, so it does not block. Current
   gaps: f64 arithmetic, string `#`, record literals, table indexing, closures.
 - `known_divergent/` — compiles but computes the wrong answer. Open bugs, listed
-  on every run so they stay visible. Currently empty: recursion (`p10_recurse`)
-  was promoted into the corpus once defects 7–9 were fixed.
+  on every run so they stay visible. Recursion (`p10_recurse`) was promoted into
+  the corpus once defects 7–9 were fixed. Current residents, both of them
+  arithmetic and both of them cases where **the C column is the wrong one**:
+  `g065_integer_division` (`i64 / i64` is typed f64 against B-4, so C prints the
+  bit pattern of a double where the direct backend correctly truncates) and
+  `g064_int_div_by_zero` (`7 / 0` answers +inf bits under C and 0 under direct —
+  the fourth state `docs/spec/soundness.md` §1 says does not exist).
+  Both exit 0 on both columns, so **only the stdout comparison can see them**;
+  under the old status-only gate they read as agreement.
 - `native_only/` — capabilities the C backend **cannot compile at all**, so it is
   not a valid oracle. Each file declares its expected exit status as
   `-- expect: N` in a header comment. These block like the main corpus.

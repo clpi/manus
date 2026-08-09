@@ -186,12 +186,19 @@ main = (): i64
         if _compile(duo, src, "direct", dbin) and _compile(duo, src, "c", cbin)
             d = _rc(dbin)
             c = _rc(cbin)
-            if d == c
+            -- STDOUT counts here for the same reason it counts above: a row
+            -- whose columns differ only in what they PRINT is still divergent,
+            -- and reporting it as "now AGREES — promote it" would be worse
+            -- than not watching it at all.
+            dtext = _printed(dbin)
+            ctext = _printed(cbin)
+            if d == c and dtext == ctext
                 print("native_differential: known_divergent now AGREES — " .. name
                     .. " (promote it into the corpus)")
             else
                 print("native_differential: known divergence — " .. name
-                    .. " (c=" .. c:to(str) .. " direct=" .. d:to(str) .. ")")
+                    .. " (c=" .. c:to(str) .. "/[" .. ctext .. "] direct="
+                    .. d:to(str) .. "/[" .. dtext .. "])")
             end
         end
     end
