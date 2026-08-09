@@ -1181,6 +1181,32 @@ pub fn build(b: *std.Build) void {
     // Tier 0: a dead MCP server is a dead coordination plane.
     agent_smoke_step.dependOn(&mcp_gate_cmd.step);
 
+    // lsp-gate — the LSP is the same kind of program, and it had NO gate at all.
+    //
+    // It was carrying the same class of defect the MCP servers were: on
+    // 2026-08-08 `textDocument/didClose` SEGFAULTED the server. Exit 139, no
+    // diagnostic, no partial answer, no reply to anything afterwards. `t[k] =
+    // nil` does not remove a key in Duo, so `flush_dirty` — which runs after
+    // EVERY message — walked the docs table, found the nil and dereferenced it.
+    // Every editor closes documents; nobody had ever run one against it.
+    //
+    // The gate speaks real LSP framing (`Content-Length: N\r\n\r\n{…}`) and
+    // asserts response BYTES: the twelve advertised capabilities, the generated
+    // 17+13 role legend verbatim, a value round trip through hover, definition
+    // and documentSymbol, the exact delta-encoded semantic-token stream for the
+    // golden copula fixture, the CDR inlay hint, and the code lens witness
+    // counts. Everything scored happens AFTER a close, so a server that dies
+    // mid-session cannot score. Positive-controlled by driving it at corrupted
+    // copies via LSPGATE_SERVER — see the file header for the three runs.
+    const lsp_gate_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "tools/lsp/gate.duo" });
+    lsp_gate_cmd.setCwd(b.path("."));
+    lsp_gate_cmd.step.dependOn(b.getInstallStep());
+    const lsp_gate_step = b.step("lsp-gate", "The LSP must handshake, survive a document close, and answer by value");
+    lsp_gate_step.dependOn(&lsp_gate_cmd.step);
+    // Tier 0: an untested language server is an untested front end, and Pass 117
+    // §0g gates every front end.
+    agent_smoke_step.dependOn(&lsp_gate_cmd.step);
+
     // G-061 tier-0 metaprogramming smokes (combinator dispatch + derive bundles)
     const meta_smoke_paths = [_][]const u8{
         "examples/metaprogramming_test.duo",
