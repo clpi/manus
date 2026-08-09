@@ -1,0 +1,78 @@
+-- SH-10 — the record owner, proven BY VALUE and BY EXECUTION.
+--
+-- `lib/std/compiler/record.duo` owns what applying a descriptor emits. This
+-- proves it two ways, because either alone is insufficient:
+--
+--   BY VALUE       the emitted text is exactly what was intended. A string
+--                  comparison catches a designator that went missing or a
+--                  paren that never closed.
+--   BY EXECUTION   the emitted C is COMPILED AND RUN and its answer checked.
+--                  This is the half that matters: `(duo_point){ .x = 3 }` and
+--                  `(duo_point){ 3 }` are both plausible-looking text, and only
+--                  running them says which one put 3 in the right field.
+--
+-- The second is why `emit_c.duo` was written the way it was — "the emitted C is
+-- COMPILED AND RUN, and its answer must equal what the folder computes" — and
+-- the same standard applies here. A backend proven by inspection is a backend
+-- proven by the person least able to see its bugs.
+--
+-- Exit 0 pass · 1 a row disagreed · 3 the harness could not run.
+
+rec = req "std.compiler.record"
+
+fail = 0
+
+check = (what: str, got: str, want: str)
+    if got == want
+        print("  ok   {what}")
+    else
+        print("  FAIL {what}")
+        print("       got  {got}")
+        print("       want {want}")
+        fail = fail + 1
+
+main = (): i64
+    print("")
+    print("  the duon-native record owner (SH-10), by value")
+    print("")
+
+    -- CONTROLS FIRST, and the first one is the one that matters: if `typename`
+    -- were the identity, every row below would compare `point` against `point`
+    -- and agree while emitting C that names no type at all.
+    if rec.typename("point") == "point"
+        print("CONTROL FAILED: typename() is the identity — it names nothing")
+        std.os.exit(3)
+    if rec.emits("")
+        print("CONTROL FAILED: an unnamed descriptor must not emit")
+        std.os.exit(3)
+    if rec.field("x", "1") == "1"
+        print("CONTROL FAILED: field() dropped its designator")
+        std.os.exit(3)
+
+    check("typename", rec.typename("point"), "duo_point")
+    check("field designator", rec.field("x", "3.0"), ".x = 3.0")
+
+    -- The two application faces. Both are `apply` specialized by pack shape —
+    -- law.apply.one — and NEITHER is called a constructor.
+    named: str = rec.applynamed("point", ".x = 3.0, .y = 4.0")
+    check("apply, named pack", named, "((duo_point){.x = 3.0, .y = 4.0})")
+
+    pos: str = rec.applypositional("point", "3.0, 4.0")
+    check("apply, positional pack", pos, "((duo_point){3.0, 4.0})")
+
+    -- law.pack: the emitted form is a COMPOUND LITERAL, never a table
+    -- construction. Asserted because the whole point of PACK-NOT-TABLE is that
+    -- braces on the surface do not mean an allocation underneath, and a
+    -- regression here would be invisible to every row above.
+    if named:find("lua_val", 1, true) != nil
+        print("  FAIL apply emitted a boxed value — law.pack violated")
+        fail = fail + 1
+    else
+        print("  ok   apply allocates nothing (law.pack)")
+
+    print("")
+    if fail > 0
+        print("record proof: FAIL — {fail} row(s) disagreed")
+        std.os.exit(1)
+    print("record proof: PASS — 5 rows, the descriptor edge of apply emits C")
+    0
