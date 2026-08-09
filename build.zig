@@ -464,6 +464,23 @@ pub fn build(b: *std.Build) void {
     const recognition_scan_step = b.step("recognition-scan", "Pass 116 s0a: std.mem/std.fmt/std.math and bare math. in lib/std; ratchets");
     recognition_scan_step.dependOn(&recognition_scan_cmd.step);
 
+    // gap[080]. `scripts/bootstrap_scan.duo` has been in the tree, working and
+    // passing, with NO BUILD STEP -- so nothing ever ran it. gaps/GAP-080.md
+    // says "Landed with this gap: `zig build bootstrap-scan`"; the script
+    // landed and the step did not, which is the same class of defect the gap
+    // itself is about: `src/*.zig` is the one corpus the deny table cannot
+    // see, and the instrument built to see it was itself invisible.
+    //
+    // audit100 walks the canonical .duo partition and excludes the bootstrap
+    // ledger from every deny row, so the compiler -- the artifact that
+    // enforces the law on every other file -- was unmeasured. This row
+    // ratchets DOWN over tracked src/*.zig only.
+    const bootstrap_scan_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/bootstrap_scan.duo" });
+    bootstrap_scan_cmd.setCwd(b.path("."));
+    bootstrap_scan_cmd.step.dependOn(b.getInstallStep());
+    const bootstrap_scan_step = b.step("bootstrap-scan", "gap[080]: the deny table over src/*.zig, the corpus audit100 excludes; ratchets");
+    bootstrap_scan_step.dependOn(&bootstrap_scan_cmd.step);
+
     // gap[076]. The gap allocator's mkdir(2) is atomic within ONE filesystem
     // view, and parallel agents here work in git worktrees, which are several.
     // Both of its inputs used to be worktree-local, so two agents mkdir'd two
