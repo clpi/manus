@@ -5098,6 +5098,25 @@ pub const Parser = struct {
             const lit = try self.alloc.dupe(u8, s[start..]);
             try parts.append(self.alloc, try self.new_expr(.{ .string_lit = .{ .loc = loc, .val = lit } }));
         }
+        // gap[094]. A string with EXACTLY ONE part and no literal text — `"{i}"`
+        // — used to fall straight out of the loop below as its own hole, so the
+        // desugar of a string produced an `i64`:
+        //
+        //     a: str = "{i}"    type mismatch: declared 'str', initializer 'i64'
+        //     b: str = "x{i}"   fine, because one literal byte makes two parts
+        //
+        // The interpolation is what makes the value a string; whether the author
+        // also typed a literal character cannot be what decides its descriptor.
+        // Seeding the fold with an empty literal makes the single-hole case the
+        // SAME shape as every other one — `"" .. i` beside `"x" .. i` — so it
+        // reuses the concat lowering that already works instead of adding a
+        // conversion the multi-part path does not use. An all-literal string
+        // never reaches here (`parts.items.len == 0` returns above), so this
+        // cannot wrap a plain literal.
+        if (parts.items[0].* != .string_lit) {
+            const empty = try self.new_expr(.{ .string_lit = .{ .loc = loc, .val = "" } });
+            try parts.insert(self.alloc, 0, empty);
+        }
         var expr = parts.items[0];
         for (parts.items[1..]) |part| {
             expr = try self.new_expr(.{ .binop = .{
