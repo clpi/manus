@@ -1,60 +1,77 @@
--- gap[100] rung 4 — the world-receiver shape, worked and verified BY VALUE.
+-- gap[100] rung 4 — authority is an OPERAND, and the subject is the VALUE.
 --
--- Rung 4 says `os` stops being reached ambiently and arrives as an OPERAND the
--- caller could have been refused. Enforcement (rung 5) is sema and is not
--- written yet, so this file does the part that does not need it: it shows the
--- shape working, so the 620-site conversion has an exemplar to copy instead of
--- a paragraph to interpret.
+-- CORRECTED 2026-08-09. The first version of this proof was wrong in exactly
+-- the way the owner directive names: it wrote `elapsed(realclock, since)`,
+-- putting the WORLD first. Under FACE-CALL ("if you are holding the first
+-- argument, you are holding the receiver") that makes the capability container
+-- the subject — which is pseudo-OOP smuggled in through a capability argument,
+-- and it is not what the law says.
 --
--- THE TEST THAT MATTERS is not "does it run" — an ambient call runs too. It is:
--- CAN THE CAPABILITY BE WITHHELD? A world is only a world if handing over a
--- different one changes what the callee can do, and handing over nothing stops
--- it entirely. Both directions are asserted below.
+-- The correct decomposition separates three things the first version fused:
 --
--- What this does NOT claim: it does not make `os` unreachable. Nothing here
--- prevents a callee from ignoring the operand and calling os.clock() directly,
--- because that refusal is rung 5 and lives in sema. This is the shape, ready
--- for the enforcement to make it the only shape.
+--   subject   the VALUE the relation is about        (the timestamp, the path)
+--   context   the AUTHORITY required to perform it   (the clock, the filesystem)
+--   relation  the operation itself                   (elapsed, read)
 --
--- exit 0 all good; 1..4 names the direction that broke.
+-- So the surface follows the SEMANTIC SUBJECT and the world rides as an
+-- ordinary operand: `since:elapsed(w)`, not `w:elapsed(since)`. For the
+-- filesystem the same reading gives `path:read(fs)` rather than
+-- `fs:read(path)` — the path is what the relation is ABOUT; the filesystem is
+-- what makes performing it permissible.
+--
+-- "Declare from the relation; work from the value." A world is an independent
+-- semantic operand, not a receiver merely because it grants authority.
+--
+-- WHAT THIS STILL PROVES, unchanged and the only thing that matters: authority
+-- can be WITHHELD. A world is only a world if handing over a different one
+-- changes what the callee can do. Asserting the happy path alone proves
+-- nothing — an ambient call passes that too.
+--
+-- exit 0 all good; 1..3 names the direction that broke.
 
--- A world is an ORDINARY VALUE. That is the whole point: no new grammar, no
--- new sigil, no capability keyword. It carries authority because of what is
--- inside it, and it is refusable because it is an argument.
 realclock = { now = () os.clock() }
 
--- A world that answers, but with no authority behind it. This is what "refused"
--- looks like from the callee's side: same shape, no reach.
+-- Same shape, no authority behind it. This is what "refused" looks like from
+-- the callee's side.
 fakeclock = { now = () 0.0 }
 
--- The consumer names its need in its PARAMETER LIST. It cannot reach the clock
--- any other way, and a reader can see the authority it takes without reading
--- the body — which is the property ambient reach destroys.
-elapsed = (w, since: f64): f64
+-- The SUBJECT is the timestamp. The world is a named operand the caller had to
+-- be handed and could have been refused. A reader sees the authority this
+-- relation takes without reading its body — the property ambient reach destroys.
+-- NOTE: the subject is a NAMED parameter, not the ambient `.`. SELF-ZERO says
+-- the receiver is spelled `.` and the parameter list carries TRUE ARGUMENTS
+-- ONLY, so the canonical declaration is `elapsed = (w) (w.now() - .)`. Measured
+-- 2026-08-09: that does not parse — `. * 2.0` fails with ExpectedToken. The
+-- ambient-subject form is law and is unimplemented, so this proof uses a named
+-- subject. The ORIENTATION being proven is unaffected: the subject is still the
+-- value and the world is still an operand.
+elapsed = (since: f64, w): f64
     w.now() - since
 
 main = (): i64
-    -- direction 1: the real world works
-    a = realclock.now()
-    d = elapsed(realclock, a)
+    -- direction 1: the real world works, subject-first. The baseline is a
+    -- literal rather than realclock.now() because binding a world-member call
+    -- result to a typed local does not lower today (see the note below).
+    a = 0.0
+    d = a:elapsed(realclock)
     if d < 0.0
         print("world proof: real clock ran backwards: {d}")
         std.os.exit(1)
 
-    -- direction 2: THE CAPABILITY CAN BE WITHHELD. Same callee, same call, a
-    -- world with no authority — and the answer changes. If this asserted equal
-    -- values it would prove nothing: an ambient call would pass it too.
-    z = elapsed(fakeclock, 1000.0)
+    -- direction 2: THE CAPABILITY CAN BE WITHHELD. Same subject, same relation,
+    -- a world with no authority — and the answer changes.
+    base = 1000.0
+    z = base:elapsed(fakeclock)
     if z != -1000.0
         print("world proof: withheld clock still reached real time: {z}")
         std.os.exit(2)
 
-    -- direction 3: the callee is HONEST about what it took. `elapsed` has two
-    -- true arguments, and neither is a hidden ambient reach. A version that
-    -- cheated would answer the same for both worlds.
-    if elapsed(realclock, 0.0) == elapsed(fakeclock, 0.0)
+    -- direction 3: the operand is not decorative. A callee that took the world
+    -- and then reached os.clock() anyway would answer the same for both.
+    zero = 0.0
+    if zero:elapsed(realclock) == zero:elapsed(fakeclock)
         print("world proof: both worlds gave one answer — the operand is decorative")
         std.os.exit(3)
 
-    print("world proof: authority arrives as an operand and CAN be withheld")
+    print("world proof: subject-first, authority as an operand, and it CAN be withheld")
     0
