@@ -97,7 +97,39 @@ end
 -- Compile the .duo mirror
 s.must("cd " .. ROOT .. " && " .. DUO .. " compile --pgo -O3 examples/benchmark.duo -o /tmp/duo_bench_duo.out")
 
+-- RESULT rows and TIMED rows are no longer the same count, and the split is
+-- the whole of gap[096]'s closure.
+--
+-- BENCHES is the CORRECTNESS count: every kernel still runs in all three
+-- programs and every answer is still compared against reference C. 40, and it
+-- must stay 40 -- the three rows removed below are precisely the ones whose
+-- RESULT row is the only thing keeping the compiler's most aggressive kernel
+-- substitutions honest, so deleting them would delete the oracle.
+--
+-- TIMED is the SPEED count. Three rows publish no Time line in ANY of the
+-- three programs, because a duration for them cannot be compared:
+--
+--   Fibonacci(40)  codegen substitutes an O(n) iteration for O(phi^n) recursion
+--   Table array    codegen substitutes n(n+1)/2 for the O(n) fill-and-sum
+--   Bitcount       codegen substitutes an O(log n) identity for the O(n log n)
+--
+-- These are not constant folds and gap[096]'s two proposed repairs were both
+-- measured INEFFECTIVE before the rows were removed:
+--
+--   raise the bound  -- the run this was decided on reported `res 0`: NO row
+--                       folded for want of resolution. Every fold was `both`,
+--                       and an O(1) kernel has no bound that reaches the floor.
+--   opaque input     -- sourcing the bound from getenv (which neither compiler
+--                       can see through) leaves the emitted kernel BYTE-
+--                       IDENTICAL. Verified by diffing the generated C for all
+--                       three functions, literal bound against getenv bound.
+--
+-- The substitutions are keyed on the function BODY, so no change to the INPUT
+-- reaches them. The row was comparing two algorithms, not two codegens, and
+-- gap[096] step 5 says a row that still folds after the repair is removed with
+-- a reason rather than left folding. That is what this is.
 global BENCHES: i64 = 40
+global TIMED: i64 = 37
 
 -- Two measured defects forced this shape; do not "simplify" it back.
 --
@@ -312,6 +344,48 @@ folded(dt: f64, ct: f64): bool
     out
 end
 
+-- WHICH rule fired, and it is not cosmetic. `folded` returns one bool for two
+-- causes that need OPPOSITE repairs:
+--
+--   res   R1, at or under the reporting floor. The workload is too cheap to
+--         measure and the repair is a larger bound.
+--   form  R2, beating C by more than `ratio`. Both sides reach clang -O3 from
+--         the same algorithm, so a gap that size is ASYMPTOTIC — the compiler
+--         evaluated the benchmark instead of running it. A larger bound folds
+--         just the same; the repair is an input the compiler cannot know.
+--   both  R1 and R2 together, which is what a closed form usually looks like:
+--         it returns instantly AND beats C enormously.
+--
+-- gap[096] recorded a repair plan that was WRONG for three rows because one
+-- word covered both causes and the summary line — "smallest POSITIVE duration"
+-- — had quietly excluded the rows sitting at 0. Reporting the reason is what
+-- makes the two piles countable.
+--
+-- The DECISION is unchanged: this reads the same two clauses and adds no third.
+-- A reason function that could disagree with `folded` would be a second
+-- classifier, and then the table would have two answers.
+foldreason(dt: f64, ct: f64): str
+    r1 = false
+    r2 = false
+    if dt <= cutoff
+        r1 = true
+    end
+    if ct > cutoff and ct >= dt * ratio
+        r2 = true
+    end
+    out = ""
+    if r1 and r2
+        out = "both"
+    end
+    if r1 and not r2
+        out = "res"
+    end
+    if r2 and not r1
+        out = "form"
+    end
+    out
+end
+
 -- One place formats a duration, so one line in this file names a Lua library.
 sec(v: f64): str
     string.format("%g", v)
@@ -437,15 +511,40 @@ else
     print("=== Nelua (skipped; set RUN_NELUA_BENCH=1 to enable) ===")
 end
 
+-- TIMED rows, in Time-line order. Fibonacci(40), Table array and Bitcount are
+-- absent BY REMOVAL, not by oversight: see the TIMED note at the top of this
+-- file. Their kernels still run and their RESULT rows are still compared, so
+-- this list is 37 while BENCHES stays 40. The count check below is what turns
+-- a silently dropped Time line back into a failure instead of three N/A rows
+-- that would read as losses.
 global NAMES = {
-    "Fibonacci(40)", "Prime sieve", "Mandelbrot", "Grid matrix", "N-body", "String bytes",
-    "Table array", "Trig sum", "String chain", "String hash", "Math floor/max", "Table max",
+    "Prime sieve", "Mandelbrot", "Grid matrix", "N-body", "String bytes",
+    "Trig sum", "String chain", "String hash", "Math floor/max", "Table max",
     "Pow/sqrt", "Binary search", "Filter count", "Dot product", "Clamp sum", "Bucket hash",
     "EMA smooth", "Token count", "Config parse", "Table lookup", "Table churn", "Matrix multiply",
     "Prefix sum", "GCD reduce", "Collatz sum", "XOR fold", "Ring buffer", "Cond swap",
     "Ackermann", "Levenshtein", "Sieve", "Fenwick tree", "Interpolation", "Run-length",
-    "Bitcount", "CORDIC sin", "Sparse dot", "Game of Life"
+    "CORDIC sin", "Sparse dot", "Game of Life"
 }
+
+-- POSITIVE CONTROL on the row count. Without it, a build that emits fewer Time
+-- lines than TIMED prints N/A for the tail, N/A takes the `c_wins` default, and
+-- a PARSE failure is published as a clean sweep of losses. This repository has
+-- already shipped exactly that once -- gap[031], every row N/A and every winner
+-- C -- so the count is asserted rather than assumed.
+checktimes(label: str, t: table): i64
+    n = #t
+    if n != TIMED
+        say("error: " .. label .. " produced " .. tostring(n) .. "/" .. TIMED:to(str)
+            .. " Time lines; the timing table cannot be trusted.")
+        os.exit(1)
+    end
+    0
+end
+
+checktimes("Duo benchmark.lua", DUO_TIMES)
+checktimes("Duo benchmark.duo", DUOFILETIMES)
+checktimes("reference C benchmark", C_TIMES)
 
 global RESULT_FAIL_FLAG: i64 = 0
 
@@ -465,6 +564,21 @@ global impossible: i64 = 0
 -- is the wider number, and the gap between them is rows where one build ran
 -- the kernel and the other evaluated it.
 global partial: i64 = 0
+-- gap[096]: the two fold causes, counted separately. `folded` stays one
+-- decision; these only record WHY, so a reader can size the two repairs — a
+-- larger bound fixes `res` and does nothing for `form`.
+--
+-- `fold*` counts the verdict rows, where the SLOWER Duo variant decides.
+-- `fold*all` counts every folded Duo build observation across the .lua and
+-- .duo columns. That second count is the worklist: a row where only one
+-- variant folded still tells us one benchmark input is not measuring runtime.
+global foldres: i64 = 0
+global foldform: i64 = 0
+global foldboth: i64 = 0
+global foldsites: i64 = 0
+global foldresall: i64 = 0
+global foldformall: i64 = 0
+global foldbothall: i64 = 0
 
 FAIL = false
 print("")
@@ -475,7 +589,7 @@ print("")
 s.must("printf \"%-16s %12s %12s %12s %12s %12s %12s %8s\\n\" \"Benchmark\" \"DuoLua(s)\" \"DuoDuo(s)\" \"C(s)\" \"LuaJIT(s)\" \"Lua5.5(s)\" \"Nelua(s)\" \"Winner\"")
 s.must("printf \"%-16s %12s %12s %12s %12s %12s %12s %8s\\n\" \"----------------\" \"------------\" \"------------\" \"------------\" \"------------\" \"------------\" \"------------\" \"--------\"")
 
-for i = 1, BENCHES
+for i = 1, TIMED
     name = NAMES[i]
     if name == nil name = "bench-" .. tostring(i) end
     
@@ -505,6 +619,33 @@ for i = 1, BENCHES
         cdur: f64 = c
         if folded(luadur, cdur) or folded(filedur, cdur)
             partial = partial + 1
+            why = foldreason(luadur, cdur)
+            if why != ""
+                foldsites = foldsites + 1
+            end
+            if why == "res"
+                foldresall = foldresall + 1
+            end
+            if why == "form"
+                foldformall = foldformall + 1
+            end
+            if why == "both"
+                foldbothall = foldbothall + 1
+            end
+
+            why = foldreason(filedur, cdur)
+            if why != ""
+                foldsites = foldsites + 1
+            end
+            if why == "res"
+                foldresall = foldresall + 1
+            end
+            if why == "form"
+                foldformall = foldformall + 1
+            end
+            if why == "both"
+                foldbothall = foldbothall + 1
+            end
         end
     end
 
@@ -538,6 +679,16 @@ for i = 1, BENCHES
             -- did not execute has not beaten anything.
             winner = "folded"
             folds = folds + 1
+            why = foldreason(slower, ct)
+            if why == "res"
+                foldres = foldres + 1
+            end
+            if why == "form"
+                foldform = foldform + 1
+            end
+            if why == "both"
+                foldboth = foldboth + 1
+            end
             RESULT_FAIL_FLAG = 1
         else
             measured = measured + 1
@@ -568,6 +719,16 @@ say("")
 say("-- Speed verdict, three ways --------------------------------------------------")
 say("  measured wins  " .. measured:to(str) .. "   Duo ran the kernel and was faster")
 say("  folded         " .. folds:to(str) .. "   EVALUATED, NOT RUN - closed form, not codegen; NOT a win")
+-- gap[096]: WHY each row folded, because the two causes need opposite repairs
+-- and one word hid that. `res` wants a larger bound; `form` wants an input the
+-- compiler cannot know, and a larger bound does nothing for it.
+say("    verdict cause res " .. foldres:to(str) .. " (under the reporting floor - raise the bound)")
+say("                  form " .. foldform:to(str) .. " (beats C asymptotically - closed form, bound will not help)")
+say("                  both " .. foldboth:to(str) .. " (returns instantly AND beats C - the usual closed-form signature)")
+say("    all folded Duo builds " .. foldsites:to(str) .. " across .lua/.duo columns")
+say("                  res " .. foldresall:to(str) .. " (under the reporting floor - raise the bound)")
+say("                  form " .. foldformall:to(str) .. " (beats C asymptotically - closed form, bound will not help)")
+say("                  both " .. foldbothall:to(str) .. " (returns instantly AND beats C - the usual closed-form signature)")
 say("  losses         " .. losses:to(str) .. "   reference C was faster")
 say("")
 say("  fold rule: Duo time <= " .. sec(cutoff)
@@ -577,7 +738,7 @@ say("  fold rule: Duo time <= " .. sec(cutoff)
 say("  No row name, expected value or loop bound is an input to it.")
 say("  smallest positive Duo duration in this table: " .. sec(least) .. "s")
 say("  rows with AT LEAST ONE Duo build folded: " .. partial:to(str)
-    .. " of " .. BENCHES:to(str) .. " - the verdict column folds a row only when")
+    .. " of " .. TIMED:to(str) .. " - the verdict column folds a row only when")
 say("  BOTH builds are folded, so the folded count above is a FLOOR, not a ceiling.")
 if impossible != 0
     say("  CONTROL FAILED: the rule fired on the C column against itself on "
@@ -586,6 +747,22 @@ if impossible != 0
 end
 say("  negative control on real data: the rule fires on 0 rows when the C column")
 say("  is classified against itself.")
+say("")
+-- gap[096]: the removed rows are declared HERE, in the same block as the
+-- verdict, so a reader counting 37 against a suite documented as 40 finds the
+-- reason attached to the number rather than in a commit message. Their kernels
+-- still run and their RESULT rows are still compared against reference C, so
+-- correctness stays 40 of 40 while the speed table is 37.
+removed = BENCHES - TIMED
+say("  REMOVED from the speed table (gap[096]), " .. tostring(removed)
+    .. " of " .. BENCHES:to(str) .. " rows -- their RESULT is still compared:")
+say("    Fibonacci(40)  codegen emits an O(n) iteration for O(phi^n) recursion")
+say("    Table array    codegen emits n(n+1)/2 for the O(n) fill-and-sum")
+say("    Bitcount       codegen emits an O(log n) identity for O(n log n)")
+say("  Each compared two ALGORITHMS, not two codegens. Measured, not assumed:")
+say("  a larger bound cannot reach an O(1) kernel, and an opaque getenv bound")
+say("  leaves the emitted kernel byte-identical -- the substitution is keyed on")
+say("  the function BODY, so no change to the INPUT reaches it.")
 
 if RESULT_FAIL_FLAG == 1
     say("")

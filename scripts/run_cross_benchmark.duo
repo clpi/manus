@@ -11,13 +11,21 @@
 -- them are ordinary Duo here, which is the point -- the arithmetic a benchmark
 -- reports should be readable in the same language as the benchmark.
 
-_BENCHES = 23
+-- 21, not 23. Time lines are read POSITIONALLY out of four programs, so this
+-- list only stays correct while all four emit the same rows in the same order.
+-- gap[096] removed Fibonacci(40) and Table array from the speed table of
+-- examples/benchmark.lua, examples/benchmark_c.c and examples/benchmark_pure.lua
+-- alike -- Duo's codegen substitutes an O(n) iteration and an n(n+1)/2 closed
+-- form for those two kernels, so the rows compared ALGORITHMS rather than
+-- codegen. Their RESULT rows are untouched and still compared. Bitcount is not
+-- in this table's first 23 at all.
+_BENCHES = 21
 _RUNS = 3
 _OUT = "/tmp/duo_cross_bench"
 
 _names = {
-    "Fibonacci(40)", "Prime sieve", "Mandelbrot", "Grid matrix", "N-body",
-    "String bytes", "Table array", "Trig sum", "String chain", "String hash",
+    "Prime sieve", "Mandelbrot", "Grid matrix", "N-body",
+    "String bytes", "Trig sum", "String chain", "String hash",
     "Math floor/max", "Table max", "Pow/sqrt", "Binary search", "Filter count",
     "Dot product", "Clamp sum", "Bucket hash", "EMA smooth", "Token count",
     "Config parse", "Table lookup", "Table churn",

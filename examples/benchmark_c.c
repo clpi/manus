@@ -534,7 +534,10 @@ int main(void) {
     t0 = now(); int64_t fib_res = fib(40); t1 = now();
     printf("Fibonacci(40) Result: %lld\n", (long long)fib_res);
     printf("RESULT fib %lld\n", (long long)fib_res);
-    printf("Fibonacci(40) Time  %f seconds\n", t1 - t0);
+    /* gap[096] NO TIME LINE — removed from the speed table on BOTH sides,
+       RESULT kept. Duo's codegen substitutes an O(n) iteration for the
+       O(phi^n) recursion, so the row compared two ALGORITHMS. C still runs the
+       kernel and is still timed here; only the published comparison is gone. */
     printf("----------------------------------------\n");
 
     t0 = now(); int64_t prime_res = count_primes(100000); t1 = now();
@@ -575,7 +578,8 @@ int main(void) {
     t0 = now(); int64_t tbl_res = table_array_sum(500000); t1 = now();
     printf("Table Array Sum     %lld\n", (long long)tbl_res);
     printf("RESULT table_sum %lld\n", (long long)tbl_res);
-    printf("Table Bench Time    %f seconds\n", t1 - t0);
+    /* gap[096] NO TIME LINE — removed from the speed table on BOTH sides,
+       RESULT kept. Duo's codegen substitutes n(n+1)/2 for the O(n) loop. */
     printf("----------------------------------------\n");
 
     t0 = now(); double trig_res = trig_sum(5000000); t1 = now();
@@ -755,7 +759,9 @@ int main(void) {
     t0 = now(); int64_t bitcount_res = bitcount(5000000); t1 = now();
     printf("Bitcount Sum        %lld\n", (long long)bitcount_res);
     printf("RESULT bitcount %lld\n", (long long)bitcount_res);
-    printf("Bitcount Time       %f seconds\n", t1 - t0);
+    /* gap[096] NO TIME LINE — removed from the speed table on BOTH sides,
+       RESULT kept. Duo's codegen substitutes an O(log n) per-bit duty-cycle
+       identity for the O(n log n) loop. */
     printf("----------------------------------------\n");
 
     t0 = now(); double cordic_res = cordic(5000000); t1 = now();

@@ -810,7 +810,12 @@ local fib_res = fib(40)
 local t_end1 = os.clock()
 print("Fibonacci(40) Result:", fib_res)
 print("RESULT fib", fib_res)
-print("Fibonacci(40) Time ", t_end1 - t_start1, "seconds")
+-- gap[096] NO TIME LINE — removed from the speed table, RESULT kept.
+-- Duo's codegen substitutes an O(n) iteration for the O(phi^n) recursion, so
+-- this row compares two ALGORITHMS, not two codegens. Neither a larger bound
+-- nor an opaque runtime-read bound changes that: the substitution is keyed on
+-- the function BODY, and the emitted kernel is byte-identical either way.
+-- The RESULT row stays -- it is the oracle that keeps use_iterative_fib honest.
 print("----------------------------------------")
 
 print("Running Prime Sieve (limit 100,000)...")
@@ -873,7 +878,10 @@ local tbl_res = table_array_sum(500000)
 local t_end7 = os.clock()
 print("Table Array Sum    ", tbl_res)
 print("RESULT table_sum", tbl_res)
-print("Table Bench Time   ", t_end7 - t_start7, "seconds")
+-- gap[096] NO TIME LINE — removed from the speed table, RESULT kept.
+-- Duo's codegen substitutes the closed form n(n+1)/2 for the O(n) fill-and-sum,
+-- so this row compares two ALGORITHMS, not two codegens. A bound raise cannot
+-- reach an O(1) kernel and an opaque bound does not change what is emitted.
 print("----------------------------------------")
 
 print("Running Trig sum (n=5,000,000)...")
@@ -1143,7 +1151,10 @@ local bitcount_res = bitcount(5000000)
 local t_end37 = os.clock()
 print("Bitcount Sum       ", bitcount_res)
 print("RESULT bitcount", bitcount_res)
-print("Bitcount Time      ", t_end37 - t_start37, "seconds")
+-- gap[096] NO TIME LINE — removed from the speed table, RESULT kept.
+-- Duo's codegen substitutes an O(log n) per-bit duty-cycle identity for the
+-- O(n log n) loop, so this row compares two ALGORITHMS, not two codegens.
+-- 64 iterations is under the reporting floor at every representable bound.
 print("----------------------------------------")
 
 print("Running CORDIC sin (n=5,000,000)...")

@@ -396,7 +396,10 @@ local fib_res = fib(40)
 local t_end1 = os.clock()
 print("Fibonacci(40) Result:", fib_res)
 print("RESULT fib", fib_res)
-print("Fibonacci(40) Time ", t_end1 - t_start1, "seconds")
+-- gap[096] NO TIME LINE — this row left the cross-language speed table when it
+-- left examples/benchmark.lua's, and the two files are read POSITIONALLY by
+-- scripts/run_cross_benchmark.duo: a Time line here that is absent there would
+-- misalign every subsequent row. RESULT kept.
 print("----------------------------------------")
 
 print("Running Prime Sieve (limit 100,000)...")
@@ -459,7 +462,8 @@ local tbl_res = table_array_sum(500000)
 local t_end7 = os.clock()
 print("Table Array Sum    ", tbl_res)
 print("RESULT table_sum", tbl_res)
-print("Table Bench Time   ", t_end7 - t_start7, "seconds")
+-- gap[096] NO TIME LINE — see the Fibonacci(40) note above; positional
+-- alignment with examples/benchmark.lua is what makes the cross table read.
 print("----------------------------------------")
 
 print("Running Trig sum (n=5,000,000)...")
