@@ -1735,3 +1735,60 @@ migrate.blocked = "gap[087] — bare identity parses, does not resolve"
 -- `expr.name` stays; bare `.` survives ONLY as the ambient subject value. The
 -- formal grammar and this file must agree, and today they do not.
 grammar.owed = "primary drops .name; docs/spec/grammar.md and c0 must agree"
+
+-- ═══ §43 · ONE BRACE FORM — construction and call are the same syntax ═══════
+--
+-- OWNER DIRECTIVE 2026-08-08: unify descriptor `{}` construction and call `{}`
+-- semantics.
+--
+-- THEY ARE ALREADY ONE SYNTACTIC FORM. `name{ … }` parses identically whether
+-- `name` denotes a descriptor or a callable. Treating them as TWO MECHANISMS is
+-- what produced gap[088]: the call path won UNCONDITIONALLY, so `point{ 3, 4 }`
+-- emitted a call to an undeclared `point` instead of constructing one.
+--
+-- The bug was never "construction is unimplemented". It was **a shared form
+-- resolved without asking what the name denotes.**
+
+brace = law{
+    id    = "law.brace"
+    kind  = .invariant
+    holds = .resolution
+    binds = {
+        "`name{ … }` is ONE form; the NAME's resolution decides the semantics",
+        "name denotes a DESCRIPTOR -> construction, ladder rung (a)",
+        "name denotes a CALLABLE  -> application with one table operand",
+        "name denotes NEITHER     -> diagnostic, never a guess",
+    }
+    fails = "resolving the shared form as a call without asking what the name is"
+}
+
+-- `@{ … }` IS THE SAME FORM with the name ELIDED — the enclosing descriptor
+-- supplies it. So the anchor constructor is not a third mechanism either; it is
+-- `name{ … }` where the name is recovered from context, which is exactly what
+-- §42's minimum-information rule says should happen when the name is already
+-- known.
+anchor.brace = "the same form, name recovered from the enclosing descriptor"
+
+-- THIS RESOLVES Pass 122's AUDIT ITEM. `brace-call f{...}` was listed as
+-- provisional surface to be justified or retired. It is neither: it is not a
+-- separate mechanism at all, so there is nothing to retire. ONE form, one
+-- resolution rule, two outcomes — a collapse rather than a deletion.
+audit.braceresolved = "brace-call is not a mechanism; it is this form resolving to a callable"
+
+-- MEASURED 2026-08-08. 147 `name{` sites over 40 distinct names, 80 `@{`, and
+-- 29 typed bindings. `law{` alone is 57 of the 147 — THIS FILE — and it only
+-- ever passes `duo check`, because a constitution is data and is never run. So
+-- the dominant use of the form in the tree has never exercised its lowering,
+-- which is how a canonical form stayed broken while looking well-used.
+brace.sites = 147
+brace.names = 40
+
+-- The resolution rule is §41's, unchanged and now doing a second job:
+--
+--   BARE IDENTITY + SEMANTIC DEMAND + AVAILABLE HOMES -> ONE IDENTITY, OR A
+--   DIAGNOSTIC.
+--
+-- Here the demand is "a thing that can take a brace" and the homes are
+-- descriptors and callables. One rule already in the constitution decides
+-- construction, cases, subject fields, callable projections AND this. That is
+-- what a mechanism collapse looks like when it is real rather than renamed.
