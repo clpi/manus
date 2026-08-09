@@ -1242,3 +1242,103 @@ perf.ratios = {
     "density: demanded relations / binary kb",
     "reuse: realized capabilities / distinct mechanisms",
 }
+
+-- ═══ §39 · THE PRIME DIRECTIVE (what every agent receives first) ════════════
+--
+-- You are MODIFYING duon. You are not designing a conventional compiler in Zig
+-- and you are not inventing language architecture. The job is to move the
+-- repository MONOTONICALLY toward 100% self-hosted canonical duon with zero
+-- competing semantic mechanisms.
+--
+-- THE CORE QUESTION, asked before adding anything:
+--
+--   Is this an irreducible NEW concept, or is it already a value, relation,
+--   fact, world, demand, witness or realization — specialized by operands and
+--   context?
+--
+-- ASSUME THE LATTER UNTIL PROVEN OTHERWISE. Prefer one relation with many
+-- specializations over many functions, enums, registries, managers and systems.
+
+directive = law{
+    id    = "law.directive"
+    kind  = .invariant
+    holds = .monotone
+    binds = {
+        "the constitution is current law; repair the implementation, never the law",
+        "history, archived code, old apis and compatibility syntax are NOT precedent",
+        "if the constitution cannot express the task, RECORD A GAP — do not invent",
+        "spelling changes do not fix architectural duplication",
+    }
+}
+
+-- For every semantic operation, name all eight. An operation that cannot name
+-- them is not understood well enough to land.
+operation.names = {
+    "canonical relation", "semantic subject", "semantic owner", "fact",
+    "lawset", "witness", "physical projection", "deletion gate",
+}
+
+-- What an agent must be able to show is ZERO before completion. A nonzero entry
+-- is not a warning; it needs a constitutional amendment.
+delta.zero = {
+    "semantic owners added", "competing registries added", "semantic enums added",
+    "syntax added", "keywords or operators added", "string-based semantic cases",
+    "unclassified semantic apis", "new silent fallbacks",
+}
+
+-- THE FINAL TEST, and it is the strongest rule in this file because it is the
+-- only one that closes a class rather than an instance:
+--
+--   Could another competent agent look at this change and reasonably implement
+--   the SAME semantic idea using another registry, enum, helper family, api
+--   orientation, syntax or subsystem?
+--
+--   IF YES, DO NOT STOP. Find and enforce the missing constitutional invariant
+--   so there is only ONE reasonable duon-native direction.
+--
+-- Restated as the rule it generalizes: any architectural mistake an agent can
+-- make TWICE is a missing machine-enforced invariant. The constitution evolves
+-- primarily by converting recurring review findings into executable
+-- impossibility.
+final = law{
+    id    = "law.final.test"
+    kind  = .invariant
+    holds = .impossible
+    binds = {
+        "a mistake reachable twice is a missing invariant, not a missing prompt",
+        "close the CLASS, never the instance",
+    }
+    fails = "a stronger prompt where a gate was owed"
+}
+
+-- THE OBJECTIVE, stated so it is not mistaken for code quality: not merely code
+-- that works, but a repository in which non-duon architecture becomes
+-- IMPOSSIBLE TO WRITE, IMPOSSIBLE TO TEACH, IMPOSSIBLE TO MERGE, and
+-- UNNECESSARY TO REPRESENT.
+objective = law{
+    id    = "law.objective"
+    kind  = .objective
+    holds = .unrepresentable
+    binds = {
+        "impossible to write", "impossible to teach",
+        "impossible to merge", "unnecessary to represent",
+    }
+}
+
+-- SELF-AUDIT 2026-08-08, applying the final test to `zig build bootstrap-scan`,
+-- landed hours before this section. It RATCHETS 45 `add*`/`register*`/`emit*`
+-- host functions, so a 48th turns it red — the class is closed against that
+-- spelling.
+--
+-- IT FAILS THE FINAL TEST ANYWAY. The row matches by SPELLING, so `insertThing`,
+-- `internFoo`, `pushEntry`, `attachRecord` and `defineBar` all pass it while
+-- being the same architectural mistake. Worse, a PERFECTLY NAMED `add` whose
+-- signature still forces `add(graph, node)` is invisible to it — the orientation
+-- defect the scan cannot express at all.
+--
+-- So the scan MEASURES the habit and does not CLOSE it. The invariant it is
+-- missing is declarative rather than lexical: every function that mutates or
+-- resolves semantic state DECLARES the relation it projects, and an unannotated
+-- semantic mutation is the finding. Then the question stops being "what is it
+-- called" and becomes "how many physical apis project `add`, and why".
+scan.gap = "lexical rows cannot close an architectural class — projects= is owed"
