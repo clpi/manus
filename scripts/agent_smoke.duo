@@ -38,6 +38,17 @@ if not script.ok("./zig-out/bin/duo run scripts/explain.duo")
     os.exit(1)
 end
 
+-- Declared contracts, asserted at the verbs a USER STANDS AT. GAP-090 measured
+-- `@noalloc` accepted by `check`, `compile` AND `explain` because the only check
+-- lived in the C emitter and the default backend is `direct` — the contract was
+-- decorative while a Zig test called it covered. This gate reads exit codes, not
+-- output, on six verb paths, and it also owns the lexer-rejection diagnostic
+-- (H-8: a bare `error: UnexpectedChar` names no edge). GAP-091.
+if not script.ok("./zig-out/bin/duo run scripts/contract.duo")
+    print("agent-smoke: contract FAIL")
+    os.exit(1)
+end
+
 -- The Pass 8 realization plan, the codegen outcome it produces, shape
 -- fingerprint drift, cache invalidation and entity removal. Ported out of
 -- src/pass8_realization_tests.zig + src/pass8_codegen_realization_tests.zig.

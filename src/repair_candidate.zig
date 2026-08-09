@@ -86,6 +86,12 @@ pub const catalog: []const struct {
     .{ .blocker = "native_repr_unavailable", .kind = .preserve_dynamic, .summary = "Preserve dynamic representation when native path is unavailable" },
     .{ .blocker = "noalloc_heap_alloc", .kind = .preserve_dynamic, .summary = "Remove @noalloc from the function if heap allocation is required" },
     .{ .blocker = "noalloc_heap_alloc", .kind = .allocate_output_separately, .summary = "Use stack storage or a caller-provided buffer instead of mem.alloc" },
+    // GAP-091. `@pure` lowers to `__attribute__((const))`, which promises the C
+    // compiler the body reads nothing but its arguments. Touching mutable module
+    // state breaks that promise and the compiler cashes it: measured, a `@pure`
+    // reader of a module counter answered its FIRST call twice.
+    .{ .blocker = "pure_module_state", .kind = .preserve_dynamic, .summary = "Remove @pure from the function if it reads or writes module state" },
+    .{ .blocker = "pure_module_state", .kind = .specialize_parameter, .summary = "Pass the module state in as a parameter so the result depends only on arguments" },
 };
 
 fn jsonEscape(w: *std.Io.Writer, s: []const u8) !void {

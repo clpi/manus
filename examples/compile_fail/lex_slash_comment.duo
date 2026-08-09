@@ -1,0 +1,11 @@
+// GAP-090 fixture — DENIED TEXT IS THE ASSERTION.
+// A C-style comment marker the duon lexer refuses, with a non-ASCII byte
+// on the same line. This is the exact shape examples/pass7/explain_smoke.duo
+// was tracked in for as long as nothing opened it.
+//
+// The owning gate is scripts/contract.duo. It asserts that the diagnostic
+// names the file, names a span, and names the repair (`--`), and that the
+// raw Zig error name this used to print is ABSENT from the output.
+main(): i64
+    0
+end

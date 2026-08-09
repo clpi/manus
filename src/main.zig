@@ -1555,6 +1555,7 @@ fn do_realize(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
 }
 
 fn do_explain(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
+    contract_defer_exit = true;
     var ps = try parse_and_check(alloc, io, src_path);
     defer ps.sem.deinit();
     var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -1638,6 +1639,10 @@ fn do_explain(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
     }
     try fw.interface.print("}}\n", .{});
     try fw.interface.flush();
+    // The render is complete; the verdict is still a rejection. GAP-090 measured
+    // this verb exiting 0 with the violation present as JSON — an emission with
+    // no consequence is what let the contract stay decorative.
+    if (contract_violations > 0) std.process.exit(1);
 }
 
 fn do_algebra(io: Io) !void {
@@ -1647,14 +1652,6 @@ fn do_algebra(io: Io) !void {
     try semantic_algebra.writeCatalogJson(&fw.interface);
     try fw.interface.flush();
 }
-
-
-
-
-
-
-
-
 
 fn do_semantic(alloc: std.mem.Allocator, io: Io, sub: []const u8, entity_arg: ?[]const u8) !void {
     const stdout = std.Io.File.stdout();
@@ -1688,7 +1685,6 @@ fn do_semantic(alloc: std.mem.Allocator, io: Io, sub: []const u8, entity_arg: ?[
     try fw.interface.writeAll("\n");
     try fw.interface.flush();
 }
-
 
 fn ensureDirForPath(io: Io, path: []const u8) !void {
     if (std.fs.path.dirname(path)) |dir| {
@@ -2405,6 +2401,418 @@ fn alias_has_macro_syntax(alias: ast.AliasDef) bool {
     return false;
 }
 
+// ── Contract enforcement (GAP-091) ────────────────────────────────────────────
+//
+// WHY THIS LIVES HERE AND NOT IN THE EMITTER. `@noalloc` was checked in exactly
+// one place: `codegen.zig`'s `guardNoAlloc`, which only fires while the C
+// backend is writing the allocation. Measured 2026-08-09 on `canonical-to-relation`:
+//
+//     duo check   examples/pass7/noalloc_fail.duo      -> exit 0
+//     duo compile examples/pass7/noalloc_fail.duo      -> exit 0   (default backend)
+//     duo compile --backend=c  … noalloc_fail.duo      -> exit 1   (the ONLY red)
+//     duo explain examples/pass7/noalloc_fail.duo      -> exit 0, with the
+//                                                        rejection as JSON
+//
+// The default backend is `direct` (Pass 103 §0b: `--backend=direct` IS the path,
+// not an alternative), and the direct backend never runs `emit_module`, so the
+// guard was unreachable from the shipping default. A contract that only holds on
+// the oracle path is decorative — a user can write `@noalloc`, violate it and
+// ship. The Zig test that asserted it (`error.NoAllocViolation` out of
+// `explain_pipeline.runForProvenance`) called a pipeline no CLI verb reaches,
+// so it was green in the suite and absent in the product for its whole life.
+//
+// A declared contract is a SEMANTIC fact about the graph, not a property of one
+// emitter. Checking it in `parse_and_check` — the single funnel every verb goes
+// through — is what makes `check`, `compile`, `run` and `explain` all agree
+// without any of them knowing about a backend.
+//
+// SCOPE, stated so the next reader does not mistake narrowness for completeness:
+// this scan is deliberately a SUBSET of `guardNoAlloc`'s sites. It reports the
+// four `mem.*` intrinsics, which are unambiguous. It does NOT report
+// `closure.malloc` (codegen only allocates a closure that captures upvalues, and
+// reproducing that decision here would reject closures the backend accepts) or
+// `dense_table.alloc` (a sema-inferred representation choice, not a written
+// allocation). Being strictly narrower means this can never reject a program the
+// C backend accepts; the C path still catches the rest. A finding here is
+// therefore always also a finding there.
+
+/// Set by `do_explain` alone: diagnose the violation, finish the render, exit 1
+/// at the end instead of at the scan.
+var contract_defer_exit: bool = false;
+var contract_violations: usize = 0;
+
+/// `mem.alloc` / `std.mem.alloc` → "alloc". Mirrors `codegen.mem_intrinsic_name`
+/// so the two agree on what counts as the intrinsic namespace.
+fn contractMemIntrinsic(func: *const ast.Expr) ?[]const u8 {
+    if (func.* != .field) return null;
+    const f = func.field;
+    if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "mem")) return f.field;
+    if (f.obj.* == .field) {
+        const inner = f.obj.field;
+        if (inner.obj.* == .name and
+            std.mem.eql(u8, inner.obj.name.ident, "std") and
+            std.mem.eql(u8, inner.field, "mem")) return f.field;
+    }
+    return null;
+}
+
+/// The four `mem.*` entries `guardNoAlloc` guards, by name, in the same order
+/// codegen tests them. Kept as one list so a future site is added once.
+const NOALLOC_INTRINSICS = [_][]const u8{ "alloc", "calloc", "realloc", "dup" };
+
+const ContractCtx = struct {
+    noalloc: bool,
+    pure: bool,
+    fname: []const u8,
+    globals: *const std.StringHashMapUnmanaged(void),
+    /// Names bound inside the function (params, locals, loop variables). Added
+    /// but never removed: over-approximating the scope errs toward NOT
+    /// reporting, which is the safe direction for a new rejection.
+    bound: *std.StringHashMapUnmanaged(void),
+    alloc: std.mem.Allocator,
+    findings: *usize,
+
+    fn bind(self: *const ContractCtx, name: []const u8) void {
+        _ = self.bound.put(self.alloc, name, {}) catch {};
+    }
+
+    fn isGlobal(self: *const ContractCtx, name: []const u8) bool {
+        if (self.bound.contains(name)) return false;
+        return self.globals.contains(name);
+    }
+
+    fn report(self: *const ContractCtx, loc: ast.Loc, comptime what: []const u8, site: []const u8, blocker: []const u8) void {
+        self.findings.* += 1;
+        term.locErr(loc, what, .{ self.fname, site });
+        for (repair_candidate.catalog) |row| {
+            if (std.mem.eql(u8, row.blocker, blocker)) {
+                term.hint("{s} [{s}]", .{ row.summary, row.kind.name() });
+            }
+        }
+    }
+};
+
+fn contractWalkBlock(ctx: *ContractCtx, blk: ast.Block) void {
+    for (blk.stmts) |*s| contractWalkStmt(ctx, s);
+    if (blk.tail_expr) |e| contractWalkExpr(ctx, e);
+}
+
+fn contractWalkStmt(ctx: *ContractCtx, s: *const ast.Stmt) void {
+    switch (s.*) {
+        .local_decl => |d| {
+            for (d.inits) |e| contractWalkExpr(ctx, e);
+            for (d.names) |n| ctx.bind(n.ident);
+        },
+        .const_decl => |d| {
+            contractWalkExpr(ctx, d.val);
+            ctx.bind(d.ident);
+        },
+        .global_decl => |d| {
+            for (d.inits) |e| contractWalkExpr(ctx, e);
+        },
+        .assign => |d| {
+            for (d.values) |e| contractWalkExpr(ctx, e);
+            for (d.targets) |t| {
+                // A WRITE to a module global is what `__attribute__((const))`
+                // forbids outright; report it before walking the target as a
+                // read, so one store is one finding.
+                if (ctx.pure and t.* == .name and ctx.isGlobal(t.name.ident)) {
+                    ctx.report(t.name.loc, "@pure violated in function '{s}': writes module state '{s}'", t.name.ident, "pure_module_state");
+                } else contractWalkExpr(ctx, t);
+            }
+        },
+        .call_stmt => |d| contractWalkExpr(ctx, d.expr),
+        .expr_stmt => |d| contractWalkExpr(ctx, d.expr),
+        .do_block => |d| contractWalkBlock(ctx, d.body),
+        .while_loop => |d| {
+            contractWalkExpr(ctx, d.cond);
+            contractWalkBlock(ctx, d.body);
+        },
+        .repeat_loop => |d| {
+            contractWalkBlock(ctx, d.body);
+            contractWalkExpr(ctx, d.cond);
+        },
+        .if_stmt => |d| {
+            if (d.binding) |b| {
+                contractWalkExpr(ctx, b.expr);
+                ctx.bind(b.name);
+            }
+            contractWalkExpr(ctx, d.cond);
+            contractWalkBlock(ctx, d.then);
+            for (d.elseifs) |ei| {
+                contractWalkExpr(ctx, ei.cond);
+                contractWalkBlock(ctx, ei.body);
+            }
+            if (d.else_body) |b| contractWalkBlock(ctx, b);
+        },
+        .num_for => |d| {
+            contractWalkExpr(ctx, d.start);
+            contractWalkExpr(ctx, d.stop);
+            if (d.step) |e| contractWalkExpr(ctx, e);
+            ctx.bind(d.var_name);
+            contractWalkBlock(ctx, d.body);
+        },
+        .gen_for => |d| {
+            for (d.iters) |e| contractWalkExpr(ctx, e);
+            for (d.vars) |v| ctx.bind(v);
+            contractWalkBlock(ctx, d.body);
+        },
+        // A nested declaration is a DIFFERENT function with its own attributes.
+        // `contractScanModule` reaches it through its own walk; inheriting the
+        // enclosing contract here would reject a body that never declared one.
+        .func_decl => {},
+        .ret => |d| for (d.vals) |e| contractWalkExpr(ctx, e),
+        .match_stmt => |m| {
+            contractWalkExpr(ctx, m.scrutinee);
+            for (m.arms) |arm| {
+                if (arm.guard) |g| contractWalkExpr(ctx, g);
+                contractWalkBlock(ctx, arm.body);
+            }
+        },
+        .try_stmt => |t| {
+            contractWalkBlock(ctx, t.body);
+            for (t.catches) |c| {
+                if (c.binding) |b| ctx.bind(b);
+                contractWalkBlock(ctx, c.body);
+            }
+            for (t.defers) |d| contractWalkBlock(ctx, d.body);
+        },
+        .defer_stmt => |d| contractWalkBlock(ctx, d.body),
+        else => {},
+    }
+}
+
+fn contractWalkExpr(ctx: *ContractCtx, e: *const ast.Expr) void {
+    switch (e.*) {
+        .call => |c| {
+            if (ctx.noalloc) {
+                // `f(type)(rest…)` curries; codegen flattens it before guarding,
+                // so unwrap one level here for the same reason.
+                const callee = if (c.func.* == .call) c.func.call.func else c.func;
+                if (contractMemIntrinsic(callee)) |nm| {
+                    for (NOALLOC_INTRINSICS) |bad| {
+                        if (std.mem.eql(u8, nm, bad)) {
+                            ctx.report(c.loc, "@noalloc violated in function '{s}': heap allocation at mem.{s}", nm, "noalloc_heap_alloc");
+                            break;
+                        }
+                    }
+                }
+            }
+            contractWalkExpr(ctx, c.func);
+            for (c.args) |a| contractWalkExpr(ctx, a);
+        },
+        .name => |n| {
+            if (ctx.pure and ctx.isGlobal(n.ident)) {
+                ctx.report(n.loc, "@pure violated in function '{s}': reads module state '{s}'", n.ident, "pure_module_state");
+            }
+        },
+        .method_call => |m| {
+            contractWalkExpr(ctx, m.obj);
+            for (m.args) |a| contractWalkExpr(ctx, a);
+        },
+        .index => |x| {
+            contractWalkExpr(ctx, x.obj);
+            contractWalkExpr(ctx, x.key);
+        },
+        .field => |x| contractWalkExpr(ctx, x.obj),
+        .binop => |x| {
+            contractWalkExpr(ctx, x.lhs);
+            contractWalkExpr(ctx, x.rhs);
+        },
+        .unop => |x| contractWalkExpr(ctx, x.operand),
+        .try_expr => |x| contractWalkExpr(ctx, x.operand),
+        .unwrap_expr => |x| contractWalkExpr(ctx, x.operand),
+        .await_expr => |x| contractWalkExpr(ctx, x.operand),
+        .contains_expr => |x| {
+            contractWalkExpr(ctx, x.lhs);
+            contractWalkExpr(ctx, x.rhs);
+        },
+        .sequence => |x| for (x.exprs) |sub| contractWalkExpr(ctx, sub),
+        .range => |x| {
+            contractWalkExpr(ctx, x.start);
+            contractWalkExpr(ctx, x.end);
+            if (x.step) |st| contractWalkExpr(ctx, st);
+        },
+        .table => |t| for (t.fields) |f| switch (f) {
+            .indexed => |x| {
+                contractWalkExpr(ctx, x.key);
+                contractWalkExpr(ctx, x.val);
+            },
+            .named => |x| contractWalkExpr(ctx, x.val),
+            .positional => |x| contractWalkExpr(ctx, x),
+            .spread => |x| contractWalkExpr(ctx, x),
+            .semantic => |x| contractWalkExpr(ctx, x.val),
+        },
+        .if_expr => |ie| {
+            contractWalkExpr(ctx, ie.cond);
+            contractWalkExpr(ctx, ie.then_expr);
+            contractWalkExpr(ctx, ie.else_expr);
+        },
+        .match_expr => |m| {
+            contractWalkExpr(ctx, m.scrutinee);
+            for (m.arms) |arm| {
+                if (arm.guard) |g| contractWalkExpr(ctx, g);
+                contractWalkBlock(ctx, arm.body);
+            }
+        },
+        // A closure literal is its own function body. Not descended for the same
+        // reason `.func_decl` is not: it does not carry the enclosing contract.
+        .func_expr => {},
+        else => {},
+    }
+}
+
+fn contractScanFunc(
+    alloc: std.mem.Allocator,
+    globals: *const std.StringHashMapUnmanaged(void),
+    name: []const u8,
+    attrs: []const ast.Attribute,
+    fb: *const ast.FuncBody,
+    findings: *usize,
+) void {
+    const effects = semantic_algebra.effectSetFromAttributes(attrs);
+    const noalloc = effects.contains(.noalloc);
+    // `.pure` enters the set through exactly one door — `effectSetFromAttributes`
+    // sets it only when `@pure` (in any of its `comp.`/`meta.`/`compile.`
+    // spellings) was written — so membership IS the declaration. Reading the
+    // attribute name again here would be a second spelling table to drift.
+    const pure = effects.contains(.pure);
+    if (!noalloc and !pure) return;
+
+    var bound: std.StringHashMapUnmanaged(void) = .{};
+    defer bound.deinit(alloc);
+    for (fb.params) |p| _ = bound.put(alloc, p.name, {}) catch {};
+    if (fb.vararg_name) |v| _ = bound.put(alloc, v, {}) catch {};
+
+    var ctx = ContractCtx{
+        .noalloc = noalloc,
+        .pure = pure,
+        .fname = name,
+        .globals = globals,
+        .bound = &bound,
+        .alloc = alloc,
+        .findings = findings,
+    };
+    contractWalkBlock(&ctx, fb.body);
+}
+
+fn contractScanBlock(
+    alloc: std.mem.Allocator,
+    globals: *const std.StringHashMapUnmanaged(void),
+    blk: ast.Block,
+    findings: *usize,
+) void {
+    for (blk.stmts) |*s| switch (s.*) {
+        .func_decl => |fd| {
+            const nm = if (fd.path.len > 0) fd.path[fd.path.len - 1] else "?";
+            contractScanFunc(alloc, globals, nm, fd.attributes, &fd.func, findings);
+            contractScanBlock(alloc, globals, fd.func.body, findings);
+        },
+        .alias_def => |ad| for (ad.methods) |m| {
+            const nm = if (m.path.len > 0) m.path[m.path.len - 1] else "?";
+            contractScanFunc(alloc, globals, nm, m.attributes, &m.func, findings);
+        },
+        .do_block => |d| contractScanBlock(alloc, globals, d.body, findings),
+        else => {},
+    };
+}
+
+/// Names bound at module scope by a binding statement — not by a `func_decl`,
+/// because reading a sibling function is a call, not a read of state.
+fn collectModuleBindings(alloc: std.mem.Allocator, blk: ast.Block, out: *std.StringHashMapUnmanaged(void)) void {
+    for (blk.stmts) |s| switch (s) {
+        .local_decl => |d| for (d.names) |n| {
+            _ = out.put(alloc, n.ident, {}) catch {};
+        },
+        .global_decl => |d| for (d.names) |n| {
+            _ = out.put(alloc, n.ident, {}) catch {};
+        },
+        .const_decl => |d| _ = out.put(alloc, d.ident, {}) catch {},
+        else => {},
+    };
+}
+
+/// Every module-scope name the module ever ASSIGNS to. Mutability is what makes
+/// a read unsafe under `@pure`: codegen lowers `@pure` to
+/// `__attribute__((const))`, which promises the C compiler the function reads
+/// nothing but its arguments — so it may cache one call's result and reuse it.
+/// Reading an immutable module binding cannot be observed that way; reading a
+/// mutable one can, and does. See `contractScanModule`'s measurement.
+fn collectAssignedNames(alloc: std.mem.Allocator, blk: ast.Block, out: *std.StringHashMapUnmanaged(void)) void {
+    for (blk.stmts) |s| switch (s) {
+        .assign => |d| {
+            for (d.targets) |t| if (t.* == .name) {
+                _ = out.put(alloc, t.name.ident, {}) catch {};
+            };
+        },
+        .func_decl => |fd| collectAssignedNames(alloc, fd.func.body, out),
+        .do_block => |d| collectAssignedNames(alloc, d.body, out),
+        .while_loop => |d| collectAssignedNames(alloc, d.body, out),
+        .repeat_loop => |d| collectAssignedNames(alloc, d.body, out),
+        .if_stmt => |d| {
+            collectAssignedNames(alloc, d.then, out);
+            for (d.elseifs) |ei| collectAssignedNames(alloc, ei.body, out);
+            if (d.else_body) |b| collectAssignedNames(alloc, b, out);
+        },
+        .num_for => |d| collectAssignedNames(alloc, d.body, out),
+        .gen_for => |d| collectAssignedNames(alloc, d.body, out),
+        .match_stmt => |m| for (m.arms) |arm| collectAssignedNames(alloc, arm.body, out),
+        .try_stmt => |t| {
+            collectAssignedNames(alloc, t.body, out);
+            for (t.catches) |c| collectAssignedNames(alloc, c.body, out);
+            for (t.defers) |d| collectAssignedNames(alloc, d.body, out);
+        },
+        .defer_stmt => |d| collectAssignedNames(alloc, d.body, out),
+        .alias_def => |ad| for (ad.methods) |m| collectAssignedNames(alloc, m.func.body, out),
+        else => {},
+    };
+}
+
+/// Every declared contract in `mod`, checked against the body that declared it.
+/// Returns the number of violations; the caller decides the exit.
+///
+/// `sem.module_globals` is deliberately NOT the oracle for module state. It is
+/// filled from the Lua-mode "unknown identifier is a dynamic global" path, and
+/// measured 2026-08-09 it was wrong in BOTH directions in duon mode: it held
+/// `mem` (the intrinsic namespace, not state) and it did not hold `seed` from
+/// `seed: i64 = 7` at file scope, which duon binds as a module local. The set is
+/// therefore derived from the module's own top-level binding statements, which
+/// is what "module state" means in duon.
+///
+/// WHAT `@pure` COSTS TODAY, by value, measured before this check existed:
+///
+///     seed: i64 = 7
+///     @pure
+///     peek(x: i64): i64   seed + x
+///     main: a = peek(1); seed = 100; b = peek(1); print(a); print(b)
+///
+/// printed `8` and `8`. The second call must answer 101. `@pure` lowered to
+/// `__attribute__((const))` — an unchecked promise — and the C compiler cashed
+/// it by reusing the first result. That is not a decorative contract; it is a
+/// wrong answer, and it is why `@pure` is scanned here alongside `@noalloc`.
+fn contractScanModule(alloc: std.mem.Allocator, mod: *const ast.Module, sem: *const Sema) usize {
+    _ = sem;
+    var bindings: std.StringHashMapUnmanaged(void) = .{};
+    defer bindings.deinit(alloc);
+    collectModuleBindings(alloc, mod.body, &bindings);
+
+    var assigned: std.StringHashMapUnmanaged(void) = .{};
+    defer assigned.deinit(alloc);
+    collectAssignedNames(alloc, mod.body, &assigned);
+
+    // Module state = bound at module scope AND assigned somewhere.
+    var state: std.StringHashMapUnmanaged(void) = .{};
+    defer state.deinit(alloc);
+    var it = bindings.iterator();
+    while (it.next()) |e| {
+        if (assigned.contains(e.key_ptr.*)) _ = state.put(alloc, e.key_ptr.*, {}) catch {};
+    }
+
+    var findings: usize = 0;
+    contractScanBlock(alloc, &state, mod.body, &findings);
+    return findings;
+}
+
 /// SH-03 production dispatch. When the tokenize authority is Duo, lex the whole
 /// source through `lib/std/compiler/lexer.duo` and drive the parser from that
 /// stream instead of the host scanner.
@@ -2422,12 +2830,91 @@ fn routeThroughDuoLexer(
     return duo_lexer_dispatch.route(alloc, lex, src, src_path);
 }
 
+/// The 1-based `line`th line of `src`, without its terminator.
+fn sourceLine(src: []const u8, line: u32) []const u8 {
+    var n: u32 = 1;
+    var start: usize = 0;
+    var i: usize = 0;
+    while (i < src.len) : (i += 1) {
+        if (src[i] != '\n') continue;
+        if (n == line) return src[start..i];
+        n += 1;
+        start = i + 1;
+    }
+    return if (n == line) src[start..] else "";
+}
+
+/// GAP-091 / H-8. A rejection from the Duo lexer used to escape `parse_and_check`
+/// as a bare Zig error, so `duo explain` on a file the lexer refuses printed
+/// `error: UnexpectedChar` — no file, no span, no repair — and, in a debug build,
+/// a return trace. `law.output.total` says an emission is graph data rendered
+/// through the role taxonomy; a bare error name is not even plain string with a
+/// location.
+///
+/// `duo_lexer_dispatch.route` already re-lexes on the cold path and leaves the
+/// LINE in `lex.last_error_loc`. The column is derived here rather than plumbed
+/// through the C ABI: adding a `duo_lexer_error_col` export would mean
+/// regenerating the tracked `src/duo_lexer_tokenize.c`, and the derivation is
+/// exact for the class of byte that produces `UnexpectedChar` — a byte no token
+/// can start with. When nothing on the line qualifies the caret stays at column
+/// 1, which is where it was before, rather than pointing somewhere invented.
+fn diagnoseLexRejection(lex: *const Lexer, src: []const u8, src_path: []const u8, e: anyerror) void {
+    const line: u32 = if (lex.last_error_loc) |l| l.line else 1;
+    const text = sourceLine(src, line);
+
+    var col: u32 = 1;
+    var offender: ?u8 = null;
+    for (text, 0..) |c, i| {
+        if (c >= 0x80) {
+            col = @intCast(i + 1);
+            offender = c;
+            break;
+        }
+    }
+    const loc = ast.Loc{ .file = src_path, .line = line, .col = col };
+
+    switch (e) {
+        error.UnterminatedString => {
+            term.locErr(loc, "unterminated string literal", .{});
+            term.hint("close the literal with a matching quote on this line, or use the offside string block for text that spans lines", .{});
+        },
+        error.UnterminatedLongString => {
+            term.locErr(loc, "unterminated long string literal", .{});
+            term.hint("close the long-string bracket, or use the offside string block", .{});
+        },
+        error.InvalidEscape => {
+            term.locErr(loc, "invalid escape sequence in string literal", .{});
+            term.hint("duon escapes are \\n \\t \\r \\\\ \\\" \\' \\0 and \\x<hex>; a lone backslash is written \\\\", .{});
+        },
+        else => {
+            const trimmed = std.mem.trimStart(u8, text, " \t");
+            if (std.mem.startsWith(u8, trimmed, "//")) {
+                // The GAP-090 trigger, by name. `//` is not a comment marker in
+                // duon — it lexes as an operator, so the rest of the line is read
+                // as code and the first byte that cannot start a token is where
+                // the lexer stops. The repair is the comment marker, not the byte.
+                term.locErr(loc, "'//' does not begin a comment in duon", .{});
+                term.hint("a duon comment starts with `--`; `//` is the floor-division operator, so the rest of this line lexed as code", .{});
+            } else if (offender) |b| {
+                term.locErr(loc, "no token starts with byte 0x{x:0>2} — a non-ASCII character outside a string or a `--` comment", .{b});
+                term.hint("move the text into a `--` comment or a string literal, or delete the character", .{});
+            } else {
+                term.locErr(loc, "the lexer refused this line ({s})", .{@errorName(e)});
+                term.hint("run `duo fmt` on the file, or reduce the line until the rejected construct is isolated", .{});
+            }
+        },
+    }
+}
+
 fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !ParsedModule {
     const src = try read_source(alloc, io, src_path);
     term.setSource(src_path, src);
 
     var lex = Lexer.init(src, src_path);
-    try routeThroughDuoLexer(alloc, &lex, src, src_path);
+    routeThroughDuoLexer(alloc, &lex, src, src_path) catch |e| {
+        diagnoseLexRejection(&lex, src, src_path, e);
+        std.process.exit(1);
+    };
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = is_duo_source_path(src_path);
     var mod = parser.parse_module() catch |e| {
@@ -2460,6 +2947,25 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
     if (sem.errors > 0) {
         term.err("{d} error(s)", .{sem.errors});
         std.process.exit(1);
+    }
+    // GAP-091. A declared contract is checked HERE, in the one funnel every verb
+    // shares, so `check`, `compile`, `run` and `explain` all reject the same
+    // program. It used to be checked only while the C backend was emitting, and
+    // the default backend is `direct`, so the default path never checked at all.
+    {
+        const violations = contractScanModule(alloc, &mod, &sem);
+        if (violations > 0) {
+            term.err("{d} contract violation(s)", .{violations});
+            // `explain` is the one verb that must still RENDER. Its whole job is
+            // to project the graph, and the rejection plus its repair edges are
+            // already part of that projection — cutting the render here would
+            // trade one hole (silent acceptance) for another (a verb that
+            // refuses to explain the thing it just diagnosed). It records the
+            // count and exits 1 after the JSON. Every other verb stops now.
+            if (contract_defer_exit) {
+                contract_violations += violations;
+            } else std.process.exit(1);
+        }
     }
     if (graph_diag_enabled) {
         var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -2912,7 +3418,7 @@ fn spliceReqModules(
     // Spliced declarations go FIRST. A module-level constant the program reads
     // must already be bound when the program's own statements run.
     @memcpy(merged[0..added.items.len], added.items);
-    @memcpy(merged[added.items.len ..], mod.body.stmts);
+    @memcpy(merged[added.items.len..], mod.body.stmts);
     mod.body.stmts = merged;
     return added.items.len;
 }
@@ -4584,7 +5090,10 @@ fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8, canonical: boo
     };
     term.setSource(src_path, src);
     var lex = Lexer.init(src, src_path);
-    try routeThroughDuoLexer(alloc, &lex, src, src_path);
+    routeThroughDuoLexer(alloc, &lex, src, src_path) catch |e| {
+        diagnoseLexRejection(&lex, src, src_path, e);
+        std.process.exit(1);
+    };
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = is_duo_source_path(src_path);
     const mod = parser.parse_module() catch |err| {
