@@ -92,8 +92,20 @@ control = "examples/spec100/stubs/control.duo"
 -- The two branches each raised 17 -> 18 independently. Merged, both forms are
 -- present, so the floor is 19 — taking either branch's number would have
 -- silently un-floored the other's form.
+-- 19 -> 20: `nominal`, constitution §46 `law.nominal`. `d: feet = 3.0` binds a
+-- USER descriptor to a value while the value stays a `double`, so `d:to(inch)`
+-- reaches the conversion trie with a source no call site spelled. Before it,
+-- the algebra derived edges between descriptors nothing could carry, which is
+-- why the `relation` row above could only be exercised through primitives and
+-- explicitly-named sources. gap[082]'s blocker; gap[097].
+-- A 21st form, `relation_store`, is present in the tree from a parallel
+-- session but is not yet committed with it, so the floor stays at 20 here: a
+-- floor is raised by the commit that lands the fixture, never by one that can
+-- see it. Raising to 21 from this side would turn the gate red for anyone who
+-- checks out this commit alone — the mirror image of the 17 -> 19 note above,
+-- and the same rule: a floor states what THIS commit guarantees.
 blockfloor = 5
-formfloor = 19
+formfloor = 20
 
 fence = "^```"
 

@@ -1,0 +1,29 @@
+-- constitution §46 `law.nominal` — A NOMINAL DESCRIPTOR THAT ACCEPTS ANYTHING
+-- IS NOT NOMINAL. The negative twin of `examples/spec100/nominal.duo`.
+--
+-- `feet` and `f64` are the same double, and every PHYSICAL query in the
+-- compiler now says so — `is_float`, `c_type` and the drop ladder all read
+-- through the identity to the representation, which is what makes the positive
+-- fixture cost nothing. That is precisely why this file has to exist: the
+-- cheapest possible mistake was to let representation compatibility stand in
+-- for identity, and a `feet` that any double may inhabit is a comment.
+--
+-- `x` already carries `f64`. Letting a second descriptor attach to a value that
+-- has one is the silent coercion the law forbids; the repair is the conversion
+-- edge, which is the entire reason the trie exists.
+--
+-- CONTRAST WITH THE LITERAL. `d: feet = 3.0` is ADMITTED one file over, and
+-- that is not a hole. A bare numeral carries no descriptor of its own, so CDR
+-- (B-13) has the contract name it — the rule `n: u8 = 3` has always run on.
+-- The difference under test is "has a descriptor already" versus "has none",
+-- not "looks like a double".
+--
+-- The filename keeps a `_`-free single word; the harness matches on the path.
+
+type feet = f64
+
+main = (): i64
+    x: f64 = 3.0
+    d: feet = x
+    print("{d}")
+    0

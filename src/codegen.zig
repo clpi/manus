@@ -395,11 +395,12 @@ pub const CodeGen = struct {
     func_bodies: std.StringHashMapUnmanaged(*const ast.FuncBody) = .empty,
     /// Module-scope function declarations (attributes for effect/call algebra).
     func_decls: std.StringHashMapUnmanaged(*const ast.FuncDecl) = .empty,
-    /// gap[082]: the `to` relation's edge trie. Declared edges land here from
-    /// `to(dest)(src) = conv`; `emit_convert_edge` asks it BEFORE the four
-    /// hardcoded primitive arms, so an authored edge outranks the projection
-    /// and a DERIVED edge exists at all.
-    to_relation: relation.Relation = .{ .name = "to" },
+    /// gap[082]: the relation store. Declared edges land here from
+    /// `family(dest)(src) = conv`; `emit_convert_edge` asks the `to` family
+    /// BEFORE the four hardcoded primitive arms, so an authored edge outranks
+    /// the projection and a DERIVED edge exists at all. Every relation family
+    /// (to, eq, ...) is a row of this one store — see `relation.Store`.
+    relations: relation.Store = .{},
     /// Set of anonymous record hashes for which we have already emitted a
     /// C `struct` typedef. Lets us emit the typedef exactly once per
     /// unique record shape, even if the shape is used at many sites.
@@ -1060,6 +1061,15 @@ pub const CodeGen = struct {
     }
 
     fn codegen_needs_arc(self: *CodeGen, rt: RT) bool {
+        // law.nominal (§46): MEMORY BEHAVIOUR IS A PHYSICAL FACT, so it reads
+        // through the identity to the representation. Without this the `.
+        // @"struct"` row below emitted `duo_retain((void*)(d))` for a `feet`
+        // that is a `double` — the C compiler caught it ("operand of type
+        // 'double' cannot be cast to a pointer type"), but the shape of the
+        // bug is the one to remember: every switch that lists `.@"struct"` as
+        // boxed is a place a nominal descriptor can acquire overhead. gap[097]
+        // owes an enumeration of them.
+        if (types.nominalReprOf(rt)) |repr| return self.codegen_needs_arc(repr);
         if (self.enum_name_of(rt) != null) return false;
         // Native scalar / mixed modules use const char* for str — no refcounting.
         if (rt == .str and (self.moduleUsesFullNativeLowering() or self.mixed_scalar_mode)) return false;
@@ -1916,11 +1926,12 @@ pub const CodeGen = struct {
             // law.host.projection { projects = to, authority = false }
             // gap[082] is the deletion gate. This literal-string comparison is
             // the HOST'S PROJECTION of a relation that now exists as data in
-            // `to_relation`; it is not the authority on what `to` means and it
-            // must not grow. It survives because the trie only answers for
-            // descriptor pairs somebody declared, and the primitive conversions
-            // are still taught to the code generator by hand rather than
-            // written as edges in `lib/std`. When they are, this goes.
+            // the relation store; it is not the authority on what `to` means
+            // and it must not grow. It survives because the store only answers
+            // for descriptor pairs somebody declared, and the primitive
+            // conversions are still taught to the code generator by hand
+            // rather than written as edges in `lib/std`. When they are, this
+            // goes.
             if (c.func.* == .call and c.func.call.func.* == .name and
                 std.mem.eql(u8, c.func.call.func.name.ident, "to") and
                 c.func.call.args.len == 1 and c.func.call.args[0].* == .name)
@@ -2860,7 +2871,12 @@ pub const CodeGen = struct {
         if (std.mem.eql(u8, name, "bool")) return .bool;
         if (std.mem.eql(u8, name, "str") or std.mem.eql(u8, name, "string")) return .str;
         if (std.mem.eql(u8, name, "ptr") or std.mem.eql(u8, name, "void*")) return self.mem_pointer_to(.void);
-        return null;
+        // law.nominal (§46): `feet` names a descriptor over a primitive, so it
+        // is a legal type NAME here and it realizes as its representation. This
+        // is what gives `d:to(inch)` a result type — without it the conversion
+        // is typed `any` and the value is boxed on the way out, which would
+        // make the whole mechanism cost exactly the box it exists to avoid.
+        return types.nominalNamed(name);
     }
 
     fn mem_type_arg(self: *CodeGen, args: []const *ast.Expr, index: usize) ?RT {
@@ -7104,6 +7120,16 @@ pub const CodeGen = struct {
             if (stmt.* != .alias_def) continue;
             const ad = &stmt.alias_def;
             if (ad.type_params != null) continue;
+            // law.nominal (§46): A NOMINAL DESCRIPTOR IS NOT AN ALIAS, and this
+            // line is where the difference is kept. Folding `feet` to `f64`
+            // here is the erasure that made a descriptor unable to inhabit a
+            // value: after it, nothing downstream could tell the two apart, so
+            // the conversion trie derived edges between descriptors no runtime
+            // value could carry. The representation is not lost by skipping —
+            // `types.nominalRepr` holds it and `c_type` still answers "double",
+            // so the physical lowering is byte-for-byte what the alias gave.
+            // Only the IDENTITY survives, which is the whole mechanism.
+            if (types.nominalRepr(ad.name) != null) continue;
             const rt = try self.alias_record_type(ad);
             try self.record_aliases.put(self.alloc, ad.name, rt);
         }
@@ -7169,23 +7195,29 @@ pub const CodeGen = struct {
         }
     }
 
-    /// gap[082]: land every `to(dest)(src) = conv` in the trie before any body
-    /// is emitted, so an edge declared BELOW its first use still answers. A
-    /// relation is a set of facts, not a sequence of statements — declaration
-    /// order is enumeration order and nothing else.
+    /// gap[082]: land every `family(dest)(src) = conv` in the store before any
+    /// body is emitted, so an edge declared BELOW its first use still answers.
+    /// A relation is a set of facts, not a sequence of statements — declaration
+    /// order is enumeration order and nothing else. Families are created by
+    /// their first declaration; there is no per-name registry in codegen.
     pub fn populate_relation_edges(self: *CodeGen, mod: *ast.Module) E!void {
         for (mod.body.stmts) |*stmt| {
             if (stmt.* != .assign) continue;
-            const d = relation.declFromAssign(stmt.assign, &isConversionRelation) orelse continue;
-            try self.to_relation.declare(self.alloc, .{
+            const d = relation.declFromAssign(stmt.assign) orelse continue;
+            const fam = try self.relations.getOrCreate(self.alloc, d.relation);
+            try fam.declare(self.alloc, .{
                 .dest = d.dest,
                 .src = d.src,
                 .conv = d.conv,
-                .class = d.class,
+                .props = d.class.to_properties(),
                 .loc = d.loc,
             });
         }
-        if (ser_census and self.to_relation.authored() > 0) try self.report_ser();
+        if (ser_census) {
+            for (self.relations.families.items) |*fam| {
+                if (fam.authored() > 0) try self.report_ser(fam);
+            }
+        }
     }
 
     /// SER — semantic expansion ratio, derived relationships per authored one.
@@ -7195,34 +7227,29 @@ pub const CodeGen = struct {
     /// ordered pairs, so even a perfect algebra reads ~5 here and a headline
     /// without its universe would be dishonest in either direction. `refused`
     /// is reported beside it and NOT folded in — a conversion the compiler will
-    /// not perform is not a capability.
-    fn report_ser(self: *CodeGen) E!void {
+    /// not perform is not a capability. One line per relation family, so the
+    /// census shows the store, not just `to`.
+    fn report_ser(self: *CodeGen, fam: *const relation.Relation) E!void {
         var refused: usize = 0;
-        const derived = try self.to_relation.derivedCount(self.alloc, &refused);
-        const authored = self.to_relation.authored();
-        const n = try self.to_relation.universe(self.alloc);
+        const derived = try fam.derivedCount(self.alloc, &refused);
+        const authored = fam.authored();
+        const n = try fam.universe(self.alloc);
         const total = authored + derived;
         const ratio = @as(f64, @floatFromInt(total)) / @as(f64, @floatFromInt(authored));
         std.debug.print(
             "[ser] relation={s} n={d} authored={d} derived={d} refused={d} ser={d:.2}\n",
-            .{ self.to_relation.name, n, authored, derived, refused, ratio },
+            .{ fam.name, n, authored, derived, refused, ratio },
         );
     }
 
-    /// Which relation names carry a conversion trie. Exactly one today, and it
-    /// is named rather than inferred so that adding `from` later is a row here
-    /// rather than a second mechanism — `from` is the SAME edge read backwards
-    /// (spec 2.6), so it must never get a trie of its own.
-    fn isConversionRelation(name: []const u8) bool {
-        return std.mem.eql(u8, name, "to");
-    }
-
     /// Is this statement a relation-edge declaration rather than an assignment?
-    /// The declaration is a FACT, so it emits nothing at all — the trie already
-    /// holds it and the conversion sites read it from there.
+    /// The declaration is a FACT, so it emits nothing at all — the store
+    /// already holds it and the conversion sites read it from there. The
+    /// recogniser is un-gated by name: any `family(dest)(src) = conv` shape is
+    /// a declaration, and no other construct in the corpus uses that shape.
     fn stmt_is_relation_decl(stmt: *const ast.Stmt) bool {
         if (stmt.* != .assign) return false;
-        return relation.declFromAssign(stmt.assign, &isConversionRelation) != null;
+        return relation.declFromAssign(stmt.assign) != null;
     }
 
     pub fn populate_alias_defs(self: *CodeGen, mod: *ast.Module) E!void {
@@ -19369,16 +19396,18 @@ pub const CodeGen = struct {
     /// DERIVED edge outranks it too, because a derivation is the trie
     /// answering, not the trie failing over.
     fn emit_relation_convert(self: *CodeGen, dest: []const u8, src_desc: ?[]const u8, loc: ast.Loc, value: *ast.Expr, result_rt: RT) E!bool {
-        if (self.to_relation.authored() == 0) return false;
+        const rel = self.relations.family("to") orelse return false;
+        if (rel.authored() == 0) return false;
         const src = src_desc orelse self.inferred_descriptor(value) orelse return false;
         if (std.mem.eql(u8, src, dest)) return false;
 
-        if (self.to_relation.direct(src, dest)) |e| {
-            self.p("/* to[{s}][{s}] = {s} declared, class {s} */ ", .{ dest, src, e.conv, e.class.text() });
+        if (rel.direct(src, dest)) |e| {
+            var cbuf: [64]u8 = undefined;
+            self.p("/* to[{s}][{s}] = {s} declared, class {s} */ ", .{ dest, src, e.conv, e.props.fmt(&cbuf) });
             return try self.emit_conv_call(e.conv, loc, value, result_rt);
         }
 
-        const path = self.to_relation.derive(src, dest) orelse return false;
+        const path = rel.derive(src, dest) orelse return false;
         var wbuf: [512]u8 = undefined;
         const w = path.witness(&wbuf);
         if (!path.admitted) {
@@ -19408,22 +19437,22 @@ pub const CodeGen = struct {
     /// `for src, conv in to[dest]` — enumeration of a relation's edges into one
     /// destination. Declaration order, so the loop is reproducible; unrolled,
     /// because a trie the compiler already holds does not need a runtime table
-    /// to be walked.
+    /// to be walked. FAMILY-GENERIC: any family the store holds enumerates.
     fn emit_relation_enumeration(self: *CodeGen, gf: *const @FieldType(ast.Stmt, "gen_for")) E!bool {
         if (gf.iters.len != 1 or gf.vars.len == 0 or gf.vars.len > 2) return false;
         const it = gf.iters[0];
         if (it.* != .index) return false;
         const idx = it.index;
         if (idx.obj.* != .name or idx.key.* != .name) return false;
-        if (!isConversionRelation(idx.obj.name.ident)) return false;
-        // LAW-CALL: data always wins the name. If the program bound `to`
-        // itself, this is that value's index and not the relation's.
+        // LAW-CALL: data always wins the name. If the program bound the family
+        // name itself, this is that value's index and not the relation's.
         if (self.user_owns_name(idx.obj.name.ident)) return false;
+        const rel = self.relations.family(idx.obj.name.ident) orelse return false;
         const dest = idx.key.name.ident;
 
         var edges: std.ArrayListUnmanaged(relation.Edge) = .empty;
         defer edges.deinit(self.alloc);
-        try self.to_relation.intoDest(dest, &edges, self.alloc);
+        try rel.intoDest(dest, &edges, self.alloc);
 
         self.ind();
         self.p("/* {s}[{s}] enumerates {d} declared edge(s) */\n", .{ idx.obj.name.ident, dest, edges.items.len });
@@ -19458,11 +19487,17 @@ pub const CodeGen = struct {
         return true;
     }
 
-    /// The descriptor name a value carries, for trie lookup. Only primitives
-    /// answer today — see `emit_relation_convert`'s note on nominal
-    /// descriptors.
+    /// The descriptor name a value carries, for trie lookup.
+    ///
+    /// law.nominal (§46): a NOMINAL descriptor answers with its own name, which
+    /// is what lets `d:to(inch)` reach the trie when `d: feet = 3.0`. Before
+    /// this arm the only user descriptor the trie ever saw was one the call
+    /// site SPELLED (`inch:from(feet)(v)`), because a value could not carry a
+    /// descriptor at all — the algebra was deriving edges between descriptors
+    /// no value could be.
     fn inferred_descriptor(self: *CodeGen, value: *ast.Expr) ?[]const u8 {
         return switch (self.expr_type(value)) {
+            .@"struct" => |s| if (types.nominalRepr(s.name) != null) s.name else null,
             .i8 => "i8",
             .i16 => "i16",
             .i32 => "i32",

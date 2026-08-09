@@ -590,6 +590,19 @@ pub fn build(b: *std.Build) void {
     const spec_corpus_step = b.step("spec-corpus", "Pass 100 §19/§20: golden corpus blocks-passing + per-construct fixtures, ratcheted");
     spec_corpus_step.dependOn(&spec_corpus_cmd.step);
 
+    // constitution §46 `law.nominal`, second clause: "a nominal descriptor over
+    // a primitive costs no boxing". The spec-corpus row above proves the
+    // MEANING — 914436 cannot come out of a `feet` that lost its descriptor —
+    // and proves nothing at all about the COST, because a boxed double adds
+    // just as correctly. This gate reads the emitted C and carries its own
+    // positive control: a program that boxes must trip the same predicate, or
+    // the gate reports FAIL and no verdict.
+    const nominal_zero_cost_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/nominal_zero_cost.duo" });
+    nominal_zero_cost_cmd.step.dependOn(b.getInstallStep());
+    nominal_zero_cost_cmd.setCwd(b.path("."));
+    const nominal_zero_cost_step = b.step("nominal-zero-cost", "constitution §46: a nominal descriptor costs no box, read off the emitted C");
+    nominal_zero_cost_step.dependOn(&nominal_zero_cost_cmd.step);
+
     // Pass 106: twenty MUNDANE programs plus one fixture per numerics/text row.
     // The boring set ratchets a passing count; the table set asserts MEASURED
     // behaviour, so it is a change detector rather than a conformance claim.

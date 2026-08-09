@@ -254,7 +254,7 @@ pub fn enumShapeFromAst(ed: *const ast.EnumDef, alloc: std.mem.Allocator) !Resol
 //     bootstrap = true
 //     deletion  = when a descriptor is an ordinary graph node carrying its
 //                 representation as a FACT, and identities are stable semantic
-//                 ids rather than `[]const u8`. gap[091] is the gate.
+//                 ids rather than `[]const u8`. gap[097] is the gate.
 //
 // This is a process-global map keyed by TEXT, and both of those are the same
 // bootstrap debt `src/relation.zig` records against itself (`law.relation.debt`
