@@ -9,8 +9,8 @@
 --                 canonical today. Not debt, a schedule — but a schedule with
 --                 no ceiling is a wish, so it ratchets now too. See below.
 --   SANCTIONED    the bootstrap ledger (generated C: the compiled Duo lexer and
---                 keyword table), .lua fixtures (Duo is a Lua superset, so Lua
---                 is INPUT), and C test fixtures. Canon XI: generated artifacts
+--                 keyword table), .lua fixtures (duon HOSTS Lua as a first-class
+--                 source language, so Lua is INPUT), and C test fixtures. Canon XI: generated artifacts
 --                 are outputs and the ledger only shrinks.
 --   (all three categories above were LIVENESS-CHECKED, not taken on their
 --   labels — that check retired 7 dead C/H files and 1 dead script. For lua
@@ -106,7 +106,7 @@ main(): i64
     print("language census (tracked files)")
     print("  duo         {duo}   authored source")
     print("  zig         {zig}   host compiler — retires with the matrix")
-    print("  lua         {lua}   superset fixtures — INPUT, not source")
+    print("  lua         {lua}   hosted-language fixtures — INPUT, not source")
     print("  c/h         {csrc}   bootstrap ledger + fixtures — sanctioned")
     print("  sh/py       {debt}   DEBT — the number that must reach zero")
     print("  js          {js}   DEBT — authored, none generated; gaps/GAP-049")
@@ -130,7 +130,7 @@ main(): i64
     end
     -- The bootstrap ledger (G9). Licensed, with a termination condition — which
     -- is a reason to bound it, not a reason to leave it unbounded.
-    zigcap: i64 = to(i64)(std.script.getenv("CENSUS_ZIG_CEILING", "227"))
+    zigcap: i64 = to(i64)(std.script.getenv("CENSUS_ZIG_CEILING", "166"))
     if zig > zigcap
         print("language_census: FAIL — zig ledger {zig} files exceeds the ratchet {zigcap}")
         over += 1

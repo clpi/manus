@@ -244,9 +244,6 @@ std.mcp.register_tool("duo_agent_session_start", {
         canonical_index_path = shared.canonpath,
         open_p0_count = #p0,
         next_steps = {
-            "duo dev claim acquire --owner <id> --file <path> before shared edits",
-            "duo dev validate run --file <path> --execute after edits",
-            "duo dev integration submit when ready to merge",
         },
         coordination_excerpt = string.sub(coord, 1, 2000),
         canonical_excerpt = string.sub(canon, 1, 2000),

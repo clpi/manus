@@ -793,11 +793,23 @@ pub const Sema = struct {
     /// lib/std modules — measured, and the reason the guard is not just a
     /// scope lookup.
     fn is_relation_family(name: []const u8) bool {
-        const cat = @import("pass48_catalog.zig");
-        for (cat.std_relation_families) |f| {
+        // Inlined from the deleted `pass48_catalog.zig`. These two arrays were
+        // the ONLY part of the 58-file audit-apparatus cluster that the live
+        // compiler read: the catalog existed to be self-checked by a gate, and
+        // this data rode along inside it. It belongs with its one consumer.
+        const std_relation_families = [_][]const u8{
+            "to",      "from", "eq",    "cmp",   "hash",    "format", "iter",
+            "release", "ref",  "deref", "clone", "default", "get",    "set",
+            "call",    "len",  "copy",  "share", "encode",  "decode",
+        };
+        const shc_relation_families = [_][]const u8{
+            "lower",  "validate", "canonicalize", "realize", "rewrite", "measure",
+            "derive", "observe",
+        };
+        for (std_relation_families) |f| {
             if (std.mem.eql(u8, name, f)) return true;
         }
-        for (cat.shc_relation_families) |f| {
+        for (shc_relation_families) |f| {
             if (std.mem.eql(u8, name, f)) return true;
         }
         // `has` is named by Pass 81 §2.2 as projecting over `place` beside

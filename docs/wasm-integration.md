@@ -311,7 +311,7 @@ uncommitted work, and neither is caused by or fixed by this work:
 - `audit100`: `upper` 32 over (traced to `lib/std/crypto/sha.duo`), `trailret`
   31 over. Both drift run-to-run while other agents edit.
 - `agent-smoke`: `public_safety_scan` flagged
-  `docs/wart-integration.md:25` for an absolute `/Users/...` path. That file is
+  `docs/wart-integration.md:25` for an absolute home path. That file is
   in this ownership and **is fixed here** (`~/x/wart`).
 
 ---

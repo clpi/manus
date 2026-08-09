@@ -78,25 +78,14 @@ const c_sim_import = @import("c_sim_import.zig");
 const abi_specialize = @import("abi_specialize.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
 const transform_engine = @import("transform_engine.zig");
-const pass3_catalog = @import("pass3_catalog.zig");
-const pass14_catalog = @import("pass14_catalog.zig");
-const pass15_catalog = @import("pass15_catalog.zig");
-const pass16_catalog = @import("pass16_catalog.zig");
-const passes_audit = @import("passes_audit.zig");
-const pass_gates = @import("pass_gates.zig");
 const shell_session = @import("shell_session.zig");
 const shell_host = @import("shell_host.zig");
-const dev_control_plane = @import("dev_control_plane.zig");
-const dev_validation_planner = @import("dev_validation_planner.zig");
 const git_preservation = @import("git_preservation.zig");
 const native_barrier_checks = @import("native_barrier_checks.zig");
 const host_run = @import("host_run.zig");
-const pass13_catalog = @import("pass13_catalog.zig");
-const pass13_dev_audit = @import("pass13_dev_audit.zig");
 const wasm_semantic_gen = @import("wasm_semantic_gen.zig");
 const token_classify_gen = @import("token_classify_gen.zig");
 const semantic_cli = @import("semantic_cli.zig");
-const selfhost_cli = @import("selfhost_cli.zig");
 const semantic_transaction = @import("semantic_transaction.zig");
 
 var macos_sdkroot_configured = false;
@@ -789,57 +778,12 @@ pub fn main(init: std.process.Init) !void {
         return;
     }
 
-    if (std.mem.eql(u8, cmd, "catalog")) {
-        if (input_file) |sub| {
-            if (std.mem.eql(u8, sub, "audit")) {
-                const audit_tail = catalogAuditTail(args);
-                if (audit_tail.len == 0) {
-                    try do_catalog_audit(alloc, io);
-                    return;
-                }
-                const mode = audit_tail[0];
-                if (std.mem.eql(u8, mode, "check")) {
-                    try do_catalog_audit_check(alloc, io);
-                    return;
-                }
-                if (std.mem.eql(u8, mode, "summary")) {
-                    try do_catalog_audit_summary(alloc, io);
-                    return;
-                }
-                if (std.mem.eql(u8, mode, "gate")) {
-                    try do_catalog_audit_gate(alloc, io, args);
-                    return;
-                }
-                term.err("unknown catalog audit mode '{s}' (expected: check, summary, gate)", .{mode});
-                std.process.exit(1);
-            }
-            term.err("unknown catalog subcommand '{s}' (expected: audit)", .{sub});
-            std.process.exit(1);
-        }
-        try do_catalog(alloc, io);
-        return;
-    }
-
-    if (std.mem.eql(u8, cmd, "dev")) {
-        try do_dev(alloc, io, args[start..]);
-        return;
-    }
-
     if (std.mem.eql(u8, cmd, "semantic")) {
         const sub = input_file orelse {
             term.err("usage: duo semantic <intent|compare|proof|obligations|projections|context> [entity]", .{});
             std.process.exit(1);
         };
         try do_semantic(alloc, io, sub, extra_arg);
-        return;
-    }
-
-    if (std.mem.eql(u8, cmd, "selfhost")) {
-        const sub = input_file orelse {
-            term.err("usage: duo selfhost <manifest|matrix|bootstrap|subset|audits|boundary|capabilities|ledger|catalog|compare|verify|compression|perf|proof|stage|targets|production|migration|summary>", .{});
-            std.process.exit(1);
-        };
-        try do_selfhost(alloc, io, sub);
         return;
     }
 
@@ -1688,359 +1632,13 @@ fn do_algebra(io: Io) !void {
     try fw.interface.flush();
 }
 
-fn do_catalog(alloc: std.mem.Allocator, io: Io) !void {
-    const stdout = std.Io.File.stdout();
-    var buf: [65536]u8 = undefined;
-    var fw: std.Io.File.Writer = .init(stdout, io, &buf);
-    try pass3_catalog.writeCatalogJson(&fw.interface, alloc);
-    try fw.interface.flush();
-}
 
-fn do_catalog_audit(alloc: std.mem.Allocator, io: Io) !void {
-    const stdout = std.Io.File.stdout();
-    var buf: [65536]u8 = undefined;
-    var fw: std.Io.File.Writer = .init(stdout, io, &buf);
-    try passes_audit.writeCatalogAuditJson(&fw.interface, alloc);
-    try fw.interface.flush();
-}
 
-fn do_catalog_audit_summary(alloc: std.mem.Allocator, io: Io) !void {
-    const stdout = std.Io.File.stdout();
-    var buf: [65536]u8 = undefined;
-    var fw: std.Io.File.Writer = .init(stdout, io, &buf);
-    try passes_audit.writeCatalogAuditSummaryJson(&fw.interface, alloc);
-    try fw.interface.flush();
-}
 
-fn do_catalog_audit_check(alloc: std.mem.Allocator, io: Io) !void {
-    const summary = passes_audit.runComprehensiveGateCheck(io, alloc) catch |err| {
-        term.err("passes audit gate failed: {}", .{err});
-        std.process.exit(1);
-    };
-    var line_buf: [256]u8 = undefined;
-    const line = passes_audit.formatGateSummary(summary, &line_buf);
-    const stderr = std.Io.File.stderr();
-    var buf: [512]u8 = undefined;
-    var fw: std.Io.File.Writer = .init(stderr, io, &buf);
-    try fw.interface.print("{s}\n", .{line});
-    try fw.interface.flush();
-}
 
-fn catalogAuditTail(args: []const []const u8) []const []const u8 {
-    for (args, 0..) |arg, i| {
-        if (std.mem.eql(u8, arg, "audit") and i + 1 < args.len) return args[i + 1 ..];
-    }
-    return &.{};
-}
 
-fn catalogAuditGateArgs(args: []const []const u8) []const []const u8 {
-    for (args, 0..) |arg, i| {
-        if (std.mem.eql(u8, arg, "gate") and i + 1 < args.len) return args[i + 1 ..];
-    }
-    return &.{};
-}
 
-fn do_catalog_audit_gate(alloc: std.mem.Allocator, io: Io, args: []const []const u8) !void {
-    const gate_args = catalogAuditGateArgs(args);
-    var scope: pass_gates.GateScope = .all;
-    var barrier_m1 = false;
-    for (gate_args) |arg| {
-        if (std.mem.eql(u8, arg, "--barrier")) {
-            barrier_m1 = true;
-            continue;
-        }
-        if (pass_gates.GateScope.parse(arg)) |parsed| {
-            scope = parsed;
-            continue;
-        }
-        term.err("unknown catalog audit gate arg '{s}' (expected: all, pass11, pass12, pass13, pass14, pass15, pass16, pass19, pass20, pass21, pass22, pass23, pass24, pass25, pass26, pass27, pass34, pass36, foundation, self-hosting-foundation, lua-superset, semantic-unification, foundational-closure, proof-bundle, hpls-frontier, semantic-access, projection, --barrier)", .{arg});
-        std.process.exit(1);
-    }
-    if (scope == .pass13 or scope == .all) barrier_m1 = true;
-    pass_gates.runScopedGate(io, alloc, scope, .{ .barrier_m1 = barrier_m1 }) catch |err| {
-        term.err("pass gate {s} failed: {}", .{ scope.name(), err });
-        std.process.exit(1);
-    };
-    const stderr = std.Io.File.stderr();
-    var buf: [256]u8 = undefined;
-    var fw: std.Io.File.Writer = .init(stderr, io, &buf);
-    try fw.interface.print("pass-gates: PASS ({s}, cross-platform)\n", .{scope.name()});
-    try fw.interface.flush();
-}
 
-fn do_dev(alloc: std.mem.Allocator, io: Io, dev_args: []const []const u8) !void {
-    if (dev_args.len == 0) {
-        term.err("usage: duo dev <snapshot|audit|context|summary|claim|persist> ...", .{});
-        std.process.exit(1);
-    }
-    const stdout = std.Io.File.stdout();
-    var buf: [65536]u8 = undefined;
-    var fw: std.Io.File.Writer = .init(stdout, io, &buf);
-    const sub = dev_args[0];
-    if (std.mem.eql(u8, sub, "snapshot")) {
-        const snap = try dev_control_plane.buildProjectSnapshot(alloc);
-        try dev_control_plane.writeSnapshotJson(&fw.interface, snap);
-    } else if (std.mem.eql(u8, sub, "audit")) {
-        try pass13_dev_audit.writeAuditSummaryJson(&fw.interface);
-    } else if (std.mem.eql(u8, sub, "summary")) {
-        const state = try dev_control_plane.loadState(alloc, io);
-        try dev_control_plane.writeControlPlaneSummaryJson(&fw.interface, state);
-    } else if (std.mem.eql(u8, sub, "persist")) {
-        var state = try dev_control_plane.loadState(alloc, io);
-        try dev_control_plane.saveState(alloc, io, &state);
-        try fw.interface.print("{{\"saved\":\"{s}\",\"active_claims\":{d}}}", .{
-            dev_control_plane.STATE_PATH,
-            state.claims.len,
-        });
-    } else if (std.mem.eql(u8, sub, "context")) {
-        const id = if (dev_args.len >= 2) dev_args[1] else {
-            term.err("usage: duo dev context <work-item-id> (e.g. P13-WS2)", .{});
-            std.process.exit(1);
-        };
-        const snap = try dev_control_plane.buildProjectSnapshot(alloc);
-        const state = try dev_control_plane.loadState(alloc, io);
-        const bundle = try dev_control_plane.generateContextBundle(alloc, snap, id, state);
-        try dev_control_plane.writeContextBundleJson(&fw.interface, bundle);
-    } else if (std.mem.eql(u8, sub, "claim")) {
-        if (dev_args.len < 2) {
-            term.err("usage: duo dev claim <acquire|list|release|heartbeat> ...", .{});
-            std.process.exit(1);
-        }
-        const claim_sub = dev_args[1];
-        var state = try dev_control_plane.loadState(alloc, io);
-        if (std.mem.eql(u8, claim_sub, "list")) {
-            dev_control_plane.expireStaleClaims(&state);
-            try dev_control_plane.writeClaimsListJson(&fw.interface, state);
-        } else if (std.mem.eql(u8, claim_sub, "acquire")) {
-            const owner = dev_control_plane.devFlagValue(dev_args[2..], "--owner") orelse {
-                term.err("usage: duo dev claim acquire --owner <id> --file <path> [--client <id>] [--work-item <id>]", .{});
-                std.process.exit(1);
-            };
-            const file = dev_control_plane.devFlagValue(dev_args[2..], "--file") orelse {
-                term.err("usage: duo dev claim acquire --owner <id> --file <path>", .{});
-                std.process.exit(1);
-            };
-            const client = dev_control_plane.devFlagValue(dev_args[2..], "--client") orelse owner;
-            const work_item = dev_control_plane.devFlagValue(dev_args[2..], "--work-item");
-            const lease = dev_control_plane.acquireClaim(alloc, &state, .{
-                .owner = owner,
-                .client = client,
-                .work_item_id = work_item,
-                .files = &.{file},
-                .targets = &.{},
-            }) catch |err| switch (err) {
-                error.ClaimOverlap => {
-                    term.err("claim rejected: file or semantic target overlaps active lease", .{});
-                    std.process.exit(1);
-                },
-                else => return err,
-            };
-            try dev_control_plane.saveState(alloc, io, &state);
-            try dev_control_plane.appendAuditEvent(alloc, io, "claim_acquire", owner, lease.claim_id);
-            try dev_control_plane.writeClaimJson(&fw.interface, lease);
-        } else if (std.mem.eql(u8, claim_sub, "release")) {
-            const claim_id = if (dev_args.len >= 3) dev_args[2] else {
-                term.err("usage: duo dev claim release <claim-id>", .{});
-                std.process.exit(1);
-            };
-            const integrate = dev_control_plane.devFlagValue(dev_args[3..], "--integrate") != null;
-            if (integrate) {
-                const rec = try dev_control_plane.releaseClaimWithIntegration(alloc, &state, claim_id);
-                try dev_control_plane.saveState(alloc, io, &state);
-                try dev_control_plane.appendAuditEvent(alloc, io, "claim_release", "cli", claim_id);
-                if (rec) |r| {
-                    try dev_control_plane.appendAuditEvent(alloc, io, "integration_submit", r.owner, r.integration_id);
-                    try fw.interface.print("{{\"released\":\"{s}\",\"integration_id\":\"{s}\",\"work_item_id\":\"{s}\"}}", .{ claim_id, r.integration_id, r.work_item_id });
-                } else {
-                    try fw.interface.print("{{\"released\":\"{s}\",\"integration\":null}}", .{claim_id});
-                }
-            } else {
-                try dev_control_plane.releaseClaim(&state, claim_id);
-                try dev_control_plane.saveState(alloc, io, &state);
-                try dev_control_plane.appendAuditEvent(alloc, io, "claim_release", "cli", claim_id);
-                try fw.interface.print("{{\"released\":\"{s}\"}}", .{claim_id});
-            }
-        } else if (std.mem.eql(u8, claim_sub, "heartbeat")) {
-            const claim_id = if (dev_args.len >= 3) dev_args[2] else {
-                term.err("usage: duo dev claim heartbeat <claim-id> [--ttl <seconds>]", .{});
-                std.process.exit(1);
-            };
-            const ttl_raw = dev_control_plane.devFlagValue(dev_args[3..], "--ttl") orelse "7200";
-            const ttl = std.fmt.parseInt(i64, ttl_raw, 10) catch {
-                term.err("invalid --ttl '{s}'", .{ttl_raw});
-                std.process.exit(1);
-            };
-            try dev_control_plane.heartbeatClaim(&state, claim_id, ttl);
-            try dev_control_plane.saveState(alloc, io, &state);
-            try dev_control_plane.appendAuditEvent(alloc, io, "claim_heartbeat", "cli", claim_id);
-            try fw.interface.print("{{\"heartbeat\":\"{s}\",\"ttl\":{d}}}", .{ claim_id, ttl });
-        } else {
-            term.err("unknown claim subcommand '{s}' (expected: acquire, list, release, heartbeat)", .{claim_sub});
-            std.process.exit(1);
-        }
-    } else if (std.mem.eql(u8, sub, "session")) {
-        if (dev_args.len < 2 or !std.mem.eql(u8, dev_args[1], "start")) {
-            term.err("usage: duo dev session start --owner <id> [--work-item <id>] [--client <id>]", .{});
-            std.process.exit(1);
-        }
-        const owner = dev_control_plane.devFlagValue(dev_args[2..], "--owner") orelse "anonymous";
-        const client = dev_control_plane.devFlagValue(dev_args[2..], "--client") orelse owner;
-        const work_item = dev_control_plane.devFlagValue(dev_args[2..], "--work-item");
-        const state = try dev_control_plane.loadState(alloc, io);
-        const snap = state.snapshot;
-        try fw.interface.writeAll("{\"schema\":\"dev-session-v0\",\"owner\":\"");
-        try fw.interface.writeAll(owner);
-        try fw.interface.writeAll("\",\"client\":\"");
-        try fw.interface.writeAll(client);
-        try fw.interface.writeAll("\",\"snapshot\":");
-        try dev_control_plane.writeSnapshotJson(&fw.interface, snap);
-        if (work_item) |wi| {
-            const bundle = try dev_control_plane.generateContextBundle(alloc, snap, wi, state);
-            try fw.interface.writeAll(",\"context\":");
-            try dev_control_plane.writeContextBundleJson(&fw.interface, bundle);
-            const plan = dev_validation_planner.planForWorkItem(wi);
-            try fw.interface.writeAll(",\"validation_plan\":");
-            try dev_validation_planner.writePlanJson(&fw.interface, plan);
-        }
-        try fw.interface.writeAll(",\"coordination\":");
-        try dev_control_plane.writeCoordinationExportJson(&fw.interface, state);
-        try fw.interface.writeAll("}");
-        try dev_control_plane.appendAuditEvent(alloc, io, "session_start", owner, client);
-    } else if (std.mem.eql(u8, sub, "validate")) {
-        if (dev_args.len < 2) {
-            term.err("usage: duo dev validate <plan|run> ...", .{});
-            std.process.exit(1);
-        }
-        if (std.mem.eql(u8, dev_args[1], "run")) {
-            const execute = dev_control_plane.devFlagValue(dev_args[2..], "--execute") != null;
-            const file = dev_control_plane.devFlagValue(dev_args[2..], "--file");
-            const work_item = dev_control_plane.devFlagValue(dev_args[2..], "--work-item");
-            const plan: []const dev_validation_planner.ValidationGate = if (file) |f| blk: {
-                const files = [_][]const u8{f};
-                break :blk dev_validation_planner.planForFiles(&files);
-            } else if (work_item) |wi| dev_validation_planner.planForWorkItem(wi) else {
-                term.err("usage: duo dev validate run (--file <path> | --work-item <id>) [--execute]", .{});
-                std.process.exit(1);
-            };
-            const results = try dev_validation_planner.runPlan(alloc, plan, execute);
-            try dev_validation_planner.writeRunJson(&fw.interface, results);
-        } else if (std.mem.eql(u8, dev_args[1], "plan")) {
-            const file = dev_control_plane.devFlagValue(dev_args[2..], "--file");
-            const work_item = dev_control_plane.devFlagValue(dev_args[2..], "--work-item");
-            if (file != null) {
-                const files = [_][]const u8{file.?};
-                const plan = dev_validation_planner.planForFiles(&files);
-                try dev_validation_planner.writePlanJson(&fw.interface, plan);
-            } else if (work_item) |wi| {
-                const plan = dev_validation_planner.planForWorkItem(wi);
-                try dev_validation_planner.writePlanJson(&fw.interface, plan);
-            } else {
-                term.err("usage: duo dev validate plan (--file <path> | --work-item <id>)", .{});
-                std.process.exit(1);
-            }
-        } else {
-            term.err("usage: duo dev validate <plan|run> ...", .{});
-            std.process.exit(1);
-        }
-    } else if (std.mem.eql(u8, sub, "integration")) {
-        if (dev_args.len < 2) {
-            term.err("usage: duo dev integration <list|submit|complete> ...", .{});
-            std.process.exit(1);
-        }
-        var state = try dev_control_plane.loadState(alloc, io);
-        const int_sub = dev_args[1];
-        if (std.mem.eql(u8, int_sub, "list")) {
-            try dev_control_plane.writeIntegrationsListJson(&fw.interface, state);
-        } else if (std.mem.eql(u8, int_sub, "submit")) {
-            const owner = dev_control_plane.devFlagValue(dev_args[2..], "--owner") orelse {
-                term.err("usage: duo dev integration submit --owner <id> --work-item <id> [--claim-id <id>]", .{});
-                std.process.exit(1);
-            };
-            const wi = dev_control_plane.devFlagValue(dev_args[2..], "--work-item") orelse {
-                term.err("usage: duo dev integration submit --owner <id> --work-item <id>", .{});
-                std.process.exit(1);
-            };
-            const claim_id = dev_control_plane.devFlagValue(dev_args[2..], "--claim-id");
-            const rec = try dev_control_plane.submitIntegration(alloc, &state, wi, owner, claim_id);
-            try dev_control_plane.saveState(alloc, io, &state);
-            try dev_control_plane.appendAuditEvent(alloc, io, "integration_submit", owner, rec.integration_id);
-            try dev_control_plane.writeIntegrationJson(&fw.interface, rec);
-        } else if (std.mem.eql(u8, int_sub, "complete")) {
-            const int_id = if (dev_args.len >= 3) dev_args[2] else {
-                term.err("usage: duo dev integration complete <integration-id>", .{});
-                std.process.exit(1);
-            };
-            try dev_control_plane.completeIntegration(&state, int_id);
-            try dev_control_plane.saveState(alloc, io, &state);
-            try dev_control_plane.appendAuditEvent(alloc, io, "integration_complete", "cli", int_id);
-            try fw.interface.print("{{\"integrated\":\"{s}\"}}", .{int_id});
-        } else {
-            term.err("unknown integration subcommand '{s}'", .{int_sub});
-            std.process.exit(1);
-        }
-    } else if (std.mem.eql(u8, sub, "coordination")) {
-        const state = try dev_control_plane.loadState(alloc, io);
-        if (dev_args.len >= 2 and std.mem.eql(u8, dev_args[1], "status")) {
-            try dev_control_plane.writeCoordinationStatusJson(&fw.interface, state);
-        } else if (dev_args.len >= 2 and std.mem.eql(u8, dev_args[1], "export")) {
-            try dev_control_plane.writeCoordinationExportJson(&fw.interface, state);
-        } else if (dev_args.len >= 2 and std.mem.eql(u8, dev_args[1], "render")) {
-            try dev_control_plane.writeCoordinationMarkdown(&fw.interface, state);
-        } else {
-            term.err("usage: duo dev coordination <export|status|render>", .{});
-            std.process.exit(1);
-        }
-    } else if (std.mem.eql(u8, sub, "work")) {
-        if (dev_args.len < 2 or !std.mem.eql(u8, dev_args[1], "graph")) {
-            term.err("usage: duo dev work graph", .{});
-            std.process.exit(1);
-        }
-        try dev_control_plane.writeWorkGraphJson(&fw.interface);
-    } else if (std.mem.eql(u8, sub, "barrier")) {
-        if (dev_args.len < 3 or !std.mem.eql(u8, dev_args[1], "check")) {
-            term.err("usage: duo dev barrier check <pass12_m1|pass12_m1_sorted|ward_decode|ward_decode_dispatch|ward_opcode_lookup>", .{});
-            std.process.exit(1);
-        }
-        const profile = if (std.mem.eql(u8, dev_args[2], "pass12_m1"))
-            native_barrier_checks.pass12_m1_profile
-        else if (std.mem.eql(u8, dev_args[2], "pass12_m1_sorted"))
-            native_barrier_checks.pass12_m1_sorted_lookup_profile
-        else if (std.mem.eql(u8, dev_args[2], "ward_decode"))
-            native_barrier_checks.ward_decode_profile
-        else if (std.mem.eql(u8, dev_args[2], "ward_decode_dispatch"))
-            native_barrier_checks.ward_decode_dispatch_profile
-        else if (std.mem.eql(u8, dev_args[2], "ward_opcode_lookup"))
-            native_barrier_checks.ward_opcode_lookup_profile
-        else {
-            term.err("unknown barrier profile '{s}' (expected: pass12_m1, pass12_m1_sorted, ward_decode, ward_decode_dispatch, ward_opcode_lookup)", .{dev_args[2]});
-            std.process.exit(1);
-        };
-        const duo_bin = "zig-out/bin/duo";
-        const result = native_barrier_checks.evaluateProfile(alloc, profile, duo_bin) catch |err| switch (err) {
-            error.DuoBinaryMissing, error.DuoDumpFailed => {
-                term.err("barrier check failed: build duo and ensure dump-c works for {s}", .{profile.source_path});
-                std.process.exit(1);
-            },
-            else => return err,
-        };
-        defer alloc.free(result.checks);
-        defer for (result.checks) |c| native_barrier_checks.freeSymbolCheck(alloc, c);
-        try native_barrier_checks.writeProfileResultJson(&fw.interface, profile, result.checks, result.profile_ok);
-        if (!result.profile_ok) std.process.exit(1);
-    } else if (std.mem.eql(u8, sub, "preserve")) {
-        // Pass 14 §5 / Milestone 1 — preservation-aware repository operations.
-        // Inventories stash, dirty work, valuable untracked artifacts, unique
-        // branches, and prunable worktrees so destructive Git ops are auditable.
-        var report = try git_preservation.buildPreservationReport(alloc);
-        defer report.freeReport(alloc);
-        try git_preservation.writePreservationReportJson(&fw.interface, report);
-    } else {
-        term.err("unknown dev subcommand '{s}' (expected: snapshot, audit, context, summary, claim, persist, session, validate, integration, coordination, work, barrier, preserve)", .{sub});
-        std.process.exit(1);
-    }
-    try fw.interface.writeAll("\n");
-    try fw.interface.flush();
-}
 
 fn do_semantic(alloc: std.mem.Allocator, io: Io, sub: []const u8, entity_arg: ?[]const u8) !void {
     const stdout = std.Io.File.stdout();
@@ -2075,13 +1673,6 @@ fn do_semantic(alloc: std.mem.Allocator, io: Io, sub: []const u8, entity_arg: ?[
     try fw.interface.flush();
 }
 
-fn do_selfhost(alloc: std.mem.Allocator, io: Io, sub: []const u8) !void {
-    const stdout = std.Io.File.stdout();
-    var buf: [65536]u8 = undefined;
-    var fw: std.Io.File.Writer = .init(stdout, io, &buf);
-    try selfhost_cli.dispatch(&fw.interface, alloc, sub);
-    try fw.interface.flush();
-}
 
 fn ensureDirForPath(io: Io, path: []const u8) !void {
     if (std.fs.path.dirname(path)) |dir| {
