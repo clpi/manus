@@ -17,7 +17,9 @@ heap_up(h: any, i: any): void
     while i > 1
         parent = i / 2
         if h.less(h.data[i], h.data[parent])
-            tmp = h.data[i]; h.data[i] = h.data[parent]; h.data[parent] = tmp
+            tmp = h.data[i]
+            h.data[i] = h.data[parent]
+            h.data[parent] = tmp
             i = parent
         else
             break
@@ -39,7 +41,9 @@ heap_down(h: any, i: any): void
             smallest = right
         end
         if smallest == i break end
-        tmp = h.data[i]; h.data[i] = h.data[smallest]; h.data[smallest] = tmp
+        tmp = h.data[i]
+        h.data[i] = h.data[smallest]
+        h.data[smallest] = tmp
         i = smallest
     end
 end

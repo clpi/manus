@@ -74,11 +74,14 @@ end
 
 key_expansion(key: any, key_len: i64): any
     if key_len == 16
-        nk = 4; nr = 10
+        nk = 4
+        nr = 10
     elseif key_len == 24
-        nk = 6; nr = 12
+        nk = 6
+        nr = 12
     else
-        nk = 8; nr = 14
+        nk = 8
+        nr = 14
     end
 
     w = {}

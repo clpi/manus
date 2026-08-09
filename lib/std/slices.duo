@@ -127,7 +127,9 @@ reverse(arr: any): void
     i = 1
     j = n
     while i < j
-        tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp
+        tmp = arr[i]
+        arr[i] = arr[j]
+        arr[j] = tmp
         i += 1
         j -= 1
     end

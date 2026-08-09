@@ -49,7 +49,11 @@ sha1(s: str): str
             w[j + 1] = ((v << 1) | (v >> 31)) % (2^32)
             j += 1
         end
-        a = h0; b = h1; c = h2; d = h3; e = h4
+        a = h0
+        b = h1
+        c = h2
+        d = h3
+        e = h4
         j = 0
         while j < 80
             f = 0
@@ -115,8 +119,14 @@ sha256(s: str): str
         bit_len % 256
     )
     -- initial hash values
-    H0 = 0x6a09e667; H1 = 0xbb67ae85; H2 = 0x3c6ef372; H3 = 0xa54ff53a
-    H4 = 0x510e527f; H5 = 0x9b05688c; H6 = 0x1f83d9ab; H7 = 0x5be0cd19
+    hv0 = 0x6a09e667
+    hv1 = 0xbb67ae85
+    hv2 = 0x3c6ef372
+    hv3 = 0xa54ff53a
+    hv4 = 0x510e527f
+    hv5 = 0x9b05688c
+    hv6 = 0x1f83d9ab
+    hv7 = 0x5be0cd19
     block = 0
     nblocks = #msg / 64
     while block < nblocks
@@ -139,7 +149,14 @@ sha256(s: str): str
             w[j + 1] = (w[j + 1] + s0 + w[j - 7 + 1] + s1) % (2^32)
             j += 1
         end
-        a = H0; b = H1; c = H2; d = H3; e = H4; f = H5; g = H6; h = H7
+        a = hv0
+        b = hv1
+        c = hv2
+        d = hv3
+        e = hv4
+        f = hv5
+        g = hv6
+        h = hv7
         j = 0
         while j < 64
             -- S1 = ror(e, 6) ^ ror(e, 11) ^ ror(e, 25)
@@ -160,17 +177,17 @@ sha256(s: str): str
             a = (temp1 + temp2) % (2^32)
             j += 1
         end
-        H0 = (H0 + a) % (2^32)
-        H1 = (H1 + b) % (2^32)
-        H2 = (H2 + c) % (2^32)
-        H3 = (H3 + d) % (2^32)
-        H4 = (H4 + e) % (2^32)
-        H5 = (H5 + f) % (2^32)
-        H6 = (H6 + g) % (2^32)
-        H7 = (H7 + h) % (2^32)
+        hv0 = (hv0 + a) % (2^32)
+        hv1 = (hv1 + b) % (2^32)
+        hv2 = (hv2 + c) % (2^32)
+        hv3 = (hv3 + d) % (2^32)
+        hv4 = (hv4 + e) % (2^32)
+        hv5 = (hv5 + f) % (2^32)
+        hv6 = (hv6 + g) % (2^32)
+        hv7 = (hv7 + h) % (2^32)
         block += 1
     end
-    string.format("%08x%08x%08x%08x%08x%08x%08x%08x", H0, H1, H2, H3, H4, H5, H6, H7)
+    string.format("%08x%08x%08x%08x%08x%08x%08x%08x", hv0, hv1, hv2, hv3, hv4, hv5, hv6, hv7)
 end
 
 -- sha1_hex: alias for sha1 (returns hex).

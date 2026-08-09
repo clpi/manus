@@ -1,4 +1,4 @@
--- ward test suite
+-- the engine test suite
 test = req "std.test"
 fmt   = req "std.fmt"
 
@@ -92,7 +92,8 @@ test.group("wasm.op", fun()
 
   test.it("i32_add works", fun()
     rt = { stack = {}, sp = 0, fuel = 1000, config = {} }
-    rt.sp = 2; rt.stack = { 10, 32 }
+    rt.sp = 2
+    rt.stack = { 10, 32 }
     op = req "src.wasm.op"
     -- i32_add pops 2, pushes sum
     -- We test via the dispatch table

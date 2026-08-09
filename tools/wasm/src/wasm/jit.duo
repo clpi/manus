@@ -1,4 +1,4 @@
--- ward JIT compiler stub
+-- the engine JIT compiler stub
 -- Strategy: emit C and invoke clang -O2 to produce a shared library.
 -- Codegen prefers native i64 / str throughout; calls are kept in
 -- statement position so the compiler emits direct C calls rather than
@@ -88,7 +88,7 @@ fun compile_function(mod: any, func_idx: i64): any
   tmp_so: str = os.tmpname() .. ".so"
   os.write_file(tmp_c, c_src)
   os.exec("clang -O2 -shared -o " .. tmp_so .. " " .. tmp_c)
-  os.remove(tmp_c);
+  os.remove(tmp_c)
 
   { path = tmp_so, func_idx = func_idx }
 end

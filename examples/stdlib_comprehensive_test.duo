@@ -118,9 +118,12 @@ check("repr bool", fmt.repr(true) == "true")
 
 io.write("\n--- std.log ---\n")
 
-check("log set_level", (function() log.set_level("ERROR"); return log.get_level() == "ERROR" end)())
-check("log reset", (function() log.set_level("DEBUG"); return log.get_level() == "DEBUG" end)())
-check("log with_fields", (function() log.with_fields("INFO", {user = "test", id = 42}, "action performed"); return true end)())
+log.set_level("ERROR")
+check("log set_level", log.get_level() == "ERROR")
+log.set_level("DEBUG")
+check("log reset", log.get_level() == "DEBUG")
+log.with_fields("INFO", {user = "test", id = 42}, "action performed")
+check("log with_fields", true)
 
 -- ── std.zip ─────────────────────────────────────────────────────────────
 

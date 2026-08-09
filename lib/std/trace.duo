@@ -454,7 +454,10 @@ fmt_hex(value: any): str
     n = tonumber(value)
     if n == nil return to(str)(value) end
     neg = false
-    if n < 0 neg = true; n = -n end
+    if n < 0
+        neg = true
+        n = -n
+    end
     hex = _to_hex(math.floor(n))
     if neg hex = "-" .. hex end
     return sem_hex("0x" .. hex)
@@ -548,15 +551,20 @@ level_tag(level: int): str
     glyph = M.G_TRACE
     tag = "trace"
     if level == M.LV_DEBUG
-        glyph = M.G_DEBUG; tag = "debug"
+        glyph = M.G_DEBUG
+        tag = "debug"
     elseif level == M.LV_INFO
-        glyph = M.G_INFO;  tag = " info"
+        glyph = M.G_INFO
+        tag = " info"
     elseif level == M.LV_WARN
-        glyph = M.G_WARN;  tag = " warn"
+        glyph = M.G_WARN
+        tag = " warn"
     elseif level == M.LV_ERROR
-        glyph = M.G_ERROR; tag = "error"
+        glyph = M.G_ERROR
+        tag = "error"
     elseif level == M.LV_FATAL
-        glyph = M.G_FATAL; tag = "fatal"
+        glyph = M.G_FATAL
+        tag = "fatal"
     end
     body = glyph .. " " .. tag
     if level == M.LV_TRACE return dim(body) end

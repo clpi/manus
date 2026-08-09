@@ -21,13 +21,19 @@ end
 std_sort_median3(arr: any, lo: any, hi: any, less: any): any
     mid = lo + (hi - lo) / 2
     if less(arr[mid], arr[lo])
-        tmp = arr[lo]; arr[lo] = arr[mid]; arr[mid] = tmp
+        tmp = arr[lo]
+        arr[lo] = arr[mid]
+        arr[mid] = tmp
     end
     if less(arr[hi], arr[lo])
-        tmp = arr[lo]; arr[lo] = arr[hi]; arr[hi] = tmp
+        tmp = arr[lo]
+        arr[lo] = arr[hi]
+        arr[hi] = tmp
     end
     if less(arr[hi], arr[mid])
-        tmp = arr[mid]; arr[mid] = arr[hi]; arr[hi] = tmp
+        tmp = arr[mid]
+        arr[mid] = arr[hi]
+        arr[hi] = tmp
     end
     arr[mid]
 end
@@ -36,7 +42,9 @@ end
 std_sort_partition(arr: any, lo: any, hi: any, less: any): any
     pivot = std_sort_median3(arr, lo, hi, less)
     -- move pivot to hi-1
-    tmp = arr[hi - 1]; arr[hi - 1] = arr[lo + (hi - lo) / 2]; arr[lo + (hi - lo) / 2] = tmp
+    tmp = arr[hi - 1]
+    arr[hi - 1] = arr[lo + (hi - lo) / 2]
+    arr[lo + (hi - lo) / 2] = tmp
     pivot = arr[hi - 1]
     i = lo
     j = hi - 1
@@ -46,10 +54,14 @@ std_sort_partition(arr: any, lo: any, hi: any, less: any): any
         j -= 1
         while less(pivot, arr[j]) do j -= 1 end
         if i >= j break end
-        tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp
+        tmp = arr[i]
+        arr[i] = arr[j]
+        arr[j] = tmp
     end
     -- place pivot
-    tmp = arr[i]; arr[i] = arr[hi - 1]; arr[hi - 1] = tmp
+    tmp = arr[i]
+    arr[i] = arr[hi - 1]
+    arr[hi - 1] = tmp
     i
 end
 
@@ -176,7 +188,9 @@ reverse(arr: any): void
     i = 1
     j = n
     while i < j
-        tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp
+        tmp = arr[i]
+        arr[i] = arr[j]
+        arr[j] = tmp
         i += 1
         j -= 1
     end
@@ -184,7 +198,9 @@ end
 
 -- swap: swap two indices.
 swap(arr: any, i: any, j: any): void
-    tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp
+    tmp = arr[i]
+    arr[i] = arr[j]
+    arr[j] = tmp
 end
 
 -- slice: sort a sub-range [from, to] of arr.
