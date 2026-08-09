@@ -1866,52 +1866,13 @@ apply.carries = {
     "operand descriptors", "constants", "world", "demand", "return pack",
 }
 
--- ═══ §43a · APPLY-ONE · CONSTRUCT-ZERO · PACK-NOT-TABLE ════════════════════
+-- ═══ §44a · the traps, the surviving distinction, and the ladder ══════════
 --
--- The three laws §43 was reaching for, named so an implementation cannot land
--- the collision fix as a REGRESSION. Restoring distinct constructor and
--- brace-call paths — at any layer — would be exactly that: the collision was
--- EVIDENCE the two concepts were artificially overlapping, not a defect to
--- partition.
-
-applyone = law{
-    id    = "law.apply.one"
-    kind  = .invariant
-    holds = .application
-    binds = {
-        "duon has ONE application mechanism",
-        "parenthesized, braced and string faces all project onto it",
-        "construction, ordinary calls and structured application are",
-        "SPECIALIZATIONS derived from subject identity, argument shape,",
-        "demand and context — never separate semantic constructs",
-    }
-    fails = "a constructor path and a call path as distinct semantic kinds"
-}
-
-constructzero = law{
-    id    = "law.construct.zero"
-    kind  = .invariant
-    holds = .applicable
-    binds = {
-        "`constructor` is NOT an independent semantic category",
-        "a DESCRIPTOR IS AN APPLICABLE VALUE",
-        "applying one to a compatible structured argument yields a value it describes",
-    }
-    fails = "constructdescriptor, bracecall, tablector, recordinit as four things"
-}
-
--- The law that stops SURFACE unification becoming RUNTIME unification.
-packnottable = law{
-    id    = "law.pack"
-    kind  = .invariant
-    holds = .deferred
-    binds = {
-        "`{…}` in application position is a STRUCTURED ARGUMENT PACK",
-        "table realization happens only where DEMANDED",
-        "representation is selected AFTER semantic resolution, never by the surface",
-    }
-    fails = "allocating a table because the surface had braces"
-}
+-- Appended to §44 rather than restated: a concurrent session landed
+-- law.apply.one, law.construct.zero and law.pack.shape while I was writing the
+-- same three. My duplicates are DELETED — two facts with one id is worse than
+-- two facts that disagree, because law.fact.one cannot even name which is
+-- authoritative. What follows is only what was NOT already there.
 
 -- THREE TRAPS, each a plausible implementation that would regress this ruling:
 --
