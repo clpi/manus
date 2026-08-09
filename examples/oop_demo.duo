@@ -7,9 +7,9 @@
 
 -- ── Type aliases (alias) ────────────────────────────────────────────────────
 
-alias Point2D = { x: f64, y: f64 }
+Point2D: { x: f64, y: f64 }
 
-alias Float = f64
+Float: f64
 
 -- ── Basic class pattern (Lua-style table as class) ──────────────────────────
 

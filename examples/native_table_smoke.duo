@@ -1,7 +1,7 @@
 -- Smoke test for native table initialization
 -- Typed table literals should emit native C struct access
 
-alias Point = { x: f64, y: f64 }
+Point: { x: f64, y: f64 }
 
 make_point(x: f64, y: f64): Point
     { x = x, y = y }

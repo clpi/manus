@@ -1,4 +1,4 @@
-alias Point = { x: f64, y: f64 }
+Point: { x: f64, y: f64 }
 
 main()
     p: Point = { x = 3.0, y = 4.0 }

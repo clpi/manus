@@ -4,17 +4,17 @@ concept Hashable
     hash(self) -> i64
 end
 
-alias M = {}
+M: {}
 M:hash() -> i64
     return 42
 end
 
-alias S = {}
+S: {}
 S:hash() -> i64
     return 13
 end
 
-alias X = {}
+X: {}
 X:nope() -> i64
     return 0
 end

@@ -1,7 +1,7 @@
-alias Point = { x: f64, y: f64 }
+Point: { x: f64, y: f64 }
 
 @sealed
-alias Box = { label: str, count: i64 }
+Box: { label: str, count: i64 }
 
 enum Color
     Red
