@@ -1912,3 +1912,74 @@ apply.edges = { "descriptor", "callable", "table", "staged" }
 --
 -- NO CONSTRUCTOR ABSTRACTION SURVIVES INTO MACHINE CODE UNLESS DEMANDED.
 apply.ladder = 7
+
+-- ═══ §45 · DELETION CONTRACTS — relation.zig may not fossilize ═════════════
+--
+-- `src/relation.zig` is the bootstrap realization of ordinary graph relation
+-- facts. **None of its object taxonomy is semantic authority.**
+--
+-- It currently carries `Class`, `Edge`, `Path`, `Relation`, flat edge storage,
+-- STRING descriptor identities, a recognizer for the declaration shape, and an
+-- explicit `derive()`. That is acceptable ONLY as deletion-gated host
+-- projection, and it is named here because implementation pressure is exactly
+-- how gap[084]'s 64 nouns arrived: nobody decided to build a registry, one
+-- accreted. `ConversionRelation`, `ConversionEdge`, `ConversionClass` and
+-- `ConversionPath` as permanent object types would be gap[084] returning under
+-- cleaner names.
+
+relationdebt = law{
+    id    = "law.relation.debt"
+    kind  = .invariant
+    holds = .projection
+    binds = {
+        "src/relation.zig projects `relation`, `fact` and `witness` and owns none",
+        "authority = false; the deletion gate is gap[082]",
+        "no object taxonomy in it may become a permanent semantic kind",
+    }
+    fails = "gap[084]'s registries returning under cleaner names"
+}
+
+-- FOUR DEBTS NAMED, each with the condition that retires it:
+--
+--   string identities   relation resolution must not depend on textual
+--                       descriptor names once stable semantic ids exist —
+--                       packages, renames, MCP, refactoring and multiple
+--                       versions all break on text.
+--   codegen legality    the lossy-composition REFUSAL happens at codegen, so
+--                       `duo check` approves what compilation later refuses.
+--                       Class algebra belongs in SEMANTIC RESOLUTION: legality
+--                       above realization, always.
+--   one hop             derivation is deliberately one hop. Before longer
+--                       paths, a path-selection law must cover multiple valid
+--                       paths, cost, loss, effects, ownership, failure, trust
+--                       and ambiguity. **Adding BFS would be architecturally
+--                       wrong** — search is not a coherence law.
+--   `to` in codegen     four literal `"to"` comparisons remain, annotated
+--                       non-authoritative. HARD GATE: once primitive
+--                       conversions are authored std relation facts,
+--                       `codegen.zig` must go NET NEGATIVE in conversion code,
+--                       or the relation layer is a front-end feeding the same
+--                       builtin emitter kingdom.
+relation.retires = { "string identities", "codegen legality", "one hop", "to comparisons" }
+
+-- ═══ §46 · NOMINAL IDENTITY IS THE NEXT WALL ═══════════════════════════════
+--
+-- Measured (gap[082]): `d: feet = 3.0` is REJECTED because the initializer is
+-- f64. So the conversion graph derives `feet -> micron -> inch` while the
+-- compiler cannot know a runtime value IS feet.
+--
+-- That is not a conversion feature. It is REPRESENTATION POLYMORPHISM, and it
+-- is the milestone the algebra is waiting on: **a `feet` value may physically
+-- remain an f64 while being semantically distinct.** Expanding conversion
+-- machinery before this lands buys nothing, because there is nothing for the
+-- derived edges to act on.
+nominal = law{
+    id    = "law.nominal"
+    kind  = .invariant
+    holds = .independent
+    binds = {
+        "semantic descriptor identity is INDEPENDENT of physical representation",
+        "a nominal descriptor over a primitive costs no boxing",
+    }
+    fails = "a descriptor that cannot inhabit a value"
+}
