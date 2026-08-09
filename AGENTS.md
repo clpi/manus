@@ -215,3 +215,20 @@ one full 23-file rescue (2026-08-01). Commit early on a branch, coordinate via
 claims in `.agents/session/`, or export a visible `.patch` file.
 `git stash list` must stay EMPTY.
 
+**NEVER `git reset --hard`, for the same reason and worse.** Stashed work is
+hidden; hard-reset work is GONE — unstaged changes were never written to the
+object database, so there is no blob to recover and `git fsck` will not save
+you. It is repo-wide: it discards every parallel agent's uncommitted work in the
+tree, not just the commit you meant to undo.
+
+Recorded because it happened here on 2026-08-09. An agent ran
+`git reset --hard HEAD~1` to drop a throwaway probe commit and destroyed an
+uncommitted gap[075] fix in `lib/std/fs.duo` belonging to another session. It
+was reconstructible only because the author's fixture
+(`scripts/fs_remove_proof.duo`) was UNTRACKED and therefore survived — untracked
+files are the only thing a hard reset spares. That is luck, not a safety net.
+
+To undo a commit you just made, **`git reset --soft HEAD~1`** — it moves the
+branch pointer and touches no file. To discard one path, name that path. Never
+widen a revert to the whole tree to save a keystroke.
+
