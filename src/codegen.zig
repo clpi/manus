@@ -3536,6 +3536,22 @@ pub const CodeGen = struct {
                 .global_decl => |*gd| for (gd.names) |lname| {
                     if (self.module_functions_assign_name(mod, lname.ident)) return lname.ident;
                 },
+                // gap[108]. An UNTYPED file-scope binding — `total = 5`, no
+                // `: i64` — does not parse as a declaration at all. There is no
+                // `local`/`var` keyword in duon, so the parser hands module
+                // scope an `.assign`, exactly as it does for `total = 8` inside
+                // a function. The two decl arms above therefore saw nothing,
+                // the guard did not fire, and the program ran natively with a
+                // wrong number: measured at this commit, `total = 5` read 5 in
+                // a second function after `main` wrote 8, where C read 8.
+                //
+                // `promote_module_captured_locals` already treats module-scope
+                // `.assign` as a binding site, which is the proof this arm was
+                // an omission and not a decision.
+                .assign => |*as| for (as.targets) |target| {
+                    if (target.* != .name) continue;
+                    if (self.module_functions_assign_name(mod, target.name.ident)) return target.name.ident;
+                },
                 else => {},
             }
         }
