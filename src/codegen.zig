@@ -3979,10 +3979,21 @@ pub const CodeGen = struct {
                     var abuf: [256]u8 = undefined;
                     if (ambient_dotted_path(expr, &abuf)) |dotted| {
                         if (self.find_module_file_for_req(dotted)) |mod_path| {
+                            // ORDERING, not nativeness. Both records are populated
+                            // AT EMISSION, and `main.zig` runs this precheck on a
+                            // standalone CodeGen BEFORE anything is emitted — so an
+                            // absent record means "not emitted yet", and reading it
+                            // as "not native" refuses clean modules for not having
+                            // happened. Measured: lib/std/compiler/bind.duo
+                            // prechecks CLEAN while its consumer bailed here.
+                            // With no record, defer to the SAME predicate the `req`
+                            // branch above already trusts — this is the `req` case
+                            // wearing different syntax, and two spellings of one
+                            // concept may not disagree about their own soundness.
                             const emitted_native = if (self.embedded_module_native.get(mod_path)) |e|
                                 e
                             else
-                                self.embedded_req_is_native(dotted);
+                                self.req_module_is_native_direct(dotted);
                             if (!emitted_native) {
                                 native_diag_fail("global-decl-module-path");
                                 break :blk false;
