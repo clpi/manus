@@ -124,8 +124,8 @@ main = (): i64
     truelitc = run(bin, work, "truelit", "c")
     falselitd = run(bin, work, "falselit", "direct")
     falselitc = run(bin, work, "falselit", "c")
-    trueararmsd = run(bin, work, "truearms", "direct")
-    trueararmsc = run(bin, work, "truearms", "c")
+    truearmsd = run(bin, work, "truearms", "direct")
+    truearmsc = run(bin, work, "truearms", "c")
     falsearmsd = run(bin, work, "falsearms", "direct")
     falsearmsc = run(bin, work, "falsearms", "c")
     localsd = run(bin, work, "constlocal", "direct")
@@ -163,8 +163,8 @@ main = (): i64
     -- B3/B4. Both arms, on opposite verdicts, with the `if/else` pushed out of
     -- the function's tail slot by a trailing print. Under the defect BOTH arms
     -- were lost — the observation no mis-taken-branch theory could explain.
-    note("B3 true with else", trueararmsd == "rc=0 then|thenlast|after|",
-        "the taken arm runs whole · direct: {trueararmsd}")
+    note("B3 true with else", truearmsd == "rc=0 then|thenlast|after|",
+        "the taken arm runs whole · direct: {truearmsd}")
     note("B4 false with else", falsearmsd == "rc=0 else|elselast|after|",
         "the else arm runs whole · direct: {falsearmsd}")
 
@@ -209,7 +209,7 @@ main = (): i64
     -- The C backend has no tail-slot split and was correct throughout, which is
     -- exactly why `--backend=c` masked this defect for as long as it did.
     agree = truelitd == truelitc and falselitd == falselitc and
-        trueararmsd == trueararmsc and falsearmsd == falsearmsc and
+        truearmsd == truearmsc and falsearmsd == falsearmsc and
         localsd == localsc and derivedd == derivedc and
         nestedd == nestedc and tailbd == tailbc and
         effectsd == effectsc and foldedd == foldedc
