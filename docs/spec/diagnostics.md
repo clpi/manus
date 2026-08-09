@@ -360,7 +360,7 @@ error: FileNotFound
 /Users/…/mise/installs/zig/master/lib/std/Io/Threaded.zig:4889:35: … in dirOpenFilePosix (duo)
                         .NOENT => return error.FileNotFound,
 … 16 more lines …
-/Users/clp/x/duo/src/main.zig:903:9: 0x10479632b in main (duo)
+<repo>/src/main.zig:903:9: 0x10479632b in main (duo)
 ```
 
 This is a plausible first command a new user runs, and it is a stack trace.
@@ -370,7 +370,7 @@ This is a plausible first command a new user runs, and it is a stack trace.
 
 ```
 thread 496691 panic: integer overflow
-/Users/clp/x/duo/src/region_transform.zig:166:19: … in evalConstBinop (duo)
+<repo>/src/region_transform.zig:166:19: … in evalConstBinop (duo)
         .add => a + b,
 ```
 
