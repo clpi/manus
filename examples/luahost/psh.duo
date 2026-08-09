@@ -1,0 +1,8 @@
+-- LS-1 — the shell boundary: a levelled long string whose CONTENTS are
+-- bash, including [[ ]] and a ; that Pass 119 denies in duon source. Inside
+-- a long string they are bytes, and the lexer must not read them as duon.
+script = [=[
+if [[ -f "$file" ]]; then
+    echo "$file"
+fi
+]=]

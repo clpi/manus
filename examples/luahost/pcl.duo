@@ -1,0 +1,2 @@
+-- CL-0 — a parenthesised call with two arguments of different kinds.
+print("hi", 42)

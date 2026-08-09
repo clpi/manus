@@ -290,3 +290,133 @@ Nothing else. Every other reduction is gated on a Duo replacement existing.
 - Class (c)/(d) boundary is drawn by compile-pipeline reachability. A file that
   a compile never touches is classified (d) even if its name reads like
   compiler.
+
+---
+
+## 9. Wave 3, 2026-08-09 — the last of the apparatus, and the first two ports
+
+Measured on branch `canonical-to-relation` after waves 1 and 2 had taken the
+census ratchet 237 → 135 by deletion. **This wave took it 135 → 121.**
+
+### Method, re-run rather than quoted
+
+The import closure was recomputed, not inherited: transitive `@import("X.zig")`
+from `main.zig` over `src/*.zig`, with a positive control on the scanner
+(`codegen.zig` must show ~10 importers — it showed 9, named). Result at the
+start of this wave: **105 of 134 `src/*.zig` in the `main.zig` closure**, 29
+outside it, all 29 imported by `src/tests.zig`, ~5,033 lines.
+
+Note the closure is slightly generous: `main.zig` imports
+`native_barrier_checks.zig` and never calls it, so that file is "production" by
+an unused import only.
+
+### Deleted — 11 files, apparatus asserting apparatus
+
+Each is a hand-written table plus one test asserting the table has the length
+the same file declares. None had an importer other than `tests.zig`. None
+touched a compiler path.
+
+| file | lines | the whole assertion |
+|---|---|---|
+| `pass25_semantic_category.zig` | 82 | `@intFromEnum(.pointer) == 4`, `invariants.len >= 5` |
+| `pass26_evidence.zig` | 98 | `certaintyTermCount() == 10`, `example_proofs.len >= 2` |
+| `pass26_transform_meta.zig` | 65 | `composition_rules.len >= 2`, `meta_invariants.len >= 4` |
+| `pass26_protocol_attachment.zig` | 166 | its own dotted paths and its own example table |
+| `conversion_graph.zig` | 105 | builds its own graph, asserts its own graph — superseded by `src/relation.zig`, which `codegen.zig` actually imports |
+| `selfhost_migration_plan.zig` | 70 | `items.len >= 10`, `items[0].id == "MP-01"` |
+| `selfhost_production_path.zig` | 210 | self-consistency over a hand-written phase table |
+| `compiler_perf_baseline.zig` | 42 | `metrics.len >= 4` |
+| `compiler_perf_measure.zig` | 114 | a timing smoke asserting `ns > 0` |
+| `region_layout.zig` | 160 | a real layout planner with **zero callers** — a scaffold for passes that never arrived |
+| `pass20_import_strength.zig` | 91 | the only live path it touched, `c_sim_import.importHeaderSource` on `point_h`, is already covered by `pass5_golden_tests.zig`; the classifier it asserts lives only in the deleted file |
+
+Evidence the cut was clean: `zig build` green, and `zig test` on `tests.zig`
+went **1165 → 1152**, exactly the 13 tests those files declared. A grep for each
+deleted basename across `*.zig`, `*.duo` and `*.json` returns nothing.
+
+### Ported — 3 files, replaced by two Duo gates wired into `agent-smoke`
+
+| Zig file | lines | Duo replacement |
+|---|---|---|
+| `lua_superset_corpus.zig` | 131 | `scripts/luahost.duo` + `examples/luahost/*.duo` (12 fixtures) |
+| `pass7_contract_tests.zig` | 94 | `scripts/explain.duo` |
+| `pass7_explain_tests.zig` | 107 | `scripts/explain.duo` |
+
+Both ports assert through the **shipping CLI** rather than through internals,
+which is wider coverage than the originals: the Lua corpus went from
+`Lexer` + `Parser` in memory to `duo check` on real files (parse *and* sema),
+and the Pass 7 tests went from in-process structs to the JSON `duo explain`
+actually prints. Both gates carry **four controls each** — the originals carried
+none — and both were positive-controlled by deliberately breaking a fixture and
+confirming the gate goes red, then restoring it.
+
+Two findings fell out of the porting, and neither is a porting loss:
+
+- **`examples/pass7/explain_smoke.duo` was broken and tracked.** It opened with
+  a C-style `//` comment, which the duon lexer refuses. Nothing noticed because
+  the Zig test that owned its content carried a byte-identical copy as a string
+  literal and never opened the file. The marker is repaired in this commit.
+- **`duo explain` does not diagnose that failure — it prints a raw Zig stack
+  trace and exits 1.** That is an H-8 output-totality finding.
+- **`@noalloc` is not enforced where a user stands.** `duo check`, `duo compile`
+  and `duo explain` all exit **0** on a module that allocates inside a
+  `@noalloc` function; the rejection is visible only as a line of JSON
+  (`"transformation":"contract.noalloc","status":"rejected"`). The Zig test
+  asserted `error.NoAllocViolation` from a pipeline no CLI verb reaches.
+
+### Kept — 15 files, with the blocker named
+
+Deletion is now exhausted. What remains outside the production closure is real
+coverage, and each row says what stops the port.
+
+| file | lines | blocker |
+|---|---|---|
+| `property_tests.zig` | 1495 | protected; property/fuzz harness with no Duo equivalent |
+| `lexer_differential.zig` | 225 | protected; field-for-field host-vs-Duo lexer differential |
+| `wasm_decode_differential.zig` | 82 | protected; 256-opcode decode/validator agreement |
+| `selfhost_verify.zig` | 174 | drives the three differentials above; a port ports them |
+| `meta_transform_tests.zig` | 444 | asserts `transform_engine` **provenance** — an in-process registry with no CLI projection |
+| `call_transform_tests.zig` | 102 | same: transform registration and dispatch provenance |
+| `pass6_dispatch_tests.zig` | 45 | same: the tier-1 registry gate is only reachable in process |
+| `pass4_native_tests.zig` | 195 | asserts emitted C **and** ARM64 asm text; portable in principle via `--backend=c` / `--backend=direct` plus artifact greps, but needs a stable addressable artifact path |
+| `codegen_pass3_tests.zig` | 71 | same shape, `|>` field-access fusion in emitted C |
+| `pass5_foreign_tests.zig` | 225 | links and **runs** foreign C, asserting returned values (25, 10); needs a Duo gate that compiles, links and executes |
+| `pass5_golden_tests.zig` | 73 | SIM snapshot JSON golden + a formatting-invariance assertion; `duo` has no verb that prints a SIM snapshot |
+| `pass8_realization_tests.zig` | 158 | fingerprint drift and persistent-cache invalidation across compiles; needs cache state observable from the CLI |
+| `pass8_codegen_realization_tests.zig` | 55 | realization logging, same blocker |
+| `pass11_ward_barrier_tests.zig` | 37 | a 6-line driver over `native_barrier_checks.zig` (534 lines of symbol analysis). Porting means porting that; and `build.zig` owns its test root, which this wave did not touch |
+| `tests.zig` | 100 | the aggregator; it dies last |
+
+### The next honest wave
+
+The three CLI-observability blockers above are one blocker wearing three hats:
+**`duo explain` already proves the pattern.** A verb that prints the transform
+provenance registry, the SIM snapshot, and the realization/cache state as JSON
+would unblock `meta_transform_tests`, `call_transform_tests`,
+`pass6_dispatch_tests`, `pass5_golden_tests` and both `pass8_*` files at once —
+about 1,000 lines — with no compiler semantics changed. That is the highest-
+leverage next move and it is `main.zig` work, not test work.
+
+### Gate results for this wave
+
+| gate | before | after |
+|---|---|---|
+| `zig build` | 0 | 0 |
+| `zig build unit-test` | 0 (1165 tests) | 0 (1147 tests) |
+| `zig build agent-smoke` | 0 | 0 |
+| `zig build language-census` | 0 (zig 135 ≤ 135) | 0 (zig 121 ≤ 121) |
+| `zig build audit100` | **1** — 4 rows red | **1** — the same 4 rows, same counts, `no row moved` |
+
+The audit100 red is not this wave's: `accessor` +2, `arrow` +12, `trailret` +23
+and `convert` +2 were red at baseline and are unchanged. The `nonduo` row FELL
+434 → 420. Both new scripts cost **zero** deny points, which is what
+`no row moved` in the per-diff delta reports.
+
+### One defect found in `build.zig`, not repaired here
+
+`build.zig` still names two roots that no longer exist —
+`b.path("src/pass11_catalog.zig")` and `b.path("src/selfhost_target_matrix.zig")`
+— left behind by an earlier deletion wave. `b.path` is lazy, so `zig build`
+stays green and only the steps that depend on those roots break. `build.zig` was
+out of scope for this wave; the repair is to drop the two `addTest` roots and
+whatever steps depend on them.

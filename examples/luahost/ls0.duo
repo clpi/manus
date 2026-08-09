@@ -1,0 +1,3 @@
+-- LS-0 — a bare long string spanning a newline.
+x = [[alpha
+beta]]

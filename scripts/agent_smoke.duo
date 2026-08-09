@@ -20,6 +20,24 @@ if not script.ok("./zig-out/bin/duo run scripts/module_surface_gate.duo")
     os.exit(1)
 end
 
+-- The hosted-language corpus, ported out of src/lua_superset_corpus.zig when
+-- that file was deleted. It runs HERE rather than as its own build.zig step
+-- because tier-0 is where a front-end regression should be caught, and because
+-- the corpus is twelve `duo check` invocations, not a suite.
+if not script.ok("./zig-out/bin/duo run scripts/luahost.duo")
+    print("agent-smoke: luahost FAIL")
+    os.exit(1)
+end
+
+-- The `duo explain` contract + enrichment assertions, ported out of
+-- src/pass7_contract_tests.zig and src/pass7_explain_tests.zig when those
+-- were deleted. They read the shipping JSON, so they
+-- also convict a `duo explain` that has stopped printing a section.
+if not script.ok("./zig-out/bin/duo run scripts/explain.duo")
+    print("agent-smoke: explain FAIL")
+    os.exit(1)
+end
+
 bin = script.duo_bin()
 script.duo_run_all(agent.smoke_targets(), bin)
 print("agent-smoke: PASS")

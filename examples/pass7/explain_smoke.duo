@@ -1,4 +1,4 @@
-// Pass 7 Milestone 1 smoke — `duo explain explain_smoke.duo`
+-- Pass 7 Milestone 1 smoke — `duo explain explain_smoke.duo`
 Point: @{ x: f64, y: f64 }
 
 distance2(p: Point): f64

@@ -1,0 +1,3 @@
+-- LC-1 — a levelled long comment holding a ]] that must not close it.
+--[=[ has ]] inside ]=]
+y = 2
