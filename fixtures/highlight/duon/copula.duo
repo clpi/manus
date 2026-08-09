@@ -1,0 +1,9 @@
+-- surface: duon
+-- H-1, THE FIRST PROOF. `:` is two roles and canonical layout decides which:
+-- the copula is SPACED, the invoke is TIGHT (§0d). Every `:` below is one or
+-- the other, and a front-end that gives them one colour is convicted here.
+x: f64 = 1.5
+lx: lexer = lexer{ src }
+b = lx:read(number)(x)
+n: i64 = b:len()
+tok = lx:peek():kind()

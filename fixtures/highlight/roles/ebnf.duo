@@ -1,0 +1,22 @@
+-- golden roles for fixtures/highlight/surface/ebnf.duo
+--
+-- ONE ROLE CODE PER SOURCE BYTE, one line per source line. H-6 totality is
+-- checked BY LENGTH: a golden line shorter than its source line means a byte
+-- with no role, and `zig build highlight-corpus` fails on the difference. That
+-- is the whole reason the golden is per-byte rather than per-token — a token
+-- corpus cannot express "every character has a role".
+--
+-- `!` is NOT a role. It is the mixed-space diagnostic G-TOTAL (§0g) requires
+-- where two candidates exist and no surface fact separates them. It is legal
+-- only in fixtures/highlight/mixed/.
+--
+-- Codes are the second column of the taxonomy in tools/lsp/src/highlight.duo.
+roles = {
+    "mmmmmmmmmmmmmmmm",
+    "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+    "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+    "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+    "ddddlcccldddd",
+    "ddddlccclddddddlulddddd",
+    "dddddlccclltllddddlltl",
+}

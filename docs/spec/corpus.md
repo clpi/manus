@@ -66,6 +66,18 @@ To promote a file, add a one-line rule above the rule that currently catches it.
   re-adjudicated to `canonical` one at a time as they are revived.
 - `scripts/` is `canonical` even though every gate in it shells out. Shelling
   out is a library call, not a foreign file.
+- `fixtures/highlight/` is the golden role corpus, and it splits three ways for
+  the same reason this file exists at all. The duon fixtures and the golden role
+  tables are `canonical` and must read as exemplary Pass-100 source, because a
+  highlighting corpus written in retired spellings proves only that the
+  highlighter handles retired spellings. `fixtures/highlight/surface/` is
+  `foreign`: those files carry dnir, arm64 assembly, ebnf and C, which is the
+  same act `examples/c_emit` is classified `foreign` for.
+  `fixtures/highlight/mixed/` is `negative` — every span in it is DELIBERATELY
+  undecidable, and the denied text (a leading dot at a clause head, and a
+  semicolon Pass 119 abolished) IS the assertion: the projector must diagnose
+  there rather than default, and a gate reporting zero unresolved spans without
+  this file is reporting the broken kind of zero.
 - `examples/spec100/` is `canonical` and is the one place in `examples/` that
   is promoted by construction rather than case by case: each file is the
   fixture for one Pass 100 §20 construct, checked by `zig build spec-corpus`.
@@ -92,6 +104,8 @@ negative       examples/compile_fail/
 negative       examples/native_differential/unsupported/
 negative       error_test.duo
 canonical      examples/native_differential/
+negative       fixtures/highlight/mixed/
+foreign        fixtures/highlight/surface/
 canonical      fixtures/highlight/
 generated      examples/pass12_m1_diff.duo
 generated      lib/std/token/classify.duo

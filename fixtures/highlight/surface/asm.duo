@@ -1,0 +1,7 @@
+-- surface: asm
+-- ONE COLOUR LANGUAGE, third surface. A mnemonic is a callable, a register is a
+-- place, an immediate is a number. No new hue is introduced for machine code.
+    add x0, x1, x2
+    mov x3, #16
+    ldr x4, sp
+    ret lr

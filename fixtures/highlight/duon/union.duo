@@ -1,0 +1,9 @@
+-- surface: duon
+-- H-1, THE SECOND PROOF, and it reads the bit the first one set. `|` after a
+-- copula is a UNION edge between descriptors; `|` with no descriptor edge open
+-- is a PIPE carrying data. The scan needs one bit of edge state, which no
+-- glyph window of any width can supply.
+open(path) = (p): file | error
+method: "get" | "post"
+sh "ls" | grep("duo")
+sh "cat log" | count()

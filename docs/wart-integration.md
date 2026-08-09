@@ -22,7 +22,7 @@ ARM64 macOS, and that no local wart baseline exists. **All three are false as of
 the repo:
 
 ```
-$ cd /Users/clp/x/wart
+$ cd ~/x/wart
 $ zig build -Drelease=true --cache-dir <scratch>/wartcache -p <scratch>/wartout
 BUILD_EXIT=0     # zero lines of output
 $ <scratch>/wartout/bin/wart version

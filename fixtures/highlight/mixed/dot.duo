@@ -1,0 +1,13 @@
+-- surface: duon
+-- NEGATIVE CONTROL for G-TOTAL, and the positive control for the diagnostic
+-- path. Every marked span below has TWO candidates and no surface fact that
+-- separates them, so the projector must DIAGNOSE rather than default. A gate
+-- reporting "0 unresolved spans" over a corpus that cannot produce one is the
+-- kind of zero §3 says is usually a broken gate; this file is what stops that.
+--
+-- A leading `.` at the head of a clause: §0.3 reads it as an inferred case,
+-- §0a reads it as a field of the subject. Both are law. Nothing on the line
+-- decides, so nothing may be coloured.
+.eof
+-- Pass 119: THE SEMICOLON DOES NOT EXIST. A byte spelling one names no edge.
+n = 1;

@@ -1,0 +1,1148 @@
+-- runtime_bench — ward against wart, wasmtime and wasmer, on one corpus.
+--
+-- WHAT THIS ANSWERS. The claim under test is that ward is more performant than
+-- the other WebAssembly runtimes on this machine, end to end. That claim had no
+-- instrument in this repository before this file: nothing in `scripts/` or
+-- `build.zig` measured ward against anything but ward. A claim with no
+-- instrument is not a weak claim, it is an unmade one.
+--
+-- FIVE AXES, all reported per runtime:
+--
+--     loc       source lines of the runtime itself
+--     bytes     size of the built binary
+--     startup   process start to first answer on a trivial module
+--     rss       peak resident set size on that same trivial module
+--     exec      wall time per workload
+--
+-- WHY THIS FILE IS SO DEFENSIVE. CLAUDE.md §3 is the reason and it should be
+-- read before this file is trusted. The benchmark suite in this repository
+-- reported "Duo beats C" for months on fabrication: three kernels returned
+-- frozen literal answers when the argument matched the benchmark, seven
+-- computed the benchmark's own constants, and THREE SEPARATE HARNESS DEFECTS
+-- hid all of it — a float comparator that compared MAGNITUDES so a sign flip
+-- differed by zero, a fail flag that could not hold a value, and a timing
+-- collector that never seeded its minimum. Every control below exists because
+-- one of those three actually happened here.
+--
+-- So the order of operations is fixed, and it is not an optimization target:
+--
+--   1. Prove the timer has UNITS. Not "non-zero" — units. A sleep of a known
+--      length must measure to that length. A monotonically increasing garbage
+--      counter passes a non-zero check and fails this one.
+--   2. Prove the comparator discriminates. Two different answers must compare
+--      unequal, and the single normalization this harness performs (32-bit
+--      sign) must fire on the pair it was written for and NOT on a near miss.
+--   3. Get every runtime's ANSWER and compare answers.
+--   4. Only then time anything. A runtime that is fast and wrong is not fast,
+--      and its time is never printed as though it were a result.
+--
+-- REPORTING LOSSES IS THE POINT. ward loses rows in this table and the table
+-- says so, with a ranked worklist at the bottom. A gate that can only come out
+-- green is decoration. What FAILS this gate is a regression against ward's own
+-- recorded baseline, not an absolute loss — a gate that went red on day one for
+-- reasons nobody can act on in one sitting would be switched off within a week.
+--
+-- THE BIGGEST CAVEAT IN THE FILE. The `loc` and `bytes` axes are NOT
+-- like-for-like. wart's tracked Zig carries a CLI, a package manager, WIT
+-- tooling, OCI container packaging, an interactive shell and an AOT pipeline;
+-- ward's Duo carries a runtime and a JIT. wasmtime and wasmer ship one binary
+-- holding an optimizing compiler and a package client. Comparing whole trees
+-- flatters ward by a factor nobody has measured, so a WHOLE row and a RUNTIME
+-- CORE row are both printed, core being the module subtree that actually
+-- executes WebAssembly on each side. Quote the core row. It is still not a
+-- perfect match; it is honest about not being one.
+--
+-- ENTRY CONVENTIONS. Two families, because the corpus holds two and collapsing
+-- them would silently drop one:
+--
+--   start   a WASI command module. Every runtime runs it the same way and the
+--           ANSWER is its stdout. All four runtimes qualify.
+--   invoke  a module exporting `run` with no `_start`. wasmtime reaches it with
+--           `--invoke run`. wart's CLI has no invoke flag at all — `wart run
+--           --invoke run f.wasm` reads `--invoke` as the FILENAME and exits 1 —
+--           and wasmer's `--invoke` exits 118 on these modules. Those two cells
+--           are `n/a` with that reason printed, never a silent skip, and `n/a`
+--           never counts as agreement.
+--
+-- THE ONE NORMALIZATION, stated plainly, because a normalization is exactly how
+-- a harness stops measuring. ward prints an i32 result UNSIGNED and wasmtime
+-- prints it SIGNED: on `hash2b` ward says 3285959272 where wasmtime says
+-- -1009008024, which are the same 32 bits. `same()` accepts two integers that
+-- differ by exactly 2^32, marks the cell `wrap` rather than `ok`, and rejects
+-- everything else. The control below proves the rule fires on that pair and
+-- does NOT fire on 1 versus 4294967295.
+--
+-- WARD IS INVOKED THROUGH THE ENVIRONMENT, not argv. `ext/ward/src/ward.duo`
+-- reads WARD_WASM and WARD_INVOKE; passing a module as an argument measures a
+-- different module or nothing at all, which is how two earlier ward baselines
+-- came out wrong. ward also appends a three-line trailer to stdout, stripped
+-- before comparison, and the stripping is itself controlled below.
+--
+-- ON THE TEMPORARIES. Nearly every print builds its line from single-use
+-- locals. That is TMP-1 shaped and it is not a style choice: string
+-- interpolation in this compiler substitutes BARE IDENTIFIERS only, so
+-- `"{pad(name, 11)}"` emits the literal text `{pad(name, 11)}`. Measured, not
+-- assumed. Joining identifiers with `..` is the alternative and is used for
+-- every table row.
+
+here = "scripts/runtime_bench.duo"
+ind = "  "
+ind4 = "    "
+ind6 = "      "
+
+shell(cmd: str): str
+    std.script.capture(cmd)
+end
+
+cut(s: str): any
+    out = {}
+    n: i64 = #s
+    start: i64 = 1
+    i: i64 = 1
+    while i <= n
+        if s:byte(i) == 10
+            if i > start
+                out[#out + 1] = s:sub(start, i - 1)
+            end
+            start = i + 1
+        end
+        i += 1
+    end
+    if start <= n
+        out[#out + 1] = s:sub(start, n)
+    end
+    out
+end
+
+pad(s: str, width: i64): str
+    out: str = s
+    while #out < width
+        out = "{out} "
+    end
+    out
+end
+
+lpad(s: str, width: i64): str
+    out: str = s
+    while #out < width
+        out = " {out}"
+    end
+    out
+end
+
+starts(s: str, prefix: str): bool
+    #s >= #prefix and s:sub(1, #prefix) == prefix
+end
+
+-- Seconds to four decimals from integer nanoseconds. `to(str)` on an f64 does
+-- not compile in this tree (it lowers to an undeclared `tostring`), so the
+-- fraction is assembled from integers — the same reason every other benchmark
+-- driver here does it this way.
+secs(ns: i64): str
+    tenk: i64 = to(i64)((ns + 50000) / 100000)
+    whole: i64 = to(i64)(tenk / 10000)
+    frac: i64 = tenk % 10000
+    fs: str = to(str)(frac)
+    while #fs < 4
+        fs = "0{fs}"
+    end
+    ws: str = to(str)(whole)
+    "{ws}.{fs}"
+end
+
+kib(n: i64): str
+    tenths: i64 = to(i64)((n * 10 + 512) / 1024)
+    whole: i64 = to(i64)(tenths / 10)
+    frac: i64 = tenths % 10
+    ws: str = to(str)(whole)
+    fs: str = to(str)(frac)
+    "{ws}.{fs}K"
+end
+
+-- `to(i64)` answers 0 for text that is not a number, so every numeric parse in
+-- this file is guarded by this rather than by a nil check that never fires.
+digits(s: str): bool
+    out: bool = #s > 0
+    i: i64 = 1
+    if out and s:byte(1) == 45
+        i = 2
+        out = #s > 1
+    end
+    while out and i <= #s
+        b: i64 = s:byte(i)
+        if b < 48 or b > 57
+            out = false
+        end
+        i += 1
+    end
+    out
+end
+
+-- The one tolerated difference: a 32-bit integer printed signed by one runtime
+-- and unsigned by another. See the header.
+wrapped(a: str, b: str): bool
+    out: bool = false
+    if digits(a) and digits(b)
+        x: i64 = to(i64)(a)
+        y: i64 = to(i64)(b)
+        width: i64 = 4294967296
+        out = x - y == width or y - x == width
+    end
+    out
+end
+
+same(a: str, b: str): bool
+    a == b or wrapped(a, b)
+end
+
+-- ward appends `engine=`, `result=` and `seconds=` lines to stdout. The
+-- module's own output is everything else. Newlines become spaces so a
+-- multi-line answer is still one comparable token.
+answer(raw: str): str
+    out: str = ""
+    for i, line in cut(raw)
+        keep: bool = not starts(line, "engine=") and not starts(line, "result=")
+            and not starts(line, "seconds=")
+        piece: str = std.script.chomp(line)
+        if keep and piece != ""
+            if out == ""
+                out = piece
+            else
+                out = "{out} {piece}"
+            end
+        end
+    end
+    out
+end
+
+-- ward's `result=` field, which is the answer for the invoke family: those
+-- modules return a value rather than printing one.
+field(raw: str, key: str): str
+    out: str = ""
+    n: i64 = #key
+    for i, line in cut(raw)
+        if starts(line, key)
+            out = std.script.chomp(line:sub(n + 1, #line))
+        end
+    end
+    out
+end
+
+-- One timed run. stdout and stderr go to /dev/null so no pipe sits inside the
+-- timing window. The exit status is deliberately not read here: correctness was
+-- settled before anything was timed.
+span(cmd: str): i64
+    t0: i64 = std.time.monotonic()
+    std.script.run("{cmd} >/dev/null 2>&1")
+    std.time.monotonic() - t0
+end
+
+-- N samples, answering the pair {fastest, slowest}.
+--
+-- The fastest is the headline: a benchmark's slow samples are the machine, not
+-- the runtime. The SLOWEST is kept because it is the only honest way this
+-- harness can say how much of a gap is real. The difference between the two is
+-- this cell's SPREAD, and a gap between two runtimes that is smaller than one
+-- runtime's own spread is not a result — it is the machine. Rows like that are
+-- called `tie` below rather than being awarded to whoever happened to come out
+-- ahead. Without this, `min.wasm` reported ward losing at 103 percent on a
+-- 0.4ms difference sitting on an 8ms shell-fork floor.
+--
+-- Both slots are seeded to -1 and the seed is checked by the caller: a
+-- collector that never seeded its minimum is one of the three defects
+-- CLAUDE.md §3 records, and it reported zero for everything.
+samples(cmd: str, runs: i64): any
+    lo: i64 = -1
+    hi: i64 = -1
+    i: i64 = 0
+    while i < runs
+        ns: i64 = span(cmd)
+        if lo < 0 or ns < lo
+            lo = ns
+        end
+        if hi < 0 or ns > hi
+            hi = ns
+        end
+        i += 1
+    end
+    { lo, hi }
+end
+
+fastest(cmd: str, runs: i64): i64
+    samples(cmd, runs)[1]
+end
+
+-- First run of digits in a string, or -1. Used for both `wc` and `time -l`
+-- output, neither of which has a stable column position worth trusting.
+number(s: str): i64
+    out: i64 = -1
+    start: i64 = 0
+    i: i64 = 1
+    while i <= #s and out < 0
+        b: i64 = s:byte(i)
+        if b >= 48 and b <= 57
+            if start == 0
+                start = i
+            end
+        elseif start > 0
+            out = to(i64)(s:sub(start, i - 1))
+        end
+        i += 1
+    end
+    if start > 0 and out < 0
+        out = to(i64)(s:sub(start, #s))
+    end
+    out
+end
+
+-- Peak resident set size in bytes. macOS `/usr/bin/time -l` reports bytes; GNU
+-- `-v` reports kilobytes and is not what this parses, so a host without the
+-- macOS spelling gets -1 and an `n/a` cell rather than a number off by 1024.
+peak(cmd: str): i64
+    probe: str = "/usr/bin/time -l {cmd} 2>&1 >/dev/null | grep maximum"
+    number(std.script.chomp(shell(probe)))
+end
+
+filesize(path: str): i64
+    probe: str = "wc -c < '{path}' 2>/dev/null"
+    number(std.script.chomp(shell(probe)))
+end
+
+-- Tracked source lines under a pathspec, counted through git so untracked
+-- scratch and build output cannot inflate a runtime's size.
+loc(root: str, spec: str): i64
+    probe: str = "cd '{root}' && git ls-files {spec} | tr '\\n' '\\0' | xargs -0 wc -l 2>/dev/null | tail -1"
+    number(std.script.chomp(shell(probe)))
+end
+
+filecount(root: str, spec: str): i64
+    probe: str = "cd '{root}' && git ls-files {spec} | wc -l"
+    number(std.script.chomp(shell(probe)))
+end
+
+globcount(pattern: str): i64
+    probe: str = "ls {pattern} 2>/dev/null | wc -l"
+    out: i64 = number(std.script.chomp(shell(probe)))
+    if out < 0
+        out = 0
+    end
+    out
+end
+
+-- The command that runs `path` under runtime `rt`. Two entry conventions; see
+-- the header. An unsupported pair answers "" and the caller prints `n/a` with
+-- the reason rather than skipping the cell.
+invocation(rt: str, bin: str, path: str, entry: str): str
+    out: str = ""
+    if rt == "ward"
+        if entry == "start"
+            out = "WARD_WASM='{path}' WARD_INVOKE=_start '{bin}'"
+        else
+            out = "WARD_WASM='{path}' WARD_INVOKE=run '{bin}'"
+        end
+    elseif rt == "wart"
+        if entry == "start"
+            out = "'{bin}' run '{path}'"
+        end
+    elseif rt == "wasmtime"
+        if entry == "start"
+            out = "'{bin}' '{path}'"
+        else
+            out = "'{bin}' --invoke run '{path}'"
+        end
+    elseif rt == "wasmer"
+        if entry == "start"
+            out = "'{bin}' run '{path}'"
+        end
+    end
+    out
+end
+
+-- What a runtime answers. ward's invoke answer is its `result=` field; every
+-- other cell is stdout with ward's trailer removed.
+observe(rt: str, cmd: str, entry: str): str
+    probe: str = "{cmd} 2>/dev/null"
+    raw: str = shell(probe)
+    out: str = answer(raw)
+    if rt == "ward" and entry == "invoke"
+        out = field(raw, "result=")
+    end
+    out
+end
+
+-- LAW-ONE one-word wrappers over the snake-cased corners of std.script.
+-- `fs_exists`, `fs_read` and `getenv_or` are seven §1 `snake` points this file
+-- would otherwise carry into a ratchet with zero slack, and the underscore is
+-- in the STDLIB's spelling, not in anything this file chose. Wrapping is the
+-- repair available from here; renaming lib/std is somebody else's diff.
+exists(path: str): bool
+    probe: str = "test -e '{path}'"
+    std.script.ok(probe)
+end
+
+slurp(path: str): str
+    probe: str = "cat '{path}' 2>/dev/null"
+    shell(probe)
+end
+
+which(tool: str): str
+    probe: str = "command -v {tool} 2>/dev/null"
+    std.script.chomp(shell(probe))
+end
+
+main(): i64
+    root: str = std.script.chomp(shell("git rev-parse --show-toplevel 2>/dev/null"))
+    code: i64 = 0
+    if root == ""
+        print("runtime bench: FAIL — not inside a git work tree")
+        code = 3
+    end
+
+    runs: i64 = 5
+    slack: i64 = 40
+    wardbin: str = ""
+    wartbin: str = ""
+    warttree: str = ""
+    timebin: str = ""
+    merbin: str = ""
+    floor: str = ""
+    overhead: i64 = 0
+
+    if code == 0
+        rawruns: str = std.script.getenv("BENCH_RUNS", "5")
+        if digits(rawruns) and to(i64)(rawruns) > 0
+            runs = to(i64)(rawruns)
+        end
+        rawslack: str = std.script.getenv("BENCH_SLACK", "40")
+        if digits(rawslack) and to(i64)(rawslack) >= 0
+            slack = to(i64)(rawslack)
+        end
+
+        wardbin = std.script.getenv("WARD_BIN", "{root}/zig-out/bin/ward")
+        warttree = std.script.getenv("WART_ROOT", "{root}/../wart")
+        wartbin = std.script.getenv("WART_BIN", "{warttree}/zig-out/bin/wart")
+        timebin = which("wasmtime")
+        merbin = which("wasmer")
+        floor = "{root}/benchmarks/wasm_rt/min.wasm"
+
+        rs: str = to(str)(runs)
+        ss: str = to(str)(slack)
+        print("runtime bench — ward vs wart vs wasmtime vs wasmer, five axes")
+        print("  root      {root}")
+        print("  runs      {rs} per cell, best of (minimum)")
+        print("  slack     {ss} percent over baseline before a regression fails the gate")
+        -- The binary's timestamp, because several sessions edit ward's source
+        -- in this tree and a benchmark of a stale binary is a benchmark of
+        -- whatever was true this morning. This gate deliberately does not
+        -- rebuild; it reports what it measured instead.
+        wardstamp: str = std.script.chomp(shell("date -r '{wardbin}' 2>/dev/null"))
+        wardsrc: str = std.script.chomp(shell("cd '{root}' && git status --porcelain ext/ward/src | wc -l"))
+        print("  ward      {wardbin}")
+        print("            built {wardstamp}")
+        -- The wart REVISION, not just the path. wart lives outside this repo in
+        -- a tree its owner edits, and `ext/ward/bench/run.duo` resolves it
+        -- through $WART or $HOME with no revision recorded at all — so no
+        -- number ever published from that harness can say which wart it beat.
+        -- A comparison whose opponent cannot be identified is not reproducible.
+        wartsha: str = std.script.chomp(shell("git -C '{warttree}' rev-parse --short HEAD 2>/dev/null"))
+        wartdirty: str = std.script.chomp(shell("git -C '{warttree}' status --porcelain 2>/dev/null | wc -l"))
+        wardsha: str = std.script.chomp(shell("cd '{root}' && git rev-parse --short HEAD 2>/dev/null"))
+        if wartsha == ""
+            wartsha = "UNKNOWN"
+        end
+        print("  wart      {wartbin}")
+        print("            rev {wartsha}, {wartdirty} file(s) dirty")
+        print("  wasmtime  {timebin}")
+        print("  wasmer    {merbin}")
+        print("  duo repo  {wardsha}")
+        if wartsha == "UNKNOWN"
+            print("")
+            print("  NOTE: wart's revision could not be read. Every wart cell below is")
+            print("  then unattributable — record the revision or do not quote the row.")
+        end
+        if wartdirty != "0"
+            print("")
+            print("  NOTE: wart's tree has {wartdirty} dirty file(s), so rev {wartsha} does")
+            print("  NOT fully describe the binary measured here.")
+        end
+        if wardsrc != "0"
+            print("")
+            print("  NOTE: {wardsrc} file(s) under ext/ward/src are modified in the working")
+            print("  tree. The binary above may predate them. Nothing here rebuilds ward,")
+            print("  so this table describes the BINARY, not the source next to it.")
+        end
+        print("")
+
+        if not exists(wardbin)
+            print("runtime bench: FAIL — no ward binary at {wardbin}")
+            print("  Build it first, or set WARD_BIN. This gate does not build ward:")
+            print("  a benchmark that builds its own subject reports the build, not the")
+            print("  subject, and several sessions share this tree.")
+            code = 3
+        end
+        if code == 0 and not exists(wartbin)
+            print("runtime bench: FAIL — no wart binary at {wartbin}")
+            print("  wart is the reference implementation ward is measured against.")
+            print("  Set WART_BIN or WART_ROOT.")
+            code = 3
+        end
+        if code == 0 and timebin == ""
+            print("runtime bench: FAIL — wasmtime is not on PATH")
+            print("  wasmtime is the ORACLE for every answer in this table, not merely")
+            print("  another column. Without it nothing here can be verified, so nothing")
+            print("  is printed.")
+            code = 3
+        end
+        if code == 0 and not exists(floor)
+            print("runtime bench: FAIL — missing the floor module {floor}")
+            code = 3
+        end
+    end
+
+    -- === CONTROLS ===
+    --
+    -- Nothing below runs if a control does not fire. That is the difference
+    -- between a harness and a decoration: the failure mode of a benchmark is a
+    -- confident number, so the instrument is measured before the subject.
+
+    if code == 0
+        print("CONTROLS")
+
+        unit: i64 = span("sleep 0.25")
+        us: str = secs(unit)
+        if unit < 200000000 or unit > 600000000
+            print("  timer unit          {us}s for a 0.25s sleep — FAIL")
+            print("  runtime bench: the clock does not measure wall time. Every number")
+            print("    below would be unearned, so none is printed.")
+            code = 3
+        else
+            print("  timer unit          0.25s sleep measured {us}s   OK")
+        end
+    end
+
+    if code == 0
+        -- Every timed cell forks a shell, so this is the constant inside every
+        -- measurement. It is REPORTED and never subtracted: subtracting a noisy
+        -- constant from a noisy measurement is how a benchmark starts printing
+        -- negative times.
+        overhead = fastest("true", runs)
+        os: str = secs(overhead)
+        if overhead <= 0
+            print("  harness floor       {os}s — FAIL, the collector never seeded")
+            code = 3
+        else
+            print("  harness floor       {os}s per spawn, INCLUDED in every cell below")
+        end
+    end
+
+    if code == 0
+        -- The comparator discriminates, and the normalization fires exactly
+        -- where it was written to fire. A comparator that compared MAGNITUDES
+        -- is one of the three defects CLAUDE.md §3 records: a sign flip
+        -- differed by zero and every mismatch read as agreement.
+        good: bool = same("hi", "hi")
+        bad: bool = same("1", "3")
+        wrap: bool = same("-1009008024", "3285959272")
+        near: bool = same("1", "4294967295")
+        if good and not bad and wrap and not near
+            print("  comparator          equal yes · differing no · wrap yes · near-wrap no   OK")
+        else
+            print("  comparator          FAIL — the answer comparator does not discriminate")
+            code = 3
+        end
+    end
+
+    if code == 0
+        -- ward's trailer strip is real. Were it a no-op, every ward answer
+        -- would carry `engine=` and read as WRONG, which is self-detecting; but
+        -- a strip that removed EVERYTHING would read as agreement between two
+        -- empty strings, which is not.
+        wcmd: str = invocation("ward", wardbin, floor, "start")
+        probe: str = "{wcmd} 2>/dev/null"
+        wraw: str = shell(probe)
+        wans: str = answer(wraw)
+        shorter: bool = #wraw > #wans
+        if wans != "" and shorter
+            print("  ward trailer strip  raw carries the trailer, answer is `{wans}`   OK")
+        else
+            print("  ward trailer strip  FAIL — the strip is a no-op or removed the answer")
+            code = 3
+        end
+        print("")
+    end
+
+    -- === INVENTORY ===
+    --
+    -- Counted, not invented. Both benchmark trees are enumerated in full and
+    -- every module is either measured or accounted for with a reason. The
+    -- measured list is CURATED and the curation is three columns of plain text
+    -- anyone can check.
+
+    if code == 0
+        nscaled: i64 = globcount("'{root}/benchmarks/wasm_rt/scaled/'*.wasm")
+        nflat: i64 = globcount("'{root}/benchmarks/wasm_rt/'*.wasm")
+        nconform: i64 = globcount("'{root}/benchmarks/wasm_rt/conform/'*")
+        nward: i64 = globcount("'{root}/ext/ward/bench/'*.wasm")
+        a: str = lpad(to(str)(nscaled), 4)
+        b: str = lpad(to(str)(nflat), 4)
+        c: str = lpad(to(str)(nconform), 4)
+        d: str = lpad(to(str)(nward), 4)
+        print("INVENTORY — every .wasm in both benchmark trees, measured or accounted for")
+        print("  benchmarks/wasm_rt/scaled  {a}   all 6 measured, the scaled workload set")
+        print("  benchmarks/wasm_rt         {b}   4 measured; the rest are WASI-shape")
+        print("                                  probes (a b c d1 f1-f5 g jitable) or")
+        print("                                  unscaled duplicates of the scaled six")
+        print("  benchmarks/wasm_rt/conform {c}   0 measured — spec conformance fixtures,")
+        print("                                  a correctness corpus, not workloads")
+        print("  ext/ward/bench             {d}   3 measured; the rest are byte-scale JIT")
+        print("                                  and opcode fixtures, 57-354 bytes each")
+        print("")
+    end
+
+    -- === AXIS loc ===
+
+    if code == 0
+        print("AXIS loc — tracked source lines. WHOLE tree and RUNTIME CORE, because")
+        print("  the whole-tree row is not like-for-like: wart's tree carries a CLI, a")
+        print("  package manager, WIT tooling, OCI packaging, a shell and an AOT")
+        print("  pipeline ward has no counterpart for. Quote the core row.")
+        print("")
+        wardwhole: i64 = loc(root, "'ext/ward/src/*.duo'")
+        wardcore: i64 = loc(root, "'ext/ward/src/ward.duo' 'ext/ward/src/wasm/*.duo'")
+        wardfiles: i64 = filecount(root, "'ext/ward/src/*.duo'")
+        wartwhole: i64 = loc(warttree, "'src/*.zig'")
+        wartcore: i64 = loc(warttree, "'src/wasm/*.zig'")
+        wartfiles: i64 = filecount(warttree, "'src/*.zig'")
+
+        h1: str = pad("runtime", 11)
+        h2: str = lpad("whole", 10)
+        h3: str = lpad("core", 10)
+        h4: str = lpad("files", 8)
+        print(ind .. h1 .. h2 .. h3 .. h4 .. "   language")
+        n1: str = pad("ward", 11)
+        n2: str = lpad(to(str)(wardwhole), 10)
+        n3: str = lpad(to(str)(wardcore), 10)
+        n4: str = lpad(to(str)(wardfiles), 8)
+        print(ind .. n1 .. n2 .. n3 .. n4 .. "   duo")
+        m1: str = pad("wart", 11)
+        m2: str = lpad(to(str)(wartwhole), 10)
+        m3: str = lpad(to(str)(wartcore), 10)
+        m4: str = lpad(to(str)(wartfiles), 8)
+        print(ind .. m1 .. m2 .. m3 .. m4 .. "   zig")
+        na: str = lpad("n/a", 10)
+        nb: str = lpad("n/a", 8)
+        t1: str = pad("wasmtime", 11)
+        print(ind .. t1 .. na .. na .. nb .. "   upstream source is not vendored here")
+        e1: str = pad("wasmer", 11)
+        print(ind .. e1 .. na .. na .. nb .. "   upstream source is not vendored here")
+
+        if wardcore <= 0 or wartcore <= 0
+            print("")
+            print("  runtime bench: FAIL — a loc row read zero. Both trees must be")
+            print("    reachable; a zero here is a broken pathspec, not a small runtime.")
+            code = 3
+        end
+        print("")
+    end
+
+    -- === AXIS bytes ===
+
+    if code == 0
+        print("AXIS bytes — built binary. Also not like-for-like, and worse: wasmtime")
+        print("  and wasmer ship one binary carrying an optimizing compiler, a package")
+        print("  client and a WASI implementation.")
+        print("")
+        bh1: str = pad("runtime", 11)
+        bh2: str = lpad("bytes", 14)
+        bh3: str = lpad("size", 10)
+        print(ind .. bh1 .. bh2 .. bh3)
+        rtname = { "ward", "wart", "wasmtime", "wasmer" }
+        rtbin = { wardbin, wartbin, timebin, merbin }
+        for i, name in rtname
+            bin: str = rtbin[i]
+            c1: str = pad(name, 11)
+            if bin == ""
+                c2: str = lpad("n/a", 14)
+                c3: str = lpad("not on PATH", 12)
+                print(ind .. c1 .. c2 .. c3)
+            else
+                sz: i64 = filesize(bin)
+                c2: str = lpad(to(str)(sz), 14)
+                c3: str = lpad(kib(sz), 10)
+                print(ind .. c1 .. c2 .. c3)
+            end
+        end
+        print("")
+    end
+
+    -- === AXES startup and rss ===
+
+    if code == 0
+        print("AXIS startup and rss — both on benchmarks/wasm_rt/min.wasm, a WASI")
+        print("  module whose whole body prints `hi`. startup INCLUDES the harness")
+        print("  floor above and is not corrected for it; the floor column shows what")
+        print("  is left after it, for reading only. rss is peak resident set from")
+        print("  /usr/bin/time -l, which reports bytes on this host.")
+        print("")
+        sh1: str = pad("runtime", 11)
+        sh2: str = lpad("startup", 12)
+        sh3: str = lpad("over floor", 12)
+        sh4: str = lpad("rss", 12)
+        print(ind .. sh1 .. sh2 .. sh3 .. sh4)
+        rtname = { "ward", "wart", "wasmtime", "wasmer" }
+        rtbin = { wardbin, wartbin, timebin, merbin }
+        for i, name in rtname
+            bin: str = rtbin[i]
+            c1: str = pad(name, 11)
+            if bin == ""
+                c2: str = lpad("n/a", 12)
+                c3: str = lpad("not on PATH", 12)
+                c4: str = lpad("n/a", 12)
+                print(ind .. c1 .. c2 .. c3 .. c4)
+            else
+                cmd: str = invocation(name, bin, floor, "start")
+                ns: i64 = fastest(cmd, runs)
+                rs: i64 = peak(cmd)
+                c2: str = lpad(secs(ns), 12)
+                c3: str = lpad(secs(ns - overhead), 12)
+                rss: str = "n/a"
+                if rs > 0
+                    rss = kib(rs)
+                end
+                c4: str = lpad(rss, 12)
+                print(ind .. c1 .. c2 .. c3 .. c4)
+            end
+        end
+        print("")
+    end
+
+    -- === WORKLOADS ===
+    --
+    -- The curated list. Baselines are nanoseconds, parallel to `wname`, and
+    -- each one is the WORST best-of-5 ward produced across four full runs on
+    -- 2026-08-08, aarch64-macos — not a single reading. A baseline taken from
+    -- one quiet run fires the moment somebody else starts a build, which was
+    -- measured: the harness floor doubled from 4ms to 7ms between two runs
+    -- twenty minutes apart and three rows went red without ward changing. A cell over baseline by
+    -- more than `slack` percent fails the gate; a cell well under baseline is
+    -- reported so the number can be lowered, which is the other half of a
+    -- ratchet and the half usually skipped. Override the whole table with
+    -- BENCH_BASELINE pointing at a file of `name ns` lines, the runs with
+    -- BENCH_RUNS and the tolerance with BENCH_SLACK.
+    --
+    -- WHY THE DEFAULT SLACK IS 40 PERCENT AND NOT THE 25 THIS STARTED WITH.
+    -- Half these rows finish in under ten milliseconds and every cell carries
+    -- an eight-millisecond shell fork, so a 25 percent band on `s-fib` is about
+    -- one and a half milliseconds — well inside what this machine varies by
+    -- between two runs minutes apart. A ratchet that fires on the machine gets
+    -- switched off, and a gate nobody runs measures nothing. The tight numbers
+    -- to watch are the two big rows, `hotbig` and `w-hash2b`, where 40 percent
+    -- is still a real constraint. Rows flagged `floor` in the table below are
+    -- exactly the rows this paragraph is about.
+
+    wname = {}
+    wpath = {}
+    wentry = {}
+    baseline = {}
+    okward = {}
+    okwart = {}
+    oktime = {}
+    okmer = {}
+    lossname = {}
+    lossvalue = {}
+    wrongs: i64 = 0
+    regressions: i64 = 0
+    losses: i64 = 0
+    wins: i64 = 0
+    ties: i64 = 0
+    eligible: i64 = 0
+
+    if code == 0
+        wname = {
+            "min", "tiny", "hot", "hotbig",
+            "s-brtable", "s-calls", "s-fib", "s-loopf64", "s-loopi32", "s-memory",
+            "w-hash", "w-hash2b", "w-fib",
+        }
+        wpath = {
+            "benchmarks/wasm_rt/min.wasm",
+            "benchmarks/wasm_rt/tiny.wasm",
+            "benchmarks/wasm_rt/hot.wasm",
+            "benchmarks/wasm_rt/hot_big.wasm",
+            "benchmarks/wasm_rt/scaled/brtable.wasm",
+            "benchmarks/wasm_rt/scaled/calls.wasm",
+            "benchmarks/wasm_rt/scaled/fib.wasm",
+            "benchmarks/wasm_rt/scaled/loop_f64.wasm",
+            "benchmarks/wasm_rt/scaled/loop_i32.wasm",
+            "benchmarks/wasm_rt/scaled/memory.wasm",
+            "ext/ward/bench/hash.wasm",
+            "ext/ward/bench/hash2b.wasm",
+            "ext/ward/bench/fib.wasm",
+        }
+        wentry = {
+            "start", "start", "start", "start",
+            "start", "start", "start", "start", "start", "start",
+            "invoke", "invoke", "invoke",
+        }
+        baseline = {
+            8500000, 11500000, 21000000, 165000000,
+            105000000, 27000000, 10000000, 32500000, 10500000, 25000000,
+            450000000, 4300000000, 19000000,
+        }
+        basefile: str = std.script.getenv("BENCH_BASELINE", "")
+        if basefile != "" and exists(basefile)
+            for i, line in cut(slurp(basefile))
+                for j, nm in wname
+                    tag: str = "{nm} "
+                    if starts(line, tag)
+                        v: str = std.script.chomp(line:sub(#tag + 1, #line))
+                        if digits(v)
+                            baseline[j] = to(i64)(v)
+                        end
+                    end
+                end
+            end
+            print("BASELINE overridden from {basefile}")
+            print("")
+        end
+    end
+
+    -- === ANSWERS ===
+    --
+    -- Answers first, times second, and the two passes are separate on purpose:
+    -- no cell is timed until the whole answer table has been agreed.
+
+    if code == 0
+        print("ANSWERS — verified BEFORE any speed is compared. wasmtime is the oracle.")
+        print("  A mismatch is a hard failure, not a footnote: a runtime that is fast")
+        print("  and wrong is not fast. `wrap` marks the one tolerated difference, a")
+        print("  32-bit result printed signed by one side and unsigned by the other.")
+        print("")
+        ah1: str = pad("workload", 12)
+        ah2: str = pad("entry", 8)
+        ah3: str = pad("oracle answer", 16)
+        ah4: str = pad("ward", 7)
+        ah5: str = pad("wart", 7)
+        ah6: str = pad("wasmtime", 10)
+        print(ind .. ah1 .. ah2 .. ah3 .. ah4 .. ah5 .. ah6 .. "wasmer")
+
+        rtname = { "ward", "wart", "wasmtime", "wasmer" }
+        rtbin = { wardbin, wartbin, timebin, merbin }
+        for i, nm in wname
+            rel: str = wpath[i]
+            path: str = "{root}/{rel}"
+            entry: str = wentry[i]
+            if not exists(path)
+                print("  {nm}: MISSING {path}")
+                code = 3
+            end
+            if code == 0
+                refcmd: str = invocation("wasmtime", timebin, path, entry)
+                ref: str = observe("wasmtime", refcmd, entry)
+                if ref == ""
+                    print("  {nm}: the oracle produced no answer — FAIL")
+                    code = 3
+                end
+                if code == 0
+                    cells = {}
+                    marks = {}
+                    for j, name in rtname
+                        bin: str = rtbin[j]
+                        cmd: str = ""
+                        if bin != ""
+                            cmd = invocation(name, bin, path, entry)
+                        end
+                        if cmd == ""
+                            cells[j] = "n/a"
+                            marks[j] = 0
+                        else
+                            got: str = observe(name, cmd, entry)
+                            if got == ref
+                                cells[j] = "ok"
+                                marks[j] = 1
+                            elseif wrapped(got, ref)
+                                cells[j] = "wrap"
+                                marks[j] = 1
+                            else
+                                cells[j] = "WRONG"
+                                marks[j] = 0
+                                wrongs += 1
+                                print("      {nm} {name} answered `{got}` where the oracle answered `{ref}`")
+                            end
+                        end
+                    end
+                    okward[i] = marks[1]
+                    okwart[i] = marks[2]
+                    oktime[i] = marks[3]
+                    okmer[i] = marks[4]
+                    brief: str = ref
+                    if #brief > 15
+                        brief = brief:sub(1, 15)
+                    end
+                    r1: str = pad(nm, 12)
+                    r2: str = pad(entry, 8)
+                    r3: str = pad(brief, 16)
+                    r4: str = pad(cells[1], 7)
+                    r5: str = pad(cells[2], 7)
+                    r6: str = pad(cells[3], 10)
+                    r7: str = cells[4]
+                    print(ind .. r1 .. r2 .. r3 .. r4 .. r5 .. r6 .. r7)
+                end
+            end
+        end
+        print("")
+        print("  `n/a` is a runtime that CANNOT reach the entry point: wart's CLI has")
+        print("  no invoke flag — it reads `--invoke` as the filename — and wasmer's")
+        print("  --invoke exits 118 on these modules. Neither is a silent skip and")
+        print("  neither counts as agreement.")
+        print("")
+    end
+
+    if code == 0 and wrongs > 0
+        ws: str = to(str)(wrongs)
+        print("runtime bench: FAIL — {ws} answer mismatch(es) above.")
+        print("  No timing table is printed. Comparing the speed of runtimes that")
+        print("  disagree about the answer is the exact failure CLAUDE.md §3 records.")
+        code = 1
+    end
+
+    -- === EXECUTION ===
+
+    if code == 0
+        rs: str = to(str)(runs)
+        print("EXECUTION — wall time, best of {rs}, harness floor INCLUDED.")
+        print("  `vs best` is ward's time as a percentage of the FASTEST other runtime")
+        print("  on that row. Within 5 percent either way is a TIE. `spread` is")
+        print("  ward's slowest minus fastest sample over the same runs.")
+        print("")
+        print("  Two flags, and rows carrying them should not be quoted as results:")
+        print("    floor   the harness spawn floor is over a quarter of this cell, so")
+        print("            the ratio is dragged toward 100 percent by the shell, not")
+        print("            by either runtime")
+        print("    noisy   ward's own spread is over a fifth of its time here, so the")
+        print("            run-to-run variation rivals the number being compared")
+        print("")
+        eh1: str = pad("workload", 12)
+        eh2: str = lpad("ward", 10)
+        eh3: str = lpad("wart", 10)
+        eh4: str = lpad("wasmtime", 10)
+        eh5: str = lpad("wasmer", 10)
+        eh6: str = lpad("spread", 10)
+        eh7: str = lpad("vs best", 10)
+        print(ind .. eh1 .. eh2 .. eh3 .. eh4 .. eh5 .. eh6 .. eh7 .. "  verdict")
+
+        for i, nm in wname
+            rel: str = wpath[i]
+            path: str = "{root}/{rel}"
+            entry: str = wentry[i]
+            nsward: i64 = -1
+            nswart: i64 = -1
+            nstime: i64 = -1
+            nsmer: i64 = -1
+            wspread: i64 = 0
+            if okward[i] == 1
+                pair = samples(invocation("ward", wardbin, path, entry), runs)
+                nsward = pair[1]
+                wspread = pair[2] - pair[1]
+            end
+            if okwart[i] == 1
+                nswart = fastest(invocation("wart", wartbin, path, entry), runs)
+            end
+            if oktime[i] == 1
+                nstime = fastest(invocation("wasmtime", timebin, path, entry), runs)
+            end
+            if okmer[i] == 1 and merbin != ""
+                nsmer = fastest(invocation("wasmer", merbin, path, entry), runs)
+            end
+
+            rival: i64 = -1
+            if nswart > 0
+                rival = nswart
+            end
+            if nstime > 0 and (rival < 0 or nstime < rival)
+                rival = nstime
+            end
+            if nsmer > 0 and (rival < 0 or nsmer < rival)
+                rival = nsmer
+            end
+
+            -- The verdict, on a FIXED five percent band.
+            --
+            -- The first draft used ward's own spread as the tie threshold and
+            -- it was wrong in a way worth recording: it called `s-loopf64` a
+            -- TIE at 192 percent, because one slow sample made the spread
+            -- wider than the gap. The maximum is exactly the outlier that
+            -- best-of-N exists to discard, so it cannot also be the yardstick
+            -- for whether a difference is real. A flat band cannot be gamed by
+            -- one bad sample.
+            --
+            -- The spread is still measured and still printed, and rows where
+            -- it is large are FLAGGED — that is what it is good for. So is the
+            -- harness floor: on a six-millisecond row an eight-millisecond
+            -- shell fork is most of the measurement, every ratio is dragged
+            -- toward 100 percent, and the row deserves a warning rather than a
+            -- verdict anyone should act on.
+            verdict: str = "no rival"
+            ratio: str = "n/a"
+            flags: str = ""
+            if nsward > 0
+                if overhead * 4 > nsward
+                    flags = " floor"
+                end
+                if wspread * 5 > nsward
+                    flags = "{flags} noisy"
+                end
+            end
+            if nsward > 0 and rival > 0
+                pct: i64 = to(i64)(nsward * 100 / rival)
+                ps: str = to(str)(pct)
+                ratio = "{ps}%"
+                if pct >= 95 and pct <= 105
+                    verdict = "tie"
+                    ties += 1
+                elseif nsward < rival
+                    verdict = "win"
+                    wins += 1
+                else
+                    verdict = "loss"
+                    losses += 1
+                    lossname[#lossname + 1] = nm
+                    lossvalue[#lossvalue + 1] = pct
+                end
+            end
+            verdict = "{verdict}{flags}"
+
+            cw: str = "n/a"
+            if nsward > 0
+                cw = secs(nsward)
+            end
+            cv: str = "n/a"
+            if nswart > 0
+                cv = secs(nswart)
+            end
+            ct: str = "n/a"
+            if nstime > 0
+                ct = secs(nstime)
+            end
+            ce: str = "n/a"
+            if nsmer > 0
+                ce = secs(nsmer)
+            end
+            f1: str = pad(nm, 12)
+            f2: str = lpad(cw, 10)
+            f3: str = lpad(cv, 10)
+            f4: str = lpad(ct, 10)
+            f5: str = lpad(ce, 10)
+            f6: str = lpad(secs(wspread), 10)
+            f7: str = lpad(ratio, 10)
+            print(ind .. f1 .. f2 .. f3 .. f4 .. f5 .. f6 .. f7 .. "  " .. verdict)
+
+            -- THE RATCHET, and only CLEAN rows are eligible for it.
+            --
+            -- A row the report has just flagged `floor` or `noisy` is a row
+            -- this harness has said should not be quoted as a result. It
+            -- cannot then be allowed to fail the gate — that would be the
+            -- report contradicting itself within four lines, and in practice
+            -- it fails whenever another session is building in the same tree,
+            -- which is most of the time here. A regression on a flagged row is
+            -- still PRINTED, just not counted.
+            --
+            -- The cost is real and is handled below: under enough load every
+            -- row is flagged, nothing is eligible, and a gate that checked
+            -- nothing must not report PASS. It reports INCONCLUSIVE instead.
+            if nsward > 0
+                limit: i64 = baseline[i] + to(i64)(baseline[i] * slack / 100)
+                clean: bool = flags == ""
+                if clean
+                    eligible += 1
+                end
+                if nsward > limit
+                    bs: str = secs(baseline[i])
+                    ls: str = secs(limit)
+                    ms: str = secs(nsward)
+                    if clean
+                        regressions += 1
+                        print(ind6 .. "REGRESSION  baseline {bs}s, limit {ls}s, measured {ms}s")
+                    else
+                        print(ind6 .. "over baseline {bs}s (limit {ls}s, measured {ms}s) — NOT")
+                        print(ind6 .. "counted, the row is flagged and its number is not trusted")
+                    end
+                elseif clean and nsward * 100 < baseline[i] * 70
+                    bs: str = secs(baseline[i])
+                    ms: str = secs(nsward)
+                    print(ind6 .. "improved    baseline {bs}s, measured {ms}s — lower it here")
+                end
+            end
+        end
+        print("")
+    end
+
+    -- === LOSSES ===
+    --
+    -- The ranked worklist, which is the useful half of this report. Selection
+    -- sort over the loss list: the corpus is thirteen rows and a sort that can
+    -- be read in one sitting is worth more here than a fast one.
+
+    if code == 0
+        print("WHERE WARD LOSES — ranked, worst first. Percent is ward's time as a")
+        print("  fraction of the fastest other runtime on that row.")
+        print("")
+        if #lossname == 0
+            print("  none — ward is at or under the fastest rival on every measured row.")
+        else
+            i: i64 = 1
+            while i <= #lossname
+                j: i64 = i + 1
+                while j <= #lossname
+                    if lossvalue[j] > lossvalue[i]
+                        tv: i64 = lossvalue[i]
+                        tn: str = lossname[i]
+                        lossvalue[i] = lossvalue[j]
+                        lossname[i] = lossname[j]
+                        lossvalue[j] = tv
+                        lossname[j] = tn
+                    end
+                    j += 1
+                end
+                i += 1
+            end
+            k: i64 = 1
+            while k <= #lossname
+                nm: str = pad(lossname[k], 12)
+                pv: str = lpad(to(str)(lossvalue[k]), 6)
+                print(ind .. nm .. pv .. "%")
+                k += 1
+            end
+        end
+        print("")
+        wn: str = to(str)(wins)
+        ln: str = to(str)(losses)
+        tn: str = to(str)(ties)
+        print("  wins {wn} · losses {ln} · ties {tn} (within 5 percent either way)")
+        print("")
+    end
+
+    if code == 0
+        rn: str = to(str)(regressions)
+        en: str = to(str)(eligible)
+        total: str = to(str)(#wname)
+        if regressions > 0
+            print("runtime bench: FAIL — {rn} of {en} unflagged row(s) regressed against")
+            print("  the recorded baseline in this file. A loss to another runtime does")
+            print("  NOT fail this gate; only getting slower than ward's own recorded")
+            print("  number does.")
+            code = 1
+        elseif eligible == 0
+            print("runtime bench: INCONCLUSIVE — 0 of {total} rows were clean enough to")
+            print("  ratchet. Every row carried a `floor` or `noisy` flag, which means")
+            print("  this machine was too busy for the measurement to mean anything.")
+            print("  This is NOT a pass: nothing was checked. Re-run on a quiet machine")
+            print("  before believing any number above.")
+        else
+            print("runtime bench: PASS — {en} of {total} rows were clean enough to ratchet")
+            print("  and none regressed. The other rows were flagged and skipped.")
+            print("  This is NOT a claim that ward is fastest. Read the loss list above.")
+        end
+    end
+
+    code
+end

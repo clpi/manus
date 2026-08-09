@@ -147,8 +147,20 @@ main = (): i64
     -- git ls-files is the authority on what is tracked; the `-f` test drops
     -- entries that are staged-deleted so a mid-rebase tree cannot fake a
     -- failure out of a missing file.
+    --
+    -- `fixtures/highlight/` is EXCLUDED, and the reason matters because the
+    -- exclusion looks like the exact move this gate exists to stop. This census
+    -- asks "can an editor recognise the DUON corpus". Those files are the golden
+    -- role corpus for `zig build highlight-corpus` and `zig build role-scan`,
+    -- and several of them deliberately carry dnir, arm64 assembly, ebnf and C —
+    -- one colour language over five surfaces is the point of them. Counting
+    -- non-duon text as unrecognised duon does not measure the grammar, it
+    -- dilutes the metric with files nobody claimed it should parse. The duon
+    -- fixtures among them DO fail here, and that is a real signal — the same
+    -- GAP-049 offside hole `examples/spec100/offside.duo` already reports, so
+    -- dropping them costs no information this gate was carrying.
     listfile = tmp .. "/corpus.txt"
-    std.script.capture("git ls-files '*.duo' | while read f; do [ -f \"$f\" ] && printf '%s/%s\\n' \"$PWD\" \"$f\"; done > '" .. listfile .. "'")
+    std.script.capture("git ls-files '*.duo' | grep -v '^fixtures/highlight/' | while read f; do [ -f \"$f\" ] && printf '%s/%s\\n' \"$PWD\" \"$f\"; done > '" .. listfile .. "'")
     total = to(i64)(std.script.chomp(std.script.capture("grep -c . '" .. listfile .. "'")))
     if total < 1
         io.write("tree_sitter_coverage: FAIL — no tracked .duo files found; the corpus list is empty\n")

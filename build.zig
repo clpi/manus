@@ -237,37 +237,46 @@ pub fn build(b: *std.Build) void {
     const wasm_bench_step = b.step("wasm-bench", "Run WASM runtime benchmark (wasmtime, wazero, wasm3, iwasm, wasmer, spin)");
     wasm_bench_step.dependOn(&wasm_bench_cmd.step);
 
-    // ── ward conformance suite (ext/ward) ───────────────────────────────────
-    // ward is a WASM runtime shipping in the release, and until 2026-08-08 it
-    // had NO test suite: `ext/ward/test/main.duo` required four modules that
-    // had been deleted and did not parse, so the only checking was a benchmark
-    // harness's `-1` filter. This step builds the runtime and differences every
-    // fixture against wasmtime BY VALUE, under both engines and both entry
-    // shapes, and refuses to print a score until its own controls pass (exit 3).
+    // ── wasm conformance suite (tools/wasm) ─────────────────────────────────
+    // The WASM runtime ships in the release, and until 2026-08-08 it had NO
+    // test suite: `test/main.duo` required four modules that had been deleted
+    // and did not parse, so the only checking was a benchmark harness's `-1`
+    // filter. This step builds the engine and differences every fixture against
+    // wasmtime BY VALUE, under both engines and both entry shapes, and refuses
+    // to print a score until its own controls pass (exit 3).
     //
-    // Both commands run with cwd = ext/ward so `duo run`'s `.out` artifact
-    // lands where ext/ward/.gitignore already covers it, and the compiled
-    // runtime goes to /tmp for the reason that directory's .gitignore states:
-    // a stale binary sitting next to the source is this project's oldest
-    // measurement bug.
-    // Paths are relative to the CHILD's cwd (ext/ward), which is what setCwd
+    // It used to live at `ext/ward/` and be called ward. It is not a separate
+    // product any more -- it is duon's wasm capability, so it sits beside the
+    // other toolchain parts that version-lock to the compiler (`tools/lsp`,
+    // `tools/mcp`). `docs/wasm-integration.md` records why NOT `lib/std/wasm/`:
+    // the engine is a program, `capability-scan` has zero slack on a
+    // `lib/std/**` denominator, and `stdlib_embed_gate` requires every file
+    // under `lib/std` to be `req`-able, which a program with a `main()` tail
+    // is not.
+    //
+    // Both commands run with cwd = tools/wasm so `duo run`'s `.out` artifact
+    // lands where that directory's .gitignore already covers it, and the
+    // compiled engine goes outside the tree for the reason the same .gitignore
+    // states: a stale binary sitting next to the source is this project's
+    // oldest measurement bug.
+    // Paths are relative to the CHILD's cwd (tools/wasm), which is what setCwd
     // establishes before exec. An absolute path via the build root would be
     // nicer to read, and the API for it has moved twice in zig master.
-    const ward_bin_path = "../../zig-out/bin/ward-conform";
+    const wasm_conform_bin = "../../zig-out/bin/wasm-conform";
     const duo_bin_path = "../../zig-out/bin/duo";
-    const ward_build_cmd = b.addSystemCommand(&.{
-        duo_bin_path,  "compile",     "src/ward.duo",
+    const wasm_engine_cmd = b.addSystemCommand(&.{
+        duo_bin_path,  "compile",     "src/engine.duo",
         "--backend=c", "--emit",      "exe",
-        "-o",          ward_bin_path,
+        "-o",          wasm_conform_bin,
     });
-    ward_build_cmd.setCwd(b.path("ext/ward"));
-    ward_build_cmd.step.dependOn(b.getInstallStep());
-    const ward_test_cmd = b.addSystemCommand(&.{ duo_bin_path, "run", "test/conform.duo" });
-    ward_test_cmd.setEnvironmentVariable("WARD_BIN", ward_bin_path);
-    ward_test_cmd.setCwd(b.path("ext/ward"));
-    ward_test_cmd.step.dependOn(&ward_build_cmd.step);
-    const ward_test_step = b.step("ward-test", "ward conformance: every fixture, both engines, differenced against wasmtime");
-    ward_test_step.dependOn(&ward_test_cmd.step);
+    wasm_engine_cmd.setCwd(b.path("tools/wasm"));
+    wasm_engine_cmd.step.dependOn(b.getInstallStep());
+    const wasm_test_cmd = b.addSystemCommand(&.{ duo_bin_path, "run", "test/conform.duo" });
+    wasm_test_cmd.setEnvironmentVariable("DUO_WASM_BIN", wasm_conform_bin);
+    wasm_test_cmd.setCwd(b.path("tools/wasm"));
+    wasm_test_cmd.step.dependOn(&wasm_engine_cmd.step);
+    const wasm_test_step = b.step("wasm-test", "wasm conformance: every fixture, both engines, differenced against wasmtime");
+    wasm_test_step.dependOn(&wasm_test_cmd.step);
 
     const ml_bench_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/run_ml_benchmark.duo" });
     ml_bench_cmd.setCwd(b.path("."));
@@ -367,6 +376,30 @@ pub fn build(b: *std.Build) void {
     role_scan_cmd.step.dependOn(b.getInstallStep());
     const role_scan_step = b.step("role-scan", "G-TOTAL: role coverage, ambiguity and sidecar conformance over fixtures/highlight");
     role_scan_step.dependOn(&role_scan_cmd.step);
+
+    // highlight-corpus -- CLAUDE.md section 0d, executable. Highlighting is a
+    // PROJECTION OF THE GRAPH, not a lexer, and the only way to tell those two
+    // apart from outside is a corpus containing the glyphs duon overloads: `:`
+    // is copula OR invoke and `|` is union OR pipe, and no lexer separates
+    // either pair. The gate asserts the role AND the card at named byte
+    // offsets, so "it produced highlighting" is not a passing answer.
+    //
+    // It also gates section 0g's G-TOTAL: every non-whitespace byte carries a
+    // role, and an undecidable span DIAGNOSES rather than defaulting. The
+    // negative control in fixtures/highlight/mixed/ is what keeps the
+    // "0 unresolved spans" row from being the broken kind of zero.
+    //
+    // RELATIONSHIP TO `role-scan`, which measures the same directory: that step
+    // measures a hole in the LAW and deliberately does not ratchet. This one
+    // measures an INSTRUMENT against the law as read, and does ratchet, because
+    // its taxonomy is written down in tools/lsp/src/highlight.duo and can
+    // therefore regress. They disagree about whether the section 0g fine splits
+    // are roles or refinements; both files argue the case in their headers.
+    const highlight_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/highlight.duo" });
+    highlight_cmd.setCwd(b.path("."));
+    highlight_cmd.step.dependOn(b.getInstallStep());
+    const highlight_step = b.step("highlight-corpus", "Pass 113-119: the golden role corpus, totality, the H-1 proofs by value, and specificity; ratchets");
+    highlight_step.dependOn(&highlight_cmd.step);
 
     // U1 -- Pass 105 section 4's `std@{ ambient = false }`, executable. The one
     // charter row that is effective immediately rather than at 0.1, so it is a

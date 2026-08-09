@@ -1,0 +1,7 @@
+-- surface: ebnf
+-- ONE COLOUR LANGUAGE, fourth surface. An ebnf nonterminal is a descriptor by
+-- another name, a quoted terminal is text, and `|` is a union — the same union
+-- that separates `t | error`, because alternation IS the descriptor edge.
+expr ::= term
+term ::= factor | group
+group ::= "(" expr ")"
