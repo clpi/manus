@@ -82,7 +82,7 @@
 -- obtained by reading a global is not counted. Pressure, not proof.
 --
 -- POPULATION. Tracked `lib/std/**/*.duo` only, and that is a CHOICE with a
--- known hole: Duo also lives inside Zig fixtures and inside `ext/ward/src`,
+-- known hole: Duo also lives inside Zig fixtures and inside `tools/wasm/src`,
 -- and neither is std. U1 is a rule about the STANDARD LIBRARY — what a
 -- program gets without asking — so the population is the shipped std surface.
 -- A module reachable only from a test is not shipped and is not counted.

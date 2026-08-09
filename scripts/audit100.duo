@@ -449,7 +449,7 @@ main(): i64
     -- point counted PER FILE at the commit where the gate was last exactly at
     -- budget (a34b10b) and again at HEAD. Seven rows went red; the canonical
     -- set grew 445 -> 447. All 440 points land in exactly THREE files, and all
-    -- three are under `ext/ward/`:
+    -- three are under `tools/wasm/`:
     --
     --   row          delta   opcodes.duo  ward.duo  derived.duo
     --   snake         +158        11        146          1
@@ -463,9 +463,9 @@ main(): i64
     -- Nothing here is repairable as text, which is why it is budgeted and not
     -- fixed:
     --
-    --   `ext/ward/src/ward.duo` carries 314 of the 440 points, and 310 of those
+    --   `tools/wasm/src/ward.duo` carries 314 of the 440 points, and 310 of those
     --   (164 upper + 146 snake) are ONE generated block — the `OP_unreachable = 0`
-    --   … `OP_i64_extend32_s = 196` constants that `ext/ward/tools/opcodes.duo`
+    --   … `OP_i64_extend32_s = 196` constants that `tools/wasm/tools/opcodes.duo`
     --   projects into it (6497d44, which is what took ward from 241 hand-typed
     --   opcode predicates to 3). Editing those names by hand is undone by the
     --   next projection run. The repair is in the projector's `_const()`
@@ -474,13 +474,13 @@ main(): i64
     --   where 46 flat `encode_add_reg` names are owed a level rather than 46
     --   other flat names.
     --
-    --   `ext/ward/tools/opcodes.duo` is the projector itself (new in 6497d44).
+    --   `tools/wasm/tools/opcodes.duo` is the projector itself (new in 6497d44).
     --   Its 47 underprefix points are `_agree` `_selfcheck` `_const` `_num`
     --   `_isreserved` and friends — private helpers, and `_` is EXPORT CONTROL
     --   in this compiler (codegen.zig drops `_`-prefixed names from module
     --   exports), so stripping the prefix is a surface change, not a rename.
     --
-    --   `ext/ward/bench/derived.duo` drifted by 9 points total.
+    --   `tools/wasm/bench/derived.duo` drifted by 9 points total.
     --
     -- This session DID repair one thing in that file rather than budget it, but
     -- it was a different gate: its `getenv("DUO_ROOT", <an absolute path under
@@ -598,10 +598,10 @@ main(): i64
     --   oneline       +23          +23                   0
     --   trailret      +49          +37                 +12
     --
-    --   `ext/ward/test/conform.duo` and `ext/ward/bench/six.duo` are new: a
+    --   `tools/wasm/test/conform.duo` and `tools/wasm/bench/six.duo` are new: a
     --   conformance suite (ward had NO test suite; the file in test/ required
     --   four deleted modules and did not parse) and a six-runtime benchmark.
-    --   Their debt is the shape every sibling harness in `ext/ward/bench/`
+    --   Their debt is the shape every sibling harness in `tools/wasm/bench/`
     --   already carries — `_norm`/`_pad` helpers, `std.string.split`,
     --   `string.match`, and reports that interpolate numbers into prose. It is
     --   budgeted rather than rewritten because the canonical forms for two of
@@ -648,7 +648,7 @@ main(): i64
     -- per file with this gate's own two filters (drop `^\s*--` lines, strip
     -- string bodies) against `git show HEAD:<path>` and the working copy:
     --
-    --   row          delta   ext/ward/src/ward.duo   lib/std/jit.duo
+    --   row          delta   tools/wasm/src/ward.duo   lib/std/jit.duo
     --   snake         +20             20                    0
     --   directive      +1              0                    1
     --   stdlib         +2              2                    0
@@ -736,8 +736,8 @@ main(): i64
     --               `sym` documents, written as a bare tail expression it
     --               answers 0 for every buffer. Verified by value.
     --   directive+1 that same `@c.emit`, counted once more from the other row.
-    --   nonduo +1   `ext/ward/bench/ward_call_indirect_typed.wasm`, a fixture,
-    --               i.e. INPUT. Its `.wat` source is in `ext/ward/HANDOFF.md`
+    --   nonduo +1   `tools/wasm/bench/ward_call_indirect_typed.wasm`, a fixture,
+    --               i.e. INPUT. Its `.wat` source is in `tools/wasm/HANDOFF.md`
     --               rather than tracked beside it, because `bench/` tracks no
     --               `.wat` and adding the convention would cost a second row.
     --
@@ -1091,7 +1091,7 @@ main(): i64
     -- non-.duo files were deleted elsewhere, and "lower a budget whenever you
     -- lower a count" is the half of the ratchet that nobody remembers to do —
     -- 24 points of unearned headroom is 24 files somebody could add unnoticed.
-    -- 537 as of 2026-08-08: `ext/ward/bench/ward_call_indirect_typed.wasm`,
+    -- 537 as of 2026-08-08: `tools/wasm/bench/ward_call_indirect_typed.wasm`,
     -- the fixture that holds ward's new call_indirect jit arm to a value on
     -- both engines. A fixture is INPUT, which is the category this row cannot
     -- distinguish -- see the attribution block above.

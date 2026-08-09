@@ -72,7 +72,7 @@
 -- everything else. The control below proves the rule fires on that pair and
 -- does NOT fire on 1 versus 4294967295.
 --
--- WARD IS INVOKED THROUGH THE ENVIRONMENT, not argv. `ext/ward/src/ward.duo`
+-- WARD IS INVOKED THROUGH THE ENVIRONMENT, not argv. `tools/wasm/src/ward.duo`
 -- reads WARD_WASM and WARD_INVOKE; passing a module as an argument measures a
 -- different module or nothing at all, which is how two earlier ward baselines
 -- came out wrong. ward also appends a three-line trailer to stdout, stripped
@@ -436,11 +436,11 @@ main(): i64
         -- whatever was true this morning. This gate deliberately does not
         -- rebuild; it reports what it measured instead.
         wardstamp: str = std.script.chomp(shell("date -r '{wardbin}' 2>/dev/null"))
-        wardsrc: str = std.script.chomp(shell("cd '{root}' && git status --porcelain ext/ward/src | wc -l"))
+        wardsrc: str = std.script.chomp(shell("cd '{root}' && git status --porcelain tools/wasm/src | wc -l"))
         print("  ward      {wardbin}")
         print("            built {wardstamp}")
         -- The wart REVISION, not just the path. wart lives outside this repo in
-        -- a tree its owner edits, and `ext/ward/bench/run.duo` resolves it
+        -- a tree its owner edits, and `tools/wasm/bench/run.duo` resolves it
         -- through $WART or $HOME with no revision recorded at all — so no
         -- number ever published from that harness can say which wart it beat.
         -- A comparison whose opponent cannot be identified is not reproducible.
@@ -467,7 +467,7 @@ main(): i64
         end
         if wardsrc != "0"
             print("")
-            print("  NOTE: {wardsrc} file(s) under ext/ward/src are modified in the working")
+            print("  NOTE: {wardsrc} file(s) under tools/wasm/src are modified in the working")
             print("  tree. The binary above may predate them. Nothing here rebuilds ward,")
             print("  so this table describes the BINARY, not the source next to it.")
         end
@@ -582,7 +582,7 @@ main(): i64
         nscaled: i64 = globcount("'{root}/benchmarks/wasm_rt/scaled/'*.wasm")
         nflat: i64 = globcount("'{root}/benchmarks/wasm_rt/'*.wasm")
         nconform: i64 = globcount("'{root}/benchmarks/wasm_rt/conform/'*")
-        nward: i64 = globcount("'{root}/ext/ward/bench/'*.wasm")
+        nward: i64 = globcount("'{root}/tools/wasm/bench/'*.wasm")
         a: str = lpad(to(str)(nscaled), 4)
         b: str = lpad(to(str)(nflat), 4)
         c: str = lpad(to(str)(nconform), 4)
@@ -594,7 +594,7 @@ main(): i64
         print("                                  unscaled duplicates of the scaled six")
         print("  benchmarks/wasm_rt/conform {c}   0 measured — spec conformance fixtures,")
         print("                                  a correctness corpus, not workloads")
-        print("  ext/ward/bench             {d}   3 measured; the rest are byte-scale JIT")
+        print("  tools/wasm/bench             {d}   3 measured; the rest are byte-scale JIT")
         print("                                  and opcode fixtures, 57-354 bytes each")
         print("")
     end
@@ -607,9 +607,9 @@ main(): i64
         print("  package manager, WIT tooling, OCI packaging, a shell and an AOT")
         print("  pipeline ward has no counterpart for. Quote the core row.")
         print("")
-        wardwhole: i64 = loc(root, "'ext/ward/src/*.duo'")
-        wardcore: i64 = loc(root, "'ext/ward/src/ward.duo' 'ext/ward/src/wasm/*.duo'")
-        wardfiles: i64 = filecount(root, "'ext/ward/src/*.duo'")
+        wardwhole: i64 = loc(root, "'tools/wasm/src/*.duo'")
+        wardcore: i64 = loc(root, "'tools/wasm/src/ward.duo' 'tools/wasm/src/wasm/*.duo'")
+        wardfiles: i64 = filecount(root, "'tools/wasm/src/*.duo'")
         wartwhole: i64 = loc(warttree, "'src/*.zig'")
         wartcore: i64 = loc(warttree, "'src/wasm/*.zig'")
         wartfiles: i64 = filecount(warttree, "'src/*.zig'")
@@ -774,9 +774,9 @@ main(): i64
             "benchmarks/wasm_rt/scaled/loop_f64.wasm",
             "benchmarks/wasm_rt/scaled/loop_i32.wasm",
             "benchmarks/wasm_rt/scaled/memory.wasm",
-            "ext/ward/bench/hash.wasm",
-            "ext/ward/bench/hash2b.wasm",
-            "ext/ward/bench/fib.wasm",
+            "tools/wasm/bench/hash.wasm",
+            "tools/wasm/bench/hash2b.wasm",
+            "tools/wasm/bench/fib.wasm",
         }
         wentry = {
             "start", "start", "start", "start",

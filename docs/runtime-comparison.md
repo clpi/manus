@@ -30,7 +30,7 @@ dominate on execution and this document does not say it does.
 | `rss` | peak resident set from `/usr/bin/time -l` on that same module |
 | `exec` | wall time per workload, best of 5 |
 
-Four runtimes: **ward** (`ext/ward`, Duo), **wart** (`~/x/wart`, Zig, read-only —
+Four runtimes: **ward** (`tools/wasm`, Duo), **wart** (`~/x/wart`, Zig, read-only —
 it is the reference implementation ward was written against), **wasmtime**
 v47.0.3, **wasmer**.
 
@@ -38,7 +38,7 @@ v47.0.3, **wasmer**.
 
 The report prints **wart's git revision and dirty-file count** on every run, and
 warns when either the revision is unreadable or the tree is dirty. This is not
-ceremony. `ext/ward/bench/run.duo:103` resolves wart through `$WART` or
+ceremony. `tools/wasm/bench/run.duo:103` resolves wart through `$WART` or
 `$HOME/x/wart` with no revision recorded at all, so **no number ever published
 from that harness can say which wart it beat**. A comparison whose opponent
 cannot be identified is not reproducible.
@@ -105,7 +105,7 @@ accounted for. Nothing is silently skipped.
 | `benchmarks/wasm_rt/scaled` | 6 | 6 | — |
 | `benchmarks/wasm_rt` | 21 | 4 | WASI-shape probes (`a b c d1 f1`–`f5 g jitable`) and unscaled duplicates of the scaled six |
 | `benchmarks/wasm_rt/conform` | 89 | 0 | spec conformance fixtures — a correctness corpus, not workloads |
-| `ext/ward/bench` | 45 | 3 | the rest are 57–354 byte JIT and opcode fixtures |
+| `tools/wasm/bench` | 45 | 3 | the rest are 57–354 byte JIT and opcode fixtures |
 
 **13 workloads measured**, in two entry families:
 
@@ -263,7 +263,7 @@ anything, and a gate that checked nothing must not come out green.
   starts a build.
 - Tolerance: `BENCH_SLACK`, default **40** percent.
 - Also override: `BENCH_RUNS` (default 5), `BENCH_BASELINE` (a file of
-  `name ns` lines replacing the embedded table), `WARD_BIN`, `WART_BIN`,
+  `name ns` lines replacing the embedded table), `DUO_WASM_BIN`, `WART_BIN`,
   `WART_ROOT`.
 
 **Why 40 and not 25.** Half these rows finish in under 10 ms and every cell
@@ -279,7 +279,7 @@ other half of a ratchet and the half usually skipped.
 ## What this instrument does not do
 
 - **It does not build ward.** A benchmark that builds its own subject reports
-  the build. It prints the binary's timestamp, and warns when `ext/ward/src` is
+  the build. It prints the binary's timestamp, and warns when `tools/wasm/src` is
   dirty in the working tree, so a stale measurement announces itself.
 - **It does not subtract the harness floor** from any published number.
 - **It measures whole-process wall time**, so every cell includes process

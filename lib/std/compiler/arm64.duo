@@ -85,7 +85,7 @@ encode_ret = (): i64
 end
 
 -- ─────────────────────────────────────────────────────────────────────────
--- LIFTED FROM ward's JIT (ext/ward/src/wasm/jit_arm64.duo), 2026-08-08.
+-- LIFTED FROM ward's JIT (tools/wasm/src/wasm/jit_arm64.duo), 2026-08-08.
 --
 -- ward is a WASM runtime, not this compiler's backend, and its encoders are
 -- entangled with its operand-stack layout — so nothing is *shared*, it is
