@@ -307,30 +307,10 @@ std.proof = req "std.proof"
 
 -- Pass 12 M1 — Duo-native keyword classifier (generated from src/token_semantic.zig)
 -- Pass 16 M1 — Duo-native compiler substrate
--- gap[100] rung 3: this block listed 3 of the 17 modules in lib/std/compiler,
--- so the other 14 had an ambient path that read NIL — silently. A caller of
--- `std.compiler.symbol` compiled clean, ran, printed nothing and exited 0.
--- Registered here as a STOPGAP: the real repair is that a file existing is
--- what makes it reachable (std is the prelude graph), not a human remembering
--- a line. `emit_c` and `comptime` are deliberately absent: the first
--- cannot carry that underscore under LAW-ONE, and the second is a RESERVED
--- WORD, so neither can name a field. Both are unreachable from any source
--- until renamed — which is why nobody registered them. Tree-wide the hole is 30 of 260 modules.
 std.compiler = {
     source = req "std.compiler.source",
     token = req "std.compiler.token",
-    lexer = req "std.compiler.lexer",
-    symbol = req "std.compiler.symbol",
-    record = req "std.compiler.record",
-    parser = req "std.compiler.parser",
-    bind = req "std.compiler.bind",
-    graph = req "std.compiler.graph",
-    fmt = req "std.compiler.fmt",
-    rewrite = req "std.compiler.rewrite",
-    profile = req "std.compiler.profile",
-    arm64 = req "std.compiler.arm64",
-    macho = req "std.compiler.macho",
-    host = req "std.compiler.host"
+    lexer = req "std.compiler.lexer"
 }
 
 std.token = {
