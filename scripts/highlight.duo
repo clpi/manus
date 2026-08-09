@@ -125,6 +125,14 @@ proofs = {
     "5 5 1 callable opcode a dnir opcode and a method call are ONE role",
     "5 5 7 place reg registers are PLACES",
     "5 7 1 callable opcode the same, two lines down",
+    -- Pass 118 §4 per-language totalization: a dnir leftover NAMES a node in
+    -- the flattened graph. It used to reach the generic `value` card, which is
+    -- no more than its lexical class and so a §0g SPECIFICITY finding rather
+    -- than coverage. These two rows are the difference: the golden stores only
+    -- the ROLE letter, so without them `fact` and `value` are indistinguishable
+    -- and the repair could silently regress.
+    "5 9 6 place fact a dnir leftover is a FACT NAME, never a generic value",
+    "5 9 11 place fact the second leftover on the line, so it is not a one-off",
     "6 4 5 callable opcode an asm mnemonic takes the opcode card too",
     "6 4 9 place reg and a register the same place role as a dnir temporary",
     "6 5 13 number imm a machine immediate is a number",

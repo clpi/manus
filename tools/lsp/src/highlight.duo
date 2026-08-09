@@ -240,6 +240,7 @@ cards = {
     "opaque   foreign    g foreign source, uncoloured within",
     "value    place      v a named value at rest",
     "reg      place      r a machine register",
+    "fact     place      f a dnir fact name",
     "lit      number     n a numeric literal",
     "imm      number     i a machine immediate",
     "quoted   text       q a string literal",
@@ -1010,6 +1011,16 @@ scan(line: str, surface: str): str
                 -- §0g per-language leftovers: an ebnf leftover is a NONTERMINAL
                 -- reference, which is a descriptor by another name.
                 rc = "dn"
+            end
+            if surface == "dnir" and rc == "pv"
+                -- Pass 118 §4, per-language totalization: "every leftover
+                -- identifier is a NAMED role (`d-i` — a fact name), never
+                -- generic." A dnir word that reached the generic `value` card
+                -- got no more than its lexical class, which §0g SPECIFICITY
+                -- makes a G-TOTAL finding rather than coverage. It is not a
+                -- value at rest: it NAMES a node in the flattened graph, which
+                -- is what the `fact` card says and `value` did not.
+                rc = "pf"
             end
             piece = pairof(rc:sub(1, 1), rc:sub(2, 2), #w)
             out = out .. piece

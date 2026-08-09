@@ -6,3 +6,4 @@ place %0: i64
 const %1 = 7
 add %2 = %0, %1
 ret %2
+edge view buffer
