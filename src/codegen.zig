@@ -5359,6 +5359,28 @@ pub const CodeGen = struct {
         if (!native_scalar_plain or self.native_scalar_needs_string_h(mod)) {
             self.p("#include <string.h>\n", .{});
         }
+        // math.h is UNCONDITIONAL, unlike its neighbours above.
+        //
+        // It used to ride along with the lua runtime block below, so a
+        // native-scalar module that called a libm function got the call and not
+        // the declaration: `examples/pass27_proof_matrix.duo` died on
+        // `call to undeclared library function 'sqrt'` under C99 and could not
+        // be built by EITHER backend (gap[055]).
+        //
+        // The neighbours each gate on a bespoke `native_scalar_needs_*_h` AST
+        // walk. Adding a ninth walk for this would fix `sqrt` and leave the next
+        // libm function to be discovered the same way — by a program failing to
+        // compile. math.h declares functions and macros and pulls in no runtime,
+        // so including it always costs a little preprocessing and closes the
+        // whole class. The emitter cannot decide this from the body anyway:
+        // includes are written before the body is generated.
+        self.p("#include <math.h>\n", .{});
+        // time.h for the same reason and by the same argument. `os.clock`
+        // lowers to `clock()`/`CLOCKS_PER_SEC` regardless of whether the module
+        // takes the runtime path, and the declaration was riding on the runtime
+        // block. Standard C, declarations only. `sys/time.h` stays gated below
+        // because it is POSIX, not C.
+        self.p("#include <time.h>\n", .{});
         // Translation-unit-level decision, captured before any embedded module
         // swaps `native_scalar_mode` / `substrate_native_mode` / `module_knowledge`
         // to its own values. Everything that must agree with the presence of the
@@ -5368,7 +5390,6 @@ pub const CodeGen = struct {
         self.tu_needs_lua_runtime = self.moduleNeedsLuaRuntime();
         if (self.moduleNeedsLuaRuntime()) {
             self.p("#include <stdarg.h>\n", .{});
-            self.p("#include <math.h>\n", .{});
             self.p("#include <time.h>\n", .{});
             self.p("#include <sys/time.h>\n", .{});
         }
