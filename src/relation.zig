@@ -521,10 +521,11 @@ fn testEdge(dest: []const u8, src: []const u8, conv: []const u8, c: Class) Edge 
     };
 }
 
-fn fmtBuf(p: Properties) [64]u8 {
-    var buf: [64]u8 = undefined;
-    _ = p.fmt(&buf);
-    return buf;
+// Returns the SLICE `fmt` wrote, not the whole buffer. Returning `[64]u8`
+// meant every comparison also saw 52 bytes of `undefined` tail — the test
+// read as a `fmt` bug when the helper was the bug.
+fn fmtBuf(p: Properties, buf: []u8) []const u8 {
+    return p.fmt(buf);
 }
 
 test "a store holds many relation families" {
@@ -600,7 +601,8 @@ test "a lossy or failing hop is found and REFUSED, never silently composed" {
 
     // narrowing meets exact = narrowing: the one-weak-hop rule is fact-wise.
     try testing.expectEqual(Loss.some, p.props.loss);
-    try testing.expectEqualStrings("narrowing", &fmtBuf(p.props));
+    var nbuf: [64]u8 = undefined;
+    try testing.expectEqualStrings("narrowing", fmtBuf(p.props, &nbuf));
 
     var refused: usize = 0;
     const derived = try to.derivedCount(testing.allocator, &refused);
@@ -619,7 +621,8 @@ test "a meet outside the six classes renders as facts, not a wrong class" {
     try testing.expect(!p.admitted);
     // checked ∘ view was never one of the six classes; the old lattice lied by
     // printing `checked`. The facts print `failure view`.
-    try testing.expectEqualStrings("failure view", &fmtBuf(p.props));
+    var fbuf: [64]u8 = undefined;
+    try testing.expectEqualStrings("failure view", fmtBuf(p.props, &fbuf));
 }
 
 test "declFromAssign refuses an ordinary assignment" {
