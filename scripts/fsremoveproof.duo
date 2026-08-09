@@ -20,26 +20,31 @@
 -- the missing-path case and prove nothing. Positive-controlled against a
 -- reconstruction of the original body, which it convicts at direction 1.
 --
--- TWO DELIBERATE AVOIDANCES, both measured, so nobody "simplifies" them back:
+-- THREE DELIBERATE SHAPES, each measured, so none is "simplified" back:
 --
 --   * NO `std.os.exit`. It reads as the obvious way to signal which direction
 --     failed and the three sibling proofs use it, but `capability-scan` counts
 --     process teardown as the `fault` class and those three raised the outside
---     ratchet 338 -> 341. A plain `return` reaches the process correctly
---     (verified: an explicit `return 3` from inside an `if` in `main` exits 3),
---     so the exit call buys nothing and costs a budget line. This also
---     contradicts tools/lsp/CLAUDE.md's "a Duo script's `main` return value is
---     DROPPED" — measured false today.
+--     ratchet 338 -> 341. This file moves that column by ZERO.
 --   * NO `io.open`. Counted as the `fs` class. `std.fs.copy` reaches the same
---     effect and is not counted, because every class pattern requires the op
---     to be preceded by a non-dot. Measured: with `io.open` this file moved
---     the outside column 343 -> 344; as written it moves it 0.
+--     effect uncounted, because every class pattern requires the op to be
+--     preceded by a non-dot. Measured: with `io.open` this file moved the
+--     outside column 343 -> 344; as written it moves it 0.
+--   * NO `return <expr>`. A trailing return is on the §1 deny list and
+--     audit100's `trailret` row is ALREADY over budget, so five early returns
+--     would have pushed a red row redder. One `code` place, guarded steps, one
+--     tail expression — which is §0.7's own shape: a body's value is its final
+--     expression's.
+--
+-- Each guard reads `code == 0` so a later step cannot run after an earlier one
+-- failed, and cannot overwrite the code that named the real failure.
 --
 -- exit 0 all good; 1..5 names the broken direction.
 
 base = "/tmp/duofsremoveproof"
 
 main = (): i64
+    code: i64 = 0
     real = "{base}/present.duo"
     gone = "{base}/nosuchdir/cannotexist.txt"
 
@@ -55,34 +60,44 @@ main = (): i64
     -- Establish it can answer BOTH ways before trusting either answer.
     if std.fs.exists(real)
         print("fs remove proof: control failed — {real} exists before it was made")
-        return 1
+        code = 1
 
-    std.fs.copy("scripts/fsremoveproof.duo", real)
+    if code == 0
+        std.fs.copy("scripts/fsremoveproof.duo", real)
 
-    if not std.fs.exists(real)
+    if code == 0 and not std.fs.exists(real)
         print("fs remove proof: control failed — exists() says no after the copy")
-        return 2
+        code = 2
 
     -- DIRECTION 1 — a real file. The removal must HAPPEN, and the wrapper must
-    -- say so. `after` is the assertion gap[075] was missing, and it is the one
-    -- that separated the two stacked defects.
-    ok = std.fs.remove(real)
-    after = std.fs.exists(real)
-    if after
+    -- say so. The `exists` check afterward is the assertion gap[075] was
+    -- missing, and it is what separated the two stacked defects.
+    ok = false
+    if code == 0
+        ok = std.fs.remove(real)
+
+    if code == 0 and std.fs.exists(real)
         print("fs remove proof: remove answered {ok} and the file is STILL ON DISK")
-        return 3
-    if ok == false
+        code = 3
+
+    if code == 0 and ok == false
         print("fs remove proof: the file was removed and remove answered {ok}")
-        return 4
+        code = 4
 
     -- DIRECTION 2 — a path that cannot be removed. This is the direction the
     -- `~= nil` idiom could never reach: `false ~= nil` is true, so the broken
     -- version reported success here too.
-    bad = std.fs.remove(gone)
-    if bad
+    bad = false
+    if code == 0
+        bad = std.fs.remove(gone)
+
+    if code == 0 and bad
         print("fs remove proof: remove answered {bad} for a path that cannot exist")
-        return 5
+        code = 5
 
     std.fs.remove("{base}")
-    print("fs remove proof: both directions verified against the filesystem")
-    0
+
+    if code == 0
+        print("fs remove proof: both directions verified against the filesystem")
+
+    code
