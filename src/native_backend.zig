@@ -837,28 +837,6 @@ const Arm64Compiler = struct {
     fp_reg_owner: [32]?u32 = @splat(null),
     fp_home_regs: [32]bool = @splat(false),
     fp_free_at: std.AutoHashMapUnmanaged(u32, u32) = .empty,
-    /// Which ids are known to hold an INTEGER, recorded by the producer that
-    /// emitted them — the exact mirror of `fp_temps`, and for the same reason.
-    ///
-    /// This licenses `scvtf` on a GP-resident operand read in float position:
-    /// `(col - WIDTH / 2) * 3.5 / WIDTH` in `examples/mandelbrot.duo` is an
-    /// ordinary i64 in x12 that the multiply wants as a double, and refusing it
-    /// is what keeps that program off the direct backend.
-    ///
-    /// It cannot be read off the DNIR. Measured 2026-08-08, `render()` lowers
-    /// with `ty = .any` on every instruction including `const_i64`, so the
-    /// type slot carries no fact to consult; writing it down properly is a
-    /// change in the LOWERER. Marking at the producer keeps the judgement in
-    /// the place that already knows, and only unambiguous producers mark:
-    /// integer immediates, GP arithmetic and comparisons over operands that
-    /// are themselves not FP, and the loads/stores that carry those.
-    ///
-    /// A MISSING mark costs a refusal, which is the safe direction and the
-    /// same failure mode `fp_temps` has. A WRONG mark costs a plausible double
-    /// built out of a float's bits, which is the failure gap[058] was filed
-    /// for — so nothing marks on the strength of "the consumer wanted an
-    /// integer".
-    int_temps: std.AutoHashMapUnmanaged(u32, void) = .empty,
     /// Stack slots for sealed record fields (f64 or i64): "c.pos" -> slot meta.
     fp_stack_slots: std.StringHashMapUnmanaged(StackSlot) = .empty,
     stack_frame_bytes: u16 = 0,
@@ -959,7 +937,6 @@ const Arm64Compiler = struct {
         self.fp_locals.deinit(self.alloc);
         self.fp_temps.deinit(self.alloc);
         self.fp_free_at.deinit(self.alloc);
-        self.int_temps.deinit(self.alloc);
         self.fp_stack_slots.deinit(self.alloc);
         self.slot_bases.deinit(self.alloc);
         self.f64_kernel_names.deinit(self.alloc);
@@ -1244,37 +1221,6 @@ const Arm64Compiler = struct {
         }
     }
 
-    /// Record that this id holds an integer. Only unambiguous producers call it.
-    fn markIntTemp(self: *Arm64Compiler, id: ?u32) Error!void {
-        const t = id orelse return;
-        try self.int_temps.put(self.alloc, t, {});
-    }
-
-    /// A GP binop's result is an integer when it is a COMPARISON (0 or 1
-    /// whatever the operands were) or when both operands are known integers.
-    /// Arithmetic over an operand of unknown kind stays UNKNOWN: a `.f64`
-    /// immediate reaches the GP path as raw BITS through `evalDnirValue`, and
-    /// calling a sum of those an integer is how a float becomes a plausible
-    /// wrong number one `scvtf` later.
-    fn markIntBinop(self: *Arm64Compiler, ins: dnir.Instr, op: ast.BinOp) Error!void {
-        if (isComparison(op)) {
-            try self.markIntTemp(ins.result);
-            return;
-        }
-        if (self.valueIsInt(ins.lhs) and self.valueIsInt(ins.rhs)) {
-            try self.markIntTemp(ins.result);
-        }
-    }
-
-    /// Whether this operand is a known integer. An `.i64` immediate counts.
-    fn valueIsInt(self: *const Arm64Compiler, v: dnir.Value) bool {
-        return switch (v) {
-            .i64 => true,
-            .local, .temp => |id| self.int_temps.contains(id),
-            else => false,
-        };
-    }
-
     /// This register is a local's home for the rest of the function.
     fn markFpHome(self: *Arm64Compiler, reg: u5) void {
         self.fp_home_regs[reg] = true;
@@ -1307,7 +1253,6 @@ const Arm64Compiler = struct {
         self.locals.clearRetainingCapacity();
         self.fp_locals.clearRetainingCapacity();
         self.fp_temps.clearRetainingCapacity();
-        self.int_temps.clearRetainingCapacity();
         // A staged variadic tail belongs to exactly one call. Carrying a
         // leftover across a function boundary would push a stale register onto
         // the next call's memory-argument area, so clear it with the rest of
@@ -1594,7 +1539,6 @@ const Arm64Compiler = struct {
                 };
                 try self.emitMovImm(reg, val);
                 if (ins.result) |t| try temps.put(self.alloc, t, reg);
-                try self.markIntTemp(ins.result);
             },
             .const_f64 => {
                 const d = try self.allocFpReg();
@@ -1671,9 +1615,6 @@ const Arm64Compiler = struct {
                 } else {
                     const reg = try self.evalDnirValue(temps, ins.lhs);
                     if (ins.result) |t| try temps.put(self.alloc, t, reg);
-                    // Integer-ness travels through the load exactly as
-                    // FP-ness travels through the arm above.
-                    if (self.valueIsInt(ins.lhs)) try self.markIntTemp(ins.result);
                 }
             },
             .store_local => {
@@ -1733,26 +1674,13 @@ const Arm64Compiler = struct {
                         if (val_reg != local_reg and !Arm64Compiler.regIsPinned(pinned, val_reg)) self.releaseReg(val_reg);
                         try pinned.put(self.alloc, slot, local_reg);
                         try temps.put(self.alloc, slot, local_reg);
-                        // Same rule as the f64 arm's `markFpTemp(slot)`: the
-                        // KIND is a fact about the SLOT, and has to survive the
-                        // store or the next read of the local knows nothing.
-                        if (self.valueIsInt(ins.lhs)) try self.markIntTemp(slot);
                     } else if (!Arm64Compiler.regIsPinned(pinned, val_reg)) {
                         self.releaseReg(val_reg);
                     }
                 }
             },
             .binop => blk: {
-                // An FP-RESIDENT operand makes this float arithmetic no matter
-                // what the instruction is typed. `cx = (col - WIDTH / 2) * 3.5
-                // / WIDTH` in `examples/mandelbrot.duo` lowers the final divide
-                // with `ty = .any` — measured, along with every other
-                // instruction in `render()`, `const_i64` included — so it fell
-                // to the integer arm and read a d register's NUMBER as an x
-                // register. The sibling arm inside a float kernel already asks
-                // `valueIsFp` for exactly this reason; the arm outside one
-                // never did.
-                if (ins.ty == .f64 or self.valueIsFp(ins.lhs) or self.valueIsFp(ins.rhs)) {
+                if (ins.ty == .f64) {
                     const ast_op = dnirBinOpToAst(ins.binop);
                     // f64 ARITHMETIC outside a float-returning function. The
                     // arm below emits exactly this and is gated on
@@ -1857,7 +1785,6 @@ const Arm64Compiler = struct {
                         if (!Arm64Compiler.regIsPinned(pinned, ilhs)) self.releaseReg(ilhs);
                         if (!Arm64Compiler.regIsPinned(pinned, irhs)) self.releaseReg(irhs);
                         if (ins.result) |t| try temps.put(self.alloc, t, idst);
-                        try self.markIntBinop(ins, cmp_op);
                         break :blk;
                     }
                     const lhs = try self.evalDnirValueFp(temps, ins.lhs);
@@ -1883,7 +1810,6 @@ const Arm64Compiler = struct {
                     if (!Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
                     if (!Arm64Compiler.regIsPinned(pinned, rhs)) self.releaseReg(rhs);
                     if (ins.result) |t| try temps.put(self.alloc, t, dst);
-                    try self.markIntBinop(ins, op);
                 }
             },
             .call_extern, .call_direct => {
@@ -2430,28 +2356,7 @@ const Arm64Compiler = struct {
     }
 
     fn evalDnirValueFp(self: *Arm64Compiler, temps: *std.AutoHashMapUnmanaged(u32, u5), v: dnir.Value) Error!u5 {
-        if (self.crossFile(v, true)) {
-            // A GP-resident operand read in float position. The `.i64` arm
-            // below already converts an integer IMMEDIATE with `scvtf`; the
-            // same value arriving in a register was refused instead, which is
-            // what `(col - WIDTH / 2) * 3.5 / WIDTH` in
-            // `examples/mandelbrot.duo` runs into — `col - 40` is a perfectly
-            // ordinary i64 in x12 and the multiply wants it as a double.
-            //
-            // The licence is `int ids`, not the position: promote only when the
-            // DNIR says every definition of this id is an integer. Promoting on
-            // the strength of "the consumer wanted a float" would convert an
-            // FP value that merely FAILED TO BE MARKED, and the result is a
-            // plausible double rather than a refusal — the exact failure
-            // gap[058] was filed for.
-            if (self.valueIsInt(v)) {
-                const src = try self.evalDnirValue(temps, v);
-                const d = try self.allocFpReg();
-                try self.emitScvtfFromGpr(d, src);
-                return d;
-            }
-            return refuse(@src());
-        }
+        if (self.crossFile(v, true)) return refuse(@src());
         return switch (v) {
             .void => try self.allocFpReg(),
             .f64 => |n| blk: {
