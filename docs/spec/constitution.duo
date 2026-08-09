@@ -677,7 +677,7 @@ archrelation = law{
 -- relation successively specialized: `add`, then the LEVEL, then the subject,
 -- then the value. Where the operand already names its kind, `g:add(n)` resolves
 -- through the descriptor of `n` and the level is unnecessary.
-add.canon = { "g:add(node)(n)", "g:add(edge)(a, rel, b)", "g:add(n)" }
+add.canon = { "g:add(n)", "g:add(mode)(n)" }   -- level ONLY where mode is a real choice
 
 factone = law{
     id    = "law.fact.one"
@@ -729,7 +729,7 @@ kinds.authority = false
 -- accident. G0 --transaction--> G1, never mutation in place — which is what
 -- buys incrementality, undo, replay, speculation, parallel agents and stable
 -- incarnation identity.
-edit.canon = { "edit = world(graph)(g)", "edit:add(edge)(...)" }
+edit.canon = { "edit = world(graph)(g)", "parent:add(child)" }  -- graph is AUTHORITY, not cargo
 
 -- The irreducible primitives. Everything else — descriptor, binding, place,
 -- effect, capability, lifetime, origin, trust, provenance, representation,
@@ -867,4 +867,134 @@ package = law{
         "the contract is surface, effects, failure set, complexity, determinism, capability",
     }
     fails = "opening a registry before coherence closes"
+}
+
+-- ═══ §37 · ORIENTATION. Semantic expressibility is not canonicality. ═══════
+--
+-- Duon source may be semantically correct and still noncanonical. Orientation,
+-- compaction and idiom are LAW, not taste — and the compiler, formatter,
+-- agents, std, the self-hosted compiler, duon wasm, the docs and every piece of
+-- architectural pseudocode obey the same one.
+
+-- Declare from the relation. Work from the value. The two faces are different
+-- questions: the declaration answers "what relation exists?", the invocation
+-- answers "what can this value do or become?". Never collapse them into one
+-- spelling. Operation-first at a CALL SITE is canonical only when the relation
+-- itself is the value being held or passed — `xs:map(to(str))`.
+face = law{
+    id    = "law.face.subject"
+    kind  = .invariant
+    holds = .subject
+    binds = {
+        "if the first semantic operand is present as a value, IT IS THE RECEIVER",
+        "declare operation-first, execute subject-first",
+        "operation-first at a call site only for a relation held as a value",
+    }
+    fails = "to(str)(n) where n is in hand — the algebra described, not the work done"
+}
+
+-- A level names a REAL CHOICE, never a category already recoverable. If removing
+-- a level leaves exactly one valid edge, the canonicalizer removes it. `x:to(str)`
+-- cannot collapse — `str` is the demanded destination and is an independent
+-- decision. `g:add(node)(n)` DOES collapse, because `n` names its own descriptor.
+necessity = law{
+    id    = "law.level.necessity"
+    kind  = .invariant
+    holds = .necessary
+    binds = {
+        "a level exists only for a choice the operands cannot recover",
+        "removal leaving exactly one valid edge means the level was a tag",
+        "explicitness is not automatically clarity",
+    }
+    fails = "a redundant semantic level, which is restatement and violates hpls"
+}
+
+-- THE OBJECT THAT STORES THE DATA IS NOT NECESSARILY THE SEMANTIC SUBJECT.
+-- A host structure owning the memory does not make it the receiver. If the
+-- operation resolves a subject, canonical orientation is `subject:resolve(rel)`
+-- with the graph ambient — NOT `graph:resolve(relation)(subject)` merely because
+-- the index physically lives in a graph object. This is the law that stops
+-- pseudo-OOP drift, and it is the twin of law.face.subject: together they
+-- forbid both `compiler:everything(...)` and `lower(target)(value)`.
+physical = law{
+    id    = "law.owner.physical"
+    kind  = .invariant
+    holds = .semantic
+    binds = {
+        "physical storage owner is not the semantic subject",
+        "value:lower(target), never compiler:lower(value, target)",
+        "fact:derive(rule), never graph:derive(fact, rule) where graph is storage",
+        "host method ownership leaking into semantic design is a finding",
+    }
+    fails = "an api perfectly named and incorrectly oriented"
+}
+
+-- Ambient is earned, not assumed: a thing is ambient ONLY where exactly one
+-- valid contextual value exists. Otherwise it DIAGNOSES. No hidden global
+-- compiler graph — the dynamic global environment is a lua fact, not a duon one,
+-- and it may not return as architecture.
+ambient = law{
+    id    = "law.ambient.one"
+    kind  = .invariant
+    holds = .unique
+    binds = {
+        "graph and world are authority, not syntactic cargo",
+        "ambient requires exactly one valid contextual value",
+        "ambiguity diagnoses rather than picks",
+    }
+    fails = "shortening source by hiding an independent choice"
+}
+
+-- Canonical source is a FIXED POINT, semantically and not merely by formatting.
+-- The canonicalizer performs semantic REPAIRS — `to(str)(n)` becomes `n:to(str)`
+-- — and emits a witness naming the relation, subject, level and the unchanged
+-- graph identity, which is what makes the rewrite justified rather than a
+-- reformat. Idiom is checked across every dimension at once, not one grep:
+-- face, level, home, bind, return, route, subject, case, chain, convert.
+idiom = law{
+    id    = "law.idiom.total"
+    kind  = .invariant
+    holds = .fixpoint
+    binds = {
+        "canon(source) == source for every committed canonical file",
+        "the canonicalizer repairs orientation and witnesses the repair",
+        "agents report idiom counts COMPUTED, never self-declared",
+    }
+    fails = "semantically valid source that teaches the wrong idiom"
+}
+
+-- Relation metadata carries the canonical face, so rendering is DERIVED rather
+-- than left to agent taste. An argument list is not `{ a, b, c }` — each operand
+-- carries a ROLE, and orientation follows from the roles automatically. This is
+-- also what stops a bootstrap host signature from teaching the renderer that its
+-- first parameter is the receiver.
+role = law{
+    id    = "law.relation.role"
+    kind  = .invariant
+    holds = .roles
+    binds = {
+        "every operand carries a role: subject, level, operand, world, demand",
+        "canonical rendering derives from roles, not from source order",
+        "a host signature declares which argument is the subject, and it need not be the first",
+    }
+    fails = "a generator emitting to(str)(x) because it had a signature and no subject role"
+}
+
+-- DOCUMENTATION IS CORPUS. A code block in a normative document is a canonical
+-- corpus member and compiles under the same gate, because an architect writing
+-- `to(str)(x)` in a design note teaches every later agent the wrong idiom. A
+-- block is duon, dnir, foreign or CONCEPTUAL — and if an idea cannot yet be
+-- expressed canonically it is marked conceptual and filed as a gap. Never invent
+-- near-duon. Prose is lintable too: say "add fact" and "resolve relation", never
+-- "call addnode" or "the registry owns".
+doc = law{
+    id    = "law.doc.corpus"
+    kind  = .invariant
+    holds = .canonical
+    binds = {
+        "normative code blocks obey every canonical gate",
+        "a block is duon, dnir, foreign or conceptual — never rough pseudocode",
+        "architecture prose uses duon concepts, so its wording is lintable",
+    }
+    fails = "a specification teaching an idiom its own gate would reject"
 }
