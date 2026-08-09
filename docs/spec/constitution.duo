@@ -1466,7 +1466,16 @@ subtract = law{
 }
 
 -- FIVE OBLIGATIONS BEFORE ANY DELETION. Retirement is proven, not asserted.
+--
+-- AMENDED 2026-08-08 by gap[087], and the amendment is the whole lesson:
+-- obligation 1 is NOT satisfied by the replacement PARSING. Measured, `kind =
+-- invariant` parses and does NOT resolve — it lowers to an undeclared
+-- identifier — while the retirement-debt form `kind = .invariant` compiles. I
+-- recorded obligation 1 satisfied on `duo check` alone and was wrong. This tree
+-- already had that trap on record twice ("a resolving ambient path is not a
+-- working one"), and the third time was in the file legislating against it.
 subtract.proves = {
+    "the replacement RESOLVES AND LOWERS, proven BY VALUE, on both backends",
     "every semantic role has a strictly SIMPLER EXISTING spelling",
     "resolution is deterministic",
     "canonical lowering is NO WORSE",
@@ -1607,4 +1616,5 @@ shadow = law{
 -- §40's blocked count RESOLVES: of the 57 SELF-ZERO sites, the 36 `.x`
 -- arithmetic reads retire to bare identity; the 15 bare `.` and 6 leading `:`
 -- STAY, because both earn their syntax under law.subject.punctuation.
-subtract.resolved = "36 retire, 21 stay"
+-- BLOCKED by gap[087]: the bare form does not resolve, so nothing retires yet.
+subtract.resolved = "36 retire, 21 stay — BLOCKED until bare identity resolves"
