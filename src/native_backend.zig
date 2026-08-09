@@ -2610,6 +2610,26 @@ const Arm64Compiler = struct {
         while (reg < 29) : (reg += 1) {
             if (reg == platform_reserved_reg) continue;
             if (exclude != null and reg == exclude.?) continue;
+            // A SPILLED register is not free, however `used_regs` reads.
+            //
+            // `spillReg` stores the victim and clears `used_regs`, but the slot
+            // that owned it still MAPS to it, and `ensureRegLive` reloads into
+            // THAT SAME register. So handing it out here gives two owners one
+            // register, and the later reload silently overwrites whichever
+            // arrived second. Disassembled from a 3-read program answering 0:
+            //
+            //     add x22, x23, x25     ; a + b
+            //     str x28, [sp, #0x8]   ; spill x28
+            //     add x28, x22, x27     ; result computed INTO the freed x28
+            //     ldr x28, [sp, #0x8]   ; reload clobbers it
+            //     mov x0,  x28          ; returns the spilled garbage
+            //
+            // The real repair is a reload that may land in a DIFFERENT register
+            // — `ensureRegLive` returning one instead of assuming the original.
+            // That is an allocator change. Until then this keeps a spilled
+            // register reserved to its owner: exhaustion then REFUSES, and a
+            // refusal is a bail while the alternative is a wrong answer.
+            if (self.spilled_regs.contains(reg)) continue;
             if (!self.used_regs[reg]) {
                 self.used_regs[reg] = true;
                 return reg;
