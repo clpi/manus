@@ -2717,3 +2717,68 @@ irretire = {
 -- binding is not a memory location until demand proves it needs one — address
 -- observed, capture, aliasing, spill, mutation or a debugger.
 irwin = "a binding is not a memory location until demand proves it needs one"
+
+-- ═══ §60 · FOUR CLAIMS §59 DID NOT CARRY ═══════════════════════════════════
+
+vocabsame = law{
+    id    = "law.vocab.same"
+    kind  = .invariant
+    holds = .shared
+    binds = {
+        "source, semantic graph, dnir, tooling and machine provenance share ONE relation and descriptor identity space",
+        "each layer may ADD facts; none may rename an operation into its own vocabulary",
+    }
+    why   = "the source-to-graph-to-dnir-to-assembly view becomes nearly free, because the compiler no longer RECONSTRUCTS correspondence — the lineage was never broken."
+    canon = "add(a,b) semantic · add + descriptor i64 + repr register + overflow wrap realized · block 7, value v19, users {v20,v23} in flow · v19 -> x3 allocated · `add x3,x1,x2` machine"
+}
+
+-- `Op` is a SECOND TAXONOMY. It should become an interned ACCELERATION of a
+-- relation identity, never an identity of its own — and the same collapse
+-- deletes the redundant dispatch level `switch op { .binop => switch binop }`,
+-- because `lt` is a relation, not `cmp` carrying a `lt` tag.
+opintern = law{
+    id    = "law.op.intern"
+    kind  = .invariant
+    holds = .interned
+    binds = {
+        "a compact opcode is an interned acceleration of a RELATION IDENTITY",
+        "it is never a second identity",
+        "no operation is a tag inside another operation",
+    }
+    deny  = "binop.add beside the semantic relation add — one redundant dispatch level, and a switch inside a switch to service it"
+}
+
+-- Most irs freeze physical type on entry. DNIR need not: it can carry a LADDER
+-- of realization knowledge and commit only where demand or abi forces it.
+reprladder = law{
+    id    = "law.repr.ladder"
+    kind  = .invariant
+    holds = .candidates
+    binds = {
+        "a realized value may carry SEVERAL candidate representations",
+        "commitment happens where demand, abi or target requires it — not on entry to the ir",
+        "point -> sealed shape -> scalar-replaceable -> two f64 -> registers -> d0,d1 is one value gaining facts",
+    }
+    why   = "freezing representation early is what makes a conventional lower ir lose the optimizations it then spends passes trying to recover. law.observe.min and law.abi.demand both need this to be true of the ir, not only of the graph."
+}
+
+-- If realized ir is ordinary graph data, the self-hosted compiler transforms it
+-- with ordinary duon — no separate pattern language, which is a whole subsystem
+-- SHC does not then have to write.
+irdata = law{
+    id    = "law.ir.data"
+    kind  = .objective
+    holds = .ordinary
+    binds = {
+        "realized instructions are ordinary graph data with a relation, a result, operands and facts",
+        "compiler transforms are ordinary relation applications over them",
+        "patterns are descriptors and relations, NOT an external ir pattern language",
+    }
+    canon = "block:map(fold):filter(live):map(realize(target))"
+    why   = "a compiler that needs a bespoke matching dsl to manipulate its own ir has two languages in it. law.force.three says the self-host workload is what forces this to be true."
+}
+
+-- Places unify: `field(x)`, `index(i)` and `global(g)` are one PLACE operand to
+-- load and store, so alias, bounds, mutability and provenance analysis reason
+-- uniformly and the backend still picks its own instruction.
+irplace = "load(subject, place) · store(subject, place, value) — place is field, index or global"
