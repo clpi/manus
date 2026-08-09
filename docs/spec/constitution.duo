@@ -1417,3 +1417,105 @@ subtract.proves = {
 -- retire independently, which is the order to work in.
 subtract.blocked = "self-zero's implicit subject: bare identity vs local binding"
 subtract.free = { "case in construction", "argument lens", "inferred case" }
+
+-- ═══ §41 · SELF-ZERO, REDEFINED — the receiver disappears, not into dots ════
+--
+-- OWNER DIRECTIVE 2026-08-08. This RESOLVES §40's open question and SUPERSEDES
+-- §0a's definition of SELF-ZERO.
+--
+-- THE MISTAKE THE OLD DEFINITION MADE: it defined SELF-ZERO as `.x` / `.y` /
+-- `:length()`, which makes `.` and `:` CARRY THE BURDEN OF SELF. The receiver
+-- did not disappear; it was respelled as punctuation.
+--
+-- THE CORRECTED DEFINITION:
+--
+--   A subject-bearing scope contributes its subject's visible relations and
+--   projections to ORDINARY NAME RESOLUTION. The subject has no user-visible
+--   binding name.
+--
+-- So this is the SELF-ZERO form:
+--
+--   point:scale = (k) @{ x * k, y * k }
+--
+-- and this is not:
+--
+--   point:scale = (k) @{ .x * k, .y * k }
+
+selfzero = law{
+    id    = "law.selfzero"
+    kind  = .invariant
+    holds = .resolution
+    binds = {
+        "subject projections participate in BARE-NAME resolution",
+        "there is no .field shorthand and no self",
+        "the receiver disappears from source, it is not respelled as punctuation",
+    }
+    fails = "defining the implicit subject as a punctuation prefix"
+}
+
+-- THE COMPLETE RECEIVER MODEL. Eight rows, and every one of them earns its
+-- spelling:
+--
+--   explicit field            p.x
+--   IMPLICIT field            x
+--   explicit relation         p:length()
+--   IMPLICIT relation         :length()
+--   explicit whole subject    p
+--   IMPLICIT whole subject    .
+--   passed field projection   map(name)
+--   passed relation           map(to(str))
+receiver.model = 8
+
+-- `:` IS KEPT BECAUSE IT CONTRIBUTES INFORMATION. `normalize()` could be an
+-- ordinary local or world function; `:normalize()` unambiguously says "invoke
+-- the normalize relation on the ambient subject". That earns its syntax.
+--
+-- Bare `.` IS KEPT for the subject VALUE ITSELF — `cache:put(.)` — and now
+-- means exactly ONE thing. Not case. Not lens. Not field shorthand.
+punctuation = law{
+    id    = "law.subject.punctuation"
+    kind  = .invariant
+    holds = .necessary
+    binds = {
+        "omitting the subject must not require restating it as punctuation",
+        "except the subject VALUE `.` or the invocation boundary `:`",
+    }
+}
+
+-- THE ONE RULE THAT REPLACES THREE PUNCTUATION ENCODINGS. `.case`, `.field`
+-- and `.lens` were three spellings for three contexts the graph already
+-- distinguishes:
+--
+--   BARE IDENTITY + SEMANTIC DEMAND + AVAILABLE HOMES -> ONE IDENTITY, OR A
+--   DIAGNOSTIC.
+--
+--   law{ kind = invariant }     `invariant` resolves: kind demands a case
+--   point:scale = (k) x * k     `x` resolves: the subject has one projection x
+--   users:map(name)             `name` resolves: map demands a callable
+resolution.rule = "bare identity plus demand plus homes yields one identity or a diagnostic"
+
+-- SHADOWING IS DIAGNOSED, NEVER SILENTLY RESOLVED. "Locals win" is DENIED:
+-- adding `x = 3` would silently change every later `x` from a subject
+-- projection to a local binding, which makes source meaning depend on a
+-- declaration the reader may not have reached yet.
+shadow = law{
+    id    = "law.shadow"
+    kind  = .invariant
+    holds = .diagnose
+    binds = {
+        "a lexical binding may NOT silently shadow an ambient-subject identity",
+        "referenced in the same scope",
+        "a collision that would depend on subtle precedence DIAGNOSES",
+    }
+    fails = "locals win, and every later x quietly changes meaning"
+}
+
+-- MEASURED 2026-08-08: all four forms — `kind = .invariant`, `kind = invariant`,
+-- `.x * k` and `x * k` — already PARSE. So the retirement is a
+-- CANONICALIZATION, not a language change, and §40's obligation 1 (a strictly
+-- simpler existing spelling) is satisfied by construction for both.
+--
+-- §40's blocked count RESOLVES: of the 57 SELF-ZERO sites, the 36 `.x`
+-- arithmetic reads retire to bare identity; the 15 bare `.` and 6 leading `:`
+-- STAY, because both earn their syntax under law.subject.punctuation.
+subtract.resolved = "36 retire, 21 stay"
