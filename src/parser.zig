@@ -5396,10 +5396,24 @@ pub const Parser = struct {
             _ = try self.expect(.rparen);
             return self.new_expr(.{ .unop = .{ .loc = l, .op = .compile, .operand = operand } });
         }
-        // @{} — compile-time frozen table / descriptor literal (Pass 3)
+        // `@{ … }` — c0 §43 `anchor.brace`: "the same form, name recovered from
+        // the enclosing descriptor". So this is NOT a third brace mechanism and
+        // it does not get a reader of its own; it is `parse_pack` with the
+        // subject-elided stance, and the enclosing descriptor is the name.
+        //
+        // The `.compile` wrapper STAYS, and that is a separate axis rather than
+        // a second mechanism: `@` also stages, and the 25 measured `= @{ … }`
+        // sites in the tree are frozen constant tables that depend on the
+        // staging. Where there is no enclosing descriptor, `home` is null and
+        // the pack is honestly anonymous — §43 says the name is RECOVERED from
+        // context, and at top level there is no context to recover it from.
         if ((try self.pk()).kind == .lbrace) {
-            const table = try self.parse_table();
-            return self.new_expr(.{ .unop = .{ .loc = l, .op = .compile, .operand = table } });
+            const pack = try self.parse_pack(.{
+                .applied = self.descriptor_home != null,
+                .elided = true,
+                .home = self.descriptor_home,
+            });
+            return self.new_expr(.{ .unop = .{ .loc = l, .op = .compile, .operand = pack } });
         }
         const first = try self.parse_at_path_segment();
         var parts: std.ArrayList([]const u8) = .empty;
@@ -5798,12 +5812,43 @@ pub const Parser = struct {
                     // so the function returned a call result instead of a record.
                     // Table-call sugar buys nothing `f({...})` does not, and a
                     // scan of 575 `.duo` files found zero real uses of it.
+                    //
+                    // APPLY-ONE (c0 §43 `law.brace`, §44 `law.apply.one`).
+                    // `name{ … }` is ONE form and it is APPLICATION; the SUBJECT
+                    // decides what applying means. This arm therefore emits the
+                    // same node the paren face emits, and asks nothing about what
+                    // `e` denotes — "the parser emits one structural application
+                    // node and never resolves the edge".
+                    //
+                    // What changed here is not the node but the FACTS on it. It
+                    // used to record `.parenless`, the same face a string call
+                    // takes, and hand the pack to `parse_call_args` which wrapped
+                    // it as an ordinary first argument. The result was that
+                    //
+                    //     f{ x = 1 }        and        f({ x = 1 })
+                    //
+                    // produced byte-identical trees. c0 §44a trap 2 is "braces as
+                    // sugar", and the tree had already applied that sugar and
+                    // erased the evidence before sema ran, so no later consumer
+                    // could have declined it. Now the face is `.braced` and the
+                    // operand carries `pack.applied`, which is the difference
+                    // between an argument pack and a table that happens to be an
+                    // argument. `pack.realized` stays `.undecided`: law.pack.shape
+                    // puts representation AFTER semantic resolution, and a `{` in
+                    // the source is not a demand for a heap table.
                     if (tok.loc.line > e.loc().line) break;
                     if (e.* == .name and std.mem.eql(u8, e.name.ident, "nn")) {
+                        // FINDING, reported not repaired (gap[092]): this line is
+                        // c0 §44a trap 1 verbatim — the parser asking what a name
+                        // denotes to pick a different production — sitting in the
+                        // very arm APPLY-ONE repairs. It is left standing because
+                        // deleting it changes what `examples/ml_showcase.duo`
+                        // compiles to, and a regression is not a fix. Its removal
+                        // is a step of gap[092], with its one real user measured.
                         e = try self.parse_nn_block_desugar(tok.loc);
                     } else {
                         const callargs = try self.parse_call_args();
-                        e = try self.new_expr(.{ .call = .{ .loc = tok.loc, .func = e, .args = callargs, .form = .parenless } });
+                        e = try self.new_expr(.{ .call = .{ .loc = tok.loc, .func = e, .args = callargs, .form = .braced } });
                     }
                 },
                 .lparen, .string_lit => {
@@ -5953,7 +5998,15 @@ pub const Parser = struct {
                 }
                 _ = try self.expect(.rparen);
             },
-            .lbrace => try args.append(self.alloc, try self.parse_table()),
+            // APPLY-ONE: a brace in argument position IS the subject's argument
+            // PACK (c0 §44 `law.pack.shape`), and saying so is the whole point —
+            // `f{ x = 1 }` and `f({ x = 1 })` were the same tree until this bit
+            // existed. `parse_table` reads the same bytes either way; only the
+            // stance differs, because there is one brace form and not two.
+            .lbrace => try args.append(self.alloc, try self.parse_pack(.{
+                .applied = true,
+                .home = self.descriptor_home,
+            })),
             .string_lit => {
                 const t = try self.adv();
                 const decoded = try Lexer.decode_lua_short_string(self.alloc, t.text);
@@ -5969,7 +6022,24 @@ pub const Parser = struct {
         return args.toOwnedSlice(self.alloc);
     }
 
+    /// The ONE brace reader. Every stance of `{ … }` — anonymous value, applied
+    /// pack, elided-subject pack — reads the same bytes through here and differs
+    /// only in the `Pack` stance it is handed. c0 §43: there are not two brace
+    /// forms to choose between, so there is not a second reader to choose either.
     fn parse_table(self: *Parser) ParseError!*ast.Expr {
+        return self.parse_pack(.{});
+    }
+
+    fn parse_pack(self: *Parser, stance: ast.Pack) ParseError!*ast.Expr {
+        const e = try self.parse_pack_body();
+        // A `for` inside the braces made this a comprehension, which is a stream
+        // and not a pack; leave it exactly as it was rather than stamping a
+        // stance onto a node that has no pack.
+        if (e.* == .table) e.table.pack = stance;
+        return e;
+    }
+
+    fn parse_pack_body(self: *Parser) ParseError!*ast.Expr {
         const l = (try self.expect(.lbrace)).loc;
         var fields: std.ArrayList(ast.TableField) = .empty;
         while (!(try self.check(.rbrace))) {
@@ -8452,4 +8522,155 @@ test "parse: @c.emit with combinator arg is expr_stmt not directive" {
     try testing.expect(call_expr.* == .call);
     try testing.expect(call_expr.call.func.* == .name);
     try testing.expectEqualStrings("__emit", call_expr.call.func.name.ident);
+}
+
+// ── APPLY-ONE (c0 §43 `law.brace`, §44 `law.apply.one` / `law.pack.shape`) ────
+//
+// These tests are a SET and must be read together. Any one of them passes under
+// a parser that had simply picked one reading for every brace, which is the
+// state APPLY-ONE repairs; it is the whole set that says the faces converge on
+// one node while the pack's stance stays a recorded fact.
+
+test "apply-one: the brace face and the paren face reach the SAME node kind" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const braced = try parseDuoSource(
+        \\q = point{ x = 1, y = 2 }
+    , &arena);
+    const parened = try parseDuoSource(
+        \\q = point(1, 2)
+    , &arena);
+    // ONE application node. The parser asked nothing about what `point` denotes
+    // and emitted no second production — c0 §44a trap 1.
+    const b = braced.body.stmts[0].assign.values[0];
+    const p = parened.body.stmts[0].assign.values[0];
+    try testing.expect(b.* == .call);
+    try testing.expect(p.* == .call);
+    try testing.expectEqualStrings("point", b.call.func.name.ident);
+    try testing.expectEqualStrings("point", p.call.func.name.ident);
+}
+
+test "apply-one: the brace FACE is recorded, and differs from the paren face" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuoSource(
+        \\q = point{ x = 1 }
+        \\r = point(1)
+    , &arena);
+    try testing.expectEqual(
+        ast.InvocationForm.braced,
+        mod.body.stmts[0].assign.values[0].call.form,
+    );
+    try testing.expectEqual(
+        ast.InvocationForm.parenthesized,
+        mod.body.stmts[1].assign.values[0].call.form,
+    );
+}
+
+test "apply-one: f{...} is NOT f({...}) — the pack stance is what tells them apart" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // c0 §44a trap 2 ("braces as sugar"). Before APPLY-ONE these two produced
+    // byte-identical trees, so nothing downstream COULD decline to allocate a
+    // table: the sugar had already been applied and its evidence erased.
+    const applied = try parseDuoSource(
+        \\q = f{ x = 1 }
+    , &arena);
+    const argument = try parseDuoSource(
+        \\q = f({ x = 1 })
+    , &arena);
+    const ap = applied.body.stmts[0].assign.values[0].call;
+    const ar = argument.body.stmts[0].assign.values[0].call;
+    try testing.expect(ap.args[0].table.pack.applied);
+    try testing.expect(!ar.args[0].table.pack.applied);
+    try testing.expectEqual(ast.InvocationForm.braced, ap.form);
+    try testing.expectEqual(ast.InvocationForm.parenthesized, ar.form);
+}
+
+test "apply-one: the parser never decides realization — packs rest undecided" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // c0 §44 `law.pack.shape`: "physical representation is selected AFTER
+    // semantic resolution". A `{` in the source is not a demand for a table, so
+    // the only value the parser may write is `.undecided`.
+    const mod = try parseDuoSource(
+        \\q = point{ x = 1, y = 2 }
+        \\r = { x = 1, y = 2 }
+    , &arena);
+    try testing.expectEqual(
+        ast.Realization.undecided,
+        mod.body.stmts[0].assign.values[0].call.args[0].table.pack.realized,
+    );
+    try testing.expectEqual(
+        ast.Realization.undecided,
+        mod.body.stmts[1].assign.values[0].table.pack.realized,
+    );
+}
+
+test "apply-one: labels and positions survive on the pack" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // §44 `apply.carries` names "argument labels" and "argument positions". They
+    // are the pack's own fields in declaration ORDER, which is why APPLY-ONE
+    // adds no parallel label table: a second one is where the shapes drift.
+    const mod = try parseDuoSource(
+        \\q = point{ x = 1, y = 2 }
+        \\r = point{ 1, 2 }
+    , &arena);
+    const named = mod.body.stmts[0].assign.values[0].call.args[0].table.fields;
+    try testing.expectEqual(@as(usize, 2), named.len);
+    try testing.expectEqualStrings("x", named[0].named.key);
+    try testing.expectEqualStrings("y", named[1].named.key);
+    const positional = mod.body.stmts[1].assign.values[0].call.args[0].table.fields;
+    try testing.expectEqual(@as(usize, 2), positional.len);
+    try testing.expectEqual(@as(i64, 1), positional[0].positional.int_lit.val);
+    try testing.expectEqual(@as(i64, 2), positional[1].positional.int_lit.val);
+}
+
+test "apply-one: a bare pack is anonymous — no subject, so no application" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // c0 §44a: "`{ x = 1, y = 2 }` an ordinary anonymous structured value /
+    // `point{ x = 1, y = 2 }` APPLICATION of `point` to that shape — different
+    // because one has a SUBJECT." This is the row that keeps the surviving
+    // distinction from being "constructor versus call".
+    const mod = try parseDuoSource(
+        \\r = { x = 1, y = 2 }
+    , &arena);
+    const t = mod.body.stmts[0].assign.values[0];
+    try testing.expect(t.* == .table);
+    try testing.expect(!t.table.pack.applied);
+    try testing.expect(!t.table.pack.elided);
+    try testing.expect(t.table.pack.home == null);
+}
+
+test "apply-one: top-level @{...} has no name to recover and says so" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // c0 §43 `anchor.brace` recovers the name from the ENCLOSING DESCRIPTOR. At
+    // top level there is no enclosing descriptor, so `home` is null and the pack
+    // is honestly anonymous rather than claiming a subject it cannot name.
+    // Positive control for the elided bit: it is set, and `home` is not.
+    const mod = try parseDuoSource(
+        \\kind = @{ eof = 0, ident = 1 }
+    , &arena);
+    const staged = mod.body.stmts[0].assign.values[0];
+    try testing.expect(staged.* == .unop);
+    try testing.expectEqual(ast.UnOp.compile, staged.unop.op);
+    const pack = staged.unop.operand.table.pack;
+    try testing.expect(pack.elided);
+    try testing.expect(pack.home == null);
+    try testing.expect(!pack.applied);
+}
+
+test "apply-one: a comprehension is a stream, and takes no pack stance" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // `{ v for v in xs }` leaves `parse_pack_body` as a `.list_comp`, not a
+    // `.table`. Stamping a stance onto it would be inventing a pack that has no
+    // fields — the failure mode this row exists to catch.
+    const mod = try parseDuoSource(
+        \\r = { v for v in xs }
+    , &arena);
+    try testing.expect(mod.body.stmts[0].assign.values[0].* == .list_comp);
 }

@@ -1,0 +1,121 @@
+#!/usr/bin/env duo
+-- APPLY-ONE gate — c0 §43 `law.brace`, §44 `law.apply.one` / `law.pack.shape`.
+--
+-- WHY A GATE AND NOT JUST A FIXTURE. The positive fixture and the negative twin
+-- are only evidence when they are read TOGETHER: either alone passes under a
+-- compiler that had picked one reading for every brace, which is the state
+-- gap[088] measured. This runner is what makes them one fact.
+--
+-- WHAT IT MEASURES, all three outcomes the law enumerates:
+--
+--   callable subject  -> applies, and the brace face AGREES with the paren face
+--   neither           -> refuses, and refuses with a diagnostic
+--   descriptor        -> OWED (gap[092]); reported, and reported as owed
+--
+-- The descriptor row is checked in the direction it currently fails, so this
+-- gate goes RED the day it starts working. A gate that cannot notice its own
+-- gap being closed is not measuring the gap.
+--
+-- Exit 0 = the measured state matches the recorded state. Nonzero = drift.
+
+-- `global` matches every other runner in scripts/ and is not decoration here: a
+-- module-scope binding that is later ASSIGNED emits `duo_g__name` against a
+-- `duo_g_name` declaration and the C compiler refuses the file. That defect is
+-- unrelated to APPLY-ONE and is recorded on gap[092]; this is the convention
+-- that steps around it.
+global s = req "std.script"
+
+global duo: str = tostring(s.getenv_or("DUO"))
+if string.len(duo) == 0
+    duo = "./zig-out/bin/duo"
+end
+
+global failures: i64 = 0
+
+report(ok: bool, what: str, detail: str): void
+    if ok
+        s.echo("OK:   " .. what)
+    else
+        s.echo("FAIL: " .. what)
+        if string.len(detail) > 0
+            s.echo("      " .. detail)
+        end
+        failures = failures + 1
+    end
+end
+
+tmpname(): str
+    t = tostring(s.fs_tmp())
+    if string.len(t) == 0
+        t = "/tmp/duo_applyone_" .. tostring(os.time())
+    end
+    return string.gsub(t, "\n", "")
+end
+
+-- Run a file and hand back its combined output. Exit status is returned
+-- SEPARATELY and never inferred from the text: `cmd | tail` reports the exit of
+-- `tail`, and a gate built on that has already shipped a broken commit here.
+capture(cmd: str): str
+    t = tmpname()
+    s.run(cmd .. " > " .. t .. " 2>&1")
+    out = s.fs_read(t)
+    os.remove(t)
+    return out
+
+status(cmd: str): i64
+    t = tmpname()
+    rc = s.run(cmd .. " > " .. t .. " 2>&1")
+    os.remove(t)
+    return rc
+
+main(): void
+    -- ROW 1 — the POSITIVE twin, by VALUE. Six prints, and the pair that must
+    -- agree is the third and fourth: the brace face and the paren face applied
+    -- to one callable. "It compiled" is not the assertion; the digits are.
+    pos = "examples/apply_one_pack_proof.duo"
+    out = capture(duo .. " run " .. pos)
+    hasvalues = string.find(out, "3", 1, true) != nil
+    if string.find(out, "7", 1, true) == nil
+        hasvalues = false
+    end
+    if string.find(out, "9", 1, true) == nil
+        hasvalues = false
+    end
+    report(hasvalues, "positive twin answers by value (3 4 7 7 9 1)", out)
+
+    -- ROW 2 — the two faces AGREE. §44: "parenthesized, braced and string faces
+    -- project onto the SAME application relation". The fixture prints `braced`
+    -- then `parened` from one callable and one pack; a single `7` where two are
+    -- expected is the failure this row exists for, so count them.
+    faces = string.find(out, "7\n7", 1, true) != nil
+    report(faces, "brace face and paren face project onto one relation", out)
+
+    -- ROW 3 — the NEGATIVE twin refuses. c0 §43: "subject is NEITHER ->
+    -- diagnostic, never a guess." Both halves are checked: nonzero status AND a
+    -- diagnostic. A silent nonzero would satisfy the first alone.
+    neg = "examples/compile_fail/apply_one_neither.duo"
+    negrc = status(duo .. " check " .. neg)
+    negout = capture(duo .. " check " .. neg)
+    refused = negrc != 0
+    if string.find(negout, "nosuch", 1, true) == nil
+        refused = false
+    end
+    report(refused, "neither-case refuses, and names the subject", negout)
+
+    -- ROW 4 — the DESCRIPTOR subject, checked in the direction it FAILS. This
+    -- is the owed row (gap[092]): the resolution lives in sema and codegen, and
+    -- the parser half cannot reach it. When it lands this row goes RED, which is
+    -- the point — a gate that cannot notice its own gap closing is decoration.
+    t = tmpname() .. ".duo"
+    s.fs_write(t, "point: @{ x: f64, y: f64 }\nq = point{ x = 3.0, y = 4.0 }\nprint(q.x)\n")
+    descrc = status(duo .. " run " .. t)
+    os.remove(t)
+    report(descrc != 0, "descriptor subject STILL does not construct — gap[092] open", "")
+
+    if failures == 0
+        s.echo("apply-one: 4/4")
+    else
+        s.echo("apply-one: " .. tostring(failures) .. " row(s) drifted")
+        os.exit(1)
+    end
+end

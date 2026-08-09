@@ -2,7 +2,18 @@ const std = @import("std");
 pub const Loc = @import("lexer.zig").Loc;
 const RT = @import("types.zig").ResolvedType;
 
-/// Pass 24 §4.1 — surface invocation form on call AST nodes.
+/// Pass 24 §4.1 — the surface FACE an application was written through.
+///
+/// c0 §44 `law.apply.one`: "parenthesized, braced and string faces project onto
+/// the SAME application relation". The face is therefore a recorded FACT on the
+/// one application node (`Expr.call`), never a choice of production. Nothing may
+/// switch on it to pick a different object model; it exists so a consumer can
+/// tell which face it is looking at without re-deriving it from spelling.
+///
+/// `braced` was added by APPLY-ONE. Before it, `f{ … }` and `f"…"` both recorded
+/// `parenless`, so the brace face had NO face of its own and `f{ x = 1 }` was
+/// indistinguishable from `f({ x = 1 })` in the tree — c0 §44a trap 2 ("braces as
+/// sugar") already applied and its evidence erased before sema ever ran.
 pub const InvocationForm = enum {
     value_reference,
     parenthesized,
@@ -11,11 +22,55 @@ pub const InvocationForm = enum {
     receiver_parenless,
     command,
     indirect,
+    /// `subject{ … }` — the brace face. The single operand is a `.table` whose
+    /// `pack.applied` is set; it is the subject's structured ARGUMENT PACK.
+    braced,
 
     pub fn name(self: InvocationForm) []const u8 {
         return @tagName(self);
     }
 };
+
+/// c0 §44 `law.pack.shape` — "a BRACED ARGUMENT NEED NOT MATERIALIZE A TABLE".
+///
+/// `{ … }` is one construct with three stances, and they are stances of the SAME
+/// form rather than three mechanisms (c0 §43 `anchor.brace`):
+///
+///     { x = 1 }         an anonymous structured value      applied=0 elided=0
+///     point{ x = 1 }    the pack of an application         applied=1 elided=0
+///     @{ x = 1 }        the same, subject name elided      applied=1 elided=1
+///
+/// The FIELDS were never the missing facts — `TableField.named` already carries a
+/// label, field ORDER already carries position, `.spread` and `.indexed` already
+/// carry their edges. What the tree could not state is the three bits below, and
+/// without them `f{ … }` had already been rewritten to `f({ … })` by the time any
+/// consumer saw it.
+pub const Pack = struct {
+    /// Written in APPLICATION position: this brace is a subject's argument pack,
+    /// not a free-standing value. Distinguishes `f{ x = 1 }` from `f({ x = 1 })`.
+    applied: bool = false,
+    /// `@{ … }` — the subject NAME is elided and the enclosing descriptor
+    /// supplies it. Not a third mechanism; `home` is where the name comes from.
+    elided: bool = false,
+    /// The enclosing descriptor this parse was reading for, when there was one.
+    /// Null at top level, where `@{ … }` has no name to recover and is honestly
+    /// the anonymous pack.
+    home: ?[]const u8 = null,
+    /// law.pack.shape: "physical representation is selected AFTER semantic
+    /// resolution". `undecided` is the resting state and the only value the
+    /// PARSER may ever write — the surface having braces is not a demand for a
+    /// heap table. A resolving consumer records what demand actually required.
+    realized: Realization = .undecided,
+
+    /// Whether this pack is the pack of an application at all.
+    pub fn is_argument(self: Pack) bool {
+        return self.applied;
+    }
+};
+
+/// What demand turned out to require of a pack. `undecided` means nobody has
+/// asked yet, which is not the same as "a table" and must never be read as one.
+pub const Realization = enum { undecided, table, fields };
 
 // ── Type expressions ─────────────────────────────────────────────────────────
 
@@ -450,7 +505,10 @@ pub const Expr = union(enum) {
     binop: struct { loc: Loc, op: BinOp, lhs: *Expr, rhs: *Expr },
     unop: struct { loc: Loc, op: UnOp, operand: *Expr },
     func_expr: *FuncBody,
-    table: struct { loc: Loc, fields: []TableField },
+    /// The brace construct, in all three of its stances — see `Pack`. Named
+    /// `table` for the bootstrap's own history; a table is one REALIZATION of
+    /// it, and `pack.realized` is where that is decided.
+    table: struct { loc: Loc, fields: []TableField, pack: Pack = .{} },
     list_comp: ListComprehension,
     try_expr: struct { loc: Loc, operand: *Expr }, // expr?
     unwrap_expr: struct { loc: Loc, operand: *Expr }, // expr!
@@ -748,15 +806,13 @@ pub const RecordField = struct {
     loc: Loc,
 };
 
-/// One field of an actual table literal initializer: `{ name = expr, ... }`.
-/// Mirrors `RecordField` but pairs a name with a value expression instead of
-/// a type. The sema pass uses these to verify that an initializer matches its
-/// record-type annotation and to check `@implements(Concept)` satisfaction.
-pub const TableLitField = struct {
-    name: []const u8,
-    val: *Expr,
-    loc: Loc,
-};
+// DELETED by APPLY-ONE (c0 §44 `law.construct.zero` deny-list `recordinit`):
+// `TableLitField { name, val, loc }` was a second spelling of
+// `TableField.named { key, val }` with a `loc`. Its doc-comment asserted "the
+// sema pass uses these to verify that an initializer matches its record-type
+// annotation"; sema does not, and never did — a repo-wide grep found the type
+// declared here and referenced NOWHERE. A dead duplicate of the pack's field
+// shape is exactly where a second construction path grows back, so it goes.
 
 pub const Block = struct {
     loc: Loc,

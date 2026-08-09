@@ -405,6 +405,20 @@ pub fn build(b: *std.Build) void {
     const capability_scan_step = b.step("capability-scan", "Pass 105 U1: ambient fs/net/clock/rand/proc/fault reach in lib/std; ratchets");
     capability_scan_step.dependOn(&capability_scan_cmd.step);
 
+    // APPLY-ONE -- c0 section 43 `law.brace` and section 44 `law.apply.one`.
+    // A step of its own because the positive fixture and the negative twin are
+    // only evidence when they are read TOGETHER: either alone passes under a
+    // compiler that had picked one reading for every brace, which is the state
+    // gap[088] measured and gap[092] still carries. The runner also checks the
+    // OWED row in the direction it currently fails, so the gate goes red the day
+    // descriptor application starts working -- a gate that cannot notice its own
+    // gap closing is decoration.
+    const apply_one_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/applyone.duo" });
+    apply_one_cmd.setCwd(b.path("."));
+    apply_one_cmd.step.dependOn(b.getInstallStep());
+    const apply_one_step = b.step("apply-one", "c0 section 43/44: one brace form, three outcomes; descriptor row owed by gap[092]");
+    apply_one_step.dependOn(&apply_one_cmd.step);
+
     // RECOGNITION -- Pass 116 section 0a, the AUDIT v4 row, executable. It is a
     // step of its own rather than a row inside audit100 because the whole
     // finding is that `math.` is TWO rules: pure ops that want a value edge and

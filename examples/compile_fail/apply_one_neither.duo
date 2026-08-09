@@ -1,0 +1,31 @@
+-- APPLY-ONE, the THIRD outcome — c0 §43 `law.brace`:
+--
+--     "subject is a DESCRIPTOR -> descriptor application"
+--     "subject is a CALLABLE   -> ordinary application of a structured pack"
+--     "subject is NEITHER      -> diagnostic, never a guess"
+--
+-- This is the NEITHER row, and it is a rejection fixture rather than a value
+-- fixture for the reason the law states in its own `fails` clause: the defect
+-- being pinned is "resolving the shared form as a call without asking what the
+-- name is". A guess has no value to compare against — it has an ANSWER, and the
+-- answer is wrong. So the pin has to be the diagnostic.
+--
+-- The negative twin of `examples/apply_one_pack_proof.duo`. That file's rows
+-- all have a subject that resolves; this one has a subject that resolves to
+-- nothing, and the two must be read together. Either alone passes under a
+-- compiler that had simply picked one reading for every brace.
+--
+-- MEASURED 2026-08-09, and this is the CURRENT text, not the target text:
+--
+--     error: call to undeclared function 'nosuch'
+--
+-- It is the right REFUSAL and the wrong SENTENCE. "call to undeclared function"
+-- is the call path narrating its own unconditional win — the exact framing
+-- §43 deletes — and it names only one of the two homes the resolution rule
+-- consults. Under APPLY-ONE the subject was looked for in descriptor space AND
+-- in callable space and found in neither, and the diagnostic should say that.
+-- Owed by gap[092] along with the resolution it belongs to; pinned here on the
+-- substring that survives the rewording so the fixture does not have to move
+-- when the sentence does.
+
+nosuch{ x = 1, y = 2 }

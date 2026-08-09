@@ -1,0 +1,72 @@
+-- APPLY-ONE — c0 §43 `law.brace`, §44 `law.apply.one` / `law.construct.zero` /
+-- `law.pack.shape`. gap[088] is the defect; gap[092] carries what is still owed.
+--
+-- THE LAW. `name{ … }` is ONE form and it is APPLICATION; the SUBJECT decides
+-- what applying means. A descriptor subject constructs, a callable subject
+-- applies, and neither is a diagnostic. The parser resolves NOTHING — it emits
+-- one structural application node for every face.
+--
+-- WHAT THIS FIXTURE PINS, and it is deliberately only the rows that pass. The
+-- descriptor-application rows are NOT here: `point{ x = 3.0, y = 4.0 }` still
+-- emits a call to an undeclared `point`, and that is pinned in gap[092] with
+-- its measured output instead of written here as an aspiration. A proof file
+-- that cannot run proves nothing, and a red gate teaches the next reader to
+-- skip it.
+--
+-- Every row asserts a VALUE. `tostring(d)` once reported `d=table` for a
+-- decoder returning an EMPTY table and a bisect built on that was wrong, so
+-- "it compiled" and "it built something" are not evidence here.
+--
+-- SEPARATE DEFECT, measured while writing this and NOT caused by APPLY-ONE: a
+-- module-scope typed record binding beside a `main()` emits `duo_g__p` against
+-- a `duo_g_p` declaration and the C compiler refuses it. Reproduces with no
+-- brace face anywhere in the file. That is why `p` lives inside `main` here.
+
+point: @{ x: f64, y: f64 }
+
+-- The CALLABLE subjects. `apply(callable)(argpack)` is one of the four edges
+-- §44 `apply.edge` enumerates, and these rows prove the brace face reaches its
+-- subject and answers — the general mechanism is sound, and it is descriptor
+-- RESOLUTION that is missing rather than the face.
+first(t: any): any
+    t.x
+
+second(t: any): any
+    t.y
+
+kind = @{ eof = 0, ident = 1 }
+
+main(): void
+    -- ROW 1 — the anonymous pack, applied to nothing. c0 §44a: "`{ x = 1,
+    -- y = 2 }` an ordinary anonymous structured value / `point{ x = 1, y = 2 }`
+    -- APPLICATION of `point` to that shape — different because one has a
+    -- SUBJECT." This row is the one WITHOUT a subject, and it is the
+    -- construction path that has always worked: a typed binding plus a bare
+    -- pack, two forms already in the grammar, composed.
+    p: point = { x = 3.0, y = 4.0 }
+    print(p.x)
+    print(p.y)
+
+    -- ROW 2 — the CALLABLE subject through the BRACE face, and ROW 3 the same
+    -- subject through the PAREN face. §44: "parenthesized, braced and string
+    -- faces project onto the SAME application relation", so these two must
+    -- agree. If they ever disagree the faces have stopped being faces, and this
+    -- pair is what convicts that.
+    braced = first{ x = 7.0, y = 8.0 }
+    parened = first({ x = 7.0, y = 8.0 })
+    print(braced)
+    print(parened)
+
+    -- ROW 4 — a second label read off the same pack. §44 `apply.carries` names
+    -- "argument labels" and "argument positions"; both are the pack's own
+    -- fields in declaration order, which is why APPLY-ONE added nothing
+    -- parallel to hold them — a second table of labels is where the two shapes
+    -- drift apart.
+    print(second{ x = 1.0, y = 9.0 })
+
+    -- ROW 5 — `@{ … }`. c0 §43 `anchor.brace` recovers the elided name from the
+    -- ENCLOSING DESCRIPTOR; at top level there is none, so the pack is honestly
+    -- anonymous and `@` is doing its OTHER job, staging. Not a third mechanism:
+    -- one reader, a different stance.
+    print(kind.ident)
+end
