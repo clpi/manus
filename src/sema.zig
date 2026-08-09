@@ -713,6 +713,59 @@ pub const Sema = struct {
         };
     }
 
+    /// Inclusive bounds of a sized integer descriptor; null for everything else.
+    /// `u64`'s max is deliberately clamped to i64 max — the literal arrives as an
+    /// i64 and a wider bound could not be represented to compare against, so the
+    /// honest thing is to not claim a check we cannot perform.
+    fn intMin(t: RT) ?i64 {
+        return switch (t) {
+            .i8 => -128,
+            .i16 => -32768,
+            .i32 => -2147483648,
+            .i64 => std.math.minInt(i64),
+            .u8, .u16, .u32, .u64 => 0,
+            else => null,
+        };
+    }
+
+    fn intMax(t: RT) ?i64 {
+        return switch (t) {
+            .i8 => 127,
+            .i16 => 32767,
+            .i32 => 2147483647,
+            .i64, .u64 => std.math.maxInt(i64),
+            .u8 => 255,
+            .u16 => 65535,
+            .u32 => 4294967295,
+            else => null,
+        };
+    }
+
+    /// The literal value of `e` when it is an integer literal, or the negation of
+    /// one — `-1` is a unary minus over `1`, and a range check that missed that
+    /// would pass every negative literal into an unsigned descriptor.
+    fn intLiteralValue(e: *const ast.Expr) ?i64 {
+        return switch (e.*) {
+            .int_lit => |l| l.val,
+            .unop => |u| if (u.op == .neg) blk: {
+                const inner = intLiteralValue(u.operand) orelse break :blk null;
+                break :blk -inner;
+            } else null,
+            else => null,
+        };
+    }
+
+    /// The literal, when it provably does not fit the annotation. Null means
+    /// either "fits" or "not a literal" — this never guesses at a computed value,
+    /// which is a range-fact question for the checker, not a lexical one.
+    fn literalOutOfRange(ann: RT, e: *const ast.Expr) ?i64 {
+        const lo = intMin(ann) orelse return null;
+        const hi = intMax(ann) orelse return null;
+        const v = intLiteralValue(e) orelse return null;
+        if (v < lo or v > hi) return v;
+        return null;
+    }
+
     fn type_annotation_accepts_init(ann: RT, init_t: RT) bool {
         if (ann.eql(init_t)) return true;
         if (ann.is_integer() and init_t.is_integer()) return true;
@@ -1944,6 +1997,20 @@ pub const Sema = struct {
                                     const ann_name = ann.duo_name(&ann_buf);
                                     const init_name = init_t.duo_name(&init_buf);
                                     self.err(lname.loc, "type mismatch: variable '{s}' declared as '{s}', but initializer has type '{s}'", .{ lname.ident, ann_name, init_name });
+                                }
+                            }
+                            // A LITERAL that provably cannot fit is a diagnostic,
+                            // never a truncation. `x: u8 = 300` printed 44 with
+                            // `duo check` exiting 0 — not proven, not
+                            // runtime-checked, not diagnosed, which is the
+                            // fourth state soundness.md §1 says does not exist
+                            // (gap[064]). There is no analysis to do here and no
+                            // flow to be sensitive to: 300 does not fit in u8, at
+                            // the point of writing, always.
+                            if (i < ld.inits.len) {
+                                if (literalOutOfRange(ann, ld.inits[i])) |lit| {
+                                    var rb: [128]u8 = undefined;
+                                    self.err(lname.loc, "literal {d} does not fit in '{s}' (range {d}..{d})", .{ lit, ann.duo_name(&rb), intMin(ann).?, intMax(ann).? });
                                 }
                             }
                         }
