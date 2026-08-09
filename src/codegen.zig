@@ -13983,7 +13983,17 @@ pub const CodeGen = struct {
                         break :blk "%s";
                     if (self.enum_is_payload_free(ename)) break :blk "%d";
                 }
-                break :blk switch (t) {
+                // law.nominal (§46): RENDERING IS A PHYSICAL QUESTION. A
+                // nominal descriptor is printed as the thing it IS, and the
+                // fallback below is not a safe default for it — `feet` took
+                // the `else` arm and emitted `printf("%s", d)` on a `double`,
+                // which SEGFAULTED at runtime with `ok compile` reported. This
+                // is the exact class gap[097] hole 2 names: a switch whose
+                // descriptor arm assumes boxed. gap[093] measured the same
+                // site as silent no-output before the descriptor reached the
+                // emitter at all.
+                const phys = types.nominalReprOf(t) orelse t;
+                break :blk switch (phys) {
                     .i8, .i16, .i32 => "%d",
                     .i64 => "%lld",
                     .u8, .u16, .u32 => "%u",

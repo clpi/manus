@@ -93,6 +93,26 @@ boxes(bodyfile: str): i64
     v
 end
 
+-- RENDERING IS A PHYSICAL QUESTION TOO, and it is checked here rather than in
+-- the fixture because the fixture asserts one line and this needs its own.
+--
+-- `print("\x7bd\x7d")` on a `feet` emitted `printf("%s", d)` against a
+-- `double` and SEGFAULTED at runtime while the build reported `ok compile` —
+-- the format selector's descriptor arm assumed boxed, which is gap[097] hole
+-- 2 in its most visible form. gap[093] measured the same site as SILENT
+-- NO-OUTPUT one step earlier. A nominal descriptor prints as the thing it is.
+writerender(path: str): void
+    std.script.run("rm -f {path}")
+    line(path, "type feet = f64")
+    line(path, "type tally = i64")
+    line(path, "")
+    line(path, "main = (): i64")
+    line(path, "    d: feet = 2.5")
+    line(path, "    t: tally = 41")
+    line(path, "    print(d)")
+    line(path, "    print(t)")
+    line(path, "    0")
+
 -- THE CONTROL. Same arithmetic, same printed value, but the binding that
 -- carries the descriptor in the fixture is `any` here — so the compiler has
 -- to box it. If `boxes` does not fire on this, `boxes` is measuring nothing.
@@ -163,6 +183,17 @@ measure(duo: str): i64
     -- something — which is exactly the regression the law.canon.performance
     -- rule exists to catch.
     check("derived feet -> inch is a direct shrink(grow(", hits(b, "shrink(grow("))
+
+    -- Rendering, by value on both representations.
+    rpath = "{work}/render.duo"
+    writerender(rpath)
+    rendered = "no output"
+    if quiet("{duo} compile {rpath} --backend=c -o {work}/render.out") == 0
+        rendered = std.script.chomp(std.script.capture("{work}/render.out | xargs"))
+    okrender = 0
+    if rendered == "2.5 41"
+        okrender = 1
+    check("a nominal renders as its representation (got '{rendered}')", okrender)
 
     -- THE POSITIVE CONTROL, run last so its output cannot be mistaken for the
     -- fixture's.
