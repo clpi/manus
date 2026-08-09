@@ -108,6 +108,14 @@ not a policy but a measurement.
 
 ## 5. The honest bill (what refusing LLVM costs)
 
+> **SUPERSEDED BY PASS 104.** The bill exists; the CURRENCY CHANGED. This
+> section prices the backend in engineer-decades, which is the incumbent's
+> unit and the wrong one: the decades went to semantics archaeology, mutable-IR
+> pass coupling, and a compatibility museum — three sinks Duo deletes by
+> construction — plus serial lore accumulation, which becomes search under
+> gates. See `docs/spec/pass104.md`; the argument below is kept for its
+> reasoning, not its estimate.
+
 Owning the descent means owning what LLVM gave for free: decades of instruction
 scheduling, allocation heuristics, and peephole lore. Three reasons the bill is
 payable, stated as claims that pay the toll like all others:

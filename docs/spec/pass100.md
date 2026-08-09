@@ -411,6 +411,25 @@ graph merge. C is never an intermediary, LLVM never a dependency; foreign
 toolchains are CI ORACLES only; C/TS/Rust emission is an interop EXPORT at the
 edge:
 
+**The compression law (Pass 104)** — why owning the descent is weeks-class and
+not decades-class:
+
+```
+incumbent ≈ (passes × invariant coupling) × targets × dialects × legacy
+            + semantics archaeology + serial lore accumulation
+duo       ≈ Σ independent checked edges + data-described targets
+            + 0 (archaeology deleted) + parallel mined lore / gate throughput
+```
+
+Their optimizer INFERS; ours READS. Alias analysis, UB reasoning, loop-idiom
+recognition and devirtualization are archaeology for facts the source discarded
+— Duo never discards them, so the hardest half of optimization is not solved
+faster, it is not a task. Mutable-IR pass coupling becomes admission of
+independent checked rewrites (legality is data, not folklore). The dialect /
+flag / legacy-target museum is not built. Serial human lore becomes search under
+gates: a peephole is an edge-shaped, law-bounded, oracle-checkable unit, and
+Duo is an admission gate with a language attached.
+
 1. **Sealed collapse** makes hot-path dispatch static (rung-3 proofs), erasing
    the "dynamic language" tax where it matters; the collapse *rate* is a public
    metric.
@@ -686,10 +705,13 @@ themselves). *Nothing runs* → correct: §22.
 ## 22. Status ledger & open bridges (described ≠ demonstrated)
 
 **Running: nothing.** The audit artifact is the interim pipeline. **Spec'd,
-owed**: **BACKEND MATURITY** — the marquee item (Pass 103): selection /
-allocation / peephole per target over data-described ISAs, with parity measured
-per-workload against oracle compilers — plus **the Duo evaluator** (bodies are
-tables; evaluation is a fold); the graph service + toolchain front-ends (LSP/MCP/tree-sitter
+owed**: **BACKEND MATURITY** — the marquee item, reframed by Pass 104 as **the
+mining loop's throughput**, metered by G-D1..G-D6: days/weeks-class to baseline
+(evaluator fixed point, flow differential, generated ISA fidelity, end-to-end
+oracle parity), worklist-shaped past it, with REWRITES-ADMITTED-PER-WEEK as the
+standing falsifier — if that number is low the Compression Thesis is wrong and
+this ledger says so — plus **the Duo evaluator** (bodies are tables; evaluation
+is a fold); the graph service + toolchain front-ends (LSP/MCP/tree-sitter
 projection); canonicalizer + L2 rewrite set; archetypes; the add family;
 hot-list telemetry; witness store + `why`; `scan`; the differential harness;
 the benchmark corpus of §13. **Open decisions (bridged)**: memory management

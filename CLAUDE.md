@@ -199,7 +199,22 @@ graph → realize → flow → lower(target) → encode(target) → encode(elf�
 all DNIR, all family edges. The ISA is **descriptors with layout facts**;
 registers are **places**; the linker is **graph merge**. **NO C intermediary, NO
 LLVM, no runtime host.** Foreign compilers are **CI ORACLES ONLY**; emitting
-C/TS is an interop **EXPORT**, never a stage.
+C/TS is an interop **EXPORT**, never a stage. **Performance work is edge
+ADMISSION — propose, prove (legality data + witness), measure (Ward delta);
+never hand-tune without a witness** (Pass 104).
+
+**Why the descent is weeks-class, not decades-class (Pass 104).** Their
+optimizer INFERS; ours READS. The incumbent decades went to four sinks: semantics
+archaeology (alias/UB/idiom/devirt — reconstructing facts the source discarded;
+Duo never discards them, so it is not a task), mutable-IR pass coupling
+(N passes × M invariants × K targets; here a transformation is an edge with its
+legality as DATA, so multiplicative becomes additive), the compatibility museum
+(dialects × flags × legacy — not maintained faster, NOT BUILT), and serial human
+lore (the one that remains, and it becomes search under gates: a peephole is an
+edge-shaped, law-bounded, oracle-checkable unit — **Duo is an admission gate
+with a language attached**). The falsifier is
+**REWRITES-ADMITTED-PER-WEEK** (G-D5): if that number is low the thesis is
+wrong and the ledger must say so.
 
 What this means for THIS repository, concretely:
 
