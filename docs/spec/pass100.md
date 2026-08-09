@@ -358,7 +358,18 @@ enumerable callable, a function a non-enumerable table; apply/retrieve/anchor
 shared; `x@iter` answers the type question; the boundary crosses
 (dispatch→apply, gen→sample, orient→invert). Scope = table = world.
 
-**Memory** (bridged): non-moving E1 until the GC record; drop ladder via
+**Memory** (DECIDED, Pass 107 — the E1 bridge retires): precise reference
+counting with static elision and reuse (Perceus-class), plus regions and the
+drop ladder. Tier 1 PROVEN DROPS (ownership/last-use facts insert frees
+statically, zero runtime cost, the majority under demand) · tier 2 REGIONS
+(effect-scoped arenas; allocation-free steady states provable) · tier 3 MANAGED
+RC (precise counts only where sharing facts require; counts elided by borrow
+proofs; cycles by deferred trial-deletion confined to cycle-POSSIBLE shapes, so
+acyclic descriptors never pay). NEVER a tracing stop-the-world collector —
+latency is a language property. `ref(weak)` is a non-owning place with an
+invalidation fact, reads yielding `t | nil`; `release` runs deterministically at
+last drop and no async finalizer queue exists. `why(free)(x)` is the acceptance
+fixture. Historical: non-moving E1 until the GC record; drop ladder via
 `release`; `ref/deref` proven-fast or safe-slow, explained; `copy` ⇒ memcpy;
 ownership-driven mutation (`xs:sort()` in-place under uniqueness — linearity
 makes it observationally sound — persistent under sharing); effect-region
@@ -395,7 +406,17 @@ LEN  a family: # operator face, len value face; units per descriptor
 TEXT str = bytes & utf8.valid; iteration explicit by unit; no default iter
 OVFL overflow = realization dimension: checked default; wrap/saturate by
      policy fact; proven away under range facts
-TAIL proper tail calls guaranteed
+TAIL proper tail calls guaranteed; non-tail depth is METERED by a world fact
+     with a routed `error.depth` — no SIGSEGV as an API (Pass 107)
+HASH keyed (SipHash-class); the key is a WORLD FACT — deterministic default per
+     build so U2 holds and replays reproduce; DoS-exposed services inject a
+     secret key world-fact, resistance without losing within-world determinism
+FAULT there is no panic: DIAGNOSES (compile), ROUTED FAILURES (runtime, B-15),
+     and FAULTS (contract violations at sealed boundaries). A fault unwinds the
+     WORLD — task-scope teardown, journals flushed, witnesses dumped — never the
+     process by default; `abort` is a capability (Pass 107)
+FLOAT `to(str)` is shortest round-trip (Ryu-class); locale never involved —
+     B-11's sibling (Pass 107)
 ```
 
 ## 13. The performance doctrine — why ≥ C is the design target
@@ -723,8 +744,8 @@ herein pays one running fixture as the corpus lands; blocks-passing/
 blocks-total is the project's first honest number, and §13 is not exempt.
 **Owed (Pass 106) — the artifacts a trained reader checks in the first five
 minutes, none blocked on implementation, all blocked on being written**: the
-FORMAL GRAMMAR + generated parser + ambiguity argument (the first credibility
-artifact) · the COST MODEL (strict evaluation order as small-step semantics;
+FORMAL GRAMMAR — **written, `docs/spec/grammar.md` (Pass 108), normative;
+the GENERATED PARSER remains owed** · the COST MODEL (strict evaluation order as small-step semantics;
 demand governs MATERIALIZATION, never evaluation order; the guaranteed-erasure
 list separated from best-effort optimization) · the SOUNDNESS PAGE (three-state:
 proven / runtime-checked / diagnostic — no silent fourth state) · the NUMERICS

@@ -8,6 +8,8 @@
 1c. docs/spec/pass104.md  COMPRESSION THESIS — supersedes 103 §5; amends §13/§22
 1d. docs/spec/pass105.md  LEVERAGE CHARTER — U1..U8 release gates; amends §22/§24
 1e. docs/spec/pass106.md  BLIND-SPOT AUDIT — owed artifacts; amends §22
+1f. docs/spec/pass107.md  NAME (duon) + MEMORY DECISION + boring rulings
+1g. docs/spec/grammar.md   FORMAL GRAMMAR (Pass 108) — normative
 2. CLAUDE.md              its operative summary; what agents actually read
 3. docs/spec/AUTHORITY.md what is law in this repository, and what is still owed
 4. docs/spec/corpus.md    which .duo files the deny table must reach zero on

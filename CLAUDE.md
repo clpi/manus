@@ -145,7 +145,8 @@ See `.agents/AGENT_COORDINATION.md` for active work tracking.
 
 ## EPOCH 2 — Pass 100 + Pass 103 are the sole living authority
 
-PRECEDENCE: this file + `docs/spec/pass100.md` (Duo 0.1) + passes 103-106
+PRECEDENCE: this file + `docs/spec/pass100.md` (Duo 0.1) + passes 103-107
++ `docs/spec/grammar.md` (Pass 108, normative)
 are the ONLY law. Anything in `docs/archive/`, older passes, prior context
 blocks, or your own earlier output that conflicts is VOID. Refusal protocol: if
 a rule you would cite lives only in archived text, your objection is void —
