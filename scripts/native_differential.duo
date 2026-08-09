@@ -89,6 +89,52 @@ _compile(duo: str, src: str, backend: str, out: str): bool
         .. " --emit exe -o " .. out .. " >/dev/null 2>&1") == 0
 end
 
+-- gap[108]. One `unsupported/` row's verdict. The folder used to be LISTED and
+-- nothing more — the name printed, the program never compiled — which made its
+-- contract ("an honest capability gap, NOT a miscompilation") an assertion
+-- instead of a measurement. The assertion was load-bearing:
+-- `g066_written_file_scope_global` lives there precisely because the direct
+-- backend once answered 3 where C answered 6, and the only thing between that
+-- wrong answer and a user is one precheck guard in `codegen.zig`. Delete the
+-- guard and the old gate still printed "unsupported" and still passed.
+--
+-- The check IS the contract, in three arms:
+--   direct refuses             the expected state, reported, does not block
+--   direct compiles + agrees   the capability landed, promote it, does not block
+--   direct compiles + diverges a MISCOMPILATION, and it BLOCKS
+-- The third arm is the one with teeth, and it is the arm the folder always
+-- claimed was impossible.
+--
+-- `known_divergent/` runs through the SAME helper, because the two folders were
+-- always one question asked twice — compile both ways, compare status AND
+-- stdout, say which of the three arms you landed in. They differed only in the
+-- word printed and in whether a divergence blocked, and both of those are now
+-- parameters. Folding them also deletes the duplicate ladder rather than adding
+-- a second one.
+_frontier(duo: str, kind: str, blocks: bool, src: str): void
+    name = _stem(src)
+    base = "{_WORK}/{kind}_{name}"
+    dbin = "{base}.direct"
+    cbin = "{base}.c"
+    if not _compile(duo, src, "direct", dbin)
+        print("native_differential: {kind} (direct cannot compile) — {name}")
+    else
+        if not _compile(duo, src, "c", cbin)
+            print("native_differential: {kind} compiles under direct, C cannot build it — move to native_only/ — {name}")
+        else
+            d = _rc(dbin)
+            c = _rc(cbin)
+            dtext = _printed(dbin)
+            ctext = _printed(cbin)
+            note = "c={c}/[{ctext}] direct={d}/[{dtext}]"
+            if d == c and dtext == ctext
+                print("native_differential: {kind} now COMPILES and AGREES — {name} (promote it into the corpus)")
+            if d != c or dtext != ctext
+                if blocks
+                    _fail("{name}: {kind} program compiled under direct and MISCOMPILED — {note}")
+                if not blocks
+                    print("native_differential: known divergence — {name} ({note})")
+
 main = (): i64
     duo = _env("DUO", "./zig-out/bin/duo")
     corpus = _env("NATIVE_DIFF_CORPUS", "examples/native_differential")
@@ -171,36 +217,38 @@ main = (): i64
     -- refuses to compile (a capability gap — honest, not a miscompilation).
     -- `known_divergent/` holds programs it compiles and gets WRONG; those are
     -- open bugs, listed every run so they stay visible instead of decaying into
-    -- folklore. Neither blocks: the gate exists to stop regressions in what
-    -- already works.
+    -- folklore. Neither blocks on the CAPABILITY being absent: the gate exists
+    -- to stop regressions in what already works.
+    --
+    -- gap[108]. `unsupported/` used to be listed and nothing more — the name
+    -- was printed and the program was never compiled. That made the folder's
+    -- own contract ("an honest capability gap, NOT a miscompilation") an
+    -- assertion rather than a measurement, and the assertion was load-bearing:
+    -- `g066_written_file_scope_global` sits here precisely because the direct
+    -- backend once answered 3 where C answered 6, and the only thing standing
+    -- between that wrong answer and a user is one precheck guard in
+    -- `codegen.zig`. Delete the guard and this gate would still have printed
+    -- "unsupported" and passed.
+    --
+    -- So the folder is now CHECKED, and the check is the contract itself:
+    -- compile each program both ways, and
+    --   * direct refuses            -> the expected state, reported, no block
+    --   * direct compiles + AGREES  -> the capability landed, promote it, no block
+    --   * direct compiles + DIVERGES-> a MISCOMPILATION, and it BLOCKS
+    -- The third arm is the one that has teeth, and it is the arm the folder
+    -- always claimed was impossible.
+    -- STDOUT counts in both folders for the same reason it counts in the main
+    -- corpus: a row whose columns differ only in what they PRINT is still
+    -- divergent, and reporting it as "now AGREES — promote it" would be worse
+    -- than not watching it at all.
     unsupported_count = 0
     for _i, src in _list(corpus .. "/unsupported")
         unsupported_count = unsupported_count + 1
-        print("native_differential: unsupported (direct backend cannot compile) — " .. _stem(src))
+        _frontier(duo, "unsupported", true, src)
     end
 
     for _i, src in _list(corpus .. "/known_divergent")
-        name = _stem(src)
-        dbin = _WORK .. "/kd_" .. name .. ".direct"
-        cbin = _WORK .. "/kd_" .. name .. ".c"
-        if _compile(duo, src, "direct", dbin) and _compile(duo, src, "c", cbin)
-            d = _rc(dbin)
-            c = _rc(cbin)
-            -- STDOUT counts here for the same reason it counts above: a row
-            -- whose columns differ only in what they PRINT is still divergent,
-            -- and reporting it as "now AGREES — promote it" would be worse
-            -- than not watching it at all.
-            dtext = _printed(dbin)
-            ctext = _printed(cbin)
-            if d == c and dtext == ctext
-                print("native_differential: known_divergent now AGREES — " .. name
-                    .. " (promote it into the corpus)")
-            else
-                print("native_differential: known divergence — " .. name
-                    .. " (c=" .. c:to(str) .. "/[" .. ctext .. "] direct="
-                    .. d:to(str) .. "/[" .. dtext .. "])")
-            end
-        end
+        _frontier(duo, "known_divergent", false, src)
     end
 
     print("native_differential: " .. _agree:to(str) .. " agree, " .. _diverge:to(str)

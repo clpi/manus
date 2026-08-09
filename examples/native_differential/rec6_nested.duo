@@ -1,0 +1,18 @@
+-- A nested record: a record field whose descriptor is itself a record.
+--
+-- Promoted out of `unsupported/` 2026-08-09 by the gate that now COMPILES
+-- everything in that folder instead of only listing it. The direct backend had
+-- started lowering this and agreeing with C, and nothing was watching.
+--
+-- Canonicalized on promotion: `unsupported/` is outside the audit's reach, so
+-- the file still spelled `Inner` / `Outer` (LAW-ONE: no uppercase, ever) and
+-- ended on `return o.i.x + o.y` (a body's value is its final expression). Both
+-- were invisible while it sat in the folder — which is the second thing the
+-- gate change surfaced.
+
+inner: { x: i64 }
+outer: { i: inner, y: i64 }
+
+main(): i64
+    o: outer = { i = { x = 40 }, y = 2 }
+    o.i.x + o.y

@@ -1070,11 +1070,68 @@ end
 --
 -- A reservation directory is never removed. Leaking a number costs nothing;
 -- reusing one is the bug this exists to prevent.
+--
+-- === gap[076]: mkdir(2) IS ATOMIC ONLY WITHIN ONE FILESYSTEM VIEW ==========
+--
+-- The allocator above was correct and still collided FOUR times in two days,
+-- because both of its inputs were WORKTREE-LOCAL:
+--
+--   gaps/                         the working tree's gap files — one branch
+--   .agents/session/gapalloc      gitignored, so every worktree has its OWN
+--
+-- Parallel agents in this repo work in `git worktree`s by design (it is the
+-- mitigation for a bare `git commit` sweeping another session's staged work).
+-- Two agents in two worktrees therefore mkdir'd two DIFFERENT paths. Both
+-- won. The POSIX guarantee held perfectly and protected nothing — measured:
+-- this worktree had no ledger directory at all, while the main checkout's
+-- held GAP-074, so both would have been handed the same next number.
+--
+-- THE FIX IS TO RESTORE ONE FILESYSTEM VIEW without giving up worktrees.
+-- `git rev-parse --git-common-dir` names the ONE directory every worktree of
+-- a repository shares — linked worktrees keep private `.git/worktrees/<name>`
+-- state but resolve --git-common-dir to the same parent. Putting the
+-- reservation there makes the mkdir atomicity mean across worktrees exactly
+-- what it already meant across processes. The 12-process property is
+-- preserved, not weakened: the primitive is unchanged, only its LOCATION.
+--
+-- Not repo-private state, so it is not gitignored — it is outside the work
+-- tree entirely, which is why it survives branch switches and worktree
+-- deletion, and why no `git status` ever shows it.
 
 gapsdir = root .. "/gaps"
-gapledger = root .. "/.agents/session/gapalloc"
+-- `--path-format=absolute` because a BARE --git-common-dir answers a relative
+-- ".git" from the main checkout and an absolute path from a linked worktree.
+-- The two must resolve to one string or the shared view silently splits back
+-- into the two views this is fixing.
+--
+-- `printf %s "$(…)"` rather than a trailing-newline strip: command
+-- substitution already drops trailing newlines, and a path may contain
+-- spaces, so a whitespace-squeeze would corrupt it.
+--
+-- `${g:-…}` covers BOTH failure modes together — git absent (non-zero exit)
+-- and git answering empty. Without the empty arm a blank answer would build
+-- the ledger path "/duon-gapalloc" at the filesystem root. Degrading to the
+-- old worktree-local ledger beats refusing to allocate: with no git there are
+-- no sibling worktrees to collide with anyway.
+--
+-- `std.proc.capture` reads LINE BY LINE and re-appends "\n" to each, so its
+-- result always carries exactly one trailing newline even against `printf %s`
+-- — the shell cannot hand back a bare string. Trimming it is not optional:
+-- the un-trimmed value builds ".git\n/duon-gapalloc", a path with a newline
+-- in the MIDDLE, and every worktree would still agree on it, so the allocator
+-- would keep working and stay wrong. Caught only by dumping the bytes; a
+-- line-oriented grep over the gate's own output hides it perfectly.
+--
+-- THE `: str` IS LOAD-BEARING — do not drop it to match the bindings above.
+-- Without the annotation the capture result stays a BOXED value, and codegen
+-- emits `lua_str_buf_len_i64` against the box, which answers 0. `:len() - 1`
+-- is then -1, and `sub(1, -1)` is Lua for "the whole string" — so the trim
+-- silently returns its input and there is no error anywhere. `str_trim` below
+-- survives the same hazard for the same reason: its parameter is typed.
+gapraw: str = std.proc.capture("g=$(git -C '" .. root .. "' rev-parse --path-format=absolute --git-common-dir 2>/dev/null); printf %s \"${g:-" .. root .. "/.agents/session}\"")
+gapledger = gapraw:sub(1, gapraw:len() - 1) .. "/duon-gapalloc"
 
-fun gap_pad(n: int): str
+fun gappad(n: int): str
     s = n:to(str)
     while string.len(s) < 3
         s = "0" .. s
@@ -1085,8 +1142,20 @@ end
 -- Highest number VISIBLE anywhere: filed gaps and prior reservations both
 -- count. Seeding from the union is what stops the allocator from walking up
 -- from 1 and colliding with a gap somebody filed by hand.
-fun gap_high(): int
-    hi = 0
+fun gaphigh(): int
+    -- SEEDED FROM EVERY REF, not just the checked-out branch. A gap filed and
+    -- COMMITTED on a branch that has not merged is invisible to both scans
+    -- below, and that is the half of gap[076] the shared ledger cannot cover
+    -- — a number filed by hand, or before the allocator existed, leaves no
+    -- reservation directory behind. The shared ledger covers the mirror case,
+    -- a file reserved but not yet committed. Both run because neither
+    -- subsumes the other. Measured at 0.06s on this repo.
+    --
+    -- This is a SEED rather than a fourth loop on purpose: the two scans
+    -- below can only raise it, so if the pipeline answers empty or garbage
+    -- (`tonumber` yields 0 here, it does not fail) the allocator degrades to
+    -- exactly its previous behaviour instead of handing out a low number.
+    hi = tonumber(std.proc.capture("printf %s \"$(git -C '" .. root .. "' log --all --name-only --pretty=format: -- gaps/ 2>/dev/null | grep -oE 'GAP-[0-9]+' | grep -oE '[0-9]+' | sort -n | tail -1)\"")) or 0
     for _, name in std.fs.read_dir(gapsdir) or {}
         d = string.match(name, "^GAP%-(%d+)")
         if d ~= nil
@@ -1106,17 +1175,17 @@ end
 
 -- Hand back a number nobody else can be holding. Returns -1 only if 512
 -- consecutive numbers are all taken, which means something is very wrong.
-fun gap_allocate(): int
+fun gapallocate(): int
     std.fs.mkdirall(gapledger)
-    n = gap_high() + 1
+    n = gaphigh() + 1
     tries = 0
     while tries < 512
         -- THE ATOMIC STEP. Exactly one concurrent caller sees true here.
-        if std.os.mkdir(gapledger .. "/GAP-" .. gap_pad(n))
+        if std.os.mkdir(gapledger .. "/GAP-" .. gappad(n))
             -- Won the reservation. If a gap file already occupies the number
             -- (filed by hand, before this allocator existed), keep the
             -- reservation so it is never handed out, and take the next.
-            if not std.fs.exists(gapsdir .. "/GAP-" .. gap_pad(n) .. ".md")
+            if not std.fs.exists(gapsdir .. "/GAP-" .. gappad(n) .. ".md")
                 return n
             end
         end
@@ -1127,11 +1196,11 @@ fun gap_allocate(): int
 end
 
 fun gap_open(agent_id: str, kind: str, title: str, detail: str, priority: str, files: str): str
-    n = gap_allocate()
+    n = gapallocate()
     if n < 0
         return std.json.encode({ allocated = false, error = "no free gap number in 512 tries" })
     end
-    id = "GAP-" .. gap_pad(n)
+    id = "GAP-" .. gappad(n)
     ts = os.date("!%Y-%m-%dT%H:%m:%SZ")
     pr = priority
     if pr == nil or pr == "" then pr = "P1" end
@@ -1386,9 +1455,14 @@ m.dev_claim_release = dev_claim_release
 m.dev_claim_files = dev_claim_files
 m.dev_claim_note = dev_claim_note
 m.dev_claim_list = dev_claim_list
-m.gap_allocate = gap_allocate
+m.gapallocate = gapallocate
 m.gap_open = gap_open
-m.gap_high = gap_high
+m.gaphigh = gaphigh
+-- Exported so a gate can ECHO THE RESOLVED PATH. A gap allocator that
+-- silently fell back to the worktree-local ledger would keep colliding while
+-- reporting success; the path is the only thing that distinguishes the two,
+-- so it must be observable rather than inferred.
+m.gapledger = gapledger
 m.dev_coordination_export = dev_coordination_export
 m.dev_validate_plan = dev_validate_plan
 m.semantic_claims = semantic_claims
