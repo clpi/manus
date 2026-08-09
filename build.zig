@@ -68,6 +68,18 @@ pub fn build(b: *std.Build) void {
     const census_step = b.step("language-census", "G11: count tracked non-Duo source; ratchets sh/py, js and zig");
     census_step.dependOn(&census_cmd.step);
 
+    // U8 -- Pass 105 section 4's `toolchain@{ foreign = ledger | oracle }`. The
+    // step above answers how MUCH foreign code there is; this one answers by
+    // what RIGHT each file is here. Two licences exist -- bootstrap ledger with
+    // a termination condition (Pass 103 section 7), or CI oracle (section 5) --
+    // and anything else is a violation. Rules live in docs/spec/foreign.md, the
+    // same no-silent-default mechanism corpus.md uses for .duo.
+    const foreign_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/foreign_census.duo" });
+    foreign_cmd.setCwd(b.path("."));
+    foreign_cmd.step.dependOn(b.getInstallStep());
+    const foreign_step = b.step("foreign-census", "Pass 105 U8: every foreign file classified ledger or oracle; ratchets violations");
+    foreign_step.dependOn(&foreign_cmd.step);
+
     // The native census. Same reasoning as G11 one level down: "native 100%"
     // was a slogan because nothing measured it honestly. `duo compile` falls
     // back to the C backend and still reports ok, so only --backend=direct is
@@ -315,6 +327,18 @@ pub fn build(b: *std.Build) void {
     const audit100_step = b.step("audit100", "Pass 100 deny table over the canonical .duo corpus; ratchets each row");
     audit100_step.dependOn(&audit100_cmd.step);
 
+    // U1 -- Pass 105 section 4's `std@{ ambient = false }`, executable. The one
+    // charter row that is effective immediately rather than at 0.1, so it is a
+    // step rather than a plan. It ratchets off a measured baseline for the same
+    // reason audit100 does: std has ambient reach today, and a gate that is red
+    // on the day it ships is a gate people learn to skip. The number has to be
+    // VISIBLE and fall; it does not have to be zero tomorrow.
+    const capability_scan_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/capability_scan.duo" });
+    capability_scan_cmd.setCwd(b.path("."));
+    capability_scan_cmd.step.dependOn(b.getInstallStep());
+    const capability_scan_step = b.step("capability-scan", "Pass 105 U1: ambient fs/net/clock/rand/proc/fault reach in lib/std; ratchets");
+    capability_scan_step.dependOn(&capability_scan_cmd.step);
+
     // The first sixty seconds of a new user's life, gated. src/build_framework.zig's
     // tests drive parser+sema in-process and stayed green while `duo init` emitted a
     // src/main.duo that `duo check`, `duo build` and `duo run` all rejected. Only a
@@ -324,6 +348,19 @@ pub fn build(b: *std.Build) void {
     init_build_cmd.step.dependOn(b.getInstallStep());
     const init_build_step = b.step("init-build-smoke", "duo init -> check -> build -> run -> test on a clean directory");
     init_build_step.dependOn(&init_build_cmd.step);
+
+    // U2 -- Pass 105 section 4's `build@deterministic`. The step above is its
+    // narrow ancestor and stays: it rebuilds into the SAME cache at the SAME
+    // path, which a warm cache satisfies by copying rather than recompiling.
+    // This one builds twice into two prefixes with two caches, so neither
+    // build can see the other's output, and it diagnoses a divergence rather
+    // than only reporting one. It never touches zig-out. Two full builds -- not
+    // a tier-0 gate.
+    const determinism_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/build_determinism.duo" });
+    determinism_cmd.setCwd(b.path("."));
+    determinism_cmd.step.dependOn(b.getInstallStep());
+    const determinism_step = b.step("build-determinism", "Pass 105 U2: two independent builds, byte-identical artifacts; names the divergence source");
+    determinism_step.dependOn(&determinism_cmd.step);
 
     const repro_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/reproducibility_smoke.duo" });
     repro_cmd.setCwd(b.path("."));

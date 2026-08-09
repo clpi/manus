@@ -257,8 +257,12 @@ ARG-1) · constructor scan (ladder) · alias scan · concat scan · stdlib scan 
 result scan (B-12) · enum scan · end scan · temp scan (TMP-1) · field scan (X8)
 · return scan · edge scan · strata scan · shape match · RUNG REPORT · gap row
 (cite `-- gap[nn]`) · **capability scan** (`std@{ ambient = false }` — Pass 105
-U1, effective immediately: no std module gains ambient fs/net/clock/rand reach;
-measured baseline 46 of 257 modules, gap[061]) · fixture row. Every ruling
+U1, effective immediately: no std module gains ambient fs/net/clock/rand reach.
+RUN IT: `zig build capability-scan`, which ratchets. Measured 2026-08-08 at
+878e0d1: **278 ambient sites across 53 of 257 modules**, not the 46 gap[061]
+recorded — that grep missed `math.random(` entirely, missed `net`'s bodyless
+declarations, and could not see the libc inside `@c.emit` payloads. gap[061]) ·
+fixture row. Every ruling
 regenerates THIS FILE in the same commit — a ruling without regeneration is
 unshipped.
 
