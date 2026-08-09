@@ -269,6 +269,41 @@ a function; job control is task scopes (leaving the scope reaps).
 
 THEME: **github dark (Primer)**, role-mapped — the canonical docs/site theme.
 
+**RULING 2026-08-08 — H-2 HOLDS AT 18; FINE SPLITS ARE CARDS, NOT ROLES.**
+Two agents implemented this section independently and reached opposite readings
+(`docs/spec/roles.md` + `scripts/role_scan.duo` say the count cannot close and
+is ≥29; `fixtures/highlight/` implements 18 roles × 40 cards). Adjudicated on
+the text, not the count:
+
+- **THE DISCRIMINATOR IS HUE.** H-1's own sentence pairs them — "`:` copula vs
+  invoke; `|` union vs pipe — **two roles, two colors**." §0g's fine splits
+  (`=` bind / `+=` update / `==` relation, the paren kinds, comma) name
+  *edges* and never name a colour. A split that changes hue is a ROLE; a split
+  within one hue is a CARD. That is derivable from H-1 + H-4 rather than from
+  counting, which is why it wins.
+- **WEIGHT, ITALIC AND LUMINANCE ARE AXES, NOT ROLES.** H-3/H-5/H-6 make them
+  orthogonal by construction, so they cannot inflate the count.
+- **The 18th role is `place`** — ordinary bindings (`x`, `total`, `lx`), blue,
+  heavy at definition. GAP-073 correctly identified this as the largest hole
+  (H-4's blue names "numbers, `.cases`, literals, registers" and a plain name is
+  none of them, while H-6 says the function is TOTAL). Naming `place` closes it
+  and is what lets coverage reach 100% instead of 20%.
+
+**RULING 2026-08-08 — R1 DECIDES `:`; SPACING ONLY RENDERS IT.** §0d says
+"canonical layout makes L1 lexical: copula `:` is spaced, invoke `:` is tight."
+`docs/spec/grammar.md` R1 says IS never takes an argument group; INVOKE always
+does. They disagree on `count:u32` — spacing calls it invoke, R1 calls it a
+copula, **and R1 is right**; that spelling is in the corpus. grammar.md is
+normative (Pass 108). Read §0d's sentence as *canonical layout renders the
+distinction visible*, never as the decider.
+
+Two roles were merged rather than carried, and this is licensed by the hue
+discriminator above: `opcode`/`mnemonic` → `callable`, `register` → `place`,
+`witness` → `walk`. Two spans DIAGNOSE rather than default, per H-6: a leading
+`.` at a clause head (§0.3 reads it as an inferred case, §0a as a subject field
+— **a genuine hole in the law**, not the implementation) and `;`, which Pass 119
+abolished, so a byte spelling one names no edge.
+
 - **H-1** color follows the EDGE, not the glyph (`:` copula vs invoke; `|`
   union vs pipe — two roles, two colors). **H-2** the 18-role taxonomy is
   CLOSED. **H-3** definition and use share a hue; definition adds WEIGHT.
