@@ -338,3 +338,80 @@ graph service behind the ambiguous cases, the gate was weakened rather than
 satisfied. Check `mismatch` against a deliberately corrupted sidecar before
 believing any run — `role_scan.duo` documents both positive controls in its
 header and they are the only reason the three numbers above are worth reading.
+
+---
+
+# RESOLVED 2026-08-08 — the rendered spec settles all four open questions
+
+The owner's rendered `duon 0.1` specification page (github-dark, role-mapped,
+"this page's renderer implements the taxonomy it specifies") carries the
+taxonomy as executable CSS plus a `ROLES` table giving every role its name,
+semantic space, rule citation, and dnir correspondence. That is H-7's
+`(span, role, rule, dnir)` tuple, shipped. It answers what this file could not
+derive.
+
+## 1. The set is LARGER THAN 18, and the extra members are the fine splits
+
+The rendered taxonomy carries roughly forty classes. "18" names the **hue-level
+role set**; §0g's fine splits are additional roles in the same stream, each with
+its own rule citation — which is what H-1 ("two roles, two colors") requires and
+what this file predicted could not be reconciled with a closed 18. Both are true:
+the HUE set is closed, the ROLE set is not 18.
+
+## 2. Ordinary names DO have a hue — the largest hole is closed
+
+`t-v` — *value in scope* — renders at full foreground ink, with the rule stated
+as **luminance = surprisal (H-6)**: names carry local meaning and take full ink;
+structural punctuation is inferable from layout and renders faint. "Dim is a
+statement, not an omission."
+
+That was this file's headline gap ("H-4 names no hue for an ordinary binding")
+and the reason `role-scan` measured 20% coverage. It resolves without inventing
+anything: the hue was always the default foreground.
+
+## 3. Every fine split has a role AND a rule
+
+```
+t-bd   '=' binds a fact          a binding asserts; it does not mutate
+t-up   '+=' update edge          compound assign = one read-modify fact
+t-cmp  '==' relation edge        chains are ONE fact (CHAIN-CMP)
+t-pl   level paren               LAW-STRATA: each decision its own level
+t-pp   parameter paren           delimits the callable's received places
+t-yb   descriptor brace          R2/R3 decide by position
+t-cm   comma                     LAW-STRATA: comma = stratify
+t-sw   [space walk]              §8: subtrees are tables
+t-w2w  walk WRITE (underlined)   writing a place is not reading it
+t-sj   bare '.' — the subject    SELF-ZERO: there is no self
+t-ch   comparison chain          CHAIN-CMP: one fact, one underline
+t-pu   structural punctuation    faint: inferable from layout (H-6)
+```
+
+## 4. The `:` discrimination — BOTH rules, at different layers
+
+This file reported §0d (spacing) and `grammar.md` R1 (argument group) as
+conflicting. The rendered spec keeps both and assigns them layers:
+
+* **R5** is the semantic rule — *operands select the operator*: `:` is IS in
+  binding position, INVOKE postfix.
+* **Canonical layout** makes that decision **lexically visible**: the copula is
+  spaced (`x: f64`), the invoke is tight (`lx:read`).
+
+So spacing renders a decision it does not make. `count:u32` is then simply
+non-canonical input — the formatter's job, not an ambiguity. This file's
+recommendation was to demote §0d's sentence; the correct repair is to state it
+as a *rendering* consequence, which is what the spec does.
+
+## What this means for `role-scan`
+
+The gate's three numbers are unblocked in principle. Coverage should rise from
+20% once `t-v` and the punctuation roles are admitted, and the twelve ambiguity
+spans should fall as the fine-split rules land. **Not yet re-measured** — that is
+the next run, and the number is what decides, not this paragraph.
+
+## One stale row in the rendered spec
+
+§14.1 still lists **`ward@dominates(wart)` (G-DOM)** as a CI gate. The owner
+retired it on 2026-08-08 — *"dominates shouldnt be a thing its just an artifact
+of claude"* — and it is gone from `CLAUDE.md` (commit e717f89). What survives is
+an ordinary runtime benchmark (`zig build runtime-bench`) publishing losses. The
+spec page should drop that bullet.
