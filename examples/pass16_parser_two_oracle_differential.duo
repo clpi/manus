@@ -81,14 +81,21 @@
 --
 -- ── FINDINGS THAT ARE NOT MINE TO FIX (src/**) ──────────────────────────────
 --
---   F1  `src/pretty.zig` prints the lens `.err` as `|__proj_v| __proj_v.err` —
---       a pipe-delimited closure that is not Duo grammar at all, carrying a
---       generated name that breaks LAW-ONE twice (`_` prefix, `[a-z]_[a-z]`).
---       21 files. Repair: print the lens back as `.err`.
---   F2  `duo fmt` IS NOT IDEMPOTENT. `f = fun(a) a end` formats to
---       `f = (a) / a / end`, and formatting THAT fails: "expected '<eof>', got
---       'end'". The incumbent cannot re-read its own output either, so the
---       row below is bothrej, not a hole in this parser.
+--   F1  CLOSED. `src/pretty.zig` printed the lens `.err` as
+--       `|__proj_v| __proj_v.err` — a pipe-delimited closure that is not Duo
+--       grammar at all, carrying a generated name that breaks LAW-ONE twice
+--       (`_` prefix, `[a-z]_[a-z]`). Measured at 21 of 260 lib/std files
+--       before, 0 after. The printer now re-sugars the verified desugaring
+--       back to the anchor it came from, and every other lambda keeps its
+--       `fun`, so no `|params|` is emitted anywhere.
+--   F2  CLOSED. `duo fmt` WAS NOT IDEMPOTENT: `f = fun(a) a end` formatted to
+--       `f = (a) / a / end`, and formatting THAT failed with "expected
+--       '<eof>', got 'end'" — the incumbent could not re-read its own output
+--       either, so row 35 is bothrej rather than a hole in this parser. A
+--       lambda now keeps its `fun`, so its output reparses to an IDENTICAL
+--       projection (row 43). Row 35 stays exactly as it is: its source is the
+--       old broken rendering, which both parsers still reject and which the
+--       formatter no longer produces.
 --   F3  The incumbent DROPS the result union. `f(x: i64): i64 | error` formats
 --       to `fun f(x: i64) -> i64` — `| error` is gone. Pass 100 §0.6 makes
 --       that union the language's result discipline, and the self-hosted
@@ -260,14 +267,23 @@ rows = {
     -- any real file, only in the formatter's own broken output.
     { "f = (a)\n  a\nend\n", 1, 1, 0, "-" },
 
-    -- ── F1: the lens printed as a foreign closure ───────────────────────────
-    -- p2 = 1, pinned. `has(.err)(r)` formats to `has(|__proj_v| __proj_v.err)(r)`
-    -- — a pipe-delimited closure that is not Duo grammar, with a generated
-    -- name breaking LAW-ONE twice over. 21 files, and the largest remaining P2
-    -- class by a wide margin. The repair is in src/pretty.zig: print the lens
-    -- back as `.err`. Teaching THIS parser to read `|x| x.err` would be
-    -- annexing foreign surface to accommodate a printer bug, which A2 forbids.
-    { "x = has(.err)(r)", 0, 0, 1, "norm" },
+    -- ── F1: CLOSED — the lens round-trips ───────────────────────────────────
+    -- WAS (0, 0, 1, "norm"): `has(.err)(r)` formatted to
+    -- `has(|__proj_v| __proj_v.err)(r)` — a pipe-delimited closure that is not
+    -- Duo grammar, with a generated name breaking LAW-ONE twice over. 21 files,
+    -- the largest remaining P2 class. src/pretty.zig now re-sugars the lens, so
+    -- fmt(S) IS S: the Duo parser reads it (p2 = 0) and the projections are
+    -- identical ("same"). Teaching THIS parser to read `|x| x.err` would have
+    -- been annexing foreign surface for a printer bug, which A2 forbids.
+    --
+    -- THE PIN WAS THE GATE. With the printer repaired and this row unchanged,
+    -- the harness returned 100 + 36 = 136 — the P2 mismatch for row 36, since
+    -- the row still asserted the defect. 136 reads as 128+8 and was once
+    -- mistaken for a signal; the harness has NO print statements, so zero
+    -- stdout is what it produces at exit 0 as well and is not evidence of a
+    -- crash. A row that encodes a defect must be re-pinned when the defect is
+    -- repaired, or it convicts the repair.
+    { "x = has(.err)(r)", 0, 0, 0, "same" },
 
     -- ── P1 duorej: holes that remain, pinned so they cannot regress silently ─
     -- Unlike `then` and `->`, the formatter does not EMIT these, so a program
@@ -293,6 +309,30 @@ rows = {
     { "x =", 1, 1, 0, "-" },
     { "fun f(", 1, 1, 0, "-" },
     { "x = t[i", 1, 1, 0, "-" },
+
+    -- ── F2: the lambda now ROUND-TRIPS, and "same" is the whole point ───────
+    -- APPENDED, never inserted: the rows above are addressed by INDEX in the
+    -- exit code, and row 36's comment cites 136 = 100 + 36 by number.
+    --
+    -- `f = fun(a) a + 1 end` used to format to a multi-line `f = (a) / a + 1 /
+    -- end`, which does not reparse — `f = (a)` binds a parenthesized expression
+    -- and the `end` is then orphaned ("expected '<eof>', got 'end'"). The
+    -- lambda now keeps its `fun`, so fmt(S) is `f = fun(a) / a + 1 / end` and
+    -- the projection is IDENTICAL to S's.
+    --
+    -- THE STABILITY FIELD IS LOAD-BEARING HERE. The obvious repair — render a
+    -- sole-expression body as the one-line `(params) expr` — passes P2, because
+    -- `f = (a) a + 1` PARSES. It parses as a different program:
+    --
+    --     f = fun(a) a + 1 end  ->  (assign f (lambda (params (param a)) (+ a 1)))
+    --     f = (a) a + 1         ->  (assign f a) (+ a 1)        TWO statements
+    --
+    -- P2 alone would have waved that through and the formatter would have begun
+    -- emitting a silent misparse — worse than the rejection it replaced, since
+    -- `is_bare_lambda_head` is undecidable without the statement's base column.
+    -- P3 is what caught it, at 200 + 43. Pinned "same", so any future repair
+    -- that reintroduces the bare head is convicted here rather than shipped.
+    { "f = fun(a) a + 1 end", 0, 0, 0, "same" },
 }
 
 main(): i64

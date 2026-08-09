@@ -794,29 +794,103 @@ pub const PrettyPrinter = struct {
     }
 
     pub fn printFuncBody(self: *PrettyPrinter, fb: *const ast.FuncBody) Error!void {
-        if (self.mode == .duo and fb.body.stmts.len == 1 and fb.body.tail_expr == null) {
-            const stmt = fb.body.stmts[0];
-            if (stmt == .ret) {
-                if (stmt.ret.vals.len == 1) {
-                    try self.write("|");
-                    for (fb.params, 0..) |param, i| {
-                        if (i > 0) try self.write(", ");
-                        try self.write(param.name);
-                        if (param.typ != .inferred) {
-                            try self.write(": ");
-                            try self.printTypeExpr(param.typ);
-                        }
-                    }
-                    try self.write("| ");
-                    try self.printExpr(stmt.ret.vals[0], 0);
+        // Reached ONLY from `.func_expr` — a lambda. A named declaration goes
+        // through `printFuncDef`, so nothing here can move a `fun f() … end`.
+        if (self.mode == .duo) {
+            if (soleExpr(&fb.body)) |sole| {
+                // RE-SUGAR THE LENS. `parser.zig` desugars a leading `.name`
+                // into the lambda `(__proj_v) __proj_v.name` at PARSE time,
+                // so by here the anchor is gone and the printer was faithfully
+                // emitting the desugaring. Two things were wrong with that:
+                // the generated binder breaks LAW-ONE twice (underscore
+                // prefix, and `proj_v` is not one word), and the surface it
+                // produced is not Duo grammar, so `duo fmt` output could not
+                // be read back. Print the anchor the user wrote.
+                if (fb.params.len == 1 and !fb.vararg and
+                    std.mem.eql(u8, fb.params[0].name, "__proj_v") and
+                    fb.params[0].typ == .inferred and
+                    isLensChain(sole))
+                {
+                    try self.printLensChain(sole);
                     return;
                 }
             }
         }
+        // EVERY other lambda prints `fun(params) <block> end`.
+        //
+        // It used to print `|params| expr` for a sole-return body — a FOREIGN
+        // closure spelling A2 forbids annexing, which the parser cannot read
+        // back — and a bare `(params) <block> end` otherwise, which does not
+        // reparse either: `f = (a)` binds a parenthesized expression and the
+        // `end` is then orphaned ("expected '<eof>', got 'end'").
+        //
+        // The one-line `(params) expr` form is NOT the repair, and measurement
+        // is why. It parses, so it looks fixed, but at STATEMENT level it
+        // parses as a DIFFERENT PROGRAM:
+        //
+        //   f = fun(a) a + 1 end   ->  (assign f (lambda (params (param a)) (+ a 1)))
+        //   f = (a) a + 1          ->  (assign f a) (+ a 1)          TWO statements
+        //
+        // That is the `is_bare_lambda_head` ambiguity: a single-name group is
+        // undecidable without the enclosing statement's base column. Emitting
+        // it would push a known-ambiguous shape out of the formatter's own
+        // output and into real files — a silent misparse, which is strictly
+        // worse than the rejection it replaces. Keeping `fun` keeps the head
+        // unambiguous, and it projects IDENTICALLY to the source for both the
+        // sole-expression and the multi-statement body.
+        if (self.mode == .duo and !self.canonical) try self.write("fun");
         try self.printFuncSig(fb);
         try self.printBlock(&fb.body);
         try self.nl();
         try self.write("end");
+    }
+
+    /// The body's SOLE expression, when it has one — the shape the lens
+    /// re-sugaring must recognise.
+    ///
+    /// DEMAND-RETURN: a body's value is its final expression's, so `return e`
+    /// and a bare tail `e` are THE SAME BODY. The AST spells that one meaning
+    /// two ways, and only these two shapes qualify:
+    ///
+    ///     stmts = [ret e], tail = null     the explicit spelling
+    ///     stmts = [],      tail = e        the offside spelling
+    ///
+    /// Both must answer, or the lens re-sugaring would fire on one spelling of
+    /// a body and not the other. Anything with statements BESIDE the tail is a
+    /// real block; `ret` with zero or several values is not a single
+    /// expression.
+    fn soleExpr(b: *const ast.Block) ?*const ast.Expr {
+        if (b.tail_expr) |te| {
+            return if (b.stmts.len == 0) te else null;
+        }
+        if (b.stmts.len == 1 and b.stmts[0] == .ret and b.stmts[0].ret.vals.len == 1) {
+            return b.stmts[0].ret.vals[0];
+        }
+        return null;
+    }
+
+    /// True when `e` is exactly the field chain the lens desugaring builds:
+    /// a `.field` walk (possibly nested) rooted at the generated `__proj_v`.
+    /// Anything else — a call, an index, a different root — is an ORDINARY
+    /// lambda a user wrote by hand and must not be re-sugared into an anchor.
+    fn isLensChain(e: *const ast.Expr) bool {
+        return switch (e.*) {
+            .field => |f| switch (f.obj.*) {
+                .name => |n| std.mem.eql(u8, n.ident, "__proj_v"),
+                .field => isLensChain(f.obj),
+                else => false,
+            },
+            else => false,
+        };
+    }
+
+    /// Print `.a.b.c` for the verified chain, root first. The root `__proj_v`
+    /// itself prints nothing — it IS the anchor.
+    fn printLensChain(self: *PrettyPrinter, e: *const ast.Expr) Error!void {
+        const f = e.field;
+        if (f.obj.* == .field) try self.printLensChain(f.obj);
+        try self.write(".");
+        try self.write(f.field);
     }
 
     fn printFuncSig(self: *PrettyPrinter, fb: *const ast.FuncBody) !void {
