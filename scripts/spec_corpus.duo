@@ -76,7 +76,7 @@ control = "examples/spec100/stubs/control.duo"
 -- blocks 2 -> 5: `shc/lex.duo` and `shc/parse.duo` join their module and the
 -- §19 descent stubs; `tool/wordcount.duo` gets its shebang onto line 1.
 blockfloor = 5
-formfloor = 16
+formfloor = 17
 
 fence = "^```"
 

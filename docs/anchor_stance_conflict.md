@@ -38,12 +38,13 @@ Both are recorded per row. A row that is only untidy is marked *cleanup*.
 
 ---
 
-## Row 1 — leading `.`: which anchor stance
+## Row 1 — leading `.`: which anchor stance  *(1a, 1b, 1c RECONCILED)*
 
-**Parser believes:** every leading `.` is the *element* stance. `parse_field_projection`
-(one call site, in `parse_simple_expr`) desugars `.name` to the lambda
-`(__proj_v) __proj_v.name`, unconditionally. Position is never consulted, so the
-three anchor contexts §2 decides BY POSITION collapse to one.
+**Parser believed:** every leading `.` is the *element* stance.
+`parse_field_projection` (one call site, in `parse_simple_expr`) desugared
+`.name` to the lambda `(__proj_v) __proj_v.name`, unconditionally. Position was
+never consulted, so the three anchor contexts §2 decides BY POSITION collapsed
+to one. It consults position now — see the settlement under 1b/1c.
 
 **Sema believes:** nothing about anchors — it type-checks the lambda as a value.
 Its `==` rule admits any two operands and its arithmetic rule admits a closure,
@@ -71,7 +72,7 @@ error: invalid operands to binary expression ('duo_token__kind' and 'lua_Value')
 An enum compared against a closure. **RECONCILED** — see the settlement below.
 Fixture: `examples/spec100/anchor.duo`, asserting `105`.
 
-### 1b — method scope → my field  *(bug: accepted, should be rejected — OPEN)*
+### 1b — method scope → my field  *(bug: accepted, should be rejected)*
 
 ```duo
 lexer: { pos: i64 }
@@ -89,10 +90,9 @@ error: expected expression
  return ((int64_t)lua_to_num((lua_val_from_closure((lua_Closure*)duo_make_closure_0()) + 1)));
 ```
 
-Closure plus one. Open: closing this changes what a *bare* leading `.` means and
-would move existing `map(.x)`-shaped code, so it is a separate landing.
+Closure plus one.
 
-### 1c — leading `:m()` on the ambient subject  *(bug: accepted, should be rejected — OPEN)*
+### 1c — leading `:m()` on the ambient subject  *(bug: accepted, should be rejected)*
 
 Same mechanism through `parse_method_reference`:
 
@@ -104,6 +104,93 @@ end
 
 clean under `duo check`; the C backend then fails on `lua_to_num` /
 `lua_val_from_closure` in a translation unit that carries no Lua runtime.
+
+### 1b / 1c — the settlement  *(RECONCILED, with one context deliberately left alone)*
+
+**The decision, from Pass 108 R2 and R1 rather than from taste.** R2: a leading
+`.name` "is a lens in ARGUMENT position always; the CASE in descriptor-expected
+position; neither context ⇒ diagnostic". Pass 100 §2 supplies the third context
+R2's "always" is measured against — method scope → my field `.pos`. R1 makes a
+leading `:name(` a sibling invoke, and its IS/INVOKE split is already total
+("IS never takes an argument group; INVOKE always does"), so the open question
+under R1 was never IS-vs-INVOKE — it was *which subject*, the same POSITION
+question.
+
+**The mechanism.** Two counters, both facts the parser already has rather than
+shapes it infers:
+
+* `call_arg_depth` — incremented in `parse_call_args`, `parse_parenless_call_arg`,
+  the method-reference argument list, and the right operand of `|>`. That last
+  one is not an afterthought: `p |> .x` means *apply the lens `.x` to `p`*, and
+  `codegen_pass3_tests` pins both it and the chained `p |> .x |> .y`.
+* `subject` — the enclosing function's FIRST parameter, which §0.6 already makes
+  the receiver, recorded in `parse_func_body` where the parameters are parsed
+  and restored on exit so nesting cannot leak a receiver outward.
+
+Argument position wins when both hold, which is R2's "in ARGUMENT position
+ALWAYS". `ast.Expr` is untouched; `sema.zig` and `codegen.zig` are untouched.
+
+**The context deliberately left alone, and why it is not a dodge.** Inside a
+DESCRIPTOR body the first parameter of a slot function is emphatically not the
+receiver. §20's own golden `shc/lex.duo` is the proof:
+
+```duo
+lexer: {
+    pos: u32
+    here = () span{ .pos, .pos }
+    skip = (p) while b = :peek() and p(b) .pos += 1
+}
+```
+
+`here` has no parameter at all, and `skip`'s first parameter is the PREDICATE.
+Taking either as the subject rewrites `.pos` into `p.pos` and `:peek()` into
+`p:peek()` — a wrong value dressed up as a fix for wrong values. So
+`descriptor_body_depth` holds the subject unset there and the leading `.` keeps
+exactly the reading it has today. This is measured, not assumed: the first cut
+of this change took blocks from 5/5 to 3/5 and `shc/lex.duo` named the line.
+
+For the same reason the R2 diagnostic ("neither context ⇒ diagnostic") is NOT
+raised yet. With the descriptor-body anchor unbuilt, erroring there would reject
+the golden corpus. The subject-less case falls back to the lens reading it has
+always had. **That is the remaining piece of rows 1b/1c**, and it needs the
+descriptor-body anchor first — the coordinator's note that "bare `@` names the
+anchor in a slot body" is the thread to pull.
+
+**The fixture.** `examples/spec100/anchorscope.duo`, **429**, forms floor
+16 → 17. `bump`'s tail carries all three positions in one expression —
+method-scope `.pos`, sibling invoke `:peek()`, and an argument-position lens
+`.tab` inside a body that HAS an ambient subject, which is what proves argument
+position BEATS method scope rather than merely coexisting. The value kills each
+degenerate reading: the old collapse does not compile; `.pos` resolving to `tab`
+gives 229; `:peek()` not invoking does not compile; the argument `.tab` read as
+my field applies the integer 2; `reach` inheriting `bump`'s receiver looks for
+`l.at`; the chain reading `.at.lo` gives 423. `walk.duo` next door pins the lens
+alone at 12.
+
+Before: `duo check` clean, then
+`error: invalid operands to binary expression ('lua_Value' and 'int')` on
+`lua_val_from_closure(...) + 1`.
+After: `bump(l)` answers `42`; `step(l)` answers `42`; the fixture answers `429`.
+
+**Corpus-wide before/after** (the measurement this row was required to carry,
+because it moves `map(.x)`-shaped code): `duo check` over all 775 tracked `.duo`
+files, diffed PER FILE — **identical**, 714 pass / 61 fail before and after. No
+existing leading `.` moved, because every one of them is already in argument
+position, a case position, or a descriptor body.
+
+**A pre-existing defect found while fixturing this**, recorded rather than
+fixed: applying a lens to a NATIVE RECORD segfaults —
+
+```duo
+use = (f, v) f(v)
+bump(l: lexer): i64
+    t = use(.tab, l)
+    l.pos * 100 + t
+end
+```
+
+exits 139 on a compiler built with this change *stashed*, so it is not this
+change. The fixture applies its lens to a bare table for that reason.
 
 ---
 

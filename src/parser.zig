@@ -79,6 +79,43 @@ pub const Parser = struct {
     duo_mode: bool = false,
     /// Nesting inside function bodies; bare `name()` func decls are module-scope only.
     func_body_depth: u32 = 0,
+    /// Pass 108 R2/R1 and Pass 100 §2 THE ANCHOR — the two pieces of POSITION a
+    /// leading `.` or `:` needs, so the parser can decide the stance instead of
+    /// collapsing all three into one.
+    ///
+    /// R2 rules the leading `.`: "a lens in ARGUMENT position always; the CASE
+    /// in descriptor-expected position; neither context => diagnostic". §2 adds
+    /// the third context these two implement, method scope -> my field `.pos`.
+    /// The case stance is decided upstream in `parse_anchor_case`.
+    ///
+    /// `call_arg_depth` is ARGUMENT POSITION, counted rather than guessed. It
+    /// resets to 0 inside a function body, because a body is a fresh statement
+    /// context: `f((l) .pos)` reads `.pos` against `l`, not against whatever
+    /// `f` will map over.
+    ///
+    /// `subject` is METHOD SCOPE: the enclosing function's FIRST parameter,
+    /// which §0.6 already makes the receiver — "declare at the trie, CALL AT
+    /// THE VALUE... holding the first argument means holding the receiver". It
+    /// is saved and restored around each body so nesting cannot leak a
+    /// receiver outward.
+    call_arg_depth: u32 = 0,
+    subject: ?[]const u8 = null,
+    /// Nesting inside a DESCRIPTOR body, where the first parameter of a slot
+    /// function is emphatically NOT the receiver — the enclosing descriptor is.
+    /// §20's own golden `shc/lex.duo` is the proof and the reason this counter
+    /// exists:
+    ///
+    ///     lexer: {
+    ///         pos: u32
+    ///         here = () span{ .pos, .pos }
+    ///         skip = (p) while b = :peek() and p(b) .pos += 1
+    ///
+    /// `here` has no parameter at all, and `skip`'s first parameter is the
+    /// PREDICATE. Taking either as the subject would silently rewrite `.pos`
+    /// into `p.pos` and `:peek()` into `p:peek()` — a wrong value dressed as a
+    /// fix for wrong values. Inside a descriptor body the subject stays unset
+    /// and the leading `.` keeps exactly the reading it has today.
+    descriptor_body_depth: u32 = 0,
     /// GAP-16 — nesting inside a `@`-directive argument list, where a string
     /// literal is DATA handed to the compiler rather than runtime source text.
     /// `@comp.interpolate("int64_t {name}()...")` owns those braces itself; if
@@ -2721,6 +2758,23 @@ pub const Parser = struct {
             ret_fallible = self.union_alternative_seen;
         }
 
+        // §2 METHOD SCOPE begins here: inside this body a leading `.` walks
+        // from the FIRST parameter, which §0.6 already makes the receiver.
+        // Saved and restored so a nested body cannot leak its receiver outward,
+        // and `call_arg_depth` resets because a body is a fresh statement
+        // context — `f((l) .pos)` is `l.pos`, not a lens over `f`'s data.
+        const outer_subject = self.subject;
+        const outer_call_arg_depth = self.call_arg_depth;
+        self.subject = if (self.descriptor_body_depth == 0 and params.items.len > 0)
+            params.items[0].name
+        else
+            null;
+        self.call_arg_depth = 0;
+        defer {
+            self.subject = outer_subject;
+            self.call_arg_depth = outer_call_arg_depth;
+        }
+
         const had_do = try self.eat(.kw_do) != null;
         const body_tok = try self.pk();
         const multiline = body_tok.loc.line > rparen_tok.loc.line;
@@ -3924,6 +3978,8 @@ pub const Parser = struct {
 
     fn parse_descriptor_table(self: *Parser) ParseError!struct { entries: []DescriptorEntry } {
         _ = try self.expect(.lbrace);
+        self.descriptor_body_depth += 1;
+        defer self.descriptor_body_depth -= 1;
         var entries: std.ArrayList(DescriptorEntry) = .empty;
         while (!(try self.check(.rbrace))) {
             const tok = try self.pk();
@@ -4461,7 +4517,7 @@ pub const Parser = struct {
             const rhs = if (try self.at_anchor_case(inf.op))
                 try self.parse_anchor_case()
             else
-                try self.parse_prec(inf.right);
+                try self.parse_operand(inf.op, inf.right);
             e = try self.new_expr(.{ .binop = .{
                 .loc = e.loc(),
                 .op = inf.op,
@@ -4483,7 +4539,25 @@ pub const Parser = struct {
     const parenless_call_arg_min_prec: u8 = 18;
 
     /// Parse one parenless call argument — stops before low-precedence infix (`+`, `-`, …).
+    /// The right operand of a binary operator, with ONE operator singled out:
+    /// `|>`'s right operand is ARGUMENT POSITION. `p |> .x` means "apply the
+    /// lens `.x` to `p`", which is the same stance `map(.x)` has and must not
+    /// become the method-scope walk `p.x` just because a receiver happens to be
+    /// in scope. `codegen_pass3_tests` pins both `p |> .x` and the chained
+    /// `p |> .x |> .y`, and they are what caught this.
+    fn parse_operand(self: *Parser, op: ast.BinOp, min_prec: u8) ParseError!*ast.Expr {
+        if (op != .pipeline) return self.parse_prec(min_prec);
+        self.call_arg_depth += 1;
+        defer self.call_arg_depth -= 1;
+        return self.parse_prec(min_prec);
+    }
+
     fn parse_parenless_call_arg(self: *Parser) ParseError!*ast.Expr {
+        // R2 ARGUMENT POSITION, and it counts as such: `print .name` is the
+        // same stance as `print(.name)`, so the two spellings cannot mean
+        // different things.
+        self.call_arg_depth += 1;
+        defer self.call_arg_depth -= 1;
         return self.parse_prec(parenless_call_arg_min_prec);
     }
 
@@ -4641,7 +4715,7 @@ pub const Parser = struct {
             const rhs = if (try self.at_anchor_case(inf.op))
                 try self.parse_anchor_case()
             else
-                try self.parse_prec(inf.right);
+                try self.parse_operand(inf.op, inf.right);
             lhs = try self.new_expr(.{ .binop = .{
                 .loc = lhs.loc(),
                 .op = inf.op,
@@ -5036,15 +5110,62 @@ pub const Parser = struct {
         } });
     }
 
-    /// Parse `.name` or `.a.b.c` as a field projection: desugars to `(__v) __v.name`
-    /// or `(__v) __v.a.b.c`. Only fires at expression-start (where `.` is currently invalid),
-    /// so this is backward-compatible. Enables `users:map(.name)` syntax.
+    /// Pass 108 R2 — a leading `.name` "is a lens in ARGUMENT position always;
+    /// the CASE in descriptor-expected position; neither context ⇒ diagnostic".
+    /// Pass 100 §2 names the third context this adds: method scope → my field
+    /// (`.pos`). The case stance is decided upstream in `parse_anchor_case`;
+    /// this function is the other two, and the diagnostic R2 requires.
     ///
-    /// This is the SECOND anchor stance (argument position → each element). It
-    /// is still the fallback for every position the parser has not yet been
-    /// taught, including method scope — see `parse_anchor_case` for the stance
-    /// that is settled and the remainder that is not.
+    /// THE DEFECT THIS CLOSES. There was exactly ONE rule here — build the lens
+    /// `(__proj_v) __proj_v.name` — applied to every leading `.`
+    /// unconditionally, so the contexts R2 separates collapsed into one.
+    /// `sema.zig` holds no belief about anchors (19 decision sites on `@` in
+    /// this file, 0 there) and its arithmetic rule admits a closure, so METHOD
+    /// SCOPE checked clean and died in the C backend:
+    ///
+    ///     bump(l: lexer): i64
+    ///         .pos + 1
+    ///     end
+    ///
+    ///     return ((int64_t)lua_to_num((lua_val_from_closure(
+    ///         (lua_Closure*)duo_make_closure_0()) + 1)));
+    ///     error: invalid operands to binary expression ('lua_Value' and 'int')
+    ///
+    /// A closure plus one, from a program `duo check` called clean.
+    ///
+    /// POSITION NOW DECIDES, and both halves are FACTS THE PARSER ALREADY HAS
+    /// rather than shapes it infers: `call_arg_depth` is incremented where
+    /// arguments are parsed, and `subject` is the enclosing function's first
+    /// parameter, recorded where the parameters are parsed. Argument position
+    /// wins when both hold, because it is the inner context — `xs:map(.x)`
+    /// inside a method body is still a lens over `xs`, which is R2's "in
+    /// ARGUMENT position ALWAYS".
+    ///
+    /// Neither reading is a guess, and the third outcome is R2's own: outside
+    /// both positions there is no anchor to walk from, so it is a diagnostic
+    /// rather than a silent lens.
     fn parse_field_projection(self: *Parser) ParseError!*ast.Expr {
+        if (self.call_arg_depth == 0 and self.subject != null) {
+            const subject = self.subject.?;
+            const dot_tok = try self.adv();
+            const first_field = try self.expect_name_like();
+            var walk = try self.new_expr(.{ .field = .{
+                .loc = dot_tok.loc,
+                .obj = try self.new_expr(.{ .name = .{ .loc = dot_tok.loc, .ident = subject } }),
+                .field = first_field,
+            } });
+            while ((try self.pk()).kind == .dot) {
+                const chain_dot = try self.adv();
+                const chain_field = try self.expect_name_like();
+                walk = try self.new_expr(.{ .field = .{
+                    .loc = chain_dot.loc,
+                    .obj = walk,
+                    .field = chain_field,
+                } });
+            }
+            return walk;
+        }
+
         const dot_tok = try self.adv(); // consume the leading `.`
         const first_field = try self.expect_name_like();
 
@@ -5099,9 +5220,24 @@ pub const Parser = struct {
         }) });
     }
 
-    /// Parse `:method` or `:method(args)` as a method reference: desugars to
-    /// `(__proj_v) __proj_v:method()` or `(__proj_v) __proj_v:method(args)`.
-    /// Expression-start only — enables `items:each(:close)` syntax.
+    /// Pass 108 R1 — `:` is INVOKE "whenever a left operand exists and a call
+    /// group follows; leading `:name(` is sibling invoke". §2 says what the
+    /// sibling invokes ON: "leading `:m()` on the ambient subject".
+    ///
+    /// R1's disambiguation is already total — "the forms cannot coincide: IS
+    /// never takes an argument group; INVOKE always does" — so the open
+    /// question was never IS-vs-INVOKE here. It was WHICH SUBJECT, and that is
+    /// the same POSITION question `parse_field_projection` answers. In METHOD
+    /// SCOPE the ambient subject is the enclosing function's first parameter,
+    /// so `:peek()` is `l:peek()`. In ARGUMENT POSITION there is no ambient
+    /// subject yet — the subject is each element — so it stays the sibling
+    /// reference `(__proj_v) __proj_v:method()` that `items:each(:close)`
+    /// wants.
+    ///
+    /// Same failure as the leading `.` and the same shape: `:peek() + 1` in a
+    /// `: i64` body checked clean and reached the C backend as
+    /// `lua_val_from_closure(...) + 1`, in a translation unit carrying no Lua
+    /// runtime.
     fn parse_method_reference(self: *Parser) ParseError!*ast.Expr {
         const colon_tok = try self.adv(); // consume `:`
         const method_name = try self.expect_name_like();
@@ -5109,6 +5245,8 @@ pub const Parser = struct {
         var args: []*ast.Expr = &.{};
         if ((try self.pk()).kind == .lparen) {
             _ = try self.adv();
+            self.call_arg_depth += 1;
+            defer self.call_arg_depth -= 1;
             var arg_list: std.ArrayList(*ast.Expr) = .empty;
             if (!(try self.check(.rparen))) {
                 try arg_list.append(self.alloc, try self.parse_expr());
@@ -5117,6 +5255,18 @@ pub const Parser = struct {
             }
             _ = try self.expect(.rparen);
             args = try arg_list.toOwnedSlice(self.alloc);
+        }
+
+        // METHOD SCOPE: the ambient subject is the receiver, so this is an
+        // ordinary sibling invoke on it — not a reference to be applied later.
+        if (self.call_arg_depth == 0 and self.subject != null) {
+            const subject = self.subject.?;
+            return self.new_expr(.{ .method_call = .{
+                .loc = colon_tok.loc,
+                .obj = try self.new_expr(.{ .name = .{ .loc = colon_tok.loc, .ident = subject } }),
+                .method = method_name,
+                .args = args,
+            } });
         }
 
         const call_expr = try self.new_expr(.{
@@ -5787,9 +5937,15 @@ pub const Parser = struct {
     fn parse_call_args(self: *Parser) ParseError![]*ast.Expr {
         var args: std.ArrayList(*ast.Expr) = .empty;
         const tok = try self.pk();
+        // R2 ARGUMENT POSITION, counted rather than guessed — this is where
+        // `map(.x)` gets its lens stance. Only the parenthesised arm counts: a
+        // brace-call `f{ ... }` is a table and a string-call is a literal,
+        // neither of which can carry a leading `.` expression.
         switch (tok.kind) {
             .lparen => {
                 _ = try self.adv();
+                self.call_arg_depth += 1;
+                defer self.call_arg_depth -= 1;
                 if (!(try self.check(.rparen))) {
                     try args.append(self.alloc, try self.parse_expr());
                     while (try self.eat(.comma) != null)
