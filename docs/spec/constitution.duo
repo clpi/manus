@@ -2563,3 +2563,71 @@ docgate = {
     "generated escape artifacts appear in output",
     "distinguishable semantic roles collapse to identical rendering by accident",
 }
+
+-- ═══ §58 · IF THE GRAPH IS A PATH, THE SOURCE IS A PATH ════════════════════
+
+chainprefer = law{
+    id    = "law.chain.prefer"
+    kind  = .invariant
+    holds = .chain
+    binds = {
+        "a value produced ONLY to become the subject of exactly one following relation forms a postfix chain",
+        "the temporary binding is removed",
+        "no temporary may exist merely to bridge two relations",
+    }
+    canon = "users:map(.score):take(n):filter(positive)"
+    deny  = "scores = users:map(.score) then limited = scores:take(n) then result = limited:filter(positive)"
+    why   = "the chain makes subject flow explicit, exposes fusion, and deletes three names nobody reads. If the semantic graph is already a path, the source should look like one."
+}
+
+chainbreak = law{
+    id    = "law.chain.break"
+    kind  = .invariant
+    holds = .kept
+    binds = {
+        "the intermediate has MORE THAN ONE consumer",
+        "the name carries semantic information a reader needs",
+        "the step crosses an effect or world boundary",
+        "what follows targets the ORIGINAL ambient subject, not the produced value",
+    }
+    why   = "chain-prefer without this becomes point-free code, which trades a readable name for a shorter line. The rule is about deleting BRIDGES, not deleting names."
+}
+
+-- THE DISAMBIGUATION, and the reason layout may not carry this weight.
+--
+--     :normalize()        two SIBLING invocations on one ambient subject
+--     :validate()
+--
+--     point               a CHAIN: each step consumes the step above
+--         :normalize()
+--         :validate()
+--
+-- Indenting a leading `:` under another leading `:` must NEVER mean "continue
+-- the pipeline". A chain ORIGINATES FROM A VALUE.
+chainop = law{
+    id    = "law.chain.postfix"
+    kind  = .invariant
+    holds = .postfix
+    binds = {
+        "postfix `:` is the ONLY chain operator",
+        "leading `:` is ambient-subject invocation, never implicit pipeline continuation",
+        "a chain originates from a value, not from indentation",
+    }
+    deny  = "inferring chaining from line adjacency or nesting depth"
+    fails = "two sibling effects silently read as a two-stage pipeline, or the reverse"
+}
+
+-- Where to look for this defect. Every one of these is a path in the graph and
+-- is routinely written as a stack of temporaries.
+chainaudit = {
+    "normalize, validate, format",
+    "decode, validate, transform, encode",
+    "read, decode, parse",
+    "collection transformations",
+    "compiler descent",
+    "graph transformation",
+    "snapshot, transform, diff, merge",
+    "wasm validate, lower, realize",
+    "string projection",
+    "conversion and protocol examples",
+}
