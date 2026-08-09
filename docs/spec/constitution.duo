@@ -2316,3 +2316,77 @@ basis = law{
     deny  = "renaming helpers to one-word names, which satisfies a grep and derives nothing"
     fails = "a second sequence descriptor having to write `starts`, `contains` and `split` again"
 }
+
+-- ═══ §52 · @ IS ANCHORING, AND NOTHING ELSE ════════════════════════════════
+--
+-- The old reading — "@ is the universal compiler prefix" — is permanently
+-- abandoned. What survives is one irreducible job, and the three surviving
+-- forms are genuinely one idea: OMIT AN IDENTITY THE SEMANTIC ENVIRONMENT
+-- ALREADY KNOWS.
+--
+--     @        the enclosing descriptor
+--     .        the ambient subject
+--     x@rel    the relation anchored at x
+--
+-- `@comp.foo` is not in that family and dies with the bootstrap authority it
+-- carries.
+
+anchor = law{
+    id    = "law.at.one"
+    kind  = .invariant
+    holds = .anchor
+    binds = {
+        "@ only denotes or establishes a semantic ANCHOR",
+        "@ never means compiler magic",
+        "prefix directive syntax DOES NOT EXIST",
+        "@ supplies the ambient descriptor; . supplies the ambient subject",
+        "x@rel selects relation rel anchored at semantic value or descriptor x",
+    }
+    canon = { "origin = () @{0,0}", "point@ordering", "ward@allocation" }
+    deny  = "@comp.* and the legacy attributes — bootstrap debt with a deletion gate, never authority"
+}
+
+-- `@{ … }` IS NOT A CONSTRUCTION SYNTAX. It is compositional: `@` recovers the
+-- enclosing descriptor and `{ … }` is the pack, so it is APPLY-ONE with the
+-- subject elided. `@{ x, y }` and `point{ x, y }` are the SAME family; the
+-- first recovers `point` from context. This is why @ carries zero special
+-- construction semantics and why the anchor form did not become a third
+-- mechanism when §43 collapsed brace call and brace construction.
+anchor.brace = "@ + pack = apply(enclosing descriptor)(pack)"
+
+-- ═══ §53 · CAPABILITY BY PRESSURE, NOT BY CHECKLIST ════════════════════════
+--
+-- How to reach a comprehensive implementation without implementing a
+-- theoretical feature list: three workloads, run simultaneously, each forcing a
+-- different half of the substrate.
+
+forcing = law{
+    id    = "law.force.three"
+    kind  = .protocol
+    holds = .pressure
+    binds = {
+        "compiler self-host forces parse, sema, graph, lowering, encoding",
+        "duon wasm forces jit, cfg, register allocation, memory, performance",
+        "lsp, mcp, formatter, package and build force persistent graphs, stable ids, diagnostics, incremental computation",
+        "a capability unnecessary to ALL THREE is not pre-release p0",
+    }
+    why   = "capability built to satisfy a checklist is speculative scaffolding. Capability built under pressure from a real workload is load-bearing on the day it lands."
+    keep  = "any capability duon wasm needs should normally become a GENERAL compiler primitive — never ward-only infrastructure"
+}
+
+-- The claim to make, and the one to refuse. "Faster than C across the board
+-- without exception" invites benchmark hacking and cannot be established: no
+-- compiler architecture mathematically guarantees one implementation wins every
+-- program on every cpu. The defensible construction is already law
+-- (law.c.floor, law.perf.floor, law.perf.dominance) and reads:
+--
+--   the c-equivalent realization is RETAINED whenever lawful · duon may add
+--   STRICTLY STRONGER candidates from additional semantic facts · the public
+--   supported corpus demonstrates RELIABLE dominance, adversarial workloads
+--   retained
+--
+-- Get law.perf.dominance right — more semantic knowledge may never shrink the
+-- valid realization set — and systematic dominance becomes an engineering
+-- problem rather than a wish.
+claim.refused = "faster than c across the board without exception"
+claim.made    = "more semantic knowledge never reduces the valid realization set"
