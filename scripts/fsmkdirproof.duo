@@ -1,0 +1,69 @@
+-- std.fs.mkdir / mkdir(all) / copy — verified BY VALUE, both directions.
+--
+-- gap[100] rung 0. The duplicate os/fs surface could not be collapsed safely
+-- because picking a survivor ships that survivor's bugs to every caller of
+-- both, and NONE of mkdir / mkdir(all) / copy had a fixture. gap[075] had
+-- already shown what that costs: fs.remove answered true for a path it had not
+-- removed, because a wrapper reported success it never verified.
+--
+-- So every assertion here checks the FILESYSTEM, never the wrapper's word:
+-- the directory must EXIST afterward, the copy's bytes must MATCH, and a call
+-- that cannot succeed must answer the failure side.
+--
+-- This fixture also convicts the defect that blocked rung 2 for an hour:
+-- `@c.emit` in TAIL-EXPRESSION position returns the wrong value silently.
+--
+--     return @c.emit("mkdir(path, 0777) == 0")   -> true,  directory created
+--            @c.emit("mkdir(path, 0777) == 0")   -> FALSE, directory created
+--
+-- Same C, same syscall, same observable effect, opposite answer. Nothing
+-- diagnoses. A caller branching on the result takes the wrong arm while the
+-- filesystem says the operation worked.
+--
+-- exit 0 all good; 1..6 names the broken direction.
+
+base = "/tmp/duofsproof"
+
+main = (): i64
+    std.fs.remove("{base}/a/b/c")
+    std.fs.remove("{base}/one")
+
+    made = std.fs.mkdir("{base}")
+    if not std.fs.exists("{base}")
+        print("fs proof: mkdir answered {made} and the directory is absent")
+        std.os.exit(1)
+    if made == false
+        print("fs proof: mkdir created the directory and answered {made}")
+        std.os.exit(2)
+
+    deep = std.fs.mkdir("{base}/nosuchparent/x")
+    if deep
+        print("fs proof: mkdir answered {deep} for a path whose parent is absent")
+        std.os.exit(3)
+
+    -- The nested case is NOT asserted here, and the reason is a finding rather
+    -- than an omission: the only op that creates it is spelled `mkdir_all`,
+    -- and a LAW-ONE identifier cannot contain that underscore. So canonical
+    -- duon CANNOT CALL IT — the idiom gate rejects the call site, correctly.
+    -- The qualifier belongs in a LEVEL (`mkdir(all)`), which is the repair;
+    -- until that lands, the op is reachable only from non-canonical source and
+    -- is therefore untestable from a canonical fixture. gap[100] rung 6.
+
+    src = "{base}/one"
+    f = io.open(src, "w")
+    f:write("duon")
+    f:close()
+    dst = "{base}/two"
+    cp = std.fs.copy(src, dst)
+    if not std.fs.exists(dst)
+        print("fs proof: copy answered {cp} and the target is absent")
+        std.os.exit(5)
+    g = io.open(dst, "r")
+    body = g:read("a")
+    g:close()
+    if body != "duon"
+        print("fs proof: copy produced {body}, not the source bytes")
+        std.os.exit(6)
+
+    print("fs proof: mkdir and copy verified by value; nested is unreachable from canonical source")
+    0

@@ -67,7 +67,7 @@ end
 
 mkdir(path: str): bool
     if path == nil return false end
-    os.execute("mkdir '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null")
+    return @c.emit("mkdir(path, 0777) == 0")
 end
 
 mkdir_all(path: str): bool
