@@ -738,6 +738,95 @@ edit.canon = { "edit = world(graph)(g)", "parent:add(child)" }  -- graph is AUTH
 -- it is duon's relation calculus made persistent.
 primitives = { "value", "relation", "fact", "world", "demand", "witness" }
 
+-- TRUST IS A LEVEL ON A FACT, never a mechanism standing beside one. The line
+-- above already names trust a FAMILY OF FACTS; these are its levels, in the
+-- ordinary duon sense that `read(number)` is a level — no new object class, no
+-- new surface.
+--
+-- Measured over tracked `src/*.zig`, 2026-08-08: 55 flags on the function-body
+-- descriptor gate specialized emitters, 28 carry a checking companion, 42
+-- recognizers feed them, and 51 further sites spell assume, noalias, pure or
+-- likely. Six ad-hoc trust mechanisms grown by accretion rather than decision —
+-- not one of them a fact, not one witnessed, not one composable.
+--
+-- `asserted` is the level the tree lacks entirely, and its absence is precisely
+-- why nobody could enumerate the unchecked flags: there was no way to say "I
+-- know this and you cannot prove it" and have the claim RECORDED, COUNTED,
+-- INVALIDATABLE and ATTRIBUTABLE when it turns out false. An assumption wearing
+-- no label is indistinguishable from a proof right up until it answers 200000
+-- where the reference answers 100000, which this repository has already paid
+-- for once.
+trust = @{
+    inferred = .derived      -- the compiler derived it from the graph
+    proven   = .witness      -- A5 satisfied; the witness is inspectable
+    observed = .sample       -- profile-time; carries its sample and its expiry
+    asserted = .author       -- the author knows and the compiler cannot check
+    foreign  = .lawset       -- a foreign lawset guarantees it, trust-tagged
+    guarded  = .runtime      -- true under a check, which carries its descent
+}
+
+-- Weakest last, and an unlabelled claim takes the WEAKEST level rather than the
+-- strongest. A default of `proven` is how six mechanisms became invisible.
+trust.order = { "proven", "inferred", "observed", "guarded", "foreign", "asserted" }
+trust.rest = .asserted
+
+facttrust = law{
+    id    = "law.fact.trust"
+    kind  = .invariant
+    holds = .level
+    binds = {
+        "every fact carries exactly one trust level",
+        "asserted is attributable — it names its author and what invalidates it",
+        "asserted has a spelling and therefore a census",
+        "a realization trusts the MINIMUM over the facts it consumes",
+        "no mechanism may carry trust that the fact does not",
+    }
+    fails = "a flag wearing the face of a proof: no companion check, no witness, no census"
+}
+
+-- ABSENCE IS A FACT, AND ITS SPELLING ALREADY EXISTS. A2 NNS, checked against
+-- this document rather than assumed: a false-valued field in a descriptor is
+-- how absence has always been written here — `syntax.anchor` denies a prefix,
+-- `syntax.name` denies underscore and uppercase, `syntax.block` denies the
+-- semicolon, `subject` denies a name, `kinds` denies authority, `std` denies
+-- ambient reach. Nothing is owed at the SURFACE, and a proposal for `noalias`,
+-- `restrict` or an unsafe block is the signal that the existing form has not
+-- been found yet.
+--
+-- What IS owed is the ENUMERATION. Optimization runs on negative facts — no
+-- alias, no re-entry, no failure edge, no observer — and the compiler spells
+-- none of them, so a flag stands in for "no alias exists" and hopes. Each
+-- negative below is an ordinary fact taking an ordinary trust level, which is
+-- the whole point: `alias = false` proven by an ownership witness and the same
+-- words asserted by an author are different claims, and only the census can
+-- tell them apart.
+--
+-- One correction to GAP-085, which proposes `x@{ alias = false }` by name:
+-- `alias` is a RESERVED WORD and cannot name a field — measured, the parser
+-- rejects it where `sharing`, `reentry`, `failure`, `observer` and `effect` all
+-- pass. The negative fact is `sharing`, and this is the ordinary case of a
+-- proposal being a proposal and the measurement being the law.
+absence = @{
+    sharing  = .ownership    -- no other live place reaches this one
+    reentry  = .world        -- no foreign frame re-enters during this scope
+    failure  = .contract     -- no failure edge leaves this realization
+    observer = .region       -- no other thread observes this place
+    effect   = .purity       -- no world is touched
+}
+
+negative = law{
+    id    = "law.fact.negative"
+    kind  = .invariant
+    holds = .fact
+    binds = {
+        "absence is a fact carrying a trust level, never a mechanism",
+        "the spelling is a false-valued field in a descriptor — no new surface",
+        "a negative fact names the witness that would falsify it",
+        "an unspellable absence becomes a flag, which is how this was found",
+    }
+    fails = "noalias, restrict or an unsafe block proposed as new grammar"
+}
+
 -- dnir is THE CANONICAL REALIZED RELATION STREAM — not nodes plus an operation
 -- taxonomy. This SUPERSEDES the earlier "family of facets" reading in §28:
 -- naming sub-ir families recreates ir kingdoms under a friendlier word.

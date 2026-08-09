@@ -78,6 +78,66 @@ sees = (pat: str, line: str): i64
     cmd: str = "printf {q}%s\\n{q} {q}{line}{q} | grep -c -E {q}{pat}{q}"
     to(i64)(std.proc.capture(cmd))
 
+-- ── the assumption row (GAP-085) ──────────────────────────────────────────
+--
+-- `src/*.zig` carries `use_` flags on the function-body descriptor that gate
+-- specialized emitters. CLAUDE.md §3 MEASUREMENT HONESTY already rules on
+-- them — "a detector must verify every constant its emitter assumes, and
+-- decline to the general path otherwise" — and records what violating it cost:
+-- ten fabricated benchmark kernels, three of which returned frozen literals.
+-- The rule was stated and NOTHING ENFORCED IT. This row is the number.
+--
+-- What it counts. A flag is UNADJUDICATED when it is all three of:
+--
+--   declared   `use_x: bool` on the descriptor in src/ast.zig
+--   live       assigned something other than `false` — a flag retired to
+--              `false` is adjudicated, and a declared field never assigned
+--              at all cannot reach an emitter
+--   unverified no `verify_x` companion anywhere in tracked zig
+--
+-- WHAT THIS ROW DOES NOT CLAIM, and the reason it is budgeted at 17 rather
+-- than driven to zero. All seventeen were READ before this row was written
+-- (GAP-085 step 0, the disconfirming case) and none is an unguarded value
+-- claim. Twelve are the dense-table polynomial family: ONE detector that
+-- reads every coefficient out of the ast, stores them on the descriptor, and
+-- returns on any statement it does not model — measured, `t[i] = i` with a
+-- `break` at 5 answers 15 over n = 50, not 1275. `dot product dense` is
+-- verified by `verify_dot_product_identity`, deliberately shared because both
+-- emitters print the same closed form; a name-matching grep cannot see that.
+-- `iterative fib` is a total structural match on fibonacci's own definition
+-- and requires SELF-recursion, which is how the §3 name-keying defect was
+-- repaired. `simd reduction` and `force always inline` emit pragmas and
+-- compute no value. `dense table` picks a representation whose accessors grow
+-- on demand.
+--
+-- So the row does not convict the seventeen. It stops the EIGHTEENTH from
+-- arriving unread — which is exactly the failure §3 describes and exactly the
+-- one nothing in this tree could catch.
+livepat = "fb\\.use_[a-z0-9_]+ = [a-z!(][a-z]*"
+verifypat = "verify_[a-z0-9_]+"
+
+-- Both extractors take their INPUT as a command so a synthetic line can be
+-- pushed through the identical chain. A control that exercises a paraphrase
+-- of the pattern proves nothing about the pattern that runs.
+live = (feed: str): str
+    "{feed} | grep -hoE {q}{livepat}{q} | grep -v {q} = false{q} | sed {q}s/fb\\.use_//;s/ = .*//{q} | sort -u"
+
+verified = (feed: str): str
+    "{feed} | grep -hoE {q}{verifypat}{q} | sed {q}s/verify_//{q} | sort -u"
+
+zig = (root: str): str
+    "cd {root} && git ls-files 'src/*.zig' | tr '\\n' '\\0' | xargs -0 cat"
+
+lines = (cmd: str): i64
+    to(i64)(std.proc.capture("{cmd} | wc -l"))
+
+-- Set difference without a temp file and without a brace group, which would
+-- collide with interpolation: emit the right side TWICE, so a name present on
+-- both sides appears three times and a left-only name appears once. `uniq -u`
+-- keeps the ones seen once.
+minus = (a: str, b: str): i64
+    to(i64)(std.proc.capture("( {a} ; {b} ; {b} ) | sort | uniq -u | wc -l"))
+
 pad = (s: str, width: i64): str
     out = s
     while #out < width
@@ -126,6 +186,31 @@ main = (): i64
         print("CONTROL FAILED: relation convicts an ordinary accessor")
         bad = bad + 1
 
+    -- The assumption row has FIVE controls, because it is a pipeline rather
+    -- than one grep and every stage of a pipeline can fail silently to zero.
+    -- Two prove the extractors read the real corpus at all; two prove the live
+    -- filter separates an assignment from a retirement; one proves the set
+    -- difference. Without the first two a broken `git ls-files` would score a
+    -- perfect nothing, which this repository has already shipped once.
+    if lines(live(zig(root))) < 1
+        print("CONTROL FAILED: the live extractor reads no flag from src/*.zig")
+        bad = bad + 1
+    if lines(verified(zig(root))) < 1
+        print("CONTROL FAILED: the verify extractor reads no companion from src/*.zig")
+        bad = bad + 1
+    if lines(live("printf {q}    fb.use_alpha = detect(fb);\\n{q}")) != 1
+        print("CONTROL FAILED: live does not see a conditionally-assigned flag")
+        bad = bad + 1
+    if lines(live("printf {q}    fb.use_beta = false;\\n{q}")) != 0
+        print("CONTROL FAILED: live counts a flag retired to false")
+        bad = bad + 1
+    if minus("printf {q}alpha\\n{q}", "printf {q}beta\\n{q}") != 1
+        print("CONTROL FAILED: minus loses a left-only name")
+        bad = bad + 1
+    if minus("printf {q}alpha\\n{q}", "printf {q}alpha\\n{q}") != 0
+        print("CONTROL FAILED: minus keeps a name present on both sides")
+        bad = bad + 1
+
     if bad > 0
         print("")
         print("bootstrap scan: CONTROLS BROKEN — every number below would be")
@@ -135,6 +220,7 @@ main = (): i64
     upper = count(root, upperpat)
     companion = count(root, companionpat)
     relation = count(root, relationpat)
+    assume = minus(live(zig(root)), verified(zig(root)))
 
     print("")
     print("  the deny table over src/*.zig — the corpus audit100 cannot see")
@@ -143,11 +229,17 @@ main = (): i64
     over = over + row("upper", upper, 770)
     over = over + row("companion", companion, 47)
     over = over + row("relation", relation, 47)
+    over = over + row("assume", assume, 17)
     print("")
     print("  §0.1 LAW-ONE denies uppercase; §0.3 denies companion *Kind/*Type")
     print("  by name; law.arch.relation denies a semantic distinction encoded")
     print("  in a host function name. See gaps/GAP-080.md for the repair order")
     print("  and for why NOT to bulk-rename.")
+    print("")
+    print("  assume is §3 MEASUREMENT HONESTY made a number: a live use flag")
+    print("  with no verify companion. The seventeen at budget were each read")
+    print("  and none is an unguarded value claim — the row exists so the")
+    print("  eighteenth cannot arrive unread. See gaps/GAP-085.md.")
     print("")
 
     if over > 0
