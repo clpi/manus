@@ -5002,7 +5002,74 @@ pub const Parser = struct {
         }
     }
 
-    /// Pass 23 §9 — `{ident}` in string literals desugar to `..` concat at parse time (duo_mode).
+    fn interpolationIdentStart(c: u8) bool {
+        return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or c == '_';
+    }
+
+    fn interpolationIdentContinue(c: u8) bool {
+        return interpolationIdentStart(c) or (c >= '0' and c <= '9');
+    }
+
+    fn parseInterpolationIdent(s: []const u8, pos: *usize) ?[]const u8 {
+        if (pos.* >= s.len or !interpolationIdentStart(s[pos.*])) return null;
+        const start = pos.*;
+        pos.* += 1;
+        while (pos.* < s.len and interpolationIdentContinue(s[pos.*])) {
+            pos.* += 1;
+        }
+        return s[start..pos.*];
+    }
+
+    fn parseInterpolationIndexKey(self: *Parser, loc: ast.Loc, raw: []const u8) ParseError!?*ast.Expr {
+        const text = std.mem.trim(u8, raw, " \t\r\n");
+        if (text.len == 0) return null;
+        if (std.fmt.parseInt(i64, text, 10)) |val| {
+            return self.new_expr(.{ .int_lit = .{ .loc = loc, .val = val } });
+        } else |_| {}
+        return self.parseInterpolationPath(loc, text);
+    }
+
+    fn parseInterpolationPath(self: *Parser, loc: ast.Loc, raw: []const u8) ParseError!?*ast.Expr {
+        const text = std.mem.trim(u8, raw, " \t\r\n");
+        var pos: usize = 0;
+        const head = parseInterpolationIdent(text, &pos) orelse return null;
+        var expr = try self.new_expr(.{ .name = .{ .loc = loc, .ident = try self.alloc.dupe(u8, head) } });
+        while (pos < text.len) {
+            switch (text[pos]) {
+                '.' => {
+                    pos += 1;
+                    const field = parseInterpolationIdent(text, &pos) orelse return null;
+                    expr = try self.new_expr(.{ .field = .{
+                        .loc = loc,
+                        .obj = expr,
+                        .field = try self.alloc.dupe(u8, field),
+                    } });
+                },
+                '[' => {
+                    const key_start = pos + 1;
+                    pos += 1;
+                    var depth: usize = 1;
+                    while (pos < text.len and depth > 0) {
+                        if (text[pos] == '[') {
+                            depth += 1;
+                        } else if (text[pos] == ']') {
+                            depth -= 1;
+                            if (depth == 0) break;
+                        }
+                        pos += 1;
+                    }
+                    if (depth != 0) return null;
+                    const key = (try self.parseInterpolationIndexKey(loc, text[key_start..pos])) orelse return null;
+                    expr = try self.new_expr(.{ .index = .{ .loc = loc, .obj = expr, .key = key } });
+                    pos += 1;
+                },
+                else => return null,
+            }
+        }
+        return expr;
+    }
+
+    /// Pass 23 §9 — string interpolation holes desugar to `..` concat at parse time (duo_mode).
     fn desugar_string_interpolation(self: *Parser, loc: ast.Loc, s: []const u8) ParseError!*ast.Expr {
         if (self.directive_arg_depth > 0 or !self.duo_mode or std.mem.indexOfScalar(u8, s, '{') == null) {
             return self.new_expr(.{ .string_lit = .{ .loc = loc, .val = s } });
@@ -5014,78 +5081,16 @@ pub const Parser = struct {
             if (s[i] == '{' and i + 1 < s.len) {
                 const rest = s[i + 1 ..];
                 if (std.mem.indexOfScalar(u8, rest, '}')) |off| {
-                    const ident = rest[0..off];
-                    // Pass 59 STR-1. This used to also require
-                    // `allEqual(ident, ident[0]) == false`, i.e. "not every
-                    // character the same" — which silently declined to
-                    // interpolate any SINGLE-CHARACTER name, since one char is
-                    // trivially all-the-same. `"v={x}"` therefore printed the
-                    // literal text `v={x}` while `"v={val}"` printed the value,
-                    // and it failed as OUTPUT, never as an error. Single-letter
-                    // names (`{i}`, `{n}`, `{b}`) are the common case in exactly
-                    // the loops interpolation is for, so STR-1 was broken where
-                    // it matters most. The character loop below already
-                    // restricts this to a valid identifier, so the guard bought
-                    // nothing. Verified zero strings in lib/ examples/ scripts/
-                    // contain `{c}` or `{cc}`, so no existing literal changes
-                    // meaning.
-                    if (ident.len > 0) {
-                        // A DOTTED PATH is accepted, not just a bare name:
-                        // `"({p.x}, {p.y})"`. Restricting the hole to a single
-                        // identifier is what forced `..` chains for the most
-                        // common case there is — printing a field — so STR-1
-                        // could not actually replace them. Each `.` segment must
-                        // itself be a valid identifier, so `{a.}`, `{.x}` and
-                        // `{a..b}` stay literal rather than becoming a partial
-                        // parse. Leading-`.` lens holes (STR-4) are deliberately
-                        // NOT claimed here: they need an ambient subject, which
-                        // is a separate feature, and silently reading them as a
-                        // name would be worse than leaving them literal.
-                        var valid = true;
-                        var seg_len: usize = 0;
-                        for (ident) |c| {
-                            if (c == '.') {
-                                if (seg_len == 0) {
-                                    valid = false;
-                                    break;
-                                }
-                                seg_len = 0;
-                                continue;
-                            }
-                            const alpha = (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or c == '_';
-                            const digit = c >= '0' and c <= '9';
-                            if (!alpha and !digit) {
-                                valid = false;
-                                break;
-                            }
-                            // A segment may not START with a digit.
-                            if (seg_len == 0 and digit) {
-                                valid = false;
-                                break;
-                            }
-                            seg_len += 1;
+                    const hole_text = rest[0..off];
+                    if (try self.parseInterpolationPath(loc, hole_text)) |hole| {
+                        if (start < i) {
+                            const lit = try self.alloc.dupe(u8, s[start..i]);
+                            try parts.append(self.alloc, try self.new_expr(.{ .string_lit = .{ .loc = loc, .val = lit } }));
                         }
-                        if (seg_len == 0) valid = false; // trailing '.'
-                        if (valid) {
-                            if (start < i) {
-                                const lit = try self.alloc.dupe(u8, s[start..i]);
-                                try parts.append(self.alloc, try self.new_expr(.{ .string_lit = .{ .loc = loc, .val = lit } }));
-                            }
-                            var seg_it = std.mem.splitScalar(u8, ident, '.');
-                            const head = seg_it.next().?;
-                            var hole = try self.new_expr(.{ .name = .{ .loc = loc, .ident = try self.alloc.dupe(u8, head) } });
-                            while (seg_it.next()) |seg| {
-                                hole = try self.new_expr(.{ .field = .{
-                                    .loc = loc,
-                                    .obj = hole,
-                                    .field = try self.alloc.dupe(u8, seg),
-                                } });
-                            }
-                            try parts.append(self.alloc, hole);
-                            i += 1 + off + 1;
-                            start = i;
-                            continue;
-                        }
+                        try parts.append(self.alloc, hole);
+                        i += 1 + off + 1;
+                        start = i;
+                        continue;
                     }
                 }
             }
@@ -8311,6 +8316,33 @@ test "parse: same-line void call then concat (F-13813-1)" {
     try testing.expect(tail.binop.op == .concat);
     try testing.expect(tail.binop.lhs.* == .string_lit);
     try testing.expectEqualStrings("ok: ", tail.binop.lhs.string_lit.val);
+}
+
+test "parse: string interpolation indexed holes" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuoSource(
+        \\a = "{found[i]}"
+        \\b = "{r[1]}"
+        \\c = "{rows[i].name}"
+    , &arena);
+
+    const a = mod.body.stmts[0].assign.values[0];
+    try testing.expect(a.* == .index);
+    try testing.expectEqualStrings("found", a.index.obj.name.ident);
+    try testing.expectEqualStrings("i", a.index.key.name.ident);
+
+    const b = mod.body.stmts[1].assign.values[0];
+    try testing.expect(b.* == .index);
+    try testing.expectEqualStrings("r", b.index.obj.name.ident);
+    try testing.expectEqual(@as(i64, 1), b.index.key.int_lit.val);
+
+    const c = mod.body.stmts[2].assign.values[0];
+    try testing.expect(c.* == .field);
+    try testing.expectEqualStrings("name", c.field.field);
+    try testing.expect(c.field.obj.* == .index);
+    try testing.expectEqualStrings("rows", c.field.obj.index.obj.name.ident);
+    try testing.expectEqualStrings("i", c.field.obj.index.key.name.ident);
 }
 
 test "parse: field projection .name desugars to anonymous function" {

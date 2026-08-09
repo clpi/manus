@@ -46,6 +46,10 @@ main = (): i64
         fails += 1
     end
 
+    rootforeign = std.script.chomp(std.script.capture("find . -maxdepth 1 -type f \\( -name '*.py' -o -name '*.sh' \\) -print | sort | head -1"))
+    if _report(rootforeign != "", "root foreign scratch script {rootforeign} present (delete or move into duon)")
+        fails += 1
+
     -- Tracked *.out must never ship; local gitignored copies are fine.
     if _report(_tracked("'*.out'"), "tracked *.out files in repository (git rm)")
         fails += 1

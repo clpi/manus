@@ -9,9 +9,9 @@ fence(): void
     @c.emit("__asm__ volatile(\"\" ::: \"memory\");")
 end
 
--- Spin-loop hint: x86 `pause`, AArch64 `yield`
+-- Spin loop hint: x86 `pause`, AArch64 `yield`
 @hot
-spin_wait(): void
+spinwait(): void
     @c.emit("#if defined(__x86_64__) || defined(__i386__)")
     @c.emit("__asm__ volatile(\"pause\");")
     @c.emit("#elif defined(__aarch64__)")
@@ -21,4 +21,3 @@ end
 
 -- Re-export ML device placement helpers (@device runtime table)
 device = req 'std.ml.device'
-

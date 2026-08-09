@@ -260,18 +260,19 @@ end
 -- This is the sanctioned home for C-level primitives; callers stay pure Duo.
 
 f64_to_bits(x: f64): i64
-    return @c.emit([[ ({ double _d = (double)x; int64_t _i; memcpy(&_i, &_d, 8); _i; }) ]])
+    @comp.bit.bitcast(x, "int64_t")
 end
 
 f64_from_bits(b: i64): f64
-    return @c.emit([[ ({ int64_t _i = (int64_t)b; double _d; memcpy(&_d, &_i, 8); _d; }) ]])
+    @comp.bit.bitcast(b, "double")
 end
 
 f32_to_bits(x: f64): i64
-    return @c.emit([[ ({ float _f = (float)x; int32_t _i; memcpy(&_i, &_f, 4); (int64_t)(uint32_t)_i; }) ]])
+    y: f32 = x
+    @comp.bit.bitcast(y, "uint32_t")
 end
 
 f32_from_bits(b: i64): f64
-    return @c.emit([[ ({ int32_t _i = (int32_t)(uint32_t)b; float _f; memcpy(&_f, &_i, 4); (double)_f; }) ]])
+    y: u32 = b
+    @comp.bit.bitcast(y, "float")
 end
-

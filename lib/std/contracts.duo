@@ -79,34 +79,25 @@ invariant(condition: str, message: str)
   }
 end
 assert_const(condition: bool, message: str)
-  @c.emit("/* [contract] assert_const */")
-  
+  condition
 end
 emit_preconditions(): void
-  @c.emit("/* [contracts] emit_preconditions */")
-  
   contract_stack = {}
   contract_count = 0
 end
 emit_postconditions(): void
-  @c.emit("/* [contracts] emit_postconditions */")
-  
   contract_stack = {}
   contract_count = 0
 end
 emit_invariants(): void
-  @c.emit("/* [contracts] emit_invariants */")
-  
   contract_stack = {}
   contract_count = 0
 end
 debug_check(condition_str: str, message: str): void
-  @c.emit("/* [contracts] debug_check */")
-  
+  message
 end
 profile_check(condition_str: str, message: str): void
-  @c.emit("/* [contracts] profile_check */")
-  
+  message
 end
 all(conditions: any): str
   parts = {}

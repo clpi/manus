@@ -19,5 +19,5 @@ end
 -- Byte length, so a caller need not reach for the boxed runtime.
 @comp.c.export("duo_str_len")
 len(s: str): i64
-    return @comp.c.emit([[(int64_t)strlen(s)]])
+    #s
 end

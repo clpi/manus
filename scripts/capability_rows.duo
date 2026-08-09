@@ -493,24 +493,19 @@ main = (): i64
     -- A missing fixture must not read as a shorter row; that is how a
     -- capability quietly stops being measured.
     --
-    -- `nm = r[1]` FIRST, every time a row field is wanted in a string. A `{}`
-    -- hole takes a plain identifier, not an indexed expression: `{r[1]}` stays
-    -- LITERAL and the first run of this report printed a NO FIXTURE section
-    -- reading `{r[1]}` and a G column of `—` across every measured row,
-    -- because the grep was searching for the four characters `{r[2]}`. It is
-    -- the quiet kind of wrong — the table still renders.
+    -- Indexed interpolation is intentionally used below so this report cannot
+    -- quietly regress to printing `{r[1]}` as literal text.
     for ri, r in rows
-        nm = r[1]
         for fi, f in r[3]
             if not std.script.fs_exists(f)
-                print("capability_rows: FAIL — row '{nm}' names a missing fixture {f}")
+                print("capability_rows: FAIL — row '{r[1]}' names a missing fixture {f}")
                 return 3
             end
             remember(files, seen, f)
         end
         for fi, f in r[4]
             if not std.script.fs_exists(f)
-                print("capability_rows: FAIL — row '{nm}' names a missing deny fixture {f}")
+                print("capability_rows: FAIL — row '{r[1]}' names a missing deny fixture {f}")
                 return 3
             end
             remember(files, seen, f)

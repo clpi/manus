@@ -11,8 +11,9 @@ io.lsp = {}
 -- hand edit here is caught on the commit that makes it (H-1).
 io.lsp.legend = {"keyword", "copula", "operator", "layout", "descriptor", "union", "anchor", "retrieve", "invoke", "callable", "world", "foreign", "place", "number", "literal", "case", "comment", "walk", "pipe"}
 io.lsp.mods = {"declaration", "defaultlibrary"}
--- The role function is TOTAL (H-6): every legend member is coverable, and
--- coverage is measured over ALL 19 of them.
+-- Roles 1..19 are the closed set coverage is measured over;
+-- the rest are roles.md §3 and do NOT count toward coverage (§7).
+-- The role function is TOTAL (H-6): every legend member is coverable.
 io.lsp.closed = 19
 -- </legend>
 

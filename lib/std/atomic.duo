@@ -1,5 +1,7 @@
 -- std.atomic — atomic operations on table-backed memory
--- Uses compare_swap for CAS-based mutex and spin_wait for CPU yielding.
+-- Uses compare swap for CAS-based mutexes and hardware spinwait for CPU yielding.
+
+hardware = req "std.hardware"
 
 store(t: any, key: any, value: any): any
     old = t[key]
@@ -68,12 +70,7 @@ lock(m: any): void
             m.count = 1
             return
         end
-        -- Spin-wait: yield CPU hint between attempts
-        @c.emit("#if defined(__x86_64__) || defined(__i386__)")
-        @c.emit("__asm__ volatile(\"pause\");")
-        @c.emit("#elif defined(__aarch64__)")
-        @c.emit("__asm__ volatile(\"yield\");")
-        @c.emit("#endif")
+        hardware.spinwait()
     end
 end
 
@@ -101,4 +98,3 @@ signal(sp: any): void
     if sp == nil return end
     sp.notify = true
 end
-
