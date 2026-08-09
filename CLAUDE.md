@@ -255,8 +255,11 @@ lexical greps at zero · uppercase 0 · prefix-@ 0 · face scan (receiver forms,
 ARG-1) · constructor scan (ladder) · alias scan · concat scan · stdlib scan ·
 result scan (B-12) · enum scan · end scan · temp scan (TMP-1) · field scan (X8)
 · return scan · edge scan · strata scan · shape match · RUNG REPORT · gap row
-(cite `-- gap[nn]`) · fixture row. Every ruling regenerates THIS FILE in the
-same commit — a ruling without regeneration is unshipped.
+(cite `-- gap[nn]`) · **capability scan** (`std@{ ambient = false }` — Pass 105
+U1, effective immediately: no std module gains ambient fs/net/clock/rand reach;
+measured baseline 46 of 257 modules, gap[061]) · fixture row. Every ruling
+regenerates THIS FILE in the same commit — a ruling without regeneration is
+unshipped.
 
 ### §3 MEASUREMENT HONESTY — earned the hard way, 2026-08-08
 

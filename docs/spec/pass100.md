@@ -721,6 +721,10 @@ measurement · grammar formalization + resolution-cost analysis (metered by the
 sealed-collapse floor) · the graph's concrete schema. **The toll**: every claim
 herein pays one running fixture as the corpus lands; blocks-passing/
 blocks-total is the project's first honest number, and §13 is not exempt.
+**Owed (Pass 105)**: the PUBLIC CLAIMS DASHBOARD — blocks-passing/blocks-total,
+oracle-parity tables, admission velocity, sealed-collapse rate, ledger size.
+The pitch deck and the CI dashboard are the same artifact, and a release
+without its numbers is unshipped.
 
 > **Repository note (2026-08-08).** "Running: nothing" is the spec's
 > conservative stance and is now inconsistent with observed reality in this
@@ -769,6 +773,17 @@ world, and enumerability is the axis · the callable is one thing · routing
 composes from demand.
 
 ## 24. Version discipline
+
+**Release gates (Pass 105 §4)** — strategic invariants as anchored protocols on
+the toolchain itself, red in CI until true: `std@{ ambient = false }` (U1,
+capability scan — the measured baseline is gap[061]) · `build@deterministic`
+(U2) · `dnir@migratable(v_prev)` (U3) · `graph@{ colored = false }` (U4) ·
+`registry.open = gate(coherence.closed)` (U5 — the registry opens AFTER the
+coherence law closes; ecosystem splits are forever) · `std@deprecation_only`
+(U6) · `release@published(metrics)` (U7) · `toolchain@{ foreign = ledger |
+oracle }` (U8). The unretrofittable list is chosen by one test: has any
+language ever successfully added this after release? The answer under each is
+no.
 
 0.1 means: the semantic surface of Parts I–III is frozen against everything
 except (a) the bridged decisions of §22, which land through their contracts,
