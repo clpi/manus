@@ -1014,7 +1014,13 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
     for (block.stmts, 0..) |*stmt, i| {
         try lowerStmt(ctx, stmt, allow_return and stmtIsTailSlot(block, i));
     }
-    if (allow_return) _ = try tryEmitTailDemandReturn(ctx, block);
+    if (allow_return) {
+        _ = try tryEmitTailDemandReturn(ctx, block);
+        return;
+    }
+    // gap[104], same hole as `lowerBlockReturns`: without this the tail
+    // expression of a non-answering block is lowered by nobody.
+    try lowerBlockTailEffect(ctx, block);
 }
 
 /// `req "path"` — a compile-time module binding, not a runtime call.
@@ -1207,7 +1213,51 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
         try lowerStmt(ctx, stmt, tail_here);
     }
     if (allow_return) return try tryEmitTailDemandReturn(ctx, block);
+    try lowerBlockTailEffect(ctx, block);
     return false;
+}
+
+/// gap[104] — a block's tail expression whose value NOBODY DEMANDS is a
+/// STATEMENT, and it has to be lowered like one.
+///
+/// `blk.tail_expr` is the parser's home for a final expression, and the ONLY
+/// thing that ever lowered it was `tryEmitTailDemandReturn`, which the two
+/// callers here reach exclusively under `allow_return`. A branch body or a loop
+/// body is lowered with `allow_return = false` — correctly, since neither is
+/// the function's answer — so its tail expression was walked past by the
+/// statement loop (it is not in `block.stmts`) and then never lowered at all.
+/// Two paths, each right on its own, with the tail expression falling between:
+///
+///     if 42 > 10
+///         print("first")   -- a statement; emitted
+///         print("last")    -- the tail expression; SILENTLY DROPPED
+///     end
+///
+///     while n < 3
+///         n += 1           -- a statement; emitted
+///         print("b")       -- the tail expression; SILENTLY DROPPED
+///     end
+///
+/// Both printed nothing where the C backend printed. This is not about `print`,
+/// not about constant conditions and not about branching: the branch is taken
+/// (`if 42 > 10 return 7` answers 7 on both backends) and the loop iterates the
+/// right number of times. Only the tail slot of a non-answering block is lost.
+/// A tail ASSIGNMENT was always fine because an assignment is a `stmt`, so it
+/// rides the loop above — which is exactly why the defect looked like it was
+/// about void calls.
+///
+/// The C backend is the oracle and already states the rule: its `.statement`
+/// tail mode emits `expr;` for the same position. `.discard` consumption is the
+/// DNIR spelling of that semicolon.
+///
+/// `.table` is skipped for the reason `lowerStmt`'s `.expr_stmt` arm skips it —
+/// `lowerExprCons` has no `.table` arm, so lowering one fails the whole
+/// function. A bare table in a discarded position carries no effect, so
+/// dropping it is the right answer rather than a second hole.
+fn lowerBlockTailEffect(ctx: *LowerCtx, block: *const ast.Block) Error!void {
+    const e = block.tail_expr orelse return;
+    if (e.* == .table) return;
+    _ = try lowerExprCons(ctx, e, exprCallConsumption(e));
 }
 
 /// Whether statement `i` occupies the slot the block's result comes out of.

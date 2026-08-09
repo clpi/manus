@@ -360,6 +360,23 @@ pub fn build(b: *std.Build) void {
     const cfloor_step = b.step("c-floor", "constitution §47: the C-equivalent realization is a costed candidate; plan vs measurement");
     cfloor_step.dependOn(&cfloor_cmd.step);
 
+    // tail-slot -- gap[104]. A block's final expression lives in
+    // `blk.tail_expr`, and in dnir_lower only the RETURN path ever read that
+    // field, so a branch body or a loop body -- both lowered with
+    // `allow_return = false` -- dropped its last statement on the floor. The
+    // direct backend is what `duo run` uses, so every conditional print, every
+    // error path and every accumulate-then-emit loop was silent by default
+    // while `--backend=c` was correct. A step of its own rather than an
+    // audit100 row because it COMPILES AND RUNS four programs through both
+    // backends and reads their stdout BY VALUE -- the defect survived three
+    // wrong diagnoses precisely because each probed control flow with the
+    // thing that was broken.
+    const tailslot_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/tailslot.duo" });
+    tailslot_cmd.setCwd(b.path("."));
+    tailslot_cmd.step.dependOn(b.getInstallStep());
+    const tailslot_step = b.step("tail-slot", "gap[104]: a non-answering block's tail expression runs, and matches the C backend");
+    tailslot_step.dependOn(&tailslot_cmd.step);
+
     // audit100 -- CLAUDE.md section 1's deny table, executable. It scans the
     // canonical partition of docs/spec/corpus.md only, because compile_fail
     // fixtures are SUPPOSED to contain the denied text, and it ratchets off

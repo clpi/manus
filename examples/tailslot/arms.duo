@@ -1,0 +1,31 @@
+-- gap[104] — both arms of an `if/else` carry a tail slot, and both were lost.
+--
+-- The two-armed shape is the sharpest form of the defect: control reaches
+-- exactly one arm, and under the bug NEITHER printed, which no mis-taken-branch
+-- theory can explain. Run once with a true condition and once with a false one
+-- so the fixture convicts a repair that only fixes the arm it was written for.
+--
+-- The `if/else` here is deliberately NOT the last thing in `pick`: a trailing
+-- `print("done")` pushes it out of the function's tail slot, so both arms are
+-- lowered with `allow_return = false` and take the broken path. Without that
+-- trailing line the arms are the function's answer, go through
+-- `tryEmitTailDemandReturn`, and print correctly even on the unfixed
+-- compiler — the fixture would have been green against the bug.
+--
+-- Expect exactly: `then` `done` `else` `done` `4`.
+
+pick = (c: bool): void
+    if c
+        print("then")
+    else
+        print("else")
+    print("done")
+
+main = (): i64
+    pick(true)
+    pick(false)
+    n: i64 = 0
+    if n < 1
+        n += 4
+        print(n)
+    0

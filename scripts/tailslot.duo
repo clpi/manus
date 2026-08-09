@@ -1,0 +1,142 @@
+-- gap[104] · THE TAIL SLOT OF A NON-ANSWERING BLOCK IS A STATEMENT.
+--
+-- WHAT THIS GATE IS FOR. A block's final expression lives in `blk.tail_expr`,
+-- not in `blk.stmts`. In `src/dnir_lower.zig` the only reader of that field was
+-- `tryEmitTailDemandReturn`, and both callers reach it exclusively under
+-- `allow_return`. A branch body and a loop body are lowered with
+-- `allow_return = false` — correctly, neither is the function's answer — so
+-- their tail expression was walked past by the statement loop and then lowered
+-- by nobody. Two paths, each right alone, with the tail expression falling
+-- between them.
+--
+-- The C backend is the oracle and already states the rule: its `.statement`
+-- tail mode emits `expr;` in the same position. So every row here runs the same
+-- fixture through BOTH backends and compares the bytes. A row is a wrong answer
+-- only when the two disagree or when the expected value is absent.
+--
+-- WHY IT IS A GATE AND NOT AN AUDIT ROW: it compiles and runs programs, and it
+-- reads their STDOUT BY VALUE. Three diagnoses of this defect were wrong
+-- because each probed control flow with `print` while `print` was the thing
+-- being dropped, so this gate reads exit codes as well as bytes and never
+-- infers one from the other.
+--
+-- THE ROWS
+--
+--   P0  the fixtures exist and both backends build them        control
+--   T1  branch  — an if-body's tail print runs                 gap[104]
+--   T2  loop    — a while-body's tail print runs, every pass   gap[104]
+--   T3  arms    — both arms of an if/else, out of tail slot    gap[104]
+--   N1  gap[033] — a void tail call that IS the answer         negative
+--   N2  a taken branch still returns its value (rc=7)          negative
+--   N3  a tail ASSIGNMENT is unchanged                         negative
+--   X1  direct and the C backend print the same bytes          oracle
+
+rows = ""
+failed = 0
+
+here = (): str
+    std.script.chomp(std.script.capture("pwd"))
+
+quiet = (cmd: str): i64
+    std.script.status("{cmd} >/dev/null 2>&1")
+
+grab = (cmd: str): str
+    std.script.chomp(std.script.capture(cmd))
+
+note = (tag: str, ok: bool, detail: str): void
+    mark = "FAIL"
+    if ok
+        mark = "ok  "
+    if not ok
+        failed = failed + 1
+    rows = "{rows}  {mark} {tag}  {detail}\n"
+
+-- One fixture, one backend: compile, run, capture stdout with newlines turned
+-- into `|` so a row can be compared as a single value, and record the exit code
+-- separately. `duo compile` writes beside the source unless `-o` says
+-- otherwise, so every artifact is named into the work directory — a build
+-- product in the repo root is a hygiene finding.
+--
+-- The output file is REMOVED first. A stale capture from the previous backend
+-- reads exactly like a pass, which is the confident-green this gate exists to
+-- refuse.
+run = (bin: str, work: str, name: str, backend: str): str
+    src = "examples/tailslot/{name}.duo"
+    exe = "{work}/{name}.{backend}"
+    out = "{work}/{name}.{backend}.out"
+    quiet("rm -f {exe} {out}")
+    built = quiet("{bin} compile {src} --backend={backend} -o {exe}")
+    if built != 0
+        return "BUILD-FAILED"
+    code = std.script.status("{exe} >{out} 2>/dev/null")
+    body = grab("tr '\\n' '|' <{out}")
+    "rc={code} {body}"
+
+main = (): i64
+    root = here()
+    bin = "{root}/zig-out/bin/duo"
+    work = "/tmp/duo-tailslot"
+    quiet("rm -rf {work}")
+    quiet("mkdir -p {work}")
+
+    -- P0. A gate that scores 0/N over 0 subjects is broken, not green. Count
+    -- the fixtures on disk before reading a single one of them.
+    fixtures = grab("ls examples/tailslot/*.duo | wc -l | tr -d ' '")
+    have = to(i64)(fixtures)
+    note("P0 control", have == 4, "fixtures on disk: {have} of 4")
+    if have != 4
+        print(rows)
+        print("tailslot: FAIL — the fixture set is not what the rows below assume")
+        return 3
+
+    branchd = run(bin, work, "branch", "direct")
+    branchc = run(bin, work, "branch", "c")
+    loopd = run(bin, work, "loop", "direct")
+    loopc = run(bin, work, "loop", "c")
+    armsd = run(bin, work, "arms", "direct")
+    armsc = run(bin, work, "arms", "c")
+    answd = run(bin, work, "answer", "direct")
+    answc = run(bin, work, "answer", "c")
+
+    -- T1. The filed repro. `first` alone is the defect; both lines is the fix.
+    note("T1 gap[104] branch", branchd == "rc=0 first|last|",
+        "if-body tail print · direct: {branchd}")
+
+    -- T2. The same hole through `while`. Three iterations, three lines — a
+    -- repair that emits the tail once outside the loop would print `b|3|`.
+    note("T2 gap[104] loop", loopd == "rc=0 b|b|b|3|",
+        "while-body tail print · direct: {loopd}")
+
+    -- T3. Both arms, and neither is the function's tail. Under the defect this
+    -- printed `done|done|` — control reached both arms and neither emitted.
+    note("T3 gap[104] arms", armsd == "rc=0 then|done|else|done|4|",
+        "if/else arms out of tail slot · direct: {armsd}")
+
+    -- N1/N2/N3 all read the same fixture, because the three shapes a repair
+    -- must not disturb compose into one program: a void tail call that IS the
+    -- answer (gap[033] — emitting `ret` there gave exit 59, 224 with an else),
+    -- a taken branch that returns 7, and a tail compound assignment summing 30.
+    -- The space is measured by WIDTH, not by comparing a captured string: a
+    -- shell capture is chomped, so a line holding exactly one space and a line
+    -- holding nothing both read as "" and the row would pass on an absent line.
+    -- `wc -c` over the first line answers 2 for " \n" and 1 for "\n".
+    spaced = grab("sed -n '1p' {work}/answer.direct.out | wc -c | tr -d ' '")
+    note("N1 gap[033]", spaced == "2",
+        "void tail call as the answer prints its space, no `ret` leak: width={spaced}")
+    note("N2 branch answers", answd == "rc=7  |30|",
+        "taken branch still returns · direct: {answd}")
+    note("N3 tail assignment", grab("sed -n '2p' {work}/answer.direct.out") == "30",
+        "tail `t += 10` still accumulates: reads 30")
+
+    -- X1. The oracle row. §3 MEASUREMENT HONESTY: the two lowerings must
+    -- produce the SAME ANSWER, and that is checked before any of the rows above
+    -- is worth anything.
+    agree = branchd == branchc and loopd == loopc and armsd == armsc and answd == answc
+    note("X1 oracle", agree, "direct vs --backend=c on all four fixtures")
+
+    print(rows)
+    if failed > 0
+        print("tailslot: FAIL — {failed} row(s); gap[104] is not closed")
+        return 1
+    print("tailslot: ok — the tail slot of a non-answering block runs, on both backends")
+    0
