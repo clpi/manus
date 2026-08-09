@@ -20,9 +20,14 @@ an earlier session or from training, **it is not law and never applies.**
 
 ## MECHANICAL DENY LIST — a diff containing any row is REJECTED UNREAD
 
-Run `zig build idiom-gate` before you finish. It is not advisory; it exits
-nonzero and blocks the commit. Every row here is a grep, and every row is
-checked.
+You do not have to remember to run this. `.githooks/pre-commit` runs
+`scripts/idiomgate.duo` over your staged diff on EVERY commit, for every agent,
+and a finding EXITS NONZERO AND BLOCKS THE COMMIT. To check before you stage:
+
+    DUOGATEFILES="$(git ls-files -m '*.duo')" duo run scripts/idiomgate.duo
+
+(`zig build idiom-gate` is a DIFFERENT, narrower step: it covers 4 files while
+its description claims every one. Do not rely on it.)
 
 | you wrote | it is denied because | write instead |
 |---|---|---|

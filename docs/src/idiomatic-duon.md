@@ -217,4 +217,7 @@ not prose.
 migration debt. Do not imitate the file you are editing — check it against this
 guide and repair what you touch.
 
-Before you finish: `zig build idiom-gate`.
+Before you finish: `.githooks/pre-commit` gates your staged diff automatically.
+To check early:
+
+    DUOGATEFILES="$(git ls-files -m '*.duo')" duo run scripts/idiomgate.duo
