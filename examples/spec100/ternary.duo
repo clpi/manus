@@ -1,0 +1,38 @@
+-- Pass 100 §6 — `kind = if tok.keyword keyword else name`: the expression-if
+-- IS the ternary. Like every other one-liner it is terminated by the NEWLINE
+-- (§3.3), not by a closer; `end` is "accepted and deleted" (§3.4), never
+-- demanded. §20's `lexer` writes it as
+-- `peek = () if .pos < #.src .src[.pos] else nil`, and the missing `end` was
+-- that block's first diagnostic.
+--
+-- FIVE NUMBERS, and they disagree on purpose, because "it compiled" says
+-- nothing about which arm ran:
+--
+--   10 20   ONE callable, both arms. An implementation that always takes the
+--           then-arm prints "10 10"; one that always takes the else-arm prints
+--           "20 20"; one that drops a missing else to nil prints "10 nil".
+--   3 2 1   the CHAINED form `else if`. All three answers differ, so a chain
+--           that collapsed to its first test prints "3 3 1" and a chain that
+--           fell through to its last prints "1 1 1". Only real chaining prints
+--           three different numbers in this order.
+-- expect: 10 20 3 2 1
+
+pick = (n: i64): i64
+    k = if n > 3 10 else 20
+    k
+end
+
+grade = (n: i64): i64
+    k = if n > 8 3 else if n > 4 2 else 1
+    k
+end
+
+main = (): i64
+    hi = pick(5)
+    lo = pick(1)
+    top = grade(9)
+    mid = grade(5)
+    low = grade(1)
+    print("{hi} {lo} {top} {mid} {low}")
+    0
+end
