@@ -332,6 +332,17 @@ license to ignore the law; it is the difference between transcribing a table and
 implementing one. `place` was found this way: no pass named it, the law required
 totality, and the measurement said ordinary names had no hue.
 
+**NNS FIRST (A2), ALWAYS.** The grammar is CLOSED; capability = the semantics of
+EXISTING forms. Reach for levels, places, facts, edges, worlds, protocols or
+layout — **never a new token, sigil, keyword or mechanism.** Pass 119's gap
+catalogue is the worked example: forty features from other languages absorbed by
+five concepts and **zero new grammar** (`?.` is a refinement proof or
+`get(.y, default)`; generators are demand streams because laziness is already
+the resting state; channels are stream places composed by `|`; overflow is mode
+levels `add(wrap|sat|checked)`). If a proposed repair needs new surface, that is
+the signal you have not yet found the existing form it is hiding — say so rather
+than annexing.
+
 **STANDING RULE, so this is the last time it is asked: any token whose card
 cannot state a role MORE SPECIFIC than its lexical class is a G-TOTAL finding.**
 The gate measures SPECIFICITY, not just coverage. Per-language totalization is
