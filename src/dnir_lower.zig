@@ -651,6 +651,23 @@ pub const LowerCtx = struct {
     /// Static element count of a positional table, keyed by its `.len` slot, so
     /// `t[i]` with a non-constant `i` knows how many slots to select over.
     table_lens: std.AutoHashMapUnmanaged(u32, i64) = .empty,
+    /// Growable heap-backed tables, keyed by the slot holding the base address.
+    /// A table in here has NO compile-time length — see `DynTable`.
+    dyn_tables: std.AutoHashMapUnmanaged(u32, DynTable) = .empty,
+    /// ONE set of scratch places for every growable-table store in the
+    /// function, because a slot costs a register for the whole function and the
+    /// backend's spiller answers WRONG rather than refusing when it runs out.
+    /// Their live ranges cannot overlap: a store's key and value are lowered
+    /// before either is written, and a store is a statement, so no second store
+    /// can be in flight inside one.
+    dyn_scratch: ?DynScratch = null,
+    /// Names this function body subscripts with `[…]`. An empty `{}` binding
+    /// consults it to choose its REALIZATION: subscripted means the growable
+    /// heap array, unsubscripted keeps the record explosion, which is the only
+    /// thing `{}` could be before this and is still right for `o = {}; o.a = 1`.
+    indexed_names: std.StringHashMapUnmanaged(void) = .empty,
+    /// Names the body asks `#` of — see `DynTable.len`.
+    length_names: std.StringHashMapUnmanaged(void) = .empty,
     /// Module-level integer constants, keyed `Name` or `Name.field`. Populated
     /// from top-level `N = <int>` and `N = @{ f = <int>, ... }` bindings, which
     /// are otherwise invisible inside a function body.
@@ -677,6 +694,10 @@ pub const LowerCtx = struct {
         self.bool_slots.deinit(self.alloc);
         self.ptr_slots.deinit(self.alloc);
         self.table_lens.deinit(self.alloc);
+        self.dyn_tables.deinit(self.alloc);
+        // Keys are borrowed from the AST, which outlives the context.
+        self.indexed_names.deinit(self.alloc);
+        self.length_names.deinit(self.alloc);
         var ci = self.const_ints.iterator();
         while (ci.next()) |e| self.alloc.free(e.key_ptr.*);
         self.const_ints.deinit(self.alloc);
@@ -772,6 +793,12 @@ fn lowerFunction(
     // advancing the cursor the first temps alias the parameters, and the backend's
     // single slot->register map silently rebinds a parameter to a temp's register.
     ctx.next_temp = param_slot_cursor;
+
+    // Which names this body subscripts, so an empty `{}` binding can choose its
+    // realization. Read once here rather than at each binding: the uses that
+    // decide are ahead of the binding, not behind it.
+    var uses = NameUses{ .indexed = &ctx.indexed_names, .lengths = &ctx.length_names };
+    try collectIndexedNames(alloc, &fd.func.body, &uses);
 
     // §12 TAIL, armed only for a flat scalar frame. `param_slot_cursor` counts
     // the slots actually assigned above, so this equality IS the test for "one
@@ -1472,6 +1499,426 @@ fn ptrSlotOf(ctx: *LowerCtx, expr: *const ast.Expr) ?u32 {
     return slot;
 }
 
+/// A GROWABLE table: three ordinary slots, and the whole representation.
+///
+/// `base` holds a heap address, `cap` how many elements that address is good
+/// for, `len` the highest index written. Every one of them is a runtime value,
+/// which is the entire difference from `alloc_slots` — that reserves a
+/// COMPILE-TIME number of words in the frame (`sp + constant`, capped at 4094
+/// words for the whole function), so a table whose size is only known while
+/// running has nowhere to live in it.
+///
+/// The identity of the table is the NAME; `base` is only where it happens to
+/// be right now, and growth moves it. Nothing may cache the address across a
+/// store — every read of the base goes through the slot, on purpose.
+/// `len` is present only when the body asks for `#t`. A place costs a register
+/// for the whole function, so a fact nobody reads is not recorded — and the
+/// store loses its length-update branch with it.
+const DynTable = struct { base: u32, cap: u32, len: ?u32 };
+
+/// Scratch places shared by every growable-table access in one function.
+///
+/// `key` belongs to reads, the rest to stores. Sharing them is legal because an
+/// access lowers its operand expressions to completion BEFORE writing any of
+/// these, so a nested access — `xs[ys[j]]`, `xs[i] = xs[i] + 1` — has finished
+/// with the place before the enclosing one touches it.
+/// `key` is a general scratch and is reused three times within one access —
+/// the index, then the clamped index, then a call argument — because its uses
+/// are strictly sequential and it is dead between them. `ok` is read twice.
+///
+/// A TEMP would not do for any of these, for two different reasons: `binop`
+/// releases a temp's register after ONE consumption, and `mov_arg` and
+/// `load_index` never release one at all, so a value passed to either LEAKS a
+/// register for the rest of the function. Nine leaked registers is what turned
+/// a two-table function into `sub x28, x28, x28`.
+const DynScratch = struct { key: u32, ok: u32, idx: u32, val: u32, ncap: u32 };
+
+/// How many elements a growable table is born with.
+///
+/// It is born ALLOCATED, not empty, and that is what buys the branchless read
+/// below: `base` is a valid address from the binding onward, so an out-of-range
+/// read can be answered by clamping the INDEX and masking the result instead of
+/// by a branch around the load. A branch there would need a place to hold its
+/// answer, a place is a register for the whole function, and registers are the
+/// scarce resource this backend miscompiles on.
+const dyn_initial_cap: i64 = 8;
+
+/// The growable table `expr` names, if it names one.
+fn dynTableOf(ctx: *LowerCtx, expr: *const ast.Expr) ?DynTable {
+    if (expr.* != .name) return null;
+    const slot = ctx.locals.get(expr.name.ident) orelse return null;
+    return ctx.dyn_tables.get(slot);
+}
+
+/// Collect every name this body subscripts with `[…]`.
+///
+/// The question `{}` has to answer is which REALIZATION it wants, and the body
+/// is what decides: `o = {}` followed by `o.a = 1` is a record and lowers as
+/// one today, while `xs = {}` followed by `xs[i] = v` is a sequence and had no
+/// lowering at all. Reading the uses is how the binding learns which it is.
+///
+/// Deliberately conservative in one direction only: a missed subscript leaves
+/// the name on the record path, which is exactly today's behaviour, so nothing
+/// that lowers now can stop lowering. A statement form not listed here is not
+/// silently mis-answered — it is simply not a source of subscripts yet.
+/// The two questions a body answers about a name, both borrowing AST slices.
+const NameUses = struct {
+    indexed: *std.StringHashMapUnmanaged(void),
+    lengths: *std.StringHashMapUnmanaged(void),
+};
+
+fn collectIndexedNames(
+    alloc: std.mem.Allocator,
+    block: *const ast.Block,
+    out: *NameUses,
+) Error!void {
+    for (block.stmts) |st| try collectIndexedInStmt(alloc, &st, out);
+    if (block.tail_expr) |te| try collectIndexedInExpr(alloc, te, out);
+}
+
+fn collectIndexedInStmt(
+    alloc: std.mem.Allocator,
+    st: *const ast.Stmt,
+    out: *NameUses,
+) Error!void {
+    switch (st.*) {
+        .local_decl => |d| for (d.inits) |e| try collectIndexedInExpr(alloc, e, out),
+        .global_decl => |d| for (d.inits) |e| try collectIndexedInExpr(alloc, e, out),
+        .const_decl => |d| try collectIndexedInExpr(alloc, d.val, out),
+        .assign => |a| {
+            for (a.targets) |e| try collectIndexedInExpr(alloc, e, out);
+            for (a.values) |e| try collectIndexedInExpr(alloc, e, out);
+        },
+        .call_stmt => |c| try collectIndexedInExpr(alloc, c.expr, out),
+        .expr_stmt => |e| try collectIndexedInExpr(alloc, e.expr, out),
+        .do_block => |d| try collectIndexedNames(alloc, &d.body, out),
+        .while_loop => |w| {
+            try collectIndexedInExpr(alloc, w.cond, out);
+            try collectIndexedNames(alloc, &w.body, out);
+        },
+        .repeat_loop => |r| {
+            try collectIndexedNames(alloc, &r.body, out);
+            try collectIndexedInExpr(alloc, r.cond, out);
+        },
+        .if_stmt => |f| {
+            try collectIndexedInExpr(alloc, f.cond, out);
+            try collectIndexedNames(alloc, &f.then, out);
+            for (f.elseifs) |ei| {
+                try collectIndexedInExpr(alloc, ei.cond, out);
+                try collectIndexedNames(alloc, &ei.body, out);
+            }
+            if (f.else_body) |eb| try collectIndexedNames(alloc, &eb, out);
+        },
+        .num_for => |nf| {
+            try collectIndexedInExpr(alloc, nf.start, out);
+            try collectIndexedInExpr(alloc, nf.stop, out);
+            if (nf.step) |s| try collectIndexedInExpr(alloc, s, out);
+            try collectIndexedNames(alloc, &nf.body, out);
+        },
+        .gen_for => |gf| {
+            for (gf.iters) |e| try collectIndexedInExpr(alloc, e, out);
+            try collectIndexedNames(alloc, &gf.body, out);
+        },
+        .ret => |r| for (r.vals) |e| try collectIndexedInExpr(alloc, e, out),
+        else => {},
+    }
+}
+
+fn collectIndexedInExpr(
+    alloc: std.mem.Allocator,
+    expr: *const ast.Expr,
+    out: *NameUses,
+) Error!void {
+    switch (expr.*) {
+        .index => |ix| {
+            if (ix.obj.* == .name) try out.indexed.put(alloc, ix.obj.name.ident, {});
+            try collectIndexedInExpr(alloc, ix.obj, out);
+            try collectIndexedInExpr(alloc, ix.key, out);
+        },
+        .field => |f| try collectIndexedInExpr(alloc, f.obj, out),
+        .call => |c| {
+            try collectIndexedInExpr(alloc, c.func, out);
+            for (c.args) |a| try collectIndexedInExpr(alloc, a, out);
+        },
+        .method_call => |m| {
+            try collectIndexedInExpr(alloc, m.obj, out);
+            for (m.args) |a| try collectIndexedInExpr(alloc, a, out);
+        },
+        .binop => |b| {
+            try collectIndexedInExpr(alloc, b.lhs, out);
+            try collectIndexedInExpr(alloc, b.rhs, out);
+        },
+        .unop => |u| {
+            // `#t` decides a FACT rather than a representation: a table whose
+            // length nobody reads does not carry one.
+            if (u.op == .len and u.operand.* == .name)
+                try out.lengths.put(alloc, u.operand.name.ident, {});
+            try collectIndexedInExpr(alloc, u.operand, out);
+        },
+        .if_expr => |ie| {
+            try collectIndexedInExpr(alloc, ie.cond, out);
+            try collectIndexedInExpr(alloc, ie.then_expr, out);
+            try collectIndexedInExpr(alloc, ie.else_expr, out);
+        },
+        .table => |t| for (t.fields) |fld| switch (fld) {
+            .positional => |v| try collectIndexedInExpr(alloc, v, out),
+            .named => |n| try collectIndexedInExpr(alloc, n.val, out),
+            else => {},
+        },
+        .sequence => |s| for (s.exprs) |e| try collectIndexedInExpr(alloc, e, out),
+        else => {},
+    }
+}
+
+/// `t = {}` where the body subscripts `t` — a table with NO compile-time
+/// length, realized as a heap array that grows.
+///
+/// The binding allocates `dyn_initial_cap` zeroed elements. `calloc` rather
+/// than `realloc(null, …)` because the zeroing is REQUIRED — an element never
+/// written must read as absent — and calloc's pages come from the kernel
+/// already zero, which is the difference between a page fault and a write on
+/// every byte once these tables get large.
+///
+/// Rebinding an existing growable name resets the three facts rather than
+/// minting new slots, so `xs = {}` inside a loop does not walk the frame.
+fn lowerDynTableInit(ctx: *LowerCtx, name: []const u8) Error!void {
+    try ensureExtern(ctx, "mem", "zeroed", "calloc");
+    if (ctx.locals.get(name)) |s| {
+        if (ctx.dyn_tables.get(s)) |dt| {
+            try emitDynAlloc(ctx, dt);
+            return;
+        }
+    }
+    const base = ctx.freshTemp();
+    const cap = ctx.freshTemp();
+    try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), base);
+    try ctx.locals.put(ctx.alloc, try std.fmt.allocPrint(ctx.alloc, "{s}.cap", .{name}), cap);
+    var len: ?u32 = null;
+    if (ctx.length_names.contains(name)) {
+        len = ctx.freshTemp();
+        try ctx.locals.put(ctx.alloc, try std.fmt.allocPrint(ctx.alloc, "{s}.len", .{name}), len.?);
+    }
+    const dt = DynTable{ .base = base, .cap = cap, .len = len };
+    try emitDynAlloc(ctx, dt);
+    // The base IS a memory-backed table base, so every consumer that already
+    // knows how to index or pass one — `load_index`, `store_index`,
+    // `materializeTableSlots` at a call site — works unchanged.
+    try ctx.ptr_slots.put(ctx.alloc, base, {});
+    try ctx.dyn_tables.put(ctx.alloc, base, dt);
+}
+
+fn emitDynAlloc(ctx: *LowerCtx, dt: DynTable) Error!void {
+    try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = .{ .i64 = dyn_initial_cap } });
+    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = .{ .i64 = 8 } });
+    const p = ctx.freshTemp();
+    try ctx.emit(.{ .op = .call_extern, .result = p, .callee = "calloc" });
+    try emitStoreSlot(ctx, dt.base, .{ .temp = p });
+    try emitStoreSlot(ctx, dt.cap, .{ .i64 = dyn_initial_cap });
+    if (dt.len) |l| try emitStoreSlot(ctx, l, .{ .i64 = 0 });
+}
+
+/// The function's shared store scratch, minted on first use.
+fn dynScratch(ctx: *LowerCtx) DynScratch {
+    if (ctx.dyn_scratch) |s| return s;
+    const s = DynScratch{
+        .key = ctx.freshTemp(),
+        .ok = ctx.freshTemp(),
+        .idx = ctx.freshTemp(),
+        .val = ctx.freshTemp(),
+        .ncap = ctx.freshTemp(),
+    };
+    ctx.dyn_scratch = s;
+    return s;
+}
+
+fn emitStoreSlot(ctx: *LowerCtx, slot: u32, v: dnir.Value) Error!void {
+    try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = v, .ty = .any });
+}
+
+/// `cond` into a fresh temp, then `br_if_not` — the one branch primitive the
+/// backend has. Answers the instruction index whose `branch_target` the caller
+/// patches to wherever "condition false" should land.
+fn emitBranchUnless(ctx: *LowerCtx, op: dnir.BinOpTag, lhs: dnir.Value, rhs: dnir.Value) Error!usize {
+    const c = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = c, .binop = op, .lhs = lhs, .rhs = rhs });
+    const at = ctx.instrs.items.len;
+    try ctx.emit(.{ .op = .br_if_not, .lhs = .{ .temp = c }, .branch_target = 0 });
+    return at;
+}
+
+fn patchHere(ctx: *LowerCtx, at: usize) void {
+    ctx.instrs.items[at].branch_target = @intCast(ctx.instrs.items.len);
+}
+
+/// Grow `dt` so that index `idx` is addressable. Emits nothing at all in the
+/// common case: the guard is one compare against capacity, and a loop writing
+/// inside the current capacity never enters the body.
+///
+/// Capacity doubles, with a floor of 8 and a jump straight to `idx` when the
+/// write lands past double — so filling `xs[i]` for i in 1..n costs O(log n)
+/// reallocations, and `xs[n] = v` on an empty table costs exactly one.
+///
+/// The new tail is ZEROED because an unwritten element reads as absent, and
+/// absent must read the same whether the slot came from a fresh allocation or
+/// from the untouched half of a doubling. `realloc` guarantees neither, so the
+/// zeroing is explicit. (A first allocation could take `calloc` and get its
+/// pages already zero from the kernel instead of writing them here — that is a
+/// real saving on multi-megabyte tables and it is the next rung, not this one.)
+fn emitDynGrow(ctx: *LowerCtx, dt: DynTable, sc: DynScratch) Error!void {
+    try ensureExtern(ctx, "mem", "resize", "realloc");
+    const idx_slot = sc.idx;
+    const ncap = sc.ncap;
+
+    // if idx <= cap: nothing to do.
+    const skip = try emitBranchUnless(ctx, .gt, .{ .local = idx_slot }, .{ .local = dt.cap });
+
+    const dbl = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = dbl, .binop = .mul, .lhs = .{ .local = dt.cap }, .rhs = .{ .i64 = 2 } });
+    try emitStoreSlot(ctx, ncap, .{ .temp = dbl });
+
+    const not_small = try emitBranchUnless(ctx, .lt, .{ .local = ncap }, .{ .i64 = 8 });
+    try emitStoreSlot(ctx, ncap, .{ .i64 = 8 });
+    patchHere(ctx, not_small);
+
+    const reaches = try emitBranchUnless(ctx, .lt, .{ .local = ncap }, .{ .local = idx_slot });
+    try emitStoreSlot(ctx, ncap, .{ .local = idx_slot });
+    patchHere(ctx, reaches);
+
+    const bytes = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = bytes, .binop = .mul, .lhs = .{ .local = ncap }, .rhs = .{ .i64 = 8 } });
+    try emitStoreSlot(ctx, sc.key, .{ .temp = bytes });
+    try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = .{ .local = dt.base } });
+    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = .{ .local = sc.key } });
+    const nbase = ctx.freshTemp();
+    try ctx.emit(.{ .op = .call_extern, .result = nbase, .callee = "realloc" });
+    try emitStoreSlot(ctx, dt.base, .{ .temp = nbase });
+
+    // Zero the new tail, `[cap, ncap)` in element terms. `realloc` promises the
+    // old bytes and says nothing about the new ones, and an element never
+    // written must read as absent, so this is not optional.
+    //
+    // ONE `memset` rather than a store loop. The loop was correct and cost two
+    // places — a counter and its bound — which is two registers held for the
+    // whole function in a backend whose register spiller answers wrong rather
+    // than refusing. A base address is an ordinary integer here, so `base +
+    // cap * 8` is a binop like any other and the whole tail is one call.
+    try ensureExtern(ctx, "mem", "fill", "memset");
+    const capbytes = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = capbytes, .binop = .mul, .lhs = .{ .local = dt.cap }, .rhs = .{ .i64 = 8 } });
+    const tail = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = tail, .binop = .add, .lhs = .{ .local = dt.base }, .rhs = .{ .temp = capbytes } });
+    try emitStoreSlot(ctx, sc.key, .{ .temp = tail });
+    try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = .{ .local = sc.key } });
+    const grown = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = grown, .binop = .sub, .lhs = .{ .local = ncap }, .rhs = .{ .local = dt.cap } });
+    const fillbytes = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = fillbytes, .binop = .mul, .lhs = .{ .temp = grown }, .rhs = .{ .i64 = 8 } });
+    try emitStoreSlot(ctx, sc.key, .{ .temp = fillbytes });
+    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = .{ .i64 = 0 } });
+    try ctx.emit(.{ .op = .mov_arg, .result = 2, .lhs = .{ .local = sc.key } });
+    try ctx.emit(.{ .op = .call_extern, .callee = "memset" });
+
+    try emitStoreSlot(ctx, dt.cap, .{ .local = ncap });
+    patchHere(ctx, skip);
+}
+
+/// `t[k] = v` on a growable table: grow if the index is past capacity, store,
+/// and extend the length.
+///
+/// An index below 1 stores NOWHERE and does not trap. That is a deliberate
+/// difference from the register-exploded table's `emitIndexBoundsTrap`, and it
+/// is not a relaxation of that rule — it is the same rule reaching a different
+/// representation. The trap exists because a fixed table cannot grow, so an
+/// index past its end is a limit made observable rather than a silent lie. A
+/// growable table HAS no such limit above; below 1 there is no element in a
+/// 1-based sequence to name, and the C backend's `duo_dt_set_` ignores exactly
+/// that case. Two backends answering the same program differently is the defect
+/// worth avoiding here.
+fn lowerDynIndexStore(
+    ctx: *LowerCtx,
+    dt: DynTable,
+    key_expr: *const ast.Expr,
+    value: *const ast.Expr,
+) Error!void {
+    // Both operands are lowered BEFORE either scratch place is written, which
+    // is what makes one shared pair safe for every store in the function: a key
+    // or value expression may itself read a growable table, and that read now
+    // holds nothing across a branch at all.
+    const key_v = try lowerExpr(ctx, key_expr);
+    const val_v = try lowerExprCons(ctx, value, .single);
+    const sc = dynScratch(ctx);
+    try emitStoreSlot(ctx, sc.idx, key_v);
+    try emitStoreSlot(ctx, sc.val, val_v);
+
+    const done = try emitBranchUnless(ctx, .geq, .{ .local = sc.idx }, .{ .i64 = 1 });
+    try emitDynGrow(ctx, dt, sc);
+    try ctx.emit(.{
+        .op = .store_index,
+        .ty = .i64,
+        .lhs = .{ .local = dt.base },
+        .rhs = .{ .local = sc.idx },
+        .third = .{ .local = sc.val },
+    });
+    if (dt.len) |l| {
+        const kept = try emitBranchUnless(ctx, .gt, .{ .local = sc.idx }, .{ .local = l });
+        try emitStoreSlot(ctx, l, .{ .local = sc.idx });
+        patchHere(ctx, kept);
+    }
+    patchHere(ctx, done);
+}
+
+/// `t[k]` on a growable table — one scaled load, BRANCHLESS, holding nothing
+/// across a jump and therefore costing no register for the function's lifetime.
+///
+///     ok  = (1 <= k) * (k <= cap)      1 when the element is addressable
+///     at  = ok * (k - 1) + 1           k in range, otherwise element 1
+///     out = base[at] * ok              the element, otherwise absent
+///
+/// Out of range answers 0 — an element never written reads as absent, and the
+/// C backend's `duo_dt_get_` answers the same. The clamp is what makes the load
+/// unconditionally safe: the binding allocates, so element 1 always exists, and
+/// masking the RESULT is what makes reading it harmless.
+///
+/// The bound is CAPACITY, not length: the gap between them is zeroed at every
+/// growth, so both answer absent, and capacity is the one that keeps the
+/// address inside the allocation.
+fn lowerDynIndexLoad(ctx: *LowerCtx, dt: DynTable, key_expr: *const ast.Expr) Error!dnir.Value {
+    const key = try lowerExpr(ctx, key_expr);
+    const sc = dynScratch(ctx);
+    try emitStoreSlot(ctx, sc.key, key);
+
+    const low = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = low, .binop = .geq, .lhs = .{ .local = sc.key }, .rhs = .{ .i64 = 1 } });
+    const high = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = high, .binop = .leq, .lhs = .{ .local = sc.key }, .rhs = .{ .local = dt.cap } });
+    const both = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = both, .binop = .mul, .lhs = .{ .temp = low }, .rhs = .{ .temp = high } });
+    try emitStoreSlot(ctx, sc.ok, .{ .temp = both });
+
+    const back = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = back, .binop = .sub, .lhs = .{ .local = sc.key }, .rhs = .{ .i64 = 1 } });
+    const scaled = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = scaled, .binop = .mul, .lhs = .{ .local = sc.ok }, .rhs = .{ .temp = back } });
+    const at = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = at, .binop = .add, .lhs = .{ .temp = scaled }, .rhs = .{ .i64 = 1 } });
+    // Back into `key`, whose last read was `back` two instructions ago.
+    // `load_index` does not release a temp index, so passing one here would
+    // strand a register per read site.
+    try emitStoreSlot(ctx, sc.key, .{ .temp = at });
+
+    const got = ctx.freshTemp();
+    try ctx.emit(.{
+        .op = .load_index,
+        .ty = .i64,
+        .result = got,
+        .lhs = .{ .local = dt.base },
+        .rhs = .{ .local = sc.key },
+    });
+    const out = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = out, .binop = .mul, .lhs = .{ .temp = got }, .rhs = .{ .local = sc.ok } });
+    return .{ .temp = out };
+}
+
 /// Copy a register-exploded positional table into a contiguous frame region and
 /// return the slot holding its base address.
 ///
@@ -1641,6 +2088,13 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
         }
     }
     if (value.* == .table) {
+        // `{}` with no fields is the one literal that states no length. Which
+        // realization it takes is read off the USES: subscripted means the
+        // growable heap array, everything else keeps the record explosion.
+        if (value.table.fields.len == 0 and ctx.indexed_names.contains(name)) {
+            try lowerDynTableInit(ctx, name);
+            return;
+        }
         if (tableIsPositional(value)) {
             try lowerPositionalTableAssign(ctx, name, value);
             return;
@@ -1790,6 +2244,12 @@ fn lowerIndexAssignTarget(
 ) Error!void {
     if (obj.* != .name) return bail(@src());
     const table_name = obj.name.ident;
+
+    // A growable table owns its own store: the index may be past capacity, and
+    // the answer to that is to grow, not to refuse. Asked BEFORE `ptrSlotOf`,
+    // which would also succeed here — its base is a real base — because that
+    // path stores blind, with no capacity to check against.
+    if (dynTableOf(ctx, obj)) |dt| return lowerDynIndexStore(ctx, dt, key_expr, value);
 
     // Memory-backed table: a real scaled store, so writes through a shared base
     // are visible to every function holding it.
@@ -2202,6 +2662,19 @@ fn lowerExprCons(
                 try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "strlen", .lhs = arg });
                 break :blk dnir.Value{ .temp = t };
             }
+            // `#t` on a growable table is a slot read. The length is a fact the
+            // table already carries — every store maintains it — so there is
+            // nothing to probe and no runtime to ask.
+            if (u.op == .len) {
+                if (dynTableOf(ctx, u.operand)) |dt| {
+                    // `collectIndexedNames` saw this `#` and the binding gave
+                    // the table a length place because of it, so a missing one
+                    // is a disagreement between the scan and the emitter, not a
+                    // program the backend should guess at.
+                    const l = dt.len orelse return bail(@src());
+                    break :blk dnir.Value{ .local = l };
+                }
+            }
             return bailWith(@src(), @tagName(u.op));
         },
         .index => |ix| blk: {
@@ -2230,6 +2703,9 @@ fn lowerExprCons(
                 break :blk dnir.Value{ .temp = t };
             }
             if (ix.obj.* != .name) return bail(@src());
+            // Growable first, for the same reason the store asks first: this
+            // base is only good up to a capacity the guard has to read.
+            if (dynTableOf(ctx, ix.obj)) |dt| break :blk try lowerDynIndexLoad(ctx, dt, ix.key);
             // A memory-backed table indexes for real: one scaled load, constant
             // or not. This is the path that makes a shared token array work.
             if (ptrSlotOf(ctx, ix.obj)) |base| {
