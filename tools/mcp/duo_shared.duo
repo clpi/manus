@@ -1107,7 +1107,7 @@ end
 -- Hand back a number nobody else can be holding. Returns -1 only if 512
 -- consecutive numbers are all taken, which means something is very wrong.
 fun gap_allocate(): int
-    std.fs.mkdir_all(gapledger)
+    std.fs.mkdirall(gapledger)
     n = gap_high() + 1
     tries = 0
     while tries < 512
@@ -1242,7 +1242,7 @@ fun claim_drop(key: str): bool
 end
 
 fun dev_claim_acquire(owner: str, file: str, client: str, work_item: str): str
-    std.fs.mkdir_all(claimsdir)
+    std.fs.mkdirall(claimsdir)
     path = claim_norm(file)
     if path == ""
         return std.json.encode({ granted = false, reason = "empty file path" })

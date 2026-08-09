@@ -51,13 +51,15 @@ main = (): i64
         print("fs proof: mkdir answered {deep} for a path whose parent is absent")
         std.os.exit(3)
 
-    -- The nested case is NOT asserted here, and the reason is a finding rather
-    -- than an omission: the only op that creates it is spelled `mkdir_all`,
-    -- and a LAW-ONE identifier cannot contain that underscore. So canonical
-    -- duon CANNOT CALL IT — the idiom gate rejects the call site, correctly.
-    -- The qualifier belongs in a LEVEL (`mkdir(all)`), which is the repair;
-    -- until that lands, the op is reachable only from non-canonical source and
-    -- is therefore untestable from a canonical fixture. gap[100] rung 6.
+    -- Now assertable. This block used to be a comment explaining why it could
+    -- not exist: the op was spelled `mkdir_all`, a LAW-ONE identifier cannot
+    -- carry that underscore, so canonical duon could not call it and no
+    -- canonical fixture could cover it. Renamed to one legal word, so the
+    -- coverage hole closes with it.
+    all = std.fs.mkdirall("{base}/a/b/c")
+    if not std.fs.exists("{base}/a/b/c")
+        print("fs proof: mkdirall answered {all} and the leaf is absent")
+        std.os.exit(4)
 
     src = "{base}/one"
     f = io.open(src, "w")
@@ -75,5 +77,5 @@ main = (): i64
         print("fs proof: copy produced {body}, not the source bytes")
         std.os.exit(6)
 
-    print("fs proof: mkdir and copy verified by value; nested is unreachable from canonical source")
+    print("fs proof: mkdir, mkdirall and copy all verified by value")
     0

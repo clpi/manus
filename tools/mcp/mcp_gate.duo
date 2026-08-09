@@ -100,7 +100,7 @@ has(blob: str, needle: str): bool
 end
 
 main = (): i64
-    std.fs.mkdir_all(work)
+    std.fs.mkdirall(work)
     io.write("mcp-gate: the MCP servers must SERVE, not merely compile\n")
 
     -- ---------------------------------------------------------------

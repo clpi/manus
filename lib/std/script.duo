@@ -292,7 +292,7 @@ fs_write(p: str, content: str): void
 end
 
 fs_mkdir(p: str): void
-    std.os.mkdir_all(p)
+    std.os.mkdirall(p)
 end
 
 fs_glob(pattern: str): any

@@ -184,7 +184,7 @@ at(line: i64, col: i64): str
 end
 
 main(): i64
-    std.fs.mkdir_all(work)
+    std.fs.mkdirall(work)
     io.write("lsp-gate: the LSP must SERVE, not merely compile\n")
     io.write("  server: " .. server .. "\n")
 
