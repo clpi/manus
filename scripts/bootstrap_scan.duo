@@ -1,0 +1,152 @@
+-- GAP-080 — the deny table, pointed at the compiler that enforces it.
+--
+-- WHY THIS EXISTS. `audit100` walks the canonical `.duo` corpus and convicts
+-- 19 rows over it. `src/*.zig` is the bootstrap ledger and is excluded from
+-- every one of them. So the artifact that enforces the law on every other file
+-- in the tree is the single corpus the law does not reach — and it shows:
+-- `NodeKind` violates §0.1 LAW-ONE (no uppercase EVER) and §0.3 INFERRED CASES
+-- (which denies companion `*_kind`/`*_type` descriptors BY NAME) in one
+-- identifier, and nothing has ever convicted it.
+--
+-- WHAT THE EXEMPTION ACTUALLY GRANTS. `law.host.projection` is precise: the
+-- bootstrap may look un-duon-like ONLY WHERE THE HOST LANGUAGE REQUIRES IT.
+-- Zig does not require a companion `Kind` enum — §0.3's inline case-set has a
+-- direct Zig spelling. The enum is a DESIGN CHOICE sheltering under a grant
+-- written for pointer arithmetic and `extern` layout. "Bootstrap ledger" has
+-- come to mean "unaudited" where the law says it means "projected, named, and
+-- carrying a deletion gate."
+--
+-- WHAT IT MEASURES, three ratcheted rows over tracked `src/*.zig`:
+--
+--   upper      uppercase type declarations           §0.1 LAW-ONE
+--   companion  `*Kind` / `*Type` enums               §0.3 INFERRED CASES
+--   relation   addNode / addEdge / addChild /        law.arch.relation
+--              register* / emit* — a semantic
+--              distinction encoded in a host name
+--
+-- THE RATCHET RUNS DOWN. These numbers may fall and may not rise. That is the
+-- whole mechanism: without it every repair in GAP-079 is voluntary, and a
+-- voluntary repair against 791 sites is not a plan.
+--
+-- WHAT THIS GATE DOES NOT DO. It does not rename anything, and whoever takes
+-- the repair must not bulk-rename either. `duo-lawone-predicate-collisions`
+-- records a mechanical `is_*` sweep colliding on 25 of 71 sites, four against
+-- their own constructors in the same file. 791 rows across the bootstrap
+-- compiler would be worse, and the compiler is the one artifact that cannot be
+-- allowed to break. Repair by subsystem, differentials green at each step —
+-- `law.differential` applied to the compiler's own source.
+
+q = "'"
+
+-- Tracked zig only. `git ls-files` rather than a glob so an untracked scratch
+-- file cannot move a ratcheted number, which is the blind spot that made
+-- audit100 red for four agents in a row tonight.
+head = (root: str): str
+    "cd {root} && git ls-files 'src/*.zig' | tr '\\n' '\\0' | xargs -0 grep -h -E "
+
+-- §0.1 LAW-ONE. A declared type whose name carries a capital.
+upperpat = "^pub const [A-Z][A-Za-z0-9]* = (enum|struct|union|packed struct)"
+
+-- §0.3 INFERRED CASES: "case-sets INLINE at the field; NO companion
+-- `*_kind`/`*_type` descriptors." A `*Kind` enum is that companion exactly.
+companionpat = "^pub const [A-Za-z0-9]*(Kind|Type) = enum"
+
+-- law.arch.relation. A semantic distinction recoverable from the operand,
+-- encoded in the host function's NAME instead. `addNode`, `addEdge` and
+-- `addChild` are one open relation successively specialized; `register*` and
+-- `emit*` are the same shape wearing different verbs.
+relationpat = "pub fn (add|register|emit)[A-Z][A-Za-z0-9]*\\("
+
+count = (root: str, pat: str): i64
+    pre: str = head(root)
+    cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | wc -l"
+    to(i64)(std.proc.capture(cmd))
+
+-- The control surface. `count` alone cannot separate "the corpus is clean"
+-- from "the pattern matches nothing" — a broken pattern reads as a perfect
+-- score, and this repository has already shipped a gate that reported 0/N for
+-- exactly that reason. Every row below is checked against a synthetic line it
+-- MUST see and one it MUST decline.
+sees = (pat: str, line: str): i64
+    cmd: str = "printf {q}%s\\n{q} {q}{line}{q} | grep -c -E {q}{pat}{q}"
+    to(i64)(std.proc.capture(cmd))
+
+pad = (s: str, width: i64): str
+    out = s
+    while #out < width
+        out = out .. " "
+    out
+
+-- Every hole below is a PLAIN BINDING, never an expression. `"{pad(name, 11)}"`
+-- renders the call LITERALLY — duon interpolation substitutes bindings and
+-- field walks only, so an expression hole silently prints its own source and
+-- the table reads as corrupt data rather than as a formatting bug.
+row = (name: str, n: i64, budget: i64): i64
+    mark = "  "
+    if n > budget
+        mark = "!!"
+    label: str = pad(name, 11)
+    shown: str = pad(to(str)(n), 7)
+    print("  {mark} {label} {shown} {budget}")
+    if n > budget
+        return 1
+    0
+
+main = (): i64
+    root = std.os.getenv("DUO_ROOT")
+    if root == ""
+        root = "."
+
+    -- CONTROLS FIRST. A row printed before its control has been checked is a
+    -- number nobody should act on.
+    bad = 0
+    if sees(upperpat, "pub const NodeKind = enum {") != 1
+        print("CONTROL FAILED: upper does not see `pub const NodeKind = enum`")
+        bad = bad + 1
+    if sees(upperpat, "pub const node = enum {") != 0
+        print("CONTROL FAILED: upper convicts an already-canonical name")
+        bad = bad + 1
+    if sees(companionpat, "pub const EdgeKind = enum {") != 1
+        print("CONTROL FAILED: companion does not see `EdgeKind`")
+        bad = bad + 1
+    if sees(companionpat, "pub const Lexer = struct {") != 0
+        print("CONTROL FAILED: companion convicts a non-companion type")
+        bad = bad + 1
+    if sees(relationpat, "pub fn addChild(self: *SemanticGraph") != 1
+        print("CONTROL FAILED: relation does not see `addChild`")
+        bad = bad + 1
+    if sees(relationpat, "pub fn get(self: *const SemanticGraph") != 0
+        print("CONTROL FAILED: relation convicts an ordinary accessor")
+        bad = bad + 1
+
+    if bad > 0
+        print("")
+        print("bootstrap scan: CONTROLS BROKEN — every number below would be")
+        print("  meaningless, so none is printed. Fix the patterns first.")
+        std.os.exit(3)
+
+    upper = count(root, upperpat)
+    companion = count(root, companionpat)
+    relation = count(root, relationpat)
+
+    print("")
+    print("  the deny table over src/*.zig — the corpus audit100 cannot see")
+    print("  row          count   budget")
+    over = 0
+    over = over + row("upper", upper, 770)
+    over = over + row("companion", companion, 47)
+    over = over + row("relation", relation, 47)
+    print("")
+    print("  §0.1 LAW-ONE denies uppercase; §0.3 denies companion *Kind/*Type")
+    print("  by name; law.arch.relation denies a semantic distinction encoded")
+    print("  in a host function name. See gaps/GAP-080.md for the repair order")
+    print("  and for why NOT to bulk-rename.")
+    print("")
+
+    if over > 0
+        print("bootstrap scan: FAIL — {over} row(s) rose. The ratchet runs DOWN.")
+        std.os.exit(1)
+
+    total: i64 = upper + companion + relation
+    print("bootstrap scan: PASS — {total} sites, none rising")
+    0
