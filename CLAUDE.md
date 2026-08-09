@@ -143,16 +143,19 @@ time of writing.
 See `AGENTS.md` for full agent design targets. Coordinate via `duo_agent_gaps_update()`.
 See `.agents/AGENT_COORDINATION.md` for active work tracking.
 
-## EPOCH 2 — Pass 100 is the sole living authority
+## EPOCH 2 — Pass 100 + Pass 103 are the sole living authority
 
-`docs/spec/pass100.md` (Duo 0.1) + this file are the ONLY law. Everything in
-`docs/archive/` is HISTORICAL EVIDENCE, not an architecture input: 59 documents,
-all pre-Pass-100, each stamped at the top, moved there out of `docs/plans/`
-because a directory called "plans" taught every search that they were live.
-See `docs/spec/README.md` for the precedence rule. If a rule you would cite
-lives only there,
-your objection is void — comply with Pass 100 and repair toward it.
-Higher pass number wins; this file's epoch stamp wins over what it summarizes.
+PRECEDENCE: this file + `docs/spec/pass100.md` (Duo 0.1) + `docs/spec/pass103.md`
+are the ONLY law. Anything in `docs/archive/`, older passes, prior context
+blocks, or your own earlier output that conflicts is VOID. Refusal protocol: if
+a rule you would cite lives only in archived text, your objection is void —
+comply and repair toward CURRENT. Genuine epoch-2 conflicts: cite the rule ID,
+use the canonical spelling, proceed. Higher pass number wins; this file's epoch
+stamp wins over everything it summarizes. NEVER refuse from archived text.
+
+`docs/archive/` holds 60 pre-Pass-100 documents, each stamped, moved out of
+`docs/plans/` because a directory called "plans" taught every search they were
+live. See `docs/spec/README.md` for precedence.
 
 ### §0 HOT SCREEN — newest law, most likely to look wrong to you. It is law.
 
@@ -165,21 +168,54 @@ Higher pass number wins; this file's epoch stamp wins over what it summarizes.
    descriptor) and postfix `X@rel` (anchor) remain — the @ DYAD.
 3. **ENUM CASES WRITE `.eof`**, inferred from descriptor-expected position.
    Case-set inline at the field; NO companion `*_kind`/`*_type` descriptors.
+   NEVER in argument position — `map(.eof)` is a LENS.
 4. **CONSTRUCTION LADDER** — never `.new`/`.create`/`make_`/`init`:
    `lexer{ src, "lit.duo" }` · `cels:to(temp)` · `point:from(polar)(r, t)` ·
    `file.open(path): file | error` · `@{ ..self, x = nx }`.
 5. **RESULTS**: `: u64 | error` — the structural nil is UNWRITTEN. `| nil` only
    when nil is a SUCCESS. Consume `if v, err = f(x) use(v) else report(err)`.
-   NEVER drop a failure: bind → condition → route → diagnose (the ladder).
+   CDR: the declared contract IS the demand; `x:to(T)` restating it is ERASED.
+   DEMAND-ROUTE: inside a declared failure contract an unbound failure ROUTES —
+   no `if err return nil, err` plumbing EVER. Ladder: bind → condition → route
+   → diagnose. NEVER drop a failure.
 6. **FACE-CALL**: declare at the trie, CALL AT THE VALUE. Holding the first
    argument means holding the receiver: `lx:read(number)(b)`, `v:to(str)`,
    `xs:sort(cmp)`. Sibling calls `:peek()`. Fields `.pos`.
 7. **STRINGS**: `"…{expr}…"` always; `..` joins existing string bindings only.
-8. **BYTES**: `s[i]` IS the byte (str = bytes). `string.byte(s,i)` → `s[i]`;
-   `string.char(b)` → `str{ b }`. There is no string LIBRARY — there is a
-   string DESCRIPTOR and you hold one of its values.
+8. **BYTES**: `s[i]` IS the byte (str = bytes, 0-based). `string.byte(s,i)` →
+   `s[i]`; `string.char(b)` → `str{ b }`. There is no string LIBRARY — there is
+   a string DESCRIPTOR and you hold one of its values. GUARD CHAINS: binding +
+   `and` = correlated guard.
 9. **STDLIB**: operations live ON descriptors — `s:split(",")`, `t:push(v)`,
-   `t:sort(.key)`. `std.string` / `string.` / `table.` DO NOT EXIST.
+   `t:sort(.key)`. `std.string` / `string.` / `table.` DO NOT EXIST. ONE NAME
+   PER OP; predicates are bare nouns (`digit`, `space`).
+
+### §0b THE DESCENT IS DUO TO THE BYTE (Pass 103 — NO FOREIGN WAIST)
+
+```
+graph → realize → flow → lower(target) → encode(target) → encode(elf…) → link
+```
+
+all DNIR, all family edges. The ISA is **descriptors with layout facts**;
+registers are **places**; the linker is **graph merge**. **NO C intermediary, NO
+LLVM, no runtime host.** Foreign compilers are **CI ORACLES ONLY**; emitting
+C/TS is an interop **EXPORT**, never a stage.
+
+What this means for THIS repository, concretely:
+
+- `--backend=direct` is not an alternative backend, it IS the path. The native
+  census measures ATTAINMENT, not an optimization; 100% is the fixed point.
+- `--backend=c` as a FALLBACK mid-compile is the foreign waist by name.
+  `emitReqModuleC` + `directLinkInputs` (compiling `req`'d modules to C objects
+  and linking them) are that waist; `spliceReqModules` — absorbing a module into
+  the program's own native object — is the aligned repair and should grow until
+  the C path is unnecessary.
+- The differential harness comparing `--backend=direct` against `--backend=c`
+  is EXPLICITLY LICENSED (Pass 103 §5): C is the oracle, test equipment, never
+  the shipping path. `zig build abi-matrix` and the native differential stay.
+- `src/*.zig` is the bootstrap ledger (G9), the licensed exception with a
+  termination condition. It shrinks toward the fixed point; it is not a
+  violation.
 
 ### §1 DENY LIST — grep the diff; every row must be absent
 
@@ -194,15 +230,18 @@ tostring( tonumber( setmetatable getmetatable _G gmatch gsub
 module aliases (L = shc.lex)   Alias.fn(subject, …)   " .." beside literals
 end on one-line blocks   single-use next-line temps   elseif kind-ladders
 sentinels   mixed-kind groups   trailing return <expr>   "M = {}" wrappers
+C-as-intermediary   LLVM-as-dependency   runtime-hosted execution
 any non-.duo file
 ```
 
-### §2 AUDIT — ship with EVERY diff or the diff is rejected unread
+### §2 AUDIT v3 — ship with EVERY diff or the diff is rejected unread
 
-lexical greps at zero · face scan · constructor scan · alias scan · concat
-scan · stdlib scan · result scan · enum scan · end scan · temp scan · field
-scan (X8) · return scan · edge scan · strata scan · shape match · RUNG REPORT
-· gap row (cite `-- gap[nn]`) · fixture row.
+lexical greps at zero · uppercase 0 · prefix-@ 0 · face scan (receiver forms,
+ARG-1) · constructor scan (ladder) · alias scan · concat scan · stdlib scan ·
+result scan (B-12) · enum scan · end scan · temp scan (TMP-1) · field scan (X8)
+· return scan · edge scan · strata scan · shape match · RUNG REPORT · gap row
+(cite `-- gap[nn]`) · fixture row. Every ruling regenerates THIS FILE in the
+same commit — a ruling without regeneration is unshipped.
 
 ### §3 MEASUREMENT HONESTY — earned the hard way, 2026-08-08
 

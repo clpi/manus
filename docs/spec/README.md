@@ -4,6 +4,7 @@
 
 ```
 1. docs/spec/pass100.md   the specification — sole living semantic authority
+1b. docs/spec/pass103.md  NO FOREIGN WAIST — amends §13/§15/§18/§22
 2. CLAUDE.md              its operative summary; what agents actually read
 3. docs/spec/AUTHORITY.md what is law in this repository, and what is still owed
 4. docs/spec/corpus.md    which .duo files the deny table must reach zero on

@@ -402,8 +402,14 @@ TAIL proper tail calls guaranteed
 
 **C's optimizer is bounded by what C can know; Duo's by what is true.** Every
 mechanism below converts information C discards into speed, and every one
-terminates in machine code with no runtime between — the same backends, more
-facts:
+terminates in machine code with no runtime between — and **the descent is DUO
+TO THE BYTE** (Pass 103, NO FOREIGN WAIST): graph -> realize -> flow ->
+lower(target) -> encode(target) -> encode(elf/macho/pe/wasm) -> link, all DNIR
+transformed by family edges; the ISA is descriptors with layout facts (encoding
+= the codec matrix pointed at silicon); registers are places; the linker is
+graph merge. C is never an intermediary, LLVM never a dependency; foreign
+toolchains are CI ORACLES only; C/TS/Rust emission is an interop EXPORT at the
+edge:
 
 1. **Sealed collapse** makes hot-path dispatch static (rung-3 proofs), erasing
    the "dynamic language" tax where it matters; the collapse *rate* is a public
@@ -493,7 +499,8 @@ named-arg/default syntax (slots and brace-calls instead) · generics syntax ·
 lifetime syntax · trait objects (bundles → enums) · implicit conversions and
 transitive search · `?`/`?.`/`//` · slice syntax (`all` is a value) ·
 `satisfies/refine/has` primitives · operation namespaces (`std.string`) and
-activity junk drawers (`std.script`, `util`) · visitor/pass-pipeline compiler
+activity junk drawers (`std.script`, `util`) · **C-as-intermediary,
+LLVM-as-dependency, runtime-hosted execution** (Pass 103) · visitor/pass-pipeline compiler
 architecture · plugin/macro hook APIs (edges) · test/build/logging frameworks ·
 directive surfaces (`@comp`, `@assert`, `@why`, `@descriptors`) ·
 visibility-by-naming · closure-as-a-kind · location transparency · uppercase.
@@ -535,9 +542,11 @@ facts; sandbox = shadowed world roots.
 
 Authored source is 100% Duo; the bootstrap ledger is the sole exception and
 only shrinks; foreign code lives only there and in gap exhibits. The IR is a
-descriptor family; every direction is a projection pair (emission
-`lower(target)`; ingestion: C headers / Rust metadata / TS types → rung-6
-descriptors with provenance and trust); zero-adapter ABI on proven layout
+descriptor family; projection pairs are INTEROP EXPORTS + ingestion — **never
+the compile path** (Pass 103; emission `lower(target)` IS the native backend,
+and C/TS emission is a product for consumers; ingestion: C headers / Rust
+metadata / TS types → rung-6 descriptors with provenance and trust);
+zero-adapter ABI on proven layout
 equality; protocols ⇄ trait bounds; schemas round-trip with `migrate(v1)(v2)`;
 one conformance suite runs differentially across targets. Rosetta in one line
 each: Lua keep the feel, lose the library; Rust traits→protocols, `?`→routing,
@@ -677,7 +686,10 @@ themselves). *Nothing runs* → correct: §22.
 ## 22. Status ledger & open bridges (described ≠ demonstrated)
 
 **Running: nothing.** The audit artifact is the interim pipeline. **Spec'd,
-owed**: the graph service + toolchain front-ends (LSP/MCP/tree-sitter
+owed**: **BACKEND MATURITY** — the marquee item (Pass 103): selection /
+allocation / peephole per target over data-described ISAs, with parity measured
+per-workload against oracle compilers — plus **the Duo evaluator** (bodies are
+tables; evaluation is a fold); the graph service + toolchain front-ends (LSP/MCP/tree-sitter
 projection); canonicalizer + L2 rewrite set; archetypes; the add family;
 hot-list telemetry; witness store + `why`; `scan`; the differential harness;
 the benchmark corpus of §13. **Open decisions (bridged)**: memory management
