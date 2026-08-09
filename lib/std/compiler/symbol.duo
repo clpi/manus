@@ -1,0 +1,63 @@
+-- SH-10 — the duon-native owner of C SYMBOL emission.
+--
+-- WHY THIS FILE EXISTS. Three separate canonical repairs — gap[083] name
+-- mangling, gap[087] bare-identity resolution, gap[088] constructor rung (a) —
+-- all terminate at ONE missing capability: there is no duon-native owner of
+-- code emission. `lib/std/compiler/` has a lexer, a parser and a projection,
+-- and `emit_c.duo` covers integer EXPRESSIONS only. Nothing here owns a symbol.
+--
+-- So the repair for all three is only expressible in the bootstrap, which the
+-- owner directive excludes. This file is the smallest piece that changes that:
+-- it owns the NAME, in duon, provably.
+--
+-- WHAT IT IS NOT. Not a code generator. It emits no declarations, no bodies, no
+-- records. It answers exactly one question — what C symbol does this duon name
+-- take — and that is the question gap[083] is about.
+--
+-- THE DEFECT IT CLOSES, measured 2026-08-08: a duon function named `read`,
+-- `write`, `open` or `abs` emitted its name UNMANGLED into C, where libc had
+-- already declared it. `abs(21)` compiled clean and printed **21** — libc's
+-- answer, not duon's. Not a build failure. A wrong number.
+--
+-- WHY UNCONDITIONAL RATHER THAN A KEYWORD LIST. libc's namespace is OPEN: any
+-- symbol it declares next release can capture a duon name, so the colliding set
+-- is unknowable from inside the compiler. A list is a census that goes stale
+-- and reports a confident zero. Prefixing every root-file function needs no
+-- list and cannot go stale.
+
+-- The C symbol for a root-file, single-word, non-method duon function.
+--
+-- `duo_fn_` is chosen for the reason any prefix is chosen: C reserves
+-- identifiers beginning `_` at file scope, and `duo_` is already this
+-- compiler's prefix for every other emitted symbol, so the namespace is one
+-- rather than two.
+root = (name: str): str
+    "duo_fn_{name}"
+
+-- A module function is ALREADY closed by its module prefix — `<mod>__<name>` is
+-- not a spelling libc can hold, because libc has no `__` in that position. This
+-- is why only the root translation unit ever needed repair, and recording it
+-- here stops the next reader prefixing twice.
+module = (home: str, name: str): str
+    "{home}__{name}"
+
+-- `main` is the one root name that may NOT take the ordinary prefix: the
+-- runtime driver emits its own `int main(...)` and calls this as the entry
+-- point. A collision here is a link error rather than a silent bind, but the
+-- repair is the same shape.
+entry = (): str
+    "duo_entry_main"
+
+-- Whether a root name needs the prefix at all. Everything does — that IS the
+-- rule — and the function exists so a caller states the decision rather than
+-- assuming it, and so the one exception has somewhere to live.
+mangles = (name: str): bool
+    if name == "main"
+        return false
+    true
+
+-- The C symbol for a root name, with the `main` exception applied.
+symbol = (name: str): str
+    if mangles(name)
+        return root(name)
+    entry()
