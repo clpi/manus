@@ -658,8 +658,35 @@ proj_type = (lx: Lexer): str
 end
 
 -- Statements until 'end' (consumed). 'else'/'elseif' do not terminate here.
+-- A body ends at `end` OR at a DEDENT, and `end` is the retired half.
+--
+-- This used to end only at `end`, which made the self-hosted parser require the
+-- form §0.7 DELETED and reject the form the law mandates. Measured before the
+-- repair, and the asymmetry is the tell:
+--
+--     f = (x: i64): i64      + offside body    status 1   REJECTED
+--     f = (x: i64): i64      + `end`           status 0
+--     f = (x)                + offside body    status 0
+--     f = (x: i64): i64 | error  either form   status 1   REJECTED
+--
+-- So the canonical spelling of a typed callable — the commonest shape in
+-- idiomatic duon, and the only one `: t | error` can be written in — did not
+-- parse. lib/std reported 257/257 the whole time because lib/std still writes
+-- `end`: the ratchet was green on a corpus written in the retired dialect.
+--
+-- The repair is NNS (A2): no new token, no lexer change. The parser already
+-- carries `loc.line` and `loc.col` on every token and already uses them for the
+-- bodiless-declaration rule above. A body is the run of statements indented
+-- past its opener, so the first body token's column IS the base, and a later
+-- token left of it has dedented out.
+--
+-- EOF closes an end-less body rather than erroring — with `end` deleted there is
+-- no other terminator at the end of a file. The `acc == ""` guard keeps a
+-- genuinely truncated body an error: a body that parsed nothing before EOF is
+-- still a defect, and that is what `mark_error` is for.
 proj_body = (lx: Lexer): str
     acc = ""
+    base: i64 = 0
     while true
         skip_semis(lx)
         t = lexer.peek(lx)
@@ -668,7 +695,15 @@ proj_body = (lx: Lexer): str
             return acc
         end
         if t.kind == token.KIND_EOF
-            mark_error(lx)
+            if acc == ""
+                mark_error(lx)
+            end
+            return acc
+        end
+        if base == 0
+            base = t.loc.col
+        end
+        if t.loc.col < base
             return acc
         end
         before: i64 = lx.pos
