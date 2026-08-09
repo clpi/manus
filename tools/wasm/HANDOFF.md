@@ -1,4 +1,4 @@
-# ward — handoff
+# duon wasm — handoff
 
 ## 2026-08-08 (latest) — `call_indirect` compiles, and it found a wrong answer
 
@@ -53,17 +53,17 @@ interpreter's status 71 — so a trap is byte-identical on both engines.
 ### The type check is not optional, and here is the proof it was missing
 
 **The interpreter had no signature check either.** Four probe modules, each one
-line of `.wat`, run against wasmtime and against ward before and after:
+line of `.wat`, run against wasmtime and against the engine before and after:
 
-| probe | wasmtime | ward BEFORE | ward AFTER (jit and interp) |
+| probe | wasmtime | the engine BEFORE | the engine AFTER (jit and interp) |
 |---|---|---|---|
 | correct call through the table | `11` | `11`, exit 0 | `11`, exit 0 |
-| slot's signature ≠ call site's | trap | exit **70** (ward's own bail) | **trap, exit 71** |
+| slot's signature ≠ call site's | trap | exit **70** (the engine's own bail) | **trap, exit 71** |
 | index past the table | trap | exit **70** | **trap, exit 71** |
 | element never initialised | trap | **`11`, exit 0** | **trap, exit 71** |
 | signature mismatch, callee reachable | trap | **`11`, exit 0** | **trap, exit 71** |
 
-The last two rows are the point. **ward answered `11` and exited 0 for two
+The last two rows are the point. **the engine answered `11` and exited 0 for two
 programs every conforming runtime traps on** — a plausible number for a call
 that must not happen, which is this repo's named failure class. The
 never-initialised row is the one `jtoc` exists for; the mismatch row is the one
@@ -89,7 +89,7 @@ oracle would silently skip it):
 
 ### Coverage, before and after
 
-Refusal census over both corpora, `WARD_JIT_TRACE=1` at every fixture and entry
+Refusal census over both corpora, `DUO_WASM_JIT_TRACE=1` at every fixture and entry
 shape:
 
 | refusal | before | after |
@@ -107,19 +107,19 @@ start compiling. They are wasi-libc `_start`s, and queuing their table-reachable
 callees exposed the NEXT blocker in each: six need a callee with more than 17
 locals (this JIT has no spill model — locals are registers), three hit a
 `return` inside an inlined body. Those are the two things to attack next and
-neither is small. What did move: `bench/ward_call_indirect.wasm` compiles where
+neither is small. What did move: `bench/call_indirect.wasm` compiles where
 it fell back, plus the new fixture below.
 
 **No timing claim.** Every module `call_indirect` blocked sits under the 40 ms
 process-startup floor this repo established, so there is nothing to measure and
-nothing is quoted. `ward_call_indirect.wasm` runs in 0.075 ms.
+nothing is quoted. `call_indirect.wasm` runs in 0.075 ms.
 
 ### New fixture
 
-`bench/ward_call_indirect_typed.wasm` — 1000 iterations dispatching through a
+`bench/call_indirect_typed.wasm` — 1000 iterations dispatching through a
 4-entry table with TWO distinct signatures in the same body and a computed
 index, so both the matching path of the type check and both arities are
-exercised. ward answers 1034562941 on both engines; so does wasmtime. Source:
+exercised. the engine answers 1034562941 on both engines; so does wasmtime. Source:
 
 ```wat
 (module
@@ -176,22 +176,22 @@ for every buffer.
 ## 2026-08-08 — the JIT can leave its own code buffer
 
 The named architectural blocker is closed, and it was **in `lib/std/jit.duo`,
-not in ward**. `alloc`/`w32`/`seal`/`call*` let Duo emit code and ENTER it;
+not in the engine**. `alloc`/`w32`/`seal`/`call*` let Duo emit code and ENTER it;
 nothing let emitted code LEAVE it. So a body reaching an imported function took
 the whole module to the interpreter — which is every wasi-libc `_start`, because
 `_start` reaches `fd_write` to print its answer. The trace said so on all three
 losing modules, at the same offset:
 
 ```
-ward: jit declined -- call target is an IMPORTED function, which the jit
+wasm: jit declined -- call target is an IMPORTED function, which the jit
       cannot reach -- opcode 16 (call) at body offset 9
 ```
 
 `std.jit.sym(name)` now yields a host function address (`dlsym` against what is
 already mapped; 0 for a name the host has not linked, and every caller checks).
-ward's JIT emits the WASI effect inline: materialize the address into x17, `BLR`
+the engine's JIT emits the WASI effect inline: materialize the address into x17, `BLR`
 it. Dispatch is on the import's FIELD NAME — byte for byte the test `run_body`
-already applied — and every import ward cannot perform keeps the interpreter's
+already applied — and every import the engine cannot perform keeps the interpreter's
 stub shape, so the two engines cannot disagree about a module. **No module name,
 function index or input size is an input to any of it.**
 
@@ -212,7 +212,7 @@ address is baked in and re-materialized after every call. Cold path — once per
 | `brtable` (_start) | 425 | **10** | 10 | 14 | startup floor, 39× faster |
 | `hot` (_start) | 313 | **18** | 17 | 19 | startup floor, 17× faster |
 | `hot_big` (_start) | 3301 | **133** | 132 | **111** | wasmtime — 24× faster, level with wart |
-| `loop_f64` (_start) | **cannot run** | **8** | 8 | 12 | ward |
+| `loop_f64` (_start) | **cannot run** | **8** | 8 | 12 | the engine |
 
 **`hash` and `hash2b` are TIES.** Three runs disagree about the winner —
 `hash2b` read 3671/3613, then 3763/3699, then 3678/3763 — the sign flips inside
@@ -265,9 +265,9 @@ so it buys coverage, not a measured number. The rest: `i32.load` with an offset
 above 16 MiB (3), `prefix.simd` (2), `i32.extend8_s` (2), one `return` inside an
 inlined body.
 
-## 2026-08-08 (late) — ward has a test suite, and it found eight real bugs
+## 2026-08-08 (late) — the engine has a test suite, and it found eight real bugs
 
-`test/conform.duo` is the suite. `zig build ward-test` is the step. It runs
+`test/conform.duo` is the suite. `zig build wasm-test` is the step. It runs
 **every `.wasm` fixture under both engines and both entry shapes**, differences
 the answer against wasmtime BY VALUE, and refuses to print a score until five
 controls pass in the same process (exit 3, distinct from exit 1, so a broken
@@ -275,13 +275,13 @@ harness can never be read as a failing runtime):
 
 1. both binaries under test exist and respond;
 2. the module path REACHES the runtime — two fixtures with different oracle
-   answers must give ward two different answers;
+   answers must give the engine two different answers;
 3. the comparator returns PASS on a matched pair and DIFF on a mismatched one;
 4. a PERTURBED module (byte 4 of the magic overwritten) is refused by both;
 5. a MISSING module is refused rather than defaulted.
 
-Control 4 was **red when it was written**: every walker in `ward.duo` starts at
-byte 9, so ward ran a file whose magic had been destroyed and printed the
+Control 4 was **red when it was written**: every walker in `engine.duo` starts at
+byte 9, so the engine ran a file whose magic had been destroyed and printed the
 unperturbed answer. `main` now validates the 8-byte header. A control that
 cannot fail is not evidence, so the header check and the control landed
 together.
@@ -291,7 +291,7 @@ together.
 | first full run | 128 | 100 | **16** | 8 | 0 | 4 |
 | after the memory fix | 128 | **122** | **0** | 2 | 0 | 4 |
 
-The 16 DIFFs were one bug. **ward's linear memory was a hardcoded ONE page and
+The 16 DIFFs were one bug. **the engine's linear memory was a hardcoded ONE page and
 every effective address was masked `& 0xFFFF` to fit it**, so a module declaring
 two pages had its upper half folded onto its lower half:
 `benchmarks/wasm_rt/memory` answered 792579638 for 3674599702, and seven
@@ -306,14 +306,14 @@ refusing opcode 252 (`prefix.fc`) at body offset 287. That is the suite's
 budget; lower it when the gap closes.
 
 **The suite's own comparator had a bug on its first run** and reported 30 false
-DIFFs: it scored a printing `_start` against ward's `result=` field (which is
-the void return, i.e. 0) instead of against the bytes ward printed. Printed
+DIFFs: it scored a printing `_start` against the engine's `result=` field (which is
+the void return, i.e. 0) instead of against the bytes the engine printed. Printed
 bytes now win unconditionally. This is why a new harness's first red is worth
 reading before it is believed.
 
 ## 2026-08-08 (late) — why the JIT declined `hot_big`, and where it still does
 
-`WARD_JIT_TRACE=1` is new: all 56 `return -1` sites in `jit_compile` now go
+`DUO_WASM_JIT_TRACE=1` is new: all 56 `return -1` sites in `jit_compile` now go
 through `jitbail(why, op, pos)` and name themselves. The JIT declines whole
 bodies silently and `main` runs the interpreter without saying so — that is how
 `hot_big` stayed 30x behind wasmtime with a correct answer.
@@ -333,10 +333,10 @@ compiling that body means compiling a call to an imported host function. Nothing
 in `lib/std/jit.duo` can express one: its surface is
 `alloc / w32 / r32 / w8 / seal / call0..call2 / release / arch`, and **none of
 those yields the ADDRESS of a host function**, so emitted code has no way to
-call back into ward. The two ways out are both larger than a fix:
+call back into the engine. The two ways out are both larger than a fix:
 
 - give `std.jit` a primitive that returns a callable host address, and refactor
-  ward's WASI (which today lives inline inside `run_body`'s dispatch) into a
+  the engine's WASI (which today lives inline inside `run_body`'s dispatch) into a
   C-ABI trampoline the emitted `BLR` can target; or
 - mixed mode: interpret the outer frames and JIT only the hot inner function.
   That needs per-function entry points that take arguments (the current entry
@@ -344,14 +344,14 @@ call back into ward. The two ways out are both larger than a fix:
   boundary, which BUG B forbids for pointer locals.
 
 Until one of those exists, **a WASI program that prints its answer will run on
-ward's interpreter**, and `hot_big` is such a program. What did change: it is
+the engine's interpreter**, and `hot_big` is such a program. What did change: it is
 now CORRECT on both engines, where before the fix above it was correct only by
 accident of the 16-bit address wrap.
 
 `call_indirect` (0x11) still has no JIT arm, and `ltgt` is still ONE shared
 label buffer across frames.
 
-## 2026-08-08 (late) — six runtimes, 61 rows, and where ward is not first
+## 2026-08-08 (late) — six runtimes, 61 rows, and where the engine is not first
 
 `duo run bench/six.duo`, N=3 interleaved, min of 3, machine otherwise idle.
 Nothing is timed until it has been differenced against wasmtime, so a cell that
@@ -359,18 +359,18 @@ disagrees or cannot be reached is `WRONG` / `err` / `n/a` and never a number.
 
 **55 of 61 rows are below a 40 ms startup floor and are attributed to nobody.**
 Most fixtures here finish in single-digit milliseconds: that number is process
-startup — ward is a 208 KB static binary, wasmtime builds a JIT before it runs
+startup — the engine is a 208 KB static binary, wasmtime builds a JIT before it runs
 anything — and counting it as a win is the same defect as the withdrawn table in
 this repo's README, where 13 of 24 "wins" read at or below timer resolution. The
 floor keys on measured time, never on a module name or an input size, and it
-requires BOTH the fastest runtime AND ward to be under it, because otherwise
-`brtable` (ward 424 ms, wart 11 ms) would have been filed as startup noise.
+requires BOTH the fastest runtime AND the engine to be under it, because otherwise
+`brtable` (the engine 424 ms, wart 11 ms) would have been filed as startup noise.
 
-Of the **6 rows that do measurable work, ward is first on 1**:
+Of the **6 rows that do measurable work, the engine is first on 1**:
 
-| workload | ward | wart | wasmtime | wasmer | wasm3 | iwasm | first |
+| workload | the engine | wart | wasmtime | wasmer | wasm3 | iwasm | first |
 |---|---:|---:|---:|---:|---:|---:|---|
-| `hash` (run) | **368** | n/a | 374 | n/a | 1099 | 1672 | ward — a TIE |
+| `hash` (run) | **368** | n/a | 374 | n/a | 1099 | 1672 | the engine — a TIE |
 | `hash2b` (run) | 3805 | n/a | **3693** | n/a | 11294 | 16987 | wasmtime |
 | `brtable` (_start) | 424 | **11** | 15 | 25 | 18 | 21 | wart |
 | `hot` (_start) | 313 | **19** | 21 | 31 | 73 | 70 | wart |
@@ -380,9 +380,9 @@ Of the **6 rows that do measurable work, ward is first on 1**:
 **`hash` at 368 vs wasmtime 374 is a tie inside drift (1.6%), not a win**, and
 no claim otherwise may be restored. The four unambiguous losses are `brtable`
 (38x behind wart), `hot` (16x), `hot_big` (29x behind wasmtime) and `loop_f64`
-(ward cannot run it at all — opcode 252). All four are modules the JIT declines,
-which is the same story as §hot_big above: ward's interpreter is roughly 20-30x
-off a compiling runtime, and everything ward "wins" is a row where no runtime
+(the engine cannot run it at all — opcode 252). All four are modules the JIT declines,
+which is the same story as §hot_big above: the engine's interpreter is roughly 20-30x
+off a compiling runtime, and everything the engine "wins" is a row where no runtime
 did enough work to measure.
 
 Three CLI facts the harness had to learn, each of which produced a bogus row
@@ -400,12 +400,12 @@ counts they quote (`8/18`, `11/18`) are superseded by the table here.
 
 ## State, re-measured 2026-08-08
 
-Measured at `981b1f0`. `src/ward.duo` — 4976 lines, 4004 of them code; pure Duo,
+Measured at `981b1f0`. `src/engine.duo` — 4976 lines, 4004 of them code; pure Duo,
 zero `@c.emit` — builds clean in **~35 s** (the 2026-08-06 handoff's
 "1177 lines / ~1.0 s" is four times out of date):
 
 ```
-duo compile src/ward.duo --backend=c --emit exe -o /tmp/ward
+duo compile src/engine.duo --backend=c --emit exe -o /tmp/duowasm
 ```
 
 **Conformance, `duo run bench/verify.duo` against wasmtime, 44 modules:**
@@ -424,25 +424,25 @@ in bench/ that has a wasmtime reference now matches it**, on both engines.
 pass, so 24 kernels with seeded-random constants, loop bounds and instruction
 mixes were generated fresh and differenced against wasmtime: **24/24 agree**
 (12 i32, 6 f64, 6 i64+memory+call). Separately, every benchmark answer value was
-grepped for in `src/ward.duo`: the only two hits (`4037913`, `70000`) are in
+grepped for in `src/engine.duo`: the only two hits (`4037913`, `70000`) are in
 comments describing past bugs. `bench/wart.duo` regenerates the arbitrary-kernel
 check on demand.
 
 **Speed.** Interleaved, min-of-N wall clock. `bench/wart.duo` produces this
 table; do not quote a number that did not come out of a harness.
 
-| workload | ward JIT | wart | wasmtime | ward/wart |
+| workload | the engine JIT | wart | wasmtime | the engine/wart |
 | --- | ---: | ---: | ---: | ---: |
 | 6 generated kernels, 100M iters | 205-229 ms | 203-211 ms | 190-200 ms | **103%** |
 | FNV 200M (hand-written `.wat`) | 390 ms | 386 ms | 327 ms | **101%** |
 | `bench/hash.wasm` `run` export | 388 ms | not reachable | 392 ms | — |
 | `benchmarks/wasm_rt/hot_big.wasm` | 3400 ms (**interp**) | — | 119 ms | — |
 
-So: **ward is ~1-3% slower than wart, not faster.** Pass 101 §4 asks for
+So: **the engine is ~1-3% slower than wart, not faster.** Pass 101 §4 asks for
 measurably faster; that criterion is UNMET and `bench/wart.duo` exits non-zero
-saying so. ward is at parity with wasmtime on `hash.wasm`, 19% behind it on the
+saying so. the engine is at parity with wasmtime on `hash.wasm`, 19% behind it on the
 same kernel written by hand, and **28x** behind it on `hot_big.wasm`, where the
-JIT does not engage at all and ward falls back to the interpreter.
+JIT does not engage at all and the engine falls back to the interpreter.
 
 **Derived-lines ratio (Pass 101 §4, target >= 80%): `9%`** — was `0%` before
 2026-08-08. Measured by `duo run bench/derived.duo`, which positive-controls
@@ -472,11 +472,11 @@ Every parser / hang / `#s` / boxing blocker from earlier handoffs is **resolved*
 
 ## `src/wasm/*.duo` is DEAD CODE — 1406 lines of it
 
-`src/ward.duo` is self-contained: its only `req` is `std.jit`. Nothing in the
+`src/engine.duo` is self-contained: its only `req` is `std.jit`. Nothing in the
 repo requires anything under `src/wasm/`, and the modules that used to
 (`src/main.duo`, `src/cli.duo`, `src/wasm/runtime.duo`, `src/wasm/init.duo`)
 were deleted. `test/main.duo` still requires `src.wasm`, `src.edge` and
-`src.lib`, none of which exist, and it fails to parse besides — **ward has no
+`src.lib`, none of which exist, and it fails to parse besides — **the engine has no
 running test suite**; `bench/verify.duo` is doing that job.
 
 This matters most for `src/wasm/jit_arm64.duo` (701 lines). It is the
@@ -484,14 +484,14 @@ This matters most for `src/wasm/jit_arm64.duo` (701 lines). It is the
 `docs/performance.md` — `vs_pop` / `vs_alloc_not` / `flush_tos`, pinned locals
 in x23..x28. It is a genuinely more advanced code generator than the one that
 ships, and it is unreachable: its host modules are gone. The shipping JIT is
-`jit_compile` inside `src/ward.duo` (lines 2712-4418, 1366 code lines), which
+`jit_compile` inside `src/engine.duo` (lines 2712-4418, 1366 code lines), which
 tracks two register aliases and has no liveness model.
 
-**Do not treat `docs/performance.md`'s ward numbers as this ward's numbers.**
-Its `hot_big` table (ward JIT 0.21 s, "beats wasm3 by 2.2x and iwasm by 2.0x")
+**Do not treat `docs/performance.md`'s the engine numbers as this the engine's numbers.**
+Its `hot_big` table (the engine JIT 0.21 s, "beats wasm3 by 2.2x and iwasm by 2.0x")
 was produced by that deleted architecture. Re-run today against the shipping
-binary: ward **3.4 s on the interpreter**, wasm3 0.77 s, iwasm 0.74 s,
-wasmtime 0.12 s — ward is **4.5x slower than wasm3**, the opposite of the claim.
+binary: the engine **3.4 s on the interpreter**, wasm3 0.77 s, iwasm 0.74 s,
+wasmtime 0.12 s — the engine is **4.5x slower than wasm3**, the opposite of the claim.
 The value is right (2331661441, matching wasmtime); only the claim is wrong.
 
 ## wart IS a usable baseline now — with one hard limit
@@ -507,38 +507,38 @@ The limit: **`wart run` can only invoke `_start`, and prints nothing for a
 function that returns a value.** Of the 44 modules in `bench/`, 24 export only
 `run` (wart cannot reach them) and of the 17 exporting `_start` only 2 print
 anything. So wart's ANSWER is observable for **2 of 44** fixtures, and any
-ward-vs-wart row built on the other 42 is timing two runtimes with no evidence
+the engine-vs-wart row built on the other 42 is timing two runtimes with no evidence
 either computed the right thing.
 
 `bench/wart.duo` is the repair: generate the kernel, ask wasmtime for the value,
 then emit a second module whose `_start` traps unless the value matches. wart's
-exit status becomes a value check and ward's `-1` bail becomes one too. It
+exit status becomes a value check and the engine's `-1` bail becomes one too. It
 runs a deliberately-wrong assert first and refuses to report if either runtime
 accepts it.
 
 ## The trap that invalidated two benchmark sweeps
 
-ward does **not read argv** — duo-compiled binaries don't populate Lua's `arg`
-(verified with a 10-line repro: `arg is nil`). ward reads `WARD_WASM`, and it
+the engine does **not read argv** — duo-compiled binaries don't populate Lua's `arg`
+(verified with a 10-line repro: `arg is nil`). the engine reads `DUO_WASM_MODULE`, and it
 used to default to a hardcoded `/tmp/hash.wasm`, which existed on the dev box.
 
-So `ward some_module.wasm` ran **`/tmp/hash.wasm`** and printed a correct-looking
+So `the engine some_module.wasm` ran **`/tmp/hash.wasm`** and printed a correct-looking
 `result=1899277430` — for a nonexistent path, and for `/dev/urandom` garbage. A
 whole 18-module sweep came back "100% passing" that way.
 
-**Fixed this session.** No default module; missing `WARD_WASM` is now an error.
-Always drive ward as:
+**Fixed this session.** No default module; missing `DUO_WASM_MODULE` is now an error.
+Always drive the engine as:
 
 ```
-WARD_WASM=<abs path> WARD_INVOKE=<export> WARD_ENGINE=jit|interp  ward
+DUO_WASM_MODULE=<abs path> DUO_WASM_INVOKE=<export> DUO_WASM_ENGINE=jit|interp  the engine
 ```
 
 ## Also fixed this session
 
 - **Export name is selectable.** `find_run_body` hardcoded a byte compare
-  against `r`,`u`,`n`. It now matches `WARD_INVOKE` (default `run`), which is
+  against `r`,`u`,`n`. It now matches `DUO_WASM_INVOKE` (default `run`), which is
   what makes the `_start`-exporting wart corpus reachable at all.
-- **Removed the "largest body" fallback.** When no export matched, ward picked
+- **Removed the "largest body" fallback.** When no export matched, the engine picked
   the biggest function in the module and ran it, reporting a plausible number.
   `wart_core_i32_compute` burned 0.127 s on garbage that way. A miss is now a
   clean diagnostic.
@@ -595,7 +595,7 @@ Fixed both; `wart_i64_bench` is now exact (3388630585). 9/18 -> 10/18.
 write *before* decrementing, which is correct. Script:
 
 ```
-grep -n 'mem.write_i64(st, (sp - 1)' src/ward.duo   # then check each for a
+grep -n 'mem.write_i64(st, (sp - 1)' src/engine.duo   # then check each for a
                                                     # preceding `sp -= 1`
 ```
 
@@ -604,7 +604,7 @@ write missed the slot, not that the operator is wrong.
 
 ## THE HARDCODED GLOBAL 0
 
-ward never parsed the **global section**. It unconditionally did
+the engine never parsed the **global section**. It unconditionally did
 
 ```
 mem.write_i64(gl, 0, 65536)   -- "wasm-libc expects a shadow stack pointer"
@@ -681,13 +681,13 @@ coverage from **4/18 to 6/18** (`wart_comprehensive_bench` 3985 and
 silently yields 0 produces "executes but wrong", which is far more expensive to
 find than an honest bail. Audit any new range arm for this.
 
-**"ward produced a result" is NOT coverage.** An earlier version of this harness
+**"the engine produced a result" is NOT coverage.** An earlier version of this harness
 counted any non-sentinel result as a pass and reported **8/18**. A differential
 check against wasmtime showed 2 of those were plain wrong and 1 was an f64 the
 reporting path truncates. `bench/verify.duo` is now the oracle; `bench/run.duo` is
 for timing only. Real score: **4 PASS, 3 DIFF, 9 UNSUPPORTED, 2 SKIP**.
 
-| module | wasmtime | ward | |
+| module | wasmtime | the engine | |
 | --- | --- | --- | --- |
 | `hash` | 1899277430 | 1899277430 | PASS |
 | `wart_arithmetic_bench` | -1000001 | 4293967295 | PASS (signed vs unsigned print) |
@@ -697,7 +697,7 @@ for timing only. Real score: **4 PASS, 3 DIFF, 9 UNSUPPORTED, 2 SKIP**.
 | `wart_mixed_type_bench` | 537630237 | 832587187 | **DIFF** |
 | `wart_simple_bench` | 4037913 | 1 | **DIFF** |
 
-Note wasmtime prints i32 **signed** and ward prints **unsigned**; `verify.sh`
+Note wasmtime prints i32 **signed** and the engine prints **unsigned**; `verify.sh`
 folds both to unsigned 32-bit before comparing, so that is not a real mismatch.
 
 **Return-type handling is FIXED** (`find_run_body(... , 2)` reports the target's
@@ -714,14 +714,14 @@ bytes of the same scratch buffer). Result formatting is type-aware for f32
 (0x7D), f64 (0x7C) and i64 (0x7E).
 
 **The `which == 2` result-type lookup is CORRECT — verified.** For
-`wart_f32_bench`, ward reports f32 and `wasm-tools print` confirms
-`(func (;3;) (type 1) (result f32))`. So when ward and wasmtime disagree there,
+`wart_f32_bench`, the engine reports f32 and `wasm-tools print` confirms
+`(func (;3;) (type 1) (result f32))`. So when the engine and wasmtime disagree there,
 it is **f32 arithmetic**, not the type plumbing. Do not re-debug the lookup.
 
 Modules that went from `-1` (bail) to a wrong value — i.e. they now execute end
 to end and need per-opcode differencing, which is a much better position:
 
-| module | wasmtime | ward |
+| module | wasmtime | the engine |
 | --- | --- | --- |
 | `wart_f32_bench` | 29181774 | 1001001.875 |
 | `wart_f64_bench` | 1000100048462729.9 | 1000100019002752 |
@@ -749,15 +749,15 @@ Floats dominate — they are the next unlock, not exotic opcodes:
 | `i32.ge_u` / `gt_u` | ~19 | missing |
 | `i32.load/store`, `global.get/set` | ~21 | partial |
 
-`-1` means ward genuinely could not execute it (unsupported opcode / stack
+`-1` means the engine genuinely could not execute it (unsupported opcode / stack
 underflow). So the limiter is **opcode coverage**, not the decoder.
 
 ## Speed, on the one workload that stresses it — SUPERSEDED
 
 | runtime | `hash.wasm` | re-measured 2026-08-08 |
 | --- | --- | --- |
-| ward `jit-arm64` | **0.45 s** | 0.382 s |
-| ward `interp` | 5.26 s | **7.10 s** |
+| the engine `jit-arm64` | **0.45 s** | 0.382 s |
+| the engine `interp` | 5.26 s | **7.10 s** |
 | wasmtime | **0.436 s** | 0.384 s |
 | wart | **SIGILL** | runs, but cannot invoke `run` |
 
@@ -792,16 +792,16 @@ Opcode coverage, counted:
 
 | layer | ops | re-counted 2026-08-08 |
 | --- | --- | --- |
-| `src/ward.duo` — the binary that actually works | **20** | **184 opcodes, all projected**; 3 hard-coded predicates left, all false positives |
-| `ext/ward/tools/opcodes.duo` — ward's descriptor, new | — | 184 rows; answerable to duo's canonical 63 |
+| `src/engine.duo` — the binary that actually works | **20** | **184 opcodes, all projected**; 3 hard-coded predicates left, all false positives |
+| `tools/wasm/tools/opcodes.duo` — the engine's descriptor, new | — | 184 rows; answerable to duo's canonical 63 |
 | `src/wasm/op.duo` — separate 8398-line tree, not what builds | 151 | 162 lines, dead code |
 | duo canonical descriptors (`duo wasm-tables emit`) | **63** | 63, unchanged |
 | full spec (MVP + SIMD + bulk/ref + WASI/WASIX) | ~450+ | unchanged |
 
-The 2026-08-06 note said ward's 20 constants were a hand-copied subset of a
+The 2026-08-06 note said the engine's 20 constants were a hand-copied subset of a
 63-op subset, and that hand-writing the rest "across interpreter arms *and* JIT
 emitters is the thing to avoid." **That is exactly what happened**, and it was
-repaired the same day: ward had grown to 170 distinct hard-coded opcode
+repaired the same day: the engine had grown to 170 distinct hard-coded opcode
 numbers, only 19 of them behind a name, the other 151 bare integers inside
 dispatch predicates. All 184 are now projected — see below.
 
@@ -815,20 +815,20 @@ Fixed there; two consecutive `duo wasm-tables emit` runs on a clean tree now
 produce no diff. Positive-controlled: perturb the file first and the same
 `git diff` check does fire, and the re-emit restores the canonical text.
 
-**ward's opcode dispatch is projected from a descriptor.**
+**the engine's opcode dispatch is projected from a descriptor.**
 `tools/opcodes.duo` holds the table (184 opcodes, 24 ALU rows, 20 CMP rows)
-and writes four `-- derived(ward.opcodes.*)` regions into `src/ward.duo`:
+and writes four `-- derived(wasm.opcodes.*)` regions into `src/engine.duo`:
 
 ```
 duo run tools/opcodes.duo                     # project
-WARD_DERIVE_CHECK=1 duo run tools/opcodes.duo # fail if src/ward.duo drifted
+DUO_WASM_DERIVE=1 duo run tools/opcodes.duo # fail if src/engine.duo drifted
 ```
 
 It is not a second source of truth: it re-parses
 `lib/std/wasm/ward_mvp_opcodes.duo` and refuses to project on any disagreement
 over the 63 opcodes duo's canonical table holds (it reports the count it
 checked — 63 — so a parser that matched nothing cannot read as unanimous).
-ward needs 170, which is why the extension lives here. Both gates are
+the engine needs 170, which is why the extension lives here. Both gates are
 negative-controlled: perturbing a derived line makes `--check` fail, and
 mis-typing an opcode in `tools/opcodes.duo` makes the projection refuse.
 
@@ -847,4 +847,4 @@ Two constraints still shape this, and both held:
    collides with the standing "no zig no c only duo" directive. `tools/` is
    Duo; only the eight-word `then` fix touched the Zig.
 2. Cross-file module embedding is still broken in duo, so the projection
-   writes **into** `ward.duo` rather than being required from it.
+   writes **into** `engine.duo` rather than being required from it.

@@ -1,13 +1,13 @@
-# ward — remaining opcode work, in execution order
+# duon wasm — remaining opcode work, in execution order
 
 Written blind (no shell) so a fresh session can execute mechanically. Every item lists
 the stack effect and, where relevant, the ARM64 encoding, so no rediscovery is needed.
 Verify each group against wasmtime before moving on — `wasmtime run --invoke run x.wasm`
-prints a *signed* i32; compare against ward with `+ 2**32` when negative.
+prints a *signed* i32; compare against the engine with `+ 2**32` when negative.
 
 ## 0. First: verify what is already written (blocks everything else)
 
-`block`/`if` branch targets depend on the forward end-scanner in `src/ward.duo`. The
+`block`/`if` branch targets depend on the forward end-scanner in `src/engine.duo`. The
 rewrite there is uncompiled. Until it is verified, **any** block containing an
 immediate-carrying opcode may branch to the wrong place, which will look like a wrong
 result in unrelated features.

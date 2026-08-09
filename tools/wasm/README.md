@@ -1,160 +1,135 @@
-# ward
+# duon wasm
 
-AI-native WebAssembly runtime written in [Duo](https://github.com/clpi/luo-duo).
+duon's WebAssembly engine. Decodes a module, runs it, and JITs it to ARM64 —
+written in Duo, no `@c.emit`, no C intermediary, no LLVM.
 
-Reimplements [wart](../wart) in Duo. **Measured 2026-08-08: wart is 121,285
-lines of Zig across 182 files; ward is 11,350 lines of Duo across 29 files — a
-10.7× ratio.**
+It used to be a separate product called **ward**, living at `~/x/ward` and then
+`ext/ward/`. It is not a separate product any more: it is the wasm part of the
+toolchain, the same way `tools/lsp` is the language-server part.
+`docs/wasm-integration.md` records the move and why it landed in `tools/` rather
+than `lib/std/wasm/`.
 
-This line previously read "~1.3M lines of Zig" and "~1,500 lines of Duo". Both
-numbers were wrong, both in the flattering direction, and together they claimed
-a ~870× ratio against an actual 10.7×. Corrected under CLAUDE.md §3: a claim on
-a front page is a claim, and it pays the same toll as one in a benchmark.
+## Status — measured 2026-08-08, nothing here is a projection
 
-## Why
+| | |
+|---|---|
+| Conformance | **126 PASS / 130 rows, 0 DIFF** — every fixture, both engines, both entry shapes, differenced against wasmtime **by value** (`zig build wasm-test`) |
+| JIT coverage | 49 of 65 bodies compiled; the rest fall back to the interpreter, which is a speed difference and never an answer difference |
+| JIT worth | **29×** over this engine's own interpreter (43.04 s → 1.32 s on a 1e9 i32 kernel) |
+| Size | 11,350 lines of Duo across 28 files, of which `src/engine.duo` is 6,312 |
 
-| | wart (Zig) | ward (Duo) |
-|--|-----------|------------|
-| Lines of code | **121,285** (182 files) | **11,350** (29 files) |
-| Binary size | unmeasured | unmeasured |
-| Startup time | unmeasured | unmeasured |
-| AI inference | Separate WASI-NN layer | Native `@device` + `Tensor` types |
-| Hardware dispatch | Manual enum matching | `@device(.auto)` — compiler handles it |
-| Edge serverless | Complex isolate lifecycle | `edge.serverless.handle(request)` |
-| Learning curve | Zig generics + comptime | It's just Lua with types |
+Against the other runtimes on that kernel — all five return `3725993217`:
 
-## Quick start
+| runtime | best wall | vs wasmtime |
+|---|---|---|
+| wasmtime | **1.05 s** | 1.00× |
+| wasmer | 1.21 s | 1.15× |
+| **duon wasm** (`engine=jit-arm64`) | **1.32 s** | 1.26× |
+| wart (Zig, JIT) | 1.36 s | 1.30× |
 
-```bash
-# Run a WASM module
-duo run src/main.duo -- run hello.wasm
+**Read that honestly: it is 3% ahead of wart and 26% behind wasmtime — last of
+the four JIT-class runtimes.** One kernel, one shape. It is not a dominance
+claim and must not be quoted as one. `docs/wart-integration.md` §1 has the
+method, the positive control, and what the number cannot say.
 
-# Compile WASM to native binary (AOT)
-duo run src/main.duo -- compile app.wasm -o app
+wart is 121,285 lines of Zig across 182 files, so the ratio is **10.7×**. This
+page previously said "~1.3M lines of Zig" and "~1,500 lines of Duo" — both wrong,
+both flattering, together claiming ~870× against an actual 10.7×. Corrected in
+`0e4eb29` under CLAUDE.md §3: a claim on a front page pays the same toll as one
+in a benchmark.
 
-# Start serverless edge runtime
-duo run src/main.duo -- deploy --serverless app.wasm
-
-# Interactive shell
-duo run src/main.duo -- shell
-
-# Inspect module
-duo run src/main.duo -- inspect app.wasm
-```
-
-## Architecture
-
-```
-ward/
-├── src/
-│   ├── main.duo          CLI entry (58 lines — replaces wart's main + cmd/)
-│   ├── cli.duo           All CLI commands (166 lines — replaces 19 cmd files)
-│   ├── lib.duo           Embeddable API (90 lines — replaces embed/ + wart.h)
-│   ├── wasm/
-│   │   ├── init.duo      Package re-exports
-│   │   ├── module.duo    Binary decoder (255 lines — replaces 432KB module.zig)
-│   │   ├── runtime.duo   Interpreter (263 lines — replaces 651KB runtime.zig)
-│   │   ├── op.duo        Opcode dispatch (310 lines — replaces 300K+ of op files)
-│   │   ├── wasi.duo      WASI host (201 lines — replaces 313K of wasi/ dir)
-│   │   ├── jit.duo       JIT via C codegen (103 lines — replaces 90K)
-│   │   └── aot.duo       AOT compiler (180 lines — replaces 74K)
-│   ├── edge/
-│   │   └── init.duo      Edge runtime + serverless (263 lines — replaces 140K)
-│   └── nn/
-│       └── init.duo      NN inference engine (350 lines — replaces 170K)
-├── build.duo             Project manifest
-└── README.md
-```
-
-## The Aha Moments
-
-### 1. "I wrote a WASM runtime and it's 255 lines"
-
-```duo
--- Decode any .wasm binary:
-mod = wasm.decode(os.read_file("app.wasm"))
-fmt.println("exports: {}", #mod.exports)
-```
-
-Duo's table-driven approach + pattern matching makes binary parsing trivial. What takes 432KB of Zig (section decoders, validation, error handling) becomes a single dispatch table.
-
-### 2. "AI inference just works on any hardware"
-
-```duo
-@device(.auto)  -- CPU, GPU, TPU — compiler picks the best
-fun infer(model, input: Tensor[B, S, f32])
-  transformer_forward(model, input)
-end
-```
-
-No manual accelerator dispatch. No `if gpu then ... else ...`. The `@device(.auto)` directive generates specialized paths for each available backend at compile time.
-
-### 3. "Serverless in 5 lines"
-
-```duo
-srv = edge.serverless.new({ max_isolates = 1024 })
-srv.register(wasm_bytes)
-response = srv.handle({ method = "GET", path = "/", module_hash = hash })
-```
-
-Each request gets an isolated WASM sandbox with memory snapshots for instant cold starts. The isolate pool handles lifecycle automatically.
-
-### 4. "The whole runtime is embeddable"
-
-```duo
--- In your Duo application:
-ward = req "ward"
-
-eng = ward.engine({ max_isolates = 100 })
-mod = ward.compile(eng, wasm_bytes)
-iso = ward.isolate(eng, mod, { "io", "clocks" })
-result = ward.call(iso, "compute", { 42 })
-```
-
-10 functions replace the entire 150-line C header API.
-
-## How it's faster
-
-1. **AOT via Duo→C→Clang**: Instead of hand-rolling ARM64/x64 like wart's JIT, ward emits optimized C and lets Clang `-O3 -ffast-math -flto` do what it does best. Same approach that makes Duo beat hand-written C on benchmarks.
-
-2. **Zero-copy memory**: Duo's `mem.*` intrinsics map directly to pointer operations in the generated C. No GC, no refcounting on the hot path.
-
-3. **Tiered compilation**: Interpreter → JIT (C codegen + clang -O2) → AOT (full module). Hot functions get compiled after 100 calls.
-
-4. **NN inference with @hot + @unroll**: The transformer attention loop and matmul are annotated so Duo generates vectorized, unrolled C — matching BLAS performance.
-
-5. **Table dispatch**: The opcode interpreter uses Duo `match` which compiles to a jump table in C. Same technique used in production VMs.
-
-## Capabilities
-
-- ✅ WASM binary format decoding (MVP + proposals)
-- ✅ Stack-based interpreter with fuel metering
-- ✅ WASI Preview 1 (fd_write, fd_read, proc_exit, args, environ, clocks, random)
-- ✅ WASI Preview 2 stubs (component model bindings)
-- ✅ JIT compilation (WASM → C → shared lib)
-- ✅ AOT compilation (WASM → standalone native binary)
-- ✅ Edge runtime with sandboxed isolates
-- ✅ Serverless HTTP adapter with isolate pooling
-- ✅ WASI-NN: GGUF model loading + transformer inference
-- ✅ WASI-NN: ONNX model loading
-- ✅ Accelerator dispatch (CPU/GPU/TPU) with `@device(.auto)`
-- ✅ Module caching (content-addressed)
-- ✅ Memory snapshots for fast cold starts
-- ✅ Interactive REPL/shell
-- ✅ Embeddable library API
-
-## Building
+## Running it
 
 ```bash
-cd ~/x/duo
-duo compile ~/x/ward/src/main.duo -o ward -O3
+zig build wasm-test        # build the engine + run the full differential
 ```
 
-Or to run directly during development:
+The engine reads **environment, not argv** — duon-compiled binaries do not
+populate Lua's `arg`, and passing a module as an argument measures nothing.
+This has faked two whole benchmark sweeps.
+
 ```bash
-duo run ~/x/ward/src/main.duo -- run examples/hello.wasm
+duo compile src/engine.duo --backend=c --emit exe -o /tmp/duowasm
+DUO_WASM_MODULE=$PWD/bench/fib.wasm DUO_WASM_INVOKE=run /tmp/duowasm
+# engine=jit-arm64
+# result=2178309
 ```
 
-## License
+| variable | meaning |
+|---|---|
+| `DUO_WASM_MODULE` | the module to run. **Required** — there is no default, because a default made every mis-invocation print a plausible answer for a different module |
+| `DUO_WASM_INVOKE` | export to enter, default `run` |
+| `DUO_WASM_ENGINE` | `interp` forces the architecture-independent path; used to check JIT/interpreter parity |
+| `DUO_WASM_JIT_TRACE` | name the reason the JIT declined a body. It declines **silently** otherwise |
+| `DUO_WASM_PHASES` | read / walk / alloc / compile timings |
+| `DUO_WASM_DUMP` | write the emitted ARM64 words as hex for disassembly |
 
-MIT
+A `duon wasm run x.wasm` subcommand is the intended surface and does not exist
+yet; it needs `src/main.zig`. See `docs/wasm-integration.md` §3.
+
+## What it does
+
+- WASM binary decoding — section walk, exports, memory, globals, data, elements
+- A stack interpreter covering 184 opcodes, architecture-independent
+- An **ARM64 JIT written in Duo** (`std.jit` mmap/seal/call), falling back to the
+  interpreter on any opcode it cannot emit, so adding opcodes changes speed and
+  never changes an answer
+- WASI Preview 1, partially: enough `fd_write` for the fixtures that use it
+- SIMD (0xFD) on the interpreter path
+
+## What it does NOT do
+
+Named explicitly because the previous version of this file listed fifteen
+capabilities with green checkmarks and roughly four of them were real.
+
+- **No AOT.** `src/wasm/aot.duo` is ten lines and `compile()` returns `""`.
+- **No x86-64 JIT.** ARM64 only.
+- **No component model, no WIT, no WASI Preview 2 or 3.**
+- **No threads, atomics, exceptions, GC, multi-memory, memory64, tail-call, or
+  relaxed-SIMD.** Zero grep hits for each in `src/engine.duo`.
+- **No edge runtime, no serverless adapter, no isolate pool, no REPL, no module
+  cache, no memory snapshots, no WASI-NN, no GGUF or ONNX loading, no
+  accelerator dispatch.** Every one of those was claimed here. None exists.
+- **No embeddable library API.** `src/lib.duo` does not exist.
+
+`src/nn/init.duo` is a 368-line tensor/transformer module that nothing requires
+and that has nothing to do with WebAssembly; it is a leftover of the
+"AI-native" framing. `docs/wasm-integration.md` §5 proposes moving it to
+`lib/std/ml/` or deleting it.
+
+## Layout
+
+```
+src/engine.duo      the whole runtime — decoder, interpreter, ARM64 JIT
+src/wasm/           a parallel modular tree that NOTHING requires (dead)
+  jit_arm64.duo       dead as a module, live as the source of truth for
+                      lib/std/compiler/arm64{,check}.duo; a donor for SH-11
+  jit.duo             a C-emitting JIT stub — the foreign waist Pass 103 §0b
+                      bans by name, sitting in dead code. Should be deleted.
+  aot.duo             10-line stub returning ""
+src/nn/             tensors and a transformer; not wasm
+bench/              6 harnesses + 47 .wasm fixtures (inputs, not source)
+test/conform.duo    the differential suite; refuses to score until 5 controls pass
+tools/opcodes.duo   the opcode descriptor. Opcode numbers are PROJECTED into
+                    src/engine.duo — never type one
+```
+
+`src/engine.duo` is one 6,312-line file on purpose. Two codegen constraints
+force it: pointer locals must not cross a function boundary, and a bare module
+tail makes the native-scalar precheck reject the whole file, at which point
+every value transits a boxed `lua_Value` whose numeric payload is a `double` —
+which is what once rounded every `f64.const` above 2^53 and cost the low byte.
+
+## Rules this engine learned the hard way
+
+- **"It produced a result" is not coverage.** A harness counting any
+  non-sentinel result reported 8/18; differencing against wasmtime showed two
+  were plain wrong. Only oracle agreement counts.
+- **Every range arm needs a terminal `else return -1`.** `i32.div_s`/`rem_s`
+  silently returned **0** for months.
+- **The JIT falls back silently.** Check the `engine=` line, or a correctness
+  gate stays green while the JIT is dead.
+- **Never quote the printed `seconds=`** for a perf claim — it is `os.clock`,
+  which on macOS accumulates CPU across threads. Use an interleaved harness.
+- **Positive-control every zero, negative-control every oracle.** A gate that
+  cannot fail is not evidence.

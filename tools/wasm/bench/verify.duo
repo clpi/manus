@@ -1,25 +1,25 @@
--- Differential correctness oracle: ward vs wasmtime.
+-- Differential correctness oracle: the engine vs wasmtime.
 --
 -- Duo replacement for bench/verify.sh (bash + an embedded Python `norm`).
 --
--- This exists because "ward produced a result" is NOT coverage. A first pass at
+-- This exists because "the engine produced a result" is NOT coverage. A first pass at
 -- this harness counted any non-sentinel result as a pass and reported 8/18; a
 -- differential check against wasmtime showed 2 of those were plain wrong and one
 -- was an f64 the reporting path truncates. Only wasmtime agreement counts.
 --
 --   duo run bench/verify.duo
---   WARD_ENGINE=jit duo run bench/verify.duo
+--   DUO_WASM_ENGINE=jit duo run bench/verify.duo
 
 _is_numeric(s: str): bool
     if s == "" return false end
     string.match(s, "^%-?%d+%.?%d*$") != nil
 end
 
--- wasmtime prints i32 signed, ward prints it unsigned. Same 32-bit value, so
+-- wasmtime prints i32 signed, the engine prints it unsigned. Same 32-bit value, so
 -- integral results fold to unsigned 32-bit before comparison.
 --
 -- Non-integral values are an f64 and are compared as DOUBLES, not as text:
--- wasmtime and ward print different digit counts for the same value
+-- wasmtime and the engine print different digit counts for the same value
 -- (4.436463668243931 vs 4.4364636682439311), which read as a DIFF and hid real
 -- passes.
 _norm(s: str): str
@@ -35,7 +35,7 @@ _norm(s: str): str
         -- The wrap-to-positive is load-bearing. Duo's `%` is C-style TRUNCATED,
         -- so it keeps the sign of the dividend, while the Python original this
         -- replaces used a FLOORED `%` that never returns negative. Without the
-        -- correction, wasmtime's -1009008024 and ward's 3285959272 -- the same
+        -- correction, wasmtime's -1009008024 and the engine's 3285959272 -- the same
         -- 32-bit value -- read as a DIFF, and hash2b and wart_arithmetic_bench
         -- dropped out of the passing set.
         u = i % 4294967296
@@ -50,7 +50,7 @@ _norm(s: str): str
 end
 
 -- A module whose real answer is what it PRINTS (via fd_write) is compared on
--- its emitted bytes, not on the numeric result of a void _start. Strip ward's
+-- its emitted bytes, not on the numeric result of a void _start. Strip the engine's
 -- own protocol lines to recover just the module's output.
 --
 -- Omitting this cost 4 of 42 passes when I first converted the harness: the
@@ -106,9 +106,9 @@ _rule(): void
 end
 
 main(): i64
-    ward_bin = std.script.getenv("WARD_BIN", "/tmp/ward")
+    binary = std.script.getenv("DUO_WASM_BIN", "/tmp/duowasm")
     wasmtime = std.script.getenv("WASMTIME", "wasmtime")
-    engine = std.script.getenv("WARD_ENGINE", "interp")
+    engine = std.script.getenv("DUO_WASM_ENGINE", "interp")
     root = std.script.chomp(std.script.capture("pwd"))
 
     pass = 0
@@ -143,15 +143,15 @@ main(): i64
             want = "_start"
         end
 
-        -- WARD_ENGINE selects the engine under test. It defaults to `interp`
+        -- DUO_WASM_ENGINE selects the engine under test. It defaults to `interp`
         -- because that is the path every module takes; run with
-        -- WARD_ENGINE=jit to difference the JIT against the same oracle. The
+        -- DUO_WASM_ENGINE=jit to difference the JIT against the same oracle. The
         -- JIT silently FALLS BACK to the interpreter when it cannot compile a
         -- body, so agreement alone does not prove the JIT ran -- the ENGINE
         -- column reports what actually executed.
-        raw = std.script.capture("WARD_WASM=" .. root .. "/" .. m
-            .. " WARD_INVOKE=" .. want .. " WARD_ENGINE=" .. engine
-            .. " timeout 120 " .. ward_bin .. " 2>/dev/null")
+        raw = std.script.capture("DUO_WASM_MODULE=" .. root .. "/" .. m
+            .. " DUO_WASM_INVOKE=" .. want .. " DUO_WASM_ENGINE=" .. engine
+            .. " timeout 120 " .. binary .. " 2>/dev/null")
         eng = _field(raw, "engine")
         if eng == "jit-arm64"
             jitn += 1
@@ -172,7 +172,7 @@ main(): i64
             -- wasmtime invoked it successfully but it yields no observable
             -- value -- a void `(func)` export that neither returns nor prints.
             -- There is nothing to difference, so the only honest check is that
-            -- ward also runs it to completion instead of bailing (-1). Counted
+            -- the engine also runs it to completion instead of bailing (-1). Counted
             -- separately from a real PASS, because "didn't trap" is much weaker
             -- evidence than "matched the oracle".
             if got != "" and got != "-1"
@@ -199,7 +199,7 @@ main(): i64
     end
 
     _rule()
-    print("ward agrees with wasmtime on " .. to(str)(pass) .. " module(s); "
+    print("the engine agrees with wasmtime on " .. to(str)(pass) .. " module(s); "
         .. to(str)(fail) .. " unsupported-or-wrong; "
         .. to(str)(void_ok) .. " void-export completed; "
         .. to(str)(skip) .. " skipped")
@@ -209,7 +209,7 @@ main(): i64
     -- correctness-based gate stays fully green while the JIT is dead. That
     -- happened during this work: an operand-stack accounting bug disabled JIT
     -- compilation for every float module and the corpus still read 42/42. Only
-    -- under WARD_ENGINE=jit is the floor meaningful; the default interp run
+    -- under DUO_WASM_ENGINE=jit is the floor meaningful; the default interp run
     -- legitimately compiles nothing.
     if engine == "jit"
         floor: i64 = to(i64)(std.script.getenv("JIT_FLOOR", "34"))

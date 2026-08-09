@@ -54,7 +54,7 @@ fun emit_c_function(mod: any, func_idx: i64, code: any, sig: any): str
     params[i] = c_type .. " p" .. tostring(i - 1)
   end
   params[#params + 1] = "uint8_t* memory"
-  lines[#lines + 1] = ret_type .. " ward_jit_f" .. tostring(func_idx) ..
+  lines[#lines + 1] = ret_type .. " wasmjitf" .. tostring(func_idx) ..
     "(" .. table.concat(params, ", ") .. ") {"
 
   -- Locals.

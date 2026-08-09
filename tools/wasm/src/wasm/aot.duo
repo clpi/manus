@@ -1,4 +1,4 @@
--- ward AOT compiler (stubbed for init)
+-- the engine AOT compiler (stubbed for init)
 
 M = {}
 

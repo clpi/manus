@@ -1,4 +1,4 @@
--- ward/src/wasm/stack.duo — Operand + control stack
+-- the engine/src/wasm/stack.duo — Operand + control stack
 -- Pre-allocated fixed arrays. All ops inline to single pointer derefs.
 
 fun stack_new(capacity: i64)

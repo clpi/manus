@@ -1,4 +1,4 @@
--- ward NN inference engine — AI-native WASI-NN implementation
+-- the engine NN inference engine — AI-native WASI-NN implementation
 -- Replaces wart's src/wasm/wasi/nn/ (~170K of Zig) with ~350 lines of Duo
 -- The AHA: @device(.auto) + Tensor types + nn{} blocks = ML inference that writes itself
 
@@ -49,7 +49,7 @@ fun select_target(requested: i64, available: [any]): i64
     end
   end
   -- Fallback to CPU (never error — always compute)
-  fmt.eprintln("ward-nn: target {} unavailable, falling back to CPU", requested)
+  fmt.eprintln("nn: target {} unavailable, falling back to CPU", requested)
   TARGET.cpu
 end
 

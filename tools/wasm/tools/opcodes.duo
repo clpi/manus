@@ -1,18 +1,18 @@
--- ward's WASM opcode descriptor table, and the projection that writes it into
--- src/ward.duo.
+-- the engine's WASM opcode descriptor table, and the projection that writes it into
+-- src/engine.duo.
 --
---   duo run tools/opcodes.duo          -- project; rewrites src/ward.duo
+--   duo run tools/opcodes.duo          -- project; rewrites src/engine.duo
 --   duo run tools/opcodes.duo --check  -- fail if the projection is stale
 --
--- WHY THIS EXISTS. ward used to hard-code 170 distinct opcode numbers across
+-- WHY THIS EXISTS. it used to hard-code 170 distinct opcode numbers across
 -- 241 dispatch predicates -- in the interpreter ladder AND, independently,
 -- in the JIT's ALU_OPS / CMP_OPS tables. The 2026-08-06 handoff named that
 -- exact failure ("hand-writing the rest across interpreter arms *and* JIT
 -- emitters is the thing to avoid") and it happened anyway, because there was
--- nothing to hand-write *from* on the ward side: duo's canonical table
--- (lib/std/wasm/ward_mvp_opcodes.duo) stops at 63 ops and ward needs 170.
+-- nothing to hand-write *from* on the engine side: duo's canonical table
+-- (lib/std/wasm/ward_mvp_opcodes.duo) stops at 63 ops and the engine needs 170.
 --
--- So OPS below is the descriptor, and every opcode number ward compiles
+-- So OPS below is the descriptor, and every opcode number the engine compiles
 -- against is projected from it. An opcode number now appears ONCE in this
 -- repo per fact, not once per consumer.
 --
@@ -520,17 +520,17 @@ main(): i64
     end
     print("agrees with duo's canonical table on " .. to(str)(n) .. " opcode(s)")
 
-    target = "src/ward.duo"
+    target = "src/engine.duo"
     before = std.script.fs_read(target)
-    after = _render(before, "ward.opcodes.constants", _body_consts())
-    after = _render(after, "ward.opcodes.names", _body_names())
-    after = _render(after, "ward.opcodes.aluword", _body_alu())
-    after = _render(after, "ward.opcodes.cmpcond", _body_cmp())
+    after = _render(before, "wasm.opcodes.constants", _body_consts())
+    after = _render(after, "wasm.opcodes.names", _body_names())
+    after = _render(after, "wasm.opcodes.aluword", _body_alu())
+    after = _render(after, "wasm.opcodes.cmpcond", _body_cmp())
 
     -- Mode selection is an ENV VAR, not argv: duo-compiled binaries do not
     -- populate Lua's `arg`, and an argv-driven flag would silently take the
     -- write path in a gate that meant to check.
-    if std.script.getenv("WARD_DERIVE_CHECK", "") != ""
+    if std.script.getenv("DUO_WASM_DERIVE", "") != ""
         if after != before
             print("*** " .. target .. " is STALE against tools/opcodes.duo ***")
             print("    run: duo run tools/opcodes.duo")

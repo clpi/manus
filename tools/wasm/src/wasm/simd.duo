@@ -1,4 +1,4 @@
--- ward SIMD (v128) — pure Duo, one executor over one descriptor table.
+-- the engine SIMD (v128) — pure Duo, one executor over one descriptor table.
 --
 -- A v128 is two i64 halves. Every wasm SIMD lane op has the same shape: walk the
 -- lanes, apply a kernel, reassemble. So there is exactly ONE executor here and
@@ -9,7 +9,7 @@
 -- `global` is required on a module-level `req`: without it the name is invisible
 -- in the embedded module's generated C ("use of undeclared identifier"). std.bit
 -- supplies IEEE bit reinterpretation, the one primitive float lanes need — it
--- lives in the stdlib so ward itself stays free of C.
+-- lives in the stdlib so the engine itself stays free of C.
 global bitm = req "std.bit"
 
 I8  = 8

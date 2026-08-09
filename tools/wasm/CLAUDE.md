@@ -1,7 +1,7 @@
-# ward — WASM runtime in Duo
+# duon wasm — the toolchain's WebAssembly engine
 
 WASM runtime written in Duo, measured against `~/x/wart` (the Zig reference) and
-`wasmtime`. Lives at `ext/ward` inside the duo repo since 2026-08-08; it used to
+`wasmtime`. Lives at `tools/wasm` inside the duo repo since 2026-08-08; it used to
 be `~/x/ward`.
 
 Read `HANDOFF.md` before anything else. It carries the measured state and the
@@ -17,23 +17,23 @@ cd ~/x/duo && zig build -Doptimize=ReleaseFast   # -> zig-out/bin/duo
 
 ## What actually builds
 
-**`src/ward.duo` is the whole runtime** — 4584 lines, self-contained, pure Duo,
+**`src/engine.duo` is the whole runtime** — 4584 lines, self-contained, pure Duo,
 zero `@c.emit`. Its only `req` is `std.jit`.
 
 ```bash
-duo compile src/ward.duo --backend=c --emit exe -o /tmp/ward   # ~30 s
+duo compile src/engine.duo --backend=c --emit exe -o /tmp/duowasm   # ~30 s
 ```
 
-It reads **`WARD_WASM`, not argv** — duo-compiled binaries do not populate Lua's
+It reads **`DUO_WASM_MODULE`, not argv** — duo-compiled binaries do not populate Lua's
 `arg`. Passing a module as an argument measures nothing; this has faked two
 whole benchmark sweeps.
 
 ```bash
-WARD_WASM=<abs path> WARD_INVOKE=<export> WARD_ENGINE=jit|interp /tmp/ward
+DUO_WASM_MODULE=<abs path> DUO_WASM_INVOKE=<export> DUO_WASM_ENGINE=jit|interp /tmp/duowasm
 ```
 
-`WARD_INVOKE` defaults to `run`. `WARD_DUMP=<path>` dumps the emitted JIT words;
-`WARD_PHASES=1` prints read/walk/alloc/compile timings; **`WARD_JIT_TRACE=1`
+`DUO_WASM_INVOKE` defaults to `run`. `DUO_WASM_DUMP=<path>` dumps the emitted JIT words;
+`DUO_WASM_PHASES=1` prints read/walk/alloc/compile timings; **`DUO_WASM_JIT_TRACE=1`
 names the reason the JIT declined a body** — it declines silently otherwise and
 `main` runs the interpreter without saying so, which is how `hot_big` stayed 30x
 behind wasmtime while printing the right answer.
@@ -41,8 +41,8 @@ behind wasmtime while printing the right answer.
 ## The test suite
 
 ```bash
-zig build ward-test          # from the repo root — builds ward, then runs:
-duo run test/conform.duo     # from ext/ward, against WARD_BIN (default /tmp/ward)
+zig build wasm-test          # from the repo root — builds the engine, then runs:
+duo run test/conform.duo     # from tools/wasm, against DUO_WASM_BIN (default /tmp/duowasm)
 ```
 
 `test/conform.duo` runs every `.wasm` fixture under **both engines and both
@@ -52,7 +52,7 @@ binaries respond, the module path reaches the runtime, the comparator can
 return a red, a perturbed module is refused, a missing module is refused.
 Read `HANDOFF.md` for what it found on its first run.
 
-Note `ext/ward/test/` is covered by the ROOT `.gitignore`'s bare `test`
+Note `tools/wasm/test/` is covered by the ROOT `.gitignore`'s bare `test`
 pattern, so files there need `git add -f`.
 
 ## What does NOT build
@@ -72,11 +72,11 @@ better code generator than the one that ships.
 
 ```bash
 duo run bench/verify.duo      # correctness vs wasmtime; the oracle
-duo run bench/wart.duo        # ward vs wart, generated kernels, Pass 101 §4
+duo run bench/wart.duo        # the engine vs wart, generated kernels, Pass 101 §4
 duo run bench/derived.duo     # derived-lines / total-lines ratio
 duo run bench/run.duo         # coverage sweep + per-engine timing
 duo run bench/perf.duo        # interleaved median wall clock vs wasmtime
-duo run bench/six.duo         # ward vs wart/wasmtime/wasmer/wasm3/iwasm
+duo run bench/six.duo         # the engine vs wart/wasmtime/wasmer/wasm3/iwasm
 ```
 
 `bench/six.duo` VERIFIES before it times: a runtime that cannot be driven to an
@@ -85,24 +85,24 @@ millisecond. It also records the CLI facts that produce bogus rows if ignored �
 `wasm3` writes its result to stderr, `iwasm` prints hex with a `:i32` suffix,
 and `wart run` can only enter `_start`.
 
-All of them take `WARD_BIN` (default `/tmp/ward`). `bench/run.duo` builds ward;
+All of them take `DUO_WASM_BIN` (default `/tmp/duowasm`). `bench/run.duo` builds the engine;
 the others expect it to exist.
 
 ## Opcode numbers are PROJECTED — never type one
 
 ```bash
 duo run tools/opcodes.duo                     # rewrite the derived regions
-WARD_DERIVE_CHECK=1 duo run tools/opcodes.duo # gate: fail if ward.duo drifted
+DUO_WASM_DERIVE=1 duo run tools/opcodes.duo # gate: fail if engine.duo drifted
 ```
 
 `tools/opcodes.duo` is the descriptor. It writes four
-`-- derived(ward.opcodes.*)` regions in `src/ward.duo`: the `OP_*` constants,
+`-- derived(wasm.opcodes.*)` regions in `src/engine.duo`: the `OP_*` constants,
 the `OP_NAMES` diagnostic table, and the JIT's `ALU_OPS` / `CMP_OPS`. **Do not
 edit inside a derived region** — add a row to the descriptor and re-project.
 
 It is answerable to duo's canonical table: it re-parses
 `lib/std/wasm/ward_mvp_opcodes.duo` and refuses to project on any disagreement
-over the 63 opcodes that file holds. ward needs 184, which is the only reason
+over the 63 opcodes that file holds. the engine needs 184, which is the only reason
 an extension table exists here at all.
 
 Before this landed, the same opcode number was typed by hand in the
@@ -111,7 +111,7 @@ is exactly the drift the 2026-08-06 handoff warned against.
 
 ## Rules this project learned the hard way
 
-- **"ward produced a result" is NOT coverage.** A harness that counted any
+- **"the engine produced a result" is NOT coverage.** A harness that counted any
   non-sentinel result reported 8/18; differencing against wasmtime showed 2 were
   plain wrong. Only oracle agreement counts.
 - **Every range arm needs a terminal `else return -1`.** `i32.div_s`/`rem_s`
@@ -124,8 +124,8 @@ is exactly the drift the 2026-08-06 handoff warned against.
 - **A binop returning its first operand** means the result write missed the slot.
 - **The JIT falls back to the interpreter silently.** Correctness gates stay
   green while the JIT is dead. Check the `engine=` line, and `bench/verify.duo`
-  enforces a `JIT_FLOOR` under `WARD_ENGINE=jit` for exactly this reason.
-- **Never quote ward's printed `seconds=`** for a perf claim: it is `os.clock`,
+  enforces a `JIT_FLOOR` under `DUO_WASM_ENGINE=jit` for exactly this reason.
+- **Never quote the engine's printed `seconds=`** for a perf claim: it is `os.clock`,
   which on macOS accumulates CPU across threads. Use an interleaved harness.
 - **Positive-control every zero**, and negative-control every oracle. A gate that
   cannot fail is not evidence.
@@ -134,11 +134,11 @@ is exactly the drift the 2026-08-06 handoff warned against.
   module's upper half onto its lower half: one fixture answered 792579638 for
   3674599702 and seven printed nothing at all while exiting 0. An out-of-range
   access must bail, never wrap.
-- **A JIT refusal must name itself.** `WARD_JIT_TRACE=1`. Four separate
+- **A JIT refusal must name itself.** `DUO_WASM_JIT_TRACE=1`. Four separate
   refusals were stacked behind the first one on `hot_big`, and nothing could
   see past the first until they did.
 
 ## Monoglot
 
-`.duo` only. No new `.zig`, `.c`, `.sh`, or `.py` under `ext/ward`. `.wasm`/
+`.duo` only. No new `.zig`, `.c`, `.sh`, or `.py` under `tools/wasm`. `.wasm`/
 `.wat` fixtures in `bench/` are inputs, not source.

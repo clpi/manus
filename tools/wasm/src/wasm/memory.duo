@@ -1,4 +1,4 @@
--- ward/src/wasm/memory.duo — Linear memory (mmap-backed)
+-- the engine/src/wasm/memory.duo — Linear memory (mmap-backed)
 PAGE_SIZE = 65536
 
 fun mem_new(pages: i64)

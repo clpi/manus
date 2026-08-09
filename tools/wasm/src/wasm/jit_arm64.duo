@@ -1,4 +1,4 @@
--- ward/src/wasm/jit_arm64.duo — WASM → ARM64 template JIT. Pure Duo.
+-- the engine/src/wasm/jit_arm64.duo — WASM → ARM64 template JIT. Pure Duo.
 --
 -- The interpreter's cost is decode + dispatch, not the operations. This emits,
 -- per wasm opcode, a fixed ARM64 sequence over the *same* operand-stack layout
@@ -10,12 +10,12 @@
 -- instruction selector is a table, not a switch: adding an opcode is one row.
 --
 -- Registers (AAPCS64 — x19..x22 are callee-saved, so the prologue spills them):
---   x0=WardRT*  x1=WardFrame*  x19=stack base  x20=sp  x21=locals  x22=memory
+--   x0=rtstate*  x1=rtframe*  x19=stack base  x20=sp  x21=locals  x22=memory
 --   x8,x9 = scratch
 
 jit = req "std.jit"
 
--- ── WardRT / WardFrame field offsets (must track runtime.duo's structs) ──
+-- ── rtstate / rtframe field offsets (must track runtime.duo's structs) ──
 RT_MEMORY = 16
 RT_STACK  = 32
 RT_SP     = 40
@@ -351,7 +351,7 @@ fun emit_epilogue(b)
   put(b, RET)
 end
 
-global trace_reject = os.getenv("WARD_JIT_TRACE")
+global trace_reject = os.getenv("DUO_WASM_JIT_TRACE")
 
 -- ── Support scan ────────────────────────────────────────────────────────
 -- A body is compiled only if *every* opcode is supported, so a partially
@@ -383,7 +383,7 @@ fun can_compile(body: any, body_len: i64): bool
 end
 
 -- Debug: write the emitted words little-endian so llvm-objdump can read them.
-global dump_path = os.getenv("WARD_JIT_DUMP")
+global dump_path = os.getenv("DUO_WASM_JIT_DUMP")
 fun dump(b, path: str)
   f = io.open(path, "wb")
   if f == nil return end
@@ -395,7 +395,7 @@ fun dump(b, path: str)
 end
 
 -- ── Compile ─────────────────────────────────────────────────────────────
--- Returns a sealed buffer callable as fn(WardRT*, WardFrame*) -> new sp,
+-- Returns a sealed buffer callable as fn(rtstate*, rtframe*) -> new sp,
 -- or nil when the body uses anything outside the supported set.
 -- Highest local index touched + 1. Decides whether every local fits in the
 -- pinned register file.
@@ -696,6 +696,6 @@ M.invoke = invoke
 M.can_compile = can_compile
 -- On by default: compile() is authoritative and returns nil for any body
 -- outside the supported opcode set, so an unsupported function transparently
--- keeps interpreting. WARD_JIT=0 forces the interpreter everywhere.
-M.available = jit.arch() == "arm64" and os.getenv("WARD_JIT") ~= "0"
+-- keeps interpreting. DUO_WASM_JIT=0 forces the interpreter everywhere.
+M.available = jit.arch() == "arm64" and os.getenv("DUO_WASM_JIT") ~= "0"
 M

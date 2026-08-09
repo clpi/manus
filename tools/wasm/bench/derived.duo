@@ -1,8 +1,8 @@
--- Pass 101 §4: derived-lines / total-lines for ward, target >= 80%.
+-- Pass 101 §4: derived-lines / total-lines for the engine, target >= 80%.
 --
 --   duo run bench/derived.duo
 --
--- Pass 101 calls hand-written serialization in ward "a violation with a
+-- Pass 101 calls hand-written serialization in the engine "a violation with a
 -- derivation repair", and asks for the repair to be MEASURED rather than
 -- asserted. This is that measurement. It had no implementation before
 -- 2026-08-08; the first honest reading of it is 0%.
@@ -10,7 +10,7 @@
 -- WHAT COUNTS AS DERIVED. A line is derived when it was projected from a
 -- descriptor rather than typed by a person, and it says so in the source:
 --
---   -- derived(std.wasm.ward.opcodes) begin
+--   -- derived(std.wasm.opcodes) begin
 --   ...projected lines...
 --   -- derived end
 --
@@ -164,7 +164,7 @@ main(): i64
     print("selfcheck OK (marker detection proved on a synthetic buffer)")
     print("")
 
-    built = "src/ward.duo"
+    built = "src/engine.duo"
     r = _count(built)
     code = _part(r, 1)
     derived = _part(r, 2)

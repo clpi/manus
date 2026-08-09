@@ -12,7 +12,7 @@
 --
 -- Locals are `u32` so the TYPE carries the wrap, as C's uint32_t did. An
 -- earlier version used i64 plus `& 4294967295` after every step: same answer,
--- three extra ops per iteration, which pushed ward's INTERPRETER past the
+-- three extra ops per iteration, which pushed the engine's INTERPRETER past the
 -- harnesses' 120s timeout on the 2-billion sibling. A fixture must be fast
 -- enough to time.
 

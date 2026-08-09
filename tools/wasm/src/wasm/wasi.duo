@@ -1,4 +1,4 @@
--- ward WASI host implementation (Preview 1/2/3)
+-- the engine WASI host implementation (Preview 1/2/3)
 -- Replaces wart's src/wasm/wasi.zig (113K) + wasi/*.zig (~200K) with ~250 lines
 -- Key insight: Duo's table dispatch + closures = trivial host binding
 
@@ -42,7 +42,7 @@ fun wasi_fd_write(rt, args)
       data = data .. string.char(mem_mod.read_byte(rt.memory, buf_ptr + j))
     end
 
-    if os.getenv("WARD_TRACE_FD")
+    if os.getenv("DUO_WASM_TRACE_FD")
       io.stderr:write("[fd_write fd=" .. tostring(fd) .. " iov=" .. tostring(i)
         .. "/" .. tostring(iovs_len) .. " ptr=" .. tostring(buf_ptr)
         .. " len=" .. tostring(buf_len) .. " got=" .. tostring(#data) .. "]\n")
@@ -98,7 +98,7 @@ fun wasi_fd_fdstat_get(rt, args)
     filetype = 0
   else
     -- stdout/stderr are treated as non-tty so line-buffered output flushes
-    -- on newline instead of waiting for __stdio_exit (which ward does not emulate).
+    -- on newline instead of waiting for __stdio_exit (which the engine does not emulate).
     if fd == 1 or fd == 2
       flags = 4
     end

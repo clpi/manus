@@ -1,4 +1,4 @@
--- ward/src/wasm/table.duo — Function reference tables
+-- the engine/src/wasm/table.duo — Function reference tables
 -- Used for call_indirect dispatch. Fixed array of function indices.
 
 fun table_new(size: i64)

@@ -1,7 +1,7 @@
 jitm = req "std.jit"
 iom = req "std.io"
 
--- ward — WASM runtime in Duo. Pure Duo: no @c.emit, no @c.include, no C.
+-- the engine — WASM runtime in Duo. Pure Duo: no @c.emit, no @c.include, no C.
 --
 -- Execution strategy is chosen at run time and is CROSS-ARCHITECTURE
 -- CONSISTENT: every path computes the same result on every host.
@@ -14,19 +14,19 @@ iom = req "std.io"
 -- behaviour -- only speed. `--interp` forces the fallback path, which is how
 -- the two are checked against each other (pass14 s2.4 cross-architecture parity).
 
--- ward WASM interpreter — PURE DUO, zero @c.emit/@c.include.
+-- the engine WASM interpreter — PURE DUO, zero @c.emit/@c.include.
 --
 -- EVERY OPCODE NUMBER IN THIS FILE IS PROJECTED, NOT TYPED. The four
--- `-- derived(ward.opcodes.*)` regions below are written by
+-- `-- derived(wasm.opcodes.*)` regions below are written by
 -- `duo run tools/opcodes.duo` from the descriptor table in that file, and
--- `WARD_DERIVE_CHECK=1 duo run tools/opcodes.duo` exits non-zero if they have
+-- `DUO_WASM_DERIVE=1 duo run tools/opcodes.duo` exits non-zero if they have
 -- drifted. Do not edit inside a derived region; edit the descriptor and
 -- re-project.
 --
 -- tools/opcodes.duo is in turn answerable to duo's canonical table
 -- (src/wasm_semantic_gen.zig -> `duo wasm-tables emit` ->
 -- lib/std/wasm/ward_mvp_opcodes.duo): it re-parses that file and refuses to
--- project on any disagreement over the 63 opcodes it holds. ward needs 170,
+-- project on any disagreement over the 63 opcodes it holds. the engine needs 170,
 -- which is why the extension table lives here rather than there.
 --
 -- The constants are inlined rather than required because requiring a std
@@ -48,7 +48,7 @@ iom = req "std.io"
 -- Shape: ONE hoisted LEB128 decode (was 6 copies), binops share operand
 -- fetch/stack adjust (was 15 near-identical blocks), hot opcodes tested first.
 
--- derived(ward.opcodes.constants) begin -- regenerate: duo run tools/opcodes.duo
+-- derived(wasm.opcodes.constants) begin -- regenerate: duo run tools/opcodes.duo
 OP_unreachable = 0
 OP_nop = 1
 OP_block = 2
@@ -344,7 +344,7 @@ find_run_body(s: str, n: i64, want: str, wlen: i64, which: i64): i64
     i += sz
   end
 
-  -- export section: find the export named `want` (WARD_INVOKE, default "run")
+  -- export section: find the export named `want` (DUO_WASM_INVOKE, default "run")
   target: i64 = -1
   if exp_off > 0
     cnt2: i64 = uleb_val(s, exp_off, n)
@@ -465,7 +465,7 @@ end
 -- printed `result=-1`, and the process EXITED 0. The source comment claimed the
 -- opcode was named on stderr; that diagnostic was never written, and there was
 -- no stderr surface in the Duo stdlib to write it with. So the only thing
--- separating "ward computed this" from "ward gave up" was a caller remembering
+-- separating "the engine computed this" from "the engine gave up" was a caller remembering
 -- to grep stdout for a sentinel -- and -1 is a perfectly legal i64 result, so
 -- even that grep is wrong. bench/fib.wasm at fib(34) reaches this today.
 --
@@ -478,7 +478,7 @@ end
 -- The contract, at the process boundary:
 --   exit 0   a result was computed; stdout carries `result=<v>`
 --   exit 1   usage, or the module could not be read or decoded
---   exit 70  ward met an opcode or a shape it cannot execute
+--   exit 70  the engine met an opcode or a shape it cannot execute
 --   exit 71  the module itself trapped (`unreachable`)
 -- Every nonzero exit writes one line to STDERR naming why. Nothing is printed
 -- to stdout on a failure, so `result=` on stdout now means a result.
@@ -497,7 +497,7 @@ end
 -- opcode 158` sends the reader to a table; `unimplemented opcode 158
 -- (f64.nearest)` names the arm to write, and f64.nearest is precisely the gap
 -- that cost this project a session when it presented as `result=nan`.
--- derived(ward.opcodes.names) begin -- regenerate: duo run tools/opcodes.duo
+-- derived(wasm.opcodes.names) begin -- regenerate: duo run tools/opcodes.duo
 OP_NAMES = {
   {0,    "unreachable"},
   {1,    "nop"},
@@ -702,7 +702,7 @@ end
 -- label/frame depth ceiling, a memory bound. The opcode is named because it
 -- localises the refusal, not because the opcode is missing.
 bail(op: i64, pos: i64): i64
-  iom.err("ward: cannot execute opcode " .. to(str)(op) .. " " .. opname(op) .. " at body offset " .. to(str)(pos) .. " (unsupported operand shape, or an interpreter limit inside its arm)\n")
+  iom.err("wasm: cannot execute opcode " .. to(str)(op) .. " " .. opname(op) .. " at body offset " .. to(str)(pos) .. " (unsupported operand shape, or an interpreter limit inside its arm)\n")
   os.exit(70)
   -1
 end
@@ -710,23 +710,23 @@ end
 -- No arm at all. This is the ranked-worklist signal the old `-1` swallowed: a
 -- corpus sweep now reports exactly which opcodes to implement next.
 bailop(op: i64, pos: i64): i64
-  iom.err("ward: unimplemented opcode " .. to(str)(op) .. " " .. opname(op) .. " at body offset " .. to(str)(pos) .. "\n")
+  iom.err("wasm: unimplemented opcode " .. to(str)(op) .. " " .. opname(op) .. " at body offset " .. to(str)(pos) .. "\n")
   os.exit(70)
   -1
 end
 
 -- `unreachable` is the MODULE trapping, which every conforming runtime does
--- too. It is not a gap in ward and must not be counted as one.
+-- too. It is not a gap in the engine and must not be counted as one.
 bailtrap(pos: i64): i64
-  iom.err("ward: wasm trap (unreachable) at body offset " .. to(str)(pos) .. "\n")
+  iom.err("wasm: wasm trap (unreachable) at body offset " .. to(str)(pos) .. "\n")
   os.exit(71)
   -1
 end
 
 -- The decoder gave up before any opcode was reached, so there is no opcode to
--- name -- the module shape itself is what ward cannot handle.
+-- name -- the module shape itself is what the engine cannot handle.
 bailshape(why: str): i64
-  iom.err("ward: cannot decode module (" .. why .. ")\n")
+  iom.err("wasm: cannot decode module (" .. why .. ")\n")
   os.exit(1)
   -1
 end
@@ -734,17 +734,17 @@ end
 -- The JIT declines a whole body by returning -1, and `main` then runs the
 -- interpreter without saying so. That is why `hot_big.wasm` could print a
 -- correct answer 31x behind wasmtime for weeks: the answer was right and the
--- refusal was invisible. `WARD_JIT_TRACE=1` makes every refusal name itself --
+-- refusal was invisible. `DUO_WASM_JIT_TRACE=1` makes every refusal name itself --
 -- the reason, the opcode, and the byte offset inside the body.
 --
 -- Unlike `bail`/`bailop` this does NOT exit: declining to compile is legal, the
 -- interpreter still has to run. Only the silence was the bug.
 jitbail(why: str, op: i64, pos: i64): i64
-  if os.getenv("WARD_JIT_TRACE")
+  if os.getenv("DUO_WASM_JIT_TRACE")
     if op >= 0
-      iom.err("ward: jit declined -- " .. why .. " -- opcode " .. to(str)(op) .. " " .. opname(op) .. " at body offset " .. to(str)(pos) .. "\n")
+      iom.err("wasm: jit declined -- " .. why .. " -- opcode " .. to(str)(op) .. " " .. opname(op) .. " at body offset " .. to(str)(pos) .. "\n")
     else
-      iom.err("ward: jit declined -- " .. why .. "\n")
+      iom.err("wasm: jit declined -- " .. why .. "\n")
     end
   end
   -1
@@ -829,7 +829,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         kd: i64 = string.byte(img, ij)
         ij += 1
         if kd == 0
-          -- Identify the import by FIELD NAME so the ones ward can actually
+          -- Identify the import by FIELD NAME so the ones the engine can actually
           -- perform (fd_write) are real effects rather than stubs. `fs` is the
           -- field-name start captured before the name was skipped above.
           isfw: i64 = 0
@@ -881,7 +881,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   -- nothing asked: a direct `call` names its callee and the validator has
   -- already agreed about the signature. `call_indirect` names a TABLE SLOT,
   -- and wasm requires the runtime to compare the slot's actual signature
-  -- against the one written at the call site and TRAP when they differ. Ward
+  -- against the one written at the call site and TRAP when they differ. The engine
   -- did not compare, so a mismatched slot silently entered the wrong function
   -- with the wrong argument shape -- a wrong answer, not a refusal.
   fty  = mem.alloc(4096 * 8)
@@ -942,7 +942,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   mem.zero(extw, 256)
   mem.zero(exts, 256)
   -- extract_lane descriptors: (lane width, signed?). Reading `w` bytes at the
-  -- lane covers EVERY variant -- float lanes need no special case because ward
+  -- lane covers EVERY variant -- float lanes need no special case because the engine
   -- keeps floats on the operand stack as their bit pattern, so extracting an
   -- f32 lane and an i32 lane are the same four bytes.
   mem.write_byte(extw, 21, 1)  mem.write_byte(exts, 21, 1)  -- i8x16.extract_lane_s
@@ -987,7 +987,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   mem.write_byte(vwid, 242, 8)   mem.write_byte(vker, 242, 9)   -- f64x2.mul
   mem.write_byte(vwid, 231, 4)   mem.write_byte(vker, 231, 10)  -- f32x4.div
   mem.write_byte(vwid, 243, 8)   mem.write_byte(vker, 243, 10)  -- f64x2.div
-  -- Initialise globals from the module's OWN global section. ward used to
+  -- Initialise globals from the module's OWN global section. it used to
   -- hardcode gl[0] = 65536 unconditionally, so every module that declares its
   -- own globals started 65536 too high: `wart_simple_opcode_bench` reported
   -- 135536 for an expected 70000 -- exactly 70000 + 65536.
@@ -1133,7 +1133,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   end
 
   -- ── table + element segments ─────────────────────────────────────────
-  -- ward's table holds function indices. Only what `call_indirect` and the
+  -- the engine's table holds function indices. Only what `call_indirect` and the
   -- 0xFC table ops need: a flat i64 array plus a size.
   if tb_off > 0
     ntb: i64 = uleb_val(img, tb_off, n)
@@ -1471,13 +1471,13 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         -- registered in `himm`). Imported/WASI functions are not executable
         -- here yet, so bail rather than jumping into a body that isn't ours.
         if imm2 < nimp
-          -- Imported (WASI) function. ward has no host bindings yet, so it
+          -- Imported (WASI) function. the engine has no host bindings yet, so it
           -- cannot perform the effect -- but bailing loses the whole module.
           -- Consume the declared params and leave the declared number of
           -- results, which keeps the operand stack balanced so everything
           -- around the import still executes and is still checkable.
           -- fd_write(fd, iovs, iovs_len, nwritten) -> errno. The only host
-          -- effect ward performs: walk the iovec array in linear memory and
+          -- effect the engine performs: walk the iovec array in linear memory and
           -- emit the bytes, so a module's real output is checkable against
           -- wasmtime instead of being silently dropped.
           if mem.read_i64(imfn, imm2 * 8) == 1 and sp >= 4
@@ -1965,7 +1965,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         sp -= 1
         -- An index past the table is a wasm TRAP, not an interpreter limit.
         -- It used to `bail` (exit 70, "unsupported operand shape"), which reads
-        -- as ward's gap when it is the module's own out-of-range call, and it
+        -- as the engine's gap when it is the module's own out-of-range call, and it
         -- put the two engines on different exit statuses for the same program.
         if tsl >= tbsize
           return bailtrap(pc)
@@ -2749,7 +2749,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         sp = sp
 
       elseif op == OP_memory_size or op == OP_memory_grow
-        -- memory.size / memory.grow. ward's linear memory is the module's
+        -- memory.size / memory.grow. the engine's linear memory is the module's
         -- DECLARED page count and never grows, so size is that count (it used
         -- to be the literal 1, which is wrong for every module above one page)
         -- and grow always refuses (-1), which is a legal wasm answer rather
@@ -2867,7 +2867,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           end
           sp -= 3
         elseif sub == 9 or sub == 13
-          -- data.drop / elem.drop: ward keeps segments for the whole run, so
+          -- data.drop / elem.drop: the engine keeps segments for the whole run, so
           -- dropping is a no-op. Consume the segment index.
           pc += 1
           sp = sp
@@ -2962,7 +2962,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           -- difference from the 168..171 family: NaN answers 0 and an
           -- out-of-range magnitude clamps to the end of the target range where
           -- the trapping form would trap. `benchmarks/wasm_rt/loop_f64` is one
-          -- `i32.trunc_sat_f64_s`, and without it ward could not run that
+          -- `i32.trunc_sat_f64_s`, and without it the engine could not run that
           -- module on EITHER engine.
           --
           -- 4..7, the i64 family, are deliberately NOT here: the u64 upper half
@@ -3008,7 +3008,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         end
 
       elseif op == OP_prefix_simd
-        -- 0xFD SIMD with FULL 128-bit values. ward's operand stack is 64-bit,
+        -- 0xFD SIMD with FULL 128-bit values. the engine's operand stack is 64-bit,
         -- so a v128 lives in a side store (`vstk`, 16 bytes per entry) and the
         -- stack slot holds its INDEX. That keeps one-slot stack discipline —
         -- `drop` still pops exactly one — while every lane is real. A
@@ -3225,7 +3225,7 @@ end
 -- two can no longer drift the way they did while both were typed by hand.
 --
 -- i64 forms are the same ARM64 instructions with sf=1 (bit 31).
--- derived(ward.opcodes.aluword) begin -- regenerate: duo run tools/opcodes.duo
+-- derived(wasm.opcodes.aluword) begin -- regenerate: duo run tools/opcodes.duo
 ALU_OPS = {
   {OP_i32_add,            0x0B000000},
   {OP_i32_sub,            0x4B000000},
@@ -3257,7 +3257,7 @@ ALU_OPS = {
 -- Comparisons: opcode -> ARM64 condition code used by CSET. i64 rows reuse the
 -- i32 conditions on a 64-bit CMP; the CSET stays 32-bit because a wasm compare
 -- yields i32 whatever its operands were.
--- derived(ward.opcodes.cmpcond) begin -- regenerate: duo run tools/opcodes.duo
+-- derived(wasm.opcodes.cmpcond) begin -- regenerate: duo run tools/opcodes.duo
 CMP_OPS = {
   {OP_i32_eq,       0},
   {OP_i32_ne,       1},
@@ -3784,7 +3784,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
 
   -- ── ENTRY TRAMPOLINE ────────────────────────────────────────────────────
   -- jitm.call2 enters at word 0 under the C ABI, so this is the one place that
-  -- has to preserve the FULL callee-saved window for ward's own compiled C.
+  -- has to preserve the FULL callee-saved window for the engine's own compiled C.
   -- x19..x28 are CALLEE-SAVED on AArch64 and this JIT uses them for locals and
   -- for the two bases, so clobbering them corrupts the caller: it once made
   -- `rtype` read back wrong and every f32/f64 module print its raw bit pattern.
@@ -4106,7 +4106,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
 
     elseif op == OP_f32_const or op == OP_f64_const
       -- f32.const / f64.const. The immediate is RAW little-endian IEEE754, not
-      -- a LEB. ward keeps floats on the operand stack as their BIT PATTERN, so
+      -- a LEB. the engine keeps floats on the operand stack as their BIT PATTERN, so
       -- a float constant is just an integer constant — no FP register needed.
       fw: i64 = 4
       if op == OP_f64_const
@@ -4441,7 +4441,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         jitm.w32(code, n, 0x93407C00 | (cv << 5) | cv)   -- SXTW
         n += 1
       elseif op >= OP_i32_reinterpret_f32
-        -- reinterpret is FREE here: ward keeps floats in GP registers as bit
+        -- reinterpret is FREE here: the engine keeps floats in GP registers as bit
         -- patterns, so this is the identity. Only the 32-bit forms clear the
         -- high half.
         if op == OP_i32_reinterpret_f32 or op == OP_f32_reinterpret_i32
@@ -4989,7 +4989,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_cset = -1
 
     elseif op == OP_f32_copysign or op == OP_f64_copysign
-      -- copysign. ward keeps floats as BIT PATTERNS in GP registers, so this is
+      -- copysign. the engine keeps floats as BIT PATTERNS in GP registers, so this is
       -- pure integer masking: clear the sign bit of a, take b's, OR them. No FP
       -- register is touched -- another dividend of the representation.
       if sp < 2 or sp > 8
@@ -5030,7 +5030,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
 
     elseif op == OP_unreachable
       -- unreachable: the module traps. BRK #0 is the only trap this JIT can
-      -- express -- there is no way to call back into ward from emitted code --
+      -- express -- there is no way to call back into the engine from emitted code --
       -- so a jit trap raises SIGTRAP where an interpreter trap exits 71. That
       -- divergence is REAL and `test/conform.duo` reports it rather than
       -- hiding it; what is not acceptable is inventing a return value here.
@@ -5386,7 +5386,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- `std.jit.sym` now answers with a host function address, so the effect
       -- is emitted: materialize the address into x17 and `BLR` it. Dispatch is
       -- on the import's FIELD NAME -- the same byte test the interpreter
-      -- applies -- and every import that is not one ward can perform keeps the
+      -- applies -- and every import that is not one engine can perform keeps the
       -- interpreter's stub shape, so the two engines cannot disagree about a
       -- module. Nothing here reads a module name, a function index or an input
       -- size.
@@ -5520,7 +5520,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       else
         -- Every other import: consume the declared parameters and leave the
         -- declared results as zero. Byte for byte the interpreter's stub, so a
-        -- module calling an import ward cannot perform still runs, and runs the
+        -- module calling an import the engine cannot perform still runs, and runs the
         -- same way on both engines. `proc_exit` is this shape -- one parameter,
         -- no result, no emitted instruction at all.
         if imnp > sp
@@ -6043,35 +6043,35 @@ end
 
 -- ── entry ────────────────────────────────────────────────────────────────
 -- Compiled binaries do not populate Lua's `arg`, so selection comes from the
--- environment: WARD_WASM picks the module, WARD_ENGINE=interp forces the
+-- environment: DUO_WASM_MODULE picks the module, DUO_WASM_ENGINE=interp forces the
 -- architecture-independent path (used to check JIT/interpreter parity).
 -- No default module: a hardcoded fallback made every mis-invocation print a
 -- plausible result for a *different* module, which faked two whole benchmark
--- sweeps. Absent WARD_WASM is now an error, not a silent substitution.
+-- sweeps. Absent DUO_WASM_MODULE is now an error, not a silent substitution.
 -- Wrapped in a function: a bare module tail makes
 -- can_emit_native_scalar_module reject the WHOLE file (native-diag reports
 -- "first fail: mod-tail"), and with native_scalar_mode=false every value
 -- transits a boxed lua_Value whose numeric payload is a DOUBLE. That is what
 -- rounded f64.const bit patterns above 2^53 and cost the low byte.
 main(): void
-  path = os.getenv("WARD_WASM")
-  invoke = os.getenv("WARD_INVOKE") or "run"
+  path = os.getenv("DUO_WASM_MODULE")
+  invoke = os.getenv("DUO_WASM_INVOKE") or "run"
   -- Every failure below goes to STDERR and exits nonzero. It used to `print`
   -- to stdout and fall off the end of main, i.e. exit 0 -- so a harness that
-  -- ran ward on the wrong path got a clean exit status and no `result=` line,
+  -- ran the engine on the wrong path got a clean exit status and no `result=` line,
   -- and only noticed if it happened to be checking for one.
   if not path
-    iom.err("ward: set WARD_WASM=<module.wasm> (WARD_INVOKE=<export>, default \"run\")\n")
+    iom.err("wasm: set DUO_WASM_MODULE=<module.wasm> (DUO_WASM_INVOKE=<export>, default \"run\")\n")
     os.exit(1)
   end
   force_interp: i64 = 0
-  if os.getenv("WARD_ENGINE") == "interp"
+  if os.getenv("DUO_WASM_ENGINE") == "interp"
     force_interp = 1
   end
 
   f = io.open(path, "rb")
   if not f
-    iom.err("ward: cannot open " .. path .. "\n")
+    iom.err("wasm: cannot open " .. path .. "\n")
     os.exit(1)
   end
   tRD0 = os.clock()
@@ -6080,17 +6080,17 @@ main(): void
   tRD1 = os.clock()
 
   -- HEADER CHECK. Every walker in this file starts at byte 9, i.e. it ASSUMED
-  -- the 8-byte header rather than reading it, so ward would run a file whose
+  -- the 8-byte header rather than reading it, so the engine would run a file whose
   -- magic number had been overwritten and print a confident answer for it.
   -- `test/conform.duo` perturbs byte 4 of a fixture and requires a refusal;
   -- without this the perturbation is invisible, and a control that cannot fail
   -- is not evidence.
   if #bytes < 8 or string.byte(bytes, 1) != 0 or string.byte(bytes, 2) != 97 or string.byte(bytes, 3) != 115 or string.byte(bytes, 4) != 109
-    iom.err("ward: " .. path .. " is not a wasm module (bad magic)\n")
+    iom.err("wasm: " .. path .. " is not a wasm module (bad magic)\n")
     os.exit(1)
   end
   if string.byte(bytes, 5) != 1 or string.byte(bytes, 6) != 0 or string.byte(bytes, 7) != 0 or string.byte(bytes, 8) != 0
-    iom.err("ward: " .. path .. " is not wasm version 1\n")
+    iom.err("wasm: " .. path .. " is not wasm version 1\n")
     os.exit(1)
   end
 
@@ -6098,7 +6098,7 @@ main(): void
   tRD2 = os.clock()
   tgt: i64 = find_run_body(bytes, #bytes, invoke, #invoke, 1)
   tRD3 = os.clock()
-  if os.getenv("WARD_PHASES")
+  if os.getenv("DUO_WASM_PHASES")
     print("phase read=" .. to(str)(tRD1 - tRD0) .. " walk0=" .. to(str)(tRD2 - tRD1) .. " walk1=" .. to(str)(tRD3 - tRD2))
   end
   boff: i64 = packed // 65536
@@ -6108,7 +6108,7 @@ main(): void
   -- handle it can desync. Validate before anything indexes the image, so a
   -- desync is a clean diagnostic rather than an out-of-bounds read.
   if blen <= 0 or boff < 0 or boff + blen > #bytes
-    iom.err("ward: could not locate an exported `" .. invoke .. "` body in " .. path .. "\n")
+    iom.err("wasm: could not locate an exported `" .. invoke .. "` body in " .. path .. "\n")
     iom.err("      (decoded offset=" .. to(str)(boff) .. " len=" .. to(str)(blen) .. " of " .. to(str)(#bytes) .. " bytes)\n")
     os.exit(1)
   end
@@ -6123,9 +6123,9 @@ main(): void
     tJ1 = os.clock()
     if code
       words: i64 = jit_compile(bytes, boff, blen, code, #bytes)
-      -- WARD_DUMP=<path>: write the emitted words as hex, one per line, for
+      -- DUO_WASM_DUMP=<path>: write the emitted words as hex, one per line, for
       -- disassembly. Diagnostic only; off unless the env var is set.
-      dmp = os.getenv("WARD_DUMP")
+      dmp = os.getenv("DUO_WASM_DUMP")
       if dmp
         df = io.open(dmp, "w")
         if df
@@ -6139,7 +6139,7 @@ main(): void
         print("jit_words=" .. to(str)(words))
       end
       tJ2 = os.clock()
-      if os.getenv("WARD_PHASES")
+      if os.getenv("DUO_WASM_PHASES")
         print("phase alloc=" .. to(str)(tJ1 - tJ0) .. " compile=" .. to(str)(tJ2 - tJ1))
       end
       if words > 0 and jitm.seal(code, words * 4)
@@ -6185,7 +6185,7 @@ main(): void
         -- quietly shrinking an absurd declared minimum here would be heap
         -- corruption rather than a wrong answer.
         if jpg > 4096
-          iom.err("ward: declared linear memory above 4096 pages\n")
+          iom.err("wasm: declared linear memory above 4096 pages\n")
           os.exit(1)
         end
         jlinsz: i64 = jpg * 65536

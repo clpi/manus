@@ -7,8 +7,8 @@
 --
 --   duo compile bench/fib.duo --target wasm32-wasi -o bench/fib.wasm
 --
--- It also pins ward's largest known gap. ward's ARM64 JIT implements `call`
--- by INLINING the callee (src/ward.duo, `elseif op == 16`), capped at depth 6,
+-- It also pins the engine's largest known gap. the engine's ARM64 JIT implements `call`
+-- by INLINING the callee (src/engine.duo, `elseif op == 16`), capped at depth 6,
 -- and a bail returns -1 for the WHOLE body. Recursion can never be inlined
 -- away, so this module always falls back to the interpreter and runs ~11x
 -- slower than wasmtime. Any future real-call support in the JIT should show up

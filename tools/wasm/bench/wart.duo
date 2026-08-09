@@ -5,7 +5,7 @@
 --
 -- Pass 101 asks for "wart enters the differential harness as the baseline" and
 -- for the claim to "ship as a table, not an adjective". Before 2026-08-08 no
--- harness compared ward to wart at all: bench/verify.duo differences ward
+-- harness compared the engine to wart at all: bench/verify.duo differences the engine
 -- against wasmtime, bench/run.duo has a wart column that only reports SIGILL or
 -- a wall time, and bench/perf.duo has no wart column at all.
 --
@@ -13,20 +13,20 @@
 -- and it prints nothing for a function that returns a value. 24 of the 44
 -- modules in bench/ export only `run`, so wart cannot reach them; of the 17
 -- that export `_start`, only 2 print anything. So on the existing corpus wart's
--- ANSWER is observable for 2 modules out of 44, and a "ward vs wart" row built
+-- ANSWER is observable for 2 modules out of 44, and a "the engine vs wart" row built
 -- on the other 42 would be timing two runtimes with no evidence either computed
 -- the right thing. That is the shape of claim CLAUDE.md §3 was written about.
 --
 -- THE REPAIR. Generate the kernel, ask wasmtime for the answer, then emit a
 -- SECOND module with the same kernel whose `_start` traps unless the value
--- matches. wart's exit status becomes a value check, and ward's `result=-1`
+-- matches. wart's exit status becomes a value check, and the engine's `result=-1`
 -- bail becomes one too. The expected constant comes from the oracle at run
 -- time, never from this file -- and the kernels are generated from a seed, so
 -- no recognizer anywhere can key on a function name, a literal, or a loop
 -- bound and still pass.
 --
 -- CONTROLS. A trap-on-mismatch check that never traps proves nothing, so the
--- first thing this runs is a deliberately WRONG assert. If wart or ward accepts
+-- first thing this runs is a deliberately WRONG assert. If wart or the engine accepts
 -- it, the harness refuses to report and exits non-zero.
 
 -- Deterministic 32-bit LCG. The kernels must be arbitrary but the run must be
@@ -129,7 +129,7 @@ _field(raw: str, key: str): str
     std.script.chomp(m)
 end
 
--- ward's verdict on a trapping module. Both signals are required, because each
+-- the engine's verdict on a trapping module. Both signals are required, because each
 -- one alone has been wrong at some point:
 --
 --   exit status  -- since 981b1f0 a trap exits non-zero (71) and prints a
@@ -137,13 +137,13 @@ end
 --                   legitimate result were both `result=-1`, indistinguishable
 --                   from a function that genuinely returns -1.
 --   result=0     -- a void `_start` that ran to completion. Checking only the
---                   exit status would score "ward never started" as agreement.
+--                   exit status would score "the engine never started" as agreement.
 --
 -- Requiring both means a future change to either channel shows up as
 -- `no-result` rather than as a silent pass.
-_ward_assert(ward_bin: str, wasm: str): str
-    cmd = "WARD_WASM=" .. wasm
-        .. " WARD_INVOKE=_start WARD_ENGINE=jit timeout 300 " .. ward_bin
+_expect(binary: str, wasm: str): str
+    cmd = "DUO_WASM_MODULE=" .. wasm
+        .. " DUO_WASM_INVOKE=_start DUO_WASM_ENGINE=jit timeout 300 " .. binary
     rc = std.script.status(cmd .. " >/dev/null 2>&1")
     raw = std.script.capture(cmd .. " 2>/dev/null")
     r = _field(raw, "result")
@@ -164,7 +164,7 @@ _wart_assert(wart: str, wasm: str): str
 end
 
 main(): i64
-    ward_bin = std.script.getenv("WARD_BIN", "/tmp/ward")
+    binary = std.script.getenv("DUO_WASM_BIN", "/tmp/duowasm")
     wart = std.script.getenv("WART", std.script.getenv("HOME", ".") .. "/x/wart/zig-out/bin/wart")
     wasmtime = std.script.getenv("WASMTIME", "wasmtime")
     kn: i64 = to(i64)(std.script.getenv("K", "8"))
@@ -175,8 +175,8 @@ main(): i64
     -- ratio column was measuring `fork` and dyld, not code generation.
     iters: i64 = to(i64)(std.script.getenv("ITERS", "100000000"))
 
-    if not std.script.fs_exists(ward_bin)
-        print("no ward binary at " .. ward_bin .. " -- build it with bench/run.duo first")
+    if not std.script.fs_exists(binary)
+        print("no the engine binary at " .. binary .. " -- build it with bench/run.duo first")
         return 1
     end
     if not std.script.fs_exists(wart)
@@ -189,7 +189,7 @@ main(): i64
         return 1
     end
 
-    dir = std.script.fs_tmpdir() .. "/ward_wart_diff"
+    dir = std.script.fs_tmpdir() .. "/_delta"
     std.script.fs_mkdir(dir)
 
     -- ── CONTROLS ─────────────────────────────────────────────────────────
@@ -216,16 +216,16 @@ main(): i64
     print("== controls ==")
     pw = _wart_assert(wart, cpos)
     nw = _wart_assert(wart, cneg)
-    pd = _ward_assert(ward_bin, cpos)
-    nd = _ward_assert(ward_bin, cneg)
+    pd = _expect(binary, cpos)
+    nd = _expect(binary, cneg)
     print("  wart  correct-assert=" .. pw .. "  wrong-assert=" .. nw)
-    print("  ward  correct-assert=" .. pd .. "  wrong-assert=" .. nd)
+    print("  the engine  correct-assert=" .. pd .. "  wrong-assert=" .. nd)
     if pw != "agree" or nw == "agree"
         print("*** wart control FAILED -- its exit status is not evidence; nothing below is reportable ***")
         return 1
     end
     if pd != "agree" or nd == "agree"
-        print("*** ward control FAILED -- its result field is not evidence; nothing below is reportable ***")
+        print("*** the engine control FAILED -- its result field is not evidence; nothing below is reportable ***")
         return 1
     end
     print("  both directions proved; the table below is evidence.")
@@ -233,13 +233,13 @@ main(): i64
 
     -- ── GENERATED DIFFERENTIAL + TIMING ──────────────────────────────────
     print(_pad("KERNEL", 10) .. _pad("WASMTIME", 14) .. _pad("WARD", 14)
-        .. _pad("wart", 10) .. _pad("ward", 10) .. _pad("ward ms", 9)
-        .. _pad("wart ms", 9) .. _pad("wtime ms", 9) .. "ward/wart")
+        .. _pad("wart", 10) .. _pad("duon", 10) .. _pad("the engine ms", 9)
+        .. _pad("wart ms", 9) .. _pad("wtime ms", 9) .. "the engine/wart")
     _rule(104)
 
     seed = seed0
     bad = 0
-    sward = 0
+    sduon = 0
     swart = 0
     i = 1
     while i <= kn
@@ -251,28 +251,28 @@ main(): i64
         amod = _build(dir, "k" .. to(str)(i) .. "_assert", _assert_wat(body, ref))
 
         vwart = _wart_assert(wart, amod)
-        vward = _ward_assert(ward_bin, amod)
+        vduon = _expect(binary, amod)
 
-        -- ward's own value, read the way bench/verify.duo reads it, so the row
+        -- the engine's own value, read the way bench/verify.duo reads it, so the row
         -- carries a number and not only a verdict. wasmtime prints i32 signed
-        -- and ward prints it unsigned; the two columns are the same 32-bit
+        -- and the engine prints it unsigned; the two columns are the same 32-bit
         -- value when they differ only by 2^32.
-        wraw = std.script.capture("WARD_WASM=" .. rmod
-            .. " WARD_INVOKE=run WARD_ENGINE=jit timeout 300 " .. ward_bin .. " 2>/dev/null")
+        wraw = std.script.capture("DUO_WASM_MODULE=" .. rmod
+            .. " DUO_WASM_INVOKE=run DUO_WASM_ENGINE=jit timeout 300 " .. binary .. " 2>/dev/null")
         got = _field(wraw, "result")
 
         -- Interleaved, min of `reps`. Interleaving matters: this box drifts
         -- measurably under sustained load, and a sequential sweep charges the
         -- drift to whichever runtime ran last.
-        tward = 9999999
+        tduon = 9999999
         twart = 9999999
         twt = 9999999
         j = 1
         while j <= reps
-            a = _time_ms("WARD_WASM=" .. rmod .. " WARD_INVOKE=run WARD_ENGINE=jit "
-                .. ward_bin .. " >/dev/null 2>&1")
-            if a < tward
-                tward = a
+            a = _time_ms("DUO_WASM_MODULE=" .. rmod .. " DUO_WASM_INVOKE=run DUO_WASM_ENGINE=jit "
+                .. binary .. " >/dev/null 2>&1")
+            if a < tduon
+                tduon = a
             end
             b = _time_ms(wart .. " run --jit " .. amod .. " >/dev/null 2>&1")
             if b < twart
@@ -284,35 +284,35 @@ main(): i64
             end
             j += 1
         end
-        sward = sward + tward
+        sduon = sduon + tduon
         swart = swart + twart
 
         ratio = "-"
         if twart > 0
-            ratio = to(str)(tward * 100 / twart) .. "%"
+            ratio = to(str)(tduon * 100 / twart) .. "%"
         end
-        if vwart != "agree" or vward != "agree"
+        if vwart != "agree" or vduon != "agree"
             bad += 1
         end
         print(_pad("k" .. to(str)(i), 10) .. _pad(ref, 14) .. _pad(got, 14)
-            .. _pad(vwart, 10) .. _pad(vward, 10) .. _pad(to(str)(tward), 9)
+            .. _pad(vwart, 10) .. _pad(vduon, 10) .. _pad(to(str)(tduon), 9)
             .. _pad(to(str)(twart), 9) .. _pad(to(str)(twt), 9) .. ratio)
         i += 1
     end
 
     _rule(104)
     if swart > 0
-        print("aggregate ward/wart = " .. to(str)(sward * 100 / swart)
-            .. "%   (<100% means ward is faster -- Pass 101 §4 asks for < 100%)")
+        print("aggregate the engine/wart = " .. to(str)(sduon * 100 / swart)
+            .. "%   (<100% means the engine is faster -- Pass 101 §4 asks for < 100%)")
     end
     print("kernels where a runtime disagreed with the oracle: " .. to(str)(bad) .. "/" .. to(str)(kn))
 
     if bad != 0
         return 1
     end
-    if swart > 0 and sward >= swart
+    if swart > 0 and sduon >= swart
         print("")
-        print("*** PASS 101 §4 UNMET: ward is not faster than wart on this corpus ***")
+        print("*** PASS 101 §4 UNMET: the engine is not faster than wart on this corpus ***")
         return 1
     end
     0
