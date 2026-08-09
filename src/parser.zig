@@ -200,6 +200,16 @@ pub const Parser = struct {
     fn open_layout(self: *Parser, open: ?ast.Loc) ParseError!LayoutFrame {
         const first = try self.pk();
         var f = LayoutFrame{};
+        // LAYOUT IS A `.duo` RULE. Lua has no offside rule: blocks close with
+        // `end` at whatever column the writer left them, and `f.offside` is
+        // what turns a dedent into a close and a deeper `end` into an error.
+        // Applying it to `.lua` input imposes the Duo surface on a Lua file,
+        // which is the same dialect leak this pass exists to close — and it
+        // was not theoretical: `examples/benchmark.lua:704` (the `.lua` half
+        // of the benchmark's correctness oracle) failed to compile at HEAD
+        // with "'end' at column 13 closes a block opened at column 9", so
+        // `zig build bench` could not reach a single RESULT row.
+        if (!self.duo_mode) return f;
         const o = open orelse return f;
         f.open_line = o.line;
         f.open_col = o.col;
@@ -973,12 +983,21 @@ pub const Parser = struct {
         return ast.Stmt{ .ret = .{ .loc = l, .vals = try vals.toOwnedSlice(self.alloc) } };
     }
 
-    /// Pass 100 §1 — statement-leading keywords the deny table retires.
+    /// Pass 100 §1/§15 — statement-leading keywords the deny table retires,
+    /// and the graveyard rows it names as load-bearing absences.
     ///
-    /// This fires for `.duo` input ONLY. Duo is a Lua superset and `.lua` input
-    /// keeps today's behaviour unchanged; the dialect is selected from the file
-    /// extension by `is_duo_source_path` in main.zig, which sets `duo_mode`.
-    /// That is the same switch `comptime` already rejects on, not a new one.
+    /// This fires for `.duo` input ONLY. Duo is a Lua superset and `.lua`
+    /// input keeps today's behaviour unchanged; the dialect is selected from
+    /// the file extension by `is_duo_source_path` in main.zig, which sets
+    /// `duo_mode`. That is the same switch `comptime` already rejects on, not
+    /// a new one. It is also the owner's scoping ruling made mechanical
+    /// (2026-08-08): "lua backcompat should work native mode for lua files
+    /// only" — `.lua` keeps the whole compatibility surface and lowers
+    /// natively, `.duo` gets Pass 100 and nothing else.
+    ///
+    /// EVERY ROW NAMES THE REPAIR. A bare rejection makes the corpus
+    /// unmigratable: the reader is left guessing the replacement spelling, and
+    /// guessing is what kept these forms in the tree.
     ///
     /// A row belongs here only once its statement-leading count is measured at
     /// zero over EVERY `.duo` file a gate compiles — not just the canonical
@@ -989,20 +1008,46 @@ pub const Parser = struct {
     /// canonical count could not see it. Measure against the gates, then add
     /// the row.
     ///
-    /// Measured 2026-08-08, statement-leading over 466 canonical files:
-    /// try 0, catch 0. Rows deliberately NOT here yet, with their counts:
-    /// `then` 656, `elseif` 820, `do` 179, `fun` 322, `global` 112, `local` 23,
-    /// `const` 0 canonical but 1 in the tested examples. Each needs a corpus
-    /// migration before it can become an error; `string.` (175 files) and
-    /// `req` (100 files) need the replacement surface to exist first.
+    /// A second measurement trap, found the same way: the census has to strip
+    /// `[[ … ]]` long-bracket bodies as well as `"…"` ones. `let` reads 6 and
+    /// `local` reads 23 with long brackets IN, and both read 0 with them out —
+    /// the `let`s are WGSL inside `lib/std/graphics/shader.duo`'s shader
+    /// source and the `local`s are Duo snippets `scripts/test_property_11.duo`
+    /// hands the compiler as DATA. Neither is Duo code this parser ever sees,
+    /// and budgeting them as debt asks for a repair no edit can make.
+    ///
+    /// Measured 2026-08-08, statement-leading over the 767 tracked `.duo`
+    /// files with both strips applied: try 0, catch 0, defer 0, goto 0,
+    /// extends 0, private 0, await 0, let 0, async 2, macro 3. The five files
+    /// behind `async`/`macro` were unreferenced demos OF the retired construct
+    /// and were retired with it.
+    ///
+    /// Rows deliberately NOT here yet, with their counts: `then` 656,
+    /// `elseif` 820, `do` 179, `fun` 324, `global` 202, `concept` 58,
+    /// `alias` 14, `const` 10, `enum` 9, `match` 8, `local` 0-in-corpus but
+    /// alive in 17 Duo fixtures EMBEDDED IN ZIG (`src/codegen.zig`,
+    /// `src/dnir_lower.zig`, `src/sema.zig`, `src/lua_superset_corpus.zig`)
+    /// that parse with `duo_mode = true` — one of which, "a function-body
+    /// local outranks a module global of the same name", has `local` as its
+    /// SUBJECT and needs the Lua dialect rather than a rewrite. Each needs a
+    /// corpus migration before it can become an error; `string.` (175 files)
+    /// and `req` (100 files) need the replacement surface to exist first.
     fn denyRetiredStmtKeyword(self: *Parser, tok: Token) ParseError!void {
         if (!self.duo_mode) return;
         const replacement: []const u8 = switch (tok.kind) {
             .kw_try, .kw_catch => "Pass 100 §0.5: bind the result and route it — `if v, err = f(x) use(v) else report(err)`",
+            .kw_defer => "Pass 100 §15: scope exit is structural — hold the resource in a descriptor value whose release is its own, or route the failure with a result pack",
+            .kw_goto => "Pass 100 §13: use `break`/`continue`, or a dispatch table — `next(state)(event) = handler`, which gets exhaustiveness and the diagram free",
+            .kw_extends => "Pass 100 §15: there is no inheritance — compose by spreading a descriptor `@{ ..base, extra = v }`, or home the shared surface on a face",
+            .kw_private => "Pass 100 §15 denies visibility-by-naming: nest the value under the descriptor that owns it",
+            .kw_await, .kw_async => "Pass 100 §15: no async/await keyword pair — concurrency is a property of the value, not a colour on the function",
+            .kw_macro => "Pass 100 §17: run the leverage ladder instead — edge, derivable, liftable, hook, projection, bundle, lens, dispatch table; `add(module)(…)` and `add(case)(…)` are ordinary calls",
+            .kw_let => "Pass 100 §0: bindings are bare — `x = expr`. `if let p = e` / `while let p = e` is the Rust shape; write `if v, err = f(x) use(v) else report(err)`",
             else => return,
         };
         term.locErr(tok.loc, "'{s}' is retired in .duo files (Pass 100 §1 deny table)", .{tok.kind.spelling()});
         term.locHint(tok.loc, "{s}", .{replacement});
+        term.locHint(tok.loc, "Lua-shaped input is still accepted, and still lowers natively, in a `.lua` file", .{});
         return ParseError.UnexpectedToken;
     }
 
@@ -1389,6 +1434,9 @@ pub const Parser = struct {
         if (tok.kind == .name and !is_keyword_token(tok.text)) {
             return self.parse_jai_type_def_with_attrs(attrs_slice);
         }
+        // §15 applies to attributed declarations too, or `@inline async f()`
+        // is a hole straight through the ruling.
+        try self.denyRetiredStmtKeyword(tok);
         return switch (tok.kind) {
             .kw_function, .kw_fun => self.parse_func_decl_with_attrs(false, attrs_slice),
             .kw_async => self.parse_async_func_decl_with_attrs(attrs_slice),
@@ -2861,6 +2909,7 @@ pub const Parser = struct {
         const l = (try self.adv()).loc;
         // `if let pattern = expr then ... end` — desugars to match
         if ((try self.pk()).kind == .kw_let) {
+            try self.denyRetiredStmtKeyword(try self.pk());
             _ = try self.adv(); // consume `let`
             const pattern = try self.parse_pattern();
             _ = try self.expect(.assign);
@@ -3051,6 +3100,7 @@ pub const Parser = struct {
         const l = (try self.adv()).loc;
         // `while let pattern = expr do ... end` — desugars to while + match
         if ((try self.pk()).kind == .kw_let) {
+            try self.denyRetiredStmtKeyword(try self.pk());
             _ = try self.adv(); // consume `let`
             const pattern = try self.parse_pattern();
             _ = try self.expect(.assign);
@@ -3310,6 +3360,7 @@ pub const Parser = struct {
         {
             const tok = try self.pk();
             if (tok.kind == .kw_await) {
+                try self.denyRetiredStmtKeyword(tok);
                 _ = try self.adv(); // consume `await`
                 const operand = try self.parse_match_scrutinee_prec(20);
                 lhs = try self.new_expr(.{ .await_expr = .{ .loc = tok.loc, .operand = operand } });
@@ -4459,6 +4510,7 @@ pub const Parser = struct {
                 const inner = try self.parse_prec(20);
                 lhs = try self.new_expr(.{ .unquote = .{ .loc = tok.loc, .expr = inner } });
             } else if (tok.kind == .kw_await) {
+                try self.denyRetiredStmtKeyword(tok);
                 _ = try self.adv(); // consume `await`
                 const operand = try self.parse_prec(20);
                 lhs = try self.new_expr(.{ .await_expr = .{ .loc = tok.loc, .operand = operand } });
@@ -4540,6 +4592,7 @@ pub const Parser = struct {
     fn parse_unary(self: *Parser) ParseError!*ast.Expr {
         const tok = try self.pk();
         if (tok.kind == .kw_await) {
+            try self.denyRetiredStmtKeyword(tok);
             _ = try self.adv(); // consume `await`
             const operand = try self.parse_prec(20);
             return self.new_expr(.{ .await_expr = .{ .loc = tok.loc, .operand = operand } });

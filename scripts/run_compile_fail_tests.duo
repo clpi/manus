@@ -136,12 +136,22 @@ run_fail("examples/compile_fail/anchor_metafield.duo", "is not an anchor stance"
 -- construct was gated on the dialect rather than removed from the compiler,
 -- so "lua native compile" keeps working. Drop the run_ok rows and this suite
 -- can no longer tell "Duo rejects it" apart from "the compiler lost it".
+--
+-- The pattern each run_fail asserts is the REPAIR-bearing hint, not only the
+-- refusal line, because a bare rejection makes the corpus unmigratable.
 run_fail("examples/compile_fail/pass100_try_retired.duo", "'try' is retired in .duo files")
 run_ok("examples/compile_fail/pass100_try_retired.lua")
+run_fail("examples/compile_fail/pass100_goto_retired.duo", "dispatch table")
+run_ok("examples/compile_fail/pass100_goto_retired.lua")
 
 run_ok("tests/test.lua")
 run_ok("examples/hello.lua")
 run_ok("examples/fib.lua")
+-- The benchmark's Lua mirror: half the correctness oracle, and the file that
+-- proved layout had leaked out of `.duo`. It failed to `check` at 79d4e09
+-- ("'end' at column 13 closes a block opened at column 9" at line 704), which
+-- meant `zig build bench` could not reach a single RESULT row.
+run_ok("examples/benchmark.lua")
 run_ok("examples/fib.duo")
 run_ok("examples/ml_showcase.duo")
 run_ok("examples/direct_table_iteration.duo")

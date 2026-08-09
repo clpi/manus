@@ -1,4 +1,0 @@
-macro twice(x) `(,x + ,x)
-
-value: i64 = @twice(21)
-print(value)

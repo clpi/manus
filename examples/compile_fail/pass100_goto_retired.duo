@@ -1,0 +1,25 @@
+-- Pass 100 §15 — `goto` is a load-bearing absence. Failure is the assertion.
+--
+-- Jumping to a label is the shape §13 replaces with a dispatch table:
+-- `next(state)(event) = handler`, where exhaustiveness and the diagram come
+-- free. Measured zero users over the 767 tracked `.duo` files, 2026-08-08,
+-- with `"…"` and `[[ … ]]` bodies both stripped.
+--
+-- Its twin `pass100_goto_retired.lua` is the same program in Lua and must
+-- still compile. That pair IS the dialect split — one construct, two
+-- extensions, two answers — and the `.lua` half is the load-bearing one: it
+-- proves the construct was gated on the dialect rather than removed from the
+-- compiler.
+--
+-- The pattern this row asserts is the REPAIR ("dispatch table"), not the
+-- refusal line, because a diagnostic that only says no makes the corpus
+-- unmigratable.
+
+main(): i64
+    i = 0
+    while i < 3
+        i = i + 1
+        goto skip
+        print(i)
+        ::skip::
+    0
