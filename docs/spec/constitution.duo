@@ -22,10 +22,27 @@
 
 law: {
     id: str
-    kind: { invariant, objective, deprecated }
+    kind: { invariant, objective, deprecated, boundary, protocol }
     holds: any
     binds: seq(str)
     fails: str
+    -- Widened 2026-08-09. APPLY-ONE began VALIDATING this file against this
+    -- descriptor — a braced application now checks its labels against the
+    -- subject's fields — and it rejected twelve labels the laws were already
+    -- using. The DESCRIPTOR was the stale half: `why`, `deny`, `canon` and the
+    -- rest were in the corpus long before a checker could see them. Widened to
+    -- match measured use rather than narrowing the laws to match a guess; the
+    -- corpus is the evidence of what a law actually needs to say.
+    --
+    -- The constitution now type-checks against its own descriptor, which is
+    -- law.doc.corpus arriving mechanically instead of by discipline.
+    why: any
+    deny: any
+    canon: any
+    keep: any
+    ladder: any
+    open: any
+    proof: any
 }
 
 representation = law{
@@ -2146,4 +2163,89 @@ edge.over = {
     { fact = "range",               c = "the declared width is the width",           duon = "0 <= x < 256 narrows arithmetic and removes bounds checks" },
     { fact = "shape",               c = "the struct is the layout",                  duon = "struct, soa, aos, packed, simd lane, register tuple — by demand" },
     { fact = "call shape",          c = "one function, one body",                    duon = "many machine realizations from one semantic function" },
+}
+
+-- ═══ §50 · WORLD IS AN OPERAND, NOT THE SUBJECT ════════════════════════════
+--
+-- Owner ruling, and it CORRECTS gap[100] before its 620-site migration runs.
+-- gap[100] is right that `os.remove(path)` is authority masquerading as an
+-- inert table. Its proposed repair — make the capability the receiver —
+-- would fix reach and break orientation.
+
+world = law{
+    id    = "law.world.operand"
+    kind  = .invariant
+    holds = .operand
+    binds = {
+        "capability is an OPERAND and a CONTEXT, never automatically the subject",
+        "the subject is the thing the relation is ABOUT",
+        "authority is required to perform the relation, not to be its receiver",
+        "where the world is granted in scope it is recoverable and elides",
+    }
+    canon = { "path:read(fs)", "path:read()" }
+    deny  = { "fs:read(path)", "os:remove(path)" }
+    why   = "law.owner.physical one level up: the thing that GRANTS a capability is no more the semantic subject than the thing that STORES data. Making capability containers receivers is pseudo-OOP arriving through the capability door."
+    fails = "620 call sites migrated into the wrong orientation, then migrated again"
+}
+
+-- OBSERVE-MIN. The deepest reason duon can beat C, and it is not instruction
+-- selection: C freezes representation and ABI at the source, duon keeps them as
+-- degrees of freedom until demand forces the choice.
+observe = law{
+    id    = "law.observe.min"
+    kind  = .invariant
+    holds = .demanded
+    binds = {
+        "realization preserves only observations the current demand, lawset and world require",
+        "a representation artifact nobody can observe need not physically exist",
+        "an unread field is not computed, an impossible failure carries no tag, an unconsumed pack position is never materialized",
+    }
+    why   = "the optimizer question is not `what transformation preserves the program` but `what observations must this demand preserve`. Those are different questions and only the second admits erasing the value itself."
+}
+
+-- ABI is DERIVED from the call graph, not declared. One semantic callable, many
+-- physical faces: a caller needing one field gets one register, a caller that
+-- only tests failure gets flags. C settles this in the header and spends the
+-- optimizer trying to recover it.
+abi = law{
+    id    = "law.abi.demand"
+    kind  = .invariant
+    holds = .derived
+    binds = {
+        "the physical abi is a consequence of demand across the call graph",
+        "one semantic callable may carry several realized faces",
+        "argument packs, return packs, closures, descriptor values, error packs and suspension state all obey this",
+    }
+}
+
+-- Facts survive REGIONS, not operations. One guard establishes a child world in
+-- which many operations consume the proven fact without re-proving it — and the
+-- counterpart law is what kills it.
+epoch = law{
+    id    = "law.proof.epoch"
+    kind  = .invariant
+    holds = .region
+    binds = {
+        "a guard establishes facts for a control region, not for one operation",
+        "operations inside consume those facts without repeating the guard",
+        "every relation declares which facts its traversal INVALIDATES",
+        "a fact carries forward until an invalidating relation kills it",
+    }
+    why   = "c optimizers usually cannot prove a condition survives a call or an aliasing boundary. duon can, because the graph says which relations can falsify it — and that makes compilation cheaper as well as the output faster."
+}
+
+-- Physical width follows the proven STATE SPACE, not the declared type. A value
+-- with ten reachable states does not require sixty-four bits; a table of 0/1 is
+-- one bit per element, which is 8x denser than the c `int8_t` a programmer would
+-- have to choose by hand.
+entropy = law{
+    id    = "law.entropy.min"
+    kind  = .invariant
+    holds = .minimum
+    binds = {
+        "semantic state-space cardinality is the LOWER BOUND on physical bits",
+        "the gap between actual representation and that bound is an optimizer objective",
+        "one principle replaces every bespoke narrow-enum, bit-pack and tagged-union rule",
+    }
+    canon = "0 <= x <= 255 realizes u8 while remaining the same semantic value"
 }
