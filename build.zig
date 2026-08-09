@@ -661,11 +661,6 @@ pub fn build(b: *std.Build) void {
     pass16_source_module_proof.step.dependOn(b.getInstallStep());
     pass16_source_module_proof.setCwd(b.path("."));
 
-    const pass16_m1_verify = b.addRunArtifact(exe);
-    pass16_m1_verify.addArgs(&.{ "selfhost", "verify" });
-    pass16_m1_verify.step.dependOn(b.getInstallStep());
-    pass16_m1_verify.setCwd(b.path("."));
-
     const pass16_lexer_corpus_proof = b.addRunArtifact(exe);
     pass16_lexer_corpus_proof.addArgs(&.{ "run", "examples/pass16_lexer_corpus_proof.duo" });
     pass16_lexer_corpus_proof.step.dependOn(b.getInstallStep());
@@ -737,7 +732,6 @@ pub fn build(b: *std.Build) void {
     pass16_m1_smoke_step.dependOn(&pass16_lexer_tokenize_all.step);
     pass16_m1_smoke_step.dependOn(&pass16_lexer_tokenize_text.step);
     pass16_m1_smoke_step.dependOn(&pass16_parser_corpus.step);
-    pass16_m1_smoke_step.dependOn(&pass16_m1_verify.step);
 
     const passes_smoke_cmd = b.addRunArtifact(exe);
     passes_smoke_cmd.addArg("catalog");

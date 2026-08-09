@@ -5,7 +5,7 @@
 const std = @import("std");
 
 pub const SCHEMA_VERSION = "pass25-tail-result-model-v0";
-pub const PLAN_PATH = "docs/archive/pass25_tail_result_demand.md";
+pub const PLAN_PATH = "(archived, deleted — git history)";
 
 /// Principal semantic return pack demand from explicit descriptor or inferred contract.
 pub const ResultDemand = struct {
@@ -168,5 +168,5 @@ test "pass25_tail_result_model: rules + rejected heuristics" {
     try std.testing.expectEqual(@as(usize, 8), @typeInfo(TailResultRule).@"enum".field_names.len);
     try std.testing.expect(rejected_heuristics.len >= 6);
     try std.testing.expect(invariants.len >= 7);
-    try std.testing.expectEqualStrings("docs/archive/pass25_tail_result_demand.md", PLAN_PATH);
+    try std.testing.expectEqualStrings("(archived, deleted — git history)", PLAN_PATH);
 }

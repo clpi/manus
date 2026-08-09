@@ -74,7 +74,7 @@ that quietly makes a gate meaningless:
 
 - **`public_safety_scan` was RED at the start of this pass**, and took
   `agent-smoke` down with it (agent-smoke runs the scan as its first step).
-  `ext/ward/tools/opcodes.duo` shipped
+  `tools/wasm/tools/opcodes.duo` shipped
   `std.script.getenv("DUO_ROOT", <an absolute path under one author's home
   directory>)` — a personal filesystem path in a public tracked file, and a
   default that resolves to nothing on any other machine. (The literal is not
@@ -99,9 +99,9 @@ into 447 canonical / 258 historical / 20 foreign / 12 negative / 4 generated /
 2 compatibility).
 
 The gate ratchets, and it went red this pass on seven rows. All 440 points
-attribute to three `ext/ward/` files, 310 of them to a single generated block —
-the `OP_*` opcode constants that `ext/ward/tools/opcodes.duo` projects into
-`ext/ward/src/ward.duo`. Those were **budgeted, not repaired**, because
+attribute to three `tools/wasm/` files, 310 of them to a single generated block —
+the `OP_*` opcode constants that `tools/wasm/tools/opcodes.duo` projects into
+`tools/wasm/src/engine.duo`. Those were **budgeted, not repaired**, because
 hand-renaming a projected block is undone by the next projection; the repair
 belongs in the projector's name renderer and is the same shape as `GAP-041`.
 Full per-file attribution is in the commit message at `32395f5` and in the
@@ -448,7 +448,7 @@ one detector test, and the combined codegen recogniser test, which gained a
 `retired` mode requiring the closed form to be ABSENT *and* a real loop to be
 present, so an empty body cannot pass as a decline). `zig build
 native-differential` **63 agree / 0 diverge, PASS**. `zig build agent-smoke`
-**PASS**. `zig build ward-test` **PASS, 126/130, 0 DIFF**. `zig build
+**PASS**. `zig build wasm-test` **PASS, 126/130, 0 DIFF**. `zig build
 repo-hygiene` **PASS**. `zig build spec-corpus` **PASS**. `zig build audit100`
 fails 7 rows over budget **identically with and without this change** (verified
 by stashing it and re-running) — it is not a regression from this.
@@ -1147,7 +1147,7 @@ mechanism has not been independently re-audited in this pass.**
 > happen. Both engines now compare the callee's declared type index against the
 > call site's and trap, and both carry a per-slot occupancy flag. The emitted
 > code makes the same three checks inline. Probe sources are in
-> `ext/ward/HANDOFF.md`.
+> `tools/wasm/HANDOFF.md`.
 >
 > One new `std.jit` primitive, `addr(buf)`: `sym` let emitted code reach a HOST
 > function, `addr` lets it reach its own through a table. The dispatch table's
@@ -1161,7 +1161,7 @@ mechanism has not been independently re-audited in this pass.**
 > it**, so shipping the JIT half alone would put the two engines on different
 > answers for a case nothing verifies. Both halves with fixtures, or neither.
 
-> **SUPERSEDED 2026-08-08 by `zig build ward-test` and `bench/six.duo`.**
+> **SUPERSEDED 2026-08-08 by `zig build wasm-test` and `bench/six.duo`.**
 > The two-workload table below was too small a sample to support what was
 > claimed from it. Measured across SIX workloads that do real work:
 >
@@ -1261,14 +1261,14 @@ mechanism has not been independently re-audited in this pass.**
 > - `prefix.simd` (0xFD) and `i32.extend8_s` have no JIT arm (2 fixtures each).
 
 
-Ward (`ext/ward/`, ~5000 lines of pure Duo, zero `@c.emit`) is the downstream
+Ward (`tools/wasm/`, ~5000 lines of pure Duo, zero `@c.emit`) is the downstream
 application that proves Duo builds systems software. Compiled for this
 measurement in **41.8 s** via `duo compile src/ward.duo --backend=c --emit exe`.
 
 Six-runtime table, **measured for this document** (min of 5, interleaved,
 wall clock including process start, machine otherwise idle):
 
-### Workload A — `ext/ward/bench/hash.wasm`, `run` export
+### Workload A — `tools/wasm/bench/hash.wasm`, `run` export
 
 | engine | min | median | value |
 |---|---:|---:|---|
@@ -1320,11 +1320,11 @@ within 1 % of each other (3305 / 3349 ms) because they are the same code path.
 `docs/performance.md` still contains tables showing ward at **0.21 s** on this
 exact workload, "beating wasm3 by 2.2× and iwasm by 2.0×". Those numbers were
 real when taken, and they measured
-`ext/ward/src/wasm/jit_arm64.duo` — a register-allocating JIT that is now
+`tools/wasm/src/wasm/jit_arm64.duo` — a register-allocating JIT that is now
 **dead code**: its host modules were deleted and nothing requires it. The
 shipping JIT is `jit_compile` inside `src/ward.duo`, which tracks two register
 aliases and has no liveness model. The superseding stamps are in place in
-`docs/performance.md` and `ext/ward/HANDOFF.md`; **do not quote the 0.21 s.**
+`docs/performance.md` and `tools/wasm/HANDOFF.md`; **do not quote the 0.21 s.**
 
 ### Ward conformance and derived-lines
 
@@ -1337,12 +1337,12 @@ aliases and has no liveness model. The superseding stamps are in place in
   than wart in aggregate (103 %), and `bench/wart.duo` exits non-zero saying so.
 - Pass 101 §4 derived-lines ratio, target ≥ 80 %: **9 %** (up from 0 %).
   **UNMET**, and the harness exits non-zero saying so.
-- **`zig build ward-test` is the suite** — 128 rows, **124 PASS, 0 DIFF, 0
+- **`zig build wasm-test` is the suite** — 128 rows, **124 PASS, 0 DIFF, 0
   UNSUPPORTED**, exit 0, every row differenced against wasmtime by value, and
   the JIT compiles 47 of the 64 rows it is asked for (36 before this pass).
   `test/main.duo` is still dead: it requires three modules that do not exist
   and does not parse.
-- 1406 lines under `ext/ward/src/wasm/` are dead code.
+- 1406 lines under `tools/wasm/src/wasm/` are dead code.
 
 ---
 
@@ -1414,7 +1414,7 @@ Stated plainly, no hedging.
    arm and is the largest remaining coverage gap. Two of Pass 101 §4's criteria
    are formally UNMET and their harnesses exit non-zero saying so.
    *(Ward's "no running test suite" was item 3 here. It now has one:
-   `zig build ward-test`, 128 rows, 124 PASS, 0 DIFF, exit 0.)*
+   `zig build wasm-test`, 128 rows, 124 PASS, 0 DIFF, exit 0.)*
 4. **Cross-execution is unproven.** Six targets build; one was run. There is no
    evidence any non-host binary works.
 5. **The Pass 100 surface does not exist** (GAP-025). `CLAUDE.md` §0 describes a

@@ -450,7 +450,8 @@ is_lambda_head = (lx: Lexer): bool
         end
     end
     if not found and depth == 0
-        if lexer.peek(lx).kind == token.KIND_COLON
+        rk = lexer.peek(lx).kind
+        if rk == token.KIND_COLON or rk == token.KIND_ARROW
             found = true
         end
     end
@@ -498,6 +499,36 @@ is_bare_lambda_head = (lx: Lexer): bool
     if empty
         return true
     end
+    -- gap[046] / OPEN, and left open ON PURPOSE rather than guessed at. The
+    -- single-name group `(a)` is the one shape this test cannot decide, and the
+    -- two-oracle differential proves it MATTERS: `duo fmt` renders
+    -- `f = fun(a) a end` — a row this repo's own corpus proof pins — as
+    --
+    --     f = (a)
+    --       a
+    --     end
+    --
+    -- so P2 CANONICAL CLOSURE fails: the self-hosted parser cannot read what
+    -- the production formatter just wrote.
+    --
+    -- Layout is the discriminator, as everywhere else in this file, but not the
+    -- layout available HERE. The body of a lambda is indented past the
+    -- STATEMENT that opens it, not past its own `(` — in `f = (a)` the paren
+    -- sits at column 5 and the body at column 3 — so the comparison needs the
+    -- enclosing statement's base column, and proj_* is deliberately
+    -- token-only: it never reads `lx.src` and takes no base column parameter.
+    -- Two repairs that do NOT work, both measured:
+    --   * comparing against `(`'s own column: never fires for the shape above,
+    --     and can misfire on a group continued onto the next line.
+    --   * speculating a lambda and rewinding on failure (the idiom this file
+    --     uses for `n: i64 = 5` vs `obj:m(1,2)`): the wrong reading SUCCEEDS —
+    --     inside `g(): any / x = (a) / y = 2 / end`, `y = 2` parses as a body
+    --     and `end` closes it, so the speculation swallows the rest of the
+    --     function and reports clean.
+    -- The real repair is to thread the statement base column through the
+    -- expression chain, which is a signature change across proj_*, not a
+    -- predicate tweak. Pinned as a P2 row in
+    -- examples/pass16_parser_two_oracle_differential.duo so it stays measured.
     plain and commas > 0 and names == commas + 1
 end
 
@@ -576,7 +607,8 @@ params_have_colon = (lx: Lexer): bool
     -- colon must follow the CLOSING paren, which is why a call carrying a typed
     -- lambda does not match — that colon is inside the group.
     if not found and depth == 0
-        if lexer.peek(lx).kind == token.KIND_COLON
+        rk = lexer.peek(lx).kind
+        if rk == token.KIND_COLON or rk == token.KIND_ARROW
             found = true
         end
     end
@@ -637,8 +669,40 @@ proj_params_from_lparen = (lx: Lexer): str
     proj_params(lx)
 end
 
-proj_type = (lx: Lexer): str
+-- One type ATOM: a dotted name (`str`, `std.str`, `Lexer`) or a parenthesised
+-- tuple (`(str, i64)`). No `|` here — the union level is above, so the
+-- recursion cannot make `|` bind tighter than a comma.
+proj_type_atom = (lx: Lexer): str
     t = lexer.peek(lx)
+    -- A TUPLE return type. `gguf.read(string)` in tools/wasm/src/nn/init.duo is
+    -- spelled `(str, i64)` and was the next production-parser-accepts /
+    -- self-hosted-parser-rejects file after `then`, so this closes the last
+    -- `tools` divergence that is not a deny-list construct.
+    if t.kind == token.KIND_LPAREN
+        lexer.next(lx)
+        acc = "(tuple"
+        more = true
+        while more
+            inner = proj_type(lx)
+            if inner == ""
+                mark_error(lx)
+                more = false
+            else
+                acc = "{acc} {inner}"
+                if lexer.peek(lx).kind == token.KIND_COMMA
+                    lexer.next(lx)
+                else
+                    if lexer.peek(lx).kind != token.KIND_RPAREN
+                        mark_error(lx)
+                    else
+                        lexer.next(lx)
+                    end
+                    more = false
+                end
+            end
+        end
+        return "{acc})"
+    end
     if is_type_kind(t.kind) == false
         return ""
     end
@@ -653,6 +717,42 @@ proj_type = (lx: Lexer): str
         end
         _s = lexer.next(lx)
         acc = acc .. "." .. seg.text
+    end
+    acc
+end
+
+-- type := atom ('|' atom)*
+--
+-- `: t | error` is Pass 100 §0.6 — the result discipline the whole language is
+-- built on — and gap[046] measured it at ZERO: no uses in lib/std, and no
+-- production in either half of the self-hosted parser. It is written here and
+-- nowhere else because `|` reads two ways and POSITION is the only thing that
+-- separates them: infix `|` in expression space is bitwise-or (proj_bor), and
+-- `|` in TYPE space is the union edge. proj_type is only ever entered from a
+-- type position — after a `:` copula, inside a tuple, after a parameter name —
+-- so consuming `|` here cannot reach an expression. That is H-1 stated as a
+-- parser rule: the colour follows the EDGE, not the glyph.
+--
+-- Projected `(union t error)` rather than `(| t error)` on purpose. Sharing the
+-- binop spelling would make `f(): i64 | error` and `f(): i64` .. `| error`
+-- project identically, and the whole point of writing the production is that a
+-- failure position is structurally visible.
+proj_type = (lx: Lexer): str
+    acc = proj_type_atom(lx)
+    if acc != "" and lexer.peek(lx).kind == token.KIND_PIPE
+        s = "(union {acc}"
+        more = true
+        while more and lexer.peek(lx).kind == token.KIND_PIPE
+            lexer.next(lx)
+            nxt = proj_type_atom(lx)
+            if nxt == ""
+                mark_error(lx)
+                more = false
+            else
+                s = "{s} {nxt}"
+            end
+        end
+        acc = "{s})"
     end
     acc
 end
@@ -716,6 +816,43 @@ proj_body = (lx: Lexer): str
     end
 end
 
+-- A block that MUST close with `end`, so EOF is a REJECTION rather than a
+-- terminator.
+--
+-- proj_body treats EOF as a close, which is right for an offside body: with
+-- `end` deleted (§0.7) the last body in a file has no other terminator. `do`
+-- is not that shape. It is an explicit Lua-form block whose only terminator is
+-- `end`, and routing it through proj_body meant `do x = 1` — truncated,
+-- unterminated — parsed CLEAN. That is a P1 `zigrej` divergence: the
+-- production parser rejects it, this one accepted it, and over-acceptance
+-- moves the coverage ratchet the good way so nothing was watching. It was
+-- already convicting `pass16_parser_corpus_proof.duo` (exit 117, its
+-- seventeenth compile-fail row) at HEAD before this session touched anything.
+proj_block = (lx: Lexer): str
+    acc = ""
+    more = true
+    while more
+        skip_semis(lx)
+        t = lexer.peek(lx)
+        if t.kind == token.KIND_END
+            lexer.next(lx)
+            more = false
+        elseif t.kind == token.KIND_EOF
+            mark_error(lx)
+            more = false
+        else
+            before: i64 = lx.pos
+            peeked = lx.has_peeked
+            acc = join(acc, proj_stmt(lx))
+            if stalled(lx, before, peeked)
+                mark_error(lx)
+                more = false
+            end
+        end
+    end
+    acc
+end
+
 -- Statements until 'end', 'else' or 'elseif' — for if/else block parsing.
 proj_body_until_else = (lx: Lexer): str
     acc = ""
@@ -752,8 +889,7 @@ proj_fun_decl = (lx: Lexer, first: Tok): str
         s = s .. " " .. params
     end
     s = s .. ")"
-    if lexer.peek(lx).kind == token.KIND_COLON
-        _c = lexer.next(lx)
+    if ret_intro(lx)
         s = s .. " (ret " .. proj_type(lx) .. ")"
     end
     if lexer.peek(lx).kind == token.KIND_ASSIGN
@@ -798,8 +934,7 @@ proj_fun_expr = (lx: Lexer): str
         s = s .. " " .. params
     end
     s = s .. ")"
-    if lexer.peek(lx).kind == token.KIND_COLON
-        _c = lexer.next(lx)
+    if ret_intro(lx)
         s = s .. " (ret " .. proj_type(lx) .. ")"
     end
     body = proj_body(lx)
@@ -809,10 +944,66 @@ proj_fun_expr = (lx: Lexer): str
     s .. ")"
 end
 
+-- `then` is optional exactly the way `do` is, and for a stronger reason than
+-- tolerance: `duo fmt` EMITS it. `do_fmt` in src/main.zig is
+-- `Parser.parse_module` fed to `PrettyPrinter.printModule` and nothing else, so
+-- the formatter's output is the production AST's own canonical rendering — and
+-- it renders `if ready run() end` as `if ready then / run() / end`. A parser
+-- that means to REPLACE src/parser.zig cannot reject what src/parser.zig's own
+-- printer writes.
+--
+-- gap[046] §3 filed `then` under "the parser is right and the source is stale"
+-- because §1 deny-lists it. That reading is wrong and the two-oracle
+-- differential is what overturned it: deny-list status governs what a human
+-- should type, not what a parser must read. Measured — `then` alone was 6 of
+-- the 9 files where the production parser accepted and this one rejected.
+skip_then = (lx: Lexer)
+    if lexer.peek(lx).kind == token.KIND_THEN
+        lexer.next(lx)
+    end
+end
+
+-- The RETURN-TYPE introducer, either spelling, consumed. `:` is the copula and
+-- the canonical form; `->` is §1 deny-listed and is read anyway, for the same
+-- reason `then` is.
+--
+-- The evidence is stronger here than for `then`, and it is the single biggest
+-- number this session produced. P2 CANONICAL CLOSURE measured across the repo
+-- said the self-hosted parser could read 258/258 lib/std files but could NOT
+-- read `duo fmt`'s rendering of 249 of them. One construct accounts for
+-- essentially all of it: src/pretty.zig prints every return type as `-> T`,
+-- and it does so in `--canonical` mode too —
+--
+--     $ duo fmt --canonical hex.duo
+--     encode(s: str) -> str
+--
+-- so the production toolchain's own canonical output is unreadable by its
+-- intended replacement. Both spellings project `(ret T)` with no marker of
+-- which was written, because they name the SAME edge and a projection that
+-- distinguished them would make the formatter's output a different tree from
+-- its input.
+--
+-- This is NOT a licence to write `->`. §1 governs what goes in a .duo file and
+-- the deny list still holds there; it has never governed what a parser must
+-- READ, and conflating the two is what left gap[046] recording `->` as "the
+-- source is stale" when the source in question was machine-generated. The
+-- other repair — teaching src/pretty.zig to print `: T` under `--canonical` —
+-- is the right one long-term and is src/**, so it is specified rather than
+-- made. Both should land; only one of them is mine.
+ret_intro = (lx: Lexer): bool
+    k = lexer.peek(lx).kind
+    hit = k == token.KIND_COLON or k == token.KIND_ARROW
+    if hit
+        lexer.next(lx)
+    end
+    hit
+end
+
 -- if expr ... ('elseif' expr ...)* ('else' ...)? 'end'
 proj_if = (lx: Lexer): str
     _i = lexer.next(lx)
     cond = proj_expr(lx)
+    skip_then(lx)
     s = "(if " .. cond
     while true
         skip_semis(lx)
@@ -820,6 +1011,7 @@ proj_if = (lx: Lexer): str
         if t.kind == token.KIND_ELSEIF
             _e = lexer.next(lx)
             c2 = proj_expr(lx)
+            skip_then(lx)
             s = s .. " (elseif " .. c2
             b = proj_body_until_else(lx)
             if b != ""
@@ -1046,11 +1238,19 @@ proj_target_or_expr = (lx: Lexer): str
             -- fell 184 -> 151. The tail test is local after all: a pack is the
             -- body's value, so `end` must follow it. A top-level `a, b` (EOF
             -- follows, no consumer) stays rejected.
-            if lexer.peek(lx).kind == token.KIND_END
-                return "(pack " .. targets .. ")"
-            end
-            mark_error(lx)
-            return "(error)"
+            --
+            -- REWIND before projecting the pack, rather than reusing `targets`.
+            -- The list above was read with proj_postfix because it was
+            -- SPECULATED to be an assignment target list, and a pack's elements
+            -- are full expressions: `s, pos + 8 + len` — the return of
+            -- `gguf.read(string)` in tools/wasm/src/nn/init.duo — parsed `pos`
+            -- as the second target, met `+`, and rejected. Reusing `targets`
+            -- would be resuming mid-expression, which is the same defect the
+            -- save at the top of this function exists to avoid; tail_pack
+            -- re-reads the whole list under the expression grammar and keeps
+            -- the `end` requirement that makes a bare `a, b` still reject.
+            lexer.restore_state(lx, st)
+            return tail_pack(lx, proj_expr(lx))
         end
         op = lexer.next(lx)
         if op.kind != token.KIND_ASSIGN
@@ -1158,6 +1358,21 @@ proj_desc_body = (lx: Lexer): str
                 keyed = true
             end
         end
+        -- A STRING-literal key in the unbracketed `k = v` slot:
+        -- `{ "what is metaprogramming" = [[ ... ]] }`. Not Lua-legal and not
+        -- how the corpus usually spells a computed key, but the production
+        -- parser accepts it and tools/mcp/duo_shared.duo uses it, so the
+        -- self-hosted parser has to read it too — P1 acceptance agreement is
+        -- about the incumbent's grammar, not about the one I would design. It
+        -- projects as `(key "..." v)`, identical to the bracketed spelling,
+        -- because they denote the same edge.
+        strkey = false
+        if t.kind == token.KIND_STRING_LIT
+            k2 = peek2(lx)
+            if k2.kind == token.KIND_ASSIGN
+                strkey = true
+            end
+        end
         -- `{ [0] = "trace", [k] = v }` — a computed key.
         if t.kind == token.KIND_LBRACKET
             _lb = lexer.next(lx)
@@ -1171,6 +1386,12 @@ proj_desc_body = (lx: Lexer): str
                 _e = lexer.next(lx)
             end
             s = s .. " (key " .. k .. " " .. proj_expr(lx) .. ")"
+        elseif strkey
+            lexer.next(lx)
+            lexer.next(lx)
+            k = quote(t.text)
+            v = proj_expr(lx)
+            s = "{s} (key {k} {v})"
         elseif keyed
             _n = lexer.next(lx)
             _e = lexer.next(lx)
@@ -1221,29 +1442,59 @@ proj_and = (lx: Lexer): str
     end
 end
 
-proj_cmp = (lx: Lexer): str
-    left = proj_bor(lx)
-    t = lexer.peek(lx)
-    op = "?"
-    if t.kind == token.KIND_EQ
+-- A CHAIN of comparisons, left-associated, not a single non-associative one.
+--
+-- The level used to read exactly one comparison and return, so
+-- `a > b != c > d` — the XOR-of-two-tests idiom, and the shape of the
+-- point-in-polygon test in lib/std/math/geometry.duo and the sign compare in
+-- tools/wasm/src/engine.duo — parsed `(> a b)` and left `!=` unconsumed for the
+-- statement level to reject. Both files parse under `src/parser.zig`, so it was
+-- a P2 CANONICAL CLOSURE divergence found by re-reading the formatter's output.
+--
+-- HONEST LIMIT, recorded rather than papered over: §0a CHAIN-CMP rules that
+-- `a < b < c` is ONE fact — a conjunctive chain evaluating its shared operands
+-- once — and this projection does not carry that. It emits the incumbent's
+-- left-associated tree, `(< (< a b) c)`, because matching the incumbent is what
+-- the differential measures and because a `(chain ...)` node would move every
+-- comparison row already pinned in the corpus proof. The conjunctive reading is
+-- a SEMANTIC ruling that belongs to the layer above the projection, and naming
+-- it here is cheaper than discovering later that the parser silently decided
+-- it. The two files above are genuine boolean-XOR uses, where left association
+-- is also the intended meaning.
+-- The comparison operator a token kind names, or "" for every other kind.
+-- Split out so the level below is a plain `while`: with the ladder inline the
+-- loop needed a mid-body `return` to escape, and the escape was the only thing
+-- the ladder's `else` arm did.
+cmp_op = (k: i64): str
+    op = ""
+    if k == token.KIND_EQ
         op = "="
-    elseif t.kind == token.KIND_NEQ
+    elseif k == token.KIND_NEQ
         -- `!=` used to fold into `=` here, so `a != b` and `a == b` projected
         -- to the identical s-expression and no proof could tell them apart.
         op = "!="
-    elseif t.kind == token.KIND_LEQ
+    elseif k == token.KIND_LEQ
         op = "<="
-    elseif t.kind == token.KIND_GEQ
+    elseif k == token.KIND_GEQ
         op = ">="
-    elseif t.kind == token.KIND_LT
+    elseif k == token.KIND_LT
         op = "<"
-    elseif t.kind == token.KIND_GT
+    elseif k == token.KIND_GT
         op = ">"
-    else
-        return left
     end
-    _o = lexer.next(lx)
-    "(" .. op .. " " .. left .. " " .. proj_bor(lx) .. ")"
+    op
+end
+
+proj_cmp = (lx: Lexer): str
+    left = proj_bor(lx)
+    op = cmp_op(lexer.peek(lx).kind)
+    while op != ""
+        lexer.next(lx)
+        right = proj_bor(lx)
+        left = "({op} {left} {right})"
+        op = cmp_op(lexer.peek(lx).kind)
+    end
+    left
 end
 
 -- Bitwise levels, Lua precedence: `|` < `~` < `&` < shift < `..`/`+`.
@@ -1513,8 +1764,7 @@ proj_primary = (lx: Lexer): str
             s2 = s2 .. " " .. params
         end
         s2 = s2 .. ")"
-        if lexer.peek(lx).kind == token.KIND_COLON
-            _c = lexer.next(lx)
+        if ret_intro(lx)
             s2 = s2 .. " (ret " .. proj_type(lx) .. ")"
         end
         -- LAYOUT picks the body shape here too, not the presence of
@@ -1627,6 +1877,15 @@ proj_concept = (lx: Lexer): str
             mark_error(lx)
             return s .. ")"
         end
+        -- A `fun`-prefixed signature. The corpus writes concept members bare
+        -- (`alloc(self, bytes: i64): any`), but `duo fmt` re-emits every one of
+        -- them as `fun alloc(self, bytes: i64) -> any`, so the printer's own
+        -- output for lib/std/mem.duo was unreadable here — a P2 CANONICAL
+        -- CLOSURE failure with the identical shape as `->` itself. Skipping the
+        -- keyword costs nothing: the signature grammar after it is the same.
+        if lexer.peek(lx).kind == token.KIND_FUN or lexer.peek(lx).kind == token.KIND_FUNCTION
+            lexer.next(lx)
+        end
         nm = lexer.next(lx)
         if not is_member_name(nm)
             mark_error(lx)
@@ -1643,8 +1902,7 @@ proj_concept = (lx: Lexer): str
             sig = sig .. " " .. params
         end
         sig = sig .. ")"
-        if lexer.peek(lx).kind == token.KIND_COLON
-            _co = lexer.next(lx)
+        if ret_intro(lx)
             sig = sig .. " (ret " .. proj_type(lx) .. ")"
         end
         s = s .. " " .. sig .. ")"
@@ -1720,14 +1978,30 @@ proj_stmt = (lx: Lexer): str
     end
     if t.kind == token.KIND_DO
         _d = lexer.next(lx)
-        body = proj_body(lx)
+        body = proj_block(lx)
         if body != ""
             return "(do " .. body .. ")"
         end
         return "(do)"
     end
-    if t.kind == token.KIND_LOCAL or t.kind == token.KIND_GLOBAL
+    -- `const` rides proj_decl with `local`/`global` because the three have one
+    -- shape — binder NAME (':' type)? ('=' expr)? — and proj_decl already names
+    -- the projection after `kw.text`, so `const k = 5` projects `(const k 5)`
+    -- with no new arm. gap[046] §6 ranked const and defer last on cheapness
+    -- grounds and that was right: this is the whole change.
+    if t.kind == token.KIND_LOCAL or t.kind == token.KIND_GLOBAL or t.kind == token.KIND_CONST
         return proj_decl(lx)
+    end
+    -- `defer <stmt>` — one statement, deferred to scope exit. Projected with the
+    -- deferred statement NESTED rather than flattened, because a flat
+    -- `(defer) (call close h)` is the same two top-level statements as an
+    -- undeferred call and the whole meaning of the construct is the edge
+    -- between them. That is the same defect class as the `nn { }` tear-off in
+    -- gap[046] §3: acceptance with the structure thrown away.
+    if t.kind == token.KIND_DEFER
+        lexer.next(lx)
+        inner = proj_stmt(lx)
+        return "(defer {inner})"
     end
     if t.kind == token.KIND_NAME
         t2 = peek2(lx)

@@ -107,7 +107,6 @@ ext/ward/              WASM runtime in Duo — downstream consumer (was ~/x/ward
 examples/              Example .duo programs
 scripts/               Shell scripts for CI gates and benchmarks
 docs/spec/             THE LAW — pass100.md + AUTHORITY.md + corpus.md
-docs/archive/          historical evidence; never an architecture input
 ```
 
 ## Key invariants
@@ -133,7 +132,9 @@ docs/archive/          historical evidence; never an architecture input
 There are none. Pass 100 is the only plan; `docs/spec/AUTHORITY.md` carries what
 is still owed. This section used to name Pass 11/12/13/16 plan documents as
 active, which contradicted the epoch-2 rule below in the same file — every
-`pass*.md` is historical. Those documents now live in `docs/archive/`.
+`pass*.md` is historical. Those documents are DELETED (Pass 121 owner
+directive: archival material is deleted or not considered); git history retains
+them as evidence.
 
 The `pass11-gate` and `pass12`/`pass16` build steps still exist and still run:
 a gate named after a pass is live tooling, not a live plan. Read the gate, not
@@ -174,7 +175,7 @@ See `.agents/AGENT_COORDINATION.md` for active work tracking.
 
 PRECEDENCE: this file + `docs/spec/pass100.md` (as amended through Pass 119)
 + passes 103-107 + `docs/spec/grammar.md` (Pass 108, normative)
-are the ONLY law. Anything in `docs/archive/`, older passes, prior context
+are the ONLY law. Anything archived, older passes, prior context
 blocks, or your own earlier output that conflicts is VOID. Refusal protocol: if
 a rule you would cite lives only in archived text, your objection is void —
 comply and repair toward CURRENT. Genuine epoch-2 conflicts: cite the rule ID,
@@ -182,9 +183,11 @@ use the canonical spelling, proceed. Higher pass number wins; this file's epoch
 stamp wins over everything it summarizes. NEVER refuse from archived text. The
 repo's history is not the repo's law.
 
-`docs/archive/` holds 60 pre-Pass-100 documents, each stamped, moved out of
+The 60 pre-Pass-100 documents are DELETED. They were first moved out of
 `docs/plans/` because a directory called "plans" taught every search they were
-live. See `docs/spec/README.md` for precedence.
+live; the move reduced the pull without removing it, and grep still reached them.
+Owner directive (Pass 121): archival material is deleted or not considered.
+Git history is the evidence store — it is not on the search path.
 
 ### §-1 NAME — `duon` (Pass 107, verified 111, FINAL 112)
 

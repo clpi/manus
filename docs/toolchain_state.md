@@ -51,7 +51,7 @@ repo has already written down and filed.
 | **LSP (read-only: hover / why / diagnostics)** | `tools/lsp/src/server.duo` — 2343 L of pure Duo, builds to a 387 KB self-contained binary. Implements 12 LSP methods (dispatch `:2274-2319`): initialize, didOpen/Change/Close/Save, documentSymbol, hover, definition, references, rename, foldingRange, documentHighlight, workspaceSymbol, completion. Diagnostics shell out to `duo check --plain-diagnostics` on a temp file (`:1358`) and text-parse the result (`:1190-1338`). | Hover = `why`; references = dependents; diagnostics = the audit. All of it graph queries. | **The entire symbol layer is a parallel implementation.** `scan_symbols_lo` (`:601-694`) is a line-oriented keyword scanner; `find_refs_in_text` (`:727-787`) and `find_rename_edits_in_text` (`:790-850`) are **byte-identical word-boundary scanners differing only in what they append** — 120 duplicated lines, in one file, doing what `semantic_graph.usersOf` does. Hover (`:2064-2096`) returns the raw declaration LINE as a string; the graph's `why` field is never read. `scan_workspace` (`:1413-1452`) shells out to `find ... \| head -200` and re-scans up to 200 files by hand. | Replace `handle_document_symbol` with a `duo graph` call. It is the smallest possible dogfood: the JSON already carries `name`/`kind`/`line`/`col` for every func, and it deletes the largest hand-written scanner. Do this before touching hover. |
 | **MCP (same queries + `add`)** | `tools/mcp/duo_lsp.duo` (760 L, 32 tools) and `tools/mcp/duo_bench.duo` (540 L, 33 tools) over `tools/mcp/duo_shared.duo` (998 L). ~20 shared functions are already thin projections that shell to the compiler's own control plane: `duo dev claim/session/integration`, `duo semantic claims/preview/validate` (`duo_shared.duo:138-200`). | The same queries as LSP, plus the `add` family. The agent surface IS the emission API. | (a) **16 of 33 tools are registered in BOTH servers** (§2.1) and both are configured simultaneously — the agent sees each twice. (b) **`META_CATALOG` is a hand-copy** (`duo_lsp.duo:13-54`, 40 entries) of `src/meta_module.zig`, which owns **174 distinct `comp.*` paths** across 627 alias rows — 23 % coverage, and the file's own comment at `:12` says *"should be auto-generated"*. (c) Diagnostics are text-parsed **twice inside one file** — `duo_diagnostics` (`:64-85`) and `duo_compile_check` (`:96-115`) are the same code, and neither passes `--plain-diagnostics`. (d) No `add` family at all — every tool is read-only or a gate runner. | Delete the 16 duplicates from one server (bench keeps the gates, lsp keeps the language surface). Then replace `META_CATALOG` with a `@comp.catalog()` call — verified reachable: `duo run` on a file calling `print(@comp.catalog())` compiles and runs clean. |
 | **tree-sitter** | `ext/tree-sitter-duo/grammar.js` — **804 lines of hand-authored JavaScript**, last touched 2026-07-12. Header line 7: *"Based on the lexer tokens from src/lexer.zig and AST from src/ast.zig."* Generated `src/grammar.json` (87 KB) is committed. | A GENERATED artifact projected from grammar descriptors. Output, never authored. | Hand-maintained, and **already wrong** — see §4. It is also the only non-Duo, non-generated source in the toolchain, so it is a live MONOGLOT violation. The compiler has already filed this: `src/pass21_catalog.zig:68` — *"P21-G13 parser/formatter/treesitter/LSP/MCP grammar agreement — status: open"*. | `duo grammar emit` following the **existing two-instance precedent**: `duo token-tables emit` and `duo wasm-tables emit` (`src/main.zig:814-844`) already project Zig descriptors into checked-in artifacts. Emit `grammar.js` from `src/pass21_keyword_registry.zig` + the parser's rule set the same way. |
-| **Ward** | `ext/ward/` — 6791 L of Duo. Working WASM runtime; `hash.wasm` in 0.45 s JIT vs wasmtime 0.436 s (`ext/ward/HANDOFF.md:249-256`). | The in-repo proof application, built on the finished loop. | Ward is ahead of the loop it is supposed to prove, not behind it — see §5. Its ARM64 emitter is a **donor for SH-11**, and the stated reason it was not one has expired. | See §5. |
+| **Ward** | `tools/wasm/` — 6791 L of Duo. Working WASM runtime; `hash.wasm` in 0.45 s JIT vs wasmtime 0.436 s (`tools/wasm/HANDOFF.md:249-256`). | The in-repo proof application, built on the finished loop. | Ward is ahead of the loop it is supposed to prove, not behind it — see §5. Its ARM64 emitter is a **donor for SH-11**, and the stated reason it was not one has expired. | See §5. |
 
 ## 2. Duplication ledger
 
@@ -290,7 +290,7 @@ refactor.
 
 ## 5. Ward's ARM64 JIT — verifying the donor claim
 
-**The claim as posed:** `ext/ward/src/wasm/jit_arm64.duo` is ~701 lines of ARM64
+**The claim as posed:** `tools/wasm/src/wasm/jit_arm64.duo` is ~701 lines of ARM64
 emitter in Duo while `lib/std/compiler/arm64.duo` is ~222 and
 `src/native_backend.zig` is ~5113 Zig, so ward's JIT is a donor for SH-11.
 
@@ -299,12 +299,12 @@ conclusion holds, and is stronger than posed — but the specific file named is
 not the one that works.** Corrections, measured:
 
 **(a) There are two ARM64 emitters in ward, and the shipping one is the other.**
-`jit_arm64.duo` is not imported by `ext/ward/src/ward.duo`, by `ext/ward/build.duo`,
+`jit_arm64.duo` is not imported by `tools/wasm/src/engine.duo`, by `tools/wasm/build.duo`,
 or by anything else in the repo — `grep -rn "jit_arm64"` over `*.duo`/`*.zig`
 matches only its own first line. The emitter that actually runs is
 `ward.duo:2712-4404` — **`jit_compile`, a single 1693-line function** with 151
 inline `jitm.w32(code, n, 0x…)` raw-hex sites, selected at `ward.duo:4427-4469`
-via `WARD_ENGINE`. This is the same trap `ext/ward/HANDOFF.md:255-257` already
+via `DUO_WASM_ENGINE`. This is the same trap `tools/wasm/HANDOFF.md:255-257` already
 records for `src/wasm/op.duo` ("separate 8398-line tree, not what builds").
 
 **(b) The measurement belongs to `jit_compile`, not to `jit_arm64.duo`.**
@@ -338,7 +338,7 @@ should be kept.
 > backend, and **its encoder is not reusable from here.**
 
 That was a repository-boundary argument written when ward lived at `~/x/ward`.
-Ward is now `ext/ward/` in this repo. The sentence is now false as stated —
+Ward is now `tools/wasm/` in this repo. The sentence is now false as stated —
 whatever remains is a design argument about coupling to `WardRT`/`WardFrame`
 offsets (`jit_arm64.duo:19-23`), which is confined to the memory ops and the
 prologue, not to the ~70 lines of pure encoders that have no runtime dependency

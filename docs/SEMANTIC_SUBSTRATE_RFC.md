@@ -105,7 +105,7 @@ and why does each node exist?"
 | --- | --- | --- |
 | C import | `c_frontend.zig`, `c_header_parse.zig` → foreign descriptor → `foreign_adapter` | Closest to done; produces typed `ForeignFunc` with `boundary_id` |
 | Lua dynamic | `lua_Value`, `native_scalar_mode` split in `codegen.zig` | Native scalar vs Lua thunks chosen per-function; `lua_Value` only on dynamic path |
-| WASM | `wasm_dispatch.zig`, `wasm_semantic.zig`, `wasm_semantic_gen.zig`, plus `@comp.embed.wasm` and `ext/ward/` (WASM runtime consumer) | Three disjoint roles, no Duo→WASM direct backend, no WASM frontend into the graph |
+| WASM | `wasm_dispatch.zig`, `wasm_semantic.zig`, `wasm_semantic_gen.zig`, plus `@comp.embed.wasm` and `tools/wasm/` (WASM runtime consumer) | Three disjoint roles, no Duo→WASM direct backend, no WASM frontend into the graph |
 | Transform registry | `src/transform_engine.zig` + `DUO_PROVENANCE=1` | `@comp.match` wired to provenance; other combinators next |
 
 ## 3. The core architectural decision
@@ -333,9 +333,9 @@ shared files.
   Phase E (transactions + capabilities) should build on.
 - `docs/AGENT_ALIGNMENT.md` — Tier A (spine) and Tier B (equality saturation,
   foreign adapters). Phase C maps to Tier B.7.
-- `docs/archive/pass5_semantic_interchange.md` — C/Lua/WASM boundaries. Phase C
+- `(archived, deleted — git history)` — C/Lua/WASM boundaries. Phase C
   is the graph-flavored continuation.
-- `docs/archive/pass8_persistent_semantic_computing.md` — Phase B (commit log)
+- `(archived, deleted — git history)` — Phase B (commit log)
   and Phase E (transactions) are its graph mechanism.
-- `docs/archive/pass15_semantic_shell.md` — Phase D (graph REPL).
-- `docs/archive/pass22_*.md` — the region graph passes this RFC extends.
+- `(archived, deleted — git history)` — Phase D (graph REPL).
+- the region graph passes this RFC extends (archived, deleted — git history).

@@ -36,7 +36,7 @@ Commit generated Wasm lookup tables when `wasm_semantic.zig` changes.
 
 Release is blocked on critical items in `duo catalog → pass10.release_blockers` (secrets, licensing, broken instructions, misrepresented docs).
 
-Historical pass plans under `docs/archive/` are **not** release-contract documentation — see [docs/archive/](archive/).
+Historical pass plans are DELETED and are **not** release-contract documentation; git history holds them.
 
 ## CI
 

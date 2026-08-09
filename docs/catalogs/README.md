@@ -2,7 +2,7 @@
 
 > **Machine-readable export:** `duo catalog` (JSON)  
 > **Pass 2 algebras:** `duo algebra` (JSON)  
-> **Plan:** [`docs/archive/pass3_directive_grammar_convergence.md`](../archive/pass3_directive_grammar_convergence.md)
+> **Plan:** [`(archived, deleted — git history)`](../archive/pass3_directive_grammar_convergence.md)
 
 | Catalog | File | CLI field |
 | --- | --- | --- |

@@ -61,7 +61,7 @@ is not picked up (verified: `-V 1` still prints `JIT: true`). So:
   the JIT does nothing — it is evidence I could not turn it off.
 
 Any ward-vs-wart table that has ever carried a "wart interpreter" column is
-reporting wart's JIT under an interpreter's name. `ext/ward/bench/run.duo:87`
+reporting wart's JIT under an interpreter's name. `tools/wasm/bench/run.duo:87`
 also still special-cases exit status 132 (`128+SIGILL`) as wart's expected
 failure mode; that arm is now dead code guarding a condition that does not
 occur.
@@ -101,7 +101,7 @@ And the number that says ward's JIT is real and load-bearing:
 | ward configuration | wall | self-reported |
 |---|---|---|
 | `engine=jit-arm64` (default) | 1.32 s | `seconds=1.314667` |
-| `WARD_ENGINE=interp` | 43.04 s | `seconds=38.625673` |
+| `DUO_WASM_ENGINE=interp` | 43.04 s | `seconds=38.625673` |
 
 **29× from ward's own ARM64 JIT.** That is not a fallback; that is the product.
 
@@ -123,8 +123,8 @@ noise: wasmtime 0.10, wasmer 0.11, wart 0.12, ward 0.13.
   slower than wasmer on the same kernel. It is currently last of the five.
 - Anything about a wart *interpreter*, because §0.2 says that configuration is
   not reachable from the CLI.
-- Anything end-to-end. `duo run ext/ward/src/ward.duo` spends **65.8 s
-  compiling** before it runs anything; only the compiled `ward.out` binary is a
+- Anything end-to-end. `duo run tools/wasm/src/engine.duo` spends **65.8 s
+  compiling** before it runs anything; only the compiled `engine.out` binary is a
   runtime measurement. A harness that times `duo run` is timing the Duo
   compiler.
 
@@ -208,9 +208,9 @@ counter should learn about classes.
 wart: **182 tracked `.zig`, 121,283 lines** (107,311 under `src/`, 12,777 under
 `test/`). ward: **29 `.duo`, 11,350 lines**, of which `src/ward.duo` alone is
 6,312. wart is **10.7× ward's line count**, not the 1,000× that
-`ext/ward/README.md` claims.
+`tools/wasm/README.md` claims.
 
-> `ext/ward/README.md` opens with "Reimplements wart (~1.3M lines of Zig) in
+> `tools/wasm/README.md` opens with "Reimplements wart (~1.3M lines of Zig) in
 > ~1,500 lines of Duo". Measured: 121,283 and 11,350. Both figures are wrong by
 > about an order of magnitude and they are wrong in the flattering direction.
 > The comparison table under them ("Binary size ~8MB vs <1MB", "Startup ~5ms vs
@@ -311,7 +311,7 @@ row the way `lua` is separate).
 ### Option 4 — stay separate; only the harness reaches across
 
 - **Cost:** the status quo, which is what produced this document's two false
-  beliefs. `ext/ward/bench/run.duo:103` resolves wart through
+  beliefs. `tools/wasm/bench/run.duo:103` resolves wart through
   `$WART` / `$HOME/x/wart/zig-out/bin/wart` — an unpinned path to an
   uncommitted working tree. There is no commit anywhere recording which wart a
   ward number was measured against.
@@ -324,10 +324,10 @@ row the way `lua` is separate).
 Pin wart as a submodule. Do not change any census. Then do the three things that
 actually block the dominance claim, none of which need wart's files in-tree:
 
-1. **Fix `ext/ward/README.md`.** 1.3M → 121,283; 1,500 → 11,350. The real 10.7×
+1. **Fix `tools/wasm/README.md`.** 1.3M → 121,283; 1,500 → 11,350. The real 10.7×
    is a better number than a fabricated 1,000×, and §3's line is the first thing
    a reader sees.
-2. **Retire the SIGILL arm** in `ext/ward/bench/run.duo:87` and the
+2. **Retire the SIGILL arm** in `tools/wasm/bench/run.duo:87` and the
    "wart interpreter" column everywhere it appears. wart JITs by default
    (§0.2); a column labelled interpreter that reports a JIT is a §3 violation
    already shipped.
@@ -384,9 +384,9 @@ $(mise where wasi-sdk)/wasi-sdk/bin/clang --target=wasm32-wasip1 -O1 \
 wasmtime /tmp/k.wasm
 wasmer run /tmp/k.wasm
 ~/x/wart/zig-out/bin/wart run /tmp/k.wasm        # already JITs — see §0.2
-duo compile ext/ward/src/ward.duo -o /tmp/ward.out   # ~66s; do NOT time `duo run`
-WARD_WASM=/tmp/k.wasm WARD_INVOKE=_start /tmp/ward.out
-WARD_ENGINE=interp WARD_WASM=/tmp/k.wasm WARD_INVOKE=_start /tmp/ward.out   # 43s
+duo compile tools/wasm/src/engine.duo -o /tmp/engine.out   # ~66s; do NOT time `duo run`
+DUO_WASM_MODULE=/tmp/k.wasm DUO_WASM_INVOKE=_start /tmp/engine.out
+DUO_WASM_ENGINE=interp DUO_WASM_MODULE=/tmp/k.wasm DUO_WASM_INVOKE=_start /tmp/engine.out   # 43s
 
 # the census arithmetic
 zig build language-census

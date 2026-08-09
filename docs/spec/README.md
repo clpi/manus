@@ -17,11 +17,11 @@
 3. docs/spec/AUTHORITY.md what is law in this repository, and what is still owed
 4. docs/spec/corpus.md    which .duo files the deny table must reach zero on
 --------------------------------------------------------------------------
-   docs/archive/**        HISTORICAL EVIDENCE. Never an architecture input.
+   (archive DELETED)      git history is the evidence store, not the search path.
 ```
 
 **`docs/spec/pass100.md` is the only living authority.** Everything under
-`docs/archive/` is evidence of how the design got here. It is never an input.
+The archive is DELETED; git history holds that evidence and is never an input.
 
 `CLAUDE.md` is the operative summary of Pass 100 and carries the epoch stamp.
 Where it and the spec appear to disagree, the epoch stamp wins over what it
@@ -52,4 +52,4 @@ different path to git. Cite it as `docs/spec/pass100.md`.
 
 `docs/spec/` holds law. A document belongs here only if it is currently binding.
 Anything that records a decision, a measurement, or a superseded design belongs
-in `docs/archive/`, where the archive README will index it.
+by deleting it; git history is the record.

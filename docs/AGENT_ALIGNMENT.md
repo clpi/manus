@@ -137,7 +137,7 @@ Details: [`semantic_universe.md` §2–§9](semantic_universe.md)
 
 | Track | Doc / command | Status |
 | --- | --- | --- |
-| Pass 5 plan | `docs/archive/pass5_semantic_interchange.md` | ✅ |
+| Pass 5 plan | `(archived, deleted — git history)` | ✅ |
 | SIM v0 | `src/sim.zig` | 🔄 partial |
 | Native export | `duo sim <file.duo>` | ✅ |
 | C import (Layer B) | `duo sim --import-c <header>` | 🔄 partial |
@@ -156,7 +156,7 @@ Details: [`semantic_universe.md` §2–§9](semantic_universe.md)
 
 | Track | Doc / command | Status |
 | --- | --- | --- |
-| Pass 8 plan | `docs/archive/pass8_persistent_semantic_computing.md` | 🔄 tracking |
+| Pass 8 plan | `(archived, deleted — git history)` | 🔄 tracking |
 | Realization selection | `realization.zig` | 🔄 partial (P8-M1) |
 | Evidence model | `evidence_record.zig` | 🔄 partial |
 | Persistent cache schema | `persistent_semantic_state.zig` | 🔄 schema only |
@@ -178,7 +178,7 @@ Details: [`semantic_universe.md` §2–§9](semantic_universe.md)
 
 | Track | Doc / command | Status |
 | --- | --- | --- |
-| Pass 6 plan | `docs/archive/pass6_architectural_reconciliation.md` | 🔄 partial |
+| Pass 6 plan | `(archived, deleted — git history)` | 🔄 partial |
 | Duplication matrix | `duo catalog` → `pass6.duplications` | 🔄 8 entries |
 | Dependency DAG | `pass6.dependency_dag` | 🔄 partial |
 | Risk register | `pass6.risks` (AR-001 … AR-008) | 🔄 partial |
@@ -199,7 +199,7 @@ modular runtime, direct native backend, incremental self-hosting.
 
 | Track | Doc / command | Status |
 | --- | --- | --- |
-| Pass 4 plan | `docs/archive/pass4_native_end_to_end.md` | ✅ |
+| Pass 4 plan | `(archived, deleted — git history)` | ✅ |
 | Barrier catalog | `docs/catalogs/performance_barriers.md` (PB-011+) | 🔄 |
 | Bootstrap catalog | `docs/catalogs/bootstrap_dependencies.md` | ✅ |
 | First milestone | `examples/pass4_native_milestone.duo` | ✅ C + direct arm64 |
@@ -218,7 +218,7 @@ where specialization permits. See P4-01–P4-09 in the Pass 4 plan.
 
 | Track | Doc / command | Status |
 | --- | --- | --- |
-| Pass 3 plan | `docs/archive/pass3_directive_grammar_convergence.md` | ✅ |
+| Pass 3 plan | `(archived, deleted — git history)` | ✅ |
 | Keyword catalog | `docs/catalogs/keywords.md` (53 → target 30) | ✅ |
 | Directive catalog | `docs/catalogs/directives.md` | ✅ |
 | Grammar catalog | `docs/catalogs/grammar_compactness.md` | ✅ |
@@ -254,7 +254,7 @@ Full audit: [`plans/pass2_foundational_convergence.md`](plans/pass2_foundational
 | Infrastructure | Status | Owner tag |
 | --- | --- | --- |
 | Plan doc | ✅ `docs/semantic_universe.md` | — |
-| **Pass 2 convergence audit** | ✅ `docs/archive/pass2_foundational_convergence.md` | `convergence-audit` |
+| **Pass 2 convergence audit** | ✅ `(archived, deleted — git history)` | `convergence-audit` |
 | **Algebra spine** | ✅ `src/semantic_algebra.zig` + `duo algebra` | `convergence-audit` |
 | **Knowledge ↔ sema bridge** | 🔄 `knowledgeOfType`, `module_knowledge` in codegen | `convergence-audit` |
 | **Shape transforms registry** | ✅ `shape.seal` … `shape.lower` in `transform_engine` | `transform-registry` |
@@ -303,12 +303,12 @@ Before merging **any** new or changed `@comp.*` combinator / fold / meta hook:
 | Read | Path |
 | --- | --- |
 | **This compass** | `docs/AGENT_ALIGNMENT.md` |
-| **Pass 5 cross-language** | `docs/archive/pass5_semantic_interchange.md` |
-| **Pass 4 native** | `docs/archive/pass4_native_end_to_end.md` |
-| **Pass 3 directive/grammar** | `docs/archive/pass3_directive_grammar_convergence.md` |
+| **Pass 5 cross-language** | `(archived, deleted — git history)` |
+| **Pass 4 native** | `(archived, deleted — git history)` |
+| **Pass 3 directive/grammar** | `(archived, deleted — git history)` |
 | **Pass 3 catalogs** | `docs/catalogs/README.md` + `duo catalog` |
-| **Pass 2 convergence** | `docs/archive/pass2_foundational_convergence.md` |
-| **Pass 6 reconciliation** | `docs/archive/pass6_architectural_reconciliation.md` |
+| **Pass 2 convergence** | `(archived, deleted — git history)` |
+| **Pass 6 reconciliation** | `(archived, deleted — git history)` |
 | Architecture plan | `docs/semantic_universe.md` |
 | Agent rules | `AGENTS.md` |
 | Claims, gaps, log | `.agents/AGENT_COORDINATION.md` |

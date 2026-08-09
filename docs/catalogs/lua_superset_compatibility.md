@@ -85,4 +85,4 @@ Token reduction, formatter preference, or aesthetics alone are **insufficient**.
 2. Add or extend lexer/parser/sema test.
 3. Run `zig build lua-superset-gate`.
 4. If claiming Lua compatibility, extend differential corpus (`P1`).
-5. For call/concurrency changes, update `docs/archive/pass24_execution_concurrency_lua_supremacy.md`.
+5. For call/concurrency changes, update `(archived, deleted — git history)`.

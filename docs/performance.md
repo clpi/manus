@@ -11904,10 +11904,10 @@ at the epilogue, so the cache never spans a branch. Ordering matters: producers 
 > below. The computed value is right (2331661441, matching wasmtime); only the
 > claim is wrong.
 >
-> Cause: the JIT that produced these numbers is `ext/ward/src/wasm/jit_arm64.duo`,
+> Cause: the JIT that produced these numbers is `tools/wasm/src/wasm/jit_arm64.duo`,
 > and it is DEAD CODE. Its host modules (`src/main.duo`, `src/cli.duo`,
 > `src/wasm/runtime.duo`, `src/wasm/init.duo`) were deleted; nothing requires it
-> — `grep -c jit_arm64 ext/ward/src/ward.duo` returns 0. The shipping JIT is
+> — `grep -c jit_arm64 tools/wasm/src/engine.duo` returns 0. The shipping JIT is
 > `jit_compile` inside `src/ward.duo`, which tracks two register aliases and has
 > no liveness model. A faster architecture was measured, then removed, and the
 > measurement outlived it.
@@ -11915,8 +11915,8 @@ at the epilogue, so the cache never spans a branch. Ordering matters: producers 
 > This is the §3 MEASUREMENT HONESTY failure mode in its quietest form: no
 > fabricated recognizer, no frozen literal, just a true table about a binary
 > that no longer exists. The repair is the one §3 already prescribes — a claim
-> must name the artifact it was measured on. See `ext/ward/HANDOFF.md` and
-> `ext/ward/bench/wart.duo`, the first harness that compares ward to wart at all
+> must name the artifact it was measured on. See `tools/wasm/HANDOFF.md` and
+> `tools/wasm/bench/wart.duo`, the first harness that compares ward to wart at all
 > (result: ward ~3% SLOWER, aggregate 103%).
 
 ward now beats wasm3 and iwasm outright. The remaining 3x to wasmtime/wasmer is

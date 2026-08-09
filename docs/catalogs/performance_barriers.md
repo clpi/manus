@@ -21,6 +21,6 @@
 | PB-014 | Runtime preamble linked when unused | `moduleNeedsLuaRuntime` | Pay-for-use runtime profiles | 🔄 partial |
 | PB-015 | `@comp.why.*` explanation queries | `dynamic_boundary.zig`, `@comp.why.boxed` / `@comp.representation` | Compiler explanation surface | 🔄 partial |
 
-**Pass 4 plan:** [`docs/archive/pass4_native_end_to_end.md`](../archive/pass4_native_end_to_end.md)  
+**Pass 4 plan:** [`(archived, deleted — git history)`](../archive/pass4_native_end_to_end.md)  
 **Bootstrap catalog:** [`docs/catalogs/bootstrap_dependencies.md`](bootstrap_dependencies.md)  
 **First milestone:** `examples/pass4_native_milestone.duo` — C path ✅, direct native-exe/asm ✅ (sealed f64 record + f64 main → int exit wrapper)

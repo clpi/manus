@@ -66,4 +66,4 @@ duo run examples/pass16_m1_lexer_proof.duo
 - Silent fallback to generated C, Lua VM, or external compiler on the canonical path
 - Undocumented bootstrap binaries or unpinned dependencies
 
-See `docs/archive/pass16_self_hosted_compiler.md` for the full Pass 16 mission.
+See `(archived, deleted — git history)` for the full Pass 16 mission.

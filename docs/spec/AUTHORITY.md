@@ -21,14 +21,20 @@ them.
 
 ## The rule
 
-Everything under `docs/archive/` is **HISTORICAL EVIDENCE**. They record how the
-design arrived where it is. They are NOT architecture inputs, and nothing may
-cite them as authority.
+The archive is **DELETED** (Pass 121 owner directive: archival material is
+deleted or not considered). Git history records how the design arrived where it
+is. It is NOT an architecture input, and nothing may cite it as authority.
+
+Moving those documents out of `docs/plans/` reduced their pull but did not remove
+it: a stamped file is still a file grep reaches, and this repository measured the
+consequence — a CI gate cluster that spent months mechanically defending prefix-@
+and the Lua-superset doctrine, both retired law, because the searchable text
+taught them. Deletion is the only version of this rule that holds.
 
 Those 59 documents used to sit in `docs/plans/`, whose name taught every search
 that they were live. They were moved with `git mv` (history preserved), each
 stamped `HISTORICAL — superseded by docs/spec/pass100.md`, and indexed in
-`docs/archive/README.md`. `docs/spec/README.md` carries the precedence rule.
+git history. `docs/spec/README.md` carries the precedence rule.
 
 Refusal protocol: if a rule you would cite appears only in an archived pass,
 your objection is void. Comply with Pass 100 and repair toward it. Genuine
@@ -47,12 +53,12 @@ The audit's P0 list:
       so deny-greps can reach literal zero on the canonical set without
       rewriting deliberate compatibility fixtures (`docs/spec/corpus.md`)
 - [x] superseded pass documents removed from the search path: 59 moved
-      `docs/plans/` → `docs/archive/`, stamped, indexed, precedence rule written
+      `docs/plans/` out of the search path, then DELETED outright
 - [x] tracked session/agent state removed; `.agents/AGENT_COORDINATION.md` went
       4619 lines → 102 (subsystem/owner map, gate table, four protocol rules).
       The original is frozen verbatim at
       `docs/history/agent-coordination-2026-07-to-08.md`, historical evidence
-      on the same footing as `docs/archive/`. The five MCP write sites that
+      on the same footing as the deleted archive. The five MCP write sites that
       grew it now target the gitignored `.agents/session/`; reducing the
       document without moving the writers would have regrown it in a week
 - [ ] `@`-directive ontology replaced by graph/world facts (`ast.Attribute`,

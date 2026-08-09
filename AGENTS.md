@@ -136,17 +136,17 @@ Duo MUST achieve compile, runtime, and startup speeds that are better than ANY p
 
 **Read first:** [`docs/AGENT_ALIGNMENT.md`](docs/AGENT_ALIGNMENT.md) (2-min compass).
 
-**Full plan:** [`docs/archive/semantic_graph_architecture.md`](docs/archive/semantic_graph_architecture.md).
+**Full plan:** [`(archived, deleted — git history)`]((archived, deleted — git history)).
 
 **Architecture passes (read in order):**
-- Pass 2: [`docs/archive/pass2_foundational_convergence.md`](docs/archive/pass2_foundational_convergence.md) — 8 algebras
-- Pass 3: [`docs/archive/pass3_directive_grammar_convergence.md`](docs/archive/pass3_directive_grammar_convergence.md) — grammar/directives
-- Pass 4: [`docs/archive/pass4_native_end_to_end.md`](docs/archive/pass4_native_end_to_end.md) — native backend
-- Pass 5: [`docs/archive/pass5_semantic_interchange.md`](docs/archive/pass5_semantic_interchange.md) — cross-language
-- Pass 6: [`docs/archive/pass6_architectural_reconciliation.md`](docs/archive/pass6_architectural_reconciliation.md) — architectural reconciliation
-- Pass 7: [`docs/archive/pass7_ai_native_compilation.md`](docs/archive/pass7_ai_native_compilation.md) — AI-native compilation
-- Pass 8: [`docs/archive/pass8_persistent_semantic_computing.md`](docs/archive/pass8_persistent_semantic_computing.md) — persistent semantic computing
-- Pass 9: [`docs/archive/pass9_ward_readiness.md`](docs/archive/pass9_ward_readiness.md) — Ward readiness & runtime supremacy
+- Pass 2: [`(archived, deleted — git history)`]((archived, deleted — git history)) — 8 algebras
+- Pass 3: [`(archived, deleted — git history)`]((archived, deleted — git history)) — grammar/directives
+- Pass 4: [`(archived, deleted — git history)`]((archived, deleted — git history)) — native backend
+- Pass 5: [`(archived, deleted — git history)`]((archived, deleted — git history)) — cross-language
+- Pass 6: [`(archived, deleted — git history)`]((archived, deleted — git history)) — architectural reconciliation
+- Pass 7: [`(archived, deleted — git history)`]((archived, deleted — git history)) — AI-native compilation
+- Pass 8: [`(archived, deleted — git history)`]((archived, deleted — git history)) — persistent semantic computing
+- Pass 9: [`(archived, deleted — git history)`]((archived, deleted — git history)) — Ward readiness & runtime supremacy
 
 **Catalogs:** [`docs/catalogs/keywords.md`](docs/catalogs/keywords.md) | [`docs/catalogs/directives.md`](docs/catalogs/directives.md) | [`docs/catalogs/grammar_compactness.md`](docs/catalogs/grammar_compactness.md) | [`docs/catalogs/native_barriers.md`](docs/catalogs/native_barriers.md)
 
@@ -199,7 +199,7 @@ These rules are authoritative. Compiler, stdlib, docs, and all agents must stay 
 - **Canonical ≠ exclusive.** Prefer denser Duo forms in new code; permanently accept Lua-canonical equivalents (`then`, `do`, `local function`, parenthesized calls).
 - **Call model:** bare `a` = value reference; `a()` / `a x` = invoke; shell zero-arg commands only in explicit command regions (Pass 15) — never global bare-name invocation.
 - **Deprecation threshold:** genuine conflict + no reliable disambiguation + blocks higher-value capability + exact migration + documented exception. Token reduction alone is insufficient.
-- Full constitution: `docs/archive/pass24_execution_concurrency_lua_supremacy.md`. Matrix: `docs/catalogs/lua_superset_compatibility.md`. Gate: `zig build lua-superset-gate`.
+- Full constitution: `(archived, deleted — git history)`. Matrix: `docs/catalogs/lua_superset_compatibility.md`. Gate: `zig build lua-superset-gate`.
 
 ## Duo Language Conventions
 
