@@ -2249,3 +2249,70 @@ entropy = law{
     }
     canon = "0 <= x <= 255 realizes u8 while remaining the same semantic value"
 }
+
+-- ═══ §51 · LIFTING. What a refinement inherits from its representation. ════
+--
+-- The rule that makes `str` acquire `slice(byte)`'s vocabulary WITHOUT
+-- acquiring the operations that would destroy it. General: it governs every
+-- refinement over every representation, and it is what turns a relation store
+-- into a projection algebra.
+
+lift = law{
+    id    = "law.lift.safe"
+    kind  = .invariant
+    holds = .conditional
+    binds = {
+        "an operation on a representation lifts to a refinement IFF its required facts are held and its preserved facts cover the refinement's invariants",
+        "otherwise the lift is REFUSED, or yields a WEAKER descriptor, or yields a CHECKED result",
+        "inheritance is never `the representation permits it, therefore the refinement does`",
+    }
+    canon = "str = view(slice(byte)) + encoding(utf8) + valid(utf8): slice lifts, put(byte) does not"
+    why   = "a byte slice permits writes that leave text invalid. Blind inheritance is how a refinement silently stops being one."
+    fails = "an operation that compiles and produces a value its own descriptor forbids"
+}
+
+-- Element axes are LEVELS, not separate names. `str` enumerates three ways and
+-- they disagree — so `len`, `at` and `iter` are each three relations, and
+-- law.level.necessity decides when the axis may elide.
+axis = law{
+    id    = "law.axis.level"
+    kind  = .invariant
+    holds = .level
+    binds = {
+        "one value may expose several independent enumerable axes",
+        "len(byte), len(codepoint), len(grapheme) are three relations, not one function",
+        "where the axis is uniquely recoverable it elides; where several are valid it stays explicit",
+    }
+    deny  = "picking an axis silently — `#s` choosing bytes is a wrong answer for text, not a limitation"
+}
+
+-- PERSISTENT SEMANTICS, EPHEMERAL REALIZATION. The value is immutable; the
+-- machine operation need not be. This is what lets functional source compile to
+-- the same instructions as imperative C, and it is the same mechanism that
+-- gives snapshots, replay, rollback and stateless handles.
+persist = law{
+    id    = "law.persist.unique"
+    kind  = .invariant
+    holds = .semantic
+    binds = {
+        "an operation yields a NEW semantic value and preserves its predecessor",
+        "a persistent update MAY realize destructively when the predecessor is provably unobservable",
+        "structural sharing, copy-on-write, rope, small-inline and grow-in-place are realizations of one semantics",
+    }
+    why   = "persistent semantics is usually paid for in copies. Under uniqueness and last-use facts the copy is not needed, so the functional form costs what the imperative form costs."
+    open  = "snapshot identity, diff, patch and merge are the same mechanism reaching tooling: patch(a, diff(a,b)) = b"
+}
+
+-- The acceptance test, written as law so it cannot be satisfied by renaming.
+basis = law{
+    id    = "law.basis.derive"
+    kind  = .objective
+    holds = .derived
+    binds = {
+        "adding a sequence descriptor ACQUIRES the vocabulary its representation already has, without reimplementation",
+        "adding an element relation PROJECTS through every structure whose lifting laws permit it",
+        "standard basis size — the primitive relation families needed to derive the standard vocabulary — is the scoreboard, not loc",
+    }
+    deny  = "renaming helpers to one-word names, which satisfies a grep and derives nothing"
+    fails = "a second sequence descriptor having to write `starts`, `contains` and `split` again"
+}
