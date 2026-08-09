@@ -2390,3 +2390,82 @@ forcing = law{
 -- problem rather than a wish.
 claim.refused = "faster than c across the board without exception"
 claim.made    = "more semantic knowledge never reduces the valid realization set"
+
+-- ═══ §54 · THE PACK LADDER — three source forms, one application ═══════════
+--
+-- Most explicit to most inferred, and the canonicalizer picks the SHORTEST that
+-- stays uniquely resolvable:
+--
+--     point{ x, y }    descriptor stated
+--     @{ x, y }        descriptor = the ambient one
+--     { x, y }         descriptor = the expected one
+--
+-- Three source projections of ONE apply relation. Not three constructors.
+
+pack = law{
+    id    = "law.pack.neutral"
+    kind  = .invariant
+    holds = .data
+    binds = {
+        "a braced pack is STRUCTURED SEMANTIC DATA and nothing more",
+        "it stays a pack until a demand supplies a unique descriptor",
+        "`a = { x, y }` remains an ordinary structural value",
+    }
+    deny  = "redefining a bare pack as `construct the expected descriptor`"
+    why   = "if the bare form MEANT construction it would be a second constructor mechanism hiding behind inference. Same syntax, more compiler knowledge — that is specialization at the grammar level, and law.construct.zero survives it."
+}
+
+expect = law{
+    id    = "law.expect.apply"
+    kind  = .invariant
+    holds = .demand
+    binds = {
+        "an expected descriptor may supply the OMITTED application subject",
+        "`p: point = { x, y }` is apply(point)(pack) — the demand names the subject",
+        "the pack is unchanged; only what is known about it changed",
+    }
+    canon = "p: point = { x, y }"
+    deny  = "p: point = @{ x, y } — @ restates what the demand already said"
+}
+
+atapply = law{
+    id    = "law.at.apply"
+    kind  = .invariant
+    holds = .ambient
+    binds = {
+        "@{ … } explicitly supplies the AMBIENT descriptor as the application subject",
+        "it earns its keep only where demand does not already determine the subject",
+    }
+    canon = "inside point: `copy = () @{ x, y }` where nothing else names point"
+    why   = "narrowing @{} to this makes it USEFUL rather than ubiquitous — and it stays compositional, @ recovering the descriptor and { } being the pack, so it is never a third mechanism."
+}
+
+omit = law{
+    id    = "law.omit.derivable"
+    kind  = .invariant
+    holds = .shortest
+    binds = {
+        "the canonicalizer removes an explicit descriptor or @ when it is UNIQUELY implied",
+        "`p = point{ x, y }` keeps its subject — nothing else names it",
+        "`p: point = { x, y }` drops it — the annotation already did",
+        "inside a point-returning relation both the subject and the field source are recoverable, so `{ x + dx, y + dy }` is canonical",
+    }
+    fails = "a form that is shorter but no longer uniquely resolvable"
+}
+
+-- A REAL semantic decision, recorded as one rather than smuggled in as a
+-- function-declaration special case. `b: point = (x, y) …` cannot mean the
+-- CALLABLE satisfies `point` — a callable is not a point.
+demand = law{
+    id    = "law.callable.demand"
+    kind  = .invariant
+    holds = .result
+    binds = {
+        "where a binding's right side introduces a CALLABLE, an annotation between the name and `=` describes the callable's RESULT demand",
+        "where it does not, the annotation describes the value, unchanged",
+        "the right side's SHAPE decides which, so nothing is ambiguous",
+        "the parser keeps binding(name, annotation, rhs); the PROJECTION is semantic",
+    }
+    canon = "parse: config = (src) …  means result(parse): config"
+    why   = "a general contextual projection, not a `function return type` production. NNS holds: no new grammar, and it beats both `b = (x, y): point` and inventing function-type notation."
+}
