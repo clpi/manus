@@ -2631,3 +2631,89 @@ chainaudit = {
     "string projection",
     "conversion and protocol examples",
 }
+
+-- ═══ §59 · DNIR IS A PROJECTION, NOT A SECOND LANGUAGE ═════════════════════
+--
+-- MEASURED 2026-08-09, `src/duo_native_ir.zig`: **45 opcodes, 26 of them
+-- carrying an underscore**, and a 20-FIELD instruction record. A `mul` reserves
+-- storage for callee, req alias, field, record, third result, value array,
+-- branch target and hardware intrinsic — none of which apply. That is a second
+-- ontology with a second naming law and a second cost model.
+
+irone = law{
+    id    = "law.ir.one"
+    kind  = .invariant
+    holds = .projection
+    binds = {
+        "dnir is NOT a second semantic language",
+        "it is the native-realization PROJECTION of the semantic graph",
+        "source, graph, dnir, tooling and machine provenance share relation and descriptor IDENTITIES",
+        "dnir may add realization FACTS; it may never rename a semantic operation into a competing ontology",
+    }
+    fails = "a dnir opcode that is a second name for a relation the graph already has"
+}
+
+irexplicit = law{
+    id    = "law.ir.explicit"
+    kind  = .invariant
+    holds = .explicit
+    binds = {
+        "dnir exists to make IMPLICIT source facts explicit where optimization needs them",
+        "value identity · control flow · representation candidates · effects · demand · machine constraints · provenance",
+        "adding explicitness is its job; inventing vocabulary is not",
+    }
+    keep  = "dnir need NOT look like source. A dag is not a pipeline, and explicit value ids are information source does not carry. `v1 = field(p, x)` is correct where forcing a chain would lie about the dataflow."
+}
+
+ircompact = law{
+    id    = "law.ir.compact"
+    kind  = .invariant
+    holds = .separate
+    binds = {
+        "READABLE dnir uses canonical duon naming and composition",
+        "INTERNAL dnir uses compact interned ids and representation-selected storage",
+        "readable syntax NEVER dictates compiler memory layout",
+    }
+    why   = "the same law the language states about itself: semantic identity does not choose physical representation. A hot instruction lane stays dense while rare payloads live out of line, and the graph may pick aos or soa by workload."
+    deny  = "a 20-field record where a mul reserves slots for callee, branch target and hardware intrinsic"
+}
+
+irbomit = law{
+    id    = "law.ir.omit"
+    kind  = .invariant
+    holds = .derived
+    binds = {
+        "a fact uniquely recoverable from operands, descriptors, relation identity, target or demand is NOT redundantly encoded",
+        "the qualifier becomes a LEVEL or a FACT, never a longer name",
+    }
+    canon = "const(i64) · load(field) · call(extern) · br(false) · len(byte) — and each collapses further where the operand already says it"
+    deny  = "constdirect, loadfield, callextern — one-wording an underscore is WORSE than the underscore"
+}
+
+-- THE GUARDRAIL, without which this ruling is destructive. Unify IDENTITY;
+-- preserve REALIZATION FACTS. Integer add, float add, vector add, saturating,
+-- wrapping and checked add are ONE relation — and dnir must still carry
+-- descriptor, representation, overflow law, vector width, rounding and target
+-- features, or the backend cannot legalize an instruction.
+irguard = "unify identity, preserve realization facts — never one dynamically interpreted relation"
+
+-- The retirement list, and what each becomes.
+irretire = {
+    { was = "const_i64 const_f64 const_str const_req", now = "const, with the descriptor" },
+    { was = "load_local load_field load_index load_global", now = "load, with the place" },
+    { was = "store_local store_field store_index", now = "store, with the place" },
+    { was = "call_direct call_extern", now = "call, with linkage, symbol, abi, lawset" },
+    { was = "mov_arg fp_mov_arg", now = "NOTHING — abi placement belongs to machine realization, not to a typed ir" },
+    { was = "br_if br_if_not", now = "br, one terminal form; a negated condition is canonicalized" },
+    { was = "ret_record", now = "ret — the value's representation decides scalar, pack, hfa, sret or nothing" },
+    { was = "hw_fence hw_spin hw_unary", now = "hw, with the intrinsic" },
+    { was = "str_len", now = "len, with the axis" },
+}
+
+-- Two of those are worth more than the renaming. `mov_arg`/`fp_mov_arg` mean
+-- ABI PLACEMENT LEAKED INTO A TYPED IR — removing them enables move coalescing
+-- and argument precoloring instead of materializing pointless virtual moves.
+-- And `load_local`/`store_local` are SOURCE-STORAGE ARTIFACTS: under ssa a
+-- binding is not a memory location until demand proves it needs one — address
+-- observed, capture, aliasing, spill, mutation or a debugger.
+irwin = "a binding is not a memory location until demand proves it needs one"
