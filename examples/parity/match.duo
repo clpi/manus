@@ -1,0 +1,12 @@
+-- G-061 tier-1 three-site parity fixture for `comp.match`.
+-- TOP = top_level_assign · NESTED = nested_callback · BLOCK = block_body.
+-- All three C string literals must be IDENTICAL; scripts/transform.duo asserts it.
+
+TOP = @comp.match("a|b", fun(m) m.pattern .. "\n" end)
+NESTED = @comp.map("q", fun(seed)
+    @comp.match("a|b", fun(m) m.pattern .. "\n" end)
+end)
+parity(): str
+    @comp.match("a|b", fun(m) m.pattern .. "\n" end)
+end
+BLOCK = parity()

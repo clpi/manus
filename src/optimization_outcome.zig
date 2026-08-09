@@ -224,6 +224,25 @@ pub fn writeJson(log: *const OutcomeLog, w: *std.Io.Writer) !void {
             try jsonEscape(w, r);
             try w.print("\"", .{});
         }
+        // H-8: the outcome already CARRIES its subject and its chosen
+        // representation. Printing only `reason` left both readable solely as
+        // prose inside one string, so nothing outside the process could assert
+        // which entity was realized as what.
+        if (o.entity) |e| {
+            try w.print(",\"entity\":\"", .{});
+            try jsonEscape(w, e);
+            try w.print("\"", .{});
+        }
+        if (o.before_repr) |b| {
+            try w.print(",\"before_repr\":\"", .{});
+            try jsonEscape(w, b);
+            try w.print("\"", .{});
+        }
+        if (o.after_repr) |a| {
+            try w.print(",\"after_repr\":\"", .{});
+            try jsonEscape(w, a);
+            try w.print("\"", .{});
+        }
         try w.print("}}", .{});
     }
     try w.print("]}}", .{});

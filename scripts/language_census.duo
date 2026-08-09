@@ -63,7 +63,20 @@
 -- scripts/explain.duo, both wired into agent-smoke and both asserting through
 -- the shipping CLI, which is wider than what the Zig originals reached.
 --
--- Deletion is now EXHAUSTED. What remains under 121 is the compiler plus
+-- LOWERED 121 -> 115 on 2026-08-09, and all six came off by PORTING. They were
+-- the whole "blocked on in-process state with no CLI projection" class in
+-- gaps/GAP-090: meta_transform_tests, call_transform_tests, pass6_dispatch_tests,
+-- pass5_golden_tests, pass8_realization_tests, pass8_codegen_realization_tests.
+-- One move unblocked all six — `duo explain` grew `transform_provenance` and
+-- `transform_registry`, and `optimization_outcome` grew the entity / repr fields
+-- it already carried — after which the assertions could be made from outside the
+-- process. They became scripts/realize.duo, scripts/sim.duo and
+-- scripts/transform.duo, all three wired into agent-smoke, each carrying four or
+-- five positive controls the Zig originals did not have. `zig build unit-test`
+-- went 1147 -> 1122: exactly the 25 tests those six files declared, so nothing
+-- was lost by accident.
+--
+-- Deletion is now EXHAUSTED. What remains under 115 is the compiler plus
 -- fifteen files of real differential coverage, and it comes off by porting.
 -- Every remaining non-production file is classified with its blocker in
 -- docs/ledger-removal.md §9 and gaps/GAP-090.md, so the next session lowers
@@ -143,7 +156,7 @@ main(): i64
     end
     -- The bootstrap ledger (G9). Licensed, with a termination condition — which
     -- is a reason to bound it, not a reason to leave it unbounded.
-    zigcap: i64 = to(i64)(std.script.getenv("CENSUS_ZIG_CEILING", "121"))
+    zigcap: i64 = to(i64)(std.script.getenv("CENSUS_ZIG_CEILING", "115"))
     if zig > zigcap
         print("language_census: FAIL — zig ledger {zig} files exceeds the ratchet {zigcap}")
         over += 1

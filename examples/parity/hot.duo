@@ -1,0 +1,12 @@
+-- Pass 2.5 call-algebra fixture: a `@hot` callee, bound the same way as
+-- call.duo so the only difference between the two is the attribute.
+
+@hot
+scale(x: i64): i64
+    x * 2
+end
+
+main(): i64
+    y = scale(21)
+    y
+end

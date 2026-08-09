@@ -1,0 +1,12 @@
+-- G-061 tier-1 three-site parity fixture for `comp.each`.
+-- TOP = top_level_assign · NESTED = nested_callback · BLOCK = block_body.
+-- All three C string literals must be IDENTICAL; scripts/transform.duo asserts it.
+
+TOP = @comp.each("a|b", fun(f) f.name .. "\n" end)
+NESTED = @comp.map("q", fun(seed)
+    @comp.each("a|b", fun(f) f.name .. "\n" end)
+end)
+parity(): str
+    @comp.each("a|b", fun(f) f.name .. "\n" end)
+end
+BLOCK = parity()

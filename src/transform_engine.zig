@@ -139,6 +139,8 @@ const provenance_allocator = std.heap.page_allocator;
 pub fn deinitProvenance(_: std.mem.Allocator) void {
     provenance_log.deinit(provenance_allocator);
     provenance_log = .empty;
+    provenance_snapshot.deinit(provenance_allocator);
+    provenance_snapshot = .empty;
     deinitProofLog(provenance_allocator);
     provenance_enabled = false;
 }
@@ -157,6 +159,159 @@ pub fn setProvenanceEnabled(enabled: bool) void {
 
 pub fn provenanceEntries() []const ProvenanceEntry {
     return provenance_log.items;
+}
+
+/// Pass 117 H-8: the provenance log is CLEARED by `setProvenanceEnabled(false)`,
+/// which a provenance run's own `defer` fires before any caller can render it.
+/// The snapshot is what survives that teardown so the state can leave the
+/// process as `(transform, site, hashes)` data instead of staying invisible.
+var provenance_snapshot: std.ArrayListUnmanaged(ProvenanceEntry) = .empty;
+
+pub fn snapshotProvenance() void {
+    provenance_snapshot.clearRetainingCapacity();
+    provenance_snapshot.appendSlice(provenance_allocator, provenance_log.items) catch {};
+}
+
+pub fn clearProvenanceSnapshot() void {
+    provenance_snapshot.clearRetainingCapacity();
+}
+
+pub fn provenanceSnapshotEntries() []const ProvenanceEntry {
+    return provenance_snapshot.items;
+}
+
+/// Sites observed in the SNAPSHOT (the post-run projection of the log).
+pub fn snapshotSitesObserved(public_name: []const u8) std.EnumSet(SiteKind) {
+    var seen = std.EnumSet(SiteKind).empty;
+    for (provenanceSnapshotEntries()) |e| {
+        if (std.mem.eql(u8, e.public_name, public_name)) seen.insert(e.site);
+    }
+    return seen;
+}
+
+/// The observed provenance log, rendered. One object per dispatch.
+pub fn writeProvenanceJson(w: *std.Io.Writer) !void {
+    const entries = provenanceSnapshotEntries();
+    try w.print("{{\"schema\":\"transform-provenance-v0\",\"entry_count\":{d},\"entries\":[", .{entries.len});
+    for (entries, 0..) |e, i| {
+        if (i > 0) try w.print(",", .{});
+        try w.print(
+            "{{\"transform\":\"{s}\",\"site\":\"{s}\",\"inputs_hash\":\"{x}\",\"output_hash\":\"{x}\",\"evidence\":\"{s}\"}}",
+            .{ e.public_name, siteKindName(e.site), e.inputs_hash, e.output_hash, e.evidence.name() },
+        );
+    }
+    try w.print("]}}", .{});
+}
+
+/// The tier-1 registry with its contract, and — per transform — whether every
+/// DECLARED parity site was OBSERVED in this run. Declared-vs-observed in one
+/// read is the whole point: a registry alone cannot convict a dispatch gate.
+pub fn writeRegistryJson(w: *std.Io.Writer) !void {
+    try w.print("{{\"schema\":\"transform-registry-v0\",\"tier1_count\":{d},\"tier1\":[", .{parity_tier1.len});
+    for (parity_tier1, 0..) |public_name, i| {
+        if (i > 0) try w.print(",", .{});
+        const d = descriptor(public_name);
+        try w.print("{{\"transform\":\"{s}\",\"registered\":{s},\"requires_parity\":{s}", .{
+            public_name,
+            if (d != null) "true" else "false",
+            if (requiresParityTest(public_name)) "true" else "false",
+        });
+        if (d) |dd| {
+            try w.print(",\"native_only\":{s},\"parity_contract_satisfied\":{s},\"parse_as_expression\":{s},\"budget\":\"{s}\",\"hardness\":\"{s}\",\"parity_sites\":[", .{
+                if (dd.contract.native_only) "true" else "false",
+                if (parityContractSatisfied(dd)) "true" else "false",
+                if (mustParseAsExpression(public_name)) "true" else "false",
+                @tagName(dd.budget),
+                dd.hardness.name(),
+            });
+            for (dd.contract.parity_sites, 0..) |site, si| {
+                if (si > 0) try w.print(",", .{});
+                try w.print("\"{s}\"", .{siteKindName(site)});
+            }
+            try w.print("],\"observed_sites\":[", .{});
+            const seen = snapshotSitesObserved(public_name);
+            var first = true;
+            for (dd.contract.parity_sites) |site| {
+                if (!seen.contains(site)) continue;
+                if (!first) try w.print(",", .{});
+                first = false;
+                try w.print("\"{s}\"", .{siteKindName(site)});
+            }
+            try w.print("],\"parity_observed\":{s}", .{
+                if (snapshotParityObserved(public_name)) "true" else "false",
+            });
+        }
+        try w.print("}}", .{});
+    }
+    // The call algebra, enumerated FROM the enum rather than from a list: a
+    // new CallTransform variant that nobody registered shows up here as
+    // `registered:false` instead of going unmeasured.
+    try w.print("],\"call\":[", .{});
+    {
+        var i: usize = 0;
+        inline for (@typeInfo(semantic_algebra.CallTransform).@"enum".field_values) |value| {
+            if (i > 0) try w.print(",", .{});
+            i += 1;
+            const op: semantic_algebra.CallTransform = @enumFromInt(value);
+            const id = semantic_algebra.callTransformId(op);
+            const d = descriptor(id);
+            try w.print("{{\"transform\":\"{s}\",\"is_call\":{s},\"registered\":{s}", .{
+                id,
+                if (isCallTransform(id)) "true" else "false",
+                if (d != null) "true" else "false",
+            });
+            if (d) |dd| {
+                try w.print(",\"native_only\":{s},\"parity_sites\":[", .{
+                    if (dd.contract.native_only) "true" else "false",
+                });
+                for (dd.contract.parity_sites, 0..) |site, si| {
+                    if (si > 0) try w.print(",", .{});
+                    try w.print("\"{s}\"", .{siteKindName(site)});
+                }
+                try w.print("],\"observed\":{s}", .{
+                    if (snapshotSitesObserved(id).count() > 0) "true" else "false",
+                });
+            }
+            try w.print("}}", .{});
+        }
+    }
+    try w.print("],\"internal_gate\":[", .{});
+    for (tier1_internal_hooks, 0..) |internal, i| {
+        if (i > 0) try w.print(",", .{});
+        try w.print("{{\"hook\":\"{s}\",\"public\":\"{s}\",\"dispatch_allowed\":{s}}}", .{
+            internal,
+            publicNameForInternal(internal) orelse "",
+            if (requireMetaDispatchBeforeHook(internal)) "true" else "false",
+        });
+    }
+    try w.print("]}}", .{});
+}
+
+/// Internal codegen/comptime hook names carrying a tier-1 registry mapping.
+pub const tier1_internal_hooks: []const []const u8 = &.{
+    "__comptimemap",
+    "__comptimematch",
+    "__comptimepower",
+    "__derivepower",
+    "__comptimefixpoint",
+    "__comptimetabulate",
+    "__comptimeinterpolate",
+    "__comptimeeach",
+    // Mapped but NOT tier-1: it must still clear the dispatch gate under
+    // `DUO_TRANSFORM_GATE=1`, which is the half of strict mode that a list of
+    // parity combinators alone cannot show.
+    "__metacatalog",
+};
+
+/// `tier1ParityObserved` against the snapshot rather than the live log.
+pub fn snapshotParityObserved(public_name: []const u8) bool {
+    if (!requiresParityTest(public_name)) return true;
+    const d = descriptor(public_name) orelse return false;
+    const observed = snapshotSitesObserved(public_name);
+    for (d.contract.parity_sites) |site| {
+        if (!observed.contains(site)) return false;
+    }
+    return true;
 }
 
 pub fn siteKindName(site: SiteKind) []const u8 {

@@ -1624,6 +1624,14 @@ fn do_explain(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
     try assumption_guard.writeModuleJson(&assumptions, &fw.interface);
     try fw.interface.print(",\"realizations\":", .{});
     try realization.writeJson(&realizations, &fw.interface);
+    // H-8 output totality: the transform engine's provenance and its tier-1
+    // registry contract are compiler state with no other projection. Rendering
+    // them here is what lets the dispatch gate be asserted from outside the
+    // process instead of only from an in-process Zig test.
+    try fw.interface.print(",\"transform_provenance\":", .{});
+    try transform_engine.writeProvenanceJson(&fw.interface);
+    try fw.interface.print(",\"transform_registry\":", .{});
+    try transform_engine.writeRegistryJson(&fw.interface);
     if (repair_set) |rs| {
         try fw.interface.print(",\"repair_candidates\":", .{});
         try repair_candidate.writeRepairSetJson(&rs, &fw.interface);

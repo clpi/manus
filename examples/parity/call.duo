@@ -1,0 +1,14 @@
+-- Pass 2.5 call-algebra fixture: a plain typed direct call.
+-- `call.inline` must dispatch and the C must hold a direct `add(...)` with no
+-- `lua_invoke` anywhere in the translation unit. The result is BOUND rather
+-- than returned: a call in tail position dispatches the whole call algebra,
+-- which would make the `@hot` discrimination in hot.duo unfalsifiable.
+
+add(a: i64, b: i64): i64
+    a + b
+end
+
+main(): i64
+    x = add(1, 2)
+    x
+end

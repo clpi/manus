@@ -1,0 +1,200 @@
+-- Pass 5 SIM snapshot gate — stable entity ids, ABI facts, formatting invariance.
+--
+-- PORTED from src/pass5_golden_tests.zig (73 lines, 2 tests), deleted in the
+-- same commit. Both tests built a snapshot in process
+-- (`c_sim_import.importHeaderSource` / `sim.exportNativeModule`, then
+-- `abi_specialize.specializeSnapshot`) and asserted substrings of
+-- `sim.writeSnapshotJson`. Two shipping verbs print exactly that document:
+--
+--   duo sim --import-c <header.h>   the C-origin snapshot
+--   duo sim <file.duo>              the native duon snapshot
+--
+-- so the port greps the CLI output instead of an in-memory writer.
+--
+-- THE FIXTURES WERE ALREADY ON DISK and are now actually OPENED.
+-- `pass5_golden_tests.zig` named `examples/pass5/fixtures/point.h` as the
+-- snapshot's `artifact` string but read its bytes from `pass5_fixtures.zig`,
+-- a Zig file carrying a copy of the header as a string literal. That is the
+-- same second-source-of-truth that let `examples/pass7/explain_smoke.duo` sit
+-- broken and tracked: a duplicate cannot guard its original. This gate reads
+-- the tracked header. `src/pass5_fixtures.zig` still has other importers, so
+-- it is not deleted here — but nothing in this gate reads it.
+--
+-- FORMATTING INVARIANCE, WIDENED. The Zig test wrote ONE in-memory snapshot
+-- twice and compared the bytes; it could only catch a nondeterministic
+-- WRITER. Running the verb twice compares two whole pipelines — import,
+-- specialize and render — so it also catches a nondeterministic map order or
+-- a pointer-derived id, which is the failure the original could not see.
+-- (The Zig comment on that assertion records a use-after-free the in-memory
+-- version had to work around. Two processes cannot have it.)
+
+here(): str
+    std.script.chomp(std.script.capture("pwd"))
+end
+
+compiler(root: str): str
+    "{root}/zig-out/bin/duo"
+end
+
+shout(msg: str): void
+    print("sim: {msg}")
+end
+
+present(path: str): bool
+    std.script.status("test -e {path}") == 0
+end
+
+capture(cmd: str, out: str): bool
+    std.script.status("{cmd} >{out} 2>/dev/null") == 0
+end
+
+held(path: str, want: str): bool
+    std.script.status("tr ',' '\\n' < {path} | grep -q -F '{want}'") == 0
+end
+
+same(one: str, two: str): bool
+    std.script.status("cmp -s {one} {two}") == 0
+end
+
+main = (): i64
+    root = here()
+    bin = compiler(root)
+    dir = "/tmp/duo-sim-gate"
+    bad = 0
+
+    -- CONTROL 1 — the runner convicts.
+    if std.script.status("false") == 0
+        shout("FAIL — control: status() called `false` a success")
+        bad += 1
+    end
+
+    -- CONTROL 2 — the compiler is here.
+    if not present(bin)
+        shout("FAIL — no compiler at {bin}; run `zig build` first")
+        bad += 1
+    end
+
+    header = "{root}/examples/pass5/fixtures/point.h"
+    native = "{root}/examples/pass4_native_milestone.duo"
+
+    -- CONTROL 3 — the fixtures are here. Held over a missing file is false for
+    -- every want, which reads as a wall of real failures.
+    if not present(header)
+        shout("FAIL — missing fixture {header}")
+        bad += 1
+    end
+    if not present(native)
+        shout("FAIL — missing fixture {native}")
+        bad += 1
+    end
+
+    if std.script.status("rm -rf {dir} && mkdir -p {dir}") != 0
+        shout("FAIL — could not build the sandbox at {dir}")
+        bad += 1
+    end
+
+    foreign = "{dir}/c.json"
+    if not capture("{bin} sim --import-c {header}", foreign)
+        shout("FAIL — `duo sim --import-c` did not run on {header}")
+        bad += 1
+    end
+
+    -- CONTROL 4 — held() can answer NO.
+    if held(foreign, "duo-sim-this-string-does-not-exist")
+        shout("FAIL — control: held() matched a string that is not in the output")
+        bad += 1
+    end
+
+    -- S1 — the C header's entities keep their stable ids and their ABI facts.
+    if not held(foreign, "\"id\":\"c:record:CPoint\"")
+        shout("FAIL — S1: the C record lost its stable entity id")
+        bad += 1
+    end
+    if not held(foreign, "\"id\":\"c:function:distance2\"")
+        shout("FAIL — S1: the C function lost its stable entity id")
+        bad += 1
+    end
+    if not held(foreign, "\"origin_language\":\"c\"")
+        shout("FAIL — S1: the snapshot did not record a C origin")
+        bad += 1
+    end
+    if not held(foreign, "\"abi_completeness\":\"complete\"")
+        shout("FAIL — S1: the ABI was not reported complete")
+        bad += 1
+    end
+    if not held(foreign, "\"calling_convention\":\"c\"")
+        shout("FAIL — S1: the calling convention was not c")
+        bad += 1
+    end
+    if not held(foreign, "\"pass_by\":\"value\"")
+        shout("FAIL — S1: the record was not specialized to pass-by-value")
+        bad += 1
+    end
+    if not held(foreign, "\"storage_class\":\"native\"")
+        shout("FAIL — S1: abi.specialize did not lower the C record to native")
+        bad += 1
+    end
+
+    -- S2 — formatting invariance. Two runs of the same verb over the same
+    -- header must agree byte for byte.
+    twice = "{dir}/c2.json"
+    if not capture("{bin} sim --import-c {header}", twice)
+        shout("FAIL — S2: the second `duo sim --import-c` run did not complete")
+        bad += 1
+    end
+    if not same(foreign, twice)
+        shout("FAIL — S2: two runs of the same snapshot rendered different bytes")
+        bad += 1
+    end
+
+    duon = "{dir}/duo.json"
+    if not capture("{bin} sim {native}", duon)
+        shout("FAIL — `duo sim` did not run on {native}")
+        bad += 1
+    end
+
+    -- CONTROL 5 — same() can answer NO. Without this, S2 would pass for a
+    -- comparator that has stopped comparing, and so would every future
+    -- invariance assertion added below it.
+    if same(foreign, duon)
+        shout("FAIL — control: same() called two different snapshots identical")
+        bad += 1
+    end
+
+    -- S3 — the native duon module exports the same shape of snapshot, with
+    -- duon-namespaced ids and the sealed record lowered native.
+    if not held(duon, "\"id\":\"duo:record:Point\"")
+        shout("FAIL — S3: the sealed record lost its stable entity id")
+        bad += 1
+    end
+    if not held(duon, "\"id\":\"duo:function:distance2\"")
+        shout("FAIL — S3: the native function lost its stable entity id")
+        bad += 1
+    end
+    if not held(duon, "\"origin_language\":\"duo\"")
+        shout("FAIL — S3: the snapshot did not record a duon origin")
+        bad += 1
+    end
+    if not held(duon, "\"storage_class\":\"native\"")
+        shout("FAIL — S3: the sealed record was not classed native")
+        bad += 1
+    end
+
+    -- S4 — invariance again, on the native side.
+    duontwice = "{dir}/duo2.json"
+    if not capture("{bin} sim {native}", duontwice)
+        shout("FAIL — S4: the second `duo sim` run did not complete")
+        bad += 1
+    end
+    if not same(duon, duontwice)
+        shout("FAIL — S4: two runs of the native snapshot rendered different bytes")
+        bad += 1
+    end
+
+    if bad == 0
+        shout("PASS — C and native snapshots, stable ids, ABI facts and byte invariance, 5 controls held")
+    end
+    bad
+end
+
+std.os.exit(main())

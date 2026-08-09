@@ -86,6 +86,10 @@ pub fn runForProvenance(
     optimization_outcome.setSessionBridge(true);
     defer optimization_outcome.setSessionBridge(false);
     defer transform_engine.setProvenanceEnabled(false);
+    // LIFO: this fires BEFORE `setProvenanceEnabled(false)` clears the log, so
+    // the run's provenance survives for rendering. It runs on the error paths
+    // too — a rejected contract is exactly when the log is worth reading.
+    defer transform_engine.snapshotProvenance();
     var discard: std.Io.Writer.Allocating = .init(alloc);
     defer discard.deinit();
     try runModuleCodegen(alloc, io, mod, sem, src_path, "native", compiler_lib_root, &discard.writer);

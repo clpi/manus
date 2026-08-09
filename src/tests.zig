@@ -21,8 +21,6 @@ test {
     _ = @import("meta_module.zig");
     _ = @import("transform_engine.zig");
     _ = @import("meta_dispatch.zig");
-    _ = @import("meta_transform_tests.zig");
-    _ = @import("call_transform_tests.zig");
     _ = @import("codegen_pass3_tests.zig");
     _ = @import("semantic_graph.zig");
     _ = @import("semantic_algebra.zig");
@@ -34,7 +32,6 @@ test {
     _ = @import("foreign_adapter.zig");
     _ = @import("pass5_foreign_tests.zig");
     _ = @import("abi_specialize.zig");
-    _ = @import("pass5_golden_tests.zig");
     _ = @import("knowledge_snapshot.zig");
     _ = @import("optimization_outcome.zig");
     _ = @import("explain_pipeline.zig");
@@ -44,8 +41,6 @@ test {
     _ = @import("evidence_record.zig");
     _ = @import("realization.zig");
     _ = @import("persistent_semantic_state.zig");
-    _ = @import("pass8_realization_tests.zig");
-    _ = @import("pass8_codegen_realization_tests.zig");
     _ = @import("compile_semantic_cache.zig");
     _ = @import("semantic_invalidation.zig");
     _ = @import("wasm_semantic.zig");
@@ -89,7 +84,6 @@ test {
     _ = @import("pass11_ward_barrier_tests.zig");
     _ = @import("wasm_decode_semantic.zig");
     _ = @import("target_model.zig");
-    _ = @import("pass6_dispatch_tests.zig");
     _ = @import("sim_pipeline.zig");
     _ = @import("pass4_native_tests.zig");
     _ = @import("meta_codegen.zig");
