@@ -7839,6 +7839,55 @@ pub const CodeGen = struct {
         self.p("}}", .{});
     }
 
+    /// APPLY-ONE resolution at the EMITTER — c0 §43 `law.brace` row 1, §44
+    /// `apply.edge`, gap[092]. Answers the descriptor's record type when this
+    /// application's subject is a descriptor, and null for every other subject.
+    ///
+    /// ORDER IS THE WHOLE ARGUMENT, and it is why this is not c0 §44a trap 1.
+    /// The FACE is settled first, from facts the PARSER stated on the node
+    /// (`form == .braced`, `pack.applied`) — nothing here asks what a name
+    /// denotes in order to decide which surface was written. Only after the
+    /// form is known does the subject get resolved, and resolving a subject is
+    /// what `law.brace` requires ("the SUBJECT decides"). The patch gap[088]
+    /// reverted did the opposite: it consulted `record_aliases` to RE-DERIVE a
+    /// split the tree had already destroyed.
+    fn descriptor_application_type(self: *const CodeGen, c: anytype) ?RT {
+        if (c.form != .braced) return null;
+        if (c.args.len != 1) return null;
+        if (c.args[0].* != .table) return null;
+        if (!c.args[0].table.pack.applied) return null;
+        if (c.func.* != .name) return null;
+        const rt = self.record_aliases.get(c.func.name.ident) orelse return null;
+        if (rt != .table_type) return null;
+        return rt;
+    }
+
+    /// `point{ x = 3.0, y = 4.0 }` -> `(duo_rec_…){ .x = 3e0, .y = 4e0 }`.
+    ///
+    /// `law.pack.shape`: "A BRACED ARGUMENT NEED NOT MATERIALIZE A TABLE." It
+    /// does not here. `emit_record_initializer` is the SAME emitter the working
+    /// typed binding `p: point = { x = 3.0, y = 4.0 }` already used, reading
+    /// the pack's own named and positional fields in descriptor order — so
+    /// there is no second construction path, only a second SITE reaching the
+    /// one that existed. No `lua_table_new_with_capacity`, no boxed value, no
+    /// heap: the pack lands as struct fields the C compiler is free to keep in
+    /// registers. That is the `apply.ladder` rung §44 calls scalar replacement.
+    fn emit_descriptor_application(self: *CodeGen, c: anytype) E!bool {
+        const rt = self.descriptor_application_type(c) orelse return false;
+        var buf: [128]u8 = undefined;
+        const cname = self.c_type(RT{ .@"struct" = .{ .name = c.func.name.ident } }, &buf);
+        // A C compound literal, so the construction is an EXPRESSION and
+        // composes anywhere a value does — argument, field, return, operand.
+        self.p("({s})", .{cname});
+        try self.emit_record_initializer(rt.table_type.fields, c.args[0]);
+        // The resolving consumer records what demand actually required
+        // (`ast.Realization`). Sema writes this too; both write `.fields` and
+        // neither may write `.table` for a resolved descriptor pack, so the
+        // two cannot disagree about a fact the law puts after resolution.
+        c.args[0].table.pack.realized = .fields;
+        return true;
+    }
+
     fn emit_arg_for_param(self: *CodeGen, arg: *const ast.Expr, param_type: RT, for_call: bool) E!void {
         try self.emit_arg_for_param_abi(arg, param_type, for_call, .duo);
     }
@@ -15330,6 +15379,10 @@ pub const CodeGen = struct {
                 }
             },
             .call => |c| {
+                // APPLY-ONE, the EMITTING half — c0 §44 `apply.edge` row 1,
+                // gap[092]. A descriptor subject constructs. This must precede
+                // every other `.call` arm, because all of them assume a callee.
+                if (try self.emit_descriptor_application(c)) return;
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__constexpr") and c.args.len == 1) {
                     try self.emit_comptime_expr(c.args[0], self.expr_type(expr) == .any);
                     return;

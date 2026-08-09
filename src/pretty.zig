@@ -218,6 +218,20 @@ pub const PrettyPrinter = struct {
             },
             .call => |x| {
                 try self.printExpr(x.func, 0);
+                // APPLY-ONE, gap[092] — c0 §44a trap 2 is "braces as sugar",
+                // and writing `(` here unconditionally made the canonical
+                // FORMATTER a source-level implementation of it: every
+                // `f{ … }` came back as `f({ … })`, so the brace face could not
+                // survive a round trip through the repo's own tool. Until the
+                // parser half this printer could not have avoided it — both
+                // faces recorded `parenless` and the tree held nothing to tell
+                // them apart. It now states the face, and this reads it.
+                if (x.form == .braced and x.args.len == 1 and
+                    x.args[0].* == .table and x.args[0].table.pack.applied)
+                {
+                    try self.printExpr(x.args[0], 0);
+                    return;
+                }
                 try self.write("(");
                 for (x.args, 0..) |arg, i| {
                     if (i > 0) try self.write(", ");

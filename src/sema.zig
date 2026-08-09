@@ -372,6 +372,16 @@ pub const Sema = struct {
     module_sealed: std.StringHashMapUnmanaged(void) = .{},
     /// Registry of declared enum types for exhaustiveness checking.
     enum_types: std.StringHashMapUnmanaged(RT) = .{},
+    /// `<case>` -> the case-set that declares it, `""` when two do. c0 §41
+    /// `resolution.rule`, gap[087].
+    ///
+    /// A FAST REJECT, not the resolver. The resolver reads the DEMANDED
+    /// case-set's own variants — the demand is what decides, and this map only
+    /// answers "is this spelling a case anywhere?" so an ordinary `a == b`
+    /// costs one hash lookup instead of a type check. Keeping the two apart is
+    /// what stops the index from becoming a second authority: it can never
+    /// select a home, only decline to look.
+    case_homes: std.StringHashMapUnmanaged([]const u8) = .{},
     /// Registry of declared concepts for satisfaction checking.
     concepts: std.StringHashMapUnmanaged(ConceptInfo) = .{},
     /// Registry of overloaded function signatures (Requirement 12).
@@ -664,6 +674,7 @@ pub const Sema = struct {
         }
         self.module_sealed.deinit(self.alloc);
         self.enum_types.deinit(self.alloc);
+        self.case_homes.deinit(self.alloc);
         self.concepts.deinit(self.alloc);
         // Clean up overload lists.
         var it = self.overloads.iterator();
@@ -2534,6 +2545,79 @@ pub const Sema = struct {
         return self.record(expr, t);
     }
 
+    /// APPLY-ONE, the RESOLVING half — c0 §43 `law.brace` row 1, §44
+    /// `apply.edge` "apply(descriptor)(fieldpack) -> a value the descriptor
+    /// describes". gap[092].
+    ///
+    /// Answers non-null exactly when this application's SUBJECT is a record
+    /// descriptor, in which case the application constructs and its type is the
+    /// descriptor — never the callee's return type, because there is no callee.
+    ///
+    /// Every fact §44 `apply.carries` enumerates SURVIVES this: the subject
+    /// identity stays on `c.func`, the argument labels and their order stay on
+    /// the pack's own `TableField`s, the operand descriptors are recorded by
+    /// `check_expr` on each field value as usual, and the return pack is the
+    /// answer below. Nothing is moved to a parallel structure and nothing is
+    /// dropped — a second table of labels beside the pack is exactly where the
+    /// two shapes drift apart, which is why APPLY-ONE added no such thing.
+    fn check_descriptor_application(self: *Sema, expr: *ast.Expr) SemaError!?RT {
+        const c = &expr.call;
+        // The FACE, read from the tree rather than re-derived. Before APPLY-ONE
+        // `f{ … }` and `f({ … })` were byte-identical here and this test could
+        // not have been written.
+        if (c.form != .braced) return null;
+        if (c.args.len != 1) return null;
+        if (c.args[0].* != .table) return null;
+        if (!c.args[0].table.pack.applied) return null;
+        if (c.func.* != .name) return null;
+
+        const subject = c.func.name.ident;
+        const def = self.alias_defs.get(subject) orelse return null;
+        // A descriptor with type parameters is a generic alias and is expanded,
+        // not applied; a nominal descriptor over a scalar (`feet: f64`) has no
+        // field pack to receive. Both decline to the general path rather than
+        // guessing, per `law.brace`'s own "never a guess".
+        if (def.type_params != null) return null;
+        const is_record = def.fields.len != 0 or
+            (def.target != null and def.target.? == .record);
+        if (!is_record) return null;
+
+        // The pack's field VALUES are ordinary operands and are checked as
+        // such. Done before the realization is recorded so a diagnostic inside
+        // a field still reports against the field, not against the pack.
+        _ = try self.check_expr(c.args[0]);
+
+        // Argument labels are checked against the descriptor, which is the
+        // whole benefit of resolving the subject instead of calling it: a
+        // misspelled label used to become a silent table key.
+        //
+        // ONCE. `realized` is the record of this resolution having happened, so
+        // it is also what makes the check idempotent — sema reaches a binding's
+        // initializer more than once (inference, then the block walk) and
+        // without this the same label reported twice.
+        if (c.args[0].table.pack.realized == .undecided) {
+            for (c.args[0].table.fields) |tf| {
+                if (tf != .named) continue;
+                if (!AliasRegistry.hasfield(def, tf.named.key)) {
+                    self.err(
+                        c.args[0].loc(),
+                        "descriptor '{s}' has no field '{s}', so the applied pack carries a label the subject cannot receive",
+                        .{ subject, tf.named.key },
+                    );
+                }
+            }
+        }
+
+        // `law.pack.shape`: "physical representation is selected AFTER semantic
+        // resolution". This is that selection, and it is the first write to
+        // `realized` anywhere — the parser may only ever leave `.undecided`.
+        // A resolved descriptor pack is FIELDS: the emitter has a designated
+        // initializer for exactly this shape and no heap table is required.
+        c.args[0].table.pack.realized = .fields;
+
+        return RT{ .@"struct" = .{ .name = subject } };
+    }
+
     fn check_expr_inner(self: *Sema, expr: *ast.Expr) SemaError!RT {
         return switch (expr.*) {
             .nil => .nil,
@@ -2575,7 +2659,24 @@ pub const Sema = struct {
                 return .any;
             },
             .field => |f| {
-                const ot = try self.check_expr(f.obj);
+                var ot = try self.check_expr(f.obj);
+                // A DESCRIPTOR NAME DENOTES ITS DESCRIPTOR. `token.kind.eof`
+                // reported `any` because `token` is an `alias_def` and not a
+                // scope binding, so `check_expr` took the implicit-local arm
+                // above and the whole walk lost its type — `k = token.kind.eof`
+                // then had no case-set to be a case of, which is why gap[087]'s
+                // bare form had nothing to resolve against.
+                //
+                // Recovered here rather than in the `.name` arm deliberately:
+                // a descriptor name in VALUE position is APPLY-ONE's question
+                // (§43 `law.brace`) and is answered by the call path, while
+                // this is only the WALK — `x.y` where `x` names a descriptor
+                // has exactly one reading, and it is the only one this touches.
+                if (ot == .any and f.obj.* == .name and
+                    self.alias_defs.contains(f.obj.name.ident))
+                {
+                    ot = RT{ .@"struct" = .{ .name = f.obj.name.ident } };
+                }
                 if (ot == .enum_type and self.find_enum_variant(ot.enum_type, f.field) != null) {
                     return ot;
                 }
@@ -2856,6 +2957,21 @@ pub const Sema = struct {
                     if (std.mem.eql(u8, callee, "pairs") or std.mem.eql(u8, callee, "ipairs")) {
                         self.warn_msg(c.func.name.loc, "'{s}' is deprecated; iterate tables directly with 'for value in table' or 'for key, value in table'", .{callee});
                     }
+                    // APPLY-ONE (c0 §43 `law.brace`, §44 `apply.edge` row 1),
+                    // gap[092]. THE SUBJECT DECIDES. Descriptor space is
+                    // consulted BEFORE callable space, and before the refusal
+                    // below, because a descriptor subject is an application
+                    // whose meaning is CONSTRUCTION — not a call, and not an
+                    // undeclared function.
+                    //
+                    // This is not c0 §44a trap 1. Trap 1 is a consumer
+                    // *deriving* the brace/paren split from what a name
+                    // denotes; the split is STATED by the tree here
+                    // (`form == .braced`, `pack.applied`) and this site only
+                    // resolves the subject that the stated form already
+                    // identified. Reading a stated fact and selecting an edge
+                    // is `law.brace` working.
+                    if (try self.check_descriptor_application(expr)) |rt| return rt;
                     // gap[026]: a call to a name nothing declares. This must run
                     // BEFORE `check_expr(c.func)` below, because that path
                     // silently defines any unresolved name as an implicit local
@@ -2871,7 +2987,21 @@ pub const Sema = struct {
                         !is_relation_family(callee) and
                         self.foreign_functions.get(callee) == null)
                     {
-                        self.err(c.func.name.loc, "call to undeclared function '{s}'", .{callee});
+                        // c0 §43 `law.brace` third outcome: "subject is NEITHER
+                        // -> diagnostic, never a guess". The old sentence was
+                        // "call to undeclared function '{s}'" — the right
+                        // refusal in the wrong words. It was the CALL PATH
+                        // narrating its own unconditional win, and it named one
+                        // of the two homes the resolution rule consults. Under
+                        // APPLY-ONE the subject is looked for in DESCRIPTOR
+                        // space and in CALLABLE space, and this diagnostic
+                        // fires only when BOTH answered no; it says so, and it
+                        // names each home with what it was asked for.
+                        self.err(
+                            c.func.name.loc,
+                            "'{s}' is neither a descriptor nor a callable, so the {s} application has no subject: descriptor space holds no '{s}' and callable space holds no '{s}' (no declaration, no builtin, no foreign import)",
+                            .{ callee, c.form.name(), callee, callee },
+                        );
                     }
                 }
                 const ft = try self.check_expr(c.func);
@@ -3163,6 +3293,17 @@ pub const Sema = struct {
     }
 
     fn check_binop(self: *Sema, loc: ast.Loc, op: ast.BinOp, lhs: *ast.Expr, rhs: *ast.Expr) SemaError!RT {
+        // c0 §41 `resolution.rule` — BARE IDENTITY + SEMANTIC DEMAND + AVAILABLE
+        // HOMES -> ONE IDENTITY, OR A DIAGNOSTIC. gap[087].
+        //
+        // BEFORE either operand is checked, and that ordering is the whole
+        // correctness argument. `check_expr` on an unbound name IMPLICITLY
+        // DEFINES it as an `any` local (the duo_mode arm of the `.name` case),
+        // so a resolver that ran afterwards would be resolving against a
+        // binding it had just created — and `law.shadow` would then fire on
+        // every bare case, blaming the reader for the checker's own side
+        // effect.
+        if (op == .eq or op == .neq) try self.resolve_bare_case_operands(lhs, rhs);
         const lt = try self.check_expr(lhs);
         const rt = try self.check_expr(rhs);
 
@@ -4263,6 +4404,105 @@ pub const Sema = struct {
 
     /// Look up a variant in the enum type by tag name.
     /// Handles both qualified ("EnumName.Variant") and unqualified ("Variant") tags.
+    /// The spelling this expression would offer to case resolution, or null.
+    ///
+    /// THE FAST REJECT. `a == b` between two integers must cost one hash
+    /// lookup, not a type check, so nothing below this line runs unless the
+    /// name is a case spelling SOMEWHERE. The index cannot select a home — it
+    /// only decides whether there is a question to ask.
+    fn case_spelling(self: *const Sema, e: *const ast.Expr) ?[]const u8 {
+        if (e.* != .name) return null;
+        if (!self.case_homes.contains(e.name.ident)) return null;
+        return e.name.ident;
+    }
+
+    /// The case-set a demand names, if it names one. Both spellings answer: a
+    /// value already typed as the case-set, and a name that resolves to one.
+    fn demanded_caseset(self: *const Sema, demand: RT) ?RT {
+        if (demand == .enum_type) return demand;
+        if (demand == .@"struct") {
+            if (self.enum_types.get(demand.@"struct".name)) |e| return e;
+        }
+        return null;
+    }
+
+    /// c0 §41 — resolve a bare case in a comparison, or diagnose.
+    ///
+    /// NON-CIRCULARITY IS STRUCTURAL, not a check. The expected descriptor is
+    /// read from the OTHER operand, so the token being resolved contributes
+    /// nothing to its own demand. When BOTH operands spell cases there is no
+    /// operand left to supply one, and this declines rather than picking the
+    /// case-set that happens to declare either name — `circle == square` names
+    /// no comparison the graph can prove, and G-TOTAL's ambiguity number is 0.
+    fn resolve_bare_case_operands(self: *Sema, lhs: *ast.Expr, rhs: *ast.Expr) SemaError!void {
+        if (self.case_homes.count() == 0) return;
+        const lcase = self.case_spelling(lhs);
+        const rcase = self.case_spelling(rhs);
+        if (lcase == null and rcase == null) return;
+        if (lcase != null and rcase != null) return;
+        if (rcase) |c| {
+            const demand = try self.check_expr(lhs);
+            try self.bind_bare_case(rhs, demand, c);
+            return;
+        }
+        const demand = try self.check_expr(rhs);
+        try self.bind_bare_case(lhs, demand, lcase.?);
+    }
+
+    /// The four outcomes, and there is no fifth. `bound` is whether the
+    /// spelling is ALSO a lexical binding here.
+    ///
+    ///   case of the demand, not bound     RESOLVE — rewrite to the home
+    ///   case of the demand, bound         DIAGNOSE — `law.shadow`
+    ///   not a case of the demand, unbound DIAGNOSE — mixed space
+    ///   not a case of the demand, bound   leave alone — an ordinary operand
+    ///
+    /// The last row is why `bound` is consulted at all rather than the case
+    /// always winning: a local named `count` compared against an i64 must keep
+    /// meaning the local, even if some unrelated case-set spells `count`.
+    fn bind_bare_case(self: *Sema, e: *ast.Expr, demand: RT, case: []const u8) SemaError!void {
+        const et = self.demanded_caseset(demand) orelse return;
+        const bound = self.scope.lookup(case) != null;
+        const is_case = self.find_enum_variant(et.enum_type, case) != null;
+
+        if (is_case and bound) {
+            // `law.shadow`: "a lexical binding may NOT silently shadow an
+            // ambient-subject identity referenced in the same scope; a
+            // collision that would depend on subtle precedence DIAGNOSES."
+            // "Locals win" is DENIED by name, and so is "the case wins" — the
+            // point is that adding a binding must never quietly change what an
+            // already-written comparison means.
+            self.err(e.loc(), "'{s}' is both a lexical binding and a case of '{s}' here, so this comparison has two readings", .{ case, et.enum_type.name });
+            self.hint_msg(e.loc(), "name the home ('{s}.{s}') to mean the case, or rename the binding", .{ et.enum_type.name, case });
+            return;
+        }
+        if (!is_case) {
+            if (bound) return;
+            // The spelling IS a case, but of a case-set nothing here demanded.
+            // Resolving it against whichever set declares it would make the
+            // answer depend on which file was parsed — a mixed-space
+            // diagnostic, never a guess.
+            const home = self.case_homes.get(case) orelse "";
+            if (home.len == 0) {
+                self.err(e.loc(), "'{s}' is a case of more than one case-set, and '{s}' is not one of them", .{ case, et.enum_type.name });
+            } else {
+                self.err(e.loc(), "'{s}' is a case of '{s}', but this comparison demands '{s}'", .{ case, home, et.enum_type.name });
+            }
+            self.hint_msg(e.loc(), "compare against a case of '{s}', or convert the operand", .{et.enum_type.name});
+            return;
+        }
+
+        // RESOLVED. The node is rewritten to the SAME shape the dotted form
+        // and the fully-named form both produce — `token__kind.eof` — so sema
+        // and codegen consume one resolved fact and neither re-derives it
+        // (A3 ONE EDGE). Nothing downstream learns that a bare name was
+        // written, which is what makes this a canonicalization rather than a
+        // second lowering path.
+        const home = try self.alloc.create(ast.Expr);
+        home.* = .{ .name = .{ .loc = e.loc(), .ident = et.enum_type.name } };
+        e.* = .{ .field = .{ .loc = e.loc(), .obj = home, .field = case } };
+    }
+
     fn find_enum_variant(self: *const Sema, enum_info: anytype, tag: []const u8) ?types.EnumVariantType {
         _ = self;
         // Extract the variant name from the tag (may be "EnumName.Variant" or just "Variant")
@@ -4405,6 +4645,18 @@ pub const Sema = struct {
 
         // Register in the enum type registry (for exhaustiveness checking)
         try self.enum_types.put(self.alloc, ed.name, enum_t);
+        // gap[087]: the spellings this case-set claims. A name a SECOND
+        // case-set claims is marked ambiguous rather than overwritten — two
+        // homes for one spelling is exactly the state where a silent pick
+        // produces a wrong VALUE rather than a failed build.
+        for (ed.variants) |v| {
+            const gop = try self.case_homes.getOrPut(self.alloc, v.name);
+            if (gop.found_existing) {
+                if (!std.mem.eql(u8, gop.value_ptr.*, ed.name)) gop.value_ptr.* = "";
+            } else {
+                gop.value_ptr.* = ed.name;
+            }
+        }
 
         // Define the enum name in scope as a constant type
         try self.scope.define(ed.name, .{ .typ = enum_t, .is_const = true });
