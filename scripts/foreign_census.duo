@@ -259,12 +259,29 @@ main(): i64
             end
 
             -- The row no file census can see.
-            embedded: i64 = count("cd {root} && git ls-files '*.duo' | tr '\\n' '\\0' | xargs -0 grep -h -o -E '@(comp\\.)?c\\.(emit|include)' 2>/dev/null | wc -l")
+            -- Comment lines are stripped, and this file excludes ITSELF, for
+            -- the reason audit100 gives for the same exclusion: a scanner
+            -- whose subject is the text it greps for reports its own source.
+            -- Both were paid for here. Tracking these three scripts took the
+            -- count 236 -> 240 on their headers alone; adding a diagnostic
+            -- that NAMES the token in a string took it to 184. Prose and
+            -- error messages are not embedded C.
+            embedded: i64 = count("cd {root} && git ls-files '*.duo' | grep -v 'scripts/foreign_census.duo' | tr '\\n' '\\0' | xargs -0 grep -h -E '@(comp\\.)?c\\.(emit|include)' 2>/dev/null | grep -v -E '^[[:space:]]*--' | grep -o -E '@(comp\\.)?c\\.(emit|include)' | wc -l")
             print("")
             print("  embedded       {embedded}    foreign code INSIDE .duo (@c.emit / @c.include) — ledger by construction, invisible to any extension census")
 
+            -- Positive control on the embedded row: this tree demonstrably
+            -- has embedded C — the compiler links a generated `@c.emit`
+            -- artifact to tokenize with — so a zero here is a broken grep, not
+            -- a milestone. The day it is genuinely zero, this check is the
+            -- thing to delete, in the commit that earns it.
+            if embedded == 0
+                print("foreign_census: FAIL — 0 embedded @c sites. The compiler tokenizes with a generated @c.emit artifact, so a zero is a broken grep, not a milestone.")
+                code = 3
+            end
+
             floor: i64 = to(i64)(std.script.getenv("FOREIGN_FLOOR", "4"))
-            embedfloor: i64 = to(i64)(std.script.getenv("FOREIGN_EMBED_FLOOR", "236"))
+            embedfloor: i64 = to(i64)(std.script.getenv("FOREIGN_EMBED_FLOOR", "181"))
             over: i64 = 0
             if unclassified > floor
                 print("foreign_census: FAIL — {unclassified} unclassified foreign files, over the ratchet {floor}. Classify it as ledger with a termination condition, classify it as oracle with the authority that licenses it, or delete it.")
