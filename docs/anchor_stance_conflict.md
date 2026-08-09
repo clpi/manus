@@ -107,14 +107,14 @@ clean under `duo check`; the C backend then fails on `lua_to_num` /
 
 ---
 
-## Row 2 — postfix `X@rel`: the spec's own spelling is the matmul operator
+## Row 2 — postfix `X@rel`: the spec's own spelling is the matmul operator  *(RECONCILED)*
 
-**Parser believes:** `@` between two expressions on ONE LINE is the `matmul`
+**Parser believed:** `@` between two expressions on ONE LINE is the `matmul`
 binary operator (`infix_prec` maps `.at → .matmul`). On a NEW LINE the same
 token is an attribute prefix. Three separate loops re-decide this by comparing
 `tok.loc.line` against the left operand's line.
 
-**Sema believes:** nothing — it admits the binop.
+**Sema believed:** nothing — it admits the binop.
 
 **Observable** *(bug: accepted, should be rejected)*:
 
@@ -125,7 +125,64 @@ q = p@x            -- §2: MOVE the anchor and retrieve
 
 `duo check` → clean, with `warning: infix '@' matmul is non-canonical`.
 `duo compile` → `error: use of undeclared identifier 'x'`. The canonical postfix
-anchor is unreachable, and what it reaches instead is a tensor operator.
+anchor was unreachable, and what it reached instead was a tensor operator.
+
+### The decision
+
+**The postfix anchor takes the token; matmul keeps it only when spaced.** This
+was never a two-sided question, and the deciding evidence is that the repository
+already contained a parser that got it right: `lib/std/compiler/parser.duo`
+reads postfix `@` as a SUFFIX in `proj_suffixed`, right beside `.field`, `[i]`
+and `:m()`, building `(anchor base name)` —
+and `examples/pass16_parser_corpus_proof.duo` pins `bar = foo@7` →
+`(program (assign bar (anchor foo 7)))`. Two parsers in one repository held
+different facts about one token. Alongside that: infix `@` warns
+"non-canonical" in `.duo` already, and a grep over 770 tracked `.duo` files
+finds exactly three infix uses, all spaced `x @ y`, all inside
+`examples/compile_fail/`.
+
+### The mechanism
+
+**ADJACENCY**, which is this parser's own precedent — `peek_glued_assign` reads
+`>>=` as `>>` glued to `=` and says "ADJACENCY is the whole rule";
+`examples/spec100/glued.duo` is that fixture. `at_is_glued_anchor` requires the
+relation name to start in the column right after the `@` ends, on the same line,
+and the caller keeps the existing `tok.loc.line > e.loc().line` guard so a
+new-line `@hot` attribute (glued on the right too — `@` in column 1, `hot` in
+column 2) cannot be swallowed. Column arithmetic rather than a source scan,
+because under SH-03 the lexer is sometimes a cursor over a token stream and a
+byte-level rule would decide differently depending on which lexer ran.
+
+Every `X@rel` in the spec is written glued (`p@x`, `backend@driver`, `shc@wire`,
+`ward@allocation_free`, `point@ordering`); every matmul in the repository is
+written spaced. So no existing program changes meaning, and the three tensor
+fixtures still report `tensor matmul inner dimension mismatch`.
+
+The parser hands down a resolved `field` node — retrieval, never invocation,
+never a `method_call`. `ast.Expr` is untouched; sema and codegen are untouched.
+
+### The fixture
+
+`examples/spec100/anchormove.duo`, **353**, and the `forms` floor ratchets
+11 → 12. The value kills each degenerate reading: matmul winning the token does
+not compile at all; an anchor answering the first field gives 343; `@` binding
+looser than `*` gives `p@(x * 100)` and an undeclared identifier; broken
+chaining (`b@inner@x`) does not compile. The walk `p.x` is summed beside the
+moves on purpose — two stances of one anchor must land on one fact.
+
+Before: `duo check` clean + matmul warning, then
+`error: use of undeclared identifier 'x'`.
+After: `p@x` answers `3`; the fixture answers `353`.
+
+### What is still owed
+
+§2's relation space — `point@ordering → (bundle, nil) | (nil, missing)`,
+protocol satisfaction, distribution over `&` and `|` — does not exist in the
+compiler. The reachable half of MOVE is retrieval against the anchored home, and
+that is what landed. `scripts/spec_conformance.duo`'s `P48 anchor X@to(T)` row
+now *compiles* and answers `false` instead of failing to build: the spelling is
+reachable, the relation is not. That row stays red on purpose and now names one
+gap instead of two.
 
 ---
 

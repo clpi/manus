@@ -136,8 +136,16 @@ main(): i64
     record("S14 retrieve to[T]", "main(): void\n    print(to[str] != nil)\nend\n", "true")
     record("S14 retrieve to[T][X]", "main(): void\n    print(to[str][i64] != nil)\nend\n", "true")
 
-    -- THE CANONICAL ANCHOR is POSTFIX `X@rel` (Pass 48 §2.1). This is the form
-    -- that should exist, and does not.
+    -- THE CANONICAL ANCHOR is POSTFIX `X@rel` (Pass 48 §2.1, Pass 100 §2).
+    --
+    -- The SPELLING exists now: glued `X@rel` is a postfix anchor rather than
+    -- the matmul operator, so this row compiles instead of dying on "use of
+    -- undeclared identifier 'str'". It still answers `false`, and that is the
+    -- honest remainder — the anchor RETRIEVES, and there is no `to` relation
+    -- retrievable off the `i64` descriptor to retrieve. §2's relation space
+    -- (`point@ordering -> (bundle, nil) | (nil, missing)`, protocol
+    -- satisfaction, distribution over `&` and `|`) is unbuilt. The row stays
+    -- red on purpose and now names one gap instead of two.
     record("P48 anchor X@to(T)", "main(): void\n    print(i64@to(str) != nil)\nend\n", "true")
 
     -- `value.@name` is IN PASS 48'S GRAVEYARD (Part VI), alongside `point:@to`

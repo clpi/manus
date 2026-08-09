@@ -1,0 +1,44 @@
+-- Pass 100 §2 THE ANCHOR — the POSTFIX stance: `X@rel` MOVES the anchor and
+-- retrieves.
+--
+--     q = p@x
+--
+-- §4's character catalog states it in one line: "@ the anchor: name it (bare),
+-- move it (postfix X@rel — retrieval only)".
+--
+-- WHAT THIS FIXTURE EXISTS TO CATCH. The spec's own canonical spelling was
+-- UNREACHABLE, and what it reached instead was a tensor operator. `infix_prec`
+-- mapped the `@` token to `matmul`, so `p@x` checked clean — with a warning
+-- calling the matmul non-canonical — and then died in the C backend on "use of
+-- undeclared identifier 'x'", because `x` had been parsed as the right OPERAND
+-- of a binary operator rather than as the relation being retrieved. Meanwhile
+-- the SELF-HOSTED parser already read the same token as a postfix anchor
+-- (`lib/std/compiler/parser.duo` builds `(anchor base name)`, and
+-- `examples/pass16_parser_corpus_proof.duo` pins `bar = foo@7`). Two parsers in
+-- one repository, one token, different facts.
+--
+-- ADJACENCY decides, which is this parser's own precedent — `>>=` is `>>` glued
+-- to `=` and `glued.duo` next door is that fixture. Every `X@rel` in the spec is
+-- written glued; every matmul in this repository is written spaced (`x @ y`, all
+-- three rows in examples/compile_fail). So no existing program changes meaning.
+--
+-- VERIFIED BY VALUE, and the value kills the degenerate readings:
+--   * matmul still winning the token          -> does not compile at all
+--   * an anchor that answers the FIRST field  -> 343, not 353
+--   * an anchor that answers the receiver     -> not a number
+--   * `@` binding looser than `*`             -> `p@(x * 100)`, undeclared
+--   * chaining broken (`b@inner@x`)           -> does not compile
+-- and the walk `p.x` is summed beside the moves on purpose: the two stances are
+-- stances of ONE anchor, so they have to land on one fact.
+-- expect: 353
+
+point: { x: i64, y: i64 }
+box: { inner: point, tag: i64 }
+
+main = (): i64
+    p: point = { x = 3, y = 4 }
+    b: box = { inner = p, tag = 7 }
+    n = p@x * 100 + p@y * 10 + b@inner@x + b@tag + p.x
+    print("{n}")
+    0
+end

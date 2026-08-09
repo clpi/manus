@@ -4865,6 +4865,31 @@ pub const Parser = struct {
         return (try self.pk()).kind == .dot;
     }
 
+    /// Is this `@` the postfix ANCHOR (§2, `X@rel`) rather than the matmul
+    /// operator? The relation name must be GLUED to the sigil: same line, and
+    /// starting in the column right after the `@` ends.
+    ///
+    /// Column arithmetic and not a source scan, because the lexer is not always
+    /// scanning a buffer — under SH-03 it is a cursor over a token stream the
+    /// DUO lexer produced (`Lexer.duo_tokens`), and a rule that reached for
+    /// bytes would decide differently depending on which lexer ran. `loc` and
+    /// `text` are the two things both paths carry, which is exactly what
+    /// `peek_glued_assign` uses for `>>=`.
+    ///
+    /// The left side is not tested here; the caller's `tok.loc.line >
+    /// e.loc().line` check does the work that matters, keeping a NEW-LINE `@hot`
+    /// attribute out (that one is glued on the right too — `@` in column 1,
+    /// `hot` in column 2 — so right-adjacency alone would swallow it).
+    fn at_is_glued_anchor(self: *Parser, at_tok: Token) ParseError!bool {
+        const saved = self.lex.saveState();
+        defer self.lex.restoreState(saved);
+        _ = try self.adv();
+        const rel = try self.pk();
+        if (!is_name_like_kind(rel.kind)) return false;
+        if (rel.loc.line != at_tok.loc.line) return false;
+        return rel.loc.col == at_tok.loc.col + @as(u32, @intCast(at_tok.text.len));
+    }
+
     /// Pass 100 §2 THE ANCHOR — **leading `.` WALKS from the anchor**, and which
     /// anchor it walks from is decided BY POSITION: method scope → my field
     /// (`.pos`); argument position → each element (`map(.x)`); **descriptor-
@@ -5369,6 +5394,66 @@ pub const Parser = struct {
                         continue;
                     }
                     e = try self.new_expr(.{ .field = .{ .loc = tok.loc, .obj = e, .field = fld } });
+                },
+                .at => {
+                    // Pass 100 §2 THE ANCHOR — **postfix `X@rel` MOVES it and
+                    // retrieves** (never invokes). §4's character catalog says
+                    // the same in one line: "@ the anchor: name it (bare), move
+                    // it (postfix X@rel — retrieval only)".
+                    //
+                    // THE DEFECT THIS CLOSES: the spec's own canonical spelling
+                    // was UNREACHABLE, and what it reached instead was a tensor
+                    // operator. `infix_prec` mapped `.at` to `.matmul`, so
+                    //
+                    //     q = p@x
+                    //
+                    // checked clean with `warning: infix '@' matmul is
+                    // non-canonical` and then died in the C backend on "use of
+                    // undeclared identifier 'x'" — `x` had been parsed as the
+                    // right OPERAND of a binary operator.
+                    //
+                    // THE EVIDENCE THAT THIS IS A DISAGREEMENT AND NOT A GAP.
+                    // The SELF-HOSTED parser already reads postfix `@` as an
+                    // anchor SUFFIX: `lib/std/compiler/parser.duo` builds
+                    // `(anchor base name)` in `proj_suffixed`, right beside
+                    // `.field`, `[i]` and `:m()`, and
+                    // `examples/pass16_parser_corpus_proof.duo` pins
+                    // `bar = foo@7` -> `(program (assign bar (anchor foo 7)))`.
+                    // Two parsers in one repository held different facts about
+                    // one token. This one now agrees with the canonical graph,
+                    // and it agrees by PARSING THE SAME SHAPE — a suffix, not an
+                    // infix operand.
+                    //
+                    // ADJACENCY DECIDES, which is this parser's own precedent
+                    // (`peek_glued_assign`: `>>=` is `>>` glued to `=`, and
+                    // "ADJACENCY is the whole rule"; `examples/spec100/glued.duo`
+                    // is the fixture). Every `X@rel` in the spec is written
+                    // glued — `p@x`, `backend@driver`, `shc@wire`,
+                    // `ward@allocation_free`, `point@ordering` — and every
+                    // matmul in this repository is written spaced: the three
+                    // `x @ y` rows are all in `examples/compile_fail/`, and a
+                    // grep of infix `@` over 770 tracked `.duo` files finds no
+                    // others. So glued `X@rel` is the anchor, spaced `a @ b`
+                    // stays matmul, and no existing program changes meaning.
+                    //
+                    // RETRIEVAL, NEVER INVOCATION: this hands down a resolved
+                    // `field` node — the value of `rel` at the anchored home —
+                    // and never a `method_call`. Sema and codegen consume a
+                    // decided fact; neither re-derives one, which is the rule
+                    // row 1a set and row 3 enforced by deleting the last
+                    // spelling-derived stance in codegen.
+                    //
+                    // WHAT IS STILL OWED, stated rather than faked: §2's
+                    // relation space — `point@ordering -> (bundle, nil) |
+                    // (nil, missing)`, protocol satisfaction, `|`/`&`
+                    // distribution — does not exist in the compiler. The
+                    // reachable half of MOVE is retrieval against the anchored
+                    // home, and that is what this is.
+                    if (tok.loc.line > e.loc().line) break;
+                    if (!try self.at_is_glued_anchor(tok)) break;
+                    _ = try self.adv();
+                    const rel = try self.expect_name_like();
+                    e = try self.new_expr(.{ .field = .{ .loc = tok.loc, .obj = e, .field = rel } });
                 },
                 .lbracket => {
                     _ = try self.adv();
@@ -8006,6 +8091,47 @@ test "parse: duo mode infix @ matmul parses as binop (deprioritized)" {
     , &arena);
     const b = mod.body.stmts[0].assign.values[0].binop;
     try testing.expectEqual(ast.BinOp.matmul, b.op);
+}
+
+// Pass 100 §2 — the postfix anchor and the matmul operator share a token and
+// are told apart by ADJACENCY. These two tests are a PAIR: either alone would
+// pass under a parser that had simply picked one reading for everything, so
+// they are written adjacent and must be read together.
+test "parse: glued X@rel is the postfix anchor, not matmul" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuoSource(
+        \\q = p@x
+    , &arena);
+    const f = mod.body.stmts[0].assign.values[0].field;
+    try testing.expectEqualStrings("x", f.field);
+    try testing.expectEqualStrings("p", f.obj.name.ident);
+}
+
+test "parse: spaced a @ b stays matmul beside the glued anchor" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuoSource(
+        \\y = a @ b
+    , &arena);
+    try testing.expectEqual(ast.BinOp.matmul, mod.body.stmts[0].assign.values[0].binop.op);
+}
+
+// The attribute is glued on the right too — `@` in column 1, `hot` in column 2
+// — so right-adjacency ALONE would have swallowed it into the expression above
+// as an anchor. The line check is what keeps them apart, and this is the row
+// that fails if someone deletes it.
+test "parse: a new-line @attribute is not an anchor on the line above" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuoSource(
+        \\x = 42
+        \\@hot
+        \\f(): i64
+        \\    1
+        \\end
+    , &arena);
+    try testing.expectEqual(@as(i64, 42), mod.body.stmts[0].assign.values[0].int_lit.val);
 }
 
 test "parse: duo mode legacy @comptime_fold warns" {
