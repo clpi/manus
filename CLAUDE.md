@@ -284,7 +284,19 @@ a function; job control is task scopes (leaving the scope reaps).
 
 THEME: **github dark (Primer)**, role-mapped — the canonical docs/site theme.
 
-**RULING 2026-08-08 — H-2 HOLDS AT 18; FINE SPLITS ARE CARDS, NOT ROLES.**
+**CORRECTION 2026-08-08, from the rendered spec itself.** The spec's §14.1 states
+H-2 as *"the role set is closed"* — **with no number.** "18" was my summary, not
+the law. So the RULING is CLOSURE (the set is finite, enumerated, and total);
+the COUNT is a BINDING and gets checked against what the renderer needs. This
+reconciles both implementations rather than picking one: the dissent that said
+"CLOSED at 18 is false" was right about the number and wrong about the closure.
+The spec's own renderer carries ~36 role classes across five notations
+(`t-*` duon, `d-*` dnir, `a-*` asm, `g-*` ebnf, `r-*` foreign) plus modifiers,
+and it passes its own G-TOTAL gate — so the working set is larger than 18 and
+the law is satisfied anyway. **Enumerate what the renderer needs; do not defend a
+count.**
+
+**RULING 2026-08-08 — FINE SPLITS ARE CARDS, NOT SEPARATE HUES.**
 Two agents implemented this section independently and reached opposite readings
 (`docs/spec/roles.md` + `scripts/role_scan.duo` say the count cannot close and
 is ≥29; `fixtures/highlight/` implements 18 roles × 40 cards). Adjudicated on
