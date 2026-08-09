@@ -143,7 +143,7 @@ time of writing.
 See `AGENTS.md` for full agent design targets. Coordinate via `duo_agent_gaps_update()`.
 See `.agents/AGENT_COORDINATION.md` for active work tracking.
 
-## EPOCH 2 — Pass 100 + Pass 103 are the sole living authority
+## EPOCH 2 — Pass 100 + passes 103-108 are the sole living authority
 
 PRECEDENCE: this file + `docs/spec/pass100.md` (Duo 0.1) + passes 103-107
 + `docs/spec/grammar.md` (Pass 108, normative)
