@@ -1754,10 +1754,11 @@ brace = law{
     kind  = .invariant
     holds = .resolution
     binds = {
-        "`name{ … }` is ONE form; the NAME's resolution decides the semantics",
-        "name denotes a DESCRIPTOR -> construction, ladder rung (a)",
-        "name denotes a CALLABLE  -> application with one table operand",
-        "name denotes NEITHER     -> diagnostic, never a guess",
+        "`name{ … }` is ONE form; it is APPLICATION, and the subject decides what applying means",
+        "subject is a DESCRIPTOR -> descriptor application, which yields a value it describes",
+        "subject is a CALLABLE   -> ordinary application of a structured argument pack",
+        "subject is NEITHER      -> diagnostic, never a guess",
+        "the PARSER never asks `is this a type` — it emits one application node",
     }
     fails = "resolving the shared form as a call without asking what the name is"
 }
@@ -1792,3 +1793,161 @@ brace.names = 40
 -- descriptors and callables. One rule already in the constitution decides
 -- construction, cases, subject fields, callable projections AND this. That is
 -- what a mechanism collapse looks like when it is real rather than renamed.
+
+-- ═══ §44 · APPLICATION IS ONE MECHANISM ════════════════════════════════════
+--
+-- §43 collapsed brace construction and brace call. This finishes the collapse:
+-- the unification is SEMANTIC, never a parser choosing between two productions.
+-- A repair that "fixes the collision" by restoring separate constructor and
+-- brace-call paths in the ast or in sema is a REGRESSION, not a fix — the
+-- collision was evidence the two concepts were artificially overlapping.
+
+apply = law{
+    id    = "law.apply.one"
+    kind  = .invariant
+    holds = .one
+    binds = {
+        "duon has ONE application mechanism",
+        "parenthesized, braced and string faces project onto the SAME application relation",
+        "descriptor construction, ordinary call and structured application are SPECIALIZATIONS",
+        "the specialization derives from subject identity, argument shape, demand and context",
+        "the parser emits one structural application node and never resolves the edge",
+    }
+    fails = "a parser asking `is the subject a type` to pick a production"
+}
+
+-- Unification of the MECHANISM is not a claim that every application is
+-- observationally identical. These stay distinct EDGES — specializations of one
+-- relation, exactly as `add(node)` and `add(edge)` are specializations of `add`,
+-- never separate grammar or object models.
+apply.edge = {
+    "apply(descriptor)(fieldpack)",
+    "apply(callable)(argpack)",
+    "apply(table)(keypack)",
+    "apply(staged)(argpack)",
+}
+
+construct = law{
+    id    = "law.construct.zero"
+    kind  = .invariant
+    holds = .none
+    binds = {
+        "CONSTRUCTOR IS NOT A SEMANTIC CATEGORY",
+        "a descriptor is an APPLICABLE VALUE",
+        "applying one to a compatible structured argument yields a value it describes",
+        "no constructor abstraction survives into machine code unless demanded",
+    }
+    deny  = { "constructdescriptor", "bracecall", "tablector", "recordinit" }
+    why   = "same ruling as law.arch.relation: do not name in a function what subject and argument shape already determine"
+    ladder = "dynamic application, descriptor known, field shape known, layout known, direct initialization, scalar replacement, registers or constant"
+}
+
+pack = law{
+    id    = "law.pack.shape"
+    kind  = .invariant
+    holds = .deferred
+    binds = {
+        "a BRACED ARGUMENT NEED NOT MATERIALIZE A TABLE",
+        "`{ … }` is a structured argument and value PACK",
+        "table realization happens only where demand requires it",
+        "physical representation is selected AFTER semantic resolution",
+    }
+    deny  = [[defining f{...} as sugar for f({...}), which fixes the argument to one table before anything is known]]
+    why   = [[point{ x = 1, y = 2 } must lower to two fields in registers. Allocating a table because the SURFACE has braces lets syntax decide representation, which law.demand.rest forbids]]
+    keep  = "surface unification must not imply RUNTIME unification"
+}
+
+-- Unification must EXPOSE facts, not erase them. The application identity
+-- carries subject identity, argument labels and positions, operand descriptors,
+-- constants, world, demand and return pack — so `point{ x = 1, y = 2 }` is a far
+-- stronger fact than a generic dynamic call, and specializes accordingly.
+apply.carries = {
+    "subject identity", "argument labels", "argument positions",
+    "operand descriptors", "constants", "world", "demand", "return pack",
+}
+
+-- ═══ §43a · APPLY-ONE · CONSTRUCT-ZERO · PACK-NOT-TABLE ════════════════════
+--
+-- The three laws §43 was reaching for, named so an implementation cannot land
+-- the collision fix as a REGRESSION. Restoring distinct constructor and
+-- brace-call paths — at any layer — would be exactly that: the collision was
+-- EVIDENCE the two concepts were artificially overlapping, not a defect to
+-- partition.
+
+applyone = law{
+    id    = "law.apply.one"
+    kind  = .invariant
+    holds = .application
+    binds = {
+        "duon has ONE application mechanism",
+        "parenthesized, braced and string faces all project onto it",
+        "construction, ordinary calls and structured application are",
+        "SPECIALIZATIONS derived from subject identity, argument shape,",
+        "demand and context — never separate semantic constructs",
+    }
+    fails = "a constructor path and a call path as distinct semantic kinds"
+}
+
+constructzero = law{
+    id    = "law.construct.zero"
+    kind  = .invariant
+    holds = .applicable
+    binds = {
+        "`constructor` is NOT an independent semantic category",
+        "a DESCRIPTOR IS AN APPLICABLE VALUE",
+        "applying one to a compatible structured argument yields a value it describes",
+    }
+    fails = "constructdescriptor, bracecall, tablector, recordinit as four things"
+}
+
+-- The law that stops SURFACE unification becoming RUNTIME unification.
+packnottable = law{
+    id    = "law.pack"
+    kind  = .invariant
+    holds = .deferred
+    binds = {
+        "`{…}` in application position is a STRUCTURED ARGUMENT PACK",
+        "table realization happens only where DEMANDED",
+        "representation is selected AFTER semantic resolution, never by the surface",
+    }
+    fails = "allocating a table because the surface had braces"
+}
+
+-- THREE TRAPS, each a plausible implementation that would regress this ruling:
+--
+--   1. PARSER-LEVEL OVERLOAD — the parser asking whether `point` is a type,
+--      emitting a constructor node if so and a call node if not. That is the
+--      split this law deletes,
+--      relocated one layer down. My own reverted patch did this in codegen,
+--      branching on `record_aliases`, and it was the same mistake at a third
+--      layer.
+--   2. BRACES AS SUGAR — defining `f{…}` as `f({…})` fixes the argument
+--      semantics to "one table operand", and then `point{ x = 1, y = 2 }`
+--      cannot reach two registers without allocating a table it never needed.
+--   3. LOST CALL SHAPE — application identity must PRESERVE subject identity,
+--      argument labels, positions, descriptor identities, constants, world,
+--      demand and return pack. `point{ x = 1, y = 2 }` must be strictly
+--      STRONGER than a generic dynamic call, never equal to one.
+apply.traps = { "parser overload", "braces as sugar", "lost call shape" }
+
+-- The distinction that SURVIVES, and it is not "constructor versus call":
+--
+--   { x = 1, y = 2 }         an ordinary anonymous structured value
+--   point{ x = 1, y = 2 }    APPLICATION of `point` to that shape
+--
+-- Different because one has a SUBJECT.
+--
+-- The specializations remain real, distinguishable edges — apply(descriptor,
+-- fieldpack) · apply(callable, argpack) · apply(table, keypack) · apply(staged,
+-- argpack) — but they specialize ONE relation by operand, exactly as `add`
+-- does, rather than by name.
+apply.edges = { "descriptor", "callable", "table", "staged" }
+
+-- The ladder this buys, which is why the unification is worth more than the
+-- collision it fixes:
+--
+--   dynamic application -> descriptor known -> field shape known -> layout
+--   known -> direct initialization -> scalar replacement -> registers
+--
+-- NO CONSTRUCTOR ABSTRACTION SURVIVES INTO MACHINE CODE UNLESS DEMANDED.
+apply.ladder = 7
