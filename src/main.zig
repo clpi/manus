@@ -26,6 +26,37 @@ const codegen_mod = @import("codegen.zig");
 /// How many linked Duo module objects call the lua runtime, when that is why
 /// the direct path was refused. Zero means the link graph was not the reason.
 var link_refusal: usize = 0;
+
+/// Pass 103 §7 makes "how much of a compile goes through C" a NUMBER this
+/// repository owes, so the code that routes each `req`'d module says which way
+/// it sent it. One line per module on stderr under `DUO_WAIST_REPORT=1`, which
+/// is what a corpus sweep can count; silent otherwise, because this is a
+/// measurement and not a diagnostic.
+///
+/// The dispositions are exclusive and cover every `req` binding a direct-backend
+/// compile sees:
+///   `splice`  — absorbed into the program's own native object. NOT the waist.
+///   `nocall`  — bound but never called through; no object, nothing emitted.
+///   `exports`/`collide`/`unbound`/`parse` — declined by the splice, so the
+///               module falls to `emitReqModuleC` + a C object if it is called.
+///   `cobject` — `directLinkInputs` built a C object for it. THE WAIST.
+const waist = struct {
+    var on: ?bool = null;
+
+    fn enabled() bool {
+        if (on) |v| return v;
+        const v = std.c.getenv("DUO_WAIST_REPORT") != null;
+        on = v;
+        return v;
+    }
+
+    fn note(how: []const u8, module: []const u8) void {
+        if (!enabled()) return;
+        var buf: [512]u8 = undefined;
+        const line = std.fmt.bufPrint(&buf, "waist\t{s}\t{s}\n", .{ how, module }) catch return;
+        _ = std.c.write(2, line.ptr, line.len);
+    }
+};
 const backend_identity = @import("backend_identity.zig");
 const pass27_benchmark_evidence = @import("pass27_benchmark_evidence.zig");
 const pass34_representation_manifest = @import("pass34_representation_manifest.zig");
@@ -3068,7 +3099,10 @@ fn spliceReqModules(
     defer added.deinit(alloc);
 
     for (pairs.items) |pair| {
-        if (req.moduleExportsSymbols(pair.alias)) continue;
+        if (req.moduleExportsSymbols(pair.alias)) {
+            waist.note("exports", pair.source_path);
+            continue;
+        }
 
         // `pair.alias` and `pair.source_path` are borrowed from `req`, which
         // this function's own `defer` frees — and the alias is written straight
@@ -3087,9 +3121,15 @@ fn spliceReqModules(
         var wanted: std.StringHashMapUnmanaged(void) = .empty;
         defer wanted.deinit(alloc);
         try collectDottedCallsInBlock(&mod.body, alias, &wanted, alloc);
-        if (wanted.count() == 0) continue;
+        if (wanted.count() == 0) {
+            waist.note("nocall", source_path);
+            continue;
+        }
 
-        const ps = parse_and_check(alloc, io, source_path) catch continue;
+        const ps = parse_and_check(alloc, io, source_path) catch {
+            waist.note("parse", source_path);
+            continue;
+        };
 
         // Two passes: learn the module's function names first, so an intra-module
         // call can be recognised even when it precedes the callee's declaration.
@@ -3123,13 +3163,50 @@ fn spliceReqModules(
             if (!grew) break;
         }
 
+        // ONE REACHABILITY RULE, FOR BINDINGS TOO. `wanted` already says "splice
+        // only what the program reaches"; the bindings had no such rule and came
+        // across wholesale. That was invisible while a binding was one scalar,
+        // and stops being invisible the moment a constant TABLE qualifies below
+        // — `std.wasm.opcode_lookup` would hoist all 63 rows of every table in
+        // the file into a program that reads one of them. It also over-vetoes:
+        // the collision check judged names that were never going to be added.
+        //
+        // What a spliced FUNCTION BODY reads is the same free-name walk
+        // `spliceIsSelfContained` uses to AUDIT the result, run here to DECIDE
+        // it. Read before the re-rooting below, because that rewrite turns a
+        // bare sibling call into `alias.name` and would change what the walk
+        // sees. A binding admitted by `exprIsLiteral` reads no name itself, so
+        // there is no transitive closure to take.
+        var read: std.StringHashMapUnmanaged(void) = .empty;
+        defer read.deinit(alloc);
+        var scan = CallScan{
+            .alias = null,
+            .siblings = &empty_name_set,
+            .out = &read,
+            .alloc = alloc,
+            .free = &read,
+        };
+        for (ps.mod.body.stmts) |st| {
+            if (st != .func_decl) continue;
+            const fd = st.func_decl;
+            if (fd.is_local or fd.method or fd.path.len != 1) continue;
+            if (!wanted.contains(fd.path[0])) continue;
+            try collectBareCallsInBlock2(&fd.func.body, &scan);
+        }
+        // A walk that met a form it does not descend into cannot say a name is
+        // UNREAD, so it stops filtering — which is the old wholesale behaviour,
+        // and `spliceIsSelfContained` refuses a blind walk anyway.
+        const filter_bindings = !scan.blind;
+
         // Only the names actually being spliced can collide. Judging the whole
         // module made an unrelated same-named constant veto a splice that would
         // never have touched it.
         var conflict = false;
         for (ps.mod.body.stmts) |st| {
             const name = topLevelName(st) orelse continue;
-            if (st == .func_decl and !wanted.contains(name)) continue;
+            if (st == .func_decl) {
+                if (!wanted.contains(name)) continue;
+            } else if (filter_bindings and !read.contains(name)) continue;
             if (taken.contains(name)) {
                 conflict = true;
                 break;
@@ -3137,11 +3214,18 @@ fn spliceReqModules(
         }
         if (conflict) {
             if (term.trace) term.traceStep("req-splice-name-collision", .{});
+            waist.note("collide", source_path);
             continue;
         }
 
         const added_start = added.items.len;
         for (ps.mod.body.stmts) |st| {
+            // The reachability rule, applied to bindings: an unread module
+            // constant is not a dependency, so it does not come across.
+            if (st != .func_decl and filter_bindings) {
+                const name = topLevelName(st) orelse continue;
+                if (!read.contains(name)) continue;
+            }
             switch (st) {
                 .func_decl => |fd| {
                     if (fd.is_local or fd.method or fd.path.len != 1) continue;
@@ -3205,8 +3289,10 @@ fn spliceReqModules(
         if (!spliceIsSelfContained(alloc, &ps.mod, added.items[added_start..])) {
             added.shrinkRetainingCapacity(added_start);
             if (term.trace) term.traceStep("req-splice-unbound-module-name", .{});
+            waist.note("unbound", source_path);
             continue;
         }
+        waist.note("splice", source_path);
 
         for (ps.mod.body.stmts) |st| {
             if (topLevelName(st)) |n| try taken.put(alloc, n, {});
@@ -3262,9 +3348,13 @@ fn spliceIsSelfContained(
         .alloc = alloc,
         .free = &used,
     };
-    for (spliced) |st| {
-        if (st != .func_decl) continue;
-        collectBareCallsInBlock2(&st.func_decl.func.body, &scan) catch return false;
+    // EVERY spliced statement, not only the function bodies. The bindings used
+    // to be scalar literals, which read nothing, so walking them would have
+    // found nothing — and that is exactly why the omission was invisible. Now
+    // that a table constructor comes across, the walk has to cover the form
+    // that could carry a name, or the next widening inherits the same hole.
+    for (spliced) |*st| {
+        collectBareCallsInStmt(st, &scan) catch return false;
     }
     if (scan.blind) return false;
 
@@ -3459,10 +3549,38 @@ fn collectBareCallsInExpr(
 
 /// A literal is a definition with no side effect, so hoisting it into the
 /// program that spliced the module cannot change what the program does.
+///
+/// A TABLE OF LITERALS is one too, and it is the class the splice used to
+/// decline. `lib/std/wasm/opcodes.duo` opens with `TYPES = { "i32", … }` and
+/// every function in the file indexes it; `opcode_lookup.duo` is 63 rows of the
+/// same shape. Neither could ever be absorbed, so a program calling one lost
+/// the whole native path over a constant array. Two properties make hoisting it
+/// as safe as hoisting `4`:
+///
+///   * every element is itself literal, so the constructor READS NO NAME. That
+///     matters beyond side effects: a free name hiding in a hoisted binding
+///     would be a use whose declaration never came across — exactly the defect
+///     `spliceIsSelfContained` exists to stop. Requiring literal elements means
+///     there is nothing left to check.
+///   * the constructor allocates, but it allocated once at module scope in the
+///     source module too, and the spliced binding runs in the same position.
+///
+/// `spread` and `semantic` fields are refused: a spread names a table to expand
+/// and a semantic field carries an annotation the splice does not reason about.
+/// An unprovable case declines rather than guesses.
 fn exprIsLiteral(e: *const ast.Expr) bool {
     return switch (e.*) {
         .int_lit, .float_lit, .string_lit, .true_lit, .false_lit => true,
         .unop => |u| u.operand.* == .int_lit or u.operand.* == .float_lit,
+        .table => |t| {
+            for (t.fields) |f| switch (f) {
+                .positional => |v| if (!exprIsLiteral(v)) return false,
+                .named => |kv| if (!exprIsLiteral(kv.val)) return false,
+                .indexed => |kv| if (!exprIsLiteral(kv.key) or !exprIsLiteral(kv.val)) return false,
+                .spread, .semantic => return false,
+            };
+            return true;
+        },
         else => false,
     };
 }
@@ -3788,6 +3906,7 @@ fn directLinkInputs(
         // the link line breaks programs that linked fine without it. Building
         // it separately lets a module that cannot stand alone be skipped, so
         // the only failure left is the honest one: a genuinely missing symbol.
+        waist.note("cobject", sp);
         if (compileReqModuleObject(alloc, io, cc, out_c, out_o)) {
             // `std.token.classify` exports `duo_keyword_classify`, which is
             // exactly what the fixed helper at inputs[0] provides. Linking both

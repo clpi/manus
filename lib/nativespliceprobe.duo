@@ -3,10 +3,19 @@
 -- `@comp.c.export`, so it gets no object of its own and a caller can only
 -- reach it if the splice absorbs it into the caller's native object.
 --
--- Shape is chosen to exercise three things at once: a module-level constant
--- read by a module function, a function called directly from the program, and
--- a function reachable only TRANSITIVELY (`twice` -> `bump`), which is what
--- the splice's call-closure has to discover.
+-- Shape is chosen to exercise four things at once: a module-level constant
+-- read by a module function, a function called directly from the program, a
+-- function reachable only TRANSITIVELY (`twice` -> `bump`), which is what the
+-- splice's call-closure has to discover — and a constant TABLE that nothing
+-- here reads.
+--
+-- That last one arrived with the widening that made a table literal
+-- splice-eligible. It is the `std.wasm.opcode_lookup` shape (63 such rows) in
+-- one line, and it must NOT come across: an unread constant is not a
+-- dependency, and the caller's answer must stay 43 on the direct backend
+-- either way. Verified by VALUE through the native differential, which runs
+-- `req_splice.duo` on both backends and compares.
+names = { "one", "two" }
 BASE = 40
 
 bump(n: i64): i64
