@@ -1,0 +1,60 @@
+-- gap[100] rung 4 — the world-receiver shape, worked and verified BY VALUE.
+--
+-- Rung 4 says `os` stops being reached ambiently and arrives as an OPERAND the
+-- caller could have been refused. Enforcement (rung 5) is sema and is not
+-- written yet, so this file does the part that does not need it: it shows the
+-- shape working, so the 620-site conversion has an exemplar to copy instead of
+-- a paragraph to interpret.
+--
+-- THE TEST THAT MATTERS is not "does it run" — an ambient call runs too. It is:
+-- CAN THE CAPABILITY BE WITHHELD? A world is only a world if handing over a
+-- different one changes what the callee can do, and handing over nothing stops
+-- it entirely. Both directions are asserted below.
+--
+-- What this does NOT claim: it does not make `os` unreachable. Nothing here
+-- prevents a callee from ignoring the operand and calling os.clock() directly,
+-- because that refusal is rung 5 and lives in sema. This is the shape, ready
+-- for the enforcement to make it the only shape.
+--
+-- exit 0 all good; 1..4 names the direction that broke.
+
+-- A world is an ORDINARY VALUE. That is the whole point: no new grammar, no
+-- new sigil, no capability keyword. It carries authority because of what is
+-- inside it, and it is refusable because it is an argument.
+realclock = { now = () os.clock() }
+
+-- A world that answers, but with no authority behind it. This is what "refused"
+-- looks like from the callee's side: same shape, no reach.
+fakeclock = { now = () 0.0 }
+
+-- The consumer names its need in its PARAMETER LIST. It cannot reach the clock
+-- any other way, and a reader can see the authority it takes without reading
+-- the body — which is the property ambient reach destroys.
+elapsed = (w, since: f64): f64
+    w.now() - since
+
+main = (): i64
+    -- direction 1: the real world works
+    a = realclock.now()
+    d = elapsed(realclock, a)
+    if d < 0.0
+        print("world proof: real clock ran backwards: {d}")
+        std.os.exit(1)
+
+    -- direction 2: THE CAPABILITY CAN BE WITHHELD. Same callee, same call, a
+    -- world with no authority — and the answer changes. If this asserted equal
+    -- values it would prove nothing: an ambient call would pass it too.
+    z = elapsed(fakeclock, 1000.0)
+    if z != -1000.0
+        print("world proof: withheld clock still reached real time: {z}")
+        std.os.exit(2)
+
+    -- direction 3: the callee is HONEST about what it took. `elapsed` has two
+    -- true arguments, and neither is a hidden ambient reach. A version that
+    -- cheated would answer the same for both worlds.
+    if elapsed(realclock, 0.0) == elapsed(fakeclock, 0.0)
+        print("world proof: both worlds gave one answer — the operand is decorative")
+        std.os.exit(3)
+
+    print("world proof: authority arrives as an operand and CAN be withheld")
+    0
