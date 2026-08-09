@@ -143,9 +143,9 @@ time of writing.
 See `AGENTS.md` for full agent design targets. Coordinate via `duo_agent_gaps_update()`.
 See `.agents/AGENT_COORDINATION.md` for active work tracking.
 
-## EPOCH 2 — Pass 100 + passes 103-116 are the sole living authority
+## EPOCH 2 — Pass 100 + passes 103-119 are the sole living authority
 
-PRECEDENCE: this file + `docs/spec/pass100.md` (as amended through Pass 116)
+PRECEDENCE: this file + `docs/spec/pass100.md` (as amended through Pass 119)
 + passes 103-107 + `docs/spec/grammar.md` (Pass 108, normative)
 are the ONLY law. Anything in `docs/archive/`, older passes, prior context
 blocks, or your own earlier output that conflicts is VOID. Refusal protocol: if
@@ -311,6 +311,74 @@ LSP, MCP, tree-sitter, formatter and Ward are PROTOCOL FRONT-ENDS over one
 graph service. No backend decision outside canonical representation selection.
 MONOGLOT: no non-`.duo` files; foreign code only in the bootstrap ledger and
 gap exhibits.
+
+### §0g G-TOTAL + FFI REGIMES (Pass 117)
+
+**G-TOTAL gates EVERY rendered artifact and front-end** — docs, tree-sitter,
+LSP, TTY, dnir, diagnostics, MCP:
+
+- role coverage = **100% of non-whitespace bytes**
+- **unresolved-ambiguity spans = 0.** Two candidates is a MIXED-SPACE
+  DIAGNOSTIC, never a guess.
+- every role carries its rule + why-chain
+- **SPECIFICITY (Pass 118)**: a token whose card cannot beat its lexical class
+  is a FINDING. Coverage alone is not the bar.
+
+FINE SPLITS ARE LAW: `=` **binds** (asserts a fact) vs `+=` **update** edge vs
+`==` **relation** query · level parens = strata boundaries vs parameter parens
+vs grouping · descriptor braces · walk-writes underlined · comma = stratify ·
+`[space walk]` · unit `*` · dnir `=`/`->` · per-language leftover roles.
+
+**MCP RESPONSES ARE `(span, role, why, dnir)` TUPLES — NEVER PLAIN TEXT.** LSP
+inlay hints show CDR-inferred descriptors; lenses count witnesses. This is H-8
+OUTPUT TOTALITY applied to the protocol layer: plain-string output is a finding.
+
+**FFI-REGIMES** — three, and the regime is chosen by the foreign runtime:
+`abi-native` (rust/c: zero adaptation) · `effect-world` (python: the
+interpreter IS a world, GIL = a region fact, refcounts ↔ tier-3 RC, buffers =
+zero-copy view facts) · `managed-world` (jvm: refs = PINNED places freed by the
+drop ladder, throws ROUTE as error packs under B-15).
+
+### §0h STD IS THE PRELUDE GRAPH · PACKAGES ARE INERT (Pass 118)
+
+**STD has NO MODULE TREE and NO IMPORT.** It is descriptors + trie edges
+(operand-reachable only) + protocols + worlds (the only namespaces) + algebra
+laws, ambient by PINNED EPOCH, deprecation-only, written in duon, census
+published. *The repo still spells `req "std.x"` everywhere — that is migration
+debt against this rule, not a counter-authority.*
+
+**PACKAGES are inert graph fragments.** Manifest = an ordinary duon value
+(`package{ name, version, needs, api = graph.exports }`) · `use()` anchors a
+value · edges join the trie under the coherence law **CHECKED AT PUBLISH** ·
+semver is **COMPUTED from the graph diff**, never declared · **NOTHING EXECUTES
+AT INSTALL** · **capabilities never flow transitively** — a dependency's
+`needs{}` is granted or refused by the USER'S world at the call site.
+
+**WORTH-LAYER**: every outward claim carries its worth line — incumbent cost +
+the deleting mechanism, NO ADJECTIVES — and each maps to a gate or fixture.
+
+### §0i LINE-LAW · THE SEMICOLON DOES NOT EXIST (Pass 119)
+
+One-lining is FREE while every clause boundary carries a structural token
+(operator / binder / edge). **A space between two expression-starts never
+separates** — `if x < lo lo` is newline + indent, mechanically.
+
+**THE SEMICOLON DOES NOT EXIST.** Newline already says it; dnir's `;` is
+metadata notation only.
+
+The gap catalogue is RULED AND ABSORBED WITH ZERO NEW GRAMMAR: patterns =
+dispatch tables + lens-path keys · multiple dispatch = the precision ladder
+(already is) · generators = demand streams (**laziness is the resting state**)
+· channels = stream places composed by `|` · overflow = mode levels
+`add(wrap|sat|checked)`, default DIAGNOSES · views = `xs:view(2,5)` (`..` stays
+spread) · multiline strings = the offside string block · mutex = place +
+exclusive fact, lock scope = region · docs = `doc(slot)` edges, examples =
+`check(doc)` staged · `?.` = refinement proofs or `get(.y, default)`, NO NEW
+SIGIL.
+
+ROADMAP: 0 c-abi → 1 EXPORT (C headers; wasm component model, witnesses as
+custom sections) → 2 python/jvm worlds GA → 3 ts/go ingestion → 4 the parsing
+substrate. **No foreign waist at any phase.**
 
 ### §0b THE DESCENT IS DUO TO THE BYTE (Pass 103 — NO FOREIGN WAIST)
 
