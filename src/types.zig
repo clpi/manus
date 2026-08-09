@@ -224,6 +224,87 @@ pub fn enumShapeFromAst(ed: *const ast.EnumDef, alloc: std.mem.Allocator) !Resol
     return .{ .enum_type = .{ .name = ed.name, .variants = variants } };
 }
 
+// ── NOMINAL DESCRIPTORS · law.nominal, constitution §46 ─────────────────────
+//
+// `feet: f64` declares a descriptor named `feet` whose PHYSICAL REALIZATION is
+// `f64`. A `feet` value is a `double` in the emitted C — no box, no wrapper, no
+// tag — while being a DIFFERENT SEMANTIC IDENTITY from an `f64`.
+//
+// THE CARRIER IS THE ONE THAT ALREADY EXISTED (A2 NNS-FIRST). A named
+// descriptor already resolves to `ResolvedType.@"struct"{ .name = "feet" }`;
+// that node already carries the identity and already flows through every switch
+// in the compiler. What was missing was the REPRESENTATION FACT, and that is
+// all this map adds. Nothing was added to `ResolvedType`, so no lowering path
+// grew a new arm it could get wrong, which is what makes "zero physical
+// overhead" provable rather than hoped for: the only way a nominal descriptor
+// can box is if `.@"struct"` boxes, and `feet` and `f64` answer `c_type` with
+// the same six characters.
+//
+// NOMINALITY IS THE ABSENCE OF A RULE, NOT THE PRESENCE OF ONE. `eql` already
+// compares `.@"struct"` by NAME, so `feet` ≠ `f64` for free. The work is
+// entirely in the other direction — teaching the PHYSICAL queries
+// (`is_integer`, `is_float`, `is_native`, `c_type`) to look through the
+// identity to the representation, while the SEMANTIC queries keep seeing two
+// distinct descriptors.
+//
+// ── DELETION CONTRACT (law.host.projection) ─────────────────────────────────
+//
+//     authority = false
+//     projects  = descriptor
+//     bootstrap = true
+//     deletion  = when a descriptor is an ordinary graph node carrying its
+//                 representation as a FACT, and identities are stable semantic
+//                 ids rather than `[]const u8`. gap[091] is the gate.
+//
+// This is a process-global map keyed by TEXT, and both of those are the same
+// bootstrap debt `src/relation.zig` records against itself (`law.relation.debt`
+// — "string identities"). It is written down here at the moment the mechanism
+// becomes useful, because that is when the pressure to fossilize starts.
+var nominal_reprs: std.StringHashMapUnmanaged(ResolvedType) = .empty;
+
+/// Land `name --realized-as--> repr`. Re-declaration REPLACES, so a later
+/// module's descriptor wins over an earlier one of the same name, matching
+/// `Relation.declare`.
+pub fn declareNominal(alloc: std.mem.Allocator, name: []const u8, repr: ResolvedType) !void {
+    try nominal_reprs.put(alloc, name, repr);
+}
+
+/// The representation of a nominal descriptor NAME, or null when the name is
+/// not one. Null is the answer for every ordinary record descriptor, which is
+/// what keeps this from changing the meaning of existing `.@"struct"` types.
+pub fn nominalRepr(name: []const u8) ?ResolvedType {
+    return nominal_reprs.get(name);
+}
+
+/// The representation behind a resolved type, when that type IS a nominal
+/// descriptor. Every physical query in `ResolvedType` routes through this, and
+/// so does the sema rule that refuses `d: feet = x` — one derivation, asked
+/// from both directions.
+pub fn nominalReprOf(t: ResolvedType) ?ResolvedType {
+    return switch (t) {
+        .@"struct" => |s| nominal_reprs.get(s.name),
+        else => null,
+    };
+}
+
+/// `feet` as a TYPE, when `feet` is a declared nominal descriptor. Used where a
+/// descriptor name arrives as text (a conversion target group, a `mem` level).
+pub fn nominalNamed(name: []const u8) ?ResolvedType {
+    if (nominal_reprs.get(name) == null) return null;
+    return ResolvedType{ .@"struct" = .{ .name = name } };
+}
+
+/// Which targets may carry a nominal descriptor. Deliberately narrow: a
+/// descriptor over an aggregate is an ordinary record alias and must keep
+/// behaving like one, so only the SCALARS — the representations that cost
+/// nothing to be nominal over — are admitted.
+pub fn nominalReprAdmissible(repr: ResolvedType) bool {
+    return switch (repr) {
+        .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .f32, .f64, .bool, .str => true,
+        else => false,
+    };
+}
+
 /// Resolved type after semantic analysis.
 /// During sema, each expression gets a `ResolvedType` attached.
 pub const ResolvedType = union(enum) {
@@ -298,6 +379,11 @@ pub const ResolvedType = union(enum) {
     pub fn is_integer(self: ResolvedType) bool {
         return switch (self) {
             .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64 => true,
+            // law.nominal: a PHYSICAL question about `feet` is a question about
+            // the double behind it. The semantic questions (`eql`, and the sema
+            // rule that refuses a bare f64 where `feet` is demanded) are the
+            // ones that must NOT look through.
+            .@"struct" => |s| if (nominal_reprs.get(s.name)) |nr| nr.is_integer() else false,
             else => false,
         };
     }
@@ -305,6 +391,7 @@ pub const ResolvedType = union(enum) {
     pub fn is_float(self: ResolvedType) bool {
         return switch (self) {
             .f32, .f64, .v4f64, .v8f32 => true,
+            .@"struct" => |s| if (nominal_reprs.get(s.name)) |nr| nr.is_float() else false,
             else => false,
         };
     }
@@ -768,6 +855,12 @@ pub const ResolvedType = union(enum) {
                 return std.fmt.bufPrint(buf, "{s}*", .{inner}) catch inner;
             },
             .@"struct" => |s| {
+                // law.nominal: `feet` IS a double. This one line is the whole
+                // of "zero physical overhead" — a nominal descriptor never
+                // reaches the C emitter as a type of its own, so there is no
+                // wrapper struct to allocate, no tag to test and no boxed
+                // fallback to fall into.
+                if (nominal_reprs.get(s.name)) |nr| return nr.c_type(buf);
                 return std.fmt.bufPrint(buf, "duo_{s}", .{s.name}) catch s.name;
             },
             .array => |a| {

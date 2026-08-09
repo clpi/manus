@@ -243,7 +243,34 @@ pub const AliasRegistry = struct {
         for (mod.body.stmts) |*stmt| {
             if (stmt.* != .alias_def) continue;
             try self.map.put(alloc, stmt.alias_def.name, &stmt.alias_def);
+            try noteNominal(alloc, &stmt.alias_def);
         }
+    }
+
+    /// law.nominal (§46) — `feet: f64` is a DESCRIPTOR over a representation,
+    /// not a second name for `f64`.
+    ///
+    /// Derived HERE, in the one place both Sema and CodeGen already call, so
+    /// the two subsystems cannot disagree about which names are nominal (A3 ONE
+    /// EDGE — the disagreement between parser and sema over a leading `.` is
+    /// the defect this shape exists to avoid repeating).
+    ///
+    /// Only SCALAR targets. A descriptor over a record is an ordinary alias and
+    /// keeps every behaviour it had; a descriptor with type parameters is a
+    /// generic alias and is expanded, not made nominal.
+    fn noteNominal(alloc: Allocator, def: *const ast.AliasDef) Allocator.Error!void {
+        if (def.type_params != null) return;
+        if (def.fields.len != 0 or def.parent != null) return;
+        const target = def.target orelse return;
+        if (target != .named) return;
+        const repr = types.resolve(target, null, alloc) catch return;
+        // The admissibility gate also disposes of forward references:
+        // `types.resolve` answers `.@"struct"{n}` for a name it does not know,
+        // and `.@"struct"` is not an admissible representation, so a descriptor
+        // over an undeclared name stays an ordinary alias rather than becoming
+        // a nominal descriptor over nothing.
+        if (!types.nominalReprAdmissible(repr)) return;
+        try types.declareNominal(alloc, def.name, repr);
     }
 
     /// `descriptor --has--> field`, counting an inherited record target's fields.
@@ -768,7 +795,56 @@ pub const Sema = struct {
 
     fn type_annotation_accepts_init(ann: RT, init_t: RT) bool {
         if (ann.eql(init_t)) return true;
+        // law.nominal (§46) — NOMINALITY IS THE POINT, and it is enforced by
+        // REFUSING the representation shortcut, not by adding a rule.
+        //
+        // `feet` and `f64` are the same double and `is_float()` says so, which
+        // is exactly what makes the next two lines dangerous: without this
+        // guard a nominal descriptor would accept any value of its own
+        // representation and would not be nominal at all. A descriptor that
+        // accepts anything is a comment.
+        //
+        // Both directions refuse. `d: feet = x` (x: f64) is the obvious one;
+        // `y: f64 = d` is the same law read the other way — a `feet` does not
+        // silently become a plain double either. The repair for both is the
+        // conversion edge, which is the whole reason the trie exists.
+        if (types.nominalReprOf(ann) != null or types.nominalReprOf(init_t) != null) return false;
         if (ann.is_integer() and init_t.is_integer()) return true;
+        return type_annotation_accepts_init_rest(ann, init_t);
+    }
+
+    /// CDR (B-13) — A DECLARED CONTRACT DIRECTS REALIZATION.
+    ///
+    /// `d: feet = 3.0` is admitted and `d: feet = x` is not, and the difference
+    /// is not a weakening of nominality — it is the literal rule the rest of
+    /// the language already runs on. A bare numeral carries NO descriptor of
+    /// its own; §0g says so in as many words ("literals — the card shows the
+    /// DESCRIPTOR, CDR-inferred from the contract"), and it is why `n: u8 = 3`
+    /// is a u8 rather than an i64 that happens to fit. The contract names the
+    /// literal; nothing is coerced, because there was nothing there yet to
+    /// coerce.
+    ///
+    /// `x` is different in kind. It already carries `f64`, and letting a second
+    /// descriptor attach to a value that has one is precisely the silent
+    /// coercion that makes nominal descriptors decorative.
+    ///
+    /// The representation still has to fit: `d: feet = "3"` is refused, because
+    /// CDR directs realization and does not invent one.
+    fn nominal_accepts_literal(ann: RT, e: *const ast.Expr) bool {
+        const repr = types.nominalReprOf(ann) orelse return false;
+        return switch (e.*) {
+            .int_lit => repr.is_numeric(),
+            .float_lit => repr.is_float(),
+            .string_lit => repr == .str,
+            .true_lit, .false_lit => repr == .bool,
+            // `-3.0` is one literal wearing a sign, not an operation on a value
+            // that already has a descriptor.
+            .unop => |u| u.op == .neg and nominal_accepts_literal(ann, u.operand),
+            else => false,
+        };
+    }
+
+    fn type_annotation_accepts_init_rest(ann: RT, init_t: RT) bool {
         if (ann.is_float() and init_t.is_float()) return true;
         // ?T accepts T (optional accepts its inner type)
         if (ann == .option) {
@@ -2002,13 +2078,30 @@ pub const Sema = struct {
                         // annotation is known (not any), they must match
                         if (i < init_types.items.len) {
                             const init_t = init_types.items[i];
-                            if (ann != .any and init_t != .any and init_t != .nil and !type_annotation_accepts_init(ann, init_t)) {
+                            const cdr_literal = i < ld.inits.len and
+                                nominal_accepts_literal(ann, ld.inits[i]);
+                            if (ann != .any and init_t != .any and init_t != .nil and
+                                !cdr_literal and !type_annotation_accepts_init(ann, init_t))
+                            {
                                 {
                                     var ann_buf: [128]u8 = undefined;
                                     var init_buf: [128]u8 = undefined;
                                     const ann_name = ann.duo_name(&ann_buf);
                                     const init_name = init_t.duo_name(&init_buf);
-                                    self.err(lname.loc, "type mismatch: variable '{s}' declared as '{s}', but initializer has type '{s}'", .{ lname.ident, ann_name, init_name });
+                                    // law.nominal: same representation, DIFFERENT
+                                    // IDENTITY. Saying "type mismatch: feet vs
+                                    // f64" reads like a bug in the compiler when
+                                    // both are doubles, so the message names the
+                                    // shared representation and the repair EDGE
+                                    // rather than restating the two names.
+                                    const ann_repr = types.nominalReprOf(ann);
+                                    const init_repr = types.nominalReprOf(init_t);
+                                    if (ann_repr != null or init_repr != null) {
+                                        var rbuf: [64]u8 = undefined;
+                                        const shared = (ann_repr orelse init_repr).?;
+                                        self.err(lname.loc, "descriptor mismatch: '{s}' is declared '{s}' and the initializer carries '{s}' — both realize as '{s}', but a nominal descriptor is not its representation", .{ lname.ident, ann_name, init_name, shared.c_type(&rbuf) });
+                                        self.hint_msg(lname.loc, "convert at the edge: '{s}:to({s})', or declare the initializer '{s}'", .{ if (ld.inits[i].* == .name) ld.inits[i].name.ident else "value", ann_name, ann_name });
+                                    } else self.err(lname.loc, "type mismatch: variable '{s}' declared as '{s}', but initializer has type '{s}'", .{ lname.ident, ann_name, init_name });
                                 }
                             }
                             // A LITERAL that provably cannot fit is a diagnostic,
