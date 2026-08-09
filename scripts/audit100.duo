@@ -153,6 +153,18 @@ _hits(pat: str, keep: i64): i64
     to(i64)(std.script.chomp(std.script.capture(cmd)))
 end
 
+-- Count matches of `pat` against ONE literal line, through the same grep the
+-- rows use. This is the control surface: it asks whether a pattern still
+-- recognises the text it was written for, without depending on the corpus
+-- containing that text. A row whose residue legitimately reaches zero stays
+-- controlled; a row whose regex rots is caught on the run that rots it.
+_probe(pat: str, line: str): i64
+    q: str = "'"
+    cmd: str = ("printf " .. q .. "%s\n" .. q .. " " .. q .. line .. q
+        .. " | grep -c -E " .. q .. pat .. q)
+    to(i64)(std.script.chomp(std.script.capture(cmd)))
+end
+
 _show(pat: str, keep: i64): void
     q: str = "'"
     -- SHOW must agree with the count or it sends people to lines the ratchet
@@ -352,6 +364,7 @@ main(): i64
         "snake", "upper", "underprefix", "companion", "accessor", "axis",
         "directive", "ctor", "stdlib", "import", "foreignkw", "arrow",
         "luafn", "mwrapper", "concatlit", "oneline", "trailret",
+        "graveyard",
     }
     note = {
         "underscore inside an identifier",
@@ -371,6 +384,7 @@ main(): i64
         ".. beside a string literal",
         "end on a one-line block",
         "trailing return <expr>",
+        "compiler REFUSES these in .duo",
     }
     pat = {
         "[a-z]_[a-z]",
@@ -390,6 +404,7 @@ main(): i64
         "[" .. dq .. "][[:space:]]*\\.\\.|\\.\\.[[:space:]]*[" .. dq .. "]",
         "(^|[[:space:]])(if|for|while|elseif)[[:space:]].*[[:space:]]end[[:space:]]*$",
         "(^|[[:space:]])return[[:space:]]+[^[:space:]]",
+        "(^|[^A-Za-z0-9_.])(try|catch|defer|goto|extends|private|await|async|macro|let)([^A-Za-z0-9_]|$)",
     }
     -- REBASELINED 2026-08-08 (third time), same method as the last two: every
     -- point counted PER FILE at the commit where the gate was last exactly at
@@ -715,14 +730,70 @@ main(): i64
     -- Nothing else moved: `oneline` reads exactly 2258 over the same corpus
     -- with the four new fixtures in it, because every `if` in them is written
     -- over multiple lines.
-    budgets: str = "14154 2256 1847 259 322 481 154 58 2031 442 167 128 228 36 2428 2258 3439"
+    -- 2026-08-08, the DIALECT SPLIT: one row added, `graveyard`, and it is the
+    -- first row in this table the COMPILER refuses rather than the gate counts.
+    -- The owner's ruling is that Lua back-compatibility is for `.lua` files
+    -- only, so `src/parser.zig` now rejects `try catch defer goto extends
+    -- private await async macro let` in `duo_mode` with the canonical repair
+    -- named in the diagnostic. Every one of those keywords was measured at
+    -- ZERO line-leading uses over the 767 tracked `.duo` files before it
+    -- landed.
+    --
+    -- Its budget is 6, not 0, and the six are worth stating precisely because
+    -- they are the difference between what this gate can see and what the
+    -- compiler sees. All six are `let` in `lib/std/graphics/shader.duo`, and
+    -- all six are WGSL inside a `[[ … ]]` long bracket — shader source the
+    -- parser never reads as Duo. This gate's strip removes `"…"` bodies and
+    -- comments; it does not remove long brackets, so it cannot tell that
+    -- residue from code. Excluding `let` from the pattern would read 0 and
+    -- would be worse: it would stop watching a row the compiler enforces.
+    -- Teaching `_hits` about long brackets would move all seventeen other
+    -- budgets in the same diff, which is the change this row is deliberately
+    -- not making. The ratchet still works as a ratchet: a NEW `try`/`goto`/
+    -- `let` anywhere in the canonical partition takes this to 7 and reddens
+    -- the gate.
+    -- `snake` 14154 -> 14157, +3, and every point is named. The dialect split
+    -- adds three rows to `scripts/run_compile_fail_tests.duo`: two `run_fail`
+    -- rows asserting the §15 diagnostics fire, and one `run_ok` row asserting
+    -- `examples/benchmark.lua` still compiles (the positive control without
+    -- which the refusal could be "simplified" into a refusal everywhere). All
+    -- three points are the HARNESS HELPER NAMES — `run_fail`, `run_ok` — which
+    -- this file already records as unrepairable-without-a-rename two blocks
+    -- above. Paying for them here rather than letting them ride is the half of
+    -- the ratchet protocol that gets skipped.
+    --
+    -- NOTE the gate is still red after this and NONE of that is this diff.
+    -- Measured at pristine HEAD (4784b28) with this diff stashed: snake 14297
+    -- against a budget of 14154, plus eight other rows over. This diff moves
+    -- exactly two numbers and both are attributed above. Those other points
+    -- belong to whoever last moved them, and rebaselining them here would
+    -- launder another session's debt into this commit — which is the one
+    -- thing a ratchet cannot survive.
+    --
+    -- METHOD, so the +3 is checkable rather than asserted: the ONLY canonical
+    -- `.duo` file this diff touches is `scripts/run_compile_fail_tests.duo`
+    -- (audit100 self-excludes; the four retired demos are `historical`; the
+    -- two new fixtures are `negative`). Counted per row on that file alone,
+    -- before and after: snake 61 -> 64, upper 6 -> 6, underprefix 0 -> 0,
+    -- graveyard 0 -> 0, concatlit 19 -> 19, trailret 1 -> 1.
+    budgets: str = "14157 2256 1847 259 322 481 154 58 2031 442 167 128 228 36 2428 2258 3439 6"
 
     -- Per-row: 1 = measure with string bodies INTACT. Only `concatlit` sets
     -- it, because its subject IS the string literal; stripping bodies takes
     -- that row from 2155 to 1, which would read as a triumph and mean nothing.
     -- Every other row is about the shape of Duo code, so a `const T*` inside
     -- an emit payload is not evidence against it.
-    keeps: str =    "0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0"
+    keeps: str =    "0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0"
+
+    -- Per-row: 1 = THE COMPILER REFUSES THIS, 0 = the gate merely counts it.
+    -- The distinction is the whole point of the column. A counted row is
+    -- pressure: someone can still write the text and the gate will only
+    -- complain if the total goes up. An ENFORCED row cannot be written at all
+    -- in a `.duo` file — `duo check` fails with the repair named — so its
+    -- count is a residue measurement, not a debt. Reporting both under one
+    -- heading, as this gate did until 2026-08-08, makes "we tolerate 167 of
+    -- these" and "these are impossible" look like the same fact.
+    enforced: str = "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1"
 
     if _field(budgets, #id) == "" or _field(budgets, #id + 1) != ""
         print("audit100: FAIL — the budget row does not have exactly "
@@ -734,13 +805,71 @@ main(): i64
             .. to(str)(#id) .. " entries; the strip is out of step")
         return 3
     end
+    if _field(enforced, #id) == "" or _field(enforced, #id + 1) != ""
+        print("audit100: FAIL — the enforced row does not have exactly "
+            .. to(str)(#id) .. " entries; the ENFORCED column is out of step")
+        return 3
+    end
+    -- Positive control on the column itself. If nothing is marked ENFORCED the
+    -- column is dead weight that reads as "nothing is enforced" — which was
+    -- true before the dialect split and must never silently become true again
+    -- by someone deleting a row. CLAUDE.md §3: positive-control every zero.
+    marked: i64 = 0
+    j: i64 = 1
+    while j <= #id
+        if _field(enforced, j) == "1"
+            marked += 1
+        end
+        j += 1
+    end
+    if marked == 0
+        print("audit100: FAIL — no row is marked ENFORCED; the column would"
+            .. " report that the compiler refuses nothing, which is a claim"
+            .. " about the parser, not about this file")
+        return 3
+    end
+
+    -- POSITIVE CONTROL ON EVERY ENFORCED ROW. A ratchet only ever fails
+    -- UPWARD, so a row whose regex has rotted to match nothing reads 0, sits
+    -- under its budget, and passes forever while reporting that the compiler
+    -- is holding a line it stopped holding. That is the exact failure mode
+    -- CLAUDE.md §3 names ("a gate that reports 0/N is usually broken"), and it
+    -- is worse on an ENFORCED row than a counted one, because the ENFORCED
+    -- marker is a claim about the PARSER that this file cannot otherwise
+    -- check.
+    --
+    -- The control: an enforced row must match its own SPELLING. `_probe` greps
+    -- the row's pattern against a literal built here rather than against the
+    -- corpus, so it is independent of what the corpus happens to contain — the
+    -- row would still be controlled on the day its residue reaches zero.
+    j = 1
+    while j <= #id
+        if _field(enforced, j) == "1"
+            if _probe(pat[j], "  goto skip") == 0
+                print("audit100: FAIL — the ENFORCED row " .. id[j]
+                    .. " does not match its own spelling; its regex is broken"
+                    .. " and it would read 0, pass, and report that the"
+                    .. " compiler refuses something it no longer refuses")
+                return 3
+            end
+            -- and the same pattern must DECLINE ordinary Duo, or the row is a
+            -- match-everything that would redden on any edit.
+            if _probe(pat[j], "  x = f(y) + 1") != 0
+                print("audit100: FAIL — the ENFORCED row " .. id[j]
+                    .. " matches ordinary Duo; its regex is too broad and its"
+                    .. " budget is measuring noise")
+                return 3
+            end
+        end
+        j += 1
+    end
 
     show: str = std.script.getenv("AUDIT100_SHOW", "")
 
     print("")
     print("deny rows over " .. to(str)(listed) .. " canonical files ("
         .. _SELF .. " self-excluded: its patterns are data)")
-    print("  row            count   budget   what")
+    print("  row            count   budget   E  what")
 
     over = 0
     total = 0
@@ -754,8 +883,12 @@ main(): i64
             flag = "!!"
             over += 1
         end
+        mark: str = " "
+        if _field(enforced, i) == "1"
+            mark = "E"
+        end
         print("  " .. flag .. " " .. _pad(id[i], 12) .. _pad(to(str)(c), 8)
-            .. _pad(to(str)(b), 9) .. note[i])
+            .. _pad(to(str)(b), 9) .. _pad(mark, 3) .. note[i])
         if show == id[i]
             _show(pat[i], to(i64)(_field(keeps, i)))
         end
@@ -773,15 +906,40 @@ main(): i64
     -- the fixture that holds ward's new call_indirect jit arm to a value on
     -- both engines. A fixture is INPUT, which is the category this row cannot
     -- distinguish -- see the attribution block above.
-    nonduo_budget = 537
+    -- 537 -> 539, +2, and the two are named separately because only one of
+    -- them is this diff. Measured directly rather than inferred:
+    -- `git ls-tree -r --name-only 4784b28 | grep -cv '\.(duo|md)$'` reads 538
+    -- at pristine HEAD, and the worktree index reads 539 with this diff in.
+    --
+    --   +1  examples/compile_fail/pass100_try_retired.lua   landed at 4784b28
+    --   +1  examples/compile_fail/pass100_goto_retired.lua  this diff
+    --
+    -- Both are the `.lua` twins of deny-table fixtures, and the twin is the
+    -- load-bearing half: without it the row proves only that the compiler
+    -- refuses something, not that it still ACCEPTS Lua from a `.lua` file.
+    -- This row cannot tell a dialect proof from debt, which is the same
+    -- category error the attribution block above describes for fixtures.
+    -- The 4784b28 point is paid here rather than left riding because it is
+    -- the same mechanism this diff extends; every other red row below belongs
+    -- to whoever last moved it and is deliberately NOT rebaselined.
+    nonduo_budget = 539
     if nonduo > nonduo_budget
         over += 1
         print("  !! " .. _pad("nonduo", 12) .. _pad(to(str)(nonduo), 8)
-            .. _pad(to(str)(nonduo_budget), 9) .. "tracked non-.duo, non-.md files")
+            .. _pad(to(str)(nonduo_budget), 9) .. _pad(" ", 3)
+            .. "tracked non-.duo, non-.md files")
     else
         print("     " .. _pad("nonduo", 12) .. _pad(to(str)(nonduo), 8)
-            .. _pad(to(str)(nonduo_budget), 9) .. "tracked non-.duo, non-.md files")
+            .. _pad(to(str)(nonduo_budget), 9) .. _pad(" ", 3)
+            .. "tracked non-.duo, non-.md files")
     end
+
+    print("")
+    print("E = ENFORCED: `duo check` REFUSES this in a .duo file and names the")
+    print("  canonical repair. Unmarked rows are COUNTED only — the text still")
+    print("  compiles and the budget is the only pressure on it. "
+        .. to(str)(marked) .. " of "
+        .. to(str)(#id) .. " rows are enforced.")
 
     print("")
     print("UNMECHANIZED §1 rows — semantic, not greppable; still binding on review:")
