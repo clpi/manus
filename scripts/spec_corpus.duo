@@ -13,9 +13,11 @@
 --
 -- TWO NUMBERS, answering different questions:
 --
---   blocks     §20's five golden files, checked verbatim. This is the metric
---              §19 names. It moves rarely and in big steps, because a block
---              needs EVERY construct in it.
+--   blocks     §20's five golden files, checked. This is the metric §19
+--              names. It moves rarely and in big steps, because a block needs
+--              EVERY construct in it. Split verbatim/joined in the report —
+--              see the note above `work` for what a block is checked against
+--              and why that is not the same as making it pass.
 --   forms      one fixture per §20 construct, each printing a value the
 --              fixture itself declares. This is the number that moves while a
 --              block is still red, and it is where a regression surfaces
@@ -38,9 +40,30 @@
 -- compiler; what is not allowed is a number going down. Raise a floor when a
 -- row goes green; never lower one to quiet the gate.
 
+-- A BLOCK IS A FILE IN A PROJECT, not a standalone program. §20 heads every
+-- block with a PATH — `shc/lex.duo`, `shc/parse.duo` — and those two are one
+-- module: `parse.duo` cites `lexer` and `token` because `lex.duo` declares
+-- them. So a block is checked against the blocks that share its path prefix,
+-- and then against `stubs/corpus.duo` for the three names no §20 block
+-- declares at all (§19: "stubs are `todo(gap[nn])` or bodiless declarations").
+--
+-- The two facts stay SEPARATE in the report, because one number for both
+-- cannot tell you which one moved:
+--
+--   verbatim   the block checks clean exactly as §20 writes it
+--   joined     it checks clean once its module and the descent stubs are
+--              present — i.e. every CONSTRUCT in it is admitted and what was
+--              missing was declarations, which is a corpus property
+--
+-- The prelude is the one part of this gate that can turn a row green with no
+-- compiler change, so it is answerable to `stubs/control.duo`: a fragment
+-- citing a name the prelude does not carry must still FAIL, and if it stops
+-- failing this gate reports FAIL and no verdict.
 work = "/tmp/duo-spec-corpus"
 spec = "docs/spec/pass100.md"
 fixtures = "examples/spec100"
+stubs = "examples/spec100/stubs/corpus.duo"
+control = "examples/spec100/stubs/control.duo"
 
 -- MEASURED floors, never estimated. `scripts/spec_conformance.duo` records
 -- what happens otherwise: a floor written from memory reported a regression
@@ -48,18 +71,31 @@ fixtures = "examples/spec100"
 --
 -- 11 -> 12: `anchormove`, §2's postfix anchor `X@rel`. Raised because the row
 -- went green, which is the only reason a floor may move.
-blockfloor = 2
-formfloor = 12
+-- 12 -> 16: `ternary`, `walk`, `loopbody`, `anchorbare` — the four constructs
+-- `shc/lex.duo` was waiting on.
+-- blocks 2 -> 5: `shc/lex.duo` and `shc/parse.duo` join their module and the
+-- §19 descent stubs; `tool/wordcount.duo` gets its shebang onto line 1.
+blockfloor = 5
+formfloor = 16
 
 fence = "^```"
 
 blockrows = ""
 blocktotal = 0
 blockpass = 0
+blockbare = 0
+blockjoin = 0
 
 formrows = ""
 formtotal = 0
 formpass = 0
+
+-- 1 while the descent stubs still let a citation of an undeclared name fail.
+controlok = 0
+
+-- Printed with the verdict so the prelude cannot grow quietly: a stub file
+-- that doubles in size between two runs is visible in the report itself.
+stublines = 0
 
 quiet(cmd: str): i64
     std.script.status("{cmd} >/dev/null 2>&1")
@@ -98,10 +134,22 @@ at(pattern: str): i64
     n
 end
 
--- The first line of a block is its `-- path/name.duo` header; that is the name
--- §20 gives it and the only name it has.
+-- A block's name is its `-- path/name.duo` header; that is the name §20 gives
+-- it and the only name it has. It is line 1 for every block except the one
+-- that must give line 1 to a shebang — a shebang is only a shebang on line 1,
+-- which is a property of every POSIX kernel and not of Duo — so the first TWO
+-- lines are searched and nothing deeper, or an inner comment in a headerless
+-- block would name it.
 label(path: str): str
-    std.script.chomp(std.script.capture("head -1 {path}"))
+    std.script.chomp(std.script.capture("sed -n '1,2p' {path} | grep -m1 '^-- ' | head -1"))
+end
+
+-- The MODULE a block belongs to: the first path element of its header. Two
+-- blocks with the same one are two files of one project and are checked
+-- together, in the order §20 writes them.
+home(path: str): str
+    std.script.chomp(std.script.capture(
+        "sed -n '1,2p' {path} | grep -m1 '^-- ' | head -1 | cut -c4- | cut -d/ -f1"))
 end
 
 stem(path: str): str
@@ -127,6 +175,9 @@ diagnostic(duo: str, path: str): str
     line
 end
 
+-- VERBATIM FIRST, JOINED SECOND, and the diagnostic always comes from the
+-- VERBATIM block: a line number that names the composed file would send a
+-- reader to a line §20 never wrote.
 block(duo: str, index: i64, first: i64, last: i64): void
     path = "{work}/block{index}.duo"
     std.script.run("sed -n '{first},{last}p' {spec} > {path}")
@@ -135,13 +186,31 @@ block(duo: str, index: i64, first: i64, last: i64): void
     if name == ""
         name = "block {index}"
     end
+    mod = home(path)
+    if mod == ""
+        mod = "solo{index}"
+    end
+    -- The module accumulator holds the blocks of this project already seen.
+    -- Empty for the first block of every module, so a one-file module is
+    -- checked against the stubs and nothing else.
+    kit = "{work}/kit-{mod}.duo"
+    join = "{work}/join{index}.duo"
+    std.script.run("touch {kit} && cat {stubs} {kit} {path} > {join}")
     if quiet("{duo} check {path}") == 0
         blockpass = blockpass + 1
+        blockbare = blockbare + 1
         blockrows = "{blockrows}  pass  {name}\n"
     else
-        note = diagnostic(duo, path)
-        blockrows = "{blockrows}  FAIL  {name}\n        {note}\n"
+        if quiet("{duo} check {join}") == 0
+            blockpass = blockpass + 1
+            blockjoin = blockjoin + 1
+            blockrows = "{blockrows}  pass  {name}\n        with module '{mod}' and the §19 descent stubs\n"
+        else
+            note = diagnostic(duo, path)
+            blockrows = "{blockrows}  FAIL  {name}\n        {note}\n"
+        end
     end
+    std.script.run("cat {path} >> {kit}")
 end
 
 -- One construct fixture: compile it, RUN it, compare stdout against the value
@@ -171,9 +240,24 @@ form(duo: str, path: str): void
     end
 end
 
+-- The prelude's own control, run the way a block is run: prepend it to a
+-- fragment citing a name it does NOT carry and require the check to fail. A
+-- prelude that makes everything pass measures nothing, and a gate that cannot
+-- fail is the exact §22 defect this file was written against.
+controls(duo: str): i64
+    ok = 1
+    probe = "{work}/control.duo"
+    std.script.run("cat {stubs} {control} > {probe}")
+    if quiet("{duo} check {probe}") == 0
+        ok = 0
+    end
+    ok
+end
+
 -- POSITIVE CONTROLS FIRST, verdict second. Every gate in this repository that
 -- reported a confident zero did it by measuring nothing and saying so in the
--- language of a pass, so both empties are checked before either floor is.
+-- language of a pass, so the empties and the discriminating control are all
+-- checked before either floor is.
 verdict(): i64
     code = 0
     if blocktotal == 0
@@ -182,6 +266,13 @@ verdict(): i64
     end
     if code == 0 and formtotal == 0
         print("spec corpus: FAIL — no construct fixtures found in {fixtures}")
+        code = 1
+    end
+    if code == 0 and controlok == 0
+        print("spec corpus: FAIL — the descent stubs stopped discriminating:")
+        print("  {control} CHECKED CLEAN with {stubs} prepended, so a block")
+        print("  that passes 'joined' proves nothing. Read the prelude before")
+        print("  believing any row above.")
         code = 1
     end
     if code == 0 and blockpass < blockfloor
@@ -209,6 +300,7 @@ report(): void
     io.write(formrows)
     print("")
     print("  blocks  {blockpass}/{blocktotal}   floor {blockfloor}")
+    print("          {blockbare} verbatim, {blockjoin} with module + §19 descent stubs ({stublines} stub lines)")
     print("  forms   {formpass}/{formtotal}   floor {formfloor}")
     print("")
 end
@@ -224,6 +316,11 @@ measure(duo: str): i64
     if first == 0 or stop == 0 or stop <= first
         print("spec corpus: FAIL — §20 not located in {spec}")
         code = 1
+    end
+
+    if code == 0
+        controlok = controls(duo)
+        stublines = count(stubs)
     end
 
     if code == 0

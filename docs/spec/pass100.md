@@ -679,8 +679,8 @@ send = (out, u: user) u:encode(json):each(out.write)
 ```
 
 ```
--- tool/wordcount.duo
 #!/usr/bin/env duo
+-- tool/wordcount.duo
 { lines } = std.fs
 counts = {}
 for line in lines(os.args[0]) for w in line:split(" ") counts:bump(w)
