@@ -25,8 +25,18 @@
 base = "/tmp/duofsproof"
 
 main = (): i64
-    std.fs.remove("{base}/a/b/c")
+    -- Clean DEEPEST FIRST and include the base itself. The first draft removed
+    -- only the leaves, so a second run found the base already present, mkdir
+    -- correctly answered false, and the fixture reported a failure that was its
+    -- own litter. A fixture that passes only on a clean machine manufactures
+    -- false reds today and false greens the moment someone "fixes" it by
+    -- loosening the assertion.
+    std.fs.remove("{base}/two")
     std.fs.remove("{base}/one")
+    std.fs.remove("{base}/a/b/c")
+    std.fs.remove("{base}/a/b")
+    std.fs.remove("{base}/a")
+    std.fs.remove("{base}")
 
     made = std.fs.mkdir("{base}")
     if not std.fs.exists("{base}")
