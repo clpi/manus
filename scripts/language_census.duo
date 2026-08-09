@@ -130,7 +130,7 @@ main(): i64
     end
     -- The bootstrap ledger (G9). Licensed, with a termination condition — which
     -- is a reason to bound it, not a reason to leave it unbounded.
-    zigcap: i64 = to(i64)(std.script.getenv("CENSUS_ZIG_CEILING", "237"))
+    zigcap: i64 = to(i64)(std.script.getenv("CENSUS_ZIG_CEILING", "227"))
     if zig > zigcap
         print("language_census: FAIL — zig ledger {zig} files exceeds the ratchet {zigcap}")
         over += 1

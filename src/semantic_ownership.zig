@@ -53,7 +53,6 @@ pub const modules: []const ModuleEntry = &.{
     .{ .path = "src/knowledge_snapshot.zig", .classification = .tooling_only, .role = "Knowledge lattice snapshots", .production_consumers = "duo explain CLI" },
     .{ .path = "src/optimization_outcome.zig", .classification = .tooling_only, .role = "Optimization outcome log", .production_consumers = "duo explain CLI" },
     .{ .path = "src/semantic_algebra.zig", .classification = .partial, .role = "Descriptor/shape algebra", .production_consumers = "semantic_graph, codegen hints" },
-    .{ .path = "src/autodiff.zig", .classification = .experimental, .role = "Autodiff transform stub", .production_consumers = "none in default compile" },
     .{ .path = "src/build_framework.zig", .classification = .canonical, .role = "build.duo target model", .production_consumers = "duo build/run" },
 };
 
