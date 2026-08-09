@@ -5,7 +5,7 @@ distance2(p: Point): f64
     p.x * p.x + p.y * p.y
 end
 
-main(): i64
+main(): f64
     p = Point { x = 3, y = 4 }
     distance2(p)
 end

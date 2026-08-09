@@ -162,6 +162,11 @@ pub const Parser = struct {
     /// drains this ahead of the statement that filled it.
     pending_hoists: std.ArrayList(ast.Stmt) = .empty,
 
+    /// gap[077] — serial number for the staging places a simultaneous
+    /// multiple assignment needs. Monotonic per module so two swaps in one
+    /// scope cannot name the same place.
+    stage_seq: u32 = 0,
+
     /// The descriptor a body is being read for, so an inline case-set can take
     /// its HOME as its name (§0.1: the qualifier moves to a HOME —
     /// `token.kind`). Null outside a named descriptor body.
@@ -501,6 +506,172 @@ pub const Parser = struct {
         const p2 = try self.alloc.create(ast.Expr);
         p2.* = e;
         return p2;
+    }
+
+    // ── gap[077] MULTIPLE ASSIGNMENT IS SIMULTANEOUS ─────────────────────────
+    //
+    // `a, b = b, a` is the swap every reader already has a reflex for, and it
+    // was SILENTLY WRONG. Both backends wrote the targets left to right, so
+    // `a` took `b`'s value and then `b` took the ALREADY-OVERWRITTEN `a`.
+    // Measured 2026-08-09, before this: `a = 1 · b = 2 · a, b = b, a` printed
+    // `2 2`, and `t[1], t[2] = t[2], t[1]` over `{ 3, 7 }` printed `7 7`.
+    // `--backend=direct` and `--backend=c` AGREED on both, which is exactly
+    // why it read as the language rather than as a defect.
+    //
+    // The rule is that every right-hand value is realized BEFORE any target is
+    // written — the same rule that already makes the failure pack correct.
+    // Rather than teach two lowerers that separately, the statement is
+    // rewritten here into the sequence that already means it: read the places,
+    // stage the values, then write. It goes inside a `do` block so the staging
+    // places cannot escape and no block parser has to drain a hoist list —
+    // three of the four statement-list builders do not.
+    //
+    // It fires ONLY on a real conflict, so the AST every other front end reads
+    // is unchanged for the ordinary case: `a, b = 1, 2` keeps its shape, and
+    // `v, err = f(x)` is a one-value PACK (`values.len == 1`) that never
+    // reaches here at all — that case already worked and is the regression
+    // test.
+
+    fn parallel_assign(self: *Parser, loc: ast.Loc, targets: []*ast.Expr, values: []*ast.Expr) ParseError!?ast.Stmt {
+        if (targets.len < 2 or targets.len != values.len) return null;
+        if (!assign_self_conflicts(targets, values)) return null;
+
+        var stmts: std.ArrayList(ast.Stmt) = .empty;
+
+        // The PLACES first, left to right. A computed key must be read once,
+        // before any write, or a swap with side-effecting indices changes
+        // meaning: `t[i], t[j] = t[j], t[i]` must evaluate `i` and `j` once
+        // each, not twice.
+        const places = try self.alloc.alloc(*ast.Expr, targets.len);
+        for (targets, 0..) |t, i| places[i] = try self.stage_place(&stmts, t);
+
+        // Then every value, so no write can reach one.
+        const staged = try self.alloc.alloc(*ast.Expr, values.len);
+        for (values, 0..) |v, i| staged[i] = try self.stage_value(&stmts, v);
+
+        for (places, 0..) |p, i| try self.emit_single_assign(&stmts, p, staged[i]);
+
+        return ast.Stmt{ .do_block = .{ .loc = loc, .body = .{
+            .loc = loc,
+            .stmts = try stmts.toOwnedSlice(self.alloc),
+            .tail_expr = null,
+        } } };
+    }
+
+    fn emit_single_assign(
+        self: *Parser,
+        stmts: *std.ArrayList(ast.Stmt),
+        target: *ast.Expr,
+        value: *ast.Expr,
+    ) ParseError!void {
+        const tg = try self.alloc.alloc(*ast.Expr, 1);
+        tg[0] = target;
+        const vl = try self.alloc.alloc(*ast.Expr, 1);
+        vl[0] = value;
+        try stmts.append(self.alloc, .{ .assign = .{
+            .loc = target.loc(),
+            .targets = tg,
+            .values = vl,
+        } });
+    }
+
+    /// Bind `v` to a fresh staging place and hand back a reader for it.
+    fn stage_value(self: *Parser, stmts: *std.ArrayList(ast.Stmt), v: *ast.Expr) ParseError!*ast.Expr {
+        const ident = try std.fmt.allocPrint(self.alloc, "duostage{d}", .{self.stage_seq});
+        self.stage_seq += 1;
+        try self.emit_single_assign(
+            stmts,
+            try self.new_expr(.{ .name = .{ .loc = v.loc(), .ident = ident } }),
+            v,
+        );
+        return try self.new_expr(.{ .name = .{ .loc = v.loc(), .ident = ident } });
+    }
+
+    /// A target is a PLACE, so it is never staged itself — only the
+    /// subexpressions that SELECT it. A settled one is already read-once and
+    /// stays where it is; anything computed becomes a staging place so the
+    /// write below reads it rather than re-running it.
+    fn stage_place(self: *Parser, stmts: *std.ArrayList(ast.Stmt), t: *ast.Expr) ParseError!*ast.Expr {
+        return switch (t.*) {
+            .index => |ix| try self.new_expr(.{ .index = .{
+                .loc = ix.loc,
+                .obj = if (expr_is_settled(ix.obj)) ix.obj else try self.stage_value(stmts, ix.obj),
+                .key = if (expr_is_settled(ix.key)) ix.key else try self.stage_value(stmts, ix.key),
+            } }),
+            .field => |f| try self.new_expr(.{ .field = .{
+                .loc = f.loc,
+                .obj = if (expr_is_settled(f.obj)) f.obj else try self.stage_value(stmts, f.obj),
+                .field = f.field,
+            } }),
+            else => t,
+        };
+    }
+
+    /// Re-reading this costs nothing and can observe nothing.
+    fn expr_is_settled(e: *const ast.Expr) bool {
+        return switch (e.*) {
+            .name, .int_lit, .float_lit, .string_lit, .nil, .true_lit, .false_lit => true,
+            else => false,
+        };
+    }
+
+    /// Does a LATER value read storage an earlier target writes? That is the
+    /// whole condition — left-to-right writing is only observable when one of
+    /// them lands on something still to be read.
+    fn assign_self_conflicts(targets: []*ast.Expr, values: []*ast.Expr) bool {
+        for (targets, 0..) |t, i| {
+            // A place this pass cannot name is a place it cannot prove safe.
+            const base = place_base(t) orelse return true;
+            for (values[i + 1 ..]) |v| {
+                if (expr_reads_name(v, base)) return true;
+            }
+        }
+        return false;
+    }
+
+    /// The name whose storage a place ultimately writes: `t` for `t[i].x`.
+    fn place_base(e: *const ast.Expr) ?[]const u8 {
+        return switch (e.*) {
+            .name => |n| n.ident,
+            .index => |ix| place_base(ix.obj),
+            .field => |f| place_base(f.obj),
+            else => null,
+        };
+    }
+
+    /// Conservative by construction: a shape this walk does not decompose is
+    /// reported as a read, because staging is always sound and skipping it is
+    /// what produced the wrong answer.
+    fn expr_reads_name(e: *const ast.Expr, name: []const u8) bool {
+        return switch (e.*) {
+            .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg => false,
+            .name => |n| std.mem.eql(u8, n.ident, name),
+            .index => |ix| expr_reads_name(ix.obj, name) or expr_reads_name(ix.key, name),
+            .field => |f| expr_reads_name(f.obj, name),
+            .binop => |b| expr_reads_name(b.lhs, name) or expr_reads_name(b.rhs, name),
+            .unop => |u| expr_reads_name(u.operand, name),
+            .contains_expr => |c| expr_reads_name(c.lhs, name) or expr_reads_name(c.rhs, name),
+            .try_expr => |x| expr_reads_name(x.operand, name),
+            .unwrap_expr => |x| expr_reads_name(x.operand, name),
+            .await_expr => |x| expr_reads_name(x.operand, name),
+            .call => |c| blk: {
+                if (expr_reads_name(c.func, name)) break :blk true;
+                for (c.args) |a| if (expr_reads_name(a, name)) break :blk true;
+                break :blk false;
+            },
+            .method_call => |m| blk: {
+                if (expr_reads_name(m.obj, name)) break :blk true;
+                for (m.args) |a| if (expr_reads_name(a, name)) break :blk true;
+                break :blk false;
+            },
+            .sequence => |s| blk: {
+                for (s.exprs) |x| if (expr_reads_name(x, name)) break :blk true;
+                break :blk false;
+            },
+            .range => |r| expr_reads_name(r.start, name) or expr_reads_name(r.end, name) or
+                (if (r.step) |s| expr_reads_name(s, name) else false),
+            else => true,
+        };
     }
 
     fn new_fb(self: *Parser, fb: ast.FuncBody) ParseError!*ast.FuncBody {
@@ -4408,10 +4579,17 @@ pub const Parser = struct {
                             try values.append(self.alloc, try self.parse_expr());
                     }
                 }
+                const tgts = try exprs.toOwnedSlice(self.alloc);
+                const vals = try values.toOwnedSlice(self.alloc);
+                // gap[077]: simultaneous, when the targets and the values
+                // overlap. Shape-preserving otherwise.
+                if (try self.parallel_assign(first.loc(), tgts, vals)) |simultaneous| {
+                    return simultaneous;
+                }
                 return ast.Stmt{ .assign = .{
                     .loc = first.loc(),
-                    .targets = try exprs.toOwnedSlice(self.alloc),
-                    .values = try values.toOwnedSlice(self.alloc),
+                    .targets = tgts,
+                    .values = vals,
                 } };
             } else {
                 // ── Bare sequence expression: a, b ──

@@ -837,6 +837,35 @@ pub fn build(b: *std.Build) void {
     hash_agreement_step.dependOn(&hash_agreement_cmd.step);
     agent_smoke_step.dependOn(&hash_agreement_cmd.step);
 
+    // semantics-gate — two SILENT WRONG ANSWERS, both convicted by value.
+    //
+    // gap[077]: `a, b = b, a` wrote its targets left to right, so the swap
+    // destroyed one of its own operands — `2 2` for a=1,b=2. gap[102]: a body
+    // whose final expression was a CALL resolved to the preceding statement
+    // instead, so `p = 5` then `d2(p)` RETURNED 5 through the direct backend
+    // where C returned 25, and sema type-checked the binding as the return
+    // (which is what held this very gate red).
+    //
+    // Tier 0, and by value rather than by exit status, because both defects
+    // produced plausible answers on BOTH backends: a differential cannot
+    // convict a wrong answer two backends agree on. Each fixture carries its
+    // negative twin and its positive control — the non-overlapping assignment
+    // that must keep its shape, the failure pack that must not regress, and
+    // the trailing-effect body whose answer really is the preceding binding.
+    const semantics_paths = [_][]const u8{
+        "examples/simultaneous_assign_proof.duo",
+        "examples/tail_demand_call_proof.duo",
+    };
+    const semantics_step = b.step("semantics-gate", "Simultaneous assignment and tail-demand return, by value");
+    semantics_step.dependOn(b.getInstallStep());
+    inline for (semantics_paths) |path| {
+        const cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", path });
+        cmd.setCwd(b.path("."));
+        cmd.step.dependOn(b.getInstallStep());
+        semantics_step.dependOn(&cmd.step);
+        agent_smoke_step.dependOn(&cmd.step);
+    }
+
     // MCP gate. All three duo MCP servers (duo-bench, duo-lsp, zls) were DEAD —
     // not slow, dead — for an unknown period, and nothing noticed: they
     // compiled, so every check that existed was satisfied, while `duo run`

@@ -73,7 +73,7 @@ pub fn blockTailResultWithDemand(blk: *const ast.Block, demand: ResultDemand) ?R
     // stripping must still run for it — `s = new32(); update(s, data); final(s)`
     // in std/hash/fnv.duo depends on that walk-back. Only a value-carrying tail
     // expression suppresses stripping.
-    const tail_carries_value = if (blk.tail_expr) |e| !isDiscardCall(e) else false;
+    const tail_carries_value = if (blk.tail_expr) |e| !isVoidShapedCall(e) else false;
     if (!tail_carries_value) {
         while (end > 0 and isTransparentTrailer(&blk.stmts[end - 1])) {
             end -= 1;
@@ -83,7 +83,7 @@ pub fn blockTailResultWithDemand(blk: *const ast.Block, demand: ResultDemand) ?R
 
     const tail_expr = if (trailer_count == 0) blk.tail_expr else null;
     if (tail_expr) |e| {
-        if (isDiscardCall(e) and end > 0) {
+        if (isVoidShapedCall(e) and end > 0) {
             if (tailStatementResult(blk.stmts[0..end], end - 1)) |anchor| {
                 var anchored = anchor;
                 anchored.transparent_trailer_count = 1;
@@ -142,6 +142,49 @@ fn isTransparentTrailer(stmt: *const ast.Stmt) bool {
 
 fn isDiscardCall(expr: *const ast.Expr) bool {
     return expr.* == .call or expr.* == .method_call;
+}
+
+/// gap[102]: the parser promotes ANY trailing call to `blk.tail_expr`, so the
+/// AST cannot tell `print value` (an effect) from `d2(p)` (the answer) by shape.
+/// Treating both as discards walked the resolver back onto the PRECEDING
+/// statement, which is what §0.7 forbids — a body's value is its final
+/// expression's:
+///
+///     t(): i64
+///         p = 5
+///         d2(p)      -- 25
+///
+/// resolved to `p = 5`, so sema type-checked the binding as the return (the
+/// `Point` mismatch that held agent-smoke red) and the direct backend RETURNED
+/// 5 where the C oracle returned 25 — a silent wrong answer, not just a false
+/// positive.
+///
+/// The walk-back is still owed to the effect case, so the discriminator is
+/// void-ness rather than call-ness. Only a callee KNOWN to yield nothing is
+/// transparent; everything else is the result. `print` is the built-in floor;
+/// callers holding signatures widen it through `voidOracle`.
+fn isVoidShapedCall(expr: *const ast.Expr) bool {
+    if (expr.* != .call) return false;
+    const callee = expr.call.func;
+    if (callee.* == .name and std.mem.eql(u8, callee.name.ident, "print")) return true;
+    if (void_oracle) |oracle| return oracle.yieldsNothing(oracle.ctx, expr);
+    return false;
+}
+
+/// A caller that holds declared return types can answer void-ness for user
+/// callables too. Installed for the duration of one check; absent, the built-in
+/// floor above is the whole answer.
+pub const VoidOracle = struct {
+    ctx: *const anyopaque,
+    yieldsNothing: *const fn (ctx: *const anyopaque, expr: *const ast.Expr) bool,
+};
+
+var void_oracle: ?VoidOracle = null;
+
+pub fn installVoidOracle(oracle: ?VoidOracle) ?VoidOracle {
+    const prev = void_oracle;
+    void_oracle = oracle;
+    return prev;
 }
 
 fn tailStatementResult(stmts: []const ast.Stmt, last_index: usize) ?Resolution {
