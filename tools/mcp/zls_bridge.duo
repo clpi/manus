@@ -13,7 +13,7 @@
 -- works from a handler. So the helpers move here and the handlers call
 -- `bridge.request(...)`.
 
-M = {}
+m = {}
 
 fun available(): bool
     std.proc.exec("which zls >/dev/null 2>&1") == 0
@@ -56,8 +56,8 @@ fun fmt(path: str): str
     "fmt failed (exit " .. rc .. "): " .. path
 end
 
-M.available = available
-M.request = request
-M.read_source = read_source
-M.fmt = fmt
-M
+m.available = available
+m.request = request
+m.read_source = read_source
+m.fmt = fmt
+m

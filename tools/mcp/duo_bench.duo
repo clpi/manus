@@ -33,7 +33,7 @@ end
 -- healthy — which is how both MCP servers stayed dead with nothing noticing.
 -- See `zig build mcp-gate`.
 --
--- Sibling modules are spelled from the PROJECT ROOT (`tools.mcp.x`), never
+-- Sibling modules are spelled from the PROJECT root (`tools.mcp.x`), never
 -- bare (`x`). `req` is resolved at COMPILE time against the directory tree
 -- above the source file — the compiler walks up from the .duo file looking
 -- for a sibling `src/` — so a bare `req "duo_shared"` only resolved when the
@@ -54,15 +54,15 @@ std.mcp.register_tool("duo_bench_run", {
     description = "Run a benchmark suite under build lock",
     type = "object",
     properties = {
-        bench_type = { type = "string", description = "bench|ml-bench|honest-bench|cross-bench" },
+        suite = { type = "string", description = "bench|ml-bench|honest-bench|cross-bench" },
         timeout = { type = "number" },
     },
-    required = { "bench_type" },
+    required = { "suite" },
 }, fun(args)
-    if args.bench_type == nil or args.bench_type == ""
-        return "no bench type"
+    if args.suite == nil or args.suite == ""
+        return std.json.encode({ error = "no bench type given" })
     end
-    std.json.encode(shared.bench_run(args.bench_type, args.timeout or 900))
+    std.json.encode(shared.bench_run(args.suite, args.timeout or 900))
 end)
 
 std.mcp.register_tool("duo_build_run", {
@@ -92,7 +92,7 @@ std.mcp.register_tool("duo_coordination_read", {
     type = "object",
     properties = {},
 }, fun(_args)
-    shared.coordination_read()
+    std.json.encode(shared.document(shared.coordpath, "coordination-buffer", 0))
 end)
 
 std.mcp.register_tool("duo_coordination_update", {
@@ -106,7 +106,7 @@ std.mcp.register_tool("duo_coordination_update", {
     },
     required = { "action", "agent_id", "detail" },
 }, fun(args)
-    shared.coordination_update(args.action, args.agent_id, args.detail, args.files or "")
+    std.json.encode(shared.coordination_update(args.action, args.agent_id, args.detail, args.files or ""))
 end)
 
 std.mcp.register_tool("duo_session_log", {
@@ -119,7 +119,7 @@ std.mcp.register_tool("duo_session_log", {
     },
     required = { "agent_id", "summary" },
 }, fun(args)
-    shared.session_log(args.agent_id, args.summary, args.detail or "")
+    std.json.encode(shared.session_log(args.agent_id, args.summary, args.detail or ""))
 end)
 
 std.mcp.register_tool("duo_repo_tooling", {
@@ -139,7 +139,7 @@ std.mcp.register_tool("duo_perf_ledger", {
     type = "object",
     properties = {},
 }, fun(_args)
-    shared.perf_ledger()
+    std.json.encode(shared.document(shared.perfpath, "perf-ledger", 10000))
 end)
 
 std.mcp.register_tool("duo_agent_canonical_index", {
@@ -147,7 +147,7 @@ std.mcp.register_tool("duo_agent_canonical_index", {
     type = "object",
     properties = {},
 }, fun(_args)
-    shared.canonical_index()
+    std.json.encode(shared.document(shared.canonpath, "canonical-index", 0))
 end)
 
 std.mcp.register_tool("duo_audit_native_boxing", {
@@ -240,8 +240,8 @@ std.mcp.register_tool("duo_agent_session_start", {
     std.json.encode({
         agent_id = agent,
         dev_control_plane = dev_json,
-        coordination_path = shared.COORD_PATH,
-        canonical_index_path = shared.CANON_PATH,
+        coordination_path = shared.coordpath,
+        canonical_index_path = shared.canonpath,
         open_p0_count = #p0,
         next_steps = {
             "duo dev claim acquire --owner <id> --file <path> before shared edits",
@@ -336,18 +336,18 @@ std.mcp.register_tool("duo_dev_validate_run", {
 end)
 
 std.mcp.register_tool("duo_bench_regressions", {
-    description = "Detect benchmark regressions: compare Duo RESULT/timing vs reference C. Pass bench_output to analyze captured stdout, else runs `zig build <bench_type>` under lock.",
+    description = "Detect benchmark regressions: compare Duo RESULT/timing vs reference C. Pass bench_output to analyze captured stdout, else runs `zig build <suite>` under lock.",
     type = "object",
     properties = {
         bench_output = { type = "string", description = "Captured bench stdout (optional; if empty, runs bench)" },
-        bench_type = { type = "string", description = "bench|ml-bench|honest-bench (default bench)" },
+        suite = { type = "string", description = "bench|ml-bench|honest-bench (default bench)" },
     },
 }, fun(args)
     bo = args.bench_output
     if bo == nil
         bo = ""
     end
-    bt = args.bench_type
+    bt = args.suite
     if bt == nil
         bt = "bench"
     end
@@ -374,7 +374,7 @@ std.mcp.register_tool("duo_file_finding", {
     },
     required = { "kind", "title", "detail", "priority" },
 }, fun(args)
-    coord_path = shared.COORD_PATH
+    coord_path = shared.coordpath
     ts = os.date("!%Y-%m-%dT%H:%M:%SZ")
     fp_line = ""
     if args.file_path and args.file_path ~= ""
@@ -414,7 +414,7 @@ std.mcp.register_tool("duo_grammar_spec_read", {
     type = "object",
     properties = {},
 }, fun(_args)
-    std.fs.read_file(shared.ROOT .. "/docs/GRAMMAR_SPEC.md") or "GRAMMAR_SPEC.md not found"
+    std.json.encode(shared.document(shared.root .. "/docs/GRAMMAR_SPEC.md", "grammar-spec", 0))
 end)
 
 std.mcp.register_tool("duo_grammar_spec_update", {
@@ -428,7 +428,7 @@ std.mcp.register_tool("duo_grammar_spec_update", {
     },
     required = { "rule_id", "status", "title", "content" },
 }, fun(args)
-    spec_path = shared.ROOT .. "/docs/GRAMMAR_SPEC.md"
+    spec_path = shared.root .. "/docs/GRAMMAR_SPEC.md"
     existing = std.fs.read_file(spec_path) or ""
     ts = os.date("!%Y-%m-%dT%H:%M:%SZ")
     entry = "\n\n## Rule: " .. (args.rule_id or "") .. " [" .. (args.status or "accepted") .. "]\n### " .. (args.title or "") .. "\n_Updated: " .. ts .. "_\n\n" .. (args.content or "") .. "\n"
@@ -441,7 +441,7 @@ std.mcp.register_tool("duo_directive_hierarchy_read", {
     type = "object",
     properties = {},
 }, fun(_args)
-    std.fs.read_file(shared.ROOT .. "/docs/DIRECTIVE_HIERARCHY.md") or "DIRECTIVE_HIERARCHY.md not found"
+    std.json.encode(shared.document(shared.root .. "/docs/DIRECTIVE_HIERARCHY.md", "directive-hierarchy", 0))
 end)
 
 std.mcp.register_tool("duo_embed_symbols", {
@@ -465,7 +465,7 @@ std.mcp.register_tool("duo_embed_symbols", {
         -- never-substituted template placeholder: `cd <DUO_ROOT>` is a shell
         -- redirect from a file named DUO_ROOT, so the rebuild always ran in
         -- the wrong directory or not at all.
-        r = shared.locked_capture("cd " .. rd .. " && " .. shared.DUO_BIN .. " run scripts/build_symbol_index.duo -- " .. ipath)
+        r = shared.locked_capture("cd " .. rd .. " && " .. shared.duobin .. " run scripts/build_symbol_index.duo -- " .. ipath)
         if r.exit_code ~= 0
             return std.json.encode({ error = "symbol index build failed", exit_code = r.exit_code })
         end
@@ -561,7 +561,7 @@ std.mcp.register_tool("duo_semantic_snapshot", {
     if i
         return string.sub(output, i)
     end
-    return "{\"error\":\"no JSON in output\"}"
+    "{\"error\":\"no JSON in output\"}"
 end)
 
 std.mcp.register_tool("duo_foreign_import_preview", {

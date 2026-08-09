@@ -56,7 +56,12 @@ fun parse_fun_header_str(line: str): any
     ptypes_csv = ""
     first = 1
     for pt, _ in pset do
-        if first == 1 then ptypes_csv = pt; first = 0 else ptypes_csv = ptypes_csv .. "," .. pt end
+        if first == 1 then
+            ptypes_csv = pt
+            first = 0
+        else
+            ptypes_csv = ptypes_csv .. "," .. pt
+        end
     end
     ret = string.match(line, "%)%s*%->%s*([%w_]+)")
     if ret == nil then ret = string.match(line, "%)%s*:%s*([%w_]+)") end
@@ -80,7 +85,12 @@ fun extract_records(src: str): str
     for ln in string.gmatch(src .. "\n", "([^\n]*)\n") do
         rec = parse_fun_header_str(ln)
         if rec ~= nil then
-            if first == 1 then out = rec; first = 0 else out = out .. "\n" .. rec end
+            if first == 1 then
+                out = rec
+                first = 0
+            else
+                out = out .. "\n" .. rec
+            end
         end
     end
     out
@@ -128,7 +138,12 @@ fun detect_op_families(records_csv: str): str
         if cnt == nil then cnt = "0" end
         if tonumber(cnt) >= 2 then
             row = pre .. ";" .. types_csv .. ";" .. cnt
-            if first == 1 then out = row; first = 0 else out = out .. "\n" .. row end
+            if first == 1 then
+                out = row
+                first = 0
+            else
+                out = out .. "\n" .. row
+            end
         end
     end
     out
@@ -153,7 +168,12 @@ fun emit_generate(row: str): str
     for ty in string.gmatch(types_csv, "([^,]+)") do
         ct = ctype_of(ty)
         entry = ty .. ":" .. ct
-        if first == 1 then ctypes = entry; first = 0 else ctypes = ctypes .. "|" .. entry end
+        if first == 1 then
+            ctypes = entry
+            first = 0
+        else
+            ctypes = ctypes .. "|" .. entry
+        end
     end
     "GEN_" .. prefix .. " = @comp.generate([[\nops: " .. prefix .. "\ntypes: " .. ctypes .. "\ntemplate: static inline $1 " .. prefix .. "_$0($1 a, $1 b) { return a OP b; }\n]])"
 end
@@ -204,7 +224,12 @@ fun audit_boxing(source: str): any
     for needle, _ in needles do
         if string.find(c, needle, 1, true) ~= nil then
             hit_marks = hit_marks .. "."
-            if first == 1 then hits_csv = needle; first = 0 else hits_csv = hits_csv .. "," .. needle end
+            if first == 1 then
+                hits_csv = needle
+                first = 0
+            else
+                hits_csv = hits_csv .. "," .. needle
+            end
         end
     end
     hc = string.len(hit_marks)
@@ -255,7 +280,12 @@ fun evaluate(source: str, goal: str): str
     applied_csv = ""
     first = 1
     for _, label in applied do
-        if first == 1 then applied_csv = label; first = 0 else applied_csv = applied_csv .. " | " .. label end
+        if first == 1 then
+            applied_csv = label
+            first = 0
+        else
+            applied_csv = applied_csv .. " | " .. label
+        end
     end
 
     original_loc = count_newlines(source) + 1

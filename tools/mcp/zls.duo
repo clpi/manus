@@ -35,7 +35,7 @@ std.mcp.register_tool("zig_diagnostics", "Get LSP diagnostics for a .zig file vi
     end
     uri = "file://" .. args.file_path
     content = bridge.read_source(args.file_path)
-    _open = bridge.request("textDocument/didOpen", {
+    opened = bridge.request("textDocument/didOpen", {
         textDocument = { uri = uri, languageId = "zig", version = 1, text = content }
     })
     -- Diagnostics arrive as a publishDiagnostics NOTIFICATION, which a

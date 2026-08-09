@@ -46,7 +46,7 @@ end
 -- `duo run x.duo` drops `x.out` in the CURRENT directory. Run from the repo
 -- root and the gate litters the root with duo_bench.out / duo_lsp.out, which
 -- `zig build repo-hygiene` is entitled to fail on. Work in a scratch dir.
-WORK = "/tmp/duo-mcp-gate"
+work = "/tmp/duo-mcp-gate"
 
 fails = 0
 
@@ -61,11 +61,15 @@ end
 -- Drive a server: feed it `lines` on stdin, hand back everything it wrote.
 -- stdin is a FILE, not a pipe, because the transport is newline-delimited
 -- JSON and a half-written pipe would look like a hang rather than a failure.
-drive(server: str, lines: str): str
-    reqf = WORK .. "/req.json"
-    respf = WORK .. "/resp.json"
+-- One request/response PAIR PER SERVER, named by tag. A single shared
+-- req.json/resp.json is not just untidy: when a check fails there is nothing
+-- left to inspect, because the next server has already overwritten the
+-- evidence. The transcripts stay on disk under work for exactly that reason.
+drive(server: str, tag: str, lines: str): str
+    reqf = work .. "/" .. tag .. ".req.json"
+    respf = work .. "/" .. tag .. ".resp.json"
     std.fs.write_file(reqf, lines)
-    os.execute("cd " .. WORK .. " && DUO_ROOT='" .. root .. "' '" .. duo_bin
+    os.execute("cd " .. work .. " && DUO_ROOT='" .. root .. "' '" .. duo_bin
         .. "' run '" .. server .. "' < '" .. reqf .. "' > '" .. respf .. "' 2>/dev/null")
     std.fs.read_file(respf) or ""
 end
@@ -77,7 +81,7 @@ end
 -- is reported as a failure rather than silently resolved in either direction.
 count_names(blob: str): int
     n = 0
-    for _m in string.gmatch(blob, "\"name\":\"duo_")
+    for hit in string.gmatch(blob, "\"name\":\"duo_")
         n = n + 1
     end
     n
@@ -85,7 +89,7 @@ end
 
 count_schemas(blob: str): int
     n = 0
-    for _m in string.gmatch(blob, "\"inputSchema\"")
+    for hit in string.gmatch(blob, "\"inputSchema\"")
         n = n + 1
     end
     n
@@ -96,7 +100,7 @@ has(blob: str, needle: str): bool
 end
 
 main = (): i64
-    std.fs.mkdir_all(WORK)
+    std.fs.mkdir_all(work)
     io.write("mcp-gate: the MCP servers must SERVE, not merely compile\n")
 
     -- ---------------------------------------------------------------
@@ -120,7 +124,7 @@ main = (): i64
         .. "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_dev_claim_release\",\"arguments\":{\"owner\":\"mcpgate\",\"file\":\""
         .. probe .. "\"}}}\n"
         .. "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_coordination_read\",\"arguments\":{}}}\n"
-    bout = drive(bench, breq)
+    bout = drive(bench, "bench", breq)
 
     if not has(bout, "\"protocolVersion\":\"2024-11-05\"")
         report(false, "duo_bench initialize", "no protocolVersion in response — the server never handshook")
@@ -142,7 +146,7 @@ main = (): i64
     end
 
     -- Named tools. A count alone passes when a tool is renamed away.
-    for _i, name in {"duo_agent_gaps_update", "duo_coordination_read", "duo_dev_claim_acquire", "duo_dev_claim_release", "duo_dev_claim_files", "duo_agent_smoke"}
+    for pos, name in {"duo_agent_gaps_update", "duo_coordination_read", "duo_dev_claim_acquire", "duo_dev_claim_release", "duo_dev_claim_files", "duo_agent_smoke"}
         if not has(bout, "\"name\":\"" .. name .. "\"")
             report(false, "duo_bench lists " .. name, "absent from tools/list")
             fails = fails + 1
@@ -233,7 +237,7 @@ main = (): i64
         .. "{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_directive_hierarchy_read\",\"arguments\":{}}}\n"
         .. "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_table_shapes\",\"arguments\":{\"file_path\":\"examples/hello.duo\"}}}\n"
         .. "{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_multiplier_opportunities\",\"arguments\":{\"file_path\":\"examples/hello.duo\"}}}\n"
-    lout = drive(lsp, lreq)
+    lout = drive(lsp, "lsp", lreq)
 
     if not has(lout, "\"protocolVersion\":\"2024-11-05\"")
         report(false, "duo_lsp initialize", "no protocolVersion in response — the server never handshook")
@@ -254,7 +258,7 @@ main = (): i64
         report(true, "duo_lsp serves 32 tools", "")
     end
 
-    for _i, name in {"duo_agent_gaps_update", "duo_diagnostics", "duo_file_finding", "duo_agent_canonical_index"}
+    for pos, name in {"duo_agent_gaps_update", "duo_diagnostics", "duo_file_finding", "duo_agent_canonical_index"}
         if not has(lout, "\"name\":\"" .. name .. "\"")
             report(false, "duo_lsp lists " .. name, "absent from tools/list")
             fails = fails + 1
@@ -284,7 +288,7 @@ main = (): i64
     -- The seven-tool regression guard. Each of these was silently dead.
     revived = { "duo_meta_catalog", "duo_complexity", "duo_grammar_spec_read", "duo_directive_hierarchy_read", "duo_table_shapes", "duo_multiplier_opportunities" }
     rid = 5
-    for _i, rname in revived
+    for pos, rname in revived
         if not has(lout, "\"id\":" .. to(str)(rid))
             report(false, rname .. " answers", "no response — handler tail is probably a bare if/else again")
             fails = fails + 1
@@ -305,7 +309,7 @@ main = (): i64
     zreq = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n"
         .. "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\n"
         .. "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"zig_format\",\"arguments\":{\"file_path\":\"/dev/null\"}}}\n"
-    zout = drive(zls, zreq)
+    zout = drive(zls, "zls", zreq)
 
     if not has(zout, "\"protocolVersion\":\"2024-11-05\"")
         report(false, "zls initialize", "no protocolVersion — the server never handshook")
@@ -315,7 +319,7 @@ main = (): i64
     end
 
     zn = 0
-    for _m in string.gmatch(zout, "\"name\":\"zig_")
+    for hit in string.gmatch(zout, "\"name\":\"zig_")
         zn = zn + 1
     end
     if zn ~= 4
@@ -338,7 +342,7 @@ main = (): i64
     -- `duo run tools/mcp/mcp_gate.duo` from the repo root drops mcp_gate.out
     -- BESIDE THE REPO ROOT, not beside the source. It is gitignored, so
     -- repo-hygiene stays green, but a gate that litters the tree it guards is
-    -- a bad neighbour. The server .out files land in WORK already.
+    -- a bad neighbour. The server .out files land in work already.
     os.execute("rm -f ./mcp_gate.out")
 
     io.write("\n")

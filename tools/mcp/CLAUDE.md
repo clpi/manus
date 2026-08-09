@@ -86,27 +86,54 @@ Seven handlers were dead this way and nobody knew: `duo_semantic_snapshot`
 accuracy. All are fixed, and `mcp-gate` calls six of them by name so the class
 cannot come back silently.
 
-## G-TOTAL baseline for the MCP front-end (Pass 117, measured 2026-08-08)
+## G-TOTAL for the MCP front-end (Pass 117 §0g) — measured, then moved
 
 Pass 117 §0g requires MCP responses to be `(span, role, why, dnir)` tuples;
-plain-string output is an H-8 OUTPUT TOTALITY finding. The baseline, so the
-migration has a number to move:
+plain-string output is an H-8 OUTPUT TOTALITY finding.
 
-| | tools |
-|---|---|
-| total across duo_bench + duo_lsp + zls | **71** |
-| emit a JSON body | 50 |
-| emit **plain text** (H-8 finding) | **21** |
-| emit `(span, role, why, dnir)` tuples | **0** |
+| | before | after |
+|---|---|---|
+| total tools across duo_bench + duo_lsp + zls | 71 | 71 |
+| emit a JSON body | 50 | **66** |
+| emit **plain text** (H-8 finding) | **21** | **5** |
+| emit `(span, role, why, dnir)` tuples | **0** | **0** |
 
-35 of the 71 were classified by CALLING the tool and parsing the response body;
-the rest are static reads of the handler tail, because calling them runs builds,
-benchmarks or writes. The plain-text 21 are concentrated in the document readers
-(`duo_coordination_read`, `duo_perf_ledger`, `duo_agent_canonical_index`,
-`duo_grammar_spec_read`, `duo_directive_hierarchy_read`, `duo_coordination_buffer`,
-`duo_agent_gaps_buffer`) and the `duo dev …` passthroughs, which return whatever
-the compiler CLI printed. **Nothing is G-TOTAL compliant yet** — the JSON 50 are
-structured but they are not tuples, so 0 is the honest compliant count.
+40 of the 71 were classified by CALLING the tool and parsing the response body;
+the rest are static reads, because calling them runs builds, benchmarks or
+writes to tracked files.
+
+**What moved.** The ten document readers now return an envelope carrying the
+document's PROVENANCE as checkable facts — `path`, `exists`, `bytes`, `lines`,
+`truncated`. That is a real repair, not a reshuffle: `duo_perf_ledger` had been
+silently cutting a 604947-byte ledger to 10000 bytes, and no caller could tell
+that from a short document. `duo_coordination_update` and `duo_session_log`
+answered `"ok: …"`, which told the caller nothing it could act on; they now name
+the buffer they wrote and the status the entry landed with.
+
+**What did NOT move, and why it should not be faked.** The compliant count is
+still **0**, and the remaining 5 stay plain text on purpose:
+
+- `duo_semantic_snapshot` (×2) and `zig_format` are PASSTHROUGHS — they return
+  whatever `duo sim` / `zig fmt` printed. The honest repair is upstream: the
+  compiler CLI is itself a rendered artifact under G-TOTAL. Wrapping its prose
+  in a tuple-shaped envelope here would be worse than leaving it, because it
+  would read as compliant while carrying exactly the same bytes.
+- No tool emits a `role`, deliberately. The 18-role taxonomy H-2 calls CLOSED is
+  not enumerated anywhere in the tree: `docs/spec/roles.md` §4 counts 17 named,
+  states role 18 "is unnamed anywhere", lists two candidates and **refuses to
+  guess between them**, and shows §0g's fine splits oblige ≥29. `gaps/GAP-071`
+  records that G-TOTAL cannot yet be measured. §0g also requires
+  **zero unresolved-ambiguity spans** — two candidates is a mixed-space
+  diagnostic, never a fallback. A guessed role would satisfy a scan and make
+  every number downstream of it unfalsifiable.
+
+**The interface this front-end will consume**, so the taxonomy owner can aim at
+it: a per-token `(line, col, len, role)` quadruple — the shape already used by
+`fixtures/highlight/*.roles.duo` — plus a `why` carrying the rule id that
+decided the role. `duo_diagnostics`, `duo_compile_check` and `duo_table_shapes`
+already return real spans (`file`, `line`, `col`) and are the three tools that
+become tuple-compliant the day the role list closes. **Owed: the enumeration of
+role 18 and a decision on the ≥12 unhued-but-required splits.**
 
 ## MCP config snippet (for Claude Desktop / claude_desktop_config.json)
 

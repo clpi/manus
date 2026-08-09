@@ -6,7 +6,7 @@
 -- EVERY `req` LIVES HERE, AT FILE SCOPE, AND MUST STAY HERE — a `req` in a
 -- tool handler binds a local its nested closures try to capture, and Duo has
 -- no closure capture, so lowering emits an undeclared C identifier and the
--- server never builds. Sibling modules are spelled from the PROJECT ROOT
+-- server never builds. Sibling modules are spelled from the PROJECT root
 -- (`tools.mcp.x`): `req` resolves at compile time against the tree above the
 -- source file, so a bare name only worked with cwd = tools/std.mcp.
 --
@@ -94,7 +94,7 @@ std.mcp.register_tool("duo_diagnostics", "Get compiler diagnostics for a Duo sou
     },
     required = { "file_path" },
 }, fun(args)
-    output = std.proc.capture(shared.DUO_BIN .. " check " .. args.file_path .. " 2>&1")
+    output = std.proc.capture(shared.duobin .. " check " .. args.file_path .. " 2>&1")
     diags = {}
     for line in string.gmatch(output, "[^\n]+")
         if string.find(line, ": error:") or string.find(line, ": warning:")
@@ -126,7 +126,7 @@ std.mcp.register_tool("duo_compile_check", "Run duo check and return parsed diag
     },
     required = { "file_path" },
 }, fun(args)
-    output = std.proc.capture(shared.DUO_BIN .. " check " .. args.file_path .. " 2>&1")
+    output = std.proc.capture(shared.duobin .. " check " .. args.file_path .. " 2>&1")
     diags = {}
     for line in string.gmatch(output, "[^\n]+")
         if string.find(line, ": error:") or string.find(line, ": warning:")
@@ -160,7 +160,7 @@ std.mcp.register_tool("duo_table_shapes", "Export table_shapes and enum_shapes f
     -- bare `if … else … end` sends NO RESPONSE AT ALL and ends the session —
     -- measured 2026-08-08 across 7 handlers, all of which were listed by
     -- tools/list and all of which were dead.
-    output = std.proc.capture(shared.DUO_BIN .. " graph " .. args.file_path .. " 2>&1")
+    output = std.proc.capture(shared.duobin .. " graph " .. args.file_path .. " 2>&1")
     if string.find(output, ": error:") or string.find(output, "sema error") or string.find(output, "parse failed")
         return std.json.encode({ ok = false, error = string.sub(output, 1, 4000), table_shapes = {}, enum_shapes = {} })
     end
@@ -168,7 +168,7 @@ std.mcp.register_tool("duo_table_shapes", "Export table_shapes and enum_shapes f
     if parsed == nil
         return std.json.encode({ ok = false, error = "failed to parse duo graph JSON", raw_output = string.sub(output, 1, 2000) })
     end
-    return std.json.encode({
+    std.json.encode({
         ok = true,
         file = parsed.file,
         table_shapes = parsed.table_shapes or {},
@@ -204,7 +204,7 @@ std.mcp.register_tool("duo_meta_catalog", "List all @comp.* / @meta.* constructs
         end
         return std.json.encode(groups)
     end
-    return std.json.encode(META_CATALOG)
+    std.json.encode(META_CATALOG)
 end)
 
 -- Tool: duo_meta_ladder — show scaling ladder
@@ -271,7 +271,7 @@ std.mcp.register_tool("duo_coordination_buffer", "Read the shared agent coordina
     type = "object",
     properties = {},
 }, fun(_args)
-    shared.coordination_read()
+    std.json.encode(shared.document(shared.coordpath, "coordination-buffer", 0))
 end)
 
 -- Tool: duo_agent_gaps_buffer — read gaps ledger
@@ -279,7 +279,7 @@ std.mcp.register_tool("duo_agent_gaps_buffer", "Read the cross-session agent gap
     type = "object",
     properties = {},
 }, fun(_args)
-    shared.coordination_read()
+    std.json.encode(shared.document(shared.coordpath, "gaps-buffer", 0))
 end)
 
 -- Tool: duo_agent_canonical_index — read canonical index
@@ -287,7 +287,7 @@ std.mcp.register_tool("duo_agent_canonical_index", "Read canonical router for ag
     type = "object",
     properties = {},
 }, fun(_args)
-    shared.canonical_index()
+    std.json.encode(shared.document(shared.canonpath, "canonical-index", 0))
 end)
 
 -- Tool: duo_grammar_spec_read — read grammar spec
@@ -295,11 +295,7 @@ std.mcp.register_tool("duo_grammar_spec_read", "Read canonical surface-syntax ru
     type = "object",
     properties = {},
 }, fun(_args)
-    gpath = "docs/GRAMMAR_SPEC.md"
-    if std.fs.exists(gpath)
-        return std.fs.read_file(gpath)
-    end
-    return "Grammar spec not initialized. See docs/GRAMMAR_SPEC.md"
+    std.json.encode(shared.document(shared.root .. "/docs/GRAMMAR_SPEC.md", "grammar-spec", 0))
 end)
 
 -- Tool: duo_grammar_spec_update — append grammar rule change
@@ -314,7 +310,7 @@ std.mcp.register_tool("duo_grammar_spec_update", "Append a grammar rule changelo
 }, fun(args)
     gpath = "docs/GRAMMAR_SPEC.md"
     if not std.fs.exists(gpath)
-        return "Grammar spec missing — create docs/GRAMMAR_SPEC.md first"
+        return std.json.encode({ kind = "grammar.update", ok = false, path = gpath, reason = "grammar spec missing; create docs/GRAMMAR_SPEC.md first" })
     end
     content = std.fs.read_file(gpath)
     date = os.date("%Y-%m-%d")
@@ -326,7 +322,7 @@ std.mcp.register_tool("duo_grammar_spec_update", "Append a grammar rule changelo
         content = content .. "\n## Changelog\n\n| Date | Rule | Change |\n| --- | --- | --- |\n" .. entry
     end
     std.fs.write_file(gpath, content)
-    return "Appended " .. args.rule_id .. " to grammar spec changelog"
+    std.json.encode({ kind = "grammar.update", ok = true, path = gpath, rule = args.rule_id, status = args.status })
 end)
 
 -- Tool: duo_directive_hierarchy_read — read directive hierarchy
@@ -334,11 +330,7 @@ std.mcp.register_tool("duo_directive_hierarchy_read", "Read @comp.* dotted direc
     type = "object",
     properties = {},
 }, fun(_args)
-    dpath = "docs/DIRECTIVE_HIERARCHY.md"
-    if std.fs.exists(dpath)
-        return std.fs.read_file(dpath)
-    end
-    return "See docs/DIRECTIVE_HIERARCHY.md"
+    std.json.encode(shared.document(shared.root .. "/docs/DIRECTIVE_HIERARCHY.md", "directive-hierarchy", 0))
 end)
 
 -- Tool: duo_agent_smoke — run agent-smoke gate
@@ -399,7 +391,7 @@ std.mcp.register_tool("duo_session_log", "Append a structured session log entry 
     },
     required = { "agent_id", "summary" },
 }, fun(args)
-    shared.session_log(args.agent_id, args.summary, args.detail or "")
+    std.json.encode(shared.session_log(args.agent_id, args.summary, args.detail or ""))
 end)
 
 -- Tool: duo_repo_tooling — run a Duo repo script
@@ -456,7 +448,7 @@ std.mcp.register_tool("duo_complexity", "Query complexity information for any @c
         end
         return std.json.encode({ error = "Path not found in catalog: " .. path, suggestion = "Use duo_meta_catalog() to see all available paths" })
     end
-    return std.json.encode({ error = "Path must start with comp., meta., or compiler.: " .. path })
+    std.json.encode({ error = "Path must start with comp., meta., or compiler.: " .. path })
 end)
 
 -- Tool: duo_next_combinators — suggest next-level combinators
@@ -591,7 +583,7 @@ std.mcp.register_tool("duo_multiplier_opportunities", "Analyze a .duo file for p
             })
         end
         
-    return std.json.encode({
+    std.json.encode({
         file = args.file_path,
         opportunities = opportunities,
         count = #opportunities,
@@ -611,15 +603,15 @@ std.mcp.register_tool("duo_agent_session_start", "Session bootstrap: load coordi
     canon = shared.canonical_index()
     std.json.encode({
         agent_id = args.agent_id or "agent",
-        coordination_path = shared.COORD_PATH,
-        canonical_index_path = shared.CANON_PATH,
+        coordination_path = shared.coordpath,
+        canonical_index_path = shared.canonpath,
         open_p0_count = #p0,
         next_steps = {
             "duo_coordination_update(action='claim', ...) before shared edits",
             "duo_complexity(path='comp.map') to query complexity",
             "duo_next_combinators(path='comp.map') to get suggestions",
             "duo_multiplier_opportunities(file_path='file.duo') to find opportunities",
-            "cd " .. root .. " && " .. shared.DUO_BIN .. " run scripts/agent_smoke.duo (or the duo_agent_smoke tool, which takes the build lock)",
+            "cd " .. root .. " && " .. shared.duobin .. " run scripts/agent_smoke.duo (or the duo_agent_smoke tool, which takes the build lock)",
         },
         coordination_excerpt = string.sub(coord, 1, 4000),
         canonical_excerpt = string.sub(canon, 1, 2000),
