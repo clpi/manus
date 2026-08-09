@@ -293,7 +293,7 @@ from the graph service — hand edits are an H-1 drift finding. The golden token
 corpus (`fixtures/highlight/*.duo` + `*.roles`) convicts any front-end that
 diverges.
 
-### §0e STRATEGIC INVARIANTS + DOMINANCE (Passes 105, 116)
+### §0e STRATEGIC INVARIANTS (Pass 105)
 
 Anchored protocols, RED IN CI: `std@{ ambient = false }` · `build@deterministic`
 · `dnir@migratable(v)` · `graph@{ colored = false }` (effects never fork call
@@ -301,9 +301,13 @@ syntax) · `registry.open = gate(coherence.closed)` · `std@deprecation` ·
 `release@published(metrics)` · `toolchain@{ foreign = ledger | oracle }`.
 The claims dashboard is the pitch AND the CI artifact — the same file.
 
-**G-DOM**: `ward@dominates(wart)` on loc / bytes / startup / rss — STRICT, red
-in CI on regression, published each release. **Every proof workload gets a
-dominance row against its oracle.**
+**RUNTIME COMPARISON.** ward is measured against wart, wasmtime and wasmer on
+loc / bytes / startup / rss / execution, and the table is published with its
+LOSSES. This is an ordinary benchmark with a regression ratchet, not an anchored
+protocol: an earlier draft framed it as `ward@dominates(wart)` ("G-DOM"), which
+was AI-generated formalism rather than a design decision and is RETIRED. What
+survives is the measurement and the requirement that every runtime produce the
+SAME ANSWER before any speed number is compared.
 
 ### §0f ONE GRAPH SERVICE (Pass 101 §5)
 
@@ -503,7 +507,8 @@ force.
 New v4 rows, additive to v3: **self scan** (a parameter named `self` is a
 finding, §0a) · **recognition scan** (`std.mem`/`std.fmt`/`std.math` and bare
 `math.` = findings) · **role scan** (plain-string output is an H-8 finding) ·
-**dominance row** (every proof workload cites its oracle delta, G-DOM).
+**runtime row** (every proof workload cites its oracle delta, answers verified
+equal first).
 
 lexical greps at zero · uppercase 0 · prefix-@ 0 · face scan (receiver forms,
 ARG-1) · constructor scan (ladder) · alias scan · concat scan · stdlib scan ·
