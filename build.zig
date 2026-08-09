@@ -464,6 +464,39 @@ pub fn build(b: *std.Build) void {
     const recognition_scan_step = b.step("recognition-scan", "Pass 116 s0a: std.mem/std.fmt/std.math and bare math. in lib/std; ratchets");
     recognition_scan_step.dependOn(&recognition_scan_cmd.step);
 
+    // gap[080]. `scripts/bootstrap_scan.duo` has been in the tree, working and
+    // passing, with NO BUILD STEP -- so nothing ever ran it. gaps/GAP-080.md
+    // says "Landed with this gap: `zig build bootstrap-scan`"; the script
+    // landed and the step did not, which is the same class of defect the gap
+    // itself is about: `src/*.zig` is the one corpus the deny table cannot
+    // see, and the instrument built to see it was itself invisible.
+    //
+    // audit100 walks the canonical .duo partition and excludes the bootstrap
+    // ledger from every deny row, so the compiler -- the artifact that
+    // enforces the law on every other file -- was unmeasured. This row
+    // ratchets DOWN over tracked src/*.zig only.
+    const bootstrap_scan_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/bootstrap_scan.duo" });
+    bootstrap_scan_cmd.setCwd(b.path("."));
+    bootstrap_scan_cmd.step.dependOn(b.getInstallStep());
+    const bootstrap_scan_step = b.step("bootstrap-scan", "gap[080]: the deny table over src/*.zig, the corpus audit100 excludes; ratchets");
+    bootstrap_scan_step.dependOn(&bootstrap_scan_cmd.step);
+
+    // gap[076]. The gap allocator's mkdir(2) is atomic within ONE filesystem
+    // view, and parallel agents here work in git worktrees, which are several.
+    // Both of its inputs used to be worktree-local, so two agents mkdir'd two
+    // different paths and both won. Reservations now live under
+    // --git-common-dir, which every worktree shares.
+    //
+    // Report mode prints the RESOLVED LEDGER PATH rather than a verdict, and
+    // that is the whole point: a silent fallback to the worktree-local ledger
+    // would keep colliding while reporting success, so the path is the only
+    // thing that tells the two apart. Read-only -- it allocates nothing.
+    const gapalloc_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/gapalloc.duo" });
+    gapalloc_cmd.setCwd(b.path("."));
+    gapalloc_cmd.step.dependOn(b.getInstallStep());
+    const gapalloc_step = b.step("gapalloc", "gap[076]: resolved gap-reservation ledger path, high-water mark across ALL refs, next number");
+    gapalloc_step.dependOn(&gapalloc_cmd.step);
+
     // The first sixty seconds of a new user's life, gated. src/build_framework.zig's
     // tests drive parser+sema in-process and stayed green while `duo init` emitted a
     // src/main.duo that `duo check`, `duo build` and `duo run` all rejected. Only a
@@ -684,11 +717,10 @@ pub fn build(b: *std.Build) void {
     // records the row as landed while nothing ran it. Both exit directions
     // checked before wiring, per gap[070]: PASS exits 0, and a lowered budget
     // exits 1 after printing `!! assume 17 1`.
-    const bootstrap_scan_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/bootstrap_scan.duo" });
-    bootstrap_scan_cmd.step.dependOn(b.getInstallStep());
-    bootstrap_scan_cmd.setCwd(b.path("."));
-    const bootstrap_scan_step = b.step("bootstrap-scan", "GAP-080/085: uppercase, companion, relation and assume rows over src/*.zig; ratchets down");
-    bootstrap_scan_step.dependOn(&bootstrap_scan_cmd.step);
+    // DEDUP on merge: two agents independently found `bootstrap-scan` was a
+    // script with no build step and each wired it. The gap[080] wiring above
+    // is kept; this one is removed. The duplicate discovery is the evidence
+    // that a phantom gate is findable — see the merge commit.
 
     // GAP-075: std.fs.remove, by VALUE, both directions. The fixture gap[075]
     // owed and gap[100] rung 2 cited as already existing — it never did, under

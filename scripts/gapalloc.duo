@@ -1,0 +1,31 @@
+-- scripts/gapalloc.duo — the gap[076] acceptance gate.
+--
+-- `zig build gapalloc` proves the allocator hands out a number no other
+-- worktree of this repository can be holding. It exists because the previous
+-- allocator was CORRECT and still collided four times in two days: its
+-- mkdir(2) was atomic within one filesystem view, and parallel agents here
+-- work in git worktrees, which are several views.
+--
+-- Modes, selected by the `gapmode` environment variable:
+--   report   resolved ledger path, high-water mark, next number. Read-only,
+--            allocates nothing. THIS IS THE POSITIVE CONTROL — a gate that
+--            printed only a verdict could not tell a shared ledger from a
+--            silent fallback to the worktree-local one, which is the exact
+--            defect being fixed, so the PATH is what it prints.
+--   alloc    allocate one number and print it, bare. The concurrency harness
+--            runs this from two worktrees at once and compares the answers.
+--
+-- `std.os.getenv` answers "" — never nil — for an unset name.
+
+shared = req "tools.mcp.duo_shared"
+
+mode = std.os.getenv("gapmode")
+if mode == nil or mode == ""
+    mode = "report"
+
+if mode == "alloc"
+    print(shared.gapallocate():to(str))
+else
+    print("ledger  " .. shared.gapledger)
+    print("high    " .. shared.gaphigh():to(str))
+    print("next    " .. (shared.gaphigh() + 1):to(str))

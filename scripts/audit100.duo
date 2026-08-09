@@ -408,6 +408,7 @@ main(): i64
     -- main and must stay in this order.
     id = {
         "snake", "upper", "upperdecl", "underprefix", "companion", "accessor", "axis",
+        "self",
         "directive", "ctor", "stdlib", "import", "foreignkw", "arrow",
         "luafn", "mwrapper", "concatlit", "oneline", "trailret",
         "graveyard", "convert",
@@ -420,6 +421,7 @@ main(): i64
         "companion *_kind / *_type",
         "get_ / set_ / compute_",
         "axis name instead of a level",
+        "a parameter named self (SELF-ZERO)",
         "prefix-@ directive",
         ".new( .create( make_ .init(",
         "string. / table. / std.string.",
@@ -442,6 +444,7 @@ main(): i64
         "_(kind|type)([^A-Za-z0-9_]|$)",
         "(get|set|compute)_[A-Za-z]",
         "(sort_by|take_while|drop_while|group_by|max_by|min_by|is_[a-z])",
+        "[(,][[:space:]]*self([[:space:]]*[,)]|[[:space:]]*:[[:space:]])",
         "@(comp|c)\\.",
         "\\.(new|create)\\(|make_[a-z]|\\.init\\(",
         "(^|[^A-Za-z0-9_.])(string|table)\\.|std\\.string",
@@ -1136,14 +1139,20 @@ main(): i64
     --                  `string.byte` form answers 3. Recorded in gaps/GAP-108.md;
     --                  the same finding the ward entry above reached as GAP-025.
     --                  2020 -> 2021.
-    budgets: str = "13966 2136 18 1810 259 322 479 154 58 2021 442 167 128 228 36 2411 2258 3441 6 324"
+    -- MERGE 2026-08-09: both sides were right and neither alone is correct.
+    -- One branch ADDED the `self` row (41) — the AUDIT v4 scan that had never
+    -- existed. The other MOVED two values (underprefix 1808->1810, stdlib
+    -- 2020->2021) paying for `unsupported/` now being compiled. Taking the
+    -- 21-row list WITH the two moved values; dropping either loses a real
+    -- measurement.
+    budgets: str = "13966 2136 18 1810 259 322 479 41 154 58 2021 442 167 128 228 36 2411 2258 3441 6 324"
 
     -- Per-row: 1 = measure with string bodies INTACT. Only `concatlit` sets
     -- it, because its subject IS the string literal; stripping bodies takes
     -- that row from 2155 to 1, which would read as a triumph and mean nothing.
     -- Every other row is about the shape of Duo code, so a `const T*` inside
     -- an emit payload is not evidence against it.
-    keeps: str =    "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0"
+    keeps: str =    "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0"
 
     -- Per-row: 1 = THE COMPILER REFUSES THIS, 0 = the gate merely counts it.
     -- The distinction is the whole point of the column. A counted row is
@@ -1153,7 +1162,7 @@ main(): i64
     -- count is a residue measurement, not a debt. Reporting both under one
     -- heading, as this gate did until 2026-08-08, makes "we tolerate 167 of
     -- these" and "these are impossible" look like the same fact.
-    enforced: str = "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0"
+    enforced: str = "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0"
 
     if _field(budgets, #id) == "" or _field(budgets, #id + 1) != ""
         print("audit100: FAIL — the budget row does not have exactly "
@@ -1252,6 +1261,49 @@ main(): i64
             .. " case-set " .. ucase:to(str) .. ", ordinary line "
             .. uplain:to(str) .. "); the ratchet would drive the repair"
             .. " backwards")
+        return 3
+
+    -- POSITIVE CONTROL ON `self`. §0a SELF-ZERO — "a parameter named `self` is
+    -- an audit finding; parameter lists count TRUE ARGUMENTS ONLY" — has been
+    -- law since Pass 116, and CLAUDE.md §2 lists a "self scan" among the AUDIT
+    -- v4 rows. It did not exist. Not a row aimed at the wrong position like
+    -- `upperdecl` was: NO INSTRUMENT AT ALL, while the audit table named one,
+    -- so the row read as satisfied by being absent. gaps/GAP-071 measured 29
+    -- files by hand on the day the rule landed and nothing has measured it
+    -- since. Landed 2026-08-09 at 41 points on the canonical partition.
+    --
+    -- The DECLINE half is the load-bearing one here, and more delicate than
+    -- any other row's. `self` is not merely a banned spelling — it is a banned
+    -- spelling that appears constantly in the two forms the law REPLACES it
+    -- with. `self.x` is a field walk and `self:len()` is an invoke; both are
+    -- SELF-ZERO violations in spirit, but neither is a PARAMETER, and a row
+    -- that convicted them would count the same defect three times and could
+    -- never reach zero by removing parameters. So the pattern anchors on
+    -- parameter-list position (`(` or `,` to the left) and accepts only a
+    -- closer, a comma, or a SPACED copula to the right — §0d's spacing rule
+    -- doing real work: `self: any` is a typed parameter, `self:peek()` is an
+    -- invoke, and one space decides it.
+    sp: i64 = 8
+    spat: i64 = _probe(pat[sp], "    scale = (self, k) @" .. ubrace .. " .x * k " .. ubraceclose)
+    sbare: i64 = _probe(pat[sp], "    len = (self): i64")
+    styped: i64 = _probe(pat[sp], "    fh.close = (self: any) nil")
+    ssecond: i64 = _probe(pat[sp], "    write = (fh, self) nil")
+    swalk: i64 = _probe(pat[sp], "    n = self.pos + 1")
+    sinvoke: i64 = _probe(pat[sp], "    n = self:peek() + 1")
+    scanon: i64 = _probe(pat[sp], "    scale = (k) @" .. ubrace .. " .x * k " .. ubraceclose)
+    sword: i64 = _probe(pat[sp], "    myself = (herself, itself) nil")
+    if spat == 0 or sbare == 0 or styped == 0 or ssecond == 0
+        print("audit100: FAIL — the self row does not see a parameter named"
+            .. " self (bare " .. spat:to(str) .. ", sole " .. sbare:to(str)
+            .. ", typed " .. styped:to(str) .. ", second " .. ssecond:to(str)
+            .. "); it would read 0 and pass")
+        return 3
+    if swalk != 0 or sinvoke != 0 or scanon != 0 or sword != 0
+        print("audit100: FAIL — the self row convicts something that is not a"
+            .. " parameter (field walk " .. swalk:to(str) .. ", invoke "
+            .. sinvoke:to(str) .. ", canonical lens " .. scanon:to(str)
+            .. ", word-boundary " .. sword:to(str) .. "); the count would"
+            .. " triple-count one defect and could never reach zero")
         return 3
 
     -- POSITIVE CONTROL ON `convert`, the newest row and the only one whose
