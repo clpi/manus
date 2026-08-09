@@ -75,12 +75,25 @@ control = "examples/spec100/stubs/control.duo"
 -- `shc/lex.duo` was waiting on.
 -- blocks 2 -> 5: `shc/lex.duo` and `shc/parse.duo` join their module and the
 -- §19 descent stubs; `tool/wordcount.duo` gets its shebang onto line 1.
--- 17 -> 18: `relation`, §9's conversion algebra — the declaration face
+-- 17 -> 19, TWO forms landing in parallel and each raising the floor by one:
+--
+-- `relation` — §9's conversion algebra: the declaration face
 -- `to(dest)(src) = conv`, the enumerable trie `to[dest]`, and the composition
--- law that derives a conversion nobody wrote. Raised because the row went
--- green; gap[082].
+-- law that derives a conversion nobody wrote. gap[082].
+--
+-- `convert` — Pass 121 §9's conversion edge at the RECEIVER. It went green
+-- because `str -> i64` started building at all; gap[081] found it failing in
+-- BOTH faces on a typed `str`, which is why the tree is written 1647:1 in the
+-- noncanonical orientation and why the census was never only about taste. The
+-- fixture asserts 2^53 + 1 for the reason all of these carry a value: a
+-- conversion detouring through a double answers 9007199254740992 and reads as
+-- correct.
+--
+-- The two branches each raised 17 -> 18 independently. Merged, both forms are
+-- present, so the floor is 19 — taking either branch's number would have
+-- silently un-floored the other's form.
 blockfloor = 5
-formfloor = 18
+formfloor = 19
 
 fence = "^```"
 

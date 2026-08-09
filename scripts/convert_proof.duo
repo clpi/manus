@@ -1,0 +1,149 @@
+-- GAP-081 step 1 — the conversion edge, proved BY VALUE in both faces, both
+-- lowerings, and on the input that used to answer 0.
+--
+-- WHAT WAS BROKEN. `to(i64)` on a typed `str` failed to build in BOTH faces:
+-- `error: call to undeclared function 'lua_to_num'`. A full-native module has
+-- no boxed runtime, so the name the conversion reached for was never declared.
+-- That is not an orientation defect — orientation is innocent there — it is a
+-- MISSING CONVERSION, and it is the reason gaps/GAP-081.md reads 1647
+-- operation-first sites against one canonical one as partly capability rather
+-- than taste: the commonest conversion in this tree is parsing a number, and
+-- its canonical spelling did not compile.
+--
+-- WHAT IT MUST NOT DO NOW. Answer 0. `lua_to_num` reaches `atof` and the
+-- native `tonumber` path reaches `strtod`; both report 0.0 for "abc", and this
+-- repository has already been burned by exactly that shape — `tonumber("abc")`
+-- returning 0 rather than nil produced confident wrong numbers in a gate. So
+-- "it compiles" is not the assertion here and neither is "it answers 17": this
+-- also requires that a string holding no number does NOT come back as one, and
+-- that a genuine "0" still does. A conversion that cannot state failure is not
+-- a conversion.
+--
+-- WHY EVERY PROBE IS WRITTEN HERE RATHER THAN TRACKED AS A FIXTURE. The
+-- noncanonical face has to be compiled to prove the two faces agree, and a
+-- tracked file spelling it would be a deny point on `audit100`'s `convert`
+-- row — the row this same diff added. Probe text lives inside string literals,
+-- which that gate strips, so the proof can write the form it is proving
+-- equivalent without arguing against itself. Same reasoning `audit100` uses to
+-- exclude its own patterns.
+--
+-- Each probe is ONE string literal rather than a concatenation, for the same
+-- accounting reason: `..` beside a literal is the `concatlit` row, and a proof
+-- that pays 26 points to a row it is not about is a proof nobody can land.
+
+q = "'"
+work = "/tmp/duo-convert-proof"
+
+duo = ""
+fails = 0
+
+-- Write a probe and answer its stdout, chomped. `flags` selects the lowering.
+answer = (name: str, src: str, flags: str): str
+    path: str = "{work}/{name}.duo"
+    bin: str = "{work}/{name}.out"
+    std.script.run("printf {q}%s{q} {q}{src}{q} > {path}")
+    rc: i64 = std.script.run("{duo} compile {path} {flags} --emit exe -o {bin} > {work}/{name}.log 2>&1")
+    out = "DID NOT BUILD"
+    if rc == 0
+        out = std.script.chomp(std.script.capture(bin))
+    out
+
+-- and its exit status, which is the only way to see a FAULT.
+verdict = (name: str, src: str, flags: str): i64
+    path: str = "{work}/{name}.duo"
+    bin: str = "{work}/{name}.out"
+    std.script.run("printf {q}%s{q} {q}{src}{q} > {path}")
+    rc: i64 = std.script.run("{duo} compile {path} {flags} --emit exe -o {bin} > {work}/{name}.log 2>&1")
+    code = -1
+    if rc == 0
+        code = std.script.status("{bin} > /dev/null 2>&1")
+    code
+
+row = (label: str, got: str, want: str): i64
+    mark = "  ok"
+    bad = 0
+    if got != want
+        mark = "FAIL"
+        bad = 1
+    print("  {mark}  {label}  want {want} got {got}")
+    bad
+
+main = (): i64
+    duo = std.script.getenv("DUO", "./zig-out/bin/duo")
+    std.script.run("rm -rf {work} && mkdir -p {work}")
+
+    -- The two faces of one edge. `opfirst` is the form 250 files are written
+    -- in; `subjfirst` is the form Pass 121 §9 makes canonical. They must agree
+    -- on the value, or the canonicalizer in this same diff is unsound.
+    opfirst = "main = (): i64\n    s: str = \"17\"\n    n: i64 = to(i64)(s)\n    print(n)\n    0\n"
+    subjfirst = "main = (): i64\n    s: str = \"17\"\n    n: i64 = s:to(i64)\n    print(n)\n    0\n"
+
+    -- The SAME expression over an untyped call result. This pair is recorded
+    -- separately because it used to disagree: operation-first compiled, and
+    -- the receiver face boxed into a member invocation and did not build. Two
+    -- faces of one edge, only one of them lowering, is half of why the corpus
+    -- is written the way it is.
+    opcall = "main = (): i64\n    n: i64 = to(i64)(std.proc.capture(\"printf 17\"))\n    print(n)\n    0\n"
+    subjcall = "main = (): i64\n    n: i64 = std.proc.capture(\"printf 17\"):to(i64)\n    print(n)\n    0\n"
+
+    -- The input that used to answer 0. It must not answer anything.
+    junk = "main = (): i64\n    s: str = \"abc\"\n    n: i64 = s:to(i64)\n    print(n)\n    0\n"
+
+    -- Trailing text is the subtler half of the same rule: `strtoll` stops at
+    -- the `x` and reports 12 without complaining, which is a wrong number
+    -- wearing a right one's clothes.
+    tail = "main = (): i64\n    s: str = \"12x\"\n    n: i64 = s:to(i64)\n    print(n)\n    0\n"
+
+    -- A genuine zero, so the refusal above is never confused with the value.
+    -- If this row ever fails the way `junk` passes, the conversion has stopped
+    -- answering rather than started refusing.
+    zero = "main = (): i64\n    s: str = \"0\"\n    n: i64 = s:to(i64)\n    print(n)\n    0\n"
+
+    print("")
+    print("  str -> i64, both faces, default lowering")
+    fails = fails + row("opfirst    ", answer("a", opfirst, ""), "17")
+    fails = fails + row("subjfirst  ", answer("b", subjfirst, ""), "17")
+    fails = fails + row("opcall     ", answer("c", opcall, ""), "17")
+    fails = fails + row("subjcall   ", answer("d", subjcall, ""), "17")
+
+    print("")
+    print("  the same, through the C backend")
+    fails = fails + row("opfirst  c ", answer("e", opfirst, "--backend=c"), "17")
+    fails = fails + row("subjfirst c", answer("f", subjfirst, "--backend=c"), "17")
+
+    print("")
+    print("  a string holding no number must not come back as one")
+    fails = fails + row("zero       ", answer("g", zero, ""), "0")
+    fails = fails + row("junk       ", answer("h", junk, ""), "")
+    fails = fails + row("tail       ", answer("i", tail, ""), "")
+
+    -- `answer` reads stdout, and an empty stdout is also what a program that
+    -- failed to BUILD produces. The status separates them: a build failure
+    -- reads -1 here, a fault reads its abort code, and 0 would mean the
+    -- program ran to completion and printed nothing — three different facts
+    -- that look identical in the rows above.
+    --
+    -- The "Abort trap: 6" lines on stderr around here are the SHELL reporting
+    -- the fault these two rows require. That is the proof working.
+    junkcode: i64 = verdict("j", junk, "")
+    tailcode: i64 = verdict("k", tail, "")
+    print("")
+    print("  and it must FAULT rather than exit clean")
+    if junkcode <= 0
+        print("  FAIL  junk exit  want a nonzero fault, got {junkcode}")
+        fails = fails + 1
+    else
+        print("    ok  junk exit  {junkcode}")
+    if tailcode <= 0
+        print("  FAIL  tail exit  want a nonzero fault, got {tailcode}")
+        fails = fails + 1
+    else
+        print("    ok  tail exit  {tailcode}")
+
+    print("")
+    if fails > 0
+        print("convert proof: FAIL — {fails} row(s)")
+        std.os.exit(1)
+    print("convert proof: PASS — one edge, two faces, and a refusal where there")
+    print("  is no number to convert")
+    0

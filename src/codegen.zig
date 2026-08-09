@@ -5638,6 +5638,12 @@ pub const CodeGen = struct {
         // block. Standard C, declarations only. `sys/time.h` stays gated below
         // because it is POSIX, not C.
         self.p("#include <time.h>\n", .{});
+        // errno.h, unconditional by the same argument as math.h above: standard
+        // C, macros and one lvalue, no runtime. `duo_str_to_i64` is emitted into
+        // every translation unit and reads `errno` to tell a saturated
+        // `strtoll` from an honest one, and the emitter cannot know from the
+        // body whether it will be reached — includes are written first.
+        self.p("#include <errno.h>\n", .{});
         // Translation-unit-level decision, captured before any embedded module
         // swaps `native_scalar_mode` / `substrate_native_mode` / `module_knowledge`
         // to its own values. Everything that must agree with the presence of the
@@ -5884,6 +5890,36 @@ pub const CodeGen = struct {
         // the message away. One `%` is what C needs here.
         self.p("    fprintf(stderr, \"%s\\n\", msg);\n", .{});
         self.p("    abort();\n", .{});
+        self.p("}}\n", .{});
+        // duo_str_to_i64 — the `str -> i64` conversion edge, spelled in plain C.
+        //
+        // The edge used to emit `lua_to_num(s)` for a `str` source. In a
+        // full-native module that name is never declared, so BOTH faces of the
+        // conversion (`to(i64)(s)` and `s:to(i64)`) failed to build with "call
+        // to undeclared function 'lua_to_num'" — gap[081]'s finding that the
+        // 1647:1 orientation census is partly capability rather than taste,
+        // since the commonest conversion in the tree could not be spelled
+        // canonically at all.
+        //
+        // It parses STRICTLY and FAULTS on a non-numeric input rather than
+        // answering 0. `lua_to_num` reaches `atof`, and the native `tonumber`
+        // path reaches `strtod`, both of which report 0 for "abc" — the silent
+        // zero this tree has already been burned by. A conversion that answers
+        // 0 for a string that holds no number is not a conversion, and the
+        // boring rulings put teardown (never a panic-with-recovery) at the end
+        // of a demand that cannot be met.
+        self.p("static inline int64_t duo_str_to_i64(const char* s) {{\n", .{});
+        self.p("    if (!s) duo_fatal(\"to(i64): no string\");\n", .{});
+        self.p("    const char* p = s;\n", .{});
+        self.p("    while (*p == ' ' || *p == '\\t' || *p == '\\n' || *p == '\\r') p++;\n", .{});
+        self.p("    char* endp = NULL;\n", .{});
+        self.p("    errno = 0;\n", .{});
+        self.p("    long long v = strtoll(p, &endp, 10);\n", .{});
+        self.p("    if (endp == p) duo_fatal(\"to(i64): not a number\");\n", .{});
+        self.p("    while (*endp == ' ' || *endp == '\\t' || *endp == '\\n' || *endp == '\\r') endp++;\n", .{});
+        self.p("    if (*endp != '\\0') duo_fatal(\"to(i64): trailing text after number\");\n", .{});
+        self.p("    if (errno == ERANGE) duo_fatal(\"to(i64): out of range\");\n", .{});
+        self.p("    return (int64_t)v;\n", .{});
         self.p("}}\n", .{});
         if (self.native_scalar_needs_int_floor_helpers(mod)) {
             // Floor division and floor modulo for typed int64 (Lua // and % semantics)
@@ -16073,7 +16109,8 @@ pub const CodeGen = struct {
                 // law.host.projection { projects = to, authority = false }
                 // gap[082] is the deletion gate.
                 if (mc.args.len == 1 and std.mem.eql(u8, mc.method, "to") and
-                    (ot.is_numeric() or ot == .str or ot == .bool))
+                    (ot.is_numeric() or ot == .str or ot == .bool or
+                        self.untyped_receiver_takes_convert_edge(ot, mc)))
                 {
                     var fam = ast.Expr{ .name = .{ .loc = mc.loc, .ident = "to" } };
                     var inner_args = [_]*ast.Expr{mc.args[0]};
@@ -19261,6 +19298,48 @@ pub const CodeGen = struct {
         return false;
     }
 
+    /// `x:to(i64)` where the RECEIVER's type is not known statically.
+    ///
+    /// The receiver-first `to` normalization above is gated on a scalar
+    /// receiver, so an untyped call result — `std.proc.capture(cmd):to(i64)` —
+    /// fell past it into ordinary member dispatch and emitted a boxed member
+    /// invocation of `.to` with `"i64"` as an argument, which does not build.
+    /// (Spelled without the runtime's name on purpose: `pass4_boxed_inventory`
+    /// counts that identifier as raw text, so writing it in prose would report
+    /// a boxing site this change does not add.) The
+    /// OPERATION-FIRST spelling of the identical expression,
+    /// `to(i64)(std.proc.capture(cmd))`, went straight to the conversion edge
+    /// and worked. Two faces of one edge, only one of them lowering, is the
+    /// asymmetry gap[081] records — and it is half of why the tree is written
+    /// 1647:1 in the noncanonical orientation.
+    ///
+    /// The scalar gate is kept for the reason it was written (data always wins
+    /// the name) and widened only where a user member CANNOT be what was meant:
+    /// the target group must name a PRIMITIVE descriptor, the program must not
+    /// have bound `to` itself, and the receiver must carry no record alias
+    /// declaring its own `to`. `p:to(point)` and a record with a hand-written
+    /// `to` both still dispatch as members.
+    fn untyped_receiver_takes_convert_edge(self: *CodeGen, ot: RT, mc: anytype) bool {
+        if (ot != .any) return false;
+        if (mc.args[0].* != .name) return false;
+        const target = mc.args[0].name.ident;
+        if (self.mem_type_from_name(target) == null) return false;
+        if (self.user_owns_name("to")) return false;
+        if (mc.obj.* == .name) {
+            if (self.record_aliases.get(mc.obj.name.ident)) |alias| {
+                if (alias == .@"struct") {
+                    if (self.alias_defs.get(alias.@"struct".name)) |def| {
+                        for (def.methods) |method| {
+                            const last = if (method.path.len > 0) method.path[method.path.len - 1] else "";
+                            if (std.mem.eql(u8, last, "to")) return false;
+                        }
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
     /// One lowering for both orientations of the conversion edge (A3 ONE EDGE,
     /// 3.2: "orientations to/from share one edge"). `target` names the
     /// destination descriptor; `value` is the single runtime operand.
@@ -19419,7 +19498,18 @@ pub const CodeGen = struct {
             // the edge has one meaning regardless of what flows into it.
             const src = self.expr_type(value);
             if (result_rt == .any) self.p("lua_val_from_int(", .{});
-            if (src == .str or src == .any) {
+            if (src == .str and (self.expr_is_native_cstr(value) or !self.expr_emits_lua_value(value))) {
+                // A `str` that is already a native `const char*` — the typed
+                // spelling, `s: str` then `s:to(i64)`. Boxing it to reach
+                // `lua_to_num` asked for a name a full-native module never
+                // declares, which is why BOTH faces of this conversion failed
+                // to build (gap[081] step 1). One edge, one meaning: the plain
+                // C parse answers what the boxed one does for a numeral and
+                // FAULTS where the boxed one silently answered 0.
+                self.p("duo_str_to_i64(", .{});
+                try self.emit_expr(value);
+                self.p(")", .{});
+            } else if (src == .str or src == .any) {
                 self.p("((int64_t)lua_to_num(", .{});
                 try self.emit_as_lua_value(value);
                 self.p("))", .{});
@@ -20026,6 +20116,22 @@ pub const CodeGen = struct {
                 if (self.infer_req_module_call_return_type(e)) |rt| {
                     if (rt == .str) break :blk true;
                 }
+                if (self.expr_type(e) != .str) break :blk false;
+                if (self.moduleUsesFullNativeLowering()) break :blk true;
+                if (self.current_func_name) |name| break :blk self.funcUsesNativeLowering(name);
+                break :blk false;
+            },
+            // Receiver face of the same fact. `s:sub(a, b)` lowers to
+            // `duo_str_sub_cstr(...)`, which ALREADY returns `const char*`, but
+            // without this arm the comparison path treated it as boxed and
+            // wrapped it — `strcmp(lua_to_str(duo_str_sub_cstr(...)), "…")`,
+            // a name a full-native module never declares, with an
+            // int-to-pointer error behind it. Same shape and same cause as the
+            // `to(i64)` defect gap[081] is about: the operation-first spelling
+            // of a fact was taught to the emitter and the subject-first one was
+            // not. When the two faces disagree, authors write the one that
+            // builds, and the census reads as taste.
+            .method_call => blk: {
                 if (self.expr_type(e) != .str) break :blk false;
                 if (self.moduleUsesFullNativeLowering()) break :blk true;
                 if (self.current_func_name) |name| break :blk self.funcUsesNativeLowering(name);

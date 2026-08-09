@@ -197,7 +197,7 @@ main(): i64
     end
 
     _rule(126)
-    print("duon-wasm covers " .. to(str)(pass) .. "/" .. to(str)(total)
+    print("duon-wasm covers " .. pass:to(str) .. "/" .. total:to(str)
         .. " modules (both engines agree, non-sentinel result)")
     0
 end

@@ -50,10 +50,10 @@ main = (): i64
     -- status is the whole result. Running it is the point; compiling is not.
     code = std.script.run(_OUT)
     if code != 0
-        print("pass11_direct_smoke: FAIL — expected exit 0, got exit=" .. to(str)(code))
+        print("pass11_direct_smoke: FAIL — expected exit 0, got exit=" .. code:to(str))
         return 1
     end
 
-    print("pass11_direct_smoke: PASS — direct compile + execute (exit=" .. to(str)(code) .. ")")
+    print("pass11_direct_smoke: PASS — direct compile + execute (exit=" .. code:to(str) .. ")")
     0
 end

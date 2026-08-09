@@ -72,12 +72,12 @@ _body(seed: i64, iters: i64): str
     elseif k == 4
         op = "i32.or"
     end
-    "\n  (local.set $acc (i32.const " .. to(str)(a) .. "))"
+    "\n  (local.set $acc (i32.const " .. a:to(str) .. "))"
         .. "\n  (block $B (loop $L"
-        .. "\n    (br_if $B (i32.ge_s (local.get $i) (i32.const " .. to(str)(iters) .. ")))"
-        .. "\n    (local.set $acc (" .. op .. " (local.get $acc) (i32.const " .. to(str)(b) .. ")))"
+        .. "\n    (br_if $B (i32.ge_s (local.get $i) (i32.const " .. iters:to(str) .. ")))"
+        .. "\n    (local.set $acc (" .. op .. " (local.get $acc) (i32.const " .. b:to(str) .. ")))"
         .. "\n    (local.set $acc (i32.mul (i32.xor (local.get $acc) (local.get $i)) (i32.const 16777619)))"
-        .. "\n    (local.set $acc (i32.rotl (local.get $acc) (i32.const " .. to(str)(rot) .. ")))"
+        .. "\n    (local.set $acc (i32.rotl (local.get $acc) (i32.const " .. rot:to(str) .. ")))"
         .. "\n    (local.set $i (i32.add (local.get $i) (i32.const 1)))"
         .. "\n    (br $L)))"
 end
@@ -245,10 +245,10 @@ main(): i64
     while i <= kn
         seed = _next(seed)
         body = _body(seed, iters)
-        rmod = _build(dir, "k" .. to(str)(i) .. "_run", _run_wat(body))
+        rmod = _build(dir, "k" .. i:to(str) .. "_run", _run_wat(body))
         ref = std.script.chomp(std.script.capture(
             wasmtime .. " --invoke run " .. rmod .. " 2>/dev/null | tail -1"))
-        amod = _build(dir, "k" .. to(str)(i) .. "_assert", _assert_wat(body, ref))
+        amod = _build(dir, "k" .. i:to(str) .. "_assert", _assert_wat(body, ref))
 
         vwart = _wart_assert(wart, amod)
         vduon = _expect(binary, amod)
@@ -294,9 +294,9 @@ main(): i64
         if vwart != "agree" or vduon != "agree"
             bad += 1
         end
-        print(_pad("k" .. to(str)(i), 10) .. _pad(ref, 14) .. _pad(got, 14)
-            .. _pad(vwart, 10) .. _pad(vduon, 10) .. _pad(to(str)(tduon), 9)
-            .. _pad(to(str)(twart), 9) .. _pad(to(str)(twt), 9) .. ratio)
+        print(_pad("k" .. i:to(str), 10) .. _pad(ref, 14) .. _pad(got, 14)
+            .. _pad(vwart, 10) .. _pad(vduon, 10) .. _pad(tduon:to(str), 9)
+            .. _pad(twart:to(str), 9) .. _pad(twt:to(str), 9) .. ratio)
         i += 1
     end
 
@@ -305,7 +305,7 @@ main(): i64
         print("aggregate the engine/wart = " .. to(str)(sduon * 100 / swart)
             .. "%   (<100% means the engine is faster -- Pass 101 §4 asks for < 100%)")
     end
-    print("kernels where a runtime disagreed with the oracle: " .. to(str)(bad) .. "/" .. to(str)(kn))
+    print("kernels where a runtime disagreed with the oracle: " .. bad:to(str) .. "/" .. kn:to(str))
 
     if bad != 0
         return 1

@@ -410,7 +410,7 @@ main(): i64
         "snake", "upper", "underprefix", "companion", "accessor", "axis",
         "directive", "ctor", "stdlib", "import", "foreignkw", "arrow",
         "luafn", "mwrapper", "concatlit", "oneline", "trailret",
-        "graveyard",
+        "graveyard", "convert",
     }
     note = {
         "underscore inside an identifier",
@@ -431,6 +431,7 @@ main(): i64
         "end on a one-line block",
         "trailing return <expr>",
         "compiler REFUSES these in .duo",
+        "to(x)(y) — conversion written operation-first",
     }
     pat = {
         "[a-z]_[a-z]",
@@ -451,6 +452,7 @@ main(): i64
         "(^|[[:space:]])(if|for|while|elseif)[[:space:]].*[[:space:]]end[[:space:]]*$",
         "(^|[[:space:]])return[[:space:]]+[^[:space:]]",
         "(^|[^A-Za-z0-9_.])(try|catch|defer|goto|extends|private|await|async|macro|let)([^A-Za-z0-9_]|$)",
+        "(^|[^A-Za-z0-9_.:])to\\([A-Za-z0-9]+\\)\\(",
     }
     -- REBASELINED 2026-08-08 (third time), same method as the last two: every
     -- point counted PER FILE at the commit where the gate was last exactly at
@@ -970,14 +972,62 @@ main(): i64
     --   3. If a genuine TRAILING return lands in `examples/boring/` or
     --      `examples/table/` under cover of this raise. The delta report added
     --      below is the check: it names the file before the commit exists.
-    budgets: str = "14121 2255 1808 259 322 479 154 58 2020 442 167 128 228 36 2411 2258 3441 6"
+    --
+    -- 2026-08-08, ONE ROW ADDED: `convert`, at 949. Pass 121 §9 makes
+    -- `n:to(str)` canonical and `to(str)(n)` noncanonical, and gaps/GAP-081.md
+    -- measured the tree at 1647 operation-first sites against ONE canonical
+    -- one. This row is that census turned into pressure. It is the ONLY number
+    -- this diff moves: no other budget is touched, in either direction.
+    --
+    -- 949 IS NOT 1647, and the difference is the gate rather than the tree.
+    -- GAP-081 counted OCCURRENCES over every tracked `.duo`; every row here
+    -- counts LINES over the CANONICAL partition, after comment lines and
+    -- string bodies are stripped and after this file excludes itself. Measured
+    -- both ways at the same commit: 1640 occurrences tree-wide by this row's
+    -- own regex, 949 canonical lines through this gate's filters. Cite the one
+    -- that matches the question being asked; do not read the fall from 1647 to
+    -- 949 as work having happened.
+    --
+    -- The regex excludes `:` before `to` on purpose, so `xs:to(seq)(entry)` —
+    -- a CANONICAL subject-first conversion that happens to carry a level group
+    -- — is not convicted. A ratchet that counted the repair as a violation
+    -- would drive the corpus the wrong way, and it is controlled for above.
+    --
+    -- 949 -> 329 IN THE SAME DIFF THAT ADDED THE ROW, and the two halves are
+    -- separable: 949 was measured before `scripts/convert_canon.duo` ran, 329
+    -- after, over the same 523 canonical files and with the row's own controls
+    -- green both times. 620 points paid at SOURCE — 720 `to(str)` sites across
+    -- 118 files rewritten to the receiver face, each carrying a §18 witness,
+    -- none of them budgeted. "Lower a budget whenever you lower a count" is the
+    -- half of the ratchet nobody remembers; this is it being done.
+    --
+    -- 949 -> 324 is 625 lines, and the two sources are kept apart because only
+    -- one of them is mechanical. 620 came from `scripts/convert_canon.duo`,
+    -- which rewrote 718 `to(str)` sites across 118 files with a §18 witness
+    -- each; the remaining 5 were repaired BY HAND in the same diff, and they
+    -- are the sites that were explicitly waiting on step 1 —
+    -- `scripts/bootstrap_scan.duo`, which kept the operation-first spelling ON
+    -- PURPOSE with a comment naming gap[081] because it was the only spelling
+    -- that built, and `examples/table/stredge.duo` / `strwide.duo`, the
+    -- numerics fixtures that had been recording this exact defect as MEASURED
+    -- behaviour and had to be remeasured once it stopped being true.
+    --
+    -- WHAT THE REMAINING 324 ARE, so the next agent does not read them as
+    -- laziness. Two populations, and NEITHER is safe for a scan that does not
+    -- parse. (1) `to(i64)` and `to(f64)` — gaps/GAP-081.md's whole finding is
+    -- that these could not be spelled canonically at all until this same diff
+    -- fixed the conversion; the rewrite is deliberately held back a step so the
+    -- fixture can hold first. (2) `to(str)` over a subject richer than a name
+    -- or a field walk — `to(str)(a + b)` needs `(a + b):to(str)`, and adding
+    -- that paren is a judgement about precedence, not a substitution.
+    budgets: str = "14121 2255 1808 259 322 479 154 58 2020 442 167 128 228 36 2411 2258 3441 6 324"
 
     -- Per-row: 1 = measure with string bodies INTACT. Only `concatlit` sets
     -- it, because its subject IS the string literal; stripping bodies takes
     -- that row from 2155 to 1, which would read as a triumph and mean nothing.
     -- Every other row is about the shape of Duo code, so a `const T*` inside
     -- an emit payload is not evidence against it.
-    keeps: str =    "0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0"
+    keeps: str =    "0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0"
 
     -- Per-row: 1 = THE COMPILER REFUSES THIS, 0 = the gate merely counts it.
     -- The distinction is the whole point of the column. A counted row is
@@ -987,7 +1037,7 @@ main(): i64
     -- count is a residue measurement, not a debt. Reporting both under one
     -- heading, as this gate did until 2026-08-08, makes "we tolerate 167 of
     -- these" and "these are impossible" look like the same fact.
-    enforced: str = "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1"
+    enforced: str = "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0"
 
     if _field(budgets, #id) == "" or _field(budgets, #id + 1) != ""
         print("audit100: FAIL — the budget row does not have exactly "
@@ -1056,6 +1106,36 @@ main(): i64
             end
         end
         j += 1
+    end
+
+    -- POSITIVE CONTROL ON `convert`, the newest row and the only one whose
+    -- subject is an ORIENTATION rather than a spelling. Both halves matter and
+    -- neither is checkable from the count: the row must SEE the noncanonical
+    -- face and must DECLINE the canonical one, or it is either dead weight or
+    -- a ratchet that punishes the repair it exists to drive. gaps/GAP-081.md
+    -- is the whole reason this is spelled out here — that gap opens with a
+    -- census someone could have acted on without ever checking that the
+    -- canonical form compiled.
+    if _probe(pat[#id], "    n: i64 = to(i64)(s)") == 0
+        print("audit100: FAIL — the convert row does not see an"
+            .. " operation-first conversion; it would read 0 and pass")
+        return 3
+    end
+    if _probe(pat[#id], "    n: i64 = s:to(i64)") != 0
+        print("audit100: FAIL — the convert row convicts the CANONICAL"
+            .. " subject-first form; the ratchet would drive the repair"
+            .. " backwards")
+        return 3
+    end
+    if _probe(pat[#id], "    xs:to(seq)(entry)") != 0
+        print("audit100: FAIL — the convert row convicts a LEVELED canonical"
+            .. " conversion; a subject-first call with a level group is"
+            .. " already the form this row is asking for")
+        return 3
+    end
+    if _probe(pat[#id], "  x = f(y) + 1") != 0
+        print("audit100: FAIL — the convert row matches ordinary Duo")
+        return 3
     end
 
     show: str = std.script.getenv("AUDIT100_SHOW", "")

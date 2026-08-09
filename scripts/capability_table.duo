@@ -160,7 +160,7 @@ _measure(duo: str, src: str, group: str, blocking: bool, declared: bool): void
     proven = false
     if native and d_rc != 124
         if declared
-            proven = want != "" and to(str)(d_rc) == want
+            proven = want != "" and d_rc:to(str) == want
         else
             proven = cpath and d_rc == c_rc
         end
@@ -221,13 +221,13 @@ main = (): i64
     print("  --- --- ---  --- --- --- ---   ----------")
     io.write(_rows)
     print("")
-    print("  described  " .. to(str)(_described) .. "/" .. to(str)(_n))
-    print("  parsed     " .. to(str)(_parsed) .. "/" .. to(str)(_n))
-    print("  checked    " .. to(str)(_checked) .. "/" .. to(str)(_n))
-    print("  c path     " .. to(str)(_cpath) .. "/" .. to(str)(_n))
-    print("  native     " .. to(str)(_native) .. "/" .. to(str)(_n))
-    print("  proven     " .. to(str)(_proven) .. "/" .. to(str)(_n))
-    print("  canonical  " .. to(str)(_canonical) .. "/" .. to(str)(_n))
+    print("  described  " .. _described:to(str) .. "/" .. _n:to(str))
+    print("  parsed     " .. _parsed:to(str) .. "/" .. _n:to(str))
+    print("  checked    " .. _checked:to(str) .. "/" .. _n:to(str))
+    print("  c path     " .. _cpath:to(str) .. "/" .. _n:to(str))
+    print("  native     " .. _native:to(str) .. "/" .. _n:to(str))
+    print("  proven     " .. _proven:to(str) .. "/" .. _n:to(str))
+    print("  canonical  " .. _canonical:to(str) .. "/" .. _n:to(str))
     print("")
 
     -- Positive controls. A table like this fails by reporting nothing, not by

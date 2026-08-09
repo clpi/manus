@@ -626,14 +626,14 @@ main(): i64
                 if #roleln != #srcln
                     a: str = to(str)(#srcln)
                     c: str = to(str)(#roleln)
-                    n: str = to(str)(i)
+                    n: str = i:to(str)
                     print("  !! {src}:{n} totality — {a} source bytes, {c} roles")
                     bad = bad + 1
                 end
                 if i <= #gl and gl[i] == roleln
                     nagree = nagree + 1
                 elseif i <= #gl
-                    n: str = to(str)(i)
+                    n: str = i:to(str)
                     want: str = gl[i]
                     print("  !! {src}:{n} golden mismatch")
                     print("     want {want}")

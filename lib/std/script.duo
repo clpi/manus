@@ -7,7 +7,7 @@ run(cmd: str): i64
     rc = std.os.execute(cmd)
     if rc == nil return -1 end
     if rc == true return 0 end
-    if to(str)(rc) == "0" return 0 end
+    if rc:to(str) == "0" return 0 end
     1
 end
 
@@ -43,7 +43,7 @@ lock_cmd(cmd: str): str
 end
 
 lock_cmd_timeout(cmd: str, timeout: i64): str
-    duo_bin() .. " run scripts/duo_lock.duo -- --timeout " .. to(str)(timeout) .. " -- " .. cmd
+    duo_bin() .. " run scripts/duo_lock.duo -- --timeout " .. timeout:to(str) .. " -- " .. cmd
 end
 
 locked_run(cmd: str): i64

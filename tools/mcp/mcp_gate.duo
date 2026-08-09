@@ -136,10 +136,10 @@ main = (): i64
     bn = count_names(bout)
     bs = count_schemas(bout)
     if bn ~= bs
-        report(false, "duo_bench tool census agrees", "name count " .. to(str)(bn) .. " vs schema count " .. to(str)(bs))
+        report(false, "duo_bench tool census agrees", "name count " .. bn:to(str) .. " vs schema count " .. bs:to(str))
         fails = fails + 1
     elseif bn ~= 35
-        report(false, "duo_bench serves 35 tools", "served " .. to(str)(bn) .. " — update this number ON PURPOSE when adding a tool")
+        report(false, "duo_bench serves 35 tools", "served " .. bn:to(str) .. " — update this number ON PURPOSE when adding a tool")
         fails = fails + 1
     else
         report(true, "duo_bench serves 35 tools", "")
@@ -249,10 +249,10 @@ main = (): i64
     ln = count_names(lout)
     ls = count_schemas(lout)
     if ln ~= ls
-        report(false, "duo_lsp tool census agrees", "name count " .. to(str)(ln) .. " vs schema count " .. to(str)(ls))
+        report(false, "duo_lsp tool census agrees", "name count " .. ln:to(str) .. " vs schema count " .. ls:to(str))
         fails = fails + 1
     elseif ln ~= 32
-        report(false, "duo_lsp serves 32 tools", "served " .. to(str)(ln) .. " — update this number ON PURPOSE when adding a tool")
+        report(false, "duo_lsp serves 32 tools", "served " .. ln:to(str) .. " — update this number ON PURPOSE when adding a tool")
         fails = fails + 1
     else
         report(true, "duo_lsp serves 32 tools", "")
@@ -289,7 +289,7 @@ main = (): i64
     revived = { "duo_meta_catalog", "duo_complexity", "duo_grammar_spec_read", "duo_directive_hierarchy_read", "duo_table_shapes", "duo_multiplier_opportunities" }
     rid = 5
     for pos, rname in revived
-        if not has(lout, "\"id\":" .. to(str)(rid))
+        if not has(lout, "\"id\":" .. rid:to(str))
             report(false, rname .. " answers", "no response — handler tail is probably a bare if/else again")
             fails = fails + 1
         else
@@ -323,7 +323,7 @@ main = (): i64
         zn = zn + 1
     end
     if zn ~= 4
-        report(false, "zls serves 4 tools", "served " .. to(str)(zn))
+        report(false, "zls serves 4 tools", "served " .. zn:to(str))
         fails = fails + 1
     else
         report(true, "zls serves 4 tools", "")
@@ -350,7 +350,7 @@ main = (): i64
         io.write("mcp-gate: PASS — all three servers handshake, serve their full tool census, and answer by value\n")
         return 0
     end
-    io.write("mcp-gate: FAIL — " .. to(str)(fails) .. " check(s) failed\n")
+    io.write("mcp-gate: FAIL — " .. fails:to(str) .. " check(s) failed\n")
     -- `std.os.exit`, NOT `return 1`. A Duo script's `main` return value is
     -- DROPPED — measured here: the gate printed 13 failures and the process
     -- still exited 0, which `zig build` reads as success. A gate that cannot

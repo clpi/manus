@@ -569,7 +569,7 @@ main = (): i64
         end
     end
     if nrec != #files
-        got = to(str)(nrec)
+        got = nrec:to(str)
         want = to(str)(#files)
         print("capability_rows: FAIL — {got} records for {want} fixtures; the sweep lost files")
         return 3
@@ -597,7 +597,7 @@ main = (): i64
         end
     end
     if nhost != #files
-        got = to(str)(nhost)
+        got = nhost:to(str)
         want = to(str)(#files)
         print("capability_rows: FAIL — hosted probe answered {got} of {want}; H is not measured")
         return 3
@@ -646,8 +646,8 @@ main = (): i64
         end
     end
     if hostyes == 0 or hostno == 0
-        hy = to(str)(hostyes)
-        hn = to(str)(hostno)
+        hy = hostyes:to(str)
+        hn = hostno:to(str)
         print("capability_rows: FAIL — the hosted probe answered the same for every")
         print("  fixture ({hy} accepted, {hn} rejected); H is not discriminating")
         return 3
@@ -792,7 +792,7 @@ main = (): i64
             edges = edges + 1
         end
     end
-    ec = to(str)(edges)
+    ec = edges:to(str)
     fc = to(str)(#files)
     print("  G NOTES — `duo graph` emits an `edges` array for {ec} of {fc} fixtures.")
     print("  A `?` cell means the graph schema has no slot for that capability at all")
@@ -805,8 +805,8 @@ main = (): i64
     end
     print("")
 
-    hy = to(str)(hostyes)
-    hn = to(str)(hostno)
+    hy = hostyes:to(str)
+    hn = hostno:to(str)
     print("  CONTROLS — all four fired, so a failure in this matrix would show")
     print("    syntax  {ctlsyntax}  lost P")
     print("    type    {ctltype}  kept P, lost S")
@@ -815,7 +815,7 @@ main = (): i64
     print("")
 
     if denyfail > 0
-        df = to(str)(denyfail)
+        df = denyfail:to(str)
         print("capability_rows: FAIL — {df} deny fixture(s) were ACCEPTED")
         return 1
     end

@@ -41,11 +41,11 @@ main = (): i64
         shift = rb & 31
         positive = ra & 1048575
 
-        si = to(str)(i)
-        sa = to(str)(a)
-        sb = to(str)(b)
-        ss = to(str)(shift)
-        sp = to(str)(positive)
+        si = i:to(str)
+        sa = a:to(str)
+        sb = b:to(str)
+        ss = shift:to(str)
+        sp = positive:to(str)
 
         -- The generated Duo still uses `local`, exactly as the shell version
         -- emitted it. The canon lists `local` as dead, so this corpus is due a

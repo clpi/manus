@@ -222,9 +222,9 @@ main(): i64
         if code == 0
             print("")
             print("  class          files   licence")
-            a: str = pad(to(str)(ledger), 8)
-            b: str = pad(to(str)(oracle), 8)
-            c: str = pad(to(str)(unclassified), 8)
+            a: str = pad(ledger:to(str), 8)
+            b: str = pad(oracle:to(str), 8)
+            c: str = pad(unclassified:to(str), 8)
             print("  ledger         {a}bootstrap debt; shrinks; every rule names its end")
             print("  oracle         {b}test equipment; never on the shipping path")
             print("  unclassified   {c}VIOLATION — neither licence applies")
@@ -242,7 +242,7 @@ main(): i64
                 n: i64 = count("sed -n '{i}p' {work}/countsr")
                 pc: str = pad(cls, 9)
                 pp: str = pad(pre, 30)
-                pn: str = pad(to(str)(n), 6)
+                pn: str = pad(n:to(str), 6)
                 print("    {pc}{pp}{pn}{why}")
                 i += 1
             end

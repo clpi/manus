@@ -15,9 +15,9 @@ _fmt2(x: f64): str
     whole = n / 100
     frac = n % 100
     if frac < 10
-        return to(str)(whole) .. ".0" .. to(str)(frac)
+        return whole:to(str) .. ".0" .. frac:to(str)
     end
-    to(str)(whole) .. "." .. to(str)(frac)
+    whole:to(str) .. "." .. frac:to(str)
 end
 
 _sdk_flag(): str

@@ -155,7 +155,7 @@ validate_into(value: any, schema: any, path: str, errors: any): bool
         i = 1
         while i <= rawlen(value)
             if has(.items)(schema)
-                if not validate_into(value[i], schema.items, path .. "[" .. to(str)(i) .. "]", errors)
+                if not validate_into(value[i], schema.items, path .. "[" .. i:to(str) .. "]", errors)
                     ok = false
                 end
             end
@@ -171,7 +171,7 @@ validate_into(value: any, schema: any, path: str, errors: any): bool
         if has(.values)(schema)
             ok = true
             for k, v in value
-                if not validate_into(v, schema.values, path .. "." .. to(str)(k), errors)
+                if not validate_into(v, schema.values, path .. "." .. k:to(str), errors)
                     ok = false
                 end
             end
@@ -220,11 +220,11 @@ end
 check_string_constraints(v: str, s: any, path: str, errors: any): bool
     ok = true
     if has(.min_length)(s) and #v < s.min_length
-        errors[rawlen(errors) + 1] = {path = path, message = "min length " .. to(str)(s.min_length)}
+        errors[rawlen(errors) + 1] = {path = path, message = "min length " .. s.min_length:to(str)}
         ok = false
     end
     if has(.max_length)(s) and #v > s.max_length
-        errors[rawlen(errors) + 1] = {path = path, message = "max length " .. to(str)(s.max_length)}
+        errors[rawlen(errors) + 1] = {path = path, message = "max length " .. s.max_length:to(str)}
         ok = false
     end
     if has(.pattern)(s)
@@ -239,11 +239,11 @@ end
 check_number_constraints(v: any, s: any, path: str, errors: any): bool
     ok = true
     if has(.min_val)(s) and v < s.min_val
-        errors[rawlen(errors) + 1] = {path = path, message = "min value " .. to(str)(s.min_val)}
+        errors[rawlen(errors) + 1] = {path = path, message = "min value " .. s.min_val:to(str)}
         ok = false
     end
     if has(.max_val)(s) and v > s.max_val
-        errors[rawlen(errors) + 1] = {path = path, message = "max value " .. to(str)(s.max_val)}
+        errors[rawlen(errors) + 1] = {path = path, message = "max value " .. s.max_val:to(str)}
         ok = false
     end
     ok

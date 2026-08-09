@@ -97,7 +97,7 @@ _unhex(s: str): str
         v = v * 16 + d
         i += 1
     end
-    to(str)(v)
+    v:to(str)
 end
 
 -- One spelling for a value that six runtimes print six ways: signed vs
@@ -123,9 +123,9 @@ _norm(raw: str): str
         if u < 0
             u = u + 4294967296
         end
-        return to(str)(u)
+        return u:to(str)
     end
-    to(str)(f)
+    f:to(str)
 end
 
 -- Is this line the RUNTIME talking rather than the MODULE? Every runtime here
@@ -362,7 +362,7 @@ main(): i64
                             if r == "duon"
                                 duonms = v
                             end
-                            cells = cells .. _lpad(to(str)(v), w)
+                            cells = cells .. _lpad(v:to(str), w)
                             if best < 0 or v < best
                                 best = v
                                 bestr = r
@@ -395,7 +395,7 @@ main(): i64
                         end
                         losses[nloss] = _pad(name .. " (" .. entry .. ")", 34)
                             .. " the engine " .. _lpad(wv, 6) .. " ms vs " .. bestr .. " "
-                            .. _lpad(to(str)(best), 6) .. " ms"
+                            .. _lpad(best:to(str), 6) .. " ms"
                     end
                     print(_pad(name, 30) .. " " .. _pad(entry, 7) .. cells .. "   " .. bestr)
                 end
@@ -404,12 +404,12 @@ main(): i64
     end
 
     print(rule)
-    print("timed rows " .. to(str)(rows)
-        .. " — " .. to(str)(startup) .. " below the " .. to(str)(floor)
+    print("timed rows " .. rows:to(str)
+        .. " — " .. startup:to(str) .. " below the " .. floor:to(str)
         .. " ms startup floor and attributed to NOBODY")
     print("of the " .. to(str)(rows - startup) .. " rows that do measurable work: the engine first on "
-        .. to(str)(firsts) .. ", NOT first on " .. to(str)(nloss))
-    print("(ms, min of " .. to(str)(n) .. " interleaved runs; only VERIFIED runtimes are timed;")
+        .. firsts:to(str) .. ", NOT first on " .. nloss:to(str))
+    print("(ms, min of " .. n:to(str) .. " interleaved runs; only VERIFIED runtimes are timed;")
     print(" n/a = cannot be driven to that export; err = refused the module; WRONG = ran and disagreed)")
     if nloss > 0
         print("")

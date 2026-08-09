@@ -222,7 +222,7 @@ unique(list: any): any
     i = 1
     while i <= rawlen(list)
         v = list[i]
-        key = to(str)(v)
+        key = v:to(str)
         if not seen[key]
             seen[key] = true
             out[rawlen(out) + 1] = v

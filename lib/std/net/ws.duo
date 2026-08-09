@@ -208,12 +208,12 @@ ws_client_handshake(host: str, port: i64, path: str): str
     key = base64_encode(key_bytes)
 
     "GET " .. path .. " HTTP/1.1\r\n"
-        .. "Host: " .. host .. ":" .. to(str)(port) .. "\r\n"
+        .. "Host: " .. host .. ":" .. port:to(str) .. "\r\n"
         .. "Upgrade: websocket\r\n"
         .. "Connection: Upgrade\r\n"
         .. "Sec-WebSocket-Key: " .. key .. "\r\n"
         .. "Sec-WebSocket-Version: 13\r\n"
-        .. "Origin: http://" .. host .. ":" .. to(str)(port) .. "\r\n"
+        .. "Origin: http://" .. host .. ":" .. port:to(str) .. "\r\n"
         .. "\r\n"
 end
 

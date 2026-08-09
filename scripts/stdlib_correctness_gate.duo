@@ -153,14 +153,14 @@ main(): i64
 
     -- std.wasm — constants that vanished when referenced from a nested export
     -- table. Values are from the WASM binary format spec, not from the module.
-    check("wasm.SECTION.CODE", to(str)(std.wasm.SECTION.CODE), "10")
-    check("wasm.TYPE.I32", to(str)(std.wasm.TYPE.I32), "127")
-    check("wasm.TYPE.FUNC", to(str)(std.wasm.TYPE.FUNC), "96")
+    check("wasm.SECTION.CODE", std.wasm.SECTION.CODE:to(str), "10")
+    check("wasm.TYPE.I32", std.wasm.TYPE.I32:to(str), "127")
+    check("wasm.TYPE.FUNC", std.wasm.TYPE.FUNC:to(str), "96")
 
     -- std.encoding.protobuf / std.net.ws — same nested-table defect.
-    check("protobuf.WIRE.VARINT", to(str)(std.encoding.protobuf.WIRE.VARINT), "0")
-    check("protobuf.WIRE.FIXED32", to(str)(std.encoding.protobuf.WIRE.FIXED32), "5")
-    check("ws.OP.PONG", to(str)(std.net.ws.OP.PONG), "10")
+    check("protobuf.WIRE.VARINT", std.encoding.protobuf.WIRE.VARINT:to(str), "0")
+    check("protobuf.WIRE.FIXED32", std.encoding.protobuf.WIRE.FIXED32:to(str), "5")
+    check("ws.OP.PONG", std.net.ws.OP.PONG:to(str), "10")
 
     -- std.math.geometry — vec2_dot of (3,4).(1,0) is 3. Arithmetic, not lookup.
     check("geometry.vec2_dot", to(str)(std.math.geometry.vec2_dot(
@@ -191,7 +191,7 @@ main(): i64
     check("script.getenv fallback", std.script.getenv("DEFINITELY_UNSET_XYZ", "fb"), "fb")
 
     io.write(report)
-    print("stdlib_correctness: " .. to(str)(fails) .. " wrong of " .. to(str)(checked)
+    print("stdlib_correctness: " .. fails:to(str) .. " wrong of " .. checked:to(str)
         .. " (floor " .. to(str)(baseline()) .. ")")
 
     if checked == 0
@@ -204,7 +204,7 @@ main(): i64
     end
     if fails < baseline()
         print("stdlib_correctness: rows fixed since the floor was set — LOWER baseline() to "
-            .. to(str)(fails))
+            .. fails:to(str))
     end
     print("stdlib_correctness: PASS")
     0

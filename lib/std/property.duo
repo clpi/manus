@@ -198,7 +198,7 @@ end
 std_property_flatten_rec(obj: any, prefix: any, out: any): void
     if obj == nil return end
     for k, v in obj
-        path = to(str)(k)
+        path = k:to(str)
         if prefix != ""
             path = prefix .. "." .. path
         end

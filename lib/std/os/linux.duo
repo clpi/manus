@@ -122,7 +122,7 @@ end
 epoll_create(max_events: i64): any
     fd = @ffi("duo_epoll_create", i64, {i64})(max_events)
     if fd < 0
-        error("epoll_create failed: " .. to(str)(fd))
+        error("epoll_create failed: " .. fd:to(str))
     end
     {
         fd = fd,
@@ -202,7 +202,7 @@ M.IN_MOVE_SELF = 0x00000800
 inotify_new(): any
     fd = @ffi("duo_inotify_init", i64, {i64})(0)
     if fd < 0
-        error("inotify_init failed: " .. to(str)(fd))
+        error("inotify_init failed: " .. fd:to(str))
     end
     {
         fd = fd,

@@ -323,7 +323,7 @@ id(): i64
     co = coroutine.running()
     if co == nil return 0 end
     -- Hash the coroutine pointer for a stable id
-    s = to(str)(co)
+    s = co:to(str)
     h = 5381
     for i = 1, #s
         h = (h * 33 + s:byte(i)) % 4294967296

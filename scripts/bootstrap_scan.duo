@@ -57,17 +57,10 @@ companionpat = "^pub const [A-Za-z0-9]*(Kind|Type) = enum"
 -- `emit*` are the same shape wearing different verbs.
 relationpat = "pub fn (add|register|emit)[A-Z][A-Za-z0-9]*\\("
 
--- ORIENTATION DEBT, stated rather than hidden. Pass 121 §9 makes `x:to(i64)`
--- canonical and `to(i64)(x)` noncanonical. Measured 2026-08-08, `to(i64)` FAILS
--- IN BOTH FACES on a typed str (`lua_to_num` undeclared), and the subject-first
--- form additionally boxes a call result into `lua_invoke`. `to(str)` canonicalizes
--- cleanly in both faces; `to(i64)` does not canonicalize at all yet. So this
--- file keeps the operation-first spelling ON PURPOSE, and the canonicalizer must
--- not rewrite `to(i64)` sites until that defect closes — see gaps/GAP-081.md.
 count = (root: str, pat: str): i64
     pre: str = head(root)
     cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | wc -l"
-    to(i64)(std.proc.capture(cmd))
+    std.proc.capture(cmd):to(i64)
 
 -- The control surface. `count` alone cannot separate "the corpus is clean"
 -- from "the pattern matches nothing" — a broken pattern reads as a perfect
@@ -76,7 +69,7 @@ count = (root: str, pat: str): i64
 -- MUST see and one it MUST decline.
 sees = (pat: str, line: str): i64
     cmd: str = "printf {q}%s\\n{q} {q}{line}{q} | grep -c -E {q}{pat}{q}"
-    to(i64)(std.proc.capture(cmd))
+    std.proc.capture(cmd):to(i64)
 
 -- ── the assumption row (GAP-085) ──────────────────────────────────────────
 --
@@ -153,7 +146,7 @@ row = (name: str, n: i64, budget: i64): i64
     if n > budget
         mark = "!!"
     label: str = pad(name, 11)
-    shown: str = pad(to(str)(n), 7)
+    shown: str = pad(n:to(str), 7)
     print("  {mark} {label} {shown} {budget}")
     if n > budget
         return 1

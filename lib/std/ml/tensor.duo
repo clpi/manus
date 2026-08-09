@@ -149,7 +149,7 @@ shape(t: any)
 end
 
 tostring(t: any)
-    return "Tensor(" .. to(str)(t.rows) .. "x" .. to(str)(t.cols) .. ")"
+    return "Tensor(" .. t.rows:to(str) .. "x" .. t.cols:to(str) .. ")"
 end
 
 -- ═══════════════════════════════════════════════════════════════

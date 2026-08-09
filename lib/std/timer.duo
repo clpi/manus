@@ -107,7 +107,7 @@ format(seconds: any): str
     end
     mins = math.floor(seconds / 60)
     secs = seconds - mins * 60
-    return to(str)(mins) .. "m" .. to(str)(std_timer_round_dec(secs, 1)) .. "s"
+    return mins:to(str) .. "m" .. to(str)(std_timer_round_dec(secs, 1)) .. "s"
 end
 
 -- summary: return a summary table of all lap times.

@@ -189,8 +189,8 @@ end
 format_diff(type_name: str, changes: any): str
     lines = {}
     lines[#lines + 1] = "=== Type Diff: " .. type_name .. " ==="
-    lines[#lines + 1] = "Old fields: " .. to(str)(changes.old_count) .. ", New fields: " .. to(str)(changes.new_count)
-    lines[#lines + 1] = "Compatible: " .. to(str)(changes.compatible)
+    lines[#lines + 1] = "Old fields: " .. changes.old_count:to(str) .. ", New fields: " .. changes.new_count:to(str)
+    lines[#lines + 1] = "Compatible: " .. changes.compatible:to(str)
 
     if #changes.added > 0
         lines[#lines + 1] = ""

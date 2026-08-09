@@ -137,7 +137,7 @@ sha512(s: str): str
         w = {}
         for j = 0, 15
             off: i64 = block * 128 + j * 8 + 1
-            w[j + 1] = wide_from_bytes(to(str)(msg), off)
+            w[j + 1] = wide_from_bytes(msg:to(str), off)
         end
         for j = 16, 79
             s0 = wide_xor(wide_xor(wide_ror(w[j - 14 + 1], 1), wide_ror(w[j - 14 + 1], 8)), wide_shr(w[j - 14 + 1], 7))

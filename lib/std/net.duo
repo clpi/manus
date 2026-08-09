@@ -70,7 +70,7 @@ http_request(method: str, url: str, body: str, headers: any): any
         for k, v in headers
             -- Also sanitize header values
             safe_k = string.gsub(k, "[;&|`$']", "")
-            safe_v = string.gsub(to(str)(v), "[;&|`$']", "")
+            safe_v = string.gsub(v:to(str), "[;&|`$']", "")
             cmd = cmd .. " -H '" .. safe_k .. ": " .. safe_v .. "'"
         end
     end
@@ -142,9 +142,9 @@ end
 http_serve(port: i64, handler: any): void
     srv = listen("0.0.0.0", port, 128)
     if srv == nil
-        io.write("net.http_serve: listen failed on port " .. to(str)(port) .. "\n")
+        io.write("net.http_serve: listen failed on port " .. port:to(str) .. "\n")
     end
-    io.write("net: listening on :" .. to(str)(port) .. "\n")
+    io.write("net: listening on :" .. port:to(str) .. "\n")
     while true
         cli = accept(srv)
         if cli == nil break end

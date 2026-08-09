@@ -92,8 +92,8 @@ main(): i64
     mmed = _median(m, n)
 
     print("module   " .. mod)
-    print("the engine     median " .. to(str)(wmed) .. " ms  min " .. to(str)(wmin))
-    print("wasmtime median " .. to(str)(mmed) .. " ms  min " .. to(str)(mmin))
+    print("the engine     median " .. wmed:to(str) .. " ms  min " .. wmin:to(str))
+    print("wasmtime median " .. mmed:to(str) .. " ms  min " .. mmin:to(str))
     if mmed > 0
         print("ratio    " .. to(str)(wmed * 100 / mmed) .. "%  (<100 means the engine is faster)")
     end

@@ -203,9 +203,10 @@ main(): i64
         i = i + 1
     end
     body = body .. "}\n"
-    body = body .. "-- The role function is TOTAL (H-6): every legend member is coverable, and\n"
-    body = body .. "-- coverage is measured over ALL " .. to(str)(nclosed) .. " of them.\n"
-    body = body .. "io.lsp.closed = " .. to(str)(nclosed) .. "\n"
+    body = body .. "-- Roles 1.." .. nclosed:to(str) .. " are the closed set coverage is measured over;\n"
+    body = body .. "-- the rest are roles.md §3 and do NOT count toward coverage (§7).\n"
+    body = body .. "-- The role function is TOTAL (H-6): every legend member is coverable.\n"
+    body = body .. "io.lsp.closed = " .. nclosed:to(str) .. "\n"
     body = body .. closer
 
     target = "{root}/tools/lsp/src/server.duo"

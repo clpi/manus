@@ -129,7 +129,7 @@ end
 -- The banner. `count` is the residue line count — the one number in this file
 -- that is measured rather than declared.
 banner(count: i64): str
-    n: str = to(str)(count)
+    n: str = count:to(str)
     b: str = "/**\n"
     b = "{b} * @file tree-sitter grammar for Duo — PARTIALLY GENERATED.\n"
     b = "{b} *\n"
@@ -518,8 +518,8 @@ report(): i64
             bad = 3
         end
         if bad == 0
-            nrows: str = to(str)(rows)
-            nops: str = to(str)(n)
+            nrows: str = rows:to(str)
+            nops: str = n:to(str)
             print("  operators in the table: {nops}")
             print("  §2 precedence rows read from docs/spec/grammar.md: {nrows}")
             flips: i64 = 0
@@ -546,8 +546,8 @@ report(): i64
                 end
                 i = i + 1
             end
-            nflips: str = to(str)(flips)
-            nunlisted: str = to(str)(unlisted)
+            nflips: str = flips:to(str)
+            nunlisted: str = unlisted:to(str)
             print("  adjacent pairs where §2 and this table disagree: {nflips}")
             print("  adjacent pairs §2 does not list at all: {nunlisted}")
         end
@@ -609,7 +609,7 @@ main(): i64
     end
 
     count: i64 = lines(residue)
-    nres: str = to(str)(count)
+    nres: str = count:to(str)
     print("  residue  {nres} authored lines, carried from {source}")
 
     bad: i64 = report()
@@ -632,8 +632,8 @@ main(): i64
 
     total: i64 = lines(body)
     gen: i64 = total - count
-    ntotal: str = to(str)(total)
-    ngen: str = to(str)(gen)
+    ntotal: str = total:to(str)
+    ngen: str = gen:to(str)
     print("  emitted  {ngen} generated lines of {ntotal} total")
 
     -- Positive control on the emitter itself. A build that lost the operator

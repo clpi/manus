@@ -80,7 +80,7 @@ assert_not_equal(ctx: any, got: any, expected: any, msg: str): void
         ctx.errors[#ctx.errors + 1] = {
             type = "assert_not_equal",
             message = msg or "Values should not be equal",
-            expected = "not " .. to(str)(expected),
+            expected = "not " .. expected:to(str),
             got = got,
         }
     end
@@ -114,7 +114,7 @@ assert_greater(ctx: any, got: f64, expected: f64, msg: str): void
         ctx.errors[#ctx.errors + 1] = {
             type = "assert_greater",
             message = msg or "Expected greater than",
-            expected = "> " .. to(str)(expected),
+            expected = "> " .. expected:to(str),
             got = got,
         }
     end
@@ -128,7 +128,7 @@ assert_less(ctx: any, got: f64, expected: f64, msg: str): void
         ctx.errors[#ctx.errors + 1] = {
             type = "assert_less",
             message = msg or "Expected less than",
-            expected = "< " .. to(str)(expected),
+            expected = "< " .. expected:to(str),
             got = got,
         }
     end
@@ -142,7 +142,7 @@ assert_in_range(ctx: any, got: f64, min: f64, max: f64, msg: str): void
         ctx.errors[#ctx.errors + 1] = {
             type = "assert_in_range",
             message = msg or "Value not in range",
-            expected = "[" .. to(str)(min) .. ", " .. to(str)(max) .. "]",
+            expected = "[" .. min:to(str) .. ", " .. max:to(str) .. "]",
             got = got,
         }
     end
@@ -219,7 +219,7 @@ assert_table_equal(ctx: any, got: any, expected: any, msg: str): void
             ctx.failed += 1
             ctx.errors[#ctx.errors + 1] = {
                 type = "assert_table_equal",
-                message = msg or "Tables differ at index " .. to(str)(i),
+                message = msg or "Tables differ at index " .. i:to(str),
                 expected = expected[i],
                 got = got[i],
                 index = i,
@@ -377,8 +377,8 @@ assert_faster_than(ctx: any, func: any, max_time: f64, iterations: i64, msg: str
         ctx.errors[#ctx.errors + 1] = {
             type = "assert_faster_than",
             message = msg or "Function too slow",
-            expected = "< " .. to(str)(max_time) .. "s",
-            got = to(str)(avg_time) .. "s",
+            expected = "< " .. max_time:to(str) .. "s",
+            got = avg_time:to(str) .. "s",
         }
     end
 end

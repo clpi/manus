@@ -239,7 +239,7 @@ main(): i64
         print("isa_fidelity: FAIL — the descriptor table is empty; nothing was judged")
         code = 3
     else
-        n = to(str)(nrows)
+        n = nrows:to(str)
         tup = to(str)(each())
         total = to(str)(nrows * each())
         print("ISA fidelity — descriptors vs clang, byte for byte (Pass 104 G-D3)")
@@ -268,11 +268,11 @@ main(): i64
         cshift = sweep(only(ctlshift), "ctlshift", false)
         cswap = sweep(only(ctlswap), "ctlswap", false)
 
-        cb = to(str)(cbase)
-        cs = to(str)(cshift)
-        cw = to(str)(cswap)
+        cb = cbase:to(str)
+        cs = cshift:to(str)
+        cw = cswap:to(str)
         agreed = to(str)(nrows * each() - bad)
-        b = to(str)(bad)
+        b = bad:to(str)
 
         if bad < 0
             code = 3

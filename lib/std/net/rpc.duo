@@ -96,7 +96,7 @@ server_handle(server: any, request: any): any
     -- Call handler
     ok, result = pcall(handler, request.params, context)
     if not ok
-        return error_new(request.id, -32603, "Internal error", to(str)(result))
+        return error_new(request.id, -32603, "Internal error", result:to(str))
     end
 
     response_new(request.id, result)

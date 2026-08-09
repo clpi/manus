@@ -23,7 +23,7 @@ IdGen: {
 }
 
 format_loc(loc: Loc): str
-    loc.file .. ":" .. to(str)(loc.line) .. ":" .. to(str)(loc.col)
+    loc.file .. ":" .. loc.line:to(str) .. ":" .. loc.col:to(str)
 end
 
 cursor_new(bytes: str, file: str): ByteCursor

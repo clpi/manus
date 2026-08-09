@@ -72,7 +72,7 @@ encode(val: any): str
         if val != val return "null" end
         if val == math.huge return "1e999" end
         if val == -math.huge return "-1e999" end
-        return to(str)(val)
+        return val:to(str)
     end
     if type(val) == "string"
         return "\"" .. escape(val) .. "\""

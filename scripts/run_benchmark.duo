@@ -566,9 +566,9 @@ end
 
 say("")
 say("-- Speed verdict, three ways --------------------------------------------------")
-say("  measured wins  " .. to(str)(measured) .. "   Duo ran the kernel and was faster")
-say("  folded         " .. to(str)(folds) .. "   EVALUATED, NOT RUN - closed form, not codegen; NOT a win")
-say("  losses         " .. to(str)(losses) .. "   reference C was faster")
+say("  measured wins  " .. measured:to(str) .. "   Duo ran the kernel and was faster")
+say("  folded         " .. folds:to(str) .. "   EVALUATED, NOT RUN - closed form, not codegen; NOT a win")
+say("  losses         " .. losses:to(str) .. "   reference C was faster")
 say("")
 say("  fold rule: Duo time <= " .. sec(cutoff)
     .. "s (10 x the " .. sec(tick)
@@ -576,12 +576,12 @@ say("  fold rule: Duo time <= " .. sec(cutoff)
     .. "x the Duo time while C is above that floor.")
 say("  No row name, expected value or loop bound is an input to it.")
 say("  smallest positive Duo duration in this table: " .. sec(least) .. "s")
-say("  rows with AT LEAST ONE Duo build folded: " .. to(str)(partial)
-    .. " of " .. to(str)(BENCHES) .. " - the verdict column folds a row only when")
+say("  rows with AT LEAST ONE Duo build folded: " .. partial:to(str)
+    .. " of " .. BENCHES:to(str) .. " - the verdict column folds a row only when")
 say("  BOTH builds are folded, so the folded count above is a FLOOR, not a ceiling.")
 if impossible != 0
     say("  CONTROL FAILED: the rule fired on the C column against itself on "
-        .. to(str)(impossible) .. " row(s); a ratio of 1 can never be a fold.")
+        .. impossible:to(str) .. " row(s); a ratio of 1 can never be a fold.")
     os.exit(1)
 end
 say("  negative control on real data: the rule fires on 0 rows when the C column")

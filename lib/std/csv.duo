@@ -63,7 +63,7 @@ parse(data: any): any
 end
 
 escape_field(field: any): any
-    s = to(str)(field)
+    s = field:to(str)
     if std.string.find(s, ",") or std.string.find(s, '"') or std.string.find(s, "\n")
         s = std.string.gsub(s, '"', '""')
         return '"' .. s .. '"'

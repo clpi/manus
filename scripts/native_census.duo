@@ -77,18 +77,18 @@ main(): i64
 
     reachable: i64 = ok + bail
     print("native census (--backend=direct over examples/, compile_fail excluded)")
-    print("  native        " .. to(str)(ok) .. "   lowered to ARM64")
-    print("  bail          " .. to(str)(bail) .. "   reachable, not yet lowered — the worklist")
-    print("  unreachable   " .. to(str)(unreachable) .. "   C-emitter fixtures; native is not a goal for these")
-    print("  reachable     " .. to(str)(reachable) .. "   the denominator that can reach 100%")
+    print("  native        " .. ok:to(str) .. "   lowered to ARM64")
+    print("  bail          " .. bail:to(str) .. "   reachable, not yet lowered — the worklist")
+    print("  unreachable   " .. unreachable:to(str) .. "   C-emitter fixtures; native is not a goal for these")
+    print("  reachable     " .. reachable:to(str) .. "   the denominator that can reach 100%")
 
     floor: i64 = to(i64)(std.script.getenv("NATIVE_FLOOR", "88"))
     if ok < floor
-        print("native_census: FAIL — native " .. to(str)(ok)
-            .. " fell below the ratchet " .. to(str)(floor))
+        print("native_census: FAIL — native " .. ok:to(str)
+            .. " fell below the ratchet " .. floor:to(str))
         return 1
     end
-    print("native_census: PASS (native " .. to(str)(ok) .. " >= " .. to(str)(floor)
+    print("native_census: PASS (native " .. ok:to(str) .. " >= " .. floor:to(str)
         .. ", " .. to(str)(reachable - ok) .. " reachable programs remain)")
     0
 end

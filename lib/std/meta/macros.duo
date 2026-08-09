@@ -12,7 +12,7 @@ end
 gen_vars(prefix: str, count: i64): any
   vars = {}
   for i = 0, count - 1
-    vars[#vars + 1] = prefix .. to(str)(i)
+    vars[#vars + 1] = prefix .. i:to(str)
   end
   vars
 end

@@ -165,7 +165,7 @@ print_defaults(fs: any): void
         if not f.is_bool
             prefix = prefix .. " value"
         end
-        io.write(prefix .. "\n        " .. to(str)(f.usage) .. " (default: " .. to(str)(f.default) .. ")\n")
+        io.write(prefix .. "\n        " .. f.usage:to(str) .. " (default: " .. f.default:to(str) .. ")\n")
     end
 end
 

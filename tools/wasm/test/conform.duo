@@ -52,9 +52,9 @@ _norm(s: str): str
         if u < 0
             u = u + 4294967296
         end
-        return to(str)(u)
+        return u:to(str)
     end
-    to(str)(f)
+    f:to(str)
 end
 
 -- Every non-empty line of an output, joined by ONE space. Both sides of every
@@ -169,7 +169,7 @@ end
 -- Run the engine once. `raw` is stdout+stderr; the caller pulls fields out of it.
 _engine(bin: str, mod: str, invoke: str, engine: str, secs: i64): str
     std.script.capture("DUO_WASM_MODULE=" .. mod .. " DUO_WASM_INVOKE=" .. invoke
-        .. " DUO_WASM_ENGINE=" .. engine .. " timeout " .. to(str)(secs) .. " "
+        .. " DUO_WASM_ENGINE=" .. engine .. " timeout " .. secs:to(str) .. " "
         .. bin .. " 2>&1")
 end
 
@@ -246,7 +246,7 @@ main(): i64
         print("CONTROL FAIL: the fixture globs matched nothing — cwd is " .. root)
         return 3
     end
-    print("ok   " .. to(str)(nfix) .. " fixture module(s) found")
+    print("ok   " .. nfix:to(str) .. " fixture module(s) found")
 
     -- ── build the ORACLE table: (module, entry) -> wasmtime's answer ──────
     -- The entry shape is decided by wasmtime's EXIT STATUS, not by its output:
@@ -272,7 +272,7 @@ main(): i64
         print("CONTROL FAIL: wasmtime could not invoke ANY fixture — the oracle is not working")
         return 3
     end
-    print("ok   " .. to(str)(nora) .. " (module, entry) pair(s) the oracle can answer")
+    print("ok   " .. nora:to(str) .. " (module, entry) pair(s) the oracle can answer")
 
     -- ── CONTROL 2: the module path REACHES the runtime ───────────────────
     -- the engine reads DUO_WASM_MODULE, not argv, and it used to DEFAULT to a hardcoded
@@ -356,7 +356,7 @@ main(): i64
     print("ok   missing module refused rather than defaulted")
 
     print("")
-    print("== matrix: " .. to(str)(nora) .. " (module, entry) x 2 engines ==")
+    print("== matrix: " .. nora:to(str) .. " (module, entry) x 2 engines ==")
     print(_pad("MODULE", 34) .. " " .. _pad("ENTRY", 7) .. " " .. _pad("ENGINE-ASKED", 7)
         .. " " .. _pad("RAN", 10) .. " " .. _pad("WASMTIME", 18) .. " "
         .. _pad("WARD", 18) .. " VERDICT")
@@ -426,14 +426,14 @@ main(): i64
 
     _rule()
     total = pass + diff + bail + none + voidok + unsup
-    print("rows " .. to(str)(total)
-        .. "   PASS " .. to(str)(pass)
-        .. "   DIFF " .. to(str)(diff)
-        .. "   UNSUPPORTED " .. to(str)(unsup)
-        .. "   BAIL " .. to(str)(bail)
-        .. "   NORESULT " .. to(str)(none)
-        .. "   OK(void) " .. to(str)(voidok))
-    print("jit asked " .. to(str)(jitasked) .. ", jit actually compiled " .. to(str)(jitran)
+    print("rows " .. total:to(str)
+        .. "   PASS " .. pass:to(str)
+        .. "   DIFF " .. diff:to(str)
+        .. "   UNSUPPORTED " .. unsup:to(str)
+        .. "   BAIL " .. bail:to(str)
+        .. "   NORESULT " .. none:to(str)
+        .. "   OK(void) " .. voidok:to(str))
+    print("jit asked " .. jitasked:to(str) .. ", jit actually compiled " .. jitran:to(str)
         .. " — the rest fell back to the interpreter (DUO_WASM_JIT_TRACE=1 names the refusal)")
 
     -- JIT ENGAGEMENT FLOOR. The JIT falls back SILENTLY, so a purely value-based
@@ -442,7 +442,7 @@ main(): i64
     -- corpus still read 42/42. The floor is a ratchet, not a target.
     floor: i64 = to(i64)(std.script.getenv("JIT_FLOOR", "0"))
     if jitran < floor
-        print("*** JIT ENGAGEMENT REGRESSION: " .. to(str)(jitran) .. " < floor " .. to(str)(floor) .. " ***")
+        print("*** JIT ENGAGEMENT REGRESSION: " .. jitran:to(str) .. " < floor " .. floor:to(str) .. " ***")
         return 1
     end
 
@@ -457,19 +457,19 @@ main(): i64
     budget: i64 = to(i64)(std.script.getenv("DUO_WASM_UNSUPPORTED", "2"))
     bad = 0
     if diff != 0
-        print("*** " .. to(str)(diff) .. " row(s) DISAGREE with the oracle ***")
+        print("*** " .. diff:to(str) .. " row(s) DISAGREE with the oracle ***")
         bad += 1
     end
     if none != 0
-        print("*** " .. to(str)(none) .. " row(s) produced NOTHING (timeout or crash) ***")
+        print("*** " .. none:to(str) .. " row(s) produced NOTHING (timeout or crash) ***")
         bad += 1
     end
     if bail != 0
-        print("*** " .. to(str)(bail) .. " row(s) returned the -1 sentinel with no diagnostic ***")
+        print("*** " .. bail:to(str) .. " row(s) returned the -1 sentinel with no diagnostic ***")
         bad += 1
     end
     if unsup > budget
-        print("*** UNSUPPORTED went up: " .. to(str)(unsup) .. " > budget " .. to(str)(budget)
+        print("*** UNSUPPORTED went up: " .. unsup:to(str) .. " > budget " .. budget:to(str)
             .. " — a new opcode gap landed ***")
         bad += 1
     end

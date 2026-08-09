@@ -292,7 +292,7 @@ main(): i64
             end
         end
     end
-    napps: str = to(str)(napp)
+    napps: str = napp:to(str)
     print("  apps      {napps} in-tree application roots (own build.duo)")
 
     ncanon = 0
@@ -403,12 +403,12 @@ main(): i64
     end
 
     nfiles: str = to(str)(#files)
-    scanon: str = to(str)(ncanon)
-    scompat: str = to(str)(ncompat)
-    sforeign: str = to(str)(nforeign)
-    sneg: str = to(str)(nneg)
-    shist: str = to(str)(nhist)
-    sgen: str = to(str)(ngen)
+    scanon: str = ncanon:to(str)
+    scompat: str = ncompat:to(str)
+    sforeign: str = nforeign:to(str)
+    sneg: str = nneg:to(str)
+    shist: str = nhist:to(str)
+    sgen: str = ngen:to(str)
     print("")
     print("corpus census ({nfiles} tracked .duo files)")
     print("  canonical      {scanon}   deny table applies")
@@ -419,7 +419,7 @@ main(): i64
     print("  generated      {sgen}   fix the generator, not the file")
 
     if nnone != 0
-        snone: str = to(str)(nnone)
+        snone: str = nnone:to(str)
         print("")
         print("corpus_classify: FAIL — {snone} tracked .duo files match no rule in docs/spec/corpus.md:")
         io.write(unclassified)
@@ -432,9 +432,9 @@ main(): i64
         return 3
     end
 
-    sexact: str = to(str)(texact)
-    sfamily: str = to(str)(tfamily)
-    sdefault: str = to(str)(tdefault)
+    sexact: str = texact:to(str)
+    sfamily: str = tfamily:to(str)
+    sdefault: str = tdefault:to(str)
     print("")
     print("how much of each path the rule pins")
     print("  exact          {sexact}   the rule names the file")
@@ -460,7 +460,7 @@ main(): i64
         k += 1
     end
     if dead != 0
-        sdead: str = to(str)(dead)
+        sdead: str = dead:to(str)
         print("  !! {sdead} rule(s) match nothing. A rule that binds no file is not a rule.")
     end
 
@@ -478,10 +478,10 @@ main(): i64
     embeds: str = "tr '\\n' '\\0' < {listing} | xargs -0 grep -l -E {q}@c\\.emit|@comp\\.c\\.emit|@lua\\(|@foreign\\(|@ffi\\({q} 2>/dev/null"
     nc4: i64 = to(i64)(std.script.chomp(shell("{embeds} | grep -c . || true")))
 
-    sc1: str = to(str)(nc1)
-    sc2: str = to(str)(nc2)
-    sc3: str = to(str)(nc3)
-    sc4: str = to(str)(nc4)
+    sc1: str = nc1:to(str)
+    sc2: str = nc2:to(str)
+    sc3: str = nc3:to(str)
+    sc4: str = nc4:to(str)
     print("")
     print("contradictions — where the class and the evidence disagree")
     print("  C1  historical yet gate-referenced       {sc1}")

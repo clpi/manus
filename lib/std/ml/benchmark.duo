@@ -198,13 +198,13 @@ report(results: any): str
   lines[#lines + 1] = ""
   for name, result in results
     lines[#lines + 1] = "Model: " .. name
-    lines[#lines + 1] = "  Batch Size: " .. to(str)(result.batch_size)
-    lines[#lines + 1] = "  Mean Latency: " .. to(str)(result.mean_latency) .. "s"
-    lines[#lines + 1] = "  Median Latency: " .. to(str)(result.median_latency) .. "s"
-    lines[#lines + 1] = "  P95 Latency: " .. to(str)(result.p95_latency) .. "s"
-    lines[#lines + 1] = "  P99 Latency: " .. to(str)(result.p99_latency) .. "s"
-    lines[#lines + 1] = "  Throughput: " .. to(str)(result.throughput) .. " batches/s"
-    lines[#lines + 1] = "  Tokens/sec: " .. to(str)(result.tokens_per_second)
+    lines[#lines + 1] = "  Batch Size: " .. result.batch_size:to(str)
+    lines[#lines + 1] = "  Mean Latency: " .. result.mean_latency:to(str) .. "s"
+    lines[#lines + 1] = "  Median Latency: " .. result.median_latency:to(str) .. "s"
+    lines[#lines + 1] = "  P95 Latency: " .. result.p95_latency:to(str) .. "s"
+    lines[#lines + 1] = "  P99 Latency: " .. result.p99_latency:to(str) .. "s"
+    lines[#lines + 1] = "  Throughput: " .. result.throughput:to(str) .. " batches/s"
+    lines[#lines + 1] = "  Tokens/sec: " .. result.tokens_per_second:to(str)
     lines[#lines + 1] = ""
   end
   table.concat(lines, "\n")

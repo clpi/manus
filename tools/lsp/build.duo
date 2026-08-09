@@ -32,7 +32,7 @@ main = (): i64
     print("compiling duo-lsp with: " .. duo)
     rc = std.script.run(duo .. " compile -o duo-lsp src/server.duo")
     if rc != 0
-        print("error: compile failed (exit " .. to(str)(rc) .. ")")
+        print("error: compile failed (exit " .. rc:to(str) .. ")")
         return rc
     end
 

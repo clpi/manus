@@ -167,7 +167,7 @@ main(): i64
     record("PIPE filter", "main(): void\n    vs = {1, 2}\n    print(#vs:filter(.x))\nend\n", "2")
 
     io.write(report)
-    print("spec_conformance: " .. to(str)(implemented) .. "/" .. to(str)(checked)
+    print("spec_conformance: " .. implemented:to(str) .. "/" .. checked:to(str)
         .. " implemented (floor " .. to(str)(baseline()) .. ")")
 
     if implemented < baseline()
@@ -176,7 +176,7 @@ main(): i64
     end
     if implemented > baseline()
         print("spec_conformance: forms gained since the floor was set — RAISE baseline() to "
-            .. to(str)(implemented) .. " and narrow the interim advice in CLAUDE.md")
+            .. implemented:to(str) .. " and narrow the interim advice in CLAUDE.md")
     end
     print("spec_conformance: PASS")
     0

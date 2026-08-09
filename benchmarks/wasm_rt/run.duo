@@ -42,11 +42,11 @@ _secs(ns: i64): str
     tenk = (ns + 50000) / 100000
     whole = tenk / 10000
     frac = tenk % 10000
-    fs = to(str)(frac)
+    fs = frac:to(str)
     while #fs < 4
         fs = "0" .. fs
     end
-    to(str)(whole) .. "." .. fs
+    whole:to(str) .. "." .. fs
 end
 
 -- One timed run. Returns ns; the OUTPUT is read separately by the caller,

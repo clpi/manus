@@ -69,7 +69,7 @@ main = (): i64
     end
 
     print("")
-    print("Results: " .. to(str)(_pass) .. " passed, " .. to(str)(_fail) .. " failed")
+    print("Results: " .. _pass:to(str) .. " passed, " .. _fail:to(str) .. " failed")
     if _fail > 0
         return 1
     end

@@ -218,7 +218,7 @@ to_string(cfg: any): str
     i = 1
     while i <= rawlen(all_keys)
         val = get(cfg, all_keys[i])
-        parts[rawlen(parts) + 1] = all_keys[i] .. " = " .. to(str)(val)
+        parts[rawlen(parts) + 1] = all_keys[i] .. " = " .. val:to(str)
         i += 1
     end
     table.sort(parts)

@@ -24,11 +24,11 @@ end
 -- builder_write_fmt: append a formatted string (using tostring on args).
 builder_write_fmt(b: any, fmt: str, a1: any, a2: any, a3: any, a4: any, a5: any): void
     result = fmt
-    if a1 != nil result = std.string.gsub(result, "{1}", to(str)(a1)) end
-    if a2 != nil result = std.string.gsub(result, "{2}", to(str)(a2)) end
-    if a3 != nil result = std.string.gsub(result, "{3}", to(str)(a3)) end
-    if a4 != nil result = std.string.gsub(result, "{4}", to(str)(a4)) end
-    if a5 != nil result = std.string.gsub(result, "{5}", to(str)(a5)) end
+    if a1 != nil result = std.string.gsub(result, "{1}", a1:to(str)) end
+    if a2 != nil result = std.string.gsub(result, "{2}", a2:to(str)) end
+    if a3 != nil result = std.string.gsub(result, "{3}", a3:to(str)) end
+    if a4 != nil result = std.string.gsub(result, "{4}", a4:to(str)) end
+    if a5 != nil result = std.string.gsub(result, "{5}", a5:to(str)) end
     builder_write(b, result)
 end
 
@@ -62,7 +62,7 @@ interp(template: str, values: any): str
     if values == nil return template end
     result = template
     for key, val in values
-        result = std.string.gsub(result, "{" .. to(str)(key) .. "}", to(str)(val))
+        result = std.string.gsub(result, "{" .. key:to(str) .. "}", val:to(str))
     end
     result
 end
@@ -70,11 +70,11 @@ end
 -- interp_indexed: replace {1}, {2}, ... placeholders with positional arguments.
 interp_indexed(template: str, a1: any, a2: any, a3: any, a4: any, a5: any): str
     result = template
-    if a1 != nil result = std.string.gsub(result, "{1}", to(str)(a1)) end
-    if a2 != nil result = std.string.gsub(result, "{2}", to(str)(a2)) end
-    if a3 != nil result = std.string.gsub(result, "{3}", to(str)(a3)) end
-    if a4 != nil result = std.string.gsub(result, "{4}", to(str)(a4)) end
-    if a5 != nil result = std.string.gsub(result, "{5}", to(str)(a5)) end
+    if a1 != nil result = std.string.gsub(result, "{1}", a1:to(str)) end
+    if a2 != nil result = std.string.gsub(result, "{2}", a2:to(str)) end
+    if a3 != nil result = std.string.gsub(result, "{3}", a3:to(str)) end
+    if a4 != nil result = std.string.gsub(result, "{4}", a4:to(str)) end
+    if a5 != nil result = std.string.gsub(result, "{5}", a5:to(str)) end
     result
 end
 

@@ -374,8 +374,8 @@ N-15 is **not fixtured** — the garbage is not stable between runs, so no
 | T-8 | `s[0]` on `""` | does not compile — same raw C type error | — | **C · compiler bug** |
 | T-9 | string comparison | `"Z" < "a"` true; `"ab" < "abc"` true; **`"\xc3\xa9" < "z"` true** | B-11 "byte-lexicographic" | **C · compiler bug** |
 | T-10 | split, empty fields | `"a,,b":split(",")` → 3 parts, the middle one `""` | — | ok |
-| T-11 | numeric str-edge, above 2^53 | `to(i64)("9007199254740993")` = `9007199254740992` | B-13 | **C · compiler bug** |
-| T-12 | numeric str-edge, not a number | `to(i64)("abc")` = `0`, no failure, no diagnostic | B-13/B-14 | **C · compiler bug** |
+| T-11 | numeric str-edge, above 2^53 | `"9007199254740993":to(i64)` = `9007199254740993` | B-13 | ok — **repaired 2026-08-08**, gap[081] |
+| T-12 | numeric str-edge, not a number | `"abc":to(i64)` FAULTS and names the input; `"12x"` faults on the trailing text; `"0"` still answers `0` | B-13/B-14 | **partly repaired 2026-08-08** — it refuses, but it TEARS DOWN rather than routing a failure |
 
 ### The §12 contradictions, argued
 
@@ -395,13 +395,33 @@ N-15 is **not fixtured** — the garbage is not stable between runs, so no
   `0x7A`. Measured, it sorts below — which is exactly what comparing `char` as
   SIGNED does. So every non-ASCII string sorts before every ASCII one.
   **Compiler bug** against B-11, one character wide in the fix.
-- **T-11, T-12.** B-13 makes the numeric str-edge part of the declared
-  contract, and B-14 makes an unconsumed failure a diagnostic. Measured, the
-  edge routes through a double (losing the low bit above 2^53) and answers `0`
-  for input that is not a number at all — so a failed parse is
-  indistinguishable from a successful parse of `"0"`. **Compiler bug** on both
-  counts. `tonumber` was repaired earlier this epoch to return nil rather than
-  0; `to(i64)` is the same defect at the canonical spelling and was not.
+- **T-11, T-12, REMEASURED 2026-08-08 (gaps/GAP-081.md step 1).** Both rows
+  above were understated, and the understatement mattered. The edge did route
+  through a double and did answer `0` for input holding no number — but only
+  where it ran at all: in a full-native module `to(i64)` on a typed `str`
+  reached `lua_to_num`, which such a module never declares, so the conversion
+  did not COMPILE, in either face. That is why gap[081] reads the corpus census
+  of 1647 operation-first conversions against one canonical one as partly
+  capability rather than taste. The commonest conversion direction in this tree
+  is parsing a number, and its canonical spelling did not build.
+
+  It now lowers to a plain-C integer parse. T-11 keeps all 64 bits, so
+  `"9007199254740993"` round-trips. T-12 refuses: no digits, or text after the
+  digits, or a value out of range, and it names which. `"0"` still answers `0`,
+  which is the row that keeps the refusal honest — a parse failure and a
+  successful parse of zero are no longer the same observation.
+
+  **T-12 IS ONLY PARTLY REPAIRED, and the remaining half is stated rather than
+  hidden.** B-14 says an unconsumed failure DIAGNOSES and routes; this FAULTS —
+  §0c world teardown, the end of a demand that cannot be met. Teardown is
+  admitted by the boring rulings and is categorically better than a silent `0`,
+  but it is not a routed `i64 | error`, and it will not be until the failure
+  position has somewhere to go at a conversion edge. `zig build convert-proof`
+  asserts the exit code so the distinction stays visible.
+
+  `tonumber` was repaired earlier this epoch to return nil rather than 0;
+  `to(i64)` is the same defect at the canonical spelling and reached its repair
+  a whole epoch later, through a census that looked like a taste problem.
 
 ---
 

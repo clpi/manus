@@ -379,7 +379,7 @@ _g_prim = (): i64
     end
     if _eat2(45)
         r2: i64 = _g_prim()
-        _emit("neg x" .. to(str)(r2) .. ", x" .. to(str)(r2))
+        _emit("neg x" .. r2:to(str) .. ", x" .. r2:to(str))
         return r2
     end
     v: i64 = 0
@@ -396,7 +396,7 @@ _g_prim = (): i64
     if _reg > 15
         _bad2 = true
     end
-    _emit("mov x" .. to(str)(d) .. ", #" .. to(str)(v))
+    _emit("mov x" .. d:to(str) .. ", #" .. v:to(str))
     d
 end
 
@@ -406,11 +406,11 @@ _g_term = (): i64
         _ws2()
         if _eat2(42)
             r: i64 = _g_prim()
-            _emit("mul x" .. to(str)(left) .. ", x" .. to(str)(left) .. ", x" .. to(str)(r))
+            _emit("mul x" .. left:to(str) .. ", x" .. left:to(str) .. ", x" .. r:to(str))
             _reg -= 1
         elseif _eat2(47)
             r2: i64 = _g_prim()
-            _emit("sdiv x" .. to(str)(left) .. ", x" .. to(str)(left) .. ", x" .. to(str)(r2))
+            _emit("sdiv x" .. left:to(str) .. ", x" .. left:to(str) .. ", x" .. r2:to(str))
             _reg -= 1
         else
             return left
@@ -424,11 +424,11 @@ _g_expr = (): i64
         _ws2()
         if _eat2(43)
             r: i64 = _g_term()
-            _emit("add x" .. to(str)(left) .. ", x" .. to(str)(left) .. ", x" .. to(str)(r))
+            _emit("add x" .. left:to(str) .. ", x" .. left:to(str) .. ", x" .. r:to(str))
             _reg -= 1
         elseif _eat2(45)
             r2: i64 = _g_term()
-            _emit("sub x" .. to(str)(left) .. ", x" .. to(str)(left) .. ", x" .. to(str)(r2))
+            _emit("sub x" .. left:to(str) .. ", x" .. left:to(str) .. ", x" .. r2:to(str))
             _reg -= 1
         else
             return left
@@ -449,6 +449,6 @@ asm_for = (expr: str): str
     if _bad2 or _p2 <= #_src2
         return ""
     end
-    body = _asm .. "    mov x0, x" .. to(str)(r) .. "\n    ret\n"
+    body = _asm .. "    mov x0, x" .. r:to(str) .. "\n    ret\n"
     ".text\n.global _duo_eval\n.align 2\n_duo_eval:\n" .. body
 end

@@ -87,7 +87,7 @@ _block_reason(): str
     procs = _count_heavy()
     cap = _gate_max()
     if procs >= cap
-        return "heavy procs (" .. to(str)(procs) .. ") >= gate cap (" .. to(str)(cap) .. ")"
+        return "heavy procs (" .. procs:to(str) .. ") >= gate cap (" .. cap:to(str) .. ")"
     end
 
     -- 8x cores, not 1x: macOS load average includes uninterruptible I/O wait
@@ -98,15 +98,15 @@ _block_reason(): str
     limit = cpus * 8
     load1 = _loadavg_int()
     if load1 > limit
-        return "load avg (" .. to(str)(load1) .. ") > " .. to(str)(limit)
-            .. " (8x " .. to(str)(cpus) .. " cores)"
+        return "load avg (" .. load1:to(str) .. ") > " .. limit:to(str)
+            .. " (8x " .. cpus:to(str) .. " cores)"
     end
 
     total = _total_procs()
     plimit = _maxproc() * 80 / 100
     if total > plimit
-        return "total user procs (" .. to(str)(total) .. ") > 80% of maxproc ("
-            .. to(str)(plimit) .. ")"
+        return "total user procs (" .. total:to(str) .. ") > 80% of maxproc ("
+            .. plimit:to(str) .. ")"
     end
     ""
 end
@@ -148,7 +148,7 @@ _status(): void
         print("  state:                             BLOCKED (" .. r .. ")")
     end
     n = _num(_sh("ls -1 " .. _gate_dir() .. "/slot_* 2>/dev/null | wc -l | tr -d ' '"), 0)
-    print("  active gate slots:                 " .. to(str)(n))
+    print("  active gate slots:                 " .. n:to(str))
 end
 
 _config(): void
@@ -215,7 +215,7 @@ main = (): i64
     reason = _block_reason()
     while reason != ""
         if waited >= timeout
-            print("duo_gate: timed out after " .. to(str)(timeout)
+            print("duo_gate: timed out after " .. timeout:to(str)
                 .. "s waiting for fork safety (" .. reason .. ")")
             _cleanup_stale()
             return 75
@@ -223,14 +223,14 @@ main = (): i64
         step = 2
         if waited > 30 step = 5 end
         if waited > 120 step = 10 end
-        std.script.run("sleep " .. to(str)(step))
+        std.script.run("sleep " .. step:to(str))
         waited = waited + step
         reason = _block_reason()
     end
 
     pid = _sh("echo $PPID")
     slot = _slot_file(pid)
-    std.script.run("printf '%s %s %s\\n' " .. pid .. " $(date +%s) " .. to(str)(timeout)
+    std.script.run("printf '%s %s %s\\n' " .. pid .. " $(date +%s) " .. timeout:to(str)
         .. " > " .. slot .. " 2>/dev/null")
 
     std.script.env_set("DUO_GATE_HELD", "1")
