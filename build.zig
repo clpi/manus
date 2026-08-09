@@ -675,6 +675,40 @@ pub fn build(b: *std.Build) void {
     const convert_canon_step = b.step("convert-canon", "Pass 121 §17: rewrite to(str) sites to the receiver face, witnessed (dry run)");
     convert_canon_step.dependOn(&convert_canon_cmd.step);
 
+    // GAP-080 / GAP-085: the deny table over src/*.zig, which audit100 cannot
+    // see. Four ratcheting rows, all running DOWN. The `assume` row is §3
+    // MEASUREMENT HONESTY made a number — a live `use_*` flag with no
+    // `verify_*` companion — and exists so the eighteenth arrives read.
+    //
+    // The SCRIPT has existed since c8d6e06 and this STEP did not, so GAP-085
+    // records the row as landed while nothing ran it. Both exit directions
+    // checked before wiring, per gap[070]: PASS exits 0, and a lowered budget
+    // exits 1 after printing `!! assume 17 1`.
+    const bootstrap_scan_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/bootstrap_scan.duo" });
+    bootstrap_scan_cmd.step.dependOn(b.getInstallStep());
+    bootstrap_scan_cmd.setCwd(b.path("."));
+    const bootstrap_scan_step = b.step("bootstrap-scan", "GAP-080/085: uppercase, companion, relation and assume rows over src/*.zig; ratchets down");
+    bootstrap_scan_step.dependOn(&bootstrap_scan_cmd.step);
+
+    // GAP-075: std.fs.remove, by VALUE, both directions. The fixture gap[075]
+    // owed and gap[100] rung 2 cited as already existing — it never did, under
+    // either spelling. Every assertion reads the FILESYSTEM, because the bug
+    // was a wrapper reporting success for a removal that did not happen, and
+    // the return value alone could not tell the two apart.
+    const fs_remove_proof_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/fsremoveproof.duo" });
+    fs_remove_proof_cmd.step.dependOn(b.getInstallStep());
+    fs_remove_proof_cmd.setCwd(b.path("."));
+    const fs_remove_proof_step = b.step("fs-remove-proof", "GAP-075: fs.remove verified against the filesystem in both directions");
+    fs_remove_proof_step.dependOn(&fs_remove_proof_cmd.step);
+
+    // GAP-100 rung 0: the same by-value discipline for mkdir / mkdirall / copy.
+    // Written earlier and never wired, so it had not run in CI at all.
+    const fs_mkdir_proof_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/fsmkdirproof.duo" });
+    fs_mkdir_proof_cmd.step.dependOn(b.getInstallStep());
+    fs_mkdir_proof_cmd.setCwd(b.path("."));
+    const fs_mkdir_proof_step = b.step("fs-mkdir-proof", "GAP-100 rung 0: mkdir, mkdirall and copy verified against the filesystem");
+    fs_mkdir_proof_step.dependOn(&fs_mkdir_proof_cmd.step);
+
     const direct_link_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/direct_module_link_proof.duo" });
     direct_link_cmd.step.dependOn(b.getInstallStep());
     direct_link_cmd.setCwd(b.path("."));
