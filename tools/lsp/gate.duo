@@ -46,6 +46,13 @@
 --     human would notice in a screenshot, and it moves exactly one integer in
 --     the asserted token array.
 --
+-- TAXONOMY, AND WHOSE. The legend and token rows below assert the taxonomy in
+-- `docs/spec/roles.md` §2/§3 and the R1 copula/invoke decider in §5.1.
+-- `tools/lsp/src/highlight.duo` implements a DIFFERENT one — 18 members,
+-- spacing-decided `:` — and the two give different answers on the fixture line
+-- this gate asserts. gaps/GAP-078.md carries the conflict; do not "fix" a red
+-- row here by adopting the other taxonomy without that ruling.
+--
 -- LSPGATE_SERVER   drive a different server file (the controls use it).
 
 root = std.os.getenv("DUO_ROOT")

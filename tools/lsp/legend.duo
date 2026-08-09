@@ -28,6 +28,16 @@
 -- Deriving the legend from ANOTHER front end's copy would make two copies
 -- agree with each other and neither with the law. Both derive from §2.
 --
+-- AND THE OTHER TAXONOMY — read gaps/GAP-078.md before changing anything here.
+-- `tools/lsp/src/highlight.duo` landed the same day with a DIFFERENT closed
+-- set: 18 members, `place` where §2 says `name`, `text` where §2 says
+-- `literal`, the §0g fine splits demoted to "cards", no `ambiguous` member —
+-- and it decides the copula/invoke split by SPACING where §5.1 decides it by
+-- grammar.md R1. On `count:u32` the two answer differently. This generator
+-- reads `docs/spec/roles.md` because that is the tracked spec in `docs/spec/`,
+-- NOT because the question is settled. It is not settled, and until a ruling
+-- lands in CLAUDE.md neither of these two may quietly become the other.
+--
 -- Run: duo run tools/lsp/legend.duo    (writes in place, prints what changed)
 -- Exit 0 wrote or already current · 2 the taxonomy source could not be read
 -- or did not enumerate seventeen hued roles — no file was touched.

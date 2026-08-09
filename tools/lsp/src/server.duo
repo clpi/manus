@@ -2591,6 +2591,13 @@ end
 -- `zig build lsp-gate` runs THIS scanner over `fixtures/highlight/*.duo` and
 -- convicts it against the hand-written `.roles.duo` sidecars, span for span.
 -- When the graph service answers roles, delete this and ask it. -- gap[071]
+--
+-- THERE IS NOW A THIRD. `tools/lsp/src/highlight.duo` landed the same day with
+-- an 18-member closed set, different member names, and the copula/invoke split
+-- decided by SPACING rather than by grammar.md R1 — which answers `count:u32`
+-- the other way. This scanner follows roles.md §5.1 and R1. Read
+-- gaps/GAP-078.md before reconciling them; the conflict is a RULING that is
+-- owed, not a bug in either. -- gap[078]
 
 roleid(name: any): i64
   i = 1
