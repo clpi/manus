@@ -153,6 +153,45 @@ _hits(pat: str, keep: i64): i64
     to(i64)(std.script.chomp(std.script.capture(cmd)))
 end
 
+-- Count lines matching `pat` in an ARBITRARY text source, through the two
+-- filters every row uses. `src` is a shell fragment that writes the text to
+-- stdout, so the same row regex can be pointed at the working copy of a file
+-- (`cat p`) or at its HEAD blob (`git show HEAD:p`). That pair is the whole
+-- delta report: `after - before` is what YOUR tree costs on that row.
+--
+-- It is a separate function from `_hits` rather than a parameter on it because
+-- `_hits` hard-codes the canonical list, and the delta report must be able to
+-- read a file that is not on that list yet — an UNTRACKED `.duo` is invisible
+-- to `git ls-files`, so its points are worth exactly zero until someone runs
+-- `git add`, at which moment they are worth all of them at once. That is how
+-- `examples/boring/` landed +6 on `trailret` with nobody holding it.
+_tally(pat: str, keep: i64, src: str): i64
+    q: str = "'"
+    strip: str = _STRIP
+    if keep != 0
+        strip = ""
+    end
+    cmd: str = (src
+        .. " | grep -v -E " .. q .. "^[[:space:]]*--" .. q
+        .. strip
+        .. " | grep -c -E " .. q .. pat .. q)
+    to(i64)(std.script.chomp(std.script.capture(cmd)))
+end
+
+-- Does `f` fall in the canonical partition, by the same first-match-wins walk
+-- the census does? The delta report needs this for files the census never
+-- saw.
+_canon(rcls: any, rpre: any, f: str): bool
+    j: i64 = 1
+    while j <= #rpre
+        if _starts(f, rpre[j])
+            return rcls[j] == "canonical"
+        end
+        j += 1
+    end
+    false
+end
+
 -- Count matches of `pat` against ONE literal line, through the same grep the
 -- rows use. This is the control surface: it asks whether a pattern still
 -- recognises the text it was written for, without depending on the corpus
@@ -850,7 +889,81 @@ main(): i64
     -- without this diff the row would read 3443. Lowering it here would be
     -- rebaselining someone else's red, which the note above forbids. It stays
     -- at 3437 and stays red until whoever added those files pays or budgets it.
-    budgets: str = "14121 2255 1808 259 322 479 154 58 2020 442 167 128 228 36 2411 2258 3437 6"
+    --
+    -- 2026-08-08: `trailret` 3437 -> 3441, RAISED, and this is the entry the
+    -- block above was waiting for. The gate had been red on this one row for
+    -- four sessions, each of which recorded "pre-existing, not mine" and
+    -- worked around it, which is what a ratchet does to a repository when a
+    -- red row has no owner. Owned here.
+    --
+    -- THE ROW IS WRONG, NOT THE CODE, and it is wrong in a way this file has
+    -- already ruled on once. `trailret`'s regex is
+    -- `(^|[[:space:]])return[[:space:]]+[^[:space:]]` — it is LINE-GRAINED, so
+    -- it cannot see whether a `return` is the last statement of a function.
+    -- Pass 100 §5 (DEMAND-RETURN) does not deny `return`; it says "`return` =
+    -- EARLY EXIT or contract only". §1 denies the TRAILING one. The regex
+    -- cannot tell those two apart, so it convicts the licensed form. That is
+    -- verbatim the finding recorded above for `examples/spec100/pack.duo`,
+    -- where the row was raised by 2 rather than have the §20 result-pack
+    -- fixture stop testing what §20 writes.
+    --
+    -- All six new points, attributed and then CHECKED rather than asserted:
+    --
+    --   examples/boring/anagram.duo       2   `return 0`  length guard, and
+    --                                         a mismatch found inside a `for`
+    --   examples/boring/binarysearch.duo  1   `return mid` on a hit, inside
+    --                                         the `while`
+    --   examples/boring/fib.duo           1   `return n`   the base case
+    --   examples/boring/palindrome.duo    1   `return 0`   a mismatched pair,
+    --                                         inside the `while`
+    --   examples/table/tailcall.duo       1   `return acc` the base case
+    --
+    -- Measured: the canonical list reads 3441 with those two directories in
+    -- and 3435 with them removed, and no other row moves by one line either
+    -- way. Zero of the six is a trailing return. The mechanical check, which
+    -- is what makes this a reading rather than an opinion: a TRAILING return
+    -- is followed by the function's own `end`, at column 0. Each of these six
+    -- is followed by an INDENTED `end` — the `end` of the `if`, the `while` or
+    -- the `for` it exits. Every one of those five functions terminates in a
+    -- bare tail expression (`1`, `0`, `fib(n - 1) + fib(n - 2)`,
+    -- `tail(n - 1, acc + 1)`), which is §5's final-expression form and the
+    -- thing the row exists to protect.
+    --
+    -- WHY NOT PAY AT SOURCE. Two reasons, and the second is the one that
+    -- would have cost another session a day:
+    --
+    --   The guards are already law-compliant, so rewriting them into if/else
+    --   expression position is bending law-compliant code to satisfy an
+    --   instrument that admits it cannot measure the distinction. It is also
+    --   bending it in the direction Pass 106 §4 built this corpus to resist:
+    --   the boring corpus is twenty ORDINARY programs written the ordinary
+    --   way, the instrument for finding what a mundane program needs that a
+    --   lexer never did. An early-exit guard is the ordinary way in every
+    --   language there is. A corpus rewritten toward the compiler measures the
+    --   compiler against itself.
+    --
+    --   And the rewrite silently DISARMS the gate that guards the corpus.
+    --   `scripts/boring_corpus.duo`'s positive control is a textual mutation —
+    --   `sed 's/return n$/return n + 1/' examples/boring/fib.duo` — which
+    --   corrupts fib's base case and requires the row to go red. Rewriting
+    --   `return n` out of that file makes the sed a no-op, the corrupted
+    --   program passes, and `boring-corpus` correctly refuses to report any
+    --   row. This was tried and observed. So: before repairing any file in a
+    --   corpus, read what that corpus's control MUTATES.
+    --
+    -- WHAT WOULD MAKE THIS RAISE WRONG, stated so it can be checked cold:
+    --
+    --   1. If any of the six is in fact function-final. Re-check by the column
+    --      rule above; if one is, pay it at source and lower this by one.
+    --   2. If `trailret` is ever made structure-aware — taught to fire only on
+    --      a `return` whose next non-blank line is an `end` at column 0 — then
+    --      these six stop being counted and this budget MUST come back down by
+    --      6. That is the real repair and it is not made here only because it
+    --      moves all seventeen other budgets in the same diff.
+    --   3. If a genuine TRAILING return lands in `examples/boring/` or
+    --      `examples/table/` under cover of this raise. The delta report added
+    --      below is the check: it names the file before the commit exists.
+    budgets: str = "14121 2255 1808 259 322 479 154 58 2020 442 167 128 228 36 2411 2258 3441 6"
 
     -- Per-row: 1 = measure with string bodies INTACT. Only `concatlit` sets
     -- it, because its subject IS the string literal; stripping bodies takes
@@ -947,10 +1060,12 @@ main(): i64
 
     over = 0
     total = 0
+    counts: str = ""
     i: i64 = 1
     while i <= #id
         c: i64 = _hits(pat[i], to(i64)(_field(keeps, i)))
         total += c
+        counts = counts .. to(str)(c) .. " "
         flag: str = "  "
         b: i64 = to(i64)(_field(budgets, i))
         if c > b
@@ -1029,6 +1144,138 @@ main(): i64
         print("     " .. _pad("nonduo", 12) .. _pad(to(str)(nonduo), 8)
             .. _pad(to(str)(nonduo_budget), 9) .. _pad(" ", 3)
             .. "tracked non-.duo, non-.md files")
+    end
+
+    -- PER-DIFF DELTA — the headroom mechanism, and the reason it exists.
+    --
+    -- Every row above reads EXACTLY its budget. That is the intended steady
+    -- state of a ratchet whose budgets are set to exact counts, and it has one
+    -- consequence nobody designed: THERE IS NO HEADROOM ANYWHERE, so any file
+    -- added anywhere reddens the gate, and the person who added it finds out
+    -- after it has landed. What happens then is not that they fix it — it is
+    -- that the next four people read a red row, correctly observe that it is
+    -- not theirs, and work around it. That is exactly how `trailret` sat red
+    -- for four sessions. The debt was real; what was missing was any mechanical
+    -- way to answer "is this mine?" other than by assertion.
+    --
+    -- This section answers it. For every canonical `.duo` file that differs
+    -- from HEAD in this working tree, it counts each row's pattern on the HEAD
+    -- blob and on the working copy, through this gate's OWN two filters, and
+    -- prints the difference. Run before you commit — which §2 already requires
+    -- of every diff — it tells you what your diff costs on every row while the
+    -- diff is still yours to change.
+    --
+    -- It includes UNTRACKED files on purpose, and marks them. They are the
+    -- blind spot that produced this entry: `git ls-files` cannot see them, so
+    -- their points read as zero right up until `git add`, when they all land at
+    -- once. An untracked canonical `.duo` is a bill, and this is where it is
+    -- shown before it comes due.
+    --
+    -- It never changes the verdict. Blame is diagnosis; the budgets are the
+    -- judgement. A delta report that could fail the gate would just be a
+    -- nineteenth row.
+    chlist: str = _LIST .. ".changed"
+    chall: str = ""
+    chfresh: str = ""
+    nch = 0
+    nfresh = 0
+    for _i, f in _lines(std.script.capture("cd " .. root
+        .. " && git diff --name-only HEAD -- '*.duo' 2>/dev/null"))
+        if f != _SELF and _canon(rcls, rpre, f)
+            nch += 1
+            chall = chall .. f .. "\n"
+        end
+    end
+    for _i, f in _lines(std.script.capture("cd " .. root
+        .. " && git ls-files -o --exclude-standard -- '*.duo' 2>/dev/null"))
+        if f != _SELF and _canon(rcls, rpre, f)
+            nch += 1
+            nfresh += 1
+            chall = chall .. f .. "\n"
+            chfresh = chfresh .. "      " .. f .. "\n"
+        end
+    end
+
+    if nch != 0
+        std.script.fs_write(chlist, chall)
+        after: str = ("cd " .. root .. " && tr '\\n' '\\0' < " .. chlist
+            .. " | xargs -0 cat 2>/dev/null")
+        before: str = ("cd " .. root
+            .. " && while read p; do git show HEAD:\"$p\" 2>/dev/null; done < " .. chlist)
+
+        -- POSITIVE CONTROL, and it guards the direction that hurts. A broken
+        -- `after` pipeline reads 0 on every row, every delta comes out zero or
+        -- negative, and the report says "no row moved. A red row is NOT yours"
+        -- to the one person who could still have fixed it cheaply. That is a
+        -- confident zero in the language of an alibi. A broken `before`
+        -- pipeline fails the other way — it blames you for everything — which
+        -- is safe, so it is not a hard failure.
+        if _tally("[a-zA-Z]", 1, after) == 0
+            print("audit100: FAIL — the delta report read 0 letters across "
+                .. to(str)(nch) .. " changed canonical file(s); its pipeline is"
+                .. " broken and it would report every red row as nobody's")
+            return 3
+        end
+
+        print("")
+        print("PER-DIFF DELTA — what THIS working tree costs, against HEAD")
+        print("  " .. to(str)(nch) .. " changed canonical .duo file(s) read, "
+            .. to(str)(nfresh) .. " of them UNTRACKED (not yet in the counts above)")
+        moved = 0
+        i = 1
+        while i <= #id
+            k: i64 = to(i64)(_field(keeps, i))
+            d: i64 = _tally(pat[i], k, after) - _tally(pat[i], k, before)
+            if d != 0
+                moved += 1
+                c: i64 = to(i64)(_field(counts, i))
+                b: i64 = to(i64)(_field(budgets, i))
+                sign: str = "+"
+                if d < 0
+                    sign = ""
+                end
+                verdict: str = "row is at or under budget"
+                if c > b
+                    verdict = "ROW IS OVER BY " .. to(str)(c - b) .. " — pay it or budget it HERE"
+                end
+                print("  " .. _pad(id[i], 12) .. _pad(sign .. to(str)(d), 8) .. verdict)
+                -- Per-file attribution, for the rows you must act on.
+                if c > b
+                    for _j, f in _lines(chall)
+                        fa: i64 = _tally(pat[i], k, "cd " .. root .. " && cat " .. f .. " 2>/dev/null")
+                        fb: i64 = _tally(pat[i], k, "cd " .. root .. " && git show HEAD:" .. f .. " 2>/dev/null")
+                        if fa != fb
+                            fs: str = "+"
+                            if fa < fb
+                                fs = ""
+                            end
+                            print("      " .. _pad(fs .. to(str)(fa - fb), 6) .. f)
+                        end
+                    end
+                end
+            end
+            i += 1
+        end
+        if moved == 0
+            print("  no row moved. Any red row above is NOT this tree's: find its")
+            print("  owner with `git log -S` on the row's pattern rather than")
+            print("  rebaselining it, which launders another session's debt.")
+        end
+        if nfresh != 0
+            print("")
+            print("  UNTRACKED canonical files. Their points are counted in the")
+            print("  deltas above but NOT in the count column, and they land in")
+            print("  full the moment you `git add`:")
+            io.write(chfresh)
+        end
+    end
+    -- Said out loud rather than skipped in silence. "The section did not run"
+    -- and "the section ran and found nothing" print identically otherwise, and
+    -- this whole mechanism exists because those two were indistinguishable.
+    if nch == 0
+        print("")
+        print("PER-DIFF DELTA — no changed canonical .duo file in this tree, so")
+        print("  no row above is attributable here. Every red row is HEAD's.")
     end
 
     print("")
