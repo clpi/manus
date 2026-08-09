@@ -159,6 +159,17 @@ ambient(root: str, pat: str): i64
     to(i64)(std.script.chomp(std.script.capture(cmd)))
 end
 
+-- gap[100]: the same reach measured OUTSIDE lib/std. Every number above it is
+-- lib/std ONLY, and a budget that states no denominator reads as though it
+-- covered the tree. Measured 2026-08-09: os.* alone is 156 sites inside
+-- lib/std and 461 outside it, so the ratchet was pressing on a quarter of the
+-- surface it names while reporting PASS. Reported, deliberately NOT ratcheted
+-- yet — a budget is only honest once someone has agreed to hold it.
+beyond(root: str, pat: str): i64
+    pre: str = "cd {root} && git ls-files '*.duo' | grep -v {q}^lib/std/{q} | tr '\\n' '\\0' | xargs -0 grep -H -n -E "
+    cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | grep -v -E {q}{mediator}{q} | wc -l"
+    to(i64)(std.script.chomp(std.script.capture(cmd)))
+
 -- The complement: matched, non-comment, and DOES carry a world receiver.
 threaded(root: str, pat: str): i64
     pre: str = head(root)
@@ -349,9 +360,17 @@ main(): i64
 
         pct: i64 = to(i64)(reached * 100 / total)
         print("")
-        print("  ambient sites      {sites}")
+        out: i64 = beyond(root, anypat)
+        whole: i64 = sites + out
+        print("  SCOPE: every row above counts lib/std ONLY.")
+        print("  ambient sites      {sites}   (lib/std)")
         print("  ambient modules    {reached} of {total} ({pct}%)")
         print("  mediated sites     {thru}   (a reach that names the op but carries a world receiver)")
+        print("")
+        print("  ambient sites      {out}   OUTSIDE lib/std — tools, scripts, examples, ext")
+        print("  ambient sites      {whole}   WHOLE TREE — the real denominator")
+        print("  gap[100]: the budget below holds the lib/std column only. The outside")
+        print("  column is REPORTED, NOT RATCHETED, and is free to grow today.")
         print("")
         print("  E = ENFORCED: `duo check` REFUSES this in a .duo file. 0 of 6 classes are")
         print("  enforced — every row above is COUNTED, and the budget is the only pressure")
