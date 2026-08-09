@@ -57,105 +57,111 @@
 -- CORPUS_CLASSIFY_EMIT=1   print one `class tier ref path` row per file, which
 --                          is what regenerates docs/corpus_manifest.md.
 
-_SELF = "scripts/corpus_classify.duo"
-_LIST = "/tmp/duo_corpus_classify.list"
-_HAY = "/tmp/duo_corpus_classify.hay"
-_PAT = "/tmp/duo_corpus_classify.pat"
+-- Pass 100 spelling, 2026-08-08. The helpers used to carry `_` prefixes and the
+-- reports used to be `..` ladders; both are §1 deny rows that `audit100`
+-- ratchets, and this file held 58 of one and 52 of the other. The behaviour is
+-- unchanged and was checked that way: the full report and the
+-- CORPUS_CLASSIFY_EMIT manifest were captured before and after and are
+-- byte-identical.
 
-_lines(s: str): any
+here = "scripts/corpus_classify.duo"
+listing = "/tmp/duo_corpus_classify.list"
+haystack = "/tmp/duo_corpus_classify.hay"
+needles = "/tmp/duo_corpus_classify.pat"
+
+cut(s: str): any
     out = {}
     n: i64 = #s
     start: i64 = 1
     i: i64 = 1
     while i <= n
-        if string.byte(s, i) == 10
+        if s:byte(i) == 10
             if i > start
-                table.insert(out, string.sub(s, start, i - 1))
+                out[#out + 1] = s:sub(start, i - 1)
             end
             start = i + 1
         end
         i += 1
     end
     if start <= n
-        table.insert(out, string.sub(s, start, n))
+        out[#out + 1] = s:sub(start, n)
     end
     out
 end
 
-_starts(s: str, prefix: str): bool
-    p: i64 = #prefix
-    if #s < p
-        return false
-    end
-    string.sub(s, 1, p) == prefix
+starts(s: str, prefix: str): bool
+    #s >= #prefix and s:sub(1, #prefix) == prefix
 end
 
-_ends(s: str, suffix: str): bool
-    p: i64 = #suffix
-    if #s < p
-        return false
-    end
-    string.sub(s, #s - p + 1, #s) == suffix
+ends(s: str, suffix: str): bool
+    #s >= #suffix and s:sub(#s - #suffix + 1, #s) == suffix
 end
 
--- Whitespace-separated field n (1-based) of a line, "" when absent.
-_field(line: str, want: i64): str
+-- Whitespace-separated field n (1-based) of a line, "" when absent. `seen` only
+-- ever increases, so the first field that matches `want` is the only one that
+-- can, and the answer is carried to the tail rather than returned early.
+field(line: str, want: i64): str
+    out: str = ""
     n: i64 = #line
     i: i64 = 1
     seen: i64 = 0
     while i <= n
-        b: i64 = string.byte(line, i)
+        b: i64 = line:byte(i)
         if b != 32 and b != 9
             seen += 1
             start: i64 = i
-            while i <= n and string.byte(line, i) != 32 and string.byte(line, i) != 9
+            while i <= n and line:byte(i) != 32 and line:byte(i) != 9
                 i += 1
             end
             if seen == want
-                return string.sub(line, start, i - 1)
+                out = line:sub(start, i - 1)
             end
         else
             i += 1
         end
     end
-    ""
+    out
 end
 
-_is_class(c: str): bool
+known(c: str): bool
     c == "canonical" or c == "compatibility" or c == "foreign"
         or c == "negative" or c == "historical" or c == "generated"
 end
 
-_base(p: str): str
-    n: i64 = #p
-    i: i64 = n
+base(p: str): str
+    out: str = p
+    i: i64 = #p
     while i > 0
-        if string.byte(p, i) == 47
-            return string.sub(p, i + 1, n)
+        if p:byte(i) == 47
+            out = p:sub(i + 1, #p)
+            i = 0
+        else
+            i -= 1
         end
-        i -= 1
     end
-    p
+    out
 end
 
-_dir(p: str): str
-    n: i64 = #p
-    i: i64 = n
+parent(p: str): str
+    out: str = ""
+    i: i64 = #p
     while i > 0
-        if string.byte(p, i) == 47
-            return string.sub(p, 1, i - 1)
+        if p:byte(i) == 47
+            out = p:sub(1, i - 1)
+            i = 0
+        else
+            i -= 1
         end
-        i -= 1
     end
-    ""
+    out
 end
 
-_segments(prefix: str): i64
+depth(prefix: str): i64
     n: i64 = #prefix
     i: i64 = 1
     c: i64 = 0
     while i <= n
-        if string.byte(prefix, i) == 47
+        if prefix:byte(i) == 47
             c += 1
         end
         i += 1
@@ -166,66 +172,67 @@ end
 -- How much of the path the rule pins. See the header: `default` means the
 -- class came from a policy over a whole top-level tree, not from evidence
 -- about the file.
-_tier(prefix: str): str
-    if _ends(prefix, ".duo")
-        return "exact"
+tier(prefix: str): str
+    out: str = "family"
+    if ends(prefix, ".duo")
+        out = "exact"
+    elseif depth(prefix) <= 1 and ends(prefix, "/")
+        out = "default"
     end
-    if _segments(prefix) <= 1 and _ends(prefix, "/")
-        return "default"
-    end
-    "family"
+    out
 end
 
-_pad(s: str, width: i64): str
+pad(s: str, width: i64): str
     out: str = s
     while #out < width
-        out = out .. " "
+        out = "{out} "
     end
     out
 end
 
 -- One shell round trip; the caller decides whether an empty answer is fatal.
-_capture(cmd: str): str
+shell(cmd: str): str
     std.script.capture(cmd)
 end
 
 main(): i64
-    root: str = std.script.chomp(_capture("git rev-parse --show-toplevel 2>/dev/null"))
+    root: str = std.script.chomp(shell("git rev-parse --show-toplevel 2>/dev/null"))
     if root == ""
         print("corpus_classify: FAIL — not inside a git work tree; the corpus cannot be listed")
         return 3
     end
     print("corpus_classify — docs/spec/corpus.md, re-derived over the tracked corpus")
-    print("  root      " .. root)
+    print("  root      {root}")
 
-    spec: str = root .. "/docs/spec/corpus.md"
+    spec: str = "{root}/docs/spec/corpus.md"
     if not std.script.fs_exists(spec)
-        print("corpus_classify: FAIL — missing " .. spec)
+        print("corpus_classify: FAIL — missing {spec}")
         return 3
     end
 
     -- Rules as parallel arrays: first match wins, order as written.
     rcls = {}
     rpre = {}
-    rtier = {}
+    rpin = {}
     rhit = {}
-    for _i, line in _lines(std.script.fs_read(spec))
-        c: str = _field(line, 1)
-        p: str = _field(line, 2)
-        if _is_class(c) and p != "" and _field(line, 3) == ""
-            table.insert(rcls, c)
-            table.insert(rpre, p)
-            table.insert(rtier, _tier(p))
-            table.insert(rhit, 0)
+    for i, line in cut(std.script.fs_read(spec))
+        c: str = field(line, 1)
+        p: str = field(line, 2)
+        if known(c) and p != "" and field(line, 3) == ""
+            rcls[#rcls + 1] = c
+            rpre[#rpre + 1] = p
+            rpin[#rpin + 1] = tier(p)
+            rhit[#rhit + 1] = 0
         end
     end
     if #rcls == 0
         print("corpus_classify: FAIL — docs/spec/corpus.md yielded 0 rules; the parse is broken")
         return 3
     end
-    print("  rules     " .. to(str)(#rcls) .. " from docs/spec/corpus.md")
+    nrules: str = to(str)(#rcls)
+    print("  rules     {nrules} from docs/spec/corpus.md")
 
-    files = _lines(_capture("cd " .. root .. " && git ls-files '*.duo'"))
+    files = cut(shell("cd {root} && git ls-files '*.duo'"))
     if #files == 0
         print("corpus_classify: FAIL — git ls-files found 0 .duo files; the census did not run")
         return 3
@@ -234,13 +241,13 @@ main(): i64
     -- The reference haystack: what a gate could plausibly run. build.zig and
     -- CI are the entry points; scripts/*.duo are the gates themselves. This
     -- file is excluded from it (see SELF-EXCLUSION in the header).
-    _capture("cd " .. root .. " && { cat build.zig 2>/dev/null; "
-        .. "git ls-files 'scripts/*.duo' | grep -v corpus_classify | tr '\\n' '\\0' "
-        .. "| xargs -0 cat 2>/dev/null; "
-        .. "find .github -type f 2>/dev/null | tr '\\n' '\\0' | xargs -0 cat 2>/dev/null; "
-        .. "} > " .. _HAY)
-    hay_bytes: i64 = to(i64)(std.script.chomp(_capture("wc -c < " .. _HAY .. " 2>/dev/null")))
-    if hay_bytes == 0
+    --
+    -- The group is a SUBSHELL, not a `{ …; }` brace group: a brace in a string
+    -- literal is an interpolation hole in Pass 100, and `{ cat build.zig` would
+    -- be read as one. `( … )` groups identically for a redirect.
+    shell("cd {root} && ( cat build.zig 2>/dev/null; git ls-files 'scripts/*.duo' | grep -v corpus_classify | tr '\\n' '\\0' | xargs -0 cat 2>/dev/null; find .github -type f 2>/dev/null | tr '\\n' '\\0' | xargs -0 cat 2>/dev/null; ) > {haystack}")
+    haybytes: i64 = to(i64)(std.script.chomp(shell("wc -c < {haystack} 2>/dev/null")))
+    if haybytes == 0
         print("corpus_classify: FAIL — reference haystack is empty; every UNREF would be a lie")
         return 3
     end
@@ -252,20 +259,21 @@ main(): i64
     -- in it is run by name-less enumeration. Counting only filenames would
     -- report 60-odd live gate fixtures as dead scratch.
     pats: str = ""
-    for _i, f in files
-        pats = pats .. f .. "\n" .. _base(f) .. "\n"
+    for i, f in files
+        b: str = base(f)
+        pats = "{pats}{f}\n{b}\n"
         -- Only NESTED directories, and every one of them up the chain. A bare
         -- top-level name like `examples` or `lib` occurs in unrelated prose and
         -- would mark the whole tree live, so it is excluded.
-        d: str = _dir(f)
-        while _segments(d) >= 1
-            pats = pats .. d .. "\n"
-            d = _dir(d)
+        d: str = parent(f)
+        while depth(d) >= 1
+            pats = "{pats}{d}\n"
+            d = parent(d)
         end
     end
-    std.script.fs_write(_PAT, pats)
+    std.script.fs_write(needles, pats)
     refs = {}
-    for _i, h in _lines(_capture("grep -o -F -f " .. _PAT .. " " .. _HAY .. " 2>/dev/null | sort -u"))
+    for i, h in cut(shell("grep -o -F -f {needles} {haystack} 2>/dev/null | sort -u"))
         refs[h] = 1
     end
 
@@ -274,57 +282,58 @@ main(): i64
     -- reference from build.zig" says nothing about it. Derived, not listed:
     -- adding another in-tree app must not require editing this gate.
     approot = {}
-    n_app = 0
-    for _i, f in files
-        if _base(f) == "build.duo"
-            d: str = _dir(f)
+    napp = 0
+    for i, f in files
+        if base(f) == "build.duo"
+            d: str = parent(f)
             if d != ""
                 approot[d] = 1
-                n_app += 1
+                napp += 1
             end
         end
     end
-    print("  apps      " .. to(str)(n_app) .. " in-tree application roots (own build.duo)")
+    napps: str = to(str)(napp)
+    print("  apps      {napps} in-tree application roots (own build.duo)")
 
-    n_canon = 0
-    n_compat = 0
-    n_foreign = 0
-    n_neg = 0
-    n_hist = 0
-    n_gen = 0
-    n_none = 0
-    t_exact = 0
-    t_family = 0
-    t_default = 0
+    ncanon = 0
+    ncompat = 0
+    nforeign = 0
+    nneg = 0
+    nhist = 0
+    ngen = 0
+    nnone = 0
+    texact = 0
+    tfamily = 0
+    tdefault = 0
     unclassified: str = ""
     canon: str = ""
     c1: str = ""
-    n_c1 = 0
+    nc1 = 0
     c2: str = ""
-    n_c2 = 0
+    nc2 = 0
     emit: bool = std.script.getenv("CORPUS_CLASSIFY_EMIT", "") != ""
     rows: str = ""
 
-    for _i, f in files
+    for i, f in files
         cls: str = ""
-        tier: str = ""
+        pin: str = ""
         j: i64 = 1
         while j <= #rpre and cls == ""
-            if _starts(f, rpre[j])
+            if starts(f, rpre[j])
                 cls = rcls[j]
-                tier = rtier[j]
+                pin = rpin[j]
                 rhit[j] = rhit[j] + 1
             end
             j += 1
         end
 
-        referenced: bool = refs[f] == 1 or refs[_base(f)] == 1
-        fdir: str = _dir(f)
-        while _segments(fdir) >= 1
+        referenced: bool = refs[f] == 1 or refs[base(f)] == 1
+        fdir: str = parent(f)
+        while depth(fdir) >= 1
             if refs[fdir] == 1
                 referenced = true
             end
-            fdir = _dir(fdir)
+            fdir = parent(fdir)
         end
         mark: str = "UNREF"
         if referenced
@@ -332,92 +341,105 @@ main(): i64
         end
 
         if cls == "canonical"
-            n_canon += 1
-            if f != _SELF
-                canon = canon .. root .. "/" .. f .. "\n"
+            ncanon += 1
+            if f != here
+                canon = "{canon}{root}/{f}\n"
             end
             -- C2: scratch inside the enforced partition. Two exemptions, both
             -- earned: lib/ is reached by `req` so build.zig never names it,
             -- and an application subtree is reached by its own build.duo.
-            in_app: bool = false
-            adir: str = _dir(f)
+            inapp: bool = false
+            adir: str = parent(f)
             while adir != ""
                 if approot[adir] == 1
-                    in_app = true
+                    inapp = true
                 end
-                adir = _dir(adir)
+                adir = parent(adir)
             end
-            if not referenced and not _starts(f, "lib/") and not in_app
-                n_c2 += 1
-                if n_c2 <= 12
-                    c2 = c2 .. "    " .. f .. "\n"
+            if not referenced and not starts(f, "lib/") and not inapp
+                nc2 += 1
+                if nc2 <= 12
+                    c2 = "{c2}    {f}\n"
                 end
             end
         elseif cls == "compatibility"
-            n_compat += 1
+            ncompat += 1
         elseif cls == "foreign"
-            n_foreign += 1
+            nforeign += 1
         elseif cls == "negative"
-            n_neg += 1
+            nneg += 1
         elseif cls == "historical"
-            n_hist += 1
+            nhist += 1
             -- C1: "unmaintained past-epoch evidence" that a gate still runs.
             if referenced
-                n_c1 += 1
-                if n_c1 <= 12
-                    c1 = c1 .. "    " .. f .. "\n"
+                nc1 += 1
+                if nc1 <= 12
+                    c1 = "{c1}    {f}\n"
                 end
             end
         elseif cls == "generated"
-            n_gen += 1
+            ngen += 1
         else
-            n_none += 1
-            if n_none <= 12
-                unclassified = unclassified .. "    " .. f .. "\n"
+            nnone += 1
+            if nnone <= 12
+                unclassified = "{unclassified}    {f}\n"
             end
         end
 
-        if tier == "exact"
-            t_exact += 1
-        elseif tier == "family"
-            t_family += 1
-        elseif tier == "default"
-            t_default += 1
+        if pin == "exact"
+            texact += 1
+        elseif pin == "family"
+            tfamily += 1
+        elseif pin == "default"
+            tdefault += 1
         end
 
         if emit
-            rows = rows .. _pad(cls, 15) .. _pad(tier, 9) .. _pad(mark, 7) .. f .. "\n"
+            cell: str = pad(cls, 15)
+            pincell: str = pad(pin, 9)
+            refcell: str = pad(mark, 7)
+            rows = "{rows}{cell}{pincell}{refcell}{f}\n"
         end
     end
 
+    nfiles: str = to(str)(#files)
+    scanon: str = to(str)(ncanon)
+    scompat: str = to(str)(ncompat)
+    sforeign: str = to(str)(nforeign)
+    sneg: str = to(str)(nneg)
+    shist: str = to(str)(nhist)
+    sgen: str = to(str)(ngen)
     print("")
-    print("corpus census (" .. to(str)(#files) .. " tracked .duo files)")
-    print("  canonical      " .. to(str)(n_canon) .. "   deny table applies")
-    print("  compatibility  " .. to(str)(n_compat) .. "   Lua-superset input")
-    print("  foreign        " .. to(str)(n_foreign) .. "   embeds another language, or vendored")
-    print("  negative       " .. to(str)(n_neg) .. "   denied text IS the assertion")
-    print("  historical     " .. to(str)(n_hist) .. "   past-epoch evidence, unmaintained")
-    print("  generated      " .. to(str)(n_gen) .. "   fix the generator, not the file")
+    print("corpus census ({nfiles} tracked .duo files)")
+    print("  canonical      {scanon}   deny table applies")
+    print("  compatibility  {scompat}   Lua-superset input")
+    print("  foreign        {sforeign}   embeds another language, or vendored")
+    print("  negative       {sneg}   denied text IS the assertion")
+    print("  historical     {shist}   past-epoch evidence, unmaintained")
+    print("  generated      {sgen}   fix the generator, not the file")
 
-    if n_none != 0
+    if nnone != 0
+        snone: str = to(str)(nnone)
         print("")
-        print("corpus_classify: FAIL — " .. to(str)(n_none)
-            .. " tracked .duo files match no rule in docs/spec/corpus.md:")
+        print("corpus_classify: FAIL — {snone} tracked .duo files match no rule in docs/spec/corpus.md:")
         io.write(unclassified)
         print("  Classify them; there is deliberately no silent default.")
         return 1
     end
 
-    if n_canon == 0
+    if ncanon == 0
         print("corpus_classify: FAIL — canonical partition is empty; the rules cannot be right")
         return 3
     end
 
+    sexact: str = to(str)(texact)
+    sfamily: str = to(str)(tfamily)
+    sdefault: str = to(str)(tdefault)
     print("")
     print("how much of each path the rule pins")
-    print("  exact          " .. to(str)(t_exact) .. "   the rule names the file")
-    print("  family         " .. to(str)(t_family) .. "   the rule pins a purpose (2+ segments)")
-    print("  default        " .. to(str)(t_default) .. "   the rule pins one top-level tree — POLICY, not evidence")
+    print("  exact          {sexact}   the rule names the file")
+    print("  family         {sfamily}   the rule pins a purpose (2+ segments)")
+    print("  default        {sdefault}   the rule pins one top-level tree — POLICY, not evidence")
 
     print("")
     print("rules, in order (first match wins)")
@@ -430,53 +452,53 @@ main(): i64
             flag = "!!"
             dead += 1
         end
-        print("  " .. flag .. " " .. _pad(rcls[k], 14) .. _pad(rtier[k], 9)
-            .. _pad(to(str)(rhit[k]), 8) .. rpre[k])
+        cell: str = pad(rcls[k], 14)
+        pincell: str = pad(rpin[k], 9)
+        hits: str = pad(to(str)(rhit[k]), 8)
+        pre: str = rpre[k]
+        print("  {flag} {cell}{pincell}{hits}{pre}")
         k += 1
     end
     if dead != 0
-        print("  !! " .. to(str)(dead)
-            .. " rule(s) match nothing. A rule that binds no file is not a rule.")
+        sdead: str = to(str)(dead)
+        print("  !! {sdead} rule(s) match nothing. A rule that binds no file is not a rule.")
     end
 
     -- C3 and C4 read the canonical partition's CONTENT, so they need the list.
-    std.script.fs_write(_LIST, canon)
-    listed: i64 = to(i64)(std.script.chomp(_capture("wc -l < " .. _LIST)))
+    std.script.fs_write(listing, canon)
+    listed: i64 = to(i64)(std.script.chomp(shell("wc -l < {listing}")))
     if listed == 0
         print("corpus_classify: FAIL — canonical list is empty on disk; the content checks cannot run")
         return 3
     end
     q: str = "'"
-    c3n: i64 = to(i64)(std.script.chomp(_capture(
-        "tr '\\n' '\\0' < " .. _LIST .. " | xargs -0 grep -l -i -E "
-        .. q .. "generated by|do not edit|auto-generated" .. q
-        .. " 2>/dev/null | grep -c . || true")))
-    c3: str = _capture(
-        "tr '\\n' '\\0' < " .. _LIST .. " | xargs -0 grep -l -i -E "
-        .. q .. "generated by|do not edit|auto-generated" .. q
-        .. " 2>/dev/null | sed " .. q .. "s|" .. root .. "/||" .. q .. " | head -12")
-    c4n: i64 = to(i64)(std.script.chomp(_capture(
-        "tr '\\n' '\\0' < " .. _LIST .. " | xargs -0 grep -l -E "
-        .. q .. "@c\\.emit|@comp\\.c\\.emit|@lua\\(|@foreign\\(|@ffi\\(" .. q
-        .. " 2>/dev/null | grep -c . || true")))
+    marker: str = "tr '\\n' '\\0' < {listing} | xargs -0 grep -l -i -E {q}generated by|do not edit|auto-generated{q} 2>/dev/null"
+    nc3: i64 = to(i64)(std.script.chomp(shell("{marker} | grep -c . || true")))
+    c3: str = shell("{marker} | sed {q}s|{root}/||{q} | head -12")
+    embeds: str = "tr '\\n' '\\0' < {listing} | xargs -0 grep -l -E {q}@c\\.emit|@comp\\.c\\.emit|@lua\\(|@foreign\\(|@ffi\\({q} 2>/dev/null"
+    nc4: i64 = to(i64)(std.script.chomp(shell("{embeds} | grep -c . || true")))
 
+    sc1: str = to(str)(nc1)
+    sc2: str = to(str)(nc2)
+    sc3: str = to(str)(nc3)
+    sc4: str = to(str)(nc4)
     print("")
     print("contradictions — where the class and the evidence disagree")
-    print("  C1  historical yet gate-referenced       " .. to(str)(n_c1))
-    if n_c1 != 0
+    print("  C1  historical yet gate-referenced       {sc1}")
+    if nc1 != 0
         io.write(c1)
         print("      (first 12; \"unmaintained\" is false for a file build.zig runs)")
     end
-    print("  C2  canonical, unreferenced, outside lib " .. to(str)(n_c2))
-    if n_c2 != 0
+    print("  C2  canonical, unreferenced, outside lib {sc2}")
+    if nc2 != 0
         io.write(c2)
         print("      (first 12; scratch inside the partition the deny table enforces)")
     end
-    print("  C3  canonical yet carries a generator marker  " .. to(str)(c3n))
-    if c3n != 0
+    print("  C3  canonical yet carries a generator marker  {sc3}")
+    if nc3 != 0
         io.write(c3)
     end
-    print("  C4  canonical yet embeds another language     " .. to(str)(c4n))
+    print("  C4  canonical yet embeds another language     {sc4}")
     print("      (named, not failed: lib/std embedding C is sanctioned, while")
     print("       examples/c_emit_* is `foreign` for the same act — one of these is wrong)")
 
@@ -486,7 +508,6 @@ main(): i64
     end
 
     print("")
-    print("corpus_classify: PASS — " .. to(str)(#files) .. " files, 0 unclassified, "
-        .. to(str)(t_default) .. " resolved by a top-level policy default")
+    print("corpus_classify: PASS — {nfiles} files, 0 unclassified, {sdefault} resolved by a top-level policy default")
     0
 end

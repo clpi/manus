@@ -3,16 +3,16 @@ io.lsp = {}
 
 -- ── byte predicates ──────────────────────────────────────────────────────────
 fun is_ident_start(b: any) -> bool
-  return b >= 65 and b <= 90 or b >= 97 and b <= 122 or b == 95
+  b >= 65 and b <= 90 or b >= 97 and b <= 122 or b == 95
 end
 fun is_ident_char(b: any) -> bool
-  return b >= 65 and b <= 90 or b >= 97 and b <= 122 or b >= 48 and b <= 57 or b == 95
+  b >= 65 and b <= 90 or b >= 97 and b <= 122 or b >= 48 and b <= 57 or b == 95
 end
 fun is_word_char_byte(b: any) -> bool
-  return b >= 48 and b <= 57 or b >= 65 and b <= 90 or b >= 97 and b <= 122 or b == 95 or b == 46 or b == 36 or b == 64
+  b >= 48 and b <= 57 or b >= 65 and b <= 90 or b >= 97 and b <= 122 or b == 95 or b == 46 or b == 36 or b == 64
 end
 fun is_space_byte(b: any) -> bool
-  return b == 32 or b == 9 or b == 10 or b == 13
+  b == 32 or b == 9 or b == 10 or b == 13
 end
 
 -- ── string helpers ───────────────────────────────────────────────────────────
@@ -59,7 +59,7 @@ fun starts_with(s, prefix) -> bool
   if s == nil then
     return false
   end
-  return string.sub(s, 1, string.len(prefix)) == prefix
+  string.sub(s, 1, string.len(prefix)) == prefix
 end
 fun ends_with(s, suffix) -> bool
   if s == nil then
@@ -68,7 +68,7 @@ fun ends_with(s, suffix) -> bool
   if string.len(suffix) > string.len(s) then
     return false
   end
-  return string.sub(s, string.len(s) - string.len(suffix) + 1) == suffix
+  string.sub(s, string.len(s) - string.len(suffix) + 1) == suffix
 end
 fun trim(s) -> str
   if s == nil then
@@ -338,7 +338,7 @@ fun starts_keyword(s, kw) -> bool
   if n == k then
     return true
   end
-  return not is_ident_char(string.byte(r, k + 1))
+  not is_ident_char(string.byte(r, k + 1))
 end
 fun count_keyword(s, word) -> i64
   c = 0
@@ -366,10 +366,10 @@ fun count_keyword(s, word) -> i64
   c
 end
 fun count_end(s) -> i64
-  return count_keyword(s, "end")
+  count_keyword(s, "end")
 end
 fun is_block_opener(kw: any) -> bool
-  return kw == "fun" or kw == "function" or kw == "enum" or kw == "concept" or kw == "match" or kw == "if" or kw == "while" or kw == "for" or kw == "do" or kw == "begin" or kw == "struct"
+  kw == "fun" or kw == "function" or kw == "enum" or kw == "concept" or kw == "match" or kw == "if" or kw == "while" or kw == "for" or kw == "do" or kw == "begin" or kw == "struct"
 end
 fun kind_of(kw: any) -> any
   if kw == "fun" or kw == "function" then
@@ -381,7 +381,7 @@ fun kind_of(kw: any) -> any
   if kw == "concept" then
     return 11
   end
-  return 23
+  23
 end
 fun kind_label(k) -> str
   if k == 12 then
@@ -1061,7 +1061,7 @@ end
 
 -- ── JSON helpers ─────────────────────────────────────────────────────────────
 fun shell_quote(s) -> str
-  return "'" .. string.gsub(s, "'", "'\\''") .. "'"
+  "'" .. string.gsub(s, "'", "'\\''") .. "'"
 end
 fun resolve_check_flags() -> str
   f = os.getenv("DUO_LSP_CHECK_FLAGS")
@@ -1151,7 +1151,7 @@ io.lsp.ws._texts = {}
 io.lsp.root_uri = nil
 
 fun now_secs() -> i64
-  return os.time()
+  os.time()
 end
 fun doc_for(uri) -> any
   d = io.lsp.docs[uri]
@@ -1601,7 +1601,7 @@ fun completion_kind_for_symbol(k) -> i64
   if k == 14 then
     return 21
   end
-  return 13
+  13
 end
 fun add_completion(out, seen, label, kind, detail, insert_text, sort_text) -> void
   if label == nil or label == "" then

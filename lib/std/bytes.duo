@@ -4,7 +4,7 @@
 
 -- Create a byte buffer from a string (zero-copy view of string bytes)
 from_string(s: str): any
-    return { data = s, pos = 1, len = #s }
+    { data = s, pos = 1, len = #s }
 end
 
 -- Read one byte at current position, advance cursor
@@ -12,7 +12,7 @@ read_byte(buf: any): i64
     if buf.pos > buf.len return -1 end
     b = buf.data:byte(buf.pos)
     buf.pos = buf.pos + 1
-    return b
+    b
 end
 
 -- Read a u32 (little-endian) from cursor
@@ -23,7 +23,7 @@ read_u32_le(buf: any): i64
     b2 = buf.data:byte(buf.pos + 2)
     b3 = buf.data:byte(buf.pos + 3)
     buf.pos = buf.pos + 4
-    return b0 + b1 * 256 + b2 * 65536 + b3 * 16777216
+    b0 + b1 * 256 + b2 * 65536 + b3 * 16777216
 end
 
 -- Read a u16 (little-endian) from cursor
@@ -32,7 +32,7 @@ read_u16_le(buf: any): i64
     b0 = buf.data:byte(buf.pos)
     b1 = buf.data:byte(buf.pos + 1)
     buf.pos = buf.pos + 2
-    return b0 + b1 * 256
+    b0 + b1 * 256
 end
 
 -- Read LEB128-encoded unsigned integer (used extensively in Wasm binary format)
@@ -48,7 +48,7 @@ read_leb128_u(buf: any): i64
         shift = shift + 7
         if shift >= 35 return -1 end
     end
-    return result
+    result
 end
 
 -- Read LEB128-encoded signed integer
@@ -69,7 +69,7 @@ read_leb128_s(buf: any): i64
         end
         if shift >= 70 return -1 end
     end
-    return result
+    result
 end
 
 -- Read N bytes as a substring
@@ -77,17 +77,17 @@ read_bytes(buf: any, n: i64): str
     if buf.pos + n - 1 > buf.len return "" end
     result = buf.data:sub(buf.pos, buf.pos + n - 1)
     buf.pos = buf.pos + n
-    return result
+    result
 end
 
 -- Remaining bytes in buffer
 remaining(buf: any): i64
-    return buf.len - buf.pos + 1
+    buf.len - buf.pos + 1
 end
 
 -- Check if at end
 is_eof(buf: any): bool
-    return buf.pos > buf.len
+    buf.pos > buf.len
 end
 
 -- Skip N bytes
@@ -97,5 +97,5 @@ end
 
 -- Current position (1-indexed)
 position(buf: any): i64
-    return buf.pos
+    buf.pos
 end

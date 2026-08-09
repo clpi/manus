@@ -221,11 +221,12 @@ rows = {
 }
 
 -- Every unique fixture, and every row's membership, are derived from `rows`.
-files = {}
-seen = {}
-probe = {}
-host = {}
-
+--
+-- The four tables that hold them are LOCAL TO `main` and threaded through
+-- `remember` as arguments. They were module-scope `x = {}` bindings, which is
+-- the `mwrapper` deny row (`audit100` cannot tell a mutable accumulator from an
+-- `M = {}` module wrapper), and nothing outside `main` ever read them — the
+-- module scope was reach this file never used.
 nofixture = ""
 denyrows = ""
 denyfail = 0
@@ -248,7 +249,7 @@ weave(lines: any): str
     out
 end
 
-remember(path: str): void
+remember(files: any, seen: any, path: str): void
     if seen[path] == nil
         seen[path] = 1
         files[#files + 1] = path
@@ -454,6 +455,10 @@ pad(s: str, w: i64): str
 end
 
 main = (): i64
+    files = {}
+    seen = {}
+    probe = {}
+    host = {}
     duo = std.script.getenv("DUO", "./zig-out/bin/duo")
     jobs = std.script.getenv("CAPROWS_JOBS", "8")
     limit = std.script.getenv("CAPROWS_TIMEOUT", "20")
@@ -501,14 +506,14 @@ main = (): i64
                 print("capability_rows: FAIL — row '{nm}' names a missing fixture {f}")
                 return 3
             end
-            remember(f)
+            remember(files, seen, f)
         end
         for fi, f in r[4]
             if not std.script.fs_exists(f)
                 print("capability_rows: FAIL — row '{nm}' names a missing deny fixture {f}")
                 return 3
             end
-            remember(f)
+            remember(files, seen, f)
         end
     end
     if #files == 0
@@ -531,9 +536,9 @@ main = (): i64
     std.script.run("cp {good} {ctlsyntax} && printf 'if if if\\n' >> {ctlsyntax}")
     std.script.run("cp {good} {ctltype} && printf 'bad: i64 = \"notanumber\"\\n' >> {ctltype}")
     std.script.run("sed 's/^-- expect: .*/-- expect: 99 99 99/' {good} > {ctlvalue}")
-    remember(ctlsyntax)
-    remember(ctltype)
-    remember(ctlvalue)
+    remember(files, seen, ctlsyntax)
+    remember(files, seen, ctltype)
+    remember(files, seen, ctlvalue)
 
     listpath = "{work}/files.list"
     listing = ""
