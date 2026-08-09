@@ -2933,9 +2933,70 @@ pub const Sema = struct {
         };
     }
 
+    /// GAP-059 — the half of the `@` token that ADJACENCY did not reconcile.
+    ///
+    /// Pass 100 §2 gives `@` exactly two surviving stances, the DYAD: bare `@`
+    /// NAMES the enclosing descriptor, and postfix `X@rel` MOVES the anchor and
+    /// RETRIEVES. Neither is a binary operator over values. `3f6ec4e` gave the
+    /// GLUED spelling to the anchor — `at_is_glued_anchor` in `src/parser.zig`
+    /// reads `p@x` as a SUFFIX beside `.field` and `[i]`, agreeing with
+    /// `lib/std/compiler/parser.duo`, pinned by value at 353 in
+    /// `examples/spec100/anchormove.duo`.
+    ///
+    /// `infix_prec` still maps the `@` token to `.matmul`, so the SPACED
+    /// spelling kept everything the glued one shed:
+    ///
+    ///     print(p @ x)
+    ///     -> warning: infix '@' matmul is non-canonical
+    ///     -> ✓ checked — no errors                       exit 0
+    ///     -> error: use of undeclared identifier 'x'
+    ///
+    /// `duo check` exiting 0 on a construct the compiler has no meaning for is
+    /// the defect, and adjacency narrowed it rather than removing it. The
+    /// tensor product is NOT the defect: `Tensor[M,K] @ Tensor[K,N]` is a real,
+    /// shape-checked operation with real fixtures
+    /// (`examples/compile_fail/tensor_matmul_k_mismatch.duo`), and it is the
+    /// only spelling that operation has today.
+    ///
+    /// So the verdict is a TYPE question, not a lexical one, which is why it
+    /// lives here and not in the parser: the parser sees one token and no
+    /// types, and cannot tell `x @ y` over two tensors from `p @ x` over a
+    /// record. Sema can. Until now sema held no belief about `@` at all — 19
+    /// decision sites in `parser.zig`, 0 here — which is exactly how the two
+    /// subsystems came to disagree in the first place.
+    ///
+    /// Returns true when the operands are both tensors (checking continues to
+    /// the shape rules). Returns false after reporting, which is the honest
+    /// answer for every other operand pair. `.lua` files are untouched: the
+    /// gate is `duo_mode`, the same switch `comptime` already errors through,
+    /// and `examples/compile_fail/anchor_infix_at.lua` is the positive control
+    /// that fails if that guard is ever dropped.
+    ///
+    /// The repair the hint names is the SPACE, because after `3f6ec4e` there is
+    /// a working spelling one column to the left. That is the whole reason this
+    /// can be a hard error and not a warning: refusing a construct whose repair
+    /// does not exist would make the corpus unmigratable.
+    fn check_infix_at(self: *Sema, loc: ast.Loc, lt: RT, rt: RT) bool {
+        if (lt == .tensor and rt == .tensor) {
+            self.warn_msg(loc, "warning: infix '@' matmul is non-canonical; prefer explicit tensor APIs or typed helpers", .{});
+            return true;
+        }
+        self.err(loc, "infix '@' has no meaning in .duo: it parsed as the matmul operator over non-tensor operands", .{});
+        // Unconditional, not `hint_msg`: `hints_enabled` is off under
+        // `duo check`, and a refusal with no repair makes the corpus
+        // unmigratable — the rule `scripts/run_compile_fail_tests.duo` states
+        // over its own rows. The `.@name` refusal hints the same way.
+        term.locHint(loc, "the anchor is the GLUED form: close the space and 'X @ rel' becomes 'X@rel', which moves the anchor and retrieves. A spaced '@' is the matmul operator, and that needs both operands to be Tensor[..]", .{});
+        return false;
+    }
+
     fn check_binop(self: *Sema, loc: ast.Loc, op: ast.BinOp, lhs: *ast.Expr, rhs: *ast.Expr) SemaError!RT {
         const lt = try self.check_expr(lhs);
         const rt = try self.check_expr(rhs);
+
+        if (op == .matmul and self.duo_mode) {
+            if (!self.check_infix_at(loc, lt, rt)) return .any;
+        }
 
         // Handle vector operations
         if (lt.is_vector() or rt.is_vector()) {
@@ -12893,6 +12954,53 @@ test "sema: tensor matmul infers output shape" {
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
     s.duo_mode = true;
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+// GAP-059. Three rows, and the last two are the load-bearing ones: a gate with
+// no positive control is a gate that can be silently always-on. Row 1 is the
+// refusal of a SPACED `@` over non-tensors, row 2 is `.lua` still holding the
+// operator, row 3 is the tensor product still legal in `.duo` — asserted by
+// "sema: tensor matmul infers output shape" directly above, which runs with
+// duo_mode = true and expects zero errors.
+//
+// The GLUED spelling never reaches here at all: after 3f6ec4e the parser reads
+// `p@x` as an anchor suffix, so it is a `field` node, not a binop. That is the
+// fourth row and it lives where it belongs, in
+// `examples/spec100/anchormove.duo`, as a VALUE.
+test "sema: duo mode infix @ over non-tensor operands is an error" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\fun f(a: i64, b: i64): i64
+        \\  return a @ b
+        \\end
+    ;
+    var lex = Lexer.init(src, "test.duo");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.duo_mode = true;
+    try s.check_module(&mod);
+    try testing.expect(s.errors > 0);
+}
+
+test "sema: lua mode infix @ over non-tensor operands is not an error" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\fun f(a, b)
+        \\  return a @ b
+        \\end
+    ;
+    var lex = Lexer.init(src, "test.lua");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.duo_mode = false;
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
 }

@@ -4627,11 +4627,14 @@ pub const Parser = struct {
                         "warning: '|>' is a non-canonical pipeline operator; prefer f(x), map(data, .field), or nested calls",
                         .{},
                     ),
-                    .matmul => term.locWarn(
-                        tok.loc,
-                        "warning: infix '@' matmul is non-canonical; prefer explicit tensor APIs or typed helpers",
-                        .{},
-                    ),
+                    // GAP-059 — infix `@` used to warn HERE and then let the
+                    // program through. The verdict moved to `check_infix_at`
+                    // in sema.zig, because it is a TYPE question the parser
+                    // cannot answer: `x @ y` over two tensors is a real,
+                    // shape-checked operation with fixtures, and `p@x` over a
+                    // record is the spec's anchor spelling with no meaning in
+                    // this front end. Warning at both sites would print
+                    // "Duo accepted the code" beside a hard error.
                     else => {},
                 }
             }

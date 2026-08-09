@@ -129,6 +129,18 @@ run_fail("examples/compile_fail/offside_end_column.duo", "closes a block opened 
 -- and a wrong value that type-checks is exactly the thing a value fixture
 -- cannot pin. See docs/anchor_stance_conflict.md row 3.
 run_fail("examples/compile_fail/anchor_metafield.duo", "is not an anchor stance")
+-- GAP-059 — the half of the `@` token adjacency did not reconcile. 3f6ec4e
+-- gave the GLUED spelling to the anchor (`p@x` retrieves; anchormove.duo pins
+-- it at 353), but `infix_prec` still maps the token to `.matmul`, so the
+-- SPACED spelling kept the false green: `p @ x` warned, checked clean, exited
+-- 0, and then handed the C backend an identifier the user never wrote. This
+-- row asserts the refusal; the row under it asserts the .lua twin still
+-- compiles, which is what proves the operator was gated on the dialect rather
+-- than removed. The pattern is the refusal line, and the hint beside it names
+-- the repair — close the space — which is the only reason this can be an error
+-- instead of a warning.
+run_fail("examples/compile_fail/anchor_infix_at.duo", "has no meaning in .duo")
+run_ok("examples/compile_fail/anchor_infix_at.lua")
 
 -- Pass 100 §1 — deny-table rows enforced at the .duo surface. Each row is a
 -- pair — the .duo file must be rejected, and its byte-identical .lua twin must
