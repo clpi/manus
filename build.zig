@@ -339,6 +339,20 @@ pub fn build(b: *std.Build) void {
     const capability_scan_step = b.step("capability-scan", "Pass 105 U1: ambient fs/net/clock/rand/proc/fault reach in lib/std; ratchets");
     capability_scan_step.dependOn(&capability_scan_cmd.step);
 
+    // RECOGNITION -- Pass 116 section 0a, the AUDIT v4 row, executable. It is a
+    // step of its own rather than a row inside audit100 because the whole
+    // finding is that `math.` is TWO rules: pure ops that want a value edge and
+    // carry no capability, and `math.random`, which is ambient authority and is
+    // the ENTIRE `rand` class the capability scan ratchets. One averaged budget
+    // would hide that. It also probes its own two blockers live -- the value
+    // edge is built AND RUN, never merely `check`ed, because `duo check` exits
+    // 0 on `x:abs()` and only codegen rejects it.
+    const recognition_scan_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/recognition_scan.duo" });
+    recognition_scan_cmd.setCwd(b.path("."));
+    recognition_scan_cmd.step.dependOn(b.getInstallStep());
+    const recognition_scan_step = b.step("recognition-scan", "Pass 116 s0a: std.mem/std.fmt/std.math and bare math. in lib/std; ratchets");
+    recognition_scan_step.dependOn(&recognition_scan_cmd.step);
+
     // The first sixty seconds of a new user's life, gated. src/build_framework.zig's
     // tests drive parser+sema in-process and stayed green while `duo init` emitted a
     // src/main.duo that `duo check`, `duo build` and `duo run` all rejected. Only a
