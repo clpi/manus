@@ -2860,3 +2860,73 @@ evidence = law{
     fails = "A TEST RESULT WHOSE EVIDENCE ANOTHER RUN CAN OVERWRITE IS NOT A FACT"
     why   = "the same law as everywhere else — one fact, one authority, explicit provenance — applied to the artifacts a gate reads. Three sessions today each reported a red they could not attribute, and each had to rebuild from `git archive` to find out whose it was."
 }
+
+-- ═══ §63 · THE BOUNDARY EVERY RECONSTRUCTION IS DOWNSTREAM OF ══════════════
+--
+-- MEASURED 2026-08-09, `src/dnir_lower.zig:340`:
+--
+--     graph: ?*const semantic_graph.SemanticGraph
+--     -- "Pass 16 hook: optional semantic graph for provenance/transform ordering"
+--
+-- So the actual architecture is `AST -> DNIR`, with the graph applied AFTERWARD
+-- to reorder functions and attach stable ids. Not `AST -> graph -> demand ->
+-- realization`. **Every reconstruction side table is a consequence of this.**
+
+authority = law{
+    id    = "law.graph.authority"
+    kind  = .invariant
+    holds = .queryable
+    binds = {
+        "native realization RECEIVES the semantic substrate; it is not optional metadata",
+        "the lowerer ASKS — descriptor(result(relation)), descriptor(value), relation(call), effect, world, demand — and gets ONE answer",
+        "the graph is the authoritative IDENTITY and PROVENANCE substrate; a fact attached to an identity has one authoritative SOURCE and is queryable at realization",
+    }
+    keep  = "ONE LOGICAL AUTHORITY, NOT ONE LITERAL STRUCTURE. A descriptor fact may physically live in a graph node, an interned table, a side arena or a query cache — turning the graph into a giant mutable compiler database would trade one architecture problem for a performance one."
+    why   = "without this boundary, deleting reconstruction map #1 simply creates map #2. Opcode cleanup before it makes dnir prettier while the architecture stays broken."
+    fails = "a lowerer that re-derives from the ast what sema already established"
+}
+
+-- COUNT SEMANTIC RECONSTRUCTIONS, NOT DATA STRUCTURES. Two maps may legitimately
+-- project two independent dimensions; one function may reconstruct five facts.
+-- Measured and CORRECTED already: `module_consts.ints` and function-local
+-- `const_ints` encode genuinely different SCOPE facts and must not be fused.
+reconstructrow = { "fact", "authority", "consumer", "projection or query or RECONSTRUCTION" }
+reconstructwarn = "hpls pressure applied to a structure count causes destructive fusion — the metric is the fact, not the table"
+
+-- ═══ §64 · TWO AXES, AND ONE MAY NEVER SUBSTITUTE FOR THE OTHER ════════════
+--
+-- Measured together they read as contradiction, and both are true: the zig
+-- ledger went 237 -> 115 and sh/py to 0, while gap[062] reports the stage table
+-- UNMOVED — realize and flow absent, linking still shelling to `xcrun cc` — and
+-- `codegen.zig` GREW 34,780 -> 35,704.
+
+axes = {
+    horizontal = { "foreign files", "generated foreign projections", "shell and python dependencies", "duplicated tooling" },
+    vertical   = { "graph authoritative", "realize exists", "flow exists", "allocator exists", "encoder consumes the realized graph", "linker sovereign", "evaluator self-hosted" },
+}
+
+axes.rule = "NEVER LET HORIZONTAL SOVEREIGNTY SUBSTITUTE FOR VERTICAL DESCENT — they are scored separately or a repository compression reads as an architecture"
+
+-- codegen.zig absorbing responsibility instead of surrendering it is the failure
+-- a file count cannot see. The budget is on RESPONSIBILITIES, not lines: a
+-- migration may add adapters, but every new semantic capability names its target
+-- owner, and nothing lands in codegen merely because that is where native
+-- behaviour currently works.
+codegen.budget = "semantic responsibilities monotonically DECREASE"
+
+gatelive = law{
+    id    = "law.gate.live"
+    kind  = .invariant
+    holds = .reachable
+    binds = {
+        "an authoritative checker not reachable from a NAMED AGGREGATE GATE is not a checker",
+        "a check declares its owner, input, output and aggregate as ordinary facts",
+        "the build DERIVES its gate topology from those facts rather than wiring each command by hand",
+    }
+    why   = "four instruments were found this week that existed and never ran, each recorded as delivered — one of them cited by TWO gaps as already existing when it had never been written. The pattern is structural, not careless."
+}
+
+-- `unsupported/` is a CAPABILITY FRONTIER, not a graveyard: it means "proven not
+-- to pass the required native gate today", never "someone once thought this was
+-- unsupported". Promotion is AUTOMATIC the moment a program compiles and agrees.
+unsupported.means = "proven not to pass the required gate today; promotion is automatic on agreement"
