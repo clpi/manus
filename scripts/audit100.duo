@@ -66,6 +66,13 @@
 -- counts are stable across repeat runs.
 
 _SELF = "scripts/audit100.duo"
+-- The constitution is excluded for the SAME reason audit100 excludes itself:
+-- its text is DATA. `law.arch.relation` must be able to name `addnode` and
+-- `add_node` as the spellings it forbids, and `law.fact.one` must show the
+-- two-write anti-pattern it rules out. A deny-grep over the law convicts the
+-- law for citing the law. Exclusion is NOT a budget: the file is canonical, it
+-- passes `duo check`, and every rule it states is enforced on every other file.
+_LAW = "docs/spec/constitution.duo"
 _LIST = std.script.getenv("AUDIT100_LIST", "/tmp/duo_audit100_canonical.list")
 
 -- The string-body strip, as a shell fragment. Two passes, in this order:
@@ -292,7 +299,7 @@ main(): i64
         end
         if cls == "canonical"
             n_canon += 1
-            if f != _SELF
+            if f != _SELF and f != _LAW
                 written += 1
                 canon = canon .. root .. "/" .. f .. "\n"
             end
@@ -1181,14 +1188,14 @@ main(): i64
     nfresh = 0
     for _i, f in _lines(std.script.capture("cd " .. root
         .. " && git diff --name-only HEAD -- '*.duo' 2>/dev/null"))
-        if f != _SELF and _canon(rcls, rpre, f)
+        if f != _SELF and f != _LAW and _canon(rcls, rpre, f)
             nch += 1
             chall = chall .. f .. "\n"
         end
     end
     for _i, f in _lines(std.script.capture("cd " .. root
         .. " && git ls-files -o --exclude-standard -- '*.duo' 2>/dev/null"))
-        if f != _SELF and _canon(rcls, rpre, f)
+        if f != _SELF and f != _LAW and _canon(rcls, rpre, f)
             nch += 1
             nfresh += 1
             chall = chall .. f .. "\n"

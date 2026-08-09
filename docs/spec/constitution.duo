@@ -758,3 +758,113 @@ final = law{
     binds = { "no competing semantic systems", "all meaning reduces to here" }
     fails = "a second place where meaning is decided"
 }
+
+-- ═══ §36 · what the twenty-point review added, and nothing more ════════════
+--
+-- Five rulings the adjudication produced that no fact above carries yet. Added
+-- rather than restated: every other point of that review was already law here.
+
+-- SELF-ZERO deletes a PARAMETER, not a PROOF. Unspecified, the ambient subject
+-- becomes a second borrowing mechanism by accident — `capture = () .` and a
+-- nested `f = () () .` have to answer reference vs copy vs view vs lifetime
+-- extension, and each answer touches closures, regions, ownership, aliasing and
+-- ABI. A surface cheaper than the binding it abbreviates is how implicit
+-- borrowing gets in.
+escape = law{
+    id    = "law.escape"
+    kind  = .invariant
+    holds = .ordinary
+    binds = {
+        "the ambient subject is an ordinary semantic value",
+        "capture and escape take the same lifetime proof as any other place",
+        "no implicit borrow, no implicit copy, no lifetime extension",
+    }
+    fails = "a second borrowing mechanism nobody declared"
+}
+
+-- The memory ladder's load-bearing undefined term. `cycle-possible` is doing
+-- enormous work: dynamic tables, closures capturing tables capturing closures,
+-- foreign objects, weak refs, finalizers, resurrection, cross-thread graphs,
+-- detection latency, behaviour under memory pressure, per-object metadata.
+-- "Never a tracing collector" is a LATENCY PROMISE, so it is measured, not
+-- asserted — and lua hosting generates pathological cyclic graphs routinely,
+-- which makes the supremacy story and the memory doctrine ONE experiment.
+cycle = law{
+    id    = "law.cycle"
+    kind  = .objective
+    holds = .measured
+    binds = {
+        "cycle-possible is undefined and must be defined before it is relied on",
+        "the no-tracing promise ships with latency and throughput envelopes",
+        "the lua corpus is the designated adversary",
+    }
+    fails = "a mechanism list standing in for a latency guarantee"
+}
+
+-- The wasm engine is one very large file BECAUSE compiler defects punish
+-- decomposition. An agent reading it could conclude giant modules are idiomatic
+-- high-performance duon. THEY ARE NOT. Every such workaround is a gap with a
+-- removal fixture, and the engine is the primary language-design fuzzer: each
+-- ugly thing it needs is either inherent wasm complexity or a duon defect, and
+-- it gets adjudicated as exactly one of the two.
+workaround = law{
+    id    = "law.wasm.workaround"
+    kind  = .invariant
+    holds = .gap
+    binds = {
+        "every compiler-forced workaround is a gap with a removal fixture",
+        "the workaround count publishes and descends to zero",
+        "a compiler limitation never becomes runtime architecture",
+        "agent context must say the monolith is a defect, not a pattern",
+    }
+    fails = "an agent learning bad duon from the best evidence duon has"
+}
+
+-- Fastest AND smallest AND most featureful are conflicting dimensions, so the
+-- WHOLE matrix publishes, losses included. The external reference runtime is a
+-- moving oracle and ceiling, never an ancestor: its performance is ITS claim,
+-- and this repository may publish only its own last reproducible measurement.
+matrix = @{
+    speed   = { "startup", "cold", "warm", "jit latency", "steady", "memory", "branch", "call", "simd", "wasi" }
+    size    = { "binary", "stripped", "loc", "rss", "instance", "jit metadata", "code cache" }
+    feature = { "core spec", "wasi one", "wasi two", "simd", "threads", "atomics",
+                "exceptions", "tail calls", "memory64", "multi memory", "reftypes",
+                "component", "wit", "embedding", "aot", "jit arch" }
+    quality = { "conformance", "differential", "fuzzing", "determinism", "diagnostics", "provenance", "sandbox" }
+    proof   = { "percent canonical duon", "foreign loc", "workarounds", "native realization", "boxing", "allocation", "binary to source" }
+}
+
+release = law{
+    id    = "law.wasm.release"
+    kind  = .invariant
+    holds = .total
+    binds = {
+        "every axis of the matrix publishes, losses included",
+        "the external reference runtime is an oracle, never an ancestor",
+        "our claim cites our own reproducible measurement, never the oracle's",
+        "every runtime answers identically before any speed number is compared",
+    }
+    fails = "a correctness-free speed win, which this repository already paid for once"
+}
+
+-- Package composition is a SEMANTIC exercise owed now, not package-system
+-- detail owed later — the registry gate is currently a gate with no referent.
+-- And compatibility does not reduce to graph shape: complexity, effects,
+-- allocation, determinism, the error set, precision, ordering stability, a
+-- sealed descriptor opening, and timing observable through a foreign interface
+-- all move while the edge set stands still. A COMPUTED number that misses an
+-- effect growth is worse than a declared one, because it is trusted.
+package = law{
+    id    = "law.package"
+    kind  = .invariant
+    holds = .owed
+    binds = {
+        "relation and descriptor ownership",
+        "extension authority and version coexistence",
+        "dependency-private extensions and local overrides",
+        "conflicting implication chains",
+        "semver is computed from contracts and witnesses, never from edges",
+        "the contract is surface, effects, failure set, complexity, determinism, capability",
+    }
+    fails = "opening a registry before coherence closes"
+}

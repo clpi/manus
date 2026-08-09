@@ -100,6 +100,7 @@ To promote a file, add a one-line rule above the rule that currently catches it.
 ## Rules
 
 ```
+canonical      docs/spec/constitution.duo
 negative       examples/compile_fail/
 negative       examples/native_differential/unsupported/
 negative       error_test.duo

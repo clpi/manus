@@ -58,7 +58,7 @@ place      → postfixexpr                       -- a.b, a[k], .b (anchored)
 shapedecl  → name ":" shape [ "=" expr ]       -- IS [+ HOLDS]
 
 ifstmt     → "if" cond ( inline [ "else" inline ] | block [ "else" (ifstmt|block) ] )
-while      → "while" cond ( inline [ ";" stmt ] | block )
+while      → "while" cond ( inline | block )    -- P119: no ";" tail
 for        → "for" name { "," name } "in" postfixexpr ( inline | block )
 inline     → stmt                              -- exactly one; self-delimited
 cond       → chain
