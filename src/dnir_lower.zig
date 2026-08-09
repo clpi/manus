@@ -660,6 +660,13 @@ pub const LowerCtx = struct {
     next_temp: u32 = 0,
     locals: std.StringHashMapUnmanaged(u32) = .empty,
     instrs: std.ArrayList(dnir.Instr) = .empty,
+    /// The function being lowered, when a self-call in TAIL position can be
+    /// turned into a jump. Empty disables the rewrite — see `tryEmitSelfTail`.
+    self_name: []const u8 = "",
+    /// Its parameter slots, in order. One slot per parameter, which is what
+    /// makes the reassign-and-jump legal: a record parameter occupies several
+    /// slots and is excluded rather than partially written.
+    self_param_slots: []const u32 = &.{},
 
     pub fn deinit(self: *LowerCtx) void {
         var it = self.locals.iterator();
@@ -765,6 +772,17 @@ fn lowerFunction(
     // advancing the cursor the first temps alias the parameters, and the backend's
     // single slot->register map silently rebinds a parameter to a temp's register.
     ctx.next_temp = param_slot_cursor;
+
+    // §12 TAIL, armed only for a flat scalar frame. `param_slot_cursor` counts
+    // the slots actually assigned above, so this equality IS the test for "one
+    // slot per parameter" — a record parameter exploded into several and the
+    // cursor runs ahead of the parameter list.
+    if (fd.path.len == 1 and param_slot_cursor == fd.func.params.len) {
+        const slots = try alloc.alloc(u32, fd.func.params.len);
+        for (0..fd.func.params.len) |i| slots[i] = @intCast(i);
+        ctx.self_name = fd.path[0];
+        ctx.self_param_slots = slots;
+    }
 
     try lowerBlock(&ctx, &fd.func.body, true);
 
@@ -897,6 +915,49 @@ fn isVoidTailCall(expr: *const ast.Expr) bool {
     return callee.* == .name and std.mem.eql(u8, callee.name.ident, "print");
 }
 
+/// §12 TAIL — a self-call in tail position is a JUMP, not a frame.
+///
+/// `tail = (n, acc) … tail(n - 1, acc + 1)` at ten million deep is the
+/// fixture; the direct backend pushed ten million frames and took SIGSEGV
+/// where the C backend answered 10000000, because clang does the sibling call
+/// and this pass did not. The rewrite is the standard one: evaluate the
+/// arguments, write them over the parameter slots, branch to instruction 0.
+///
+/// Every argument lands in a FRESH TEMP before any slot is written. Writing
+/// them in place would make `tail(acc, n)` — a swap — read the parameter it had
+/// already overwritten, which is a wrong answer rather than a crash.
+///
+/// Declined, not guessed, whenever the frame is not a flat row of scalar slots:
+/// a record parameter occupies several slots, an f64 parameter arrives in the
+/// FP file, and a record return leaves through x8. Each of those needs its own
+/// reassignment and none of them is this rewrite.
+fn tryEmitSelfTail(ctx: *LowerCtx, expr: *const ast.Expr) Error!bool {
+    if (ctx.self_name.len == 0) return false;
+    if (expr.* != .call) return false;
+    const c = expr.call;
+    if (c.func.* != .name) return false;
+    if (!std.mem.eql(u8, c.func.name.ident, ctx.self_name)) return false;
+    if (c.args.len != ctx.self_param_slots.len) return false;
+    if (ctx.ret_record != null) return false;
+    if (ctx.self_fp_params) return false;
+    for (c.args) |a| {
+        if (exprTouchesF64(ctx, a)) return false;
+    }
+
+    var staged: [8]u32 = undefined;
+    if (c.args.len > staged.len) return false;
+    for (c.args, 0..) |a, i| {
+        const v = try lowerExprCons(ctx, a, .single);
+        staged[i] = ctx.freshTemp();
+        try ctx.emit(.{ .op = .store_local, .result = staged[i], .lhs = v, .ty = .any });
+    }
+    for (ctx.self_param_slots, 0..) |slot, i| {
+        try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = .{ .local = staged[i] }, .ty = .any });
+    }
+    try ctx.emit(.{ .op = .br, .branch_target = 0 });
+    return true;
+}
+
 fn tryEmitTailDemandReturn(ctx: *LowerCtx, block: *const ast.Block) Error!bool {
     const r = tail_result_demand.blockTailResult(block) orelse return false;
     // gap[033]: emitting `ret` here made `if c print(" ") end` compile to
@@ -929,6 +990,7 @@ fn tryEmitTailDemandReturn(ctx: *LowerCtx, block: *const ast.Block) Error!bool {
         // instead and let the C backend take it.
         return bail(@src());
     }
+    if (try tryEmitSelfTail(ctx, r.expr)) return true;
     try ctx.emit(.{ .op = .ret, .lhs = try lowerExpr(ctx, r.expr), .ty = ret_ty });
     return true;
 }
@@ -1113,7 +1175,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                 (ctx.ret_record != null and isRecordLocalName(ctx, r.vals[0])))
             {
                 try lowerRecordReturn(ctx, r.vals[0]);
-            } else {
+            } else if (!try tryEmitSelfTail(ctx, r.vals[0])) {
                 const ret_ty: RT = if (exprIsF64(ctx, r.vals[0])) .f64 else .any;
                 try ctx.emit(.{ .op = .ret, .lhs = try lowerExpr(ctx, r.vals[0]), .ty = ret_ty });
             }

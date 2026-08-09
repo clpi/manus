@@ -161,13 +161,26 @@ fn resolveConstOperand(v: dnir.Value, const_map: *const std.AutoHashMapUnmanaged
     };
 }
 
+/// Fold two constants the way the TARGET would, or decline.
+///
+/// This panicked the whole compiler on `a: i64 = <i64 max>  b = a + 1`:
+/// Zig's `+` traps on signed overflow, so a program whose only crime was
+/// reaching the top of the range took `thread panic: integer overflow` inside
+/// a fold that exists to make it faster. The run-time answer wraps — the C
+/// backend prints the wrapped value and so does the ARM64 `add` this fold is
+/// standing in for — so the wrapping operators are not a workaround here, they
+/// are the semantics being modelled.
+///
+/// `@divTrunc`/`@rem` still trap on `minInt / -1`, whose true quotient is not
+/// representable. That one is declined rather than wrapped: there is no
+/// answer to model.
 fn evalConstBinop(op: dnir.BinOpTag, a: i64, b: i64) ?i64 {
     return switch (op) {
-        .add => a + b,
-        .sub => a - b,
-        .mul => a * b,
-        .div => if (b == 0) null else @divTrunc(a, b),
-        .mod => if (b == 0) null else @rem(a, b),
+        .add => a +% b,
+        .sub => a -% b,
+        .mul => a *% b,
+        .div => if (b == 0 or (b == -1 and a == std.math.minInt(i64))) null else @divTrunc(a, b),
+        .mod => if (b == 0 or (b == -1 and a == std.math.minInt(i64))) null else @rem(a, b),
         else => null,
     };
 }

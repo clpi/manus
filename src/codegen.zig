@@ -353,6 +353,16 @@ pub const CodeGen = struct {
     embed_parent_full_native: bool = false,
     /// Set of function names that are native-eligible in mixed mode.
     native_scalar_funcs: std.StringHashMapUnmanaged(void) = .empty,
+    /// Types the native-scalar PRECHECK knows for the function body it is
+    /// walking. Live only for the duration of one `block_is_native_scalar`
+    /// call; see `precheck_collect_types`.
+    ///
+    /// The precheck runs before any emit, so `local_scopes` is empty and
+    /// `expr_type` answered `.any` for every function-local binding. That is
+    /// what the `print-arg:any` refusal was: 10 programs in examples/, and
+    /// nothing wrong with any of them — `n = 1  print("{n}")` was outside the
+    /// direct subset because nobody had told the precheck what `n` was.
+    precheck_types: std.StringHashMapUnmanaged(RT) = .empty,
     test_mode: bool = false,
     bench_mode: bool = false,
     /// Pass 11 WP-01: explicit benchmark representation profile.
@@ -3395,6 +3405,8 @@ pub const CodeGen = struct {
                             return nofit(@src());
                         }
                     }
+                    self.precheck_collect_types(&fd.func);
+                    defer self.precheck_types.clearRetainingCapacity();
                     if (!self.block_is_native_scalar(fd.func.body, true)) {
                         native_diag_fail("func-body");
                         return nofit(@src());
@@ -4455,12 +4467,183 @@ pub const CodeGen = struct {
         return try self.try_emit_native_pipeline_named(lhs, rhs);
     }
 
+    /// What the PRECHECK can prove about one function's local bindings.
+    ///
+    /// Deliberately not a type inferencer. It proves exactly two facts —
+    /// "this name always holds an integer" and "this name always holds text" —
+    /// because those are the two the direct backend's `print` lowering
+    /// (`dnir_lower.lowerPrint`) can already render, and it renders anything
+    /// else it does not recognize as `%lld`. A third answer here would be a
+    /// wrong NUMBER, not a bail: `print(ok)` on a bool must read `true`, and
+    /// the same register printed as an integer reads `1`. So bool, f64,
+    /// records, tables and everything unproven stay `.any` and stay refused.
+    ///
+    /// Order-INSENSITIVE on purpose. Every assignment to a name anywhere in the
+    /// body must agree, so a name rebound to a different kind later in the
+    /// function is unproven at EVERY use, including the ones textually before
+    /// the rebinding. A per-point analysis would be sharper and would have to be
+    /// right about control flow; this one only has to be right about a set.
+    fn precheck_collect_types(self: *CodeGen, f: *const ast.FuncBody) void {
+        self.precheck_types.clearRetainingCapacity();
+        for (f.params) |param| {
+            const rt = types.resolve(param.typ, null, self.alloc) catch continue;
+            self.precheck_note_type(param.name, rt);
+        }
+        self.precheck_scan_block(&f.body);
+    }
+
+    fn precheck_note_type(self: *CodeGen, name: []const u8, rt: RT) void {
+        const gop = self.precheck_types.getOrPut(self.alloc, name) catch return;
+        if (!gop.found_existing) {
+            gop.value_ptr.* = rt;
+            return;
+        }
+        // Two bindings, two answers: the name proves nothing.
+        if (!std.meta.eql(gop.value_ptr.*, rt)) gop.value_ptr.* = .any;
+    }
+
+    fn precheck_scan_block(self: *CodeGen, block: *const ast.Block) void {
+        for (block.stmts) |*stmt| self.precheck_scan_stmt(stmt);
+    }
+
+    fn precheck_scan_stmt(self: *CodeGen, stmt: *const ast.Stmt) void {
+        switch (stmt.*) {
+            .local_decl => |ld| {
+                if (ld.names.len != ld.inits.len) {
+                    for (ld.names) |n| self.precheck_note_type(n.ident, .any);
+                    return;
+                }
+                for (ld.names, ld.inits) |n, init_expr| {
+                    if (n.typ != .inferred) {
+                        self.precheck_note_type(n.ident, types.resolve(n.typ, null, self.alloc) catch .any);
+                    } else {
+                        self.precheck_note_type(n.ident, self.precheck_value_type(init_expr));
+                    }
+                }
+            },
+            .global_decl => |gd| {
+                if (gd.names.len != gd.inits.len) {
+                    for (gd.names) |n| self.precheck_note_type(n.ident, .any);
+                    return;
+                }
+                for (gd.names, gd.inits) |n, init_expr| {
+                    if (n.typ != .inferred) {
+                        self.precheck_note_type(n.ident, types.resolve(n.typ, null, self.alloc) catch .any);
+                    } else {
+                        self.precheck_note_type(n.ident, self.precheck_value_type(init_expr));
+                    }
+                }
+            },
+            .assign => |as| {
+                if (as.targets.len != as.values.len) {
+                    for (as.targets) |t| {
+                        if (t.* == .name) self.precheck_note_type(t.name.ident, .any);
+                    }
+                    return;
+                }
+                for (as.targets, as.values) |t, v| {
+                    if (t.* != .name) continue;
+                    self.precheck_note_type(t.name.ident, self.precheck_value_type(v));
+                }
+            },
+            .const_decl => |cd| self.precheck_note_type(cd.ident, self.precheck_value_type(cd.val)),
+            .do_block => |db| self.precheck_scan_block(&db.body),
+            .while_loop => |ws| self.precheck_scan_block(&ws.body),
+            .repeat_loop => |rs| self.precheck_scan_block(&rs.body),
+            .if_stmt => |is| {
+                if (is.binding) |b| self.precheck_note_type(b.name, .any);
+                self.precheck_scan_block(&is.then);
+                for (is.elseifs) |ei| self.precheck_scan_block(&ei.body);
+                if (is.else_body) |eb| self.precheck_scan_block(&eb);
+            },
+            .num_for => |nf| {
+                const rt: RT = if (nf.var_typ != .inferred)
+                    types.resolve(nf.var_typ, null, self.alloc) catch .any
+                else
+                    self.precheck_value_type(nf.start);
+                self.precheck_note_type(nf.var_name, rt);
+                self.precheck_scan_block(&nf.body);
+            },
+            .gen_for => |gf| {
+                for (gf.vars) |v| self.precheck_note_type(v, .any);
+                self.precheck_scan_block(&gf.body);
+            },
+            else => {},
+        }
+    }
+
+    /// The two facts, and nothing else. `.any` means "unproven", never "dynamic".
+    fn precheck_value_type(self: *CodeGen, e: *const ast.Expr) RT {
+        // Sema first, when sema was sure. It knows shapes this predicate
+        // deliberately does not reconstruct — `to(i64)("…")` is a call whose
+        // CALLEE is a call, and the relation surface already declares its own
+        // result type. Restricted to the two kinds below for the same reason
+        // everything else here is: a third answer is a wrong number.
+        if (e.* != .name) {
+            const t = self.expr_type(e);
+            if (t == .i64 or t == .str) return t;
+        }
+        return switch (e.*) {
+            .int_lit => .i64,
+            .string_lit => .str,
+            // A name already proven in THIS body. One pass, no fixpoint: a name
+            // read before it is written answers `.any`, and `.any` is the
+            // refusing answer, so the order can only cost coverage.
+            .name => |n| self.precheck_types.get(n.ident) orelse .any,
+            .unop => |u| switch (u.op) {
+                // `#x` is a count and `-n` keeps its operand's kind.
+                .len => .i64,
+                .neg => self.precheck_value_type(u.operand),
+                else => .any,
+            },
+            .binop => |b| switch (b.op) {
+                // A comparison is a BOOL, and a bool rendered as an integer is
+                // the wrong answer this whole predicate exists to avoid.
+                .eq, .neq, .lt, .gt, .leq, .geq, .@"and", .@"or" => .any,
+                .concat => .any,
+                else => blk: {
+                    const lt = self.precheck_value_type(b.lhs);
+                    if (lt != .i64) break :blk .any;
+                    break :blk if (self.precheck_value_type(b.rhs) == .i64) .i64 else .any;
+                },
+            },
+            // A call answers what its callee DECLARED, and only when that
+            // declaration is one of the two proven kinds. An inferred or
+            // fallible return proves nothing.
+            .call => |c| blk: {
+                if (c.func.* != .name) break :blk .any;
+                var buf: [256]u8 = undefined;
+                const fd = self.func_decls.get(c.func.name.ident) orelse
+                    self.func_decls.get(self.mangled_name(c.func.name.ident, &buf)) orelse
+                    break :blk .any;
+                if (fd.func.ret_fallible) break :blk .any;
+                const rt = self.resolve_type(contract_ret(&fd.func));
+                break :blk if (rt == .i64 or rt == .str) rt else .any;
+            },
+            else => .any,
+        };
+    }
+
+    /// The precheck's own answer for a bare name, used only where `expr_type`
+    /// gave up. Never widens a type sema was sure about.
+    fn precheck_name_type(self: *CodeGen, e: *const ast.Expr) RT {
+        if (e.* != .name) return .any;
+        return self.precheck_types.get(e.name.ident) orelse .any;
+    }
+
     fn call_stmt_is_native_scalar(self: *CodeGen, expr: *const ast.Expr) bool {
         if (expr.* != .call) return self.expr_is_native_scalar(expr);
         const call = expr.call;
         if (call.func.* == .name and std.mem.eql(u8, call.func.name.ident, "print")) {
             for (call.args) |arg| {
-                const rt = self.expr_type(arg);
+                var rt = self.expr_type(arg);
+                // `expr_type` reads `local_scopes`, which the precheck never
+                // fills — it runs before any emit. So a function-local answered
+                // `.any` and `n = 1  print("{n}")` was refused. Only consulted
+                // where sema had nothing, and only for the two kinds
+                // `dnir_lower.lowerPrint` renders (gap[034]: the precheck and
+                // the lowering must claim the same set).
+                if (rt == .any) rt = self.precheck_name_type(arg);
                 if (self.enum_name_of(rt)) |ename| {
                     if (self.enum_is_payload_free(ename) and self.expr_is_native_scalar(arg)) continue;
                     return false;
