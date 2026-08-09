@@ -959,7 +959,35 @@ fn tryEmitSelfTail(ctx: *LowerCtx, expr: *const ast.Expr) Error!bool {
 }
 
 fn tryEmitTailDemandReturn(ctx: *LowerCtx, block: *const ast.Block) Error!bool {
+    // gap[104], the ANSWERING half. `lowerBlockTailEffect` closed the hole for a
+    // block whose value nobody demands; this closes the same hole for a block
+    // that DOES answer but whose answer is anchored somewhere other than its
+    // tail expression.
+    //
+    // `blockTailResult` deliberately walks back off a tail expression that
+    // carries no value — `s = new32(); update(s, data); final(s)` yields `s`,
+    // not the void `final(s)` — and returns the preceding binding as the
+    // resolution. That is right about the VALUE and says nothing about the
+    // EFFECT, and the effect was then lowered by nobody:
+    //
+    //     bump = (k: i64): void
+    //         t = k + 1        -- a statement; lowered, and it is the anchor
+    //         print(k)         -- the tail expression; SILENTLY DROPPED
+    //
+    // printed nothing on the direct backend where the C backend printed `3`.
+    // Instrumented rather than inferred — the resolution came back
+    // `rule=tail_assignment stmts=1 tail_expr=true anchored_on_tail=false`, so
+    // `ret t` was emitted and `print(k)` was never visited. The single-statement
+    // form (`print(k)` alone) resolves ON the tail expression and always worked,
+    // which is what made this look like it was about globals or about `void`.
+    //
+    // The tail expression's effect is sequenced after the statements the caller
+    // already lowered and before the anchored return, which is the order the C
+    // backend emits: `t = k + 1; printf(...); return t;`.
     const r = tail_result_demand.blockTailResult(block) orelse return false;
+    if (block.tail_expr) |te| {
+        if (te != r.expr) try lowerBlockTailEffect(ctx, block);
+    }
     // gap[033]: emitting `ret` here made `if c print(" ") end` compile to
     // `return print(" ")`, returning whatever register the void call left —
     // exit 59, and 224 with an else, where the C backend exits 0. Lower it as

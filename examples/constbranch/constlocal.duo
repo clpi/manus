@@ -1,0 +1,16 @@
+-- gap[104] · the shape the gap was ORIGINALLY filed as: the condition reads a
+-- local whose value is compile-time known.
+--
+-- The filed diagnosis blamed the local and it was incidental — a bare literal
+-- comparison did it too. The row stays because it is the shape a human writes
+-- (`n = 42` then `if n > 10`), and because it is the bridge between a literal
+-- condition and a folded one: the local is where constant propagation gets its
+-- first opportunity.
+
+main = (): i64
+    n = 42
+    if n > 10
+        print("big")
+        print("biglast")
+    print("after")
+    0

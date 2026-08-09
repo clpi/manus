@@ -1,0 +1,18 @@
+-- gap[104] · a DERIVED constant — the condition names nothing the reader can
+-- see is 42, and the compiler still proves it.
+--
+-- `a + b` has to be folded before `c > 10` is decidable, so this row fails if
+-- the fold reaches one level and not two. It is the smallest fixture here that
+-- an author could not have written as a literal, which is the point: the blast
+-- radius is "conditions the optimizer proves", not "conditions spelled with a
+-- literal", and those are not the same set.
+
+main = (): i64
+    a = 20
+    b = 22
+    c = a + b
+    if c > 10
+        print("derived")
+        print("derivedlast")
+    print("after")
+    0

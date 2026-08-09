@@ -1,0 +1,26 @@
+-- gap[104] · a branch that MUTATES STATE and emits, so a lost body is visible
+-- as a wrong NUMBER and not only as a missing line.
+--
+-- Every other fixture here would also pass if the branch ran and the prints
+-- were merely reordered. This one cannot: `total` reads 3, then 7, then 7 after
+-- the `if`, so the arithmetic pins the order and the count of executions. A
+-- body executed twice reads 3|7|10|14|14, a body skipped reads 0, and a body
+-- whose tail statement is dropped reads 3|3 — three distinct wrong answers,
+-- none of which is the expected one.
+--
+-- `total` is a LOCAL, deliberately. A file-scope global would have been the more
+-- natural spelling and it is currently miscompiled by the direct backend
+-- independently of anything to do with branches (`total += k` inside a function
+-- does not reach the global; measured direct=5 against C=8 on a three-line
+-- program with no `if` in it). Using one here would make this row red for a
+-- reason it does not test. That defect is filed separately.
+
+main = (): i64
+    total: i64 = 0
+    if 42 > 10
+        total += 3
+        print(total)
+        total += 4
+        print(total)
+    print(total)
+    0

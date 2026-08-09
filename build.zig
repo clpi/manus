@@ -377,6 +377,24 @@ pub fn build(b: *std.Build) void {
     const tailslot_step = b.step("tail-slot", "gap[104]: a non-answering block's tail expression runs, and matches the C backend");
     tailslot_step.dependOn(&tailslot_cmd.step);
 
+    // constbranch -- gap[104], the SYMPTOM side of the same defect. `tail-slot`
+    // above proves the lowering is repaired; this proves the shape a user
+    // actually hits cannot come back by another route. Ten fixtures covering
+    // every form a proven-constant condition takes -- literal, local, derived,
+    // nested, both `else` arms, as a function's answer, with state mutation --
+    // and, the row it exists for, a condition the SOURCE DOES NOT CONTAIN,
+    // arriving at the test by propagation from a call site. That last is why a
+    // grep for `if <literal>` is not a substitute: the blast radius is programs
+    // the optimizer folds a condition in, which cannot be enumerated by reading
+    // source. Every row asserts captured stdout BY VALUE against both backends,
+    // because this defect's whole signature is a clean compile, a zero exit and
+    // a silently wrong answer.
+    const constbranch_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/constbranch.duo" });
+    constbranch_cmd.setCwd(b.path("."));
+    constbranch_cmd.step.dependOn(b.getInstallStep());
+    const constbranch_step = b.step("constbranch", "gap[104]: a branch the compiler proves constant still runs its body, on both backends");
+    constbranch_step.dependOn(&constbranch_cmd.step);
+
     // audit100 -- CLAUDE.md section 1's deny table, executable. It scans the
     // canonical partition of docs/spec/corpus.md only, because compile_fail
     // fixtures are SUPPOSED to contain the denied text, and it ratchets off

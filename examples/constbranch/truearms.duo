@@ -1,0 +1,19 @@
+-- gap[104] · a TRUE constant with an `else`. Under the defect NEITHER arm ran,
+-- which no mis-taken-branch theory can explain and which is why the two-armed
+-- shape is the sharpest form of the bug.
+--
+-- The trailing `print("after")` is load-bearing: it pushes the `if/else` out of
+-- the function's tail slot, so both arms lower with `allow_return = false` and
+-- take the path that was broken. Without it the arms ARE the answer, go through
+-- the return path, and print correctly even on an unfixed compiler — the
+-- fixture would have been green against the bug it exists to catch.
+
+main = (): i64
+    if 42 > 10
+        print("then")
+        print("thenlast")
+    else
+        print("else")
+        print("elselast")
+    print("after")
+    0

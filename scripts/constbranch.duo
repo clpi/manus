@@ -1,0 +1,223 @@
+-- gap[104] · A BRANCH THE COMPILER PROVES CONSTANT MUST STILL RUN ITS BODY.
+--
+-- WHAT THIS GATE IS FOR. `if 42 > 10 print("BIG")` compiled clean, exited 0 and
+-- printed nothing. `if/else` on a constant could execute NEITHER arm. The cause
+-- was never the constant and never the branch: a block's final expression lives
+-- in `blk.tail_expr`, not in `blk.stmts`, and on the direct backend nothing
+-- lowered it unless the block was the function's answer. The branch was taken
+-- the whole time — `if 42 > 10 return 7` always exited 7.
+--
+-- WHY IT IS A SEPARATE GATE FROM `tail-slot`. That gate proves the MECHANISM is
+-- repaired, on four fixtures aimed at the lowering. This one proves the
+-- SYMPTOM cannot come back, across the ten shapes a constant condition actually
+-- takes in source — including the one nobody can grep for. A future change that
+-- reintroduces the hole by another route (a new fold, a new block lowerer, an
+-- inliner) fails here even if it leaves `lowerBlockTailEffect` untouched.
+--
+-- THE BLAST RADIUS, which is the reason for the fixture list. The defect is not
+-- "programs containing a literal condition". It is "programs the optimizer
+-- proves a condition constant in", and constant propagation creates that shape
+-- from source that contained no literal at all. `folded.duo` is that case: its
+-- body is written against a parameter and the constant arrives from the call
+-- site. It is the row this gate exists for; the literal rows are the ones that
+-- made the defect findable.
+--
+-- EVERY ROW IS ASSERTED BY VALUE. "It compiled" and "it did not crash" are not
+-- evidence here — this defect's whole signature is a clean compile, a zero exit
+-- and a silently wrong answer. Rows compare captured STDOUT byte for byte and
+-- read the exit code separately, never inferring one from the other.
+--
+-- THE ROWS
+--
+--   P0  the fixtures exist and the count is what the rows assume   control
+--   H0  the comparator can tell two different outputs apart        harness
+--   B1  literal true                                               gap[104]
+--   B2  literal false — the CLASSIFIER control                     negative
+--   B3  true with else                                             gap[104]
+--   B4  false with else                                            gap[104]
+--   B5  a compile-time-known local                                 gap[104]
+--   B6  a DERIVED constant — two levels of fold                    gap[104]
+--   B7  a constant condition nested in a constant condition        gap[104]
+--   B8  the branch as the ANSWER, read by EXIT CODE                negative
+--   B9  a branch that mutates state — wrong NUMBER, not just a
+--       missing line                                               gap[104]
+--   B10 an OPTIMIZER-CREATED constant condition                    gap[104]
+--   X1  direct and the C backend agree on every fixture            oracle
+--
+-- MEASURED AGAINST THE UNFIXED LOWERING, which is what makes these a regression
+-- test rather than ten programs that happen to pass. With the tail-effect
+-- lowering defeated, EIGHT of the ten rows produce a different, wrong answer:
+--
+--   truelit     first|after|                  `last` gone
+--   truearms    then|after|                   the arm's tail gone
+--   falsearms   else|after|                   the other arm's tail gone
+--   constlocal  big|after|
+--   derived     derived|after|
+--   nested      inner|after|                  BOTH tail slots gone
+--   effects     3|7|                          the branch's second print gone
+--   folded      folded|after|after|
+--
+-- The two that do NOT move are the two negative controls, and that is by
+-- design: `falselit` has no taken body to lose, and `tailbranch` reports through
+-- the exit code, which the defect never touched. A gate whose every row moves
+-- when a fix is defeated is not measuring its own controls.
+
+rows = ""
+failed = 0
+
+here = (): str
+    std.script.chomp(std.script.capture("pwd"))
+
+quiet = (cmd: str): i64
+    std.script.status("{cmd} >/dev/null 2>&1")
+
+grab = (cmd: str): str
+    std.script.chomp(std.script.capture(cmd))
+
+note = (tag: str, ok: bool, detail: str): void
+    mark = "FAIL"
+    if ok
+        mark = "ok  "
+    if not ok
+        failed = failed + 1
+    rows = "{rows}  {mark} {tag}  {detail}\n"
+
+-- One fixture, one backend: compile, run, and return the exit code and the
+-- whole of stdout as a single comparable value with newlines rendered `|`.
+--
+-- The artifact and its output file are REMOVED first. A stale capture left by
+-- the previous backend reads exactly like a pass, and a gate that reports green
+-- off the other backend's bytes is the confident-green this file exists to
+-- refuse. `duo compile` writes beside the source unless `-o` says otherwise, so
+-- every product is named into the work directory — a build artifact in the repo
+-- root is a hygiene finding.
+run = (bin: str, work: str, name: str, backend: str): str
+    src = "examples/constbranch/{name}.duo"
+    exe = "{work}/{name}.{backend}"
+    out = "{work}/{name}.{backend}.out"
+    quiet("rm -f {exe} {out}")
+    built = quiet("{bin} compile {src} --backend={backend} -o {exe}")
+    if built != 0
+        return "BUILD-FAILED"
+    code = std.script.status("{exe} >{out} 2>/dev/null")
+    body = grab("tr '\\n' '|' <{out}")
+    "rc={code} {body}"
+
+main = (): i64
+    root = here()
+    bin = "{root}/zig-out/bin/duo"
+    work = "/tmp/duo-constbranch"
+    quiet("rm -rf {work}")
+    quiet("mkdir -p {work}")
+
+    -- P0. A gate that scores 0/N over 0 subjects is broken, not green. Count the
+    -- fixtures on disk before trusting a single row below.
+    fixtures = grab("ls examples/constbranch/*.duo | wc -l | tr -d ' '")
+    have = to(i64)(fixtures)
+    note("P0 control", have == 10, "fixtures on disk: {have} of 10")
+    if have != 10
+        print(rows)
+        print("constbranch: FAIL — the fixture set is not what the rows below assume")
+        return 3
+
+    truelitd = run(bin, work, "truelit", "direct")
+    truelitc = run(bin, work, "truelit", "c")
+    falselitd = run(bin, work, "falselit", "direct")
+    falselitc = run(bin, work, "falselit", "c")
+    trueararmsd = run(bin, work, "truearms", "direct")
+    trueararmsc = run(bin, work, "truearms", "c")
+    falsearmsd = run(bin, work, "falsearms", "direct")
+    falsearmsc = run(bin, work, "falsearms", "c")
+    localsd = run(bin, work, "constlocal", "direct")
+    localsc = run(bin, work, "constlocal", "c")
+    derivedd = run(bin, work, "derived", "direct")
+    derivedc = run(bin, work, "derived", "c")
+    nestedd = run(bin, work, "nested", "direct")
+    nestedc = run(bin, work, "nested", "c")
+    tailbd = run(bin, work, "tailbranch", "direct")
+    tailbc = run(bin, work, "tailbranch", "c")
+    effectsd = run(bin, work, "effects", "direct")
+    effectsc = run(bin, work, "effects", "c")
+    foldedd = run(bin, work, "folded", "direct")
+    foldedc = run(bin, work, "folded", "c")
+
+    -- H0. POSITIVE-CONTROL THE COMPARATOR ITSELF. Every row below is an equality
+    -- against a literal, so a comparator that answered true for everything would
+    -- report ten greens over ten broken programs. Two fixtures that are known to
+    -- differ must compare unequal, or nothing else printed here means anything.
+    note("H0 harness", truelitd != falselitd,
+        "two different outputs compare unequal: `{truelitd}` vs `{falselitd}`")
+
+    -- B1. The filed repro. `first|after|` is the defect — the body's tail
+    -- expression lost — and `after|` alone would mean the whole body went.
+    note("B1 literal true", truelitd == "rc=0 first|last|after|",
+        "if 42 > 10 · direct: {truelitd}")
+
+    -- B2. THE CLASSIFIER CONTROL, and the reason B1 means anything. If constant
+    -- conditions were simply never evaluated, this body would run and print
+    -- `never`. A green here plus a green on B1 says the fold DECIDES and then
+    -- emits the arm it decided on.
+    note("B2 literal false", falselitd == "rc=0 after|",
+        "if 42 < 10 skips, and only skips · direct: {falselitd}")
+
+    -- B3/B4. Both arms, on opposite verdicts, with the `if/else` pushed out of
+    -- the function's tail slot by a trailing print. Under the defect BOTH arms
+    -- were lost — the observation no mis-taken-branch theory could explain.
+    note("B3 true with else", trueararmsd == "rc=0 then|thenlast|after|",
+        "the taken arm runs whole · direct: {trueararmsd}")
+    note("B4 false with else", falsearmsd == "rc=0 else|elselast|after|",
+        "the else arm runs whole · direct: {falsearmsd}")
+
+    -- B5/B6. The shape the gap was filed as, and the shape that proves the fold
+    -- reaches more than one level. `derived` needs `a + b` folded before
+    -- `c > 10` is decidable at all.
+    note("B5 constant local", localsd == "rc=0 big|biglast|after|",
+        "n = 42 · if n > 10 · direct: {localsd}")
+    note("B6 derived constant", derivedd == "rc=0 derived|derivedlast|after|",
+        "c = a + b · if c > 10 · direct: {derivedd}")
+
+    -- B7. Two tail slots stacked. A repair that handles one level and not the
+    -- recursive case loses `outerlast` alone, which is one line of difference —
+    -- so the row prints four distinguishable strings rather than one.
+    note("B7 nested condition", nestedd == "rc=0 inner|innerlast|outerlast|after|",
+        "a constant condition inside one · direct: {nestedd}")
+
+    -- B8. THE NEGATIVE CONTROL THAT SETTLED THE DIAGNOSIS. Reported by exit
+    -- code, not by output: three readings of this defect were withdrawn because
+    -- each probed control flow with `print` while `print` was the broken
+    -- instrument. rc=7 says the true arm ran; rc=3 says it did not. It is also
+    -- the check that an `if` which IS the answer may still return.
+    note("B8 tail branch", tailbd == "rc=7 ",
+        "if 42 > 10 return 7 · answers by EXIT CODE · direct: {tailbd}")
+
+    -- B9. State, so a lost body is a wrong NUMBER and not only a missing line.
+    -- A body run twice reads 3|7|10|14|14, a body skipped reads 0, a body whose
+    -- tail is dropped reads 3|7 — three distinct wrong answers, none of them the
+    -- expected one.
+    note("B9 side effects", effectsd == "rc=0 3|7|7|",
+        "the branch mutates and emits in order · direct: {effectsd}")
+
+    -- B10. THE ROW THE GATE IS FOR. Nothing in `gate`'s body is a literal
+    -- condition; the constant arrives at `k > 10` from the call site. Both
+    -- verdicts come out of the same body, so this one fixture carries the true
+    -- case, the false case, and the proof they are decided per call.
+    note("B10 folded constant", foldedd == "rc=0 folded|foldedlast|after|after|",
+        "a constant condition the SOURCE DOES NOT CONTAIN · direct: {foldedd}")
+
+    -- X1. The oracle. §3 MEASUREMENT HONESTY: the two lowerings must produce the
+    -- SAME ANSWER, and that is checked before any row above is worth anything.
+    -- The C backend has no tail-slot split and was correct throughout, which is
+    -- exactly why `--backend=c` masked this defect for as long as it did.
+    agree = truelitd == truelitc and falselitd == falselitc and
+        trueararmsd == trueararmsc and falsearmsd == falsearmsc and
+        localsd == localsc and derivedd == derivedc and
+        nestedd == nestedc and tailbd == tailbc and
+        effectsd == effectsc and foldedd == foldedc
+    note("X1 oracle", agree, "direct vs --backend=c on all ten fixtures")
+
+    print(rows)
+    if failed > 0
+        print("constbranch: FAIL — {failed} row(s); a proven-constant branch is losing its body")
+        return 1
+    print("constbranch: ok — a branch the compiler proves constant runs its body, on both backends")
+    0

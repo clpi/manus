@@ -1,0 +1,16 @@
+-- gap[104] · a constant condition INSIDE a constant condition.
+--
+-- Two tail slots stacked: `print("innerlast")` is the inner block's tail and
+-- `print("outerlast")` is the outer block's, so a repair that lowers one level
+-- of tail expression and not the recursive case loses `outerlast` only. That is
+-- a one-line difference in the expected value and it is the reason this row
+-- prints four distinguishable strings instead of one.
+
+main = (): i64
+    if 42 > 10
+        if 7 > 3
+            print("inner")
+            print("innerlast")
+        print("outerlast")
+    print("after")
+    0

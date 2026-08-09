@@ -1,0 +1,13 @@
+-- gap[104] · the CLASSIFIER control. A condition proved FALSE must skip.
+--
+-- This row is what makes the true rows mean anything. If constant conditions
+-- were simply not evaluated at all, the body below would run and this fixture
+-- would print `never` — so a green here plus a green on `truelit` is the pair
+-- that says the fold DECIDES and then emits the arm it decided on.
+
+main = (): i64
+    if 42 < 10
+        print("never")
+        print("neverlast")
+    print("after")
+    0

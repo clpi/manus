@@ -1,0 +1,16 @@
+-- gap[104] · a FALSE constant with an `else` — the arm a repair is least
+-- likely to have been written for.
+--
+-- Identical to `truearms` but for the relation, so the pair convicts a fix that
+-- only repairs the arm its author tested. The `else` body carries two lines for
+-- the same reason every other fixture here does: the second is the tail slot.
+
+main = (): i64
+    if 42 < 10
+        print("then")
+        print("thenlast")
+    else
+        print("else")
+        print("elselast")
+    print("after")
+    0

@@ -1,0 +1,17 @@
+-- gap[104] · the filed repro, verbatim: a condition the compiler PROVES true.
+--
+-- `if 42 > 10 print("...")` compiled clean and printed NOTHING. Two lines in
+-- the body, because the second one is the block's TAIL EXPRESSION and that is
+-- the slot the defect lived in — a one-line body would have been green against
+-- the bug on the `arms` shape and is not evidence on its own.
+--
+-- `after` is the control: it is outside the `if`, so a run that prints only
+-- `after` says the branch body was lost, and a run that prints nothing at all
+-- says something much larger broke.
+
+main = (): i64
+    if 42 > 10
+        print("first")
+        print("last")
+    print("after")
+    0

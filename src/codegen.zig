@@ -1275,6 +1275,39 @@ pub const CodeGen = struct {
         }
     }
 
+    /// The C symbol for a binding promoted to `duo_g_` storage.
+    ///
+    /// ONE emitter, because there were five spellings of it and one of them
+    /// omitted the guard. A top-level script has an EMPTY `current_module_cname`
+    /// — nothing is wrong with that, it is what "not inside a req'd module"
+    /// means — so an unguarded `duo_g_{cname}_{name}` renders `duo_g__total`
+    /// with a doubled underscore, while every READ of the same binding goes
+    /// through `emit_var_name_mode`, which is guarded and renders
+    /// `duo_g_total`. The declaration and the use picked different names for
+    /// one binding, so the C backend could not compile ANY program holding a
+    /// mutable file-scope scalar:
+    ///
+    ///     total: i64 = 0
+    ///     main = (): i64
+    ///         total += 3
+    ///         print(total)
+    ///         0
+    ///
+    ///     error: use of undeclared identifier 'duo_g__total';
+    ///           did you mean 'duo_g_total'?
+    ///
+    /// It is a hard build error rather than a wrong answer, which is the only
+    /// reason it was survivable — but it takes the C ORACLE offline for exactly
+    /// the programs a differential most wants to check, so a native miscompile
+    /// in that shape had nothing to be compared against.
+    fn emit_global_storage_name(self: *CodeGen, name: []const u8) void {
+        if (self.current_module_cname.len > 0) {
+            self.p("duo_g_{s}_{s}", .{ self.current_module_cname, name });
+        } else {
+            self.p("duo_g_{s}", .{name});
+        }
+    }
+
     fn emit_var_name(self: *CodeGen, name: []const u8) void {
         self.emit_var_name_mode(name, .read);
     }
@@ -12277,7 +12310,7 @@ pub const CodeGen = struct {
                     if (!promoted_module_local) try self.note_local_type(lname.ident, if (rt == .nil) .any else rt);
                     if (rt == .any or rt == .option or rt == .result or rt == .nil) {
                         if (promoted_module_local) {
-                            self.p("duo_g_{s}_{s}", .{ self.current_module_cname, lname.ident });
+                            self.emit_global_storage_name(lname.ident);
                         } else {
                             self.p("lua_Value {s}", .{lname.ident});
                         }
@@ -12295,7 +12328,8 @@ pub const CodeGen = struct {
                         // (zero) — emitted as `{0}` so any plain-`int`
                         // field still gets a valid C value.
                         if (promoted_module_local) {
-                            self.p("duo_g_{s}_{s} = ", .{ self.current_module_cname, lname.ident });
+                            self.emit_global_storage_name(lname.ident);
+                            self.p(" = ", .{});
                         } else {
                             self.typ(rt);
                             self.p(" {s} = ", .{lname.ident});
@@ -12307,7 +12341,7 @@ pub const CodeGen = struct {
                         // it as lua_Value and box the callee so reads/tables get
                         // a valid value instead of a `/* func */` placeholder.
                         if (promoted_module_local) {
-                            self.p("duo_g_{s}_{s}", .{ self.current_module_cname, lname.ident });
+                            self.emit_global_storage_name(lname.ident);
                         } else {
                             self.p("lua_Value {s}", .{lname.ident});
                         }
@@ -12319,7 +12353,7 @@ pub const CodeGen = struct {
                         }
                     } else {
                         if (promoted_module_local) {
-                            self.p("duo_g_{s}_{s}", .{ self.current_module_cname, lname.ident });
+                            self.emit_global_storage_name(lname.ident);
                         } else {
                             self.typ(rt);
                             self.p(" {s}", .{lname.ident});

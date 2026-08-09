@@ -1,0 +1,17 @@
+-- gap[104] · the branch as the function's ANSWER, reported by EXIT CODE.
+--
+-- THE RULE THIS FIXTURE CARRIES: when a program produces no output, do not test
+-- its control flow with output. Three diagnoses of this defect were withdrawn
+-- because each probed the branch with `print` while `print` was the instrument
+-- that was broken — the branch was taken the whole time. This row asks the
+-- question without going through any emission at all: rc=7 means the true arm
+-- ran, rc=3 means it did not.
+--
+-- It is also the negative control for the tail-slot machinery in the other
+-- direction: here the `if` IS the function's tail, so it must still be allowed
+-- to return rather than being lowered as a bare effect.
+
+main = (): i64
+    if 42 > 10
+        return 7
+    3

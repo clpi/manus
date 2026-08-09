@@ -1,0 +1,25 @@
+-- gap[104] · THE ROW THE WHOLE GATE IS FOR: a constant condition the SOURCE
+-- DOES NOT CONTAIN.
+--
+-- `gate` is written against a parameter. Nothing in its body is a literal
+-- condition and nothing in it could be grepped for. The constant arrives at
+-- `k > 10` by propagation from the call site, which is what makes the blast
+-- radius of this defect "programs the optimizer folds a condition in" rather
+-- than "programs someone wrote `if 42 > 10` in" — a set that cannot be
+-- enumerated by reading source.
+--
+-- Both call sites run the SAME body with opposite verdicts, so one fixture
+-- carries the true case, the false case, and the proof that the two are decided
+-- per-call rather than baked once. Expect `folded` and `foldedlast` exactly
+-- once, and `after` exactly twice.
+
+gate = (k: i64): void
+    if k > 10
+        print("folded")
+        print("foldedlast")
+    print("after")
+
+main = (): i64
+    gate(42)
+    gate(0)
+    0
