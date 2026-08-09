@@ -484,3 +484,43 @@ being budgeted.
 stays green and only the steps that depend on those roots break. `build.zig` was
 out of scope for this wave; the repair is to drop the two `addTest` roots and
 whatever steps depend on them.
+
+---
+
+## 2026-08-09 — the boundary has moved: the test tier is nearly gone
+
+Recomputed from `main.zig` (positive control: `codegen.zig` shows 7 importers,
+not 0, so the scan resolves).
+
+```
+production closure        105 of 114 src/*.zig
+non-production              9 files / 2,602 lines
+orphans (zero importers)    0     — deletion is EXHAUSTED
+```
+
+Earlier today this read 104 production / 56 non-production / 8,878 lines. The
+non-production tier fell **56 -> 9** and **8,878 -> 2,602 lines** through
+deletion of self-certifying apparatus and porting to Duo gates. **What remains
+in Zig is now overwhelmingly the compiler itself.**
+
+The nine, and why each is still here:
+
+| file | lines | status |
+|---|---|---|
+| `property_tests.zig` | 1495 | PROTECTED — real property coverage, not self-audit |
+| `lexer_differential.zig` | 225 | PROTECTED — differential against the Duo lexer |
+| `selfhost_verify.zig` | 174 | PROTECTED |
+| `wasm_decode_differential.zig` | 82 | PROTECTED |
+| `pass4_native_tests.zig` · `codegen_pass3_tests.zig` · `pass5_foreign_tests.zig` | — | blocked on ARTIFACT ADDRESSING; the last links and RUNS foreign C |
+| `pass11_ward_barrier_tests.zig` | — | needs `native_barrier_checks.zig` (534 lines) ported and `build.zig` rewired |
+| `tests.zig` | — | the root; dies last |
+
+**Deletion is finished as a strategy.** Every remaining file is reachable from
+`main.zig` or is protected coverage. Zero requires PORTING the compiler, and the
+sequence is the owner's: nominal descriptors (landed) -> stable semantic ids ->
+the generic relation/fact store -> `codegen.zig` net-negative in
+conversion-specific code.
+
+**Do not re-run a deletion sweep expecting yield.** Four were run today; the
+last three found nothing. The orphan count is 0 and the control proves the scan
+works. The next file removed will be removed because something replaced it.
