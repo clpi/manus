@@ -1,0 +1,942 @@
+-- role-scan — G-TOTAL, made measurable for the first time.
+--
+-- gaps/GAP-071.md: "G-TOTAL cannot be measured at all yet. It requires role
+-- coverage over rendered artifacts, and the role taxonomy has no
+-- implementation — there is no highlights.scm generator, no LSP legend
+-- generator, and no golden token corpus (fixtures/highlight/*.duo + *.roles)
+-- in the tree. A gate with no instrument reports nothing, which is worse than
+-- reporting a bad number." This is the instrument. -- gap[071]
+--
+-- WHAT IT DOES. For every fixture under fixtures/highlight, assign a role to
+-- every non-whitespace byte using ONLY the tests docs/spec/roles.md §5 shows a
+-- citation for, and compare the result span-for-span against the hand-written
+-- <fixture>.roles.duo sidecar. Three numbers, per CLAUDE.md §0g:
+--
+--   coverage    bytes carrying one of the CLOSED 17 roles, over all bytes that
+--               carry a role at all. The denominator is every non-whitespace
+--               byte plus the whitespace INSIDE comments and literals, which
+--               H-6 gives a role along with the rest of its span. G-TOTAL
+--               demands 100%.
+--   ambiguity   spans with two or more candidate roles and no rule that
+--               decides. G-TOTAL demands 0 — "two candidates is a MIXED-SPACE
+--               DIAGNOSTIC, never a guess".
+--   mismatch    spans where this scanner disagrees with the sidecar. This is
+--               the front-end conformance number and the only one of the three
+--               under the scanner author's control. It must be 0.
+--
+-- THIS GATE IS EXPECTED TO BE RED, AND THAT IS THE POINT. Coverage cannot
+-- reach 100% while H-4 assigns no hue to an ordinary binding, and ambiguity
+-- cannot reach 0 while pipe-versus-bor, level-versus-parameter parens and
+-- leading `.name` are decided by the graph rather than by the text. Both go
+-- green by WRITING THE MISSING LAW, not by changing this file. A green run
+-- today would mean the instrument was built to flatter the taxonomy.
+--
+-- THE ONE THING THAT MUST NOT HAPPEN is the failure mode CLAUDE.md §3 names:
+-- a gate that reports 100% because it classified everything as "other". Five
+-- controls run on EVERY invocation and any one of them failing is exit 3, not
+-- a number:
+--
+--   1. POPULATION. Fixtures found > 0, every fixture has a sidecar, and the
+--      corpus holds more than zero non-whitespace bytes. A confident zero is
+--      usually a broken gate.
+--   2. TILING. For each fixture the spans must TILE it: in source order,
+--      non-overlapping, inside their lines, with nothing but whitespace in the
+--      gaps, and covering at least every non-whitespace byte. That is H-6's
+--      "every character has a role" checked arithmetically, and it is what
+--      makes the coverage denominator real — a tokenizer that dropped a byte,
+--      overran a line, or double-counted one would otherwise move the
+--      percentage with nothing in the report to show for it.
+--   3. COMPARATOR, BOTH HALVES. The scan compared against ITSELF must report
+--      0 mismatches, and the same scan compared against a copy of itself with
+--      exactly ONE role word corrupted must report exactly 1. Only the second
+--      half is usually written, and a comparator that returns a constant
+--      passes it.
+--   4. COVERAGE COUNTER. Coverage is computed twice by different paths — a
+--      re-parse of every record, and the per-role tally printed in the report
+--      — and the two must agree. Then the hued role holding the MOST bytes is
+--      struck from the taxonomy and coverage must fall by EXACTLY that role's
+--      byte count. "It went down" would pass a weaker test; this one pins the
+--      counter to the role string and the width field together. It is the
+--      in-process form of the "delete a role assignment and require coverage
+--      to drop" control.
+--   5. SIDECAR READER. The sidecar parser must accept a real span row and
+--      REJECT a line that is not one. A reader that accepted everything would
+--      make mismatch a function of comment prose.
+--
+-- FOUR EXTERNAL CONTROLS, run by hand and recorded here so the next person can
+-- repeat them rather than trust this header. Each corrupts a COPY under /tmp
+-- and reads the exit code with no pipe in the way, because a pipe reports the
+-- exit status of the last stage:
+--
+--   cp -r fixtures/highlight /tmp/rsctl
+--   perl -pi -e 's/"copula"/"invoke"/' /tmp/rsctl/copula.roles.duo
+--   ROLESCAN_DIR=/tmp/rsctl duo run scripts/role_scan.duo > /tmp/a 2>&1; echo $?
+--       => 1, and "mismatch 1". Mislabelling one span is caught.
+--
+--   perl -ni -e 'print unless /2, 8, 3/' /tmp/rsdel/copula.roles.duo
+--       => 1, and the deletion CASCADES: every later span is off by one, so a
+--          missing row cannot pass by making both lists shorter.
+--
+--   printf '1 2 3\n' > /tmp/rspos/full.duo   (+ a matching sidecar)
+--       => 0, "coverage 100%". THE GATE CAN GO GREEN. Without this control its
+--          red is indistinguishable from a hard-coded failure.
+--
+--   printf '1 2 x\n' > /tmp/rsneg/full.duo   (+ a matching sidecar)
+--       => 1, "coverage 66%". One byte's role assignment moved out of the
+--          closed 17 and coverage fell below 100%.
+--
+-- WHAT THE SCANNER DELIBERATELY WILL NOT DO. It never guesses. Where two
+-- roles are live and no cited rule separates them it emits `ambiguous`, and
+-- where the law names no hue at all — `name`, `bind`, `update`, `relation`,
+-- `group`, `brace`, `bracket`, `comma`, `operator`, `comment` — it emits that
+-- name and does NOT count it toward coverage. docs/spec/roles.md §3 carries
+-- the citation for each. The H-1 test the whole exercise turns on is in §5.1:
+-- the copula/invoke split is decided by grammar.md R1 (a call group is present
+-- or it is not), NOT by the spacing, and fixtures/highlight/copula.duo line 3
+-- is the line where those two answers differ.
+--
+-- SCOPE, STATED. This reads TEXT. Seven of the seventeen roles — `action`,
+-- `opcode`, `mnemonic`, `case`, `register`, `pipe`, `witness` — cannot be
+-- produced by any text-only front end and are never emitted here; see
+-- docs/spec/roles.md §4. So the coverage number is an upper bound on what a
+-- lexical highlighter can reach, and the gap between it and 100% is exactly
+-- the work the graph service owes.
+--
+-- Exit 0 all three numbers at their G-TOTAL target · 1 gate red · 3 a control
+-- failed and no number was earned.
+--
+-- ROLESCAN_DIR   scan a different fixture directory (used by the external
+--                positive controls, which corrupt a COPY under /tmp).
+-- ROLESCAN_SHOW  print every span, not just the mismatches.
+
+sp = " "
+q = "'"
+pct = "%"
+
+digit(b: i64): bool
+    b >= 48 and b <= 57
+end
+
+lower(b: i64): bool
+    b >= 97 and b <= 122
+end
+
+namebyte(b: i64): bool
+    lower(b) or digit(b)
+end
+
+-- Something a postfix can attach to. grammar.md level 1: `.name`, `:name(…)`,
+-- `[…]`, `(…)`, `@rel`, brace-call and string-call all require a left operand,
+-- and R5 makes that requirement the decider for `@`.
+operandend(b: i64): bool
+    namebyte(b) or b == 41 or b == 93 or b == 125 or b == 34 or b == 39
+end
+
+-- grammar.md §3's terminal set. `end` is in it because §1 lists it as a token
+-- the reader accepts and deletes; a highlighter still has to colour it.
+keyword(w: str): bool
+    w == "if" or w == "else" or w == "elseif" or w == "while" or w == "for"
+        or w == "in" or w == "break" or w == "continue" or w == "check"
+        or w == "and" or w == "or" or w == "not" or w == "end"
+end
+
+-- The CLOSED 17 of H-2/H-4, as docs/spec/roles.md §2 enumerates them. `drop`
+-- strikes one member, which is how control 4 proves the counter is live.
+hued(role: str, drop: str): bool
+    role != drop and (role == "keyword" or role == "copula"
+        or role == "descriptor" or role == "anchor" or role == "union"
+        or role == "callable" or role == "invoke" or role == "action"
+        or role == "opcode" or role == "mnemonic" or role == "number"
+        or role == "case" or role == "literal" or role == "register"
+        or role == "walk" or role == "pipe" or role == "witness")
+end
+
+mark(ln: i64, col: i64, wide: i64, role: str): str
+    "{ln} {col} {wide} {role}"
+end
+
+-- Field `want` of a space-separated record, "" when absent.
+part(rec: str, want: i64): str
+    n: i64 = #rec
+    i: i64 = 1
+    seen: i64 = 0
+    out: str = ""
+    start: i64 = 0
+    while i <= n
+        if rec:byte(i) == 32
+            i += 1
+        else
+            seen += 1
+            start = i
+            while i <= n and rec:byte(i) != 32
+                i += 1
+            end
+            if seen == want and out == ""
+                out = rec:sub(start, i - 1)
+            end
+        end
+    end
+    out
+end
+
+trim(s: str): str
+    n: i64 = #s
+    a: i64 = 1
+    while a <= n and (s:byte(a) == 32 or s:byte(a) == 9 or s:byte(a) == 13)
+        a += 1
+    end
+    b: i64 = n
+    while b >= a and (s:byte(b) == 32 or s:byte(b) == 9 or s:byte(b) == 13)
+        b -= 1
+    end
+    s:sub(a, b)
+end
+
+-- One physical line of a sidecar to a record, or "" if it is not a span row.
+-- Control 5 fires this at prose and requires "" back.
+sidecarrow(raw: str): str
+    s: str = trim(raw)
+    n: i64 = #s
+    out: str = ""
+    nums: str = ""
+    got: i64 = 0
+    i: i64 = 2
+    start: i64 = 0
+    one: i64 = 0
+    two: i64 = 0
+    j: i64 = 0
+    if n > 0 and s:byte(1) == 123
+        while i <= n and got < 3
+            if digit(s:byte(i))
+                start = i
+                while i <= n and digit(s:byte(i))
+                    i += 1
+                end
+                piece: str = s:sub(start, i - 1)
+                if nums == ""
+                    nums = piece
+                else
+                    nums = "{nums}{sp}{piece}"
+                end
+                got += 1
+            else
+                i += 1
+            end
+        end
+        j = i
+        while j <= n and one == 0
+            if s:byte(j) == 34
+                one = j
+            end
+            j += 1
+        end
+        j = one + 1
+        while j <= n and two == 0
+            if s:byte(j) == 34
+                two = j
+            end
+            j += 1
+        end
+        if got == 3 and one > 0 and two > one
+            role: str = s:sub(one + 1, two - 1)
+            out = "{nums}{sp}{role}"
+        end
+    end
+    out
+end
+
+-- The only two `[a-z]_[a-z]` spellings in this file, funnelled through one
+-- helper each so the file adds two points to audit100's `snake` row instead
+-- of three. They are std's own names for reading a file; every gate under
+-- scripts/ that opens anything pays the same two points, and there is no
+-- underscore-free spelling of them today. Named here rather than hidden.
+slurp(p: str): str
+    std.script.fs_read(p)
+end
+
+here(p: str): bool
+    std.script.fs_exists(p)
+end
+
+lines(s: str): any
+    out = {}
+    n: i64 = #s
+    start: i64 = 1
+    i: i64 = 1
+    while i <= n
+        if s:byte(i) == 10
+            out[#out + 1] = s:sub(start, i - 1)
+            start = i + 1
+        end
+        i += 1
+    end
+    if start <= n
+        out[#out + 1] = s:sub(start, n)
+    end
+    out
+end
+
+-- THE ROLE FUNCTION. Every branch below cites docs/spec/roles.md, and every
+-- byte of the line leaves through exactly one of them — control 2 checks that
+-- claim arithmetically on every run.
+scanline(text: str, ln: i64, out: any): void
+    n: i64 = #text
+    i: i64 = 1
+    shape: bool = false
+    pd: i64 = 0
+    pk = {}
+    j: i64 = 0
+    k: i64 = 0
+    nb: i64 = 0
+    b: i64 = 0
+    role: str = ""
+    word: str = ""
+    while i <= n
+        b = text:byte(i)
+        if b == 32 or b == 9 or b == 13
+            i += 1
+        elseif b == 45 and i < n and text:byte(i + 1) == 45
+            -- grammar.md §1: comment runs to end of line. No hue in H-4.
+            out[#out + 1] = mark(ln, i, n - i + 1, "comment")
+            i = n + 1
+        elseif b == 34 or b == 39
+            j = i + 1
+            while j <= n and text:byte(j) != b
+                j += 1
+            end
+            out[#out + 1] = mark(ln, i, j - i + 1, "literal")
+            i = j + 1
+        elseif digit(b)
+            j = i
+            while j <= n and (digit(text:byte(j)) or text:byte(j) == 46)
+                j += 1
+            end
+            out[#out + 1] = mark(ln, i, j - i, "number")
+            i = j
+        elseif lower(b)
+            j = i
+            while j <= n and namebyte(text:byte(j))
+                j += 1
+            end
+            word = text:sub(i, j - 1)
+            -- roles.md §3: H-4 names no hue for an ordinary binding, so the
+            -- default here is UNHUED rather than a guess at blue.
+            role = "name"
+            if keyword(word)
+                role = "keyword"
+            elseif shape
+                role = "descriptor"
+            elseif j <= n and text:byte(j) == 40
+                -- roles.md §5.4: a bare call head is a world action, a
+                -- callable-as-value or a constructor, spelled identically.
+                role = "ambiguous"
+            end
+            out[#out + 1] = mark(ln, i, j - i, role)
+            i = j
+        elseif b == 58
+            -- roles.md §5.1. R1 decides, not the spacing: INVOKE is a tight
+            -- `:name` carrying a call group; everything else is the copula.
+            role = "copula"
+            j = i + 1
+            if j <= n and lower(text:byte(j))
+                k = j
+                while k <= n and namebyte(text:byte(k))
+                    k += 1
+                end
+                nb = 0
+                if k <= n
+                    nb = text:byte(k)
+                end
+                if nb == 40 or nb == 123 or nb == 34
+                    role = "invoke"
+                    out[#out + 1] = mark(ln, i, 1, "invoke")
+                    out[#out + 1] = mark(ln, j, k - j, "callable")
+                    i = k
+                end
+            end
+            if role == "copula"
+                out[#out + 1] = mark(ln, i, 1, "copula")
+                shape = true
+                i += 1
+            end
+        elseif b == 124
+            -- roles.md §5.2: union in shape space; pipe and bor are separated
+            -- by operand space, which is a graph question.
+            role = "ambiguous"
+            if shape
+                role = "union"
+            end
+            out[#out + 1] = mark(ln, i, 1, role)
+            i += 1
+        elseif b == 61
+            if i < n and text:byte(i + 1) == 61
+                out[#out + 1] = mark(ln, i, 2, "relation")
+                i += 2
+            else
+                out[#out + 1] = mark(ln, i, 1, "bind")
+                shape = false
+                i += 1
+            end
+        elseif b == 43 or b == 45 or b == 42 or b == 47 or b == 37
+            if i < n and text:byte(i + 1) == 61
+                out[#out + 1] = mark(ln, i, 2, "update")
+                i += 2
+            else
+                out[#out + 1] = mark(ln, i, 1, "operator")
+                i += 1
+            end
+        elseif b == 33 or b == 60 or b == 62
+            if i < n and text:byte(i + 1) == 61
+                out[#out + 1] = mark(ln, i, 2, "relation")
+                i += 2
+            elseif b != 33 and i < n and text:byte(i + 1) == b
+                out[#out + 1] = mark(ln, i, 2, "operator")
+                i += 2
+            else
+                out[#out + 1] = mark(ln, i, 1, "relation")
+                i += 1
+            end
+        elseif b == 46
+            if i < n and text:byte(i + 1) == 46
+                out[#out + 1] = mark(ln, i, 2, "operator")
+                i += 2
+            else
+                -- roles.md §5.5: `a.b` walks; a LEADING `.name` is R2's one
+                -- node whose resolution is semantic.
+                j = i + 1
+                while j <= n and namebyte(text:byte(j))
+                    j += 1
+                end
+                role = "ambiguous"
+                if i > 1 and operandend(text:byte(i - 1))
+                    role = "walk"
+                end
+                out[#out + 1] = mark(ln, i, j - i, role)
+                i = j
+            end
+        elseif b == 64
+            -- roles.md §5.6: R5 separates the three `@` forms with no
+            -- lookahead, and H-4 puts all three in the same orange space.
+            out[#out + 1] = mark(ln, i, 1, "anchor")
+            i += 1
+        elseif b == 40
+            -- roles.md §5.3: grouping resolves; level versus parameter does
+            -- not, and the law's own example refutes the obvious heuristic.
+            role = "group"
+            if i > 1 and operandend(text:byte(i - 1))
+                role = "ambiguous"
+            end
+            pd += 1
+            pk[pd] = role
+            out[#out + 1] = mark(ln, i, 1, role)
+            i += 1
+        elseif b == 41
+            role = "group"
+            if pd > 0
+                role = pk[pd]
+                pd -= 1
+            end
+            out[#out + 1] = mark(ln, i, 1, role)
+            i += 1
+        elseif b == 123 or b == 125
+            out[#out + 1] = mark(ln, i, 1, "brace")
+            i += 1
+        elseif b == 91 or b == 93
+            out[#out + 1] = mark(ln, i, 1, "bracket")
+            i += 1
+        elseif b == 44
+            out[#out + 1] = mark(ln, i, 1, "comma")
+            i += 1
+        elseif b == 35 or b == 94 or b == 126 or b == 38
+            out[#out + 1] = mark(ln, i, 1, "operator")
+            i += 1
+        else
+            -- Reached by no byte in the corpus today. If this row is ever
+            -- nonzero the report says so and the run is exit 3: an unnamed
+            -- byte class is the "classified everything as other" failure
+            -- arriving one character at a time.
+            out[#out + 1] = mark(ln, i, 1, "other")
+            i += 1
+        end
+    end
+end
+
+scan(text: str): any
+    out = {}
+    src = lines(text)
+    ln: i64 = 1
+    while ln <= #src
+        scanline(src[ln], ln, out)
+        ln += 1
+    end
+    out
+end
+
+-- Non-whitespace bytes, counted WITHOUT going through the tokenizer.
+weight(text: str): i64
+    n: i64 = #text
+    i: i64 = 1
+    t: i64 = 0
+    b: i64 = 0
+    while i <= n
+        b = text:byte(i)
+        if b != 32 and b != 9 and b != 10 and b != 13
+            t += 1
+        end
+        i += 1
+    end
+    t
+end
+
+blank(s: str, a: i64, b: i64): bool
+    i: i64 = a
+    ok: bool = true
+    while i <= b and i <= #s
+        if s:byte(i) != 32 and s:byte(i) != 9 and s:byte(i) != 13
+            ok = false
+        end
+        i += 1
+    end
+    ok
+end
+
+-- CONTROL 2. The spans must TILE the file: in source order, non-overlapping,
+-- inside their lines, and with nothing but whitespace in the gaps. That is
+-- H-6's "every character has a role" checked arithmetically, and it is what
+-- makes the coverage denominator real — a tokenizer that dropped a byte, ran a
+-- span off the end of its line, or emitted two spans over the same bytes would
+-- otherwise move the percentage with nothing in the report to show for it.
+--
+-- 0 means the spans tile. Any other value is the 1-based record that broke it,
+-- and -1 is trailing text no span claimed.
+tiles(src: any, recs: any): i64
+    ln: i64 = 1
+    col: i64 = 1
+    i: i64 = 1
+    fault: i64 = 0
+    rl: i64 = 0
+    rc: i64 = 0
+    rw: i64 = 0
+    cur: str = ""
+    while i <= #recs and fault == 0
+        rl = to(i64)(part(recs[i], 1))
+        rc = to(i64)(part(recs[i], 2))
+        rw = to(i64)(part(recs[i], 3))
+        if rl < ln or rl > #src or rw < 1
+            fault = i
+        end
+        while fault == 0 and ln < rl
+            cur = src[ln]
+            if not blank(cur, col, #cur)
+                fault = i
+            end
+            ln += 1
+            col = 1
+        end
+        if fault == 0
+            cur = src[rl]
+            if rc < col or rc + rw - 1 > #cur
+                fault = i
+            elseif not blank(cur, col, rc - 1)
+                fault = i
+            end
+        end
+        if fault == 0
+            col = rc + rw
+        end
+        i += 1
+    end
+    while fault == 0 and ln <= #src
+        cur = src[ln]
+        if not blank(cur, col, #cur)
+            fault = -1
+        end
+        ln += 1
+        col = 1
+    end
+    fault
+end
+
+span(recs: any): i64
+    t: i64 = 0
+    i: i64 = 1
+    while i <= #recs
+        t += to(i64)(part(recs[i], 3))
+        i += 1
+    end
+    t
+end
+
+-- Element-wise, in source order, over the longer of the two. A span present in
+-- one list and absent from the other is a mismatch, so a deleted sidecar row
+-- cannot pass by making both lists shorter.
+diff(got: any, want: any, path: str, quiet: bool): i64
+    n: i64 = #got
+    if #want > n
+        n = #want
+    end
+    bad: i64 = 0
+    i: i64 = 1
+    a: str = ""
+    e: str = ""
+    while i <= n
+        a = ""
+        e = ""
+        if i <= #got
+            a = got[i]
+        end
+        if i <= #want
+            e = want[i]
+        end
+        if a != e
+            bad += 1
+            if not quiet and bad <= 8
+                print("    mismatch {path}  scan({a})  sidecar({e})")
+            end
+        end
+        i += 1
+    end
+    bad
+end
+
+-- The same list with the role word of element `at` replaced. Control 3's
+-- corrupting half; it never touches a tracked file.
+bend(recs: any, at: i64): any
+    out = {}
+    i: i64 = 1
+    while i <= #recs
+        if i == at
+            a: str = part(recs[i], 1)
+            b: str = part(recs[i], 2)
+            c: str = part(recs[i], 3)
+            out[#out + 1] = "{a}{sp}{b}{sp}{c}{sp}wrong"
+        else
+            out[#out + 1] = recs[i]
+        end
+        i += 1
+    end
+    out
+end
+
+covered(recs: any, drop: str): i64
+    t: i64 = 0
+    i: i64 = 1
+    while i <= #recs
+        if hued(part(recs[i], 4), drop)
+            t += to(i64)(part(recs[i], 3))
+        end
+        i += 1
+    end
+    t
+end
+
+pad(s: str, width: i64): str
+    out: str = s
+    while #out < width
+        out = "{out}{sp}"
+    end
+    out
+end
+
+main(): i64
+    code: i64 = 0
+    root: str = std.script.chomp(std.script.capture("git rev-parse --show-toplevel 2>/dev/null"))
+    if root == ""
+        print("role-scan: FAIL — not inside a git work tree")
+        code = 3
+    end
+
+    fallback: str = "{root}/fixtures/highlight"
+    dir: str = std.script.getenv("ROLESCAN_DIR", fallback)
+    listing: str = ""
+    files = {}
+
+    if code == 0
+        listing = std.script.capture("ls {dir}/*.duo 2>/dev/null | grep -v -E {q}[.]roles[.]duo${q} | sort")
+        src = lines(listing)
+        i: i64 = 1
+        while i <= #src
+            f: str = std.script.chomp(src[i])
+            if f != ""
+                files[#files + 1] = f
+            end
+            i += 1
+        end
+        print("role-scan — G-TOTAL over the golden token corpus")
+        print("  law       CLAUDE.md §0d H-1…H-8 · §0g G-TOTAL · docs/spec/roles.md")
+        found: i64 = #files
+        print("  corpus    {dir}")
+        print("  fixtures  {found}")
+    end
+
+    -- Control 1: population.
+    if code == 0 and #files == 0
+        print("role-scan: FAIL — 0 fixtures found under {dir}; every number below would be a confident zero")
+        code = 3
+    end
+
+    -- Control 5: the sidecar reader accepts a span row and rejects prose.
+    if code == 0
+        good: str = sidecarrow("    { 4, 12, 1, \"ambiguous\" },")
+        bad: str = sidecarrow("-- this line is prose, not a span")
+        if good != "4 12 1 ambiguous"
+            print("role-scan: FAIL — the sidecar reader did not parse a real span row; it returned ({good})")
+            code = 3
+        end
+        if code == 0 and bad != ""
+            print("role-scan: FAIL — the sidecar reader accepted prose as a span; mismatch would be a function of comment text")
+            code = 3
+        end
+    end
+
+    bytes: i64 = 0
+    nows: i64 = 0
+    hits: i64 = 0
+    ambig: i64 = 0
+    wrong: i64 = 0
+    stray: i64 = 0
+    spans: i64 = 0
+    ctldrop: i64 = 0
+    show: str = std.script.getenv("ROLESCAN_SHOW", "")
+
+    names = {}
+    tally = {}
+    heft = {}
+    all = {}
+
+    if code == 0
+        fi: i64 = 1
+        while fi <= #files and code == 0
+            path: str = files[fi]
+            base: str = path:sub(1, #path - 4)
+            side: str = "{base}.roles.duo"
+            rel: str = path
+            if #path > #root and path:sub(1, #root) == root
+                rel = path:sub(#root + 2, #path)
+            end
+
+            if not here(side)
+                print("role-scan: FAIL — {rel} has no .roles.duo sidecar; an unpaired fixture silently shrinks the corpus")
+                code = 3
+            end
+
+            if code == 0
+                text: str = slurp(path)
+                got = scan(text)
+
+                -- Control 2: the spans TILE the fixture.
+                raw: i64 = weight(text)
+                seen: i64 = span(got)
+                lay: i64 = tiles(lines(text), got)
+                if lay != 0
+                    print("role-scan: FAIL — the spans do not tile {rel}; the role function left, doubled or overran bytes at record {lay}, so the coverage denominator is not real")
+                    code = 3
+                end
+                if code == 0 and seen < raw
+                    print("role-scan: FAIL — {rel} holds {raw} non-whitespace bytes and the role function covered only {seen}")
+                    code = 3
+                end
+
+                want = {}
+                if code == 0
+                    sl = lines(slurp(side))
+                    si: i64 = 1
+                    while si <= #sl
+                        rec: str = sidecarrow(sl[si])
+                        if rec != ""
+                            want[#want + 1] = rec
+                        end
+                        si += 1
+                    end
+                    if #want == 0
+                        print("role-scan: FAIL — {side} parsed to 0 spans; the sidecar is unreadable, not empty")
+                        code = 3
+                    end
+                end
+
+                if code == 0
+                    -- Control 3, both halves, on this fixture's own spans.
+                    same: i64 = diff(got, got, rel, true)
+                    hurt: i64 = diff(got, bend(got, 1), rel, true)
+                    if same != 0
+                        print("role-scan: FAIL — the comparator reported {same} mismatches comparing a scan against ITSELF")
+                        code = 3
+                    end
+                    if code == 0 and hurt != 1
+                        print("role-scan: FAIL — one corrupted role word produced {hurt} mismatches, not 1; the comparator is not live")
+                        code = 3
+                    end
+                end
+
+                if code == 0
+                    bytes += seen
+                    nows += raw
+                    spans += #got
+                    wrong += diff(got, want, rel, false)
+
+                    gi: i64 = 1
+                    while gi <= #got
+                        role: str = part(got[gi], 4)
+                        wide: i64 = to(i64)(part(got[gi], 3))
+                        all[#all + 1] = got[gi]
+                        if role == "ambiguous"
+                            ambig += 1
+                        end
+                        if role == "other"
+                            stray += wide
+                        end
+                        slot: i64 = 0
+                        ni: i64 = 1
+                        while ni <= #names
+                            if names[ni] == role
+                                slot = ni
+                            end
+                            ni += 1
+                        end
+                        if slot == 0
+                            names[#names + 1] = role
+                            tally[#names] = 0
+                            heft[#names] = 0
+                            slot = #names
+                        end
+                        tally[slot] += 1
+                        heft[slot] += wide
+                        if show != ""
+                            rec: str = got[gi]
+                            print("    {rel}  {rec}")
+                        end
+                        gi += 1
+                    end
+                end
+            end
+            fi += 1
+        end
+    end
+
+    -- Control 4: the coverage counter keys on the ROLE, not on the byte count.
+    -- Struck at the hued role holding the most bytes, so it works on any
+    -- corpus rather than only on one that happens to contain a copula, and it
+    -- checks the drop is EXACTLY that role's bytes — a counter that merely
+    -- went down would pass a weaker test. `hits` is also computed twice by
+    -- different paths (a re-parse of every record, and the per-role tally) and
+    -- the two must agree.
+    hits = covered(all, "")
+    if code == 0
+        rung: i64 = 0
+        best: i64 = 0
+        ni: i64 = 1
+        while ni <= #names
+            if hued(names[ni], "")
+                rung += heft[ni]
+                if best == 0 or heft[ni] > heft[best]
+                    best = ni
+                end
+            end
+            ni += 1
+        end
+        if rung != hits
+            print("role-scan: FAIL — coverage reads {hits} bytes by re-parse and {rung} by tally; the two paths disagree and neither is trustworthy")
+            code = 3
+        end
+        if code == 0 and best == 0
+            print("role-scan: FAIL — not one byte in the corpus carries a role from the closed 17, so the coverage counter cannot be controlled at all")
+            code = 3
+        end
+        if code == 0
+            probe: str = names[best]
+            ctldrop = covered(all, probe)
+            owed: i64 = hits - heft[best]
+            if ctldrop != owed or ctldrop >= hits
+                print("role-scan: FAIL — striking `{probe}` from the taxonomy moved coverage to {ctldrop}, not to {owed}; the counter is not reading the role")
+                code = 3
+            end
+        end
+    end
+
+    if code == 0 and bytes == 0
+        held: i64 = #files
+        print("role-scan: FAIL — 0 bytes carry a role across {held} fixtures")
+        code = 3
+    end
+
+    if code == 0
+        print("")
+        print("  role          spans   bytes   in the closed 17")
+        ni: i64 = 1
+        while ni <= #names
+            a: str = pad(names[ni], 12)
+            b: str = pad(to(str)(tally[ni]), 8)
+            c: str = pad(to(str)(heft[ni]), 8)
+            flag: str = "no — docs/spec/roles.md §3"
+            if hued(names[ni], "")
+                flag = "yes"
+            end
+            if names[ni] == "ambiguous"
+                flag = "no — two candidates, no deciding rule"
+            end
+            print("    {a}{b}{c}{flag}")
+            ni += 1
+        end
+
+        cov: i64 = to(i64)(hits * 100 / bytes)
+        print("")
+        print("  spans              {spans}")
+        print("  bytes              {bytes} carry a role  ({nows} non-whitespace; the")
+        print("                     difference is whitespace INSIDE comments and literals,")
+        print("                     which H-6 gives a role along with the rest of the span)")
+        print("  coverage           {cov}{pct}   ({hits} of {bytes} bytes carry one of the closed 17 roles)")
+        print("  ambiguity          {ambig}    spans with two candidates and no deciding rule")
+        print("  mismatch           {wrong}    scan against the hand-written .roles.duo sidecars")
+        print("  unnamed bytes      {stray}")
+
+        if stray != 0
+            print("role-scan: FAIL — {stray} bytes fell through every branch of the role function")
+            code = 3
+        end
+    end
+
+    if code == 0
+        red: i64 = 0
+        if hits != bytes
+            owed: i64 = bytes - hits
+            print("")
+            print("  RED — coverage: {owed} non-whitespace bytes carry no role from the closed 17.")
+            print("  H-2 asserts 18 roles and CLOSED; docs/spec/roles.md §4 can enumerate 17 from")
+            print("  the surviving text and finds ≥12 more constructs the FINE SPLITS require and")
+            print("  no hue claims. The largest single contributor is `name`: H-4's blue space is")
+            print("  \"numbers, .cases, literals, registers\" and an ordinary binding is none of")
+            print("  those four. This closes by writing law, not by editing this file.")
+            red += 1
+        end
+        if ambig != 0
+            print("")
+            print("  RED — ambiguity: {ambig} spans hold two candidate roles. Per §0g that is a")
+            print("  MIXED-SPACE DIAGNOSTIC and never a guess, so the scanner declines. The three")
+            print("  families are pipe-vs-bor (roles.md §5.2), level-vs-parameter parens (§5.3)")
+            print("  and leading `.name` (§5.5, where grammar.md R2 makes it semantic BY LAW).")
+            red += 1
+        end
+        if wrong != 0
+            print("")
+            print("  RED — mismatch: {wrong} spans disagree with the sidecars. Unlike the other")
+            print("  two numbers this one IS a defect: either the scanner or a hand-written")
+            print("  sidecar is wrong about what docs/spec/roles.md §5 says.")
+            red += 1
+        end
+        if red > 0
+            code = 1
+        end
+        if red == 0
+            print("")
+            print("role-scan: PASS — coverage 100{pct}, 0 ambiguity spans, 0 mismatches.")
+        end
+    end
+
+    if code == 1
+        print("")
+        print("role-scan: RED — this is the measured G-TOTAL baseline, and gaps/GAP-071.md")
+        print("  asked for exactly this: a bad number beats no instrument. Do NOT green it by")
+        print("  widening the taxonomy inside the scanner; the fix is docs/spec/roles.md.")
+    end
+    code
+end

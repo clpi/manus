@@ -1,0 +1,23 @@
+-- Expected (line, col, len, role) for union.duo. HAND-WRITTEN from
+-- docs/spec/roles.md §5.2.
+--
+-- What this fixture discriminates: `|` has THREE meanings and only two
+-- hues. In shape space (reached through `shapedecl -> name ":" shape`) it
+-- is the orange union edge and is lexically decidable. Outside it, `pipe`
+-- (green, H-4) and `bor` (pass100 §4, NO HUE ANYWHERE) are separated by
+-- operand space, which is a graph question. Line 3 is therefore an
+-- unresolved-ambiguity span, which G-TOTAL counts and which must be a
+-- mixed-space DIAGNOSTIC rather than a guess. -- gap[071]
+spans = {
+    { 1, 1, 8, "comment" },
+    { 2, 1, 1, "name" },
+    { 2, 2, 1, "copula" },
+    { 2, 4, 3, "descriptor" },
+    { 2, 8, 1, "union" },
+    { 2, 10, 3, "descriptor" },
+    { 3, 1, 3, "name" },
+    { 3, 5, 1, "bind" },
+    { 3, 7, 2, "name" },
+    { 3, 10, 1, "ambiguous" },
+    { 3, 12, 2, "name" },
+}

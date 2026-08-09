@@ -1,0 +1,32 @@
+-- Expected (line, col, len, role) for bind.duo. HAND-WRITTEN from
+-- docs/spec/roles.md §3 and §5.4.
+--
+-- What this fixture discriminates: §0g's "FINE SPLITS ARE LAW" row for
+-- `=` binds / `+=` update edge / `==` relation query. All three are
+-- lexically decidable by spelling and NONE of them has a hue in H-4, so
+-- all three are UNHUED and none counts toward coverage. A renderer that
+-- paints all three the same colour has lost the split the law calls law.
+--
+-- Line 5 is the specificity finding (Pass 118): LAW-CALL names `print`
+-- as a world action — purple, italic under H-5 — but a call head is
+-- spelled identically to a constructor (pass100 §4: descriptors are
+-- construction), so a lexical front end cannot beat the lexical class
+-- `name`. `ambiguous(callable|descriptor)`. -- gap[071]
+spans = {
+    { 1, 1, 7, "comment" },
+    { 2, 1, 1, "name" },
+    { 2, 3, 1, "bind" },
+    { 2, 5, 1, "number" },
+    { 3, 1, 1, "name" },
+    { 3, 3, 2, "update" },
+    { 3, 6, 1, "number" },
+    { 4, 1, 2, "keyword" },
+    { 4, 4, 1, "name" },
+    { 4, 6, 2, "relation" },
+    { 4, 9, 1, "number" },
+    { 5, 5, 5, "ambiguous" },
+    { 5, 10, 1, "ambiguous" },
+    { 5, 11, 1, "name" },
+    { 5, 12, 1, "ambiguous" },
+    { 6, 1, 3, "keyword" },
+}

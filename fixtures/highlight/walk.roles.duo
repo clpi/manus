@@ -1,0 +1,25 @@
+-- Expected (line, col, len, role) for walk.duo. HAND-WRITTEN from
+-- docs/spec/roles.md §5.5.
+--
+-- What this fixture discriminates: `.field` versus `.case`. With a left
+-- operand, `a.b` is data access (pass100 §4) and is the green `walk`
+-- role — decidable. LEADING `.name` is semantic BY LAW: grammar.md R2
+-- says the parser emits ONE node (`anchorref`) and "resolution is
+-- semantic", and R2's descriptor-expected test is itself a graph query
+-- ("RHS of `==` against a KNOWN CASE-SET"). So line 3's `.eof` is
+-- `ambiguous(case|walk)` — blue against green, two hues, no lexical rule.
+-- R2's own "neither context => diagnostic" and G-TOTAL's "two candidates
+-- is a mixed-space DIAGNOSTIC, never a guess" are the same instruction.
+-- -- gap[071]
+spans = {
+    { 1, 1, 7, "comment" },
+    { 2, 1, 1, "name" },
+    { 2, 3, 1, "bind" },
+    { 2, 5, 1, "name" },
+    { 2, 6, 4, "walk" },
+    { 3, 1, 1, "name" },
+    { 3, 3, 1, "bind" },
+    { 3, 5, 1, "name" },
+    { 3, 7, 2, "relation" },
+    { 3, 10, 4, "ambiguous" },
+}

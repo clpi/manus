@@ -1,0 +1,3 @@
+-- paren
+f = map(symbol)(u32)
+g = (a + b) * c

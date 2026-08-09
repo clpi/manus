@@ -1,0 +1,3 @@
+-- walk
+p = w.pos
+k = t == .eof

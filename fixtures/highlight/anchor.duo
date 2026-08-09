@@ -1,0 +1,3 @@
+-- anchor
+fresh = @{ x = 1 }
+moved = point@polar

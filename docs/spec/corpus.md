@@ -92,6 +92,7 @@ negative       examples/compile_fail/
 negative       examples/native_differential/unsupported/
 negative       error_test.duo
 canonical      examples/native_differential/
+canonical      fixtures/highlight/
 generated      examples/pass12_m1_diff.duo
 generated      lib/std/token/classify.duo
 generated      lib/std/wasm/opcode_lookup.duo

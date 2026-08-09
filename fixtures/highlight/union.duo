@@ -1,0 +1,3 @@
+-- union
+v: i64 | f64
+out = xs | ys

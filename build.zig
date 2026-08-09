@@ -164,6 +164,27 @@ pub fn build(b: *std.Build) void {
     const capability_rows_step = b.step("capability-rows", "Pass 100 §22: per-CAPABILITY matrix, generated from fixtures");
     capability_rows_step.dependOn(&capability_rows_cmd.step);
 
+    // ward against wart, wasmtime and wasmer on one corpus, five axes. Before
+    // this step nothing in the tree measured ward against anything but ward,
+    // so "ward is faster" was an unmade claim rather than a weak one.
+    //
+    // Not part of `test` or `agent-smoke`, on purpose: it spawns roughly 300
+    // processes and one workload alone runs four seconds, so it is a step you
+    // ask for. It also does NOT build ward -- a benchmark that builds its own
+    // subject reports the build -- and it prints the binary's timestamp plus a
+    // warning when ward's source is dirty, so a stale measurement announces
+    // itself instead of being quoted.
+    //
+    // What makes it fail is a REGRESSION against the baselines recorded in the
+    // script, not a loss to another runtime. ward loses rows today and the
+    // table ranks them; a gate that could only come out green would be
+    // decoration, and this one is meant to produce a worklist.
+    const runtime_bench_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/runtime_bench.duo" });
+    runtime_bench_cmd.setCwd(b.path("."));
+    runtime_bench_cmd.step.dependOn(b.getInstallStep());
+    const runtime_bench_step = b.step("runtime-bench", "ward vs wart/wasmtime/wasmer on loc, bytes, startup, rss and execution");
+    runtime_bench_step.dependOn(&runtime_bench_cmd.step);
+
     const test_step = b.step("test", "Run all tests (unit + compile-fail)");
     test_step.dependOn(&test_cmd.step);
 

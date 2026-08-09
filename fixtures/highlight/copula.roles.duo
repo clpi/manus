@@ -1,0 +1,31 @@
+-- Expected (line, col, len, role) for copula.duo. HAND-WRITTEN from
+-- docs/spec/roles.md §5.1; never generated from scripts/role_scan.duo.
+--
+-- What this fixture discriminates: the copula/invoke split, and the fact
+-- that SPACING IS NOT THE DECIDER. grammar.md R1 is ("IS never takes an
+-- argument group; INVOKE always does"); CLAUDE.md §0d's spaced-vs-tight
+-- rule is a canonical-layout corollary. Line 3 separates them: `count:u32`
+-- is TIGHT and has no call group, so R1 says copula and spacing says
+-- invoke. A scanner that highlights line 3 purple has failed H-1.
+--
+-- `total`, `count`, `n`, `lx`, `number` are ordinary bindings. H-4's blue
+-- space is "numbers, .cases, literals, registers" and names no hue for a
+-- binding, so they are `name` — UNHUED, and they do not count toward
+-- coverage. See docs/spec/roles.md §3. -- gap[071]
+spans = {
+    { 1, 1, 9, "comment" },
+    { 2, 1, 5, "name" },
+    { 2, 6, 1, "copula" },
+    { 2, 8, 3, "descriptor" },
+    { 3, 1, 5, "name" },
+    { 3, 6, 1, "copula" },
+    { 3, 7, 3, "descriptor" },
+    { 4, 1, 1, "name" },
+    { 4, 3, 1, "bind" },
+    { 4, 5, 2, "name" },
+    { 4, 7, 1, "invoke" },
+    { 4, 8, 4, "callable" },
+    { 4, 12, 1, "ambiguous" },
+    { 4, 13, 6, "name" },
+    { 4, 19, 1, "ambiguous" },
+}
