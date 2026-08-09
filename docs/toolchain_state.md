@@ -160,10 +160,12 @@ the Duo toolchain.
 
 ### 2.7 Repository hygiene in `tools/mcp/`
 
-35 of the 58 files under `tools/` are `eval_probe*.duo` — one-off scratch probes
-(`eval_probe.duo`, `eval_probe2.duo` … `eval_probe35.duo`), e.g. `eval_probe17.duo`
-is three prints testing whether `string.gmatch` returns a callable. They are
-committed alongside the servers. `tools/mcp/duo_shared.duo:5` also opens with
+RESOLVED 2026-08-08. 36 of the 58 files under `tools/` were `eval_probe*.duo` —
+one-off scratch probes (`eval_probe.duo`, `eval_probe2.duo` … `eval_probe35.duo`),
+e.g. `eval_probe17.duo` was three prints testing whether `string.gmatch` returns
+a callable. They were committed alongside the servers and are now deleted: a
+`git grep` found no reference from `build.zig`, from any gate, or from any
+script, so nothing consumed them. `tools/mcp/duo_shared.duo:5` also opens with
 `M = {}` and closes with `M` at `:1002` — the M pattern that the HOT LIST calls
 dead, in the file that every MCP tool routes through.
 
@@ -396,8 +398,9 @@ Ward), smallest-first, each one dogfooding the last:
 10. **tree-sitter.** `duo grammar emit`, modelled on `duo token-tables emit`;
     close P21-G13.
 11. **Ward → SH-11.** Lift the runtime-independent encoders per §5.
-12. **Housekeeping.** Retire `tools/mcp/eval_probe*.duo` (35 files); decide
-    whether `zls.duo` belongs in a Duo toolchain at all, given §2.6.
+12. **Housekeeping.** ~~Retire `tools/mcp/eval_probe*.duo`~~ — DONE 2026-08-08,
+    36 files deleted. Still open: decide whether `zls.duo` belongs in a Duo
+    toolchain at all, given §2.6.
 
 ## Appendix — measurements taken
 

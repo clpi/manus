@@ -327,6 +327,26 @@ pub fn build(b: *std.Build) void {
     const audit100_step = b.step("audit100", "Pass 100 deny table over the canonical .duo corpus; ratchets each row");
     audit100_step.dependOn(&audit100_cmd.step);
 
+    // role-scan -- G-TOTAL (CLAUDE.md section 0g), executable for the first
+    // time. gaps/GAP-071.md records that G-TOTAL "cannot be measured at all
+    // yet" for want of an instrument, and that "a gate with no instrument
+    // reports nothing, which is worse than reporting a bad number". This is the
+    // instrument: it assigns a role to every byte of the golden token corpus
+    // under fixtures/highlight using only the tests docs/spec/roles.md can cite,
+    // and reports coverage / ambiguity / mismatch.
+    //
+    // UNLIKE audit100 AND capability-scan THIS DOES NOT RATCHET, and that is
+    // deliberate. Those two measure a distance the repository can walk down by
+    // editing code. This one measures a hole in the LAW -- H-2 asserts a closed
+    // 18-role taxonomy that the tree never enumerates, and coverage cannot
+    // reach 100% until the missing roles are written. A budget here would turn
+    // an unwritten rule into a satisfied number.
+    const role_scan_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/role_scan.duo" });
+    role_scan_cmd.setCwd(b.path("."));
+    role_scan_cmd.step.dependOn(b.getInstallStep());
+    const role_scan_step = b.step("role-scan", "G-TOTAL: role coverage, ambiguity and sidecar conformance over fixtures/highlight");
+    role_scan_step.dependOn(&role_scan_cmd.step);
+
     // U1 -- Pass 105 section 4's `std@{ ambient = false }`, executable. The one
     // charter row that is effective immediately rather than at 0.1, so it is a
     // step rather than a plan. It ratchets off a measured baseline for the same
@@ -1084,6 +1104,28 @@ pub fn build(b: *std.Build) void {
     const hash_agreement_step = b.step("hash-agreement", "Compile-time vs runtime string hash must agree (intern pool)");
     hash_agreement_step.dependOn(&hash_agreement_cmd.step);
     agent_smoke_step.dependOn(&hash_agreement_cmd.step);
+
+    // MCP gate. All three duo MCP servers (duo-bench, duo-lsp, zls) were DEAD —
+    // not slow, dead — for an unknown period, and nothing noticed: they
+    // compiled, so every check that existed was satisfied, while `duo run`
+    // failed at link time on a `req` inside a tool handler. Coordination across
+    // parallel agent sessions ran with no coordination tool at all, and the
+    // damage was measurable — three gap-number collisions in one night plus
+    // repeated sweep-commits.
+    //
+    // The gate does real JSON-RPC over stdio and asserts response BYTES: exact
+    // tool counts (not floors), named coordination tools, a value round trip
+    // through the file-claim lock that requires the lock to REFUSE a second
+    // owner, and by-name calls to seven handlers that used to answer nothing at
+    // all. It spawns the servers in a scratch cwd, because `duo run x.duo`
+    // drops `x.out` beside itself and this gate guards the tree it runs in.
+    const mcp_gate_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "tools/mcp/mcp_gate.duo" });
+    mcp_gate_cmd.setCwd(b.path("."));
+    mcp_gate_cmd.step.dependOn(b.getInstallStep());
+    const mcp_gate_step = b.step("mcp-gate", "MCP servers must handshake, serve their full tool census, and answer by value");
+    mcp_gate_step.dependOn(&mcp_gate_cmd.step);
+    // Tier 0: a dead MCP server is a dead coordination plane.
+    agent_smoke_step.dependOn(&mcp_gate_cmd.step);
 
     // G-061 tier-0 metaprogramming smokes (combinator dispatch + derive bundles)
     const meta_smoke_paths = [_][]const u8{

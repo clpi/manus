@@ -1,6 +1,6 @@
 -- Pass 5 MCP shared helper smoke (run from duo repo root via duo-mcp).
-shared = req "duo_shared"
-json = req "std.json"
+shared = req "tools.mcp.duo_shared"
+
 
 preview = shared.foreign_import_preview("examples/pass5/fixtures/point.h", "examples/pass5")
 if not preview.ok

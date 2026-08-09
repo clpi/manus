@@ -1,6 +1,0 @@
--- Test: check if \n is a newline or literal backslash-n
-s1 = "line1\nline2\nline3\n"
-print("s1_len=" .. string.len(s1) .. " s1[2]=" .. string.byte(s1, 2))
-
-s2 = "fun add_i32(a: i32, b: i32): i32 a + b end\nfun add_i64(a: i64, b: i64): i64 a + b end"
-print("s2_len=" .. string.len(s2) .. " s2[46]=" .. string.byte(s2, 46) .. " s2[47]=" .. string.byte(s2, 47))

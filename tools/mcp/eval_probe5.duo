@@ -1,4 +1,0 @@
-sx = req "std.script"
-c = sx.capture(sx.getenv("DUO_ROOT", ".") .. "/zig-out/bin/duo dump-c /tmp/duo_eval_audit.duo 2>&1")
-print("len=" .. string.len(c))
-print("first40=[" .. string.sub(c, 1, 40) .. "]")

@@ -125,6 +125,27 @@ Shared coordination logic is in `duo_shared.duo` (also mirrored to `scripts/mcp/
 
 For a comprehensive quick-reference of all tools organized by category, see **[TOOLS.md](./TOOLS.md)**.
 
+## Gate
+
+`zig build mcp-gate` is the only proof that these servers work, and it runs as
+part of `zig build agent-smoke` (tier 0). It speaks real JSON-RPC over stdio to
+each server and asserts the RESPONSE BYTES: exact tool counts, the named
+coordination tools, and a value round trip through the file-claim lock that
+requires the lock to REFUSE a second owner.
+
+It exists because both servers were dead — not slow, dead — for an unknown
+period and nothing noticed. They COMPILED; `duo run` failed at link time on a
+`req` inside a tool handler. "It compiled" and "it started" are both worthless
+here: a server that starts and lists zero tools is indistinguishable from a
+working one in a log.
+
+When you add or remove a tool, update the expected count in
+`tools/mcp/mcp_gate.duo` deliberately. The count is asserted EXACTLY, not as a
+floor, so that a tool which quietly stops registering fails the build.
+
 ## Test artifacts
 
-The `eval_probe*.duo` files (probe1 through probe35+) are **test artifacts** from the `duo_exponential_eval` evaluator development. They exercise the Duo compiler's codegen paths and are not part of the MCP server implementation. Their compiled outputs (`*.out`) are gitignored.
+There are none. The 36 `eval_probe*.duo` scratch files were deleted on
+2026-08-08: nothing referenced them — not `build.zig`, not any gate, not any
+script — and the two documents that mentioned them both described them as
+one-off probes to retire.

@@ -1,7 +1,7 @@
 -- duo-mcp/duo_eval.duo — exponential metaprogramming evaluator.
 -- Pure Duo. Input: Duo source. Output: metaprogramming-enhanced, minimized Duo
 -- intermediary using @comp.* combinators + native-boxing audit + LOC metrics.
--- Imported by duo_bench.duo: `eval = req "duo_eval"`.
+-- Imported by duo_bench.duo: `eval = req "tools.mcp.duo_eval"`.
 --
 -- Implementation notes:
 --  * All intermediate data is carried as DELIMITED STRINGS or string-keyed->string
@@ -11,9 +11,16 @@
 --    bug, G-052-adjacent). Delimiters `;` (field) and newline (record) are inlined;
 --    identifiers/types never contain these bytes.
 
-json_mod = req "std.json"
-fs = req "std.fs"
-sx = req "std.script"
+
+-- `std.script` is gone (denied activity junk drawer, Pass 100 §15). The two
+-- things it was used for here are `std.os.getenv` and `std.proc.capture`.
+-- getenv answers "" — NOT nil — for an unset name, so every read is guarded
+-- against "" explicitly. The old `os.getenv(name, default)` two-argument
+-- form silently DROPPED its default under the Lua 5.1 runtime.
+duo_root = std.os.getenv("DUO_ROOT")
+if duo_root == nil or duo_root == "" then duo_root = "." end
+duo_bin = std.os.getenv("DUO_BIN")
+if duo_bin == nil or duo_bin == "" then duo_bin = duo_root .. "/zig-out/bin/duo" end
 
 -- parse one line as a function header -> "name;ptypes_csv;ret" or nil.
 -- accepts: fun NAME(p: T, ...) [: | -> ] RET   and bare NAME(...) [: | -> ] RET
@@ -187,11 +194,9 @@ end
 
 fun audit_boxing(source: str): any
     tmp = "/tmp/duo_eval_audit.duo"
-    fs.write_file(tmp, source)
-    -- full path default: "duo" is not on PATH (was the root cause of the 68-char error output).
-    -- NOTE: os.getenv(name, default) ignores its 2nd arg (Lua 5.1 runtime) — use sx.getenv.
-    bin = sx.getenv("DUO_BIN", sx.getenv("DUO_ROOT", ".") .. "/zig-out/bin/duo")
-    c = sx.capture(bin .. " dump-c " .. tmp .. " 2>&1") or ""
+    std.fs.write_file(tmp, source)
+    -- full path: "duo" is not on PATH (was the root cause of the 68-char error output).
+    c = std.proc.capture(duo_bin .. " dump-c " .. tmp .. " 2>&1") or ""
     needles = { ["lua_invoke("] = 1, ["lua_table_get_str_lit("] = 1, ["lua_Value "] = 1, ["lua_table_new("] = 1, ["lua_val_from_"] = 1, ["lua_to_str("] = 1, ["lua_to_int("] = 1 }
     hits_csv = ""
     hit_marks = ""
@@ -281,5 +286,5 @@ fun evaluate(source: str, goal: str): str
         native_boxing_audit = audit,
         tip = "Each @comp.generate folds to native C at compile time (no lua_Value). One Duo author line multiplies into N native functions."
     }
-    json_mod.encode(result)
+    std.json.encode(result)
 end

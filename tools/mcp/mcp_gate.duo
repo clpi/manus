@@ -1,0 +1,357 @@
+-- tools/mcp/mcp_gate.duo — tier-0 gate: the MCP servers actually SERVE.
+--
+-- Why this exists. ALL THREE duo MCP servers were dead — not slow, dead — for
+-- an unknown length of time, and nothing noticed. Coordination across parallel
+-- agent sessions ran with no coordination tool at all: three gap-number
+-- collisions in one night, and repeated sweep-commits where one session's
+-- bare `git commit` swallowed another's in-flight work. An MCP server with no
+-- gate is a server that dies silently and takes coordination with it.
+--
+-- duo_bench and duo_lsp died on a `req` inside a tool handler. zls.duo had
+-- NEVER built at all, on a different instance of the same limitation: a
+-- file-scope `fun` called from a handler. Nobody had run it, so nobody knew.
+--
+-- What this gate refuses to accept as evidence:
+--
+--   * "it compiled" — the servers COMPILED for months. duo_bench.duo failed
+--     at LINK time on `duo_make_closure_29(sx)`, which you only see if you
+--     actually run it.
+--   * "it started" — a server that starts and lists ZERO tools is byte-for-byte
+--     indistinguishable from a working one in a log.
+--   * "tools/list answered" — `duo_meta_catalog` and `duo_complexity` are
+--     listed by duo_lsp right now and send no response at all when called.
+--
+-- So every check here is a REAL JSON-RPC round trip over stdio whose RESPONSE
+-- BYTES are asserted. Counts are asserted EXACTLY, not as floors: a floor
+-- silently tolerates the tool that stopped registering.
+--
+-- Every zero and every green in here is positive-controlled. The claim probe
+-- proves the coordination lock by making it REFUSE — a lock that only ever
+-- says yes is not a lock, and the gate would rather see the "no".
+
+
+root = std.os.getenv("DUO_ROOT")
+if root == nil or root == ""
+    root = std.os.getenv("PWD")
+end
+if root == nil or root == ""
+    root = "."
+end
+
+duo_bin = std.os.getenv("DUO_BIN")
+if duo_bin == nil or duo_bin == ""
+    duo_bin = root .. "/zig-out/bin/duo"
+end
+
+-- `duo run x.duo` drops `x.out` in the CURRENT directory. Run from the repo
+-- root and the gate litters the root with duo_bench.out / duo_lsp.out, which
+-- `zig build repo-hygiene` is entitled to fail on. Work in a scratch dir.
+WORK = "/tmp/duo-mcp-gate"
+
+fails = 0
+
+report(ok: bool, what: str, detail: str): void
+    if ok
+        io.write("  ok   " .. what .. "\n")
+    else
+        io.write("  FAIL " .. what .. " — " .. detail .. "\n")
+    end
+end
+
+-- Drive a server: feed it `lines` on stdin, hand back everything it wrote.
+-- stdin is a FILE, not a pipe, because the transport is newline-delimited
+-- JSON and a half-written pipe would look like a hang rather than a failure.
+drive(server: str, lines: str): str
+    reqf = WORK .. "/req.json"
+    respf = WORK .. "/resp.json"
+    std.fs.write_file(reqf, lines)
+    os.execute("cd " .. WORK .. " && DUO_ROOT='" .. root .. "' '" .. duo_bin
+        .. "' run '" .. server .. "' < '" .. reqf .. "' > '" .. respf .. "' 2>/dev/null")
+    std.fs.read_file(respf) or ""
+end
+
+-- Count tool entries two INDEPENDENT ways and require them to agree. One
+-- counter keying on `"name":"` could be fooled by a description containing
+-- that text; one keying on `"inputSchema"` could be fooled by a schema that
+-- nests. Agreement between two different mistakes is unlikely; disagreement
+-- is reported as a failure rather than silently resolved in either direction.
+count_names(blob: str): int
+    n = 0
+    for _m in string.gmatch(blob, "\"name\":\"duo_")
+        n = n + 1
+    end
+    n
+end
+
+count_schemas(blob: str): int
+    n = 0
+    for _m in string.gmatch(blob, "\"inputSchema\"")
+        n = n + 1
+    end
+    n
+end
+
+has(blob: str, needle: str): bool
+    string.find(blob, needle, 1, true) ~= nil
+end
+
+main = (): i64
+    std.fs.mkdir_all(WORK)
+    io.write("mcp-gate: the MCP servers must SERVE, not merely compile\n")
+
+    -- ---------------------------------------------------------------
+    -- duo-bench: handshake, exact tool census, named coordination tools,
+    -- and a VALUE round trip through the file-claim lock.
+    -- ---------------------------------------------------------------
+    io.write("duo_bench.duo\n")
+    bench = root .. "/tools/mcp/duo_bench.duo"
+
+    -- A scratch path for the claim probe. Claims are repo-relative, and this
+    -- one names a directory that does not exist and never will, so the probe
+    -- can never collide with a real session's claim.
+    probe = ".mcpgate/probe"
+    breq = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_dev_claim_acquire\",\"arguments\":{\"owner\":\"mcpgate\",\"file\":\""
+        .. probe .. "\"}}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_dev_claim_acquire\",\"arguments\":{\"owner\":\"intruder\",\"file\":\""
+        .. probe .. "\"}}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_dev_claim_files\",\"arguments\":{}}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_dev_claim_release\",\"arguments\":{\"owner\":\"mcpgate\",\"file\":\""
+        .. probe .. "\"}}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_coordination_read\",\"arguments\":{}}}\n"
+    bout = drive(bench, breq)
+
+    if not has(bout, "\"protocolVersion\":\"2024-11-05\"")
+        report(false, "duo_bench initialize", "no protocolVersion in response — the server never handshook")
+        fails = fails + 1
+    else
+        report(true, "duo_bench initialize", "")
+    end
+
+    bn = count_names(bout)
+    bs = count_schemas(bout)
+    if bn ~= bs
+        report(false, "duo_bench tool census agrees", "name count " .. to(str)(bn) .. " vs schema count " .. to(str)(bs))
+        fails = fails + 1
+    elseif bn ~= 35
+        report(false, "duo_bench serves 35 tools", "served " .. to(str)(bn) .. " — update this number ON PURPOSE when adding a tool")
+        fails = fails + 1
+    else
+        report(true, "duo_bench serves 35 tools", "")
+    end
+
+    -- Named tools. A count alone passes when a tool is renamed away.
+    for _i, name in {"duo_agent_gaps_update", "duo_coordination_read", "duo_dev_claim_acquire", "duo_dev_claim_release", "duo_dev_claim_files", "duo_agent_smoke"}
+        if not has(bout, "\"name\":\"" .. name .. "\"")
+            report(false, "duo_bench lists " .. name, "absent from tools/list")
+            fails = fails + 1
+        else
+            report(true, "duo_bench lists " .. name, "")
+        end
+    end
+
+    -- VALUE round trip #1: the claim is GRANTED.
+    if not has(bout, "\\\"granted\\\":true")
+        report(false, "duo_dev_claim_acquire grants", "no granted:true in the response body")
+        fails = fails + 1
+    else
+        report(true, "duo_dev_claim_acquire grants", "")
+    end
+
+    -- VALUE round trip #2 — THE POSITIVE CONTROL. A second owner asking for
+    -- the same path must be REFUSED, and the refusal must name the holder.
+    -- If this passes while the check above also passes, the lock is doing
+    -- work; if a lock only ever says yes it is not protecting anything.
+    if not has(bout, "\\\"granted\\\":false")
+        report(false, "duo_dev_claim_acquire refuses a second owner", "the lock granted the same path twice")
+        fails = fails + 1
+    elseif not has(bout, "\\\"held_by\\\":\\\"mcpgate\\\"")
+        report(false, "refusal names the holder", "granted:false but held_by is not mcpgate")
+        fails = fails + 1
+    else
+        report(true, "duo_dev_claim_acquire refuses a second owner (held_by: mcpgate)", "")
+    end
+
+    -- VALUE round trip #3: the live claim is visible by owner, and the
+    -- release clears it. A release that reports success on a claim still on
+    -- disk is the failure mode this replaced.
+    if not has(bout, "\\\"owner\\\":\\\"mcpgate\\\"")
+        report(false, "duo_dev_claim_files shows the live claim", "the claim was granted but does not appear in the listing")
+        fails = fails + 1
+    else
+        report(true, "duo_dev_claim_files shows the live claim", "")
+    end
+
+    if not has(bout, "\\\"released\\\":true")
+        report(false, "duo_dev_claim_release clears the claim", "release did not confirm; a stuck claim blocks every later session")
+        fails = fails + 1
+    else
+        report(true, "duo_dev_claim_release clears the claim", "")
+    end
+
+    -- And the claim really is gone from the filesystem, not just from a
+    -- return value. Verify by VALUE on disk.
+    leftover = root .. "/.agents/session/claims/.mcpgate~probe"
+    if std.fs.exists(leftover)
+        os.execute("rm -rf '" .. leftover .. "'")
+        report(false, "released claim leaves no directory", "claim dir survived the release")
+        fails = fails + 1
+    else
+        report(true, "released claim leaves no directory", "")
+    end
+
+    -- A read-only tool that must return a non-empty body. `duo_coordination_read`
+    -- answers even when the buffer is missing, so an empty body here means the
+    -- handler died rather than that there was nothing to say.
+    if not has(bout, "\"id\":7")
+        report(false, "duo_coordination_read answers", "no response for id 7 — the handler killed the session")
+        fails = fails + 1
+    else
+        report(true, "duo_coordination_read answers", "")
+    end
+
+    -- ---------------------------------------------------------------
+    -- duo-lsp
+    -- ---------------------------------------------------------------
+    io.write("duo_lsp.duo\n")
+    lsp = root .. "/tools/mcp/duo_lsp.duo"
+    lreq = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_language_features\",\"arguments\":{}}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_agent_canonical_index\",\"arguments\":{}}}\n"
+        -- ids 5-10 are the SEVEN-TOOL REGRESSION GUARD. Every one of these was
+        -- dead: registered, listed by tools/list, and sending no response at
+        -- all when called, because its handler's tail expression was a bare
+        -- `if … else … end` instead of explicit `return`s. The failure is
+        -- completely invisible from the outside — no error, no exit code, the
+        -- session simply ends — so it can only be caught by calling the tool
+        -- and demanding an answer.
+        .. "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_meta_catalog\",\"arguments\":{}}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_complexity\",\"arguments\":{\"path\":\"comp.map\"}}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_grammar_spec_read\",\"arguments\":{}}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_directive_hierarchy_read\",\"arguments\":{}}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_table_shapes\",\"arguments\":{\"file_path\":\"examples/hello.duo\"}}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_multiplier_opportunities\",\"arguments\":{\"file_path\":\"examples/hello.duo\"}}}\n"
+    lout = drive(lsp, lreq)
+
+    if not has(lout, "\"protocolVersion\":\"2024-11-05\"")
+        report(false, "duo_lsp initialize", "no protocolVersion in response — the server never handshook")
+        fails = fails + 1
+    else
+        report(true, "duo_lsp initialize", "")
+    end
+
+    ln = count_names(lout)
+    ls = count_schemas(lout)
+    if ln ~= ls
+        report(false, "duo_lsp tool census agrees", "name count " .. to(str)(ln) .. " vs schema count " .. to(str)(ls))
+        fails = fails + 1
+    elseif ln ~= 32
+        report(false, "duo_lsp serves 32 tools", "served " .. to(str)(ln) .. " — update this number ON PURPOSE when adding a tool")
+        fails = fails + 1
+    else
+        report(true, "duo_lsp serves 32 tools", "")
+    end
+
+    for _i, name in {"duo_agent_gaps_update", "duo_diagnostics", "duo_file_finding", "duo_agent_canonical_index"}
+        if not has(lout, "\"name\":\"" .. name .. "\"")
+            report(false, "duo_lsp lists " .. name, "absent from tools/list")
+            fails = fails + 1
+        else
+            report(true, "duo_lsp lists " .. name, "")
+        end
+    end
+
+    -- VALUE: duo_language_features must come back with real content, and the
+    -- session must SURVIVE it — id 4 is the proof that the handler returned
+    -- rather than taking the process down with it. That is not theoretical:
+    -- duo_meta_catalog and duo_complexity do exactly that today.
+    if not has(lout, "\"id\":3")
+        report(false, "duo_language_features answers", "no response for id 3")
+        fails = fails + 1
+    else
+        report(true, "duo_language_features answers", "")
+    end
+
+    if not has(lout, "\"id\":4")
+        report(false, "duo_lsp survives a tool call", "id 4 never answered — a handler ended the session")
+        fails = fails + 1
+    else
+        report(true, "duo_lsp survives a tool call", "")
+    end
+
+    -- The seven-tool regression guard. Each of these was silently dead.
+    revived = { "duo_meta_catalog", "duo_complexity", "duo_grammar_spec_read", "duo_directive_hierarchy_read", "duo_table_shapes", "duo_multiplier_opportunities" }
+    rid = 5
+    for _i, rname in revived
+        if not has(lout, "\"id\":" .. to(str)(rid))
+            report(false, rname .. " answers", "no response — handler tail is probably a bare if/else again")
+            fails = fails + 1
+        else
+            report(true, rname .. " answers", "")
+        end
+        rid = rid + 1
+    end
+
+    -- ---------------------------------------------------------------
+    -- zls: the THIRD dead server. It had never built — `ensure_zls()` and
+    -- `zls_request()` were file-scope functions called from handlers, which
+    -- is an upvalue call the C stage rejects. Nothing had ever run it, so
+    -- nothing had ever said so.
+    -- ---------------------------------------------------------------
+    io.write("zls.duo\n")
+    zls = root .. "/tools/mcp/zls.duo"
+    zreq = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"zig_format\",\"arguments\":{\"file_path\":\"/dev/null\"}}}\n"
+    zout = drive(zls, zreq)
+
+    if not has(zout, "\"protocolVersion\":\"2024-11-05\"")
+        report(false, "zls initialize", "no protocolVersion — the server never handshook")
+        fails = fails + 1
+    else
+        report(true, "zls initialize", "")
+    end
+
+    zn = 0
+    for _m in string.gmatch(zout, "\"name\":\"zig_")
+        zn = zn + 1
+    end
+    if zn ~= 4
+        report(false, "zls serves 4 tools", "served " .. to(str)(zn))
+        fails = fails + 1
+    else
+        report(true, "zls serves 4 tools", "")
+    end
+
+    -- VALUE: `zig fmt /dev/null` must FAIL, and the handler must say so with
+    -- the exit status rather than dying. A bridge that reports success on an
+    -- unformattable path is the same class of lie as a lock that only grants.
+    if not has(zout, "fmt failed (exit ")
+        report(false, "zls zig_format reports a real exit status", "no failure text for an unformattable path")
+        fails = fails + 1
+    else
+        report(true, "zls zig_format reports a real exit status", "")
+    end
+
+    -- `duo run tools/mcp/mcp_gate.duo` from the repo root drops mcp_gate.out
+    -- BESIDE THE REPO ROOT, not beside the source. It is gitignored, so
+    -- repo-hygiene stays green, but a gate that litters the tree it guards is
+    -- a bad neighbour. The server .out files land in WORK already.
+    os.execute("rm -f ./mcp_gate.out")
+
+    io.write("\n")
+    if fails == 0
+        io.write("mcp-gate: PASS — all three servers handshake, serve their full tool census, and answer by value\n")
+        return 0
+    end
+    io.write("mcp-gate: FAIL — " .. to(str)(fails) .. " check(s) failed\n")
+    -- `std.os.exit`, NOT `return 1`. A Duo script's `main` return value is
+    -- DROPPED — measured here: the gate printed 13 failures and the process
+    -- still exited 0, which `zig build` reads as success. A gate that cannot
+    -- fail the build is decoration, and this one exists precisely because
+    -- nothing was watching the MCP servers.
+    std.os.exit(1)
+    1
+end

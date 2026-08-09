@@ -1,13 +1,32 @@
 -- duo-mcp/duo_shared.duo — shared MCP tool implementations for Duo MCP servers.
 -- Pure Duo, replaces Python duo_mcp_shared.py.
--- Import as `shared = req "duo_shared"` from servers in this directory.
+-- Import as `shared = req "tools.mcp.duo_shared"` — ROOTED, not bare: `req`
+-- resolves at compile time against the tree above the source file, so a bare
+-- name only resolved when the process was started with cwd = tools/mcp.
 
 M = {}
 
-script = req "std.script"
-json_mod = req "std.json"
+-- `std.script` is gone: the denied activity junk drawer (Pass 100 §15). Its
+-- 52 uses here were exactly six operations — capture, run, fs_exists, fs_read,
+-- fs_write, lock_cmd — and the first five are std.proc and std.fs, referenced
+-- directly under Pass 118 §0h (std is the prelude graph: no import). The
+-- sixth is LOCK_PREFIX, four lines of string concatenation, below.
 
-ROOT = os.getenv("DUO_ROOT", os.getenv("PWD", "."))
+-- `os.getenv(name, default)` SILENTLY DROPS its second argument under the Lua
+-- 5.1 runtime — this line used to read
+--   ROOT = os.getenv("DUO_ROOT", os.getenv("PWD", "."))
+-- and neither fallback ever ran. With DUO_ROOT unset, ROOT was nil and the
+-- four path constants below concatenated against nil at module load, taking
+-- the whole server down before it could answer anything.
+-- `std.os.getenv` is the single-argument form, and it answers "" — never nil —
+-- for an unset name, so every read is guarded against "" as well as nil.
+ROOT = std.os.getenv("DUO_ROOT")
+if ROOT == nil or ROOT == ""
+    ROOT = std.os.getenv("PWD")
+end
+if ROOT == nil or ROOT == ""
+    ROOT = "."
+end
 -- Session state, NOT repository truth. These tools APPEND — five write sites
 -- below — which is how .agents/AGENT_COORDINATION.md grew to 4619 tracked
 -- lines and became a control plane. .agents/session/ is gitignored; the
@@ -15,7 +34,15 @@ ROOT = os.getenv("DUO_ROOT", os.getenv("PWD", "."))
 COORD_PATH = ROOT .. "/.agents/session/coordination.md"
 PERF_PATH = ROOT .. "/docs/performance.md"
 CANON_PATH = ROOT .. "/.agents/AGENT_CANONICAL.md"
-DUO_BIN = os.getenv("DUO_BIN", ROOT .. "/zig-out/bin/duo")
+DUO_BIN = std.os.getenv("DUO_BIN")
+if DUO_BIN == nil or DUO_BIN == ""
+    DUO_BIN = ROOT .. "/zig-out/bin/duo"
+end
+
+-- The build lock, spelled here so std.script is not needed for the one thing
+-- it was actually load-bearing for. `duo run x.duo -- cmd` consumes the first
+-- `--` itself, so the wrapper never sees a separator it did not ask for.
+LOCK_PREFIX = DUO_BIN .. " run " .. ROOT .. "/scripts/duo_lock.duo -- "
 
 -- Section heading that marks the open-gaps/findings table in the
 -- coordination buffer. Kept as a constant so callers that search for it
@@ -28,8 +55,8 @@ finding_seq = 0
 -- === Coordination ===
 
 fun coordination_read(): str
-    if script.fs_exists(COORD_PATH)
-        script.fs_read(COORD_PATH)
+    if std.fs.exists(COORD_PATH)
+        std.fs.read_file(COORD_PATH)
     else
         "Coordination buffer not yet initialized."
     end
@@ -46,7 +73,7 @@ fun coordination_update(action: str, agent_id: str, detail: str, files: str)
     if action == "claim" then status = "LOCKED"
     elseif action == "release" then status = "UNLOCKED" end
     entry = entry .. "Status: " .. status .. "\n"
-    script.fs_write(COORD_PATH, script.fs_read(COORD_PATH) .. entry)
+    std.fs.write_file(COORD_PATH, std.fs.read_file(COORD_PATH) .. entry)
     return "ok: " .. action .. " " .. agent_id
 end
 
@@ -54,7 +81,7 @@ fun session_log(agent_id: str, summary: str, detail: str)
     timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
     entry = "\n| " .. timestamp .. " | " .. agent_id .. " | " .. summary .. " |"
     if detail ~= "" then entry = entry .. " " .. detail .. " |" else entry = entry .. " |" end
-    content = script.fs_read(COORD_PATH)
+    content = std.fs.read_file(COORD_PATH)
     marker = "## Session log (newest first)"
     pos = string.find(content, marker)
     if pos
@@ -69,7 +96,7 @@ fun session_log(agent_id: str, summary: str, detail: str)
     else
         content = content .. "\n\n## Session log (newest first)\n\n| UTC date | Agent | Summary |\n| --- | --- | --- |\n" .. entry .. "\n"
     end
-    script.fs_write(COORD_PATH, content)
+    std.fs.write_file(COORD_PATH, content)
     "ok: session logged"
 end
 
@@ -86,12 +113,12 @@ end
 
 fun agent_smoke(timeout: int): any
     smoke_cmd = DUO_BIN .. " run scripts/agent_smoke.duo"
-    locked = script.lock_cmd(smoke_cmd)
+    locked = LOCK_PREFIX .. smoke_cmd
     rc = 0
     if os.getenv("DUO_LOCK_HELD") == "1"
-        rc = script.run(smoke_cmd)
+        rc = std.proc.exec(smoke_cmd)
     else
-        rc = script.run(locked)
+        rc = std.proc.exec(locked)
     end
     return { exit_code = rc, passed = rc == 0, gate = "agent-smoke" }
 end
@@ -108,28 +135,68 @@ fun build_run(gate: str, timeout: int): any
     if cmd == nil then return { error = "unknown gate: " .. gate } end
     rc = 0
     if os.getenv("DUO_LOCK_HELD") == "1"
-        rc = script.run(cmd)
+        rc = std.proc.exec(cmd)
     else
-        rc = script.run(script.lock_cmd(cmd))
+        rc = std.proc.exec(LOCK_PREFIX .. cmd)
     end
     return { exit_code = rc, passed = rc == 0, gate = gate }
+end
+
+-- Benchmark suites. An ALLOWLIST, not string interpolation: `bench_type`
+-- arrives from an MCP client, and the old duo_bench.duo handler pasted it
+-- straight into a shell command line under the build lock.
+fun bench_run(bench_type: str, timeout: int): any
+    suites = {
+        bench = "zig build bench",
+        ["ml-bench"] = "zig build ml-bench",
+        ["honest-bench"] = "zig build honest-bench",
+        ["cross-bench"] = "zig build cross-bench",
+        ["wasm-bench"] = "zig build wasm-bench",
+    }
+    cmd = suites[bench_type]
+    if cmd == nil then return { error = "unknown bench suite: " .. bench_type } end
+    rc = 0
+    if os.getenv("DUO_LOCK_HELD") == "1"
+        rc = std.proc.exec(cmd)
+    else
+        rc = std.proc.exec(LOCK_PREFIX .. cmd)
+    end
+    return { exit_code = rc, passed = rc == 0, bench_type = bench_type }
+end
+
+-- Run a command under the build lock and hand back BOTH its status and its
+-- output. Callers used to reach for std.script directly for this; keeping it
+-- here means the lock discipline lives in one place.
+fun locked_capture(cmd: str): any
+    full = cmd
+    if os.getenv("DUO_LOCK_HELD") ~= "1"
+        full = LOCK_PREFIX .. cmd
+    end
+    out = std.proc.capture(full .. " 2>&1; echo \"duoexit:$?\"")
+    rc = 0
+    mpos = string.find(out, "duoexit:", 1, true)
+    if mpos ~= nil
+        rc = tonumber(string.gsub(string.sub(out, mpos + 8), "%s+", "")) or 0
+        out = string.sub(out, 1, mpos - 1)
+    end
+    return { exit_code = rc, passed = rc == 0, output = out }
 end
 
 -- === Repo tooling ===
 
 fun repo_tooling(script_name: str, args: str): any
     full = ""
-    if script.fs_exists("scripts/" .. script_name)
+    if std.fs.exists("scripts/" .. script_name)
         full = DUO_BIN .. " run scripts/" .. script_name
-    elseif script.fs_exists(script_name)
+    elseif std.fs.exists(script_name)
         full = DUO_BIN .. " run " .. script_name
-    elseif script.fs_exists(ROOT .. "/scripts/" .. script_name)
+    elseif std.fs.exists(ROOT .. "/scripts/" .. script_name)
         full = DUO_BIN .. " run " .. ROOT .. "/scripts/" .. script_name
     else
         return { error = "script not found: " .. script_name }
     end
     if args ~= "" then full = full .. " " .. args end
-    rc = script.run(full)
+    rc = std.proc.exec(full)
     return { exit_code = rc, passed = rc == 0, script = script_name }
 end
 
@@ -139,55 +206,60 @@ fun dev_session_start(owner: str, work_item: str, client: str): str
     cmd = DUO_BIN .. " dev session start --owner " .. owner
     if client ~= "" then cmd = cmd .. " --client " .. client end
     if work_item ~= "" then cmd = cmd .. " --work-item " .. work_item end
-    script.capture(cmd .. " 2>&1")
+    std.proc.capture(cmd .. " 2>&1")
 end
 
-fun dev_claim_acquire(owner: str, file: str, client: str, work_item: str): str
+-- The compiler-side lease. It reports a claim; it does NOT arbitrate one —
+-- two callers both get an "acquired" line back. The arbitrating claim is
+-- `dev_claim_acquire` further down, which holds a mkdir(2) lock. This one is
+-- kept for its side effect on the dev control plane and is called BY that
+-- function once the real lock is held.
+fun dev_claim_note(owner: str, file: str, client: str, work_item: str): str
     cmd = DUO_BIN .. " dev claim acquire --owner " .. owner .. " --file " .. file
     if client ~= "" then cmd = cmd .. " --client " .. client end
     if work_item ~= "" then cmd = cmd .. " --work-item " .. work_item end
-    script.capture(cmd .. " 2>&1")
+    std.proc.capture(cmd .. " 2>&1")
 end
 
 fun dev_claim_list(): str
-    script.capture(DUO_BIN .. " dev claim list 2>&1")
+    std.proc.capture(DUO_BIN .. " dev claim list 2>&1")
 end
 
 fun dev_coordination_export(): str
-    script.capture(DUO_BIN .. " dev coordination export 2>&1")
+    std.proc.capture(DUO_BIN .. " dev coordination export 2>&1")
 end
 
 fun dev_validate_plan(file: str, work_item: str): str
     cmd = DUO_BIN .. " dev validate plan"
     if file ~= "" then cmd = cmd .. " --file " .. file
     elseif work_item ~= "" then cmd = cmd .. " --work-item " .. work_item end
-    script.capture(cmd .. " 2>&1")
+    std.proc.capture(cmd .. " 2>&1")
 end
 
 fun semantic_claims(): str
-    script.capture(DUO_BIN .. " semantic claims 2>&1")
+    std.proc.capture(DUO_BIN .. " semantic claims 2>&1")
 end
 
 fun semantic_transaction_preview(classifier: str): str
     c = classifier
     if c == nil or c == "" then c = "classifier.sorted_lookup" end
-    script.capture(DUO_BIN .. " semantic preview " .. c .. " 2>&1")
+    std.proc.capture(DUO_BIN .. " semantic preview " .. c .. " 2>&1")
 end
 
 fun semantic_transaction_validate(classifier: str): str
     c = classifier
     if c == nil or c == "" then c = "classifier.sorted_lookup" end
-    script.capture(DUO_BIN .. " semantic validate " .. c .. " 2>&1")
+    std.proc.capture(DUO_BIN .. " semantic validate " .. c .. " 2>&1")
 end
 
 fun dev_integration_list(): str
-    script.capture(DUO_BIN .. " dev integration list 2>&1")
+    std.proc.capture(DUO_BIN .. " dev integration list 2>&1")
 end
 
 fun dev_integration_submit(owner: str, work_item: str, claim_id: str): str
     cmd = DUO_BIN .. " dev integration submit --owner " .. owner .. " --work-item " .. work_item
     if claim_id ~= nil and claim_id ~= "" then cmd = cmd .. " --claim-id " .. claim_id end
-    script.capture(cmd .. " 2>&1")
+    std.proc.capture(cmd .. " 2>&1")
 end
 
 fun dev_validate_run(file: str, work_item: str, execute: bool): str
@@ -195,13 +267,13 @@ fun dev_validate_run(file: str, work_item: str, execute: bool): str
     if file ~= nil and file ~= "" then cmd = cmd .. " --file " .. file
     elseif work_item ~= nil and work_item ~= "" then cmd = cmd .. " --work-item " .. work_item end
     if execute then cmd = cmd .. " --execute" end
-    script.capture(cmd .. " 2>&1")
+    std.proc.capture(cmd .. " 2>&1")
 end
 
 -- === Native boxing audit ===
 
 fun dump_c(file_path: str): str
-    script.capture(DUO_BIN .. " dump-c " .. file_path .. " 2>&1")
+    std.proc.capture(DUO_BIN .. " dump-c " .. file_path .. " 2>&1")
 end
 
 fun audit_native_boxing(file_path: str): any
@@ -246,11 +318,11 @@ end
 -- === Pass 5 semantic interchange (SIM) ===
 
 fun semantic_snapshot(file_path: str): any
-    output = script.capture(DUO_BIN .. " sim " .. file_path .. " 2>&1")
+    output = std.proc.capture(DUO_BIN .. " sim " .. file_path .. " 2>&1")
     if string.find(output, ": error:") or string.find(output, "sema error") or string.find(output, "parse failed") then
         return { ok = false, error = string.sub(output, 1, 4000), schema = "sim-v0" }
     end
-    parsed = json_mod.decode(output)
+    parsed = std.json.decode(output)
     if parsed == nil then
         return { ok = false, error = "failed to parse SIM JSON", raw_output = string.sub(output, 1, 2000) }
     end
@@ -265,7 +337,7 @@ fun semantic_snapshot(file_path: str): any
 end
 
 fun semantic_snapshot_raw(file_path: str): str
-    output = script.capture(DUO_BIN .. " sim " .. file_path .. " 2>&1")
+    output = std.proc.capture(DUO_BIN .. " sim " .. file_path .. " 2>&1")
     -- Find the JSON start (skip any diagnostic lines)
     i = string.find(output, "{")
     if i == nil then
@@ -279,11 +351,11 @@ fun foreign_import_preview(header_path: str, source_dir: str): any
     if source_dir ~= "" and string.sub(header_path, 1, 1) ~= "/" then
         resolved = source_dir .. "/" .. header_path
     end
-    output = script.capture(DUO_BIN .. " sim --import-c " .. resolved .. " 2>&1")
+    output = std.proc.capture(DUO_BIN .. " sim --import-c " .. resolved .. " 2>&1")
     if string.find(output, ": error:") or string.find(output, "failed") then
         return { ok = false, error = string.sub(output, 1, 4000), header = resolved }
     end
-    parsed = json_mod.decode(output)
+    parsed = std.json.decode(output)
     if parsed == nil then
         return { ok = false, error = "failed to parse SIM JSON", header = resolved, raw_output = string.sub(output, 1, 2000) }
     end
@@ -306,8 +378,8 @@ fun foreign_import_preview(header_path: str, source_dir: str): any
 end
 
 fun pass6_catalog(): any
-    output = script.capture(DUO_BIN .. " catalog 2>&1")
-    parsed = json_mod.decode(output)
+    output = std.proc.capture(DUO_BIN .. " catalog 2>&1")
+    parsed = std.json.decode(output)
     if parsed == nil then
         return { ok = false, error = "failed to parse catalog JSON", raw_output = string.sub(output, 1, 2000) }
     end
@@ -319,8 +391,8 @@ fun pass6_catalog(): any
 end
 
 fun pass5_catalog(): any
-    output = script.capture(DUO_BIN .. " catalog 2>&1")
-    parsed = json_mod.decode(output)
+    output = std.proc.capture(DUO_BIN .. " catalog 2>&1")
+    parsed = std.json.decode(output)
     if parsed == nil then
         return { ok = false, error = "failed to parse catalog JSON", raw_output = string.sub(output, 1, 2000) }
     end
@@ -333,7 +405,7 @@ end
 
 fun foreign_entity_lookup(file_path: str, symbol: str): any
     content = ""
-    if script.fs_exists(file_path) then content = script.fs_read(file_path) end
+    if std.fs.exists(file_path) then content = std.fs.read_file(file_path) end
     source_dir = file_path
     dir = string.match(file_path, "^(.*)/[^/]+$")
     if dir then source_dir = dir end
@@ -363,15 +435,15 @@ end
 -- === Canonical index ===
 
 fun canonical_index(): str
-    if script.fs_exists(CANON_PATH)
-        return script.fs_read(CANON_PATH)
+    if std.fs.exists(CANON_PATH)
+        return std.fs.read_file(CANON_PATH)
     end
     return "Canonical index not found at " .. CANON_PATH
 end
 
 fun perf_ledger(): str
-    if script.fs_exists(PERF_PATH)
-        return string.sub(script.fs_read(PERF_PATH), 1, 10000)
+    if std.fs.exists(PERF_PATH)
+        return string.sub(std.fs.read_file(PERF_PATH), 1, 10000)
     end
     return "Performance ledger not found at " .. PERF_PATH
 end
@@ -389,7 +461,7 @@ fun bench_regressions(bench_output: str, bench_type: str): any
     if bt == "" then bt = "bench" end
     if out == nil then out = "" end
     if out == "" then
-        out = script.capture("duo run scripts/duo_lock.duo -- zig build " .. bt .. " 2>&1")
+        out = std.proc.capture("duo run scripts/duo_lock.duo -- zig build " .. bt .. " 2>&1")
     end
     pass_full = "All benchmarks: results match"
     pass_correct = "benchmark results match reference C"
@@ -464,8 +536,8 @@ fun perf_gaps(): any
         i = i + 1
     end
     perf = ""
-    if script.fs_exists(PERF_PATH) then
-        perf = string.sub(script.fs_read(PERF_PATH), 1, 4000)
+    if std.fs.exists(PERF_PATH) then
+        perf = string.sub(std.fs.read_file(PERF_PATH), 1, 4000)
     end
     return {
         open_perf_gap_count = #gaps,
@@ -479,10 +551,10 @@ end
 -- with the verified workaround for each. Protects every duo developer from
 -- spending hours on these. Literal scans only (pattern engine is unreliable).
 fun audit_codegen_pitfalls(file_path: str): any
-    if not script.fs_exists(file_path) then
+    if not std.fs.exists(file_path) then
         return { error = "file not found: " .. file_path }
     end
-    src = script.fs_read(file_path)
+    src = std.fs.read_file(file_path)
     lines = string.split(src, "\n")
     findings = {}
     i = 1
@@ -742,7 +814,7 @@ fun exponential_evaluate(code: str, file_path: str): any
         suggestions = suggestions,
         optimized_preview = optimized,
     }
-    if file_path and file_path ~= "" and script.fs_exists(file_path)
+    if file_path and file_path ~= "" and std.fs.exists(file_path)
         result.boxing = audit_native_boxing(file_path)
     end
     result
@@ -932,15 +1004,290 @@ fun file_finding(kind: str, title: str, detail: str, priority: str, files: str):
     else
         content = content .. "\n\n" .. GAPS_MARKER .. "\n\n" .. hdr .. "\n| --- | --- | --- | --- | --- | --- | --- |\n" .. row .. "\n"
     end
-    script.fs_write(COORD_PATH, content)
+    std.fs.write_file(COORD_PATH, content)
     return "ok: filed " .. id .. " (" .. kind .. ")"
+end
+
+-- === GAP NUMBER ALLOCATION ============================================
+--
+-- `gaps/` is a shared numeric registry with no allocator. Every session read
+-- the directory, picked "the next one", and wrote it — so two sessions that
+-- read before either wrote both picked the same number. That is not
+-- hypothetical: GAP-065 was filed, overwritten by another session, and had to
+-- be refiled as GAP-067; three collisions landed in a single night.
+--
+-- The fix is to stop ASKING for a number and start being HANDED one. The
+-- atomic primitive is mkdir(2): POSIX guarantees that when two processes
+-- mkdir the same path, exactly one returns 0 and the other gets EEXIST.
+-- Winning the mkdir IS the allocation. No lock is taken, so there is no lock
+-- to race, no lock to leak, and no stale-lock heuristic to get wrong.
+--
+-- A reservation directory is never removed. Leaking a number costs nothing;
+-- reusing one is the bug this exists to prevent.
+
+GAPS_DIR = ROOT .. "/gaps"
+GAP_LEDGER = ROOT .. "/.agents/session/gapalloc"
+
+fun gap_pad(n: int): str
+    s = to(str)(n)
+    while string.len(s) < 3
+        s = "0" .. s
+    end
+    s
+end
+
+-- Highest number VISIBLE anywhere: filed gaps and prior reservations both
+-- count. Seeding from the union is what stops the allocator from walking up
+-- from 1 and colliding with a gap somebody filed by hand.
+fun gap_high(): int
+    hi = 0
+    for _, name in std.fs.read_dir(GAPS_DIR) or {}
+        d = string.match(name, "^GAP%-(%d+)")
+        if d ~= nil
+            v = tonumber(d) or 0
+            if v > hi then hi = v end
+        end
+    end
+    for _, name in std.fs.read_dir(GAP_LEDGER) or {}
+        d = string.match(name, "^GAP%-(%d+)")
+        if d ~= nil
+            v = tonumber(d) or 0
+            if v > hi then hi = v end
+        end
+    end
+    hi
+end
+
+-- Hand back a number nobody else can be holding. Returns -1 only if 512
+-- consecutive numbers are all taken, which means something is very wrong.
+fun gap_allocate(): int
+    std.fs.mkdir_all(GAP_LEDGER)
+    n = gap_high() + 1
+    tries = 0
+    while tries < 512
+        -- THE ATOMIC STEP. Exactly one concurrent caller sees true here.
+        if std.os.mkdir(GAP_LEDGER .. "/GAP-" .. gap_pad(n))
+            -- Won the reservation. If a gap file already occupies the number
+            -- (filed by hand, before this allocator existed), keep the
+            -- reservation so it is never handed out, and take the next.
+            if not std.fs.exists(GAPS_DIR .. "/GAP-" .. gap_pad(n) .. ".md")
+                return n
+            end
+        end
+        n = n + 1
+        tries = tries + 1
+    end
+    -1
+end
+
+fun gap_open(agent_id: str, kind: str, title: str, detail: str, priority: str, files: str): str
+    n = gap_allocate()
+    if n < 0
+        return std.json.encode({ allocated = false, error = "no free gap number in 512 tries" })
+    end
+    id = "GAP-" .. gap_pad(n)
+    ts = os.date("!%Y-%m-%dT%H:%M:%SZ")
+    pr = priority
+    if pr == nil or pr == "" then pr = "P1" end
+    body = "# " .. id .. " — " .. title .. "\n\n"
+        .. "**Status:** OPEN · **Filed:** " .. ts .. "\n"
+        .. "**Priority:** " .. pr .. " · **Kind:** " .. kind .. "\n"
+        .. "**Filed by:** " .. agent_id .. "\n"
+    if files ~= nil and files ~= ""
+        body = body .. "**Files:** " .. files .. "\n"
+    end
+    body = body .. "\n" .. detail .. "\n"
+    std.fs.write_file(GAPS_DIR .. "/" .. id .. ".md", body)
+    file_finding(kind, id .. " — " .. title, detail, pr, files)
+    std.json.encode({ allocated = true, gap_id = id, number = n, path = "gaps/" .. id .. ".md", priority = pr })
+end
+
+-- === FILE-PATH CLAIMS =================================================
+--
+-- Claims used to be per-FEATURE, which is why one session's bare `git commit`
+-- kept swallowing another's in-flight edits: two agents "working on different
+-- features" were writing the same files. Partition by FILE.
+--
+-- Same primitive as gap allocation: the claim directory IS the lock, created
+-- with mkdir(2), so the exact-path case admits exactly one holder with no
+-- read-then-write window.
+--
+-- Overlap (a claim on `tools/` vs a claim on `tools/mcp/x.duo`) cannot be
+-- decided by one mkdir, so it is handled by ACQUIRE-THEN-VERIFY: take the
+-- exact lock, then look for a live overlapping claim, and if one is there,
+-- release and report a conflict. Whoever observes the overlap backs off
+-- UNCONDITIONALLY. That can never double-grant — for both callers to see a
+-- clear scan, both scans would have to precede both mkdirs, and each caller
+-- scans strictly after its own mkdir. It can conservatively refuse both,
+-- which a retry resolves; refusing twice is safe, granting twice is not.
+
+CLAIMS_DIR = ROOT .. "/.agents/session/claims"
+CLAIM_TTL = 14400
+
+-- Repo-relative, no leading "./", no trailing "/". Two spellings of one file
+-- must produce one key or the lock protects nothing.
+fun claim_norm(p: str): str
+    s = p or ""
+    if string.sub(s, 1, string.len(ROOT)) == ROOT
+        s = string.sub(s, string.len(ROOT) + 1)
+    end
+    while string.sub(s, 1, 1) == "/" or string.sub(s, 1, 2) == "./"
+        if string.sub(s, 1, 1) == "/"
+            s = string.sub(s, 2)
+        else
+            s = string.sub(s, 3)
+        end
+    end
+    while string.len(s) > 1 and string.sub(s, string.len(s)) == "/"
+        s = string.sub(s, 1, string.len(s) - 1)
+    end
+    s
+end
+
+-- "/" is not legal in a directory name; "~" is not legal in a repo path here.
+fun claim_key(p: str): str
+    string.gsub(p, "/", "~")
+end
+
+fun claim_unkey(k: str): str
+    string.gsub(k, "~", "/")
+end
+
+-- Does one claim cover the other? Prefix comparison at a SEGMENT boundary:
+-- "tools/mcp" covers "tools/mcp/x.duo" but must not cover "tools/mcpx.duo".
+fun claim_overlaps(a: str, b: str): bool
+    if a == b then return true end
+    if string.sub(b, 1, string.len(a) + 1) == a .. "/" then return true end
+    if string.sub(a, 1, string.len(b) + 1) == b .. "/" then return true end
+    false
+end
+
+fun claim_meta(key: str): any
+    raw = std.fs.read_file(CLAIMS_DIR .. "/" .. key .. "/owner")
+    if raw == nil or raw == "" then return nil end
+    owner = string.match(raw, "^([^\t]*)")
+    tsv = string.match(raw, "^[^\t]*\t([^\t\n]*)")
+    wi = string.match(raw, "^[^\t]*\t[^\t]*\t([^\t\n]*)")
+    return { owner = owner or "", at = tonumber(tsv) or 0, work = wi or "" }
+end
+
+fun claim_live(key: str): bool
+    m = claim_meta(key)
+    if m == nil then return false end
+    return (os.time() - m.at) < CLAIM_TTL
+end
+
+fun claim_write(key: str, owner: str, work: str): void
+    std.fs.write_file(CLAIMS_DIR .. "/" .. key .. "/owner",
+        owner .. "\t" .. to(str)(os.time()) .. "\t" .. work .. "\n")
+end
+
+-- NOT `std.fs.remove` + `std.fs.rmdir`. `std.fs.remove` is written
+-- `os.remove(path) ~= nil`, and `false ~= nil` is TRUE, so it reports success
+-- unconditionally — measured 2026-08-08: it returned true on a file that was
+-- still on disk and still read back its old contents afterwards. A release
+-- that lies leaves a lock nobody can clear, which is worse than no lock at
+-- all. Drop the whole claim directory in one shot and VERIFY BY VALUE that
+-- the metadata is gone before reporting anything.
+fun claim_drop(key: str): bool
+    dir = CLAIMS_DIR .. "/" .. key
+    os.execute("rm -rf '" .. string.gsub(dir, "'", "'\\''") .. "'")
+    return claim_meta(key) == nil
+end
+
+fun dev_claim_acquire(owner: str, file: str, client: str, work_item: str): str
+    std.fs.mkdir_all(CLAIMS_DIR)
+    path = claim_norm(file)
+    if path == ""
+        return std.json.encode({ granted = false, reason = "empty file path" })
+    end
+    key = claim_key(path)
+    wi = work_item or ""
+    own = owner or "agent"
+
+    -- THE ATOMIC STEP for the exact path.
+    got = std.os.mkdir(CLAIMS_DIR .. "/" .. key)
+    if not got
+        m = claim_meta(key)
+        if m ~= nil and m.owner == own
+            -- Re-entrant: same owner, refresh the lease rather than deadlock
+            -- against itself.
+            claim_write(key, own, wi)
+            return std.json.encode({ granted = true, path = path, owner = own, reentrant = true })
+        end
+        if m ~= nil and (os.time() - m.at) >= CLAIM_TTL
+            claim_drop(key)
+            got = std.os.mkdir(CLAIMS_DIR .. "/" .. key)
+        end
+        if not got
+            holder = "unknown"
+            if m ~= nil then holder = m.owner end
+            return std.json.encode({ granted = false, path = path, held_by = holder, reason = "file already claimed" })
+        end
+    end
+    claim_write(key, own, wi)
+
+    -- ACQUIRE-THEN-VERIFY: now look for a live claim that covers, or is
+    -- covered by, this path.
+    for _, other in std.fs.read_dir(CLAIMS_DIR) or {}
+        if other ~= key
+            op = claim_unkey(other)
+            if claim_overlaps(path, op) and claim_live(other)
+                om = claim_meta(other)
+                oo = "unknown"
+                if om ~= nil then oo = om.owner end
+                claim_drop(key)
+                return std.json.encode({ granted = false, path = path, overlaps = op, held_by = oo, reason = "overlapping claim" })
+            end
+        end
+    end
+    std.json.encode({ granted = true, path = path, owner = own, work_item = wi, ttl = CLAIM_TTL })
+end
+
+fun dev_claim_release(owner: str, file: str): str
+    path = claim_norm(file)
+    key = claim_key(path)
+    m = claim_meta(key)
+    if m == nil
+        return std.json.encode({ released = false, path = path, reason = "no such claim" })
+    end
+    if m.owner ~= owner
+        return std.json.encode({ released = false, path = path, held_by = m.owner, reason = "not the holder" })
+    end
+    -- NOT `gone = claim_drop(key)` then encode: binding a bool-returning call
+    -- to a local inside a `: str` function makes the compiler report
+    -- "return type mismatch: expected 'str', got 'bool'" and emit a module
+    -- that dies on first call. Branch on the call instead.
+    if claim_drop(key)
+        return std.json.encode({ released = true, path = path })
+    end
+    std.json.encode({ released = false, path = path, reason = "release did not clear the claim" })
+end
+
+fun dev_claim_files(): str
+    rows = {}
+    for _, key in std.fs.read_dir(CLAIMS_DIR) or {}
+        m = claim_meta(key)
+        if m ~= nil
+            rows[#rows + 1] = {
+                path = claim_unkey(key),
+                owner = m.owner,
+                work_item = m.work,
+                age = os.time() - m.at,
+                live = (os.time() - m.at) < CLAIM_TTL,
+            }
+        end
+    end
+    std.json.encode({ claims = rows, count = #rows, ttl = CLAIM_TTL })
 end
 
 fun agent_gaps_update(action: str, agent_id: str, gap_id: str, kind: str, title: str, detail: str, priority: str, files: str): str
     act = action
     if act == nil or act == "" then act = "open" end
     if act == "open"
-        return file_finding(kind, title, detail, priority, files)
+        -- `open` ALLOCATES. The caller does not supply gap_id and cannot;
+        -- that is the whole point.
+        return gap_open(agent_id, kind, title, detail, priority, files)
     end
     ts = os.date("!%Y-%m-%dT%H:%M:%SZ")
     entry = "\n| " .. ts .. " | " .. agent_id .. " | gap-" .. act .. " | " .. gap_id .. ": " .. detail .. " |"
@@ -958,7 +1305,7 @@ fun agent_gaps_update(action: str, agent_id: str, gap_id: str, kind: str, title:
     else
         content = content .. "\n\n" .. marker .. "\n\n" .. table_marker .. entry .. "\n"
     end
-    script.fs_write(COORD_PATH, content)
+    std.fs.write_file(COORD_PATH, content)
     return "ok: gap " .. act .. " " .. gap_id
 end
 
@@ -975,6 +1322,9 @@ M.session_log = session_log
 M.open_p0_gaps = open_p0_gaps
 M.agent_smoke = agent_smoke
 M.build_run = build_run
+M.bench_run = bench_run
+M.locked_capture = locked_capture
+M.semantic_snapshot_raw = semantic_snapshot_raw
 M.repo_tooling = repo_tooling
 M.dump_c = dump_c
 M.audit_native_boxing = audit_native_boxing
@@ -985,7 +1335,13 @@ M.file_finding = file_finding
 M.agent_gaps_update = agent_gaps_update
 M.dev_session_start = dev_session_start
 M.dev_claim_acquire = dev_claim_acquire
+M.dev_claim_release = dev_claim_release
+M.dev_claim_files = dev_claim_files
+M.dev_claim_note = dev_claim_note
 M.dev_claim_list = dev_claim_list
+M.gap_allocate = gap_allocate
+M.gap_open = gap_open
+M.gap_high = gap_high
 M.dev_coordination_export = dev_coordination_export
 M.dev_validate_plan = dev_validate_plan
 M.semantic_claims = semantic_claims

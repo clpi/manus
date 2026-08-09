@@ -1,5 +1,0 @@
-ev = req "duo_eval"
-r = ev.parse_fun_header_str("fun add_i32(a: i32, b: i32): i32 a + b end")
-print("parse1=[" .. tostring(r) .. "]")
-r2 = ev.parse_fun_header_str("fun add_f64(a: f64, b: f64): f64 a + b end")
-print("parse2=[" .. tostring(r2) .. "]")
