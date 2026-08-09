@@ -103,6 +103,7 @@ const ModuleConsts = struct {
 
 const empty_module_consts: ModuleConsts = .{};
 const empty_str_returns: std.StringHashMapUnmanaged(void) = .empty;
+const empty_bool_returns: std.StringHashMapUnmanaged(void) = .empty;
 const empty_fp_params: std.StringHashMapUnmanaged([]bool) = .empty;
 
 /// Collect top-level constant bindings so a function body can fold them.
@@ -210,6 +211,14 @@ pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.
     // (string.char, concat, math via exprReturnsF64, now str-returning calls).
     var str_returns: std.StringHashMapUnmanaged(void) = .empty;
     defer str_returns.deinit(alloc);
+    // Functions declared `: bool`. Not a convenience: `..` renders an integer
+    // with "%lld" and a bool as `true`/`false`, and a bool is an integer in
+    // every register the backend owns. Without this set `"{ok}"` on a
+    // bool-returning call prints `1` where the C backend prints `true` — a
+    // wrong ANSWER, not a bail. Every interpolation operand this cannot place
+    // on one side of that line is refused.
+    var bool_returns: std.StringHashMapUnmanaged(void) = .empty;
+    defer bool_returns.deinit(alloc);
 
     // GAP-056: which ABI slots each callee expects in v0..v7, so the CALLER
     // marshals into the register file the CALLEE reads from. Keyed by
@@ -252,6 +261,9 @@ pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.
         if (isStrType(fd.func.ret_type) and fd.path.len > 0) {
             try str_returns.put(alloc, fd.path[0], {});
         }
+        if (isBoolType(fd.func.ret_type) and fd.path.len > 0) {
+            try bool_returns.put(alloc, fd.path[0], {});
+        }
     }
 
     var functions: std.ArrayList(dnir.Function) = .empty;
@@ -290,10 +302,17 @@ pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.
         // one of these bails means exactly one declaration was ineligible, and
         // which one is the entire finding.
         if (!functionEligible(fd, records.items)) {
-            if (skipped == null) skipped = if (fd.path.len > 0) fd.path[0] else "?";
+            // The WHOLE path, not `path[0]`. A spliced `req` module contributes
+            // `os.exit`, `os.clock`, `os.time` … and every one of them reported
+            // as plain `os`, so the row named a module where the finding is one
+            // declaration inside it.
+            if (skipped == null) skipped = if (fd.path.len > 0)
+                try std.mem.join(alloc, ".", fd.path)
+            else
+                "?";
             continue;
         }
-        const f = try lowerFunction(alloc, fd, records.items, &req, &externs, &func_record_returns, &f64_kernels, &fp_params, &str_returns, &module_consts);
+        const f = try lowerFunction(alloc, fd, records.items, &req, &externs, &func_record_returns, &f64_kernels, &fp_params, &str_returns, &bool_returns, &module_consts);
         try functions.append(alloc, f);
     }
     if (functions.items.len == 0) return bail(@src());
@@ -527,7 +546,8 @@ fn functionEligible(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc) bool
         return slots <= 8;
     }
     if (!isIntType(fd.func.ret_type) and !isBoolType(fd.func.ret_type) and
-        !isStrType(fd.func.ret_type) and !isVoidType(fd.func.ret_type)) return false;
+        !isStrType(fd.func.ret_type) and !isVoidType(fd.func.ret_type) and
+        fd.func.ret_type != .inferred) return false;
     // An all-f64 parameter list with an INT return was refused, while the same
     // parameters with an f64 return were accepted by the branch above. AAPCS
     // puts floats in v0..v7 and integers in x0..x7 — separate register files —
@@ -612,12 +632,18 @@ pub const LowerCtx = struct {
     self_fp_params: bool = false,
     /// Functions declared `: str`, so a consumer recognizes a call's result.
     str_returns: *const std.StringHashMapUnmanaged(void) = &empty_str_returns,
+    /// Functions declared `: bool`, so `..` refuses to render one as a number.
+    bool_returns: *const std.StringHashMapUnmanaged(void) = &empty_bool_returns,
     /// When set, tail/table returns lower to `ret_record` for this record name.
     ret_record: ?[]const u8 = null,
     /// Local slots that hold f64 values inside integer kernels.
     f64_slots: std.AutoHashMapUnmanaged(u32, void) = .empty,
     /// Local slots holding `str` (a `const char*`), so `#s` can lower to strlen.
     str_slots: std.AutoHashMapUnmanaged(u32, void) = .empty,
+    /// Local slots holding `bool`. A bool rides an integer register, so nothing
+    /// downstream can tell one from an i64 by its representation — only this
+    /// set can, and `..` needs the answer to choose between `true` and `1`.
+    bool_slots: std.AutoHashMapUnmanaged(u32, void) = .empty,
     /// Slots holding the base address of a memory-backed positional table —
     /// `ptr` parameters, and locals materialized by `materializeTableSlots`.
     /// `t[i]` on one of these is a scaled 8-byte load, not a select-chain.
@@ -641,6 +667,7 @@ pub const LowerCtx = struct {
         self.locals.deinit(self.alloc);
         self.f64_slots.deinit(self.alloc);
         self.str_slots.deinit(self.alloc);
+        self.bool_slots.deinit(self.alloc);
         self.ptr_slots.deinit(self.alloc);
         self.table_lens.deinit(self.alloc);
         var ci = self.const_ints.iterator();
@@ -679,6 +706,7 @@ fn lowerFunction(
     f64_kernels: *const std.StringHashMapUnmanaged(void),
     fp_params: *const std.StringHashMapUnmanaged([]bool),
     str_returns: *const std.StringHashMapUnmanaged(void),
+    bool_returns: *const std.StringHashMapUnmanaged(void),
     module_consts: *const ModuleConsts,
 ) Error!dnir.Function {
     var ctx: LowerCtx = .{
@@ -694,6 +722,7 @@ fn lowerFunction(
             break :blk slots > 0;
         },
         .str_returns = str_returns,
+        .bool_returns = bool_returns,
         .module_consts = module_consts,
         .ret_record = if (findRecordName(records, fd.func.ret_type)) |r| r.name else null,
     };
@@ -723,6 +752,9 @@ fn lowerFunction(
         // A `str` parameter is a `const char*`, so `#p` inside the body can use
         // strlen just like a str local.
         if (resolveType(par.typ) == .str) try ctx.str_slots.put(alloc, param_slot_cursor, {});
+        // A `bool` parameter is an integer register the printer must not read as
+        // a number.
+        if (isBoolType(par.typ)) try ctx.bool_slots.put(alloc, param_slot_cursor, {});
         // A `ptr` parameter carries the base address of a caller's positional
         // table, so `p[i]` in the body is a scaled load off that register.
         if (typeIsPtr(par.typ)) try ctx.ptr_slots.put(alloc, param_slot_cursor, {});
@@ -785,6 +817,7 @@ fn resolveType(t: ast.TypeExpr) RT {
     return switch (t) {
         .named => |n| blk: {
             if (std.mem.eql(u8, n, "i64")) break :blk .i64;
+            if (isIntAlias(n)) break :blk .i64;
             if (std.mem.eql(u8, n, "i32")) break :blk .i32;
             if (std.mem.eql(u8, n, "str")) break :blk .str;
             if (std.mem.eql(u8, n, "bool")) break :blk .bool;
@@ -796,8 +829,23 @@ fn resolveType(t: ast.TypeExpr) RT {
     };
 }
 
+/// `int` and `integer` ARE `i64`, and this is not a courtesy: `types.zig`
+/// resolves both to `.i64` under "Common aliases", so they are the same type by
+/// the language's own answer. This pass matched the two spellings `i64` and
+/// `i32` literally, so `exit(code: int)` in `lib/std/os.duo` was ineligible —
+/// and because `lowerModule` requires EVERY function in a module to lower, one
+/// spliced `os.exit` refused the whole program. Two spellings of one type, and
+/// the narrower reading cost every program that touches `std.os`.
+///
+/// Only the exact aliases. `i8`, `u32` and friends resolve to their own widths
+/// and would need truncation this pass does not emit, so they stay out.
+fn isIntAlias(n: []const u8) bool {
+    return std.mem.eql(u8, n, "int") or std.mem.eql(u8, n, "integer");
+}
+
 fn isIntType(t: ast.TypeExpr) bool {
-    return t == .named and (std.mem.eql(u8, t.named, "i64") or std.mem.eql(u8, t.named, "i32"));
+    return t == .named and (std.mem.eql(u8, t.named, "i64") or
+        std.mem.eql(u8, t.named, "i32") or isIntAlias(t.named));
 }
 
 /// `bool` rides an integer register like any other scalar.
@@ -976,6 +1024,12 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                 }
                 if (ln.typ != .inferred and isFloatType(ln.typ)) {
                     if (ctx.locals.get(ln.ident)) |slot| try ctx.f64_slots.put(ctx.alloc, slot, {});
+                }
+                // `ok: bool = f()` where `f` is not declared `: bool`. The
+                // ANNOTATION is the answer here and the initializer is not, so
+                // the mark has to follow the declared type as well.
+                if (isBoolType(ln.typ)) {
+                    if (ctx.locals.get(ln.ident)) |slot| try ctx.bool_slots.put(ctx.alloc, slot, {});
                 }
             }
         },
@@ -1351,12 +1405,65 @@ fn materializeTableSlots(ctx: *LowerCtx, name: []const u8) Error!u32 {
     return base;
 }
 
+/// True when `expr` holds a BOOLEAN rather than a number.
+///
+/// A bool rides an integer register, so no representation downstream can tell
+/// `true` from `1`. The distinction is only visible where a value is RENDERED:
+/// `"{ok}"` must print `true`, and `"%lld"` on the same register prints `1`.
+/// That is a wrong answer, not a bail, so every renderer asks this first and
+/// refuses whatever it cannot place.
+///
+/// The predicate is POSITIVE and deliberately narrow — the shapes that are
+/// provably bool. Anything outside it is not "known integer"; `exprIsIntegral`
+/// still has to prove that separately, and the two together are what admit an
+/// operand.
+fn exprIsBoolish(ctx: *LowerCtx, expr: *const ast.Expr) bool {
+    return switch (expr.*) {
+        .true_lit, .false_lit => true,
+        .unop => |u| u.op == .not,
+        .binop => |b| switch (b.op) {
+            .eq, .neq, .lt, .gt, .leq, .geq => true,
+            // `a and b` / `a or b` yield an OPERAND in Lua, not a truth value,
+            // so they are bool only when both arms are.
+            .@"and", .@"or" => exprIsBoolish(ctx, b.lhs) and exprIsBoolish(ctx, b.rhs),
+            else => false,
+        },
+        .call => |c| c.func.* == .name and ctx.bool_returns.contains(c.func.name.ident),
+        .name => |n| blk: {
+            const slot = ctx.locals.get(n.ident) orelse break :blk false;
+            break :blk ctx.bool_slots.contains(slot);
+        },
+        else => false,
+    };
+}
+
+/// An operand of `..` this pass can render without changing the answer.
+///
+/// Either it is already text, or it is provably an integer that is not a bool.
+/// `#s`, `s[i]`, an i64 local and an i64-returning call all qualify; an f64, a
+/// bool, a record, a table base and anything unproven do not, and each of those
+/// is a bail rather than a guess.
+fn concatOperandOk(ctx: *LowerCtx, expr: *const ast.Expr) bool {
+    if (exprIsStr(ctx, expr)) return true;
+    if (exprIsBoolish(ctx, expr)) return false;
+    return exprIsIntegral(ctx, expr);
+}
+
 /// True when `expr` is known to produce a `str` (a `const char*`), so `#expr`
 /// can lower to a `strlen` call rather than a dynamic length probe.
 fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
     return switch (expr.*) {
         .string_lit => true,
-        .binop => |bb| bb.op == .concat and exprIsStr(ctx, bb.lhs) and exprIsStr(ctx, bb.rhs),
+        // `..` ALWAYS produces text, including where one side is a number —
+        // which is the shape `"{a} {b}"` desugars to. Requiring both sides to
+        // be str was what made every interpolation of an integer answer "not a
+        // string" and take the whole enclosing function to the C backend. At
+        // least one side must still be a str: two integers concatenated is a
+        // shape this pass has never lowered, and claiming it here would let
+        // `lowerConcat` produce text where the answer was never checked.
+        .binop => |bb| bb.op == .concat and
+            concatOperandOk(ctx, bb.lhs) and concatOperandOk(ctx, bb.rhs) and
+            (exprIsStr(ctx, bb.lhs) or exprIsStr(ctx, bb.rhs)),
         // Two producers of str, one arm. A producer the type tracker does not
         // know about breaks every consumer downstream, so both belong here:
         //   * a call to a function declared `: str` — without it,
@@ -1428,6 +1535,13 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
         if (store_ty == .f64) try ctx.f64_slots.put(ctx.alloc, slot, {});
         if (exprIsStr(ctx, value)) try ctx.str_slots.put(ctx.alloc, slot, {});
         if (exprIsStr(ctx, value)) try ctx.str_slots.put(ctx.alloc, slot, {});
+        // Both directions. A slot REASSIGNED from a bool to an integer is no
+        // longer a bool, and leaving the mark set would refuse a legal
+        // interpolation for the rest of the function.
+        if (exprIsBoolish(ctx, value))
+            try ctx.bool_slots.put(ctx.alloc, slot, {})
+        else
+            _ = ctx.bool_slots.remove(slot);
         if (intLiteralStep(value)) |n| {
             const gop = try ctx.const_ints.getOrPut(ctx.alloc, name);
             if (!gop.found_existing) gop.key_ptr.* = try ctx.alloc.dupe(u8, name);
@@ -1440,6 +1554,7 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
     try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), slot);
     if (store_ty == .f64) try ctx.f64_slots.put(ctx.alloc, slot, {});
     if (exprIsStr(ctx, value)) try ctx.str_slots.put(ctx.alloc, slot, {});
+    if (exprIsBoolish(ctx, value)) try ctx.bool_slots.put(ctx.alloc, slot, {});
     if (intLiteralStep(value)) |n| {
         const gop = try ctx.const_ints.getOrPut(ctx.alloc, name);
         if (!gop.found_existing) gop.key_ptr.* = try ctx.alloc.dupe(u8, name);
@@ -2086,35 +2201,140 @@ fn lowerShortCircuit(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *
     return .{ .local = slot };
 }
 
-fn lowerConcat(ctx: *LowerCtx, lhs: *const ast.Expr, rhs: *const ast.Expr) Error!dnir.Value {
-    const a = try lowerExpr(ctx, lhs);
-    const b = try lowerExpr(ctx, rhs);
-    try ensureExtern(ctx, "string", "len", "strlen");
+/// The variadic tail the backend can stage. Eight is `pending_varargs`' width,
+/// not a guess.
+const max_concat_holes = 8;
+
+/// A `..` chain read as a printf FORMAT plus the arguments it consumes.
+///
+/// Both consumers of a chain — `print`, and a chain in value position — need
+/// exactly this, and they need to AGREE on it: two renderers for "how does an
+/// operand become text" is two chances to disagree with each other and with the
+/// C backend.
+const ConcatPlan = struct {
+    /// The literal parts with `%` doubled and each hole replaced by its
+    /// conversion. Owned by `ctx.alloc`.
+    fmt: []const u8,
+    /// The same text with NO conversions, valid only when `count == 0`.
+    literal: []const u8,
+    holes: [max_concat_holes]*const ast.Expr,
+    count: usize,
+};
+
+/// Read a flattened `..` chain as a format string, or answer null when a part
+/// is a shape this cannot render. Null is not a failure — the caller decides
+/// whether that is a bail or a fallback.
+fn planConcat(ctx: *LowerCtx, parts: []const *const ast.Expr, newline: bool) Error!?ConcatPlan {
+    var fmt: std.ArrayListUnmanaged(u8) = .empty;
+    defer fmt.deinit(ctx.alloc);
+    var literal: std.ArrayListUnmanaged(u8) = .empty;
+    defer literal.deinit(ctx.alloc);
+    var plan: ConcatPlan = .{ .fmt = "", .literal = "", .holes = undefined, .count = 0 };
+
+    for (parts) |p| {
+        if (p.* == .string_lit) {
+            try literal.appendSlice(ctx.alloc, p.string_lit.val);
+            // A `%` in the program's own text is TEXT. Left alone it reads the
+            // following byte as a conversion and prints an argument that was
+            // never passed — a wrong answer produced by a correct-looking
+            // literal.
+            for (p.string_lit.val) |ch| {
+                if (ch == '%') try fmt.append(ctx.alloc, '%');
+                try fmt.append(ctx.alloc, ch);
+            }
+            continue;
+        }
+        if (plan.count == max_concat_holes) return null;
+        if (exprIsStr(ctx, p)) {
+            try fmt.appendSlice(ctx.alloc, "%s");
+        } else if (concatOperandOk(ctx, p)) {
+            // `concatOperandOk` has already refused f64 and bool — the two
+            // shapes `%lld` renders into a plausible wrong answer.
+            try fmt.appendSlice(ctx.alloc, "%lld");
+        } else return null;
+        plan.holes[plan.count] = p;
+        plan.count += 1;
+    }
+    if (newline) {
+        try fmt.append(ctx.alloc, '\n');
+        try literal.append(ctx.alloc, '\n');
+    }
+    plan.fmt = try ctx.alloc.dupe(u8, fmt.items);
+    plan.literal = try ctx.alloc.dupe(u8, literal.items);
+    return plan;
+}
+
+/// Stage a plan's holes in the variadic tail. Emitted immediately before the
+/// call that reads them.
+fn stageConcatHoles(ctx: *LowerCtx, vals: []const dnir.Value) Error!void {
+    for (vals, 0..) |v, i| {
+        try ctx.emit(.{ .op = .mov_arg, .result = @intCast(i), .field = "vararg", .lhs = v });
+    }
+}
+
+/// A `..` chain in VALUE position — `s = "a={a}"` — as one buffer.
+///
+/// The chain used to lower pairwise: strlen, strlen, malloc, strcpy, strcat per
+/// `..`, with every intermediate buffer live across every later call. Three
+/// holes is 26 values live at once against 19 allocatable registers, and the
+/// backend leaks one more per result-less call, so the ladder ASSEMBLED and
+/// then answered wrong — `a .. "-" .. b .. "-" .. c` printed the right text and
+/// exited 240, and a three-hole interpolation segfaulted. Measuring the chain
+/// once and filling it once removes the pressure instead of budgeting for it:
+/// live values drop to one per hole, and those ride the variadic tail, which
+/// Apple's ARM64 ABI passes in memory rather than in registers.
+///
+/// `snprintf(nil, 0, fmt, …)` is the measurement — it writes nothing and
+/// answers the length the same format with the same arguments will produce, so
+/// the buffer cannot be the wrong size for the fill that follows.
+fn lowerConcatChain(ctx: *LowerCtx, lhs: *const ast.Expr, rhs: *const ast.Expr) Error!dnir.Value {
+    var parts: std.ArrayListUnmanaged(*const ast.Expr) = .empty;
+    defer parts.deinit(ctx.alloc);
+    try flattenConcat(ctx.alloc, lhs, &parts);
+    try flattenConcat(ctx.alloc, rhs, &parts);
+
+    const plan = (try planConcat(ctx, parts.items, false)) orelse return bailWith(@src(), "concat");
+    // Every part was a literal, so the chain IS its own answer.
+    if (plan.count == 0) return .{ .str = plan.literal };
+
+    // Lower each hole ONCE. The values are staged twice — once to measure, once
+    // to fill — and re-lowering would evaluate the operand twice.
+    var vals: [max_concat_holes]dnir.Value = undefined;
+    for (plan.holes[0..plan.count], 0..) |h, i| vals[i] = try lowerExpr(ctx, h);
+
     try ensureExtern(ctx, "mem", "alloc", "malloc");
-    try ensureExtern(ctx, "string", "copy", "strcpy");
-    try ensureExtern(ctx, "string", "cat", "strcat");
-    const la = ctx.freshTemp();
-    try ctx.emit(.{ .op = .call_extern, .result = la, .callee = "strlen", .lhs = a });
-    const lb = ctx.freshTemp();
-    try ctx.emit(.{ .op = .call_extern, .result = lb, .callee = "strlen", .lhs = b });
-    const sum = ctx.freshTemp();
-    try ctx.emit(.{ .op = .binop, .result = sum, .binop = .add, .lhs = .{ .temp = la }, .rhs = .{ .temp = lb } });
+    try ensureExtern(ctx, "string", "format", "snprintf");
+
+    try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = .{ .i64 = 0 } });
+    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = .{ .i64 = 0 } });
+    try ctx.emit(.{ .op = .mov_arg, .result = 2, .lhs = .{ .str = plan.fmt } });
+    try stageConcatHoles(ctx, vals[0..plan.count]);
+    const wide = ctx.freshTemp();
+    try ctx.emit(.{ .op = .call_extern, .result = wide, .callee = "snprintf" });
+
+    // snprintf answers an `int`, so only w0 is defined; the upper half of x0 is
+    // whatever the callee left there. Sign-extending garbage into a malloc size
+    // is not a hazard worth leaving to the platform's habits.
+    const len = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = len, .binop = .band, .lhs = .{ .temp = wide }, .rhs = .{ .i64 = 0xFFFFFFFF } });
     const total = ctx.freshTemp();
-    try ctx.emit(.{ .op = .binop, .result = total, .binop = .add, .lhs = .{ .temp = sum }, .rhs = .{ .i64 = 1 } });
+    try ctx.emit(.{ .op = .binop, .result = total, .binop = .add, .lhs = .{ .temp = len }, .rhs = .{ .i64 = 1 } });
     const buf = ctx.freshTemp();
     try ctx.emit(.{ .op = .call_extern, .result = buf, .callee = "malloc", .lhs = .{ .temp = total } });
+
     try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = .{ .temp = buf } });
-    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = a });
-    try ctx.emit(.{ .op = .call_extern, .callee = "strcpy" });
-    try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = .{ .temp = buf } });
-    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = b });
-    try ctx.emit(.{ .op = .call_extern, .callee = "strcat" });
+    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = .{ .temp = total } });
+    try ctx.emit(.{ .op = .mov_arg, .result = 2, .lhs = .{ .str = plan.fmt } });
+    try stageConcatHoles(ctx, vals[0..plan.count]);
+    try ctx.emit(.{ .op = .call_extern, .callee = "snprintf" });
     return .{ .temp = buf };
 }
 
 fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const ast.Expr) Error!dnir.Value {
-    if (op == .concat and exprIsStr(ctx, lhs) and exprIsStr(ctx, rhs)) {
-        return try lowerConcat(ctx, lhs, rhs);
+    if (op == .concat and concatOperandOk(ctx, lhs) and concatOperandOk(ctx, rhs) and
+        (exprIsStr(ctx, lhs) or exprIsStr(ctx, rhs)))
+    {
+        return try lowerConcatChain(ctx, lhs, rhs);
     }
     const f64_op = exprIsF64(ctx, lhs) or exprIsF64(ctx, rhs);
     const t = ctx.freshTemp();
@@ -2340,6 +2560,17 @@ fn lowerToStr(ctx: *LowerCtx, c: anytype) Error!?dnir.Value {
     if (!exprIsIntegral(ctx, c.args[0])) return null;
 
     const n = try lowerExpr(ctx, c.args[0]);
+    return .{ .temp = try emitIntToStr(ctx, n) };
+}
+
+/// Render an already-lowered INTEGER value as decimal text, and answer the temp
+/// holding the buffer.
+///
+/// Shared by `to(str)(n)` and by `..`, on purpose: two emitters for "number to
+/// decimal" is two chances to disagree with the C backend, and the caller is
+/// responsible for having proved the value is an integer — `"%lld"` is a
+/// constant this assumes and cannot check from a register.
+fn emitIntToStr(ctx: *LowerCtx, n: dnir.Value) Error!u32 {
     try ensureExtern(ctx, "mem", "alloc", "malloc");
     try ensureExtern(ctx, "string", "format", "snprintf");
     const buf = ctx.freshTemp();
@@ -2354,7 +2585,7 @@ fn lowerToStr(ctx: *LowerCtx, c: anytype) Error!?dnir.Value {
     // and still prints a pointer, because snprintf never reads x3.
     try ctx.emit(.{ .op = .mov_arg, .result = 0, .field = "vararg", .lhs = n });
     try ctx.emit(.{ .op = .call_extern, .callee = "snprintf" });
-    return .{ .temp = buf };
+    return buf;
 }
 
 /// `a.b.c` -> "a.b.c" into `out`. False for anything not a pure name chain.
@@ -2626,6 +2857,54 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
 /// Unsupported arg shapes (multi-arg, tables, records) fall through to the AST
 /// path, which reports the honest DNB001 — the direct subset still refuses
 /// rather than boxing.
+/// Flatten a left-leaning `..` chain into its parts, in evaluation order.
+fn flattenConcat(alloc: std.mem.Allocator, e: *const ast.Expr, out: *std.ArrayListUnmanaged(*const ast.Expr)) Error!void {
+    if (e.* == .binop and e.binop.op == .concat) {
+        try flattenConcat(alloc, e.binop.lhs, out);
+        try flattenConcat(alloc, e.binop.rhs, out);
+        return;
+    }
+    try out.append(alloc, e);
+}
+
+/// `print("{a} {b} {c}")` as ONE `printf`, with the literal text as the format.
+///
+/// The parser desugars an interpolated literal into a left-leaning chain of
+/// `..`, and lowering that chain literally costs one malloc, one strcpy and one
+/// strcat per hole with every intermediate buffer live across all of them.
+/// Three holes is 26 values live at once; the backend has 19 allocatable
+/// registers and leaks one more per result-less call, so the ladder assembled,
+/// printed the right text, and then returned a wrong exit code or walked off
+/// the stack. Measured on `a .. "-" .. b .. "-" .. c`: correct output, exit 240
+/// where the answer is 0 — a WRONG ANSWER reached by a construct that compiled.
+///
+/// The format string removes the problem rather than budgeting around it. The
+/// literal parts ARE the format, each hole contributes one conversion, and
+/// nothing is allocated at all: live values drop to one per hole, and those
+/// travel in the variadic tail, which Apple's ARM64 ABI passes in memory.
+///
+/// Returns null — not a bail — when the shape is not one this can render. The
+/// caller then lowers the argument the ordinary way.
+fn lowerPrintFormat(ctx: *LowerCtx, arg: *const ast.Expr) Error!?dnir.Value {
+    if (arg.* != .binop or arg.binop.op != .concat) return null;
+
+    var parts: std.ArrayListUnmanaged(*const ast.Expr) = .empty;
+    defer parts.deinit(ctx.alloc);
+    try flattenConcat(ctx.alloc, arg, &parts);
+
+    // `print` ends a line. `print_value` gets that from `puts`; here it is one
+    // more byte of format.
+    const plan = (try planConcat(ctx, parts.items, true)) orelse return null;
+
+    var vals: [max_concat_holes]dnir.Value = undefined;
+    for (plan.holes[0..plan.count], 0..) |h, i| vals[i] = try lowerExpr(ctx, h);
+
+    try ensureExtern(ctx, "io", "printf", "printf");
+    try stageConcatHoles(ctx, vals[0..plan.count]);
+    try ctx.emit(.{ .op = .call_extern, .callee = "printf", .lhs = .{ .str = plan.fmt } });
+    return .void;
+}
+
 fn lowerPrint(ctx: *LowerCtx, args: []const *ast.Expr) Error!dnir.Value {
     if (args.len == 0) {
         try ctx.emit(.{ .op = .print_value });
@@ -2633,6 +2912,7 @@ fn lowerPrint(ctx: *LowerCtx, args: []const *ast.Expr) Error!dnir.Value {
     }
     if (args.len != 1) return bail(@src());
     const arg = args[0];
+    if (try lowerPrintFormat(ctx, arg)) |v| return v;
     const v = try lowerExpr(ctx, arg);
     const ty: RT = if (exprIsStr(ctx, arg)) .str else if (exprIsF64Value(ctx, arg)) .f64 else .i64;
     try ctx.emit(.{ .op = .print_value, .lhs = v, .ty = ty });

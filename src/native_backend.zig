@@ -817,6 +817,26 @@ const Arm64Compiler = struct {
     /// x10's number. See gap[058].
     fp_temps: std.AutoHashMapUnmanaged(u32, void) = .empty,
     used_fp_regs: [32]bool = @splat(false),
+    /// LIVENESS for the FP value range. `releaseFpReg` was a no-op, so
+    /// allocation was a monotonic cursor and every float loop walked off the
+    /// end of the pool; the standing answer was to raise the pool size, which
+    /// converted honest DNB003 refusals into hangs twice (gap[057]).
+    ///
+    /// Three facts make a release safe:
+    ///   * `fp reg owner` — which DNIR id currently reads out of this register.
+    ///     A register with an owner is not scratch and cannot be handed back by
+    ///     an operand-release at the point of use.
+    ///   * `fp home regs` — this register is a LOCAL's home. A local keeps one
+    ///     register for its whole lifetime (the same invariant the integer path
+    ///     spells `isLocalReg`), so a home is never freed.
+    ///   * `fp free at` — the last instruction index that READS an id, extended
+    ///     across any enclosing back edge. Freeing on the last TEXTUAL use is
+    ///     wrong inside a loop: a value defined before the loop and last read
+    ///     inside it is read again on the next iteration, after the reuse has
+    ///     already clobbered the register.
+    fp_reg_owner: [32]?u32 = @splat(null),
+    fp_home_regs: [32]bool = @splat(false),
+    fp_free_at: std.AutoHashMapUnmanaged(u32, u32) = .empty,
     /// Stack slots for sealed record fields (f64 or i64): "c.pos" -> slot meta.
     fp_stack_slots: std.StringHashMapUnmanaged(StackSlot) = .empty,
     stack_frame_bytes: u16 = 0,
@@ -916,6 +936,7 @@ const Arm64Compiler = struct {
         self.string_map.deinit(self.alloc);
         self.fp_locals.deinit(self.alloc);
         self.fp_temps.deinit(self.alloc);
+        self.fp_free_at.deinit(self.alloc);
         self.fp_stack_slots.deinit(self.alloc);
         self.slot_bases.deinit(self.alloc);
         self.f64_kernel_names.deinit(self.alloc);
@@ -1113,6 +1134,112 @@ const Arm64Compiler = struct {
         return false;
     }
 
+    /// Every DNIR id this instruction READS. `vals` carries the fields of a
+    /// wide record return that lhs/rhs/third cannot express, so a scan that
+    /// stopped at `third` would call a fourth field dead while it is still read.
+    fn forEachOperandId(ins: dnir.Instr, ctx: anytype, comptime visit: fn (@TypeOf(ctx), u32) void) void {
+        const fixed = [_]dnir.Value{ ins.lhs, ins.rhs, ins.third };
+        for (fixed) |v| switch (v) {
+            .local, .temp => |id| visit(ctx, id),
+            else => {},
+        };
+        for (ins.vals) |v| switch (v) {
+            .local, .temp => |id| visit(ctx, id),
+            else => {},
+        };
+    }
+
+    /// Last instruction index that reads each id, widened so that no live range
+    /// ends inside a loop it did not start in. See the `fp free at` field.
+    fn computeFpLastUse(self: *Arm64Compiler, f: dnir.Function) Error!void {
+        self.fp_free_at.clearRetainingCapacity();
+        var def_at: std.AutoHashMapUnmanaged(u32, u32) = .empty;
+        defer def_at.deinit(self.alloc);
+        var back: std.ArrayList([2]u32) = .empty;
+        defer back.deinit(self.alloc);
+
+        var idx: u32 = 0;
+        for (f.blocks) |b| {
+            for (b.instrs) |ins| {
+                const Sink = struct {
+                    map: *std.AutoHashMapUnmanaged(u32, u32),
+                    alloc: std.mem.Allocator,
+                    at: u32,
+                    failed: bool = false,
+                    fn note(s: *@This(), id: u32) void {
+                        s.map.put(s.alloc, id, s.at) catch {
+                            s.failed = true;
+                        };
+                    }
+                };
+                var sink: Sink = .{ .map = &self.fp_free_at, .alloc = self.alloc, .at = idx };
+                forEachOperandId(ins, &sink, Sink.note);
+                if (sink.failed) return error.OutOfMemory;
+                if (ins.result) |r| {
+                    if (!def_at.contains(r)) try def_at.put(self.alloc, r, idx);
+                }
+                switch (ins.op) {
+                    .br, .br_if, .br_if_not => {
+                        if (ins.branch_target <= idx) {
+                            try back.append(self.alloc, .{ ins.branch_target, idx });
+                        }
+                    },
+                    else => {},
+                }
+                idx += 1;
+            }
+        }
+
+        // A range that STARTS before a loop and ENDS inside it must survive to
+        // the back edge, or the next iteration reads a register that the tail of
+        // the body has already reused. Nested loops make one pass insufficient:
+        // widening to an inner back edge can drag a range into an outer one, so
+        // iterate to a fixpoint (bounded — every step only moves ends forward).
+        var changed = true;
+        var rounds: u32 = 0;
+        while (changed and rounds < 16) : (rounds += 1) {
+            changed = false;
+            var it = self.fp_free_at.iterator();
+            while (it.next()) |e| {
+                const def = def_at.get(e.key_ptr.*) orelse 0;
+                for (back.items) |edge| {
+                    const head = edge[0];
+                    const tail = edge[1];
+                    if (def < head and e.value_ptr.* >= head and e.value_ptr.* < tail) {
+                        e.value_ptr.* = tail;
+                        changed = true;
+                    }
+                }
+            }
+        }
+        // A fixpoint that did not settle means the widening is not conservative
+        // enough to trust. Pin every range to the end of the function rather
+        // than free anything on a guess.
+        if (changed) {
+            var it = self.fp_free_at.valueIterator();
+            while (it.next()) |v| v.* = std.math.maxInt(u32);
+        }
+    }
+
+    /// This register is a local's home for the rest of the function.
+    fn markFpHome(self: *Arm64Compiler, reg: u5) void {
+        self.fp_home_regs[reg] = true;
+        self.used_fp_regs[reg] = true;
+    }
+
+    /// Free every FP value register whose owner has no read left after `idx`.
+    fn sweepFpLive(self: *Arm64Compiler, idx: u32) void {
+        var reg: u5 = fp_value_reg_base;
+        while (reg < fp_value_reg_base + fp_value_reg_count) : (reg += 1) {
+            const owner = self.fp_reg_owner[reg] orelse continue;
+            if (self.fp_home_regs[reg]) continue;
+            const last = self.fp_free_at.get(owner) orelse 0;
+            if (last > idx) continue;
+            self.fp_reg_owner[reg] = null;
+            self.used_fp_regs[reg] = false;
+        }
+    }
+
     fn regIsPinned(pinned: *const std.AutoHashMapUnmanaged(u32, u5), reg: u5) bool {
         var it = pinned.valueIterator();
         while (it.next()) |slot_reg| {
@@ -1133,6 +1260,9 @@ const Arm64Compiler = struct {
         self.pending_vararg_count = 0;
         self.used_regs = @splat(false);
         self.used_fp_regs = @splat(false);
+        self.fp_reg_owner = @splat(null);
+        self.fp_home_regs = @splat(false);
+        try self.computeFpLastUse(f);
         self.returned = false;
         self.fp_stack_slots.clearRetainingCapacity();
         self.stack_frame_bytes = 0;
@@ -1182,6 +1312,7 @@ const Arm64Compiler = struct {
                         try self.emitFmovReg(h, dreg);
                         break :blk h;
                     } else dreg;
+                    self.markFpHome(home);
                     try self.fp_locals.put(self.alloc, p.name, home);
                     try temps.put(self.alloc, slot, home);
                     try self.markFpTemp(slot);
@@ -1195,6 +1326,7 @@ const Arm64Compiler = struct {
                             try self.emitFmovReg(h, dreg);
                             break :blk h;
                         } else dreg;
+                        self.markFpHome(home);
                         const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ p.name, fname });
                         try self.fp_locals.put(self.alloc, key, home);
                         dreg += 1;
@@ -1343,14 +1475,33 @@ const Arm64Compiler = struct {
         // end — the function then executes whatever symbol the linker placed
         // next. Track the final instruction separately.
         var tail_terminates = false;
+        var flat_idx: u32 = 0;
         for (f.blocks) |b| {
             for (b.instrs) |ins| {
                 try code_offsets.append(self.alloc, @intCast(self.code.items.len));
                 try self.compileDnirInstr(&temps, &pinned, ins, &branch_patches);
+                // Ownership is recorded HERE, once, rather than at each of the
+                // eight `temps.put` + `markFpTemp` pairs: the pair is exactly
+                // "this id now reads out of this register", and one place
+                // cannot drift out of step with another.
+                if (ins.result) |t| {
+                    if (self.fp_temps.contains(t)) {
+                        if (temps.get(t)) |r| {
+                            if (r >= fp_value_reg_base and
+                                r < fp_value_reg_base + fp_value_reg_count and
+                                !self.fp_home_regs[r])
+                            {
+                                self.fp_reg_owner[r] = t;
+                            }
+                        }
+                    }
+                }
+                self.sweepFpLive(flat_idx);
                 tail_terminates = switch (ins.op) {
                     .ret, .ret_record, .br => true,
                     else => false,
                 };
+                flat_idx += 1;
             }
         }
         // Sentinel: branch_target may equal instr count (fall-through past if-block).
@@ -1485,6 +1636,14 @@ const Arm64Compiler = struct {
                         // wrote — `r = math.sqrt(x)` put the result in d1 and
                         // the comparison read d9.
                         const home = pinned.get(slot) orelse temps.get(slot) orelse d;
+                        // Claim the home BEFORE releasing the value register:
+                        // on a local's first store they are the same register,
+                        // and a release that ran first would hand the local's
+                        // home to the next allocation.
+                        if (home >= fp_value_reg_base and home < fp_value_reg_base + fp_value_reg_count) {
+                            self.fp_reg_owner[home] = null;
+                            self.markFpHome(home);
+                        }
                         if (home != d) {
                             try self.emitFmovReg(home, d);
                             self.releaseFpReg(d);
@@ -1556,6 +1715,13 @@ const Arm64Compiler = struct {
                     const dst = try self.allocReg();
                     try self.emitFcmpReg(lhs, rhs);
                     try self.emitCsetFp(dst, conditionForComparison(ast_op));
+                    // The sibling comparison arm inside a float kernel already
+                    // does this. Both operands are consumed by the `fcmp` and
+                    // neither survives into the boolean, so an immediate staged
+                    // here (the `4.0` of `x2 + y2 > 4.0`) is pure scratch. It
+                    // was leaked, which mattered when nothing was ever freed.
+                    self.releaseFpReg(lhs);
+                    self.releaseFpReg(rhs);
                     if (ins.result) |t| try temps.put(self.alloc, t, dst);
                 } else if (self.cur_func_float) {
                     // A COMPARISON here answers with a boolean, not a double,
@@ -1585,9 +1751,8 @@ const Arm64Compiler = struct {
                     // `scvtf`, which is what makes `zx*zx + zy*zy < 4.0` — the
                     // shape this arm was written for — still work.
                     const cmp_op = dnirBinOpToAst(ins.binop);
-                    if (isComparison(cmp_op) and
-                        (self.valueIsFp(ins.lhs) or self.valueIsFp(ins.rhs)))
-                    {
+                    const any_fp = self.valueIsFp(ins.lhs) or self.valueIsFp(ins.rhs);
+                    if (isComparison(cmp_op) and any_fp) {
                         const clhs = try self.evalDnirValueFp(temps, ins.lhs);
                         const crhs = try self.evalDnirValueFp(temps, ins.rhs);
                         const cdst = try self.allocReg();
@@ -1598,10 +1763,21 @@ const Arm64Compiler = struct {
                         if (ins.result) |t| try temps.put(self.alloc, t, cdst);
                         break :blk;
                     }
-                    // An all-integer comparison inside a float kernel is an
-                    // ordinary integer comparison. Nothing about the enclosing
+                    // An all-integer OPERATION inside a float kernel is an
+                    // ordinary integer operation. Nothing about the enclosing
                     // function changes that.
-                    if (isComparison(cmp_op)) {
+                    //
+                    // This used to say `isComparison(cmp_op)` and let every
+                    // other integer op fall into the FP arithmetic below, which
+                    // is the same confusion one step further along:
+                    // `i += 1` on an i64 counter emitted
+                    // `scvtf d28, x9 / fadd d29, d10, d28 / fmov d10, d29` —
+                    // an FP add of `i`'s GENERAL-PURPOSE register number, x10
+                    // read as d10. x10 never advanced, so the loop head
+                    // `cmp x10, #100` was true forever and the escape test at
+                    // iteration 6 answered with `i` still 0. gap[058] found the
+                    // comparison half of this; the arithmetic half survived it.
+                    if (!any_fp) {
                         const ilhs = try self.evalDnirValue(temps, ins.lhs);
                         const irhs = try self.evalDnirValue(temps, ins.rhs);
                         const idst = try self.allocReg();
@@ -1673,6 +1849,14 @@ const Arm64Compiler = struct {
                     try self.emitPopVarargs(vbytes);
                     try self.emitRestoreCallerRegs(save);
                     self.used_fp_regs[0] = true;
+                    // This arm parked the result in d0 and left it UNRECORDED,
+                    // so `fp_temps` disagreed with the register the code had
+                    // actually written. An integer consumer then read x0 — the
+                    // same file confusion `crossFile` refuses everywhere else,
+                    // but invisible to it, because the record said nothing.
+                    // Say what was emitted; the cross-file guard can then judge
+                    // the consumer instead of guessing.
+                    try self.markFpTemp(ins.result);
                     if (ins.result) |t| try temps.put(self.alloc, t, 0);
                 } else {
                     if (ins.lhs != .void) {
@@ -2110,7 +2294,29 @@ const Arm64Compiler = struct {
         try self.patchCondBranch(done, @intCast(self.code.items.len));
     }
 
+    /// A read whose register FILE disagrees with the file the value lives in.
+    ///
+    /// `temps` is one map for two register files, so this is not a type error
+    /// that some other layer would have caught — it is a plain integer that
+    /// names d18 in one reader and x18 in the other, and the emitted
+    /// instruction is well-formed nonsense. `render()` in
+    /// `examples/mandelbrot.duo` reached both directions in one expression:
+    /// `(col - WIDTH / 2) * 3.5 / WIDTH` emitted `fmul d17, d12, d16` for a
+    /// `col - 40` that lives in x12, then `sdiv x13, x17, x9` for a product
+    /// that lives in d17. It printed 80 lines where C printed 3280.
+    ///
+    /// Refusing is the whole point: DNB001 sends the program to the C backend,
+    /// which is right, whereas emitting sends it to a plausible wrong answer.
+    /// gap[058] asks for this by name.
+    fn crossFile(self: *const Arm64Compiler, v: dnir.Value, want_fp: bool) bool {
+        return switch (v) {
+            .local, .temp => |id| self.fp_temps.contains(id) != want_fp,
+            else => false,
+        };
+    }
+
     fn evalDnirValue(self: *Arm64Compiler, temps: *std.AutoHashMapUnmanaged(u32, u5), v: dnir.Value) Error!u5 {
+        if (self.crossFile(v, false)) return refuse(@src());
         return switch (v) {
             .void => try self.allocReg(),
             .i64 => |n| blk: {
@@ -2142,6 +2348,7 @@ const Arm64Compiler = struct {
     }
 
     fn evalDnirValueFp(self: *Arm64Compiler, temps: *std.AutoHashMapUnmanaged(u32, u5), v: dnir.Value) Error!u5 {
+        if (self.crossFile(v, true)) return refuse(@src());
         return switch (v) {
             .void => try self.allocFpReg(),
             .f64 => |n| blk: {
@@ -2169,6 +2376,7 @@ const Arm64Compiler = struct {
     }
 
     fn evalDnirFpArg(self: *Arm64Compiler, temps: *std.AutoHashMapUnmanaged(u32, u5), v: dnir.Value) Error!u5 {
+        if (self.crossFile(v, true)) return refuse(@src());
         return switch (v) {
             .f64 => |n| blk: {
                 const d = try self.allocFpReg();
@@ -2180,9 +2388,20 @@ const Arm64Compiler = struct {
         };
     }
 
+    /// Hand a SCRATCH FP register back. Scratch means exactly: inside the value
+    /// range, not a local's home, and not currently read by any id. Every
+    /// caller passes the register an operand happened to arrive in, and that
+    /// register is very often a live local or a temp with reads still ahead —
+    /// which is why this function was a no-op, and why making it free
+    /// unconditionally would clobber the loop state it is supposed to preserve.
+    /// Owned registers retire in `sweepFpLive`, at the instruction index where
+    /// their last read is behind them.
     fn releaseFpReg(self: *Arm64Compiler, reg: u5) void {
-        _ = self;
-        _ = reg;
+        if (reg < fp_value_reg_base) return;
+        if (reg >= fp_value_reg_base + fp_value_reg_count) return;
+        if (self.fp_home_regs[reg]) return;
+        if (self.fp_reg_owner[reg] != null) return;
+        self.used_fp_regs[reg] = false;
     }
 
     fn emitCompareOrBinop(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, op: ast.BinOp) Error!void {
