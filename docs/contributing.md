@@ -22,7 +22,7 @@ Performance-sensitive changes: read and update [docs/performance.md](performance
 ## Code conventions
 
 - Zig: `snake_case`, single-file modules, `pub` API surface — see [CLAUDE.md](../CLAUDE.md)
-- Duo stdlib: [docs/src/idiomatic_duo.md](src/idiomatic_duo.md), [AGENTS.md](../AGENTS.md) grammar table
+- Duo stdlib: [docs/src/idiomatic-duon.md](src/idiomatic-duon.md), [AGENTS.md](../AGENTS.md) grammar table
 - Typed paths must not introduce `lua_Value` on hot paths
 
 ## Agent / parallel development

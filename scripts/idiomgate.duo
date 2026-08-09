@@ -1,0 +1,270 @@
+-- idiomgate — canonical duon enforced on the STAGED DIFF, for every agent.
+--
+-- Why the diff and not the tree: 756 .duo files still carry bare `end` and 227
+-- carry Lua module idioms. A whole-tree gate would block every commit until a
+-- 756-file migration landed, so it would be switched off within a day. Gating
+-- the diff makes the debt monotonically SHRINK and makes a NEW violation
+-- impossible. Same ratchet shape as audit100.
+--
+-- Reads the file list from the env var DUOGATEFILES (newline separated) because
+-- duo binaries do not populate argv — an argv-driven scanner reports a
+-- confident 0. If the var is absent the gate says so and exits 3; it never
+-- reports a clean run it did not perform.
+--
+-- Runs a POSITIVE CONTROL before any verdict. A gate that reports 0 findings is
+-- usually broken, not green (§3 MEASUREMENT HONESTY).
+
+-- one denied form: the bytes to look for, the law it breaks, the repair edge
+rules = {
+    { pat = "_",             law = "LAW-ONE",      fix = "one lowercase word: a LEVEL read(number), a HOME date.pad, or delete the axis" },
+    { pat = "end",           law = "Pass 100 §7",  fix = "`end` is DELETED — outdent" },
+    { pat = ";",             law = "Pass 119 §1",  fix = "the semicolon does not exist — press enter" },
+    { pat = "string.",       law = "§0.8",         fix = "s:sub(i,j) · s[i] IS the byte · no Lua module idioms" },
+    { pat = "table.",        law = "RECOGNITION",  fix = "xs:push(v) — worlds are the only namespaces" },
+    { pat = "math.",         law = "RECOGNITION",  fix = "x:abs() — pure ops are VALUE EDGES" },
+    { pat = "std.mem",       law = "RECOGNITION",  fix = "value edges, not a std module tree" },
+    { pat = "std.fmt",       law = "RECOGNITION",  fix = "interpolation, not a format module" },
+    { pat = "std.math",      law = "RECOGNITION",  fix = "x:abs()" },
+    { pat = "function",      law = "§1 deny",      fix = "bare declaration: name = (a: i64): i64" },
+    { pat = "local",         law = "§1 deny",      fix = "bindings are already scoped" },
+    { pat = "require",       law = "§1 deny",      fix = "std is the prelude graph — no import" },
+    { pat = "then",          law = "§1 deny",      fix = "outdent" },
+    { pat = "tostring",      law = "§1 deny",      fix = "x:to(str)" },
+    { pat = "tonumber",      law = "§1 deny",      fix = "x:to(i64) — and it ROUTES on failure" },
+    { pat = "pcall",         law = "§1 deny",      fix = "t | error — failure routes (B-15)" },
+    { pat = "setmetatable",  law = "§1 deny",      fix = "descriptors and protocols" },
+    { pat = "pairs",         law = "§1 deny",      fix = "iterate the value: xs:each()" },
+    { pat = ".new(",         law = "LADDER",       fix = "desc{…} · x:to(desc) · p:from(mode)(…) · file.open" },
+    { pat = ".create(",      law = "LADDER",       fix = "desc{…}" },
+    { pat = "make",          law = "LADDER",       fix = "desc{…} — make* is banned" },
+    { pat = "self",          law = "SELF-ZERO",    fix = ".x · leading :call() · `.` is the subject · ... spreads it" },
+}
+
+-- true when needle occurs in hay. No pattern API: `s:find` is a value edge but
+-- a literal scan cannot misfire on a metacharacter, and these needles carry `.`
+has = (hay: str, needle: str): bool
+    n = rawlen(hay)
+    m = rawlen(needle)
+    if m == 0
+        return false
+    i = 1
+    while i + m - 1 <= n
+        if hay:sub(i, i + m - 1) == needle
+            return true
+        i = i + 1
+    false
+
+-- lowercase letter, for the LAW-ONE [a-z]_[a-z] check
+alpha = (c: str): bool
+    c >= "a" and c <= "z"
+
+upper = (c: str): bool
+    c >= "A" and c <= "Z"
+
+-- Strip comments and string bodies so a rule cannot fire on prose or on this
+-- file's own rule table. Quotes are replaced by spaces, not removed, so column
+-- numbers stay true.
+strip = (line: str): str
+    out = ""
+    n = rawlen(line)
+    quote = ""
+    i = 1
+    while i <= n
+        c = line:sub(i, i)
+        if quote == ""
+            if c == "-" and i < n and line:sub(i + 1, i + 1) == "-"
+                return out
+            if c == "\"" or c == "'"
+                quote = c
+                out = out .. " "
+            else
+                out = out .. c
+        else
+            if c == quote
+                quote = ""
+            out = out .. " "
+        i = i + 1
+    out
+
+-- LAW-ONE: an underscore BETWEEN two lowercase letters. Numeric literals and a
+-- leading _ (which is export control, not spelling) are not findings.
+snake = (code: str): bool
+    n = rawlen(code)
+    i = 2
+    while i < n
+        if code:sub(i, i) == "_" and alpha(code:sub(i - 1, i - 1)) and alpha(code:sub(i + 1, i + 1))
+            return true
+        i = i + 1
+    false
+
+-- a capital starting an identifier: the "capital types" finding
+capital = (code: str): bool
+    n = rawlen(code)
+    i = 1
+    while i <= n
+        c = code:sub(i, i)
+        if upper(c)
+            prev = ""
+            if i > 1
+                prev = code:sub(i - 1, i - 1)
+            if prev == "" or (not alpha(prev) and not upper(prev) and prev != "_")
+                if i < n and (alpha(code:sub(i + 1, i + 1)) or upper(code:sub(i + 1, i + 1)))
+                    return true
+        i = i + 1
+    false
+
+-- a bare `end` occupying its own line
+bareend = (code: str): bool
+    t = ""
+    n = rawlen(code)
+    i = 1
+    while i <= n
+        c = code:sub(i, i)
+        if c != " " and c != "\t"
+            t = t .. c
+        i = i + 1
+    t == "end"
+
+found = 0
+
+scanline = (path: str, no: i64, line: str): i64
+    code = strip(line)
+    hits = 0
+    if bareend(code)
+        print("{path}:{no}  end  [Pass 100 §7]  `end` is DELETED — outdent")
+        hits = hits + 1
+    if snake(code)
+        print("{path}:{no}  underscore  [LAW-ONE]  one lowercase word: a LEVEL, a HOME, or delete the axis")
+        hits = hits + 1
+    if capital(code)
+        print("{path}:{no}  uppercase  [LAW-ONE]  no uppercase in an identifier, ever: point, error, max")
+        hits = hits + 1
+    if has(code, ";")
+        print("{path}:{no}  semicolon  [Pass 119 §1]  the semicolon does not exist — press enter")
+        hits = hits + 1
+    if has(code, "string.")
+        print("{path}:{no}  string.  [§0.8]  s:sub(i,j) · s[i] IS the byte")
+        hits = hits + 1
+    if has(code, "table.")
+        print("{path}:{no}  table.  [RECOGNITION]  xs:push(v) — worlds are the only namespaces")
+        hits = hits + 1
+    if has(code, "math.")
+        print("{path}:{no}  math.  [RECOGNITION]  x:abs() — pure ops are VALUE EDGES")
+        hits = hits + 1
+    if has(code, "function")
+        print("{path}:{no}  function  [§1]  bare declaration: name = (a: i64): i64")
+        hits = hits + 1
+    if has(code, "require")
+        print("{path}:{no}  require  [§0h]  std is the prelude graph — no import")
+        hits = hits + 1
+    if has(code, "tostring")
+        print("{path}:{no}  tostring  [§1]  x:to(str)")
+        hits = hits + 1
+    if has(code, "pcall")
+        print("{path}:{no}  pcall  [B-15]  t | error — failure routes")
+        hits = hits + 1
+    if has(code, "setmetatable")
+        print("{path}:{no}  setmetatable  [§1]  descriptors and protocols")
+        hits = hits + 1
+    if has(code, ".new(")
+        print("{path}:{no}  .new(  [LADDER]  desc{{…}} · x:to(desc) · p:from(mode)(…)")
+        hits = hits + 1
+    hits
+
+scanfile = (path: str): i64
+    f = io.open(path, "r")
+    if f == nil
+        return 0
+    body = f:read("a")
+    f:close()
+    hits = 0
+    no = 1
+    line = ""
+    n = rawlen(body)
+    i = 1
+    while i <= n
+        c = body:sub(i, i)
+        if c == "\n"
+            hits = hits + scanline(path, no, line)
+            line = ""
+            no = no + 1
+        else
+            line = line .. c
+        i = i + 1
+    if rawlen(line) > 0
+        hits = hits + scanline(path, no, line)
+    hits
+
+-- POSITIVE CONTROL. Every detector must fire on a line built to trip it, and
+-- must stay silent on a canonical line. A gate that cannot convict its own
+-- exhibit reports 0 because it is broken, not because the tree is clean.
+control = (): bool
+    ok = true
+    if not bareend("    end")
+        print("control FAIL: bareend did not fire")
+        ok = false
+    if bareend("    scan(n)")
+        print("control FAIL: bareend fired on canonical")
+        ok = false
+    if not snake("is_digit(c)")
+        print("control FAIL: snake did not fire")
+        ok = false
+    if snake("digit(c)")
+        print("control FAIL: snake fired on canonical")
+        ok = false
+    if not capital("p: Point")
+        print("control FAIL: capital did not fire")
+        ok = false
+    if capital("p: point")
+        print("control FAIL: capital fired on canonical")
+        ok = false
+    if not has("x = string.sub(s,1,2)", "string.")
+        print("control FAIL: has did not fire")
+        ok = false
+    if has("x = s:sub(1,2)", "string.")
+        print("control FAIL: has fired on canonical")
+        ok = false
+    if rawlen(strip("code -- string.sub here")) > 6
+        print("control FAIL: strip did not remove a comment")
+        ok = false
+    ok
+
+main = (): i64
+    if not control()
+        print("")
+        print("idiomgate: POSITIVE CONTROL FAILED — the gate is broken, not the tree.")
+        print("No verdict is reported. Fix the gate before trusting any run.")
+        return 3
+    files = os.getenv("DUOGATEFILES")
+    if files == nil or files == ""
+        print("idiomgate: DUOGATEFILES is empty.")
+        print("This gate reads its file list from the environment because duo")
+        print("binaries do not populate argv. It refuses to report a clean run")
+        print("it did not perform. Set DUOGATEFILES to a newline-separated list.")
+        return 3
+    total = 0
+    count = 0
+    path = ""
+    n = rawlen(files)
+    i = 1
+    while i <= n + 1
+        c = " "
+        if i <= n
+            c = files:sub(i, i)
+        if c == "\n" or i == n + 1
+            if rawlen(path) > 0
+                total = total + scanfile(path)
+                count = count + 1
+            path = ""
+        else
+            path = path .. c
+        i = i + 1
+    print("")
+    print("idiomgate: {count} file(s) scanned, {total} finding(s)  [control: 9/9 pass]")
+    if total > 0
+        print("")
+        print("The law: CLAUDE.md + docs/spec/ · the deny list: AGENTS.md")
+        print("The teaching: docs/src/idiomatic-duon.md")
+        print("The corpus is NOT the law — do not imitate the file you are editing.")
+        return 1
+    0

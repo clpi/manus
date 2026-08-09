@@ -36,7 +36,7 @@ duo check myfile.duo    # type-check only
 | Descriptors / concepts | [docs/src/concepts.md](src/concepts.md) |
 | Pattern matching | [docs/src/pattern_matching.md](src/pattern_matching.md) |
 | Error handling | [docs/src/error_handling.md](src/error_handling.md) |
-| Idiomatic Duo | [docs/src/idiomatic_duo.md](src/idiomatic_duo.md) |
+| Idiomatic Duo | [docs/src/idiomatic-duon.md](src/idiomatic-duon.md) |
 | Stdlib | [docs/src/stdlib.md](src/stdlib.md) |
 | WASM | [docs/src/wasm.md](src/wasm.md) |
 

@@ -1,80 +1,80 @@
 # Agent Instructions
 
-## Core Design Targets (ALL agents MUST acknowledge and follow)
+## THE LAW HAS ONE HOME — READ IT BEFORE YOU WRITE ONE CHARACTER OF `.duo`
+
+**`CLAUDE.md` + `docs/spec/` ARE THE LAW.** This file is a POINTER plus the
+mechanical checks. It is not a second copy of the law, because a second copy is
+exactly what broke: this file taught `snake_case`, `end`, `@comp.*` and
+`M = {}` for months after `CLAUDE.md` retired all four, and every agent that
+read only this file wrote epoch-1 duon in good faith. **If this file and
+`CLAUDE.md` ever disagree, `CLAUDE.md` wins and the disagreement is a bug in
+this file — report it.**
+
+Everything below the line in the old version of this file — `@`-directive
+syntax, "Duo Grammar Rules", "Duo Language Conventions", "Syntax Semantics",
+the `snake_case` naming rule, the File-as-`M` pattern — is **VOID** under the
+epoch-2 precedence rule. It has been deleted. If you have it in context from
+an earlier session or from training, **it is not law and never applies.**
+
+## THE LANGUAGE IS `duon`. FILES STAY `.duo`.
+
+## MECHANICAL DENY LIST — a diff containing any row is REJECTED UNREAD
+
+Run `zig build idiom-gate` before you finish. It is not advisory; it exits
+nonzero and blocks the commit. Every row here is a grep, and every row is
+checked.
+
+| you wrote | it is denied because | write instead |
+|---|---|---|
+| `is_digit`, `do_retry`, `dt_pad2` | **LAW-ONE**: identifiers are ONE lowercase word. `grep [a-z]_[a-z]` outside numerals = 0 | `digit`, `retry`, a LEVEL `pad(2)`, or a HOME `date.pad` |
+| `Point`, `Error`, `MAX_N` | no uppercase in identifiers, EVER | `point`, `error`, `max` |
+| `end` | **`end` is DELETED.** A body is an offside expression sequence | outdent |
+| `;` | the semicolon DOES NOT EXIST (Pass 119) | press enter |
+| `then`, `do` | not duon | outdent |
+| `@comp.*`, any new `@` spelling | prefix `@` does not exist. Existing `@` spellings are frozen COMPATIBILITY — do not add, do not delete | see `docs/directive_erasure.md` |
+| `string.sub`, `string.byte`, `table.insert` | no Lua module idioms; **worlds are the only namespaces** | `s:sub(i,j)`, `s[i]` IS the byte, `xs:push(v)` |
+| `std.mem`, `std.fmt`, `std.math`, bare `math.` | RECOGNITION: pure ops are VALUE EDGES | `x:abs()`, `s:copy()` |
+| `require`, `local`, `function`, `fn`, `class`, `match`, `switch`, `type` | not duon | bare decl; `type` is denied outright |
+| `M = {}` … `return M` | the file IS its scope | declare at file scope |
+| `L.next(lex)` — ALIAS-CALL | **FACE-CALL**: if you hold the first argument you hold the RECEIVER | `lex:next()` |
+| `.new(`, `.create(`, `make_*`, `init` | the CONSTRUCTOR LADDER | `desc{…}` · `x:to(desc)` · `p:from(polar)(r,t)` · `file.open` |
+| `self` as a parameter | **SELF-ZERO** — there is no self | `.x` · leading `:length()` · `.` is the subject · `...` spreads it |
+| `if err return nil, err` | zero forwarding plumbing exists in duon | `t \| error`; an unbound failure ROUTES (B-15) |
+| `"a" .. x:to(str)` | no concat chains | `"{x}"` |
+| `tostring(`, `tonumber(`, `pairs(`, `pcall(`, `setmetatable(` | Lua runtime globals | `:to(str)`, `:to(i64)`, iterate the value |
+| plain-string diagnostic / MCP / REPL output | **H-8 OUTPUT TOTALITY** | `(span, role, why, dnir)` tuples |
+| any non-`.duo` file | **§0f MONOGLOT** | write duon. No python, no bash, no zig |
+
+## THE FIVE FORMS THAT REPLACE EVERYTHING YOU MISS
+
+You will reach for a keyword duon does not have. **The grammar is CLOSED — NNS
+FIRST: capability is the semantics of EXISTING forms, never a new token.** If a
+repair seems to need new surface, you have not yet found the form it is hiding.
+
+1. **LEVELS** — the qualifier moves into a paren: `read(number)`, `skip(space)`,
+   `add(wrap|sat|checked)`, `any(i64, f64)`.
+2. **HOMES** — navigation, not activity: `wire.header`, `token.kind`, `utf8.valid`.
+3. **THE AMBIENT TRIAD** — `@` is the enclosing DESCRIPTOR, `.` is the ambient
+   SUBJECT, and a walk hangs off either without naming it. `.` alone is the
+   zero-length walk and IS the subject.
+4. **DEMAND STREAMS** — laziness is the RESTING STATE, so there is no
+   comprehension syntax and never will be: `xs:take(odd):map(f)` fuses.
+5. **WORLDS** — the only capability namespaces. `std@{ ambient = false }`.
+
+Inferred cases (`tok.kind == .eof`), interpolation (`"{x}"`), and offside layout
+are the defaults. Reach for them before anything else.
+
+## THE CORPUS IS NOT THE LAW
+
+**756 `.duo` files still contain bare `end` and 227 contain `string.`.** That is
+MIGRATION DEBT, not permission. Do not imitate the file you are editing — check
+it against the table above and repair what you touch. The repo's history is not
+the repo's law.
+
+---
 
 ### 1. The Aha Moment Target
 Every feature must create "discoverability moments" — the feeling when Zig's comptime made generics click, when Rust's traits made metaprogramming extensible. Duo features should compose intuitively so developers have revelations about what's possible. Features should be discoverable through common-sense semantics and produce outsized results from minimal input.
-
-### 2. Metaprogramming Framework (More Capable Than Jai/Rust/Zig)
-- `@` is the SINGLE prefix for ALL compile-time operations in .duo files
-- All directives use dotted paths under a compiler meta module; NO underscore patterns in public surface
-- **Primary:** `@comp.*` — shortest, canonical compiler module
-- **Aliases:** `@compiler.*`, `@meta.*` — both map to same internal targets
-- NO underscores in @-directive names: write `@comp.foo.bar`, NEVER `@comp.foo_bar`
-
-**Hierarchy:**
-- `@comp.compile.*` — compile-time control (`when`, `loop`, `fold`, `log`, `warn`, `error`, `assert`, `cached`, `thread`, `device`, `autodiff`, `unroll`, `modify`, `profile`, `native`)
-- `@comp.embed.*` — file embedding (`str`, `file`, `json`, `wasm`)
-- `@comp.bit.*` — bit intrinsics (`popcount`, `ctz`, `clz`, `bswap`, `rotl`, `rotr`, `bitcast`)
-- `@comp.hint.*` — optimization hints (`likely`, `unlikely`, `prefetch`, `assume`, `unreachable`, `trap`, `fence`)
-- `@comp.type.*` — type introspection (`name`, `id`, `info`, `is`, `as`)
-- `@comp.c.*` — C interface (`emit`, `include`, `import`, `export`, `call`, `type`)
-- `@comp.agent.*` — agent discoverability hooks (`catalog`, `ladder`, `hooks`, `dedupe`, `gaps`)
-- `@comp.pipeline` — pipeline family generation
-- `@comp.derive` / `@comp.define.derive` — derive macros
-- `@comp.foreign` — cross-language transpilation
-- `@comp.sql` — SQL DDL to C struct generation
-- `@comp.wasm` — embed WASM modules
-- `@comp.lua` — compile-time Lua execution
-- `@comp.schema` — schema generation
-- `@comp.ffi` — FFI generation
-- `@comp.codegen` — raw codegen injection
-- `@comp.as` — explicit type cast
-- `@comp.make.type` — type construction
-- `@comp.bitfield` — bitfield type
-- `@comp.union` — union type
-- `@comp.select` — compile-time select
-- `@comp.run` — compile-time execution
-- `@comp.constexpr` — constexpr evaluation
-- `@comp.catalog` / `@comp.ladder` — self-documentation
-
-**Exponential combinators (O(1) → O(n^k)):**
-- `@comp.map` / `@comp.sweep` — O(n) type sweep
-- `@comp.match` — O(n) pattern-match codegen (pipe-separated alternatives → N specialized branches)
-- `@comp.tabulate` — O(n) compile-time lookup table generator
-- `@comp.interpolate` — O(n) compile-time string interpolation (code template injection with {name} placeholders)
-- `@comp.zip` — O(n*m) compile-time cartesian zip
-- `@comp.product` — O(n²) cartesian product
-- `@comp.tensor` — O(n³) tensor sweep
-- `@comp.nfold` — O(n^k) N-concept sweep
-- `@comp.ceiling` — derive sweep + product
-- `@comp.omni` / `@comp.stack` — ceiling + optional sweep
-- `@comp.burst` — derive.all + product
-- `@comp.transcend` — 3-concept derive + map
-- `@comp.infinity` — transcend + nfold(4)
-- `@comp.hyper` — transcend + nfold(5)
-- `@comp.tower` — nfold with dynamic k (up to 16)
-- `@comp.power` / `@comp.powerset` — O(2^n)
-- `@comp.choose` — O(n choose k), fixed-size subset generation
-- `@comp.permute` — O(n!)
-- `@comp.derive.product` / `@comp.derive.tensor` / `@comp.derive.nfold` — derive variants
-- `@comp.derive.power` / `@comp.derive.choose` / `@comp.derive.permute` — derive on powerset/combinations/permutations
-
-**Bare-name aliases** (ergonomic, for extremely common intrinsics):
-- `@(expr)` = compile-time evaluation
-- `@popcount`, `@clz`, `@ctz` — bit intrinsics
-- `@likely`, `@unlikely` — branch hints
-- `@hot`, `@inline`, `@cold`, `@noinline` — optimization directives
-- `@raw`, `@packed`, `@align` — layout control
-- `@export`, `@c.export`, `@ffi` — linkage
-- `@modify(fn)` — type parameter validation
-- `@native` — native C ABI (no lua_Value intermediaries)
-- `@cached` — memoize comptime evaluation
-- `@deprecated`, `@pure`, `@flatten`, `@noreturn`, `@restrict` — function attributes
-
-**In .lua files**, `--- @directive` in triple-dash comments provides the same without breaking Lua syntax.
-
-**Goal:** produce the MOST expansive dynamic and capable output with MINIMAL syntax additions over Lua. The framework must be MORE logical and capable than Jai's #run, Rust's proc macros, and Zig's comptime.
 
 ### 3. AI/ML-Native (Better Than Mojo)
 - `Tensor[dims, dtype]` compile-time shape checking
@@ -91,21 +91,12 @@ Every feature must create "discoverability moments" — the feeling when Zig's c
 
 **Key pillars (in order of importance):**
 1. **Persistent semantic graph with durable identities** — Everything is a graph node
-2. **Unified transformation engine** — All `@comp.*` directives are transforms with contracts/provenance
+2. **Unified transformation engine** — every transformation is an EDGE carrying its legality as DATA, with contracts and provenance
 3. **First-class staging + budgeted partial evaluation** — Agents can reason about computation exposure
 4. **Effects and capabilities** — Basis for builds, plugins, agents
 5. **Transactional semantic editing** — Safe agent collaboration
 
 **All agents:** See `.agents/AGENT_COORDINATION.md` for the detailed implementation plan. Coordinate via `duo_agent_gaps_update()` rather than duplicating work.
-
-### 4. C Interface: `@c.*` Prefix
-- `@c.include("header.h")` — include C header (replaces @cinclude)
-- `@c.import("header.h")` — parse and import C declarations
-- `@c.export("name")` — export function with C ABI
-- `@c.type("struct_name")` — reference C type
-- `@c.call("func_name", args)` — call C function directly
-- `@c.emit("raw C code")` — inject raw C (replaces __emit)
-- Full form: `@comp.c.*` — both `@c.*` and `@comp.c.*` are valid
 
 ### 5. Performance Guarantee
 - Duo MUST beat or tie hand-written C on ALL 40 benchmarks
@@ -160,110 +151,13 @@ manipulate the **same graph** at different capability levels.
 + budgeted partial eval, (4) effects/capabilities for builds/plugins/agents,
 (5) transactional semantic editing for agent workflows.
 
-**Do not** add new `@comp.*` combinators without registry entry, contract, and
-parity tests (top-level, nested callback, block body). Exponential metaprogramming
-remains the advantage; **predictable composition** is how we keep it.
+**Do not** add new surface — NNS FIRST (A2): the grammar is CLOSED, and capability
+is the semantics of EXISTING forms. New capability arrives as an EDGE admitted
+under a witness (propose, prove, measure), never as a token, sigil or keyword.
+**Predictable composition** is the advantage; a closed grammar is how we keep it.
 
 This plan **preserves** performance gate, Lua superset, native lowering, and
 minimum-syntax ergonomics — see §11 of the semantic graph architecture doc.
-
-## Duo Grammar Rules (Canonical)
-
-These rules are authoritative. Compiler, stdlib, docs, and all agents must stay aligned.
-
-### @-Directive Syntax
-- NO `@const` or `@comptime` — these are NOT valid Duo directives.
-- Use `@(expr)` for compile-time evaluation of an expression.
-- Use `@comp.*` for module-scope compile-time transforms (e.g. `@comp.derive`, `@comp.specialize`).
-- `@comp.*` is the PRIMARY metaprogramming module. `@meta.*` and `@compiler.*` are aliases and map to the same functionality.
-- NO underscores in @-directive names: write `@comp.foo.bar`, NEVER `@comp.foo_bar`.
-
-### Function Declaration
-- Bare function declarations are preferred in new .duo code — the `fun` or `function` keyword is optional when the context is unambiguous at file/module scope.
-- Example: `add(a: i64, b: i64): i64 = a + b`
-- `fun` remains valid and may be used for clarity inside blocks.
-
-### If-Expressions
-- Duo supports if as an expression: `x = if a < b value else value * 2 end`
-- The `end` closes the if-expression. Omitting `then` is Duo-canonical; `if ready then run() end` remains valid Lua (`LUA_AND_DUO_CANONICAL`).
-- Chained: `x = if a expr1 else if b expr2 else expr3 end`
-
-### Table Keys
-- Identifier keys NEVER need `[]`: write `{ x = 1, y = 2 }` not `{ [x] = 1 }`.
-- Computed/dynamic keys use `[]`: `{ [key_expr] = value }`.
-
-### Lua superset maximization (Pass 24)
-
-- Duo is a **Lua superset**, not a Lua-inspired subset. Valid Lua 5.5 should remain valid with equivalent semantics unless a documented superset exception applies.
-- **`[[ ... ]]` is Lua long-string syntax** — never deprecate, repurpose as shell conditionals, or replace with alternate block syntax. Full long-bracket family and long comments must match Lua delimiter rules.
-- **Canonical ≠ exclusive.** Prefer denser Duo forms in new code; permanently accept Lua-canonical equivalents (`then`, `do`, `local function`, parenthesized calls).
-- **Call model:** bare `a` = value reference; `a()` / `a x` = invoke; shell zero-arg commands only in explicit command regions (Pass 15) — never global bare-name invocation.
-- **Deprecation threshold:** genuine conflict + no reliable disambiguation + blocks higher-value capability + exact migration + documented exception. Token reduction alone is insufficient.
-- Full constitution: `(archived, deleted — git history)`. Matrix: `docs/catalogs/lua_superset_compatibility.md`. Gate: `zig build lua-superset-gate`.
-
-## Duo Language Conventions
-
-When writing `.duo` files, follow these conventions:
-
-### File-as-M Pattern
-- Every module file IS its own `M`. Treat the file scope as `M` — no need for `local M = {}` / `return M` boilerplate. Functions and values declared at file scope are module exports. Use an explicit `M = {}` table only when you need to rename exports or selectively expose a subset.
-
-### Syntax
-- **Bare declarations preferred** — `name(params): ret body end` without `fun`/`function` keyword.
-- **`fun` when needed** — use inside blocks or for clarity. Always prefer `fun` over `function`.
-- **`req` over `require`** — use `req` for all module imports. `req("std.string")` for stdlib, `req("module.path")` for user modules.
-- **If-expressions as values** — `x = if cond expr else expr2 end`.
-- **Omit `do`** where the parser allows it — `while cond ... end`, `for ... end`.
-- **Prefer omitting `then`** — `if ready run() end` is Duo-canonical; `if ready then run() end` remains permanently accepted Lua syntax.
-- **Omit `local`** — in .duo files, all bindings default to local scope.
-- **`end` closes all blocks** — `fun`, `if`, `while`, `for`, `match`, `enum`, etc.
-
-### Style
-- Prefer implicit returns (tail expressions) over explicit `return`.
-- Minimize new syntax over Lua — Duo adds `fun`, `req`, typed params, enums, match, concepts. Do not invent new keywords or syntax unless there is a clear ergonomic or performance win.
-- Favor fewer characters where possible without sacrificing clarity.
-- Prioritize ergonomics, no performance regressions, highest metaprogramming power, and low-level control.
-- Use `@` prefix for ALL compile-time and compiler directive operations.
-- Prefer `@comp.*` for new features; use bare-name aliases only for extremely common pre-existing intrinsics.
-- Use `const` for module-level constants that should fold into typed code.
-
-### Compiler Hints (Lua files only)
-- Compiler hints like `--- @inline`, `--- @cold`, `--- @unroll` are supported only in `.lua` files as an extra feature. Do not use them in `.duo` files — in .duo files, `@` is direct syntax, not embedded in comments.
-
-### Type Annotations
-- Add `i64`, `str`, `float`, `bool` type annotations on parameters and return types when performance matters. The codegen inserts native C casts for these, generating faster code.
-
-### The @c.* Interface
-- `@c.include("header.h")` for C headers
-- `@c.emit("code")` for raw C injection
-- `@ffi("name")` on functions for external C linkage
-- `@c.export("name")` for exported symbols
-
-### Naming
-- Module files: `lib/std/<name>.duo` — short, lowercase, no underscores.
-- Functions: `snake_case` — e.g. `do_retry`, `circuit_new`, `config_get`.
-- Internal helpers: prefix with the module name — e.g. `std_retry_sleep`, `dt_pad2`, `dt_is_leap_year`.
-- Avoid C reserved words as parameter names (e.g. `default`).
-- `@comp.*` dotted paths use periods, never underscores: `@comp.compile.thread` not `@compile_thread`.
-
-### Module Structure
-- Register every stdlib module in `lib/std.duo` with a `std.<name> = req "std.<name>"` line.
-- Group related modules hierarchically: `std.net.retry` (network retry), `std.collections.cache` (data structures), `std.time.timer` (timing), etc.
-- Export via `M = {}` / `M` at file end when renaming exports or exposing a subset.
-
-## Syntax Semantics (canonical — keep compiler, stdlib, and docs aligned)
-
-| Rule | `.duo` behavior | Implementation status |
-| --- | --- | --- |
-| **Implicit `local`** | Omit `local` everywhere; bindings are file/module locals unless `global` is explicit | **Fixed** in `src/sema.zig` (2026-07-12): duo module scope no longer uses `require_global`; reads of undeclared names auto-define locals; pre-register assign targets |
-| **`@` prefix** | ALL compile-time ops use `@comp.*` dotted paths; `@meta.*` and `@compiler.*` are aliases | Parser desugars dotted paths to `__*` internals |
-| **`_` private prefix** | Top-level `fun _helper()` / `_state = …` are file-private, not module exports | **Codegen**: `add_module_export` skips `name[0]=='_'`; **LSP** (`duo-lsp`): should mirror — open gap if completion lists `_` symbols |
-| **`global`** | Only way to create a true module global in `.duo` | Implemented via `global_decl` |
-| **String-literal calls** | `print 'hi'`, `req 'std.io'` — call sugar without parens | Parser `parse_suffixed_expr` |
-| **Bare functions + if-expressions** | `name(params) body end`, `name = (params) body end`, and `if cond expr else if ... end` | Parser hardened 2026-07-30 |
-| **Indentation** | Not semantic; blocks close with `end` | Lua-style |
-| **`@comp.*` hierarchy** | Primary module for ALL metaprogramming; NO underscore public names | `src/meta_module.zig` |
-| **Table keys** | Identifier keys: `{ x = 1 }`; computed: `{ [expr] = val }` | Standard Lua table semantics |
 
 ### Agent documentation protocol
 
@@ -272,18 +166,6 @@ When writing `.duo` files, follow these conventions:
 3. **After** performance or codegen work: append a dated section to `docs/performance.md` with commands run, files touched, measured ratios, and rejected experiments.
 4. **After** syntax/semantic fixes: update the semantics table if status changes.
 5. **Hardware / low-level**: prefer `.duo` + `@comp.c.emit` / `@comp.asm` / `@comp.device` in `lib/std/hardware.duo` and `lib/std/ml/device.duo` when Lua grammar blocks optimization; do not add Lua-only benchmark gaming.
-
-### Open gaps (2026-08-03)
-
-- **Sieve**: 8-byte hardware popcount via `__builtin_popcountll` now implemented, and marking loop uses pointer-based stride arithmetic to avoid repeated index multiplication. Further improvements would likely require chunk-based 16-byte SIMD marking.
-- **Mandelbrot**: `duo_mandel_benchmark_sum` is now `static inline __attribute__((always_inline))` while keeping `no-fast-math`; `.duo` now beats `.lua` while `RESULT` matches. 4-wide SIMD without RESULT drift is still open.
-- **Lua boxed values**: `codegen.zig` still emits `lua_to_num`, `lua_to_bool`, `lua_to_str` on several paths that could use native lowering. Audit in progress.
-- **`@comp.*` canonical names**: internal `normalizeDirective` still maps dotted paths to underscore canonical names. These should be fully dotted.
-- **LSP `_` privacy**: export filtering in `duo-lsp` (codegen already filters)
-- **Exponential combinator boxing** (2026-08-04): ~~`@comp.tensor`, `@comp.transcend`, `@comp.infinity`, `@comp.hyper` fold correctly but emit `lua_to_str("<literal>")` instead of bare `const char*` C literals.~~ **FIXED** (kiro-cli 2026-08-04): Added tensor/transcend/infinity/hyper to `fold_meta_string_expr` and `comptimeMetaHook`. All four now emit bare `const char*` literals.
-- **@comp.nfold unwired**: ~~Registered + hook exists in meta_module.zig but NO codegen dispatch.~~ **FIXED** (kiro-cli 2026-08-04): Added `__comptimenfold` to `maybe_emit_meta_string_call`. Fully wired.
-- **func_is_compile_only missing**: ~~`@comp.compile.only` is registered as a directive but has NO enforcement in codegen.~~ **FIXED** (kiro-cli 2026-08-04): `func_is_compile_only()` added; gates `emit_lua_thunk_decls` and `emit_lua_thunk`.
-- **Alias metatable guards**: ~~`emit_alias_metatable_init`, `emit_alias_metatable_decls`, `emit_alias_derive_functions` in codegen.zig lack `native_scalar_mode` guards.~~ **FIXED** (prior agent): All three already have guards.
 
 ## Performance Work
 
@@ -328,7 +210,3 @@ one full 23-file rescue (2026-08-01). Commit early on a branch, coordinate via
 claims in `.agents/session/`, or export a visible `.patch` file.
 `git stash list` must stay EMPTY.
 
-## Companion Repositories
-
-- **duo-mcp**: ~/x/duo-mcp/ — canonical MCP (Model Context Protocol) server for Duo. Provides tool definitions and AI integration for Duo language services.
-- **duo-lsp**: ~/x/duo-lsp/ — canonical LSP (Language Server Protocol) implementation for Duo. Provides editor integration, completion, and diagnostics.

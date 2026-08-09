@@ -2,7 +2,7 @@
 
 - [Introduction](./introduction.md)
 - [Language Overview](./overview.md)
-- [Idiomatic Duo](./idiomatic_duo.md)
+- [Idiomatic Duo](./idiomatic-duon.md)
 - [Types and Type Annotations](./types.md)
 - [Language Status and Roadmap](./roadmap.md)
 - [Functions](./functions.md)

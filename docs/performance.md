@@ -2216,7 +2216,7 @@ Implemented:
 
 | Area | Change |
 | --- | --- |
-| `docs/src/idiomatic_duo.md` | Document non-significant indentation; `print 'x'` / `req 'mod'` string-literal call sugar |
+| `docs/src/idiomatic-duon.md` | Document non-significant indentation; `print 'x'` / `req 'mod'` string-literal call sugar |
 | `src/codegen.zig` | `emit_life_native_body`: align with `benchmark_c.c` (2 grids, no oscillation memcmp shortcut) |
 | `lib/std/hardware.duo` | `fence()`, `spin_wait()` via `@c.emit` + `__asm`; re-exports `std.ml.device` |
 | `lib/std.duo` | Register `std.hardware` |
