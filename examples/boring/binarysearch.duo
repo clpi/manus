@@ -1,0 +1,30 @@
+-- Binary search over a sorted sequence. Asserts a hit, a miss and a boundary,
+-- because a search that always answers `found` passes any single hit.
+-- expect: 5 0 1
+find = (xs, n: i64, key: i64): i64
+    lo = 1
+    hi = n
+    while lo <= hi
+        mid = lo + (hi - lo) / 2
+        v = xs[mid]
+        if v == key
+            return mid
+        end
+        if v < key
+            lo = mid + 1
+        end
+        if v >= key
+            hi = mid - 1
+        end
+    end
+    0
+end
+
+main = (): i64
+    xs = { 2, 4, 6, 8, 10, 12, 14 }
+    a = find(xs, 7, 10)
+    b = find(xs, 7, 11)
+    c = find(xs, 7, 2)
+    print("{a} {b} {c}")
+    0
+end

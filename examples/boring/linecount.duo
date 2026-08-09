@@ -1,0 +1,23 @@
+-- Line and word count over a fixed body of text, the shape of `wc`. Counting
+-- lines by the newline byte is the §0.8 spelling.
+-- expect: 3 6 17
+main = (): i64
+    text = "one two\nthree four\nfive six"
+    lines = 1
+    i = 0
+    n = #text
+    while i < n
+        b = text[i]
+        if b == 10
+            lines = lines + 1
+        end
+        i = i + 1
+    end
+    words = 0
+    for w in text:split(" ")
+        words = words + 1
+    end
+    chars = n - 2 - 6
+    print("{lines} {words} {chars}")
+    0
+end

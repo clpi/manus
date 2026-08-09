@@ -1,0 +1,10 @@
+-- TEXT: the numeric str-edge on input that is not a number. §12 B-13 makes
+-- this an EDGE and B-14 makes an unconsumed failure a diagnostic. Measured:
+-- it answers 0 and reports nothing, so a parse failure is indistinguishable
+-- from the successful parse of "0".
+-- expect: 0
+main = (): i64
+    a = to(i64)("abc")
+    print("{a}")
+    0
+end

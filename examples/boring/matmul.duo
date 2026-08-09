@@ -1,0 +1,30 @@
+-- 3x3 matrix multiply over flat sequences. Three cells are asserted, one per
+-- row, so a loop that fills only the diagonal cannot pass.
+-- expect: 30 36 42 66 81 96 102 126 150
+main = (): i64
+    a = { 1, 2, 3, 4, 5, 6, 7, 8, 9 }
+    b = { 1, 2, 3, 4, 5, 6, 7, 8, 9 }
+    c = { 0, 0, 0, 0, 0, 0, 0, 0, 0 }
+    for i = 0, 2
+        for j = 0, 2
+            sum = 0
+            for k = 0, 2
+                x = a[i * 3 + k + 1]
+                y = b[k * 3 + j + 1]
+                sum = sum + x * y
+            end
+            c[i * 3 + j + 1] = sum
+        end
+    end
+    out = ""
+    for v in c
+        if out == ""
+            out = "{v}"
+        end
+        if out != "{v}"
+            out = "{out} {v}"
+        end
+    end
+    print("{out}")
+    0
+end

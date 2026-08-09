@@ -1,0 +1,12 @@
+-- TEXT: invalid UTF-8. §12 TEXT reads "str = bytes & utf8.valid". Measured:
+-- the validity half is not enforced anywhere — an unpaired 0xFF is an
+-- ordinary two-byte string and indexes fine.
+-- expect: 2 255 254
+main = (): i64
+    s = "\xff\xfe"
+    n = #s
+    a = s[0]
+    b = s[1]
+    print("{n} {a} {b}")
+    0
+end

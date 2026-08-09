@@ -724,6 +724,15 @@ pub fn build(b: *std.Build) void {
     const spec_corpus_step = b.step("spec-corpus", "Pass 100 §19/§20: golden corpus blocks-passing + per-construct fixtures, ratcheted");
     spec_corpus_step.dependOn(&spec_corpus_cmd.step);
 
+    // Pass 106: twenty MUNDANE programs plus one fixture per numerics/text row.
+    // The boring set ratchets a passing count; the table set asserts MEASURED
+    // behaviour, so it is a change detector rather than a conformance claim.
+    const boring_corpus_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/boring_corpus.duo" });
+    boring_corpus_cmd.step.dependOn(b.getInstallStep());
+    boring_corpus_cmd.setCwd(b.path("."));
+    const boring_corpus_step = b.step("boring-corpus", "Pass 106: everyday programs + the measured numerics/text pages, ratcheted");
+    boring_corpus_step.dependOn(&boring_corpus_cmd.step);
+
     const direct_link_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/direct_module_link_proof.duo" });
     direct_link_cmd.step.dependOn(b.getInstallStep());
     direct_link_cmd.setCwd(b.path("."));

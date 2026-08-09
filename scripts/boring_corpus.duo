@@ -1,0 +1,250 @@
+-- Pass 106 — THE BORING CORPUS, run.
+--
+-- Pass 106 named the blind spot: "the corpus is lexers and LEB128 —
+-- expert-flavored. People calibrate on MUNDANE programs." Every fixture this
+-- repository had was shaped like a compiler, so every construct a compiler
+-- does not need went unexercised. Twenty everyday programs is the instrument
+-- that finds those.
+--
+-- THE POINT IS THE FAILURES. A boring program that will not compile is a hole
+-- in the canonical surface, and the diagnostic names the construct. The
+-- passing count is the ratchet; the FAIL rows are the work list. No program
+-- here may be bent away from canonical Pass 100 spelling to make it pass —
+-- if `str{ b }` does not exist, the fixture keeps writing `str{ b }` and the
+-- row stays red until the compiler grows it.
+--
+-- TWO SETS, answering different questions:
+--
+--   boring   examples/boring — twenty everyday programs. Quicksort, FizzBuzz,
+--            a CSV reader, Roman numerals. This is the calibration number.
+--   table    examples/table — one fixture per row of the numerics and text
+--            pages: overflow, division signs, NaN ordering, shift width,
+--            float rendering, embedded NUL, invalid UTF-8, byte ordering.
+--            These assert what the compiler MEASURABLY DOES today, not what
+--            the spec says it should, so the set is a CHANGE DETECTOR: a row
+--            going red means the behaviour moved and the page must be
+--            re-measured. `docs/numerics_and_text.md` carries the readings
+--            and marks which of them contradict Pass 100 §12.
+--
+-- VERIFY BY VALUE. A program is not passing because it compiled — it passes
+-- when its stdout equals the `-- expect:` line it carries. Two of the twenty
+-- shipped with an `expect` this author had computed WRONG; both were caught
+-- by a sibling that asserted the same data a different way, which is why
+-- `bubblesort` asserts the whole sorted sequence while `quicksort` asserts
+-- three positions in it.
+--
+-- THIS GATE CANNOT WRITE TO WHAT IT MEASURES. Every binary lands in {work}
+-- under /tmp and nothing is ever emitted beside a fixture. The first
+-- capability table in this repository ran `duo fmt` over the corpus it was
+-- counting and reported 46/0 from evidence it had destroyed; that is the
+-- defect this rule exists against.
+--
+-- RATCHET, not pass/fail of the spec. The spec is allowed to run ahead of the
+-- compiler; what is not allowed is a number going down. Raise a floor when a
+-- row goes green; never lower one to quiet the gate.
+
+work = "/tmp/duo-boring-corpus"
+boring = "examples/boring"
+page = "examples/table"
+
+-- MEASURED floors, never estimated. Run the gate, read the number, pin it.
+--
+-- boring 10/20 on the day this landed. The ten red rows are not this gate's
+-- bugs and must not be quieted here — they are filed with minimal repros in
+-- docs/numerics_and_text.md.
+boringfloor = 10
+pagefloor = 19
+
+boringrows = ""
+boringtotal = 0
+boringpass = 0
+
+pagerows = ""
+pagetotal = 0
+pagepass = 0
+
+-- 1 while a deliberately corrupted program is still rejected. A gate that
+-- cannot fail is not evidence.
+controlok = 0
+
+quiet(cmd: str): i64
+    std.script.status("{cmd} >/dev/null 2>&1")
+end
+
+count(path: str): i64
+    to(i64)(std.script.chomp(std.script.capture("wc -l < {path}")))
+end
+
+stem(path: str): str
+    std.script.chomp(std.script.capture("basename {path} .duo"))
+end
+
+-- The exact diagnostic, not a summary. An audit that says "fails" teaches
+-- nothing; the construct named in the message is the ordered work list. The
+-- C backend reports through the host compiler, so a row can fail with a C
+-- type error rather than a Duo diagnosis — that distinction is itself a
+-- finding and is preserved rather than normalised away.
+diagnostic(duo: str, path: str): str
+    line = std.script.chomp(std.script.capture(
+        "{duo} compile {path} --emit exe -o {work}/probe.out 2>&1 | grep -m1 'error:' | head -1"))
+    if line == ""
+        line = "no diagnostic captured"
+    end
+    line
+end
+
+-- One fixture: compile it, RUN it, compare stdout against the value the
+-- fixture declares. The four ways to be wrong stay separate on purpose — a
+-- fixture with no declared value proves nothing and must not read as a pass,
+-- and a program that crashes after printing is not the same finding as one
+-- that prints the wrong number.
+runone(duo: str, path: str, which: str): i64
+    ok = 0
+    name = stem(path)
+    want = std.script.chomp(std.script.capture(
+        "sed -n 's/^-- expect: *//p' {path} | head -1"))
+    bin = "{work}/{which}-{name}.out"
+    if want == ""
+        row = "  FAIL  {name}  carries no '-- expect:' line\n"
+        record(which, row)
+    end
+    if want != ""
+        if quiet("{duo} compile {path} --emit exe -o {bin}") != 0
+            note = diagnostic(duo, path)
+            row = "  FAIL  {name}  {note}\n"
+            record(which, row)
+        end
+        if quiet("{duo} compile {path} --emit exe -o {bin}") == 0
+            code = std.script.status("{bin} >{work}/{name}.stdout 2>/dev/null")
+            got = std.script.chomp(std.script.capture("cat {work}/{name}.stdout"))
+            if code != 0
+                row = "  FAIL  {name}  exited {code} (signal or error), stdout '{got}'\n"
+                record(which, row)
+            end
+            if code == 0 and got == want
+                ok = 1
+                row = "  pass  {name}  {got}\n"
+                record(which, row)
+            end
+            if code == 0 and got != want
+                row = "  FAIL  {name}  want '{want}' got '{got}'\n"
+                record(which, row)
+            end
+        end
+    end
+    ok
+end
+
+record(which: str, row: str): void
+    if which == "boring"
+        boringrows = "{boringrows}{row}"
+    end
+    if which == "page"
+        pagerows = "{pagerows}{row}"
+    end
+end
+
+-- Every .duo under a directory, measured. The list travels as a FILE rather
+-- than through a splitter, so no row of this gate depends on a splitter's
+-- behaviour at the end of its input.
+sweep(duo: str, dir: str, which: str): void
+    list = "{work}/{which}.list"
+    std.script.run("ls {dir}/*.duo > {list} 2>/dev/null")
+    j = 1
+    n = count(list)
+    while j <= n
+        path = std.script.chomp(std.script.capture("sed -n '{j}p' {list}"))
+        ok = runone(duo, path, which)
+        if which == "boring"
+            boringtotal = boringtotal + 1
+            boringpass = boringpass + ok
+        end
+        if which == "page"
+            pagetotal = pagetotal + 1
+            pagepass = pagepass + ok
+        end
+        j = j + 1
+    end
+end
+
+-- THE POSITIVE CONTROL. Take a program that passes, corrupt the VALUE it
+-- computes without touching its `-- expect:` line, and require the row to go
+-- red. A gate whose comparison is broken reports every row green and reads
+-- exactly like success, which is how this repository once shipped a gate that
+-- zeroed sixteen of seventeen rows and exited 0.
+controls(duo: str): i64
+    ok = 0
+    probe = "{work}/control.duo"
+    std.script.run("sed 's/return n$/return n + 1/' {boring}/fib.duo > {probe}")
+    got = runone(duo, probe, "control")
+    if got == 0
+        ok = 1
+    end
+    ok
+end
+
+-- POSITIVE CONTROLS FIRST, verdict second. Every gate in this repository that
+-- reported a confident zero did it by measuring nothing and saying so in the
+-- language of a pass, so both empties and the control are checked before
+-- either floor is.
+verdict(): i64
+    code = 0
+    if boringtotal == 0
+        print("boring corpus: FAIL — no programs found in {boring}")
+        code = 1
+    end
+    if code == 0 and pagetotal == 0
+        print("boring corpus: FAIL — no table fixtures found in {page}")
+        code = 1
+    end
+    if code == 0 and controlok == 0
+        print("boring corpus: FAIL — the control stopped discriminating:")
+        print("  a fib.duo with its base case corrupted still PASSED, so the")
+        print("  value comparison is broken and no row above means anything.")
+        code = 1
+    end
+    if code == 0 and boringpass < boringfloor
+        print("boring corpus: FAIL — everyday programs regressed below the floor")
+        code = 1
+    end
+    if code == 0 and pagepass < pagefloor
+        print("boring corpus: FAIL — a numerics or text row changed behaviour.")
+        print("  These fixtures assert what the compiler MEASURABLY DOES, so a")
+        print("  red row means the reading moved. Re-measure and update")
+        print("  docs/numerics_and_text.md in the same commit.")
+        code = 1
+    end
+    if code == 0
+        print("boring corpus: PASS")
+    end
+    code
+end
+
+report(): void
+    print("")
+    print("  Pass 106 — THE BORING CORPUS ({boring})")
+    print("")
+    io.write(boringrows)
+    print("")
+    print("  NUMERICS AND TEXT, as measured ({page})")
+    print("")
+    io.write(pagerows)
+    print("")
+    print("  boring  {boringpass}/{boringtotal}   floor {boringfloor}")
+    print("  table   {pagepass}/{pagetotal}   floor {pagefloor}")
+    print("")
+end
+
+measure(duo: str): i64
+    std.script.run("rm -rf {work} && mkdir -p {work}")
+    controlok = controls(duo)
+    sweep(duo, boring, "boring")
+    sweep(duo, page, "page")
+    report()
+    verdict()
+end
+
+main = (): i64
+    duo = std.script.getenv("DUO", "./zig-out/bin/duo")
+    measure(duo)
+end

@@ -1,0 +1,22 @@
+-- A singly linked list built from a descriptor with a self-referencing field.
+-- Asserts the length and the head value, so an empty list cannot pass.
+-- expect: 3 10
+node: {
+    value: i64
+    next: node
+}
+
+main = (): i64
+    third: node = { value = 30 }
+    second: node = { value = 20, next = third }
+    first: node = { value = 10, next = second }
+    count = 0
+    cur = first
+    while cur
+        count = count + 1
+        cur = cur.next
+    end
+    head = first.value
+    print("{count} {head}")
+    0
+end

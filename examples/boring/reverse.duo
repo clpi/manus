@@ -1,0 +1,16 @@
+-- String reversal, byte by byte. §0.8 builds a string from bytes with the
+-- str descriptor rather than a char function.
+-- expect: olleh
+main = (): i64
+    s = "hello"
+    out = ""
+    i = #s - 1
+    while i >= 0
+        b = s[i]
+        piece = str{ b }
+        out = "{out}{piece}"
+        i = i - 1
+    end
+    print("{out}")
+    0
+end

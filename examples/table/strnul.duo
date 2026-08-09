@@ -1,0 +1,9 @@
+-- TEXT: `#s` with an embedded NUL. Measured: 3 — the length is the byte
+-- count, not strlen. This row was red earlier in the epoch and is now green.
+-- expect: 3
+main = (): i64
+    s = "a\0b"
+    n = #s
+    print("{n}")
+    0
+end

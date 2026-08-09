@@ -1,0 +1,13 @@
+-- NUMERICS: negative zero. IEEE-correct on comparison; renders as `-0`, so
+-- the sign survives the value face but the float-ness does not.
+-- expect: -0 1
+main = (): i64
+    a = -0.0
+    b = 0.0
+    e = 0
+    if a == b
+        e = 1
+    end
+    print("{a} {e}")
+    0
+end

@@ -1,0 +1,16 @@
+-- CONTROL: §12 TAIL guarantees proper tail calls. Ten million tail frames
+-- complete with the right answer and no signal. The NON-tail half of the row
+-- is measured separately, in `depth.duo`, because it does not survive.
+-- expect: 10000000
+tail = (n: i64, acc: i64): i64
+    if n <= 0
+        return acc
+    end
+    tail(n - 1, acc + 1)
+end
+
+main = (): i64
+    a = tail(10000000, 0)
+    print("{a}")
+    0
+end

@@ -1,0 +1,10 @@
+-- TEXT: the numeric str-edge above 2^53. The digits name an exact i64, but
+-- the edge routes through a double and loses the low bit — 2^53+1 arrives as
+-- 2^53. §12 B-13 makes this edge part of the declared contract, so a lossy
+-- edge is a wrong answer rather than a rounding policy.
+-- expect: 9007199254740992
+main = (): i64
+    b = to(i64)("9007199254740993")
+    print("{b}")
+    0
+end

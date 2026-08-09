@@ -69,6 +69,13 @@ To promote a file, add a one-line rule above the rule that currently catches it.
 - `examples/spec100/` is `canonical` and is the one place in `examples/` that
   is promoted by construction rather than case by case: each file is the
   fixture for one Pass 100 §20 construct, checked by `zig build spec-corpus`.
+  `examples/boring/` and `examples/table/` are promoted the same way, by
+  `zig build boring-corpus`: twenty everyday programs and one fixture per row
+  of the numerics and text pages. Ten of the twenty do NOT compile, and that is
+  deliberate — Pass 106 asks what a MUNDANE program needs that a lexer never
+  did, so a red row is the finding and must not be repaired by bending the
+  program away from canonical spelling. `docs/numerics_and_text.md` carries
+  each one with its diagnostic.
   The §20 blocks themselves are NOT here — the gate extracts them from
   `docs/spec/pass100.md` on every run, because a tracked copy of the spec's
   own text is a second source of truth and its drift is invisible.
@@ -101,6 +108,8 @@ foreign        examples/wasm/
 compatibility  examples/lua
 compatibility  examples/test_lua
 canonical      examples/spec100/
+canonical      examples/boring/
+canonical      examples/table/
 historical     examples/
 foreign        vendor/
 historical     test.duo

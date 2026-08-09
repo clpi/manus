@@ -1,0 +1,26 @@
+-- Roman numerals, arabic to roman. Three numbers with different carry shapes:
+-- a subtractive pair, a repeated glyph, and a mixed year.
+-- expect: XIV XL MCMLXXXIV
+roman = (n: i64): str
+    value = { 1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1 }
+    glyph = { "M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I" }
+    out = ""
+    left = n
+    for i = 1, 13
+        v = value[i]
+        g = glyph[i]
+        while left >= v
+            out = "{out}{g}"
+            left = left - v
+        end
+    end
+    out
+end
+
+main = (): i64
+    a = roman(14)
+    b = roman(40)
+    c = roman(1984)
+    print("{a} {b} {c}")
+    0
+end

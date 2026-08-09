@@ -1,0 +1,28 @@
+-- TEXT: string ordering. §12 B-11 says byte-lexicographic. Measured on a
+-- SINGLE comparison it is: "Z" sorts below "a", and a prefix sorts below its
+-- extension. The non-ASCII row is where it breaks — 0xC3 must sort ABOVE
+-- 0x7A under unsigned byte order, and it does not, which is what a signed
+-- char comparison does.
+-- expect: 1 1 1
+main = (): i64
+    p = "Z"
+    q = "a"
+    a = 0
+    if p < q
+        a = 1
+    end
+    r = "ab"
+    s = "abc"
+    b = 0
+    if r < s
+        b = 1
+    end
+    t = "\xc3\xa9"
+    u = "z"
+    c = 0
+    if t < u
+        c = 1
+    end
+    print("{a} {b} {c}")
+    0
+end

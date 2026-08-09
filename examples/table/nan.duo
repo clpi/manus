@@ -1,0 +1,21 @@
+-- NUMERICS: NaN identity and ordering. IEEE-correct: NaN is not equal to
+-- itself and every ordering against it is false.
+-- expect: nan 0 0 0
+main = (): i64
+    z = 0.0
+    n = z / z
+    a = 0
+    if n == n
+        a = 1
+    end
+    b = 0
+    if n < 1.0
+        b = 1
+    end
+    c = 0
+    if n > 1.0
+        c = 1
+    end
+    print("{n} {a} {b} {c}")
+    0
+end

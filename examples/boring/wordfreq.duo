@@ -1,0 +1,23 @@
+-- Word frequency over a fixed sentence. §0.9 puts the split on the string
+-- descriptor. The counts of two different words are asserted, so a counter
+-- that bumps every key equally cannot pass.
+-- expect: 3 1 8
+main = (): i64
+    text = "the cat sat on the mat the end"
+    words = text:split(" ")
+    the = 0
+    other = 0
+    total = 0
+    for word in words
+        total = total + 1
+        if word == "the"
+            the = the + 1
+        end
+        if word == "cat"
+            other = other + 1
+        end
+    end
+    rest = total
+    print("{the} {other} {rest}")
+    0
+end

@@ -1,0 +1,34 @@
+-- A tiny JSON scanner: count the object depth and pull one integer value.
+-- Byte-level, because §0.8 says `s[i]` IS the byte.
+-- expect: 2 7
+main = (): i64
+    src = "{\"a\": {\"b\": 7}}"
+    depth = 0
+    deepest = 0
+    i = 0
+    n = #src
+    while i < n
+        b = src[i]
+        if b == 123
+            depth = depth + 1
+        end
+        if b == 125
+            depth = depth - 1
+        end
+        if depth > deepest
+            deepest = depth
+        end
+        i = i + 1
+    end
+    value = 0
+    i = 0
+    while i < n
+        b = src[i]
+        if b >= 48 and b <= 57
+            value = value * 10 + (b - 48)
+        end
+        i = i + 1
+    end
+    print("{deepest} {value}")
+    0
+end
