@@ -1618,3 +1618,120 @@ shadow = law{
 -- STAY, because both earn their syntax under law.subject.punctuation.
 -- BLOCKED by gap[087]: the bare form does not resolve, so nothing retires yet.
 subtract.resolved = "36 retire, 21 stay — BLOCKED until bare identity resolves"
+
+-- ═══ §42 · SURFACE SUBTRACTION — the rules that keep it from becoming golf ══
+--
+-- Pass 122. Canonical duon encodes ONLY distinctions the compiler cannot
+-- recover from the explicit subject, the ambient subject, expected descriptor,
+-- relation identity, operand descriptors, demand, lexical scope, or
+-- world/lawset context. Syntax restating recoverable information is debt.
+--
+-- ULTIMATE RULE: syntax exists to RESOLVE UNCERTAINTY, not to RESTATE
+-- CERTAINTY. The shortest form is not the one with the fewest characters — it
+-- is the one containing the FEWEST UNNECESSARY SEMANTIC DECISIONS.
+
+minimum = law{
+    id    = "law.minimum"
+    kind  = .invariant
+    holds = .irreducible
+    binds = {
+        "canonical source writes IRREDUCIBLE information",
+        "plus what is deliberately retained for human semantic naming",
+        "canonicalization is not minification",
+    }
+}
+
+-- THE CANONICAL-PERFORMANCE LAW, and it is the one this session measured twice.
+-- A canonical rewrite is INVALID if it lowers worse than the form it replaces
+-- without a semantic reason. Canonicality and performance CANNOT DISAGREE —
+-- and where they do, COMPILER CAPABILITY IS THE GAP, never the corpus.
+--
+--   gap[081]  canonical `x:to(i64)` fails both faces; noncanonical
+--             `to(i64)(x)` works. 1647 sites chose the working form.
+--   gap[087]  canonical bare case does not resolve; dotted does. Every site
+--             in the tree uses dotted.
+--
+-- In both the corpus looked like bad taste and was authors writing what
+-- compiles. This law inverts the repair order permanently: FIX THE CAPABILITY,
+-- THEN ENFORCE THE ORIENTATION.
+canonperf = law{
+    id    = "law.canon.performance"
+    kind  = .invariant
+    holds = .equal
+    binds = {
+        "canonical may never lower worse than the form it replaces",
+        "if canonicality and performance disagree, the COMPILER is the gap",
+        "track allocations, boxing, dispatch, lookup, copies, size, compile, fallback",
+    }
+    fails = "a law prescribing a spelling the compiler cannot produce"
+}
+
+-- RESOLUTION ENTROPY CEILING. Every omitted token transfers work to semantic
+-- resolution, and that cost is MEASURED, not assumed away. A compaction is
+-- accepted only when resolution stays unique, diagnostics stay good, local
+-- reasoning stays predictable, and AGENT GENERATION ACCURACY DOES NOT REGRESS.
+-- If removing syntax causes a large nonlocal search, THE SYNTAX WAS EARNING ITS
+-- KEEP.
+entropy = law{
+    id    = "law.entropy"
+    kind  = .invariant
+    holds = .bounded
+    binds = { "hpls includes compaction WITHOUT semantic-distance explosion" }
+}
+
+-- SEMANTIC LOCALITY. Bare-identity resolution draws from a PREDICTABLE LOCAL
+-- LATTICE and nothing wider. Transitive dependency existence does NOT make an
+-- identity visible — no global graph soup.
+locality.lattice = {
+    "lexical", "ambient subject", "expected descriptor",
+    "explicitly visible package graph", "standard vocabulary",
+}
+
+-- WHAT IS NOT COMPACTED, stated so subtraction does not become point-free code.
+-- duon does not delete syntax merely because the graph can technically infer
+-- meaning. These carry irreducible or high-value HUMAN information:
+keep = {
+    "x.y", "x:f()", ":f() under self-zero", ". as the whole ambient subject",
+    "if", "while", "for x in xs", "break", "continue",
+    "arithmetic and comparison operator faces", "[expr] computed keys",
+    "ordinary interpolated strings", "offside layout",
+}
+
+-- THE THREE TIERS. Retirement is not one list — it is a judgement per form.
+retire = {
+    "leading .field implicit projection", "leading .case", "leading .field lens",
+    ".field constructor designation", "tail `return x`",
+    "operation-first immediate to(t)(x)", "redundant relation levels",
+    "redundant descriptor annotations", "repeated standard and package homes",
+    "single-use pipeline temporaries adding no name",
+    "manual failure forwarding where the contract routes",
+}
+
+audit = {
+    "check(...) as its own grammar production", "brace-call f{...}",
+    "string-call f\"...\"", "raw [[...]] strings",
+    "the special condition-binding grammar", "@{} where demand is already unique",
+    "& refinement over bitwise", "| union over bitwise", "early return",
+}
+
+-- LEVEL-ZERO, HOME-ZERO, TEMP-ZERO, ROUTE-ZERO, SUBJECT-ZERO, CASE-ZERO,
+-- CONVERT-ZERO. One test serves all seven: does removing it leave EXACTLY ONE
+-- valid reading? If yes it goes; if no it stays in its smallest existing form.
+zero.test = "does removal leave exactly one valid edge"
+
+-- CONSTITUTION-FIRST MIGRATION (§46). THIS FILE currently teaches the forms it
+-- retires — `kind = .invariant`, `holds = .facts`, `close = .compatibility`.
+-- It is the FIRST canonical migration target, and **the constitution must never
+-- teach deprecated syntax**.
+--
+-- BLOCKED, and honestly: gap[087] measured that the replacement does not
+-- resolve. Migrating now would make C0 unparseable by the compiler it governs,
+-- which §45 forbids by name. The migration lands the moment bare identity
+-- resolves, and not before.
+migrate.first = "the constitution"
+migrate.blocked = "gap[087] — bare identity parses, does not resolve"
+
+-- Grammar reconciliation (§47): `primary` eventually drops `.name`; postfix
+-- `expr.name` stays; bare `.` survives ONLY as the ambient subject value. The
+-- formal grammar and this file must agree, and today they do not.
+grammar.owed = "primary drops .name; docs/spec/grammar.md and c0 must agree"
