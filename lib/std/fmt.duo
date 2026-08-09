@@ -2,7 +2,7 @@
 
 int(v: any): str
     if v == nil return "nil" end
-    to(str)(v)
+    v:to(str)
 end
 
 float(v: any, precision: i64): str
@@ -10,7 +10,7 @@ float(v: any, precision: i64): str
     if precision == nil
         string.format("%g", v)
     end
-    string.format("%." .. to(str)(precision) .. "f", v)
+    string.format("%." .. precision:to(str) .. "f", v)
 end
 
 to_str(v: any): str
@@ -89,16 +89,16 @@ format(fmt: str, args: any): str
                 spec = fmt:sub(i + 1, j - 1)
                 v = args[arg_idx]
                 if spec == ""
-                    out = out .. to(str)(v)
+                    out = out .. v:to(str)
                 elseif spec:sub(1, 2) == ":."
                     prec = tonumber(spec:sub(3))
                     if prec and tonumber(v)
-                        out = out .. string.format("%." .. to(str)(prec) .. "f", v)
+                        out = out .. string.format("%." .. prec:to(str) .. "f", v)
                     else
-                        out = out .. to(str)(v)
+                        out = out .. v:to(str)
                     end
                 else
-                    out = out .. to(str)(v)
+                    out = out .. v:to(str)
                 end
                 arg_idx = arg_idx + 1
                 i = j + 1
@@ -123,7 +123,7 @@ end
 bytes(size: any): str
     if size == nil return "0 B" end
     if size < 1024
-        return to(str)(size) .. " B"
+        return size:to(str) .. " B"
     elseif size < 1024 * 1024
         return string.format("%.1f KB", size / 1024)
     elseif size < 1024 * 1024 * 1024
@@ -153,7 +153,7 @@ repr(v: any): str
     elseif t == "boolean"
         if v return "true" else return "false" end
     elseif t == "number"
-        return to(str)(v)
+        return v:to(str)
     elseif t == "table"
         parts = {}
         n = rawlen(v)
@@ -166,12 +166,12 @@ repr(v: any): str
             return "{" .. table.concat(parts, ", ") .. "}"
         else
             for k, val in v
-                parts[rawlen(parts) + 1] = to(str)(k) .. "=" .. repr(val)
+                parts[rawlen(parts) + 1] = k:to(str) .. "=" .. repr(val)
             end
             return "{" .. table.concat(parts, ", ") .. "}"
         end
     else
-        return to(str)(v)
+        return v:to(str)
     end
 end
 

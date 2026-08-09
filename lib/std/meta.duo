@@ -289,7 +289,7 @@ derive_display(val: any): str
     if type(val) == "boolean"
         if val return "true" else return "false" end
     end
-    if type(val) == "number" return to(str)(val) end
+    if type(val) == "number" return val:to(str) end
     if type(val) == "string" return val end
     if type(val) == "table"
         parts = {}
@@ -300,7 +300,7 @@ derive_display(val: any): str
         end
         return "{" .. table.concat(parts, ", ") .. "}"
     end
-    to(str)(val)
+    val:to(str)
 end
 
 derive_deep_clone(val: any): any
@@ -340,7 +340,7 @@ derive_hash(val: any): u64
         end
         return h
     end
-    string.len(to(str)(val))
+    string.len(val:to(str))
 end
 
 derive_ord(a: any, b: any): i64
@@ -350,8 +350,8 @@ derive_ord(a: any, b: any): i64
     if type(a) == "number" and type(b) == "number"
         if a < b return -1 else return 1 end
     end
-    sa = to(str)(a)
-    sb = to(str)(b)
+    sa = a:to(str)
+    sb = b:to(str)
     if sa < sb return -1 else return 1 end
 end
 
@@ -366,12 +366,12 @@ derive_format(val: any, spec: str): str
         return string.format("%x", math.floor(val))
     end
     if spec == "s"
-        return to(str)(val)
+        return val:to(str)
     end
     if spec == "t"
         return derive_display(val)
     end
-    to(str)(val)
+    val:to(str)
 end
 
 derive_len(val: any): i64
@@ -669,7 +669,7 @@ unique(t: any): any
     i = 1
     while i <= #t
         v = t[i]
-        key = to(str)(v)
+        key = v:to(str)
         if not seen[key]
             seen[key] = true
             n += 1
@@ -992,7 +992,7 @@ end
 invert(t: any): any
     out = {}
     for k, v in t
-        out[to(str)(v)] = k
+        out[v:to(str)] = k
     end
     out
 end

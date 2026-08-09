@@ -71,7 +71,7 @@ describe(cell: i64): str
     if status == 124
         return "HUNG"
     end
-    "exit=" .. to(str)(status) .. " fp=" .. to(str)(fp)
+    "exit=" .. status:to(str) .. " fp=" .. fp:to(str)
 end
 
 main(): i64
@@ -131,8 +131,8 @@ main(): i64
         ncols = ncols + 1
     end
 
-    print("semantic_harness: " .. to(str)(entries) .. " entries x " .. to(str)(ncols)
-        .. " targets, " .. to(str)(diverged) .. " diverged")
+    print("semantic_harness: " .. entries:to(str) .. " entries x " .. ncols:to(str)
+        .. " targets, " .. diverged:to(str) .. " diverged")
 
     if entries == 0
         print("semantic_harness: FAIL (empty corpus)")

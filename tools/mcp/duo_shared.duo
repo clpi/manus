@@ -1075,7 +1075,7 @@ gapsdir = root .. "/gaps"
 gapledger = root .. "/.agents/session/gapalloc"
 
 fun gap_pad(n: int): str
-    s = to(str)(n)
+    s = n:to(str)
     while string.len(s) < 3
         s = "0" .. s
     end

@@ -183,6 +183,6 @@ main(): i64
     if not label
         label = "corpus"
     end
-    print(label .. ": files=" .. to(str)(census_files) .. "  and=" .. to(str)(census_ands) .. "  CHAINED=" .. to(str)(total))
+    print(label .. ": files=" .. census_files:to(str) .. "  and=" .. census_ands:to(str) .. "  CHAINED=" .. total:to(str))
     0
 end

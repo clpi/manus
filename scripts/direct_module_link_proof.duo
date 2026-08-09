@@ -43,7 +43,7 @@ main = (): i64
     -- main() returns the file size: two 4-byte ARM64 instructions.
     rc = std.script.status(_WORK .. "/prog")
     if rc != 8
-        return _bad("expected exit 8 (bytes written), got " .. to(str)(rc))
+        return _bad("expected exit 8 (bytes written), got " .. rc:to(str))
     end
 
     -- mov x0, #42 (0xd2800540) ; ret (0xd65f03c0), little-endian.
@@ -96,7 +96,7 @@ main = (): i64
     end
     subrc = std.script.status(_WORK .. "/sub")
     if subrc != 5
-        return _bad("native string.sub returned " .. to(str)(subrc) .. ", expected 5")
+        return _bad("native string.sub returned " .. subrc:to(str) .. ", expected 5")
     end
     print("direct_module_link_proof: native string.sub works on the direct backend")
 
@@ -115,7 +115,7 @@ main = (): i64
     end
     prc = std.script.status(_WORK .. "/parse")
     if prc != 11
-        return _bad("Duo parser returned " .. to(str)(prc) .. ", expected 11")
+        return _bad("Duo parser returned " .. prc:to(str) .. ", expected 11")
     end
     print("direct_module_link_proof: Duo parser runs natively (2 + 3 * (4 - 1) = 11)")
 

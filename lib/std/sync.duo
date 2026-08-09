@@ -19,7 +19,7 @@ run(): void
     task = table.remove(__sync_run_queue, 1)
     ok, err = coroutine.resume(task.co)
     if not ok
-      io.write("sync: task error: " .. to(str)(err) .. "\n")
+      io.write("sync: task error: " .. err:to(str) .. "\n")
     elseif coroutine.status(task.co) == "suspended"
       __sync_run_queue[#__sync_run_queue + 1] = task
     end
@@ -32,7 +32,7 @@ step(): bool
   task = table.remove(__sync_run_queue, 1)
   ok, err = coroutine.resume(task.co)
   if not ok
-    io.write("sync: task error: " .. to(str)(err) .. "\n")
+    io.write("sync: task error: " .. err:to(str) .. "\n")
   elseif coroutine.status(task.co) == "suspended"
     __sync_run_queue[#__sync_run_queue + 1] = task
   end

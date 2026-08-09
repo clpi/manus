@@ -54,11 +54,11 @@ _f6(x: f64): str
     n = to(i64)(x * 1000000.0 + 0.5)
     whole = n / 1000000
     frac = n % 1000000
-    fs = to(str)(frac)
+    fs = frac:to(str)
     while #fs < 6
         fs = "0" .. fs
     end
-    to(str)(whole) .. "." .. fs
+    whole:to(str) .. "." .. fs
 end
 
 -- `to(f64)` is NOT a validating parse: to(f64)("Fibonacci(40)"), to(f64)("Time")
@@ -294,7 +294,7 @@ main = (): i64
         j = jt[i]
         if d != nil and c != nil and l != nil and j != nil
             name = _names[i]
-            if name == nil name = "bench-" .. to(str)(i) end
+            if name == nil name = "bench-" .. i:to(str) end
             print(_pad(name, 16) .. " " .. _lpad(_f6(d), 10) .. " " .. _lpad(_f6(c), 10)
                 .. " " .. _lpad(_f6(l), 10) .. " " .. _lpad(_f6(j), 10))
             -- Geometric mean of the ratios: the mean of logs, exponentiated.

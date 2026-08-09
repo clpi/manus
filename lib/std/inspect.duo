@@ -23,11 +23,11 @@ end
 std_inspect_hash(value: any): str
     if value == nil return "nil" end
     t = type(value)
-    if t != "table" return t .. ":" .. to(str)(value) end
+    if t != "table" return t .. ":" .. value:to(str) end
     parts = {}
     ks = {}
     for k, v in value
-        ks[rawlen(ks) + 1] = to(str)(k)
+        ks[rawlen(ks) + 1] = k:to(str)
     end
     std_inspect_sort_strings(ks)
     i = 1
@@ -59,7 +59,7 @@ std_inspect_to_str(value: any, indent: any, seen: any): str
         return '"' .. value .. '"'
     end
     if t == "number"
-        return to(str)(value)
+        return value:to(str)
     end
     if t == "boolean"
         if value return "true" end
@@ -69,9 +69,9 @@ std_inspect_to_str(value: any, indent: any, seen: any): str
         return "<function>"
     end
     if t != "table"
-        return to(str)(value)
+        return value:to(str)
     end
-    ptr = to(str)(value)
+    ptr = value:to(str)
     if seen[ptr] != nil return "<circular>" end
     seen[ptr] = true
     n = rawlen(value)
@@ -98,7 +98,7 @@ std_inspect_to_str(value: any, indent: any, seen: any): str
     i = 1
     while i <= rawlen(pairs_list)
         pair = pairs_list[i]
-        key_str = to(str)(pair.k)
+        key_str = pair.k:to(str)
         if type(pair.k) == "string"
             key_str = pair.k
         end
@@ -137,7 +137,7 @@ std_inspect_diff(a: any, b: any, prefix: any, diffs: any): void
     end
     for k, v in a
         path = k
-        if prefix != "" path = prefix .. "." .. to(str)(k) end
+        if prefix != "" path = prefix .. "." .. k:to(str) end
         if b[k] == nil
             diffs[rawlen(diffs) + 1] = {path = path, kind = "removed", old = v}
         else
@@ -147,7 +147,7 @@ std_inspect_diff(a: any, b: any, prefix: any, diffs: any): void
     for k, v in b
         if a[k] == nil
             path = k
-            if prefix != "" path = prefix .. "." .. to(str)(k) end
+            if prefix != "" path = prefix .. "." .. k:to(str) end
             diffs[rawlen(diffs) + 1] = {path = path, kind = "added", new = v}
         end
     end
@@ -215,11 +215,11 @@ diff_summary(a: any, b: any): str
         d = diffs[i]
         line = d.kind .. " " .. d.path
         if d.kind == "changed"
-            line = line .. ": " .. to(str)(d.old) .. " -> " .. to(str)(d.new)
+            line = line .. ": " .. d.old:to(str) .. " -> " .. d.new:to(str)
         elseif d.kind == "added"
-            line = line .. ": " .. to(str)(d.new)
+            line = line .. ": " .. d.new:to(str)
         elseif d.kind == "removed"
-            line = line .. ": " .. to(str)(d.old)
+            line = line .. ": " .. d.old:to(str)
         end
         parts[rawlen(parts) + 1] = line
         i += 1
@@ -233,12 +233,12 @@ type_name(value: any): str
     t = type(value)
     if t == "table"
         n = rawlen(value)
-        if n > 0 return "array[" .. to(str)(n) .. "]" end
+        if n > 0 return "array[" .. n:to(str) .. "]" end
         count = 0
         for _ck, _cv in value
             count += 1
         end
-        if count > 0 return "table[" .. to(str)(count) .. "]" end
+        if count > 0 return "table[" .. count:to(str) .. "]" end
         return "table"
     end
     return t
@@ -266,7 +266,7 @@ keys_of(t: any): any
     out = {}
     if t == nil or type(t) != "table" return out end
     for kk, _kv in t
-        out[rawlen(out) + 1] = to(str)(kk)
+        out[rawlen(out) + 1] = kk:to(str)
     end
     std_inspect_sort_strings(out)
     out
@@ -276,22 +276,22 @@ end
 summary(value: any): str
     if value == nil return "nil" end
     t = type(value)
-    if t != "table" return t .. ": " .. to(str)(value) end
+    if t != "table" return t .. ": " .. value:to(str) end
     n = rawlen(value)
     if n > 0
-        return "array(" .. to(str)(n) .. " elements)"
+        return "array(" .. n:to(str) .. " elements)"
     end
     count = 0
     first_key = nil
     for k, v in value
         count += 1
-        if first_key == nil first_key = to(str)(k) end
+        if first_key == nil first_key = k:to(str) end
     end
     if count == 0 return "empty table" end
     if count <= 3
-        return "table(" .. to(str)(count) .. " keys: " .. first_key .. " ...)"
+        return "table(" .. count:to(str) .. " keys: " .. first_key .. " ...)"
     end
-    return "table(" .. to(str)(count) .. " keys)"
+    return "table(" .. count:to(str) .. " keys)"
 end
 
 -- caller_info: return info about the calling function.
@@ -348,14 +348,14 @@ stack_trace(level: any, max_depth: any, pretty: any): str
                     C_MAGENTA .. C_ITALIC .. fname .. "()" .. C_RESET
             loc = src
             if info.currentline and info.currentline > 0
-                loc = src .. C_DIM .. ":" .. C_RESET .. C_YELLOW .. to(str)(info.currentline) .. C_RESET
+                loc = src .. C_DIM .. ":" .. C_RESET .. C_YELLOW .. info.currentline:to(str) .. C_RESET
             end
             frame = frame .. "  " .. C_DIM .. "⟨" .. C_RESET ..
                     C_UNDER .. loc .. C_RESET .. C_DIM .. "⟩" .. C_RESET
         else
             frame = fname .. "()"
             if info.currentline and info.currentline > 0
-                frame = frame .. " [" .. src .. ":" .. to(str)(info.currentline) .. "]"
+                frame = frame .. " [" .. src .. ":" .. info.currentline:to(str) .. "]"
             else
                 frame = frame .. " [" .. src .. "]"
             end

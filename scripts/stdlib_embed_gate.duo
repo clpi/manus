@@ -74,7 +74,7 @@ main(): i64
     end
 
     io.write(report)
-    print("stdlib_embed: " .. to(str)(broken) .. " unreachable of " .. to(str)(total)
+    print("stdlib_embed: " .. broken:to(str) .. " unreachable of " .. total:to(str)
         .. " (ceiling " .. to(str)(ceiling()) .. ")")
 
     if total == 0
@@ -87,7 +87,7 @@ main(): i64
     end
     if broken < ceiling()
         print("stdlib_embed: modules repaired since the floor was set — LOWER ceiling() to "
-            .. to(str)(broken))
+            .. broken:to(str))
     end
     print("stdlib_embed: PASS")
     0

@@ -44,11 +44,11 @@ _fx(x: f64, places: i64): str
     n = to(i64)(x * to(f64)(scale) + 0.5)
     whole = n / scale
     frac = n % scale
-    fs = to(str)(frac)
+    fs = frac:to(str)
     while #fs < places
         fs = "0" .. fs
     end
-    to(str)(whole) .. "." .. fs
+    whole:to(str) .. "." .. fs
 end
 
 -- `to(f64)` is not a validating parse -- to(f64)("Time:") returns 0.0, not nil
@@ -103,7 +103,7 @@ _results(text: str): any
             n = n + 1
         end
     end
-    r["__count"] = to(str)(n)
+    r["__count"] = n:to(str)
     r
 end
 
@@ -128,7 +128,7 @@ end
 main = (): i64
     duo = "./zig-out/bin/duo"
     cc = _env_or("CC", "clang")
-    runs = to(i64)(_env_or("RUNS", to(str)(_RUNS)))
+    runs = to(i64)(_env_or("RUNS", _RUNS:to(str)))
     if runs == nil or runs < 1 runs = _RUNS end
 
     print("========================================")
@@ -169,9 +169,9 @@ main = (): i64
     -- A short RESULT set is a failed run wearing the costume of a passing one:
     -- with zero rows every comparison below is vacuously satisfied.
     for _i, pair in {{"Duo", dres}, {"C", cres}}
-        if pair[2]["__count"] != to(str)(_BENCHES)
+        if pair[2]["__count"] != _BENCHES:to(str)
             print(pair[1] .. " correctness run emitted " .. pair[2]["__count"]
-                .. " RESULT row(s), expected " .. to(str)(_BENCHES))
+                .. " RESULT row(s), expected " .. _BENCHES:to(str))
             return 1
         end
     end
@@ -205,19 +205,19 @@ main = (): i64
     end
     if bad != 0
         print("")
-        print("ML BENCHMARK: FAIL — " .. to(str)(bad) .. " result(s) differ from C")
+        print("ML BENCHMARK: FAIL — " .. bad:to(str) .. " result(s) differ from C")
         return 1
     end
 
     print("")
-    print("All " .. to(str)(_BENCHES) .. " results match.")
+    print("All " .. _BENCHES:to(str) .. " results match.")
     print("")
-    print("--- Timing (" .. to(str)(runs) .. " runs each) ---")
+    print("--- Timing (" .. runs:to(str) .. " runs each) ---")
     print("")
 
     dmin = {}
     cmin = {}
-    print("Running Duo (" .. to(str)(runs) .. " times)...")
+    print("Running Duo (" .. runs:to(str) .. " times)...")
     r = 0
     while r < runs
         for k, v in _times(std.script.capture(duo_bin .. " 2>/dev/null"))
@@ -225,7 +225,7 @@ main = (): i64
         end
         r = r + 1
     end
-    print("Running C (" .. to(str)(runs) .. " times)...")
+    print("Running C (" .. runs:to(str) .. " times)...")
     r = 0
     while r < runs
         for k, v in _times(std.script.capture(c_bin .. " 2>/dev/null"))
@@ -235,7 +235,7 @@ main = (): i64
     end
 
     print("")
-    print("--- Results (min of " .. to(str)(runs) .. " runs) ---")
+    print("--- Results (min of " .. runs:to(str) .. " runs) ---")
     print("")
     print(_pad("Benchmark", 16) .. " " .. _lpad("Duo(s)", 12) .. " " .. _lpad("C(s)", 12)
         .. " " .. _lpad("Ratio", 10))
@@ -267,7 +267,7 @@ main = (): i64
     -- either way, as the shell version did. The 40-benchmark gate is
     -- `zig build bench`.
     if timing_fail > 0
-        print("ML BENCHMARK: " .. to(str)(timing_fail)
+        print("ML BENCHMARK: " .. timing_fail:to(str)
             .. " workload(s) slower than C (optimization targets).")
         print("  (Core 40-benchmark gate: zig build bench)")
         return 0

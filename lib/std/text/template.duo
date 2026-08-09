@@ -27,7 +27,7 @@ render(tmpl: str, data: any): str
             expr = string.gsub(tmpl:sub(i + 2, close - 1), "^%s+", "")
             expr = string.gsub(expr, "%s+$", "")
             result = eval_expr(expr, data)
-            out[rawlen(out) + 1] = to(str)(result)
+            out[rawlen(out) + 1] = result:to(str)
             i = close + 2
         else
             out[rawlen(out) + 1] = tmpl:sub(i, i)
@@ -201,7 +201,7 @@ render_blocks(tmpl: str, data: any, start: i64): str
                 if block_end == nil i = n + 1 end
             else
                 result = eval_expr(expr, data)
-                out[rawlen(out) + 1] = to(str)(result)
+                out[rawlen(out) + 1] = result:to(str)
                 i = close + 2
             end
         else

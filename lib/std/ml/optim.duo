@@ -137,7 +137,7 @@ step_sgd(opt: any, params: any, grads: any): void
     for i = 1, #params
         p = params[i]
         g = grads[i]
-        key = to(str)(p)
+        key = p:to(str)
 
         if opt.momentum != 0
             if opt.velocities[key] == nil
@@ -164,7 +164,7 @@ step_adam(opt: any, params: any, grads: any): void
     for i = 1, #params
         p = params[i]
         g = grads[i]
-        key = to(str)(p)
+        key = p:to(str)
 
         if opt.m[key] == nil
             opt.m[key] = Tensor.zeros(p.rows, p.cols)
@@ -191,7 +191,7 @@ step_adamw(opt: any, params: any, grads: any): void
     for i = 1, #params
         p = params[i]
         g = grads[i]
-        key = to(str)(p)
+        key = p:to(str)
 
         if opt.m[key] == nil
             opt.m[key] = Tensor.zeros(p.rows, p.cols)
@@ -216,7 +216,7 @@ step_adagrad(opt: any, params: any, grads: any): void
     for i = 1, #params
         p = params[i]
         g = grads[i]
-        key = to(str)(p)
+        key = p:to(str)
 
         if opt.accum[key] == nil
             opt.accum[key] = Tensor.zeros(p.rows, p.cols)
@@ -234,7 +234,7 @@ step_rmsprop(opt: any, params: any, grads: any): void
     for i = 1, #params
         p = params[i]
         g = grads[i]
-        key = to(str)(p)
+        key = p:to(str)
 
         if opt.cache[key] == nil
             opt.cache[key] = Tensor.zeros(p.rows, p.cols)
@@ -258,7 +258,7 @@ step_lamb(opt: any, params: any, grads: any): void
     for i = 1, #params
         p = params[i]
         g = grads[i]
-        key = to(str)(p)
+        key = p:to(str)
 
         if opt.m[key] == nil
             opt.m[key] = Tensor.zeros(p.rows, p.cols)

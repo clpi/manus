@@ -279,7 +279,7 @@ resolver_set_timeout(resolver: any, timeout: i64): void
   resolver.timeout = timeout
 end
 resolver_resolve(resolver: any, name: str, qtype: i64): any
-  cache_key = name .. ":" .. to(str)(qtype)
+  cache_key = name .. ":" .. qtype:to(str)
   if resolver.cache[cache_key]
     return resolver.cache[cache_key]
   end

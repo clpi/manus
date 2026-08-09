@@ -295,13 +295,13 @@ tally(rec: str): void
 end
 
 rung(label: str, n: i64, total: i64): void
-    v = to(str)(n)
-    t = to(str)(total)
+    v = n:to(str)
+    t = total:to(str)
     print("    {label} {v} / {t}")
 end
 
 bucket(label: str, n: i64, tail: str): void
-    v = to(str)(n)
+    v = n:to(str)
     print("    {label} {v}   {tail}")
 end
 
@@ -375,8 +375,8 @@ main = (): i64
         end
     end
 
-    got = to(str)(ntotal)
-    want = to(str)(wanted)
+    got = ntotal:to(str)
+    want = wanted:to(str)
     if ntotal == 0
         print("capability_matrix: FAIL — 0 records for {want} programs; the sweep is broken")
         return 3
@@ -425,7 +425,7 @@ main = (): i64
     bucket("undescribed           ", nundescribed,
         "checked, but carry no `--` statement of intent")
     print("")
-    inv = to(str)(ninversions)
+    inv = ninversions:to(str)
     print("  LADDER INVERSIONS — {inv} reached a rung while failing one below it")
     if inversions != ""
         io.write(inversions)
@@ -467,10 +467,10 @@ main = (): i64
     -- raise it.
     provenfloor: i64 = to(i64)(envor("CAPMATRIX_PROVEN_FLOOR", "79"))
     checkedfloor: i64 = to(i64)(envor("CAPMATRIX_CHECKED_FLOOR", "285"))
-    pf = to(str)(provenfloor)
-    cf = to(str)(checkedfloor)
-    pn = to(str)(nproven)
-    cn = to(str)(nchecked)
+    pf = provenfloor:to(str)
+    cf = checkedfloor:to(str)
+    pn = nproven:to(str)
+    cn = nchecked:to(str)
     if nproven < provenfloor
         print("capability_matrix: FAIL — proven {pn} fell below the ratchet {pf}")
         return 1

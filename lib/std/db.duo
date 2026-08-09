@@ -405,12 +405,12 @@ build(q: any): any
 
         -- LIMIT
         if has(.limit)(q)
-            parts[#parts + 1] = "LIMIT " .. to(str)(q.limit)
+            parts[#parts + 1] = "LIMIT " .. q.limit:to(str)
         end
 
         -- OFFSET
         if has(.offset)(q)
-            parts[#parts + 1] = "OFFSET " .. to(str)(q.offset)
+            parts[#parts + 1] = "OFFSET " .. q.offset:to(str)
         end
 
     elseif q.type == "insert"

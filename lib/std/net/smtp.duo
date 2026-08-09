@@ -56,7 +56,7 @@ send_mail_auth(addr: str, auth: any, from: str, to: any, msg: str): any
     end
     -- Sanitize host to prevent shell injection
     safe_host = shell_escape(host)
-    url = "smtp://" .. safe_host .. ":" .. to(str)(port)
+    url = "smtp://" .. safe_host .. ":" .. port:to(str)
     cmd = "curl -s --url " .. url
     if auth != nil and auth.username != nil
         -- Sanitize credentials
@@ -89,7 +89,7 @@ new_message(headers: any, body: str): str
     if body == nil body = "" end
     out = {}
     for k, v in headers
-        out[rawlen(out) + 1] = k .. ": " .. to(str)(v) .. "\r\n"
+        out[rawlen(out) + 1] = k .. ": " .. v:to(str) .. "\r\n"
     end
     out[rawlen(out) + 1] = "\r\n"
     out[rawlen(out) + 1] = body

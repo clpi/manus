@@ -63,16 +63,16 @@ _did_open(uri: str, text: str): str
 end
 
 _doc_symbol(id: i64, uri: str): str
-    _frame("{\"jsonrpc\":\"2.0\",\"id\":" .. to(str)(id)
+    _frame("{\"jsonrpc\":\"2.0\",\"id\":" .. id:to(str)
         .. ",\"method\":\"textDocument/documentSymbol\",\"params\":{\"textDocument\":{\"uri\":\""
         .. uri .. "\"}}}")
 end
 
 _hover(id: i64, uri: str, line: i64, ch: i64): str
-    _frame("{\"jsonrpc\":\"2.0\",\"id\":" .. to(str)(id)
+    _frame("{\"jsonrpc\":\"2.0\",\"id\":" .. id:to(str)
         .. ",\"method\":\"textDocument/hover\",\"params\":{\"textDocument\":{\"uri\":\""
-        .. uri .. "\"},\"position\":{\"line\":" .. to(str)(line)
-        .. ",\"character\":" .. to(str)(ch) .. "}}}")
+        .. uri .. "\"},\"position\":{\"line\":" .. line:to(str)
+        .. ",\"character\":" .. ch:to(str) .. "}}}")
 end
 
 main = (): i64
@@ -222,13 +222,13 @@ main = (): i64
     _check("brace-nested member is not top-level", not _has(nest, "\"distance\""), "")
     _check("top-level call is not a declaration", not _has(nest, "\"print\""), "")
 
-    _check("exit code 0 after shutdown", rc == 0, "got " .. to(str)(rc))
+    _check("exit code 0 after shutdown", rc == 0, "got " .. rc:to(str))
 
     print("")
     if _failed == 0
         print("ALL PASS")
         os.exit(0)
     end
-    print(to(str)(_failed) .. " FAILED")
+    print(_failed:to(str) .. " FAILED")
     os.exit(1)
 end

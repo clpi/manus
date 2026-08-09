@@ -252,7 +252,7 @@ main(): i64
         -- GAP-11: `{bad}` is an i64 hole and would emit the brace text
         -- literally, so this one stays a chain. The all-string line below is
         -- interpolated, which is where `{}` works today.
-        print("module_surface: FAIL — positive control " .. to(str)(bad) .. " did not fire")
+        print("module_surface: FAIL — positive control " .. bad:to(str) .. " did not fire")
         print("module_surface: the detector is broken; a clean corpus report would be meaningless")
         return 1
     end
@@ -288,7 +288,7 @@ main(): i64
         i += 1
     end
 
-    print("module_surface: " .. to(str)(files) .. " files, " .. to(str)(total)
+    print("module_surface: " .. files:to(str) .. " files, " .. total:to(str)
         .. " reach-throughs (control: 3/3 fired)")
     if files == 0
         print("module_surface: FAIL (empty corpus)")

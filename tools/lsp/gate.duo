@@ -94,7 +94,7 @@ end
 -- from the body's own byte length and never from a constant.
 frame(body: str): str
     n = #body
-    "Content-Length: " .. to(str)(n) .. "\r\n\r\n" .. body
+    "Content-Length: " .. n:to(str) .. "\r\n\r\n" .. body
 end
 
 -- Feed the server a session on stdin, hand back everything it wrote. stdin is
@@ -162,7 +162,7 @@ cdr = "scale(v: i64)\\n  v * 3\\nend\\ntotal = 7\\n"
 cdruri = "file:///tmp/duo-lsp-gate/cdr.duo"
 
 msg(id: i64, method: str, params: str): str
-    frame("{\"jsonrpc\":\"2.0\",\"id\":" .. to(str)(id) .. ",\"method\":\"" .. method
+    frame("{\"jsonrpc\":\"2.0\",\"id\":" .. id:to(str) .. ",\"method\":\"" .. method
         .. "\",\"params\":" .. params .. "}")
 end
 
@@ -171,8 +171,8 @@ note(method: str, params: str): str
 end
 
 at(line: i64, col: i64): str
-    "{\"textDocument\":{\"uri\":\"" .. uri .. "\"},\"position\":{\"line\":" .. to(str)(line)
-        .. ",\"character\":" .. to(str)(col) .. "}}"
+    "{\"textDocument\":{\"uri\":\"" .. uri .. "\"},\"position\":{\"line\":" .. line:to(str)
+        .. ",\"character\":" .. col:to(str) .. "}}"
 end
 
 main(): i64
@@ -339,7 +339,7 @@ main(): i64
         io.write("lsp-gate: PASS — the server handshakes, survives a close, and answers by value\n")
         return 0
     end
-    io.write("lsp-gate: FAIL — " .. to(str)(fails) .. " check(s) failed\n")
+    io.write("lsp-gate: FAIL — " .. fails:to(str) .. " check(s) failed\n")
     -- `std.os.exit`, NOT `return 1`. A Duo script's `main` return value is
     -- DROPPED, so a gate that returns 1 exits 0 and `zig build` reads success.
     -- mcp-gate learned this by printing 13 failures into a green build.

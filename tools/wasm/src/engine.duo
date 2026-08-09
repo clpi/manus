@@ -702,7 +702,7 @@ end
 -- label/frame depth ceiling, a memory bound. The opcode is named because it
 -- localises the refusal, not because the opcode is missing.
 bail(op: i64, pos: i64): i64
-  iom.err("wasm: cannot execute opcode " .. to(str)(op) .. " " .. opname(op) .. " at body offset " .. to(str)(pos) .. " (unsupported operand shape, or an interpreter limit inside its arm)\n")
+  iom.err("wasm: cannot execute opcode " .. op:to(str) .. " " .. opname(op) .. " at body offset " .. pos:to(str) .. " (unsupported operand shape, or an interpreter limit inside its arm)\n")
   os.exit(70)
   -1
 end
@@ -710,7 +710,7 @@ end
 -- No arm at all. This is the ranked-worklist signal the old `-1` swallowed: a
 -- corpus sweep now reports exactly which opcodes to implement next.
 bailop(op: i64, pos: i64): i64
-  iom.err("wasm: unimplemented opcode " .. to(str)(op) .. " " .. opname(op) .. " at body offset " .. to(str)(pos) .. "\n")
+  iom.err("wasm: unimplemented opcode " .. op:to(str) .. " " .. opname(op) .. " at body offset " .. pos:to(str) .. "\n")
   os.exit(70)
   -1
 end
@@ -718,7 +718,7 @@ end
 -- `unreachable` is the MODULE trapping, which every conforming runtime does
 -- too. It is not a gap in the engine and must not be counted as one.
 bailtrap(pos: i64): i64
-  iom.err("wasm: wasm trap (unreachable) at body offset " .. to(str)(pos) .. "\n")
+  iom.err("wasm: wasm trap (unreachable) at body offset " .. pos:to(str) .. "\n")
   os.exit(71)
   -1
 end
@@ -742,7 +742,7 @@ end
 jitbail(why: str, op: i64, pos: i64): i64
   if os.getenv("DUO_WASM_JIT_TRACE")
     if op >= 0
-      iom.err("wasm: jit declined -- " .. why .. " -- opcode " .. to(str)(op) .. " " .. opname(op) .. " at body offset " .. to(str)(pos) .. "\n")
+      iom.err("wasm: jit declined -- " .. why .. " -- opcode " .. op:to(str) .. " " .. opname(op) .. " at body offset " .. pos:to(str) .. "\n")
     else
       iom.err("wasm: jit declined -- " .. why .. "\n")
     end
@@ -6109,7 +6109,7 @@ main(): void
   -- desync is a clean diagnostic rather than an out-of-bounds read.
   if blen <= 0 or boff < 0 or boff + blen > #bytes
     iom.err("wasm: could not locate an exported `" .. invoke .. "` body in " .. path .. "\n")
-    iom.err("      (decoded offset=" .. to(str)(boff) .. " len=" .. to(str)(blen) .. " of " .. to(str)(#bytes) .. " bytes)\n")
+    iom.err("      (decoded offset=" .. boff:to(str) .. " len=" .. blen:to(str) .. " of " .. to(str)(#bytes) .. " bytes)\n")
     os.exit(1)
   end
 
@@ -6136,7 +6136,7 @@ main(): void
           end
           df:close()
         end
-        print("jit_words=" .. to(str)(words))
+        print("jit_words=" .. words:to(str))
       end
       tJ2 = os.clock()
       if os.getenv("DUO_WASM_PHASES")
@@ -6291,20 +6291,20 @@ main(): void
     -- concat loses low mantissa bits (f64.const 1.0001 printed as
     -- 1.0000999999999749); the same load bound to an f64 local is exact.
     rf: f64 = mem.load(f64)(rbuf)
-    print("result=" .. to(str)(rf))
+    print("result=" .. rf:to(str))
     mem.free(rbuf)
   elseif rtype == 0x7D
     rbuf2 = mem.alloc(16)
     mem.write_i64(rbuf2, 0, result)
     rf2: f32 = mem.load(f32)(rbuf2)
-    print("result=" .. to(str)(rf2))
+    print("result=" .. rf2:to(str))
     mem.free(rbuf2)
   elseif rtype == 0x7E
-    print("result=" .. to(str)(result))
+    print("result=" .. result:to(str))
   else
     -- i32 arms already mask their own results, so the slot is already a correct
     -- unsigned 32-bit value; masking again here only forces a boxed lua_band.
-    print("result=" .. to(str)(result))
+    print("result=" .. result:to(str))
   end
   print("seconds=" .. to(str)(t1 - t0))
 end

@@ -142,11 +142,11 @@ secs(ns: i64): str
     tenk: i64 = to(i64)((ns + 50000) / 100000)
     whole: i64 = to(i64)(tenk / 10000)
     frac: i64 = tenk % 10000
-    fs: str = to(str)(frac)
+    fs: str = frac:to(str)
     while #fs < 4
         fs = "0{fs}"
     end
-    ws: str = to(str)(whole)
+    ws: str = whole:to(str)
     "{ws}.{fs}"
 end
 
@@ -154,8 +154,8 @@ kib(n: i64): str
     tenths: i64 = to(i64)((n * 10 + 512) / 1024)
     whole: i64 = to(i64)(tenths / 10)
     frac: i64 = tenths % 10
-    ws: str = to(str)(whole)
-    fs: str = to(str)(frac)
+    ws: str = whole:to(str)
+    fs: str = frac:to(str)
     "{ws}.{fs}K"
 end
 
@@ -425,8 +425,8 @@ main(): i64
         merbin = which("wasmer")
         floor = "{root}/benchmarks/wasm_rt/min.wasm"
 
-        rs: str = to(str)(runs)
-        ss: str = to(str)(slack)
+        rs: str = runs:to(str)
+        ss: str = slack:to(str)
         print("runtime bench — ward vs wart vs wasmtime vs wasmer, five axes")
         print("  root      {root}")
         print("  runs      {rs} per cell, best of (minimum)")
@@ -583,10 +583,10 @@ main(): i64
         nflat: i64 = globcount("'{root}/benchmarks/wasm_rt/'*.wasm")
         nconform: i64 = globcount("'{root}/benchmarks/wasm_rt/conform/'*")
         nward: i64 = globcount("'{root}/tools/wasm/bench/'*.wasm")
-        a: str = lpad(to(str)(nscaled), 4)
-        b: str = lpad(to(str)(nflat), 4)
-        c: str = lpad(to(str)(nconform), 4)
-        d: str = lpad(to(str)(nward), 4)
+        a: str = lpad(nscaled:to(str), 4)
+        b: str = lpad(nflat:to(str), 4)
+        c: str = lpad(nconform:to(str), 4)
+        d: str = lpad(nward:to(str), 4)
         print("INVENTORY — every .wasm in both benchmark trees, measured or accounted for")
         print("  benchmarks/wasm_rt/scaled  {a}   all 6 measured, the scaled workload set")
         print("  benchmarks/wasm_rt         {b}   4 measured; the rest are WASI-shape")
@@ -620,14 +620,14 @@ main(): i64
         h4: str = lpad("files", 8)
         print(ind .. h1 .. h2 .. h3 .. h4 .. "   language")
         n1: str = pad("ward", 11)
-        n2: str = lpad(to(str)(wardwhole), 10)
-        n3: str = lpad(to(str)(wardcore), 10)
-        n4: str = lpad(to(str)(wardfiles), 8)
+        n2: str = lpad(wardwhole:to(str), 10)
+        n3: str = lpad(wardcore:to(str), 10)
+        n4: str = lpad(wardfiles:to(str), 8)
         print(ind .. n1 .. n2 .. n3 .. n4 .. "   duo")
         m1: str = pad("wart", 11)
-        m2: str = lpad(to(str)(wartwhole), 10)
-        m3: str = lpad(to(str)(wartcore), 10)
-        m4: str = lpad(to(str)(wartfiles), 8)
+        m2: str = lpad(wartwhole:to(str), 10)
+        m3: str = lpad(wartcore:to(str), 10)
+        m4: str = lpad(wartfiles:to(str), 8)
         print(ind .. m1 .. m2 .. m3 .. m4 .. "   zig")
         na: str = lpad("n/a", 10)
         nb: str = lpad("n/a", 8)
@@ -667,7 +667,7 @@ main(): i64
                 print(ind .. c1 .. c2 .. c3)
             else
                 sz: i64 = filesize(bin)
-                c2: str = lpad(to(str)(sz), 14)
+                c2: str = lpad(sz:to(str), 14)
                 c3: str = lpad(kib(sz), 10)
                 print(ind .. c1 .. c2 .. c3)
             end
@@ -898,7 +898,7 @@ main(): i64
     end
 
     if code == 0 and wrongs > 0
-        ws: str = to(str)(wrongs)
+        ws: str = wrongs:to(str)
         print("runtime bench: FAIL — {ws} answer mismatch(es) above.")
         print("  No timing table is printed. Comparing the speed of runtimes that")
         print("  disagree about the answer is the exact failure CLAUDE.md §3 records.")
@@ -908,7 +908,7 @@ main(): i64
     -- === EXECUTION ===
 
     if code == 0
-        rs: str = to(str)(runs)
+        rs: str = runs:to(str)
         print("EXECUTION — wall time, best of {rs}, harness floor INCLUDED.")
         print("  `vs best` is ward's time as a percentage of the FASTEST other runtime")
         print("  on that row. Within 5 percent either way is a TIE. `spread` is")
@@ -994,7 +994,7 @@ main(): i64
             end
             if nsward > 0 and rival > 0
                 pct: i64 = to(i64)(nsward * 100 / rival)
-                ps: str = to(str)(pct)
+                ps: str = pct:to(str)
                 ratio = "{ps}%"
                 if pct >= 95 and pct <= 105
                     verdict = "tie"
@@ -1114,16 +1114,16 @@ main(): i64
             end
         end
         print("")
-        wn: str = to(str)(wins)
-        ln: str = to(str)(losses)
-        tn: str = to(str)(ties)
+        wn: str = wins:to(str)
+        ln: str = losses:to(str)
+        tn: str = ties:to(str)
         print("  wins {wn} · losses {ln} · ties {tn} (within 5 percent either way)")
         print("")
     end
 
     if code == 0
-        rn: str = to(str)(regressions)
-        en: str = to(str)(eligible)
+        rn: str = regressions:to(str)
+        en: str = eligible:to(str)
         total: str = to(str)(#wname)
         if regressions > 0
             print("runtime bench: FAIL — {rn} of {en} unflagged row(s) regressed against")

@@ -595,7 +595,7 @@ poll_watch(path: str, callback: any, interval_ms: int): void
     while true do
         -- Sleep for interval
         sec = interval_ms / 1000.0
-        os.execute("sleep " .. to(str)(sec))
+        os.execute("sleep " .. sec:to(str))
 
         cur_mtime = get_mtime(path)
         cur_exists = cur_mtime != ""

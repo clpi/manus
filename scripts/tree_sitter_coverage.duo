@@ -122,7 +122,7 @@ main = (): i64
     -- swallow with `>/dev/null 2>&1`.
     genstatus = _shstatus(sdk, "cd " .. grammardir .. " && tree-sitter generate")
     if genstatus != 0
-        io.write("tree_sitter_coverage: FAIL — tree-sitter generate exited " .. to(str)(genstatus) .. "\n")
+        io.write("tree_sitter_coverage: FAIL — tree-sitter generate exited " .. genstatus:to(str) .. "\n")
         io.write(_sh(sdk, "cd " .. grammardir .. " && tree-sitter generate 2>&1 | head -40"))
         return 1
     end
@@ -170,19 +170,19 @@ main = (): i64
     fails = _failures(sdk, listfile)
     recognised = total - fails
     pct = (recognised * 1000) / total
-    print("tree_sitter_coverage: recognised " .. to(str)(recognised) .. " / " .. to(str)(total)
-        .. " (" .. to(str)(pct / 10) .. "." .. to(str)(pct % 10) .. "%), unrecognised " .. to(str)(fails)
-        .. ", ceiling " .. to(str)(ceiling))
+    print("tree_sitter_coverage: recognised " .. recognised:to(str) .. " / " .. total:to(str)
+        .. " (" .. to(str)(pct / 10) .. "." .. to(str)(pct % 10) .. "%), unrecognised " .. fails:to(str)
+        .. ", ceiling " .. ceiling:to(str))
 
     if fails > ceiling
-        io.write("tree_sitter_coverage: FAIL — " .. to(str)(fails) .. " unrecognised, ceiling is " .. to(str)(ceiling) .. "\n")
+        io.write("tree_sitter_coverage: FAIL — " .. fails:to(str) .. " unrecognised, ceiling is " .. ceiling:to(str) .. "\n")
         io.write("  the files that failed:\n")
         io.write(_sh(sdk, "cd " .. grammardir .. " && tree-sitter parse --quiet --paths '" .. listfile .. "' 2>/dev/null | sort -u | head -40"))
         return 1
     end
 
     if fails < ceiling
-        print("tree_sitter_coverage: ratchet may be lowered to " .. to(str)(fails))
+        print("tree_sitter_coverage: ratchet may be lowered to " .. fails:to(str))
     end
 
     print("tree_sitter_coverage: PASS")

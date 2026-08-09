@@ -8,14 +8,14 @@
 assert(condition: any, message: any): bool
     if condition return true end
     msg = "assertion failed"
-    if message != nil msg = msg .. ": " .. to(str)(message) end
+    if message != nil msg = msg .. ": " .. message:to(str) end
     error(msg)
 end
 
 -- assert_eq: assert two values are equal.
 assert_eq(actual: any, expected: any, message: any): bool
     if actual == expected return true end
-    msg = "expected " .. to(str)(expected) .. ", got " .. to(str)(actual)
+    msg = "expected " .. expected:to(str) .. ", got " .. actual:to(str)
     if message != nil msg = message .. " — " .. msg end
     error(msg)
 end
@@ -23,7 +23,7 @@ end
 -- assert_ne: assert two values are not equal.
 assert_ne(actual: any, expected: any, message: any): bool
     if actual != expected return true end
-    msg = "expected values to differ, both are " .. to(str)(actual)
+    msg = "expected values to differ, both are " .. actual:to(str)
     if message != nil msg = message .. " — " .. msg end
     error(msg)
 end
@@ -31,7 +31,7 @@ end
 -- assert_true: assert value is truthy.
 assert_true(value: any, message: any): bool
     if value != nil and value != false return true end
-    msg = "expected truthy value, got " .. to(str)(value)
+    msg = "expected truthy value, got " .. value:to(str)
     if message != nil msg = message .. " — " .. msg end
     error(msg)
 end
@@ -39,7 +39,7 @@ end
 -- assert_false: assert value is falsy.
 assert_false(value: any, message: any): bool
     if value == nil or value == false return true end
-    msg = "expected falsy value, got " .. to(str)(value)
+    msg = "expected falsy value, got " .. value:to(str)
     if message != nil msg = message .. " — " .. msg end
     error(msg)
 end
@@ -47,7 +47,7 @@ end
 -- assert_nil: assert value is nil.
 assert_nil(value: any, message: any): bool
     if value == nil return true end
-    msg = "expected nil, got " .. to(str)(value)
+    msg = "expected nil, got " .. value:to(str)
     if message != nil msg = message .. " — " .. msg end
     error(msg)
 end
@@ -65,7 +65,7 @@ end
 -- assert_gt: assert a > b.
 assert_gt(actual: any, expected: any, message: any): bool
     if actual > expected return true end
-    msg = "expected " .. to(str)(actual) .. " > " .. to(str)(expected)
+    msg = "expected " .. actual:to(str) .. " > " .. expected:to(str)
     if message != nil msg = message .. " — " .. msg end
     error(msg)
 end
@@ -73,7 +73,7 @@ end
 -- assert_gte: assert a >= b.
 assert_gte(actual: any, expected: any, message: any): bool
     if actual >= expected return true end
-    msg = "expected " .. to(str)(actual) .. " >= " .. to(str)(expected)
+    msg = "expected " .. actual:to(str) .. " >= " .. expected:to(str)
     if message != nil msg = message .. " — " .. msg end
     error(msg)
 end
@@ -81,7 +81,7 @@ end
 -- assert_lt: assert a < b.
 assert_lt(actual: any, expected: any, message: any): bool
     if actual < expected return true end
-    msg = "expected " .. to(str)(actual) .. " < " .. to(str)(expected)
+    msg = "expected " .. actual:to(str) .. " < " .. expected:to(str)
     if message != nil msg = message .. " — " .. msg end
     error(msg)
 end
@@ -89,7 +89,7 @@ end
 -- assert_lte: assert a <= b.
 assert_lte(actual: any, expected: any, message: any): bool
     if actual <= expected return true end
-    msg = "expected " .. to(str)(actual) .. " <= " .. to(str)(expected)
+    msg = "expected " .. actual:to(str) .. " <= " .. expected:to(str)
     if message != nil msg = message .. " — " .. msg end
     error(msg)
 end
@@ -97,7 +97,7 @@ end
 -- assert_in_range: assert value is within [lo, hi].
 assert_in_range(value: any, lo: any, hi: any, message: any): bool
     if value >= lo and value <= hi return true end
-    msg = "expected " .. to(str)(value) .. " in [" .. to(str)(lo) .. ", " .. to(str)(hi) .. "]"
+    msg = "expected " .. value:to(str) .. " in [" .. lo:to(str) .. ", " .. hi:to(str) .. "]"
     if message != nil msg = message .. " — " .. msg end
     error(msg)
 end
@@ -109,7 +109,7 @@ assert_match(str_val: any, pattern: any, message: any): bool
     if str_val == nil str_val = "" end
     found = string.find(str_val, pattern, 1)
     if found != nil return true end
-    msg = "expected string to match pattern '" .. pattern .. "', got '" .. to(str)(str_val) .. "'"
+    msg = "expected string to match pattern '" .. pattern .. "', got '" .. str_val:to(str) .. "'"
     if message != nil msg = message .. " — " .. msg end
     error(msg)
 end
@@ -118,7 +118,7 @@ end
 assert_contains(haystack: any, needle: any, message: any): bool
     if haystack == nil haystack = "" end
     if string.find(haystack, needle, 1, true) != nil return true end
-    msg = "expected string to contain '" .. to(str)(needle) .. "'"
+    msg = "expected string to contain '" .. needle:to(str) .. "'"
     if message != nil msg = message .. " — " .. msg end
     error(msg)
 end
@@ -167,7 +167,7 @@ assert_is_array(value: any, message: any): bool
     i = 2
     while i <= rawlen(value)
         if value[i] == nil
-            msg = "expected array but found hole at index " .. to(str)(i)
+            msg = "expected array but found hole at index " .. i:to(str)
             if message != nil msg = message .. " — " .. msg end
             error(msg)
         end
@@ -195,7 +195,7 @@ assert_len(value: any, expected_len: any, message: any): bool
         actual = rawlen(value)
     end
     if actual == expected_len return true end
-    msg = "expected length " .. to(str)(expected_len) .. ", got " .. to(str)(actual)
+    msg = "expected length " .. expected_len:to(str) .. ", got " .. actual:to(str)
     if message != nil msg = message .. " — " .. msg end
     error(msg)
 end
@@ -250,7 +250,7 @@ assert_in(value: any, list: any, message: any): bool
         if list[i] == value return true end
         i += 1
     end
-    msg = "expected " .. to(str)(value) .. " to be in list"
+    msg = "expected " .. value:to(str) .. " to be in list"
     if message != nil msg = message .. " — " .. msg end
     error(msg)
 end
@@ -310,7 +310,7 @@ end
 -- soft_assert_eq: record an equality failure.
 soft_assert_eq(collector: any, actual: any, expected: any, message: any): void
     if actual == expected return end
-    msg = "expected " .. to(str)(expected) .. ", got " .. to(str)(actual)
+    msg = "expected " .. expected:to(str) .. ", got " .. actual:to(str)
     if message != nil msg = message .. " — " .. msg end
     collector.failures[rawlen(collector.failures) + 1] = msg
 end

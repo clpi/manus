@@ -197,8 +197,8 @@ main = (): i64
     end
 
     print("")
-    print("=== Results: " .. to(str)(_pass) .. " passed, " .. to(str)(_fail) .. " failed, "
-        .. to(str)(_skip) .. " skipped ===")
+    print("=== Results: " .. _pass:to(str) .. " passed, " .. _fail:to(str) .. " failed, "
+        .. _skip:to(str) .. " skipped ===")
     if _fail > 0
         os.exit(1)
     end

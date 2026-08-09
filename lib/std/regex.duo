@@ -68,7 +68,7 @@ error_message(errcode: int): str
     buf = string.rep(" ", 256)
     rc = pcre2_get_error_message_8(errcode, buf, 256)
     if rc < 0
-        return "PCRE2 error " .. to(str)(errcode)
+        return "PCRE2 error " .. errcode:to(str)
     end
     buf:sub(1, rc)
 end

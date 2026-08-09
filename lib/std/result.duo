@@ -15,7 +15,7 @@ err(message: any): any
     if type(message) == "table" and message.message != nil
         return {kind = "err", value = nil, err = message}
     end
-    {kind = "err", value = nil, err = {message = to(str)(message), cause = nil, kind = "error"}}
+    {kind = "err", value = nil, err = {message = message:to(str), cause = nil, kind = "error"}}
 end
 
 -- is_ok: returns true if the result is ok.
@@ -99,7 +99,7 @@ end
 result_to_str(r: any): str
     if r == nil return "Result(nil)" end
     if r.kind == "ok"
-        return "Ok(" .. to(str)(r.value) .. ")"
+        return "Ok(" .. r.value:to(str) .. ")"
     end
     msg = ""
     if has(.err)(r) and r.err.message != nil
@@ -177,7 +177,7 @@ end
 -- option_to_string: human-readable representation.
 option_to_str(o: any): str
     if o == nil or o.kind != "some" return "None" end
-    return "Some(" .. to(str)(o.value) .. ")"
+    return "Some(" .. o.value:to(str) .. ")"
 end
 
 -- ===== Batch utilities =====

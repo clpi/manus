@@ -77,10 +77,10 @@ main = (): i64
     code = std.script.status(_OUT)
     if code != 2
         print("pass11_spill_smoke: FAIL — expected exit 2 (v0+v21 with >20 live locals), got exit="
-            .. to(str)(code))
+            .. code:to(str))
         return 1
     end
 
-    print("pass11_spill_smoke: PASS — spill lowering + runtime (exit=" .. to(str)(code) .. ")")
+    print("pass11_spill_smoke: PASS — spill lowering + runtime (exit=" .. code:to(str) .. ")")
     0
 end

@@ -249,9 +249,9 @@ main(): i64
         i = i + 1
     end
     body = body .. "}\n"
-    body = body .. "-- Roles 1.." .. to(str)(nclosed) .. " are the closed set coverage is measured over; the rest\n"
+    body = body .. "-- Roles 1.." .. nclosed:to(str) .. " are the closed set coverage is measured over; the rest\n"
     body = body .. "-- are roles.md §3 and do NOT count toward coverage (§7).\n"
-    body = body .. "io.lsp.closed = " .. to(str)(nclosed) .. "\n"
+    body = body .. "io.lsp.closed = " .. nclosed:to(str) .. "\n"
     body = body .. closer
 
     target = "{root}/tools/lsp/src/server.duo"

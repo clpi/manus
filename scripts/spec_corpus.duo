@@ -75,8 +75,15 @@ control = "examples/spec100/stubs/control.duo"
 -- `shc/lex.duo` was waiting on.
 -- blocks 2 -> 5: `shc/lex.duo` and `shc/parse.duo` join their module and the
 -- §19 descent stubs; `tool/wordcount.duo` gets its shebang onto line 1.
+-- 17 -> 18: `convert`, Pass 121 §9's conversion edge at the receiver. It went
+-- green because `str -> i64` started building at all — gaps/GAP-081.md found
+-- it failing in BOTH faces on a typed `str`, which is why the tree is written
+-- 1647:1 in the noncanonical orientation and why the census was never only
+-- about taste. The fixture asserts 2^53 + 1 for the reason all of these carry
+-- a value: a conversion detouring through a double answers 9007199254740992
+-- and reads as correct.
 blockfloor = 5
-formfloor = 17
+formfloor = 18
 
 fence = "^```"
 

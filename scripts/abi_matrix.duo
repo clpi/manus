@@ -104,10 +104,10 @@ main(): i64
         return 3
     end
 
-    okstr = to(str)(ok)
-    wrongstr = to(str)(wrong)
-    bailstr = to(str)(bail)
-    nocstr = to(str)(noc)
+    okstr = ok:to(str)
+    wrongstr = wrong:to(str)
+    bailstr = bail:to(str)
+    nocstr = noc:to(str)
     print("ABI shape matrix (generated call shapes, C backend as oracle)")
     print("  agree         {okstr}   both backends returned the same value")
     print("  MISCOMPILE    {wrongstr}   direct compiled and answered WRONG")
@@ -121,12 +121,12 @@ main(): i64
 
     ceiling: i64 = to(i64)(std.script.getenv("MISCOMPILE_CEILING", "0"))
     if wrong > ceiling
-        ceilstr = to(str)(ceiling)
+        ceilstr = ceiling:to(str)
         print("abi_matrix: FAIL — {wrongstr} wrong answers exceeds the ceiling {ceilstr}")
         return 1
     end
     if wrong < ceiling
-        ceilstr2 = to(str)(ceiling)
+        ceilstr2 = ceiling:to(str)
         print("abi_matrix: PASS — {wrongstr} wrong, BELOW the ceiling {ceilstr2}. Lower MISCOMPILE_CEILING in this commit.")
         return 0
     end

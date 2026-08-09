@@ -194,9 +194,9 @@ end
 
 row(name: str, sites: i64, mods: i64, rest: i64, note: str): void
     a = pad(name, 8)
-    b = pad(to(str)(sites), 7)
-    c = pad(to(str)(mods), 7)
-    d = pad(to(str)(rest), 9)
+    b = pad(sites:to(str), 7)
+    c = pad(mods:to(str), 7)
+    d = pad(rest:to(str), 9)
     print("  {a}{b}{c}{d}  {note}")
 end
 

@@ -394,7 +394,7 @@ _render(text: str, tag: str, body: str): str
         end
     end
     if seen != 1
-        print("*** region '" .. tag .. "' appears " .. to(str)(seen) .. " times, expected 1 ***")
+        print("*** region '" .. tag .. "' appears " .. seen:to(str) .. " times, expected 1 ***")
         os.exit(1)
     end
     -- Splitting a "…\n"-terminated text yields a trailing empty element, which
@@ -422,8 +422,8 @@ _agree(path: str): i64
                 end
             end
             if got != want
-                print("*** " .. nm .. ": canonical table says " .. to(str)(want)
-                    .. ", tools/opcodes.duo says " .. to(str)(got) .. " ***")
+                print("*** " .. nm .. ": canonical table says " .. want:to(str)
+                    .. ", tools/opcodes.duo says " .. got:to(str) .. " ***")
                 os.exit(1)
             end
             checked += 1
@@ -518,7 +518,7 @@ main(): i64
         print("*** parsed 0 rows out of " .. canon .. "; the agreement check is broken ***")
         return 1
     end
-    print("agrees with duo's canonical table on " .. to(str)(n) .. " opcode(s)")
+    print("agrees with duo's canonical table on " .. n:to(str) .. " opcode(s)")
 
     target = "src/engine.duo"
     before = std.script.fs_read(target)

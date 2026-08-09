@@ -55,7 +55,7 @@ _scan(text: str): str
             end
         end
     end
-    to(str)(code) .. "|" .. to(str)(derived)
+    code:to(str) .. "|" .. derived:to(str)
 end
 
 _part(s: str, n: i64): i64
@@ -141,7 +141,7 @@ _selfcheck(): bool
     facts = "if op == 106\nfop = 0x3800\n-- derived(t) begin\nOP_nop = 1\n-- derived end\nif op >= 40\n"
     f = _format_facts(facts)
     if f != 2
-        print("selfcheck: expected 2 opcode predicates in the probe, got " .. to(str)(f))
+        print("selfcheck: expected 2 opcode predicates in the probe, got " .. f:to(str))
         print("  (the probe holds one `==`, one `>=`, one assignment, one derived line)")
         return false
     end
@@ -170,7 +170,7 @@ main(): i64
     derived = _part(r, 2)
 
     print(_pad("FILE", 30) .. _pad("CODE", 8) .. _pad("DERIVED", 9) .. "SHIPS")
-    print(_pad(built, 30) .. _pad(to(str)(code), 8) .. _pad(to(str)(derived), 9) .. "yes")
+    print(_pad(built, 30) .. _pad(code:to(str), 8) .. _pad(derived:to(str), 9) .. "yes")
 
     -- Everything under src/ that is NOT required by the built artifact. These
     -- are reported so the number cannot be flattered by counting dead trees
@@ -185,17 +185,17 @@ main(): i64
     end
 
     print("")
-    print("shipped code lines   " .. to(str)(code))
-    print("derived code lines   " .. to(str)(derived))
+    print("shipped code lines   " .. code:to(str))
+    print("derived code lines   " .. derived:to(str))
     if code > 0
         print("derived ratio        " .. to(str)(derived * 100 / code)
             .. "%   (Pass 101 target >= 80%)")
     end
-    print("orphan code lines    " .. to(str)(orphan) .. "  (in src/wasm/, required by nothing)")
+    print("orphan code lines    " .. orphan:to(str) .. "  (in src/wasm/, required by nothing)")
 
     facts = _format_facts(std.script.fs_read(built))
     print("")
-    print("hand-encoded WASM opcode predicates in the shipped file: " .. to(str)(facts))
+    print("hand-encoded WASM opcode predicates in the shipped file: " .. facts:to(str))
     print("  was 241 on 2026-08-08, before the dispatch was projected from")
     print("  tools/opcodes.duo. The residue is 3 known false positives on the")
     print("  `f64op` width flag, kept as the scanner's floor -- see the comment")

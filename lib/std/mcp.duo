@@ -142,7 +142,7 @@ mcp_serve(): void
         elseif msg.method == "ping"
             mcp_send_response(msg.id, {})
         elseif has(.id)(msg)
-            mcp_send_error(msg.id, -32601, "Method not found: " .. to(str)(msg.method))
+            mcp_send_error(msg.id, -32601, "Method not found: " .. msg.method:to(str))
         end
     end
 end

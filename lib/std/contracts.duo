@@ -509,8 +509,8 @@ end
 coverage_report(coverage: any): str
   lines: any = {}
   lines[1] = "ok=" .. bool_text(coverage.ok)
-  lines[2] = "matched=" .. to(str)(coverage.matched_count)
-  lines[3] = "missing=" .. to(str)(coverage.missing_count)
+  lines[2] = "matched=" .. coverage.matched_count:to(str)
+  lines[3] = "missing=" .. coverage.missing_count:to(str)
   if coverage.missing_count > 0
     lines[#lines + 1] = "missing " .. coverage.missing
   end

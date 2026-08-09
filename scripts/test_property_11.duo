@@ -192,7 +192,7 @@ local result: i32 = apply(increment, 41)
 
     print("")
     if _fails > 0
-        print("[Property 11] FAIL — " .. to(str)(_fails) .. " module(s)/assertion(s) failed")
+        print("[Property 11] FAIL — " .. _fails:to(str) .. " module(s)/assertion(s) failed")
         return 1
     end
     print("[Property 11] SUCCESS")

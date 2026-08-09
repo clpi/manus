@@ -42,11 +42,11 @@ _norm(s: str): str
         if u < 0
             u = u + 4294967296
         end
-        return to(str)(u)
+        return u:to(str)
     end
     -- Non-integral: normalise through one f64 round trip so both sides print
     -- with the same precision.
-    to(str)(f)
+    f:to(str)
 end
 
 -- A module whose real answer is what it PRINTS (via fd_write) is compared on
@@ -199,10 +199,10 @@ main(): i64
     end
 
     _rule()
-    print("the engine agrees with wasmtime on " .. to(str)(pass) .. " module(s); "
-        .. to(str)(fail) .. " unsupported-or-wrong; "
-        .. to(str)(void_ok) .. " void-export completed; "
-        .. to(str)(skip) .. " skipped")
+    print("the engine agrees with wasmtime on " .. pass:to(str) .. " module(s); "
+        .. fail:to(str) .. " unsupported-or-wrong; "
+        .. void_ok:to(str) .. " void-export completed; "
+        .. skip:to(str) .. " skipped")
 
     -- JIT COVERAGE FLOOR. A JIT that stops compiling falls back to the
     -- interpreter and still produces correct answers, so a purely
@@ -213,9 +213,9 @@ main(): i64
     -- legitimately compiles nothing.
     if engine == "jit"
         floor: i64 = to(i64)(std.script.getenv("JIT_FLOOR", "34"))
-        print("jit-compiled: " .. to(str)(jitn) .. " module(s) (floor " .. to(str)(floor) .. ")")
+        print("jit-compiled: " .. jitn:to(str) .. " module(s) (floor " .. floor:to(str) .. ")")
         if jitn < floor
-            print("*** JIT COVERAGE REGRESSION: " .. to(str)(jitn) .. " < " .. to(str)(floor)
+            print("*** JIT COVERAGE REGRESSION: " .. jitn:to(str) .. " < " .. floor:to(str)
                 .. " -- the JIT is silently falling back ***")
             return 1
         end

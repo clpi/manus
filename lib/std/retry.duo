@@ -70,7 +70,7 @@ do_retry(max_attempts: i64, backoff_fn: any, fn_ref: any): any
             return {ok = result, attempts = attempt}
         end
         if not ok
-            last_error = to(str)(result)
+            last_error = result:to(str)
         end
         if attempt < max_attempts
             wait = backoff_fn(attempt)
@@ -93,7 +93,7 @@ do_retry_bool(max_attempts: i64, backoff_fn: any, fn_ref: any): any
             return {ok = true, attempts = attempt}
         end
         if not ok
-            last_error = to(str)(result)
+            last_error = result:to(str)
         end
         if attempt < max_attempts
             wait = backoff_fn(attempt)
@@ -127,7 +127,7 @@ retry_if(max_attempts: i64, backoff_fn: any, condition: any, fn_ref: any): any
             return {ok = result, attempts = attempt}
         end
         if not ok
-            last_error = to(str)(result)
+            last_error = result:to(str)
             if not condition(last_error)
                 return {ok = nil, error = last_error, attempts = attempt}
             end
@@ -192,7 +192,7 @@ circuit_call(cb: any, fn_ref: any): any
     if cb.failures >= cb.threshold
         cb.state = "open"
     end
-    {ok = nil, error = to(str)(result)}
+    {ok = nil, error = result:to(str)}
 end
 
 -- circuit_state: return the current state of the circuit breaker.

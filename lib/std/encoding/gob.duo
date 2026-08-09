@@ -69,7 +69,7 @@ encode(v: any, out: any): void
             out[rawlen(out) + 1] = string.char(TAG_TABLE)
             encode_int(count, out)
             for k, val in v
-                encode(to(str)(k), out)
+                encode(k:to(str), out)
                 encode(val, out)
             end
         end

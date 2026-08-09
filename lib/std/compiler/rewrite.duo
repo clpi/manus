@@ -144,7 +144,7 @@ _fold_once = (src: str): str
                     cand = src:sub(i, e)
                     if C.foldable(cand)
                         v: i64 = C.fold(cand)
-                        rep = to(str)(v)
+                        rep = v:to(str)
                         if C.foldable(rep) and C.fold(rep) == v
                             out = out .. rep
                             i = e + 1

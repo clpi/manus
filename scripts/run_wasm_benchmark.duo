@@ -55,11 +55,11 @@ _fx(x: f64, places: i64): str
     n = to(i64)(v * to(f64)(scale) + 0.5)
     w = n / scale
     f = n % scale
-    fs = to(str)(f)
+    fs = f:to(str)
     while #fs < places
         fs = "0" .. fs
     end
-    s = to(str)(w) .. "." .. fs
+    s = w:to(str) .. "." .. fs
     if neg return "-" .. s end
     s
 end
@@ -88,7 +88,7 @@ _result_block(text: str): str
             n = n + 1
         end
     end
-    out .. "__n " .. to(str)(n)
+    out .. "__n " .. n:to(str)
 end
 
 _result_count(block: str): i64
@@ -143,7 +143,7 @@ _save_baseline(path: str, names: any, times: any, runs: i64): void
     body = "# Duo WASM Runtime Benchmark Baseline\n"
         .. "# Generated: " .. std.script.chomp(std.script.capture("date -u '+%Y-%m-%d %H:%M:%S UTC'")) .. "\n"
         .. "# Commit: " .. commit .. "\n"
-        .. "# Runs per runtime: " .. to(str)(runs) .. "\n#\n"
+        .. "# Runs per runtime: " .. runs:to(str) .. "\n#\n"
         .. "# runtime  total_wall_seconds\n"
     for i, n in names
         body = body .. _pad(n, 12) .. "  " .. _fx(times[i], 3) .. "\n"
@@ -233,10 +233,10 @@ main = (): i64
     first = _result_block(std.script.capture(cmds[1] .. " 2>/dev/null"))
     n = _result_count(first)
     if n != _BENCHES
-        print("ERROR: Expected " .. to(str)(_BENCHES) .. " RESULT lines, got " .. to(str)(n) .. ".")
+        print("ERROR: Expected " .. _BENCHES:to(str) .. " RESULT lines, got " .. n:to(str) .. ".")
         os.exit(1)
     end
-    print("  PASS All " .. to(str)(_BENCHES) .. " RESULT lines present")
+    print("  PASS All " .. _BENCHES:to(str) .. " RESULT lines present")
 
     -- Two runtimes disagreeing on a RESULT is a wasm codegen bug, not a
     -- performance note, so it fails before any timing is reported.
@@ -251,7 +251,7 @@ main = (): i64
     end
 
     print("")
-    print("=== Timing (min of " .. to(str)(runs) .. " runs, wall-clock seconds) ===")
+    print("=== Timing (min of " .. runs:to(str) .. " runs, wall-clock seconds) ===")
     times = {}
     for i2, nm in names
         print("  INFO Timing " .. nm .. "...")

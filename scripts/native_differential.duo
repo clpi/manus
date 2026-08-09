@@ -105,10 +105,10 @@ main = (): i64
                 c_rc = _run_binary(c_bin)
                 if direct_rc == 124
                     _fail(name .. ": direct backend HUNG (>" .. run_timeout .. "s) — c="
-                        .. to(str)(c_rc))
+                        .. c_rc:to(str))
                 else
                     if direct_rc != c_rc
-                        _fail(name .. ": c=" .. to(str)(c_rc) .. " direct=" .. to(str)(direct_rc))
+                        _fail(name .. ": c=" .. c_rc:to(str) .. " direct=" .. direct_rc:to(str))
                     else
                         _agree = _agree + 1
                     end
@@ -133,8 +133,8 @@ main = (): i64
                 _fail(name .. ": direct backend failed to compile (native_only)")
             else
                 actual = _run_binary(bin)
-                if to(str)(actual) != expected
-                    _fail(name .. ": expected " .. expected .. ", got " .. to(str)(actual)
+                if actual:to(str) != expected
+                    _fail(name .. ": expected " .. expected .. ", got " .. actual:to(str)
                         .. " (native_only)")
                 else
                     _agree = _agree + 1
@@ -167,13 +167,13 @@ main = (): i64
                     .. " (promote it into the corpus)")
             else
                 print("native_differential: known divergence — " .. name
-                    .. " (c=" .. to(str)(c) .. " direct=" .. to(str)(d) .. ")")
+                    .. " (c=" .. c:to(str) .. " direct=" .. d:to(str) .. ")")
             end
         end
     end
 
-    print("native_differential: " .. to(str)(_agree) .. " agree, " .. to(str)(_diverge)
-        .. " diverge, " .. to(str)(unsupported_count) .. " unsupported (corpus: " .. corpus .. ")")
+    print("native_differential: " .. _agree:to(str) .. " agree, " .. _diverge:to(str)
+        .. " diverge, " .. unsupported_count:to(str) .. " unsupported (corpus: " .. corpus .. ")")
 
     if _diverge != 0
         print("native_differential: FAIL")

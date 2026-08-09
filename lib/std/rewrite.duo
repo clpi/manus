@@ -130,11 +130,11 @@ apply_all(): str
     for i = 1, rule_count
         if rules[i].enabled
             r = rules[i]
-            lines[#lines + 1] = "  [" .. to(str)(r.priority) .. "] " .. r.name .. ": " .. r.pattern .. " -> " .. r.replacement
+            lines[#lines + 1] = "  [" .. r.priority:to(str) .. "] " .. r.name .. ": " .. r.pattern .. " -> " .. r.replacement
             applied = applied + 1
         end
     end
-    "/* [rewrite] " .. to(str)(applied) .. " rules registered */\n" .. str_join(lines, "\n")
+    "/* [rewrite] " .. applied:to(str) .. " rules registered */\n" .. str_join(lines, "\n")
 end
 
 -- describe_bundle: compile-time bundle metadata (folds to native C string).
@@ -155,7 +155,7 @@ summary(): str
         status = r.enabled and "on" or "off"
         parts[#parts + 1] = "  [" .. status .. "] " .. r.name .. ": " .. r.pattern .. " -> " .. r.replacement
     end
-    "Rewrite rules (" .. to(str)(rule_count) .. "):\n" .. str_join(parts, "\n")
+    "Rewrite rules (" .. rule_count:to(str) .. "):\n" .. str_join(parts, "\n")
 end
 
 -- clear: remove all rules

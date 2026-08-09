@@ -876,6 +876,24 @@ pub fn build(b: *std.Build) void {
     const boring_corpus_step = b.step("boring-corpus", "Pass 106: everyday programs + the measured numerics/text pages, ratcheted");
     boring_corpus_step.dependOn(&boring_corpus_cmd.step);
 
+    // GAP-081: the conversion edge, by VALUE. Both faces, both lowerings, and
+    // the input that used to answer 0 — a conversion that compiles and reports
+    // 0 for "abc" is the failure mode this tree already paid for once, so
+    // "17 -> 17" is only half of what this asserts.
+    const convert_proof_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/convert_proof.duo" });
+    convert_proof_cmd.step.dependOn(b.getInstallStep());
+    convert_proof_cmd.setCwd(b.path("."));
+    const convert_proof_step = b.step("convert-proof", "GAP-081: str -> i64 in both faces and both lowerings, and a refusal on non-numeric input");
+    convert_proof_step.dependOn(&convert_proof_cmd.step);
+
+    // The canonicalizer itself, DRY RUN. It reports what it would rewrite and
+    // writes nothing; `CONVERTCANON_APPLY=1` is the only thing that writes.
+    const convert_canon_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/convert_canon.duo" });
+    convert_canon_cmd.step.dependOn(b.getInstallStep());
+    convert_canon_cmd.setCwd(b.path("."));
+    const convert_canon_step = b.step("convert-canon", "Pass 121 §17: rewrite to(str) sites to the receiver face, witnessed (dry run)");
+    convert_canon_step.dependOn(&convert_canon_cmd.step);
+
     const direct_link_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/direct_module_link_proof.duo" });
     direct_link_cmd.step.dependOn(b.getInstallStep());
     direct_link_cmd.setCwd(b.path("."));

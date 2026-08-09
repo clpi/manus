@@ -59,7 +59,7 @@ lpad(s: str, w: i64): str
 end
 
 digits(n: i64, w: i64): str
-    o = to(str)(n)
+    o = n:to(str)
     while #o < w
         o = "0{o}"
     end
@@ -160,7 +160,7 @@ cc = std.script.getenv("CC", "clang")
 stripbin = std.script.getenv("STRIP", "strip")
 runs = to(i64)(std.script.getenv("RUNS", "5"))
 chainmid = to(i64)(std.script.getenv("CHAIN_FUNCS", "180"))
-chainsmall = to(i64)(std.script.getenv("CHAIN_FUNCS_1K", to(str)(chainmid)))
+chainsmall = to(i64)(std.script.getenv("CHAIN_FUNCS_1K", chainmid:to(str)))
 chainbig = to(i64)(std.script.getenv("CHAIN_FUNCS_10K", "1500"))
 uname = sh("uname -s")
 
@@ -418,12 +418,12 @@ pairrows(name: str, duosrc: str, csrc: str, duoout: str, cout: str,
     cbytes: i64 = sizeat(csrc)
     duosize: i64 = sizeat(duoout)
     csize: i64 = sizeat(cout)
-    row(name, "source_lines", to(str)(duolines), to(str)(clines),
+    row(name, "source_lines", duolines:to(str), clines:to(str),
         ratio(duolines, clines))
-    row(name, "source_bytes", to(str)(duobytes), to(str)(cbytes),
+    row(name, "source_bytes", duobytes:to(str), cbytes:to(str),
         ratio(duobytes, cbytes))
     row(name, "compile_s", secs(duons), secs(cns), ratio(duons, cns))
-    row(name, "binary_bytes", to(str)(duosize), to(str)(csize),
+    row(name, "binary_bytes", duosize:to(str), csize:to(str),
         ratio(duosize, csize))
 end
 
@@ -509,7 +509,7 @@ mlbinary(floor: i64): void
     pairrows(name, duosrc, csrc, duoout, cout, duons, cns)
     duostrip: i64 = strippedsize(duoout, "{work}/ml_bench_duo_stripped")
     cstrip: i64 = strippedsize(cout, "{work}/ml_bench_c_stripped")
-    row(name, "stripped_bytes", to(str)(duostrip), to(str)(cstrip),
+    row(name, "stripped_bytes", duostrip:to(str), cstrip:to(str),
         ratio(duostrip, cstrip))
     resultrow(name, "5_rows_match")
 end
@@ -528,11 +528,11 @@ duoapp(name: str, duosrc: str, sentinel: str, floor: i64): void
     duobytes: i64 = sizeat(duosrc)
     duosize: i64 = sizeat(duoout)
     duostrip: i64 = strippedsize(duoout, duostripped)
-    lone(name, "source_lines", to(str)(duolines))
-    lone(name, "source_bytes", to(str)(duobytes))
+    lone(name, "source_lines", duolines:to(str))
+    lone(name, "source_bytes", duobytes:to(str))
     lone(name, "compile_s", secs(duons))
-    lone(name, "binary_bytes", to(str)(duosize))
-    lone(name, "stripped_bytes", to(str)(duostrip))
+    lone(name, "binary_bytes", duosize:to(str))
+    lone(name, "stripped_bytes", duostrip:to(str))
     resultrow(name, "sentinel_match")
 end
 

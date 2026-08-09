@@ -67,15 +67,15 @@ _norm(t: str, s: any): str
     if type(s) == "table"
         parts = {}
         for _i, x in s
-            parts[#parts + 1] = to(str)(x)
+            parts[#parts + 1] = x:to(str)
         end
         return "v128:" .. table.concat(parts, ",")
     end
     if s == "nan:canonical" or s == "nan:arithmetic" return "nan" end
     n = to(i64)(s)
-    if n == nil return to(str)(s) end
+    if n == nil return s:to(str) end
     if t == "i32" or t == "f32" return to(str)(n & _MASK32) end
-    to(str)(n)
+    n:to(str)
 end
 
 -- One argument as a scalar string. v128 lanes arrive as a list and are not
@@ -83,7 +83,7 @@ end
 -- unrunnable rather than crashing or silently passing.
 _arg_str(v: any): str
     if type(v) == "table" return "" end
-    to(str)(v)
+    v:to(str)
 end
 
 main = (): i64
@@ -208,7 +208,7 @@ main = (): i64
                                                 if want == "nan" and _is_nan_bits(et, n)
                                                     have = "nan"
                                                 else
-                                                    have = to(str)(n)
+                                                    have = n:to(str)
                                                 end
                                             end
                                             if have == want
@@ -250,9 +250,9 @@ main = (): i64
     -- divergence on every run.
     if executed > 0 pct = (tot_ok * 1000 + executed / 2) / executed end
     print("")
-    print("executed " .. to(str)(executed) .. " assertions: " .. to(str)(tot_ok)
-        .. " pass, " .. to(str)(tot_bad) .. " fail (" .. to(str)(pct / 10) .. "."
-        .. to(str)(pct % 10) .. "% conformance); " .. to(str)(tot_skip)
+    print("executed " .. executed:to(str) .. " assertions: " .. tot_ok:to(str)
+        .. " pass, " .. tot_bad:to(str) .. " fail (" .. to(str)(pct / 10) .. "."
+        .. to(str)(pct % 10) .. "% conformance); " .. tot_skip:to(str)
         .. " skipped (validation-only)")
 
     if #fails > 0

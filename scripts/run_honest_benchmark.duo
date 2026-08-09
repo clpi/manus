@@ -49,11 +49,11 @@ _fx(x: f64, places: i64): str
     n = to(i64)(x * to(f64)(scale) + 0.5)
     w = n / scale
     f = n % scale
-    fs = to(str)(f)
+    fs = f:to(str)
     while #fs < places
         fs = "0" .. fs
     end
-    to(str)(w) .. "." .. fs
+    w:to(str) .. "." .. fs
 end
 
 _fields(l: str): any
@@ -83,7 +83,7 @@ _rows(text: str, tag: str): any
             n = n + 1
         end
     end
-    r["__n"] = to(str)(n)
+    r["__n"] = n:to(str)
     r
 end
 
@@ -126,9 +126,9 @@ main = (): i64
     -- A short RESULT set is a failed run wearing the costume of a passing one:
     -- with zero rows every comparison below is vacuously satisfied.
     for _i, p in {{"Duo", dres}, {"C", cres}}
-        if p[2]["__n"] != to(str)(_ROWS)
+        if p[2]["__n"] != _ROWS:to(str)
             return _fail(p[1] .. " RESULT count mismatch: got " .. p[2]["__n"]
-                .. " expected " .. to(str)(_ROWS))
+                .. " expected " .. _ROWS:to(str))
         end
     end
 
@@ -168,13 +168,13 @@ main = (): i64
     dmin = {}
     cmin = {}
     for _j, pair in {{"Duo", dbin, dmin}, {"C", cbin, cmin}}
-        print("Running " .. pair[1] .. " (" .. to(str)(_RUNS) .. " iterations)...")
+        print("Running " .. pair[1] .. " (" .. _RUNS:to(str) .. " iterations)...")
         r = 0
         while r < _RUNS
             t = _rows(std.script.capture("HONEST_SEED=" .. seed .. " " .. pair[2] .. " 2>/dev/null"), "Time")
-            if t["__n"] != to(str)(_ROWS)
+            if t["__n"] != _ROWS:to(str)
                 return _fail(pair[1] .. " timing run " .. to(str)(r + 1)
-                    .. " Time count mismatch: got " .. t["__n"] .. " expected " .. to(str)(_ROWS))
+                    .. " Time count mismatch: got " .. t["__n"] .. " expected " .. _ROWS:to(str))
             end
             for k, v in t
                 if k != "__n"
@@ -194,7 +194,7 @@ main = (): i64
     end
 
     print("")
-    print("--- Results (min of " .. to(str)(_RUNS) .. " runs) ---")
+    print("--- Results (min of " .. _RUNS:to(str) .. " runs) ---")
     print("")
     print(_pad("Benchmark", 16) .. " " .. _lpad("Duo(s)", 12) .. " " .. _lpad("C(s)", 12)
         .. " " .. _lpad("Ratio", 10) .. " " .. _lpad("Winner", 8))
