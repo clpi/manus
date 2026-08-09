@@ -1983,3 +1983,224 @@ nominal = law{
     }
     fails = "a descriptor that cannot inhabit a value"
 }
+
+-- ═══ §47 · C-DOMINANCE — C is a CANDIDATE, not the ceiling ═════════════════
+--
+-- THE HONEST QUALIFICATION FIRST, because the goal as usually stated cannot be
+-- met: no compiler can guarantee that EVERY duon program beats EVERY
+-- hand-written C program on every machine and every metric. A human can write
+-- assembly, exploit undocumented behaviour, or choose a workload built to
+-- defeat one optimizer.
+--
+-- What IS achievable, and is strictly stronger than benchmarking:
+--
+--   For every duon program whose semantics are no stronger than an equivalent
+--   C program, the compiler must be able to produce machine code NO WORSE than
+--   the best C realization in its candidate set — while exploiting semantic
+--   facts unavailable to C where they exist.
+--
+-- THE MECHANISM. C stops being the ceiling and becomes ONE CANDIDATE
+-- REALIZATION. For any semantic fragment the compiler holds several: duon
+-- native lowering, a C-equivalent scalar lowering, simd, an intrinsic, a
+-- generated sequence, a library call, a profile-guided version. It costs them
+-- and picks. If duon-native is worse, IT PICKS THE C-EQUIVALENT ONE.
+--
+--   duon semantic information  >=  C semantic information
+--   candidate set              includes the C-equivalent realization
+--   chosen                     = min cost over candidates
+--
+-- Duon cannot lose, because it keeps the fallback. That is monotonicity rather
+-- than optimism, and it is why this is architecture and not a benchmark claim.
+
+cfloor = law{
+    id    = "law.c.floor"
+    kind  = .invariant
+    holds = .candidate
+    binds = {
+        "wherever a C-equivalent realization exists it is a BASELINE CANDIDATE",
+        "native duon must MEET OR BEAT that baseline before replacing it",
+        "C is a candidate, never the optimization ceiling",
+    }
+    fails = "a native lowering that ships because it is native"
+}
+
+perffloor = law{
+    id    = "law.perf.floor"
+    kind  = .invariant
+    holds = .retained
+    binds = {
+        "a conservative baseline realization is RETAINED",
+        "until another candidate is proven or measured superior",
+        "under the ACTIVE objective, never under a default one",
+    }
+}
+
+perfdominance = law{
+    id    = "law.perf.dominance"
+    kind  = .invariant
+    holds = .monotone
+    binds = {
+        "adding semantic facts may NEVER reduce the realization set",
+        "it may only remove semantically INVALID candidates, or add stronger ones",
+    }
+    fails = "a fact that makes the compiler forget an option it had"
+}
+
+-- Every rewrite carries these, and a candidate replaces another ONLY when
+-- correctness is proven AND cost does not rise for the chosen objective. Where
+-- uncertain, KEEP BOTH and dispatch — monotonic optimization rather than
+-- heuristic optimism.
+rewrite.carries = { "requires", "preserves", "cost", "witness", "descent" }
+
+-- PERFORMANCE IS NOT ONE NUMBER. A realization DOMINATES another when it is no
+-- worse on every relevant dimension and strictly better on one — a Pareto
+-- frontier, never a magical scalar.
+cost.dimensions = {
+    "latency", "throughput", "code size", "compile time", "peak memory",
+    "allocations", "cache footprint", "branch misses", "energy", "startup",
+    "binary size", "tail latency",
+}
+
+-- THREE THINGS C DOES THAT DUON MUST BEAT BY CONSTRUCTION, not by tuning:
+--
+--   ALIASING             C optimizes poorly without `restrict`. duon derives
+--                        alias facts, so NO USER-WRITTEN EQUIVALENT OF
+--                        `restrict` appears in ordinary code.
+--   SEPARATE COMPILATION C loses whole-program facts at translation-unit
+--                        boundaries. Packages retain graph fragments and
+--                        specialize across them — whole-program knowledge
+--                        WITHOUT whole-program rebuild cost.
+--   ABI FREEZING         C APIs commit to physical representation early. A duon
+--                        interface commits to MEANING; the machine abi is
+--                        chosen at realization.
+beats = { "aliasing", "separate compilation", "abi freezing" }
+
+-- ═══ §48 · THE RELATION ALGEBRA — one vocabulary, not one per family ════════
+--
+-- `to` proved the seed: authored edges, enumeration, one-hop composition,
+-- witnesses, refused lossy derivation, SER 2.00 at N=4. THE NEXT MISTAKE WOULD
+-- BE GROWING SEPARATE SYSTEMS AROUND IT — an algebra for `add`, another for
+-- `iter`, another for `from`.
+--
+-- Fourteen operations, and they are the algebra rather than syntax:
+algebra = {
+    "derive",   -- obtain an edge from other facts
+    "compose",  -- compose compatible edges
+    "invert",   -- the logically inverse orientation, never a second store
+    "imply",    -- one relationship entails another
+    "lift",     -- map a relation across descriptor, container or world structure
+    "restrict", -- narrow applicability by world, descriptor or property
+    "project",  -- expose one relation through another surface
+    "orient",   -- choose the face WITHOUT changing identity
+    "meet",     -- combine constraints conservatively
+    "join",     -- combine alternatives where lawful
+    "block",    -- an explicit NEGATIVE fact that prevents derivation
+    "prefer",   -- candidate ordering as DATA, never a resolver hardcode
+    "canon",    -- choose the canonical equivalent surface
+    "realize",  -- choose the physical implementation under demand and target
+}
+
+-- The faces are ORIENTATIONS of one identity, not separate mechanisms:
+-- declaration (operation-first) · subject invocation · callable value ·
+-- enumeration · anchored/reflection · derivation · inverse · operator · field ·
+-- application · ambient-subject.
+--
+-- CONSEQUENCE, stated so it is not rediscovered: the conversion CLASSES —
+-- exact, lossless, view, checked, narrowing, consuming — must not stay
+-- conversion-only. They become ORDINARY FACTS on the edge (`loss = none`,
+-- `failure = false`, `storage = view`, `consumes = true`), or `add` and `iter`
+-- each grow their own class system and gap[084] returns a third time.
+classes.become = "ordinary facts on the edge"
+
+-- MEASURED 2026-08-09: relation families with a real algebra = 1 (`to`).
+-- Authored std conversion edges = essentially 0. Projection-algebra breadth is
+-- roughly 10-15% realized against an architecture that is far more complete.
+-- That distance is the frontier, and it is not closed by more syntax.
+algebra.families = 1
+
+-- ═══ §45 · C-DOMINANCE. C is a CANDIDATE, never the ceiling. ═══════════════
+--
+-- The honest form of "better than C". No compiler can guarantee every program
+-- beats every hand-written C on every machine — a human can write assembly, or
+-- pick a workload hostile to the optimizer. The achievable guarantee is
+-- STRUCTURAL, and it is stronger than benchmarking:
+--
+--   duon semantic information  >=  c semantic information
+--   candidate realizations     >=  the c-equivalent realization
+--   chosen realization         =   min cost over candidates
+--
+-- Retaining the fallback is what makes losing impossible. This is why the rule
+-- is about the CANDIDATE SET and not about benchmark scores.
+
+cfloor = law{
+    id    = "law.c.floor"
+    kind  = .invariant
+    holds = .candidate
+    binds = {
+        "wherever a c-equivalent realization exists it IS representable as a baseline candidate",
+        "native duon realization must MEET OR BEAT that baseline before replacing it",
+        "c is one candidate realization, never the optimization ceiling",
+    }
+    fails = "treating the c backend as a comparison target instead of a floor in the candidate set"
+}
+
+perffloor = law{
+    id    = "law.perf.floor"
+    kind  = .invariant
+    holds = .retained
+    binds = {
+        "a conservative baseline realization is RETAINED until another is proven or measured superior",
+        "superiority is judged under the ACTIVE objective, not a fixed one",
+        "uncertain means keep both and choose, never guess",
+    }
+    why   = "monotonic optimization rather than heuristic optimism"
+}
+
+perfmono = law{
+    id    = "law.perf.dominance"
+    kind  = .invariant
+    holds = .monotone
+    binds = {
+        "adding a semantic fact may NEVER reduce the available realization set",
+        "a fact may only remove semantically INVALID candidates, or add stronger ones",
+    }
+    fails = "a proof that makes the compiler slower — the signature of a fact wired as a constraint rather than as knowledge"
+}
+
+-- Cost is not a scalar and "performance" is not runtime. A realization DOMINATES
+-- another when it is no worse on every relevant dimension and strictly better on
+-- one. Keep a PARETO FRONTIER; do not collapse it into one magical number.
+cost.axes = {
+    "latency", "throughput", "code size", "compile time", "peak memory",
+    "allocations", "cache footprint", "branch misses", "energy", "startup",
+    "binary size", "tail latency",
+}
+
+-- The objective is an ordinary target/world fact — NO new surface, no compiler
+-- modes. `target = latency` and `target = size` select different frontiers.
+cost.objective = { latency, throughput, size, energy, startup, balanced }
+
+-- WHAT DUON RETAINS THAT C DISCARDS. Each row is a fact C cannot express, and
+-- each is the reason a candidate can beat the c-equivalent floor rather than
+-- merely match it.
+edge.over = {
+    { fact = "descriptor identity", c = "double", duon = "meters, probability, sorted vector, nonzero scalar — can change the ALGORITHM" },
+    { fact = "closed world",        c = "cannot know no future participant exists", duon = "sealed relation: devirtualize, erase dispatch, drop tag checks" },
+    { fact = "ownership",           c = "aliasing is weak without restrict",        duon = "unique, borrowed, noalias, noescape, dead-after-call" },
+    { fact = "effects",             c = "calls are opaque",                          duon = "reads a, writes b, no io, no allocation, no reentry — so reorder and parallelize" },
+    { fact = "failure",             c = "the branch is always there",                duon = "failure proven impossible erases the tag and the machinery" },
+    { fact = "range",               c = "the declared width is the width",           duon = "0 <= x < 256 narrows arithmetic and removes bounds checks" },
+    { fact = "shape",               c = "the struct is the layout",                  duon = "struct, soa, aos, packed, simd lane, register tuple — by demand" },
+    { fact = "call shape",          c = "one function, one body",                    duon = "many machine realizations from one semantic function" },
+}
+
+-- THREE THINGS C DOES THAT DUON MUST BEAT BY CONSTRUCTION, not by tuning.
+edge.beat = {
+    { name = "aliasing",  goal = "no user-written equivalent of restrict in ordinary code — alias facts are DERIVED" },
+    { name = "separate compilation", goal = "whole-program knowledge WITHOUT whole-program rebuild cost: packages retain graph fragments and specialize across them, incrementally" },
+    { name = "abi freezing", goal = "SEMANTIC ABI first, machine ABI chosen at realization — c apis commit to physical representation far too early" },
+}
+
+-- Every rewrite carries these, and a candidate replaces another ONLY when
+-- correctness is proven AND cost is no worse under the active objective.
+rewrite.carries = { requires, preserves, cost, witness, descent }
