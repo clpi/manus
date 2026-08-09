@@ -2118,71 +2118,25 @@ classes.become = "ordinary facts on the edge"
 -- That distance is the frontier, and it is not closed by more syntax.
 algebra.families = 1
 
--- ═══ §45 · C-DOMINANCE. C is a CANDIDATE, never the ceiling. ═══════════════
+
+-- ═══ §49 · two additions to §47, merged from a parallel derivation ══════════
 --
--- The honest form of "better than C". No compiler can guarantee every program
--- beats every hand-written C on every machine — a human can write assembly, or
--- pick a workload hostile to the optimizer. The achievable guarantee is
--- STRUCTURAL, and it is stronger than benchmarking:
---
---   duon semantic information  >=  c semantic information
---   candidate realizations     >=  the c-equivalent realization
---   chosen realization         =   min cost over candidates
---
--- Retaining the fallback is what makes losing impossible. This is why the rule
--- is about the CANDIDATE SET and not about benchmark scores.
+-- §47 and an independent §45 draft were written simultaneously and BOTH landed,
+-- duplicating law.c.floor, law.perf.floor and law.perf.dominance. Duplicate law
+-- ids are precisely what law.stack.consistency forbids ("two constitutional
+-- facts may not disagree"), so the duplicate block is deleted and only what it
+-- carried UNIQUELY survives here. Recorded rather than silently merged: two
+-- agents deriving the same law independently is evidence the law was findable,
+-- which is a good sign — and duplicate ids are still a defect.
 
-cfloor = law{
-    id    = "law.c.floor"
-    kind  = .invariant
-    holds = .candidate
-    binds = {
-        "wherever a c-equivalent realization exists it IS representable as a baseline candidate",
-        "native duon realization must MEET OR BEAT that baseline before replacing it",
-        "c is one candidate realization, never the optimization ceiling",
-    }
-    fails = "treating the c backend as a comparison target instead of a floor in the candidate set"
-}
-
-perffloor = law{
-    id    = "law.perf.floor"
-    kind  = .invariant
-    holds = .retained
-    binds = {
-        "a conservative baseline realization is RETAINED until another is proven or measured superior",
-        "superiority is judged under the ACTIVE objective, not a fixed one",
-        "uncertain means keep both and choose, never guess",
-    }
-    why   = "monotonic optimization rather than heuristic optimism"
-}
-
-perfmono = law{
-    id    = "law.perf.dominance"
-    kind  = .invariant
-    holds = .monotone
-    binds = {
-        "adding a semantic fact may NEVER reduce the available realization set",
-        "a fact may only remove semantically INVALID candidates, or add stronger ones",
-    }
-    fails = "a proof that makes the compiler slower — the signature of a fact wired as a constraint rather than as knowledge"
-}
-
--- Cost is not a scalar and "performance" is not runtime. A realization DOMINATES
--- another when it is no worse on every relevant dimension and strictly better on
--- one. Keep a PARETO FRONTIER; do not collapse it into one magical number.
-cost.axes = {
-    "latency", "throughput", "code size", "compile time", "peak memory",
-    "allocations", "cache footprint", "branch misses", "energy", "startup",
-    "binary size", "tail latency",
-}
-
--- The objective is an ordinary target/world fact — NO new surface, no compiler
--- modes. `target = latency` and `target = size` select different frontiers.
+-- The objective is an ordinary target/world fact. NO new surface, no compiler
+-- modes: `target = latency` and `target = size` select different frontiers of
+-- the same cost.dimensions in §47.
 cost.objective = { latency, throughput, size, energy, startup, balanced }
 
--- WHAT DUON RETAINS THAT C DISCARDS. Each row is a fact C cannot express, and
--- each is the reason a candidate can beat the c-equivalent floor rather than
--- merely match it.
+-- WHY a candidate can BEAT the c floor rather than merely match it. Each row is
+-- information C discards at the source level and duon retains as an ordinary
+-- fact.
 edge.over = {
     { fact = "descriptor identity", c = "double", duon = "meters, probability, sorted vector, nonzero scalar — can change the ALGORITHM" },
     { fact = "closed world",        c = "cannot know no future participant exists", duon = "sealed relation: devirtualize, erase dispatch, drop tag checks" },
@@ -2193,14 +2147,3 @@ edge.over = {
     { fact = "shape",               c = "the struct is the layout",                  duon = "struct, soa, aos, packed, simd lane, register tuple — by demand" },
     { fact = "call shape",          c = "one function, one body",                    duon = "many machine realizations from one semantic function" },
 }
-
--- THREE THINGS C DOES THAT DUON MUST BEAT BY CONSTRUCTION, not by tuning.
-edge.beat = {
-    { name = "aliasing",  goal = "no user-written equivalent of restrict in ordinary code — alias facts are DERIVED" },
-    { name = "separate compilation", goal = "whole-program knowledge WITHOUT whole-program rebuild cost: packages retain graph fragments and specialize across them, incrementally" },
-    { name = "abi freezing", goal = "SEMANTIC ABI first, machine ABI chosen at realization — c apis commit to physical representation far too early" },
-}
-
--- Every rewrite carries these, and a candidate replaces another ONLY when
--- correctness is proven AND cost is no worse under the active objective.
-rewrite.carries = { requires, preserves, cost, witness, descent }
