@@ -30,7 +30,7 @@ _fail(msg: str): void
     _diverge = _diverge + 1
 end
 
-_env_or(name: str, fallback: str): str
+_env(name: str, fallback: str): str
     v = std.script.getenv_or(name)
     if v == "" return fallback end
     v
@@ -38,11 +38,32 @@ end
 
 -- A miscompiled loop does not fail, it spins. Every run is bounded, and 124 is
 -- the timeout marker the caller checks for.
-_timeout_prefix = ""
+_bounded = ""
 
-_run_binary(bin: str): i64
-    std.script.status(_timeout_prefix .. bin)
+_rc(bin: str): i64
+    std.script.status(_bounded .. bin)
 end
+
+-- gap[067] part 2. Exit status alone is structurally blind to a DROPPED EFFECT:
+-- `for i = 1, 3 / print(i)` exited 0 on both backends and printed `1 2 3` under
+-- --backend=c and NOTHING under --backend=direct, and this gate called that
+-- agreement for as long as it compared statuses. The same hole hid a file-scope
+-- global whose read folded to its initializer (c=6, direct=3, both exit 0).
+--
+-- Newlines are folded to spaces so a one-line failure message can carry the
+-- whole transcript; a divergence in line BREAKS alone is not a divergence this
+-- gate is built to catch, and squeezing them keeps the report readable.
+_printed(bin: str): str
+    std.script.chomp(std.script.capture(_bounded .. bin .. " 2>/dev/null | tr '\\n' ' '"))
+
+-- The stdout half of one row's verdict. Split out so the comparison reads as
+-- one fact at the call site instead of four nested lines inside the status
+-- ladder.
+_judge(name: str, ctext: str, dtext: str): void
+    if ctext == dtext
+        _agree = _agree + 1
+    if ctext != dtext
+        _fail(name .. ": stdout differs — c=[" .. ctext .. "] direct=[" .. dtext .. "]")
 
 -- `ls` rather than a glob: an empty directory must yield nothing, not a literal
 -- unexpanded pattern treated as a filename.
@@ -69,12 +90,12 @@ _compile(duo: str, src: str, backend: str, out: str): bool
 end
 
 main = (): i64
-    duo = _env_or("DUO", "./zig-out/bin/duo")
-    corpus = _env_or("NATIVE_DIFF_CORPUS", "examples/native_differential")
-    run_timeout = _env_or("NATIVE_DIFF_TIMEOUT", "10")
+    duo = _env("DUO", "./zig-out/bin/duo")
+    corpus = _env("NATIVE_DIFF_CORPUS", "examples/native_differential")
+    bound = _env("NATIVE_DIFF_TIMEOUT", "10")
 
     if not std.script.fs_exists(duo)
-        zig = _env_or("ZIG", "zig")
+        zig = _env("ZIG", "zig")
         if std.script.run(zig .. " build") != 0
             print("native_differential: FAIL — zig build")
             return 1
@@ -82,9 +103,9 @@ main = (): i64
     end
 
     for _i, cand in {"timeout", "gtimeout"}
-        if _timeout_prefix == "" and std.script.chomp(std.script.capture(
+        if _bounded == "" and std.script.chomp(std.script.capture(
             "command -v " .. cand .. " 2>/dev/null")) != ""
-            _timeout_prefix = cand .. " " .. run_timeout .. " "
+            _bounded = cand .. " " .. bound .. " "
         end
     end
 
@@ -92,25 +113,28 @@ main = (): i64
 
     for _i, src in _list(corpus)
         name = _stem(src)
-        direct_bin = _WORK .. "/" .. name .. ".direct"
-        c_bin = _WORK .. "/" .. name .. ".c"
+        dbin = _WORK .. "/" .. name .. ".direct"
+        cbin = _WORK .. "/" .. name .. ".c"
 
-        if not _compile(duo, src, "direct", direct_bin)
+        if not _compile(duo, src, "direct", dbin)
             _fail(name .. ": direct backend failed to compile")
         else
-            if not _compile(duo, src, "c", c_bin)
+            if not _compile(duo, src, "c", cbin)
                 _fail(name .. ": c backend failed to compile")
             else
-                direct_rc = _run_binary(direct_bin)
-                c_rc = _run_binary(c_bin)
-                if direct_rc == 124
-                    _fail(name .. ": direct backend HUNG (>" .. run_timeout .. "s) — c="
-                        .. c_rc:to(str))
+                drc = _rc(dbin)
+                crc = _rc(cbin)
+                if drc == 124
+                    _fail(name .. ": direct backend HUNG (>" .. bound .. "s) — c="
+                        .. crc:to(str))
                 else
-                    if direct_rc != c_rc
-                        _fail(name .. ": c=" .. c_rc:to(str) .. " direct=" .. direct_rc:to(str))
+                    if drc != crc
+                        _fail(name .. ": c=" .. crc:to(str) .. " direct=" .. drc:to(str))
                     else
-                        _agree = _agree + 1
+                        -- gap[067]. STDOUT is the second half of the comparison
+                        -- and the half that catches dropped effects. Status
+                        -- agreement is necessary, never sufficient.
+                        _judge(name, _printed(cbin), _printed(dbin))
                     end
                 end
             end
@@ -132,7 +156,7 @@ main = (): i64
             if not _compile(duo, src, "direct", bin)
                 _fail(name .. ": direct backend failed to compile (native_only)")
             else
-                actual = _run_binary(bin)
+                actual = _rc(bin)
                 if actual:to(str) != expected
                     _fail(name .. ": expected " .. expected .. ", got " .. actual:to(str)
                         .. " (native_only)")
@@ -160,8 +184,8 @@ main = (): i64
         dbin = _WORK .. "/kd_" .. name .. ".direct"
         cbin = _WORK .. "/kd_" .. name .. ".c"
         if _compile(duo, src, "direct", dbin) and _compile(duo, src, "c", cbin)
-            d = _run_binary(dbin)
-            c = _run_binary(cbin)
+            d = _rc(dbin)
+            c = _rc(cbin)
             if d == c
                 print("native_differential: known_divergent now AGREES — " .. name
                     .. " (promote it into the corpus)")

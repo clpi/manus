@@ -2,9 +2,18 @@
 
 `zig build native-differential` (script: `scripts/native_differential.sh`).
 
-The direct ARM64 backend must produce the **same exit status** as the C backend
-for every program in this directory. Exit status is the observable: each program
-returns a computed value from `main`.
+The direct ARM64 backend must produce the **same exit status and the same
+stdout** as the C backend for every program in this directory. Each program
+returns a computed value from `main`, and any program that prints is compared
+byte for byte on what it printed.
+
+**Stdout is not optional and was not always there.** gap[067] — a numeric `for`
+whose body's only effect is a call, dropped entirely by the direct backend —
+exited 0 on both columns and differed only in what reached the terminal, so a
+status-only differential called it agreement. So did a file-scope global whose
+read folded to its initializer (gap[066]: c printed 6, direct printed 3, both
+exit 0). An entire class of DROPPED-EFFECT defects is invisible to exit status,
+because the whole point of a dropped effect is that it was never a value.
 
 ## Why this exists
 
