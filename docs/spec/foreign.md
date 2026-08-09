@@ -60,6 +60,14 @@ counts embedded sites as a row of its own and ratchets it. It is `ledger`-class
 by construction — it is bootstrap, it has a termination condition (Pass 103's
 no-foreign-waist ruling), and it only shrinks.
 
+Two things are stripped before that count, and both were paid for rather than
+foreseen. **Comment lines**: the moment the three Pass 105 gates were tracked,
+their headers' mentions of `@c.emit` took the count from 236 to 240 and the
+ratchet went red over prose. **The census's own source**: adding a diagnostic
+that names the token in a string took it to 184. A scanner whose subject is the
+text it greps for reports itself, which is the exclusion `audit100` makes for
+the identical reason. The honest count is **181**.
+
 ## Rules
 
 ```
