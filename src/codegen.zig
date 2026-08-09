@@ -3937,11 +3937,29 @@ pub const CodeGen = struct {
                     // path that merely RESOLVES to a file (its last line is
                     // `find_module_file_for_req(...) != null`) and so cannot
                     // distinguish a native dependency from a runtime one here.
+                    // The refusal above was right to distrust
+                    // `req_module_is_native_direct` WHOLE, but it threw away the
+                    // sound part with the unsound part. That predicate has three
+                    // tiers: (1) `embedded_module_native` — what the module was
+                    // ACTUALLY emitted as, (2) `embedded_req_is_native`, and
+                    // (3) a bare `find_module_file_for_req(..) != null`, which
+                    // means only "a file exists" and is what cannot tell a
+                    // native dependency from a runtime one. Tiers 1-2 consult the
+                    // emission record and are exactly the evidence this site
+                    // needs. So: accept when the module was MEASURED native,
+                    // refuse otherwise — never on file existence alone.
                     var abuf: [256]u8 = undefined;
                     if (ambient_dotted_path(expr, &abuf)) |dotted| {
-                        if (self.find_module_file_for_req(dotted) != null) {
-                            native_diag_fail("global-decl-module-path");
-                            break :blk false;
+                        if (self.find_module_file_for_req(dotted)) |mod_path| {
+                            const emitted_native = if (self.embedded_module_native.get(mod_path)) |e|
+                                e
+                            else
+                                self.embedded_req_is_native(dotted);
+                            if (!emitted_native) {
+                                native_diag_fail("global-decl-module-path");
+                                break :blk false;
+                            }
+                            continue;
                         }
                     }
                     const hint: RT = if (i < gd.names.len) self.resolve_binding_type(&gd.names[i]) else .any;
