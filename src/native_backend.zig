@@ -2356,7 +2356,32 @@ const Arm64Compiler = struct {
     }
 
     fn evalDnirValueFp(self: *Arm64Compiler, temps: *std.AutoHashMapUnmanaged(u32, u5), v: dnir.Value) Error!u5 {
-        if (self.crossFile(v, true)) return refuse(@src());
+        // gap[101]: an INTEGER-classed temp in a float position is a LOSSLESS
+        // WIDENING, not a refusal. The `.i64` arm below already does exactly
+        // this for an immediate, and its comment reads: "scvtf already existed
+        // for exactly this and nothing reached it from here." A temp is the case
+        // that never reached it — `(col - WIDTH/2) * 3.5` is a binop, so the
+        // integer subexpression arrives as a temp and the immediate arm cannot
+        // see it. Traced, not inferred: mandelbrot refuses here on temp 6,
+        // defined by an integer binop and consumed by a float operand.
+        //
+        // Only this direction. float->int is NOT symmetric and must not be
+        // added: it truncates, mandelbrot writes no conversion at all, and a
+        // backend that truncates unasked still renders an image — the wrong
+        // one, past a passing fixture. See gap[101].
+        if (self.crossFile(v, true)) {
+            switch (v) {
+                .local, .temp => |id| {
+                    if (temps.get(id)) |gp| {
+                        const d = try self.allocFpReg();
+                        try self.emitScvtfFromGpr(d, gp);
+                        return d;
+                    }
+                    return refuse(@src());
+                },
+                else => return refuse(@src()),
+            }
+        }
         return switch (v) {
             .void => try self.allocFpReg(),
             .f64 => |n| blk: {
