@@ -104,8 +104,15 @@ control = "examples/spec100/stubs/control.duo"
 -- see it. Raising to 21 from this side would turn the gate red for anyone who
 -- checks out this commit alone — the mirror image of the 17 -> 19 note above,
 -- and the same rule: a floor states what THIS commit guarantees.
+-- 20 -> 21: `barecase`, c0 §41 `resolution.rule`. `k == eof` RESOLVES against
+-- the case-set the other operand demands and lowers to the same native
+-- comparison the dotted form did. §40's obligation 1 had been recorded
+-- satisfied because the bare form parsed; it did not resolve, and gap[087]
+-- blocked the 231-site retirement on exactly that. The fixture's 216 is
+-- unreachable unless one spelling claimed by TWO case-sets resolves to two
+-- different homes by demand.
 blockfloor = 5
-formfloor = 20
+formfloor = 21
 
 fence = "^```"
 

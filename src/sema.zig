@@ -2232,6 +2232,27 @@ pub const Sema = struct {
                 }
                 for (as.targets, 0..) |tgt, i| {
                     try self.check_assign_target(tgt);
+                    // c0 §41 — AN IMPLICIT LOCAL TAKES THE CASE-SET OF THE
+                    // VALUE THAT CREATED IT. `check_assign_target` binds an
+                    // undeclared duo-mode name as `any`, discarding what the
+                    // right-hand side knew, so `k = token.kind.eof` produced a
+                    // `k` with no case-set and the later `k == eof` had no
+                    // demand to resolve against — the token would have had to
+                    // supply its own expected descriptor, which is exactly the
+                    // circularity §41 forbids.
+                    //
+                    // NARROWED TO CASE-SETS ON PURPOSE. The general rule — an
+                    // implicit local takes its value's descriptor — is right
+                    // and is a much larger change than gap[087] needs; it is
+                    // filed there rather than smuggled in under a case fix.
+                    if (tgt.* == .name and i < as.values.len) {
+                        const vt = self.type_map.get(as.values[i]) orelse RT.any;
+                        if (vt == .enum_type) {
+                            if (self.scope.lookupPtr(tgt.name.ident)) |sym| {
+                                if (sym.typ == .any) sym.typ = vt;
+                            }
+                        }
+                    }
                     _ = try self.check_expr(tgt);
                     const val_expr: ?*const ast.Expr = if (i < as.values.len) as.values[i] else null;
                     self.noteModuleSealingInvalidation(tgt, val_expr);

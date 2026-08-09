@@ -1,0 +1,37 @@
+-- constitution §41 · G-TOTAL "two candidates is a mixed-space DIAGNOSTIC,
+-- never a guess". gap[087].
+--
+-- `circle` is a real case with a real home — it is just not a case of the
+-- case-set this comparison demands. The tempting behaviour is to resolve it
+-- against the home that declares it and let the comparison be false; that is
+-- the resolution being a SEARCH rather than a demand, and it makes the answer
+-- depend on which case-sets happen to be in scope.
+--
+-- The diagnostic names both homes, because the two useful repairs are "you
+-- meant a case of token.kind" and "you meant to compare a glyph.form", and the
+-- reader cannot tell which without seeing both.
+--
+-- This is the row that distinguishes the resolver from an index. The positive
+-- fixture `examples/spec100/barecase.duo` declares `number` in BOTH case-sets
+-- and resolves it two different ways by demand; this file proves the same
+-- machinery REFUSES when the demand does not name a home for the spelling at
+-- all. An implementation that passed the first and not this one would be
+-- picking by index and getting lucky.
+
+token: {
+    kind: { name, number, eof }
+    span: i64
+}
+
+glyph: {
+    form: { circle, square }
+    area: f64
+}
+
+main = (): i64
+    k = token.kind.eof
+    n = 0
+    if k == circle
+        n = n + 1
+    print("{n}")
+    0
