@@ -675,6 +675,25 @@ pub fn build(b: *std.Build) void {
     const convert_canon_step = b.step("convert-canon", "Pass 121 §17: rewrite to(str) sites to the receiver face, witnessed (dry run)");
     convert_canon_step.dependOn(&convert_canon_cmd.step);
 
+    // GAP-075: std.fs.remove, by VALUE, both directions. The fixture gap[075]
+    // owed and gap[100] rung 2 cited as already existing — it never did, under
+    // either spelling. Every assertion reads the FILESYSTEM, because the bug
+    // was a wrapper reporting success for a removal that did not happen, and
+    // the return value alone could not tell the two apart.
+    const fs_remove_proof_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/fsremoveproof.duo" });
+    fs_remove_proof_cmd.step.dependOn(b.getInstallStep());
+    fs_remove_proof_cmd.setCwd(b.path("."));
+    const fs_remove_proof_step = b.step("fs-remove-proof", "GAP-075: fs.remove verified against the filesystem in both directions");
+    fs_remove_proof_step.dependOn(&fs_remove_proof_cmd.step);
+
+    // GAP-100 rung 0: the same by-value discipline for mkdir / mkdirall / copy.
+    // Written earlier and never wired, so it had not run in CI at all.
+    const fs_mkdir_proof_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/fsmkdirproof.duo" });
+    fs_mkdir_proof_cmd.step.dependOn(b.getInstallStep());
+    fs_mkdir_proof_cmd.setCwd(b.path("."));
+    const fs_mkdir_proof_step = b.step("fs-mkdir-proof", "GAP-100 rung 0: mkdir, mkdirall and copy verified against the filesystem");
+    fs_mkdir_proof_step.dependOn(&fs_mkdir_proof_cmd.step);
+
     const direct_link_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/direct_module_link_proof.duo" });
     direct_link_cmd.step.dependOn(b.getInstallStep());
     direct_link_cmd.setCwd(b.path("."));
