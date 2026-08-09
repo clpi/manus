@@ -13,6 +13,44 @@
 //! is the ONLY way one enters, and it is an ordinary assignment statement — NNS
 //! FIRST (A2), the grammar is closed and no new surface was added to get here.
 //!
+//! ── DELETION CONTRACT (law.host.projection) ─────────────────────────────────
+//!
+//!     authority   = false
+//!     projects    = relation
+//!     bootstrap   = true
+//!     deletion    = when descriptors, edges and witnesses are ordinary graph
+//!                   facts and this file has no object taxonomy left to hold
+//!
+//! THIS FILE IS NOT THE RELATION SUBSYSTEM. It is the bootstrap REALIZATION of
+//! ordinary graph relation facts, and **none of its object taxonomy is semantic
+//! authority**: `Class`, `Edge`, `Path` and `Relation` are host structs that
+//! project onto `relation` / `fact` / `witness`, which are three of the six
+//! irreducible primitives in `docs/spec/constitution.duo`. The final shape has
+//! no `ConversionRelation`, `ConversionEdge`, `ConversionClass` or
+//! `ConversionPath` in it.
+//!
+//! Recorded now, at the moment the file is USEFUL, because that is when the
+//! pressure to fossilize starts. GAP-084 was this repository's registry problem;
+//! a registry that returns under a cleaner name is the same defect. Two rows of
+//! `law.architecture.owner`'s deny list — `*Registry`, `*Kernel` — were written
+//! against exactly this trajectory.
+//!
+//! KNOWN BOOTSTRAP DEBT, so it is measured rather than discovered later:
+//!   - descriptor and callable identities are `[]const u8`. Textual names doing
+//!     semantic-identity work is the root of a whole family of live bugs
+//!     (`law.identity.three`), and it breaks packages, renames, MCP,
+//!     refactoring, version coexistence and private descriptors. Stable
+//!     semantic ids retire it.
+//!   - class legality is refused at CODEGEN, so `duo check` can approve what
+//!     compilation later rejects. Resolution, coherence and class legality
+//!     belong in SEMA, above realization. This is a direction violation and it
+//!     is temporary.
+//!   - `derive` is deliberately ONE HOP. Longer paths need a real
+//!     path-selection law — multiple valid paths, cost, information loss,
+//!     effects, ownership, failure, trust, ambiguity. **Adding BFS/DFS instead
+//!     of that law would be architecturally wrong**, so the limit stays until
+//!     the law exists.
+//!
 //! THE ALGEBRA. `derive` is the one composition law: an undeclared `a -> b` is
 //! answered by `a -> mid -> b` when a mid exists. This is the whole claim under
 //! test — N descriptors sharing a canonical hub need N authored edges rather
