@@ -10,6 +10,9 @@
 1e. docs/spec/pass106.md  BLIND-SPOT AUDIT — owed artifacts; amends §22
 1f. docs/spec/pass107.md  NAME (duon) + MEMORY DECISION + boring rulings
 1g. docs/spec/grammar.md   FORMAL GRAMMAR (Pass 108) — normative
+1h. docs/spec/cost.md      COST MODEL — strict order; guaranteed-erasure list
+1i. docs/spec/soundness.md SOUNDNESS — three states, no silent fourth
+1j. docs/spec/numerics.md  NUMERICS — the boring table
 2. CLAUDE.md              its operative summary; what agents actually read
 3. docs/spec/AUTHORITY.md what is law in this repository, and what is still owed
 4. docs/spec/corpus.md    which .duo files the deny table must reach zero on
