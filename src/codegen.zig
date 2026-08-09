@@ -20405,12 +20405,18 @@ pub const CodeGen = struct {
             // returning a native value, not a lua_Value — same exception as the
             // recognized stdlib modules above. Claiming otherwise makes callers
             // wrap it in lua_to_num(), which does not accept an int64_t.
-            if (e.call.func.field.obj.* == .name and
-                self.req_module_bindings.contains(e.call.func.field.obj.name.ident))
-            {
-                if (self.infer_req_module_call_return_type(e)) |crt| {
-                    if (crt != .any and self.type_lowers_native(crt)) return false;
-                }
+            // gap[100] part 1, third site. The receiver test that used to guard
+            // this — `.name` bound in `req_module_bindings` — is redundant now
+            // that `infer_req_module_call_return_type` answers for BOTH
+            // spellings: it returns null unless the call really does resolve to
+            // a module function, so asking it directly is both simpler and
+            // correct for the ambient path. With the guard in place the ambient
+            // call folded to a native symbol and was still reported as emitting
+            // a lua_Value, so `print` wrapped it —
+            // `lua_to_str(std_compiler_symbol__root("q"))` — which is the very
+            // failure the comment above warns about, one spelling over.
+            if (self.infer_req_module_call_return_type(e)) |crt| {
+                if (crt != .any and self.type_lowers_native(crt)) return false;
             }
             return true;
         }
@@ -23397,8 +23403,26 @@ pub const CodeGen = struct {
         const c = expr.call;
         if (c.func.* != .field) return null;
         const f = &c.func.field;
-        if (f.obj.* != .name) return null;
-        const mod_cname = self.req_module_bindings.get(f.obj.name.ident) orelse return null;
+
+        // gap[100] part 1: the same receiver widening as the emission path. The
+        // two must agree — the fold emitting a native `const char*` while the
+        // type inference still answers `any` is how the first version produced
+        // `lua_to_display_str(std_compiler_symbol__root("q"))`, a correct call
+        // wrapped by a caller that had been told nothing about it.
+        var amb_buf: [512]u8 = undefined;
+        var amb_owned: ?[]const u8 = null;
+        defer if (amb_owned) |o| self.alloc.free(o);
+        const mod_cname = blk: {
+            if (f.obj.* == .name) break :blk self.req_module_bindings.get(f.obj.name.ident) orelse return null;
+            if (!self.duo_mode or f.obj.* != .field) return null;
+            const mod_path = ambient_dotted_path(f.obj, &amb_buf) orelse return null;
+            if (!std.mem.startsWith(u8, mod_path, "std.")) return null;
+            const mod_file = self.find_module_file_for_req(mod_path) orelse return null;
+            if (!self.embedded_module_paths.contains(mod_file)) return null;
+            const o = self.module_c_name(mod_path) catch return null;
+            amb_owned = o;
+            break :blk o;
+        };
         const ft = self.lookup_req_module_func_type(mod_cname, f.field) orelse return null;
         var ret = ft.func.ret.*;
         if (ret == .@"struct") {
@@ -23415,8 +23439,33 @@ pub const CodeGen = struct {
     ) E!bool {
         if (func.* != .field) return false;
         const f = &func.field;
-        if (f.obj.* != .name) return false;
-        const mod_cname = self.req_module_bindings.get(f.obj.name.ident) orelse return false;
+
+        // gap[100] part 1: the receiver is EITHER a name bound by `req` OR the
+        // ambient path itself. §2.7 already requires the second to fold — the
+        // const-field analogue (`try_emit_ambient_module_const_field`) does it
+        // and this call path did not, so `std.a.b.c(x)` walked a runtime table
+        // to a NIL STUB while `req "std.a.b"` then `.c(x)` folded. The law's
+        // preferred spelling did not merely run slower, it returned nothing.
+        var amb_buf: [512]u8 = undefined;
+        var amb_cname: ?[]const u8 = null;
+        defer if (amb_cname) |c| self.alloc.free(c);
+        const mod_cname = blk: {
+            if (f.obj.* == .name) {
+                if (self.req_module_bindings.get(f.obj.name.ident)) |c| break :blk c;
+                return false;
+            }
+            if (!self.duo_mode) return false;
+            if (f.obj.* != .field) return false;
+            const mod_path = ambient_dotted_path(f.obj, &amb_buf) orelse return false;
+            if (!std.mem.startsWith(u8, mod_path, "std.")) return false;
+            const mod_file = self.find_module_file_for_req(mod_path) orelse return false;
+            // Only fold when the module is already embedded: the folded symbol
+            // has to exist. Same precondition the const-field fold states.
+            if (!self.embedded_module_paths.contains(mod_file)) return false;
+            const c = self.module_c_name(mod_path) catch return false;
+            amb_cname = c;
+            break :blk c;
+        };
 
         var name_buf: [256]u8 = undefined;
         const saved_cname = self.current_module_cname;
