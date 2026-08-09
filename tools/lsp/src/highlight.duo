@@ -1,4 +1,4 @@
--- highlight — the role projection: the 18-role taxonomy, the cards that refine
+-- highlight — the role projection: the ONE role taxonomy, the cards that refine
 -- it, and the scanner that projects a surface into both.
 --
 -- CLAUDE.md §0d and §0g are the law this file implements. The claim, and the
@@ -17,14 +17,18 @@
 --
 -- HOW EACH IS DECIDED, stated so the shortcut is auditable:
 --
---   `:`  by LAYOUT, and this is the layout rule earning its keep rather than a
---        coincidence being exploited. §0.7 makes rendering canonical and §0d
---        says it outright: "copula `:` is SPACED (`x: f64`), invoke `:` is
---        TIGHT (`lx:read`)". Because the renderer is normative, spacing is a
---        FACT ABOUT THE GRAPH that survives into the byte stream, so a level-1
---        reading recovers it. Take canonical layout away and this
---        discrimination goes with it — an argument FOR canonical layout, not
---        against this projection.
+--   `:`  by grammar.md R1, WHICH IS NORMATIVE (Pass 108): INVOKE always takes
+--        an argument group, IS never does. This file used to decide it by
+--        LAYOUT — §0d's "copula SPACED, invoke TIGHT" — and gaps/GAP-078.md
+--        ruled that reading a FINDING and deleted it. The argument that lost is
+--        kept here because it was serious: the renderer is normative, so
+--        spacing is a fact about the graph that survives into the byte stream.
+--        What breaks the tie is TOTALITY. Spacing survives only for input the
+--        formatter has already touched, and H-6 makes the role function total —
+--        it must answer for hand-typed, mid-edit, pasted and foreign input too.
+--        R1 answers there; spacing does not. So `count:u32` is a COPULA: it is
+--        tight, and it carries no call group. §0d's spacing sentence is a
+--        RENDERING consequence on canonical input, never the decider.
 --
 --   `|`  by EDGE STATE, and it cannot be done any other way. The scan carries
 --        one bit — am I on a descriptor edge? — and that bit is set BY THE
@@ -63,54 +67,68 @@
 -- the lexer could have done it. A lexeme that takes two or more (role, card)
 -- pairs across the corpus was decided by its EDGE. The gate reports the split.
 --
--- ── H-2 vs THE FINE SPLITS, resolved rather than reinterpreted ──────────────
+-- ── CLOSURE IS THE LAW; THE COUNT NEVER WAS (gaps/GAP-078.md, ruled) ────────
 --
--- §0d H-2 closes the taxonomy at 18 roles. §0g then makes fine splits LAW: `=`
--- binds vs `+=` updates vs `==` relates; level parens vs parameter parens vs
--- grouping; descriptor braces; walk-writes; comma stratifies; unit `*`; dnir
--- `=`/`->`; per-language leftovers. Those are not 18 roles' worth of anything —
--- they are REFINEMENTS WITHIN roles, so this file carries them as a second
--- column: a CARD. `bind`, `update` and `relation` are three cards of the ONE
--- role `operator`; `strata`, `param` and `group` are three cards of `layout`.
--- Hue comes from the role, so the fine splits never fork the colour language;
--- they sharpen the why-chain and they are what SPECIFICITY is measured over.
--- H-2 holds at 18 and is cited here rather than quietly widened.
+-- This file used to assert "H-2 closes the taxonomy at 18" and check it. It no
+-- longer asserts any number, and neither does `docs/spec/roles.md`, because the
+-- rendered spec states H-2 as *"the role set is closed"* — with NO number. "18"
+-- was a summary artifact. The RULING is CLOSURE: finite, enumerated, TOTAL. The
+-- count is a BINDING, and a binding is checked against what the renderer needs
+-- rather than defended. `closed()` below now checks closure — well-formedness,
+-- uniqueness, totality of the hue/rule/capture/card columns, and the presence of
+-- the diagnostic member — and reports the count without ruling on it.
 --
--- ── AGAINST docs/spec/roles.md, WHICH REACHES THE OPPOSITE RULING ──────────
+-- That dissolves the 17-vs-18 disagreement rather than resolving it: two correct
+-- enumerations of different working sets were never a conflict.
 --
--- A parallel session wrote `docs/spec/roles.md` and `scripts/role_scan.duo` over
--- this same corpus directory, and its §4 does the arithmetic out loud: reading
--- every member H-4 names yields SEVENTEEN, the eighteenth is unnamed anywhere in
--- the tree, and §0g's fine splits would push the count past twenty-nine. It then
--- rules that H-2's count is UNDERSPECIFIED, having considered and REJECTED the
--- reading this file implements — that the fine splits are sub-role modifiers —
--- on the grounds that H-1 calls the `:` and `|` splits "two roles, two colors"
--- and §0g lists `=`/`+=`/`==` in the same breath.
+-- ── ROLES vs CARDS: THE DISCRIMINATOR IS HUE, EXCEPT WHERE THE LAW NAMES ────
 --
--- That objection is the strongest one available and it is answered here rather
--- than ignored, because the two files disagree in the repository and a reader
--- must be able to see why. THE DISCRIMINATOR IS HUE. H-1's two splits change
--- the COLOUR — copula is red and invoke is purple; union is orange and pipe is
--- green — so they are roles under H-4, which defines a role's hue as its
--- semantic space. `=`, `+=` and `==` do NOT change colour: all three are law,
--- all three are red, all three lower to a dnir edge in the same family. A
--- distinction that never changes hue is not a hue-bearing distinction, and H-2
--- counts hue-bearing distinctions. So the splits refine within a role, which is
--- what a CARD is, and the taxonomy stays closed at 18 with the precision living
--- in a second column. That reading also survives §0g's own last clause —
--- "per-language leftover roles" is unbounded, and an unbounded family cannot be
--- absorbed by any closed count except as cards.
+-- §0g makes fine splits LAW: `=` binds vs `+=` updates vs `==` relates; level
+-- parens vs parameter parens vs grouping; descriptor braces; walk-writes; comma
+-- stratifies; unit `*`; dnir `=`/`->`; per-language leftovers. Those are
+-- REFINEMENTS WITHIN roles, carried here as a second column: a CARD. `bind`,
+-- `update` and `relation` are three cards of the ONE role `operator`; `strata`,
+-- `param` and `group` are three cards of `layout`. THE DISCRIMINATOR IS HUE:
+-- H-1's own splits change the colour — copula red, invoke purple; union orange,
+-- pipe green — and H-4 defines a role's hue as its semantic space. `=`, `+=`
+-- and `==` never change colour, so they refine rather than fork.
 --
--- WHERE THE EIGHTEENTH COMES FROM, since roles.md is right that no hue names it:
--- `comment` — which roles.md itself lists as one of the two candidates, and
--- which H-6 forces, since comment bytes are non-whitespace and the role function
--- is total. Three of that document's seventeen are merged here rather than
--- carried: `opcode` and `mnemonic` fold into `callable` (an opcode and a method
--- call are the same edge, which is the ONE-COLOUR-LANGUAGE claim), `register`
--- folds into `place` (§0b: "registers are places"), and `witness` folds into
--- `walk` (a witness reference is a walk into provenance). `foreign` is added,
--- because H-5 makes the trust boundary typographic and a span with no graph
--- behind it cannot borrow a role from one. Every one of those four moves is a
+-- WHERE THE LAW NAMES A ROLE, THE LAW WINS OVER THAT DISCRIMINATOR. Pass 118 §4
+-- names SPACE WALK (`to[str]`) its own ROLE, descriptor-tinted — trie navigation
+-- into descriptor space, not a bracket. The hue discriminator would have made it
+-- a card inside `descriptor`; it is a role because the law says so, and it is
+-- spelled `retrieve` (pass100 §4's own word for `[ ]`). Braces (a matching
+-- stack), comma (stratify), unit `*` and dnir `=`/`->` stay CARDS, which is what
+-- the same section says about them.
+--
+-- ── THE OTHER TAXONOMY IS GONE, NOT PARKED BESIDE THIS ONE ──────────────────
+--
+-- `docs/spec/roles.md` + `scripts/role_scan.duo` landed the same day over this
+-- same corpus directory with a second, disagreeing taxonomy. GAP-078 ruled and
+-- `scripts/role_scan.duo` is DELETED; `docs/spec/roles.md` is now the prose face
+-- of the table below rather than a rival enumeration. What that document won is
+-- carried here and is not a compromise:
+--
+--   `:`         decided by grammar.md R1, above. Its §5.1 was right.
+--   `literal`   the string role's spelling. No argument ran either way, so the
+--               tracked spec's word is taken; this file used to say `text`.
+--   ambiguous   a taxonomy with no way to SAY "two candidates" cannot report
+--               the number G-TOTAL gates. The member is `!`, it is NOT a role,
+--               it is never a colour, and `closed()` requires it to exist.
+--
+-- What this file won, and keeps: `place` — the ordinary binding, blue, heavy at
+-- definition. roles.md called it `name` and left it UNHUED, calling it "the
+-- largest hole"; an unhued role cannot satisfy H-6's total function, which is
+-- exactly why one implementation measured 20% coverage and this one 100%.
+--
+-- Four of roles.md's seventeen are merged here rather than carried: `opcode` and
+-- `mnemonic` fold into `callable` (an opcode and a method call are the same
+-- edge, which is the ONE-COLOUR-LANGUAGE claim), `register` folds into `place`
+-- (§0b: "registers are places"), and `witness` folds into `walk` (a witness
+-- reference is a walk into provenance). `foreign` and `comment` are added, the
+-- first because H-5 makes the trust boundary typographic and a span with no
+-- graph behind it cannot borrow a role from one, the second because H-6 forces
+-- it — comment bytes are non-whitespace. Every one of those moves is a
 -- judgement, and each is recoverable: they are ROWS in the table below, and the
 -- corpus re-measures the moment a row changes.
 --
@@ -138,7 +156,7 @@
 -- Exit 0 answered · 2 bad arguments · 3 the taxonomy failed its own closure
 -- check. A projector with a broken taxonomy must not print a plausible answer.
 
--- ── THE TAXONOMY (H-2, CLOSED AT 18) ─────────────────────────────────────────
+-- ── THE TAXONOMY (H-2: CLOSED — finite, enumerated, total) ───────────────────
 --
 -- ONE table. Each row is a record:
 --
@@ -186,13 +204,14 @@ roles = {
     "descriptor d orange heavy upright plain h4   dnir.ty     @type",
     "union      u orange plain upright plain h1   dnir.ty     @punctuation.special",
     "anchor     a orange heavy upright loud  law2 dnir.obj    @attribute",
+    "retrieve   r orange plain upright plain p118 dnir.index  @punctuation.bracket",
     "invoke     i purple plain upright plain h1   dnir.method @function.method",
     "callable   f purple heavy upright plain law5 dnir.call   @function",
     "world      w purple plain italic  plain h5   dnir.call   @function.builtin",
     "foreign    g purple plain italic  plain h5   dnir.none   @string.special",
     "place      p blue   heavy upright plain law1 dnir.local  @variable",
     "number     n blue   plain upright plain h4   dnir.const  @number",
-    "text       t blue   plain upright plain law8 dnir.const  @string",
+    "literal    t blue   plain upright plain law8 dnir.const  @string",
     "case       y blue   plain upright plain law3 dnir.const  @constant.builtin",
     "comment    m blue   plain upright faint h6   dnir.none   @comment",
     "walk       v green  plain upright plain h4   dnir.field  @property",
@@ -205,16 +224,20 @@ roles = {
 --
 -- A card never carries hue — hue is the role's. A card carries PRECISION: it is
 -- what the why-chain says beyond the colour, and it is what specificity is
--- measured over. `mixed` is the one card with no role: it is the mixed-space
--- diagnostic G-TOTAL requires in place of a guess.
+-- measured over. `ambiguous` is the one card with no role: it is the mixed-space
+-- diagnostic G-TOTAL requires in place of a guess, and `closed()` requires it to
+-- be present, because a taxonomy that cannot SAY "two candidates" cannot report
+-- the ambiguity number the gate is built to read.
 cards = {
     "space    layout     s whitespace and indentation",
     "strata   layout     t level parens, a strata boundary",
     "param    layout     p parameter parens, the argument list",
     "group    layout     g grouping parens",
+    "quote    layout     q a literal delimiter",
     "brace    layout     d descriptor braces",
     "stratify layout     x comma, which stratifies a group",
-    "index    layout     i square brackets",
+    "walk     retrieve   w a space walk, trie navigation into descriptor space",
+    "index    retrieve   i retrieval from a table by a value key",
     "bind     operator   b binds, asserting a fact",
     "update   operator   u an update edge",
     "relation operator   r a relation query",
@@ -243,12 +266,12 @@ cards = {
     "fact     place      f a dnir fact name",
     "lit      number     n a numeric literal",
     "imm      number     i a machine immediate",
-    "quoted   text       q a string literal",
-    "term     text       t an ebnf terminal",
+    "quoted   literal    q a string literal",
+    "term     literal    t an ebnf terminal",
     "inferred case       y an inferred case",
     "prose    comment    m prose",
     "meta     comment    d dnir metadata notation",
-    "mixed    none       ! two candidates, so a mixed-space diagnostic",
+    "ambiguous none      ! two candidates, so a mixed-space diagnostic",
 }
 
 -- github dark (Primer), mapped over HUE, not over role. §0d fixes the theme;
@@ -272,6 +295,7 @@ rules = {
     "h5   §0d H-5 weight is definition; italic is ambient or foreign",
     "h6   §0d H-6 the role function is total; luminance is surprisal",
     "g17  §0g G-TOTAL fine splits are law; a card refines, never forks, a role",
+    "p118 §0d Pass 118 §4 the space walk is trie navigation, its own role",
     "law1 §0.1 LAW-ONE identifiers are one lowercase word",
     "law2 §0.2 the @ dyad: bare descriptor and postfix anchor",
     "law3 §0.3 inferred cases, read from descriptor-expected position",
@@ -312,9 +336,9 @@ bindings = {
     "(nil) case",
     "(boolean) case",
     "(enum_variant (identifier) CAP) case",
-    "(double_quoted_string) text",
-    "(single_quoted_string) text",
-    "(long_string) text",
+    "(double_quoted_string) literal",
+    "(single_quoted_string) literal",
+    "(long_string) literal",
     "(function_declaration name: (function_name) CAP) callable",
     "(bare_function_declaration name: (function_name) CAP) callable",
     "(foreign_declaration name: (function_name) CAP) callable",
@@ -452,15 +476,20 @@ citing(id: str): str
     std.script.chomp(out)
 end
 
--- CLOSURE, checked before anything is printed. H-2 closes the taxonomy at 18; a
--- projector whose taxonomy has drifted must not answer at all, because its
--- answers would look exactly like correct ones. Positive-controlled by the
--- gate, which corrupts a copy of these tables and requires this to fire.
+-- CLOSURE, checked before anything is printed. H-2 rules that the role set is
+-- CLOSED — finite, enumerated, total — and rules NO NUMBER, so no number is
+-- asserted here. What is checked is closure itself: the set is non-empty, every
+-- row is well formed, no name and no code is claimed twice, every role carries a
+-- hue a hue row defines, a rule a rule row expands, a tree-sitter capture and at
+-- least one card, every card refines a role that exists, and the DIAGNOSTIC
+-- member is present. A projector whose taxonomy has drifted must not answer at
+-- all, because its answers would look exactly like correct ones. Positive-
+-- controlled by the gate, which corrupts a copy of these tables and requires
+-- this to fire.
 closed(): str
     bad: str = ""
-    if #roles != 18
-        n: str = to(str)(#roles)
-        bad = "the taxonomy carries {n} rows; H-2 closes it at 18"
+    if #roles == 0
+        bad = "the taxonomy is empty; a closed set is enumerated, not absent"
     end
     i: i64 = 1
     while i <= #roles
@@ -503,6 +532,7 @@ closed(): str
         i = i + 1
     end
     i = 1
+    diag: i64 = 0
     while i <= #cards
         c: str = cards[i]
         cn: str = field(c, 1)
@@ -510,7 +540,18 @@ closed(): str
         if cr != "none" and rowof(cr) == ""
             bad = "card {cn} refines {cr}, which is not a role"
         end
+        if cr == "none" and field(c, 3) == kbad
+            diag = diag + 1
+        end
         i = i + 1
+    end
+    -- gap[078]: the taxonomy must be able to SAY "two candidates". G-TOTAL gates
+    -- ambiguity at 0, and a set with no diagnostic member reports that 0 by
+    -- being unable to count rather than by deciding — the confident zero §3
+    -- names. Losing this member is losing the number.
+    if diag != 1
+        n: str = to(str)(diag)
+        bad = "the taxonomy carries {n} diagnostic members; G-TOTAL needs exactly one"
     end
     bad
 end
@@ -631,6 +672,7 @@ ocode = "o"
 acode = "a"
 lcode = "l"
 tcode = "t"
+rcode = "r"
 kprose = "m"
 kmeta = "d"
 krel = "r"
@@ -820,6 +862,8 @@ scan(line: str, surface: str): str
     groups: i64 = 0
     braces: i64 = 0
     opened: str = ""
+    holding: str = ""
+    streaming: bool = false
     i: i64 = 1
     while i <= #line
         b: i64 = line:byte(i)
@@ -837,9 +881,13 @@ scan(line: str, surface: str): str
             piece = pairof(mcode, kprose, #line - i + 1)
             out = out .. piece
             i = #line + 1
-        elseif b == 34
+        elseif b == 34 or b == 39
+            -- BOTH quotes. `'x'` used to fall through to the arithmetic arm and
+            -- render as operator/place/operator — a string read as two products
+            -- around a variable. grammar.md §1 gives `string` both spellings and
+            -- the flat span corpus is what caught it. gap[078].
             j: i64 = i + 1
-            while j <= #line and line:byte(j) != 34
+            while j <= #line and line:byte(j) != b
                 j = j + 1
             end
             piece = strand(line, i, j, surface)
@@ -860,28 +908,45 @@ scan(line: str, surface: str): str
                 i = i + 1
             end
         elseif b == 58
-            -- THE FIRST PROOF. Tight is invoke, spaced is copula — §0d, and the
-            -- canonical renderer is what makes the spacing load-bearing.
+            -- THE FIRST PROOF, decided by grammar.md R1 (NORMATIVE, Pass 108):
+            -- INVOKE always takes an argument group, IS never does. So a `:` is
+            -- an invoke exactly when a name follows it immediately AND that name
+            -- is immediately followed by a call group — `(`, `{` or `"`. Every
+            -- other `:` is the copula, which makes this arm TOTAL: there is no
+            -- input it declines on, which is precisely why it beats the spacing
+            -- reading it replaced. `count:u32` is tight, carries no group, and
+            -- lands here as a COPULA. gap[078].
             if surface == "ebnf"
                 out = "{out}ca"
-            elseif blank(nb) or nb == 0
-                out = "{out}ca"
-                descpos = true
-            elseif wordy(nb)
-                out = "{out}iy"
             else
-                -- neither spaced nor followed by a name: the layout rule cannot
-                -- speak and there is no default. §0g.
-                out = "{out}!!"
+                w: str = wordat(line, i + 1)
+                after: i64 = byteat(line, i + 1 + #w)
+                if #w > 0 and (after == 40 or after == 123 or after == 34)
+                    out = "{out}iy"
+                else
+                    out = "{out}ca"
+                    descpos = true
+                end
             end
             head = false
             i = i + 1
         elseif b == 124
-            -- THE SECOND PROOF, and it reads the bit the first one set.
+            -- THE SECOND PROOF, and it reads the bits the earlier arms set.
+            -- On a descriptor edge it is the UNION. Off the edge §0g gives it
+            -- two readings and the ruling decides neither: "channels = stream
+            -- places composed by `|`" is the PIPE, and pass100 §4 lists `bor`
+            -- over integer operands. What separates them is operand space, so
+            -- the only surface fact available is whether a stream place was
+            -- opened on this line — a world action does that. `sh "ls" | grep(…)`
+            -- is a pipe because `sh` opened one; `out = xs | ys` has TWO
+            -- candidates and no rule, so it DIAGNOSES rather than defaulting to
+            -- green. gap[078]: the ruling did not reach this span.
             if descpos or surface == "ebnf"
                 out = "{out}ul"
-            else
+            elseif streaming
                 out = "{out}bm"
+            else
+                out = "{out}!!"
             end
             head = false
             i = i + 1
@@ -1022,6 +1087,11 @@ scan(line: str, surface: str): str
                 -- is what the `fact` card says and `value` did not.
                 rc = "pf"
             end
+            if rc == "ww"
+                -- a world action opens a stream place, which is the one surface
+                -- fact that separates a PIPE from a `bor` at the `|` arm above.
+                streaming = true
+            end
             piece = pairof(rc:sub(1, 1), rc:sub(2, 2), #w)
             out = out .. piece
             head = false
@@ -1072,8 +1142,49 @@ scan(line: str, surface: str): str
             out = "{out}ld"
             head = false
             i = i + 1
-        elseif b == 91 or b == 93
-            out = "{out}li"
+        elseif b == 91
+            -- Pass 118 §4: SPACE WALK is its OWN ROLE, descriptor-tinted — trie
+            -- navigation, not a bracket. `to[str]` walks descriptor space;
+            -- `xs[0]` retrieves from a table by a value key. What separates them
+            -- is the CONTENT's space, which is R5's "operands select the
+            -- operator" read off the surface: a lone shape name is descriptor
+            -- space, a numeric or quoted key is value space, and a bare name is
+            -- TWO CANDIDATES — is it a descriptor or a place? — so it diagnoses
+            -- rather than defaulting. gap[078].
+            j: i64 = i + 1
+            while j <= #line and line:byte(j) != 93
+                j = j + 1
+            end
+            inner: str = line:sub(i + 1, j - 1)
+            card: str = kbad
+            if holds(shapes, inner)
+                card = "w"
+            elseif #inner > 0 and (digit(inner:byte(1)) or inner:byte(1) == 34)
+                card = "i"
+            end
+            role: str = rcode
+            if card == kbad
+                role = kbad
+            end
+            holding = holding .. card
+            piece = pairof(role, card, 1)
+            out = out .. piece
+            head = false
+            i = i + 1
+        elseif b == 93
+            -- the closer answers what the opener answered, for the reason the
+            -- paren closer does: recomputing it reads the byte AFTER the group.
+            card: str = kbad
+            if #holding > 0
+                card = holding:sub(#holding, #holding)
+                holding = holding:sub(1, #holding - 1)
+            end
+            role: str = rcode
+            if card == kbad
+                role = kbad
+            end
+            piece = pairof(role, card, 1)
+            out = out .. piece
             head = false
             i = i + 1
         elseif b == 44
@@ -1116,12 +1227,17 @@ end
 -- the roles reach inside it. Quotes and braces are layout; a hole reads as a
 -- walk when it carries a dot and as a place otherwise. In ebnf a quoted span is
 -- a TERMINAL, which is the same role with a different card.
+--
+-- The delimiting quote takes the layout card `quote`, not `group`: it delimits a
+-- literal and delimits nothing else, and a card that cannot beat "punctuation"
+-- is the Pass 118 SPECIFICITY finding. The interpolation braces stay `group` —
+-- they delimit an expression, which is what grouping means.
 strand(line: str, i: i64, j: i64, surface: str): str
     card: str = "q"
     if surface == "ebnf"
         card = "t"
     end
-    out: str = "lg"
+    out: str = "lq"
     piece: str = ""
     k: i64 = i + 1
     while k <= j - 1
@@ -1147,7 +1263,7 @@ strand(line: str, i: i64, j: i64, surface: str): str
         end
     end
     if j <= #line
-        out = "{out}lg"
+        out = "{out}lq"
     end
     out
 end
@@ -1166,7 +1282,7 @@ why(key: str): str
     faint: str = "faint"
     if key == kbad
         cite: str = citing(gseventeen)
-        out = "mixed  NO ROLE — two candidates, so a mixed-space diagnostic\n"
+        out = "ambiguous  NO ROLE — two candidates, so a mixed-space diagnostic\n"
         out = "{out}  rule     {cite}\n"
         out = "{out}  dnir     dnir.none\n"
         out = "{out}  why      G-TOTAL forbids a default here; the span diagnoses\n"
@@ -1276,8 +1392,8 @@ legend(): str
         i = i + 1
     end
     -- without this the legend ends in a newline AND `print` adds one, so the
-    -- file carries a nineteenth empty row against eighteen roles. A consumer
-    -- that indexes the legend by position would be off by one at the end.
+    -- file carries one empty row past the last role. A consumer that indexes the
+    -- legend by position would be off by one at the end.
     if #out > 0
         out = out:sub(1, #out - 1)
     end
@@ -1374,8 +1490,13 @@ emitscm(): str
     ccap: str = capof("comment")
     b = "{b}\n(comment) {ccap} @spell\n\n"
     bcap: str = capof("layout")
-    b = "{b}[\n  {q}({q} {q}){q} {q}[{q} {q}]{q}\n] {bcap}\n\n"
+    b = "{b}[\n  {q}({q} {q}){q}\n] {bcap}\n\n"
     b = "{b}[\n  {q},{q} {q}.{q}\n] {bcap}\n\n"
+    -- Pass 118 §4: the square brackets are the SPACE WALK, not layout. This is
+    -- the one place the generated query can carry a role the old grammar folded
+    -- into punctuation, so it does.
+    rcap: str = capof("retrieve")
+    b = "{b}[\n  {q}[{q} {q}]{q}\n] {rcap}\n\n"
     b = "{b}; THE H-1 HOLE, stated where an editor author will read it. `:` is ONE\n"
     b = "{b}; node to this grammar and so is `|`, so the four roles H-1 names —\n"
     b = "{b}; copula/invoke and union/pipe — cannot be separated by any query written\n"
@@ -1424,7 +1545,7 @@ main(): i64
     end
 
     if mode == "table"
-        print("roles, H-2 closed at 18:")
+        print("roles, H-2 CLOSED — finite, enumerated, total; the count is a binding:")
         print("  name code hue weight italic luminance rule dnir capture")
         i: i64 = 1
         while i <= #roles
@@ -1432,7 +1553,7 @@ main(): i64
             print("  {r}")
             i = i + 1
         end
-        print("cards, §0g fine splits — refinements WITHIN the 18:")
+        print("cards, §0g fine splits — refinements WITHIN a role:")
         print("  name role code note")
         i = 1
         while i <= #cards

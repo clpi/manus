@@ -26,13 +26,14 @@
 ;   descriptor @type #ffa657
 ;   union @punctuation.special #ffa657
 ;   anchor @attribute #ffa657
+;   retrieve @punctuation.bracket #ffa657
 ;   invoke @function.method #d2a8ff
 ;   callable @function #d2a8ff
 ;   world @function.builtin #d2a8ff
 ;   foreign @string.special #d2a8ff
 ;   place @variable #79c0ff
 ;   number @number #79c0ff
-;   text @string #79c0ff
+;   literal @string #79c0ff
 ;   case @constant.builtin #79c0ff
 ;   comment @comment #8b949e
 ;   walk @property #7ee787
@@ -131,11 +132,15 @@
 (comment) @comment @spell
 
 [
-  "(" ")" "[" "]"
+  "(" ")"
 ] @punctuation.bracket
 
 [
   "," "."
+] @punctuation.bracket
+
+[
+  "[" "]"
 ] @punctuation.bracket
 
 ; THE H-1 HOLE, stated where an editor author will read it. `:` is ONE

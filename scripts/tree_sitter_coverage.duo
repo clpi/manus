@@ -151,7 +151,7 @@ main = (): i64
     -- `fixtures/highlight/` is EXCLUDED, and the reason matters because the
     -- exclusion looks like the exact move this gate exists to stop. This census
     -- asks "can an editor recognise the DUON corpus". Those files are the golden
-    -- role corpus for `zig build highlight-corpus` and `zig build role-scan`,
+    -- role corpus for `zig build highlight-corpus`,
     -- and several of them deliberately carry dnir, arm64 assembly, ebnf and C —
     -- one colour language over five surfaces is the point of them. Counting
     -- non-duon text as unrecognised duon does not measure the grammar, it

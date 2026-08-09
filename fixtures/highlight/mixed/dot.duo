@@ -11,3 +11,6 @@
 .eof
 -- Pass 119: THE SEMICOLON DOES NOT EXIST. A byte spelling one names no edge.
 n = 1;
+-- And the space walk where the surface CANNOT decide: is `i` a descriptor or a
+-- place? Two candidates, no rule between them, so both brackets diagnose.
+q = xs[i]

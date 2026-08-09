@@ -1,38 +1,44 @@
--- Expected (line, col, len, role) for paren.duo. HAND-WRITTEN from
--- docs/spec/roles.md §5.3.
+-- Expected (line, col, len, role) for paren.duo. HAND-WRITTEN from the law.
 --
--- What this fixture discriminates: the three-way paren split. GROUPING is
--- decidable — grammar.md gives `primary -> "(" expr ")"` against
+-- What this fixture discriminates: the three-way paren split. All three are
+-- ONE role — `layout`, red and FAINT, because a paren is inferable from the
+-- shape of the line — and the split lives in the cards `strata`, `param` and
+-- `group`. gaps/GAP-078.md ruled that: the split never changes hue, so it is
+-- not a role, and §0g's demand that the three be distinguished is satisfied by
+-- the card, which is also what SPECIFICITY is measured over.
+--
+-- GROUPING is decidable — grammar.md gives `primary -> "(" expr ")"` against
 -- `postfix -> "(" [args] ")"`, and the two differ by whether an operand
--- precedes the paren — so line 3 resolves. LEVEL versus PARAMETER does
--- not: LAW-STRATA's litmus is "if the prefix MEANS something, it's a
--- level" and LAW-ROLE's is "a choice OPERANDS CANNOT DETERMINE", both
--- graph queries. The tempting heuristic (last group in a spine is the
--- parameters) is refuted by the law's own example — LAW-STRATA calls BOTH
--- groups in `map(symbol)(u32)` levels. Line 2 is five ambiguity spans.
+-- precedes the paren — so line 3 is `group` twice. LEVEL versus PARAMETER is
+-- decided by the LADDER: §0.5 declares operation-first at the trie and calls
+-- subject-first at the value, and both mark a level the same way, by a SECOND
+-- group immediately following the first. `map(symbol)(u32)` carries that mark,
+-- so the first group is `strata` and the second is `param`. That reading is a
+-- card-level judgement and it is gated; at ROLE granularity, which is what
+-- these rows assert, both are `layout` either way.
 --
 -- This is the ONE fixture that does not `duo check`: `map` is undeclared, and
 -- the two-level curried callable that would declare it is exactly the
--- construct the fixture exists to be ambiguous about. The golden token corpus
--- is LEXICAL — see docs/spec/roles.md §6. -- gap[071]
+-- construct the fixture exists to be sharp about. The golden token corpus is
+-- LEXICAL — see docs/spec/roles.md §6. -- gap[078]
 spans = {
     { 1, 1, 8, "comment" },
-    { 2, 1, 1, "name" },
-    { 2, 3, 1, "bind" },
-    { 2, 5, 3, "ambiguous" },
-    { 2, 8, 1, "ambiguous" },
-    { 2, 9, 6, "name" },
-    { 2, 15, 1, "ambiguous" },
-    { 2, 16, 1, "ambiguous" },
-    { 2, 17, 3, "name" },
-    { 2, 20, 1, "ambiguous" },
-    { 3, 1, 1, "name" },
-    { 3, 3, 1, "bind" },
-    { 3, 5, 1, "group" },
-    { 3, 6, 1, "name" },
+    { 2, 1, 1, "place" },
+    { 2, 3, 1, "operator" },
+    { 2, 5, 3, "callable" },
+    { 2, 8, 1, "layout" },
+    { 2, 9, 6, "place" },
+    { 2, 15, 1, "layout" },
+    { 2, 16, 1, "layout" },
+    { 2, 17, 3, "descriptor" },
+    { 2, 20, 1, "layout" },
+    { 3, 1, 1, "place" },
+    { 3, 3, 1, "operator" },
+    { 3, 5, 1, "layout" },
+    { 3, 6, 1, "place" },
     { 3, 8, 1, "operator" },
-    { 3, 10, 1, "name" },
-    { 3, 11, 1, "group" },
+    { 3, 10, 1, "place" },
+    { 3, 11, 1, "layout" },
     { 3, 13, 1, "operator" },
-    { 3, 15, 1, "name" },
+    { 3, 15, 1, "place" },
 }

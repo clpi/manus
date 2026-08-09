@@ -327,7 +327,10 @@ count.**
 Two agents implemented this section independently and reached opposite readings
 (`docs/spec/roles.md` + `scripts/role_scan.duo` say the count cannot close and
 is ≥29; `fixtures/highlight/` implements 18 roles × 40 cards). Adjudicated on
-the text, not the count:
+the text, not the count — and **EXECUTED 2026-08-08 by gaps/GAP-078.md**, which
+merged the two into ONE taxonomy (`tools/lsp/src/highlight.duo`), DELETED
+`scripts/role_scan.duo`, and left `docs/spec/roles.md` as that table's prose
+face. The `:` split now follows grammar.md R1 and not spacing:
 
 - **THE DISCRIMINATOR IS HUE.** H-1's own sentence pairs them — "`:` copula vs
   invoke; `|` union vs pipe — **two roles, two colors**." §0g's fine splits
@@ -376,7 +379,7 @@ duon — writing one is a diagnostic whose repair is "press enter". Both hold: t
 role exists for the notations that still have the token.
 
 **THE BINDINGS ARE NOT GOSPEL — the RULINGS are.** A pass's *rulings* are law
-(H-2 closes at 18; the role function is total; specificity is gated). The
+(H-2 closes the role set; the role function is total; specificity is gated). The
 specific bindings a pass hands down — role codes (`t-bd`, `t-up`, `t-cmp`,
 `t-pl`, `t-pp`, `t-pu`, `t-yb`), which hue a given token takes, which split is a
 role versus a card — are PROPOSALS, and they are checked against what the graph
@@ -406,8 +409,11 @@ their weighted definitions, asm leftovers are operands, foreign leftovers are
 trust-marked identifiers.
 
 - **H-1** color follows the EDGE, not the glyph (`:` copula vs invoke; `|`
-  union vs pipe — two roles, two colors). **H-2** the 18-role taxonomy is
-  CLOSED. **H-3** definition and use share a hue; definition adds WEIGHT.
+  union vs pipe — two roles, two colors). **H-2** the role taxonomy is
+  CLOSED — finite, enumerated, total, and **with NO number**: the correction
+  above rules CLOSURE, the count is a BINDING, and gaps/GAP-078.md executed
+  that by deleting every `!= 18` assertion in the tree. **H-3** definition and
+  use share a hue; definition adds WEIGHT.
 - **H-4** hue = semantic SPACE: red law (keywords + copula `:`) · orange
   descriptor (+ `@` + union edges) · purple callable (+ invoke `:` + world
   actions italic + dnir opcodes + asm mnemonics) · blue value-at-rest (numbers,

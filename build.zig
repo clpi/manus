@@ -357,26 +357,18 @@ pub fn build(b: *std.Build) void {
     const audit100_step = b.step("audit100", "Pass 100 deny table over the canonical .duo corpus; ratchets each row");
     audit100_step.dependOn(&audit100_cmd.step);
 
-    // role-scan -- G-TOTAL (CLAUDE.md section 0g), executable for the first
-    // time. gaps/GAP-071.md records that G-TOTAL "cannot be measured at all
-    // yet" for want of an instrument, and that "a gate with no instrument
-    // reports nothing, which is worse than reporting a bad number". This is the
-    // instrument: it assigns a role to every byte of the golden token corpus
-    // under fixtures/highlight using only the tests docs/spec/roles.md can cite,
-    // and reports coverage / ambiguity / mismatch.
+    // role-scan is GONE, and this note is here so the next reader does not go
+    // looking for it. gaps/GAP-078.md: two role taxonomies landed in this tree
+    // on the same day and disagreed -- on `:`, on the count, on whether an
+    // ordinary binding has a hue, on the spelling of the string role, and on
+    // whether the section 0g fine splits are roles. Two generators for one
+    // legend means whichever a front end picks, the other convicts it, and the
+    // two coverage numbers measured different quantities. The ruling merged
+    // them into ONE taxonomy and DELETED `scripts/role_scan.duo` rather than
+    // parking it beside the survivor. Its corpus was not deleted with it: the
+    // seven fixtures under fixtures/highlight/*.duo and their span sidecars are
+    // now measured by `highlight-corpus` below, in the surviving vocabulary.
     //
-    // UNLIKE audit100 AND capability-scan THIS DOES NOT RATCHET, and that is
-    // deliberate. Those two measure a distance the repository can walk down by
-    // editing code. This one measures a hole in the LAW -- H-2 asserts a closed
-    // 18-role taxonomy that the tree never enumerates, and coverage cannot
-    // reach 100% until the missing roles are written. A budget here would turn
-    // an unwritten rule into a satisfied number.
-    const role_scan_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/role_scan.duo" });
-    role_scan_cmd.setCwd(b.path("."));
-    role_scan_cmd.step.dependOn(b.getInstallStep());
-    const role_scan_step = b.step("role-scan", "G-TOTAL: role coverage, ambiguity and sidecar conformance over fixtures/highlight");
-    role_scan_step.dependOn(&role_scan_cmd.step);
-
     // highlight-corpus -- CLAUDE.md section 0d, executable. Highlighting is a
     // PROJECTION OF THE GRAPH, not a lexer, and the only way to tell those two
     // apart from outside is a corpus containing the glyphs duon overloads: `:`
@@ -389,12 +381,12 @@ pub fn build(b: *std.Build) void {
     // negative control in fixtures/highlight/mixed/ is what keeps the
     // "0 unresolved spans" row from being the broken kind of zero.
     //
-    // RELATIONSHIP TO `role-scan`, which measures the same directory: that step
-    // measures a hole in the LAW and deliberately does not ratchet. This one
-    // measures an INSTRUMENT against the law as read, and does ratchet, because
-    // its taxonomy is written down in tools/lsp/src/highlight.duo and can
-    // therefore regress. They disagree about whether the section 0g fine splits
-    // are roles or refinements; both files argue the case in their headers.
+    // It publishes the three G-TOTAL numbers -- coverage, ambiguity,
+    // provenance -- over BOTH corpora at once, which is what gaps/GAP-078.md's
+    // falsifier asked for: a coverage percentage published without naming the
+    // taxonomy behind it means the gap was closed by forgetting. There is one
+    // taxonomy now, so there is one set of numbers. SPECIFICITY is reported
+    // separately because Pass 118 makes it the bar coverage is not.
     const highlight_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/highlight.duo" });
     highlight_cmd.setCwd(b.path("."));
     highlight_cmd.step.dependOn(b.getInstallStep());

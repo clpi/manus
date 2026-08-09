@@ -87,6 +87,45 @@ kinds = {
     "control",
 }
 
+-- ── THE SPAN CORPUS (gap[078]) ───────────────────────────────────────────────
+--
+-- The SECOND corpus, and it was the losing taxonomy's. `docs/spec/roles.md` +
+-- `scripts/role_scan.duo` measured these seven fixtures with a rival role
+-- function; the ruling deleted the scanner and this gate inherited the corpus
+-- rather than the corpus being deleted with it. Keeping it is not sentiment:
+--
+--   * it asserts at SPAN granularity in role NAMES, where the per-byte golden
+--     asserts single letters. A sidecar row is readable by a human who has
+--     never opened the taxonomy, and it is hand-written from the law.
+--   * it is written in a DIFFERENT vocabulary from the projector's output, so
+--     it convicts a rename as well as a re-decision. `text` -> `literal` and
+--     `name` -> `place` are both visible here and invisible in the golden.
+--   * `copula.duo` line 3 is `count:u32` — the ONE line on which the two
+--     taxonomies gave different answers. It is asserted from both sides now.
+--
+-- A span is a maximal run of ONE (role, card) pair with whitespace runs
+-- dropped, which is what a reader means by "the role of that token". Two
+-- adjacent tokens that take the same pair are ONE span; stated because
+-- `(a + b) * c` yields one `layout` span for `((` shapes if they ever meet.
+spansrcs = {
+    "fixtures/highlight/anchor.duo",
+    "fixtures/highlight/bind.duo",
+    "fixtures/highlight/copula.duo",
+    "fixtures/highlight/literal.duo",
+    "fixtures/highlight/paren.duo",
+    "fixtures/highlight/union.duo",
+    "fixtures/highlight/walk.duo",
+}
+-- `union.duo` is a CONTROL: line 3 is `out = xs | ys`, which §0g reads as a
+-- stream place composed by `|` and pass100 §4 reads as `bor` over integers.
+-- Nothing on the line opens a stream, so the two candidates stand and the span
+-- DIAGNOSES. The GAP-078 ruling does not reach that span — recorded as a
+-- finding about the ruling, and gated as a control rather than guessed green.
+spankinds = {
+    "clean", "clean", "clean", "clean",
+    "clean", "control", "clean",
+}
+
 -- THE ASSERTIONS, written from the law rather than from the output.
 --   fixture-index  line  byte  role  card  what it proves
 proofs = {
@@ -138,18 +177,32 @@ proofs = {
     "6 5 13 number imm a machine immediate is a number",
     "7 5 6 copula ascribe ebnf ::= IS the ascription edge",
     "7 6 17 union alt ebnf alternation IS the descriptor union",
-    "7 7 12 text term an ebnf terminal is text",
+    "7 7 12 literal term an ebnf terminal is a literal",
     "8 6 1 foreign opaque the trust boundary is typographic",
     -- G-TOTAL: two candidates DIAGNOSE.
-    "9 11 1 mixed mixed a leading dot at a clause head has two readings",
-    "9 13 6 mixed mixed Pass 119: the semicolon names no edge",
+    "9 11 1 ambiguous ambiguous a leading dot at a clause head has two readings",
+    "9 13 6 ambiguous ambiguous Pass 119: the semicolon names no edge",
+    -- gap[078] Q1, THE RULED LINE. `count:u32` is TIGHT and carries NO call
+    -- group. grammar.md R1 — normative, Pass 108 — says COPULA; §0d's spacing
+    -- sentence says invoke and is a RENDERING corollary, not the decider. These
+    -- two rows are the ruling made falsifiable at the byte: a projector that
+    -- reads spacing answers `invoke` at 12:6 and `callable` at 12:7.
+    "1 13 6 copula ascribe R1 DECIDES: a tight colon with no call group IS",
+    "1 13 7 descriptor shape and what follows it is therefore a descriptor",
+    -- Pass 118 §4, the one place the law names a ROLE where the hue
+    -- discriminator would have named a card.
+    "3 15 9 retrieve walk `to[str]` is a SPACE WALK, not a bracket",
+    "3 16 7 retrieve index the same glyph over a value key RETRIEVES",
+    "9 16 7 ambiguous ambiguous and over a bare name it has two candidates",
 }
 
 -- MEASURED floors, never estimated. Raise when a row goes green; lowering one
 -- needs a sentence saying why the ROW, not the code, was wrong.
 fixturefloor = 9
-prooffloor = 39
-edgefloor = 14
+prooffloor = 46
+edgefloor = 17
+spanfixturefloor = 7
+spanfloor = 96
 
 -- Is there an executable at `path`? `std.script.fs_exists` answers this and is
 -- unusable: LAW-ONE puts `[a-z]_[a-z]` at zero and the deny table counts every
@@ -304,7 +357,7 @@ end
 rolename(code: str): str
     out: str = "-"
     if code == "!"
-        out = "mixed"
+        out = "ambiguous"
     end
     named: str = lookup(1, 2, code)
     if named != ""
@@ -316,13 +369,72 @@ end
 cardname(role: str, card: str): str
     out: str = "-"
     if role == "!"
-        out = "mixed"
+        out = "ambiguous"
     end
     rname: str = lookup(1, 2, role)
     body: str = slurp("{work}/table")
     for i, ln in body:split("\n")
         if field(ln, 2) == rname and field(ln, 3) == card
             out = field(ln, 1)
+        end
+    end
+    out
+end
+
+digit = (b: i64): bool
+    b >= 48 and b <= 57
+end
+
+-- One sidecar line to the record `ln col wide role`, or "" when the line is not
+-- a span row. Prose MUST come back "" — a reader that accepted everything would
+-- make the span count a function of comment text, and every sidecar in this
+-- corpus is more comment than data. Positive-controlled in `main` on both
+-- halves: a real row must parse, and a comment must not.
+sidespan = (raw: str): str
+    out: str = ""
+    n: i64 = #raw
+    got: i64 = 0
+    nums: str = ""
+    i: i64 = 1
+    while i <= n and blank(raw:byte(i))
+        i = i + 1
+    end
+    if i <= n and raw:byte(i) == 123
+        i = i + 1
+        while i <= n and got < 3
+            if digit(raw:byte(i))
+                start: i64 = i
+                while i <= n and digit(raw:byte(i))
+                    i = i + 1
+                end
+                piece: str = raw:sub(start, i - 1)
+                if nums == ""
+                    nums = piece
+                else
+                    nums = "{nums} {piece}"
+                end
+                got = got + 1
+            else
+                i = i + 1
+            end
+        end
+        a: i64 = 0
+        while i <= n and a == 0
+            if raw:byte(i) == 34
+                a = i
+            end
+            i = i + 1
+        end
+        b: i64 = 0
+        while i <= n and b == 0
+            if raw:byte(i) == 34
+                b = i
+            end
+            i = i + 1
+        end
+        if got == 3 and a > 0 and b > a
+            role: str = raw:sub(a + 1, b - 1)
+            out = "{nums} {role}"
         end
     end
     out
@@ -426,8 +538,13 @@ main(): i64
     nroles = nroles - 1
     ncards = ncards - 1
     print("  taxonomy   {nroles} roles, {ncards} cards")
-    if nroles != 18
-        print("highlight corpus: FAIL — H-2 closes the taxonomy at 18, not {nroles}")
+    -- H-2 rules CLOSURE, not a count (gap[078]), so no number is asserted here.
+    -- The projector's own `closed()` is what convicts a drifted taxonomy, and it
+    -- has already run — `hlmode=table` exits 3 if it failed, which is the check
+    -- above. What IS asserted is that the set is non-empty and that every role
+    -- carries at least one card, both of which a count would have hidden.
+    if nroles < 1 or ncards < nroles
+        print("highlight corpus: FAIL — {nroles} roles and {ncards} cards; a closed set is enumerated and every role is refined")
         std.os.exit(1)
     end
 
@@ -451,6 +568,12 @@ main(): i64
     rolelines = {}
     cardlines = {}
     firstline = {}
+    -- PROVENANCE (H-7, G-TOTAL): every role a corpus byte actually takes must
+    -- answer `why()` with a rule citation and a dnir edge. Tallied by BYTE so
+    -- the number weights what the corpus really contains rather than what the
+    -- table could contain.
+    codes = {}
+    codebytes = {}
 
     f: i64 = 1
     while f <= #srcs
@@ -534,6 +657,20 @@ main(): i64
                             end
                         else
                             nroled = nroled + 1
+                            slot: i64 = 0
+                            z: i64 = 1
+                            while z <= #codes
+                                if codes[z] == rb
+                                    slot = z
+                                end
+                                z = z + 1
+                            end
+                            if slot == 0
+                                codes[#codes + 1] = rb
+                                codebytes[#codes] = 0
+                                slot = #codes
+                            end
+                            codebytes[slot] = codebytes[slot] + 1
                         end
                     end
                     j = j + 1
@@ -676,6 +813,133 @@ main(): i64
     nproofs: str = to(str)(#proofs)
     print("    {npass} of {nproofs} proofs hold")
 
+    -- ── THE SPAN CORPUS, gap[078] ───────────────────────────────────────────
+    -- The losing taxonomy's corpus, measured by the surviving one. Role NAMES
+    -- at SPAN granularity against hand-written sidecars, which convicts a
+    -- rename where a per-byte golden of role letters cannot.
+    print("")
+    print("  THE SPAN CORPUS (gap[078]) — role names against hand-written sidecars")
+    goodrow: str = sidespan("    { 4, 12, 1, \"invoke\" },")
+    badrow: str = sidespan("-- this line is prose, not a span")
+    if goodrow != "4 12 1 invoke"
+        print("    !! the sidecar reader did not parse a real span row; it returned ({goodrow})")
+        bad = bad + 1
+    end
+    if badrow != ""
+        print("    !! the sidecar reader accepted prose as a span; every comment would assert")
+        bad = bad + 1
+    end
+    nsfix: i64 = 0
+    nspan: i64 = 0
+    smiss: i64 = 0
+    sdiag: i64 = 0
+    scontrol: i64 = 0
+    s: i64 = 1
+    while s <= #spansrcs
+        src: str = spansrcs[s]
+        base: str = src:sub(1, #src - 4)
+        side: str = "{base}.roles.duo"
+        kind: str = spankinds[s]
+        std.script.run("hlpath={src} {bin} > {work}/sr 2>/dev/null")
+        std.script.run("hlmode=cards hlpath={src} {bin} > {work}/sc 2>/dev/null")
+        rl = cut(slurp("{work}/sr"))
+        cl = cut(slurp("{work}/sc"))
+        got = {}
+        i: i64 = 1
+        while i <= #rl
+            roleln: str = rl[i]
+            cardln: str = cl[i]
+            j: i64 = 1
+            while j <= #roleln
+                rb: str = roleln:sub(j, j)
+                cb: str = cardln:sub(j, j)
+                e: i64 = j
+                while e <= #roleln and roleln:sub(e, e) == rb and cardln:sub(e, e) == cb
+                    e = e + 1
+                end
+                wide: i64 = e - j
+                if rb != "l" or cb != "s"
+                    nm: str = rolename(rb)
+                    got[#got + 1] = "{i} {j} {wide} {nm}"
+                    nsolid = nsolid + wide
+                    if rb == "!"
+                        ndiag = ndiag + wide
+                        sdiag = sdiag + wide
+                        if kind == "control"
+                            ncontrol = ncontrol + wide
+                            scontrol = scontrol + wide
+                        end
+                    else
+                        nroled = nroled + wide
+                        slot: i64 = 0
+                        z: i64 = 1
+                        while z <= #codes
+                            if codes[z] == rb
+                                slot = z
+                            end
+                            z = z + 1
+                        end
+                        if slot == 0
+                            codes[#codes + 1] = rb
+                            codebytes[#codes] = 0
+                            slot = #codes
+                        end
+                        codebytes[slot] = codebytes[slot] + wide
+                    end
+                end
+                j = e
+            end
+            i = i + 1
+        end
+        want = {}
+        for k, ln in slurp(side):split("\n")
+            rec: str = sidespan(ln)
+            if rec != ""
+                want[#want + 1] = rec
+            end
+        end
+        if #want == 0
+            print("    !! {side} parsed to 0 spans; the sidecar is unreadable, not empty")
+            bad = bad + 1
+        end
+        wide2: i64 = #got
+        if #want > wide2
+            wide2 = #want
+        end
+        i = 1
+        while i <= wide2
+            sa: str = "-"
+            sb: str = "-"
+            if i <= #got
+                sa = got[i]
+            end
+            if i <= #want
+                sb = want[i]
+            end
+            if sa != sb
+                print("    !! {src}  scan({sa})  sidecar({sb})")
+                smiss = smiss + 1
+                bad = bad + 1
+            end
+            i = i + 1
+        end
+        nspan = nspan + #got
+        nsfix = nsfix + 1
+        s = s + 1
+    end
+    print("    fixtures  {nsfix}")
+    print("    spans     {nspan}")
+    print("    mismatch  {smiss}")
+    print("    diagnostic bytes  {sdiag}, of which {scontrol} in a control fixture")
+    if sdiag != scontrol
+        print("    !! a canonical span fixture defaulted where it should have diagnosed")
+        bad = bad + 1
+    end
+    if scontrol == 0
+        print("    !! no span fixture produced a diagnostic — the machinery is unproven here")
+        bad = bad + 1
+    end
+
     print("")
     print("  SPECIFICITY (Pass 118 — the bar coverage is not)")
     edge: i64 = 0
@@ -715,6 +979,65 @@ main(): i64
             print("      {cell}{named}")
         end
         k = k + 1
+    end
+
+    -- ── G-TOTAL, THE THREE GATED NUMBERS (§0g) ──────────────────────────────
+    -- Reported here as three numbers over BOTH corpora, because gap[078]'s
+    -- falsifier is precisely a coverage percentage published without naming the
+    -- taxonomy that produced it. There is now one taxonomy, so there is one set
+    -- of numbers, and SPECIFICITY is reported separately below because Pass 118
+    -- makes it the bar coverage is not.
+    print("")
+    print("  G-TOTAL (§0g) — coverage, ambiguity, provenance")
+    provbytes: i64 = 0
+    provroles: i64 = 0
+    k = 1
+    while k <= #codes
+        one: str = codes[k]
+        std.script.run("hlmode=why hlrole={one} {bin} > {work}/w 2>/dev/null")
+        chain: str = slurp("{work}/w")
+        cited: i64 = chain:find("rule     §")
+        edged: i64 = chain:find("dnir     dnir[.]")
+        if cited > 0 and edged > 0
+            provbytes = provbytes + codebytes[k]
+            provroles = provroles + 1
+        else
+            nm: str = rolename(one)
+            print("    !! role {nm} answers `why` with no rule citation or no dnir edge")
+            bad = bad + 1
+        end
+        k = k + 1
+    end
+    -- Coverage is measured over the CANONICAL fixtures. The negative controls
+    -- exist to produce diagnostics; counting a deliberate diagnostic against
+    -- coverage would make the control self-defeating, so their bytes leave both
+    -- sides of the ratio and are reported on their own line instead.
+    canonbytes: i64 = nsolid - ncontrol
+    cov: i64 = 0
+    if canonbytes > 0
+        cov = to(i64)(nroled * 100 / canonbytes)
+    end
+    unresolved: i64 = ndiag - ncontrol
+    prov: i64 = 0
+    if nroled > 0
+        prov = to(i64)(provbytes * 100 / nroled)
+    end
+    nrolesused: str = to(str)(#codes)
+    print("    coverage    {cov}%   ({nroled} of {canonbytes} canonical non-whitespace bytes carry a role)")
+    print("    ambiguity   {unresolved}     unresolved spans outside the negative controls")
+    print("    provenance  {prov}%   ({provroles} of {nrolesused} roles used answer `why` with rule + dnir)")
+    print("    controls    {ncontrol} bytes deliberately diagnosed, which is what makes the two zeros readable")
+    if cov != 100
+        print("    !! G-TOTAL requires coverage = 100%")
+        bad = bad + 1
+    end
+    if unresolved != 0
+        print("    !! G-TOTAL requires ambiguity = 0")
+        bad = bad + 1
+    end
+    if prov != 100
+        print("    !! G-TOTAL requires provenance = 100%")
+        bad = bad + 1
     end
 
     print("")
@@ -759,8 +1082,11 @@ main(): i64
     std.script.run("hlmode=legend {bin} > {work}/legend 2>/dev/null")
     nleg: i64 = #cut(slurp("{work}/legend"))
     print("    LSP legend  {nleg} semantic-token types, from the same rows")
-    if nleg != 18
-        print("    !! the legend carries {nleg} types against 18 roles")
+    -- Not "18": the legend must carry EXACTLY the roles the taxonomy enumerates.
+    -- That is the drift check a fixed number was standing in for, and it keeps
+    -- working when the binding moves — which it just did (gap[078]).
+    if nleg != nroles
+        print("    !! the legend carries {nleg} types against {nroles} roles")
         bad = bad + 1
     end
 
@@ -775,6 +1101,14 @@ main(): i64
     end
     if edge < edgefloor
         print("  !! edge-decided lexemes {edge} under floor {edgefloor}")
+        bad = bad + 1
+    end
+    if nsfix < spanfixturefloor
+        print("  !! span fixtures {nsfix} under floor {spanfixturefloor}")
+        bad = bad + 1
+    end
+    if nspan < spanfloor
+        print("  !! spans {nspan} under floor {spanfloor}")
         bad = bad + 1
     end
     if bad > 0
