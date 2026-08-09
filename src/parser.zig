@@ -8674,3 +8674,25 @@ test "apply-one: a comprehension is a stream, and takes no pack stance" {
     , &arena);
     try testing.expect(mod.body.stmts[0].assign.values[0].* == .list_comp);
 }
+test "apply-one: @{...} under a named binding RECOVERS the elided subject" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // c0 §43 `anchor.brace`: "the same form, name recovered from the enclosing
+    // descriptor". This is the row where there IS one, and it is the positive
+    // control for the top-level row above — that one asserts `home == null`,
+    // which a parser that never set `home` at all would also satisfy. The two
+    // must be read together or neither means anything.
+    //
+    // MEASURED, not assumed: `home` comes back "kind". The parser holds
+    // `descriptor_home` across the initializer of a named typed binding, so the
+    // elided subject resolves to the name being bound.
+    const mod = try parseDuoSource(
+        \\kind: any = @{ eof = 0 }
+    , &arena);
+    const staged = mod.body.stmts[0].local_decl.inits[0];
+    try testing.expect(staged.* == .unop);
+    const p = staged.unop.operand.table.pack;
+    try testing.expect(p.elided);
+    try testing.expectEqualStrings("kind", p.home.?);
+    try testing.expect(p.applied);
+}
