@@ -226,9 +226,9 @@ main = (): i64
     print("  the deny table over src/*.zig — the corpus audit100 cannot see")
     print("  row          count   budget")
     over = 0
-    over = over + row("upper", upper, 770)
-    over = over + row("companion", companion, 47)
-    over = over + row("relation", relation, 47)
+    over = over + row("upper", upper, 444)
+    over = over + row("companion", companion, 41)
+    over = over + row("relation", relation, 45)
     over = over + row("assume", assume, 17)
     print("")
     print("  §0.1 LAW-ONE denies uppercase; §0.3 denies companion *Kind/*Type")
