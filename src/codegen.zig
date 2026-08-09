@@ -3964,6 +3964,11 @@ pub const CodeGen = struct {
                 }
                 for (ld.inits, 0..) |expr, i| {
                     const hint: RT = if (i < ld.names.len) self.resolve_binding_type(&ld.names[i]) else .any;
+                    // gap[094]. `a: str = "{i}"` — a number into a `str` place.
+                    if (self.native_str_place_violated(hint, expr)) {
+                        native_diag_fail("str-place-numeric");
+                        break :blk false;
+                    }
                     if (!self.init_is_native_scalar(expr, hint)) {
                         native_diag_fail("local-decl-init");
                         break :blk false;
@@ -4095,6 +4100,28 @@ pub const CodeGen = struct {
                         self.global_type(as.targets[i].name.ident) orelse .any
                     else
                         .any;
+                    // gap[094]. The DECLARED type of the place, which is not the
+                    // same question `hint` answers. `precheck_types` MERGES every
+                    // binding of a name and collapses a disagreement to `.any`
+                    // — `out: str = "a"` followed by `out = word` (an i64) is
+                    // exactly such a disagreement, so by the time this arm runs
+                    // the place reads `.any` and a check against it can never
+                    // fire. Sema's type for the target expression still carries
+                    // the declaration, so that is what the str-place check asks.
+                    // `out: str = "a"` then `out = word`, where `word` is the
+                    // bare hole `i`. This is the row that SEGFAULTED, and a
+                    // check on DECLARATIONS alone would have missed it: the
+                    // declaration is well typed and the later assignment is not.
+                    const place: RT = if (i < as.targets.len)
+                        self.expr_type(as.targets[i])
+                    else
+                        .any;
+                    if (self.native_str_place_violated(place, value) or
+                        self.native_str_place_violated(hint, value))
+                    {
+                        native_diag_fail("str-place-numeric");
+                        break :blk false;
+                    }
                     if (!self.init_is_native_scalar(value, hint)) {
                         native_diag_fail_fmt("assign-value:{s}", .{if (value.* == .unop) @tagName(value.unop.op) else @tagName(value.*)});
                         break :blk false;
@@ -4682,6 +4709,31 @@ pub const CodeGen = struct {
             },
             else => {},
         }
+    }
+
+    /// gap[094], the paired requirement. TRUE when a `str` PLACE is being fed a
+    /// value this predicate can prove is a number.
+    ///
+    /// `"{i}"` with no surrounding literal text desugars to the bare hole — the
+    /// concat fold that would have converted it never runs on a one-part list —
+    /// so `a: str = "{i}"` puts an i64 into a `const char*` place. C's type
+    /// system catches it and refuses the program. The native-scalar precheck had
+    /// no such check, admitted the module, and emitted a LOAD THROUGH 7: the
+    /// direct backend reported `ok compile` and the binary took SIGSEGV, while
+    /// the C backend correctly refused the identical source.
+    ///
+    /// A backend accepting what the oracle rejects is the §3 failure mode, and a
+    /// segfault is the worst way to express it. Refusing here turns it into a
+    /// DNB, which routes the program to C and gets the honest diagnostic. This
+    /// does NOT repair the desugar — that lives in the parser and is still owed;
+    /// it stops the native path from making the parser's defect lethal.
+    ///
+    /// Only PROVEN numbers refuse. `.any` is unproven and stays admitted, so a
+    /// value the predicate cannot type is not punished for it.
+    fn native_str_place_violated(self: *CodeGen, hint: RT, value: *const ast.Expr) bool {
+        if (hint != .str) return false;
+        const vt = self.precheck_value_type(value);
+        return vt.is_numeric() or vt == .bool;
     }
 
     /// The two facts, and nothing else. `.any` means "unproven", never "dynamic".
@@ -16476,6 +16528,45 @@ pub const CodeGen = struct {
                         self.p(", ", .{});
                         if (mc.args.len > 0) try self.emit_as_lua_value(mc.args[0]) else self.p("lua_val_nil()", .{});
                         self.p("))", .{});
+                    } else if (std.mem.eql(u8, mc.method, "push") and mc.args.len == 1) {
+                        // gap[068]. `t:push(v)` is THE canonical append (§0.9 —
+                        // `table.` DOES NOT EXIST, so there is no other
+                        // spelling). It had no arm here, so it fell through to
+                        // the generic lookup, read the field `push` off the
+                        // table, got NIL, and `lua_invoke(nil, …)` did nothing
+                        // at all. `t = { }` / `t:push(10)` / `t:push(29)` then
+                        // printed `0 nil nil` — exit 0, `ok compile`, no
+                        // diagnostic. Both appends vanished, and the wrong
+                        // answer was EMPTY, which reads as "no results" rather
+                        // than "the append did not happen".
+                        //
+                        // `lua_tbl_insert(t, v, nil)` is the append arm of the
+                        // same helper `table.insert` already used, so this adds
+                        // no new runtime surface — it routes the canonical
+                        // spelling to the code that was always there. Alias and
+                        // record methods are resolved ABOVE this chain, so a
+                        // user-defined `push` still wins.
+                        self.p("lua_tbl_insert(", .{});
+                        try self.emit_as_lua_value(mc.obj);
+                        self.p(", ", .{});
+                        try self.emit_as_lua_value(mc.args[0]);
+                        self.p(", lua_val_nil())", .{});
+                    } else if (std.mem.eql(u8, mc.method, "pop") and mc.args.len == 0) {
+                        // gap[068], the sibling the gap told us to look for:
+                        // "One no-op found by hand usually means an untested
+                        // receiver state, not a unique defect." `t:pop()` had
+                        // the identical hole from the other side — it read the
+                        // field `pop`, got nil, and answered NIL for every pop.
+                        // `examples/boring/stackqueue.duo` failed as
+                        // `want '3 1' got 'nil 1'`, and `nil` reads as "the
+                        // stack was empty" rather than "pop is not wired".
+                        //
+                        // `lua_tbl_remove(t, nil)` is the remove-the-last arm
+                        // of the helper `table.remove` already uses, so LIFO
+                        // comes from the code that was always there.
+                        self.p("lua_tbl_remove(", .{});
+                        try self.emit_as_lua_value(mc.obj);
+                        self.p(", lua_val_nil())", .{});
                     } else {
                         const hash = calc_lua_hash(mc.method);
                         self.p("({{\n", .{});
