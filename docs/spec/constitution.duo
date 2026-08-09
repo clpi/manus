@@ -653,6 +653,102 @@ layers = {
     "graph", "specialized", "realization", "dnir", "backend",
 }
 
+-- ═══ §36 · THE COMPILER'S OWN ARCHITECTURE IS DUON-SHAPED ══════════════════
+--
+-- The compiler should not merely COMPILE duon this way. `SemanticGraph.addNode`
+-- is not ugly naming; it is evidence the architecture has not internalized its
+-- own language. Every claim below was measured at `src/semantic_graph.zig` on
+-- 2026-08-08, not recalled.
+
+archrelation = law{
+    id    = "law.arch.relation"
+    kind  = .invariant
+    holds = .relation
+    binds = {
+        "a distinction recoverable from OPERANDS, LEVELS, HOMES, LAWSETS or CONTEXT",
+        "may not be a separate host function name, enum case, registry or manager",
+        "canonical is the ordinary relation specialized by its operands",
+        "a bootstrap host function may implement it PHYSICALLY, never as authority",
+    }
+    fails = "addnode addedge addchild registertype registerprotocol emitwitness"
+}
+
+-- These are not unrelated functions sharing a prefix. They are ONE open
+-- relation successively specialized: `add`, then the LEVEL, then the subject,
+-- then the value. Where the operand already names its kind, `g:add(n)` resolves
+-- through the descriptor of `n` and the level is unnecessary.
+add.canon = { "g:add(node)(n)", "g:add(edge)(a, rel, b)", "g:add(n)" }
+
+factone = law{
+    id    = "law.fact.one"
+    kind  = .invariant
+    holds = .one
+    binds = {
+        "two properties projecting one relationship may NOT be written independently",
+        "scope and contains",
+        "a reverse index and its forward edge",
+        "ownership and release obligations",
+        "origin and provenance references",
+    }
+    fails = "addChild writes n.scope = parent AND addEdge(.contains) — two mutations of one fact"
+}
+
+-- Measured: `addChild` at src/semantic_graph.zig:297 sets `n.scope = parent`,
+-- then calls `addNode`, then `addEdge(.contains)`. The source itself records
+-- that the two used to drift apart, which is the tell. `parent contains child`
+-- is the FACT; `child.scope`, `parent.children` and ancestry are PROJECTIONS.
+-- So `addChild` has no semantic existence at all: `parent:add(contains)(child)`.
+contains.canon = "parent:add(contains)(child)"
+
+hostprojection = law{
+    id    = "law.host.projection"
+    kind  = .invariant
+    holds = .projection
+    binds = {
+        "the bootstrap may look un-duon-like ONLY where the host requires it",
+        "every such api NAMES the duon relation it projects",
+        "it carries authority false, its semantic owner, and its deletion gate",
+    }
+    fails = "a host abstraction made permanent because it was convenient in zig"
+}
+
+-- `add` is an ORDINARY OPEN RELATION, not privileged compiler magic. The
+-- compiler ships well-known specializations; a graph world may authorize more
+-- under coherence. A hidden switch over kinds would fix forever what adding can
+-- mean.
+--
+-- Measured: NodeKind carries 15 cases and EdgeKind 7 — and NodeKind still lists
+-- `directive`, `concept` and `pipeline`, three concepts already RETIRED as
+-- canonical duon. A closed enum outlived the semantics it enumerated, which is
+-- what closed kinds do.
+kinds.role = .index          -- bootstrap acceleration, never ontology
+kinds.authority = false
+
+-- A graph VALUE is immutable current truth. Authority to produce the next
+-- incarnation is a WORLD, so arbitrary code cannot mutate compiler truth by
+-- accident. G0 --transaction--> G1, never mutation in place — which is what
+-- buys incrementality, undo, replay, speculation, parallel agents and stable
+-- incarnation identity.
+edit.canon = { "edit = world(graph)(g)", "edit:add(edge)(...)" }
+
+-- The irreducible primitives. Everything else — descriptor, binding, place,
+-- effect, capability, lifetime, origin, trust, provenance, representation,
+-- realization — is a semantic FAMILY OF FACTS, not a separate graph object
+-- class. The graph must not look like an OO graph database implemented in Zig;
+-- it is duon's relation calculus made persistent.
+primitives = { "value", "relation", "fact", "world", "demand", "witness" }
+
+-- dnir is THE CANONICAL REALIZED RELATION STREAM — not nodes plus an operation
+-- taxonomy. This SUPERSEDES the earlier "family of facets" reading in §28:
+-- naming sub-ir families recreates ir kingdoms under a friendlier word.
+-- The `add` identity stays traceable at every rung, which a conventional opcode
+-- enum cannot promise:
+--
+--     semantic     x --add--> y, z
+--     realized     add(i64)(register, register)
+--     dnir         %3 = add.i64 %1 %2
+dnir.stream = true
+
 -- ═══ the final invariant ═══════════════════════════════════════════════════
 
 final = law{
