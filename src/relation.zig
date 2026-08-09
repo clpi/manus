@@ -629,6 +629,10 @@ test "declFromAssign refuses an ordinary assignment" {
     // plain two-name assignment, which must stay the overwhelming case.
     const target = ast.Expr{ .name = .{ .loc = .{ .file = "t", .line = 1, .col = 1 }, .ident = "x" } };
     const value = ast.Expr{ .name = .{ .loc = .{ .file = "t", .line = 1, .col = 1 }, .ident = "y" } };
-    const as = ast.Assign{ .loc = .{ .file = "t", .line = 1, .col = 1 }, .targets = &[_]*ast.Expr{@constCast(&target)}, .values = &[_]*ast.Expr{@constCast(&value)} };
+    // `ast.Assign` does not exist — `assign` is an ANONYMOUS struct inside the
+    // `Stmt` union, so there is no named type to construct. `declFromAssign`
+    // takes `anytype` and reads three fields, so the recogniser's real contract
+    // is structural: this literal IS what it receives at every call site.
+    const as = .{ .loc = ast.Loc{ .file = "t", .line = 1, .col = 1 }, .targets = &[_]*ast.Expr{@constCast(&target)}, .values = &[_]*ast.Expr{@constCast(&value)} };
     try testing.expect(declFromAssign(&as) == null);
 }
