@@ -1,6 +1,0 @@
-Inner: { x: i64 }
-Outer: { i: Inner, y: i64 }
-main(): i64
-    o: Outer = { i = { x = 40 }, y = 2 }
-    return o.i.x + o.y
-end

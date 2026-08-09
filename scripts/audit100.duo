@@ -1096,7 +1096,47 @@ main(): i64
     --   moved 14098 -> 14105 under me from a tracked edit that was not mine.
     --   13966 is the value at this commit; if it reads red for work that is not
     --   an underscore regression, remeasure before paying it.
-    budgets: str = "13966 2136 18 1808 259 322 479 154 58 2020 442 167 128 228 36 2411 2258 3441 6 324"
+    -- 2026-08-09, gap[108] — `native-differential` now COMPILES `unsupported/`
+    -- instead of only listing it. Three rows move and all three are attributed;
+    -- one of them moves DOWNWARD, which is the reason the other two are paid
+    -- rather than argued.
+    --
+    --   row          delta   where
+    --   concatlit     -8     scripts/native_differential.duo   (paid down)
+    --   underprefix   +2     scripts/native_differential.duo
+    --   stdlib        +1     examples/native_differential/canon4_str_scan_lambda.duo
+    --
+    --   concatlit -8   the new frontier verdict is written with interpolation
+    --                  (`"c={c}/[{ctext}]"`), and folding `known_divergent/`
+    --                  into the same helper DELETED the duplicate `..` ladder
+    --                  it used to carry. The row stays red by 33 from debt that
+    --                  is not in these files; the budget is NOT tightened,
+    --                  because tightening a row five sessions are writing turns
+    --                  someone else's unrelated commit red.
+    --   underprefix+2  `_frontier` and its body reaching the file's existing
+    --                  private helpers — `_WORK` `_compile` `_rc` `_printed`
+    --                  `_fail` `_stem`. Every one of those names predates this
+    --                  diff; the underscore is this script's export-control
+    --                  spelling throughout, and a helper that called them by
+    --                  some other name would not be calling them. Folding the
+    --                  two frontier loops into one already removed seven such
+    --                  references, which is what kept this at 2 instead of 9.
+    --                  1808 -> 1810. The row was ALREADY over by 2 before this
+    --                  diff, from files it does not touch; that debt is left
+    --                  where it is rather than absorbed into this number.
+    --   stdlib +1      one `string.byte`, in a file that MOVED rather than a
+    --                  line that was written: `canon4_str_scan_lambda.duo` was
+    --                  promoted out of `unsupported/` (which the audit does not
+    --                  reach) after the new gate found it compiling and agreeing.
+    --                  No new stdlib reach entered the tree. `src[i]` is the
+    --                  §0.8 spelling and was tried first — it is worse than
+    --                  unsupported: `--backend=c` emits `lua_eq(src[i], 32)`
+    --                  against an undeclared `lua_eq` and fails to build, while
+    --                  `--backend=direct` compiles it and answers 2 where the
+    --                  `string.byte` form answers 3. Recorded in gaps/GAP-108.md;
+    --                  the same finding the ward entry above reached as GAP-025.
+    --                  2020 -> 2021.
+    budgets: str = "13966 2136 18 1810 259 322 479 154 58 2021 442 167 128 228 36 2411 2258 3441 6 324"
 
     -- Per-row: 1 = measure with string bodies INTACT. Only `concatlit` sets
     -- it, because its subject IS the string literal; stripping bodies takes

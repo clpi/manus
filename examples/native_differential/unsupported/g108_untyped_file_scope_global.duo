@@ -1,0 +1,47 @@
+-- gap[108]. The UNTYPED file-scope binding — the half of gap[066] the guard
+-- could not see.
+--
+-- `g066_written_file_scope_global.duo` next to this file spells its bindings
+-- `total: i64 = 0`, which the parser hands module scope as a DECLARATION, and
+-- the precheck guard added for gap[066] scanned exactly two statement kinds:
+-- `.local_decl` and `.global_decl`. This program spells the same binding
+-- `total = 5`. There is no `local` / `var` keyword in duon, so with the type
+-- annotation gone there is no declaration left to parse — module scope gets an
+-- `.assign`, the same node `total = 8` produces inside `main`. The guard saw
+-- nothing and the program ran natively:
+--
+--     --backend=direct   ok compile   8 5
+--     --backend=c                     8 8
+--
+-- C is right. A file-scope binding is ONE storage location; the 8 written in
+-- `main` must be what `show` reads. The direct backend gave each function its
+-- own register-resident copy re-materialized from the initializer, so the write
+-- landed nowhere and the read folded to 5.
+--
+-- Two things worth keeping. The gap[066] guard was not wrong, it was
+-- INCOMPLETE, and the incompleteness tracked a SPELLING rather than a
+-- semantics — the identical program is refused with a type annotation and
+-- admitted without one. And `promote_module_captured_locals` in the same file
+-- already treated module-scope `.assign` as a binding site, which is what
+-- makes this an omission rather than a decision.
+--
+-- The precheck now scans module-scope `.assign` targets too, so this program
+-- takes the honest DNB001 path (`mod-global-written:total`) and answers 8 8
+-- through C. Native census is unchanged at 129: no corpus program had this
+-- shape, which is why nothing caught it — hence this fixture.
+--
+-- Promote both files into the corpus proper the day the native profile gives a
+-- written file-scope binding real storage. The C column already prints `8 8`.
+
+total = 5
+
+show(): i64
+    total
+
+main(): i64
+    total = 8
+    a: i64 = total
+    b: i64 = show()
+    print(a)
+    print(b)
+    0
