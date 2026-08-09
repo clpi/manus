@@ -6259,6 +6259,13 @@ pub const CodeGen = struct {
         if (module_has_dense_table(mod)) {
             self.p("{s}", .{duo_dense_runtime});
             self.nl();
+        } else {
+            // gap[099]. A hoisted boxed bound versions its loop whether or not
+            // the module has a dense table, so the bound helpers cannot ride
+            // along with the dense runtime any more. Two `static inline`
+            // definitions; unused ones cost nothing and draw no warning.
+            self.p("{s}", .{duo_loop_bound_runtime});
+            self.nl();
         }
         if (self.moduleNeedsLuaRuntime()) {
             self.p("#include <locale.h>\n", .{});
@@ -11757,7 +11764,29 @@ pub const CodeGen = struct {
 
         try self.lv_scan_block(&wl.body, &st);
         if (st.uses_global and st.has_call) st.ok = false;
-        if (!st.ok or st.checks.items.len == 0) {
+        // gap[099]. Zero dense-range checks used to decline outright, because
+        // versioning was BUILT for index checking and an unchecked loop has
+        // nothing to prove. That reasoning is right about the checks and wrong
+        // about the CONDITION, and it is the condition gap[099] is about.
+        //
+        // A hoisted bound emits `__wb_ok ? ((double)i <= __wb_n) : lua_leq(…)`.
+        // That ternary is opaque to scalar evolution, so LLVM cannot recognize
+        // the loop at all: measured on one kernel with a varying argument, both
+        // forms answering 2601333333330000, `scan(n: any)` ran 6.23s where
+        // `scan(n: i64)` ran 0.00s — the typed loop was closed-formed and the
+        // boxed one was not. Not a constant factor; the trip count is the gap.
+        //
+        // The repair was already sitting here fully built. With zero checks the
+        // guard degenerates to `if (__lvhi != INT64_MIN)` and the fast arm's
+        // condition is `i <= __lvhi` — a plain int64 compare against a bound
+        // `duo_dt_hi_num` has already proved exact over [0, 1e15], with the
+        // original boxed test kept verbatim in the else arm. So the integer arm
+        // gap[099] asks for is the arm this function declined to reach.
+        //
+        // Scoped to `hoisted`: an unhoisted loop's bound is ALREADY an integer
+        // and its condition already lowers to an int compare, so versioning it
+        // with no checks would double the body for nothing.
+        if (!st.ok or (st.checks.items.len == 0 and !hoisted)) {
             st.checks.deinit(self.alloc);
             return null;
         }
@@ -24969,10 +24998,51 @@ fn runtimeMetafieldLitReassignLine(
 /// (Lua's `nil` coerced to a number, which is what the boxed path yields in the
 /// same arithmetic context). The static cap survives only as a *reservation*, so
 /// getting it wrong costs a realloc, never memory safety.
+/// gap[099]. The two loop-bound helpers, on their own.
+///
+/// They used to reach the output only inside `duo_dense_runtime`, which is
+/// emitted under `module_has_dense_table`. That was right while loop versioning
+/// existed only to prove index checks — no dense table, no versioning, no need
+/// for the helpers. It stopped being right when a hoisted boxed bound became a
+/// reason to version a loop that touches no table at all: the versioned loop
+/// emitted `duo_dt_hi_num(...)` into a file whose prelude did not declare it.
+///
+/// They carry their own include guard, distinct from `DUO_DT_DEFINED`, and the
+/// dense runtime is a superset — so whichever arrives first, the other is a
+/// no-op and the two can never disagree about a definition.
+const duo_loop_bound_runtime =
+    \\/* --- Duo loop-versioning bound helpers --- */
+    \\#ifndef DUO_LVB_DEFINED
+    \\#define DUO_LVB_DEFINED
+    \\#include <stdint.h>
+    \\#include <stdbool.h>
+    \\/* Largest counter value a `while i < e` / `i <= e` loop can reach, for a    */
+    \\/* native integer bound. INT64_MIN means "no usable bound" and declines.     */
+    \\static inline int64_t duo_dt_hi_int(int64_t e, bool strict) {
+    \\    if (!strict) return e;
+    \\    return e == INT64_MIN ? INT64_MIN : e - 1;
+    \\}
+    \\/* The same, for the boxed bound the hoisted `while` compares as a double.   */
+    \\/* Outside [0, 1e15] this declines: below 2^53 every int64 converts to double */
+    \\/* exactly, so within that window `(double)i <= d` really does imply         */
+    \\/* `i <= (int64_t)d`. NaN takes the same exit as a negative bound.           */
+    \\static inline int64_t duo_dt_hi_num(bool ok, double d, bool strict) {
+    \\    int64_t t;
+    \\    if (!ok || !(d >= 0.0) || d > 1e15) return INT64_MIN;
+    \\    t = (int64_t)d;
+    \\    if (strict && (double)t == d) t -= 1;
+    \\    return t;
+    \\}
+    \\#endif
+;
+
 const duo_dense_runtime =
     \\/* --- Duo dense (native array) table backing --- */
     \\#ifndef DUO_DT_DEFINED
     \\#define DUO_DT_DEFINED
+    \\#ifndef DUO_LVB_DEFINED
+    \\#define DUO_LVB_DEFINED
+    \\#endif
     \\#include <stdlib.h>
     \\#include <string.h>
     \\#include <stdint.h>
