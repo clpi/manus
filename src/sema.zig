@@ -5316,6 +5316,18 @@ pub const Sema = struct {
 
             var loop_table_assigns: usize = 0;
             var loop_poly_fill: ?DenseTablePolyFill = null;
+            // The closed form sums EVERY index in the range, so the loop must
+            // VISIT every index. The guard below rejects a statement this walk
+            // cannot model — but the increment is an `.assign` like any other,
+            // matches none of the three recognizers, and was therefore skipped
+            // in silence. So `i = i + 7` looked identical to `i = i + 1`.
+            //
+            // Measured: `xs[i] = i` stepping by 7, summed over 1..n with n=10,
+            // fills only xs[1] and xs[8] and must answer 9. This detector
+            // answered 55 — n(n+1)/2 — a wrong answer, not a missed
+            // optimization. §3: a detector must verify every constant its
+            // emitter assumes and decline to the general path otherwise.
+            var index_step_one = false;
 
             for (wl.body.stmts) |*s| {
                 // The closed form below sums the WHOLE range, so the loop has to
@@ -5340,9 +5352,15 @@ pub const Sema = struct {
                     } else if (dense_table_sum_reduction(tgt, val, tname, idx_name, &consts)) |poly| {
                         reduction_assignments += 1;
                         reduction = poly;
+                    } else if (assign_steps_index_by_one(tgt, val, idx_name)) {
+                        index_step_one = true;
                     }
                 }
             }
+
+            // No verified unit step, no closed form. Declining here costs an
+            // optimization; not declining costs an answer.
+            if (!index_step_one) return;
 
             table_assignments += loop_table_assigns;
             if (loop_poly_fill) |poly| poly_fill = poly;
@@ -5572,6 +5590,22 @@ pub const Sema = struct {
         if (tgt.* != .index) return false;
         const idx = &tgt.index;
         return idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname);
+    }
+
+    /// True for `i = i + 1` / `i = 1 + i` where `i` is the loop index — the ONLY
+    /// step under which a whole-range closed form is sound. Any other step, and
+    /// any step this cannot read, must decline: a fill that visits every 7th
+    /// slot summed against a closed form for every slot is a wrong answer.
+    fn assign_steps_index_by_one(tgt: *const ast.Expr, val: *const ast.Expr, idx_name: []const u8) bool {
+        if (tgt.* != .name or !std.mem.eql(u8, tgt.name.ident, idx_name)) return false;
+        if (val.* != .binop or val.binop.op != .add) return false;
+        const l = val.binop.lhs;
+        const r = val.binop.rhs;
+        const l_is_idx = l.* == .name and std.mem.eql(u8, l.name.ident, idx_name);
+        const r_is_idx = r.* == .name and std.mem.eql(u8, r.name.ident, idx_name);
+        const l_is_one = l.* == .int_lit and l.int_lit.val == 1;
+        const r_is_one = r.* == .int_lit and r.int_lit.val == 1;
+        return (l_is_idx and r_is_one) or (l_is_one and r_is_idx);
     }
 
     fn dense_table_assign_poly(tgt: *const ast.Expr, val: *const ast.Expr, tname: []const u8, idx_name: []const u8, consts: *const DenseTableIntConstSet) ?DenseTablePolyFill {
