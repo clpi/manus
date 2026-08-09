@@ -2469,3 +2469,97 @@ demand = law{
     canon = "parse: config = (src) …  means result(parse): config"
     why   = "a general contextual projection, not a `function return type` production. NNS holds: no new grammar, and it beats both `b = (x, y): point` and inventing function-type notation."
 }
+
+-- ═══ §55 · IDENTITY, AUTHORITY ORDER, AND WHAT SELF-HOSTING MUST NOT COST ══
+
+identity = {
+    language = "duon", website = "duon.so", extension = ".duo",
+    binary = "duon", shellname = "duonsh", aka = ".do"
+}
+
+-- `.do` is NOT canonical. It may be RECOGNIZED as an explicit alias; every file
+-- duon generates — tooling, packages, examples, documentation — emits `.duo`.
+-- `duon.com` stays renounced (squatted); `duon.so` is the site.
+identity.emit = ".duo"
+
+order = law{
+    id    = "law.authority.order"
+    kind  = .invariant
+    holds = .ranked
+    binds = {
+        "current explicit owner directive",
+        "this constitution",
+        "the normative grammar",
+        "the canonical verification corpus",
+        "the implementation",
+        "historical passes, only where not superseded",
+    }
+    keep  = "WHEN AN OWNER RULING SUPERSEDES THIS FILE, UPDATE THIS FILE. Never leave two truths standing and rank them."
+    fails = "a directive recorded beside a contradicting law instead of replacing it"
+}
+
+-- The clarification that keeps monoglot from eating the product. Deleting
+-- foreign SEMANTIC AUTHORITY is the goal; deleting foreign INTEGRATION would
+-- make duon less useful the day it became self-hosted.
+foreign = law{
+    id    = "law.foreign.integration"
+    kind  = .invariant
+    holds = .kept
+    binds = {
+        "100% self-hosting must not reduce duon's usefulness to NON-duon projects",
+        "first-class lawsets and projections stay for lua, c, rust, python, wasm, abi and schema formats, source asts, build systems and package systems",
+        "cross-language transformation uses the SAME graph, provenance, laws and witnesses as native transformation",
+    }
+    deny  = "deleting foreign INTEGRATION in the name of deleting foreign AUTHORITY"
+}
+
+-- ═══ §56 · CHAIN ORDER IS SEMANTIC · NO IMPLICIT CALL ══════════════════════
+
+chain = law{
+    id    = "law.chain.order"
+    kind  = .invariant
+    holds = .ordered
+    binds = {
+        "every postfix relation consumes the result to its LEFT",
+        "order is SEMANTIC: take(n):filter(p) is not filter(p):take(n) unless a law proves it",
+        "streaming and fusion happen where demand, effects and invariants permit",
+        "chaining several relations never REQUIRES an intermediate allocation",
+    }
+    why   = "fusion is a realization freedom, not a reordering licence. A pipeline that silently commuted its stages would be a wrong answer wearing an optimization."
+}
+
+nocall = law{
+    id    = "law.call.explicit"
+    kind  = .invariant
+    holds = .never
+    binds = { "a bare `f` is NEVER inferred as `f()`" }
+    why   = "a callable is a value. Inferring invocation from mention would make every relation passed as a value ambiguous with its own result — and law.call.face depends on the callable face staying distinct."
+    open  = "`p:len` as zero-operand subject invocation is an OPEN candidate, to accept or reject before syntax freeze. It must remain distinct from `p@len`, which ANCHORS the relation rather than performing it."
+}
+
+world.order = law{
+    id    = "law.world.resolve"
+    kind  = .invariant
+    holds = .ranked
+    binds = {
+        "an explicitly supplied world",
+        "a lexically granted compatible world",
+        "an explicitly captured world",
+        "otherwise FAILURE",
+    }
+    deny  = "inferring authority from a package-global ambient capability"
+    why   = "authority that can be reached by default is not a capability. The ladder ends in failure on purpose."
+}
+
+-- ═══ §57 · THE DOCS GATE ═══════════════════════════════════════════════════
+--
+-- Six conditions, each a BUILD FAILURE. Documentation is corpus
+-- (law.doc.corpus) and this is what makes that mechanical.
+docgate = {
+    "a visible semantic token lacks a semantic role",
+    "a current lowering claim lacks compiler evidence",
+    "source, graph, dnir and assembly correspondence is broken",
+    "stale canonical syntax contradicts an owner ruling",
+    "generated escape artifacts appear in output",
+    "distinguishable semantic roles collapse to identical rendering by accident",
+}
