@@ -721,6 +721,23 @@ measurement · grammar formalization + resolution-cost analysis (metered by the
 sealed-collapse floor) · the graph's concrete schema. **The toll**: every claim
 herein pays one running fixture as the corpus lands; blocks-passing/
 blocks-total is the project's first honest number, and §13 is not exempt.
+**Owed (Pass 106) — the artifacts a trained reader checks in the first five
+minutes, none blocked on implementation, all blocked on being written**: the
+FORMAL GRAMMAR + generated parser + ambiguity argument (the first credibility
+artifact) · the COST MODEL (strict evaluation order as small-step semantics;
+demand governs MATERIALIZATION, never evaluation order; the guaranteed-erasure
+list separated from best-effort optimization) · the SOUNDNESS PAGE (three-state:
+proven / runtime-checked / diagnostic — no silent fourth state) · the NUMERICS
+PAGE and the TEXT PAGE (the boring tables experts check first) · the DIAGNOSTICS
+SPEC (to a newcomer the first error message IS the language) · the BORING CORPUS
+(twenty everyday programs — the golden corpus is expert-flavoured) · the
+RELATED-WORK PAGE (Unison, Koka, Zig, Hylo, Mojo, Lean, Erlang, Lua — publishing
+it converts every "have you heard of X" into "yes, section 5") · the GOVERNANCE
+PAGE + license + NAME RESOLUTION. **Release sequencing: the evaluator ships
+first** (G-D1 is days-class by our own claim), with the REPL as its face —
+running-thing → spec → thesis, inverting how it was built, because a hundred
+specs lose to two hundred running lines.
+
 **Owed (Pass 105)**: the PUBLIC CLAIMS DASHBOARD — blocks-passing/blocks-total,
 oracle-parity tables, admission velocity, sealed-collapse rate, ledger size.
 The pitch deck and the CI dashboard are the same artifact, and a release

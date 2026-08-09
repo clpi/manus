@@ -64,6 +64,13 @@ failed as a second type system with an annotation tax; here it is three labels
 riding fact machinery that exists anyway — and the buyer is the **auditor**, not
 the developer. *Fixture:* the token-cannot-leak proof, three lines, red-teamed.
 
+**The Lua succession — WEDGE 1b (promoted by Pass 106).** Tiny embeddable
+`libduo` for game engines, nginx/redis-class hosts, plugins. It is Duo's most
+NATURAL first ecosystem: the shape is already Lua's, hosts adopt embedded
+languages one engine at a time, and there is no ecosystem cold-start to survive.
+It also feeds the wedge — embedded scripting is where agent-generated code meets
+sandboxes and metered worlds. Flagged at Pass 72 and underweighted since.
+
 **Wire, data, serialization (Ward's home).** The codec matrix: declare a shape
 once with layout facts; encode/decode/validators/generators/printers for
 binary + JSON + text *derive*, fused and zero-copy. protobuf / serde /
