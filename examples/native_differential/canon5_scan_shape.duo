@@ -1,5 +1,5 @@
-Tok: @{ kind: i64, start: i64, len: i64 }
-scan = (src: str, pos: i64): Tok
+tok: @{ kind: i64, start: i64, len: i64 }
+scan = (src: str, pos: i64): tok
     n = #src
     i = pos
     if i < n
@@ -12,6 +12,6 @@ scan = (src: str, pos: i64): Tok
     { kind = 2, start = i, len = 1 }
 end
 main(): i64
-    t: Tok = scan("abcd", 1)
+    t: tok = scan("abcd", 1)
     t.start
 end

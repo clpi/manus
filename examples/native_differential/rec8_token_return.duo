@@ -1,8 +1,8 @@
-Tok: { kind: i64, text: str }
-make(k: i64): Tok
+tok: { kind: i64, text: str }
+make(k: i64): tok
     return { kind = k, text = "x" }
 end
 main(): i64
-    t: Tok = make(42)
+    t: tok = make(42)
     return t.kind
 end

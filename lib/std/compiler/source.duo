@@ -1,14 +1,14 @@
 -- std.compiler.source — Duo-native source substrate (§7 Phase 1; Pass 16 WS1/WS2)
--- Parity: src/source_cursor.zig ByteCursor (1-based pos, line/col on \n)
+-- Parity: src/source_cursor.zig bytecursor (1-based pos, line/col on \n)
 -- Note: mutating cursor_* on req'd records requires record-by-ref codegen at call sites.
 
-Loc: {
+loc: {
     file: str,
     line: i64,
     col: i64
 }
 
-ByteCursor: {
+bytecursor: {
     bytes: str,
     pos: i64,
     file: str,
@@ -16,39 +16,39 @@ ByteCursor: {
     col: i64
 }
 
-type StableId = i64
+type stableid = i64
 
-IdGen: {
-    next: StableId
+idgen: {
+    next: stableid
 }
 
-format_loc(loc: Loc): str
+formatloc(loc: loc): str
     loc.file .. ":" .. loc.line:to(str) .. ":" .. loc.col:to(str)
 end
 
-cursor_new(bytes: str, file: str): ByteCursor
+cursornew(bytes: str, file: str): bytecursor
     { bytes = bytes, pos = 1, file = file, line = 1, col = 1 }
 end
 
-cursor_eof(c: ByteCursor): bool
+cursoreof(c: bytecursor): bool
     c.pos > #c.bytes
 end
 
-cursor_peek(c: ByteCursor): i64
-    if cursor_eof(c)
+cursorpeek(c: bytecursor): i64
+    if cursoreof(c)
         return 0
     end
     c.bytes:byte(c.pos)
 end
 
-cursor_peek2(c: ByteCursor): i64
+cursorpeek2(c: bytecursor): i64
     if c.pos + 1 > #c.bytes
         return 0
     end
     c.bytes:byte(c.pos + 1)
 end
 
-cursor_remaining(c: ByteCursor): i64
+cursorremaining(c: bytecursor): i64
     n = #c.bytes - c.pos + 1
     if n < 0
         return 0
@@ -56,8 +56,8 @@ cursor_remaining(c: ByteCursor): i64
     n
 end
 
-cursor_advance(c: ByteCursor): i64
-    if cursor_eof(c)
+cursoradvance(c: bytecursor): i64
+    if cursoreof(c)
         return 0
     end
     ch = c.bytes:byte(c.pos)
@@ -71,29 +71,29 @@ cursor_advance(c: ByteCursor): i64
     ch
 end
 
-cursor_loc(c: ByteCursor): Loc
+cursorloc(c: bytecursor): loc
     { file = c.file, line = c.line, col = c.col }
 end
 
-id_gen_new(start: StableId): IdGen
+idgennew(start: stableid): idgen
     { next = start }
 end
 
-id_gen_next(g: IdGen): StableId
+idgennext(g: idgen): stableid
     id = g.next
     g.next = g.next + 1
     id
 end
 
 M = {
-    format_loc = format_loc,
-    cursor_new = cursor_new,
-    cursor_eof = cursor_eof,
-    cursor_peek = cursor_peek,
-    cursor_peek2 = cursor_peek2,
-    cursor_remaining = cursor_remaining,
-    cursor_advance = cursor_advance,
-    cursor_loc = cursor_loc,
-    id_gen_new = id_gen_new,
-    id_gen_next = id_gen_next,
+    formatloc = formatloc,
+    cursornew = cursornew,
+    cursoreof = cursoreof,
+    cursorpeek = cursorpeek,
+    cursorpeek2 = cursorpeek2,
+    cursorremaining = cursorremaining,
+    cursoradvance = cursoradvance,
+    cursorloc = cursorloc,
+    idgennew = idgennew,
+    idgennext = idgennext,
 }

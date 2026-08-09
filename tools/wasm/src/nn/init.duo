@@ -19,23 +19,23 @@ DTYPE = {
   fp16 = 0, fp32 = 1, ["u8"] = 2, ["i32"] = 3, bf16 = 4, ["i64"] = 5,
 }
 
-Config: {
-  n_embd: i64,
-  n_head: i64,
-  n_layer: i64,
-  n_vocab: i64,
-  ffn_dim: i64,
+config: {
+  nembd: i64,
+  nhead: i64,
+  nlayer: i64,
+  nvocab: i64,
+  ffndim: i64,
   eps: float
 }
 
-LayerWeights: {
+layerweights: {
   wq: [float],
   wk: [float],
   wv: [float],
   wo: [float],
-  w_gate: [float],
-  w_up: [float],
-  w_down: [float]
+  wgate: [float],
+  wup: [float],
+  wdown: [float]
 }
 
 -- ═══════════════════════════════════════════════════════════════
@@ -130,14 +130,14 @@ end
 -- Transformer config read from GGUF metadata
 fun transformer_config(model): any
   meta = model.metadata
-  n_embd = meta["llama.embedding_length"] or 4096
+  nembd = meta["llama.embedding_length"] or 4096
   return {
-    n_embd = n_embd,
-    n_head = meta["llama.attention.head_count"] or 32,
+    nembd = nembd,
+    nhead = meta["llama.attention.head_count"] or 32,
     n_kv_head = meta["llama.attention.head_count_kv"] or 32,
-    n_layer = meta["llama.block_count"] or 1,
-    ffn_dim = meta["llama.feed_forward_length"] or (n_embd * 4),
-    n_vocab = meta["llama.vocab_size"] or 32000,
+    nlayer = meta["llama.block_count"] or 1,
+    ffndim = meta["llama.feed_forward_length"] or (nembd * 4),
+    nvocab = meta["llama.vocab_size"] or 32000,
     eps = meta["llama.attention.layer_norm_rms_epsilon"] or 1e-5,
   }
 end
@@ -162,51 +162,51 @@ end
 -- Attention forward pass
 @hot
 @device(.auto)
-fun attention(x: [float], cfg: Config, layer_weights: LayerWeights): [float]
-  head_dim = cfg.n_embd // cfg.n_head
-  n_head = cfg.n_head
+fun attention(x: [float], cfg: config, weights: layerweights): [float]
+  headdim = cfg.nembd // cfg.nhead
+  nhead = cfg.nhead
 
   -- Q, K, V projections (matmul)
-  q = matmul(x, layer_weights.wq, cfg.n_embd, cfg.n_embd)
-  k = matmul(x, layer_weights.wk, cfg.n_embd, cfg.n_embd)
-  v = matmul(x, layer_weights.wv, cfg.n_embd, cfg.n_embd)
+  q = matmul(x, weights.wq, cfg.nembd, cfg.nembd)
+  k = matmul(x, weights.wk, cfg.nembd, cfg.nembd)
+  v = matmul(x, weights.wv, cfg.nembd, cfg.nembd)
 
   -- Scaled dot-product attention per head
-  scale = 1.0 / math.sqrt(head_dim)
+  scale = 1.0 / headdim:sqrt()
   out = {}
-  for h = 0, n_head - 1
-    offset = h * head_dim
+  for h = 0, nhead - 1
+    offset = h * headdim
     -- Score = Q · K^T / sqrt(d)
     score = 0.0
-    for d = 1, head_dim
+    for d = 1, headdim
       score = score + q[offset + d] * k[offset + d]
     end
     score = score * scale
     -- Softmax (single token, no causal mask needed for greedy)
     weight = math.exp(score)
     -- Weighted V
-    for d = 1, head_dim
+    for d = 1, headdim
       out[offset + d] = (out[offset + d] or 0) + weight * v[offset + d]
     end
   end
 
   -- Output projection
-  matmul(out, layer_weights.wo, cfg.n_embd, cfg.n_embd)
+  matmul(out, weights.wo, cfg.nembd, cfg.nembd)
 end
 
 -- FFN (SwiGLU)
 @hot
 @device(.auto)
-fun ffn(x: [float], cfg: Config, weights: LayerWeights): [float]
+fun ffn(x: [float], cfg: config, weights: layerweights): [float]
   -- gate = silu(x @ W_gate)
-  gate = matmul(x, weights.w_gate, cfg.n_embd, cfg.ffn_dim)
-  up = matmul(x, weights.w_up, cfg.n_embd, cfg.ffn_dim)
+  gate = matmul(x, weights.wgate, cfg.nembd, cfg.ffndim)
+  up = matmul(x, weights.wup, cfg.nembd, cfg.ffndim)
   -- SiLU activation
-  for i = 1, cfg.ffn_dim
+  for i = 1, cfg.ffndim
     gate[i] = gate[i] * (1.0 / (1.0 + math.exp(-gate[i]))) * up[i]
   end
   -- Down projection
-  matmul(gate, weights.w_down, cfg.ffn_dim, cfg.n_embd)
+  matmul(gate, weights.wdown, cfg.ffndim, cfg.nembd)
 end
 
 -- Dense matmul (SIMD-friendly via @hot)
@@ -226,46 +226,46 @@ end
 
 -- Full transformer forward
 @device(.auto)
-fun transformer_forward(model, cfg: Config, token_id: i64): [float]
+fun transformerforward(model, cfg: config, tokenid: i64): [float]
   -- Embedding lookup
-  x = get_embedding(model, token_id, cfg.n_embd)
+  x = getembedding(model, tokenid, cfg.nembd)
 
   -- Layer loop
-  for l = 0, cfg.n_layer - 1
-    weights = get_layer_weights(model, l)
+  for l = 0, cfg.nlayer - 1
+    weights = getlayerweights(model, l)
 
     -- Pre-attention norm
     normed = rms_norm(x, cfg.eps)
     -- Attention + residual
-    attn_out = attention(normed, cfg, weights)
-    for i = 1, cfg.n_embd x[i] = x[i] + attn_out[i] end
+    attnout = attention(normed, cfg, weights)
+    for i = 1, cfg.nembd x[i] = x[i] + attnout[i] end
 
     -- Pre-FFN norm
     normed = rms_norm(x, cfg.eps)
     -- FFN + residual
-    ffn_out = ffn(normed, cfg, weights)
-    for i = 1, cfg.n_embd x[i] = x[i] + ffn_out[i] end
+    ffnout = ffn(normed, cfg, weights)
+    for i = 1, cfg.nembd x[i] = x[i] + ffnout[i] end
   end
 
   -- Final norm + logits
   x = rms_norm(x, cfg.eps)
-  matmul(x, get_output_weight(model), cfg.n_embd, cfg.n_vocab)
+  matmul(x, getoutputweight(model), cfg.nembd, cfg.nvocab)
 end
 
 -- Helpers for weight loading
-fun get_embedding(model, token_id, n_embd: i64): [float]
-  -- Read from tensor data at offset token_id * n_embd * 4 bytes
+fun getembedding(model, tokenid, nembd: i64): [float]
+  -- Read from tensor data at offset tokenid * nembd * 4 bytes
   result = {}
-  for i = 1, n_embd result[i] = 0.0 end  -- placeholder
+  for i = 1, nembd result[i] = 0.0 end  -- placeholder
   result
 end
 
-fun get_layer_weights(model, layer_idx): { wq: [float], wk: [float], wv: [float], wo: [float], w_gate: [float], w_up: [float], w_down: [float] }
+fun getlayerweights(model, layeridx): { wq: [float], wk: [float], wv: [float], wo: [float], wgate: [float], wup: [float], wdown: [float] }
   -- Return weight struct for layer (loads from GGUF blob)
-  { wq = {}, wk = {}, wv = {}, wo = {}, w_gate = {}, w_up = {}, w_down = {} }
+  { wq = {}, wk = {}, wv = {}, wo = {}, wgate = {}, wup = {}, wdown = {} }
 end
 
-fun get_output_weight(model): [float]
+fun getoutputweight(model): [float]
   {}
 end
 
@@ -329,7 +329,7 @@ fun registry_infer(reg, name: str, inputs: [any]): [any]
     cfg = transformer_config(model)
     -- Run transformer on first input token
     token = inputs[1] and inputs[1][1] or 0
-    logits = transformer_forward(model, cfg, token)
+    logits = transformerforward(model, cfg, token)
     return { logits }
   else
     -- ONNX: generic graph execution (stub)
@@ -354,7 +354,7 @@ M.gguf_load = gguf_load
 M.onnx_load = onnx_load
 -- Transformer
 M.transformer_config = transformer_config
-M.transformer_forward = transformer_forward
+M.transformerforward = transformerforward
 M.rms_norm = rms_norm
 M.attention = attention
 M.ffn = ffn

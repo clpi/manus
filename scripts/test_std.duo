@@ -1,4 +1,4 @@
 print("0")
 src = req "std.compiler.source"
-c = src.cursor_new("hello", "foo.duo")
+c = src.cursornew("hello", "foo.duo")
 print(tostring(c.line))

@@ -2,63 +2,63 @@
 -- Blockers: (1) embedded-module record ctor codegen, (2) C str cannot hold NUL — need slice+len.
 -- Proof: examples/pass9/leb128_cursor_smoke.duo (numeric LEB128 + u32 le).
 
-ByteCursor: @{ data: str, pos: i64, len: i64 }
+bytecursor: @{ data: str, pos: i64, len: i64 }
 
-new(data: str): ByteCursor
-    ByteCursor { data = data, pos = 1, len = #data }
+new(data: str): bytecursor
+    bytecursor { data = data, pos = 1, len = #data }
 end
 
-remaining(c: ByteCursor): i64
+remaining(c: bytecursor): i64
     if c.pos > c.len return 0 end
     c.len - c.pos + 1
 end
 
-eof(c: ByteCursor): bool
+eof(c: bytecursor): bool
     c.pos > c.len
 end
 
-position(c: ByteCursor): i64
+position(c: bytecursor): i64
     c.pos
 end
 
-skip(c: ByteCursor, n: i64)
+skip(c: bytecursor, n: i64)
     c.pos = c.pos + n
 end
 
 -- Read one byte; returns -1 on EOF.
-read_u8(c: ByteCursor): i64
+readu8(c: bytecursor): i64
     if c.pos > c.len return -1 end
     b = c.data:byte(c.pos)
     c.pos = c.pos + 1
     b
 end
 
-read_u16_le(c: ByteCursor): i64
-    b0 = read_u8(c)
+readu16le(c: bytecursor): i64
+    b0 = readu8(c)
     if b0 < 0 return -1 end
-    b1 = read_u8(c)
+    b1 = readu8(c)
     if b1 < 0 return -1 end
     b0 | (b1 << 8)
 end
 
-read_u32_le(c: ByteCursor): i64
-    b0 = read_u8(c)
+readu32le(c: bytecursor): i64
+    b0 = readu8(c)
     if b0 < 0 return -1 end
-    b1 = read_u8(c)
+    b1 = readu8(c)
     if b1 < 0 return -1 end
-    b2 = read_u8(c)
+    b2 = readu8(c)
     if b2 < 0 return -1 end
-    b3 = read_u8(c)
+    b3 = readu8(c)
     if b3 < 0 return -1 end
     b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
 end
 
 -- Wasm LEB128 unsigned (P9-M1 kernel primitive).
-read_leb128_u(c: ByteCursor): i64
+readlebu(c: bytecursor): i64
     result = 0
     shift = 0
     while true
-        b = read_u8(c)
+        b = readu8(c)
         if b < 0 return -1 end
         result = result | ((b & 0x7F) << shift)
         if (b & 0x80) == 0 return result end
@@ -69,12 +69,12 @@ read_leb128_u(c: ByteCursor): i64
 end
 
 -- Wasm LEB128 signed.
-read_leb128_s(c: ByteCursor): i64
+readlebs(c: bytecursor): i64
     result = 0
     shift = 0
     b = 0
     while true
-        b = read_u8(c)
+        b = readu8(c)
         if b < 0 return -1 end
         result = result | ((b & 0x7F) << shift)
         shift = shift + 7
@@ -89,7 +89,7 @@ read_leb128_s(c: ByteCursor): i64
     return -1
 end
 
-read_bytes(c: ByteCursor, n: i64): str
+readbytes(c: bytecursor, n: i64): str
     if n < 0 or c.pos + n - 1 > c.len return "" end
     s = c.data:sub(c.pos, c.pos + n - 1)
     c.pos = c.pos + n
@@ -97,10 +97,10 @@ read_bytes(c: ByteCursor, n: i64): str
 end
 
 -- Wasm module header: magic (0x6D736100) + version (1).
-read_wasm_header(c: ByteCursor): i64
-    magic = read_u32_le(c)
+readwasmheader(c: bytecursor): i64
+    magic = readu32le(c)
     if magic < 0 return -1 end
-    version = read_u32_le(c)
+    version = readu32le(c)
     if version < 0 return -1 end
     if magic != 0x6D736100 return -2 end
     if version != 1 return -3 end

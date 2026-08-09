@@ -17,7 +17,7 @@
 -- the scope — the exact question a binder answers, and the one that produces
 -- "undefined name" diagnostics.
 
-Span: @{ start: i64, len: i64 }
+span: @{ start: i64, len: i64 }
 
 is_alpha = (c: i64): i64
     if c >= 97 and c <= 122

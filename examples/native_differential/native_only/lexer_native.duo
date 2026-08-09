@@ -15,7 +15,7 @@
 
 Classify = req "std.token.classify"
 
-Tok: @{ kind: i64, start: i64, len: i64 }
+tok: @{ kind: i64, start: i64, len: i64 }
 
 -- Non-keyword kinds. `classify.duo` covers only the 54 reserved words, so these
 -- two live here and are deliberately outside the canonical keyword range.
@@ -92,7 +92,7 @@ classify_word = (src: str, start: i64, len: i64): i64
     KIND_NAME
 end
 
-next_token = (src: str, pos: i64): Tok
+nexttoken = (src: str, pos: i64): tok
     n = #src
     i = pos
     while i <= n and is_space(string.byte(src, i)) == 1
@@ -127,7 +127,7 @@ sum_keyword_kinds = (src: str): i64
     pos = 1
     n = #src
     while pos <= n
-        t: Tok = next_token(src, pos)
+        t: tok = nexttoken(src, pos)
         if t.kind == 0 - 1
             return total
         end

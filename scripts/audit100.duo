@@ -407,7 +407,7 @@ main(): i64
     -- The deny rows, as parallel arrays; `budget` is hoisted to the top of
     -- main and must stay in this order.
     id = {
-        "snake", "upper", "underprefix", "companion", "accessor", "axis",
+        "snake", "upper", "upperdecl", "underprefix", "companion", "accessor", "axis",
         "directive", "ctor", "stdlib", "import", "foreignkw", "arrow",
         "luafn", "mwrapper", "concatlit", "oneline", "trailret",
         "graveyard", "convert",
@@ -415,6 +415,7 @@ main(): i64
     note = {
         "underscore inside an identifier",
         "uppercase identifier in bind/call/field position",
+        "uppercase name in DECLARATION position (Point: @" .. "{" .. "…" .. "}" .. ")",
         "_ prefix on a name",
         "companion *_kind / *_type",
         "get_ / set_ / compute_",
@@ -436,6 +437,7 @@ main(): i64
     pat = {
         "[a-z]_[a-z]",
         "(^|[^A-Za-z0-9_])[A-Z][A-Za-z0-9_]*[[:space:]]*[=(.]",
+        "^[[:space:]]*[A-Z][A-Za-z0-9_]*[[:space:]]*:",
         "(^|[^A-Za-z0-9_.])_[A-Za-z]",
         "_(kind|type)([^A-Za-z0-9_]|$)",
         "(get|set|compute)_[A-Za-z]",
@@ -1020,14 +1022,88 @@ main(): i64
     -- fixture can hold first. (2) `to(str)` over a subject richer than a name
     -- or a field walk — `to(str)(a + b)` needs `(a + b):to(str)`, and adding
     -- that paren is a judgement about precedence, not a substitution.
-    budgets: str = "14121 2255 1808 259 322 479 154 58 2020 442 167 128 228 36 2411 2258 3441 6 324"
+    -- 2026-08-09, `upperdecl` LANDS. §0.1 LAW-ONE has said "No uppercase EVER
+    -- (`point`, `error`, `json` — never `Point`, `Error`, `MAX_N`)" since epoch
+    -- 2, and §1 carries "ANY uppercase identifier". The `upper` row above has
+    -- been measuring that since it landed — but only in BIND, CALL and FIELD
+    -- position, because its pattern requires a following `=`, `(` or `.`.
+    --
+    -- A duon DESCRIPTOR is declared with a copula: `Point: @{ x: f64 }`. The
+    -- byte after the name is `:`, so `upper` never saw a single one of them.
+    -- The largest population the deny row exists for was the one population it
+    -- could not count, and the row read 2169/2255 — comfortably green — the
+    -- whole time. This is the same class as a gate that reports 0/N: not a
+    -- wrong number, a number measured somewhere other than where the rule is.
+    --
+    -- MEASURED 2026-08-09 over the 548-file canonical partition: 53 lines in
+    -- 35 files. Migrated in the same commit down to 18. The row is GREEN at 18
+    -- and 18 is not a resting place — what is left is named, per file, below.
+    --
+    -- WHAT THE REMAINING 18 ARE. Three populations, none of them "later":
+    --
+    --  2  `tools/mcp/duo_shared.duo` 909/939 — the words `EXAMPLE:` and
+    --     `Example:` inside `[[ … ]]` long-string bodies. MCP help text, not
+    --     duon code. The per-row strip deletes `"…"` bodies and cannot reach
+    --     `[[ … ]]`, so this row over-reports there exactly as the header says
+    --     every line-grained row does. IRREDUCIBLE without a lexer-grade strip.
+    --
+    --  5  `lib/std/compiler/lexer.duo` (Loc Tok State Lexer) and
+    --     `parser.duo` (Res). The rename WORKS — it was written, it compiled on
+    --     all four consumers, and both lexer differentials still hit their
+    --     frozen fingerprints. It was reverted because `.githooks/pre-commit`
+    --     gates the ADDED lines of a diff, and renaming a descriptor rewrites
+    --     lines that carry pre-existing underscore debt (`peeked_token`,
+    --     `int_val`, `next_tok`, `save_state`): 48 + 60 findings, none of them
+    --     about uppercase. Clearing them means renaming std EXPORTS, which is a
+    --     surface change, and regenerating `src/duo_lexer_tokenize.c`, which
+    --     currently carries another session's unshipped `to(i64)` work. The
+    --     uppercase migration is BLOCKED ON THE SNAKE MIGRATION of those two
+    --     files; it is not blocked on anything about uppercase.
+    --
+    -- 11  `scripts/test_wasm_codegen.duo` (HELLO, NATIVE_C, … OUT_NATIVE).
+    --     Same gate, one irreducible line: 145/146 read
+    --     `tostring(s.path_join(TMPDIR_TEST, …))`, and `path_join` is a
+    --     `std.script` EXPORT. Repairing the line means renaming a
+    --     widely-consumed std function, so the file cannot be brought to canon
+    --     from inside an uppercase migration.
+    --
+    -- The 2 are left VISIBLE rather than special-cased to 0: a row that can
+    -- never read anything is the failure mode §3 names, and `_probe` below
+    -- controls both directions so the count can never quietly become a dead
+    -- pattern.
+    --
+    -- WHY IT IS ITS OWN ROW AND NOT A WIDER `upper`. Widening `upper` to accept
+    -- `:` would fold a 53-point debt into a 2169-point count and no one could
+    -- tell afterwards whether the descriptors had been migrated or the total
+    -- had merely drifted. Separate row, separate ratchet, separate proof.
+    -- TWO OTHER ROWS RATCHETED in the same commit, because the same renames
+    -- paid them and a row left above what it now measures is unearned slack the
+    -- next session spends without noticing:
+    --
+    --   `upper` 2255 -> 2136. The descriptor renames removed 33 counted
+    --   bind/call/field points at the USE sites (`Loc`/`ByteCursor`/`IdGen`/
+    --   `StableId`/`Config`/`LayerWeights`/`Tok`/`Pair`/`Res` as types).
+    --
+    --   `snake` 14121 -> 13966. Not a bonus — a COST OF ENTRY. `.githooks/
+    --   pre-commit` gates the added lines of a diff, so every line a descriptor
+    --   rename rewrites must also come to canon. That forced the underscore
+    --   repair of `lib/std/compiler/source.duo` and `lib/std/cursor.duo`
+    --   exports (`cursor_new` -> `cursornew`, `read_leb128_u` -> `readlebu`, 10
+    --   + 7 functions with their three consumers), `tools/wasm/src/nn/init.duo`
+    --   (`n_embd` -> `nembd` and 15 more), and five differential fixtures.
+    --
+    --   snake was measured with FIVE OTHER SESSIONS writing this branch and it
+    --   moved 14098 -> 14105 under me from a tracked edit that was not mine.
+    --   13966 is the value at this commit; if it reads red for work that is not
+    --   an underscore regression, remeasure before paying it.
+    budgets: str = "13966 2136 18 1808 259 322 479 154 58 2020 442 167 128 228 36 2411 2258 3441 6 324"
 
     -- Per-row: 1 = measure with string bodies INTACT. Only `concatlit` sets
     -- it, because its subject IS the string literal; stripping bodies takes
     -- that row from 2155 to 1, which would read as a triumph and mean nothing.
     -- Every other row is about the shape of Duo code, so a `const T*` inside
     -- an emit payload is not evidence against it.
-    keeps: str =    "0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0"
+    keeps: str =    "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0"
 
     -- Per-row: 1 = THE COMPILER REFUSES THIS, 0 = the gate merely counts it.
     -- The distinction is the whole point of the column. A counted row is
@@ -1037,7 +1113,7 @@ main(): i64
     -- count is a residue measurement, not a debt. Reporting both under one
     -- heading, as this gate did until 2026-08-08, makes "we tolerate 167 of
     -- these" and "these are impossible" look like the same fact.
-    enforced: str = "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0"
+    enforced: str = "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0"
 
     if _field(budgets, #id) == "" or _field(budgets, #id + 1) != ""
         print("audit100: FAIL — the budget row does not have exactly "
@@ -1107,6 +1183,36 @@ main(): i64
         end
         j += 1
     end
+
+    -- POSITIVE CONTROL ON `upperdecl`. This row sits at 2 and both of those
+    -- points are string-body noise it cannot repair, so its count is nearly
+    -- pinned — which is exactly the condition under which a rotted regex is
+    -- invisible. The count cannot control the row, so the row is controlled
+    -- against literals built here: it must SEE a descriptor declaration in
+    -- either brace form, and must DECLINE the canonical lowercase spelling,
+    -- an inferred case, and a lowercase copula. Without the DECLINE half a
+    -- pattern like `^.*:` would read green today and convict every canonical
+    -- descriptor in the repo tomorrow.
+    ubrace: str = "{"
+    ubraceclose: str = "}"
+    updecl: str = pat[3]
+    upat: i64 = _probe(updecl, "Point: @" .. ubrace .. " x: f64 " .. ubraceclose)
+    ubare: i64 = _probe(updecl, "ByteCursor: " .. ubrace)
+    ulower: i64 = _probe(updecl, "point: @" .. ubrace .. " x: f64 " .. ubraceclose)
+    ucase: i64 = _probe(updecl, "    kind: " .. ubrace .. " name, number, eof " .. ubraceclose)
+    uplain: i64 = _probe(updecl, "  x = f(y) + 1")
+    if upat == 0 or ubare == 0
+        print("audit100: FAIL — the upperdecl row does not see an uppercase"
+            .. " descriptor declaration (@-brace " .. upat:to(str)
+            .. ", bare brace " .. ubare:to(str) .. "); it would read 0 and pass")
+        return 3
+    if ulower != 0 or ucase != 0 or uplain != 0
+        print("audit100: FAIL — the upperdecl row convicts CANONICAL duon"
+            .. " (lowercase descriptor " .. ulower:to(str) .. ", inferred"
+            .. " case-set " .. ucase:to(str) .. ", ordinary line "
+            .. uplain:to(str) .. "); the ratchet would drive the repair"
+            .. " backwards")
+        return 3
 
     -- POSITIVE CONTROL ON `convert`, the newest row and the only one whose
     -- subject is an ORIENTATION rather than a spelling. Both halves matter and

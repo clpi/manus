@@ -1,4 +1,4 @@
-ByteCursor: { a: i64 }
-cursor_new(): ByteCursor
+bytecursor: { a: i64 }
+cursornew(): bytecursor
     { a = 1 }
 end

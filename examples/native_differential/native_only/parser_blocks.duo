@@ -17,7 +17,7 @@
 
 Classify = req "std.token.classify"
 
-Span: @{ kind: i64, start: i64, len: i64 }
+span: @{ kind: i64, start: i64, len: i64 }
 
 KIND_OTHER = 0
 
@@ -81,7 +81,7 @@ end
 
 -- Next word-or-symbol span. Non-word bytes are returned as single-byte spans so
 -- the scan always advances.
-next_span = (src: str, pos: i64): Span
+nextspan = (src: str, pos: i64): span
     n = #src
     i = pos
     while i <= n and is_space(string.byte(src, i)) == 1
@@ -109,7 +109,7 @@ max_depth = (src: str): i64
     pos = 1
     n = #src
     while pos <= n
-        s: Span = next_span(src, pos)
+        s: span = nextspan(src, pos)
         if s.kind == 0 - 1
             return best
         end

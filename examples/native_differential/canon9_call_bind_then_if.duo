@@ -1,8 +1,8 @@
-Tok: @{ kind: i64, start: i64, len: i64 }
+tok: @{ kind: i64, start: i64, len: i64 }
 pred = (c: i64): i64
     2
 end
-scan = (pos: i64): Tok
+scan = (pos: i64): tok
     k = pred(pos)
     if k == 1
         return { kind = 1, start = pos, len = 1 }
@@ -10,6 +10,6 @@ scan = (pos: i64): Tok
     { kind = 2, start = pos, len = 1 }
 end
 main(): i64
-    t: Tok = scan(9)
+    t: tok = scan(9)
     t.kind
 end

@@ -1,29 +1,29 @@
 -- Pass 16 Phase 1 — req'd source module cursor walk (record-by-ref codegen).
 -- Parity: src/source_cursor.zig differentialProductionParity / walkReference.
 walk_reference(): i64
-    c = std.compiler.source.cursor_new("a\nb\nc", "test.duo")
-    if std.compiler.source.cursor_peek(c) != 97
+    c = std.compiler.source.cursornew("a\nb\nc", "test.duo")
+    if std.compiler.source.cursorpeek(c) != 97
         return 1
     end
-    ch = std.compiler.source.cursor_advance(c)
+    ch = std.compiler.source.cursoradvance(c)
     if ch != 97
         return 2
     end
-    while not std.compiler.source.cursor_eof(c)
-        std.compiler.source.cursor_advance(c)
-        loc = std.compiler.source.cursor_loc(c)
+    while not std.compiler.source.cursoreof(c)
+        std.compiler.source.cursoradvance(c)
+        loc = std.compiler.source.cursorloc(c)
         if loc.line == 3 and loc.col == 1
             break
         end
     end
-    loc = std.compiler.source.cursor_loc(c)
+    loc = std.compiler.source.cursorloc(c)
     if loc.line != 3
         return 3
     end
     if loc.col != 1
         return 4
     end
-    print("pass16_source_module_proof: PASS " .. std.compiler.source.format_loc(loc))
+    print("pass16_source_module_proof: PASS " .. std.compiler.source.formatloc(loc))
     0
 end
 

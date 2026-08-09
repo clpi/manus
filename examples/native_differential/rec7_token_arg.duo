@@ -1,8 +1,8 @@
-Tok: { kind: i64, text: str }
-kind_of(t: Tok): i64
+tok: { kind: i64, text: str }
+kindof(t: tok): i64
     return t.kind
 end
 main(): i64
-    t: Tok = { kind = 42, text = "fun" }
-    return kind_of(t)
+    t: tok = { kind = 42, text = "fun" }
+    return kindof(t)
 end

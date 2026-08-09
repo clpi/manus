@@ -1,5 +1,5 @@
-Tok: { kind: i64, start: i64, len: i64 }
-mk(src: str, pos: i64): Tok
+tok: { kind: i64, start: i64, len: i64 }
+mk(src: str, pos: i64): tok
     return { kind = 1, start = pos, len = 2 }
 end
 loop_over(src: str): i64
@@ -7,7 +7,7 @@ loop_over(src: str): i64
     pos = 1
     n = #src
     while pos <= n do
-        t: Tok = mk(src, pos)
+        t: tok = mk(src, pos)
         total = total + t.kind
         pos = pos + t.len
     end

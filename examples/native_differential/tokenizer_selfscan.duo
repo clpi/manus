@@ -15,7 +15,7 @@
 
 Kind = @{ eof = 0, ident = 1, number = 2, punct = 3 }
 
-Tok: @{ kind: i64, start: i64, len: i64 }
+tok: @{ kind: i64, start: i64, len: i64 }
 
 is_digit = (c: i64): i64
     if c >= 48 and c <= 57
@@ -50,7 +50,7 @@ is_space = (c: i64): i64
     0
 end
 
-scan_one = (src: str, pos: i64): Tok
+scanone = (src: str, pos: i64): tok
     n = #src
     i = pos
     while i <= n and is_space(string.byte(src, i)) == 1
@@ -84,7 +84,7 @@ count_tokens = (src: str): i64
     pos = 1
     n = #src
     while pos <= n
-        t: Tok = scan_one(src, pos)
+        t: tok = scanone(src, pos)
         if t.kind == Kind.eof
             return total
         end

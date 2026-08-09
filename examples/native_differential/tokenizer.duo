@@ -33,9 +33,9 @@ Kind = @{ eof = 0, ident = 1, number = 2, punct = 3 }
 --   Kind.eof == 0, and eof < ident < number < punct
 --   a non-EOF token always has len >= 1, so `pos` strictly increases
 
--- The token shape. Three scalar fields ride the ABI registers, so a Tok is
+-- The token shape. Three scalar fields ride the ABI registers, so a tok is
 -- passed and returned without ever being materialised on the heap.
-Tok: @{ kind: i64, start: i64, len: i64 }
+tok: @{ kind: i64, start: i64, len: i64 }
 
 is_digit = (c: i64): i64
     if c >= 48 and c <= 57
@@ -70,9 +70,9 @@ is_space = (c: i64): i64
     0
 end
 
--- Scan one token starting at `pos`. Every branch returns a fully-populated Tok,
+-- Scan one token starting at `pos`. Every branch returns a fully-populated tok,
 -- so a partial record never escapes. `Kind.eof` marks end of input.
-scan_one = (src: str, pos: i64): Tok
+scanone = (src: str, pos: i64): tok
     n = #src
     i = pos
     while i <= n and is_space(string.byte(src, i)) == 1
@@ -107,12 +107,12 @@ tokenize_checksum = (src: str): i64
     pos = 1
     n = #src
     while pos <= n
-        t: Tok = scan_one(src, pos)
+        t: tok = scanone(src, pos)
         if t.kind == Kind.eof
             return total
         end
         -- Invariant: a non-EOF token always has len >= 1, so `pos` strictly
-        -- increases and the loop terminates. Established by scan_one's branches,
+        -- increases and the loop terminates. Established by scanone's branches,
         -- each of which returns at least one consumed byte.
         total = total + t.kind * 10 + t.len
         pos = t.start + t.len
@@ -121,7 +121,7 @@ tokenize_checksum = (src: str): i64
 end
 
 -- Optimization coverage note (not `@comp.why`): the inner loop is a byte compare
--- plus a Tok in ABI registers, with no allocation and no runtime helper. The
+-- plus a tok in ABI registers, with no allocation and no runtime helper. The
 -- emitted binary contains only _scan_one, _tokenize_checksum, _is_space,
 -- _is_alpha, _is_digit and _main — zero `lua_*` symbols.
 --

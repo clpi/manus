@@ -3,7 +3,7 @@
 
 classify = req "std.token.classify"
 
-Loc: {
+loc: {
     file: str,
     line: i64,
     col: i64
@@ -122,9 +122,9 @@ KIND_PERCENT_ASSIGN = 103
 KIND_CARET_ASSIGN = 104
 KIND_EOF = 105
 
-Token: {
+token: {
     kind: i64,
-    loc: Loc,
+    loc: loc,
     text: str,
     int_val: i64,
     float_val: f64

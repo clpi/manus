@@ -110,7 +110,7 @@ checksum 162 through the C backend.
 #### Resolved: `f{...}` table-call sugar no longer spans a newline
 
 ```
-scan = (pos: i64): Tok
+scan = (pos: i64): tok
     k = one(pos)                        -- a call statement …
     { kind = k, start = pos, len = 1 }  -- … then a tail record literal
 end
@@ -208,7 +208,7 @@ It is gated `native_only` because the **C backend cannot compile it** — as wit
 not a valid oracle.
 
 Why not `lib/std/compiler/lexer.duo` (the existing SH-03 differential oracle):
-its `Lexer` record has 18 fields including strings, nested records and floats,
+its `lexer` record has 18 fields including strings, nested records and floats,
 exceeding the 8-slot register ABI for aggregates. Keeping lexer state in scalars
 and a 3-field token record puts the whole thing inside the proven native subset.
 **The 18-field design is a choice, not a requirement** — which is the useful
@@ -440,10 +440,10 @@ current backend and natively compiling a real tokenizer.
 ### The next boundary
 
 The exploded model is capped at **8 ABI slots**, and every field must be scalar.
-`Lexer.new()` returns an 18-field record containing strings, nested records
-(`Loc`, `Tok`), floats and booleans, so no amount of exploding reaches it —
+`lexer.new()` returns an 18-field record containing strings, nested records
+(`Loc`, `tok`), floats and booleans, so no amount of exploding reaches it —
 records that large need a memory model: stack allocation, field-offset
-addressing, and a hidden-pointer return convention. Worse, `Lexer.new` is an
+addressing, and a hidden-pointer return convention. Worse, `lexer.new` is an
 *extern* call into a separately-compiled module, so the direct backend would also
 have to match that module's struct ABI exactly.
 
