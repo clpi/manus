@@ -44,6 +44,30 @@ run_fail(file: str, pattern: str)
     end
 end
 
+-- gap[082]: a refusal that only CODEGEN can make. `run_fail` runs `duo check`,
+-- which stops before lowering, so a judgment made while emitting is invisible
+-- to it — and reporting such a fixture as passing `check` is exactly the
+-- false-green this repo has paid for before. This runner compiles.
+--
+-- That `duo check` cannot see a lossy-composition refusal is a real limitation
+-- and is recorded on the gap: the class lattice belongs in sema, where it would
+-- be one diagnostic in one place instead of a lowering-time veto. Until it
+-- moves, the gate has to run the stage that holds the rule.
+refuses(file: str, pattern: str)
+    tmp = temp_file()
+    rc = s.run("{DUO} compile {file} -o /dev/null > {tmp} 2>&1")
+    out = s.fs_read(tmp)
+    os.remove(tmp)
+
+    if rc == 0
+        fail("{file} should not compile", out)
+    elseif string.find(out, pattern, 1, true) != nil
+        pass("{file}  (expected error found)")
+    else
+        fail("{file}  expected pattern: {pattern}", out)
+    end
+end
+
 run_ok(file: str)
     tmp = temp_file()
     rc = s.run(DUO .. " check " .. file .. " > " .. tmp .. " 2>&1")
@@ -110,6 +134,7 @@ run_fail("examples/compile_fail/const_no_init.lua",       "must have an initiali
 run_fail("examples/compile_fail/close_no_init.lua",       "must have an initializer")
 run_fail("examples/compile_fail/vararg_rest_assign.lua",  "read-only vararg table")
 run_fail("examples/compile_fail/global_const_assign.lua", "attempt to assign to const variable")
+refuses("examples/compile_fail/relation_lossy_compose.duo", "no silent conversion inch -> milli")
 run_fail("examples/compile_fail/tensor_matmul_k_mismatch.duo", "tensor matmul inner dimension mismatch")
 run_fail("examples/compile_fail/tensor_matmul_symbolic_k_mismatch.duo", "tensor matmul inner dimension mismatch")
 run_fail("examples/compile_fail/tensor_broadcast_incompatible.duo", "tensor broadcast incompatible shapes")

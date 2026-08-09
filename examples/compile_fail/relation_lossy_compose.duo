@@ -1,0 +1,42 @@
+-- gap[082] — the composition law must REFUSE a silently-lossy derivation.
+--
+-- The same four edges as `examples/spec100/relation.duo`, over i64 instead of
+-- f64. That one change makes each division NARROWING — 25401 micron is not a
+-- whole inch — and the class lattice must therefore refuse `inch -> milli`,
+-- which is a route it can plainly see.
+--
+-- WHY THIS FIXTURE IS THE IMPORTANT HALF. An algebra that composes ANYTHING is
+-- not safer than no algebra; it is more dangerous, because adding one
+-- descriptor could quietly change an existing program's answer. The refusal is
+-- what makes the mechanism safe to scale, and it costs real derivations: the
+-- f64 fixture derives 6 edges from 6 authored, this one derives 0 from 4 and
+-- reports 2 refused. Both numbers are the same law.
+--
+-- The diagnostic names the WEAK HOP, not just the pair, because "no conversion"
+-- would send the reader looking for a missing edge when the edge is present and
+-- the CLASS is the objection.
+--
+-- The filename keeps a `_` because every fixture in this directory does; the
+-- harness matches on the path.
+
+stretch = (v: i64): i64
+    v * 25400
+
+shrink = (v: i64): i64
+    v // 25400
+
+swell = (v: i64): i64
+    v * 1000
+
+shrivel = (v: i64): i64
+    v // 1000
+
+to(micron)(inch) = stretch@exact
+to(inch)(micron) = shrink@narrowing
+to(micron)(milli) = swell@exact
+to(milli)(micron) = shrivel@narrowing
+
+main = (): i64
+    bore: i64 = milli:from(inch)(5)
+    print("{bore}")
+    0
