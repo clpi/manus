@@ -1158,7 +1158,7 @@ why(key: str): str
         out = "mixed  NO ROLE — two candidates, so a mixed-space diagnostic\n"
         out = "{out}  rule     {cite}\n"
         out = "{out}  dnir     dnir.none\n"
-        out = "{out}  why      G-TOTAL forbids a default here; the span diagnoses"
+        out = "{out}  why      G-TOTAL forbids a default here; the span diagnoses\n"
     elseif r != ""
         nm: str = field(r, 1)
         cd: str = field(r, 2)
