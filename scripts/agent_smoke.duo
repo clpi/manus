@@ -38,6 +38,31 @@ if not script.ok("./zig-out/bin/duo run scripts/explain.duo")
     os.exit(1)
 end
 
+-- The Pass 8 realization plan, the codegen outcome it produces, shape
+-- fingerprint drift, cache invalidation and entity removal. Ported out of
+-- src/pass8_realization_tests.zig + src/pass8_codegen_realization_tests.zig.
+if not script.ok("./zig-out/bin/duo run scripts/realize.duo")
+    print("agent-smoke: realize FAIL")
+    os.exit(1)
+end
+
+-- The Pass 5 SIM snapshots — stable entity ids, ABI facts, and byte-for-byte
+-- rendering invariance across two runs. Ported out of
+-- src/pass5_golden_tests.zig.
+if not script.ok("./zig-out/bin/duo run scripts/sim.duo")
+    print("agent-smoke: sim FAIL")
+    os.exit(1)
+end
+
+-- The transform engine: tier-1 registry contracts, the strict dispatch gate,
+-- three-site combinator parity and the call algebra. Ported out of
+-- src/meta_transform_tests.zig + src/call_transform_tests.zig +
+-- src/pass6_dispatch_tests.zig.
+if not script.ok("./zig-out/bin/duo run scripts/transform.duo")
+    print("agent-smoke: transform FAIL")
+    os.exit(1)
+end
+
 bin = script.duo_bin()
 script.duo_run_all(agent.smoke_targets(), bin)
 print("agent-smoke: PASS")
