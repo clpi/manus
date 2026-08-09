@@ -73,9 +73,11 @@ held(path: str, want: str): bool
     std.script.status("tr ',' '\\n' < {path} | grep -q -F '{want}'") == 0
 end
 
--- The C string literal bound to `name` in emitted C, e.g. `TOP`.
+-- The C string literal bound to `name` in emitted C, e.g. `TOP`. The binding's
+-- own name is stripped here so the three sites compare as VALUES — they are
+-- bound to three different names and would never be equal otherwise.
 literal(path: str, name: str): str
-    std.script.chomp(std.script.capture("grep -o 'const char\\* {name} = \"[^\"]*\"' {path} | head -1"))
+    std.script.chomp(std.script.capture("grep -o 'const char\\* {name} = \"[^\"]*\"' {path} | head -1 | sed 's/.*= //'"))
 end
 
 -- The literal returned by the block-body site's function. Anchored on the
@@ -83,7 +85,7 @@ end
 -- share an interpolation syntax in which a brace is a hole, so the pattern
 -- stays brace-free on purpose.
 blocklit(path: str): str
-    std.script.chomp(std.script.capture("grep -A1 'const char\\* parity()' {path} | grep -o 'return \"[^\"]*\"' | head -1"))
+    std.script.chomp(std.script.capture("grep -A1 'const char\\* parity()' {path} | grep -o 'return \"[^\"]*\"' | head -1 | sed 's/^return //'"))
 end
 
 main = (): i64
@@ -312,12 +314,11 @@ main = (): i64
             shout("FAIL — M3: {n} produced no block-body literal")
             bad += 1
         end
-        -- The bindings carry their own name, so compare the values only.
-        if string.gsub(top, "^.*TOP = ", "") != string.gsub(nested, "^.*NESTED = ", "")
+        if top != nested
             shout("FAIL — M3: {n} folded differently at top-level and nested-callback sites")
             bad += 1
         end
-        if string.gsub(top, "^.*TOP = ", "") != string.gsub(block, "^return ", "")
+        if top != block
             shout("FAIL — M3: {n} folded differently at top-level and block-body sites")
             bad += 1
         end
