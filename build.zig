@@ -464,6 +464,22 @@ pub fn build(b: *std.Build) void {
     const recognition_scan_step = b.step("recognition-scan", "Pass 116 s0a: std.mem/std.fmt/std.math and bare math. in lib/std; ratchets");
     recognition_scan_step.dependOn(&recognition_scan_cmd.step);
 
+    // gap[076]. The gap allocator's mkdir(2) is atomic within ONE filesystem
+    // view, and parallel agents here work in git worktrees, which are several.
+    // Both of its inputs used to be worktree-local, so two agents mkdir'd two
+    // different paths and both won. Reservations now live under
+    // --git-common-dir, which every worktree shares.
+    //
+    // Report mode prints the RESOLVED LEDGER PATH rather than a verdict, and
+    // that is the whole point: a silent fallback to the worktree-local ledger
+    // would keep colliding while reporting success, so the path is the only
+    // thing that tells the two apart. Read-only -- it allocates nothing.
+    const gapalloc_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/gapalloc.duo" });
+    gapalloc_cmd.setCwd(b.path("."));
+    gapalloc_cmd.step.dependOn(b.getInstallStep());
+    const gapalloc_step = b.step("gapalloc", "gap[076]: resolved gap-reservation ledger path, high-water mark across ALL refs, next number");
+    gapalloc_step.dependOn(&gapalloc_cmd.step);
+
     // The first sixty seconds of a new user's life, gated. src/build_framework.zig's
     // tests drive parser+sema in-process and stayed green while `duo init` emitted a
     // src/main.duo that `duo check`, `duo build` and `duo run` all rejected. Only a
