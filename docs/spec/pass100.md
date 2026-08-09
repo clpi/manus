@@ -171,7 +171,9 @@ specs are sections in holes); raw `[[…]]` means raw; `'a'` byte literals.
      records; identity for anonymous data tables)
 and or not   operands returned (or IS nil-coalescing; facts narrow); not
      → bool; mixed and/or parenthesize
---   comment   ;  one-line induction tail (the only ; in the language)
+--   comment   ;  RETIRED by Pass 119 — THE SEMICOLON DOES NOT EXIST.
+     Newline already says it; dnir's ';' is metadata notation only. The
+     one-line induction tail is written `while (i += 1) <= n consume(i)`.
 "    interpolating string   '  byte   [[ ]]  raw
 ```
 

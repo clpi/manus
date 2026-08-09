@@ -354,6 +354,55 @@ What this means for THIS repository, concretely:
   termination condition. It shrinks toward the fixed point; it is not a
   violation.
 
+### §0g G-TOTAL · REGIMES · STD-GRAPH · PKG-GRAPH · LINE-LAW (Passes 117-119)
+
+**G-TOTAL** gates EVERY rendered artifact and front-end — docs, tree-sitter,
+LSP, TTY, dnir, diagnostics, MCP: role coverage = **100% of non-whitespace
+bytes** · unresolved-ambiguity spans = **0** (two candidates is a mixed-space
+diagnostic, never a guess) · every role carries rule + why-chain. Fine splits
+are law: `=` BINDS (asserts a fact) vs `+=` UPDATE edge vs `==` RELATION query;
+level parens vs parameter parens vs grouping; walk-writes underlined. MCP
+responses are `(span, role, why, dnir)` tuples — **never plain text**. G-TOTAL
+also measures SPECIFICITY: a token whose card cannot beat its lexical class is a
+finding.
+
+**FFI-REGIMES**: abi-native (rust/c — zero adaptation) · effect-world (python —
+the interpreter is a world, GIL = region fact, refcounts ↔ tier-3 RC, buffers =
+zero-copy view facts) · managed-world (jvm — refs are PINNED places freed by the
+drop ladder, throws ROUTE as error packs under B-15).
+
+**STD IS THE PRELUDE GRAPH** — no module tree, no import. Descriptors + trie
+edges (operand-reachable only) + protocols + worlds (the only namespaces) +
+algebra laws, ambient by pinned EPOCH, deprecation-only, written in duon, census
+published.
+
+**PACKAGES ARE INERT GRAPH FRAGMENTS**: the manifest is an ordinary duon value;
+`use()` anchors a value; edges join the trie under the coherence law CHECKED AT
+PUBLISH; semver is COMPUTED from the graph diff; **NOTHING EXECUTES AT INSTALL**;
+capabilities never flow transitively — a dep's `needs{}` is granted or refused by
+the user's world at the call site.
+
+**WORTH-LAYER**: every outward claim carries its worth line — incumbent cost +
+the deleting mechanism, no adjectives — each mapping to a gate or fixture.
+
+**LINE-LAW**: one-lining is free while every clause boundary carries a structural
+token (operator / binder / edge); a space between two expression-starts
+(`if x < lo lo`) NEVER separates — newline + indent, mechanically.
+**THE SEMICOLON DOES NOT EXIST** (Pass 119; this RETIRES Pass 100 §4's
+"one-line induction tail", and §4 is amended in the same commit).
+
+Gap catalogue absorbed with ZERO new grammar: patterns = dispatch tables +
+lens-path keys · multiple dispatch = the precision ladder · generators = demand
+streams (laziness is the resting state) · channels = stream places composed by
+`|` · overflow = mode levels `add(wrap|sat|checked)` · views = `xs:view(2,5)` ·
+multiline strings = the offside string block · mutex = place + exclusive fact ·
+docs = `doc(slot)` edges · `?.` = refinement proofs or `get(.y, default)`, no new
+sigil.
+
+**Roadmap**: 0 c-abi → 1 EXPORT (C headers; wasm component model, witnesses as
+custom sections) → 2 python/jvm worlds GA → 3 ts/go ingestion → 4 the parsing
+substrate. **No foreign waist at any phase.**
+
 ### §1 DENY LIST — grep the diff; every row must be absent
 
 ```
@@ -366,7 +415,8 @@ try catch -> => ?. ?: T? |> <T> type X = type( pairs( ipairs( pcall
 tostring( tonumber( setmetatable getmetatable _G gmatch gsub
 module aliases (L = shc.lex)   Alias.fn(subject, …)   " .." beside literals
 end on one-line blocks   single-use next-line temps   elseif kind-ladders
-sentinels   mixed-kind groups   trailing return <expr>   "M = {}" wrappers
+sentinels   mixed-kind groups   trailing return <expr>   ANY `;`
+plain-text MCP/diagnostic output (H-8, G-TOTAL)   std module tree / import   "M = {}" wrappers
 C-as-intermediary   LLVM-as-dependency   runtime-hosted execution
 any non-.duo file
 ```
