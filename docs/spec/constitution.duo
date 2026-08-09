@@ -1342,3 +1342,78 @@ objective = law{
 -- semantic mutation is the finding. Then the question stops being "what is it
 -- called" and becomes "how many physical apis project `add`, and why".
 scan.gap = "lexical rows cannot close an architectural class — projects= is owed"
+
+-- ═══ §40 · SYNTAX SUBTRACTION — leading dot is retirement debt ══════════════
+--
+-- OWNER DIRECTIVE 2026-08-08, and it SUPERSEDES the leading-dot readings in
+-- §0.2, §0.3 and §0a. Recorded under law.owner.precedence: a directive outranks
+-- any generated ruling, and this one narrows laws those passes stated too
+-- generally.
+--
+-- CANONICAL `.` HAS ONE MEANING: explicit postfix projection from an
+-- ALREADY-WRITTEN subject — `x.y`. Every other leading-dot form is retirement
+-- debt, and is not preserved merely because the parser accepts it.
+--
+-- THE TEST, asked of every syntactic form and not only this one:
+--
+--   Does this token encode semantic information ALREADY UNIQUELY RECOVERABLE
+--   from subject, expected descriptor, demand, relation identity or context?
+--
+--   If yes it is canonicalization debt. AND THE REPAIR IS NOT NEW SYNTAX.
+--
+-- THE TARGET IS NOT FEWER CHARACTERS. It is FEWER SYNTACTIC SEMANTIC
+-- MECHANISMS. A shorter spelling that adds a mechanism is a loss.
+
+subtract = law{
+    id    = "law.subtract"
+    kind  = .invariant
+    holds = .postfix
+    binds = {
+        "canonical `.` is postfix projection from a written subject",
+        "recoverable information is debt, not economy",
+        "retired syntax is never replaced by new syntax",
+    }
+    fails = "preserving a form because the parser happens to accept it"
+}
+
+-- FIVE OBLIGATIONS BEFORE ANY DELETION. Retirement is proven, not asserted.
+subtract.proves = {
+    "every semantic role has a strictly SIMPLER EXISTING spelling",
+    "resolution is deterministic",
+    "canonical lowering is NO WORSE",
+    "the canonicalizer migrates it mechanically",
+    "lua and foreign dialects are unaffected",
+}
+
+-- MEASURED 2026-08-08, and the surface is small enough to retire:
+--
+--   ordinary postfix `x.y`            24031   <- canonical, dominates
+--   case in construction `= .x`         123
+--   lens in argument `map(.f)`           96
+--   leading `.` in arithmetic `.x * k`   36    <- SELF-ZERO's field read
+--   bare `.` as value                    15
+--   inferred case `== .name`             12
+--   leading `:name()` invoke              6
+--   `{ .field = value }`                  0    <- ALREADY ABSENT
+--
+-- ~290 leading-dot sites against 24031 canonical postfix. One of the four forms
+-- the directive names does not exist in the tree at all.
+
+-- THE HARD CASE, stated rather than glossed: SELF-ZERO (§0a) rests ENTIRELY on
+-- leading `.`. `scale = (k) @{ .x * k, .y * k }` has no subject written down —
+-- that is the whole point of there being no `self`. Retiring leading `.` and
+-- keeping SELF-ZERO requires the directive's own suggestion to hold: that
+-- implicit-subject fields use ORDINARY BARE IDENTITIES.
+--
+--   scale = (k) @{ x * k, y * k }
+--
+-- Which collides with a local binding named `x`, so obligation 2 —
+-- DETERMINISTIC RESOLUTION — is the one that decides this form, and it is not
+-- yet proven either way. 36 arithmetic sites, 15 bare `.`, 6 leading invokes:
+-- 57 sites, all SELF-ZERO, all blocked on the same question.
+--
+-- This is recorded as OPEN rather than resolved. The other forms — 123 case
+-- constructions, 96 argument lenses, 12 inferred cases — do not depend on it and
+-- retire independently, which is the order to work in.
+subtract.blocked = "self-zero's implicit subject: bare identity vs local binding"
+subtract.free = { "case in construction", "argument lens", "inferred case" }
