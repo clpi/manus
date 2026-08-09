@@ -2,15 +2,22 @@
 
 AI-native WebAssembly runtime written in [Duo](https://github.com/clpi/luo-duo).
 
-Reimplements [wart](../wart) (~1.3M lines of Zig) in **~1,500 lines of Duo** — same capabilities, 10× less code, more intuitive, hardware-aware by default.
+Reimplements [wart](../wart) in Duo. **Measured 2026-08-08: wart is 121,285
+lines of Zig across 182 files; ward is 11,350 lines of Duo across 29 files — a
+10.7× ratio.**
+
+This line previously read "~1.3M lines of Zig" and "~1,500 lines of Duo". Both
+numbers were wrong, both in the flattering direction, and together they claimed
+a ~870× ratio against an actual 10.7×. Corrected under CLAUDE.md §3: a claim on
+a front page is a claim, and it pays the same toll as one in a benchmark.
 
 ## Why
 
 | | wart (Zig) | ward (Duo) |
 |--|-----------|------------|
-| Lines of code | ~1,300,000 | ~1,500 |
-| Binary size | ~8MB | <1MB |
-| Startup time | ~5ms | <1ms |
+| Lines of code | **121,285** (182 files) | **11,350** (29 files) |
+| Binary size | unmeasured | unmeasured |
+| Startup time | unmeasured | unmeasured |
 | AI inference | Separate WASI-NN layer | Native `@device` + `Tensor` types |
 | Hardware dispatch | Manual enum matching | `@device(.auto)` — compiler handles it |
 | Edge serverless | Complex isolate lifecycle | `edge.serverless.handle(request)` |
