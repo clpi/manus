@@ -2782,3 +2782,81 @@ irdata = law{
 -- load and store, so alias, bounds, mutability and provenance analysis reason
 -- uniformly and the backend still picks its own instruction.
 irplace = "load(subject, place) · store(subject, place, value) — place is field, index or global"
+
+-- ═══ §61 · IDENTITY-ONE · COMMIT-MONOTONIC · THE CONVERGENCE GATE ══════════
+--
+-- §59-60 are FROZEN. No further dnir design pass. What follows is the two
+-- invariants they did not carry, and the instrument that measures whether the
+-- implementation is converging on them at all.
+
+lineage = law{
+    id    = "law.identity.lineage"
+    kind  = .invariant
+    holds = .continuous
+    binds = {
+        "every realized instruction RETAINS the identity of the semantic relation it descends from",
+        "source span, relation id, realization, value and control identity, allocation, machine instruction, machine byte range — ONE lineage",
+        "a compact opcode is intern(relation), never an independent operation that happens to share a name",
+    }
+    deny  = "semantic add becoming an unrelated binop.add that must later be CORRELATED BACK to add"
+    why   = "no translation back into semantic meaning is needed if the meaning was never lost. The four-way source/graph/dnir/assembly view is a consequence of this invariant, not a feature built beside it."
+}
+
+commit = law{
+    id    = "law.commit.monotonic"
+    kind  = .invariant
+    holds = .narrowing
+    binds = {
+        "realization NARROWS a candidate set through evidence, never by default",
+        "every removed candidate is attributable to demand, target, abi, observation, effect, proof or cost",
+        "a lower layer may ADD explicit facts; it may never silently forget the fact that justified an earlier commitment",
+    }
+    canon = "{boxed, stack, pair, hfa, scalar} -> {pair, hfa, scalar} -> {scalar}, each step with its reason"
+    why   = "this is what makes `why wasn't this simd`, `why did this allocate`, `why did this become sret`, `why wasn't this scalar-replaced` MECHANICALLY answerable rather than a debugging exercise."
+}
+
+-- The governance gap this closes: the constitution can say law.ir.one while the
+-- implementation stays the old dnir indefinitely. These are measured, not
+-- asserted — and the LAST line is the guardrail on the whole list.
+converge = {
+    { row = "semantic operation identity spaces",   target = 1 },
+    { row = "instructions carrying a semantic id",  target = "100%" },
+    { row = "instructions carrying provenance",     target = "100%" },
+    { row = "underscored semantic op names",        target = 0 },
+    { row = "nested op/subop dispatch levels",      target = 0 },
+    { row = "abi argument-move operations",         target = 0 },
+    { row = "ordinary local load/store operations", target = 0 },
+    { row = "semantic return operation families",   target = 1 },
+    { row = "place load/store families",            target = 2 },
+    { row = "semantic reconstruction side maps",    target = 0 },
+    { row = "facts reconstructed after sema",       target = "decreasing" },
+    { row = "early representation commitments",     target = "decreasing" },
+    { row = "correspondence rebuilds",              target = 0 },
+}
+
+converge.guard = "MEASURE SEMANTIC AUTHORITY AND RECONSTRUCTION, never a vanity opcode count — a smaller count that hides distinctions inside giant dynamic switches is WORSE"
+
+-- The recurring failure this names, in the lowerer's own shape: a semantic fact
+-- exists · the lowerer loses it · a local map re-discovers it · another consumer
+-- misses the map · another special case is added. **Every deleted reconstruction
+-- table is worth more than an opcode rename.**
+reconstruct = "establish once · project many times · reconstruct nowhere"
+
+-- ═══ §62 · EVIDENCE MUST BE PRIVATE TO THE RUN ═════════════════════════════
+--
+-- MEASURED: every compile writes `/tmp/duo_<basename>.c` with NO RUN IDENTITY.
+-- With several sessions building one tree, `agent-smoke` returns 0/1/0 across
+-- three identical runs and the failing row MOVES between them. Both rows pass
+-- standalone.
+
+evidence = law{
+    id    = "law.evidence.private"
+    kind  = .invariant
+    holds = .isolated
+    binds = {
+        "every run receives a unique id, a private temp directory, private logs, a private mutable cache namespace and isolated generated artifacts",
+        "only immutable or content-addressed data may be shared",
+    }
+    fails = "A TEST RESULT WHOSE EVIDENCE ANOTHER RUN CAN OVERWRITE IS NOT A FACT"
+    why   = "the same law as everywhere else — one fact, one authority, explicit provenance — applied to the artifacts a gate reads. Three sessions today each reported a red they could not attribute, and each had to rebuild from `git archive` to find out whose it was."
+}
