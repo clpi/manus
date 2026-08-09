@@ -3415,6 +3415,26 @@ pub const CodeGen = struct {
             return nofit(@src());
         }
 
+        // gap[066] follow-on. A file-scope binding that a FUNCTION WRITES needs
+        // real storage the native-scalar profile does not give it: every
+        // function body treats the name as its own register-resident local, so
+        // the write lands nowhere the next read can see.
+        //
+        // Measured before this guard: `g: i64 = 0` with `g = g + i` in a loop
+        // printed 3 where C printed 6, and `g = g + 1` printed 0 where C
+        // printed 3 — g's READ folded to the initializer while the write was
+        // discarded. Not a bail, not a diagnostic: a running program with a
+        // confident wrong number, which is the worst class there is.
+        //
+        // A read-only file-scope binding is still fine — folding its
+        // initializer is correct when nothing can change it — so this refuses
+        // only the written case, and DNB001 sends it to the C backend, which
+        // now mangles the symbol consistently and answers correctly.
+        if (self.module_top_level_written_binding(mod)) |written| {
+            native_diag_fail_fmt("mod-global-written:{s}", .{written});
+            return nofit(@src());
+        }
+
         for (mod.body.stmts) |*stmt| {
             switch (stmt.*) {
                 .func_decl => |fd| {
@@ -3501,6 +3521,25 @@ pub const CodeGen = struct {
             if (!self.native_scalar_funcs.contains(fd.path[0])) return false;
         }
         return true;
+    }
+
+    /// gap[066] follow-on. The name of the first file-scope binding that some
+    /// module function ASSIGNS, or null when every file-scope binding is
+    /// read-only from the functions' point of view. Names the binding so the
+    /// DNB tag can say which one, rather than "outside the subset".
+    fn module_top_level_written_binding(self: *CodeGen, mod: *const ast.Module) ?[]const u8 {
+        for (mod.body.stmts) |*stmt| {
+            switch (stmt.*) {
+                .local_decl => |*ld| for (ld.names) |lname| {
+                    if (self.module_functions_assign_name(mod, lname.ident)) return lname.ident;
+                },
+                .global_decl => |*gd| for (gd.names) |lname| {
+                    if (self.module_functions_assign_name(mod, lname.ident)) return lname.ident;
+                },
+                else => {},
+            }
+        }
+        return null;
     }
 
     fn module_top_level_is_native(self: *CodeGen, mod: *const ast.Module) bool {
@@ -5047,9 +5086,15 @@ pub const CodeGen = struct {
         const rt = self.resolve_type(type_expr);
         // .any requires lua_Value boxing — NOT native scalar.
         // .func as a value type also requires boxing (closure/function pointer).
+        // A `.dynamic` table is a BOXED lua table. Answering "native scalar"
+        // for it put a value on the opposite side of the native gate from what
+        // `types.ResolvedType.is_native` and `semantic_algebra.lowersToNativeC`
+        // both say — the gap[092] shape, where two spellings of one value land
+        // on opposite sides. Storage class is the discriminator all three
+        // owners already agree on; see gaps/GAP-108.md §2.1 for the probe.
         return rt.is_numeric() or rt == .bool or rt == .str or rt == .void or
             rt == .array or rt == .@"struct" or rt == .enum_type or
-            rt == .table_type or rt == .pointer;
+            (rt == .table_type and rt.table_type.storage_class != .dynamic) or rt == .pointer;
     }
 
     fn module_has_cinclude(self: *CodeGen, mod: *const ast.Module) bool {
@@ -9826,10 +9871,27 @@ pub const CodeGen = struct {
     }
 
     fn native_dense_c_symbol(self: *const CodeGen, name: []const u8, buf: []u8) []const u8 {
+        return self.global_c_symbol(name, buf);
+    }
+
+    /// gap[066]. THE mangler for file-scope global storage. Every emitter that
+    /// names a `duo_g_*` symbol must route through here — the declaration
+    /// emitter guarded on `current_module_cname.len > 0` and the promoted
+    /// local-decl *assignment* emitters did not, so a top-level `g: i64 = 0`
+    /// in a program with no module prefix was DECLARED `duo_g_g` and ASSIGNED
+    /// `duo_g__g`, and the C backend could not build the program at all.
+    /// Two mangling rules for one symbol is the defect; one function is the fix.
+    fn global_c_symbol(self: *const CodeGen, name: []const u8, buf: []u8) []const u8 {
         if (self.current_module_cname.len > 0) {
             return std.fmt.bufPrint(buf, "duo_g_{s}_{s}", .{ self.current_module_cname, name }) catch name;
         }
         return std.fmt.bufPrint(buf, "duo_g_{s}", .{name}) catch name;
+    }
+
+    /// `global_c_symbol` written straight to the output stream.
+    fn p_global_c_symbol(self: *CodeGen, name: []const u8) void {
+        var buf: [512]u8 = undefined;
+        self.p("{s}", .{self.global_c_symbol(name, &buf)});
     }
 
     fn remove_native_dense_module_tables_for_scope(self: *CodeGen, module_cname: []const u8) !void {
@@ -12277,7 +12339,7 @@ pub const CodeGen = struct {
                     if (!promoted_module_local) try self.note_local_type(lname.ident, if (rt == .nil) .any else rt);
                     if (rt == .any or rt == .option or rt == .result or rt == .nil) {
                         if (promoted_module_local) {
-                            self.p("duo_g_{s}_{s}", .{ self.current_module_cname, lname.ident });
+                            self.p_global_c_symbol(lname.ident);
                         } else {
                             self.p("lua_Value {s}", .{lname.ident});
                         }
@@ -12295,7 +12357,8 @@ pub const CodeGen = struct {
                         // (zero) — emitted as `{0}` so any plain-`int`
                         // field still gets a valid C value.
                         if (promoted_module_local) {
-                            self.p("duo_g_{s}_{s} = ", .{ self.current_module_cname, lname.ident });
+                            self.p_global_c_symbol(lname.ident);
+                            self.p(" = ", .{});
                         } else {
                             self.typ(rt);
                             self.p(" {s} = ", .{lname.ident});
@@ -12307,7 +12370,7 @@ pub const CodeGen = struct {
                         // it as lua_Value and box the callee so reads/tables get
                         // a valid value instead of a `/* func */` placeholder.
                         if (promoted_module_local) {
-                            self.p("duo_g_{s}_{s}", .{ self.current_module_cname, lname.ident });
+                            self.p_global_c_symbol(lname.ident);
                         } else {
                             self.p("lua_Value {s}", .{lname.ident});
                         }
@@ -12319,7 +12382,7 @@ pub const CodeGen = struct {
                         }
                     } else {
                         if (promoted_module_local) {
-                            self.p("duo_g_{s}_{s}", .{ self.current_module_cname, lname.ident });
+                            self.p_global_c_symbol(lname.ident);
                         } else {
                             self.typ(rt);
                             self.p(" {s}", .{lname.ident});
