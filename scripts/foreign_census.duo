@@ -280,7 +280,7 @@ main(): i64
                 code = 3
             end
 
-            floor: i64 = to(i64)(std.script.getenv("FOREIGN_FLOOR", "4"))
+            floor: i64 = to(i64)(std.script.getenv("FOREIGN_FLOOR", "2"))
             embedfloor: i64 = to(i64)(std.script.getenv("FOREIGN_EMBED_FLOOR", "181"))
             over: i64 = 0
             if unclassified > floor

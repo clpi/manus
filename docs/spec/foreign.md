@@ -83,17 +83,22 @@ oracle   tests/                        license:pass103-§5 — differential fixt
 
 ## Unclassified today, and why each is a violation rather than a rule
 
-Four files match nothing above. Each is authored source in another language
-with no bootstrap role and no oracle role, which is precisely the definition of
-debt this file exists to make visible:
+Two files match nothing above. Each is authored source in another language with
+no bootstrap role and no oracle role, which is precisely the definition of debt
+this file exists to make visible:
 
-- `ext/tree-sitter-duo/grammar.js` — 804 lines. Pass 100 §19 calls the
-  tree-sitter grammar "a generated grammar projection (output, never
-  authored)"; it is authored. See gaps/GAP-049.
+- `ext/tree-sitter-duo/grammar.js` — **PARTIALLY generated** as of `8f07860`:
+  `scripts/treesitter_emit.duo` now projects part of it and
+  `zig build treesitter-projection` fails unless the tracked file is
+  byte-identical to the projection. That is most of the way to a `ledger` row,
+  and the rule lands when the projection is TOTAL — a file with authored
+  regions is not yet output. See gaps/GAP-049.
 - `ext/vscode-duo/extension.js`
-- `docs/theme/custom.js`
-- `scripts/run_compile_size_benchmark.sh` — the last shell script in a
-  repository whose gates are otherwise `.duo`.
+
+Two left the list without a rule being written for them, which is the outcome
+this file is for: `docs/theme/custom.js` was deleted, and
+`scripts/run_compile_size_benchmark.sh` was rewritten in Duo. The budget was
+lowered from 4 to 2 in the same commit that measured it.
 
 A file that becomes genuinely generated belongs in `ledger` with its generator
 named and a termination condition. A file that becomes test equipment belongs
