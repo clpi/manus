@@ -75,8 +75,12 @@ control = "examples/spec100/stubs/control.duo"
 -- `shc/lex.duo` was waiting on.
 -- blocks 2 -> 5: `shc/lex.duo` and `shc/parse.duo` join their module and the
 -- §19 descent stubs; `tool/wordcount.duo` gets its shebang onto line 1.
+-- 17 -> 18: `relation`, §9's conversion algebra — the declaration face
+-- `to(dest)(src) = conv`, the enumerable trie `to[dest]`, and the composition
+-- law that derives a conversion nobody wrote. Raised because the row went
+-- green; gap[082].
 blockfloor = 5
-formfloor = 17
+formfloor = 18
 
 fence = "^```"
 

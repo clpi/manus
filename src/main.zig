@@ -125,6 +125,14 @@ fn apply_env_flags(init: std.process.Init) void {
         if (map.get("DUO_NATIVE_DIAG")) |v| {
             if (env_value_truthy(v)) cg.native_diag = true;
         }
+        // gap[082]: every derived conversion's A5 witness, on demand. The same
+        // witness ships inside the generated artifact unconditionally.
+        if (map.get("DUO_WHY_CONVERT")) |v| {
+            if (env_value_truthy(v)) cg.why_convert = true;
+        }
+        if (map.get("DUO_SER")) |v| {
+            if (env_value_truthy(v)) cg.ser_census = true;
+        }
     }
     {
         const te = @import("transform_engine.zig");

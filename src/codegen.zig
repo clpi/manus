@@ -35,6 +35,7 @@ const meta_dispatch = @import("meta_dispatch.zig");
 const backend_identity = @import("backend_identity.zig");
 const dynamic_boundary = @import("dynamic_boundary.zig");
 const pass23_protocol_registry = @import("pass23_protocol_registry.zig");
+const relation = @import("relation.zig");
 
 /// SH-03: an embedded module tokenizes through the SAME lexer the compile
 /// driver uses.
@@ -62,6 +63,18 @@ fn routeEmbedThroughDuoLexer(
 }
 
 pub var native_diag: bool = false;
+/// gap[082]: conversions the trie found a route for and the class lattice
+/// REFUSED. Counted rather than returned because a refusal is a diagnostic
+/// about the program, not a failure of the code generator — but it must still
+/// stop the build, or "never silently compose into a lossy conversion" is a
+/// comment rather than a rule.
+pub var refused_conversions: u32 = 0;
+/// `DUO_WHY_CONVERT=1` prints every derived conversion's witness. The witness
+/// also ships inside the generated artifact; this is the interactive face of
+/// the same fact.
+pub var why_convert: bool = false;
+/// `DUO_SER=1` reports the relation's semantic expansion ratio WITH ITS N.
+pub var ser_census: bool = false;
 var native_diag_tag: ?[]const u8 = null;
 /// True when the module body assigns `name` at top level (e.g. `M = {}`).
 /// Such a global stays live even in native-direct modules: its field writes and
@@ -382,6 +395,11 @@ pub const CodeGen = struct {
     func_bodies: std.StringHashMapUnmanaged(*const ast.FuncBody) = .empty,
     /// Module-scope function declarations (attributes for effect/call algebra).
     func_decls: std.StringHashMapUnmanaged(*const ast.FuncDecl) = .empty,
+    /// gap[082]: the `to` relation's edge trie. Declared edges land here from
+    /// `to(dest)(src) = conv`; `emit_convert_edge` asks it BEFORE the four
+    /// hardcoded primitive arms, so an authored edge outranks the projection
+    /// and a DERIVED edge exists at all.
+    to_relation: relation.Relation = .{ .name = "to" },
     /// Set of anonymous record hashes for which we have already emitted a
     /// C `struct` typedef. Lets us emit the typedef exactly once per
     /// unique record shape, even if the shape is used at many sites.
@@ -1894,6 +1912,15 @@ pub const CodeGen = struct {
             // `to(T)(v)` yields T. Without this the type is unknown and a
             // chained projection (`x:to(i64):to(str)`) cannot resolve its
             // second receiver — the edge knows its own target, so say so.
+            //
+            // law.host.projection { projects = to, authority = false }
+            // gap[082] is the deletion gate. This literal-string comparison is
+            // the HOST'S PROJECTION of a relation that now exists as data in
+            // `to_relation`; it is not the authority on what `to` means and it
+            // must not grow. It survives because the trie only answers for
+            // descriptor pairs somebody declared, and the primitive conversions
+            // are still taught to the code generator by hand rather than
+            // written as edges in `lib/std`. When they are, this goes.
             if (c.func.* == .call and c.func.call.func.* == .name and
                 std.mem.eql(u8, c.func.call.func.name.ident, "to") and
                 c.func.call.args.len == 1 and c.func.call.args[0].* == .name)
@@ -1911,6 +1938,7 @@ pub const CodeGen = struct {
             return self.expr_type(&lu);
         }
         // Same edge, receiver-first spelling: `v:to(T)` also yields T.
+        // law.host.projection { projects = to, authority = false } — gap[082].
         if (e.* == .method_call) {
             const mc = e.method_call;
             if (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1 and mc.args[0].* == .name) {
@@ -4868,6 +4896,8 @@ pub const CodeGen = struct {
                         var tbuf: [256]u8 = undefined;
                         break :fd self.func_decls.get(self.mangled_name(mc.method, &tbuf)) != null;
                     } or
+                    // law.host.projection { projects = to, authority = false }
+                    // gap[082] is the deletion gate.
                     (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1);
                 if (!resolvable) {
                     native_diag_fail_fmt("method-unresolved:{s}", .{mc.method});
@@ -5458,12 +5488,22 @@ pub const CodeGen = struct {
             self.req_ctx = old_req_ctx;
             self.current_module_cname = old_module_cname;
             self.current_module = old_module;
+            // gap[082]: a refused composition has already reported itself at
+            // the site. Stopping here is what makes the class lattice a rule —
+            // if the build continued, the site would fall through to the
+            // builtin projection and the program would quietly stop meaning
+            // what its edges say.
+            if (refused_conversions > 0) {
+                term.err("{d} conversion(s) refused: silent composition stops at lossless", .{refused_conversions});
+                std.process.exit(1);
+            }
         }
         if (self.src_path.len > 0) {
             debug_trace.event(.codegen, .module, "emit {s}", .{self.src_path});
         } else {
             debug_trace.event(.codegen, .module, "emit module", .{});
         }
+        try self.populate_relation_edges(mod);
         try self.populate_alias_defs(mod);
         try self.collect_comptime_only_funcs(mod);
         try self.populate_record_aliases(mod);
@@ -7062,6 +7102,62 @@ pub const CodeGen = struct {
                 try self.note_func_decl(fd.path[0], fd);
             }
         }
+    }
+
+    /// gap[082]: land every `to(dest)(src) = conv` in the trie before any body
+    /// is emitted, so an edge declared BELOW its first use still answers. A
+    /// relation is a set of facts, not a sequence of statements — declaration
+    /// order is enumeration order and nothing else.
+    pub fn populate_relation_edges(self: *CodeGen, mod: *ast.Module) E!void {
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .assign) continue;
+            const d = relation.declFromAssign(stmt.assign, &isConversionRelation) orelse continue;
+            try self.to_relation.declare(self.alloc, .{
+                .dest = d.dest,
+                .src = d.src,
+                .conv = d.conv,
+                .class = d.class,
+                .loc = d.loc,
+            });
+        }
+        if (ser_census and self.to_relation.authored() > 0) try self.report_ser();
+    }
+
+    /// SER — semantic expansion ratio, derived relationships per authored one.
+    ///
+    /// COMPUTED FROM THE TRIE, never declared, and printed WITH ITS N. The
+    /// ratio is a function of ecosystem size: six descriptors admit thirty
+    /// ordered pairs, so even a perfect algebra reads ~5 here and a headline
+    /// without its universe would be dishonest in either direction. `refused`
+    /// is reported beside it and NOT folded in — a conversion the compiler will
+    /// not perform is not a capability.
+    fn report_ser(self: *CodeGen) E!void {
+        var refused: usize = 0;
+        const derived = try self.to_relation.derivedCount(self.alloc, &refused);
+        const authored = self.to_relation.authored();
+        const n = try self.to_relation.universe(self.alloc);
+        const total = authored + derived;
+        const ratio = @as(f64, @floatFromInt(total)) / @as(f64, @floatFromInt(authored));
+        std.debug.print(
+            "[ser] relation={s} n={d} authored={d} derived={d} refused={d} ser={d:.2}\n",
+            .{ self.to_relation.name, n, authored, derived, refused, ratio },
+        );
+    }
+
+    /// Which relation names carry a conversion trie. Exactly one today, and it
+    /// is named rather than inferred so that adding `from` later is a row here
+    /// rather than a second mechanism — `from` is the SAME edge read backwards
+    /// (spec 2.6), so it must never get a trie of its own.
+    fn isConversionRelation(name: []const u8) bool {
+        return std.mem.eql(u8, name, "to");
+    }
+
+    /// Is this statement a relation-edge declaration rather than an assignment?
+    /// The declaration is a FACT, so it emits nothing at all — the trie already
+    /// holds it and the conversion sites read it from there.
+    fn stmt_is_relation_decl(stmt: *const ast.Stmt) bool {
+        if (stmt.* != .assign) return false;
+        return relation.declFromAssign(stmt.assign, &isConversionRelation) != null;
     }
 
     pub fn populate_alias_defs(self: *CodeGen, mod: *ast.Module) E!void {
@@ -12156,6 +12252,14 @@ pub const CodeGen = struct {
                 try self.note_comptime_binding(cd.ident, cd.val);
             },
             .assign => |*as| {
+                // gap[082]: `to(dest)(src) = conv` is a relation-edge
+                // DECLARATION, not an assignment. It landed in the trie during
+                // `populate_relation_edges`; there is nothing to run. Before
+                // this arm existed the same bytes lowered to
+                // `lua_to_str(tostring(...)) = digits` and clang rejected it as
+                // "expression is not assignable" — the declaration face parsed,
+                // passed `duo check`, and could not be compiled.
+                if (stmt_is_relation_decl(stmt)) return;
                 if (as.values.len == 1 and self.uses_multi_return(as.values[0], as.targets.len)) {
                     self.ind();
                     self.pl("lua_mret_clear();", .{});
@@ -13014,6 +13118,13 @@ pub const CodeGen = struct {
                 }
             },
             .gen_for => |*gf| {
+                // gap[082]: `for src, conv in to[dest]` — Pass 100 §9's own
+                // enumeration face, which did not work: `to[dest]` lowered to
+                // `lua_table_get(to, ...)` and clang said "use of undeclared
+                // identifier 'to'". The trie is compile-time data, so the
+                // demand is discharged at compile time and the loop UNROLLS.
+                // Nothing is materialized at run time (A4 DEMAND).
+                if (try self.emit_relation_enumeration(gf)) return;
                 const IterMode = enum { generic, direct_table, explicit_pairs, explicit_ipairs };
                 var mode: IterMode = .generic;
                 var table_expr: ?*ast.Expr = null;
@@ -15941,6 +16052,8 @@ pub const CodeGen = struct {
                 // exist, so the data-wins rule is preserved by construction.
                 // Retrieval stays anchored (`p@to` is the value; `p:to(str)`
                 // is the act).
+                // law.host.projection { projects = to, authority = false }
+                // gap[082] is the deletion gate.
                 if (mc.args.len == 1 and std.mem.eql(u8, mc.method, "to") and
                     (ot.is_numeric() or ot == .str or ot == .bool))
                 {
@@ -19133,7 +19246,137 @@ pub const CodeGen = struct {
     /// One lowering for both orientations of the conversion edge (A3 ONE EDGE,
     /// 3.2: "orientations to/from share one edge"). `target` names the
     /// destination descriptor; `value` is the single runtime operand.
+    /// gap[082]: ask the TRIE before the hardcoded primitive arms.
+    ///
+    /// `src_desc` is the source descriptor when the call site named it
+    /// (`dest:from(src)(v)`, `dest.from(src)(v)` — spec 2.6 gate 6). When the
+    /// site did not, it is inferred from the value's own type, which is exactly
+    /// as far as inference reaches today: a nominal descriptor annotation
+    /// (`d: feet = 3.0`) is rejected by sema, so a user descriptor can only
+    /// reach here by being SPELLED. That limit is real and is recorded on the
+    /// gap rather than hidden behind a guess.
+    ///
+    /// Order matters and is law, not taste: a DECLARED edge outranks the
+    /// builtin projection (A3 — the authored fact is the relationship), and a
+    /// DERIVED edge outranks it too, because a derivation is the trie
+    /// answering, not the trie failing over.
+    fn emit_relation_convert(self: *CodeGen, dest: []const u8, src_desc: ?[]const u8, loc: ast.Loc, value: *ast.Expr, result_rt: RT) E!bool {
+        if (self.to_relation.authored() == 0) return false;
+        const src = src_desc orelse self.inferred_descriptor(value) orelse return false;
+        if (std.mem.eql(u8, src, dest)) return false;
+
+        if (self.to_relation.direct(src, dest)) |e| {
+            self.p("/* to[{s}][{s}] = {s} declared, class {s} */ ", .{ dest, src, e.conv, e.class.text() });
+            return try self.emit_conv_call(e.conv, loc, value, result_rt);
+        }
+
+        const path = self.to_relation.derive(src, dest) orelse return false;
+        var wbuf: [512]u8 = undefined;
+        const w = path.witness(&wbuf);
+        if (!path.admitted) {
+            // A route exists and the algebra REFUSES it. This is a diagnostic
+            // and not a fallthrough: falling through would silently pick the
+            // builtin projection, which is precisely how an algebra becomes
+            // dangerous — the program would keep compiling and quietly stop
+            // meaning what the edges say.
+            term.locErr(loc, "no silent conversion {s} -> {s}: {s}", .{ src, dest, w });
+            term.locHint(loc, "declare the edge, or route the lossy hop by name", .{});
+            refused_conversions += 1;
+            return false;
+        }
+        if (why_convert) std.debug.print("[why convert] {s}\n", .{w});
+        // The witness ships INSIDE the artifact. A5 makes it mandatory, and a
+        // witness that only exists in a compiler's stderr is not carried by the
+        // thing it justifies.
+        self.p("/* witness w-conv: {s} */ ", .{w});
+        var inner = ast.Expr{ .call = .{
+            .loc = loc,
+            .func = @constCast(&ast.Expr{ .name = .{ .loc = loc, .ident = path.first.conv } }),
+            .args = @constCast(&[_]*ast.Expr{value}),
+        } };
+        return try self.emit_conv_call(path.second.conv, loc, &inner, result_rt);
+    }
+
+    /// `for src, conv in to[dest]` — enumeration of a relation's edges into one
+    /// destination. Declaration order, so the loop is reproducible; unrolled,
+    /// because a trie the compiler already holds does not need a runtime table
+    /// to be walked.
+    fn emit_relation_enumeration(self: *CodeGen, gf: *const @FieldType(ast.Stmt, "gen_for")) E!bool {
+        if (gf.iters.len != 1 or gf.vars.len == 0 or gf.vars.len > 2) return false;
+        const it = gf.iters[0];
+        if (it.* != .index) return false;
+        const idx = it.index;
+        if (idx.obj.* != .name or idx.key.* != .name) return false;
+        if (!isConversionRelation(idx.obj.name.ident)) return false;
+        // LAW-CALL: data always wins the name. If the program bound `to`
+        // itself, this is that value's index and not the relation's.
+        if (self.user_owns_name(idx.obj.name.ident)) return false;
+        const dest = idx.key.name.ident;
+
+        var edges: std.ArrayListUnmanaged(relation.Edge) = .empty;
+        defer edges.deinit(self.alloc);
+        try self.to_relation.intoDest(dest, &edges, self.alloc);
+
+        self.ind();
+        self.p("/* {s}[{s}] enumerates {d} declared edge(s) */\n", .{ idx.obj.name.ident, dest, edges.items.len });
+        for (gf.vars) |v| try self.note_local(v);
+        for (edges.items) |e| {
+            self.ind();
+            self.pl("{{", .{});
+            self.indent += 1;
+            try self.note_local_type(gf.vars[0], .str);
+            self.ind();
+            self.p("const char* {s} = \"{s}\"; (void){s};\n", .{ gf.vars[0], e.src, gf.vars[0] });
+            if (gf.vars.len > 1) {
+                try self.note_local_type(gf.vars[1], .str);
+                self.ind();
+                self.p("const char* {s} = \"{s}\"; (void){s};\n", .{ gf.vars[1], e.conv, gf.vars[1] });
+            }
+            try self.emit_block(&gf.body);
+            self.indent -= 1;
+            self.ind();
+            self.pl("}}", .{});
+        }
+        return true;
+    }
+
+    fn emit_conv_call(self: *CodeGen, conv: []const u8, loc: ast.Loc, value: *ast.Expr, result_rt: RT) E!bool {
+        var call = ast.Expr{ .call = .{
+            .loc = loc,
+            .func = @constCast(&ast.Expr{ .name = .{ .loc = loc, .ident = conv } }),
+            .args = @constCast(&[_]*ast.Expr{value}),
+        } };
+        if (result_rt == .any) try self.emit_as_lua_value(&call) else try self.emit_expr(&call);
+        return true;
+    }
+
+    /// The descriptor name a value carries, for trie lookup. Only primitives
+    /// answer today — see `emit_relation_convert`'s note on nominal
+    /// descriptors.
+    fn inferred_descriptor(self: *CodeGen, value: *ast.Expr) ?[]const u8 {
+        return switch (self.expr_type(value)) {
+            .i8 => "i8",
+            .i16 => "i16",
+            .i32 => "i32",
+            .i64 => "i64",
+            .u8 => "u8",
+            .u16 => "u16",
+            .u32 => "u32",
+            .u64 => "u64",
+            .f32 => "f32",
+            .f64 => "f64",
+            .bool => "bool",
+            .str => "str",
+            else => null,
+        };
+    }
+
     fn emit_convert_edge(self: *CodeGen, target: []const u8, loc: ast.Loc, value: *ast.Expr, result_rt: RT) E!bool {
+        return self.emit_convert_edge_from(target, null, loc, value, result_rt);
+    }
+
+    fn emit_convert_edge_from(self: *CodeGen, target: []const u8, src_desc: ?[]const u8, loc: ast.Loc, value: *ast.Expr, result_rt: RT) E!bool {
+        if (try self.emit_relation_convert(target, src_desc, loc, value, result_rt)) return true;
         var one = [_]*ast.Expr{value};
         if (std.mem.eql(u8, target, "str")) {
             var synth = ast.Expr{ .name = .{ .loc = loc, .ident = "tostring" } };
@@ -19291,7 +19534,15 @@ pub const CodeGen = struct {
         if (func.* == .method_call) {
             const recv = func.method_call;
             if (std.mem.eql(u8, recv.method, "from") and recv.obj.* == .name and args.len == 1) {
-                if (try self.emit_convert_edge(recv.obj.name.ident, recv.loc, args[0], result_rt)) return true;
+                // gap[082]: the source descriptor is RIGHT THERE in
+                // `dest:from(src)(v)` and was being discarded. Pass it — it is
+                // the only way a user descriptor reaches the trie today, since
+                // sema rejects a nominal annotation on a binding.
+                const named_src = if (recv.args.len == 1 and recv.args[0].* == .name)
+                    recv.args[0].name.ident
+                else
+                    null;
+                if (try self.emit_convert_edge_from(recv.obj.name.ident, named_src, recv.loc, args[0], result_rt)) return true;
             }
         }
         // Same edge, DOT spelling. Gate 6 requires `to(str)` and `str.from(T)`
@@ -19304,7 +19555,10 @@ pub const CodeGen = struct {
         if (func.* == .call and func.call.func.* == .field and args.len == 1) {
             const fld = func.call.func.field;
             if (std.mem.eql(u8, fld.field, "from") and fld.obj.* == .name and func.call.args.len == 1) {
-                if (try self.emit_convert_edge(fld.obj.name.ident, fld.loc, args[0], result_rt)) return true;
+                // Same edge, dot spelling — the source group is equally present
+                // here and equally discarded before gap[082].
+                const named_src = if (func.call.args[0].* == .name) func.call.args[0].name.ident else null;
+                if (try self.emit_convert_edge_from(fld.obj.name.ident, named_src, fld.loc, args[0], result_rt)) return true;
             }
         }
         if (func.* == .field and args.len == 1) {
@@ -19322,6 +19576,10 @@ pub const CodeGen = struct {
         // the vestiges remain only as aliases.
         if (func.* == .call) {
             const inner = func.call;
+            // law.host.projection { projects = to, authority = false } —
+            // gap[082] is the deletion gate. The trie is consulted first, in
+            // `emit_convert_edge_from`; this arm is the fallback for primitive
+            // destinations no edge has been written for yet.
             const fam_to = inner.func.* == .name and std.mem.eql(u8, inner.func.name.ident, "to");
             // `from` is NOT resolvable standalone: 2.6 spells it
             // `str:from(point)(raw)` — the TARGET is the receiver, the source
