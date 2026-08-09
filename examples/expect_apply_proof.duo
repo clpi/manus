@@ -19,10 +19,25 @@
 -- stayed `.undecided`, three separate representation choosers read the
 -- all-positional-literal shape as an ARRAY, and `.x` took the dynamic path.
 --
--- Every row below asserts a VALUE. `zig build expect-apply` additionally reads
--- the emitted C and requires the record initializer with NO dense-table
--- runtime, which is `law.pack.shape`'s "a braced argument need not materialize
--- a table" — a heap table prints the same digits a struct does.
+-- Every row below asserts a VALUE. One assertion CANNOT be made by a printed
+-- digit and is not pretended to be: `law.pack.shape`'s "a braced argument need
+-- not materialize a table" — a heap table prints the same digits a struct does.
+-- That one is read off the emitted C, and was MEASURED at this commit:
+--
+--     duo_rec_266508db7bffdac0 p = { .x = 1e0, .y = 2e0 };
+--
+-- no heap table and no boxed value — the same thing `point{ 1.0, 2.0 }` emits,
+-- which is the point: the three projections are ONE relation, so they must land
+-- on one representation.
+--
+-- AND THE DENSE-TABLE RUNTIME IS STILL IN THIS FILE, four `duo_dt_grow` of it.
+-- That is not a leak and it is the second half of the proof: it belongs to
+-- ROW 5's bare pack, which is SUPPOSED to stay an ordinary positional value.
+-- Both representations coexisting in one translation unit is exactly what
+-- "`{…}` stays semantically neutral" has to look like — a file where the dense
+-- runtime had vanished would mean the bare pack had been collapsed into the
+-- descriptor too. Re-read both with
+-- `duo compile examples/expect_apply_proof.duo --backend=c` and the C in /tmp.
 
 point: @{ x: f64, y: f64 }
 
