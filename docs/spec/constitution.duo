@@ -998,3 +998,129 @@ doc = law{
     }
     fails = "a specification teaching an idiom its own gate would reject"
 }
+
+-- ═══ §37 · DISTRIBUTION IS NOT SEMANTICS (the stdlib reconciliation) ════════
+--
+-- THE DEEPEST RULE, and everything below is a consequence:
+--
+--   Distribution boundaries must never become semantic boundaries unless the
+--   semantics genuinely require it.
+--
+-- Four distinctions that follow, each of which the tree currently violates in a
+-- measurable way (2026-08-08):
+--
+--   1. A function does not become conceptually different because it arrived
+--      from another package.
+--   2. A standard operation does not need `std.` because of where its
+--      implementation FILE lives.       -- 3549 `std.*` sites, 126 homes
+--   3. A package namespace is not a substitute for relation identity.
+--   4. IMPORTING CODE IS NOT GRANTING CAPABILITY.  -- 278 ambient sites
+
+distribution = law{
+    id    = "law.distribution"
+    kind  = .invariant
+    holds = .semantic
+    binds = {
+        "a distribution boundary is not a semantic boundary",
+        "provenance is discoverable, never restated at every call",
+        "package identity matters where AMBIGUITY is real, not otherwise",
+    }
+    fails = "std.string.split(s, x) where s:split(x) names the same edge"
+}
+
+-- The four layers, which the word "stdlib" blurs into one.
+--
+--   core       required to define ordinary duon semantics — descriptor,
+--              relation, table, callable, failure, basic numerics and
+--              sequences, reflection. Always present. No import, no prefix.
+--   vocabulary standardized relation and descriptor IDENTITIES that are NOT
+--              language axioms — sort, encode, json, time, format. Standard
+--              MEANING; realization is replaceable.
+--   package    a separately versioned GRAPH FRAGMENT contributing descriptors,
+--              relations, implementations, worlds, laws, realizations. It does
+--              NOT contribute a namespace.
+--   world      AUTHORITY to perform effects, and orthogonal to all three above.
+layers.std = { "core", "vocabulary", "package", "world" }
+
+-- §4 is the one the tree breaks hardest and the one that matters most.
+-- `file.open` may be KNOWN without filesystem authority being GRANTED. The
+-- capability scan measures the conflation directly: 278 ambient sites across 53
+-- of 258 std modules, where knowing an operation IS having it.
+authority = law{
+    id    = "law.authority.grant"
+    kind  = .invariant
+    holds = .orthogonal
+    binds = {
+        "availability and authority are DIFFERENT relations",
+        "a standard operation may resolve while the world refuses it",
+        "installing a package grants NO capability",
+    }
+    fails = "import as permission — 278 ambient sites measured"
+}
+
+-- MEANING is standard and non-replaceable; REALIZATION is replaceable. A
+-- package may contribute a better `sort` realization — insertion, introsort,
+-- radix, simd, gpu — and the call stays `xs:sort()`. It may NOT redefine what
+-- standard `sort`, `eq`, `hash` or `to` MEAN, or ordinary code would change
+-- behaviour on installation.
+vocabulary = law{
+    id    = "law.vocabulary"
+    kind  = .invariant
+    holds = .meaning
+    binds = {
+        "packages add REALIZATIONS freely",
+        "packages may not redefine standard MEANING",
+        "one call site, many realizations, selected by demand and cost",
+    }
+    fails = "behaviour changing because a dependency was installed"
+}
+
+-- REACHABILITY FOR LINKING AND REACHABILITY FOR RESOLUTION ARE DIFFERENT
+-- RELATIONS. `app -> orm -> driver` must not hand the app every edge the driver
+-- contributes; `orm` decides what it re-exports. Without this, a project with
+-- 400 dependencies has an unreasonable resolution universe and composition
+-- becomes spooky.
+reach = law{
+    id    = "law.reach"
+    kind  = .invariant
+    holds = .explicit
+    binds = {
+        "the transitive dependency graph is NOT the resolution universe",
+        "a package chooses what it re-exports",
+        "a private dependency is topology, not a naming trick",
+    }
+    fails = "a transitive dependency's extensions becoming candidate edges"
+}
+
+-- Coherence under composition, which is the real pre-registry problem: two
+-- fragments may each imply a different edge for the same identity. "Latest
+-- import wins" is DENIED — it destroys semantic locality.
+coherence.rule = "a package may freely define relations over identities it OWNS. extending a relation where it owns NEITHER side needs explicit extension authority or a local scope."
+
+-- Packages advertise PROVEN FACTS, not only apis — allocation-free, deterministic,
+-- no-network, native on a target, thread-safe, no-failure under a descriptor.
+-- Downstream optimization consumes them, which makes a package a fragment
+-- carrying realization knowledge rather than only code you can call.
+package.publishes = { "identity", "version", "exports", "requires", "guarantees", "provenance" }
+
+-- Build, dev, runtime and plugin dependencies are ONE system. The STAGE at
+-- which a fragment is demanded decides when it participates; separate
+-- dependency families are a mechanism duplicated four times.
+depends = law{
+    id    = "law.depends"
+    kind  = .invariant
+    holds = .stage
+    fails = "build-dependency, dev-dependency and proc-macro as separate families"
+}
+
+-- Feature flags are DEMAND, not package metadata booleans. If nothing demands
+-- tls, its fragment and realization disappear. A package with 50,000 semantic
+-- facts may contribute 17 machine realizations to a given program — which is
+-- what makes "more featureful AND smaller binary" expressible rather than
+-- contradictory.
+features = law{
+    id    = "law.features"
+    kind  = .invariant
+    holds = .demand
+    fails = "a feature-configuration mini-language beside the language"
+}
