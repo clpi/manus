@@ -65,7 +65,7 @@ pub fn build(b: *std.Build) void {
     const census_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/language_census.duo" });
     census_cmd.setCwd(b.path("."));
     census_cmd.step.dependOn(b.getInstallStep());
-    const census_step = b.step("language-census", "G11: count tracked non-Duo source; ratchets sh/py debt");
+    const census_step = b.step("language-census", "G11: count tracked non-Duo source; ratchets sh/py, js and zig");
     census_step.dependOn(&census_cmd.step);
 
     // The native census. Same reasoning as G11 one level down: "native 100%"
@@ -242,13 +242,16 @@ pub fn build(b: *std.Build) void {
     const ml_bench_step = b.step("ml-bench", "Run ML benchmark suite (Duo vs C)");
     ml_bench_step.dependOn(&ml_bench_cmd.step);
 
-    const honest_bench_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_honest_benchmark.sh" });
+    // `scripts/run_honest_benchmark.sh` does not exist and has not for some
+    // time — the Duo port is tracked and the shell file is not, so this step
+    // was invoking bash on a missing path. Repointed at the file that is there.
+    const honest_bench_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/run_honest_benchmark.duo" });
     honest_bench_cmd.setCwd(b.path("."));
     honest_bench_cmd.step.dependOn(b.getInstallStep());
     const honest_bench_step = b.step("honest-bench", "Run honest benchmark (no precomputation, runtime inputs)");
     honest_bench_step.dependOn(&honest_bench_cmd.step);
 
-    const compile_size_bench_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_compile_size_benchmark.sh" });
+    const compile_size_bench_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/run_compile_size_benchmark.duo" });
     compile_size_bench_cmd.setCwd(b.path("."));
     compile_size_bench_cmd.step.dependOn(b.getInstallStep());
     const compile_size_bench_step = b.step("compile-size-bench", "Track compile time and binary size vs C");
@@ -285,6 +288,21 @@ pub fn build(b: *std.Build) void {
     ts_coverage_cmd.setCwd(b.path("."));
     const ts_coverage_step = b.step("tree-sitter-coverage", "tree-sitter generates, and recognises a ratcheted share of the .duo corpus (GAP-049)");
     ts_coverage_step.dependOn(&ts_coverage_cmd.step);
+
+    // Pass 101 "the host": tree-sitter is "a generated grammar projection
+    // (output, never authored)". ext/tree-sitter-duo/grammar.js is PARTLY
+    // that now -- everything outside its @@residue markers is emitted by
+    // scripts/treesitter_emit.duo. This step regenerates and fails unless the
+    // result is byte-identical to the tracked file, which is the only thing
+    // that separates a generated artifact from an authored one with a banner.
+    // It also prints the authored residue line count, which is the number
+    // GAP-049 is measured by.
+    const ts_projection_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/treesitter_emit.duo" });
+    ts_projection_cmd.setCwd(b.path("."));
+    ts_projection_cmd.setEnvironmentVariable("TSEMIT_CHECK", "1");
+    ts_projection_cmd.step.dependOn(b.getInstallStep());
+    const ts_projection_step = b.step("treesitter-projection", "grammar.js regenerates byte-identically from scripts/treesitter_emit.duo (GAP-049)");
+    ts_projection_step.dependOn(&ts_projection_cmd.step);
 
     // audit100 -- CLAUDE.md section 1's deny table, executable. It scans the
     // canonical partition of docs/spec/corpus.md only, because compile_fail
