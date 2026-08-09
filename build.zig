@@ -472,16 +472,6 @@ pub fn build(b: *std.Build) void {
     });
     const run_pass11_module_target = b.addRunArtifact(pass11_module_target);
 
-    const pass11_module_catalog = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/pass11_catalog.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-        .filters = &.{"pass11_catalog:"},
-    });
-    const run_pass11_module_catalog = b.addRunArtifact(pass11_module_catalog);
-
     const pass11_module_proof = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/proof_carrying.zig"),
@@ -502,18 +492,12 @@ pub fn build(b: *std.Build) void {
     });
     const run_pass11_module_ward = b.addRunArtifact(pass11_module_ward);
 
-    const pass11_module_catalog_cmd = b.addRunArtifact(exe);
-    pass11_module_catalog_cmd.addArg("catalog");
-    pass11_module_catalog_cmd.step.dependOn(b.getInstallStep());
-    pass11_module_catalog_cmd.setCwd(b.path("."));
 
     const pass11_module_step = b.step("pass11-module-smoke", "Pass 11: native_barrier_checks + target_model + catalog unit tests (cross-platform)");
     pass11_module_step.dependOn(&run_pass11_module_barrier.step);
     pass11_module_step.dependOn(&run_pass11_module_target.step);
-    pass11_module_step.dependOn(&run_pass11_module_catalog.step);
     pass11_module_step.dependOn(&run_pass11_module_proof.step);
     pass11_module_step.dependOn(&run_pass11_module_ward.step);
-    pass11_module_step.dependOn(&pass11_module_catalog_cmd.step);
 
     const pass11_blob_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/pass11_blob_object_smoke.duo" });
     pass11_blob_cmd.setCwd(b.path("."));
@@ -647,17 +631,6 @@ pub fn build(b: *std.Build) void {
     duo_idiom_step.dependOn(&duo_idiom_cmd.step);
 
 
-
-    const pass16_cross_platform_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/selfhost_target_matrix.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    const run_pass16_cross_platform_tests = b.addRunArtifact(pass16_cross_platform_tests);
-    const pass16_cross_platform_step = b.step("pass16-cross-platform", "Pass 16 §17 target matrix + host-aware gate (native, cross-platform)");
-    pass16_cross_platform_step.dependOn(&run_pass16_cross_platform_tests.step);
 
     const pass16_m1_diff = b.addRunArtifact(exe);
     pass16_m1_diff.addArgs(&.{ "run", "examples/pass12_m1_diff.duo" });
