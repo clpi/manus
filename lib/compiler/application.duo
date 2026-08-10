@@ -27,6 +27,15 @@ application: {
     demand: identity
 }
 
+instruction: {
+    relation: identity
+    application: identity
+    subject: identity
+    operands: identity
+    result: identity
+    facts: identity
+}
+
 validate: bool = (subject: application)
     subject.meaning.known
         and subject.content.known
@@ -42,6 +51,16 @@ validate: bool = (subject: application)
         and subject.witness.known
         and subject.provenance.known
         and subject.demand.known
+
+realize: instruction = (subject: application)
+    instruction{
+        relation = subject.relation
+        application = subject.meaning
+        subject = subject.subject
+        operands = subject.arguments
+        result = subject.result
+        facts = subject.facts
+    }
 
 main: i64 = ()
     meaning: identity = identity{ value = 0, known = true }
@@ -62,6 +81,7 @@ main: i64 = ()
     occurrence: identity = identity{ value = 15, known = true }
     twinmeaning: identity = identity{ value = 16, known = true }
     twinincarnation: identity = identity{ value = 17, known = true }
+    vector: identity = identity{ value = 18, known = true }
     unknown: identity = identity{ value = 0, known = false }
     candidate: application = application{
         meaning = meaning
@@ -88,7 +108,7 @@ main: i64 = ()
         arguments = arguments
         result = result
         descriptor = descriptor
-        facts = facts
+        facts = vector
         world = world
         effects = effects
         witness = witness
@@ -127,6 +147,8 @@ main: i64 = ()
         provenance = provenance
         demand = demand
     }
+    realized: instruction = candidate:realize()
+    alternate: instruction = revised:realize()
     code = 0
     if not candidate:validate()
         code = 1
@@ -144,6 +166,26 @@ main: i64 = ()
         code = 7
     if broken:validate()
         code = 8
+    if realized.relation.value != candidate.relation.value
+        code = 9
+    if realized.application.value != candidate.meaning.value
+        code = 10
+    if realized.subject.value != candidate.subject.value
+        code = 11
+    if realized.operands.value != candidate.arguments.value
+        code = 12
+    if realized.result.value != candidate.result.value
+        code = 13
+    if realized.facts.value != candidate.facts.value
+        code = 14
+    if alternate.relation.value != realized.relation.value
+        code = 15
+    if alternate.application.value != realized.application.value
+        code = 16
+    if alternate.facts.value != revised.facts.value
+        code = 17
+    if alternate.facts.value == realized.facts.value
+        code = 18
     if code == 0
-        print("application identity accepted")
+        print("application realization accepted")
     code
