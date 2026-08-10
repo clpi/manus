@@ -1,0 +1,88 @@
+-- Graph-fact verdict core for GAP-124. No verdict receives a home spelling.
+-- The four integers intern the canonical finding states for a scalar SHC proof.
+
+valid: i64 = 0
+migrate: i64 = 1
+missing: i64 = 2
+invalid: i64 = 3
+
+world: i64 = (need: i64, reach: i64)
+    if (need & reach) == need
+        valid
+    else
+        invalid
+
+subject: i64 = (possessed: bool, callable: bool, operation: bool)
+    if possessed
+        if callable
+            if operation
+                migrate
+            else
+                valid
+        else
+            valid
+    else
+        valid
+
+vocab: i64 = (known: bool, duplicate: bool, qualifier: bool, foreign: bool)
+    if duplicate
+        invalid
+    else
+        if qualifier
+            migrate
+        else
+            if foreign
+                missing
+            else
+                if known
+                    valid
+                else
+                    missing
+
+sentinel: i64 = (cases: bool, literal: bool, routing: bool)
+    if cases
+        if literal
+            if routing
+                invalid
+            else
+                valid
+        else
+            valid
+    else
+        valid
+
+control: i64 = (equivalent: bool, admitted: bool, freedom: bool)
+    if equivalent
+        if admitted
+            if freedom
+                migrate
+            else
+                invalid
+        else
+            missing
+    else
+        valid
+
+main: i64 = ()
+    code: i64 = 0
+    if 2:world(2) != valid
+        code = 1
+    if 2:world(0) != invalid
+        code = 2
+    if true:subject(true, true) != migrate
+        code = 3
+    if true:subject(true, false) != valid
+        code = 4
+    if true:vocab(false, false, false) != valid
+        code = 5
+    if false:vocab(false, false, true) != missing
+        code = 6
+    if true:sentinel(true, true) != invalid
+        code = 7
+    if true:control(true, true) != migrate
+        code = 8
+    if true:control(false, true) != missing
+        code = 9
+    if code == 0
+        print("canon: pass")
+    code
