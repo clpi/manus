@@ -22,6 +22,7 @@ Tok: {
 
 State: {
     pos: i64,
+    start: i64,
     line: i64,
     col: i64,
     has_peeked: bool,
@@ -31,6 +32,7 @@ State: {
 Lexer: {
     src: str,
     pos: i64,
+    start: i64,
     line: i64,
     col: i64,
     file: str,
@@ -56,6 +58,7 @@ new(src: str, file: str): Lexer
     return {
         src = src,
         pos = 1,
+        start = 1,
         line = 1,
         col = 1,
         file = file,
@@ -272,6 +275,7 @@ read_long_str(self: Lexer, level: i64): str
         end
     end
     start = self.pos
+    self.start = start
     while self.pos <= #self.src
         if self:peek_char() == 93
             close_start = self.pos
@@ -297,6 +301,7 @@ end
 read_str(self: Lexer, quote: i64): str
     self:adv()
     start = self.pos
+    self.start = start
     while self.pos <= #self.src
         c = self:peek_char()
         if c == quote
@@ -527,6 +532,7 @@ end
 
 next_tok(self: Lexer): Tok
     self:skip_ws()
+    self.start = self.pos
     if self.pos > #self.src
         return { kind = std.compiler.token.KIND_EOF, loc = self:cur_loc(), text = "", int_val = 0, float_val = 0.0 }
     end
@@ -736,6 +742,7 @@ end
 save_state(self: Lexer): State
     return {
         pos = self.pos,
+        start = self.start,
         line = self.line,
         col = self.col,
         has_peeked = self.has_peeked,
@@ -745,6 +752,7 @@ end
 
 restore_state(self: Lexer, state: State)
     self.pos = state.pos
+    self.start = state.start
     self.line = state.line
     self.col = state.col
     self.has_peeked = state.has_peeked
@@ -828,12 +836,13 @@ end
 -- kind-based differential stayed green. That is the same shape as the token-TEXT
 -- gap this file already records, so the field is carried rather than recomputed.
 --
--- SEVEN slots per token, byte offsets, `float_val` written as f64 bits:
---     0 kind   1 line   2 col   3 int_val   4 text_off   5 text_len   6 float_val
+-- Seven slots per token, byte offsets, `float_val` written as f64 bits:
+--     0 kind   1 line   2 col   3 int_val   4 source offset   5 text length   6 float value
 --
--- Returns the token count, or -1 if `cap` or `txtcap` is too small — never a
--- truncated stream, because a short read that looks like a short file is the
--- one failure a parser cannot detect.
+-- Returns the token count, or -1 if `cap` is too small. The final two arguments
+-- remain only to preserve the bootstrap ABI while consumers migrate; token text
+-- is no longer copied through them. A short read that looks like a short file is
+-- the one failure a parser cannot detect.
 -- The rejection's location, for a host that has just been handed a negative
 -- code. Re-lexes: this is the cold path, taken once per failed file.
 @c.export("duo_lexer_error_line")
@@ -853,18 +862,12 @@ end
 duo_lexer_tokenize_full(src: str, file: str, out: i64, cap: i64, txt: i64, txtcap: i64): i64
     lex = new(src, file)
     buf = mem.ptr_from_addr(i64, out)
-    tbuf = mem.ptr_from_addr(i64, txt)
     n: i64 = 0
     toff: i64 = 0
     while n < cap
         tok = next_tok(lex)
         tlen: i64 = strm.len(tok.text)
-        if toff + tlen > txtcap return -1 end
-        k: i64 = 0
-        while k < tlen
-            mem.write_byte(tbuf, toff + k, tok.text:byte(k + 1))
-            k += 1
-        end
+        toff = lex.start - 1
         mem.write_i64(buf, (n * 7) * 8, tok.kind)
         mem.write_i64(buf, (n * 7 + 1) * 8, tok.loc.line)
         mem.write_i64(buf, (n * 7 + 2) * 8, tok.loc.col)
@@ -872,7 +875,6 @@ duo_lexer_tokenize_full(src: str, file: str, out: i64, cap: i64, txt: i64, txtca
         mem.write_i64(buf, (n * 7 + 4) * 8, toff)
         mem.write_i64(buf, (n * 7 + 5) * 8, tlen)
         mem.write_f64(buf, (n * 7 + 6) * 8, tok.float_val)
-        toff = toff + tlen
         n += 1
         -- GAP-017: a rejection is returned, not raised. Negative codes are
         -- offset by 100 so they cannot collide with -1 (buffer too small):

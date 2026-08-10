@@ -1,9 +1,8 @@
 //! Pass 16 MP-04 — production lexer dispatch seam (explicit authority split).
 //!
-//! Keywords are Duo-canonical via `duo_keyword_bridge`. Full tokenization remains
-//! host (`src/lexer.zig`) until `duo_lexer_tokenize.c` (or equivalent) lands.
-//! This module is the single production entry for lexer authority metadata and
-//! keyword dispatch from the host lexer hot path.
+//! Keywords and full tokenization are Duon-owned. This module is the bootstrap
+//! projection that links the generated lexer artifact into the production host
+//! until compiler B can consume the Duon token stream directly.
 const std = @import("std");
 const lexer = @import("lexer.zig");
 const duo_keyword_bridge = @import("duo_keyword_bridge.zig");
@@ -61,42 +60,13 @@ pub const TOKENIZE_EXPORTS = [_][]const u8{
 
 pub const TOKENIZE_EXPORT_PROOF = "examples/pass16_lexer_tokenize_export_proof.duo";
 
-/// Full tokenization authority for the production compile driver.
-///
-/// Still `.host_zig`, deliberately — but not for the reason this comment used
-/// to give. It claimed "each call re-lexes from the start, so driving production
-/// tokenization through them would be quadratic". That is wrong: `new()` is a
-/// record literal, and `duo_lexer_step` sets `pos` and lexes exactly one token,
-/// so feeding `next_pos` back walks a source in O(n). Measured, not assumed.
-///
-/// LOCATION IS NO LONGER THE BLOCKER — that claim is retired here.
-///
-/// This comment used to say "what MP4-B02 needs is an export that threads
-/// location through, e.g. taking `line` and packing a line field alongside
-/// `kind`/`next_pos`". That export exists, and in a better shape than the one
-/// proposed: `duo_lexer_tokenize_all` writes four i64 per token (kind, line,
-/// col, int_val) and `duo_lexer_tokenize_text` writes six (adding text_off,
-/// text_len) into host-provided buffers. One `Lexer` runs the whole file, so the
-/// stream is state-faithful by construction rather than rebuilt per token —
-/// which also retires `duo_lexer_step`'s own hazard, recorded in lexer.duo:653,
-/// that stepping discards `has_peeked`/`peeked_token` and mis-lexes
-/// context-sensitive shapes.
-///
-/// Proven, not assumed: examples/pass16_lexer_tokenize_all_proof.duo asserts
-/// that tokenizing "a\nb" reports line 1 then line 2, and
-/// pass16_lexer_tokenize_text_proof.duo covers the text arena. Both assert by
-/// EXIT CODE (0 pass, a distinct nonzero per failed check) and print nothing on
-/// success, so "no output" is not evidence of a skipped proof. Negative control
-/// verified: flipping the line-2 assertion yields exit 14.
-///
-/// What actually remains for `.duo_native` is PRODUCTION DISPATCH: `src/lexer.zig`
-/// still tokenizes for the compile driver. Closing it means committing generated
-/// C for the Duo lexer and calling it from the host, exactly as SH-02's keyword
-/// leg already does through `src/duo_keyword_classify.c` — that precedent, not a
-/// missing capability, is the remaining work.
+/// Full tokenization authority for the production compile driver. The Duon
+/// lexer owns token identity, values, locations, and source spans. This host
+/// enum only reports that authority; it does not establish it.
 pub fn tokenizeAuthority() TokenizeAuthority {
-    // GAP-022 is CLOSED — token text now points into the source and the parser's
-    // offset arithmetic works. Measured with the flag on: the compile-fail suite
+    // GAP-022 is CLOSED — the Duon lexer publishes authoritative source offsets,
+    // token text points into the source, and parser offset arithmetic works.
+    // Measured with the flag on: the compile-fail suite
     // is BYTE-IDENTICAL to the host-authority baseline (10 failures, same rows),
     // parser coverage 256/256, selfhost proofs 12/12, repo-hygiene pass, and
     // examples/layout_attrs_test.duo — which panicked before — checks clean.

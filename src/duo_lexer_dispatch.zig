@@ -19,7 +19,7 @@ const std = @import("std");
 const lexer = @import("lexer.zig");
 
 /// i64 slots per token in the `duo_lexer_tokenize_full` record buffer:
-/// 0 kind · 1 line · 2 col · 3 int_val · 4 text_off · 5 text_len · 6 float_val.
+/// 0 kind · 1 line · 2 col · 3 int_val · 4 source_off · 5 text_len · 6 float_val.
 pub const RECORD_SLOTS: usize = 7;
 
 extern fn duo_lexer_tokenize_full(
@@ -58,19 +58,18 @@ pub fn errorLine(src: [:0]const u8, file: [:0]const u8) u32 {
 
 pub const DispatchError = error{
     BufferTooSmall,
+    InvalidSourceSpan,
     OutOfMemory,
 } || lexer.LexError;
 
 /// Tokenize `src` through the Duo lexer, returning host `Token`s.
 ///
-/// `text` slices point into `text_arena`, which the caller owns and must keep
-/// alive as long as the tokens are used — the same lifetime discipline as the
-/// host lexer, whose token text points into the source buffer.
+/// `text` slices point into `src`, using source offsets published by the Duo
+/// lexer. The host does not reconstruct provenance from copied token bytes.
 pub fn tokenize(
     allocator: std.mem.Allocator,
     src: [:0]const u8,
     file: [:0]const u8,
-    text_arena: *std.ArrayList(u8),
 ) DispatchError![]lexer.Token {
     // One record per byte is a safe upper bound: every token consumes at least
     // one source byte, plus one for the terminating EOF. Sized rather than
@@ -79,15 +78,13 @@ pub fn tokenize(
     const records = try allocator.alloc(i64, cap * RECORD_SLOTS);
     defer allocator.free(records);
 
-    try text_arena.resize(allocator, src.len + 1);
-
     const n = duo_lexer_tokenize_full(
         src.ptr,
         file.ptr,
         @intCast(@intFromPtr(records.ptr)),
         @intCast(cap),
-        @intCast(@intFromPtr(text_arena.items.ptr)),
-        @intCast(text_arena.items.len),
+        0,
+        0,
     );
     if (n == -1) return DispatchError.BufferTooSmall;
     // A malformed source is a rejection the caller reports, not a truncated
@@ -99,45 +96,22 @@ pub fn tokenize(
     const tokens = try allocator.alloc(lexer.Token, count);
     errdefer allocator.free(tokens);
 
-    // GAP-022: token text must be a slice INTO THE SOURCE, not into the arena.
-    // The parser recovers absolute offsets by pointer arithmetic against
-    // `tok.text.ptr` (parse_attribute_args), so arena-backed text yields garbage
-    // — index 26286 into a 188-byte file.
-    //
-    // No ABI change is needed to fix it. The field-for-field differential
-    // against src/lexer.zig proves Duo's token text is byte-identical to the
-    // host's, and the host's text IS a source slice — so every token's text is a
-    // literal substring of the source and its offset is recoverable. Tokens
-    // arrive in order, so one forward scan finds each in amortized O(n) without
-    // the lexer publishing anything new.
-    //
-    // The arena is now only the transport buffer the ABI requires; nothing
-    // points into it after this loop.
-    var cursor: usize = 0;
+    // GAP-022's first repair copied every token into an arena, then searched
+    // the source for that copy. That preserved parser pointer arithmetic but
+    // left source provenance as host reconstruction. Slot 4 is now the exact
+    // zero-based text offset decided by the Duo lexer. Reject an impossible
+    // span instead of silently falling back to copied bytes.
     for (tokens, 0..) |*tok, i| {
         const r = records[i * RECORD_SLOTS ..][0..RECORD_SLOTS];
+        if (r[4] < 0 or r[5] < 0) return DispatchError.InvalidSourceSpan;
         const off: usize = @intCast(r[4]);
         const len: usize = @intCast(r[5]);
-        const copied = text_arena.items[off .. off + len];
-
-        // Zero-length text (EOF) has no position to find; anchor it at the
-        // cursor so it still points into the source rather than nowhere.
-        const src_text: []const u8 = if (len == 0)
-            src[cursor..cursor]
-        else if (std.mem.indexOfPos(u8, src, cursor, copied)) |at| blk: {
-            cursor = at + len;
-            break :blk src[at .. at + len];
-        } else
-            // Unreachable while the differential holds. Falling back to the
-            // copy keeps the token CORRECT if it ever stops holding — a wrong
-            // pointer is worse than a non-source one, and the differential is
-            // what catches the latter.
-            copied;
+        if (off > src.len or len > src.len - off) return DispatchError.InvalidSourceSpan;
 
         tok.* = .{
             .kind = @enumFromInt(r[0]),
             .loc = .{ .file = file, .line = @intCast(r[1]), .col = @intCast(r[2]) },
-            .text = src_text,
+            .text = src[off .. off + len],
             .int_val = r[3],
             .float_val = @bitCast(r[6]),
         };
@@ -161,8 +135,8 @@ pub fn tokenize(
 /// failure falls back to the host scanner, because those are host-side and say
 /// nothing about the source.
 ///
-/// Allocations are not freed. The tokens, their NUL-terminated source copy and
-/// the transport arena must outlive `lex`, and every caller's `lex` outlives
+/// Allocations are not freed. The tokens and their NUL-terminated source copy
+/// must outlive `lex`, and every caller's `lex` outlives
 /// the function that owns the allocator — so freeing here would dangle. The
 /// leak is bounded by the number of modules in one compilation, the same order
 /// as the driver's own, and a compile is a process.
@@ -175,17 +149,15 @@ pub fn route(
     if (@import("duo_lexer_bridge.zig").tokenizeAuthority() != .duo_native) return;
     const zsrc = std.mem.concatWithSentinel(alloc, u8, &.{src}, 0) catch return;
     const zfile = std.mem.concatWithSentinel(alloc, u8, &.{file}, 0) catch return;
-    const arena = alloc.create(std.ArrayList(u8)) catch return;
-    arena.* = .empty;
-    const toks = tokenize(alloc, zsrc, zfile, arena) catch |e| switch (e) {
+    const toks = tokenize(alloc, zsrc, zfile) catch |e| switch (e) {
         error.OutOfMemory, error.BufferTooSmall => return,
         else => {
             lex.last_error_loc = .{ .file = file, .line = errorLine(zsrc, zfile), .col = 1 };
             return e;
         },
     };
-    // The scan above resolves token text against `zsrc`, the NUL-terminated
-    // copy the C ABI requires. The parser holds the ORIGINAL `src`, and
+    // Duo's offsets first resolve against `zsrc`, the NUL-terminated copy the C
+    // ABI requires. The parser holds the ORIGINAL `src`, and
     // srcOffsetOf compares pointers — so text pointing into the copy is "not in
     // the source" and attribute recovery fails. Rebase onto `src`; the copy is
     // byte-identical, so the offsets carry over exactly.
@@ -238,9 +210,7 @@ pub fn differential(allocator: std.mem.Allocator, src: [:0]const u8, file: [:0]c
     const host = try tokenizeHost(allocator, src, file);
     defer allocator.free(host);
 
-    var arena: std.ArrayList(u8) = .empty;
-    defer arena.deinit(allocator);
-    const duo = try tokenize(allocator, src, file, &arena);
+    const duo = try tokenize(allocator, src, file);
     defer allocator.free(duo);
 
     if (host.len != duo.len) return error.TokenCountMismatch;
@@ -260,14 +230,26 @@ test "duo_lexer_dispatch: stride contract" {
 
 test "duo_lexer_dispatch: Duo lexer drives a host token stream" {
     const a = std.testing.allocator;
-    var arena: std.ArrayList(u8) = .empty;
-    defer arena.deinit(a);
-    const toks = try tokenize(a, "fun add(a: i64): i64 = a + 1 end", "t.duo", &arena);
+    const toks = try tokenize(a, "fun add(a: i64): i64 = a + 1 end", "t.duo");
     defer a.free(toks);
     try std.testing.expectEqual(@as(usize, 15), toks.len);
     try std.testing.expectEqual(lexer.TokenKind.kw_fun, toks[0].kind);
     try std.testing.expectEqualStrings("add", toks[1].text);
     try std.testing.expectEqual(@as(u32, 1), toks[0].loc.line);
+}
+
+test "duo_lexer_dispatch: Duo owns exact token source spans" {
+    const a = std.testing.allocator;
+    const source: [:0]const u8 = "a a \"a\" [[a]]";
+    const toks = try tokenize(a, source, "span.duo");
+    defer a.free(toks);
+
+    const base = @intFromPtr(source.ptr);
+    const expected = [_]usize{ 0, 2, 5, 10, source.len };
+    try std.testing.expectEqual(expected.len, toks.len);
+    for (toks, expected) |tok, offset| {
+        try std.testing.expectEqual(offset, @intFromPtr(tok.text.ptr) - base);
+    }
 }
 
 test "duo_lexer_dispatch: token streams agree field for field" {
@@ -289,9 +271,7 @@ test "duo_lexer_dispatch: token streams agree field for field" {
 // regression breaks a test that says WHY, rather than shifting a count.
 test "duo_lexer_dispatch: float literals carry their value" {
     const a = std.testing.allocator;
-    var arena: std.ArrayList(u8) = .empty;
-    defer arena.deinit(a);
-    const toks = try tokenize(a, "1.5", "t.duo", &arena);
+    const toks = try tokenize(a, "1.5", "t.duo");
     defer a.free(toks);
     try std.testing.expectEqual(lexer.TokenKind.float_lit, toks[0].kind);
     try std.testing.expectEqual(@as(f64, 1.5), toks[0].float_val);
@@ -303,15 +283,13 @@ test "duo_lexer_dispatch: float literals carry their value" {
 // diagnostic. Each must now be a catchable error.
 test "duo_lexer_dispatch: malformed sources reject instead of aborting" {
     const a = std.testing.allocator;
-    var arena: std.ArrayList(u8) = .empty;
-    defer arena.deinit(a);
     try std.testing.expectError(
         lexer.LexError.UnterminatedString,
-        tokenize(a, "s = \"unterminated", "bad.duo", &arena),
+        tokenize(a, "s = \"unterminated", "bad.duo"),
     );
     try std.testing.expectError(
         lexer.LexError.UnterminatedLongString,
-        tokenize(a, "s = [[unterminated", "bad.duo", &arena),
+        tokenize(a, "s = [[unterminated", "bad.duo"),
     );
 }
 
@@ -361,9 +339,7 @@ test "duo_lexer_dispatch: gap[042] — hex literals at and above 2^63" {
 // is 14695981039346656037, which as an i64 bit pattern is -3750763034362895579.
 test "duo_lexer_dispatch: gap[042] — the FNV offset basis carries its bits" {
     const a = std.testing.allocator;
-    var arena: std.ArrayList(u8) = .empty;
-    defer arena.deinit(a);
-    const toks = try tokenize(a, "0xcbf29ce484222325", "hex.duo", &arena);
+    const toks = try tokenize(a, "0xcbf29ce484222325", "hex.duo");
     defer a.free(toks);
     try std.testing.expectEqual(lexer.TokenKind.int_lit, toks[0].kind);
     try std.testing.expectEqual(@as(i64, -3750763034362895579), toks[0].int_val);
