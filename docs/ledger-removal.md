@@ -418,7 +418,29 @@ differing only by the attribute, `simd_lower` observed on one and asserted
   `persistent_semantic_state.canReuse` on synthetic inputs. Both facts are
   asserted one layer up through real modules; only the synthetic inputs are lost.
 
-### Kept — 9 files, with the blocker named
+### Native C ABI execution — 115 → 114 by porting (2026-08-09)
+
+`pass5_foreign_tests.zig` is replaced by the widened `scripts/sim.duo` gate.
+An entity-bounded matcher selects each public SIM serialization row by stable
+identity, then checks that row's C origin, calling convention, native storage,
+and value/pointer ABI specialization. The schema and exact entity count are
+checked separately, and a missing-identity control proves the row selector can
+answer no. The public
+`dump-c` projection is checked for native aggregates and the absence of the
+boxed compatibility family; a deliberately boxed control proves that detector
+can convict. Clang then links the tracked point and rectangle oracles and the
+executables must return **25** and **10**. This preserves all four former tests
+through shipping interfaces and adds private per-run artifacts plus controls.
+
+The proof is deliberately narrower than full cross-law semantic equivalence.
+Ownership, effects, failure translation, and world facts are not present in the
+current SIM projection, so that stronger claim remains vocabulary-blocked.
+This is a horizontal harness migration that removes Zig; it is not itself a
+claim that the compiler has reached full self-hosting. Its retained
+file/process bridge is legacy orchestration: the lawful subject-first world
+relation remains vocabulary-blocked rather than being invented in this gate.
+
+### Kept — 8 files, with the blocker named
 
 Deletion is exhausted and the projection class is closed. What remains outside
 the production closure is real coverage, and each row says what stops the port.
@@ -431,9 +453,8 @@ the production closure is real coverage, and each row says what stops the port.
 | `selfhost_verify.zig` | 174 | drives the three differentials above; a port ports them |
 | `pass4_native_tests.zig` | 195 | asserts emitted C **and** ARM64 asm text; `duo dump-c` now covers the C half (see `scripts/transform.duo`), so what is left is a stable addressable path for `--backend=direct` asm |
 | `codegen_pass3_tests.zig` | 71 | same shape, `\|>` field-access fusion in emitted C — and `scripts/transform.duo` already asserts the pipeline's C line, so this is the smallest remaining port |
-| `pass5_foreign_tests.zig` | 225 | links and **runs** foreign C, asserting returned values (25, 10); needs a Duo gate that compiles, links and executes |
 | `pass11_ward_barrier_tests.zig` | 37 | a 6-line driver over `native_barrier_checks.zig` (534 lines of symbol analysis). Porting means porting that; and `build.zig` owns its test root |
-| `tests.zig` | 100 | the aggregator; it dies last |
+| `tests.zig` | 96 | the aggregator; it dies last |
 
 ### The next honest wave
 
@@ -493,17 +514,17 @@ Recomputed from `main.zig` (positive control: `codegen.zig` shows 7 importers,
 not 0, so the scan resolves).
 
 ```
-production closure        105 of 114 src/*.zig
-non-production              9 files / 2,602 lines
+production closure        105 of 113 src/*.zig
+non-production              8 files / 2,375 lines
 orphans (zero importers)    0     — deletion is EXHAUSTED
 ```
 
 Earlier today this read 104 production / 56 non-production / 8,878 lines. The
-non-production tier fell **56 -> 9** and **8,878 -> 2,602 lines** through
+non-production tier fell **56 -> 8** and **8,878 -> 2,375 lines** through
 deletion of self-certifying apparatus and porting to Duo gates. **What remains
 in Zig is now overwhelmingly the compiler itself.**
 
-The nine, and why each is still here:
+The eight, and why each is still here:
 
 | file | lines | status |
 |---|---|---|
@@ -511,7 +532,7 @@ The nine, and why each is still here:
 | `lexer_differential.zig` | 225 | PROTECTED — differential against the Duo lexer |
 | `selfhost_verify.zig` | 174 | PROTECTED |
 | `wasm_decode_differential.zig` | 82 | PROTECTED |
-| `pass4_native_tests.zig` · `codegen_pass3_tests.zig` · `pass5_foreign_tests.zig` | — | blocked on ARTIFACT ADDRESSING; the last links and RUNS foreign C |
+| `pass4_native_tests.zig` · `codegen_pass3_tests.zig` | — | blocked on direct-backend ARTIFACT ADDRESSING |
 | `pass11_ward_barrier_tests.zig` | — | needs `native_barrier_checks.zig` (534 lines) ported and `build.zig` rewired |
 | `tests.zig` | — | the root; dies last |
 

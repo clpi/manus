@@ -1,200 +1,172 @@
--- Pass 5 SIM snapshot gate — stable entity ids, ABI facts, formatting invariance.
+-- SIM and native C ABI gate.
 --
--- PORTED from src/pass5_golden_tests.zig (73 lines, 2 tests), deleted in the
--- same commit. Both tests built a snapshot in process
--- (`c_sim_import.importHeaderSource` / `sim.exportNativeModule`, then
--- `abi_specialize.specializeSnapshot`) and asserted substrings of
--- `sim.writeSnapshotJson`. Two shipping verbs print exactly that document:
---
---   duo sim --import-c <header.h>   the C-origin snapshot
---   duo sim <file.duo>              the native duon snapshot
---
--- so the port greps the CLI output instead of an in-memory writer.
---
--- THE FIXTURES WERE ALREADY ON DISK and are now actually OPENED.
--- `pass5_golden_tests.zig` named `examples/pass5/fixtures/point.h` as the
--- snapshot's `artifact` string but read its bytes from `pass5_fixtures.zig`,
--- a Zig file carrying a copy of the header as a string literal. That is the
--- same second-source-of-truth that let `examples/pass7/explain_smoke.duo` sit
--- broken and tracked: a duplicate cannot guard its original. This gate reads
--- the tracked header. `src/pass5_fixtures.zig` still has other importers, so
--- it is not deleted here — but nothing in this gate reads it.
---
--- FORMATTING INVARIANCE, WIDENED. The Zig test wrote ONE in-memory snapshot
--- twice and compared the bytes; it could only catch a nondeterministic
--- WRITER. Running the verb twice compares two whole pipelines — import,
--- specialize and render — so it also catches a nondeterministic map order or
--- a pointer-derived id, which is the failure the original could not see.
--- (The Zig comment on that assertion records a use-after-free the in-memory
--- version had to work around. Two processes cannot have it.)
+-- Entity-bounded public serialization observations replace the former
+-- in-process golden tests. The C rows replace the four tests in
+-- src/pass5_foreign_tests.zig: emitted C stays unboxed, clang links the tracked
+-- oracle fixtures, and the resulting programs return 25 and 10. Every compound
+-- observation owns a private temporary directory.
 
-here(): str
+here: str = ()
     std.script.chomp(std.script.capture("pwd"))
-end
 
-compiler(root: str): str
+compiler: str = (root: str)
     "{root}/zig-out/bin/duo"
-end
 
-shout(msg: str): void
+shout: void = (msg: str)
     print("sim: {msg}")
-end
 
-present(path: str): bool
+present: bool = (path: str)
     std.script.status("test -e {path}") == 0
-end
 
-capture(cmd: str, out: str): bool
+capture: bool = (cmd: str, out: str)
     std.script.status("{cmd} >{out} 2>/dev/null") == 0
-end
 
-held(path: str, want: str): bool
-    std.script.status("tr ',' '\\n' < {path} | grep -q -F '{want}'") == 0
-end
+isolated: bool = (cmd: str)
+    capture("d=$(mktemp -d) || exit 1; trap 'rm -rf $d' EXIT; " .. cmd, "/dev/null")
 
-same(one: str, two: str): bool
-    std.script.status("cmp -s {one} {two}") == 0
-end
+expect: i64 = (ok: bool, msg: str)
+    if ok
+        0
+    else
+        shout("FAIL — {msg}")
+        1
+
+row: str = (id: str)
+    "awk -v id='\"id\":\"{id}\"' 'p=index($0,id) { s=substr($0,p); q=index(s,\"},{\\\"id\\\":\"); if (q) s=substr(s,1,q-1); print s; exit } END { if (!p) exit 1 }' $d/snap.json"
 
 main = (): i64
     root = here()
     bin = compiler(root)
-    dir = "/tmp/duo-sim-gate"
+    fixtures = "{root}/examples/pass5/fixtures"
+    examples = "{root}/examples/pass5"
+    point = {
+        header = "{fixtures}/point.h",
+        oracle = "{fixtures}/point.c",
+        source = "{examples}/c_point_smoke.duo",
+    }
+    rect = {
+        header = "{fixtures}/big_rect.h",
+        oracle = "{fixtures}/big_rect.c",
+        source = "{examples}/c_big_rect_smoke.duo",
+    }
+    native = "{root}/examples/pass4_native_milestone.duo"
+    boxes = "grep -E -q '(lua_Value|lua_val_|lua_to_|lua_table_|duo_retain|duo_release|duo_CPoint|duo_CBigRect)' "
     bad = 0
 
-    -- CONTROL 1 — the runner convicts.
-    if std.script.status("false") == 0
-        shout("FAIL — control: status() called `false` a success")
-        bad += 1
-    end
+    -- Controls establish that the runner, tools, fixtures, matcher, and byte
+    -- comparator can all convict a deliberately false observation.
+    bad += expect(not capture("false", "/dev/null"),
+        "control 1: capture called false a success")
+    bad += expect(present(bin),
+        "control 2: no compiler at {bin}; run zig build first")
+    bad += expect(capture("command -v clang", "/dev/null"),
+        "control 3: clang is unavailable")
+    bad += expect(present(point.header), "control 4: missing point header")
+    bad += expect(present(point.oracle), "control 4: missing point oracle")
+    bad += expect(present(point.source), "control 4: missing point source")
+    bad += expect(present(rect.header), "control 4: missing rectangle header")
+    bad += expect(present(rect.oracle), "control 4: missing rectangle oracle")
+    bad += expect(present(rect.source), "control 4: missing rectangle source")
+    bad += expect(present(native), "control 4: missing fixture {native}")
+    bad += expect(isolated("printf one > $d/one && printf two > $d/two && ! cmp -s $d/one $d/two"),
+        "control 5: comparator called distinct values identical")
+    bad += expect(isolated("printf 'lua_Value boxed' > $d/boxed.c && {boxes}$d/boxed.c"),
+        "control 6: boxed-output detector missed lua_Value")
 
-    -- CONTROL 2 — the compiler is here.
-    if not present(bin)
-        shout("FAIL — no compiler at {bin}; run `zig build` first")
-        bad += 1
-    end
+    call = row("c:function:distance2")
+    shape = row("c:record:CPoint")
+    probe = "cd '{root}' && '{bin}' sim --import-c examples/pass5/fixtures/point.h > $d/snap.json"
+        .. ' && grep -q -F "\\\"schema\\\":\\\"sim-v0\\\",\\\"file\\\":\\\"examples/pass5/fixtures/point.h\\\",\\\"entity_count\\\":2" $d/snap.json'
+        .. ' && (' .. call .. ' | grep -F "\\\"origin\\\":{\\\"language\\\":\\\"c\\\""'
+        .. ' | grep -F "\\\"params\\\":[{\\\"name\\\":\\\"point\\\",\\\"type\\\":\\\"CPoint\\\"}]"'
+        .. ' | grep -F "\\\"abi\\\":{\\\"calling_convention\\\":\\\"c\\\",\\\"pass_by\\\":\\\"value\\\"}"'
+        .. ' | grep -q -F "\\\"contract\\\":{\\\"origin_language\\\":\\\"c\\\",\\\"semantic_completeness\\\":\\\"complete\\\",\\\"abi_completeness\\\":\\\"complete\\\"")'
+        .. ' && (' .. shape .. ' | grep -F "\\\"storage_class\\\":\\\"native\\\""'
+        .. ' | grep -q -F "\\\"contract\\\":{\\\"origin_language\\\":\\\"c\\\",\\\"semantic_completeness\\\":\\\"complete\\\",\\\"abi_completeness\\\":\\\"complete\\\"")'
+    bad += expect(isolated(probe),
+        "S1: point snapshot lost bounded identity, C ABI, value passing, or native storage")
 
-    header = "{root}/examples/pass5/fixtures/point.h"
-    native = "{root}/examples/pass4_native_milestone.duo"
+    absent = row("c:function:absent")
+    probe = "cd '{root}' && '{bin}' sim --import-c examples/pass5/fixtures/point.h > $d/snap.json"
+        .. " && ! ({absent} >/dev/null)"
+    bad += expect(isolated(probe),
+        "control 7: bounded selector found an absent stable identity")
 
-    -- CONTROL 3 — the fixtures are here. Held over a missing file is false for
-    -- every want, which reads as a wall of real failures.
-    if not present(header)
-        shout("FAIL — missing fixture {header}")
-        bad += 1
-    end
-    if not present(native)
-        shout("FAIL — missing fixture {native}")
-        bad += 1
-    end
+    stable = "cd '{root}' && '{bin}' sim --import-c examples/pass5/fixtures/point.h > $d/one.json"
+        .. " && '{bin}' sim --import-c examples/pass5/fixtures/point.h > $d/two.json"
+        .. " && cmp -s $d/one.json $d/two.json"
+    bad += expect(isolated(stable),
+        "S2: identical point imports rendered different bytes")
 
-    if std.script.status("rm -rf {dir} && mkdir -p {dir}") != 0
-        shout("FAIL — could not build the sandbox at {dir}")
-        bad += 1
-    end
+    call = row("duo:function:distance2")
+    shape = row("duo:record:Point")
+    probe = "cd '{root}' && '{bin}' sim examples/pass4_native_milestone.duo > $d/snap.json"
+        .. ' && grep -q -F "\\\"schema\\\":\\\"sim-v0\\\",\\\"file\\\":\\\"examples/pass4_native_milestone.duo\\\",\\\"entity_count\\\":3" $d/snap.json'
+        .. ' && (' .. call .. ' | grep -F "\\\"origin\\\":{\\\"language\\\":\\\"duo\\\""'
+        .. ' | grep -q -F "\\\"contract\\\":{\\\"origin_language\\\":\\\"duo\\\",\\\"semantic_completeness\\\":\\\"complete\\\",\\\"abi_completeness\\\":\\\"complete\\\"")'
+        .. ' && (' .. shape .. ' | grep -F "\\\"storage_class\\\":\\\"native\\\""'
+        .. ' | grep -q -F "\\\"contract\\\":{\\\"origin_language\\\":\\\"duo\\\",\\\"semantic_completeness\\\":\\\"complete\\\",\\\"abi_completeness\\\":\\\"complete\\\"")'
+    bad += expect(isolated(probe),
+        "S3: native snapshot lost bounded identity, Duon origin, or native storage")
 
-    foreign = "{dir}/c.json"
-    if not capture("{bin} sim --import-c {header}", foreign)
-        shout("FAIL — `duo sim --import-c` did not run on {header}")
-        bad += 1
-    end
+    stable = "cd '{root}' && '{bin}' sim examples/pass4_native_milestone.duo > $d/one.json"
+        .. " && '{bin}' sim examples/pass4_native_milestone.duo > $d/two.json"
+        .. " && cmp -s $d/one.json $d/two.json"
+    bad += expect(isolated(stable),
+        "S4: identical native exports rendered different bytes")
 
-    -- CONTROL 4 — held() can answer NO.
-    if held(foreign, "duo-sim-this-string-does-not-exist")
-        shout("FAIL — control: held() matched a string that is not in the output")
-        bad += 1
-    end
+    call = row("c:function:sum4")
+    shape = row("c:record:CBigRect")
+    probe = "cd '{root}' && '{bin}' sim --import-c examples/pass5/fixtures/big_rect.h > $d/snap.json"
+        .. ' && grep -q -F "\\\"schema\\\":\\\"sim-v0\\\",\\\"file\\\":\\\"examples/pass5/fixtures/big_rect.h\\\",\\\"entity_count\\\":2" $d/snap.json'
+        .. ' && (' .. call .. ' | grep -F "\\\"origin\\\":{\\\"language\\\":\\\"c\\\""'
+        .. ' | grep -F "\\\"params\\\":[{\\\"name\\\":\\\"rect\\\",\\\"type\\\":\\\"CBigRect*\\\"}]"'
+        .. ' | grep -F "\\\"abi\\\":{\\\"calling_convention\\\":\\\"c\\\",\\\"pass_by\\\":\\\"pointer\\\"}"'
+        .. ' | grep -q -F "\\\"contract\\\":{\\\"origin_language\\\":\\\"c\\\",\\\"semantic_completeness\\\":\\\"complete\\\",\\\"abi_completeness\\\":\\\"complete\\\"")'
+        .. ' && (' .. shape .. ' | grep -F "\\\"storage_class\\\":\\\"native\\\""'
+        .. ' | grep -q -F "\\\"contract\\\":{\\\"origin_language\\\":\\\"c\\\",\\\"semantic_completeness\\\":\\\"complete\\\",\\\"abi_completeness\\\":\\\"complete\\\"")'
+    bad += expect(isolated(probe),
+        "S5: rectangle snapshot lost bounded identity, pointer ABI, or native storage")
 
-    -- S1 — the C header's entities keep their stable ids and their ABI facts.
-    if not held(foreign, "\"id\":\"c:record:CPoint\"")
-        shout("FAIL — S1: the C record lost its stable entity id")
-        bad += 1
-    end
-    if not held(foreign, "\"id\":\"c:function:distance2\"")
-        shout("FAIL — S1: the C function lost its stable entity id")
-        bad += 1
-    end
-    if not held(foreign, "\"origin_language\":\"c\"")
-        shout("FAIL — S1: the snapshot did not record a C origin")
-        bad += 1
-    end
-    if not held(foreign, "\"abi_completeness\":\"complete\"")
-        shout("FAIL — S1: the ABI was not reported complete")
-        bad += 1
-    end
-    if not held(foreign, "\"calling_convention\":\"c\"")
-        shout("FAIL — S1: the calling convention was not c")
-        bad += 1
-    end
-    if not held(foreign, "\"pass_by\":\"value\"")
-        shout("FAIL — S1: the record was not specialized to pass-by-value")
-        bad += 1
-    end
-    if not held(foreign, "\"storage_class\":\"native\"")
-        shout("FAIL — S1: abi.specialize did not lower the C record to native")
-        bad += 1
-    end
+    source = point.source
+    emit = "'{bin}' dump-c '{source}' > $d/point.c"
+        .. " && grep -q -F 'fixtures/point.h' $d/point.c"
+        .. " && grep -q -F 'extern double distance2(CPoint' $d/point.c"
+        .. " && grep -q -F 'CPoint p = {' $d/point.c"
+        .. " && grep -q -F '.x = ' $d/point.c"
+        .. " && grep -q -F 'return distance2(p);' $d/point.c"
+        .. " && ! {boxes}$d/point.c"
+    bad += expect(isolated(emit),
+        "S6: point C lost its native value call or introduced boxed machinery")
 
-    -- S2 — formatting invariance. Two runs of the same verb over the same
-    -- header must agree byte for byte.
-    twice = "{dir}/c2.json"
-    if not capture("{bin} sim --import-c {header}", twice)
-        shout("FAIL — S2: the second `duo sim --import-c` run did not complete")
-        bad += 1
-    end
-    if not same(foreign, twice)
-        shout("FAIL — S2: two runs of the same snapshot rendered different bytes")
-        bad += 1
-    end
+    oracle = point.oracle
+    link = "'{bin}' dump-c '{source}' > $d/point.c"
+        .. " && clang -std=c11 -O2 -I'{examples}' -I'{fixtures}'"
+        .. " $d/point.c '{oracle}' -lm -o $d/point"
+        .. " && ( $d/point; test $? -eq 25 )"
+    bad += expect(isolated(link),
+        "S7: point C did not link and return 25")
 
-    duon = "{dir}/duo.json"
-    if not capture("{bin} sim {native}", duon)
-        shout("FAIL — `duo sim` did not run on {native}")
-        bad += 1
-    end
+    source = rect.source
+    emit = "'{bin}' dump-c '{source}' > $d/rect.c"
+        .. " && grep -q -F 'extern double sum4' $d/rect.c"
+        .. " && grep -q -F 'CBigRect r = {' $d/rect.c"
+        .. " && grep -q -F 'return sum4(&r);' $d/rect.c"
+        .. " && ! {boxes}$d/rect.c"
+    bad += expect(isolated(emit),
+        "S8: rectangle C lost its native pointer call or introduced boxed machinery")
 
-    -- CONTROL 5 — same() can answer NO. Without this, S2 would pass for a
-    -- comparator that has stopped comparing, and so would every future
-    -- invariance assertion added below it.
-    if same(foreign, duon)
-        shout("FAIL — control: same() called two different snapshots identical")
-        bad += 1
-    end
-
-    -- S3 — the native duon module exports the same shape of snapshot, with
-    -- duon-namespaced ids and the sealed record lowered native.
-    if not held(duon, "\"id\":\"duo:record:Point\"")
-        shout("FAIL — S3: the sealed record lost its stable entity id")
-        bad += 1
-    end
-    if not held(duon, "\"id\":\"duo:function:distance2\"")
-        shout("FAIL — S3: the native function lost its stable entity id")
-        bad += 1
-    end
-    if not held(duon, "\"origin_language\":\"duo\"")
-        shout("FAIL — S3: the snapshot did not record a duon origin")
-        bad += 1
-    end
-    if not held(duon, "\"storage_class\":\"native\"")
-        shout("FAIL — S3: the sealed record was not classed native")
-        bad += 1
-    end
-
-    -- S4 — invariance again, on the native side.
-    duontwice = "{dir}/duo2.json"
-    if not capture("{bin} sim {native}", duontwice)
-        shout("FAIL — S4: the second `duo sim` run did not complete")
-        bad += 1
-    end
-    if not same(duon, duontwice)
-        shout("FAIL — S4: two runs of the native snapshot rendered different bytes")
-        bad += 1
-    end
+    oracle = rect.oracle
+    link = "'{bin}' dump-c '{source}' > $d/rect.c"
+        .. " && clang -std=c11 -O2 -I'{examples}' -I'{fixtures}'"
+        .. " $d/rect.c '{oracle}' -lm -o $d/rect"
+        .. " && ( $d/rect; test $? -eq 10 )"
+    bad += expect(isolated(link),
+        "S9: rectangle C did not link and return 10")
 
     if bad == 0
-        shout("PASS — C and native snapshots, stable ids, ABI facts and byte invariance, 5 controls held")
-    end
+        shout("PASS — stable snapshots and native C value/pointer ABI returned 25/10; 7 controls held")
+
     bad
-end
 
 std.os.exit(main())

@@ -1,5 +1,5 @@
 -- Pass 5 smoke: @comp.c.import registers CPoint + distance2 for sema/codegen.
--- Requires linking against a C object providing distance2 (see pass5_foreign_tests.zig).
+-- scripts/sim.duo links the emitted C against the tracked distance2 oracle.
 
 @comp.c.import("fixtures/point.h")
 

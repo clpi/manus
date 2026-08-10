@@ -4,7 +4,7 @@
 -- Pure Duo (no Python / no shell). Used by the `duo_embed_symbols` MCP tool so it
 -- is genuine semantic search, not keyword `find`.
 --
--- Run:  scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/build_symbol_index.duo -- docs/symbol_index.json
+-- Run: duo run scripts/duo_lock.duo -- ./zig-out/bin/duo run scripts/build_symbol_index.duo -- docs/symbol_index.json
 -- (the MCP tool invokes this when force_rebuild or the index is missing)
 
 global vector = req "std.vector"
@@ -220,8 +220,7 @@ main(): void
     files = {}
     collect("src", files)
     collect("lib/std", files)
-    -- duo-mcp lives in a sibling repo; include if present relative to repo root
-    if os.execute("test -d '../duo-mcp'") collect("../duo-mcp", files) end
+    collect("tools/mcp", files)
 
     symbols = {}
     for _, path in files

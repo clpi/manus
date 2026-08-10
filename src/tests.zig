@@ -30,7 +30,6 @@ test {
     _ = @import("c_layout_verify.zig");
     _ = @import("pass5_fixtures.zig");
     _ = @import("foreign_adapter.zig");
-    _ = @import("pass5_foreign_tests.zig");
     _ = @import("abi_specialize.zig");
     _ = @import("knowledge_snapshot.zig");
     _ = @import("optimization_outcome.zig");
