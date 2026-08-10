@@ -4,6 +4,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const ast = @import("ast.zig");
+const Expr = ast.Expr;
 const types = @import("types.zig");
 const RT = types.ResolvedType;
 const term = @import("term.zig");
@@ -361,6 +362,15 @@ pub const FuncSignature = struct {
     is_vararg: bool,
 };
 
+/// Checked identity of one callable application. AST pointers are provenance
+/// keys only; `target` is the declaration selected by semantic analysis.
+pub const ApplicationFact = struct {
+    target: *const ast.FuncDecl,
+    subject: ?*const Expr,
+    arguments: []const *Expr,
+    result: RT,
+};
+
 pub const Sema = struct {
     alloc: Allocator,
     scope: Scope,
@@ -387,6 +397,11 @@ pub const Sema = struct {
     /// Registry of overloaded function signatures (Requirement 12).
     /// Maps function name → list of overload signatures.
     overloads: std.StringHashMapUnmanaged(std.ArrayListUnmanaged(FuncSignature)) = .{},
+    /// Unique module callables by source name. Null marks an overloaded spelling
+    /// that cannot identify a declaration without overload resolution.
+    callable_defs: std.StringHashMapUnmanaged(?*const ast.FuncDecl) = .{},
+    /// Authoritative callable resolution retained per checked application.
+    applications: std.AutoHashMapUnmanaged(*const Expr, ApplicationFact) = .empty,
     /// Top-level type aliases, used by semantic type resolution. Shares one
     /// type, one derivation and one decision procedure with CodeGen's registry
     /// — see `AliasRegistry`.
@@ -604,6 +619,33 @@ pub const Sema = struct {
         return .unknown;
     }
 
+    /// Descriptor established by semantic checking for this exact expression.
+    pub fn exprDescriptor(self: *const Sema, expr: *const Expr) ?RT {
+        return self.type_map.get(expr);
+    }
+
+    /// Callable identity established for this exact application. Absence means
+    /// unresolved or dynamic; consumers must not replace it with name lookup.
+    pub fn applicationFact(self: *const Sema, expr: *const Expr) ?ApplicationFact {
+        return self.applications.get(expr);
+    }
+
+    fn recordApplication(
+        self: *Sema,
+        expr: *const Expr,
+        target: *const ast.FuncDecl,
+        subject: ?*const Expr,
+        arguments: []const *Expr,
+        result: RT,
+    ) SemaError!void {
+        try self.applications.put(self.alloc, expr, .{
+            .target = target,
+            .subject = subject,
+            .arguments = arguments,
+            .result = result,
+        });
+    }
+
     /// Pass 34 L1 — true when binding is a req module assumed frozen after load.
     pub fn moduleSealed(self: *const Sema, name: []const u8) bool {
         return self.module_sealed.contains(name);
@@ -682,6 +724,8 @@ pub const Sema = struct {
             entry.value_ptr.deinit(self.alloc);
         }
         self.overloads.deinit(self.alloc);
+        self.callable_defs.deinit(self.alloc);
+        self.applications.deinit(self.alloc);
         self.alias_defs.deinit(self.alloc);
         self.generic_func_arities.deinit(self.alloc);
         self.test_entries.deinit(self.alloc);
@@ -1633,6 +1677,8 @@ pub const Sema = struct {
         self.debug_directives.clearRetainingCapacity();
         self.alias_defs.clearRetainingCapacity();
         self.generic_func_arities.clearRetainingCapacity();
+        self.callable_defs.clearRetainingCapacity();
+        self.applications.clearRetainingCapacity();
         // Pass 5: import foreign declarations from @c.import / @cinclude headers first.
         for (mod.body.stmts) |*stmt| {
             if (stmt.* == .cinclude) {
@@ -1646,6 +1692,20 @@ pub const Sema = struct {
         // Lua 5.5 scripts use implicit globals at module scope; Duo uses implicit locals.
         if (self.lua55_mode) {
             self.scope.set_require_global(true);
+        }
+        // Capture declaration identity before checking any body. Duplicate
+        // spellings remain unresolved here; source order never selects an
+        // overloaded relation identity.
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .func_decl) continue;
+            const fd = &stmt.func_decl;
+            if (fd.path.len != 1 or fd.method) continue;
+            const slot = try self.callable_defs.getOrPut(self.alloc, fd.path[0]);
+            if (slot.found_existing) {
+                slot.value_ptr.* = null;
+            } else {
+                slot.value_ptr.* = fd;
+            }
         }
         // Pre-register top-level bindings so forward references work.
         for (mod.body.stmts) |*stmt| {
@@ -2254,7 +2314,7 @@ pub const Sema = struct {
                         }
                     }
                     _ = try self.check_expr(tgt);
-                    const val_expr: ?*const ast.Expr = if (i < as.values.len) as.values[i] else null;
+                    const val_expr: ?*const Expr = if (i < as.values.len) as.values[i] else null;
                     self.noteModuleSealingInvalidation(tgt, val_expr);
                     if (i < as.values.len and tgt.* == .name) {
                         try self.maybe_register_meta_concept(tgt.name.ident, as.values[i]);
@@ -3141,10 +3201,18 @@ pub const Sema = struct {
                         std.mem.eql(u8, c.func.name.ident, "type")) return .str;
                 }
 
-                return switch (ft) {
+                const result: RT = switch (ft) {
                     .func => |f| f.ret.*,
                     else => .any,
                 };
+                if (c.func.* == .name) {
+                    if (self.callable_defs.get(c.func.name.ident)) |target| {
+                        if (target) |resolved| {
+                            try self.recordApplication(expr, resolved, null, c.args, result);
+                        }
+                    }
+                }
+                return result;
             },
             .method_call => |mc| {
                 const ot = try self.check_expr(mc.obj);
@@ -3154,6 +3222,22 @@ pub const Sema = struct {
                 }
                 if (std.mem.eql(u8, mc.method, "to_string") and enum_type_has_derive(ot, "Display")) {
                     return .str;
+                }
+                if (self.callable_defs.get(mc.method)) |target| {
+                    if (target) |resolved| {
+                        if (self.scope.lookup(mc.method)) |symbol| {
+                            if (symbol.typ == .func) {
+                                const callable = symbol.typ.func;
+                                if (callable.params.len == mc.args.len + 1 and
+                                    callable.params[0].eql(ot))
+                                {
+                                    const result = callable.ret.*;
+                                    try self.recordApplication(expr, resolved, mc.obj, mc.args, result);
+                                    return result;
+                                }
+                            }
+                        }
+                    }
                 }
                 return .any;
             },

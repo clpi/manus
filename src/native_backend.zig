@@ -183,6 +183,17 @@ pub fn emitObject(alloc: std.mem.Allocator, mod: *const ast.Module, target: []co
     return emitObjectMode(alloc, mod, null);
 }
 
+pub fn emitObjectWithGraph(
+    alloc: std.mem.Allocator,
+    mod: *const ast.Module,
+    target: []const u8,
+    graph: *const semantic_graph.SemanticGraph,
+) Error![]u8 {
+    refusal_site.line = 0;
+    if (!isNativeObjectTarget(target)) return error.UnsupportedTarget;
+    return emitObjectModeWithGraph(alloc, mod, null, graph);
+}
+
 /// Like `emitObject`, but when `process_entry` is set the named zero-arg function
 /// gets `fcvtzs x0, d0` on f64 returns so native executables receive an i64 exit code.
 pub fn emitObjectForExecutable(alloc: std.mem.Allocator, mod: *const ast.Module, process_entry: []const u8) Error![]u8 {
@@ -201,8 +212,30 @@ pub fn emitObjectForExecutable(alloc: std.mem.Allocator, mod: *const ast.Module,
     return emitObjectMode(alloc, mod, process_entry);
 }
 
+pub fn emitObjectForExecutableWithGraph(
+    alloc: std.mem.Allocator,
+    mod: *const ast.Module,
+    process_entry: []const u8,
+    graph: *const semantic_graph.SemanticGraph,
+) Error![]u8 {
+    refusal_site = @src();
+    refusal_note_len = 0;
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) {
+        return error.UnsupportedTarget;
+    }
+    return emitObjectModeWithGraph(alloc, mod, process_entry, graph);
+}
+
 pub fn emitSharedObjectInput(alloc: std.mem.Allocator, mod: *const ast.Module) Error![]u8 {
     return emitObjectMode(alloc, mod, null);
+}
+
+pub fn emitSharedObjectInputWithGraph(
+    alloc: std.mem.Allocator,
+    mod: *const ast.Module,
+    graph: *const semantic_graph.SemanticGraph,
+) Error![]u8 {
+    return emitObjectModeWithGraph(alloc, mod, null, graph);
 }
 
 fn emitObjectMode(alloc: std.mem.Allocator, mod: *const ast.Module, process_entry: ?[]const u8) Error![]u8 {
@@ -215,6 +248,21 @@ fn emitObjectMode(alloc: std.mem.Allocator, mod: *const ast.Module, process_entr
     return emitMachOArm64Object(alloc, output.text, output.cstring, output.symbols, output.relocations, output.bss_size);
 }
 
+fn emitObjectModeWithGraph(
+    alloc: std.mem.Allocator,
+    mod: *const ast.Module,
+    process_entry: ?[]const u8,
+    graph: *const semantic_graph.SemanticGraph,
+) Error![]u8 {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) {
+        return error.UnsupportedTarget;
+    }
+
+    var output = try emitArm64ModuleWithGraph(alloc, mod, process_entry, graph);
+    defer output.deinit(alloc);
+    return emitMachOArm64Object(alloc, output.text, output.cstring, output.symbols, output.relocations, output.bss_size);
+}
+
 pub fn emitAssembly(alloc: std.mem.Allocator, mod: *const ast.Module, target: []const u8) Error![]u8 {
     refusal_site.line = 0;
     if (!isNativeAsmTarget(target)) return error.UnsupportedTarget;
@@ -222,6 +270,28 @@ pub fn emitAssembly(alloc: std.mem.Allocator, mod: *const ast.Module, target: []
         return error.UnsupportedTarget;
     }
     const output = try emitArm64Module(alloc, mod, null);
+    defer {
+        alloc.free(output.text);
+        if (output.cstring.len > 0) alloc.free(output.cstring);
+        for (output.symbols) |sym| alloc.free(sym.name);
+        alloc.free(output.symbols);
+        alloc.free(output.relocations);
+    }
+    return output.asm_text;
+}
+
+pub fn emitAssemblyWithGraph(
+    alloc: std.mem.Allocator,
+    mod: *const ast.Module,
+    target: []const u8,
+    graph: *const semantic_graph.SemanticGraph,
+) Error![]u8 {
+    refusal_site.line = 0;
+    if (!isNativeAsmTarget(target)) return error.UnsupportedTarget;
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) {
+        return error.UnsupportedTarget;
+    }
+    const output = try emitArm64ModuleWithGraph(alloc, mod, null, graph);
     defer {
         alloc.free(output.text);
         if (output.cstring.len > 0) alloc.free(output.cstring);
@@ -4485,18 +4555,27 @@ fn emitArm64Module(alloc: std.mem.Allocator, mod: *const ast.Module, process_ent
     defer graph.deinit();
     _ = graph.liftModuleWithCalls(mod, "<native>") catch {};
 
-    if (dnir_lower.lowerModuleWithGraph(alloc, mod, &graph)) |dnir_mod| {
+    return emitArm64ModuleWithGraph(alloc, mod, process_entry, &graph);
+}
+
+fn emitArm64ModuleWithGraph(
+    alloc: std.mem.Allocator,
+    mod: *const ast.Module,
+    process_entry: ?[]const u8,
+    graph: *const semantic_graph.SemanticGraph,
+) Error!Arm64Output {
+    if (dnir_lower.lowerModuleWithGraph(alloc, mod, graph)) |dnir_mod| {
         defer freeDnirModule(alloc, dnir_mod);
         if (dnir.moduleIsNativeDirectReady(dnir_mod)) {
-            const regions = region_graph.buildModuleRegions(alloc, dnir_mod, &graph) catch null;
+            const regions = region_graph.buildModuleRegions(alloc, dnir_mod, graph) catch null;
             if (regions) |rs| {
                 defer region_graph.freeModuleRegions(alloc, rs);
-                region_graph.validateModuleRegions(rs, &graph, dnir_mod, alloc) catch {
+                region_graph.validateModuleRegions(rs, graph, dnir_mod, alloc) catch {
                     if (region_schedule.regionGateStrictEnabled()) {
                         return refuse(@src());
                     }
                 };
-                if (realization.buildDeferredFromGraph(alloc, &graph, "<native>")) |plan_val| {
+                if (realization.buildDeferredFromGraph(alloc, graph, "<native>")) |plan_val| {
                     var plan = plan_val;
                     defer plan.deinit(alloc);
                     realization.commitModuleForTarget(alloc, &plan, "native") catch {};

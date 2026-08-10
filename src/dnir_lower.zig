@@ -7,6 +7,7 @@
 //! lowers the same way; linker entry is `@export` / CLI target, not a magic name.
 const std = @import("std");
 const ast = @import("ast.zig");
+const Expr = ast.Expr;
 const types = @import("types.zig");
 const dnir = @import("duo_native_ir.zig");
 const native_req_support = @import("native_req_support.zig");
@@ -119,7 +120,7 @@ fn collectModuleConsts(
     const map = &out.ints;
     for (mod.body.stmts) |*stmt| {
         var name: ?[]const u8 = null;
-        var val: ?*const ast.Expr = null;
+        var val: ?*const Expr = null;
         switch (stmt.*) {
             .assign => |as| {
                 if (as.targets.len == 1 and as.values.len == 1 and as.targets[0].* == .name) {
@@ -1022,6 +1023,7 @@ fn exprCallConsumption(expr: *const ast.Expr) types.ReturnConsumption {
 }
 
 fn exprReturnsF64(ctx: *LowerCtx, expr: *const ast.Expr) bool {
+    if (applicationResultIs(ctx, expr, .f64)) return true;
     if (expr.* != .call) return false;
     // `math.sqrt(x)` and friends are libm: f64 in, f64 out. Without this the
     // binding `r: f64 = math.sqrt(x)` stores through the INTEGER path — the
@@ -1403,6 +1405,7 @@ fn lowerRuntimeNumFor(ctx: *LowerCtx, loop: anytype) Error!void {
 }
 
 fn exprIsF64(ctx: *LowerCtx, expr: *const ast.Expr) bool {
+    if (applicationResultIs(ctx, expr, .f64)) return true;
     return switch (expr.*) {
         .float_lit => true,
         .call => exprReturnsF64(ctx, expr),
@@ -1502,6 +1505,7 @@ fn materializeTableSlots(ctx: *LowerCtx, name: []const u8) Error!u32 {
 /// still has to prove that separately, and the two together are what admit an
 /// operand.
 fn exprIsBoolish(ctx: *LowerCtx, expr: *const ast.Expr) bool {
+    if (applicationResultIs(ctx, expr, .bool)) return true;
     return switch (expr.*) {
         .true_lit, .false_lit => true,
         .unop => |u| u.op == .not,
@@ -1539,6 +1543,7 @@ fn concatOperandOk(ctx: *LowerCtx, expr: *const ast.Expr) bool {
 /// True when `expr` is known to produce a `str` (a `const char*`), so `#expr`
 /// can lower to a `strlen` call rather than a dynamic length probe.
 fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
+    if (applicationResultIs(ctx, expr, .str)) return true;
     return switch (expr.*) {
         .string_lit => true,
         // `..` ALWAYS produces text, including where one side is a number —
@@ -2132,7 +2137,7 @@ fn lowerExpr(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
 
 fn lowerExprCons(
     ctx: *LowerCtx,
-    expr: *const ast.Expr,
+    expr: *const Expr,
     consumption: types.ReturnConsumption,
 ) Error!dnir.Value {
     return switch (expr.*) {
@@ -2229,7 +2234,7 @@ fn lowerExprCons(
             break :blk dnir.Value{ .local = slot };
         },
         .call => try lowerCall(ctx, expr, consumption),
-        .method_call => try lowerCall(ctx, try faceAsCall(ctx, expr), consumption),
+        .method_call => try lowerSubjectCall(ctx, expr, consumption),
         .field => try lowerField(ctx, expr),
         .macro_call => |mc| {
             if (dnir_hardware.parseIntrinsic(mc.name)) |hw| {
@@ -2273,6 +2278,61 @@ fn faceAsCall(ctx: *LowerCtx, expr: *const ast.Expr) Error!*const ast.Expr {
     const call = try ctx.alloc.create(ast.Expr);
     call.* = .{ .call = .{ .loc = mc.loc, .func = func, .args = args } };
     return call;
+}
+
+fn applicationResultIs(
+    ctx: *const LowerCtx,
+    expr: *const Expr,
+    expected: std.meta.Tag(types.ResolvedType),
+) bool {
+    const descriptor = ctx.graph.applicationDescriptorForExpr(expr) orelse return false;
+    return std.meta.activeTag(descriptor) == expected;
+}
+
+/// Lower the canonical subject face from the relation identity selected by
+/// semantic analysis. The exact source expression remains the lookup key, so
+/// realization never recreates a call and never resolves its spelling again.
+fn lowerSubjectCall(
+    ctx: *LowerCtx,
+    expr: *const Expr,
+    consumption: types.ReturnConsumption,
+) Error!dnir.Value {
+    if (expr.* != .method_call) return bail(@src());
+    const mc = expr.method_call;
+
+    // String descriptor primitives are bootstrap lowering rules, not declared
+    // ordinary relations yet. Preserve their current realization until the
+    // standard vocabulary owns those identities.
+    if (exprIsStr(ctx, mc.obj)) {
+        return lowerCall(ctx, try faceAsCall(ctx, expr), consumption);
+    }
+
+    const relation_id = ctx.graph.applicationRelationForExpr(expr) orelse
+        return bailWith(@src(), "application-identity");
+    const relation = ctx.graph.get(relation_id) orelse return bail(@src());
+    const callee = relation.name orelse return bail(@src());
+    const descriptor = ctx.graph.applicationDescriptorForExpr(expr) orelse return bail(@src());
+
+    const args = try ctx.alloc.alloc(*Expr, mc.args.len + 1);
+    args[0] = mc.obj;
+    @memcpy(args[1..], mc.args);
+
+    if (std.meta.activeTag(descriptor) == .f64) {
+        return lowerF64KernelCall(ctx, callee, args);
+    }
+    switch (descriptor) {
+        .any, .nil, .table_type, .@"struct" => return bailWith(@src(), "application-result"),
+        else => {},
+    }
+
+    const arg0 = try scalarCallLhs(ctx, args, callee);
+    if (consumption == .discard) {
+        try ctx.emit(.{ .op = .call_direct, .callee = callee, .lhs = arg0 });
+        return .void;
+    }
+    const result = ctx.freshTemp();
+    try ctx.emit(.{ .op = .call_direct, .result = result, .callee = callee, .lhs = arg0 });
+    return .{ .temp = result };
 }
 
 /// Whether any part of `expr` involves f64. `exprIsF64` only inspects the node
@@ -2694,6 +2754,7 @@ fn scalarCallLhs(ctx: *LowerCtx, args: []const *ast.Expr, callee: ?[]const u8) E
 fn exprIsIntegral(ctx: *LowerCtx, expr: *const ast.Expr) bool {
     if (exprTouchesF64(ctx, expr)) return false;
     if (exprIsStr(ctx, expr)) return false;
+    if (ctx.graph.applicationDescriptorForExpr(expr)) |descriptor| return descriptor.is_integer();
     return switch (expr.*) {
         .int_lit, .true_lit, .false_lit => true,
         // `#s` is a length and `s[i]` is a byte — both integers.

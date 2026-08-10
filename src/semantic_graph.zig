@@ -6,6 +6,8 @@
 /// with read-only query API. No behavior change to codegen until Phase 2 wiring.
 const std = @import("std");
 const ast = @import("ast.zig");
+const Expr = ast.Expr;
+const sema = @import("sema.zig");
 const types = @import("types.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
 const transform_engine = @import("transform_engine.zig");
@@ -51,6 +53,7 @@ pub const NodeKind = enum {
     func,
     param,
     local,
+    value,
     type_node,
     call,
     relation,
@@ -68,6 +71,10 @@ pub const EdgeKind = enum {
     contains,
     def,
     use,
+    relation,
+    subject,
+    argument,
+    result,
     type_of,
     transform_input,
     transform_output,
@@ -95,6 +102,10 @@ pub const Node = struct {
     call_shape: ?types.CallShape = null,
     /// Resolved result descriptor attached to a function's semantic identity.
     result_descriptor: ?types.ResolvedType = null,
+    /// Checked descriptor of a semantic value or application result.
+    descriptor: ?types.ResolvedType = null,
+    /// Demand attached to an application before realization selects control.
+    demand: ?types.ReturnConsumption = null,
     /// Factual `@comp.why.shape` explanation captured at graph lift.
     why: ?[]const u8 = null,
     /// Pass 2: knowledge lattice position when known.
@@ -140,6 +151,7 @@ pub const Edge = struct {
     from: NodeId,
     to: NodeId,
     kind: EdgeKind,
+    position: u16 = 0,
 };
 
 pub const SemanticGraph = struct {
@@ -214,7 +226,7 @@ pub const SemanticGraph = struct {
     fn nameAddressable(kind: NodeKind) bool {
         return switch (kind) {
             .module, .source_file, .func, .param, .type_node, .concept, .table_shape, .enum_shape => true,
-            .local, .call, .relation, .transform_app, .comptime_value, .emit_artifact => false,
+            .local, .value, .call, .relation, .transform_app, .comptime_value, .emit_artifact => false,
         };
     }
 
@@ -324,6 +336,54 @@ pub const SemanticGraph = struct {
     /// spelled the same can no longer answer for it.
     pub fn findFunc(self: *const SemanticGraph, name: []const u8) ?NodeId {
         return self.findId(.func, name);
+    }
+
+    /// Exact declaration lookup used by checked application lifting. This is a
+    /// provenance join on the declaration Sema selected, never a name join.
+    fn findFuncDecl(self: *const SemanticGraph, target: *const ast.FuncDecl) ?NodeId {
+        const raw: *const anyopaque = @ptrCast(target);
+        for (self.nodes.items, 0..) |node, i| {
+            if (node.kind != .func or node.ast_ref == null) continue;
+            if (@as(*const anyopaque, @ptrCast(node.ast_ref.?)) == raw) {
+                return .{ .index = @intCast(i) };
+            }
+        }
+        return null;
+    }
+
+    /// Relation selected for a checked application.
+    pub fn applicationRelation(self: *const SemanticGraph, application: NodeId) ?NodeId {
+        for (self.edges.items) |edge| {
+            if (edge.kind == .relation and edge.from.index == application.index) return edge.to;
+        }
+        return null;
+    }
+
+    /// Checked application node for this exact source expression. The AST
+    /// pointer is provenance only; callers receive the graph identity and use
+    /// its relation/value edges from that point onward.
+    pub fn applicationForExpr(self: *const SemanticGraph, expr: *const Expr) ?NodeId {
+        const raw: *const anyopaque = @ptrCast(expr);
+        for (self.nodes.items, 0..) |node, i| {
+            if (node.kind != .call or node.ast_ref == null) continue;
+            if (@as(*const anyopaque, @ptrCast(node.ast_ref.?)) == raw) {
+                return .{ .index = @intCast(i) };
+            }
+        }
+        return null;
+    }
+
+    /// Exact relation selected for a source application.
+    pub fn applicationRelationForExpr(self: *const SemanticGraph, expr: *const Expr) ?NodeId {
+        const application = self.applicationForExpr(expr) orelse return null;
+        return self.applicationRelation(application);
+    }
+
+    /// Result descriptor retained on the checked application identity.
+    pub fn applicationDescriptorForExpr(self: *const SemanticGraph, expr: *const Expr) ?types.ResolvedType {
+        const application = self.applicationForExpr(expr) orelse return null;
+        const node = self.get(application) orelse return null;
+        return node.descriptor;
     }
 
     /// Query a function result through its stable identity. Realization uses
@@ -899,7 +959,7 @@ pub const SemanticGraph = struct {
 
     fn liftExprsFromExpr(
         self: *SemanticGraph,
-        expr: *const ast.Expr,
+        expr: *const Expr,
         file: []const u8,
         parent: NodeId,
         consumption: types.ReturnConsumption,
@@ -959,7 +1019,7 @@ pub const SemanticGraph = struct {
 
     fn liftCallFromExpr(
         self: *SemanticGraph,
-        expr: *const ast.Expr,
+        expr: *const Expr,
         file: []const u8,
         parent: NodeId,
         consumption: types.ReturnConsumption,
@@ -1001,6 +1061,84 @@ pub const SemanticGraph = struct {
         const mod_id = try self.liftModuleFull(mod, file);
         try self.liftCalls(mod, file, mod_id);
         return mod_id;
+    }
+
+    fn addApplicationValue(
+        self: *SemanticGraph,
+        application: NodeId,
+        expr: *const Expr,
+        file: []const u8,
+        descriptor: types.ResolvedType,
+    ) !NodeId {
+        const loc = expr.loc();
+        return self.addChild(application, .{
+            .kind = .value,
+            .span = .{ .file = file, .start = loc.line, .end = loc.col },
+            .descriptor = descriptor,
+            .knowledge = semantic_algebra.knowledgeOfType(descriptor),
+            .stage = .sema,
+            .ast_ref = @ptrCast(@constCast(expr)),
+        });
+    }
+
+    /// Replace syntax-derived call links with identities and descriptors that
+    /// survived semantic checking. This is the production lift; absence of a
+    /// checked fact stays unresolved rather than falling back to name matching.
+    pub fn liftModuleWithCheckedCalls(
+        self: *SemanticGraph,
+        mod: *const ast.Module,
+        checked: *const sema.Sema,
+        file: []const u8,
+    ) !NodeId {
+        const module = try self.liftModuleWithCalls(mod, file);
+
+        var calls: std.ArrayListUnmanaged(NodeId) = .empty;
+        defer calls.deinit(self.alloc);
+        for (self.nodes.items, 0..) |node, i| {
+            if (node.kind == .call) try calls.append(self.alloc, .{ .index = @intCast(i) });
+        }
+
+        for (calls.items) |call_id| {
+            const raw = self.nodes.items[call_id.index].ast_ref orelse continue;
+            const expr: *const Expr = @ptrCast(@alignCast(raw));
+            const fact = checked.applicationFact(expr) orelse continue;
+            const relation = self.findFuncDecl(fact.target) orelse continue;
+
+            // AST call lifting used to join by callee text. Remove that
+            // provisional edge before publishing the checked identity.
+            var write: usize = 0;
+            for (self.edges.items) |edge| {
+                if (edge.from.index == call_id.index and edge.kind == .use) continue;
+                self.edges.items[write] = edge;
+                write += 1;
+            }
+            self.edges.items.len = write;
+
+            self.nodes.items[call_id.index].descriptor = fact.result;
+            if (self.nodes.items[call_id.index].call_shape) |shape| {
+                self.nodes.items[call_id.index].demand = shape.return_consumption;
+            }
+            try self.addEdge(.{ .from = call_id, .to = relation, .kind = .relation });
+
+            if (fact.subject) |subject| {
+                const descriptor = checked.exprDescriptor(subject) orelse .any;
+                const value = try self.addApplicationValue(call_id, subject, file, descriptor);
+                try self.addEdge(.{ .from = call_id, .to = value, .kind = .subject });
+            }
+            for (fact.arguments, 0..) |argument, i| {
+                const descriptor = checked.exprDescriptor(argument) orelse .any;
+                const value = try self.addApplicationValue(call_id, argument, file, descriptor);
+                try self.addEdge(.{
+                    .from = call_id,
+                    .to = value,
+                    .kind = .argument,
+                    .position = @intCast(i),
+                });
+            }
+            const result = try self.addApplicationValue(call_id, expr, file, fact.result);
+            try self.addEdge(.{ .from = call_id, .to = result, .kind = .result });
+        }
+        return module;
     }
 
     /// Find all call nodes targeting a specific callee name.
@@ -1064,10 +1202,15 @@ pub const SemanticGraph = struct {
 
         for (self.nodes.items, 0..) |node, i| {
             if (node.kind != .call) continue;
-            const cs = node.call_shape orelse continue;
-            const callee = cs.callee_name orelse continue;
+            const call_id = NodeId{ .index = @intCast(i) };
+            const callee: []const u8 = if (self.applicationRelation(call_id)) |relation|
+                (self.get(relation) orelse continue).name orelse continue
+            else blk: {
+                const cs = node.call_shape orelse continue;
+                break :blk cs.callee_name orelse continue;
+            };
             if (in_module.get(callee) == null) continue;
-            const caller_id = self.containingFuncId(.{ .index = @intCast(i) }) orelse continue;
+            const caller_id = self.containingFuncId(call_id) orelse continue;
             const caller_node = self.get(caller_id) orelse continue;
             const caller = caller_node.name orelse continue;
             if (in_module.get(caller) == null) continue;
@@ -1177,6 +1320,7 @@ pub const SemanticGraph = struct {
             .func => "func",
             .param => "param",
             .local => "local",
+            .value => "value",
             .type_node => "type_node",
             .call => "call",
             .relation => "relation",
@@ -1186,6 +1330,22 @@ pub const SemanticGraph = struct {
             .emit_artifact => "emit_artifact",
             .table_shape => "table_shape",
             .enum_shape => "enum_shape",
+        };
+    }
+
+    pub fn edgeKindLabel(kind: EdgeKind) []const u8 {
+        return switch (kind) {
+            .contains => "contains",
+            .def => "def",
+            .use => "use",
+            .relation => "relation",
+            .subject => "subject",
+            .argument => "argument",
+            .result => "result",
+            .type_of => "type",
+            .transform_input => "input",
+            .transform_output => "output",
+            .provenance => "provenance",
         };
     }
 
@@ -1454,6 +1614,22 @@ pub const SemanticGraph = struct {
                     try appendJsonInt(out, alloc, node.hardware_lowerings.bits);
                 }
             }
+            if (node.descriptor) |descriptor| {
+                var namebuf: [96]u8 = undefined;
+                try out.appendSlice(alloc, ",\"descriptor\":\"");
+                try jsonEscapeAppend(out, alloc, descriptor.duo_name(&namebuf));
+                try out.append(alloc, '"');
+            }
+            if (node.demand) |demand| {
+                try out.appendSlice(alloc, ",\"demand\":\"");
+                try out.appendSlice(alloc, switch (demand) {
+                    .unknown => "unknown",
+                    .discard => "discard",
+                    .single => "single",
+                    .multi => "multi",
+                });
+                try out.append(alloc, '"');
+            }
             if (node.stable_id) |sid| {
                 var hex: [16]u8 = undefined;
                 try out.appendSlice(alloc, ",\"stable_id\":\"");
@@ -1464,6 +1640,22 @@ pub const SemanticGraph = struct {
             try appendJsonInt(out, alloc, node.span.start);
             try out.appendSlice(alloc, ",\"col\":");
             try appendJsonInt(out, alloc, node.span.end);
+            try out.append(alloc, '}');
+        }
+        try out.appendSlice(alloc, "],\"edges\":[");
+        for (self.edges.items, 0..) |edge, i| {
+            if (i > 0) try out.append(alloc, ',');
+            try out.appendSlice(alloc, "{\"from\":");
+            try appendJsonInt(out, alloc, edge.from.index);
+            try out.appendSlice(alloc, ",\"to\":");
+            try appendJsonInt(out, alloc, edge.to.index);
+            try out.appendSlice(alloc, ",\"relation\":\"");
+            try out.appendSlice(alloc, edgeKindLabel(edge.kind));
+            try out.append(alloc, '"');
+            if (edge.kind == .argument) {
+                try out.appendSlice(alloc, ",\"position\":");
+                try appendJsonInt(out, alloc, edge.position);
+            }
             try out.append(alloc, '}');
         }
         try out.appendSlice(alloc, "],\"table_shapes\":[");
@@ -1687,6 +1879,68 @@ test "semantic_graph: function identities carry resolved result descriptors" {
     try std.testing.expectEqual(types.ResolvedType.str, g.funcResultDescriptor("label").?);
     try std.testing.expectEqual(types.ResolvedType.bool, g.funcResultDescriptor("ready").?);
     try std.testing.expect(g.funcResultDescriptor("missing") == null);
+}
+
+test "semantic_graph: checked subject application retains relation and value identities" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\document: {
+        \\    value: i64
+        \\}
+        \\read: i64 = (subject: document)
+        \\    subject.value
+        \\main: i64 = ()
+        \\    document{ value = 42 }:read()
+    ;
+    var lex = Lexer.init(src, "application.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var module = try parser.parse_module();
+
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&module);
+
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "application.duo");
+
+    var application: ?NodeId = null;
+    for (graph.nodes.items, 0..) |node, i| {
+        if (node.kind != .call) continue;
+        const id = NodeId{ .index = @intCast(i) };
+        if (graph.applicationRelation(id) != null) application = id;
+    }
+    const app = application orelse return error.TestExpectedEqual;
+    const relation = graph.applicationRelation(app) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqualStrings("read", graph.get(relation).?.name.?);
+    try std.testing.expectEqual(types.ResolvedType.i64, graph.get(app).?.descriptor.?);
+
+    var subjects: usize = 0;
+    var results: usize = 0;
+    for (graph.edges.items) |edge| {
+        if (edge.from.index != app.index) continue;
+        if (edge.kind == .subject) {
+            subjects += 1;
+            const value = graph.get(edge.to) orelse return error.TestExpectedEqual;
+            try std.testing.expect(value.kind == .value);
+            try std.testing.expect(value.descriptor.? == .@"struct");
+            try std.testing.expectEqualStrings("document", value.descriptor.?.@"struct".name);
+        }
+        if (edge.kind == .result) {
+            results += 1;
+            const value = graph.get(edge.to) orelse return error.TestExpectedEqual;
+            try std.testing.expectEqual(types.ResolvedType.i64, value.descriptor.?);
+        }
+        try std.testing.expect(edge.kind != .use);
+    }
+    try std.testing.expectEqual(@as(usize, 1), subjects);
+    try std.testing.expectEqual(@as(usize, 1), results);
 }
 
 test "semantic_graph: moduleFunctionEmitOrder callees before callers" {

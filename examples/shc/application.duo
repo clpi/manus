@@ -1,0 +1,5 @@
+read: i64 = (subject: i64)
+    subject
+
+main: i64 = ()
+    42:read() - 42

@@ -1479,10 +1479,11 @@ fn hashSourceFile(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !u64 {
 }
 
 fn do_graph(alloc: std.mem.Allocator, io: Io, src_path: []const u8, write_sidecar: bool) !void {
-    const ps = try parse_and_check(alloc, io, src_path);
+    var ps = try parse_and_check(alloc, io, src_path);
+    defer ps.sem.deinit();
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCalls(&ps.mod, src_path);
+    _ = try graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
     const source_hash = hashSourceFile(alloc, io, src_path) catch null;
     var json: std.ArrayListUnmanaged(u8) = .empty;
     defer json.deinit(alloc);
@@ -1505,10 +1506,11 @@ fn do_graph(alloc: std.mem.Allocator, io: Io, src_path: []const u8, write_sideca
 }
 
 fn do_sim(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
-    const ps = try parse_and_check(alloc, io, src_path);
+    var ps = try parse_and_check(alloc, io, src_path);
+    defer ps.sem.deinit();
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCalls(&ps.mod, src_path);
+    _ = try graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
     var snap = try sim_pipeline.exportInterchangeWithGraph(alloc, &ps.mod, src_path, &graph);
     defer snap.deinit(alloc);
     const stdout = std.Io.File.stdout();
@@ -1573,7 +1575,7 @@ fn do_explain(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
     defer ps.sem.deinit();
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCalls(&ps.mod, src_path);
+    _ = try graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
 
     var snap = try knowledge_snapshot.buildFromModule(alloc, &ps.mod, &ps.sem, &graph, src_path);
     defer snap.deinit(alloc);
@@ -3086,7 +3088,7 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
     if (graph_diag_enabled) {
         var graph = semantic_graph.SemanticGraph.init(alloc);
         defer graph.deinit();
-        if (graph.liftModuleWithCalls(&mod, src_path)) |_| {
+        if (graph.liftModuleWithCheckedCalls(&mod, &sem, src_path)) |_| {
             graph.dumpSummary(io, std.Io.File.stderr(), src_path);
         } else |e| {
             term.dim("[duo graph] lift skipped: {s}", .{@errorName(e)});
@@ -4464,10 +4466,13 @@ fn do_compile(
                     // objects — which is the whole intended change.
                     const too_many_modules = runtime_needing_modules > 0 and runtime_linked_modules.len > 1;
                     if (too_many_modules) link_refusal = runtime_needing_modules;
+                    var direct_graph = semantic_graph.SemanticGraph.init(alloc);
+                    defer direct_graph.deinit();
+                    _ = try direct_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
                     const obj_result = if (native_scalar_candidate and !too_many_modules)
-                        native_backend.emitObjectForExecutable(alloc, &ps.mod, entry)
+                        native_backend.emitObjectForExecutableWithGraph(alloc, &ps.mod, entry, &direct_graph)
                     else
-                        @as(@TypeOf(native_backend.emitObjectForExecutable(alloc, &ps.mod, entry)), error.UnsupportedProgram);
+                        @as(@TypeOf(native_backend.emitObjectForExecutableWithGraph(alloc, &ps.mod, entry, &direct_graph)), error.UnsupportedProgram);
                     if (obj_result) |obj| {
                         const direct_extra = try directLinkInputs(alloc, io, &ps.mod, mt, cc, null);
                         const obj_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_native.o", .{std.fs.path.stem(src_path)});
@@ -4539,7 +4544,10 @@ fn do_compile(
                     }
                 }
             } else if (native_backend.isNativeSharedTarget(mt)) {
-                const obj = native_backend.emitSharedObjectInput(alloc, &ps.mod) catch |e| {
+                var direct_graph = semantic_graph.SemanticGraph.init(alloc);
+                defer direct_graph.deinit();
+                _ = try direct_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
+                const obj = native_backend.emitSharedObjectInputWithGraph(alloc, &ps.mod, &direct_graph) catch |e| {
                     if (std.mem.eql(u8, backend_mode, "auto")) {
                         if (term.info) term.infoMsg("auto backend: direct dylib lowering unavailable ({s})", .{@errorName(e)});
                     } else {
@@ -4560,10 +4568,13 @@ fn do_compile(
                 if (!(test_mode and term.test_report == .json)) term.ok("✓ {s}", .{out_path});
                 return;
             } else {
+                var direct_graph = semantic_graph.SemanticGraph.init(alloc);
+                defer direct_graph.deinit();
+                _ = try direct_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
                 const native_output = if (native_backend.isNativeAsmTarget(mt))
-                    native_backend.emitAssembly(alloc, &ps.mod, mt)
+                    native_backend.emitAssemblyWithGraph(alloc, &ps.mod, mt, &direct_graph)
                 else
-                    native_backend.emitObject(alloc, &ps.mod, mt);
+                    native_backend.emitObjectWithGraph(alloc, &ps.mod, mt, &direct_graph);
                 const obj = native_output catch |e| {
                     if (std.mem.eql(u8, backend_mode, "auto")) {
                         if (term.info) term.infoMsg("auto backend: direct object lowering unavailable ({s})", .{@errorName(e)});

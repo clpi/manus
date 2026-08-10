@@ -12890,6 +12890,41 @@ kernels. Benchmark-name recognition and a WASM-only value ontology are rejected.
 
 ---
 
+## 2026-08-10 — SHC-01 checked application identity reaches direct realization
+
+### Implemented
+
+- Semantic checking retains the exact callable declaration selected for a
+  subject application, together with its subject, arguments, result and
+  descriptor.
+- The semantic graph publishes those as relation, subject, argument and result
+  identities. Direct realization consumes that checked graph instead of
+  constructing an AST-only graph at the backend boundary.
+- Canonical subject lowering queries the exact application identity. It no
+  longer synthesizes an operation-first call and resolves the relation again.
+
+### Performance scope
+
+This removes semantic reconstruction and a transient AST allocation from the
+direct path. It does not change the selected machine instructions for the
+focused scalar proof, so no runtime speedup is claimed. The change introduces
+no boxed `lua_Value` path and no C fallback into the proof.
+
+### Validation
+
+- `zig build` — pass
+- `duo check examples/shc/application.duo` — pass
+- `duo graph examples/shc/application.duo` — exact `read` relation plus `i64`
+  subject/result descriptors; no provisional name-use edge
+- `DUO_NATIVE_DIAG=1 DUO_DNIR_TRACE=1 duo run --backend=direct
+  examples/shc/application.duo` — pass, exit 0
+- `scripts/idiomgate.duo` on the focused diff — 0 findings, 20/20 controls
+- `zig build unit-test --summary all` — 1157/1160; the same three live-tree
+  failures remain in parser interpolation, native register pressure and
+  relation derivation
+
+---
+
 ## 2026-08-09 — exact cross-module scalar identity for SH-04
 
 ### Implemented
