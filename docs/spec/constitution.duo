@@ -3128,10 +3128,25 @@ conventionzero = law{
     keep  = "canonicality is part of correctness"
 }
 
+canonicalstate = { .canonical, .migratable, .vocabularyblocked, .invalid }
+
+findingstate = law{
+    id    = "law.canonical.state"
+    kind  = .invariant
+    holds = .total
+    binds = {
+        "canonical means the strongest admitted semantic representation is present",
+        "migratable means equivalence is witnessed and canonicalization may rewrite",
+        "vocabularyblocked means the required relation world case or law is absent and must be admitted before source repair",
+        "invalid means the program contradicts language law",
+        "every canonicality finding has exactly one state and no gate invents vocabulary to change it",
+    }
+}
+
 canonicalfinding = @{
     id = "descriptor.canonical.finding"
     fields = {
-        .span, .subject, .relation, .intent, .law, .family,
+        .span, .state, .subject, .relation, .intent, .law, .family,
         .why, .rewrite, .confidence, .world, .demand, .cases, .dnir,
     }
     rule = "diagnostics MCP LSP and generated docs project this same record; plain string findings are invalid"
