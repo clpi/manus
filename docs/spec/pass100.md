@@ -141,9 +141,10 @@ but see docs-as-fixtures — canonical example blocks compile). Everything else
 on the page changes meaning; that is the A1 audit and it now passes.
 
 **Literals**: numbers need a leading digit (`0.5`); `1_000_000`, `0xff_ff`,
-`0b1010`; `150 * ms` (units are descriptors; no unit literals); strings
-interpolate — `"{expr}"` holes are full expressions (`"{fixed(2)(x)}"` — format
-specs are sections in holes); raw `[[…]]` means raw; `'a'` byte literals.
+`0b1010`; `150 * ms` (units are descriptors; no unit literals); text uses
+double quotes and interpolates — `"{expr}"` holes are full expressions
+(`"{fixed(2)(x)}"` — format specs are sections in holes); multiline text remains
+the same literal family; single quotes produce bytes.
 
 ## 4. The character catalog
 
@@ -153,28 +154,27 @@ specs are sections in holes); raw `[[…]]` means raw; `'a'` byte literals.
 :    IS (shape-space operand: name: shape) · INVOKE (a:m(x); leading :m()
      = sibling on ambient subject) — operand space selects, position-total
 @    the anchor: name it (bare), move it (postfix X@rel — retrieval only)
-( )  APPLY (functions, dispatch tables, descriptors=construction, levels)
-     · grouping · parameter slots
-[ ]  RETRIEVE (index t[k], trie to[str][point], gap[23]) · raw strings
-{ }  tables: data (=), descriptors (:), constructors desc{…}, brace-call
-     named args, destructuring {a, b} = x, world/bundle literals
+( )  ordinary callable APPLY · grouping · parameter slots and operand packs
+[ ]  computed RETRIEVE / projection (index t[k], trie to[str][point], gap[23])
+{ }  structured packs: data (=), descriptors (:), descriptor application
+     desc{…}, destructuring {a, b} = x, world/bundle literals
 =    HOLDS (value binding; slot defaults; case payload) — vs : IS
 |    union edge (descriptor operands: i64 | f64, t | nil, "a" | "b") ·
      bor (integer operands)
 &    refinement edge (u16 & positive, str & utf8.valid) · band (integers)
 ..   string join (existing string bindings ONLY) · spread {..base, x = 1}
      · pack params (..xs) and spread f(..xs)
-#    len operator face (#s; bare len = value face; s:len() normalizes)
+#    comment face; length is the subject relation `len`
 + - * / % ^ << >> ~    arithmetic/shift roots (operand-selected; * with a
      unit descriptor = united value)
 == != < <= > >=        eq/cmp projections (derived structural for sealed
      records; identity for anonymous data tables)
 and or not   operands returned (or IS nil-coalescing; facts narrow); not
      → bool; mixed and/or parenthesize
---   comment   ;  RETIRED by Pass 119 — THE SEMICOLON DOES NOT EXIST.
-     Newline already says it; dnir's ';' is metadata notation only. The
-     one-line induction tail is written `while (i += 1) <= n consume(i)`.
-"    interpolating string   '  byte   [[ ]]  raw
+--   compatibility comment provenance only
+;    RETIRED by Pass 119 — THE SEMICOLON DOES NOT EXIST. Newline already
+     says it; realization metadata may display separators without source law.
+"    text, including multiline text   '  bytes   `  reserved
 ```
 
 ## 5. Bindings, callables, parameters, contracts
@@ -191,8 +191,8 @@ f = (x) g(x)                  THE CALLABLE — one concept (the realization
                               f@world, injectable, serializable, erased
                               when empty). "Closure" is a measurement.
 connect = (host: str, port: u16 = 443, tls: bool = true)
-                              params are SLOTS: shape + default; brace-call
-                              supplies by name; positional fill is canon
+                              params are SLOTS: shape + default; ordinary
+                              application supplies an operand pack
 gather = (..xs) xs:sum()      pack param; f(..xs) spreads
 parse = (lx): ast | error     the return contract: a DEMAND DESCRIPTOR —
                               CDR (B-13) realizes the last expression
@@ -503,8 +503,8 @@ filter fold each find any all count take drop until sort max min group join
 push pop sum zip windows chunks bump iterate`; loops for cursors/effects/exit
 protocols. **P5 dispatch** — keys → callable table (cases `.eof`, literals,
 descriptors); never elseif. **P6 conversion** — declare `to(t)` at the source or
-join; consume `x:to(t)`; compose explicitly. **P7 options** — brace call +
-options descriptor. **P8 bundles** — anchor and inject (`run(task,
+join; consume `x:to(t)`; compose explicitly. **P7 options** — structured pack +
+options descriptor application. **P8 bundles** — anchor and inject (`run(task,
 point@ordering)`); never dicts or op-params. **P9 predicates** — bare nouns,
 four roles. **P10 hooks & codegen** — edges (`lower(t)(op)`); bulk via `for d in
 graph.descriptors if d@wire to(json)(d) = gen(d)`. **P11 script** — shebang;
@@ -532,12 +532,13 @@ setmetatable getmetatable _G gmatch gsub` · module aliases and
 deleted) · single-use next-line temps · same-subject void runs unchained ·
 elseif kind-ladders · sentinels · per-field hand loops · failure-forwarding
 plumbing (`if err return nil, err` — routing exists) · mixed-kind and
-two-decision groups · trailing `return expr` · wrappers · any non-`.duo` file.
+two-decision groups · trailing `return expr` · wrappers · new canonical source
+outside `.id`.
 
 **The graveyard (load-bearing absences):** function/class/import/match/try/
 trait/macro/ternary syntax · `local self type req new init end`(retiring) ·
 `__` names and the metatable API · regex and Lua patterns · pipe operator ·
-named-arg/default syntax (slots and brace-calls instead) · generics syntax ·
+parallel callable brace/string faces · generics syntax ·
 lifetime syntax · trait objects (bundles → enums) · implicit conversions and
 transitive search · `?`/`?.`/`//` · slice syntax (`all` is a value) ·
 `satisfies/refine/has` primitives · operation namespaces (`std.string`) and
