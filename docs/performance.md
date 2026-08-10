@@ -12888,6 +12888,32 @@ forms. A narrow engine-local bridge is admissible only with the full 130-row
 conformance matrix, an explicit nonzero JIT floor, and adversarial neighboring
 kernels. Benchmark-name recognition and a WASM-only value ontology are rejected.
 
+### Signed immediate realization
+
+The Duon ARM64 emitter now retains the signed value of `i32.const` long enough
+to select `SUB #imm` for addition by a negative constant and `ADD #imm` for
+subtraction by one. This is a general realization rule for the existing value
+relation; it adds no benchmark recognizer, new opcode identity, or Zig code.
+
+| Evidence | Before | After |
+| --- | ---: | ---: |
+| `hot_big` emitted words | 432 | 429 |
+| adversarial signed-immediate fixture words | 42 | 36 |
+| `hot_big` Duon JIT, min of 7 | 127 ms | 128 ms |
+| `hot_big` wasmtime, min of 7 | 106 ms | 106 ms |
+
+The adversarial fixture covers `add -9`, `sub -9`, the `-4095` encodable
+boundary, and the `-4096` non-encodable neighbor. Interpreter, JIT, and wasmtime
+all produce `2009`; the three encodable negative constants remove two words
+each, while `-4096` retains the existing materialization path.
+
+The complete conformance matrix remains green: 130 rows, 126 `PASS`, four
+`OK(void)`, zero differential failures, unsupported results, bails, or missing
+results; 49 of 65 oracle-answerable JIT requests compiled. Runtime is unchanged
+within measurement noise, so this is a code-size result only. The remaining
+`hot_big` gap requires retained value/liveness identity for alias-copy removal
+and lawful multiply-add selection rather than more engine-local caches.
+
 ---
 
 ## 2026-08-10 — SHC-01 checked application identity reaches direct realization
