@@ -89,8 +89,11 @@ artifact content; binary identity is not required for B-to-C acceptance.
 duo check lib/compiler/bootstrap.duo
 duo run lib/compiler/bootstrap.duo
 duo check lib/compiler/application.duo
-zig build shc-application
 ```
+
+The application check validates only the Duon-owned schema. It is not an SHC
+stage or aggregate. A future bootstrap projection must derive its evidence from
+the executed Duon compiler graph rather than make a host build step authoritative.
 
 ## Prohibited claims
 
