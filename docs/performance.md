@@ -12834,3 +12834,43 @@ canonical `unit-test` step, which provides the complete linker topology.
 - Carry record-result identity without rebuilding a name-keyed result map.
 - Keep parameter ABI classification separate from result descriptors; merging
   those facts caused the zero-argument defect removed here.
+
+---
+
+## 2026-08-09 — exact cross-module scalar identity for SH-04
+
+### Implemented
+
+- Embedded compiler modules now record each scalar identity actually emitted at
+  native file scope.
+- A cross-module constant projection folds only when that exact identity exists;
+  it no longer depends on a whole-module native/dynamic classification.
+- This is a bootstrap bridge for the current C fallback. It adds no Duon
+  semantic operation and has the same deletion boundary as the Zig code
+  generator.
+
+### Measured impact
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| Boxed `compiler.token` field reads in the parser artifact | 220 | 0 |
+| Native token constant references | 205 | 425 |
+| Real parser corpus proof exit | 139 | 0 |
+| Self-host manifest SH-04 | fail | pass |
+| Self-host manifest failing rows | 4 | 3 |
+
+No runtime benchmark speedup is claimed. The change removes a boxed module-table
+dependency from the real parser projection and closes SH-04; SH-05, SH-09, and
+SH-13 remain honest failures.
+
+### Validation
+
+- `zig fmt src/codegen.zig --check` — pass
+- `zig build -Doptimize=ReleaseFast` — pass
+- `duo run --backend=c examples/pass16_parser_corpus_proof.duo` — pass
+- generated-artifact inspection for boxed token reads and native constants — pass
+- `duo run scripts/selfhost_manifest.duo` — expected aggregate failure,
+  with SH-04 newly passing and SH-05/SH-09/SH-13 still failing
+- `zig build unit-test --summary all` — 1165/1168; three unrelated live-tree
+  failures remain in parser interpolation, native register pressure, and relation
+  derivation. None exercises the cross-module scalar projection changed here.

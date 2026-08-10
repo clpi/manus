@@ -458,6 +458,12 @@ pub const CodeGen = struct {
     // same binding; this records what was really declared so reads can follow it.
     // Keyed `<mod>|<name>` because the same name lives in many modules.
     emitted_global_storage: std.StringHashMapUnmanaged(void) = .{},
+    // Scalar identities that an embedded module actually emitted at file
+    // scope. A mixed module can still own native constants even when its
+    // callable surface needs the runtime; consumers may fold only these
+    // recorded identities instead of reading the module's boxed export table.
+    // Keyed `<mod>|<name>` to match emitted_global_storage.
+    emitted_module_scalars: std.StringHashMapUnmanaged(void) = .{},
     /// Pass 7: active function carries @noalloc — heap emit sites call guardNoAlloc.
     current_func_noalloc: bool = false,
     noalloc_violation: ?[]const u8 = null,
@@ -23442,6 +23448,8 @@ pub const CodeGen = struct {
             self.p(" {s} = ", .{mname});
             try self.emit_expr(val);
             self.p(";\n", .{});
+            const key = try std.fmt.allocPrint(self.alloc, "{s}|{s}", .{ self.current_module_cname, ident });
+            try self.emitted_module_scalars.put(self.alloc, key, {});
             try self.note_comptime_binding(ident, val);
         }
     }
@@ -23519,13 +23527,14 @@ pub const CodeGen = struct {
         field: []const u8,
         result_rt: RT,
     ) E!bool {
-        // Only a module emitted in native-scalar mode folds its constants into
-        // `<mod>__<field>` symbols. A module whose export is a real table has no
-        // such symbols — fall through to the table read instead of emitting a
-        // reference to something that was never defined.
-        if (self.embedded_module_native.get(mod_cname)) |emitted_native| {
-            if (!emitted_native) return false;
-        }
+        // Native eligibility is a property of the whole module, but constants
+        // are emitted independently. Requiring the whole module to be native
+        // forced mixed modules such as compiler.token through a boxed table for
+        // every KIND projection even though exact C constants already existed.
+        // Follow the emitted identity, not the module's broad classification.
+        var emitted_key_buf: [512]u8 = undefined;
+        const emitted_key = std.fmt.bufPrint(&emitted_key_buf, "{s}|{s}", .{ mod_cname, field }) catch return false;
+        if (!self.emitted_module_scalars.contains(emitted_key)) return false;
         var sym_buf: [384]u8 = undefined;
         // A cross-module const field read assumes the target is a folded
         // `static const <mod>__<field>`. When that module instead emitted real
