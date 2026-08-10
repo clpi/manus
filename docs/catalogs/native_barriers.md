@@ -100,7 +100,7 @@
 | Field | Value |
 | --- | --- |
 | **Location** | `src/native_backend.zig` register allocator |
-| **Barrier** | Correctly refuses when more semantic values are simultaneously live than the GP register set can hold |
+| **Barrier** | Correctly refuses when more values are simultaneously live in lowering than the GP register set can hold |
 | **Impact** | Complex functions can't use native backend |
 | **Class** | BACKEND |
 | **Prerequisite** | Value-keyed register or fixed-frame locations, CFG-aware liveness, and materialization into an available register |

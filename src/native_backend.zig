@@ -7052,7 +7052,7 @@ test "unused immediate bindings do not demand register or stack places" {
     const alloc = arena.allocator();
 
     const source =
-        \\main(): i64
+        \\main: i64 = ()
         \\    v0 = 1
         \\    v1 = 1
         \\    v2 = 1
@@ -7077,7 +7077,7 @@ test "unused immediate bindings do not demand register or stack places" {
         \\    v21 = 1
         \\    v0 + v21
     ;
-    var lex = Lexer.init(source, "pass11_spill_proof.duo");
+    var lex = Lexer.init(source, "pass11_spill_proof.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -7098,12 +7098,12 @@ test "unused immediate bindings do not demand register or stack places" {
     try std.testing.expect(obj.len > 0);
 
     const minimal_source =
-        \\main(): i64
+        \\main: i64 = ()
         \\    v0 = 1
         \\    v21 = 1
         \\    v0 + v21
     ;
-    var minimal_lex = Lexer.init(minimal_source, "unused-binding-minimal.duo");
+    var minimal_lex = Lexer.init(minimal_source, "unused-binding-minimal.id");
     var minimal_parser = Parser.init(&minimal_lex, alloc);
     minimal_parser.duo_mode = true;
     var minimal_mod = try minimal_parser.parse_module();
@@ -7118,6 +7118,24 @@ test "unused immediate bindings do not demand register or stack places" {
     const minimal_obj = try emitObject(alloc, &minimal_mod, "native-object");
     defer alloc.free(minimal_obj);
     try std.testing.expectEqualSlices(u8, minimal_obj, obj);
+
+    var historical_lex = Lexer.init(minimal_source, "unused-binding-minimal.duo");
+    var historical_parser = Parser.init(&historical_lex, alloc);
+    historical_parser.duo_mode = true;
+    var historical_mod = try historical_parser.parse_module();
+    var historical_sem = Sema.init(alloc);
+    defer historical_sem.deinit();
+    historical_sem.duo_mode = true;
+    try historical_sem.check_module(&historical_mod);
+
+    try std.testing.expectEqualStrings("unused-binding-minimal.id", minimal_mod.file);
+    try std.testing.expectEqualStrings("unused-binding-minimal.duo", historical_mod.file);
+    const historical_listing = try emitAssembly(alloc, &historical_mod, "native-asm");
+    defer alloc.free(historical_listing);
+    try std.testing.expectEqualStrings(minimal_listing, historical_listing);
+    const historical_obj = try emitObject(alloc, &historical_mod, "native-object");
+    defer alloc.free(historical_obj);
+    try std.testing.expectEqualSlices(u8, minimal_obj, historical_obj);
 }
 
 test "more live integer values than registers refuses without aliasing owners" {
@@ -7128,7 +7146,7 @@ test "more live integer values than registers refuses without aliasing owners" {
     const alloc = arena.allocator();
 
     const source =
-        \\main(): i64
+        \\main: i64 = ()
         \\    v0 = 1
         \\    v1 = 1
         \\    v2 = 1
@@ -7151,7 +7169,7 @@ test "more live integer values than registers refuses without aliasing owners" {
         \\    v19 = 1
         \\    v0 + v1 + v2 + v3 + v4 + v5 + v6 + v7 + v8 + v9 + v10 + v11 + v12 + v13 + v14 + v15 + v16 + v17 + v18 + v19
     ;
-    var lex = Lexer.init(source, "live-register-pressure.duo");
+    var lex = Lexer.init(source, "live-register-pressure.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
