@@ -27,12 +27,18 @@ available to executed Idsem parser code.
 
 Canonical source ingress now recognizes `.id` as Idsem and retains `.duo` as
 historical provenance. Both suffixes select the same lexer, parser law, semantic
-production, and realization path; only ingress provenance differs. The host
-projection is centralized in `src/duo_lexer_bridge.zig` until compiler B can
-consume the constitutional source fact directly. Build entry and embedded
-module discovery prefer `.id` and fall back to `.duo`. Tooling and corpus gates
-that still enumerate `.duo` independently remain migration bridges, not
-bootstrap evidence.
+production, and realization path. The source-family projection is centralized
+in `src/duo_lexer_bridge.zig` until compiler B can consume the constitutional
+source fact directly. Build entry and embedded module discovery prefer `.id`
+and fall back to `.duo`. Tooling and corpus gates that still enumerate `.duo`
+independently remain migration bridges, not bootstrap evidence.
+
+Suffix-independent semantic identity is not closed on current main. An executed
+negative control over byte-identical `.id` and `.duo` inputs produced identical
+direct-native object bytes, but every exported graph `stable_id` changed because
+the graph hashes the source path. `GAP-142` owns removal of that path-derived
+identity authority. Until then, the suffix distinction is not confined to
+provenance even though the tested machine realization is equal.
 
 The host names `duo_lexer_bridge`, `duo_mode`, and the `duo` executable are
 historical bootstrap symbols. They remain one implementation path, not a second
@@ -48,19 +54,19 @@ closed.
 SHC-00 supplies an executable structural verifier in
 `lib/compiler/bootstrap.duo`. Its synthetic controls validate lineage and
 parity relationships only; they neither authenticate the supplied identities
-nor observe a compiler run. A real bootstrap command must eventually supply
-graph-minted identities, witnesses, provenance, and observations from an
-execution world before the contract can accept B or C.
+nor observe a compiler run. Its historical three-coordinate `identity` record
+is not the constitutional graph-owned identity model and must not be promoted to
+canonical `.id` source. A real bootstrap projection must consume exact graph
+entities, witnesses, provenance, and observations from an execution world
+before the contract can accept B or C.
 
-`lib/compiler/application.duo` owns the complete application shape required by
-SHC-01. Argument and return packs retain identities for values, labels,
-positions, descriptors, constants, and provenance. The application retains its
-relation, subject, argument and result packs, descriptor facts, world, effects,
-witness, provenance, and demand without declaring a smaller projection that
-could lose them. The aggregate type-checks that owner without creating or
-observing graph facts. Production authority begins when graph-minted identities
-survive the graph, DNIR, realization, and machine lineage without source-name
-reconstruction.
+`lib/compiler/application.duo` inventories the application and pack facts
+required by SHC-01. It is still historical migration source, not a complete
+identity owner: its three-coordinate `identity` record conflicts with the rule
+that the graph entity is identity, and unconditional identity fields cannot
+represent unknown, absent, and empty facts honestly. Production authority begins
+when exact graph entities and explicit fact cardinality survive graph, demand,
+realization, and machine lineage without source-name reconstruction.
 
 ## Target chain
 
@@ -119,10 +125,11 @@ a large runtime, boxed compiler state, or a fully materialized realization
 program.
 
 The source-family projection in this stage is a constant-time ingress fact with
-no allocation. It selects one language law and records provenance, then has no
-role in graph identity, realization choice, or generated runtime behavior.
-Equivalent `.id` and historical `.duo` input therefore retain identical lawful
-realizations.
+no allocation. It selects one language law and records provenance. It does not
+select machine realization: the current focused direct-native differential emits
+byte-identical objects for equivalent `.id` and `.duo` source. The downstream
+graph still hashes the full source path into `stable_id`, however, so semantic
+identity equivalence remains open until `GAP-142` removes that authority.
 
 Future B/C acceptance requires two distinct application and output
 incarnations, the seed as B's exact producer, B as C's exact producer,
@@ -140,9 +147,10 @@ duo run lib/compiler/bootstrap.duo
 duo check lib/compiler/application.duo
 ```
 
-The application check validates only the Idsem-owned schema. It is not an SHC
-stage or aggregate. A future bootstrap projection must derive its evidence from
-the executed Idsem compiler graph rather than make a host build step authoritative.
+These historical `.duo` checks validate migration structures only. They are not
+canonical `.id` source, an SHC stage, or an aggregate. A future bootstrap
+projection must derive its evidence from the executed Idsem compiler graph
+rather than make a host build step authoritative.
 
 ## Prohibited claims
 
