@@ -5,6 +5,7 @@ const std = @import("std");
 
 test {
     _ = @import("lexer.zig");
+    _ = @import("duo_lexer_dispatch.zig");
     _ = @import("ast.zig");
     _ = @import("types.zig");
     _ = @import("parser.zig");

@@ -1,14 +1,14 @@
-//! SH-03 production dispatch — the host consuming the Duo lexer's token stream.
+//! SH-03 production dispatch — the host consuming the Idsem lexer's token stream.
 //!
 //! This is the seam `duo_lexer_bridge.tokenizeAuthority()` switches on. It binds
 //! `duo_lexer_tokenize_full` from the artifact built out of
 //! `lib/std/compiler/host.duo` and rebuilds host `Token`s from the flat record
-//! buffer, so the compiler can tokenize through Duo instead of `src/lexer.zig`.
+//! buffer, so the compiler can tokenize through Idsem instead of `src/lexer.zig`.
 //!
 //! WHY `tokenize_full` AND NOT `tokenize_text`: `tokenize_text` writes six i64
 //! per token and drops `float_val`. Dispatching on it would mis-read every float
 //! literal while every kind- and text-based differential stayed green — which is
-//! not hypothetical, it is exactly how GAP-021 hid for the whole life of the Duo
+//! not hypothetical, it is exactly how GAP-021 hid for the whole life of the Idsem
 //! lexer. The full entry carries all seven fields the host `Token` holds.
 //!
 //! WHY THE ARTIFACT IS BUILT FROM `host.duo` AND NOT `lexer.duo`: `--lib` never
@@ -35,7 +35,7 @@ extern fn duo_lexer_tokenize_full(
 /// decodes rather than hard-coding it.
 extern fn duo_lexer_host_stride() i64;
 
-/// GAP-017 closed: the Duo lexer returns a REJECTION rather than aborting the
+/// GAP-017 closed: the Idsem lexer returns a REJECTION rather than aborting the
 /// process. Negative returns are offset by 100 so they cannot be confused with
 /// -1 (buffer too small), and the codes mirror `lexer.LexError`'s order.
 extern fn duo_lexer_error_line(src: [*:0]const u8, file: [*:0]const u8) i64;
@@ -62,9 +62,9 @@ pub const DispatchError = error{
     OutOfMemory,
 } || lexer.LexError;
 
-/// Tokenize `src` through the Duo lexer, returning host `Token`s.
+/// Tokenize `src` through the Idsem lexer, returning host `Token`s.
 ///
-/// `text` slices point into `src`, using source offsets published by the Duo
+/// `text` slices point into `src`, using source offsets published by the Idsem
 /// lexer. The host does not reconstruct provenance from copied token bytes.
 pub fn tokenize(
     allocator: std.mem.Allocator,
@@ -99,7 +99,7 @@ pub fn tokenize(
     // GAP-022's first repair copied every token into an arena, then searched
     // the source for that copy. That preserved parser pointer arithmetic but
     // left source provenance as host reconstruction. Slot 4 is now the exact
-    // zero-based text offset decided by the Duo lexer. Reject an impossible
+    // zero-based text offset decided by the Idsem lexer. Reject an impossible
     // span instead of silently falling back to copied bytes.
     for (tokens, 0..) |*tok, i| {
         const r = records[i * RECORD_SLOTS ..][0..RECORD_SLOTS];
@@ -119,44 +119,43 @@ pub fn tokenize(
     return tokens;
 }
 
-/// Drive `lex` from the Duo lexer's token stream instead of the host scanner.
+/// Drive `lex` from the Idsem lexer's token stream instead of the host scanner.
 ///
 /// This is the ONE production routing entry. It used to live in main.zig as a
-/// private helper, which is why the compile driver tokenized through Duo while
+/// private helper, which is why the compile driver tokenized through Idsem while
 /// codegen's module-embed paths — which build their own `Lexer` + `Parser` to
 /// decide native embedding and to emit required modules — still ran the host
 /// scanner. Two scanners deciding one compilation is exactly the shape that
 /// hides a divergence: the driver would accept a source the embed path lexed
 /// differently, and nothing would report it.
 ///
-/// A Duo-side REJECTION is returned, not swallowed: the host scanner would
-/// reject the same source, and silently falling back would hide a real
-/// divergence behind a passing compile. Only an out-of-memory or buffer-sizing
-/// failure falls back to the host scanner, because those are host-side and say
-/// nothing about the source.
+/// Every failure is returned. The host scanner is a differential oracle, not a
+/// production fallback: resource pressure must not silently restore host
+/// lexical authority.
 ///
-/// Allocations are not freed. The tokens and their NUL-terminated source copy
-/// must outlive `lex`, and every caller's `lex` outlives
-/// the function that owns the allocator — so freeing here would dangle. The
-/// leak is bounded by the number of modules in one compilation, the same order
-/// as the driver's own, and a compile is a process.
+/// The token pack outlives `lex`. The NUL-terminated source and file copies are
+/// needed only for the generated-C call; every token view is rebased to the
+/// caller-owned source and file before those copies are released.
 pub fn route(
     alloc: std.mem.Allocator,
     lex: *lexer.Lexer,
     src: []const u8,
     file: []const u8,
 ) !void {
-    if (@import("duo_lexer_bridge.zig").tokenizeAuthority() != .duo_native) return;
-    const zsrc = std.mem.concatWithSentinel(alloc, u8, &.{src}, 0) catch return;
-    const zfile = std.mem.concatWithSentinel(alloc, u8, &.{file}, 0) catch return;
+    if (@import("duo_lexer_bridge.zig").tokenizeAuthority() != .duo_native)
+        return error.IdsemLexerInactive;
+    const zsrc = try std.mem.concatWithSentinel(alloc, u8, &.{src}, 0);
+    errdefer alloc.free(zsrc);
+    const zfile = try std.mem.concatWithSentinel(alloc, u8, &.{file}, 0);
+    errdefer alloc.free(zfile);
     const toks = tokenize(alloc, zsrc, zfile) catch |e| switch (e) {
-        error.OutOfMemory, error.BufferTooSmall => return,
+        error.OutOfMemory, error.BufferTooSmall => return e,
         else => {
             lex.last_error_loc = .{ .file = file, .line = errorLine(zsrc, zfile), .col = 1 };
             return e;
         },
     };
-    // Duo's offsets first resolve against `zsrc`, the NUL-terminated copy the C
+    // Idsem's offsets first resolve against `zsrc`, the NUL-terminated copy the C
     // ABI requires. The parser holds the ORIGINAL `src`, and
     // srcOffsetOf compares pointers — so text pointing into the copy is "not in
     // the source" and attribute recovery fails. Rebase onto `src`; the copy is
@@ -171,12 +170,16 @@ pub fn route(
         // The offset is valid regardless of length; only the slicing needs the
         // bound. Rebase every token.
         const off = @intFromPtr(tok.text.ptr) - @intFromPtr(zsrc.ptr);
-        if (off + tok.text.len <= src.len) tok.text = src[off .. off + tok.text.len];
+        std.debug.assert(off + tok.text.len <= src.len);
+        tok.text = src[off .. off + tok.text.len];
+        tok.loc.file = file;
     }
+    alloc.free(zfile);
+    alloc.free(zsrc);
     lex.useDuoTokens(toks);
 }
 
-/// The ABI contract, asserted rather than assumed. A layout change in the Duo
+/// The ABI contract, asserted rather than assumed. A layout change in the Idsem
 /// lexer must fail here, at the seam, instead of silently shifting every field.
 pub fn validateStride() !void {
     if (duo_lexer_host_stride() != 4) return error.UnexpectedTokenizeAllStride;
@@ -199,7 +202,7 @@ fn tokenizeHost(
     return out.toOwnedSlice(allocator);
 }
 
-/// The property production dispatch rests on: for any source, the Duo lexer and
+/// The property production dispatch rests on: for any source, the Idsem lexer and
 /// `src/lexer.zig` produce the SAME token stream — every field, not just kinds.
 ///
 /// Existing SH-03 differentials compare fingerprints, which fold kinds (and,
@@ -210,11 +213,11 @@ pub fn differential(allocator: std.mem.Allocator, src: [:0]const u8, file: [:0]c
     const host = try tokenizeHost(allocator, src, file);
     defer allocator.free(host);
 
-    const duo = try tokenize(allocator, src, file);
-    defer allocator.free(duo);
+    const idsem = try tokenize(allocator, src, file);
+    defer allocator.free(idsem);
 
-    if (host.len != duo.len) return error.TokenCountMismatch;
-    for (host, duo) |h, d| {
+    if (host.len != idsem.len) return error.TokenCountMismatch;
+    for (host, idsem) |h, d| {
         if (h.kind != d.kind) return error.TokenKindMismatch;
         if (h.loc.line != d.loc.line) return error.TokenLineMismatch;
         if (h.loc.col != d.loc.col) return error.TokenColMismatch;
@@ -228,7 +231,7 @@ test "duo_lexer_dispatch: stride contract" {
     try validateStride();
 }
 
-test "duo_lexer_dispatch: Duo lexer drives a host token stream" {
+test "duo_lexer_dispatch: Idsem lexer drives a host token stream" {
     const a = std.testing.allocator;
     const toks = try tokenize(a, "fun add(a: i64): i64 = a + 1 end", "t.duo");
     defer a.free(toks);
@@ -238,7 +241,39 @@ test "duo_lexer_dispatch: Duo lexer drives a host token stream" {
     try std.testing.expectEqual(@as(u32, 1), toks[0].loc.line);
 }
 
-test "duo_lexer_dispatch: Duo owns exact token source spans" {
+test "duo_lexer_dispatch: production route fails closed on storage failure" {
+    const src = "main = (): i64\n    0";
+    for ([_]usize{ 0, 2, 3 }) |fail_index| {
+        var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{
+            .fail_index = fail_index,
+        });
+        var lex = lexer.Lexer.init(src, "lexer.id");
+
+        try std.testing.expectError(
+            error.OutOfMemory,
+            route(failing.allocator(), &lex, src, "lexer.id"),
+        );
+        try std.testing.expect(failing.has_induced_failure);
+        try std.testing.expectEqual(failing.allocated_bytes, failing.freed_bytes);
+        try std.testing.expect(!lex.isDuoBacked());
+    }
+}
+
+test "duo_lexer_dispatch: production route releases temporary source copies" {
+    const a = std.testing.allocator;
+    const src: []const u8 = "main = (): i64\n    0";
+    const file: []const u8 = "lexer.id";
+    var lex = lexer.Lexer.init(src, file);
+
+    try route(a, &lex, src, file);
+    const toks = lex.duo_tokens.?;
+    defer a.free(toks);
+
+    try std.testing.expectEqual(@intFromPtr(src.ptr), @intFromPtr(toks[0].text.ptr));
+    try std.testing.expectEqual(@intFromPtr(file.ptr), @intFromPtr(toks[0].loc.file.ptr));
+}
+
+test "duo_lexer_dispatch: Idsem owns exact token source spans" {
     const a = std.testing.allocator;
     const source: [:0]const u8 = "a a \"a\" [[a]]";
     const toks = try tokenize(a, source, "span.duo");
@@ -312,12 +347,12 @@ test "duo_lexer_dispatch: corpus-data-as-literals tokenizes identically" {
 
 // gap[042]. GAP-024 fixed `_int_of`'s DECIMAL accumulator and left the HEX one
 // as `i64`, so `v * 16` on a hex literal at or above 2^63 was signed overflow
-// and the Duo lexer ABORTED THE PROCESS rather than returning a token.
+// and the Idsem lexer ABORTED THE PROCESS rather than returning a token.
 //
 // Nothing caught it because no differential case contained such a literal —
 // lib/std does (`0xcbf29ce484222325` in heap.duo, `0x8000000000000000` in
 // encoding/varint.duo and ml/gguf.duo), but only the compile DRIVER routed
-// through the Duo lexer and a driver never lexes the stdlib. It surfaced the
+// through the Idsem lexer and a driver never lexes the stdlib. It surfaced the
 // moment codegen's module-embed paths were routed through the same lexer.
 //
 // These three are the literals actually in the tree, plus the boundary either
@@ -346,7 +381,7 @@ test "duo_lexer_dispatch: gap[042] — the FNV offset basis carries its bits" {
 }
 
 // GAP-024, found while probing GAP-023 and NOT its cause: the host lexer
-// overflows on a u64 literal above i64 max, which is a value Duo's u64 can
+// overflows on a u64 literal above i64 max, which is a value Idsem's u64 can
 // represent. This is a real divergence in its own right; it does NOT explain the
 // two regressing proofs, whose u64 fingerprint appears only in a COMMENT.
 //

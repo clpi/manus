@@ -17,6 +17,17 @@ source spans. The host bounds-checks those spans and projects them into its
 temporary parser representation. It does not reconstruct token text or source
 locations.
 
+The production route is now fail-closed. Allocation, record-buffer, and token
+projection failures leave no accepted token stream and return an error to the
+caller; they no longer return success and resume the host scanner. The host
+scanner remains a differential oracle. This removes one automatic host semantic
+fallback, but it does not close the missing canonical lexical identities in
+`GAP-145`, the generated grammar roles in `GAP-134`, or later code-generation
+fallbacks. Module-embed callers still convert a route error into a declined
+embed or optimization path; deleting those higher-level fallbacks requires the
+corresponding realization owner to distinguish physical refusal from semantic
+failure.
+
 The next boundary remains production parse recognition. It is blocked by
 `GAP-134`: C0 requires the self-hosted parser to consume a generated
 constitutional grammar, while the current repository has no machine-readable
@@ -24,6 +35,35 @@ canonical grammar-role projection. Porting the host recognizer would duplicate
 grammar authority through token-text lists and mutable lookahead. S0 therefore
 remains the honest stage until grammar roles and an immutable token view are
 available to executed Idsem parser code.
+
+## Production authority ledger
+
+| Boundary | Current state | Exact remaining authority |
+| --- | --- | --- |
+| Source ingress | MIGRATION BRIDGE | Zig discovers source and projects the centralized `.id`/historical `.duo` family fact. |
+| Lexer | IDSEM OWNED | Executed Idsem lexer owns the current token stream and now fails closed; canonical lexical-law closure remains `GAP-145`. |
+| Token/span | IDSEM OWNED | Idsem token identities and exact spans are projected through the generated-C physical bridge. |
+| Grammar projection | BLOCKED | No complete machine-readable canonical role projection or immutable token view exists (`GAP-134`, `GAP-145`). |
+| Parser recognition | HOST OWNED | `src/parser.zig` still decides callable headers, expressions, bindings, and source structure. |
+| Binding/scope | HOST OWNED | Production binding and scope construction remain in the host parser and semantic producer. |
+| Semantic construction | HOST OWNED | The graph work is an improving host implementation, not executed compiler-B source. |
+| Relation/application resolution | HOST OWNED | Production resolution remains host-executed; exact graph application authority is still under integration. |
+| Demand | HOST OWNED | No executed Idsem compiler demand stage exists. |
+| Lowering/realization | HOST OWNED | Host lowering and realization select the artifact path. |
+| Machine selection | HOST OWNED | Host code selects direct native or generated-C realization. |
+| Object emission | HOST OWNED | The native object emitter is host implementation and production lineage is incomplete. |
+| Runtime/link selection | HOST OWNED | Host code still selects runtime support and link behavior. |
+| Assembler/linker execution | FOREIGN REALIZATION ONLY | Foreign tools perform physical realization after the host selection. |
+
+For the fail-closed lexer transfer:
+
+- **BEFORE:** a storage failure returned success without installing the Idsem
+  token pack, so the next parser read silently resumed the host scanner.
+- **AFTER:** the same failure propagates, partial route storage is released, and
+  no host token stream is accepted by that route.
+- **NEXT:** `GAP-145` must publish distinct canonical lexical identities and
+  source-law provenance; then `GAP-134` can project generated grammar roles to
+  an immutable token view and replace the first host parser recognition.
 
 Canonical source ingress now recognizes `.id` as Idsem and retains `.duo` as
 historical provenance. Both suffixes select the same lexer, parser law, semantic
@@ -135,10 +175,15 @@ identity equivalence remains open until `GAP-142` removes that authority.
 
 The direct-native metadata lookup change adds two fixed suffix probes per
 candidate prefix and no allocation beyond the path/source work already required.
-Its unit control ran in the serialized aggregate: **1183/1186 passed**, with the
-same three pre-existing parser, visibility, and relation failures and no new
-failure. This establishes canonical-first lookup behavior, not a self-hosting
-stage or suffix-independent graph identity.
+Its earlier serialized aggregate reached **1183/1186** with three known semantic
+failures. That is historical evidence for that exact snapshot, not current-tree
+admission. On the current fail-closed lexer working tree, the focused production
+route controls passed **6/6**, `zig build` completed, the rebuilt compiler checked
+`examples/shc/lexer.id`, and `pass16-m1-smoke` completed **16/16**. The current
+unit aggregate remains red after execution at **1191/1194**: interpolation
+indexed holes, ordinary root relation projection, and independent `eq`
+derivation still fail. The new lexer controls pass inside that exact aggregate;
+the baseline failures remain failures rather than being renamed a pass.
 
 Future B/C acceptance requires two distinct application and output
 incarnations, the seed as B's exact producer, B as C's exact producer,
