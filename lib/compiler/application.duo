@@ -34,6 +34,7 @@ instruction: {
     operands: identity
     result: identity
     facts: identity
+    provenance: identity
 }
 
 validate: bool = (subject: application)
@@ -60,6 +61,7 @@ realize: instruction = (subject: application)
         operands = subject.arguments
         result = subject.result
         facts = subject.facts
+        provenance = subject.provenance
     }
 
 main: i64 = ()
@@ -82,6 +84,7 @@ main: i64 = ()
     twinmeaning: identity = identity{ value = 16, known = true }
     twinincarnation: identity = identity{ value = 17, known = true }
     vector: identity = identity{ value = 18, known = true }
+    trace: identity = identity{ value = 19, known = true }
     unknown: identity = identity{ value = 0, known = false }
     candidate: application = application{
         meaning = meaning
@@ -112,7 +115,7 @@ main: i64 = ()
         world = world
         effects = effects
         witness = witness
-        provenance = provenance
+        provenance = trace
         demand = demand
     }
     twin: application = application{
@@ -178,14 +181,20 @@ main: i64 = ()
         code = 13
     if realized.facts.value != candidate.facts.value
         code = 14
-    if alternate.relation.value != realized.relation.value
+    if realized.provenance.value != candidate.provenance.value
         code = 15
-    if alternate.application.value != realized.application.value
+    if alternate.relation.value != realized.relation.value
         code = 16
-    if alternate.facts.value != revised.facts.value
+    if alternate.application.value != realized.application.value
         code = 17
-    if alternate.facts.value == realized.facts.value
+    if alternate.facts.value != revised.facts.value
         code = 18
+    if alternate.facts.value == realized.facts.value
+        code = 19
+    if alternate.provenance.value != revised.provenance.value
+        code = 20
+    if alternate.provenance.value == realized.provenance.value
+        code = 21
     if code == 0
         print("application realization accepted")
     code
