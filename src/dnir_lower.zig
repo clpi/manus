@@ -3663,7 +3663,14 @@ fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
         if (ctx.module_consts.strs.get(mk)) |sv| return .{ .str = sv };
         if (ctx.req.constant(fld.obj.name.ident, fld.field)) |val| {
             const t = ctx.freshTemp();
-            try ctx.emit(.{ .op = .const_req, .result = t, .req_alias = fld.obj.name.ident, .field = fld.field, .lhs = .{ .i64 = val } });
+            try ctx.emit(.{
+                .op = .@"const",
+                .result = t,
+                .req_alias = fld.obj.name.ident,
+                .field = fld.field,
+                .lhs = .{ .i64 = val },
+                .ty = .i64,
+            });
             return .{ .temp = t };
         }
         const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ fld.obj.name.ident, fld.field });

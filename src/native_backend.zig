@@ -1798,15 +1798,6 @@ const Arm64Compiler = struct {
                     if (ins.result) |t| try temps.put(self.alloc, t, reg);
                 },
             },
-            .const_req => {
-                const reg = try self.allocReg();
-                const val: i64 = switch (ins.lhs) {
-                    .i64 => |v| v,
-                    else => return refuse(@src()),
-                };
-                try self.emitMovImm(reg, val);
-                if (ins.result) |t| try temps.put(self.alloc, t, reg);
-            },
             .fp_mov_arg => {
                 const d_slot: u5 = @intCast(ins.result orelse return refuse(@src()));
                 self.used_fp_regs[d_slot] = true;
@@ -5308,6 +5299,71 @@ fn stageCompactGpApplication(
     var staged = compact;
     staged.functions = functions;
     return staged;
+}
+
+test "native backend: folded module provenance does not select constant realization" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const plain_instructions = [_]dnir.Instr{
+        .{ .op = .@"const", .result = 0, .lhs = .{ .i64 = 14 }, .ty = .i64 },
+        .{ .op = .ret, .lhs = .{ .temp = 0 }, .ty = .i64 },
+    };
+    const qualified_instructions = [_]dnir.Instr{
+        .{
+            .op = .@"const",
+            .result = 0,
+            .lhs = .{ .i64 = 14 },
+            .req_alias = "token",
+            .field = "kindfun",
+            .ty = .i64,
+        },
+        .{ .op = .ret, .lhs = .{ .temp = 0 }, .ty = .i64 },
+    };
+    const plain_blocks = [_]dnir.Block{.{ .instrs = &plain_instructions }};
+    const qualified_blocks = [_]dnir.Block{.{ .instrs = &qualified_instructions }};
+    const plain_functions = [_]dnir.Function{.{
+        .name = "main",
+        .ret = .i64,
+        .blocks = &plain_blocks,
+    }};
+    const qualified_functions = [_]dnir.Function{.{
+        .name = "main",
+        .ret = .i64,
+        .blocks = &qualified_blocks,
+    }};
+    const plain = dnir.Module{ .functions = &plain_functions };
+    const qualified = dnir.Module{ .functions = &qualified_functions };
+
+    var plain_output = try emitArm64FromDnir(alloc, plain, null);
+    defer plain_output.deinit(alloc);
+    var qualified_output = try emitArm64FromDnir(alloc, qualified, null);
+    defer qualified_output.deinit(alloc);
+    try std.testing.expectEqualSlices(u8, plain_output.text, qualified_output.text);
+    try std.testing.expectEqualStrings(plain_output.asm_text, qualified_output.asm_text);
+
+    const plain_object = try emitMachOArm64Object(
+        alloc,
+        plain_output.text,
+        plain_output.cstring,
+        plain_output.symbols,
+        plain_output.relocations,
+        plain_output.bss_size,
+    );
+    defer alloc.free(plain_object);
+    const qualified_object = try emitMachOArm64Object(
+        alloc,
+        qualified_output.text,
+        qualified_output.cstring,
+        qualified_output.symbols,
+        qualified_output.relocations,
+        qualified_output.bss_size,
+    );
+    defer alloc.free(qualified_object);
+    try std.testing.expectEqualSlices(u8, plain_object, qualified_object);
 }
 
 test "native backend: compact checked call preserves staged machine realization" {

@@ -13359,3 +13359,51 @@ realization files are unchanged):
   This path does not measure the direct-native change;
 - `zig fmt`, `zig ast-check`, and `git diff --check` over the two changed Zig
   files — pass.
+
+---
+
+## 2026-08-10 — module constants use one realization
+
+Folded module requirement constants now use the existing `const` realization.
+The source module alias and field remain provenance on the realization item,
+and the numeric descriptor remains `i64`; none of those qualifiers select a
+second operation. This removes `const_req` from the realization operation enum,
+native-readiness switch, lowering, and ARM64 emitter.
+
+| Owned realization census | Before | After |
+| --- | ---: | ---: |
+| `const_req` references | 5 | 0 |
+| Semantic operation categories for constants | 2 | 1 |
+| ARM64 emitter branches for integer constants | 2 | 1 |
+| Runtime instructions | baseline | unchanged |
+| ARM64 text bytes | baseline | byte-identical |
+| Mach-O object bytes | baseline | byte-identical |
+
+The machine negative control compares an ordinary integer constant with the
+same constant carrying module alias and field provenance. Assembly, text, and
+object bytes are identical. The qualifiers remain inspectable without becoming
+machine-selection authority. This closes one host realization category; it
+does not add project semantics or canonical source in Zig.
+
+Compiler state improves by one enum member and one backend dispatch branch.
+The emitted instruction count, allocations, copies, runtime, startup, artifact
+size, and incremental behavior are unchanged. Compile latency and peak RSS were
+not isolated because the delta is below the useful resolution of the aggregate
+gate. No native C-floor or Wasm performance claim is made.
+
+Serialized evidence on the current working tree based at `d802eeb`:
+
+- `zig build unit-test --summary all` through `scripts/duo_lock.duo` — known
+  red result, exit 1: 1189/1192 passed. The three failures remain interpolation
+  indexed holes, ordinary root relation projection, and independent `eq`
+  derivation. Both added controls pass within that aggregate;
+- `zig build native-census` — 96 native, 110 bail, 16 unreachable, 206
+  reachable; pass against the 88-native ratchet;
+- `zig build native-differential` — known red result, exit 1: 47 agree, 20
+  diverge, 5 unsupported; the blocking set is unchanged;
+- `zig build agent-smoke` — known red result, exit 1 after 10/12 build steps.
+  The realization, semantic, LSP, and MCP subgates pass. The isolated
+  `std_metaprogramming_modules_smoke.duo` invocation compiles and returns inner
+  exit 128 on this tree;
+- `zig fmt`, `zig ast-check`, and `git diff --check` over the three changed Zig
+  files — pass.

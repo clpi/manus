@@ -69,7 +69,6 @@ pub const BranchCondition = enum {
 
 pub const Op = enum {
     @"const",
-    const_req,
     store_local,
     load_field,
     store_field,
@@ -144,7 +143,7 @@ pub const Instr = struct {
     rhs: Value = .void,
     /// Direct symbol for `call_direct` / `call_extern`.
     callee: []const u8 = "",
-    /// Req alias for `const_req` (e.g. `Token`).
+    /// Source module alias retained as provenance for a folded constant.
     req_alias: []const u8 = "",
     field: []const u8 = "",
     binop: BinOpTag = .add,
@@ -321,7 +320,6 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
                     .ret,
                     .ret_record,
                     .@"const",
-                    .const_req,
                     .store_local,
                     .load_global,
                     .mov_arg,
@@ -348,6 +346,21 @@ test "duo_native_ir: empty module not ready" {
 test "duo_native_ir: resident graph identity handle stays dense" {
     try std.testing.expectEqual(@sizeOf(u32), @sizeOf(semantic_graph.NodeId));
     try std.testing.expectEqual(@as(usize, 8), @sizeOf(?semantic_graph.NodeId));
+}
+
+test "duo_native_ir: folded module constant uses one const realization" {
+    const instruction = Instr{
+        .op = .@"const",
+        .result = 0,
+        .lhs = .{ .i64 = 14 },
+        .req_alias = "token",
+        .field = "kindfun",
+        .ty = .i64,
+    };
+    try std.testing.expectEqual(Op.@"const", instruction.op);
+    try std.testing.expectEqualStrings("token", instruction.req_alias);
+    try std.testing.expectEqualStrings("kindfun", instruction.field);
+    try std.testing.expectEqual(RT.i64, instruction.ty);
 }
 
 test "duo_native_ir: single ret function ready" {
