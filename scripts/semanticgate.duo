@@ -44,6 +44,7 @@ envemptypat = "(getenv|envor|env_or|std\\.script\\.getenv).*\"\"|\"\".*(getenv|e
 nilpat = "^[[:space:]]*if .*(!=|==) nil"
 existpat = "^[[:space:]]*if .*exists\\("
 processpat = "std[.]proc[.]capture\\("
+boxpat = "lua_Value|lua_invoke|lua_require"
 
 states = {
     canonical = "canonical",
@@ -168,12 +169,22 @@ debt = {
         positive = "pub const BinOpTag = enum {",
         negative = "pub const RelationId = struct {",
         rewrite = "replace semantic operation enums with reversible relation interning"
+    },
+    boxed = {
+        id = "runtime.boxed",
+        state = states.migratable,
+        law = "law.shc.native",
+        owner = "shc",
+        cap = 1271,
+        positive = "lua_Value value",
+        negative = "int64_t value",
+        rewrite = "retain typed semantic values through direct realization"
     }
 }
 
 main = ()
     code = 0
-    cmd = "printf {q}%s\\n{q} {q}pub const IfExpr = struct {{{q} | grep -q -E {q}{parserpat}{q} && printf {q}%s\\n{q} {q}pub const relation = struct {{{q} | grep -q -v -E {q}{parserpat}{q} && printf 1"
+    cmd = "printf {q}%s\\n{q} {q}pub const IfExpr = struct {{{q} | grep -q -E {q}{parserpat}{q} && printf {q}%s\\n{q} {q}pub const relation = struct {{{q} | grep -q -v -E {q}{parserpat}{q} && printf {q}%s\\n{q} {q}{debt.boxed.positive}{q} | grep -q -E {q}{boxpat}{q} && printf {q}%s\\n{q} {q}{debt.boxed.negative}{q} | grep -q -v -E {q}{boxpat}{q} && printf 1"
     if std.proc.capture(cmd):to(i64) != 1
         print("(semanticgate, control, parser-only, broken classifier)")
         code = 3
@@ -217,7 +228,7 @@ main = ()
     if std.proc.capture(cmd):to(i64) != 0
         print("(semanticgate, control, namespace, convicted subject relation)")
         code = 3
-    cmd = "test \"$(./zig-out/bin/duo run examples/spec100/result.duo 2>/dev/null)\" = 42 && test \"$(./zig-out/bin/duo run scripts/canon.duo 2>/dev/null)\" = {q}canon: pass{q} && printf {q}%s\\n{q} {q}{debt.result.positive}{q} | grep -q -E {q}{suffixpat}{q} && printf {q}%s\\n{q} {q}{debt.standard.positive}{q} | grep -q -E {q}{stdpat}{q} && printf {q}%s\\n{q} {q}{debt.standard.negative}{q} | grep -q -v -E {q}{stdpat}{q} && printf {q}%s\\n{q} {q}{debt.empty.positive}{q} | grep -q -E {q}{envemptypat}{q} && printf {q}%s\\n{q} {q}{debt.empty.negative}{q} | grep -q -v -E {q}{envemptypat}{q} && printf {q}%s\\n{q} {q}{debt.absence.positive}{q} | grep -q -E {q}{nilpat}{q} && printf {q}%s\\n{q} {q}{debt.absence.negative}{q} | grep -q -v -E {q}{nilpat}{q} && printf {q}%s\\n{q} {q}{debt.existence.positive}{q} | grep -q -E {q}{existpat}{q} && printf {q}%s\\n{q} {q}{debt.existence.negative}{q} | grep -q -v -E {q}{existpat}{q} && printf {q}%s\\n{q} {q}{debt.file.positive}{q} | grep -q {q}_{q} && printf {q}%s\\n{q} {q}{debt.file.negative}{q} | grep -q -v {q}_{q} && printf {q}%s\\n{q} {q}{debt.process.positive}{q} | grep -q -E {q}{processpat}{q} && printf {q}%s\\n{q} {q}{debt.process.negative}{q} | grep -q -v -E {q}{processpat}{q} && printf {q}%s\\n{q} {q}{debt.taxonomy.positive}{q} | grep -q -E {q}{taxpat}{q} && printf {q}%s\\n{q} {q}{debt.taxonomy.negative}{q} | grep -q -v -E {q}{taxpat}{q} && printf 1"
+    cmd = "test \"$(./zig-out/bin/duo run examples/spec100/result.duo 2>/dev/null)\" = 42 && test \"$(./zig-out/bin/duo run scripts/canon.duo 2>/dev/null)\" = {q}canon: pass{q} && printf {q}%s\\n{q} {q}{debt.result.positive}{q} | grep -q -E {q}{suffixpat}{q} && printf {q}%s\\n{q} {q}{debt.standard.positive}{q} | grep -q -E {q}{stdpat}{q} && printf {q}%s\\n{q} {q}{debt.standard.negative}{q} | grep -q -v -E {q}{stdpat}{q} && printf {q}%s\\n{q} {q}{debt.empty.positive}{q} | grep -q -E {q}{envemptypat}{q} && printf {q}%s\\n{q} {q}{debt.empty.negative}{q} | grep -q -v -E {q}{envemptypat}{q} && printf {q}%s\\n{q} {q}{debt.absence.positive}{q} | grep -q -E {q}{nilpat}{q} && printf {q}%s\\n{q} {q}{debt.absence.negative}{q} | grep -q -v -E {q}{nilpat}{q} && printf {q}%s\\n{q} {q}{debt.existence.positive}{q} | grep -q -E {q}{existpat}{q} && printf {q}%s\\n{q} {q}{debt.existence.negative}{q} | grep -q -v -E {q}{existpat}{q} && printf {q}%s\\n{q} {q}{debt.file.positive}{q} | grep -q {q}_{q} && printf {q}%s\\n{q} {q}{debt.file.negative}{q} | grep -q -v {q}_{q} && printf {q}%s\\n{q} {q}{debt.process.positive}{q} | grep -q -E {q}{processpat}{q} && printf {q}%s\\n{q} {q}{debt.process.negative}{q} | grep -q -v -E {q}{processpat}{q} && printf {q}%s\\n{q} {q}{debt.taxonomy.positive}{q} | grep -q -E {q}{taxpat}{q} && printf {q}%s\\n{q} {q}{debt.taxonomy.negative}{q} | grep -q -v -E {q}{taxpat}{q} && ! ./zig-out/bin/duo dump-c examples/spec100/read.duo 2>/dev/null | grep -q -E {q}{boxpat}{q} && ./zig-out/bin/duo dump-c examples/spec100/read.duo 2>/dev/null | grep -q {q}std_compiler_reader__read{q} && printf 1"
     if std.proc.capture(cmd):to(i64) != 1
         print("(semanticgate, control, source, broken semantic debt classifier)")
         code = 3
@@ -253,8 +264,11 @@ main = ()
         ir = std.proc.capture(cmd):to(i64)
         cmd = "git grep --cached -h -E {q}{taxpat}{q} -- src/duo_native_ir.zig 2>/dev/null | wc -l"
         taxonomy = std.proc.capture(cmd):to(i64)
-        cmd = "git grep --cached -h -E {q}{apipat}{q} -- {after} 2>/dev/null | wc -l"
+        cmd = "a=$(git grep --cached -h -E {q}{apipat}{q} -- {after} 2>/dev/null | wc -l); b=$(git grep --cached -h {q}lua_Value{q} -- {all} 2>/dev/null | wc -l); printf {q}%s{q} $((a * 10000 + b))"
         api = std.proc.capture(cmd):to(i64)
+        combined = api
+        boxed = combined % 10000
+        api = (combined - boxed) / 10000
         cmd = "git grep --cached -h -E {q}{namespacepat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*(--|source[[:space:]]*=|\"){q} | wc -l"
         namespace = std.proc.capture(cmd):to(i64)
         cmd = "git grep --cached -h -E {q}{stdpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*(--|source[[:space:]]*=|\"){q} | wc -l"
@@ -296,6 +310,8 @@ main = ()
         if ir > debt.vocab.cap over += 1
         print("(semanticgate, census, {debt.taxonomy.state}, {debt.taxonomy.id}, {taxonomy}, cap={debt.taxonomy.cap}, law={debt.taxonomy.law}, owner={debt.taxonomy.owner})")
         if taxonomy > debt.taxonomy.cap over += 1
+        print("(semanticgate, census, {debt.boxed.state}, {debt.boxed.id}, {boxed}, cap={debt.boxed.cap}, law={debt.boxed.law}, owner={debt.boxed.owner})")
+        if boxed > debt.boxed.cap over += 1
         print("(semanticgate, count, migration, api, {api}, cap=8)")
         if api > 8 over += 1
         print("(semanticgate, census, {debt.namespace.state}, {debt.namespace.id}, {namespace}, cap={debt.namespace.cap}, law={debt.namespace.law}, owner={debt.namespace.owner})")
