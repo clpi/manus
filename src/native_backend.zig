@@ -974,14 +974,16 @@ const Arm64Compiler = struct {
     ///   * `fp home regs` — this register is a LOCAL's home. A local keeps one
     ///     register for its whole lifetime (the same invariant the integer path
     ///     spells `isLocalReg`), so a home is never freed.
-    ///   * `fp free at` — the last instruction index that READS an id, extended
+    ///   * `value free at` — the last instruction index that READS an id, extended
     ///     across any enclosing back edge. Freeing on the last TEXTUAL use is
     ///     wrong inside a loop: a value defined before the loop and last read
     ///     inside it is read again on the next iteration, after the reuse has
     ///     already clobbered the register.
     fp_reg_owner: [32]?u32 = @splat(null),
     fp_home_regs: [32]bool = @splat(false),
-    fp_free_at: std.AutoHashMapUnmanaged(u32, u32) = .empty,
+    /// Last instruction that reads each DNIR value/slot id. The map is shared
+    /// by both register files; physical file selection is a separate fact.
+    value_free_at: std.AutoHashMapUnmanaged(u32, u32) = .empty,
     fp_abi_passthrough: std.AutoHashMapUnmanaged(u32, void) = .empty,
     /// Stack slots for sealed record fields (f64 or i64): "c.pos" -> slot meta.
     fp_stack_slots: std.StringHashMapUnmanaged(StackSlot) = .empty,
@@ -1083,7 +1085,7 @@ const Arm64Compiler = struct {
         self.string_map.deinit(self.alloc);
         self.fp_locals.deinit(self.alloc);
         self.fp_temps.deinit(self.alloc);
-        self.fp_free_at.deinit(self.alloc);
+        self.value_free_at.deinit(self.alloc);
         self.fp_abi_passthrough.deinit(self.alloc);
         self.fp_stack_slots.deinit(self.alloc);
         self.slot_bases.deinit(self.alloc);
@@ -1321,9 +1323,9 @@ const Arm64Compiler = struct {
     }
 
     /// Last instruction index that reads each id, widened so that no live range
-    /// ends inside a loop it did not start in. See the `fp free at` field.
-    fn computeFpLastUse(self: *Arm64Compiler, f: dnir.Function) Error!void {
-        self.fp_free_at.clearRetainingCapacity();
+    /// ends inside a loop it did not start in. See the `value free at` field.
+    fn computeValueLastUse(self: *Arm64Compiler, f: dnir.Function) Error!void {
+        self.value_free_at.clearRetainingCapacity();
         self.fp_abi_passthrough.clearRetainingCapacity();
         var def_at: std.AutoHashMapUnmanaged(u32, u32) = .empty;
         defer def_at.deinit(self.alloc);
@@ -1344,7 +1346,7 @@ const Arm64Compiler = struct {
                         };
                     }
                 };
-                var sink: Sink = .{ .map = &self.fp_free_at, .alloc = self.alloc, .at = idx };
+                var sink: Sink = .{ .map = &self.value_free_at, .alloc = self.alloc, .at = idx };
                 forEachOperandId(ins, &sink, Sink.note);
                 if (sink.failed) return error.OutOfMemory;
                 if (ins.result) |r| {
@@ -1371,7 +1373,7 @@ const Arm64Compiler = struct {
         var rounds: u32 = 0;
         while (changed and rounds < 16) : (rounds += 1) {
             changed = false;
-            var it = self.fp_free_at.iterator();
+            var it = self.value_free_at.iterator();
             while (it.next()) |e| {
                 const def = def_at.get(e.key_ptr.*) orelse 0;
                 for (back.items) |edge| {
@@ -1388,7 +1390,7 @@ const Arm64Compiler = struct {
         // enough to trust. Pin every range to the end of the function rather
         // than free anything on a guess.
         if (changed) {
-            var it = self.fp_free_at.valueIterator();
+            var it = self.value_free_at.valueIterator();
             while (it.next()) |v| v.* = std.math.maxInt(u32);
         }
 
@@ -1403,7 +1405,7 @@ const Arm64Compiler = struct {
                 if (previous_call_result) |result| {
                     const direct_consumer = instruction.op == .fp_mov_arg or instruction.op == .ret;
                     if (direct_consumer and
-                        self.fp_free_at.get(result) == idx and
+                        self.value_free_at.get(result) == idx and
                         instructionReadsId(instruction, result))
                     {
                         try self.fp_abi_passthrough.put(self.alloc, result, {});
@@ -1430,7 +1432,7 @@ const Arm64Compiler = struct {
         while (reg < fp_value_reg_base + fp_value_reg_count) : (reg += 1) {
             const owner = self.fp_reg_owner[reg] orelse continue;
             if (self.fp_home_regs[reg]) continue;
-            const last = self.fp_free_at.get(owner) orelse 0;
+            const last = self.value_free_at.get(owner) orelse 0;
             if (last > idx) continue;
             self.fp_reg_owner[reg] = null;
             self.used_fp_regs[reg] = false;
@@ -1459,7 +1461,7 @@ const Arm64Compiler = struct {
         self.used_fp_regs = @splat(false);
         self.fp_reg_owner = @splat(null);
         self.fp_home_regs = @splat(false);
-        try self.computeFpLastUse(f);
+        try self.computeValueLastUse(f);
         self.returned = false;
         self.fp_stack_slots.clearRetainingCapacity();
         self.stack_frame_bytes = 0;
@@ -1863,6 +1865,18 @@ const Arm64Compiler = struct {
                 }
             },
             .store_local => {
+                // A binding with no DNIR consumer does not demand a physical
+                // place. An integer immediate has no effect to preserve, so
+                // omit both materialization and the permanent local home. This is
+                // deliberately narrower than general dead-code elimination:
+                // temp/local operands still carry ownership and may need their
+                // producer register retired by the value allocator.
+                if (ins.result) |slot| {
+                    if (ins.application == null and !self.value_free_at.contains(slot)) switch (ins.lhs) {
+                        .i64 => return,
+                        else => {},
+                    };
+                }
                 // Dispatch on what the VALUE is, not only on how the
                 // instruction is typed. `x2: f64 = x * x` arrived with a
                 // non-f64 `ty`, so the store took the integer path and emitted
@@ -7030,7 +7044,7 @@ test "Pass 11 WP-05: if-return then i64 field assign" {
     try std.testing.expect(obj.len > 0);
 }
 
-test "Pass 11 WP-03: register spills with >20 live locals" {
+test "unused immediate bindings do not demand register or stack places" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -7062,7 +7076,6 @@ test "Pass 11 WP-03: register spills with >20 live locals" {
         \\    v20 = 1
         \\    v21 = 1
         \\    v0 + v21
-        \\end
     ;
     var lex = Lexer.init(source, "pass11_spill_proof.duo");
     var parser = Parser.init(&lex, alloc);
@@ -7075,13 +7088,82 @@ test "Pass 11 WP-03: register spills with >20 live locals" {
 
     const listing = try emitAssembly(alloc, &mod, "native-asm");
     defer alloc.free(listing);
-    try std.testing.expect(std.mem.indexOf(u8, listing, "\tstr x") != null);
-    try std.testing.expect(std.mem.indexOf(u8, listing, "\tldr x") != null);
+    try std.testing.expect(std.mem.indexOf(u8, listing, "\tstr x") == null);
+    try std.testing.expect(std.mem.indexOf(u8, listing, "\tldr x") == null);
+    try std.testing.expect(std.mem.indexOf(u8, listing, "\tsub sp") == null);
     try std.testing.expect(std.mem.indexOf(u8, listing, "lua_") == null);
 
     const obj = try emitObject(alloc, &mod, "native-object");
     defer alloc.free(obj);
     try std.testing.expect(obj.len > 0);
+
+    const minimal_source =
+        \\main(): i64
+        \\    v0 = 1
+        \\    v21 = 1
+        \\    v0 + v21
+    ;
+    var minimal_lex = Lexer.init(minimal_source, "unused-binding-minimal.duo");
+    var minimal_parser = Parser.init(&minimal_lex, alloc);
+    minimal_parser.duo_mode = true;
+    var minimal_mod = try minimal_parser.parse_module();
+    var minimal_sem = Sema.init(alloc);
+    defer minimal_sem.deinit();
+    minimal_sem.duo_mode = true;
+    try minimal_sem.check_module(&minimal_mod);
+
+    const minimal_listing = try emitAssembly(alloc, &minimal_mod, "native-asm");
+    defer alloc.free(minimal_listing);
+    try std.testing.expectEqualStrings(minimal_listing, listing);
+    const minimal_obj = try emitObject(alloc, &minimal_mod, "native-object");
+    defer alloc.free(minimal_obj);
+    try std.testing.expectEqualSlices(u8, minimal_obj, obj);
+}
+
+test "more live integer values than registers refuses without aliasing owners" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const source =
+        \\main(): i64
+        \\    v0 = 1
+        \\    v1 = 1
+        \\    v2 = 1
+        \\    v3 = 1
+        \\    v4 = 1
+        \\    v5 = 1
+        \\    v6 = 1
+        \\    v7 = 1
+        \\    v8 = 1
+        \\    v9 = 1
+        \\    v10 = 1
+        \\    v11 = 1
+        \\    v12 = 1
+        \\    v13 = 1
+        \\    v14 = 1
+        \\    v15 = 1
+        \\    v16 = 1
+        \\    v17 = 1
+        \\    v18 = 1
+        \\    v19 = 1
+        \\    v0 + v1 + v2 + v3 + v4 + v5 + v6 + v7 + v8 + v9 + v10 + v11 + v12 + v13 + v14 + v15 + v16 + v17 + v18 + v19
+    ;
+    var lex = Lexer.init(source, "live-register-pressure.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var mod = try parser.parse_module();
+    var sem = Sema.init(alloc);
+    defer sem.deinit();
+    sem.duo_mode = true;
+    try sem.check_module(&mod);
+
+    try std.testing.expectError(
+        error.RegisterExhausted,
+        emitAssembly(alloc, &mod, "native-asm"),
+    );
 }
 
 test "record return wider than x0..x7 uses the AAPCS64 x8 indirect result" {

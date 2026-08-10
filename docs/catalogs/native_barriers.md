@@ -100,11 +100,11 @@
 | Field | Value |
 | --- | --- |
 | **Location** | `src/native_backend.zig` register allocator |
-| **Barrier** | ~~Panics with `RegisterExhausted` at >20 live values~~ |
+| **Barrier** | Correctly refuses when more semantic values are simultaneously live than the GP register set can hold |
 | **Impact** | Complex functions can't use native backend |
 | **Class** | BACKEND |
-| **Prerequisite** | Stack-frame spill slots |
-| **Status** | Partial — spill slot infrastructure + `allocReg` spill path (Pass 11 WP-03); DNB003 still fires on pathological cases |
+| **Prerequisite** | Value-keyed register or fixed-frame locations, CFG-aware liveness, and materialization into an available register |
+| **Status** | Open — GAP-148. The former Pass 11 WP-03 proof required storage for unread bindings; native lowering now omits those places and retains a genuine live-pressure refusal control |
 
 ### 9. Per-expression knowledge now gates call dispatch
 
