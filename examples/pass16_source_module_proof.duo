@@ -1,6 +1,6 @@
 -- Pass 16 Phase 1 — req'd source module cursor walk (record-by-ref codegen).
 -- Parity: src/source_cursor.zig differentialProductionParity / walkReference.
-walk_reference(): i64
+walk: i64 = ()
     c = std.compiler.source.cursornew("a\nb\nc", "test.duo")
     if std.compiler.source.cursorpeek(c) != 97
         return 1
@@ -27,7 +27,5 @@ walk_reference(): i64
     0
 end
 
-code = walk_reference()
-if code != 0
-    std.os.exit(code)
-end
+main: i64 = ()
+    walk()
