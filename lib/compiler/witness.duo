@@ -1,0 +1,150 @@
+-- The inspectable evidence that authorizes one semantic fact.
+--
+-- A witness exists only after its check succeeds. It therefore carries no
+-- self-asserted `proven` flag: the fact, law, check, dependencies, falsifier,
+-- and complete provenance chain are the evidence a consumer can inspect.
+
+identity: {
+    value: i64
+    known: bool
+}
+
+provenance: {
+    meaning: identity
+    content: identity
+    incarnation: identity
+    origin: identity
+    parent: identity
+    transform: identity
+}
+
+witness: {
+    meaning: identity
+    content: identity
+    incarnation: identity
+    fact: identity
+    law: identity
+    check: identity
+    dependencies: identity
+    falsifier: identity
+    provenance: provenance
+}
+
+complete: bool = (subject: witness)
+    subject.meaning.known
+        and subject.content.known
+        and subject.incarnation.known
+        and subject.fact.known
+        and subject.law.known
+        and subject.check.known
+        and subject.dependencies.known
+        and subject.falsifier.known
+        and subject.provenance.meaning.known
+        and subject.provenance.content.known
+        and subject.provenance.incarnation.known
+        and subject.provenance.origin.known
+        and subject.provenance.parent.known
+        and subject.provenance.transform.known
+
+main: i64 = ()
+    zero: identity = identity{ value = 0, known = true }
+    unknown: identity = identity{ value = 0, known = false }
+    content: identity = identity{ value = 1, known = true }
+    first: identity = identity{ value = 2, known = true }
+    second: identity = identity{ value = 3, known = true }
+    origin: identity = identity{ value = 4, known = true }
+    parent: identity = identity{ value = 5, known = true }
+    transform: identity = identity{ value = 6, known = true }
+    fact: identity = identity{ value = 7, known = true }
+    law: identity = identity{ value = 8, known = true }
+    check: identity = identity{ value = 9, known = true }
+    dependencies: identity = identity{ value = 10, known = true }
+    falsifier: identity = identity{ value = 11, known = true }
+    prior: provenance = provenance{
+        meaning = zero
+        content = content
+        incarnation = first
+        origin = origin
+        parent = parent
+        transform = transform
+    }
+    later: provenance = provenance{
+        meaning = zero
+        content = content
+        incarnation = second
+        origin = origin
+        parent = first
+        transform = transform
+    }
+    proof: witness = witness{
+        meaning = zero
+        content = content
+        incarnation = first
+        fact = fact
+        law = law
+        check = check
+        dependencies = dependencies
+        falsifier = falsifier
+        provenance = prior
+    }
+    replay: witness = witness{
+        meaning = zero
+        content = content
+        incarnation = second
+        fact = fact
+        law = law
+        check = check
+        dependencies = dependencies
+        falsifier = falsifier
+        provenance = later
+    }
+    invalid: provenance = provenance{
+        meaning = zero
+        content = content
+        incarnation = first
+        origin = origin
+        parent = unknown
+        transform = transform
+    }
+    unchecked: witness = witness{
+        meaning = zero
+        content = content
+        incarnation = first
+        fact = fact
+        law = law
+        check = unknown
+        dependencies = dependencies
+        falsifier = falsifier
+        provenance = prior
+    }
+    untraced: witness = witness{
+        meaning = zero
+        content = content
+        incarnation = first
+        fact = fact
+        law = law
+        check = check
+        dependencies = dependencies
+        falsifier = falsifier
+        provenance = invalid
+    }
+    code = 0
+    if not proof:complete()
+        code = 1
+    if not replay:complete()
+        code = 2
+    if proof.content.value != replay.content.value
+        code = 3
+    if proof.incarnation.value == replay.incarnation.value
+        code = 4
+    if proof.provenance.incarnation.value == replay.provenance.incarnation.value
+        code = 5
+    if unchecked:complete()
+        code = 6
+    if untraced:complete()
+        code = 7
+    if proof.falsifier.value != falsifier.value
+        code = 8
+    if code == 0
+        print("witness foundation accepted")
+    code
