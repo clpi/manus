@@ -243,7 +243,7 @@ test "duo_lexer_dispatch: Idsem lexer drives a host token stream" {
 
 test "duo_lexer_dispatch: production route fails closed on storage failure" {
     const src = "main = (): i64\n    0";
-    for ([_]usize{ 0, 2, 3 }) |fail_index| {
+    for ([_]usize{ 0, 1, 2, 3 }) |fail_index| {
         var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{
             .fail_index = fail_index,
         });
