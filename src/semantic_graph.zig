@@ -1673,6 +1673,8 @@ test "semantic_graph: function identities carry resolved result descriptors" {
         \\    1.5
         \\label(): str
         \\    "ok"
+        \\ready(): bool
+        \\    true
     ;
     var lex = Lexer.init(src, "results.duo");
     var parser = Parser.init(&lex, alloc);
@@ -1685,6 +1687,7 @@ test "semantic_graph: function identities carry resolved result descriptors" {
 
     try std.testing.expectEqual(types.ResolvedType.f64, g.funcResultDescriptor("measure").?);
     try std.testing.expectEqual(types.ResolvedType.str, g.funcResultDescriptor("label").?);
+    try std.testing.expectEqual(types.ResolvedType.bool, g.funcResultDescriptor("ready").?);
     try std.testing.expect(g.funcResultDescriptor("missing") == null);
 }
 

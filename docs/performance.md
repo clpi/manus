@@ -12788,18 +12788,20 @@ reporting intact.
 
 - Function semantic identities now carry their resolved result descriptor.
 - DNIR lowering receives the semantic graph non-optionally and queries that
-  descriptor for floating direct-call results.
-- Deleted the duplicate name-keyed `f64_kernels` reconstruction map.
+  descriptor for floating, string, and boolean direct-call results.
+- Deleted the duplicate name-keyed `f64_kernels`, `str_returns`, and
+  `bool_returns` reconstruction maps.
 - Removed the incorrect coupling between a floating result and the presence of
   floating argument slots, so zero-argument `f64` calls retain `.f64` in DNIR.
-- Added positive `f64` and negative `i64` controls. No new source, package, or
-  runtime file boundary was introduced.
+- Added positive `f64`, `str`, and negative `i64` controls. An adversarial bool
+  control proves a bool-returning call cannot silently enter integer rendering.
+  No new source, package, or runtime file boundary was introduced.
 
 ### Measured impact
 
 | Measure | Before | After |
 | --- | ---: | ---: |
-| DNIR function-result reconstruction maps for `f64` | 1 | 0 |
+| DNIR scalar-result reconstruction maps | 3 | 0 |
 | Optional graph at `lowerModuleWithGraph` | yes | no |
 | Zero-argument direct `f64` call admitted | no | yes |
 | Realized-path boxing or allocation added | 0 | 0 |
@@ -12829,8 +12831,6 @@ canonical `unit-test` step, which provides the complete linker topology.
 
 ### Remaining targets
 
-- Move string and boolean direct-call result classification to the same graph
-  query and delete those reconstruction maps.
 - Carry record-result identity without rebuilding a name-keyed result map.
 - Keep parameter ABI classification separate from result descriptors; merging
   those facts caused the zero-argument defect removed here.

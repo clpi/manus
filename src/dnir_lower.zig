@@ -102,8 +102,6 @@ const ModuleConsts = struct {
 };
 
 const empty_module_consts: ModuleConsts = .{};
-const empty_str_returns: std.StringHashMapUnmanaged(void) = .empty;
-const empty_bool_returns: std.StringHashMapUnmanaged(void) = .empty;
 const empty_fp_params: std.StringHashMapUnmanaged([]bool) = .empty;
 
 /// Collect top-level constant bindings so a function body can fold them.
@@ -213,22 +211,6 @@ fn lowerModuleFromGraph(
     }
     try collectRecords(alloc, &records, mod);
 
-    // Functions declared `: str`. This has the same reconstruction shape as the
-    // deleted f64 result map: an unknown producer breaks every consumer downstream.
-    // `msg = format(...)` then `#msg` bailed because the
-    // local never entered str_slots -- the fourth time this exact gap has bitten
-    // (string.char, concat, math via exprReturnsF64, now str-returning calls).
-    var str_returns: std.StringHashMapUnmanaged(void) = .empty;
-    defer str_returns.deinit(alloc);
-    // Functions declared `: bool`. Not a convenience: `..` renders an integer
-    // with "%lld" and a bool as `true`/`false`, and a bool is an integer in
-    // every register the backend owns. Without this set `"{ok}"` on a
-    // bool-returning call prints `1` where the C backend prints `true` — a
-    // wrong ANSWER, not a bail. Every interpolation operand this cannot place
-    // on one side of that line is refused.
-    var bool_returns: std.StringHashMapUnmanaged(void) = .empty;
-    defer bool_returns.deinit(alloc);
-
     // GAP-056: which ABI slots each callee expects in v0..v7, so the CALLER
     // marshals into the register file the CALLEE reads from. Keyed by
     // `funcExportName` — the same string `lowerCall` emits as the callee — so a
@@ -255,19 +237,6 @@ fn lowerModuleFromGraph(
             continue;
         }
         try fp_params.put(alloc, key, try paramSlotIsFp(alloc, fd, records.items));
-    }
-
-    for (mod.body.stmts) |*stmt| {
-        if (stmt.* != .func_decl) continue;
-        const fd = &stmt.func_decl;
-        if (!shouldIncludeFuncDecl(fd) or fd.path.len != 1 or fd.method) continue;
-        if (funcFfiName(fd.attributes) != null) continue;
-        if (isStrType(fd.func.ret_type) and fd.path.len > 0) {
-            try str_returns.put(alloc, fd.path[0], {});
-        }
-        if (isBoolType(fd.func.ret_type) and fd.path.len > 0) {
-            try bool_returns.put(alloc, fd.path[0], {});
-        }
     }
 
     var functions: std.ArrayList(dnir.Function) = .empty;
@@ -316,7 +285,7 @@ fn lowerModuleFromGraph(
                 "?";
             continue;
         }
-        const f = try lowerFunction(alloc, fd, records.items, graph, &req, &externs, &func_record_returns, &fp_params, &str_returns, &bool_returns, &module_consts);
+        const f = try lowerFunction(alloc, fd, records.items, graph, &req, &externs, &func_record_returns, &fp_params, &module_consts);
         try functions.append(alloc, f);
     }
     if (functions.items.len == 0) return bail(@src());
@@ -632,10 +601,6 @@ pub const LowerCtx = struct {
     /// GAP-056: this function's own f64 parameters are homed in d0..d7, so
     /// staging an outgoing f64 argument would overwrite one of them.
     self_fp_params: bool = false,
-    /// Functions declared `: str`, so a consumer recognizes a call's result.
-    str_returns: *const std.StringHashMapUnmanaged(void) = &empty_str_returns,
-    /// Functions declared `: bool`, so `..` refuses to render one as a number.
-    bool_returns: *const std.StringHashMapUnmanaged(void) = &empty_bool_returns,
     /// When set, tail/table returns lower to `ret_record` for this record name.
     ret_record: ?[]const u8 = null,
     /// Local slots that hold f64 values inside integer kernels.
@@ -714,8 +679,6 @@ fn lowerFunction(
     externs: *std.ArrayList(dnir.Extern),
     func_record_returns: *std.StringHashMapUnmanaged([]const u8),
     fp_params: *const std.StringHashMapUnmanaged([]bool),
-    str_returns: *const std.StringHashMapUnmanaged(void),
-    bool_returns: *const std.StringHashMapUnmanaged(void),
     module_consts: *const ModuleConsts,
 ) Error!dnir.Function {
     var ctx: LowerCtx = .{
@@ -730,8 +693,6 @@ fn lowerFunction(
             const slots = f64AbiParamSlots(fd, records) orelse break :blk false;
             break :blk slots > 0;
         },
-        .str_returns = str_returns,
-        .bool_returns = bool_returns,
         .module_consts = module_consts,
         .ret_record = if (findRecordName(records, fd.func.ret_type)) |r| r.name else null,
     };
@@ -1077,12 +1038,16 @@ fn exprReturnsF64(ctx: *LowerCtx, expr: *const ast.Expr) bool {
             expr.call.args.len == 1) return true;
     }
     if (expr.call.func.* != .name) return false;
-    return functionReturnsF64(ctx, expr.call.func.name.ident);
+    return functionResultIs(ctx, expr.call.func.name.ident, .f64);
 }
 
-fn functionReturnsF64(ctx: *const LowerCtx, name: []const u8) bool {
+fn functionResultIs(
+    ctx: *const LowerCtx,
+    name: []const u8,
+    expected: std.meta.Tag(types.ResolvedType),
+) bool {
     const descriptor = ctx.graph.funcResultDescriptor(name) orelse return false;
-    return descriptor == .f64;
+    return std.meta.activeTag(descriptor) == expected;
 }
 
 fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!void {
@@ -1547,7 +1512,7 @@ fn exprIsBoolish(ctx: *LowerCtx, expr: *const ast.Expr) bool {
             .@"and", .@"or" => exprIsBoolish(ctx, b.lhs) and exprIsBoolish(ctx, b.rhs),
             else => false,
         },
-        .call => |c| c.func.* == .name and ctx.bool_returns.contains(c.func.name.ident),
+        .call => |c| c.func.* == .name and functionResultIs(ctx, c.func.name.ident, .bool),
         .name => |n| blk: {
             const slot = ctx.locals.get(n.ident) orelse break :blk false;
             break :blk ctx.bool_slots.contains(slot);
@@ -1595,7 +1560,7 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
         //     does not recognize its own argument and falls through to an
         //     undefined `string_byte` symbol.
         .call => |c| switch (c.func.*) {
-            .name => |n| ctx.str_returns.contains(n.ident),
+            .name => |n| functionResultIs(ctx, n.ident, .str),
             // `to(str)(n)` — the relation surface's own producer of str. It is
             // spelled as a call whose CALLEE is a call, so neither the
             // declared-return arm nor the `string.char` arm sees it, and every
@@ -2320,7 +2285,7 @@ fn exprTouchesF64(ctx: *LowerCtx, expr: *const ast.Expr) bool {
         .binop => |b| exprTouchesF64(ctx, b.lhs) or exprTouchesF64(ctx, b.rhs),
         .unop => |u| exprTouchesF64(ctx, u.operand),
         .call => |c| blk: {
-            if (c.func.* == .name and functionReturnsF64(ctx, c.func.name.ident)) break :blk true;
+            if (c.func.* == .name and functionResultIs(ctx, c.func.name.ident, .f64)) break :blk true;
             for (c.args) |a| {
                 if (exprTouchesF64(ctx, a)) break :blk true;
             }
@@ -2742,7 +2707,7 @@ fn exprIsIntegral(ctx: *LowerCtx, expr: *const ast.Expr) bool {
         // A plain call to a function that returns neither str nor f64 nor a
         // record. `exprTouchesF64` above already excluded the float kernels.
         .call => |cc| cc.func.* == .name and
-            !ctx.str_returns.contains(cc.func.name.ident) and
+            !functionResultIs(ctx, cc.func.name.ident, .str) and
             !ctx.func_record_returns.contains(cc.func.name.ident),
         .name => |n| blk: {
             const slot = ctx.locals.get(n.ident) orelse break :blk false;
@@ -3031,7 +2996,7 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
             return try lowerHwIntrinsic(ctx, hw, c.args);
         }
         const callee = c.func.name.ident;
-        if (functionReturnsF64(ctx, callee)) {
+        if (functionResultIs(ctx, callee, .f64)) {
             return try lowerF64KernelCall(ctx, callee, c.args);
         }
         if (std.mem.eql(u8, callee, "print")) {
@@ -3890,6 +3855,10 @@ test "dnir_lower: call result class comes from graph descriptor" {
         \\    1.5
         \\count(): i64
         \\    1
+        \\label(): str
+        \\    "ok"
+        \\length(): i64
+        \\    #label()
         \\floating(): f64
         \\    measure()
         \\integer(): i64
@@ -3903,21 +3872,44 @@ test "dnir_lower: call result class comes from graph descriptor" {
 
     var saw_float = false;
     var saw_integer = false;
+    var saw_string = false;
+    var saw_length = false;
     for (m.functions) |f| {
         for (f.blocks[0].instrs) |ins| {
-            if (ins.op != .call_direct) continue;
-            if (std.mem.eql(u8, ins.callee, "measure")) {
+            if (ins.op == .call_direct and std.mem.eql(u8, ins.callee, "measure")) {
                 saw_float = true;
                 try std.testing.expectEqual(RT.f64, ins.ty);
             }
-            if (std.mem.eql(u8, ins.callee, "count")) {
+            if (ins.op == .call_direct and std.mem.eql(u8, ins.callee, "count")) {
                 saw_integer = true;
                 try std.testing.expect(ins.ty != .f64);
             }
+            if (ins.op == .call_direct and std.mem.eql(u8, ins.callee, "label")) saw_string = true;
+            if (ins.op == .call_extern and std.mem.eql(u8, ins.callee, "strlen")) saw_length = true;
         }
     }
     try std.testing.expect(saw_float);
     try std.testing.expect(saw_integer);
+    try std.testing.expect(saw_string);
+    try std.testing.expect(saw_length);
+}
+
+test "dnir_lower: bool result descriptor prevents integer interpolation" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\ready(): bool
+        \\    true
+        \\render(): str
+        \\    "ready=" .. ready()
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "bool_result_query.duo");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    const mod = try parser.parse_module();
+
+    try std.testing.expectError(error.UnsupportedConstruct, lowerModule(alloc, &mod));
 }
 
 test "dnir_lower: graph orders callees before callers" {
