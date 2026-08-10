@@ -117,6 +117,20 @@ capital = (code: str): bool
         i = i + 1
     false
 
+-- Release Gate Zero firewall. These public homes are known migration surfaces,
+-- not admitted semantic vocabulary. Identity-based SUBJECT/WORLD/VOCAB checks
+-- supersede this detector once the parser graph owns applications; until then
+-- no added line may teach another agent that navigation grants authority.
+authority: bool = (code: str)
+    has(code, "st" .. "d.script.") or has(code, "st" .. "d.proc.")
+        or has(code, "st" .. "d.os.") or has(code, "st" .. "d.fs.")
+
+-- Concatenation is a real value relation. It is noncanonical when the same
+-- expression immediately demands only emission, because that spelling forces
+-- a materialized bridge value instead of exposing segments to the sink.
+materialize: bool = (code: str)
+    has(code, "print(") and has(code, "..")
+
 -- a bare `end` occupying its own line
 bareend = (code: str): bool
     t = ""
@@ -172,6 +186,12 @@ scanline = (path: str, no: i64, line: str): i64
         hits = hits + 1
     if has(code, ".new(")
         print("{path}:{no}  .new(  [LADDER]  desc{{…}} · x:to(desc) · p:from(mode)(…)")
+        hits = hits + 1
+    if authority(code)
+        print("({path}, {no}, invalid, law.authority.home, public capability home is not admitted vocabulary)")
+        hits = hits + 1
+    if materialize(code)
+        print("({path}, {no}, migratable, law.demand.materialize, output consumes segments without demanding a concatenated value)")
         hits = hits + 1
     hits
 
@@ -256,6 +276,18 @@ control = (): bool
     if rawlen(strip("code -- string.sub here")) > 6
         print("control FAIL: strip did not remove a comment")
         ok = false
+    if not authority("st" .. "d.script.run(command)")
+        print("control FAIL: authority did not reject std script")
+        ok = false
+    if authority("command:run(process)")
+        print("control FAIL: authority rejected a subject relation")
+        ok = false
+    if not materialize("print(\"x = \" .. x)")
+        print("control FAIL: materialize missed output concatenation")
+        ok = false
+    if materialize("value = left .. right")
+        print("control FAIL: materialize rejected a demanded concat value")
+        ok = false
     ok
 
 main = (): i64
@@ -280,7 +312,7 @@ main = (): i64
     d:close()
     total = scandiff(files)
     print("")
-    print("idiomgate: {total} finding(s) on ADDED lines  [control: 9/9 pass]")
+    print("idiomgate: {total} finding(s) on ADDED lines  [control: 13/13 pass]")
     if total > 0
         print("")
         print("The law: CLAUDE.md + docs/spec/ · the deny list: AGENTS.md")
