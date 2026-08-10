@@ -125,6 +125,11 @@ authority: bool = (code: str)
     has(code, "st" .. "d.script.") or has(code, "st" .. "d.proc.")
         or has(code, "st" .. "d.os.") or has(code, "st" .. "d.fs.")
 
+-- `read` names one relation. Holding its subject requires the subject face;
+-- changing the home spelling must not turn an operation-first call canonical.
+readface: bool = (code: str)
+    has(code, ".read(")
+
 -- Concatenation is a real value relation. It is noncanonical when the same
 -- expression immediately demands only emission, because that spelling forces
 -- a materialized bridge value instead of exposing segments to the sink.
@@ -189,6 +194,9 @@ scanline = (path: str, no: i64, line: str): i64
         hits = hits + 1
     if authority(code)
         print("({path}, {no}, invalid, law.authority.home, public capability home is not admitted vocabulary)")
+        hits = hits + 1
+    if readface(code)
+        print("({path}, {no}, invalid, law.subject.one, read is subject-first: subject:read(...))")
         hits = hits + 1
     if materialize(code)
         print("({path}, {no}, migratable, law.demand.materialize, output consumes segments without demanding a concatenated value)")
@@ -282,6 +290,12 @@ control = (): bool
     if authority("command:run(process)")
         print("control FAIL: authority rejected a subject relation")
         ok = false
+    if not readface("arbitrary.home.read(subject)")
+        print("control FAIL: readface did not reject operation-first read")
+        ok = false
+    if readface("subject:read(world)")
+        print("control FAIL: readface rejected subject-first read")
+        ok = false
     if not materialize("print(\"x = \" .. x)")
         print("control FAIL: materialize missed output concatenation")
         ok = false
@@ -312,7 +326,7 @@ main = (): i64
     d:close()
     total = scandiff(files)
     print("")
-    print("idiomgate: {total} finding(s) on ADDED lines  [control: 13/13 pass]")
+    print("idiomgate: {total} finding(s) on ADDED lines  [control: 14/14 pass]")
     if total > 0
         print("")
         print("The law: CLAUDE.md + docs/spec/ · the deny list: AGENTS.md")
