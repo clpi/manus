@@ -13274,9 +13274,14 @@ ARM64 text, and Mach-O object bytes unchanged. Renaming the physical link
 symbol together with the same target handle also leaves machine text bytes
 unchanged, while redirecting to another valid graph entity fails closed.
 
-Serialized evidence for the exact tree:
+Serialized evidence for the realization source at `cb31638`, with the aggregate
+rerun after the evidence audit on current HEAD `f4afc8b` (the five realization
+files are unchanged):
 
-- `zig build unit-test` — pass;
+- `zig build unit-test --summary all` through `scripts/duo_lock.duo` — known
+  red result, exit 1: 1187/1190 passed. The three failures are interpolation
+  indexed holes, ordinary root relation projection, and independent `eq`
+  derivation. The focused resident-handle controls pass within that aggregate;
 - `zig build native-census` — 96 native, 110 bail, 16 unreachable, 206
   reachable; pass against the 88-native ratchet;
 - `zig build native-differential` — known red result, 47 agree, 20 diverge,
@@ -13332,9 +13337,14 @@ work. The checked path still carries graph `NodeId` under the resident-owner
 bridge described above, so this result does not close graph-incarnation or
 public-lineage debt.
 
-Serialized evidence for this exact tree:
+Serialized evidence for the realization source at `3956a70`, with the aggregate
+rerun after the evidence audit on current HEAD `f4afc8b` (the two changed
+realization files are unchanged):
 
-- `zig build unit-test` — pass;
+- `zig build unit-test --summary all` through `scripts/duo_lock.duo` — known
+  red result, exit 1: 1187/1190 passed. The three failures are interpolation
+  indexed holes, ordinary root relation projection, and independent `eq`
+  derivation. All four added compaction controls pass within that aggregate;
 - `zig build native-census` — 96 native, 110 bail, 16 unreachable, 206
   reachable; pass against the 88-native ratchet;
 - `zig build native-differential` — known red result, 47 agree, 20 diverge,
