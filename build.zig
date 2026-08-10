@@ -854,6 +854,16 @@ pub fn build(b: *std.Build) void {
     pass16_parser_corpus.step.dependOn(b.getInstallStep());
     pass16_parser_corpus.setCwd(b.path("."));
 
+    // projection=check(application); authority=false;
+    // owner=lib/compiler/application.duo; delete at GAP-116 derived aggregate.
+    const shc_application_owner = b.addRunArtifact(exe);
+    shc_application_owner.addArgs(&.{ "check", "lib/compiler/application.duo" });
+    shc_application_owner.step.dependOn(b.getInstallStep());
+    shc_application_owner.setCwd(b.path("."));
+
+    const shc_application_step = b.step("shc-application", "SHC-01 complete application schema");
+    shc_application_step.dependOn(&shc_application_owner.step);
+
     const pass16_m1_smoke_step = b.step("pass16-m1-smoke", "Pass 16 M1: keyword + cursor + lexer corpus + embed + tokenize proofs");
     pass16_m1_smoke_step.dependOn(&pass16_m1_diff.step);
     pass16_m1_smoke_step.dependOn(&pass16_m1_proof.step);
@@ -895,6 +905,7 @@ pub fn build(b: *std.Build) void {
     agent_smoke_step.dependOn(&public_safety_cmd.step);
     agent_smoke_step.dependOn(&semantic_architecture_cmd.step);
     agent_smoke_step.dependOn(&agent_smoke_cmd.step);
+    agent_smoke_step.dependOn(shc_application_step);
     test_step.dependOn(agent_smoke_step);
 
     // The compile-time string hash (codegen/sema `calc_lua_hash`) and the

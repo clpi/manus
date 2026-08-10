@@ -18,10 +18,15 @@ nor observe a compiler run. A real bootstrap command must eventually supply
 graph-minted identities, witnesses, provenance, and observations from an
 execution world before the contract can accept B or C.
 
-`lib/compiler/application.duo` states the identity and projection shapes
-required by SHC-01. It contains no synthetic proof. Production authority begins
-when checked application identities survive the graph, DNIR, realization, and
-machine lineage without being reconstructed from source names.
+`lib/compiler/application.duo` owns the complete application shape required by
+SHC-01. Argument and return packs retain identities for values, labels,
+positions, descriptors, constants, and provenance. The application retains its
+relation, subject, argument and result packs, descriptor facts, world, effects,
+witness, provenance, and demand without declaring a smaller projection that
+could lose them. The aggregate type-checks that owner without creating or
+observing graph facts. Production authority begins when graph-minted identities
+survive the graph, DNIR, realization, and machine lineage without source-name
+reconstruction.
 
 ## Target chain
 
@@ -84,6 +89,7 @@ artifact content; binary identity is not required for B-to-C acceptance.
 duo check lib/compiler/bootstrap.duo
 duo run lib/compiler/bootstrap.duo
 duo check lib/compiler/application.duo
+zig build shc-application
 ```
 
 ## Prohibited claims

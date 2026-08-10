@@ -1,9 +1,7 @@
--- Structural schema for one semantic application.
+-- Structural owner for one semantic application.
 --
--- This file declares the information a production graph must mint and retain.
--- It does not create identities or prove that the current compiler carries
--- them. Arguments and facts remain identities so their native containers can
--- move to the compiler substrate without changing application meaning.
+-- Identities are supplied by the graph. This module preserves their complete
+-- shape; it does not mint, authenticate, project, or observe them.
 
 identity: {
     meaning: i64
@@ -11,12 +9,22 @@ identity: {
     incarnation: i64
 }
 
+pack: {
+    identity: identity
+    values: identity
+    labels: identity
+    positions: identity
+    descriptors: identity
+    constants: identity
+    provenance: identity
+}
+
 application: {
     identity: identity
     relation: identity
     subject: identity
-    arguments: identity
-    result: identity
+    arguments: pack
+    result: pack
     descriptor: identity
     facts: identity
     world: identity
@@ -24,16 +32,4 @@ application: {
     witness: identity
     provenance: identity
     demand: identity
-}
-
-projection: {
-    application: identity
-    relation: identity
-    subject: identity
-    operands: identity
-    result: identity
-    descriptor: identity
-    facts: identity
-    demand: identity
-    provenance: identity
 }
