@@ -13101,12 +13101,10 @@ source span
 
 ### Gates and performance scope
 
-- serialized `zig build unit-test --summary all` — 1171/1178 passed; fail.
-  Three added controls do not reach their intended proof: the ordinary and
-  record lineage controls use object-target spellings rejected by the real
-  target API, and the descriptor/argument control is refused before its
-  invariant. The remaining failures are the interpolation index,
-  register-spill, root-relation projection and relation-family controls;
+- serialized `zig build unit-test --summary all` — 1174/1178 passed; fail only
+  on the pre-existing interpolation index, register-spill, root-relation
+  projection and relation-family controls. The three checked-call controls now
+  reach and pass their intended object-lineage and argument-ABI invariants;
 - locked `native-census` — 95 native, 111 bail, 16 unreachable, 206
   reachable; pass against the 88-native ratchet;
 - locked `native-differential` — 47 agree, 20 diverge, 5 unsupported; fail on
@@ -13128,6 +13126,14 @@ The call path introduces no boxing, allocation, generic dispatch or C fallback.
 The extra f64 move occurs only when a value must survive another call. The
 measured benchmark manifest uses `backend=c-specialized`, so it does not
 exercise this direct path and no C-floor or runtime-speed claim is made here.
+
+The post-merge admission repair uses the production `native-object` target in
+both object-lineage controls. It also removes the obsolete coupling between an
+`f64` result and floating arguments: argument register placement is selected
+from the graph-provided parameter descriptors, general-register record slots
+are counted after expansion, and unsupported mixed register families remain a
+fail-closed refusal. The locked native differential remains 47 agree, 20
+diverge and 5 unsupported, identical to the pre-repair result.
 
 ### Remaining bridges and deletion gates
 

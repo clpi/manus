@@ -5446,7 +5446,7 @@ test "native backend: checked ordinary call reaches regions and machine lineage"
             try expectLineageCallTarget(alloc, output, module, lineage);
         }
 
-        var artifact = try emitObjectWithGraphLineage(alloc, &ast_module, "ordinary-object", &graph);
+        var artifact = try emitObjectWithGraphLineage(alloc, &ast_module, "native-object", &graph);
         defer artifact.deinit(alloc);
         try std.testing.expectEqual(@as(usize, 2), artifact.lineage.len);
         for (artifact.lineage) |lineage| {
@@ -5534,7 +5534,7 @@ test "native backend: checked record result keeps application identity" {
     try std.testing.expect(output.lineage[0].descriptor.eql(applications[0].descriptor));
     try expectLineageCallTarget(alloc, output, module, output.lineage[0]);
 
-    var artifact = try emitObjectWithGraphLineage(alloc, &ast_module, "record-object", &graph);
+    var artifact = try emitObjectWithGraphLineage(alloc, &ast_module, "native-object", &graph);
     defer artifact.deinit(alloc);
     try std.testing.expectEqual(@as(usize, 1), artifact.lineage.len);
     try std.testing.expectEqualSlices(

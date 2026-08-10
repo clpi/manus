@@ -745,31 +745,28 @@ fn functionEligible(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc) bool
         }
         return true;
     }
-    if (isFloatType(fd.func.ret_type)) {
-        const slots = f64AbiParamSlots(fd, recs) orelse return false;
-        return slots <= 8;
-    }
-    if (!isIntType(fd.func.ret_type) and !isBoolType(fd.func.ret_type) and
+    if (!isFloatType(fd.func.ret_type) and !isIntType(fd.func.ret_type) and !isBoolType(fd.func.ret_type) and
         !isStrType(fd.func.ret_type) and !isVoidType(fd.func.ret_type) and
         fd.func.ret_type != .inferred) return false;
-    // An all-f64 parameter list with an INT return was refused, while the same
-    // parameters with an f64 return were accepted by the branch above. AAPCS
-    // puts floats in v0..v7 and integers in x0..x7 — separate register files —
-    // so the return class and the parameter classes are independent, and there
-    // was never a reason to couple them. `mandel(cx: f64, cy: f64): i64` is the
-    // shape: a float kernel that answers with a count.
+    // AAPCS64 assigns the result and argument register classes independently.
+    // Determine the parameter file from parameter descriptors, never from the
+    // result descriptor.
     if (f64AbiParamSlots(fd, recs)) |slots| {
         if (slots > 0) return slots <= 8;
     }
-    if (fd.func.params.len > 8) return false;
+    var gp_slots: usize = 0;
     for (fd.func.params) |p| {
+        if (isFloatType(p.typ) or isF64Record(recs, p.typ) != null) return false;
         if (findRecordName(recs, p.typ)) |r| {
-            if (r.fields.len > max_reg_record_fields) return false;
+            gp_slots += r.fields.len;
+            if (gp_slots > 8) return false;
             continue;
         }
         // `ptr` rides x0..x7 like an i64 — it is the base address of a
         // memory-backed positional table (SH-04).
         if (!isIntType(p.typ) and !isBoolType(p.typ) and !isStrType(p.typ) and !typeIsPtr(p.typ)) return false;
+        gp_slots += 1;
+        if (gp_slots > 8) return false;
     }
     return true;
 }
