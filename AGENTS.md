@@ -150,8 +150,9 @@ Duon is developed by concurrent agents in one dirty checkout.
    path owned by another live session.
 3. Use `duo_agent_gaps_update` for numbered obligations. Do not create a second
    tracker or hand-allocate a gap.
-4. Serialize builds and benchmarks through `scripts/duo_lock.duo` or the locked
-   MCP build tools. A concurrent benchmark is not evidence.
+4. Serialize builds and benchmarks through the locked MCP build tools. Until a
+   world-backed Duon coordinator is admitted, do not teach a `std.script`
+   wrapper as canonical authority. A concurrent benchmark is not evidence.
 5. Commit only explicit owned pathspecs. Inspect the staged diff and the final
    commit before pushing. Never absorb, revert, format, or hide another agent's
    work.

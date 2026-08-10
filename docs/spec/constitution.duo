@@ -3148,6 +3148,7 @@ canonicalfinding = @{
     fields = {
         .span, .state, .subject, .relation, .intent, .law, .family,
         .why, .rewrite, .confidence, .world, .demand, .cases, .dnir,
+        .origin, .symbol, .role, .needs, .status, .action,
     }
     rule = "diagnostics MCP LSP and generated docs project this same record; plain string findings are invalid"
     rewrite = "present only where equivalence is proven; otherwise family and missing vocabulary remain explicit"
@@ -3293,4 +3294,252 @@ budgetreduction = @{
     dnir = "current deficiency: namespace call, empty sentinel, temporary and branch survive because absence and default facts were erased"
     target = "open vocabulary audit: assign no spelling until lookup presence conversion and default reduce to the smallest existing relation family"
     machine = "runtime: lookup presence test then parse or fallback; build-stage known name and environment may fold to one integer constant"
+}
+
+-- ═══ §66 · AUTHORITY, SUBJECT AND STANDARD VOCABULARY CLOSURE ══════════════
+--
+-- A home may locate a meaning. It can never grant permission to observe or
+-- change a world. This is graph law, not a deny list for particular spellings:
+-- renaming a home must not alter the verdict.
+
+authorityhome = law{
+    id    = "law.authority.home"
+    kind  = .invariant
+    holds = .never
+    binds = {
+        "homes packages and paths organize semantic identity only",
+        "filesystem environment process network clock random terminal hardware deployment and service authority exist only as world edges",
+        "an effectful application is valid only when every required world is semantically reachable",
+        "home reachability contributes zero world authority",
+    }
+    fails = "navigation used as permission"
+}
+
+homeaction = law{
+    id    = "law.home.action"
+    kind  = .invariant
+    holds = .none
+    binds = {
+        "a home may contain descriptors relations cases constants and semantic data",
+        "selecting an entity through a home performs no activity",
+        "an action reached through navigation still requires its subject relation effects and worlds",
+    }
+}
+
+subjectone = law{
+    id    = "law.subject.one"
+    kind  = .invariant
+    holds = .role
+    binds = {
+        "every application with a meaningful semantic subject records exactly one subject role",
+        "when that value is possessed and the relation is subject callable the canonical face is subject first",
+        "operation first application of its own first meaningful argument is noncanonical independent of home spelling",
+        "the verdict follows relation identity and parameter roles rather than text",
+    }
+}
+
+worldone = law{
+    id    = "law.world.one"
+    kind  = .invariant
+    holds = .edge
+    binds = {
+        "a capability sensitive relation declares its required world facts",
+        "world requirements participate in checking staging sandboxing caching optimization adaptation authorization and provenance",
+        "there is no namespace capability system beside world edges",
+    }
+}
+
+environmentone = law{
+    id    = "law.environment.one"
+    kind  = .invariant
+    holds = .unsettled
+    binds = {
+        "environment access has one semantic owner",
+        "the key or name is the subject and the environment is required world authority",
+        "the outcome preserves absent present empty and present nonempty as distinct semantic cases",
+        "foreign symbol names and package paths do not become native relations",
+        "no source spelling is admitted until the smallest existing relation family is proved",
+    }
+    keep = "vocabularyblocked is the only honest state until relation admission settles the canonical expression"
+}
+
+sentinelzero = law{
+    id    = "law.sentinel.zero"
+    kind  = .invariant
+    holds = .cases
+    binds = {
+        "an ordinary domain value never silently replaces a known presence failure or validity case",
+        "empty minus one zero nil and false retain their ordinary meanings unless the descriptor law explicitly says otherwise",
+        "a physical realization may exploit a niche or sentinel only while semantic cases remain recoverable",
+    }
+}
+
+foreignname = law{
+    id    = "law.foreign.name"
+    kind  = .invariant
+    holds = .provenance
+    binds = {
+        "a foreign api retains origin symbol lawset abi effects failure ownership uncertainty and world requirements",
+        "a foreign symbol enters native vocabulary only through a witnessed semantic equivalence",
+        "physical convergence never erases foreign semantic diversity prematurely",
+    }
+}
+
+stdlibshadow = law{
+    id    = "law.std.shadow"
+    kind  = .protocol
+    holds = .zero
+    binds = {
+        "every public standard callable declares relation identity subject role descriptor constraints worlds effects cases realization freedoms and foreign provenance",
+        "a wrapper duplicating an existing relation under a subsystem home is rejected",
+        "a namespace carrying authority a subject hidden as its argument a collapsed case forced materialization or foreign name disguised as native semantics is rejected",
+        "standard vocabulary must compose across native wasm and compatible foreign lawsets",
+    }
+}
+
+vocabclosed = law{
+    id    = "law.vocab.closed"
+    kind  = .protocol
+    holds = .admitted
+    binds = {
+        "agents never invent public standard vocabulary locally",
+        "relation admission returns existing derivable new foreign or vocabularyblocked",
+        "new is accepted only when an independent semantic distinction remains after relation level fact descriptor place world origin abi and target factoring",
+        "vocabularyblocked is preferable to a plausible helper without authority",
+    }
+}
+
+worldgate = law{
+    id    = "law.gate.world"
+    kind  = .protocol
+    holds = .semantic
+    binds = {
+        "for every effectful application required worlds are a subset of semantically reachable worlds",
+        "homes contribute no authority",
+        "the positive control uses a legal arbitrary home and still fails for the absent environment world",
+    }
+}
+
+subjectgate = law{
+    id    = "law.gate.subject"
+    kind  = .protocol
+    holds = .identity
+    binds = {
+        "resolve relation identity subject role and actual value occupying that role",
+        "reject an operation first home application when that value supports the canonical subject call",
+        "renaming the home never changes the result",
+    }
+}
+
+vocabgate = law{
+    id    = "law.gate.vocab"
+    kind  = .protocol
+    holds = .identity
+    binds = {
+        "every public standard compiler shell MCP generated and documented operation resolves to one admitted relation identity",
+        "duplicate names recoverable qualifiers and raw foreign symbols are rejected",
+    }
+}
+
+worldnamegate = law{
+    id    = "law.gate.worldname"
+    kind  = .protocol
+    holds = .semantic
+    binds = {
+        "audit resolved standard exports rather than source strings",
+        "semantic homes remain legal and capability homes remain powerless",
+        "a home rename is required to preserve every verdict",
+    }
+}
+
+sentinelgate = law{
+    id    = "law.gate.sentinel"
+    kind  = .protocol
+    holds = .flow
+    binds = {
+        "follow an external or capability result into literal comparison and conditional demand",
+        "diagnose when its contract already carries the semantic case represented by that literal",
+        "the literal spelling is irrelevant",
+    }
+}
+
+controlreduce = law{
+    id    = "law.gate.controlreduce"
+    kind  = .protocol
+    holds = .proved
+    binds = {
+        "audit conditional demand for default projection failure routing state establishment finite dispatch and iteration filtering",
+        "reject only when an admitted relation is observationally equivalent and at least as optimizable",
+        "irreducible conditional demand remains canonical",
+    }
+}
+
+corpuszero = law{
+    id    = "law.corpus.zero"
+    kind  = .protocol
+    holds = .semantic
+    binds = {
+        "semantic canonicality runs over every tracked source and generated canonical example",
+        "namespace world subject sentinel duplicate relation foreign name conditional bridge and result debt only descend to zero",
+        "text censuses may guard migration spelling but never claim semantic proof",
+    }
+}
+
+generatedzero = law{
+    id    = "law.generated.zero"
+    kind  = .invariant
+    holds = .author
+    binds = {
+        "generated canonicality debt is repaired at the generator",
+        "generated output receives no whitelist",
+    }
+}
+
+touchzero = law{
+    id    = "law.touch.zero"
+    kind  = .protocol
+    holds = .owned
+    binds = {
+        "a touched semantic region leaves mechanically repairable canonical debt at zero",
+        "remaining debt records vocabularyblocked implementationblocked or migrationblocked with stable identity and rationale",
+        "existing code is never a justification",
+    }
+}
+
+commitzero = law{
+    id    = "law.commit.zero"
+    kind  = .protocol
+    holds = .same
+    binds = {
+        "precommit parses normalizes resolves identities infers subject roles resolves worlds audits canonicality formats safe equivalences checks ratchets and tests",
+        "CI executes the same semantic gate",
+        "no agent override exists",
+    }
+}
+
+authorityfinding = @{
+    relation = "foreign symbol awaiting canonical relation admission"
+    subject = "resolved value occupying the semantic subject role"
+    authority = "required and reachable worlds"
+    form = "observed application projection"
+    laws = { "law.authority.home", "law.subject.one", "law.vocab.closed" }
+    status = .vocabularyblocked
+    action = "finalize or use the admitted relation; never invent a replacement helper"
+}
+
+authorityinvariant = law{
+    id    = "law.authority.rename"
+    kind  = .invariant
+    holds = .stable
+    binds = {
+        "changing an arbitrary namespace home or package spelling never changes canonicality",
+        "canonicality follows subject relation world descriptor lawset demand and provenance",
+    }
+}
+
+semanticblock = @{
+    gap = 124
+    state = .vocabularyblocked
+    why = "the current staged text census is a migration ratchet; authoritative world subject vocabulary sentinel and control gates require graph queries in self hosted Duon"
+    unlock = "gap 121 module initialization then graph fact access from Duon compiler modules"
 }
