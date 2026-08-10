@@ -184,7 +184,9 @@ debt = {
 
 main = ()
     code = 0
-    cmd = "if git cat-file -e :src/ast.zig && git cat-file -e :src/parser.zig && git cat-file -e :src/pretty.zig && git cat-file -e :src/duo_native_ir.zig && git cat-file -e :src/semantic_graph.zig && git cat-file -e :scripts/semanticgate.duo && git grep --cached -q -E {q}{parserpat}{q} -- {front} && git grep --cached -q -E {q}{astpat}{q} -- {after} && git grep --cached -q {q}boxpat = {q} -- scripts/semanticgate.duo; then git grep --cached -q {q}boxpat = {q} -- {duofiles}; status=$?; if test $status = 1; then printf {q}%s\\n{q} {q}pub const IfExpr = struct {{{q} | grep -q -E {q}{parserpat}{q} && printf {q}%s\\n{q} {q}pub const relation = struct {{{q} | grep -q -v -E {q}{parserpat}{q} && printf {q}%s\\n{q} {q}{debt.boxed.positive}{q} | grep -q -E {q}{boxpat}{q} && printf {q}%s\\n{q} {q}{debt.boxed.negative}{q} | grep -q -v -E {q}{boxpat}{q} && printf 1; else printf 0; fi; else printf 0; fi"
+    -- Every census pathset is compared with an independently expanded source
+    -- set. An empty or narrowed pathset with zero matches must withhold counts.
+    cmd = "allfiles=$(git ls-files -- {all}); frontfiles=$(git ls-files -- {front}); afterfiles=$(git ls-files -- {after}); provenfiles=$(git ls-files -- {proven}); duos=$(git ls-files -- {duofiles}); expectedall=$(git ls-files -- {q}src/*.zig{q}); expectedfront=$(git ls-files -- src/ast.zig src/parser.zig src/macro_expand.zig); expectedafter=$(git ls-files -- {q}src/*.zig{q} {q}:(exclude)src/ast.zig{q} {q}:(exclude)src/parser.zig{q} {q}:(exclude)src/macro_expand.zig{q} {q}:(exclude)src/pretty.zig{q}); expectedproven=$(git ls-files -- src/ast.zig src/parser.zig src/pretty.zig); expectedduos=$(git ls-files -- {q}*.duo{q} {q}:(exclude)scripts/semanticgate.duo{q} {q}:(exclude)scripts/idiomgate.duo{q}); if test -n \"$allfiles\" && test -n \"$duos\" && test \"$allfiles\" = \"$expectedall\" && test \"$frontfiles\" = \"$expectedfront\" && test \"$afterfiles\" = \"$expectedafter\" && test \"$provenfiles\" = \"$expectedproven\" && test \"$duos\" = \"$expectedduos\" && test -z \"$(git ls-files -- {q}src/no-such-*.zig{q})\" && printf {q}%s\\n{q} \"$allfiles\" | grep -qx src/ast.zig && printf {q}%s\\n{q} \"$allfiles\" | grep -qx src/duo_native_ir.zig && printf {q}%s\\n{q} \"$duos\" | grep -qx lib/compiler/application.duo && git cat-file -e :src/ast.zig && git cat-file -e :src/parser.zig && git cat-file -e :src/pretty.zig && git cat-file -e :src/duo_native_ir.zig && git cat-file -e :src/semantic_graph.zig && git cat-file -e :scripts/semanticgate.duo && git grep --cached -q -E {q}{parserpat}{q} -- {front} && git grep --cached -q -E {q}{astpat}{q} -- {after} && git grep --cached -q {q}boxpat = {q} -- scripts/semanticgate.duo; then git grep --cached -q {q}boxpat = {q} -- {duofiles}; status=$?; if test $status = 1; then printf {q}%s\\n{q} {q}pub const IfExpr = struct {{{q} | grep -q -E {q}{parserpat}{q} && printf {q}%s\\n{q} {q}pub const relation = struct {{{q} | grep -q -v -E {q}{parserpat}{q} && printf {q}%s\\n{q} {q}{debt.boxed.positive}{q} | grep -q -E {q}{boxpat}{q} && printf {q}%s\\n{q} {q}{debt.boxed.negative}{q} | grep -q -v -E {q}{boxpat}{q} && printf 1; else printf 0; fi; else printf 0; fi"
     if std.proc.capture(cmd):to(i64) != 1
         print("(semanticgate, control, source, staged pathspec parser classifier or exclusion failed)")
         code = 3
@@ -250,7 +252,7 @@ main = ()
         render += std.proc.capture(cmd):to(i64)
         cmd = "git grep --cached -h -E {q}{physicalpat}{q} -- src/duo_native_ir.zig 2>/dev/null | wc -l"
         physical = std.proc.capture(cmd):to(i64)
-        cmd = "git grep --cached -h -E {q}{newpat}{q} -- {all} 2>/dev/null | wc -l"
+        cmd = "files=$(git ls-files -- {all}); if test -z \"$files\"; then printf 1000000; else git grep --cached -h -E {q}{newpat}{q} -- $files 2>/dev/null | wc -l; fi"
         unclassified = std.proc.capture(cmd):to(i64)
         cmd = "git grep --cached -h -E {q}{astpat}{q} -- {after} 2>/dev/null | wc -l"
         consumer = std.proc.capture(cmd):to(i64)
@@ -264,7 +266,7 @@ main = ()
         ir = std.proc.capture(cmd):to(i64)
         cmd = "git grep --cached -h -E {q}{taxpat}{q} -- src/duo_native_ir.zig 2>/dev/null | wc -l"
         taxonomy = std.proc.capture(cmd):to(i64)
-        cmd = "a=$(git grep --cached -h -E {q}{apipat}{q} -- {after} 2>/dev/null | wc -l); b=$(git grep --cached -h {q}lua_Value{q} -- {all} 2>/dev/null | wc -l); printf {q}%s{q} $((a * 10000 + b))"
+        cmd = "files=$(git ls-files -- {all}); if test -z \"$files\"; then printf 99999999; else a=$(git grep --cached -h -E {q}{apipat}{q} -- {after} 2>/dev/null | wc -l); b=$(git grep --cached -h {q}lua_Value{q} -- $files 2>/dev/null | wc -l); printf {q}%s{q} $((a * 10000 + b)); fi"
         api = std.proc.capture(cmd):to(i64)
         combined = api
         boxed = combined % 10000
