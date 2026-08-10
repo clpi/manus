@@ -168,23 +168,28 @@ fun bench_run(suite: str, timeout: int): any
     { exit_code = rc, passed = rc == 0, suite = suite }
 end
 
--- Run a command under the build lock and hand back BOTH its status and its
--- output. Callers used to reach for std.script directly for this; keeping it
--- here means the lock discipline lives in one place.
-fun locked_capture(cmd: str): any
+-- Run a fixed internal command under the build lock and retain its output and
+-- status from the same process. This relation is not exposed as an MCP tool.
+capture: any = (cmd: str)
     full = cmd
     if os.getenv("DUO_LOCK_HELD") ~= "1"
         full = lockprefix .. cmd
     end
     out = std.proc.capture(full .. " 2>&1; echo \"duoexit:$?\"")
-    rc = 0
-    mpos = string.find(out, "duoexit:", 1, true)
-    if mpos ~= nil
-        rc = tonumber(string.gsub(string.sub(out, mpos + 8), "%s+", "")) or 0
-        out = string.sub(out, 1, mpos - 1)
-    end
-    { exit_code = rc, passed = rc == 0, output = out }
-end
+    mark = "\nduoexit:"
+    raw = out
+    at: i64 = 0
+    i: i64 = 1
+    while i + #mark - 1 <= #raw
+        if raw:sub(i, i + #mark - 1) == mark
+            at = i
+        i = i + 1
+    status: i64 = -1
+    out = raw
+    if at > 0
+        status = raw:sub(at + #mark):to(i64)
+        out = raw:sub(1, at - 1)
+    { status = status, passed = status == 0, output = out }
 
 -- === DOCUMENT ENVELOPE (Pass 117 §0g / H-8 partial repair) ===
 --
@@ -493,70 +498,80 @@ fun perf_ledger(): str
     end
     "Performance ledger not found at " .. perfpath
 end
--- === Benchmark regression analysis ===
--- Interpret a benchmark run's own verdict (the bench script already compares Duo
--- RESULT lines against reference C and prints a pass marker). We extract RESULT
--- rows, detect failure/timing-regression lines, and return a structured verdict.
--- If bench_output is empty, run `zig build <suite>` under the build lock and
--- capture stdout. Pattern-free: literal find/sub only (the pattern engine mis-handles
--- checkmarks, ">=", and the "-" in RESULT names).
-fun bench_regressions(bench_output: str, suite: str): any
-    out = bench_output
-    bt = suite
-    if bt == nil then bt = "bench" end
-    if bt == "" then bt = "bench" end
-    if out == nil then out = "" end
-    if out == "" then
-        out = std.proc.capture("duo run scripts/duo_lock.duo -- zig build " .. bt .. " 2>&1")
-    end
-    pass_full = "All benchmarks: results match"
-    pass_correct = "benchmark results match reference C"
-    passed = false
-    if string.find(out, pass_full, 1, true) ~= nil then passed = true end
-    if string.find(out, pass_correct, 1, true) ~= nil then passed = true end
-    results = {}
-    failures = {}
-    timing_notes = {}
-    lines = string.split(out, "\n")
-    i = 1
-    while i <= #lines
-        ln = lines[i]
-        if string.sub(ln, 1, 7) == "RESULT " then
-            rest = string.sub(ln, 8)
-            sp = string.find(rest, " ", 1, true)
-            nm = rest
-            val = ""
-            if sp ~= nil then
-                nm = string.sub(rest, 1, sp - 1)
-                val = string.sub(rest, sp + 1)
-            end
-            _ = table.insert(results, { name = nm, value = val })
-        end
-        is_fail = false
-        if string.find(ln, "mismatch", 1, true) ~= nil then is_fail = true end
-        if string.find(ln, "FAIL", 1, true) ~= nil then is_fail = true end
-        if string.find(ln, "error:", 1, true) ~= nil then is_fail = true end
-        if is_fail then _ = table.insert(failures, ln) end
-        if string.find(ln, "regress", 1, true) ~= nil then _ = table.insert(timing_notes, ln) end
-        i = i + 1
-    end
-    summary = ""
-    if passed then
-        summary = "PASS: " .. #results .. " RESULT lines verified; Duo .lua/.duo <= C gate met."
-    else
-        summary = "CHECK: pass marker absent; " .. #results .. " RESULT lines; " .. #failures .. " failure line(s); " .. #timing_notes .. " timing note(s)."
-    end
-    {
-        passed = passed,
-        suite = bt,
-        result_count = #results,
-        results = results,
-        failure_count = #failures,
-        failures = failures,
-        timing_notes = timing_notes,
-        summary = summary,
+-- Gate-private bootstrap projection for GAP-119. The harness owns these
+-- witnesses; this relation only projects its retained artifact into fields.
+observe: any = (proof: any, line: str)
+    if line:find("All 40 benchmark results match reference C for .lua and .duo.", 1, true) > 0
+        proof.correct = true
+    if line:find("fold classifier control: 11/11 agree", 1, true) > 0
+        proof.fold = true
+    if line:find("REMOVED from the speed table (gap[096]), 3 of 40 rows", 1, true) > 0
+        proof.removal = true
+    if line:find("negative control on real data: the rule fires on 0 rows", 1, true) > 0
+        proof.negative = true
+    if line:find("All benchmarks: results match and Duo .lua/.duo >= C on measured time", 1, true) > 0
+        proof.speed = true
+    if line:find("mismatch", 1, true) > 0
+        proof.failures:push("mismatch")
+    if line:find("FAIL:", 1, true) > 0
+        proof.failures:push("FAIL:")
+    if line:find("error:", 1, true) > 0
+        proof.failures:push("error:")
+    proof
+
+prove: any = (suite: str)
+    if suite != "bench"
+        return {
+            passed = false
+            suite = suite
+            status = -1
+            error = "benchmark proof supports only the release bench suite"
+        }
+    path = os.tmpname()
+    command = "zig build bench"
+    run = capture(command .. " > '" .. path .. "' 2>&1")
+    status = run.status
+    proof = {
+        correct = false
+        fold = false
+        removal = false
+        negative = false
+        speed = false
+        failures = {}
+        observe = observe
     }
-end
+    artifact = document(path, "benchmark", 0)
+    if not artifact.exists
+        proof.failures:push("artifact")
+    else
+        for line in artifact.text:split("\n")
+            proof = proof:observe(line)
+    positive = { correct = false, fold = false, removal = false, negative = false, speed = false, failures = {}, observe = observe }
+    positive = positive:observe("All 40 benchmark results match reference C for .lua and .duo.")
+    positive = positive:observe("fold classifier control: 11/11 agree")
+    positive = positive:observe("REMOVED from the speed table (gap[096]), 3 of 40 rows")
+    positive = positive:observe("negative control on real data: the rule fires on 0 rows")
+    positive = positive:observe("All benchmarks: results match and Duo .lua/.duo >= C on measured time")
+    reject = { correct = false, fold = false, removal = false, negative = false, speed = false, failures = {}, observe = observe }
+    reject = reject:observe("FAIL: synthetic control")
+    controls = positive.correct and positive.fold and positive.removal
+        and positive.negative and positive.speed and #positive.failures == 0
+        and #reject.failures == 1
+    {
+        passed = status == 0 and proof.correct and proof.fold and proof.removal
+            and proof.negative and proof.speed and #proof.failures == 0 and controls
+        correct = proof.correct
+        fold = proof.fold
+        removal = proof.removal
+        negative = proof.negative
+        speed = proof.speed
+        failures = proof.failures
+        suite = suite
+        status = status
+        artifact = path
+        gate = "zig build bench"
+        controls = controls
+    }
 
 -- === Open performance gaps ===
 -- Surface perf / native-lowering / codegen gaps that are still open in the
@@ -1439,7 +1454,7 @@ m.agent_smoke = agent_smoke
 m.build_run = build_run
 m.document = document
 m.bench_run = bench_run
-m.locked_capture = locked_capture
+m.capture = capture
 m.semantic_snapshot_raw = semantic_snapshot_raw
 m.repo_tooling = repo_tooling
 m.dump_c = dump_c
@@ -1471,7 +1486,7 @@ m.semantic_transaction_validate = semantic_transaction_validate
 m.dev_integration_list = dev_integration_list
 m.dev_integration_submit = dev_integration_submit
 m.dev_validate_run = dev_validate_run
-m.bench_regressions = bench_regressions
+m.prove = prove
 m.perf_gaps = perf_gaps
 m.audit_codegen_pitfalls = audit_codegen_pitfalls
 m.exponential_onboard = exponential_onboard

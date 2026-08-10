@@ -145,6 +145,12 @@ main = (): i64
         report(true, "duo_bench serves 35 tools", "")
     end
 
+    if has(bout, "bench_output")
+        report(false, "benchmark proof rejects detached transcripts", "duo_bench_regressions still accepts caller-supplied output")
+        fails = fails + 1
+    if not has(bout, "bench_output")
+        report(true, "benchmark proof rejects detached transcripts", "")
+
     -- Named tools. A count alone passes when a tool is renamed away.
     for pos, name in {"duo_agent_gaps_update", "duo_coordination_read", "duo_dev_claim_acquire", "duo_dev_claim_release", "duo_dev_claim_files", "duo_agent_smoke"}
         if not has(bout, "\"name\":\"" .. name .. "\"")

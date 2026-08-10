@@ -333,22 +333,17 @@ std.mcp.register_tool("duo_dev_validate_run", {
 end)
 
 std.mcp.register_tool("duo_bench_regressions", {
-    description = "Detect benchmark regressions: compare Duo RESULT/timing vs reference C. Pass bench_output to analyze captured stdout, else runs `zig build <suite>` under lock.",
+    description = "Run the release benchmark aggregate and return its process-bound status and raw artifact.",
     type = "object",
     properties = {
-        bench_output = { type = "string", description = "Captured bench stdout (optional; if empty, runs bench)" },
-        suite = { type = "string", description = "bench|ml-bench|honest-bench (default bench)" },
+        suite = { type = "string", ["enum"] = { "bench" }, description = "Release proof suite" },
     },
 }, fun(args)
-    bo = args.bench_output
-    if bo == nil
-        bo = ""
-    end
     bt = args.suite
     if bt == nil
         bt = "bench"
     end
-    std.json.encode(shared.bench_regressions(bo, bt))
+    std.json.encode(shared.prove(bt))
 end)
 
 std.mcp.register_tool("duo_perf_gaps", {
@@ -462,9 +457,9 @@ std.mcp.register_tool("duo_embed_symbols", {
         -- never-substituted template placeholder: `cd <DUO_ROOT>` is a shell
         -- redirect from a file named DUO_ROOT, so the rebuild always ran in
         -- the wrong directory or not at all.
-        r = shared.locked_capture("cd " .. rd .. " && " .. shared.duobin .. " run scripts/build_symbol_index.duo -- " .. ipath)
-        if r.exit_code ~= 0
-            return std.json.encode({ error = "symbol index build failed", exit_code = r.exit_code })
+        r = shared.capture("cd " .. rd .. " && " .. shared.duobin .. " run scripts/build_symbol_index.duo -- " .. ipath)
+        if r.status ~= 0
+            return std.json.encode({ error = "symbol index build failed", status = r.status })
         end
     end
 
