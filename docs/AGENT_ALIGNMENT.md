@@ -10,31 +10,32 @@ into a second specification. Read `docs/spec/constitution.duo`, `CLAUDE.md`,
 Move monotonically to:
 
 ```text
-current-canonical Duon source
--> Duon-owned semantic identities and facts
+current canonical `.id` source
+-> Idsem-owned semantic identities and facts
 -> compiler B through the honest existing backend
 -> B compiles C from the identical compiler source
 -> B/C semantic and behavioral equivalence
--> progressively Duon-owned realization and backend
--> Duon Wasm faster than Wasmtime on equivalent semantics
+-> progressively Idsem-owned realization and backend
+-> Idsem Wasm faster than Wasmtime on equivalent semantics
 ```
 
-The destination is 100% self-hosted canonical Duon. A `.duo` filename does not
-transfer authority: generated projections, epoch-1 syntax, C-backed proofs, and
-Duon wrappers over Zig owners remain bootstrap debt.
+The destination is 100% self-hosted canonical Idsem. A `.id` filename does not
+transfer authority, and `.duo` remains historical source provenance during
+migration. Generated projections, epoch-1 syntax, C-backed proofs, and Idsem
+wrappers over Zig owners remain bootstrap debt.
 
-Duon and Lua are distinct lawsets hosted by one compiler. Duon is not a Lua
-superset, and Lua compatibility may not define Duon semantics or architecture.
+Idsem and Lua are distinct lawsets hosted by one compiler. Idsem is not a Lua
+superset, and Lua compatibility may not define Idsem semantics or architecture.
 
 ## Current phase
 
 The language architecture is already specified. The work now is the minimum
 closed semantic kernel, compiler B, bootstrap closure, and proof. Do not start another pass,
 invent another semantic taxonomy, add surface syntax, or strengthen a bootstrap
-subsystem that the constitution requires Duon to replace.
+subsystem that the constitution requires Idsem to replace.
 
 Horizontal ports are useful only when they remove a dependency. They are not
-self-hosting progress unless semantic and production authority move into Duon.
+self-hosting progress unless semantic and production authority move into Idsem.
 
 ## No New Zig
 
@@ -44,17 +45,17 @@ registries, or Zig reconstruction caches.
 An edit to existing Zig is exceptional bootstrap wiring. It is admissible only
 when all of these are true:
 
-1. Canonical Duon already owns the semantic fact or relation.
+1. Canonical Idsem already owns the semantic fact or relation.
 2. The edit only passes that authority into the current production path.
 3. No decision is reconstructed from syntax, text, names, or backend shape.
 4. Host semantic code is net negative, or the same change names the exact
-   deletion trigger and the Duon file that replaces it.
+   deletion trigger and the Idsem file that replaces it.
 5. A focused direct-native value proof fails before the edit and passes after.
 
-If those conditions do not hold, implement the missing authority in Duon first.
+If those conditions do not hold, implement the missing authority in Idsem first.
 Running the existing Zig bootstrap and its gates is validation, not permission
 to expand it. Retain old host implementations as differential oracles until the
-Duon replacement is proven, then delete them.
+Idsem replacement is proven, then delete them.
 
 ## SHC Queue
 
@@ -65,7 +66,7 @@ corpus sweep, backend target, or tool surface for the earliest open rung.
    acceptance contract in `lib/compiler/bootstrap.duo`.
 2. **SHC-01 application.** Preserve relation, subject, arguments, result,
    descriptor, world, witness, provenance, and demand identity.
-3. **SHC-02 evidence.** Make provenance and witnesses ordinary queryable Duon
+3. **SHC-02 evidence.** Make provenance and witnesses ordinary queryable Idsem
    facts so no consumer reconstructs them from syntax or names.
 4. **SHC-03 substrate.** Finish bytes, views, strings, arenas, vectors, maps,
    interning, bitsets, source/span, filesystem read, and diagnostics. Nothing
@@ -77,7 +78,7 @@ corpus sweep, backend target, or tool surface for the earliest open rung.
    make B build C from identical source; prove semantic, diagnostic, behavioral,
    and artifact equivalence; then retire Zig semantic owners in dependency order.
 7. **SHC-15 backend.** After B -> C, progressively transfer flow, allocation,
-   encoding, object emission, and linking into Duon.
+   encoding, object emission, and linking into Idsem.
 8. **Wasm supremacy.** Reuse the same value, demand, liveness, allocation,
    encoding, and provenance substrate. Never create a Ward-only IR kingdom.
 
@@ -93,7 +94,7 @@ Every capability report keeps these facts separate:
 
 ```text
 canonical source
-Duon semantic owner
+Idsem semantic owner
 direct execution
 production dispatch
 oracle identity
@@ -125,8 +126,9 @@ not release evidence.
 ## Coordination
 
 Inspect the dirty tree and live claims before work. Claim exact paths through
-the Duo MCP, never overwrite another session, never stash, never hard reset,
-and serialize heavy validation. Commit only explicit pathspecs when requested.
+the repository MCP, never overwrite another session, never stash, never hard
+reset, and serialize heavy validation. Commit only explicit pathspecs when
+requested.
 
 Record architectural blockers in `gaps/GAP-0NN.md`. Record performance evidence
 in `docs/performance.md`. Use the current checkout and fixed artifacts for every
