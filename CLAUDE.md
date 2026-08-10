@@ -262,6 +262,47 @@ entry invokes the same command authority and canonical source discovery no
 longer needs the historical suffix. Rename behind executable evidence; never
 half-rename a runtime path.
 
+### §-0 closure
+
+Semantic identity is the spine, not the whole project claim. Every production
+change must answer all of these dimensions without hiding cost on another one:
+
+| dimension | required question |
+|---|---|
+| identity | does one meaning remain one exact graph entity and one native word? |
+| facts | is known information preserved instead of reconstructed from source or physical form? |
+| demand | does unused work disappear before materialization or runtime exists? |
+| realization | do lawful physical choices remain open until observation forces commitment? |
+| runtime | can equivalent semantics retain at least C-equivalent execution? |
+| compile | did compiler work, state, allocation, and expensive analysis remain minimal? |
+| startup | did the cold path and initialization obligation remain minimal? |
+| footprint | did compiler memory, runtime memory, artifact size, and runtime surface remain minimal? |
+| foreign | does the imported lawset retain provenance while using the shared graph and realization architecture? |
+| selfhost | did executed Idsem authority move toward seed builds B, B builds C, and proved B/C closure? |
+| agent | can the resulting fact be inspected and acted on through graph identity rather than reparsed text? |
+| provenance | can every important resolution, specialization, allocation, realization, and machine decision explain its cause? |
+| surface | is canonical `.id` still dense, familiar, regular, and readable? |
+| convergence | did capability grow without another identity, graph, demand, provenance, execution, or tooling authority? |
+
+The physical rule is **maximum meaning, minimum state**. Use dense owner-scoped
+handles, packed facts and edges, arenas, bitsets, compact ranges, and demanded
+projections. Meaning does not imply materialization; compiler knowledge does
+not imply runtime state. Cheap fact closure precedes opportunity estimation;
+expensive reasoning runs only when its expected value justifies compiler cost
+and exact dependencies permit incremental reuse.
+
+Specialization remains one monotonic path from dynamic through inferred,
+guarded, sealed, native, and target realization. Users do not enter another
+language mode. Stronger facts remove cost while preserving or enlarging lawful
+cheap realizations.
+
+FTCFTW evidence reports native runtime, compile, startup, memory, artifact,
+incremental, and realization effects. Wasm evidence separately reports decode
+and import, compile, instantiate, startup, steady execution, memory, runtime
+footprint, artifact size, and end-to-end latency. Throughput alone never closes
+FTCFTW, and Wasm remains an imported lawset in the shared execution
+architecture rather than a permanent virtual-machine ontology.
+
 ### §0 HOT SCREEN — newest law, most likely to look wrong to you. It is law.
 
 1. **LAW-ONE: IDENTIFIERS ARE ONE LOWERCASE WORD.** `grep [a-z]_[a-z]` outside

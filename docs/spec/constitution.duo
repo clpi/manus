@@ -3583,8 +3583,8 @@ authorityinvariant = law{
 semanticblock = @{
     gap = 124
     state = .vocabularyblocked
-    why = "the current staged text census is a migration ratchet; authoritative world subject vocabulary sentinel and control gates require graph queries in self hosted Duon"
-    unlock = "gap 121 module initialization then graph fact access from Duon compiler modules"
+    why = "the current staged text census is a migration ratchet; authoritative world subject vocabulary sentinel and control gates require graph queries in self hosted Idsem"
+    unlock = "gap 121 module initialization then graph fact access from Idsem compiler modules"
 }
 
 literal = {}
@@ -3611,7 +3611,7 @@ literal.bytes = law{
         "one byte remains a byte sequence of cardinality one and may scalarize only under proved byte demand",
         "text byte codepoint scalar grapheme and character remain distinct descriptors and facts",
         "raw source characters encode as source utf8 bytes; byte escapes are byte oriented and unicode escapes are rejected until separately admitted",
-        "historical lua single quoted text retains compatibility provenance and canonicalizes to double quoted text before native duon meaning",
+        "historical lua single quoted text retains compatibility provenance and canonicalizes to double quoted text before native idsem meaning",
     }
 }
 
@@ -3671,5 +3671,70 @@ lexical.block = @{
     gap = 145
     state = .implementationblocked
     why = "both live lexers collapse text bytes and lua long strings into one string token while hash remains a length token and downstream consumers reconstruct delimiters"
-    unlock = "distinct duon owned token identities plus generated grammar roles compatibility provenance canonical migrations and derived tooling projections"
+    unlock = "distinct idsem owned token identities plus generated grammar roles compatibility provenance canonical migrations and derived tooling projections"
+}
+
+-- project closure 2026-08-10
+--
+-- Semantic identity is the spine, not the whole acceptance claim. Every
+-- production change is judged across meaning, physical work, human use and
+-- sovereignty. A local win may not hide cost or authority on another axis.
+
+closure = law{
+    id    = "law.project.closure"
+    kind  = .protocol
+    holds = .proved
+    binds = {
+        "identity remains the exact graph entity and one meaning retains one native word",
+        "facts already known are preserved and never reconstructed from names paths syntax hashes or physical operations",
+        "demand removes unused work before storage allocation boxing aggregation adaptation or runtime exists",
+        "realization retains every lawful physical choice until an observable contract forces commitment",
+        "runtime compile startup memory artifact incremental and retained realization effects are reported for every architecture closure claim",
+        "foreign semantics retain origin law ownership failure abi world effect and uncertainty while native and foreign execution share graph demand realization and machine architecture",
+        "self hosting progress is an executed semantic authority transfer toward seed builds b b builds c and proved b c closure",
+        "agent tools inspect and act on graph identity facts dependencies demand provenance and transformation without reparsing human text",
+        "important resolution specialization allocation realization and machine decisions retain inspectable causal evidence",
+        "canonical id source remains dense familiar regular and readable while source faces erase into semantic facts after resolution",
+        "capability grows through admitted relations and facts without creating another identity graph demand provenance execution or tooling authority",
+    }
+    fails = "a local correctness performance tooling or migration claim that hides added work lost facts duplicated authority or weaker human source"
+}
+
+economy = law{
+    id    = "law.project.economy"
+    kind  = .invariant
+    holds = .minimal
+    binds = {
+        "maximum semantic knowledge uses minimum physical compiler state",
+        "graph identity facts packs edges and ranges use compact owner scoped storage and projections are materialized only when demanded",
+        "cheap fact closure precedes opportunity estimation and expensive analysis is demanded only where expected value justifies its cost",
+        "persistent exact dependencies permit incremental reuse without guessing continuity from names paths spans or fingerprints",
+        "meaning does not imply materialization and compiler knowledge does not imply runtime state",
+    }
+}
+
+specialization = law{
+    id    = "law.project.specialization"
+    kind  = .invariant
+    holds = .progressive
+    binds = {
+        "one source program may progress from dynamic through inferred guarded sealed native and target realization without entering another language mode",
+        "call pack return demand descriptor shape world effect profile and target facts monotonically remove cost without replacing semantic identity",
+        "a value binding pack table closure iterator or result becomes a place aggregate allocation or runtime object only when observation demands it",
+        "stronger knowledge must preserve or enlarge lawful cheap realizations and may never force a representation merely because the compiler learned more",
+    }
+}
+
+ftcftw = law{
+    id    = "law.project.ftcftw"
+    kind  = .protocol
+    holds = .measured
+    binds = {
+        "equivalent native semantics retain at least c equivalent runtime compile startup memory binary incremental and realization outcomes",
+        "an idsem win uses retained semantic knowledge and transferable realization rather than fixed answers inputs seeds counts or benchmark specific recognition",
+        "wasm evidence separately measures decode import compile instantiate startup steady execution memory runtime footprint artifact size and end to end latency",
+        "wasm enters the shared graph with its exact lawset and never creates a permanent virtual machine semantic kingdom",
+        "a throughput win cannot hide worse cold start compiler work memory runtime obligation or artifact footprint",
+        "every measurement names the executed backend snapshot comparator workload machine and known unsupported or divergent cases",
+    }
 }
