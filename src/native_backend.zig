@@ -7097,6 +7097,24 @@ test "unused immediate bindings do not demand register or stack places" {
     defer alloc.free(obj);
     try std.testing.expect(obj.len > 0);
 
+    var compatibility_lex = Lexer.init(source, "pass11_spill_proof.duo");
+    var compatibility_parser = Parser.init(&compatibility_lex, alloc);
+    compatibility_parser.duo_mode = true;
+    var compatibility_mod = try compatibility_parser.parse_module();
+    var compatibility_sem = Sema.init(alloc);
+    defer compatibility_sem.deinit();
+    compatibility_sem.duo_mode = true;
+    try compatibility_sem.check_module(&compatibility_mod);
+
+    try std.testing.expectEqualStrings("pass11_spill_proof.id", mod.file);
+    try std.testing.expectEqualStrings("pass11_spill_proof.duo", compatibility_mod.file);
+    const compatibility_listing = try emitAssembly(alloc, &compatibility_mod, "native-asm");
+    defer alloc.free(compatibility_listing);
+    try std.testing.expectEqualStrings(listing, compatibility_listing);
+    const compatibility_obj = try emitObject(alloc, &compatibility_mod, "native-object");
+    defer alloc.free(compatibility_obj);
+    try std.testing.expectEqualSlices(u8, obj, compatibility_obj);
+
     const minimal_source =
         \\main: i64 = ()
         \\    v0 = 1
@@ -7118,24 +7136,6 @@ test "unused immediate bindings do not demand register or stack places" {
     const minimal_obj = try emitObject(alloc, &minimal_mod, "native-object");
     defer alloc.free(minimal_obj);
     try std.testing.expectEqualSlices(u8, minimal_obj, obj);
-
-    var historical_lex = Lexer.init(minimal_source, "unused-binding-minimal.duo");
-    var historical_parser = Parser.init(&historical_lex, alloc);
-    historical_parser.duo_mode = true;
-    var historical_mod = try historical_parser.parse_module();
-    var historical_sem = Sema.init(alloc);
-    defer historical_sem.deinit();
-    historical_sem.duo_mode = true;
-    try historical_sem.check_module(&historical_mod);
-
-    try std.testing.expectEqualStrings("unused-binding-minimal.id", minimal_mod.file);
-    try std.testing.expectEqualStrings("unused-binding-minimal.duo", historical_mod.file);
-    const historical_listing = try emitAssembly(alloc, &historical_mod, "native-asm");
-    defer alloc.free(historical_listing);
-    try std.testing.expectEqualStrings(minimal_listing, historical_listing);
-    const historical_obj = try emitObject(alloc, &historical_mod, "native-object");
-    defer alloc.free(historical_obj);
-    try std.testing.expectEqualSlices(u8, minimal_obj, historical_obj);
 }
 
 test "more live integer values than registers refuses without aliasing owners" {
