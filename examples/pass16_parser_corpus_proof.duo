@@ -228,7 +228,10 @@ positives = {
     { "h(n: i64)\n  n\nend", "(program (fun h (params (param n i64)) n))" },
 }
 
-fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",
+left = "\x7b"
+right = "\x7d"
+
+fails = { "x =", "end", "x = +", "fun f(", "return +", "{left} nope {right} = 1",
     "for = 1, n end", "for i = 1 end", "for k, in t end",
     "a, b", "repeat x = 1", "obj:m", "x = t[i", "local = 1",
     "f = fun a end", "x = { 1,", "do x = 1" }
@@ -238,12 +241,14 @@ main(): i64
         c = positives[i]
         got = std.compiler.parser.proj_program(c[1], "corpus.duo")
         if got != c[2]
+            print("(parserproof, mismatch, positive, {i}, got={got}, want={c[2]})")
             return i
         end
     end
     for i = 1, #fails
         st = std.compiler.parser.parse_status(fails[i], "corpus.duo")
         if st == 0
+            print("(parserproof, mismatch, negative, {i}, accepted={fails[i]})")
             return 100 + i
         end
     end

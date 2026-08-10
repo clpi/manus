@@ -44,16 +44,15 @@ _row = (id: str, module_path: str, proof: str, oracle: str): bool
 end
 
 main(): i64
-    print("{ \"schema\": \"selfhost-duo-manifest-v1\", \"rows\": [")
+    print("{ \"schema\": \"selfhost-manifest\", \"rows\": [")
 
     all_ok = true
 
     -- SH-01..SH-03 predate this session and already had Duo implementations and
     -- proofs; they were missing from this manifest, which made the record look
-    -- like the session's work was the whole picture. SH-02 is the one row that
-    -- is genuinely duo_canonical — its Duo projection IS the production keyword
-    -- classifier — and SH-03's Duo lexer is proved token-for-token equal to
-    -- src/lexer.zig while production still dispatches to the host.
+    -- like the session's work was the whole picture. SH-02 and SH-03 are
+    -- duo_canonical: the production classifier and tokenizer both dispatch
+    -- through their Duon projections. The host implementations remain oracles.
     if not _row("SH-01", "lib/std/compiler/source.duo", "examples/pass16_source_cursor_proof.duo",
         "differential against the production ProductionCursor")
         all_ok = false
@@ -63,7 +62,7 @@ main(): i64
         all_ok = false
     end
     if not _row("SH-03", "lib/std/compiler/lexer.duo", "examples/pass16_lexer_fingerprint_differential.duo",
-        "token-for-token fingerprint equality with src/lexer.zig")
+        "DUO_CANONICAL — production dispatch plus token-for-token equality with src/lexer.zig")
         all_ok = false
     end
     if not _row("SH-04", "lib/std/compiler/parser.duo", "examples/pass16_parser_corpus_proof.duo",
@@ -113,13 +112,12 @@ main(): i64
 
     print("],")
     -- The distinction the matrix actually tracks, stated in the manifest so a
-    -- consumer cannot mistake one for the other: these rows have Duo
-    -- implementations with passing oracles. They are NOT duo_canonical, which
-    -- additionally requires the host to dispatch through them.
-    print("  \"duo_impl_rows\": 14,")
-    print("  \"oracle_backed_rows\": 13,")
-    print("  \"duo_canonical_rows\": 1,")
-    print("  \"canonical_blocker\": \"production dispatch: host still calls src/*.zig\"")
+    -- consumer cannot mistake one for the other: implementation, oracle and
+    -- production authority are separate facts. Each row reports its live state.
+    print("  \"implemented\": 14,")
+    print("  \"oracle\": 13,")
+    print("  \"canonical\": 2,")
+    print("  \"blocker\": \"production dispatch after lexing: parser and later authorities still call src/*.zig\"")
     print("}")
     if all_ok
         return 0
