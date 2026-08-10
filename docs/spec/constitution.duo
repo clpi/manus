@@ -3543,3 +3543,90 @@ semanticblock = @{
     why = "the current staged text census is a migration ratchet; authoritative world subject vocabulary sentinel and control gates require graph queries in self hosted Duon"
     unlock = "gap 121 module initialization then graph fact access from Duon compiler modules"
 }
+
+literal = {}
+
+literal.text = law{
+    id    = "law.literal.text"
+    kind  = .invariant
+    holds = .one
+    binds = {
+        "double quotes are the one canonical text literal face",
+        "one line multiline escaped and interpolated text share one literal family",
+        "interpolation preserves literal and expression segments and does not demand concatenation or materialization",
+        "a multiline opening newline and final newline are omitted; the closing quote indentation is removed exactly from every nonblank content line and insufficient indentation diagnoses",
+        "triple quotes unicode quote delimiters and lua long brackets are not canonical text faces",
+    }
+}
+
+literal.bytes = law{
+    id    = "law.literal.bytes"
+    kind  = .invariant
+    holds = .one
+    binds = {
+        "single quotes are the one canonical byte sequence literal face",
+        "one byte remains a byte sequence of cardinality one and may scalarize only under proved byte demand",
+        "text byte codepoint scalar grapheme and character remain distinct descriptors and facts",
+        "raw source characters encode as source utf8 bytes; byte escapes are byte oriented and unicode escapes are rejected until separately admitted",
+        "historical lua single quoted text retains compatibility provenance and canonicalizes to double quoted text before native duon meaning",
+    }
+}
+
+comment = law{
+    id    = "law.comment.one"
+    kind  = .invariant
+    holds = .trivia
+    binds = {
+        "hash begins the one canonical line comment and has no canonical length reading",
+        "length is the subject oriented len relation with an explicit axis when it is not uniquely recoverable",
+        "lua dash comments and lua long comments are compatibility provenance only",
+        "repeated hash lines are the canonical multiline comment face; no block comment syntax is admitted",
+        "hash bang is allowed only at byte zero as script launch provenance and grants no semantic authority",
+        "removing comments changes no graph fact except source trivia provenance",
+    }
+}
+
+backtick = law{
+    id    = "law.backtick.zero"
+    kind  = .invariant
+    holds = .reserved
+    binds = {
+        "backtick has no canonical meaning and never executes or captures a process",
+        "process execution is an ordinary application over structured values with explicit worlds effects failures and provenance",
+        "a future value face requires grammar and relation admission and remains separate from execution",
+        "unused punctuation need not acquire a meaning",
+    }
+}
+
+lexical = law{
+    id    = "law.lexical.one"
+    kind  = .protocol
+    holds = .generated
+    binds = {
+        "one lexical authority distinguishes text bytes compatibility long text comment compatibility comment shebang and reserved backtick identities",
+        "the lexer records delimiter lawset token identity content span and compatibility status once",
+        "grammar parser formatter canonicalizer tree sitter lsp mcp documentation generators and migrations consume generated projections of those facts",
+        "no consumer reconstructs literal or comment role from delimiter text source substring ast flags or contents",
+        "token role lookup is compact and constant time and literal payloads retain source views where lawful",
+    }
+    fails = "one string token followed by downstream delimiter reconstruction or separately handwritten lexical tables"
+}
+
+lexical.gate = law{
+    id    = "law.gate.lexical"
+    kind  = .protocol
+    holds = .semantic
+    binds = {
+        "canonical repository source rejects lua comments lua long strings hash length historical single quoted text and unadmitted backticks by token identity and provenance",
+        "compatibility source preserves foreign literal and comment lawsets until an exact migration witness exists",
+        "generated canonical source receives no exception",
+        "the corpus ratchet counts complete classified inputs and fails closed when an authority or source is unavailable",
+    }
+}
+
+lexical.block = @{
+    gap = 145
+    state = .implementationblocked
+    why = "both live lexers collapse text bytes and lua long strings into one string token while hash remains a length token and downstream consumers reconstruct delimiters"
+    unlock = "distinct duon owned token identities plus generated grammar roles compatibility provenance canonical migrations and derived tooling projections"
+}

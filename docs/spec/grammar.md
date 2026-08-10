@@ -1,9 +1,9 @@
-# duon 0.1 — Formal Grammar (Pass 108)
+# duon 0.1 - Formal Grammar
 
-**The first credibility artifact** (Pass 106 §1). The surface as EBNF over an
-offside lexer, with the precedence table and the five ambiguity resolutions
-stated as rules. The parser is generated from this file — the grammar is data —
-and this document is **normative** until the graph service hosts it.
+This is the normative human projection of C0's grammar until the graph service
+hosts it. The parser is not yet generated from this file. `GAP-134` owns that
+missing grammar projection; `GAP-145` owns the lexical identity migration. The
+implementation accepting a form does not make it canonical.
 
 ## 1. Lexical layer
 
@@ -14,22 +14,42 @@ tokens     → NEWLINE, INDENT, DEDENT emitted à la offside:
              INDENT/DEDENT on column change against the indent stack;
              a dedent to a column not on the stack ⇒ LAYOUT ERROR
              (never an alternate parse — ceilings keep the stack ≤ 4)
-comment    → "--" to end of line (dropped; doc blocks are checks)
+shebang    → "#!" text NEWLINE, only at byte zero; source provenance
+comment    → "#" text NEWLINE; trivia with zero semantic authority
 name       → [a-z][a-z0-9]*            -- single word; acronyms lowercase
 number     → digit [digit _]* ["." digit+] | "0x" hex+ | "0b" bin+
              ("_" legal only between digits)
-byte       → "'" char "'"
-string     → '"' (text | "{" expr "}")* '"'      -- holes are full exprs
-rawstring  → "[[" text "]]"
+bytes      → "'" byteitem* "'"         -- byte sequence, never text/char
+text       → '"' (textitem | "{" expr "}")* '"'
+backtick   → RESERVED
 END        → "end" (accepted, DELETED by the reader — resync only)
 ```
+
+`text` may span physical lines without becoming another literal kind. When the
+opening quote is followed immediately by a newline, that newline and the final
+newline before a closing quote on its own line are omitted. The whitespace
+prefix before the closing quote is removed exactly from every nonblank content
+line; a nonblank line with less indentation is an error. Blank lines normalize
+to empty lines. This rule is deterministic and formatter-stable.
+
+`bytes` accepts byte-oriented escapes such as `\xNN`, `\n`, `\\`, and `\'`.
+Ordinary source characters contribute their UTF-8 bytes. Unicode escape syntax
+inside a byte literal is rejected until separately admitted; it never produces
+a host-language character integer. Byte literals do not interpolate.
+
+The compatibility projection separately recognizes Lua `--` comments, Lua long
+comments, Lua long strings, and historical Lua single-quoted text. These carry
+compatibility provenance and never share canonical token identity. A historical
+single-quoted text literal canonicalizes to double-quoted text before it can be
+read as native Duon. Backtick remains tokenizable but has no canonical grammar
+role and never implies process execution.
 
 ## 2. Precedence (tightest → loosest); all left-assoc unless noted
 
 ```
 1  postfix:  .name   :name(args)   [expr…]   (args)   @rel|@Proto   {…}-call
              "str"-call                       -- the two parenless operands
-2  prefix:   not  -  ~  #  .name(leading)  :name(leading)  @(bare)
+2  prefix:   not  -  ~  .name(leading)  :name(leading)  @(bare)
 3  ^                                          (right)
 4  * / %
 5  + -
@@ -79,8 +99,8 @@ unary      → { prefixop } postfixexpr
 postfixexpr→ primary { postfix }
 postfix    → "." name | ":" name callargs | "[" expr { "," expr } "]"
            | "(" [ args ] ")" | "@" ( name | postfixexpr )
-           | tableliteral | string             -- brace-call, string-call
-primary    → name | number | byte | string | rawstring
+           | tableliteral | text               -- brace-call, text-call
+primary    → name | number | bytes | text
            | "(" expr ")" | tableliteral | "@" [ tableliteral ]
            | "." name | ":" name callargs      -- leading lens / sibling call
 tableliteral → "{" [ field { fieldsep field } ] "}"
@@ -104,7 +124,7 @@ case contract — ⇒ the case. Neither context ⇒ diagnostic ("state the shape
 qualify"). The parser produces ONE node (`anchorref`); *resolution* is semantic,
 so the grammar is unambiguous because the spelling is one production.
 
-**R3 — parenless calls.** Only postfix positions accept a `string` or
+**R3 — parenless calls.** Only postfix positions accept `text` or
 `tableliteral` as an argument-forming token; they bind at level 1; at most one
 per spine (enforced post-parse); and they are **forbidden in `cond` and in
 `for`-iterable position** (self-delimitation). So `while sh "x" …` is a layout
@@ -139,7 +159,7 @@ evaluator (G-D1's sibling fixture).
 
 This document is normative and the parser is **not yet generated from it**.
 `src/parser.zig` is hand-written and predates this grammar; `lib/std/compiler/parser.duo`
-is the self-hosted one. Two known points of contact with reality:
+is the self-hosted target. Three known points of contact with reality:
 
 - **R5 is enforced as of afad6f3.** Infix `@` folded to `.matmul` used to
   type-check clean in `.duo` — a green check on a construct with no meaning. It
@@ -149,6 +169,11 @@ is the self-hosted one. Two known points of contact with reality:
   `examples/spec100/offside.duo` and two `examples/compile_fail/offside_*.duo`
   fixtures asserting that a dedent matching no legal shape is a DIAGNOSTIC and
   never an alternate parse.
+- **Lexical closure is not implemented.** Both live lexers currently emit one
+  string token for single quotes, double quotes, and Lua long strings. They
+  still tokenize `#` as length, and parser/tooling paths reconstruct delimiters
+  from source. `GAP-145` requires distinct token identities and generated roles
+  before parser or corpus migration.
 
 The gap between this file and `src/parser.zig` is the work; naming the gap is
 what makes it measurable.

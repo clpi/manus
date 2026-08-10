@@ -102,6 +102,9 @@ A changed `.duo` line is rejected when it introduces any of these forms:
 
 - an identifier containing an underscore or uppercase letter;
 - `end`, a semicolon, `then`, or `do` instead of offside structure;
+- `--` or Lua long comments instead of `#` comments;
+- Lua long strings, historical single-quoted text, `#value` length, or an
+  unadmitted backtick use;
 - a new prefix directive or compatibility directive use;
 - Lua globals or module operations;
 - a namespace call when the held value is the receiver;
@@ -111,6 +114,14 @@ A changed `.duo` line is rejected when it introduces any of these forms:
   semantic tuple is required;
 - legacy callable-result spelling;
 - a new foreign source file.
+
+Canonical lexical meaning is fixed: double quotes are text, single quotes are
+bytes, hash starts a comment, length is the subject relation `len`, and backtick
+is reserved and never executes a process. Compatibility parsing may retain Lua
+comments, long strings, and historical single-quoted text only with explicit
+lawset provenance. Until `GAP-145` provides distinct lexer identities and
+generated grammar roles, do not migrate delimiters by search/replace or infer a
+literal/comment role downstream from token text.
 
 Before staging Duon, run the repository-native idiom check over the exact
 working-tree diff:
