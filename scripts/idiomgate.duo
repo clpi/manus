@@ -90,30 +90,46 @@ strip = (line: str): str
         i = i + 1
     out
 
--- LAW-ONE: an underscore BETWEEN two lowercase letters. Numeric literals and a
--- leading _ (which is export control, not spelling) are not findings.
-snake = (code: str): bool
-    n = rawlen(code)
-    i = 2
-    while i < n
-        if code:sub(i, i) == "_" and alpha(code:sub(i - 1, i - 1)) and alpha(code:sub(i + 1, i + 1))
+-- LAW-ONE has no spelling exemptions. Qualification belongs to levels and
+-- homes; an underscore in Duon source is migration debt regardless of where it
+-- occurs in an identifier.
+under: bool = (code: str)
+    n = #code
+    i = 1
+    while i <= n
+        if code:sub(i, i) == "_"
             return true
         i = i + 1
     false
 
--- a capital starting an identifier: the "capital types" finding
-capital = (code: str): bool
-    n = rawlen(code)
+-- Uppercase is not a descriptor convention in Duon. Cases, descriptors,
+-- bindings, homes, relations, and generated identities share the same law.
+capital: bool = (code: str)
+    n = #code
     i = 1
     while i <= n
-        c = code:sub(i, i)
-        if upper(c)
-            prev = ""
+        if upper(code:sub(i, i))
+            return true
+        i = i + 1
+    false
+
+word: bool = (c: str)
+    alpha(c) or upper(c) or (c >= "0" and c <= "9")
+
+token: bool = (code: str, sought: str)
+    n = #code
+    m = #sought
+    i = 1
+    while i + m - 1 <= n
+        if code:sub(i, i + m - 1) == sought
+            before = ""
+            after = ""
             if i > 1
-                prev = code:sub(i - 1, i - 1)
-            if prev == "" or (not alpha(prev) and not upper(prev) and prev != "_")
-                if i < n and (alpha(code:sub(i + 1, i + 1)) or upper(code:sub(i + 1, i + 1)))
-                    return true
+                before = code:sub(i - 1, i - 1)
+            if i + m <= n
+                after = code:sub(i + m, i + m)
+            if (before == "" or not word(before)) and (after == "" or not word(after))
+                return true
         i = i + 1
     false
 
@@ -125,10 +141,36 @@ authority: bool = (code: str)
     has(code, "st" .. "d.script.") or has(code, "st" .. "d.proc.")
         or has(code, "st" .. "d.os.") or has(code, "st" .. "d.fs.")
 
--- `read` names one relation. Holding its subject requires the subject face;
--- changing the home spelling must not turn an operation-first call canonical.
+-- A trie declaration is operation-first; invocation is always subject-first.
+-- This recognizes the declaration face without granting bare calls or an
+-- arbitrary home an exception.
+readdecl: bool = (code: str, start: i64)
+    i = 1
+    n = #code
+    while i <= n and (code:sub(i, i) == " " or code:sub(i, i) == "\t")
+        i = i + 1
+    if i != start
+        return false
+    equal = start + 5
+    while equal <= n and code:sub(equal, equal) != "="
+        equal = equal + 1
+    if equal > n
+        return false
+    equal = equal + 1
+    while equal <= n and (code:sub(equal, equal) == " " or code:sub(equal, equal) == "\t")
+        equal = equal + 1
+    equal <= n and code:sub(equal, equal) == "("
+
 readface: bool = (code: str)
-    has(code, ".read(")
+    n = #code
+    i = 1
+    while i + 4 <= n
+        if code:sub(i, i + 4) == "read("
+            if i == 1 or code:sub(i - 1, i - 1) != ":"
+                if not readdecl(code, i)
+                    return true
+        i = i + 1
+    false
 
 -- Concatenation is a real value relation. It is noncanonical when the same
 -- expression immediately demands only emission, because that spelling forces
@@ -156,7 +198,7 @@ scanline = (path: str, no: i64, line: str): i64
     if bareend(code)
         print("{path}:{no}  end  [Pass 100 §7]  `end` is DELETED — outdent")
         hits = hits + 1
-    if snake(code)
+    if under(code)
         print("{path}:{no}  underscore  [LAW-ONE]  one lowercase word: a LEVEL, a HOME, or delete the axis")
         hits = hits + 1
     if capital(code)
@@ -188,6 +230,9 @@ scanline = (path: str, no: i64, line: str): i64
         hits = hits + 1
     if has(code, "setmetatable")
         print("{path}:{no}  setmetatable  [§1]  descriptors and protocols")
+        hits = hits + 1
+    if token(code, "nil")
+        print("({path}, {no}, invalid, law.lua.hosted, nil is a Lua value; use the admitted semantic case)")
         hits = hits + 1
     if has(code, ".new(")
         print("{path}:{no}  .new(  [LADDER]  desc{{…}} · x:to(desc) · p:from(mode)(…)")
@@ -263,13 +308,13 @@ control = (): bool
     if bareend("    scan(n)")
         print("control FAIL: bareend fired on canonical")
         ok = false
-    if not snake("is_digit(c)")
-        print("control FAIL: snake did not fire")
+    if not under("is_digit(c)") or not under("_subject")
+        print("control FAIL: under did not fire")
         ok = false
-    if snake("digit(c)")
-        print("control FAIL: snake fired on canonical")
+    if under("digit(c)")
+        print("control FAIL: under fired on canonical")
         ok = false
-    if not capital("p: Point")
+    if not capital("p: Point") or not capital("p: P")
         print("control FAIL: capital did not fire")
         ok = false
     if capital("p: point")
@@ -293,8 +338,17 @@ control = (): bool
     if not readface("arbitrary.home.read(subject)")
         print("control FAIL: readface did not reject operation-first read")
         ok = false
+    if not readface("value = read(subject)")
+        print("control FAIL: readface did not reject bare read")
+        ok = false
     if readface("subject:read(world)")
         print("control FAIL: readface rejected subject-first read")
+        ok = false
+    if readface("read(number) = (subject, bytes)")
+        print("control FAIL: readface rejected a trie declaration")
+        ok = false
+    if not token("value = nil", "nil") or token("value = vanilla", "nil")
+        print("control FAIL: nil token boundary is broken")
         ok = false
     if not materialize("print(\"x = \" .. x)")
         print("control FAIL: materialize missed output concatenation")
@@ -326,7 +380,7 @@ main = (): i64
     d:close()
     total = scandiff(files)
     print("")
-    print("idiomgate: {total} finding(s) on ADDED lines  [control: 14/14 pass]")
+    print("idiomgate: {total} finding(s) on ADDED lines  [control: 19/19 pass]")
     if total > 0
         print("")
         print("The law: CLAUDE.md + docs/spec/ · the deny list: AGENTS.md")
