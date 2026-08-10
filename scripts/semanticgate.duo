@@ -184,9 +184,9 @@ debt = {
 
 main = ()
     code = 0
-    cmd = "printf {q}%s\\n{q} {q}pub const IfExpr = struct {{{q} | grep -q -E {q}{parserpat}{q} && printf {q}%s\\n{q} {q}pub const relation = struct {{{q} | grep -q -v -E {q}{parserpat}{q} && printf {q}%s\\n{q} {q}{debt.boxed.positive}{q} | grep -q -E {q}{boxpat}{q} && printf {q}%s\\n{q} {q}{debt.boxed.negative}{q} | grep -q -v -E {q}{boxpat}{q} && printf 1"
+    cmd = "if git cat-file -e :src/ast.zig && git cat-file -e :src/parser.zig && git cat-file -e :src/pretty.zig && git cat-file -e :src/duo_native_ir.zig && git cat-file -e :src/semantic_graph.zig && git cat-file -e :scripts/semanticgate.duo && git grep --cached -q -E {q}{parserpat}{q} -- {front} && git grep --cached -q -E {q}{astpat}{q} -- {after} && git grep --cached -q {q}boxpat = {q} -- scripts/semanticgate.duo; then git grep --cached -q {q}boxpat = {q} -- {duofiles}; status=$?; if test $status = 1; then printf {q}%s\\n{q} {q}pub const IfExpr = struct {{{q} | grep -q -E {q}{parserpat}{q} && printf {q}%s\\n{q} {q}pub const relation = struct {{{q} | grep -q -v -E {q}{parserpat}{q} && printf {q}%s\\n{q} {q}{debt.boxed.positive}{q} | grep -q -E {q}{boxpat}{q} && printf {q}%s\\n{q} {q}{debt.boxed.negative}{q} | grep -q -v -E {q}{boxpat}{q} && printf 1; else printf 0; fi; else printf 0; fi"
     if std.proc.capture(cmd):to(i64) != 1
-        print("(semanticgate, control, parser-only, broken classifier)")
+        print("(semanticgate, control, source, staged pathspec parser classifier or exclusion failed)")
         code = 3
     cmd = "printf {q}%s\\n{q} {q}.if_stmt => |branch|{q} | grep -c -E {q}{dispatchpat}{q}"
     if std.proc.capture(cmd):to(i64) != 1
