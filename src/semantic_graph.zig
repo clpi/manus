@@ -53,7 +53,7 @@ pub const NodeKind = enum {
     local,
     type_node,
     call,
-    directive,
+    relation,
     concept,
     transform_app,
     comptime_value,
@@ -62,8 +62,6 @@ pub const NodeKind = enum {
     table_shape,
     /// Enum descriptor shape (variant count in `field_count`; names via `ast_ref`).
     enum_shape,
-    /// Pass 2.3: `|>` pipeline step in optimization graph IR.
-    pipeline,
 };
 
 pub const EdgeKind = enum {
@@ -119,9 +117,10 @@ pub const Node = struct {
     completion: ?pass26_recursive_descriptor.DescriptorCompletion = null,
     /// Human-readable descriptor composition label (`Point+Named`).
     descriptor_label: ?[]const u8 = null,
-    /// Pass 2.3: pipeline algebra op when `kind == .pipeline` (`|>` lowers to `.map`).
-    pipeline_op: ?semantic_algebra.PipelineOp = null,
-    /// Pass 2.4: hardware lowering targets for pipeline nodes (cpu/simd/gpu).
+    /// Iteration relation identity. A source face such as `|>` is provenance,
+    /// not a persistent node kind.
+    iteration_relation: ?semantic_algebra.IterationRelation = null,
+    /// Lawful hardware realization candidates for the relation (cpu/simd/gpu).
     hardware_lowerings: semantic_algebra.HardwareSet = .{},
     /// Opaque link to AST for Phase 1 — graph mirrors, does not replace, AST yet.
     ast_ref: ?*anyopaque = null,
@@ -215,7 +214,7 @@ pub const SemanticGraph = struct {
     fn nameAddressable(kind: NodeKind) bool {
         return switch (kind) {
             .module, .source_file, .func, .param, .type_node, .concept, .table_shape, .enum_shape => true,
-            .local, .call, .directive, .transform_app, .comptime_value, .emit_artifact, .pipeline => false,
+            .local, .call, .relation, .transform_app, .comptime_value, .emit_artifact => false,
         };
     }
 
@@ -909,27 +908,27 @@ pub const SemanticGraph = struct {
             .binop => |b| {
                 if (b.op == .pipeline) {
                     const loc = expr.loc();
-                    const op = semantic_algebra.PipelineOp.map;
+                    const relation = semantic_algebra.IterationRelation.map;
                     var lowerings = semantic_algebra.HardwareSet.singleton(.cpu);
                     if (b.rhs.* == .name) {
                         if (self.func_decls.get(b.rhs.name.ident)) |fd| {
                             lowerings = semantic_algebra.hardwareLoweringsFromAttributes(fd.attributes);
                         }
                     }
-                    const pipe_id = try self.addChild(parent, .{
-                        .kind = .pipeline,
+                    const relation_id = try self.addChild(parent, .{
+                        .kind = .relation,
                         .span = .{
                             .file = file,
                             .start = loc.line,
                             .end = loc.col,
                         },
-                        .pipeline_op = op,
+                        .iteration_relation = relation,
                         .hardware_lowerings = lowerings,
                         .knowledge = .observed,
                         .stage = .sema,
                         .ast_ref = @ptrCast(@constCast(expr)),
                     });
-                    const transform_name = semantic_algebra.pipelineTransformId(op);
+                    const transform_name = semantic_algebra.iterationTransformId(relation);
                     if (transform_engine.isRegisteredTransform(transform_name)) {
                         const transform_id = try self.addChild(parent, .{
                             .kind = .transform_app,
@@ -938,7 +937,7 @@ pub const SemanticGraph = struct {
                             .knowledge = .observed,
                             .stage = .transform,
                         });
-                        try self.addEdge(.{ .from = transform_id, .to = pipe_id, .kind = .transform_output });
+                        try self.addEdge(.{ .from = transform_id, .to = relation_id, .kind = .transform_output });
                     }
                 }
                 try self.liftExprsFromExpr(b.lhs, file, parent, .single);
@@ -1180,14 +1179,13 @@ pub const SemanticGraph = struct {
             .local => "local",
             .type_node => "type_node",
             .call => "call",
-            .directive => "directive",
+            .relation => "relation",
             .concept => "concept",
             .transform_app => "transform_app",
             .comptime_value => "comptime_value",
             .emit_artifact => "emit_artifact",
             .table_shape => "table_shape",
             .enum_shape => "enum_shape",
-            .pipeline => "pipeline",
         };
     }
 
@@ -1445,10 +1443,10 @@ pub const SemanticGraph = struct {
                 try out.appendSlice(alloc, ",\"variants\":");
                 try appendEnumVariantsJson(out, alloc, &node);
             }
-            if (node.kind == .pipeline) {
-                if (node.pipeline_op) |pop| {
-                    try out.appendSlice(alloc, ",\"pipeline_op\":\"");
-                    try out.appendSlice(alloc, pop.name());
+            if (node.kind == .relation) {
+                if (node.iteration_relation) |relation| {
+                    try out.appendSlice(alloc, ",\"relation\":\"");
+                    try out.appendSlice(alloc, relation.name());
                     try out.append(alloc, '"');
                 }
                 if (node.hardware_lowerings.bits != 0) {
@@ -1979,7 +1977,7 @@ test "semantic_graph: alias with derive builds transform descriptor label" {
     try std.testing.expectEqualStrings("Vec2~Display~Eq", vec.descriptor_label.?);
 }
 
-test "semantic_graph: pipeline operator lifts pipeline nodes" {
+test "semantic_graph: pipeline face normalizes to an iteration relation" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -2000,7 +1998,17 @@ test "semantic_graph: pipeline operator lifts pipeline nodes" {
     defer g.deinit();
     const mod_id = try g.liftModuleWithCalls(&module, "test.duo");
     _ = mod_id;
-    try std.testing.expectEqual(@as(usize, 1), g.countKind(.pipeline));
+    try std.testing.expectEqual(@as(usize, 1), g.countKind(.relation));
+    for (g.nodes.items) |node| {
+        if (node.kind != .relation) continue;
+        try std.testing.expectEqual(semantic_algebra.IterationRelation.map, node.iteration_relation.?);
+    }
+    var json: std.ArrayListUnmanaged(u8) = .empty;
+    defer json.deinit(alloc);
+    try g.writeJson(alloc, "test.duo", &json, null);
+    try std.testing.expect(std.mem.indexOf(u8, json.items, "\"kind\":\"relation\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json.items, "\"relation\":\"map\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json.items, "\"kind\":\"pipeline\"") == null);
 }
 
 test "semantic_graph: func_decls index supports effect inference" {

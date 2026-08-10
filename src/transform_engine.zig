@@ -693,8 +693,8 @@ pub fn descriptor(public_name: []const u8) ?Descriptor {
     if (callTransformFromId(public_name)) |op| {
         return callTransformDescriptor(public_name, op);
     }
-    if (pipelineOpFromTransformId(public_name)) |op| {
-        return pipelineTransformDescriptor(public_name, op);
+    if (iterationRelationFromTransformId(public_name)) |relation| {
+        return iterationRelationDescriptor(public_name, relation);
     }
     if (std.mem.eql(u8, public_name, "comp.type.shape") or
         std.mem.eql(u8, public_name, "comp.shape") or
@@ -794,11 +794,11 @@ pub fn isShapeTransform(public_name: []const u8) bool {
     return shapeOpFromTransformId(public_name) != null;
 }
 
-/// True for Pass 2 pipeline algebra transforms (`pipeline.map`, `pipeline.fuse`, …).
-pub fn isPipelineTransform(public_name: []const u8) bool {
-    inline for (@typeInfo(semantic_algebra.PipelineOp).@"enum".field_values) |value| {
-        const op: semantic_algebra.PipelineOp = @enumFromInt(value);
-        if (std.mem.eql(u8, public_name, semantic_algebra.pipelineTransformId(op))) return true;
+/// True when a compatibility transform spelling projects an iteration relation.
+pub fn isIterationTransform(public_name: []const u8) bool {
+    inline for (@typeInfo(semantic_algebra.IterationRelation).@"enum".field_values) |value| {
+        const relation: semantic_algebra.IterationRelation = @enumFromInt(value);
+        if (std.mem.eql(u8, public_name, semantic_algebra.iterationTransformId(relation))) return true;
     }
     return false;
 }
@@ -821,16 +821,16 @@ fn callTransformFromId(public_name: []const u8) ?semantic_algebra.CallTransform 
     return semantic_algebra.callTransformFromId(public_name);
 }
 
-fn pipelineOpFromTransformId(public_name: []const u8) ?semantic_algebra.PipelineOp {
-    inline for (@typeInfo(semantic_algebra.PipelineOp).@"enum".field_names, @typeInfo(semantic_algebra.PipelineOp).@"enum".field_values) |_, value| {
-        const op: semantic_algebra.PipelineOp = @enumFromInt(value);
-        if (std.mem.eql(u8, public_name, semantic_algebra.pipelineTransformId(op))) return op;
+fn iterationRelationFromTransformId(public_name: []const u8) ?semantic_algebra.IterationRelation {
+    inline for (@typeInfo(semantic_algebra.IterationRelation).@"enum".field_values) |value| {
+        const relation: semantic_algebra.IterationRelation = @enumFromInt(value);
+        if (std.mem.eql(u8, public_name, semantic_algebra.iterationTransformId(relation))) return relation;
     }
     return null;
 }
 
-fn pipelineTransformDescriptor(public_name: []const u8, op: semantic_algebra.PipelineOp) Descriptor {
-    _ = op;
+fn iterationRelationDescriptor(public_name: []const u8, relation: semantic_algebra.IterationRelation) Descriptor {
+    _ = relation;
     return .{
         .public_name = public_name,
         .internal_name = public_name,
@@ -1080,18 +1080,18 @@ test "transform_engine: provenanceSitesObserved tracks tier-1 sites" {
     try std.testing.expect(observed.contains(.block_body));
 }
 
-test "transform_engine: pipeline.map registered" {
+test "transform_engine: compatibility pipeline.map spelling is registered" {
     try std.testing.expect(isRegisteredTransform("pipeline.map"));
     const d = descriptor("pipeline.map") orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(BudgetClass.linear, d.budget);
 }
 
-test "transform_engine: all PipelineOp ids registered" {
-    inline for (@typeInfo(semantic_algebra.PipelineOp).@"enum".field_values) |value| {
-        const op: semantic_algebra.PipelineOp = @enumFromInt(value);
-        const id = semantic_algebra.pipelineTransformId(op);
+test "transform_engine: all iteration relation ids are registered" {
+    inline for (@typeInfo(semantic_algebra.IterationRelation).@"enum".field_values) |value| {
+        const relation: semantic_algebra.IterationRelation = @enumFromInt(value);
+        const id = semantic_algebra.iterationTransformId(relation);
         try std.testing.expect(isRegisteredTransform(id));
-        try std.testing.expect(isPipelineTransform(id));
+        try std.testing.expect(isIterationTransform(id));
     }
 }
 

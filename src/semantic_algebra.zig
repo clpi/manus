@@ -282,9 +282,12 @@ pub fn buildAliasDescriptorExprWithDerives(
     return &builder.nodes.items[expr_idx];
 }
 
-/// Map pipeline IR ops to transform registry ids (`pipeline.map`, …).
-pub fn pipelineTransformId(op: PipelineOp) []const u8 {
-    return switch (op) {
+/// Compatibility-facing transform ids for ordinary iteration relations.
+///
+/// The `pipeline.*` strings are frozen registry spellings. They do not name a
+/// distinct semantic family: graph identity is the relation below.
+pub fn iterationTransformId(relation: IterationRelation) []const u8 {
+    return switch (relation) {
         .source => "pipeline.source",
         .map => "pipeline.map",
         .filter => "pipeline.filter",
@@ -549,9 +552,9 @@ pub fn hardwareLoweringsFromAttributes(attrs: []const ast.Attribute) HardwareSet
     return set;
 }
 
-// ── 8. Pipeline Graph IR ──────────────────────────────────────────────────────
+// ── 8. Iteration relations ───────────────────────────────────────────────────
 
-pub const PipelineOp = enum {
+pub const IterationRelation = enum {
     source,
     map,
     filter,
@@ -561,14 +564,14 @@ pub const PipelineOp = enum {
     branch,
     collect,
 
-    pub fn name(self: PipelineOp) []const u8 {
+    pub fn name(self: IterationRelation) []const u8 {
         return @tagName(self);
     }
 };
 
-pub const PipelineNode = struct {
+pub const RelationNode = struct {
     id: u32,
-    op: PipelineOp,
+    relation: IterationRelation,
     /// Lowered targets this node may become (loop, simd, gpu, coroutine, comptime).
     lowerings: HardwareSet = .{},
     knowledge: KnowledgeLevel = .unknown,
@@ -1080,14 +1083,14 @@ pub const convergence_catalog: []const ConvergenceEntry = &.{
         .notes = "Replaces compile-time/runtime dichotomy.",
     },
     .{
-        .id = "pipeline_graph_ir",
+        .id = "iteration_relation_graph",
         .legacy_mechanisms = &.{
             "|> pipeline", "std.pipeline", "pipeline_gen.zig",
         },
-        .unified_algebra = "PipelineNode graph with multi-target lowering",
+        .unified_algebra = "iteration relation graph with multi-target realization",
         .status = .partial,
         .priority = 7,
-        .notes = "Graph lift pipeline nodes; pipeline.* registered in transform_engine; fused backend via pipeline_gen pending.",
+        .notes = "Graph lift records relation identity; compatibility pipeline.* transforms remain registered; fused realization pending.",
     },
     .{
         .id = "effect_algebra",
@@ -1157,7 +1160,7 @@ pub fn writeCatalogJson(w: *std.Io.Writer) !void {
     try w.print("\"descriptor_ops\":[\"add\",\"sub\",\"intersect\",\"restrict\",\"transform\"],", .{});
     try w.print("\"shape_ops\":[\"seal\",\"open\",\"merge\",\"subtract\",\"project\",\"rename\",\"freeze\",\"specialize\",\"lift\",\"lower\"],", .{});
     try w.print("\"call_transforms\":[\"inline\",\"specialize\",\"memo\",\"devirtualize\",\"gpu_lower\",\"simd_lower\"],", .{});
-    try w.print("\"pipeline_ops\":[\"source\",\"map\",\"filter\",\"scan\",\"fold\",\"fuse\",\"branch\",\"collect\"],", .{});
+    try w.print("\"iteration_relations\":[\"source\",\"map\",\"filter\",\"scan\",\"fold\",\"fuse\",\"branch\",\"collect\"],", .{});
     try w.print("\"cost_dimensions\":[\"latency\",\"throughput\",\"compile_time\",\"binary_size\",\"memory\",\"bandwidth\",\"power\",\"determinism\",\"code_size\",\"agent_complexity\",\"source_complexity\"]", .{});
     try w.print("}},\"convergence\":[\n", .{});
 
