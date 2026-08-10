@@ -11,6 +11,20 @@ backend.
 
 No Duo-built compiler binary exists in the production path yet.
 
+The production front end nevertheless has one executed Duon-owned boundary:
+`lib/std/compiler/lexer.duo` owns token content, token identity, and exact
+source spans. The host bounds-checks those spans and projects them into its
+temporary parser representation. It does not reconstruct token text or source
+locations.
+
+The next boundary remains production parse recognition. It is blocked by
+`GAP-134`: C0 requires the self-hosted parser to consume a generated
+constitutional grammar, while the current repository has no machine-readable
+canonical grammar-role projection. Porting the host recognizer would duplicate
+grammar authority through token-text lists and mutable lookahead. S0 therefore
+remains the honest stage until grammar roles and an immutable token view are
+available to executed Duon parser code.
+
 SHC-00 supplies an executable structural verifier in
 `lib/compiler/bootstrap.duo`. Its synthetic controls validate lineage and
 parity relationships only; they neither authenticate the supplied identities
