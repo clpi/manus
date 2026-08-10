@@ -4273,12 +4273,20 @@ pub const Parser = struct {
                     }
                     const part = try self.expect(.name);
                     try path.append(self.alloc, part.text);
-                } else if (try self.eat(.colon) != null) {
+                } else if ((try self.pk()).kind == .colon) {
+                    const colon = try self.pk();
+                    _ = try self.adv();
                     if ((try self.pk()).kind != .name) {
                         self.lex.restoreState(saved);
                         return null;
                     }
                     const part = try self.expect(.name);
+                    if (part.loc.line != colon.loc.line or
+                        part.loc.col > colon.loc.col + @as(u32, @intCast(colon.text.len)))
+                    {
+                        self.lex.restoreState(saved);
+                        return null;
+                    }
                     try path.append(self.alloc, part.text);
                     method = true;
                     break;
@@ -4419,7 +4427,9 @@ pub const Parser = struct {
             const saved_home = self.descriptor_home;
             self.descriptor_home = first.name.ident;
             defer self.descriptor_home = saved_home;
+            self.union_alternative_seen = false;
             const typ = try self.parse_type();
+            const binding_fallible = self.union_alternative_seen;
 
             // Jai-like type definition: `Name: { fields }` with no initializer
             // becomes an alias_def (equivalent to `type Name = { fields }`)
@@ -4436,6 +4446,25 @@ pub const Parser = struct {
 
             var inits: std.ArrayList(*ast.Expr) = .empty;
             if (try self.eat(.assign) != null) {
+                // C0 §65: the result descriptor belongs to the binding, not to
+                // a suffix on the callable face.  Preserve that demand on the
+                // ordinary function record so every later stage sees exactly
+                // the same semantic object as the legacy suffix form.
+                if (try self.starts_parenthesized_func_expr()) {
+                    var fb = try self.parse_func_body(first.loc());
+                    fb.ret_type = typ;
+                    fb.ret_fallible = binding_fallible;
+                    const path = try self.alloc.alloc([]const u8, 1);
+                    path[0] = first.name.ident;
+                    return ast.Stmt{ .func_decl = .{
+                        .loc = first.loc(),
+                        .path = path,
+                        .method = false,
+                        .is_local = false,
+                        .func = fb,
+                        .attributes = &.{},
+                    } };
+                }
                 try inits.append(self.alloc, try self.parse_expr());
             }
             var names: std.ArrayList(ast.LocalName) = .empty;
@@ -7636,6 +7665,42 @@ test "parse: assign-form bare func decl without return type (GR-001)" {
     try testing.expectEqualStrings("sub", stmt.func_decl.path[0]);
     try testing.expectEqual(@as(usize, 2), stmt.func_decl.func.params.len);
     try testing.expect(stmt.func_decl.func.ret_type == .inferred);
+}
+
+test "parse: result demand precedes callable binding" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuoSource(
+        \\budget: i64 = (fallback: i64)
+        \\    fallback
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .func_decl);
+    try testing.expectEqualStrings("budget", stmt.func_decl.path[0]);
+    try testing.expectEqual(@as(usize, 1), stmt.func_decl.func.params.len);
+    try testing.expectEqualStrings("fallback", stmt.func_decl.func.params[0].name);
+    try testing.expect(stmt.func_decl.func.ret_type == .named);
+    try testing.expectEqualStrings("i64", stmt.func_decl.func.ret_type.named);
+    try testing.expect(!stmt.func_decl.func.ret_fallible);
+    const tail = stmt.func_decl.func.body.tail_expr orelse return error.MissingTailExpr;
+    try testing.expect(tail.* == .name);
+    try testing.expectEqualStrings("fallback", tail.name.ident);
+}
+
+test "parse: named result demand is not a receiver assignment" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuoSource(
+        \\meaning: { id: str }
+        \\normal: meaning = (face: str)
+        \\    { id = face }
+    , &arena);
+    const stmt = mod.body.stmts[1];
+    try testing.expect(stmt == .func_decl);
+    try testing.expectEqual(@as(usize, 1), stmt.func_decl.path.len);
+    try testing.expectEqualStrings("normal", stmt.func_decl.path[0]);
+    try testing.expect(stmt.func_decl.func.ret_type == .named);
+    try testing.expectEqualStrings("meaning", stmt.func_decl.func.ret_type.named);
 }
 
 test "parse: Pass23 colon method assign with implicit self" {
