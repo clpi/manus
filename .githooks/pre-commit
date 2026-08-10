@@ -5,17 +5,27 @@
 #
 # The logic is duon (scripts/idiomgate.duo). This shim exists solely because git
 # execs a file and does not know how to run .duo. Keep it this small.
-root=$(git rev-parse --show-toplevel) || exit 0
+root=$(git rev-parse --show-toplevel) || exit 1
 duo="$root/zig-out/bin/duo"
-[ -x "$duo" ] || { echo "idiomgate: duo not built — gate SKIPPED, not passed."; exit 0; }
-tmp=$(mktemp -t idiomgate) || exit 0
+[ -x "$duo" ] || { echo "canonical preflight: duo not built — commit blocked."; exit 1; }
+tmp=$(mktemp -t idiomgate) || exit 1
 git diff --cached -U0 --diff-filter=ACM -- '*.duo' > "$tmp"
-[ -s "$tmp" ] || { rm -f "$tmp"; exit 0; }
-DUOGATEDIFF="$tmp" "$duo" run "$root/scripts/idiomgate.duo"; rc=$?
+rc=0
+if [ -s "$tmp" ]; then
+  DUOGATEDIFF="$tmp" "$duo" run "$root/scripts/idiomgate.duo"
+  rc=$?
+fi
 rm -f "$tmp"
 [ $rc -eq 0 ] || {
   echo ""
   echo "COMMIT BLOCKED — every finding above is on a line THIS DIFF ADDS."
   echo "Inherited debt in the same file is not gated; only what you write is."
+  exit 1
+}
+
+"$duo" run "$root/scripts/semanticgate.duo" || {
+  echo ""
+  echo "COMMIT BLOCKED — semantic canonicality is part of correctness."
+  echo "Repair or explicitly classify the semantic debt; do not suppress it."
   exit 1
 }

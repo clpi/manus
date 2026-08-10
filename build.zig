@@ -481,6 +481,12 @@ pub fn build(b: *std.Build) void {
     const bootstrap_scan_step = b.step("bootstrap-scan", "gap[080]: the deny table over src/*.zig, the corpus audit100 excludes; ratchets");
     bootstrap_scan_step.dependOn(&bootstrap_scan_cmd.step);
 
+    const semantic_architecture_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/semanticgate.duo" });
+    semantic_architecture_cmd.setCwd(b.path("."));
+    semantic_architecture_cmd.step.dependOn(b.getInstallStep());
+    const semantic_architecture_step = b.step("semantic-architecture", "C0 §65: syntax faces erase into semantic relations, facts and demand; debt ratchets");
+    semantic_architecture_step.dependOn(&semantic_architecture_cmd.step);
+
     // gap[076]. The gap allocator's mkdir(2) is atomic within ONE filesystem
     // view, and parallel agents here work in git worktrees, which are several.
     // Both of its inputs used to be worktree-local, so two agents mkdir'd two
@@ -887,6 +893,7 @@ pub fn build(b: *std.Build) void {
     agent_smoke_cmd.step.dependOn(b.getInstallStep());
     const agent_smoke_step = b.step("agent-smoke", "Run tier-0 agent-smoke gate (public safety, coordination, stdlib, meta)");
     agent_smoke_step.dependOn(&public_safety_cmd.step);
+    agent_smoke_step.dependOn(&semantic_architecture_cmd.step);
     agent_smoke_step.dependOn(&agent_smoke_cmd.step);
     test_step.dependOn(agent_smoke_step);
 

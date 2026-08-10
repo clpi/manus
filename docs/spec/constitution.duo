@@ -2930,3 +2930,352 @@ gatelive = law{
 -- to pass the required native gate today", never "someone once thought this was
 -- unsupported". Promotion is AUTOMATIC the moment a program compiles and agrees.
 unsupported.means = "proven not to pass the required gate today; promotion is automatic on agreement"
+
+-- ═══ §65 · SEMANTIC NORMALIZATION — SURFACE IS EVIDENCE, NEVER AUTHORITY ══════
+--
+-- Owner directive 2026-08-09. The pressure test was the conventional shape
+-- `if not std.fs.exists(path)`: control words survived as semantic categories,
+-- a distribution home masqueraded as meaning, and an existence query exposed
+-- a state transition that should usually be atomic. The correction is NOT an
+-- immediate keyword purge. Meaning unifies first; spelling earns or loses its
+-- place only after ordinary relations can carry the work.
+
+surfacezero = law{
+    id    = "law.surface.zero"
+    kind  = .invariant
+    holds = .erased
+    binds = {
+        "a grammar face records provenance and resolution evidence, never semantic identity",
+        "if while for and or not operators projection indexing application and binding normalize immediately",
+        "a retained grammar face may improve human density and still own ZERO semantic machinery",
+    }
+    fails = "a parser production surviving as the authority for type effect optimization or lowering"
+}
+
+semanticsonly = law{
+    id    = "law.semantics.only"
+    kind  = .invariant
+    holds = .closed
+    binds = {
+        "after parsing the vocabulary is value relation descriptor fact demand world place witness provenance dependency application binding projection realization",
+        "source grammar categories are unavailable to semantic consumers except as provenance",
+        "temporary parser classification is parser-local and normalizes before semantic authority begins",
+    }
+    deny  = {
+        "conditional statement kind", "loop kind", "binary or unary expression kind",
+        "call index member return break or continue kind as semantic authority",
+    }
+}
+
+normalize = law{
+    id    = "law.normalize.early"
+    kind  = .invariant
+    holds = .immediate
+    binds = {
+        "tokens become parse faces; parse faces become meaning; meaning becomes identities relations and facts",
+        "no chain of syntax taxonomies exists between parsing and the persistent graph",
+        "every face carries source provenance through erasure",
+    }
+    fails = "ast to typed ast to control ast to backend ast"
+}
+
+faceerase = {
+    "if -> conditional demand over alternatives plus merge",
+    "while -> repeated demand with condition dependency body dependency and backedge",
+    "for -> iter relation with binding projection and demanded body",
+    "and or -> ordinary relations with operand-returning short-circuit demand",
+    "not -> ordinary truth relation with a prefix projection",
+    "operator -> ordinary relation identity plus orientation and precedence provenance",
+    "application faces -> one apply relation specialized by subject argument shape demand and context",
+    "index and member faces -> place or projection relations",
+    "binding face -> fact and place identity, never storage by default",
+    "return break continue -> demanded result of the enclosing region, never standalone semantic kinds",
+}
+
+controlone = law{
+    id    = "law.control.one"
+    kind  = .invariant
+    holds = .ordinary
+    binds = {
+        "control is dependencies demand effects values regions and facts",
+        "conditional demand selects exactly one alternative",
+        "repetition is a cyclic dependency region with explicit termination demand",
+        "iteration is a relation; map take fold each and fuse are specializations",
+        "termination is a result directed at an enclosing region",
+    }
+    keep  = "branch merge and backedge may exist as physical realization facts, never source ontology"
+}
+
+truth = law{
+    id    = "law.truth.relation"
+    kind  = .invariant
+    holds = .relation
+    binds = {
+        "and or and not are ordinary relation identities",
+        "short circuiting is a demand law, not keyword authority",
+        "the infix or prefix face may remain only while it earns greater readable density",
+    }
+}
+
+operatorface = law{
+    id    = "law.operator.face"
+    kind  = .invariant
+    holds = .projection
+    binds = {
+        "grammar supplies orientation precedence and provenance",
+        "the semantic graph stores the relation identity and operands",
+        "no plus binary or unary ontology survives normalization",
+    }
+}
+
+bindplace = law{
+    id    = "law.binding.place"
+    kind  = .invariant
+    holds = .demanded
+    binds = {
+        "a binding establishes identity and facts",
+        "storage exists only where address capture mutation alias spill abi or debugging demand it",
+    }
+    fails = "a source binding becoming a memory slot by default"
+}
+
+semanticorder = law{
+    id    = "law.order.minimum"
+    kind  = .invariant
+    holds = .dependency
+    binds = {
+        "source order becomes dependency only where observation or law requires it",
+        "independent pure relations remain reorderable parallelizable and fusible",
+    }
+}
+
+realizeface = law{
+    id    = "law.realize.face"
+    kind  = .invariant
+    holds = .separate
+    binds = {
+        "backend branches loops blocks registers and jumps are physical realization facts",
+        "they never prove source semantics and never become persistent semantic identities",
+        "semantic provenance reaches every physical control edge",
+    }
+}
+
+keywordpressure = law{
+    id    = "law.keyword.pressure"
+    kind  = .protocol
+    holds = .earned
+    binds = {
+        "no reserved word is entitled to exist",
+        "each face names the relation it projects and erases immediately",
+        "ordinary relations replace reducible uses before any spelling is removed",
+        "readability resolution entropy vocabulary cost and lowering quality decide retention",
+        "a control or truth face survives only where the ordinary relation would materially lose clarity or performance or where the demand is irreducible",
+    }
+    keep  = "if while and or not remain provisional grammar faces; for is aggressively canonicalized toward iteration relations"
+}
+
+semanticgate = law{
+    id    = "law.gate.semantic"
+    kind  = .protocol
+    holds = .ratchet
+    binds = {
+        "every syntax-derived compiler case is classified parser-only provenance-only physical-only irreducible or migration debt",
+        "unclassified cases are zero and every zero has a positive control",
+        "migration debt counts only descend and every repair lowers its exact budget",
+        "the named semantic-architecture gate is part of agent-smoke",
+    }
+    fails = "a semantic architecture audit that reports but cannot block a merge"
+}
+
+endgate = "when semantic normalization is complete no surviving semantic kind corresponds one to one with a grammar production; every retained face is justified by resolution or human density and carries zero semantic authority"
+
+conventional = law{
+    id    = "law.audit.conventional"
+    kind  = .protocol
+    holds = .classified
+    binds = {
+        "std os fs and mem operation homes are canonical debt, not semantic namespaces",
+        "operation first namespace calls are audited against subject relation world and demand roles",
+        "empty string and nil are never assumed to mean absence without a descriptor law",
+        "an existence guard followed by a state operation is audited for an atomic relation",
+        "a single consumer temporary feeding selection is audited for direct value flow",
+        "callable result demand precedes the binder; a suffix result annotation is debt",
+    }
+    keep  = "the audit classifies meaning before repair; it never invents replacement vocabulary from a grep"
+}
+
+semanticfirst = law{
+    id    = "law.semantic.first"
+    kind  = .invariant
+    holds = .intent
+    binds = {
+        "canonical source names the irreducible semantic operation requested",
+        "a conventional control storage namespace failure or representation pattern is never the starting model",
+        "the chosen representation preserves the most information and the largest lawful realization set",
+    }
+    fails = "syntax translated from C Rust Python or Lua before subject relation cases world and demand are identified"
+}
+
+conventionzero = law{
+    id    = "law.convention.zero"
+    kind  = .invariant
+    holds = .strongest
+    binds = {
+        "a weaker conventional pattern is noncanonical when an existing relation level descriptor world demand place proof or structured value preserves its observations",
+        "the stronger form must expose at least as much optimization freedom",
+        "parsing typing and tests do not excuse canonicality debt",
+    }
+    keep  = "canonicality is part of correctness"
+}
+
+canonicalfinding = @{
+    id = "descriptor.canonical.finding"
+    fields = {
+        .span, .subject, .relation, .intent, .law, .family,
+        .why, .rewrite, .confidence, .world, .demand, .cases, .dnir,
+    }
+    rule = "diagnostics MCP LSP and generated docs project this same record; plain string findings are invalid"
+    rewrite = "present only where equivalence is proven; otherwise family and missing vocabulary remain explicit"
+}
+
+canonicalpreflight = law{
+    id    = "law.canonical.preflight"
+    kind  = .protocol
+    holds = .blocking
+    binds = {
+        "parse then normalize then semantic audit then corpus idiom gate then format then test",
+        "precommit and CI repeat the named semantic architecture gate",
+        "a canonicality finding is repaired at its authoritative semantic or vocabulary layer and is never suppressed",
+    }
+}
+
+canonicalformat = law{
+    id    = "law.canonical.format"
+    kind  = .protocol
+    holds = .proved
+    binds = {
+        "the formatter rewrites only equivalences admitted by a witness",
+        "one consumer bridge binding removal and callable face migration require preserved provenance effects demand and observation",
+        "probable semantic improvement without proof remains a structured diagnostic",
+    }
+}
+
+touchedcanonical = law{
+    id    = "law.canonical.touched"
+    kind  = .protocol
+    holds = .zero
+    binds = {
+        "a touched semantic region leaves no newly reachable canonicality debt",
+        "safe inherited debt in that region is repaired in the same change",
+        "remaining debt names its missing relation or proof owner and its canonical gap identifier",
+    }
+}
+
+vocabularyaudit = law{
+    id    = "law.vocabulary.audit"
+    kind  = .protocol
+    holds = .semantic
+    binds = {
+        "every standard operation identifies subject relation world preserved cases and demand",
+        "misleading namespace sentinel and representation APIs deprecate only after their semantic replacement is admitted",
+        "the standard library is runtime substrate semantic vocabulary optimization interface agent corpus and style authority at once",
+    }
+}
+
+canonicaldebt = {
+    "namespace subject calls -> 0",
+    "capability as namespace traversal -> 0",
+    "ordinary values used as absence or failure sentinels -> 0",
+    "existence query followed by establishable state transition -> 0",
+    "single consumer bridge bindings -> 0",
+    "reducible imperative iteration -> 0",
+    "conditional demand used only for default projection cases or failure routing -> 0",
+    "manual failure forwarding -> 0",
+    "undemanded storage allocation or materialization -> 0",
+    "callable result suffix -> 0",
+    "representation specific operation where a semantic relation exists -> 0",
+}
+
+semanticservice = law{
+    id    = "law.semantic.service"
+    kind  = .protocol
+    holds = .one
+    binds = {
+        "compiler LSP MCP formatter and generated documentation query one persistent semantic graph",
+        "explain canonical subject relations and why are projections of descriptor canonical finding",
+        "the constitution grammar standard vocabulary and compiler manifest generate the teaching corpus",
+    }
+    fails = "independently handwritten examples that can contradict semantic authority"
+}
+
+boundaryzero = law{
+    id    = "law.boundary.semantic"
+    kind  = .invariant
+    holds = .total
+    binds = {
+        "parser normalization graph transforms dnir realization formatter diagnostics LSP MCP documentation and agents preserve the same identities relations facts provenance and laws",
+        "no boundary reconstructs meaning from a face spelling opcode namespace filename or representation",
+        "every projection can answer which semantic identity and witness authorized it",
+    }
+}
+
+wordone = law{
+    id    = "law.word.one"
+    kind  = .invariant
+    holds = .everywhere
+    binds = {
+        "every identifier is one lowercase semantic word",
+        "underscores uppercase word collisions and abbreviated multiword compounds are zero in source paths generated code graph identities diagnostics tools and documentation anchors",
+        "a second axis becomes a level home relation descriptor field or separate identity rather than punctuation inside a name",
+    }
+}
+
+fileone = law{
+    id    = "law.file.one"
+    kind  = .invariant
+    holds = .concept
+    binds = {
+        "a file is the durable home of one semantic concept",
+        "its path ownership documentation tests transforms and generated projections share that concept identity",
+        "a file that becomes a miscellaneous namespace utility bucket or unrelated declaration bundle must split",
+    }
+    keep  = "one concept may require several relations descriptors proofs and realizations; cohesion is semantic rather than a line limit"
+}
+
+stdzero = law{
+    id    = "law.std.zero"
+    kind  = .protocol
+    holds = .retiring
+    binds = {
+        "std is a distribution and compatibility root, never semantic authority",
+        "pure activity is a subject relation and capability activity is a subject relation under a world",
+        "homes navigate concepts but never substitute for a subject relation or world",
+        "every admitted replacement lowers the std root ratchet and removes the misleading entry point",
+    }
+    keep  = "a temporary import root may locate vocabulary while self hosting converges; it contributes no semantic identity"
+}
+
+-- Conventional source to semantic reduction, recorded without blessing a
+-- replacement spelling. The environment/default vocabulary remains OPEN: the
+-- relation family must be derived before a canonical name is assigned.
+budgetreduction = @{
+    source = {
+        "budget = (name: str, fallback: i64): i64",
+        "    value = std.os.getenv(name)",
+        "    if value == empty-string",
+        "        fallback",
+        "    else",
+        "        value:to(i64)",
+    }
+    graph = {
+        "environment world is authority",
+        "name is the lookup key subject",
+        "lookup yields absent or present(value), preserving present empty-string",
+        "present value flows through to(i64)",
+        "absent flows to fallback",
+        "selection is value demand, not a conditional semantic kind",
+    }
+    dnir = "current deficiency: namespace call, empty sentinel, temporary and branch survive because absence and default facts were erased"
+    target = "open vocabulary audit: assign no spelling until lookup presence conversion and default reduce to the smallest existing relation family"
+    machine = "runtime: lookup presence test then parse or fallback; build-stage known name and environment may fold to one integer constant"
+}

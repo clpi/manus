@@ -76,6 +76,123 @@ MIGRATION DEBT, not permission. Do not imitate the file you are editing — chec
 it against the table above and repair what you touch. The repo's history is not
 the repo's law.
 
+## SEMANTIC-FIRST — DO NOT TRANSLATE CONVENTIONAL CODE INTO DUON
+
+Never begin from:
+
+“How would I write this C / Rust / Python / Lua pattern using Duon syntax?”
+
+Begin from:
+
+“What semantic operation is this program actually requesting?”
+
+Then express that operation using the smallest existing Duon combination of:
+
+- relation
+- level
+- descriptor
+- value
+- demand
+- world
+- place
+- proof
+- ordinary application / structured value
+
+before introducing explicit control, storage, allocation, namespace traversal,
+sentinel values, or representation.
+
+The following are PRESUMPTIVELY NONCANONICAL and require semantic justification
+whenever written or touched:
+
+- namespace-style operation(subject) when the first meaningful value is the subject;
+- std.*/module traversal standing in for semantic subject or world;
+- empty string, nil, zero, -1, or another ordinary value used as an absence/error sentinel;
+- existence/query followed by a state-changing operation that could express the requested transition directly;
+- explicit conditional control used only to implement defaulting, projection, case selection, optional handling, or failure routing;
+- imperative iteration equivalent to an existing iteration relation;
+- single-consumer temporary bindings used only to bridge relations;
+- explicit storage/allocation not demanded by observation;
+- manual failure forwarding;
+- legacy callable-result syntax;
+- representation-specific vocabulary where an existing semantic relation applies.
+
+if, while, for, and, or, not, calls, indexing, updates, and operators are SOURCE
+FACES, not semantic explanations.
+
+When reasoning about code after parsing, describe its meaning using Duon semantic
+terms.
+
+Do not say:
+
+- “if statement”
+- “while node”
+- “for loop”
+- “binary expression”
+- “call expression”
+
+except while specifically discussing parser recognition.
+
+Instead identify the actual:
+
+- relation
+- semantic values
+- conditional demand
+- dependencies
+- carried values
+- iteration relation
+- world/effects
+- result demand
+- place
+- representation facts
+
+If the right semantic vocabulary does not yet exist, STOP.
+
+Do not invent a conventional workaround.
+
+Record the missing semantic relation/vocabulary requirement and fix the
+authoritative standard vocabulary or semantic model first.
+
+### Required pre-write questions
+
+Before writing a nontrivial Duon expression, ask:
+
+1. What value is the semantic subject?
+2. What relation is actually being requested?
+3. What information is being represented indirectly?
+4. Is a sentinel standing in for a semantic case?
+5. Is explicit control merely implementing a value relation?
+6. Is iteration hiding a known higher-level relation?
+7. Is a temporary semantically meaningful or only a bridge?
+8. Is a namespace standing in for a world or subject?
+9. Is storage/allocation actually observable?
+10. What optimization freedom would this spelling destroy?
+
+Prefer the representation that preserves the most semantic information and
+leaves the largest lawful realization set.
+
+### Absolute rule
+
+A syntactically valid Duon program that expresses its intent through a weaker
+conventional pattern is still noncanonical Duon.
+
+Passing the parser is not sufficient.
+Passing type checking is not sufficient.
+Passing tests is not sufficient.
+
+**Canonicality is part of correctness.**
+
+The rule crosses every boundary: source, generated Duon, graph identity, DNIR,
+realization, diagnostics, formatter, LSP, MCP, documentation and agent output.
+Identifiers are one lowercase semantic word; underscores are never canonical.
+Each file owns one semantic concept. `std` is a retiring distribution and
+compatibility root, never semantic authority; lower its ratchet whenever an
+admitted subject relation, level, home or world replaces an entry point.
+
+Every commit runs `zig build semantic-architecture` through the pre-commit
+chokepoint. Do not suppress or route around a canonicality finding. It means the
+source model is wrong, not merely the spelling; repair the authoritative
+semantic layer or classify the blocked migration debt.
+
 ---
 
 ### 1. The Aha Moment Target
@@ -231,4 +348,3 @@ files are the only thing a hard reset spares. That is luck, not a safety net.
 To undo a commit you just made, **`git reset --soft HEAD~1`** — it moves the
 branch pointer and touches no file. To discard one path, name that path. Never
 widen a revert to the whole tree to save a keystroke.
-

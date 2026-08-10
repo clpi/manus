@@ -127,6 +127,61 @@ docs/spec/             THE LAW — pass100.md + AUTHORITY.md + corpus.md
 - Zero Lua boxed values in the hot path — all values must be native C ABI or direct registers
 - Every perf change must pass `zig build bench` with no regressions
 
+## Semantic normalization
+
+Grammar faces are evidence, never semantic authority. `if`, `while`, `for`,
+`and`, `or`, `not`, operators, application, projection, indexing and binding
+normalize immediately into values, relations, facts, demand, worlds, places,
+dependencies and provenance. A retained keyword may still be the densest source
+projection; it may not own type, effect, optimization or lowering semantics.
+
+Control is ordinary conditional or cyclic demand. `and`/`or`/`not` are ordinary
+relations whose short-circuit behavior is a demand law. Iteration is a relation,
+so canonicalization prefers `map`/`take`/`fold`/`each` and fused chains wherever
+they carry the same meaning. Backend branches, blocks and jumps are physical
+realization facts only. Run `zig build semantic-architecture`; it classifies
+every measured syntax-derived compiler case and ratchets migration debt down.
+
+Subject and authority stay orthogonal: `path:read(fs)` or `path:read()` where the
+world is uniquely granted, never `std.fs.read(path)` or `fs:read(path)`. Prefer
+an atomic state relation over an existence-check control pattern where one
+exists. See C0 §65; this section is its non-normative projection.
+
+High-information audits:
+
+```text
+BAD  std.fs.exists(path)
+WHY  operation-first namespace traversal hides path as subject and filesystem
+     authority as a world; an existence query may also split one atomic state
+     transition into a racy observation plus mutation.
+ASK  What is the subject? What world grants authority? What state is actually
+     being established? Does the state-changing relation remove the query?
+
+BAD  value = std.os.getenv(name)
+     if value == ""
+         fallback
+     else
+         value:to(i64)
+WHY  an empty string is a valid present value, but this source collapses it into
+     absence; the conditional merely implements presence conversion/defaulting.
+ASK  What cases does lookup preserve? Which value is the subject? What relation
+     combines presence, conversion and fallback? If that vocabulary is absent,
+     record the gap instead of inventing another namespace or sentinel API.
+```
+
+These are questions, not premature replacement spellings. A formatter may only
+rewrite a proven equivalence; an unresolved semantic family receives a structured
+canonicality finding. `GAP-117` records that the current parser still rejects the
+canonical callable result-demand face without the deleted `end` token; `GAP-118`
+owns the unresolved environment presence/default vocabulary.
+
+The rule is total across boundaries. Identifiers are one lowercase semantic word
+everywhere—underscores are never canonical, including generated identities and
+tool output. Each file is the durable home of one semantic concept, not a utility
+bucket or namespace. `std` is only a retiring distribution/compatibility root:
+subject relations, levels and worlds carry meaning, and every admitted replacement
+must lower the `stdroot` ratchet.
+
 ## Active plans
 
 There are none. Pass 100 is the only plan; `docs/spec/AUTHORITY.md` carries what
@@ -772,4 +827,3 @@ The rules that follow, and they are not negotiable:
   on that was wrong. Assert contents.
 - **Positive-control every zero.** A gate that reports 0/N is usually broken,
   not green.
-

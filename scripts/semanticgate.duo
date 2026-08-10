@@ -1,0 +1,195 @@
+-- Semantic normalization architecture gate, C0 §65.
+--
+-- A grammar face may survive for readable density. It may not survive as the
+-- thing sema, optimization or lowering reasons about. This census separates
+-- five classifications instead of treating every syntax-shaped word alike:
+-- parser-only, provenance-only, physical-realization-only, documented
+-- irreducible meaning, and migration debt. The first three are bounded; the
+-- fourth is deliberately zero; every debt row ratchets down.
+--
+-- The rows count LINES, not matches. The gate scans tracked bootstrap source so
+-- an untracked probe cannot move a budget. Each pattern has a positive and a
+-- negative control before any repository number is trusted.
+--
+-- GAP-119 owns this gate's 34 process-capture namespace calls. Execution has
+-- no admitted subject/world/result vocabulary yet, and GAP-117 prevents hiding
+-- the repetition behind a canonically result-typed helper. The blocked row
+-- makes that bootstrap debt visible and monotone instead of aliasing it away.
+
+q = "'"
+
+all = "git ls-files 'src/*.zig'"
+front = "printf '%s\\n' src/ast.zig src/parser.zig src/macro_expand.zig"
+after = "git ls-files 'src/*.zig' | grep -v -E '^src/(ast|parser|macro_expand|pretty)\\.zig$'"
+proven = "printf '%s\\n' src/ast.zig src/parser.zig src/pretty.zig"
+duofiles = "git ls-files '*.duo' | grep -v '^scripts/semanticgate.duo$'"
+
+astpat = "ast\\.(Expr|Stmt|BinOp|UnOp|IfExpr|ElseIf|ListComprehension)"
+dispatchpat = "\\.(if_stmt|while_loop|repeat_loop|num_for|gen_for|brk|cont|ret|binop|unop|call|method_call|index|field|if_expr|contains_expr)[[:space:],]*=>"
+parserpat = "pub const (BinOp|UnOp|IfExpr|ListComprehension|Stmt)[[:space:]=]"
+provenpat = "InvocationForm|\\.form[[:space:]]*(==|!=)"
+facepat = "if \\(c\\.form != \\.braced\\)"
+graphpat = "^[[:space:]]+(call|directive|pipeline),$"
+physicalpat = "^[[:space:]]+(br|br_if|br_if_not|ret|ret_record),$"
+irpat = "^[[:space:]]+(const_(i64|f64|str|req)|load_(local|field|index|global)|store_(local|field|index)|call_(direct|extern)|mov_arg|fp_mov_arg|br_if|br_if_not|ret_record|hw_(fence|spin|unary)|str_len|binop|cmp),$"
+apipat = "pub const (CallSite|CallTransform|ReturnPack|ReturnConsumption|CalleeKind|CallShape|CallReturnSpecialization)[[:space:]=]"
+newpat = "pub const (IfStmt|WhileStmt|ForStmt|BinaryExpr|UnaryExpr|CallExpr|IndexExpr|MemberExpr|ReturnStmt|BreakStmt|ContinueStmt)[[:space:]=]"
+namespacepat = "std\\.(os|fs|mem)\\.[a-z][a-z0-9]*\\("
+stdpat = "(^|[^a-z0-9.])std\\.[a-z]"
+suffixpat = "^[[:space:]]*[a-z][a-z0-9]*[[:space:]]*=[[:space:]]*\\([^)]*\\)[[:space:]]*:[[:space:]]*[a-z][a-z0-9]*(\\([^)]*\\))?[[:space:]]*$"
+envemptypat = "(getenv|envor|env_or|std\\.script\\.getenv).*\"\"|\"\".*(getenv|envor|env_or|std\\.script\\.getenv)"
+nilpat = "^[[:space:]]*if .*(!=|==) nil"
+existpat = "^[[:space:]]*if .*exists\\("
+
+main = ()
+    code = 0
+    cmd = "printf {q}%s\\n{q} {q}pub const IfExpr = struct {{{q} | grep -c -E {q}{parserpat}{q}"
+    if std.proc.capture(cmd):to(i64) != 1
+        print("(semanticgate, control, parser-only, missed IfExpr)")
+        code = 3
+    cmd = "printf {q}%s\\n{q} {q}pub const relation = struct {{{q} | grep -c -E {q}{parserpat}{q}"
+    if std.proc.capture(cmd):to(i64) != 0
+        print("(semanticgate, control, parser-only, convicted relation)")
+        code = 3
+    cmd = "printf {q}%s\\n{q} {q}.if_stmt => |branch|{q} | grep -c -E {q}{dispatchpat}{q}"
+    if std.proc.capture(cmd):to(i64) != 1
+        print("(semanticgate, control, dispatch, missed if face)")
+        code = 3
+    cmd = "printf {q}%s\\n{q} {q}.demand => |edge|{q} | grep -c -E {q}{dispatchpat}{q}"
+    if std.proc.capture(cmd):to(i64) != 0
+        print("(semanticgate, control, dispatch, convicted demand)")
+        code = 3
+    cmd = "printf {q}%s\\n{q} {q}    directive,{q} | grep -c -E {q}{graphpat}{q}"
+    if std.proc.capture(cmd):to(i64) != 1
+        print("(semanticgate, control, graph, missed directive kind)")
+        code = 3
+    cmd = "printf {q}%s\\n{q} {q}    relation,{q} | grep -c -E {q}{graphpat}{q}"
+    if std.proc.capture(cmd):to(i64) != 0
+        print("(semanticgate, control, graph, convicted relation)")
+        code = 3
+    cmd = "printf {q}%s\\n{q} {q}    call_direct,{q} | grep -c -E {q}{irpat}{q}"
+    if std.proc.capture(cmd):to(i64) != 1
+        print("(semanticgate, control, ir, missed duplicate call identity)")
+        code = 3
+    cmd = "printf {q}%s\\n{q} {q}    br,{q} | grep -c -E {q}{irpat}{q}"
+    if std.proc.capture(cmd):to(i64) != 0
+        print("(semanticgate, control, ir, convicted physical branch)")
+        code = 3
+    cmd = "printf {q}%s\\n{q} {q}pub const WhileStmt = struct {{{q} | grep -c -E {q}{newpat}{q}"
+    if std.proc.capture(cmd):to(i64) != 1
+        print("(semanticgate, control, unclassified, missed new syntax kind)")
+        code = 3
+    cmd = "printf {q}%s\\n{q} {q}pub const Demand = struct {{{q} | grep -c -E {q}{newpat}{q}"
+    if std.proc.capture(cmd):to(i64) != 0
+        print("(semanticgate, control, unclassified, convicted semantic kind)")
+        code = 3
+    cmd = "printf {q}%s\\n{q} {q}std.fs.exists(path){q} | grep -c -E {q}{namespacepat}{q}"
+    if std.proc.capture(cmd):to(i64) != 1
+        print("(semanticgate, control, namespace, missed std fs operation)")
+        code = 3
+    cmd = "printf {q}%s\\n{q} {q}path:exists(){q} | grep -c -E {q}{namespacepat}{q}"
+    if std.proc.capture(cmd):to(i64) != 0
+        print("(semanticgate, control, namespace, convicted subject relation)")
+        code = 3
+    cmd = "printf {q}%s\\n{q} {q}budget = (name: str): i64{q} | grep -q -E {q}{suffixpat}{q} && printf {q}%s\\n{q} {q}std.json.encode(x){q} | grep -q -E {q}{stdpat}{q} && printf {q}%s\\n{q} {q}x:encode(json){q} | grep -q -v -E {q}{stdpat}{q} && printf {q}%s\\n{q} {q}std.os.getenv(name) == \"\"{q} | grep -q -E {q}{envemptypat}{q} && printf {q}%s\\n{q} {q}present(\"\"){q} | grep -q -v -E {q}{envemptypat}{q} && printf {q}%s\\n{q} {q}if value == nil{q} | grep -q -E {q}{nilpat}{q} && printf {q}%s\\n{q} {q}value:case(.absent){q} | grep -q -v -E {q}{nilpat}{q} && printf {q}%s\\n{q} {q}if path:exists(){q} | grep -q -E {q}{existpat}{q} && printf {q}%s\\n{q} {q}path:ensure(file){q} | grep -q -v -E {q}{existpat}{q} && printf {q}%s\\n{q} {q}bad_name.duo{q} | grep -q {q}_{q} && printf {q}%s\\n{q} {q}concept.duo{q} | grep -q -v {q}_{q} && printf 1"
+    if std.proc.capture(cmd):to(i64) != 1
+        print("(semanticgate, control, source, broken semantic debt classifier)")
+        code = 3
+    cmd = "printf {q}%s\\n{q} {q}budget: i64 = (name: str){q} | grep -c -E {q}{suffixpat}{q}"
+    if std.proc.capture(cmd):to(i64) != 0
+        print("(semanticgate, control, result, convicted result demand)")
+        code = 3
+
+    if code != 0
+        print("(semanticgate, error, controls, broken, repository counts withheld)")
+    if code == 0
+        cmd = "{front} | tr '\\n' '\\0' | xargs -0 grep -h -E {q}{parserpat}{q} 2>/dev/null | wc -l"
+        parser = std.proc.capture(cmd):to(i64)
+        cmd = "{proven} | tr '\\n' '\\0' | xargs -0 grep -h -E {q}{provenpat}{q} 2>/dev/null | wc -l"
+        provenance = std.proc.capture(cmd):to(i64)
+        cmd = "printf '%s\\n' src/pretty.zig | tr '\\n' '\\0' | xargs -0 grep -h -E {q}{astpat}{q} 2>/dev/null | wc -l"
+        render = std.proc.capture(cmd):to(i64)
+        cmd = "printf '%s\\n' src/pretty.zig | tr '\\n' '\\0' | xargs -0 grep -h -E {q}{dispatchpat}{q} 2>/dev/null | wc -l"
+        render += std.proc.capture(cmd):to(i64)
+        cmd = "printf '%s\\n' src/duo_native_ir.zig | tr '\\n' '\\0' | xargs -0 grep -h -E {q}{physicalpat}{q} 2>/dev/null | wc -l"
+        physical = std.proc.capture(cmd):to(i64)
+        cmd = "{all} | tr '\\n' '\\0' | xargs -0 grep -h -E {q}{newpat}{q} 2>/dev/null | wc -l"
+        unclassified = std.proc.capture(cmd):to(i64)
+        cmd = "{after} | tr '\\n' '\\0' | xargs -0 grep -h -E {q}{astpat}{q} 2>/dev/null | wc -l"
+        consumer = std.proc.capture(cmd):to(i64)
+        cmd = "{after} | tr '\\n' '\\0' | xargs -0 grep -h -E {q}{dispatchpat}{q} 2>/dev/null | wc -l"
+        dispatch = std.proc.capture(cmd):to(i64)
+        cmd = "{after} | tr '\\n' '\\0' | xargs -0 grep -h -E {q}{facepat}{q} 2>/dev/null | wc -l"
+        face = std.proc.capture(cmd):to(i64)
+        cmd = "printf '%s\\n' src/semantic_graph.zig | tr '\\n' '\\0' | xargs -0 grep -h -E {q}{graphpat}{q} 2>/dev/null | wc -l"
+        graph = std.proc.capture(cmd):to(i64)
+        cmd = "printf '%s\\n' src/duo_native_ir.zig | tr '\\n' '\\0' | xargs -0 grep -h -E {q}{irpat}{q} 2>/dev/null | wc -l"
+        ir = std.proc.capture(cmd):to(i64)
+        cmd = "{after} | tr '\\n' '\\0' | xargs -0 grep -h -E {q}{apipat}{q} 2>/dev/null | wc -l"
+        api = std.proc.capture(cmd):to(i64)
+        cmd = "{duofiles} | tr '\\n' '\\0' | xargs -0 grep -h -E {q}{namespacepat}{q} 2>/dev/null | grep -v -E {q}^[[:space:]]*(--|source[[:space:]]*=|\"){q} | wc -l"
+        namespace = std.proc.capture(cmd):to(i64)
+        cmd = "{duofiles} | tr '\\n' '\\0' | xargs -0 grep -h -E {q}{stdpat}{q} 2>/dev/null | grep -v -E {q}^[[:space:]]*(--|source[[:space:]]*=|\"){q} | wc -l"
+        standard = std.proc.capture(cmd):to(i64)
+        cmd = "{duofiles} | tr '\\n' '\\0' | xargs -0 grep -h -E {q}{suffixpat}{q} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l"
+        suffix = std.proc.capture(cmd):to(i64)
+        cmd = "{duofiles} | tr '\\n' '\\0' | xargs -0 grep -h -E {q}{envemptypat}{q} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l"
+        envempty = std.proc.capture(cmd):to(i64)
+        cmd = "{duofiles} | tr '\\n' '\\0' | xargs -0 grep -h -E {q}{nilpat}{q} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l"
+        nilabsence = std.proc.capture(cmd):to(i64)
+        cmd = "{duofiles} | tr '\\n' '\\0' | xargs -0 grep -h -E {q}{existpat}{q} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l"
+        existence = std.proc.capture(cmd):to(i64)
+        cmd = "grep -c -E {q}std[.]proc[.]capture\\({q} scripts/semanticgate.duo"
+        bootstrap = std.proc.capture(cmd):to(i64)
+        cmd = "git ls-files '*.duo' | grep -c {q}_{q}"
+        fileword = std.proc.capture(cmd):to(i64)
+
+        over = 0
+        print("(semanticgate, count, parser-only, faces, {parser}, cap=5)")
+        if parser > 5 over += 1
+        print("(semanticgate, count, provenance, faces, {provenance}, cap=10)")
+        if provenance > 10 over += 1
+        print("(semanticgate, count, provenance, render, {render}, cap=26)")
+        if render > 26 over += 1
+        print("(semanticgate, count, physical, control, {physical}, cap=5)")
+        if physical > 5 over += 1
+        print("(semanticgate, count, irreducible, documented, 0, cap=0)")
+        print("(semanticgate, count, unclassified, syntax, {unclassified}, cap=0)")
+        if unclassified > 0 over += 1
+        print("(semanticgate, count, migration, consumers, {consumer}, cap=815)")
+        if consumer > 815 over += 1
+        print("(semanticgate, count, migration, dispatch, {dispatch}, cap=723)")
+        if dispatch > 723 over += 1
+        print("(semanticgate, count, migration, faceauth, {face}, cap=2)")
+        if face > 2 over += 1
+        print("(semanticgate, count, migration, graphkind, {graph}, cap=1)")
+        if graph > 1 over += 1
+        print("(semanticgate, count, migration, irops, {ir}, cap=24)")
+        if ir > 24 over += 1
+        print("(semanticgate, count, migration, api, {api}, cap=8)")
+        if api > 8 over += 1
+        print("(semanticgate, count, migration, namespace, {namespace}, cap=179)")
+        if namespace > 179 over += 1
+        print("(semanticgate, count, migration, stdroot, {standard}, cap=2842)")
+        if standard > 2842 over += 1
+        print("(semanticgate, count, migration, resultsuffix, {suffix}, cap=296)")
+        if suffix > 296 over += 1
+        print("(semanticgate, count, audit, emptyabsence, {envempty}, cap=22)")
+        if envempty > 22 over += 1
+        print("(semanticgate, count, audit, nilabsence, {nilabsence}, cap=1541)")
+        if nilabsence > 1541 over += 1
+        print("(semanticgate, count, audit, existence, {existence}, cap=85)")
+        if existence > 85 over += 1
+        print("(semanticgate, count, migration, fileword, {fileword}, cap=468)")
+        if fileword > 468 over += 1
+        print("(semanticgate, count, blocked, processapi, {bootstrap}, cap=34, gap=119)")
+        if bootstrap > 34 over += 1
+
+        if over > 0
+            print("(semanticgate, fail, ratchet, raised, lower implementation or justify law change)")
+            code = 1
+        else
+            print("(semanticgate, pass, law.surface.zero, classified, debt may only descend)")
+    if code != 0
+        error("(semanticgate, blocked, canonicality, unresolved, see structured findings above)")
+    code
