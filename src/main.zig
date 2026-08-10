@@ -393,7 +393,6 @@ const usage =
     \\  catalog audit summary audit without open_items (medium)
     \\  dev        <sub>    Pass 13 development control plane (snapshot|audit|context|summary|claim|persist|session|validate|integration|coordination)
     \\  semantic   <sub>    Pass 12 semantic projections (intent|compare|proof|preview|validate|transforms|…)
-    \\  selfhost   <sub>    Pass 16 self-hosting (manifest|targets|verify|proof|stage|…)
     \\  wasm-tables emit    regenerate lib/std/wasm/opcode_lookup.duo + ward_mvp_opcodes.duo
     \\  completion <shell>  generate shell completions (bash, zsh, fish, nu)
     \\
@@ -465,7 +464,6 @@ pub fn main(init: std.process.Init) !void {
             std.mem.eql(u8, args[1], "catalog") or
             std.mem.eql(u8, args[1], "dev") or
             std.mem.eql(u8, args[1], "semantic") or
-            std.mem.eql(u8, args[1], "selfhost") or
             std.mem.eql(u8, args[1], "wasm-tables") or
             std.mem.eql(u8, args[1], "token-tables") or
             std.mem.eql(u8, args[1], "completion") or
