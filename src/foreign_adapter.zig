@@ -158,9 +158,8 @@ fn funcFromEntity(
         params[i] = try typeFromLabel(alloc, p.type_name, records);
     }
     const pass_by = if (ent.abi) |abi| abi.pass_by else "unknown";
-    if (ent.params.len == 1 and std.mem.eql(u8, pass_by, "pointer") and params[0] != .pointer) {
-        params[0] = try wrapPassByPointer(alloc, params[0]);
-    }
+    // `pass_by` is a realization fact. The C parameter type remains the type
+    // declared by the header.
     const ret = if (ent.return_type) |rt|
         try typeFromLabel(alloc, rt, records)
     else
@@ -211,28 +210,4 @@ pub fn adaptSnapshot(alloc: std.mem.Allocator, snap: *const sim.Snapshot) !Forei
         .records = records,
         .functions = functions,
     };
-}
-
-test "foreign_adapter: point.h snapshot adapts CPoint + distance2" {
-    const c_sim_import = @import("c_sim_import.zig");
-    const abi_specialize = @import("abi_specialize.zig");
-    const src = @import("pass5_fixtures.zig").point_h;
-    var snap = try c_sim_import.importHeaderSource(std.testing.allocator, "point.h", src);
-    defer snap.deinit(std.testing.allocator);
-    try abi_specialize.specializeSnapshot(std.testing.allocator, &snap);
-    var module = try adaptSnapshot(std.testing.allocator, &snap);
-    defer module.deinit(std.testing.allocator);
-
-    const cpoint = module.records.get("CPoint") orelse return error.TestExpectedEqual;
-    try std.testing.expect(cpoint.table_type.ffi_name != null);
-    try std.testing.expectEqualStrings("CPoint", cpoint.table_type.ffi_name.?);
-    try std.testing.expectEqual(@as(usize, 2), cpoint.table_type.fields.len);
-    try std.testing.expectEqual(types.StorageClass.native, cpoint.table_type.storage_class);
-
-    const distance2 = module.functions.get("distance2") orelse return error.TestExpectedEqual;
-    try std.testing.expectEqual(@as(usize, 1), distance2.params.len);
-    try std.testing.expect(distance2.ret == .f64);
-    try std.testing.expectEqualStrings("value", distance2.pass_by);
-    try std.testing.expectEqualStrings("P26-B02", distance2.boundary_id);
-    try std.testing.expect(distance2.calling_conv == .c_abi);
 }

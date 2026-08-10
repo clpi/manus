@@ -28,7 +28,6 @@ test {
     _ = @import("c_frontend.zig");
     _ = @import("c_sim_import.zig");
     _ = @import("c_layout_verify.zig");
-    _ = @import("pass5_fixtures.zig");
     _ = @import("foreign_adapter.zig");
     _ = @import("abi_specialize.zig");
     _ = @import("knowledge_snapshot.zig");

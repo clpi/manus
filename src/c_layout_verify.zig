@@ -159,19 +159,3 @@ pub fn verifyRecordWithClang(
         .fields = try fields.toOwnedSlice(alloc),
     };
 }
-
-test "c_layout_verify: CPoint matches clang probe" {
-    const alloc = std.testing.allocator;
-    const src = @import("pass5_fixtures.zig").point_h;
-    var frontend = try c_frontend.parseHeader(alloc, "point.h", src);
-    defer frontend.deinit(alloc);
-    try std.testing.expectEqual(@as(usize, 1), frontend.records.len);
-    var layout = (try verifyRecordWithClang(alloc, frontend.records[0])) orelse {
-        // clang unavailable in CI — skip
-        return;
-    };
-    defer layout.deinit(alloc);
-    try std.testing.expectEqual(@as(usize, 16), layout.size);
-    try std.testing.expectEqual(@as(usize, 8), layout.alignment);
-    try std.testing.expectEqual(@as(usize, 2), layout.fields.len);
-}

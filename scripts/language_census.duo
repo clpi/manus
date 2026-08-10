@@ -81,6 +81,14 @@
 -- unboxed C, native clang linkage, and the tracked point/rectangle oracle values
 -- 25 and 10. `zig build unit-test` loses exactly the four replaced tests.
 --
+-- LOWERED 114 -> 113 on 2026-08-10 by deleting pass5_fixtures.zig after its
+-- duplicate header constants and five consuming Zig tests moved behind the
+-- public SIM boundary. scripts/sim.duo now checks exact clang/SIM record
+-- layouts, native and C ABI selection, P26-B02 attachment, the large by-value
+-- semantic/realization split, unboxed emitted C, and oracle execution. No
+-- foreign source file replaced the fixture: the gate reads the tracked headers
+-- already used by the examples.
+--
 -- Deletion is now EXHAUSTED. What remains is the compiler/build closure plus
 -- eight non-production files of real coverage, and it comes off by porting.
 -- Every remaining non-production file is classified with its blocker in
@@ -122,10 +130,10 @@ tally(pattern: str): i64
 end
 
 ratchet: i64 = (cap: i64)
-    if cap < 114
+    if cap < 113
         cap
     else
-        114
+        113
 
 main(): i64
     duo: i64 = tally("\\.duo$")

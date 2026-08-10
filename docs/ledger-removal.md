@@ -440,6 +440,54 @@ claim that the compiler has reached full self-hosting. Its retained
 file/process bridge is legacy orchestration: the lawful subject-first world
 relation remains vocabulary-blocked rather than being invented in this gate.
 
+### Pass 5 fixture constants — 114 → 113 by porting (2026-08-10)
+
+`pass5_fixtures.zig` held 30 lines of inline copies of the tracked point and
+rectangle headers. Its five consumers were test blocks rather than compiler
+owners: one in `c_layout_verify.zig`, one in `foreign_adapter.zig`, and three in
+`abi_specialize.zig`. The copies and all five blocks are gone. `scripts/sim.duo`
+S1, S3, and S10-S12 now observe the same contracts through the shipping CLI and
+clang: exact point and rectangle layouts, native and C calling conventions,
+P26-B02/c_abi attachment, and both the pointer-declared and by-value rectangle
+calls. The gate reads the tracked headers and derives its temporary by-value
+variant; no foreign file replaces the deleted fixture.
+
+Porting found a semantic/realization bug. A large C record marked
+`pass_by=pointer` had its header-declared value type rewritten to `*CBigRect`.
+Physical placement is now retained as metadata without changing the C type.
+The paired witness proves both sides: the tracked pointer declaration emits
+`sum4(&r)`, while the derived by-value declaration emits `sum4(r)`; clang links
+both and each returns **10**, with the boxed detector active. The size-based
+`pass_by` value remains target-independent bootstrap metadata, not a direct
+machine-ABI proof.
+
+This is another horizontal harness migration. It lowers the foreign-file
+ledger and strengthens the public differential, but it does not move graph,
+realization, allocator, encoder, linker, or evaluator authority into Duon.
+The P26-B02 check is a plain debug projection, and the legacy clang layout
+probe still owns fixed `/tmp/duo_layout_probe*` paths; locked gate execution
+serializes this evidence but does not make concurrent public SIM probes safe.
+
+Measured on clean baseline and staged-snapshot worktrees:
+
+- `zig build --summary all` passed 3/3, and the replacement SIM gate passed
+  all 12 observations and all 7 deliberate-failure controls.
+- The host unit population moved from 1,164 to 1,159 exactly: 1,161/3 and
+  1,156/3 pass/fail. The same parser interpolation, native register-spill, and
+  relation-composition tests are red in both snapshots, so the five-test
+  difference is exactly the five blocks mapped above.
+- The language census passed at 113, and the deliberate 112 ceiling failed.
+  The foreign census passed with 118 ledger files, 64 oracle files, zero
+  unclassified files, and 166 embedded-C sites.
+- The staged idiom gate reported zero findings with 14/14 controls, and the
+  semantic gate passed. `audit100` remains red on the four existing global
+  over-ceiling rows; its per-diff report sees one improvement (`concatlit -1`)
+  and no new debt.
+- The staged-snapshot `agent-smoke` reached and passed SIM, then stopped at
+  `std_metaprogramming_modules_smoke.duo`. That same smoke program exits 1 on
+  the clean baseline because the compose-each showcase reports zero fragments,
+  so the unrelated red is retained rather than reported as a migration pass.
+
 ### Kept — 8 files, with the blocker named
 
 Deletion is exhausted and the projection class is closed. What remains outside
@@ -514,13 +562,13 @@ Recomputed from `main.zig` (positive control: `codegen.zig` shows 7 importers,
 not 0, so the scan resolves).
 
 ```
-production closure        105 of 113 src/*.zig
-non-production              8 files / 2,375 lines
+production closure        104 of 112 src/*.zig
+non-production              8 files / 2,374 lines
 orphans (zero importers)    0     — deletion is EXHAUSTED
 ```
 
 Earlier today this read 104 production / 56 non-production / 8,878 lines. The
-non-production tier fell **56 -> 8** and **8,878 -> 2,375 lines** through
+non-production tier fell **56 -> 8** and **8,878 -> 2,374 lines** through
 deletion of self-certifying apparatus and porting to Duo gates. **What remains
 in Zig is now overwhelmingly the compiler itself.**
 
