@@ -36,6 +36,7 @@ const backend_identity = @import("backend_identity.zig");
 const dynamic_boundary = @import("dynamic_boundary.zig");
 const pass23_protocol_registry = @import("pass23_protocol_registry.zig");
 const relation = @import("relation.zig");
+const duo_lexer_bridge = @import("duo_lexer_bridge.zig");
 
 /// SH-03: an embedded module tokenizes through the SAME lexer the compile
 /// driver uses.
@@ -3791,7 +3792,7 @@ pub const CodeGen = struct {
             // directly but fails with "expected '<eof>', got 'end'" the moment it
             // is embedded — which is what stopped `std/script.duo` and
             // `std/mcp.duo` from embedding, and so kept the Duo MCP servers dead.
-            sub_parser.duo_mode = std.mem.endsWith(u8, mod_path, ".duo");
+            sub_parser.duo_mode = duo_lexer_bridge.isIdsemSourcePath(mod_path);
             var sub_mod = sub_parser.parse_module() catch return false;
             self.collect_require_names_block(&sub_mod.body, &names) catch return false;
             for (sub_mod.body.stmts) |*sub_stmt| {
@@ -22824,9 +22825,11 @@ pub const CodeGen = struct {
 
     fn find_module_path(self: *CodeGen, base_dir: []const u8, mod_name: []const u8) ?[]const u8 {
         const templates = .{
-            "{s}/{s}.duo",
+            "{s}/{s}" ++ duo_lexer_bridge.CANONICAL_SOURCE_SUFFIX,
+            "{s}/{s}" ++ duo_lexer_bridge.HISTORICAL_SOURCE_SUFFIX,
             "{s}/{s}.lua",
-            "{s}/{s}/init.duo",
+            "{s}/{s}/init" ++ duo_lexer_bridge.CANONICAL_SOURCE_SUFFIX,
+            "{s}/{s}/init" ++ duo_lexer_bridge.HISTORICAL_SOURCE_SUFFIX,
             "{s}/{s}/init.lua",
         };
         const cwd = Io.Dir.cwd();
@@ -22974,14 +22977,13 @@ pub const CodeGen = struct {
                 var sub_lex = @import("lexer.zig").Lexer.init(sub_src, mod_path.?);
                 if (!routeEmbedThroughDuoLexer(self.alloc, &sub_lex, sub_src, mod_path.?)) continue;
                 var sub_parser = @import("parser.zig").Parser.init(&sub_lex, self.alloc);
-                sub_parser.duo_mode = std.mem.endsWith(u8, mod_path.?, ".duo");
-                // The embed path must parse a `.duo` module in the same dialect the
+                sub_parser.duo_mode = duo_lexer_bridge.isIdsemSourcePath(mod_path.?);
+                // The embed path must parse Duon modules in the same dialect the
                 // standalone path uses. Without this, duo-mode-only syntax (bare
                 // function declarations) parses fine when the file is compiled
                 // directly but fails with "expected '<eof>', got 'end'" the moment it
                 // is embedded — which is what stopped `std/script.duo` and
                 // `std/mcp.duo` from embedding, and so kept the Duo MCP servers dead.
-                sub_parser.duo_mode = std.mem.endsWith(u8, mod_path.?, ".duo");
                 var sub_mod = sub_parser.parse_module() catch |e| {
                     term.err("emit_required_modules: re-parse failed for {s}: {}", .{ mod_path.?, e });
                     continue;
@@ -23219,7 +23221,7 @@ pub const CodeGen = struct {
         // bodies and typed bindings are rejected — the file then fails to embed
         // and its duo_mod_* thunk is never emitted, while the caller registers
         // it anyway ("use of undeclared identifier duo_mod_*").
-        parser.duo_mode = std.mem.endsWith(u8, path, ".duo");
+        parser.duo_mode = duo_lexer_bridge.isIdsemSourcePath(path);
         const submod = parser.parse_module() catch return false;
         if (module_ast_blocks_full_native_ast(&submod)) return false;
         // A dependency that materializes a table export is reached through
@@ -23271,7 +23273,7 @@ pub const CodeGen = struct {
             // directly but fails with "expected '<eof>', got 'end'" the moment it
             // is embedded — which is what stopped `std/script.duo` and
             // `std/mcp.duo` from embedding, and so kept the Duo MCP servers dead.
-            sub_parser.duo_mode = std.mem.endsWith(u8, mod_path, ".duo");
+            sub_parser.duo_mode = duo_lexer_bridge.isIdsemSourcePath(mod_path);
             var sub_mod = sub_parser.parse_module() catch return false;
             self.collect_require_names_block(&sub_mod.body, &names) catch return false;
             for (sub_mod.body.stmts) |*sub_stmt| {
@@ -23866,7 +23868,7 @@ pub const CodeGen = struct {
         var lex = @import("lexer.zig").Lexer.init(source, module_path);
         if (!routeEmbedThroughDuoLexer(self.alloc, &lex, source, module_path)) return null;
         var parser = @import("parser.zig").Parser.init(&lex, self.alloc);
-        parser.duo_mode = std.mem.endsWith(u8, module_path, ".duo");
+        parser.duo_mode = duo_lexer_bridge.isIdsemSourcePath(module_path);
         const module = parser.parse_module() catch return null;
 
         var declared = false;
@@ -24516,15 +24518,15 @@ pub const CodeGen = struct {
         // bodies and typed bindings are rejected — the file then fails to embed
         // and its duo_mod_* thunk is never emitted, while the caller registers
         // it anyway ("use of undeclared identifier duo_mod_*").
-        parser.duo_mode = std.mem.endsWith(u8, path, ".duo");
+        parser.duo_mode = duo_lexer_bridge.isIdsemSourcePath(path);
         var submod = parser.parse_module() catch |e| {
             term.err("emit_embedded_module: parse failed for {s}: {}", .{ path, e });
             return false;
         };
         var subsem = sema.Sema.init(self.alloc);
         defer subsem.deinit();
-        subsem.lua55_mode = std.mem.endsWith(u8, path, ".lua");
-        subsem.duo_mode = std.mem.endsWith(u8, path, ".duo");
+        subsem.lua55_mode = duo_lexer_bridge.isLuaSourcePath(path);
+        subsem.duo_mode = duo_lexer_bridge.isIdsemSourcePath(path);
         subsem.next_closure_id = self.next_closure_id;
         subsem.check_module(&submod) catch |e| {
             term.err("emit_embedded_module: sema failed for {s}: {}", .{ path, e });

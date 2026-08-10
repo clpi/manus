@@ -3,6 +3,48 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const directives = @import("directives.zig");
 const Sema = @import("sema.zig").Sema;
+const family = @import("duo_lexer_bridge.zig");
+
+const canonical = family.CANONICAL_SOURCE_SUFFIX;
+const historical = family.HISTORICAL_SOURCE_SUFFIX;
+
+const build_source_candidates = [_][]const u8{
+    "build" ++ canonical,
+    "src/build" ++ canonical,
+    "build" ++ historical,
+    "src/build" ++ historical,
+    "src/main" ++ canonical,
+    "main" ++ canonical,
+    "src/main" ++ historical,
+    "main" ++ historical,
+    "src/main.lua",
+    "main.lua",
+    "src/init" ++ canonical,
+    "init" ++ canonical,
+    "src/init" ++ historical,
+    "init" ++ historical,
+    "src/init.lua",
+    "init.lua",
+};
+
+const entrypoint_candidates = [_][]const u8{
+    "src/main" ++ canonical,
+    "main" ++ canonical,
+    "src/main" ++ historical,
+    "main" ++ historical,
+    "src/main.lua",
+    "main.lua",
+    "src/init" ++ canonical,
+    "init" ++ canonical,
+    "src/init" ++ historical,
+    "init" ++ historical,
+    "src/init.lua",
+    "init.lua",
+};
+
+pub fn buildSourceCandidates() []const []const u8 {
+    return &build_source_candidates;
+}
 
 pub const TargetKind = enum {
     exe,
@@ -450,20 +492,16 @@ fn pathExists(io: std.Io, path: []const u8) bool {
 }
 
 fn isEntrypointPath(path: []const u8) bool {
-    return std.mem.eql(u8, path, "src/main.duo") or
-        std.mem.eql(u8, path, "main.duo") or
-        std.mem.eql(u8, path, "src/main.lua") or
-        std.mem.eql(u8, path, "main.lua") or
-        std.mem.eql(u8, path, "src/init.duo") or
-        std.mem.eql(u8, path, "init.duo") or
-        std.mem.eql(u8, path, "src/init.lua") or
-        std.mem.eql(u8, path, "init.lua");
+    for (entrypoint_candidates) |candidate| {
+        if (std.mem.eql(u8, path, candidate)) return true;
+    }
+    return false;
 }
 
 fn implicitTargetForSource(alloc: std.mem.Allocator, build_source: []const u8) !?Target {
     if (!isEntrypointPath(build_source)) return null;
     const base = std.fs.path.basename(build_source);
-    const is_init = std.mem.eql(u8, base, "init.duo") or std.mem.eql(u8, base, "init.lua");
+    const is_init = std.mem.startsWith(u8, base, "init.");
     const name = if (is_init) "lib" else "app";
     return .{
         .name = try alloc.dupe(u8, name),
@@ -550,39 +588,17 @@ pub fn loadFromSema(alloc: std.mem.Allocator, build_source: []const u8, sem: *co
 
 pub fn findBuildSource(io: std.Io, requested: ?[]const u8) []const u8 {
     if (requested) |r| {
-        if (std.mem.endsWith(u8, r, ".duo") or std.mem.endsWith(u8, r, ".lua")) return r;
+        if (family.sourceFacts(r).law != .unknown) return r;
     }
-    const candidates = [_][]const u8{
-        "build.duo",
-        "src/build.duo",
-        "src/main.duo",
-        "main.duo",
-        "src/main.lua",
-        "main.lua",
-        "src/init.duo",
-        "init.duo",
-        "src/init.lua",
-        "init.lua",
-    };
-    for (candidates) |c| {
+    for (build_source_candidates) |c| {
         if (!pathExists(io, c)) continue;
         return c;
     }
-    return "build.duo";
+    return "build" ++ canonical;
 }
 
 pub fn findEntrypoint(io: std.Io) ?[]const u8 {
-    const candidates = [_][]const u8{
-        "src/main.duo",
-        "main.duo",
-        "src/main.lua",
-        "main.lua",
-        "src/init.duo",
-        "init.duo",
-        "src/init.lua",
-        "init.lua",
-    };
-    for (candidates) |c| {
+    for (entrypoint_candidates) |c| {
         if (pathExists(io, c)) return c;
     }
     return null;
@@ -855,8 +871,8 @@ test "build_framework: implicit entrypoint target" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    const src = "print(\"hello\")\n";
-    var lex = @import("lexer.zig").Lexer.init(src, "src/main.duo");
+    const src = "main: i64 = ()\n    0\n";
+    var lex = @import("lexer.zig").Lexer.init(src, "src/main.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -865,10 +881,19 @@ test "build_framework: implicit entrypoint target" {
     sem.duo_mode = true;
     try sem.check_module(&mod);
 
-    var project = try loadFromSema(alloc, "src/main.duo", &sem);
+    var project = try loadFromSema(alloc, "src/main.id", &sem);
     defer project.deinit(alloc);
     try std.testing.expect(project.targets.len == 1);
     try std.testing.expect(project.targets[0].kind == .run);
     try std.testing.expectEqualStrings("app", project.targets[0].name);
-    try std.testing.expectEqualStrings("src/main.duo", project.targets[0].src.?);
+    try std.testing.expectEqualStrings("src/main.id", project.targets[0].src.?);
+}
+
+test "build_framework: canonical entry precedes historical entry" {
+    try std.testing.expectEqualStrings("build.id", build_source_candidates[0]);
+    try std.testing.expectEqualStrings("src/build.id", build_source_candidates[1]);
+    try std.testing.expectEqualStrings("build.duo", build_source_candidates[2]);
+    try std.testing.expectEqualStrings("src/main.id", entrypoint_candidates[0]);
+    try std.testing.expect(isEntrypointPath("src/main.id"));
+    try std.testing.expect(isEntrypointPath("src/main.duo"));
 }

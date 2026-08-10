@@ -367,15 +367,15 @@ const usage =
     \\
     \\commands:
     \\  shell              persistent semantic shell (Pass 15; default when no args)
-    \\  init       [name]   create a new Duo project
+    \\  init       [name]   create a new Idsem project
     \\  build      [target] build the default or named target from @build metadata
     \\             list     show all @build.* targets (or: duo build --list)
     \\             all      build every compile target in stage order
     \\             stage S  build targets in stage S (or: duo build all --stage S)
-    \\  compile    [file]   compile .duo/.lua to a native binary
+    \\  compile    [file]   compile .id (historical .duo and foreign .lua remain accepted)
     \\  run        [file]   compile and run immediately, or run @build target
     \\  check      <file>   type-check only, no output
-    \\  fmt        <file>   format a .duo/.lua file (--canonical strips then/do in .duo)
+    \\  fmt        <file>   format an .id, historical .duo, or foreign .lua file
     \\  test       [file]   run inline @test functions (or @build.test target)
     \\  bench      [file]   run @bench-marked functions (or @build.bench target)
     \\  prove               reproduce the seven release proofs and write a proof bundle
@@ -421,7 +421,7 @@ const usage =
     \\  --build-report S  build output style: pretty|compact|verbose|plain (default pretty)
     \\  --stage <name>    with `build all`, build only one named/numeric stage
     \\  --no-color        disable ANSI styling
-    \\  --canonical       fmt: omit deprecated then/do keywords in .duo output
+    \\  --canonical       fmt: emit the strongest admitted canonical source face
     \\  --filter <pat>    run only tests whose name contains <pat>
     \\
 ;
@@ -709,7 +709,7 @@ pub fn main(init: std.process.Init) !void {
 
     if (std.mem.eql(u8, cmd, "run")) {
         if (input_file) |maybe_target| {
-            if (!is_duo_source_path(maybe_target) and !is_lua_source_path(maybe_target)) {
+            if (!is_idsem_source_path(maybe_target) and !is_lua_source_path(maybe_target)) {
                 try do_project_build(alloc, io, maybe_target, output_file, cc, opt_level, target, verbose, load_chunk, pgo, lib_mode, shared_mem, link_flags.items, true);
                 return;
             }
@@ -718,7 +718,7 @@ pub fn main(init: std.process.Init) !void {
 
     if (std.mem.eql(u8, cmd, "symbols")) {
         const file = input_file orelse {
-            term.err("no input file (duo symbols <file.duo>)", .{});
+            term.err("no input file (duo symbols <file.id>)", .{});
             std.process.exit(1);
         };
         try do_symbols(alloc, io, file);
@@ -740,7 +740,7 @@ pub fn main(init: std.process.Init) !void {
             }
         }
         const file = graph_file orelse {
-            term.err("no input file (duo graph <file.duo> [--write])", .{});
+            term.err("no input file (duo graph <file.id> [--write])", .{});
             std.process.exit(1);
         };
         try do_graph(alloc, io, file, graph_write);
@@ -771,7 +771,7 @@ pub fn main(init: std.process.Init) !void {
             return;
         }
         const file = duo_file orelse {
-            term.err("no input file (duo sim <file.duo> or duo sim --import-c <header>)", .{});
+            term.err("no input file (duo sim <file.id> or duo sim --import-c <header>)", .{});
             std.process.exit(1);
         };
         try do_sim(alloc, io, file);
@@ -780,7 +780,7 @@ pub fn main(init: std.process.Init) !void {
 
     if (std.mem.eql(u8, cmd, "realize")) {
         if (input_file == null) {
-            term.err("no input file (duo realize <file.duo>)", .{});
+            term.err("no input file (duo realize <file.id>)", .{});
             std.process.exit(1);
         }
         try do_realize(alloc, io, input_file.?);
@@ -789,7 +789,7 @@ pub fn main(init: std.process.Init) !void {
 
     if (std.mem.eql(u8, cmd, "explain")) {
         const file = input_file orelse {
-            term.err("no input file (duo explain <file.duo>)", .{});
+            term.err("no input file (duo explain <file.id>)", .{});
             std.process.exit(1);
         };
         try do_explain(alloc, io, file);
@@ -911,7 +911,7 @@ fn read_source(alloc: std.mem.Allocator, io: Io, path: []const u8) ![]u8 {
 }
 
 fn is_source_path(path: []const u8) bool {
-    return is_duo_source_path(path) or is_lua_source_path(path);
+    return is_idsem_source_path(path) or is_lua_source_path(path);
 }
 
 fn usesProjectWorkspace(cmd: []const u8, input_file: ?[]const u8) bool {
@@ -992,12 +992,11 @@ fn detectCompilerLibRoot(alloc: std.mem.Allocator, io: Io, environ: *std.process
 }
 
 fn dirHasWorkspaceMarker(alloc: std.mem.Allocator, io: Io, dir: []const u8) !bool {
-    const build = try pathJoin2(alloc, dir, "build.duo");
-    defer alloc.free(build);
-    if (absPathExists(io, build)) return true;
-    const src_build = try pathJoin2(alloc, dir, "src/build.duo");
-    defer alloc.free(src_build);
-    if (absPathExists(io, src_build)) return true;
+    for (build_framework.buildSourceCandidates()[0..4]) |candidate| {
+        const path = try pathJoin2(alloc, dir, candidate);
+        defer alloc.free(path);
+        if (absPathExists(io, path)) return true;
+    }
     return false;
 }
 
@@ -1045,7 +1044,7 @@ fn buildSourcePath(io: Io, requested: ?[]const u8) []const u8 {
     const cwd = Io.Dir.cwd();
     cwd.access(io, path, .{}) catch {
         term.err("no build source found", .{});
-        term.hint("expected build.duo, src/build.duo, src/main.duo, main.duo, src/main.lua, main.lua, src/init.lua, or init.lua", .{});
+        term.hint("expected build.id, src/build.id, src/main.id, main.id, a historical .duo source, or a Lua source", .{});
         std.process.exit(1);
     };
     return path;
@@ -1057,7 +1056,7 @@ fn resolveDefaultSource(alloc: std.mem.Allocator, io: Io) ![]const u8 {
         return try alloc.dupe(u8, path);
     }
     term.err("no input file and no default source found", .{});
-    term.hint("create src/main.duo, main.duo, src/main.lua, main.lua, src/init.lua, or init.lua", .{});
+    term.hint("create src/main.id or main.id; historical .duo and Lua entrypoints remain migration inputs", .{});
     std.process.exit(1);
 }
 
@@ -1261,7 +1260,7 @@ fn fmtTree(alloc: std.mem.Allocator, io: Io, dir_path: []const u8) !void {
             try fmtTree(alloc, io, sub);
             continue;
         }
-        if (std.mem.endsWith(u8, entry.name, ".duo") or std.mem.endsWith(u8, entry.name, ".lua")) {
+        if (is_source_path(entry.name)) {
             const path = try std.fs.path.join(alloc, &.{ dir_path, entry.name });
             defer alloc.free(path);
             try do_fmt(alloc, io, path, false);
@@ -1339,9 +1338,9 @@ fn scanInlineTestDir(
             continue;
         }
         if (entry.kind != .file) continue;
-        const is_lua = std.mem.endsWith(u8, entry.name, ".lua");
-        const is_duo = std.mem.endsWith(u8, entry.name, ".duo");
-        if (!is_lua and !is_duo) continue;
+        const is_lua = is_lua_source_path(entry.name);
+        const is_idsem = is_idsem_source_path(entry.name);
+        if (!is_lua and !is_idsem) continue;
         const path = if (std.mem.eql(u8, rel_dir, "."))
             try alloc.dupe(u8, entry.name)
         else
@@ -1363,12 +1362,13 @@ fn scanInlineTestDir(
 fn lessTestPath(_: void, a: []const u8, b: []const u8) bool {
     const score = struct {
         fn value(path: []const u8) u8 {
-            if (std.mem.eql(u8, path, "test/main.duo")) return 0;
-            if (std.mem.eql(u8, path, "test/main.lua")) return 1;
-            if (std.mem.startsWith(u8, path, "test/")) return 2;
-            if (std.mem.startsWith(u8, path, "tests/")) return 3;
-            if (std.mem.startsWith(u8, path, "src/")) return 4;
-            return 5;
+            if (std.mem.eql(u8, path, "test/main.id")) return 0;
+            if (std.mem.eql(u8, path, "test/main.duo")) return 1;
+            if (std.mem.eql(u8, path, "test/main.lua")) return 2;
+            if (std.mem.startsWith(u8, path, "test/")) return 3;
+            if (std.mem.startsWith(u8, path, "tests/")) return 4;
+            if (std.mem.startsWith(u8, path, "src/")) return 5;
+            return 6;
         }
     }.value;
     const sa = score(a);
@@ -1686,7 +1686,7 @@ fn do_prove(alloc: std.mem.Allocator, io: Io) !bool {
     try Io.Dir.writeFile(cwd, io, .{ .sub_path = worktree_path, .data = worktree_process.stdout });
     const worktree_clean = std.mem.trim(u8, worktree_process.stdout, " \t\r\n").len == 0;
 
-    term.print("Duo release proof\n", .{});
+    term.print("Idsem release proof\n", .{});
     term.print("  source {s}: {s}\n", .{ revision, if (worktree_clean) "clean" else "dirty" });
     var results: std.ArrayListUnmanaged(proof_carrying.ReleaseGateResult) = .empty;
     defer results.deinit(alloc);
@@ -1822,40 +1822,20 @@ fn writeNewFile(io: Io, path: []const u8, data: []const u8) !void {
 }
 
 fn do_init(alloc: std.mem.Allocator, io: Io, name: []const u8) !void {
-    const main_src = try std.fmt.allocPrint(alloc,
-        \\@build.project({{
-        \\    name = "{s}",
-        \\    version = "0.1.0",
-        \\    default = "app"
-        \\}})
-        \\@build.run({{
-        \\    name = "app",
-        \\    src = "src/main.duo",
-        \\    out = "zig-out/bin/{s}",
-        \\    opt = "-O3"
-        \\}})
-        \\@build.test({{
-        \\    name = "test",
-        \\    src = "src/main.duo",
-        \\    out = "zig-out/bin/{s}_test"
-        \\}})
+    _ = alloc;
+    const main_src =
+        \\main: i64 = ()
+        \\    0
         \\
-        \\@test
-        \\fun smoke(): void
-        \\    assert(1 + 1 == 2)
-        \\end
-        \\
-        \\print("hello from Duo")
-        \\
-    , .{ name, name, name });
+    ;
 
     const mkdir_argv = [_][]const u8{ "mkdir", "-p", "src", "zig-out/bin" };
     try run_child_process(io, &mkdir_argv, "mkdir", true);
-    try writeNewFile(io, "src/main.duo", main_src);
-    term.banner("Duo project created");
+    try writeNewFile(io, "src/main.id", main_src);
+    term.banner("Idsem project created");
     term.kv("name", name);
     term.section("files");
-    term.kv("•", "src/main.duo");
+    term.kv("•", "src/main.id");
     term.kv("•", "zig-out/bin/");
     term.divider();
     term.dim("next: duo build   # compile default target", .{});
@@ -2034,11 +2014,11 @@ fn run_shell_line(alloc: std.mem.Allocator, io: Io, raw_line: []const u8, sessio
             term.kv("!ls -la", "run host shell command");
             term.kv(":time", "show total shell execution time");
             term.kv(":reset", "clear session state (counter)");
-            term.kv(":export", "write canonical .duo from session history");
+            term.kv(":export", "write historical .duo session source");
             term.kv(":snapshot", "print semantic session JSON");
             term.kv(":quit / :exit", "leave the shell");
             term.divider();
-            term.dim("Pass 15 semantic shell — structured Duo; ! prefix is explicit raw {s}", .{shell_host.rawShellLabel()});
+            term.dim("Idsem compatibility shell; ! prefix is explicit raw {s}", .{shell_host.rawShellLabel()});
             return true;
         }
         if (std.mem.eql(u8, line, ":snapshot")) {
@@ -2057,7 +2037,7 @@ fn run_shell_line(alloc: std.mem.Allocator, io: Io, raw_line: []const u8, sessio
             const cwd = std.Io.Dir.cwd();
             try Io.Dir.writeFile(cwd, io, .{ .sub_path = out_path, .data = mod });
             try shell_session.recordHistory(alloc, session, .@"export", line, mod, 0, null);
-            term.ok("exported canonical Duo → {s}", .{out_path});
+            term.ok("exported historical Idsem source → {s}", .{out_path});
             return true;
         }
         if (std.mem.eql(u8, line, ":time")) {
@@ -2135,15 +2115,15 @@ fn run_shell_line(alloc: std.mem.Allocator, io: Io, raw_line: []const u8, sessio
 
 fn shellContinuePrompt(depth: i32) void {
     if (term.color) {
-        term.printRaw("\x1b[1;36mduo\x1b[0m\x1b[2m·{}\x1b[0m ", .{depth + 1});
+        term.printRaw("\x1b[1;36midsem\x1b[0m\x1b[2m·{}\x1b[0m ", .{depth + 1});
     } else {
-        term.printRaw("duo·{} ", .{depth + 1});
+        term.printRaw("idsem·{} ", .{depth + 1});
     }
 }
 
 fn do_shell(alloc: std.mem.Allocator, io: Io, verbose: bool) !void {
-    term.banner("Duo semantic shell");
-    term.dim("Pass 15 — canonical Duo · :help · :export · ! = explicit raw host shell", .{});
+    term.banner("Idsem compatibility shell");
+    term.dim(":help · :export · ! = explicit raw host shell", .{});
     var session = try shell_session.newSession(alloc);
     defer session.deinit(alloc);
     var line: std.ArrayList(u8) = .empty;
@@ -2153,9 +2133,9 @@ fn do_shell(alloc: std.mem.Allocator, io: Io, verbose: bool) !void {
 
     // Print initial prompt
     if (term.color) {
-        term.printRaw("\x1b[1;36mduo\x1b[0m\x1b[2m>\x1b[0m ", .{});
+        term.printRaw("\x1b[1;36midsem\x1b[0m\x1b[2m>\x1b[0m ", .{});
     } else {
-        term.printRaw("duo> ", .{});
+        term.printRaw("idsem> ", .{});
     }
     while (true) {
         // std.posix.STDIN_FILENO is a comptime_int, which does not coerce to
@@ -2348,11 +2328,11 @@ const ParsedModule = struct {
 };
 
 fn is_lua_source_path(path: []const u8) bool {
-    return std.mem.endsWith(u8, path, ".lua");
+    return duo_lexer_bridge.isLuaSourcePath(path);
 }
 
-fn is_duo_source_path(path: []const u8) bool {
-    return std.mem.endsWith(u8, path, ".duo");
+fn is_idsem_source_path(path: []const u8) bool {
+    return duo_lexer_bridge.isIdsemSourcePath(path);
 }
 
 fn module_has_macro_syntax(mod: *const ast.Module) bool {
@@ -3032,7 +3012,7 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
         std.process.exit(1);
     };
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = is_duo_source_path(src_path);
+    parser.duo_mode = is_idsem_source_path(src_path);
     var mod = parser.parse_module() catch |e| {
         if (lex.last_error_loc) |loc| {
             term.locErr(loc, "lexer failed with {s}", .{@errorName(e)});
@@ -3044,7 +3024,7 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
 
     var sem = Sema.init(alloc);
     sem.lua55_mode = is_lua_source_path(src_path);
-    sem.duo_mode = is_duo_source_path(src_path);
+    sem.duo_mode = is_idsem_source_path(src_path);
     sem.source_path = try alloc.dupe(u8, src_path);
     sem.hints_enabled = term.hints;
     sem.info_enabled = term.info;
@@ -5222,7 +5202,7 @@ fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8, canonical: boo
         std.process.exit(1);
     };
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = is_duo_source_path(src_path);
+    parser.duo_mode = is_idsem_source_path(src_path);
     const mod = parser.parse_module() catch |err| {
         if (lex.last_error_loc) |loc| {
             term.locErr(loc, "lexer failed with {s}", .{@errorName(err)});

@@ -1,4 +1,4 @@
-# Duon bootstrap contract
+# Idsem bootstrap contract
 
 `lib/compiler/bootstrap.duo` is the executable machine-readable structural
 candidate. This document is its human projection. It is not bootstrap evidence
@@ -9,9 +9,9 @@ backend.
 
 **S0 (active):** the pinned Zig seed produces the host compiler.
 
-No Duo-built compiler binary exists in the production path yet.
+No Idsem-built compiler binary exists in the production path yet.
 
-The production front end nevertheless has one executed Duon-owned boundary:
+The production front end nevertheless has one executed Idsem-owned boundary:
 `lib/std/compiler/lexer.duo` owns token content, token identity, and exact
 source spans. The host bounds-checks those spans and projects them into its
 temporary parser representation. It does not reconstruct token text or source
@@ -23,7 +23,27 @@ constitutional grammar, while the current repository has no machine-readable
 canonical grammar-role projection. Porting the host recognizer would duplicate
 grammar authority through token-text lists and mutable lookahead. S0 therefore
 remains the honest stage until grammar roles and an immutable token view are
-available to executed Duon parser code.
+available to executed Idsem parser code.
+
+Canonical source ingress now recognizes `.id` as Idsem and retains `.duo` as
+historical provenance. Both suffixes select the same lexer, parser law, semantic
+production, and realization path; only ingress provenance differs. The host
+projection is centralized in `src/duo_lexer_bridge.zig` until compiler B can
+consume the constitutional source fact directly. Build entry and embedded
+module discovery prefer `.id` and fall back to `.duo`. Tooling and corpus gates
+that still enumerate `.duo` independently remain migration bridges, not
+bootstrap evidence.
+
+The host names `duo_lexer_bridge`, `duo_mode`, and the `duo` executable are
+historical bootstrap symbols. They remain one implementation path, not a second
+language or command authority. Delete the bridge names when compiler B consumes
+the constitutional source fact directly; remove the executable alias after an
+`idsem` entry invokes that same command authority in production. The generated
+runtime package path and the current corpus, formatter, LSP, MCP, Tree-sitter,
+and census enumerations still contain independent `.duo` assumptions. Their
+deletion gate is a generated source-family projection consumed by each surface,
+with untracked `.id` candidates included and missing census input failing
+closed.
 
 SHC-00 supplies an executable structural verifier in
 `lib/compiler/bootstrap.duo`. Its synthetic controls validate lineage and
@@ -47,7 +67,7 @@ reconstruction.
 | Stage | Input | Output | Proof |
 | --- | --- | --- | --- |
 | **S0** | Zig + repo source | Host `duo` binary | CI, unit tests, bench gates |
-| **S1 / B** | S0 + canonical Duon compiler source | First Duon-built compiler | Semantic fingerprint vs S0 oracle |
+| **S1 / B** | S0 + canonical Idsem compiler source | First Idsem-built compiler | Semantic fingerprint vs S0 oracle |
 | **S2 / C** | B + identical source | Self-built compiler | Semantic, diagnostic, and behavioral parity with B |
 | **S3** | C + identical source | Fixed-point candidate | Artifact comparison and reproducibility bundle |
 
@@ -58,7 +78,7 @@ The seed must be:
 - Pinned and checksummed
 - Archived and reproducibly obtainable
 - Minimal enough to audit
-- Clearly separated from canonical Duo compiler source
+- Clearly separated from canonical Idsem compiler source
 - Used for bootstrap only — not semantic authority after S2
 
 ## Stage comparisons (always required)
@@ -77,8 +97,8 @@ The seed must be:
 
 ## Bootstrap subset
 
-The minimum Duon subset required to compile the next stage is a staged
-capability level of canonical Duon, not a permanent second language.
+The minimum Idsem subset required to compile the next stage is a staged
+capability level of canonical Idsem, not a permanent second language.
 
 The candidate compiler-critical basis is: bytes, views, strings, arenas,
 vectors, maps, interning, bitsets, source/span, filesystem read, and diagnostic
@@ -88,6 +108,21 @@ an exact frozen capability contract: filesystem read and diagnostic output
 still need their subject, world, and effect identities, and no row has observed
 production reachability. Adding unrelated standard vocabulary does not advance
 this contract.
+
+## FTCFTW constraint
+
+Bootstrap work must preserve maximum semantic knowledge with minimum physical
+compiler state. The graph retains meaning; demand deletes work before
+materialization; realization keeps compact lawful choices until commitment;
+machine selects the cheapest concrete execution. Rich meaning does not justify
+a large runtime, boxed compiler state, or a fully materialized realization
+program.
+
+The source-family projection in this stage is a constant-time ingress fact with
+no allocation. It selects one language law and records provenance, then has no
+role in graph identity, realization choice, or generated runtime behavior.
+Equivalent `.id` and historical `.duo` input therefore retain identical lawful
+realizations.
 
 Future B/C acceptance requires two distinct application and output
 incarnations, the seed as B's exact producer, B as C's exact producer,
@@ -105,13 +140,13 @@ duo run lib/compiler/bootstrap.duo
 duo check lib/compiler/application.duo
 ```
 
-The application check validates only the Duon-owned schema. It is not an SHC
+The application check validates only the Idsem-owned schema. It is not an SHC
 stage or aggregate. A future bootstrap projection must derive its evidence from
-the executed Duon compiler graph rather than make a host build step authoritative.
+the executed Idsem compiler graph rather than make a host build step authoritative.
 
 ## Prohibited claims
 
-- "Self-hosted" when Duo code exists but is not on the production compile path
+- "Self-hosted" when Idsem code exists but is not on the production compile path
 - Silent fallback. An explicit existing C/native bootstrap backend is allowed
   for B and C, but it does not prove backend sovereignty.
 - Undocumented bootstrap binaries or unpinned dependencies

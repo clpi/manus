@@ -147,8 +147,9 @@ owner = law{
 -- ═══ §4 · identity ═════════════════════════════════════════════════════════
 
 language = @{
-    name  = "duon"
-    file  = ".duo"
+    name  = "idsem"
+    file  = ".id"
+    history = @{ name = "duon", file = ".duo" }
     epoch = 2
 }
 

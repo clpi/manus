@@ -13,6 +13,51 @@ pub const dispatch = @import("duo_lexer_dispatch.zig");
 
 pub const SCHEMA_VERSION = "duo-lexer-bridge-v0";
 
+pub const CANONICAL_SOURCE_SUFFIX = ".id";
+pub const HISTORICAL_SOURCE_SUFFIX = ".duo";
+
+pub const SourceLaw = enum {
+    idsem,
+    lua,
+    unknown,
+};
+
+pub const SourceProvenance = enum {
+    canonical,
+    historical,
+    foreign,
+    unknown,
+};
+
+pub const SourceFacts = struct {
+    law: SourceLaw,
+    provenance: SourceProvenance,
+};
+
+/// Bootstrap projection of C0's source-family facts. The suffix is consumed
+/// only at ingress; later stages receive the language law and retain the path
+/// as provenance without using it as semantic identity.
+pub fn sourceFacts(path: []const u8) SourceFacts {
+    if (std.mem.endsWith(u8, path, CANONICAL_SOURCE_SUFFIX)) {
+        return .{ .law = .idsem, .provenance = .canonical };
+    }
+    if (std.mem.endsWith(u8, path, HISTORICAL_SOURCE_SUFFIX)) {
+        return .{ .law = .idsem, .provenance = .historical };
+    }
+    if (std.mem.endsWith(u8, path, ".lua")) {
+        return .{ .law = .lua, .provenance = .foreign };
+    }
+    return .{ .law = .unknown, .provenance = .unknown };
+}
+
+pub fn isIdsemSourcePath(path: []const u8) bool {
+    return sourceFacts(path).law == .idsem;
+}
+
+pub fn isLuaSourcePath(path: []const u8) bool {
+    return sourceFacts(path).law == .lua;
+}
+
 pub const TokenizeAuthority = enum {
     host_zig,
     duo_native,
@@ -124,6 +169,17 @@ test "duo_lexer_bridge: production split" {
     try validateProductionSplit();
     try std.testing.expect(tokenizeAuthority() == .duo_native);
     try std.testing.expect(keywordAuthority() == .duo_native);
+}
+
+test "duo_lexer_bridge: suffix changes provenance not language law" {
+    const canonical = sourceFacts("compiler.id");
+    const historical = sourceFacts("compiler.duo");
+    try std.testing.expectEqual(SourceLaw.idsem, canonical.law);
+    try std.testing.expectEqual(SourceLaw.idsem, historical.law);
+    try std.testing.expectEqual(SourceProvenance.canonical, canonical.provenance);
+    try std.testing.expectEqual(SourceProvenance.historical, historical.provenance);
+    try std.testing.expectEqual(SourceLaw.lua, sourceFacts("compiler.lua").law);
+    try std.testing.expectEqual(SourceLaw.unknown, sourceFacts("compiler.txt").law);
 }
 
 // TOKENIZE_EXPORTS is the SH-03 seam: a self-hosting claim is only as good as
