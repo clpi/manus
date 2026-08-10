@@ -1,30 +1,34 @@
-# duon — the duon compiler, which also hosts Lua
+# Idsem compiler, which also hosts Lua
 
 **TWO LANGUAGES, ONE COMPILER (Pass 120 §33 P0.4). This replaces "Duo is a
 Lua-superset language", which is now DELETED and must not be restored:**
 
-- **duon is its own native language**, with its own semantics. It is not a
+- **Idsem is its own native language**, with its own semantics. It is not a
   superset of anything and it inherits no rule by descent.
 - **This compiler hosts Lua as a FIRST-CLASS source language** — not a
-  compatibility mode, not a degraded duon frontend. The goal is to be the best
+  compatibility mode, not a degraded Idsem frontend. The goal is to be the best
   interpreter / JIT / AOT for Lua *while preserving exact Lua semantics*.
 
 **THE LUA FIREWALL (Pass 120 §16).** The substrate is shared; the LAWSET is not.
-Lua semantics are not duon semantics wearing `origin = lua` — a Lua table lookup
-and a duon sealed-shape field lookup can have identical graph SHAPE and
-different semantic LAW. **duon laws may never prove a Lua optimization** unless
+Lua semantics are not Idsem semantics wearing `origin = lua` — a Lua table lookup
+and an Idsem sealed-shape field lookup can have identical graph SHAPE and
+different semantic LAW. **Idsem laws may never prove a Lua optimization** unless
 an explicit cross-law theorem witnesses observational equivalence. Lua owns:
 table semantics, metatable semantics, multiple-return adjustment, numeric
 behaviour, truthiness, closure environments, coroutines, the error model,
 iteration order, dynamic globals, observable identity.
 
 *Semantic diversity above; physical convergence below.* The semantic graphs stay
-distinct; the REALIZATION graph is where a Lua numeric loop and a duon sealed
+distinct; the REALIZATION graph is where a Lua numeric loop and an Idsem sealed
 numeric loop may both become an unboxed i64 induction — and only under a witness.
 
 `docs/spec/constitution.duo` is C0, the source of truth. This file is a
 PROJECTION of it and is non-normative; where they disagree, the constitution
 wins and this file is the defect.
+
+Historical pass citations, bootstrap paths, command aliases, and exact source
+filenames below retain old spellings only as migration provenance. They do not
+name a second current language or source family.
 
 This repo is the compiler, written in **Zig master** (`0.17.0-dev`, via `mise`)
 during bootstrap.
@@ -36,7 +40,8 @@ during bootstrap.
 - **WASI SDK**: installed via mise as `wasi-sdk@latest`
 - **Runtimes for testing**: `wasmtime`, `wasmer` (both installed via mise)
 
-Cross-compile a **Duo program** to WASM: `duo compile f.duo --target wasm32-wasi`
+Cross-compile canonical Idsem source through the bootstrap command alias:
+`duo compile f.id --target wasm32-wasi`
 (verified 2026-08-08 — builds and runs under wasmtime).
 
 Cross-compiling **the compiler itself** is a different thing and this line used
@@ -78,7 +83,7 @@ compile there because compiling spawns a C compiler.
 ```bash
 zig build                    # debug build → zig-out/bin/duo
 zig build -Doptimize=ReleaseFast   # release build
-zig build run -- <file.duo>  # compile and run a .duo file
+zig build run -- <file.id>   # compile and run canonical Idsem source
 zig build test               # all tests (unit + compile-fail)
 zig build unit-test          # Zig unit tests only
 zig build agent-smoke        # tier-0 gate (hygiene + stdlib + meta)
@@ -111,7 +116,7 @@ docs/spec/             THE LAW — pass100.md + AUTHORITY.md + corpus.md
 
 ## Key invariants
 
-- **Prefix `@` does not exist.** Directives are not a Duo feature; §0.2 of the
+- **Prefix `@` does not exist.** Directives are not an Idsem feature; §0.2 of the
   epoch-2 section below is the rule. This slot used to read "`@` is the single
   prefix for ALL compile-time operations (`@comp.*`)", which contradicted §0.2
   in the same file, and agents cited whichever half suited the diff.
@@ -244,16 +249,18 @@ live; the move reduced the pull without removing it, and grep still reached them
 Owner directive (Pass 121): archival material is deleted or not considered.
 Git history is the evidence store — it is not on the search path.
 
-### §-1 NAME — `duon` (Pass 107, verified 111, FINAL 112)
+### §-1 identity
 
-The language is **duon** (FKA duo). **Files stay `.duo`.** Binary `duon`, shell
-`duonsh`, lib `libduon`, GitHub org `duon-lang`. pypi/npm/crates `duon` all
-measured free 2026-08-08 — REGISTER BEFORE ANYTHING PUBLIC. `duon.com` is
-renounced (squatted). The name question is CLOSED; do not reopen it.
+The language and project are **Idsem**. Canonical native source uses `.id`, and
+the target executable is `idsem`. Historical `duo`, `duon`, and `.duo`
+spellings are migration or provenance only; they do not establish another
+language, graph identity, or command authority.
 
-The repo is still spelled `duo` nearly everywhere (binary, `DUO_ROOT`,
-`zig-out/bin/duo`, ~700 `.duo` files' prose). That is MIGRATION DEBT, not a
-counter-authority. Rename behind a gate; never half-rename a runtime path.
+The repository and bootstrap executable are still spelled `duo` in many paths.
+That compatibility bridge remains one implementation path until an `idsem`
+entry invokes the same command authority and canonical source discovery no
+longer needs the historical suffix. Rename behind executable evidence; never
+half-rename a runtime path.
 
 ### §0 HOT SCREEN — newest law, most likely to look wrong to you. It is law.
 

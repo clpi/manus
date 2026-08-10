@@ -1,15 +1,15 @@
 #!/bin/sh
-# Canonical duon, enforced on the ADDED LINES of the staged diff, for EVERY
+# Canonical Idsem, enforced on the ADDED LINES of the staged diff, for EVERY
 # agent — codex, opencode, claude, human. This is the one chokepoint they all
 # pass through; an editor-specific hook disciplines only its own editor.
 #
-# The logic is duon (scripts/idiomgate.duo). This shim exists solely because git
+# The logic is Idsem (scripts/idiomgate.duo). This shim exists solely because git
 # execs a file and does not know how to run .duo. Keep it this small.
 root=$(git rev-parse --show-toplevel) || exit 1
 duo="$root/zig-out/bin/duo"
 [ -x "$duo" ] || { echo "canonical preflight: duo not built — commit blocked."; exit 1; }
 tmp=$(mktemp -t idiomgate) || exit 1
-git diff --cached -U0 --diff-filter=ACM -- '*.duo' > "$tmp"
+git diff --cached -U0 --diff-filter=ACM -- '*.id' '*.duo' > "$tmp"
 rc=0
 if [ -s "$tmp" ]; then
   DUOGATEDIFF="$tmp" "$duo" run "$root/scripts/idiomgate.duo"

@@ -2,7 +2,7 @@
 
 ## Authority
 
-The language law has one home. Read these files before editing Duon, in this
+The language law has one home. Read these files before editing Idsem, in this
 order:
 
 1. `docs/spec/constitution.duo` — C0, the highest authority.
@@ -16,28 +16,29 @@ second language specification. If it conflicts with C0 or `CLAUDE.md`, stop,
 report the conflict, and repair this projection. Repository history and the
 legacy corpus are migration evidence, never authority.
 
-The language is Duon. Source files remain `.duo`.
+The language is Idsem. Canonical source files use `.id`; `.duo` is historical
+source provenance during migration.
 
 ## Monoglot boundary
 
-The destination is a Duon compiler, standard vocabulary, build, tools, gates,
-and documentation projections implemented in Duon.
+The destination is an Idsem compiler, standard vocabulary, build, tools, gates,
+and documentation projections implemented in Idsem.
 
 Do not add a new Zig, C, Lua, shell, Python, or other foreign subsystem. Existing
 foreign implementation is bootstrap debt. A foreign edit is admissible only
 when an active gap and evidence show that it is the smallest bridge needed to
-unlock its Duon replacement, or when it strictly removes foreign surface. Keep
-the bridge local, preserve native performance, and move the authority into Duon
+unlock its Idsem replacement, or when it strictly removes foreign surface. Keep
+the bridge local, preserve native performance, and move the authority into Idsem
 in the same vertical slice as soon as the compiler can express it.
 
 Never route a typed or compile-time value through a boxed compatibility value.
 The semantic value and its native realization remain distinct; compatibility
-front ends do not own Duon meaning.
+front ends do not own Idsem meaning.
 
 ## Semantic-first correctness
 
 Never translate a C, Rust, Python, Lua, or conventional compiler pattern into
-Duon syntax. Begin with the semantic operation the program requests. Express it
+Idsem syntax. Begin with the semantic operation the program requests. Express it
 with the smallest existing combination of relation, level, descriptor, value,
 demand, world, place, proof, application, and structured value.
 
@@ -62,8 +63,8 @@ normalization into durable relation, value, demand, dependency, world, place,
 and realization facts. Retain a source face only when its use is irreducible or
 removing it would measurably sacrifice clarity or performance.
 
-Each file owns one semantic concept. Each Duon identifier is one lowercase
-semantic word. An underscore or uppercase letter in a Duon identifier is never
+Each file owns one semantic concept. Each Idsem identifier is one lowercase
+semantic word. An underscore or uppercase letter in an Idsem identifier is never
 canonical. `std` is a retiring distribution and compatibility root, not
 semantic authority; reduce its ratchet whenever a subject relation, level,
 home, or world can own the operation.
@@ -98,7 +99,8 @@ demand, places, proofs, provenance, and realization facts.
 The grammar is closed. New capability does not justify a token, sigil,
 directive, keyword, or special AST ontology.
 
-A changed `.duo` line is rejected when it introduces any of these forms:
+A changed canonical `.id` line, or touched historical `.duo` line, is rejected
+when it introduces any of these forms:
 
 - an identifier containing an underscore or uppercase letter;
 - `end`, a semicolon, `then`, or `do` instead of offside structure;
@@ -123,11 +125,11 @@ lawset provenance. Until `GAP-145` provides distinct lexer identities and
 generated grammar roles, do not migrate delimiters by search/replace or infer a
 literal/comment role downstream from token text.
 
-Before staging Duon, run the repository-native idiom check over the exact
+Before staging Idsem, run the repository-native idiom check over the exact
 working-tree diff:
 
     gate="$(mktemp -t duogate)" && trap 'rm -f "$gate"' EXIT
-    git diff -U0 -- '*.duo' > "$gate"
+    git diff -U0 -- '*.id' '*.duo' > "$gate"
     DUOGATEDIFF="$gate" duo run scripts/idiomgate.duo
 
 `scripts/semanticgate.duo` reads the staged index, so run it after staging or let
@@ -136,7 +138,7 @@ suppress, bypass, weaken, or route around a finding. Safe formatting rewrites
 require proved semantic equivalence. Intent-sensitive findings require a
 semantic repair, not a regex rewrite.
 
-Before writing a nontrivial Duon expression, answer:
+Before writing a nontrivial Idsem expression, answer:
 
 1. What value is the semantic subject?
 2. What relation is requested?
@@ -154,7 +156,7 @@ largest lawful realization set.
 
 ## Coordination and commits
 
-Duon is developed by concurrent agents in one dirty checkout.
+Idsem is developed by concurrent agents in one dirty checkout.
 
 1. Start through `duo_agent_session_start` and inspect the canonical router,
    live gaps, `git status --short --branch`, recent commits, live claims, and
@@ -164,7 +166,7 @@ Duon is developed by concurrent agents in one dirty checkout.
 3. Use `duo_agent_gaps_update` for numbered obligations. Do not create a second
    tracker or hand-allocate a gap.
 4. Serialize builds and benchmarks through the locked MCP build tools. Until a
-   world-backed Duon coordinator is admitted, do not teach a `std.script`
+   world-backed Idsem coordinator is admitted, do not teach a `std.script`
    wrapper as canonical authority. A concurrent benchmark is not evidence.
 5. Commit only explicit owned pathspecs. Inspect the staged diff and the final
    commit before pushing. Never absorb, revert, format, or hide another agent's

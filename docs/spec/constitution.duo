@@ -149,8 +149,60 @@ owner = law{
 language = @{
     name  = "idsem"
     file  = ".id"
-    history = @{ name = "duon", file = ".duo" }
+    binary = "idsem"
+    history = @{ name = "duon", aka = "duo", file = ".duo", binary = "duo" }
     epoch = 2
+}
+
+entity = law{
+    id    = "law.identity.graph"
+    kind  = .invariant
+    holds = .graph
+    binds = {
+        "the exact graph entity or its owner-defined compact handle is semantic identity within one graph incarnation",
+        "name path span source spelling fingerprint hash and intern slot are projections provenance evidence or acceleration and never establish identity",
+        "distinct occurrences and distinct graph incarnations retain distinct identities even when every compared fact matches",
+        "downstream semantic use fails closed when the exact graph identity is absent",
+    }
+    fails = "stable id path hash fingerprint name or source spelling selecting semantic meaning"
+}
+
+continuity = law{
+    id    = "law.identity.continuity"
+    kind  = .protocol
+    holds = .evidence
+    binds = {
+        "cross edit build snapshot and incarnation continuity is a relation between graph identities",
+        "provenance source span home relation descriptor transformation and graph correspondence may support that relation",
+        "missing correspondence remains unknown rather than guessed from equal paths names or fingerprints",
+    }
+}
+
+fingerprint = law{
+    id    = "law.identity.fingerprint"
+    kind  = .protocol
+    holds = .acceleration
+    binds = {
+        "a fingerprint may retrieve a cache or correspondence candidate only",
+        "authoritative graph facts verify every candidate before semantic reuse",
+        "collisions and deleting every fingerprint index preserve semantic correctness",
+        "fingerprints are computed only when caching persistence or tooling demands them",
+    }
+}
+
+number = law{
+    id    = "law.number.projection"
+    kind  = .invariant
+    holds = .composed
+    binds = {
+        "i8 i16 i32 i64 u8 u16 u32 u64 f32 and f64 remain compact canonical source faces",
+        "fixed width signedness format precision overflow and rounding are descriptor facts or laws rather than unrelated primitive kingdoms",
+        "an unannotated integer literal retains its exact integer value without a default fixed width",
+        "width is semantic only where arithmetic range serialization abi memory foreign or other observable law demands it",
+        "physical lane register immediate memory vector and target width belong to realization",
+        "bool text bytes and integer remain semantic domains rather than machine width aliases",
+    }
+    fails = "a primitive kind tag selecting meaning or an inferred literal committing a machine representation without demand"
 }
 
 -- ═══ §5 · syntax ═══════════════════════════════════════════════════════════
@@ -2473,15 +2525,10 @@ demand = law{
 
 -- ═══ §55 · IDENTITY, AUTHORITY ORDER, AND WHAT SELF-HOSTING MUST NOT COST ══
 
-identity = {
-    language = "duon", website = "duon.so", extension = ".duo",
-    binary = "duon", shellname = "duonsh", aka = ".do"
-}
-
--- `.do` is NOT canonical. It may be RECOGNIZED as an explicit alias; every file
--- duon generates — tooling, packages, examples, documentation — emits `.duo`.
--- `duon.com` stays renounced (squatted); `duon.so` is the site.
-identity.emit = ".duo"
+-- §4 owns the project and source identity. This projection exists only so the
+-- later authority laws refer to that one owner rather than redeclaring it.
+identity = language
+identity.emit = language.file
 
 order = law{
     id    = "law.authority.order"

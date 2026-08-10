@@ -1,7 +1,7 @@
 # Epoch 2 — what is law in this repository
 
-**Pass 100 (Duo 0.1) is the sole living semantic authority.** `CLAUDE.md` is
-its operative summary and is what agents read.
+**`docs/spec/constitution.duo` is the sole living semantic authority for
+Idsem.** `CLAUDE.md` is its operative projection and is what agents read.
 
 ## The problem this file exists to fix
 
@@ -48,10 +48,12 @@ The audit's P0 list:
 - [x] the spec itself committed at `docs/spec/pass100.md` (it was referenced but absent)
 - [x] `audit100` built from the deny table so the spec becomes executable pressure
       (`zig build audit100`, `scripts/audit100.duo`)
-- [x] every `.duo` corpus file classified
+- [x] the historical `.duo` corpus classified
       canonical / compatibility / foreign / negative / historical / generated,
       so deny-greps can reach literal zero on the canonical set without
       rewriting deliberate compatibility fixtures (`docs/spec/corpus.md`)
+- [ ] canonical `.id` and historical `.duo` source families projected from one
+      authority into corpus, formatter, LSP, MCP, Tree-sitter, and generators
 - [x] superseded pass documents removed from the search path: 59 moved
       `docs/plans/` out of the search path, then DELETED outright
 - [x] tracked session/agent state removed; `.agents/AGENT_COORDINATION.md` went
