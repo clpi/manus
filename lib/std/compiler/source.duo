@@ -16,12 +16,6 @@ bytecursor: {
     col: i64
 }
 
-type stableid = i64
-
-idgen: {
-    next: stableid
-}
-
 formatloc(loc: loc): str
     loc.file .. ":" .. loc.line:to(str) .. ":" .. loc.col:to(str)
 end
@@ -75,16 +69,6 @@ cursorloc(c: bytecursor): loc
     { file = c.file, line = c.line, col = c.col }
 end
 
-idgennew(start: stableid): idgen
-    { next = start }
-end
-
-idgennext(g: idgen): stableid
-    id = g.next
-    g.next = g.next + 1
-    id
-end
-
 M = {
     formatloc = formatloc,
     cursornew = cursornew,
@@ -94,6 +78,4 @@ M = {
     cursorremaining = cursorremaining,
     cursoradvance = cursoradvance,
     cursorloc = cursorloc,
-    idgennew = idgennew,
-    idgennext = idgennext,
 }
