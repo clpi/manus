@@ -3988,7 +3988,6 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         vone: i64 = 1
         v = v - (vone << vsh)
       end
-      integer: i64 = v
       v = v & 0xFFFFFFFF
       nx: i64 = string.byte(s, off + pc)
       if sp >= 1 and nx == 118 and v >= 1 and v <= 31
@@ -4036,39 +4035,28 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         end
         n += 1
         pc += 1
-      elseif sp >= 1 and nx == 106 and integer >= -4095 and integer <= 4095
-        -- A negative add is the same value relation as a positive subtract.
-        -- Keep the signed constant long enough to select the one-word form.
+      elseif sp >= 1 and nx == 106 and v <= 4095
+        -- ADD Wt, Wt, #v
         fs3: i64 = sp - 1
         if ali_slot == sp - 1 fs3 = ali_reg end
         if ali2_slot == sp - 1
           fs3 = ali2_reg
         end
-        encoding: i64 = 0x11000000
-        immediate: i64 = integer
-        if integer < 0
-          encoding = 0x51000000
-          immediate = -integer
-        jitm.w32(code, n, encoding | (immediate << 10) | (fs3 << 5) | (sp - 1))
+        jitm.w32(code, n, 0x11000000 | (v << 10) | (fs3 << 5) | (sp - 1))
         if ali_slot == sp - 1 ali_slot = -1 end
         if ali2_slot == sp - 1
           ali2_slot = -1
         end
         n += 1
         pc += 1
-      elseif sp >= 1 and nx == 107 and integer >= -4095 and integer <= 4095
-        -- Subtracting a negative selects the positive ADD immediate form.
+      elseif sp >= 1 and nx == 107 and v <= 4095
+        -- SUB Wt, Wt, #v
         fs4: i64 = sp - 1
         if ali_slot == sp - 1 fs4 = ali_reg end
         if ali2_slot == sp - 1
           fs4 = ali2_reg
         end
-        encoding: i64 = 0x51000000
-        immediate: i64 = integer
-        if integer < 0
-          encoding = 0x11000000
-          immediate = -integer
-        jitm.w32(code, n, encoding | (immediate << 10) | (fs4 << 5) | (sp - 1))
+        jitm.w32(code, n, 0x51000000 | (v << 10) | (fs4 << 5) | (sp - 1))
         if ali_slot == sp - 1 ali_slot = -1 end
         if ali2_slot == sp - 1
           ali2_slot = -1

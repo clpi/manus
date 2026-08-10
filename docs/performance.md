@@ -12888,32 +12888,6 @@ forms. A narrow engine-local bridge is admissible only with the full 130-row
 conformance matrix, an explicit nonzero JIT floor, and adversarial neighboring
 kernels. Benchmark-name recognition and a WASM-only value ontology are rejected.
 
-### Signed immediate realization
-
-The Duon ARM64 emitter now retains the signed value of `i32.const` long enough
-to select `SUB #imm` for addition by a negative constant and `ADD #imm` for
-subtraction by one. This is a general realization rule for the existing value
-relation; it adds no benchmark recognizer, new opcode identity, or Zig code.
-
-| Evidence | Before | After |
-| --- | ---: | ---: |
-| `hot_big` emitted words | 432 | 429 |
-| adversarial signed-immediate fixture words | 42 | 36 |
-| `hot_big` Duon JIT, min of 7 | 127 ms | 128 ms |
-| `hot_big` wasmtime, min of 7 | 106 ms | 106 ms |
-
-The adversarial fixture covers `add -9`, `sub -9`, the `-4095` encodable
-boundary, and the `-4096` non-encodable neighbor. Interpreter, JIT, and wasmtime
-all produce `2009`; the three encodable negative constants remove two words
-each, while `-4096` retains the existing materialization path.
-
-The complete conformance matrix remains green: 130 rows, 126 `PASS`, four
-`OK(void)`, zero differential failures, unsupported results, bails, or missing
-results; 49 of 65 oracle-answerable JIT requests compiled. Runtime is unchanged
-within measurement noise, so this is a code-size result only. The remaining
-`hot_big` gap requires retained value/liveness identity for alias-copy removal
-and lawful multiply-add selection rather than more engine-local caches.
-
 ---
 
 ## 2026-08-10 — SHC-01 checked application identity reaches direct realization
@@ -12958,7 +12932,7 @@ no boxed `lua_Value` path and no C fallback into the proof.
 
 ---
 
-## 2026-08-09 — exact cross-module scalar identity for SH-04
+## 2026-08-09 — exact cross-module scalar identity for SH-04 (historical parser measurement)
 
 ### Implemented
 
@@ -12972,26 +12946,32 @@ no boxed `lua_Value` path and no C fallback into the proof.
 
 ### Measured impact
 
+These are the focused parser measurements captured on 2026-08-09. They remain
+historical evidence for that artifact; they are not a current aggregate
+self-hosting or SHC authority.
+
 | Measure | Before | After |
 | --- | ---: | ---: |
 | Boxed `compiler.token` field reads in the parser artifact | 220 | 0 |
 | Native token constant references | 205 | 425 |
 | Real parser corpus proof exit | 139 | 0 |
-| Self-host manifest SH-04 | fail | pass |
-| Self-host manifest failing rows | 4 | 3 |
+| Historical forced-C manifest SH-04 | fail | pass |
+| Historical forced-C manifest failing rows | 4 | 3 |
 
 No runtime benchmark speedup is claimed. The change removes a boxed module-table
-dependency from the real parser projection and closes SH-04; SH-05, SH-09, and
-SH-13 remain honest failures.
+dependency from the measured parser projection. It does not establish current
+SHC authority.
 
 ### Validation
 
 - `zig fmt src/codegen.zig --check` — pass
 - `zig build -Doptimize=ReleaseFast` — pass
-- `duo run --backend=c examples/pass16_parser_corpus_proof.duo` — pass
+- `duo run --backend=c examples/pass16_parser_corpus_proof.duo` — focused real
+  parser proof passed, taking the recorded parser artifact from exit 139 to 0
 - generated-artifact inspection for boxed token reads and native constants — pass
-- `duo run scripts/selfhost_manifest.duo` — expected aggregate failure,
-  with SH-04 newly passing and SH-05/SH-09/SH-13 still failing
+- `9835522` later retired the unwired forced-C manifest and runner. It did not
+  install a replacement aggregate gate and does not establish current SHC
+  authority.
 - `zig build unit-test --summary all` — 1165/1168; three unrelated live-tree
   failures remain in parser interpolation, native register pressure, and relation
   derivation. None exercises the cross-module scalar projection changed here.

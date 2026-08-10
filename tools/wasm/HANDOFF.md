@@ -1,29 +1,6 @@
 # duon wasm — handoff
 
-## 2026-08-10 (latest) — signed immediates shrink ARM64 realization
-
-The Duon emitter retains a signed `i32.const` value through immediate
-selection. `x + -k` now realizes as `SUB #k`, and `x - -k` as `ADD #k`, for
-encodable values through 4095. This is a general relation-preserving selection;
-it adds no benchmark recognizer, WASM-only semantic operation, or Zig code.
-
-Evidence:
-
-- `hot_big` JIT output is 429 words, down from 432.
-- A neighboring-case fixture covering `add -9`, `sub -9`, `-4095`, and the
-  non-encodable `-4096` boundary is 36 words, down from 42. Interpreter, JIT,
-  and wasmtime all return `2009`.
-- Full conformance is 126 `PASS` plus four `OK(void)` across 130 rows, with no
-  differential failure, unsupported result, bail, or missing result.
-- The verified interleaved min-of-seven `hot_big` timing is 127 ms before and
-  128 ms after, against wasmtime at 106 ms both times. This is not a runtime
-  speedup claim.
-
-GAP-130 remains open. The next shared compiler requirement is stable value and
-liveness identity through bindings and demand, so realization can remove alias
-copies and select lawful fused multiply-add without another engine-local cache.
-
-## 2026-08-08 — `call_indirect` compiles, and it found a wrong answer
+## 2026-08-08 (latest) — `call_indirect` compiles, and it found a wrong answer
 
 `call_indirect` (0x11) has a JIT arm. It was 10 of the 18 refusals across both
 fixture corpora and the largest coverage gap left; **it is 0 of the 17 now.**
