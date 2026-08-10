@@ -666,6 +666,99 @@ test "region_transform: checked application is never selected by callee spelling
     try std.testing.expectEqual(@as(usize, 0), census.legacy_function_name_bridges);
 }
 
+test "region_transform: checked ordinary occurrences retain identity" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+    const dnir_lower = @import("dnir_lower.zig");
+    const semantic_graph = @import("semantic_graph.zig");
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\observe: i64 = (value: i64)
+        \\    value
+        \\main: i64 = ()
+        \\    observe(41)
+        \\    observe(42)
+    ;
+    var lex = Lexer.init(src, "checked-transform-retention.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var mod = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&mod);
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&mod, &checked, "checked-transform-retention.duo");
+    var m = try dnir_lower.lowerModuleWithGraph(alloc, &mod, &graph);
+
+    const initial_regions = try region_graph.buildModuleRegions(alloc, m, &graph);
+    defer region_graph.freeModuleRegions(alloc, initial_regions);
+    try region_graph.validateModuleRegions(initial_regions, &graph, m, alloc);
+
+    var before: [2]region_graph.Node = undefined;
+    var before_callers: [2]dnir.SemanticRef = undefined;
+    var before_count: usize = 0;
+    for (initial_regions) |region| {
+        for (region.nodes) |node| {
+            if (node.kind != .call or !region_graph.hasCompleteApplicationIdentity(node)) continue;
+            if (before_count >= before.len) return error.TestExpectedEqual;
+            before[before_count] = node;
+            before_callers[before_count] = region.func_identity orelse return error.TestExpectedEqual;
+            before_count += 1;
+        }
+    }
+    try std.testing.expectEqual(before.len, before_count);
+    try std.testing.expectEqual(@as(?dnir.SemanticRef, null), before[0].subject_id);
+    try std.testing.expectEqual(@as(?dnir.SemanticRef, null), before[1].subject_id);
+    try std.testing.expect(before[0].relation_id.?.eql(before[1].relation_id.?));
+    try std.testing.expect(!before[0].application_id.?.eql(before[1].application_id.?));
+    try std.testing.expect(!before[0].value_id.?.eql(before[1].value_id.?));
+
+    const report = try applyModuleRegionTransforms(alloc, &m, initial_regions);
+    try std.testing.expectEqual(@as(u32, 0), report.legacy_const_inlines);
+    try std.testing.expectEqual(@as(u32, 0), report.const_binop_fusions);
+    try std.testing.expectEqual(@as(u32, 0), report.dead_const_pruned);
+
+    const final_regions = try region_graph.buildModuleRegions(alloc, m, &graph);
+    defer region_graph.freeModuleRegions(alloc, final_regions);
+    try region_graph.validateModuleRegions(final_regions, &graph, m, alloc);
+    const census = try region_graph.semanticNameReconstructionCensus(alloc, final_regions, &graph);
+    try std.testing.expectEqual(@as(usize, 2), census.required_checked_applications);
+    try std.testing.expectEqual(@as(usize, 2), census.checked_call_nodes);
+    try std.testing.expectEqual(@as(usize, 0), census.incomplete_lineage);
+    try std.testing.expectEqual(@as(usize, 0), census.missing_lineage);
+    try std.testing.expectEqual(@as(usize, 0), census.legacy_symbol_bridges);
+    try std.testing.expectEqual(@as(usize, 0), census.legacy_function_name_bridges);
+
+    var after_count: usize = 0;
+    for (final_regions) |region| {
+        for (region.nodes) |node| {
+            if (node.kind != .call or !region_graph.hasCompleteApplicationIdentity(node)) continue;
+            var match: ?usize = null;
+            for (before[0..before_count], 0..) |expected, i| {
+                if (expected.application_id.?.eql(node.application_id.?)) match = i;
+            }
+            const index = match orelse return error.TestExpectedEqual;
+            const expected = before[index];
+            try std.testing.expect(expected.relation_id.?.eql(node.relation_id.?));
+            try std.testing.expect(expected.application_id.?.eql(node.application_id.?));
+            try std.testing.expect(expected.value_id.?.eql(node.value_id.?));
+            try std.testing.expectEqual(expected.subject_id, node.subject_id);
+            try std.testing.expect(expected.descriptor.?.eql(node.descriptor.?));
+            try std.testing.expect(before_callers[index].eql(region.func_identity orelse return error.TestExpectedEqual));
+            try std.testing.expectEqual(expected.realization_start, node.realization_start);
+            after_count += 1;
+        }
+    }
+    try std.testing.expectEqual(before_count, after_count);
+}
+
 test "region_transform: fuse const binop via region schedule" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;

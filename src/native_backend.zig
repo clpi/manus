@@ -4658,15 +4658,24 @@ fn validateDnirApplications(
 
     const LinkTarget = struct {
         identity: dnir.SemanticRef,
+        linkage: []const u8,
         result_record: ?[]const u8,
     };
-    var functions_by_symbol: std.StringHashMapUnmanaged(LinkTarget) = .empty;
-    defer functions_by_symbol.deinit(alloc);
+    var functions_by_relation: std.AutoHashMapUnmanaged(u32, LinkTarget) = .empty;
+    defer functions_by_relation.deinit(alloc);
+    var link_symbols: std.StringHashMapUnmanaged(void) = .empty;
+    defer link_symbols.deinit(alloc);
     for (module.functions) |function| {
         const identity = function.semantic_identity orelse continue;
-        const slot = try functions_by_symbol.getOrPut(alloc, function.name);
-        if (slot.found_existing) return refuseWith(@src(), "duplicate-link-symbol");
-        slot.value_ptr.* = .{ .identity = identity, .result_record = function.ret_record };
+        const symbol_slot = try link_symbols.getOrPut(alloc, function.name);
+        if (symbol_slot.found_existing) return refuseWith(@src(), "duplicate-link-symbol");
+        const relation_slot = try functions_by_relation.getOrPut(alloc, identity.node);
+        if (relation_slot.found_existing) return refuseWith(@src(), "function-identity-collision");
+        relation_slot.value_ptr.* = .{
+            .identity = identity,
+            .linkage = function.name,
+            .result_record = function.ret_record,
+        };
     }
 
     for (module.functions) |function| {
@@ -4714,10 +4723,13 @@ fn validateDnirApplications(
                 {
                     return refuseWith(@src(), "application-identity-mismatch");
                 }
-                const target = functions_by_symbol.get(instruction.callee) orelse
+                const target = functions_by_relation.get(application.relation.node) orelse
                     return refuseWith(@src(), "application-link-target");
                 if (!target.identity.eql(application.relation)) {
                     return refuseWith(@src(), "application-link-target");
+                }
+                if (!std.mem.eql(u8, target.linkage, instruction.callee)) {
+                    return refuseWith(@src(), "application-link-symbol");
                 }
                 if (target.result_record) |record| {
                     if (!std.mem.eql(u8, record, instruction.record)) {
@@ -5614,6 +5626,8 @@ test "native backend: callee spelling cannot redirect a checked application" {
 
     const module = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph);
     try validateDnirApplications(alloc, module, applications);
+    var baseline = try emitArm64FromDnir(alloc, module, null);
+    defer baseline.deinit(alloc);
     var identified: ?*dnir.Instr = null;
     for (module.functions) |function| {
         for (function.blocks) |block| {
@@ -5633,28 +5647,88 @@ test "native backend: callee spelling cannot redirect a checked application" {
         error.UnsupportedProgram,
         validateDnirApplications(alloc, module, applications),
     );
+    try std.testing.expectEqualStrings("application-identity-mismatch", refusalNote().?);
     instruction.ty = descriptor_before;
+
+    const functions: []dnir.Function = @constCast(module.functions);
+    var selected_function: ?*dnir.Function = null;
+    var other_function: ?*dnir.Function = null;
+    for (functions) |*function| {
+        const identity = function.semantic_identity orelse continue;
+        if (identity.eql(applications[0].relation)) {
+            selected_function = function;
+        } else if (std.mem.eql(u8, function.name, "impostor")) {
+            other_function = function;
+        }
+    }
+    const selected = selected_function orelse return error.TestExpectedEqual;
+    const other = other_function orelse return error.TestExpectedEqual;
+    const selected_identity = selected.semantic_identity.?;
+    const other_identity = other.semantic_identity.?;
+
+    const other_name = other.name;
+    other.name = selected.name;
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        validateDnirApplications(alloc, module, applications),
+    );
+    try std.testing.expectEqualStrings("duplicate-link-symbol", refusalNote().?);
+    other.name = other_name;
+
+    other.semantic_identity = .{
+        .node = selected_identity.node,
+        .fingerprint = other_identity.fingerprint,
+    };
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        validateDnirApplications(alloc, module, applications),
+    );
+    try std.testing.expectEqualStrings("function-identity-collision", refusalNote().?);
+    other.semantic_identity = other_identity;
+
+    selected.semantic_identity.?.fingerprint ^= 1;
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        validateDnirApplications(alloc, module, applications),
+    );
+    try std.testing.expectEqualStrings("application-link-target", refusalNote().?);
+    selected.semantic_identity = selected_identity;
+
+    selected.semantic_identity.?.node ^= 0x8000_0000;
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        validateDnirApplications(alloc, module, applications),
+    );
+    try std.testing.expectEqualStrings("application-link-target", refusalNote().?);
+    selected.semantic_identity = selected_identity;
+
     instruction.callee = "impostor";
     try std.testing.expect(applications[0].relation.eql(relation_before));
     try std.testing.expectError(
         error.UnsupportedProgram,
         validateDnirApplications(alloc, module, applications),
     );
+    try std.testing.expectEqualStrings("application-link-symbol", refusalNote().?);
 
     // A physical symbol may be renamed when the exact target identity moves
     // with it. The semantic relation remains the graph-selected relation.
     instruction.callee = "observe_alias";
-    var renamed_target = false;
-    const functions: []dnir.Function = @constCast(module.functions);
-    for (functions) |*function| {
-        if (function.semantic_identity == null or
-            !function.semantic_identity.?.eql(applications[0].relation)) continue;
-        function.name = "observe_alias";
-        renamed_target = true;
-    }
-    try std.testing.expect(renamed_target);
+    selected.name = "observe_alias";
     try std.testing.expect(relation_before.eql(instruction.relation.?));
+    try std.testing.expect(selected.semantic_identity.?.eql(selected_identity));
     try validateDnirApplications(alloc, module, applications);
+
+    var renamed = try emitArm64FromDnir(alloc, module, null);
+    defer renamed.deinit(alloc);
+    try std.testing.expectEqualSlices(u8, baseline.text, renamed.text);
+    try std.testing.expect(std.mem.indexOf(u8, baseline.asm_text, "bl _observe") != null);
+    try std.testing.expect(std.mem.indexOf(u8, renamed.asm_text, "bl _observe_alias") != null);
+    try std.testing.expectEqual(baseline.lineage.len, renamed.lineage.len);
+    try std.testing.expectEqual(@as(usize, 1), renamed.lineage.len);
+    try std.testing.expect(baseline.lineage[0].relation.eql(renamed.lineage[0].relation));
+    try std.testing.expect(baseline.lineage[0].application.eql(renamed.lineage[0].application));
+    try std.testing.expect(baseline.lineage[0].value.eql(renamed.lineage[0].value));
+    try std.testing.expect(baseline.lineage[0].function.eql(renamed.lineage[0].function));
 }
 
 test "native backend: checked call result descriptor does not select argument ABI" {
