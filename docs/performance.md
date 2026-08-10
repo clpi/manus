@@ -13199,3 +13199,39 @@ SHC authority.
 - `zig build unit-test --summary all` — 1165/1168; three unrelated live-tree
   failures remain in parser interpolation, native register pressure, and relation
   derivation. None exercises the cross-module scalar projection changed here.
+
+---
+
+## 2026-08-10 — floating local alias removal
+
+The current realization migration encoding no longer emits `load_local` for a
+floating value already resident in its local home. All four producers created a
+fresh DNIR temporary value number, while ARM64 emitted zero bytes and only
+aliased the same register. Consumers now use the original DNIR local slot
+number directly.
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| `load_local` production producers | 4 | 0 |
+| `load_local` operation variants | 1 | 0 |
+| Native census | 96 / 206 | 96 / 206 |
+| Native differential | 47 agree / 20 diverge / 5 unsupported | unchanged |
+
+Machine equivalence was measured for a plain floating local, a value surviving
+an intervening call, a conditional, and a loop backedge. Assembly and Mach-O
+object bytes are identical for every before/after pair. Representative SHA-256
+checksums are:
+
+- plain local: assembly `503ce90fe44dffcfb4b85b23b58f831bb0b1c8c5d8ed977fe1f0a5f1889fe3a2`,
+  object `895e06ce826aabb1a463232ae2aaae22e9117973ecd2b561597067f985f0aa61`;
+- across call: assembly `5eac2f6096117afcc78597cc63ef3e88ab3ab7eaf9dac69c1be23bd9201b8611`,
+  object `645a1d5a0b96fbd75eadaa65a7c619e5a477931c75a2e49646d9d4cd8b92feca`;
+- conditional: assembly `84686290ca5bb32fffcc46d1d891ae015d063396b6bc3e26ab3174d8264bfb1b`,
+  object `514dbe9d685a8750874a996d134569f737add9295b8f36b087000ff649bf6762`;
+- backedge: assembly `8610ea8d05e4e9a4c5566249d5819ba1d2b427317cb90d783567e77e4550031b`,
+  object `d1ee54884d248f25aa4addf84b12dbef85f3ba6d8c5569e07a89ab44a77b1293`.
+
+This is compiler-work and vocabulary reduction, not a runtime speed claim. It
+adds no boxing, allocation, dispatch, materialization, or ABI movement. The
+remaining exploded-record name bridge is outside this result and remains
+deletion-gated on exact graph-owned structured value projections.

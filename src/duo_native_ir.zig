@@ -1,8 +1,10 @@
-//! Duo Native IR (DNIR) — canonical typed lowering between sema and backends.
+//! DNIR — migration encoding for the current realization substrate.
+//! Graph identity remains authoritative; this layer adds physical facts for
+//! realization and machine emission without creating another meaning space.
 //!
 //! Machine code is the release target. C emission is bootstrap/debug only.
 //! DNIR is SSA-ish: native scalars, records, direct calls — consumed by
-//! `dnir_backend.zig` (ARM64 Mach-O) without lua_Value.
+//! `native_backend.zig` (ARM64 Mach-O) without lua_Value.
 const std = @import("std");
 const types = @import("types.zig");
 const dnir_hardware = @import("dnir_hardware.zig");
@@ -71,7 +73,6 @@ pub const BranchCondition = enum {
 pub const Op = enum {
     @"const",
     const_req,
-    load_local,
     store_local,
     load_field,
     store_field,
@@ -332,7 +333,6 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
                     .ret_record,
                     .@"const",
                     .const_req,
-                    .load_local,
                     .store_local,
                     .load_global,
                     .mov_arg,

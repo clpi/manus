@@ -1848,22 +1848,6 @@ const Arm64Compiler = struct {
                 // base here handed it to the next argument's index constant.
                 if (reg != slot) self.releaseDnirTemp(pinned, ins.lhs, reg);
             },
-            .load_local => {
-                // Same rule as the store: the slot's register FILE is a fact
-                // about the slot, not about this instruction's type tag.
-                if (ins.ty == .f64 or self.valueIsFp(ins.lhs)) {
-                    const slot: u32 = switch (ins.lhs) {
-                        .local => |s| s,
-                        else => return refuse(@src()),
-                    };
-                    const d = pinned.get(slot) orelse temps.get(slot) orelse return undefinedAt(@src(), "local", slot);
-                    if (ins.result) |t| try temps.put(self.alloc, t, d);
-                    try self.markFpTemp(ins.result);
-                } else {
-                    const reg = try self.evalDnirValue(temps, ins.lhs);
-                    if (ins.result) |t| try temps.put(self.alloc, t, reg);
-                }
-            },
             .store_local => {
                 // A binding with no DNIR consumer does not demand a physical
                 // place. An integer immediate has no effect to preserve, so
@@ -2691,6 +2675,7 @@ const Arm64Compiler = struct {
                 try self.emitFmovImmFp(d, n);
                 break :blk d;
             },
+            .local => |slot| temps.get(slot) orelse undefinedAt(@src(), "local", slot),
             .temp => |t| temps.get(t) orelse undefinedAt(@src(), "temp", t),
             else => refuse(@src()),
         };

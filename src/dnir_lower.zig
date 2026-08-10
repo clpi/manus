@@ -2335,14 +2335,7 @@ fn emitF64RecordFieldsFromName(ctx: *LowerCtx, name: []const u8, slot: *u32) Err
             const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ name, fname });
             const field_slot = ctx.locals.get(key) orelse return bail(@src());
             ctx.alloc.free(key);
-            const t = ctx.freshTemp();
-            try ctx.emit(.{
-                .op = .load_local,
-                .result = t,
-                .lhs = .{ .local = field_slot },
-                .ty = .f64,
-            });
-            try ctx.emit(.{ .op = .fp_mov_arg, .result = slot.*, .lhs = .{ .temp = t } });
+            try ctx.emit(.{ .op = .fp_mov_arg, .result = slot.*, .lhs = .{ .local = field_slot } });
             slot.* += 1;
             if (slot.* > 8) return bail(@src());
         }
@@ -2472,11 +2465,6 @@ fn lowerExprCons(
                 if (ctx.module_consts.strs.get(n.ident)) |sv| break :blk dnir.Value{ .str = sv };
                 return bailWith(@src(), n.ident);
             };
-            if (ctx.f64_slots.contains(slot)) {
-                const t = ctx.freshTemp();
-                try ctx.emit(.{ .op = .load_local, .result = t, .lhs = .{ .local = slot }, .ty = .f64 });
-                break :blk dnir.Value{ .temp = t };
-            }
             break :blk dnir.Value{ .local = slot };
         },
         .binop => |b| if (b.op == .@"and" or b.op == .@"or")
@@ -2545,11 +2533,6 @@ fn lowerExprCons(
             const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{d}", .{ ix.obj.name.ident, n });
             defer ctx.alloc.free(key);
             const slot = ctx.locals.get(key) orelse return bail(@src());
-            if (ctx.f64_slots.contains(slot)) {
-                const t = ctx.freshTemp();
-                try ctx.emit(.{ .op = .load_local, .result = t, .lhs = .{ .local = slot }, .ty = .f64 });
-                break :blk dnir.Value{ .temp = t };
-            }
             break :blk dnir.Value{ .local = slot };
         },
         .call => try lowerCall(ctx, expr, consumption),
@@ -3698,11 +3681,6 @@ fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
         defer path.deinit(ctx.alloc);
         if (try flattenNames(ctx.alloc, expr, &path)) {
             if (ctx.locals.get(path.items)) |slot| {
-                if (ctx.f64_slots.contains(slot)) {
-                    const ft = ctx.freshTemp();
-                    try ctx.emit(.{ .op = .load_local, .result = ft, .lhs = .{ .local = slot }, .ty = .f64 });
-                    return .{ .temp = ft };
-                }
                 return .{ .local = slot };
             }
         }
@@ -4033,17 +4011,18 @@ test "dnir_lower: f64 kernel call with record variable" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\Point: @{ x: f64, y: f64 }
-        \\distance2(p: Point): f64
+        \\point: {
+        \\    x: f64
+        \\    y: f64
+        \\}
+        \\distance2: f64 = (p: point)
         \\    p.x * p.x + p.y * p.y
-        \\end
-        \\main(): i64
+        \\main: i64 = ()
         \\    p = { x = 3.0, y = 4.0 }
-        \\    r: f64 = distance2(p)
+        \\    distance2(p)
         \\    0
-        \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "record_var.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "record-variable.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -4054,13 +4033,14 @@ test "dnir_lower: f64 kernel call with record variable" {
     }
     const main = main_fn orelse return error.TestUnexpectedResult;
     var fp_movs: u32 = 0;
-    var load_f64_fields: u32 = 0;
+    var local_fp_movs: u32 = 0;
     for (main.blocks[0].instrs) |ins| {
-        if (ins.op == .fp_mov_arg) fp_movs += 1;
-        if (ins.op == .load_local and ins.ty == .f64) load_f64_fields += 1;
+        if (ins.op != .fp_mov_arg) continue;
+        fp_movs += 1;
+        if (ins.lhs == .local) local_fp_movs += 1;
     }
     try std.testing.expect(fp_movs == 2);
-    try std.testing.expect(load_f64_fields == 2);
+    try std.testing.expect(local_fp_movs == 2);
 }
 
 test "dnir_lower: main returns f64 kernel tail" {
