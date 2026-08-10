@@ -13407,3 +13407,21 @@ Serialized evidence on the current working tree based at `d802eeb`:
   exit 128 on this tree;
 - `zig fmt`, `zig ast-check`, and `git diff --check` over the three changed Zig
   files — pass.
+
+---
+
+## 2026-08-10 — rejected floating call-row compaction
+
+An uncommitted prototype extended the identified single-operand call
+compaction from the proven `i64` contract to an exact `f64` operand and result.
+The realization row count fell from two to one, but ARM64 emission grew from 40
+to 44 text bytes. The explicit `fp_mov_arg` row writes the literal directly to
+`d0`; carrying the literal on the call first materialized it in `d16` and then
+added `fmov d0, d16`.
+
+The byte-equivalence control failed inside the locked unit gate, which reported
+1190/1194 passing with the prototype's failure plus the three known aggregate
+failures. The prototype was removed completely. The admitted `f64` path keeps
+explicit ABI staging until the call emitter can consume the operand without an
+extra machine instruction. No production source or test from the prototype was
+committed.
