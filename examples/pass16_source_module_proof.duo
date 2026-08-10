@@ -1,5 +1,5 @@
--- Pass 16 Phase 1 — req'd source module cursor walk (record-by-ref codegen).
--- Parity: src/source_cursor.zig differentialProductionParity / walkReference.
+-- Historical source-module cursor walk. The default backend checks C-backed
+-- behavior only; direct execution currently refuses at cursornew (GAP-127).
 walk: i64 = ()
     c = std.compiler.source.cursornew("a\nb\nc", "test.duo")
     if std.compiler.source.cursorpeek(c) != 97
@@ -23,7 +23,7 @@ walk: i64 = ()
     if loc.col != 1
         return 4
     end
-    print("pass16_source_module_proof: PASS " .. std.compiler.source.formatloc(loc))
+    print("source module: C-backed behavior only; direct frontier is cursornew {std.compiler.source.formatloc(loc)}")
     0
 end
 
