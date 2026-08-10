@@ -395,6 +395,13 @@ pub const CodeGen = struct {
     func_bodies: std.StringHashMapUnmanaged(*const ast.FuncBody) = .empty,
     /// Module-scope function declarations (attributes for effect/call algebra).
     func_decls: std.StringHashMapUnmanaged(*const ast.FuncDecl) = .empty,
+    /// `(subject descriptor, relation)` -> embedded relation symbol. This is an
+    /// acceleration of declared identities, not another operation namespace.
+    /// An empty value records an ambiguous family and is never selected.
+    subject_relations: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// Qualified descriptors exported by embedded homes. Homes identify the
+    /// descriptor; they do not authorize an operation.
+    subject_descriptors: std.StringHashMapUnmanaged(RT) = .empty,
     /// gap[082]: the relation store. Declared edges land here from
     /// `family(dest)(src) = conv`; `emit_convert_edge` asks the `to` family
     /// BEFORE the four hardcoded primitive arms, so an authored edge outranks
@@ -929,6 +936,17 @@ pub const CodeGen = struct {
         const key = self.mangled_name(name, &buf);
         const owned = try self.alloc.dupe(u8, key);
         try self.func_decls.put(self.alloc, owned, fd);
+        if (fd.func.params.len == 0 or fd.func.params[0].typ != .named) return;
+        const descriptor = fd.func.params[0].typ.named;
+        const index = try std.fmt.allocPrint(self.alloc, "{s}|{s}", .{ descriptor, name });
+        if (self.subject_relations.get(index)) |prior| {
+            defer self.alloc.free(index);
+            if (!std.mem.eql(u8, prior, owned)) {
+                try self.subject_relations.put(self.alloc, index, "");
+            }
+        } else {
+            try self.subject_relations.put(self.alloc, index, owned);
+        }
     }
 
     /// Try to evaluate an expression's boolean condition at compile time.
@@ -2010,6 +2028,9 @@ pub const CodeGen = struct {
                 if (self.func_decls.get(self.mangled_name(mc.method, &tbuf))) |fd| {
                     return self.resolve_type(contract_ret(&fd.func));
                 }
+            }
+            if (self.subjectRelation(mc.method, mc.obj)) |resolved| {
+                return self.resolve_type(contract_ret(&resolved.decl.func));
             }
             if (self.static_dispatch_type_for_expr(mc.obj, mc.method)) |_| {
                 if (std.mem.eql(u8, mc.method, "increment") or
@@ -5092,7 +5113,7 @@ pub const CodeGen = struct {
                     fd: {
                         var tbuf: [256]u8 = undefined;
                         break :fd self.func_decls.get(self.mangled_name(mc.method, &tbuf)) != null;
-                    } or
+                    } or self.subjectRelation(mc.method, mc.obj) != null or
                     // law.host.projection { projects = to, authority = false }
                     // gap[082] is the deletion gate.
                     (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1);
@@ -7300,6 +7321,22 @@ pub const CodeGen = struct {
         }
     }
 
+    fn noteSubjectDescriptors(self: *CodeGen, mod: *ast.Module) E!void {
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .alias_def) continue;
+            const alias = &stmt.alias_def;
+            if (alias.type_params != null or types.nominalRepr(alias.name) != null) continue;
+            const record = try self.alias_record_type(alias);
+            if (record != .table_type) continue;
+            const key = try std.fmt.allocPrint(self.alloc, "{s}|{s}", .{ self.current_module_cname, alias.name });
+            if (self.subject_descriptors.contains(key)) {
+                self.alloc.free(key);
+                continue;
+            }
+            try self.subject_descriptors.put(self.alloc, key, record);
+        }
+    }
+
     fn populate_foreign_aliases(self: *CodeGen) E!void {
         const map = self.foreign_records orelse return;
         var it = map.iterator();
@@ -8016,15 +8053,33 @@ pub const CodeGen = struct {
     /// what `law.brace` requires ("the SUBJECT decides"). The patch gap[088]
     /// reverted did the opposite: it consulted `record_aliases` to RE-DERIVE a
     /// split the tree had already destroyed.
-    fn descriptor_application_type(self: *const CodeGen, c: anytype) ?RT {
+    const DescriptorApplication = struct {
+        name: []const u8,
+        record: RT,
+    };
+
+    fn descriptorApplication(self: *const CodeGen, c: anytype) ?DescriptorApplication {
         if (c.form != .braced) return null;
         if (c.args.len != 1) return null;
         if (c.args[0].* != .table) return null;
         if (!c.args[0].table.pack.applied) return null;
-        if (c.func.* != .name) return null;
-        const rt = self.record_aliases.get(c.func.name.ident) orelse return null;
+        if (c.func.* == .name) {
+            const name = c.func.name.ident;
+            const rt = self.record_aliases.get(name) orelse return null;
+            if (rt != .table_type) return null;
+            return .{ .name = name, .record = rt };
+        }
+        if (c.func.* != .field or c.func.field.obj.* != .name) return null;
+        const home = self.req_module_bindings.get(c.func.field.obj.name.ident) orelse return null;
+        var keybuf: [512]u8 = undefined;
+        const key = std.fmt.bufPrint(&keybuf, "{s}|{s}", .{ home, c.func.field.field }) catch return null;
+        const rt = self.subject_descriptors.get(key) orelse return null;
         if (rt != .table_type) return null;
-        return rt;
+        return .{ .name = c.func.field.field, .record = rt };
+    }
+
+    fn descriptor_application_type(self: *const CodeGen, c: anytype) ?RT {
+        return (self.descriptorApplication(c) orelse return null).record;
     }
 
     /// `point{ x = 3.0, y = 4.0 }` -> `(duo_rec_…){ .x = 3e0, .y = 4e0 }`.
@@ -8038,9 +8093,13 @@ pub const CodeGen = struct {
     /// heap: the pack lands as struct fields the C compiler is free to keep in
     /// registers. That is the `apply.ladder` rung §44 calls scalar replacement.
     fn emit_descriptor_application(self: *CodeGen, c: anytype) E!bool {
-        const rt = self.descriptor_application_type(c) orelse return false;
+        const application = self.descriptorApplication(c) orelse return false;
+        const rt = application.record;
         var buf: [128]u8 = undefined;
-        const cname = self.c_type(RT{ .@"struct" = .{ .name = c.func.name.ident } }, &buf);
+        const cname = if (c.func.* == .name)
+            self.c_type(RT{ .@"struct" = .{ .name = application.name } }, &buf)
+        else
+            self.c_type(rt, &buf);
         // A C compound literal, so the construction is an EXPRESSION and
         // composes anywhere a value does — argument, field, return, operand.
         self.p("({s})", .{cname});
@@ -16425,6 +16484,8 @@ pub const CodeGen = struct {
                     if (try self.maybe_emit_stdlib_call(&inner, outer_args[0..], self.expr_type(expr))) return;
                 }
 
+                if (try self.tryEmitSubjectRelation(mc)) return;
+
                 // ═══════════════════════════════════════════════════════════
                 // Zero-cost metatable dispatch: if we know the object's type
                 // has a method defined in its alias_defs, emit a direct call
@@ -16699,6 +16760,7 @@ pub const CodeGen = struct {
                         if (try self.try_emit_native_string_affix(mc.method, mc.obj, mc.args[0])) return;
                     }
                     if (try self.try_emit_native_string_transform(mc.method, mc.obj, mc.args, self.expr_type(expr))) return;
+                    if (try self.tryEmitSubjectRelation(mc)) return;
                     if (!self.moduleNeedsLuaRuntime()) {
                         self.p("duo_fatal(\"unlowered native string method\")", .{});
                         return;
@@ -16798,6 +16860,7 @@ pub const CodeGen = struct {
                         self.p(")", .{});
                         return;
                     }
+                    if (try self.tryEmitSubjectRelation(mc)) return;
                     try self.emit_expr(mc.obj);
                     self.p("__{s}(", .{mc.method});
                     for (mc.args, 0..) |arg, i| {
@@ -23245,7 +23308,8 @@ pub const CodeGen = struct {
                 .local_decl => |*ld| {
                     for (ld.names, 0..) |*ln, i| {
                         if (i >= ld.inits.len) continue;
-                        const path = req_path_from_expr(ld.inits[i]) orelse continue;
+                        var pathbuf: [512]u8 = undefined;
+                        const path = self.moduleBindingPath(ld.inits[i], &pathbuf) orelse continue;
                         try self.try_register_req_binding(ln.ident, path);
                         if (self.req_module_skips_lua_binding(path)) try self.mark_req_native_direct(ln.ident);
                         if (self.duo_mode) try self.mark_module_sealed(ln.ident);
@@ -23253,7 +23317,8 @@ pub const CodeGen = struct {
                 },
                 .assign => |*as| {
                     if (as.targets.len != 1 or as.values.len != 1 or as.targets[0].* != .name) continue;
-                    const path = req_path_from_expr(as.values[0]) orelse continue;
+                    var pathbuf: [512]u8 = undefined;
+                    const path = self.moduleBindingPath(as.values[0], &pathbuf) orelse continue;
                     try self.try_register_req_binding(as.targets[0].name.ident, path);
                     if (self.req_module_skips_lua_binding(path)) try self.mark_req_native_direct(as.targets[0].name.ident);
                     if (self.duo_mode) try self.mark_module_sealed(as.targets[0].name.ident);
@@ -23261,7 +23326,8 @@ pub const CodeGen = struct {
                 .global_decl => |*gd| {
                     for (gd.names, 0..) |*ln, i| {
                         if (i >= gd.inits.len) continue;
-                        const path = req_path_from_expr(gd.inits[i]) orelse continue;
+                        var pathbuf: [512]u8 = undefined;
+                        const path = self.moduleBindingPath(gd.inits[i], &pathbuf) orelse continue;
                         try self.try_register_req_binding(ln.ident, path);
                         if (self.req_module_skips_lua_binding(path)) try self.mark_req_native_direct(ln.ident);
                         if (self.duo_mode) try self.mark_module_sealed(ln.ident);
@@ -23271,6 +23337,13 @@ pub const CodeGen = struct {
             }
         }
         try self.collect_module_seal_invalidations(mod);
+    }
+
+    fn moduleBindingPath(self: *CodeGen, expr: anytype, buf: []u8) ?[]const u8 {
+        if (req_path_from_expr(expr)) |path| return path;
+        const path = ambient_dotted_path(expr, buf) orelse return null;
+        if (self.find_module_file_for_req(path) == null) return null;
+        return path;
     }
 
     fn mark_module_sealed(self: *CodeGen, name: []const u8) !void {
@@ -23604,6 +23677,103 @@ pub const CodeGen = struct {
         self.current_module_cname = saved_cname;
         if (ft != .func) return null;
         return ft;
+    }
+
+    const SubjectRelation = struct {
+        name: []const u8,
+        home: []const u8,
+        decl: *const ast.FuncDecl,
+    };
+
+    /// Resolve a receiver face against relations declared by embedded homes.
+    ///
+    /// A home only contributes identity and provenance; the held value remains
+    /// the subject.  Embedded declarations are already registered under their
+    /// stable C names (`home__relation`).  Match that existing relation family
+    /// by its bare name and first parameter descriptor, and decline ambiguity
+    /// instead of guessing from a namespace spelling.
+    fn subjectDescriptor(self: *CodeGen, subject: anytype) ?[]const u8 {
+        if (subject.* == .call) {
+            if (self.descriptorApplication(subject.call)) |application| return application.name;
+        }
+        return switch (self.expr_type(subject)) {
+            .i8 => "i8",
+            .i16 => "i16",
+            .i32 => "i32",
+            .i64 => "i64",
+            .u8 => "u8",
+            .u16 => "u16",
+            .u32 => "u32",
+            .u64 => "u64",
+            .f32 => "f32",
+            .f64 => "f64",
+            .bool => "bool",
+            .str => "str",
+            .@"struct" => |record| record.name,
+            .enum_type => |enumeration| enumeration.name,
+            else => null,
+        };
+    }
+
+    fn subjectRelation(self: *CodeGen, method: []const u8, subject: anytype) ?SubjectRelation {
+        const subject_type = self.expr_type(subject);
+        const descriptor = self.subjectDescriptor(subject) orelse return null;
+        var index_buf: [512]u8 = undefined;
+        const index = std.fmt.bufPrint(&index_buf, "{s}|{s}", .{ descriptor, method }) catch return null;
+        const name = self.subject_relations.get(index) orelse return null;
+        if (name.len == 0) return null;
+        const decl = self.func_decls.get(name) orelse return null;
+        const parameter_type = self.resolve_type(decl.func.params[0].typ);
+        if (subject_type != .any and !subject_type.eql(parameter_type)) return null;
+        const suffix_len = method.len + 2;
+        if (name.len <= suffix_len) return null;
+        return .{ .name = name, .home = name[0 .. name.len - suffix_len], .decl = decl };
+    }
+
+    fn tryEmitSubjectRelation(self: *CodeGen, call: anytype) E!bool {
+        const resolved = self.subjectRelation(call.method, call.obj) orelse return false;
+        self.p("{s}(", .{resolved.name});
+        const params = resolved.decl.func.params;
+        const saved_cname = self.current_module_cname;
+
+        self.current_module_cname = resolved.home;
+        const subject_type = self.resolve_type(params[0].typ);
+        const subject_by_ptr = self.native_record_param_by_ptr(subject_type);
+        self.current_module_cname = saved_cname;
+        if (subject_by_ptr) {
+            if (call.obj.* == .name and self.expr_is_native_record_ptr_param(call.obj)) {
+                try self.emit_expr(call.obj);
+            } else {
+                self.p("&", .{});
+                try self.emit_expr(call.obj);
+            }
+        } else {
+            try self.emit_arg_for_param(call.obj, subject_type, true);
+        }
+
+        for (call.args, 0..) |arg, i| {
+            self.p(", ", .{});
+            if (i + 1 >= params.len) {
+                try self.emit_expr(arg);
+                continue;
+            }
+            self.current_module_cname = resolved.home;
+            const param_type = self.resolve_type(params[i + 1].typ);
+            const param_by_ptr = self.native_record_param_by_ptr(param_type);
+            self.current_module_cname = saved_cname;
+            if (param_by_ptr) {
+                if (arg.* == .name and self.expr_is_native_record_ptr_param(arg)) {
+                    try self.emit_expr(arg);
+                } else {
+                    self.p("&", .{});
+                    try self.emit_expr(arg);
+                }
+            } else {
+                try self.emit_arg_for_param(arg, param_type, true);
+            }
+        }
+        self.p(")", .{});
+        return true;
     }
 
     fn infer_req_module_call_return_type(self: *CodeGen, expr: *const ast.Expr) ?RT {
@@ -24264,6 +24434,7 @@ pub const CodeGen = struct {
 
         self.populate_alias_defs(&submod) catch {};
         self.populate_record_aliases(&submod) catch {};
+        self.noteSubjectDescriptors(&submod) catch {};
 
         // Promote module-level mutable globals to static file-scope storage.
         // Functions are emitted at file scope, so they cannot see locals that were

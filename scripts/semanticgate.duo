@@ -24,7 +24,7 @@ all = "'src/*.zig'"
 front = "src/ast.zig src/parser.zig src/macro_expand.zig"
 after = "'src/*.zig' ':(exclude)src/ast.zig' ':(exclude)src/parser.zig' ':(exclude)src/macro_expand.zig' ':(exclude)src/pretty.zig'"
 proven = "src/ast.zig src/parser.zig src/pretty.zig"
-duofiles = "'*.duo' ':(exclude)scripts/semanticgate.duo'"
+duofiles = "'*.duo' ':(exclude)scripts/semanticgate.duo' ':(exclude)scripts/idiomgate.duo'"
 
 astpat = "ast\\.(Expr|Stmt|BinOp|UnOp|IfExpr|ElseIf|ListComprehension)"
 dispatchpat = "\\.(if_stmt|while_loop|repeat_loop|num_for|gen_for|brk|cont|ret|binop|unop|call|method_call|index|field|if_expr|contains_expr)[[:space:],]*=>"
