@@ -161,7 +161,7 @@ Most other rows are at timer resolution (`0.000000s`) via compile-time reduction
 | **Compile time** | Build-tool goal (xmake-class) | `compile-size-bench` now tracks typed checksum plus generated 1k/10k-line typed projects; fixed real-project tarballs are still needed |
 | **Binary size** | ML deploy (<1 MB goal) | `compile-size-bench` now tracks minimal typed, generated 1k/10k-line, and stripped ML benchmark binary sizes; fixed real-app samples remain open |
 | **GPU backends** | `@device(.metal/.cuda)` | Extend `run_gpu_benchmark.sh` into CI on Apple Silicon |
-| **WASM perf** | Edge ML | `wasm-bench` parity vs native C for matmul/dot |
+| **Duon WASM engine** | Edge/runtime parity | GAP-130: `hot_big` is 18% behind wasmtime while `hash2b` is tied; shared value/liveness realization remains open |
 | **Alloc / GC pressure** | Dynamic Lua paths | Table churn at scale with `collectgarbage` disabled |
 | **I/O + parsing** | Real apps | JSON/tokenize bench (not in 40) |
 | **Concurrency** | Roadmap item | Parallel matmul / rayon-style (no bench yet) |
@@ -12834,6 +12834,59 @@ canonical `unit-test` step, which provides the complete linker topology.
 - Carry record-result identity without rebuilding a name-keyed result map.
 - Keep parameter ABI classification separate from result descriptors; merging
   those facts caused the zero-argument defect removed here.
+
+---
+
+## 2026-08-10 — GAP-130 current Duon WASM engine baseline
+
+### Evidence recorded
+
+The current engine was measured with value agreement before timing. The
+six-runtime `hot_big` run used interleaved min-of-five samples; an independent
+private engine artifact repeated the relevant rows with min-of-three samples.
+This is a fixed-artifact runtime baseline, not a compiler-build benchmark.
+
+| Runtime | `hot_big` ms | Verification |
+| --- | ---: | --- |
+| Duon | 130 | value matched wasmtime before timing |
+| wasmtime | 110 | oracle |
+| wasmer | 121 | value matched |
+| wart | 131 | value matched |
+| wasm3 | 735 | value matched |
+| iwasm | 713 | value matched |
+
+The independent artifact measured `hot_big` at 131 ms against wasmtime at
+112 ms, and `hash2b` at 3,763 ms against 3,754 ms. The source and artifact are
+distinctly identified:
+
+```text
+engine source sha256  ff8567bc7f90ef29dcf4de2d6565d4ee432d7151b588448987f8c84fbd47e142
+engine artifact       /tmp/duowasm-audit, 262800 bytes
+artifact sha256       fa151f7c8cdb20cd0471fd71bdf5c3cb85bbd70cd15438193cb19a7f92e17d92
+```
+
+Phase reporting attributes about 128–134 ms to execution, about 110 us to JIT
+compilation, and only microseconds to reading, walking, and executable-memory
+allocation. The inspected ARM64 loop has about 15 instructions versus
+wasmtime's roughly 9. GAP-130 records the generic sources: aliases are flushed
+around `local.tee` and `br_if`, multiplication and addition remain separate,
+and signed `-9` is materialized instead of selecting `SUB #9`.
+
+### Evidence limits
+
+The compiler binary changed during the independent engine build, so compiler
+duration and compiler provenance are invalid. External runtime version strings
+and a pinned wart revision were not captured. These measurements establish the
+runtime loss and its generated-code location; they are not reproducible release
+evidence and do not support a shipped speedup claim.
+
+### Remaining target
+
+Preserve semantic value identity through local bindings and branch demand, then
+let shared realization select alias-free operands, `MADD`, and signed immediate
+forms. A narrow engine-local bridge is admissible only with the full 130-row
+conformance matrix, an explicit nonzero JIT floor, and adversarial neighboring
+kernels. Benchmark-name recognition and a WASM-only value ontology are rejected.
 
 ---
 
