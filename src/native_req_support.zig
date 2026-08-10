@@ -3,12 +3,18 @@ const std = @import("std");
 const Io = std.Io;
 const ast = @import("ast.zig");
 const duo_module_names = @import("duo_module_names.zig");
+const source_family = @import("duo_lexer_bridge.zig");
+
+const source_suffixes = [_][]const u8{
+    source_family.CANONICAL_SOURCE_SUFFIX,
+    source_family.HISTORICAL_SOURCE_SUFFIX,
+};
 
 pub const ModuleMeta = struct {
     mod_cname: []const u8,
     constants: std.StringHashMapUnmanaged(i64),
     exports: std.StringHashMapUnmanaged([]const u8),
-    /// The `.duo` file this module resolved to, when it was found on disk. The
+    /// The Idsem source this module resolved to, when it was found on disk. The
     /// direct backend emits relocations against this module's `@comp.c.export`
     /// symbols, so it must be able to compile and link the file that defines
     /// them; the alias and C prefix alone do not say where that file lives.
@@ -350,12 +356,15 @@ fn loadModuleMeta(alloc: std.mem.Allocator, req_path: []const u8, mod_cname: []c
     var found_path: ?[]const u8 = null;
     const prefixes = [_][]const u8{ "lib/std/", "lib/" };
     for (prefixes) |prefix| {
-        const path = std.fmt.bufPrint(&path_buf, "{s}{s}.duo", .{ prefix, rel_path }) catch continue;
-        owned_source = Io.Dir.readFileAlloc(cwd, io, path, alloc, .unlimited) catch null;
-        if (owned_source != null) {
-            found_path = try alloc.dupe(u8, path);
-            break;
+        for (source_suffixes) |suffix| {
+            const path = std.fmt.bufPrint(&path_buf, "{s}{s}{s}", .{ prefix, rel_path, suffix }) catch continue;
+            owned_source = Io.Dir.readFileAlloc(cwd, io, path, alloc, .unlimited) catch null;
+            if (owned_source != null) {
+                found_path = try alloc.dupe(u8, path);
+                break;
+            }
         }
+        if (owned_source != null) break;
     }
     errdefer if (found_path) |fp| alloc.free(fp);
     const source = owned_source orelse return makeEmpty(alloc, mod_cname);
@@ -482,6 +491,14 @@ test "native_req_support: token constants" {
     }
     try std.testing.expectEqual(@as(i64, 14), meta.constants.get("KIND_FUN").?);
     try std.testing.expectEqual(@as(i64, 105), meta.constants.get("KIND_EOF").?);
+}
+
+test "native_req_support: canonical source precedes historical source" {
+    try std.testing.expectEqualStrings(".id", source_suffixes[0]);
+    try std.testing.expectEqualStrings(".duo", source_suffixes[1]);
+    try std.testing.expectEqual(source_family.SourceLaw.idsem, source_family.sourceFacts("module.id").law);
+    try std.testing.expectEqual(source_family.SourceProvenance.canonical, source_family.sourceFacts("module.id").provenance);
+    try std.testing.expectEqual(source_family.SourceProvenance.historical, source_family.sourceFacts("module.duo").provenance);
 }
 
 test "native_req_support: classify export" {
