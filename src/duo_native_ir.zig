@@ -146,6 +146,10 @@ pub const Instr = struct {
     relation: ?SemanticRef = null,
     application: ?SemanticRef = null,
     value: ?SemanticRef = null,
+    /// Semantic subject selected upstream. Null is an authoritative absence for
+    /// applications whose relation has no subject role; it is never inferred
+    /// here from argument position or source spelling.
+    subject: ?SemanticRef = null,
     /// First flattened DNIR instruction whose emitted bytes belong to this
     /// application realization. Present exactly when application identity is.
     realization_start: ?u32 = null,

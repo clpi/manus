@@ -296,7 +296,8 @@ fn functionHasBinop(f: *const dnir.Function, op: dnir.BinOpTag) bool {
 }
 
 fn hasAnyApplicationIdentity(ins: dnir.Instr) bool {
-    return ins.relation != null or ins.application != null or ins.value != null or ins.realization_start != null;
+    return ins.relation != null or ins.application != null or ins.value != null or
+        ins.subject != null or ins.realization_start != null;
 }
 
 fn functionHasApplicationLineage(f: *const dnir.Function) bool {
@@ -619,10 +620,10 @@ test "region_transform: checked application is never selected by callee spelling
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\helper: i64 = (subject: i64)
+        \\helper: i64 = ()
         \\    1
         \\main: i64 = ()
-        \\    42:helper()
+        \\    helper()
     ;
     var lex = Lexer.init(src, "checked_inline.duo");
     var parser = Parser.init(&lex, alloc);

@@ -13038,6 +13038,112 @@ is manufactured while those facts are absent.
 
 ---
 
+## 2026-08-10 — checked call realization from graph identity
+
+This entry extends the preceding subject-only proof to ordinary scalar calls
+and scalar-argument, non-floating-field record results. It does not claim full
+call coverage.
+
+### Implemented
+
+- Checked calls consume the graph-selected relation, occurrence, result value,
+  optional subject, result descriptor and containing relation. The resident
+  graph node handle is the exact identity within this projection; the stable
+  fingerprint is checked metadata only.
+- Argument evaluation follows graph subject and ordered argument edges. The
+  descriptor selects GP or FP ABI placement; source call spelling and argument
+  position do not select semantic subject or relation.
+- The relation name remains only the physical link symbol. Before emission it
+  must resolve to a function carrying the exact relation identity. Renaming the
+  symbol and its target together leaves semantic identity unchanged; redirecting
+  the spelling to another function fails closed.
+- Scalar calls and scalar-argument record results carry one application range
+  through DNIR, rebuilt regions, machine instructions and object bytes. Record
+  result capture is part of the identified call realization; the former
+  anonymous second capture was removed.
+- A checked f64 result is copied out of the ABI register only when later demand
+  requires it to survive another call. An immediate ABI consumer keeps the
+  zero-copy return path. Discarded calls allocate no result register.
+- Checked functions remain outside the legacy name-selected constant transform
+  until the graph supplies transform identity, world/effect evidence and a
+  witness. No anonymous constant replaces an application.
+
+### Focused census
+
+For two ordinary calls of one relation, the region census moves from two
+required applications with no identified realization to two checked call nodes,
+zero incomplete lineage, zero missing lineage, zero symbol recovery and zero
+function-name recovery. The occurrences share the relation and retain distinct
+application and result identities through object bytes.
+
+For this enlarged checked family after the change:
+
+- semantic selection from callee text: 0;
+- semantic relation recovery from a function name: 0;
+- missing or partial application identity admitted: 0;
+- fingerprint-only identity admitted: 0;
+- name-selected transforms admitted: 0;
+- anonymous post-call record realizations: 0.
+
+The trace proved by the focused controls is:
+
+```text
+source span
+  -> exact graph application node
+  -> relation, result value, optional subject, descriptor and caller nodes
+  -> DNIR argument placement plus call realization
+  -> identity-preserving transform stage
+  -> region identity
+  -> decoded ARM64 BL target carrying the exact relation identity
+  -> text range
+  -> object byte range
+```
+
+### Gates and performance scope
+
+- serialized `zig build unit-test` — pass;
+- locked `native-census` — 95 native, 111 bail, 16 unreachable, 206
+  reachable; pass against the 88-native ratchet;
+- locked `native-differential` — 47 agree, 20 diverge, 5 unsupported; fail on
+  the 20 explicitly listed direct refusals, with no silent fallback;
+- serialized `zig build bench` — pass on the shared integration tree; its
+  manifest remains `backend=c-specialized`, so it does not measure this direct
+  realization;
+- `zig fmt`, `zig ast-check` on the five compiler files and
+  `git diff --check` — pass.
+
+The broader `zig build test` did not produce a verdict: its compile-failure
+runner slept for more than ten minutes with no child command and was terminated
+to release the shared build lock. The earlier agent smoke run reached its
+standard metaprogramming module check and failed there; that source is outside
+this slice.
+
+The call path introduces no boxing, allocation, generic dispatch or C fallback.
+The extra f64 move occurs only when a value must survive another call. The
+measured benchmark manifest uses `backend=c-specialized`, so it does not
+exercise this direct path and no C-floor or runtime-speed claim is made here.
+
+### Remaining bridges and deletion gates
+
+The checked subset still uses the resident graph lifetime, an AST reference
+only to evaluate already-selected values, the relation name as a link symbol,
+legacy physical call tags and a name/field record ABI projection. Ordinary
+record arguments, floating-field record results, req/module/foreign calls,
+primitives, runtime bridges and hardware realizations remain explicit refusals
+or legacy paths; they are not counted in the zero-text census. Floating record
+results require unique stable homes and parallel-safe ABI return placement
+before admission.
+
+The application producer must still supply durable
+meaning/content/incarnation identity; argument and result pack identity with
+slot order, labels, positions, descriptor, constant and provenance
+correspondence; explicit absence/unknown/empty cardinality; world, effect,
+demand and witness; typed origin/linkage/ABI; and transform identity/evidence.
+A Duon-owned public projection must then retain application-to-instruction and
+object-byte lineage beyond the resident compiler process.
+
+---
+
 ## 2026-08-09 — exact cross-module scalar identity for SH-04 (historical parser measurement)
 
 ### Implemented

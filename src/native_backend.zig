@@ -42,14 +42,15 @@ pub const DirectDiag = struct {
 };
 
 /// Bootstrap projection from one identified DNIR realization to emitted bytes.
-/// The three hashes are the identity surface the graph exposes today; the
-/// application owner will replace them with collision-safe identity references.
-/// This record deliberately does not invent the missing realization or witness
-/// identities.
+/// SemanticRef.node is an exact handle into the resident graph; fingerprint is
+/// checked integrity metadata, never identity. This record deliberately does
+/// not invent the missing durable, realization or witness identities.
 pub const MachineLineage = struct {
     relation: dnir.SemanticRef,
     application: dnir.SemanticRef,
     value: dnir.SemanticRef,
+    subject: ?dnir.SemanticRef,
+    descriptor: native_types.ResolvedType,
     function: dnir.SemanticRef,
     instruction_start: u32,
     instruction_end: u32,
@@ -981,6 +982,7 @@ const Arm64Compiler = struct {
     fp_reg_owner: [32]?u32 = @splat(null),
     fp_home_regs: [32]bool = @splat(false),
     fp_free_at: std.AutoHashMapUnmanaged(u32, u32) = .empty,
+    fp_abi_passthrough: std.AutoHashMapUnmanaged(u32, void) = .empty,
     /// Stack slots for sealed record fields (f64 or i64): "c.pos" -> slot meta.
     fp_stack_slots: std.StringHashMapUnmanaged(StackSlot) = .empty,
     stack_frame_bytes: u16 = 0,
@@ -1082,6 +1084,7 @@ const Arm64Compiler = struct {
         self.fp_locals.deinit(self.alloc);
         self.fp_temps.deinit(self.alloc);
         self.fp_free_at.deinit(self.alloc);
+        self.fp_abi_passthrough.deinit(self.alloc);
         self.fp_stack_slots.deinit(self.alloc);
         self.slot_bases.deinit(self.alloc);
         self.f64_kernel_names.deinit(self.alloc);
@@ -1304,10 +1307,24 @@ const Arm64Compiler = struct {
         };
     }
 
+    fn instructionReadsId(ins: dnir.Instr, id: u32) bool {
+        const fixed = [_]dnir.Value{ ins.lhs, ins.rhs, ins.third };
+        for (fixed) |value| switch (value) {
+            .local, .temp => |slot| if (slot == id) return true,
+            else => {},
+        };
+        for (ins.vals) |value| switch (value) {
+            .local, .temp => |slot| if (slot == id) return true,
+            else => {},
+        };
+        return false;
+    }
+
     /// Last instruction index that reads each id, widened so that no live range
     /// ends inside a loop it did not start in. See the `fp free at` field.
     fn computeFpLastUse(self: *Arm64Compiler, f: dnir.Function) Error!void {
         self.fp_free_at.clearRetainingCapacity();
+        self.fp_abi_passthrough.clearRetainingCapacity();
         var def_at: std.AutoHashMapUnmanaged(u32, u32) = .empty;
         defer def_at.deinit(self.alloc);
         var back: std.ArrayList([2]u32) = .empty;
@@ -1373,6 +1390,31 @@ const Arm64Compiler = struct {
         if (changed) {
             var it = self.fp_free_at.valueIterator();
             while (it.next()) |v| v.* = std.math.maxInt(u32);
+        }
+
+        // Keep a checked f64 result in d0 only when the next instruction
+        // immediately consumes it as an ABI argument or function result.
+        // Otherwise a later call may overwrite d0, and store_local would
+        // incorrectly make the ABI register look like stable storage.
+        var previous_call_result: ?u32 = null;
+        idx = 0;
+        for (f.blocks) |block| {
+            for (block.instrs) |instruction| {
+                if (previous_call_result) |result| {
+                    const direct_consumer = instruction.op == .fp_mov_arg or instruction.op == .ret;
+                    if (direct_consumer and
+                        self.fp_free_at.get(result) == idx and
+                        instructionReadsId(instruction, result))
+                    {
+                        try self.fp_abi_passthrough.put(self.alloc, result, {});
+                    }
+                }
+                previous_call_result = switch (instruction.op) {
+                    .call_direct, .call_extern => instruction.result,
+                    else => null,
+                };
+                idx += 1;
+            }
         }
     }
 
@@ -1642,6 +1684,9 @@ const Arm64Compiler = struct {
                 if (identity_count != 0 and identity_count != 3) {
                     return refuseWith(@src(), "partial-application-lineage");
                 }
+                if (identity_count == 0 and ins.subject != null) {
+                    return refuseWith(@src(), "orphan-application-subject");
+                }
                 if ((identity_count == 3) != (ins.realization_start != null)) {
                     return refuseWith(@src(), "partial-realization-lineage");
                 }
@@ -1654,6 +1699,8 @@ const Arm64Compiler = struct {
                         .relation = ins.relation.?,
                         .application = application,
                         .value = ins.value.?,
+                        .subject = ins.subject,
+                        .descriptor = ins.ty,
                         .function = f.semantic_identity orelse
                             return refuseWith(@src(), "application-caller-identity"),
                         .instruction_start = realization_start,
@@ -2026,15 +2073,24 @@ const Arm64Compiler = struct {
                     try self.emitBl(ins.callee);
                     try self.emitPopVarargs(vbytes);
                     try self.emitRestoreCallerRegs(save);
-                    self.used_fp_regs[0] = true;
-                    try self.markFpTemp(ins.result);
-                    // The result stays in d0: that IS the ARM64 return register,
-                    // and a copy-out here breaks the f64 return ABI (caught by
-                    // "native backend lowers Pass 4 milestone with f64 return in
-                    // d0"). A consumer that needs it to survive a later call is
-                    // served by store_local giving the LOCAL a stable home.
-                    if (ins.result) |t| try temps.put(self.alloc, t, 0);
-                } else if (self.cur_func_float) {
+                    if (ins.result) |result| {
+                        try self.markFpTemp(result);
+                        if (ins.application != null and !self.fp_abi_passthrough.contains(result)) {
+                            const home = try self.allocFpReg();
+                            try self.emitFmovReg(home, 0);
+                            try temps.put(self.alloc, result, home);
+                            self.used_fp_regs[0] = false;
+                        } else {
+                            // A direct ABI consumer can read d0 without an
+                            // intermediate value register. This keeps a tail
+                            // call/return at the same C-equivalent realization.
+                            self.used_fp_regs[0] = true;
+                            try temps.put(self.alloc, result, 0);
+                        }
+                    } else {
+                        self.used_fp_regs[0] = false;
+                    }
+                } else if (self.cur_func_float and ins.application == null) {
                     if (ins.lhs != .void) {
                         const arg_d = try self.evalDnirValueFp(temps, ins.lhs);
                         if (arg_d != 0) try self.emitFmovReg(0, arg_d);
@@ -2046,16 +2102,20 @@ const Arm64Compiler = struct {
                     try self.emitBl(ins.callee);
                     try self.emitPopVarargs(vbytes);
                     try self.emitRestoreCallerRegs(save);
-                    self.used_fp_regs[0] = true;
-                    // This arm parked the result in d0 and left it UNRECORDED,
-                    // so `fp_temps` disagreed with the register the code had
-                    // actually written. An integer consumer then read x0 — the
-                    // same file confusion `crossFile` refuses everywhere else,
-                    // but invisible to it, because the record said nothing.
-                    // Say what was emitted; the cross-file guard can then judge
-                    // the consumer instead of guessing.
-                    try self.markFpTemp(ins.result);
-                    if (ins.result) |t| try temps.put(self.alloc, t, 0);
+                    if (ins.result) |result| {
+                        self.used_fp_regs[0] = true;
+                        // This arm parked the result in d0 and left it UNRECORDED,
+                        // so `fp_temps` disagreed with the register the code had
+                        // actually written. An integer consumer then read x0 — the
+                        // same file confusion `crossFile` refuses everywhere else,
+                        // but invisible to it, because the record said nothing.
+                        // Say what was emitted; the cross-file guard can then judge
+                        // the consumer instead of guessing.
+                        try self.markFpTemp(result);
+                        try temps.put(self.alloc, result, 0);
+                    } else {
+                        self.used_fp_regs[0] = false;
+                    }
                 } else {
                     if (ins.lhs != .void) {
                         const arg_reg = try self.evalDnirValue(temps, ins.lhs);
@@ -2094,9 +2154,11 @@ const Arm64Compiler = struct {
                             try self.assignRecordFromAbiRegs(base, rec);
                         } else return refuse(@src());
                     }
-                    const dst = try self.allocReg();
-                    try self.emitMovReg(dst, 0);
-                    if (ins.result) |t| try temps.put(self.alloc, t, dst);
+                    if (ins.result) |result| {
+                        const dst = try self.allocReg();
+                        try self.emitMovReg(dst, 0);
+                        try temps.put(self.alloc, result, dst);
+                    }
                 }
             },
             .init_record => {
@@ -4573,6 +4635,11 @@ fn checkedApplications(
     };
 }
 
+fn optionalSemanticRefEql(a: ?dnir.SemanticRef, b: ?dnir.SemanticRef) bool {
+    if (a == null or b == null) return a == null and b == null;
+    return a.?.eql(b.?);
+}
+
 fn validateDnirApplications(
     alloc: std.mem.Allocator,
     module: dnir.Module,
@@ -4589,6 +4656,19 @@ fn validateDnirApplications(
         slot.value_ptr.* = i;
     }
 
+    const LinkTarget = struct {
+        identity: dnir.SemanticRef,
+        result_record: ?[]const u8,
+    };
+    var functions_by_symbol: std.StringHashMapUnmanaged(LinkTarget) = .empty;
+    defer functions_by_symbol.deinit(alloc);
+    for (module.functions) |function| {
+        const identity = function.semantic_identity orelse continue;
+        const slot = try functions_by_symbol.getOrPut(alloc, function.name);
+        if (slot.found_existing) return refuseWith(@src(), "duplicate-link-symbol");
+        slot.value_ptr.* = .{ .identity = identity, .result_record = function.ret_record };
+    }
+
     for (module.functions) |function| {
         var instruction_index: u32 = 0;
         for (function.blocks) |block| {
@@ -4598,8 +4678,11 @@ fn validateDnirApplications(
                     @as(u2, @intFromBool(instruction.application != null)) +
                     @as(u2, @intFromBool(instruction.value != null));
                 if (identity_count == 0) {
-                    if (instruction.realization_start != null) {
+                    if (instruction.subject != null or instruction.realization_start != null) {
                         return refuseWith(@src(), "orphan-realization-lineage");
+                    }
+                    if (applications.len != 0 and instruction.op == .call_direct) {
+                        return refuseWith(@src(), "missing-application-lineage");
                     }
                     continue;
                 }
@@ -4625,9 +4708,23 @@ fn validateDnirApplications(
                 }
                 if (!application.application.eql(instruction.application.?) or
                     !application.relation.eql(instruction.relation.?) or
-                    !application.value.eql(instruction.value.?))
+                    !application.value.eql(instruction.value.?) or
+                    !optionalSemanticRefEql(application.subject, instruction.subject) or
+                    !application.descriptor.eql(instruction.ty))
                 {
                     return refuseWith(@src(), "application-identity-mismatch");
+                }
+                const target = functions_by_symbol.get(instruction.callee) orelse
+                    return refuseWith(@src(), "application-link-target");
+                if (!target.identity.eql(application.relation)) {
+                    return refuseWith(@src(), "application-link-target");
+                }
+                if (target.result_record) |record| {
+                    if (!std.mem.eql(u8, record, instruction.record)) {
+                        return refuseWith(@src(), "application-result-abi");
+                    }
+                } else if (instruction.record.len != 0) {
+                    return refuseWith(@src(), "application-result-abi");
                 }
                 uses[application_index] += 1;
             }
@@ -4662,6 +4759,8 @@ fn validateMachineLineage(
         if (!lineage.application.eql(application.application) or
             !lineage.relation.eql(application.relation) or
             !lineage.value.eql(application.value) or
+            !optionalSemanticRefEql(lineage.subject, application.subject) or
+            !lineage.descriptor.eql(application.descriptor) or
             !lineage.function.eql(application.caller))
         {
             return refuseWith(@src(), "machine-lineage-mismatch");
@@ -5085,6 +5184,42 @@ fn alignForward(value: usize, alignment: usize) usize {
     return (value + alignment - 1) & ~(alignment - 1);
 }
 
+fn expectLineageCallTarget(
+    alloc: std.mem.Allocator,
+    output: Arm64Output,
+    module: dnir.Module,
+    lineage: MachineLineage,
+) !void {
+    var target_function: ?dnir.Function = null;
+    for (module.functions) |function| {
+        if (function.semantic_identity != null and function.semantic_identity.?.eql(lineage.relation)) {
+            target_function = function;
+            break;
+        }
+    }
+    const function = target_function orelse return error.TestExpectedEqual;
+    const link_name = try linkerSymbolName(alloc, function.name);
+    defer alloc.free(link_name);
+    var target_offset: ?u32 = null;
+    for (output.symbols) |symbol| {
+        if (!symbol.defined or symbol.section != 1 or !std.mem.eql(u8, symbol.name, link_name)) continue;
+        target_offset = symbol.offset;
+        break;
+    }
+
+    var call_count: usize = 0;
+    var offset: u32 = lineage.text_start;
+    while (offset + 4 <= lineage.text_end) : (offset += 4) {
+        const word = std.mem.readInt(u32, output.text[offset..][0..4], .little);
+        if (word & 0xfc00_0000 != 0x9400_0000) continue;
+        const shifted: i32 = @bitCast((word & 0x03ff_ffff) << 6);
+        const destination = @as(i64, offset) + @as(i64, shifted >> 6) * 4;
+        try std.testing.expectEqual(@as(i64, target_offset orelse return error.TestExpectedEqual), destination);
+        call_count += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 1), call_count);
+}
+
 test "native backend: checked subject identity reaches object bytes" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
@@ -5112,11 +5247,13 @@ test "native backend: checked subject identity reaches object bytes" {
     const applications = try checkedApplications(alloc, &graph);
     defer alloc.free(applications);
     try std.testing.expectEqual(@as(usize, 1), applications.len);
+    try std.testing.expect(applications[0].subject != null);
 
     const projected = try dnir_lower.lowerModuleWithGraph(alloc, &module, &graph);
     var instruction_index: u32 = 0;
     var spans_abi_staging = false;
     var dnir_caller: ?dnir.SemanticRef = null;
+    var dnir_subject: ?dnir.SemanticRef = null;
     for (projected.functions) |function| {
         instruction_index = 0;
         for (function.blocks) |block| {
@@ -5124,6 +5261,7 @@ test "native backend: checked subject identity reaches object bytes" {
                 if (instruction.application != null) {
                     spans_abi_staging = instruction.realization_start.? < instruction_index;
                     dnir_caller = function.semantic_identity;
+                    dnir_subject = instruction.subject;
                 }
                 instruction_index += 1;
             }
@@ -5131,19 +5269,23 @@ test "native backend: checked subject identity reaches object bytes" {
     }
     try std.testing.expect(spans_abi_staging);
     try std.testing.expectEqual(applications[0].caller, dnir_caller.?);
+    try std.testing.expect(applications[0].subject.?.eql(dnir_subject.?));
 
     const regions = try region_graph.buildModuleRegions(alloc, projected, &graph);
     defer region_graph.freeModuleRegions(alloc, regions);
     try region_graph.validateModuleRegions(regions, &graph, projected, alloc);
     var region_caller: ?dnir.SemanticRef = null;
+    var region_subject: ?dnir.SemanticRef = null;
     for (regions) |region| {
         for (region.nodes) |node| {
             if (node.application_id != null and node.application_id.?.eql(applications[0].application)) {
                 region_caller = region.func_identity;
+                region_subject = node.subject_id;
             }
         }
     }
     try std.testing.expectEqual(applications[0].caller, region_caller.?);
+    try std.testing.expect(applications[0].subject.?.eql(region_subject.?));
 
     var output = try emitArm64ModuleWithGraph(alloc, &module, null, &graph);
     defer output.deinit(alloc);
@@ -5152,8 +5294,11 @@ test "native backend: checked subject identity reaches object bytes" {
     try std.testing.expectEqual(applications[0].relation, text_lineage.relation);
     try std.testing.expectEqual(applications[0].application, text_lineage.application);
     try std.testing.expectEqual(applications[0].value, text_lineage.value);
+    try std.testing.expect(applications[0].subject.?.eql(text_lineage.subject.?));
+    try std.testing.expect(applications[0].descriptor.eql(text_lineage.descriptor));
     try std.testing.expectEqual(applications[0].caller, text_lineage.function);
     try std.testing.expect(text_lineage.instruction_start + 1 < text_lineage.instruction_end);
+    try expectLineageCallTarget(alloc, output, projected, text_lineage);
 
     output.lineage[0].function.node +%= 1;
     try std.testing.expectError(
@@ -5161,6 +5306,18 @@ test "native backend: checked subject identity reaches object bytes" {
         validateMachineLineage(alloc, output, applications),
     );
     output.lineage[0].function.node -%= 1;
+    output.lineage[0].subject.?.node +%= 1;
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        validateMachineLineage(alloc, output, applications),
+    );
+    output.lineage[0].subject.?.node -%= 1;
+    output.lineage[0].descriptor = .i32;
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        validateMachineLineage(alloc, output, applications),
+    );
+    output.lineage[0].descriptor = applications[0].descriptor;
 
     var artifact = try emitObjectWithGraphLineage(alloc, &module, "native-object", &graph);
     defer artifact.deinit(alloc);
@@ -5169,6 +5326,8 @@ test "native backend: checked subject identity reaches object bytes" {
     try std.testing.expectEqual(text_lineage.relation, object_lineage.relation);
     try std.testing.expectEqual(text_lineage.application, object_lineage.application);
     try std.testing.expectEqual(text_lineage.value, object_lineage.value);
+    try std.testing.expect(text_lineage.subject.?.eql(object_lineage.subject.?));
+    try std.testing.expect(text_lineage.descriptor.eql(object_lineage.descriptor));
     try std.testing.expectEqual(text_lineage.function, object_lineage.function);
     try std.testing.expectEqualSlices(
         u8,
@@ -5210,7 +5369,11 @@ test "native backend: removing checked identity refuses before machine emission"
             const instructions: []dnir.Instr = @constCast(block.instrs);
             for (instructions) |*instruction| {
                 if (instruction.application == null) continue;
+                instruction.relation = null;
                 instruction.application = null;
+                instruction.value = null;
+                instruction.subject = null;
+                instruction.realization_start = null;
                 removed = true;
             }
         }
@@ -5222,7 +5385,7 @@ test "native backend: removing checked identity refuses before machine emission"
     );
 }
 
-test "native backend: checked ordinary call cannot fall back to its symbol" {
+test "native backend: checked ordinary call reaches regions and machine lineage" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -5230,9 +5393,10 @@ test "native backend: checked ordinary call cannot fall back to its symbol" {
         \\observe: i64 = (value: i64)
         \\    value
         \\main: i64 = ()
+        \\    observe(41)
         \\    observe(42)
     ;
-    var lexer = Lexer.init(source, "symbol-fallback.duo");
+    var lexer = Lexer.init(source, "ordinary-lineage.duo");
     var parser = Parser.init(&lexer, alloc);
     parser.duo_mode = true;
     var ast_module = try parser.parse_module();
@@ -5243,16 +5407,482 @@ test "native backend: checked ordinary call cannot fall back to its symbol" {
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "symbol-fallback.duo");
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "ordinary-lineage.duo");
+    const applications = try checkedApplications(alloc, &graph);
+    defer alloc.free(applications);
+    try std.testing.expectEqual(@as(usize, 2), applications.len);
+    try std.testing.expect(applications[0].relation.eql(applications[1].relation));
+    try std.testing.expect(!applications[0].application.eql(applications[1].application));
+    try std.testing.expect(!applications[0].value.eql(applications[1].value));
+    try std.testing.expectEqual(@as(?dnir.SemanticRef, null), applications[0].subject);
+    try std.testing.expectEqual(@as(?dnir.SemanticRef, null), applications[1].subject);
+
+    const module = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph);
+    try validateDnirApplications(alloc, module, applications);
+
+    const regions = try region_graph.buildModuleRegions(alloc, module, &graph);
+    defer region_graph.freeModuleRegions(alloc, regions);
+    try region_graph.validateModuleRegions(regions, &graph, module, alloc);
+    const census = try region_graph.semanticNameReconstructionCensus(alloc, regions, &graph);
+    try std.testing.expectEqual(@as(usize, 2), census.required_checked_applications);
+    try std.testing.expectEqual(@as(usize, 2), census.checked_call_nodes);
+    try std.testing.expectEqual(@as(usize, 0), census.incomplete_lineage);
+    try std.testing.expectEqual(@as(usize, 0), census.missing_lineage);
+    try std.testing.expectEqual(@as(usize, 0), census.legacy_symbol_bridges);
+    try std.testing.expectEqual(@as(usize, 0), census.legacy_function_name_bridges);
+
+    if (builtin.os.tag == .macos and builtin.cpu.arch == .aarch64) {
+        var output = try emitArm64ModuleWithGraph(alloc, &ast_module, null, &graph);
+        defer output.deinit(alloc);
+        try std.testing.expectEqual(@as(usize, 2), output.lineage.len);
+        try std.testing.expect(output.lineage[0].relation.eql(output.lineage[1].relation));
+        try std.testing.expect(!output.lineage[0].application.eql(output.lineage[1].application));
+        try std.testing.expect(!output.lineage[0].value.eql(output.lineage[1].value));
+        try std.testing.expectEqual(@as(?dnir.SemanticRef, null), output.lineage[0].subject);
+        try std.testing.expectEqual(@as(?dnir.SemanticRef, null), output.lineage[1].subject);
+        try std.testing.expect(output.lineage[0].descriptor.eql(.i64));
+        try std.testing.expect(output.lineage[1].descriptor.eql(.i64));
+        for (output.lineage) |lineage| {
+            try expectLineageCallTarget(alloc, output, module, lineage);
+        }
+
+        var artifact = try emitObjectWithGraphLineage(alloc, &ast_module, "ordinary-object", &graph);
+        defer artifact.deinit(alloc);
+        try std.testing.expectEqual(@as(usize, 2), artifact.lineage.len);
+        for (artifact.lineage) |lineage| {
+            const source_node = graph.get(.{ .index = lineage.application.node }) orelse
+                return error.TestExpectedEqual;
+            try std.testing.expectEqual(semantic_graph.NodeKind.call, source_node.kind);
+            try std.testing.expectEqualStrings("ordinary-lineage.duo", source_node.span.file);
+            try std.testing.expect(source_node.ast_ref != null);
+            try std.testing.expect(lineage.object_start < lineage.object_end);
+            try std.testing.expect(@as(usize, lineage.object_end) <= artifact.bytes.len);
+            var text_lineage: ?MachineLineage = null;
+            for (output.lineage) |candidate| {
+                if (candidate.application.eql(lineage.application)) text_lineage = candidate;
+            }
+            const text = text_lineage orelse return error.TestExpectedEqual;
+            try std.testing.expectEqualSlices(
+                u8,
+                output.text[text.text_start..text.text_end],
+                artifact.bytes[lineage.object_start..lineage.object_end],
+            );
+        }
+    }
+}
+
+test "native backend: checked record result keeps application identity" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\pair: {
+        \\    left: i64
+        \\    right: i64
+        \\}
+        \\make: pair = (value: i64)
+        \\    { left = value, right = value + 1 }
+        \\main: i64 = ()
+        \\    result: pair = make(41)
+        \\    result.left + 1
+    ;
+    var lexer = Lexer.init(source, "record-lineage.duo");
+    var parser = Parser.init(&lexer, alloc);
+    parser.duo_mode = true;
+    var ast_module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&ast_module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "record-lineage.duo");
     const applications = try checkedApplications(alloc, &graph);
     defer alloc.free(applications);
     try std.testing.expectEqual(@as(usize, 1), applications.len);
 
     const module = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph);
+    try validateDnirApplications(alloc, module, applications);
+    var call: ?*dnir.Instr = null;
+    var anonymous_record_realizations: usize = 0;
+    for (module.functions) |function| {
+        for (function.blocks) |block| {
+            const instructions: []dnir.Instr = @constCast(block.instrs);
+            for (instructions) |*instruction| {
+                if (instruction.application != null) call = instruction;
+                if (instruction.op == .init_record) anonymous_record_realizations += 1;
+            }
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 0), anonymous_record_realizations);
+    const instruction = call orelse return error.TestExpectedEqual;
+    try std.testing.expectEqualStrings("pair", instruction.record);
+    try std.testing.expect(instruction.application.?.eql(applications[0].application));
+    try std.testing.expect(instruction.value.?.eql(applications[0].value));
+    try std.testing.expect(instruction.ty.eql(applications[0].descriptor));
+
+    const regions = try region_graph.buildModuleRegions(alloc, module, &graph);
+    defer region_graph.freeModuleRegions(alloc, regions);
+    try region_graph.validateModuleRegions(regions, &graph, module, alloc);
+
+    var output = try emitArm64ModuleWithGraph(alloc, &ast_module, null, &graph);
+    defer output.deinit(alloc);
+    try std.testing.expectEqual(@as(usize, 1), output.lineage.len);
+    try std.testing.expect(output.lineage[0].application.eql(applications[0].application));
+    try std.testing.expect(output.lineage[0].descriptor.eql(applications[0].descriptor));
+    try expectLineageCallTarget(alloc, output, module, output.lineage[0]);
+
+    var artifact = try emitObjectWithGraphLineage(alloc, &ast_module, "record-object", &graph);
+    defer artifact.deinit(alloc);
+    try std.testing.expectEqual(@as(usize, 1), artifact.lineage.len);
+    try std.testing.expectEqualSlices(
+        u8,
+        output.text[output.lineage[0].text_start..output.lineage[0].text_end],
+        artifact.bytes[artifact.lineage[0].object_start..artifact.lineage[0].object_end],
+    );
+
+    instruction.record = "other";
     try std.testing.expectError(
         error.UnsupportedProgram,
         validateDnirApplications(alloc, module, applications),
     );
+}
+
+test "native backend: checked f64 record result refuses unstable ABI homes" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\pair: {
+        \\    left: f64
+        \\    right: f64
+        \\}
+        \\make: pair = (value: f64)
+        \\    { left = value, right = value }
+        \\main: f64 = ()
+        \\    result: pair = make(1.5)
+        \\    result.left
+    ;
+    var lexer = Lexer.init(source, "record-f64-refusal.duo");
+    var parser = Parser.init(&lexer, alloc);
+    parser.duo_mode = true;
+    var ast_module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&ast_module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "record-f64-refusal.duo");
+
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        emitArm64ModuleWithGraph(alloc, &ast_module, null, &graph),
+    );
+}
+
+test "native backend: callee spelling cannot redirect a checked application" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\observe: i64 = (value: i64)
+        \\    value
+        \\impostor: i64 = (value: i64)
+        \\    value + 1
+        \\main: i64 = ()
+        \\    observe(42)
+    ;
+    var lexer = Lexer.init(source, "callee-mismatch.duo");
+    var parser = Parser.init(&lexer, alloc);
+    parser.duo_mode = true;
+    var ast_module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&ast_module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "callee-mismatch.duo");
+    const applications = try checkedApplications(alloc, &graph);
+    defer alloc.free(applications);
+    try std.testing.expectEqual(@as(usize, 1), applications.len);
+
+    const module = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph);
+    try validateDnirApplications(alloc, module, applications);
+    var identified: ?*dnir.Instr = null;
+    for (module.functions) |function| {
+        for (function.blocks) |block| {
+            const instructions: []dnir.Instr = @constCast(block.instrs);
+            for (instructions) |*instruction| {
+                if (instruction.application == null) continue;
+                identified = instruction;
+            }
+        }
+    }
+    const instruction = identified orelse return error.TestExpectedEqual;
+    const relation_before = instruction.relation.?;
+    const descriptor_before = instruction.ty;
+    instruction.ty = .i32;
+    try std.testing.expect(relation_before.eql(instruction.relation.?));
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        validateDnirApplications(alloc, module, applications),
+    );
+    instruction.ty = descriptor_before;
+    instruction.callee = "impostor";
+    try std.testing.expect(applications[0].relation.eql(relation_before));
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        validateDnirApplications(alloc, module, applications),
+    );
+
+    // A physical symbol may be renamed when the exact target identity moves
+    // with it. The semantic relation remains the graph-selected relation.
+    instruction.callee = "observe_alias";
+    var renamed_target = false;
+    const functions: []dnir.Function = @constCast(module.functions);
+    for (functions) |*function| {
+        if (function.semantic_identity == null or
+            !function.semantic_identity.?.eql(applications[0].relation)) continue;
+        function.name = "observe_alias";
+        renamed_target = true;
+    }
+    try std.testing.expect(renamed_target);
+    try std.testing.expect(relation_before.eql(instruction.relation.?));
+    try validateDnirApplications(alloc, module, applications);
+}
+
+test "native backend: checked call result descriptor does not select argument ABI" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\choose: f64 = (value: i64)
+        \\    1.5
+        \\main: f64 = ()
+        \\    choose(42)
+    ;
+    var lexer = Lexer.init(source, "call-abi.duo");
+    var parser = Parser.init(&lexer, alloc);
+    parser.duo_mode = true;
+    var ast_module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&ast_module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "call-abi.duo");
+    const applications = try checkedApplications(alloc, &graph);
+    defer alloc.free(applications);
+    try std.testing.expectEqual(@as(usize, 1), applications.len);
+    try std.testing.expect(applications[0].descriptor.eql(.f64));
+
+    const module = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph);
+    var saw_gp_stage = false;
+    var saw_fp_stage = false;
+    for (module.functions) |function| {
+        for (function.blocks) |block| {
+            for (block.instrs) |instruction| {
+                if (instruction.op == .mov_arg) saw_gp_stage = true;
+                if (instruction.op == .fp_mov_arg) saw_fp_stage = true;
+                if (instruction.application != null) {
+                    try std.testing.expectEqual(dnir.Value.void, instruction.lhs);
+                    try std.testing.expect(instruction.ty.eql(.f64));
+                }
+            }
+        }
+    }
+    try std.testing.expect(saw_gp_stage);
+    try std.testing.expect(!saw_fp_stage);
+    try validateDnirApplications(alloc, module, applications);
+
+    var output = try emitArm64ModuleWithGraph(alloc, &ast_module, null, &graph);
+    defer output.deinit(alloc);
+    try std.testing.expectEqual(@as(usize, 1), output.lineage.len);
+    try std.testing.expect(output.lineage[0].descriptor.eql(.f64));
+    try expectLineageCallTarget(alloc, output, module, output.lineage[0]);
+}
+
+test "native backend: nested checked call machine ranges do not overlap" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\inner: i64 = (value: i64)
+        \\    value
+        \\outer: i64 = (left: i64, right: i64)
+        \\    left + right
+        \\main: i64 = ()
+        \\    outer(inner(40), inner(2))
+    ;
+    var lexer = Lexer.init(source, "nested-lineage.duo");
+    var parser = Parser.init(&lexer, alloc);
+    parser.duo_mode = true;
+    var ast_module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&ast_module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "nested-lineage.duo");
+    const applications = try checkedApplications(alloc, &graph);
+    defer alloc.free(applications);
+    try std.testing.expectEqual(@as(usize, 3), applications.len);
+    const module = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph);
+
+    var output = try emitArm64ModuleWithGraph(alloc, &ast_module, null, &graph);
+    defer output.deinit(alloc);
+    try std.testing.expectEqual(@as(usize, 3), output.lineage.len);
+    var outer: ?MachineLineage = null;
+    var inner: [2]MachineLineage = undefined;
+    var inner_count: usize = 0;
+    for (output.lineage) |lineage| {
+        try expectLineageCallTarget(alloc, output, module, lineage);
+        var parameter_count: ?usize = null;
+        for (module.functions) |function| {
+            if (function.semantic_identity != null and function.semantic_identity.?.eql(lineage.relation)) {
+                parameter_count = function.params.len;
+            }
+        }
+        if (parameter_count == 2) {
+            outer = lineage;
+        } else if (parameter_count == 1) {
+            if (inner_count >= inner.len) return error.TestExpectedEqual;
+            inner[inner_count] = lineage;
+            inner_count += 1;
+        }
+    }
+    try std.testing.expectEqual(inner.len, inner_count);
+    const outer_lineage = outer orelse return error.TestExpectedEqual;
+    for (inner) |inner_lineage| {
+        try std.testing.expect(inner_lineage.instruction_end <= outer_lineage.instruction_start);
+        try std.testing.expect(inner_lineage.text_end <= outer_lineage.text_start);
+    }
+}
+
+test "native backend: nested checked f64 results survive later operand calls" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\inner: f64 = (value: f64)
+        \\    value
+        \\outer: f64 = (left: f64, right: f64)
+        \\    left + right
+        \\main: f64 = ()
+        \\    outer(inner(1.0), inner(2.0))
+    ;
+    var lexer = Lexer.init(source, "nested-f64-lineage.duo");
+    var parser = Parser.init(&lexer, alloc);
+    parser.duo_mode = true;
+    var ast_module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&ast_module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "nested-f64-lineage.duo");
+    const applications = try checkedApplications(alloc, &graph);
+    defer alloc.free(applications);
+    try std.testing.expectEqual(@as(usize, 3), applications.len);
+    const module = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph);
+
+    var output = try emitArm64ModuleWithGraph(alloc, &ast_module, null, &graph);
+    defer output.deinit(alloc);
+    try std.testing.expectEqual(@as(usize, 3), output.lineage.len);
+    const main_start = std.mem.indexOf(u8, output.asm_text, "_main:\n") orelse
+        return error.TestExpectedEqual;
+    const main_assembly = output.asm_text[main_start..];
+    try std.testing.expect(std.mem.indexOf(u8, main_assembly, "fmov d16, d0") != null);
+    try std.testing.expect(std.mem.indexOf(u8, main_assembly, "fmov d17, d0") != null);
+
+    var outer: ?MachineLineage = null;
+    var latest_inner_end: u32 = 0;
+    for (output.lineage) |lineage| {
+        try expectLineageCallTarget(alloc, output, module, lineage);
+        var parameter_count: ?usize = null;
+        for (module.functions) |function| {
+            if (function.semantic_identity != null and function.semantic_identity.?.eql(lineage.relation)) {
+                parameter_count = function.params.len;
+            }
+        }
+        if (parameter_count == 2) {
+            outer = lineage;
+        } else if (parameter_count == 1) {
+            latest_inner_end = @max(latest_inner_end, lineage.text_end);
+        }
+    }
+    try std.testing.expect(latest_inner_end <= (outer orelse return error.TestExpectedEqual).text_start);
+}
+
+test "native backend: discarded checked calls do not retain return registers" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\observe: i64 = (value: i64)
+        \\    value
+        \\main: i64 = ()
+        \\    observe(1)
+        \\    observe(2)
+        \\    observe(3)
+        \\    observe(4)
+        \\    observe(5)
+        \\    observe(6)
+        \\    observe(7)
+        \\    observe(8)
+        \\    observe(9)
+        \\    observe(10)
+        \\    observe(11)
+        \\    observe(12)
+        \\    observe(13)
+        \\    observe(14)
+        \\    observe(15)
+        \\    observe(16)
+        \\    observe(17)
+        \\    observe(18)
+        \\    observe(19)
+        \\    observe(20)
+        \\    0
+    ;
+    var lexer = Lexer.init(source, "discarded-calls.duo");
+    var parser = Parser.init(&lexer, alloc);
+    parser.duo_mode = true;
+    var ast_module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&ast_module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "discarded-calls.duo");
+    const applications = try checkedApplications(alloc, &graph);
+    defer alloc.free(applications);
+    try std.testing.expectEqual(@as(usize, 20), applications.len);
+    const module = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph);
+
+    var output = try emitArm64ModuleWithGraph(alloc, &ast_module, null, &graph);
+    defer output.deinit(alloc);
+    try std.testing.expectEqual(applications.len, output.lineage.len);
+    for (output.lineage) |lineage| {
+        try expectLineageCallTarget(alloc, output, module, lineage);
+    }
 }
 
 test "native backend lowers Pass 4 milestone with f64 return in d0 (no main exit hack)" {

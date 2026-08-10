@@ -7,6 +7,7 @@ const dnir = @import("duo_native_ir.zig");
 const dnir_hardware = @import("dnir_hardware.zig");
 const semantic_graph = @import("semantic_graph.zig");
 const realization = @import("realization.zig");
+const types = @import("types.zig");
 
 pub const CanonicalEdge = enum {
     defines,
@@ -38,6 +39,8 @@ pub const Node = struct {
     relation_id: ?dnir.SemanticRef = null,
     application_id: ?dnir.SemanticRef = null,
     value_id: ?dnir.SemanticRef = null,
+    subject_id: ?dnir.SemanticRef = null,
+    descriptor: ?types.ResolvedType = null,
     realization_start: ?u32 = null,
     shape_id: ?u64 = null,
     dnir_temp: ?u32 = null,
@@ -149,6 +152,8 @@ pub fn buildFromDnirFunction(
                 .relation_id = ins.relation,
                 .application_id = ins.application,
                 .value_id = ins.value,
+                .subject_id = ins.subject,
+                .descriptor = if (ins.application != null) ins.ty else null,
                 .realization_start = ins.realization_start,
                 .shape_id = if (kind == .record) record_shape_id else null,
                 .callee = callee_owned,
@@ -245,7 +250,8 @@ pub fn findRegion(regions: []const Region, func_name: []const u8) ?*const Region
 }
 
 pub fn hasAnyApplicationIdentity(node: Node) bool {
-    return node.relation_id != null or node.application_id != null or node.value_id != null or node.realization_start != null;
+    return node.relation_id != null or node.application_id != null or node.value_id != null or
+        node.subject_id != null or node.realization_start != null;
 }
 
 pub fn hasCompleteApplicationIdentity(node: Node) bool {
@@ -321,6 +327,8 @@ const ExpectedApplication = struct {
     application: dnir.SemanticRef,
     relation: dnir.SemanticRef,
     value: dnir.SemanticRef,
+    subject: ?dnir.SemanticRef,
+    descriptor: types.ResolvedType,
     caller: dnir.SemanticRef,
     uses: u32 = 0,
 };
@@ -329,12 +337,15 @@ pub const CheckedApplicationProjection = struct {
     relation: dnir.SemanticRef,
     application: dnir.SemanticRef,
     value: dnir.SemanticRef,
+    subject: ?dnir.SemanticRef,
+    descriptor: types.ResolvedType,
     caller: dnir.SemanticRef,
 };
 
 const ApplicationEdges = struct {
     relation: ?semantic_graph.NodeId = null,
     result: ?semantic_graph.NodeId = null,
+    subject: ?semantic_graph.NodeId = null,
 };
 
 fn containingFunctionFromScope(
@@ -387,6 +398,10 @@ pub fn checkedApplicationProjections(
                 if (edges[edge.from.index].result != null) return error.ApplicationGraphMismatch;
                 edges[edge.from.index].result = edge.to;
             },
+            .subject => {
+                if (edges[edge.from.index].subject != null) return error.ApplicationGraphMismatch;
+                edges[edge.from.index].subject = edge.to;
+            },
             else => {},
         }
     }
@@ -399,6 +414,8 @@ pub fn checkedApplicationProjections(
         if (node.kind != .call) continue;
         const relation = edges[i].relation orelse continue;
         const result = edges[i].result orelse return error.ApplicationGraphMismatch;
+        const result_node = graph.get(result) orelse return error.ApplicationGraphMismatch;
+        const descriptor = result_node.descriptor orelse return error.ApplicationGraphMismatch;
         const caller = containingFunctionFromScope(graph, .{ .index = @intCast(i) }) orelse
             return error.ApplicationGraphMismatch;
         const application_identity = try semanticReference(graph, .{ .index = @intCast(i) });
@@ -408,6 +425,11 @@ pub fn checkedApplicationProjections(
             .relation = try semanticReference(graph, relation),
             .application = application_identity,
             .value = try semanticReference(graph, result),
+            .subject = if (edges[i].subject) |subject|
+                try semanticReference(graph, subject)
+            else
+                null,
+            .descriptor = descriptor,
             .caller = try semanticReference(graph, caller),
         });
     }
@@ -429,6 +451,8 @@ fn expectedApplications(
             .application = projection.application,
             .relation = projection.relation,
             .value = projection.value,
+            .subject = projection.subject,
+            .descriptor = projection.descriptor,
             .caller = projection.caller,
         };
     }
@@ -458,7 +482,10 @@ pub fn validateModuleRegions(
                 return error.ApplicationGraphMismatch;
             if (!application.application.eql(node.application_id.?) or
                 !application.relation.eql(node.relation_id.?) or
-                !application.value.eql(node.value_id.?))
+                !application.value.eql(node.value_id.?) or
+                !optionalSemanticRefEql(application.subject, node.subject_id) or
+                node.descriptor == null or
+                !application.descriptor.eql(node.descriptor.?))
             {
                 return error.ApplicationGraphMismatch;
             }
@@ -667,6 +694,8 @@ test "region_graph: validates checked applications by identity" {
     for (mr.nodes) |node| {
         if (node.kind != .call) continue;
         try std.testing.expect(hasCompleteApplicationIdentity(node));
+        try std.testing.expect(node.subject_id != null);
+        try std.testing.expect(node.descriptor.?.eql(.i64));
         saw_call = true;
     }
     try std.testing.expect(saw_call);
@@ -681,6 +710,20 @@ test "region_graph: validates checked applications by identity" {
     for (regions) |*region| {
         for (region.nodes) |*node| {
             if (node.kind != .call or !hasCompleteApplicationIdentity(node.*)) continue;
+            const subject_id = node.subject_id;
+            node.subject_id = null;
+            try std.testing.expectError(
+                error.ApplicationGraphMismatch,
+                validateModuleRegions(regions, &g, m, alloc),
+            );
+            node.subject_id = subject_id;
+            const descriptor = node.descriptor;
+            node.descriptor = .i32;
+            try std.testing.expectError(
+                error.ApplicationGraphMismatch,
+                validateModuleRegions(regions, &g, m, alloc),
+            );
+            node.descriptor = descriptor;
             const application_id = node.application_id;
             node.application_id = null;
             const invalid_census = try semanticNameReconstructionCensus(alloc, regions, &g);
@@ -693,6 +736,7 @@ test "region_graph: validates checked applications by identity" {
             node.relation_id = null;
             node.application_id = null;
             node.value_id = null;
+            node.subject_id = null;
             node.realization_start = null;
             const missing_census = try semanticNameReconstructionCensus(alloc, regions, &g);
             try std.testing.expectEqual(@as(usize, 1), missing_census.missing_lineage);

@@ -113,6 +113,7 @@ const CheckedApplication = struct {
     relation_identity: dnir.SemanticRef,
     application_identity: dnir.SemanticRef,
     value_identity: dnir.SemanticRef,
+    subject_identity: ?dnir.SemanticRef,
     caller_identity: dnir.SemanticRef,
 };
 
@@ -209,6 +210,10 @@ const CheckedApplicationIndex = struct {
             const relation_identity = try semanticReference(graph, relation);
             const application_identity = try semanticReference(graph, .{ .index = @intCast(i) });
             const value_identity = try semanticReference(graph, result);
+            const subject_identity = if (edges[i].subject) |subject|
+                try semanticReference(graph, subject)
+            else
+                null;
             const caller_identity = try semanticReference(graph, caller);
             const arguments = try alloc.alloc(semantic_graph.NodeId, edges[i].argument_count);
             for (arguments) |*argument| argument.* = semantic_graph.NodeId.invalid;
@@ -222,6 +227,7 @@ const CheckedApplicationIndex = struct {
                 .relation_identity = relation_identity,
                 .application_identity = application_identity,
                 .value_identity = value_identity,
+                .subject_identity = subject_identity,
                 .caller_identity = caller_identity,
             }) catch |err| {
                 alloc.free(arguments);
@@ -1129,6 +1135,11 @@ fn isVoidTailCall(expr: *const ast.Expr) bool {
 fn tryEmitSelfTail(ctx: *LowerCtx, expr: *const ast.Expr) Error!bool {
     if (ctx.self_name.len == 0) return false;
     if (expr.* != .call) return false;
+    // A checked application cannot become a branch until the semantic graph
+    // supplies a transform identity and witness. Let ordinary checked-call
+    // lowering retain the application instead of authorizing a rewrite from
+    // the callee spelling.
+    if (ctx.applications.get(expr) != null) return false;
     const c = expr.call;
     if (c.func.* != .name) return false;
     if (!std.mem.eql(u8, c.func.name.ident, ctx.self_name)) return false;
@@ -1842,6 +1853,14 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
     // an extern symbol. There is nothing to store at runtime, and lowering it as
     // an ordinary call pushed the whole program outside the direct subset.
     if (isReqCall(value)) return;
+    if (value.* == .call) {
+        if (ctx.applications.get(value)) |application| {
+            if (recordForDescriptor(ctx.records, application.descriptor)) |record| {
+                try lowerCheckedRecordCallAssign(ctx, name, application, record);
+                return;
+            }
+        }
+    }
     if (value.* == .call and value.call.func.* == .name) {
         if (ctx.func_record_returns.get(value.call.func.name.ident)) |rec_name| {
             try lowerRecordCallAssign(ctx, name, value.call.func.name.ident, value.call.args, rec_name);
@@ -1888,6 +1907,78 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
         gop.value_ptr.* = n;
     }
     try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = v, .ty = store_ty });
+}
+
+fn recordForDescriptor(
+    records: []const dnir.RecordDesc,
+    descriptor: types.ResolvedType,
+) ?dnir.RecordDesc {
+    if (descriptor == .@"struct") {
+        for (records) |record| {
+            if (std.mem.eql(u8, record.name, descriptor.@"struct".name) and
+                checkedRecordResultSupported(record)) return record;
+        }
+        return null;
+    }
+    if (descriptor != .table_type) return null;
+    const fields = descriptor.table_type.fields;
+    for (records) |record| {
+        if (record.fields.len != fields.len) continue;
+        var matches = true;
+        for (record.fields, record.kinds, fields) |name, kind, field| {
+            if (!std.mem.eql(u8, name, field.name)) {
+                matches = false;
+                break;
+            }
+            const field_kind: ?dnir.FieldKind = switch (field.typ) {
+                .str => .str,
+                .f64 => .f64,
+                .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .bool => .i64,
+                else => null,
+            };
+            if (field_kind == null or field_kind.? != kind) {
+                matches = false;
+                break;
+            }
+        }
+        if (matches and checkedRecordResultSupported(record)) return record;
+    }
+    return null;
+}
+
+fn checkedRecordResultSupported(record: dnir.RecordDesc) bool {
+    for (record.kinds) |kind| {
+        if (kind == .f64) return false;
+    }
+    return true;
+}
+
+fn lowerCheckedRecordCallAssign(
+    ctx: *LowerCtx,
+    name: []const u8,
+    application: *const CheckedApplication,
+    record: dnir.RecordDesc,
+) Error!void {
+    const relation = ctx.graph.get(application.relation) orelse return bail(@src());
+    const callee = relation.name orelse return bailWith(@src(), "application-link-symbol");
+    var operand_storage: [8]CheckedScalarOperand = undefined;
+    const operands = try checkedScalarOperands(ctx, application, &operand_storage);
+    var values: [8]dnir.Value = undefined;
+    const floating = try evaluateCheckedScalarOperands(ctx, operands, &values);
+    const realization_start: u32 = @intCast(ctx.instrs.items.len);
+    try stageCheckedScalarOperands(ctx, values[0..operands.len], floating);
+    try ctx.emit(.{
+        .op = .call_direct,
+        .relation = application.relation_identity,
+        .application = application.application_identity,
+        .value = application.value_identity,
+        .subject = application.subject_identity,
+        .realization_start = realization_start,
+        .callee = callee,
+        .record = record.name,
+        .field = name,
+        .ty = application.descriptor,
+    });
 }
 
 fn lowerRecordCallAssign(ctx: *LowerCtx, name: []const u8, callee: []const u8, args: []const *ast.Expr, rec_name: []const u8) Error!void {
@@ -2525,49 +2616,123 @@ fn applicationDescriptor(ctx: *const LowerCtx, expr: *const Expr) ?types.Resolve
     return ctx.graph.applicationDescriptorForExpr(expr);
 }
 
+const CheckedScalarOperand = struct {
+    expression: *Expr,
+    descriptor: types.ResolvedType,
+};
+
 fn checkedScalarOperand(
     ctx: *const LowerCtx,
     value_id: semantic_graph.NodeId,
-) Error!*Expr {
+) Error!CheckedScalarOperand {
     const value = ctx.graph.get(value_id) orelse return bail(@src());
     const descriptor = value.descriptor orelse
         return bailWith(@src(), "application-operand-descriptor");
-    if (std.meta.activeTag(descriptor) != .i64) {
-        return bailWith(@src(), "application-operand-abi");
+    switch (descriptor) {
+        .i32, .i64, .bool, .str, .f64 => {},
+        else => return bailWith(@src(), "application-operand-abi"),
     }
     const raw = value.ast_ref orelse return bailWith(@src(), "application-operand-provenance");
-    return @ptrCast(@alignCast(raw));
+    return .{
+        .expression = @ptrCast(@alignCast(raw)),
+        .descriptor = descriptor,
+    };
 }
 
-/// Project the subject and position-ordered arguments from checked graph edges.
-/// AST references are used only to evaluate those already-selected values; they
-/// do not decide subject role, order, descriptor, or relation identity.
+fn checkedScalarResult(descriptor: types.ResolvedType) Error!void {
+    switch (descriptor) {
+        .i32, .i64, .bool, .str, .f64, .void => {},
+        else => return bailWith(@src(), "application-result-abi"),
+    }
+}
+
+/// Project the semantic subject, when present, followed by position-ordered
+/// arguments. Subject absence stays absence; it is not reconstructed as
+/// argument zero for operation-first source faces.
 fn checkedScalarOperands(
     ctx: *LowerCtx,
     application: *const CheckedApplication,
-    storage: *[8]*Expr,
-) Error![]const *Expr {
-    const subject = application.subject orelse return bailWith(@src(), "application-subject");
-    if (application.arguments.len >= storage.len) return bailWith(@src(), "application-argument-pack");
-    storage[0] = try checkedScalarOperand(ctx, subject);
-    for (application.arguments, 1..) |argument, i| {
-        storage[i] = try checkedScalarOperand(ctx, argument);
+    storage: *[8]CheckedScalarOperand,
+) Error![]const CheckedScalarOperand {
+    var count: usize = 0;
+    if (application.subject) |subject| {
+        storage[count] = try checkedScalarOperand(ctx, subject);
+        count += 1;
     }
-    return storage[0 .. application.arguments.len + 1];
+    for (application.arguments) |argument| {
+        if (count >= storage.len) return bailWith(@src(), "application-argument-pack");
+        storage[count] = try checkedScalarOperand(ctx, argument);
+        count += 1;
+    }
+    return storage[0..count];
 }
 
-fn checkedScalarCallLhs(ctx: *LowerCtx, operands: []const *Expr) Error!dnir.Value {
-    if (operands.len == 0) return bailWith(@src(), "application-subject");
-    if (operands.len == 1) return lowerExprCons(ctx, operands[0], .single);
-
-    var values: [8]dnir.Value = undefined;
+fn evaluateCheckedScalarOperands(
+    ctx: *LowerCtx,
+    operands: []const CheckedScalarOperand,
+    values: *[8]dnir.Value,
+) Error!bool {
+    var fp_count: usize = 0;
     for (operands, 0..) |operand, i| {
-        values[i] = try lowerExprCons(ctx, operand, .single);
+        values[i] = try lowerExprCons(ctx, operand.expression, .single);
+        if (operand.descriptor == .f64) fp_count += 1;
     }
-    for (values[0..operands.len], 0..) |value, i| {
+    if (fp_count != 0 and fp_count != operands.len) {
+        return bailWith(@src(), "application-operand-abi");
+    }
+    return fp_count != 0;
+}
+
+fn stageCheckedScalarOperands(
+    ctx: *LowerCtx,
+    values: []const dnir.Value,
+    floating: bool,
+) Error!void {
+    if (floating) {
+        for (values, 0..) |value, i| {
+            try ctx.emit(.{ .op = .fp_mov_arg, .result = @intCast(i), .lhs = value });
+        }
+        return;
+    }
+    for (values, 0..) |value, i| {
         try ctx.emit(.{ .op = .mov_arg, .result = @intCast(i), .lhs = value });
     }
-    return .void;
+}
+
+/// Realize one checked scalar application. Source call orientation has already
+/// disappeared: relation, subject role, ordered operands, result and occurrence
+/// all come from the graph. The relation's name is retained only as the current
+/// physical link-symbol projection and is validated against the target
+/// callable identity before machine emission.
+fn lowerCheckedScalarCall(
+    ctx: *LowerCtx,
+    application: *const CheckedApplication,
+    consumption: types.ReturnConsumption,
+) Error!dnir.Value {
+    const relation = ctx.graph.get(application.relation) orelse return bail(@src());
+    const callee = relation.name orelse return bailWith(@src(), "application-link-symbol");
+    try checkedScalarResult(application.descriptor);
+
+    var operand_storage: [8]CheckedScalarOperand = undefined;
+    const operands = try checkedScalarOperands(ctx, application, &operand_storage);
+    var values: [8]dnir.Value = undefined;
+    const floating = try evaluateCheckedScalarOperands(ctx, operands, &values);
+    const realization_start: u32 = @intCast(ctx.instrs.items.len);
+    try stageCheckedScalarOperands(ctx, values[0..operands.len], floating);
+    const has_result = consumption != .discard and application.descriptor != .void;
+    const result = if (has_result) ctx.freshTemp() else null;
+    try ctx.emit(.{
+        .op = .call_direct,
+        .relation = application.relation_identity,
+        .application = application.application_identity,
+        .value = application.value_identity,
+        .subject = application.subject_identity,
+        .realization_start = realization_start,
+        .result = result,
+        .callee = callee,
+        .ty = application.descriptor,
+    });
+    return if (result) |temp| .{ .temp = temp } else .void;
 }
 
 /// Lower the canonical subject face from the relation identity selected by
@@ -2578,6 +2743,11 @@ fn lowerSubjectCall(
     expr: *const Expr,
     consumption: types.ReturnConsumption,
 ) Error!dnir.Value {
+    if (ctx.applications.get(expr)) |application| {
+        if (application.subject == null) return bailWith(@src(), "application-subject");
+        return lowerCheckedScalarCall(ctx, application, consumption);
+    }
+
     // String descriptor primitives are bootstrap lowering rules, not declared
     // ordinary relations yet. Preserve their current realization until the
     // standard vocabulary owns those identities.
@@ -2585,47 +2755,7 @@ fn lowerSubjectCall(
         return lowerCall(ctx, try faceAsCall(ctx, expr), consumption);
     }
 
-    const application = ctx.applications.get(expr) orelse
-        return bailWith(@src(), "application-identity");
-    const relation = ctx.graph.get(application.relation) orelse return bail(@src());
-    const callee = relation.name orelse return bail(@src());
-    const realization_start: u32 = @intCast(ctx.instrs.items.len);
-
-    var operand_storage: [8]*Expr = undefined;
-    const args = try checkedScalarOperands(ctx, application, &operand_storage);
-    if (std.meta.activeTag(application.descriptor) == .f64) {
-        return bailWith(@src(), "application-result-abi");
-    }
-    switch (application.descriptor) {
-        .any, .nil, .table_type, .@"struct" => return bailWith(@src(), "application-result"),
-        else => {},
-    }
-
-    const arg0 = try checkedScalarCallLhs(ctx, args);
-    if (consumption == .discard) {
-        try ctx.emit(.{
-            .op = .call_direct,
-            .relation = application.relation_identity,
-            .application = application.application_identity,
-            .value = application.value_identity,
-            .realization_start = realization_start,
-            .callee = callee,
-            .lhs = arg0,
-        });
-        return .void;
-    }
-    const result = ctx.freshTemp();
-    try ctx.emit(.{
-        .op = .call_direct,
-        .relation = application.relation_identity,
-        .application = application.application_identity,
-        .value = application.value_identity,
-        .realization_start = realization_start,
-        .result = result,
-        .callee = callee,
-        .lhs = arg0,
-    });
-    return .{ .temp = result };
+    return bailWith(@src(), "application-identity");
 }
 
 /// Whether any part of `expr` involves f64. `exprIsF64` only inspects the node
@@ -3139,6 +3269,9 @@ fn flattenNames(alloc: std.mem.Allocator, e: *const ast.Expr, out: *std.ArrayLis
 
 fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnConsumption) Error!dnir.Value {
     if (expr.* != .call) return bail(@src());
+    if (ctx.applications.get(expr)) |application| {
+        return lowerCheckedScalarCall(ctx, application, consumption);
+    }
     const c = expr.call;
     const discard = consumption == .discard;
     if (try lowerToStr(ctx, c)) |v| return v;
@@ -4284,9 +4417,15 @@ test "dnir_lower: checked subject call retains semantic identities" {
     const application = application_id orelse return error.TestExpectedEqual;
     const relation = graph.applicationRelation(application) orelse return error.TestExpectedEqual;
     const value = graph.applicationResult(application) orelse return error.TestExpectedEqual;
+    var subject: ?semantic_graph.NodeId = null;
+    for (graph.edges.items) |edge| {
+        if (edge.from.index != application.index or edge.kind != .subject) continue;
+        subject = edge.to;
+    }
     const application_identity = try semanticReference(&graph, application);
     const relation_identity = try semanticReference(&graph, relation);
     const value_identity = try semanticReference(&graph, value);
+    const subject_identity = try semanticReference(&graph, subject orelse return error.TestExpectedEqual);
 
     const module = try lowerModuleWithGraph(alloc, &mod, &graph);
     var found = false;
@@ -4297,6 +4436,7 @@ test "dnir_lower: checked subject call retains semantic identities" {
             try std.testing.expect(relation_identity.eql(instruction.relation.?));
             try std.testing.expect(application_identity.eql(instruction.application.?));
             try std.testing.expect(value_identity.eql(instruction.value.?));
+            try std.testing.expect(subject_identity.eql(instruction.subject.?));
             try std.testing.expect(instruction.realization_start != null);
         }
     }
@@ -4334,6 +4474,7 @@ test "dnir_lower: applications share relation without sharing occurrence identit
     var relations: [2]dnir.SemanticRef = undefined;
     var applications: [2]dnir.SemanticRef = undefined;
     var values: [2]dnir.SemanticRef = undefined;
+    var subjects: [2]dnir.SemanticRef = undefined;
     var count: usize = 0;
     for (module.functions) |function| {
         for (function.blocks[0].instrs) |instruction| {
@@ -4342,6 +4483,7 @@ test "dnir_lower: applications share relation without sharing occurrence identit
             relations[count] = instruction.relation.?;
             applications[count] = instruction.application.?;
             values[count] = instruction.value.?;
+            subjects[count] = instruction.subject.?;
             count += 1;
         }
     }
@@ -4349,6 +4491,106 @@ test "dnir_lower: applications share relation without sharing occurrence identit
     try std.testing.expect(relations[0].eql(relations[1]));
     try std.testing.expect(!applications[0].eql(applications[1]));
     try std.testing.expect(!values[0].eql(values[1]));
+    try std.testing.expect(!subjects[0].eql(subjects[1]));
+}
+
+test "dnir_lower: checked ordinary calls consume graph identity" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\observe: i64 = (value: i64)
+        \\    value
+        \\main: i64 = ()
+        \\    observe(41)
+        \\    observe(42)
+    ;
+    var lexer = Lexer.init(source, "ordinary-application.duo");
+    var parser = Parser.init(&lexer, alloc);
+    parser.duo_mode = true;
+    var ast_module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&ast_module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "ordinary-application.duo");
+
+    const module = try lowerModuleWithGraph(alloc, &ast_module, &graph);
+    var relation: ?dnir.SemanticRef = null;
+    var applications: [2]dnir.SemanticRef = undefined;
+    var values: [2]dnir.SemanticRef = undefined;
+    var count: usize = 0;
+    for (module.functions) |function| {
+        for (function.blocks[0].instrs) |instruction| {
+            if (instruction.application == null) continue;
+            if (count >= applications.len) return error.TestExpectedEqual;
+            if (relation) |first| {
+                try std.testing.expect(first.eql(instruction.relation.?));
+            } else {
+                relation = instruction.relation.?;
+            }
+            applications[count] = instruction.application.?;
+            values[count] = instruction.value.?;
+            try std.testing.expectEqual(@as(?dnir.SemanticRef, null), instruction.subject);
+            try std.testing.expectEqual(types.ResolvedType.i64, instruction.ty);
+            count += 1;
+        }
+    }
+    try std.testing.expectEqual(applications.len, count);
+    try std.testing.expect(!applications[0].eql(applications[1]));
+    try std.testing.expect(!values[0].eql(values[1]));
+}
+
+test "dnir_lower: checked f64 call derives ABI staging from descriptors" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\add: f64 = (left: f64, right: f64)
+        \\    left + right
+        \\main: f64 = ()
+        \\    add(1.5, 2.5)
+    ;
+    var lexer = Lexer.init(source, "ordinary-f64-application.duo");
+    var parser = Parser.init(&lexer, alloc);
+    parser.duo_mode = true;
+    var ast_module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&ast_module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "ordinary-f64-application.duo");
+
+    const module = try lowerModuleWithGraph(alloc, &ast_module, &graph);
+    var fp_moves: usize = 0;
+    var call_index: ?u32 = null;
+    for (module.functions) |function| {
+        var instruction_index: u32 = 0;
+        for (function.blocks[0].instrs) |instruction| {
+            if (instruction.op == .fp_mov_arg) fp_moves += 1;
+            if (instruction.application != null) {
+                call_index = instruction_index;
+                try std.testing.expectEqual(types.ResolvedType.f64, instruction.ty);
+                try std.testing.expectEqual(@as(?dnir.SemanticRef, null), instruction.subject);
+                try std.testing.expect(instruction.realization_start.? < instruction_index);
+            }
+            instruction_index += 1;
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 2), fp_moves);
+    try std.testing.expect(call_index != null);
 }
 
 test "dnir_lower: bool result descriptor prevents integer interpolation" {
