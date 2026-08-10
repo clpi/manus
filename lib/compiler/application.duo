@@ -81,8 +81,8 @@ main: i64 = ()
     demand: identity = identity{ value = 13, known = true }
     revision: identity = identity{ value = 14, known = true }
     occurrence: identity = identity{ value = 15, known = true }
-    twinmeaning: identity = identity{ value = 16, known = true }
-    twinincarnation: identity = identity{ value = 17, known = true }
+    peer: identity = identity{ value = 16, known = true }
+    instance: identity = identity{ value = 17, known = true }
     vector: identity = identity{ value = 18, known = true }
     trace: identity = identity{ value = 19, known = true }
     unknown: identity = identity{ value = 0, known = false }
@@ -119,9 +119,9 @@ main: i64 = ()
         demand = demand
     }
     twin: application = application{
-        meaning = twinmeaning
+        meaning = peer
         content = content
-        incarnation = twinincarnation
+        incarnation = instance
         relation = relation
         subject = subject
         arguments = arguments
