@@ -1,0 +1,13 @@
+document: {
+    value: i64
+    text: str
+}
+
+read: i64 = (subject: document)
+    subject.value
+
+name: str = (subject: document)
+    subject.text
+
+copy: document = (subject: document)
+    document{ value = subject.value, text = subject.text }

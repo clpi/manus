@@ -1,6 +1,0 @@
-document: {
-    value: i64
-}
-
-read: i64 = (subject: document)
-    subject.value

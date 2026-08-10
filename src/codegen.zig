@@ -402,6 +402,12 @@ pub const CodeGen = struct {
     /// Qualified descriptors exported by embedded homes. Homes identify the
     /// descriptor; they do not authorize an operation.
     subject_descriptors: std.StringHashMapUnmanaged(RT) = .empty,
+    /// Bootstrap projection of resolved relation result descriptors from a
+    /// dependency module.  The native precheck runs before dependency emission,
+    /// so it consumes this retained fact instead of reopening and reparsing the
+    /// module at every subject application.  GAP-132 deletes this cache when
+    /// resolver identities flow into the production graph directly.
+    subject_relation_results: std.StringHashMapUnmanaged(RT) = .empty,
     /// gap[082]: the relation store. Declared edges land here from
     /// `family(dest)(src) = conv`; `emit_convert_edge` asks the `to` family
     /// BEFORE the four hardcoded primitive arms, so an authored edge outranks
@@ -2032,7 +2038,7 @@ pub const CodeGen = struct {
             if (self.subjectRelation(mc.method, mc.obj)) |resolved| {
                 return self.resolve_type(contract_ret(&resolved.decl.func));
             }
-            if (self.probeSubjectRelationType(mc.method, mc.obj, mc.args.len)) |t| return t;
+            if (self.knownSubjectRelationType(mc.method, mc.obj, mc.args.len)) |t| return t;
             if (self.static_dispatch_type_for_expr(mc.obj, mc.method)) |_| {
                 if (std.mem.eql(u8, mc.method, "increment") or
                     std.mem.eql(u8, mc.method, "decrement") or
@@ -3399,6 +3405,10 @@ pub const CodeGen = struct {
             native_diag_fail("subject-descriptors");
             return nofit(@src());
         };
+        if (self.subject_relation_results.count() == 0 and !self.req_deps_allow_full_native(mod)) {
+            native_diag_fail("module-relations");
+            return nofit(@src());
+        }
         // Pass 11 WP-01: bench_mode no longer forces boxing by default.
         // Only --bench-backend=c-dynamic explicitly selects the boxed path.
         if (self.bench_mode and self.bench_backend == .c_dynamic) {
@@ -5162,7 +5172,7 @@ pub const CodeGen = struct {
                         var tbuf: [256]u8 = undefined;
                         break :fd self.func_decls.get(self.mangled_name(mc.method, &tbuf)) != null;
                     } or self.subjectRelation(mc.method, mc.obj) != null or
-                    self.probeSubjectRelationType(mc.method, mc.obj, mc.args.len) != null or
+                    self.knownSubjectRelationType(mc.method, mc.obj, mc.args.len) != null or
                     // law.host.projection { projects = to, authority = false }
                     // gap[082] is the deletion gate.
                     (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1);
@@ -5171,8 +5181,7 @@ pub const CodeGen = struct {
                     break :blk false;
                 }
                 const rt = self.expr_type(expr);
-                if (rt.is_numeric() or rt == .bool or rt == .str or rt == .void or
-                    self.type_lowers_native(rt)) break :blk true;
+                if (rt.is_native() or self.type_lowers_native(rt)) break :blk true;
                 native_diag_fail_fmt("method-ret:{s}", .{mc.method});
                 break :blk false;
             },
@@ -5794,8 +5803,9 @@ pub const CodeGen = struct {
         meta_directives.registerModuleDirectives(self.alloc, mod) catch {};
 
         self.collect_req_module_bindings(mod) catch {};
+        const req_deps_native = self.req_deps_allow_full_native(mod);
         self.native_scalar_mode = self.can_emit_native_scalar_module(mod);
-        if (self.native_scalar_mode and !self.req_deps_allow_full_native(mod)) {
+        if (self.native_scalar_mode and !req_deps_native) {
             self.native_scalar_mode = false;
         }
         if (!self.native_scalar_mode and self.duo_mode and (self.target.len == 0 or std.mem.eql(u8, self.target, "native"))) {
@@ -5816,7 +5826,7 @@ pub const CodeGen = struct {
         // `lua_Value` signatures with no runtime declared — "unknown type name
         // 'lua_Value'". A req dependency that needs the runtime disqualifies
         // full-native lowering regardless of which mode selected it.
-        if (self.substrate_native_mode and !self.req_deps_allow_full_native(mod)) {
+        if (self.substrate_native_mode and !req_deps_native) {
             self.substrate_native_mode = false;
         }
         self.module_knowledge = if (self.native_scalar_mode or self.substrate_native_mode)
@@ -6574,6 +6584,7 @@ pub const CodeGen = struct {
         }
         if (self.duo_mode) {
             try self.emit_required_modules(mod);
+            self.current_module = mod;
         }
         if (self.moduleNeedsLuaRuntime()) {
             try self.emit_closure_structs(self.all_closures.items);
@@ -6582,6 +6593,7 @@ pub const CodeGen = struct {
             try jit.emitJitRuntime(self);
             if (!self.duo_mode) {
                 try self.emit_required_modules(mod);
+                self.current_module = mod;
             }
         }
 
@@ -7392,6 +7404,44 @@ pub const CodeGen = struct {
                 continue;
             }
             try self.subject_descriptors.put(self.alloc, key, record);
+        }
+    }
+
+    fn noteSubjectRelationResults(self: *CodeGen, home: []const u8, mod: *const ast.Module) E!void {
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .func_decl) continue;
+            const decl = &stmt.func_decl;
+            if (decl.path.len != 1 or decl.func.params.len == 0) continue;
+            if (decl.func.params[0].typ != .named) continue;
+
+            const descriptor = decl.func.params[0].typ.named;
+            var declared = false;
+            for (mod.body.stmts) |*candidate| {
+                if (candidate.* != .alias_def) continue;
+                if (std.mem.eql(u8, candidate.alias_def.name, descriptor)) {
+                    declared = true;
+                    break;
+                }
+            }
+            if (!declared) continue;
+
+            var result = types.resolve(contract_ret(&decl.func), null, self.alloc) catch continue;
+            if (result == .@"struct") {
+                result.@"struct".name = try self.alloc.dupe(u8, result.@"struct".name);
+            }
+            if (!result.is_native()) continue;
+            const key = try std.fmt.allocPrint(self.alloc, "{s}|{s}|{s}|{d}", .{
+                home,
+                descriptor,
+                decl.path[0],
+                decl.func.params.len - 1,
+            });
+            if (self.subject_relation_results.get(key)) |prior| {
+                defer self.alloc.free(key);
+                if (!prior.eql(result)) try self.subject_relation_results.put(self.alloc, key, .any);
+            } else {
+                try self.subject_relation_results.put(self.alloc, key, result);
+            }
         }
     }
 
@@ -22729,7 +22779,7 @@ pub const CodeGen = struct {
             .field => |f| {
                 var pathbuf: [512]u8 = undefined;
                 if (ambient_dotted_path(expr, &pathbuf)) |path| {
-                    if (std.mem.startsWith(u8, path, "std.") and self.find_module_file_for_req(path) != null) {
+                    if (self.find_module_file_for_req(path) != null) {
                         try names.append(self.alloc, try self.alloc.dupe(u8, path));
                         return;
                     }
@@ -23257,6 +23307,7 @@ pub const CodeGen = struct {
             // `std/mcp.duo` from embedding, and so kept the Duo MCP servers dead.
             sub_parser.duo_mode = std.mem.endsWith(u8, mod_path, ".duo");
             var sub_mod = sub_parser.parse_module() catch return false;
+            self.noteSubjectRelationResults(name, &sub_mod) catch return false;
             self.collect_require_names_block(&sub_mod.body, &names) catch return false;
             for (sub_mod.body.stmts) |*sub_stmt| {
                 if (sub_stmt.* == .func_decl) {
@@ -23776,6 +23827,9 @@ pub const CodeGen = struct {
         if (subject.* == .call) {
             if (self.descriptorApplication(subject.call)) |application| return application.name;
         }
+        if (subject.* == .method_call) {
+            if (self.knownSubjectDescriptor(subject)) |descriptor| return descriptor;
+        }
         return switch (self.expr_type(subject)) {
             .i8 => "i8",
             .i16 => "i16",
@@ -23833,52 +23887,58 @@ pub const CodeGen = struct {
         return null;
     }
 
-    fn probeSubjectRelationType(self: *CodeGen, method: []const u8, subject: anytype, arg_count: usize) ?RT {
+    fn knownSubjectHome(self: *CodeGen, subject: anytype, buf: []u8) ?[]const u8 {
+        if (subject.* == .method_call) return self.knownSubjectHome(subject.method_call.obj, buf);
         if (subject.* != .call) return null;
         const application = subject.call;
         if (application.form != .braced or application.args.len != 1 or application.args[0].* != .table) return null;
         if (!application.args[0].table.pack.applied or application.func.* != .field) return null;
-        const descriptor = application.func.field.field;
         if (application.func.field.obj.* != .name) return null;
+        return self.modulePathForBinding(application.func.field.obj.name.ident, buf);
+    }
 
+    fn knownSubjectDescriptor(self: *CodeGen, subject: anytype) ?[]const u8 {
+        if (subject.* == .call) {
+            const application = subject.call;
+            if (application.form != .braced or application.args.len != 1 or application.args[0].* != .table) return null;
+            if (!application.args[0].table.pack.applied or application.func.* != .field) return null;
+            return application.func.field.field;
+        }
+        if (subject.* != .method_call) return null;
+        const relation_call = subject.method_call;
+        const result = self.knownSubjectRelationResult(relation_call.method, relation_call.obj, relation_call.args.len, false) orelse return null;
+        return switch (result) {
+            .@"struct" => |record| record.name,
+            else => null,
+        };
+    }
+
+    fn knownSubjectRelationResult(
+        self: *CodeGen,
+        method: []const u8,
+        subject: anytype,
+        arg_count: usize,
+        aliases: bool,
+    ) ?RT {
         var path_buf: [512]u8 = undefined;
-        const path = self.modulePathForBinding(application.func.field.obj.name.ident, &path_buf) orelse return null;
-        const module_path = self.find_module_file_for_req(path) orelse return null;
-        const source = Io.Dir.readFileAlloc(Io.Dir.cwd(), self.io, module_path, self.alloc, .unlimited) catch return null;
-        defer self.alloc.free(source);
-
-        var lex = @import("lexer.zig").Lexer.init(source, module_path);
-        if (!routeEmbedThroughDuoLexer(self.alloc, &lex, source, module_path)) return null;
-        var parser = @import("parser.zig").Parser.init(&lex, self.alloc);
-        parser.duo_mode = std.mem.endsWith(u8, module_path, ".duo");
-        const module = parser.parse_module() catch return null;
-
-        var declared = false;
-        for (module.body.stmts) |*stmt| {
-            if (stmt.* != .alias_def) continue;
-            if (std.mem.eql(u8, stmt.alias_def.name, descriptor)) {
-                declared = true;
-                break;
-            }
+        const path = self.knownSubjectHome(subject, &path_buf) orelse return null;
+        const descriptor = self.knownSubjectDescriptor(subject) orelse return null;
+        var key_buf: [1024]u8 = undefined;
+        const key = std.fmt.bufPrint(&key_buf, "{s}|{s}|{s}|{d}", .{ path, descriptor, method, arg_count }) catch return null;
+        const result = self.subject_relation_results.get(key) orelse return null;
+        if (result == .any) return null;
+        if (aliases and result == .@"struct") {
+            if (self.record_aliases.get(result.@"struct".name)) |record| return record;
         }
-        if (!declared) return null;
+        return result;
+    }
 
-        for (module.body.stmts) |*stmt| {
-            if (stmt.* != .func_decl) continue;
-            const funcdecl = &stmt.func_decl;
-            if (funcdecl.path.len != 1 or !std.mem.eql(u8, funcdecl.path[0], method)) continue;
-            if (funcdecl.func.params.len != arg_count + 1 or funcdecl.func.params[0].typ != .named) continue;
-            if (!std.mem.eql(u8, funcdecl.func.params[0].typ.named, descriptor)) continue;
-            const result = types.resolve(contract_ret(&funcdecl.func), null, self.alloc) catch return null;
-            if (result.is_numeric() or result == .bool or result == .str or result == .void) return result;
-            return null;
-        }
-        return null;
+    fn knownSubjectRelationType(self: *CodeGen, method: []const u8, subject: anytype, arg_count: usize) ?RT {
+        return self.knownSubjectRelationResult(method, subject, arg_count, true);
     }
 
     fn tryEmitSubjectRelation(self: *CodeGen, call: anytype) E!bool {
         const resolved = self.subjectRelation(call.method, call.obj) orelse return false;
-        self.p("{s}(", .{resolved.name});
         const params = resolved.decl.func.params;
         const saved_cname = self.current_module_cname;
 
@@ -23886,7 +23946,20 @@ pub const CodeGen = struct {
         const subject_type = self.resolve_type(params[0].typ);
         const subject_by_ptr = self.native_record_param_by_ptr(subject_type);
         self.current_module_cname = saved_cname;
-        if (subject_by_ptr) {
+        const subject_addressable = call.obj.* == .name or
+            (call.obj.* == .call and self.descriptorApplication(call.obj.call) != null);
+        const subject_place = subject_by_ptr and !subject_addressable;
+        if (subject_place) {
+            self.p("({{ ", .{});
+            self.typ(subject_type);
+            self.p(" duo_relation_subject = ", .{});
+            try self.emit_expr(call.obj);
+            self.p("; ", .{});
+        }
+        self.p("{s}(", .{resolved.name});
+        if (subject_place) {
+            self.p("&duo_relation_subject", .{});
+        } else if (subject_by_ptr) {
             if (call.obj.* == .name and self.expr_is_native_record_ptr_param(call.obj)) {
                 try self.emit_expr(call.obj);
             } else {
@@ -23919,6 +23992,7 @@ pub const CodeGen = struct {
             }
         }
         self.p(")", .{});
+        if (subject_place) self.p("; }})", .{});
         return true;
     }
 

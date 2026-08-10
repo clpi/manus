@@ -1,4 +1,5 @@
-reader = std.compiler.reader
+reader = compiler.reader
 
 main: i64 = ()
-    reader.document{ value = 42 }:read()
+    reader.document{ value = 42, text = "duon" }:copy():read()
+        + reader.document{ value = 0, text = "duon" }:copy():name():len()
