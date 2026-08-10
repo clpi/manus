@@ -252,6 +252,228 @@ pub const ClaimStatus = enum {
     }
 };
 
+pub const RELEASE_PROOF_SCHEMA_VERSION = "duo-release-proof-v0";
+pub const RELEASE_PROOF_BUNDLE_DIR = ".duo/proof/release-0.1";
+
+/// The release argument is deliberately orthogonal: passing one domain cannot
+/// stand in for missing evidence in another.
+pub const ReleaseProofKind = enum {
+    performance,
+    compression,
+    dynamicity,
+    metaprogramming,
+    foreign_leverage,
+    systems_credibility,
+    trust,
+
+    pub fn id(self: ReleaseProofKind) []const u8 {
+        return switch (self) {
+            .performance => "performance",
+            .compression => "compression",
+            .dynamicity => "dynamicity",
+            .metaprogramming => "metaprogramming",
+            .foreign_leverage => "foreign-leverage",
+            .systems_credibility => "systems-credibility",
+            .trust => "trust",
+        };
+    }
+};
+
+pub const ReleaseProofDomain = struct {
+    kind: ReleaseProofKind,
+    label: []const u8,
+    objection: []const u8,
+    answer: []const u8,
+    readiness: ClaimStatus,
+    gates: []const []const u8,
+};
+
+/// These are supporting gates, not substitutes for the stated proof. A domain
+/// becomes proven only after its readiness is explicitly promoted to supported
+/// and every named gate passes.
+pub const release_proofs: []const ReleaseProofDomain = &.{
+    .{
+        .kind = .performance,
+        .label = "Performance",
+        .objection = "Cute syntax, slower than C or Rust.",
+        .answer = "Equivalent algorithms and semantics produce competitive native artifacts under hostile measurement.",
+        .readiness = .partial,
+        .gates = &.{"bench-proof-gate"},
+    },
+    .{
+        .kind = .compression,
+        .label = "Compression",
+        .objection = "It is only syntax golf or generated boilerplate.",
+        .answer = "One semantic authority replaces duplicated facts, mechanisms, files, and projections.",
+        .readiness = .planned,
+        .gates = &.{},
+    },
+    .{
+        .kind = .dynamicity,
+        .label = "Dynamicity",
+        .objection = "The fast path quietly turned a dynamic language into a static one.",
+        .answer = "One source meaning moves from open dynamic execution through guarded and sealed native realizations.",
+        .readiness = .partial,
+        .gates = &.{ "semantics-gate", "native-differential" },
+    },
+    .{
+        .kind = .metaprogramming,
+        .label = "Metaprogramming",
+        .objection = "Existing macro and comptime systems already do this.",
+        .answer = "One ordinary semantic program derives implementation, tests, documentation, tooling, and foreign projections.",
+        .readiness = .partial,
+        .gates = &.{"meta-gate"},
+    },
+    .{
+        .kind = .foreign_leverage,
+        .label = "Foreign leverage",
+        .objection = "Nobody will rewrite an existing project in an experimental language.",
+        .answer = "Imported foreign semantics improve an otherwise untouched project and regenerate deterministically.",
+        .readiness = .partial,
+        .gates = &.{ "test", "abi-matrix" },
+    },
+    .{
+        .kind = .systems_credibility,
+        .label = "Systems credibility",
+        .objection = "Research languages collapse under substantial systems software.",
+        .answer = "Ward, native targets, and bootstrap stages work through the released compiler with explicit fallbacks.",
+        .readiness = .partial,
+        .gates = &.{ "native-differential", "wasm-test" },
+    },
+    .{
+        .kind = .trust,
+        .label = "Trust",
+        .objection = "The claims are cherry-picked, generated, or secretly delegated to C.",
+        .answer = "Every release claim resolves to reproducible source, commands, artifacts, logs, and measurements.",
+        .readiness = .partial,
+        .gates = &.{ "test", "repo-hygiene", "public-safety", "reproducibility-smoke" },
+    },
+};
+
+/// Stable execution order. Shared gates run once even when they support more
+/// than one proof domain; the destructive reproducibility gate runs last.
+pub const release_gates: []const []const u8 = &.{
+    "bench-proof-gate",
+    "semantics-gate",
+    "native-differential",
+    "meta-gate",
+    "abi-matrix",
+    "wasm-test",
+    "test",
+    "repo-hygiene",
+    "public-safety",
+    "reproducibility-smoke",
+};
+
+pub const ReleaseGateStatus = enum {
+    passed,
+    failed,
+    unavailable,
+
+    pub fn name(self: ReleaseGateStatus) []const u8 {
+        return @tagName(self);
+    }
+};
+
+pub const ReleaseGateResult = struct {
+    gate: []const u8,
+    status: ReleaseGateStatus,
+    log_path: []const u8,
+};
+
+pub const ReleaseProofStatus = enum {
+    proven,
+    failed,
+    unproven,
+
+    pub fn name(self: ReleaseProofStatus) []const u8 {
+        return @tagName(self);
+    }
+};
+
+pub fn releaseProofStatus(domain: ReleaseProofDomain, results: []const ReleaseGateResult) ReleaseProofStatus {
+    if (domain.gates.len == 0) return .unproven;
+    for (domain.gates) |gate| {
+        const result = releaseGateResult(results, gate) orelse return .unproven;
+        if (result.status != .passed) return .failed;
+    }
+    return if (domain.readiness == .supported) .proven else .unproven;
+}
+
+fn releaseGateResult(results: []const ReleaseGateResult, gate: []const u8) ?ReleaseGateResult {
+    for (results) |result| {
+        if (std.mem.eql(u8, result.gate, gate)) return result;
+    }
+    return null;
+}
+
+fn releaseGateExists(gate: []const u8) bool {
+    for (release_gates) |known| {
+        if (std.mem.eql(u8, known, gate)) return true;
+    }
+    return false;
+}
+
+pub fn writeReleaseProofJson(
+    w: *std.Io.Writer,
+    revision: []const u8,
+    worktree_clean: bool,
+    results: []const ReleaseGateResult,
+) !void {
+    var proven: usize = 0;
+    var failed: usize = 0;
+    var unproven: usize = 0;
+    for (release_proofs) |domain| switch (releaseProofStatus(domain, results)) {
+        .proven => proven += 1,
+        .failed => failed += 1,
+        .unproven => unproven += 1,
+    };
+
+    try w.print("{{\"schema\":\"{s}\",\"revision\":\"", .{RELEASE_PROOF_SCHEMA_VERSION});
+    try jsonEscape(w, revision);
+    try w.print("\",\"worktree\":\"{s}\",\"worktree_status\":\"{s}/worktree.txt\",\"bundle\":\"{s}\",\"domains\":[", .{
+        if (worktree_clean) "clean" else "dirty",
+        RELEASE_PROOF_BUNDLE_DIR,
+        RELEASE_PROOF_BUNDLE_DIR,
+    });
+    for (release_proofs, 0..) |domain, i| {
+        if (i > 0) try w.writeByte(',');
+        const status = releaseProofStatus(domain, results);
+        try w.print("{{\"id\":\"{s}\",\"label\":\"", .{domain.kind.id()});
+        try jsonEscape(w, domain.label);
+        try w.writeAll("\",\"objection\":\"");
+        try jsonEscape(w, domain.objection);
+        try w.writeAll("\",\"answer\":\"");
+        try jsonEscape(w, domain.answer);
+        try w.print("\",\"readiness\":\"{s}\",\"status\":\"{s}\",\"gates\":[", .{
+            domain.readiness.name(),
+            status.name(),
+        });
+        for (domain.gates, 0..) |gate, gate_i| {
+            if (gate_i > 0) try w.writeByte(',');
+            try w.print("\"{s}\"", .{gate});
+        }
+        try w.writeAll("]}");
+    }
+    try w.writeAll("],\"gate_results\":[");
+    for (results, 0..) |result, i| {
+        if (i > 0) try w.writeByte(',');
+        try w.print("{{\"gate\":\"{s}\",\"command\":\"zig build {s}\",\"status\":\"{s}\",\"log\":\"", .{
+            result.gate,
+            result.gate,
+            result.status.name(),
+        });
+        try jsonEscape(w, result.log_path);
+        try w.writeAll("\"}");
+    }
+    try w.print("],\"summary\":{{\"proven\":{},\"failed\":{},\"unproven\":{},\"total\":{}}}}}\n", .{
+        proven,
+        failed,
+        unproven,
+        release_proofs.len,
+    });
+}
+
 /// Seed claims — must match README and release docs or be downgraded.
 pub const seed_claims: []const ReleaseClaim = &.{
     .{
@@ -270,13 +492,13 @@ pub const seed_claims: []const ReleaseClaim = &.{
         .id = "claim.self_hosted",
         .statement = "Compiler is self-hosted",
         .status = .planned,
-        .dependency_ids = &.{ "cap.bootstrap.duo_chain" },
+        .dependency_ids = &.{"cap.bootstrap.duo_chain"},
     },
     .{
         .id = "claim.zero_boxing_global",
         .statement = "All programs compile without lua_Value boxing",
         .status = .stale,
-        .dependency_ids = &.{ "cap.repr.native_scalar" },
+        .dependency_ids = &.{"cap.repr.native_scalar"},
     },
     .{
         .id = "claim.faster_than_c_global",
@@ -288,14 +510,14 @@ pub const seed_claims: []const ReleaseClaim = &.{
         .id = "claim.m1_keyword_semantic",
         .statement = "Keyword classifier derives from canonical token_semantic source with proof obligations discharged",
         .status = .supported,
-        .dependency_ids = &.{ "cap.token_semantic.m1" },
+        .dependency_ids = &.{"cap.token_semantic.m1"},
         .proof_bundle_id = "bundle.m1.keyword_classifier",
     },
     .{
         .id = "claim.m2_wasm_decode",
         .statement = "Wasm instruction decode has canonical semantic intent; native hot path proof pending",
         .status = .partial,
-        .dependency_ids = &.{ "cap.wasm_decode.m2" },
+        .dependency_ids = &.{"cap.wasm_decode.m2"},
         .proof_bundle_id = "bundle.m2.wasm_decode",
     },
 };
@@ -419,4 +641,32 @@ test "proof_carrying: writeSchemaJson" {
     defer buf.deinit();
     try writeSchemaJson(&buf.writer);
     try std.testing.expect(std.mem.indexOf(u8, buf.written(), "proof-carrying-v0") != null);
+
+    try std.testing.expectEqual(@as(usize, 7), release_proofs.len);
+    for (release_proofs, 0..) |domain, i| {
+        try std.testing.expect(domain.kind.id().len > 0);
+        if (domain.readiness == .supported) try std.testing.expect(domain.gates.len > 0);
+        for (domain.gates) |gate| try std.testing.expect(releaseGateExists(gate));
+        for (release_proofs[i + 1 ..]) |other| {
+            try std.testing.expect(!std.mem.eql(u8, domain.kind.id(), other.kind.id()));
+        }
+    }
+
+    var results: [release_gates.len]ReleaseGateResult = undefined;
+    for (release_gates, 0..) |gate, i| {
+        results[i] = .{ .gate = gate, .status = .passed, .log_path = "proof.log" };
+    }
+    for (release_proofs) |domain| {
+        try std.testing.expectEqual(ReleaseProofStatus.unproven, releaseProofStatus(domain, &results));
+    }
+
+    var release_buf: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer release_buf.deinit();
+    try writeReleaseProofJson(&release_buf.writer, "deadbeef", false, &.{});
+    try std.testing.expect(std.mem.indexOf(u8, release_buf.written(), RELEASE_PROOF_SCHEMA_VERSION) != null);
+    try std.testing.expect(std.mem.indexOf(u8, release_buf.written(), "\"revision\":\"deadbeef\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, release_buf.written(), "\"worktree\":\"dirty\"") != null);
+    for (release_proofs) |domain| {
+        try std.testing.expect(std.mem.indexOf(u8, release_buf.written(), domain.kind.id()) != null);
+    }
 }

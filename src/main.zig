@@ -72,6 +72,7 @@ const persistent_semantic_state = @import("persistent_semantic_state.zig");
 const compile_semantic_cache = @import("compile_semantic_cache.zig");
 const semantic_invalidation = @import("semantic_invalidation.zig");
 const evidence_record = @import("evidence_record.zig");
+const proof_carrying = @import("proof_carrying.zig");
 const optimization_outcome = @import("optimization_outcome.zig");
 const explain_pipeline = @import("explain_pipeline.zig");
 const c_sim_import = @import("c_sim_import.zig");
@@ -377,6 +378,7 @@ const usage =
     \\  fmt        <file>   format a .duo/.lua file (--canonical strips then/do in .duo)
     \\  test       [file]   run inline @test functions (or @build.test target)
     \\  bench      [file]   run @bench-marked functions (or @build.bench target)
+    \\  prove               reproduce the seven release proofs and write a proof bundle
     \\  symbols    <file>   glanceable module/test/build symbol map
     \\  graph      <file>   export semantic graph JSON (table_shapes, enum_shapes)
     \\  sim        <file>   export SIM v0 semantic snapshot JSON (Pass 5)
@@ -453,6 +455,7 @@ pub fn main(init: std.process.Init) !void {
             std.mem.eql(u8, args[1], "dump-c") or
             std.mem.eql(u8, args[1], "test") or
             std.mem.eql(u8, args[1], "bench") or
+            std.mem.eql(u8, args[1], "prove") or
             std.mem.eql(u8, args[1], "symbols") or
             std.mem.eql(u8, args[1], "graph") or
             std.mem.eql(u8, args[1], "sim") or
@@ -669,6 +672,15 @@ pub fn main(init: std.process.Init) !void {
 
     if (usesProjectWorkspace(cmd, input_file)) {
         try enterWorkspaceRoot(alloc, io);
+    }
+
+    if (std.mem.eql(u8, cmd, "prove")) {
+        if (input_file != null) {
+            term.err("duo prove takes no arguments", .{});
+            std.process.exit(2);
+        }
+        if (!try do_prove(alloc, io)) std.process.exit(1);
+        return;
     }
 
     if (std.mem.eql(u8, cmd, "build")) {
@@ -905,6 +917,7 @@ fn is_source_path(path: []const u8) bool {
 }
 
 fn usesProjectWorkspace(cmd: []const u8, input_file: ?[]const u8) bool {
+    if (std.mem.eql(u8, cmd, "prove")) return true;
     if (std.mem.eql(u8, cmd, "build")) return true;
     if (std.mem.eql(u8, cmd, "test") or std.mem.eql(u8, cmd, "bench")) return input_file == null;
     if (std.mem.eql(u8, cmd, "compile") or std.mem.eql(u8, cmd, "check") or std.mem.eql(u8, cmd, "dump-c")) return input_file == null;
@@ -1643,6 +1656,109 @@ fn do_explain(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
     // this verb exiting 0 with the violation present as JSON — an emission with
     // no consequence is what let the contract stay decorative.
     if (contract_violations > 0) std.process.exit(1);
+}
+
+fn do_prove(alloc: std.mem.Allocator, io: Io) !bool {
+    const cwd = Io.Dir.cwd();
+    try cwd.createDirPath(io, proof_carrying.RELEASE_PROOF_BUNDLE_DIR);
+
+    const revision_process = try std.process.run(alloc, io, .{
+        .argv = &.{ "git", "rev-parse", "HEAD" },
+    });
+    defer alloc.free(revision_process.stdout);
+    defer alloc.free(revision_process.stderr);
+    if (!revision_process.term.success()) {
+        term.err("duo prove could not identify the source revision: {s}", .{revision_process.stderr});
+        return false;
+    }
+    const revision = std.mem.trim(u8, revision_process.stdout, " \t\r\n");
+
+    const worktree_process = try std.process.run(alloc, io, .{
+        .argv = &.{ "git", "status", "--porcelain=v1", "--untracked-files=all" },
+    });
+    defer alloc.free(worktree_process.stdout);
+    defer alloc.free(worktree_process.stderr);
+    if (!worktree_process.term.success()) {
+        term.err("duo prove could not inspect the source worktree: {s}", .{worktree_process.stderr});
+        return false;
+    }
+    const worktree_path = try std.fmt.allocPrint(alloc, "{s}/worktree.txt", .{proof_carrying.RELEASE_PROOF_BUNDLE_DIR});
+    try Io.Dir.writeFile(cwd, io, .{ .sub_path = worktree_path, .data = worktree_process.stdout });
+    const worktree_clean = std.mem.trim(u8, worktree_process.stdout, " \t\r\n").len == 0;
+
+    term.print("Duo release proof\n", .{});
+    term.print("  source {s}: {s}\n", .{ revision, if (worktree_clean) "clean" else "dirty" });
+    var results: std.ArrayListUnmanaged(proof_carrying.ReleaseGateResult) = .empty;
+    defer results.deinit(alloc);
+    for (proof_carrying.release_gates) |gate| {
+        const log_path = try std.fmt.allocPrint(alloc, "{s}/{s}.log", .{
+            proof_carrying.RELEASE_PROOF_BUNDLE_DIR,
+            gate,
+        });
+        const status = try run_release_gate(alloc, io, gate, log_path);
+        try results.append(alloc, .{
+            .gate = gate,
+            .status = status,
+            .log_path = log_path,
+        });
+        term.print("  gate {s}: {s}\n", .{ gate, status.name() });
+    }
+
+    var summary: std.Io.Writer.Allocating = .init(alloc);
+    defer summary.deinit();
+    try proof_carrying.writeReleaseProofJson(&summary.writer, revision, worktree_clean, results.items);
+    const summary_path = try std.fmt.allocPrint(alloc, "{s}/summary.json", .{proof_carrying.RELEASE_PROOF_BUNDLE_DIR});
+    try Io.Dir.writeFile(cwd, io, .{ .sub_path = summary_path, .data = summary.written() });
+
+    var proven: usize = 0;
+    var complete = worktree_clean;
+    for (proof_carrying.release_proofs) |domain| {
+        const status = proof_carrying.releaseProofStatus(domain, results.items);
+        if (status == .proven) {
+            proven += 1;
+        } else {
+            complete = false;
+        }
+        term.print("  proof {s}: {s} ({s})\n", .{
+            domain.kind.id(),
+            status.name(),
+            domain.readiness.name(),
+        });
+    }
+    term.print("release claims: {}/{} proven\n", .{ proven, proof_carrying.release_proofs.len });
+    term.print("proof bundle: {s}\n", .{proof_carrying.RELEASE_PROOF_BUNDLE_DIR});
+    if (!worktree_clean) term.err("release proof source worktree is dirty; see {s}", .{worktree_path});
+    if (!complete) term.err("release proof is incomplete; unproven domains remain release blockers", .{});
+    return complete;
+}
+
+fn run_release_gate(
+    alloc: std.mem.Allocator,
+    io: Io,
+    gate: []const u8,
+    log_path: []const u8,
+) !proof_carrying.ReleaseGateStatus {
+    const cwd = Io.Dir.cwd();
+    var log_file = try cwd.createFile(io, log_path, .{});
+    var child = std.process.spawn(io, .{
+        .argv = &.{ "zig", "build", gate },
+        .stdin = .ignore,
+        .stdout = .{ .file = log_file },
+        .stderr = .{ .file = log_file },
+    }) catch |err| {
+        log_file.close(io);
+        const message = try std.fmt.allocPrint(alloc, "unable to start `zig build {s}`: {s}\n", .{ gate, @errorName(err) });
+        try Io.Dir.writeFile(cwd, io, .{ .sub_path = log_path, .data = message });
+        return .unavailable;
+    };
+    defer child.kill(io);
+    const result = child.wait(io) catch |err| {
+        log_file.close(io);
+        term.err("duo prove could not wait for gate {s}: {s}", .{ gate, @errorName(err) });
+        return .unavailable;
+    };
+    log_file.close(io);
+    return if (result.success()) .passed else .failed;
 }
 
 fn do_algebra(io: Io) !void {
@@ -4850,7 +4966,7 @@ const bash_completion =
     \\    cur="${COMP_WORDS[COMP_CWORD]}"
     \\    prev="${COMP_WORDS[COMP_CWORD-1]}"
     \\
-    \\    local commands="shell init build compile run check test bench dump-c completion help"
+    \\    local commands="shell init build compile run check test bench prove dump-c completion help"
     \\    local options="-o -O0 -O1 -O2 -O3 --cc --target --load-chunk --lib --pgo --shared-memory --link --filter --trace --info --hints --plain-diagnostics --debug --debug-depth --test-report --build-report --no-color -v --verbose -h --help"
     \\    local shells="bash zsh fish nu"
     \\    local targets="native wasm32-wasi"
@@ -4893,6 +5009,7 @@ const zsh_completion =
     \\    'check:type-check only'
     \\    'test:run @test functions in a .duo file'
     \\    'bench:run @bench functions only'
+    \\    'prove:reproduce the seven release proofs'
     \\    'dump-c:print generated C'
     \\    'completion:generate shell completions'
     \\    'help:show help'
@@ -4949,6 +5066,7 @@ const fish_completion =
     \\complete -c duo -n '__fish_use_subcommand' -a 'check' -d 'Type-check only'
     \\complete -c duo -n '__fish_use_subcommand' -a 'test' -d 'Run @test functions in a .duo file'
     \\complete -c duo -n '__fish_use_subcommand' -a 'bench' -d 'Run @bench functions only'
+    \\complete -c duo -n '__fish_use_subcommand' -a 'prove' -d 'Reproduce the seven release proofs'
     \\complete -c duo -n '__fish_use_subcommand' -a 'dump-c' -d 'Print generated C'
     \\complete -c duo -n '__fish_use_subcommand' -a 'symbols' -d 'Glanceable module symbol map'
     \\complete -c duo -n '__fish_use_subcommand' -a 'graph' -d 'Export semantic graph JSON'
@@ -4981,7 +5099,7 @@ const fish_completion =
 const nu_completion =
     \\# nushell completion for duo
     \\def "nu-complete duo commands" [] {
-    \\  [shell init build compile run check test bench dump-c completion help]
+    \\  [shell init build compile run check test bench prove dump-c completion help]
     \\}
     \\def "nu-complete duo shells" [] {
     \\  [bash zsh fish nu]
