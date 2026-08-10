@@ -13101,7 +13101,12 @@ source span
 
 ### Gates and performance scope
 
-- serialized `zig build unit-test` — pass;
+- serialized `zig build unit-test --summary all` — 1171/1178 passed; fail.
+  Three added controls do not reach their intended proof: the ordinary and
+  record lineage controls use object-target spellings rejected by the real
+  target API, and the descriptor/argument control is refused before its
+  invariant. The remaining failures are the interpolation index,
+  register-spill, root-relation projection and relation-family controls;
 - locked `native-census` — 95 native, 111 bail, 16 unreachable, 206
   reachable; pass against the 88-native ratchet;
 - locked `native-differential` — 47 agree, 20 diverge, 5 unsupported; fail on
@@ -13112,11 +13117,12 @@ source span
 - `zig fmt`, `zig ast-check` on the five compiler files and
   `git diff --check` — pass.
 
-The broader `zig build test` did not produce a verdict: its compile-failure
-runner slept for more than ten minutes with no child command and was terminated
-to release the shared build lock. The earlier agent smoke run reached its
-standard metaprogramming module check and failed there; that source is outside
-this slice.
+The broader `zig build test` did not produce a verdict. The compile-failure
+child finished its work but blocked while flushing output into a full pipe; its
+parent waited without draining that pipe and held the serialized build lock.
+`GAP-147` records the process evidence and required control. The earlier agent
+smoke run reached its standard metaprogramming module check and failed there;
+that source is outside this slice.
 
 The call path introduces no boxing, allocation, generic dispatch or C fallback.
 The extra f64 move occurs only when a value must survive another call. The
