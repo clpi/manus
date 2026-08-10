@@ -12779,3 +12779,58 @@ headline SIMD number will stay artificially low until the frame-setup half lands
 
 Regression check after: bench 21/21, real C programs 10/10, SIMD scalar 4/4, exact i64
 reporting intact.
+
+---
+
+## 2026-08-09 — graph-owned function result classification in DNIR
+
+### Implemented
+
+- Function semantic identities now carry their resolved result descriptor.
+- DNIR lowering receives the semantic graph non-optionally and queries that
+  descriptor for floating direct-call results.
+- Deleted the duplicate name-keyed `f64_kernels` reconstruction map.
+- Removed the incorrect coupling between a floating result and the presence of
+  floating argument slots, so zero-argument `f64` calls retain `.f64` in DNIR.
+- Added positive `f64` and negative `i64` controls. No new source, package, or
+  runtime file boundary was introduced.
+
+### Measured impact
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| DNIR function-result reconstruction maps for `f64` | 1 | 0 |
+| Optional graph at `lowerModuleWithGraph` | yes | no |
+| Zero-argument direct `f64` call admitted | no | yes |
+| Realized-path boxing or allocation added | 0 | 0 |
+| Repository files added | 0 | 0 |
+
+This is an authority/query-path change, not a benchmark kernel optimization.
+The hard benchmark gate passed all correctness and timing thresholds; no new
+runtime speedup is claimed and the current snapshot is unchanged.
+
+### Validation
+
+- `zig fmt src/semantic_graph.zig src/dnir_lower.zig --check` — pass
+- focused `zig test src/semantic_graph.zig --test-filter descriptor` — pass
+- `zig build unit-test --summary all` — pass
+- `zig build` — pass
+- `zig build test` — pass
+- `zig build native-differential` — pass
+- `zig build native-census` — pass
+- `zig build agent-smoke` — pass
+- `zig build audit100` — pass
+- `zig build bench` and cached confirmation with `--summary all` — pass
+
+The standalone `zig test src/dnir_lower.zig --test-filter descriptor` probe was
+rejected as a project gate because it omits the repository keyword bridge and
+fails to link `_duo_keyword_classify`. The regression is exercised by the
+canonical `unit-test` step, which provides the complete linker topology.
+
+### Remaining targets
+
+- Move string and boolean direct-call result classification to the same graph
+  query and delete those reconstruction maps.
+- Carry record-result identity without rebuilding a name-keyed result map.
+- Keep parameter ABI classification separate from result descriptors; merging
+  those facts caused the zero-argument defect removed here.

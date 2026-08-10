@@ -95,6 +95,8 @@ pub const Node = struct {
     call_shape_id: ?u64 = null,
     /// For `.call` nodes: the inferred CallShape (Phase 1 — conservative from AST).
     call_shape: ?types.CallShape = null,
+    /// Resolved result descriptor attached to a function's semantic identity.
+    result_descriptor: ?types.ResolvedType = null,
     /// Factual `@comp.why.shape` explanation captured at graph lift.
     why: ?[]const u8 = null,
     /// Pass 2: knowledge lattice position when known.
@@ -325,6 +327,14 @@ pub const SemanticGraph = struct {
         return self.findId(.func, name);
     }
 
+    /// Query a function result through its stable identity. Realization uses
+    /// this instead of rebuilding name-keyed return classifications from AST.
+    pub fn funcResultDescriptor(self: *const SemanticGraph, name: []const u8) ?types.ResolvedType {
+        const id = self.findFunc(name) orelse return null;
+        const node = self.get(id) orelse return null;
+        return node.result_descriptor;
+    }
+
     /// Find the first node with a given name, whatever its kind or scope. O(n).
     /// This is a QUESTION WITHOUT AN ANSWER when two bindings share a spelling,
     /// and it silently returns the earlier one — prefer `findId`/`findFunc`,
@@ -499,6 +509,7 @@ pub const SemanticGraph = struct {
                     .end = fd.loc.col,
                 },
                 .name = fd.path[0],
+                .result_descriptor = try types.resolve(fd.func.ret_type, null, self.alloc),
                 .ast_ref = @ptrCast(fd),
             });
             try self.func_decls.put(self.alloc, fd.path[0], fd);
@@ -1649,6 +1660,32 @@ test "semantic_graph: liftModule creates func and param nodes" {
     try std.testing.expectEqual(@as(usize, 4), g.nodes.items.len); // module + func + 2 params
     const add_id = g.findByName("add") orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(.func, g.get(add_id).?.kind);
+}
+
+test "semantic_graph: function identities carry resolved result descriptors" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\measure(): f64
+        \\    1.5
+        \\label(): str
+        \\    "ok"
+    ;
+    var lex = Lexer.init(src, "results.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    const module = try parser.parse_module();
+
+    var g = SemanticGraph.init(alloc);
+    defer g.deinit();
+    _ = try g.liftModule(&module, "results.duo");
+
+    try std.testing.expectEqual(types.ResolvedType.f64, g.funcResultDescriptor("measure").?);
+    try std.testing.expectEqual(types.ResolvedType.str, g.funcResultDescriptor("label").?);
+    try std.testing.expect(g.funcResultDescriptor("missing") == null);
 }
 
 test "semantic_graph: moduleFunctionEmitOrder callees before callers" {

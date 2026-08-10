@@ -183,6 +183,17 @@ fn collectModuleConsts(
 }
 
 pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.Module {
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = graph.liftModuleWithCalls(mod, "<dnir>") catch return error.OutOfMemory;
+    return lowerModuleWithGraph(alloc, mod, &graph);
+}
+
+fn lowerModuleFromGraph(
+    alloc: std.mem.Allocator,
+    mod: *const ast.Module,
+    graph: *const semantic_graph.SemanticGraph,
+) Error!dnir.Module {
     bail_site.line = 0;
     var req = try native_req_support.collectFromModule(alloc, mod);
     defer req.deinit(alloc);
@@ -202,11 +213,9 @@ pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.
     }
     try collectRecords(alloc, &records, mod);
 
-    var f64_kernels: std.StringHashMapUnmanaged(void) = .empty;
-    defer f64_kernels.deinit(alloc);
-    // Functions declared `: str`. Same shape as f64_kernels and for the same
-    // reason: a PRODUCER the type tracker does not know about breaks every
-    // consumer downstream. `msg = format(...)` then `#msg` bailed because the
+    // Functions declared `: str`. This has the same reconstruction shape as the
+    // deleted f64 result map: an unknown producer breaks every consumer downstream.
+    // `msg = format(...)` then `#msg` bailed because the
     // local never entered str_slots -- the fourth time this exact gap has bitten
     // (string.char, concat, math via exprReturnsF64, now str-returning calls).
     var str_returns: std.StringHashMapUnmanaged(void) = .empty;
@@ -253,11 +262,6 @@ pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.
         const fd = &stmt.func_decl;
         if (!shouldIncludeFuncDecl(fd) or fd.path.len != 1 or fd.method) continue;
         if (funcFfiName(fd.attributes) != null) continue;
-        if (isFloatType(fd.func.ret_type) and functionEligible(fd, records.items)) {
-            if (f64AbiParamSlots(fd, records.items)) |slots| {
-                if (slots > 0) try f64_kernels.put(alloc, fd.path[0], {});
-            }
-        }
         if (isStrType(fd.func.ret_type) and fd.path.len > 0) {
             try str_returns.put(alloc, fd.path[0], {});
         }
@@ -312,7 +316,7 @@ pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.
                 "?";
             continue;
         }
-        const f = try lowerFunction(alloc, fd, records.items, &req, &externs, &func_record_returns, &f64_kernels, &fp_params, &str_returns, &bool_returns, &module_consts);
+        const f = try lowerFunction(alloc, fd, records.items, graph, &req, &externs, &func_record_returns, &fp_params, &str_returns, &bool_returns, &module_consts);
         try functions.append(alloc, f);
     }
     if (functions.items.len == 0) return bail(@src());
@@ -337,12 +341,10 @@ pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.
 pub fn lowerModuleWithGraph(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
-    graph: ?*const semantic_graph.SemanticGraph,
+    graph: *const semantic_graph.SemanticGraph,
 ) Error!dnir.Module {
-    var m = try lowerModule(alloc, mod);
-    if (graph) |g| {
-        try applyGraphToModule(alloc, g, &m);
-    }
+    var m = try lowerModuleFromGraph(alloc, mod, graph);
+    try applyGraphToModule(alloc, graph, &m);
     return m;
 }
 
@@ -453,9 +455,9 @@ fn isF64Record(recs: []const dnir.RecordDesc, t: ast.TypeExpr) ?dnir.RecordDesc 
 /// hold: `p(3.5, 1.5)` answered 1 where C answered 9. It compiled, ran, and
 /// exited cleanly with the wrong number.
 ///
-/// The caller-side set that DID exist, `f64_kernels`, additionally required an
-/// f64 RETURN, while the callee-side `is_float_kernel` flag does not — that
-/// disagreement is the entire bug. Both ends now derive from this one function.
+/// The deleted caller-side f64 result map additionally required an f64 return,
+/// while the callee-side `is_float_kernel` flag does not. Parameter placement
+/// remains this separate ABI fact; result descriptors now come from the graph.
 ///
 /// Per-SLOT rather than a single all-or-nothing answer because AAPCS64 counts
 /// the two register files separately: `f(a: i64, b: f64, c: i64)` is x0, d0, x1
@@ -620,10 +622,10 @@ fn findRecordName(recs: []const dnir.RecordDesc, t: ast.TypeExpr) ?dnir.RecordDe
 pub const LowerCtx = struct {
     alloc: std.mem.Allocator,
     records: []const dnir.RecordDesc,
+    graph: *const semantic_graph.SemanticGraph,
     req: *const native_req_support.Context,
     externs: *std.ArrayList(dnir.Extern),
     func_record_returns: *std.StringHashMapUnmanaged([]const u8),
-    f64_kernels: *const std.StringHashMapUnmanaged(void),
     /// GAP-056: per-callee ABI slot classes, so a caller marshals f64 arguments
     /// into v0..v7 instead of x0..x7. Empty means no callee needs FP slots.
     fp_params: *const std.StringHashMapUnmanaged([]bool) = &empty_fp_params,
@@ -707,10 +709,10 @@ fn lowerFunction(
     alloc: std.mem.Allocator,
     fd: *const ast.FuncDecl,
     records: []const dnir.RecordDesc,
+    graph: *const semantic_graph.SemanticGraph,
     req: *const native_req_support.Context,
     externs: *std.ArrayList(dnir.Extern),
     func_record_returns: *std.StringHashMapUnmanaged([]const u8),
-    f64_kernels: *const std.StringHashMapUnmanaged(void),
     fp_params: *const std.StringHashMapUnmanaged([]bool),
     str_returns: *const std.StringHashMapUnmanaged(void),
     bool_returns: *const std.StringHashMapUnmanaged(void),
@@ -719,10 +721,10 @@ fn lowerFunction(
     var ctx: LowerCtx = .{
         .alloc = alloc,
         .records = records,
+        .graph = graph,
         .req = req,
         .externs = externs,
         .func_record_returns = func_record_returns,
-        .f64_kernels = f64_kernels,
         .fp_params = fp_params,
         .self_fp_params = blk: {
             const slots = f64AbiParamSlots(fd, records) orelse break :blk false;
@@ -1075,7 +1077,12 @@ fn exprReturnsF64(ctx: *LowerCtx, expr: *const ast.Expr) bool {
             expr.call.args.len == 1) return true;
     }
     if (expr.call.func.* != .name) return false;
-    return ctx.f64_kernels.contains(expr.call.func.name.ident);
+    return functionReturnsF64(ctx, expr.call.func.name.ident);
+}
+
+fn functionReturnsF64(ctx: *const LowerCtx, name: []const u8) bool {
+    const descriptor = ctx.graph.funcResultDescriptor(name) orelse return false;
+    return descriptor == .f64;
 }
 
 fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!void {
@@ -2313,7 +2320,7 @@ fn exprTouchesF64(ctx: *LowerCtx, expr: *const ast.Expr) bool {
         .binop => |b| exprTouchesF64(ctx, b.lhs) or exprTouchesF64(ctx, b.rhs),
         .unop => |u| exprTouchesF64(ctx, u.operand),
         .call => |c| blk: {
-            if (c.func.* == .name and ctx.f64_kernels.contains(c.func.name.ident)) break :blk true;
+            if (c.func.* == .name and functionReturnsF64(ctx, c.func.name.ident)) break :blk true;
             for (c.args) |a| {
                 if (exprTouchesF64(ctx, a)) break :blk true;
             }
@@ -2586,7 +2593,6 @@ fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const a
 /// d0-d7 on entry whenever the body can call — the same move the integer side
 /// has always made out of x0-x7 into x9+. Values and staging no longer share
 /// registers, so the hazard is gone at its source and the refusal is retired.
-
 /// Whether this callee takes at least one argument in v0..v7.
 fn calleeWantsFpSlots(ctx: *LowerCtx, callee: ?[]const u8) bool {
     const name = callee orelse return false;
@@ -3025,7 +3031,7 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
             return try lowerHwIntrinsic(ctx, hw, c.args);
         }
         const callee = c.func.name.ident;
-        if (ctx.f64_kernels.contains(callee)) {
+        if (functionReturnsF64(ctx, callee)) {
             return try lowerF64KernelCall(ctx, callee, c.args);
         }
         if (std.mem.eql(u8, callee, "print")) {
@@ -3141,7 +3147,6 @@ fn exprIsF64Value(ctx: *LowerCtx, expr: *const ast.Expr) bool {
 }
 
 fn lowerF64KernelCall(ctx: *LowerCtx, callee: []const u8, args: []const *ast.Expr) Error!dnir.Value {
-    if (args.len == 0) return bail(@src());
     var slot: u32 = 0;
     for (args) |arg| {
         switch (arg.*) {
@@ -3174,7 +3179,6 @@ fn lowerF64KernelCall(ctx: *LowerCtx, callee: []const u8, args: []const *ast.Exp
             },
         }
     }
-    if (slot == 0) return bail(@src());
     const t = ctx.freshTemp();
     try ctx.emit(.{ .op = .call_direct, .result = t, .callee = callee, .ty = .f64 });
     return .{ .temp = t };
@@ -3875,6 +3879,45 @@ test "dnir_lower: lowerModuleWithGraph matches lowerModule" {
     try std.testing.expect(m_direct.hardware_tier == m_graph.hardware_tier);
     try std.testing.expect(m_direct.functions[0].blocks[0].instrs.len == m_graph.functions[0].blocks[0].instrs.len);
     try std.testing.expect(m_graph.functions[0].graph_stable_id != null);
+}
+
+test "dnir_lower: call result class comes from graph descriptor" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\measure(): f64
+        \\    1.5
+        \\count(): i64
+        \\    1
+        \\floating(): f64
+        \\    measure()
+        \\integer(): i64
+        \\    count()
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "result_query.duo");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    const mod = try parser.parse_module();
+    const m = try lowerModule(alloc, &mod);
+
+    var saw_float = false;
+    var saw_integer = false;
+    for (m.functions) |f| {
+        for (f.blocks[0].instrs) |ins| {
+            if (ins.op != .call_direct) continue;
+            if (std.mem.eql(u8, ins.callee, "measure")) {
+                saw_float = true;
+                try std.testing.expectEqual(RT.f64, ins.ty);
+            }
+            if (std.mem.eql(u8, ins.callee, "count")) {
+                saw_integer = true;
+                try std.testing.expect(ins.ty != .f64);
+            }
+        }
+    }
+    try std.testing.expect(saw_float);
+    try std.testing.expect(saw_integer);
 }
 
 test "dnir_lower: graph orders callees before callers" {
