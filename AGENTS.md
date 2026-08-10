@@ -112,16 +112,18 @@ A changed `.duo` line is rejected when it introduces any of these forms:
 - legacy callable-result spelling;
 - a new foreign source file.
 
-Before staging Duon, run the repository-native checks over the exact changed
-paths:
+Before staging Duon, run the repository-native idiom check over the exact
+working-tree diff:
 
-    DUOGATEFILES="$(git ls-files -m '*.duo')" duo run scripts/idiomgate.duo
-    duo run scripts/semanticgate.duo
+    gate="$(mktemp -t duogate)" && trap 'rm -f "$gate"' EXIT
+    git diff -U0 -- '*.duo' > "$gate"
+    DUOGATEDIFF="$gate" duo run scripts/idiomgate.duo
 
-The pre-commit hook repeats the blocking gates. Do not suppress, bypass, weaken,
-or route around a finding. Safe formatting rewrites require proved semantic
-equivalence. Intent-sensitive findings require a semantic repair, not a regex
-rewrite.
+`scripts/semanticgate.duo` reads the staged index, so run it after staging or let
+the pre-commit hook run it. The hook repeats both blocking gates. Do not
+suppress, bypass, weaken, or route around a finding. Safe formatting rewrites
+require proved semantic equivalence. Intent-sensitive findings require a
+semantic repair, not a regex rewrite.
 
 Before writing a nontrivial Duon expression, answer:
 
