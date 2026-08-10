@@ -1,23 +1,31 @@
-# Duo bootstrap architecture (Pass 16)
+# Duon bootstrap contract
 
-This document describes the **honest** bootstrap strategy for Duo self-hosting.
-Machine-readable state: `duo catalog` → `pass16.bootstrap_dag`.
+`lib/compiler/bootstrap.duo` is the executable machine-readable authority. This
+document is its human projection. The immediate target is compiler B, not a
+sovereign backend.
 
 ## Current stage: S0
 
-**S0 (active):** Pinned Zig bootstrap via `mise` + `scripts/ci_zig_version.duo`.
-`zig build` produces `zig-out/bin/duo`, which is the host compiler (Zig implementation).
+**S0 (active):** the pinned Zig seed produces the host compiler.
 
 No Duo-built compiler binary exists in the production path yet.
+
+SHC-00 is executable: the seed compiler checks and runs
+`lib/compiler/bootstrap.duo` through the explicit C bootstrap path. The emitted
+translation contains zero `lua_Value`, `lua_invoke`, and `lua_require` markers.
+Its positive chain and two negative controls pass. This proves the contract,
+not compiler B. Direct ARM64 currently refuses its record signatures with
+`InvalidMainSignature`; backend sovereignty begins at SHC-15 and does not block
+the first B/C closure.
 
 ## Target chain
 
 | Stage | Input | Output | Proof |
 | --- | --- | --- | --- |
 | **S0** | Zig + repo source | Host `duo` binary | CI, unit tests, bench gates |
-| **S1** | S0 + canonical Duo compiler source | First Duo-built compiler | Semantic fingerprint vs S0-oracle |
-| **S2** | S1 + same source | Self-built compiler | Behavioral + test parity with S1 |
-| **S3** | S2 + same source | Third generation | Reproducibility bundle (optional binary identity) |
+| **S1 / B** | S0 + canonical Duon compiler source | First Duon-built compiler | Semantic fingerprint vs S0 oracle |
+| **S2 / C** | B + identical source | Self-built compiler | Semantic, diagnostic, and behavioral parity with B |
+| **S3** | C + identical source | Fixed-point candidate | Artifact comparison and reproducibility bundle |
 
 ## Trusted seed requirements
 
@@ -45,25 +53,26 @@ The seed must be:
 
 ## Bootstrap subset
 
-The minimum Duo subset required to compile the next compiler stage is a **staged
-capability level** of canonical Duo — not a permanent second language.
+The minimum Duon subset required to compile the next stage is a staged
+capability level of canonical Duon, not a permanent second language.
 
-Track supported syntax, descriptors, compile-time capabilities, native structures,
-runtime profile, backend capabilities, target, unsupported features, and migration plan
-in `src/pass16_catalog.zig` workstreams.
+The frozen compiler-critical basis is: bytes, views, strings, arenas, vectors,
+maps, interning, bitsets, source/span, filesystem read, and diagnostic output.
+`lib/compiler/bootstrap.duo` records the basis and the exact chain/evidence
+shape. Adding unrelated standard vocabulary does not advance this contract.
 
 ## Commands
 
-```bash
-duo catalog | rg pass16
-zig build pass16-gate
-duo run examples/pass16_m1_lexer_proof.duo
+```text
+duo check lib/compiler/bootstrap.duo
+duo run lib/compiler/bootstrap.duo
 ```
 
 ## Prohibited claims
 
 - "Self-hosted" when Duo code exists but is not on the production compile path
-- Silent fallback to generated C, Lua VM, or external compiler on the canonical path
+- Silent fallback. An explicit existing C/native bootstrap backend is allowed
+  for B and C, but it does not prove backend sovereignty.
 - Undocumented bootstrap binaries or unpinned dependencies
-
-See `(archived, deleted — git history)` for the full Pass 16 mission.
+- A B/C comparison built from different compiler source
+- File-count reduction presented as compiler authority transfer

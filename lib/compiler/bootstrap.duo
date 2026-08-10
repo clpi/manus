@@ -1,0 +1,126 @@
+-- The self-hosting chain and its acceptance evidence.
+--
+-- This file owns the bootstrap contract. It does not run compilers, choose a
+-- process API, or claim that a stage exists. Worlds will supply execution;
+-- these values state what an observed chain must prove.
+
+contract: {
+    seed: i64
+    first: i64
+    second: i64
+    third: i64
+    source: i64
+    backend: i64
+    semantic: bool
+    behavior: bool
+    diagnostic: bool
+    artifact: bool
+}
+
+basis: {
+    bytes: bool
+    view: bool
+    string: bool
+    arena: bool
+    vector: bool
+    map: bool
+    intern: bool
+    bitset: bool
+    source: bool
+    span: bool
+    read: bool
+    diagnostic: bool
+}
+
+accept: bool = (subject: contract)
+    linked = subject.seed > 0
+        and subject.first > 0
+        and subject.second > 0
+        and subject.third > 0
+        and subject.seed != subject.first
+        and subject.first != subject.second
+        and subject.second != subject.third
+    same = subject.source > 0 and subject.backend > 0
+    ready = subject.semantic
+        and subject.behavior
+        and subject.diagnostic
+        and subject.artifact
+    linked and same and ready
+
+complete: bool = (subject: basis)
+    subject.bytes
+        and subject.view
+        and subject.string
+        and subject.arena
+        and subject.vector
+        and subject.map
+        and subject.intern
+        and subject.bitset
+        and subject.source
+        and subject.span
+        and subject.read
+        and subject.diagnostic
+
+main: i64 = ()
+    candidate: contract = contract{
+        seed = 1
+        first = 2
+        second = 3
+        third = 4
+        source = 1
+        backend = 1
+        semantic = true
+        behavior = true
+        diagnostic = true
+        artifact = true
+    }
+    negative: contract = contract{
+        seed = 1
+        first = 2
+        second = 3
+        third = 4
+        source = 1
+        backend = 1
+        semantic = true
+        behavior = true
+        diagnostic = true
+        artifact = false
+    }
+    broken: contract = contract{
+        seed = 1
+        first = 1
+        second = 3
+        third = 4
+        source = 1
+        backend = 1
+        semantic = true
+        behavior = true
+        diagnostic = true
+        artifact = true
+    }
+    minimum: basis = basis{
+        bytes = true
+        view = true
+        string = true
+        arena = true
+        vector = true
+        map = true
+        intern = true
+        bitset = true
+        source = true
+        span = true
+        read = true
+        diagnostic = true
+    }
+    code = 0
+    if not candidate:accept()
+        code = 1
+    if negative:accept()
+        code = 2
+    if not minimum:complete()
+        code = 3
+    if broken:accept()
+        code = 4
+    if code == 0
+        print("bootstrap contract accepted")
+    code

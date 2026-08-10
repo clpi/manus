@@ -12,9 +12,10 @@ Move monotonically to:
 ```text
 current-canonical Duon source
 -> Duon-owned semantic identities and facts
--> demand-selected Duon realization
--> Duon-owned flow, allocation, encoding and linking
--> direct native compiler
+-> compiler B through the honest existing backend
+-> B compiles C from the identical compiler source
+-> B/C semantic and behavioral equivalence
+-> progressively Duon-owned realization and backend
 -> Duon Wasm faster than Wasmtime on equivalent semantics
 ```
 
@@ -27,8 +28,8 @@ superset, and Lua compatibility may not define Duon semantics or architecture.
 
 ## Current phase
 
-The language architecture is already specified. The work now is implementation
-convergence, deletion, direct execution, and proof. Do not start another pass,
+The language architecture is already specified. The work now is the minimum
+closed semantic kernel, compiler B, bootstrap closure, and proof. Do not start another pass,
 invent another semantic taxonomy, add surface syntax, or strengthen a bootstrap
 subsystem that the constitution requires Duon to replace.
 
@@ -55,35 +56,36 @@ Running the existing Zig bootstrap and its gates is validation, not permission
 to expand it. Retain old host implementations as differential oracles until the
 Duon replacement is proven, then delete them.
 
-## Vertical Priority
+## SHC Queue
 
-Work in this order unless a correctness regression blocks an earlier rung:
+Every implementation task belongs to one rung. Do not substitute another audit,
+corpus sweep, backend target, or tool surface for the earliest open rung.
 
-1. **Canonical source.** The implementation and its proof use current Duon,
-   pass the exact added-line gate, and introduce no `std.script`, namespace
-   authority, sentinel state, legacy callable face, or bridge vocabulary.
-2. **Semantic authority.** Source resolves stable relation, descriptor, subject,
-   world, value, and provenance identities in Duon. Backends do not rescan ASTs
-   or recover facts from textual names.
-3. **Demand and places.** Tables, packs, closures, strings, worlds, and compiler
-   facts remain values until observation demands representation. Bindings do not
-   become storage merely because a lowerer expects a local.
-4. **Realization.** The same identities reach flow, liveness, representation,
-   ABI and target selection. Qualifiers remain facts, not new opcode names.
-5. **Direct execution.** The Duon implementation runs through direct native
-   without `lua_Value`, generated C, an external compiler, or a hidden runtime.
-6. **Production dispatch.** The shipping compiler invokes the Duon authority;
-   the old implementation is only a differential oracle.
-7. **Bootstrap closure.** Reproduce S1 -> S2 -> S3 with artifact identity and
-   semantic equivalence, then delete the oracle path.
-8. **Wasm supremacy.** Ward uses the same value, demand, liveness, allocation,
-   encoding and provenance substrate. Optimize shared realization facts, never
-   a benchmark name or a Ward-only opcode kingdom.
+1. **SHC-00 bootstrap.** Freeze the minimum compiler-B subset and the B -> C
+   acceptance contract in `lib/compiler/bootstrap.duo`.
+2. **SHC-01 application.** Preserve relation, subject, arguments, result,
+   descriptor, world, witness, provenance, and demand identity.
+3. **SHC-02 evidence.** Make provenance and witnesses ordinary queryable Duon
+   facts so no consumer reconstructs them from syntax or names.
+4. **SHC-03 substrate.** Finish bytes, views, strings, arenas, vectors, maps,
+   interning, bitsets, source/span, filesystem read, and diagnostics. Nothing
+   outside this compiler-critical basis blocks B.
+5. **SHC-04 through SHC-10.** Move one thin production path through source,
+   lexer, generated grammar/parser, binding, graph construction, relation
+   resolution, and minimal lowering. Widen only after that path executes.
+6. **SHC-11 through SHC-14.** Build compiler B with the existing honest backend;
+   make B build C from identical source; prove semantic, diagnostic, behavioral,
+   and artifact equivalence; then retire Zig semantic owners in dependency order.
+7. **SHC-15 backend.** After B -> C, progressively transfer flow, allocation,
+   encoding, object emission, and linking into Duon.
+8. **Wasm supremacy.** Reuse the same value, demand, liveness, allocation,
+   encoding, and provenance substrate. Never create a Ward-only IR kingdom.
 
-The first useful SHC slice is the smallest real compiler workload that crosses
-every rung. A parser corpus needs demanded immutable tables and iteration; do
-not shrink the proof to avoid those semantics. A green C fallback is an oracle
-row, not direct or self-host evidence.
+The first useful SHC slice is the smallest real compiler path that makes B
+produce an executable. It may use the existing C/native bootstrap backend when
+that path is explicit and attributable. That is valid B evidence, not backend
+sovereignty. Do not shrink parser or semantic meaning merely to avoid tables,
+iteration, worlds, or application identity.
 
 ## Evidence Labels
 
