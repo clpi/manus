@@ -140,16 +140,16 @@ pub fn buildFromDnirFunction(
             }
 
             var callee_owned: ?[]const u8 = null;
-            var callee_stable: ?u64 = null;
+            var callee_stable: ?u64 = ins.relation;
             if (kind == .call and ins.callee.len > 0) {
                 callee_owned = try alloc.dupe(u8, ins.callee);
-                if (graph) |g| {
+                if (callee_stable == null) if (graph) |g| {
                     if (g.findFunc(ins.callee)) |cid| {
                         if (g.get(cid)) |cn| {
                             if (cn.stable_id) |sid| callee_stable = sid.hash;
                         }
                     }
-                }
+                };
             }
 
             try nodes.append(alloc, .{

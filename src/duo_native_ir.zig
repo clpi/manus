@@ -63,9 +63,7 @@ pub const BinOpTag = enum {
 };
 
 pub const Op = enum {
-    const_i64,
-    const_f64,
-    const_str,
+    @"const",
     const_req,
     load_local,
     store_local,
@@ -128,6 +126,10 @@ pub const Value = union(enum) {
 
 pub const Instr = struct {
     op: Op,
+    /// Stable semantic identities retained from the authoritative graph.
+    relation: ?u64 = null,
+    application: ?u64 = null,
+    value: ?u64 = null,
     result: ?u32 = null,
     lhs: Value = .void,
     rhs: Value = .void,
@@ -250,9 +252,7 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
                     .cmp,
                     .ret,
                     .ret_record,
-                    .const_i64,
-                    .const_f64,
-                    .const_str,
+                    .@"const",
                     .const_req,
                     .load_local,
                     .store_local,

@@ -359,6 +359,14 @@ pub const SemanticGraph = struct {
         return null;
     }
 
+    /// Result value produced by a checked application.
+    pub fn applicationResult(self: *const SemanticGraph, application: NodeId) ?NodeId {
+        for (self.edges.items) |edge| {
+            if (edge.kind == .result and edge.from.index == application.index) return edge.to;
+        }
+        return null;
+    }
+
     /// Checked application node for this exact source expression. The AST
     /// pointer is provenance only; callers receive the graph identity and use
     /// its relation/value edges from that point onward.

@@ -2307,18 +2307,30 @@ fn lowerSubjectCall(
         return lowerCall(ctx, try faceAsCall(ctx, expr), consumption);
     }
 
-    const relation_id = ctx.graph.applicationRelationForExpr(expr) orelse
+    const application_id = ctx.graph.applicationForExpr(expr) orelse
         return bailWith(@src(), "application-identity");
+    const relation_id = ctx.graph.applicationRelation(application_id) orelse return bail(@src());
+    const value_id = ctx.graph.applicationResult(application_id) orelse return bail(@src());
+    const application_node = ctx.graph.get(application_id) orelse return bail(@src());
     const relation = ctx.graph.get(relation_id) orelse return bail(@src());
+    const value = ctx.graph.get(value_id) orelse return bail(@src());
     const callee = relation.name orelse return bail(@src());
     const descriptor = ctx.graph.applicationDescriptorForExpr(expr) orelse return bail(@src());
+    const relation_identity = (relation.stable_id orelse return bail(@src())).hash;
+    const application_identity = (application_node.stable_id orelse return bail(@src())).hash;
+    const value_identity = (value.stable_id orelse return bail(@src())).hash;
 
     const args = try ctx.alloc.alloc(*Expr, mc.args.len + 1);
     args[0] = mc.obj;
     @memcpy(args[1..], mc.args);
 
     if (std.meta.activeTag(descriptor) == .f64) {
-        return lowerF64KernelCall(ctx, callee, args);
+        const lowered = try lowerF64KernelCall(ctx, callee, args);
+        const instruction = &ctx.instrs.items[ctx.instrs.items.len - 1];
+        instruction.relation = relation_identity;
+        instruction.application = application_identity;
+        instruction.value = value_identity;
+        return lowered;
     }
     switch (descriptor) {
         .any, .nil, .table_type, .@"struct" => return bailWith(@src(), "application-result"),
@@ -2327,11 +2339,26 @@ fn lowerSubjectCall(
 
     const arg0 = try scalarCallLhs(ctx, args, callee);
     if (consumption == .discard) {
-        try ctx.emit(.{ .op = .call_direct, .callee = callee, .lhs = arg0 });
+        try ctx.emit(.{
+            .op = .call_direct,
+            .relation = relation_identity,
+            .application = application_identity,
+            .value = value_identity,
+            .callee = callee,
+            .lhs = arg0,
+        });
         return .void;
     }
     const result = ctx.freshTemp();
-    try ctx.emit(.{ .op = .call_direct, .result = result, .callee = callee, .lhs = arg0 });
+    try ctx.emit(.{
+        .op = .call_direct,
+        .relation = relation_identity,
+        .application = application_identity,
+        .value = value_identity,
+        .result = result,
+        .callee = callee,
+        .lhs = arg0,
+    });
     return .{ .temp = result };
 }
 
@@ -3953,6 +3980,60 @@ test "dnir_lower: call result class comes from graph descriptor" {
     try std.testing.expect(saw_integer);
     try std.testing.expect(saw_string);
     try std.testing.expect(saw_length);
+}
+
+test "dnir_lower: checked subject call retains semantic identities" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\read: i64 = (subject: i64)
+        \\    subject
+        \\main: i64 = ()
+        \\    42:read()
+    ;
+    var lex = Lexer.init(src, "application.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var mod = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&mod);
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&mod, &checked, "application.duo");
+
+    var application_id: ?semantic_graph.NodeId = null;
+    for (graph.nodes.items, 0..) |node, i| {
+        if (node.kind != .call) continue;
+        const id = semantic_graph.NodeId{ .index = @intCast(i) };
+        if (graph.applicationRelation(id) != null) application_id = id;
+    }
+    const application = application_id orelse return error.TestExpectedEqual;
+    const relation = graph.applicationRelation(application) orelse return error.TestExpectedEqual;
+    const value = graph.applicationResult(application) orelse return error.TestExpectedEqual;
+    const application_hash = graph.get(application).?.stable_id.?.hash;
+    const relation_hash = graph.get(relation).?.stable_id.?.hash;
+    const value_hash = graph.get(value).?.stable_id.?.hash;
+
+    const module = try lowerModuleWithGraph(alloc, &mod, &graph);
+    var found = false;
+    for (module.functions) |function| {
+        for (function.blocks[0].instrs) |instruction| {
+            if (instruction.op != .call_direct or !std.mem.eql(u8, instruction.callee, "read")) continue;
+            found = true;
+            try std.testing.expectEqual(relation_hash, instruction.relation.?);
+            try std.testing.expectEqual(application_hash, instruction.application.?);
+            try std.testing.expectEqual(value_hash, instruction.value.?);
+        }
+    }
+    try std.testing.expect(found);
 }
 
 test "dnir_lower: bool result descriptor prevents integer interpolation" {

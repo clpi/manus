@@ -126,7 +126,7 @@ fn buildConstSlotMap(
     for (f.blocks) |b| {
         for (b.instrs) |ins| {
             const slot = switch (ins.op) {
-                .const_i64, .store_local => ins.result orelse continue,
+                .@"const", .store_local => ins.result orelse continue,
                 else => continue,
             };
             const gop = try defs.getOrPut(alloc, slot);
@@ -136,7 +136,8 @@ fn buildConstSlotMap(
 
     for (f.blocks) |b| {
         for (b.instrs) |ins| {
-            if (ins.op != .const_i64 and ins.op != .store_local) continue;
+            if (ins.op != .@"const" and ins.op != .store_local) continue;
+            if (ins.op == .@"const" and ins.ty != .i64) continue;
             if (ins.lhs != .i64) continue;
             const slot = ins.result orelse continue;
             if ((defs.get(slot) orelse 0) != 1) continue;
@@ -290,7 +291,7 @@ fn functionHasBinop(f: *const dnir.Function, op: dnir.BinOpTag) bool {
     return false;
 }
 
-/// Replace `call_direct callee()` with `const_i64` in `caller` when callee returns a constant.
+/// Replace a direct call with a constant realization when its result is known.
 pub fn applyConstReturnInline(
     alloc: std.mem.Allocator,
     caller: *dnir.Function,
@@ -311,9 +312,13 @@ pub fn applyConstReturnInline(
                 ins.result != null)
             {
                 try new_instrs.append(alloc, .{
-                    .op = .const_i64,
+                    .op = .@"const",
+                    .relation = ins.relation,
+                    .application = ins.application,
+                    .value = ins.value,
                     .result = ins.result,
                     .lhs = .{ .i64 = value },
+                    .ty = .i64,
                 });
                 block_changed = true;
                 continue;
@@ -334,7 +339,7 @@ pub fn applyConstReturnInline(
     return changed;
 }
 
-/// Replace a foldable integer `binop` with `const_i64` at `result_temp`.
+/// Replace a foldable integer application with a constant realization.
 pub fn applyConstBinopFusion(
     alloc: std.mem.Allocator,
     caller: *dnir.Function,
@@ -351,9 +356,13 @@ pub fn applyConstBinopFusion(
         for (block.instrs) |ins| {
             if (ins.op == .binop and ins.result == result_temp and ins.ty != .f64) {
                 try new_instrs.append(alloc, .{
-                    .op = .const_i64,
+                    .op = .@"const",
+                    .relation = ins.relation,
+                    .application = ins.application,
+                    .value = ins.value,
                     .result = result_temp,
                     .lhs = .{ .i64 = value },
+                    .ty = .i64,
                 });
                 block_changed = true;
                 continue;
@@ -431,7 +440,7 @@ fn tempUseCount(f: dnir.Function, slot: u32) u32 {
     return n;
 }
 
-/// Remove `const_i64` producers whose result temp has zero uses.
+/// Remove integer constant producers whose result temp has zero uses.
 pub fn pruneDeadConstProducers(
     alloc: std.mem.Allocator,
     caller: *dnir.Function,
@@ -444,7 +453,7 @@ pub fn pruneDeadConstProducers(
         var block_changed = false;
 
         for (block.instrs) |ins| {
-            if (ins.op == .const_i64) {
+            if (ins.op == .@"const" and ins.ty == .i64) {
                 const rt = ins.result orelse {
                     try new_instrs.append(alloc, ins);
                     continue;
@@ -533,12 +542,26 @@ test "region_transform: inline const-return helper at region call site" {
 
     const main_before = findFunctionMut(&m, "main") orelse return error.TestExpectedEqual;
     try std.testing.expect(functionHasCallTo(main_before, "helper"));
+    const mutable_blocks: []dnir.Block = @constCast(main_before.blocks);
+    const mutable_instructions: []dnir.Instr = @constCast(mutable_blocks[0].instrs);
+    for (mutable_instructions) |*instruction| {
+        if (instruction.op != .call_direct) continue;
+        instruction.relation = 11;
+        instruction.application = 22;
+        instruction.value = 33;
+    }
 
     const applied = try applyModuleConstReturnInlines(alloc, &m, regions);
     try std.testing.expectEqual(@as(u32, 1), applied);
 
     const main_after = findFunctionMut(&m, "main") orelse return error.TestExpectedEqual;
     try std.testing.expect(!functionHasCallTo(main_after, "helper"));
+    for (main_after.blocks[0].instrs) |instruction| {
+        if (instruction.op != .@"const") continue;
+        try std.testing.expectEqual(@as(?u64, 11), instruction.relation);
+        try std.testing.expectEqual(@as(?u64, 22), instruction.application);
+        try std.testing.expectEqual(@as(?u64, 33), instruction.value);
+    }
 }
 
 test "region_transform: fuse const binop via region schedule" {
@@ -620,7 +643,7 @@ test "region_transform: fuse binop over const local slots" {
     try std.testing.expect(!functionHasBinop(main_after, .add));
 }
 
-test "region_transform: prune orphaned const_i64 temps" {
+test "region_transform: prune orphaned constant temps" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -631,9 +654,9 @@ test "region_transform: prune orphaned const_i64 temps" {
         .blocks = &.{
             .{
                 .instrs = &.{
-                    .{ .op = .const_i64, .result = 1, .lhs = .{ .i64 = 10 } },
-                    .{ .op = .const_i64, .result = 2, .lhs = .{ .i64 = 32 } },
-                    .{ .op = .const_i64, .result = 3, .lhs = .{ .i64 = 42 } },
+                    .{ .op = .@"const", .result = 1, .lhs = .{ .i64 = 10 }, .ty = .i64 },
+                    .{ .op = .@"const", .result = 2, .lhs = .{ .i64 = 32 }, .ty = .i64 },
+                    .{ .op = .@"const", .result = 3, .lhs = .{ .i64 = 42 }, .ty = .i64 },
                     .{ .op = .ret, .lhs = .{ .temp = 3 } },
                 },
             },
@@ -643,7 +666,7 @@ test "region_transform: prune orphaned const_i64 temps" {
     const pruned = try pruneDeadConstProducers(alloc, &f);
     try std.testing.expectEqual(@as(u32, 2), pruned);
     try std.testing.expectEqual(@as(usize, 2), f.blocks[0].instrs.len);
-    try std.testing.expect(f.blocks[0].instrs[0].op == .const_i64);
+    try std.testing.expect(f.blocks[0].instrs[0].op == .@"const");
     try std.testing.expectEqual(@as(i64, 42), f.blocks[0].instrs[0].lhs.i64);
     try std.testing.expect(f.blocks[0].instrs[1].op == .ret);
 }

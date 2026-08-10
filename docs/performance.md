@@ -12902,6 +12902,12 @@ kernels. Benchmark-name recognition and a WASM-only value ontology are rejected.
   constructing an AST-only graph at the backend boundary.
 - Canonical subject lowering queries the exact application identity. It no
   longer synthesizes an operation-first call and resolves the relation again.
+- DNIR now retains stable relation, application and result-value identities on
+  the checked subject-call realization. Region construction consumes that
+  relation identity before its legacy callee-name bridge.
+- `const_i64`, `const_f64` and `const_str` are one `const` realization selected
+  by the value descriptor. Constant-return and constant-fold transforms retain
+  semantic lineage when they select that realization.
 
 ### Performance scope
 
@@ -12919,7 +12925,8 @@ no boxed `lua_Value` path and no C fallback into the proof.
 - `DUO_NATIVE_DIAG=1 DUO_DNIR_TRACE=1 duo run --backend=direct
   examples/shc/application.duo` — pass, exit 0
 - `scripts/idiomgate.duo` on the focused diff — 0 findings, 20/20 controls
-- `zig build unit-test --summary all` — 1157/1160; the same three live-tree
+- `zig build unit-test --summary all` — 1158/1161; both new identity/lineage
+  controls pass, and the same three live-tree
   failures remain in parser interpolation, native register pressure and
   relation derivation
 

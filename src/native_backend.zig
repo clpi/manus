@@ -1601,30 +1601,45 @@ const Arm64Compiler = struct {
         branch_patches: *std.ArrayList(DnirBranchPatch),
     ) Error!void {
         switch (ins.op) {
-            .const_i64, .const_req => {
+            .@"const" => switch (ins.ty) {
+                .f64 => {
+                    const d = try self.allocFpReg();
+                    const val = switch (ins.lhs) {
+                        .f64 => |v| v,
+                        else => return refuse(@src()),
+                    };
+                    try self.emitFmovImmFp(d, val);
+                    if (ins.result) |t| try temps.put(self.alloc, t, d);
+                    try self.markFpTemp(ins.result);
+                },
+                .str => {
+                    const reg = try self.allocReg();
+                    const s = switch (ins.lhs) {
+                        .str => |v| v,
+                        else => return refuse(@src()),
+                    };
+                    const sym = try self.internString(s);
+                    try self.emitAdrpAdd(reg, sym);
+                    if (ins.result) |t| try temps.put(self.alloc, t, reg);
+                },
+                else => {
+                    if (!ins.ty.is_integer()) return refuse(@src());
+                    const reg = try self.allocReg();
+                    const val = switch (ins.lhs) {
+                        .i64 => |v| v,
+                        else => return refuse(@src()),
+                    };
+                    try self.emitMovImm(reg, val);
+                    if (ins.result) |t| try temps.put(self.alloc, t, reg);
+                },
+            },
+            .const_req => {
                 const reg = try self.allocReg();
                 const val: i64 = switch (ins.lhs) {
                     .i64 => |v| v,
-                    else => if (ins.op == .const_req) ins.lhs.i64 else return refuse(@src()),
-                };
-                try self.emitMovImm(reg, val);
-                if (ins.result) |t| try temps.put(self.alloc, t, reg);
-            },
-            .const_f64 => {
-                const d = try self.allocFpReg();
-                const val: f64 = switch (ins.lhs) {
-                    .f64 => |v| v,
                     else => return refuse(@src()),
                 };
-                try self.emitFmovImmFp(d, val);
-                if (ins.result) |t| try temps.put(self.alloc, t, d);
-                try self.markFpTemp(ins.result);
-            },
-            .const_str => {
-                const reg = try self.allocReg();
-                const s = ins.lhs.str;
-                const sym = try self.internString(s);
-                try self.emitAdrpAdd(reg, sym);
+                try self.emitMovImm(reg, val);
                 if (ins.result) |t| try temps.put(self.alloc, t, reg);
             },
             .fp_mov_arg => {
