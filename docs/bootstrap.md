@@ -10,20 +10,17 @@ sovereign backend.
 
 No Duo-built compiler binary exists in the production path yet.
 
-SHC-00 is executable: the seed compiler checks and runs
-`lib/compiler/bootstrap.duo` through the explicit C bootstrap path. The emitted
-translation contains zero `lua_Value`, `lua_invoke`, and `lua_require` markers.
-Its positive chain and two negative controls pass. This proves the contract,
-not compiler B. Direct ARM64 currently refuses its record signatures with
-`InvalidMainSignature`; backend sovereignty begins at SHC-15 and does not block
-the first B/C closure.
+SHC-00 supplies an executable structural verifier in
+`lib/compiler/bootstrap.duo`. Its synthetic controls validate lineage and
+parity relationships only; they neither authenticate the supplied identities
+nor observe a compiler run. A real bootstrap command must eventually supply
+graph-minted identities, witnesses, provenance, and observations from an
+execution world before the contract can accept B or C.
 
-SHC-01 is executable in `lib/compiler/application.duo`. One application retains
-semantic, content, and incarnation identity plus its relation, subject,
-argument pack, result, descriptor facts, world, effects, witness, provenance,
-and demand. Its controls prove that content reuse does not collapse semantic
-identity, a content revision preserves semantic identity, and missing lineage
-is rejected.
+`lib/compiler/application.duo` states the identity and projection shapes
+required by SHC-01. It contains no synthetic proof. Production authority begins
+when checked application identities survive the graph, DNIR, realization, and
+machine lineage without being reconstructed from source names.
 
 ## Target chain
 
@@ -65,8 +62,19 @@ capability level of canonical Duon, not a permanent second language.
 
 The frozen compiler-critical basis is: bytes, views, strings, arenas, vectors,
 maps, interning, bitsets, source/span, filesystem read, and diagnostic output.
-`lib/compiler/bootstrap.duo` records the basis and the exact chain/evidence
-shape. Adding unrelated standard vocabulary does not advance this contract.
+`lib/compiler/bootstrap.duo` records the required capability identities and the
+exact chain/evidence shape. A capability row requires a relation, descriptor,
+and witness identity; the file does not claim that production reachability has
+already been observed. Adding unrelated standard vocabulary does not advance
+this contract.
+
+Future B/C acceptance requires two distinct application and output
+incarnations, the seed as B's exact producer, B as C's exact producer,
+identical source content, the same backend and execution-world content, and
+semantic, behavioral, and diagnostic observations with witness and provenance
+bound to each application. The structural controls check those relationships,
+not the authenticity of their synthetic identities. B and C may have different
+artifact content; binary identity is not required for B-to-C acceptance.
 
 ## Commands
 
@@ -74,7 +82,6 @@ shape. Adding unrelated standard vocabulary does not advance this contract.
 duo check lib/compiler/bootstrap.duo
 duo run lib/compiler/bootstrap.duo
 duo check lib/compiler/application.duo
-duo run lib/compiler/application.duo
 ```
 
 ## Prohibited claims
@@ -85,3 +92,4 @@ duo run lib/compiler/application.duo
 - Undocumented bootstrap binaries or unpinned dependencies
 - A B/C comparison built from different compiler source
 - File-count reduction presented as compiler authority transfer
+- Synthetic verifier controls presented as observed bootstrap evidence

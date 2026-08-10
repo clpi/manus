@@ -1,19 +1,18 @@
--- One semantic application and the identities it retains.
+-- Structural schema for one semantic application.
 --
--- Every reference is a semantic identity minted by the graph. Its number is
--- not a source offset, storage slot, opcode, or backend-local value number.
--- Arguments and facts remain identities here because their native containers
--- belong to the SHC-03 substrate; application must not choose their layout.
+-- This file declares the information a production graph must mint and retain.
+-- It does not create identities or prove that the current compiler carries
+-- them. Arguments and facts remain identities so their native containers can
+-- move to the compiler substrate without changing application meaning.
 
 identity: {
-    value: i64
-    known: bool
+    meaning: i64
+    content: i64
+    incarnation: i64
 }
 
 application: {
-    meaning: identity
-    content: identity
-    incarnation: identity
+    identity: identity
     relation: identity
     subject: identity
     arguments: identity
@@ -27,174 +26,14 @@ application: {
     demand: identity
 }
 
-instruction: {
-    relation: identity
+projection: {
     application: identity
+    relation: identity
     subject: identity
     operands: identity
     result: identity
+    descriptor: identity
     facts: identity
+    demand: identity
     provenance: identity
 }
-
-validate: bool = (subject: application)
-    subject.meaning.known
-        and subject.content.known
-        and subject.incarnation.known
-        and subject.relation.known
-        and subject.subject.known
-        and subject.arguments.known
-        and subject.result.known
-        and subject.descriptor.known
-        and subject.facts.known
-        and subject.world.known
-        and subject.effects.known
-        and subject.witness.known
-        and subject.provenance.known
-        and subject.demand.known
-
-realize: instruction = (subject: application)
-    instruction{
-        relation = subject.relation
-        application = subject.meaning
-        subject = subject.subject
-        operands = subject.arguments
-        result = subject.result
-        facts = subject.facts
-        provenance = subject.provenance
-    }
-
-main: i64 = ()
-    meaning: identity = identity{ value = 0, known = true }
-    content: identity = identity{ value = 1, known = true }
-    incarnation: identity = identity{ value = 2, known = true }
-    relation: identity = identity{ value = 3, known = true }
-    subject: identity = identity{ value = 4, known = true }
-    arguments: identity = identity{ value = 5, known = true }
-    result: identity = identity{ value = 6, known = true }
-    descriptor: identity = identity{ value = 7, known = true }
-    facts: identity = identity{ value = 8, known = true }
-    world: identity = identity{ value = 9, known = true }
-    effects: identity = identity{ value = 10, known = true }
-    witness: identity = identity{ value = 11, known = true }
-    provenance: identity = identity{ value = 12, known = true }
-    demand: identity = identity{ value = 13, known = true }
-    revision: identity = identity{ value = 14, known = true }
-    occurrence: identity = identity{ value = 15, known = true }
-    peer: identity = identity{ value = 16, known = true }
-    instance: identity = identity{ value = 17, known = true }
-    vector: identity = identity{ value = 18, known = true }
-    trace: identity = identity{ value = 19, known = true }
-    unknown: identity = identity{ value = 0, known = false }
-    candidate: application = application{
-        meaning = meaning
-        content = content
-        incarnation = incarnation
-        relation = relation
-        subject = subject
-        arguments = arguments
-        result = result
-        descriptor = descriptor
-        facts = facts
-        world = world
-        effects = effects
-        witness = witness
-        provenance = provenance
-        demand = demand
-    }
-    revised: application = application{
-        meaning = meaning
-        content = revision
-        incarnation = occurrence
-        relation = relation
-        subject = subject
-        arguments = arguments
-        result = result
-        descriptor = descriptor
-        facts = vector
-        world = world
-        effects = effects
-        witness = witness
-        provenance = trace
-        demand = demand
-    }
-    twin: application = application{
-        meaning = peer
-        content = content
-        incarnation = instance
-        relation = relation
-        subject = subject
-        arguments = arguments
-        result = result
-        descriptor = descriptor
-        facts = facts
-        world = world
-        effects = effects
-        witness = witness
-        provenance = provenance
-        demand = demand
-    }
-    broken: application = application{
-        meaning = meaning
-        content = content
-        incarnation = incarnation
-        relation = relation
-        subject = subject
-        arguments = arguments
-        result = result
-        descriptor = descriptor
-        facts = facts
-        world = world
-        effects = effects
-        witness = unknown
-        provenance = provenance
-        demand = demand
-    }
-    realized: instruction = candidate:realize()
-    alternate: instruction = revised:realize()
-    code = 0
-    if not candidate:validate()
-        code = 1
-    if not revised:validate()
-        code = 2
-    if candidate.meaning.value != revised.meaning.value
-        code = 3
-    if candidate.content.value == revised.content.value
-        code = 4
-    if not twin:validate()
-        code = 5
-    if candidate.content.value != twin.content.value
-        code = 6
-    if candidate.meaning.value == twin.meaning.value
-        code = 7
-    if broken:validate()
-        code = 8
-    if realized.relation.value != candidate.relation.value
-        code = 9
-    if realized.application.value != candidate.meaning.value
-        code = 10
-    if realized.subject.value != candidate.subject.value
-        code = 11
-    if realized.operands.value != candidate.arguments.value
-        code = 12
-    if realized.result.value != candidate.result.value
-        code = 13
-    if realized.facts.value != candidate.facts.value
-        code = 14
-    if realized.provenance.value != candidate.provenance.value
-        code = 15
-    if alternate.relation.value != realized.relation.value
-        code = 16
-    if alternate.application.value != realized.application.value
-        code = 17
-    if alternate.facts.value != revised.facts.value
-        code = 18
-    if alternate.facts.value == realized.facts.value
-        code = 19
-    if alternate.provenance.value != revised.provenance.value
-        code = 20
-    if alternate.provenance.value == realized.provenance.value
-        code = 21
-    if code == 0
-        print("application realization accepted")
-    code
