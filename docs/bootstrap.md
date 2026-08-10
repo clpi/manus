@@ -1,8 +1,9 @@
 # Duon bootstrap contract
 
-`lib/compiler/bootstrap.duo` is the executable machine-readable authority. This
-document is its human projection. The immediate target is compiler B, not a
-sovereign backend.
+`lib/compiler/bootstrap.duo` is the executable machine-readable structural
+candidate. This document is its human projection. It is not bootstrap evidence
+or production authority. The immediate target is compiler B, not a sovereign
+backend.
 
 ## Current stage: S0
 
@@ -60,12 +61,13 @@ The seed must be:
 The minimum Duon subset required to compile the next stage is a staged
 capability level of canonical Duon, not a permanent second language.
 
-The frozen compiler-critical basis is: bytes, views, strings, arenas, vectors,
-maps, interning, bitsets, source/span, filesystem read, and diagnostic output.
-`lib/compiler/bootstrap.duo` records the required capability identities and the
-exact chain/evidence shape. A capability row requires a relation, descriptor,
-and witness identity; the file does not claim that production reachability has
-already been observed. Adding unrelated standard vocabulary does not advance
+The candidate compiler-critical basis is: bytes, views, strings, arenas,
+vectors, maps, interning, bitsets, source/span, filesystem read, and diagnostic
+output. `lib/compiler/bootstrap.duo` records a relation, descriptor, and witness
+identity for each candidate row plus the chain/evidence shape. That is not yet
+an exact frozen capability contract: filesystem read and diagnostic output
+still need their subject, world, and effect identities, and no row has observed
+production reachability. Adding unrelated standard vocabulary does not advance
 this contract.
 
 Future B/C acceptance requires two distinct application and output
