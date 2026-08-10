@@ -18,6 +18,13 @@ not compiler B. Direct ARM64 currently refuses its record signatures with
 `InvalidMainSignature`; backend sovereignty begins at SHC-15 and does not block
 the first B/C closure.
 
+SHC-01 is executable in `lib/compiler/application.duo`. One application retains
+semantic, content, and incarnation identity plus its relation, subject,
+argument pack, result, descriptor facts, world, effects, witness, provenance,
+and demand. Its controls prove that content reuse does not collapse semantic
+identity, a content revision preserves semantic identity, and missing lineage
+is rejected.
+
 ## Target chain
 
 | Stage | Input | Output | Proof |
@@ -66,6 +73,8 @@ shape. Adding unrelated standard vocabulary does not advance this contract.
 ```text
 duo check lib/compiler/bootstrap.duo
 duo run lib/compiler/bootstrap.duo
+duo check lib/compiler/application.duo
+duo run lib/compiler/application.duo
 ```
 
 ## Prohibited claims
