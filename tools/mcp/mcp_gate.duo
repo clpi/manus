@@ -29,6 +29,7 @@
 -- proves the coordination lock by making it REFUSE — a lock that only ever
 -- says yes is not a lock, and the gate would rather see the "no".
 
+shared = req "tools.mcp.duo_shared"
 
 root = std.os.getenv("DUO_ROOT")
 if root == nil or root == ""
@@ -103,6 +104,20 @@ main = (): i64
     std.fs.mkdirall(work)
     io.write("mcp-gate: the MCP servers must SERVE, not merely compile\n")
 
+    capturegood = shared.capture("printf capturegood")
+    if capturegood.status ~= 0 or not capturegood.passed or not has(capturegood.output, "capturegood")
+        report(false, "process capture preserves success", "status " .. capturegood.status:to(str))
+        fails = fails + 1
+    else
+        report(true, "process capture preserves success", "")
+
+    capturebad = shared.capture("sh -c 'printf capturebad; exit 7'")
+    if capturebad.status ~= 7 or capturebad.passed or not has(capturebad.output, "capturebad")
+        report(false, "process capture preserves failure", "status " .. capturebad.status:to(str))
+        fails = fails + 1
+    else
+        report(true, "process capture preserves failure", "")
+
     -- ---------------------------------------------------------------
     -- duo-bench: handshake, exact tool census, named coordination tools,
     -- and a VALUE round trip through the file-claim lock.
@@ -114,6 +129,15 @@ main = (): i64
     -- one names a directory that does not exist and never will, so the probe
     -- can never collide with a real session's claim.
     probe = ".mcpgate/probe"
+    benchrefuse = std.json.encode({
+        jsonrpc = "2.0",
+        id = 9,
+        method = "tools/call",
+        params = {
+            name = "duo_bench_regressions",
+            arguments = { suite = "control" },
+        },
+    })
     breq = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n"
         .. "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\n"
         .. "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_dev_claim_acquire\",\"arguments\":{\"owner\":\"mcpgate\",\"file\":\""
@@ -124,6 +148,7 @@ main = (): i64
         .. "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_dev_claim_release\",\"arguments\":{\"owner\":\"mcpgate\",\"file\":\""
         .. probe .. "\"}}}\n"
         .. "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_coordination_read\",\"arguments\":{}}}\n"
+        .. benchrefuse .. "\n"
     bout = drive(bench, "bench", breq)
 
     if not has(bout, "\"protocolVersion\":\"2024-11-05\"")
@@ -220,6 +245,15 @@ main = (): i64
     else
         report(true, "duo_coordination_read answers", "")
     end
+
+    if not has(bout, "\"id\":9")
+        report(false, "duo_bench_regressions answers", "no response for id 9")
+        fails = fails + 1
+    elseif not has(bout, "benchmark proof supports only the release bench suite")
+        report(false, "duo_bench_regressions rejects unsupported suites", "handler did not return its fail-closed result")
+        fails = fails + 1
+    else
+        report(true, "duo_bench_regressions rejects unsupported suites without running a benchmark", "")
 
     -- ---------------------------------------------------------------
     -- duo-lsp

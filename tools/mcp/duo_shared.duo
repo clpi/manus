@@ -176,7 +176,7 @@ capture: any = (cmd: str)
         full = lockprefix .. cmd
     end
     out = std.proc.capture(full .. " 2>&1; echo \"duoexit:$?\"")
-    mark = "\nduoexit:"
+    mark = "duoexit:"
     raw = out
     at: i64 = 0
     i: i64 = 1
@@ -188,7 +188,10 @@ capture: any = (cmd: str)
     out = raw
     if at > 0
         status = raw:sub(at + #mark):to(i64)
-        out = raw:sub(1, at - 1)
+        if at == 1
+            out = ""
+        else
+            out = raw:sub(1, at - 1)
     { status = status, passed = status == 0, output = out }
 
 -- === DOCUMENT ENVELOPE (Pass 117 §0g / H-8 partial repair) ===
