@@ -2032,6 +2032,7 @@ pub const CodeGen = struct {
             if (self.subjectRelation(mc.method, mc.obj)) |resolved| {
                 return self.resolve_type(contract_ret(&resolved.decl.func));
             }
+            if (self.probeSubjectRelationType(mc.method, mc.obj, mc.args.len)) |t| return t;
             if (self.static_dispatch_type_for_expr(mc.obj, mc.method)) |_| {
                 if (std.mem.eql(u8, mc.method, "increment") or
                     std.mem.eql(u8, mc.method, "decrement") or
@@ -3389,6 +3390,15 @@ pub const CodeGen = struct {
 
     pub fn can_emit_native_scalar_module(self: *CodeGen, mod: *const ast.Module) bool {
         if (native_diag) std.debug.print("[native-diag] CALLED duo_mode={} target={s} load={} lib={} test={} bench={}\n", .{ self.duo_mode, self.target, self.load_chunk, self.lib_mode, self.test_mode, self.bench_mode });
+        self.current_module = mod;
+        self.collect_req_module_bindings(mod) catch {
+            native_diag_fail("module-bindings");
+            return nofit(@src());
+        };
+        self.noteSubjectDescriptors(mod) catch {
+            native_diag_fail("subject-descriptors");
+            return nofit(@src());
+        };
         // Pass 11 WP-01: bench_mode no longer forces boxing by default.
         // Only --bench-backend=c-dynamic explicitly selects the boxed path.
         if (self.bench_mode and self.bench_backend == .c_dynamic) {
@@ -3465,15 +3475,36 @@ pub const CodeGen = struct {
         for (mod.body.stmts) |*stmt| {
             switch (stmt.*) {
                 .func_decl => |fd| {
-                    if (fd.path.len != 1) return nofit(@src());
-                    if (fd.func.vararg or fd.func.vararg_name != null) return nofit(@src());
-                    if (fd.func.is_async) return nofit(@src());
+                    if (fd.path.len != 1) {
+                        native_diag_fail("func-path");
+                        return nofit(@src());
+                    }
+                    if (fd.func.vararg or fd.func.vararg_name != null) {
+                        native_diag_fail("func-vararg");
+                        return nofit(@src());
+                    }
+                    if (fd.func.is_async) {
+                        native_diag_fail("func-async");
+                        return nofit(@src());
+                    }
                     // Test/bench/debug/trace directives require the full runtime.
-                    if (@import("directives.zig").attrsMarkTest(fd.attributes)) return nofit(@src());
-                    if (@import("directives.zig").attrsWantBench(fd.attributes)) return nofit(@src());
-                    if (@import("directives.zig").attrsHaveDebug(fd.attributes)) return nofit(@src());
+                    if (@import("directives.zig").attrsMarkTest(fd.attributes)) {
+                        native_diag_fail("func-test");
+                        return nofit(@src());
+                    }
+                    if (@import("directives.zig").attrsWantBench(fd.attributes)) {
+                        native_diag_fail("func-bench");
+                        return nofit(@src());
+                    }
+                    if (@import("directives.zig").attrsHaveDebug(fd.attributes)) {
+                        native_diag_fail("func-debug");
+                        return nofit(@src());
+                    }
                     // Allow closures and methods — they compile to C functions.
-                    if (fd.func.type_params != null) return nofit(@src());
+                    if (fd.func.type_params != null) {
+                        native_diag_fail("func-type-params");
+                        return nofit(@src());
+                    }
                     if (!self.type_expr_is_native_scalar(contract_ret(&fd.func))) {
                         // The tag has to name what the PREDICATE saw, not what
                         // the source spells. `contract_ret` answers `.inferred`
@@ -3490,7 +3521,10 @@ pub const CodeGen = struct {
                         return nofit(@src());
                     }
                     for (fd.func.params) |param| {
-                        if (param.default_val != null) return nofit(@src());
+                        if (param.default_val != null) {
+                            native_diag_fail("param-default");
+                            return nofit(@src());
+                        }
                         if (!self.type_expr_is_native_scalar(param.typ)) {
                             native_diag_fail_fmt("param-type:{s}", .{typeLabel(param.typ)});
                             return nofit(@src());
@@ -4127,6 +4161,14 @@ pub const CodeGen = struct {
             },
             .assign => |as| blk: {
                 if (as.targets.len != as.values.len) break :blk false;
+                if (as.targets.len == 1 and as.values.len == 1 and as.targets[0].* == .name) {
+                    var pathbuf: [512]u8 = undefined;
+                    if (self.moduleBindingPath(as.values[0], &pathbuf)) |path| {
+                        if (self.req_module_is_native_direct(path)) break :blk true;
+                        native_diag_fail("assign-module-nonnative");
+                        break :blk false;
+                    }
+                }
                 for (as.targets) |target| {
                     if (!self.lvalue_is_native_scalar(target)) {
                         native_diag_fail("assign-target");
@@ -4137,6 +4179,12 @@ pub const CodeGen = struct {
                     if (req_path_from_expr(value)) |path| {
                         if (self.req_module_is_native_direct(path)) continue;
                         native_diag_fail("assign-req-nonnative");
+                        break :blk false;
+                    }
+                    var pathbuf: [512]u8 = undefined;
+                    if (self.moduleBindingPath(value, &pathbuf)) |path| {
+                        if (self.req_module_is_native_direct(path)) continue;
+                        native_diag_fail("assign-module-nonnative");
                         break :blk false;
                     }
                     const hint: RT = if (i < as.targets.len and as.targets[i].* == .name)
@@ -5114,6 +5162,7 @@ pub const CodeGen = struct {
                         var tbuf: [256]u8 = undefined;
                         break :fd self.func_decls.get(self.mangled_name(mc.method, &tbuf)) != null;
                     } or self.subjectRelation(mc.method, mc.obj) != null or
+                    self.probeSubjectRelationType(mc.method, mc.obj, mc.args.len) != null or
                     // law.host.projection { projects = to, authority = false }
                     // gap[082] is the deletion gate.
                     (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1);
@@ -5731,6 +5780,7 @@ pub const CodeGen = struct {
         try self.populate_alias_defs(mod);
         try self.collect_comptime_only_funcs(mod);
         try self.populate_record_aliases(mod);
+        try self.noteSubjectDescriptors(mod);
         try self.populate_foreign_aliases();
         try self.populate_enum_defs(mod);
         try self.populate_func_bodies(mod);
@@ -6427,6 +6477,14 @@ pub const CodeGen = struct {
                 // benchmark compiled and the typed migration did not.
                 if (!self.tu_needs_lua_runtime and gt == .any and
                     self.req_module_bindings.contains(key.*)) continue;
+                // A home used only to reach a native module is navigation, not
+                // a runtime value.  Sema records the root name as a global
+                // because the source expression starts there (`std.a.b`), but
+                // native relation resolution consumes the whole path at compile
+                // time.  Materializing that root would reintroduce lua_Value
+                // into an otherwise runtime-free translation unit.
+                if (!self.tu_needs_lua_runtime and gt == .any and
+                    self.isAmbientModuleRoot(key.*)) continue;
                 if (self.current_module_cname.len > 0) {
                     self.p("static ", .{});
                     self.typ(gt);
@@ -7321,7 +7379,7 @@ pub const CodeGen = struct {
         }
     }
 
-    fn noteSubjectDescriptors(self: *CodeGen, mod: *ast.Module) E!void {
+    fn noteSubjectDescriptors(self: *CodeGen, mod: *const ast.Module) E!void {
         for (mod.body.stmts) |*stmt| {
             if (stmt.* != .alias_def) continue;
             const alias = &stmt.alias_def;
@@ -12744,7 +12802,8 @@ pub const CodeGen = struct {
                     if (self.duo_mode and tgt.* == .name) {
                         const name = tgt.name.ident;
                         if (i < as.values.len) {
-                            if (req_path_from_expr(as.values[i])) |path| {
+                            var pathbuf: [512]u8 = undefined;
+                            if (self.moduleBindingPath(as.values[i], &pathbuf)) |path| {
                                 try self.try_register_req_binding(name, path);
                                 if (self.req_module_skips_lua_binding(path)) {
                                     try self.mark_req_native_direct(name);
@@ -22668,22 +22727,11 @@ pub const CodeGen = struct {
                 for (mc.args) |a| try self.collect_require_names(a, names);
             },
             .field => |f| {
-                if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "std")) {
-                    var buf: [256]u8 = undefined;
-                    const mod_name = std.fmt.bufPrint(&buf, "std.{s}", .{f.field}) catch unreachable;
-                    try names.append(self.alloc, try self.alloc.dupe(u8, mod_name));
-                    try names.append(self.alloc, try self.alloc.dupe(u8, "std"));
-                } else if (f.obj.* == .field) {
-                    // A nested ambient path names a module at a depth the
-                    // two-level case above cannot see: `std.net.url` lives one
-                    // hop below `std.net`. Offer the whole dotted path at every
-                    // hop and let module resolution keep the one that names a
-                    // real file — an unresolvable name is skipped downstream.
-                    var dbuf: [512]u8 = undefined;
-                    if (ambient_dotted_path(expr, &dbuf)) |dotted| {
-                        if (std.mem.startsWith(u8, dotted, "std.")) {
-                            try names.append(self.alloc, try self.alloc.dupe(u8, dotted));
-                        }
+                var pathbuf: [512]u8 = undefined;
+                if (ambient_dotted_path(expr, &pathbuf)) |path| {
+                    if (std.mem.startsWith(u8, path, "std.") and self.find_module_file_for_req(path) != null) {
+                        try names.append(self.alloc, try self.alloc.dupe(u8, path));
+                        return;
                     }
                 }
                 try self.collect_require_names(f.obj, names);
@@ -23341,9 +23389,41 @@ pub const CodeGen = struct {
 
     fn moduleBindingPath(self: *CodeGen, expr: anytype, buf: []u8) ?[]const u8 {
         if (req_path_from_expr(expr)) |path| return path;
+        // In-memory unit modules have no filesystem service attached to the
+        // generator.  An ambient field chain there is an ordinary expression,
+        // not evidence of a resolvable module home.
+        if (self.src_path.len == 0) return null;
         const path = ambient_dotted_path(expr, buf) orelse return null;
         if (self.find_module_file_for_req(path) == null) return null;
         return path;
+    }
+
+    fn isAmbientModuleRoot(self: *CodeGen, name: []const u8) bool {
+        const mod = self.current_module orelse return false;
+        for (mod.body.stmts) |*stmt| {
+            switch (stmt.*) {
+                .local_decl => |*decl| for (decl.inits) |value| {
+                    if (self.valueHasAmbientModuleRoot(value, name)) return true;
+                },
+                .assign => |*assign| for (assign.values) |value| {
+                    if (self.valueHasAmbientModuleRoot(value, name)) return true;
+                },
+                .global_decl => |*decl| for (decl.inits) |value| {
+                    if (self.valueHasAmbientModuleRoot(value, name)) return true;
+                },
+                else => {},
+            }
+        }
+        return false;
+    }
+
+    fn valueHasAmbientModuleRoot(self: *CodeGen, value: anytype, name: []const u8) bool {
+        var pathbuf: [512]u8 = undefined;
+        if (self.moduleBindingPath(value, &pathbuf) == null) return false;
+        var dottedbuf: [512]u8 = undefined;
+        const dotted = ambient_dotted_path(value, &dottedbuf) orelse return false;
+        const stop = std.mem.indexOfScalar(u8, dotted, '.') orelse return false;
+        return std.mem.eql(u8, dotted[0..stop], name);
     }
 
     fn mark_module_sealed(self: *CodeGen, name: []const u8) !void {
@@ -23728,6 +23808,72 @@ pub const CodeGen = struct {
         const suffix_len = method.len + 2;
         if (name.len <= suffix_len) return null;
         return .{ .name = name, .home = name[0 .. name.len - suffix_len], .decl = decl };
+    }
+
+    fn modulePathForBinding(self: *CodeGen, name: []const u8, buf: []u8) ?[]const u8 {
+        const mod = self.current_module orelse return null;
+        for (mod.body.stmts) |*stmt| {
+            switch (stmt.*) {
+                .local_decl => |*decl| for (decl.names, 0..) |*binding, i| {
+                    if (!std.mem.eql(u8, binding.ident, name) or i >= decl.inits.len) continue;
+                    return self.moduleBindingPath(decl.inits[i], buf);
+                },
+                .assign => |*assign| {
+                    if (assign.targets.len != 1 or assign.values.len != 1 or assign.targets[0].* != .name) continue;
+                    if (!std.mem.eql(u8, assign.targets[0].name.ident, name)) continue;
+                    return self.moduleBindingPath(assign.values[0], buf);
+                },
+                .global_decl => |*decl| for (decl.names, 0..) |*binding, i| {
+                    if (!std.mem.eql(u8, binding.ident, name) or i >= decl.inits.len) continue;
+                    return self.moduleBindingPath(decl.inits[i], buf);
+                },
+                else => {},
+            }
+        }
+        return null;
+    }
+
+    fn probeSubjectRelationType(self: *CodeGen, method: []const u8, subject: anytype, arg_count: usize) ?RT {
+        if (subject.* != .call) return null;
+        const application = subject.call;
+        if (application.form != .braced or application.args.len != 1 or application.args[0].* != .table) return null;
+        if (!application.args[0].table.pack.applied or application.func.* != .field) return null;
+        const descriptor = application.func.field.field;
+        if (application.func.field.obj.* != .name) return null;
+
+        var path_buf: [512]u8 = undefined;
+        const path = self.modulePathForBinding(application.func.field.obj.name.ident, &path_buf) orelse return null;
+        const module_path = self.find_module_file_for_req(path) orelse return null;
+        const source = Io.Dir.readFileAlloc(Io.Dir.cwd(), self.io, module_path, self.alloc, .unlimited) catch return null;
+        defer self.alloc.free(source);
+
+        var lex = @import("lexer.zig").Lexer.init(source, module_path);
+        if (!routeEmbedThroughDuoLexer(self.alloc, &lex, source, module_path)) return null;
+        var parser = @import("parser.zig").Parser.init(&lex, self.alloc);
+        parser.duo_mode = std.mem.endsWith(u8, module_path, ".duo");
+        const module = parser.parse_module() catch return null;
+
+        var declared = false;
+        for (module.body.stmts) |*stmt| {
+            if (stmt.* != .alias_def) continue;
+            if (std.mem.eql(u8, stmt.alias_def.name, descriptor)) {
+                declared = true;
+                break;
+            }
+        }
+        if (!declared) return null;
+
+        for (module.body.stmts) |*stmt| {
+            if (stmt.* != .func_decl) continue;
+            const funcdecl = &stmt.func_decl;
+            if (funcdecl.path.len != 1 or !std.mem.eql(u8, funcdecl.path[0], method)) continue;
+            if (funcdecl.func.params.len != arg_count + 1 or funcdecl.func.params[0].typ != .named) continue;
+            if (!std.mem.eql(u8, funcdecl.func.params[0].typ.named, descriptor)) continue;
+            const result = types.resolve(contract_ret(&funcdecl.func), null, self.alloc) catch return null;
+            if (result.is_numeric() or result == .bool or result == .str or result == .void) return result;
+            return null;
+        }
+        return null;
     }
 
     fn tryEmitSubjectRelation(self: *CodeGen, call: anytype) E!bool {
