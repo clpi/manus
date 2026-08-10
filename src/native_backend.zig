@@ -41,6 +41,34 @@ pub const DirectDiag = struct {
     message: []const u8,
 };
 
+/// Bootstrap projection from one identified DNIR realization to emitted bytes.
+/// The three hashes are the identity surface the graph exposes today; the
+/// application owner will replace them with collision-safe identity references.
+/// This record deliberately does not invent the missing realization or witness
+/// identities.
+pub const MachineLineage = struct {
+    relation: dnir.SemanticRef,
+    application: dnir.SemanticRef,
+    value: dnir.SemanticRef,
+    function: dnir.SemanticRef,
+    instruction_start: u32,
+    instruction_end: u32,
+    text_start: u32,
+    text_end: u32,
+    object_start: u32 = 0,
+    object_end: u32 = 0,
+};
+
+pub const ObjectWithLineage = struct {
+    bytes: []u8,
+    lineage: []MachineLineage,
+
+    pub fn deinit(self: *ObjectWithLineage, alloc: std.mem.Allocator) void {
+        alloc.free(self.bytes);
+        alloc.free(self.lineage);
+    }
+};
+
 /// Which of the 75 backend refusals fired.
 ///
 /// The third and last layer to get this. dnir_lower and the native-scalar
@@ -194,6 +222,21 @@ pub fn emitObjectWithGraph(
     return emitObjectModeWithGraph(alloc, mod, null, graph);
 }
 
+/// Emit a graph-aware object together with the byte ranges of every DNIR
+/// instruction that retained application identity. The symbol table remains a
+/// physical linker projection; semantic correspondence is queried through this
+/// sidecar, never reconstructed from symbol spelling.
+pub fn emitObjectWithGraphLineage(
+    alloc: std.mem.Allocator,
+    mod: *const ast.Module,
+    target: []const u8,
+    graph: *const semantic_graph.SemanticGraph,
+) Error!ObjectWithLineage {
+    refusal_site.line = 0;
+    if (!isNativeObjectTarget(target)) return error.UnsupportedTarget;
+    return emitObjectModeWithGraphLineage(alloc, mod, null, graph);
+}
+
 /// Like `emitObject`, but when `process_entry` is set the named zero-arg function
 /// gets `fcvtzs x0, d0` on f64 returns so native executables receive an i64 exit code.
 pub fn emitObjectForExecutable(alloc: std.mem.Allocator, mod: *const ast.Module, process_entry: []const u8) Error![]u8 {
@@ -258,9 +301,34 @@ fn emitObjectModeWithGraph(
         return error.UnsupportedTarget;
     }
 
+    const artifact = try emitObjectModeWithGraphLineage(alloc, mod, process_entry, graph);
+    alloc.free(artifact.lineage);
+    return artifact.bytes;
+}
+
+fn emitObjectModeWithGraphLineage(
+    alloc: std.mem.Allocator,
+    mod: *const ast.Module,
+    process_entry: ?[]const u8,
+    graph: *const semantic_graph.SemanticGraph,
+) Error!ObjectWithLineage {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) {
+        return error.UnsupportedTarget;
+    }
+
     var output = try emitArm64ModuleWithGraph(alloc, mod, process_entry, graph);
     defer output.deinit(alloc);
-    return emitMachOArm64Object(alloc, output.text, output.cstring, output.symbols, output.relocations, output.bss_size);
+    const bytes = try emitMachOArm64Object(alloc, output.text, output.cstring, output.symbols, output.relocations, output.bss_size);
+    errdefer alloc.free(bytes);
+
+    const text_offset = machOTextOffset(output.cstring.len, output.bss_size);
+    const lineage = try alloc.dupe(MachineLineage, output.lineage);
+    errdefer alloc.free(lineage);
+    for (lineage) |*entry| {
+        entry.object_start = @intCast(text_offset + entry.text_start);
+        entry.object_end = @intCast(text_offset + entry.text_end);
+    }
+    return .{ .bytes = bytes, .lineage = lineage };
 }
 
 pub fn emitAssembly(alloc: std.mem.Allocator, mod: *const ast.Module, target: []const u8) Error![]u8 {
@@ -276,6 +344,7 @@ pub fn emitAssembly(alloc: std.mem.Allocator, mod: *const ast.Module, target: []
         for (output.symbols) |sym| alloc.free(sym.name);
         alloc.free(output.symbols);
         alloc.free(output.relocations);
+        if (output.lineage.len > 0) alloc.free(output.lineage);
     }
     return output.asm_text;
 }
@@ -298,6 +367,7 @@ pub fn emitAssemblyWithGraph(
         for (output.symbols) |sym| alloc.free(sym.name);
         alloc.free(output.symbols);
         alloc.free(output.relocations);
+        if (output.lineage.len > 0) alloc.free(output.lineage);
     }
     return output.asm_text;
 }
@@ -313,6 +383,7 @@ pub fn emitAssemblyForExecutable(alloc: std.mem.Allocator, mod: *const ast.Modul
         for (output.symbols) |sym| alloc.free(sym.name);
         alloc.free(output.symbols);
         alloc.free(output.relocations);
+        if (output.lineage.len > 0) alloc.free(output.lineage);
     }
     return output.asm_text;
 }
@@ -568,6 +639,7 @@ const Arm64Output = struct {
     cstring: []u8 = &.{},
     symbols: []Symbol,
     relocations: []Relocation,
+    lineage: []MachineLineage = &.{},
     /// Bytes of `__DATA,__bss` zerofill arena this module needs. 0 means the
     /// section is not emitted at all, which is the pre-arena behavior verbatim.
     bss_size: u64 = 0,
@@ -579,6 +651,7 @@ const Arm64Output = struct {
         for (self.symbols) |sym| alloc.free(sym.name);
         alloc.free(self.symbols);
         alloc.free(self.relocations);
+        if (self.lineage.len > 0) alloc.free(self.lineage);
     }
 };
 
@@ -846,6 +919,7 @@ const Arm64Compiler = struct {
     symbols: std.ArrayList(Symbol) = .empty,
     extern_symbols: std.StringHashMapUnmanaged(u32) = .empty,
     relocations: std.ArrayList(Relocation) = .empty,
+    lineage: std.ArrayList(MachineLineage) = .empty,
     call_patches: std.ArrayList(CallPatch) = .empty,
     loops: std.ArrayList(LoopContext) = .empty,
     used_regs: [29]bool = @splat(false),
@@ -992,6 +1066,7 @@ const Arm64Compiler = struct {
         self.symbols.deinit(self.alloc);
         self.extern_symbols.deinit(self.alloc);
         self.relocations.deinit(self.alloc);
+        self.lineage.deinit(self.alloc);
         self.call_patches.deinit(self.alloc);
         for (self.loops.items) |*loop| {
             loop.continue_patches.deinit(self.alloc);
@@ -1068,7 +1143,17 @@ const Arm64Compiler = struct {
         }
         const relocations = try self.relocations.toOwnedSlice(self.alloc);
         self.relocations = .empty;
-        return .{ .text = text, .asm_text = asm_text, .cstring = cstring_bytes, .symbols = symbols, .relocations = relocations };
+        errdefer self.alloc.free(relocations);
+        const lineage = try self.lineage.toOwnedSlice(self.alloc);
+        self.lineage = .empty;
+        return .{
+            .text = text,
+            .asm_text = asm_text,
+            .cstring = cstring_bytes,
+            .symbols = symbols,
+            .relocations = relocations,
+            .lineage = lineage,
+        };
     }
 
     fn internString(self: *Arm64Compiler, content: []const u8) Error!u32 {
@@ -1249,7 +1334,7 @@ const Arm64Compiler = struct {
                     if (!def_at.contains(r)) try def_at.put(self.alloc, r, idx);
                 }
                 switch (ins.op) {
-                    .br, .br_if, .br_if_not => {
+                    .br => {
                         if (ins.branch_target <= idx) {
                             try back.append(self.alloc, .{ ins.branch_target, idx });
                         }
@@ -1548,8 +1633,35 @@ const Arm64Compiler = struct {
         var flat_idx: u32 = 0;
         for (f.blocks) |b| {
             for (b.instrs) |ins| {
-                try code_offsets.append(self.alloc, @intCast(self.code.items.len));
+                const text_start: u32 = @intCast(self.code.items.len);
+                try code_offsets.append(self.alloc, text_start);
                 try self.compileDnirInstr(&temps, &pinned, ins, &branch_patches);
+                const identity_count: u2 = @as(u2, @intFromBool(ins.relation != null)) +
+                    @as(u2, @intFromBool(ins.application != null)) +
+                    @as(u2, @intFromBool(ins.value != null));
+                if (identity_count != 0 and identity_count != 3) {
+                    return refuseWith(@src(), "partial-application-lineage");
+                }
+                if ((identity_count == 3) != (ins.realization_start != null)) {
+                    return refuseWith(@src(), "partial-realization-lineage");
+                }
+                if (ins.application) |application| {
+                    const realization_start = ins.realization_start.?;
+                    if (realization_start > flat_idx or realization_start >= code_offsets.items.len) {
+                        return refuseWith(@src(), "invalid-realization-start");
+                    }
+                    try self.lineage.append(self.alloc, .{
+                        .relation = ins.relation.?,
+                        .application = application,
+                        .value = ins.value.?,
+                        .function = f.semantic_identity orelse
+                            return refuseWith(@src(), "application-caller-identity"),
+                        .instruction_start = realization_start,
+                        .instruction_end = flat_idx + 1,
+                        .text_start = code_offsets.items[realization_start],
+                        .text_end = @intCast(self.code.items.len),
+                    });
+                }
                 // Ownership is recorded HERE, once, rather than at each of the
                 // eight `temps.put` + `markFpTemp` pairs: the pair is exactly
                 // "this id now reads out of this register", and one place
@@ -1568,7 +1680,8 @@ const Arm64Compiler = struct {
                 }
                 self.sweepFpLive(flat_idx);
                 tail_terminates = switch (ins.op) {
-                    .ret, .ret_record, .br => true,
+                    .ret, .ret_record => true,
+                    .br => ins.branch_condition == .unconditional,
                     else => false,
                 };
                 flat_idx += 1;
@@ -2106,22 +2219,23 @@ const Arm64Compiler = struct {
                 try self.emitRet();
                 self.returned = true;
             },
-            .br_if_not => {
-                const cond = try self.evalDnirValue(temps, ins.lhs);
-                // `evalDnirValue` materializes the condition into a GPR (via
-                // `cset`, which does not write NZCV). Without this compare the
-                // branch below would consume whatever flags the condition's own
-                // `cmp` left, turning every `if <comparison>` into
-                // `if (lhs == rhs)`. Test the boolean itself: `b.eq` then means
-                // "condition was false", which is br_if_not.
-                try self.emitCmpZero(cond);
-                const patch_off = try self.emitBCond(.eq, 0);
-                self.releaseReg(cond);
-                try branch_patches.append(self.alloc, .{ .patch_off = patch_off, .target_instr = ins.branch_target, .is_cond = true });
-            },
             .br => {
-                const patch_off = try self.emitB(0);
-                try branch_patches.append(self.alloc, .{ .patch_off = patch_off, .target_instr = ins.branch_target, .is_cond = false });
+                switch (ins.branch_condition) {
+                    .unconditional => {
+                        const patch_off = try self.emitB(0);
+                        try branch_patches.append(self.alloc, .{ .patch_off = patch_off, .target_instr = ins.branch_target, .is_cond = false });
+                    },
+                    .when_true, .when_false => {
+                        const cond = try self.evalDnirValue(temps, ins.lhs);
+                        // The condition is a materialized boolean; compare that
+                        // value rather than reusing flags from its producer.
+                        try self.emitCmpZero(cond);
+                        const arm: Condition = if (ins.branch_condition == .when_true) .ne else .eq;
+                        const patch_off = try self.emitBCond(arm, 0);
+                        self.releaseReg(cond);
+                        try branch_patches.append(self.alloc, .{ .patch_off = patch_off, .target_instr = ins.branch_target, .is_cond = true });
+                    },
+                }
             },
             .load_field => {
                 const base = if (ins.req_alias.len > 0) ins.req_alias else "rec";
@@ -4444,40 +4558,124 @@ fn findTableFieldValue(fields: []const ast.TableField, name: []const u8) ?*const
     return null;
 }
 
-fn freeDnirModule(alloc: std.mem.Allocator, m: dnir.Module) void {
-    for (m.records) |r| {
-        alloc.free(r.name);
-        for (r.fields) |f| alloc.free(f);
-        alloc.free(r.fields);
-        alloc.free(r.kinds);
+const CheckedApplication = region_graph.CheckedApplicationProjection;
+
+/// The graph edges are the current authoritative coverage set. A checked
+/// application is not optional metadata: once relation and result edges exist,
+/// direct realization must account for it exactly once or refuse.
+fn checkedApplications(
+    alloc: std.mem.Allocator,
+    graph: *const semantic_graph.SemanticGraph,
+) Error![]CheckedApplication {
+    return region_graph.checkedApplicationProjections(alloc, graph) catch |err| switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        else => refuseWith(@src(), "checked-application-graph"),
+    };
+}
+
+fn validateDnirApplications(
+    alloc: std.mem.Allocator,
+    module: dnir.Module,
+    applications: []const CheckedApplication,
+) Error!void {
+    const uses = try alloc.alloc(u32, applications.len);
+    defer alloc.free(uses);
+    @memset(uses, 0);
+    var by_application: std.AutoHashMapUnmanaged(u32, usize) = .empty;
+    defer by_application.deinit(alloc);
+    for (applications, 0..) |application, i| {
+        const slot = try by_application.getOrPut(alloc, application.application.node);
+        if (slot.found_existing) return refuseWith(@src(), "application-identity-collision");
+        slot.value_ptr.* = i;
     }
-    alloc.free(m.records);
-    for (m.functions) |f| {
-        alloc.free(f.name);
-        for (f.params) |p| {
-            alloc.free(p.name);
-            if (p.record) |rn| alloc.free(rn);
-        }
-        alloc.free(f.params);
-        if (f.ret_record) |rn| alloc.free(rn);
-        for (f.blocks) |b| {
-            for (b.instrs) |ins| {
-                if (ins.callee.len > 0) alloc.free(ins.callee);
-                if (ins.req_alias.len > 0) alloc.free(ins.req_alias);
-                if (ins.field.len > 0) alloc.free(ins.field);
-                if (ins.record.len > 0) alloc.free(ins.record);
-                if (ins.vals.len > 0) alloc.free(ins.vals);
+
+    for (module.functions) |function| {
+        var instruction_index: u32 = 0;
+        for (function.blocks) |block| {
+            for (block.instrs) |instruction| {
+                defer instruction_index += 1;
+                const identity_count: u2 = @as(u2, @intFromBool(instruction.relation != null)) +
+                    @as(u2, @intFromBool(instruction.application != null)) +
+                    @as(u2, @intFromBool(instruction.value != null));
+                if (identity_count == 0) {
+                    if (instruction.realization_start != null) {
+                        return refuseWith(@src(), "orphan-realization-lineage");
+                    }
+                    continue;
+                }
+                if (identity_count != 3) return refuseWith(@src(), "partial-application-lineage");
+                const realization_start = instruction.realization_start orelse
+                    return refuseWith(@src(), "partial-realization-lineage");
+                if (realization_start > instruction_index) {
+                    return refuseWith(@src(), "invalid-realization-start");
+                }
+
+                // A checked call-to-constant or tail-call rewrite needs a
+                // semantic transform witness that the current graph does not
+                // publish. Until then, only the untransformed call is lawful.
+                if (instruction.op != .call_direct) {
+                    return refuseWith(@src(), "unwitnessed-application-transform");
+                }
+
+                const application_index = by_application.get(instruction.application.?.node) orelse
+                    return refuseWith(@src(), "unknown-application-lineage");
+                const application = applications[application_index];
+                if (function.semantic_identity == null or !function.semantic_identity.?.eql(application.caller)) {
+                    return refuseWith(@src(), "application-caller-mismatch");
+                }
+                if (!application.application.eql(instruction.application.?) or
+                    !application.relation.eql(instruction.relation.?) or
+                    !application.value.eql(instruction.value.?))
+                {
+                    return refuseWith(@src(), "application-identity-mismatch");
+                }
+                uses[application_index] += 1;
             }
-            alloc.free(b.instrs);
         }
-        alloc.free(f.blocks);
     }
-    alloc.free(m.functions);
-    for (m.externs) |e| {
-        alloc.free(e.duo_name);
-        alloc.free(e.symbol);
+
+    for (uses) |use_count| {
+        if (use_count != 1) return refuseWith(@src(), "application-realization-count");
     }
-    alloc.free(m.externs);
+}
+
+fn validateMachineLineage(
+    alloc: std.mem.Allocator,
+    output: Arm64Output,
+    applications: []const CheckedApplication,
+) Error!void {
+    if (output.lineage.len != applications.len) {
+        return refuseWith(@src(), "machine-lineage-count");
+    }
+    var expected: std.AutoHashMapUnmanaged(u32, CheckedApplication) = .empty;
+    defer expected.deinit(alloc);
+    var seen: std.AutoHashMapUnmanaged(u32, void) = .empty;
+    defer seen.deinit(alloc);
+    for (applications) |application| {
+        const slot = try expected.getOrPut(alloc, application.application.node);
+        if (slot.found_existing) return refuseWith(@src(), "machine-lineage-collision");
+        slot.value_ptr.* = application;
+    }
+    for (output.lineage) |lineage| {
+        const application = expected.get(lineage.application.node) orelse
+            return refuseWith(@src(), "machine-lineage-unknown");
+        if (!lineage.application.eql(application.application) or
+            !lineage.relation.eql(application.relation) or
+            !lineage.value.eql(application.value) or
+            !lineage.function.eql(application.caller))
+        {
+            return refuseWith(@src(), "machine-lineage-mismatch");
+        }
+        if (lineage.instruction_start >= lineage.instruction_end) {
+            return refuseWith(@src(), "machine-lineage-instruction-range");
+        }
+        if (lineage.text_start >= lineage.text_end or @as(usize, lineage.text_end) > output.text.len) {
+            return refuseWith(@src(), "machine-lineage-range");
+        }
+        const slot = try seen.getOrPut(alloc, lineage.application.node);
+        if (slot.found_existing) return refuseWith(@src(), "machine-lineage-count");
+    }
+    if (seen.count() != applications.len) return refuseWith(@src(), "machine-lineage-count");
 }
 
 fn emitArm64FromDnir(alloc: std.mem.Allocator, m: dnir.Module, process_entry: ?[]const u8) Error!Arm64Output {
@@ -4579,39 +4777,73 @@ fn emitArm64ModuleWithGraph(
     process_entry: ?[]const u8,
     graph: *const semantic_graph.SemanticGraph,
 ) Error!Arm64Output {
+    const applications = try checkedApplications(alloc, graph);
+    defer alloc.free(applications);
+    const checked_path = applications.len > 0;
+
     if (dnir_lower.lowerModuleWithGraph(alloc, mod, graph)) |dnir_mod| {
-        defer freeDnirModule(alloc, dnir_mod);
+        defer dnir.deinitModule(alloc, dnir_mod);
         if (dnir.moduleIsNativeDirectReady(dnir_mod)) {
-            const regions = region_graph.buildModuleRegions(alloc, dnir_mod, graph) catch null;
-            if (regions) |rs| {
-                defer region_graph.freeModuleRegions(alloc, rs);
-                region_graph.validateModuleRegions(rs, graph, dnir_mod, alloc) catch {
-                    if (region_schedule.regionGateStrictEnabled()) {
-                        return refuse(@src());
-                    }
+            try validateDnirApplications(alloc, dnir_mod, applications);
+
+            var dnir_mut = dnir_mod;
+            if (region_graph.buildModuleRegions(alloc, dnir_mut, graph)) |initial_regions| {
+                defer region_graph.freeModuleRegions(alloc, initial_regions);
+                region_graph.validateModuleRegions(initial_regions, graph, dnir_mut, alloc) catch {
+                    if (checked_path or region_schedule.regionGateStrictEnabled()) return refuse(@src());
+                };
+                const transform_report = region_transform.applyModuleRegionTransforms(alloc, &dnir_mut, initial_regions) catch blk: {
+                    if (checked_path) return refuse(@src());
+                    break :blk region_transform.ModuleTransformReport{};
+                };
+                _ = transform_report;
+            } else |_| {
+                if (checked_path) return refuse(@src());
+            }
+
+            // Transformation changes realization, not meaning. Revalidate the
+            // actual DNIR that will be emitted, then rebuild the region graph so
+            // scheduling and tooling never observe the stale pre-transform view.
+            try validateDnirApplications(alloc, dnir_mut, applications);
+            if (region_graph.buildModuleRegions(alloc, dnir_mut, graph)) |final_regions| {
+                defer region_graph.freeModuleRegions(alloc, final_regions);
+                region_graph.validateModuleRegions(final_regions, graph, dnir_mut, alloc) catch {
+                    if (checked_path or region_schedule.regionGateStrictEnabled()) return refuse(@src());
                 };
                 if (realization.buildDeferredFromGraph(alloc, graph, "<native>")) |plan_val| {
                     var plan = plan_val;
                     defer plan.deinit(alloc);
                     realization.commitModuleForTarget(alloc, &plan, "native") catch {};
-                    region_graph.attachRealizationPlan(alloc, rs, &plan) catch {};
+                    region_graph.attachRealizationPlan(alloc, final_regions, &plan) catch {};
                 } else |_| {}
-                var dnir_mut = dnir_mod;
-                _ = region_transform.applyModuleRegionTransforms(alloc, &dnir_mut, rs) catch .{};
-                if (region_schedule.buildModuleSchedules(alloc, rs)) |schedules| {
+                if (region_schedule.buildModuleSchedules(alloc, final_regions)) |schedules| {
                     defer region_schedule.freeModuleSchedules(alloc, schedules);
-                } else |_| {}
+                } else |_| {
+                    if (checked_path) return refuse(@src());
+                }
+            } else |_| {
+                if (checked_path) return refuse(@src());
             }
-            return emitArm64FromDnir(alloc, dnir_mod, process_entry);
+
+            var output = try emitArm64FromDnir(alloc, dnir_mut, process_entry);
+            errdefer output.deinit(alloc);
+            try validateMachineLineage(alloc, output, applications);
+            return output;
         }
+        if (checked_path) return refuseWith(@src(), "checked-direct-not-ready");
     } else |e| {
         // Without this the only trace a developer sees is the *AST fallback's*
         // failure, which is a different and usually less informative site. The
         // DNIR bail is the one that decides whether a program lowers natively.
         if (std.c.getenv("DUO_DNIR_TRACE") != null) {
-            std.debug.print("DUO_DNIR_TRACE: DNIR lowering bailed with {s}; falling back to the AST path\n", .{@errorName(e)});
+            if (checked_path) {
+                std.debug.print("DUO_DNIR_TRACE: checked DNIR lowering refused with {s}\n", .{@errorName(e)});
+            } else {
+                std.debug.print("DUO_DNIR_TRACE: DNIR lowering bailed with {s}; falling back to the AST path\n", .{@errorName(e)});
+            }
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
         }
+        if (checked_path) return refuseWith(@src(), "checked-dnir-lowering");
     }
 
     var records = try collectF64Records(alloc, mod);
@@ -4643,8 +4875,18 @@ fn emitArm64ModuleWithGraph(
     return compiler.finish();
 }
 
-fn emitMachOArm64Object(alloc: std.mem.Allocator, text: []const u8, cstring: []const u8, symbols: []const Symbol, relocations: []const Relocation, bss_size: u64) Error![]u8 {
+fn machOTextOffset(cstring_len: usize, bss_size: u64) usize {
     const header_size: usize = 32;
+    const segment_size: usize = 72;
+    const section_size: usize = 80;
+    const symtab_size: usize = 24;
+    const build_version_size: usize = 24;
+    const nsects: usize = (if (cstring_len > 0) @as(usize, 2) else 1) +
+        (if (bss_size > 0) @as(usize, 1) else 0);
+    return header_size + segment_size + section_size * nsects + symtab_size + build_version_size;
+}
+
+fn emitMachOArm64Object(alloc: std.mem.Allocator, text: []const u8, cstring: []const u8, symbols: []const Symbol, relocations: []const Relocation, bss_size: u64) Error![]u8 {
     const segment_size: usize = 72;
     const section_size: usize = 80;
     const symtab_size: usize = 24;
@@ -4656,7 +4898,7 @@ fn emitMachOArm64Object(alloc: std.mem.Allocator, text: []const u8, cstring: []c
     const has_bss = bss_size > 0;
     const nsects: u32 = (if (has_cstring) @as(u32, 2) else 1) + (if (has_bss) @as(u32, 1) else 0);
     const sizeofcmds = segment_size + section_size * nsects + symtab_size + build_version_size;
-    const text_offset: usize = header_size + sizeofcmds;
+    const text_offset = machOTextOffset(cstring.len, bss_size);
     const reloff: usize = text_offset + text.len;
     const after_relocs: usize = reloff + relocations.len * 8;
     const cstring_fileoff: usize = after_relocs;
@@ -4841,6 +5083,176 @@ fn appendU64(out: *std.ArrayList(u8), alloc: std.mem.Allocator, value: u64) !voi
 
 fn alignForward(value: usize, alignment: usize) usize {
     return (value + alignment - 1) & ~(alignment - 1);
+}
+
+test "native backend: checked subject identity reaches object bytes" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\observe: i64 = (subject: i64, left: i64, right: i64)
+        \\    subject + left + right
+        \\main: i64 = ()
+        \\    40:observe(1, 1)
+    ;
+    var lexer = Lexer.init(source, "machine-lineage.duo");
+    var parser = Parser.init(&lexer, alloc);
+    parser.duo_mode = true;
+    var module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&module);
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "machine-lineage.duo");
+    const applications = try checkedApplications(alloc, &graph);
+    defer alloc.free(applications);
+    try std.testing.expectEqual(@as(usize, 1), applications.len);
+
+    const projected = try dnir_lower.lowerModuleWithGraph(alloc, &module, &graph);
+    var instruction_index: u32 = 0;
+    var spans_abi_staging = false;
+    var dnir_caller: ?dnir.SemanticRef = null;
+    for (projected.functions) |function| {
+        instruction_index = 0;
+        for (function.blocks) |block| {
+            for (block.instrs) |instruction| {
+                if (instruction.application != null) {
+                    spans_abi_staging = instruction.realization_start.? < instruction_index;
+                    dnir_caller = function.semantic_identity;
+                }
+                instruction_index += 1;
+            }
+        }
+    }
+    try std.testing.expect(spans_abi_staging);
+    try std.testing.expectEqual(applications[0].caller, dnir_caller.?);
+
+    const regions = try region_graph.buildModuleRegions(alloc, projected, &graph);
+    defer region_graph.freeModuleRegions(alloc, regions);
+    try region_graph.validateModuleRegions(regions, &graph, projected, alloc);
+    var region_caller: ?dnir.SemanticRef = null;
+    for (regions) |region| {
+        for (region.nodes) |node| {
+            if (node.application_id != null and node.application_id.?.eql(applications[0].application)) {
+                region_caller = region.func_identity;
+            }
+        }
+    }
+    try std.testing.expectEqual(applications[0].caller, region_caller.?);
+
+    var output = try emitArm64ModuleWithGraph(alloc, &module, null, &graph);
+    defer output.deinit(alloc);
+    try std.testing.expectEqual(@as(usize, 1), output.lineage.len);
+    const text_lineage = output.lineage[0];
+    try std.testing.expectEqual(applications[0].relation, text_lineage.relation);
+    try std.testing.expectEqual(applications[0].application, text_lineage.application);
+    try std.testing.expectEqual(applications[0].value, text_lineage.value);
+    try std.testing.expectEqual(applications[0].caller, text_lineage.function);
+    try std.testing.expect(text_lineage.instruction_start + 1 < text_lineage.instruction_end);
+
+    output.lineage[0].function.node +%= 1;
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        validateMachineLineage(alloc, output, applications),
+    );
+    output.lineage[0].function.node -%= 1;
+
+    var artifact = try emitObjectWithGraphLineage(alloc, &module, "native-object", &graph);
+    defer artifact.deinit(alloc);
+    try std.testing.expectEqual(@as(usize, 1), artifact.lineage.len);
+    const object_lineage = artifact.lineage[0];
+    try std.testing.expectEqual(text_lineage.relation, object_lineage.relation);
+    try std.testing.expectEqual(text_lineage.application, object_lineage.application);
+    try std.testing.expectEqual(text_lineage.value, object_lineage.value);
+    try std.testing.expectEqual(text_lineage.function, object_lineage.function);
+    try std.testing.expectEqualSlices(
+        u8,
+        output.text[text_lineage.text_start..text_lineage.text_end],
+        artifact.bytes[object_lineage.object_start..object_lineage.object_end],
+    );
+}
+
+test "native backend: removing checked identity refuses before machine emission" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\observe: i64 = (subject: i64)
+        \\    subject
+        \\main: i64 = ()
+        \\    42:observe()
+    ;
+    var lexer = Lexer.init(source, "missing-lineage.duo");
+    var parser = Parser.init(&lexer, alloc);
+    parser.duo_mode = true;
+    var ast_module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&ast_module);
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "missing-lineage.duo");
+    const applications = try checkedApplications(alloc, &graph);
+    defer alloc.free(applications);
+    try std.testing.expectEqual(@as(usize, 1), applications.len);
+
+    const module = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph);
+    var removed = false;
+    for (module.functions) |function| {
+        for (function.blocks) |block| {
+            const instructions: []dnir.Instr = @constCast(block.instrs);
+            for (instructions) |*instruction| {
+                if (instruction.application == null) continue;
+                instruction.application = null;
+                removed = true;
+            }
+        }
+    }
+    try std.testing.expect(removed);
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        validateDnirApplications(alloc, module, applications),
+    );
+}
+
+test "native backend: checked ordinary call cannot fall back to its symbol" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\observe: i64 = (value: i64)
+        \\    value
+        \\main: i64 = ()
+        \\    observe(42)
+    ;
+    var lexer = Lexer.init(source, "symbol-fallback.duo");
+    var parser = Parser.init(&lexer, alloc);
+    parser.duo_mode = true;
+    var ast_module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&ast_module);
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "symbol-fallback.duo");
+    const applications = try checkedApplications(alloc, &graph);
+    defer alloc.free(applications);
+    try std.testing.expectEqual(@as(usize, 1), applications.len);
+
+    const module = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph);
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        validateDnirApplications(alloc, module, applications),
+    );
 }
 
 test "native backend lowers Pass 4 milestone with f64 return in d0 (no main exit hack)" {
@@ -5466,6 +5878,7 @@ test "native backend emits external call relocation" {
         for (output.symbols) |sym| alloc.free(sym.name);
         alloc.free(output.symbols);
         alloc.free(output.relocations);
+        if (output.lineage.len > 0) alloc.free(output.lineage);
     }
     try std.testing.expectEqual(@as(usize, 1), output.relocations.len);
     try std.testing.expectEqualStrings("llabs", output.symbols[output.relocations[0].symbol_index].name);
@@ -5507,6 +5920,7 @@ test "native backend lowers string literals to cstring with adrp/add relocations
         for (output.symbols) |sym| alloc.free(sym.name);
         alloc.free(output.symbols);
         alloc.free(output.relocations);
+        if (output.lineage.len > 0) alloc.free(output.lineage);
     }
     // Interned literal materializes in the cstring section.
     try std.testing.expect(output.cstring.len > 0);

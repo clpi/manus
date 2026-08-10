@@ -6,7 +6,6 @@ const std = @import("std");
 const dnir = @import("duo_native_ir.zig");
 const dnir_hardware = @import("dnir_hardware.zig");
 const semantic_graph = @import("semantic_graph.zig");
-const graph_query = @import("graph_query.zig");
 const realization = @import("realization.zig");
 
 pub const CanonicalEdge = enum {
@@ -36,6 +35,10 @@ pub const Node = struct {
     kind: NodeKind,
     label: ?[]const u8 = null,
     graph_stable_id: ?u64 = null,
+    relation_id: ?dnir.SemanticRef = null,
+    application_id: ?dnir.SemanticRef = null,
+    value_id: ?dnir.SemanticRef = null,
+    realization_start: ?u32 = null,
     shape_id: ?u64 = null,
     dnir_temp: ?u32 = null,
     callee: ?[]const u8 = null,
@@ -49,7 +52,7 @@ pub const Edge = struct {
 
 pub const Region = struct {
     func_name: []const u8,
-    func_stable_id: ?u64,
+    func_identity: ?dnir.SemanticRef,
     nodes: []Node,
     edges: []Edge,
     /// Pass 22 Gate L — unresolved realization candidates visible at region scope.
@@ -71,7 +74,7 @@ pub const Region = struct {
 pub fn buildFromDnirFunction(
     alloc: std.mem.Allocator,
     f: dnir.Function,
-    graph: ?*const semantic_graph.SemanticGraph,
+    _: ?*const semantic_graph.SemanticGraph,
     records: []const dnir.RecordDesc,
 ) !Region {
     var nodes: std.ArrayListUnmanaged(Node) = .empty;
@@ -83,12 +86,6 @@ pub fn buildFromDnirFunction(
     const region_id = next_id;
     next_id += 1;
     try nodes.append(alloc, .{ .id = region_id, .kind = .region, .label = try alloc.dupe(u8, f.name) });
-
-    // One resolver for both ends of the identity check. `validateModuleRegions`
-    // re-derives this hash through `graph_query.stableIdOf` and errors when the
-    // two differ; deriving them here by a second, name-first route is how that
-    // check could fail on a name collision rather than on a real mismatch.
-    const func_stable_id: ?u64 = if (graph) |g| graph_query.stableIdOf(g, f.name) else null;
 
     var temp_node: std.AutoHashMapUnmanaged(u32, u32) = .empty;
     defer temp_node.deinit(alloc);
@@ -113,7 +110,7 @@ pub fn buildFromDnirFunction(
             const kind: NodeKind = switch (ins.op) {
                 .call_direct, .call_extern => .call,
                 .binop, .cmp => .binop,
-                .br, .br_if, .br_if_not => .branch,
+                .br => .branch,
                 .ret, .ret_record => .ret,
                 .init_record => .record,
                 .hw_fence, .hw_spin, .hw_unary => .hardware,
@@ -140,23 +137,19 @@ pub fn buildFromDnirFunction(
             }
 
             var callee_owned: ?[]const u8 = null;
-            var callee_stable: ?u64 = ins.relation;
             if (kind == .call and ins.callee.len > 0) {
                 callee_owned = try alloc.dupe(u8, ins.callee);
-                if (callee_stable == null) if (graph) |g| {
-                    if (g.findFunc(ins.callee)) |cid| {
-                        if (g.get(cid)) |cn| {
-                            if (cn.stable_id) |sid| callee_stable = sid.hash;
-                        }
-                    }
-                };
             }
 
             try nodes.append(alloc, .{
                 .id = nid,
                 .kind = kind,
                 .label = label_owned,
-                .graph_stable_id = if (kind == .call) callee_stable else record_stable_id,
+                .graph_stable_id = record_stable_id,
+                .relation_id = ins.relation,
+                .application_id = ins.application,
+                .value_id = ins.value,
+                .realization_start = ins.realization_start,
                 .shape_id = if (kind == .record) record_shape_id else null,
                 .callee = callee_owned,
                 .dnir_temp = ins.result,
@@ -177,7 +170,7 @@ pub fn buildFromDnirFunction(
                 try temp_node.put(alloc, t, nid);
                 try edges.append(alloc, .{ .from = nid, .to = nid, .kind = .defines });
             }
-            if (kind == .call and callee_stable != null) {
+            if (kind == .call and ins.relation != null and ins.application != null and ins.value != null) {
                 try edges.append(alloc, .{ .from = nid, .to = region_id, .kind = .calls });
             }
         }
@@ -185,7 +178,7 @@ pub fn buildFromDnirFunction(
 
     return .{
         .func_name = try alloc.dupe(u8, f.name),
-        .func_stable_id = func_stable_id,
+        .func_identity = f.semantic_identity,
         .nodes = try nodes.toOwnedSlice(alloc),
         .edges = try edges.toOwnedSlice(alloc),
         .hardware_tier = dnir_hardware.functionHardwareTier(f),
@@ -239,6 +232,8 @@ pub const RegionGraphError = error{
     EmitOrderMismatch,
     StableIdMismatch,
     CallGraphMismatch,
+    IncompleteApplicationIdentity,
+    ApplicationGraphMismatch,
     OutOfMemory,
 };
 
@@ -249,58 +244,234 @@ pub fn findRegion(regions: []const Region, func_name: []const u8) ?*const Region
     return null;
 }
 
-/// Count direct intra-module callees with semantic graph identity.
+pub fn hasAnyApplicationIdentity(node: Node) bool {
+    return node.relation_id != null or node.application_id != null or node.value_id != null or node.realization_start != null;
+}
+
+pub fn hasCompleteApplicationIdentity(node: Node) bool {
+    return node.relation_id != null and node.application_id != null and node.value_id != null and node.realization_start != null;
+}
+
+fn optionalSemanticRefEql(a: ?dnir.SemanticRef, b: ?dnir.SemanticRef) bool {
+    if (a == null or b == null) return a == null and b == null;
+    return a.?.eql(b.?);
+}
+
+pub const SemanticNameReconstructionCensus = struct {
+    required_checked_applications: usize = 0,
+    checked_call_nodes: usize = 0,
+    checked_realization_nodes: usize = 0,
+    incomplete_lineage: usize = 0,
+    missing_lineage: usize = 0,
+    legacy_symbol_bridges: usize = 0,
+    legacy_function_name_bridges: usize = 0,
+};
+
+/// Measure the application-identity boundary represented by region nodes. A
+/// partial identity fails closed; it is never completed from the symbol. A
+/// call with no identity remains an explicit legacy symbol bridge.
+pub fn semanticNameReconstructionCensus(
+    alloc: std.mem.Allocator,
+    regions: []const Region,
+    graph: *const semantic_graph.SemanticGraph,
+) RegionGraphError!SemanticNameReconstructionCensus {
+    var census: SemanticNameReconstructionCensus = .{};
+    var expected = try expectedApplications(alloc, graph);
+    defer expected.deinit(alloc);
+    census.required_checked_applications = expected.count();
+
+    for (regions) |region| {
+        if (region.func_identity == null) census.legacy_function_name_bridges += 1;
+        for (region.nodes) |node| {
+            if (!hasAnyApplicationIdentity(node)) {
+                if (node.kind == .call) census.legacy_symbol_bridges += 1;
+                continue;
+            }
+            if (!hasCompleteApplicationIdentity(node)) {
+                census.incomplete_lineage += 1;
+                continue;
+            }
+            if (node.kind == .call) {
+                census.checked_call_nodes += 1;
+            } else {
+                census.checked_realization_nodes += 1;
+            }
+            if (expected.getPtr(node.application_id.?.node)) |application| {
+                application.uses += 1;
+            }
+        }
+    }
+    var iterator = expected.valueIterator();
+    while (iterator.next()) |application| {
+        if (application.uses == 0) census.missing_lineage += 1;
+    }
+    return census;
+}
+
+/// Count direct intra-module callees with complete semantic application identity.
 pub fn countDirectCallees(region: *const Region) usize {
     var n: usize = 0;
     for (region.nodes) |node| {
-        if (node.kind == .call and node.graph_stable_id != null) n += 1;
+        if (node.kind == .call and hasCompleteApplicationIdentity(node)) n += 1;
     }
     return n;
 }
 
-/// Verify DNIR emit order, stable IDs, and call edges match the semantic graph.
+const ExpectedApplication = struct {
+    application: dnir.SemanticRef,
+    relation: dnir.SemanticRef,
+    value: dnir.SemanticRef,
+    caller: dnir.SemanticRef,
+    uses: u32 = 0,
+};
+
+pub const CheckedApplicationProjection = struct {
+    relation: dnir.SemanticRef,
+    application: dnir.SemanticRef,
+    value: dnir.SemanticRef,
+    caller: dnir.SemanticRef,
+};
+
+const ApplicationEdges = struct {
+    relation: ?semantic_graph.NodeId = null,
+    result: ?semantic_graph.NodeId = null,
+};
+
+fn containingFunctionFromScope(
+    graph: *const semantic_graph.SemanticGraph,
+    start: semantic_graph.NodeId,
+) ?semantic_graph.NodeId {
+    var current = start;
+    var depth: u32 = 0;
+    while (depth < 64) : (depth += 1) {
+        const node = graph.get(current) orelse return null;
+        if (node.kind == .func) return current;
+        if (!node.scope.isValid()) return null;
+        current = node.scope;
+    }
+    return null;
+}
+
+fn semanticReference(
+    graph: *const semantic_graph.SemanticGraph,
+    node_id: semantic_graph.NodeId,
+) RegionGraphError!dnir.SemanticRef {
+    const node = graph.get(node_id) orelse return error.ApplicationGraphMismatch;
+    return .{
+        .node = node_id.index,
+        .fingerprint = (node.stable_id orelse return error.ApplicationGraphMismatch).hash,
+    };
+}
+
+/// Collect the current checked application identity surface in O(nodes+edges).
+/// These exact node references are a session-local bootstrap projection; no
+/// missing pack, world, witness, provenance, or durable identity component is
+/// synthesized here. Fingerprints remain non-authoritative metadata.
+pub fn checkedApplicationProjections(
+    alloc: std.mem.Allocator,
+    graph: *const semantic_graph.SemanticGraph,
+) RegionGraphError![]CheckedApplicationProjection {
+    const edges = alloc.alloc(ApplicationEdges, graph.nodes.items.len) catch return error.OutOfMemory;
+    defer alloc.free(edges);
+    for (edges) |*entry| entry.* = .{};
+
+    for (graph.edges.items) |edge| {
+        if (edge.from.index >= edges.len) return error.ApplicationGraphMismatch;
+        if (graph.nodes.items[edge.from.index].kind != .call) continue;
+        switch (edge.kind) {
+            .relation => {
+                if (edges[edge.from.index].relation != null) return error.ApplicationGraphMismatch;
+                edges[edge.from.index].relation = edge.to;
+            },
+            .result => {
+                if (edges[edge.from.index].result != null) return error.ApplicationGraphMismatch;
+                edges[edge.from.index].result = edge.to;
+            },
+            else => {},
+        }
+    }
+
+    var projections: std.ArrayListUnmanaged(CheckedApplicationProjection) = .empty;
+    errdefer projections.deinit(alloc);
+    var seen: std.AutoHashMapUnmanaged(u32, void) = .empty;
+    defer seen.deinit(alloc);
+    for (graph.nodes.items, 0..) |node, i| {
+        if (node.kind != .call) continue;
+        const relation = edges[i].relation orelse continue;
+        const result = edges[i].result orelse return error.ApplicationGraphMismatch;
+        const caller = containingFunctionFromScope(graph, .{ .index = @intCast(i) }) orelse
+            return error.ApplicationGraphMismatch;
+        const application_identity = try semanticReference(graph, .{ .index = @intCast(i) });
+        const slot = seen.getOrPut(alloc, application_identity.node) catch return error.OutOfMemory;
+        if (slot.found_existing) return error.ApplicationGraphMismatch;
+        try projections.append(alloc, .{
+            .relation = try semanticReference(graph, relation),
+            .application = application_identity,
+            .value = try semanticReference(graph, result),
+            .caller = try semanticReference(graph, caller),
+        });
+    }
+    return projections.toOwnedSlice(alloc) catch return error.OutOfMemory;
+}
+
+fn expectedApplications(
+    alloc: std.mem.Allocator,
+    graph: *const semantic_graph.SemanticGraph,
+) RegionGraphError!std.AutoHashMapUnmanaged(u32, ExpectedApplication) {
+    var expected: std.AutoHashMapUnmanaged(u32, ExpectedApplication) = .empty;
+    errdefer expected.deinit(alloc);
+    const projections = try checkedApplicationProjections(alloc, graph);
+    defer alloc.free(projections);
+    for (projections) |projection| {
+        const slot = expected.getOrPut(alloc, projection.application.node) catch return error.OutOfMemory;
+        if (slot.found_existing) return error.ApplicationGraphMismatch;
+        slot.value_ptr.* = .{
+            .application = projection.application,
+            .relation = projection.relation,
+            .value = projection.value,
+            .caller = projection.caller,
+        };
+    }
+    return expected;
+}
+
+/// Verify function and application identities without recovering either from
+/// linker/debug names.
 pub fn validateModuleRegions(
     regions: []const Region,
     graph: *const semantic_graph.SemanticGraph,
     m: dnir.Module,
     alloc: std.mem.Allocator,
 ) RegionGraphError!void {
-    var names: std.ArrayListUnmanaged([]const u8) = .empty;
-    defer names.deinit(alloc);
-    for (m.functions) |f| try names.append(alloc, f.name);
+    var expected = try expectedApplications(alloc, graph);
+    defer expected.deinit(alloc);
 
-    const order = graph.moduleFunctionEmitOrder(alloc, names.items) catch return error.OutOfMemory;
-    defer alloc.free(order);
+    if (regions.len != m.functions.len) return error.EmitOrderMismatch;
+    for (m.functions, 0..) |f, i| {
+        const region = &regions[i];
+        if (!optionalSemanticRefEql(region.func_identity, f.semantic_identity)) return error.StableIdMismatch;
 
-    if (order.len != m.functions.len) return error.EmitOrderMismatch;
-    for (order, 0..) |name, i| {
-        if (!std.mem.eql(u8, name, m.functions[i].name)) return error.EmitOrderMismatch;
+        for (region.nodes) |node| {
+            if (!hasAnyApplicationIdentity(node)) continue;
+            if (!hasCompleteApplicationIdentity(node)) return error.IncompleteApplicationIdentity;
+            const application = expected.getPtr(node.application_id.?.node) orelse
+                return error.ApplicationGraphMismatch;
+            if (!application.application.eql(node.application_id.?) or
+                !application.relation.eql(node.relation_id.?) or
+                !application.value.eql(node.value_id.?))
+            {
+                return error.ApplicationGraphMismatch;
+            }
+            if (region.func_identity == null or !application.caller.eql(region.func_identity.?)) {
+                return error.ApplicationGraphMismatch;
+            }
+            application.uses += 1;
+        }
     }
 
-    for (m.functions) |f| {
-        const region = findRegion(regions, f.name) orelse return error.StableIdMismatch;
-        if (region.func_stable_id != f.graph_stable_id) return error.StableIdMismatch;
-        if (f.graph_stable_id) |sid| {
-            const gsid = graph_query.stableIdOf(graph, f.name) orelse return error.StableIdMismatch;
-            if (gsid != sid) return error.StableIdMismatch;
-        }
-
-        const callees = graph_query.calleesOf(graph, alloc, f.name) catch return error.OutOfMemory;
-        defer alloc.free(callees);
-        if (callees.len == 0) continue;
-
-        if (countDirectCallees(region) != callees.len) return error.CallGraphMismatch;
-
-        for (callees) |callee| {
-            var found = false;
-            for (region.nodes) |node| {
-                if (node.kind != .call or node.graph_stable_id == null) continue;
-                if (node.callee) |c| {
-                    if (std.mem.eql(u8, c, callee)) found = true;
-                }
-            }
-            if (!found) return error.CallGraphMismatch;
-        }
+    var iterator = expected.valueIterator();
+    while (iterator.next()) |application| {
+        if (application.uses != 1) return error.CallGraphMismatch;
     }
 }
 
@@ -455,30 +626,31 @@ pub fn buildValidatedModuleRegions(
     return regions;
 }
 
-test "region_graph: preserves call edges and stable ids" {
+test "region_graph: validates checked applications by identity" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
     const dnir_lower = @import("dnir_lower.zig");
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\Point: @{ x: f64, y: f64 }
-        \\distance2(p: Point): f64
-        \\    p.x * p.x + p.y * p.y
-        \\end
-        \\main(): i64
-        \\    distance2({ x = 3.0, y = 4.0 })
-        \\    0
-        \\end
+        \\read: i64 = (subject: i64)
+        \\    subject
+        \\main: i64 = ()
+        \\    42:read()
     ;
     var lex = Lexer.init(src, "region.duo");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
-    const mod = try parser.parse_module();
+    var mod = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&mod);
     var g = semantic_graph.SemanticGraph.init(alloc);
     defer g.deinit();
-    _ = try g.liftModuleWithCalls(&mod, "region.duo");
+    _ = try g.liftModuleWithCheckedCalls(&mod, &checked, "region.duo");
     const m = try dnir_lower.lowerModuleWithGraph(alloc, &mod, &g);
 
     const regions = try buildModuleRegions(alloc, m, &g);
@@ -488,14 +660,50 @@ test "region_graph: preserves call edges and stable ids" {
     var main_region: ?*const Region = null;
     for (regions) |*r| {
         if (std.mem.eql(u8, r.func_name, "main")) main_region = r;
-        try std.testing.expect(r.func_stable_id != null);
+        try std.testing.expect(r.func_identity != null);
     }
     const mr = main_region orelse return error.TestExpectedEqual;
     var saw_call = false;
-    for (mr.edges) |e| {
-        if (e.kind == .calls) saw_call = true;
+    for (mr.nodes) |node| {
+        if (node.kind != .call) continue;
+        try std.testing.expect(hasCompleteApplicationIdentity(node));
+        saw_call = true;
     }
     try std.testing.expect(saw_call);
+
+    const census = try semanticNameReconstructionCensus(alloc, regions, &g);
+    try std.testing.expectEqual(@as(usize, 1), census.required_checked_applications);
+    try std.testing.expectEqual(@as(usize, 1), census.checked_call_nodes);
+    try std.testing.expectEqual(@as(usize, 0), census.incomplete_lineage);
+    try std.testing.expectEqual(@as(usize, 0), census.legacy_symbol_bridges);
+    try std.testing.expectEqual(@as(usize, 0), census.legacy_function_name_bridges);
+
+    for (regions) |*region| {
+        for (region.nodes) |*node| {
+            if (node.kind != .call or !hasCompleteApplicationIdentity(node.*)) continue;
+            const application_id = node.application_id;
+            node.application_id = null;
+            const invalid_census = try semanticNameReconstructionCensus(alloc, regions, &g);
+            try std.testing.expectEqual(@as(usize, 1), invalid_census.incomplete_lineage);
+            try std.testing.expectError(
+                error.IncompleteApplicationIdentity,
+                validateModuleRegions(regions, &g, m, alloc),
+            );
+            node.application_id = application_id;
+            node.relation_id = null;
+            node.application_id = null;
+            node.value_id = null;
+            node.realization_start = null;
+            const missing_census = try semanticNameReconstructionCensus(alloc, regions, &g);
+            try std.testing.expectEqual(@as(usize, 1), missing_census.missing_lineage);
+            try std.testing.expectError(
+                error.CallGraphMismatch,
+                validateModuleRegions(regions, &g, m, alloc),
+            );
+            return;
+        }
+    }
+    return error.TestExpectedEqual;
 }
 
 test "region_graph: hardware ops become labeled nodes" {

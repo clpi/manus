@@ -12932,6 +12932,112 @@ no boxed `lua_Value` path and no C fallback into the proof.
 
 ---
 
+## 2026-08-10 — exact checked-application lineage through direct objects
+
+This entry supersedes the downstream identity and transform claims in the
+preceding SHC-01 entry. It does not change that entry's upstream Sema/graph
+history.
+
+### Implemented
+
+- DNIR, regions and machine provenance now carry an exact semantic reference:
+  the graph node handle is authoritative and the stable fingerprint is an
+  integrity check. A fingerprint is never used alone as semantic identity.
+- For the checked scalar subject-call subset, relation, application occurrence,
+  result value and containing callable references are mandatory. Subject and
+  ordered operand roles come from graph edges. Removing or corrupting any
+  required reference refuses direct realization instead of recovering meaning
+  from the callee spelling.
+- Application lookup, function ordering and reverse validation use indexes
+  built in linear time. Distinct occurrences of one relation retain distinct
+  application and result identities.
+- Region construction no longer recovers a relation by searching for a function
+  named like `callee`. The remaining `callee` string is the selected physical
+  link symbol or explicitly quarantined identity-free legacy data.
+- Machine lineage covers the complete realized instruction range, including
+  argument placement, and translates the text range to the final object byte
+  range. It retains callable, relation, application and value references.
+- Identified functions are excluded from the legacy name-selected constant
+  transform until an authoritative transform witness, effect proof and stable
+  realization identity exist. Regions are rebuilt and revalidated after every
+  admitted transform.
+- `br_if` and `br_if_not` were retired as duplicate physical vocabulary. One
+  `br` realization now carries an explicit unconditional/true/false condition
+  fact. No source control category became semantic DNIR authority.
+
+### Focused semantic census
+
+The initial downstream direct-call census found 3 linker-symbol-only sites, 6
+temporary text-recovery bridges and 17 semantic-authority violations, plus 16
+primitive/runtime families whose canonical relation, world or bootstrap origin
+is not yet available. That is a repository inventory, not a claim that all
+entries were repaired here.
+
+For the supported checked scalar subject-call subset after this change:
+
+- semantic selection from callee spelling: 0;
+- relation recovery from a function name in region construction: 0;
+- partial or missing identity accepted: 0;
+- name-selected transforms admitted: 0;
+- hash-only semantic identity: 0;
+- retired conditional branch operation names: 2.
+
+Plain calls, req/module and foreign calls, string/runtime primitives, hardware
+operations and f64 ABI selection remain outside that zero. They retain explicit
+legacy tags or refuse; none is counted as canonical checked-application
+coverage.
+
+### Machine-equivalence evidence
+
+An isolated ReleaseFast integration-HEAD build and a build with the final five
+compiler files produced byte-identical AArch64 Mach-O objects for nine
+call-free control families:
+
+| Family | SHA-256 before and after |
+| --- | --- |
+| if / else-if | `db089bbe5781e23d4c98b2d904ced6eb7afa2d774bd92da6648193275c37e77a` |
+| while | `d36b5b95b0dba0d9fad8947ac2b6bf76e2bdb0047689d9260a15ea988fbb04d4` |
+| constant-step for | `7d28ebf479987e966e85a91a765c50a76a58c01977f9956840c5b7c4a5d05afa` |
+| runtime-step for | `79d9a9ce81239d94b29cd34ea54e79c84d32bde47670667f81415f62a97f3b81` |
+| dynamic indexed read | `31a2ca9b6062f516b3c7a782ddadd3b82336abc38104756647a2660d818b955d` |
+| dynamic indexed write | `56353e157f75fcd07f423341a05437f1c4580f4643990e4ec2f135eccd4aaa13` |
+| short-circuit and | `08f1e5f4418aeba2a58d4332ccbba869053b6f1051d1e71cdee416c1b5fc5531` |
+| short-circuit or | `4953f48035cc809484b6ac830e3a9ad2c5efd25d395957ad064aa658706789c1` |
+| conditional expression | `edc07bc550c3a216ee94c4e1cd2d0b827cebf27d3809ccd69f7589792fcce417` |
+
+This slice therefore claims no runtime speedup and no runtime regression. It
+changes semantic validation, observability and physical vocabulary while
+preserving the selected machine encoding for the affected branch family.
+
+### Gates and current performance state
+
+- `zig build unit-test` through the serialized build tool — pass.
+- locked `zig build` — pass.
+- locked `scripts/agent_smoke.duo` — pass.
+- `zig fmt --check`, `zig ast-check` on all five compiler files and
+  `git diff --check` — pass.
+- locked `native-differential` — 17 agree, 50 diverge, 5 unsupported; fail.
+  An isolated integration-HEAD run produced the same counts.
+- locked `native-census` — 47 native, 159 bail, 15 unreachable, 206 reachable;
+  fail against the existing 88-native ratchet. Integration HEAD produced the
+  same counts.
+- locked `zig build bench` — all 40 result rows agree for both Duo inputs, but
+  the speed verdict is 23 measured wins, 2 folded rows and 12 C wins; fail.
+  The manifest is `backend=c-specialized`, so this DNIR/direct-only change is
+  not on the measured runtime path. No C-floor claim is made.
+
+### Deletion gates
+
+The downstream graph-node handle remains a session-local bridge. It can be
+retired when the application producer supplies collision-safe durable
+meaning/content/incarnation identity; argument and result pack identities with
+slot cardinality and correspondence; explicit absent/unknown/empty states;
+world, effects, witness, provenance and demand; typed origin/linkage/ABI; and a
+transform identity plus purity/effect witness. No placeholder or zero identity
+is manufactured while those facts are absent.
+
+---
+
 ## 2026-08-09 — exact cross-module scalar identity for SH-04 (historical parser measurement)
 
 ### Implemented

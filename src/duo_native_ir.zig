@@ -62,6 +62,12 @@ pub const BinOpTag = enum {
     shr,
 };
 
+pub const BranchCondition = enum {
+    unconditional,
+    when_true,
+    when_false,
+};
+
 pub const Op = enum {
     @"const",
     const_req,
@@ -91,8 +97,6 @@ pub const Op = enum {
     /// Move an f64 value into d{result} before `call_direct` (.ty = .f64).
     fp_mov_arg,
     br,
-    br_if,
-    br_if_not,
     ret,
     ret_record,
     /// Sovereign machine barrier — `dmb` / `mfence` class (never C emit).
@@ -124,12 +128,27 @@ pub const Value = union(enum) {
     record: u32,
 };
 
+/// Exact node reference in the authoritative graph plus its diagnostic/content
+/// fingerprint. `node` is the identity key; `fingerprint` is never used alone
+/// to select meaning and may collide without aliasing two nodes.
+pub const SemanticRef = struct {
+    node: u32,
+    fingerprint: u64,
+
+    pub fn eql(a: SemanticRef, b: SemanticRef) bool {
+        return a.node == b.node and a.fingerprint == b.fingerprint;
+    }
+};
+
 pub const Instr = struct {
     op: Op,
-    /// Stable semantic identities retained from the authoritative graph.
-    relation: ?u64 = null,
-    application: ?u64 = null,
-    value: ?u64 = null,
+    /// Exact semantic graph references retained through realization.
+    relation: ?SemanticRef = null,
+    application: ?SemanticRef = null,
+    value: ?SemanticRef = null,
+    /// First flattened DNIR instruction whose emitted bytes belong to this
+    /// application realization. Present exactly when application identity is.
+    realization_start: ?u32 = null,
     result: ?u32 = null,
     lhs: Value = .void,
     rhs: Value = .void,
@@ -152,6 +171,8 @@ pub const Instr = struct {
     vals: []const Value = &.{},
     /// Label index for branch ops (resolved by backend).
     branch_target: u32 = 0,
+    /// Physical branch selection. Semantic condition identity remains upstream.
+    branch_condition: BranchCondition = .unconditional,
     /// Hardware intrinsic for `hw_unary` / metadata on fence-family ops.
     hw: HwIntrinsic = .none,
 };
@@ -191,8 +212,8 @@ pub const Function = struct {
     ret_record: ?[]const u8 = null,
     /// Pure f64 kernel — params/return use FP registers (Pass 4 M1).
     is_float_kernel: bool = false,
-    /// Semantic graph `StableId` hash when lowered via `lowerModuleWithGraph`.
-    graph_stable_id: ?u64 = null,
+    /// Exact authoritative graph identity for the callable declaration.
+    semantic_identity: ?SemanticRef = null,
     blocks: []const Block,
 };
 
@@ -205,6 +226,46 @@ pub const Module = struct {
     /// Highest hardware tier exercised — for catalog / capability proofs.
     hardware_tier: HardwareTier = .scalar,
 };
+
+/// Release fields interned by DNIR lowering when an instruction is discarded.
+pub fn deinitInstr(alloc: std.mem.Allocator, instruction: Instr) void {
+    if (instruction.callee.len > 0) alloc.free(instruction.callee);
+    if (instruction.req_alias.len > 0) alloc.free(instruction.req_alias);
+    if (instruction.field.len > 0) alloc.free(instruction.field);
+    if (instruction.record.len > 0) alloc.free(instruction.record);
+    if (instruction.vals.len > 0) alloc.free(instruction.vals);
+}
+
+/// Release a module produced by DNIR lowering.
+pub fn deinitModule(alloc: std.mem.Allocator, module: Module) void {
+    for (module.records) |record| {
+        alloc.free(record.name);
+        for (record.fields) |field| alloc.free(field);
+        alloc.free(record.fields);
+        alloc.free(record.kinds);
+    }
+    alloc.free(module.records);
+    for (module.functions) |function| {
+        alloc.free(function.name);
+        for (function.params) |param| {
+            alloc.free(param.name);
+            if (param.record) |record| alloc.free(record);
+        }
+        alloc.free(function.params);
+        if (function.ret_record) |record| alloc.free(record);
+        for (function.blocks) |block| {
+            for (block.instrs) |instruction| deinitInstr(alloc, instruction);
+            alloc.free(block.instrs);
+        }
+        alloc.free(function.blocks);
+    }
+    alloc.free(module.functions);
+    for (module.externs) |external| {
+        alloc.free(external.duo_name);
+        alloc.free(external.symbol);
+    }
+    alloc.free(module.externs);
+}
 
 pub fn moduleHardwareTier(m: Module) HardwareTier {
     var tier: HardwareTier = .scalar;
@@ -239,6 +300,19 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
     for (m.functions) |f| {
         for (f.blocks) |b| {
             for (b.instrs) |i| {
+                const identity_count: u2 = @as(u2, @intFromBool(i.relation != null)) +
+                    @as(u2, @intFromBool(i.application != null)) +
+                    @as(u2, @intFromBool(i.value != null));
+                if (identity_count != 0 and identity_count != 3) return false;
+                if ((identity_count == 3) != (i.realization_start != null)) return false;
+                if (i.op == .br) {
+                    switch (i.branch_condition) {
+                        .unconditional => if (i.lhs != .void) return false,
+                        .when_true, .when_false => if (i.lhs == .void) return false,
+                    }
+                } else if (i.branch_condition != .unconditional) {
+                    return false;
+                }
                 switch (i.op) {
                     .call_direct,
                     .call_extern,
@@ -260,8 +334,6 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
                     .mov_arg,
                     .fp_mov_arg,
                     .br,
-                    .br_if,
-                    .br_if_not,
                     .hw_fence,
                     .hw_spin,
                     .hw_unary,
@@ -291,4 +363,19 @@ test "duo_native_ir: single ret function ready" {
     };
     const m = Module{ .functions = &.{f} };
     try std.testing.expect(moduleIsNativeDirectReady(m));
+}
+
+test "duo_native_ir: branch condition and operand agree" {
+    const bad_unconditional = [_]Block{
+        .{ .instrs = &.{.{ .op = .br, .lhs = .{ .i64 = 1 } }} },
+    };
+    const bad_conditional = [_]Block{
+        .{ .instrs = &.{.{ .op = .br, .branch_condition = .when_false }} },
+    };
+    const good_conditional = [_]Block{
+        .{ .instrs = &.{.{ .op = .br, .lhs = .{ .i64 = 1 }, .branch_condition = .when_false }} },
+    };
+    try std.testing.expect(!moduleIsNativeDirectReady(.{ .functions = &.{.{ .name = "bad", .ret = .void, .blocks = &bad_unconditional }} }));
+    try std.testing.expect(!moduleIsNativeDirectReady(.{ .functions = &.{.{ .name = "bad", .ret = .void, .blocks = &bad_conditional }} }));
+    try std.testing.expect(moduleIsNativeDirectReady(.{ .functions = &.{.{ .name = "good", .ret = .void, .blocks = &good_conditional }} }));
 }

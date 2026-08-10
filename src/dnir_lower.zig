@@ -105,6 +105,165 @@ const ModuleConsts = struct {
 const empty_module_consts: ModuleConsts = .{};
 const empty_fp_params: std.StringHashMapUnmanaged([]bool) = .empty;
 
+const CheckedApplication = struct {
+    relation: semantic_graph.NodeId,
+    subject: ?semantic_graph.NodeId,
+    arguments: []semantic_graph.NodeId,
+    descriptor: types.ResolvedType,
+    relation_identity: dnir.SemanticRef,
+    application_identity: dnir.SemanticRef,
+    value_identity: dnir.SemanticRef,
+    caller_identity: dnir.SemanticRef,
+};
+
+const ApplicationEdges = struct {
+    relation: ?semantic_graph.NodeId = null,
+    result: ?semantic_graph.NodeId = null,
+    subject: ?semantic_graph.NodeId = null,
+    argument_count: usize = 0,
+};
+
+fn containingFunctionFromScope(
+    graph: *const semantic_graph.SemanticGraph,
+    start: semantic_graph.NodeId,
+) ?semantic_graph.NodeId {
+    var current = start;
+    var depth: u32 = 0;
+    while (depth < 64) : (depth += 1) {
+        const node = graph.get(current) orelse return null;
+        if (node.kind == .func) return current;
+        if (!node.scope.isValid()) return null;
+        current = node.scope;
+    }
+    return null;
+}
+
+fn semanticReference(
+    graph: *const semantic_graph.SemanticGraph,
+    node_id: semantic_graph.NodeId,
+) Error!dnir.SemanticRef {
+    const node = graph.get(node_id) orelse return bail(@src());
+    return .{
+        .node = node_id.index,
+        .fingerprint = (node.stable_id orelse return bail(@src())).hash,
+    };
+}
+
+/// One module-local query index for checked application facts. This is a
+/// bootstrap projection of graph identities, not a replacement application
+/// schema; missing owner facts remain missing and are never synthesized.
+const CheckedApplicationIndex = struct {
+    alloc: std.mem.Allocator,
+    applications: std.ArrayListUnmanaged(CheckedApplication) = .empty,
+    by_expression: std.AutoHashMapUnmanaged(*const Expr, usize) = .empty,
+    by_node: []?usize = &.{},
+    has_unresolved_calls: bool = false,
+
+    fn init(
+        alloc: std.mem.Allocator,
+        graph: *const semantic_graph.SemanticGraph,
+    ) Error!CheckedApplicationIndex {
+        var index: CheckedApplicationIndex = .{ .alloc = alloc };
+        errdefer index.deinit();
+
+        const edges = try alloc.alloc(ApplicationEdges, graph.nodes.items.len);
+        defer alloc.free(edges);
+        for (edges) |*entry| entry.* = .{};
+        for (graph.edges.items) |edge| {
+            if (edge.from.index >= edges.len) return bailWith(@src(), "application-edge");
+            if (graph.nodes.items[edge.from.index].kind != .call) continue;
+            switch (edge.kind) {
+                .relation => {
+                    if (edges[edge.from.index].relation != null) return bailWith(@src(), "application-relation-count");
+                    edges[edge.from.index].relation = edge.to;
+                },
+                .result => {
+                    if (edges[edge.from.index].result != null) return bailWith(@src(), "application-result-count");
+                    edges[edge.from.index].result = edge.to;
+                },
+                .subject => {
+                    if (edges[edge.from.index].subject != null) return bailWith(@src(), "application-subject-count");
+                    edges[edge.from.index].subject = edge.to;
+                },
+                .argument => edges[edge.from.index].argument_count += 1,
+                else => {},
+            }
+        }
+
+        index.by_node = try alloc.alloc(?usize, graph.nodes.items.len);
+        @memset(index.by_node, null);
+        for (graph.nodes.items, 0..) |node, i| {
+            if (node.kind != .call) continue;
+            const relation = edges[i].relation orelse {
+                index.has_unresolved_calls = true;
+                continue;
+            };
+            const result = edges[i].result orelse return bailWith(@src(), "application-result");
+            const caller = containingFunctionFromScope(graph, .{ .index = @intCast(i) }) orelse
+                return bailWith(@src(), "application-caller");
+            const result_node = graph.get(result) orelse return bail(@src());
+            const expression_raw = node.ast_ref orelse return bailWith(@src(), "application-provenance");
+            const expression: *const Expr = @ptrCast(@alignCast(expression_raw));
+            const descriptor = result_node.descriptor orelse
+                return bailWith(@src(), "application-result-descriptor");
+            const relation_identity = try semanticReference(graph, relation);
+            const application_identity = try semanticReference(graph, .{ .index = @intCast(i) });
+            const value_identity = try semanticReference(graph, result);
+            const caller_identity = try semanticReference(graph, caller);
+            const arguments = try alloc.alloc(semantic_graph.NodeId, edges[i].argument_count);
+            for (arguments) |*argument| argument.* = semantic_graph.NodeId.invalid;
+
+            const application_index = index.applications.items.len;
+            index.applications.append(alloc, .{
+                .relation = relation,
+                .subject = edges[i].subject,
+                .arguments = arguments,
+                .descriptor = descriptor,
+                .relation_identity = relation_identity,
+                .application_identity = application_identity,
+                .value_identity = value_identity,
+                .caller_identity = caller_identity,
+            }) catch |err| {
+                alloc.free(arguments);
+                return err;
+            };
+            index.by_node[i] = application_index;
+            const slot = try index.by_expression.getOrPut(alloc, expression);
+            if (slot.found_existing) return bailWith(@src(), "application-provenance-collision");
+            slot.value_ptr.* = application_index;
+        }
+
+        for (graph.edges.items) |edge| {
+            if (edge.kind != .argument or edge.from.index >= index.by_node.len) continue;
+            const application_index = index.by_node[edge.from.index] orelse continue;
+            const application = &index.applications.items[application_index];
+            const position: usize = edge.position;
+            if (position >= application.arguments.len or application.arguments[position].isValid()) {
+                return bailWith(@src(), "application-argument-position");
+            }
+            application.arguments[position] = edge.to;
+        }
+        for (index.applications.items) |application| {
+            for (application.arguments) |argument| {
+                if (!argument.isValid()) return bailWith(@src(), "application-argument-position");
+            }
+        }
+        return index;
+    }
+
+    fn deinit(self: *CheckedApplicationIndex) void {
+        for (self.applications.items) |application| self.alloc.free(application.arguments);
+        self.applications.deinit(self.alloc);
+        self.by_expression.deinit(self.alloc);
+        if (self.by_node.len > 0) self.alloc.free(self.by_node);
+    }
+
+    fn get(self: *const CheckedApplicationIndex, expression: *const Expr) ?*const CheckedApplication {
+        const application_index = self.by_expression.get(expression) orelse return null;
+        return &self.applications.items[application_index];
+    }
+};
+
 /// Collect top-level constant bindings so a function body can fold them.
 ///
 /// `N = 3` and the canonical enum form `Kind = @{ eof = 0, ident = 1 }` are
@@ -192,6 +351,7 @@ fn lowerModuleFromGraph(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
     graph: *const semantic_graph.SemanticGraph,
+    applications: *const CheckedApplicationIndex,
 ) Error!dnir.Module {
     bail_site.line = 0;
     var req = try native_req_support.collectFromModule(alloc, mod);
@@ -211,6 +371,21 @@ fn lowerModuleFromGraph(
         records.deinit(alloc);
     }
     try collectRecords(alloc, &records, mod);
+
+    // Join declarations to graph identities by exact provenance. The exported
+    // function name remains a linker/debug symbol; it is not an identity key.
+    var function_identities: std.AutoHashMapUnmanaged(*const ast.FuncDecl, dnir.SemanticRef) = .empty;
+    defer function_identities.deinit(alloc);
+    for (graph.nodes.items, 0..) |node, i| {
+        if (node.kind != .func) continue;
+        const raw = node.ast_ref orelse continue;
+        const declaration: *const ast.FuncDecl = @ptrCast(@alignCast(raw));
+        try function_identities.put(
+            alloc,
+            declaration,
+            try semanticReference(graph, .{ .index = @intCast(i) }),
+        );
+    }
 
     // GAP-056: which ABI slots each callee expects in v0..v7, so the CALLER
     // marshals into the register file the CALLEE reads from. Keyed by
@@ -286,7 +461,19 @@ fn lowerModuleFromGraph(
                 "?";
             continue;
         }
-        const f = try lowerFunction(alloc, fd, records.items, graph, &req, &externs, &func_record_returns, &fp_params, &module_consts);
+        const f = try lowerFunction(
+            alloc,
+            fd,
+            function_identities.get(fd),
+            records.items,
+            graph,
+            applications,
+            &req,
+            &externs,
+            &func_record_returns,
+            &fp_params,
+            &module_consts,
+        );
         try functions.append(alloc, f);
     }
     if (functions.items.len == 0) return bail(@src());
@@ -306,38 +493,27 @@ fn lowerModuleFromGraph(
     };
 }
 
-/// Pass 16 hook: optional semantic graph for provenance/transform ordering.
-/// Reorders functions callees-before-callers and attaches graph stable IDs.
+/// Pass 16 hook: graph identity controls checked call ordering and provenance.
 pub fn lowerModuleWithGraph(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
     graph: *const semantic_graph.SemanticGraph,
 ) Error!dnir.Module {
-    var m = try lowerModuleFromGraph(alloc, mod, graph);
-    try applyGraphToModule(alloc, graph, &m);
+    var applications = try CheckedApplicationIndex.init(alloc, graph);
+    defer applications.deinit();
+    var m = try lowerModuleFromGraph(alloc, mod, graph, &applications);
+    errdefer dnir.deinitModule(alloc, m);
+    try applyGraphToModule(alloc, graph, &applications, &m);
     return m;
 }
 
 fn applyGraphToModule(
     alloc: std.mem.Allocator,
     graph: *const semantic_graph.SemanticGraph,
+    applications: *const CheckedApplicationIndex,
     m: *dnir.Module,
 ) Error!void {
-    var names: std.ArrayListUnmanaged([]const u8) = .empty;
-    defer names.deinit(alloc);
-    for (m.functions) |f| try names.append(alloc, f.name);
-
-    const order = try graph.moduleFunctionEmitOrder(alloc, names.items);
-    defer alloc.free(order);
-
-    try reorderFunctions(alloc, m, order);
-
-    const funcs: []dnir.Function = @constCast(m.functions);
-    for (funcs) |*f| {
-        const id = graph.findFunc(f.name) orelse continue;
-        const node = graph.get(id) orelse continue;
-        if (node.stable_id) |sid| f.graph_stable_id = sid.hash;
-    }
+    try reorderFunctionsByGraphIdentity(alloc, applications, m);
 
     const recs: []dnir.RecordDesc = @constCast(m.records);
     for (recs) |*rec| {
@@ -348,24 +524,74 @@ fn applyGraphToModule(
     }
 }
 
-fn reorderFunctions(alloc: std.mem.Allocator, m: *dnir.Module, order: []const []const u8) Error!void {
-    if (m.functions.len <= 1 or order.len != m.functions.len) return;
+/// Place checked callees before callers using graph identities only. If any
+/// in-module application is unresolved, retaining source order is safer than
+/// completing the dependency graph from its spelling.
+fn reorderFunctionsByGraphIdentity(
+    alloc: std.mem.Allocator,
+    applications: *const CheckedApplicationIndex,
+    m: *dnir.Module,
+) Error!void {
+    if (m.functions.len <= 1) return;
+    if (applications.has_unresolved_calls) return;
 
-    var rank: std.StringHashMapUnmanaged(usize) = .empty;
-    defer rank.deinit(alloc);
-    for (order, 0..) |name, i| {
-        try rank.put(alloc, name, i);
+    var functions_by_identity: std.AutoHashMapUnmanaged(u32, usize) = .empty;
+    defer functions_by_identity.deinit(alloc);
+    for (m.functions, 0..) |function, i| {
+        const identity = function.semantic_identity orelse return;
+        const slot = try functions_by_identity.getOrPut(alloc, identity.node);
+        if (slot.found_existing) return bailWith(@src(), "function-identity-collision");
+        slot.value_ptr.* = i;
     }
 
-    const funcs: []dnir.Function = @constCast(m.functions);
-    const Func = dnir.Function;
-    std.mem.sort(Func, funcs, rank, struct {
-        fn lessThan(ctx: std.StringHashMapUnmanaged(usize), a: Func, b: Func) bool {
-            const ra = ctx.get(a.name) orelse return false;
-            const rb = ctx.get(b.name) orelse return true;
-            return ra < rb;
+    const in_degree = try alloc.alloc(usize, m.functions.len);
+    defer alloc.free(in_degree);
+    @memset(in_degree, 0);
+    const unlocks = try alloc.alloc(std.ArrayListUnmanaged(usize), m.functions.len);
+    defer {
+        for (unlocks) |*list| list.deinit(alloc);
+        alloc.free(unlocks);
+    }
+    for (unlocks) |*list| list.* = .empty;
+    var dependency_edges: std.AutoHashMapUnmanaged(u128, void) = .empty;
+    defer dependency_edges.deinit(alloc);
+
+    var checked_edges: usize = 0;
+    for (applications.applications.items) |application| {
+        const caller_index = functions_by_identity.get(application.caller_identity.node) orelse continue;
+        const relation_index = functions_by_identity.get(application.relation_identity.node) orelse continue;
+        const dependency = (@as(u128, relation_index) << 64) | @as(u128, caller_index);
+        const slot = try dependency_edges.getOrPut(alloc, dependency);
+        if (slot.found_existing) continue;
+        try unlocks[relation_index].append(alloc, caller_index);
+        in_degree[caller_index] += 1;
+        checked_edges += 1;
+    }
+    if (checked_edges == 0) return;
+
+    var ready: std.ArrayListUnmanaged(usize) = .empty;
+    defer ready.deinit(alloc);
+    for (in_degree, 0..) |degree, i| {
+        if (degree == 0) try ready.append(alloc, i);
+    }
+    var order: std.ArrayListUnmanaged(usize) = .empty;
+    defer order.deinit(alloc);
+    while (ready.items.len > 0) {
+        const function_index = ready.pop().?;
+        try order.append(alloc, function_index);
+        for (unlocks[function_index].items) |caller_index| {
+            in_degree[caller_index] -= 1;
+            if (in_degree[caller_index] == 0) try ready.append(alloc, caller_index);
         }
-    }.lessThan);
+    }
+    if (order.items.len != m.functions.len) return;
+
+    const ordered = try alloc.alloc(dnir.Function, m.functions.len);
+    defer alloc.free(ordered);
+    for (order.items, 0..) |source_index, destination_index| {
+        ordered[destination_index] = m.functions[source_index];
+    }
+    @memcpy(@constCast(m.functions), ordered);
 }
 
 fn funcFfiName(attrs: []const ast.Attribute) ?[]const u8 {
@@ -593,6 +819,7 @@ pub const LowerCtx = struct {
     alloc: std.mem.Allocator,
     records: []const dnir.RecordDesc,
     graph: *const semantic_graph.SemanticGraph,
+    applications: *const CheckedApplicationIndex,
     req: *const native_req_support.Context,
     externs: *std.ArrayList(dnir.Extern),
     func_record_returns: *std.StringHashMapUnmanaged([]const u8),
@@ -674,8 +901,10 @@ fn internInstrStrings(alloc: std.mem.Allocator, instrs: []dnir.Instr) Error!void
 fn lowerFunction(
     alloc: std.mem.Allocator,
     fd: *const ast.FuncDecl,
+    semantic_identity: ?dnir.SemanticRef,
     records: []const dnir.RecordDesc,
     graph: *const semantic_graph.SemanticGraph,
+    applications: *const CheckedApplicationIndex,
     req: *const native_req_support.Context,
     externs: *std.ArrayList(dnir.Extern),
     func_record_returns: *std.StringHashMapUnmanaged([]const u8),
@@ -686,6 +915,7 @@ fn lowerFunction(
         .alloc = alloc,
         .records = records,
         .graph = graph,
+        .applications = applications,
         .req = req,
         .externs = externs,
         .func_record_returns = func_record_returns,
@@ -791,6 +1021,7 @@ fn lowerFunction(
             const slots = f64AbiParamSlots(fd, records) orelse break :blk false;
             break :blk slots > 0 and slots <= 8;
         },
+        .semantic_identity = semantic_identity,
         .blocks = blocks,
     };
 }
@@ -1102,7 +1333,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
 
             const cond = try lowerExpr(ctx, is.cond);
             var fail_idx = ctx.instrs.items.len;
-            try ctx.emit(.{ .op = .br_if_not, .lhs = cond, .branch_target = 0 });
+            try ctx.emit(.{ .op = .br, .lhs = cond, .branch_target = 0, .branch_condition = .when_false });
 
             const then_ret = try lowerBlockReturns(ctx, &is.then, allow_return);
             if (!then_ret) {
@@ -1115,7 +1346,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                 ctx.instrs.items[fail_idx].branch_target = next_idx;
                 const econd = try lowerExpr(ctx, elseif.cond);
                 fail_idx = ctx.instrs.items.len;
-                try ctx.emit(.{ .op = .br_if_not, .lhs = econd, .branch_target = 0 });
+                try ctx.emit(.{ .op = .br, .lhs = econd, .branch_target = 0, .branch_condition = .when_false });
                 const branch_ret = try lowerBlockReturns(ctx, &elseif.body, allow_return);
                 if (!branch_ret) {
                     try end_branches.append(ctx.alloc, @intCast(ctx.instrs.items.len));
@@ -1136,7 +1367,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             const head_idx: u32 = @intCast(ctx.instrs.items.len);
             const cond = try lowerExpr(ctx, ws.cond);
             const fail_idx = ctx.instrs.items.len;
-            try ctx.emit(.{ .op = .br_if_not, .lhs = cond, .branch_target = 0 });
+            try ctx.emit(.{ .op = .br, .lhs = cond, .branch_target = 0, .branch_condition = .when_false });
             // A loop body is never an implicit-tail position: its last statement
             // runs once per iteration, not once per call. Propagating
             // `allow_return` here makes `tryEmitTailDemandReturn` end the body
@@ -1309,7 +1540,7 @@ fn lowerConstNumFor(ctx: *LowerCtx, loop: anytype, step_lit: i64) Error!void {
         .rhs = try lowerExpr(ctx, loop.stop),
     });
     const fail_idx = ctx.instrs.items.len;
-    try ctx.emit(.{ .op = .br_if_not, .lhs = .{ .temp = cond_temp }, .branch_target = 0 });
+    try ctx.emit(.{ .op = .br, .lhs = .{ .temp = cond_temp }, .branch_target = 0, .branch_condition = .when_false });
     // Loop bodies are not implicit-tail positions — see the while_loop arm.
     _ = try lowerBlockReturns(ctx, &loop.body, false);
     const next_temp = ctx.freshTemp();
@@ -1353,7 +1584,7 @@ fn lowerRuntimeNumFor(ctx: *LowerCtx, loop: anytype) Error!void {
         .rhs = .{ .i64 = 0 },
     });
     const to_pos_idx = ctx.instrs.items.len;
-    try ctx.emit(.{ .op = .br_if_not, .lhs = .{ .temp = sign_temp }, .branch_target = 0 });
+    try ctx.emit(.{ .op = .br, .lhs = .{ .temp = sign_temp }, .branch_target = 0, .branch_condition = .when_false });
 
     const neg_cond = ctx.freshTemp();
     try ctx.emit(.{
@@ -1364,7 +1595,7 @@ fn lowerRuntimeNumFor(ctx: *LowerCtx, loop: anytype) Error!void {
         .rhs = .{ .local = stop_slot },
     });
     const neg_fail = ctx.instrs.items.len;
-    try ctx.emit(.{ .op = .br_if_not, .lhs = .{ .temp = neg_cond }, .branch_target = 0 });
+    try ctx.emit(.{ .op = .br, .lhs = .{ .temp = neg_cond }, .branch_target = 0, .branch_condition = .when_false });
     const to_body_from_neg = ctx.instrs.items.len;
     try ctx.emit(.{ .op = .br, .branch_target = 0 });
 
@@ -1380,7 +1611,7 @@ fn lowerRuntimeNumFor(ctx: *LowerCtx, loop: anytype) Error!void {
         .rhs = .{ .local = stop_slot },
     });
     const pos_fail = ctx.instrs.items.len;
-    try ctx.emit(.{ .op = .br_if_not, .lhs = .{ .temp = pos_cond }, .branch_target = 0 });
+    try ctx.emit(.{ .op = .br, .lhs = .{ .temp = pos_cond }, .branch_target = 0, .branch_condition = .when_false });
 
     const body_idx: u32 = @intCast(ctx.instrs.items.len);
     ctx.instrs.items[to_body_from_neg].branch_target = body_idx;
@@ -1731,12 +1962,12 @@ fn emitIndexBoundsTrap(ctx: *LowerCtx, idx_slot: u32, len: i64) Error!void {
     const lo = ctx.freshTemp();
     try ctx.emit(.{ .op = .binop, .result = lo, .binop = .geq, .lhs = .{ .local = idx_slot }, .rhs = .{ .i64 = 1 } });
     const lo_bad = ctx.instrs.items.len;
-    try ctx.emit(.{ .op = .br_if_not, .lhs = .{ .temp = lo }, .branch_target = 0 });
+    try ctx.emit(.{ .op = .br, .lhs = .{ .temp = lo }, .branch_target = 0, .branch_condition = .when_false });
 
     const hi = ctx.freshTemp();
     try ctx.emit(.{ .op = .binop, .result = hi, .binop = .leq, .lhs = .{ .local = idx_slot }, .rhs = .{ .i64 = len } });
     const hi_bad = ctx.instrs.items.len;
-    try ctx.emit(.{ .op = .br_if_not, .lhs = .{ .temp = hi }, .branch_target = 0 });
+    try ctx.emit(.{ .op = .br, .lhs = .{ .temp = hi }, .branch_target = 0, .branch_condition = .when_false });
 
     const skip = ctx.instrs.items.len;
     try ctx.emit(.{ .op = .br, .branch_target = 0 });
@@ -1821,7 +2052,7 @@ fn lowerIndexAssignTarget(
             .rhs = .{ .i64 = i },
         });
         const skip = ctx.instrs.items.len;
-        try ctx.emit(.{ .op = .br_if_not, .lhs = .{ .temp = cmp }, .branch_target = 0 });
+        try ctx.emit(.{ .op = .br, .lhs = .{ .temp = cmp }, .branch_target = 0, .branch_condition = .when_false });
         try ctx.emit(.{ .op = .store_local, .result = elem_slot, .lhs = .{ .local = val_slot }, .ty = .any });
         ctx.instrs.items[skip].branch_target = @intCast(ctx.instrs.items.len);
     }
@@ -1871,7 +2102,7 @@ fn lowerDynamicIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const as
             .rhs = .{ .i64 = i },
         });
         const skip = ctx.instrs.items.len;
-        try ctx.emit(.{ .op = .br_if_not, .lhs = .{ .temp = cmp }, .branch_target = 0 });
+        try ctx.emit(.{ .op = .br, .lhs = .{ .temp = cmp }, .branch_target = 0, .branch_condition = .when_false });
         try ctx.emit(.{ .op = .store_local, .result = out_slot, .lhs = .{ .local = elem_slot }, .ty = .any });
         ctx.instrs.items[skip].branch_target = @intCast(ctx.instrs.items.len);
     }
@@ -2285,8 +2516,58 @@ fn applicationResultIs(
     expr: *const Expr,
     expected: std.meta.Tag(types.ResolvedType),
 ) bool {
-    const descriptor = ctx.graph.applicationDescriptorForExpr(expr) orelse return false;
+    const descriptor = applicationDescriptor(ctx, expr) orelse return false;
     return std.meta.activeTag(descriptor) == expected;
+}
+
+fn applicationDescriptor(ctx: *const LowerCtx, expr: *const Expr) ?types.ResolvedType {
+    if (ctx.applications.get(expr)) |application| return application.descriptor;
+    return ctx.graph.applicationDescriptorForExpr(expr);
+}
+
+fn checkedScalarOperand(
+    ctx: *const LowerCtx,
+    value_id: semantic_graph.NodeId,
+) Error!*Expr {
+    const value = ctx.graph.get(value_id) orelse return bail(@src());
+    const descriptor = value.descriptor orelse
+        return bailWith(@src(), "application-operand-descriptor");
+    if (std.meta.activeTag(descriptor) != .i64) {
+        return bailWith(@src(), "application-operand-abi");
+    }
+    const raw = value.ast_ref orelse return bailWith(@src(), "application-operand-provenance");
+    return @ptrCast(@alignCast(raw));
+}
+
+/// Project the subject and position-ordered arguments from checked graph edges.
+/// AST references are used only to evaluate those already-selected values; they
+/// do not decide subject role, order, descriptor, or relation identity.
+fn checkedScalarOperands(
+    ctx: *LowerCtx,
+    application: *const CheckedApplication,
+    storage: *[8]*Expr,
+) Error![]const *Expr {
+    const subject = application.subject orelse return bailWith(@src(), "application-subject");
+    if (application.arguments.len >= storage.len) return bailWith(@src(), "application-argument-pack");
+    storage[0] = try checkedScalarOperand(ctx, subject);
+    for (application.arguments, 1..) |argument, i| {
+        storage[i] = try checkedScalarOperand(ctx, argument);
+    }
+    return storage[0 .. application.arguments.len + 1];
+}
+
+fn checkedScalarCallLhs(ctx: *LowerCtx, operands: []const *Expr) Error!dnir.Value {
+    if (operands.len == 0) return bailWith(@src(), "application-subject");
+    if (operands.len == 1) return lowerExprCons(ctx, operands[0], .single);
+
+    var values: [8]dnir.Value = undefined;
+    for (operands, 0..) |operand, i| {
+        values[i] = try lowerExprCons(ctx, operand, .single);
+    }
+    for (values[0..operands.len], 0..) |value, i| {
+        try ctx.emit(.{ .op = .mov_arg, .result = @intCast(i), .lhs = value });
+    }
+    return .void;
 }
 
 /// Lower the canonical subject face from the relation identity selected by
@@ -2297,53 +2578,37 @@ fn lowerSubjectCall(
     expr: *const Expr,
     consumption: types.ReturnConsumption,
 ) Error!dnir.Value {
-    if (expr.* != .method_call) return bail(@src());
-    const mc = expr.method_call;
-
     // String descriptor primitives are bootstrap lowering rules, not declared
     // ordinary relations yet. Preserve their current realization until the
     // standard vocabulary owns those identities.
-    if (exprIsStr(ctx, mc.obj)) {
+    if (expr.* == .method_call and exprIsStr(ctx, expr.method_call.obj)) {
         return lowerCall(ctx, try faceAsCall(ctx, expr), consumption);
     }
 
-    const application_id = ctx.graph.applicationForExpr(expr) orelse
+    const application = ctx.applications.get(expr) orelse
         return bailWith(@src(), "application-identity");
-    const relation_id = ctx.graph.applicationRelation(application_id) orelse return bail(@src());
-    const value_id = ctx.graph.applicationResult(application_id) orelse return bail(@src());
-    const application_node = ctx.graph.get(application_id) orelse return bail(@src());
-    const relation = ctx.graph.get(relation_id) orelse return bail(@src());
-    const value = ctx.graph.get(value_id) orelse return bail(@src());
+    const relation = ctx.graph.get(application.relation) orelse return bail(@src());
     const callee = relation.name orelse return bail(@src());
-    const descriptor = ctx.graph.applicationDescriptorForExpr(expr) orelse return bail(@src());
-    const relation_identity = (relation.stable_id orelse return bail(@src())).hash;
-    const application_identity = (application_node.stable_id orelse return bail(@src())).hash;
-    const value_identity = (value.stable_id orelse return bail(@src())).hash;
+    const realization_start: u32 = @intCast(ctx.instrs.items.len);
 
-    const args = try ctx.alloc.alloc(*Expr, mc.args.len + 1);
-    args[0] = mc.obj;
-    @memcpy(args[1..], mc.args);
-
-    if (std.meta.activeTag(descriptor) == .f64) {
-        const lowered = try lowerF64KernelCall(ctx, callee, args);
-        const instruction = &ctx.instrs.items[ctx.instrs.items.len - 1];
-        instruction.relation = relation_identity;
-        instruction.application = application_identity;
-        instruction.value = value_identity;
-        return lowered;
+    var operand_storage: [8]*Expr = undefined;
+    const args = try checkedScalarOperands(ctx, application, &operand_storage);
+    if (std.meta.activeTag(application.descriptor) == .f64) {
+        return bailWith(@src(), "application-result-abi");
     }
-    switch (descriptor) {
+    switch (application.descriptor) {
         .any, .nil, .table_type, .@"struct" => return bailWith(@src(), "application-result"),
         else => {},
     }
 
-    const arg0 = try scalarCallLhs(ctx, args, callee);
+    const arg0 = try checkedScalarCallLhs(ctx, args);
     if (consumption == .discard) {
         try ctx.emit(.{
             .op = .call_direct,
-            .relation = relation_identity,
-            .application = application_identity,
-            .value = value_identity,
+            .relation = application.relation_identity,
+            .application = application.application_identity,
+            .value = application.value_identity,
+            .realization_start = realization_start,
             .callee = callee,
             .lhs = arg0,
         });
@@ -2352,9 +2617,10 @@ fn lowerSubjectCall(
     const result = ctx.freshTemp();
     try ctx.emit(.{
         .op = .call_direct,
-        .relation = relation_identity,
-        .application = application_identity,
-        .value = value_identity,
+        .relation = application.relation_identity,
+        .application = application.application_identity,
+        .value = application.value_identity,
+        .realization_start = realization_start,
         .result = result,
         .callee = callee,
         .lhs = arg0,
@@ -2399,7 +2665,7 @@ fn exprTouchesF64(ctx: *LowerCtx, expr: *const ast.Expr) bool {
 ///   and:  S = lhs;  if !S goto END;  S = rhs;  END:
 ///   or:   S = lhs;  if !S goto RHS;  goto END;  RHS: S = rhs;  END:
 ///
-/// `or` is expressed with `br_if_not` + `br` because the backend has no `br_if`.
+/// `or` uses a false-polarity branch followed by an unconditional branch.
 fn lowerShortCircuit(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const ast.Expr) Error!dnir.Value {
     // Integer contexts only. When an operand's subtree touches f64 — an f64
     // kernel call, a float literal, an f64 slot — the AST backend already lowers
@@ -2411,7 +2677,7 @@ fn lowerShortCircuit(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *
     try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = try lowerExpr(ctx, lhs), .ty = .any });
 
     const test_idx = ctx.instrs.items.len;
-    try ctx.emit(.{ .op = .br_if_not, .lhs = .{ .local = slot }, .branch_target = 0 });
+    try ctx.emit(.{ .op = .br, .lhs = .{ .local = slot }, .branch_target = 0, .branch_condition = .when_false });
 
     if (op == .@"and") {
         try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = try lowerExpr(ctx, rhs), .ty = .any });
@@ -2446,7 +2712,7 @@ fn lowerIfExpr(ctx: *LowerCtx, ie: *const ast.IfExpr) Error!dnir.Value {
     const slot = ctx.freshTemp();
     const cond = try lowerExpr(ctx, ie.cond);
     const test_idx = ctx.instrs.items.len;
-    try ctx.emit(.{ .op = .br_if_not, .lhs = cond, .branch_target = 0 });
+    try ctx.emit(.{ .op = .br, .lhs = cond, .branch_target = 0, .branch_condition = .when_false });
 
     try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = try lowerExpr(ctx, ie.then_expr), .ty = .any });
     const skip_idx = ctx.instrs.items.len;
@@ -2781,7 +3047,7 @@ fn scalarCallLhs(ctx: *LowerCtx, args: []const *ast.Expr, callee: ?[]const u8) E
 fn exprIsIntegral(ctx: *LowerCtx, expr: *const ast.Expr) bool {
     if (exprTouchesF64(ctx, expr)) return false;
     if (exprIsStr(ctx, expr)) return false;
-    if (ctx.graph.applicationDescriptorForExpr(expr)) |descriptor| return descriptor.is_integer();
+    if (applicationDescriptor(ctx, expr)) |descriptor| return descriptor.is_integer();
     return switch (expr.*) {
         .int_lit, .true_lit, .false_lit => true,
         // `#s` is a length and `s[i]` is a byte — both integers.
@@ -3872,11 +4138,11 @@ test "dnir_lower: if elseif else chain" {
     parser.duo_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
-    var br_if_not: u32 = 0;
+    var when_false: u32 = 0;
     for (m.functions[0].blocks[0].instrs) |ins| {
-        if (ins.op == .br_if_not) br_if_not += 1;
+        if (ins.op == .br and ins.branch_condition == .when_false) when_false += 1;
     }
-    try std.testing.expect(br_if_not >= 3);
+    try std.testing.expect(when_false >= 3);
 }
 
 test "dnir_lower: numeric for runtime step parameter" {
@@ -3931,7 +4197,7 @@ test "dnir_lower: lowerModuleWithGraph matches lowerModule" {
     try std.testing.expect(m_direct.functions.len == m_graph.functions.len);
     try std.testing.expect(m_direct.hardware_tier == m_graph.hardware_tier);
     try std.testing.expect(m_direct.functions[0].blocks[0].instrs.len == m_graph.functions[0].blocks[0].instrs.len);
-    try std.testing.expect(m_graph.functions[0].graph_stable_id != null);
+    try std.testing.expect(m_graph.functions[0].semantic_identity != null);
 }
 
 test "dnir_lower: call result class comes from graph descriptor" {
@@ -4018,9 +4284,9 @@ test "dnir_lower: checked subject call retains semantic identities" {
     const application = application_id orelse return error.TestExpectedEqual;
     const relation = graph.applicationRelation(application) orelse return error.TestExpectedEqual;
     const value = graph.applicationResult(application) orelse return error.TestExpectedEqual;
-    const application_hash = graph.get(application).?.stable_id.?.hash;
-    const relation_hash = graph.get(relation).?.stable_id.?.hash;
-    const value_hash = graph.get(value).?.stable_id.?.hash;
+    const application_identity = try semanticReference(&graph, application);
+    const relation_identity = try semanticReference(&graph, relation);
+    const value_identity = try semanticReference(&graph, value);
 
     const module = try lowerModuleWithGraph(alloc, &mod, &graph);
     var found = false;
@@ -4028,12 +4294,61 @@ test "dnir_lower: checked subject call retains semantic identities" {
         for (function.blocks[0].instrs) |instruction| {
             if (instruction.op != .call_direct or !std.mem.eql(u8, instruction.callee, "read")) continue;
             found = true;
-            try std.testing.expectEqual(relation_hash, instruction.relation.?);
-            try std.testing.expectEqual(application_hash, instruction.application.?);
-            try std.testing.expectEqual(value_hash, instruction.value.?);
+            try std.testing.expect(relation_identity.eql(instruction.relation.?));
+            try std.testing.expect(application_identity.eql(instruction.application.?));
+            try std.testing.expect(value_identity.eql(instruction.value.?));
+            try std.testing.expect(instruction.realization_start != null);
         }
     }
     try std.testing.expect(found);
+}
+
+test "dnir_lower: applications share relation without sharing occurrence identity" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\read: i64 = (subject: i64)
+        \\    subject
+        \\main: i64 = ()
+        \\    41:read()
+        \\    42:read()
+    ;
+    var lex = Lexer.init(src, "application-occurrence.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var mod = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&mod);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&mod, &checked, "application-occurrence.duo");
+
+    const module = try lowerModuleWithGraph(alloc, &mod, &graph);
+    var relations: [2]dnir.SemanticRef = undefined;
+    var applications: [2]dnir.SemanticRef = undefined;
+    var values: [2]dnir.SemanticRef = undefined;
+    var count: usize = 0;
+    for (module.functions) |function| {
+        for (function.blocks[0].instrs) |instruction| {
+            if (instruction.application == null) continue;
+            if (count >= applications.len) return error.TestExpectedEqual;
+            relations[count] = instruction.relation.?;
+            applications[count] = instruction.application.?;
+            values[count] = instruction.value.?;
+            count += 1;
+        }
+    }
+    try std.testing.expectEqual(applications.len, count);
+    try std.testing.expect(relations[0].eql(relations[1]));
+    try std.testing.expect(!applications[0].eql(applications[1]));
+    try std.testing.expect(!values[0].eql(values[1]));
 }
 
 test "dnir_lower: bool result descriptor prevents integer interpolation" {
@@ -4081,7 +4396,7 @@ test "dnir_lower: graph orders callees before callers" {
     for (m.functions, 0..) |f, i| {
         if (std.mem.eql(u8, f.name, "distance2")) idx_distance = i;
         if (std.mem.eql(u8, f.name, "main")) idx_main = i;
-        try std.testing.expect(f.graph_stable_id != null);
+        try std.testing.expect(f.semantic_identity != null);
     }
     try std.testing.expect(idx_distance != null and idx_main != null);
     try std.testing.expect(idx_distance.? < idx_main.?);
@@ -4390,7 +4705,7 @@ test "dnir_lower: if binding assigns before branch" {
                 const ins = b.instrs[i];
                 if (ins.op == .call_direct and std.mem.eql(u8, ins.callee, "get")) saw_get_call = true;
                 if (ins.op == .store_local and ins.result != null) saw_v_store = true;
-                if (saw_v_store and (ins.op == .br_if_not or ins.op == .br_if)) br_after_store = true;
+                if (saw_v_store and ins.op == .br and ins.branch_condition != .unconditional) br_after_store = true;
             }
         }
     }

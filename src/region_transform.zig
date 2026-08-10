@@ -7,7 +7,7 @@ const region_graph = @import("region_graph.zig");
 const region_schedule = @import("region_schedule.zig");
 
 pub const TransformKind = enum {
-    inline_const_return,
+    legacy_inline_const_return,
     fuse_const_binop,
 };
 
@@ -22,7 +22,7 @@ pub const TransformRecord = struct {
 };
 
 pub const ModuleTransformReport = struct {
-    const_inlines: u32 = 0,
+    legacy_const_inlines: u32 = 0,
     const_binop_fusions: u32 = 0,
     dead_const_pruned: u32 = 0,
 };
@@ -34,14 +34,15 @@ pub const Error = error{
     ScheduleCycle,
 };
 
-/// If `callee` is a zero-arg function that returns a constant i64, return that value.
-pub fn calleeConstI64Return(m: dnir.Module, callee: []const u8) ?i64 {
+/// Legacy name-selected bridge. Checked applications require world/effect/witness
+/// facts before this realization can be selected by semantic identity.
+pub fn legacyCalleeConstI64Return(m: dnir.Module, callee: []const u8) ?i64 {
     for (m.functions) |f| {
         if (!std.mem.eql(u8, f.name, callee)) continue;
         if (f.params.len != 0) return null;
         if (f.blocks.len != 1) return null;
-        // A SINGLE BLOCK IS NOT A SINGLE EXIT. DNIR keeps `br`/`br_if`/
-        // `br_if_not` and several `ret`s inside one block, so `blocks.len == 1`
+        // A SINGLE BLOCK IS NOT A SINGLE EXIT. DNIR keeps conditional `br`
+        // and several `ret`s inside one block, so `blocks.len == 1`
         // does not mean straight-line code. Returning the FIRST constant `ret`
         // therefore inlined the value of a branch that may never be taken:
         //
@@ -63,7 +64,7 @@ pub fn calleeConstI64Return(m: dnir.Module, callee: []const u8) ?i64 {
         var found: ?i64 = null;
         for (f.blocks[0].instrs) |ins| {
             switch (ins.op) {
-                .br, .br_if, .br_if_not => return null,
+                .br => return null,
                 .ret_record => return null,
                 .ret => {
                     if (found != null) return null;
@@ -202,8 +203,8 @@ fn operandScheduleOk(
     };
 }
 
-/// Discover const-return inline sites from region call nodes + DNIR facts.
-pub fn findConstReturnInlines(
+/// Discover const-return sites only for calls that have no semantic identity.
+pub fn findLegacyConstReturnInlines(
     alloc: std.mem.Allocator,
     regions: []const region_graph.Region,
     m: dnir.Module,
@@ -212,13 +213,14 @@ pub fn findConstReturnInlines(
     errdefer out.deinit(alloc);
 
     for (regions) |region| {
+        if (regionHasApplicationLineage(&region)) continue;
         for (region.nodes) |node| {
             if (node.kind != .call) continue;
-            if (node.graph_stable_id == null) continue;
+            if (region_graph.hasAnyApplicationIdentity(node)) continue;
             const callee = node.callee orelse continue;
-            const value = calleeConstI64Return(m, callee) orelse continue;
+            const value = legacyCalleeConstI64Return(m, callee) orelse continue;
             try out.append(alloc, .{
-                .kind = .inline_const_return,
+                .kind = .legacy_inline_const_return,
                 .caller = region.func_name,
                 .callee = callee,
                 .region_node_id = node.id,
@@ -240,6 +242,7 @@ pub fn findConstBinopFusions(
 
     for (regions) |region| {
         const func = findFunction(m, region.func_name) orelse continue;
+        if (functionHasApplicationLineage(&func)) continue;
         var const_map = try buildConstSlotMap(alloc, func);
         defer const_map.deinit(alloc);
 
@@ -248,6 +251,7 @@ pub fn findConstBinopFusions(
 
         for (region.nodes) |node| {
             if (node.kind != .binop) continue;
+            if (region_graph.hasAnyApplicationIdentity(node)) continue;
             const rt = node.dnir_temp orelse continue;
             const ins = findInstrByResult(func, rt) orelse continue;
             if (ins.op != .binop or ins.ty == .f64) continue;
@@ -291,13 +295,36 @@ fn functionHasBinop(f: *const dnir.Function, op: dnir.BinOpTag) bool {
     return false;
 }
 
-/// Replace a direct call with a constant realization when its result is known.
-pub fn applyConstReturnInline(
+fn hasAnyApplicationIdentity(ins: dnir.Instr) bool {
+    return ins.relation != null or ins.application != null or ins.value != null or ins.realization_start != null;
+}
+
+fn functionHasApplicationLineage(f: *const dnir.Function) bool {
+    for (f.blocks) |block| {
+        for (block.instrs) |instruction| {
+            if (hasAnyApplicationIdentity(instruction)) return true;
+        }
+    }
+    return false;
+}
+
+fn regionHasApplicationLineage(region: *const region_graph.Region) bool {
+    for (region.nodes) |node| {
+        if (region_graph.hasAnyApplicationIdentity(node)) return true;
+    }
+    return false;
+}
+
+/// Apply the legacy name-selected bridge only while no checked identity exists.
+pub fn applyLegacyConstReturnInline(
     alloc: std.mem.Allocator,
     caller: *dnir.Function,
     callee: []const u8,
     value: i64,
 ) Error!bool {
+    if (functionHasApplicationLineage(caller)) return false;
+    const callee_key = try alloc.dupe(u8, callee);
+    defer alloc.free(callee_key);
     var changed = false;
     const blocks: []dnir.Block = @constCast(caller.blocks);
     for (blocks) |*block| {
@@ -307,15 +334,13 @@ pub fn applyConstReturnInline(
 
         for (block.instrs) |ins| {
             if (ins.op == .call_direct and
-                std.mem.eql(u8, ins.callee, callee) and
+                !hasAnyApplicationIdentity(ins) and
+                std.mem.eql(u8, ins.callee, callee_key) and
                 ins.lhs == .void and
                 ins.result != null)
             {
                 try new_instrs.append(alloc, .{
                     .op = .@"const",
-                    .relation = ins.relation,
-                    .application = ins.application,
-                    .value = ins.value,
                     .result = ins.result,
                     .lhs = .{ .i64 = value },
                     .ty = .i64,
@@ -329,6 +354,16 @@ pub fn applyConstReturnInline(
         if (block_changed) {
             const owned = try new_instrs.toOwnedSlice(alloc);
             const old = block.instrs;
+            for (old) |instruction| {
+                if (instruction.op == .call_direct and
+                    !hasAnyApplicationIdentity(instruction) and
+                    std.mem.eql(u8, instruction.callee, callee_key) and
+                    instruction.lhs == .void and
+                    instruction.result != null)
+                {
+                    dnir.deinitInstr(alloc, instruction);
+                }
+            }
             block.instrs = owned;
             alloc.free(old);
             changed = true;
@@ -339,13 +374,15 @@ pub fn applyConstReturnInline(
     return changed;
 }
 
-/// Replace a foldable integer application with a constant realization.
+/// Replace an identity-free legacy binop with a constant realization. A
+/// semantic application needs a transform witness before it may use this path.
 pub fn applyConstBinopFusion(
     alloc: std.mem.Allocator,
     caller: *dnir.Function,
     result_temp: u32,
     value: i64,
 ) Error!bool {
+    if (functionHasApplicationLineage(caller)) return false;
     var changed = false;
     const blocks: []dnir.Block = @constCast(caller.blocks);
     for (blocks) |*block| {
@@ -354,12 +391,13 @@ pub fn applyConstBinopFusion(
         var block_changed = false;
 
         for (block.instrs) |ins| {
-            if (ins.op == .binop and ins.result == result_temp and ins.ty != .f64) {
+            if (ins.op == .binop and
+                !hasAnyApplicationIdentity(ins) and
+                ins.result == result_temp and
+                ins.ty != .f64)
+            {
                 try new_instrs.append(alloc, .{
                     .op = .@"const",
-                    .relation = ins.relation,
-                    .application = ins.application,
-                    .value = ins.value,
                     .result = result_temp,
                     .lhs = .{ .i64 = value },
                     .ty = .i64,
@@ -373,6 +411,15 @@ pub fn applyConstBinopFusion(
         if (block_changed) {
             const owned = try new_instrs.toOwnedSlice(alloc);
             const old = block.instrs;
+            for (old) |instruction| {
+                if (instruction.op == .binop and
+                    !hasAnyApplicationIdentity(instruction) and
+                    instruction.result == result_temp and
+                    instruction.ty != .f64)
+                {
+                    dnir.deinitInstr(alloc, instruction);
+                }
+            }
             block.instrs = owned;
             alloc.free(old);
             changed = true;
@@ -383,19 +430,19 @@ pub fn applyConstBinopFusion(
     return changed;
 }
 
-/// Apply all const-return inlines discovered from the region graph.
-pub fn applyModuleConstReturnInlines(
+/// Apply the quarantined name-selected bridge to legacy calls only.
+pub fn applyModuleLegacyConstReturnInlines(
     alloc: std.mem.Allocator,
     m: *dnir.Module,
     regions: []const region_graph.Region,
 ) Error!u32 {
-    const candidates = try findConstReturnInlines(alloc, regions, m.*);
+    const candidates = try findLegacyConstReturnInlines(alloc, regions, m.*);
     defer freeTransformRecords(alloc, candidates);
 
     var applied: u32 = 0;
     for (candidates) |c| {
         const caller = findFunctionMut(m, c.caller) orelse return error.CallerNotFound;
-        if (try applyConstReturnInline(alloc, caller, c.callee, c.const_value)) {
+        if (try applyLegacyConstReturnInline(alloc, caller, c.callee, c.const_value)) {
             applied += 1;
         }
     }
@@ -445,6 +492,10 @@ pub fn pruneDeadConstProducers(
     alloc: std.mem.Allocator,
     caller: *dnir.Function,
 ) Error!u32 {
+    // `realization_start` is positional bootstrap lineage. Until transforms
+    // have their own stable identity/witness, deleting any preceding
+    // instruction would corrupt the application-to-byte range.
+    if (functionHasApplicationLineage(caller)) return 0;
     var pruned: u32 = 0;
     const blocks: []dnir.Block = @constCast(caller.blocks);
     for (blocks) |*block| {
@@ -470,6 +521,11 @@ pub fn pruneDeadConstProducers(
         if (block_changed) {
             const owned = try new_instrs.toOwnedSlice(alloc);
             const old = block.instrs;
+            for (old) |instruction| {
+                if (instruction.op != .@"const" or instruction.ty != .i64) continue;
+                const result = instruction.result orelse continue;
+                if (tempUseCount(caller.*, result) == 0) dnir.deinitInstr(alloc, instruction);
+            }
             block.instrs = owned;
             alloc.free(old);
         } else {
@@ -497,17 +553,17 @@ pub fn applyModuleRegionTransforms(
     m: *dnir.Module,
     regions: []const region_graph.Region,
 ) Error!ModuleTransformReport {
-    const inlines = try applyModuleConstReturnInlines(alloc, m, regions);
+    const inlines = try applyModuleLegacyConstReturnInlines(alloc, m, regions);
     const fusions = try applyModuleConstBinopFusions(alloc, m, regions);
     const pruned = try applyModuleDeadConstPrune(alloc, m);
     return .{
-        .const_inlines = inlines,
+        .legacy_const_inlines = inlines,
         .const_binop_fusions = fusions,
         .dead_const_pruned = pruned,
     };
 }
 
-test "region_transform: inline const-return helper at region call site" {
+test "region_transform: legacy const-return bridge is explicit" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
     const dnir_lower = @import("dnir_lower.zig");
@@ -535,33 +591,78 @@ test "region_transform: inline const-return helper at region call site" {
     const regions = try region_graph.buildModuleRegions(alloc, m, &g);
     defer region_graph.freeModuleRegions(alloc, regions);
 
-    const candidates = try findConstReturnInlines(alloc, regions, m);
+    const candidates = try findLegacyConstReturnInlines(alloc, regions, m);
     defer freeTransformRecords(alloc, candidates);
     try std.testing.expectEqual(@as(usize, 1), candidates.len);
     try std.testing.expectEqual(@as(i64, 1), candidates[0].const_value);
 
     const main_before = findFunctionMut(&m, "main") orelse return error.TestExpectedEqual;
     try std.testing.expect(functionHasCallTo(main_before, "helper"));
-    const mutable_blocks: []dnir.Block = @constCast(main_before.blocks);
-    const mutable_instructions: []dnir.Instr = @constCast(mutable_blocks[0].instrs);
-    for (mutable_instructions) |*instruction| {
-        if (instruction.op != .call_direct) continue;
-        instruction.relation = 11;
-        instruction.application = 22;
-        instruction.value = 33;
-    }
 
-    const applied = try applyModuleConstReturnInlines(alloc, &m, regions);
+    const applied = try applyModuleLegacyConstReturnInlines(alloc, &m, regions);
     try std.testing.expectEqual(@as(u32, 1), applied);
 
     const main_after = findFunctionMut(&m, "main") orelse return error.TestExpectedEqual;
     try std.testing.expect(!functionHasCallTo(main_after, "helper"));
-    for (main_after.blocks[0].instrs) |instruction| {
-        if (instruction.op != .@"const") continue;
-        try std.testing.expectEqual(@as(?u64, 11), instruction.relation);
-        try std.testing.expectEqual(@as(?u64, 22), instruction.application);
-        try std.testing.expectEqual(@as(?u64, 33), instruction.value);
+    const census = try region_graph.semanticNameReconstructionCensus(alloc, regions, &g);
+    try std.testing.expectEqual(@as(usize, 1), census.legacy_symbol_bridges);
+}
+
+test "region_transform: checked application is never selected by callee spelling" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+    const dnir_lower = @import("dnir_lower.zig");
+    const semantic_graph = @import("semantic_graph.zig");
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\helper: i64 = (subject: i64)
+        \\    1
+        \\main: i64 = ()
+        \\    42:helper()
+    ;
+    var lex = Lexer.init(src, "checked_inline.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var mod = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&mod);
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&mod, &checked, "checked_inline.duo");
+    var m = try dnir_lower.lowerModuleWithGraph(alloc, &mod, &graph);
+
+    const main = findFunctionMut(&m, "main") orelse return error.TestExpectedEqual;
+    var projected = false;
+    for (main.blocks) |block| {
+        for (block.instrs) |instruction| {
+            if (instruction.op == .call_direct and instruction.application != null) projected = true;
+        }
     }
+    try std.testing.expect(projected);
+
+    const regions = try region_graph.buildModuleRegions(alloc, m, &graph);
+    defer region_graph.freeModuleRegions(alloc, regions);
+    try region_graph.validateModuleRegions(regions, &graph, m, alloc);
+
+    const candidates = try findLegacyConstReturnInlines(alloc, regions, m);
+    defer freeTransformRecords(alloc, candidates);
+    try std.testing.expectEqual(@as(usize, 0), candidates.len);
+    try std.testing.expectEqual(@as(u32, 0), try applyModuleLegacyConstReturnInlines(alloc, &m, regions));
+    try std.testing.expect(!(try applyLegacyConstReturnInline(alloc, main, "helper", 1)));
+    try std.testing.expect(functionHasCallTo(main, "helper"));
+
+    const census = try region_graph.semanticNameReconstructionCensus(alloc, regions, &graph);
+    try std.testing.expectEqual(@as(usize, 1), census.required_checked_applications);
+    try std.testing.expectEqual(@as(usize, 1), census.checked_call_nodes);
+    try std.testing.expectEqual(@as(usize, 0), census.legacy_symbol_bridges);
+    try std.testing.expectEqual(@as(usize, 0), census.legacy_function_name_bridges);
 }
 
 test "region_transform: fuse const binop via region schedule" {
