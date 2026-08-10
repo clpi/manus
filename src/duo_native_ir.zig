@@ -6,6 +6,7 @@
 //! DNIR is SSA-ish: native scalars, records, direct calls — consumed by
 //! `native_backend.zig` (ARM64 Mach-O) without lua_Value.
 const std = @import("std");
+const semantic_graph = @import("semantic_graph.zig");
 const types = @import("types.zig");
 const dnir_hardware = @import("dnir_hardware.zig");
 const RT = types.ResolvedType;
@@ -39,10 +40,6 @@ pub const RecordDesc = struct {
     name: []const u8,
     fields: []const []const u8,
     kinds: []const FieldKind,
-    /// Semantic graph shape identity when lowered via `lowerModuleWithGraph`.
-    shape_id: ?u64 = null,
-    /// Semantic graph `StableId` hash for the table_shape node.
-    graph_stable_id: ?u64 = null,
 };
 
 pub const BinOpTag = enum {
@@ -129,28 +126,16 @@ pub const Value = union(enum) {
     record: u32,
 };
 
-/// Exact node reference in the authoritative graph plus its diagnostic/content
-/// fingerprint. `node` is the identity key; `fingerprint` is never used alone
-/// to select meaning and may collide without aliasing two nodes.
-pub const SemanticRef = struct {
-    node: u32,
-    fingerprint: u64,
-
-    pub fn eql(a: SemanticRef, b: SemanticRef) bool {
-        return a.node == b.node and a.fingerprint == b.fingerprint;
-    }
-};
-
 pub const Instr = struct {
     op: Op,
-    /// Exact semantic graph references retained through realization.
-    relation: ?SemanticRef = null,
-    application: ?SemanticRef = null,
-    value: ?SemanticRef = null,
+    /// Exact handles into the graph incarnation retained through realization.
+    relation: ?semantic_graph.NodeId = null,
+    application: ?semantic_graph.NodeId = null,
+    value: ?semantic_graph.NodeId = null,
     /// Semantic subject selected upstream. Null is an authoritative absence for
     /// applications whose relation has no subject role; it is never inferred
     /// here from argument position or source spelling.
-    subject: ?SemanticRef = null,
+    subject: ?semantic_graph.NodeId = null,
     /// First flattened DNIR instruction whose emitted bytes belong to this
     /// application realization. Present exactly when application identity is.
     realization_start: ?u32 = null,
@@ -218,7 +203,7 @@ pub const Function = struct {
     /// Pure f64 kernel — params/return use FP registers (Pass 4 M1).
     is_float_kernel: bool = false,
     /// Exact authoritative graph identity for the callable declaration.
-    semantic_identity: ?SemanticRef = null,
+    semantic_identity: ?semantic_graph.NodeId = null,
     blocks: []const Block,
 };
 
@@ -228,6 +213,10 @@ pub const Module = struct {
     globals: []const Global = &.{},
     dense_tables: []const DenseTable = &.{},
     externs: []const Extern = &.{},
+    /// Owner of every graph handle carried by this module. The pointer is an
+    /// owner/lifetime constraint, not another semantic identity: identified
+    /// modules are valid only while this exact graph remains resident.
+    identity_owner: ?*const semantic_graph.SemanticGraph = null,
     /// Highest hardware tier exercised — for catalog / capability proofs.
     hardware_tier: HardwareTier = .scalar,
 };
@@ -354,6 +343,11 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
 test "duo_native_ir: empty module not ready" {
     const m = Module{ .functions = &.{} };
     try std.testing.expect(!moduleIsNativeDirectReady(m));
+}
+
+test "duo_native_ir: resident graph identity handle stays dense" {
+    try std.testing.expectEqual(@sizeOf(u32), @sizeOf(semantic_graph.NodeId));
+    try std.testing.expectEqual(@as(usize, 8), @sizeOf(?semantic_graph.NodeId));
 }
 
 test "duo_native_ir: single ret function ready" {

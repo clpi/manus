@@ -31,8 +31,18 @@ pub const Error = error{
     OutOfMemory,
     CalleeNotFound,
     CallerNotFound,
+    GraphOwnerMismatch,
     ScheduleCycle,
 };
+
+fn requireSameGraphOwner(
+    regions: []const region_graph.Region,
+    m: dnir.Module,
+) Error!void {
+    for (regions) |region| {
+        if (region.identity_owner != m.identity_owner) return error.GraphOwnerMismatch;
+    }
+}
 
 /// Legacy name-selected bridge. Checked applications require world/effect/witness
 /// facts before this realization can be selected by semantic identity.
@@ -209,6 +219,7 @@ pub fn findLegacyConstReturnInlines(
     regions: []const region_graph.Region,
     m: dnir.Module,
 ) Error![]TransformRecord {
+    try requireSameGraphOwner(regions, m);
     var out: std.ArrayListUnmanaged(TransformRecord) = .empty;
     errdefer out.deinit(alloc);
 
@@ -237,6 +248,7 @@ pub fn findConstBinopFusions(
     regions: []const region_graph.Region,
     m: dnir.Module,
 ) Error![]TransformRecord {
+    try requireSameGraphOwner(regions, m);
     var out: std.ArrayListUnmanaged(TransformRecord) = .empty;
     errdefer out.deinit(alloc);
 
@@ -554,6 +566,7 @@ pub fn applyModuleRegionTransforms(
     m: *dnir.Module,
     regions: []const region_graph.Region,
 ) Error!ModuleTransformReport {
+    try requireSameGraphOwner(regions, m.*);
     const inlines = try applyModuleLegacyConstReturnInlines(alloc, m, regions);
     const fusions = try applyModuleConstBinopFusions(alloc, m, regions);
     const pruned = try applyModuleDeadConstPrune(alloc, m);
@@ -702,7 +715,7 @@ test "region_transform: checked ordinary occurrences retain identity" {
     try region_graph.validateModuleRegions(initial_regions, &graph, m, alloc);
 
     var before: [2]region_graph.Node = undefined;
-    var before_callers: [2]dnir.SemanticRef = undefined;
+    var before_callers: [2]semantic_graph.NodeId = undefined;
     var before_count: usize = 0;
     for (initial_regions) |region| {
         for (region.nodes) |node| {
@@ -714,11 +727,19 @@ test "region_transform: checked ordinary occurrences retain identity" {
         }
     }
     try std.testing.expectEqual(before.len, before_count);
-    try std.testing.expectEqual(@as(?dnir.SemanticRef, null), before[0].subject_id);
-    try std.testing.expectEqual(@as(?dnir.SemanticRef, null), before[1].subject_id);
-    try std.testing.expect(before[0].relation_id.?.eql(before[1].relation_id.?));
-    try std.testing.expect(!before[0].application_id.?.eql(before[1].application_id.?));
-    try std.testing.expect(!before[0].value_id.?.eql(before[1].value_id.?));
+    try std.testing.expectEqual(@as(?semantic_graph.NodeId, null), before[0].subject_id);
+    try std.testing.expectEqual(@as(?semantic_graph.NodeId, null), before[1].subject_id);
+    try std.testing.expect(std.meta.eql(before[0].relation_id.?, before[1].relation_id.?));
+    try std.testing.expect(!std.meta.eql(before[0].application_id.?, before[1].application_id.?));
+    try std.testing.expect(!std.meta.eql(before[0].value_id.?, before[1].value_id.?));
+
+    const first_owner = initial_regions[0].identity_owner;
+    initial_regions[0].identity_owner = null;
+    try std.testing.expectError(
+        error.GraphOwnerMismatch,
+        applyModuleRegionTransforms(alloc, &m, initial_regions),
+    );
+    initial_regions[0].identity_owner = first_owner;
 
     const report = try applyModuleRegionTransforms(alloc, &m, initial_regions);
     try std.testing.expectEqual(@as(u32, 0), report.legacy_const_inlines);
@@ -742,16 +763,16 @@ test "region_transform: checked ordinary occurrences retain identity" {
             if (node.kind != .call or !region_graph.hasCompleteApplicationIdentity(node)) continue;
             var match: ?usize = null;
             for (before[0..before_count], 0..) |expected, i| {
-                if (expected.application_id.?.eql(node.application_id.?)) match = i;
+                if (std.meta.eql(expected.application_id.?, node.application_id.?)) match = i;
             }
             const index = match orelse return error.TestExpectedEqual;
             const expected = before[index];
-            try std.testing.expect(expected.relation_id.?.eql(node.relation_id.?));
-            try std.testing.expect(expected.application_id.?.eql(node.application_id.?));
-            try std.testing.expect(expected.value_id.?.eql(node.value_id.?));
+            try std.testing.expect(std.meta.eql(expected.relation_id.?, node.relation_id.?));
+            try std.testing.expect(std.meta.eql(expected.application_id.?, node.application_id.?));
+            try std.testing.expect(std.meta.eql(expected.value_id.?, node.value_id.?));
             try std.testing.expectEqual(expected.subject_id, node.subject_id);
             try std.testing.expect(expected.descriptor.?.eql(node.descriptor.?));
-            try std.testing.expect(before_callers[index].eql(region.func_identity orelse return error.TestExpectedEqual));
+            try std.testing.expect(std.meta.eql(before_callers[index], region.func_identity orelse return error.TestExpectedEqual));
             try std.testing.expectEqual(expected.realization_start, node.realization_start);
             after_count += 1;
         }

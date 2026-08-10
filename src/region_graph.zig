@@ -35,14 +35,12 @@ pub const Node = struct {
     id: u32,
     kind: NodeKind,
     label: ?[]const u8 = null,
-    graph_stable_id: ?u64 = null,
-    relation_id: ?dnir.SemanticRef = null,
-    application_id: ?dnir.SemanticRef = null,
-    value_id: ?dnir.SemanticRef = null,
-    subject_id: ?dnir.SemanticRef = null,
+    relation_id: ?semantic_graph.NodeId = null,
+    application_id: ?semantic_graph.NodeId = null,
+    value_id: ?semantic_graph.NodeId = null,
+    subject_id: ?semantic_graph.NodeId = null,
     descriptor: ?types.ResolvedType = null,
     realization_start: ?u32 = null,
-    shape_id: ?u64 = null,
     dnir_temp: ?u32 = null,
     callee: ?[]const u8 = null,
 };
@@ -55,7 +53,8 @@ pub const Edge = struct {
 
 pub const Region = struct {
     func_name: []const u8,
-    func_identity: ?dnir.SemanticRef,
+    func_identity: ?semantic_graph.NodeId,
+    identity_owner: ?*const semantic_graph.SemanticGraph,
     nodes: []Node,
     edges: []Edge,
     /// Pass 22 Gate L — unresolved realization candidates visible at region scope.
@@ -77,8 +76,7 @@ pub const Region = struct {
 pub fn buildFromDnirFunction(
     alloc: std.mem.Allocator,
     f: dnir.Function,
-    _: ?*const semantic_graph.SemanticGraph,
-    records: []const dnir.RecordDesc,
+    identity_owner: ?*const semantic_graph.SemanticGraph,
 ) !Region {
     var nodes: std.ArrayListUnmanaged(Node) = .empty;
     errdefer nodes.deinit(alloc);
@@ -121,16 +119,8 @@ pub fn buildFromDnirFunction(
             };
 
             var label_owned: ?[]const u8 = null;
-            var record_shape_id: ?u64 = null;
-            var record_stable_id: ?u64 = null;
             if (kind == .record and ins.record.len > 0) {
                 label_owned = try alloc.dupe(u8, ins.record);
-                for (records) |rec| {
-                    if (!std.mem.eql(u8, rec.name, ins.record)) continue;
-                    record_shape_id = rec.shape_id;
-                    record_stable_id = rec.graph_stable_id;
-                    break;
-                }
             }
 
             if (kind == .hardware) {
@@ -148,14 +138,12 @@ pub fn buildFromDnirFunction(
                 .id = nid,
                 .kind = kind,
                 .label = label_owned,
-                .graph_stable_id = record_stable_id,
                 .relation_id = ins.relation,
                 .application_id = ins.application,
                 .value_id = ins.value,
                 .subject_id = ins.subject,
                 .descriptor = if (ins.application != null) ins.ty else null,
                 .realization_start = ins.realization_start,
-                .shape_id = if (kind == .record) record_shape_id else null,
                 .callee = callee_owned,
                 .dnir_temp = ins.result,
             });
@@ -184,6 +172,7 @@ pub fn buildFromDnirFunction(
     return .{
         .func_name = try alloc.dupe(u8, f.name),
         .func_identity = f.semantic_identity,
+        .identity_owner = identity_owner,
         .nodes = try nodes.toOwnedSlice(alloc),
         .edges = try edges.toOwnedSlice(alloc),
         .hardware_tier = dnir_hardware.functionHardwareTier(f),
@@ -217,13 +206,16 @@ pub fn buildModuleRegions(
     m: dnir.Module,
     graph: ?*const semantic_graph.SemanticGraph,
 ) ![]Region {
+    if (m.identity_owner) |owner| {
+        if (graph == null or graph.? != owner) return error.GraphOwnerMismatch;
+    }
     var regions: std.ArrayListUnmanaged(Region) = .empty;
     errdefer {
         for (regions.items) |*r| r.deinit(alloc);
         regions.deinit(alloc);
     }
     for (m.functions) |f| {
-        try regions.append(alloc, try buildFromDnirFunction(alloc, f, graph, m.records));
+        try regions.append(alloc, try buildFromDnirFunction(alloc, f, m.identity_owner));
     }
     return try regions.toOwnedSlice(alloc);
 }
@@ -235,7 +227,8 @@ pub fn freeModuleRegions(alloc: std.mem.Allocator, regions: []Region) void {
 
 pub const RegionGraphError = error{
     EmitOrderMismatch,
-    StableIdMismatch,
+    GraphOwnerMismatch,
+    FunctionIdentityMismatch,
     CallGraphMismatch,
     IncompleteApplicationIdentity,
     ApplicationGraphMismatch,
@@ -258,9 +251,9 @@ pub fn hasCompleteApplicationIdentity(node: Node) bool {
     return node.relation_id != null and node.application_id != null and node.value_id != null and node.realization_start != null;
 }
 
-fn optionalSemanticRefEql(a: ?dnir.SemanticRef, b: ?dnir.SemanticRef) bool {
+fn optionalNodeEql(a: ?semantic_graph.NodeId, b: ?semantic_graph.NodeId) bool {
     if (a == null or b == null) return a == null and b == null;
-    return a.?.eql(b.?);
+    return std.meta.eql(a.?, b.?);
 }
 
 pub const SemanticNameReconstructionCensus = struct {
@@ -287,6 +280,7 @@ pub fn semanticNameReconstructionCensus(
     census.required_checked_applications = expected.count();
 
     for (regions) |region| {
+        if (region.identity_owner != graph) return error.GraphOwnerMismatch;
         if (region.func_identity == null) census.legacy_function_name_bridges += 1;
         for (region.nodes) |node| {
             if (!hasAnyApplicationIdentity(node)) {
@@ -302,7 +296,7 @@ pub fn semanticNameReconstructionCensus(
             } else {
                 census.checked_realization_nodes += 1;
             }
-            if (expected.getPtr(node.application_id.?.node)) |application| {
+            if (expected.getPtr(node.application_id.?)) |application| {
                 application.uses += 1;
             }
         }
@@ -324,22 +318,22 @@ pub fn countDirectCallees(region: *const Region) usize {
 }
 
 const ExpectedApplication = struct {
-    application: dnir.SemanticRef,
-    relation: dnir.SemanticRef,
-    value: dnir.SemanticRef,
-    subject: ?dnir.SemanticRef,
+    application: semantic_graph.NodeId,
+    relation: semantic_graph.NodeId,
+    value: semantic_graph.NodeId,
+    subject: ?semantic_graph.NodeId,
     descriptor: types.ResolvedType,
-    caller: dnir.SemanticRef,
+    caller: semantic_graph.NodeId,
     uses: u32 = 0,
 };
 
 pub const CheckedApplicationProjection = struct {
-    relation: dnir.SemanticRef,
-    application: dnir.SemanticRef,
-    value: dnir.SemanticRef,
-    subject: ?dnir.SemanticRef,
+    relation: semantic_graph.NodeId,
+    application: semantic_graph.NodeId,
+    value: semantic_graph.NodeId,
+    subject: ?semantic_graph.NodeId,
     descriptor: types.ResolvedType,
-    caller: dnir.SemanticRef,
+    caller: semantic_graph.NodeId,
 };
 
 const ApplicationEdges = struct {
@@ -363,21 +357,10 @@ fn containingFunctionFromScope(
     return null;
 }
 
-fn semanticReference(
-    graph: *const semantic_graph.SemanticGraph,
-    node_id: semantic_graph.NodeId,
-) RegionGraphError!dnir.SemanticRef {
-    const node = graph.get(node_id) orelse return error.ApplicationGraphMismatch;
-    return .{
-        .node = node_id.index,
-        .fingerprint = (node.stable_id orelse return error.ApplicationGraphMismatch).hash,
-    };
-}
-
 /// Collect the current checked application identity surface in O(nodes+edges).
 /// These exact node references are a session-local bootstrap projection; no
 /// missing pack, world, witness, provenance, or durable identity component is
-/// synthesized here. Fingerprints remain non-authoritative metadata.
+/// synthesized here. The returned handles are valid only with `graph`.
 pub fn checkedApplicationProjections(
     alloc: std.mem.Allocator,
     graph: *const semantic_graph.SemanticGraph,
@@ -408,7 +391,7 @@ pub fn checkedApplicationProjections(
 
     var projections: std.ArrayListUnmanaged(CheckedApplicationProjection) = .empty;
     errdefer projections.deinit(alloc);
-    var seen: std.AutoHashMapUnmanaged(u32, void) = .empty;
+    var seen: std.AutoHashMapUnmanaged(semantic_graph.NodeId, void) = .empty;
     defer seen.deinit(alloc);
     for (graph.nodes.items, 0..) |node, i| {
         if (node.kind != .call) continue;
@@ -418,19 +401,20 @@ pub fn checkedApplicationProjections(
         const descriptor = result_node.descriptor orelse return error.ApplicationGraphMismatch;
         const caller = containingFunctionFromScope(graph, .{ .index = @intCast(i) }) orelse
             return error.ApplicationGraphMismatch;
-        const application_identity = try semanticReference(graph, .{ .index = @intCast(i) });
-        const slot = seen.getOrPut(alloc, application_identity.node) catch return error.OutOfMemory;
+        _ = graph.get(relation) orelse return error.ApplicationGraphMismatch;
+        _ = graph.get(result) orelse return error.ApplicationGraphMismatch;
+        _ = graph.get(caller) orelse return error.ApplicationGraphMismatch;
+        if (edges[i].subject) |subject| _ = graph.get(subject) orelse return error.ApplicationGraphMismatch;
+        const application_identity: semantic_graph.NodeId = .{ .index = @intCast(i) };
+        const slot = seen.getOrPut(alloc, application_identity) catch return error.OutOfMemory;
         if (slot.found_existing) return error.ApplicationGraphMismatch;
         try projections.append(alloc, .{
-            .relation = try semanticReference(graph, relation),
+            .relation = relation,
             .application = application_identity,
-            .value = try semanticReference(graph, result),
-            .subject = if (edges[i].subject) |subject|
-                try semanticReference(graph, subject)
-            else
-                null,
+            .value = result,
+            .subject = edges[i].subject,
             .descriptor = descriptor,
-            .caller = try semanticReference(graph, caller),
+            .caller = caller,
         });
     }
     return projections.toOwnedSlice(alloc) catch return error.OutOfMemory;
@@ -439,13 +423,13 @@ pub fn checkedApplicationProjections(
 fn expectedApplications(
     alloc: std.mem.Allocator,
     graph: *const semantic_graph.SemanticGraph,
-) RegionGraphError!std.AutoHashMapUnmanaged(u32, ExpectedApplication) {
-    var expected: std.AutoHashMapUnmanaged(u32, ExpectedApplication) = .empty;
+) RegionGraphError!std.AutoHashMapUnmanaged(semantic_graph.NodeId, ExpectedApplication) {
+    var expected: std.AutoHashMapUnmanaged(semantic_graph.NodeId, ExpectedApplication) = .empty;
     errdefer expected.deinit(alloc);
     const projections = try checkedApplicationProjections(alloc, graph);
     defer alloc.free(projections);
     for (projections) |projection| {
-        const slot = expected.getOrPut(alloc, projection.application.node) catch return error.OutOfMemory;
+        const slot = expected.getOrPut(alloc, projection.application) catch return error.OutOfMemory;
         if (slot.found_existing) return error.ApplicationGraphMismatch;
         slot.value_ptr.* = .{
             .application = projection.application,
@@ -467,29 +451,31 @@ pub fn validateModuleRegions(
     m: dnir.Module,
     alloc: std.mem.Allocator,
 ) RegionGraphError!void {
+    if (m.identity_owner != graph) return error.GraphOwnerMismatch;
     var expected = try expectedApplications(alloc, graph);
     defer expected.deinit(alloc);
 
     if (regions.len != m.functions.len) return error.EmitOrderMismatch;
     for (m.functions, 0..) |f, i| {
         const region = &regions[i];
-        if (!optionalSemanticRefEql(region.func_identity, f.semantic_identity)) return error.StableIdMismatch;
+        if (region.identity_owner != graph) return error.GraphOwnerMismatch;
+        if (!optionalNodeEql(region.func_identity, f.semantic_identity)) return error.FunctionIdentityMismatch;
 
         for (region.nodes) |node| {
             if (!hasAnyApplicationIdentity(node)) continue;
             if (!hasCompleteApplicationIdentity(node)) return error.IncompleteApplicationIdentity;
-            const application = expected.getPtr(node.application_id.?.node) orelse
+            const application = expected.getPtr(node.application_id.?) orelse
                 return error.ApplicationGraphMismatch;
-            if (!application.application.eql(node.application_id.?) or
-                !application.relation.eql(node.relation_id.?) or
-                !application.value.eql(node.value_id.?) or
-                !optionalSemanticRefEql(application.subject, node.subject_id) or
+            if (!std.meta.eql(application.application, node.application_id.?) or
+                !std.meta.eql(application.relation, node.relation_id.?) or
+                !std.meta.eql(application.value, node.value_id.?) or
+                !optionalNodeEql(application.subject, node.subject_id) or
                 node.descriptor == null or
                 !application.descriptor.eql(node.descriptor.?))
             {
                 return error.ApplicationGraphMismatch;
             }
-            if (region.func_identity == null or !application.caller.eql(region.func_identity.?)) {
+            if (region.func_identity == null or !std.meta.eql(application.caller, region.func_identity.?)) {
                 return error.ApplicationGraphMismatch;
             }
             application.uses += 1;

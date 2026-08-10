@@ -41,17 +41,17 @@ pub const DirectDiag = struct {
     message: []const u8,
 };
 
-/// Bootstrap projection from one identified DNIR realization to emitted bytes.
-/// SemanticRef.node is an exact handle into the resident graph; fingerprint is
-/// checked integrity metadata, never identity. This record deliberately does
-/// not invent the missing durable, realization or witness identities.
+/// Bootstrap projection from one identified realization to emitted bytes.
+/// Every semantic field is an exact handle owned by the resident graph named
+/// by the containing output. This record deliberately does not invent the
+/// missing durable continuity, realization, or witness identities.
 pub const MachineLineage = struct {
-    relation: dnir.SemanticRef,
-    application: dnir.SemanticRef,
-    value: dnir.SemanticRef,
-    subject: ?dnir.SemanticRef,
+    relation: semantic_graph.NodeId,
+    application: semantic_graph.NodeId,
+    value: semantic_graph.NodeId,
+    subject: ?semantic_graph.NodeId,
     descriptor: native_types.ResolvedType,
-    function: dnir.SemanticRef,
+    function: semantic_graph.NodeId,
     instruction_start: u32,
     instruction_end: u32,
     text_start: u32,
@@ -63,6 +63,8 @@ pub const MachineLineage = struct {
 pub const ObjectWithLineage = struct {
     bytes: []u8,
     lineage: []MachineLineage,
+    /// The lineage handles are meaningful only while this graph is resident.
+    identity_owner: *const semantic_graph.SemanticGraph,
 
     pub fn deinit(self: *ObjectWithLineage, alloc: std.mem.Allocator) void {
         alloc.free(self.bytes);
@@ -329,7 +331,7 @@ fn emitObjectModeWithGraphLineage(
         entry.object_start = @intCast(text_offset + entry.text_start);
         entry.object_end = @intCast(text_offset + entry.text_end);
     }
-    return .{ .bytes = bytes, .lineage = lineage };
+    return .{ .bytes = bytes, .lineage = lineage, .identity_owner = graph };
 }
 
 pub fn emitAssembly(alloc: std.mem.Allocator, mod: *const ast.Module, target: []const u8) Error![]u8 {
@@ -641,6 +643,7 @@ const Arm64Output = struct {
     symbols: []Symbol,
     relocations: []Relocation,
     lineage: []MachineLineage = &.{},
+    identity_owner: ?*const semantic_graph.SemanticGraph = null,
     /// Bytes of `__DATA,__bss` zerofill arena this module needs. 0 means the
     /// section is not emitted at all, which is the pre-arena behavior verbatim.
     bss_size: u64 = 0,
@@ -834,7 +837,7 @@ fn findModuleFunction(mod: *const ast.Module, name: []const u8) ?*const ast.Func
     return null;
 }
 
-/// Linker entry for native executables. Duo has no mandatory `main()` — file-scope
+/// Linker entry for native executables. Idsem has no mandatory `main()` — file-scope
 /// functions export uniformly. Prefer an explicit `@export` zero-arg i64/void/f64 entry,
 /// else a sole eligible zero-arg function, else a function literally named `main`.
 /// When `override` is set (`--entry`), it must name an eligible zero-arg function.
@@ -2413,7 +2416,7 @@ const Arm64Compiler = struct {
                 try temps.put(self.alloc, t, dst);
             },
             .load_index, .store_index => |op| if (ins.ty == .i64) {
-                // Memory-backed positional table: 8-byte elements, Duo-indexed
+                // Memory-backed positional table: 8-byte elements, Idsem-indexed
                 // from 1, so element `i` is at `base + (i - 1) * 8`. The scaled
                 // register form `[base, idx, lsl #3]` does the multiply for
                 // free, so only the 1-based bias costs an instruction.
@@ -2470,7 +2473,7 @@ const Arm64Compiler = struct {
                 self.releaseDnirTemp(pinned, ins.rhs, sidx);
                 self.releaseDnirTemp(pinned, ins.third, sval);
             } else {
-                // `string.byte(s, i)`: Duo indexes strings from 1, C pointers
+                // `string.byte(s, i)`: Idsem indexes strings from 1, C pointers
                 // from 0, so the byte lives at `base + (i - 1)`.
                 const base = try self.evalDnirValue(temps, ins.lhs);
                 const idx = try self.evalDnirValue(temps, ins.rhs);
@@ -4634,33 +4637,36 @@ fn checkedApplications(
     };
 }
 
-fn optionalSemanticRefEql(a: ?dnir.SemanticRef, b: ?dnir.SemanticRef) bool {
+fn optionalNodeEql(a: ?semantic_graph.NodeId, b: ?semantic_graph.NodeId) bool {
     if (a == null or b == null) return a == null and b == null;
-    return a.?.eql(b.?);
+    return std.meta.eql(a.?, b.?);
 }
 
 fn validateDnirApplications(
     alloc: std.mem.Allocator,
     module: dnir.Module,
     applications: []const CheckedApplication,
+    graph: *const semantic_graph.SemanticGraph,
 ) Error!void {
+    const owner = module.identity_owner orelse return refuseWith(@src(), "missing-graph-owner");
+    if (owner != graph) return refuseWith(@src(), "graph-owner-mismatch");
     const uses = try alloc.alloc(u32, applications.len);
     defer alloc.free(uses);
     @memset(uses, 0);
-    var by_application: std.AutoHashMapUnmanaged(u32, usize) = .empty;
+    var by_application: std.AutoHashMapUnmanaged(semantic_graph.NodeId, usize) = .empty;
     defer by_application.deinit(alloc);
     for (applications, 0..) |application, i| {
-        const slot = try by_application.getOrPut(alloc, application.application.node);
+        const slot = try by_application.getOrPut(alloc, application.application);
         if (slot.found_existing) return refuseWith(@src(), "application-identity-collision");
         slot.value_ptr.* = i;
     }
 
     const LinkTarget = struct {
-        identity: dnir.SemanticRef,
+        identity: semantic_graph.NodeId,
         linkage: []const u8,
         result_record: ?[]const u8,
     };
-    var functions_by_relation: std.AutoHashMapUnmanaged(u32, LinkTarget) = .empty;
+    var functions_by_relation: std.AutoHashMapUnmanaged(semantic_graph.NodeId, LinkTarget) = .empty;
     defer functions_by_relation.deinit(alloc);
     var link_symbols: std.StringHashMapUnmanaged(void) = .empty;
     defer link_symbols.deinit(alloc);
@@ -4668,7 +4674,7 @@ fn validateDnirApplications(
         const identity = function.semantic_identity orelse continue;
         const symbol_slot = try link_symbols.getOrPut(alloc, function.name);
         if (symbol_slot.found_existing) return refuseWith(@src(), "duplicate-link-symbol");
-        const relation_slot = try functions_by_relation.getOrPut(alloc, identity.node);
+        const relation_slot = try functions_by_relation.getOrPut(alloc, identity);
         if (relation_slot.found_existing) return refuseWith(@src(), "function-identity-collision");
         relation_slot.value_ptr.* = .{
             .identity = identity,
@@ -4708,23 +4714,23 @@ fn validateDnirApplications(
                     return refuseWith(@src(), "unwitnessed-application-transform");
                 }
 
-                const application_index = by_application.get(instruction.application.?.node) orelse
+                const application_index = by_application.get(instruction.application.?) orelse
                     return refuseWith(@src(), "unknown-application-lineage");
                 const application = applications[application_index];
-                if (function.semantic_identity == null or !function.semantic_identity.?.eql(application.caller)) {
+                if (function.semantic_identity == null or !std.meta.eql(function.semantic_identity.?, application.caller)) {
                     return refuseWith(@src(), "application-caller-mismatch");
                 }
-                if (!application.application.eql(instruction.application.?) or
-                    !application.relation.eql(instruction.relation.?) or
-                    !application.value.eql(instruction.value.?) or
-                    !optionalSemanticRefEql(application.subject, instruction.subject) or
+                if (!std.meta.eql(application.application, instruction.application.?) or
+                    !std.meta.eql(application.relation, instruction.relation.?) or
+                    !std.meta.eql(application.value, instruction.value.?) or
+                    !optionalNodeEql(application.subject, instruction.subject) or
                     !application.descriptor.eql(instruction.ty))
                 {
                     return refuseWith(@src(), "application-identity-mismatch");
                 }
-                const target = functions_by_relation.get(application.relation.node) orelse
+                const target = functions_by_relation.get(application.relation) orelse
                     return refuseWith(@src(), "application-link-target");
-                if (!target.identity.eql(application.relation)) {
+                if (!std.meta.eql(target.identity, application.relation)) {
                     return refuseWith(@src(), "application-link-target");
                 }
                 if (!std.mem.eql(u8, target.linkage, instruction.callee)) {
@@ -4751,28 +4757,30 @@ fn validateMachineLineage(
     alloc: std.mem.Allocator,
     output: Arm64Output,
     applications: []const CheckedApplication,
+    graph: *const semantic_graph.SemanticGraph,
 ) Error!void {
+    if (output.identity_owner != graph) return refuseWith(@src(), "machine-graph-owner-mismatch");
     if (output.lineage.len != applications.len) {
         return refuseWith(@src(), "machine-lineage-count");
     }
-    var expected: std.AutoHashMapUnmanaged(u32, CheckedApplication) = .empty;
+    var expected: std.AutoHashMapUnmanaged(semantic_graph.NodeId, CheckedApplication) = .empty;
     defer expected.deinit(alloc);
-    var seen: std.AutoHashMapUnmanaged(u32, void) = .empty;
+    var seen: std.AutoHashMapUnmanaged(semantic_graph.NodeId, void) = .empty;
     defer seen.deinit(alloc);
     for (applications) |application| {
-        const slot = try expected.getOrPut(alloc, application.application.node);
+        const slot = try expected.getOrPut(alloc, application.application);
         if (slot.found_existing) return refuseWith(@src(), "machine-lineage-collision");
         slot.value_ptr.* = application;
     }
     for (output.lineage) |lineage| {
-        const application = expected.get(lineage.application.node) orelse
+        const application = expected.get(lineage.application) orelse
             return refuseWith(@src(), "machine-lineage-unknown");
-        if (!lineage.application.eql(application.application) or
-            !lineage.relation.eql(application.relation) or
-            !lineage.value.eql(application.value) or
-            !optionalSemanticRefEql(lineage.subject, application.subject) or
+        if (!std.meta.eql(lineage.application, application.application) or
+            !std.meta.eql(lineage.relation, application.relation) or
+            !std.meta.eql(lineage.value, application.value) or
+            !optionalNodeEql(lineage.subject, application.subject) or
             !lineage.descriptor.eql(application.descriptor) or
-            !lineage.function.eql(application.caller))
+            !std.meta.eql(lineage.function, application.caller))
         {
             return refuseWith(@src(), "machine-lineage-mismatch");
         }
@@ -4782,7 +4790,7 @@ fn validateMachineLineage(
         if (lineage.text_start >= lineage.text_end or @as(usize, lineage.text_end) > output.text.len) {
             return refuseWith(@src(), "machine-lineage-range");
         }
-        const slot = try seen.getOrPut(alloc, lineage.application.node);
+        const slot = try seen.getOrPut(alloc, lineage.application);
         if (slot.found_existing) return refuseWith(@src(), "machine-lineage-count");
     }
     if (seen.count() != applications.len) return refuseWith(@src(), "machine-lineage-count");
@@ -4820,7 +4828,9 @@ fn emitArm64FromDnir(alloc: std.mem.Allocator, m: dnir.Module, process_entry: ?[
     };
     defer compiler.deinit();
     try compiler.compileDnirModule(m);
-    return compiler.finish();
+    var output = try compiler.finish();
+    output.identity_owner = m.identity_owner;
+    return output;
 }
 
 fn collectScalRecordsFromDnir(alloc: std.mem.Allocator, m: dnir.Module) Error!ScalRecordMap {
@@ -4878,7 +4888,13 @@ fn emitArm64Module(alloc: std.mem.Allocator, mod: *const ast.Module, process_ent
     defer graph.deinit();
     _ = graph.liftModuleWithCalls(mod, "<native>") catch {};
 
-    return emitArm64ModuleWithGraph(alloc, mod, process_entry, &graph);
+    var output = try emitArm64ModuleWithGraph(alloc, mod, process_entry, &graph);
+    if (output.lineage.len != 0) {
+        output.deinit(alloc);
+        return refuseWith(@src(), "orphan-machine-lineage");
+    }
+    output.identity_owner = null;
+    return output;
 }
 
 fn emitArm64ModuleWithGraph(
@@ -4894,7 +4910,7 @@ fn emitArm64ModuleWithGraph(
     if (dnir_lower.lowerModuleWithGraph(alloc, mod, graph)) |dnir_mod| {
         defer dnir.deinitModule(alloc, dnir_mod);
         if (dnir.moduleIsNativeDirectReady(dnir_mod)) {
-            try validateDnirApplications(alloc, dnir_mod, applications);
+            try validateDnirApplications(alloc, dnir_mod, applications, graph);
 
             var dnir_mut = dnir_mod;
             if (region_graph.buildModuleRegions(alloc, dnir_mut, graph)) |initial_regions| {
@@ -4914,7 +4930,7 @@ fn emitArm64ModuleWithGraph(
             // Transformation changes realization, not meaning. Revalidate the
             // actual DNIR that will be emitted, then rebuild the region graph so
             // scheduling and tooling never observe the stale pre-transform view.
-            try validateDnirApplications(alloc, dnir_mut, applications);
+            try validateDnirApplications(alloc, dnir_mut, applications, graph);
             if (region_graph.buildModuleRegions(alloc, dnir_mut, graph)) |final_regions| {
                 defer region_graph.freeModuleRegions(alloc, final_regions);
                 region_graph.validateModuleRegions(final_regions, graph, dnir_mut, alloc) catch {
@@ -4937,7 +4953,7 @@ fn emitArm64ModuleWithGraph(
 
             var output = try emitArm64FromDnir(alloc, dnir_mut, process_entry);
             errdefer output.deinit(alloc);
-            try validateMachineLineage(alloc, output, applications);
+            try validateMachineLineage(alloc, output, applications, graph);
             return output;
         }
         if (checked_path) return refuseWith(@src(), "checked-direct-not-ready");
@@ -5203,7 +5219,7 @@ fn expectLineageCallTarget(
 ) !void {
     var target_function: ?dnir.Function = null;
     for (module.functions) |function| {
-        if (function.semantic_identity != null and function.semantic_identity.?.eql(lineage.relation)) {
+        if (function.semantic_identity != null and std.meta.eql(function.semantic_identity.?, lineage.relation)) {
             target_function = function;
             break;
         }
@@ -5263,8 +5279,8 @@ test "native backend: checked subject identity reaches object bytes" {
     const projected = try dnir_lower.lowerModuleWithGraph(alloc, &module, &graph);
     var instruction_index: u32 = 0;
     var spans_abi_staging = false;
-    var dnir_caller: ?dnir.SemanticRef = null;
-    var dnir_subject: ?dnir.SemanticRef = null;
+    var dnir_caller: ?semantic_graph.NodeId = null;
+    var dnir_subject: ?semantic_graph.NodeId = null;
     for (projected.functions) |function| {
         instruction_index = 0;
         for (function.blocks) |block| {
@@ -5280,23 +5296,23 @@ test "native backend: checked subject identity reaches object bytes" {
     }
     try std.testing.expect(spans_abi_staging);
     try std.testing.expectEqual(applications[0].caller, dnir_caller.?);
-    try std.testing.expect(applications[0].subject.?.eql(dnir_subject.?));
+    try std.testing.expect(std.meta.eql(applications[0].subject.?, dnir_subject.?));
 
     const regions = try region_graph.buildModuleRegions(alloc, projected, &graph);
     defer region_graph.freeModuleRegions(alloc, regions);
     try region_graph.validateModuleRegions(regions, &graph, projected, alloc);
-    var region_caller: ?dnir.SemanticRef = null;
-    var region_subject: ?dnir.SemanticRef = null;
+    var region_caller: ?semantic_graph.NodeId = null;
+    var region_subject: ?semantic_graph.NodeId = null;
     for (regions) |region| {
         for (region.nodes) |node| {
-            if (node.application_id != null and node.application_id.?.eql(applications[0].application)) {
+            if (node.application_id != null and std.meta.eql(node.application_id.?, applications[0].application)) {
                 region_caller = region.func_identity;
                 region_subject = node.subject_id;
             }
         }
     }
     try std.testing.expectEqual(applications[0].caller, region_caller.?);
-    try std.testing.expect(applications[0].subject.?.eql(region_subject.?));
+    try std.testing.expect(std.meta.eql(applications[0].subject.?, region_subject.?));
 
     var output = try emitArm64ModuleWithGraph(alloc, &module, null, &graph);
     defer output.deinit(alloc);
@@ -5305,28 +5321,28 @@ test "native backend: checked subject identity reaches object bytes" {
     try std.testing.expectEqual(applications[0].relation, text_lineage.relation);
     try std.testing.expectEqual(applications[0].application, text_lineage.application);
     try std.testing.expectEqual(applications[0].value, text_lineage.value);
-    try std.testing.expect(applications[0].subject.?.eql(text_lineage.subject.?));
+    try std.testing.expect(std.meta.eql(applications[0].subject.?, text_lineage.subject.?));
     try std.testing.expect(applications[0].descriptor.eql(text_lineage.descriptor));
     try std.testing.expectEqual(applications[0].caller, text_lineage.function);
     try std.testing.expect(text_lineage.instruction_start + 1 < text_lineage.instruction_end);
     try expectLineageCallTarget(alloc, output, projected, text_lineage);
 
-    output.lineage[0].function.node +%= 1;
+    output.lineage[0].function.index +%= 1;
     try std.testing.expectError(
         error.UnsupportedProgram,
-        validateMachineLineage(alloc, output, applications),
+        validateMachineLineage(alloc, output, applications, &graph),
     );
-    output.lineage[0].function.node -%= 1;
-    output.lineage[0].subject.?.node +%= 1;
+    output.lineage[0].function.index -%= 1;
+    output.lineage[0].subject.?.index +%= 1;
     try std.testing.expectError(
         error.UnsupportedProgram,
-        validateMachineLineage(alloc, output, applications),
+        validateMachineLineage(alloc, output, applications, &graph),
     );
-    output.lineage[0].subject.?.node -%= 1;
+    output.lineage[0].subject.?.index -%= 1;
     output.lineage[0].descriptor = .i32;
     try std.testing.expectError(
         error.UnsupportedProgram,
-        validateMachineLineage(alloc, output, applications),
+        validateMachineLineage(alloc, output, applications, &graph),
     );
     output.lineage[0].descriptor = applications[0].descriptor;
 
@@ -5337,7 +5353,7 @@ test "native backend: checked subject identity reaches object bytes" {
     try std.testing.expectEqual(text_lineage.relation, object_lineage.relation);
     try std.testing.expectEqual(text_lineage.application, object_lineage.application);
     try std.testing.expectEqual(text_lineage.value, object_lineage.value);
-    try std.testing.expect(text_lineage.subject.?.eql(object_lineage.subject.?));
+    try std.testing.expect(std.meta.eql(text_lineage.subject.?, object_lineage.subject.?));
     try std.testing.expect(text_lineage.descriptor.eql(object_lineage.descriptor));
     try std.testing.expectEqual(text_lineage.function, object_lineage.function);
     try std.testing.expectEqualSlices(
@@ -5392,8 +5408,63 @@ test "native backend: removing checked identity refuses before machine emission"
     try std.testing.expect(removed);
     try std.testing.expectError(
         error.UnsupportedProgram,
-        validateDnirApplications(alloc, module, applications),
+        validateDnirApplications(alloc, module, applications, &graph),
     );
+}
+
+test "native backend: graph handles cannot cross resident owners" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\observe: i64 = (value: i64)
+        \\    value
+        \\main: i64 = ()
+        \\    observe(42)
+    ;
+    var lexer = Lexer.init(source, "owner.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.duo_mode = true;
+    var ast_module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&ast_module);
+
+    var graph_a = semantic_graph.SemanticGraph.init(alloc);
+    defer graph_a.deinit();
+    _ = try graph_a.liftModuleWithCheckedCalls(&ast_module, &checked, "owner.id");
+    var graph_b = semantic_graph.SemanticGraph.init(alloc);
+    defer graph_b.deinit();
+    _ = try graph_b.liftModuleWithCheckedCalls(&ast_module, &checked, "owner.id");
+    try std.testing.expectEqual(graph_a.nodes.items.len, graph_b.nodes.items.len);
+    try std.testing.expectEqual(
+        graph_a.nodes.items[0].stable_id.?.hash,
+        graph_b.nodes.items[0].stable_id.?.hash,
+    );
+
+    const module = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph_a);
+    try std.testing.expect(module.identity_owner == &graph_a);
+    const applications_b = try checkedApplications(alloc, &graph_b);
+    defer alloc.free(applications_b);
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        validateDnirApplications(alloc, module, applications_b, &graph_b),
+    );
+    try std.testing.expectEqualStrings("graph-owner-mismatch", refusalNote().?);
+    try std.testing.expectError(
+        error.GraphOwnerMismatch,
+        region_graph.buildModuleRegions(alloc, module, &graph_b),
+    );
+
+    var output = try emitArm64FromDnir(alloc, module, null);
+    defer output.deinit(alloc);
+    try std.testing.expect(output.identity_owner == &graph_a);
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        validateMachineLineage(alloc, output, applications_b, &graph_b),
+    );
+    try std.testing.expectEqualStrings("machine-graph-owner-mismatch", refusalNote().?);
 }
 
 test "native backend: checked ordinary call reaches regions and machine lineage" {
@@ -5422,14 +5493,14 @@ test "native backend: checked ordinary call reaches regions and machine lineage"
     const applications = try checkedApplications(alloc, &graph);
     defer alloc.free(applications);
     try std.testing.expectEqual(@as(usize, 2), applications.len);
-    try std.testing.expect(applications[0].relation.eql(applications[1].relation));
-    try std.testing.expect(!applications[0].application.eql(applications[1].application));
-    try std.testing.expect(!applications[0].value.eql(applications[1].value));
-    try std.testing.expectEqual(@as(?dnir.SemanticRef, null), applications[0].subject);
-    try std.testing.expectEqual(@as(?dnir.SemanticRef, null), applications[1].subject);
+    try std.testing.expect(std.meta.eql(applications[0].relation, applications[1].relation));
+    try std.testing.expect(!std.meta.eql(applications[0].application, applications[1].application));
+    try std.testing.expect(!std.meta.eql(applications[0].value, applications[1].value));
+    try std.testing.expectEqual(@as(?semantic_graph.NodeId, null), applications[0].subject);
+    try std.testing.expectEqual(@as(?semantic_graph.NodeId, null), applications[1].subject);
 
     const module = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph);
-    try validateDnirApplications(alloc, module, applications);
+    try validateDnirApplications(alloc, module, applications, &graph);
 
     const regions = try region_graph.buildModuleRegions(alloc, module, &graph);
     defer region_graph.freeModuleRegions(alloc, regions);
@@ -5446,11 +5517,11 @@ test "native backend: checked ordinary call reaches regions and machine lineage"
         var output = try emitArm64ModuleWithGraph(alloc, &ast_module, null, &graph);
         defer output.deinit(alloc);
         try std.testing.expectEqual(@as(usize, 2), output.lineage.len);
-        try std.testing.expect(output.lineage[0].relation.eql(output.lineage[1].relation));
-        try std.testing.expect(!output.lineage[0].application.eql(output.lineage[1].application));
-        try std.testing.expect(!output.lineage[0].value.eql(output.lineage[1].value));
-        try std.testing.expectEqual(@as(?dnir.SemanticRef, null), output.lineage[0].subject);
-        try std.testing.expectEqual(@as(?dnir.SemanticRef, null), output.lineage[1].subject);
+        try std.testing.expect(std.meta.eql(output.lineage[0].relation, output.lineage[1].relation));
+        try std.testing.expect(!std.meta.eql(output.lineage[0].application, output.lineage[1].application));
+        try std.testing.expect(!std.meta.eql(output.lineage[0].value, output.lineage[1].value));
+        try std.testing.expectEqual(@as(?semantic_graph.NodeId, null), output.lineage[0].subject);
+        try std.testing.expectEqual(@as(?semantic_graph.NodeId, null), output.lineage[1].subject);
         try std.testing.expect(output.lineage[0].descriptor.eql(.i64));
         try std.testing.expect(output.lineage[1].descriptor.eql(.i64));
         for (output.lineage) |lineage| {
@@ -5461,7 +5532,7 @@ test "native backend: checked ordinary call reaches regions and machine lineage"
         defer artifact.deinit(alloc);
         try std.testing.expectEqual(@as(usize, 2), artifact.lineage.len);
         for (artifact.lineage) |lineage| {
-            const source_node = graph.get(.{ .index = lineage.application.node }) orelse
+            const source_node = graph.get(lineage.application) orelse
                 return error.TestExpectedEqual;
             try std.testing.expectEqual(semantic_graph.NodeKind.call, source_node.kind);
             try std.testing.expectEqualStrings("ordinary-lineage.duo", source_node.span.file);
@@ -5470,7 +5541,7 @@ test "native backend: checked ordinary call reaches regions and machine lineage"
             try std.testing.expect(@as(usize, lineage.object_end) <= artifact.bytes.len);
             var text_lineage: ?MachineLineage = null;
             for (output.lineage) |candidate| {
-                if (candidate.application.eql(lineage.application)) text_lineage = candidate;
+                if (std.meta.eql(candidate.application, lineage.application)) text_lineage = candidate;
             }
             const text = text_lineage orelse return error.TestExpectedEqual;
             try std.testing.expectEqualSlices(
@@ -5515,7 +5586,7 @@ test "native backend: checked record result keeps application identity" {
     try std.testing.expectEqual(@as(usize, 1), applications.len);
 
     const module = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph);
-    try validateDnirApplications(alloc, module, applications);
+    try validateDnirApplications(alloc, module, applications, &graph);
     var call: ?*dnir.Instr = null;
     var anonymous_record_realizations: usize = 0;
     for (module.functions) |function| {
@@ -5530,8 +5601,8 @@ test "native backend: checked record result keeps application identity" {
     try std.testing.expectEqual(@as(usize, 0), anonymous_record_realizations);
     const instruction = call orelse return error.TestExpectedEqual;
     try std.testing.expectEqualStrings("pair", instruction.record);
-    try std.testing.expect(instruction.application.?.eql(applications[0].application));
-    try std.testing.expect(instruction.value.?.eql(applications[0].value));
+    try std.testing.expect(std.meta.eql(instruction.application.?, applications[0].application));
+    try std.testing.expect(std.meta.eql(instruction.value.?, applications[0].value));
     try std.testing.expect(instruction.ty.eql(applications[0].descriptor));
 
     const regions = try region_graph.buildModuleRegions(alloc, module, &graph);
@@ -5541,7 +5612,7 @@ test "native backend: checked record result keeps application identity" {
     var output = try emitArm64ModuleWithGraph(alloc, &ast_module, null, &graph);
     defer output.deinit(alloc);
     try std.testing.expectEqual(@as(usize, 1), output.lineage.len);
-    try std.testing.expect(output.lineage[0].application.eql(applications[0].application));
+    try std.testing.expect(std.meta.eql(output.lineage[0].application, applications[0].application));
     try std.testing.expect(output.lineage[0].descriptor.eql(applications[0].descriptor));
     try expectLineageCallTarget(alloc, output, module, output.lineage[0]);
 
@@ -5557,7 +5628,7 @@ test "native backend: checked record result keeps application identity" {
     instruction.record = "other";
     try std.testing.expectError(
         error.UnsupportedProgram,
-        validateDnirApplications(alloc, module, applications),
+        validateDnirApplications(alloc, module, applications, &graph),
     );
 }
 
@@ -5624,7 +5695,7 @@ test "native backend: callee spelling cannot redirect a checked application" {
     try std.testing.expectEqual(@as(usize, 1), applications.len);
 
     const module = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph);
-    try validateDnirApplications(alloc, module, applications);
+    try validateDnirApplications(alloc, module, applications, &graph);
     var baseline = try emitArm64FromDnir(alloc, module, null);
     defer baseline.deinit(alloc);
     var identified: ?*dnir.Instr = null;
@@ -5641,10 +5712,10 @@ test "native backend: callee spelling cannot redirect a checked application" {
     const relation_before = instruction.relation.?;
     const descriptor_before = instruction.ty;
     instruction.ty = .i32;
-    try std.testing.expect(relation_before.eql(instruction.relation.?));
+    try std.testing.expect(std.meta.eql(relation_before, instruction.relation.?));
     try std.testing.expectError(
         error.UnsupportedProgram,
-        validateDnirApplications(alloc, module, applications),
+        validateDnirApplications(alloc, module, applications, &graph),
     );
     try std.testing.expectEqualStrings("application-identity-mismatch", refusalNote().?);
     instruction.ty = descriptor_before;
@@ -5654,7 +5725,7 @@ test "native backend: callee spelling cannot redirect a checked application" {
     var other_function: ?*dnir.Function = null;
     for (functions) |*function| {
         const identity = function.semantic_identity orelse continue;
-        if (identity.eql(applications[0].relation)) {
+        if (std.meta.eql(identity, applications[0].relation)) {
             selected_function = function;
         } else if (std.mem.eql(u8, function.name, "impostor")) {
             other_function = function;
@@ -5669,43 +5740,55 @@ test "native backend: callee spelling cannot redirect a checked application" {
     other.name = selected.name;
     try std.testing.expectError(
         error.UnsupportedProgram,
-        validateDnirApplications(alloc, module, applications),
+        validateDnirApplications(alloc, module, applications, &graph),
     );
     try std.testing.expectEqualStrings("duplicate-link-symbol", refusalNote().?);
     other.name = other_name;
 
-    other.semantic_identity = .{
-        .node = selected_identity.node,
-        .fingerprint = other_identity.fingerprint,
-    };
+    other.semantic_identity = selected_identity;
     try std.testing.expectError(
         error.UnsupportedProgram,
-        validateDnirApplications(alloc, module, applications),
+        validateDnirApplications(alloc, module, applications, &graph),
     );
     try std.testing.expectEqualStrings("function-identity-collision", refusalNote().?);
     other.semantic_identity = other_identity;
 
-    selected.semantic_identity.?.fingerprint ^= 1;
-    try std.testing.expectError(
-        error.UnsupportedProgram,
-        validateDnirApplications(alloc, module, applications),
-    );
-    try std.testing.expectEqualStrings("application-link-target", refusalNote().?);
-    selected.semantic_identity = selected_identity;
+    // Stable hashes are derived metadata. Removing every one cannot alter
+    // selection, machine text, or object bytes selected by exact handles.
+    if (builtin.os.tag == .macos and builtin.cpu.arch == .aarch64) {
+        var before = try emitObjectWithGraphLineage(alloc, &ast_module, "native-object", &graph);
+        defer before.deinit(alloc);
+        for (graph.nodes.items) |*node| node.stable_id = null;
+        var after = try emitObjectWithGraphLineage(alloc, &ast_module, "native-object", &graph);
+        defer after.deinit(alloc);
+        try std.testing.expect(before.identity_owner == &graph);
+        try std.testing.expect(after.identity_owner == &graph);
+        try std.testing.expectEqualSlices(u8, before.bytes, after.bytes);
+        try std.testing.expectEqual(before.lineage.len, after.lineage.len);
+        try std.testing.expectEqual(@as(usize, 1), before.lineage.len);
+        try std.testing.expect(std.meta.eql(before.lineage[0].relation, after.lineage[0].relation));
+        try std.testing.expect(std.meta.eql(before.lineage[0].application, after.lineage[0].application));
+        try std.testing.expect(std.meta.eql(before.lineage[0].value, after.lineage[0].value));
+    } else {
+        for (graph.nodes.items) |*node| node.stable_id = null;
+    }
+    try validateDnirApplications(alloc, module, applications, &graph);
 
-    selected.semantic_identity.?.node ^= 0x8000_0000;
+    // Redirecting the target to another valid entity in the same graph must
+    // fail even when all textual linkage remains unchanged.
+    selected.semantic_identity = applications[0].application;
     try std.testing.expectError(
         error.UnsupportedProgram,
-        validateDnirApplications(alloc, module, applications),
+        validateDnirApplications(alloc, module, applications, &graph),
     );
     try std.testing.expectEqualStrings("application-link-target", refusalNote().?);
     selected.semantic_identity = selected_identity;
 
     instruction.callee = "impostor";
-    try std.testing.expect(applications[0].relation.eql(relation_before));
+    try std.testing.expect(std.meta.eql(applications[0].relation, relation_before));
     try std.testing.expectError(
         error.UnsupportedProgram,
-        validateDnirApplications(alloc, module, applications),
+        validateDnirApplications(alloc, module, applications, &graph),
     );
     try std.testing.expectEqualStrings("application-link-symbol", refusalNote().?);
 
@@ -5713,9 +5796,9 @@ test "native backend: callee spelling cannot redirect a checked application" {
     // with it. The semantic relation remains the graph-selected relation.
     instruction.callee = "observe_alias";
     selected.name = "observe_alias";
-    try std.testing.expect(relation_before.eql(instruction.relation.?));
-    try std.testing.expect(selected.semantic_identity.?.eql(selected_identity));
-    try validateDnirApplications(alloc, module, applications);
+    try std.testing.expect(std.meta.eql(relation_before, instruction.relation.?));
+    try std.testing.expect(std.meta.eql(selected.semantic_identity.?, selected_identity));
+    try validateDnirApplications(alloc, module, applications, &graph);
 
     var renamed = try emitArm64FromDnir(alloc, module, null);
     defer renamed.deinit(alloc);
@@ -5724,10 +5807,10 @@ test "native backend: callee spelling cannot redirect a checked application" {
     try std.testing.expect(std.mem.indexOf(u8, renamed.asm_text, "bl _observe_alias") != null);
     try std.testing.expectEqual(baseline.lineage.len, renamed.lineage.len);
     try std.testing.expectEqual(@as(usize, 1), renamed.lineage.len);
-    try std.testing.expect(baseline.lineage[0].relation.eql(renamed.lineage[0].relation));
-    try std.testing.expect(baseline.lineage[0].application.eql(renamed.lineage[0].application));
-    try std.testing.expect(baseline.lineage[0].value.eql(renamed.lineage[0].value));
-    try std.testing.expect(baseline.lineage[0].function.eql(renamed.lineage[0].function));
+    try std.testing.expect(std.meta.eql(baseline.lineage[0].relation, renamed.lineage[0].relation));
+    try std.testing.expect(std.meta.eql(baseline.lineage[0].application, renamed.lineage[0].application));
+    try std.testing.expect(std.meta.eql(baseline.lineage[0].value, renamed.lineage[0].value));
+    try std.testing.expect(std.meta.eql(baseline.lineage[0].function, renamed.lineage[0].function));
 }
 
 test "native backend: checked call result descriptor does not select argument ABI" {
@@ -5775,7 +5858,7 @@ test "native backend: checked call result descriptor does not select argument AB
     }
     try std.testing.expect(saw_gp_stage);
     try std.testing.expect(!saw_fp_stage);
-    try validateDnirApplications(alloc, module, applications);
+    try validateDnirApplications(alloc, module, applications, &graph);
 
     var output = try emitArm64ModuleWithGraph(alloc, &ast_module, null, &graph);
     defer output.deinit(alloc);
@@ -5824,7 +5907,7 @@ test "native backend: nested checked call machine ranges do not overlap" {
         try expectLineageCallTarget(alloc, output, module, lineage);
         var parameter_count: ?usize = null;
         for (module.functions) |function| {
-            if (function.semantic_identity != null and function.semantic_identity.?.eql(lineage.relation)) {
+            if (function.semantic_identity != null and std.meta.eql(function.semantic_identity.?, lineage.relation)) {
                 parameter_count = function.params.len;
             }
         }
@@ -5889,7 +5972,7 @@ test "native backend: nested checked f64 results survive later operand calls" {
         try expectLineageCallTarget(alloc, output, module, lineage);
         var parameter_count: ?usize = null;
         for (module.functions) |function| {
-            if (function.semantic_identity != null and function.semantic_identity.?.eql(lineage.relation)) {
+            if (function.semantic_identity != null and std.meta.eql(function.semantic_identity.?, lineage.relation)) {
                 parameter_count = function.params.len;
             }
         }

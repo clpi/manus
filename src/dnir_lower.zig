@@ -2,7 +2,7 @@
 //!
 //! Produces `duo_native_ir.Module` for direct machine backends. C emission is bootstrap-only.
 //!
-//! Entry points: Duo modules export functions at file scope (file-as-M). There is no
+//! Entry points: Idsem modules export functions at file scope (file-as-M). There is no
 //! Python/Lua-style mandatory `main()` or special entry typing — any eligible function
 //! lowers the same way; linker entry is `@export` / CLI target, not a magic name.
 const std = @import("std");
@@ -107,14 +107,12 @@ const empty_fp_params: std.StringHashMapUnmanaged([]bool) = .empty;
 
 const CheckedApplication = struct {
     relation: semantic_graph.NodeId,
+    application: semantic_graph.NodeId,
+    result: semantic_graph.NodeId,
     subject: ?semantic_graph.NodeId,
     arguments: []semantic_graph.NodeId,
     descriptor: types.ResolvedType,
-    relation_identity: dnir.SemanticRef,
-    application_identity: dnir.SemanticRef,
-    value_identity: dnir.SemanticRef,
-    subject_identity: ?dnir.SemanticRef,
-    caller_identity: dnir.SemanticRef,
+    caller: semantic_graph.NodeId,
 };
 
 const ApplicationEdges = struct {
@@ -137,17 +135,6 @@ fn containingFunctionFromScope(
         current = node.scope;
     }
     return null;
-}
-
-fn semanticReference(
-    graph: *const semantic_graph.SemanticGraph,
-    node_id: semantic_graph.NodeId,
-) Error!dnir.SemanticRef {
-    const node = graph.get(node_id) orelse return bail(@src());
-    return .{
-        .node = node_id.index,
-        .fingerprint = (node.stable_id orelse return bail(@src())).hash,
-    };
 }
 
 /// One module-local query index for checked application facts. This is a
@@ -207,28 +194,23 @@ const CheckedApplicationIndex = struct {
             const expression: *const Expr = @ptrCast(@alignCast(expression_raw));
             const descriptor = result_node.descriptor orelse
                 return bailWith(@src(), "application-result-descriptor");
-            const relation_identity = try semanticReference(graph, relation);
-            const application_identity = try semanticReference(graph, .{ .index = @intCast(i) });
-            const value_identity = try semanticReference(graph, result);
-            const subject_identity = if (edges[i].subject) |subject|
-                try semanticReference(graph, subject)
-            else
-                null;
-            const caller_identity = try semanticReference(graph, caller);
+            _ = graph.get(relation) orelse return bail(@src());
+            _ = graph.get(result) orelse return bail(@src());
+            _ = graph.get(caller) orelse return bail(@src());
+            if (edges[i].subject) |subject| _ = graph.get(subject) orelse return bail(@src());
+            const application: semantic_graph.NodeId = .{ .index = @intCast(i) };
             const arguments = try alloc.alloc(semantic_graph.NodeId, edges[i].argument_count);
             for (arguments) |*argument| argument.* = semantic_graph.NodeId.invalid;
 
             const application_index = index.applications.items.len;
             index.applications.append(alloc, .{
                 .relation = relation,
+                .application = application,
+                .result = result,
                 .subject = edges[i].subject,
                 .arguments = arguments,
                 .descriptor = descriptor,
-                .relation_identity = relation_identity,
-                .application_identity = application_identity,
-                .value_identity = value_identity,
-                .subject_identity = subject_identity,
-                .caller_identity = caller_identity,
+                .caller = caller,
             }) catch |err| {
                 alloc.free(arguments);
                 return err;
@@ -251,7 +233,9 @@ const CheckedApplicationIndex = struct {
         }
         for (index.applications.items) |application| {
             for (application.arguments) |argument| {
-                if (!argument.isValid()) return bailWith(@src(), "application-argument-position");
+                if (!argument.isValid() or graph.get(argument) == null) {
+                    return bailWith(@src(), "application-argument-position");
+                }
             }
         }
         return index;
@@ -350,7 +334,28 @@ pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
     _ = graph.liftModuleWithCalls(mod, "<dnir>") catch return error.OutOfMemory;
-    return lowerModuleWithGraph(alloc, mod, &graph);
+    var module = try lowerModuleWithGraph(alloc, mod, &graph);
+
+    // This convenience path does not return the graph owner. Any handles it
+    // used while ordering realization are therefore intentionally erased
+    // before that owner is destroyed. Checked consumers must use
+    // `lowerModuleWithGraph` and retain the graph for the module's lifetime.
+    module.identity_owner = null;
+    const functions: []dnir.Function = @constCast(module.functions);
+    for (functions) |*function| {
+        function.semantic_identity = null;
+        for (function.blocks) |block| {
+            const instructions: []dnir.Instr = @constCast(block.instrs);
+            for (instructions) |*instruction| {
+                instruction.relation = null;
+                instruction.application = null;
+                instruction.value = null;
+                instruction.subject = null;
+                instruction.realization_start = null;
+            }
+        }
+    }
+    return module;
 }
 
 fn lowerModuleFromGraph(
@@ -380,17 +385,15 @@ fn lowerModuleFromGraph(
 
     // Join declarations to graph identities by exact provenance. The exported
     // function name remains a linker/debug symbol; it is not an identity key.
-    var function_identities: std.AutoHashMapUnmanaged(*const ast.FuncDecl, dnir.SemanticRef) = .empty;
+    var function_identities: std.AutoHashMapUnmanaged(*const ast.FuncDecl, semantic_graph.NodeId) = .empty;
     defer function_identities.deinit(alloc);
     for (graph.nodes.items, 0..) |node, i| {
         if (node.kind != .func) continue;
         const raw = node.ast_ref orelse continue;
         const declaration: *const ast.FuncDecl = @ptrCast(@alignCast(raw));
-        try function_identities.put(
-            alloc,
-            declaration,
-            try semanticReference(graph, .{ .index = @intCast(i) }),
-        );
+        const slot = try function_identities.getOrPut(alloc, declaration);
+        if (slot.found_existing) return bailWith(@src(), "function-provenance-collision");
+        slot.value_ptr.* = .{ .index = @intCast(i) };
     }
 
     // GAP-056: which ABI slots each callee expects in v0..v7, so the CALLER
@@ -490,11 +493,13 @@ fn lowerModuleFromGraph(
         .functions = try functions.toOwnedSlice(alloc),
         .records = try records.toOwnedSlice(alloc),
         .externs = try externs.toOwnedSlice(alloc),
+        .identity_owner = graph,
     };
     return .{
         .functions = result.functions,
         .records = result.records,
         .externs = result.externs,
+        .identity_owner = graph,
         .hardware_tier = dnir.moduleHardwareTier(result),
     };
 }
@@ -509,25 +514,16 @@ pub fn lowerModuleWithGraph(
     defer applications.deinit();
     var m = try lowerModuleFromGraph(alloc, mod, graph, &applications);
     errdefer dnir.deinitModule(alloc, m);
-    try applyGraphToModule(alloc, graph, &applications, &m);
+    try applyGraphToModule(alloc, &applications, &m);
     return m;
 }
 
 fn applyGraphToModule(
     alloc: std.mem.Allocator,
-    graph: *const semantic_graph.SemanticGraph,
     applications: *const CheckedApplicationIndex,
     m: *dnir.Module,
 ) Error!void {
     try reorderFunctionsByGraphIdentity(alloc, applications, m);
-
-    const recs: []dnir.RecordDesc = @constCast(m.records);
-    for (recs) |*rec| {
-        if (graph.findTableShape(rec.name)) |shape| {
-            rec.shape_id = shape.shape_id;
-            if (shape.stable_id) |sid| rec.graph_stable_id = sid.hash;
-        }
-    }
 }
 
 /// Place checked callees before callers using graph identities only. If any
@@ -541,11 +537,11 @@ fn reorderFunctionsByGraphIdentity(
     if (m.functions.len <= 1) return;
     if (applications.has_unresolved_calls) return;
 
-    var functions_by_identity: std.AutoHashMapUnmanaged(u32, usize) = .empty;
+    var functions_by_identity: std.AutoHashMapUnmanaged(semantic_graph.NodeId, usize) = .empty;
     defer functions_by_identity.deinit(alloc);
     for (m.functions, 0..) |function, i| {
         const identity = function.semantic_identity orelse return;
-        const slot = try functions_by_identity.getOrPut(alloc, identity.node);
+        const slot = try functions_by_identity.getOrPut(alloc, identity);
         if (slot.found_existing) return bailWith(@src(), "function-identity-collision");
         slot.value_ptr.* = i;
     }
@@ -564,8 +560,8 @@ fn reorderFunctionsByGraphIdentity(
 
     var checked_edges: usize = 0;
     for (applications.applications.items) |application| {
-        const caller_index = functions_by_identity.get(application.caller_identity.node) orelse continue;
-        const relation_index = functions_by_identity.get(application.relation_identity.node) orelse continue;
+        const caller_index = functions_by_identity.get(application.caller) orelse continue;
+        const relation_index = functions_by_identity.get(application.relation) orelse continue;
         const dependency = (@as(u128, relation_index) << 64) | @as(u128, caller_index);
         const slot = try dependency_edges.getOrPut(alloc, dependency);
         if (slot.found_existing) continue;
@@ -904,7 +900,7 @@ fn internInstrStrings(alloc: std.mem.Allocator, instrs: []dnir.Instr) Error!void
 fn lowerFunction(
     alloc: std.mem.Allocator,
     fd: *const ast.FuncDecl,
-    semantic_identity: ?dnir.SemanticRef,
+    semantic_identity: ?semantic_graph.NodeId,
     records: []const dnir.RecordDesc,
     graph: *const semantic_graph.SemanticGraph,
     applications: *const CheckedApplicationIndex,
@@ -1966,10 +1962,10 @@ fn lowerCheckedRecordCallAssign(
     try stageCheckedScalarOperands(ctx, values[0..operands.len], floating);
     try ctx.emit(.{
         .op = .call_direct,
-        .relation = application.relation_identity,
-        .application = application.application_identity,
-        .value = application.value_identity,
-        .subject = application.subject_identity,
+        .relation = application.relation,
+        .application = application.application,
+        .value = application.result,
+        .subject = application.subject,
         .realization_start = realization_start,
         .callee = callee,
         .record = record.name,
@@ -2029,7 +2025,7 @@ fn lowerPositionalTableAssign(ctx: *LowerCtx, name: []const u8, table: *const as
 /// gap[063] — `abort()` when a dynamic index leaves a register-exploded table's
 /// range, instead of silently doing nothing.
 ///
-/// A positional table lowered to registers has a FIXED capacity; a Duo table
+/// A positional table lowered to registers has a FIXED capacity; an Idsem table
 /// GROWS. The select-chain below matched no slot for an out-of-range index and
 /// simply fell through, so `t = { 0 }` followed by `t[i] = i` for i in 1..3 kept
 /// only the first write and the program printed 1 where the C oracle printed 6 —
@@ -2703,10 +2699,10 @@ fn lowerCheckedScalarCall(
     const result = if (has_result) ctx.freshTemp() else null;
     try ctx.emit(.{
         .op = .call_direct,
-        .relation = application.relation_identity,
-        .application = application.application_identity,
-        .value = application.value_identity,
-        .subject = application.subject_identity,
+        .relation = application.relation,
+        .application = application.application,
+        .value = application.result,
+        .subject = application.subject,
         .realization_start = realization_start,
         .result = result,
         .callee = callee,
@@ -4399,10 +4395,7 @@ test "dnir_lower: checked subject call retains semantic identities" {
         if (edge.from.index != application.index or edge.kind != .subject) continue;
         subject = edge.to;
     }
-    const application_identity = try semanticReference(&graph, application);
-    const relation_identity = try semanticReference(&graph, relation);
-    const value_identity = try semanticReference(&graph, value);
-    const subject_identity = try semanticReference(&graph, subject orelse return error.TestExpectedEqual);
+    const subject_identity = subject orelse return error.TestExpectedEqual;
 
     const module = try lowerModuleWithGraph(alloc, &mod, &graph);
     var found = false;
@@ -4410,10 +4403,10 @@ test "dnir_lower: checked subject call retains semantic identities" {
         for (function.blocks[0].instrs) |instruction| {
             if (instruction.op != .call_direct or !std.mem.eql(u8, instruction.callee, "read")) continue;
             found = true;
-            try std.testing.expect(relation_identity.eql(instruction.relation.?));
-            try std.testing.expect(application_identity.eql(instruction.application.?));
-            try std.testing.expect(value_identity.eql(instruction.value.?));
-            try std.testing.expect(subject_identity.eql(instruction.subject.?));
+            try std.testing.expect(std.meta.eql(relation, instruction.relation.?));
+            try std.testing.expect(std.meta.eql(application, instruction.application.?));
+            try std.testing.expect(std.meta.eql(value, instruction.value.?));
+            try std.testing.expect(std.meta.eql(subject_identity, instruction.subject.?));
             try std.testing.expect(instruction.realization_start != null);
         }
     }
@@ -4448,10 +4441,10 @@ test "dnir_lower: applications share relation without sharing occurrence identit
     _ = try graph.liftModuleWithCheckedCalls(&mod, &checked, "application-occurrence.duo");
 
     const module = try lowerModuleWithGraph(alloc, &mod, &graph);
-    var relations: [2]dnir.SemanticRef = undefined;
-    var applications: [2]dnir.SemanticRef = undefined;
-    var values: [2]dnir.SemanticRef = undefined;
-    var subjects: [2]dnir.SemanticRef = undefined;
+    var relations: [2]semantic_graph.NodeId = undefined;
+    var applications: [2]semantic_graph.NodeId = undefined;
+    var values: [2]semantic_graph.NodeId = undefined;
+    var subjects: [2]semantic_graph.NodeId = undefined;
     var count: usize = 0;
     for (module.functions) |function| {
         for (function.blocks[0].instrs) |instruction| {
@@ -4465,10 +4458,10 @@ test "dnir_lower: applications share relation without sharing occurrence identit
         }
     }
     try std.testing.expectEqual(applications.len, count);
-    try std.testing.expect(relations[0].eql(relations[1]));
-    try std.testing.expect(!applications[0].eql(applications[1]));
-    try std.testing.expect(!values[0].eql(values[1]));
-    try std.testing.expect(!subjects[0].eql(subjects[1]));
+    try std.testing.expect(std.meta.eql(relations[0], relations[1]));
+    try std.testing.expect(!std.meta.eql(applications[0], applications[1]));
+    try std.testing.expect(!std.meta.eql(values[0], values[1]));
+    try std.testing.expect(!std.meta.eql(subjects[0], subjects[1]));
 }
 
 test "dnir_lower: checked ordinary calls consume graph identity" {
@@ -4499,29 +4492,29 @@ test "dnir_lower: checked ordinary calls consume graph identity" {
     _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "ordinary-application.duo");
 
     const module = try lowerModuleWithGraph(alloc, &ast_module, &graph);
-    var relation: ?dnir.SemanticRef = null;
-    var applications: [2]dnir.SemanticRef = undefined;
-    var values: [2]dnir.SemanticRef = undefined;
+    var relation: ?semantic_graph.NodeId = null;
+    var applications: [2]semantic_graph.NodeId = undefined;
+    var values: [2]semantic_graph.NodeId = undefined;
     var count: usize = 0;
     for (module.functions) |function| {
         for (function.blocks[0].instrs) |instruction| {
             if (instruction.application == null) continue;
             if (count >= applications.len) return error.TestExpectedEqual;
             if (relation) |first| {
-                try std.testing.expect(first.eql(instruction.relation.?));
+                try std.testing.expect(std.meta.eql(first, instruction.relation.?));
             } else {
                 relation = instruction.relation.?;
             }
             applications[count] = instruction.application.?;
             values[count] = instruction.value.?;
-            try std.testing.expectEqual(@as(?dnir.SemanticRef, null), instruction.subject);
+            try std.testing.expectEqual(@as(?semantic_graph.NodeId, null), instruction.subject);
             try std.testing.expectEqual(types.ResolvedType.i64, instruction.ty);
             count += 1;
         }
     }
     try std.testing.expectEqual(applications.len, count);
-    try std.testing.expect(!applications[0].eql(applications[1]));
-    try std.testing.expect(!values[0].eql(values[1]));
+    try std.testing.expect(!std.meta.eql(applications[0], applications[1]));
+    try std.testing.expect(!std.meta.eql(values[0], values[1]));
 }
 
 test "dnir_lower: checked f64 call derives ABI staging from descriptors" {
@@ -4560,7 +4553,7 @@ test "dnir_lower: checked f64 call derives ABI staging from descriptors" {
             if (instruction.application != null) {
                 call_index = instruction_index;
                 try std.testing.expectEqual(types.ResolvedType.f64, instruction.ty);
-                try std.testing.expectEqual(@as(?dnir.SemanticRef, null), instruction.subject);
+                try std.testing.expectEqual(@as(?semantic_graph.NodeId, null), instruction.subject);
                 try std.testing.expect(instruction.realization_start.? < instruction_index);
             }
             instruction_index += 1;
@@ -4621,35 +4614,75 @@ test "dnir_lower: graph orders callees before callers" {
     try std.testing.expect(idx_distance.? < idx_main.?);
 }
 
-test "dnir_lower: graph attaches shape_id to native records" {
+test "dnir_lower: checked identity does not require stable hashes" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\Point: @{ x: f64, y: f64 }
-        \\main(): i64
-        \\    0
-        \\end
+        \\observe: i64 = (value: i64)
+        \\    value
+        \\main: i64 = ()
+        \\    observe(42)
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "shape.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "hash-free.id");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var mod = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&mod);
+    var g = semantic_graph.SemanticGraph.init(alloc);
+    defer g.deinit();
+    _ = try g.liftModuleWithCheckedCalls(&mod, &checked, "hash-free.id");
+    for (g.nodes.items) |*node| node.stable_id = null;
+
+    const m = try lowerModuleWithGraph(alloc, &mod, &g);
+    try std.testing.expect(m.identity_owner == &g);
+    var identified = false;
+    for (m.functions) |function| {
+        for (function.blocks) |block| {
+            for (block.instrs) |instruction| {
+                if (instruction.application == null) continue;
+                identified = true;
+                try std.testing.expect(g.get(instruction.relation.?) != null);
+                try std.testing.expect(g.get(instruction.application.?) != null);
+                try std.testing.expect(g.get(instruction.value.?) != null);
+            }
+        }
+    }
+    try std.testing.expect(identified);
+}
+
+test "dnir_lower: graphless convenience returns no orphan handles" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\observe: i64 = (value: i64)
+        \\    value
+        \\main: i64 = ()
+        \\    observe(42)
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "graphless.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
-    var g = semantic_graph.SemanticGraph.init(alloc);
-    defer g.deinit();
-    _ = try g.liftModuleWithCalls(&mod, "shape.duo");
-    const shape_node = g.findTableShape("Point") orelse return error.TestExpectedEqual;
-    const m = try lowerModuleWithGraph(alloc, &mod, &g);
-    try std.testing.expect(m.records.len >= 1);
-    var found = false;
-    for (m.records) |rec| {
-        if (!std.mem.eql(u8, rec.name, "Point")) continue;
-        found = true;
-        try std.testing.expect(rec.shape_id != null);
-        try std.testing.expectEqual(shape_node.shape_id.?, rec.shape_id.?);
-        try std.testing.expect(rec.graph_stable_id != null);
+    const module = try lowerModule(alloc, &mod);
+
+    try std.testing.expect(module.identity_owner == null);
+    for (module.functions) |function| {
+        try std.testing.expect(function.semantic_identity == null);
+        for (function.blocks) |block| {
+            for (block.instrs) |instruction| {
+                try std.testing.expect(instruction.relation == null);
+                try std.testing.expect(instruction.application == null);
+                try std.testing.expect(instruction.value == null);
+                try std.testing.expect(instruction.subject == null);
+                try std.testing.expect(instruction.realization_start == null);
+            }
+        }
     }
-    try std.testing.expect(found);
 }
 
 test "dnir_lower: record-return tail and call assign emit init_record" {

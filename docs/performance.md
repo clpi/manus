@@ -13235,3 +13235,60 @@ This is compiler-work and vocabulary reduction, not a runtime speed claim. It
 adds no boxing, allocation, dispatch, materialization, or ABI movement. The
 remaining exploded-record name bridge is outside this result and remains
 deletion-gated on exact graph-owned structured value projections.
+
+---
+
+## 2026-08-10 — compact resident graph handles through realization
+
+The checked direct path now carries the graph-owned `NodeId` directly from the
+resident graph through DNIR, regions, ARM64 instructions, and object-byte
+lineage. The former downstream wrapper also stored a stable hash and required
+both fields to compare equal. That made derived metadata part of semantic
+admission and repeated it at every projection boundary.
+
+One aggregate graph-owner guard now scopes the compact handles. A module from
+one live graph is refused against a second live graph even when both graphs
+have identical source, node order, names, paths, and stable hashes. The
+graphless lowering convenience erases all handles before its temporary graph
+is destroyed. This is a resident-lifetime contract, not durable continuity;
+cross-snapshot correspondence remains unknown until the graph owner publishes
+an exact continuity relation. The current owner check is a borrowed graph
+address and therefore does not distinguish destruction followed by a new graph
+at the same address. Its exact deletion gate is a graph-owned incarnation lease
+that remains distinct while any downstream aggregate can still carry the old
+handles.
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| Required downstream reference | 16 bytes | 4 bytes |
+| Optional downstream reference | 24 bytes | 8 bytes |
+| Fingerprint tokens in the five owned realization files | 11 | 0 |
+| `stable_id` tokens in the five owned realization files | 12 | 3 test-only removals/comparisons |
+| Stable-hash loads required for checked lowering | 3 projection sites | 0 |
+| Native census | 96 / 206 | 96 / 206 |
+
+The size values are compiler-measured `@sizeOf` results on the admitted host;
+the unit gate also ratchets `NodeId` to one `u32` and its optional form to eight
+bytes. Removing every stable hash after lowering leaves semantic selection,
+ARM64 text, and Mach-O object bytes unchanged. Renaming the physical link
+symbol together with the same target handle also leaves machine text bytes
+unchanged, while redirecting to another valid graph entity fails closed.
+
+Serialized evidence for the exact tree:
+
+- `zig build unit-test` — pass;
+- `zig build native-census` — 96 native, 110 bail, 16 unreachable, 206
+  reachable; pass against the 88-native ratchet;
+- `zig build native-differential` — known red result, 47 agree, 20 diverge,
+  5 unsupported; all 20 blocking rows are explicit direct refusals, and the
+  frontier additionally reports the two admitted integer-division value
+  divergences;
+- `zig fmt`, `zig ast-check`, and `git diff --check` over the five owned files
+  — pass.
+
+This reduces compiler state and removes hash work; it makes no runtime-speed or
+C-floor claim. Record layout and ABI selection still use migration names in
+the checked record subset. Their deletion gate is an exact graph-owned
+descriptor/result-pack/slot/selected-target projection from the semantic
+producer. Public production object emission still discards the lineage
+sidecar, so durable tooling continuity and GAP-137 remain open.
