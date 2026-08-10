@@ -8781,6 +8781,11 @@ pub const CodeGen = struct {
         return null;
     }
 
+    fn is_public_library_relation(self: *const CodeGen, fd: *const ast.FuncDecl) bool {
+        return self.lib_mode and self.current_module_cname.len == 0 and
+            !fd.is_local and !fd.method and fd.path.len == 1;
+    }
+
     fn emit_func_storage_and_attrs(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
         const fb = &fd.func;
         // `@export` functions are WASM exports: external linkage, no `static`,
@@ -8788,6 +8793,17 @@ pub const CodeGen = struct {
         if (func_export_name(fd)) |export_name| {
             self.p("__attribute__((export_name(\"{s}\"), visibility(\"default\"))) ", .{export_name});
             return; // Skip static/inline/hot — these must be externally visible.
+        }
+        // A library is a physical projection of its primary Duon package. Its
+        // ordinary root relations are already public through the module value;
+        // requiring a prefix foreign directive merely to make that same API
+        // linkable creates a second, syntax-owned export authority. Required
+        // modules retain their mangled internal linkage, and descriptor-home
+        // relations remain reachable through their semantic subject rather
+        // than becoming unrelated C entry points.
+        if (self.is_public_library_relation(fd)) {
+            self.p("__attribute__((visibility(\"default\"))) ", .{});
+            return;
         }
         // `@ffi` functions are extern C symbols provided by a linked library.
         if (func_ffi_name(fd.attributes) != null) {
@@ -33907,6 +33923,35 @@ test "codegen: @c.export emits exported native symbol name" {
     try testing.expect(std.mem.indexOf(u8, output, "__attribute__((export_name(\"duo_add\"), visibility(\"default\")))") != null);
     try testing.expect(std.mem.indexOf(u8, output, "int64_t add(int64_t a, int64_t b)") != null);
     try testing.expect(std.mem.indexOf(u8, output, "static int64_t add") == null);
+}
+
+test "codegen: library projects ordinary root relations" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\answer: i64 = ()
+        \\    42
+    , "library.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    semantic.duo_mode = true;
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    cg.duo_mode = true;
+    cg.lib_mode = true;
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "__attribute__((visibility(\"default\"))) int64_t answer(void)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "static inline int64_t answer(void)") == null);
 }
 
 test "codegen: @ builtin aliases emit existing intrinsic paths" {
