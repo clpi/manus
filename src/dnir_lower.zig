@@ -2694,7 +2694,13 @@ fn lowerCheckedScalarCall(
     var values: [8]dnir.Value = undefined;
     const floating = try evaluateCheckedScalarOperands(ctx, operands, &values);
     const realization_start: u32 = @intCast(ctx.instrs.items.len);
-    try stageCheckedScalarOperands(ctx, values[0..operands.len], floating);
+    // Admit only the fixed-width integer contract with byte-equivalence proof.
+    // Other general-register descriptors remain staged until their result and
+    // operand laws have the same focused control.
+    const direct_gp = operands.len == 1 and
+        operands[0].descriptor == .i64 and
+        application.descriptor == .i64;
+    if (!direct_gp) try stageCheckedScalarOperands(ctx, values[0..operands.len], floating);
     const has_result = consumption != .discard and application.descriptor != .void;
     const result = if (has_result) ctx.freshTemp() else null;
     try ctx.emit(.{
@@ -2706,6 +2712,7 @@ fn lowerCheckedScalarCall(
         .realization_start = realization_start,
         .result = result,
         .callee = callee,
+        .lhs = if (direct_gp) values[0] else .void,
         .ty = application.descriptor,
     });
     return if (result) |temp| .{ .temp = temp } else .void;
@@ -4368,7 +4375,7 @@ test "dnir_lower: checked subject call retains semantic identities" {
         \\main: i64 = ()
         \\    42:read()
     ;
-    var lex = Lexer.init(src, "application.duo");
+    var lex = Lexer.init(src, "application.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -4379,7 +4386,7 @@ test "dnir_lower: checked subject call retains semantic identities" {
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCheckedCalls(&mod, &checked, "application.duo");
+    _ = try graph.liftModuleWithCheckedCalls(&mod, &checked, "application.id");
 
     var application_id: ?semantic_graph.NodeId = null;
     for (graph.nodes.items, 0..) |node, i| {
@@ -4399,18 +4406,25 @@ test "dnir_lower: checked subject call retains semantic identities" {
 
     const module = try lowerModuleWithGraph(alloc, &mod, &graph);
     var found = false;
+    var mov_args: usize = 0;
     for (module.functions) |function| {
+        var instruction_index: u32 = 0;
         for (function.blocks[0].instrs) |instruction| {
+            const current_index = instruction_index;
+            instruction_index += 1;
+            if (instruction.op == .mov_arg) mov_args += 1;
             if (instruction.op != .call_direct or !std.mem.eql(u8, instruction.callee, "read")) continue;
             found = true;
             try std.testing.expect(std.meta.eql(relation, instruction.relation.?));
             try std.testing.expect(std.meta.eql(application, instruction.application.?));
             try std.testing.expect(std.meta.eql(value, instruction.value.?));
             try std.testing.expect(std.meta.eql(subject_identity, instruction.subject.?));
-            try std.testing.expect(instruction.realization_start != null);
+            try std.testing.expect(std.meta.eql(dnir.Value{ .i64 = 42 }, instruction.lhs));
+            try std.testing.expectEqual(current_index, instruction.realization_start.?);
         }
     }
     try std.testing.expect(found);
+    try std.testing.expectEqual(@as(usize, 0), mov_args);
 }
 
 test "dnir_lower: applications share relation without sharing occurrence identity" {
@@ -4479,7 +4493,7 @@ test "dnir_lower: checked ordinary calls consume graph identity" {
         \\    observe(41)
         \\    observe(42)
     ;
-    var lexer = Lexer.init(source, "ordinary-application.duo");
+    var lexer = Lexer.init(source, "ordinary-application.id");
     var parser = Parser.init(&lexer, alloc);
     parser.duo_mode = true;
     var ast_module = try parser.parse_module();
@@ -4489,15 +4503,21 @@ test "dnir_lower: checked ordinary calls consume graph identity" {
     try checked.check_module(&ast_module);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "ordinary-application.duo");
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "ordinary-application.id");
 
     const module = try lowerModuleWithGraph(alloc, &ast_module, &graph);
     var relation: ?semantic_graph.NodeId = null;
     var applications: [2]semantic_graph.NodeId = undefined;
     var values: [2]semantic_graph.NodeId = undefined;
     var count: usize = 0;
+    var mov_args: usize = 0;
     for (module.functions) |function| {
+        if (!std.mem.eql(u8, function.name, "main")) continue;
+        var instruction_index: u32 = 0;
         for (function.blocks[0].instrs) |instruction| {
+            const current_index = instruction_index;
+            instruction_index += 1;
+            if (instruction.op == .mov_arg) mov_args += 1;
             if (instruction.application == null) continue;
             if (count >= applications.len) return error.TestExpectedEqual;
             if (relation) |first| {
@@ -4509,12 +4529,117 @@ test "dnir_lower: checked ordinary calls consume graph identity" {
             values[count] = instruction.value.?;
             try std.testing.expectEqual(@as(?semantic_graph.NodeId, null), instruction.subject);
             try std.testing.expectEqual(types.ResolvedType.i64, instruction.ty);
+            const expected: i64 = if (count == 0) 41 else 42;
+            try std.testing.expect(std.meta.eql(dnir.Value{ .i64 = expected }, instruction.lhs));
+            try std.testing.expectEqual(current_index, instruction.realization_start.?);
             count += 1;
         }
     }
     try std.testing.expectEqual(applications.len, count);
     try std.testing.expect(!std.meta.eql(applications[0], applications[1]));
     try std.testing.expect(!std.meta.eql(values[0], values[1]));
+    try std.testing.expectEqual(@as(usize, 0), mov_args);
+}
+
+test "dnir_lower: checked multi-operand call retains ABI staging" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\add: i64 = (left: i64, right: i64)
+        \\    left + right
+        \\main: i64 = ()
+        \\    add(20, 22)
+    ;
+    var lexer = Lexer.init(source, "multi-application.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.duo_mode = true;
+    var ast_module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&ast_module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "multi-application.id");
+
+    const module = try lowerModuleWithGraph(alloc, &ast_module, &graph);
+    var mov_args: usize = 0;
+    var found = false;
+    for (module.functions) |function| {
+        if (!std.mem.eql(u8, function.name, "main")) continue;
+        var instruction_index: u32 = 0;
+        for (function.blocks[0].instrs) |instruction| {
+            if (instruction.op == .mov_arg) mov_args += 1;
+            if (instruction.application != null) {
+                found = true;
+                try std.testing.expect(instruction.relation != null);
+                try std.testing.expect(instruction.value != null);
+                try std.testing.expectEqual(@as(?semantic_graph.NodeId, null), instruction.subject);
+                try std.testing.expectEqual(dnir.Value.void, instruction.lhs);
+                try std.testing.expect(instruction.realization_start.? < instruction_index);
+            }
+            instruction_index += 1;
+        }
+    }
+    try std.testing.expect(found);
+    try std.testing.expectEqual(@as(usize, 2), mov_args);
+}
+
+test "dnir_lower: checked scalar ABI boundaries retain staging" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\choose: f64 = (value: i64)
+        \\    1.5
+        \\count: i64 = (value: f64)
+        \\    1
+        \\main: f64 = ()
+        \\    count(2.5)
+        \\    choose(1)
+    ;
+    var lexer = Lexer.init(source, "scalar-boundary.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.duo_mode = true;
+    var ast_module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&ast_module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "scalar-boundary.id");
+
+    const module = try lowerModuleWithGraph(alloc, &ast_module, &graph);
+    var gp_moves: usize = 0;
+    var fp_moves: usize = 0;
+    var calls: usize = 0;
+    for (module.functions) |function| {
+        if (!std.mem.eql(u8, function.name, "main")) continue;
+        var instruction_index: u32 = 0;
+        for (function.blocks[0].instrs) |instruction| {
+            if (instruction.op == .mov_arg) gp_moves += 1;
+            if (instruction.op == .fp_mov_arg) fp_moves += 1;
+            if (instruction.application != null) {
+                calls += 1;
+                try std.testing.expectEqual(dnir.Value.void, instruction.lhs);
+                try std.testing.expect(instruction.realization_start.? < instruction_index);
+            }
+            instruction_index += 1;
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 2), calls);
+    try std.testing.expectEqual(@as(usize, 1), gp_moves);
+    try std.testing.expectEqual(@as(usize, 1), fp_moves);
 }
 
 test "dnir_lower: checked f64 call derives ABI staging from descriptors" {

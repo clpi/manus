@@ -5247,6 +5247,263 @@ fn expectLineageCallTarget(
     try std.testing.expectEqual(@as(usize, 1), call_count);
 }
 
+fn stageCompactGpApplication(
+    alloc: std.mem.Allocator,
+    compact: dnir.Module,
+    application: semantic_graph.NodeId,
+) !dnir.Module {
+    const functions = try alloc.dupe(dnir.Function, compact.functions);
+    var found = false;
+    for (functions) |*function| {
+        var flat_index: u32 = 0;
+        for (function.blocks) |block| {
+            for (block.instrs) |instruction| {
+                if (instruction.op == .br) return error.TestUnexpectedResult;
+            }
+        }
+
+        const blocks = try alloc.dupe(dnir.Block, function.blocks);
+        function.blocks = blocks;
+        for (blocks) |*block| {
+            for (block.instrs, 0..) |instruction, instruction_index| {
+                if (instruction.application == null or
+                    !std.meta.eql(instruction.application.?, application))
+                {
+                    flat_index += 1;
+                    continue;
+                }
+                if (found or instruction.op != .call_direct or
+                    instruction.realization_start == null or
+                    instruction.realization_start.? != flat_index)
+                {
+                    return error.TestUnexpectedResult;
+                }
+                switch (instruction.lhs) {
+                    .void, .f64 => return error.TestUnexpectedResult,
+                    else => {},
+                }
+
+                const staged = try alloc.alloc(dnir.Instr, block.instrs.len + 1);
+                @memcpy(staged[0..instruction_index], block.instrs[0..instruction_index]);
+                staged[instruction_index] = .{
+                    .op = .mov_arg,
+                    .result = 0,
+                    .lhs = instruction.lhs,
+                    .ty = .i64,
+                };
+                staged[instruction_index + 1] = instruction;
+                staged[instruction_index + 1].lhs = .void;
+                staged[instruction_index + 1].realization_start = flat_index;
+                @memcpy(
+                    staged[instruction_index + 2 ..],
+                    block.instrs[instruction_index + 1 ..],
+                );
+                block.instrs = staged;
+                found = true;
+                flat_index += 2;
+            }
+        }
+    }
+    if (!found) return error.TestExpectedEqual;
+    var staged = compact;
+    staged.functions = functions;
+    return staged;
+}
+
+test "native backend: compact checked call preserves staged machine realization" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\observe: i64 = (value: i64)
+        \\    value
+        \\main: i64 = ()
+        \\    observe(40 + 2)
+    ;
+    var lexer = Lexer.init(source, "gp-inline.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.duo_mode = true;
+    var ast_module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&ast_module);
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "gp-inline.id");
+    const applications = try checkedApplications(alloc, &graph);
+    defer alloc.free(applications);
+    try std.testing.expectEqual(@as(usize, 1), applications.len);
+
+    const compact = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph);
+    try validateDnirApplications(alloc, compact, applications, &graph);
+    var compact_call_count: usize = 0;
+    var compact_mov_count: usize = 0;
+    for (compact.functions) |function| {
+        var instruction_index: u32 = 0;
+        for (function.blocks) |block| {
+            for (block.instrs) |instruction| {
+                if (instruction.op == .mov_arg) compact_mov_count += 1;
+                if (instruction.application != null) {
+                    compact_call_count += 1;
+                    try std.testing.expectEqual(dnir.Op.call_direct, instruction.op);
+                    try std.testing.expectEqual(instruction_index, instruction.realization_start.?);
+                    switch (instruction.lhs) {
+                        .void, .f64 => return error.TestUnexpectedResult,
+                        else => {},
+                    }
+                }
+                instruction_index += 1;
+            }
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 1), compact_call_count);
+    try std.testing.expectEqual(@as(usize, 0), compact_mov_count);
+
+    const staged = try stageCompactGpApplication(alloc, compact, applications[0].application);
+    try validateDnirApplications(alloc, staged, applications, &graph);
+    var compact_output = try emitArm64FromDnir(alloc, compact, null);
+    defer compact_output.deinit(alloc);
+    var staged_output = try emitArm64FromDnir(alloc, staged, null);
+    defer staged_output.deinit(alloc);
+    try validateMachineLineage(alloc, compact_output, applications, &graph);
+    try validateMachineLineage(alloc, staged_output, applications, &graph);
+    try std.testing.expectEqualSlices(u8, staged_output.text, compact_output.text);
+    try std.testing.expectEqualStrings(staged_output.asm_text, compact_output.asm_text);
+    try std.testing.expectEqual(@as(usize, 1), compact_output.lineage.len);
+    try std.testing.expectEqual(
+        compact_output.lineage[0].instruction_start + 1,
+        compact_output.lineage[0].instruction_end,
+    );
+    try std.testing.expectEqual(
+        staged_output.lineage[0].instruction_start + 2,
+        staged_output.lineage[0].instruction_end,
+    );
+    try std.testing.expectEqual(staged_output.lineage[0].text_start, compact_output.lineage[0].text_start);
+    try std.testing.expectEqual(staged_output.lineage[0].text_end, compact_output.lineage[0].text_end);
+    try expectLineageCallTarget(alloc, compact_output, compact, compact_output.lineage[0]);
+
+    const compact_object = try emitMachOArm64Object(
+        alloc,
+        compact_output.text,
+        compact_output.cstring,
+        compact_output.symbols,
+        compact_output.relocations,
+        compact_output.bss_size,
+    );
+    defer alloc.free(compact_object);
+    const staged_object = try emitMachOArm64Object(
+        alloc,
+        staged_output.text,
+        staged_output.cstring,
+        staged_output.symbols,
+        staged_output.relocations,
+        staged_output.bss_size,
+    );
+    defer alloc.free(staged_object);
+    try std.testing.expectEqualSlices(u8, staged_object, compact_object);
+}
+
+test "native backend: nested compact checked calls retain direct region use and distinct lineage" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\inner: i64 = (value: i64)
+        \\    value
+        \\outer: i64 = (value: i64)
+        \\    value
+        \\main: i64 = ()
+        \\    outer(inner(42))
+    ;
+    var lexer = Lexer.init(source, "nested-gp-inline.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.duo_mode = true;
+    var ast_module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&ast_module);
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "nested-gp-inline.id");
+    const applications = try checkedApplications(alloc, &graph);
+    defer alloc.free(applications);
+    try std.testing.expectEqual(@as(usize, 2), applications.len);
+    try std.testing.expect(!std.meta.eql(applications[0].application, applications[1].application));
+    try std.testing.expect(!std.meta.eql(applications[0].value, applications[1].value));
+
+    const module = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph);
+    try validateDnirApplications(alloc, module, applications, &graph);
+    var call_applications: [2]semantic_graph.NodeId = undefined;
+    var call_count: usize = 0;
+    for (module.functions) |function| {
+        var instruction_index: u32 = 0;
+        for (function.blocks) |block| {
+            for (block.instrs) |instruction| {
+                try std.testing.expect(instruction.op != .mov_arg);
+                if (instruction.application != null) {
+                    if (call_count >= call_applications.len) return error.TestUnexpectedResult;
+                    call_applications[call_count] = instruction.application.?;
+                    call_count += 1;
+                    try std.testing.expectEqual(instruction_index, instruction.realization_start.?);
+                    switch (instruction.lhs) {
+                        .void, .f64 => return error.TestUnexpectedResult,
+                        else => {},
+                    }
+                }
+                instruction_index += 1;
+            }
+        }
+    }
+    try std.testing.expectEqual(call_applications.len, call_count);
+
+    const regions = try region_graph.buildModuleRegions(alloc, module, &graph);
+    defer region_graph.freeModuleRegions(alloc, regions);
+    try region_graph.validateModuleRegions(regions, &graph, module, alloc);
+    var inner_node: ?u32 = null;
+    var outer_node: ?u32 = null;
+    var direct_use = false;
+    for (regions) |region| {
+        for (region.nodes) |node| {
+            if (node.application_id == null) continue;
+            if (std.meta.eql(node.application_id.?, call_applications[0])) inner_node = node.id;
+            if (std.meta.eql(node.application_id.?, call_applications[1])) outer_node = node.id;
+        }
+        if (inner_node != null and outer_node != null) {
+            for (region.edges) |edge| {
+                if (edge.kind == .uses and edge.from == inner_node.? and edge.to == outer_node.?) {
+                    direct_use = true;
+                }
+            }
+        }
+    }
+    try std.testing.expect(direct_use);
+
+    var output = try emitArm64FromDnir(alloc, module, null);
+    defer output.deinit(alloc);
+    try validateMachineLineage(alloc, output, applications, &graph);
+    try std.testing.expectEqual(@as(usize, 2), output.lineage.len);
+    var inner_lineage: ?MachineLineage = null;
+    var outer_lineage: ?MachineLineage = null;
+    for (output.lineage) |lineage| {
+        try std.testing.expectEqual(lineage.instruction_start + 1, lineage.instruction_end);
+        try expectLineageCallTarget(alloc, output, module, lineage);
+        if (std.meta.eql(lineage.application, call_applications[0])) inner_lineage = lineage;
+        if (std.meta.eql(lineage.application, call_applications[1])) outer_lineage = lineage;
+    }
+    const inner = inner_lineage orelse return error.TestExpectedEqual;
+    const outer = outer_lineage orelse return error.TestExpectedEqual;
+    try std.testing.expect(inner.instruction_end <= outer.instruction_start);
+    try std.testing.expect(inner.text_end <= outer.text_start);
+}
+
 test "native backend: checked subject identity reaches object bytes" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 

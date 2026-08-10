@@ -13292,3 +13292,60 @@ the checked record subset. Their deletion gate is an exact graph-owned
 descriptor/result-pack/slot/selected-target projection from the semantic
 producer. Public production object emission still discards the lineage
 sidecar, so durable tooling continuity and GAP-137 remain open.
+
+---
+
+## 2026-08-10 — identified single-operand call compaction
+
+For a checked direct application with exactly one `i64` operand and an `i64`
+result, the call now carries the evaluated operand itself. The former
+realization emitted an anonymous `mov_arg` row immediately before the
+identified call even though the machine emitter already performs the same
+general-register placement when the operand is present on the call.
+
+The admission is deliberately exact. Other descriptors, multiple operands,
+records, foreign and variadic calls, and identity-free legacy calls retain
+their existing staging. Widening the compact path requires the same focused
+machine-equivalence proof for the additional descriptor law.
+
+| Measure per admitted application | Before | After |
+| --- | ---: | ---: |
+| Realization instructions for argument placement plus call | 2 | 1 |
+| Region nodes for argument placement plus call | 2 | 1 |
+| Machine instructions | unchanged | unchanged |
+| ARM64 text bytes | baseline | byte-identical |
+| Mach-O object bytes | baseline | byte-identical |
+
+The focused control rebuilds the old staged form from the compact checked
+projection and proves identical assembly, text and object bytes. The compact
+lineage spans one realization instruction instead of two while retaining the
+same machine byte range and decoded call target. A nested-call control proves
+that two occurrences keep distinct application and result identities, their
+machine ranges remain non-overlapping, and the producer feeds the identified
+consumer directly in the region graph.
+
+This removes one transient instruction append, one region node and its bridge
+edge per admitted application. It introduces no allocation, boxing, dispatch,
+materialization, ABI movement, runtime instruction, relation, or semantic
+identity. Runtime speed is unchanged; the gain is smaller compiler state and
+work. The checked path still carries graph `NodeId` under the resident-owner
+bridge described above, so this result does not close graph-incarnation or
+public-lineage debt.
+
+Serialized evidence for this exact tree:
+
+- `zig build unit-test` — pass;
+- `zig build native-census` — 96 native, 110 bail, 16 unreachable, 206
+  reachable; pass against the 88-native ratchet;
+- `zig build native-differential` — known red result, 47 agree, 20 diverge,
+  5 unsupported; the blocking rows remain explicit direct refusals;
+- `zig build agent-smoke` — known red outside this path: the final
+  `std_metaprogramming_modules_smoke` artifact exits 139 in generated C after
+  the conditional result of `std.term.bold` reaches `strlen` as null. Its
+  Mach-O UUID matches the archived August 9 crash, before this realization
+  slice;
+- `zig build bench` — known red on the C-specialized generated-C path: all 40
+  results agree with C, with 23 measured wins, 2 folded rows and 12 C wins.
+  This path does not measure the direct-native change;
+- `zig fmt`, `zig ast-check`, and `git diff --check` over the two changed Zig
+  files — pass.
