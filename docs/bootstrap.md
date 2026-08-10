@@ -29,8 +29,10 @@ Canonical source ingress now recognizes `.id` as Idsem and retains `.duo` as
 historical provenance. Both suffixes select the same lexer, parser law, semantic
 production, and realization path. The source-family projection is centralized
 in `src/duo_lexer_bridge.zig` until compiler B can consume the constitutional
-source fact directly. Build entry and embedded module discovery prefer `.id`
-and fall back to `.duo`. Tooling and corpus gates that still enumerate `.duo`
+source fact directly. Build entry, embedded module discovery, and direct-native
+module metadata discovery prefer `.id` and fall back to `.duo`. The native
+metadata path consumes the source-family constants rather than maintaining its
+own suffix spelling. Tooling and corpus gates that still enumerate `.duo`
 independently remain migration bridges, not bootstrap evidence.
 
 Suffix-independent semantic identity is not closed on current main. An executed
@@ -45,11 +47,11 @@ historical bootstrap symbols. They remain one implementation path, not a second
 language or command authority. Delete the bridge names when compiler B consumes
 the constitutional source fact directly; remove the executable alias after an
 `idsem` entry invokes that same command authority in production. The generated
-runtime package path and the current corpus, formatter, LSP, MCP, Tree-sitter,
-and census enumerations still contain independent `.duo` assumptions. Their
-deletion gate is a generated source-family projection consumed by each surface,
-with untracked `.id` candidates included and missing census input failing
-closed.
+runtime package search still spells `.duo` in emitted C, and the current corpus,
+formatter, LSP, MCP, Tree-sitter, generators, and census enumerations still
+contain independent `.duo` assumptions. Their deletion gate is a generated
+source-family projection consumed by each surface, with untracked `.id`
+candidates included and missing census input failing closed.
 
 SHC-00 supplies an executable structural verifier in
 `lib/compiler/bootstrap.duo`. Its synthetic controls validate lineage and
@@ -130,6 +132,13 @@ select machine realization: the current focused direct-native differential emits
 byte-identical objects for equivalent `.id` and `.duo` source. The downstream
 graph still hashes the full source path into `stable_id`, however, so semantic
 identity equivalence remains open until `GAP-142` removes that authority.
+
+The direct-native metadata lookup change adds two fixed suffix probes per
+candidate prefix and no allocation beyond the path/source work already required.
+Its unit control ran in the serialized aggregate: **1183/1186 passed**, with the
+same three pre-existing parser, visibility, and relation failures and no new
+failure. This establishes canonical-first lookup behavior, not a self-hosting
+stage or suffix-independent graph identity.
 
 Future B/C acceptance requires two distinct application and output
 incarnations, the seed as B's exact producer, B as C's exact producer,
