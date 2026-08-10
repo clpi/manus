@@ -1,4 +1,4 @@
-# duon 0.1 - Formal Grammar
+# Idsem 0.1 - Formal Grammar
 
 This is the normative human projection of C0's grammar until the graph service
 hosts it. The parser is not yet generated from this file. `GAP-134` owns that
@@ -41,14 +41,21 @@ The compatibility projection separately recognizes Lua `--` comments, Lua long
 comments, Lua long strings, and historical Lua single-quoted text. These carry
 compatibility provenance and never share canonical token identity. A historical
 single-quoted text literal canonicalizes to double-quoted text before it can be
-read as native Duon. Backtick remains tokenizable but has no canonical grammar
+read as native Idsem. Backtick remains tokenizable but has no canonical grammar
 role and never implies process execution.
+
+Delimiter roles are closed. `()` is ordinary callable application and grouping;
+`{}` is structured pack, descriptor home, and descriptor application; `[]` is
+computed/indexed projection; `.` is statically named projection; and `:` carries
+its admitted descriptor, subject, and home roles. These syntax facts disappear
+after resolution except as provenance. No delimiter implies allocation, place,
+boxing, dispatch, or another semantic relation identity.
 
 ## 2. Precedence (tightest → loosest); all left-assoc unless noted
 
 ```
-1  postfix:  .name   :name(args)   [expr…]   (args)   @rel|@Proto   {…}-call
-             "str"-call                       -- the two parenless operands
+1  postfix:  .name   :name(args)   [expr…]   (args)   @rel|@Proto
+             {…} descriptor-application
 2  prefix:   not  -  ~  .name(leading)  :name(leading)  @(bare)
 3  ^                                          (right)
 4  * / %
@@ -99,7 +106,7 @@ unary      → { prefixop } postfixexpr
 postfixexpr→ primary { postfix }
 postfix    → "." name | ":" name callargs | "[" expr { "," expr } "]"
            | "(" [ args ] ")" | "@" ( name | postfixexpr )
-           | tableliteral | text               -- brace-call, text-call
+           | tableliteral                      -- descriptor application only
 primary    → name | number | bytes | text
            | "(" expr ")" | tableliteral | "@" [ tableliteral ]
            | "." name | ":" name callargs      -- leading lens / sibling call
@@ -124,11 +131,10 @@ case contract — ⇒ the case. Neither context ⇒ diagnostic ("state the shape
 qualify"). The parser produces ONE node (`anchorref`); *resolution* is semantic,
 so the grammar is unambiguous because the spelling is one production.
 
-**R3 — parenless calls.** Only postfix positions accept `text` or
-`tableliteral` as an argument-forming token; they bind at level 1; at most one
-per spine (enforced post-parse); and they are **forbidden in `cond` and in
-`for`-iterable position** (self-delimitation). So `while sh "x" …` is a layout
-error, never a surprise parse.
+**R3 — descriptor application.** A postfix `tableliteral` records descriptor
+application syntax. Resolution requires the subject to supply a descriptor;
+an ordinary callable in the same position is rejected rather than reinterpreted
+as a brace call. Ordinary callable application always uses `callargs`.
 
 **R4 — binding conditions and guard chains.** Inside `cond`, `=` binds a
 `link`'s targets to its `orexpr`, and `and` sequences links. Therefore

@@ -1764,6 +1764,8 @@ keep = {
     "x.y", "x:f()", ":f() under self-zero", ". as the whole ambient subject",
     "if", "while", "for x in xs", "break", "continue",
     "arithmetic and comparison operator faces", "[expr] computed keys",
+    "() ordinary application", "{} structured packs and descriptor homes",
+    "[] computed keys", ". named projection", ": descriptor, subject and home roles",
     "ordinary interpolated strings", "offside layout",
 }
 
@@ -1778,8 +1780,7 @@ retire = {
 }
 
 audit = {
-    "check(...) as its own grammar production", "brace-call f{...}",
-    "string-call f\"...\"", "raw [[...]] strings",
+    "check(...) as its own grammar production", "raw [[...]] strings",
     "the special condition-binding grammar", "@{} where demand is already unique",
     "& refinement over bitwise", "| union over bitwise", "early return",
 }
@@ -1806,31 +1807,28 @@ migrate.blocked = "gap[087] — bare identity parses, does not resolve"
 -- formal grammar and this file must agree, and today they do not.
 grammar.owed = "primary drops .name; docs/spec/grammar.md and c0 must agree"
 
--- ═══ §43 · ONE BRACE FORM — construction and call are the same syntax ═══════
+-- ═══ §43 · DELIMITER CLOSURE — useful source distinctions survive ═══════
 --
--- OWNER DIRECTIVE 2026-08-08: unify descriptor `{}` construction and call `{}`
--- semantics.
+-- OWNER DIRECTIVE 2026-08-10: brace-zero and bracket-zero are closed.
 --
--- THEY ARE ALREADY ONE SYNTACTIC FORM. `name{ … }` parses identically whether
--- `name` denotes a descriptor or a callable. Treating them as TWO MECHANISMS is
--- what produced gap[088]: the call path won UNCONDITIONALLY, so `point{ 3, 4 }`
--- emitted a call to an undeclared `point` instead of constructing one.
---
--- The bug was never "construction is unimplemented". It was **a shared form
--- resolved without asking what the name denotes.**
+-- Source faces preserve useful human distinctions while semantic meaning
+-- converges immediately after resolution. One application architecture does
+-- not imply one delimiter. Parentheses carry ordinary callable operands;
+-- braces carry structured packs, descriptor homes and descriptor application;
+-- brackets carry genuinely computed keys. None selects a physical aggregate.
 
 brace = law{
     id    = "law.brace"
     kind  = .invariant
     holds = .resolution
     binds = {
-        "`name{ … }` is ONE form; it is APPLICATION, and the subject decides what applying means",
-        "subject is a DESCRIPTOR -> descriptor application, which yields a value it describes",
-        "subject is a CALLABLE   -> ordinary application of a structured argument pack",
-        "subject is NEITHER      -> diagnostic, never a guess",
-        "the PARSER never asks `is this a type` — it emits one application node",
+        "`{ … }` is a neutral structured pack and never implies allocation",
+        "`name{ … }` is explicit descriptor application",
+        "an expected descriptor may supply the same descriptor fact",
+        "an ordinary callable uses `name( … )`, never braces",
+        "the parser preserves the source face; resolution supplies descriptor and application facts",
     }
-    fails = "resolving the shared form as a call without asking what the name is"
+    fails = "letting a callable use braces or letting delimiter choice force representation"
 }
 
 -- `@{ … }` IS THE SAME FORM with the name ELIDED — the enclosing descriptor
@@ -1840,11 +1838,10 @@ brace = law{
 -- known.
 anchor.brace = "the same form, name recovered from the enclosing descriptor"
 
--- THIS RESOLVES Pass 122's AUDIT ITEM. `brace-call f{...}` was listed as
--- provisional surface to be justified or retired. It is neither: it is not a
--- separate mechanism at all, so there is nothing to retire. ONE form, one
--- resolution rule, two outcomes — a collapse rather than a deletion.
-audit.braceresolved = "brace-call is not a mechanism; it is this form resolving to a callable"
+-- Pass 122's provisional brace-call is retired. Ordinary call and descriptor
+-- application converge semantically only after their distinct source facts
+-- have been recognized.
+audit.braceresolved = "brace-call retired; callable uses parentheses; descriptor application uses braces"
 
 -- MEASURED 2026-08-08. 147 `name{` sites over 40 distinct names, 80 `@{`, and
 -- 29 typed bindings. `law{` alone is 57 of the 147 — THIS FILE — and it only
@@ -1859,31 +1856,28 @@ brace.names = 40
 --   BARE IDENTITY + SEMANTIC DEMAND + AVAILABLE HOMES -> ONE IDENTITY, OR A
 --   DIAGNOSTIC.
 --
--- Here the demand is "a thing that can take a brace" and the homes are
--- descriptors and callables. One rule already in the constitution decides
--- construction, cases, subject fields, callable projections AND this. That is
--- what a mechanism collapse looks like when it is real rather than renamed.
+-- Here the demand is a descriptor applicable to a structured pack. Callable
+-- resolution remains the ordinary parenthesized face. Both produce graph
+-- application facts without preserving a source delimiter as semantic truth.
 
 -- ═══ §44 · APPLICATION IS ONE MECHANISM ════════════════════════════════════
 --
--- §43 collapsed brace construction and brace call. This finishes the collapse:
--- the unification is SEMANTIC, never a parser choosing between two productions.
--- A repair that "fixes the collision" by restoring separate constructor and
--- brace-call paths in the ast or in sema is a REGRESSION, not a fix — the
--- collision was evidence the two concepts were artificially overlapping.
+-- Application unification is SEMANTIC, never punctuation unification. The
+-- recognizer retains the minimum source structure and provenance. Resolution
+-- supplies relation, subject, operand pack, result pack and descriptor facts.
 
 apply = law{
     id    = "law.apply.one"
     kind  = .invariant
     holds = .one
     binds = {
-        "duon has ONE application mechanism",
-        "parenthesized, braced and string faces project onto the SAME application relation",
-        "descriptor construction, ordinary call and structured application are SPECIALIZATIONS",
-        "the specialization derives from subject identity, argument shape, demand and context",
-        "the parser emits one structural application node and never resolves the edge",
+        "idsem has ONE semantic application architecture",
+        "parentheses are the ordinary callable source face",
+        "braces are the structured pack and descriptor application source face",
+        "descriptor application and ordinary call converge after resolution where facts permit",
+        "the parser records syntax provenance and never assigns semantic relation or subject identity",
     }
-    fails = "a parser asking `is the subject a type` to pick a production"
+    fails = "a delimiter becoming semantic identity or an ordinary callable accepting braces"
 }
 
 -- Unification of the MECHANISM is not a claim that every application is
@@ -1893,7 +1887,6 @@ apply = law{
 apply.edge = {
     "apply(descriptor)(fieldpack)",
     "apply(callable)(argpack)",
-    "apply(table)(keypack)",
     "apply(staged)(argpack)",
 }
 
@@ -1917,14 +1910,16 @@ pack = law{
     kind  = .invariant
     holds = .deferred
     binds = {
-        "a BRACED ARGUMENT NEED NOT MATERIALIZE A TABLE",
-        "`{ … }` is a structured argument and value PACK",
+        "a STRUCTURED PACK NEED NOT MATERIALIZE A TABLE",
+        "`{ … }` supplies structured pack facts",
+        "`( … )` supplies callable operand pack facts",
+        "both preserve slot order, labels, values, descriptors and provenance",
         "table realization happens only where demand requires it",
         "physical representation is selected AFTER semantic resolution",
     }
-    deny  = [[defining f{...} as sugar for f({...}), which fixes the argument to one table before anything is known]]
+    deny  = [[defining f{...} as callable syntax or defining f({...}) as forced table materialization]]
     why   = [[point{ x = 1, y = 2 } must lower to two fields in registers. Allocating a table because the SURFACE has braces lets syntax decide representation, which law.demand.rest forbids]]
-    keep  = "surface unification must not imply RUNTIME unification"
+    keep  = "distinct source packs converge without implying runtime materialization"
 }
 
 -- Unification must EXPOSE facts, not erase them. The application identity
@@ -1952,9 +1947,9 @@ apply.carries = {
 --      relocated one layer down. My own reverted patch did this in codegen,
 --      branching on `record_aliases`, and it was the same mistake at a third
 --      layer.
---   2. BRACES AS SUGAR — defining `f{…}` as `f({…})` fixes the argument
---      semantics to "one table operand", and then `point{ x = 1, y = 2 }`
---      cannot reach two registers without allocating a table it never needed.
+--   2. BRACES AS CALL — accepting `f{…}` for an ordinary callable erases a
+--      useful source distinction. Defining `f({…})` as a forced table operand
+--      separately commits representation before demand.
 --   3. LOST CALL SHAPE — application identity must PRESERVE subject identity,
 --      argument labels, positions, descriptor identities, constants, world,
 --      demand and return pack. `point{ x = 1, y = 2 }` must be strictly
@@ -1968,11 +1963,11 @@ apply.traps = { "parser overload", "braces as sugar", "lost call shape" }
 --
 -- Different because one has a SUBJECT.
 --
--- The specializations remain real, distinguishable edges — apply(descriptor,
--- fieldpack) · apply(callable, argpack) · apply(table, keypack) · apply(staged,
--- argpack) — but they specialize ONE relation by operand, exactly as `add`
--- does, rather than by name.
-apply.edges = { "descriptor", "callable", "table", "staged" }
+-- Descriptor, callable and staged applications remain distinguishable through
+-- facts while sharing one application architecture. Computed indexing retains
+-- subject, key pack, place, value, descriptor and demand facts without becoming
+-- callable syntax.
+apply.edges = { "descriptor", "callable", "staged" }
 
 -- The ladder this buys, which is why the unification is worth more than the
 -- collision it fixes:
@@ -2404,7 +2399,7 @@ anchor = law{
 -- subject elided. `@{ x, y }` and `point{ x, y }` are the SAME family; the
 -- first recovers `point` from context. This is why @ carries zero special
 -- construction semantics and why the anchor form did not become a third
--- mechanism when §43 collapsed brace call and brace construction.
+-- mechanism when §43 preserved brace structure and retired brace call.
 anchor.brace = "@ + pack = apply(enclosing descriptor)(pack)"
 
 -- ═══ §53 · CAPABILITY BY PRESSURE, NOT BY CHECKLIST ════════════════════════
