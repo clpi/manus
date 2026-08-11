@@ -39,18 +39,6 @@ pub const invariants: []const Invariant = &.{
     .{ .id = "P26-RD05", .rule = "invalid incomplete descriptors rejected at seal time" },
 };
 
-pub const Example = struct {
-    id: []const u8,
-    source: []const u8,
-    recursion: RecursionKind,
-};
-
-pub const examples: []const Example = &.{
-    .{ .id = "P26-RX01", .source = "Node = @{ value: i64, next: Pointer Node }", .recursion = .indirect_pointer },
-    .{ .id = "P26-RX02", .source = "Expr = @{ Literal(value), Binary(left: Expr, right: Expr) }", .recursion = .inline_fixed_point },
-};
-
 test "pass26_recursive_descriptor: fixed point model" {
     try std.testing.expect(invariants.len >= 5);
-    try std.testing.expect(examples.len >= 2);
 }
