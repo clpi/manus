@@ -1223,6 +1223,152 @@ pub const SemanticGraph = struct {
         }
     }
 
+    const DependencyFrame = struct {
+        row: usize,
+        next: usize,
+    };
+
+    fn orderFunctionComponents(
+        alloc: std.mem.Allocator,
+        functions: []const id,
+        unlocks: []const std.ArrayListUnmanaged(usize),
+    ) ![]const id {
+        const reverse = try alloc.alloc(std.ArrayListUnmanaged(usize), functions.len);
+        defer {
+            for (reverse) |*list| list.deinit(alloc);
+            alloc.free(reverse);
+        }
+        for (reverse) |*list| list.* = .empty;
+        for (unlocks, 0..) |list, row| {
+            for (list.items) |dependent| try reverse[dependent].append(alloc, row);
+        }
+
+        const visited = try alloc.alloc(bool, functions.len);
+        defer alloc.free(visited);
+        @memset(visited, false);
+        var finish: std.ArrayListUnmanaged(usize) = .empty;
+        defer finish.deinit(alloc);
+        var frames: std.ArrayListUnmanaged(DependencyFrame) = .empty;
+        defer frames.deinit(alloc);
+
+        for (functions, 0..) |_, root| {
+            if (visited[root]) continue;
+            visited[root] = true;
+            try frames.append(alloc, .{ .row = root, .next = 0 });
+            while (frames.items.len > 0) {
+                const top = frames.items.len - 1;
+                const row = frames.items[top].row;
+                if (frames.items[top].next < unlocks[row].items.len) {
+                    const dependent = unlocks[row].items[frames.items[top].next];
+                    frames.items[top].next += 1;
+                    if (!visited[dependent]) {
+                        visited[dependent] = true;
+                        try frames.append(alloc, .{ .row = dependent, .next = 0 });
+                    }
+                    continue;
+                }
+                _ = frames.pop().?;
+                try finish.append(alloc, row);
+            }
+        }
+
+        const components = try alloc.alloc(usize, functions.len);
+        defer alloc.free(components);
+        @memset(components, std.math.maxInt(usize));
+        var component_count: usize = 0;
+        var stack: std.ArrayListUnmanaged(usize) = .empty;
+        defer stack.deinit(alloc);
+        var finish_index = finish.items.len;
+        while (finish_index > 0) {
+            finish_index -= 1;
+            const root = finish.items[finish_index];
+            if (components[root] != std.math.maxInt(usize)) continue;
+            components[root] = component_count;
+            try stack.append(alloc, root);
+            while (stack.items.len > 0) {
+                const row = stack.pop().?;
+                for (reverse[row].items) |predecessor| {
+                    if (components[predecessor] != std.math.maxInt(usize)) continue;
+                    components[predecessor] = component_count;
+                    try stack.append(alloc, predecessor);
+                }
+            }
+            component_count += 1;
+        }
+
+        const component_counts = try alloc.alloc(usize, component_count);
+        defer alloc.free(component_counts);
+        @memset(component_counts, 0);
+        for (components) |component| component_counts[component] += 1;
+        const component_offsets = try alloc.alloc(usize, component_count + 1);
+        defer alloc.free(component_offsets);
+        component_offsets[0] = 0;
+        for (component_counts, 0..) |count, component| {
+            component_offsets[component + 1] = component_offsets[component] + count;
+        }
+        const component_cursors = try alloc.dupe(usize, component_offsets[0..component_count]);
+        defer alloc.free(component_cursors);
+        const component_rows = try alloc.alloc(usize, functions.len);
+        defer alloc.free(component_rows);
+        for (components, 0..) |component, row| {
+            component_rows[component_cursors[component]] = row;
+            component_cursors[component] += 1;
+        }
+
+        const component_unlocks = try alloc.alloc(std.ArrayListUnmanaged(usize), component_count);
+        defer {
+            for (component_unlocks) |*list| list.deinit(alloc);
+            alloc.free(component_unlocks);
+        }
+        for (component_unlocks) |*list| list.* = .empty;
+        const component_degree = try alloc.alloc(usize, component_count);
+        defer alloc.free(component_degree);
+        @memset(component_degree, 0);
+        var component_edges: std.AutoHashMapUnmanaged(u128, void) = .empty;
+        defer component_edges.deinit(alloc);
+        for (unlocks, 0..) |list, row| {
+            const from = components[row];
+            for (list.items) |dependent| {
+                const to = components[dependent];
+                if (from == to) continue;
+                const edge = (@as(u128, from) << 64) | @as(u128, to);
+                const slot = try component_edges.getOrPut(alloc, edge);
+                if (slot.found_existing) continue;
+                try component_unlocks[from].append(alloc, to);
+                component_degree[to] += 1;
+            }
+        }
+
+        var ready: std.ArrayListUnmanaged(usize) = .empty;
+        defer ready.deinit(alloc);
+        for (component_degree, 0..) |degree, component| {
+            if (degree == 0) try ready.append(alloc, component);
+        }
+        var component_order: std.ArrayListUnmanaged(usize) = .empty;
+        defer component_order.deinit(alloc);
+        while (ready.items.len > 0) {
+            const component = ready.pop().?;
+            try component_order.append(alloc, component);
+            for (component_unlocks[component].items) |dependent| {
+                component_degree[dependent] -= 1;
+                if (component_degree[dependent] == 0) try ready.append(alloc, dependent);
+            }
+        }
+        if (component_order.items.len != component_count) return error.UnresolvedApplication;
+
+        const ordered = try alloc.alloc(id, functions.len);
+        errdefer alloc.free(ordered);
+        var ordered_len: usize = 0;
+        for (component_order.items) |component| {
+            for (component_rows[component_offsets[component]..component_offsets[component + 1]]) |row| {
+                ordered[ordered_len] = functions[row];
+                ordered_len += 1;
+            }
+        }
+        if (ordered_len != functions.len) return error.UnresolvedApplication;
+        return ordered;
+    }
+
     /// Emit order for exact module function entities: callees before callers.
     /// An unresolved application inside the requested function set refuses the
     /// projection rather than becoming an absent dependency.
@@ -1299,9 +1445,8 @@ pub const SemanticGraph = struct {
         }
 
         if (ordered.items.len != functions.len) {
-            // Recursion keeps the caller-provided physical order.
-            ordered.deinit(alloc);
-            return try alloc.dupe(id, functions);
+            ordered.clearAndFree(alloc);
+            return try orderFunctionComponents(alloc, functions, unlocks);
         }
 
         return try ordered.toOwnedSlice(alloc);
@@ -1972,6 +2117,29 @@ fn addChildAllocationProbe(alloc: std.mem.Allocator) !void {
     try std.testing.expectEqual(child, graph.edges.items[0].to);
 }
 
+fn orderFunctionComponentsAllocationProbe(alloc: std.mem.Allocator) !void {
+    var unlocks = [_]std.ArrayListUnmanaged(usize){ .empty, .empty, .empty };
+    defer for (&unlocks) |*list| list.deinit(alloc);
+    try unlocks[0].append(alloc, 1);
+    try unlocks[0].append(alloc, 2);
+    try unlocks[1].append(alloc, 0);
+    const functions = [_]id{ 10, 11, 12 };
+    const ordered = try SemanticGraph.orderFunctionComponents(alloc, &functions, &unlocks);
+    defer alloc.free(ordered);
+    try std.testing.expectEqualSlices(id, &functions, ordered);
+}
+
+fn moduleFunctionEmitOrderAllocationProbe(
+    alloc: std.mem.Allocator,
+    graph: *const SemanticGraph,
+    functions: []const id,
+    expected: []const id,
+) !void {
+    const ordered = try graph.moduleFunctionEmitOrder(alloc, functions);
+    defer alloc.free(ordered);
+    try std.testing.expectEqualSlices(id, expected, ordered);
+}
+
 test "semantic_graph: child and scope relation publish transactionally" {
     try std.testing.checkAllAllocationFailures(
         std.testing.allocator,
@@ -2198,6 +2366,61 @@ test "semantic_graph: moduleFunctionEmitOrder callees before callers" {
 
     g.application_facts.items[0].results.len = std.math.maxInt(u32);
     try std.testing.expectError(error.UnresolvedApplication, g.moduleFunctionEmitOrder(alloc, &functions));
+}
+
+test "semantic_graph: moduleFunctionEmitOrder condenses recursive dependencies" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\a: i64 = ()
+        \\    b()
+        \\b: i64 = ()
+        \\    a()
+        \\c: i64 = ()
+        \\    a()
+    ;
+    var lex = Lexer.init(src, "recursive.id");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var module = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&module);
+
+    var g = SemanticGraph.init(alloc);
+    defer g.deinit();
+    _ = try g.liftModuleWithCheckedCalls(&module, &checked, "recursive.id");
+
+    const a = g.findFunc("a") orelse return error.TestExpectedEqual;
+    const b = g.findFunc("b") orelse return error.TestExpectedEqual;
+    const c = g.findFunc("c") orelse return error.TestExpectedEqual;
+    const functions = [_]id{ c, a, b };
+    const order = try g.moduleFunctionEmitOrder(alloc, &functions);
+    defer alloc.free(order);
+    try std.testing.expectEqualSlices(id, &.{ a, b, c }, order);
+
+    const recursive = [_]id{ b, a };
+    const stable = try g.moduleFunctionEmitOrder(alloc, &recursive);
+    defer alloc.free(stable);
+    try std.testing.expectEqualSlices(id, &recursive, stable);
+
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        moduleFunctionEmitOrderAllocationProbe,
+        .{ &g, functions[0..], @as([]const id, &.{ a, b, c }) },
+    );
+}
+
+test "semantic_graph: recursive function ordering releases temporary state" {
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        orderFunctionComponentsAllocationProbe,
+        .{},
+    );
 }
 
 test "semantic_graph: liftAliasShapes records native storage class" {
