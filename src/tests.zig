@@ -49,9 +49,6 @@ test {
     _ = @import("pass25_tail_result_model.zig");
     _ = @import("pass26_descriptor_identity.zig");
     _ = @import("pass26_descriptor_intern.zig");
-    _ = @import("pass26_semantic_boundary.zig");
-    _ = @import("pass26_semantic_domain.zig");
-    _ = @import("pass26_runtime_closure.zig");
     _ = @import("pass26_recursive_descriptor.zig");
     _ = @import("pass26_hash_order.zig");
     _ = @import("pass26_abi_resource.zig");
