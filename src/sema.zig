@@ -11498,7 +11498,19 @@ test "sema: braced ordinary callable fails closed" {
         \\main: i64 = ()
         \\    point{ x = 3 }
     , &arena);
-    try testing.expect(s.errors > 0);
+    try testing.expectEqual(@as(u32, 1), s.errors);
+}
+
+test "sema: braced ordinary callable refusal precedes pack arity" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runIdsemSema(
+        \\point: i64 = (x: i64, y: i64)
+        \\    x + y
+        \\main: i64 = ()
+        \\    point{ x = 3 }
+    , &arena);
+    try testing.expectEqual(@as(u32, 1), s.errors);
 }
 
 test "sema: parenthesized ordinary callable remains valid" {
