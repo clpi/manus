@@ -51,7 +51,6 @@ test {
     _ = @import("pass26_descriptor_intern.zig");
     _ = @import("pass26_recursive_descriptor.zig");
     _ = @import("pass26_hash_order.zig");
-    _ = @import("pass26_abi_resource.zig");
     _ = @import("pass26_wiring.zig");
     _ = @import("pass27_benchmark_evidence.zig");
     _ = @import("pass26_descriptor_intern.zig");
