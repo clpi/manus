@@ -11,7 +11,6 @@ const dnir_lower = @import("dnir_lower.zig");
 const dnir_hardware = @import("dnir_hardware.zig");
 const semantic_graph = @import("semantic_graph.zig");
 const region_graph = @import("region_graph.zig");
-const region_transform = @import("region_transform.zig");
 
 pub const Error = error{
     UnsupportedTarget,
@@ -152,14 +151,6 @@ fn recordRefusalWith(diagnostic: *Diagnostic, src: std.builtin.SourceLocation, n
 fn invalidFactsWith(diagnostic: *Diagnostic, src: std.builtin.SourceLocation, note: []const u8) Error {
     diagnostic.record(src, note);
     return error.SemanticFactsInvalid;
-}
-
-fn transformFailure(diagnostic: *Diagnostic, src: std.builtin.SourceLocation, err: region_transform.Error) Error {
-    return switch (err) {
-        error.OutOfMemory => error.OutOfMemory,
-        error.ResidencyMismatch => invalidFactsWith(diagnostic, src, "region-transform-residency"),
-        error.CoordinateOverflow => recordRefusalWith(diagnostic, src, "region-coordinate-capacity"),
-    };
 }
 
 pub fn directDiagnostic(err: Error, target: []const u8) DirectDiag {
@@ -3229,6 +3220,15 @@ fn optionalIdEql(a: ?semantic_graph.id, b: ?semantic_graph.id) bool {
     return std.meta.eql(a.?, b.?);
 }
 
+fn nextMachineInstructionCoordinate(current: u32, diagnostic: *Diagnostic) Error!u32 {
+    return std.math.add(u32, current, 1) catch
+        return recordRefusalWith(
+            diagnostic,
+            @src(),
+            "machine-instruction-coordinate-capacity",
+        );
+}
+
 fn validateDnirApplications(
     alloc: std.mem.Allocator,
     module: dnir.Module,
@@ -3267,7 +3267,11 @@ fn validateDnirApplications(
         var instruction_index: u32 = 0;
         for (function.blocks) |block| {
             for (block.instrs) |instruction| {
-                defer instruction_index += 1;
+                const next_instruction_index = try nextMachineInstructionCoordinate(
+                    instruction_index,
+                    diagnostic,
+                );
+                defer instruction_index = next_instruction_index;
                 const fact_count: u2 = @as(u2, @intFromBool(instruction.relation != null)) +
                     @as(u2, @intFromBool(instruction.application != null)) +
                     @as(u2, @intFromBool(instruction.value != null));
@@ -3490,36 +3494,10 @@ fn emitArm64ModuleWithGraph(
 
     const lowered_result = dnir_lower.lowerModuleWithGraphObserved(alloc, mod, graph, &diagnostic.lowering);
     if (lowered_result) |lowered| {
-        var dnir_mut = lowered;
-        defer dnir.deinitModule(alloc, dnir_mut);
-        try validateDnirApplications(alloc, dnir_mut, graph, diagnostic);
-        if (dnir.moduleIsNativeDirectReady(dnir_mut)) {
-            if (region_graph.buildModuleRegions(alloc, dnir_mut)) |initial_regions| {
-                defer region_graph.freeModuleRegions(alloc, initial_regions);
-                const transform_report = region_transform.applyModuleRegionTransformsWithGraph(
-                    alloc,
-                    &dnir_mut,
-                    initial_regions,
-                    graph,
-                ) catch |err| {
-                    if (err == error.OutOfMemory) return error.OutOfMemory;
-                    if (err == error.CoordinateOverflow) return transformFailure(diagnostic, @src(), err);
-                    return transformFailure(diagnostic, @src(), err);
-                };
-                _ = transform_report;
-            } else |err| switch (err) {
-                error.OutOfMemory => return error.OutOfMemory,
-                error.CoordinateOverflow => return recordRefusalWith(
-                    diagnostic,
-                    @src(),
-                    "region-coordinate-capacity",
-                ),
-            }
-
-            // Transformation changes realization, not meaning. Revalidate the
-            // actual DNIR that will be emitted before machine emission.
-            try validateDnirApplications(alloc, dnir_mut, graph, diagnostic);
-            var output = try emitArm64FromDnir(alloc, dnir_mut, process_entry, diagnostic);
+        defer dnir.deinitModule(alloc, lowered);
+        try validateDnirApplications(alloc, lowered, graph, diagnostic);
+        if (dnir.moduleIsNativeDirectReady(lowered)) {
+            var output = try emitArm64FromDnir(alloc, lowered, process_entry, diagnostic);
             errdefer output.deinit(alloc);
             output.graph = graph;
             try validateMachineLineage(alloc, output, graph, diagnostic);
@@ -4607,7 +4585,23 @@ test "native backend: strict graph allocation failure stays allocation failure" 
     try std.testing.expectEqual(failing.allocated_bytes, failing.freed_bytes);
 }
 
-test "native backend: graph-resident region validation preserves physical native entry" {
+test "native backend: machine instruction coordinate capacity stays physical" {
+    var diagnostic: Diagnostic = .{};
+    try std.testing.expectEqual(
+        std.math.maxInt(u32),
+        try nextMachineInstructionCoordinate(std.math.maxInt(u32) - 1, &diagnostic),
+    );
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        nextMachineInstructionCoordinate(std.math.maxInt(u32), &diagnostic),
+    );
+    try std.testing.expectEqualStrings(
+        "machine-instruction-coordinate-capacity",
+        diagnostic.note().?,
+    );
+}
+
+test "native backend: checked graph preserves physical native entry" {
     var diagnostic: Diagnostic = .{};
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -4636,20 +4630,12 @@ test "native backend: graph-resident region validation preserves physical native
     try std.testing.expect(output.text.len != 0);
 }
 
-test "native backend: transform outcomes retain their category" {
-    var diagnostic: Diagnostic = .{};
-    try std.testing.expect(transformFailure(&diagnostic, @src(), error.OutOfMemory) == error.OutOfMemory);
-    try std.testing.expect(transformFailure(&diagnostic, @src(), error.ResidencyMismatch) == error.SemanticFactsInvalid);
-    try std.testing.expect(transformFailure(&diagnostic, @src(), error.CoordinateOverflow) == error.UnsupportedProgram);
-    try std.testing.expectEqualStrings("region-coordinate-capacity", diagnostic.note().?);
-}
-
 test "native backend: caller diagnostics are isolated and observed attempts reset" {
     var first: Diagnostic = .{};
     var second: Diagnostic = .{};
 
-    try std.testing.expect(transformFailure(&second, @src(), error.ResidencyMismatch) == error.SemanticFactsInvalid);
-    try std.testing.expectEqualStrings("region-transform-residency", second.note().?);
+    try std.testing.expect(invalidFactsWith(&second, @src(), "second-attempt-facts") == error.SemanticFactsInvalid);
+    try std.testing.expectEqualStrings("second-attempt-facts", second.note().?);
 
     first.lowering.site = @src();
     first.lowering.note_buffer[0] = 'x';
@@ -4674,7 +4660,7 @@ test "native backend: caller diagnostics are isolated and observed attempts rese
     try std.testing.expect(first.note() == null);
     try std.testing.expect(first.lowering.site == null);
     try std.testing.expect(first.lowering.note() == null);
-    try std.testing.expectEqualStrings("region-transform-residency", second.note().?);
+    try std.testing.expectEqualStrings("second-attempt-facts", second.note().?);
 }
 
 test "native backend: checked ordinary call reaches regions and machine lineage" {

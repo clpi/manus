@@ -365,20 +365,6 @@ pub fn applyModuleRegionTransforms(
     return applyModuleRegionTransformsValidated(alloc, module, projection);
 }
 
-pub fn applyModuleRegionTransformsWithGraph(
-    alloc: std.mem.Allocator,
-    module: *dnir.Module,
-    projection: region_graph.Projection,
-    graph: *const semantic_graph.SemanticGraph,
-) Error!ModuleTransformReport {
-    region_graph.validateModuleRegions(alloc, projection, graph, module.*) catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        error.CoordinateOverflow => return error.CoordinateOverflow,
-        else => return error.ResidencyMismatch,
-    };
-    return .{};
-}
-
 fn functionHasBinop(function: *const dnir.Function, op: dnir.BinOpTag) bool {
     for (function.blocks) |block| {
         for (block.instrs) |instruction| {
@@ -421,107 +407,6 @@ test "region_transform: folds constants from physical coordinates and dependenci
     try std.testing.expectEqual(@as(u32, 1), report.const_binop_fusions);
     try std.testing.expectEqual(@as(usize, 1), module.functions.len);
     try std.testing.expect(!functionHasBinop(&module.functions[0], .add));
-}
-
-test "region_transform: graph path declines transforms without witnesses" {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
-    const Sema = @import("sema.zig").Sema;
-    const dnir_lower = @import("dnir_lower.zig");
-
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const source =
-        \\observe: i64 = (subject: i64, left: i64, right: i64)
-        \\    subject + left + right
-        \\fold: i64 = ()
-        \\    x = 10
-        \\    y = 32
-        \\    x + y
-        \\main: i64 = ()
-        \\    40:observe(1, 1)
-    ;
-    var lexer = Lexer.init(source, "checked-transform.id");
-    var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
-    var ast_module = try parser.parse_module();
-    var checked = Sema.init(alloc);
-    defer checked.deinit();
-    checked.duo_mode = true;
-    try checked.check_module(&ast_module);
-    var graph = semantic_graph.SemanticGraph.init(alloc);
-    defer graph.deinit();
-    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "checked-transform.id");
-    var module = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph);
-    const projection = try region_graph.buildModuleRegions(alloc, module);
-    defer region_graph.freeModuleRegions(alloc, projection);
-
-    const Snapshot = struct {
-        relation: semantic_graph.id,
-        application: semantic_graph.id,
-        value: semantic_graph.id,
-        subject: ?semantic_graph.id,
-        caller: semantic_graph.id,
-        realization_start: u32,
-    };
-    var before: ?Snapshot = null;
-    var binops_before: usize = 0;
-    for (module.functions, projection.regions) |function, region| {
-        var flattened: u32 = 0;
-        for (function.blocks) |block| {
-            for (block.instrs) |instruction| {
-                if (instruction.op == .binop) binops_before += 1;
-                if (instruction.application) |application| {
-                    const realization_start = instruction.realization_start orelse
-                        return error.TestExpectedEqual;
-                    const start_coordinate = region_graph.instructionCoordinate(
-                        &region,
-                        realization_start,
-                    ) orelse return error.TestExpectedEqual;
-                    const call_coordinate = region_graph.instructionCoordinate(
-                        &region,
-                        flattened,
-                    ) orelse return error.TestExpectedEqual;
-                    try std.testing.expect(start_coordinate < call_coordinate);
-                    before = .{
-                        .relation = instruction.relation orelse return error.TestExpectedEqual,
-                        .application = application,
-                        .value = instruction.value orelse return error.TestExpectedEqual,
-                        .subject = instruction.subject,
-                        .caller = function.id orelse return error.TestExpectedEqual,
-                        .realization_start = realization_start,
-                    };
-                }
-                flattened += 1;
-            }
-        }
-    }
-    const expected = before orelse return error.TestExpectedEqual;
-
-    const report = try applyModuleRegionTransformsWithGraph(alloc, &module, projection, &graph);
-    try std.testing.expectEqual(@as(u32, 0), report.const_binop_fusions);
-    try std.testing.expectEqual(@as(u32, 0), report.dead_const_pruned);
-    try std.testing.expectEqual(@as(usize, 1), graph.applications().len);
-
-    var retained = false;
-    var binops_after: usize = 0;
-    for (module.functions) |function| {
-        for (function.blocks) |block| {
-            for (block.instrs) |instruction| {
-                if (instruction.op == .binop) binops_after += 1;
-                if (instruction.application != expected.application) continue;
-                try std.testing.expectEqual(expected.relation, instruction.relation.?);
-                try std.testing.expectEqual(expected.value, instruction.value.?);
-                try std.testing.expectEqual(expected.subject, instruction.subject);
-                try std.testing.expectEqual(expected.caller, function.id.?);
-                try std.testing.expectEqual(expected.realization_start, instruction.realization_start.?);
-                retained = true;
-            }
-        }
-    }
-    try std.testing.expectEqual(binops_before, binops_after);
-    try std.testing.expect(retained);
 }
 
 test "region_transform: rejects equal coordinates from another graph" {
