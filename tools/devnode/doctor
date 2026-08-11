@@ -15,6 +15,8 @@ cleanup_root_artifacts() {
   find "$repo" -maxdepth 1 -type f \( -name '*.out' -o -name '*.profraw' -o -name 'test_*.c' -o -name 'test_*.wasm' \) -exec rm {} \;
 }
 
+trap cleanup_root_artifacts EXIT
+
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 && ok "$1 on PATH" || bad "$1 missing from PATH"
 }
