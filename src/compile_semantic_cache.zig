@@ -30,6 +30,59 @@ fn recordNameFromEntity(entity_id: []const u8) ?[]const u8 {
     return entity_id[prefix.len..];
 }
 
+fn combineInvalidationGraphs(
+    alloc: std.mem.Allocator,
+    first: *semantic_invalidation.Graph,
+    second: *semantic_invalidation.Graph,
+) !semantic_invalidation.Graph {
+    if (first.edges.len == 0) {
+        first.deinit(alloc);
+        first.edges = &.{};
+        const edges = second.edges;
+        second.edges = &.{};
+        return .{ .edges = edges };
+    }
+    if (second.edges.len == 0) {
+        second.deinit(alloc);
+        second.edges = &.{};
+        const edges = first.edges;
+        first.edges = &.{};
+        return .{ .edges = edges };
+    }
+
+    const first_len = first.edges.len;
+    const combined_len = try std.math.add(usize, first_len, second.edges.len);
+    const edges = try alloc.realloc(first.edges, combined_len);
+    first.edges = &.{};
+    @memcpy(edges[first_len..], second.edges);
+    alloc.free(second.edges);
+    second.edges = &.{};
+    return .{ .edges = edges };
+}
+
+fn mergeAudit(
+    alloc: std.mem.Allocator,
+    state: *persistent_semantic_state.State,
+    audits: *std.ArrayListUnmanaged(persistent_semantic_state.ReuseAudit),
+    entity_id: []const u8,
+    fingerprint: u64,
+    artifact: []const u8,
+    target: []const u8,
+) !void {
+    try audits.ensureUnusedCapacity(alloc, 1);
+    const row = try persistent_semantic_state.mergeRealizationEntry(
+        alloc,
+        state,
+        entity_id,
+        fingerprint,
+        artifact,
+        COMPILER_VERSION,
+        target,
+        TRANSFORM_VERSION,
+    );
+    audits.appendAssumeCapacity(row);
+}
+
 pub fn refreshRealizationCache(
     alloc: std.mem.Allocator,
     io: std.Io,
@@ -50,47 +103,44 @@ pub fn refreshRealizationCache(
     }
 
     var live_ids: std.ArrayListUnmanaged([]const u8) = .empty;
-    errdefer live_ids.deinit(alloc);
+    defer live_ids.deinit(alloc);
 
     for (realizations.variables) |var_| {
         const sel = var_.selected() orelse continue;
         const record_name = recordNameFromEntity(var_.subject_entity) orelse continue;
         try live_ids.append(alloc, var_.subject_entity);
         const fp = try realization.fingerprintForRecordEntity(alloc, graph, record_name, target, TRANSFORM_VERSION);
-        const row = try persistent_semantic_state.mergeRealizationEntry(
+        try mergeAudit(
             alloc,
             &state,
+            &audits,
             var_.subject_entity,
             fp,
             sel.representation,
-            COMPILER_VERSION,
             target,
-            TRANSFORM_VERSION,
         );
-        try audits.append(alloc, row);
     }
 
-    const removal = try semantic_invalidation.invalidateRemovedEntities(alloc, &state, live_ids.items);
-    var audit_edges = try semantic_invalidation.edgesFromReuseAudits(alloc, audits.items);
-    errdefer audit_edges.deinit(alloc);
-
-    var all_edges: std.ArrayListUnmanaged(semantic_invalidation.Edge) = .empty;
+    const owned_audits = try audits.toOwnedSlice(alloc);
     errdefer {
-        for (all_edges.items) |*e| e.deinit(alloc);
-        all_edges.deinit(alloc);
+        for (owned_audits) |*audit| audit.deinit(alloc);
+        alloc.free(owned_audits);
     }
-    try all_edges.appendSlice(alloc, removal.edges);
-    alloc.free(removal.edges);
-    try all_edges.appendSlice(alloc, audit_edges.edges);
-    alloc.free(audit_edges.edges);
+
+    var removal = try semantic_invalidation.invalidateRemovedEntities(alloc, &state, live_ids.items);
+    defer removal.deinit(alloc);
+    var audit_edges = try semantic_invalidation.edgesFromReuseAudits(alloc, owned_audits);
+    defer audit_edges.deinit(alloc);
+    var invalidation = try combineInvalidationGraphs(alloc, &removal, &audit_edges);
+    errdefer invalidation.deinit(alloc);
 
     try persistent_semantic_state.saveToPath(alloc, io, persistent_semantic_state.DEFAULT_CACHE_PATH, &state);
 
     return .{
         .realizations = realizations,
         .state = state,
-        .audits = try audits.toOwnedSlice(alloc),
-        .invalidation = .{ .edges = try all_edges.toOwnedSlice(alloc) },
+        .audits = owned_audits,
+        .invalidation = invalidation,
     };
 }
 
@@ -105,6 +155,116 @@ pub fn refreshFromCheckedModule(
     defer graph.deinit();
     _ = try graph.liftModuleWithCalls(mod, src_path);
     return try refreshRealizationCache(alloc, io, &graph, src_path, target);
+}
+
+fn expectEdgeOwnershipUnchanged(
+    expected: semantic_invalidation.Edge,
+    actual: semantic_invalidation.Edge,
+) !void {
+    try std.testing.expect(expected.subject_entity.ptr == actual.subject_entity.ptr);
+    try std.testing.expectEqual(expected.subject_entity.len, actual.subject_entity.len);
+    try std.testing.expect(expected.affected_entity.ptr == actual.affected_entity.ptr);
+    try std.testing.expectEqual(expected.affected_entity.len, actual.affected_entity.len);
+    try std.testing.expectEqual(expected.kind, actual.kind);
+    try std.testing.expect(expected.reason.ptr == actual.reason.ptr);
+    try std.testing.expectEqual(expected.reason.len, actual.reason.len);
+}
+
+fn combineInvalidationAllocationProbe(alloc: std.mem.Allocator) !void {
+    const first_audits = [_]persistent_semantic_state.ReuseAudit{.{
+        .entity_id = "duo:record:Point",
+        .action = .invalidated,
+        .reason = "semantic fingerprint changed",
+        .artifact = "native_aggregate",
+    }};
+    const second_audits = [_]persistent_semantic_state.ReuseAudit{.{
+        .entity_id = "duo:record:Vector",
+        .action = .invalidated,
+        .reason = "target changed",
+        .artifact = "native_struct",
+    }};
+    var first = try semantic_invalidation.edgesFromReuseAudits(alloc, &first_audits);
+    defer first.deinit(alloc);
+    var second = try semantic_invalidation.edgesFromReuseAudits(alloc, &second_audits);
+    defer second.deinit(alloc);
+
+    const expected_first_ptr = first.edges.ptr;
+    const expected_second_ptr = second.edges.ptr;
+    const expected_first = first.edges[0];
+    const expected_second = second.edges[0];
+    var combined = combineInvalidationGraphs(alloc, &first, &second) catch |err| {
+        try std.testing.expect(first.edges.ptr == expected_first_ptr);
+        try std.testing.expect(second.edges.ptr == expected_second_ptr);
+        try std.testing.expectEqual(@as(usize, 1), first.edges.len);
+        try std.testing.expectEqual(@as(usize, 1), second.edges.len);
+        try expectEdgeOwnershipUnchanged(expected_first, first.edges[0]);
+        try expectEdgeOwnershipUnchanged(expected_second, second.edges[0]);
+        return err;
+    };
+    defer combined.deinit(alloc);
+
+    try std.testing.expectEqual(@as(usize, 0), first.edges.len);
+    try std.testing.expectEqual(@as(usize, 0), second.edges.len);
+    try std.testing.expectEqual(@as(usize, 2), combined.edges.len);
+    try std.testing.expectEqualStrings(first_audits[0].entity_id, combined.edges[0].subject_entity);
+    try std.testing.expectEqualStrings(second_audits[0].entity_id, combined.edges[1].subject_entity);
+}
+
+fn mergeAuditAllocationProbe(alloc: std.mem.Allocator) !void {
+    var state: persistent_semantic_state.State = .{ .entries = &.{} };
+    defer state.deinit(alloc);
+    try persistent_semantic_state.appendEntry(
+        alloc,
+        &state,
+        "duo:record:Point",
+        0xdef,
+        .source_derived,
+        "native_struct",
+        COMPILER_VERSION,
+        "native",
+        TRANSFORM_VERSION,
+    );
+
+    var audits: std.ArrayListUnmanaged(persistent_semantic_state.ReuseAudit) = .empty;
+    defer {
+        for (audits.items) |*audit| audit.deinit(alloc);
+        audits.deinit(alloc);
+    }
+
+    const expected_entries = state.entries.ptr;
+    const expected_entity = state.entries[0].entity_id.ptr;
+    const expected_artifact = state.entries[0].artifact.ptr;
+    mergeAudit(
+        alloc,
+        &state,
+        &audits,
+        "duo:record:Point",
+        0xabc,
+        "native_aggregate",
+        "native",
+    ) catch |err| {
+        try std.testing.expect(state.entries.ptr == expected_entries);
+        try std.testing.expectEqual(@as(usize, 1), state.entries.len);
+        try std.testing.expect(state.entries[0].entity_id.ptr == expected_entity);
+        try std.testing.expectEqual(@as(u64, 0xdef), state.entries[0].fingerprint);
+        try std.testing.expect(state.entries[0].artifact.ptr == expected_artifact);
+        try std.testing.expectEqualStrings("native_struct", state.entries[0].artifact);
+        try std.testing.expectEqual(@as(usize, 0), audits.items.len);
+        return err;
+    };
+
+    try std.testing.expectEqual(@as(usize, 1), audits.items.len);
+    try std.testing.expectEqual(persistent_semantic_state.AuditAction.invalidated, audits.items[0].action);
+    try std.testing.expectEqual(@as(u64, 0xabc), state.entries[0].fingerprint);
+    try std.testing.expectEqualStrings("native_aggregate", state.entries[0].artifact);
+}
+
+test "compile_semantic_cache: invalidation graph ownership transfer is transactional" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, combineInvalidationAllocationProbe, .{});
+}
+
+test "compile_semantic_cache: state merge and audit publication are transactional" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, mergeAuditAllocationProbe, .{});
 }
 
 test "compile_semantic_cache: second refresh reuses entry" {
