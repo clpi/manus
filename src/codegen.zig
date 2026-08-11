@@ -5947,6 +5947,7 @@ pub const CodeGen = struct {
             self.p("static inline FILE* popen(const char* c, const char* m) {{ (void)c; (void)m; return NULL; }}\n", .{});
             self.p("static inline int pclose(FILE* f) {{ (void)f; return -1; }}\n", .{});
             self.p("static inline int mkstemp(char* t) {{ (void)t; return -1; }}\n", .{});
+            self.p("static inline int mkstemps(char* t, int s) {{ (void)t; (void)s; return -1; }}\n", .{});
             self.p("static inline int close(int fd) {{ (void)fd; return 0; }}\n", .{});
             self.p("static inline int unlink(const char* p) {{ (void)p; return 0; }}\n", .{});
             self.p("#define L_tmpnam 256\n", .{});
@@ -30209,31 +30210,6 @@ const duo_runtime =
     \\};
     \\
     \\static const char* duo_compiler_path(void) {
-    \\    /* Prefer the running executable's own path: it just compiled the main
-    \\       program, so it is the correct compiler for req()'d modules too,
-    \\       regardless of CWD. Fixes req-module-load crashing when CWD is not
-    \\       the duo source tree (a bare "duo" then resolved via PATH to a
-    \\       different/wrong binary that panicked). Falls through to the prior
-    \\       DUO-env / CWD-relative / PATH logic if self-path is unavailable. */
-    \\    static char self_path[4096];
-    \\    static int self_resolved = 0;
-    \\    if (!self_resolved) {
-    \\        self_resolved = 1;
-    \\        self_path[0] = '\\0';
-    \\#if defined(__APPLE__)
-    \\        uint32_t sz = sizeof self_path;
-    \\        if (_NSGetExecutablePath(self_path, &sz) == 0) {
-    \\            char real[4096];
-    \\            if (realpath(self_path, real) && strlen(real) < sizeof self_path) {
-    \\                strcpy(self_path, real);
-    \\            }
-    \\        }
-    \\#elif defined(__linux__)
-    \\        ssize_t n = readlink("/proc/self/exe", self_path, sizeof self_path - 1);
-    \\        if (n > 0) self_path[n] = '\\0';
-    \\#endif
-    \\    }
-    \\    if (self_path[0] && access(self_path, X_OK) == 0) return self_path;
     \\    const char* from_env = getenv("DUO");
     \\    if (from_env && from_env[0]) return from_env;
     \\    if (access("./zig-out/bin/duo", X_OK) == 0) return "./zig-out/bin/duo";
@@ -30242,12 +30218,22 @@ const duo_runtime =
     \\}
     \\
     \\static int duo_make_temp_path(char* out, size_t out_sz, const char* suffix) {
-    \\    char tmpl[] = "/tmp/duo_ldXXXXXX";
-    \\    int fd = mkstemp(tmpl);
+    \\    if (snprintf(out, out_sz, "/tmp/duo_ldXXXXXX%s", suffix) >= (int)out_sz) return -1;
+    \\#if defined(_WIN32)
+    \\    size_t suffix_len = strlen(suffix);
+    \\    size_t path_len = strlen(out);
+    \\    if (suffix_len > 31 || path_len < suffix_len + 6) return -1;
+    \\    char saved_suffix[32];
+    \\    memcpy(saved_suffix, out + path_len - suffix_len, suffix_len + 1);
+    \\    out[path_len - suffix_len] = '\0';
+    \\    if (_mktemp_s(out, path_len - suffix_len + 1) != 0) return -1;
+    \\    memcpy(out + path_len - suffix_len, saved_suffix, suffix_len + 1);
+    \\    int fd = open(out, O_CREAT | O_EXCL | O_RDWR | O_BINARY, S_IREAD | S_IWRITE);
+    \\#else
+    \\    int fd = mkstemps(out, (int)strlen(suffix));
+    \\#endif
     \\    if (fd < 0) return -1;
     \\    close(fd);
-    \\    unlink(tmpl);
-    \\    if (snprintf(out, out_sz, "%s%s", tmpl, suffix) >= (int)out_sz) return -1;
     \\    return 0;
     \\}
     \\
@@ -31001,6 +30987,24 @@ const duo_runtime =
 // ── Tests ─────────────────────────────────────────────────────────────────
 
 const testing = std.testing;
+
+test "runtime: temporary artifact path is reserved with its suffix" {
+    try testing.expect(std.mem.indexOf(
+        u8,
+        duo_runtime,
+        "snprintf(out, out_sz, \"/tmp/duo_ldXXXXXX%s\", suffix)",
+    ) != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "mkstemps(out, (int)strlen(suffix))") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "O_CREAT | O_EXCL") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "unlink(tmpl)") == null);
+}
+
+test "runtime: dynamic source loading never invokes the application as the compiler" {
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "_NSGetExecutablePath") == null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "/proc/self/exe") == null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "getenv(\"DUO\")") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "./zig-out/bin/duo") != null);
+}
 
 // ── Runtime string: duo_contains ──────────────────────────────────────────
 
