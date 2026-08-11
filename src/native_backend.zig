@@ -4,7 +4,6 @@ const ast = @import("ast.zig");
 const Lexer = @import("lexer.zig").Lexer;
 const Parser = @import("parser.zig").Parser;
 const Sema = @import("sema.zig").Sema;
-const native_req_support = @import("native_req_support.zig");
 const dnir = @import("duo_native_ir.zig");
 const c_signatures = @import("c_signatures.zig");
 const native_types = @import("types.zig");
@@ -421,16 +420,6 @@ const Relocation = struct {
     kind: RelocKind = .branch26,
 };
 
-const ExternalSymbol = struct {
-    local_name: []const u8,
-    symbol_name: []const u8,
-};
-
-const NativeFunction = struct {
-    decl: *const ast.FuncDecl,
-    symbol_name: []const u8,
-};
-
 /// Sealed record descriptor lowered as consecutive f64 ABI slots (Pass 4 M1).
 const F64RecordDesc = struct {
     field_names: []const []const u8,
@@ -448,144 +437,13 @@ const ScalRecordDesc = struct {
 
 const ScalRecordMap = std.StringHashMapUnmanaged(ScalRecordDesc);
 
-const FuncRecordReturns = std.StringHashMapUnmanaged(ScalRecordDesc);
-const FuncF64RecordReturns = std.StringHashMapUnmanaged(F64RecordDesc);
-
-const ByteBlob = struct {
-    name: []const u8,
-    bytes: []const u8,
-};
-
-fn tableExprToBytes(alloc: std.mem.Allocator, expr: *const ast.Expr) Error!?[]const u8 {
-    if (expr.* != .table) return null;
-    var out: std.ArrayList(u8) = .empty;
-    errdefer out.deinit(alloc);
-    for (expr.table.fields) |fld| {
-        const val: *const ast.Expr = switch (fld) {
-            .named => |n| n.val,
-            .positional => |v| v,
-            else => return null,
-        };
-        if (val.* != .int_lit) return null;
-        const v = val.int_lit.val;
-        if (v < 0 or v > 255) return null;
-        try out.append(alloc, @intCast(v));
-    }
-    if (out.items.len == 0) return null;
-    return try out.toOwnedSlice(alloc);
-}
-
-fn collectByteBlobs(alloc: std.mem.Allocator, mod: *const ast.Module) Error![]ByteBlob {
-    var blobs: std.ArrayList(ByteBlob) = .empty;
-    errdefer {
-        for (blobs.items) |b| alloc.free(b.bytes);
-        blobs.deinit(alloc);
-    }
-    for (mod.body.stmts) |*stmt| {
-        const parsed: ?struct { name: []const u8, val: *ast.Expr } = switch (stmt.*) {
-            .assign => |as| blk: {
-                if (as.targets.len != 1 or as.values.len != 1) break :blk null;
-                if (as.targets[0].* != .name) break :blk null;
-                break :blk .{ .name = as.targets[0].name.ident, .val = as.values[0] };
-            },
-            .const_decl => |cd| .{ .name = cd.ident, .val = cd.val },
-            else => null,
-        };
-        const item = parsed orelse continue;
-        const name = item.name;
-        const val = item.val;
-        const bytes = try tableExprToBytes(alloc, val) orelse continue;
-        try blobs.append(alloc, .{ .name = name, .bytes = bytes });
-    }
-    return try blobs.toOwnedSlice(alloc);
-}
-
-fn freeByteBlobs(alloc: std.mem.Allocator, blobs: []const ByteBlob) void {
-    for (blobs) |b| alloc.free(b.bytes);
-}
-
-fn collectF64Records(alloc: std.mem.Allocator, mod: *const ast.Module) Error!F64RecordMap {
-    var map: F64RecordMap = .empty;
-    errdefer freeF64Records(alloc, &map);
-    for (mod.body.stmts) |*stmt| {
-        if (stmt.* != .alias_def) continue;
-        const ad = &stmt.alias_def;
-        if (ad.type_params != null) continue;
-        const target = ad.target orelse continue;
-        const rec = switch (target) {
-            .record => |r| r,
-            else => continue,
-        };
-        if (rec.fields.len == 0) continue;
-        var names: std.ArrayListUnmanaged([]const u8) = .empty;
-        errdefer names.deinit(alloc);
-        var all_f64 = true;
-        for (rec.fields) |field| {
-            if (!field.typ.is_float()) {
-                all_f64 = false;
-                break;
-            }
-            try names.append(alloc, field.name);
-        }
-        if (!all_f64) continue;
-        try map.put(alloc, ad.name, .{
-            .field_names = try names.toOwnedSlice(alloc),
-        });
-    }
-    return map;
-}
-
 fn freeF64Records(alloc: std.mem.Allocator, map: *F64RecordMap) void {
-    var it = map.iterator();
-    while (it.next()) |entry| {
-        alloc.free(entry.value_ptr.field_names);
-    }
     map.deinit(alloc);
-}
-
-fn collectScalRecords(alloc: std.mem.Allocator, mod: *const ast.Module) Error!ScalRecordMap {
-    var map: ScalRecordMap = .empty;
-    errdefer freeScalRecords(alloc, &map);
-    for (mod.body.stmts) |*stmt| {
-        if (stmt.* != .alias_def) continue;
-        const ad = &stmt.alias_def;
-        if (ad.type_params != null) continue;
-        const target = ad.target orelse continue;
-        const rec = switch (target) {
-            .record => |r| r,
-            else => continue,
-        };
-        if (rec.fields.len == 0 or rec.fields.len > 8) continue;
-        var names: std.ArrayListUnmanaged([]const u8) = .empty;
-        errdefer names.deinit(alloc);
-        var kinds: std.ArrayListUnmanaged(ScalFieldKind) = .empty;
-        errdefer kinds.deinit(alloc);
-        var ok = true;
-        for (rec.fields) |field| {
-            const kind: ScalFieldKind = if (field.typ == .named and std.mem.eql(u8, field.typ.named, "str"))
-                .str
-            else if (isIntegerAnnotation(field.typ))
-                .i64
-            else {
-                ok = false;
-                break;
-            };
-            try names.append(alloc, field.name);
-            try kinds.append(alloc, kind);
-        }
-        if (!ok) continue;
-        try map.put(alloc, ad.name, .{
-            .field_names = try names.toOwnedSlice(alloc),
-            .field_kinds = try kinds.toOwnedSlice(alloc),
-        });
-    }
-    return map;
 }
 
 fn freeScalRecords(alloc: std.mem.Allocator, map: *ScalRecordMap) void {
     var it = map.iterator();
     while (it.next()) |entry| {
-        alloc.free(entry.value_ptr.field_names);
         alloc.free(entry.value_ptr.field_kinds);
     }
     map.deinit(alloc);
@@ -596,42 +454,9 @@ fn scalRecordDesc(records: *const ScalRecordMap, typ: ast.TypeExpr) ?ScalRecordD
     return records.get(typ.named);
 }
 
-fn freeFuncRecordReturns(alloc: std.mem.Allocator, map: *FuncRecordReturns) void {
-    map.deinit(alloc);
-}
-
-fn freeFuncF64RecordReturns(alloc: std.mem.Allocator, map: *FuncF64RecordReturns) void {
-    map.deinit(alloc);
-}
-
 fn f64RecordDesc(records: *const F64RecordMap, typ: ast.TypeExpr) ?F64RecordDesc {
     if (typ != .named) return null;
     return records.get(typ.named);
-}
-
-fn paramFpSlotCount(records: *const F64RecordMap, typ: ast.TypeExpr) Error!usize {
-    if (isFloatAnnotation(typ)) return 1;
-    if (f64RecordDesc(records, typ)) |rec| return rec.field_names.len;
-    return error.InvalidMainSignature;
-}
-
-fn totalParamFpSlots(records: *const F64RecordMap, fd: *const ast.FuncDecl) Error!usize {
-    var total: usize = 0;
-    for (fd.func.params) |param| {
-        total += try paramFpSlotCount(records, param.typ);
-    }
-    return total;
-}
-
-fn isPureF64KernelFunction(records: *const F64RecordMap, fd: *const ast.FuncDecl) bool {
-    if (!returnsFloat(fd.func.ret_type)) return false;
-    var slots: usize = 0;
-    for (fd.func.params) |param| {
-        const n = paramFpSlotCount(records, param.typ) catch return false;
-        if (n == 0) return false;
-        slots += n;
-    }
-    return slots <= 8;
 }
 
 const Condition = enum(u4) {
@@ -683,144 +508,12 @@ const Arm64Output = struct {
     }
 };
 
-const NativeModule = struct {
-    functions: []NativeFunction,
-    externs: []ExternalSymbol,
-
-    fn deinit(self: *NativeModule, alloc: std.mem.Allocator) void {
-        alloc.free(self.functions);
-        for (self.externs) |sym| {
-            alloc.free(sym.local_name);
-            alloc.free(sym.symbol_name);
-        }
-        alloc.free(self.externs);
-    }
-};
-
-fn collectFunctions(
-    alloc: std.mem.Allocator,
-    mod: *const ast.Module,
-    scal_records: *const ScalRecordMap,
-    func_record_returns: *FuncRecordReturns,
-    diagnostic: *Diagnostic,
-) Error!NativeModule {
-    var records = try collectF64Records(alloc, mod);
-    defer freeF64Records(alloc, &records);
-
-    var funcs: std.ArrayList(NativeFunction) = .empty;
-    errdefer funcs.deinit(alloc);
-    var externs: std.ArrayList(ExternalSymbol) = .empty;
-    errdefer {
-        for (externs.items) |sym| {
-            alloc.free(sym.local_name);
-            alloc.free(sym.symbol_name);
-        }
-        externs.deinit(alloc);
-    }
-    for (mod.body.stmts) |*stmt| {
-        if (stmt.* != .func_decl) continue;
-        const fd = &stmt.func_decl;
-        if (fd.path.len != 1 or fd.method or fd.is_local) continue;
-        if (funcFfiName(fd.attributes)) |ffi_name| {
-            try appendUniqueExternal(alloc, &externs, fd.path[0], ffi_name);
-            continue;
-        }
-        try validateFunction(fd, &records, scal_records, diagnostic);
-        if (scalRecordDesc(scal_records, fd.func.ret_type)) |rec| {
-            try func_record_returns.put(alloc, fd.path[0], rec);
-        }
-        const symbol_name = funcExportName(fd) orelse fd.path[0];
-        try funcs.append(alloc, .{ .decl = fd, .symbol_name = symbol_name });
-    }
-    if (funcs.items.len == 0) return error.MissingMain;
-    return .{
-        .functions = try funcs.toOwnedSlice(alloc),
-        .externs = try externs.toOwnedSlice(alloc),
-    };
-}
-
-fn validateFunction(
-    fd: *const ast.FuncDecl,
-    records: *const F64RecordMap,
-    scal_records: *const ScalRecordMap,
-    diagnostic: *Diagnostic,
-) Error!void {
-    if (fd.func.vararg or fd.func.vararg_name != null) {
-        return error.InvalidMainSignature;
-    }
-    for (fd.func.params) |param| {
-        if (param.default_val != null) return recordRefusal(diagnostic, @src());
-    }
-    const ret_float = returnsFloat(fd.func.ret_type);
-    const ret_int = returnsInteger(fd.func.ret_type);
-    const ret_scal = scalRecordDesc(scal_records, fd.func.ret_type) != null;
-    if (!ret_int and !ret_float and !ret_scal and !returnsVoid(fd.func.ret_type)) {
-        return error.InvalidMainSignature;
-    }
-    if (ret_scal) {
-        if (fd.func.params.len > 8) return recordRefusal(diagnostic, @src());
-        for (fd.func.params) |param| {
-            if (!isIntegerAnnotation(param.typ) and !(param.typ == .named and std.mem.eql(u8, param.typ.named, "str"))) {
-                return error.InvalidMainSignature;
-            }
-        }
-        return;
-    }
-    if (ret_float) {
-        const slots = try totalParamFpSlots(records, fd);
-        if (slots > 8) return error.InvalidMainSignature;
-        return;
-    }
-    if (fd.func.params.len > 8) return recordRefusal(diagnostic, @src());
-    for (fd.func.params) |param| {
-        // `str` is a `const char*` — an integer-class argument that rides x0..x7
-        // exactly like an i64. The record-returning path above already accepts
-        // it; excluding it here was an oversight, and it rejected every
-        // `f(s: str): i64` reaching the retired AST compiler path.
-        // `ptr` is the base address of a memory-backed positional table — an
-        // integer-class argument in x0..x7 like `i64` and `str`. Admitting it is
-        // what lets a table cross a function boundary at all (SH-04).
-        if (!isIntegerAnnotation(param.typ) and !isStrAnnotation(param.typ) and !isPtrAnnotation(param.typ)) {
-            return error.InvalidMainSignature;
-        }
-    }
-}
-
-fn isPtrAnnotation(t: ast.TypeExpr) bool {
-    return switch (t) {
-        .named => |name| std.mem.eql(u8, name, "ptr") or std.mem.eql(u8, name, "void*"),
-        else => false,
-    };
-}
-
-fn isStrAnnotation(t: ast.TypeExpr) bool {
-    return t == .named and std.mem.eql(u8, t.named, "str");
-}
-
 fn isFloatAnnotation(t: ast.TypeExpr) bool {
     return t.is_float(); // named == "f32" or "f64"
 }
 
 fn returnsFloat(t: ast.TypeExpr) bool {
     return isFloatAnnotation(t);
-}
-
-fn isPureFloatFunction(records: *const F64RecordMap, fd: *const ast.FuncDecl) bool {
-    return isPureF64KernelFunction(records, fd);
-}
-
-fn appendUniqueExternal(alloc: std.mem.Allocator, externs: *std.ArrayList(ExternalSymbol), local_name: []const u8, symbol_name: []const u8) Error!void {
-    for (externs.items) |ext| {
-        if (std.mem.eql(u8, ext.local_name, local_name)) {
-            if (std.mem.eql(u8, ext.symbol_name, symbol_name)) return;
-            return error.DuplicateSymbol;
-        }
-    }
-    const owned_local = try alloc.dupe(u8, local_name);
-    errdefer alloc.free(owned_local);
-    const owned_symbol = try alloc.dupe(u8, symbol_name);
-    errdefer alloc.free(owned_symbol);
-    try externs.append(alloc, .{ .local_name = owned_local, .symbol_name = owned_symbol });
 }
 
 fn funcFfiName(attrs: []const ast.Attribute) ?[]const u8 {
@@ -939,27 +632,20 @@ const Arm64Compiler = struct {
     diagnostic: *Diagnostic,
     f64_records: *const F64RecordMap,
     scal_records: *const ScalRecordMap,
-    func_record_returns: *const FuncRecordReturns,
-    func_f64_record_returns: *const FuncF64RecordReturns,
-    req_ctx: *const native_req_support.Context,
     code: std.ArrayList(u8) = .empty,
     asm_text: std.ArrayList(u8) = .empty,
-    locals: std.StringHashMapUnmanaged(u5) = .empty,
     symbols: std.ArrayList(Symbol) = .empty,
     extern_symbols: std.StringHashMapUnmanaged(u32) = .empty,
     relocations: std.ArrayList(Relocation) = .empty,
     lineage: std.ArrayList(MachineLineage) = .empty,
     call_patches: std.ArrayList(CallPatch) = .empty,
-    loops: std.ArrayList(LoopContext) = .empty,
     used_regs: [29]bool = @splat(false),
-    next_label: u32 = 0,
     returned: bool = false,
     strings: std.ArrayList(StringSymbol) = .empty,
     string_map: std.StringHashMapUnmanaged(u32) = .empty,
     next_string: u32 = 0,
-    // f64 native lowering: per-function FP state. cur_func_float routes a
-    // pure-f64 function (all params + return f64) through compileExprFp.
-    // FP params arrive in d0-d7 (caller-saved) and the result returns in d0.
+    // f64 native emission: per-function physical FP state. FP params arrive
+    // in d0-d7 (caller-saved) and the result returns in d0.
     cur_func_float: bool = false,
     /// Function returns f64 but is not a pure-f64 kernel (zero-param shell, etc.).
     cur_func_ret_float: bool = false,
@@ -1000,8 +686,7 @@ const Arm64Compiler = struct {
     ///     A register with an owner is not scratch and cannot be handed back by
     ///     an operand-release at the point of use.
     ///   * `fp home regs` — this register is a LOCAL's home. A local keeps one
-    ///     register for its whole lifetime (the same invariant the integer path
-    ///     spells `isLocalReg`), so a home is never freed.
+    ///     register for its whole lifetime, so a home is never freed.
     ///   * `value free at` — the last instruction index that READS an id, extended
     ///     across any enclosing back edge. Freeing on the last TEXTUAL use is
     ///     wrong inside a loop: a value defined before the loop and last read
@@ -1018,13 +703,7 @@ const Arm64Compiler = struct {
     stack_frame_bytes: u16 = 0,
     /// `alloc_slots` result temp -> sp-relative byte offset of its slot region.
     slot_bases: std.AutoHashMapUnmanaged(u32, u16) = .empty,
-    f64_kernel_names: std.StringHashMapUnmanaged(void) = .empty,
-    blob_symbol_map: std.StringHashMapUnmanaged(u32) = .empty,
     spilled_regs: std.AutoHashMapUnmanaged(u5, u16) = .empty,
-    /// Spill slots for integer regs when x9-x28 exhausted (Pass 11 WP-03).
-    spill_offsets: std.ArrayList(u16) = .empty,
-    spill_reg_count: u5 = 0,
-    raw_blobs: std.ArrayList(RawBlobSymbol) = .empty,
     /// Arguments staged for the NEXT call's variadic tail. Apple's ARM64 ABI
     /// diverges from AAPCS64 here: every argument past a variadic function's
     /// last NAMED parameter travels on the STACK, 8-byte aligned, never in
@@ -1051,13 +730,6 @@ const Arm64Compiler = struct {
         float: bool,
     };
 
-    const LoopContext = struct {
-        continue_label: u32,
-        end_label: u32,
-        continue_patches: std.ArrayList(u32),
-        break_patches: std.ArrayList(u32),
-    };
-
     const SaveSet = struct {
         regs: [20]u5 = @splat(0),
         count: u5 = 0,
@@ -1073,12 +745,6 @@ const Arm64Compiler = struct {
     };
 
     const StringSymbol = struct {
-        bytes: []const u8,
-        name: []const u8,
-        symbol_index: u32,
-    };
-
-    const RawBlobSymbol = struct {
         bytes: []const u8,
         name: []const u8,
         symbol_index: u32,
@@ -1109,7 +775,6 @@ const Arm64Compiler = struct {
     fn deinit(self: *Arm64Compiler) void {
         self.code.deinit(self.alloc);
         self.asm_text.deinit(self.alloc);
-        self.locals.deinit(self.alloc);
         for (self.symbols.items) |sym| self.alloc.free(sym.name);
         self.symbols.deinit(self.alloc);
         self.extern_symbols.deinit(self.alloc);
@@ -1117,11 +782,6 @@ const Arm64Compiler = struct {
         self.lineage.deinit(self.alloc);
         for (self.call_patches.items) |patch| self.alloc.free(patch.target);
         self.call_patches.deinit(self.alloc);
-        for (self.loops.items) |*loop| {
-            loop.continue_patches.deinit(self.alloc);
-            loop.break_patches.deinit(self.alloc);
-        }
-        self.loops.deinit(self.alloc);
         for (self.strings.items) |s| {
             self.alloc.free(s.bytes);
             self.alloc.free(s.name);
@@ -1134,12 +794,7 @@ const Arm64Compiler = struct {
         self.fp_abi_passthrough.deinit(self.alloc);
         self.fp_stack_slots.deinit(self.alloc);
         self.slot_bases.deinit(self.alloc);
-        self.f64_kernel_names.deinit(self.alloc);
-        self.blob_symbol_map.deinit(self.alloc);
         self.spilled_regs.deinit(self.alloc);
-        self.spill_offsets.deinit(self.alloc);
-        for (self.raw_blobs.items) |b| self.alloc.free(b.name);
-        self.raw_blobs.deinit(self.alloc);
     }
 
     fn emitAsmHeader(self: *Arm64Compiler) Error!void {
@@ -1154,7 +809,7 @@ const Arm64Compiler = struct {
 
         var cstring: std.ArrayList(u8) = .empty;
         errdefer cstring.deinit(self.alloc);
-        if (self.strings.items.len > 0 or self.raw_blobs.items.len > 0) {
+        if (self.strings.items.len > 0) {
             try self.asm_text.appendSlice(self.alloc, "\n.section __TEXT,__cstring\n");
             var str_off: u32 = 0;
             for (self.strings.items) |s| {
@@ -1165,14 +820,6 @@ const Arm64Compiler = struct {
                 try cstring.appendSlice(self.alloc, s.bytes);
                 try cstring.append(self.alloc, 0);
                 str_off += @intCast(s.bytes.len + 1);
-            }
-            for (self.raw_blobs.items) |b| {
-                self.symbols.items[b.symbol_index].offset = @intCast(self.code.items.len + str_off);
-                try self.asm_text.appendSlice(self.alloc, b.name);
-                try self.asm_text.appendSlice(self.alloc, ":\n");
-                try self.emitRawBytesAsm(b.bytes);
-                try cstring.appendSlice(self.alloc, b.bytes);
-                str_off += @intCast(b.bytes.len);
             }
         }
         const cstring_bytes = try cstring.toOwnedSlice(self.alloc);
@@ -1236,40 +883,6 @@ const Arm64Compiler = struct {
         try self.relocations.append(self.alloc, .{ .offset = off_off, .symbol_index = symbol_index, .kind = .pageoff12 });
     }
 
-    fn emitRawBytesAsm(self: *Arm64Compiler, bytes: []const u8) Error!void {
-        try self.asm_text.appendSlice(self.alloc, "\t.byte ");
-        for (bytes, 0..) |b, i| {
-            if (i > 0) try self.asm_text.appendSlice(self.alloc, ", ");
-            try self.asm_text.print(self.alloc, "0x{x:0>2}", .{b});
-        }
-        try self.asm_text.appendSlice(self.alloc, "\n");
-    }
-
-    fn registerByteBlobs(self: *Arm64Compiler, blobs: []const ByteBlob) Error!void {
-        for (blobs) |blob| {
-            const idx: u32 = @intCast(self.symbols.items.len);
-            const sym_name = try std.fmt.allocPrint(self.alloc, "Lduo_blob_{s}", .{blob.name});
-            errdefer self.alloc.free(sym_name);
-            try self.symbols.append(self.alloc, .{
-                .name = sym_name,
-                .offset = 0,
-                .defined = true,
-                .section = 2,
-                .external = false,
-            });
-            try self.raw_blobs.append(self.alloc, .{
-                .bytes = blob.bytes,
-                .name = sym_name,
-                .symbol_index = idx,
-            });
-            try self.blob_symbol_map.put(self.alloc, blob.name, idx);
-        }
-    }
-
-    fn emitBlobPtr(self: *Arm64Compiler, reg: u5, symbol_index: u32) Error!void {
-        try self.emitAdrpAdd(reg, symbol_index);
-    }
-
     fn emitAscizAsm(self: *Arm64Compiler, bytes: []const u8) Error!void {
         try self.asm_text.appendSlice(self.alloc, "\t.asciz \"");
         for (bytes) |b| {
@@ -1286,27 +899,6 @@ const Arm64Compiler = struct {
         try self.asm_text.appendSlice(self.alloc, "\"\n");
     }
 
-    fn compileModule(self: *Arm64Compiler, funcs: []const NativeFunction, externs: []const ExternalSymbol, blobs: []const ByteBlob) Error!void {
-        try self.registerByteBlobs(blobs);
-        for (funcs) |func| {
-            if (isPureFloatFunction(self.f64_records, func.decl)) {
-                try self.f64_kernel_names.put(self.alloc, func.symbol_name, {});
-            }
-        }
-        try self.emitAsmHeader();
-        for (funcs) |func| {
-            try self.compileFunction(func);
-        }
-        for (externs) |ext| {
-            if (self.symbolOffset(ext.symbol_name)) |_| return error.DuplicateSymbol;
-            const owned_name = try self.alloc.dupe(u8, ext.symbol_name);
-            errdefer self.alloc.free(owned_name);
-            const symbol_index: u32 = @intCast(self.symbols.items.len);
-            try self.symbols.append(self.alloc, .{ .name = owned_name, .offset = 0, .defined = false });
-            try self.extern_symbols.put(self.alloc, ext.local_name, symbol_index);
-        }
-    }
-
     fn needsProcessExitF64Coerce(self: *const Arm64Compiler) bool {
         const entry = self.process_entry orelse return false;
         const cur = self.cur_func_name orelse return false;
@@ -1316,9 +908,6 @@ const Arm64Compiler = struct {
 
     fn compileDnirModule(self: *Arm64Compiler, m: dnir.Module) Error!void {
         try self.emitAsmHeader();
-        for (m.functions) |f| {
-            if (f.is_float_kernel) try self.f64_kernel_names.put(self.alloc, f.name, {});
-        }
         if (m.functions.len == 0) return error.MissingMain;
         for (m.functions) |f| {
             try self.compileDnirFunction(f);
@@ -1494,7 +1083,6 @@ const Arm64Compiler = struct {
 
     fn compileDnirFunction(self: *Arm64Compiler, f: dnir.Function) Error!void {
         self.cur_func_name = f.name;
-        self.locals.clearRetainingCapacity();
         self.fp_locals.clearRetainingCapacity();
         self.fp_temps.clearRetainingCapacity();
         // A staged variadic tail belongs to exactly one call. Carrying a
@@ -2418,7 +2006,7 @@ const Arm64Compiler = struct {
                     },
                     .f64 => switch (ins.lhs) {
                         // Literal: materialize the bit pattern directly into
-                        // x2 (same trick compileExprFp uses) — no FP reg.
+                        // x2 carries this physical mixed-ABI source — no FP reg.
                         .f64 => |n| try self.emitMovImm(2, @bitCast(n)),
                         else => {
                             const d = try self.evalDnirValueFp(temps, ins.lhs);
@@ -2760,104 +2348,6 @@ const Arm64Compiler = struct {
         }
     }
 
-    fn assignRecordFromStackLocals(self: *Arm64Compiler, base: []const u8, desc: ScalRecordDesc) Error!void {
-        const n = desc.field_names.len;
-        const raw_frame: u16 = @intCast(n * 8);
-        const frame: u16 = @intCast(std.mem.alignForward(u16, raw_frame, 16));
-        try self.emitSubSp(frame);
-        self.stack_frame_bytes += frame;
-        for (desc.field_names, 0..) |fname, i| {
-            const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, fname });
-            defer self.alloc.free(key);
-            // field values stored under loc.field keys from lowering
-            const off: u16 = @intCast(i * 8);
-            if (self.fp_stack_slots.get(key)) |_| {
-                try self.fp_stack_slots.put(self.alloc, key, .{ .off = off, .float = false });
-            } else {
-                // search all locals ending with .field
-                var it = self.locals.iterator();
-                while (it.next()) |e| {
-                    if (std.mem.endsWith(u8, e.key_ptr.*, fname)) {
-                        const reg = e.value_ptr.*;
-                        try self.emitStrSp(reg, off);
-                        const fk = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, fname });
-                        try self.fp_stack_slots.put(self.alloc, fk, .{ .off = off, .float = false });
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    fn compileFunction(self: *Arm64Compiler, func: NativeFunction) Error!void {
-        const fd = func.decl;
-        self.locals.clearRetainingCapacity();
-        self.used_regs = @splat(false);
-        self.returned = false;
-        self.fp_locals.clearRetainingCapacity();
-        self.used_fp_regs = @splat(false);
-        self.fp_stack_slots.clearRetainingCapacity();
-        self.stack_frame_bytes = 0;
-        self.spill_offsets.clearRetainingCapacity();
-        self.spill_reg_count = 0;
-        self.spilled_regs.clearRetainingCapacity();
-        self.cur_func_float = false;
-        self.cur_func_ret_float = false;
-
-        const name = func.symbol_name;
-        self.cur_func_name = name;
-        if (std.mem.eql(u8, name, "__native_load_u8")) {
-            try self.compileIntrinsicLoadU8(func);
-            return;
-        }
-        const offset: u32 = @intCast(self.code.items.len);
-        for (self.symbols.items) |sym| {
-            if (std.mem.eql(u8, sym.name, name)) return error.DuplicateSymbol;
-        }
-        const owned_name = try self.alloc.dupe(u8, name);
-        errdefer self.alloc.free(owned_name);
-        try self.symbols.append(self.alloc, .{ .name = owned_name, .offset = offset, .defined = true });
-
-        try self.asm_text.appendSlice(self.alloc, "\n.globl _");
-        try self.asm_text.appendSlice(self.alloc, name);
-        try self.asm_text.appendSlice(self.alloc, "\n.p2align 2\n_");
-        try self.asm_text.appendSlice(self.alloc, name);
-        try self.asm_text.appendSlice(self.alloc, ":\n");
-
-        self.cur_func_ret_record = scalRecordDesc(self.scal_records, fd.func.ret_type);
-        self.cur_func_float = isPureFloatFunction(self.f64_records, fd);
-        self.cur_func_ret_float = returnsFloat(fd.func.ret_type) and !self.cur_func_float;
-        if (self.cur_func_float) {
-            var dreg: u5 = 0;
-            for (fd.func.params) |param| {
-                if (isFloatAnnotation(param.typ)) {
-                    self.used_fp_regs[dreg] = true;
-                    try self.fp_locals.put(self.alloc, param.name, dreg);
-                    dreg += 1;
-                } else if (f64RecordDesc(self.f64_records, param.typ)) |rec| {
-                    for (rec.field_names) |fname| {
-                        self.used_fp_regs[dreg] = true;
-                        const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ param.name, fname });
-                        try self.fp_locals.put(self.alloc, key, dreg);
-                        dreg += 1;
-                    }
-                } else {
-                    return self.refuse(@src());
-                }
-            }
-        } else {
-            for (fd.func.params, 0..) |param, i| {
-                const local_reg = try self.allocReg();
-                const abi_reg: u5 = @intCast(i);
-                try self.emitMovReg(local_reg, abi_reg);
-                try self.locals.put(self.alloc, param.name, local_reg);
-            }
-        }
-
-        try self.compileBlock(fd.func.body, fd.func.ret_type);
-        if (!self.returned) return self.refuse(@src());
-    }
-
     fn emit(self: *Arm64Compiler, word: u32, asm_line: []const u8) Error!void {
         try appendU32(&self.code, self.alloc, word);
         try self.asm_text.appendSlice(self.alloc, "\t");
@@ -2890,7 +2380,6 @@ const Arm64Compiler = struct {
         try self.ensureRegLive(victim);
         try self.emitStrSp(victim, 8);
         try self.spilled_regs.put(self.alloc, victim, off);
-        if (self.spill_reg_count < std.math.maxInt(u5)) self.spill_reg_count += 1;
         self.used_regs[victim] = false;
     }
 
@@ -2945,37 +2434,6 @@ const Arm64Compiler = struct {
         return self.allocRegExcluding(null);
     }
 
-    fn compileIntrinsicLoadU8(self: *Arm64Compiler, func: NativeFunction) Error!void {
-        _ = func;
-        const offset: u32 = @intCast(self.code.items.len);
-        const name = "__native_load_u8";
-        for (self.symbols.items) |sym| {
-            if (std.mem.eql(u8, sym.name, name)) return error.DuplicateSymbol;
-        }
-        const owned_name = try self.alloc.dupe(u8, name);
-        errdefer self.alloc.free(owned_name);
-        try self.symbols.append(self.alloc, .{ .name = owned_name, .offset = offset, .defined = true });
-        try self.asm_text.appendSlice(self.alloc, "\n.globl _");
-        try self.asm_text.appendSlice(self.alloc, name);
-        try self.asm_text.appendSlice(self.alloc, "\n.p2align 2\n_");
-        try self.asm_text.appendSlice(self.alloc, name);
-        try self.asm_text.appendSlice(self.alloc, ":\n");
-        const addr = try self.allocReg();
-        try self.emitAddReg(addr, 0, 1);
-        try self.emitLdrb(0, addr);
-        self.releaseReg(addr);
-        try self.emitRet();
-    }
-
-    fn emitLoadU8Intrinsic(self: *Arm64Compiler, base: u5, off: u5) Error!u5 {
-        const addr = try self.allocReg();
-        try self.emitAddReg(addr, base, off);
-        const dst = try self.allocReg();
-        try self.emitLdrb(dst, addr);
-        self.releaseReg(addr);
-        return dst;
-    }
-
     fn restoreStackFrame(self: *Arm64Compiler) Error!void {
         if (self.stack_frame_bytes > 0) {
             try self.emitAddSp(self.stack_frame_bytes);
@@ -3022,44 +2480,6 @@ const Arm64Compiler = struct {
         try self.emitFmt(encodeCset(dst, cond), "cset x{d}, {s}", .{ dst, conditionName(cond) });
     }
 
-    fn assignRecordTable(self: *Arm64Compiler, base: []const u8, expr: *const ast.Expr) Error!void {
-        const table = switch (expr.*) {
-            .table => |t| t,
-            else => return self.refuse(@src()),
-        };
-        const n = table.fields.len;
-        if (n == 0 or n > 8) return self.refuse(@src());
-        const raw_frame: u16 = @intCast(n * 8);
-        const frame: u16 = @intCast(std.mem.alignForward(u16, raw_frame, 16));
-        try self.emitSubSp(frame);
-        self.stack_frame_bytes += frame;
-        var i: usize = 0;
-        for (table.fields) |fld| {
-            const val: *const ast.Expr = switch (fld) {
-                .named => |nf| nf.val,
-                .positional => |v| v,
-                else => return self.refuse(@src()),
-            };
-            const is_float = val.* == .float_lit;
-            const off: u16 = @intCast(i * 8);
-            if (is_float) {
-                const d = try self.compileExprFp(val);
-                try self.emitStrSpFp(d, off);
-            } else {
-                const r = try self.compileExpr(val);
-                try self.emitStrSp(r, off);
-                self.releaseReg(r);
-            }
-            const key = switch (fld) {
-                .named => |nf| try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, nf.key }),
-                .positional => try std.fmt.allocPrint(self.alloc, "{s}.{d}", .{ base, i }),
-                else => return self.refuse(@src()),
-            };
-            try self.fp_stack_slots.put(self.alloc, key, .{ .off = off, .float = is_float });
-            i += 1;
-        }
-    }
-
     fn loadStackField(self: *Arm64Compiler, key: []const u8) Error!u5 {
         const slot = self.fp_stack_slots.get(key) orelse return self.undefinedKey(@src(), "fp stack slot", key);
         const reg = try self.allocReg();
@@ -3067,480 +2487,10 @@ const Arm64Compiler = struct {
         return reg;
     }
 
-    fn storeStackField(self: *Arm64Compiler, key: []const u8, val_reg: u5) Error!void {
-        const slot = self.fp_stack_slots.get(key) orelse return self.undefinedKey(@src(), "fp stack slot", key);
-        try self.emitStrSp(val_reg, slot.off);
-    }
-
-    fn loadFpStackField(self: *Arm64Compiler, key: []const u8) Error!u5 {
-        const slot = self.fp_stack_slots.get(key) orelse return self.undefinedKey(@src(), "fp stack slot", key);
-        if (!slot.float) return self.refuse(@src());
-        const d = try self.allocFpReg();
-        try self.emitLdrSpFp(d, slot.off);
-        return d;
-    }
-
-    fn emitF64KernelCall(self: *Arm64Compiler, expr: *const ast.Expr) Error!u5 {
-        const call = switch (expr.*) {
-            .call => |c| c,
-            else => return self.refuse(@src()),
-        };
-        if (call.func.* != .name) return self.refuse(@src());
-        const name = call.func.name.ident;
-        if (self.f64_kernel_names.get(name) == null) return self.refuse(@src());
-        var d_slot: u5 = 0;
-        for (call.args) |arg| {
-            try self.emitFpCallArgInt(arg, &d_slot);
-        }
-        const save_set = try self.emitSaveCallerRegs();
-        try self.emitBl(name);
-        try self.emitRestoreCallerRegs(save_set);
-        self.used_fp_regs[0] = true;
-        return 0;
-    }
-
-    fn emitFpCallArgInt(self: *Arm64Compiler, arg: *const ast.Expr, d_slot: *u5) Error!void {
-        switch (arg.*) {
-            .name => |name| {
-                try self.loadFpStackRecord(name.ident, d_slot.*);
-                d_slot.* += @intCast(self.countFpStackRecordFields(name.ident));
-            },
-            .table => |t| {
-                var slot = d_slot.*;
-                try self.emitFpCallArgFromTable(t.fields, &slot);
-                d_slot.* = slot;
-            },
-            else => {
-                const d = try self.compileExprFp(arg);
-                if (d != d_slot.*) try self.emitFmovReg(d_slot.*, d);
-                d_slot.* += 1;
-            },
-        }
-    }
-
-    fn loadFpStackRecord(self: *Arm64Compiler, base: []const u8, start_slot: u5) Error!void {
-        const prefix = try std.fmt.allocPrint(self.alloc, "{s}.", .{base});
-        defer self.alloc.free(prefix);
-        var offs: [8]u16 = undefined;
-        var n: usize = 0;
-        var it = self.fp_stack_slots.iterator();
-        while (it.next()) |entry| {
-            if (!std.mem.startsWith(u8, entry.key_ptr.*, prefix)) continue;
-            if (n >= offs.len) return self.refuse(@src());
-            offs[n] = entry.value_ptr.*.off;
-            n += 1;
-        }
-        // Zero record fields resolved. Naming it matters: this reads as a
-        // missing symbol but is really "the record has no field offsets", and
-        // the two want different fixes.
-        if (n == 0) return self.undefinedKey(@src(), "record", "no field offsets resolved");
-        // Insertion sort (n <= 8).
-        var i: usize = 1;
-        while (i < n) : (i += 1) {
-            const key = offs[i];
-            var j = i;
-            while (j > 0 and offs[j - 1] > key) {
-                offs[j] = offs[j - 1];
-                j -= 1;
-            }
-            offs[j] = key;
-        }
-        var slot: u5 = start_slot;
-        var k: usize = 0;
-        while (k < n) : (k += 1) {
-            const d = try self.allocFpReg();
-            try self.emitLdrSpFp(d, offs[k]);
-            if (d != slot) try self.emitFmovReg(slot, d);
-            slot += 1;
-        }
-    }
-
-    fn countFpStackRecordFields(self: *Arm64Compiler, base: []const u8) usize {
-        const prefix = std.fmt.allocPrint(self.alloc, "{s}.", .{base}) catch return 0;
-        defer self.alloc.free(prefix);
-        var n: usize = 0;
-        var it = self.fp_stack_slots.iterator();
-        while (it.next()) |entry| {
-            if (std.mem.startsWith(u8, entry.key_ptr.*, prefix)) n += 1;
-        }
-        return n;
-    }
-
-    fn emitFpCallArgFromTable(self: *Arm64Compiler, fields: []const ast.TableField, d_slot: *u5) Error!void {
-        for (fields) |fld| {
-            const val = switch (fld) {
-                .named => |nf| nf.val,
-                else => return self.refuse(@src()),
-            };
-            const d = try self.compileExprFp(val);
-            if (d != d_slot.*) try self.emitFmovReg(d_slot.*, d);
-            d_slot.* += 1;
-        }
-    }
-
-    fn tryCompileF64Subexpr(self: *Arm64Compiler, expr: *const ast.Expr) Error!?u5 {
-        if (self.cur_func_float) return try self.compileExprFp(expr);
-        return switch (expr.*) {
-            .float_lit => |fl| blk: {
-                const d = try self.allocFpReg();
-                try self.emitFmovImmFp(d, fl.val);
-                break :blk d;
-            },
-            .field => |f| blk: {
-                if (f.obj.* != .name) return null;
-                const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ f.obj.name.ident, f.field });
-                defer self.alloc.free(key);
-                const slot = self.fp_stack_slots.get(key) orelse return null;
-                if (!slot.float) return null;
-                break :blk try self.loadFpStackField(key);
-            },
-            .call => |call| blk: {
-                if (call.func.* != .name) return null;
-                if (self.f64_kernel_names.get(call.func.name.ident) == null) return null;
-                break :blk try self.emitF64KernelCall(expr);
-            },
-            else => null,
-        };
-    }
-
     fn releaseReg(self: *Arm64Compiler, reg: u5) void {
-        if (reg >= 9 and reg < 29 and !self.isLocalReg(reg)) {
+        if (reg >= 9 and reg < 29) {
             self.used_regs[reg] = false;
         }
-    }
-
-    fn bindNewLocalReg(self: *Arm64Compiler, reg: u5) Error!u5 {
-        if (!self.isLocalReg(reg)) return reg;
-        const owned = try self.allocRegExcluding(reg);
-        try self.ensureRegLive(reg);
-        try self.emitMovReg(owned, reg);
-        return owned;
-    }
-
-    fn isLocalReg(self: *Arm64Compiler, reg: u5) bool {
-        var it = self.locals.iterator();
-        while (it.next()) |entry| {
-            if (entry.value_ptr.* == reg) return true;
-        }
-        return false;
-    }
-
-    fn compileBlock(self: *Arm64Compiler, block: ast.Block, ret_type: ast.TypeExpr) Error!void {
-        for (block.stmts) |*stmt| {
-            try self.compileStmt(stmt, true);
-            if (self.returned) return;
-        }
-        if (block.tail_expr) |expr| {
-            try self.emitReturnExpr(expr);
-            return;
-        }
-        if (returnsVoid(ret_type)) {
-            try self.emitMovImm(0, 0);
-            try self.restoreStackFrame();
-            try self.emitRet();
-            self.returned = true;
-            return;
-        }
-        return self.refuse(@src());
-    }
-
-    fn compileStmtBlock(self: *Arm64Compiler, block: ast.Block) Error!bool {
-        const outer_returned = self.returned;
-        self.returned = false;
-        for (block.stmts) |*stmt| {
-            try self.compileStmt(stmt, false);
-            if (self.returned) break;
-        }
-        if (!self.returned) {
-            if (block.tail_expr) |expr| {
-                const reg = try self.compileExpr(expr);
-                self.releaseReg(reg);
-            }
-        }
-        const block_returned = self.returned;
-        self.returned = outer_returned;
-        return block_returned;
-    }
-
-    fn compileStmt(self: *Arm64Compiler, stmt: *const ast.Stmt, allow_new_locals: bool) Error!void {
-        switch (stmt.*) {
-            .local_decl => |ld| {
-                if (!allow_new_locals) return self.refuse(@src());
-                if (ld.names.len != ld.inits.len) return self.refuse(@src());
-                for (ld.names, 0..) |name, i| {
-                    if (ld.inits[i].* == .call and ld.inits[i].call.func.* == .name) {
-                        if (self.func_record_returns.get(ld.inits[i].call.func.name.ident)) |rec| {
-                            const call = ld.inits[i].call;
-                            if (call.args.len > 8) return self.refuse(@src());
-                            for (call.args, 0..) |arg, j| {
-                                const arg_reg = try self.compileExpr(arg);
-                                const abi_reg: u5 = @intCast(j);
-                                if (arg_reg != abi_reg) try self.emitMovReg(abi_reg, arg_reg);
-                                self.releaseReg(arg_reg);
-                            }
-                            const save_set = try self.emitSaveCallerRegs();
-                            try self.emitBl(call.func.name.ident);
-                            try self.emitRestoreCallerRegs(save_set);
-                            try self.assignRecordFromAbiRegs(name.ident, rec);
-                            continue;
-                        }
-                    }
-                    if (ld.inits[i].* == .table and !self.cur_func_float) {
-                        try self.assignRecordTable(name.ident, ld.inits[i]);
-                        continue;
-                    }
-                    if (!isIntegerAnnotation(name.typ) and name.typ != .inferred) return self.refuse(@src());
-                    const reg = try self.compileExpr(ld.inits[i]);
-                    const local_reg = try self.bindNewLocalReg(reg);
-                    try self.locals.put(self.alloc, name.ident, local_reg);
-                }
-            },
-            .assign => |as| {
-                if (as.targets.len != as.values.len) return self.refuse(@src());
-                for (as.targets, 0..) |target, i| {
-                    const val = as.values[i];
-                    switch (target.*) {
-                        .name => |target_name| {
-                            if (val.* == .call and val.call.func.* == .name) {
-                                if (self.func_record_returns.get(val.call.func.name.ident)) |rec| {
-                                    if (val.call.args.len > 8) return self.refuse(@src());
-                                    for (val.call.args, 0..) |arg, ai| {
-                                        const arg_reg = try self.compileExpr(arg);
-                                        const abi_reg: u5 = @intCast(ai);
-                                        if (arg_reg != abi_reg) try self.emitMovReg(abi_reg, arg_reg);
-                                        self.releaseReg(arg_reg);
-                                    }
-                                    const save_set = try self.emitSaveCallerRegs();
-                                    try self.emitBl(val.call.func.name.ident);
-                                    try self.emitRestoreCallerRegs(save_set);
-                                    try self.assignRecordFromAbiRegs(target_name.ident, rec);
-                                    continue;
-                                }
-                            }
-                            if (val.* == .table) {
-                                try self.assignRecordTable(target_name.ident, val);
-                                continue;
-                            }
-                            const new_reg = try self.compileExpr(val);
-                            if (self.locals.get(target_name.ident)) |old_reg| {
-                                try self.emitMovReg(old_reg, new_reg);
-                                self.releaseReg(new_reg);
-                            } else if (!allow_new_locals) {
-                                return self.undefinedKey(@src(), "local", target_name.ident);
-                            } else {
-                                const local_reg = try self.bindNewLocalReg(new_reg);
-                                try self.locals.put(self.alloc, target_name.ident, local_reg);
-                            }
-                        },
-                        .field => |f| {
-                            if (f.obj.* != .name) return self.refuse(@src());
-                            const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ f.obj.name.ident, f.field });
-                            defer self.alloc.free(key);
-                            const new_reg = try self.compileExpr(val);
-                            try self.storeStackField(key, new_reg);
-                            self.releaseReg(new_reg);
-                        },
-                        else => return self.refuse(@src()),
-                    }
-                }
-            },
-            .ret => |ret| {
-                if (ret.vals.len == 0) {
-                    try self.emitMovImm(0, 0);
-                    try self.restoreStackFrame();
-                    try self.emitRet();
-                    self.returned = true;
-                    return;
-                }
-                if (ret.vals.len != 1) return self.refuse(@src());
-                try self.emitReturnExpr(ret.vals[0]);
-            },
-            .expr_stmt => |expr_stmt| {
-                const reg = try self.compileExpr(expr_stmt.expr);
-                self.releaseReg(reg);
-            },
-            .call_stmt => |cs| {
-                const reg = try self.compileExpr(cs.expr);
-                self.releaseReg(reg);
-            },
-            .if_stmt => |if_stmt| try self.compileIf(if_stmt),
-            .while_loop => |while_loop| try self.compileWhile(while_loop),
-            .num_for => |num_for| try self.compileNumFor(num_for),
-            .brk => {
-                if (self.loops.items.len == 0) return self.refuse(@src());
-                const loop = self.loops.items[self.loops.items.len - 1];
-                const off = try self.emitB(loop.end_label);
-                try self.loops.items[self.loops.items.len - 1].break_patches.append(self.alloc, off);
-            },
-            .cont => {
-                if (self.loops.items.len == 0) return self.refuse(@src());
-                const loop = self.loops.items[self.loops.items.len - 1];
-                const off = try self.emitB(loop.continue_label);
-                try self.loops.items[self.loops.items.len - 1].continue_patches.append(self.alloc, off);
-            },
-            else => return self.refuse(@src()),
-        }
-    }
-
-    fn compileIf(self: *Arm64Compiler, if_stmt: anytype) Error!void {
-        var end_branches: std.ArrayList(u32) = .empty;
-        defer end_branches.deinit(self.alloc);
-
-        const end_label = self.allocLabel();
-        const first_next_label = self.allocLabel();
-        const first_false = try self.emitCondBranchFalse(if_stmt.cond, first_next_label);
-        const then_returned = try self.compileStmtBlock(if_stmt.then);
-        var all_returned = then_returned;
-        if (!then_returned) {
-            const off = try self.emitB(end_label);
-            try end_branches.append(self.alloc, off);
-        }
-        try self.emitAsmLabel(first_next_label);
-        try self.patchCondBranch(first_false, @intCast(self.code.items.len));
-
-        for (if_stmt.elseifs, 0..) |elseif, i| {
-            const next_label = self.allocLabel();
-            const false_branch = try self.emitCondBranchFalse(elseif.cond, next_label);
-            const branch_returned = try self.compileStmtBlock(elseif.body);
-            all_returned = all_returned and branch_returned;
-            if (!branch_returned) {
-                const off = try self.emitB(end_label);
-                try end_branches.append(self.alloc, off);
-            }
-            try self.emitAsmLabel(next_label);
-            try self.patchCondBranch(false_branch, @intCast(self.code.items.len));
-            _ = i;
-        }
-
-        if (if_stmt.else_body) |else_body| {
-            const else_returned = try self.compileStmtBlock(else_body);
-            all_returned = all_returned and else_returned;
-        } else {
-            all_returned = false;
-        }
-
-        try self.emitAsmLabel(end_label);
-        const end_offset: u32 = @intCast(self.code.items.len);
-        for (end_branches.items) |off| try self.patchB(off, end_offset);
-        self.returned = all_returned;
-    }
-
-    fn compileWhile(self: *Arm64Compiler, while_loop: anytype) Error!void {
-        const start_label = self.allocLabel();
-        const end_label = self.allocLabel();
-        try self.emitAsmLabel(start_label);
-        const start_offset: u32 = @intCast(self.code.items.len);
-
-        const false_branch = try self.emitCondBranchFalse(while_loop.cond, end_label);
-        var ctx = LoopContext{ .continue_label = start_label, .end_label = end_label, .continue_patches = .empty, .break_patches = .empty };
-        try self.loops.append(self.alloc, ctx);
-        const body_returned = try self.compileStmtBlock(while_loop.body);
-        ctx = self.loops.pop().?;
-
-        if (!body_returned) {
-            const loop_branch = try self.emitB(start_label);
-            try self.patchB(loop_branch, start_offset);
-        }
-
-        try self.emitAsmLabel(end_label);
-        const end_offset: u32 = @intCast(self.code.items.len);
-        try self.patchCondBranch(false_branch, end_offset);
-        for (ctx.continue_patches.items) |off| try self.patchB(off, start_offset);
-        for (ctx.break_patches.items) |off| try self.patchB(off, end_offset);
-        ctx.continue_patches.deinit(self.alloc);
-        ctx.break_patches.deinit(self.alloc);
-        self.returned = false;
-    }
-
-    fn compileNumFor(self: *Arm64Compiler, num_for: anytype) Error!void {
-        if (!isIntegerAnnotation(num_for.var_typ) and num_for.var_typ != .inferred) return self.refuse(@src());
-        const start_reg = try self.compileExpr(num_for.start);
-        const stop_reg = try self.compileExpr(num_for.stop);
-        const step_reg = if (num_for.step) |step| try self.compileExpr(step) else blk: {
-            const reg = try self.allocReg();
-            try self.emitMovImm(reg, 1);
-            break :blk reg;
-        };
-        const iter_reg = try self.allocReg();
-        try self.emitMovReg(iter_reg, start_reg);
-        self.releaseReg(start_reg);
-
-        const old_iter = self.locals.get(num_for.var_name);
-        try self.locals.put(self.alloc, num_for.var_name, iter_reg);
-        defer {
-            if (old_iter) |old| {
-                self.locals.put(self.alloc, num_for.var_name, old) catch {};
-            } else {
-                _ = self.locals.remove(num_for.var_name);
-            }
-            self.releaseReg(iter_reg);
-        }
-
-        const cond_label = self.allocLabel();
-        const neg_label = self.allocLabel();
-        const body_label = self.allocLabel();
-        const continue_label = self.allocLabel();
-        const end_label = self.allocLabel();
-
-        try self.emitAsmLabel(cond_label);
-        const cond_offset: u32 = @intCast(self.code.items.len);
-        try self.emitCmpZero(step_reg);
-        const neg_branch = try self.emitBCond(.lt, neg_label);
-        try self.emitCmpReg(iter_reg, stop_reg);
-        const pos_exit = try self.emitBCond(.gt, end_label);
-        const pos_body = try self.emitB(body_label);
-
-        try self.emitAsmLabel(neg_label);
-        const neg_offset: u32 = @intCast(self.code.items.len);
-        try self.patchCondBranch(neg_branch, neg_offset);
-        try self.emitCmpReg(iter_reg, stop_reg);
-        const neg_exit = try self.emitBCond(.lt, end_label);
-
-        try self.emitAsmLabel(body_label);
-        const body_offset: u32 = @intCast(self.code.items.len);
-        try self.patchB(pos_body, body_offset);
-
-        var ctx = LoopContext{ .continue_label = continue_label, .end_label = end_label, .continue_patches = .empty, .break_patches = .empty };
-        try self.loops.append(self.alloc, ctx);
-        const body_returned = try self.compileStmtBlock(num_for.body);
-        ctx = self.loops.pop().?;
-
-        if (!body_returned) {
-            try self.emitAsmLabel(continue_label);
-            const continue_offset: u32 = @intCast(self.code.items.len);
-            for (ctx.continue_patches.items) |off| try self.patchB(off, continue_offset);
-            try self.emitAddReg(iter_reg, iter_reg, step_reg);
-            const loop_branch = try self.emitB(cond_label);
-            try self.patchB(loop_branch, cond_offset);
-        }
-
-        try self.emitAsmLabel(end_label);
-        const end_offset: u32 = @intCast(self.code.items.len);
-        try self.patchCondBranch(pos_exit, end_offset);
-        try self.patchCondBranch(neg_exit, end_offset);
-        for (ctx.break_patches.items) |off| try self.patchB(off, end_offset);
-        if (body_returned) {
-            for (ctx.continue_patches.items) |off| try self.patchB(off, end_offset);
-        }
-        self.releaseReg(stop_reg);
-        self.releaseReg(step_reg);
-        ctx.continue_patches.deinit(self.alloc);
-        ctx.break_patches.deinit(self.alloc);
-        self.returned = false;
-    }
-
-    fn emitRecordReturnFromTable(self: *Arm64Compiler, fields: []const ast.TableField, desc: ScalRecordDesc) Error!void {
-        var reg_idx: u5 = 0;
-        for (desc.field_names) |fname| {
-            const val = findTableFieldValue(fields, fname) orelse return self.refuse(@src());
-            const r = try self.compileExpr(val);
-            if (r != reg_idx) try self.emitMovReg(reg_idx, r);
-            self.releaseReg(r);
-            reg_idx += 1;
-        }
-        try self.restoreStackFrame();
-        try self.emitRet();
-        self.returned = true;
     }
 
     fn assignRecordFromAbiRegs(self: *Arm64Compiler, base: []const u8, desc: ScalRecordDesc) Error!void {
@@ -3620,374 +2570,6 @@ const Arm64Compiler = struct {
         try self.extern_symbols.put(self.alloc, symbol_name, symbol_index);
     }
 
-    fn tryCompileReqFieldAccess(self: *Arm64Compiler, obj: []const u8, field: []const u8) Error!?u5 {
-        if (self.req_ctx.constant(obj, field)) |val| {
-            const reg = try self.allocReg();
-            try self.emitMovImm(reg, val);
-            return reg;
-        }
-        return null;
-    }
-
-    fn tryCompileReqFieldCall(self: *Arm64Compiler, call_expr: *const ast.Expr) Error!?u5 {
-        if (call_expr.* != .call) return null;
-        const call = call_expr.call;
-        if (call.func.* != .field) return null;
-        const f = call.func.field;
-        if (f.obj.* != .name) return null;
-        const alias = f.obj.name.ident;
-        const sym = self.req_ctx.exportSymbol(alias, f.field) orelse return null;
-        if (call.args.len > 8) return self.refuse(@src());
-        for (call.args, 0..) |arg, i| {
-            const arg_reg = try self.compileExpr(arg);
-            const abi_reg: u5 = @intCast(i);
-            if (arg_reg != abi_reg) try self.emitMovReg(abi_reg, arg_reg);
-            self.releaseReg(arg_reg);
-        }
-        try self.ensureExternalSymbol(sym);
-        const save_set = try self.emitSaveCallerRegs();
-        try self.emitBl(sym);
-        try self.emitRestoreCallerRegs(save_set);
-        const dst = try self.allocReg();
-        try self.emitMovReg(dst, 0);
-        return dst;
-    }
-
-    fn emitReturnExpr(self: *Arm64Compiler, expr: *const ast.Expr) Error!void {
-        if (self.cur_func_ret_record) |rec| {
-            if (expr.* == .table) {
-                try self.emitRecordReturnFromTable(expr.table.fields, rec);
-                return;
-            }
-        }
-        if (self.cur_func_float) {
-            const d = try self.compileExprFp(expr);
-            if (d != 0) try self.emitFmovReg(0, d);
-            if (self.needsProcessExitF64Coerce()) try self.emitFcvtzsX0FromD0();
-            try self.restoreStackFrame();
-            try self.emitRet();
-            self.returned = true;
-            return;
-        }
-        if (self.cur_func_ret_float) {
-            const d = try self.tryCompileF64Subexpr(expr) orelse return self.refuse(@src());
-            if (d != 0) try self.emitFmovReg(0, d);
-            if (self.needsProcessExitF64Coerce()) try self.emitFcvtzsX0FromD0();
-            try self.restoreStackFrame();
-            try self.emitRet();
-            self.returned = true;
-            return;
-        }
-        const reg = try self.compileExpr(expr);
-        if (reg != 0) try self.emitMovReg(0, reg);
-        self.releaseReg(reg);
-        try self.restoreStackFrame();
-        try self.emitRet();
-        self.returned = true;
-    }
-
-    fn compileExprFp(self: *Arm64Compiler, expr: *const ast.Expr) Error!u5 {
-        // Pure-f64 lowering. f64 literals materialize via emitMovImm (bit
-        // pattern into an x-reg) + FMOV general->FP — no literal pool / data
-        // section needed. Params arrive in d0-d7; arithmetic covers kernels.
-        return switch (expr.*) {
-            .float_lit => |fl| blk: {
-                const tmp = try self.allocReg();
-                try self.emitMovImm(tmp, @bitCast(fl.val));
-                const dst = try self.allocFpReg();
-                try self.emitFmovFromGpr(dst, tmp);
-                self.releaseReg(tmp);
-                break :blk dst;
-            },
-            .name => |name| self.fp_locals.get(name.ident) orelse error.UndefinedName,
-            .field => |f| blk: {
-                if (f.obj.* != .name) return self.refuse(@src());
-                const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ f.obj.name.ident, f.field });
-                break :blk self.fp_locals.get(key) orelse error.UndefinedName;
-            },
-            .binop => |bin| blk: {
-                const lhs = try self.compileExprFp(bin.lhs);
-                const rhs = try self.compileExprFp(bin.rhs);
-                const dst = try self.allocFpReg();
-                switch (bin.op) {
-                    .add => try self.emitFaddReg(dst, lhs, rhs),
-                    .sub => try self.emitFsubReg(dst, lhs, rhs),
-                    .mul => try self.emitFmulReg(dst, lhs, rhs),
-                    .div, .idiv => try self.emitFdivReg(dst, lhs, rhs),
-                    else => return self.refuse(@src()),
-                }
-                break :blk dst;
-            },
-            .call => |call| blk: {
-                if (call.func.* != .name) return self.refuse(@src());
-                if (self.f64_kernel_names.get(call.func.name.ident)) |_| {
-                    break :blk try self.emitF64KernelCall(expr);
-                }
-                var d_slot: u5 = 0;
-                for (call.args) |arg| {
-                    try self.emitFpCallArg(arg, &d_slot);
-                }
-                const save_set = try self.emitSaveCallerRegs();
-                try self.emitBl(call.func.name.ident);
-                try self.emitRestoreCallerRegs(save_set);
-                self.used_fp_regs[0] = true;
-                break :blk @as(u5, 0);
-            },
-            else => self.refuse(@src()),
-        };
-    }
-
-    fn emitFpCallArg(self: *Arm64Compiler, arg: *const ast.Expr, d_slot: *u5) Error!void {
-        switch (arg.*) {
-            .table => |t| {
-                for (t.fields) |fld| {
-                    const val = switch (fld) {
-                        .named => |nf| nf.val,
-                        else => return self.refuse(@src()),
-                    };
-                    const d = try self.compileExprFp(val);
-                    if (d != d_slot.*) try self.emitFmovReg(d_slot.*, d);
-                    d_slot.* += 1;
-                }
-            },
-            else => {
-                const d = try self.compileExprFp(arg);
-                if (d != d_slot.*) try self.emitFmovReg(d_slot.*, d);
-                d_slot.* += 1;
-            },
-        }
-    }
-
-    fn tryEmitLuaAndOrTernary(self: *Arm64Compiler, op: ast.BinOp, lhs: *ast.Expr, rhs: *ast.Expr) Error!?u5 {
-        // Lua idiom: `(cond) and then_val or else_val` — truthiness applies only to `cond`.
-        if (op != .@"or" or lhs.* != .binop) return null;
-        const and_b = lhs.binop;
-        if (and_b.op != .@"and") return null;
-
-        const dst = try self.allocReg();
-        const else_label = self.allocLabel();
-        const end_label = self.allocLabel();
-
-        const cond_false = try self.emitCondBranchFalse(and_b.lhs, else_label);
-        const then_reg = try self.compileExpr(and_b.rhs);
-        try self.emitMovReg(dst, then_reg);
-        self.releaseReg(then_reg);
-        const to_end = try self.emitB(end_label);
-        try self.emitAsmLabel(else_label);
-        try self.patchCondBranch(cond_false, @intCast(self.code.items.len));
-        const else_reg = try self.compileExpr(rhs);
-        try self.emitMovReg(dst, else_reg);
-        self.releaseReg(else_reg);
-        try self.emitAsmLabel(end_label);
-        try self.patchB(to_end, @intCast(self.code.items.len));
-        return dst;
-    }
-
-    fn compileExpr(self: *Arm64Compiler, expr: *const ast.Expr) Error!u5 {
-        if (self.cur_func_float) return self.compileExprFp(expr);
-        return switch (expr.*) {
-            .int_lit => |lit| blk: {
-                const reg = try self.allocReg();
-                try self.emitMovImm(reg, lit.val);
-                break :blk reg;
-            },
-            .string_lit => |lit| blk: {
-                const symbol_index = try self.internString(lit.val);
-                const reg = try self.allocReg();
-                try self.emitAdrpAdd(reg, symbol_index);
-                break :blk reg;
-            },
-            .name => |name| blk: {
-                if (self.blob_symbol_map.get(name.ident)) |sym_idx| {
-                    const reg = try self.allocReg();
-                    try self.emitBlobPtr(reg, sym_idx);
-                    break :blk reg;
-                }
-                const reg = self.locals.get(name.ident) orelse return self.undefinedKey(@src(), "local", name.ident);
-                break :blk try self.bindNewLocalReg(reg);
-            },
-            .field => |f| blk: {
-                if (f.obj.* != .name) return self.refuse(@src());
-                if (try self.tryCompileReqFieldAccess(f.obj.name.ident, f.field)) |reg| break :blk reg;
-                const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ f.obj.name.ident, f.field });
-                defer self.alloc.free(key);
-                break :blk try self.loadStackField(key);
-            },
-            .unop => |un| switch (un.op) {
-                .neg => blk: {
-                    const src = try self.compileExpr(un.operand);
-                    const dst = try self.allocReg();
-                    try self.emitSubReg(dst, 31, src);
-                    self.releaseReg(src);
-                    break :blk dst;
-                },
-                .bnot => blk: {
-                    const src = try self.compileExpr(un.operand);
-                    const dst = try self.allocReg();
-                    try self.emitFmt(0xaa2003e0 | (@as(u32, src) << 16) | @as(u32, dst), "mvn x{d}, x{d}", .{ dst, src });
-                    self.releaseReg(src);
-                    break :blk dst;
-                },
-                else => self.refuse(@src()),
-            },
-            .binop => |bin| blk: {
-                if (try self.tryEmitLuaAndOrTernary(bin.op, bin.lhs, bin.rhs)) |ternary_reg| {
-                    break :blk ternary_reg;
-                }
-                if (try self.tryCompileF64Subexpr(bin.lhs)) |d_lhs| {
-                    const rhs_reg = try self.compileExpr(bin.rhs);
-                    const d_rhs = try self.allocFpReg();
-                    try self.emitScvtfFromGpr(d_rhs, rhs_reg);
-                    self.releaseReg(rhs_reg);
-                    const dst = try self.allocReg();
-                    if (isComparison(bin.op)) {
-                        try self.emitFcmpReg(d_lhs, d_rhs);
-                        try self.emitCsetFp(dst, conditionForComparison(bin.op));
-                    } else {
-                        return self.refuse(@src());
-                    }
-                    break :blk dst;
-                }
-                if (bin.op == .@"and" or bin.op == .@"or") {
-                    const lhs = try self.compileExpr(bin.lhs);
-                    const dst = try self.allocReg();
-                    const branch_label = self.allocLabel();
-                    const end_label = self.allocLabel();
-                    if (bin.op == .@"and") {
-                        const skip_rhs = try self.emitBCond(.eq, branch_label);
-                        const rhs_val = try self.compileExpr(bin.rhs);
-                        const to_end = try self.emitB(end_label);
-                        try self.emitAsmLabel(branch_label);
-                        try self.patchCondBranch(skip_rhs, @intCast(self.code.items.len));
-                        try self.emitMovReg(dst, lhs);
-                        self.releaseReg(lhs);
-                        try self.emitAsmLabel(end_label);
-                        try self.patchB(to_end, @intCast(self.code.items.len));
-                        try self.emitMovReg(dst, rhs_val);
-                        self.releaseReg(rhs_val);
-                    } else {
-                        const skip_rhs = try self.emitBCond(.ne, branch_label);
-                        const rhs_val = try self.compileExpr(bin.rhs);
-                        const to_end = try self.emitB(end_label);
-                        try self.emitAsmLabel(branch_label);
-                        try self.patchCondBranch(skip_rhs, @intCast(self.code.items.len));
-                        try self.emitMovReg(dst, lhs);
-                        self.releaseReg(lhs);
-                        try self.emitAsmLabel(end_label);
-                        try self.patchB(to_end, @intCast(self.code.items.len));
-                        try self.emitMovReg(dst, rhs_val);
-                        self.releaseReg(rhs_val);
-                    }
-                    break :blk dst;
-                }
-                const lhs = try self.compileExpr(bin.lhs);
-                const rhs = try self.compileExpr(bin.rhs);
-                const dst = try self.allocReg();
-                switch (bin.op) {
-                    .add => try self.emitAddReg(dst, lhs, rhs),
-                    .sub => try self.emitSubReg(dst, lhs, rhs),
-                    .mul => try self.emitMulReg(dst, lhs, rhs),
-                    .div, .idiv => try self.emitSdivReg(dst, lhs, rhs),
-                    .mod => {
-                        const q = try self.allocReg();
-                        try self.emitSdivReg(q, lhs, rhs);
-                        try self.emitMsubReg(dst, q, rhs, lhs);
-                        self.releaseReg(q);
-                    },
-                    .band => try self.emitAndReg(dst, lhs, rhs),
-                    .bor => try self.emitOrrReg(dst, lhs, rhs),
-                    .bxor => try self.emitEorReg(dst, lhs, rhs),
-                    .lshift => try self.emitLslReg(dst, lhs, rhs),
-                    .rshift => try self.emitAsrReg(dst, lhs, rhs),
-                    .eq, .neq, .lt, .gt, .leq, .geq => try self.emitCompareResult(dst, lhs, rhs, conditionForComparison(bin.op)),
-                    else => return self.refuse(@src()),
-                }
-                self.releaseReg(lhs);
-                self.releaseReg(rhs);
-                break :blk dst;
-            },
-            .call => |call| blk: {
-                if (call.func.* == .field) {
-                    if (try self.tryCompileReqFieldCall(expr)) |req_reg| break :blk req_reg;
-                    return self.refuse(@src());
-                }
-                if (call.func.* != .name) return self.refuse(@src());
-                if (std.mem.eql(u8, call.func.name.ident, "__native_load_u8")) {
-                    if (call.args.len != 2) return self.refuse(@src());
-                    const base = try self.compileExpr(call.args[0]);
-                    const off = try self.compileExpr(call.args[1]);
-                    const dst = try self.emitLoadU8Intrinsic(base, off);
-                    self.releaseReg(base);
-                    self.releaseReg(off);
-                    break :blk dst;
-                }
-                if (self.f64_kernel_names.get(call.func.name.ident)) |_| {
-                    const d = try self.emitF64KernelCall(expr);
-                    const xdst = try self.allocReg();
-                    try self.emitFcvtzsFromFp(xdst, d);
-                    break :blk xdst;
-                }
-                const rec_ret = self.func_record_returns.get(call.func.name.ident);
-                if (call.args.len > 8) return self.refuse(@src());
-                for (call.args, 0..) |arg, i| {
-                    const arg_reg = try self.compileExpr(arg);
-                    const abi_reg: u5 = @intCast(i);
-                    if (arg_reg != abi_reg) try self.emitMovReg(abi_reg, arg_reg);
-                    self.releaseReg(arg_reg);
-                }
-                const save_set = try self.emitSaveCallerRegs();
-                try self.emitBl(call.func.name.ident);
-                try self.emitRestoreCallerRegs(save_set);
-                if (rec_ret) |rec| {
-                    // Record return lands in x0..; caller only needs side-effect on stack slots
-                    // when assigned — handled in compileStmt assign path.
-                    _ = rec;
-                    const dst = try self.allocReg();
-                    try self.emitMovImm(dst, 0);
-                    break :blk dst;
-                }
-                const dst = try self.allocReg();
-                try self.emitMovReg(dst, 0);
-                break :blk dst;
-            },
-            else => self.refuse(@src()),
-        };
-    }
-
-    fn compileCondition(self: *Arm64Compiler, expr: *const ast.Expr) Error!Condition {
-        if (expr.* == .binop and isComparison(expr.binop.op)) {
-            const op = expr.binop.op;
-            if (try self.tryCompileF64Subexpr(expr.binop.lhs)) |lhs_d| {
-                if (try self.tryCompileF64Subexpr(expr.binop.rhs)) |rhs_d| {
-                    try self.emitFcmpReg(lhs_d, rhs_d);
-                    return conditionForComparison(op);
-                }
-                const rhs_reg = try self.compileExpr(expr.binop.rhs);
-                const lhs_reg = try self.allocReg();
-                try self.emitFcvtzsFromFp(lhs_reg, lhs_d);
-                try self.emitCmpReg(lhs_reg, rhs_reg);
-                self.releaseReg(lhs_reg);
-                self.releaseReg(rhs_reg);
-                return conditionForComparison(op);
-            }
-            const lhs = try self.compileExpr(expr.binop.lhs);
-            const rhs = try self.compileExpr(expr.binop.rhs);
-            try self.emitCmpReg(lhs, rhs);
-            self.releaseReg(lhs);
-            self.releaseReg(rhs);
-            return conditionForComparison(op);
-        }
-        const reg = try self.compileExpr(expr);
-        try self.emitCmpZero(reg);
-        self.releaseReg(reg);
-        return .ne;
-    }
-
-    fn emitCondBranchFalse(self: *Arm64Compiler, expr: *const ast.Expr, label: u32) Error!u32 {
-        const cond = try self.compileCondition(expr);
-        return self.emitBCond(invertCondition(cond), label);
-    }
-
     fn emitMovImm(self: *Arm64Compiler, reg: u5, value: i64) Error!void {
         const unsigned = @as(u64, @bitCast(value));
         var emitted = false;
@@ -4017,16 +2599,6 @@ const Arm64Compiler = struct {
 
     fn emitRet(self: *Arm64Compiler) Error!void {
         try self.emit(0xd65f03c0, "ret");
-    }
-
-    fn allocLabel(self: *Arm64Compiler) u32 {
-        const label = self.next_label;
-        self.next_label += 1;
-        return label;
-    }
-
-    fn emitAsmLabel(self: *Arm64Compiler, label: u32) Error!void {
-        try self.asm_text.print(self.alloc, ".Lduo_{d}:\n", .{label});
     }
 
     fn emitBl(self: *Arm64Compiler, target: []const u8) Error!void {
@@ -4842,30 +3414,11 @@ fn emitArm64FromDnir(alloc: std.mem.Allocator, m: dnir.Module, process_entry: ?[
     defer freeF64Records(alloc, &records);
     var scal_records = try collectScalRecordsFromDnir(alloc, m);
     defer freeScalRecords(alloc, &scal_records);
-    var req_ctx = native_req_support.Context{};
-    var func_record_returns: FuncRecordReturns = .empty;
-    defer freeFuncRecordReturns(alloc, &func_record_returns);
-    var func_f64_record_returns: FuncF64RecordReturns = .empty;
-    defer freeFuncF64RecordReturns(alloc, &func_f64_record_returns);
-    for (m.functions) |f| {
-        if (f.ret_record) |rn| {
-            if (f64RecordDesc(&records, .{ .named = rn })) |rec| {
-                const owned_fn = try alloc.dupe(u8, f.name);
-                try func_f64_record_returns.put(alloc, owned_fn, rec);
-            } else if (scalRecordDesc(&scal_records, .{ .named = rn })) |rec| {
-                const owned_fn = try alloc.dupe(u8, f.name);
-                try func_record_returns.put(alloc, owned_fn, rec);
-            }
-        }
-    }
     var compiler = Arm64Compiler{
         .alloc = alloc,
         .diagnostic = diagnostic,
         .f64_records = &records,
         .scal_records = &scal_records,
-        .func_record_returns = &func_record_returns,
-        .func_f64_record_returns = &func_f64_record_returns,
-        .req_ctx = &req_ctx,
         .process_entry = process_entry,
     };
     defer compiler.deinit();
@@ -4877,6 +3430,7 @@ fn emitArm64FromDnir(alloc: std.mem.Allocator, m: dnir.Module, process_entry: ?[
 
 fn collectScalRecordsFromDnir(alloc: std.mem.Allocator, m: dnir.Module) Error!ScalRecordMap {
     var map: ScalRecordMap = .empty;
+    errdefer freeScalRecords(alloc, &map);
     for (m.records) |r| {
         var has_f64 = false;
         for (r.kinds) |k| {
@@ -4886,20 +3440,25 @@ fn collectScalRecordsFromDnir(alloc: std.mem.Allocator, m: dnir.Module) Error!Sc
             }
         }
         if (has_f64) continue;
-        var kinds: std.ArrayListUnmanaged(ScalFieldKind) = .empty;
-        errdefer kinds.deinit(alloc);
-        var names: std.ArrayListUnmanaged([]const u8) = .empty;
-        errdefer names.deinit(alloc);
-        for (r.kinds, r.fields) |k, fname| {
-            try kinds.append(alloc, if (k == .str) .str else .i64);
-            try names.append(alloc, try alloc.dupe(u8, fname));
-        }
-        try map.put(alloc, try alloc.dupe(u8, r.name), .{
-            .field_names = try names.toOwnedSlice(alloc),
-            .field_kinds = try kinds.toOwnedSlice(alloc),
-        });
+        try putScalRecordFromDnir(alloc, &map, r);
     }
     return map;
+}
+
+fn putScalRecordFromDnir(alloc: std.mem.Allocator, map: *ScalRecordMap, record: dnir.RecordDesc) Error!void {
+    var kinds: std.ArrayListUnmanaged(ScalFieldKind) = .empty;
+    defer kinds.deinit(alloc);
+    for (record.kinds) |kind| {
+        try kinds.append(alloc, if (kind == .str) .str else .i64);
+    }
+    const owned_kinds = try kinds.toOwnedSlice(alloc);
+    errdefer alloc.free(owned_kinds);
+    const entry = try map.getOrPut(alloc, record.name);
+    if (entry.found_existing) return error.DuplicateSymbol;
+    entry.value_ptr.* = .{
+        .field_names = record.fields,
+        .field_kinds = owned_kinds,
+    };
 }
 
 fn collectF64RecordsFromDnir(alloc: std.mem.Allocator, m: dnir.Module) Error!F64RecordMap {
@@ -4915,14 +3474,37 @@ fn collectF64RecordsFromDnir(alloc: std.mem.Allocator, m: dnir.Module) Error!F64
             }
         }
         if (!all_f64) continue;
-        var names: std.ArrayListUnmanaged([]const u8) = .empty;
-        errdefer names.deinit(alloc);
-        for (r.fields) |fname| try names.append(alloc, try alloc.dupe(u8, fname));
-        try map.put(alloc, try alloc.dupe(u8, r.name), .{
-            .field_names = try names.toOwnedSlice(alloc),
-        });
+        const entry = try map.getOrPut(alloc, r.name);
+        if (entry.found_existing) return error.DuplicateSymbol;
+        entry.value_ptr.* = .{ .field_names = r.fields };
     }
     return map;
+}
+
+fn collectDnirRecordMapsAllocationProbe(alloc: std.mem.Allocator) !void {
+    const scalar_fields = [_][]const u8{ "count", "label" };
+    const scalar_kinds = [_]dnir.FieldKind{ .i64, .str };
+    const float_fields = [_][]const u8{ "x", "y" };
+    const float_kinds = [_]dnir.FieldKind{ .f64, .f64 };
+    const records = [_]dnir.RecordDesc{
+        .{ .name = "Scalar", .fields = &scalar_fields, .kinds = &scalar_kinds },
+        .{ .name = "Float", .fields = &float_fields, .kinds = &float_kinds },
+    };
+    const module: dnir.Module = .{ .functions = &.{}, .records = &records };
+    var floats = try collectF64RecordsFromDnir(alloc, module);
+    defer freeF64Records(alloc, &floats);
+    var scalars = try collectScalRecordsFromDnir(alloc, module);
+    defer freeScalRecords(alloc, &scalars);
+    try std.testing.expect(scalars.get("Scalar").?.field_names.ptr == scalar_fields[0..].ptr);
+    try std.testing.expect(floats.get("Float").?.field_names.ptr == float_fields[0..].ptr);
+}
+
+test "native backend: DNIR record projections release every failed allocation" {
+    try std.testing.checkAllAllocationFailures(
+        std.testing.allocator,
+        collectDnirRecordMapsAllocationProbe,
+        .{},
+    );
 }
 
 fn emitArm64ModuleWithGraph(
