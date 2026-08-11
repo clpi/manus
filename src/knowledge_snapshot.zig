@@ -135,12 +135,12 @@ fn appendRecordFromGraph(
     });
 }
 
-/// Build snapshots after sema + optional graph lift (Pass 7 Milestone 1 foundation).
+/// Build snapshots from sema results and the semantic graph.
 pub fn buildFromModule(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
     semantic: *const sema.Sema,
-    graph: ?*const semantic_graph.SemanticGraph,
+    graph: *const semantic_graph.SemanticGraph,
     file: []const u8,
 ) !ModuleSnapshots {
     var entities: std.ArrayListUnmanaged(EntitySnapshot) = .empty;
@@ -169,39 +169,25 @@ pub fn buildFromModule(
                 });
             },
             .alias_def => |*ad| {
-                if (graph) |g| {
-                    try appendRecordFromGraph(alloc, &entities, g, ad.name, .after_graph_lift);
-                } else {
-                    const eid = try entityId(alloc, .record, ad.name);
-                    errdefer alloc.free(eid);
-                    try entities.append(alloc, .{
-                        .entity_id = eid,
-                        .name = try alloc.dupe(u8, ad.name),
-                        .kind = .record,
-                        .phase = .after_sema,
-                        .knowledge = .stable,
-                    });
-                }
+                try appendRecordFromGraph(alloc, &entities, graph, ad.name, .after_graph_lift);
             },
             else => {},
         }
     }
 
-    if (graph) |g| {
-        for (g.nodes.items) |node| {
-            if (node.kind != .table_shape) continue;
-            const name = node.name orelse continue;
-            if (!g.atModuleScope(&node)) continue;
-            var already = false;
-            for (entities.items) |ent| {
-                if (ent.kind == .record and std.mem.eql(u8, ent.name, name)) {
-                    already = true;
-                    break;
-                }
+    for (graph.nodes.items) |node| {
+        if (node.kind != .table_shape) continue;
+        const name = node.name orelse continue;
+        if (!graph.atModuleScope(&node)) continue;
+        var already = false;
+        for (entities.items) |ent| {
+            if (ent.kind == .record and std.mem.eql(u8, ent.name, name)) {
+                already = true;
+                break;
             }
-            if (already) continue;
-            try appendRecordFromGraph(alloc, &entities, g, name, .after_graph_lift);
         }
+        if (already) continue;
+        try appendRecordFromGraph(alloc, &entities, graph, name, .after_graph_lift);
     }
 
     return .{
@@ -262,6 +248,11 @@ pub fn writeJson(snap: *const ModuleSnapshots, w: *std.Io.Writer) !void {
 pub fn writeJsonLine(snap: *const ModuleSnapshots, w: *std.Io.Writer) !void {
     try writeJson(snap, w);
     try w.print("\n", .{});
+}
+
+test "knowledge_snapshot: graph input is required" {
+    const build_info = @typeInfo(@TypeOf(buildFromModule)).@"fn";
+    try std.testing.expect(build_info.param_types[3].? == *const semantic_graph.SemanticGraph);
 }
 
 test "knowledge_snapshot: native Point record from graph lift" {
