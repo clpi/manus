@@ -26,14 +26,6 @@ pub const DescriptorCompletion = enum {
     }
 };
 
-pub const RecursiveDescriptor = struct {
-    stable_id: []const u8,
-    recursion: RecursionKind,
-    completion: DescriptorCompletion,
-    /// Fixed-point body resolved after identity established.
-    body_resolved: bool,
-};
-
 pub const Invariant = struct {
     id: []const u8,
     rule: []const u8,

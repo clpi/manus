@@ -75,23 +75,10 @@ pub const TransparentStatementKind = enum {
     log_side_effect,
 };
 
-pub const ResultLineageNode = struct {
-    id: u64,
-    /// SSA-style name stable id in semantic graph.
-    binding_stable_id: ?u64 = null,
-    /// phi merge of prior nodes (loop/branch).
-    phi_inputs: []const u64 = &.{},
-    rule: TailResultRule,
-    demand_index: u8 = 0,
-    production: ValueProductionKind = .assign,
-    region: TailRegionKind = .tail_statement,
-};
-
 /// Ambiguity reported when multiple lineages satisfy demand (never silent resolution).
 pub const AmbiguityCandidate = struct {
     binding_name: []const u8,
     type_label: []const u8,
-    stable_id: ?u64 = null,
 };
 
 pub const AmbiguityReport = struct {
