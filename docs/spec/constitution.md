@@ -1,19 +1,17 @@
--- constitution — C0, the source of truth (Pass 120).
---
--- THIS FILE IS NOT PROSE ABOUT THE LAW. IT IS THE LAW.
---
--- Every rule below is a semantic FACT a compiler reads. Prose in this file is
--- explanatory and carries no authority: if a comment and a fact disagree, the
--- fact wins and the comment is a defect. `docs/spec/*.md` and `CLAUDE.md` are
--- PROJECTIONS of this graph and may not contradict it.
---
--- Structured as duon rather than as the JSON Pass 120 arrived in, and that is
--- not a transcription. Every key in the source JSON — `primary_representation`,
--- `graph_authority`, `no_upward_dependency_allowed` — violates LAW-ONE, which
--- this file is the authority for. The re-expression IS the work: each qualifier
--- moves to a LEVEL (`law(representation)`), a HOME (`syntax.name`), or a CASE
--- (`.invariant`). A constitution spelled in a form it forbids would be the
--- first thing to fail its own gate.
+# Idsem constitution
+
+This is the sole living semantic law. `CLAUDE.md`, `docs/spec/*.md`, agent
+routers, tests, tools, and implementation are projections and may not contradict
+it. Historical pass documents and retired source are provenance only.
+
+The fenced body is structured law notation retained while `GAP-145` closes the
+canonical lexical and generated-role boundary. It is not executable canonical
+Idsem, not a source template, and its `--` notation must not be copied into
+`.id`. The current law lives in the facts; the notation is a documentation
+projection until the whole file can move truthfully to `constitution.id`.
+
+```text
+-- C0 structured law notation. NON-SOURCE.
 
 -- ═══ §1 · the primary representation ═══════════════════════════════════════
 --
@@ -56,13 +54,17 @@ representation = law{
     }
 }
 
-authority = law{
+authority = @{}
+
+authority.constitution = law{
     id    = "law.authority"
     kind  = .invariant
-    holds = true
+    holds = .sole
     binds = {
-        "every compiler reads THIS constitution",
-        "no implementation encodes a rule independently",
+        "this document is the one living semantic law",
+        "every generated projection and implementation must trace its rule to this law",
+        "no implementation projection pass document router corpus or tool encodes an independent rule",
+        "machine consumption remains blocked until canonical constitution id and generated projections replace the documentation bridge",
     }
     fails = "two encodings of one rule is two languages"
 }
@@ -126,10 +128,11 @@ coherence = law{
 -- overturn one.
 
 precedence = {
-    "directive",       -- the owner, verbatim, dated
-    "pass",            -- a pass document
-    "summary",         -- CLAUDE.md and the docs/spec projections
-    "code",            -- what happens to be implemented
+    "directive",       -- the owner, verbatim, until reconciled here
+    "constitution",    -- the sole living repository law
+    "projection",      -- grammar, corpus, context and workflow views
+    "implementation",  -- what happens to be implemented
+    "history",         -- pass documents and retired source, provenance only
 }
 
 owner = law{
@@ -137,11 +140,11 @@ owner = law{
     kind  = .invariant
     holds = .directive
     binds = {
-        "a directive outranks every pass",
-        "directives are recorded verbatim with their date",
-        "a ruling citing no directive may not overturn one",
+        "a current explicit owner directive is reconciled into this constitution before implementation continues",
+        "this constitution is the sole living semantic law inside the repository",
+        "pass documents summaries projections corpus patterns and implementation are never parallel law",
     }
-    fails = "an agent overruling the owner with agent-written text"
+    fails = "leaving a current directive beside contradictory repository law or treating historical pass text as authority"
 }
 
 -- ═══ §4 · identity ═════════════════════════════════════════════════════════
@@ -245,15 +248,14 @@ failure = @{
 
 -- ═══ §7 · lua is hosted, not assimilated ═══════════════════════════════════
 --
--- The sharpest correction in Pass 120, and it reverses a claim the substrate
--- RFC made: language origin is NOT merely metadata. A Lua table lookup and a
--- duon sealed-shape field lookup can have identical graph SHAPE and different
+-- Language origin is not merely metadata. A Lua table lookup and an
+-- Idsem sealed-shape field lookup can have identical graph SHAPE and different
 -- semantic LAW. If origin were only provenance, an optimizer could prove a
--- fact using duon laws over a Lua node.
+-- fact using Idsem laws over a Lua node.
 --
 -- So: the SUBSTRATE is shared, the LAWSET is not. Lua shares shapes,
 -- specialization, representation selection and witnesses without becoming
--- almost-duon.
+-- almost-Idsem.
 
 lua = @{
     host   = .hosted
@@ -279,13 +281,15 @@ supersedes = @{
     new = .active
 }
 
--- ═══ §9 · CLAUDE.md is generated ═══════════════════════════════════════════
+-- ═══ §9 · CLAUDE.md is a non-normative projection ══════════════════════════
 --
--- It is a PROJECTION. Hand-editing it is the drift this file exists to end.
+-- Generation is the target. Until that projection exists, a hand-maintained
+-- view must remain short, declare its source and fail closed on disagreement.
 
 context = @{
     source = .constitution
-    write  = false
+    write  = .bootstrap
+    target = .generated
     binds  = false             -- non-normative
     parts  = {
         "identity", "invariants", "canon", "denied",
@@ -307,7 +311,7 @@ pattern: {
 }
 
 selfzero = pattern{
-    canon      = "scale = (k) @{ .x * k, .y * k }"
+    canon      = "scale = (k) @{ x * k, y * k }"
     denied     = "scale = (self, k) …"
     graph      = "scale(point, k)"
     lowering   = "param 0 is the subject; the surface names no receiver"
@@ -317,7 +321,7 @@ selfzero = pattern{
 -- ═══ §11 · dialect identity ════════════════════════════════════════════════
 
 dialect = @{
-    kinds  = { .duon, .lua, .generated, .foreign },
+    kinds  = { .idsem, .lua, .generated, .foreign },
     switch = false             -- no implicit mode switch
     hidden = false             -- no hidden semantics
 }
@@ -341,8 +345,8 @@ canon = law{
 -- ═══ §13 · corpora ═════════════════════════════════════════════════════════
 
 corpus = @{
-    canon   = "authoritative"
-    compat  = "transitional"
+    canon   = "canonical id only"
+    compat  = "structured generated external or foreign"
     denied  = "invalid by construction"
 }
 
@@ -350,7 +354,13 @@ training = law{
     id    = "law.training"
     kind  = .invariant
     holds = .canon
-    binds = { "agents learn from the canonical corpus only" }
+    binds = {
+        "agents learn project owned source patterns from canonical id only",
+        "every tracked searchable file is canonical current teaching material or mechanically unmistakable foreign data",
+        "git history rather than an in tree source archive preserves retired implementation",
+        "compatibility tests use structured generated external or narrowly isolated machine owned input rather than ordinary stale programs",
+    }
+    fails = "a blind search autocomplete or nearest file analogy teaching retired architecture"
 }
 
 -- ═══ §14 · the allowed semantic kinds ══════════════════════════════════════
@@ -390,17 +400,18 @@ delta = @{
 -- ═══ §16 · the agent protocol ══════════════════════════════════════════════
 
 agent.before = @{
-    ask  = "duon context <subsystem>"
-    gets = { "rules", "archetypes", "owners", "gaps", "gates", "denied" }
+    ask  = "what is the earliest host-owned production boundary?"
+    gets = { "constitution", "source law", "revision", "dirty state", "claims", "gaps", "frontier", "gates", "denied" }
 }
 
 agent.steps = {
-    "find the semantic owner",
-    "pick the archetype",
-    "compute the graph delta",
-    "compute the realization delta",
-    "produce the witness",
-    "name the language domain",
+    "read the sole law and verify source provenance",
+    "inspect current revision dirty state live claims gaps frontier and evidence",
+    "claim exact disjoint paths before editing",
+    "find the semantic owner and request cross owner facts rather than recreating them",
+    "compute fact demand realization authority and physical state deltas",
+    "produce positive negative differential performance and private run evidence demanded by the boundary",
+    "commit explicit owned paths then release claims and hand off remaining blockers",
 }
 
 -- The stop condition, and it is a STOP, not a fallback. An agent that cannot
@@ -417,11 +428,16 @@ agent.stop = @{
 
 gate.agent = {
     "constitution consistent",
+    "source law and canonicality classified",
+    "current revision and dirty state bound",
+    "ownership conflict absent",
     "graph valid",
     "law one",
     "one edge",
+    "world requirements reachable",
     "provenance total",
     "failure obligated",
+    "run outcome and evidence private",
     "architecture delta zero",
 }
 
@@ -429,10 +445,14 @@ gate.agent = {
 
 report: {
     change: { owner: str, laws: seq(str), archetype: str, graph: str, realization: str }
+    ownership: { claims: seq(str), conflicts: seq(str), release: bool }
     proof:  { positive: str, negative: str, differential: str, witness: str }
+    run: { revision: str, tree: str, command: str, outcome: str, evidence: str }
     architecture: { kinds: i64, registries: i64, syntax: i64, authorities: i64 }
-    boundary: { duon: str, lua: str, shared: str, foreign: str }
+    boundary: { idsem: str, lua: str, shared: str, foreign: str }
     debt:   { compat: bool, bootstrap: str, gate: str }
+    blockers: seq(str)
+    handoff: str
     result: { gates: seq(str) }
 }
 
@@ -455,16 +475,14 @@ total.role = "every span has ONE role"
 total.meaning = "every entity resolves to an identity or to an explicit error"
 total.origin = "every non-source fact carries its chain"
 
--- ═══ §21 · identity is THREE things ════════════════════════════════════════
+-- ═══ §21 · identity is one graph entity ════════════════════════════════════
 --
--- Collapsing these is the dedup hazard: two structurally identical pure
--- functions share CONTENT and must not thereby share provenance, breakpoint
--- identity, capability ownership, exported symbol, or mutation history.
--- `counter{0}` and `counter{0}` are one content and two incarnations.
+-- Equal content may share realization without replacing graph identity.
+-- Incarnation, correspondence, provenance and content remain separate facts.
 
-identity.meaning = "this is logically the same thing"
-identity.content = "this normalized subgraph has the same contents"
-identity.incarnation = "this occurrence, this build, this version"
+identity = "the exact entity or owner defined compact handle within one graph incarnation"
+content = "normalized subgraph contents, never identity"
+incarnation = "the graph lifetime in which a coordinate is valid"
 
 dedup = law{
     id    = "law.dedup"
@@ -481,7 +499,7 @@ dedup = law{
 -- ═══ §22 · lawsets ═════════════════════════════════════════════════════════
 
 lawsets = @{
-    duon = "native"
+    idsem = "native"
     lua  = "lua"
     c    = "c"
     wasm = "wasm"
@@ -621,9 +639,18 @@ persist = law{
 
 -- ═══ §29 · realization candidates ══════════════════════════════════════════
 
-realizations = {
-    "constant", "scalar", "vector", "direct", "guarded",
-    "bytecode", "dynamic", "foreign",
+realization = law{
+    id    = "law.realization.candidate"
+    kind  = .invariant
+    holds = .open
+    binds = {
+        "each demanded value or application retains every lawful candidate compactly until facts demand and cost select one",
+        "constant scalar vector direct bytecode gpu and foreign implementation are possible physical candidates rather than a closed kind list",
+        "foreign origin guarded proof state and dynamic knowledge remain qualifying facts and never become realization identities",
+        "expensive candidate analysis occurs only where candidates compete and the expected value justifies compiler work",
+        "selection retains relation application value transformation implementation and machine provenance",
+        "sealed selection leaves no runtime catalog registry package traversal or generic dispatch",
+    }
 }
 
 -- ═══ §30 · optimization is a witnessed rewrite ═════════════════════════════
@@ -640,15 +667,15 @@ rewrite: {
 -- ═══ §31 · frontends ═══════════════════════════════════════════════════════
 --
 -- A foreign language lifts to the SUBSTRATE directly. Routing it through a
--- duon AST first would assimilate its semantics on the way in, which is §7.
+-- Idsem AST first would assimilate its semantics on the way in, which is §7.
 
-frontends = { "duon", "lua", "c", "wasm" }
+frontends = { "idsem", "lua", "c", "wasm" }
 
 lifting = law{
     id    = "law.lifting"
     kind  = .invariant
     holds = .direct
-    fails = "a foreign language wearing duon's ast"
+    fails = "a foreign language wearing Idsem's ast"
 }
 
 -- ═══ §32 · a call across a boundary ════════════════════════════════════════
@@ -685,18 +712,18 @@ differential = law{
     fails = "a rewrite landed on faith"
 }
 
--- ═══ §33a · the three sentences every agent gets first ═════════════════════
+-- ═══ §33a · the orientation truths every agent gets first ══════════════════
 
--- One string per line, because the offside string block Pass 119 rules for
+-- One string per line because the required offside multiline text form
 -- multiline text DOES NOT EXIST YET. Measured writing this file: a multiline
 -- string literal fails with `error: UnterminatedString`. The constitution
 -- cannot yet express its own agent rules in the form the law prescribes, and
 -- recording that here is worth more than hiding it behind a spelling.
 agent.first = {
-    "Do not design duon. duon is already designed.",
+    "Do not design Idsem. Idsem is already designed.",
     "Discover the semantic owner, instantiate its canonical archetype, preserve its graph laws, prove the realization.",
     "If the constitution cannot express the change, STOP and record a constitutional gap. Never create a competing mechanism.",
-    "Foreign languages are not duon with strange syntax.",
+    "Foreign languages are not Idsem with strange syntax.",
     "Preserve their lawsets exactly; share representations and optimizations only where witnessed equivalence permits.",
     "A green test is not enough.",
     "A change is complete only when syntax, rendering, identity, ownership, effects, obligations, provenance, realization, differential and witnesses ALL agree.",
@@ -723,9 +750,9 @@ layers = {
     "graph", "specialized", "realization", "dnir", "backend",
 }
 
--- ═══ §36 · THE COMPILER'S OWN ARCHITECTURE IS DUON-SHAPED ══════════════════
+-- ═══ §36 · THE COMPILER'S OWN ARCHITECTURE IS IDSEM-SHAPED ═════════════════
 --
--- The compiler should not merely COMPILE duon this way. `SemanticGraph.addNode`
+-- The compiler should not merely COMPILE Idsem this way. `SemanticGraph.addNode`
 -- is not ugly naming; it is evidence the architecture has not internalized its
 -- own language. Every claim below was measured at `src/semantic_graph.zig` on
 -- 2026-08-08, not recalled.
@@ -775,8 +802,8 @@ hostprojection = law{
     kind  = .invariant
     holds = .projection
     binds = {
-        "the bootstrap may look un-duon-like ONLY where the host requires it",
-        "every such api NAMES the duon relation it projects",
+        "the bootstrap may look unlike Idsem ONLY where the host requires it",
+        "every such api NAMES the Idsem relation it projects",
         "it carries authority false, its semantic owner, and its deletion gate",
     }
     fails = "a host abstraction made permanent because it was convenient in zig"
@@ -789,7 +816,7 @@ hostprojection = law{
 --
 -- Measured: NodeKind carries 15 cases and EdgeKind 7 — and NodeKind still lists
 -- `directive`, `concept` and `pipeline`, three concepts already RETIRED as
--- canonical duon. A closed enum outlived the semantics it enumerated, which is
+-- canonical Idsem. A closed enum outlived the semantics it enumerated, which is
 -- what closed kinds do.
 kinds.role = .index          -- bootstrap acceleration, never ontology
 kinds.authority = false
@@ -805,12 +832,12 @@ edit.canon = { "edit = world(graph)(g)", "parent:add(child)" }  -- graph is AUTH
 -- effect, capability, lifetime, origin, trust, provenance, representation,
 -- realization — is a semantic FAMILY OF FACTS, not a separate graph object
 -- class. The graph must not look like an OO graph database implemented in Zig;
--- it is duon's relation calculus made persistent.
+-- it is Idsem's relation calculus made persistent.
 primitives = { "value", "relation", "fact", "world", "demand", "witness" }
 
 -- TRUST IS A LEVEL ON A FACT, never a mechanism standing beside one. The line
 -- above already names trust a FAMILY OF FACTS; these are its levels, in the
--- ordinary duon sense that `read(number)` is a level — no new object class, no
+-- ordinary Idsem sense that `read(number)` is a level — no new object class, no
 -- new surface.
 --
 -- Measured over tracked `src/*.zig`, 2026-08-08: 55 flags on the function-body
@@ -962,9 +989,9 @@ cycle = law{
 
 -- The wasm engine is one very large file BECAUSE compiler defects punish
 -- decomposition. An agent reading it could conclude giant modules are idiomatic
--- high-performance duon. THEY ARE NOT. Every such workaround is a gap with a
+-- high-performance Idsem. THEY ARE NOT. Every such workaround is a gap with a
 -- removal fixture, and the engine is the primary language-design fuzzer: each
--- ugly thing it needs is either inherent wasm complexity or a duon defect, and
+-- ugly thing it needs is either inherent wasm complexity or an Idsem defect, and
 -- it gets adjudicated as exactly one of the two.
 workaround = law{
     id    = "law.wasm.workaround"
@@ -976,7 +1003,7 @@ workaround = law{
         "a compiler limitation never becomes runtime architecture",
         "agent context must say the monolith is a defect, not a pattern",
     }
-    fails = "an agent learning bad duon from the best evidence duon has"
+    fails = "an agent learning bad Idsem from the best evidence Idsem has"
 }
 
 -- Fastest AND smallest AND most featureful are conflicting dimensions, so the
@@ -990,7 +1017,7 @@ matrix = @{
                 "exceptions", "tail calls", "memory64", "multi memory", "reftypes",
                 "component", "wit", "embedding", "aot", "jit arch" }
     quality = { "conformance", "differential", "fuzzing", "determinism", "diagnostics", "provenance", "sandbox" }
-    proof   = { "percent canonical duon", "foreign loc", "workarounds", "native realization", "boxing", "allocation", "binary to source" }
+    proof   = { "percent canonical Idsem", "foreign loc", "workarounds", "native realization", "boxing", "allocation", "binary to source" }
 }
 
 release = law{
@@ -1030,9 +1057,9 @@ package = law{
 
 -- ═══ §37 · ORIENTATION. Semantic expressibility is not canonicality. ═══════
 --
--- Duon source may be semantically correct and still noncanonical. Orientation,
+-- Idsem source may be semantically correct and still noncanonical. Orientation,
 -- compaction and idiom are LAW, not taste — and the compiler, formatter,
--- agents, std, the self-hosted compiler, duon wasm, the docs and every piece of
+-- agents, std, the self-hosted compiler, Idsem Wasm, the docs and every piece of
 -- architectural pseudocode obey the same one.
 
 -- Declare from the relation. Work from the value. The two faces are different
@@ -1090,7 +1117,7 @@ physical = law{
 
 -- Ambient is earned, not assumed: a thing is ambient ONLY where exactly one
 -- valid contextual value exists. Otherwise it DIAGNOSES. No hidden global
--- compiler graph — the dynamic global environment is a lua fact, not a duon one,
+-- compiler graph — the dynamic global environment is a lua fact, not an Idsem one,
 -- and it may not return as architecture.
 ambient = law{
     id    = "law.ambient.one"
@@ -1142,9 +1169,9 @@ role = law{
 -- DOCUMENTATION IS CORPUS. A code block in a normative document is a canonical
 -- corpus member and compiles under the same gate, because an architect writing
 -- `to(str)(x)` in a design note teaches every later agent the wrong idiom. A
--- block is duon, dnir, foreign or CONCEPTUAL — and if an idea cannot yet be
+-- block is Idsem, dnir, foreign or CONCEPTUAL — and if an idea cannot yet be
 -- expressed canonically it is marked conceptual and filed as a gap. Never invent
--- near-duon. Prose is lintable too: say "add fact" and "resolve relation", never
+-- near-Idsem. Prose is lintable too: say "add fact" and "resolve relation", never
 -- "call addnode" or "the registry owns".
 doc = law{
     id    = "law.doc.corpus"
@@ -1152,8 +1179,8 @@ doc = law{
     holds = .canonical
     binds = {
         "normative code blocks obey every canonical gate",
-        "a block is duon, dnir, foreign or conceptual — never rough pseudocode",
-        "architecture prose uses duon concepts, so its wording is lintable",
+        "a block is Idsem dnir foreign or conceptual — never rough pseudocode",
+        "architecture prose uses Idsem concepts so its wording is lintable",
     }
     fails = "a specification teaching an idiom its own gate would reject"
 }
@@ -1182,14 +1209,14 @@ distribution = law{
     binds = {
         "a distribution boundary is not a semantic boundary",
         "provenance is discoverable, never restated at every call",
-        "package identity matters where AMBIGUITY is real, not otherwise",
+        "package origin disambiguates candidate provenance while exact relation law and world facts decide meaning",
     }
     fails = "std.string.split(s, x) where s:split(x) names the same edge"
 }
 
--- The four layers, which the word "stdlib" blurs into one.
+-- The orthogonal facts that a conventional standard-library namespace blurs.
 --
---   core       required to define ordinary duon semantics — descriptor,
+--   meaning    ordinary Idsem descriptors, relations, values and laws —
 --              relation, table, callable, failure, basic numerics and
 --              sequences, reflection. Always present. No import, no prefix.
 --   vocabulary standardized relation and descriptor IDENTITIES that are NOT
@@ -1198,14 +1225,14 @@ distribution = law{
 --   package    a separately versioned GRAPH FRAGMENT contributing descriptors,
 --              relations, implementations, worlds, laws, realizations. It does
 --              NOT contribute a namespace.
---   world      AUTHORITY to perform effects, and orthogonal to all three above.
-layers.std = { "core", "vocabulary", "package", "world" }
+--   world      AUTHORITY to perform effects, orthogonal to distribution.
+distribution.projects = { "relation", "descriptor", "law", "world", "implementation", "realization", "origin", "trust" }
 
 -- §4 is the one the tree breaks hardest and the one that matters most.
 -- `file.open` may be KNOWN without filesystem authority being GRANTED. The
 -- capability scan measures the conflation directly: 278 ambient sites across 53
 -- of 258 std modules, where knowing an operation IS having it.
-authority = law{
+authority.grant = law{
     id    = "law.authority.grant"
     kind  = .invariant
     holds = .orthogonal
@@ -1227,7 +1254,7 @@ vocabulary = law{
     kind  = .invariant
     holds = .meaning
     binds = {
-        "packages add REALIZATIONS freely",
+        "packages contribute witnessed implementation candidates for exact relations and laws",
         "packages may not redefine standard MEANING",
         "one call site, many realizations, selected by demand and cost",
     }
@@ -1260,7 +1287,7 @@ coherence.rule = "a package may freely define relations over identities it OWNS.
 -- no-network, native on a target, thread-safe, no-failure under a descriptor.
 -- Downstream optimization consumes them, which makes a package a fragment
 -- carrying realization knowledge rather than only code you can call.
-package.publishes = { "identity", "version", "exports", "requires", "guarantees", "provenance" }
+package.publishes = { "origin", "version", "exports", "requires", "guarantees", "implementations", "provenance" }
 
 -- Build, dev, runtime and plugin dependencies are ONE system. The STAGE at
 -- which a fragment is demanded decides when it participates; separate
@@ -1286,7 +1313,7 @@ features = law{
 
 -- ═══ §38 · THE PERFORMANCE CONSTITUTION ════════════════════════════════════
 --
--- NORTH STAR: duon source states MAXIMUM SEMANTICS; the compiler emits MINIMUM
+-- NORTH STAR: Idsem source states MAXIMUM SEMANTICS; the compiler emits MINIMUM
 -- MACHINERY.
 --
 -- Performance, binary size, compile time, memory and specialization cost are
@@ -1367,7 +1394,7 @@ size.invariant = true
 
 -- Every emitted byte range is attributable to a semantic demand — the relation,
 -- what demanded it, its realization, and why it was retained. That is what
--- `duon why size` reads, and it reports semantic causes rather than symbols.
+-- `idsem why size` reads, and it reports semantic causes rather than symbols.
 size.ledger = { "relation", "demanded by", "realization", "retained because" }
 
 -- Multi-objective cost. The build's world chooses the objective; these are
@@ -1387,7 +1414,7 @@ cost.objectives = { "speed", "size", "startup", "latency", "energy", "balanced" 
 --   number is not tracked by any gate.
 --
 --   Binary size attribution: NO byte of the compiler is attributable to a
---   semantic demand today. `duon why size` does not exist.
+--   semantic demand today. `idsem why size` does not exist.
 --
 --   RSR = 1 (gap[084]) and SER = 1 (gap[082]), so there is no specialization
 --   explosion to budget YET — which is the lucky ordering: the budget relation
@@ -1404,9 +1431,9 @@ perf.ratios = {
 
 -- ═══ §39 · THE PRIME DIRECTIVE (what every agent receives first) ════════════
 --
--- You are MODIFYING duon. You are not designing a conventional compiler in Zig
+-- You are MODIFYING Idsem. You are not designing a conventional compiler in Zig
 -- and you are not inventing language architecture. The job is to move the
--- repository MONOTONICALLY toward 100% self-hosted canonical duon with zero
+-- repository MONOTONICALLY toward 100% self-hosted canonical Idsem with zero
 -- competing semantic mechanisms.
 --
 -- THE CORE QUESTION, asked before adding anything:
@@ -1453,7 +1480,7 @@ delta.zero = {
 --   orientation, syntax or subsystem?
 --
 --   IF YES, DO NOT STOP. Find and enforce the missing constitutional invariant
---   so there is only ONE reasonable duon-native direction.
+--   so there is only ONE reasonable Idsem-native direction.
 --
 -- Restated as the rule it generalizes: any architectural mistake an agent can
 -- make TWICE is a missing machine-enforced invariant. The constitution evolves
@@ -1471,7 +1498,7 @@ final = law{
 }
 
 -- THE OBJECTIVE, stated so it is not mistaken for code quality: not merely code
--- that works, but a repository in which non-duon architecture becomes
+-- that works, but a repository in which non-Idsem architecture becomes
 -- IMPOSSIBLE TO WRITE, IMPOSSIBLE TO TEACH, IMPOSSIBLE TO MERGE, and
 -- UNNECESSARY TO REPRESENT.
 objective = law{
@@ -1691,7 +1718,7 @@ subtract.resolved = "36 retire, 21 stay — BLOCKED until bare identity resolves
 
 -- ═══ §42 · SURFACE SUBTRACTION — the rules that keep it from becoming golf ══
 --
--- Pass 122. Canonical duon encodes ONLY distinctions the compiler cannot
+-- Canonical Idsem encodes ONLY distinctions the compiler cannot
 -- recover from the explicit subject, the ambient subject, expected descriptor,
 -- relation identity, operand descriptors, demand, lexical scope, or
 -- world/lawset context. Syntax restating recoverable information is debt.
@@ -1754,11 +1781,11 @@ entropy = law{
 -- identity visible — no global graph soup.
 locality.lattice = {
     "lexical", "ambient subject", "expected descriptor",
-    "explicitly visible package graph", "standard vocabulary",
+    "exact visible semantic identities", "admitted vocabulary",
 }
 
 -- WHAT IS NOT COMPACTED, stated so subtraction does not become point-free code.
--- duon does not delete syntax merely because the graph can technically infer
+-- Idsem does not delete syntax merely because the graph can technically infer
 -- meaning. These carry irreducible or high-value HUMAN information:
 keep = {
     "x.y", "x:f()", ":f() under self-zero", ". as the whole ambient subject",
@@ -1767,6 +1794,22 @@ keep = {
     "() ordinary application", "{} structured packs and descriptor homes",
     "[] computed keys", ". named projection", ": descriptor, subject and home roles",
     "ordinary interpolated strings", "offside layout",
+}
+
+facezero = law{
+    id    = "law.face.zero"
+    kind  = .invariant
+    holds = .strongest
+    binds = {
+        "the smallest canonical source face exposes the strongest semantic fact already known",
+        "square brackets state that evaluating an expression supplies a genuinely computed key",
+        "a statically known field or key uses named projection or a structured label rather than computed string syntax",
+        "dot bracket structured and application faces erase after resolution into subject key value result descriptor place demand and provenance facts",
+        "no source face forces table storage hashing boxing dispatch allocation or any other realization",
+        "subject relation expected descriptor semantic case and world facts replace namespace redundancy bridge temporaries sentinels and implementation qualification where admitted",
+    }
+    keep  = "genuinely computed keys retain square brackets and are never debt merely because their realization later becomes static"
+    fails = "weakly dynamic source hiding a statically known identity or any punctuation surviving as semantic or representation authority"
 }
 
 -- THE THREE TIERS. Retirement is not one list — it is a judgement per form.
@@ -1838,7 +1881,7 @@ brace = law{
 -- known.
 anchor.brace = "the same form, name recovered from the enclosing descriptor"
 
--- Pass 122's provisional brace-call is retired. Ordinary call and descriptor
+-- The provisional brace-call is retired. Ordinary call and descriptor
 -- application converge semantically only after their distinct source facts
 -- have been recognized.
 audit.braceresolved = "brace-call retired; callable uses parentheses; descriptor application uses braces"
@@ -1871,7 +1914,7 @@ apply = law{
     kind  = .invariant
     holds = .one
     binds = {
-        "idsem has ONE semantic application architecture",
+        "Idsem has ONE semantic application architecture",
         "parentheses are the ordinary callable source face",
         "braces are the structured pack and descriptor application source face",
         "descriptor application and ordinary call converge after resolution where facts permit",
@@ -2052,29 +2095,29 @@ nominal = law{
 -- ═══ §47 · C-DOMINANCE — C is a CANDIDATE, not the ceiling ═════════════════
 --
 -- THE HONEST QUALIFICATION FIRST, because the goal as usually stated cannot be
--- met: no compiler can guarantee that EVERY duon program beats EVERY
+-- met: no compiler can guarantee that EVERY Idsem program beats EVERY
 -- hand-written C program on every machine and every metric. A human can write
 -- assembly, exploit undocumented behaviour, or choose a workload built to
 -- defeat one optimizer.
 --
 -- What IS achievable, and is strictly stronger than benchmarking:
 --
---   For every duon program whose semantics are no stronger than an equivalent
+--   For every Idsem program whose semantics are no stronger than an equivalent
 --   C program, the compiler must be able to produce machine code NO WORSE than
 --   the best C realization in its candidate set — while exploiting semantic
 --   facts unavailable to C where they exist.
 --
 -- THE MECHANISM. C stops being the ceiling and becomes ONE CANDIDATE
--- REALIZATION. For any semantic fragment the compiler holds several: duon
+-- REALIZATION. For any semantic fragment the compiler holds several: Idsem
 -- native lowering, a C-equivalent scalar lowering, simd, an intrinsic, a
 -- generated sequence, a library call, a profile-guided version. It costs them
--- and picks. If duon-native is worse, IT PICKS THE C-EQUIVALENT ONE.
+-- and picks. If Idsem-native is worse, IT PICKS THE C-EQUIVALENT ONE.
 --
---   duon semantic information  >=  C semantic information
+--   Idsem semantic information  >=  C semantic information
 --   candidate set              includes the C-equivalent realization
 --   chosen                     = min cost over candidates
 --
--- Duon cannot lose, because it keeps the fallback. That is monotonicity rather
+-- Idsem cannot lose, because it keeps the fallback. That is monotonicity rather
 -- than optimism, and it is why this is architecture and not a benchmark claim.
 
 cfloor = law{
@@ -2083,7 +2126,7 @@ cfloor = law{
     holds = .candidate
     binds = {
         "wherever a C-equivalent realization exists it is a BASELINE CANDIDATE",
-        "native duon must MEET OR BEAT that baseline before replacing it",
+        "native Idsem must MEET OR BEAT that baseline before replacing it",
         "C is a candidate, never the optimization ceiling",
     }
     fails = "a native lowering that ships because it is native"
@@ -2126,16 +2169,16 @@ cost.dimensions = {
     "binary size", "tail latency",
 }
 
--- THREE THINGS C DOES THAT DUON MUST BEAT BY CONSTRUCTION, not by tuning:
+-- THREE THINGS C DOES THAT IDSEM MUST BEAT BY CONSTRUCTION, not by tuning:
 --
---   ALIASING             C optimizes poorly without `restrict`. duon derives
+--   ALIASING             C optimizes poorly without `restrict`. Idsem derives
 --                        alias facts, so NO USER-WRITTEN EQUIVALENT OF
 --                        `restrict` appears in ordinary code.
 --   SEPARATE COMPILATION C loses whole-program facts at translation-unit
 --                        boundaries. Packages retain graph fragments and
 --                        specialize across them — whole-program knowledge
 --                        WITHOUT whole-program rebuild cost.
---   ABI FREEZING         C APIs commit to physical representation early. A duon
+--   ABI FREEZING         C APIs commit to physical representation early. An Idsem
 --                        interface commits to MEANING; the machine abi is
 --                        chosen at realization.
 beats = { "aliasing", "separate compilation", "abi freezing" }
@@ -2200,17 +2243,17 @@ algebra.families = 1
 cost.objective = { latency, throughput, size, energy, startup, balanced }
 
 -- WHY a candidate can BEAT the c floor rather than merely match it. Each row is
--- information C discards at the source level and duon retains as an ordinary
+-- information C discards at the source level and Idsem retains as an ordinary
 -- fact.
 edge.over = {
-    { fact = "descriptor identity", c = "double", duon = "meters, probability, sorted vector, nonzero scalar — can change the ALGORITHM" },
-    { fact = "closed world",        c = "cannot know no future participant exists", duon = "sealed relation: devirtualize, erase dispatch, drop tag checks" },
-    { fact = "ownership",           c = "aliasing is weak without restrict",        duon = "unique, borrowed, noalias, noescape, dead-after-call" },
-    { fact = "effects",             c = "calls are opaque",                          duon = "reads a, writes b, no io, no allocation, no reentry — so reorder and parallelize" },
-    { fact = "failure",             c = "the branch is always there",                duon = "failure proven impossible erases the tag and the machinery" },
-    { fact = "range",               c = "the declared width is the width",           duon = "0 <= x < 256 narrows arithmetic and removes bounds checks" },
-    { fact = "shape",               c = "the struct is the layout",                  duon = "struct, soa, aos, packed, simd lane, register tuple — by demand" },
-    { fact = "call shape",          c = "one function, one body",                    duon = "many machine realizations from one semantic function" },
+    { fact = "descriptor identity", c = "double", idsem = "meters, probability, sorted vector, nonzero scalar — can change the ALGORITHM" },
+    { fact = "closed world",        c = "cannot know no future participant exists", idsem = "sealed relation: devirtualize, erase dispatch, drop tag checks" },
+    { fact = "ownership",           c = "aliasing is weak without restrict",        idsem = "unique, borrowed, noalias, noescape, dead-after-call" },
+    { fact = "effects",             c = "calls are opaque",                          idsem = "reads a, writes b, no io, no allocation, no reentry — so reorder and parallelize" },
+    { fact = "failure",             c = "the branch is always there",                idsem = "failure proven impossible erases the tag and the machinery" },
+    { fact = "range",               c = "the declared width is the width",           idsem = "0 <= x < 256 narrows arithmetic and removes bounds checks" },
+    { fact = "shape",               c = "the struct is the layout",                  idsem = "struct, soa, aos, packed, simd lane, register tuple — by demand" },
+    { fact = "call shape",          c = "one function, one body",                    idsem = "many machine realizations from one semantic function" },
 }
 
 -- ═══ §50 · WORLD IS AN OPERAND, NOT THE SUBJECT ════════════════════════════
@@ -2236,8 +2279,8 @@ world = law{
     fails = "620 call sites migrated into the wrong orientation, then migrated again"
 }
 
--- OBSERVE-MIN. The deepest reason duon can beat C, and it is not instruction
--- selection: C freezes representation and ABI at the source, duon keeps them as
+-- OBSERVE-MIN. The deepest reason Idsem can beat C, and it is not instruction
+-- selection: C freezes representation and ABI at the source, Idsem keeps them as
 -- degrees of freedom until demand forces the choice.
 observe = law{
     id    = "law.observe.min"
@@ -2279,7 +2322,7 @@ epoch = law{
         "every relation declares which facts its traversal INVALIDATES",
         "a fact carries forward until an invalidating relation kills it",
     }
-    why   = "c optimizers usually cannot prove a condition survives a call or an aliasing boundary. duon can, because the graph says which relations can falsify it — and that makes compilation cheaper as well as the output faster."
+    why   = "c optimizers usually cannot prove a condition survives a call or an aliasing boundary. Idsem can because the graph says which relations can falsify it and that makes compilation cheaper as well as the output faster."
 }
 
 -- Physical width follows the proven STATE SPACE, not the declared type. A value
@@ -2414,12 +2457,12 @@ forcing = law{
     holds = .pressure
     binds = {
         "compiler self-host forces parse, sema, graph, lowering, encoding",
-        "duon wasm forces jit, cfg, register allocation, memory, performance",
+        "Idsem Wasm forces jit cfg register allocation memory and performance",
         "lsp, mcp, formatter, package and build force persistent graphs, stable ids, diagnostics, incremental computation",
         "a capability unnecessary to ALL THREE is not pre-release p0",
     }
     why   = "capability built to satisfy a checklist is speculative scaffolding. Capability built under pressure from a real workload is load-bearing on the day it lands."
-    keep  = "any capability duon wasm needs should normally become a GENERAL compiler primitive — never ward-only infrastructure"
+    keep  = "any capability Idsem Wasm needs should normally become a GENERAL compiler primitive — never ward-only infrastructure"
 }
 
 -- The claim to make, and the one to refuse. "Faster than C across the board
@@ -2428,7 +2471,7 @@ forcing = law{
 -- program on every cpu. The defensible construction is already law
 -- (law.c.floor, law.perf.floor, law.perf.dominance) and reads:
 --
---   the c-equivalent realization is RETAINED whenever lawful · duon may add
+--   the c-equivalent realization is RETAINED whenever lawful · Idsem may add
 --   STRICTLY STRONGER candidates from additional semantic facts · the public
 --   supported corpus demonstrates RELIABLE dominance, adversarial workloads
 --   retained
@@ -2528,14 +2571,12 @@ identity.emit = language.file
 order = law{
     id    = "law.authority.order"
     kind  = .invariant
-    holds = .ranked
+    holds = .one
     binds = {
-        "current explicit owner directive",
-        "this constitution",
-        "the normative grammar",
-        "the canonical verification corpus",
-        "the implementation",
-        "historical passes, only where not superseded",
+        "a current explicit owner directive is reconciled into this constitution before work continues",
+        "this constitution is the sole living semantic law in the repository",
+        "grammar corpus context workflow and implementation are projections or evidence and add no law",
+        "historical passes and retired source as provenance only, never authority",
     }
     keep  = "WHEN AN OWNER RULING SUPERSEDES THIS FILE, UPDATE THIS FILE. Never leave two truths standing and rank them."
     fails = "a directive recorded beside a contradicting law instead of replacing it"
@@ -2543,13 +2584,13 @@ order = law{
 
 -- The clarification that keeps monoglot from eating the product. Deleting
 -- foreign SEMANTIC AUTHORITY is the goal; deleting foreign INTEGRATION would
--- make duon less useful the day it became self-hosted.
+-- make Idsem less useful the day it became self-hosted.
 foreign = law{
     id    = "law.foreign.integration"
     kind  = .invariant
     holds = .kept
     binds = {
-        "100% self-hosting must not reduce duon's usefulness to NON-duon projects",
+        "100% self-hosting must not reduce Idsem's usefulness to non-Idsem projects",
         "first-class lawsets and projections stay for lua, c, rust, python, wasm, abi and schema formats, source asts, build systems and package systems",
         "cross-language transformation uses the SAME graph, provenance, laws and witnesses as native transformation",
     }
@@ -2713,7 +2754,7 @@ ircompact = law{
     kind  = .invariant
     holds = .separate
     binds = {
-        "READABLE dnir uses canonical duon naming and composition",
+        "READABLE dnir uses canonical Idsem naming and composition",
         "INTERNAL dnir uses compact interned ids and representation-selected storage",
         "readable syntax NEVER dictates compiler memory layout",
     }
@@ -2806,7 +2847,7 @@ reprladder = law{
 }
 
 -- If realized ir is ordinary graph data, the self-hosted compiler transforms it
--- with ordinary duon — no separate pattern language, which is a whole subsystem
+-- with ordinary Idsem — no separate pattern language, which is a whole subsystem
 -- SHC does not then have to write.
 irdata = law{
     id    = "law.ir.data"
@@ -2909,13 +2950,13 @@ evidence = law{
 -- MEASURED 2026-08-09, `src/dnir_lower.zig:340`:
 --
 --     graph: ?*const semantic_graph.SemanticGraph
---     -- "Pass 16 hook: optional semantic graph for provenance/transform ordering"
+--     -- "optional semantic graph for provenance and transformation ordering"
 --
 -- So the actual architecture is `AST -> DNIR`, with the graph applied AFTERWARD
 -- to reorder functions and attach stable ids. Not `AST -> graph -> demand ->
 -- realization`. **Every reconstruction side table is a consequence of this.**
 
-authority = law{
+authority.graph = law{
     id    = "law.graph.authority"
     kind  = .invariant
     holds = .queryable
@@ -2990,6 +3031,10 @@ surfacezero = law{
     binds = {
         "a grammar face records provenance and resolution evidence, never semantic identity",
         "if while for and or not operators projection indexing application and binding normalize immediately",
+        "a bracket face says only that evaluating an expression supplies the key while a dot face supplies statically named identity",
+        "dot and bracket faces converge after resolution whenever subject key value place demand and descriptor facts are equivalent",
+        "equivalent source faces resolve to the same graph facts while distinct occurrences retain distinct graph identities",
+        "computed projection never forces a table hash lookup dynamic dispatch allocation or physical memory access",
         "a retained grammar face may improve human density and still own ZERO semantic machinery",
     }
     fails = "a parser production surviving as the authority for type effect optimization or lowering"
@@ -3003,6 +3048,7 @@ semanticsonly = law{
         "after parsing the vocabulary is value relation descriptor fact demand world place witness provenance dependency application binding projection realization",
         "source grammar categories are unavailable to semantic consumers except as provenance",
         "temporary parser classification is parser-local and normalizes before semantic authority begins",
+        "semantic and realization consumers fail closed when only a parser category delimiter or token text is available",
     }
     deny  = {
         "conditional statement kind", "loop kind", "binary or unary expression kind",
@@ -3030,7 +3076,7 @@ faceerase = {
     "not -> ordinary truth relation with a prefix projection",
     "operator -> ordinary relation identity plus orientation and precedence provenance",
     "application faces -> one apply relation specialized by subject argument shape demand and context",
-    "index and member faces -> place or projection relations",
+    "index and member faces -> one projection relation plus exact subject key value place demand descriptor and provenance facts",
     "binding face -> fact and place identity, never storage by default",
     "return break continue -> demanded result of the enclosing region, never standalone semantic kinds",
 }
@@ -3056,6 +3102,7 @@ truth = law{
     binds = {
         "and or and not are ordinary relation identities",
         "short circuiting is a demand law, not keyword authority",
+        "not applies only to an irreducible truth relation and never repairs a helper that collapsed richer semantics to bool",
         "the infix or prefix face may remain only while it earns greater readable density",
     }
 }
@@ -3139,8 +3186,13 @@ conventional = law{
     binds = {
         "std os fs and mem operation homes are canonical debt, not semantic namespaces",
         "operation first namespace calls are audited against subject relation world and demand roles",
+        "a literal string or otherwise statically known key in brackets is audited for named projection or named structured content",
+        "table qualified get set has new and similar names are audited for projection update establishment removal iteration or shape facts",
+        "has is can exists present missing valid ready enabled supported and similar boolean helpers are audited for an existing fact case relation world transition refinement demand shape effect or identity",
+        "subject first spelling does not rescue a relation whose only work is collapsing richer semantics into bool",
         "empty string and nil are never assumed to mean absence without a descriptor law",
         "an existence guard followed by a state operation is audited for an atomic relation",
+        "a single use boolean feeding one conditional is audited for direct semantic consumption",
         "a single consumer temporary feeding selection is audited for direct value flow",
         "callable result demand precedes the binder; a suffix result annotation is debt",
     }
@@ -3165,9 +3217,15 @@ conventionzero = law{
     holds = .strongest
     binds = {
         "a weaker conventional pattern is noncanonical when an existing relation level descriptor world demand place proof or structured value preserves its observations",
+        "statically known field identity uses named projection or named structured content rather than computed key syntax",
+        "brackets remain canonical when evaluating their expression genuinely supplies key identity",
+        "subject first relation expected descriptor direct composition semantic case and explicit world fact each beat an equally readable weaker face",
+        "a semantic fact case relation transition refinement demand world effect shape or identity is never duplicated as a boolean helper",
+        "true false unknown absent not applicable and unresolved remain distinct wherever the semantic domain admits them",
         "the stronger form must expose at least as much optimization freedom",
         "parsing typing and tests do not excuse canonicality debt",
     }
+    fails = "weakly dynamic looking source that hides a static fact already possessed"
     keep  = "canonicality is part of correctness"
 }
 
@@ -3235,15 +3293,29 @@ vocabularyaudit = law{
     kind  = .protocol
     holds = .semantic
     binds = {
-        "every standard operation identifies subject relation world preserved cases and demand",
+        "every distributed implementation identifies subject relation world preserved cases and demand",
         "misleading namespace sentinel and representation APIs deprecate only after their semantic replacement is admitted",
-        "the standard library is runtime substrate semantic vocabulary optimization interface agent corpus and style authority at once",
+        "a standard distribution contributes implementations origin trust and evidence while the semantic graph owns vocabulary discovery optimization tooling and style facts",
     }
 }
 
 canonicaldebt = {
+    "tracked project owned .duo source -> 0",
+    "new generated native .duo source -> 0",
+    "current facing duo duon and pass branding outside exact history -> 0",
+    "stale agent router concepts and compatibility pattern sources -> 0",
+    "statically knowable bracket keys and literal string projections -> 0",
     "namespace subject calls -> 0",
+    "canonical relations requiring package or universal root qualification -> 0",
+    "semantic decisions reconstructed from package path -> 0",
     "capability as namespace traversal -> 0",
+    "statically knowable keys written as computed bracket projection -> 0",
+    "literal string keys written in brackets where named projection is admitted -> 0",
+    "table qualified duplicate relation names -> 0",
+    "boolean helper predicates duplicating richer semantic facts -> 0",
+    "single use boolean bridge bindings -> 0",
+    "existence query followed by mutation where one transition is admitted -> 0",
+    "unknown absent not applicable or unresolved collapsed to false -> 0",
     "ordinary values used as absence or failure sentinels -> 0",
     "existence query followed by establishable state transition -> 0",
     "single consumer bridge bindings -> 0",
@@ -3253,6 +3325,7 @@ canonicaldebt = {
     "undemanded storage allocation or materialization -> 0",
     "callable result suffix -> 0",
     "representation specific operation where a semantic relation exists -> 0",
+    "host pattern findings in canonical source -> 0",
 }
 
 semanticservice = law{
@@ -3304,14 +3377,30 @@ fileone = law{
 stdzero = law{
     id    = "law.std.zero"
     kind  = .protocol
-    holds = .retiring
+    holds = .zero
     binds = {
-        "std is a distribution and compatibility root, never semantic authority",
+        "canonical semantic namespace roots are zero; std core system platform runtime base idsem os fs script process and env never own native meaning",
+        "std is migration distribution and compatibility provenance, never semantic architecture or authority",
+        "std script is frozen historical architecture and every touched use moves toward semantic reduction and deletion",
+        "standard describes origin trust and distribution while implementation location contributes zero relation identity",
+        "new native semantic capability and new canonical std calls are forbidden",
         "pure activity is a subject relation and capability activity is a subject relation under a world",
         "homes navigate concepts but never substitute for a subject relation or world",
-        "every admitted replacement lowers the std root ratchet and removes the misleading entry point",
+        "packages contribute relations descriptors laws worlds implementations and realizations without gaining semantic authority from their path",
+        "package acquisition expands implementation candidates but grants no world and rewrites no existing semantic identity",
+        "implementations satisfying one relation and law are realization candidates selected by facts demand and cost rather than differently named apis",
+        "semantic discovery is a graph projection over relation subject descriptors result law world effect stage target origin and trust",
+        "sealed programs erase discovery catalogs registries package traversal and runtime dispatch completely",
+        "tooling begins from a possessed subject and projects applicable relations from the same graph used for documentation and realization",
+        "a witnessed foreign implementation may satisfy a native relation while retaining its exact origin lawset and abi provenance",
+        "process filesystem environment transport outcome and evidence remain distinct facts relations and worlds",
+        "every touched std use is compatibility foreign provenance physical distribution migration bridge or semantic violation",
+        "every migration bridge names its semantic reason authoritative replacement owner and exact deletion gate",
+        "removal may not create another universal semantic root or a slower boxed allocated or dynamically dispatched abstraction",
+        "every admitted replacement lowers namespace dependence and removes the misleading entry point",
     }
-    keep  = "a temporary import root may locate vocabulary while self hosting converges; it contributes no semantic identity"
+    keep  = "physical std source may remain only as migration distribution compatibility foreign provenance or compiler b bootstrap debt; it contributes no semantic identity world authority or canonical invocation"
+    fails = "finishing std replacing it with another universal root or selecting meaning from implementation location"
 }
 
 -- Conventional source to semantic reduction, recorded without blessing a
@@ -3350,7 +3439,7 @@ authorityhome = law{
     kind  = .invariant
     holds = .never
     binds = {
-        "homes packages and paths organize semantic identity only",
+        "homes packages and paths navigate or select exact identities and establish none",
         "filesystem environment process network clock random terminal hardware deployment and service authority exist only as world edges",
         "an effectful application is valid only when every required world is semantically reachable",
         "home reachability contributes zero world authority",
@@ -3413,6 +3502,8 @@ sentinelzero = law{
     binds = {
         "an ordinary domain value never silently replaces a known presence failure or validity case",
         "empty minus one zero nil and false retain their ordinary meanings unless the descriptor law explicitly says otherwise",
+        "true false unknown absent not applicable and unresolved are never collapsed into one boolean domain",
+        "presence absence failure removal and uninitialized state are semantic cases rather than sentinel comparisons or predicates",
         "a physical realization may exploit a niche or sentinel only while semantic cases remain recoverable",
     }
 }
@@ -3433,10 +3524,10 @@ stdlibshadow = law{
     kind  = .protocol
     holds = .zero
     binds = {
-        "every public standard callable declares relation identity subject role descriptor constraints worlds effects cases realization freedoms and foreign provenance",
-        "a wrapper duplicating an existing relation under a subsystem home is rejected",
-        "a namespace carrying authority a subject hidden as its argument a collapsed case forced materialization or foreign name disguised as native semantics is rejected",
-        "standard vocabulary must compose across native wasm and compatible foreign lawsets",
+        "every distributed implementation declares relation identity subject role descriptor constraints worlds effects cases realization freedoms and foreign provenance",
+        "a wrapper duplicating an existing relation under a package or subsystem home is rejected",
+        "a package namespace carrying authority a subject hidden as its argument a collapsed case forced materialization or foreign name disguised as native semantics is rejected",
+        "admitted vocabulary and implementation candidates compose across native wasm and compatible foreign lawsets independently of distribution path",
     }
 }
 
@@ -3446,6 +3537,7 @@ vocabclosed = law{
     holds = .admitted
     binds = {
         "agents never invent public standard vocabulary locally",
+        "agents never invent a boolean predicate when the missing owner is a fact case relation transition refinement demand world effect shape or identity",
         "relation admission returns existing derivable new foreign or vocabularyblocked",
         "new is accepted only when an independent semantic distinction remains after relation level fact descriptor place world origin abi and target factoring",
         "vocabularyblocked is preferable to a plausible helper without authority",
@@ -3512,6 +3604,8 @@ controlreduce = law{
     holds = .proved
     binds = {
         "audit conditional demand for default projection failure routing state establishment finite dispatch and iteration filtering",
+        "separate observation from action and replace query bool branch mutation with one admitted transition where equivalent",
+        "a predicate that only controls one branch yields to direct consumption of its underlying fact case or relation",
         "reject only when an admitted relation is observationally equivalent and at least as optimizable",
         "irreducible conditional demand remains canonical",
     }
@@ -3523,6 +3617,10 @@ corpuszero = law{
     holds = .semantic
     binds = {
         "semantic canonicality runs over every tracked source and generated canonical example",
+        "tracked project owned .duo source descends to zero and new .duo source fails immediately",
+        "current examples tools compiler source and generated native source use canonical id",
+        "compatibility support does not justify an in tree historical source library",
+        "a blind search adversary must find canonical id or unmistakable foreign data rather than a stale implementation pattern",
         "namespace world subject sentinel duplicate relation foreign name conditional bridge and result debt only descend to zero",
         "text censuses may guard migration spelling but never claim semantic proof",
     }
@@ -3534,6 +3632,7 @@ generatedzero = law{
     holds = .author
     binds = {
         "generated canonicality debt is repaired at the generator",
+        "a generator emitting native .duo source is a hard failure",
         "generated output receives no whitelist",
     }
 }
@@ -3611,7 +3710,7 @@ literal.bytes = law{
         "one byte remains a byte sequence of cardinality one and may scalarize only under proved byte demand",
         "text byte codepoint scalar grapheme and character remain distinct descriptors and facts",
         "raw source characters encode as source utf8 bytes; byte escapes are byte oriented and unicode escapes are rejected until separately admitted",
-        "historical lua single quoted text retains compatibility provenance and canonicalizes to double quoted text before native idsem meaning",
+        "historical lua single quoted text retains compatibility provenance and canonicalizes to double quoted text before native Idsem meaning",
     }
 }
 
@@ -3662,6 +3761,7 @@ lexical.gate = law{
     binds = {
         "canonical repository source rejects lua comments lua long strings hash length historical single quoted text and unadmitted backticks by token identity and provenance",
         "compatibility source preserves foreign literal and comment lawsets until an exact migration witness exists",
+        "compatibility parsing is tested through structured generated external or narrowly isolated machine owned input and never makes stale source a pattern library",
         "generated canonical source receives no exception",
         "the corpus ratchet counts complete classified inputs and fails closed when an authority or source is unavailable",
     }
@@ -3670,8 +3770,8 @@ lexical.gate = law{
 lexical.block = @{
     gap = 145
     state = .implementationblocked
-    why = "both live lexers collapse text bytes and lua long strings into one string token while hash remains a length token and downstream consumers reconstruct delimiters"
-    unlock = "distinct idsem owned token identities plus generated grammar roles compatibility provenance canonical migrations and derived tooling projections"
+    why = "the executed idsem lexer owns the production token stream identities and spans but the complete canonical and compatibility literal comment and delimiter roles are not yet one generated authority consumed by every surface"
+    unlock = "complete idsem owned lexical identities plus generated grammar roles compatibility provenance canonical migrations and derived tooling projections"
 }
 
 -- project closure 2026-08-10
@@ -3731,10 +3831,11 @@ ftcftw = law{
     holds = .measured
     binds = {
         "equivalent native semantics retain at least c equivalent runtime compile startup memory binary incremental and realization outcomes",
-        "an idsem win uses retained semantic knowledge and transferable realization rather than fixed answers inputs seeds counts or benchmark specific recognition",
+        "an Idsem win uses retained semantic knowledge and transferable realization rather than fixed answers inputs seeds counts or benchmark specific recognition",
         "wasm evidence separately measures decode import compile instantiate startup steady execution memory runtime footprint artifact size and end to end latency",
         "wasm enters the shared graph with its exact lawset and never creates a permanent virtual machine semantic kingdom",
         "a throughput win cannot hide worse cold start compiler work memory runtime obligation or artifact footprint",
         "every measurement names the executed backend snapshot comparator workload machine and known unsupported or divergent cases",
     }
 }
+```

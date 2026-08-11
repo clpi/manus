@@ -1,172 +1,46 @@
-# duo-lsp
+# Idsem language server
 
-A Language Server Protocol implementation for the [Duo](../..) language. It
-wraps the `duo` compiler's `check` command for live diagnostics and ships a
-best-effort top-level symbol outline, hover, go-to-definition, and completion — all over
-stdio JSON-RPC. The server itself is written in Duo and compiled to a self-contained binary.
+This directory contains the Language Server Protocol projection for Idsem.
+Start at [`../../AGENTS.md`](../../AGENTS.md); the sole semantic law is
+[`../../docs/spec/constitution.md`](../../docs/spec/constitution.md), and the
+current executed compiler frontier is
+[`../../docs/bootstrap.md`](../../docs/bootstrap.md).
 
-## Features
+The server projects the compiler's semantic graph over LSP. It does not define
+keywords, relations, descriptors, canonical source, diagnostic meaning,
+completion vocabulary, or semantic-token roles. Those facts come from the one
+graph and the generated projections of the one grammar authority.
 
-- **Diagnostics** — on open / change / save, the server writes the document to
-  a temp file and runs `duo check`, then publishes parsed diagnostics. Both
-  `.duo` and `.lua` documents are supported (the compiler selects the language
-  mode by extension).
-- **Document symbols** — a light line-scanner finds top-level preferred bare
-  typed functions, legacy `fun`/`function`, `enum`, `concept`, `alias`,
-  `struct`, and variable declarations for the outline. Nested declarations
-  (inside `fun`/`enum`/`match`/`{...}`) are excluded.
-- **Hover** — a projection of the compiler's semantic graph. The server runs
-  `duo graph` on the buffer and answers from the node the compiler lifted, so
-  the kind is the compiler's (`func`, `local`, `call`), and a call site also
-  reports its callee kind, arity, specializability, knowledge/stage lattice
-  position, and the line its callee is declared on. See "Graph-backed hover".
-- **Go-to-definition** — jumps to the declaration of a top-level symbol.
-- **Rename** — workspace-wide, across every open document.
-- **Completions** — provides keyword completions, type names, builtin functions,
-  std module names, and function/snippet templates.
-- **Incremental text sync** — `textDocument/didChange` with range edits is
-  applied in order; full-replace changes are handled too.
+User-facing features should therefore answer semantic questions:
 
-## Layout
+- what identity is at this span;
+- which relations apply to the possessed subject;
+- which descriptor, world, law, effect, and demand qualify the result;
+- where an identity is defined and used;
+- which canonicality finding or realization decision explains an outcome.
 
-```
-duo-lsp            compiled binary (self-contained; no node runtime)
-src/server.duo     LSP server implementation in Duo
-build.duo          build script: `duo compile -o duo-lsp src/server.duo`
-test/smoke.duo     end-to-end handshake against the real duo binary
-```
+Missing graph coverage is a compiler/tooling gap, not permission to grow a
+second parser or word scanner. Protocol strings and integer token encodings are
+renderings only and must retain a route back to structured facts.
 
-## Resolving the `duo` compiler
+ROOT-ZERO and FACE-ZERO apply to all results. Completion is subject-oriented,
+package paths grant no authority, and the standard distribution owns no native
+namespace. Named identities look static; `[]` is suggested only for genuinely
+computed keys; neither face selects a representation.
 
-The server locates the `duo` binary in this order:
+PREDICATE-ZERO also applies. Completion, diagnostics, and code actions expose
+semantic facts, cases, refinements, and transitions rather than teaching
+boolean `has`/`is`/`can`/`exists` helpers or sentinel checks. Unknown, absent,
+false, and unresolved remain distinct.
 
-1. `DUO_LSP_DUO_BIN` env var (checked at startup) — or `DUO_BIN`.
-2. `duo` sibling next to the `duo-lsp` launcher's parent's parent (`../../duo`),
-   which matches the layout when both are installed in the same `bin` dir.
-3. `duo` on `PATH`.
+Canonical project source uses `.id`. Any tracked project-owned `.duo`
+implementation here is SOURCE-ZERO debt and must be semantically migrated or
+deleted, never copied as an example. Physical launcher and environment names
+containing `duo` are bootstrap aliases and deletion targets, not current
+language identity.
 
-If none is found, the server starts but diagnostics are disabled (symbols and
-hover still work).
-
-## Running
-
-```sh
-# from the duo repo root, after `zig build`:
-export DUO_LSP_DUO_BIN="$PWD/zig-out/bin/duo"
-./ext/duo-lsp/duo-lsp           # speaks LSP on stdin/stdout
-```
-
-### Tests
-
-```sh
-duo run build.duo      # build the server binary
-duo run test/smoke.duo # full LSP handshake against the real duo binary
-```
-
-There is no separate unit-test target. There used to be `lib/*.js` — a
-JavaScript reimplementation of the diagnostic parser, symbol scanner and text
-sync that `src/server.duo` already owns — plus `test/run-tests.js` exercising
-it. Nothing shipped that code, so its tests proved nothing about the server.
-The assertions worth keeping (nested declarations not leaking into the outline,
-comments not starting blocks, top-level calls not being declarations) now run
-against the actual binary over the protocol, in `test/smoke.duo`.
-
-The smoke test opens a `.lua` document with an undeclared global, asserts a
-diagnostic is published, requests document symbols / hover / completion, and shuts down
-cleanly. It defaults to `../../zig-out/bin/duo`; override with
-`DUO_LSP_DUO_BIN`.
-
-## Editor integration
-
-The sibling `ext/vscode-duo` extension already spawns a `duo-lsp` binary over
-stdio (see its `extension.js`). To use this server in VS Code:
-
-1. `zig build` the compiler.
-2. Symlink or copy the duo-lsp binary onto `PATH`:
-   ```sh
-   ln -s "$PWD/ext/duo-lsp/duo-lsp" /usr/local/bin/duo-lsp
-   ```
-   …or set `duo-lsp.path` in VS Code settings to the absolute path of
-   `ext/duo-lsp/duo-lsp`.
-3. Reload the window; open a `.duo`/`.lua` file.
-
-For Neovim, point an `lspconfig`/manual `vim.lsp.start` server entry at the
-launcher with `cmd = { "duo-lsp" }` and `filetypes = { "duo", "lua" }`.
-
-## Diagnostic format note
-
-For editor and CI integration, run the compiler with `--plain-diagnostics` (or
-`DUO_PLAIN_DIAG=1`). That emits one line per issue:
-
-```
-path:line:col: error: message
-path:line:col: hint: add type annotations for faster codegen
-```
-
-The LSP server always passes `--plain-diagnostics` to `duo check`. Optional
-compiler notes for the editor:
-
-- `DUO_LSP_HINTS=1` — append `--hints` to the check command
-- `DUO_LSP_CHECK_FLAGS="--hints --info"` — arbitrary extra flags before the file path
-
-Human-facing TTY output (default) uses styled diagnostics with source context.
-Enable pipeline tracing with `duo compile --trace` or `DUO_TRACE=1`; optional
-`--info` / `--hints` (or `DUO_INFO` / `DUO_HINTS`) add opt-in compiler notes.
-
-The parser also accepts the legacy debug-dump form if present:
-
-```
-.{ .file = { 47, 116, … }, .line = 2, .col = 1 }: error: attempt to assign to const variable 'x'
-```
-
-The temp file path is never reported to the client.
-
-## Graph-backed hover
-
-Pass 101 §3 rules that the toolchain is one program: a single `duo` binary owns
-the graph, and every tool is a projection of it — "LSP = graph queries over a
-socket; hover = `why`". Hover is the first feature wired that way.
-
-`duo graph <file>` emits, as JSON, the node the compiler lifted for each
-declaration and call: its kind, its 1-based line/col, and for calls the callee
-kind, arity, specializability and Pass 2 knowledge/stage. The server spawns it
-once per document version, caches the result on the document, and answers hover
-from the node under the cursor.
-
-What that changed, measured on `lib/std/compiler/graph.duo`:
-
-| Cursor on | Before (line scanner) | After (`duo graph`) |
-| --- | --- | --- |
-| `_has` at 30:1 | `_variable_` — **wrong kind** | `_func_` |
-| `_add(` call at 78 | `null` | `_call_`, callee direct, arity 2, specializable, knowledge stable, declared at line 53 |
-| local `hn` at 32:5 | `null` | `_local_`, in `_has` |
-| `name:byte(1)` at 61 | `null` | `_call_`, callee method, arity 1, knowledge observed |
-
-The scanner is still consulted, but only for what the graph does not lift — see
-Limitations. Hover labels which of the two answered, so a wrong answer can be
-traced to the right source.
-
-## Limitations
-
-- **`duo graph` lifts no node for a top-level module binding.** Measured: on
-  `x: i64 = 1\nf(a: i64): i64\n  a + x\nend\nprint(f(x))\n` the graph emits
-  `module`, `func f`, `param a` and two `call` nodes — and nothing at all for
-  `x`. So the line scanner cannot be deleted yet; hover falls back to it there
-  and says `not lifted into the semantic graph`. `test/smoke.duo` asserts that
-  fallback as a **gap tripwire**: when the lift covers module bindings the
-  assertion flips, and the fallback should go with it.
-- **`param` nodes carry no span** — every one emits `"line":0,"col":0`, so
-  hover over a parameter falls through to the scanner.
-- **One file per query.** `duo graph` takes a single file and re-parses it per
-  invocation; there is no workspace lift and no daemon. Cross-file references
-  are therefore not graph-backed.
-- **No edges in the JSON.** The graph has `usersOf`/`defsOf` internally, but
-  `duo graph` emits only nodes, so `references`, `documentHighlight` and
-  `rename` still run the LSP's own word-boundary scanners. Those are the next
-  duplicates to delete, and deleting them needs an edge or query surface from
-  the compiler first.
-- The symbol scanner is line-oriented and best-effort; it does not run the
-  parser, so deeply nested or unusual declaration shapes may be missed. It is
-  intentionally scoped to top-level declarations.
-- Definition resolves only top-level declarations (no cross-file or type-aware
-  resolution); it has not been moved onto the graph yet.
+Validate the live implementation with the repository `lsp-gate` build step
+under the shared build lock. Evidence must come from real protocol traffic,
+value assertions, lifecycle coverage, and a control that demonstrates failure.
+Record the exact tree and known aggregate state; do not infer capability from a
+successful handshake or from stale counts in documentation.

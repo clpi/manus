@@ -1,54 +1,37 @@
-# Duo Tooling
+# Idsem tooling projection
 
-**Status:** Supported overview. **Audience:** users and contributors setting up editors, MCP, and CLI workflows.
+This page is a stable orientation link, not a tool census or semantic
+authority. Start at [AGENTS.md](../AGENTS.md), then follow the
+[canonical router](../.agents/AGENT_CANONICAL.md) and
+[integration workflow](../.agents/AGENT_INTEGRATION.md). The sole semantic law
+is [C0](spec/constitution.md).
 
-## CLI (`duo`)
+The language is Idsem and canonical source uses `.id`. Every tracked
+project-owned `.duo` file is SOURCE-ZERO debt. Physical `duo` executable or
+tool prefixes are bootstrap aliases and deletion targets, not a second current
+language. Canonical compiler, LSP, and MCP implementations live in this
+repository; do not route agents to historical companion checkouts.
 
-Built from this repo (`zig build` → `zig-out/bin/duo`).
+Tooling projects graph-owned identity, facts, demand, worlds, provenance, and
+realization. It must not invent a vocabulary or recover semantic truth from
+package paths, formatted text, hashes, or source punctuation. Static identity
+uses named projection; `[]` communicates a genuinely computed key and does not
+select a physical representation.
 
-| Command | Purpose |
-| --- | --- |
-| `compile`, `run`, `check` | Compile and execute Duo/Lua source |
-| `dump-c` | Inspect generated C |
-| `fmt` | Format `.duo` / `.lua` |
-| `catalog` | Machine-readable JSON (passes, transforms, readiness matrices) |
-| `explain` | Knowledge snapshots + optimization outcomes |
-| `realize` | Realization planning + persistent evidence (partial) |
-| `graph` | Semantic graph lift (partial) |
-| `wasm-tables emit` | Regenerate `lib/std/wasm/opcode_lookup.duo` from `wasm_semantic.zig` |
-| `algebra` | Pass 2 semantic algebra export |
+Tool protocols may require booleans, but those are transport renderings rather
+than semantic owners. Tooling preserves graph cases, unknowns, descriptor and
+world facts, refinements, demands, and transitions; it must not reconstruct
+them as predicate helpers, sentinel values, or query-then-act flows.
 
-See [docs/src/compiler_usage.md](src/compiler_usage.md) for full option list.
+There is no canonical standard semantic namespace. `std` is migration
+distribution, `std.script` is frozen debt, and another universal root is not a
+replacement. Implementation location is provenance; relations own meaning,
+subjects orient application, and worlds grant authority.
 
-## Editor plugins (`ext/`)
-
-| Editor | Path |
-| --- | --- |
-| VS Code | `ext/vscode-duo/` |
-| Vim / Neovim | `ext/vim-duo/` |
-| Helix | `ext/helix/` |
-| Zed | `ext/zed-duo/` |
-
-Tree-sitter grammar: `ext/tree-sitter-duo/`. LSP server: companion repo **duo-lsp** (Duo source).
-
-## MCP (Model Context Protocol)
-
-Companion repo **duo-mcp** exposes compiler/catalog/agent coordination tools for AI integrations. Not required for local development.
-
-## Agent coordination (internal)
-
-Parallel agent rules: [AGENTS.md](../AGENTS.md), [.agents/AGENT_COORDINATION.md](../.agents/AGENT_COORDINATION.md). **Not** part of the public architecture — contributors only.
-
-## Validation scripts
-
-| Script | Role |
-| --- | --- |
-| `scripts/agent_smoke.duo` | Tier-0 example smoke via `std.agent.smoke_targets()` + `public_safety_scan.sh` |
-| `scripts/public_safety_scan.sh` | Pre-release secret/path scan (Pass 10 A19) |
-| `scripts/run_compile_fail_tests.sh` | Compile-fail regression corpus |
-| `scripts/duo_lock.sh` | Serialize parallel agent builds |
-
-```bash
-./zig-out/bin/duo run scripts/agent_smoke.duo
-./scripts/public_safety_scan.sh
-```
+Use `duo_agent_session_start`, `duo_dev_claim_files`,
+`duo_dev_claim_acquire`, and `duo_agent_gaps_update` according to the router,
+and serialize heavy commands through its locked-build route. Derive volatile
+tool availability and project status from the exact current tree instead of
+copying counts into documentation. Fail closed when authority conflicts, state
+is incomplete, semantic vocabulary is missing, or a required fact is owned
+elsewhere.

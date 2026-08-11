@@ -1,262 +1,89 @@
-# Duo
+# Idsem
 
-[![CI](https://github.com/clpi/luo-duo/actions/workflows/ci.yml/badge.svg)](https://github.com/clpi/luo-duo/actions/workflows/ci.yml)
+Idsem is a language and compiler built around one durable semantic identity
+space:
 
-Duo is an experimental Lua-derived ahead-of-time language and compiler **written in Zig** (not self-hosted). Its **default backend emits C** and invokes Clang or `zig cc` to produce native binaries and Wasm. Duo includes aggressive typed specialization for `.duo` programs and an **experimental direct ARM64 Mach-O backend** for a restricted scalar subset (`--backend=direct`).
-
-**Honest status:** Pass 11 Profile A (C-backend default) is **closed** — run `zig build pass11-gate`. Self-hosting, universal direct native compilation, and globally zero-boxing semantics remain **out of scope**. See `duo catalog | jq '.pass11'` and [(archived, deleted — git history)]((archived, deleted — git history)).
-
-## Documentation
-
-| Document | Purpose |
-| --- | --- |
-| [docs/language.md](docs/language.md) | Language reference entry |
-| [docs/compiler.md](docs/compiler.md) | Compiler architecture and modules |
-| [docs/bootstrap.md](docs/bootstrap.md) | Build chain and validation tiers |
-| [docs/tooling.md](docs/tooling.md) | CLI, editors, MCP, validation scripts |
-| [docs/contributing.md](docs/contributing.md) | Contributor workflow |
-| [docs/release.md](docs/release.md) | Release checklist |
-| [docs/src/SUMMARY.md](docs/src/SUMMARY.md) | Detailed topic index |
-| [docs/performance.md](docs/performance.md) | Benchmark ledger |
-
-Machine-readable program status: `./zig-out/bin/duo catalog`.
-
-## Syntax at a Glance
-
-```lua
--- Compact functions (no keywords needed)
-add(a: i64, b: i64): i64 a + b end
-distance(p: Point): f64 p.x * p.x + p.y * p.y end
-
--- Descriptors replace struct/enum/concept keywords
-Point: @{ x: f64, y: f64 }
-Color: @{ Red, Green, Blue }
-Sprite: @{ ..Named, ..Positioned, color: str }  -- composition
-
--- Pipelines with field projections
-users:filter(.active):map(.name):each(print)
-
--- Table spread and newline separators
-config = {
-    ..defaults
-    workers = 8
-    debug = true
-}
-
--- Compile-time evaluation
-size = @(64 * 1024)
-Vec4f = @(Vector(f32, 4))
-
--- Backends (Pass 11 — explicit, no silent fallback)
--- duo compile file.duo                         # C backend (default)
--- duo compile file.duo --backend=direct        # experimental ARM64 Mach-O
--- duo compile file.duo --target native-exe --backend=direct
+```text
+source/import -> graph -> demand -> realization -> machine
 ```
 
-## Editor support
+Semantic identity persists while representation specializes. Canonical native
+source uses `.id`. Historical `.duo` source is migration provenance, not a
+second language or a pattern library.
 
-Official editor plugins for Duo live under `ext/`:
+## Current State
 
-- **VS Code** — `ext/vscode-duo/` — Includes LSP integration with `duo-lsp`
-- **Vim / Neovim** — `ext/vim-duo/`
-- **Helix** — `ext/helix/` (linked from `ext/`)
-- **Zed** — `ext/zed-duo/` — Tree-sitter + LSP config
+The repository is at bootstrap stage S0. The production Idsem lexer owns the
+legacy token-kind/content/span projection; canonical lexical identities remain
+open in `GAP-145`. Parser recognition is still host-owned, so no Idsem-built
+production compiler B exists yet. The exact current ownership,
+blockers, and measured aggregate outcome live in
+[`docs/bootstrap.md`](docs/bootstrap.md); do not infer progress from file counts
+or generated artifacts.
 
-The editor plugins provide file-type detection, syntax highlighting for all Duo syntax, and LSP integration. The LSP server (`ext/duo-lsp/src/server.duo`) is written in Duo and provides diagnostics, document symbols, hover, go-to-definition, and completions.
+The compiler-B path is:
 
-## Build
+```text
+lexical identity
+-> generated grammar roles
+-> immutable token view
+-> executed Idsem parser recognition
+-> binding and scope
+-> graph and application
+-> demand
+-> realization and machine
+-> compiler B
+-> B builds C
+```
 
-Requires Zig 0.17.0-dev.
+## Source
+
+Canonical Idsem is deliberately compact while its semantic graph remains
+compositional:
+
+```idsem
+main: i64 = ()
+    0
+```
+
+New source uses `.id`, offside bodies, lowercase one-word native identities,
+double-quoted text, single-quoted bytes, and `#` comments. The exact law is
+[`docs/spec/constitution.md`](docs/spec/constitution.md). It is structured law
+documentation, not executable source or an implementation template.
+
+`std` is migration distribution, not semantic architecture. `std.script` is
+frozen debt. New native meaning belongs to admitted relations, subject values,
+world facts, demand, and realization, never to a new `std.*` API or replacement
+universal namespace.
+
+## Build And Evidence
+
+The physical bootstrap executable is currently named `duo`; that name is a
+migration alias, not the current language identity. Build it with:
 
 ```bash
 zig build
 ```
 
-The compiler binary is installed to `zig-out/bin/duo`.
-
-## Usage
-
-```
-duo compile <file>              compile to native binary
-duo init    [name]              scaffold src/main.duo            [see note]
-duo build   [target]            build the default or named target [see note]
-duo run     [file|target]       compile and run a file, or run a build target
-duo check   <file>              type-check only
-duo dump-c  <file>              print generated C to stdout
-duo fmt     <file>              format a .duo/.lua file
-duo completion <shell>          generate shell completions (bash, zsh, fish, nu)
-
-Options:
-  -o <name>          output binary name
-  -O<n>              optimisation level (default: -O3)
-  --cc <path>        C compiler (default: clang)
-  --target <triple>  cross-compilation target (e.g. wasm32-wasi)
-  --load-chunk       compile as shared library for runtime load()
-  --pgo              profile-guided optimisation (two-pass compile)
-  --shared-memory    enable WASM shared memory (wasm32-wasi only)
-  --lib              library mode: export @export functions, skip _start
-  -v, --verbose      show C compiler warnings
-```
-
-> **Note — `duo init` writes one file, and the loop works (re-measured
-> 2026-08-08, later the same day).** This note previously read "`duo init` /
-> `duo build` do not work today": the template `duo init` wrote opened with
-> `@build.project({…})` / `@build.run({…})` / `@build.test({…})`, which the
-> front end rejected as `error: macro expansion error: UnknownMacro`, so a
-> freshly initialised project failed `duo check`, `duo build` and `duo run`.
-> That was fixed in `00cb79e` and is now gated: `zig build init-build-smoke`
-> runs init → check → build → run → test on a clean directory on every CI run.
-> Verified again by hand for this release: in an empty directory `duo init`
-> exits 0, `duo check` prints `✓ checked — no errors`, `duo build` produces
-> `zig-out/bin/duo-app`, and `duo run` prints `hello from Duo` — all exit 0.
->
-> Still true: `duo init` writes **only** `src/main.duo` and no `build.duo`
-> (this section used to claim both).
-
-## WASM compilation
-
-Compile any `.duo` or `.lua` file to WebAssembly:
+Then canonical source can be checked through the bootstrap transport:
 
 ```bash
-duo compile examples/wasm/typed_fib.duo --target wasm32-wasi -o typed_fib.wasm
-wasmtime typed_fib.wasm
+./zig-out/bin/duo check main.id
 ```
 
-Output defaults to `<stem>.wasm` when `--target wasm32-wasi` is set. The generated module exports `main` and uses WASI for I/O. Works with any WASI-compatible runtime (wasmtime, wasmer, Node.js `--experimental-wasi-unstable-preview1`).
+Use repository-locked gates for evidence. Process completion, a focused fixture,
+or the existence of an `.id` file does not prove semantic ownership. Known red
+aggregate results remain red until the exact current-tree gate passes.
 
-## Cross-language benchmarks
+## Orientation
 
-Run Duo vs C vs Lua vs LuaJIT:
+Agents and contributors start at [`AGENTS.md`](AGENTS.md). It routes to the one
+law, current bootstrap ledger, live claims, gaps, and validation protocol.
+Historical pass documents and compatibility source are evidence only.
 
-```bash
-zig build cross-bench
-```
+Useful current projections:
 
-Requires `lua` (≥5.4) and `luajit` on `$PATH`.
-
-### Latest results
-
-**Withdrawn, 2026-08-08.** A results table used to sit here reporting a
-geometric-mean "Duo beats C by 4×", with eleven rows at `0.000000` explained as
-constant-folding and dead-code elimination.
-
-That explanation was not true. Ten kernel substitutions were removed from the
-suite in one day: three returned **frozen literal answers** when the argument
-matched the benchmark (`if (steps == 5000000) return 9.378…e-08;` — no
-integration ran), and seven **computed the benchmark's constants** for programs
-that had stopped asking for them. Three harness defects hid it: a float
-comparator that compared magnitudes (so a sign flip differed by zero), a
-`RESULT_FAIL` flag that could not hold a value, and a timing collector that
-never seeded its minimum. `CLAUDE.md` §3 records the whole thing.
-
-The withdrawn numbers were produced by that suite, so they are not evidence
-and they are not reprinted here. Run `zig build bench` and
-`zig build cross-bench` yourself; the rules any future table must satisfy —
-no recognizer keyed on a function name, a literal or a loop bound; verify by
-value, never by "it compiled"; positive-control every zero — are in `CLAUDE.md`
-§3 and are not negotiable.
-
-## CI/CD
-
-Every push runs:
-
-- `zig build` — compiler build
-- `zig build unit-test` — Zig unit tests. **Currently red**: re-measured
-  2026-08-08 at `ea04a35` in a clean detached worktree, **1286/1309 pass, 23
-  fail, 0 crash, 2 leaks** (the earlier reading of 1244/1302 with 54 fail and 4
-  crash was taken before that day's fixture repairs). The 23 cluster as: 7
-  codegen tests asserting an exact generated-C substring the emitter has moved
-  off, 7 in the `pass4`/`pass5` native-struct and foreign-C-header path, 5 in
-  the G-061 tier-1 combinator / `|>` surface, 2 in `dnir_lower` trailing
-  compound assignment, and 2 singletons. See `docs/RELEASE_STATUS.md`. This
-  line previously read "all 393 unit tests", which was wrong about both the
-  count and the colour.
-- `zig build test` — unit tests, compile-fail tests, and report-styling guard
-- `zig build agent-smoke` — tier-0 gate. **Green** as of the same measurement,
-  and it is the gate to trust before pushing.
-- WASM compilation smoke test
-- WASM codegen compatibility tests
-- WASI execution tests (wasmtime + wabt)
-- Full benchmark suite (on push to main, macOS runner)
-
-Tagged releases (`v*`) produce GitHub Releases with `duo` binaries for Linux and macOS.
-
-## Benchmark suite (Duo vs C)
-
-Run the full gate (correctness + timing):
-
-```bash
-zig build bench
-```
-
-This executes `scripts/run_benchmark.duo`, which:
-
-1. Compiles `examples/benchmark.lua` with Duo and `examples/benchmark_c.c` with Clang (`-O3 -ffast-math -march=native -flto`).
-2. Verifies all 40 `RESULT <id> <value>` lines match between Duo and reference C.
-3. Runs each benchmark 10 times and compares minimum wall times. **Duo must beat or tie C on every test** (1% slack on C time).
-
-### Sources
-
-| File | Role |
-|------|------|
-| `examples/benchmark.lua` | Primary benchmark driver (untyped Lua) |
-| `examples/benchmark.duo` | Mirror of `benchmark.lua` (same 40 workloads; kept in sync) |
-| `examples/benchmark_pure.lua` | Type-annotation-free variant (for Lua/LuaJIT runners) |
-| `examples/benchmark_c.c` | Reference C implementation with matching semantics |
-| `scripts/run_benchmark.duo` | Correctness + timing harness |
-| `scripts/run_cross_benchmark.duo` | Cross-language harness (Duo + C + Lua + LuaJIT) |
-
-### Benchmarks (high → practical stdlib)
-
-| # | ID | Models |
-|---|-----|--------|
-| 1 | `fib` | Recursive numeric hot loop (lowered to iterative) |
-| 2 | `primes` | Trial-division / sieve-style integer scan |
-| 3 | `mandel` | Float escape-time (Mandelbrot core) |
-| 4 | `grid` | Nested double loop (spectral-norm style) |
-| 5 | `nbody` | Multi-body physics integration |
-| 6 | `str_bytes` | `string.rep`, `len`, `byte` checksum |
-| 7 | `table_sum` | Dense indexed table fill + sum |
-| 8 | `trig` | `math.sin` / `math.cos` accumulation |
-| 9 | `str_chain` | String length + repeat chain |
-| 10 | `str_hash` | Rolling hash over repeated literal |
-| 11 | `floor_max` | `math.floor` + `math.max` |
-| 12 | `table_max` | Dense table max scan |
-| 13 | `pow_sqrt` | `math.pow` + `math.sqrt` |
-| 14 | `bsearch` | Sorted table binary search |
-| 15 | `filter` | Predicate count / analytics filter |
-| 16 | `dot` | Dot product of two vectors |
-| 17 | `clamp` | `math.min` / `math.max` saturate |
-| 18 | `bucket` | Histogram bucket hash |
-| 19 | `ema` | Exponential moving average |
-| 20 | `token` | Token / whitespace counting |
-| 21 | `parse` | JSON-ish delimiter byte sum |
-| 22 | `lookup` | Indexed table lookup accumulation |
-| 23 | `churn` | Table insert + aggregate |
-| 24 | `matmul` | Small matrix multiply (nested loop + indexed access) |
-| 25 | `prefix` | Prefix sum scan (serial accumulation) |
-| 26 | `gcd` | GCD reduction (Euclidean algorithm, branch-heavy) |
-| 27 | `collatz` | Collatz chain length (unpredictable branching) |
-| 28 | `xorfold` | XOR fold / bit manipulation reduction |
-| 29 | `ringbuf` | Ring buffer write/read (modulo indexing) |
-| 30 | `cond_swap` | Conditional swap reduce (sorting-kernel pattern) |
-| 31 | `ack` | Ackermann function (deep recursion stress) |
-| 32 | `leven` | Levenshtein distance (2D DP table) |
-| 33 | `sieve` | Sieve of Eratosthenes (boolean array scan) |
-| 34 | `fenwick` | Fenwick tree point-update + prefix-query |
-| 35 | `interp` | Linear interpolation table (float index) |
-| 36 | `run_len` | Run-length encoding count (byte comparison) |
-| 37 | `bitcount` | Population count / Hamming weight |
-| 38 | `cordic` | Taylor-series sin approximation (shift+add) |
-| 39 | `sparse` | Sparse vector dot product (stride access) |
-| 40 | `life` | Game of Life step (2D neighbor count) |
-
-Each section prints `RESULT <id> <value>` for automated verification.
-
-## Manual runs
-
-```bash
-duo run examples/benchmark.lua
-duo compile examples/benchmark.lua -o /tmp/bench.out && /tmp/bench.out
-clang -O3 -ffast-math -march=native -flto -lm -o /tmp/c_bench examples/benchmark_c.c && /tmp/c_bench
-```
+- [`docs/spec/AUTHORITY.md`](docs/spec/AUTHORITY.md) - authority and conflict protocol
+- [`docs/AGENT_ALIGNMENT.md`](docs/AGENT_ALIGNMENT.md) - current priority compass
+- [`docs/bootstrap.md`](docs/bootstrap.md) - executed production ownership
+- [`docs/performance.md`](docs/performance.md) - measured performance ledger

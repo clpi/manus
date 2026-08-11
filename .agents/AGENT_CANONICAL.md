@@ -1,56 +1,56 @@
-# Duo Agent Canonical Index
+# Idsem agent router
 
-> **Single entry point for ALL agents** (Cursor, Claude, Codex, Devin, Kiro, Hermes,
-> OpenCode, Windsurf, Pi, etc.). Do not duplicate buffers elsewhere — route here.
+`AGENTS.md` is the repository entry point. This file is its stable path router;
+it contains no language law and no volatile project status.
 
-## Canonical files (only these)
+## One law
 
-| Purpose | Path | MCP read | MCP write |
-| --- | --- | --- | --- |
-| **Alignment compass** (read first, 2 min) | `docs/AGENT_ALIGNMENT.md` | — | update at phase boundaries |
-| **Coordination** (subsystems, owners, protocol) | `.agents/AGENT_COORDINATION.md` | read it | hand-edit only — MCP writes go to the untracked `.agents/session/` |
-| **Gaps / findings** | `gaps/GAP-0NN.md`, one file per gap | — | new file; check the directory first, numbers collide |
-| **Performance ledger** | `docs/performance.md` | `duo_perf_ledger` | append manually after bench work |
-| **Agent rules** | `AGENTS.md` | — | update only for protocol changes |
-| **Architecture plan** (semantic universe) | `docs/semantic_universe.md` | — | update at phase boundaries |
-| **Grammar spec** (surface syntax evolution) | `docs/GRAMMAR_SPEC.md` | `duo_grammar_spec_read` | `duo_grammar_spec_update` |
-| **Directive hierarchy** (`@comp.*` dotted paths) | `docs/DIRECTIVE_HIERARCHY.md` | `duo_directive_hierarchy_read` | — |
-| **MCP / multi-agent setup** | `.agents/AGENT_INTEGRATION.md` | — | update when MCP config changes |
-| **MCP servers (canonical code)** | `tools/mcp/` | all `duo_*` tools | merged in-tree 2026-08-08; version-locked to the compiler |
-| **End-user agent hooks** (writing IN Duo) | `docs/agent_hooks.md` | `duo_meta_catalog`, `duo_meta_ladder` | — |
+| Purpose | Path |
+|---|---|
+| Sole semantic law | `docs/spec/constitution.md` |
+| Operative projection | `CLAUDE.md` |
+| Grammar projection | `docs/spec/grammar.md` |
+| Source-family classification | `docs/spec/corpus.md` |
+| Authority and migration protocol | `docs/spec/AUTHORITY.md` |
+| Priority compass | `docs/AGENT_ALIGNMENT.md` |
+| Executed compiler frontier | `docs/bootstrap.md` |
+| Ownership and gates | `.agents/AGENT_COORDINATION.md` |
+| MCP setup | `.agents/AGENT_INTEGRATION.md` |
+| Performance evidence | `docs/performance.md` |
+| Open obligations | `gaps/GAP-0NN.md` |
 
-**Law:** `CLAUDE.md` is operative; `docs/spec/pass100.md` and `docs/spec/AUTHORITY.md` back it. The archived pass documents are historical evidence and may not be cited as authority.
+The constitution is structured law documentation, not executable source or a
+pattern library. Canonical implementation uses `.id`. No pass document or
+historical corpus file is an authority.
 
-**Redirects (not canonical):** `docs/AGENT_COORDINATION.md` and `docs/AGENT_GAPS.md` → the files above.
+## Session start
 
-**PROTOCOL — `git stash` is BANNED (2026-08-01).** Never stash work to reach a
-"clean tree" or dodge a conflict; it silently hides work from `git status` and
-broke all parallel agents once. Commit early on a branch, coordinate via claims,
-or export a visible `.patch` file. `git stash list` must stay EMPTY.
+1. Read `AGENTS.md`, the constitution, `CLAUDE.md`,
+   `docs/AGENT_ALIGNMENT.md`, `docs/bootstrap.md`, and the scope-specific
+   authority.
+2. Call `duo_agent_session_start(agent_id="your-id")` on `duo-bench`.
+3. Inspect `git status --short --branch`, current HEAD, recent commits, live
+   claims, open gap files, and `git stash list`.
+4. Treat the session-start open-P0 count as incomplete until `GAP-131` closes.
+5. Claim exact paths with `duo_dev_claim_acquire` before editing.
+6. Run heavy gates through the repository lock and record the inner outcome.
+7. Commit only explicit owned paths and release only your own claims.
 
-## Session start (every agent, every session)
+The current physical `duo` command and `duo-*` MCP names are bootstrap aliases.
+They do not rename Idsem or authorize new `.duo` implementation.
 
-1. Read **`docs/AGENT_ALIGNMENT.md`** — 2-min compass (direction + moratorium + phase status).
-2. Skim **`docs/semantic_universe.md`** — architecture depth when touching meta/graph/transforms.
-3. Read **`AGENTS.md`** — non-negotiables (perf, native, Lua, `@comp.*`).
-4. Call **`duo_agent_session_start(agent_id="your-id")`** (duo-bench MCP) — loads buffers + open P0 count.
-5. **Claim** work: **`duo_coordination_update(action="claim", ...)`** before editing shared files.
-6. Builds: **`duo_agent_smoke()`** or **`duo run scripts/duo_lock.duo -- ./zig-out/bin/duo run scripts/agent_smoke.duo`** (tier-0 default; `duo_lock.sh` was retired by RL-13).
-7. Native audit: **`duo_audit_metaprogramming_smokes()`** after generative/meta work; **`duo_audit_native_boxing(path)`** for targeted checks.
-8. New gap: a new `gaps/GAP-0NN.md`.
-9. Delegate P0/P1: **`duo_agent_delegate(gap_id, agent_id, status)`**.
+`std` is migration distribution, not a semantic namespace. `std.script` is
+frozen debt. New canonical `std.*` calls, APIs, generated source, and onboarding
+examples are forbidden; missing subject/world vocabulary blocks rather than
+creating another helper root.
 
-## Comptime hooks (in Duo source)
+PREDICATE-ZERO is also fail-closed: subject-first spelling does not admit a
+boolean helper when a semantic fact, case, transition, world, descriptor,
+demand, or realization fact owns the meaning. Preserve unknown and absence;
+missing vocabulary blocks rather than producing a helper predicate.
 
-| Audience | API |
-| --- | --- |
-| Agents working **on** Duo | `@comp.agent.catalog()`, `.ladder()`, `.hooks()`, `.dedupe()`, `.gaps()`; `req("std.agent")` |
-| Agents / apps **in** Duo | `@comp.derive.*`, `@comp.burst`, `@comp.pipeline`, `@comp.catalog("grouped")` |
+## Fail closed
 
-## Three concerns (do not conflate)
-
-1. **Agent direction** — coordination + gaps buffers + MCP (this index).
-2. **End-user agent hooks** — `docs/agent_hooks.md`, `@comp.agent.*`, `std.agent`.
-3. **Language implementation** — compiler, codegen, `@comp.*` combinators, native lowering.
-
-Language work takes priority once buffers are read/claimed; do not fork parallel coordination files.
+If law conflicts, status cannot be verified, vocabulary is missing, or another
+owner has not exposed a required fact: stop, record the exact blocker, and do
+not create a substitute authority.

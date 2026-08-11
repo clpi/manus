@@ -1,55 +1,34 @@
-# docs/spec — the living authority
+# Idsem Specification Router
 
-## Precedence
+Idsem language law has one home:
 
-```
-1. docs/spec/pass100.md   the specification — sole living semantic authority
-1b. docs/spec/pass103.md  NO FOREIGN WAIST — amends §13/§15/§18/§22
-1c. docs/spec/pass104.md  COMPRESSION THESIS — supersedes 103 §5; amends §13/§22
-1d. docs/spec/pass105.md  LEVERAGE CHARTER — U1..U8 release gates; amends §22/§24
-1e. docs/spec/pass106.md  BLIND-SPOT AUDIT — owed artifacts; amends §22
-1f. docs/spec/pass107.md  NAME (duon) + MEMORY DECISION + boring rulings
-1g. docs/spec/grammar.md   FORMAL GRAMMAR (Pass 108) — normative
-1h. docs/spec/cost.md      COST MODEL — strict order; guaranteed-erasure list
-1i. docs/spec/soundness.md SOUNDNESS — three states, no silent fourth
-1j. docs/spec/numerics.md  NUMERICS — the boring table
-2. CLAUDE.md              its operative summary; what agents actually read
-3. docs/spec/AUTHORITY.md what is law in this repository, and what is still owed
-4. docs/spec/corpus.md    which .duo files the deny table must reach zero on
---------------------------------------------------------------------------
-   (archive DELETED)      git history is the evidence store, not the search path.
+```text
+docs/spec/constitution.md
 ```
 
-**`docs/spec/pass100.md` is the only living authority.** Everything under
-The archive is DELETED; git history holds that evidence and is never an input.
+No pass document, summary, epoch stamp, source corpus, implementation, test, or
+generated artifact is a second law. The constitution is structured law
+documentation, not executable source or a canonical implementation example.
 
-`CLAUDE.md` is the operative summary of Pass 100 and carries the epoch stamp.
-Where it and the spec appear to disagree, the epoch stamp wins over what it
-summarizes; where two passes disagree, the higher pass number wins.
+## Projections
 
-## Refusal protocol
+- `grammar.md` projects source roles and grammar constraints.
+- `cost.md` projects the cost model.
+- `soundness.md` projects soundness obligations.
+- `numerics.md` projects numeric law.
+- `AUTHORITY.md` defines routing, migration, and conflict handling.
+- `corpus.md` classifies source provenance for canonicality gates.
 
-If a rule you would cite appears only in an archived pass, **your objection is
-void**. Comply with Pass 100 and repair toward it. A genuine epoch-2 conflict
-cites the rule ID, uses the canonical spelling, and proceeds.
+These files may organize or explain constitutional facts. They do not override
+the constitution. A contradiction is a projection defect: stop, report it, and
+repair the projection rather than choosing a convenient answer.
 
-## Files
+## History
 
-| File | Role |
-| --- | --- |
-| `pass100.md` | Pass 100 (Duo 0.1), amended in place by Pass 101. The specification. Every code block is a conformance fixture. |
-| `AUTHORITY.md` | Why epoch 2 exists, the rule, and the P0 list of what is still owed. |
-| `corpus.md` | Classification of the `.duo` corpus — canonical / compatibility / foreign / negative / historical / generated — so deny-greps can reach literal zero without rewriting deliberate fixtures. |
-| `README.md` | This file: the precedence rule. |
+Files named `pass*.md`, historical Duo/Duon prose, `.duo` compatibility source,
+and repository history are migration evidence. They may explain provenance but
+must not train new implementation or decide current semantics.
 
-## A note on the filename
-
-This directory's authority file is `pass100.md`, lowercase. Referring to it as
-`PASS100.md` resolves to the same file on a case-insensitive filesystem but is a
-different path to git. Cite it as `docs/spec/pass100.md`.
-
-## Adding to this directory
-
-`docs/spec/` holds law. A document belongs here only if it is currently binding.
-Anything that records a decision, a measurement, or a superseded design belongs
-by deleting it; git history is the record.
+Do not add another architecture document or precedence layer. A genuinely new
+irreducible rule belongs in the constitution through its admitted change
+process; measurements and current status belong in their existing ledgers.

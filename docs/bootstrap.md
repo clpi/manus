@@ -1,8 +1,10 @@
 # Idsem bootstrap contract
 
-`lib/compiler/bootstrap.duo` is the executable machine-readable structural
-candidate. This document is its human projection. It is not bootstrap evidence
-or production authority. The immediate target is compiler B, not a sovereign
+The seed currently obtains structural bootstrap candidate data from the tracked
+project-owned file `lib/compiler/bootstrap.duo`. That file is SOURCE-ZERO debt,
+not canonical source or an implementation pattern. This document is a human
+projection of the executed authority frontier; it is not bootstrap evidence or
+production authority. The immediate target is compiler B, not a sovereign
 backend.
 
 ## Current stage: S0
@@ -12,10 +14,16 @@ backend.
 No Idsem-built compiler binary exists in the production path yet.
 
 The production front end nevertheless has one executed Idsem-owned boundary:
-`lib/std/compiler/lexer.duo` owns token content, token identity, and exact
-source spans. The host bounds-checks those spans and projects them into its
-temporary parser representation. It does not reconstruct token text or source
-locations.
+the historical distribution file `lib/std/compiler/lexer.duo` owns legacy
+token-kind production, token content, and exact source spans. The host
+bounds-checks those spans and projects them into its temporary parser
+representation. It does not reconstruct token text or source locations.
+Canonical lexical identity is not closed: text, bytes, Lua long text, comments,
+shebang, and reserved backtick still lack the distinct law-bearing identities
+required by `GAP-145`. The `std` path is migration distribution, not semantic
+ownership. This tracked project-owned source must move semantically into
+canonical `.id` and the old file must be deleted in the same proven production
+slice; compatibility support does not justify retaining it as a pattern source.
 
 The production route is now fail-closed. Allocation, record-buffer, and token
 projection failures leave no accepted token stream and return an error to the
@@ -28,21 +36,27 @@ embed or optimization path; deleting those higher-level fallbacks requires the
 corresponding realization owner to distinguish physical refusal from semantic
 failure.
 
-The next boundary remains production parse recognition. It is blocked by
-`GAP-134`: C0 requires the self-hosted parser to consume a generated
-constitutional grammar, while the current repository has no machine-readable
-canonical grammar-role projection. Porting the host recognizer would duplicate
-grammar authority through token-text lists and mutable lookahead. S0 therefore
-remains the honest stage until grammar roles and an immutable token view are
-available to executed Idsem parser code.
+The next boundary remains production parse recognition. `GAP-145` must first
+publish the distinct lexical identities and source-law facts needed by
+`GAP-134`; C0 then requires the self-hosted parser to consume generated grammar
+roles through an immutable token view. Porting the host recognizer would
+duplicate grammar authority through token-text lists and mutable lookahead. S0
+therefore remains the honest stage until those facts are available to executed
+Idsem parser code.
+
+The transfer must also preserve PREDICATE-ZERO. Parser and resolver output
+retain cases, refinements, descriptor and world facts, unknowns, demands, and
+transitions directly. It must not reproduce host `has`, `is`, `can`, `exists`,
+sentinel, or query-then-mutate helpers as Idsem semantic architecture.
 
 ## Production authority ledger
 
 | Boundary | Current state | Exact remaining authority |
 | --- | --- | --- |
-| Source ingress | MIGRATION BRIDGE | Zig discovers source and projects the centralized `.id`/historical `.duo` family fact. |
-| Lexer | IDSEM OWNED | Executed Idsem lexer owns the current token stream and now fails closed; canonical lexical-law closure remains `GAP-145`. |
-| Token/span | IDSEM OWNED | Idsem token identities and exact spans are projected through the generated-C physical bridge. |
+| Source ingress | HOST OWNED | Zig currently classifies suffix/path text into source law and provenance. The helper is centralized but remains host authority and does not consume the complete corpus classification. |
+| Lexer | IDSEM OWNED | Executed Idsem lexer owns legacy token-kind, content, and span production and now fails closed; canonical lexical-law closure remains `GAP-145`. |
+| Lexical identity | BLOCKED | Distinct text, bytes, compatibility literal/comment, shebang, and reserved-backtick facts do not yet cross the token boundary (`GAP-145`). |
+| Token/span | IDSEM OWNED | Exact token content spans are projected through the generated-C physical bridge; the host retains a temporary parser representation. |
 | Grammar projection | BLOCKED | No complete machine-readable canonical role projection or immutable token view exists (`GAP-134`, `GAP-145`). |
 | Parser recognition | HOST OWNED | `src/parser.zig` still decides callable headers, expressions, bindings, and source structure. |
 | Binding/scope | HOST OWNED | Production binding and scope construction remain in the host parser and semantic producer. |
@@ -65,11 +79,16 @@ For the fail-closed lexer transfer:
   source-law provenance; then `GAP-134` can project generated grammar roles to
   an immutable token view and replace the first host parser recognition.
 
-Canonical source ingress now recognizes `.id` as Idsem and retains `.duo` as
-historical provenance. Both suffixes select the same lexer, parser law, semantic
-production, and realization path. The source-family projection is centralized
-in `src/duo_lexer_bridge.zig` until compiler B can consume the constitutional
-source fact directly. Build entry, embedded module discovery, and direct-native
+Canonical source ingress now recognizes `.id` as Idsem and temporarily accepts
+`.duo` compatibility input with noncanonical provenance. Both suffixes select
+the same lexer, parser law, semantic production, and realization path. Tracked
+project-owned `.duo` source remains SOURCE-ZERO debt and must reach zero;
+compatibility testing must move to generated, structured, or external material
+rather than an in-tree stale source library. `src/duo_lexer_bridge.zig` is one
+bootstrap helper, not the constitutional source-family authority: it still
+decides from suffix text and maps every `.duo` to the same law/provenance pair even though
+the corpus distinguishes compatibility, historical, generated, and current
+migration inputs. Build entry, embedded module discovery, and direct-native
 module metadata discovery prefer `.id` and fall back to `.duo`. The native
 metadata path consumes the source-family constants rather than maintaining its
 own suffix spelling. Tooling and corpus gates that still enumerate `.duo`
@@ -102,8 +121,8 @@ canonical `.id` source. A real bootstrap projection must consume exact graph
 entities, witnesses, provenance, and observations from an execution world
 before the contract can accept B or C.
 
-`lib/compiler/application.duo` inventories the application and pack facts
-required by SHC-01. It is still historical migration source, not a complete
+The tracked SOURCE-ZERO file `lib/compiler/application.duo` inventories the
+application and pack facts required by the next bootstrap transfer. It is not a complete
 identity owner: its three-coordinate `identity` record conflicts with the rule
 that the graph entity is identity, and unconditional identity fields cannot
 represent unknown, absent, and empty facts honestly. Production authority begins
@@ -168,22 +187,20 @@ program.
 
 The source-family projection in this stage is a constant-time ingress fact with
 no allocation. It selects one language law and records provenance. It does not
-select machine realization: the current focused direct-native differential emits
-byte-identical objects for equivalent `.id` and `.duo` source. The downstream
-graph still hashes the full source path into `stable_id`, however, so semantic
-identity equivalence remains open until `GAP-142` removes that authority.
+select machine realization. Equivalent canonical `.id` and temporary
+compatibility input must normalize to identical semantic entities and facts
+apart from admitted source provenance; focused byte equality alone does not
+prove that boundary.
 
-The direct-native metadata lookup change adds two fixed suffix probes per
-candidate prefix and no allocation beyond the path/source work already required.
-Its earlier serialized aggregate reached **1183/1186** with three known semantic
-failures. That is historical evidence for that exact snapshot, not current-tree
-admission. On the current fail-closed lexer working tree, the focused production
-route controls passed **6/6**, `zig build` completed, the rebuilt compiler checked
-`examples/shc/lexer.id`, and `pass16-m1-smoke` completed **16/16**. The current
-unit aggregate remains red after execution at **1191/1194**: interpolation
-indexed holes, ordinary root relation projection, and independent `eq`
-derivation still fail. The new lexer controls pass inside that exact aggregate;
-the baseline failures remain failures rather than being renamed a pass.
+The direct-native metadata lookup adds two fixed suffix probes per candidate
+prefix and no allocation beyond the path/source work already required. Exact
+focused and aggregate outcomes are volatile evidence and therefore do not live
+in this contract. Session bootstrap must bind them to the tested revision,
+dirty state, command, requested-run outcome, and artifact; unavailable evidence
+fails closed. `GAP-131` remains an onboarding P0 until that projection reads
+canonical gap files and live claims. A focused pass never changes a red
+aggregate into a pass, and a zero returned by the current broken reader is not
+evidence of a clean project.
 
 Future B/C acceptance requires two distinct application and output
 incarnations, the seed as B's exact producer, B as C's exact producer,
@@ -193,24 +210,20 @@ bound to each application. The structural controls check those relationships,
 not the authenticity of their synthetic identities. B and C may have different
 artifact content; binary identity is not required for B-to-C acceptance.
 
-## Commands
+## Source-zero deletion gate
 
-```text
-duo check lib/compiler/bootstrap.duo
-duo run lib/compiler/bootstrap.duo
-duo check lib/compiler/application.duo
-```
-
-These historical `.duo` checks validate migration structures only. They are not
-canonical `.id` source, an SHC stage, or an aggregate. A future bootstrap
-projection must derive its evidence from the executed Idsem compiler graph
-rather than make a host build step authoritative.
+Do not copy or run the tracked bootstrap sources as canonical examples. Their
+retained structural behavior must move into executed `.id`, receive production
+perturbation and differential proof, and then be deleted. A future bootstrap
+projection derives its evidence from the executed Idsem compiler graph rather
+than making a host build step authoritative.
 
 ## Prohibited claims
 
 - "Self-hosted" when Idsem code exists but is not on the production compile path
-- Silent fallback. An explicit existing C/native bootstrap backend is allowed
-  for B and C, but it does not prove backend sovereignty.
+- Silent fallback. A pinned trusted-seed C/native backend may remain only as
+  foreign physical realization with zero Idsem semantic authority; it does not
+  prove backend sovereignty or authorize new host implementation.
 - Undocumented bootstrap binaries or unpinned dependencies
 - A B/C comparison built from different compiler source
 - File-count reduction presented as compiler authority transfer

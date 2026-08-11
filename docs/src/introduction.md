@@ -1,77 +1,51 @@
-# Introduction
+# Idsem
 
-Duo is a Lua-like language that compiles to native C (ahead-of-time compilation). It combines the simplicity and expressiveness of Lua with optional static typing for performance-critical code.
+Idsem preserves semantic identity while allowing representation to change.
+Canonical project-owned source uses `.id`. The historical `.duo` family and
+the current `duo` command are migration artifacts, not source or naming
+templates.
 
-## Key Features
+The sole semantic law is `docs/spec/constitution.md`. It is structured law
+documentation while lexical closure blocks a truthful `constitution.id`.
+`CLAUDE.md` and this book are projections; conflicts make the projection
+defective.
 
-- **Lua-compatible syntax**: Duo accepts both `.duo` files (typed mode, local-by-default) and `.lua` files (traditional Lua mode, global-by-default)
-- **Static types, zero-cost**: When you annotate types, Duo generates pure C code with no runtime overhead or boxing
-- **Native performance**: Fully-typed Duo code compiles to native C that beats C in many benchmarks due to aggressive optimizations
-- **WASM target**: Cross-compile to WebAssembly with WASI support
-- **Pattern matching**: Lua-like match expressions with destructuring and `then`/`do` arms
-- **Async/await**: Cooperative concurrency built on stackless coroutines
-- **Generics**: Monomorphized generics (compile-time specialization)
-- **Result and Option types**: Rust-inspired error handling without runtime cost
+## Current compiler frontier
 
-## Architecture
+The executed Idsem lexer owns token and span production. The earliest remaining
+host-owned boundary is the complete lexical-role and grammar-role projection
+needed by an immutable token view and the first executed Idsem parser
+recognition. Parser, binding, semantic construction, demand, realization,
+machine selection, object emission, and link selection remain bootstrap-hosted.
 
-The Duo compiler has four main passes:
+An `.id` file counts as self-host progress only when it executes in the
+production compiler path and replaces an exact host decision. A focused test,
+renamed file, wrapper, or generated artifact is not that proof.
 
-1. **Lexer** → Tokenizes source code
-2. **Parser** → Builds an AST from tokens
-3. **Semantic Analysis** → Type-checks and annotates the AST
-4. **Code Generation** → Emits C code that clang compiles to native
+## Source direction
 
-Optional passes between semantic analysis and codegen:
+Source keeps useful human distinctions while meaning converges immediately
+after resolution:
 
-- **Monomorphizer** → Expands generic functions into concrete specializations
-- **ARC Pass** → Analyzes reference counting for managed values
-- **Async Lowering** → Transforms async functions into state machines
-
-## Status
-
-Duo is actively developed with 393+ unit tests, compile-fail tests, and a 40-benchmark performance gate (`zig build bench` requires Duo to beat or tie C). The compiler produces native binaries, shared libraries, and WebAssembly outputs. See [Roadmap](./roadmap.md) for the current feature set and planned work.
-
-## Quick Start
-
-```bash
-# Install (requires Zig 0.17.0-dev)
-zig build
-
-# Run a Duo file
-./zig-out/bin/duo run examples/hello.lua
-
-# Compile a .duo file to native binary
-./zig-out/bin/duo compile script.duo -o program
-
-# Compile to WASM
-./zig-out/bin/duo compile script.duo --target wasm32-wasi -o program.wasm
+```text
+() ordinary application and grouping
+{} structured packs, descriptor application, and bounded homes
+[] genuinely computed projection
+.  statically named projection
+:  admitted descriptor, subject, and home faces
 ```
 
-## Hello World
+Static identity should look static: `user.name` and `{ name = value }` expose
+more information than string-key computation. A genuinely computed key remains
+`values[i]` or `table[key]`. Neither face chooses a physical representation.
 
-```duo
--- hello.duo
-fun main(): void
-    print("Hello, Duo!")
-end
-```
+Possessed values supply subjects. Worlds supply authority. Facts carry
+qualification. Demand selects need. Realization selects implementation and
+physical form. Package location is provenance and distribution, never native
+semantic identity.
 
-```bash
-$ duo run hello.duo
-Hello, Duo!
-```
+## Evidence
 
-## Typed Example
-
-```duo
--- fib.duo
-fun fib(n: i64): i64
-    if n <= 1 then return n end
-    fib(n - 1) + fib(n - 2)
-end
-
-print(fib(40))
-```
-
-This compiles to pure C, running at native speed.
+Project state is volatile. Begin at `AGENTS.md`, obtain the live session
+projection, inspect the exact revision, dirty tree, claims, open gaps, and
+serialized gate outcomes, and fail closed when any source is unavailable.

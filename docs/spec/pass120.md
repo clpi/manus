@@ -1,6 +1,6 @@
 # Pass 120 — the adjudication record (EXPLANATORY, NOT LAW)
 
-> **THIS FILE DOES NOT BIND.** `docs/spec/constitution.duo` is C0 and is the only
+> **THIS FILE DOES NOT BIND.** `docs/spec/constitution.md` is C0 and is the only
 > law. This is the reasoning behind a subset of its facts, kept because a fact
 > records *what* was decided and a reader sometimes needs *why*. Where this file
 > and the constitution differ, **the constitution wins and this file is the

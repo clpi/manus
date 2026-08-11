@@ -5,10 +5,12 @@
 The language law has one home. Read these files before editing Idsem, in this
 order:
 
-1. `docs/spec/constitution.duo` — C0, the highest authority.
+1. `docs/spec/constitution.md` — C0, the sole semantic authority. It is
+   structured law documentation, not executable source or a source template.
 2. `CLAUDE.md` — the operative projection of C0.
-3. `docs/spec/AUTHORITY.md` and the relevant files in `docs/spec/`.
-4. `.agents/AGENT_CANONICAL.md` and `.agents/AGENT_COORDINATION.md` — workflow,
+3. `docs/spec/AUTHORITY.md`, `docs/bootstrap.md`, and the relevant projection
+   in `docs/spec/`.
+4. `.agents/AGENT_CANONICAL.md` and `.agents/AGENT_COORDINATION.md` — routing,
    ownership, and current obligations.
 
 This file is only the agent workflow and mechanical preflight. It is not a
@@ -65,9 +67,12 @@ removing it would measurably sacrifice clarity or performance.
 
 Each file owns one semantic concept. Each Idsem identifier is one lowercase
 semantic word. An underscore or uppercase letter in an Idsem identifier is never
-canonical. `std` is a retiring distribution and compatibility root, not
-semantic authority; reduce its ratchet whenever a subject relation, level,
-home, or world can own the operation.
+canonical. `std` is migration distribution, not semantic architecture.
+`std.script` is frozen debt. New canonical `std.*` APIs and call sites are
+forbidden. Do not replace `std` with another universal namespace: possessed
+values supply subjects, authority belongs to worlds, and qualification belongs
+in facts. If the required relation or world is not admitted, report
+`SEMANTIC-VOCABULARY-BLOCKED` instead of adding a helper.
 
 The following shapes are presumptively noncanonical whenever written or
 touched:
@@ -75,6 +80,9 @@ touched:
 - namespace activity whose first meaningful value is the subject;
 - module traversal standing in for a subject or world;
 - an ordinary value used as an absence or failure sentinel;
+- a boolean helper or negation that projects an owned semantic fact, case,
+  capability, descriptor, shape, demand, transition, or realization decision;
+- a single-use boolean binding that exists only to control the next branch;
 - an existence query followed by a transition that could establish the desired
   state atomically;
 - conditional demand used only for defaulting, projection, case handling, or
@@ -87,6 +95,9 @@ touched:
 - syntax-derived identity surviving as semantic authority;
 - representation-specific vocabulary where an admitted semantic relation
   exists.
+- computed-key syntax when the key identity is already statically known;
+- a literal string projected through `[]` when admitted named projection or a
+  structured field exposes the same identity directly.
 
 After parsing, describe meaning in semantic terms. Parser terms such as
 statement, loop node, binary expression, or call expression are valid only
@@ -150,17 +161,24 @@ Before writing a nontrivial Idsem expression, answer:
 8. Is a namespace standing in for a world or subject?
 9. Is storage or allocation observable?
 10. What lawful realization or optimization freedom would this spelling erase?
+11. Does every `[]` key genuinely require evaluation, or is a stronger static
+    field/projection face already known?
+12. Is a boolean or negation erasing a semantic case, unknown state, fact, or
+    transition that should be consumed directly?
 
 Prefer the representation that preserves the most semantic information and the
-largest lawful realization set.
+largest lawful realization set with the least source ceremony. Static identity
+looks static; computed identity uses `[]`; neither face chooses representation.
 
 ## Coordination and commits
 
 Idsem is developed by concurrent agents in one dirty checkout.
 
-1. Start through `duo_agent_session_start` and inspect the canonical router,
-   live gaps, `git status --short --branch`, recent commits, live claims, and
-   `git stash list`.
+1. Read the local router and current bootstrap ledger, then call
+   `duo_agent_session_start` and inspect `git status --short --branch`, recent
+   commits, live claims, live `gaps/GAP-*.md`, and `git stash list`. Until
+   `GAP-131` closes, a session response reporting zero P0 gaps is invalid; scan
+   the gap files and fail closed instead.
 2. Claim exact paths with `duo_dev_claim_acquire` before editing. Never edit a
    path owned by another live session.
 3. Use `duo_agent_gaps_update` for numbered obligations. Do not create a second

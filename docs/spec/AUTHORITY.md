@@ -1,109 +1,57 @@
-# Epoch 2 — what is law in this repository
+# Authority and migration
 
-**`docs/spec/constitution.duo` is the sole living semantic authority for
-Idsem.** `CLAUDE.md` is its operative projection and is what agents read.
+`docs/spec/constitution.md` is the sole living semantic-law authority for
+Idsem. No pass document, summary, plan, implementation, fixture, corpus pattern,
+or agent instruction competes with it.
 
-## The problem this file exists to fix
+The constitution uses a documentation extension because it is structured law
+data, not executable source. Its Idsem-shaped declarations are not an
+implementation pattern library. Canonical implementation uses `.id`; `GAP-145`
+separately owns the missing lexical identities and generated grammar roles.
 
-An external audit of tip `8e1e45c` found the repository's sources of truth had
-NOT converged on Pass 100 even though the implementation was moving toward it:
+## Projections
 
-> the implementation is moving toward Pass 100 faster than the repository's
-> sources of truth are converging around it ... old mechanisms, old
-> specifications, compatibility machinery, pass-shaped scaffolding, and the new
-> graph-native direction all coexist as partially authoritative systems.
+- `CLAUDE.md` is the operative projection.
+- `docs/spec/grammar.md` is the grammar projection.
+- `docs/spec/corpus.md` classifies source families for gates.
+- `AGENTS.md` is workflow and mechanical preflight.
+- `docs/AGENT_ALIGNMENT.md` is the current priority compass.
+- `docs/bootstrap.md` is the executed compiler-authority ledger.
+- `.agents/AGENT_CANONICAL.md` is the stable path router.
+- `.agents/AGENT_COORDINATION.md` maps implementation ownership and gates.
 
-Measured at the time of writing: **47 tracked `docs/plans/pass*.md` documents,
-and zero files mentioning Pass 100.** `CLAUDE.md` still carried the Pass 64
-contract. Every agent reading this repository was learning superseded law, which
-is why retired concepts kept being reintroduced — the searchable context taught
-them.
+These files explain, route, classify, or report. They do not add semantic law.
+If one disagrees with the constitution, repair the projection.
 
-## The rule
+## Current state
 
-The archive is **DELETED** (Pass 121 owner directive: archival material is
-deleted or not considered). Git history records how the design arrived where it
-is. It is NOT an architecture input, and nothing may cite it as authority.
+Do not copy volatile counts or pass/fail claims into this file. Read:
 
-Moving those documents out of `docs/plans/` reduced their pull but did not remove
-it: a stamped file is still a file grep reaches, and this repository measured the
-consequence — a CI gate cluster that spent months mechanically defending prefix-@
-and the Lua-superset doctrine, both retired law, because the searchable text
-taught them. Deletion is the only version of this rule that holds.
+- `git rev-parse HEAD`, `git status`, and recent commits for the exact tree;
+- `duo_dev_claim_files` for live ownership;
+- `gaps/GAP-0NN.md` for open obligations;
+- `docs/bootstrap.md`, verified against production dispatch, for the current
+  compiler-B frontier; and
+- the exact serialized gate output for current evidence.
 
-Those 59 documents used to sit in `docs/plans/`, whose name taught every search
-that they were live. They were moved with `git mv` (history preserved), each
-stamped `HISTORICAL — superseded by docs/spec/pass100.md`, and indexed in
-git history. `docs/spec/README.md` carries the precedence rule.
+`GAP-131` records that the MCP session-start open-P0 summary can currently
+under-report repository gaps. Until it closes, a session start is routing help,
+not a complete status authority.
 
-Refusal protocol: if a rule you would cite appears only in an archived pass,
-your objection is void. Comply with Pass 100 and repair toward it. Genuine
-epoch-2 conflicts cite the rule ID, use the canonical spelling, and proceed.
+## History
 
-## What is still owed
+Pass-number documents and Duo/Duon-era plans are historical provenance. Git
+history preserves them. Their names, examples, measurements, and architectural
+claims do not bind current work. A current document may mention a historical
+spelling only when that exact provenance is the subject.
 
-The audit's P0 list:
+## Conflict protocol
 
-- [x] Pass 100 named as sole authority; `CLAUDE.md` regenerated to epoch 2
-- [x] the spec itself committed at `docs/spec/pass100.md` (it was referenced but absent)
-- [x] `audit100` built from the deny table so the spec becomes executable pressure
-      (`zig build audit100`, `scripts/audit100.duo`)
-- [x] the historical `.duo` corpus classified
-      canonical / compatibility / foreign / negative / historical / generated,
-      so deny-greps can reach literal zero on the canonical set without
-      rewriting deliberate compatibility fixtures (`docs/spec/corpus.md`)
-- [ ] canonical `.id` and historical `.duo` source families projected from one
-      authority into corpus, formatter, LSP, MCP, Tree-sitter, and generators
-- [x] superseded pass documents removed from the search path: 59 moved
-      `docs/plans/` out of the search path, then DELETED outright
-- [x] tracked session/agent state removed; `.agents/AGENT_COORDINATION.md` went
-      4619 lines → 102 (subsystem/owner map, gate table, four protocol rules).
-      The original is frozen verbatim at
-      `docs/history/agent-coordination-2026-07-to-08.md`, historical evidence
-      on the same footing as the deleted archive. The five MCP write sites that
-      grew it now target the gitignored `.agents/session/`; reducing the
-      document without moving the writers would have regrown it in a week
-- [ ] `@`-directive ontology replaced by graph/world facts (`ast.Attribute`,
-      `has_*_attr`, layout attrs, `@comp.*` parsing all still structural)
-- [ ] stable semantic identity across scope/module/codegen — textual names are
-      still doing semantic-identity work, which is the root of a whole family
-      of current bugs
-- [ ] concept/generic/overload/method registries collapsed into trie + relations
-- [ ] offside parsing + canonicalizer (not optional-`end` lookahead hacks)
-
-`§22` of Pass 100 says "Running: nothing." That is now too conservative in
-places and inconsistent in others; the replacement is a GENERATED capability
-table — described → parsed → semantically checked → C path → direct-native →
-differentially proven → canonical — populated from the native differential
-corpus rather than asserted.
-
-## blocks-passing/blocks-total now has a reading (2026-08-08)
-
-§19 lists it as a metric and §22 calls it "the project's first honest number".
-It was never computed. `zig build spec-corpus` computes it, and reports a
-second number beside it:
-
-- **blocks** — §20's five golden files, EXTRACTED from `docs/spec/pass100.md`
-  on every run and checked verbatim. No tracked copy exists, because a tracked
-  copy of the spec's own text is a second source of truth whose drift is
-  invisible. Each failing block prints its exact diagnostic, so the report is
-  the ordered work list and not a score.
-- **forms** — one fixture per §20 construct in `examples/spec100/`, each
-  printing a value the fixture itself declares. This is the number that moves
-  while a block is still red. It is checked BY VALUE: the guard-chain fixture
-  compiles under either reading of `while b = f() and p(b)` and only the
-  printed total distinguishes them.
-
-Both ratchet from the measured baseline. Do not transcribe the numbers here —
-read them from a run, for the same reason §22's repository note gives.
-
-`gaps/GAP-025.md` carries the measured table: which block, which diagnostic,
-which construct, and three SPEC DEFECTS the corpus revealed about itself
-(a shebang below a comment; two `for` clauses nested on one line against §6;
-and two `audit100` deny rows that convict §20's own text).
-
-This does not replace `audit100`. That gate counts deny lines over the
-canonical corpus and is the LAGGING measure — how much old code still spells
-things the old way. `spec-corpus` is the LEADING one: whether the new spelling
-exists at all. §3 tells agents to pattern-match only from §20, so a block that
-does not compile is an instruction to write source the compiler rejects.
+1. Cite the exact constitutional fact and the conflicting projection.
+2. Stop the affected implementation branch; do not choose whichever text is
+   easier to implement.
+3. Repair the narrowest projection or record the missing authoritative fact.
+4. If the constitution itself lacks the needed irreducible fact, report
+   `SEMANTIC-VOCABULARY-BLOCKED` rather than inventing local vocabulary.
+5. Verify the repair through the production path and the current serialized
+   aggregate. Historical success is not evidence.

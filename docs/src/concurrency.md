@@ -1,129 +1,39 @@
-# Concurrency
+# Concurrency, effects, and worlds
 
-Duo provides cooperative concurrency through async/await and channels, enabling scalable I/O-bound and parallel workloads.
+This page states current Idsem architecture without admitting a source API. The
+sole law is [`docs/spec/constitution.md`](../spec/constitution.md); canonical
+source uses `.id`.
 
-## Async Functions
+Concurrency is not owned by a library namespace. It is expressed through
+semantic relations, dependencies, worlds, effects, values, demands, and
+observable ordering laws.
 
-Define async functions with the `async` keyword:
+## Semantic obligations
 
-```duo
-async fun fetch(url: str): str
-    response = await http_get(url)
-    return response.body
-end
-```
+Concurrent work must preserve, where applicable:
 
-Async functions compile to C structs with a step function. The current path returns results directly while descriptors are emitted for the full scheduler path.
+- subject and application identity;
+- dependency and completion ordering;
+- carried values and result demand;
+- cancellation, failure, and outcome as distinct cases;
+- required process, thread, device, clock, network, or other world facts;
+- provenance for scheduling and transformation decisions.
 
-## The sync Module
+Importing a package grants no authority. A scheduler, channel, thread, process,
+or atomic implementation may participate only under the required world and law.
+Transport completion is not automatically the requested semantic outcome.
+Readiness, capability, cancellation, failure, and availability remain semantic
+facts or cases. Unknown is not false, and an immediate state change uses its
+admitted transition rather than query, boolean, branch, and mutation plumbing.
 
-Use `std.sync` for cooperative scheduling:
+## Realization
 
-```duo
-sync = req "std.sync"
+The same semantic dependency graph may lawfully realize as compile-time
+evaluation, direct sequential code, a state machine, cooperative scheduling,
+threads, processes, vector lanes, GPU work, foreign primitives, or no runtime
+work. Source recognition must not force one of these forms.
 
--- Spawn creates a coroutine task
-sync.spawn(fun()
-    print("task 1")
-end)
-
--- Run drives all spawned tasks to completion
-sync.run()
-```
-
-## Channels
-
-Typed channels enable communication between async tasks:
-
-```duo
-sync = req "std.sync"
-
--- Channel with capacity
-ch = sync.channel(10)
-
--- Send and receive
-sync.channel_send(ch, "hello")
-msg = sync.channel_recv(ch)
-```
-
-## Producer-Consumer Pattern
-
-```duo
-sync = req "std.sync"
-
-fun producer(ch): void
-    for i = 1, 100
-        sync.channel_send(ch, "item-" .. tostring(i))
-    end
-    sync.channel_close(ch)
-end
-
-fun consumer(ch): void
-    while true
-        msg = sync.channel_recv(ch)
-        if msg == nil then break end
-        print("Got: " .. msg)
-    end
-end
-```
-
-## Standard-Library Concurrency
-
-In addition to the `async`/`await` language primitives, the standard library provides cooperative and OS-level concurrency in `lib/std/`:
-
-- `std.coroutine` — Lua-style coroutine helpers (`create`, `resume`, `yield`, `status`, `wrap`, `close`).
-- `std.sync` — single-threaded cooperative scheduler and typed channels (`spawn`, `run`, `yield`, `channel`, `channel_send`, `channel_recv`, `step`).
-- `std.concurrent` — high-level patterns (`go`, `wait`, `all`, `race`, `select`) built on `std.sync`.
-- `std.thread` — mutex, rwlock, condvar, semaphore, barrier, and thread spawn/join. Cooperative in single-threaded mode; maps to pthreads under `@concurrent("threaded")`.
-- `std.mproc` — multi-process helpers (`spawn`, `wait`, `kill`, `pid`).
-- `std.atomic` — atomic primitives and mutexes.
-
-See the [Standard Library](./stdlib.md) chapter for examples.
-
-## Threaded Scheduler
-
-For CPU-bound work, use thread pools:
-
-```duo
-@concurrent("threaded")
-async fun compute_heavy(n: i64): i64
-    -- Runs on thread pool
-    return fibonacci(n)
-end
-
--- Or via command line:
--- duo run script.duo --threads
-```
-
-Note: Threaded mode not supported on WASM targets.
-
-## Cancellation
-
-Tasks can be cancelled with proper cleanup:
-
-```duo
-async fun with_timeout(): i64
-    resource = acquire()
-    
-    defer release(resource)  -- Always runs on cancellation
-    
-    result = await some_operation()
-    return result
-end
-```
-
-## State Machine Compilation
-
-Async functions compile to C structs with explicit state:
-
-```c
-typedef struct {
-    int state;              // Current yield point
-    PollResult result;        // Return value when done
-    // Captured locals
-    int64_t i;
-    void* ch;
-} duo_async_frame_pipeline;
-```
-
-Each `await` becomes a yield point, and the scheduler (when complete) resumes execution by calling the step function.
+Existing project-owned concurrency implementation is SOURCE-ZERO or host debt.
+Do not preserve stale examples, add a replacement namespace, or infer canonical
+spellings from the old API shape. Missing irreducible vocabulary is
+`SEMANTIC-VOCABULARY-BLOCKED`.

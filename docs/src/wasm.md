@@ -1,133 +1,42 @@
-# WASM Compilation
+# Idsem and WebAssembly
 
-Duo supports cross-compilation to WebAssembly with WASI (WebAssembly System Interface) for sandboxed execution.
+This page projects current architecture without claiming an unverified command
+surface. The sole law is
+[`docs/spec/constitution.md`](../spec/constitution.md); canonical source uses
+`.id`.
 
-## Requirements
+WebAssembly is an imported, law-bearing foreign format. Its numeric widths,
+memory behavior, calls, traps, control rules, ABI, and other observable facts
+remain explicit until equivalence is proved. Foreign spellings and module paths
+are provenance, not native relation identity.
 
-- Zig (for WASI toolchain via `zig cc`)
-- WASI-compatible runtime (wasmtime, wasmer, Node.js with WASI support)
+The target architecture is:
 
-## Basic Compilation
-
-```bash
-# Compile to WASM
-duo compile script.duo --target wasm32-wasi -o program.wasm
-
-# Run with wasmtime
-wasmtime program.wasm
-
-# Run with wasmer
-wasmer program.wasm
-
-# Run with Node.js (experimental WASI)
-node --experimental-wasi-unstable-preview1 program.wasm
+```text
+wasm bytes
+-> law-bearing import
+-> shared semantic graph
+-> demand
+-> shared realization and machine selection
 ```
 
-## Output Naming
+An imported operand stack does not require a permanent runtime stack, and Wasm
+does not create a second optimizer or virtual-machine ontology. Sealed facts may
+erase stack machinery, generic dispatch, unused runtime capabilities, adapters,
+and undemanded memory state.
 
-When `--target wasm32-wasi` is specified, the output defaults to `<stem>.wasm`:
+## FTCFTW evidence
 
-```bash
-duo compile hello.lua              # Produces hello.wasm automatically
-duo compile script.duo -o app.wasm  # Explicit name
-```
+Idsem-Wasm performance claims separately measure decode/import, compile,
+instantiate, startup, steady execution, memory, artifact and runtime footprint,
+and end-to-end latency from bytes available to useful completion. Generated-C
+or isolated throughput evidence does not prove the whole envelope.
 
-## WASI Exports
+World authority is not granted by importing a package or by a legacy standard
+distribution path. WASI and other host interfaces retain their foreign law,
+origin, worlds, effects, outcomes, and evidence.
 
-The generated module exports a `main` function:
-
-```duo
--- This becomes the WASM entry point
-fun main(): i64
-    print("Hello from WASM!")
-    return 0
-end
-```
-
-## Standard Library Support
-
-Most standard library modules work in WASM, including:
-
-- `print` — Writes to WASI stdout
-- `std.fs` — Limited file system access
-- `std.json` — JSON parsing/stringification
-- `std.math` — Mathematical functions
-- `std.wasm.wasi` — WASI constants and type bindings
-
-Network modules may require additional WASI capabilities.
-
-## Shared Library Mode
-
-Compile as a shared library for dynamic loading:
-
-```bash
-duo compile module.duo --target wasm32-wasi --load-chunk -o module.wasm
-```
-
-## Library Mode
-
-Compile with `--lib` to export `@export`-annotated functions as a WASI reactor
-module. The linker emits `_initialize` for runtime setup and exports each
-annotated function for the host to call:
-
-```duo
--- module.duo
-@export
-fun add(a: i64, b: i64): i64
-    return a + b
-end
-```
-
-```bash
-duo compile module.duo --target wasm32-wasi --lib -o module.wasm
-wasmtime run --invoke add module.wasm 3 4
-```
-
-The runtime globals (`string`, `table`, `math`, `package`, ...) are initialized
-via a constructor before any export is invoked, so `print`, `table.new`, and
-other builtins work inside exported functions.
-
-## Shared Memory (Experimental)
-
-Enable shared memory for threading support:
-
-```bash
-duo compile script.duo --target wasm32-wasi --shared-memory -o program.wasm
-```
-
-Requires WASI runtime with `wasi:threading` support.
-
-## Limitations
-
-- Multi-threaded mode (`--threads`) is a compile error with WASM target
-- Some system calls may not be available
-- File system access depends on runtime capabilities
-
-## Example
-
-```duo
--- hello.duo
-fun main(): i64
-    print("Hello, WASM!")
-    return 0
-end
-```
-
-```bash
-$ duo compile hello.duo --target wasm32-wasi
-$ wasmtime hello.wasm
-Hello, WASM!
-```
-
-## Debugging WASM
-
-Generate and inspect the C code:
-
-```bash
-# See what will be compiled to WASM
-duo dump-c script.duo
-
-# Compile manually for debugging
-clang --target=wasm32-wasi -O3 script.c -o debug.wasm
-wasmtime debug.wasm --invoke main
-```
+Stale bootstrap commands, standard namespace lists, runtime setup claims, and
+manual C-debugging recipes were removed from this current-facing page. Verify
+the production frontier in [`docs/bootstrap.md`](../bootstrap.md) before
+claiming native or Wasm ownership.

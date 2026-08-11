@@ -31,7 +31,7 @@
 //! ordinary graph relation facts, and **none of its object taxonomy is semantic
 //! authority**: `Properties`, `Class`, `Edge`, `Path`, `Relation` and `Store`
 //! are host structs that project onto `relation` / `fact` / `witness`, which
-//! are three of the six irreducible primitives in `docs/spec/constitution.duo`.
+//! are three of the six irreducible primitives in `docs/spec/constitution.md`.
 //! The final shape has no `ConversionRelation`, `ConversionEdge`,
 //! `ConversionClass` or `ConversionPath` in it.
 //!

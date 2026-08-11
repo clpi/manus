@@ -1,9 +1,10 @@
 # Agent Alignment Compass
 
 This file is a short priority router. It is not language law and must not grow
-into a second specification. Read `docs/spec/constitution.duo`, `CLAUDE.md`,
-`AGENTS.md`, `.agents/AGENT_CANONICAL.md`, and
-`.agents/AGENT_COORDINATION.md` before editing.
+into a second specification. Start at `AGENTS.md`; it routes to the sole law,
+this priority projection, the current production ledger, and live ownership.
+The constitution is structured law documentation, not an implementation
+example.
 
 ## One target
 
@@ -57,30 +58,25 @@ Running the existing Zig bootstrap and its gates is validation, not permission
 to expand it. Retain old host implementations as differential oracles until the
 Idsem replacement is proven, then delete them.
 
-## SHC Queue
+## Compiler-B Queue
 
 Every implementation task belongs to one rung. Do not substitute another audit,
 corpus sweep, backend target, or tool surface for the earliest open rung.
 
-1. **SHC-00 bootstrap.** Freeze the minimum compiler-B subset and the B -> C
-   acceptance contract in `lib/compiler/bootstrap.duo`.
-2. **SHC-01 application.** Preserve relation, subject, arguments, result,
-   descriptor, world, witness, provenance, and demand identity.
-3. **SHC-02 evidence.** Make provenance and witnesses ordinary queryable Idsem
-   facts so no consumer reconstructs them from syntax or names.
-4. **SHC-03 substrate.** Finish bytes, views, strings, arenas, vectors, maps,
-   interning, bitsets, source/span, filesystem read, and diagnostics. Nothing
-   outside this compiler-critical basis blocks B.
-5. **SHC-04 through SHC-10.** Move one thin production path through source,
-   lexer, generated grammar/parser, binding, graph construction, relation
-   resolution, and minimal lowering. Widen only after that path executes.
-6. **SHC-11 through SHC-14.** Build compiler B with the existing honest backend;
-   make B build C from identical source; prove semantic, diagnostic, behavioral,
-   and artifact equivalence; then retire Zig semantic owners in dependency order.
-7. **SHC-15 backend.** After B -> C, progressively transfer flow, allocation,
-   encoding, object emission, and linking into Idsem.
-8. **Wasm supremacy.** Reuse the same value, demand, liveness, allocation,
-   encoding, and provenance substrate. Never create a Ward-only IR kingdom.
+1. Close the canonical lexical identities required by `GAP-145`.
+2. Project generated grammar roles and an immutable token view from one grammar
+   authority under `GAP-134`.
+3. Transfer the first production parser-recognition decision into executed
+   canonical `.id`, with a negative control that perturbs that implementation.
+4. Advance through binding and scope without constructing a duplicate host AST.
+5. Produce exact graph-owned relation, application, subject, pack, value,
+   descriptor, world, demand, and provenance facts.
+6. Consume those facts through demand, realization, machine, and object without
+   text, path, hash, or a second semantic operation vocabulary.
+7. Build compiler B through the honest existing backend, make B build C from
+   identical source, and prove semantic and behavioral closure.
+8. After B -> C, retire remaining host realization and artifact authorities in
+   dependency order, then widen native and Wasm FTCFTW proof.
 
 The first useful SHC slice is the smallest real compiler path that makes B
 produce an executable. It may use the existing C/native bootstrap backend when
@@ -114,10 +110,16 @@ not release evidence.
 - One relation has one identity from source through machine provenance.
 - Worlds grant authority; homes only navigate identity.
 - Work from the subject when the subject is held.
-- `std` is a retiring distribution root, never semantic authority.
-- `std.script` is migration debt and must not be replaced by an alias.
+- `std` is migration distribution, never semantic architecture. New native
+  `std.*` APIs and call sites are forbidden.
+- `std.script` is frozen migration debt: do not add, improve, rename, alias, or
+  advertise it. Touched uses require a semantic classification and deletion
+  gate.
 - If process, environment, filesystem, or result vocabulary is unresolved,
   record `SEMANTIC-VOCABULARY-BLOCKED`; do not invent a helper.
+- PREDICATE-ZERO applies after subject correction: semantic cases, descriptor,
+  capability, shape, demand, transition, and realization facts do not become
+  `has`, `is`, `can`, `exists`, sentinel, or negated helper booleans.
 - Canonicality is part of correctness. Parser, tests, and performance passing do
   not excuse a weaker conventional spelling.
 - One file owns one durable semantic boundary. Do not create `utils`, `types`,

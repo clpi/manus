@@ -1,49 +1,38 @@
-# Contributing to Duo
+# Contributing to Idsem
 
-**Status:** Supported. **Audience:** contributors.
+Start with [AGENTS.md](../AGENTS.md). It routes contributors to the sole
+semantic law, [C0](spec/constitution.md), the
+[current priority projection](AGENT_ALIGNMENT.md), the
+[bootstrap authority ledger](bootstrap.md), and live agent coordination.
 
-## Prerequisites
+Canonical native source uses `.id`. New `.duo` is forbidden; every remaining
+tracked project-owned `.duo` file must be semantically migrated or deleted and
+is never an implementation template. Do not add a foreign semantic owner.
+Existing foreign code is seed or compatibility debt and may change only under
+the narrow bridge rules in `AGENTS.md`.
 
-- **Zig 0.17.0-dev** (nightly; see CI pin)
-- **`clang`** on `$PATH` (runtime C compilation)
-- Optional: `lua` ≥5.4, `luajit` for `zig build cross-bench`
+Canonical source exposes the strongest known fact with the least ceremony.
+Use named projection and structured fields for static identity; use `[]` only
+when the key is genuinely computed. Do not translate host namespaces,
+sentinels, staging variables, storage choices, or parser categories into Idsem.
+Do not encode cases, descriptor/world facts, demand, refinements, or transitions
+as `has`, `is`, `can`, `exists`, or other boolean helpers. Subject correction
+alone does not make a weak predicate canonical. Preserve unknown, absent,
+false, and unresolved as distinct semantic states.
 
-## Build and test
+The standard distribution does not own native meaning. Do not add `std.*`,
+extend `std.script`, or create another universal namespace. Relations own
+meaning, possessed values supply subjects, worlds supply authority, and package
+location remains provenance. Missing vocabulary is
+`SEMANTIC-VOCABULARY-BLOCKED`, not permission to add a helper.
 
-```bash
-zig build
-zig build unit-test          # fast Zig tests
-zig build test               # full gate (includes compile-fail + bench)
-./zig-out/bin/duo run scripts/agent_smoke.duo
-```
+Before editing, call `duo_agent_session_start`, inspect the dirty tree,
+`duo_dev_claim_files`, and live numbered gaps, then claim exact paths through
+`duo_dev_claim_acquire`. Update obligations through `duo_agent_gaps_update`.
+Do not stash or absorb another contributor's work. Serialize heavy validation
+through the lock route in the canonical router, run the exact gates required
+for the changed boundary, and report focused and aggregate outcomes separately.
 
-Performance-sensitive changes: read and update [docs/performance.md](performance.md); run `zig build bench`.
-
-## Code conventions
-
-- Zig: `snake_case`, single-file modules, `pub` API surface — see [CLAUDE.md](../CLAUDE.md)
-- Duo stdlib: [docs/src/idiomatic-duon.md](src/idiomatic-duon.md), [AGENTS.md](../AGENTS.md) grammar table
-- Typed paths must not introduce `lua_Value` on hot paths
-
-## Agent / parallel development
-
-Multiple agents may work concurrently. Before editing shared surfaces:
-
-1. Read [.agents/AGENT_COORDINATION.md](../.agents/AGENT_COORDINATION.md) and claim your area
-2. Use `scripts/duo_lock.sh` for builds when other agents are active
-3. Never `git stash` — commit early on a branch or coordinate via visible patches
-
-## Pull requests
-
-- `zig build test` must pass
-- No benchmark regressions (`zig build bench`)
-- Pass 10: every new file needs a durable role; prefer extending canonical modules over new parallel docs
-
-## Companion repositories
-
-| Repo | Role |
-| --- | --- |
-| duo-lsp | Language Server Protocol |
-| duo-mcp | MCP tools for agents and IDE integration |
-
-These live outside this tree; paths in agent docs use `~/x/duo-lsp` and `~/x/duo-mcp` as conventions for maintainers.
+Fail closed when law conflicts, current evidence cannot be reproduced, a
+required semantic fact belongs to another owner, or the canonical vocabulary
+cannot express the change.

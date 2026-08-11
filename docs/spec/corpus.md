@@ -1,106 +1,50 @@
-# The `.duo` corpus, classified
+# SOURCE-ZERO transition manifest
 
-Epoch 2. This file is **machine-read** by `scripts/audit100.duo` (`zig build
-audit100`). Editing the prose is free; editing a rule line changes what the
-deny table is enforced against.
+This file is machine-read by the current bootstrap audit. It is a temporary
+deletion manifest, not source-family authority, a compatibility archive, or a
+pattern catalog.
 
-## Why this file exists
+Canonical project-owned Idsem source uses `.id`. Every tracked project-owned
+`.duo` file is SOURCE-ZERO debt. Retained behavior must be reduced to current
+semantics, executed from canonical `.id`, proved, and followed by deletion of
+the old source. Obsolete behavior is deleted. Compatibility cases move to
+generated, structured, or external conformance material rather than an in-tree
+stale source library.
 
-`CLAUDE.md` §1 is a deny table. A deny table is only pressure if it can reach
-zero, and it cannot reach zero over 737 tracked `.duo` files, because a large
-part of that corpus exists **in order to** contain the denied text:
+The class words below are legacy input tokens consumed by
+`scripts/audit100.duo`. They authorize only the current audit action; none
+authorizes a file to remain. Their deletion actions are:
 
-- `examples/compile_fail/` must fail to compile — that is the assertion.
-- `examples/bash_*.duo` embeds shell; `examples/c_emit_*.duo` embeds C.
-- `lib/std/token/classify.duo` is emitted by `duo token-tables emit`; rewriting
-  it by hand is the one thing its header forbids.
-- Duo is a **Lua superset**, so Lua-shaped fixtures are INPUT that proves the
-  claim, not debt that violates it.
+| reader token | required migration action |
+| --- | --- |
+| `canonical` | migrate retained project behavior to executed `.id`, then delete the old file |
+| `compatibility` | generate, structure, or externalize the compatibility case, then delete the stale source |
+| `foreign` | retain only genuinely foreign material outside the native pattern surface or externalize it |
+| `negative` | derive the rejection case from grammar/law facts or a machine-owned fixture, then delete the ordinary stale program |
+| `historical` | delete; Git already preserves history |
+| `generated` | fix the generator to emit canonical `.id`, regenerate, then delete the old output |
 
-Counting those as violations produces a gate that is red on the day it ships,
-which is a gate nobody runs. So the corpus is partitioned first, and the deny
-table is enforced against the `canonical` partition only.
+Rules are ordered and first match wins because the existing reader uses prefix
+matching. A tracked `.duo` path matching no rule currently fails that reader.
+That protects against silent omission but is not the final new-source ratchet:
+adding another rule can still admit a new file. SOURCE-ZERO therefore remains
+open until the exact-tree gate rejects every new `.duo`, includes untracked
+files, and the tracked count reaches zero.
 
-## The six classes
+No path in the rule block is an implementation example. Agents and generators
+must not open it as a pattern source. The rule block disappears with the reader
+after all retained behavior has moved and every tracked project-owned `.duo`
+file has been deleted.
 
-| class | meaning | deny table applies |
-|---|---|---|
-| `canonical` | authored Duo that must converge on Pass 100 | **yes** |
-| `compatibility` | proves the Lua superset still accepts Lua-shaped input | no |
-| `foreign` | embeds another language (C, shell, ERE) by design, or is vendored | no |
-| `negative` | must be rejected — the denied text is the assertion | no |
-| `historical` | evidence of a past epoch; not maintained, not exemplary | no |
-| `generated` | machine-emitted; the generator is the thing to fix | no |
+The living law is [`constitution.md`](constitution.md). The complete source
+family, lexical identity, generated grammar-role, and compiler-B migration
+blockers remain recorded in `GAP-145`, `GAP-134`, and
+[`docs/bootstrap.md`](../bootstrap.md). This manifest must not invent a second
+classification authority to work around them.
 
-## Mechanism: a manifest of ordered prefix rules, not per-file markers
+## Machine rules
 
-The two candidates were a one-line marker comment at the top of every file, and
-this. Markers were rejected:
-
-1. They require editing 737 files, four of which are open in other sessions
-   right now. A classification commit that collides with live compiler work
-   costs more than it buys.
-2. A marker is only as good as the check that every file has one — so a marker
-   scheme *still* needs a gate that fails on absence. It buys no rot-resistance
-   the manifest does not already have.
-3. Markers put session metadata inside source files, which is the same category
-   error as `.agents/AGENT_COORDINATION.md`.
-
-The manifest is rot-resistant by the same rule that would have made markers
-work: **a tracked `.duo` file matching no rule is a gate FAILURE.** A new file
-must be classified or `audit100` goes red. There is no silent default.
-
-Rules are **first match wins**, so order is meaningful: put the specific
-prefixes above the general ones. A prefix ending in `/` matches a directory; a
-prefix not ending in `/` matches any path starting with that text, which is how
-`examples/bash_` picks out a family by filename.
-
-To promote a file, add a one-line rule above the rule that currently catches it.
-
-## Known soft spots, stated rather than hidden
-
-- `examples/` defaults to `historical`. That is a **policy default**, not a
-  measurement: 262 of the 354 example files have no inbound reference from
-  `build.zig`, `scripts/`, `src/` or CI, and read as accumulated session probes.
-  Some of them (`*_showcase.duo`) were written to be exemplary and should be
-  re-adjudicated to `canonical` one at a time as they are revived.
-- `scripts/` is `canonical` even though every gate in it shells out. Shelling
-  out is a library call, not a foreign file.
-- `fixtures/highlight/` is the golden role corpus, and it splits three ways for
-  the same reason this file exists at all. The duon fixtures and the golden role
-  tables are `canonical` and must read as exemplary Pass-100 source, because a
-  highlighting corpus written in retired spellings proves only that the
-  highlighter handles retired spellings. `fixtures/highlight/surface/` is
-  `foreign`: those files carry dnir, arm64 assembly, ebnf and C, which is the
-  same act `examples/c_emit` is classified `foreign` for.
-  `fixtures/highlight/mixed/` is `negative` — every span in it is DELIBERATELY
-  undecidable, and the denied text (a leading dot at a clause head, and a
-  semicolon Pass 119 abolished) IS the assertion: the projector must diagnose
-  there rather than default, and a gate reporting zero unresolved spans without
-  this file is reporting the broken kind of zero.
-- `examples/spec100/` is `canonical` and is the one place in `examples/` that
-  is promoted by construction rather than case by case: each file is the
-  fixture for one Pass 100 §20 construct, checked by `zig build spec-corpus`.
-  `examples/boring/` and `examples/table/` are promoted the same way, by
-  `zig build boring-corpus`: twenty everyday programs and one fixture per row
-  of the numerics and text pages. Ten of the twenty do NOT compile, and that is
-  deliberate — Pass 106 asks what a MUNDANE program needs that a lexer never
-  did, so a red row is the finding and must not be repaired by bending the
-  program away from canonical spelling. `docs/numerics_and_text.md` carries
-  each one with its diagnostic.
-  The §20 blocks themselves are NOT here — the gate extracts them from
-  `docs/spec/pass100.md` on every run, because a tracked copy of the spec's
-  own text is a second source of truth and its drift is invisible.
-- `scripts/audit100.duo` is excluded from its own scan by the gate itself, and
-  the gate prints that it did. Its deny patterns are DATA; a corpus walker whose
-  data is the thing it greps for reports its own source. This repo has already
-  paid for that lesson once — see GAP-16, where `scripts/spec_conformance.duo`
-  had its own test programs interpolated as if they were harness source.
-
-## Rules
-
-```
-canonical      docs/spec/constitution.duo
+```text
 negative       examples/compile_fail/
 negative       examples/native_differential/unsupported/
 negative       error_test.duo
