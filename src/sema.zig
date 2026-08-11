@@ -17,6 +17,8 @@ const abi_specialize = @import("abi_specialize.zig");
 const tail_result_demand = @import("tail_result_demand.zig");
 const pass26_wiring = @import("pass26_wiring.zig");
 
+const callable_brace_error = "c0 §43 law.brace: braced application requires a descriptor subject; this subject resolved in callable space, not descriptor space, and ordinary callable application uses parentheses";
+
 pub const SemaError = error{
     TypeMismatch,
     UndeclaredVariable,
@@ -371,6 +373,16 @@ pub const ApplicationFact = struct {
     result: RT,
 };
 
+const Diagnostic = struct {
+    loc: ast.Loc,
+    message: []const u8,
+};
+
+const DiagnosticEvidence = enum {
+    complete,
+    incomplete,
+};
+
 pub const Sema = struct {
     alloc: Allocator,
     scope: Scope,
@@ -418,6 +430,8 @@ pub const Sema = struct {
     /// with known __index. Enables compile-time method resolution.
     /// Methods registered via `fun Table:method()` at module scope.
     table_methods: std.StringHashMapUnmanaged(std.ArrayListUnmanaged([]const u8)) = .{},
+    diagnostics: std.ArrayListUnmanaged(Diagnostic) = .empty,
+    diagnostic_evidence: DiagnosticEvidence = .complete,
     errors: u32,
     warnings: u32,
     hints: u32,
@@ -702,6 +716,8 @@ pub const Sema = struct {
     }
 
     pub fn deinit(self: *Sema) void {
+        for (self.diagnostics.items) |diagnostic| self.alloc.free(diagnostic.message);
+        self.diagnostics.deinit(self.alloc);
         self.scope.deinit();
         self.type_map.deinit();
         self.module_globals.deinit(self.alloc);
@@ -915,7 +931,18 @@ pub const Sema = struct {
 
     fn err(self: *Sema, loc: ast.Loc, comptime fmt: []const u8, args: anytype) void {
         self.errors += 1;
-        term.locErr(loc, fmt, args);
+        const message = std.fmt.allocPrint(self.alloc, fmt, args) catch {
+            self.diagnostic_evidence = .incomplete;
+            term.locErr(loc, fmt, args);
+            return;
+        };
+        self.diagnostics.append(self.alloc, .{ .loc = loc, .message = message }) catch {
+            self.alloc.free(message);
+            self.diagnostic_evidence = .incomplete;
+            term.locErr(loc, fmt, args);
+            return;
+        };
+        term.locErr(loc, "{s}", .{message});
     }
 
     /// gap[026]: relation families are declared at the trie, not as functions,
@@ -3090,7 +3117,7 @@ pub const Sema = struct {
                     // never a fall-through to ordinary-call checking.
                     self.err(
                         c.loc,
-                        "c0 §43 law.brace: braced application requires a descriptor subject; this subject resolved in callable space, not descriptor space, and ordinary callable application uses parentheses",
+                        callable_brace_error,
                         .{},
                     );
                     return .any;
@@ -4690,7 +4717,6 @@ pub const Sema = struct {
 
         if (missing_count > 0) {
             // Emit a single structured error listing all missing variants inline.
-            self.errors += 1;
             var buf: [2048]u8 = undefined;
             var pos: usize = 0;
             for (missing_buf[0..missing_count], 0..) |name, i| {
@@ -4704,7 +4730,7 @@ pub const Sema = struct {
                 const written = std.fmt.bufPrint(buf[pos..], "{s}", .{name}) catch break;
                 pos += written.len;
             }
-            term.locErr(me.loc, "non-exhaustive match on enum '{s}': missing variant(s): {s}", .{ enum_name, buf[0..pos] });
+            self.err(me.loc, "non-exhaustive match on enum '{s}': missing variant(s): {s}", .{ enum_name, buf[0..pos] });
         }
     }
 
@@ -5150,8 +5176,7 @@ pub const Sema = struct {
                 if (std.mem.eql(u8, rec_field.name, req_field.name)) {
                     const rec_field_type = try self.resolve_type(rec_field.typ);
                     if (req_field.typ != .any and rec_field_type != .any and !req_field.typ.eql(rec_field_type)) {
-                        self.errors += 1;
-                        term.locErr(loc, "binding '{s}' field '{s}' has type {}, but concept '{s}' requires type {}", .{
+                        self.err(loc, "binding '{s}' field '{s}' has type {}, but concept '{s}' requires type {}", .{
                             binding_name, req_field.name, rec_field_type, concept_name, req_field.typ,
                         });
                     }
@@ -5192,7 +5217,6 @@ pub const Sema = struct {
         // Emit error if any members are missing
         const total_missing = missing_methods.items.len + missing_fields.items.len;
         if (total_missing > 0) {
-            self.errors += 1;
             var list: std.ArrayListUnmanaged(u8) = .empty;
             defer list.deinit(self.alloc);
             var first = true;
@@ -5210,7 +5234,7 @@ pub const Sema = struct {
                 list.appendSlice(self.alloc, rendered) catch {};
                 first = false;
             }
-            term.locErr(loc, "binding '{s}' does not satisfy concept '{s}': missing {s}", .{ binding_name, concept_name, list.items });
+            self.err(loc, "binding '{s}' does not satisfy concept '{s}': missing {s}", .{ binding_name, concept_name, list.items });
         }
     }
 
@@ -11505,13 +11529,19 @@ test "sema: braced ordinary callable fails closed" {
 test "sema: braced ordinary callable refusal precedes pack arity" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
+    var threaded = std.Io.Threaded.init(testing.allocator, .{});
+    defer threaded.deinit();
     const s = try runIdsemSema(
-        \\point: i64 = (x: i64, y: i64)
-        \\    x + y
-        \\main: i64 = ()
-        \\    point{ x = 3 }
-    , &arena);
+        try std.Io.Dir.cwd().readFileAlloc(threaded.io(), "examples/compile_fail/callable_braces.id", arena.allocator(), .unlimited),
+        &arena,
+    );
     try testing.expectEqual(@as(u32, 1), s.errors);
+    try testing.expectEqual(DiagnosticEvidence.complete, s.diagnostic_evidence);
+    try testing.expectEqual(@as(usize, 1), s.diagnostics.items.len);
+    try testing.expectEqualStrings(
+        "c0 §43 law.brace: braced application requires a descriptor subject; this subject resolved in callable space, not descriptor space, and ordinary callable application uses parentheses",
+        s.diagnostics.items[0].message,
+    );
 }
 
 test "sema: parenthesized ordinary callable remains valid" {
