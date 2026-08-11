@@ -342,6 +342,17 @@ pub const SemanticGraph = struct {
         return self.application_values.items[start..end];
     }
 
+    fn isApplicationCandidate(self: *const SemanticGraph, entity: id) bool {
+        return entity < self.application_candidates.bit_length and
+            self.application_candidates.isSet(entity);
+    }
+
+    fn markApplicationCandidate(self: *SemanticGraph, entity: id) !void {
+        if (self.get(entity) == null) return error.InvalidApplicationFact;
+        try self.ensureApplicationRows();
+        self.application_candidates.set(entity);
+    }
+
     fn publishApplication(
         self: *SemanticGraph,
         occurrence: id,
@@ -355,7 +366,7 @@ pub const SemanticGraph = struct {
         results: []const id,
     ) !void {
         const application_node = self.get(occurrence) orelse return error.InvalidApplicationFact;
-        if (application_node.kind != .call or
+        if (!self.isApplicationCandidate(occurrence) or
             application_node.descriptor == null or
             !application_node.descriptor.?.eql(descriptor) or
             application_node.demand == null or
@@ -420,7 +431,7 @@ pub const SemanticGraph = struct {
         const fact = &self.application_facts.items[row];
         if (fact.application != occurrence) return null;
         const application_node = self.get(fact.application) orelse return null;
-        if (application_node.kind != .call or application_node.descriptor == null or
+        if (!self.isApplicationCandidate(fact.application) or application_node.descriptor == null or
             !application_node.descriptor.?.eql(fact.descriptor)) return null;
         const relation_node = self.get(fact.relation) orelse return null;
         if (relation_node.kind != .func and relation_node.kind != .relation) return null;
@@ -1088,8 +1099,7 @@ pub const SemanticGraph = struct {
             .demand = consumption,
             .ast_ref = @ptrCast(@constCast(expr)),
         });
-        try self.ensureApplicationRows();
-        self.application_candidates.set(occurrence);
+        try self.markApplicationCandidate(occurrence);
     }
 
     /// Lift module fully including call sites (Phase 1 complete lift).
@@ -1128,13 +1138,11 @@ pub const SemanticGraph = struct {
     ) !id {
         const module = try self.liftModuleWithCalls(mod, file);
 
-        var calls: std.ArrayListUnmanaged(id) = .empty;
-        defer calls.deinit(self.alloc);
-        for (self.nodes.items, 0..) |node, i| {
-            if (node.kind == .call) try calls.append(self.alloc, @intCast(i));
-        }
-
-        for (calls.items) |call_id| {
+        var candidates = self.application_candidates.iterator(.{});
+        while (candidates.next()) |candidate| {
+            const call_id = std.math.cast(id, candidate) orelse
+                return error.ApplicationFactCapacityExceeded;
+            if (call_id >= self.nodes.items.len) return error.InvalidApplicationFact;
             const raw = self.nodes.items[call_id].ast_ref orelse continue;
             const expr: *const Expr = @ptrCast(@alignCast(raw));
             const fact = checked.applicationFact(expr) orelse continue;
@@ -1145,6 +1153,7 @@ pub const SemanticGraph = struct {
             if (caller_node.kind != .func) return error.MissingApplicationCaller;
             const demand = self.nodes.items[call_id].demand orelse
                 return error.MissingApplicationDemand;
+            const provenance = self.nodes.items[call_id].span;
 
             self.nodes.items[call_id].descriptor = fact.result;
 
@@ -1170,7 +1179,7 @@ pub const SemanticGraph = struct {
                 caller,
                 fact.result,
                 demand,
-                self.nodes.items[call_id].span,
+                provenance,
                 arguments,
                 &results,
             );
@@ -1181,12 +1190,15 @@ pub const SemanticGraph = struct {
     /// Source-text projection for migration diagnostics. It does not answer
     /// which semantic relation an application selected.
     pub fn findCallsBySourceCallee(self: *const SemanticGraph, callee: []const u8, buf: *std.ArrayListUnmanaged(id)) !void {
-        for (self.nodes.items, 0..) |node, i| {
-            if (node.kind != .call) continue;
+        var candidates = self.application_candidates.iterator(.{});
+        while (candidates.next()) |candidate| {
+            const entity = std.math.cast(id, candidate) orelse
+                return error.ApplicationFactCapacityExceeded;
+            const node = self.get(entity) orelse return error.InvalidApplicationFact;
             if (node.call_shape) |cs| {
                 if (cs.callee_name) |n| {
                     if (std.mem.eql(u8, n, callee)) {
-                        try buf.append(self.alloc, @intCast(i));
+                        try buf.append(self.alloc, entity);
                     }
                 }
             }
@@ -1268,12 +1280,15 @@ pub const SemanticGraph = struct {
 
     /// Source-text method projection for migration diagnostics only.
     pub fn findCallsBySourceMethod(self: *const SemanticGraph, method: []const u8, buf: *std.ArrayListUnmanaged(id)) !void {
-        for (self.nodes.items, 0..) |node, i| {
-            if (node.kind != .call) continue;
+        var candidates = self.application_candidates.iterator(.{});
+        while (candidates.next()) |candidate| {
+            const entity = std.math.cast(id, candidate) orelse
+                return error.ApplicationFactCapacityExceeded;
+            const node = self.get(entity) orelse return error.InvalidApplicationFact;
             if (node.call_shape) |cs| {
                 if (cs.method_name) |m| {
                     if (std.mem.eql(u8, m, method)) {
-                        try buf.append(self.alloc, @intCast(i));
+                        try buf.append(self.alloc, entity);
                     }
                 }
             }
@@ -1282,8 +1297,8 @@ pub const SemanticGraph = struct {
 
     /// Get the CallShape for a specific call node.
     pub fn callShapeOf(self: *const SemanticGraph, entity: id) ?types.CallShape {
+        if (!self.isApplicationCandidate(entity)) return null;
         const node = self.get(entity) orelse return null;
-        if (node.kind != .call) return null;
         return node.call_shape;
     }
 
@@ -2030,6 +2045,16 @@ test "semantic_graph: checked subject application retains relation and value ide
     try std.testing.expectEqual(types.ResolvedType.i64, graph.get(results[0]).?.descriptor.?);
     try std.testing.expectEqual(@as(u32, 7), stored.provenance.start);
 
+    // The transitional kind tag does not own application meaning. Application
+    // facts and source provenance queries are selected by the candidate column.
+    graph.nodes.items[fact.application].kind = .value;
+    try std.testing.expect(graph.application(fact.application) != null);
+    try std.testing.expect(graph.callShapeOf(fact.application) != null);
+    var method_calls: std.ArrayListUnmanaged(id) = .empty;
+    defer method_calls.deinit(alloc);
+    try graph.findCallsBySourceMethod("read", &method_calls);
+    try std.testing.expectEqualSlices(id, &.{fact.application}, method_calls.items);
+
     for (graph.edges.items) |edge| {
         if (edge.from != fact.application) continue;
         try std.testing.expect(edge.kind != .relation);
@@ -2298,6 +2323,7 @@ test "semantic_graph: packed application facts reject duplicate and wrong roles"
         .descriptor = .i64,
         .demand = .unknown,
     });
+    try graph.markApplicationCandidate(application);
     const result = try graph.addChild(application, .{
         .kind = .value,
         .span = .{ .file = "axes.id", .start = 2, .end = 1 },
@@ -2355,6 +2381,7 @@ test "semantic_graph: packed application facts reject duplicate and wrong roles"
         .descriptor = .i64,
         .demand = .unknown,
     });
+    try graph.markApplicationCandidate(wrong);
     const wrong_result = try graph.addChild(wrong, .{
         .kind = .value,
         .span = .{ .file = "axes.id", .start = 3, .end = 1 },
