@@ -143,17 +143,19 @@ language = @{
     epoch = 2
 }
 
-entity = law{
-    id    = "law.identity.graph"
+id = law{
+    id    = "law.id.one"
     kind  = .invariant
     holds = .graph
     binds = {
-        "the exact graph entity is semantic identity; its owner-defined compact handle is only an efficient coordinate within that exact graph incarnation",
+        "id is the one semantic identity concept and facts qualify every relation application value descriptor subject world provenance transformation demand realization and machine range",
+        "graph rows slots array positions compact tags and dense integers are private physical representations of id and never create node kind edge or layer identity vocabularies",
+        "public semantic boundaries use id directly and never expose node stable entity value call application relation region instruction ast source shape descriptor type module local fingerprint graph or incarnation identity wrappers",
         "name path span source spelling fingerprint hash and intern slot are projections provenance evidence or acceleration and never establish identity",
-        "distinct occurrences and distinct graph incarnations retain distinct identities even when every compared fact matches",
-        "downstream semantic use fails closed when the exact graph identity is absent",
+        "distinct occurrences and distinct graph incarnations retain distinct ids even when every compared fact matches",
+        "downstream semantic use fails closed when the exact id and required facts are absent",
     }
-    fails = "stable id path hash fingerprint name or source spelling selecting semantic meaning"
+    fails = "a second identity concept a semantic node or kind ontology or path hash fingerprint name source spelling pointer opcode slot or address selecting meaning"
 }
 
 continuity = law{
@@ -161,8 +163,8 @@ continuity = law{
     kind  = .protocol
     holds = .evidence
     binds = {
-        "cross edit build snapshot and incarnation continuity is a relation between graph identities",
-        "provenance source span home relation descriptor transformation and graph correspondence may support that relation",
+        "cross edit build snapshot and incarnation continuity is an explicit relation between ids",
+        "provenance source span home relation descriptor transformation and graph correspondence facts may support that relation",
         "missing correspondence remains unknown rather than guessed from equal paths names or fingerprints",
     }
 }
@@ -172,8 +174,8 @@ fingerprint = law{
     kind  = .protocol
     holds = .acceleration
     binds = {
-        "a fingerprint may retrieve a cache or correspondence candidate only",
-        "authoritative graph facts verify every candidate before semantic reuse",
+        "a fingerprint may retrieve a cache or correspondence candidate only and is never named or typed as identity",
+        "authoritative facts verify every candidate before semantic reuse",
         "collisions and deleting every fingerprint index preserve semantic correctness",
         "fingerprints are computed only when caching persistence or tooling demands them",
     }
@@ -210,7 +212,7 @@ syntax.anchor = @{
 
 syntax.block = @{
     bound     = .offside
-    close     = .compatibility -- `end` is accepted-and-deleted, never emitted
+    close     = false
     semicolon = false          -- the repair is "press enter"
 }
 
@@ -279,7 +281,7 @@ context = @{
     binds  = false             -- non-normative
     parts  = {
         "identity", "invariants", "canon", "denied",
-        "ownership", "gates", "gaps", "compatibility",
+        "ownership", "gates", "gaps", "foreign",
     }
 }
 
@@ -332,7 +334,7 @@ canon = law{
 
 corpus = @{
     canon   = "canonical id only"
-    compat  = "structured generated external or foreign"
+    foreign = "structured generated external or explicit foreign lawset"
     denied  = "invalid by construction"
 }
 
@@ -344,7 +346,7 @@ training = law{
         "agents learn project owned source patterns from canonical id only",
         "every tracked searchable file is canonical current teaching material or mechanically unmistakable foreign data",
         "git history rather than an in tree source archive preserves retired implementation",
-        "compatibility tests use structured generated external or narrowly isolated machine owned input rather than ordinary stale programs",
+        "foreign import tests use structured generated external or narrowly isolated machine owned input rather than ordinary stale programs",
     }
     fails = "a blind search autocomplete or nearest file analogy teaching retired architecture"
 }
@@ -397,7 +399,8 @@ agent.steps = {
     "find the semantic owner and request cross owner facts rather than recreating them",
     "compute fact demand realization authority and physical state deltas",
     "produce positive negative differential performance and private run evidence demanded by the boundary",
-    "commit explicit owned paths then release claims and hand off remaining blockers",
+    "commit and push each bounded admitted repair promptly so concurrent work remains publicly auditable",
+    "release exact owned claims and hand off remaining blockers after the pushed revision is verified",
 }
 
 -- The stop condition, and it is a STOP, not a fallback. An agent that cannot
@@ -458,27 +461,26 @@ why.gives = {
 -- resolution is wrong. These are separate dimensions and each gets its number.
 
 total.role = "every span has ONE role"
-total.meaning = "every entity resolves to an identity or to an explicit error"
+total.meaning = "every semantic occurrence resolves to an id and facts or to an explicit error"
 total.origin = "every non-source fact carries its chain"
 
 -- ═══ §21 · identity is one graph entity ════════════════════════════════════
 --
--- Equal content may share realization without replacing graph identity.
+-- Equal content may share realization without replacing id.
 -- Incarnation, correspondence, provenance and content remain separate facts.
 
-identity = "the exact graph entity"
-coordinate = "an owner defined compact handle valid only within one exact graph incarnation"
-content = "normalized subgraph contents, never identity"
-incarnation = "the graph lifetime in which a coordinate is valid"
+coordinate = "a private compact physical representation of id valid only within one exact graph incarnation"
+content = "normalized semantic facts and relations, never identity"
+incarnation = "the graph lifetime qualifying a private coordinate"
 
 dedup = law{
     id    = "law.dedup"
     kind  = .invariant
     holds = .content
     binds = {
-        "share realization and content nodes",
-        "NEVER collapse semantic identity",
-        "only structurally transparent nodes dedup",
+        "share realization and structurally transparent content",
+        "never collapse id",
+        "private storage deduplication never changes semantic facts or correspondence",
     }
     fails = "two counters becoming one object"
 }
@@ -705,10 +707,13 @@ differential = law{
 -- remains independently reviewable. This notation is not canonical source.
 agent.first = {
     "Do not design Idsem. Idsem is already designed.",
+    "Identity is id; facts qualify it and no layer exposes a node kind edge or typed identity vocabulary.",
     "Discover the semantic owner, instantiate its canonical archetype, preserve its graph laws, prove the realization.",
     "If the constitution cannot express the change, STOP and record a constitutional gap. Never create a competing mechanism.",
     "Foreign languages are not Idsem with strange syntax.",
     "Preserve their lawsets exactly; share representations and optimizations only where witnessed equivalence permits.",
+    "Audit and correct useful old or unmerged work against current main before deleting its legacy carrier.",
+    "Push each bounded admitted repair promptly so concurrent agents audit public revisions rather than private state.",
     "A green test is not enough.",
     "A change is complete only when syntax, rendering, identity, ownership, effects, obligations, provenance, realization, differential and witnesses ALL agree.",
 }
@@ -2319,7 +2324,7 @@ forcing = law{
     binds = {
         "compiler self-host forces parse, sema, graph, lowering, encoding",
         "Idsem Wasm forces jit cfg register allocation memory and performance",
-        "lsp, mcp, formatter, package and build force persistent graph identities, witnessed cross-incarnation correspondence, diagnostics and incremental computation",
+        "lsp, mcp, formatter, package and build force persistent ids, witnessed cross-incarnation correspondence, diagnostics and incremental computation",
         "a capability unnecessary to ALL THREE is not pre-release p0",
     }
     why   = "capability built to satisfy a checklist is speculative scaffolding. Capability built under pressure from a real workload is load-bearing on the day it lands."
@@ -2869,7 +2874,7 @@ surfacezero = law{
         "if while for and or not operators projection indexing application and binding normalize immediately",
         "a bracket face says only that evaluating an expression supplies the key while a dot face supplies statically named identity",
         "dot and bracket faces converge after resolution whenever subject key value place demand and descriptor facts are equivalent",
-        "equivalent source faces resolve to the same graph facts while distinct occurrences retain distinct graph identities",
+        "equivalent source faces resolve to the same facts while distinct occurrences retain distinct ids",
         "computed projection never forces a table hash lookup dynamic dispatch allocation or physical memory access",
         "a retained grammar face may improve human density and still own ZERO semantic machinery",
     }
@@ -3193,7 +3198,7 @@ wordone = law{
     holds = .everywhere
     binds = {
         "every identifier is one lowercase semantic word",
-        "underscores uppercase word collisions and abbreviated multiword compounds are zero in source paths generated code graph identities diagnostics tools and documentation anchors",
+        "underscores uppercase word collisions and abbreviated multiword compounds are zero in source paths generated code semantic vocabulary diagnostics tools and documentation anchors",
         "a second axis becomes a level home relation descriptor field or separate identity rather than punctuation inside a name",
     }
 }
@@ -3216,7 +3221,7 @@ stdzero = law{
     holds = .zero
     binds = {
         "canonical semantic namespace roots are zero; std core system platform runtime base idsem os fs script process and env never own native meaning",
-        "std is migration distribution and compatibility provenance, never semantic architecture or authority",
+        "std is migration distribution and foreign provenance, never semantic architecture or authority",
         "std script is frozen historical architecture and every touched use moves toward semantic reduction and deletion",
         "standard describes origin trust and distribution while implementation location contributes zero relation identity",
         "new native semantic capability and new canonical std calls are forbidden",
@@ -3230,12 +3235,12 @@ stdzero = law{
         "tooling begins from a possessed subject and projects applicable relations from the same graph used for documentation and realization",
         "a witnessed foreign implementation may satisfy a native relation while retaining its exact origin lawset and abi provenance",
         "process filesystem environment transport outcome and evidence remain distinct facts relations and worlds",
-        "every touched std use is compatibility foreign provenance physical distribution migration bridge or semantic violation",
+        "every touched std use is foreign provenance physical distribution migration bridge or semantic violation",
         "every migration bridge names its semantic reason authoritative replacement owner and exact deletion gate",
         "removal may not create another universal semantic root or a slower boxed allocated or dynamically dispatched abstraction",
         "every admitted replacement lowers namespace dependence and removes the misleading entry point",
     }
-    keep  = "physical std source may remain only as migration distribution compatibility foreign provenance or compiler b bootstrap debt; it contributes no semantic identity world authority or canonical invocation"
+    keep  = "physical std source may remain only as migration distribution foreign provenance or compiler b bootstrap debt; it contributes no semantic identity world authority or canonical invocation"
     fails = "finishing std replacing it with another universal root or selecting meaning from implementation location"
 }
 
@@ -3448,11 +3453,26 @@ corpuszero = law{
         "semantic canonicality runs over every tracked source and generated canonical example",
         "tracked project owned .duo source descends to zero and new .duo source fails immediately",
         "current examples tools compiler source and generated native source use canonical id",
-        "compatibility support does not justify an in tree historical source library",
+        "foreign import support does not justify an in tree historical source library or a native compatibility mode",
         "a blind search adversary must find canonical id or unmistakable foreign data rather than a stale implementation pattern",
         "namespace world subject sentinel duplicate relation foreign name conditional bridge and result debt only descend to zero",
         "text censuses may guard migration spelling but never claim semantic proof",
     }
+}
+
+legacyzero = law{
+    id    = "law.legacy.zero"
+    kind  = .protocol
+    holds = .zero
+    binds = {
+        "native compilation recognizes canonical id only and has no duo duon lua or historical syntax mode",
+        "tracked project owned duo source native duo suffix recognition lua lexical forms historical directives old callable forms std namespace semantics and implicit boxed fallbacks descend to zero",
+        "a still required historical behavior is first preserved as an explicit foreign lawset obligation then reimplemented through the shared id facts demand and realization architecture before the legacy carrier is deleted",
+        "old or unmerged work is audited and corrected against current main rather than merged wholesale or deleted while its valid obligation remains unsatisfied",
+        "foreign conformance input is generated structured external or mechanically unmistakable and never becomes searchable native training material",
+        "one resolved native meaning reaches a lawful realization or diagnoses and never falls through to c boxed or lua semantic interpretation",
+    }
+    fails = "a native compatibility branch implicit semantic fallback stale pattern archive or deletion that recreates already solved work"
 }
 
 generatedzero = law{
@@ -3539,7 +3559,7 @@ literal.bytes = law{
         "one byte remains a byte sequence of cardinality one and may scalarize only under proved byte demand",
         "text byte codepoint scalar grapheme and character remain distinct descriptors and facts",
         "raw source characters encode as source utf8 bytes; byte escapes are byte oriented and unicode escapes are rejected until separately admitted",
-        "historical lua single quoted text retains compatibility provenance and canonicalizes to double quoted text before native Idsem meaning",
+        "foreign lua single quoted text remains in the explicit lua importer and never enters native Idsem lexical recognition",
     }
 }
 
@@ -3550,7 +3570,7 @@ comment = law{
     binds = {
         "hash begins the one canonical line comment and has no canonical length reading",
         "length is the subject oriented len relation with an explicit axis when it is not uniquely recoverable",
-        "lua dash comments and lua long comments are compatibility provenance only",
+        "lua dash comments and lua long comments remain foreign lua input and are never native Idsem comment forms",
         "repeated hash lines are the canonical multiline comment face; no block comment syntax is admitted",
         "hash bang is allowed only at byte zero as script launch provenance and grants no semantic authority",
         "removing comments changes no graph fact except source trivia provenance",
@@ -3574,8 +3594,8 @@ lexical = law{
     kind  = .protocol
     holds = .generated
     binds = {
-        "one lexical authority distinguishes text bytes compatibility long text comment compatibility comment shebang and reserved backtick identities",
-        "the lexer records delimiter lawset token identity content span and compatibility status once",
+        "one native lexical authority distinguishes text bytes hash comment shebang and reserved backtick identities",
+        "the native lexer records token identity content span and provenance once while explicit foreign importers retain their own lawsets",
         "grammar parser formatter canonicalizer tree sitter lsp mcp documentation generators and migrations consume generated projections of those facts",
         "no consumer reconstructs literal or comment role from delimiter text source substring ast flags or contents",
         "token role lookup is compact and constant time and literal payloads retain source views where lawful",
@@ -3589,8 +3609,8 @@ lexical.gate = law{
     holds = .semantic
     binds = {
         "canonical repository source rejects lua comments lua long strings hash length historical single quoted text and unadmitted backticks by token identity and provenance",
-        "compatibility source preserves foreign literal and comment lawsets until an exact migration witness exists",
-        "compatibility parsing is tested through structured generated external or narrowly isolated machine owned input and never makes stale source a pattern library",
+        "foreign literal and comment lawsets enter only through explicit foreign import rather than native compatibility parsing",
+        "foreign parsing is tested through structured generated external or narrowly isolated machine owned input and never makes stale source a pattern library",
         "generated canonical source receives no exception",
         "the corpus ratchet counts complete classified inputs and fails closed when an authority or source is unavailable",
     }
@@ -3599,8 +3619,8 @@ lexical.gate = law{
 lexical.block = @{
     gap = 145
     state = .implementationblocked
-    why = "the executed idsem lexer owns the production token stream identities and spans but the complete canonical and compatibility literal comment and delimiter roles are not yet one generated authority consumed by every surface"
-    unlock = "complete idsem owned lexical identities plus generated grammar roles compatibility provenance canonical migrations and derived tooling projections"
+    why = "the executed idsem lexer owns the production token stream identities and spans but the complete canonical literal comment and delimiter roles are not yet one generated authority consumed by every surface and native compatibility branches still remain"
+    unlock = "complete idsem owned lexical identities plus generated grammar roles canonical migrations explicit foreign import boundaries and derived tooling projections"
 }
 
 -- Semantic identity is the spine, not the whole acceptance claim. Every
@@ -3612,7 +3632,7 @@ closure = law{
     kind  = .protocol
     holds = .proved
     binds = {
-        "identity remains the exact graph entity and one meaning retains one native word",
+        "identity is id facts qualify it and one meaning retains one native word",
         "facts already known are preserved and never reconstructed from names paths syntax hashes or physical operations",
         "demand removes unused work before storage allocation boxing aggregation adaptation or runtime exists",
         "realization retains every lawful physical choice until an observable contract forces commitment",
