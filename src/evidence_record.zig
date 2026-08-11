@@ -5,8 +5,6 @@
 const std = @import("std");
 const optimization_outcome = @import("optimization_outcome.zig");
 
-pub const SCHEMA_VERSION = "evidence-record-v0";
-
 /// Reliability class for compiler claims (Pass 8 §4.6, §6).
 pub const Kind = enum(u8) {
     proven_semantic_fact,
@@ -50,22 +48,6 @@ pub const Kind = enum(u8) {
             .user_assertion, .foreign_assertion => false,
             .fuzz_evidence => false,
         };
-    }
-};
-
-pub const Record = struct {
-    kind: Kind,
-    subject_entity: []const u8,
-    source: []const u8,
-    compiler_version: ?[]const u8 = null,
-    semantic_fingerprint: ?u64 = null,
-    confidence: f32 = 1.0,
-    reproducible: bool = true,
-
-    pub fn deinit(self: *Record, alloc: std.mem.Allocator) void {
-        alloc.free(self.subject_entity);
-        alloc.free(self.source);
-        if (self.compiler_version) |v| alloc.free(v);
     }
 };
 
