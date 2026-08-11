@@ -112,7 +112,7 @@ where its microsecond template-JIT compile beats Cranelift's milliseconds.
 §2 requires S0 to receive only correctness, reproducibility, and security fixes after S1
 viability, with **no architectural evolution**. This is currently violated:
 
-- `src/pass26_wiring.zig`, `src/pass26_descriptor_intern.zig`, `src/debug_trace.zig`,
+- `src/pass26_wiring.zig`, `src/debug_trace.zig`,
   `src/sema.zig` are under active architectural change.
 - The tree has not compiled for an extended period as a result
   (`hash_map has no member 'identity_context'`, `Scope has no member 'call'`,

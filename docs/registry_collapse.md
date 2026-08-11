@@ -1,4 +1,9 @@
-# Registry collapse — survey
+# Historical registry audit
+
+> **Superseded migration evidence.** This document predates ONE-ID and is not
+> current architecture or implementation guidance. Name, path, span, hash,
+> fingerprint, and intern coordinates cannot establish semantic identity.
+> Follow `docs/spec/constitution.md` and the live graph facts instead.
 
 **Status:** survey only. No source file was modified to produce this.
 **Verified against:** clean detached worktree at `489bc1b` (`git worktree add
@@ -44,7 +49,7 @@ column and called out in Notes.
 | 11 | `CodeGen.enum_defs` / `enum_has_payload` | `src/codegen.zig:293`, `:292` | third and fourth copies of enum case facts | 2 / 1 | 4 / 9 | Same edge as #6. |
 | 12 | `CodeGen.alias_methods` | `src/codegen.zig:299` | alias name → method name list | 1 | 4 | Same edge as #4, second copy. |
 | 13 | `SemanticGraph.func_decls` | `src/semantic_graph.zig:147` | name → `*const ast.FuncDecl` | — | — | The graph's own name-keyed side table, on the very structure that is supposed to replace name-keyed side tables. |
-| 14 | `pass26_descriptor_intern.Registry` | `src/pass26_descriptor_intern.zig:237` | fingerprint → slot, decl-identity, state | `semantic_graph.zig:430` | `semantic_graph.zig` alias lift | **Not a collapse target — a collapse *tool*.** See §the seed. |
+| 14 | deleted descriptor registry | historical `src/pass26_descriptor_intern.zig` | fingerprint → slot, declaration hash, state | deleted | deleted | **Removed.** Lifecycle, recursion, and completion remain graph facts; fingerprint and intern identity projections do not. |
 
 ### Registries that are already-derived or dead — the honest subtractions
 
@@ -176,84 +181,10 @@ endpoints.
 Three of ten rows are deletions with no replacement edge. That is the shortest
 true version of the list, and it is a real reduction in the survey's own scope.
 
-## The seed for step 1 — it already exists
+## Current disposition
 
-Do not design a new identity scheme. Two are already in the tree and are close:
-
-- `SemanticGraph.StableId.compute` (`semantic_graph.zig:31`) hashes
-  `module_path | kind | stable_path | generation`. Its weakness is
-  `stablePathForNode` (`:175-182`): **if the node has a name, the name IS the
-  stable path**. So two locals named `i` in sibling scopes of one module get
-  the *same* `StableId`. The span fallback at `:177` is only used for anonymous
-  nodes — the fix is to make the enclosing-scope chain part of the path for
-  *named* nodes too, which is a change to one function.
-- `pass26_descriptor_intern.declarationIdentityHash`
-  (`pass26_descriptor_intern.zig:40-52`) hashes `module_path | name | span.line
-  | span.col` and is documented as *"never merged across bindings"*
-  (`semantic_graph.zig:108`). This is the right shape. It is currently applied
-  to aliases only (`semantic_graph.zig:430`).
-
-Step 1 is generalizing the second to all node kinds and routing the first
-through it — not inventing a third.
-
-## Sequenced plan
-
-Each step is separately shippable and separately provable. No step adds an
-adapter from graph semantics into a name-keyed registry.
-
-**Step 1 — stable semantic identity (prerequisite, blocks everything).**
-Give every graph node a declaration identity that a shadowing name cannot
-collide: generalize `declarationIdentityHash` beyond aliases, and make
-`stablePathForNode` include the enclosing scope chain so a named node's path is
-not just its name. Then add the scope-qualified index the `findByName` comment
-itself asks for (`StringHashMap → ArrayList(NodeId)` plus a scope filter), and
-convert the 14 `findByName` sites to resolve *within a scope*.
-*Proof:* a fixture with two same-named locals in sibling scopes must produce
-two distinct `StableId`s and two distinct `findByName`-successor resolutions.
-Positive-control it — per CLAUDE.md §3, a gate reporting 0 collisions is
-usually broken, so assert the collision count is nonzero *before* the fix.
-
-**Step 2 — delete the three dead rows.** `metatable_types`,
-`instantiation_sites`, `generic_func_arities`, plus `InstantiationRecord` and
-`check_specialize_directive`. No replacement edge, no behaviour change beyond
-one `--info` line and one directive diagnostic. Do this second because it
-shrinks the surface every later step has to reason about, and because it is the
-one step that cannot regress anything.
-
-**Step 3 — `member` edge, and the alias collapse (#1, #2).** Introduce the
-missing relation and fill the declared-but-empty `EdgeKind.def`. Move
-`alias_defs` to graph queries in **both** sema and codegen in the same change —
-`codegen.zig`'s ten readers are the point of the exercise; leaving them is the
-two-ontology failure. Delete `find_current_concept_def`'s sibling pattern where
-it appears.
-
-**Step 4 — concepts + methods (#3, #4, #12).** With `member` edges present,
-`type_satisfies_concept`'s four-way hand-join becomes one edge query.
-`ConceptInfo` disappears; `NodeKind.concept` gets produced for the first time.
-`codegen.zig:16705`'s rescan is deleted, not adapted.
-
-**Step 5 — enums (#6, #11).** Wire the four readers of `enum_types` and the
-thirteen of `enum_defs`/`enum_has_payload` to the `enum_shape` nodes that are
-already being lifted.
-
-**Step 6 — overloads → trie strata (#5).** Last, because it is the only row
-that needs the trie to exist as a first-class structure rather than as a query
-over edges, and because its single reader means nothing else is waiting on it.
-
-**Step 7 — `table_field_types` (#7).** Retire the string scope keys once step 1
-has made node identity available at the field-tracking sites.
-
-## The one-line answer
-
-**Collapse `alias_defs` first — but only after step 1, and only in sema and
-codegen simultaneously.** It has the most measured readers (14), it is the row
-where the sema/codegen ontology fork is widest, and `type_satisfies_concept`
-(`sema.zig:4343`) already reaches into `alias_defs` to answer a *concept*
-question and into `table_methods` to answer a *method* question — meaning the
-alias record is the join key those two rows are secretly sharing. Give aliases
-a real identity and a real `member` edge and rows 2 and 3 stop being separate
-problems.
-
-The prerequisite is not negotiable, and it is not really a ranking entry:
-without stable semantic identity every "edge" is a pair of strings, and a pair
-of strings is what we already have, spread across 62 hash maps.
+This audit is retained only to locate historical duplicate owners. Its proposed
+identity schemes and sequenced migration plan are deleted because current
+ONE-ID law rejects name-, path-, span-, hash-, fingerprint-, and intern-based
+semantic identity. Current work moves each demanded fact to the semantic graph
+and deletes the corresponding registry; missing facts block at their producer.

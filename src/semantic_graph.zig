@@ -10,11 +10,81 @@ const sema = @import("sema.zig");
 const types = @import("types.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
 const transform_engine = @import("transform_engine.zig");
-const pass26_descriptor_intern = @import("pass26_descriptor_intern.zig");
 const pass26_descriptor_identity = @import("pass26_descriptor_identity.zig");
 const pass26_recursive_descriptor = @import("pass26_recursive_descriptor.zig");
 
 pub const id = u32;
+
+fn referencesDescriptorName(rt: types.ResolvedType, name: []const u8) bool {
+    switch (rt) {
+        .@"struct" => |s| return std.mem.eql(u8, s.name, name),
+        .pointer => |p| return referencesDescriptorName(p.*, name),
+        .table_type => |t| {
+            for (t.fields) |f| {
+                if (referencesDescriptorName(f.typ, name)) return true;
+            }
+            return false;
+        },
+        .enum_type => |e| {
+            if (std.mem.eql(u8, e.name, name)) return true;
+            for (e.variants) |v| {
+                if (v.payload) |payload| {
+                    for (payload) |p| {
+                        if (referencesDescriptorName(p, name)) return true;
+                    }
+                }
+            }
+            return false;
+        },
+        else => return false,
+    }
+}
+
+fn referencesDescriptorInline(rt: types.ResolvedType, name: []const u8) bool {
+    switch (rt) {
+        .@"struct" => |s| return std.mem.eql(u8, s.name, name),
+        .table_type => |t| {
+            for (t.fields) |f| {
+                if (referencesDescriptorInline(f.typ, name)) return true;
+            }
+            return false;
+        },
+        .enum_type => |e| {
+            for (e.variants) |v| {
+                if (v.payload) |payload| {
+                    for (payload) |p| {
+                        if (referencesDescriptorInline(p, name)) return true;
+                    }
+                }
+            }
+            return false;
+        },
+        else => return false,
+    }
+}
+
+fn classifyDescriptorRecursion(name: []const u8, rt: types.ResolvedType) pass26_recursive_descriptor.RecursionKind {
+    if (!referencesDescriptorName(rt, name)) return .none;
+    if (referencesDescriptorInline(rt, name)) return .inline_fixed_point;
+    return .indirect_pointer;
+}
+
+fn inferDescriptorState(sc: types.StorageClass, is_sealed: bool) pass26_descriptor_identity.DescriptorState {
+    if (is_sealed) return .sealed;
+    return switch (sc) {
+        .native, .sealed => .sealed,
+        .guarded, .dynamic => .open_semantic,
+    };
+}
+
+fn resolveDescriptorCompletion(
+    recursion: pass26_recursive_descriptor.RecursionKind,
+    rt: types.ResolvedType,
+) pass26_recursive_descriptor.DescriptorCompletion {
+    if (recursion == .none) return .complete;
+    if (rt == .any) return .invalid_incomplete;
+    return .complete;
+}
 
 pub const NodeKind = enum {
     module,
@@ -85,12 +155,6 @@ pub const Node = struct {
     stage: ?semantic_algebra.Stage = null,
     /// Pass 2.1: descriptor algebra hash for alias/type nodes (internal).
     descriptor_hash: ?u64 = null,
-    /// Pass 26: canonical semantic fingerprint (interning/specialization; distinct from shape_id).
-    semantic_fingerprint: ?u64 = null,
-    /// Declaration-provenance fingerprint. Exact identity remains the id.
-    declaration_fingerprint: ?u64 = null,
-    /// Pass 26 M1: intern slot when pure descriptors collapse.
-    intern_slot: ?u32 = null,
     /// Pass 26 M1: descriptor lifecycle state at lift.
     descriptor_state: ?pass26_descriptor_identity.DescriptorState = null,
     /// Pass 26 M1: recursive layout classification.
@@ -149,15 +213,8 @@ pub const SemanticGraph = struct {
     application_rows: std.ArrayListUnmanaged(u32) = .empty,
     application_presence: std.DynamicBitSetUnmanaged = .{},
     application_candidates: std.DynamicBitSetUnmanaged = .{},
-    /// Exact source provenance for this resident graph.
-    module_path: []const u8 = "",
-    /// Pass 26 M1 — descriptor fingerprint interning at alias lift.
-    descriptor_registry: pass26_descriptor_intern.Registry = undefined,
     pub fn init(alloc: std.mem.Allocator) SemanticGraph {
-        return .{
-            .alloc = alloc,
-            .descriptor_registry = pass26_descriptor_intern.Registry.init(alloc),
-        };
+        return .{ .alloc = alloc };
     }
 
     pub fn deinit(self: *SemanticGraph) void {
@@ -171,7 +228,6 @@ pub const SemanticGraph = struct {
         self.application_rows.deinit(self.alloc);
         self.application_presence.deinit(self.alloc);
         self.application_candidates.deinit(self.alloc);
-        self.descriptor_registry.deinit();
     }
 
     fn deinitNode(self: *SemanticGraph, node: Node) void {
@@ -542,7 +598,6 @@ pub const SemanticGraph = struct {
 
     /// Lift module-level function names from AST (Phase 1 minimal — no sema yet).
     pub fn liftModule(self: *SemanticGraph, mod: *const ast.Module, file: []const u8) !id {
-        self.module_path = file;
         const mod_id = try self.addNode(.{
             .kind = .module,
             .span = .{ .file = file, .start = 0, .end = 0 },
@@ -629,14 +684,12 @@ pub const SemanticGraph = struct {
                 self.alloc,
             );
             const d_hash = semantic_algebra.descriptorStructuralHash(desc_expr);
-            const identity_index = try self.descriptor_registry.registerAlias(
-                self.module_path,
-                ad.name,
-                .{ .line = ad.loc.line, .col = ad.loc.col },
-                rt,
+            const state = inferDescriptorState(
                 sc,
+                if (rt == .table_type) rt.table_type.is_sealed else false,
             );
-            const identity = self.descriptor_registry.get(identity_index).?;
+            const recursion = classifyDescriptorRecursion(ad.name, rt);
+            const completion = resolveDescriptorCompletion(recursion, rt);
             var label_buf: [128]u8 = undefined;
             const label = try self.alloc.dupe(
                 u8,
@@ -653,12 +706,9 @@ pub const SemanticGraph = struct {
                 .knowledge = knowledge,
                 .stage = .sema,
                 .descriptor_hash = d_hash,
-                .semantic_fingerprint = identity.semantic_fingerprint,
-                .declaration_fingerprint = identity.declaration_identity,
-                .intern_slot = identity.intern_slot,
-                .descriptor_state = identity.state,
-                .recursion = identity.recursion,
-                .completion = identity.completion,
+                .descriptor_state = state,
+                .recursion = recursion,
+                .completion = completion,
                 .descriptor_label = label,
                 .ast_ref = @ptrCast(ad),
             });
@@ -1460,18 +1510,6 @@ pub const SemanticGraph = struct {
                 if (node.descriptor_hash) |dh| {
                     try out.appendSlice(alloc, ",\"descriptor_hash\":");
                     try appendJsonInt(out, alloc, dh);
-                }
-                if (node.semantic_fingerprint) |sf| {
-                    try out.appendSlice(alloc, ",\"semantic_fingerprint\":");
-                    try appendJsonInt(out, alloc, sf);
-                }
-                if (node.declaration_fingerprint) |di| {
-                    try out.appendSlice(alloc, ",\"declaration_fingerprint\":");
-                    try appendJsonInt(out, alloc, di);
-                }
-                if (node.intern_slot) |slot| {
-                    try out.appendSlice(alloc, ",\"intern_slot\":");
-                    try appendJsonInt(out, alloc, slot);
                 }
                 if (node.descriptor_state) |ds| {
                     try out.appendSlice(alloc, ",\"descriptor_state\":\"");
@@ -2528,7 +2566,7 @@ test "semantic_graph: table shape_id stable across identical field sets" {
     try std.testing.expectEqual(types.tableShapeIdentityHash(rt_a), types.tableShapeIdentityHash(rt_b));
 }
 
-test "semantic_graph: pass26 pure alias interning shares fingerprint and slot" {
+test "semantic_graph: descriptor lifecycle facts need no parallel identity" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -2543,19 +2581,40 @@ test "semantic_graph: pass26 pure alias interning shares fingerprint and slot" {
     const module = try parser.parse_module();
     var g = SemanticGraph.init(alloc);
     defer g.deinit();
-    g.module_path = "test.duo";
     _ = try g.liftModuleFull(&module, "test.duo");
     const pair_a = g.findTableShape("PairA") orelse return error.TestExpectedEqual;
     const pair_b = g.findTableShape("PairB") orelse return error.TestExpectedEqual;
-    try std.testing.expect(pair_a.semantic_fingerprint != null);
-    try std.testing.expectEqual(pair_a.semantic_fingerprint, pair_b.semantic_fingerprint);
-    try std.testing.expect(pair_a.declaration_fingerprint != null);
-    try std.testing.expect(pair_b.declaration_fingerprint != null);
-    try std.testing.expect(pair_a.declaration_fingerprint != pair_b.declaration_fingerprint);
-    try std.testing.expect(pair_a.intern_slot != null);
-    try std.testing.expectEqual(pair_a.intern_slot, pair_b.intern_slot);
+    try std.testing.expect(pair_a.descriptor_state == .sealed);
+    try std.testing.expect(pair_b.descriptor_state == .sealed);
     try std.testing.expect(pair_a.recursion == .none);
+    try std.testing.expect(pair_b.recursion == .none);
     try std.testing.expect(pair_a.completion == .complete);
+    try std.testing.expect(pair_b.completion == .complete);
+}
+
+test "semantic_graph: recursive descriptor facts remain graph-derived" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const node: types.ResolvedType = .{ .@"struct" = .{ .name = "Node" } };
+    const next = try alloc.create(types.ResolvedType);
+    next.* = node;
+    const fields = try alloc.alloc(types.FieldType, 2);
+    fields[0] = .{ .name = "value", .typ = .i64 };
+    fields[1] = .{ .name = "next", .typ = .{ .pointer = next } };
+    const descriptor: types.ResolvedType = .{ .table_type = .{
+        .fields = fields,
+        .storage_class = .native,
+        .is_sealed = true,
+    } };
+
+    const recursion = classifyDescriptorRecursion("Node", descriptor);
+    try std.testing.expectEqual(pass26_recursive_descriptor.RecursionKind.indirect_pointer, recursion);
+    try std.testing.expectEqual(
+        pass26_recursive_descriptor.DescriptorCompletion.complete,
+        resolveDescriptorCompletion(recursion, descriptor),
+    );
 }
 
 test "semantic_graph: alias with derive builds transform descriptor label" {
