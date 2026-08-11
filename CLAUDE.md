@@ -160,6 +160,24 @@ Prefer demanded work only, dense graph handles, packed facts and ranges,
 arenas, bitsets, generated tables, and incremental dependency reuse. A smaller
 compiler encoding that produces worse machine code is a regression.
 
+Optimization converges through three reusable graph engines rather than a
+fixed procession of semantic passes:
+
+```text
+sparse monotone fact propagation
+-> bounded witnessed equivalence retained in the same graph
+-> demand/profile/cost-budgeted realization extraction
+```
+
+Fact families supply lattices to one dependency worklist; recursive work uses
+derived SCC, dominance, loop, and effect-version indexes. Equivalence keeps
+lawful alternatives only while their expected reuse and machine value justify
+their graph and compile cost. Extraction spends cheap linear effort on cold
+regions and may use verified synthesis or integrated allocation and scheduling
+only where demand and profile justify it. These engines use specialized packed
+columns and adjacency, never a generic property database, separate e-graph,
+pass-local semantic registry, or uniform expensive optimization level.
+
 Every important decision retains causal provenance from source through graph,
 transformation, realization, instruction, and object range where that boundary
 is supported. Tooling consumes graph facts; it does not invent a vocabulary or
