@@ -5713,7 +5713,7 @@ pub const Parser = struct {
                     term.locErr(l, "@constexpr is not valid in .duo files. Use @(expr) for comptime evaluation.", .{});
                     return ParseError.UnexpectedToken;
                 }
-                if (std.mem.eql(u8, qualified, "comptime_if") or std.mem.eql(u8, qualified, "comptimeif")) {
+                if (std.mem.eql(u8, qualified, "comptime_if")) {
                     term.locErr(l, "@comptime_if is not valid in .duo files. Use if-expressions with @(expr) conditions.", .{});
                     return ParseError.UnexpectedToken;
                 }
