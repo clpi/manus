@@ -215,6 +215,22 @@ else
   bad "Cursor MCP server list failed"
 fi
 
+if cursor agent --print --mode=ask --trust --workspace "$repo" "Start at AGENTS.md. Answer with the sole Idsem semantic law file path only." >/tmp/idsem-cursor-agent-smoke.out 2>&1; then
+  if grep -q 'docs/spec/constitution.md' /tmp/idsem-cursor-agent-smoke.out; then
+    ok "Cursor Agent fresh headless session orients through AGENTS.md"
+  else
+    bad "Cursor Agent fresh headless session did not identify C0"
+  fi
+else
+  if grep -qi 'keychain is locked' /tmp/idsem-cursor-agent-smoke.out; then
+    bad "Cursor Agent fresh headless session blocked by locked macOS login keychain"
+  elif grep -qi 'Authentication required' /tmp/idsem-cursor-agent-smoke.out; then
+    bad "Cursor Agent fresh headless session requires login"
+  else
+    bad "Cursor Agent fresh headless session failed"
+  fi
+fi
+
 run_gate() {
   label="$1"
   shift
