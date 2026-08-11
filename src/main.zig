@@ -97,7 +97,6 @@ var graph_write_enabled: bool = false;
 var global_bench_backend: backend_identity.BenchBackend = .c_specialized;
 var global_bench_profile_cli: bool = false;
 var global_backend_explicit: bool = false;
-var semantic_cache_enabled: bool = true;
 
 fn env_value_truthy(value: []const u8) bool {
     if (value.len == 0) return false;
@@ -141,9 +140,6 @@ fn apply_env_flags(init: std.process.Init) void {
     }
     if (map.get("DUO_BENCH_BACKEND")) |v| {
         if (backend_identity.BenchBackend.parse(v)) |bb| global_bench_backend = bb;
-    }
-    if (map.get("DUO_SEMANTIC_CACHE")) |v| {
-        if (!env_value_truthy(v)) semantic_cache_enabled = false;
     }
     if (map.get("DUO_TRACE")) |v| {
         if (env_value_truthy(v)) term.trace = true;
@@ -4250,34 +4246,6 @@ fn do_compile(
             });
         }
         return;
-    }
-
-    if (semantic_cache_enabled and ps.sem.duo_mode) {
-        if (compile_semantic_cache.refreshFromCheckedModule(alloc, io, &ps.mod, src_path, target)) |refresh| {
-            var cache_refresh = refresh;
-            defer cache_refresh.deinit(alloc);
-            if (term.info) {
-                var reused: u32 = 0;
-                var fresh: u32 = 0;
-                var invalidated: u32 = 0;
-                for (cache_refresh.audits) |row| {
-                    switch (row.action) {
-                        .reused => reused += 1,
-                        .fresh => fresh += 1,
-                        .invalidated => invalidated += 1,
-                        .updated => {},
-                    }
-                }
-                term.infoMsg("semantic cache: {d} reused, {d} fresh, {d} invalidated, {d} removal edge(s)", .{
-                    reused,
-                    fresh,
-                    invalidated,
-                    cache_refresh.invalidation.edges.len,
-                });
-            }
-        } else |e| {
-            if (term.info) term.infoMsg("semantic cache refresh skipped: {}", .{e});
-        }
     }
 
     var native_scalar_precheck = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, undefined, ps.sem.next_closure_id, &ps.sem.table_field_types, &ps.sem.concepts);

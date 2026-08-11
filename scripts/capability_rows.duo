@@ -278,12 +278,6 @@ end
 -- backend had REFUSED, because the status belonged to tail. Unpiped, the same
 -- command reports 1.
 --
--- `DUO_SEMANTIC_CACHE=0` is load-bearing under -P: `duo check` writes one
--- semantic cache file relative to the working directory and parallel probes
--- corrupt each other's reads. capability_matrix.duo measured this — two
--- sweeps minutes apart disagreed on six programs, in the direction that
--- understates the compiler.
---
 -- ONE LINE PER TABLE ELEMENT, joined — not a `..` ladder. Two reasons and both
 -- matter. The shell is READABLE this way, which is the point of writing it out
 -- at all; and `..` beside a string literal is a CLAUDE.md §1 deny row that
@@ -296,7 +290,6 @@ probetext(duo: str, tprefix: str): str
         "s=\"$2\"",
         "d={duo}",
         "t={work}/w/$s",
-        "export DUO_SEMANTIC_CACHE=0",
         "des=0",
         "head -1 \"$f\" | grep -q '^--' && des=1",
         -- fmt rewrites in place and deletes comments; the copy takes it.
