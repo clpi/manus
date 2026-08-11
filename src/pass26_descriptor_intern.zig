@@ -6,7 +6,6 @@ const std = @import("std");
 const types = @import("types.zig");
 const pass26_descriptor_identity = @import("pass26_descriptor_identity.zig");
 const pass26_recursive_descriptor = @import("pass26_recursive_descriptor.zig");
-const pass26_hash_order = @import("pass26_hash_order.zig");
 
 pub const SCHEMA_VERSION = "pass26-descriptor-intern-v1";
 
@@ -105,15 +104,6 @@ fn collectFieldEntries(
     }
 }
 
-fn fieldOrderPolicy(
-    state: pass26_descriptor_identity.DescriptorState,
-) pass26_hash_order.FieldOrderPolicy {
-    return switch (state) {
-        .open_semantic, .mutable_builder => .declaration_significant,
-        .frozen_snapshot, .sealed, .derived => .normalized_canonical,
-    };
-}
-
 pub fn semanticFingerprint(
     rt: types.ResolvedType,
     state: pass26_descriptor_identity.DescriptorState,
@@ -129,13 +119,15 @@ pub fn semanticFingerprint(
     @memcpy(sorted[0..entries.len], entries);
     const scratch = sorted[0..entries.len];
 
-    const policy = fieldOrderPolicy(state);
-    if (policy == .normalized_canonical and scratch.len > 1) {
-        std.mem.sort(FieldEntry, scratch, {}, struct {
-            fn less(_: void, a: FieldEntry, b: FieldEntry) bool {
-                return std.mem.order(u8, a.name, b.name) == .lt;
-            }
-        }.less);
+    switch (state) {
+        .open_semantic, .mutable_builder => {},
+        .frozen_snapshot, .sealed, .derived => if (scratch.len > 1) {
+            std.mem.sort(FieldEntry, scratch, {}, struct {
+                fn less(_: void, a: FieldEntry, b: FieldEntry) bool {
+                    return std.mem.order(u8, a.name, b.name) == .lt;
+                }
+            }.less);
+        },
     }
 
     var hasher = std.hash.Wyhash.init(0x5E4A71C0);
