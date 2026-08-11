@@ -111,7 +111,7 @@ duo="$root/zig-out/bin/duo"
 git diff --cached -U0 --diff-filter=ACM -- '*.id' '*.duo' > "$tmp"
 rc=0
 if [ -s "$tmp" ]; then
-  DUOGATEDIFF="$tmp" "$duo" run "$root/scripts/idiomgate.duo"
+  DUOGATEDIFF="$tmp" "$duo" run --backend=c "$root/scripts/idiomgate.duo"
   rc=$?
 fi
 rm -f "$tmp"
