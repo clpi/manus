@@ -52,7 +52,7 @@ test {
     _ = @import("pass26_recursive_descriptor.zig");
     _ = @import("pass26_wiring.zig");
     _ = @import("pass27_benchmark_evidence.zig");
-    _ = @import("pass23_protocol_registry.zig");
+    _ = @import("lua_metamethod.zig");
     _ = @import("graph_query.zig");
     _ = @import("region_graph.zig");
     _ = @import("region_transform.zig");

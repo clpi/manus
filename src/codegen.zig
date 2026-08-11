@@ -34,7 +34,7 @@ const transform_engine = @import("transform_engine.zig");
 const meta_dispatch = @import("meta_dispatch.zig");
 const backend_identity = @import("backend_identity.zig");
 const dynamic_boundary = @import("dynamic_boundary.zig");
-const pass23_protocol_registry = @import("pass23_protocol_registry.zig");
+const lua_metamethod = @import("lua_metamethod.zig");
 const relation = @import("relation.zig");
 const duo_lexer_bridge = @import("duo_lexer_bridge.zig");
 
@@ -7573,9 +7573,9 @@ pub const CodeGen = struct {
     fn emit_alias_derive_metamethod_binding(
         self: *CodeGen,
         type_name: []const u8,
-        binding: pass23_protocol_registry.DeriveMetamethodBinding,
+        binding: lua_metamethod.DeriveBinding,
     ) void {
-        const mm = binding.lua_metamethod;
+        const mm = binding.metamethod.text();
         const hash = calc_lua_hash(mm);
         self.ind();
         self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"{s}\", {d}, {d}, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_{s}__lua));", .{
@@ -7619,14 +7619,14 @@ pub const CodeGen = struct {
                 }
             }
 
-            // Populate with @derive-generated metamethods (Pass 23 protocol registry)
-            for (pass23_protocol_registry.derive_metamethod_bindings) |binding| {
+            // Populate with @derive-generated foreign Lua metamethods.
+            for (lua_metamethod.derive_bindings) |binding| {
                 if (!alias_has_derive(ad.attributes, binding.derive_trait)) continue;
                 self.emit_alias_derive_metamethod_binding(ad.name, binding);
             }
 
             // Set __index = metatable itself (method lookup)
-            const index_mm = pass23_protocol_registry.luaMetamethodForKernel(.index) orelse "__index";
+            const index_mm = lua_metamethod.Metamethod.__index.text();
             self.ind();
             self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"{s}\", {d}, {d}, duo_mt_{s});", .{
                 ad.name, index_mm, calc_lua_hash(index_mm), index_mm.len, ad.name,
@@ -18817,7 +18817,7 @@ pub const CodeGen = struct {
         // For now, this is a runtime check emitted as C
         if (args[1].* == .string_lit) {
             const raw = args[1].string_lit.val;
-            const mm_name = pass23_protocol_registry.resolveToLuaMetamethod(raw);
+            const mm_name = if (lua_metamethod.parse(raw)) |known| known.text() else raw;
             const mm_hash = calc_lua_hash(mm_name);
             self.p("(lua_get_metafield_lit(", .{});
             try self.emit_as_lua_value(args[0]);
@@ -25292,41 +25292,35 @@ pub const CodeGen = struct {
     }
 };
 
-/// Pass 23 — emit `lua_binop_metamethod` dispatch line from protocol registry.
-fn runtimeBinopMetamethodLine(comptime op: pass23_protocol_registry.KernelOp) []const u8 {
-    const mm = pass23_protocol_registry.luaMetamethodForKernel(op) orelse
-        @compileError("pass23 registry: missing lua metamethod for runtime binop");
+/// Emit a generated-C dispatch for one exact foreign Lua metamethod.
+fn runtimeBinopMetamethodLine(comptime metamethod: lua_metamethod.Metamethod) []const u8 {
     return std.fmt.comptimePrint(
         \\    lua_Value mm = lua_binop_metamethod("{s}", a, b);
-    , .{mm});
+    , .{metamethod.text()});
 }
 
-/// Pass 23 — emit `lua_get_metafield_lit(obj, mm, hash, len)` from registry metamethod name.
+/// Emit `lua_get_metafield_lit` for one exact foreign Lua metamethod.
 fn runtimeMetafieldLitLine(
-    comptime lua_mm: []const u8,
+    comptime metamethod: lua_metamethod.Metamethod,
     comptime obj_expr: []const u8,
     comptime var_name: []const u8,
 ) []const u8 {
-    if (pass23_protocol_registry.findLuaAlias(lua_mm) == null)
-        @compileError("pass23 registry: unregistered runtime metamethod");
-    const hash = pass23_protocol_registry.luaHash(lua_mm);
+    const lua_mm = metamethod.text();
     return std.fmt.comptimePrint(
         \\    lua_Value {s} = lua_get_metafield_lit({s}, "{s}", {d}u, {d});
-    , .{ var_name, obj_expr, lua_mm, hash, lua_mm.len });
+    , .{ var_name, obj_expr, lua_mm, lua_metamethod.hash(metamethod), lua_mm.len });
 }
 
 /// Reassign form: `mm = lua_get_metafield_lit(b, "__eq", …)`.
 fn runtimeMetafieldLitReassignLine(
-    comptime lua_mm: []const u8,
+    comptime metamethod: lua_metamethod.Metamethod,
     comptime obj_expr: []const u8,
     comptime var_name: []const u8,
 ) []const u8 {
-    if (pass23_protocol_registry.findLuaAlias(lua_mm) == null)
-        @compileError("pass23 registry: unregistered runtime metamethod");
-    const hash = pass23_protocol_registry.luaHash(lua_mm);
+    const lua_mm = metamethod.text();
     return std.fmt.comptimePrint(
         \\    {s} = lua_get_metafield_lit({s}, "{s}", {d}u, {d});
-    , .{ var_name, obj_expr, lua_mm, hash, lua_mm.len });
+    , .{ var_name, obj_expr, lua_mm, lua_metamethod.hash(metamethod), lua_mm.len });
 }
 
 /// Backing store for the dense (native array) table representation.
@@ -26377,7 +26371,7 @@ const duo_runtime =
     \\        lua_Table* t = (lua_Table*)table.as.tval;
     \\        if (t && t->metatable.type == VAL_NIL) return lua_val_nil();
     \\    }
-++ runtimeMetafieldLitLine("__index", "table", "idx") ++
+++ runtimeMetafieldLitLine(.__index, "table", "idx") ++
     \\    if (idx.type == VAL_TABLE) return lua_table_get(idx, key);
     \\    if (idx.type == VAL_FUNC || idx.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { table, key };
@@ -26405,7 +26399,7 @@ const duo_runtime =
     \\        lua_Table* t = (lua_Table*)table.as.tval;
     \\        if (t && t->metatable.type == VAL_NIL) return lua_val_nil();
     \\    }
-++ runtimeMetafieldLitLine("__index", "table", "idx") ++
+++ runtimeMetafieldLitLine(.__index, "table", "idx") ++
     \\    if (idx.type == VAL_TABLE) return lua_table_get_str_lit(idx, s, hash, len);
     \\    if (idx.type == VAL_FUNC || idx.type == VAL_CLOSURE) {
     \\        lua_Value key = lua_val_from_literal(s, hash, len);
@@ -26433,7 +26427,7 @@ const duo_runtime =
     \\    if (LUA_LIKELY(table.type == VAL_TABLE)) {
     \\        lua_Table* t = (lua_Table*)table.as.tval;
     \\        if (t && t->metatable.type == VAL_NIL) return lua_val_nil();
-++ runtimeMetafieldLitLine("__index", "table", "mt") ++
+++ runtimeMetafieldLitLine(.__index, "table", "mt") ++
     \\        if (mt.type == VAL_TABLE) return lua_table_get_i64(mt, idx);
     \\        if (mt.type == VAL_FUNC || mt.type == VAL_CLOSURE) {
     \\            lua_Value key = lua_val_from_int(idx);
@@ -26464,7 +26458,7 @@ const duo_runtime =
     \\    if (LUA_LIKELY(table.type == VAL_TABLE)) {
     \\        lua_Table* t = (lua_Table*)table.as.tval;
     \\        if (t && t->metatable.type == VAL_NIL) return lua_val_nil();
-++ runtimeMetafieldLitLine("__index", "table", "mt") ++
+++ runtimeMetafieldLitLine(.__index, "table", "mt") ++
     \\        if (mt.type == VAL_TABLE) return lua_table_get_num(mt, n);
     \\        if (mt.type == VAL_FUNC || mt.type == VAL_CLOSURE) {
     \\            lua_Value key = lua_val_from_num(n);
@@ -26845,7 +26839,7 @@ const duo_runtime =
     \\                lua_table_set_raw_str_lit(table, s, hash, len, val);
     \\                return;
     \\            }
-++ runtimeMetafieldLitLine("__newindex", "table", "ni") ++
+++ runtimeMetafieldLitLine(.__newindex, "table", "ni") ++
     \\            if (ni.type == VAL_TABLE) {
     \\                lua_table_set_str_lit(ni, s, hash, len, val);
     \\                return;
@@ -26884,7 +26878,7 @@ const duo_runtime =
     \\                lua_table_set_raw(table, key, val);
     \\                return;
     \\            }
-++ runtimeMetafieldLitLine("__newindex", "table", "ni") ++
+++ runtimeMetafieldLitLine(.__newindex, "table", "ni") ++
     \\            if (ni.type == VAL_TABLE) {
     \\                lua_table_set(ni, key, val);
     \\                return;
@@ -26924,7 +26918,7 @@ const duo_runtime =
     \\                lua_table_set_raw_i64(table, idx, val);
     \\                return;
     \\            }
-++ runtimeMetafieldLitLine("__newindex", "table", "ni") ++
+++ runtimeMetafieldLitLine(.__newindex, "table", "ni") ++
     \\            if (ni.type == VAL_NIL) {
     \\                lua_table_set_raw_i64(table, idx, val);
     \\                return;
@@ -26966,7 +26960,7 @@ const duo_runtime =
     \\                lua_table_set_raw_num(table, n, val);
     \\                return;
     \\            }
-++ runtimeMetafieldLitLine("__newindex", "table", "ni") ++
+++ runtimeMetafieldLitLine(.__newindex, "table", "ni") ++
     \\            if (ni.type == VAL_NIL) {
     \\                lua_table_set_raw_num(table, n, val);
     \\                return;
@@ -27013,13 +27007,13 @@ const duo_runtime =
     \\}
     \\
     \\static inline const char* lua_concat(lua_Value a, lua_Value b) {
-++ runtimeMetafieldLitLine("__concat", "a", "mm") ++
+++ runtimeMetafieldLitLine(.__concat, "a", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        lua_Value res = lua_invoke(mm, 2, args);
     \\        return lua_to_str(res);
     \\    }
-++ runtimeMetafieldLitReassignLine("__concat", "b", "mm") ++
+++ runtimeMetafieldLitReassignLine(.__concat, "b", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        lua_Value res = lua_invoke(mm, 2, args);
@@ -27044,7 +27038,7 @@ const duo_runtime =
     \\        if (v.number_kind == 1) return lua_val_from_int(-(int64_t)lua_num(v));
     \\        return lua_val_from_num(-lua_num(v));
     \\    }
-++ runtimeMetafieldLitLine("__unm", "v", "mm") ++
+++ runtimeMetafieldLitLine(.__unm, "v", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[1] = { v };
     \\        return lua_invoke(mm, 1, args);
@@ -27056,7 +27050,7 @@ const duo_runtime =
     \\    if (LUA_LIKELY(v.type == VAL_NUMBER)) {
     \\        return lua_val_from_int(~((int64_t)lua_num(v)));
     \\    }
-++ runtimeMetafieldLitLine("__bnot", "v", "mm") ++
+++ runtimeMetafieldLitLine(.__bnot, "v", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[1] = { v };
     \\        return lua_invoke(mm, 1, args);
@@ -27076,7 +27070,7 @@ const duo_runtime =
     \\        }
     \\        return lua_num_combine(lua_num(a) + lua_num(b), a.number_kind, b.number_kind, 0);
     \\    }
-++ runtimeBinopMetamethodLine(.add) ++
+++ runtimeBinopMetamethodLine(.__add) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num(lua_to_num(a) + lua_to_num(b));
     \\}
@@ -27093,7 +27087,7 @@ const duo_runtime =
     \\        }
     \\        return lua_num_combine(lua_num(a) - lua_num(b), a.number_kind, b.number_kind, 0);
     \\    }
-++ runtimeBinopMetamethodLine(.subtract) ++
+++ runtimeBinopMetamethodLine(.__sub) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num(lua_to_num(a) - lua_to_num(b));
     \\}
@@ -27110,7 +27104,7 @@ const duo_runtime =
     \\        }
     \\        return lua_num_combine(lua_num(a) * lua_num(b), a.number_kind, b.number_kind, 0);
     \\    }
-++ runtimeBinopMetamethodLine(.multiply) ++
+++ runtimeBinopMetamethodLine(.__mul) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num(lua_to_num(a) * lua_to_num(b));
     \\}
@@ -27119,7 +27113,7 @@ const duo_runtime =
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
     \\        return lua_val_from_num(lua_num(a) / lua_num(b));
     \\    }
-++ runtimeBinopMetamethodLine(.divide) ++
+++ runtimeBinopMetamethodLine(.__div) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num(lua_to_num(a) / lua_to_num(b));
     \\}
@@ -27131,7 +27125,7 @@ const duo_runtime =
     \\        }
     \\        return lua_val_from_num(floor(lua_num(a) / lua_num(b)));
     \\    }
-++ runtimeBinopMetamethodLine(.integer_divide) ++
+++ runtimeBinopMetamethodLine(.__idiv) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num(floor(lua_to_num(a) / lua_to_num(b)));
     \\}
@@ -27144,7 +27138,7 @@ const duo_runtime =
     \\        if (a.number_kind == 1 && b.number_kind == 1) return lua_val_from_int((int64_t)r);
     \\        return lua_val_from_num(r);
     \\    }
-++ runtimeBinopMetamethodLine(.remainder) ++
+++ runtimeBinopMetamethodLine(.__mod) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    double na = lua_to_num(a);
     \\    double nb = lua_to_num(b);
@@ -27155,7 +27149,7 @@ const duo_runtime =
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
     \\        return lua_val_from_num(pow(lua_num(a), lua_num(b)));
     \\    }
-++ runtimeBinopMetamethodLine(.power) ++
+++ runtimeBinopMetamethodLine(.__pow) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num(pow(lua_to_num(a), lua_to_num(b)));
     \\}
@@ -27164,7 +27158,7 @@ const duo_runtime =
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
     \\        return lua_val_from_int((int64_t)lua_num(a) & (int64_t)lua_num(b));
     \\    }
-++ runtimeBinopMetamethodLine(.bit_and) ++
+++ runtimeBinopMetamethodLine(.__band) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num((double)((int64_t)lua_to_num(a) & (int64_t)lua_to_num(b)));
     \\}
@@ -27173,7 +27167,7 @@ const duo_runtime =
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
     \\        return lua_val_from_int((int64_t)lua_num(a) | (int64_t)lua_num(b));
     \\    }
-++ runtimeBinopMetamethodLine(.bit_or) ++
+++ runtimeBinopMetamethodLine(.__bor) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num((double)((int64_t)lua_to_num(a) | (int64_t)lua_to_num(b)));
     \\}
@@ -27182,7 +27176,7 @@ const duo_runtime =
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
     \\        return lua_val_from_int((int64_t)lua_num(a) ^ (int64_t)lua_num(b));
     \\    }
-++ runtimeBinopMetamethodLine(.bit_xor) ++
+++ runtimeBinopMetamethodLine(.__bxor) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num((double)((int64_t)lua_to_num(a) ^ (int64_t)lua_to_num(b)));
     \\}
@@ -27191,7 +27185,7 @@ const duo_runtime =
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
     \\        return lua_val_from_int((int64_t)lua_num(a) << (int64_t)lua_num(b));
     \\    }
-++ runtimeBinopMetamethodLine(.shift_left) ++
+++ runtimeBinopMetamethodLine(.__shl) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num((double)((int64_t)lua_to_num(a) << (int64_t)lua_to_num(b)));
     \\}
@@ -27200,19 +27194,19 @@ const duo_runtime =
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
     \\        return lua_val_from_int((int64_t)lua_num(a) >> (int64_t)lua_num(b));
     \\    }
-++ runtimeBinopMetamethodLine(.shift_right) ++
+++ runtimeBinopMetamethodLine(.__shr) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num((double)((int64_t)lua_to_num(a) >> (int64_t)lua_to_num(b)));
     \\}
     \\
     \\static inline bool lua_eq(lua_Value a, lua_Value b) {
     \\    if (lua_raweq_value(a, b)) return true;
-++ runtimeMetafieldLitLine("__eq", "a", "mm") ++
+++ runtimeMetafieldLitLine(.__eq, "a", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
     \\    }
-++ runtimeMetafieldLitReassignLine("__eq", "b", "mm") ++
+++ runtimeMetafieldLitReassignLine(.__eq, "b", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
@@ -27225,7 +27219,7 @@ const duo_runtime =
     \\}
     \\
     \\static inline bool duo_contains(lua_Value container, lua_Value item) {
-++ runtimeMetafieldLitLine("__contains", "container", "mm") ++
+++ runtimeMetafieldLitLine(.__contains, "container", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { container, item };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
@@ -27370,12 +27364,12 @@ const duo_runtime =
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
     \\        return lua_num(a) < lua_num(b);
     \\    }
-++ runtimeMetafieldLitLine("__lt", "a", "mm") ++
+++ runtimeMetafieldLitLine(.__lt, "a", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
     \\    }
-++ runtimeMetafieldLitReassignLine("__lt", "b", "mm") ++
+++ runtimeMetafieldLitReassignLine(.__lt, "b", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
@@ -27394,12 +27388,12 @@ const duo_runtime =
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
     \\        return lua_num(a) <= lua_num(b);
     \\    }
-++ runtimeMetafieldLitLine("__le", "a", "mm") ++
+++ runtimeMetafieldLitLine(.__le, "a", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
     \\    }
-++ runtimeMetafieldLitReassignLine("__le", "b", "mm") ++
+++ runtimeMetafieldLitReassignLine(.__le, "b", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
@@ -27415,7 +27409,7 @@ const duo_runtime =
     \\}
     \\
     \\static inline lua_Value tostring(lua_Value v) {
-++ runtimeMetafieldLitLine("__tostring", "v", "mm") ++
+++ runtimeMetafieldLitLine(.__tostring, "v", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[1] = { v };
     \\        return lua_invoke(mm, 1, args);
@@ -27431,7 +27425,7 @@ const duo_runtime =
     \\ * it is also used where a raw string is required. */
     \\static inline const char* lua_to_display_str(lua_Value v) {
     \\    if (LUA_LIKELY(v.type == VAL_STRING)) return v.as.sval;
-++ runtimeMetafieldLitLine("__tostring", "v", "mm") ++
+++ runtimeMetafieldLitLine(.__tostring, "v", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[1] = { v };
     \\        return lua_to_str(lua_invoke(mm, 1, args));
@@ -28105,7 +28099,7 @@ const duo_runtime =
     \\    if (v.type == VAL_TABLE) {
     \\        lua_Table* t = (lua_Table*)v.as.tval;
     \\        if (t && t->metatable.type == VAL_NIL) return lua_val_from_num((double)lua_table_len(v));
-++ runtimeMetafieldLitLine("__len", "v", "mm") ++
+++ runtimeMetafieldLitLine(.__len, "v", "mm") ++
     \\        if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\            lua_Value args[1] = { v };
     \\            return lua_invoke(mm, 1, args);
@@ -28122,7 +28116,7 @@ const duo_runtime =
     \\    if (v.type == VAL_TABLE) {
     \\        lua_Table* t = (lua_Table*)v.as.tval;
     \\        if (t && t->metatable.type == VAL_NIL) return (double)lua_table_len(v);
-++ runtimeMetafieldLitLine("__len", "v", "mm") ++
+++ runtimeMetafieldLitLine(.__len, "v", "mm") ++
     \\        if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\            lua_Value args[1] = { v };
     \\            return lua_to_num(lua_invoke(mm, 1, args));
@@ -31131,17 +31125,18 @@ test "runtime: robin hood table insertion invalidates last-key cache on displace
 
 test "runtime: table getters skip index lookup without metatable" {
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "if (t && t->metatable.type == VAL_NIL) return lua_val_nil();") != null);
-    const index_mm = pass23_protocol_registry.luaMetamethodForKernel(.index).?;
+    const index_metamethod = lua_metamethod.Metamethod.__index;
+    const index_mm = index_metamethod.text();
     const idx_needle = try std.fmt.allocPrint(
         testing.allocator,
         "lua_Value idx = lua_get_metafield_lit(table, \"{s}\", {d}u, {d})",
-        .{ index_mm, pass23_protocol_registry.luaHash(index_mm), index_mm.len },
+        .{ index_mm, lua_metamethod.hash(index_metamethod), index_mm.len },
     );
     defer testing.allocator.free(idx_needle);
     const mt_needle = try std.fmt.allocPrint(
         testing.allocator,
         "lua_Value mt = lua_get_metafield_lit(table, \"{s}\", {d}u, {d})",
-        .{ index_mm, pass23_protocol_registry.luaHash(index_mm), index_mm.len },
+        .{ index_mm, lua_metamethod.hash(index_metamethod), index_mm.len },
     );
     defer testing.allocator.free(mt_needle);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, idx_needle) != null);
@@ -31156,23 +31151,22 @@ test "runtime: binop metamethod lookup avoids string interning" {
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "lua_get_metafield(b, name)") == null);
 }
 
-test "runtime: binop metamethod strings wired through pass23 protocol registry" {
-    for (pass23_protocol_registry.runtime_binop_bindings) |b| {
-        const mm = pass23_protocol_registry.luaMetamethodForKernel(b.op) orelse
-            return error.TestExpectedEqual;
+test "runtime: exact Lua binop metamethods are emitted" {
+    inline for (lua_metamethod.runtime_binop_metamethods) |metamethod| {
+        const mm = metamethod.text();
         const needle = try std.fmt.allocPrint(testing.allocator, "lua_binop_metamethod(\"{s}\", a, b)", .{mm});
         defer testing.allocator.free(needle);
         try testing.expect(std.mem.indexOf(u8, duo_runtime, needle) != null);
     }
 }
 
-test "runtime: metafield lit strings wired through pass23 protocol registry" {
-    for (pass23_protocol_registry.runtime_metafield_bindings) |b| {
-        const hash = pass23_protocol_registry.luaHash(b.lua_metamethod);
+test "runtime: exact Lua metafield keys are emitted" {
+    inline for (lua_metamethod.runtime_metafield_metamethods) |metamethod| {
+        const mm = metamethod.text();
         const mm_needle = try std.fmt.allocPrint(
             testing.allocator,
             "\"{s}\", {d}u, {d}",
-            .{ b.lua_metamethod, hash, b.lua_metamethod.len },
+            .{ mm, lua_metamethod.hash(metamethod), mm.len },
         );
         defer testing.allocator.free(mm_needle);
         try testing.expect(std.mem.indexOf(u8, duo_runtime, mm_needle) != null);
