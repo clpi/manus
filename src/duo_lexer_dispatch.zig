@@ -145,9 +145,9 @@ pub fn route(
     if (@import("duo_lexer_bridge.zig").tokenizeAuthority() != .duo_native)
         return error.IdsemLexerInactive;
     const zsrc = try std.mem.concatWithSentinel(alloc, u8, &.{src}, 0);
-    errdefer alloc.free(zsrc);
+    defer alloc.free(zsrc);
     const zfile = try std.mem.concatWithSentinel(alloc, u8, &.{file}, 0);
-    errdefer alloc.free(zfile);
+    defer alloc.free(zfile);
     const toks = tokenize(alloc, zsrc, zfile) catch |e| switch (e) {
         error.OutOfMemory, error.BufferTooSmall => return e,
         else => {
@@ -155,6 +155,7 @@ pub fn route(
             return e;
         },
     };
+    errdefer alloc.free(toks);
     // Idsem's offsets first resolve against `zsrc`, the NUL-terminated copy the C
     // ABI requires. The parser holds the ORIGINAL `src`, and
     // srcOffsetOf compares pointers — so text pointing into the copy is "not in
@@ -174,9 +175,7 @@ pub fn route(
         tok.text = src[off .. off + tok.text.len];
         tok.loc.file = file;
     }
-    alloc.free(zfile);
-    alloc.free(zsrc);
-    lex.useDuoTokens(toks);
+    try lex.useDuoTokens(toks);
 }
 
 /// The ABI contract, asserted rather than assumed. A layout change in the Idsem
@@ -271,6 +270,12 @@ test "duo_lexer_dispatch: production route releases temporary source copies" {
 
     try std.testing.expectEqual(@intFromPtr(src.ptr), @intFromPtr(toks[0].text.ptr));
     try std.testing.expectEqual(@intFromPtr(file.ptr), @intFromPtr(toks[0].loc.file.ptr));
+
+    const before = lex.saveState();
+    var view = lex.tokenView().?;
+    const first = view.next();
+    try std.testing.expectEqual(@intFromPtr(src.ptr), @intFromPtr(first.text.ptr));
+    try std.testing.expectEqualDeep(before, lex.saveState());
 }
 
 test "duo_lexer_dispatch: Idsem owns exact token source spans" {
