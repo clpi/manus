@@ -1795,13 +1795,14 @@ pub const CalleeKind = enum {
     comptime_known,
 };
 
-/// Represents the compile-time-observable shape of a call site.
-/// This is the key for specialization decisions — two call sites with the
-/// same CallShape can share the same specialization.
+/// Compile-time-observable facts projected from a call site. This is legacy
+/// specialization input, not semantic identity; a resolved application keeps
+/// its exact graph entity instead.
 pub const CallShape = struct {
     /// How the callee is referenced
     callee_kind: CalleeKind,
-    /// Pass 24 §4.1 — parenthesized vs parenless vs command surface form.
+    /// Source delimiter provenance. It never participates in semantic
+    /// equality or specialization candidate fingerprints.
     invocation_form: ast.InvocationForm = .parenthesized,
     /// Callee name if statically known (null for indirect calls)
     callee_name: ?[]const u8 = null,
@@ -1820,13 +1821,11 @@ pub const CallShape = struct {
     /// Whether the receiver's table shape is known (for method calls)
     receiver_shape_known: bool = false,
 
-    /// Stable identity hash for call-shape deduplication and caching.
-    /// Two CallShapes with the same hash are considered equivalent for
-    /// specialization purposes.
-    pub fn identityHash(self: CallShape) u64 {
+    /// Derived acceleration for specialization candidate retrieval and
+    /// provenance. Every candidate still requires exact fact comparison.
+    pub fn fingerprint(self: CallShape) u64 {
         var h = std.hash.Wyhash.init(0xCA115A9E);
         h.update(std.mem.asBytes(&self.callee_kind));
-        h.update(std.mem.asBytes(&self.invocation_form));
         h.update(std.mem.asBytes(&self.arg_count));
         h.update(std.mem.asBytes(&self.known_args_mask));
         h.update(std.mem.asBytes(&self.typed_args_mask));
@@ -1836,6 +1835,12 @@ pub const CallShape = struct {
         if (self.callee_name) |n| h.update(n);
         if (self.method_name) |m| h.update(m);
         return h.final();
+    }
+
+    /// Physical bridge for the remaining codegen provenance consumer. Delete
+    /// with its three `identityHash` call sites; this value never owns meaning.
+    pub fn identityHash(self: CallShape) u64 {
+        return self.fingerprint();
     }
 
     /// True when this call shape could benefit from specialization.
@@ -1910,9 +1915,23 @@ pub const CallShape = struct {
         return buf[0..pos];
     }
 
-    /// Check if two CallShapes are equivalent for specialization.
+    fn optionalTextEql(a: ?[]const u8, b: ?[]const u8) bool {
+        if (a == null or b == null) return a == null and b == null;
+        return std.mem.eql(u8, a.?, b.?);
+    }
+
+    /// Exact specialization-fact comparison. Delimiter form is provenance;
+    /// fingerprints may retrieve candidates but cannot make this decision.
     pub fn eql(a: CallShape, b: CallShape) bool {
-        return a.identityHash() == b.identityHash();
+        return a.callee_kind == b.callee_kind and
+            optionalTextEql(a.callee_name, b.callee_name) and
+            optionalTextEql(a.method_name, b.method_name) and
+            a.arg_count == b.arg_count and
+            a.known_args_mask == b.known_args_mask and
+            a.typed_args_mask == b.typed_args_mask and
+            a.has_varargs == b.has_varargs and
+            a.return_consumption == b.return_consumption and
+            a.receiver_shape_known == b.receiver_shape_known;
     }
 };
 
@@ -1963,20 +1982,21 @@ pub fn inferCallShape(expr: *const ast.Expr) ?CallShape {
     }
 }
 
-/// Stable identity hash for a call shape (convenience wrapper).
-pub fn callShapeIdentityHash(shape: CallShape) u64 {
-    return shape.identityHash();
+/// Derived call-shape fingerprint (convenience wrapper).
+pub fn callShapeFingerprint(shape: CallShape) u64 {
+    return shape.fingerprint();
 }
 
 // ── CallShape Tests ──────────────────────────────────────────────────────────
 
-test "CallShape: parenless vs parenthesized differ in identity hash" {
+test "CallShape: delimiter provenance does not change specialization facts" {
     const paren = CallShape{ .callee_kind = .direct, .callee_name = "f", .arg_count = 1, .invocation_form = .parenthesized };
     const plain = CallShape{ .callee_kind = .direct, .callee_name = "f", .arg_count = 1, .invocation_form = .parenless };
-    try testing.expect(paren.identityHash() != plain.identityHash());
+    try testing.expectEqual(paren.fingerprint(), plain.fingerprint());
+    try testing.expect(CallShape.eql(paren, plain));
 }
 
-test "CallShape: direct call identity hash is stable" {
+test "CallShape: direct call fingerprint is stable" {
     const a = CallShape{
         .callee_kind = .direct,
         .callee_name = "add",
@@ -1989,13 +2009,31 @@ test "CallShape: direct call identity hash is stable" {
         .arg_count = 2,
         .typed_args_mask = 0b11,
     };
-    try testing.expectEqual(a.identityHash(), b.identityHash());
+    try testing.expectEqual(a.fingerprint(), b.fingerprint());
+    try testing.expect(CallShape.eql(a, b));
 }
 
-test "CallShape: different arg counts produce different hashes" {
+test "CallShape: exact facts reject different argument counts" {
     const a = CallShape{ .callee_kind = .direct, .callee_name = "f", .arg_count = 1 };
     const b = CallShape{ .callee_kind = .direct, .callee_name = "f", .arg_count = 2 };
-    try testing.expect(a.identityHash() != b.identityHash());
+    try testing.expect(!CallShape.eql(a, b));
+}
+
+test "CallShape: equal fingerprints cannot select semantic facts" {
+    const a = CallShape{
+        .callee_kind = .direct,
+        .callee_name = "ab",
+        .method_name = "c",
+        .arg_count = 1,
+    };
+    const b = CallShape{
+        .callee_kind = .direct,
+        .callee_name = "a",
+        .method_name = "bc",
+        .arg_count = 1,
+    };
+    try testing.expectEqual(a.fingerprint(), b.fingerprint());
+    try testing.expect(!CallShape.eql(a, b));
 }
 
 test "CallShape: method call shape" {
@@ -2007,7 +2045,7 @@ test "CallShape: method call shape" {
         .return_consumption = .single,
     };
     try testing.expect(shape.isSpecializable());
-    try testing.expectEqual(@as(u64, shape.identityHash()), callShapeIdentityHash(shape));
+    try testing.expectEqual(@as(u64, shape.fingerprint()), callShapeFingerprint(shape));
 }
 
 test "CallShape: indirect with no info is not specializable" {

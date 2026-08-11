@@ -10,7 +10,7 @@ const semantic_graph = @import("semantic_graph.zig");
 
 pub const CallSite = struct {
     callee: []const u8,
-    call_shape_id: ?u64,
+    call_shape_fingerprint: ?u64,
     caller: ?[]const u8,
 };
 
@@ -67,7 +67,7 @@ pub fn callsIn(
         const owned_caller = try alloc.dupe(u8, func_name);
         try out.append(alloc, .{
             .callee = owned_callee,
-            .call_shape_id = node.call_shape_id,
+            .call_shape_fingerprint = node.call_shape_fingerprint,
             .caller = owned_caller,
         });
     }

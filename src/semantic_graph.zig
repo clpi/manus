@@ -96,8 +96,9 @@ pub const Node = struct {
     field_count: u16 = 0,
     /// Stable shape identity (content hash; matches codegen struct dedup).
     shape_id: ?u64 = null,
-    /// For `.call` nodes: call-shape identity hash for specialization dedup.
-    call_shape_id: ?u64 = null,
+    /// Derived call-shape fingerprint for specialization candidate retrieval.
+    /// Exact call identity remains the graph NodeId.
+    call_shape_fingerprint: ?u64 = null,
     /// For `.call` nodes: the inferred CallShape (Phase 1 — conservative from AST).
     call_shape: ?types.CallShape = null,
     /// Resolved result descriptor attached to a function's semantic identity.
@@ -551,8 +552,8 @@ pub const SemanticGraph = struct {
                 .stage = site.stage,
             });
             try self.addEdge(.{ .from = node_id, .to = call_id, .kind = .transform_input });
-            const hash = shape.identityHash();
-            transform_engine.logProvenance(self.alloc, transform_name, .emit_call, hash, hash);
+            const fingerprint = shape.fingerprint();
+            transform_engine.logProvenance(self.alloc, transform_name, .emit_call, fingerprint, fingerprint);
         }
     }
 
@@ -1046,7 +1047,7 @@ pub const SemanticGraph = struct {
             },
             .name = call_name,
             .call_shape = shape,
-            .call_shape_id = shape.identityHash(),
+            .call_shape_fingerprint = shape.fingerprint(),
             .knowledge = site.knowledge,
             .stage = site.stage,
             .ast_ref = @ptrCast(@constCast(expr)),
@@ -1285,19 +1286,6 @@ pub const SemanticGraph = struct {
         const node = self.get(id) orelse return null;
         if (node.kind != .call) return null;
         return node.call_shape;
-    }
-
-    /// Count distinct call shapes (unique identity hashes) in the graph.
-    pub fn countDistinctCallShapes(self: *const SemanticGraph) usize {
-        var seen = std.AutoHashMapUnmanaged(u64, void){};
-        defer seen.deinit(self.alloc);
-        for (self.nodes.items) |node| {
-            if (node.kind != .call) continue;
-            if (node.call_shape_id) |id| {
-                seen.put(self.alloc, id, {}) catch continue;
-            }
-        }
-        return seen.count();
     }
 
     /// Count nodes of a given kind (diagnostics / MCP queries).
@@ -1569,9 +1557,9 @@ pub const SemanticGraph = struct {
                     try out.appendSlice(alloc, ",\"specializable\":");
                     try out.appendSlice(alloc, if (cs.isSpecializable()) "true" else "false");
                 }
-                if (node.call_shape_id) |csid| {
-                    try out.appendSlice(alloc, ",\"call_shape_id\":");
-                    try appendJsonInt(out, alloc, csid);
+                if (node.call_shape_fingerprint) |fingerprint| {
+                    try out.appendSlice(alloc, ",\"call_shape_fingerprint\":");
+                    try appendJsonInt(out, alloc, fingerprint);
                 }
                 if (node.knowledge) |k| {
                     try out.appendSlice(alloc, ",\"knowledge\":\"");
@@ -1761,9 +1749,9 @@ pub const SemanticGraph = struct {
                 try out.appendSlice(alloc, ",\"specializable\":");
                 try out.appendSlice(alloc, if (cs.isSpecializable()) "true" else "false");
             }
-            if (node.call_shape_id) |csid| {
-                try out.appendSlice(alloc, ",\"call_shape_id\":");
-                try appendJsonInt(out, alloc, csid);
+            if (node.call_shape_fingerprint) |fingerprint| {
+                try out.appendSlice(alloc, ",\"call_shape_fingerprint\":");
+                try appendJsonInt(out, alloc, fingerprint);
             }
             try out.appendSlice(alloc, ",\"line\":");
             try appendJsonInt(out, alloc, node.span.start);
