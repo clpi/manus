@@ -3087,9 +3087,13 @@ pub const Sema = struct {
                 }
                 const ft = try self.check_expr(c.func);
                 if (c.form == .braced and ft == .func) {
+                    // c0 §43 `law.brace`: "an ordinary callable uses `name( … )`,
+                    // never braces". The subject resolved in callable space,
+                    // so the braced face is the §41 "or a diagnostic" branch,
+                    // never a fall-through to ordinary-call checking.
                     self.err(
                         c.loc,
-                        "braced application requires a descriptor subject; this subject resolved in callable space, not descriptor space, and ordinary callable application uses parentheses",
+                        "c0 §43 law.brace: braced application requires a descriptor subject; this subject resolved in callable space, not descriptor space, and ordinary callable application uses parentheses",
                         .{},
                     );
                     return .any;
