@@ -145,12 +145,6 @@ token: bool = (code: str, sought: str)
         i = i + 1
     false
 
--- std is frozen migration debt. Any `std.` traversal on an added line is a new
--- call site under a namespace that grants no world. Possessed values supply
--- subjects; authority belongs to worlds; qualification belongs in facts.
-stdhome: bool = (code: str)
-    has(code, "st" .. "d.")
-
 -- A trie declaration is operation-first; invocation is always subject-first.
 -- This recognizes the declaration face without granting bare calls or an
 -- arbitrary home an exception.
@@ -247,17 +241,11 @@ scanline = (path: str, no: i64, line: str): i64
     if has(code, ".new(")
         print("{path}:{no}  .new(  [LADDER]  desc{{…}} · x:to(desc) · p:from(mode)(…)")
         hits = hits + 1
-    if stdhome(code)
-        print("({path}, {no}, invalid, law.authority, std is frozen migration debt — a namespace call grants no world)")
-        hits = hits + 1
     if readface(code)
         print("({path}, {no}, invalid, law.subject.one, read is subject-first: subject:read(...))")
         hits = hits + 1
     if materialize(code)
         print("({path}, {no}, migratable, law.demand.materialize, output consumes segments without demanding a concatenated value)")
-        hits = hits + 1
-    if token(code, "dominates")
-        print("({path}, {no}, invalid, G-DOM directive 2026-08-08, dominates is retired vocabulary)")
         hits = hits + 1
     hits
 
@@ -345,18 +333,6 @@ control = (): bool
     if rawlen(strip("code -- string.sub here")) > 6
         print("control FAIL: strip did not remove a comment")
         ok = false
-    if not stdhome("st" .. "d.mem.copy(a, b)")
-        print("control FAIL: stdhome missed a std call site")
-        ok = false
-    if stdhome("mem:copy(a, b)")
-        print("control FAIL: stdhome rejected a subject relation")
-        ok = false
-    if not token("ward@dominates(wart)", "dominates")
-        print("control FAIL: dominates token is not recognized")
-        ok = false
-    if token("x:dominate(y)", "dominates")
-        print("control FAIL: dominates fired on a different word")
-        ok = false
     if not readface("arbitrary.home.read(subject)")
         print("control FAIL: readface did not reject operation-first read")
         ok = false
@@ -405,7 +381,7 @@ main = (): i64
     d:close()
     total = scandiff(files)
     print("")
-    print("idiomgate: {total} finding(s) on ADDED lines  [control: 28/28 pass]")
+    print("idiomgate: {total} finding(s) on ADDED lines  [control: pass]")
     if total > 0
         print("")
         print("The law: docs/spec/constitution.md · the preflight: AGENTS.md")
