@@ -1016,13 +1016,26 @@ test "an eq family composes independently of to" {
     const eq = try store.getOrCreate(testing.allocator, "eq");
     try eq.declare(testing.allocator, testEdge("f64", "i64", "eqfi", .lossless));
     try eq.declare(testing.allocator, testEdge("i64", "f64", "eqif", .lossless));
+    try eq.declare(testing.allocator, testEdge("i64", "u8", "equi", .lossless));
+    try eq.declare(testing.allocator, testEdge("u8", "i64", "eqiu", .lossless));
 
-    // i64 == f64 comparability derives; the to family does not see it.
-    const p = eq.derive("f64", "i64") orelse return error.NoDerivation;
+    // f64 == u8 was never written; transitivity answers it through i64.
+    const p = eq.derive("f64", "u8") orelse return error.NoDerivation;
     try testing.expect(p.admitted);
+    try testing.expectEqualStrings("i64", p.mid);
+
+    const back = eq.derive("u8", "f64") orelse return error.NoDerivation;
+    try testing.expect(back.admitted);
+    try testing.expectEqualStrings("i64", back.mid);
+
     var refused: usize = 0;
-    try testing.expectEqual(@as(usize, 0), try eq.derivedCount(testing.allocator, &refused));
-    try testing.expectEqual(@as(usize, 2), eq.authored());
+    try testing.expectEqual(@as(usize, 2), try eq.derivedCount(testing.allocator, &refused));
+    try testing.expectEqual(@as(usize, 0), refused);
+    try testing.expectEqual(@as(usize, 4), eq.authored());
+
+    // A family is one relation identity; composition cannot leak into `to`.
+    try testing.expect(store.family("to") == null);
+    try testing.expectEqual(@as(usize, 1), store.declared());
 }
 
 test "a lossy or failing hop is found and REFUSED, never silently composed" {
