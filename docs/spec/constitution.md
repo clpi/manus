@@ -717,6 +717,7 @@ agent.first = {
     "Preserve their lawsets exactly; share representations and optimizations only where witnessed equivalence permits.",
     "Audit and correct useful old or unmerged work against current main before deleting its legacy carrier.",
     "Push each bounded admitted repair promptly so concurrent agents audit public revisions rather than private state.",
+    "Optimization converges through sparse graph fact propagation, witnessed equivalence retained in that graph, and demand profile costed realization extraction rather than a fixed pass kingdom.",
     "A green test is not enough.",
     "A change is complete only when syntax, rendering, identity, ownership, effects, obligations, provenance, realization, differential and witnesses ALL agree.",
 }
@@ -1353,6 +1354,64 @@ perf.explain = law{
         "all derive from the ONE fact graph",
         "a retained cost the compiler cannot explain IS A GAP",
     }
+}
+
+-- Three reusable engines replace a conventional procession of semantic passes.
+-- Their physical indexes are disposable projections; ids, facts, relations,
+-- witnesses and provenance remain the authority.
+perf.propagate = law{
+    id    = "law.perf.propagate"
+    kind  = .invariant
+    holds = .sparse
+    binds = {
+        "one dependency worklist propagates monotone graph facts and each fact family supplies its lattice rather than a pass local semantic store",
+        "constant descriptor range case world effect stage shape escape alias demand profile target and realization legality update only affected ids",
+        "strongly connected components condense recursive dependencies while dominators postdominators loop forests and bitsets remain derived control indexes",
+        "memory and observable effects use graph owned version and dependency facts so repeated alias walks do not become another memory semantic universe",
+        "exact dependencies drive invalidation reuse and agent tooling and unchanged facts require no repeated whole graph scan",
+    }
+    fails = "one full compiler pass and one shadow registry for every fact family"
+}
+
+perf.equivalence = law{
+    id    = "law.perf.equivalence"
+    kind  = .invariant
+    holds = .witnessed
+    binds = {
+        "lawful equivalent expressions representations algorithms foreign implementations and machine forms remain alternatives attached to the same semantic graph",
+        "equivalence persists across compiler levels where its expected reuse exceeds its retained graph and compiler cost",
+        "saturation is bounded by demand profile expected machine gain reuse confidence compile work peak state and graph growth",
+        "every admitted equivalence retains its law witness provenance and exact input output ids and extraction retains the chosen causal path",
+        "an egraph index hash fingerprint or canonical form may accelerate candidates but never becomes a second semantic ir or selects meaning",
+    }
+    fails = "destructive rewriting that discards lawful choices or an unbounded second equality graph"
+}
+
+perf.summary = law{
+    id    = "law.perf.summary"
+    kind  = .invariant
+    holds = .projection
+    binds = {
+        "modules and foreign units project compact exported descriptor relation world effect call constant escape shape cost and provenance facts",
+        "global reasoning consumes summaries first and imports a full subgraph only when demand and expected value justify it",
+        "summary indexes preserve exact owner correspondence and incremental invalidation and never mint module local semantic identity",
+        "whole program knowledge does not require whole program materialization",
+    }
+    fails = "loading every module graph to rediscover a fact already present in an exact summary"
+}
+
+perf.extract = law{
+    id    = "law.perf.extract"
+    kind  = .invariant
+    holds = .budgeted
+    binds = {
+        "optimization effort is assigned per semantic region from expected executions improvable cost confidence reuse and compile budget rather than one global optimization level",
+        "cold and simple regions use cheap linear extraction while valuable regions may demand bounded equivalence search verified synthesis or integrated allocation and scheduling",
+        "block and function layout cold splitting outlining identical folding register allocation scheduling and instruction selection consume shared profile demand and cost facts",
+        "discovered peepholes and superoptimizations enter reuse only with an exact equivalence witness over their demanded laws",
+        "native and wasm share propagation equivalence demand profile and extraction machinery while retaining their distinct observable target laws",
+    }
+    fails = "uniformly expensive optimization or a backend heuristic kingdom detached from graph facts"
 }
 
 -- THE SIZE INVARIANT, and it is what makes "more featureful AND smaller" a
