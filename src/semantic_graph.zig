@@ -134,7 +134,7 @@ pub const ApplicationFact = struct {
     subject: ?id,
     caller: id,
     descriptor: types.ResolvedType,
-    demand: ?types.ReturnConsumption,
+    demand: types.ReturnConsumption,
     provenance: SpanRef,
     arguments: FactRange,
     results: FactRange,
@@ -261,7 +261,7 @@ pub const SemanticGraph = struct {
         subject: ?id,
         caller: id,
         descriptor: types.ResolvedType,
-        demand: ?types.ReturnConsumption,
+        demand: types.ReturnConsumption,
         provenance: SpanRef,
         arguments: []const id,
         results: []const id,
@@ -269,7 +269,9 @@ pub const SemanticGraph = struct {
         const application_node = self.get(occurrence) orelse return error.InvalidApplicationFact;
         if (application_node.kind != .call or
             application_node.descriptor == null or
-            !application_node.descriptor.?.eql(descriptor)) return error.InvalidApplicationFact;
+            !application_node.descriptor.?.eql(descriptor) or
+            application_node.demand == null or
+            application_node.demand.? != demand) return error.InvalidApplicationFact;
         const relation_node = self.get(relation) orelse return error.InvalidApplicationRelation;
         if (relation_node.kind != .func and relation_node.kind != .relation) {
             return error.InvalidApplicationRelation;
@@ -1001,6 +1003,7 @@ pub const SemanticGraph = struct {
             .name = call_name,
             .call_shape = shape,
             .call_shape_fingerprint = shape.fingerprint(),
+            .demand = consumption,
             .ast_ref = @ptrCast(@constCast(expr)),
         });
         try self.ensureApplicationRows();
@@ -1058,6 +1061,8 @@ pub const SemanticGraph = struct {
             const caller = self.nodes.items[call_id].scope orelse return error.MissingApplicationCaller;
             const caller_node = self.get(caller) orelse return error.MissingApplicationCaller;
             if (caller_node.kind != .func) return error.MissingApplicationCaller;
+            const demand = self.nodes.items[call_id].demand orelse
+                return error.MissingApplicationDemand;
 
             self.nodes.items[call_id].descriptor = fact.result;
 
@@ -1082,7 +1087,7 @@ pub const SemanticGraph = struct {
                 subject_value,
                 caller,
                 fact.result,
-                null,
+                demand,
                 self.nodes.items[call_id].span,
                 arguments,
                 &results,
@@ -1308,14 +1313,10 @@ pub const SemanticGraph = struct {
     fn appendDemandJson(
         buf: *std.ArrayListUnmanaged(u8),
         alloc: std.mem.Allocator,
-        demand: ?types.ReturnConsumption,
+        demand: types.ReturnConsumption,
     ) !void {
-        const fact = demand orelse {
-            try buf.appendSlice(alloc, "null");
-            return;
-        };
         try buf.append(alloc, '"');
-        try buf.appendSlice(alloc, switch (fact) {
+        try buf.appendSlice(alloc, switch (demand) {
             .unknown => "unknown",
             .discard => "discard",
             .single => "single",
@@ -1955,7 +1956,7 @@ test "semantic_graph: checked subject application retains relation and value ide
     const stored = graph.application(fact.application) orelse return error.TestExpectedEqual;
     try std.testing.expectEqualStrings("read", graph.get(stored.relation).?.name.?);
     try std.testing.expectEqual(types.ResolvedType.i64, stored.descriptor);
-    try std.testing.expect(stored.demand == null);
+    try std.testing.expectEqual(types.ReturnConsumption.single, stored.demand);
     try std.testing.expectEqual(@as(usize, 0), graph.applicationArguments(fact.application).?.len);
     const results = graph.applicationResults(fact.application) orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(@as(usize, 1), results.len);
@@ -1987,6 +1988,7 @@ test "semantic_graph: checked subject application retains relation and value ide
         @as(i64, @intCast(stored.subject.?)),
         projected[0].object.get("subject").?.integer,
     );
+    try std.testing.expectEqualStrings("single", projected[0].object.get("demand").?.string);
 }
 
 test "semantic_graph: moduleFunctionEmitOrder callees before callers" {
@@ -2219,6 +2221,7 @@ test "semantic_graph: packed application facts reject duplicate and wrong roles"
         .kind = .call,
         .span = .{ .file = "axes.id", .start = 2, .end = 1 },
         .descriptor = .i64,
+        .demand = .unknown,
     });
     const result = try graph.addChild(application, .{
         .kind = .value,
@@ -2232,7 +2235,7 @@ test "semantic_graph: packed application facts reject duplicate and wrong roles"
         null,
         relation,
         .i64,
-        null,
+        .unknown,
         graph.get(application).?.span,
         &.{},
         &results,
@@ -2242,6 +2245,21 @@ test "semantic_graph: packed application facts reject duplicate and wrong roles"
     try std.testing.expect(graph.application(@intCast(graph.nodes.items.len)) == null);
 
     try std.testing.expectError(
+        error.InvalidApplicationFact,
+        graph.publishApplication(
+            application,
+            relation,
+            null,
+            relation,
+            .i64,
+            .single,
+            graph.get(application).?.span,
+            &.{},
+            &results,
+        ),
+    );
+
+    try std.testing.expectError(
         error.DuplicateApplicationFact,
         graph.publishApplication(
             application,
@@ -2249,7 +2267,7 @@ test "semantic_graph: packed application facts reject duplicate and wrong roles"
             null,
             relation,
             .i64,
-            null,
+            .unknown,
             graph.get(application).?.span,
             &.{},
             &results,
@@ -2260,6 +2278,7 @@ test "semantic_graph: packed application facts reject duplicate and wrong roles"
         .kind = .call,
         .span = .{ .file = "axes.id", .start = 3, .end = 1 },
         .descriptor = .i64,
+        .demand = .unknown,
     });
     const wrong_result = try graph.addChild(wrong, .{
         .kind = .value,
@@ -2275,7 +2294,7 @@ test "semantic_graph: packed application facts reject duplicate and wrong roles"
             null,
             relation,
             .i64,
-            null,
+            .unknown,
             graph.get(wrong).?.span,
             &.{},
             &wrong_results,
@@ -2333,7 +2352,8 @@ test "semantic_graph: checked occurrences keep distinct packed ranges" {
         try std.testing.expectEqual(@as(i64, @intCast(fact.relation)), object.get("relation").?.integer);
         try std.testing.expectEqual(@as(i64, @intCast(fact.caller)), object.get("caller").?.integer);
         try std.testing.expect(object.get("subject") == null);
-        try std.testing.expect(object.get("demand").? == .null);
+        try std.testing.expectEqual(types.ReturnConsumption.single, fact.demand);
+        try std.testing.expectEqualStrings("single", object.get("demand").?.string);
         try std.testing.expect(object.get("descriptor").?.string.len > 0);
         const provenance = object.get("provenance").?.object;
         try std.testing.expectEqualStrings("ranges.id", provenance.get("file").?.string);
