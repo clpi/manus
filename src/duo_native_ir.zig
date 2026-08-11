@@ -166,6 +166,25 @@ pub const Instr = struct {
     hw: HwIntrinsic = .none,
 };
 
+/// Physical slot established by an instruction in the current DNIR projection.
+/// ABI destinations and record metadata use `result` for different roles.
+pub fn definition(instruction: Instr) ?u32 {
+    return switch (instruction.op) {
+        .@"const",
+        .store_local,
+        .load_field,
+        .load_index,
+        .alloc_slots,
+        .binop,
+        .call_direct,
+        .call_extern,
+        .hw_unary,
+        .str_len,
+        => instruction.result,
+        else => null,
+    };
+}
+
 pub const Block = struct {
     instrs: []const Instr,
 };
@@ -370,6 +389,46 @@ test "duo_native_ir: folded module constant uses one const realization" {
     try std.testing.expectEqualStrings("token", instruction.req_alias);
     try std.testing.expectEqualStrings("kindfun", instruction.field);
     try std.testing.expectEqual(RT.i64, instruction.ty);
+}
+
+test "duo_native_ir: definition projects physical producers" {
+    const instructions = [_]Instr{
+        .{ .op = .@"const", .result = 37 },
+        .{ .op = .store_local, .result = 37 },
+        .{ .op = .load_field, .result = 37 },
+        .{ .op = .load_index, .result = 37 },
+        .{ .op = .alloc_slots, .result = 37 },
+        .{ .op = .binop, .result = 37 },
+        .{ .op = .call_direct, .result = 37 },
+        .{ .op = .call_extern, .result = 37 },
+        .{ .op = .hw_unary, .result = 37 },
+        .{ .op = .str_len, .result = 37 },
+    };
+    for (instructions) |instruction| {
+        try std.testing.expectEqual(@as(?u32, 37), definition(instruction));
+    }
+    try std.testing.expectEqual(@as(?u32, null), definition(.{ .op = .binop }));
+}
+
+test "duo_native_ir: definition excludes ABI metadata and nonproducers" {
+    const instructions = [_]Instr{
+        .{ .op = .store_field, .result = 37 },
+        .{ .op = .init_record, .result = 37 },
+        .{ .op = .store_index, .result = 37 },
+        .{ .op = .load_global, .result = 37 },
+        .{ .op = .cmp, .result = 37 },
+        .{ .op = .mov_arg, .result = 37 },
+        .{ .op = .fp_mov_arg, .result = 37 },
+        .{ .op = .br, .result = 37 },
+        .{ .op = .ret, .result = 37 },
+        .{ .op = .ret_record, .result = 37 },
+        .{ .op = .hw_fence, .result = 37 },
+        .{ .op = .hw_spin, .result = 37 },
+        .{ .op = .print_value, .result = 37 },
+    };
+    for (instructions) |instruction| {
+        try std.testing.expectEqual(@as(?u32, null), definition(instruction));
+    }
 }
 
 test "duo_native_ir: single ret function ready" {

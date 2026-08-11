@@ -13,7 +13,6 @@ const dnir_hardware = @import("dnir_hardware.zig");
 const semantic_graph = @import("semantic_graph.zig");
 const region_graph = @import("region_graph.zig");
 const region_transform = @import("region_transform.zig");
-const region_schedule = @import("region_schedule.zig");
 const realization = @import("realization.zig");
 
 pub const Error = error{
@@ -157,19 +156,11 @@ fn invalidFactsWith(diagnostic: *Diagnostic, src: std.builtin.SourceLocation, no
     return error.SemanticFactsInvalid;
 }
 
-fn scheduleFailure(diagnostic: *Diagnostic, src: std.builtin.SourceLocation, err: region_schedule.Error) Error {
-    return switch (err) {
-        error.OutOfMemory => error.OutOfMemory,
-        error.ScheduleCycle => recordRefusalWith(diagnostic, src, "region-schedule-cycle"),
-    };
-}
-
 fn transformFailure(diagnostic: *Diagnostic, src: std.builtin.SourceLocation, err: region_transform.Error) Error {
     return switch (err) {
         error.OutOfMemory => error.OutOfMemory,
         error.ResidencyMismatch => invalidFactsWith(diagnostic, src, "region-transform-residency"),
-        error.ScheduleCycle => recordRefusalWith(diagnostic, src, "region-transform-schedule-cycle"),
-        error.CalleeNotFound, error.CallerNotFound => recordRefusalWith(diagnostic, src, "region-transform-unavailable"),
+        error.CoordinateOverflow => recordRefusalWith(diagnostic, src, "region-coordinate-capacity"),
     };
 }
 
@@ -5032,50 +5023,38 @@ fn emitArm64ModuleFromGraph(
         if (dnir.moduleIsNativeDirectReady(dnir_mut)) {
             if (region_graph.buildModuleRegions(alloc, dnir_mut)) |initial_regions| {
                 defer region_graph.freeModuleRegions(alloc, initial_regions);
-                region_graph.validateModuleRegions(initial_regions, graph, dnir_mut, alloc) catch |err| {
-                    switch (err) {
-                        error.OutOfMemory => return error.OutOfMemory,
-                        else => {
-                            if (strict_graph) return invalidFactsWith(diagnostic, @src(), "region-facts");
-                            if (region_schedule.regionGateStrictEnabled()) return recordRefusal(diagnostic, @src());
-                        },
-                    }
-                };
-                const transform_report = region_transform.applyModuleRegionTransforms(alloc, &dnir_mut, initial_regions) catch |err| blk: {
+                const transform_result = if (strict_graph)
+                    region_transform.applyModuleRegionTransformsWithGraph(
+                        alloc,
+                        &dnir_mut,
+                        initial_regions,
+                        graph,
+                    )
+                else
+                    region_transform.applyModuleRegionTransforms(alloc, &dnir_mut, initial_regions);
+                const transform_report = transform_result catch |err| {
                     if (err == error.OutOfMemory) return error.OutOfMemory;
+                    if (err == error.CoordinateOverflow) return transformFailure(diagnostic, @src(), err);
                     if (strict_graph) return transformFailure(diagnostic, @src(), err);
-                    break :blk region_transform.ModuleTransformReport{};
+                    return recordRefusalWith(diagnostic, @src(), "region-transform-physical");
                 };
                 _ = transform_report;
-            } else |err| return err;
+            } else |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                error.CoordinateOverflow => return recordRefusalWith(
+                    diagnostic,
+                    @src(),
+                    "region-coordinate-capacity",
+                ),
+            }
 
             // Transformation changes realization, not meaning. Revalidate the
-            // actual DNIR that will be emitted, then rebuild the region graph so
-            // scheduling and tooling never observe the stale pre-transform view.
+            // actual DNIR that will be emitted before selecting realization.
             if (strict_graph) try validateDnirApplications(alloc, dnir_mut, graph, diagnostic);
-            if (region_graph.buildModuleRegions(alloc, dnir_mut)) |final_regions| {
-                defer region_graph.freeModuleRegions(alloc, final_regions);
-                region_graph.validateModuleRegions(final_regions, graph, dnir_mut, alloc) catch |err| {
-                    switch (err) {
-                        error.OutOfMemory => return error.OutOfMemory,
-                        else => {
-                            if (strict_graph) return invalidFactsWith(diagnostic, @src(), "region-facts");
-                            if (region_schedule.regionGateStrictEnabled()) return recordRefusal(diagnostic, @src());
-                        },
-                    }
-                };
-                if (realization.buildDeferredFromGraph(alloc, graph, "<native>")) |plan_val| {
-                    var plan = plan_val;
-                    defer plan.deinit(alloc);
-                    realization.commitModuleForTarget(alloc, &plan, "native") catch |err| return err;
-                    region_graph.attachRealizationPlan(alloc, final_regions, &plan) catch |err| return err;
-                } else |err| return err;
-                if (region_schedule.buildModuleSchedules(alloc, final_regions)) |schedules| {
-                    defer region_schedule.freeModuleSchedules(alloc, schedules);
-                } else |err| {
-                    if (strict_graph) return scheduleFailure(diagnostic, @src(), err);
-                    if (err == error.OutOfMemory) return error.OutOfMemory;
-                }
+            if (realization.buildDeferredFromGraph(alloc, graph, "<native>")) |plan_val| {
+                var plan = plan_val;
+                defer plan.deinit(alloc);
+                realization.commitModuleForTarget(alloc, &plan, "native") catch |err| return err;
             } else |err| return err;
 
             var output = try emitArm64FromDnir(alloc, dnir_mut, process_entry, diagnostic);
@@ -5668,19 +5647,26 @@ test "native backend: nested compact checked calls retain direct region use and 
 
     const regions = try region_graph.buildModuleRegions(alloc, module);
     defer region_graph.freeModuleRegions(alloc, regions);
-    try region_graph.validateModuleRegions(regions, &graph, module, alloc);
-    var inner_node: ?u32 = null;
-    var outer_node: ?u32 = null;
+    try region_graph.validateModuleRegions(alloc, regions, &graph, module);
+    var inner_coordinate: ?u32 = null;
+    var outer_coordinate: ?u32 = null;
     var direct_use = false;
-    for (regions.regions) |region| {
-        for (region.nodes) |node| {
-            if (node.application == null) continue;
-            if (std.meta.eql(node.application.?, call_applications[0])) inner_node = node.id;
-            if (std.meta.eql(node.application.?, call_applications[1])) outer_node = node.id;
+    for (module.functions, regions.regions) |function, region| {
+        var coordinate: u32 = 1;
+        for (function.blocks) |block| {
+            for (block.instrs) |instruction| {
+                if (instruction.application) |application| {
+                    if (std.meta.eql(application, call_applications[0])) inner_coordinate = coordinate;
+                    if (std.meta.eql(application, call_applications[1])) outer_coordinate = coordinate;
+                }
+                coordinate += 1;
+            }
         }
-        if (inner_node != null and outer_node != null) {
-            for (region.edges) |edge| {
-                if (edge.kind == .uses and edge.from == inner_node.? and edge.to == outer_node.?) {
+        if (inner_coordinate != null and outer_coordinate != null) {
+            for (region.dependencies) |dependency| {
+                if (dependency.producer == inner_coordinate.? and
+                    dependency.consumer == outer_coordinate.?)
+                {
                     direct_use = true;
                 }
             }
@@ -5756,22 +5742,6 @@ test "native backend: checked subject fact reaches object bytes" {
     try std.testing.expect(spans_abi_staging);
     try std.testing.expectEqual(applications[0].caller, dnir_caller.?);
     try std.testing.expect(std.meta.eql(applications[0].subject.?, dnir_subject.?));
-
-    const regions = try region_graph.buildModuleRegions(alloc, projected);
-    defer region_graph.freeModuleRegions(alloc, regions);
-    try region_graph.validateModuleRegions(regions, &graph, projected, alloc);
-    var region_caller: ?semantic_graph.id = null;
-    var region_subject: ?semantic_graph.id = null;
-    for (regions.regions) |region| {
-        for (region.nodes) |node| {
-            if (node.application != null and std.meta.eql(node.application.?, applications[0].application)) {
-                region_caller = region.function;
-                region_subject = node.subject;
-            }
-        }
-    }
-    try std.testing.expectEqual(applications[0].caller, region_caller.?);
-    try std.testing.expect(std.meta.eql(applications[0].subject.?, region_subject.?));
 
     var output = try emitArm64ModuleWithGraph(alloc, &module, null, &graph, &diagnostic);
     defer output.deinit(alloc);
@@ -6079,26 +6049,42 @@ test "native backend: strict graph allocation failure stays allocation failure" 
     try std.testing.expectEqual(failing.allocated_bytes, failing.freed_bytes);
 }
 
-test "native backend: schedule and transform outcomes retain their category" {
+test "native backend: graphless region validation preserves physical native entry" {
     var diagnostic: Diagnostic = .{};
-    try std.testing.expect(scheduleFailure(&diagnostic, @src(), error.OutOfMemory) == error.OutOfMemory);
-    try std.testing.expect(scheduleFailure(&diagnostic, @src(), error.ScheduleCycle) == error.UnsupportedProgram);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\main: i64 = ()
+        \\    x = 10
+        \\    y = 32
+        \\    x + y
+    ;
+    var lexer = Lexer.init(source, "graphless-region.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.duo_mode = true;
+    var module = try parser.parse_module();
+    var output = try emitArm64Module(alloc, &module, null, &diagnostic);
+    defer output.deinit(alloc);
+    try std.testing.expect(output.graph == null);
+    try std.testing.expectEqual(@as(usize, 0), output.lineage.len);
+    try std.testing.expect(output.text.len != 0);
+}
+
+test "native backend: transform outcomes retain their category" {
+    var diagnostic: Diagnostic = .{};
     try std.testing.expect(transformFailure(&diagnostic, @src(), error.OutOfMemory) == error.OutOfMemory);
     try std.testing.expect(transformFailure(&diagnostic, @src(), error.ResidencyMismatch) == error.SemanticFactsInvalid);
-    try std.testing.expect(transformFailure(&diagnostic, @src(), error.ScheduleCycle) == error.UnsupportedProgram);
-    try std.testing.expect(transformFailure(&diagnostic, @src(), error.CalleeNotFound) == error.UnsupportedProgram);
-    try std.testing.expect(transformFailure(&diagnostic, @src(), error.CallerNotFound) == error.UnsupportedProgram);
+    try std.testing.expect(transformFailure(&diagnostic, @src(), error.CoordinateOverflow) == error.UnsupportedProgram);
+    try std.testing.expectEqualStrings("region-coordinate-capacity", diagnostic.note().?);
 }
 
 test "native backend: caller diagnostics are isolated and observed attempts reset" {
     var first: Diagnostic = .{};
     var second: Diagnostic = .{};
 
-    try std.testing.expect(scheduleFailure(&first, @src(), error.ScheduleCycle) == error.UnsupportedProgram);
-    try std.testing.expectEqualStrings("region-schedule-cycle", first.note().?);
     try std.testing.expect(transformFailure(&second, @src(), error.ResidencyMismatch) == error.SemanticFactsInvalid);
     try std.testing.expectEqualStrings("region-transform-residency", second.note().?);
-    try std.testing.expectEqualStrings("region-schedule-cycle", first.note().?);
 
     first.lowering.site = @src();
     first.lowering.note_buffer[0] = 'x';
@@ -6138,7 +6124,7 @@ test "native backend: checked ordinary call reaches regions and machine lineage"
         \\    observe(41)
         \\    observe(42)
     ;
-    var lexer = Lexer.init(source, "ordinary-lineage.duo");
+    var lexer = Lexer.init(source, "ordinary-lineage.id");
     var parser = Parser.init(&lexer, alloc);
     parser.duo_mode = true;
     var ast_module = try parser.parse_module();
@@ -6149,7 +6135,7 @@ test "native backend: checked ordinary call reaches regions and machine lineage"
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "ordinary-lineage.duo");
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "ordinary-lineage.id");
     const applications = try checkedApplications(&graph, &diagnostic);
     try std.testing.expectEqual(@as(usize, 2), applications.len);
     try std.testing.expect(std.meta.eql(applications[0].relation, applications[1].relation));
@@ -6166,14 +6152,7 @@ test "native backend: checked ordinary call reaches regions and machine lineage"
 
     const regions = try region_graph.buildModuleRegions(alloc, module);
     defer region_graph.freeModuleRegions(alloc, regions);
-    try region_graph.validateModuleRegions(regions, &graph, module, alloc);
-    const census = try region_graph.semanticNameReconstructionCensus(alloc, regions, &graph);
-    try std.testing.expectEqual(@as(usize, 2), census.required_checked_applications);
-    try std.testing.expectEqual(@as(usize, 2), census.checked_call_nodes);
-    try std.testing.expectEqual(@as(usize, 0), census.incomplete_lineage);
-    try std.testing.expectEqual(@as(usize, 0), census.missing_lineage);
-    try std.testing.expectEqual(@as(usize, 0), census.legacy_symbol_bridges);
-    try std.testing.expectEqual(@as(usize, 0), census.legacy_function_name_bridges);
+    try region_graph.validateModuleRegions(alloc, regions, &graph, module);
 
     if (builtin.os.tag == .macos and builtin.cpu.arch == .aarch64) {
         var output = try emitArm64ModuleWithGraph(alloc, &ast_module, null, &graph, &diagnostic);
@@ -6194,11 +6173,11 @@ test "native backend: checked ordinary call reaches regions and machine lineage"
         defer artifact.deinit(alloc);
         try std.testing.expectEqual(@as(usize, 2), artifact.lineage.len);
         for (artifact.lineage) |lineage| {
-            const source_node = graph.get(lineage.application) orelse
+            const application = graph.application(lineage.application) orelse
                 return error.TestExpectedEqual;
-            try std.testing.expectEqual(semantic_graph.NodeKind.call, source_node.kind);
-            try std.testing.expectEqualStrings("ordinary-lineage.duo", source_node.span.file);
-            try std.testing.expect(source_node.ast_ref != null);
+            try std.testing.expectEqual(lineage.application, application.application);
+            try std.testing.expectEqualStrings("ordinary-lineage.id", application.provenance.file);
+            try std.testing.expect(application.provenance.start < application.provenance.end);
             try std.testing.expect(lineage.object_start < lineage.object_end);
             try std.testing.expect(@as(usize, lineage.object_end) <= artifact.bytes.len);
             var text_lineage: ?MachineLineage = null;
@@ -6272,7 +6251,7 @@ test "native backend: checked record result keeps application lineage" {
 
     const regions = try region_graph.buildModuleRegions(alloc, module);
     defer region_graph.freeModuleRegions(alloc, regions);
-    try region_graph.validateModuleRegions(regions, &graph, module, alloc);
+    try region_graph.validateModuleRegions(alloc, regions, &graph, module);
 
     var output = try emitArm64ModuleWithGraph(alloc, &ast_module, null, &graph, &diagnostic);
     defer output.deinit(alloc);
