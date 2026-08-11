@@ -2,7 +2,6 @@
 const std = @import("std");
 const types = @import("types.zig");
 const pass26_descriptor_identity = @import("pass26_descriptor_identity.zig");
-const pass26_semantic_operation = @import("pass26_semantic_operation.zig");
 const pass26_semantic_boundary = @import("pass26_semantic_boundary.zig");
 const pass26_semantic_domain = @import("pass26_semantic_domain.zig");
 const pass26_abi_resource = @import("pass26_abi_resource.zig");
@@ -10,7 +9,6 @@ const pass26_runtime_closure = @import("pass26_runtime_closure.zig");
 const pass26_descriptor_intern = @import("pass26_descriptor_intern.zig");
 const pass26_recursive_descriptor = @import("pass26_recursive_descriptor.zig");
 const pass26_hash_order = @import("pass26_hash_order.zig");
-const pass23_protocol_registry = @import("pass23_protocol_registry.zig");
 
 pub const SCHEMA_VERSION = "pass26-wiring-v0";
 
@@ -91,20 +89,6 @@ pub fn descriptorStateFor(rt: types.ResolvedType) pass26_descriptor_identity.Des
     }
 }
 
-/// Resolve privileged operation by example binding or Pass 23 kernel name.
-pub fn resolveSemanticOperation(name: []const u8) ?pass26_semantic_operation.OperationRecord {
-    if (pass26_semantic_operation.findByExampleBinding(name)) |rec| return rec;
-    if (pass23_protocol_registry.kernelOpFromName(name)) |op| {
-        return pass26_semantic_operation.findByKernelOp(op);
-    }
-    return null;
-}
-
-pub fn semanticOperationId(name: []const u8) ?pass26_semantic_operation.SemanticId {
-    const rec = resolveSemanticOperation(name) orelse return null;
-    return rec.id;
-}
-
 /// Metadata attached to C-import foreign functions (P26-B02 boundary).
 pub fn foreignLiftMetadata(pass_by: []const u8) ForeignLiftMetadata {
     _ = pass_by;
@@ -145,10 +129,7 @@ pub fn hashKindForShapeId() pass26_hash_order.HashKind {
     return .structural_hash;
 }
 
-test "pass26_wiring: semantic op lookup + foreign metadata" {
-    try std.testing.expect(semanticOperationId("memory.view") == .memory_view);
-    try std.testing.expect(resolveSemanticOperation("memory.view") != null);
-    try std.testing.expect(resolveSemanticOperation("release") != null);
+test "foreign metadata" {
     const meta = foreignLiftMetadata("value");
     try std.testing.expectEqualStrings("P26-B02", meta.boundary_id);
     try std.testing.expect(findForeignBoundary() != null);

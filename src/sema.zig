@@ -3026,9 +3026,6 @@ pub const Sema = struct {
                         if (c.args.len >= 1) return try self.check_expr(c.args[0]);
                         return .any;
                     }
-                    if (pass26_wiring.semanticOperationId(bn)) |sid| {
-                        debug_trace.event(.sema, .function, "pass26 semantic op {s}", .{sid.dottedPath()});
-                    }
                 }
                 if (self.duo_mode and c.func.* == .name) {
                     const callee = c.func.name.ident;

@@ -47,7 +47,6 @@ test {
     _ = @import("wasm_decode_differential.zig");
     _ = @import("tail_result_demand.zig");
     _ = @import("pass25_tail_result_model.zig");
-    _ = @import("pass26_semantic_operation.zig");
     _ = @import("pass26_descriptor_identity.zig");
     _ = @import("pass26_descriptor_intern.zig");
     _ = @import("pass26_semantic_boundary.zig");
