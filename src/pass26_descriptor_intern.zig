@@ -25,10 +25,6 @@ pub const IdentityRecord = struct {
     state: pass26_descriptor_identity.DescriptorState,
     recursion: pass26_recursive_descriptor.RecursionKind,
     completion: pass26_recursive_descriptor.DescriptorCompletion,
-    intern_policy: pass26_descriptor_identity.InterningPolicy,
-    /// True when this declaration shares runtime identity with another pure binding.
-    runtime_interned: bool = false,
-    name: []const u8,
 };
 
 const FieldEntry = struct {
@@ -230,7 +226,6 @@ pub const Registry = struct {
     alloc: std.mem.Allocator,
     records: std.ArrayListUnmanaged(IdentityRecord) = .empty,
     fingerprint_slots: std.AutoHashMapUnmanaged(u64, u32) = .empty,
-    placeholders: std.StringHashMapUnmanaged(u32) = .empty,
 
     pub fn init(alloc: std.mem.Allocator) Registry {
         return .{ .alloc = alloc };
@@ -239,7 +234,6 @@ pub const Registry = struct {
     pub fn deinit(self: *Registry) void {
         self.records.deinit(self.alloc);
         self.fingerprint_slots.deinit(self.alloc);
-        self.placeholders.deinit(self.alloc);
     }
 
     pub fn get(self: *const Registry, index: u32) ?*const IdentityRecord {
@@ -261,21 +255,15 @@ pub const Registry = struct {
         const completion = resolveCompletion(recursion, rt);
         const policy = interningPolicy(state);
 
-        if (recursion != .none) {
-            try self.placeholders.put(self.alloc, name, @intCast(self.records.items.len));
-        }
-
         const fingerprint = try semanticFingerprint(rt, state, completion, recursion, self.alloc);
         const decl_id = declarationIdentityHash(module_path, name, span);
 
         var intern_slot: ?u32 = null;
-        var runtime_interned = false;
 
         switch (policy) {
             .canonicalize_pure, .foreign_fingerprint => {
                 if (self.fingerprint_slots.get(fingerprint)) |existing| {
                     intern_slot = existing;
-                    runtime_interned = true;
                 } else {
                     const slot: u32 = @intCast(self.records.items.len);
                     try self.fingerprint_slots.put(self.alloc, fingerprint, slot);
@@ -292,16 +280,9 @@ pub const Registry = struct {
             .state = state,
             .recursion = recursion,
             .completion = completion,
-            .intern_policy = policy,
-            .runtime_interned = runtime_interned,
-            .name = name,
         };
         try self.records.append(self.alloc, record);
         return @intCast(self.records.items.len - 1);
-    }
-
-    pub fn placeholderFor(self: *const Registry, name: []const u8) ?u32 {
-        return self.placeholders.get(name);
     }
 };
 
@@ -347,8 +328,6 @@ test "pass26_descriptor_intern: pure pair interning" {
     try std.testing.expect(rx.declaration_identity != ry.declaration_identity);
     try std.testing.expect(rx.intern_slot != null);
     try std.testing.expectEqual(rx.intern_slot, ry.intern_slot);
-    try std.testing.expect(!rx.runtime_interned);
-    try std.testing.expect(ry.runtime_interned);
 }
 
 test "pass26_descriptor_intern: recursive pointer classification" {
@@ -364,7 +343,20 @@ test "pass26_descriptor_intern: recursive pointer classification" {
     fields[1] = .{ .name = "next", .typ = .{ .pointer = next_ptr } };
     const rt: types.ResolvedType = .{ .table_type = .{ .fields = fields, .storage_class = .native, .is_sealed = true } };
 
-    try std.testing.expectEqual(pass26_recursive_descriptor.RecursionKind.indirect_pointer, classifyRecursion("Node", rt));
+    var reg = Registry.init(alloc);
+    defer reg.deinit();
+
+    const span = AliasSpan{ .line = 4, .col = 2 };
+    const index = try reg.registerAlias("graph.id", "Node", span, rt, .native);
+    const record = reg.get(index).?;
+    const recursion = classifyRecursion("Node", rt);
+
+    try std.testing.expectEqual(@as(usize, 1), reg.records.items.len);
+    try std.testing.expectEqual(pass26_recursive_descriptor.RecursionKind.indirect_pointer, recursion);
+    try std.testing.expectEqual(recursion, record.recursion);
+    try std.testing.expectEqual(pass26_recursive_descriptor.DescriptorCompletion.complete, record.completion);
+    try std.testing.expectEqual(pass26_descriptor_identity.DescriptorState.sealed, record.state);
+    try std.testing.expect(record.intern_slot != null);
 }
 
 test "pass26_descriptor_intern: declaration identity differs from fingerprint" {
