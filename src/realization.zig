@@ -234,15 +234,8 @@ pub const ModuleRealizations = struct {
     variables: []Variable,
     /// The `law.c.floor` plan: one `.lowering` variable per callable, each
     /// holding the C-equivalent baseline and whatever native candidate exists.
-    ///
-    /// A SEPARATE LIST, and the reason is worth recording. These are ordinary
-    /// `Variable`s and belong in `variables` on the merits. They are held apart
-    /// because `variables.len` is a GATED NUMBER — `scripts/realize.duo`
-    /// asserts `"variable_count":1` on a one-record fixture, and
-    /// `region_graph` sums `legalCandidateCount` over `variables` into each
-    /// region's pending-decision count. Folding a second dimension into that
-    /// list would move two numbers that mean something else. Merging is right
-    /// once both consumers read a dimension filter instead of a length.
+    /// It remains separate so `variables` reports representation choices while
+    /// both dimensions retain their own explicit JSON projections.
     lowering: []Variable = &.{},
 
     pub fn deinit(self: *ModuleRealizations, alloc: std.mem.Allocator) void {
@@ -618,57 +611,13 @@ pub fn buildLoweringFloor(
     return vars.toOwnedSlice(alloc);
 }
 
-/// Count candidates still legal before target-aware commitment (Pass 22 Gate L).
+/// Number of lawful candidates retained for extraction.
 pub fn legalCandidateCount(var_: *const Variable) usize {
     var n: usize = 0;
     for (var_.candidates) |c| {
         if (c.legal) n += 1;
     }
     return n;
-}
-
-/// True when portable targets (Wasm) should avoid native struct realizations.
-pub fn targetPrefersDynamicTable(target: []const u8) bool {
-    return std.mem.indexOf(u8, target, "wasm") != null;
-}
-
-/// Apply target constraints to representation candidates (does not select).
-pub fn applyTargetConstraints(alloc: std.mem.Allocator, var_: *Variable, target: []const u8) !void {
-    if (var_.dimension != .representation) return;
-    const portable = targetPrefersDynamicTable(target);
-    for (var_.candidates) |*c| {
-        if (portable and (std.mem.eql(u8, c.id, "repr.native_sealed") or
-            std.mem.eql(u8, c.id, "repr.native_aggregate") or
-            std.mem.eql(u8, c.id, "repr.guarded")))
-        {
-            c.legal = false;
-            if (c.rejection_reason) |r| alloc.free(r);
-            c.rejection_reason = try alloc.dupe(u8, "target requires portable dynamic representation");
-            continue;
-        }
-        if (!portable and std.mem.eql(u8, c.id, "repr.dynamic_table")) {
-            c.static_cost = 100;
-        } else if (portable and std.mem.eql(u8, c.id, "repr.dynamic_table")) {
-            c.static_cost = 15;
-        }
-    }
-}
-
-/// Target-aware deterministic selection (Pass 22 §19 — deferred commitment).
-pub fn selectForTarget(alloc: std.mem.Allocator, var_: *Variable, target: []const u8) !SelectionResult {
-    try applyTargetConstraints(alloc, var_, target);
-    return selectDeterministic(alloc, var_);
-}
-
-/// Commit all module variables for a target (after deferred candidate build).
-pub fn commitModuleForTarget(alloc: std.mem.Allocator, m: *ModuleRealizations, target: []const u8) !void {
-    for (m.variables) |*v| {
-        var sel = try selectForTarget(alloc, v, target);
-        v.rejections = sel.rejections;
-        if (sel.selected_id) |sid| alloc.free(sid);
-        sel.rejections = &.{};
-        sel.deinit(alloc);
-    }
 }
 
 fn entityId(alloc: std.mem.Allocator, kind: []const u8, name: []const u8) ![]const u8 {
@@ -706,7 +655,6 @@ pub fn representationVariableForRecord(
     record_name: []const u8,
     options: struct {
         auto_select: bool = true,
-        target: []const u8 = "native",
     },
 ) !?Variable {
     const node = graph.findTableShape(record_name) orelse return null;
@@ -757,7 +705,7 @@ pub fn representationVariableForRecord(
         .rejections = &.{},
     };
     if (options.auto_select) {
-        var sel = try selectForTarget(alloc, &var_, options.target);
+        var sel = try selectDeterministic(alloc, &var_);
         var_.rejections = sel.rejections;
         if (sel.selected_id) |sid| alloc.free(sid);
         sel.rejections = &.{};
@@ -767,11 +715,11 @@ pub fn representationVariableForRecord(
 }
 
 pub fn buildDeferredFromGraph(alloc: std.mem.Allocator, graph: *const semantic_graph.SemanticGraph, file: []const u8) !ModuleRealizations {
-    return buildFromGraphOptions(alloc, graph, file, .{ .auto_select = false, .target = "native", .c_floor = false });
+    return buildFromGraphOptions(alloc, graph, file, .{ .auto_select = false, .c_floor = false });
 }
 
 pub fn buildFromGraph(alloc: std.mem.Allocator, graph: *const semantic_graph.SemanticGraph, file: []const u8) !ModuleRealizations {
-    return buildFromGraphOptions(alloc, graph, file, .{ .auto_select = true, .target = "native", .c_floor = true });
+    return buildFromGraphOptions(alloc, graph, file, .{ .auto_select = true, .c_floor = true });
 }
 
 fn buildFromGraphOptions(
@@ -780,7 +728,6 @@ fn buildFromGraphOptions(
     file: []const u8,
     options: struct {
         auto_select: bool,
-        target: []const u8,
         c_floor: bool = false,
     },
 ) !ModuleRealizations {
@@ -800,7 +747,6 @@ fn buildFromGraphOptions(
         try seen.put(alloc, name, {});
         if (try representationVariableForRecord(alloc, graph, name, .{
             .auto_select = options.auto_select,
-            .target = options.target,
         })) |v| {
             try vars.append(alloc, v);
         }
@@ -1066,7 +1012,7 @@ test "realization: storage class maps to planner candidate" {
     try std.testing.expectEqualStrings("repr.dynamic_table", candidateIdForStorageClass(.dynamic));
 }
 
-test "realization: Gate L deferred representation until target" {
+test "realization: deferred candidates remain lawful until deterministic extraction" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
     const sema = @import("sema.zig");
@@ -1095,21 +1041,18 @@ test "realization: Gate L deferred representation until target" {
     var deferred = try buildDeferredFromGraph(alloc, &graph, "user.duo");
     defer deferred.deinit(alloc);
     try std.testing.expect(deferred.variables.len >= 1);
-    const var0 = deferred.variables[0];
-    try std.testing.expect(legalCandidateCount(&var0) >= 2);
-    try std.testing.expect(var0.selected_index == null);
+    const candidate_count = deferred.variables[0].candidates.len;
+    const legal_count = legalCandidateCount(&deferred.variables[0]);
+    try std.testing.expect(legal_count >= 2);
+    try std.testing.expect(deferred.variables[0].selected_index == null);
 
-    var native_plan = try buildDeferredFromGraph(alloc, &graph, "user.duo");
-    defer native_plan.deinit(alloc);
-    try commitModuleForTarget(alloc, &native_plan, "native");
-    const native_sel = native_plan.variables[0].selected() orelse return error.TestExpectedEqual;
-    try std.testing.expect(std.mem.eql(u8, native_sel.id, "repr.native_sealed"));
-
-    var wasm_plan = try buildDeferredFromGraph(alloc, &graph, "user.duo");
-    defer wasm_plan.deinit(alloc);
-    try commitModuleForTarget(alloc, &wasm_plan, "wasm32-wasi");
-    const wasm_sel = wasm_plan.variables[0].selected() orelse return error.TestExpectedEqual;
-    try std.testing.expect(std.mem.eql(u8, wasm_sel.id, "repr.dynamic_table"));
+    var selection = try selectDeterministic(alloc, &deferred.variables[0]);
+    defer selection.deinit(alloc);
+    const selected = deferred.variables[0].selected() orelse return error.TestExpectedEqual;
+    try std.testing.expect(selected.legal);
+    try std.testing.expectEqualStrings("repr.native_sealed", selected.id);
+    try std.testing.expectEqual(candidate_count, deferred.variables[0].candidates.len);
+    try std.testing.expectEqual(legal_count, legalCandidateCount(&deferred.variables[0]));
 }
 
 // ── §47 slice: two candidates, cost by value, floor retained ─────────────────
