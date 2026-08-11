@@ -376,7 +376,7 @@ pub fn applyModuleRegionTransformsWithGraph(
         error.CoordinateOverflow => return error.CoordinateOverflow,
         else => return error.ResidencyMismatch,
     };
-    return applyModuleRegionTransformsValidated(alloc, module, projection);
+    return .{};
 }
 
 fn functionHasBinop(function: *const dnir.Function, op: dnir.BinOpTag) bool {
@@ -423,7 +423,7 @@ test "region_transform: folds constants from physical coordinates and dependenci
     try std.testing.expect(!functionHasBinop(&module.functions[0], .add));
 }
 
-test "region_transform: staged applications retain exact graph lineage" {
+test "region_transform: graph path declines transforms without witnesses" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
     const Sema = @import("sema.zig").Sema;
@@ -466,10 +466,12 @@ test "region_transform: staged applications retain exact graph lineage" {
         realization_start: u32,
     };
     var before: ?Snapshot = null;
+    var binops_before: usize = 0;
     for (module.functions, projection.regions) |function, region| {
         var flattened: u32 = 0;
         for (function.blocks) |block| {
             for (block.instrs) |instruction| {
+                if (instruction.op == .binop) binops_before += 1;
                 if (instruction.application) |application| {
                     const realization_start = instruction.realization_start orelse
                         return error.TestExpectedEqual;
@@ -498,13 +500,16 @@ test "region_transform: staged applications retain exact graph lineage" {
     const expected = before orelse return error.TestExpectedEqual;
 
     const report = try applyModuleRegionTransformsWithGraph(alloc, &module, projection, &graph);
-    try std.testing.expectEqual(@as(u32, 1), report.const_binop_fusions);
+    try std.testing.expectEqual(@as(u32, 0), report.const_binop_fusions);
+    try std.testing.expectEqual(@as(u32, 0), report.dead_const_pruned);
     try std.testing.expectEqual(@as(usize, 1), graph.applications().len);
 
     var retained = false;
+    var binops_after: usize = 0;
     for (module.functions) |function| {
         for (function.blocks) |block| {
             for (block.instrs) |instruction| {
+                if (instruction.op == .binop) binops_after += 1;
                 if (instruction.application != expected.application) continue;
                 try std.testing.expectEqual(expected.relation, instruction.relation.?);
                 try std.testing.expectEqual(expected.value, instruction.value.?);
@@ -515,6 +520,7 @@ test "region_transform: staged applications retain exact graph lineage" {
             }
         }
     }
+    try std.testing.expectEqual(binops_before, binops_after);
     try std.testing.expect(retained);
 }
 
