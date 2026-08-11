@@ -1,4 +1,4 @@
-//! Pass 16 MP-03 — canonical source cursor substrate (Duo parity + production lexer).
+//! Shared byte-location substrate for the migration oracle and production lexer.
 const std = @import("std");
 
 pub const SCHEMA_VERSION = "source-cursor-v1";
@@ -25,7 +25,7 @@ pub fn advanceLoc(ch: u8, line: *u32, col: *u32) void {
 
 pub const ByteCursor = struct {
     bytes: []const u8,
-    /// 1-based index into `bytes`, matching Duo `std.compiler.source`.
+    /// 1-based index retained by the migration oracle.
     pos: u32,
     file: []const u8,
     line: u32,
@@ -63,7 +63,7 @@ pub const ByteCursor = struct {
     }
 };
 
-/// Production lexer cursor: 0-based byte index, Duo-parity line/col (MP-03 integration).
+/// Production lexer cursor with a zero-based byte index.
 pub const ProductionCursor = struct {
     bytes: []const u8,
     /// 0-based index into `bytes` (production lexer convention).
@@ -142,36 +142,49 @@ pub fn differentialProductionParity() bool {
         .{ .text = "x", .stop_line = 1 },
     };
     for (cases) |case| {
-        const duo = productionLocAfterWalk(case.text, "parity.duo", case.stop_line);
-        var c = ByteCursor.init(case.text, "parity.duo");
+        const prod = productionLocAfterWalk(case.text, "parity.id", case.stop_line);
+        var c = ByteCursor.init(case.text, "parity.id");
         while (!c.eof()) {
             _ = c.advance();
             if (c.line == case.stop_line and c.col == 1) break;
         }
         const one = c.loc();
-        if (duo.line != one.line or duo.col != one.col) return false;
+        if (prod.line != one.line or prod.col != one.col) return false;
     }
     return true;
 }
 
-test "source_cursor: newline advances line (Duo parity)" {
-    const loc = walkReference("a\nb\nc", "test.duo");
+test "source cursor: reference locations retain exact coordinates" {
+    const loc = walkReference("a\nb\nc", "test.id");
     try std.testing.expectEqual(@as(u32, 3), loc.line);
     try std.testing.expectEqual(@as(u32, 1), loc.col);
+
+    var two = ByteCursor.init("fun\nend", "test.id");
+    while (!two.eof()) {
+        _ = two.advance();
+        if (two.line == 2 and two.col == 1) break;
+    }
+    try std.testing.expectEqual(@as(u32, 2), two.loc().line);
+    try std.testing.expectEqual(@as(u32, 1), two.loc().col);
+
+    var one = ByteCursor.init("x", "test.id");
+    _ = one.advance();
+    try std.testing.expectEqual(@as(u32, 1), one.loc().line);
+    try std.testing.expectEqual(@as(u32, 2), one.loc().col);
 }
 
 test "source_cursor: 1-based peek" {
-    var c = ByteCursor.init("fun", "x.duo");
+    var c = ByteCursor.init("fun", "x.id");
     try std.testing.expectEqual(@as(u8, 'f'), c.peek());
     try std.testing.expectEqual(@as(u32, 1), c.pos);
 }
 
 test "source_cursor: production cursor 0-based peek" {
-    var p = ProductionCursor.init("fun", "x.duo");
+    var p = ProductionCursor.init("fun", "x.id");
     try std.testing.expectEqual(@as(u8, 'f'), p.peek());
     try std.testing.expectEqual(@as(usize, 0), p.index);
 }
 
-test "source_cursor: production vs duo loc parity" {
+test "source cursor: production and migration locations agree" {
     try std.testing.expect(differentialProductionParity());
 }

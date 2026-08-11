@@ -66,7 +66,6 @@ test {
     _ = @import("duo_native_ir.zig");
     _ = @import("dnir_lower.zig");
     _ = @import("duo_module_names.zig");
-    _ = @import("selfhost_verify.zig");
     _ = @import("source_cursor.zig");
     _ = @import("lexer_differential.zig");
     _ = @import("shell_session.zig");

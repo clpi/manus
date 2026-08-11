@@ -1,4 +1,4 @@
-//! Pass 16 MP-04 — production lexer corpus differential + fingerprint gate.
+//! Production lexer corpus differential and fingerprint gate.
 const std = @import("std");
 const lexer = @import("lexer.zig");
 
@@ -10,7 +10,7 @@ pub const CorpusCase = struct {
     expected: []const lexer.TokenKind,
 };
 
-/// Explicit kind sequences for M1 bounded subset.
+/// Explicit kind sequences for the bounded migration subset.
 pub const kind_corpus: []const CorpusCase = &.{
     .{ .id = "kw-fun", .source = "fun", .expected = &.{ .kw_fun, .eof } },
     .{ .id = "kw-end", .source = "end", .expected = &.{ .kw_end, .eof } },
@@ -35,16 +35,16 @@ pub const fingerprint_corpus: []const []const u8 = &.{
 
 pub const expected_fingerprint: u64 = 14826766157002701032;
 
-/// MP4-B02 — the Duo-native tokenizer computes this same corpus fingerprint via
-/// `duo_lexer_kind_fingerprint` (`lib/std/compiler/lexer.duo`) and is proven to
-/// land on the identical value by `DUO_FINGERPRINT_PROOF`. Matching here means the
-/// two tokenizers agree token-for-token — including EOF — over every corpus entry,
-/// which is the differential the SH-03 removal gate rests on.
+/// The generated migration tokenizer computes the same corpus fingerprint via
+/// `duo_lexer_kind_fingerprint` in `lib/std/compiler/lexer.duo`. Matching means
+/// the two tokenizers agree token-for-token, including EOF, over every corpus
+/// entry.
 ///
-/// Duo arithmetic is signed, so the proof compares against these bits read as i64.
+/// The migration producer uses signed arithmetic, so the proof compares these
+/// bits as i64.
 pub const expected_fingerprint_i64: i64 = @bitCast(expected_fingerprint);
-pub const DUO_FINGERPRINT_PROOF = "examples/pass16_lexer_fingerprint_differential.duo";
-pub const DUO_FINGERPRINT_EXPORT = "duo_lexer_kind_fingerprint";
+pub const MIGRATION_FINGERPRINT_PROOF = "examples/pass16_lexer_fingerprint_differential.duo";
+pub const MIGRATION_FINGERPRINT_EXPORT = "duo_lexer_kind_fingerprint";
 
 pub fn mixFingerprint(h: u64, kind: lexer.TokenKind) u64 {
     return h *% 31 +% @intFromEnum(kind);
@@ -62,7 +62,7 @@ pub fn fingerprintSource(src: []const u8) lexer.LexError!u64 {
 }
 
 /// Token-TEXT fingerprint. `fingerprintSource` hashes only kinds, so text
-/// equivalence with the Duo lexer was never differenced — either side could
+/// equivalence with the generated lexer was never differenced — either side could
 /// return the wrong bytes for every string literal and the corpus proof would
 /// stay green.
 ///
@@ -83,8 +83,8 @@ pub fn textFingerprintSource(src: []const u8) lexer.LexError!u64 {
 }
 
 /// The value `hostTextCorpusFingerprint` produces, which
-/// `examples/pass16_lexer_text_differential.duo` must reproduce from the Duo
-/// lexer. The same bits as i64 are -4810305713451201937.
+/// The migration text differential must reproduce this value. The same bits as
+/// i64 are -4810305713451201937.
 pub const expected_text_fingerprint: u64 = 13636438360258349679;
 
 pub fn hostTextCorpusFingerprint() !u64 {
@@ -121,25 +121,13 @@ pub fn validateKindCorpusCase(case: CorpusCase) !void {
     }
 }
 
-/// Verify TokenKind ordinals match Duo token.duo + duo_keyword_classify projection.
+/// Verify TokenKind ordinals match the generated classifier transport.
 pub fn validateTokenKindParity() !void {
     const bridge = @import("duo_keyword_bridge.zig");
     if (bridge.lookupKeyword("fun") != .kw_fun) return error.TokenKindParity;
     if (@intFromEnum(lexer.TokenKind.kw_fun) != 14) return error.TokenKindParity;
     if (bridge.lookupKeyword("end") != .kw_end) return error.TokenKindParity;
     if (@intFromEnum(lexer.TokenKind.kw_end) != 10) return error.TokenKindParity;
-}
-
-pub fn validateCorpus() !void {
-    for (kind_corpus) |case| try validateKindCorpusCase(case);
-    const got = try hostCorpusFingerprint();
-    if (got != expected_fingerprint) return error.FingerprintMismatch;
-    try validateTokenKindParity();
-}
-
-pub fn validateCorpusOrBool() bool {
-    validateCorpus() catch return false;
-    return true;
 }
 
 /// Measure production lexer: tokens*1000/elapsed_ns (kilo-tokens per ms scale).
@@ -169,8 +157,9 @@ pub fn measureLexThroughput() u64 {
     return measureLexTokensPerNs(threaded.io());
 }
 
-test "lexer_differential: M1 kind corpus" {
+test "lexer differential: kind corpus and transport ordinals" {
     for (kind_corpus) |case| try validateKindCorpusCase(case);
+    try validateTokenKindParity();
 }
 
 test "lexer_differential: fingerprint corpus stable" {
@@ -186,36 +175,29 @@ test "lexer_differential: line tracking" {
     try std.testing.expectEqual(@as(u32, 2), t2.loc.line);
 }
 
-// MP4-B02 — the Duo-side differential exists and pins the same corpus constant.
-//
-// The value is asserted from both directions: the host fingerprint must equal
-// `expected_fingerprint`, and the Duo proof compares its own computation against
-// the identical bits as i64. If either the corpus or the mix ever changes, this
-// test and the Duo proof must move together or the differential is vacuous.
-test "lexer_differential: Duo-native fingerprint differential is wired" {
+// The migration-side differential pins the same corpus constant. If either the
+// corpus or the mix changes, both projections must move together.
+test "lexer differential: generated fingerprint control is wired" {
     const io_mod = std.Io;
     var threaded = io_mod.Threaded.init(std.testing.allocator, .{});
     defer threaded.deinit();
     const io = threaded.io();
 
-    // The Duo proof must exist — a missing proof would silently drop the only
-    // evidence that the Duo tokenizer agrees with the production lexer.
-    io_mod.Dir.cwd().access(io, DUO_FINGERPRINT_PROOF, .{}) catch
-        return error.DuoFingerprintProofMissing;
+    io_mod.Dir.cwd().access(io, MIGRATION_FINGERPRINT_PROOF, .{}) catch
+        return error.GeneratedFingerprintProofMissing;
 
-    // The Duo projection must still export the entry the proof calls.
-    const lexer_duo = try io_mod.Dir.cwd().readFileAlloc(
+    const migration_source = try io_mod.Dir.cwd().readFileAlloc(
         io,
         "lib/std/compiler/lexer.duo",
         std.testing.allocator,
         .unlimited,
     );
-    defer std.testing.allocator.free(lexer_duo);
-    if (std.mem.indexOf(u8, lexer_duo, DUO_FINGERPRINT_EXPORT) == null) {
-        return error.DuoFingerprintExportMissing;
+    defer std.testing.allocator.free(migration_source);
+    if (std.mem.indexOf(u8, migration_source, MIGRATION_FINGERPRINT_EXPORT) == null) {
+        return error.GeneratedFingerprintExportMissing;
     }
 
-    // Same bits, both signednesses — this is the number the Duo proof compares to.
+    // Same bits under both signednesses.
     try std.testing.expectEqual(expected_fingerprint, @as(u64, @bitCast(expected_fingerprint_i64)));
     try std.testing.expectEqual(expected_fingerprint, try hostCorpusFingerprint());
 }

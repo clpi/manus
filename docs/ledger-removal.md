@@ -488,7 +488,7 @@ Measured on clean baseline and staged-snapshot worktrees:
   the clean baseline because the compose-each showcase reports zero fragments,
   so the unrelated red is retained rather than reported as a migration pass.
 
-### Kept — 8 files, with the blocker named
+### Kept — 7 files, with the blocker named
 
 Deletion is exhausted and the projection class is closed. What remains outside
 the production closure is real coverage, and each row says what stops the port.
@@ -496,13 +496,12 @@ the production closure is real coverage, and each row says what stops the port.
 | file | lines | blocker |
 |---|---|---|
 | `property_tests.zig` | 1495 | protected; property/fuzz harness with no Duo equivalent |
-| `lexer_differential.zig` | 225 | protected; field-for-field host-vs-Duo lexer differential |
+| `lexer_differential.zig` | 207 | protected; field-for-field migration lexer differential |
 | `wasm_decode_differential.zig` | 82 | protected; 256-opcode decode/validator agreement |
-| `selfhost_verify.zig` | 174 | drives the three differentials above; a port ports them |
 | `pass4_native_tests.zig` | 195 | asserts emitted C **and** ARM64 asm text; `duo dump-c` now covers the C half (see `scripts/transform.duo`), so what is left is a stable addressable path for `--backend=direct` asm |
 | `codegen_pass3_tests.zig` | 71 | same shape, `\|>` field-access fusion in emitted C — and `scripts/transform.duo` already asserts the pipeline's C line, so this is the smallest remaining port |
 | `pass11_ward_barrier_tests.zig` | 37 | a 6-line driver over `native_barrier_checks.zig` (534 lines of symbol analysis). Porting means porting that; and `build.zig` owns its test root |
-| `tests.zig` | 96 | the aggregator; it dies last |
+| `tests.zig` | 95 | the aggregator; it dies last |
 
 ### The next honest wave
 
@@ -562,23 +561,22 @@ Recomputed from `main.zig` (positive control: `codegen.zig` shows 7 importers,
 not 0, so the scan resolves).
 
 ```
-production closure        104 of 112 src/*.zig
-non-production              8 files / 2,374 lines
+production closure        104 of 111 src/*.zig
+non-production              7 files / 2,182 lines
 orphans (zero importers)    0     — deletion is EXHAUSTED
 ```
 
 Earlier today this read 104 production / 56 non-production / 8,878 lines. The
-non-production tier fell **56 -> 8** and **8,878 -> 2,374 lines** through
+non-production tier fell **56 -> 7** and **8,878 -> 2,182 lines** through
 deletion of self-certifying apparatus and porting to Duo gates. **What remains
 in Zig is now overwhelmingly the compiler itself.**
 
-The eight, and why each is still here:
+The seven, and why each is still here:
 
 | file | lines | status |
 |---|---|---|
 | `property_tests.zig` | 1495 | PROTECTED — real property coverage, not self-audit |
-| `lexer_differential.zig` | 225 | PROTECTED — differential against the Duo lexer |
-| `selfhost_verify.zig` | 174 | PROTECTED |
+| `lexer_differential.zig` | 207 | PROTECTED — differential against the migration lexer |
 | `wasm_decode_differential.zig` | 82 | PROTECTED |
 | `pass4_native_tests.zig` · `codegen_pass3_tests.zig` | — | blocked on direct-backend ARTIFACT ADDRESSING |
 | `pass11_ward_barrier_tests.zig` | — | needs `native_barrier_checks.zig` (534 lines) ported and `build.zig` rewired |
