@@ -74,7 +74,6 @@ pub const Parser = struct {
     /// right-hand sides use the restricted scrutinee parser so that `[` at
     /// the start of the next arm is not greedily consumed as an index suffix.
     match_arm_depth: u32 = 0,
-    quote_depth: u32 = 0,
     /// When true (.duo source), emit deprecation warnings for `then` and `local`.
     duo_mode: bool = false,
     /// Nesting inside function bodies; bare `name()` func decls are module-scope only.
@@ -1271,9 +1270,7 @@ pub const Parser = struct {
     ///
     /// Measured 2026-08-08, statement-leading over the 767 tracked `.duo`
     /// files with both strips applied: try 0, catch 0, defer 0, goto 0,
-    /// extends 0, private 0, await 0, let 0, async 2, macro 3. The five files
-    /// behind `async`/`macro` were unreferenced demos OF the retired construct
-    /// and were retired with it.
+    /// extends 0, private 0, await 0, let 0, async 2.
     ///
     /// Rows deliberately NOT here yet, with their counts: `then` 656,
     /// `elseif` 820, `do` 179, `fun` 324, `global` 202, `concept` 58,
@@ -1286,6 +1283,11 @@ pub const Parser = struct {
     /// corpus migration before it can become an error; `string.` (175 files)
     /// and `req` (100 files) need the replacement surface to exist first.
     fn denyRetiredStmtKeyword(self: *Parser, tok: Token) ParseError!void {
+        if (tok.kind == .kw_macro) {
+            term.locErr(tok.loc, "'macro' has no native Idsem statement role", .{});
+            term.locHint(tok.loc, "metaprogramming is expressed through ordinary relations and compile-time facts", .{});
+            return ParseError.UnexpectedToken;
+        }
         if (!self.duo_mode) return;
         const replacement: []const u8 = switch (tok.kind) {
             .kw_try, .kw_catch => "Pass 100 §0.5: bind the result and route it — `if v, err = f(x) use(v) else report(err)`",
@@ -1294,7 +1296,6 @@ pub const Parser = struct {
             .kw_extends => "Pass 100 §15: there is no inheritance — compose by spreading a descriptor `@{ ..base, extra = v }`, or home the shared surface on a face",
             .kw_private => "Pass 100 §15 denies visibility-by-naming: nest the value under the descriptor that owns it",
             .kw_await, .kw_async => "Pass 100 §15: no async/await keyword pair — concurrency is a property of the value, not a colour on the function",
-            .kw_macro => "Pass 100 §17: run the leverage ladder instead — edge, derivable, liftable, hook, projection, bundle, lens, dispatch table; `add(module)(…)` and `add(case)(…)` are ordinary calls",
             .kw_let => "Pass 100 §0: bindings are bare — `x = expr`. `if let p = e` / `while let p = e` is the Rust shape; write `if v, err = f(x) use(v) else report(err)`",
             else => return,
         };
@@ -1366,7 +1367,6 @@ pub const Parser = struct {
             .kw_enum => self.parse_enum_def_with_attrs(&.{}),
             .kw_concept => self.parse_concept_def_with_attrs(&.{}),
             .kw_alias => self.parse_alias_def_with_attrs(&.{}),
-            .kw_macro => self.parse_macro_def(),
             .kw_if => self.parse_if(),
             .kw_while => self.parse_while(),
             .kw_repeat => self.parse_repeat(),
@@ -1587,37 +1587,6 @@ pub const Parser = struct {
             if (std.mem.eql(u8, name, item)) return true;
         }
         return false;
-    }
-
-    fn parse_macro_def(self: *Parser) ParseError!ast.Stmt {
-        const l = (try self.expect(.kw_macro)).loc;
-        const name = try self.expect(.name);
-        _ = try self.expect(.lparen);
-        var params: std.ArrayList([]const u8) = .empty;
-        if (!(try self.check(.rparen))) {
-            const first = try self.expect(.name);
-            try params.append(self.alloc, first.text);
-            while (try self.eat(.comma) != null) {
-                const param = try self.expect(.name);
-                try params.append(self.alloc, param.text);
-            }
-        }
-        _ = try self.expect(.rparen);
-        const quote_tok = try self.expect(.backtick);
-        self.quote_depth += 1;
-        defer self.quote_depth -= 1;
-        const body: ast.MacroBody = if (try self.eat(.kw_do) != null) blk: {
-            const block = try self.parse_block();
-            _ = try self.expect(.kw_end);
-            break :blk .{ .block = block };
-        } else .{ .expr = try self.parse_expr() };
-        _ = quote_tok;
-        return .{ .macro_def = .{
-            .loc = l,
-            .name = name.text,
-            .params = try params.toOwnedSlice(self.alloc),
-            .body = body,
-        } };
     }
 
     /// Parse one or more `@name` or `@name(args)` attributes, then the declaration
@@ -4336,7 +4305,7 @@ pub const Parser = struct {
         // suffixed expressions (names, literals, calls, field access).
         const first_tok = try self.pk();
         const is_unary = switch (first_tok.kind) {
-            .kw_not, .hash, .hash_hash, .kw_comptime, .minus, .tilde, .kw_await, .backtick => true,
+            .kw_not, .hash, .hash_hash, .kw_comptime, .minus, .tilde, .kw_await => true,
             else => false,
         };
         // Pass 3: `{ name, age } = user` named destructuring assign
@@ -4737,7 +4706,7 @@ pub const Parser = struct {
 
     fn is_expr_start(_: *Parser, kind: TK) bool {
         return switch (kind) {
-            .name, .int_lit, .float_lit, .string_lit, .kw_nil, .kw_true, .kw_false, .dots, .lparen, .lbrace, .lbracket, .kw_not, .hash, .minus, .tilde, .hash_hash, .kw_comptime, .kw_await, .backtick, .comma, .at => true,
+            .name, .int_lit, .float_lit, .string_lit, .kw_nil, .kw_true, .kw_false, .dots, .lparen, .lbrace, .lbracket, .kw_not, .hash, .minus, .tilde, .hash_hash, .kw_comptime, .kw_await, .comma, .at => true,
             else => false,
         };
     }
@@ -4856,17 +4825,7 @@ pub const Parser = struct {
         var lhs: *ast.Expr = undefined;
         {
             const tok = try self.pk();
-            if (tok.kind == .backtick) {
-                _ = try self.adv();
-                self.quote_depth += 1;
-                defer self.quote_depth -= 1;
-                const inner = try self.parse_prec(20);
-                lhs = try self.new_expr(.{ .quote = .{ .loc = tok.loc, .expr = inner } });
-            } else if (tok.kind == .comma and self.quote_depth > 0) {
-                _ = try self.adv();
-                const inner = try self.parse_prec(20);
-                lhs = try self.new_expr(.{ .unquote = .{ .loc = tok.loc, .expr = inner } });
-            } else if (tok.kind == .kw_await) {
+            if (tok.kind == .kw_await) {
                 try self.denyRetiredStmtKeyword(tok);
                 _ = try self.adv(); // consume `await`
                 const operand = try self.parse_prec(20);
@@ -5204,6 +5163,10 @@ pub const Parser = struct {
             .name => blk: {
                 const name_tok = try self.adv();
                 break :blk self.new_expr(.{ .name = .{ .loc = name_tok.loc, .ident = name_tok.text } });
+            },
+            .backtick => {
+                term.locErr(tok.loc, "c0 law.backtick.zero: backtick is reserved and has no canonical meaning", .{});
+                return ParseError.UnexpectedToken;
             },
             .at => blk: {
                 // §2, the @ DYAD — **bare `@` NAMES** the anchor. §20's lexer
@@ -6590,37 +6553,49 @@ test "parse: local declaration with integer initializer" {
     try testing.expectEqual(@as(i64, 42), init_expr.int_lit.val);
 }
 
-test "parse: macro definition with quote and unquote" {
+test "parse: Idsem token identity keeps backtick reserved" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
-    const mod = try parseSource("macro twice(x) `(,x + ,x)", &arena);
-    const stmt = mod.body.stmts[0];
-    try testing.expect(stmt == .macro_def);
-    try testing.expectEqualStrings("twice", stmt.macro_def.name);
-    try testing.expectEqual(@as(usize, 1), stmt.macro_def.params.len);
-    try testing.expectEqualStrings("x", stmt.macro_def.params[0]);
-    try testing.expect(stmt.macro_def.body == .expr);
-    const body = stmt.macro_def.body.expr;
-    try testing.expect(body.* == .binop);
-    try testing.expect(body.binop.lhs.* == .unquote);
-    try testing.expect(body.binop.rhs.* == .unquote);
+    const source = "`value";
+    var lex = Lexer.init(source, "reserved.id");
+    try @import("duo_lexer_dispatch.zig").route(testing.allocator, &lex, source, "reserved.id");
+    defer testing.allocator.free(lex.duo_tokens.?);
+
+    try testing.expectEqual(TK.backtick, (try lex.peek()).kind);
+    var p = Parser.init(&lex, arena.allocator());
+    p.duo_mode = true;
+    try testing.expectError(ParseError.UnexpectedToken, p.parse_module());
 }
 
-test "parse: macro definition with quoted statement block" {
+test "parse: backtick rejection does not depend on token text" {
+    const file = "reserved.id";
+    const tokens = [_]Token{
+        .{ .kind = .backtick, .loc = .{ .file = file, .line = 1, .col = 1 }, .text = "different" },
+        .{ .kind = .eof, .loc = .{ .file = file, .line = 1, .col = 10 }, .text = "" },
+    };
+    var lex = Lexer.init("", file);
+    try lex.useDuoTokens(&tokens);
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
-    const mod = try parseSource(
-        \\macro init(x) `do
-        \\  local tmp = ,x
-        \\  print(tmp)
-        \\end
-    , &arena);
-    const stmt = mod.body.stmts[0];
-    try testing.expect(stmt == .macro_def);
-    try testing.expectEqualStrings("init", stmt.macro_def.name);
-    try testing.expect(stmt.macro_def.body == .block);
-    try testing.expectEqual(@as(usize, 1), stmt.macro_def.body.block.stmts.len);
-    try testing.expect(stmt.macro_def.body.block.tail_expr != null);
+    var p = Parser.init(&lex, arena.allocator());
+    p.duo_mode = true;
+
+    try testing.expectError(ParseError.UnexpectedToken, p.parse_module());
+    _ = try parseDuoSource("value = 1", &arena);
+}
+
+test "parse: retired macro declaration cannot reach quotation" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const source = "macro twice(x) `(,x + ,x)";
+    try testing.expectError(
+        ParseError.UnexpectedToken,
+        parseDuoSource(source, &arena),
+    );
+    try testing.expectError(
+        ParseError.UnexpectedToken,
+        parseSource(source, &arena),
+    );
 }
 
 test "parse: macro call expression statement" {
