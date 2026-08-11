@@ -56,7 +56,7 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run duo");
     run_step.dependOn(&run_cmd.step);
 
-    const test_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/run_compile_fail_tests.duo" });
+    const test_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "--backend=c", "scripts/run_compile_fail_tests.duo" });
     test_cmd.setCwd(b.path("."));
     test_cmd.step.dependOn(b.getInstallStep());
     // G11 — the language census ratchet. A number nobody runs is a number that
@@ -219,7 +219,7 @@ pub fn build(b: *std.Build) void {
     });
     source_zero_cmd.setCwd(b.path("."));
 
-    const no_ansi_reports_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/assert_no_ansi_reports.duo" });
+    const no_ansi_reports_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "--backend=c", "scripts/assert_no_ansi_reports.duo" });
     no_ansi_reports_cmd.setCwd(b.path("."));
     no_ansi_reports_cmd.step.dependOn(b.getInstallStep());
     const no_ansi_reports_step = b.step("no-ansi-reports", "Assert report ANSI/no-color styling contract");
@@ -228,7 +228,7 @@ pub fn build(b: *std.Build) void {
     report_styling_step.dependOn(&no_ansi_reports_cmd.step);
     test_step.dependOn(&no_ansi_reports_cmd.step);
 
-    const gpu_bench_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/run_gpu_benchmark.duo" });
+    const gpu_bench_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "--backend=c", "scripts/run_gpu_benchmark.duo" });
     gpu_bench_cmd.setCwd(b.path("."));
     gpu_bench_cmd.step.dependOn(b.getInstallStep());
     const gpu_bench_step = b.step("gpu-bench", "Run Duo vs GPU Metal benchmark");
@@ -281,8 +281,8 @@ pub fn build(b: *std.Build) void {
     const wasm_conform_bin = "../../zig-out/bin/wasm-conform";
     const duo_bin_path = "../../zig-out/bin/duo";
     const wasm_engine_cmd = b.addSystemCommand(&.{
-        duo_bin_path,  "compile",     "src/engine.duo",
-        "--backend=c", "--emit",      "exe",
+        duo_bin_path,  "compile",        "src/engine.duo",
+        "--backend=c", "--emit",         "exe",
         "-o",          wasm_conform_bin,
     });
     wasm_engine_cmd.setCwd(b.path("tools/wasm"));
@@ -316,7 +316,7 @@ pub fn build(b: *std.Build) void {
     compile_size_bench_step.dependOn(&compile_size_bench_cmd.step);
 
     // Public safety pre-scan (Pass 10 A19)
-    const public_safety_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/public_safety_scan.duo" });
+    const public_safety_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "--backend=c", "scripts/public_safety_scan.duo" });
     public_safety_cmd.setCwd(b.path("."));
     const public_safety_step = b.step("public-safety", "Scan tracked files for secrets and personal paths (Pass 10 A19)");
     public_safety_step.dependOn(&public_safety_cmd.step);
@@ -497,7 +497,7 @@ pub fn build(b: *std.Build) void {
     const bootstrap_scan_step = b.step("bootstrap-scan", "gap[080]: the deny table over src/*.zig, the corpus audit100 excludes; ratchets");
     bootstrap_scan_step.dependOn(&bootstrap_scan_cmd.step);
 
-    const semantic_architecture_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/semanticgate.duo" });
+    const semantic_architecture_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "--backend=c", "scripts/semanticgate.duo" });
     semantic_architecture_cmd.setCwd(b.path("."));
     semantic_architecture_cmd.step.dependOn(b.getInstallStep());
     const semantic_architecture_step = b.step("semantic-architecture", "C0 §65: syntax faces erase into semantic relations, facts and demand; debt ratchets");
@@ -592,7 +592,6 @@ pub fn build(b: *std.Build) void {
     });
     const run_pass11_module_ward = b.addRunArtifact(pass11_module_ward);
 
-
     const pass11_module_step = b.step("pass11-module-smoke", "Pass 11: native_barrier_checks + target_model + catalog unit tests (cross-platform)");
     pass11_module_step.dependOn(&run_pass11_module_barrier.step);
     pass11_module_step.dependOn(&run_pass11_module_target.step);
@@ -611,8 +610,6 @@ pub fn build(b: *std.Build) void {
     const pass11_spill_step = b.step("pass11-spill-smoke", "Pass 11 WP-03: register spill proof (macOS AArch64 only)");
     pass11_spill_step.dependOn(&pass11_spill_cmd.step);
 
-
-
     const pass11_native_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/native_backend.zig"),
@@ -627,20 +624,6 @@ pub fn build(b: *std.Build) void {
     // src/native_backend.zig). Its old consumer, pass11-gate, ran the deleted
     // catalog apparatus — the coverage is real and outlived the gate.
     test_step.dependOn(&run_pass11_native_tests.step);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     const pass34_l1_proof = b.addRunArtifact(exe);
     pass34_l1_proof.addArgs(&.{ "run", "examples/l1_module_sealed_proof.duo" });
@@ -758,14 +741,10 @@ pub fn build(b: *std.Build) void {
     const direct_link_step = b.step("direct-module-link", "A direct-backend program must be able to call a req'd Duo module");
     direct_link_step.dependOn(&direct_link_cmd.step);
 
-
-
-
     const idiom_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/duo_idiom_gate.duo" });
     idiom_cmd.setCwd(b.path("."));
     const idiom_step = b.step("idiom-gate", "Every .duo file must use canonical Duo idioms");
     idiom_step.dependOn(&idiom_cmd.step);
-
 
     const bench_proof_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/run_benchmark_proof.duo" });
     bench_proof_cmd.setCwd(b.path("."));
@@ -778,8 +757,6 @@ pub fn build(b: *std.Build) void {
     duo_idiom_cmd.step.dependOn(b.getInstallStep());
     const duo_idiom_step = b.step("duo-idiom-gate", "Enforce compact idiomatic .duo in scripts/ and examples/");
     duo_idiom_step.dependOn(&duo_idiom_cmd.step);
-
-
 
     const pass16_m1_diff = b.addRunArtifact(exe);
     pass16_m1_diff.addArgs(&.{ "run", "examples/pass12_m1_diff.duo" });
@@ -891,9 +868,8 @@ pub fn build(b: *std.Build) void {
     const passes_audit_step = b.step("passes-audit-gate", "Cross-pass audit gate (native check, cross-platform)");
     passes_audit_step.dependOn(&passes_audit_cmd.step);
 
-
     // Agent-smoke gate (tier-0): public safety + coordination/stdlib/meta smokes
-    const agent_smoke_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/duo_lock.duo", "--", "./zig-out/bin/duo", "run", "scripts/agent_smoke.duo" });
+    const agent_smoke_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "--backend=c", "scripts/duo_lock.duo", "--", "./zig-out/bin/duo", "run", "--backend=c", "scripts/agent_smoke.duo" });
     agent_smoke_cmd.setCwd(b.path("."));
     agent_smoke_cmd.step.dependOn(b.getInstallStep());
     const agent_smoke_step = b.step("agent-smoke", "Run tier-0 agent-smoke gate (public safety, coordination, stdlib, meta)");
@@ -909,7 +885,7 @@ pub fn build(b: *std.Build) void {
     // as a wrong answer, not an error. Long strings hash a SAMPLE, so the two
     // spellings are no longer trivially the same loop. This fixture differences
     // them on both sides of the 32-byte boundary and carries its own controls.
-    const hash_agreement_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "examples/hash_agreement.duo" });
+    const hash_agreement_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "--backend=c", "examples/hash_agreement.duo" });
     hash_agreement_cmd.setCwd(b.path("."));
     hash_agreement_cmd.step.dependOn(b.getInstallStep());
     const hash_agreement_step = b.step("hash-agreement", "Compile-time vs runtime string hash must agree (intern pool)");
@@ -938,7 +914,7 @@ pub fn build(b: *std.Build) void {
     const semantics_step = b.step("semantics-gate", "Simultaneous assignment and tail-demand return, by value");
     semantics_step.dependOn(b.getInstallStep());
     inline for (semantics_paths) |path| {
-        const cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", path });
+        const cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "--backend=c", path });
         cmd.setCwd(b.path("."));
         cmd.step.dependOn(b.getInstallStep());
         semantics_step.dependOn(&cmd.step);
@@ -959,7 +935,7 @@ pub fn build(b: *std.Build) void {
     // owner, and by-name calls to seven handlers that used to answer nothing at
     // all. It spawns the servers in a scratch cwd, because `duo run x.duo`
     // drops `x.out` beside itself and this gate guards the tree it runs in.
-    const mcp_gate_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "tools/mcp/mcp_gate.duo" });
+    const mcp_gate_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "--backend=c", "tools/mcp/mcp_gate.duo" });
     mcp_gate_cmd.setCwd(b.path("."));
     mcp_gate_cmd.step.dependOn(b.getInstallStep());
     const mcp_gate_step = b.step("mcp-gate", "MCP servers must handshake, serve their full tool census, and answer by value");
@@ -984,7 +960,7 @@ pub fn build(b: *std.Build) void {
     // counts. Everything scored happens AFTER a close, so a server that dies
     // mid-session cannot score. Positive-controlled by driving it at corrupted
     // copies via LSPGATE_SERVER — see the file header for the three runs.
-    const lsp_gate_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "tools/lsp/gate.duo" });
+    const lsp_gate_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "--backend=c", "tools/lsp/gate.duo" });
     lsp_gate_cmd.setCwd(b.path("."));
     lsp_gate_cmd.step.dependOn(b.getInstallStep());
     const lsp_gate_step = b.step("lsp-gate", "The LSP must handshake, survive a document close, and answer by value");

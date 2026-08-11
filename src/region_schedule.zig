@@ -8,7 +8,7 @@ pub const SCHEMA_VERSION = "region-schedule-v0";
 
 pub const ScheduleSlot = struct {
     slot: u32,
-    node_id: u32,
+    coordinate: u32,
     kind: region_graph.NodeKind,
 };
 
@@ -81,14 +81,14 @@ pub fn buildRegionSchedule(
 
     var slot_idx: u32 = 0;
     while (ready.items.len > 0) {
-        const id = ready.items[ready.items.len - 1];
+        const coordinate = ready.items[ready.items.len - 1];
         _ = ready.pop();
 
-        const kind = nodeKindOf(region, id);
-        try slots.append(alloc, .{ .slot = slot_idx, .node_id = id, .kind = kind });
+        const kind = nodeKindOf(region, coordinate);
+        try slots.append(alloc, .{ .slot = slot_idx, .coordinate = coordinate, .kind = kind });
         slot_idx += 1;
 
-        if (outgoing.get(id)) |succs| {
+        if (outgoing.get(coordinate)) |succs| {
             for (succs.items) |to| {
                 const gop = indegree.getPtr(to) orelse continue;
                 gop.* -= 1;
@@ -118,21 +118,33 @@ fn nodeKindOf(region: *const region_graph.Region, id: u32) region_graph.NodeKind
 
 pub fn buildModuleSchedules(
     alloc: std.mem.Allocator,
-    regions: []const region_graph.Region,
+    projection: region_graph.Projection,
 ) Error![]FunctionSchedule {
     var out: std.ArrayListUnmanaged(FunctionSchedule) = .empty;
     errdefer {
         for (out.items) |*s| s.deinit(alloc);
         out.deinit(alloc);
     }
-    for (regions) |region| {
-        const slots = try buildRegionSchedule(alloc, &region);
-        try out.append(alloc, .{
-            .func_name = try alloc.dupe(u8, region.func_name),
-            .slots = slots,
-        });
+    for (projection.regions) |region| {
+        var schedule = try buildFunctionSchedule(alloc, &region);
+        out.append(alloc, schedule) catch |err| {
+            schedule.deinit(alloc);
+            return err;
+        };
     }
     return try out.toOwnedSlice(alloc);
+}
+
+fn buildFunctionSchedule(
+    alloc: std.mem.Allocator,
+    region: *const region_graph.Region,
+) Error!FunctionSchedule {
+    const slots = try buildRegionSchedule(alloc, region);
+    errdefer alloc.free(slots);
+    return .{
+        .func_name = try alloc.dupe(u8, region.func_name),
+        .slots = slots,
+    };
 }
 
 pub fn freeModuleSchedules(alloc: std.mem.Allocator, schedules: []FunctionSchedule) void {
@@ -141,9 +153,9 @@ pub fn freeModuleSchedules(alloc: std.mem.Allocator, schedules: []FunctionSchedu
 }
 
 /// Return schedule slot index for a region node, or null if not scheduled.
-pub fn slotIndexOf(schedule: []const ScheduleSlot, node_id: u32) ?u32 {
+pub fn slotIndexOf(schedule: []const ScheduleSlot, coordinate: u32) ?u32 {
     for (schedule) |s| {
-        if (s.node_id == node_id) return s.slot;
+        if (s.coordinate == coordinate) return s.slot;
     }
     return null;
 }
@@ -160,6 +172,7 @@ test "region_schedule: orders_before yields call before ret" {
     const Parser = @import("parser.zig").Parser;
     const dnir_lower = @import("dnir_lower.zig");
     const semantic_graph = @import("semantic_graph.zig");
+    const Sema = @import("sema.zig").Sema;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -167,20 +180,22 @@ test "region_schedule: orders_before yields call before ret" {
     const src =
         \\helper(): i64
         \\    1
-        \\end
         \\main(): i64
         \\    helper()
-        \\end
     ;
-    var lex = Lexer.init(src, "sched.duo");
+    var lex = Lexer.init(src, "schedule.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
-    const mod = try parser.parse_module();
+    var mod = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&mod);
     var g = semantic_graph.SemanticGraph.init(alloc);
     defer g.deinit();
-    _ = try g.liftModuleWithCalls(&mod, "sched.duo");
+    _ = try g.liftModuleWithCheckedCalls(&mod, &checked, "schedule.id");
     const m = try dnir_lower.lowerModuleWithGraph(alloc, &mod, &g);
-    const regions = try region_graph.buildModuleRegions(alloc, m, &g);
+    const regions = try region_graph.buildModuleRegions(alloc, m);
     defer region_graph.freeModuleRegions(alloc, regions);
 
     const main_region = region_graph.findRegion(regions, "main") orelse return error.TestExpectedEqual;
@@ -197,4 +212,25 @@ test "region_schedule: orders_before yields call before ret" {
     const cid = call_id orelse return error.TestExpectedEqual;
     const rid = ret_id orelse return error.TestExpectedEqual;
     try std.testing.expect(orderedBefore(schedule, cid, rid));
+}
+
+test "region_schedule: module projection releases owned schedules on allocation failure" {
+    const dnir = @import("duo_native_ir.zig");
+
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, struct {
+        fn run(alloc: std.mem.Allocator) !void {
+            const module: dnir.Module = .{ .functions = &.{.{
+                .name = "main",
+                .ret = .i64,
+                .blocks = &.{.{ .instrs = &.{
+                    .{ .op = .call_direct, .callee = "work", .result = 0 },
+                    .{ .op = .ret, .lhs = .{ .temp = 0 }, .ty = .i64 },
+                } }},
+            }} };
+            const regions = try region_graph.buildModuleRegions(alloc, module);
+            defer region_graph.freeModuleRegions(alloc, regions);
+            const schedules = try buildModuleSchedules(alloc, regions);
+            defer freeModuleSchedules(alloc, schedules);
+        }
+    }.run, .{});
 }

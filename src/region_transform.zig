@@ -15,7 +15,7 @@ pub const TransformRecord = struct {
     kind: TransformKind,
     caller: []const u8,
     callee: []const u8 = "",
-    region_node_id: u32 = 0,
+    coordinate: u32 = 0,
     const_value: i64 = 0,
     binop: dnir.BinOpTag = .add,
     result_temp: u32 = 0,
@@ -31,21 +31,16 @@ pub const Error = error{
     OutOfMemory,
     CalleeNotFound,
     CallerNotFound,
-    GraphOwnerMismatch,
+    ResidencyMismatch,
     ScheduleCycle,
 };
 
-fn requireSameGraphOwner(
-    regions: []const region_graph.Region,
-    m: dnir.Module,
-) Error!void {
-    for (regions) |region| {
-        if (region.identity_owner != m.identity_owner) return error.GraphOwnerMismatch;
-    }
+fn requireResidency(projection: region_graph.Projection, module: dnir.Module) Error!void {
+    if (projection.graph != module.graph) return error.ResidencyMismatch;
 }
 
-/// Legacy name-selected bridge. Checked applications require world/effect/witness
-/// facts before this realization can be selected by semantic identity.
+/// Legacy name-selected bridge. Checked applications require world, effect,
+/// and witness facts before this realization can be selected from graph facts.
 pub fn legacyCalleeConstI64Return(m: dnir.Module, callee: []const u8) ?i64 {
     for (m.functions) |f| {
         if (!std.mem.eql(u8, f.name, callee)) continue;
@@ -200,14 +195,14 @@ fn evalConstBinop(op: dnir.BinOpTag, a: i64, b: i64) ?i64 {
 fn operandScheduleOk(
     region: *const region_graph.Region,
     schedule: []const region_schedule.ScheduleSlot,
-    binop_node_id: u32,
+    binop_coordinate: u32,
     v: dnir.Value,
 ) bool {
     return switch (v) {
         .i64 => true,
         .temp, .local => |slot| blk: {
             const prod = findNodeByTemp(region, slot) orelse break :blk false;
-            break :blk region_schedule.orderedBefore(schedule, prod.id, binop_node_id);
+            break :blk region_schedule.orderedBefore(schedule, prod.id, binop_coordinate);
         },
         else => false,
     };
@@ -216,25 +211,25 @@ fn operandScheduleOk(
 /// Discover const-return sites only for calls that have no semantic identity.
 pub fn findLegacyConstReturnInlines(
     alloc: std.mem.Allocator,
-    regions: []const region_graph.Region,
+    projection: region_graph.Projection,
     m: dnir.Module,
 ) Error![]TransformRecord {
-    try requireSameGraphOwner(regions, m);
+    try requireResidency(projection, m);
     var out: std.ArrayListUnmanaged(TransformRecord) = .empty;
     errdefer out.deinit(alloc);
 
-    for (regions) |region| {
+    for (projection.regions) |region| {
         if (regionHasApplicationLineage(&region)) continue;
         for (region.nodes) |node| {
             if (node.kind != .call) continue;
-            if (region_graph.hasAnyApplicationIdentity(node)) continue;
+            if (region_graph.applicationFactsPresent(node)) continue;
             const callee = node.callee orelse continue;
             const value = legacyCalleeConstI64Return(m, callee) orelse continue;
             try out.append(alloc, .{
                 .kind = .legacy_inline_const_return,
                 .caller = region.func_name,
                 .callee = callee,
-                .region_node_id = node.id,
+                .coordinate = node.id,
                 .const_value = value,
             });
         }
@@ -245,14 +240,14 @@ pub fn findLegacyConstReturnInlines(
 /// Discover integer binops foldable to constants; schedule validates temp operands.
 pub fn findConstBinopFusions(
     alloc: std.mem.Allocator,
-    regions: []const region_graph.Region,
+    projection: region_graph.Projection,
     m: dnir.Module,
 ) Error![]TransformRecord {
-    try requireSameGraphOwner(regions, m);
+    try requireResidency(projection, m);
     var out: std.ArrayListUnmanaged(TransformRecord) = .empty;
     errdefer out.deinit(alloc);
 
-    for (regions) |region| {
+    for (projection.regions) |region| {
         const func = findFunction(m, region.func_name) orelse continue;
         if (functionHasApplicationLineage(&func)) continue;
         var const_map = try buildConstSlotMap(alloc, func);
@@ -263,7 +258,7 @@ pub fn findConstBinopFusions(
 
         for (region.nodes) |node| {
             if (node.kind != .binop) continue;
-            if (region_graph.hasAnyApplicationIdentity(node)) continue;
+            if (region_graph.applicationFactsPresent(node)) continue;
             const rt = node.dnir_temp orelse continue;
             const ins = findInstrByResult(func, rt) orelse continue;
             if (ins.op != .binop or ins.ty == .f64) continue;
@@ -275,7 +270,7 @@ pub fn findConstBinopFusions(
             try out.append(alloc, .{
                 .kind = .fuse_const_binop,
                 .caller = region.func_name,
-                .region_node_id = node.id,
+                .coordinate = node.id,
                 .binop = ins.binop,
                 .result_temp = rt,
                 .const_value = fused,
@@ -307,7 +302,7 @@ fn functionHasBinop(f: *const dnir.Function, op: dnir.BinOpTag) bool {
     return false;
 }
 
-fn hasAnyApplicationIdentity(ins: dnir.Instr) bool {
+fn applicationFactsPresent(ins: dnir.Instr) bool {
     return ins.relation != null or ins.application != null or ins.value != null or
         ins.subject != null or ins.realization_start != null;
 }
@@ -315,7 +310,7 @@ fn hasAnyApplicationIdentity(ins: dnir.Instr) bool {
 fn functionHasApplicationLineage(f: *const dnir.Function) bool {
     for (f.blocks) |block| {
         for (block.instrs) |instruction| {
-            if (hasAnyApplicationIdentity(instruction)) return true;
+            if (applicationFactsPresent(instruction)) return true;
         }
     }
     return false;
@@ -323,7 +318,7 @@ fn functionHasApplicationLineage(f: *const dnir.Function) bool {
 
 fn regionHasApplicationLineage(region: *const region_graph.Region) bool {
     for (region.nodes) |node| {
-        if (region_graph.hasAnyApplicationIdentity(node)) return true;
+        if (region_graph.applicationFactsPresent(node)) return true;
     }
     return false;
 }
@@ -347,7 +342,7 @@ pub fn applyLegacyConstReturnInline(
 
         for (block.instrs) |ins| {
             if (ins.op == .call_direct and
-                !hasAnyApplicationIdentity(ins) and
+                !applicationFactsPresent(ins) and
                 std.mem.eql(u8, ins.callee, callee_key) and
                 ins.lhs == .void and
                 ins.result != null)
@@ -369,7 +364,7 @@ pub fn applyLegacyConstReturnInline(
             const old = block.instrs;
             for (old) |instruction| {
                 if (instruction.op == .call_direct and
-                    !hasAnyApplicationIdentity(instruction) and
+                    !applicationFactsPresent(instruction) and
                     std.mem.eql(u8, instruction.callee, callee_key) and
                     instruction.lhs == .void and
                     instruction.result != null)
@@ -405,7 +400,7 @@ pub fn applyConstBinopFusion(
 
         for (block.instrs) |ins| {
             if (ins.op == .binop and
-                !hasAnyApplicationIdentity(ins) and
+                !applicationFactsPresent(ins) and
                 ins.result == result_temp and
                 ins.ty != .f64)
             {
@@ -426,7 +421,7 @@ pub fn applyConstBinopFusion(
             const old = block.instrs;
             for (old) |instruction| {
                 if (instruction.op == .binop and
-                    !hasAnyApplicationIdentity(instruction) and
+                    !applicationFactsPresent(instruction) and
                     instruction.result == result_temp and
                     instruction.ty != .f64)
                 {
@@ -447,9 +442,9 @@ pub fn applyConstBinopFusion(
 pub fn applyModuleLegacyConstReturnInlines(
     alloc: std.mem.Allocator,
     m: *dnir.Module,
-    regions: []const region_graph.Region,
+    projection: region_graph.Projection,
 ) Error!u32 {
-    const candidates = try findLegacyConstReturnInlines(alloc, regions, m.*);
+    const candidates = try findLegacyConstReturnInlines(alloc, projection, m.*);
     defer freeTransformRecords(alloc, candidates);
 
     var applied: u32 = 0;
@@ -466,9 +461,9 @@ pub fn applyModuleLegacyConstReturnInlines(
 pub fn applyModuleConstBinopFusions(
     alloc: std.mem.Allocator,
     m: *dnir.Module,
-    regions: []const region_graph.Region,
+    projection: region_graph.Projection,
 ) Error!u32 {
-    const candidates = try findConstBinopFusions(alloc, regions, m.*);
+    const candidates = try findConstBinopFusions(alloc, projection, m.*);
     defer freeTransformRecords(alloc, candidates);
 
     var applied: u32 = 0;
@@ -506,8 +501,8 @@ pub fn pruneDeadConstProducers(
     caller: *dnir.Function,
 ) Error!u32 {
     // `realization_start` is positional bootstrap lineage. Until transforms
-    // have their own stable identity/witness, deleting any preceding
-    // instruction would corrupt the application-to-byte range.
+    // have their own exact graph application and witness, deleting
+    // any preceding instruction would corrupt the application-to-byte range.
     if (functionHasApplicationLineage(caller)) return 0;
     var pruned: u32 = 0;
     const blocks: []dnir.Block = @constCast(caller.blocks);
@@ -564,11 +559,11 @@ pub fn applyModuleDeadConstPrune(
 pub fn applyModuleRegionTransforms(
     alloc: std.mem.Allocator,
     m: *dnir.Module,
-    regions: []const region_graph.Region,
+    projection: region_graph.Projection,
 ) Error!ModuleTransformReport {
-    try requireSameGraphOwner(regions, m.*);
-    const inlines = try applyModuleLegacyConstReturnInlines(alloc, m, regions);
-    const fusions = try applyModuleConstBinopFusions(alloc, m, regions);
+    try requireResidency(projection, m.*);
+    const inlines = try applyModuleLegacyConstReturnInlines(alloc, m, projection);
+    const fusions = try applyModuleConstBinopFusions(alloc, m, projection);
     const pruned = try applyModuleDeadConstPrune(alloc, m);
     return .{
         .legacy_const_inlines = inlines,
@@ -581,28 +576,22 @@ test "region_transform: legacy const-return bridge is explicit" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
     const dnir_lower = @import("dnir_lower.zig");
-    const semantic_graph = @import("semantic_graph.zig");
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\helper(): i64
+        \\helper: i64 = ()
         \\    1
-        \\end
-        \\main(): i64
+        \\main: i64 = ()
         \\    helper()
-        \\end
     ;
-    var lex = Lexer.init(src, "inline.duo");
+    var lex = Lexer.init(src, "legacy-inline.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
-    var g = semantic_graph.SemanticGraph.init(alloc);
-    defer g.deinit();
-    _ = try g.liftModuleWithCalls(&mod, "inline.duo");
-    var m = try dnir_lower.lowerModuleWithGraph(alloc, &mod, &g);
-    const regions = try region_graph.buildModuleRegions(alloc, m, &g);
+    var m = try dnir_lower.lowerModule(alloc, &mod);
+    const regions = try region_graph.buildModuleRegions(alloc, m);
     defer region_graph.freeModuleRegions(alloc, regions);
 
     const candidates = try findLegacyConstReturnInlines(alloc, regions, m);
@@ -618,8 +607,6 @@ test "region_transform: legacy const-return bridge is explicit" {
 
     const main_after = findFunctionMut(&m, "main") orelse return error.TestExpectedEqual;
     try std.testing.expect(!functionHasCallTo(main_after, "helper"));
-    const census = try region_graph.semanticNameReconstructionCensus(alloc, regions, &g);
-    try std.testing.expectEqual(@as(usize, 1), census.legacy_symbol_bridges);
 }
 
 test "region_transform: checked application is never selected by callee spelling" {
@@ -661,7 +648,7 @@ test "region_transform: checked application is never selected by callee spelling
     }
     try std.testing.expect(projected);
 
-    const regions = try region_graph.buildModuleRegions(alloc, m, &graph);
+    const regions = try region_graph.buildModuleRegions(alloc, m);
     defer region_graph.freeModuleRegions(alloc, regions);
     try region_graph.validateModuleRegions(regions, &graph, m, alloc);
 
@@ -679,7 +666,7 @@ test "region_transform: checked application is never selected by callee spelling
     try std.testing.expectEqual(@as(usize, 0), census.legacy_function_name_bridges);
 }
 
-test "region_transform: checked ordinary occurrences retain identity" {
+test "region_transform: checked ordinary occurrences retain graph facts" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
     const Sema = @import("sema.zig").Sema;
@@ -707,46 +694,38 @@ test "region_transform: checked ordinary occurrences retain identity" {
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCheckedCalls(&mod, &checked, "checked-transform-retention.duo");
+    _ = try graph.liftModuleWithCheckedCalls(&mod, &checked, "checked-transform-retention.id");
     var m = try dnir_lower.lowerModuleWithGraph(alloc, &mod, &graph);
 
-    const initial_regions = try region_graph.buildModuleRegions(alloc, m, &graph);
+    const initial_regions = try region_graph.buildModuleRegions(alloc, m);
     defer region_graph.freeModuleRegions(alloc, initial_regions);
     try region_graph.validateModuleRegions(initial_regions, &graph, m, alloc);
 
     var before: [2]region_graph.Node = undefined;
-    var before_callers: [2]semantic_graph.NodeId = undefined;
+    var before_callers: [2]semantic_graph.id = undefined;
     var before_count: usize = 0;
-    for (initial_regions) |region| {
+    for (initial_regions.regions) |region| {
         for (region.nodes) |node| {
-            if (node.kind != .call or !region_graph.hasCompleteApplicationIdentity(node)) continue;
+            if (node.kind != .call or !region_graph.applicationFactsComplete(node)) continue;
             if (before_count >= before.len) return error.TestExpectedEqual;
             before[before_count] = node;
-            before_callers[before_count] = region.func_identity orelse return error.TestExpectedEqual;
+            before_callers[before_count] = region.function orelse return error.TestExpectedEqual;
             before_count += 1;
         }
     }
     try std.testing.expectEqual(before.len, before_count);
-    try std.testing.expectEqual(@as(?semantic_graph.NodeId, null), before[0].subject_id);
-    try std.testing.expectEqual(@as(?semantic_graph.NodeId, null), before[1].subject_id);
-    try std.testing.expect(std.meta.eql(before[0].relation_id.?, before[1].relation_id.?));
-    try std.testing.expect(!std.meta.eql(before[0].application_id.?, before[1].application_id.?));
-    try std.testing.expect(!std.meta.eql(before[0].value_id.?, before[1].value_id.?));
-
-    const first_owner = initial_regions[0].identity_owner;
-    initial_regions[0].identity_owner = null;
-    try std.testing.expectError(
-        error.GraphOwnerMismatch,
-        applyModuleRegionTransforms(alloc, &m, initial_regions),
-    );
-    initial_regions[0].identity_owner = first_owner;
+    try std.testing.expectEqual(@as(?semantic_graph.id, null), before[0].subject);
+    try std.testing.expectEqual(@as(?semantic_graph.id, null), before[1].subject);
+    try std.testing.expect(std.meta.eql(before[0].relation.?, before[1].relation.?));
+    try std.testing.expect(!std.meta.eql(before[0].application.?, before[1].application.?));
+    try std.testing.expect(!std.meta.eql(before[0].value.?, before[1].value.?));
 
     const report = try applyModuleRegionTransforms(alloc, &m, initial_regions);
     try std.testing.expectEqual(@as(u32, 0), report.legacy_const_inlines);
     try std.testing.expectEqual(@as(u32, 0), report.const_binop_fusions);
     try std.testing.expectEqual(@as(u32, 0), report.dead_const_pruned);
 
-    const final_regions = try region_graph.buildModuleRegions(alloc, m, &graph);
+    const final_regions = try region_graph.buildModuleRegions(alloc, m);
     defer region_graph.freeModuleRegions(alloc, final_regions);
     try region_graph.validateModuleRegions(final_regions, &graph, m, alloc);
     const census = try region_graph.semanticNameReconstructionCensus(alloc, final_regions, &graph);
@@ -758,26 +737,79 @@ test "region_transform: checked ordinary occurrences retain identity" {
     try std.testing.expectEqual(@as(usize, 0), census.legacy_function_name_bridges);
 
     var after_count: usize = 0;
-    for (final_regions) |region| {
+    for (final_regions.regions) |region| {
         for (region.nodes) |node| {
-            if (node.kind != .call or !region_graph.hasCompleteApplicationIdentity(node)) continue;
+            if (node.kind != .call or !region_graph.applicationFactsComplete(node)) continue;
             var match: ?usize = null;
             for (before[0..before_count], 0..) |expected, i| {
-                if (std.meta.eql(expected.application_id.?, node.application_id.?)) match = i;
+                if (std.meta.eql(expected.application.?, node.application.?)) match = i;
             }
             const index = match orelse return error.TestExpectedEqual;
             const expected = before[index];
-            try std.testing.expect(std.meta.eql(expected.relation_id.?, node.relation_id.?));
-            try std.testing.expect(std.meta.eql(expected.application_id.?, node.application_id.?));
-            try std.testing.expect(std.meta.eql(expected.value_id.?, node.value_id.?));
-            try std.testing.expectEqual(expected.subject_id, node.subject_id);
+            try std.testing.expect(std.meta.eql(expected.relation.?, node.relation.?));
+            try std.testing.expect(std.meta.eql(expected.application.?, node.application.?));
+            try std.testing.expect(std.meta.eql(expected.value.?, node.value.?));
+            try std.testing.expectEqual(expected.subject, node.subject);
             try std.testing.expect(expected.descriptor.?.eql(node.descriptor.?));
-            try std.testing.expect(std.meta.eql(before_callers[index], region.func_identity orelse return error.TestExpectedEqual));
+            try std.testing.expect(std.meta.eql(before_callers[index], region.function orelse return error.TestExpectedEqual));
             try std.testing.expectEqual(expected.realization_start, node.realization_start);
             after_count += 1;
         }
     }
     try std.testing.expectEqual(before_count, after_count);
+}
+
+test "region_transform: resident graph context rejects equal coordinates from another graph" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+    const dnir_lower = @import("dnir_lower.zig");
+    const semantic_graph = @import("semantic_graph.zig");
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\observe: i64 = (value: i64)
+        \\    value
+        \\main: i64 = ()
+        \\    observe(42)
+    ;
+    var lex = Lexer.init(src, "region-residency.id");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var mod = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&mod);
+
+    var graph_a = semantic_graph.SemanticGraph.init(alloc);
+    defer graph_a.deinit();
+    _ = try graph_a.liftModuleWithCheckedCalls(&mod, &checked, "region-residency.id");
+    var graph_b = semantic_graph.SemanticGraph.init(alloc);
+    defer graph_b.deinit();
+    _ = try graph_b.liftModuleWithCheckedCalls(&mod, &checked, "region-residency.id");
+
+    const facts_a = graph_a.applications();
+    const facts_b = graph_b.applications();
+    try std.testing.expectEqual(@as(usize, 1), facts_a.len);
+    try std.testing.expectEqual(facts_a.len, facts_b.len);
+    try std.testing.expectEqual(facts_a[0].application, facts_b[0].application);
+
+    const module_a = try dnir_lower.lowerModuleWithGraph(alloc, &mod, &graph_a);
+    var module_b = try dnir_lower.lowerModuleWithGraph(alloc, &mod, &graph_b);
+    const projection_a = try region_graph.buildModuleRegions(alloc, module_a);
+    defer region_graph.freeModuleRegions(alloc, projection_a);
+
+    try std.testing.expectError(
+        error.ResidencyMismatch,
+        region_graph.validateModuleRegions(projection_a, &graph_b, module_b, alloc),
+    );
+    try std.testing.expectError(
+        error.ResidencyMismatch,
+        applyModuleRegionTransforms(alloc, &module_b, projection_a),
+    );
 }
 
 test "region_transform: fuse const binop via region schedule" {
@@ -802,7 +834,7 @@ test "region_transform: fuse const binop via region schedule" {
     defer g.deinit();
     _ = try g.liftModuleWithCalls(&mod, "fuse.duo");
     var m = try dnir_lower.lowerModuleWithGraph(alloc, &mod, &g);
-    const regions = try region_graph.buildModuleRegions(alloc, m, &g);
+    const regions = try region_graph.buildModuleRegions(alloc, m);
     defer region_graph.freeModuleRegions(alloc, regions);
 
     const main_before = findFunctionMut(&m, "main") orelse return error.TestExpectedEqual;
@@ -844,7 +876,7 @@ test "region_transform: fuse binop over const local slots" {
     defer g.deinit();
     _ = try g.liftModuleWithCalls(&mod, "local_fuse.duo");
     var m = try dnir_lower.lowerModuleWithGraph(alloc, &mod, &g);
-    const regions = try region_graph.buildModuleRegions(alloc, m, &g);
+    const regions = try region_graph.buildModuleRegions(alloc, m);
     defer region_graph.freeModuleRegions(alloc, regions);
 
     const candidates = try findConstBinopFusions(alloc, regions, m);

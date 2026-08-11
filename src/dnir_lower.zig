@@ -18,59 +18,55 @@ const RT = types.ResolvedType;
 
 pub const Error = error{
     UnsupportedConstruct,
+    GraphFactsInvalid,
     OutOfMemory,
 };
 
-/// Which of the ~60 bail sites fired, so DNB001 can name a construct.
+/// Caller-owned physical evidence for one lowering attempt.
 ///
-/// DNB001 was one undifferentiated bucket: 60 of 72 native bails across
-/// examples/ reported "outside the direct backend subset" and nothing more,
-/// which makes the worklist unorderable — you cannot tell whether supporting
-/// the next construct buys 30 programs or 1. The ambient mechanism was already
-/// wired (`DUO_DNIR_TRACE=1` dumps Zig's error return trace at
-/// src/main.zig:3186) and yields "(empty stack trace)" even in Debug, because
-/// the error is caught and re-raised before reaching the reporter.
-///
-/// So the site records itself on the way out. `@src()` makes this mechanical
-/// and unforgeable — no hand-authored tag can drift from the code it labels,
-/// and a site added later is instrumented by construction if it goes through
-/// `bail`. The pair is a plain global rather than lowering state because it is
-/// diagnostic-only and read exactly once, immediately after the failing call,
-/// on a path that is already single-threaded per compilation.
-pub var bail_site: std.builtin.SourceLocation = .{
-    .module = "",
-    .file = "",
-    .fn_name = "",
-    .line = 0,
-    .column = 0,
+/// The fixed buffer keeps refusal reporting allocation-free. A caller may run
+/// several lowerings concurrently or sequentially because no evidence lives in
+/// process-global state.
+pub const Diagnostic = struct {
+    site: ?std.builtin.SourceLocation = null,
+    note_buffer: [96]u8 = undefined,
+    note_len: u8 = 0,
+
+    pub fn reset(self: *Diagnostic) void {
+        self.site = null;
+        self.note_len = 0;
+    }
+
+    pub fn note(self: *const Diagnostic) ?[]const u8 {
+        if (self.note_len == 0) return null;
+        return self.note_buffer[0..self.note_len];
+    }
+
+    fn record(self: *Diagnostic, site: std.builtin.SourceLocation, detail: ?[]const u8) void {
+        self.site = site;
+        const text = detail orelse {
+            self.note_len = 0;
+            return;
+        };
+        const len = @min(text.len, self.note_buffer.len);
+        @memcpy(self.note_buffer[0..len], text[0..len]);
+        self.note_len = @intCast(len);
+    }
 };
 
-fn bail(src: std.builtin.SourceLocation) Error {
-    bail_site = src;
-    bail_note_len = 0;
+fn bail(diagnostic: *Diagnostic, site: std.builtin.SourceLocation) Error {
+    diagnostic.record(site, null);
     return error.UnsupportedConstruct;
 }
 
-/// What the site was looking at, when the site alone is not enough.
-///
-/// A source location says WHERE lowering stopped, never WHAT is missing — the
-/// `lowerBinop` site read as "no bitwise ops" when both blocked programs
-/// actually used `..`. For a site whose whole content is "this name did not
-/// resolve", the name IS the finding.
-var bail_note_buf: [96]u8 = undefined;
-var bail_note_len: usize = 0;
-
-pub fn bailNote() ?[]const u8 {
-    if (bail_note_len == 0) return null;
-    return bail_note_buf[0..bail_note_len];
+fn bailWith(diagnostic: *Diagnostic, site: std.builtin.SourceLocation, note: []const u8) Error {
+    diagnostic.record(site, note);
+    return error.UnsupportedConstruct;
 }
 
-fn bailWith(src: std.builtin.SourceLocation, note: []const u8) Error {
-    bail_site = src;
-    const n = @min(note.len, bail_note_buf.len);
-    @memcpy(bail_note_buf[0..n], note[0..n]);
-    bail_note_len = n;
-    return error.UnsupportedConstruct;
+fn invalidGraphFacts(diagnostic: *Diagnostic, site: std.builtin.SourceLocation, note: []const u8) Error {
+    diagnostic.record(site, note);
+    return error.GraphFactsInvalid;
 }
 
 /// Module-level compile-time bindings, split by the DNIR value they fold to.
@@ -105,152 +101,88 @@ const ModuleConsts = struct {
 const empty_module_consts: ModuleConsts = .{};
 const empty_fp_params: std.StringHashMapUnmanaged([]bool) = .empty;
 
-const CheckedApplication = struct {
-    relation: semantic_graph.NodeId,
-    application: semantic_graph.NodeId,
-    result: semantic_graph.NodeId,
-    subject: ?semantic_graph.NodeId,
-    arguments: []semantic_graph.NodeId,
-    descriptor: types.ResolvedType,
-    caller: semantic_graph.NodeId,
-};
-
-const ApplicationEdges = struct {
-    relation: ?semantic_graph.NodeId = null,
-    result: ?semantic_graph.NodeId = null,
-    subject: ?semantic_graph.NodeId = null,
-    argument_count: usize = 0,
-};
-
-fn containingFunctionFromScope(
-    graph: *const semantic_graph.SemanticGraph,
-    start: semantic_graph.NodeId,
-) ?semantic_graph.NodeId {
-    var current = start;
-    var depth: u32 = 0;
-    while (depth < 64) : (depth += 1) {
-        const node = graph.get(current) orelse return null;
-        if (node.kind == .func) return current;
-        if (!node.scope.isValid()) return null;
-        current = node.scope;
-    }
-    return null;
+fn deinitRecord(alloc: std.mem.Allocator, record: dnir.RecordDesc) void {
+    alloc.free(record.name);
+    for (record.fields) |field| alloc.free(field);
+    alloc.free(record.fields);
+    alloc.free(record.kinds);
 }
 
-/// One module-local query index for checked application facts. This is a
-/// bootstrap projection of graph identities, not a replacement application
-/// schema; missing owner facts remain missing and are never synthesized.
-const CheckedApplicationIndex = struct {
+fn deinitFunction(alloc: std.mem.Allocator, function: dnir.Function) void {
+    alloc.free(function.name);
+    for (function.params) |param| {
+        alloc.free(param.name);
+        if (param.record) |record| alloc.free(record);
+    }
+    alloc.free(function.params);
+    if (function.ret_record) |record| alloc.free(record);
+    for (function.blocks) |block| {
+        for (block.instrs) |instruction| dnir.deinitInstr(alloc, instruction);
+        alloc.free(block.instrs);
+    }
+    alloc.free(function.blocks);
+}
+
+fn deinitExtern(alloc: std.mem.Allocator, external: dnir.Extern) void {
+    alloc.free(external.duo_name);
+    alloc.free(external.symbol);
+}
+
+fn deinitParam(alloc: std.mem.Allocator, param: dnir.Param) void {
+    alloc.free(param.name);
+    if (param.record) |record| alloc.free(record);
+}
+
+/// Temporary occurrence bridge for the AST-driven realization walker. It
+/// carries only the exact graph id already published by semantic resolution;
+/// all application facts and packed values remain graph-owned. Delete this
+/// bridge when resolver/lowering work items carry the application id directly.
+const OccurrenceBridge = struct {
     alloc: std.mem.Allocator,
-    applications: std.ArrayListUnmanaged(CheckedApplication) = .empty,
-    by_expression: std.AutoHashMapUnmanaged(*const Expr, usize) = .empty,
-    by_node: []?usize = &.{},
-    has_unresolved_calls: bool = false,
+    graph: *const semantic_graph.SemanticGraph,
+    diagnostic: *Diagnostic,
+    by_expression: std.AutoHashMapUnmanaged(*const Expr, semantic_graph.id) = .empty,
+    unresolved: usize = 0,
 
     fn init(
         alloc: std.mem.Allocator,
         graph: *const semantic_graph.SemanticGraph,
-    ) Error!CheckedApplicationIndex {
-        var index: CheckedApplicationIndex = .{ .alloc = alloc };
+        diagnostic: *Diagnostic,
+    ) Error!OccurrenceBridge {
+        var index: OccurrenceBridge = .{
+            .alloc = alloc,
+            .graph = graph,
+            .diagnostic = diagnostic,
+        };
         errdefer index.deinit();
 
-        const edges = try alloc.alloc(ApplicationEdges, graph.nodes.items.len);
-        defer alloc.free(edges);
-        for (edges) |*entry| entry.* = .{};
-        for (graph.edges.items) |edge| {
-            if (edge.from.index >= edges.len) return bailWith(@src(), "application-edge");
-            if (graph.nodes.items[edge.from.index].kind != .call) continue;
-            switch (edge.kind) {
-                .relation => {
-                    if (edges[edge.from.index].relation != null) return bailWith(@src(), "application-relation-count");
-                    edges[edge.from.index].relation = edge.to;
-                },
-                .result => {
-                    if (edges[edge.from.index].result != null) return bailWith(@src(), "application-result-count");
-                    edges[edge.from.index].result = edge.to;
-                },
-                .subject => {
-                    if (edges[edge.from.index].subject != null) return bailWith(@src(), "application-subject-count");
-                    edges[edge.from.index].subject = edge.to;
-                },
-                .argument => edges[edge.from.index].argument_count += 1,
-                else => {},
-            }
-        }
-
-        index.by_node = try alloc.alloc(?usize, graph.nodes.items.len);
-        @memset(index.by_node, null);
-        for (graph.nodes.items, 0..) |node, i| {
+        for (graph.nodes.items, 0..) |node, coordinate| {
             if (node.kind != .call) continue;
-            const relation = edges[i].relation orelse {
-                index.has_unresolved_calls = true;
+            const application: semantic_graph.id = @intCast(coordinate);
+            if (graph.application(application) == null) {
+                index.unresolved += 1;
                 continue;
-            };
-            const result = edges[i].result orelse return bailWith(@src(), "application-result");
-            const caller = containingFunctionFromScope(graph, .{ .index = @intCast(i) }) orelse
-                return bailWith(@src(), "application-caller");
-            const result_node = graph.get(result) orelse return bail(@src());
-            const expression_raw = node.ast_ref orelse return bailWith(@src(), "application-provenance");
+            }
+            const results = graph.applicationResults(application) orelse
+                return invalidGraphFacts(diagnostic, @src(), "application-result-pack");
+            if (results.len != 1) return invalidGraphFacts(diagnostic, @src(), "application-result-pack");
+            const expression_raw = node.ast_ref orelse
+                return invalidGraphFacts(diagnostic, @src(), "application-provenance");
             const expression: *const Expr = @ptrCast(@alignCast(expression_raw));
-            const descriptor = result_node.descriptor orelse
-                return bailWith(@src(), "application-result-descriptor");
-            _ = graph.get(relation) orelse return bail(@src());
-            _ = graph.get(result) orelse return bail(@src());
-            _ = graph.get(caller) orelse return bail(@src());
-            if (edges[i].subject) |subject| _ = graph.get(subject) orelse return bail(@src());
-            const application: semantic_graph.NodeId = .{ .index = @intCast(i) };
-            const arguments = try alloc.alloc(semantic_graph.NodeId, edges[i].argument_count);
-            for (arguments) |*argument| argument.* = semantic_graph.NodeId.invalid;
-
-            const application_index = index.applications.items.len;
-            index.applications.append(alloc, .{
-                .relation = relation,
-                .application = application,
-                .result = result,
-                .subject = edges[i].subject,
-                .arguments = arguments,
-                .descriptor = descriptor,
-                .caller = caller,
-            }) catch |err| {
-                alloc.free(arguments);
-                return err;
-            };
-            index.by_node[i] = application_index;
             const slot = try index.by_expression.getOrPut(alloc, expression);
-            if (slot.found_existing) return bailWith(@src(), "application-provenance-collision");
-            slot.value_ptr.* = application_index;
-        }
-
-        for (graph.edges.items) |edge| {
-            if (edge.kind != .argument or edge.from.index >= index.by_node.len) continue;
-            const application_index = index.by_node[edge.from.index] orelse continue;
-            const application = &index.applications.items[application_index];
-            const position: usize = edge.position;
-            if (position >= application.arguments.len or application.arguments[position].isValid()) {
-                return bailWith(@src(), "application-argument-position");
-            }
-            application.arguments[position] = edge.to;
-        }
-        for (index.applications.items) |application| {
-            for (application.arguments) |argument| {
-                if (!argument.isValid() or graph.get(argument) == null) {
-                    return bailWith(@src(), "application-argument-position");
-                }
-            }
+            if (slot.found_existing) return invalidGraphFacts(diagnostic, @src(), "application-provenance-collision");
+            slot.value_ptr.* = application;
         }
         return index;
     }
 
-    fn deinit(self: *CheckedApplicationIndex) void {
-        for (self.applications.items) |application| self.alloc.free(application.arguments);
-        self.applications.deinit(self.alloc);
+    fn deinit(self: *OccurrenceBridge) void {
         self.by_expression.deinit(self.alloc);
-        if (self.by_node.len > 0) self.alloc.free(self.by_node);
     }
 
-    fn get(self: *const CheckedApplicationIndex, expression: *const Expr) ?*const CheckedApplication {
-        const application_index = self.by_expression.get(expression) orelse return null;
-        return &self.applications.items[application_index];
+    fn get(self: *const OccurrenceBridge, expression: *const Expr) ?*const semantic_graph.ApplicationFact {
+        const application = self.by_expression.get(expression) orelse return null;
+        return self.graph.application(application);
     }
 };
 
@@ -331,19 +263,34 @@ fn collectModuleConsts(
 }
 
 pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.Module {
+    var diagnostic: Diagnostic = .{};
+    return lowerModuleObserved(alloc, mod, &diagnostic);
+}
+
+pub fn lowerModuleObserved(
+    alloc: std.mem.Allocator,
+    mod: *const ast.Module,
+    diagnostic: *Diagnostic,
+) Error!dnir.Module {
+    diagnostic.reset();
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
     _ = graph.liftModuleWithCalls(mod, "<dnir>") catch return error.OutOfMemory;
-    var module = try lowerModuleWithGraph(alloc, mod, &graph);
+    var occurrences = try OccurrenceBridge.init(alloc, &graph, diagnostic);
+    defer occurrences.deinit();
+    var module = try lowerModuleFromGraph(alloc, mod, &graph, &occurrences, diagnostic, false);
+    errdefer dnir.deinitModule(alloc, module);
+    if (occurrences.unresolved == 0) try applyGraphToModule(alloc, &graph, &module, diagnostic);
+    var detached = module;
+    detached.graph = null;
 
     // This convenience path does not return the graph owner. Any handles it
     // used while ordering realization are therefore intentionally erased
     // before that owner is destroyed. Checked consumers must use
     // `lowerModuleWithGraph` and retain the graph for the module's lifetime.
-    module.identity_owner = null;
-    const functions: []dnir.Function = @constCast(module.functions);
+    const functions: []dnir.Function = @constCast(detached.functions);
     for (functions) |*function| {
-        function.semantic_identity = null;
+        function.id = null;
         for (function.blocks) |block| {
             const instructions: []dnir.Instr = @constCast(block.instrs);
             for (instructions) |*instruction| {
@@ -355,16 +302,17 @@ pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.
             }
         }
     }
-    return module;
+    return detached;
 }
 
 fn lowerModuleFromGraph(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
     graph: *const semantic_graph.SemanticGraph,
-    applications: *const CheckedApplicationIndex,
+    occurrences: *const OccurrenceBridge,
+    diagnostic: *Diagnostic,
+    require_graph_facts: bool,
 ) Error!dnir.Module {
-    bail_site.line = 0;
     var req = try native_req_support.collectFromModule(alloc, mod);
     defer req.deinit(alloc);
 
@@ -373,27 +321,22 @@ fn lowerModuleFromGraph(
 
     var records: std.ArrayList(dnir.RecordDesc) = .empty;
     errdefer {
-        for (records.items) |r| {
-            alloc.free(r.name);
-            for (r.fields) |f| alloc.free(f);
-            alloc.free(r.fields);
-            alloc.free(r.kinds);
-        }
+        for (records.items) |record| deinitRecord(alloc, record);
         records.deinit(alloc);
     }
     try collectRecords(alloc, &records, mod);
 
-    // Join declarations to graph identities by exact provenance. The exported
-    // function name remains a linker/debug symbol; it is not an identity key.
-    var function_identities: std.AutoHashMapUnmanaged(*const ast.FuncDecl, semantic_graph.NodeId) = .empty;
-    defer function_identities.deinit(alloc);
+    // Join declarations to graph ids by exact provenance. The exported
+    // function name remains a linker/debug symbol; it is not an id key.
+    var declarations: std.AutoHashMapUnmanaged(*const ast.FuncDecl, semantic_graph.id) = .empty;
+    defer declarations.deinit(alloc);
     for (graph.nodes.items, 0..) |node, i| {
         if (node.kind != .func) continue;
         const raw = node.ast_ref orelse continue;
         const declaration: *const ast.FuncDecl = @ptrCast(@alignCast(raw));
-        const slot = try function_identities.getOrPut(alloc, declaration);
-        if (slot.found_existing) return bailWith(@src(), "function-provenance-collision");
-        slot.value_ptr.* = .{ .index = @intCast(i) };
+        const slot = try declarations.getOrPut(alloc, declaration);
+        if (slot.found_existing) return invalidGraphFacts(diagnostic, @src(), "function-provenance-collision");
+        slot.value_ptr.* = @intCast(i);
     }
 
     // GAP-056: which ABI slots each callee expects in v0..v7, so the CALLER
@@ -421,15 +364,36 @@ fn lowerModuleFromGraph(
             alloc.free(key);
             continue;
         }
-        try fp_params.put(alloc, key, try paramSlotIsFp(alloc, fd, records.items));
+        const slots_are_fp = paramSlotIsFp(alloc, fd, records.items) catch |err| {
+            alloc.free(key);
+            return err;
+        };
+        fp_params.put(alloc, key, slots_are_fp) catch |err| {
+            alloc.free(key);
+            alloc.free(slots_are_fp);
+            return err;
+        };
     }
 
     var functions: std.ArrayList(dnir.Function) = .empty;
-    errdefer functions.deinit(alloc);
+    errdefer {
+        for (functions.items) |function| deinitFunction(alloc, function);
+        functions.deinit(alloc);
+    }
     var externs: std.ArrayList(dnir.Extern) = .empty;
-    errdefer externs.deinit(alloc);
+    errdefer {
+        for (externs.items) |external| deinitExtern(alloc, external);
+        externs.deinit(alloc);
+    }
     var func_record_returns: std.StringHashMapUnmanaged([]const u8) = .empty;
-    defer func_record_returns.deinit(alloc);
+    defer {
+        var returns = func_record_returns.iterator();
+        while (returns.next()) |entry| {
+            alloc.free(entry.key_ptr.*);
+            alloc.free(entry.value_ptr.*);
+        }
+        func_record_returns.deinit(alloc);
+    }
 
     // Register every record-returning function BEFORE lowering any body.
     //
@@ -446,11 +410,22 @@ fn lowerModuleFromGraph(
         if (!functionEligible(fd, records.items)) continue;
         const rec = findRecordName(records.items, fd.func.ret_type) orelse continue;
         const export_name = try funcExportName(alloc, fd);
+        defer alloc.free(export_name);
         if (func_record_returns.contains(export_name)) continue;
-        try func_record_returns.put(alloc, try alloc.dupe(u8, export_name), try alloc.dupe(u8, rec.name));
+        const key = try alloc.dupe(u8, export_name);
+        const value = alloc.dupe(u8, rec.name) catch |err| {
+            alloc.free(key);
+            return err;
+        };
+        func_record_returns.put(alloc, key, value) catch |err| {
+            alloc.free(key);
+            alloc.free(value);
+            return err;
+        };
     }
 
     var skipped: ?[]const u8 = null;
+    defer if (skipped) |name| alloc.free(name);
     for (mod.body.stmts) |*stmt| {
         if (stmt.* != .func_decl) continue;
         const fd = &stmt.func_decl;
@@ -470,79 +445,114 @@ fn lowerModuleFromGraph(
                 "?";
             continue;
         }
+        const function = declarations.get(fd) orelse if (require_graph_facts)
+            return invalidGraphFacts(diagnostic, @src(), "missing-function-id")
+        else
+            null;
         const f = try lowerFunction(
             alloc,
             fd,
-            function_identities.get(fd),
+            function,
             records.items,
             graph,
-            applications,
+            occurrences,
+            diagnostic,
+            require_graph_facts,
             &req,
             &externs,
             &func_record_returns,
             &fp_params,
             &module_consts,
         );
-        try functions.append(alloc, f);
+        functions.append(alloc, f) catch |err| {
+            deinitFunction(alloc, f);
+            return err;
+        };
     }
-    if (functions.items.len == 0) return bail(@src());
+    if (functions.items.len == 0) return bail(diagnostic, @src());
     if (functions.items.len != countModuleFunctions(mod))
-        return bailWith(@src(), skipped orelse "?");
+        return bailWith(diagnostic, @src(), skipped orelse "?");
 
+    const owned_functions = try functions.toOwnedSlice(alloc);
+    errdefer {
+        for (owned_functions) |function| deinitFunction(alloc, function);
+        alloc.free(owned_functions);
+    }
+    const owned_records = try records.toOwnedSlice(alloc);
+    errdefer {
+        for (owned_records) |record| deinitRecord(alloc, record);
+        alloc.free(owned_records);
+    }
+    const owned_externs = try externs.toOwnedSlice(alloc);
+    errdefer {
+        for (owned_externs) |external| deinitExtern(alloc, external);
+        alloc.free(owned_externs);
+    }
     const result = dnir.Module{
-        .functions = try functions.toOwnedSlice(alloc),
-        .records = try records.toOwnedSlice(alloc),
-        .externs = try externs.toOwnedSlice(alloc),
-        .identity_owner = graph,
+        .graph = graph,
+        .functions = owned_functions,
+        .records = owned_records,
+        .externs = owned_externs,
     };
     return .{
+        .graph = graph,
         .functions = result.functions,
         .records = result.records,
         .externs = result.externs,
-        .identity_owner = graph,
         .hardware_tier = dnir.moduleHardwareTier(result),
     };
 }
 
-/// Pass 16 hook: graph identity controls checked call ordering and provenance.
+/// Graph facts control checked call ordering and provenance.
 pub fn lowerModuleWithGraph(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
     graph: *const semantic_graph.SemanticGraph,
 ) Error!dnir.Module {
-    var applications = try CheckedApplicationIndex.init(alloc, graph);
-    defer applications.deinit();
-    var m = try lowerModuleFromGraph(alloc, mod, graph, &applications);
+    var diagnostic: Diagnostic = .{};
+    return lowerModuleWithGraphObserved(alloc, mod, graph, &diagnostic);
+}
+
+pub fn lowerModuleWithGraphObserved(
+    alloc: std.mem.Allocator,
+    mod: *const ast.Module,
+    graph: *const semantic_graph.SemanticGraph,
+    diagnostic: *Diagnostic,
+) Error!dnir.Module {
+    diagnostic.reset();
+    var occurrences = try OccurrenceBridge.init(alloc, graph, diagnostic);
+    defer occurrences.deinit();
+    if (occurrences.unresolved != 0) return invalidGraphFacts(diagnostic, @src(), "missing-application-id");
+    var m = try lowerModuleFromGraph(alloc, mod, graph, &occurrences, diagnostic, true);
     errdefer dnir.deinitModule(alloc, m);
-    try applyGraphToModule(alloc, &applications, &m);
+    try applyGraphToModule(alloc, graph, &m, diagnostic);
     return m;
 }
 
 fn applyGraphToModule(
     alloc: std.mem.Allocator,
-    applications: *const CheckedApplicationIndex,
+    graph: *const semantic_graph.SemanticGraph,
     m: *dnir.Module,
+    diagnostic: *Diagnostic,
 ) Error!void {
-    try reorderFunctionsByGraphIdentity(alloc, applications, m);
+    try reorderFunctionsByGraphFacts(alloc, graph, m, diagnostic);
 }
 
-/// Place checked callees before callers using graph identities only. If any
-/// in-module application is unresolved, retaining source order is safer than
-/// completing the dependency graph from its spelling.
-fn reorderFunctionsByGraphIdentity(
+/// Place checked callees before callers using graph facts only.
+fn reorderFunctionsByGraphFacts(
     alloc: std.mem.Allocator,
-    applications: *const CheckedApplicationIndex,
+    graph: *const semantic_graph.SemanticGraph,
     m: *dnir.Module,
+    diagnostic: *Diagnostic,
 ) Error!void {
     if (m.functions.len <= 1) return;
-    if (applications.has_unresolved_calls) return;
 
-    var functions_by_identity: std.AutoHashMapUnmanaged(semantic_graph.NodeId, usize) = .empty;
-    defer functions_by_identity.deinit(alloc);
-    for (m.functions, 0..) |function, i| {
-        const identity = function.semantic_identity orelse return;
-        const slot = try functions_by_identity.getOrPut(alloc, identity);
-        if (slot.found_existing) return bailWith(@src(), "function-identity-collision");
+    var functions: std.AutoHashMapUnmanaged(semantic_graph.id, usize) = .empty;
+    defer functions.deinit(alloc);
+    for (m.functions, 0..) |entry, i| {
+        const function = entry.id orelse return;
+        const slot = try functions.getOrPut(alloc, function);
+        if (slot.found_existing) return invalidGraphFacts(diagnostic, @src(), "duplicate-function-id");
         slot.value_ptr.* = i;
     }
 
@@ -559,9 +569,9 @@ fn reorderFunctionsByGraphIdentity(
     defer dependency_edges.deinit(alloc);
 
     var checked_edges: usize = 0;
-    for (applications.applications.items) |application| {
-        const caller_index = functions_by_identity.get(application.caller) orelse continue;
-        const relation_index = functions_by_identity.get(application.relation) orelse continue;
+    for (graph.applications()) |application| {
+        const caller_index = functions.get(application.caller) orelse continue;
+        const relation_index = functions.get(application.relation) orelse continue;
         const dependency = (@as(u128, relation_index) << 64) | @as(u128, caller_index);
         const slot = try dependency_edges.getOrPut(alloc, dependency);
         if (slot.found_existing) continue;
@@ -779,9 +789,12 @@ fn collectRecords(alloc: std.mem.Allocator, out: *std.ArrayList(dnir.RecordDesc)
         };
         if (rec.fields.len == 0 or rec.fields.len > max_record_fields) continue;
         var names: std.ArrayListUnmanaged([]const u8) = .empty;
-        errdefer names.deinit(alloc);
+        defer {
+            for (names.items) |name| alloc.free(name);
+            names.deinit(alloc);
+        }
         var kinds: std.ArrayListUnmanaged(dnir.FieldKind) = .empty;
-        errdefer kinds.deinit(alloc);
+        defer kinds.deinit(alloc);
         var ok = true;
         for (rec.fields) |field| {
             const kind: dnir.FieldKind = if (isStrType(field.typ))
@@ -794,15 +807,31 @@ fn collectRecords(alloc: std.mem.Allocator, out: *std.ArrayList(dnir.RecordDesc)
                 ok = false;
                 break;
             };
-            try names.append(alloc, try alloc.dupe(u8, field.name));
+            const name = try alloc.dupe(u8, field.name);
+            names.append(alloc, name) catch |err| {
+                alloc.free(name);
+                return err;
+            };
             try kinds.append(alloc, kind);
         }
         if (!ok) continue;
-        try out.append(alloc, .{
-            .name = try alloc.dupe(u8, ad.name),
-            .fields = try names.toOwnedSlice(alloc),
-            .kinds = try kinds.toOwnedSlice(alloc),
-        });
+        const owned_fields = try names.toOwnedSlice(alloc);
+        errdefer {
+            for (owned_fields) |name| alloc.free(name);
+            alloc.free(owned_fields);
+        }
+        const owned_kinds = try kinds.toOwnedSlice(alloc);
+        errdefer alloc.free(owned_kinds);
+        const name = try alloc.dupe(u8, ad.name);
+        const descriptor: dnir.RecordDesc = .{
+            .name = name,
+            .fields = owned_fields,
+            .kinds = owned_kinds,
+        };
+        out.append(alloc, descriptor) catch |err| {
+            deinitRecord(alloc, descriptor);
+            return err;
+        };
     }
 }
 
@@ -816,9 +845,11 @@ fn findRecordName(recs: []const dnir.RecordDesc, t: ast.TypeExpr) ?dnir.RecordDe
 
 pub const LowerCtx = struct {
     alloc: std.mem.Allocator,
+    diagnostic: *Diagnostic,
     records: []const dnir.RecordDesc,
     graph: *const semantic_graph.SemanticGraph,
-    applications: *const CheckedApplicationIndex,
+    occurrences: *const OccurrenceBridge,
+    require_graph_facts: bool,
     req: *const native_req_support.Context,
     externs: *std.ArrayList(dnir.Extern),
     func_record_returns: *std.StringHashMapUnmanaged([]const u8),
@@ -874,6 +905,7 @@ pub const LowerCtx = struct {
         var ci = self.const_ints.iterator();
         while (ci.next()) |e| self.alloc.free(e.key_ptr.*);
         self.const_ints.deinit(self.alloc);
+        if (self.self_param_slots.len > 0) self.alloc.free(self.self_param_slots);
         self.instrs.deinit(self.alloc);
     }
 
@@ -889,21 +921,48 @@ pub const LowerCtx = struct {
 };
 
 fn internInstrStrings(alloc: std.mem.Allocator, instrs: []dnir.Instr) Error!void {
-    for (instrs) |*ins| {
-        if (ins.callee.len > 0) ins.callee = try alloc.dupe(u8, ins.callee);
-        if (ins.req_alias.len > 0) ins.req_alias = try alloc.dupe(u8, ins.req_alias);
-        if (ins.field.len > 0) ins.field = try alloc.dupe(u8, ins.field);
-        if (ins.record.len > 0) ins.record = try alloc.dupe(u8, ins.record);
+    const Strings = struct {
+        callee: []const u8 = "",
+        req_alias: []const u8 = "",
+        field: []const u8 = "",
+        record: []const u8 = "",
+
+        fn deinit(self: @This(), allocator: std.mem.Allocator) void {
+            if (self.callee.len > 0) allocator.free(self.callee);
+            if (self.req_alias.len > 0) allocator.free(self.req_alias);
+            if (self.field.len > 0) allocator.free(self.field);
+            if (self.record.len > 0) allocator.free(self.record);
+        }
+    };
+
+    const strings = try alloc.alloc(Strings, instrs.len);
+    defer alloc.free(strings);
+    for (strings) |*entry| entry.* = .{};
+    errdefer for (strings) |entry| entry.deinit(alloc);
+
+    for (instrs, strings) |instruction, *entry| {
+        if (instruction.callee.len > 0) entry.callee = try alloc.dupe(u8, instruction.callee);
+        if (instruction.req_alias.len > 0) entry.req_alias = try alloc.dupe(u8, instruction.req_alias);
+        if (instruction.field.len > 0) entry.field = try alloc.dupe(u8, instruction.field);
+        if (instruction.record.len > 0) entry.record = try alloc.dupe(u8, instruction.record);
+    }
+    for (instrs, strings) |*instruction, entry| {
+        instruction.callee = entry.callee;
+        instruction.req_alias = entry.req_alias;
+        instruction.field = entry.field;
+        instruction.record = entry.record;
     }
 }
 
 fn lowerFunction(
     alloc: std.mem.Allocator,
     fd: *const ast.FuncDecl,
-    semantic_identity: ?semantic_graph.NodeId,
+    id: ?semantic_graph.id,
     records: []const dnir.RecordDesc,
     graph: *const semantic_graph.SemanticGraph,
-    applications: *const CheckedApplicationIndex,
+    occurrences: *const OccurrenceBridge,
+    diagnostic: *Diagnostic,
+    require_graph_facts: bool,
     req: *const native_req_support.Context,
     externs: *std.ArrayList(dnir.Extern),
     func_record_returns: *std.StringHashMapUnmanaged([]const u8),
@@ -912,9 +971,11 @@ fn lowerFunction(
 ) Error!dnir.Function {
     var ctx: LowerCtx = .{
         .alloc = alloc,
+        .diagnostic = diagnostic,
         .records = records,
         .graph = graph,
-        .applications = applications,
+        .occurrences = occurrences,
+        .require_graph_facts = require_graph_facts,
         .req = req,
         .externs = externs,
         .func_record_returns = func_record_returns,
@@ -941,14 +1002,20 @@ fn lowerFunction(
             if (all_scalar) {
                 for (rec.fields) |fname| {
                     const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ par.name, fname });
-                    try ctx.locals.put(alloc, key, param_slot_cursor);
+                    ctx.locals.put(alloc, key, param_slot_cursor) catch |err| {
+                        alloc.free(key);
+                        return err;
+                    };
                     param_slot_cursor += 1;
                 }
                 continue;
             }
         }
         const owned = try alloc.dupe(u8, par.name);
-        try ctx.locals.put(alloc, owned, param_slot_cursor);
+        ctx.locals.put(alloc, owned, param_slot_cursor) catch |err| {
+            alloc.free(owned);
+            return err;
+        };
         // A `str` parameter is a `const char*`, so `#p` inside the body can use
         // strlen just like a str local.
         if (resolveType(par.typ) == .str) try ctx.str_slots.put(alloc, param_slot_cursor, {});
@@ -990,37 +1057,64 @@ fn lowerFunction(
 
     var params: std.ArrayList(dnir.Param) = .empty;
     defer params.deinit(alloc);
+    errdefer for (params.items) |param| deinitParam(alloc, param);
     for (fd.func.params) |par| {
         const rec_name = if (findRecordName(records, par.typ)) |r| try alloc.dupe(u8, r.name) else null;
-        try params.append(alloc, .{
-            .name = try alloc.dupe(u8, par.name),
+        const param_name = alloc.dupe(u8, par.name) catch |err| {
+            if (rec_name) |record| alloc.free(record);
+            return err;
+        };
+        params.append(alloc, .{
+            .name = param_name,
             .ty = resolveType(par.typ),
             .record = rec_name,
-        });
+        }) catch |err| {
+            alloc.free(param_name);
+            if (rec_name) |record| alloc.free(record);
+            return err;
+        };
     }
 
-    const blocks = try alloc.alloc(dnir.Block, 1);
+    const owned_params = try params.toOwnedSlice(alloc);
+    errdefer {
+        for (owned_params) |param| deinitParam(alloc, param);
+        alloc.free(owned_params);
+    }
     const owned_instrs = try ctx.instrs.toOwnedSlice(alloc);
+    var strings_interned = false;
+    errdefer {
+        if (strings_interned) {
+            for (owned_instrs) |instruction| dnir.deinitInstr(alloc, instruction);
+        } else {
+            for (owned_instrs) |instruction| {
+                if (instruction.vals.len > 0) alloc.free(instruction.vals);
+            }
+        }
+        alloc.free(owned_instrs);
+    }
     try internInstrStrings(alloc, owned_instrs);
+    strings_interned = true;
+
+    const blocks = try alloc.alloc(dnir.Block, 1);
+    errdefer alloc.free(blocks);
     blocks[0] = .{ .instrs = owned_instrs };
 
     const ret_rec = findRecordName(records, fd.func.ret_type);
     const ret_record_name = if (ret_rec) |r| try alloc.dupe(u8, r.name) else null;
+    errdefer if (ret_record_name) |record| alloc.free(record);
     const export_name = try funcExportName(alloc, fd);
-    if (ret_record_name) |rn| {
-        try func_record_returns.put(alloc, try alloc.dupe(u8, export_name), rn);
-    }
+    errdefer alloc.free(export_name);
 
     return .{
         .name = export_name,
         .ret = resolveType(fd.func.ret_type),
-        .params = try params.toOwnedSlice(alloc),
+        .params = owned_params,
         .ret_record = ret_record_name,
         .is_float_kernel = blk: {
             const slots = f64AbiParamSlots(fd, records) orelse break :blk false;
             break :blk slots > 0 and slots <= 8;
         },
-        .semantic_identity = semantic_identity,
+        .id = id,
         .blocks = blocks,
     };
 }
@@ -1129,10 +1223,11 @@ fn tryEmitSelfTail(ctx: *LowerCtx, expr: *const ast.Expr) Error!bool {
     if (ctx.self_name.len == 0) return false;
     if (expr.* != .call) return false;
     // A checked application cannot become a branch until the semantic graph
-    // supplies a transform identity and witness. Let ordinary checked-call
+    // supplies a transform id and witness. Let ordinary checked-call
     // lowering retain the application instead of authorizing a rewrite from
     // the callee spelling.
-    if (ctx.applications.get(expr) != null) return false;
+    if (ctx.occurrences.get(expr) != null) return false;
+    if (ctx.require_graph_facts) return invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-id");
     const c = expr.call;
     if (c.func.* != .name) return false;
     if (!std.mem.eql(u8, c.func.name.ident, ctx.self_name)) return false;
@@ -1187,7 +1282,7 @@ fn tryEmitTailDemandReturn(ctx: *LowerCtx, block: *const ast.Block) Error!bool {
         // No slot means the statement did not lower to storage this pass can
         // name. Re-evaluating would be a miscompile, so decline the function
         // instead and let the C backend take it.
-        return bail(@src());
+        return bail(ctx.diagnostic, @src());
     }
     if (try tryEmitSelfTail(ctx, r.expr)) return true;
     try ctx.emit(.{ .op = .ret, .lhs = try lowerExpr(ctx, r.expr), .ty = ret_ty });
@@ -1231,7 +1326,7 @@ fn isReqCall(expr: *const ast.Expr) bool {
 }
 
 fn lowerFieldAssignTarget(ctx: *LowerCtx, obj: *const ast.Expr, field_name: []const u8, value: *const ast.Expr) Error!void {
-    if (obj.* != .name) return bail(@src());
+    if (obj.* != .name) return bail(ctx.diagnostic, @src());
     const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ obj.name.ident, field_name });
     defer ctx.alloc.free(fk);
     const v = try lowerExprCons(ctx, value, .single);
@@ -1294,7 +1389,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             // with more names than inits. The `i < ld.inits.len` guard kept it from
             // crashing, but silently left every name past the first unassigned —
             // a miscompile, which is worse than a refusal. Decline instead.
-            if (ld.names.len != ld.inits.len and ld.inits.len == 1) return bail(@src());
+            if (ld.names.len != ld.inits.len and ld.inits.len == 1) return bail(ctx.diagnostic, @src());
             for (ld.names, 0..) |*ln, i| {
                 if (i < ld.inits.len) {
                     try lowerAssignTarget(ctx, ln.ident, ld.inits[i]);
@@ -1318,13 +1413,13 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             // construct instead: DNIR lowering fails, the module falls back to the
             // C backend, and the program still compiles. Pass 42 §3.1 (correlated
             // packs with a native ABI) is what will let this lower here.
-            if (as.targets.len != as.values.len) return bail(@src());
+            if (as.targets.len != as.values.len) return bail(ctx.diagnostic, @src());
             for (as.targets, as.values) |target, value| {
                 switch (target.*) {
                     .name => |n| try lowerAssignTarget(ctx, n.ident, value),
                     .field => |f| try lowerFieldAssignTarget(ctx, f.obj, f.field, value),
                     .index => |ix| try lowerIndexAssignTarget(ctx, ix.obj, ix.key, value),
-                    else => return bail(@src()),
+                    else => return bail(ctx.diagnostic, @src()),
                 }
             }
         },
@@ -1408,7 +1503,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
         .call_stmt => |cs| {
             _ = try lowerExprCons(ctx, cs.expr, .discard);
         },
-        else => return bail(@src()),
+        else => return bail(ctx.diagnostic, @src()),
     }
 }
 
@@ -1515,24 +1610,24 @@ fn resolveIntStep(ctx: *LowerCtx, step: *const ast.Expr) Error!i64 {
     if (step.* == .name) {
         if (ctx.const_ints.get(step.name.ident)) |v| return v;
     }
-    return bail(@src());
+    return bail(ctx.diagnostic, @src());
 }
 
 fn lowerNumFor(ctx: *LowerCtx, loop: anytype) Error!void {
-    if (loop.var_typ != .inferred and !isIntType(loop.var_typ)) return bail(@src());
+    if (loop.var_typ != .inferred and !isIntType(loop.var_typ)) return bail(ctx.diagnostic, @src());
     const step_lit: ?i64 = if (loop.step) |step| resolveIntStep(ctx, step) catch null else 1;
     if (step_lit == null) {
         try lowerRuntimeNumFor(ctx, loop);
         return;
     }
     const step = step_lit.?;
-    if (step == 0) return bail(@src());
+    if (step == 0) return bail(ctx.diagnostic, @src());
     try lowerConstNumFor(ctx, loop, step);
 }
 
 fn lowerConstNumFor(ctx: *LowerCtx, loop: anytype, step_lit: i64) Error!void {
     try lowerAssignTarget(ctx, loop.var_name, loop.start);
-    const i_slot = ctx.locals.get(loop.var_name) orelse return bail(@src());
+    const i_slot = ctx.locals.get(loop.var_name) orelse return bail(ctx.diagnostic, @src());
     const head_idx: u32 = @intCast(ctx.instrs.items.len);
     const cond_temp = ctx.freshTemp();
     const cmp_op: dnir.BinOpTag = if (step_lit > 0) .leq else .geq;
@@ -1563,7 +1658,7 @@ fn lowerConstNumFor(ctx: *LowerCtx, loop: anytype, step_lit: i64) Error!void {
 
 fn lowerRuntimeNumFor(ctx: *LowerCtx, loop: anytype) Error!void {
     try lowerAssignTarget(ctx, loop.var_name, loop.start);
-    const i_slot = ctx.locals.get(loop.var_name) orelse return bail(@src());
+    const i_slot = ctx.locals.get(loop.var_name) orelse return bail(ctx.diagnostic, @src());
 
     const stop_key = try ctx.alloc.dupe(u8, "__dnir_stop");
     const stop_slot = ctx.freshTemp();
@@ -1696,9 +1791,9 @@ fn materializeTableSlots(ctx: *LowerCtx, name: []const u8) Error!u32 {
     }
     const len_key = try std.fmt.allocPrint(ctx.alloc, "{s}.len", .{name});
     defer ctx.alloc.free(len_key);
-    const len_slot = ctx.locals.get(len_key) orelse return bail(@src());
-    const len = ctx.table_lens.get(len_slot) orelse return bail(@src());
-    if (len <= 0 or len > 4096) return bail(@src());
+    const len_slot = ctx.locals.get(len_key) orelse return bail(ctx.diagnostic, @src());
+    const len = ctx.table_lens.get(len_slot) orelse return bail(ctx.diagnostic, @src());
+    if (len <= 0 or len > 4096) return bail(ctx.diagnostic, @src());
 
     const base = ctx.freshTemp();
     try ctx.emit(.{ .op = .alloc_slots, .result = base, .lhs = .{ .i64 = len } });
@@ -1706,7 +1801,7 @@ fn materializeTableSlots(ctx: *LowerCtx, name: []const u8) Error!u32 {
     while (i <= len) : (i += 1) {
         const elem_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{d}", .{ name, i });
         defer ctx.alloc.free(elem_key);
-        const elem_slot = ctx.locals.get(elem_key) orelse return bail(@src());
+        const elem_slot = ctx.locals.get(elem_key) orelse return bail(ctx.diagnostic, @src());
         try ctx.emit(.{
             .op = .store_index,
             .ty = .i64,
@@ -1841,20 +1936,27 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
 }
 
 fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) Error!void {
+    if (ctx.require_graph_facts and
+        (value.* == .call or value.* == .method_call) and
+        ctx.occurrences.get(value) == null)
+    {
+        return invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-id");
+    }
     // `Alias = req "std.compiler.token"` binds a module at compile time; the
     // alias exists only so `Alias.CONST` can fold and `Alias.fn` can resolve to
     // an extern symbol. There is nothing to store at runtime, and lowering it as
     // an ordinary call pushed the whole program outside the direct subset.
     if (isReqCall(value)) return;
     if (value.* == .call) {
-        if (ctx.applications.get(value)) |application| {
+        if (ctx.occurrences.get(value)) |application| {
             if (recordForDescriptor(ctx.records, application.descriptor)) |record| {
                 try lowerCheckedRecordCallAssign(ctx, name, application, record);
                 return;
             }
+            try checkedScalarResult(ctx.diagnostic, application.descriptor);
         }
     }
-    if (value.* == .call and value.call.func.* == .name) {
+    if (!ctx.require_graph_facts and value.* == .call and value.call.func.* == .name) {
         if (ctx.func_record_returns.get(value.call.func.name.ident)) |rec_name| {
             try lowerRecordCallAssign(ctx, name, value.call.func.name.ident, value.call.args, rec_name);
             return;
@@ -1949,22 +2051,24 @@ fn checkedRecordResultSupported(record: dnir.RecordDesc) bool {
 fn lowerCheckedRecordCallAssign(
     ctx: *LowerCtx,
     name: []const u8,
-    application: *const CheckedApplication,
+    application: *const semantic_graph.ApplicationFact,
     record: dnir.RecordDesc,
 ) Error!void {
-    const relation = ctx.graph.get(application.relation) orelse return bail(@src());
-    const callee = relation.name orelse return bailWith(@src(), "application-link-symbol");
+    const relation = ctx.graph.get(application.relation) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "application-relation");
+    const callee = relation.name orelse return invalidGraphFacts(ctx.diagnostic, @src(), "application-link-symbol");
     var operand_storage: [8]CheckedScalarOperand = undefined;
     const operands = try checkedScalarOperands(ctx, application, &operand_storage);
     var values: [8]dnir.Value = undefined;
     const floating = try evaluateCheckedScalarOperands(ctx, operands, &values);
     const realization_start: u32 = @intCast(ctx.instrs.items.len);
     try stageCheckedScalarOperands(ctx, values[0..operands.len], floating);
+    const result = try checkedApplicationResult(ctx, application);
     try ctx.emit(.{
         .op = .call_direct,
         .relation = application.relation,
         .application = application.application,
-        .value = application.result,
+        .value = result,
         .subject = application.subject,
         .realization_start = realization_start,
         .callee = callee,
@@ -1996,14 +2100,14 @@ fn lowerRecordCallAssign(ctx: *LowerCtx, name: []const u8, callee: []const u8, a
 /// base pointer and a computed offset, which is the native table-lowering
 /// milestone. Constant indexing is the slice that fits the proven subset today.
 fn lowerPositionalTableAssign(ctx: *LowerCtx, name: []const u8, table: *const ast.Expr) Error!void {
-    if (table.* != .table) return bail(@src());
+    if (table.* != .table) return bail(ctx.diagnostic, @src());
     const t_slot = ctx.freshTemp();
     try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), t_slot);
     var idx: usize = 1;
     for (table.table.fields) |fld| {
         const val = switch (fld) {
             .positional => |v| v,
-            else => return bail(@src()),
+            else => return bail(ctx.diagnostic, @src()),
         };
         const v = try lowerExpr(ctx, val);
         const eslot = ctx.freshTemp();
@@ -2080,7 +2184,7 @@ fn lowerIndexAssignTarget(
     key_expr: *const ast.Expr,
     value: *const ast.Expr,
 ) Error!void {
-    if (obj.* != .name) return bail(@src());
+    if (obj.* != .name) return bail(ctx.diagnostic, @src());
     const table_name = obj.name.ident;
 
     // Memory-backed table: a real scaled store, so writes through a shared base
@@ -2101,7 +2205,7 @@ fn lowerIndexAssignTarget(
     if (intLiteralStep(key_expr)) |n| {
         const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{d}", .{ table_name, n });
         defer ctx.alloc.free(key);
-        const slot = ctx.locals.get(key) orelse return bail(@src());
+        const slot = ctx.locals.get(key) orelse return bail(ctx.diagnostic, @src());
         const v = try lowerExprCons(ctx, value, .single);
         try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = v, .ty = .any });
         return;
@@ -2109,9 +2213,9 @@ fn lowerIndexAssignTarget(
 
     const len_key = try std.fmt.allocPrint(ctx.alloc, "{s}.len", .{table_name});
     defer ctx.alloc.free(len_key);
-    const len_slot = ctx.locals.get(len_key) orelse return bail(@src());
-    const len = ctx.table_lens.get(len_slot) orelse return bail(@src());
-    if (len == 0 or len > 32) return bail(@src());
+    const len_slot = ctx.locals.get(len_key) orelse return bail(ctx.diagnostic, @src());
+    const len = ctx.table_lens.get(len_slot) orelse return bail(ctx.diagnostic, @src());
+    if (len == 0 or len > 32) return bail(ctx.diagnostic, @src());
 
     // Evaluate index and value once, before any store, so a select-chain cannot
     // re-run side effects per candidate slot.
@@ -2125,7 +2229,7 @@ fn lowerIndexAssignTarget(
     while (i <= len) : (i += 1) {
         const elem_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{d}", .{ table_name, i });
         defer ctx.alloc.free(elem_key);
-        const elem_slot = ctx.locals.get(elem_key) orelse return bail(@src());
+        const elem_slot = ctx.locals.get(elem_key) orelse return bail(ctx.diagnostic, @src());
 
         const cmp = ctx.freshTemp();
         try ctx.emit(.{
@@ -2160,9 +2264,9 @@ fn lowerIndexAssignTarget(
 fn lowerDynamicIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const ast.Expr) Error!dnir.Value {
     const len_key = try std.fmt.allocPrint(ctx.alloc, "{s}.len", .{table_name});
     defer ctx.alloc.free(len_key);
-    const len_slot = ctx.locals.get(len_key) orelse return bail(@src());
-    const len = ctx.table_lens.get(len_slot) orelse return bail(@src());
-    if (len == 0 or len > 32) return bail(@src());
+    const len_slot = ctx.locals.get(len_key) orelse return bail(ctx.diagnostic, @src());
+    const len = ctx.table_lens.get(len_slot) orelse return bail(ctx.diagnostic, @src());
+    if (len == 0 or len > 32) return bail(ctx.diagnostic, @src());
 
     const idx_slot = ctx.freshTemp();
     try ctx.emit(.{ .op = .store_local, .result = idx_slot, .lhs = try lowerExpr(ctx, key_expr), .ty = .any });
@@ -2175,7 +2279,7 @@ fn lowerDynamicIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const as
     while (i <= len) : (i += 1) {
         const elem_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{d}", .{ table_name, i });
         defer ctx.alloc.free(elem_key);
-        const elem_slot = ctx.locals.get(elem_key) orelse return bail(@src());
+        const elem_slot = ctx.locals.get(elem_key) orelse return bail(ctx.diagnostic, @src());
 
         const cmp = ctx.freshTemp();
         try ctx.emit(.{
@@ -2204,7 +2308,7 @@ fn tableIsPositional(table: *const ast.Expr) bool {
 }
 
 fn lowerRecordLiteralAssign(ctx: *LowerCtx, name: []const u8, table: *const ast.Expr) Error!void {
-    if (table.* != .table) return bail(@src());
+    if (table.* != .table) return bail(ctx.diagnostic, @src());
     const rec_slot = ctx.freshTemp();
     try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), rec_slot);
     try lowerRecordLiteralFields(ctx, name, table);
@@ -2231,11 +2335,11 @@ fn lowerRecordLiteralAssign(ctx: *LowerCtx, name: []const u8, table: *const ast.
 /// not this one, and conflating the two is the field-ordering miscompile this
 /// backend has already had twice.
 fn lowerRecordLiteralFields(ctx: *LowerCtx, prefix: []const u8, table: *const ast.Expr) Error!void {
-    if (table.* != .table) return bail(@src());
+    if (table.* != .table) return bail(ctx.diagnostic, @src());
     for (table.table.fields) |fld| {
         const nf = switch (fld) {
             .named => |n| n,
-            else => return bail(@src()),
+            else => return bail(ctx.diagnostic, @src()),
         };
         const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ prefix, nf.key });
         if (nf.val.* == .table) {
@@ -2290,14 +2394,14 @@ fn tableMatchesRecord(table: *const ast.Expr, rec: dnir.RecordDesc) bool {
 
 /// Lower inline table literal as a temp record value for call arguments.
 fn lowerInlineRecordArg(ctx: *LowerCtx, table: *const ast.Expr, rec_name: []const u8) Error!dnir.Value {
-    if (table.* != .table) return bail(@src());
+    if (table.* != .table) return bail(ctx.diagnostic, @src());
     const rec_slot = ctx.freshTemp();
     const anon = try std.fmt.allocPrint(ctx.alloc, "__rec{d}", .{rec_slot});
     defer ctx.alloc.free(anon);
     for (table.table.fields) |fld| {
         const nf = switch (fld) {
             .named => |n| n,
-            else => return bail(@src()),
+            else => return bail(ctx.diagnostic, @src()),
         };
         const v = try lowerExpr(ctx, nf.val);
         const fslot = ctx.freshTemp();
@@ -2329,11 +2433,11 @@ fn emitF64RecordFieldsFromName(ctx: *LowerCtx, name: []const u8, slot: *u32) Err
         if (!all_f64 or !recordFieldsPresent(ctx, name, rec)) continue;
         for (rec.fields) |fname| {
             const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ name, fname });
-            const field_slot = ctx.locals.get(key) orelse return bail(@src());
+            const field_slot = ctx.locals.get(key) orelse return bail(ctx.diagnostic, @src());
             ctx.alloc.free(key);
             try ctx.emit(.{ .op = .fp_mov_arg, .result = slot.*, .lhs = .{ .local = field_slot } });
             slot.* += 1;
-            if (slot.* > 8) return bail(@src());
+            if (slot.* > 8) return bail(ctx.diagnostic, @src());
         }
         return true;
     }
@@ -2355,10 +2459,10 @@ fn isRecordLocalName(ctx: *LowerCtx, e: *const ast.Expr) bool {
 }
 
 fn lowerRecordReturn(ctx: *LowerCtx, table: *const ast.Expr) Error!void {
-    const rec_name = ctx.ret_record orelse return bail(@src());
-    const rec = findRecordName(ctx.records, .{ .named = rec_name }) orelse return bail(@src());
+    const rec_name = ctx.ret_record orelse return bail(ctx.diagnostic, @src());
+    const rec = findRecordName(ctx.records, .{ .named = rec_name }) orelse return bail(ctx.diagnostic, @src());
     const count: u32 = @intCast(rec.fields.len);
-    if (count == 0 or count > max_record_fields) return bail(@src());
+    if (count == 0 or count > max_record_fields) return bail(ctx.diagnostic, @src());
 
     // `return r` where `r` is a record-typed LOCAL rather than a literal.
     //
@@ -2373,7 +2477,7 @@ fn lowerRecordReturn(ctx: *LowerCtx, table: *const ast.Expr) Error!void {
         for (rec.fields, 0..) |fname, i| {
             const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ base, fname });
             defer ctx.alloc.free(key);
-            const slot = ctx.locals.get(key) orelse return bailWith(@src(), fname);
+            const slot = ctx.locals.get(key) orelse return bailWith(ctx.diagnostic, @src(), fname);
             nvals[i] = .{ .local = slot };
         }
         try ctx.emit(.{
@@ -2387,7 +2491,7 @@ fn lowerRecordReturn(ctx: *LowerCtx, table: *const ast.Expr) Error!void {
         });
         return;
     }
-    if (table.* != .table) return bail(@src());
+    if (table.* != .table) return bail(ctx.diagnostic, @src());
 
     // Order by the DESCRIPTOR, not by the literal.
     //
@@ -2404,13 +2508,13 @@ fn lowerRecordReturn(ctx: *LowerCtx, table: *const ast.Expr) Error!void {
     for (table.table.fields) |fld| {
         const nf = switch (fld) {
             .named => |n| n,
-            else => return bail(@src()),
+            else => return bail(ctx.diagnostic, @src()),
         };
-        const idx = fieldIndexIn(rec, nf.key) orelse return bailWith(@src(), nf.key);
+        const idx = fieldIndexIn(rec, nf.key) orelse return bailWith(ctx.diagnostic, @src(), nf.key);
         // A field written twice would leave the earlier expression's side
         // effects in the stream with no home; a field written once is the
         // whole contract here.
-        if (seen[idx]) return bailWith(@src(), nf.key);
+        if (seen[idx]) return bailWith(ctx.diagnostic, @src(), nf.key);
         vals[idx] = try lowerExpr(ctx, nf.val);
         seen[idx] = true;
     }
@@ -2418,7 +2522,7 @@ fn lowerRecordReturn(ctx: *LowerCtx, table: *const ast.Expr) Error!void {
     // rule out: the caller reads all `count` slots either way, so an omitted
     // field is caller-visible garbage rather than a missing value.
     for (seen, 0..) |s, i| {
-        if (!s) return bailWith(@src(), rec.fields[i]);
+        if (!s) return bailWith(ctx.diagnostic, @src(), rec.fields[i]);
     }
 
     try ctx.emit(.{
@@ -2448,6 +2552,12 @@ fn lowerExprCons(
     expr: *const Expr,
     consumption: types.ReturnConsumption,
 ) Error!dnir.Value {
+    if (ctx.require_graph_facts and
+        (expr.* == .call or expr.* == .method_call) and
+        ctx.occurrences.get(expr) == null)
+    {
+        return invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-id");
+    }
     return switch (expr.*) {
         .int_lit => |i| .{ .i64 = i.val },
         .float_lit => |fl| .{ .f64 = fl.val },
@@ -2459,7 +2569,7 @@ fn lowerExprCons(
                 // Not a local — a module-level integer constant folds here.
                 if (ctx.module_consts.ints.get(n.ident)) |mv| break :blk dnir.Value{ .i64 = mv };
                 if (ctx.module_consts.strs.get(n.ident)) |sv| break :blk dnir.Value{ .str = sv };
-                return bailWith(@src(), n.ident);
+                return bailWith(ctx.diagnostic, @src(), n.ident);
             };
             break :blk dnir.Value{ .local = slot };
         },
@@ -2482,7 +2592,7 @@ fn lowerExprCons(
                 try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "strlen", .lhs = arg });
                 break :blk dnir.Value{ .temp = t };
             }
-            return bailWith(@src(), @tagName(u.op));
+            return bailWith(ctx.diagnostic, @src(), @tagName(u.op));
         },
         .index => |ix| blk: {
             // `t[2]` on a positional table resolves to the element's own local,
@@ -2509,7 +2619,7 @@ fn lowerExprCons(
                 try ctx.emit(.{ .op = .load_index, .result = t, .lhs = sbase, .rhs = .{ .temp = one } });
                 break :blk dnir.Value{ .temp = t };
             }
-            if (ix.obj.* != .name) return bail(@src());
+            if (ix.obj.* != .name) return bail(ctx.diagnostic, @src());
             // A memory-backed table indexes for real: one scaled load, constant
             // or not. This is the path that makes a shared token array work.
             if (ptrSlotOf(ctx, ix.obj)) |base| {
@@ -2528,7 +2638,7 @@ fn lowerExprCons(
                 break :blk try lowerDynamicIndex(ctx, ix.obj.name.ident, ix.key);
             const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{d}", .{ ix.obj.name.ident, n });
             defer ctx.alloc.free(key);
-            const slot = ctx.locals.get(key) orelse return bail(@src());
+            const slot = ctx.locals.get(key) orelse return bail(ctx.diagnostic, @src());
             break :blk dnir.Value{ .local = slot };
         },
         .call => try lowerCall(ctx, expr, consumption),
@@ -2538,9 +2648,9 @@ fn lowerExprCons(
             if (dnir_hardware.parseIntrinsic(mc.name)) |hw| {
                 return try lowerHwIntrinsic(ctx, hw, mc.args);
             }
-            return bail(@src());
+            return bail(ctx.diagnostic, @src());
         },
-        else => bail(@src()),
+        else => bail(ctx.diagnostic, @src()),
     };
 }
 
@@ -2588,8 +2698,8 @@ fn applicationResultIs(
 }
 
 fn applicationDescriptor(ctx: *const LowerCtx, expr: *const Expr) ?types.ResolvedType {
-    if (ctx.applications.get(expr)) |application| return application.descriptor;
-    return ctx.graph.applicationDescriptorForExpr(expr);
+    const application = ctx.occurrences.get(expr) orelse return null;
+    return application.descriptor;
 }
 
 const CheckedScalarOperand = struct {
@@ -2599,26 +2709,26 @@ const CheckedScalarOperand = struct {
 
 fn checkedScalarOperand(
     ctx: *const LowerCtx,
-    value_id: semantic_graph.NodeId,
+    value: semantic_graph.id,
 ) Error!CheckedScalarOperand {
-    const value = ctx.graph.get(value_id) orelse return bail(@src());
-    const descriptor = value.descriptor orelse
-        return bailWith(@src(), "application-operand-descriptor");
+    const node = ctx.graph.get(value) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "application-value");
+    const descriptor = node.descriptor orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-descriptor");
     switch (descriptor) {
         .i32, .i64, .bool, .str, .f64 => {},
-        else => return bailWith(@src(), "application-operand-abi"),
+        else => return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi"),
     }
-    const raw = value.ast_ref orelse return bailWith(@src(), "application-operand-provenance");
+    const raw = node.ast_ref orelse return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-provenance");
     return .{
         .expression = @ptrCast(@alignCast(raw)),
         .descriptor = descriptor,
     };
 }
 
-fn checkedScalarResult(descriptor: types.ResolvedType) Error!void {
+fn checkedScalarResult(diagnostic: *Diagnostic, descriptor: types.ResolvedType) Error!void {
     switch (descriptor) {
         .i32, .i64, .bool, .str, .f64, .void => {},
-        else => return bailWith(@src(), "application-result-abi"),
+        else => return invalidGraphFacts(diagnostic, @src(), "application-result-abi"),
     }
 }
 
@@ -2627,7 +2737,7 @@ fn checkedScalarResult(descriptor: types.ResolvedType) Error!void {
 /// argument zero for operation-first source faces.
 fn checkedScalarOperands(
     ctx: *LowerCtx,
-    application: *const CheckedApplication,
+    application: *const semantic_graph.ApplicationFact,
     storage: *[8]CheckedScalarOperand,
 ) Error![]const CheckedScalarOperand {
     var count: usize = 0;
@@ -2635,12 +2745,24 @@ fn checkedScalarOperands(
         storage[count] = try checkedScalarOperand(ctx, subject);
         count += 1;
     }
-    for (application.arguments) |argument| {
-        if (count >= storage.len) return bailWith(@src(), "application-argument-pack");
+    const arguments = ctx.graph.applicationArguments(application.application) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "application-argument-pack");
+    for (arguments) |argument| {
+        if (count >= storage.len) return invalidGraphFacts(ctx.diagnostic, @src(), "application-argument-pack");
         storage[count] = try checkedScalarOperand(ctx, argument);
         count += 1;
     }
     return storage[0..count];
+}
+
+fn checkedApplicationResult(
+    ctx: *const LowerCtx,
+    application: *const semantic_graph.ApplicationFact,
+) Error!semantic_graph.id {
+    const results = ctx.graph.applicationResults(application.application) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-pack");
+    if (results.len != 1) return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-pack");
+    return results[0];
 }
 
 fn evaluateCheckedScalarOperands(
@@ -2654,7 +2776,7 @@ fn evaluateCheckedScalarOperands(
         if (operand.descriptor == .f64) fp_count += 1;
     }
     if (fp_count != 0 and fp_count != operands.len) {
-        return bailWith(@src(), "application-operand-abi");
+        return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
     }
     return fp_count != 0;
 }
@@ -2679,15 +2801,16 @@ fn stageCheckedScalarOperands(
 /// disappeared: relation, subject role, ordered operands, result and occurrence
 /// all come from the graph. The relation's name is retained only as the current
 /// physical link-symbol projection and is validated against the target
-/// callable identity before machine emission.
+/// callable id before machine emission.
 fn lowerCheckedScalarCall(
     ctx: *LowerCtx,
-    application: *const CheckedApplication,
+    application: *const semantic_graph.ApplicationFact,
     consumption: types.ReturnConsumption,
 ) Error!dnir.Value {
-    const relation = ctx.graph.get(application.relation) orelse return bail(@src());
-    const callee = relation.name orelse return bailWith(@src(), "application-link-symbol");
-    try checkedScalarResult(application.descriptor);
+    const relation = ctx.graph.get(application.relation) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "application-relation");
+    const callee = relation.name orelse return invalidGraphFacts(ctx.diagnostic, @src(), "application-link-symbol");
+    try checkedScalarResult(ctx.diagnostic, application.descriptor);
 
     var operand_storage: [8]CheckedScalarOperand = undefined;
     const operands = try checkedScalarOperands(ctx, application, &operand_storage);
@@ -2703,11 +2826,12 @@ fn lowerCheckedScalarCall(
     if (!direct_gp) try stageCheckedScalarOperands(ctx, values[0..operands.len], floating);
     const has_result = consumption != .discard and application.descriptor != .void;
     const result = if (has_result) ctx.freshTemp() else null;
+    const value = try checkedApplicationResult(ctx, application);
     try ctx.emit(.{
         .op = .call_direct,
         .relation = application.relation,
         .application = application.application,
-        .value = application.result,
+        .value = value,
         .subject = application.subject,
         .realization_start = realization_start,
         .result = result,
@@ -2718,7 +2842,7 @@ fn lowerCheckedScalarCall(
     return if (result) |temp| .{ .temp = temp } else .void;
 }
 
-/// Lower the canonical subject face from the relation identity selected by
+/// Lower the canonical subject face from the relation id selected by
 /// semantic analysis. The exact source expression remains the lookup key, so
 /// realization never recreates a call and never resolves its spelling again.
 fn lowerSubjectCall(
@@ -2726,10 +2850,11 @@ fn lowerSubjectCall(
     expr: *const Expr,
     consumption: types.ReturnConsumption,
 ) Error!dnir.Value {
-    if (ctx.applications.get(expr)) |application| {
-        if (application.subject == null) return bailWith(@src(), "application-subject");
+    if (ctx.occurrences.get(expr)) |application| {
+        if (application.subject == null) return invalidGraphFacts(ctx.diagnostic, @src(), "application-subject");
         return lowerCheckedScalarCall(ctx, application, consumption);
     }
+    if (ctx.require_graph_facts) return invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-id");
 
     // String descriptor primitives are bootstrap lowering rules, not declared
     // ordinary relations yet. Preserve their current realization until the
@@ -2738,7 +2863,7 @@ fn lowerSubjectCall(
         return lowerCall(ctx, try faceAsCall(ctx, expr), consumption);
     }
 
-    return bailWith(@src(), "application-identity");
+    return invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-id");
 }
 
 /// Whether any part of `expr` involves f64. `exprIsF64` only inspects the node
@@ -2784,7 +2909,7 @@ fn lowerShortCircuit(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *
     // kernel call, a float literal, an f64 slot — the AST backend already lowers
     // the whole `cond and a or b` ternary correctly against f64 records, and
     // taking it over here regressed Pass 11 WP-04. Refusing keeps that fallback.
-    if (exprTouchesF64(ctx, lhs) or exprTouchesF64(ctx, rhs)) return bail(@src());
+    if (exprTouchesF64(ctx, lhs) or exprTouchesF64(ctx, rhs)) return bail(ctx.diagnostic, @src());
 
     const slot = ctx.freshTemp();
     try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = try lowerExpr(ctx, lhs), .ty = .any });
@@ -2820,7 +2945,7 @@ fn lowerShortCircuit(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *
 fn lowerIfExpr(ctx: *LowerCtx, ie: *const ast.IfExpr) Error!dnir.Value {
     if (exprTouchesF64(ctx, ie.cond) or
         exprTouchesF64(ctx, ie.then_expr) or
-        exprTouchesF64(ctx, ie.else_expr)) return bailWith(@src(), "if-expr-f64");
+        exprTouchesF64(ctx, ie.else_expr)) return bailWith(ctx.diagnostic, @src(), "if-expr-f64");
 
     const slot = ctx.freshTemp();
     const cond = try lowerExpr(ctx, ie.cond);
@@ -2937,7 +3062,7 @@ fn lowerConcatChain(ctx: *LowerCtx, lhs: *const ast.Expr, rhs: *const ast.Expr) 
     try flattenConcat(ctx.alloc, lhs, &parts);
     try flattenConcat(ctx.alloc, rhs, &parts);
 
-    const plan = (try planConcat(ctx, parts.items, false)) orelse return bailWith(@src(), "concat");
+    const plan = (try planConcat(ctx, parts.items, false)) orelse return bailWith(ctx.diagnostic, @src(), "concat");
     // Every part was a literal, so the chain IS its own answer.
     if (plan.count == 0) return .{ .str = plan.literal };
 
@@ -3002,7 +3127,7 @@ fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const a
             .bxor => .bxor,
             .lshift => .shl,
             .rshift => .shr,
-            else => return bailWith(@src(), @tagName(op)),
+            else => return bailWith(ctx.diagnostic, @src(), @tagName(op)),
         },
         .lhs = try lowerExpr(ctx, lhs),
         .rhs = try lowerExpr(ctx, rhs),
@@ -3036,7 +3161,7 @@ fn calleeWantsFpSlots(ctx: *LowerCtx, callee: ?[]const u8) bool {
 
 fn emitScalarCallArgs(ctx: *LowerCtx, args: []const *ast.Expr, callee: ?[]const u8) Error!void {
     if (args.len == 0) return;
-    if (args.len > 8) return bail(@src());
+    if (args.len > 8) return bail(ctx.diagnostic, @src());
 
     // Two phases, deliberately. `mov_arg` writes x0..x7, and evaluating a later
     // argument may itself contain a call that clobbers them: in
@@ -3053,10 +3178,10 @@ fn emitScalarCallArgs(ctx: *LowerCtx, args: []const *ast.Expr, callee: ?[]const 
         if (arg.* == .name) {
             if (scalarRecordForName(ctx, arg.name.ident)) |rec| {
                 for (rec.fields) |fname| {
-                    if (count >= 8) return bail(@src());
+                    if (count >= 8) return bail(ctx.diagnostic, @src());
                     const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ arg.name.ident, fname });
                     defer ctx.alloc.free(key);
-                    const field_slot = ctx.locals.get(key) orelse return bail(@src());
+                    const field_slot = ctx.locals.get(key) orelse return bail(ctx.diagnostic, @src());
                     values[count] = .{ .local = field_slot };
                     count += 1;
                 }
@@ -3066,13 +3191,13 @@ fn emitScalarCallArgs(ctx: *LowerCtx, args: []const *ast.Expr, callee: ?[]const 
             // to be materialized into frame memory first — the elements are
             // registers until something needs a pointer to them.
             if (nameIsPositionalTable(ctx, arg.name.ident)) {
-                if (count >= 8) return bail(@src());
+                if (count >= 8) return bail(ctx.diagnostic, @src());
                 values[count] = .{ .local = try materializeTableSlots(ctx, arg.name.ident) };
                 count += 1;
                 continue;
             }
         }
-        if (count >= 8) return bail(@src());
+        if (count >= 8) return bail(ctx.diagnostic, @src());
         values[count] = try lowerExpr(ctx, arg);
         count += 1;
     }
@@ -3251,10 +3376,11 @@ fn flattenNames(alloc: std.mem.Allocator, e: *const ast.Expr, out: *std.ArrayLis
 }
 
 fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnConsumption) Error!dnir.Value {
-    if (expr.* != .call) return bail(@src());
-    if (ctx.applications.get(expr)) |application| {
+    if (expr.* != .call) return bail(ctx.diagnostic, @src());
+    if (ctx.occurrences.get(expr)) |application| {
         return lowerCheckedScalarCall(ctx, application, consumption);
     }
+    if (ctx.require_graph_facts) return invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-id");
     const c = expr.call;
     const discard = consumption == .discard;
     if (try lowerToStr(ctx, c)) |v| return v;
@@ -3386,7 +3512,7 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
                 }
                 // `mem.addr(x)` on a pointer-shaped value IS that value: a str
                 // is already a `const char*` and an alloc result is already the
-                // address. No instruction, just the identity.
+                // address. No instruction, just the value.
                 if (std.mem.eql(u8, f.field, "addr") and c.args.len == 1) {
                     return try lowerExpr(ctx, c.args[0]);
                 }
@@ -3493,7 +3619,7 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
     // Name the callee. Every row this session that reported only a location
     // turned out to be covering more than one cause, and a call site's whole
     // content is "I could not resolve this callee" — the name IS the finding.
-    return bailWith(@src(), switch (c.func.*) {
+    return bailWith(ctx.diagnostic, @src(), switch (c.func.*) {
         .name => |n| n.ident,
         .field => |f| f.field,
         else => @tagName(c.func.*),
@@ -3558,7 +3684,7 @@ fn lowerPrint(ctx: *LowerCtx, args: []const *ast.Expr) Error!dnir.Value {
         try ctx.emit(.{ .op = .print_value });
         return .void;
     }
-    if (args.len != 1) return bail(@src());
+    if (args.len != 1) return bail(ctx.diagnostic, @src());
     const arg = args[0];
     if (try lowerPrintFormat(ctx, arg)) |v| return v;
     const v = try lowerExpr(ctx, arg);
@@ -3593,24 +3719,24 @@ fn lowerF64KernelCall(ctx: *LowerCtx, callee: []const u8, args: []const *ast.Exp
                     const val = switch (fld) {
                         .named => |nf| nf.val,
                         .positional => |v| v,
-                        else => return bail(@src()),
+                        else => return bail(ctx.diagnostic, @src()),
                     };
                     try ctx.emit(.{ .op = .fp_mov_arg, .result = slot, .lhs = try lowerExpr(ctx, val) });
                     slot += 1;
-                    if (slot > 8) return bail(@src());
+                    if (slot > 8) return bail(ctx.diagnostic, @src());
                 }
             },
             .name => |n| {
                 if (try emitF64RecordFieldsFromName(ctx, n.ident, &slot)) {} else {
                     try ctx.emit(.{ .op = .fp_mov_arg, .result = slot, .lhs = try lowerExpr(ctx, arg) });
                     slot += 1;
-                    if (slot > 8) return bail(@src());
+                    if (slot > 8) return bail(ctx.diagnostic, @src());
                 }
             },
             else => {
                 try ctx.emit(.{ .op = .fp_mov_arg, .result = slot, .lhs = try lowerExpr(ctx, arg) });
                 slot += 1;
-                if (slot > 8) return bail(@src());
+                if (slot > 8) return bail(ctx.diagnostic, @src());
             },
         }
     }
@@ -3630,7 +3756,7 @@ fn lowerHwIntrinsic(ctx: *LowerCtx, hw: dnir.HwIntrinsic, args: []const *const a
             return .{ .i64 = 0 };
         },
         .popcount, .clz, .ctz => {
-            if (args.len != 1) return bail(@src());
+            if (args.len != 1) return bail(ctx.diagnostic, @src());
             const t = ctx.freshTemp();
             try ctx.emit(.{
                 .op = .hw_unary,
@@ -3640,7 +3766,7 @@ fn lowerHwIntrinsic(ctx: *LowerCtx, hw: dnir.HwIntrinsic, args: []const *const a
             });
             return .{ .temp = t };
         },
-        .none => bail(@src()),
+        .none => bail(ctx.diagnostic, @src()),
     };
 }
 
@@ -3649,11 +3775,19 @@ fn ensureExtern(ctx: *LowerCtx, alias: []const u8, field: []const u8, sym: []con
         if (std.mem.eql(u8, e.symbol, sym)) return;
     }
     const duo = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ alias, field });
-    try ctx.externs.append(ctx.alloc, .{ .duo_name = duo, .symbol = try ctx.alloc.dupe(u8, sym) });
+    const symbol = ctx.alloc.dupe(u8, sym) catch |err| {
+        ctx.alloc.free(duo);
+        return err;
+    };
+    ctx.externs.append(ctx.alloc, .{ .duo_name = duo, .symbol = symbol }) catch |err| {
+        ctx.alloc.free(duo);
+        ctx.alloc.free(symbol);
+        return err;
+    };
 }
 
 fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
-    if (expr.* != .field) return bail(@src());
+    if (expr.* != .field) return bail(ctx.diagnostic, @src());
     const fld = expr.field;
     if (fld.obj.* == .name) {
         // Module-level descriptor constant: `Kind.ident` folds to an immediate.
@@ -3694,7 +3828,7 @@ fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
                 return .{ .local = slot };
             }
         }
-        return bail(@src());
+        return bail(ctx.diagnostic, @src());
     }
     const t = ctx.freshTemp();
     const base: []const u8 = if (fld.obj.* == .name) fld.obj.name.ident else "";
@@ -4058,19 +4192,24 @@ test "dnir_lower: main returns f64 kernel tail" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\Point: @{ x: f64, y: f64 }
-        \\distance2(p: Point): f64
-        \\    p.x * p.x + p.y * p.y
-        \\end
-        \\main(): f64
-        \\    distance2({ x = 3.0, y = 4.0 })
-        \\end
+        \\distance2: f64 = (x: f64, y: f64)
+        \\    x * x + y * y
+        \\main: f64 = ()
+        \\    distance2(3.0, 4.0)
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "main_f64.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "main-f64.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
-    const mod = try parser.parse_module();
-    const m = try lowerModule(alloc, &mod);
+    var mod = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&mod);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&mod, &checked, "main-f64.id");
+    const m = try lowerModuleWithGraph(alloc, &mod, &graph);
+    defer dnir.deinitModule(alloc, m);
     try std.testing.expect(dnir.moduleIsNativeDirectReady(m));
     var main_fn: ?dnir.Function = null;
     for (m.functions) |f| {
@@ -4081,6 +4220,76 @@ test "dnir_lower: main returns f64 kernel tail" {
     try std.testing.expect(!main.is_float_kernel);
     const last = main.blocks[0].instrs[main.blocks[0].instrs.len - 1];
     try std.testing.expect(last.op == .ret and last.ty == .f64);
+}
+
+test "dnir_lower: checked aggregate operand requires graph ABI facts" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\point: {
+        \\    x: f64
+        \\    y: f64
+        \\}
+        \\distance: f64 = (value: point)
+        \\    value.x * value.x + value.y * value.y
+        \\main: f64 = ()
+        \\    value = { x = 3.0, y = 4.0 }
+        \\    distance(value)
+    ;
+    var lexer = @import("lexer.zig").Lexer.init(source, "aggregate-operand.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.duo_mode = true;
+    var module = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "aggregate-operand.id");
+
+    var diagnostic: Diagnostic = .{};
+    try std.testing.expectError(
+        error.GraphFactsInvalid,
+        lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("application-operand-abi", diagnostic.note().?);
+}
+
+test "dnir_lower: checked aggregate result requires graph ABI facts" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\point: {
+        \\    x: f64
+        \\    y: f64
+        \\}
+        \\make: point = ()
+        \\    { x = 1.0, y = 2.0 }
+        \\main: i64 = ()
+        \\    value = make()
+        \\    0
+    ;
+    var lexer = @import("lexer.zig").Lexer.init(source, "aggregate-result.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.duo_mode = true;
+    var module = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "aggregate-result.id");
+
+    var diagnostic: Diagnostic = .{};
+    try std.testing.expectError(
+        error.GraphFactsInvalid,
+        lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("application-result-abi", diagnostic.note().?);
 }
 
 test "dnir_lower: no mandatory main — entry function lowers uniformly" {
@@ -4314,10 +4523,180 @@ test "dnir_lower: lowerModuleWithGraph matches lowerModule" {
     defer g.deinit();
     _ = try g.liftModuleWithCalls(&mod, "test.duo");
     const m_graph = try lowerModuleWithGraph(alloc, &mod, &g);
+    defer dnir.deinitModule(alloc, m_graph);
+    try std.testing.expect(m_direct.graph == null);
+    try std.testing.expect(m_graph.graph == &g);
     try std.testing.expect(m_direct.functions.len == m_graph.functions.len);
     try std.testing.expect(m_direct.hardware_tier == m_graph.hardware_tier);
     try std.testing.expect(m_direct.functions[0].blocks[0].instrs.len == m_graph.functions[0].blocks[0].instrs.len);
-    try std.testing.expect(m_graph.functions[0].semantic_identity != null);
+    try std.testing.expect(m_graph.functions[0].id != null);
+}
+
+test "dnir_lower: call census without application facts refuses" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\observe: i64 = (value: i64)
+        \\    value
+        \\main: i64 = ()
+        \\    observe(42)
+    ;
+    var lexer = @import("lexer.zig").Lexer.init(source, "missing-application.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.duo_mode = true;
+    const module = try parser.parse_module();
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCalls(&module, "missing-application.id");
+
+    try std.testing.expectEqual(@as(usize, 0), graph.applications().len);
+    var diagnostic: Diagnostic = .{};
+    try std.testing.expectError(
+        error.GraphFactsInvalid,
+        lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("missing-application-id", diagnostic.note().?);
+}
+
+test "dnir_lower: uncensused condition call refuses in graph mode" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\ready: bool = ()
+        \\    true
+        \\main: i64 = ()
+        \\    if ready()
+        \\        1
+        \\    else
+        \\        0
+    ;
+    var lexer = @import("lexer.zig").Lexer.init(source, "condition-application.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.duo_mode = true;
+    const module = try parser.parse_module();
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCalls(&module, "condition-application.id");
+
+    var diagnostic: Diagnostic = .{};
+    var occurrences = try OccurrenceBridge.init(alloc, &graph, &diagnostic);
+    defer occurrences.deinit();
+    try std.testing.expectEqual(@as(usize, 0), occurrences.unresolved);
+    try std.testing.expectError(
+        error.GraphFactsInvalid,
+        lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("missing-application-id", diagnostic.note().?);
+}
+
+test "dnir_lower: diagnostics are isolated and reset by their own run" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const application_source =
+        \\observe: i64 = (value: i64)
+        \\    value
+        \\main: i64 = ()
+        \\    observe(42)
+    ;
+    var application_lexer = @import("lexer.zig").Lexer.init(application_source, "application-failure.id");
+    var application_parser = @import("parser.zig").Parser.init(&application_lexer, alloc);
+    application_parser.duo_mode = true;
+    const application_module = try application_parser.parse_module();
+    var application_graph = semantic_graph.SemanticGraph.init(alloc);
+    defer application_graph.deinit();
+    _ = try application_graph.liftModuleWithCalls(&application_module, "application-failure.id");
+
+    var application_diagnostic: Diagnostic = .{};
+    try std.testing.expectError(
+        error.GraphFactsInvalid,
+        lowerModuleWithGraphObserved(
+            alloc,
+            &application_module,
+            &application_graph,
+            &application_diagnostic,
+        ),
+    );
+    try std.testing.expectEqualStrings("missing-application-id", application_diagnostic.note().?);
+    const application_site = application_diagnostic.site orelse return error.TestExpectedEqual;
+
+    const name_source =
+        \\main: i64 = ()
+        \\    unknown
+    ;
+    var name_lexer = @import("lexer.zig").Lexer.init(name_source, "name-failure.id");
+    var name_parser = @import("parser.zig").Parser.init(&name_lexer, alloc);
+    name_parser.duo_mode = true;
+    const name_module = try name_parser.parse_module();
+    var name_graph = semantic_graph.SemanticGraph.init(alloc);
+    defer name_graph.deinit();
+    _ = try name_graph.liftModuleWithCalls(&name_module, "name-failure.id");
+
+    var retry_diagnostic: Diagnostic = .{};
+    try std.testing.expectError(
+        error.UnsupportedConstruct,
+        lowerModuleWithGraphObserved(alloc, &name_module, &name_graph, &retry_diagnostic),
+    );
+    try std.testing.expectEqualStrings("unknown", retry_diagnostic.note().?);
+    const name_site = retry_diagnostic.site orelse return error.TestExpectedEqual;
+    try std.testing.expect(!std.mem.eql(u8, application_site.fn_name, name_site.fn_name));
+    try std.testing.expectEqualStrings("missing-application-id", application_diagnostic.note().?);
+    try std.testing.expectEqual(application_site.line, application_diagnostic.site.?.line);
+
+    const success_source =
+        \\main: i64 = ()
+        \\    0
+    ;
+    var success_lexer = @import("lexer.zig").Lexer.init(success_source, "success.id");
+    var success_parser = @import("parser.zig").Parser.init(&success_lexer, alloc);
+    success_parser.duo_mode = true;
+    const success_module = try success_parser.parse_module();
+    var success_graph = semantic_graph.SemanticGraph.init(alloc);
+    defer success_graph.deinit();
+    _ = try success_graph.liftModuleWithCalls(&success_module, "success.id");
+
+    const lowered = try lowerModuleWithGraphObserved(
+        alloc,
+        &success_module,
+        &success_graph,
+        &retry_diagnostic,
+    );
+    defer dnir.deinitModule(alloc, lowered);
+    try std.testing.expect(retry_diagnostic.site == null);
+    try std.testing.expect(retry_diagnostic.note() == null);
+    try std.testing.expectEqualStrings("missing-application-id", application_diagnostic.note().?);
+}
+
+test "dnir_lower: graph module ownership is transactional on allocation failure" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const source =
+        \\first: i64 = ()
+        \\    1
+        \\second: i64 = ()
+        \\    2
+    ;
+    var lexer = @import("lexer.zig").Lexer.init(source, "allocation.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, arena.allocator());
+    parser.duo_mode = true;
+    const module = try parser.parse_module();
+    var graph = semantic_graph.SemanticGraph.init(arena.allocator());
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCalls(&module, "allocation.id");
+
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, struct {
+        fn run(
+            alloc: std.mem.Allocator,
+            input: *const ast.Module,
+            resident: *const semantic_graph.SemanticGraph,
+        ) !void {
+            const lowered = try lowerModuleWithGraph(alloc, input, resident);
+            defer dnir.deinitModule(alloc, lowered);
+        }
+    }.run, .{ &module, &graph });
 }
 
 test "dnir_lower: call result class comes from graph descriptor" {
@@ -4368,7 +4747,7 @@ test "dnir_lower: call result class comes from graph descriptor" {
     try std.testing.expect(saw_length);
 }
 
-test "dnir_lower: checked subject call retains semantic identities" {
+test "dnir_lower: checked subject call retains semantic facts" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
     const Sema = @import("sema.zig").Sema;
@@ -4395,23 +4774,17 @@ test "dnir_lower: checked subject call retains semantic identities" {
     defer graph.deinit();
     _ = try graph.liftModuleWithCheckedCalls(&mod, &checked, "application.id");
 
-    var application_id: ?semantic_graph.NodeId = null;
-    for (graph.nodes.items, 0..) |node, i| {
-        if (node.kind != .call) continue;
-        const id = semantic_graph.NodeId{ .index = @intCast(i) };
-        if (graph.applicationRelation(id) != null) application_id = id;
-    }
-    const application = application_id orelse return error.TestExpectedEqual;
-    const relation = graph.applicationRelation(application) orelse return error.TestExpectedEqual;
-    const value = graph.applicationResult(application) orelse return error.TestExpectedEqual;
-    var subject: ?semantic_graph.NodeId = null;
-    for (graph.edges.items) |edge| {
-        if (edge.from.index != application.index or edge.kind != .subject) continue;
-        subject = edge.to;
-    }
-    const subject_identity = subject orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 1), graph.applications().len);
+    const fact = &graph.applications()[0];
+    const application = fact.application;
+    const relation = fact.relation;
+    const results = graph.applicationResults(application) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 1), results.len);
+    const value = results[0];
+    const expected_subject = fact.subject orelse return error.TestExpectedEqual;
 
     const module = try lowerModuleWithGraph(alloc, &mod, &graph);
+    defer dnir.deinitModule(alloc, module);
     var found = false;
     var mov_args: usize = 0;
     for (module.functions) |function| {
@@ -4425,7 +4798,7 @@ test "dnir_lower: checked subject call retains semantic identities" {
             try std.testing.expect(std.meta.eql(relation, instruction.relation.?));
             try std.testing.expect(std.meta.eql(application, instruction.application.?));
             try std.testing.expect(std.meta.eql(value, instruction.value.?));
-            try std.testing.expect(std.meta.eql(subject_identity, instruction.subject.?));
+            try std.testing.expect(std.meta.eql(expected_subject, instruction.subject.?));
             try std.testing.expect(std.meta.eql(dnir.Value{ .i64 = 42 }, instruction.lhs));
             try std.testing.expectEqual(current_index, instruction.realization_start.?);
         }
@@ -4434,7 +4807,7 @@ test "dnir_lower: checked subject call retains semantic identities" {
     try std.testing.expectEqual(@as(usize, 0), mov_args);
 }
 
-test "dnir_lower: applications share relation without sharing occurrence identity" {
+test "dnir_lower: applications share relation without sharing occurrence id" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
     const Sema = @import("sema.zig").Sema;
@@ -4462,10 +4835,11 @@ test "dnir_lower: applications share relation without sharing occurrence identit
     _ = try graph.liftModuleWithCheckedCalls(&mod, &checked, "application-occurrence.duo");
 
     const module = try lowerModuleWithGraph(alloc, &mod, &graph);
-    var relations: [2]semantic_graph.NodeId = undefined;
-    var applications: [2]semantic_graph.NodeId = undefined;
-    var values: [2]semantic_graph.NodeId = undefined;
-    var subjects: [2]semantic_graph.NodeId = undefined;
+    defer dnir.deinitModule(alloc, module);
+    var relations: [2]semantic_graph.id = undefined;
+    var applications: [2]semantic_graph.id = undefined;
+    var values: [2]semantic_graph.id = undefined;
+    var subjects: [2]semantic_graph.id = undefined;
     var count: usize = 0;
     for (module.functions) |function| {
         for (function.blocks[0].instrs) |instruction| {
@@ -4485,7 +4859,7 @@ test "dnir_lower: applications share relation without sharing occurrence identit
     try std.testing.expect(!std.meta.eql(subjects[0], subjects[1]));
 }
 
-test "dnir_lower: checked ordinary calls consume graph identity" {
+test "dnir_lower: checked ordinary calls consume graph facts" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
     const Sema = @import("sema.zig").Sema;
@@ -4513,9 +4887,10 @@ test "dnir_lower: checked ordinary calls consume graph identity" {
     _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "ordinary-application.id");
 
     const module = try lowerModuleWithGraph(alloc, &ast_module, &graph);
-    var relation: ?semantic_graph.NodeId = null;
-    var applications: [2]semantic_graph.NodeId = undefined;
-    var values: [2]semantic_graph.NodeId = undefined;
+    defer dnir.deinitModule(alloc, module);
+    var relation: ?semantic_graph.id = null;
+    var applications: [2]semantic_graph.id = undefined;
+    var values: [2]semantic_graph.id = undefined;
     var count: usize = 0;
     var mov_args: usize = 0;
     for (module.functions) |function| {
@@ -4534,7 +4909,7 @@ test "dnir_lower: checked ordinary calls consume graph identity" {
             }
             applications[count] = instruction.application.?;
             values[count] = instruction.value.?;
-            try std.testing.expectEqual(@as(?semantic_graph.NodeId, null), instruction.subject);
+            try std.testing.expectEqual(@as(?semantic_graph.id, null), instruction.subject);
             try std.testing.expectEqual(types.ResolvedType.i64, instruction.ty);
             const expected: i64 = if (count == 0) 41 else 42;
             try std.testing.expect(std.meta.eql(dnir.Value{ .i64 = expected }, instruction.lhs));
@@ -4575,6 +4950,7 @@ test "dnir_lower: checked multi-operand call retains ABI staging" {
     _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "multi-application.id");
 
     const module = try lowerModuleWithGraph(alloc, &ast_module, &graph);
+    defer dnir.deinitModule(alloc, module);
     var mov_args: usize = 0;
     var found = false;
     for (module.functions) |function| {
@@ -4586,7 +4962,7 @@ test "dnir_lower: checked multi-operand call retains ABI staging" {
                 found = true;
                 try std.testing.expect(instruction.relation != null);
                 try std.testing.expect(instruction.value != null);
-                try std.testing.expectEqual(@as(?semantic_graph.NodeId, null), instruction.subject);
+                try std.testing.expectEqual(@as(?semantic_graph.id, null), instruction.subject);
                 try std.testing.expectEqual(dnir.Value.void, instruction.lhs);
                 try std.testing.expect(instruction.realization_start.? < instruction_index);
             }
@@ -4627,6 +5003,7 @@ test "dnir_lower: checked scalar ABI boundaries retain staging" {
     _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "scalar-boundary.id");
 
     const module = try lowerModuleWithGraph(alloc, &ast_module, &graph);
+    defer dnir.deinitModule(alloc, module);
     var gp_moves: usize = 0;
     var fp_moves: usize = 0;
     var calls: usize = 0;
@@ -4676,6 +5053,7 @@ test "dnir_lower: checked f64 call derives ABI staging from descriptors" {
     _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "ordinary-f64-application.duo");
 
     const module = try lowerModuleWithGraph(alloc, &ast_module, &graph);
+    defer dnir.deinitModule(alloc, module);
     var fp_moves: usize = 0;
     var call_index: ?u32 = null;
     for (module.functions) |function| {
@@ -4685,7 +5063,7 @@ test "dnir_lower: checked f64 call derives ABI staging from descriptors" {
             if (instruction.application != null) {
                 call_index = instruction_index;
                 try std.testing.expectEqual(types.ResolvedType.f64, instruction.ty);
-                try std.testing.expectEqual(@as(?semantic_graph.NodeId, null), instruction.subject);
+                try std.testing.expectEqual(@as(?semantic_graph.id, null), instruction.subject);
                 try std.testing.expect(instruction.realization_start.? < instruction_index);
             }
             instruction_index += 1;
@@ -4718,35 +5096,36 @@ test "dnir_lower: graph orders callees before callers" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\Point: @{ x: f64, y: f64 }
-        \\distance2(p: Point): f64
-        \\    p.x * p.x + p.y * p.y
-        \\end
+        \\distance2(value: i64): i64
+        \\    value
         \\main(): i64
-        \\    distance2({ x = 3.0, y = 4.0 })
-        \\    0
-        \\end
+        \\    distance2(3)
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "graph_order.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "graph-order.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
-    const mod = try parser.parse_module();
+    var mod = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&mod);
     var g = semantic_graph.SemanticGraph.init(alloc);
     defer g.deinit();
-    _ = try g.liftModuleWithCalls(&mod, "graph_order.duo");
+    _ = try g.liftModuleWithCheckedCalls(&mod, &checked, "graph-order.id");
     const m = try lowerModuleWithGraph(alloc, &mod, &g);
+    defer dnir.deinitModule(alloc, m);
     var idx_distance: ?usize = null;
     var idx_main: ?usize = null;
     for (m.functions, 0..) |f, i| {
         if (std.mem.eql(u8, f.name, "distance2")) idx_distance = i;
         if (std.mem.eql(u8, f.name, "main")) idx_main = i;
-        try std.testing.expect(f.semantic_identity != null);
+        try std.testing.expect(f.id != null);
     }
     try std.testing.expect(idx_distance != null and idx_main != null);
     try std.testing.expect(idx_distance.? < idx_main.?);
 }
 
-test "dnir_lower: checked identity does not require stable hashes" {
+test "dnir_lower: checked ids use graph coordinates" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -4767,10 +5146,9 @@ test "dnir_lower: checked identity does not require stable hashes" {
     var g = semantic_graph.SemanticGraph.init(alloc);
     defer g.deinit();
     _ = try g.liftModuleWithCheckedCalls(&mod, &checked, "hash-free.id");
-    for (g.nodes.items) |*node| node.stable_id = null;
 
     const m = try lowerModuleWithGraph(alloc, &mod, &g);
-    try std.testing.expect(m.identity_owner == &g);
+    defer dnir.deinitModule(alloc, m);
     var identified = false;
     for (m.functions) |function| {
         for (function.blocks) |block| {
@@ -4802,9 +5180,9 @@ test "dnir_lower: graphless convenience returns no orphan handles" {
     const mod = try parser.parse_module();
     const module = try lowerModule(alloc, &mod);
 
-    try std.testing.expect(module.identity_owner == null);
+    try std.testing.expect(module.graph == null);
     for (module.functions) |function| {
-        try std.testing.expect(function.semantic_identity == null);
+        try std.testing.expect(function.id == null);
         for (function.blocks) |block| {
             for (block.instrs) |instruction| {
                 try std.testing.expect(instruction.relation == null);

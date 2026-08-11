@@ -1,6 +1,4 @@
-//! Pass 22 §17.4 — compact semantic graph queries (deterministic, memoizable).
-//!
-//! Not a generic query engine: bounded facts for compiler, LSP, and MCP projections.
+//! Bounded semantic-graph projections for compiler, LSP, and MCP consumers.
 const std = @import("std");
 const ast = @import("ast.zig");
 const dnir = @import("duo_native_ir.zig");
@@ -8,123 +6,83 @@ const dnir_hardware = @import("dnir_hardware.zig");
 const region_graph = @import("region_graph.zig");
 const semantic_graph = @import("semantic_graph.zig");
 
-pub const CallSite = struct {
-    callee: []const u8,
-    call_shape_fingerprint: ?u64,
-    caller: ?[]const u8,
-};
+fn requireFunction(graph: *const semantic_graph.SemanticGraph, function: semantic_graph.id) !void {
+    const fact = graph.get(function) orelse return error.InvalidFunctionEntity;
+    if (fact.kind != .func) return error.InvalidFunctionEntity;
+}
 
-/// Callees invoked directly from `func_name` (intra-module call nodes only).
+/// Exact relations invoked directly from one function entity.
 pub fn calleesOf(
     graph: *const semantic_graph.SemanticGraph,
     alloc: std.mem.Allocator,
-    func_name: []const u8,
-) ![]const []const u8 {
-    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    function: semantic_graph.id,
+) ![]const semantic_graph.id {
+    var out: std.ArrayListUnmanaged(semantic_graph.id) = .empty;
     errdefer out.deinit(alloc);
-    var seen: std.StringHashMapUnmanaged(void) = .empty;
+    var seen: std.AutoHashMapUnmanaged(semantic_graph.id, void) = .empty;
     defer seen.deinit(alloc);
 
-    const func_id = graph.findFunc(func_name) orelse return try out.toOwnedSlice(alloc);
-    for (graph.nodes.items, 0..) |node, i| {
-        if (node.kind != .call) continue;
-        const call_id = semantic_graph.NodeId{ .index = @intCast(i) };
-        const caller_id = graph.containingFuncId(call_id) orelse continue;
-        if (caller_id.index != func_id.index) continue;
-        const callee = node.call_shape orelse continue;
-        const name = callee.callee_name orelse continue;
-        if (seen.contains(name)) continue;
-        try seen.put(alloc, name, {});
-        try out.append(alloc, name);
+    try requireFunction(graph, function);
+    if (graph.unresolvedApplicationCount(function) != 0) return error.UnresolvedApplication;
+    for (graph.applications()) |stored| {
+        const fact = graph.application(stored.application) orelse return error.UnresolvedApplication;
+        if (fact.caller != function) continue;
+        if (seen.contains(fact.relation)) continue;
+        try seen.put(alloc, fact.relation, {});
+        try out.append(alloc, fact.relation);
     }
     return try out.toOwnedSlice(alloc);
 }
 
-/// Call sites inside `func_name` (caller fixed to the query subject).
+/// Exact call occurrences inside one function entity.
 pub fn callsIn(
     graph: *const semantic_graph.SemanticGraph,
     alloc: std.mem.Allocator,
-    func_name: []const u8,
-) ![]CallSite {
-    var out: std.ArrayListUnmanaged(CallSite) = .empty;
-    errdefer {
-        for (out.items) |cs| {
-            alloc.free(cs.callee);
-            if (cs.caller) |c| alloc.free(c);
-        }
-        out.deinit(alloc);
-    }
+    function: semantic_graph.id,
+) ![]semantic_graph.id {
+    var out: std.ArrayListUnmanaged(semantic_graph.id) = .empty;
+    errdefer out.deinit(alloc);
 
-    const func_id = graph.findFunc(func_name) orelse return try out.toOwnedSlice(alloc);
-    for (graph.nodes.items, 0..) |node, i| {
-        if (node.kind != .call) continue;
-        const call_id = semantic_graph.NodeId{ .index = @intCast(i) };
-        const caller_id = graph.containingFuncId(call_id) orelse continue;
-        if (caller_id.index != func_id.index) continue;
-        const cs = node.call_shape orelse continue;
-        const callee = cs.callee_name orelse continue;
-        const owned_callee = try alloc.dupe(u8, callee);
-        const owned_caller = try alloc.dupe(u8, func_name);
-        try out.append(alloc, .{
-            .callee = owned_callee,
-            .call_shape_fingerprint = node.call_shape_fingerprint,
-            .caller = owned_caller,
-        });
+    try requireFunction(graph, function);
+    if (graph.unresolvedApplicationCount(function) != 0) return error.UnresolvedApplication;
+    for (graph.applications()) |stored| {
+        const fact = graph.application(stored.application) orelse return error.UnresolvedApplication;
+        if (fact.caller != function) continue;
+        try out.append(alloc, fact.application);
     }
     return try out.toOwnedSlice(alloc);
 }
 
-pub fn freeCallSites(alloc: std.mem.Allocator, sites: []CallSite) void {
-    for (sites) |cs| {
-        alloc.free(cs.callee);
-        if (cs.caller) |c| alloc.free(c);
-    }
-    alloc.free(sites);
-}
-
-/// Record layout facts from the semantic graph (Pass 22 §17.4 `representation(value)` subset).
+/// Record layout facts projected from one exact graph entity.
 pub const RecordRepresentation = struct {
+    id: semantic_graph.id,
     name: []const u8,
-    shape_id: ?u64,
-    stable_id: ?u64,
+    shape_fingerprint: ?u64,
     storage_class: ?[]const u8,
 };
 
-pub fn representationForRecord(graph: *const semantic_graph.SemanticGraph, name: []const u8) ?RecordRepresentation {
-    const node = graph.findTableShape(name) orelse return null;
+pub fn representationForRecord(
+    graph: *const semantic_graph.SemanticGraph,
+    record: semantic_graph.id,
+) !RecordRepresentation {
+    const node = graph.get(record) orelse return error.InvalidRecordEntity;
+    if (node.kind != .table_shape) return error.InvalidRecordEntity;
     const storage = if (node.storage_class) |sc| @import("types.zig").storageClassName(sc) else null;
     return .{
-        .name = name,
-        .shape_id = node.shape_id,
-        .stable_id = if (node.stable_id) |sid| sid.hash else null,
+        .id = record,
+        .name = node.name orelse return error.MissingRecordName,
+        .shape_fingerprint = node.shape_id,
         .storage_class = storage,
     };
-}
-
-/// Stable semantic identity hash for a named graph entity (func, record, …).
-///
-/// Resolved by IDENTITY, in declaration-kind order, not by first textual match:
-/// a parameter spelled like the function it sits inside used to answer for it,
-/// and every consumer of the result — DNIR provenance, region identity, the
-/// gate that asserts the two agree — inherited that wrong node. The bare-name
-/// scan remains only as the last rung, for kinds with no module-scope
-/// declaration form.
-pub fn stableIdOf(graph: *const semantic_graph.SemanticGraph, name: []const u8) ?u64 {
-    const id = graph.findFunc(name) orelse
-        graph.findId(.table_shape, name) orelse
-        graph.findId(.enum_shape, name) orelse
-        graph.findByName(name) orelse return null;
-    const node = graph.get(id) orelse return null;
-    return if (node.stable_id) |sid| sid.hash else null;
 }
 
 /// Graph-derived function emit order (callees before callers). See `SemanticGraph.moduleFunctionEmitOrder`.
 pub fn functionEmitOrder(
     graph: *const semantic_graph.SemanticGraph,
     alloc: std.mem.Allocator,
-    func_names: []const []const u8,
-) ![]const []const u8 {
-    return graph.moduleFunctionEmitOrder(alloc, func_names);
+    functions: []const semantic_graph.id,
+) ![]const semantic_graph.id {
+    return graph.moduleFunctionEmitOrder(alloc, functions);
 }
 
 /// Hardware descriptor rows exercised in a lowered module (Pass 22 WS23 query surface).
@@ -168,30 +126,106 @@ test "graph_query: calls and callees from lifted graph" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\helper(): i64
+        \\helper: i64 = ()
         \\    1
-        \\end
-        \\main(): i64
+        \\main: i64 = ()
         \\    helper()
-        \\end
     ;
-    var lex = Lexer.init(src, "q.duo");
+    var lex = Lexer.init(src, "query.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
-    const mod = try parser.parse_module();
+    var mod = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&mod);
     var g = semantic_graph.SemanticGraph.init(alloc);
     defer g.deinit();
-    _ = try g.liftModuleWithCalls(&mod, "q.duo");
+    _ = try g.liftModuleWithCheckedCalls(&mod, &checked, "query.id");
 
-    const calls = try callsIn(&g, alloc, "main");
-    defer freeCallSites(alloc, calls);
+    const main = g.findFunc("main") orelse return error.TestExpectedEqual;
+    const helper = g.findFunc("helper") orelse return error.TestExpectedEqual;
+
+    const calls = try callsIn(&g, alloc, main);
+    defer alloc.free(calls);
     try std.testing.expect(calls.len == 1);
-    try std.testing.expectEqualStrings("helper", calls[0].callee);
+    const call = g.application(calls[0]) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(helper, call.relation);
+    try std.testing.expectEqual(main, call.caller);
 
-    const callees = try calleesOf(&g, alloc, "main");
+    const callees = try calleesOf(&g, alloc, main);
     defer alloc.free(callees);
     try std.testing.expect(callees.len == 1);
-    try std.testing.expectEqualStrings("helper", callees[0]);
+    try std.testing.expectEqual(helper, callees[0]);
 
-    try std.testing.expect(stableIdOf(&g, "main") != null);
+    const not_function = try g.addChild(main, .{
+        .kind = .value,
+        .span = .{ .file = "query.id", .start = 5, .end = 5 },
+    });
+    try std.testing.expectError(error.InvalidFunctionEntity, callsIn(&g, alloc, not_function));
+    try std.testing.expectError(error.InvalidFunctionEntity, calleesOf(&g, alloc, not_function));
+
+    var unresolved = semantic_graph.SemanticGraph.init(alloc);
+    defer unresolved.deinit();
+    _ = try unresolved.liftModuleWithCalls(&mod, "query.id");
+    const unresolved_main = unresolved.findFunc("main") orelse return error.TestExpectedEqual;
+    try std.testing.expectError(error.UnresolvedApplication, callsIn(&unresolved, alloc, unresolved_main));
+    try std.testing.expectError(error.UnresolvedApplication, calleesOf(&unresolved, alloc, unresolved_main));
+    var unresolved_json: std.ArrayListUnmanaged(u8) = .empty;
+    defer unresolved_json.deinit(alloc);
+    try unresolved.writeJson(alloc, "query.id", &unresolved_json, null);
+    var unresolved_parsed = try std.json.parseFromSlice(std.json.Value, alloc, unresolved_json.items, .{});
+    defer unresolved_parsed.deinit();
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        unresolved_parsed.value.object.get("unresolved_applications").?.array.items.len,
+    );
+
+    const relation = try g.addChild(main, .{
+        .kind = .relation,
+        .span = .{ .file = "query.id", .start = 6, .end = 5 },
+    });
+    g.application_facts.items[0].relation = relation;
+    const relation_calls = try callsIn(&g, alloc, main);
+    defer alloc.free(relation_calls);
+    try std.testing.expectEqualSlices(semantic_graph.id, &.{calls[0]}, relation_calls);
+    const relation_callees = try calleesOf(&g, alloc, main);
+    defer alloc.free(relation_callees);
+    try std.testing.expectEqualSlices(semantic_graph.id, &.{relation}, relation_callees);
+
+    g.application_facts.items[0].relation = not_function;
+    try std.testing.expectError(error.UnresolvedApplication, callsIn(&g, alloc, main));
+    try std.testing.expectError(error.UnresolvedApplication, calleesOf(&g, alloc, main));
+}
+
+test "graph_query: record projection requires one exact record id" {
+    var graph = semantic_graph.SemanticGraph.init(std.testing.allocator);
+    defer graph.deinit();
+    const record = try graph.addNode(.{
+        .kind = .table_shape,
+        .span = .{ .file = "record.id", .start = 1, .end = 1 },
+        .name = "point",
+        .storage_class = .native,
+        .shape_id = 42,
+    });
+    const value = try graph.addNode(.{
+        .kind = .value,
+        .span = .{ .file = "record.id", .start = 2, .end = 1 },
+        .name = "point",
+    });
+    const unnamed_record = try graph.addNode(.{
+        .kind = .table_shape,
+        .span = .{ .file = "record.id", .start = 3, .end = 1 },
+    });
+
+    const representation = try representationForRecord(&graph, record);
+    try std.testing.expectEqual(record, representation.id);
+    try std.testing.expectEqualStrings("point", representation.name);
+    try std.testing.expectEqual(@as(?u64, 42), representation.shape_fingerprint);
+    try std.testing.expectError(error.InvalidRecordEntity, representationForRecord(&graph, value));
+    try std.testing.expectError(error.MissingRecordName, representationForRecord(&graph, unnamed_record));
+    try std.testing.expectError(
+        error.InvalidRecordEntity,
+        representationForRecord(&graph, @intCast(graph.nodes.items.len)),
+    );
 }

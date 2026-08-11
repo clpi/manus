@@ -1,5 +1,5 @@
 //! DNIR — migration encoding for the current realization substrate.
-//! Graph identity remains authoritative; this layer adds physical facts for
+//! Graph ids and facts remain authoritative; this layer adds physical facts for
 //! realization and machine emission without creating another meaning space.
 //!
 //! Machine code is the release target. C emission is bootstrap/debug only.
@@ -127,16 +127,16 @@ pub const Value = union(enum) {
 
 pub const Instr = struct {
     op: Op,
-    /// Exact handles into the graph incarnation retained through realization.
-    relation: ?semantic_graph.NodeId = null,
-    application: ?semantic_graph.NodeId = null,
-    value: ?semantic_graph.NodeId = null,
+    /// Exact ids into the resident graph retained through realization.
+    relation: ?semantic_graph.id = null,
+    application: ?semantic_graph.id = null,
+    value: ?semantic_graph.id = null,
     /// Semantic subject selected upstream. Null is an authoritative absence for
     /// applications whose relation has no subject role; it is never inferred
     /// here from argument position or source spelling.
-    subject: ?semantic_graph.NodeId = null,
+    subject: ?semantic_graph.id = null,
     /// First flattened DNIR instruction whose emitted bytes belong to this
-    /// application realization. Present exactly when application identity is.
+    /// application realization. Present exactly when an application id is.
     realization_start: ?u32 = null,
     result: ?u32 = null,
     lhs: Value = .void,
@@ -160,7 +160,7 @@ pub const Instr = struct {
     vals: []const Value = &.{},
     /// Label index for branch ops (resolved by backend).
     branch_target: u32 = 0,
-    /// Physical branch selection. Semantic condition identity remains upstream.
+    /// Physical branch selection. The semantic condition fact remains upstream.
     branch_condition: BranchCondition = .unconditional,
     /// Hardware intrinsic for `hw_unary` / metadata on fence-family ops.
     hw: HwIntrinsic = .none,
@@ -201,21 +201,20 @@ pub const Function = struct {
     ret_record: ?[]const u8 = null,
     /// Pure f64 kernel — params/return use FP registers (Pass 4 M1).
     is_float_kernel: bool = false,
-    /// Exact authoritative graph identity for the callable declaration.
-    semantic_identity: ?semantic_graph.NodeId = null,
+    /// Exact authoritative graph id for the callable declaration.
+    id: ?semantic_graph.id = null,
     blocks: []const Block,
 };
 
 pub const Module = struct {
+    /// Borrowed physical coordinate domain for resident graph ids.
+    /// Null means this projection carries no graph coordinates.
+    graph: ?*const semantic_graph.SemanticGraph = null,
     functions: []const Function,
     records: []const RecordDesc = &.{},
     globals: []const Global = &.{},
     dense_tables: []const DenseTable = &.{},
     externs: []const Extern = &.{},
-    /// Owner of every graph handle carried by this module. The pointer is an
-    /// owner/lifetime constraint, not another semantic identity: identified
-    /// modules are valid only while this exact graph remains resident.
-    identity_owner: ?*const semantic_graph.SemanticGraph = null,
     /// Highest hardware tier exercised — for catalog / capability proofs.
     hardware_tier: HardwareTier = .scalar,
 };
@@ -293,11 +292,21 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
     for (m.functions) |f| {
         for (f.blocks) |b| {
             for (b.instrs) |i| {
-                const identity_count: u2 = @as(u2, @intFromBool(i.relation != null)) +
+                const fact_count: u2 = @as(u2, @intFromBool(i.relation != null)) +
                     @as(u2, @intFromBool(i.application != null)) +
                     @as(u2, @intFromBool(i.value != null));
-                if (identity_count != 0 and identity_count != 3) return false;
-                if ((identity_count == 3) != (i.realization_start != null)) return false;
+                if (fact_count != 0 and fact_count != 3) return false;
+                if ((fact_count == 3) != (i.realization_start != null)) return false;
+                if (i.op == .call_direct) {
+                    const graph = m.graph orelse return false;
+                    const application = i.application orelse return false;
+                    const relation = i.relation orelse return false;
+                    const value = i.value orelse return false;
+                    const fact = graph.application(application) orelse return false;
+                    if (fact.relation != relation or fact.subject != i.subject) return false;
+                    const results = graph.applicationResults(application) orelse return false;
+                    if (results.len != 1 or results[0] != value) return false;
+                }
                 if (i.op == .br) {
                     switch (i.branch_condition) {
                         .unconditional => if (i.lhs != .void) return false,
@@ -343,9 +352,9 @@ test "duo_native_ir: empty module not ready" {
     try std.testing.expect(!moduleIsNativeDirectReady(m));
 }
 
-test "duo_native_ir: resident graph identity handle stays dense" {
-    try std.testing.expectEqual(@sizeOf(u32), @sizeOf(semantic_graph.NodeId));
-    try std.testing.expectEqual(@as(usize, 8), @sizeOf(?semantic_graph.NodeId));
+test "duo_native_ir: resident graph id stays dense" {
+    try std.testing.expectEqual(@sizeOf(u32), @sizeOf(semantic_graph.id));
+    try std.testing.expectEqual(@as(usize, 8), @sizeOf(?semantic_graph.id));
 }
 
 test "duo_native_ir: folded module constant uses one const realization" {
@@ -374,6 +383,28 @@ test "duo_native_ir: single ret function ready" {
     };
     const m = Module{ .functions = &.{f} };
     try std.testing.expect(moduleIsNativeDirectReady(m));
+}
+
+test "duo_native_ir: resident graph empty application census refuses direct call" {
+    var graph = semantic_graph.SemanticGraph.init(std.testing.allocator);
+    defer graph.deinit();
+    const blocks = [_]Block{
+        .{ .instrs = &.{
+            .{ .op = .call_direct, .callee = "callee" },
+            .{ .op = .ret, .lhs = .{ .i64 = 0 } },
+        } },
+    };
+    const function = Function{
+        .name = "caller",
+        .ret = .i64,
+        .blocks = &blocks,
+    };
+
+    try std.testing.expect(!moduleIsNativeDirectReady(.{ .functions = &.{function} }));
+    try std.testing.expect(!moduleIsNativeDirectReady(.{
+        .graph = &graph,
+        .functions = &.{function},
+    }));
 }
 
 test "duo_native_ir: branch condition and operand agree" {

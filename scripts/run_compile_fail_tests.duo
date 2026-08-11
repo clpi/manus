@@ -55,7 +55,7 @@ end
 -- moves, the gate has to run the stage that holds the rule.
 refuses(file: str, pattern: str)
     tmp = temp_file()
-    rc = s.run("{DUO} compile {file} -o /dev/null > {tmp} 2>&1")
+    rc = s.run("{DUO} compile --backend=c {file} -o /dev/null > {tmp} 2>&1")
     out = s.fs_read(tmp)
     os.remove(tmp)
 

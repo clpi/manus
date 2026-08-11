@@ -76,7 +76,6 @@ pub var refused_conversions: u32 = 0;
 pub var why_convert: bool = false;
 /// `DUO_SER=1` reports the relation's semantic expansion ratio WITH ITS N.
 pub var ser_census: bool = false;
-var native_diag_tag: ?[]const u8 = null;
 /// True when the module body assigns `name` at top level (e.g. `M = {}`).
 /// Such a global stays live even in native-direct modules: its field writes and
 /// the module's `return M` are still emitted, so its declaration must survive.
@@ -132,32 +131,6 @@ fn module_top_level_assigns(mod: *const ast.Module, name: []const u8) bool {
     return false;
 }
 
-fn native_diag_fail(tag: []const u8) void {
-    // First recorder wins across BOTH slots. The hand-written tags sit on the
-    // outer walk (`assign-value`, `func-body`) and fire on the way out, after
-    // the inner predicate that actually refused — so without this cross-check
-    // the coarse tag would overwrite the precise reason and every rejection
-    // would report "some statement", which is what it reported before.
-    if (native_diag_tag != null or native_scalar_fail_line != 0) return;
-    native_diag_tag = tag;
-    if (native_diag) std.debug.print("[native-diag] first fail: {s}\n", .{tag});
-}
-
-/// Why the native-scalar precheck refused, readable without DUO_NATIVE_DIAG.
-///
-/// The tag was recorded only when the env var was set, so the DNB001 a user
-/// actually sees carried no reason — and this precheck, not the DNIR lowering,
-/// is what rejects the large majority of programs (measured: 54 of 62 DNB001s
-/// across examples/ never reach a `dnir_lower.bail` site at all, because
-/// main.zig short-circuits to error.UnsupportedProgram before calling the
-/// backend). Recording is a pointer store, so it now happens always and only
-/// the printing is gated.
-///
-/// `nofit` covers the ~15 disqualifiers that never called `native_diag_fail`:
-/// most of the precheck is one-line `if (cond) return false`, where inventing
-/// a hand-written tag per line is exactly the drift `@src()` avoids.
-var native_scalar_fail_line: u32 = 0;
-
 /// A TypeExpr's shape, for a diagnostic. `.named` carries the actual spelling,
 /// which is the whole point — "some type is not native" sends a reader looking
 /// at the wrong declaration; "ret type: any" does not.
@@ -167,77 +140,6 @@ fn typeLabel(t: ast.TypeExpr) []const u8 {
         .inferred => "inferred",
         else => @tagName(t),
     };
-}
-
-fn nofit(src: std.builtin.SourceLocation) bool {
-    if (native_scalar_fail_line == 0 and native_diag_tag == null) native_scalar_fail_line = src.line;
-    return false;
-}
-
-/// A reason that has to name a specific node kind or symbol.
-///
-/// Backed by a fixed buffer rather than the allocator because this runs inside
-/// a `bool` predicate with no error path, and one live reason at a time is the
-/// whole contract (first recorder wins).
-var native_diag_buf: [96]u8 = undefined;
-
-fn native_diag_fail_fmt(comptime fmt: []const u8, args: anytype) void {
-    if (native_diag_tag != null or native_scalar_fail_line != 0) return;
-    const s = std.fmt.bufPrint(&native_diag_buf, fmt, args) catch return;
-    native_diag_tag = s;
-    if (native_diag) std.debug.print("[native-diag] first fail: {s}\n", .{s});
-}
-
-pub fn native_scalar_reason(buf: []u8) ?[]const u8 {
-    if (native_diag_tag) |t| return t;
-    if (native_scalar_fail_line == 0) return null;
-    return std.fmt.bufPrint(buf, "codegen.zig:{d}", .{native_scalar_fail_line}) catch null;
-}
-
-pub fn native_scalar_reason_reset() void {
-    native_diag_tag = null;
-    native_scalar_fail_line = 0;
-}
-
-/// A saved refusal reason, so a nested emit cannot steal the outer one.
-///
-/// The recorder is a pair of globals and "first recorder wins" is its whole
-/// contract — which holds only within ONE module. `directLinkInputs` runs a
-/// full CodeGen over each `req`'d module, and that inner run records the
-/// MODULE's reason into the same globals. When the program itself was clean,
-/// the driver then printed the dependency's reason as the program's:
-/// `parse.duo`, three lines with no `any` in them, was refused with
-/// "param-type:any" — the tag belonged to `std.compiler.parser`.
-///
-/// The tag is copied by VALUE because `native_diag_fail_fmt` writes through a
-/// single fixed buffer; holding the slice across a nested emit would restore a
-/// pointer to whatever the nested run wrote there.
-pub const NativeScalarReason = struct {
-    buf: [96]u8 = undefined,
-    len: usize = 0,
-    have_tag: bool = false,
-    line: u32 = 0,
-};
-
-pub fn native_scalar_reason_save() NativeScalarReason {
-    var s: NativeScalarReason = .{};
-    s.line = native_scalar_fail_line;
-    if (native_diag_tag) |t| {
-        s.have_tag = true;
-        s.len = @min(t.len, s.buf.len);
-        @memcpy(s.buf[0..s.len], t[0..s.len]);
-    }
-    return s;
-}
-
-pub fn native_scalar_reason_restore(s: *const NativeScalarReason) void {
-    native_scalar_fail_line = s.line;
-    if (!s.have_tag) {
-        native_diag_tag = null;
-        return;
-    }
-    @memcpy(native_diag_buf[0..s.len], s.buf[0..s.len]);
-    native_diag_tag = native_diag_buf[0..s.len];
 }
 
 pub const CodeGenError = error{
@@ -350,6 +252,11 @@ pub const CodeGen = struct {
     lib_mode: bool = false,
     duo_mode: bool = false,
     native_scalar_mode: bool = false,
+    /// First native-scalar refusal for this generator. Formatted evidence is
+    /// copied here so concurrent or nested generators cannot alias it.
+    native_diag_note: [96]u8 = undefined,
+    native_diag_note_len: u8 = 0,
+    native_diag_line: u32 = 0,
     /// Pass 2: module-wide knowledge level; set alongside `native_scalar_mode`.
     module_knowledge: semantic_algebra.KnowledgeLevel = .unknown,
     /// Per-function native scalar: when true, the module has both native-eligible
@@ -684,6 +591,37 @@ pub const CodeGen = struct {
             .table_field_types = table_field_types,
             .concepts = concepts,
         };
+    }
+
+    fn resetNativeScalarReason(self: *CodeGen) void {
+        self.native_diag_note_len = 0;
+        self.native_diag_line = 0;
+    }
+
+    fn nativeDiagFail(self: *CodeGen, note: []const u8) void {
+        if (self.native_diag_note_len != 0 or self.native_diag_line != 0) return;
+        const len = @min(note.len, self.native_diag_note.len);
+        self.native_diag_note_len = @intCast(len);
+        @memcpy(self.native_diag_note[0..len], note[0..len]);
+        if (native_diag) std.debug.print("[native-diag] first fail: {s}\n", .{self.native_diag_note[0..self.native_diag_note_len]});
+    }
+
+    fn nativeDiagFailFmt(self: *CodeGen, comptime fmt: []const u8, args: anytype) void {
+        if (self.native_diag_note_len != 0 or self.native_diag_line != 0) return;
+        const note = std.fmt.bufPrint(&self.native_diag_note, fmt, args) catch return;
+        self.native_diag_note_len = @intCast(note.len);
+        if (native_diag) std.debug.print("[native-diag] first fail: {s}\n", .{note});
+    }
+
+    fn nofit(self: *CodeGen, src: std.builtin.SourceLocation) bool {
+        if (self.native_diag_note_len == 0 and self.native_diag_line == 0) self.native_diag_line = src.line;
+        return false;
+    }
+
+    pub fn nativeScalarReason(self: *const CodeGen, buf: []u8) ?[]const u8 {
+        if (self.native_diag_note_len != 0) return self.native_diag_note[0..self.native_diag_note_len];
+        if (self.native_diag_line == 0) return null;
+        return std.fmt.bufPrint(buf, "codegen.zig:{d}", .{self.native_diag_line}) catch null;
     }
 
     fn lookup_tracked_table_field(self: *const CodeGen, table_name: []const u8, field_name: []const u8) ?RT {
@@ -3390,25 +3328,26 @@ pub const CodeGen = struct {
     }
 
     pub fn can_emit_native_scalar_module(self: *CodeGen, mod: *const ast.Module) bool {
+        self.resetNativeScalarReason();
         if (native_diag) std.debug.print("[native-diag] CALLED duo_mode={} target={s} load={} lib={} test={} bench={}\n", .{ self.duo_mode, self.target, self.load_chunk, self.lib_mode, self.test_mode, self.bench_mode });
         self.current_module = mod;
         self.collect_req_module_bindings(mod) catch {
-            native_diag_fail("module-bindings");
-            return nofit(@src());
+            self.nativeDiagFail("module-bindings");
+            return self.nofit(@src());
         };
         self.noteSubjectDescriptors(mod) catch {
-            native_diag_fail("subject-descriptors");
-            return nofit(@src());
+            self.nativeDiagFail("subject-descriptors");
+            return self.nofit(@src());
         };
         // Pass 11 WP-01: bench_mode no longer forces boxing by default.
         // Only --bench-backend=c-dynamic explicitly selects the boxed path.
         if (self.bench_mode and self.bench_backend == .c_dynamic) {
-            native_diag_fail("bench-c-dynamic");
-            return nofit(@src());
+            self.nativeDiagFail("bench-c-dynamic");
+            return self.nofit(@src());
         }
         if (self.bench_mode and self.bench_backend == .direct) {
-            native_diag_fail("bench-direct-via-codegen");
-            return nofit(@src());
+            self.nativeDiagFail("bench-direct-via-codegen");
+            return self.nofit(@src());
         }
         // `lib_mode` is deliberately NOT disqualifying here. It was excluded because
         // `--lib` existed for wasm WAST testing, and the target guard immediately
@@ -3417,8 +3356,8 @@ pub const CodeGen = struct {
         // object with no main", the emission mode a linkable `duo_lexer_tokenize.c`
         // needs (SH-03 / MP4-B02).
         if (self.load_chunk or self.test_mode) {
-            native_diag_fail("guard-mode");
-            return nofit(@src());
+            self.nativeDiagFail("guard-mode");
+            return self.nofit(@src());
         }
         if (!std.mem.eql(u8, self.target, "native") and
             !std.mem.eql(u8, self.target, "native-object") and
@@ -3427,17 +3366,17 @@ pub const CodeGen = struct {
             !std.mem.eql(u8, self.target, "native-exe") and
             !std.mem.eql(u8, self.target, "native-dylib"))
         {
-            native_diag_fail("guard-target");
-            return nofit(@src());
+            self.nativeDiagFail("guard-target");
+            return self.nofit(@src());
         }
         if (!self.duo_mode) {
-            native_diag_fail("guard-duo");
-            return nofit(@src());
+            self.nativeDiagFail("guard-duo");
+            return self.nofit(@src());
         }
         if (mod.body.tail_expr) |expr| {
             if (!self.call_stmt_is_native_scalar(expr)) {
-                native_diag_fail("mod-tail");
-                return nofit(@src());
+                self.nativeDiagFail("mod-tail");
+                return self.nofit(@src());
             }
             // A module whose exported value is a table built by keyed writes
             // (`M = {}` / `M.x = 1` / … / `M`) has to materialize a real table,
@@ -3449,8 +3388,8 @@ pub const CodeGen = struct {
             // lib/std/wasm/ward_mvp_opcodes.duo.
         }
         if (module_materializes_table(mod)) {
-            native_diag_fail("keyed-table-export");
-            return nofit(@src());
+            self.nativeDiagFail("keyed-table-export");
+            return self.nofit(@src());
         }
 
         // gap[066] follow-on. A file-scope binding that a FUNCTION WRITES needs
@@ -3469,42 +3408,42 @@ pub const CodeGen = struct {
         // only the written case, and DNB001 sends it to the C backend, which
         // now mangles the symbol consistently and answers correctly.
         if (self.module_top_level_written_binding(mod)) |written| {
-            native_diag_fail_fmt("mod-global-written:{s}", .{written});
-            return nofit(@src());
+            self.nativeDiagFailFmt("mod-global-written:{s}", .{written});
+            return self.nofit(@src());
         }
 
         for (mod.body.stmts) |*stmt| {
             switch (stmt.*) {
                 .func_decl => |fd| {
                     if (fd.path.len != 1) {
-                        native_diag_fail("func-path");
-                        return nofit(@src());
+                        self.nativeDiagFail("func-path");
+                        return self.nofit(@src());
                     }
                     if (fd.func.vararg or fd.func.vararg_name != null) {
-                        native_diag_fail("func-vararg");
-                        return nofit(@src());
+                        self.nativeDiagFail("func-vararg");
+                        return self.nofit(@src());
                     }
                     if (fd.func.is_async) {
-                        native_diag_fail("func-async");
-                        return nofit(@src());
+                        self.nativeDiagFail("func-async");
+                        return self.nofit(@src());
                     }
                     // Test/bench/debug/trace directives require the full runtime.
                     if (@import("directives.zig").attrsMarkTest(fd.attributes)) {
-                        native_diag_fail("func-test");
-                        return nofit(@src());
+                        self.nativeDiagFail("func-test");
+                        return self.nofit(@src());
                     }
                     if (@import("directives.zig").attrsWantBench(fd.attributes)) {
-                        native_diag_fail("func-bench");
-                        return nofit(@src());
+                        self.nativeDiagFail("func-bench");
+                        return self.nofit(@src());
                     }
                     if (@import("directives.zig").attrsHaveDebug(fd.attributes)) {
-                        native_diag_fail("func-debug");
-                        return nofit(@src());
+                        self.nativeDiagFail("func-debug");
+                        return self.nofit(@src());
                     }
                     // Allow closures and methods — they compile to C functions.
                     if (fd.func.type_params != null) {
-                        native_diag_fail("func-type-params");
-                        return nofit(@src());
+                        self.nativeDiagFail("func-type-params");
+                        return self.nofit(@src());
                     }
                     if (!self.type_expr_is_native_scalar(contract_ret(&fd.func))) {
                         // The tag has to name what the PREDICATE saw, not what
@@ -3515,54 +3454,54 @@ pub const CodeGen = struct {
                         // disqualifies it is the result pack, which has no
                         // native ABI yet.
                         if (fd.func.ret_fallible) {
-                            native_diag_fail_fmt("ret-pack:{s}|error", .{typeLabel(fd.func.ret_type)});
+                            self.nativeDiagFailFmt("ret-pack:{s}|error", .{typeLabel(fd.func.ret_type)});
                         } else {
-                            native_diag_fail_fmt("ret-type:{s}", .{typeLabel(fd.func.ret_type)});
+                            self.nativeDiagFailFmt("ret-type:{s}", .{typeLabel(fd.func.ret_type)});
                         }
-                        return nofit(@src());
+                        return self.nofit(@src());
                     }
                     for (fd.func.params) |param| {
                         if (param.default_val != null) {
-                            native_diag_fail("param-default");
-                            return nofit(@src());
+                            self.nativeDiagFail("param-default");
+                            return self.nofit(@src());
                         }
                         if (!self.type_expr_is_native_scalar(param.typ)) {
-                            native_diag_fail_fmt("param-type:{s}", .{typeLabel(param.typ)});
-                            return nofit(@src());
+                            self.nativeDiagFailFmt("param-type:{s}", .{typeLabel(param.typ)});
+                            return self.nofit(@src());
                         }
                     }
                     self.precheck_collect_types(&fd.func);
                     defer self.precheck_types.clearRetainingCapacity();
                     if (!self.block_is_native_scalar(fd.func.body, true)) {
-                        native_diag_fail("func-body");
-                        return nofit(@src());
+                        self.nativeDiagFail("func-body");
+                        return self.nofit(@src());
                     }
                 },
                 .const_decl => |cd| {
                     if (!self.type_expr_is_native_scalar(cd.typ) and cd.typ != .inferred) {
-                        native_diag_fail("const-typ-nonnative");
-                        return nofit(@src());
+                        self.nativeDiagFail("const-typ-nonnative");
+                        return self.nofit(@src());
                     }
                     if (!self.expr_is_native_scalar(cd.val)) {
-                        native_diag_fail("const-val-expr");
-                        return nofit(@src());
+                        self.nativeDiagFail("const-val-expr");
+                        return self.nofit(@src());
                     }
                 },
                 .local_decl, .assign, .call_stmt, .expr_stmt, .while_loop, .if_stmt, .num_for, .do_block, .ret, .brk, .cont => {
                     if (!self.stmt_is_native_scalar(stmt, false)) {
-                        native_diag_fail_fmt("mod-top-stmt:{s}", .{@tagName(stmt.*)});
-                        return nofit(@src());
+                        self.nativeDiagFailFmt("mod-top-stmt:{s}", .{@tagName(stmt.*)});
+                        return self.nofit(@src());
                     }
                 },
                 .repeat_loop, .gen_for, .match_stmt, .label_stmt, .goto_stmt, .global_decl => {
                     if (!self.stmt_is_native_scalar(stmt, false)) {
-                        native_diag_fail_fmt("mod-top-stmt:{s}", .{@tagName(stmt.*)});
-                        return nofit(@src());
+                        self.nativeDiagFailFmt("mod-top-stmt:{s}", .{@tagName(stmt.*)});
+                        return self.nofit(@src());
                     }
                 },
                 .try_stmt, .defer_stmt => {
-                    native_diag_fail("mod-top-try-defer");
-                    return nofit(@src());
+                    self.nativeDiagFail("mod-top-try-defer");
+                    return self.nofit(@src());
                 },
                 .macro_def => {},
                 .cinclude => {},
@@ -3713,19 +3652,19 @@ pub const CodeGen = struct {
         // DNB001 with no bail site at all — the one remaining case of the
         // original undifferentiated bucket.
         if (moduleHasReturnPack(mod)) {
-            native_diag_fail("return-pack");
+            self.nativeDiagFail("return-pack");
             return false;
         }
         if (self.moduleHasBoxedFuncSignature(mod)) {
-            native_diag_fail("boxed-func-signature");
+            self.nativeDiagFail("boxed-func-signature");
             return false;
         }
         if (!self.req_deps_are_native_direct(mod)) {
-            native_diag_fail("req-dep-not-native");
+            self.nativeDiagFail("req-dep-not-native");
             return false;
         }
         if (!self.module_top_level_is_native(mod)) {
-            native_diag_fail("module-top-level");
+            self.nativeDiagFail("module-top-level");
             return false;
         }
         return true;
@@ -3974,7 +3913,7 @@ pub const CodeGen = struct {
     fn block_is_native_scalar(self: *CodeGen, block: ast.Block, allow_return: bool) bool {
         if (block.tail_expr) |expr| {
             if (!allow_return) {
-                native_diag_fail("block-tail-no-return");
+                self.nativeDiagFail("block-tail-no-return");
                 return false;
             }
             // gap[033]: DEMAND (rule 3) makes an if-body's last call the block's
@@ -4010,19 +3949,19 @@ pub const CodeGen = struct {
         switch (stmt.*) {
             .assign => |as| {
                 if (as.targets.len != as.values.len) {
-                    native_diag_fail("return-pack-assign");
+                    self.nativeDiagFail("return-pack-assign");
                     return false;
                 }
             },
             .local_decl => |ld| {
                 if (ld.names.len != ld.inits.len and ld.inits.len == 1) {
-                    native_diag_fail("return-pack-local-decl");
+                    self.nativeDiagFail("return-pack-local-decl");
                     return false;
                 }
             },
             .global_decl => |gd| {
                 if (gd.names.len != gd.inits.len and gd.inits.len == 1) {
-                    native_diag_fail("return-pack-global-decl");
+                    self.nativeDiagFail("return-pack-global-decl");
                     return false;
                 }
             },
@@ -4032,11 +3971,11 @@ pub const CodeGen = struct {
             .local_decl => |ld| blk: {
                 for (ld.names) |lname| {
                     if (lname.attrib != null or lname.attributes.len != 0) {
-                        native_diag_fail("local-decl-attrib");
+                        self.nativeDiagFail("local-decl-attrib");
                         break :blk false;
                     }
                     if (lname.typ != .inferred and !self.type_expr_is_native_scalar(lname.typ)) {
-                        native_diag_fail("local-decl-typ");
+                        self.nativeDiagFail("local-decl-typ");
                         break :blk false;
                     }
                 }
@@ -4044,11 +3983,11 @@ pub const CodeGen = struct {
                     const hint: RT = if (i < ld.names.len) self.resolve_binding_type(&ld.names[i]) else .any;
                     // gap[094]. `a: str = "{i}"` — a number into a `str` place.
                     if (self.native_str_place_violated(hint, expr)) {
-                        native_diag_fail("str-place-numeric");
+                        self.nativeDiagFail("str-place-numeric");
                         break :blk false;
                     }
                     if (!self.init_is_native_scalar(expr, hint)) {
-                        native_diag_fail("local-decl-init");
+                        self.nativeDiagFail("local-decl-init");
                         break :blk false;
                     }
                 }
@@ -4069,23 +4008,23 @@ pub const CodeGen = struct {
             // for statements the precheck has already walked.
             .global_decl => |gd| blk: {
                 if (gd.star) {
-                    native_diag_fail("global-star");
+                    self.nativeDiagFail("global-star");
                     break :blk false;
                 }
                 for (gd.names) |gname| {
                     if (gname.attrib != null or gname.attributes.len != 0) {
-                        native_diag_fail("global-decl-attrib");
+                        self.nativeDiagFail("global-decl-attrib");
                         break :blk false;
                     }
                     if (gname.typ != .inferred and !self.type_expr_is_native_scalar(gname.typ)) {
-                        native_diag_fail("global-decl-typ");
+                        self.nativeDiagFail("global-decl-typ");
                         break :blk false;
                     }
                 }
                 for (gd.inits, 0..) |expr, i| {
                     if (req_path_from_expr(expr)) |path| {
                         if (self.req_module_is_native_direct(path)) continue;
-                        native_diag_fail("global-decl-req-nonnative");
+                        self.nativeDiagFail("global-decl-req-nonnative");
                         break :blk false;
                     }
                     // `global C = std.compiler.comptime` — a MODULE binding
@@ -4133,7 +4072,7 @@ pub const CodeGen = struct {
                             else
                                 self.req_module_is_native_direct(dotted);
                             if (!emitted_native) {
-                                native_diag_fail("global-decl-module-path");
+                                self.nativeDiagFail("global-decl-module-path");
                                 break :blk false;
                             }
                             continue;
@@ -4141,7 +4080,7 @@ pub const CodeGen = struct {
                     }
                     const hint: RT = if (i < gd.names.len) self.resolve_binding_type(&gd.names[i]) else .any;
                     if (!self.init_is_native_scalar(expr, hint)) {
-                        native_diag_fail_fmt("global-decl-init:{s}", .{@tagName(expr.*)});
+                        self.nativeDiagFailFmt("global-decl-init:{s}", .{@tagName(expr.*)});
                         break :blk false;
                     }
                 }
@@ -4150,12 +4089,12 @@ pub const CodeGen = struct {
             .const_decl => |cd| blk: {
                 const typ_ok = cd.typ == .inferred or self.type_expr_is_native_scalar(cd.typ);
                 if (!typ_ok) {
-                    native_diag_fail("const-decl-typ");
+                    self.nativeDiagFail("const-decl-typ");
                     break :blk false;
                 }
                 const hint = if (cd.typ != .inferred) self.resolve_type(cd.typ) else .any;
                 if (!self.init_is_native_scalar(cd.val, hint)) {
-                    native_diag_fail("const-decl-init");
+                    self.nativeDiagFail("const-decl-init");
                     break :blk false;
                 }
                 break :blk true;
@@ -4166,26 +4105,26 @@ pub const CodeGen = struct {
                     var pathbuf: [512]u8 = undefined;
                     if (self.moduleBindingPath(as.values[0], &pathbuf)) |path| {
                         if (self.req_module_is_native_direct(path)) break :blk true;
-                        native_diag_fail("assign-module-nonnative");
+                        self.nativeDiagFail("assign-module-nonnative");
                         break :blk false;
                     }
                 }
                 for (as.targets) |target| {
                     if (!self.lvalue_is_native_scalar(target)) {
-                        native_diag_fail("assign-target");
+                        self.nativeDiagFail("assign-target");
                         break :blk false;
                     }
                 }
                 for (as.values, 0..) |value, i| {
                     if (req_path_from_expr(value)) |path| {
                         if (self.req_module_is_native_direct(path)) continue;
-                        native_diag_fail("assign-req-nonnative");
+                        self.nativeDiagFail("assign-req-nonnative");
                         break :blk false;
                     }
                     var pathbuf: [512]u8 = undefined;
                     if (self.moduleBindingPath(value, &pathbuf)) |path| {
                         if (self.req_module_is_native_direct(path)) continue;
-                        native_diag_fail("assign-module-nonnative");
+                        self.nativeDiagFail("assign-module-nonnative");
                         break :blk false;
                     }
                     const hint: RT = if (i < as.targets.len and as.targets[i].* == .name)
@@ -4211,11 +4150,11 @@ pub const CodeGen = struct {
                     if (self.native_str_place_violated(place, value) or
                         self.native_str_place_violated(hint, value))
                     {
-                        native_diag_fail("str-place-numeric");
+                        self.nativeDiagFail("str-place-numeric");
                         break :blk false;
                     }
                     if (!self.init_is_native_scalar(value, hint)) {
-                        native_diag_fail_fmt("assign-value:{s}", .{if (value.* == .unop) @tagName(value.unop.op) else @tagName(value.*)});
+                        self.nativeDiagFailFmt("assign-value:{s}", .{if (value.* == .unop) @tagName(value.unop.op) else @tagName(value.*)});
                         break :blk false;
                     }
                 }
@@ -4261,7 +4200,7 @@ pub const CodeGen = struct {
                 // could not be compiled in a typed module at all. §1.2's `@iter`
                 // return-pack closure is what will make this native and delete
                 // this exclusion.
-                native_diag_fail("gen-for-dynamic-iter");
+                self.nativeDiagFail("gen-for-dynamic-iter");
                 if (true) break :blk false;
                 for (gf.iters) |iter| {
                     if (!self.expr_is_native_scalar(iter)) break :blk false;
@@ -4948,7 +4887,7 @@ pub const CodeGen = struct {
                     // recorder and every one of these surfaced as the outer
                     // "func-body" — a tag that names the whole body and points
                     // at nothing.
-                    native_diag_fail_fmt("print-arg:{s}", .{@tagName(rt)});
+                    self.nativeDiagFailFmt("print-arg:{s}", .{@tagName(rt)});
                     return false;
                 }
                 if (!self.expr_is_native_scalar(arg)) return false;
@@ -4970,9 +4909,9 @@ pub const CodeGen = struct {
     fn expr_is_native_scalar(self: *CodeGen, expr: *const ast.Expr) bool {
         return switch (expr.*) {
             .true_lit, .false_lit, .int_lit, .float_lit, .string_lit => true,
-            .nil => nofit(@src()),
+            .nil => self.nofit(@src()),
             .name => |name| if (is_runtime_global(name.ident)) blk: {
-                native_diag_fail_fmt("runtime-global:{s}", .{name.ident});
+                self.nativeDiagFailFmt("runtime-global:{s}", .{name.ident});
                 break :blk false;
             } else true,
             .binop => |bin| self.expr_is_native_scalar(bin.lhs) and self.expr_is_native_scalar(bin.rhs),
@@ -4997,19 +4936,19 @@ pub const CodeGen = struct {
                 // construct still needs the boxed path.
                 if (un.op == .compile) {
                     if (un.operand.* != .table) {
-                        native_diag_fail("compile-nontable");
+                        self.nativeDiagFail("compile-nontable");
                         break :blk false;
                     }
                     for (un.operand.table.fields) |fld| {
                         const nf = switch (fld) {
                             .named => |x| x,
                             else => {
-                                native_diag_fail("descriptor-field-unnamed");
+                                self.nativeDiagFail("descriptor-field-unnamed");
                                 break :blk false;
                             },
                         };
                         if (nf.val.* != .int_lit) {
-                            native_diag_fail("descriptor-field-nonint");
+                            self.nativeDiagFail("descriptor-field-nonint");
                             break :blk false;
                         }
                     }
@@ -5051,7 +4990,7 @@ pub const CodeGen = struct {
                     };
                     break :blk true;
                 }
-                native_diag_fail("dynamic-table");
+                self.nativeDiagFail("dynamic-table");
                 break :blk false;
             },
             .call => |call| blk: {
@@ -5124,7 +5063,7 @@ pub const CodeGen = struct {
                     if (std.mem.eql(u8, call.func.name.ident, "__emit") or
                         std.mem.eql(u8, call.func.name.ident, "__asm")) break :blk true;
                     if (is_runtime_global(call.func.name.ident)) {
-                        native_diag_fail_fmt("runtime-global-call:{s}", .{call.func.name.ident});
+                        self.nativeDiagFailFmt("runtime-global-call:{s}", .{call.func.name.ident});
                         break :blk false;
                     }
                 }
@@ -5168,17 +5107,17 @@ pub const CodeGen = struct {
                     // gap[082] is the deletion gate.
                     (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1);
                 if (!resolvable) {
-                    native_diag_fail_fmt("method-unresolved:{s}", .{mc.method});
+                    self.nativeDiagFailFmt("method-unresolved:{s}", .{mc.method});
                     break :blk false;
                 }
                 const rt = self.expr_type(expr);
                 if (rt.is_numeric() or rt == .bool or rt == .str or rt == .void or
                     self.type_lowers_native(rt)) break :blk true;
-                native_diag_fail_fmt("method-ret:{s}", .{mc.method});
+                self.nativeDiagFailFmt("method-ret:{s}", .{mc.method});
                 break :blk false;
             },
             else => {
-                native_diag_fail_fmt("expr-unhandled:{s}", .{@tagName(expr.*)});
+                self.nativeDiagFailFmt("expr-unhandled:{s}", .{@tagName(expr.*)});
                 return false;
             },
         };
@@ -30981,6 +30920,32 @@ const duo_runtime =
 // ── Tests ─────────────────────────────────────────────────────────────────
 
 const testing = std.testing;
+
+test "native scalar refusal evidence is isolated and reset per codegen" {
+    var type_map = sema.TypeMap.init(testing.allocator);
+    defer type_map.deinit();
+
+    var first = CodeGen.init(testing.allocator, undefined, &type_map, null, undefined, 0, null, null);
+    var second = CodeGen.init(testing.allocator, undefined, &type_map, null, undefined, 0, null, null);
+    first.nativeDiagFail("first");
+    second.nativeDiagFailFmt("second:{d}", .{2});
+
+    var first_buf: [64]u8 = undefined;
+    var second_buf: [64]u8 = undefined;
+    try testing.expectEqualStrings("first", first.nativeScalarReason(&first_buf).?);
+    try testing.expectEqualStrings("second:2", second.nativeScalarReason(&second_buf).?);
+
+    const module: ast.Module = .{
+        .file = "test.id",
+        .body = .{
+            .loc = .{ .file = "test.id", .line = 1, .col = 1 },
+            .stmts = &.{},
+        },
+    };
+    try testing.expect(!first.can_emit_native_scalar_module(&module));
+    try testing.expectEqualStrings("guard-duo", first.nativeScalarReason(&first_buf).?);
+    try testing.expectEqualStrings("second:2", second.nativeScalarReason(&second_buf).?);
+}
 
 test "runtime: temporary artifact path is reserved with its suffix" {
     try testing.expect(std.mem.indexOf(

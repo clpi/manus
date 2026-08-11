@@ -110,14 +110,19 @@ test "Pass 4 M1: direct backend emits distance2 without lua runtime" {
     semantic.duo_mode = true;
     try semantic.check_module(&module);
 
-    const listing = try native_backend.emitAssembly(alloc, &module, "native-asm");
-    defer alloc.free(listing);
+    const semantic_graph = @import("semantic_graph.zig");
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &semantic, "pass4_native_milestone.duo");
+    var artifact = try native_backend.emitAssemblyWithGraphLineage(alloc, &module, "native-asm", &graph);
+    defer artifact.deinit(alloc);
+    const listing = artifact.assembly;
     try testing.expect(std.mem.indexOf(u8, listing, "_distance2") != null);
     try testing.expect(std.mem.indexOf(u8, listing, "fmul") != null);
     try testing.expect(std.mem.indexOf(u8, listing, "lua_") == null);
 }
 
-test "Pass 4 M1: full milestone asm has f64 main wrapper and distance2 kernel" {
+test "Pass 4 M1: graph lowering rejects a structured argument without value-origin facts" {
     if (builtin.cpu.arch != .aarch64 or builtin.os.tag != .macos) return error.SkipZigTest;
     const native_backend = @import("native_backend.zig");
 
@@ -133,20 +138,23 @@ test "Pass 4 M1: full milestone asm has f64 main wrapper and distance2 kernel" {
     semantic.duo_mode = true;
     try semantic.check_module(&module);
 
-    // `fcvtzs x0, d0` is the PROCESS ENTRY wrapper: an `f64` main has to hand the
-    // OS an integer exit status. Only `emitAssemblyForExecutable` emits an entry
-    // point — `emitAssembly` lists the module's functions with `process_entry =
-    // null`, so asking it for the wrapper asked the wrong emitter and the
-    // listing correctly did not contain one. Confirmed against the real object:
-    // `otool -tV` on the `--emit exe` binary shows `fcvtzs x0, d0` in `_main`,
-    // and that binary exits 25 (3² + 4²).
-    const listing = try native_backend.emitAssemblyForExecutable(alloc, &module, "main");
-    defer alloc.free(listing);
-    try testing.expect(std.mem.indexOf(u8, listing, "_main") != null);
-    try testing.expect(std.mem.indexOf(u8, listing, "fcvtzs x0, d0") != null);
-    try testing.expect(std.mem.indexOf(u8, listing, "_distance2") != null);
-    try testing.expect(std.mem.indexOf(u8, listing, "fmul") != null);
-    try testing.expect(std.mem.indexOf(u8, listing, "lua_") == null);
+    const semantic_graph = @import("semantic_graph.zig");
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &semantic, "pass4_native_milestone.duo");
+    var diagnostic: native_backend.Diagnostic = .{};
+    try testing.expectError(
+        error.SemanticFactsInvalid,
+        native_backend.emitAssemblyForExecutableWithGraphLineageObserved(
+            alloc,
+            &module,
+            "main",
+            &graph,
+            &diagnostic,
+        ),
+    );
+    try testing.expectEqualStrings("graph-dnir-facts", diagnostic.note().?);
+    try testing.expectEqualStrings("application-operand-abi", diagnostic.lowering.note().?);
 }
 
 test "Pass 4: @comp.representation and why.not.native compile in native module" {

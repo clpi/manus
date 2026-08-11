@@ -20,12 +20,6 @@ const debug_trace = @import("debug_trace.zig");
 const build_framework = @import("build_framework.zig");
 const ml_kernels = @import("ml_kernels.zig");
 const native_backend = @import("native_backend.zig");
-const dnir_lower = @import("dnir_lower.zig");
-const codegen_mod = @import("codegen.zig");
-
-/// How many linked Duo module objects call the lua runtime, when that is why
-/// the direct path was refused. Zero means the link graph was not the reason.
-var link_refusal: usize = 0;
 
 /// Pass 103 §7 makes "how much of a compile goes through C" a NUMBER this
 /// repository owes, so the code that routes each `req`'d module says which way
@@ -436,7 +430,7 @@ pub fn main(init: std.process.Init) !void {
     }
 
     if (args.len < 2) {
-        try do_shell(alloc, io, false);
+        try do_shell(alloc, io, false, "auto");
         return;
     }
     const known_cmd = args.len >= 2 and
@@ -545,9 +539,7 @@ pub fn main(init: std.process.Init) !void {
                 global_bench_backend = bb;
                 global_bench_profile_cli = true;
                 if (!global_backend_explicit) {
-                    // Bench profiles select codegen representation; machine backend stays auto
-                    // so eligible programs can use direct ARM64 while others bootstrap via C.
-                    compile_backend = "auto";
+                    compile_backend = if (bb == .direct) "direct" else "c";
                 }
             } else {
                 term.err("unknown --bench-backend '{s}' (expected c-dynamic, c-specialized, or direct)", .{args[i]});
@@ -559,7 +551,7 @@ pub fn main(init: std.process.Init) !void {
                 global_bench_backend = bb;
                 global_bench_profile_cli = true;
                 if (!global_backend_explicit) {
-                    compile_backend = "auto";
+                    compile_backend = if (bb == .direct) "direct" else "c";
                 }
             } else {
                 term.err("unknown --bench-backend '{s}'", .{val});
@@ -637,6 +629,18 @@ pub fn main(init: std.process.Init) !void {
     }
     forwarded_program_args = forwarded_args.items;
 
+    if (global_bench_profile_cli and global_backend_explicit) {
+        const selected = backend_identity.Backend.parse(compile_backend) orelse {
+            term.err("unknown --backend '{s}' (expected auto, c, direct, or native)", .{compile_backend});
+            std.process.exit(1);
+        };
+        const expected: backend_identity.Backend = if (global_bench_backend == .direct) .direct else .c;
+        if (selected != expected) {
+            term.err("--backend={s} conflicts with --bench-backend={s}", .{ selected.name(), global_bench_backend.name() });
+            std.process.exit(1);
+        }
+    }
+
     apply_cli_flags(trace_flag, info_flag, hints_flag, plain_diag, debug_flag, debug_list, debug_depth, test_report_style, build_report_style, no_color, verbose_count);
     if (trace_rich and term.build_report == .pretty) term.setBuildReport(.verbose);
     target = resolveCompileTarget(target, emit_kind);
@@ -649,7 +653,7 @@ pub fn main(init: std.process.Init) !void {
     }
 
     if (std.mem.eql(u8, cmd, "shell")) {
-        try do_shell(alloc, io, verbose);
+        try do_shell(alloc, io, verbose, backend_mode);
         return;
     }
 
@@ -687,26 +691,26 @@ pub fn main(init: std.process.Init) !void {
                 term.err("duo build stage requires a stage name", .{});
                 std.process.exit(1);
             };
-            try do_build_stage(alloc, io, stage_name, output_file, cc, opt_level, target, verbose, load_chunk, pgo, lib_mode, shared_mem, link_flags.items);
+            try do_build_stage(alloc, io, stage_name, output_file, cc, opt_level, target, backend_mode, verbose, load_chunk, pgo, lib_mode, shared_mem, link_flags.items);
             return;
         }
         if (input_file != null and std.mem.eql(u8, input_file.?, "all")) {
-            try do_build_all(alloc, io, stage_filter, output_file, cc, opt_level, target, verbose, load_chunk, pgo, lib_mode, shared_mem, link_flags.items);
+            try do_build_all(alloc, io, stage_filter, output_file, cc, opt_level, target, backend_mode, verbose, load_chunk, pgo, lib_mode, shared_mem, link_flags.items);
             return;
         }
-        try do_project_build(alloc, io, input_file, output_file, cc, opt_level, target, verbose, load_chunk, pgo, lib_mode, shared_mem, link_flags.items, false);
+        try do_project_build(alloc, io, input_file, output_file, cc, opt_level, target, backend_mode, verbose, load_chunk, pgo, lib_mode, shared_mem, link_flags.items, false);
         return;
     }
 
     if (std.mem.eql(u8, cmd, "run") and input_file == null) {
-        try do_project_build(alloc, io, null, output_file, cc, opt_level, target, verbose, load_chunk, pgo, lib_mode, shared_mem, link_flags.items, true);
+        try do_project_build(alloc, io, null, output_file, cc, opt_level, target, backend_mode, verbose, load_chunk, pgo, lib_mode, shared_mem, link_flags.items, true);
         return;
     }
 
     if (std.mem.eql(u8, cmd, "run")) {
         if (input_file) |maybe_target| {
             if (!is_idsem_source_path(maybe_target) and !is_lua_source_path(maybe_target)) {
-                try do_project_build(alloc, io, maybe_target, output_file, cc, opt_level, target, verbose, load_chunk, pgo, lib_mode, shared_mem, link_flags.items, true);
+                try do_project_build(alloc, io, maybe_target, output_file, cc, opt_level, target, backend_mode, verbose, load_chunk, pgo, lib_mode, shared_mem, link_flags.items, true);
                 return;
             }
         }
@@ -845,7 +849,7 @@ pub fn main(init: std.process.Init) !void {
     if (std.mem.eql(u8, cmd, "test") or std.mem.eql(u8, cmd, "bench")) {
         const bench_only = std.mem.eql(u8, cmd, "bench");
         if (input_file) |file| {
-            try run_test_sources(alloc, io, &.{file}, output_file, cc, opt_level, target, verbose, bench_only, test_filter, link_flags.items);
+            try run_test_sources(alloc, io, &.{file}, output_file, cc, opt_level, target, backend_mode, verbose, bench_only, test_filter, link_flags.items);
             return;
         }
         if (try maybeReadBuildTarget(alloc, io, null, if (bench_only) .bench else .@"test")) |t| {
@@ -853,7 +857,7 @@ pub fn main(init: std.process.Init) !void {
                 term.err("build target '{s}' has no src= field", .{t.name});
                 std.process.exit(1);
             };
-            try run_test_sources(alloc, io, &.{src}, output_file, t.cc orelse cc, t.opt orelse opt_level, t.target orelse target, verbose, bench_only or t.bench_mode(), test_filter, t.link);
+            try run_test_sources(alloc, io, &.{src}, output_file, t.cc orelse cc, t.opt orelse opt_level, t.target orelse target, backend_mode, verbose, bench_only or t.bench_mode(), test_filter, t.link);
             return;
         }
         const sources = try scanInlineTestSources(alloc, io, bench_only);
@@ -863,7 +867,7 @@ pub fn main(init: std.process.Init) !void {
             term.hint("add @test/@test.* to .duo files or --- @test before Lua functions, or define @build.test", .{});
             std.process.exit(1);
         }
-        try run_test_sources(alloc, io, sources, output_file, cc, opt_level, target, verbose, bench_only, test_filter, link_flags.items);
+        try run_test_sources(alloc, io, sources, output_file, cc, opt_level, target, backend_mode, verbose, bench_only, test_filter, link_flags.items);
         return;
     }
 
@@ -1160,6 +1164,7 @@ fn do_build_all(
     cc_arg: []const u8,
     opt_arg: []const u8,
     target_arg: []const u8,
+    backend_mode: []const u8,
     verbose: bool,
     load_chunk_arg: bool,
     pgo_arg: bool,
@@ -1183,7 +1188,7 @@ fn do_build_all(
         if (!t.needs_compile()) continue;
         built += 1;
         term.section(t.name);
-        try do_project_build_one(alloc, io, t, output_file, cc_arg, opt_arg, target_arg, verbose, load_chunk_arg, pgo_arg, lib_mode_arg, shared_mem_arg, link_flags_arg, false);
+        try do_project_build_one(alloc, io, t, output_file, cc_arg, opt_arg, target_arg, backend_mode, verbose, load_chunk_arg, pgo_arg, lib_mode_arg, shared_mem_arg, link_flags_arg, false);
     }
     if (built == 0) {
         term.hint("no compile targets — add @build.run or @build.exe", .{});
@@ -1200,6 +1205,7 @@ fn do_build_stage(
     cc_arg: []const u8,
     opt_arg: []const u8,
     target_arg: []const u8,
+    backend_mode: []const u8,
     verbose: bool,
     load_chunk_arg: bool,
     pgo_arg: bool,
@@ -1224,7 +1230,7 @@ fn do_build_stage(
             .clean => try do_project_clean(io),
             .fmt => try do_project_fmt(alloc, io, t),
             .check => try do_project_check(alloc, io, t),
-            else => try do_project_build_one(alloc, io, t, output_file, cc_arg, opt_arg, target_arg, verbose, load_chunk_arg, pgo_arg, lib_mode_arg, shared_mem_arg, link_flags_arg, false),
+            else => try do_project_build_one(alloc, io, t, output_file, cc_arg, opt_arg, target_arg, backend_mode, verbose, load_chunk_arg, pgo_arg, lib_mode_arg, shared_mem_arg, link_flags_arg, false),
         }
     }
     if (built == 0) {
@@ -1392,6 +1398,7 @@ fn run_test_sources(
     cc: []const u8,
     opt_level: []const u8,
     target: []const u8,
+    backend_mode: []const u8,
     verbose: bool,
     bench_only: bool,
     test_filter: ?[]const u8,
@@ -1410,7 +1417,7 @@ fn run_test_sources(
         else
             try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_{d}.test.out", .{ std.fs.path.stem(file), idx });
         defer if (!(output_file != null and sources.len == 1)) alloc.free(out);
-        try do_compile(alloc, io, file, out, cc, opt_level, target, "auto", false, false, verbose, false, false, false, false, true, bench_only, test_filter, link_flags, null);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, false, verbose, false, false, false, false, true, bench_only, test_filter, link_flags, null);
         const code = try run_pretty_test_runner(alloc, io, out, bench_only);
         if (code != 0) failures += 1;
     }
@@ -1991,7 +1998,14 @@ fn run_build_command(io: Io, name: []const u8, command: []const u8) !void {
     term.buildPhaseDone("command", elapsed_ms, name);
 }
 
-fn run_shell_line(alloc: std.mem.Allocator, io: Io, raw_line: []const u8, session: *shell_session.Session, verbose: bool) !bool {
+fn run_shell_line(
+    alloc: std.mem.Allocator,
+    io: Io,
+    raw_line: []const u8,
+    session: *shell_session.Session,
+    verbose: bool,
+    backend_mode: []const u8,
+) !bool {
     const line = std.mem.trim(u8, raw_line, " \t\r\n");
     if (line.len == 0) return true;
 
@@ -2094,7 +2108,7 @@ fn run_shell_line(alloc: std.mem.Allocator, io: Io, raw_line: []const u8, sessio
     defer term.build_report = prev_report;
 
     const compile_started = Io.Timestamp.now(io, .awake);
-    try do_compile(alloc, io, src_path, out_path, "clang", "-O3", "native", "auto", false, false, verbose, false, false, false, false, false, false, null, &.{}, null);
+    try do_compile(alloc, io, src_path, out_path, "clang", "-O3", "native", backend_mode, false, false, verbose, false, false, false, false, false, false, null, &.{}, null);
     const compile_elapsed: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
 
     try run_shell_binary(io, out_path);
@@ -2117,7 +2131,7 @@ fn shellContinuePrompt(depth: i32) void {
     }
 }
 
-fn do_shell(alloc: std.mem.Allocator, io: Io, verbose: bool) !void {
+fn do_shell(alloc: std.mem.Allocator, io: Io, verbose: bool, backend_mode: []const u8) !void {
     term.banner("Idsem compatibility shell");
     term.dim(":help · :export · ! = explicit raw host shell", .{});
     var session = try shell_session.newSession(alloc);
@@ -2144,7 +2158,7 @@ fn do_shell(alloc: std.mem.Allocator, io: Io, verbose: bool) !void {
         if (n == 0) {
             // EOF - run any remaining line
             if (line.items.len > 0) {
-                _ = try run_shell_line(alloc, io, line.items, &session, verbose);
+                _ = try run_shell_line(alloc, io, line.items, &session, verbose, backend_mode);
             }
             break;
         }
@@ -2163,7 +2177,7 @@ fn do_shell(alloc: std.mem.Allocator, io: Io, verbose: bool) !void {
                         shellContinuePrompt(block_depth);
                     } else {
                         // Execute the complete block
-                        _ = try run_shell_line(alloc, io, line.items, &session, verbose);
+                        _ = try run_shell_line(alloc, io, line.items, &session, verbose, backend_mode);
                         line.clearRetainingCapacity();
                         block_depth = 0;
                         // Print fresh prompt
@@ -2198,6 +2212,7 @@ fn do_project_build(
     cc_arg: []const u8,
     opt_arg: []const u8,
     target_arg: []const u8,
+    backend_mode: []const u8,
     verbose: bool,
     load_chunk_arg: bool,
     pgo_arg: bool,
@@ -2230,7 +2245,7 @@ fn do_project_build(
         },
         else => {},
     }
-    try do_project_build_one(alloc, io, t, output_file, cc_arg, opt_arg, target_arg, verbose, load_chunk_arg, pgo_arg, lib_mode_arg, shared_mem_arg, link_flags_arg, run_after);
+    try do_project_build_one(alloc, io, t, output_file, cc_arg, opt_arg, target_arg, backend_mode, verbose, load_chunk_arg, pgo_arg, lib_mode_arg, shared_mem_arg, link_flags_arg, run_after);
 }
 
 fn do_project_build_one(
@@ -2241,6 +2256,7 @@ fn do_project_build_one(
     cc_arg: []const u8,
     opt_arg: []const u8,
     target_arg: []const u8,
+    backend_mode: []const u8,
     verbose: bool,
     load_chunk_arg: bool,
     pgo_arg: bool,
@@ -2297,7 +2313,7 @@ fn do_project_build_one(
         t.cc orelse cc_arg,
         t.opt orelse opt_arg,
         target,
-        "auto",
+        backend_mode,
         run_after,
         false,
         verbose,
@@ -3968,13 +3984,6 @@ fn emitReqModuleC(
     target: []const u8,
     needs_runtime: ?*bool,
 ) !void {
-    // The refusal recorder is global and "first recorder wins" holds only
-    // within one module. This emit is a whole CodeGen over somebody else's
-    // module; without this the dependency's reason survives into the driver and
-    // is printed as the PROGRAM's bail site.
-    const outer_reason = codegen_mod.native_scalar_reason_save();
-    defer codegen_mod.native_scalar_reason_restore(&outer_reason);
-
     var ps = try parse_and_check(alloc, io, mod_src_path);
     defer ps.sem.deinit();
 
@@ -4134,52 +4143,39 @@ fn directLinkInputs(
     return inputs.toOwnedSlice(alloc);
 }
 
-fn reportDirectBackendError(io: Io, err: anyerror, target: []const u8, trace: ?*std.builtin.StackTrace) void {
+fn reportDirectBackendError(
+    io: Io,
+    err: anyerror,
+    target: []const u8,
+    trace: ?*std.builtin.StackTrace,
+    link_refusal: usize,
+    diagnostic: *const native_backend.Diagnostic,
+    native_scalar_precheck: *const CodeGen,
+) void {
     var buf: [512]u8 = undefined;
     const msg = native_backend.describeError(err, target, &buf);
     term.err("direct backend: {s}", .{msg});
     term.hint("{s}", .{native_backend.unsupportedReason(target)});
-    // The error NAME, always. Three layers now record their own bail site and a
-    // module could still clear all three, which left "outside the subset" with
-    // no way to tell whether the refusal was even the one being instrumented.
+    // The error name is always reported. Lowering and machine evidence belong
+    // to this exact attempt; the scalar precheck belongs to this compilation.
     term.hint("refused with: {s}", .{@errorName(err)});
-    // A DNB001 says only "outside the subset" — it never says *which* of the
-    // ~60 lowering bail sites fired, so narrowing one meant bisecting the .duo
-    // source by hand, and the 60-program DNB001 bucket could not be ranked.
-    // The return-trace route was tried first and does not work: it prints
-    // "(empty stack trace)" even in Debug, because the error is caught and
-    // re-raised before reaching here. So each site records itself instead
-    // (dnir_lower.bail), and the site is printed unconditionally — it is one
-    // line, and it is the difference between a worklist and a guess.
-    // Not gated on `err` — by the time the error reaches here it has been
-    // remapped (lowering's UnsupportedConstruct surfaces as the backend's
-    // UnsupportedProgram), so the gate is the recorded site itself, which
-    // lowerModule clears on entry so a stale one cannot be attributed.
-    if (dnir_lower.bail_site.line != 0) {
-        const at = dnir_lower.bail_site;
-        if (dnir_lower.bailNote()) |note| {
-            term.hint("bail site: {s}() at dnir_lower.zig:{d} — {s}", .{ at.fn_name, at.line, note });
+    if (diagnostic.lowering.site) |at| {
+        if (diagnostic.lowering.note()) |note| {
+            term.hint("bail site: {s}() at {s}:{d} — {s}", .{ at.fn_name, at.file, at.line, note });
         } else {
-            term.hint("bail site: {s}() at dnir_lower.zig:{d}", .{ at.fn_name, at.line });
+            term.hint("bail site: {s}() at {s}:{d}", .{ at.fn_name, at.file, at.line });
         }
     } else {
-        // No lowering site means the program never reached DNIR: the
-        // native-scalar precheck disqualified the whole module first. That is
-        // the majority case, and it used to be entirely silent.
         var rbuf: [64]u8 = undefined;
-        if (codegen_mod.native_scalar_reason(&rbuf)) |why| {
+        if (native_scalar_precheck.nativeScalarReason(&rbuf)) |why| {
             term.hint("bail site: native-scalar precheck — {s}", .{why});
         } else if (link_refusal > 0) {
             term.hint("bail site: direct link — {d} linked module object(s) call the lua runtime", .{link_refusal});
-        } else if (native_backend.refusal_site.line != 0) {
-            // Third layer: the module lowered to DNIR and the ARM64 emitter
-            // refused it. Reported last because it is the only one reachable
-            // once both earlier gates have passed.
-            const rs = native_backend.refusal_site;
-            if (native_backend.refusalNote()) |n| {
-                term.hint("bail site: {s}() at native_backend.zig:{d} — {s}", .{ rs.fn_name, rs.line, n });
+        } else if (diagnostic.site) |at| {
+            if (diagnostic.note()) |note| {
+                term.hint("bail site: {s}() at {s}:{d} — {s}", .{ at.fn_name, at.file, at.line, note });
             } else {
-                term.hint("bail site: {s}() at native_backend.zig:{d}", .{ rs.fn_name, rs.line });
+                term.hint("bail site: {s}() at {s}:{d}", .{ at.fn_name, at.file, at.line });
             }
         }
     }
@@ -4262,42 +4258,33 @@ fn do_compile(
     native_scalar_precheck.populate_record_aliases(&ps.mod) catch {};
     native_scalar_precheck.populate_enum_defs(&ps.mod) catch {};
     native_scalar_precheck.populate_func_bodies(&ps.mod) catch {};
-    codegen_mod.native_scalar_reason_reset();
-    link_refusal = 0;
+    var link_refusal: usize = 0;
     const native_scalar_candidate = native_scalar_precheck.can_emit_native_scalar_module(&ps.mod);
 
+    const selected_backend = backend_identity.Backend.parse(backend_mode) orelse {
+        term.err("unknown --backend '{s}' (expected auto, c, direct, or native)", .{backend_mode});
+        std.process.exit(1);
+    };
     const effective_machine_target: ?[]const u8 = if (wantsMachineLowering(backend_mode, target))
         machineTargetForBackend(target)
     else
         null;
 
-    // Pass 27 P0: bench profiles c-dynamic/c-specialized must measure C emit, not direct Mach-O.
-    const skip_native_for_bench = global_bench_profile_cli and global_bench_backend != .direct;
+    if ((selected_backend == .auto or selected_backend == .direct) and effective_machine_target == null) {
+        term.err("{s} backend has no native machine realization for target '{s}' on this host; explicitly select --backend=c or --backend=wasm if that realization is intended", .{ selected_backend.name(), target });
+        std.process.exit(1);
+    }
 
     if (effective_machine_target) |mt| {
-        if (skip_native_for_bench) {
-            if (!std.mem.eql(u8, backend_mode, "auto") and !std.mem.eql(u8, backend_mode, "direct")) {
-                term.err("bench profile requires C emit path", .{});
-                std.process.exit(1);
-            }
-            // fall through to generated C below
-        } else if (run_after and !native_backend.isNativeExecutableTarget(mt)) {
-            if (std.mem.eql(u8, backend_mode, "auto")) {
-                // fall through to C for auto when run needs executable but target is object/asm
-            } else {
-                term.err("only --target native-exe can run through the native machine-code backend", .{});
-                std.process.exit(1);
-            }
+        if (run_after and !native_backend.isNativeExecutableTarget(mt)) {
+            term.err("only --target native-exe can run through the native machine-code backend", .{});
+            std.process.exit(1);
         } else if (load_chunk or lib_mode or shared_mem or pgo) {
-            if (!std.mem.eql(u8, backend_mode, "auto")) {
-                term.err("native machine-code target does not use C-only compile options yet", .{});
-                std.process.exit(1);
-            }
+            term.err("native machine-code target does not use C-only compile options yet", .{});
+            std.process.exit(1);
         } else if (!native_backend.isNativeExecutableTarget(mt) and !native_backend.isNativeSharedTarget(mt) and link_flags.len != 0) {
-            if (!std.mem.eql(u8, backend_mode, "auto")) {
-                term.err("native object/asm targets do not link libraries; use --target native-exe or native-dylib", .{});
-                std.process.exit(1);
-            }
+            term.err("native object/asm targets do not link libraries; use --target native-exe or native-dylib", .{});
+            std.process.exit(1);
         } else {
             if (native_backend.isNativeExecutableTarget(mt)) {
                 if (native_backend.resolveNativeEntrySymbol(&ps.mod, entry_override)) |entry| {
@@ -4324,9 +4311,8 @@ fn do_compile(
                     // `native_scalar_candidate` is exactly the "runs without the
                     // Lua runtime" predicate, computed above and, until now,
                     // first consulted 160 lines BELOW this block -- so the
-                    // machine-code path never asked. Declining here is the A8
-                    // way back down: under `auto` this falls through to the C
-                    // emit, which initialises the runtime and passes.
+                    // machine-code path never asked. A refusal here is terminal;
+                    // generated C is selected only by an explicit C request.
                     // `native_scalar_candidate` alone is NOT the predicate: it
                     // judges THIS module, and the module that needs the runtime
                     // is the CALLEE. Measured -- it is true for the program
@@ -4415,15 +4401,18 @@ fn do_compile(
                     var direct_graph = semantic_graph.SemanticGraph.init(alloc);
                     defer direct_graph.deinit();
                     _ = try direct_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
-                    const obj_result = if (native_scalar_candidate and !too_many_modules)
-                        native_backend.emitObjectForExecutableWithGraph(alloc, &ps.mod, entry, &direct_graph)
+                    var native_diagnostic: native_backend.Diagnostic = .{};
+                    const artifact_result = if (native_scalar_candidate and !too_many_modules)
+                        native_backend.emitObjectForExecutableWithGraphLineageObserved(alloc, &ps.mod, entry, &direct_graph, &native_diagnostic)
                     else
-                        @as(@TypeOf(native_backend.emitObjectForExecutableWithGraph(alloc, &ps.mod, entry, &direct_graph)), error.UnsupportedProgram);
-                    if (obj_result) |obj| {
+                        @as(@TypeOf(native_backend.emitObjectForExecutableWithGraphLineageObserved(alloc, &ps.mod, entry, &direct_graph, &native_diagnostic)), error.UnsupportedProgram);
+                    if (artifact_result) |artifact_value| {
+                        var artifact = artifact_value;
+                        defer artifact.deinit(alloc);
                         const direct_extra = try directLinkInputs(alloc, io, &ps.mod, mt, cc, null);
                         const obj_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_native.o", .{std.fs.path.stem(src_path)});
                         const cwd = Io.Dir.cwd();
-                        try Io.Dir.writeFile(cwd, io, .{ .sub_path = obj_path, .data = obj });
+                        try Io.Dir.writeFile(cwd, io, .{ .sub_path = obj_path, .data = artifact.bytes });
                         if (emitDirectCompileProofArtifact(alloc, io, src_path, obj_path, mt)) {
                             if (term.trace) term.traceStep("direct-proof-artifact", .{});
                         } else |_| {}
@@ -4471,40 +4460,31 @@ fn do_compile(
                         // No object: put the program back the way the C emit
                         // expects to find it.
                         if (spliced != 0) ps.mod.body.stmts = pre_splice_stmts;
-                        if (std.mem.eql(u8, backend_mode, "auto")) {
-                            if (term.info) term.infoMsg("auto backend: direct machine lowering unavailable ({s}) — using C emit bootstrap", .{@errorName(e)});
-                        } else {
-                            reportDirectBackendError(io, e, mt, @errorReturnTrace());
-                            std.process.exit(1);
-                        }
+                        reportDirectBackendError(io, e, mt, @errorReturnTrace(), link_refusal, &native_diagnostic, &native_scalar_precheck);
+                        std.process.exit(1);
                     }
                 } else {
                     if (entry_override) |name| {
                         term.err("--entry '{s}': no zero-arg i64/void/f64 function with that name", .{name});
                         std.process.exit(1);
-                    } else if (!std.mem.eql(u8, backend_mode, "auto")) {
-                        term.err("no linker entry: add @export on one zero-arg function, or a sole zero-arg i64/void/f64 function, or --entry <name>", .{});
+                    } else {
+                        term.err("no native linker entry: add @export on one zero-arg function, use a sole zero-arg i64/void/f64 function, pass --entry <name>, or explicitly select --backend=c", .{});
                         std.process.exit(1);
-                    } else if (term.info) {
-                        term.infoMsg("auto backend: no native entry symbol — using C emit bootstrap", .{});
                     }
                 }
             } else if (native_backend.isNativeSharedTarget(mt)) {
                 var direct_graph = semantic_graph.SemanticGraph.init(alloc);
                 defer direct_graph.deinit();
                 _ = try direct_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
-                const obj = native_backend.emitSharedObjectInputWithGraph(alloc, &ps.mod, &direct_graph) catch |e| {
-                    if (std.mem.eql(u8, backend_mode, "auto")) {
-                        if (term.info) term.infoMsg("auto backend: direct dylib lowering unavailable ({s})", .{@errorName(e)});
-                    } else {
-                        reportDirectBackendError(io, e, mt, @errorReturnTrace());
-                        std.process.exit(1);
-                    }
-                    return;
+                var native_diagnostic: native_backend.Diagnostic = .{};
+                var artifact = native_backend.emitSharedObjectInputWithGraphLineageObserved(alloc, &ps.mod, &direct_graph, &native_diagnostic) catch |e| {
+                    reportDirectBackendError(io, e, mt, @errorReturnTrace(), link_refusal, &native_diagnostic, &native_scalar_precheck);
+                    std.process.exit(1);
                 };
+                defer artifact.deinit(alloc);
                 const obj_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_native_dylib.o", .{std.fs.path.stem(src_path)});
                 const cwd = Io.Dir.cwd();
-                try Io.Dir.writeFile(cwd, io, .{ .sub_path = obj_path, .data = obj });
+                try Io.Dir.writeFile(cwd, io, .{ .sub_path = obj_path, .data = artifact.bytes });
                 try link_native_object(alloc, io, obj_path, out_path, cc, link_flags, false, true, &.{}, null);
                 if (phase_timer) |*t| trace_phase(io, t, "native dylib", out_path);
                 if (term.build_report != .plain and !test_mode) {
@@ -4517,21 +4497,24 @@ fn do_compile(
                 var direct_graph = semantic_graph.SemanticGraph.init(alloc);
                 defer direct_graph.deinit();
                 _ = try direct_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
-                const native_output = if (native_backend.isNativeAsmTarget(mt))
-                    native_backend.emitAssemblyWithGraph(alloc, &ps.mod, mt, &direct_graph)
-                else
-                    native_backend.emitObjectWithGraph(alloc, &ps.mod, mt, &direct_graph);
-                const obj = native_output catch |e| {
-                    if (std.mem.eql(u8, backend_mode, "auto")) {
-                        if (term.info) term.infoMsg("auto backend: direct object lowering unavailable ({s})", .{@errorName(e)});
-                    } else {
-                        reportDirectBackendError(io, e, mt, @errorReturnTrace());
-                        std.process.exit(1);
-                    }
-                    return;
-                };
                 const cwd = Io.Dir.cwd();
-                try Io.Dir.writeFile(cwd, io, .{ .sub_path = out_path, .data = obj });
+                if (native_backend.isNativeAsmTarget(mt)) {
+                    var native_diagnostic: native_backend.Diagnostic = .{};
+                    var assembly = native_backend.emitAssemblyWithGraphLineageObserved(alloc, &ps.mod, mt, &direct_graph, &native_diagnostic) catch |e| {
+                        reportDirectBackendError(io, e, mt, @errorReturnTrace(), link_refusal, &native_diagnostic, &native_scalar_precheck);
+                        std.process.exit(1);
+                    };
+                    defer assembly.deinit(alloc);
+                    try Io.Dir.writeFile(cwd, io, .{ .sub_path = out_path, .data = assembly.assembly });
+                } else {
+                    var native_diagnostic: native_backend.Diagnostic = .{};
+                    var artifact = native_backend.emitObjectWithGraphLineageObserved(alloc, &ps.mod, mt, &direct_graph, &native_diagnostic) catch |e| {
+                        reportDirectBackendError(io, e, mt, @errorReturnTrace(), link_refusal, &native_diagnostic, &native_scalar_precheck);
+                        std.process.exit(1);
+                    };
+                    defer artifact.deinit(alloc);
+                    try Io.Dir.writeFile(cwd, io, .{ .sub_path = out_path, .data = artifact.bytes });
+                }
                 if (phase_timer) |*t| trace_phase(io, t, "native object", out_path);
                 if (term.build_report != .plain and !test_mode) {
                     const total_ms: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
