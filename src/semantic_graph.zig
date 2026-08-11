@@ -385,16 +385,15 @@ pub const SemanticGraph = struct {
         if (caller_node.kind != .func) return error.InvalidApplicationCaller;
         if (subject) |entity| {
             const node = self.get(entity) orelse return error.InvalidApplicationSubject;
-            if (node.kind != .value or node.scope != occurrence) return error.InvalidApplicationSubject;
+            if (node.descriptor == null) return error.InvalidApplicationSubject;
         }
         for (arguments) |entity| {
             const node = self.get(entity) orelse return error.InvalidApplicationArgument;
-            if (node.kind != .value or node.scope != occurrence) return error.InvalidApplicationArgument;
+            if (node.descriptor == null) return error.InvalidApplicationArgument;
         }
         for (results) |entity| {
             const node = self.get(entity) orelse return error.InvalidApplicationResult;
-            if (node.kind != .value or node.scope != occurrence or
-                node.descriptor == null or !node.descriptor.?.eql(descriptor)) {
+            if (node.descriptor == null or !node.descriptor.?.eql(descriptor)) {
                 return error.InvalidApplicationResult;
             }
         }
@@ -449,18 +448,17 @@ pub const SemanticGraph = struct {
         if (caller_node.kind != .func) return null;
         if (fact.subject) |entity| {
             const node = self.get(entity) orelse return null;
-            if (node.kind != .value or node.scope != occurrence) return null;
+            if (node.descriptor == null) return null;
         }
         const arguments = self.valuesForRange(fact.arguments) orelse return null;
         const results = self.valuesForRange(fact.results) orelse return null;
         for (arguments) |entity| {
             const node = self.get(entity) orelse return null;
-            if (node.kind != .value or node.scope != occurrence) return null;
+            if (node.descriptor == null) return null;
         }
         for (results) |entity| {
             const node = self.get(entity) orelse return null;
-            if (node.kind != .value or node.scope != occurrence or
-                node.descriptor == null or !node.descriptor.?.eql(fact.descriptor)) return null;
+            if (node.descriptor == null or !node.descriptor.?.eql(fact.descriptor)) return null;
         }
         return fact;
     }
@@ -2259,13 +2257,34 @@ test "semantic_graph: checked subject application retains relation and value ide
     try std.testing.expectEqual(unresolved_before + 1, graph.unresolvedApplicationCount(null));
     graph.nodes.items[fact.application].demand = stored.demand;
 
+    const subject_id = stored.subject orelse return error.TestExpectedEqual;
+    graph.nodes.items[subject_id].kind = .local;
+    graph.nodes.items[subject_id].scope = null;
+    graph.nodes.items[results[0]].kind = .local;
     graph.nodes.items[results[0]].scope = null;
+    try std.testing.expect(graph.application(fact.application) != null);
+    try std.testing.expectEqual(unresolved_before, graph.unresolvedApplicationCount(null));
+
+    const subject_descriptor = graph.nodes.items[subject_id].descriptor.?;
+    graph.nodes.items[subject_id].descriptor = null;
     try std.testing.expect(graph.application(fact.application) == null);
     try std.testing.expectEqual(unresolved_before + 1, graph.unresolvedApplicationCount(null));
-    graph.nodes.items[results[0]].scope = fact.application;
+    graph.nodes.items[subject_id].descriptor = subject_descriptor;
 
-    // The transitional kind tag does not own application meaning. Application
-    // facts and source provenance queries are selected by the candidate column.
+    const result_descriptor = graph.nodes.items[results[0]].descriptor.?;
+    graph.nodes.items[results[0]].descriptor = .i32;
+    try std.testing.expect(graph.application(fact.application) == null);
+    try std.testing.expectEqual(unresolved_before + 1, graph.unresolvedApplicationCount(null));
+    graph.nodes.items[results[0]].descriptor = result_descriptor;
+
+    const result_range = graph.application_facts.items[row].results;
+    graph.application_facts.items[row].results.start = std.math.maxInt(u32);
+    try std.testing.expect(graph.application(fact.application) == null);
+    try std.testing.expectEqual(unresolved_before + 1, graph.unresolvedApplicationCount(null));
+    graph.application_facts.items[row].results = result_range;
+
+    // Transitional kinds and containment do not own application meaning. The
+    // candidate column and packed roles retain the exact semantic identities.
     graph.nodes.items[fact.application].kind = .value;
     try std.testing.expect(graph.application(fact.application) != null);
     try std.testing.expect(graph.callShapeOf(fact.application) != null);
@@ -2618,24 +2637,37 @@ test "semantic_graph: packed application facts reject duplicate and wrong roles"
         .demand = .unknown,
     });
     try graph.markApplicationCandidate(application);
-    const result = try graph.addChild(application, .{
-        .kind = .value,
+    const subject = try graph.addChild(module, .{
+        .kind = .param,
         .span = .{ .file = "axes.id", .start = 2, .end = 1 },
         .descriptor = .i64,
     });
+    const argument = try graph.addChild(module, .{
+        .kind = .local,
+        .span = .{ .file = "axes.id", .start = 2, .end = 1 },
+        .descriptor = .i64,
+    });
+    const result = try graph.addChild(module, .{
+        .kind = .local,
+        .span = .{ .file = "axes.id", .start = 2, .end = 1 },
+        .descriptor = .i64,
+    });
+    const arguments = [_]id{argument};
     const results = [_]id{result};
     try graph.publishApplication(
         application,
         relation,
-        null,
+        subject,
         relation,
         .i64,
         .unknown,
         graph.get(application).?.span,
-        &.{},
+        &arguments,
         &results,
     );
     try std.testing.expectEqual(relation, graph.applicationRelation(application).?);
+    try std.testing.expectEqual(subject, graph.application(application).?.subject.?);
+    try std.testing.expectEqualSlices(id, &arguments, graph.applicationArguments(application).?);
     try std.testing.expectEqual(result, graph.applicationResult(application).?);
     try std.testing.expect(graph.application(@intCast(graph.nodes.items.len)) == null);
 
@@ -2644,12 +2676,12 @@ test "semantic_graph: packed application facts reject duplicate and wrong roles"
         graph.publishApplication(
             application,
             relation,
-            null,
+            subject,
             relation,
             .i64,
             .single,
             graph.get(application).?.span,
-            &.{},
+            &arguments,
             &results,
         ),
     );
@@ -2659,12 +2691,12 @@ test "semantic_graph: packed application facts reject duplicate and wrong roles"
         graph.publishApplication(
             application,
             relation,
-            null,
+            subject,
             relation,
             .i64,
             .unknown,
             graph.get(application).?.span,
-            &.{},
+            &arguments,
             &results,
         ),
     );
@@ -2694,6 +2726,73 @@ test "semantic_graph: packed application facts reject duplicate and wrong roles"
             graph.get(wrong).?.span,
             &.{},
             &wrong_results,
+        ),
+    );
+
+    const incomplete = try graph.addChild(relation, .{
+        .kind = .call,
+        .span = .{ .file = "axes.id", .start = 4, .end = 1 },
+        .descriptor = .i64,
+        .demand = .unknown,
+    });
+    try graph.markApplicationCandidate(incomplete);
+    const without_descriptor = try graph.addChild(module, .{
+        .kind = .local,
+        .span = .{ .file = "axes.id", .start = 4, .end = 1 },
+    });
+    const wrong_descriptor = try graph.addChild(module, .{
+        .kind = .local,
+        .span = .{ .file = "axes.id", .start = 4, .end = 1 },
+        .descriptor = .i32,
+    });
+    const complete_result = try graph.addChild(module, .{
+        .kind = .local,
+        .span = .{ .file = "axes.id", .start = 4, .end = 1 },
+        .descriptor = .i64,
+    });
+    const incomplete_arguments = [_]id{without_descriptor};
+    const incomplete_results = [_]id{complete_result};
+    try std.testing.expectError(
+        error.InvalidApplicationSubject,
+        graph.publishApplication(
+            incomplete,
+            relation,
+            without_descriptor,
+            relation,
+            .i64,
+            .unknown,
+            graph.get(incomplete).?.span,
+            &.{},
+            &incomplete_results,
+        ),
+    );
+    try std.testing.expectError(
+        error.InvalidApplicationArgument,
+        graph.publishApplication(
+            incomplete,
+            relation,
+            null,
+            relation,
+            .i64,
+            .unknown,
+            graph.get(incomplete).?.span,
+            &incomplete_arguments,
+            &incomplete_results,
+        ),
+    );
+    const mismatched_results = [_]id{wrong_descriptor};
+    try std.testing.expectError(
+        error.InvalidApplicationResult,
+        graph.publishApplication(
+            incomplete,
+            relation,
+            null,
+            relation,
+            .i64,
+            .unknown,
+            graph.get(incomplete).?.span,
+            &.{},
+            &mismatched_results,
         ),
     );
 }
