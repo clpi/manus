@@ -74,9 +74,9 @@ s.env_set("DUO_BENCH_MANIFEST", BENCH_MANIFEST)
 
 BENCH_PARALLEL_COMPILE = s.getenv_or("BENCH_PARALLEL_COMPILE")
 
-_duo_lua_compile = DUO .. " compile --pgo -O3 examples/benchmark.lua -o /tmp/duo_bench.out"
+_duo_lua_compile = "/usr/bin/time -l " .. DUO .. " compile --pgo -O3 examples/benchmark.lua -o /tmp/duo_bench.out 2> /tmp/duolua_compile_time.txt"
 _c_instr_compile = CC .. " " .. CFLAGS .. " -fprofile-instr-generate -o /tmp/c_bench_instr.out examples/benchmark_c.c"
-_c_opt_compile = CC .. " " .. CFLAGS .. " -fprofile-instr-use=/tmp/c_bench.profdata -o /tmp/c_bench.out examples/benchmark_c.c"
+_c_opt_compile = "/usr/bin/time -l " .. CC .. " " .. CFLAGS .. " -fprofile-instr-use=/tmp/c_bench.profdata -o /tmp/c_bench.out examples/benchmark_c.c 2> /tmp/c_compile_time.txt"
 _c_profile_steps = "env LLVM_PROFILE_FILE=/tmp/c_bench.profraw /tmp/c_bench_instr.out > /dev/null 2>&1 || true; xcrun llvm-profdata merge -output=/tmp/c_bench.profdata /tmp/c_bench.profraw"
 
 if BENCH_PARALLEL_COMPILE == "1"
@@ -95,7 +95,7 @@ else
 end
 
 -- Compile the .duo mirror
-s.must("cd " .. ROOT .. " && " .. DUO .. " compile --pgo -O3 examples/benchmark.id -o /tmp/duo_bench_duo.out")
+s.must("cd " .. ROOT .. " && /usr/bin/time -l " .. DUO .. " compile --pgo -O3 examples/benchmark.id -o /tmp/duo_bench_duo.out 2> /tmp/duoduo_compile_time.txt")
 
 -- RESULT rows and TIMED rows are no longer the same count, and the split is
 -- the whole of gap[096]'s closure.
@@ -770,6 +770,21 @@ if RESULT_FAIL_FLAG == 1
     say("      beating must be MEASURED. Folded rows count against this verdict.")
 end
 
+extract_compile_metrics(file: str): table
+    out = s.capture("cat " .. file .. " 2>/dev/null || echo ''")
+    latency = string.match(out, "([0-9%.]+)%s+real")
+    mem = string.match(out, "([0-9]+)%s+maximum resident set size")
+    { latency = tonumber(latency) or -1.0, mem = tonumber(mem) or -1 }
+end
+
+duolua_metrics = extract_compile_metrics("/tmp/duolua_compile_time.txt")
+duoduo_metrics = extract_compile_metrics("/tmp/duoduo_compile_time.txt")
+c_metrics = extract_compile_metrics("/tmp/c_compile_time.txt")
+
+duolua_size = tonumber(trim(s.capture("stat -f %z /tmp/duo_bench.out 2>/dev/null || echo 0"))) or -1
+duoduo_size = tonumber(trim(s.capture("stat -f %z /tmp/duo_bench_duo.out 2>/dev/null || echo 0"))) or -1
+c_size = tonumber(trim(s.capture("stat -f %z /tmp/c_bench.out 2>/dev/null || echo 0"))) or -1
+
 -- Workstream A/B evidence binding
 evidence = "{\n"
 evidence = evidence .. "  \"revision\": \"" .. trim(s.capture("git rev-parse HEAD")) .. "\",\n"
@@ -786,6 +801,11 @@ if RESULT_FAIL_FLAG == 0
 else
     evidence = evidence .. "false,\n"
 end
+evidence = evidence .. "  \"compilation\": {\n"
+evidence = evidence .. "    \"duo_lua\": {\"latency_s\": " .. tostring(duolua_metrics.latency) .. ", \"peak_mem_bytes\": " .. tostring(duolua_metrics.mem) .. ", \"artifact_size_bytes\": " .. tostring(duolua_size) .. "},\n"
+evidence = evidence .. "    \"duo_duo\": {\"latency_s\": " .. tostring(duoduo_metrics.latency) .. ", \"peak_mem_bytes\": " .. tostring(duoduo_metrics.mem) .. ", \"artifact_size_bytes\": " .. tostring(duoduo_size) .. "},\n"
+evidence = evidence .. "    \"c_opt\": {\"latency_s\": " .. tostring(c_metrics.latency) .. ", \"peak_mem_bytes\": " .. tostring(c_metrics.mem) .. ", \"artifact_size_bytes\": " .. tostring(c_size) .. "}\n"
+evidence = evidence .. "  },\n"
 evidence = evidence .. "  \"measurements\": [\n"
 
 for i = 1, TIMED

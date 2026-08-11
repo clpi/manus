@@ -1,0 +1,56 @@
+#!/usr/bin/env duo
+json = req "std.json"
+fs = req "std.fs"
+
+content = fs.read_file("benchmark_evidence.json")
+if content == nil
+    print("No benchmark evidence found. Run scripts/run_benchmark.duo first.")
+    os.exit(1)
+end
+
+evidence = json.decode(content)
+
+print("=== Optimization Opportunity Projection ===")
+print("Compiler Artifact: " .. evidence.compiler_artifact)
+print("Realization Mode: " .. evidence.realization_mode)
+print("")
+
+-- We calculate priority based on (Duo Time - C Time). 
+-- Larger gap = higher priority.
+-- We sort descending by opportunity cost.
+
+opportunities = {}
+for i = 1, #evidence.measurements
+    m = evidence.measurements[i]
+    if m.duo_duo_s > 0 and m.c_s > 0
+        diff = m.duo_duo_s - m.c_s
+        if diff > 0.001
+            table.insert(opportunities, { name = m.name, cost = diff, duo_s = m.duo_duo_s, c_s = m.c_s })
+        end
+    end
+end
+
+-- Bubble sort for simplicity
+for i = 1, #opportunities
+    for j = 1, #opportunities - i
+        if opportunities[j].cost < opportunities[j + 1].cost
+            tmp = opportunities[j]
+            opportunities[j] = opportunities[j + 1]
+            opportunities[j + 1] = tmp
+        end
+    end
+end
+
+print(string.format("%-20s %10s %10s %10s", "Semantic Identity", "Cost Gap", "Duo Time", "C Time"))
+print(string.format("%-20s %10s %10s %10s", "-----------------", "--------", "--------", "--------"))
+
+for i = 1, #opportunities
+    o = opportunities[i]
+    -- Note: Semantic identity is currently coarse (benchmark name) until Poolside 
+    -- provides strict `application -> realization -> machine` graph lineage.
+    print(string.format("%-20s %10.3fs %10.3fs %10.3fs", o.name, o.cost, o.duo_s, o.c_s))
+end
+
+print("")
+print("Priority Projection: Work on top items above. Avoid expensive optimization on items not listed.")
+print("Waiting on Poolside: Expose exact `semantic application -> machine range` lineage interface to map cost below benchmark granularity.")
