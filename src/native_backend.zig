@@ -12,7 +12,6 @@ const dnir_hardware = @import("dnir_hardware.zig");
 const semantic_graph = @import("semantic_graph.zig");
 const region_graph = @import("region_graph.zig");
 const region_transform = @import("region_transform.zig");
-const realization = @import("realization.zig");
 
 pub const Error = error{
     UnsupportedTarget,
@@ -3518,14 +3517,8 @@ fn emitArm64ModuleWithGraph(
             }
 
             // Transformation changes realization, not meaning. Revalidate the
-            // actual DNIR that will be emitted before selecting realization.
+            // actual DNIR that will be emitted before machine emission.
             try validateDnirApplications(alloc, dnir_mut, graph, diagnostic);
-            if (realization.buildDeferredFromGraph(alloc, graph, "<native>")) |plan_val| {
-                var plan = plan_val;
-                defer plan.deinit(alloc);
-                realization.commitModuleForTarget(alloc, &plan, "native") catch |err| return err;
-            } else |err| return err;
-
             var output = try emitArm64FromDnir(alloc, dnir_mut, process_entry, diagnostic);
             errdefer output.deinit(alloc);
             output.graph = graph;
