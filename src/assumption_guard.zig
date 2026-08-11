@@ -220,13 +220,14 @@ fn appendShapeAssumption(
     });
 }
 
-/// Infer module assumptions from sema + graph lift (Pass 7 P7-04 wiring).
+/// Project module assumptions from the semantic graph.
 pub fn buildFromModule(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
     semantic: *const sema.Sema,
-    graph: ?*const semantic_graph.SemanticGraph,
+    graph: *const semantic_graph.SemanticGraph,
 ) !ModuleAssumptions {
+    _ = mod;
     _ = semantic;
     var items: std.ArrayListUnmanaged(Assumption) = .empty;
     errdefer {
@@ -234,20 +235,12 @@ pub fn buildFromModule(
         items.deinit(alloc);
     }
 
-    if (graph) |g| {
-        for (g.nodes.items) |node| {
-            if (node.kind != .table_shape) continue;
-            const name = node.name orelse continue;
-            if (!g.atModuleScope(&node)) continue;
-            const sc = node.storage_class orelse .dynamic;
-            try appendShapeAssumption(alloc, &items, name, sc, node.shape_id);
-        }
-    } else {
-        for (mod.body.stmts) |*stmt| {
-            if (stmt.* != .alias_def) continue;
-            const ad = stmt.alias_def;
-            try appendShapeAssumption(alloc, &items, ad.name, .dynamic, null);
-        }
+    for (graph.nodes.items) |node| {
+        if (node.kind != .table_shape) continue;
+        const name = node.name orelse continue;
+        if (!graph.atModuleScope(&node)) continue;
+        const sc = node.storage_class orelse .dynamic;
+        try appendShapeAssumption(alloc, &items, name, sc, node.shape_id);
     }
 
     return .{ .items = try items.toOwnedSlice(alloc) };
@@ -300,6 +293,11 @@ test "assumption_guard: writeCatalogJson emits predicate names" {
     const out = aw.written();
     try std.testing.expect(std.mem.indexOf(u8, out, "shape_id_matches") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "assume.no.escape") != null);
+}
+
+test "assumption_guard: graph input is required" {
+    const build_info = @typeInfo(@TypeOf(buildFromModule)).@"fn";
+    try std.testing.expect(build_info.param_types[3].? == *const semantic_graph.SemanticGraph);
 }
 
 test "assumption_guard: sealed Point record yields shape assumption" {
