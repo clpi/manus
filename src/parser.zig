@@ -15,53 +15,6 @@ pub const ParseError = error{
     ExpectedToken,
 } || @import("lexer.zig").LexError || Allocator.Error;
 
-/// Callable-header recognition observes the Idsem token pack through a local
-/// immutable cursor. The host scanner remains a compatibility oracle and is
-/// restored after the same recognition logic runs against it.
-const HeaderCursor = struct {
-    lex: *Lexer,
-    view: ?Lexer.TokenView,
-    initial: ?Lexer.State,
-
-    const State = union(enum) {
-        view: usize,
-        host: Lexer.State,
-    };
-
-    fn init(lex: *Lexer) HeaderCursor {
-        if (lex.tokenView()) |view| {
-            return .{ .lex = lex, .view = view, .initial = null };
-        }
-        return .{ .lex = lex, .view = null, .initial = lex.saveState() };
-    }
-
-    fn deinit(self: *HeaderCursor) void {
-        if (self.initial) |state| self.lex.restoreState(state);
-    }
-
-    fn peek(self: *HeaderCursor) ParseError!Token {
-        if (self.view) |*view| return view.peek();
-        return self.lex.peek();
-    }
-
-    fn next(self: *HeaderCursor) ParseError!Token {
-        if (self.view) |*view| return view.next();
-        return self.lex.next();
-    }
-
-    fn save(self: *const HeaderCursor) State {
-        if (self.view) |view| return .{ .view = view.index };
-        return .{ .host = self.lex.saveState() };
-    }
-
-    fn restore(self: *HeaderCursor, state: State) void {
-        switch (state) {
-            .view => |index| self.view.?.index = index,
-            .host => |host| self.lex.restoreState(host),
-        }
-    }
-};
-
 /// Source text of a primitive type keyword, so a type name can appear wherever
 /// an ordinary identifier can — table keys, field access, and so on. Type names
 /// are ORDINARY names that happen to denote types, not a separate universe of
@@ -2603,33 +2556,33 @@ pub const Parser = struct {
     ///   - a depth-1 `:` only counts as a typed param (`a: i32`) when it directly
     ///     follows a name; `(expr):method()` / `):c(` colons are method calls.
     /// True when the current token is ':' followed by a name-like token followed
-    /// immediately by '(', i.e. a method-call colon (`obj:method(`).
-    fn colon_is_method_call(scan: *HeaderCursor) ParseError!bool {
-        const saved = scan.save();
-        defer scan.restore(saved);
-        _ = try scan.next(); // ':'
-        const m_name = try scan.peek();
+    /// immediately by '(', i.e. a method-call colon (`obj:method(`). Speculative —
+    /// restores lexer state. Used by `scan_func_header_signal` so a method-call
+    /// colon inside an argument list (e.g. `print(red:to_string())`) is not
+    /// counted as a parameter type annotation (`a: i32`).
+    fn colon_is_method_call(self: *Parser) ParseError!bool {
+        const c_saved = self.lex.saveState();
+        defer self.lex.restoreState(c_saved);
+        _ = try self.adv(); // ':'
+        const m_name = try self.pk();
         if (m_name.kind != .name and !Lexer.isTypeKeyword(m_name.kind)) return false;
-        _ = try scan.next(); // name
-        return (try scan.peek()).kind == .lparen;
+        _ = try self.adv(); // name
+        return (try self.pk()).kind == .lparen;
     }
 
     fn scan_func_header_signal(self: *Parser, allow_untyped_comma: bool) ParseError!bool {
-        var scan = HeaderCursor.init(self.lex);
-        defer scan.deinit();
-        return scan_func_header_signal_from(&scan, allow_untyped_comma);
-    }
+        const saved = self.lex.saveState();
+        defer self.lex.restoreState(saved);
 
-    fn scan_func_header_signal_from(scan: *HeaderCursor, allow_untyped_comma: bool) ParseError!bool {
-        if ((try scan.peek()).kind != .lparen) return false;
-        _ = try scan.next();
+        if ((try self.pk()).kind != .lparen) return false;
+        _ = try self.adv();
 
         // A parameter list never opens with '('. Without this, `x = ((1))` scans
         // as a header: the literal sits at paren_depth 2, so the has_literal_arg
         // guard below (depth 1 only) never fires, and the group is misread as a
         // param list -- failing with "expected 'name', got '('". Grouping parens
         // in an assignment RHS (`r = r + ((b % 128) * (2 ^ s))`) hit this.
-        if ((try scan.peek()).kind == .lparen) return false;
+        if ((try self.pk()).kind == .lparen) return false;
 
         var paren_depth: usize = 1;
         var bracket_depth: usize = 0;
@@ -2644,7 +2597,7 @@ pub const Parser = struct {
         var rparen_line: u32 = 0;
         var prev: TK = .eof;
         while (paren_depth > 0) {
-            const tok = try scan.peek();
+            const tok = try self.pk();
             switch (tok.kind) {
                 .eof => return false,
                 .dots => typed_or_vararg = true,
@@ -2660,7 +2613,7 @@ pub const Parser = struct {
                     // method-call colon as an argument (e.g. `red:to_string(`)
                     // would otherwise make a plain call like `print(red:to_string())`
                     // look like a typed parameter list and misdetect a bare decl.
-                    if (!try colon_is_method_call(scan)) typed_or_vararg = true;
+                    if (!try self.colon_is_method_call()) typed_or_vararg = true;
                 },
                 .kw_fun, .kw_function => {
                     if (paren_depth == 1 and bracket_depth == 0 and brace_depth == 0 and !typed_or_vararg) {
@@ -2695,10 +2648,10 @@ pub const Parser = struct {
                 if (infix_prec(tok.kind) != null) has_infix_operator = true;
             }
             prev = tok.kind;
-            _ = try scan.next();
+            _ = try self.adv();
         }
 
-        const after = try scan.peek();
+        const after = try self.pk();
         if (has_literal_arg and !typed_or_vararg) return false; // literals are never in param list
         // Nor are infix operators: a parameter list holds names, annotations,
         // defaults and `...` — never `b & m`. Without this, `(b & m)` in operand
@@ -2715,11 +2668,11 @@ pub const Parser = struct {
         // only the arrow spelling could drop the `fun` keyword. A call is never
         // followed by a type annotation, so this is unambiguous.
         if (after.kind == .colon) {
-            const r_saved = scan.save();
-            _ = try scan.next();
-            const ty = try scan.peek();
+            const r_saved = self.lex.saveState();
+            _ = try self.adv();
+            const ty = try self.pk();
             const is_type = ty.kind == .name or Lexer.isTypeKeyword(ty.kind);
-            scan.restore(r_saved);
+            self.lex.restoreState(r_saved);
             if (is_type) return true;
         }
         if (typed_or_vararg or after.kind == .arrow or after.kind == .assign) return true;
@@ -2727,16 +2680,16 @@ pub const Parser = struct {
             if (after.kind == .eof) return false;
             if (after.kind == .colon) {
                 // `(a, b): Ret` — untyped comma params with an explicit return type.
-                const c_saved = scan.save();
-                _ = try scan.next();
-                const ty = try scan.peek();
+                const c_saved = self.lex.saveState();
+                _ = try self.adv();
+                const ty = try self.pk();
                 if (ty.kind != .name and !Lexer.isTypeKeyword(ty.kind)) {
-                    scan.restore(c_saved);
+                    self.lex.restoreState(c_saved);
                     return false;
                 }
-                _ = try scan.next();
-                const ok = (try scan.peek()).kind != .lparen;
-                scan.restore(c_saved);
+                _ = try self.adv();
+                const ok = (try self.pk()).kind != .lparen;
+                self.lex.restoreState(c_saved);
                 return ok;
             }
             if (infix_prec(after.kind) != null or after.kind == .dot) return false;
@@ -2746,11 +2699,11 @@ pub const Parser = struct {
             // Return-type colon marks a function header (`main(): i64`) only when
             // the name after ':' is followed by a body, not '(' — a '(' means it
             // is a method call (`("abc"):lower()`), not a header.
-            _ = try scan.next();
-            const ty = try scan.peek();
+            _ = try self.adv();
+            const ty = try self.pk();
             if (ty.kind != .name and !Lexer.isTypeKeyword(ty.kind)) return false;
-            _ = try scan.next();
-            return (try scan.peek()).kind != .lparen;
+            _ = try self.adv();
+            return (try self.pk()).kind != .lparen;
         }
         if (infix_prec(after.kind) != null or after.kind == .comma) return false;
         // `f(x)` with a single *untyped* name is a call, not a header: bare
@@ -6461,88 +6414,6 @@ fn parseDuoSource(src: []const u8, arena: *std.heap.ArenaAllocator) ParseError!a
     var p = Parser.init(&lex, alloc);
     p.duo_mode = true;
     return p.parse_module();
-}
-
-fn headerSignal(tokens: []const Token) !bool {
-    var lex = Lexer.init("", "header.id");
-    try lex.useDuoTokens(tokens);
-    var parser = Parser.init(&lex, testing.allocator);
-    return parser.scan_func_header_signal(false);
-}
-
-fn hostHeaderSignal(source: []const u8) !bool {
-    var lex = Lexer.init(source, "header.id");
-    var parser = Parser.init(&lex, testing.allocator);
-    return parser.scan_func_header_signal(false);
-}
-
-test "parse: callable-header observation is identity based" {
-    const canonical = [_]Token{
-        .{ .kind = .lparen, .loc = .{ .file = "header.id", .line = 1, .col = 1 }, .text = "(" },
-        .{ .kind = .name, .loc = .{ .file = "header.id", .line = 1, .col = 2 }, .text = "value" },
-        .{ .kind = .colon, .loc = .{ .file = "header.id", .line = 1, .col = 7 }, .text = ":" },
-        .{ .kind = .kw_i64, .loc = .{ .file = "header.id", .line = 1, .col = 9 }, .text = "i64" },
-        .{ .kind = .rparen, .loc = .{ .file = "header.id", .line = 1, .col = 12 }, .text = ")" },
-        .{ .kind = .eof, .loc = .{ .file = "header.id", .line = 1, .col = 13 }, .text = "" },
-    };
-    const respelled = [_]Token{
-        .{ .kind = .lparen, .loc = .{ .file = "header.id", .line = 1, .col = 1 }, .text = "open" },
-        .{ .kind = .name, .loc = .{ .file = "header.id", .line = 1, .col = 2 }, .text = "operand" },
-        .{ .kind = .colon, .loc = .{ .file = "header.id", .line = 1, .col = 7 }, .text = "role" },
-        .{ .kind = .kw_i64, .loc = .{ .file = "header.id", .line = 1, .col = 9 }, .text = "descriptor" },
-        .{ .kind = .rparen, .loc = .{ .file = "header.id", .line = 1, .col = 12 }, .text = "close" },
-        .{ .kind = .eof, .loc = .{ .file = "header.id", .line = 1, .col = 13 }, .text = "ignored" },
-    };
-    const changed_identity = [_]Token{
-        .{ .kind = .lparen, .loc = .{ .file = "header.id", .line = 1, .col = 1 }, .text = "(" },
-        .{ .kind = .name, .loc = .{ .file = "header.id", .line = 1, .col = 2 }, .text = "value" },
-        .{ .kind = .comma, .loc = .{ .file = "header.id", .line = 1, .col = 7 }, .text = ":" },
-        .{ .kind = .kw_i64, .loc = .{ .file = "header.id", .line = 1, .col = 9 }, .text = "i64" },
-        .{ .kind = .rparen, .loc = .{ .file = "header.id", .line = 1, .col = 12 }, .text = ")" },
-        .{ .kind = .eof, .loc = .{ .file = "header.id", .line = 1, .col = 13 }, .text = "" },
-    };
-
-    try testing.expect(try headerSignal(&canonical));
-    try testing.expect(try headerSignal(&respelled));
-    try testing.expect(!try headerSignal(&changed_identity));
-    try testing.expectEqual(try hostHeaderSignal("(value: i64)"), try headerSignal(&canonical));
-    try testing.expectEqual(try hostHeaderSignal("(value, i64)"), try headerSignal(&changed_identity));
-}
-
-test "parse: callable-header observation does not move production state" {
-    const tokens = [_]Token{
-        .{ .kind = .lparen, .loc = .{ .file = "header.id", .line = 1, .col = 1 }, .text = "(" },
-        .{ .kind = .name, .loc = .{ .file = "header.id", .line = 1, .col = 2 }, .text = "value" },
-        .{ .kind = .colon, .loc = .{ .file = "header.id", .line = 1, .col = 7 }, .text = ":" },
-        .{ .kind = .kw_i64, .loc = .{ .file = "header.id", .line = 1, .col = 9 }, .text = "i64" },
-        .{ .kind = .rparen, .loc = .{ .file = "header.id", .line = 1, .col = 12 }, .text = ")" },
-        .{ .kind = .eof, .loc = .{ .file = "header.id", .line = 1, .col = 13 }, .text = "" },
-    };
-    var lex = Lexer.init("", "header.id");
-    try lex.useDuoTokens(&tokens);
-    _ = try lex.peek();
-    const before = lex.saveState();
-    const pack_ptr = lex.duo_tokens.?.ptr;
-
-    var parser = Parser.init(&lex, testing.allocator);
-    parser.prev_line = 91;
-    parser.prev_end_col = 37;
-    try testing.expect(try parser.scan_func_header_signal(false));
-
-    try testing.expectEqualDeep(before, lex.saveState());
-    try testing.expectEqual(@intFromPtr(pack_ptr), @intFromPtr(lex.duo_tokens.?.ptr));
-    try testing.expectEqual(@as(u32, 91), parser.prev_line);
-    try testing.expectEqual(@as(u32, 37), parser.prev_end_col);
-
-    var host_lex = Lexer.init("(value: i64)", "header.id");
-    const host_before = host_lex.saveState();
-    var host_parser = Parser.init(&host_lex, testing.allocator);
-    host_parser.prev_line = 17;
-    host_parser.prev_end_col = 29;
-    try testing.expect(try host_parser.scan_func_header_signal(false));
-    try testing.expectEqualDeep(host_before, host_lex.saveState());
-    try testing.expectEqual(@as(u32, 17), host_parser.prev_line);
-    try testing.expectEqual(@as(u32, 29), host_parser.prev_end_col);
 }
 
 test "parse: call statement inside assign-form func body is not bare func decl" {
