@@ -95,7 +95,7 @@ else
 end
 
 -- Compile the .duo mirror
-s.must("cd " .. ROOT .. " && " .. DUO .. " compile --pgo -O3 examples/benchmark.duo -o /tmp/duo_bench_duo.out")
+s.must("cd " .. ROOT .. " && " .. DUO .. " compile --pgo -O3 examples/benchmark.id -o /tmp/duo_bench_duo.out")
 
 -- RESULT rows and TIMED rows are no longer the same count, and the split is
 -- the whole of gap[096]'s closure.
@@ -457,7 +457,7 @@ say("")
 
 print("=== Correctness (RESULT lines) ===")
 duobenchres = capture_results("Duo benchmark.lua", "/tmp/duo_bench.out")
-duobenchduores = capture_results("Duo benchmark.duo", "/tmp/duo_bench_duo.out")
+duobenchduores = capture_results("Duo benchmark.id", "/tmp/duo_bench_duo.out")
 cbenchres = capture_results("reference C benchmark", "/tmp/c_bench.out")
 
 -- `global` is load-bearing. As a BARE top-level binding this stayed false
@@ -543,7 +543,7 @@ checktimes(label: str, t: table): i64
 end
 
 checktimes("Duo benchmark.lua", DUO_TIMES)
-checktimes("Duo benchmark.duo", DUOFILETIMES)
+checktimes("Duo benchmark.id", DUOFILETIMES)
 checktimes("reference C benchmark", C_TIMES)
 
 global RESULT_FAIL_FLAG: i64 = 0
@@ -768,9 +768,57 @@ if RESULT_FAIL_FLAG == 1
     say("")
     say("FAIL: Duo .lua and .duo must beat or tie reference C on every test, and the")
     say("      beating must be MEASURED. Folded rows count against this verdict.")
+end
+
+-- Workstream A/B evidence binding
+evidence = "{\n"
+evidence = evidence .. "  \"revision\": \"" .. trim(s.capture("git rev-parse HEAD")) .. "\",\n"
+evidence = evidence .. "  \"compiler_artifact\": \"" .. DUO .. "\",\n"
+evidence = evidence .. "  \"target\": \"" .. trim(s.capture("uname -m -s")) .. "\",\n"
+evidence = evidence .. "  \"benchmark_identity\": \"run_benchmark.duo\",\n"
+evidence = evidence .. "  \"input_identity\": \"" .. BENCH_MANIFEST .. "\",\n"
+evidence = evidence .. "  \"realization_mode\": \"" .. BENCH_BACKEND .. "\",\n"
+evidence = evidence .. "  \"comparator\": \"C\",\n"
+evidence = evidence .. "  \"warm_cold\": \"warm\",\n"
+evidence = evidence .. "  \"outcome\": "
+if RESULT_FAIL_FLAG == 0
+    evidence = evidence .. "true,\n"
+else
+    evidence = evidence .. "false,\n"
+end
+evidence = evidence .. "  \"measurements\": [\n"
+
+for i = 1, TIMED
+    name = NAMES[i]
+    d = DUO_TIMES[i]
+    if d == nil d = -1.0 end
+    duofile = DUOFILETIMES[i]
+    if duofile == nil duofile = -1.0 end
+    c = C_TIMES[i]
+    if c == nil c = -1.0 end
+    
+    evidence = evidence .. "    {\n"
+    evidence = evidence .. "      \"name\": \"" .. name .. "\",\n"
+    evidence = evidence .. "      \"duo_lua_s\": " .. tostring(d) .. ",\n"
+    evidence = evidence .. "      \"duo_duo_s\": " .. tostring(duofile) .. ",\n"
+    evidence = evidence .. "      \"c_s\": " .. tostring(c) .. "\n"
+    evidence = evidence .. "    }"
+    if i < TIMED
+        evidence = evidence .. ",\n"
+    else
+        evidence = evidence .. "\n"
+    end
+end
+evidence = evidence .. "  ]\n}\n"
+
+fs = req "std.fs"
+fs.write_file("benchmark_evidence.json", evidence)
+
+if RESULT_FAIL_FLAG == 1
     os.exit(1)
 end
 
 print("══════════════════════════════════════════════════════════════════════════════")
 print("✓ All benchmarks: results match and Duo .lua/.duo >= C on measured time")
 print("══════════════════════════════════════════════════════════════════════════════")
+
