@@ -203,6 +203,22 @@ pub fn build(b: *std.Build) void {
     const unit_test_step = b.step("unit-test", "Run Zig unit tests only");
     unit_test_step.dependOn(&run_unit_tests.step);
 
+    // C0 law.corpus.zero is the Idsem owner; this is an authority-free physical
+    // Git-status projection. The same shim guards commits and serialized
+    // admission so empty, binary, renamed, case-varied, and untracked .duo
+    // paths cannot bypass the added-line Idsem gate. Delete this bridge only
+    // after an executed Idsem gate covers staged additions, the anchored
+    // committed range, and untracked worktree candidates fail-closed.
+    // Parent of the commit that admitted C0 corpus-zero. Comparing from the
+    // immutable law-adoption boundary catches a forbidden path hidden in any
+    // earlier commit of a multi-commit change, including --no-verify commits.
+    const source_zero_cmd = b.addSystemCommand(&.{
+        "./.githooks/pre-commit",
+        "source-zero",
+        "ad8a9c6eb8b55f724c7b914639be3ba6f76c0507",
+    });
+    source_zero_cmd.setCwd(b.path("."));
+
     const no_ansi_reports_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/assert_no_ansi_reports.duo" });
     no_ansi_reports_cmd.setCwd(b.path("."));
     no_ansi_reports_cmd.step.dependOn(b.getInstallStep());
@@ -881,6 +897,7 @@ pub fn build(b: *std.Build) void {
     agent_smoke_cmd.setCwd(b.path("."));
     agent_smoke_cmd.step.dependOn(b.getInstallStep());
     const agent_smoke_step = b.step("agent-smoke", "Run tier-0 agent-smoke gate (public safety, coordination, stdlib, meta)");
+    agent_smoke_step.dependOn(&source_zero_cmd.step);
     agent_smoke_step.dependOn(&public_safety_cmd.step);
     agent_smoke_step.dependOn(&semantic_architecture_cmd.step);
     agent_smoke_step.dependOn(&agent_smoke_cmd.step);
