@@ -1,4 +1,4 @@
-//! Pass 27 P0 — benchmark evidence counters and 3-backend comparison matrix.
+//! Benchmark evidence counters and compile-proof projection.
 const std = @import("std");
 const backend_identity = @import("backend_identity.zig");
 const native_barrier_checks = @import("native_barrier_checks.zig");
@@ -29,7 +29,6 @@ pub const EvidenceCounters = struct {
     return_pack_materializations: usize = 0,
     runtime_helpers: usize = 0,
     code_size_bytes: usize = 0,
-    compiler_time_ns: u64 = 0,
     /// Pass 34 L2 — fallback `.field` accesses (duo_fallback_get_* markers) + distinct
     /// interned field IDs, surfaced in the L6 manifest emission section.
     fallback_field_accesses: usize = 0,
@@ -48,7 +47,6 @@ pub const EvidenceCounters = struct {
             .return_pack_materializations = countOccurrences(source, "lua_push") + countOccurrences(source, "duo_ret_pack"),
             .runtime_helpers = base.gc_refs + base.lua_invoke,
             .code_size_bytes = code_size,
-            .compiler_time_ns = 0,
             .fallback_field_accesses = fallback.accesses,
             .interned_field_ids = fallback.distinct_ids,
         };
@@ -86,40 +84,6 @@ fn countOccurrences(haystack: []const u8, needle: []const u8) usize {
         start = rel + needle.len;
     }
     return count;
-}
-
-pub const BenchmarkMatrixRow = struct {
-    program_id: []const u8,
-    bench_backend: backend_identity.BenchBackend,
-    backend: backend_identity.Backend,
-    representation: backend_identity.RepresentationProfile,
-    runtime: backend_identity.RuntimeProfile,
-    counters: EvidenceCounters,
-    result_checksum: ?[]const u8 = null,
-    wall_time_ns: ?u64 = null,
-    correctness_match: bool = false,
-};
-
-/// Ten RESULT ids in pass27_proof_matrix (P27 I.1).
-pub const canonical_ten_programs: []const []const u8 = &.{
-    "fib", "primes", "mandel", "grid", "nbody", "table_sum", "trig", "hash", "dot", "xor",
-};
-
-pub const required_bench_backends: []const backend_identity.BenchBackend = &.{
-    .c_dynamic,
-    .c_specialized,
-    .direct,
-};
-
-pub const profileForBenchBackend = backend_identity.profileForBenchBackend;
-
-pub fn matrixCellCount() usize {
-    return canonical_ten_programs.len * required_bench_backends.len;
-}
-
-/// P27-G01 partial: schema requires 10×3 matrix definition.
-pub fn validateMatrixSchema() bool {
-    return canonical_ten_programs.len == 10 and required_bench_backends.len == 3;
 }
 
 pub const CompileProofArtifact = struct {
@@ -251,9 +215,4 @@ test "pass27_benchmark_evidence: direct object zero-box" {
     const obj = [_]u8{ 0xCF, 0xFA, 0xED, 0xFE, 0x00, 0x00, 0x00, 0x00 };
     const c = EvidenceCounters.fromDirectObject(&obj);
     try std.testing.expect(c.isZeroBoxNativePath());
-}
-
-test "pass27_benchmark_evidence: 10x3 matrix schema" {
-    try std.testing.expect(validateMatrixSchema());
-    try std.testing.expect(matrixCellCount() == 30);
 }
