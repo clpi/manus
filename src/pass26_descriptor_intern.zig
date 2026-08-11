@@ -205,14 +205,6 @@ pub fn inferDescriptorState(sc: types.StorageClass, is_sealed: bool) pass26_desc
     };
 }
 
-pub fn interningPolicy(state: pass26_descriptor_identity.DescriptorState) pass26_descriptor_identity.InterningPolicy {
-    return switch (state) {
-        .sealed, .frozen_snapshot, .derived => .canonicalize_pure,
-        .open_semantic => .defer_until_sealed,
-        .mutable_builder => .preserve_declaration,
-    };
-}
-
 pub fn resolveCompletion(
     recursion: pass26_recursive_descriptor.RecursionKind,
     rt: types.ResolvedType,
@@ -253,15 +245,15 @@ pub const Registry = struct {
         const state = inferDescriptorState(sc, is_sealed);
         const recursion = classifyRecursion(name, rt);
         const completion = resolveCompletion(recursion, rt);
-        const policy = interningPolicy(state);
 
         const fingerprint = try semanticFingerprint(rt, state, completion, recursion, self.alloc);
         const decl_id = declarationIdentityHash(module_path, name, span);
+        try self.records.ensureUnusedCapacity(self.alloc, 1);
 
         var intern_slot: ?u32 = null;
 
-        switch (policy) {
-            .canonicalize_pure, .foreign_fingerprint => {
+        switch (state) {
+            .sealed, .frozen_snapshot, .derived => {
                 if (self.fingerprint_slots.get(fingerprint)) |existing| {
                     intern_slot = existing;
                 } else {
@@ -270,7 +262,7 @@ pub const Registry = struct {
                     intern_slot = slot;
                 }
             },
-            .defer_until_sealed, .preserve_declaration => {},
+            .open_semantic, .mutable_builder => {},
         }
 
         const record = IdentityRecord{
@@ -281,7 +273,7 @@ pub const Registry = struct {
             .recursion = recursion,
             .completion = completion,
         };
-        try self.records.append(self.alloc, record);
+        self.records.appendAssumeCapacity(record);
         return @intCast(self.records.items.len - 1);
     }
 };
@@ -328,6 +320,76 @@ test "pass26_descriptor_intern: pure pair interning" {
     try std.testing.expect(rx.declaration_identity != ry.declaration_identity);
     try std.testing.expect(rx.intern_slot != null);
     try std.testing.expectEqual(rx.intern_slot, ry.intern_slot);
+}
+
+test "pass26_descriptor_intern: descriptor state controls candidate sharing" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const fields = try alloc.alloc(types.FieldType, 1);
+    fields[0] = .{ .name = "value", .typ = .i64 };
+    const open: types.ResolvedType = .{ .table_type = .{
+        .fields = fields,
+        .storage_class = .guarded,
+        .is_sealed = false,
+    } };
+    const sealed: types.ResolvedType = .{ .table_type = .{
+        .fields = fields,
+        .storage_class = .sealed,
+        .is_sealed = true,
+    } };
+
+    var reg = Registry.init(alloc);
+    defer reg.deinit();
+
+    const first_open = try reg.registerAlias("graph.id", "OpenA", .{ .line = 1, .col = 1 }, open, .guarded);
+    const second_open = try reg.registerAlias("graph.id", "OpenB", .{ .line = 2, .col = 1 }, open, .guarded);
+    try std.testing.expect(reg.get(first_open).?.intern_slot == null);
+    try std.testing.expect(reg.get(second_open).?.intern_slot == null);
+
+    const first = try reg.registerAlias("graph.id", "First", .{ .line = 3, .col = 1 }, sealed, .sealed);
+    const second = try reg.registerAlias("graph.id", "Second", .{ .line = 4, .col = 1 }, sealed, .sealed);
+    try std.testing.expect(reg.get(first).?.intern_slot != null);
+    try std.testing.expectEqual(reg.get(first).?.intern_slot, reg.get(second).?.intern_slot);
+}
+
+test "pass26_descriptor_intern: allocation failure cannot retain a candidate slot" {
+    var first_fields = [_]types.FieldType{.{ .name = "first", .typ = .i64 }};
+    var second_fields = [_]types.FieldType{.{ .name = "second", .typ = .i64 }};
+    const first_type: types.ResolvedType = .{ .table_type = .{
+        .fields = &first_fields,
+        .storage_class = .sealed,
+        .is_sealed = true,
+    } };
+    const second_type: types.ResolvedType = .{ .table_type = .{
+        .fields = &second_fields,
+        .storage_class = .sealed,
+        .is_sealed = true,
+    } };
+
+    var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{
+        .fail_index = 2,
+    });
+    var reg = Registry.init(failing.allocator());
+    errdefer reg.deinit();
+
+    try std.testing.expectError(
+        error.OutOfMemory,
+        reg.registerAlias("graph.id", "First", .{ .line = 1, .col = 1 }, first_type, .sealed),
+    );
+    try std.testing.expect(failing.has_induced_failure);
+    try std.testing.expectEqual(@as(usize, 0), reg.records.items.len);
+
+    failing.fail_index = std.math.maxInt(usize);
+    const second = try reg.registerAlias("graph.id", "Second", .{ .line = 2, .col = 1 }, second_type, .sealed);
+    const first = try reg.registerAlias("graph.id", "First", .{ .line = 1, .col = 1 }, first_type, .sealed);
+    try std.testing.expect(reg.get(second).?.intern_slot != null);
+    try std.testing.expect(reg.get(first).?.intern_slot != null);
+    try std.testing.expect(reg.get(second).?.intern_slot != reg.get(first).?.intern_slot);
+
+    reg.deinit();
+    try std.testing.expectEqual(failing.allocated_bytes, failing.freed_bytes);
 }
 
 test "pass26_descriptor_intern: recursive pointer classification" {
