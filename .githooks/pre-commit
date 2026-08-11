@@ -122,7 +122,7 @@ rm -f "$tmp"
   exit 1
 }
 
-"$duo" run "$root/scripts/semanticgate.duo" || {
+"$duo" run --backend=c "$root/scripts/semanticgate.duo" || {
   echo ""
   echo "COMMIT BLOCKED — semantic canonicality is part of correctness."
   echo "Repair or explicitly classify the semantic debt; do not suppress it."
