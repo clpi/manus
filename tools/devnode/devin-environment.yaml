@@ -1,0 +1,58 @@
+# Idsem Devin projection.
+#
+# This is physical agent setup only. It is not language authority. Devin must
+# start from AGENTS.md and repository facts, the same as Codex and Cursor.
+
+initialize:
+  - run: |
+      set -eu
+      cd "$(git rev-parse --show-toplevel)"
+      if command -v mise >/dev/null 2>&1; then
+        mise install
+      fi
+      zig build --summary all
+      ./tools/devnode/orient
+
+maintenance:
+  - run: |
+      set -eu
+      cd "$(git rev-parse --show-toplevel)"
+      ./tools/devnode/orient
+      IDSEM_DOCTOR_SKIP_GATES=1 ./tools/devnode/doctor
+
+knowledge:
+  - name: authority
+    contents: |
+      Read AGENTS.md first. It routes to docs/spec/constitution.md, CLAUDE.md,
+      docs/spec/AUTHORITY.md, docs/bootstrap.md, and the relevant projection.
+      docs/spec/constitution.md is the sole Idsem semantic law. This Devin
+      projection is not semantic authority.
+
+  - name: orientation
+    contents: |
+      Run ./tools/devnode/orient before choosing work. Treat its output as a
+      live derived state projection, not as architecture law. Follow the
+      authority links it prints.
+
+  - name: coordination
+    contents: |
+      This is a concurrent checkout. Inspect git status, HEAD, recent commits,
+      gaps, and live claims before editing. Claim exact paths through
+      duo_dev_claim_acquire when MCP is available. Never use git stash,
+      git reset --hard, git add ., or git add -A. Commit explicit pathspecs.
+
+  - name: verification
+    contents: |
+      Use ./tools/devnode/doctor for fast development-node admission. Use
+      ./tools/devnode/probe-mcp for raw MCP initialize health. Heavy gates must
+      run through ./zig-out/bin/duo run --backend=c scripts/duo_lock.duo -- ...
+      Evidence is exact tree, command, executed path, outcome, and positive
+      controls.
+
+  - name: platform-boundary
+    contents: |
+      Devin cloud sessions may not be the owner's Apple Silicon Mac. Do not
+      claim macOS/Apple ARM64 realization, local Codex/Cursor MCP integration,
+      or native performance from a Linux/cloud-only run. Emit
+      MAC-VERIFICATION-REQUIRED with exact commands when local Mac proof is
+      required.

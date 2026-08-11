@@ -27,6 +27,11 @@ Generated binaries, Codex/Cursor histories, caches, transcripts, and generated
 absolute-path MCP files are machine-local state. They are never project
 authority and must not be copied between machines.
 
+Devin uses `tools/devnode/devin-environment.yaml` as the repository-owned
+projection. It routes Devin into `AGENTS.md`, `tools/devnode/orient`, and the
+same doctor/gate evidence path instead of carrying a Devin-specific language
+summary.
+
 ## Production-reachable host dependencies
 
 The setup path installs or validates only tools that are reached by the current
@@ -41,7 +46,7 @@ admitted benchmark/foreign-lawset surfaces.
 | `jq` | canonical MCP manifest projection and checks | `generate-configs`; `probe-mcp`; `doctor` |
 | `zls` | required Zig navigation MCP server | pinned in `.tool-versions`; `probe-mcp`; `mcp-gate`; `doctor` |
 | `codex` | Codex fresh-session and MCP admission | pinned by `doctor`; generated `~/.codex/config.toml`; `codex doctor`; `codex mcp get` |
-| `cursor` | Cursor Agent admission and project MCP/rules projection | pinned by `doctor`; `.cursor/rules/00-authority.mdc`; scoped rule set; `.cursor/mcp.json`; `cursor agent --help`; `cursor agent mcp list` |
+| `cursor`, `cursor-agent` | Cursor Agent admission and project MCP/rules projection | pinned by `doctor`; `.cursor/rules/00-authority.mdc`; scoped rule set; `.cursor/mcp.json`; `cursor agent --help`; `cursor agent mcp list` |
 | `tree-sitter` | editor grammar projection gates | `doctor`; reachable through `tree-sitter-coverage` and projection gates |
 | `node`, `npm` | tree-sitter/editor package toolchain | pinned `node` in `.tool-versions`; `doctor` |
 | `lua`, `luajit` | cross-language benchmark baselines | pinned in `.tool-versions`; `doctor`; reachable through benchmark gates |
@@ -54,6 +59,7 @@ Correctness-sensitive versions currently pinned or checked:
 - `zls 0.16.0`
 - `codex-cli 0.147.0`
 - `cursor 3.5.33`
+- `cursor-agent 2026.08.04-aaa8809`
 - `node 26.7.0`
 - `lua 5.5.1`
 - `luajit 2.1.1744318430`

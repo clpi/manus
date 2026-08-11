@@ -46,6 +46,7 @@ need_cmd jq
 need_cmd zls
 need_cmd codex
 need_cmd cursor
+need_cmd cursor-agent
 need_cmd tree-sitter
 need_cmd node
 need_cmd npm
@@ -109,6 +110,10 @@ fi
 if command -v cursor >/dev/null 2>&1; then
   cursor_v="$(cursor --version 2>/dev/null | head -1 || true)"
   want_version cursor "3.5.33" "$cursor_v"
+fi
+if command -v cursor-agent >/dev/null 2>&1; then
+  cursor_agent_v="$(cursor-agent --version 2>/dev/null | head -1 || true)"
+  want_version cursor-agent "2026.08.04-aaa8809" "$cursor_agent_v"
 fi
 
 duo="${IDSEM_DUO_BIN:-$repo/zig-out/bin/duo}"
