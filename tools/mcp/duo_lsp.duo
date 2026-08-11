@@ -611,7 +611,7 @@ std.mcp.register_tool("duo_agent_session_start", "Session bootstrap: load coordi
             "duo_complexity(path='comp.map') to query complexity",
             "duo_next_combinators(path='comp.map') to get suggestions",
             "duo_multiplier_opportunities(file_path='file.duo') to find opportunities",
-            "cd " .. root .. " && " .. shared.duobin .. " run scripts/agent_smoke.duo (or the duo_agent_smoke tool, which takes the build lock)",
+            "cd " .. root .. " && " .. shared.duobin .. " run --backend=c scripts/agent_smoke.duo (or the duo_agent_smoke tool, which takes the build lock)",
         },
         coordination_excerpt = string.sub(coord, 1, 4000),
         canonical_excerpt = string.sub(canon, 1, 2000),

@@ -1,0 +1,12 @@
+---
+globs: ["docs/bootstrap.md", "gaps/GAP-139.md", "src/main.zig", "lib/**", "tools/devnode/**"]
+---
+
+# Selfhost
+
+Use `docs/bootstrap.md` for the executed bootstrap frontier. Current stage is
+S0 unless that document changes and production evidence proves it.
+
+Do not claim self-hosting from file presence, wrappers, generated C, or a
+synthetic verifier. Compiler B/C claims require exact source, producer, graph
+facts, behavior, diagnostics, and provenance evidence.

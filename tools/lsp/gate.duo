@@ -111,7 +111,7 @@ drive(lines: str): str
     respf = work .. "/resp.lsp"
     std.fs.write_file(reqf, lines)
     os.execute("cd " .. work .. " && DUO_ROOT='" .. root .. "' '" .. duobin
-        .. "' run '" .. server .. "' < '" .. reqf .. "' > '" .. respf .. "' 2>/dev/null")
+        .. "' run --backend=c '" .. server .. "' < '" .. reqf .. "' > '" .. respf .. "' 2>/dev/null")
     std.fs.read_file(respf) or ""
 end
 
@@ -363,7 +363,7 @@ main(): i64
     src = root .. "/docs/spec/roles.md"
     if std.fs.exists(src)
         rc = os.execute("cd " .. work .. " && DUO_ROOT='" .. root .. "' '" .. duobin
-            .. "' run '" .. root .. "/tools/lsp/legend.duo' > '" .. work .. "/legend.txt' 2>/dev/null")
+            .. "' run --backend=c '" .. root .. "/tools/lsp/legend.duo' > '" .. work .. "/legend.txt' 2>/dev/null")
         gen = std.fs.read_file(work .. "/legend.txt") or ""
         check(has(gen, "already current"), "the committed legend re-derives from docs/spec/roles.md",
             "regenerating changed the block — commit the regeneration, do not hand-edit it")

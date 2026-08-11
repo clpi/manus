@@ -1,0 +1,12 @@
+---
+globs: ["benchmarks/**", "scripts/*bench*.duo", "tools/wasm/bench/**", "docs/performance.md", "build.zig"]
+---
+
+# Performance
+
+Performance claims need exact command, tree, artifact path, comparator, and
+positive control. Separate runtime, compile time, startup, memory, artifact
+size, support footprint, and incremental cost.
+
+External tools are oracles or competitors only. They do not define Idsem
+semantics.

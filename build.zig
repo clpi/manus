@@ -331,7 +331,7 @@ pub fn build(b: *std.Build) void {
     const semantic_harness_step = b.step("semantic-harness", "Every projection target must agree on stdout, not just exit status (Pass 57 A2)");
     semantic_harness_step.dependOn(&semantic_harness_cmd.step);
 
-    const repo_hygiene_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/repo_hygiene.duo" });
+    const repo_hygiene_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "--backend=c", "scripts/repo_hygiene.duo" });
     repo_hygiene_cmd.setCwd(b.path("."));
     const repo_hygiene_step = b.step("repo-hygiene", "Pass 11 WP-12: forbidden root artifacts and tracked agent noise");
     repo_hygiene_step.dependOn(&repo_hygiene_cmd.step);

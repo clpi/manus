@@ -1,0 +1,12 @@
+---
+globs: ["src/semantic*.zig", "src/relation*.zig", "src/*graph*.zig", "gaps/GAP-13*.md", "gaps/GAP-14*.md"]
+---
+
+# Graph
+
+Route graph, identity, application, subject, relation, descriptor, world, and
+fact work through C0, `docs/bootstrap.md`, and `.agents/AGENT_COORDINATION.md`.
+
+Names, paths, spans, hashes, slots, opcodes, and source spelling are
+provenance or acceleration only. Do not introduce a second identity vocabulary
+or recover semantic meaning from text.

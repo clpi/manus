@@ -21,14 +21,18 @@ checkouts are not canonical implementations.
 ## Client shape
 
 Clients run the in-tree bootstrap executable with the repository as cwd. The
-physical configuration remains:
+single physical manifest is `tools/devnode/mcp.manifest.json`; run
+`tools/devnode/generate-configs` to derive absolute client projections from the
+actual clone path.
+
+The generated Codex shape is:
 
 ```toml
 [mcp_servers.duo-bench]
-command = "/Users/clp/x/duo/zig-out/bin/duo"
-args = ["run", "/Users/clp/x/duo/tools/mcp/duo_bench.duo"]
-cwd = "/Users/clp/x/duo"
-env = { DUO_ROOT = "/Users/clp/x/duo", DUO_BIN = "/Users/clp/x/duo/zig-out/bin/duo" }
+command = "<repo>/zig-out/bin/duo"
+args = ["run", "--backend=c", "<repo>/tools/mcp/duo_bench.duo"]
+cwd = "<repo>"
+env = { DUO_ROOT = "<repo>", DUO_BIN = "<repo>/zig-out/bin/duo" }
 startup_timeout_sec = 60
 tool_timeout_sec = 1800
 required = true

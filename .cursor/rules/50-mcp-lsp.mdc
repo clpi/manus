@@ -1,0 +1,13 @@
+---
+globs: ["tools/mcp/**", "tools/lsp/**", "tools/devnode/**", ".cursor/**", ".codex/**", ".agents/AGENT_INTEGRATION.md"]
+---
+
+# MCP LSP
+
+The canonical in-tree MCP servers are declared by
+`tools/devnode/mcp.manifest.json` and projected into Codex and Cursor by
+`tools/devnode/generate-configs`.
+
+MCP health requires real JSON-RPC initialize and gate execution, not config
+presence or compilation. Protocol stdout must contain protocol data only;
+diagnostics belong on stderr.

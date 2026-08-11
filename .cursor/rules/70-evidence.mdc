@@ -1,0 +1,11 @@
+---
+globs: ["gaps/**", "docs/**", "scripts/*gate*.duo", "tools/devnode/**", ".agents/**"]
+---
+
+# Evidence
+
+Use one evidence chain: run -> completion -> outcome -> evidence.
+
+Every claim names the exact tree, command, executed path, result, and known red
+aggregate. A focused pass is not an aggregate pass. A zero needs a positive
+control. Do not paste stale current-state summaries into semantic authority.

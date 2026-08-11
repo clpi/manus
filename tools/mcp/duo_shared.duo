@@ -34,7 +34,7 @@ end
 coordpath = root .. "/.agents/session/coordination.md"
 perfpath = root .. "/docs/performance.md"
 canonpath = root .. "/.agents/AGENT_CANONICAL.md"
-duobin = std.os.getenv("duobin")
+duobin = std.os.getenv("DUO_BIN")
 if duobin == nil or duobin == ""
     duobin = root .. "/zig-out/bin/duo"
 end
@@ -42,7 +42,7 @@ end
 -- The build lock, spelled here so std.script is not needed for the one thing
 -- it was actually load-bearing for. `duo run x.duo -- cmd` consumes the first
 -- `--` itself, so the wrapper never sees a separator it did not ask for.
-lockprefix = duobin .. " run " .. root .. "/scripts/duo_lock.duo -- "
+lockprefix = duobin .. " run --backend=c " .. root .. "/scripts/duo_lock.duo -- "
 
 -- Section heading that marks the open-gaps/findings table in the
 -- coordination buffer. Kept as a constant so callers that search for it

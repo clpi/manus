@@ -127,7 +127,7 @@ main(): i64
     src = "{root}/tools/lsp/src/highlight.duo"
     dump = "/tmp/duo-lsp-legend.txt"
     os.execute("cd /tmp && hlmode=legend DUO_ROOT='" .. root .. "' '" .. root
-        .. "/zig-out/bin/duo' run '" .. src .. "' > '" .. dump .. "' 2>/dev/null")
+        .. "/zig-out/bin/duo' run --backend=c '" .. src .. "' > '" .. dump .. "' 2>/dev/null")
     text = std.fs.read_file(dump)
     if text == nil or text == ""
         print("legend: FAIL — {src} printed no legend under hlmode=legend")

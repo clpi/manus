@@ -1,0 +1,40 @@
+#!/bin/sh
+set -eu
+
+repo="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$repo"
+
+head="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+dirty="$(git status --short 2>/dev/null | wc -l | tr -d ' ')"
+p0="$(
+  count=0
+  for gap in gaps/GAP-*.md; do
+    if grep -q '^\*\*Status:\*\*.*OPEN' "$gap" && grep -q '^\*\*Priority:\*\*.*P0' "$gap"; then
+      count=$((count + 1))
+    fi
+  done
+  echo "$count"
+)"
+
+echo "project: Idsem"
+echo "repository: $repo"
+echo "head: $head"
+echo "branch: $branch"
+echo "dirtyentries: $dirty"
+echo "host: $(uname -s) $(uname -m)"
+echo "authority: AGENTS.md -> docs/spec/constitution.md -> CLAUDE.md -> docs/spec/AUTHORITY.md -> docs/bootstrap.md"
+echo "pipeline: source/import -> graph -> demand -> realization -> machine"
+echo "bootstrapstage: S0 pinned Zig seed builds host compiler; executed Idsem lexer boundary; parser and later stages remain host-owned"
+echo "activep0: $p0"
+echo "frontier: close GAP-145 lexical identities, then GAP-134 generated grammar roles and immutable token view"
+echo "mcpmanifest: tools/devnode/mcp.manifest.json"
+if "$repo/tools/devnode/probe-mcp" >/tmp/idsem-orient-mcp.out 2>&1; then
+  echo "mcphealth: raw initialize pass"
+else
+  echo "mcphealth: raw initialize fail"
+fi
+echo "coordination: use duo_dev_claim_acquire for exact paths; never stash or hard reset; commit explicit pathspecs only"
+echo "evidence: exact tree, command, executed path, outcome, and positive controls"
+echo "avoid: historical .duo semantics, pass documents as law, copied machine state, shadow specs, source-text identity reconstruction"
+echo "nextboundary: smallest owned slice on lexical identity or grammar-role frontier after claiming paths"

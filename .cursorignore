@@ -1,0 +1,12 @@
+zig-out/
+.zig-cache/
+.codex/
+.agents/session/
+.cursor/mcp.json
+.cursor/hooks/state/
+*.out
+*.profraw
+test_*.c
+test_*.wasm
+docs/book/
+.DS_Store

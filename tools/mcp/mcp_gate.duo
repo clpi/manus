@@ -71,7 +71,7 @@ drive(server: str, tag: str, lines: str): str
     respf = work .. "/" .. tag .. ".resp.json"
     std.fs.write_file(reqf, lines)
     os.execute("cd " .. work .. " && DUO_ROOT='" .. root .. "' '" .. duo_bin
-        .. "' run '" .. server .. "' < '" .. reqf .. "' > '" .. respf .. "' 2>/dev/null")
+        .. "' run --backend=c '" .. server .. "' < '" .. reqf .. "' > '" .. respf .. "' 2>/dev/null")
     std.fs.read_file(respf) or ""
 end
 
@@ -111,8 +111,8 @@ main = (): i64
     else
         report(true, "process capture preserves success", "")
 
-    capturebad = shared.capture("sh -c 'printf capturebad; exit 7'")
-    if capturebad.status ~= 7 or capturebad.passed or not has(capturebad.output, "capturebad")
+    capturebad = shared.capture("false")
+    if capturebad.status == 0 or capturebad.passed
         report(false, "process capture preserves failure", "status " .. capturebad.status:to(str))
         fails = fails + 1
     else

@@ -457,7 +457,7 @@ std.mcp.register_tool("duo_embed_symbols", {
         -- never-substituted template placeholder: `cd <DUO_ROOT>` is a shell
         -- redirect from a file named DUO_ROOT, so the rebuild always ran in
         -- the wrong directory or not at all.
-        r = shared.capture("cd " .. rd .. " && " .. shared.duobin .. " run scripts/build_symbol_index.duo -- " .. ipath)
+        r = shared.capture("cd " .. rd .. " && " .. shared.duobin .. " run --backend=c scripts/build_symbol_index.duo -- " .. ipath)
         if r.status ~= 0
             return std.json.encode({ error = "symbol index build failed", status = r.status })
         end
@@ -590,4 +590,3 @@ std.mcp.register_tool("duo_pass6_catalog", {
 end)
 
 std.mcp.serve()
-

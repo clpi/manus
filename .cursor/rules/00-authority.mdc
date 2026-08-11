@@ -1,0 +1,17 @@
+---
+alwaysApply: true
+---
+
+# Idsem Authority
+
+Start every substantive repository session at `AGENTS.md`.
+
+`docs/spec/constitution.md` is the sole semantic law. `CLAUDE.md`,
+`docs/spec/AUTHORITY.md`, `docs/bootstrap.md`, `.agents/AGENT_CANONICAL.md`,
+and `.agents/AGENT_COORDINATION.md` are projections and routers.
+
+History, legacy `.duo` source, generated binaries, editor memories, chat
+histories, and machine caches are not Idsem law. Identify the semantic owner
+before editing, inspect HEAD and dirty state, inspect gaps and claims, prefer
+deletion or convergence over new mechanisms, and do not restore historical
+architecture.

@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "authority": [
+    "AGENTS.md",
+    "docs/spec/constitution.md",
+    "CLAUDE.md",
+    "docs/spec/AUTHORITY.md",
+    "docs/bootstrap.md",
+    ".agents/AGENT_CANONICAL.md",
+    ".agents/AGENT_COORDINATION.md"
+  ],
+  "servers": [
+    {
+      "name": "duo-bench",
+      "entry": "tools/mcp/duo_bench.duo",
+      "backend": "c",
+      "required": true,
+      "startup_timeout_sec": 60,
+      "tool_timeout_sec": 1800,
+      "purpose": "claims, gaps, serialized gates, and performance evidence"
+    },
+    {
+      "name": "duo-lsp",
+      "entry": "tools/mcp/duo_lsp.duo",
+      "backend": "c",
+      "required": true,
+      "startup_timeout_sec": 60,
+      "tool_timeout_sec": 1800,
+      "purpose": "diagnostics and language intelligence"
+    },
+    {
+      "name": "zls",
+      "entry": "tools/mcp/zls.duo",
+      "backend": "c",
+      "required": true,
+      "startup_timeout_sec": 60,
+      "tool_timeout_sec": 1800,
+      "purpose": "Zig bootstrap navigation through zls"
+    }
+  ]
+}

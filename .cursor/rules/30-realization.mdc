@@ -1,0 +1,12 @@
+---
+globs: ["src/dnir*.zig", "src/*native*.zig", "src/codegen.zig", "src/region*.zig", "tools/wasm/**", "docs/performance.md"]
+---
+
+# Realization
+
+Realization and machine work must preserve graph meaning and report exactly
+which path is exercised: direct native, generated C, Wasm, runtime, benchmark,
+or external oracle. Read `docs/performance.md` before performance claims.
+
+Do not select meaning from callee text, backend shape, opcode, hash, or artifact
+layout. A faster or smaller result is not semantic authority.

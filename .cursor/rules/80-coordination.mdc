@@ -1,0 +1,20 @@
+---
+globs: ["**/*"]
+---
+
+# Coordination
+
+Before implementation, name the boundary and claim exact writable paths through
+repository MCP. Keep architecture-changing work single-lane; use disjoint
+bounded implementation lanes and read-only auditors when parallelizing.
+
+Modes:
+
+AUDIT: read/search/query only; identify owner, violated law, duplicate
+authority, earliest fact loss, smallest convergent repair, and falsifier.
+
+IMPLEMENT: edit only after the boundary and writable paths are named. No scope
+growth without new evidence.
+
+VERIFY: adversarially inspect diff, generated artifacts, runtime behavior,
+authorities, controls, differentials, and protocol exchanges.
