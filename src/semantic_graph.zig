@@ -10,10 +10,42 @@ const sema = @import("sema.zig");
 const types = @import("types.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
 const transform_engine = @import("transform_engine.zig");
-const pass26_descriptor_identity = @import("pass26_descriptor_identity.zig");
-const pass26_recursive_descriptor = @import("pass26_recursive_descriptor.zig");
-
 pub const id = u32;
+
+pub const State = enum {
+    frozen_snapshot,
+    open_semantic,
+    sealed,
+    derived,
+    mutable_builder,
+
+    pub fn name(self: State) []const u8 {
+        return @tagName(self);
+    }
+};
+
+pub const Recursion = enum {
+    none,
+    indirect_pointer,
+    inline_fixed_point,
+    mutual_module,
+    foreign_recursive,
+
+    pub fn name(self: Recursion) []const u8 {
+        return @tagName(self);
+    }
+};
+
+pub const Completion = enum {
+    placeholder,
+    resolving,
+    complete,
+    invalid_incomplete,
+
+    pub fn name(self: Completion) []const u8 {
+        return @tagName(self);
+    }
+};
 
 fn referencesDescriptorName(rt: types.ResolvedType, name: []const u8) bool {
     switch (rt) {
@@ -63,13 +95,13 @@ fn referencesDescriptorInline(rt: types.ResolvedType, name: []const u8) bool {
     }
 }
 
-fn classifyDescriptorRecursion(name: []const u8, rt: types.ResolvedType) pass26_recursive_descriptor.RecursionKind {
+fn classifyDescriptorRecursion(name: []const u8, rt: types.ResolvedType) Recursion {
     if (!referencesDescriptorName(rt, name)) return .none;
     if (referencesDescriptorInline(rt, name)) return .inline_fixed_point;
     return .indirect_pointer;
 }
 
-fn inferDescriptorState(sc: types.StorageClass, is_sealed: bool) pass26_descriptor_identity.DescriptorState {
+fn inferDescriptorState(sc: types.StorageClass, is_sealed: bool) State {
     if (is_sealed) return .sealed;
     return switch (sc) {
         .native, .sealed => .sealed,
@@ -78,9 +110,9 @@ fn inferDescriptorState(sc: types.StorageClass, is_sealed: bool) pass26_descript
 }
 
 fn resolveDescriptorCompletion(
-    recursion: pass26_recursive_descriptor.RecursionKind,
+    recursion: Recursion,
     rt: types.ResolvedType,
-) pass26_recursive_descriptor.DescriptorCompletion {
+) Completion {
     if (recursion == .none) return .complete;
     if (rt == .any) return .invalid_incomplete;
     return .complete;
@@ -156,11 +188,11 @@ pub const Node = struct {
     /// Pass 2.1: descriptor algebra hash for alias/type nodes (internal).
     descriptor_hash: ?u64 = null,
     /// Pass 26 M1: descriptor lifecycle state at lift.
-    descriptor_state: ?pass26_descriptor_identity.DescriptorState = null,
+    descriptor_state: ?State = null,
     /// Pass 26 M1: recursive layout classification.
-    recursion: ?pass26_recursive_descriptor.RecursionKind = null,
+    recursion: ?Recursion = null,
     /// Pass 26 M1: fixed-point resolution status.
-    completion: ?pass26_recursive_descriptor.DescriptorCompletion = null,
+    completion: ?Completion = null,
     /// Human-readable descriptor composition label (`Point+Named`).
     descriptor_label: ?[]const u8 = null,
     /// Iteration relation identity. A source face such as `|>` is provenance,
@@ -1513,17 +1545,17 @@ pub const SemanticGraph = struct {
                 }
                 if (node.descriptor_state) |ds| {
                     try out.appendSlice(alloc, ",\"descriptor_state\":\"");
-                    try out.appendSlice(alloc, pass26_descriptor_identity.DescriptorState.name(ds));
+                    try out.appendSlice(alloc, State.name(ds));
                     try out.append(alloc, '"');
                 }
                 if (node.recursion) |rc| {
                     try out.appendSlice(alloc, ",\"recursion\":\"");
-                    try out.appendSlice(alloc, pass26_recursive_descriptor.RecursionKind.name(rc));
+                    try out.appendSlice(alloc, Recursion.name(rc));
                     try out.append(alloc, '"');
                 }
                 if (node.completion) |cp| {
                     try out.appendSlice(alloc, ",\"completion\":\"");
-                    try out.appendSlice(alloc, pass26_recursive_descriptor.DescriptorCompletion.name(cp));
+                    try out.appendSlice(alloc, Completion.name(cp));
                     try out.append(alloc, '"');
                 }
                 if (node.descriptor_label) |dl| {
@@ -2610,9 +2642,9 @@ test "semantic_graph: recursive descriptor facts remain graph-derived" {
     } };
 
     const recursion = classifyDescriptorRecursion("Node", descriptor);
-    try std.testing.expectEqual(pass26_recursive_descriptor.RecursionKind.indirect_pointer, recursion);
+    try std.testing.expectEqual(Recursion.indirect_pointer, recursion);
     try std.testing.expectEqual(
-        pass26_recursive_descriptor.DescriptorCompletion.complete,
+        Completion.complete,
         resolveDescriptorCompletion(recursion, descriptor),
     );
 }
