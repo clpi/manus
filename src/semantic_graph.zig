@@ -1138,8 +1138,10 @@ pub const SemanticGraph = struct {
     ) !id {
         const module = try self.liftModuleWithCalls(mod, file);
 
-        var candidates = self.application_candidates.iterator(.{});
-        while (candidates.next()) |candidate| {
+        const candidate_limit = self.application_candidates.bit_length;
+        var candidate: usize = 0;
+        while (candidate < candidate_limit) : (candidate += 1) {
+            if (!self.application_candidates.isSet(candidate)) continue;
             const call_id = std.math.cast(id, candidate) orelse
                 return error.ApplicationFactCapacityExceeded;
             if (call_id >= self.nodes.items.len) return error.InvalidApplicationFact;
@@ -1223,6 +1225,18 @@ pub const SemanticGraph = struct {
             const slot = try rows.getOrPut(alloc, function);
             if (slot.found_existing) return error.DuplicateFunctionEntity;
             slot.value_ptr.* = row;
+        }
+
+        var candidates = self.application_candidates.iterator(.{});
+        while (candidates.next()) |candidate| {
+            if (candidate < self.application_presence.bit_length and
+                self.application_presence.isSet(candidate)) continue;
+            const application_id = std.math.cast(id, candidate) orelse
+                return error.UnresolvedApplication;
+            const application_node = self.get(application_id) orelse
+                return error.UnresolvedApplication;
+            const caller = application_node.scope orelse return error.UnresolvedApplication;
+            if (rows.contains(caller)) return error.UnresolvedApplication;
         }
 
         const in_degree = try alloc.alloc(usize, functions.len);
@@ -2139,6 +2153,12 @@ test "semantic_graph: moduleFunctionEmitOrder callees before callers" {
     const invalid = [_]id{std.math.maxInt(id)};
     try std.testing.expectError(error.InvalidFunctionEntity, g.moduleFunctionEmitOrder(alloc, &invalid));
 
+    const unresolved = g.application_facts.items[0].application;
+    g.nodes.items[unresolved].kind = .value;
+    g.application_presence.unset(unresolved);
+    try std.testing.expectError(error.UnresolvedApplication, g.moduleFunctionEmitOrder(alloc, &functions));
+    g.application_presence.set(unresolved);
+
     g.application_facts.items[0].results.len = std.math.maxInt(u32);
     try std.testing.expectError(error.UnresolvedApplication, g.moduleFunctionEmitOrder(alloc, &functions));
 }
@@ -2439,11 +2459,24 @@ test "semantic_graph: checked occurrences keep distinct packed ranges" {
     checked.duo_mode = true;
     try checked.check_module(&module);
 
+    var probe = SemanticGraph.init(alloc);
+    _ = try probe.liftModuleWithCalls(&module, "ranges.id");
+    try std.testing.expect(probe.nodes.items.len < 64);
+    const prefix = 64 - probe.nodes.items.len;
+    probe.deinit();
+
     var graph = SemanticGraph.init(alloc);
     defer graph.deinit();
+    for (0..prefix) |_| {
+        _ = try graph.addNode(.{
+            .kind = .value,
+            .span = .{ .file = "ranges.id", .start = 0, .end = 0 },
+        });
+    }
     _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "ranges.id");
 
     const facts = graph.applications();
+    try std.testing.expect(graph.nodes.items.len > 64);
     try std.testing.expectEqual(@as(usize, 2), facts.len);
     try std.testing.expect(facts[0].application != facts[1].application);
     try std.testing.expectEqual(facts[0].relation, facts[1].relation);
