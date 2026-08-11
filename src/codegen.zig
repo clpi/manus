@@ -1822,6 +1822,17 @@ pub const CodeGen = struct {
         }
     }
 
+    fn emit_func_params(self: *CodeGen, params: []const ast.FuncParam) void {
+        if (params.len == 0) {
+            self.p("void", .{});
+            return;
+        }
+        for (params, 0..) |*param, i| {
+            if (i > 0) self.p(", ", .{});
+            self.emit_param_decl(self.resolve_type(param.typ), param.name);
+        }
+    }
+
     fn uses_multi_return(self: *CodeGen, init_expr: *const ast.Expr, name_count: usize) bool {
         if (name_count <= 1) return false;
         if (init_expr.* == .call) return true;
@@ -7361,9 +7372,13 @@ pub const CodeGen = struct {
             self.p("extern ", .{});
             self.typ(ff.ret);
             self.p(" {s}(", .{ff.c_symbol});
-            for (ff.params, 0..) |pt, i| {
-                if (i > 0) self.p(", ", .{});
-                self.typ(pt);
+            if (ff.params.len == 0) {
+                self.p("void", .{});
+            } else {
+                for (ff.params, 0..) |pt, i| {
+                    if (i > 0) self.p(", ", .{});
+                    self.typ(pt);
+                }
             }
             self.p(");\n", .{});
         }
@@ -8617,11 +8632,7 @@ pub const CodeGen = struct {
         const saved_name = self.current_func_name;
         self.current_func_body = fb;
         self.current_func_name = duo_func_name(fd);
-        for (fb.params, 0..) |*par, i| {
-            if (i > 0) self.p(", ", .{});
-            const pt = self.resolve_type(par.typ);
-            self.emit_param_decl(pt, par.name);
-        }
+        self.emit_func_params(fb.params);
         self.current_func_body = saved_body;
         self.current_func_name = saved_name;
         self.p(");\n", .{});
@@ -8984,10 +8995,14 @@ pub const CodeGen = struct {
         self.p("static inline ", .{});
         self.typ(ret);
         self.p(" {s}(", .{spec.mangled_name});
-        for (spec.template.params, 0..) |*par, i| {
-            if (i > 0) self.p(", ", .{});
-            const pt = self.normalize_table_module_type(spec.resolveType(par.typ));
-            self.emit_param_decl(pt, par.name);
+        if (spec.template.params.len == 0) {
+            self.p("void", .{});
+        } else {
+            for (spec.template.params, 0..) |*par, i| {
+                if (i > 0) self.p(", ", .{});
+                const pt = self.normalize_table_module_type(spec.resolveType(par.typ));
+                self.emit_param_decl(pt, par.name);
+            }
         }
         self.p(")", .{});
     }
@@ -9636,11 +9651,7 @@ pub const CodeGen = struct {
         const cname = self.emit_func_c_name(fd, &name_buf);
         self.p(" {s}", .{cname});
         self.p("(", .{});
-        for (fb.params, 0..) |*par, i| {
-            if (i > 0) self.p(", ", .{});
-            const pt = self.resolve_type(par.typ);
-            self.emit_param_decl(pt, par.name);
-        }
+        self.emit_func_params(fb.params);
         self.p(") {{\n", .{});
         self.indent = 1;
         try self.push_local_scope();
@@ -9753,10 +9764,7 @@ pub const CodeGen = struct {
         self.p("__attribute__((visibility(\"default\"))) ", .{});
         self.typ(ret);
         self.p(" {s}(", .{export_name});
-        for (fb.params, 0..) |*par, i| {
-            if (i > 0) self.p(", ", .{});
-            self.emit_param_decl(self.resolve_type(par.typ), par.name);
-        }
+        self.emit_func_params(fb.params);
         self.p(") {{\n", .{});
         if (ret == .void) self.p("  ", .{}) else self.p("  return ", .{});
         self.p("{s}(", .{cname});
@@ -31396,8 +31404,8 @@ test "codegen: async declarations remain directly callable while emitting frames
     try cg.emit_module(&mod);
     const output = aw.written();
 
-    try testing.expect(std.mem.indexOf(u8, output, "static inline int64_t answer();") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "static inline int64_t answer()") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "static inline int64_t answer(void);") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "static inline int64_t answer(void)") != null);
     try testing.expect(std.mem.indexOf(u8, output, "printf(\"%lld\\n\", answer());") != null);
     try testing.expect(std.mem.indexOf(u8, output, "typedef struct duo_frame_answer_") != null);
     try testing.expect(std.mem.indexOf(u8, output, "static duo_Poll duo_step_answer_") != null);
@@ -31850,7 +31858,7 @@ test "codegen: mixed native/boxed binops unbox only the dynamic side" {
     cg.duo_mode = true;
     try cg.emit_module(&module);
     const output = aw.written();
-    const fn_start = std.mem.indexOf(u8, output, "static inline int64_t f() {") orelse return error.TestExpectedEqual;
+    const fn_start = std.mem.indexOf(u8, output, "static inline int64_t f(void) {") orelse return error.TestExpectedEqual;
     const fn_end = std.mem.indexOf(u8, output[fn_start..], "return sum;") orelse return error.TestExpectedEqual;
     const fn_body = output[fn_start .. fn_start + fn_end + "return sum;".len];
     try testing.expect(std.mem.indexOf(u8, fn_body, "(int64_t)lua_table_get_str_num(") != null);
@@ -31929,7 +31937,7 @@ test "codegen: integer table index unboxes into numeric context" {
     cg.duo_mode = true;
     try cg.emit_module(&module);
     const output = aw.written();
-    const fn_start = std.mem.indexOf(u8, output, "static inline int64_t f() {") orelse return error.TestExpectedEqual;
+    const fn_start = std.mem.indexOf(u8, output, "static inline int64_t f(void) {") orelse return error.TestExpectedEqual;
     const fn_end = std.mem.indexOf(u8, output[fn_start..], "return v;") orelse return error.TestExpectedEqual;
     const fn_body = output[fn_start .. fn_start + fn_end + "return v;".len];
     try testing.expect(std.mem.indexOf(u8, fn_body, "(int64_t)lua_table_get_i64_num(t, idx)") != null);
@@ -34197,7 +34205,7 @@ test "codegen: typed __emit bypasses lua_to_num on return and locals" {
 
     try testing.expect(std.mem.indexOf(u8, output, "int64_t x = (int64_t)(40 + 2);") != null);
     try testing.expect(std.mem.indexOf(u8, output, "return (int64_t)(x + 1);") != null);
-    const fn_start = std.mem.indexOf(u8, output, "static inline int64_t raw_i64()") orelse return error.TestExpectedEqual;
+    const fn_start = std.mem.indexOf(u8, output, "static inline int64_t raw_i64(void)") orelse return error.TestExpectedEqual;
     const fn_end_rel = std.mem.indexOf(u8, output[fn_start..], "static lua_Value raw_i64__lua") orelse return error.TestExpectedEqual;
     const fn_body = output[fn_start .. fn_start + fn_end_rel];
     try testing.expect(std.mem.indexOf(u8, fn_body, "lua_to_num") == null);
