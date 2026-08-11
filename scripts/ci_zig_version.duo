@@ -5,9 +5,6 @@
 --
 --   ZIG_VERSION=$(duo run scripts/ci_zig_version.duo)
 --
--- The pin lives in build.zig.zon `.minimum_zig_version` and is mirrored into
--- the CI workflow's ZIG_VERSION; docs/release.md checks the two agree.
-
 _pin_file(): str
     "build.zig.zon"
 end

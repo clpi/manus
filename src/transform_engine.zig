@@ -1,9 +1,9 @@
-/// Unified transformation engine (Phase 0 stub).
+/// Bootstrap transformation registry and provenance bridge.
 ///
-/// Canonical plan: `docs/semantic_universe.md`
-///
-/// All `@comp.*` combinators should eventually register here with contracts,
-/// budgets, and provenance. Phase 0–1: catalog + parity metadata + provenance log.
+/// Semantic law lives only in `docs/spec/constitution.md`. Graph identities and
+/// facts own meaning; this host file records temporary dispatch and provenance
+/// mechanics and must not become another semantic transformation authority.
+/// Phase 0–1: catalog + parity metadata + provenance log.
 /// Phase 2 (partial): combinator evaluation entry is `meta_dispatch.dispatchAtSite`
 /// (gates via `requireMetaDispatchBeforeHook`, provenance via `dispatchMetaCombinator`).
 const std = @import("std");

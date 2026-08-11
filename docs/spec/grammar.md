@@ -36,8 +36,8 @@ identity or physical representation choice after normalization.
 - `()` is ordinary callable application and grouping: `f(a, b)`;
 - `{}` bounds structured packs, descriptor application, and descriptor homes;
 - `[]` is genuinely computed or indexed projection: `values[i]`;
-- `.` after an explicit subject is statically named projection: `user.name`;
-  bare `.` denotes the ambient subject value and never abbreviates `.name`;
+- `.` is only statically named projection after an explicit subject:
+  `user.name`; leading `.name` and bare `.` are noncanonical;
 - `:` carries only its admitted descriptor, subject, and home roles:
   `text:len()` for an explicit subject and `:normalize()` for the ambient
   subject;

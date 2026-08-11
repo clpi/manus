@@ -1,9 +1,13 @@
-# RFC: The Semantic Graph as Multi-Language Substrate
+# Historical RFC: The Semantic Graph as Multi-Language Substrate
 
 **Author:** opencode (big-pickle) · **Date:** 2026-08-08
-**Status:** RFC (spec) — no code changes
-**Companion:** `docs/SEMANTIC_GRAPH_DESIGN.md` (P0 design, 2026-08-04)
+**Status:** dated design record — not law, current status, or implementation guidance
+**Current law:** `docs/spec/constitution.md`
 **Owner files:** `src/semantic_graph.zig` · `src/duo_native_ir.zig` · `src/dnir_lower.zig`
+
+This file preserves the evidence and reasoning available on its date. Git and
+the current production tree decide what remains implemented. It must not train
+new architecture or compete with the constitution.
 
 ## 1. Thesis
 
@@ -321,11 +325,11 @@ shared files.
    reintroduce name-only lookups (the removed `name_index` collided on scopes).
 5. **Persisting wyhash IDs across sessions without the SHA-256 decision.** See §8.
 
-## 11. Relationship to existing docs
+## 11. Relationship to current law and dated implementation evidence
 
-- `docs/SEMANTIC_GRAPH_DESIGN.md` — Phase 1–4 spine; this RFC sharpens the
-  graph-vs-DNIR boundary and adds the edge model. Update its "Implementation
-  status" table as phases land.
+- `docs/spec/constitution.md` — the current graph, demand, realization, identity,
+  and provenance law supersedes every architectural authority this RFC once
+  claimed.
 - `src/region_graph.zig` + `pass22_gate.zig` (Pass 22, §17.2–17.4) — the existing
   bounded graph over DNIR. This RFC's Phase A is an extension of it, not a fresh
   build; `graph_query.zig` is the seed of the §7.3 graph REPL.

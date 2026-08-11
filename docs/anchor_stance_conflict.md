@@ -8,9 +8,9 @@ The sole current anchor law is
 [`docs/spec/constitution.md`](spec/constitution.md). Current source-facing facts
 include:
 
-- `.` projects a statically known name from an explicit subject;
+- `.` projects a statically known name only from an explicit subject;
 - leading `:` invokes an admitted relation on the ambient subject;
-- bare `.` denotes the ambient subject value only;
+- leading `.name` retires to bare-name resolution and bare `.` is invalid;
 - `@` supplies the admitted semantic anchor roles and never introduces a
   compiler directive;
 - parser spelling never owns the resolved relation, subject, case, or field
@@ -29,8 +29,9 @@ Two SOURCE-ZERO fixtures still mention the former labels `rows 1b/1c`. Those
 rows recorded the false-green recognition of historical leading `.name` and
 leading `:name()` as closure-shaped values; checking succeeded and the
 generated C then failed. Leading `.name` is retired: an ambient field resolves
-through its bare identity, while bare `.` denotes the whole ambient subject.
-Leading `:name()` retains only its admitted ambient-subject invocation role.
+through its bare identity, and no bare punctuation token denotes the ambient
+subject value. Leading `:name()` retains only its admitted ambient-subject
+invocation role.
 The compile-fail runner's
 `row 3` records the required rejection of `value.@name`: it is not an admitted
 anchor stance, and the former path silently produced the wrong value. These

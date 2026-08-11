@@ -1,6 +1,11 @@
-# The WASM runtime becomes duon's wasm capability — the shape, measured
+# Historical Wasm integration measurement
 
 **Filed:** 2026-08-08 · **Baseline commit:** `0e4eb29` · **Gap:** gap[072] (perf), this doc (shape)
+
+This file records a dated repository measurement and owner directive. It is not
+current law, current status, or an implementation pattern. Current Wasm and
+foreign-law architecture is governed by `docs/spec/constitution.md`; current
+performance claims follow `docs/performance.md` and exact-run evidence.
 
 ## The directive
 
@@ -79,10 +84,12 @@ shared library."* That is the C-as-intermediary waist Pass 103 §0b names as
 banned, sitting in dead code. `src/wasm/aot.duo` is 10 lines and its `compile()`
 returns `""`.
 
-`src/wasm/jit_arm64.duo` (701 lines) is the exception: it is dead as a *module*
-but it is cited as the source of truth by two live files —
-`lib/std/compiler/arm64.duo` and `lib/std/compiler/arm64check.duo` — and
-`docs/toolchain_state.md` names it a donor for SH-11. It stays.
+`src/wasm/jit_arm64.duo` (701 lines) was dead as a *module* but served as donor
+provenance for `lib/std/compiler/arm64.duo` and
+`lib/std/compiler/arm64check.duo`. That dated relationship grants no semantic
+authority and no permanent retention. Every tracked project-owned `.duo` file
+is SOURCE-ZERO debt; current retention must follow live dependencies and an
+exact canonical `.id` replacement-and-deletion gate.
 
 ---
 

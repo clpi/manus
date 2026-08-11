@@ -1339,53 +1339,47 @@ pub fn scalingLadderText() []const u8 {
     ;
 }
 
-/// Agent-oriented hook index (coordination + std.agent + key combinators).
+/// Stable routes for agents invoking the historical hook surface.
 pub fn agentHooksText() []const u8 {
     return
-    \\docs/AGENT_CANONICAL.md — single router for all agents/CLIs (read first)
-    \\docs/AGENT_COORDINATION.md — coordination buffer (claims, build tiers)
-    \\@comp.agent.catalog / @meta.agent.catalog — grouped @comp.* paths (deduped)
-    \\@comp.agent.ladder — scaling ladder + workflow hints
-    \\@comp.agent.hooks — this index
-    \\@comp.agent.dedupe — duplication-prevention checklist for parallel agents
-    \\@comp.agent.gaps — expressiveness/perf/native gaps index -> docs/AGENT_COORDINATION.md#cross-agent-gap-buffer
-    \\@comp.agent.grammar — surface-syntax index -> docs/GRAMMAR_SPEC.md
-    \\docs/DIRECTIVE_HIERARCHY.md — dotted @comp.* paths (no underscores)
-    \\docs/AGENT_COORDINATION.md#cross-agent-gap-buffer — canonical findings ledger (MCP duo_agent_gaps_*)
-    \\std.agent — recipes, build_gates, native_policy, multiplier_for, smoke_targets
-    \\std.script — Duo-first scripting; prefer over bash/python
-    \\combinators: map->derive->product->tensor->nfold->power->permute
-    \\module stack: burst->transcend->infinity->hyper
-    \\native: no lua_Value; C is intermediate -> machine code ceiling
+    \\AGENTS.md — repository entry and mechanical preflight
+    \\docs/spec/constitution.md — sole semantic law
+    \\CLAUDE.md — operative projection
+    \\docs/spec/grammar.md — grammar projection
+    \\.agents/AGENT_CANONICAL.md — stable path router
+    \\.agents/AGENT_COORDINATION.md — ownership and serialized gates
+    \\docs/bootstrap.md — executed compiler frontier
+    \\gaps/GAP-0NN.md — open obligations; verify the live census
+    \\MCP duo_agent_session_start and duo_dev_claim_* — live state and ownership
+    \\Canonical implementation is .id; historical .duo and host code are migration debt
+    \\std is migration distribution and std.script is frozen debt
+    \\Missing relation or world vocabulary is SEMANTIC-VOCABULARY-BLOCKED
     ;
 }
 
 /// Duplication-prevention protocol for 5+ parallel agents.
 pub fn agentDedupeText() []const u8 {
     return
-    \\1. Read docs/AGENT_COORDINATION.md + claim area before editing shared surfaces
-    \\2. Search codebase/MCP catalog before adding new @comp.* / std.* modules
-    \\3. Extend existing hooks (std.agent, meta_module) — do not fork parallel copies
-    \\4. One agent owns codegen.zig OR sema.zig at a time; release when done
-    \\5. Check Session log + Activity log — skip work already marked complete
-    \\6. Prefer @comp.derive / @comp.burst over hand-written boilerplate (exponential, not duplicate)
-    \\7. MCP: duo_coordination_update(claim) before edit; duo_meta_catalog before new directives
-    \\8. Never run tier-3 bench in parallel; dedupe build runs via coordination buffer
+    \\1. Read AGENTS.md, docs/spec/constitution.md, and docs/bootstrap.md
+    \\2. Inspect exact HEAD, dirty state, live claims, open gaps, and current evidence
+    \\3. Claim exact paths before editing and never absorb another owner's work
+    \\4. Request an owner's fact or projection instead of creating a substitute authority
+    \\5. Add no syntax, semantic namespace, predicate helper, or host semantic owner
+    \\6. Run the focused gate, then serialize any required aggregate under the repository lock
+    \\7. Bind every claim to the exact tree, command, inner outcome, and evidence
+    \\8. Commit explicit owned paths and release only claims held by this session
     ;
 }
 
 /// Cross-session expressiveness / performance / native-lowering gaps index.
 pub fn agentGapsText() []const u8 {
     return
-    \\docs/AGENT_COORDINATION.md#cross-agent-gap-buffer — canonical gaps ledger (read + append at session start)
-    \\MCP: duo_agent_gaps_read / duo_agent_gaps_update (duo-bench MCP)
-    \\Categories: perf | native | meta | script | agent | backend
-    \\Before new feature: search Cross-Agent Gap Buffer + @comp.catalog + claim coordination row
-    \\P0 native: eliminate lua_Value on typed/comptime paths (grep codegen.zig)
-    \\P0 perf: zig build bench after codegen; zero regressions ever
-    \\P1 meta: prefer @comp.burst/derive.all over linear hand-written copies
-    \\P2 backend: Duo-native asm/object emission beyond C; no LLVM IR dependency
-    \\Close gaps: move Open->Closed, append Findings log, update performance.md if bench-affecting
+    \\gaps/GAP-0NN.md — canonical numbered obligations
+    \\MCP duo_agent_gaps_read and duo_agent_gaps_update — live gap projection
+    \\docs/bootstrap.md — earliest host-owned production boundary
+    \\docs/performance.md — FTCFTW evidence protocol
+    \\Before work: verify the exact tree, live claims, production owner, and current gate outcome
+    \\If an owner or admitted vocabulary is missing, record the blocker and do not invent one
     ;
 }
 
@@ -1549,13 +1543,14 @@ pub fn suggestNextCombinators(path: []const u8) []const u8 {
     return "see @comp.ladder() for full scaling hierarchy";
 }
 
-/// Surface-syntax evolution index for all agents.
+/// Current grammar routes exposed through the historical hook surface.
 pub fn agentGrammarText() []const u8 {
     return
-    \\docs/GRAMMAR_SPEC.md — canonical GR-* rules (bare func, if-expressions, etc.)
-    \\MCP: duo_grammar_spec_read / duo_grammar_spec_update (duo-lsp MCP)
-    \\Comptime: @comp.agent.grammar() / std.agent.grammar_index()
-    \\Prefer dotted @comp.* paths; never introduce @comp.foo_bar underscore spellings
+    \\docs/spec/constitution.md — sole semantic law
+    \\docs/spec/grammar.md — grammar projection
+    \\GAP-134 and GAP-145 — generated grammar roles and lexical identity blockers
+    \\Lexer owns token identity, grammar owns role, parser owns recognition and provenance
+    \\Do not infer grammar or semantic meaning from token text or parser-local spelling lists
     ;
 }
 

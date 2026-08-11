@@ -36,13 +36,15 @@ embed or optimization path; deleting those higher-level fallbacks requires the
 corresponding realization owner to distinguish physical refusal from semantic
 failure.
 
-The next boundary remains production parse recognition. `GAP-145` must first
-publish the distinct lexical identities and source-law facts needed by
-`GAP-134`; C0 then requires the self-hosted parser to consume generated grammar
-roles through an immutable token view. Porting the host recognizer would
-duplicate grammar authority through token-text lists and mutable lookahead. S0
-therefore remains the honest stage until those facts are available to executed
-Idsem parser code.
+Source ingress remains the earliest host-owned entry seam: Zig still derives
+source law and provenance from suffix/path text instead of consuming an
+executed Idsem source-family fact. It is migration debt, but the current
+executable blocker is `GAP-145`: the lexer must publish the distinct canonical
+lexical identities needed by `GAP-134`. Generated grammar roles and an
+immutable token view can then move the first production parser recognition
+into executed Idsem. Porting the host recognizer would duplicate grammar
+authority through token-text lists and mutable lookahead, so S0 remains the
+honest stage until those facts cross the frontier.
 
 The transfer must also preserve PREDICATE-ZERO. Parser and resolver output
 retain cases, refinements, descriptor and world facts, unknowns, demands, and
@@ -75,9 +77,11 @@ For the fail-closed lexer transfer:
   token pack, so the next parser read silently resumed the host scanner.
 - **AFTER:** the same failure propagates, partial route storage is released, and
   no host token stream is accepted by that route.
-- **NEXT:** `GAP-145` must publish distinct canonical lexical identities and
-  source-law provenance; then `GAP-134` can project generated grammar roles to
-  an immutable token view and replace the first host parser recognition.
+- **NEXT:** `GAP-145` must publish distinct canonical lexical identities;
+  `GAP-134` can then project generated grammar roles to an immutable token view
+  and replace the first host parser recognition. The source-family projection
+  must replace suffix-derived ingress authority before compiler-B source ingress
+  can be called Idsem-owned.
 
 Canonical source ingress now recognizes `.id` as Idsem and temporarily accepts
 `.duo` compatibility input with noncanonical provenance. Both suffixes select
@@ -94,12 +98,12 @@ metadata path consumes the source-family constants rather than maintaining its
 own suffix spelling. Tooling and corpus gates that still enumerate `.duo`
 independently remain migration bridges, not bootstrap evidence.
 
-Suffix-independent semantic identity is not closed on current main. An executed
-negative control over byte-identical `.id` and `.duo` inputs produced identical
-direct-native object bytes, but every exported graph `stable_id` changed because
-the graph hashes the source path. `GAP-142` owns removal of that path-derived
-identity authority. Until then, the suffix distinction is not confined to
-provenance even though the tested machine realization is equal.
+Suffix-independent semantic identity is not closed by the existing differential.
+Byte-identical object output demonstrates only one realization result; it does
+not prove equality of every normalized graph fact. `GAP-142` owns the exact
+identity and continuity boundary. Until the complete checked-fact comparison
+passes, suffix and path influence remain unclosed rather than being inferred
+from machine equality.
 
 The host names `duo_lexer_bridge`, `duo_mode`, and the `duo` executable are
 historical bootstrap symbols. They remain one implementation path, not a second
