@@ -278,15 +278,14 @@ pub fn lowerModuleObserved(
     _ = graph.liftModuleWithCalls(mod, "<dnir>") catch return error.OutOfMemory;
     var occurrences = try OccurrenceBridge.init(alloc, &graph, diagnostic);
     defer occurrences.deinit();
-    var module = try lowerModuleFromGraph(alloc, mod, &graph, &occurrences, diagnostic, false);
+    const module = try lowerModuleFromGraph(alloc, mod, &graph, &occurrences, diagnostic, false);
     errdefer dnir.deinitModule(alloc, module);
-    if (occurrences.unresolved == 0) try applyGraphToModule(alloc, &graph, &module, diagnostic);
     var detached = module;
     detached.graph = null;
 
     // This convenience path does not return the graph owner. Any handles it
-    // used while ordering realization are therefore intentionally erased
-    // before that owner is destroyed. Checked consumers must use
+    // used while lowering are therefore intentionally erased before that
+    // owner is destroyed. Checked consumers must use
     // `lowerModuleWithGraph` and retain the graph for the module's lifetime.
     const functions: []dnir.Function = @constCast(detached.functions);
     for (functions) |*function| {
@@ -547,60 +546,41 @@ fn reorderFunctionsByGraphFacts(
 ) Error!void {
     if (m.functions.len <= 1) return;
 
+    const function_ids = try alloc.alloc(semantic_graph.id, m.functions.len);
+    defer alloc.free(function_ids);
     var functions: std.AutoHashMapUnmanaged(semantic_graph.id, usize) = .empty;
     defer functions.deinit(alloc);
     for (m.functions, 0..) |entry, i| {
-        const function = entry.id orelse return;
+        const function = entry.id orelse
+            return invalidGraphFacts(diagnostic, @src(), "missing-function-id");
+        function_ids[i] = function;
         const slot = try functions.getOrPut(alloc, function);
         if (slot.found_existing) return invalidGraphFacts(diagnostic, @src(), "duplicate-function-id");
         slot.value_ptr.* = i;
     }
 
-    const in_degree = try alloc.alloc(usize, m.functions.len);
-    defer alloc.free(in_degree);
-    @memset(in_degree, 0);
-    const unlocks = try alloc.alloc(std.ArrayListUnmanaged(usize), m.functions.len);
-    defer {
-        for (unlocks) |*list| list.deinit(alloc);
-        alloc.free(unlocks);
-    }
-    for (unlocks) |*list| list.* = .empty;
-    var dependency_edges: std.AutoHashMapUnmanaged(u128, void) = .empty;
-    defer dependency_edges.deinit(alloc);
+    const order = graph.moduleFunctionEmitOrder(alloc, function_ids) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.DuplicateFunctionEntity => return invalidGraphFacts(diagnostic, @src(), "duplicate-function-id"),
+        error.InvalidFunctionEntity => return invalidGraphFacts(diagnostic, @src(), "invalid-function-id"),
+        error.UnresolvedApplication => return invalidGraphFacts(diagnostic, @src(), "unresolved-application"),
+    };
+    defer alloc.free(order);
 
-    var checked_edges: usize = 0;
-    for (graph.applications()) |application| {
-        const caller_index = functions.get(application.caller) orelse continue;
-        const relation_index = functions.get(application.relation) orelse continue;
-        const dependency = (@as(u128, relation_index) << 64) | @as(u128, caller_index);
-        const slot = try dependency_edges.getOrPut(alloc, dependency);
-        if (slot.found_existing) continue;
-        try unlocks[relation_index].append(alloc, caller_index);
-        in_degree[caller_index] += 1;
-        checked_edges += 1;
-    }
-    if (checked_edges == 0) return;
-
-    var ready: std.ArrayListUnmanaged(usize) = .empty;
-    defer ready.deinit(alloc);
-    for (in_degree, 0..) |degree, i| {
-        if (degree == 0) try ready.append(alloc, i);
-    }
-    var order: std.ArrayListUnmanaged(usize) = .empty;
-    defer order.deinit(alloc);
-    while (ready.items.len > 0) {
-        const function_index = ready.pop().?;
-        try order.append(alloc, function_index);
-        for (unlocks[function_index].items) |caller_index| {
-            in_degree[caller_index] -= 1;
-            if (in_degree[caller_index] == 0) try ready.append(alloc, caller_index);
+    var changed = false;
+    for (order, function_ids) |ordered_id, current_id| {
+        if (ordered_id != current_id) {
+            changed = true;
+            break;
         }
     }
-    if (order.items.len != m.functions.len) return;
+    if (!changed) return;
 
     const ordered = try alloc.alloc(dnir.Function, m.functions.len);
     defer alloc.free(ordered);
-    for (order.items, 0..) |source_index, destination_index| {
+    for (order, 0..) |function, destination_index| {
+        const source_index = functions.get(function) orelse
+            return invalidGraphFacts(diagnostic, @src(), "function-order-id");
         ordered[destination_index] = m.functions[source_index];
     }
     @memcpy(@constCast(m.functions), ordered);

@@ -1121,66 +1121,57 @@ pub const SemanticGraph = struct {
     ) ![]const id {
         if (functions.len == 0) return try alloc.dupe(id, functions);
 
-        var in_module: std.AutoHashMapUnmanaged(id, void) = .empty;
-        defer in_module.deinit(alloc);
-        for (functions) |function| {
+        var rows: std.AutoHashMapUnmanaged(id, usize) = .empty;
+        defer rows.deinit(alloc);
+        for (functions, 0..) |function, row| {
             const node = self.get(function) orelse return error.InvalidFunctionEntity;
             if (node.kind != .func) return error.InvalidFunctionEntity;
-            if (in_module.contains(function)) return error.DuplicateFunctionEntity;
-            try in_module.put(alloc, function, {});
+            const slot = try rows.getOrPut(alloc, function);
+            if (slot.found_existing) return error.DuplicateFunctionEntity;
+            slot.value_ptr.* = row;
         }
 
-        var in_degree: std.AutoHashMapUnmanaged(id, usize) = .empty;
-        defer in_degree.deinit(alloc);
-        var unlocks: std.AutoHashMapUnmanaged(id, std.ArrayListUnmanaged(id)) = .empty;
+        const in_degree = try alloc.alloc(usize, functions.len);
+        defer alloc.free(in_degree);
+        @memset(in_degree, 0);
+        const unlocks = try alloc.alloc(std.ArrayListUnmanaged(usize), functions.len);
         defer {
-            var it = unlocks.iterator();
-            while (it.next()) |e| e.value_ptr.deinit(alloc);
-            unlocks.deinit(alloc);
+            for (unlocks) |*list| list.deinit(alloc);
+            alloc.free(unlocks);
         }
-
-        for (functions) |function| {
-            try in_degree.put(alloc, function, 0);
-            try unlocks.put(alloc, function, .empty);
-        }
+        for (unlocks) |*list| list.* = .empty;
+        var dependencies: std.AutoHashMapUnmanaged(u128, void) = .empty;
+        defer dependencies.deinit(alloc);
 
         for (self.applications()) |stored| {
             const fact = self.application(stored.application) orelse return error.UnresolvedApplication;
-            if (in_module.get(fact.caller) == null) continue;
+            const caller = rows.get(fact.caller) orelse continue;
             const relation_node = self.get(fact.relation) orelse return error.UnresolvedApplication;
-            if (relation_node.kind != .func or in_module.get(fact.relation) == null) continue;
-
-            const list = unlocks.getPtr(fact.relation).?;
-            var dup = false;
-            for (list.items) |dependent| {
-                if (dependent == fact.caller) {
-                    dup = true;
-                    break;
-                }
-            }
-            if (dup) continue;
-            try list.append(alloc, fact.caller);
-            in_degree.getPtr(fact.caller).?.* += 1;
+            if (relation_node.kind != .func) continue;
+            const relation = rows.get(fact.relation) orelse continue;
+            const dependency = (@as(u128, relation) << 64) | @as(u128, caller);
+            const slot = try dependencies.getOrPut(alloc, dependency);
+            if (slot.found_existing) continue;
+            try unlocks[relation].append(alloc, caller);
+            in_degree[caller] += 1;
         }
+        if (dependencies.count() == 0) return try alloc.dupe(id, functions);
 
-        var ready: std.ArrayListUnmanaged(id) = .empty;
+        var ready: std.ArrayListUnmanaged(usize) = .empty;
         defer ready.deinit(alloc);
-        for (functions) |function| {
-            if (in_degree.get(function).? == 0) try ready.append(alloc, function);
+        for (in_degree, 0..) |degree, row| {
+            if (degree == 0) try ready.append(alloc, row);
         }
 
         var ordered: std.ArrayListUnmanaged(id) = .empty;
         errdefer ordered.deinit(alloc);
 
         while (ready.items.len > 0) {
-            const function = ready.items[ready.items.len - 1];
-            _ = ready.pop();
-            try ordered.append(alloc, function);
-            const dependents = unlocks.get(function) orelse continue;
-            for (dependents.items) |dependent| {
-                const deg = in_degree.getPtr(dependent) orelse continue;
-                deg.* -= 1;
-                if (deg.* == 0) try ready.append(alloc, dependent);
+            const row = ready.pop().?;
+            try ordered.append(alloc, functions[row]);
+            for (unlocks[row].items) |dependent| {
+                in_degree[dependent] -= 1;
+                if (in_degree[dependent] == 0) try ready.append(alloc, dependent);
             }
         }
 
@@ -2024,6 +2015,20 @@ test "semantic_graph: moduleFunctionEmitOrder callees before callers" {
     try std.testing.expectEqual(@as(usize, 2), order.len);
     try std.testing.expectEqual(helper, order[0]);
     try std.testing.expectEqual(main, order[1]);
+
+    const idle = try g.addNode(.{
+        .kind = .func,
+        .span = .{ .file = "order.id", .start = 0, .end = 0 },
+    });
+    const independent = [_]id{ helper, idle };
+    const unchanged = try g.moduleFunctionEmitOrder(alloc, &independent);
+    defer alloc.free(unchanged);
+    try std.testing.expectEqualSlices(id, &independent, unchanged);
+
+    const duplicate = [_]id{ main, main };
+    try std.testing.expectError(error.DuplicateFunctionEntity, g.moduleFunctionEmitOrder(alloc, &duplicate));
+    const invalid = [_]id{std.math.maxInt(id)};
+    try std.testing.expectError(error.InvalidFunctionEntity, g.moduleFunctionEmitOrder(alloc, &invalid));
 
     g.application_facts.items[0].results.len = std.math.maxInt(u32);
     try std.testing.expectError(error.UnresolvedApplication, g.moduleFunctionEmitOrder(alloc, &functions));
