@@ -1,4 +1,4 @@
--- idiomgate — canonical duon enforced on the STAGED DIFF, for every agent.
+-- idiomgate — canonical idsem enforced on the STAGED DIFF, for every agent.
 --
 -- Why the diff and not the tree: 756 .duo files still carry bare `end` and 227
 -- carry Lua module idioms. A whole-tree gate would block every commit until a
@@ -94,7 +94,7 @@ strip = (line: str): str
     out
 
 -- LAW-ONE has no spelling exemptions. Qualification belongs to levels and
--- homes; an underscore in Duon source is migration debt regardless of where it
+-- homes; an underscore in idsem source is migration debt regardless of where it
 -- occurs in an identifier.
 under: bool = (code: str)
     n = #code
@@ -105,7 +105,7 @@ under: bool = (code: str)
         i = i + 1
     false
 
--- Uppercase is not a descriptor convention in Duon. Cases, descriptors,
+-- Uppercase is not a descriptor convention in idsem. Cases, descriptors,
 -- bindings, homes, relations, and generated identities share the same law.
 capital: bool = (code: str)
     n = #code
@@ -145,13 +145,11 @@ token: bool = (code: str, sought: str)
         i = i + 1
     false
 
--- Release Gate Zero firewall. These public homes are known migration surfaces,
--- not admitted semantic vocabulary. Identity-based SUBJECT/WORLD/VOCAB checks
--- supersede this detector once the parser graph owns applications; until then
--- no added line may teach another agent that navigation grants authority.
-authority: bool = (code: str)
-    has(code, "st" .. "d.script.") or has(code, "st" .. "d.proc.")
-        or has(code, "st" .. "d.os.") or has(code, "st" .. "d.fs.")
+-- std is frozen migration debt. Any `std.` traversal on an added line is a new
+-- call site under a namespace that grants no world. Possessed values supply
+-- subjects; authority belongs to worlds; qualification belongs in facts.
+stdhome: bool = (code: str)
+    has(code, "st" .. "d.")
 
 -- A trie declaration is operation-first; invocation is always subject-first.
 -- This recognizes the declaration face without granting bare calls or an
@@ -249,14 +247,17 @@ scanline = (path: str, no: i64, line: str): i64
     if has(code, ".new(")
         print("{path}:{no}  .new(  [LADDER]  desc{{…}} · x:to(desc) · p:from(mode)(…)")
         hits = hits + 1
-    if authority(code)
-        print("({path}, {no}, invalid, law.authority.home, public capability home is not admitted vocabulary)")
+    if stdhome(code)
+        print("({path}, {no}, invalid, law.authority, std is frozen migration debt — a namespace call grants no world)")
         hits = hits + 1
     if readface(code)
         print("({path}, {no}, invalid, law.subject.one, read is subject-first: subject:read(...))")
         hits = hits + 1
     if materialize(code)
         print("({path}, {no}, migratable, law.demand.materialize, output consumes segments without demanding a concatenated value)")
+        hits = hits + 1
+    if token(code, "dominates")
+        print("({path}, {no}, invalid, G-DOM directive 2026-08-08, dominates is retired vocabulary)")
         hits = hits + 1
     hits
 
@@ -344,11 +345,17 @@ control = (): bool
     if rawlen(strip("code -- string.sub here")) > 6
         print("control FAIL: strip did not remove a comment")
         ok = false
-    if not authority("st" .. "d.script.run(command)")
-        print("control FAIL: authority did not reject std script")
+    if not stdhome("st" .. "d.mem.copy(a, b)")
+        print("control FAIL: stdhome missed a std call site")
         ok = false
-    if authority("command:run(process)")
-        print("control FAIL: authority rejected a subject relation")
+    if stdhome("mem:copy(a, b)")
+        print("control FAIL: stdhome rejected a subject relation")
+        ok = false
+    if not token("ward@dominates(wart)", "dominates")
+        print("control FAIL: dominates token is not recognized")
+        ok = false
+    if token("x:dominate(y)", "dominates")
+        print("control FAIL: dominates fired on a different word")
         ok = false
     if not readface("arbitrary.home.read(subject)")
         print("control FAIL: readface did not reject operation-first read")
@@ -398,11 +405,11 @@ main = (): i64
     d:close()
     total = scandiff(files)
     print("")
-    print("idiomgate: {total} finding(s) on ADDED lines  [control: 20/20 pass]")
+    print("idiomgate: {total} finding(s) on ADDED lines  [control: 28/28 pass]")
     if total > 0
         print("")
-        print("The law: CLAUDE.md + docs/spec/ · the deny list: AGENTS.md")
-        print("The teaching: docs/src/idiomatic-duon.md")
+        print("The law: docs/spec/constitution.md · the preflight: AGENTS.md")
+        print("Canonical teaching source: current .id only; historical source is not a template.")
         print("The corpus is NOT the law — do not imitate the file you are editing.")
         return 1
     0
