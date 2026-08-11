@@ -1,185 +1,100 @@
-# Idsem 0.1 - Formal Grammar
+# Idsem grammar projection
 
-This is the normative human projection of C0's grammar until the graph service
-hosts it. The parser is not yet generated from this file. `GAP-134` owns that
-missing grammar projection; `GAP-145` owns the lexical identity migration. The
-implementation accepting a form does not make it canonical.
+The sole language law is [`docs/spec/constitution.md`](constitution.md). This
+page is a human projection of closed source-face decisions; it is not a second
+grammar authority and must not be used to hand-build parser tables.
 
-## 1. Lexical layer
+The repository does not yet contain the complete machine-readable grammar that
+the production parser, formatter, canonicalizer, Tree-sitter, LSP, MCP, tests,
+and documentation must share. `GAP-134` owns that missing authority and its
+generated roles. `GAP-145` owns the distinct lexical identities and immutable
+token view required to consume it. Until they close, compiler acceptance is not
+proof that a spelling is canonical.
 
-```
-input      → utf8 text, normalized: tabs→4sp; trailing ws stripped
-tokens     → NEWLINE, INDENT, DEDENT emitted à la offside:
-             NEWLINE at each physical line end NOT inside open ( [ { ;
-             INDENT/DEDENT on column change against the indent stack;
-             a dedent to a column not on the stack ⇒ LAYOUT ERROR
-             (never an alternate parse — ceilings keep the stack ≤ 4)
-shebang    → "#!" text NEWLINE, only at byte zero; source provenance
-comment    → "#" text NEWLINE; trivia with zero semantic authority
-name       → [a-z][a-z0-9]*            -- single word; acronyms lowercase
-number     → digit [digit _]* ["." digit+] | "0x" hex+ | "0b" bin+
-             ("_" legal only between digits)
-bytes      → "'" byteitem* "'"         -- byte sequence, never text/char
-text       → '"' (textitem | "{" expr "}")* '"'
-backtick   → RESERVED
-END        → "end" (accepted, DELETED by the reader — resync only)
-```
+## Lexical law
 
-`text` may span physical lines without becoming another literal kind. When the
-opening quote is followed immediately by a newline, that newline and the final
-newline before a closing quote on its own line are omitted. The whitespace
-prefix before the closing quote is removed exactly from every nonblank content
-line; a nonblank line with less indentation is an error. Blank lines normalize
-to empty lines. This rule is deterministic and formatter-stable.
+- canonical project-owned source uses `.id`;
+- names are one lowercase semantic word;
+- double quotes delimit text;
+- single quotes delimit bytes;
+- `#` begins a line comment;
+- backtick is reserved and never executes a process;
+- blocks use offside layout;
+- `end`, semicolons, `then`, `do`, Lua long strings/comments, and prefix
+  directives are not canonical Idsem.
 
-`bytes` accepts byte-oriented escapes such as `\xNN`, `\n`, `\\`, and `\'`.
-Ordinary source characters contribute their UTF-8 bytes. Unicode escape syntax
-inside a byte literal is rejected until separately admitted; it never produces
-a host-language character integer. Byte literals do not interpolate.
+Compatibility recognition preserves its foreign or historical lawset and
+provenance. It never shares canonical token identity and never supplies a
+pattern for new `.id`.
 
-The compatibility projection separately recognizes Lua `--` comments, Lua long
-comments, Lua long strings, and historical Lua single-quoted text. These carry
-compatibility provenance and never share canonical token identity. A historical
-single-quoted text literal canonicalizes to double-quoted text before it can be
-read as native Idsem. Backtick remains tokenizable but has no canonical grammar
-role and never implies process execution.
+## Delimiter roles
 
-Delimiter roles are closed. `()` is ordinary callable application and grouping;
-`{}` is structured pack, descriptor home, and descriptor application; `[]` is
-computed/indexed projection; `.` is statically named projection; and `:` carries
-its admitted descriptor, subject, and home roles. These syntax facts disappear
-after resolution except as provenance. No delimiter implies allocation, place,
-boxing, dispatch, or another semantic relation identity.
+The lexer identifies delimiters, the grammar assigns roles, the parser consumes
+roles, and resolution assigns meaning. Punctuation contributes no semantic
+identity or physical representation choice after normalization.
 
-## 2. Precedence (tightest → loosest); all left-assoc unless noted
+- `()` is ordinary callable application and grouping: `f(a, b)`;
+- `{}` bounds structured packs, descriptor application, and descriptor homes;
+- `[]` is genuinely computed or indexed projection: `values[i]`;
+- `.` after an explicit subject is statically named projection: `user.name`;
+  bare `.` denotes the ambient subject value and never abbreviates `.name`;
+- `:` carries only its admitted descriptor, subject, and home roles:
+  `text:len()` for an explicit subject and `:normalize()` for the ambient
+  subject;
+- `@` supplies a semantic anchor only: bare `@` names the enclosing descriptor,
+  `value@relation` selects that relation anchored at `value`, and `@{...}` is
+  the ambient descriptor applied to structured content. It never introduces a
+  compiler directive.
 
-```
-1  postfix:  .name   :name(args)   [expr…]   (args)   @rel|@Proto
-             {…} descriptor-application
-2  prefix:   not  -  ~  .name(leading)  :name(leading)  @(bare)
-3  ^                                          (right)
-4  * / %
-5  + -
-6  << >>
-7  & (band | refine — operand space selects)
-8  ~ (bxor)   | (bor | union)
-9  ..
-10 == != < <= > >=
-11 and         -- in binding conditions: the guard-chain link
-12 or
-13 = += -= *= /= (binding / update; also the binding-condition form)
-14 , (pack / group)
+Canonical structured faces include:
+
+```id
+{ x, y }
+
+{
+    x = a
+    y = b
+}
+
+point{ x, y }
+
+p: point = { x, y }
+
+point: {
+    x: f64
+    y: f64
+    len = ()
+        (x*x + y*y):sqrt()
+}
 ```
 
-## 3. Grammar (EBNF; `{}`=repeat, `[]`=optional, `|`=alt)
+An ordinary callable uses parentheses. A descriptor applies to structured
+content with braces. A statically known field or key uses a named projection or
+structured label. Brackets remain only when evaluating an expression supplies
+the key:
 
-```
-module     → { stmt } EOF
-block      → NEWLINE INDENT { stmt } DEDENT
-stmt       → binding | shapedecl | expr | ifstmt | while | for | return
-           | "break" | "continue" | check
-binding    → target { "," target } assignop expr { "," expr }
-target     → name | destructure | place
-destructure→ "{" name { "," name } "}"
-place      → postfixexpr                       -- a.b, a[k], .b (anchored)
-shapedecl  → name ":" shape [ "=" expr ]       -- IS [+ HOLDS]
+```id
+user.name
+table[key]
 
-ifstmt     → "if" cond ( inline [ "else" inline ] | block [ "else" (ifstmt|block) ] )
-while      → "while" cond ( inline | block )    -- P119: no ";" tail
-for        → "for" name { "," name } "in" postfixexpr ( inline | block )
-inline     → stmt                              -- exactly one; self-delimited
-cond       → chain
-chain      → link { "and" link }               -- guard chain (Pass 101)
-link       → [ target { "," target } "=" ] orexpr
-return     → "return" [ expr { "," expr } ]
-check      → "check" "(" expr ")"
-
-expr       → orexpr | fn
-fn         → "(" [ params ] ")" [ ":" shape ] ( expr | block )
-params     → param { "," param } | ".." name
-param      → name [ ":" shape ] [ "=" expr ]
-orexpr     → andexpr { "or" andexpr }
-andexpr    → cmpexpr { "and" cmpexpr }
-cmpexpr    → catexpr { cmpop catexpr }
-…                                              -- per the precedence table
-unary      → { prefixop } postfixexpr
-postfixexpr→ primary { postfix }
-postfix    → "." name | ":" name callargs | "[" expr { "," expr } "]"
-           | "(" [ args ] ")" | "@" ( name | postfixexpr )
-           | tableliteral                      -- descriptor application only
-primary    → name | number | bytes | text
-           | "(" expr ")" | tableliteral | "@" [ tableliteral ]
-           | "." name | ":" name callargs      -- leading lens / sibling call
-tableliteral → "{" [ field { fieldsep field } ] "}"
-field      → name | name "=" expr | name ":" shape | "[" expr "]" "=" expr
-           | ".." expr | fn-slot…
-shape      → postfixexpr { ("|" | "&") postfixexpr }    -- descriptor space
+{
+    name = value
+    [key] = computed
+}
 ```
 
-## 4. The five ambiguity resolutions (rules, not luck)
+None of these faces implies a table, record, object, allocation, place, nested
+container, hash lookup, boxing, or dispatch.
 
-**R1 — `:` (IS vs INVOKE).** After a *name in statement/field position* with no
-call group ⇒ shapedecl (IS). Anywhere a left operand value exists and a call
-group follows ⇒ INVOKE. Leading `:name(` with no left operand ⇒ sibling invoke.
-The forms cannot coincide: **IS never takes an argument group; INVOKE always
-does.**
+## Parser boundary
 
-**R2 — leading `.name` (lens vs case).** Argument position ⇒ lens over each
-element, *always* (Pass 98). Descriptor-expected position — RHS of `==` against
-a known case-set, constructor field, dispatch key, contract, `return` under a
-case contract — ⇒ the case. Neither context ⇒ diagnostic ("state the shape or
-qualify"). The parser produces ONE node (`anchorref`); *resolution* is semantic,
-so the grammar is unambiguous because the spelling is one production.
+Parser output records the minimum source structure and provenance needed for
+resolution. It does not mint relation, subject, application, value, world,
+demand, failure, or representation identity. Subject roles, descriptor facts,
+semantic cases, and transitions belong to the resolver and graph.
 
-**R3 — descriptor application.** A postfix `tableliteral` records descriptor
-application syntax. Resolution requires the subject to supply a descriptor;
-an ordinary callable in the same position is rejected rather than reinterpreted
-as a brace call. Ordinary callable application always uses `callargs`.
-
-**R4 — binding conditions and guard chains.** Inside `cond`, `=` binds a
-`link`'s targets to its `orexpr`, and `and` sequences links. Therefore
-`while b = :peek() and p(b)` parses as `(b = :peek()) and (p(b))` **by the chain
-production**, not by a precedence exception — and outside `cond`, `=` is a
-statement and cannot appear in expressions at all.
-
-**R5 — `@` (bare vs postfix vs constructor).** Postfix `@` requires a left
-operand (level 1). Bare `@` is a primary; immediately followed by `{` it is the
-enclosing-descriptor constructor — one production, `"@" [tableliteral]`. **No
-prefix-`@`-expression production exists: the grammar cannot express a
-directive.**
-
-## 5. Notes
-
-The grammar is **LL(2) modulo the offside layer**: one token of lookahead past
-`name` decides shapedecl vs binding vs call, and `cond` needs the second token
-to separate `target =` from `orexpr`.
-
-X8, TMP-1, chain-collapse and the one-liner limits are **canonicalizer laws, not
-grammar** — the grammar accepts more than the canon emits, by design (repair
-over rejection).
-
-The generated parser plus a fuzz corpus against these productions ships with the
-evaluator (G-D1's sibling fixture).
-
-## 6. Status in this repository
-
-This document is normative and the parser is **not yet generated from it**.
-`src/parser.zig` is hand-written and predates this grammar; `lib/std/compiler/parser.duo`
-is the self-hosted target. Three known points of contact with reality:
-
-- **R5 is enforced as of afad6f3.** Infix `@` folded to `.matmul` used to
-  type-check clean in `.duo` — a green check on a construct with no meaning. It
-  is now an error in `.duo` with the `.lua` dialect untouched, which is exactly
-  what "the grammar cannot express a directive" requires of the implementation.
-- **The offside layer is real.** Blocks close by dedent (`4b5d2d8`), with
-  `examples/spec100/offside.duo` and two `examples/compile_fail/offside_*.duo`
-  fixtures asserting that a dedent matching no legal shape is a DIAGNOSTIC and
-  never an alternate parse.
-- **Lexical closure is not implemented.** Both live lexers currently emit one
-  string token for single quotes, double quotes, and Lua long strings. They
-  still tokenize `#` as length, and parser/tooling paths reconstruct delimiters
-  from source. `GAP-145` requires distinct token identities and generated roles
-  before parser or corpus migration.
-
-The gap between this file and `src/parser.zig` is the work; naming the gap is
-what makes it measurable.
+The missing machine grammar must generate token roles, expression and binding
+starts, descriptor-member roles, delimiter capabilities, prefix/postfix roles,
+precedence, associativity, block/offside behavior, and compatibility status.
+No consumer may maintain a punctuation list, keyword list, expression-start
+chain, or source-text fallback beside that authority.

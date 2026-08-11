@@ -134,7 +134,7 @@ realization, and machine lineage without source-name reconstruction.
 | Stage | Input | Output | Proof |
 | --- | --- | --- | --- |
 | **S0** | Zig + repo source | Host `duo` binary | CI, unit tests, bench gates |
-| **S1 / B** | S0 + canonical Idsem compiler source | First Idsem-built compiler | Semantic fingerprint vs S0 oracle |
+| **S1 / B** | S0 + canonical Idsem compiler source | First Idsem-built compiler | Exact graph facts, witnessed correspondence, and behavior vs the seed oracle |
 | **S2 / C** | B + identical source | Self-built compiler | Semantic, diagnostic, and behavioral parity with B |
 | **S3** | C + identical source | Fixed-point candidate | Artifact comparison and reproducibility bundle |
 
@@ -150,12 +150,15 @@ The seed must be:
 
 ## Stage comparisons (always required)
 
-- Semantic fingerprints
+- Exact graph identities, facts, and witnessed cross-incarnation correspondence
 - Public capability manifests
-- Optimized IR fingerprints (when applicable)
+- Graph-grounded realization facts and causal lineage
 - Object structure
 - Binary behavior (test matrix)
 - Diagnostics parity
+
+Fingerprints may accelerate candidate comparison or summarize evidence. They
+never establish B/C semantic identity, correspondence, or lineage.
 
 ## Stage comparisons (when declared)
 

@@ -7,6 +7,13 @@ status snapshot.
 
 ## Boundary
 
+The current server has not reached this boundary. Its tracked project-owned
+`.duo` implementation still contains a private source scanner, handwritten
+keyword and world lists, standard-root completion, retired snippets, and
+string-shaped semantic decisions. Those are SOURCE-ZERO and duplicate-authority
+debt. The sections below state the admission target for their replacement, not
+capabilities the live server already owns.
+
 The language server is a protocol projection of compiler-owned semantic facts.
 It consumes the same graph identities, relations, descriptors, worlds, laws,
 provenance, and generated grammar roles as the compiler. It owns no vocabulary,

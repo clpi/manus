@@ -6,10 +6,14 @@ Start at [`../../AGENTS.md`](../../AGENTS.md); the sole semantic law is
 current executed compiler frontier is
 [`../../docs/bootstrap.md`](../../docs/bootstrap.md).
 
-The server projects the compiler's semantic graph over LSP. It does not define
-keywords, relations, descriptors, canonical source, diagnostic meaning,
-completion vocabulary, or semantic-token roles. Those facts come from the one
-graph and the generated projections of the one grammar authority.
+The target server projects the compiler's semantic graph over LSP. The current
+tracked `.duo` server still carries a private scanner, handwritten roles and
+worlds, standard-root completion, retired snippets, and string-shaped semantic
+decisions. That is SOURCE-ZERO and duplicate-authority debt, not proof of the
+target architecture. After migration, the server defines no keywords,
+relations, descriptors, canonical source, diagnostic meaning, completion
+vocabulary, or semantic-token roles; those facts come from the one graph and
+the generated projections of the one grammar authority.
 
 User-facing features should therefore answer semantic questions:
 

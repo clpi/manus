@@ -9,8 +9,9 @@ is [C0](spec/constitution.md).
 The language is Idsem and canonical source uses `.id`. Every tracked
 project-owned `.duo` file is SOURCE-ZERO debt. Physical `duo` executable or
 tool prefixes are bootstrap aliases and deletion targets, not a second current
-language. Canonical compiler, LSP, and MCP implementations live in this
-repository; do not route agents to historical companion checkouts.
+language. The current in-tree compiler, LSP, and MCP implementation paths live
+in this repository; do not route agents to historical companion checkouts or
+mistake those paths for canonical source.
 
 Tooling projects graph-owned identity, facts, demand, worlds, provenance, and
 realization. It must not invent a vocabulary or recover semantic truth from

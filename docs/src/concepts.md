@@ -39,7 +39,3 @@ Descriptor knowledge must preserve realization freedom. It may permit
 specialization, devirtualization, scalarization, fusion, or complete erasure,
 but it does not imply an object, vtable, boxed value, allocated record, or
 runtime reflection structure.
-
-Historical concept declarations, metatable-shaped descriptors, `std` homes,
-and directive examples were removed from this current-facing page. They remain
-available in Git history as migration evidence, not Idsem patterns.

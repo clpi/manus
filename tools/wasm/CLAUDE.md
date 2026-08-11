@@ -7,6 +7,12 @@ no dated status.
 
 ## Boundary
 
+The current engine has not reached this boundary. Its tracked project-owned
+`.duo` implementation is still a standalone interpreter/JIT with private opcode
+and stack machinery, standard-root dependencies, and runtime fallback. Those
+are SOURCE-ZERO and convergence debt. The sections below state the shared-graph
+admission target, not ownership already achieved by the live engine.
+
 WebAssembly enters Idsem as an exact foreign lawset. Decode and import produce
 graph identities and facts carrying foreign origin, module identity, operation
 semantics, descriptors, ABI, ownership, effects, failures, worlds, trust, and

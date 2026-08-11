@@ -36,7 +36,5 @@ World authority is not granted by importing a package or by a legacy standard
 distribution path. WASI and other host interfaces retain their foreign law,
 origin, worlds, effects, outcomes, and evidence.
 
-Stale bootstrap commands, standard namespace lists, runtime setup claims, and
-manual C-debugging recipes were removed from this current-facing page. Verify
-the production frontier in [`docs/bootstrap.md`](../bootstrap.md) before
+Verify the production frontier in [`docs/bootstrap.md`](../bootstrap.md) before
 claiming native or Wasm ownership.

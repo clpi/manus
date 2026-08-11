@@ -40,8 +40,6 @@ demand, and evidence. Do not collapse them into `can`, `supports`, `valid`, or
 `should` booleans that hide unknowns or make realization policy semantic
 identity.
 
-Retired directive hierarchies, aliases, stale examples, and claims of automatic
-native output have been removed from this current-facing document. Do not infer
-replacement syntax. If an irreducible operation is missing, use
-`SEMANTIC-VOCABULARY-BLOCKED` and establish its owner instead of inventing a
-directive.
+No compiler-directive syntax is admitted. If an irreducible operation is
+missing, use `SEMANTIC-VOCABULARY-BLOCKED` and establish its owner instead of
+inventing a directive.

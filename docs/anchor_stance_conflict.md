@@ -23,6 +23,23 @@ identity, `GAP-134` owns generated grammar roles and immutable observation, and
 Do not restore the old parser-site inventory or infer canonical syntax from its
 fixtures.
 
-Delete this redirect after the inbound SOURCE-ZERO fixtures have been migrated
-or deleted and the remaining gap reference points directly to its current
-owner.
+## Temporary inbound labels
+
+Two SOURCE-ZERO fixtures still mention the former labels `rows 1b/1c`. Those
+rows recorded the false-green recognition of historical leading `.name` and
+leading `:name()` as closure-shaped values; checking succeeded and the
+generated C then failed. Leading `.name` is retired: an ambient field resolves
+through its bare identity, while bare `.` denotes the whole ambient subject.
+Leading `:name()` retains only its admitted ambient-subject invocation role.
+The compile-fail runner's
+`row 3` records the required rejection of `value.@name`: it is not an admitted
+anchor stance, and the former path silently produced the wrong value. These
+labels carry no current semantic or test authority; they survive here only so
+the old comments resolve to an explicit deletion notice. Their controls must be
+rederived from the current grammar, graph facts, diagnostics, and gap-owned
+evidence.
+
+Delete this redirect after `examples/spec100/walk.duo`,
+`examples/spec100/anchorscope.duo`, and `scripts/run_compile_fail_tests.duo`
+have been migrated or deleted and `GAP-025` points directly to its current
+semantic owner.

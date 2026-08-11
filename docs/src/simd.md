@@ -27,7 +27,5 @@ index. A known field or component identity uses the stronger static face. After
 resolution, punctuation contributes provenance rather than a SIMD or storage
 operation kind.
 
-Historical vector type names, module calls, intrinsic lists, generated-C
-examples, and performance claims were removed because they were not current
-canonical Idsem authority. Target-specific claims belong in measured evidence
-for the exact exercised realization.
+Target-specific claims belong in measured evidence for the exact exercised
+realization.

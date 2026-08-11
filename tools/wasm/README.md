@@ -7,14 +7,19 @@ compiler frontier is [`../../docs/bootstrap.md`](../../docs/bootstrap.md), and
 performance claims belong in
 [`../../docs/performance.md`](../../docs/performance.md).
 
-WebAssembly is imported into the same semantic graph as every other lawset.
+The current tracked `.duo` engine remains a standalone interpreter/JIT with
+private opcode and stack machinery, standard-root dependencies, and runtime
+fallback. That is SOURCE-ZERO and convergence debt; it is not the architecture
+described below.
+
+The target imports WebAssembly into the same semantic graph as every other lawset.
 Foreign origin, operations, descriptors, memory rules, imports, ABI, failures,
 effects, worlds, and provenance remain exact. Demand selects what exists, and
 realization selects the lawful physical form. An interpreter, native compiler,
 foreign engine, opcode table, or target-specific code generator is an
 implementation candidate—not a second semantic architecture.
 
-The public model follows ROOT-ZERO: package location is provenance and grants
+The admitted public model follows ROOT-ZERO: package location is provenance and grants
 no capability; the standard distribution owns no native namespace. It follows
 FACE-ZERO: subject and static identities are exposed directly, computed keys use
 `[]`, and source syntax never chooses storage or execution strategy.

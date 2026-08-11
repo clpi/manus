@@ -38,6 +38,4 @@ proof of direct realization.
 
 Compiler B remains the project critical path. Read
 [`docs/bootstrap.md`](bootstrap.md) before spending migration work on AI/ML
-breadth. The previous page's speculative directives, Lua-shaped examples,
-standard namespace calls, static feature claims, and invented device syntax
-were removed; Git history preserves them as design provenance.
+breadth.
