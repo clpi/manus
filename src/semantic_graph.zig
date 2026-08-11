@@ -158,6 +158,10 @@ pub const SpanRef = struct {
     end: u32,
 };
 
+fn sameSpan(a: SpanRef, b: SpanRef) bool {
+    return a.start == b.start and a.end == b.end and std.mem.eql(u8, a.file, b.file);
+}
+
 pub const Node = struct {
     kind: NodeKind,
     span: SpanRef,
@@ -370,7 +374,9 @@ pub const SemanticGraph = struct {
             application_node.descriptor == null or
             !application_node.descriptor.?.eql(descriptor) or
             application_node.demand == null or
-            application_node.demand.? != demand) return error.InvalidApplicationFact;
+            application_node.demand.? != demand or
+            application_node.scope != caller or
+            !sameSpan(application_node.span, provenance)) return error.InvalidApplicationFact;
         const relation_node = self.get(relation) orelse return error.InvalidApplicationRelation;
         if (relation_node.kind != .func and relation_node.kind != .relation) {
             return error.InvalidApplicationRelation;
@@ -379,15 +385,16 @@ pub const SemanticGraph = struct {
         if (caller_node.kind != .func) return error.InvalidApplicationCaller;
         if (subject) |entity| {
             const node = self.get(entity) orelse return error.InvalidApplicationSubject;
-            if (node.kind != .value) return error.InvalidApplicationSubject;
+            if (node.kind != .value or node.scope != occurrence) return error.InvalidApplicationSubject;
         }
         for (arguments) |entity| {
             const node = self.get(entity) orelse return error.InvalidApplicationArgument;
-            if (node.kind != .value) return error.InvalidApplicationArgument;
+            if (node.kind != .value or node.scope != occurrence) return error.InvalidApplicationArgument;
         }
         for (results) |entity| {
             const node = self.get(entity) orelse return error.InvalidApplicationResult;
-            if (node.kind != .value or node.descriptor == null or !node.descriptor.?.eql(descriptor)) {
+            if (node.kind != .value or node.scope != occurrence or
+                node.descriptor == null or !node.descriptor.?.eql(descriptor)) {
                 return error.InvalidApplicationResult;
             }
         }
@@ -432,24 +439,28 @@ pub const SemanticGraph = struct {
         if (fact.application != occurrence) return null;
         const application_node = self.get(fact.application) orelse return null;
         if (!self.isApplicationCandidate(fact.application) or application_node.descriptor == null or
-            !application_node.descriptor.?.eql(fact.descriptor)) return null;
+            !application_node.descriptor.?.eql(fact.descriptor) or
+            application_node.demand == null or application_node.demand.? != fact.demand or
+            application_node.scope != fact.caller or
+            !sameSpan(application_node.span, fact.provenance)) return null;
         const relation_node = self.get(fact.relation) orelse return null;
         if (relation_node.kind != .func and relation_node.kind != .relation) return null;
         const caller_node = self.get(fact.caller) orelse return null;
         if (caller_node.kind != .func) return null;
         if (fact.subject) |entity| {
             const node = self.get(entity) orelse return null;
-            if (node.kind != .value) return null;
+            if (node.kind != .value or node.scope != occurrence) return null;
         }
         const arguments = self.valuesForRange(fact.arguments) orelse return null;
         const results = self.valuesForRange(fact.results) orelse return null;
         for (arguments) |entity| {
             const node = self.get(entity) orelse return null;
-            if (node.kind != .value) return null;
+            if (node.kind != .value or node.scope != occurrence) return null;
         }
         for (results) |entity| {
             const node = self.get(entity) orelse return null;
-            if (node.kind != .value or node.descriptor == null or !node.descriptor.?.eql(fact.descriptor)) return null;
+            if (node.kind != .value or node.scope != occurrence or
+                node.descriptor == null or !node.descriptor.?.eql(fact.descriptor)) return null;
         }
         return fact;
     }
@@ -468,13 +479,18 @@ pub const SemanticGraph = struct {
         var count: usize = 0;
         var candidates = self.application_candidates.iterator(.{});
         while (candidates.next()) |candidate| {
-            if (candidate < self.application_presence.bit_length and
-                self.application_presence.isSet(candidate)) continue;
-            const fact = self.get(@intCast(candidate)) orelse continue;
-            if (caller) |entity| {
-                if (fact.scope != entity) continue;
+            const entity = std.math.cast(id, candidate) orelse {
+                count += 1;
+                continue;
+            };
+            const node = self.get(entity) orelse {
+                count += 1;
+                continue;
+            };
+            if (caller) |caller_id| {
+                if (node.scope != caller_id) continue;
             }
-            count += 1;
+            if (self.application(entity) == null) count += 1;
         }
         return count;
     }
@@ -1229,14 +1245,13 @@ pub const SemanticGraph = struct {
 
         var candidates = self.application_candidates.iterator(.{});
         while (candidates.next()) |candidate| {
-            if (candidate < self.application_presence.bit_length and
-                self.application_presence.isSet(candidate)) continue;
             const application_id = std.math.cast(id, candidate) orelse
                 return error.UnresolvedApplication;
             const application_node = self.get(application_id) orelse
                 return error.UnresolvedApplication;
             const caller = application_node.scope orelse return error.UnresolvedApplication;
-            if (rows.contains(caller)) return error.UnresolvedApplication;
+            if (!rows.contains(caller)) continue;
+            if (self.application(application_id) == null) return error.UnresolvedApplication;
         }
 
         const in_degree = try alloc.alloc(usize, functions.len);
@@ -2064,6 +2079,23 @@ test "semantic_graph: checked subject application retains relation and value ide
     try std.testing.expectEqual(types.ResolvedType.i64, graph.get(results[0]).?.descriptor.?);
     try std.testing.expectEqual(@as(u32, 7), stored.provenance.start);
 
+    const unresolved_before = graph.unresolvedApplicationCount(null);
+    const row = graph.application_rows.items[fact.application];
+    graph.application_rows.items[fact.application] = std.math.maxInt(u32);
+    try std.testing.expect(graph.application(fact.application) == null);
+    try std.testing.expectEqual(unresolved_before + 1, graph.unresolvedApplicationCount(null));
+    graph.application_rows.items[fact.application] = row;
+
+    graph.nodes.items[fact.application].demand = .discard;
+    try std.testing.expect(graph.application(fact.application) == null);
+    try std.testing.expectEqual(unresolved_before + 1, graph.unresolvedApplicationCount(null));
+    graph.nodes.items[fact.application].demand = stored.demand;
+
+    graph.nodes.items[results[0]].scope = null;
+    try std.testing.expect(graph.application(fact.application) == null);
+    try std.testing.expectEqual(unresolved_before + 1, graph.unresolvedApplicationCount(null));
+    graph.nodes.items[results[0]].scope = fact.application;
+
     // The transitional kind tag does not own application meaning. Application
     // facts and source provenance queries are selected by the candidate column.
     graph.nodes.items[fact.application].kind = .value;
@@ -2158,6 +2190,11 @@ test "semantic_graph: moduleFunctionEmitOrder callees before callers" {
     g.application_presence.unset(unresolved);
     try std.testing.expectError(error.UnresolvedApplication, g.moduleFunctionEmitOrder(alloc, &functions));
     g.application_presence.set(unresolved);
+
+    const application_row = g.application_rows.items[unresolved];
+    g.application_rows.items[unresolved] = std.math.maxInt(u32);
+    try std.testing.expectError(error.UnresolvedApplication, g.moduleFunctionEmitOrder(alloc, &functions));
+    g.application_rows.items[unresolved] = application_row;
 
     g.application_facts.items[0].results.len = std.math.maxInt(u32);
     try std.testing.expectError(error.UnresolvedApplication, g.moduleFunctionEmitOrder(alloc, &functions));
@@ -2351,7 +2388,7 @@ test "semantic_graph: packed application facts reject duplicate and wrong roles"
         .span = .{ .file = "axes.id", .start = 1, .end = 1 },
         .name = "apply",
     });
-    const application = try graph.addChild(module, .{
+    const application = try graph.addChild(relation, .{
         .kind = .call,
         .span = .{ .file = "axes.id", .start = 2, .end = 1 },
         .descriptor = .i64,
@@ -2409,7 +2446,7 @@ test "semantic_graph: packed application facts reject duplicate and wrong roles"
         ),
     );
 
-    const wrong = try graph.addChild(module, .{
+    const wrong = try graph.addChild(relation, .{
         .kind = .call,
         .span = .{ .file = "axes.id", .start = 3, .end = 1 },
         .descriptor = .i64,
