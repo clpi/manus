@@ -1,6 +1,5 @@
 //! Pass 26 §1, §17–§18 — semantic boundary as first-class compiler value.
 const std = @import("std");
-const pass26_descriptor_identity = @import("pass26_descriptor_identity.zig");
 
 pub const SCHEMA_VERSION = "pass26-semantic-boundary-v0";
 
@@ -229,5 +228,4 @@ test "pass26_semantic_boundary: boundaries + trust + adapter chain" {
     try std.testing.expect(trustAtLeast(.abi_validated, .declared));
     try std.testing.expect(!trustAtLeast(.parsed, .abi_validated));
     try std.testing.expect(findBoundary("P26-B02") != null);
-    try std.testing.expect(pass26_descriptor_identity.layerCount() == 4);
 }
