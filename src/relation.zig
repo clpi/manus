@@ -669,7 +669,8 @@ pub const Relation = struct {
     /// why you may not have it silently" instead of "no such conversion".
     pub fn routeBy(self: *const Relation, src: Id, dest: Id) ?Route {
         if (src.eq(dest)) return null;
-        var found: ?Route = null;
+        var admitted: ?Route = null;
+        var refused: ?Route = null;
         for (self.facts.items) |first| {
             if (!first.id.src.eq(src)) continue;
             // `first.id.dest` is the candidate hub.
@@ -685,12 +686,17 @@ pub const Relation = struct {
                     .props = Properties.meet(first.props, second.props),
                     .admitted = first.props.derivable() and second.props.derivable(),
                 };
-                // Prefer an admitted route; keep a refused one only to explain.
-                if (route.admitted) return route;
-                if (found == null) found = route;
+                if (route.admitted) {
+                    // Two lawful paths require an upstream selection law. The
+                    // store cannot let declaration order choose semantics.
+                    if (admitted != null) return null;
+                    admitted = route;
+                } else if (refused == null) {
+                    refused = route;
+                }
             }
         }
-        return found;
+        return admitted orelse refused;
     }
 
     /// The composition law's rendered face — spellings in, a readable `Path`
@@ -1010,32 +1016,56 @@ test "the to family derives through a hub; other families are untouched" {
     try testing.expectEqual(@as(usize, 1), store.declared());
 }
 
-test "an eq family composes independently of to" {
+test "two lawful hubs are ambiguous and never select by declaration order" {
+    var first = Store{};
+    defer first.deinit(testing.allocator);
+    const first_to = try first.getOrCreate(testing.allocator, "to");
+    try first_to.declare(testing.allocator, testEdge("left", "a", "aleft", .lossless));
+    try first_to.declare(testing.allocator, testEdge("b", "left", "leftb", .lossless));
+    try first_to.declare(testing.allocator, testEdge("right", "a", "aright", .lossless));
+    try first_to.declare(testing.allocator, testEdge("b", "right", "rightb", .lossless));
+    try testing.expect(first_to.direct("a", "left") != null);
+    try testing.expect(first_to.direct("left", "b") != null);
+    try testing.expect(first_to.direct("a", "right") != null);
+    try testing.expect(first_to.direct("right", "b") != null);
+    try testing.expect(first_to.derive("a", "b") == null);
+
+    var second = Store{};
+    defer second.deinit(testing.allocator);
+    const second_to = try second.getOrCreate(testing.allocator, "to");
+    try second_to.declare(testing.allocator, testEdge("right", "a", "aright", .lossless));
+    try second_to.declare(testing.allocator, testEdge("b", "right", "rightb", .lossless));
+    try second_to.declare(testing.allocator, testEdge("left", "a", "aleft", .lossless));
+    try second_to.declare(testing.allocator, testEdge("b", "left", "leftb", .lossless));
+    try testing.expect(second_to.direct("a", "right") != null);
+    try testing.expect(second_to.direct("right", "b") != null);
+    try testing.expect(second_to.direct("a", "left") != null);
+    try testing.expect(second_to.direct("left", "b") != null);
+    try testing.expect(second_to.derive("a", "b") == null);
+}
+
+test "overlapping relation families retain independent facts" {
     var store = Store{};
     defer store.deinit(testing.allocator);
-    const eq = try store.getOrCreate(testing.allocator, "eq");
-    try eq.declare(testing.allocator, testEdge("f64", "i64", "eqfi", .lossless));
-    try eq.declare(testing.allocator, testEdge("i64", "f64", "eqif", .lossless));
-    try eq.declare(testing.allocator, testEdge("i64", "u8", "equi", .lossless));
-    try eq.declare(testing.allocator, testEdge("u8", "i64", "eqiu", .lossless));
+    const to = try store.getOrCreate(testing.allocator, "to");
+    const adapt = try store.getOrCreate(testing.allocator, "adapt");
+    try to.declare(testing.allocator, testEdge("micron", "inch", "shrink", .exact));
+    try to.declare(testing.allocator, testEdge("milli", "micron", "swell", .exact));
+    try adapt.declare(testing.allocator, testEdge("milli", "inch", "bridge", .lossless));
 
-    // f64 == u8 was never written; transitivity answers it through i64.
-    const p = eq.derive("f64", "u8") orelse return error.NoDerivation;
-    try testing.expect(p.admitted);
-    try testing.expectEqualStrings("i64", p.mid);
+    const path = to.derive("inch", "milli") orelse return error.NoDerivation;
+    try testing.expect(path.admitted);
+    try testing.expectEqualStrings("micron", path.mid);
+    const direct = adapt.direct("inch", "milli") orelse return error.NoDerivation;
+    try testing.expectEqualStrings("bridge", direct.conv);
+    try testing.expect(to.direct("inch", "milli") == null);
+    try testing.expect(adapt.derive("inch", "milli") == null);
 
-    const back = eq.derive("u8", "f64") orelse return error.NoDerivation;
-    try testing.expect(back.admitted);
-    try testing.expectEqualStrings("i64", back.mid);
-
-    var refused: usize = 0;
-    try testing.expectEqual(@as(usize, 2), try eq.derivedCount(testing.allocator, &refused));
-    try testing.expectEqual(@as(usize, 0), refused);
-    try testing.expectEqual(@as(usize, 4), eq.authored());
-
-    // A family is one relation identity; composition cannot leak into `to`.
-    try testing.expect(store.family("to") == null);
-    try testing.expectEqual(@as(usize, 1), store.declared());
+    try to.declare(testing.allocator, testEdge("milli", "micron", "narrow", .narrowing));
+    const refused = to.derive("inch", "milli") orelse return error.NoDerivation;
+    try testing.expect(!refused.admitted);
+    try testing.expectEqualStrings("bridge", adapt.direct("inch", "milli").?.conv);
+    try testing.expectEqual(@as(usize, 2), store.declared());
 }
 
 test "a lossy or failing hop is found and REFUSED, never silently composed" {
