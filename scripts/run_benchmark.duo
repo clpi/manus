@@ -1,5 +1,9 @@
 #!/usr/bin/env duo
 global s = req "std.script"
+global fs = req "std.fs"
+
+-- Prevent stale artifact reuse on crash
+s.run("rm -f benchmark_evidence.json")
 
 -- Keep compile progress off stdout
 global DUO_BUILD_REPORT = tostring(s.getenv_or("DUO_BUILD_REPORT"))
@@ -786,14 +790,21 @@ duoduo_size = tonumber(trim(s.capture("stat -f %z /tmp/duo_bench_duo.out 2>/dev/
 c_size = tonumber(trim(s.capture("stat -f %z /tmp/c_bench.out 2>/dev/null || echo 0"))) or -1
 
 -- Workstream A/B evidence binding
+duo_hash = trim(s.capture("shasum -a 256 " .. DUO .. " 2>/dev/null | awk '{print $1}'"))
+c_out_hash = trim(s.capture("shasum -a 256 /tmp/c_bench.out 2>/dev/null | awk '{print $1}'"))
+workload_hash = trim(s.capture("shasum -a 256 examples/benchmark.id 2>/dev/null | awk '{print $1}'"))
+
 evidence = "{\n"
 evidence = evidence .. "  \"revision\": \"" .. trim(s.capture("git rev-parse HEAD")) .. "\",\n"
 evidence = evidence .. "  \"compiler_artifact\": \"" .. DUO .. "\",\n"
+evidence = evidence .. "  \"compiler_hash\": \"" .. duo_hash .. "\",\n"
 evidence = evidence .. "  \"target\": \"" .. trim(s.capture("uname -m -s")) .. "\",\n"
 evidence = evidence .. "  \"benchmark_identity\": \"run_benchmark.duo\",\n"
 evidence = evidence .. "  \"input_identity\": \"" .. BENCH_MANIFEST .. "\",\n"
+evidence = evidence .. "  \"workload_hash\": \"" .. workload_hash .. "\",\n"
 evidence = evidence .. "  \"realization_mode\": \"" .. BENCH_BACKEND .. "\",\n"
 evidence = evidence .. "  \"comparator\": \"C\",\n"
+evidence = evidence .. "  \"comparator_hash\": \"" .. c_out_hash .. "\",\n"
 evidence = evidence .. "  \"warm_cold\": \"warm\",\n"
 evidence = evidence .. "  \"outcome\": "
 if RESULT_FAIL_FLAG == 0

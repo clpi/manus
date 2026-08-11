@@ -11,8 +11,11 @@ end
 evidence = json.decode(content)
 
 print("=== Optimization Opportunity Projection ===")
-print("Compiler Artifact: " .. evidence.compiler_artifact)
+print("Compiler Artifact: " .. evidence.compiler_artifact .. " (" .. evidence.compiler_hash .. ")")
 print("Realization Mode: " .. evidence.realization_mode)
+print("Comparator Hash: " .. evidence.comparator_hash)
+print("Workload Hash: " .. evidence.workload_hash)
+print("Revision: " .. evidence.revision)
 print("")
 
 print("BLOCKED: Poolside/graph lineage has not supplied the required semantic attribution interface.")
