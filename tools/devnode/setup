@@ -42,6 +42,8 @@ zig build --summary all
 
 "$repo/tools/devnode/generate-configs"
 
+"$repo/tools/devnode/cursor-auth"
+
 for server in duo-bench duo-lsp zls; do
   cursor agent mcp enable "$server"
 done

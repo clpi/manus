@@ -1,0 +1,29 @@
+#!/bin/sh
+set -eu
+
+repo="$(cd "$(dirname "$0")/../.." && pwd)"
+smoke_out="${TMPDIR:-/tmp}/idsem-cursor-auth-smoke.out"
+
+run_smoke() {
+  cursor agent --print --mode=ask --trust --workspace "$repo" \
+    "Start at AGENTS.md. Answer with the sole Idsem semantic law file path only." \
+    >"$smoke_out" 2>&1
+}
+
+if run_smoke && grep -q 'docs/spec/constitution.md' "$smoke_out"; then
+  echo "ok Cursor Agent headless auth"
+  exit 0
+fi
+
+if grep -qi 'Authentication required' "$smoke_out"; then
+  echo "cursor-auth: Cursor Agent requires login; launching supported login flow" >&2
+  cursor agent login
+  if run_smoke && grep -q 'docs/spec/constitution.md' "$smoke_out"; then
+    echo "ok Cursor Agent headless auth"
+    exit 0
+  fi
+fi
+
+cat "$smoke_out" >&2
+echo "cursor-auth: Cursor Agent headless auth is not admitted" >&2
+exit 1

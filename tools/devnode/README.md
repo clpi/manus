@@ -11,9 +11,11 @@ Required on a fresh supported macOS machine:
 
 The setup command builds the compiler from source, generates project-local
 Codex and Cursor MCP projections from `mcp.manifest.json`, updates Codex user
-MCP config from that projection, approves the required project MCP servers for
-Cursor Agent, probes all three required MCP servers through real JSON-RPC
-initialize requests, and runs the admission doctor.
+MCP config from that projection, verifies Cursor Agent headless auth and
+launches `cursor agent login` when the supported login flow is required,
+approves the required project MCP servers for Cursor Agent, probes all three
+required MCP servers through real JSON-RPC initialize requests, and runs the
+admission doctor.
 
 `./tools/devnode/doctor` is the pre-agent admission check. It rejects stale
 compiler artifacts, wrong tool versions, missing generated projections, missing
