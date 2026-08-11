@@ -1526,6 +1526,8 @@ pub const SemanticGraph = struct {
         }
         try out.appendSlice(alloc, ",\"nodes\":[");
         for (self.nodes.items, 0..) |node, i| {
+            const entity = std.math.cast(id, i) orelse
+                return error.ApplicationFactCapacityExceeded;
             if (i > 0) try out.append(alloc, ',');
             try out.appendSlice(alloc, "{\"id\":");
             try appendJsonInt(out, alloc, i);
@@ -1581,7 +1583,7 @@ pub const SemanticGraph = struct {
                 try out.appendSlice(alloc, ",\"fields\":");
                 try self.appendTableFieldsJson(out, alloc, self.alloc, &node);
             }
-            if (node.kind == .call) {
+            if (self.isApplicationCandidate(entity)) {
                 if (node.call_shape) |cs| {
                     try out.appendSlice(alloc, ",\"callee_kind\":\"");
                     try out.appendSlice(alloc, switch (cs.callee_kind) {
@@ -1811,12 +1813,15 @@ pub const SemanticGraph = struct {
         }
         try out.appendSlice(alloc, "],\"call_shapes\":[");
         var first_call = true;
-        for (self.nodes.items, 0..) |node, node_index| {
-            if (node.kind != .call) continue;
+        var shapes = self.application_candidates.iterator(.{});
+        while (shapes.next()) |candidate| {
+            const entity = std.math.cast(id, candidate) orelse
+                return error.ApplicationFactCapacityExceeded;
+            const node = self.get(entity) orelse return error.InvalidApplicationFact;
             if (!first_call) try out.append(alloc, ',');
             first_call = false;
             try out.appendSlice(alloc, "{\"node\":");
-            try appendJsonInt(out, alloc, node_index);
+            try appendJsonInt(out, alloc, entity);
             try out.appendSlice(alloc, ",\"name\":\"");
             try jsonEscapeAppend(out, alloc, node.name orelse "?");
             try out.append(alloc, '"');
@@ -1894,7 +1899,7 @@ pub const SemanticGraph = struct {
                 self.countKind(.func),
                 self.countKind(.table_shape),
                 self.countKind(.enum_shape),
-                self.countKind(.call),
+                self.application_candidates.count(),
             },
         ) catch return;
         for (self.nodes.items) |node| {
@@ -2075,6 +2080,15 @@ test "semantic_graph: checked subject application retains relation and value ide
         projected[0].object.get("subject").?.integer,
     );
     try std.testing.expectEqualStrings("single", projected[0].object.get("demand").?.string);
+    const projected_shapes = parsed.value.object.get("call_shapes").?.array.items;
+    try std.testing.expectEqual(graph.application_candidates.count(), projected_shapes.len);
+    var matching_shapes: usize = 0;
+    for (projected_shapes) |shape| {
+        if (shape.object.get("node").?.integer != @as(i64, @intCast(fact.application))) continue;
+        matching_shapes += 1;
+        try std.testing.expectEqualStrings("read", shape.object.get("method").?.string);
+    }
+    try std.testing.expectEqual(@as(usize, 1), matching_shapes);
 }
 
 test "semantic_graph: moduleFunctionEmitOrder callees before callers" {
@@ -2830,10 +2844,12 @@ test "semantic_graph: four calls to one callee in one body are four identities" 
     var seen: std.AutoHashMapUnmanaged(u32, void) = .empty;
     defer seen.deinit(alloc);
     var calls: usize = 0;
-    for (g.nodes.items, 0..) |node, index| {
-        if (node.kind != .call) continue;
+    var candidates = g.application_candidates.iterator(.{});
+    while (candidates.next()) |candidate| {
+        const entity = std.math.cast(id, candidate) orelse
+            return error.ApplicationFactCapacityExceeded;
         calls += 1;
-        try seen.put(alloc, @intCast(index), {});
+        try seen.put(alloc, entity, {});
     }
     // Positive control on the count: a zero here would make the identity
     // assertion below vacuously true.
