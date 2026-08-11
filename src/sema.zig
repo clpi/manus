@@ -3086,6 +3086,14 @@ pub const Sema = struct {
                     }
                 }
                 const ft = try self.check_expr(c.func);
+                if (c.form == .braced and ft == .func) {
+                    self.err(
+                        c.loc,
+                        "braced application requires a descriptor subject; this subject resolved in callable space, not descriptor space, and ordinary callable application uses parentheses",
+                        .{},
+                    );
+                    return .any;
+                }
                 if (ft == .func and ft.func.is_compile_only) {
                     self.err(c.loc, "function is marked @comp.compile.only and cannot be called at runtime", .{});
                 }
@@ -11467,6 +11475,53 @@ fn runSema(src: []const u8, arena: *std.heap.ArenaAllocator) !Sema {
     var s = Sema.init(alloc);
     try s.check_module(&mod);
     return s;
+}
+
+fn runIdsemSema(src: []const u8, arena: *std.heap.ArenaAllocator) !Sema {
+    const alloc = arena.allocator();
+    var lex = Lexer.init(src, "test.id");
+    var p = Parser.init(&lex, alloc);
+    p.duo_mode = true;
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.duo_mode = true;
+    try s.check_module(&mod);
+    return s;
+}
+
+test "sema: braced ordinary callable fails closed" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runIdsemSema(
+        \\point: i64 = (x: i64)
+        \\    x
+        \\main: i64 = ()
+        \\    point{ x = 3 }
+    , &arena);
+    try testing.expect(s.errors > 0);
+}
+
+test "sema: parenthesized ordinary callable remains valid" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runIdsemSema(
+        \\point: i64 = (x: i64)
+        \\    x
+        \\main: i64 = ()
+        \\    point(3)
+    , &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: braced descriptor application remains valid" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runIdsemSema(
+        \\point: { x: i64 }
+        \\main: point = ()
+        \\    point{ x = 3 }
+    , &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
 }
 
 test "sema: Pass25 loop-carried tail demand types factorial body" {
