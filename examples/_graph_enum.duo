@@ -1,9 +1,0 @@
-enum Color
-    Red
-    Green
-    Blue
-end
-
-main()
-    red = Color.Red
-end

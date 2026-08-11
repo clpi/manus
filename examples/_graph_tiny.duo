@@ -1,5 +1,0 @@
-Point: { x: f64, y: f64 }
-
-main()
-    p: Point = { x = 1.0, y = 2.0 }
-end
