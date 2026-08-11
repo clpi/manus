@@ -223,24 +223,6 @@ pub const Lexer = struct {
     duo_tokens: ?[]const Token = null,
     duo_index: usize = 0,
 
-    /// A local cursor over the immutable token pack installed by the Idsem
-    /// lexer. Advancing this view never advances the production lexer.
-    pub const TokenView = struct {
-        tokens: []const Token,
-        index: usize,
-
-        pub fn peek(self: *const TokenView) Token {
-            if (self.index >= self.tokens.len) return self.tokens[self.tokens.len - 1];
-            return self.tokens[self.index];
-        }
-
-        pub fn next(self: *TokenView) Token {
-            const tok = self.peek();
-            if (self.index < self.tokens.len) self.index += 1;
-            return tok;
-        }
-    };
-
     pub fn init(src: []const u8, file: []const u8) Lexer {
         return .{
             .cursor = source_cursor.ProductionCursor.init(src, file),
@@ -266,18 +248,6 @@ pub const Lexer = struct {
     /// Whether this lexer is tokenizing through Duo rather than the host scanner.
     pub fn isDuoBacked(self: *const Lexer) bool {
         return self.duo_tokens != null;
-    }
-
-    /// Observe the production token stream without mutating its live cursor.
-    /// `peek` has already advanced `duo_index`, so a held peek starts one slot
-    /// before the stored index.
-    pub fn tokenView(self: *const Lexer) ?TokenView {
-        const tokens = self.duo_tokens orelse return null;
-        const index = if (self.peeked != null and self.duo_index != 0)
-            self.duo_index - 1
-        else
-            self.duo_index;
-        return .{ .tokens = tokens, .index = index };
     }
 
     /// One token from the Duo stream. Past the end it repeats EOF, matching the
@@ -873,31 +843,6 @@ pub const Lexer = struct {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 const testing = std.testing;
-
-test "lex: immutable token view leaves the live cursor unchanged" {
-    const tokens = [_]Token{
-        .{ .kind = .name, .loc = .{ .file = "view.id", .line = 1, .col = 1 }, .text = "first" },
-        .{ .kind = .name, .loc = .{ .file = "view.id", .line = 1, .col = 7 }, .text = "second" },
-        .{ .kind = .eof, .loc = .{ .file = "view.id", .line = 1, .col = 13 }, .text = "" },
-    };
-    var lex = Lexer.init("", "view.id");
-    try lex.useDuoTokens(&tokens);
-
-    const before = lex.saveState();
-    var view = lex.tokenView().?;
-    try testing.expectEqualStrings("first", view.next().text);
-    try testing.expectEqualStrings("second", view.next().text);
-    try testing.expectEqual(TokenKind.eof, view.next().kind);
-    try testing.expectEqual(TokenKind.eof, view.next().kind);
-    try testing.expectEqualDeep(before, lex.saveState());
-
-    _ = try lex.peek();
-    const held = lex.saveState();
-    var held_view = lex.tokenView().?;
-    try testing.expectEqualStrings("first", held_view.next().text);
-    try testing.expectEqualStrings("second", held_view.next().text);
-    try testing.expectEqualDeep(held, lex.saveState());
-}
 
 test "lex: production token pack requires one terminating EOF" {
     var lex = Lexer.init("", "view.id");

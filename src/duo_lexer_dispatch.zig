@@ -270,12 +270,6 @@ test "duo_lexer_dispatch: production route releases temporary source copies" {
 
     try std.testing.expectEqual(@intFromPtr(src.ptr), @intFromPtr(toks[0].text.ptr));
     try std.testing.expectEqual(@intFromPtr(file.ptr), @intFromPtr(toks[0].loc.file.ptr));
-
-    const before = lex.saveState();
-    var view = lex.tokenView().?;
-    const first = view.next();
-    try std.testing.expectEqual(@intFromPtr(src.ptr), @intFromPtr(first.text.ptr));
-    try std.testing.expectEqualDeep(before, lex.saveState());
 }
 
 test "duo_lexer_dispatch: Idsem owns exact token source spans" {
