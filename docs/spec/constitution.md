@@ -358,7 +358,7 @@ training = law{
 -- means editing this file, in the open, with the owner.
 
 kinds = {
-    "identity", "descriptor", "relation", "binding", "place", "demand",
+    "id", "descriptor", "relation", "binding", "place", "demand",
     "obligation", "effect", "world", "capability", "lifetime", "provenance",
     "trust", "origin", "realization", "witness",
 }
@@ -488,10 +488,9 @@ dedup = law{
 -- ═══ §22 · lawsets ═════════════════════════════════════════════════════════
 
 lawsets = @{
-    idsem = "native"
-    lua  = "lua"
-    c    = "c"
-    wasm = "wasm"
+    native = { "idsem" }
+    foreign = { "lua", "c", "rust", "python", "wasm", "abi", "schema", "source", "build", "package" }
+    closed = false
 }
 
 -- ═══ §23 · the lua firewall ════════════════════════════════════════════════
@@ -658,7 +657,11 @@ rewrite: {
 -- A foreign language lifts to the SUBSTRATE directly. Routing it through a
 -- Idsem AST first would assimilate its semantics on the way in, which is §7.
 
-frontends = { "idsem", "lua", "c", "wasm" }
+frontends = @{
+    native = { "idsem" }
+    foreign = { "lua", "c", "rust", "python", "wasm", "source" }
+    closed = false
+}
 
 lifting = law{
     id    = "law.lifting"
