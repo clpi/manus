@@ -81,3 +81,6 @@ them on each machine; never copy them from another host.
 Cursor Agent must also approve each generated project server. `setup` performs
 that approval with `cursor agent mcp enable` for `duo-bench`, `duo-lsp`, and
 `zls`; `doctor` requires `cursor agent mcp list` to report all three as ready.
+That is still not enough for admission: `doctor` also starts a fresh headless
+Cursor Agent session from the repository root and requires it to orient through
+`AGENTS.md` to `docs/spec/constitution.md`.
