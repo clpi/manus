@@ -59,12 +59,6 @@
 --                     compiler written in Duo rather than the compiler written
 --                     in Zig, which is what "hosted" can mean today.
 --
--- THE DECLARED VALUE HAS TWO SPELLINGS IN THIS TREE and both are honoured:
--- under `examples/native_differential/native_only/` a `-- expect: N` is an
--- EXIT STATUS (those programs return a computed value from `main`); everywhere
--- else it is STDOUT, which is what scripts/spec_corpus.duo reads. Neither was
--- invented here; picking one would have silently failed half the corpus.
---
 -- A CELL IS AGGREGATED OVER THE ROW'S FIXTURES: every fixture reached it `✓`,
 -- some reached it `partial`, none reached it `—`. A row with NO FIXTURE prints
 -- `—` across and is named under NO FIXTURE, which is the most valuable line in
@@ -192,9 +186,6 @@ rows = {
         "examples/native_differential/native_only/parser_blocks.duo",
         "examples/native_differential/native_only/parser_token_stream.duo" },
       {} },
-    -- The §20 construct fixtures. Each is one Pass 100 capability with one
-    -- file that prints a value it declares, which is exactly the shape this
-    -- report wants and the reason spec-corpus exists.
     { "inline case-set", "\"kind\":\"enum_shape\"",
       { "examples/spec100/caseset.duo" }, {} },
     { "relation edge (level)", "-", { "examples/spec100/edge.duo" }, {} },

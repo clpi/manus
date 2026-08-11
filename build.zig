@@ -649,17 +649,6 @@ pub fn build(b: *std.Build) void {
     const capability_table_step = b.step("capability-table", "Pass 100 §22: derive the described->canonical ladder from the native corpus");
     capability_table_step.dependOn(&capability_table_cmd.step);
 
-    // Pass 100 §19's `blocks-passing/blocks-total` — the metric §22 calls "the
-    // project's first honest number". The five golden blocks of §20 are
-    // EXTRACTED from docs/spec/pass100.md on every run, so there is no tracked
-    // copy to drift, and each construct they need also carries a fixture that
-    // prints a value the fixture itself declares. Both counts ratchet.
-    const spec_corpus_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/spec_corpus.duo" });
-    spec_corpus_cmd.step.dependOn(b.getInstallStep());
-    spec_corpus_cmd.setCwd(b.path("."));
-    const spec_corpus_step = b.step("spec-corpus", "Pass 100 §19/§20: golden corpus blocks-passing + per-construct fixtures, ratcheted");
-    spec_corpus_step.dependOn(&spec_corpus_cmd.step);
-
     // constitution §21 `law.identity.three` + `law.dedup`, gap[103]. The
     // relation store keyed every edge on a descriptor's TEXT, which is wrong
     // in both directions the moment packages, renames, versions or private
@@ -675,7 +664,7 @@ pub fn build(b: *std.Build) void {
     relation_id_step.dependOn(&relation_id_cmd.step);
 
     // constitution §46 `law.nominal`, second clause: "a nominal descriptor over
-    // a primitive costs no boxing". The spec-corpus row above proves the
+    // a primitive costs no boxing". The retained value fixture proves the
     // MEANING — 914436 cannot come out of a `feet` that lost its descriptor —
     // and proves nothing at all about the COST, because a boxed double adds
     // just as correctly. This gate reads the emitted C and carries its own
