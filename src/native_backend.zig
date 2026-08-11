@@ -230,13 +230,6 @@ pub fn isNativeSharedTarget(target: []const u8) bool {
     return std.mem.eql(u8, target, "native-dylib");
 }
 
-fn emitObject(alloc: std.mem.Allocator, mod: *const ast.Module, target: []const u8) Error![]u8 {
-    var diagnostic: Diagnostic = .{};
-    diagnostic.reset();
-    if (!isNativeObjectTarget(target)) return error.UnsupportedTarget;
-    return emitObjectMode(alloc, mod, null, &diagnostic);
-}
-
 /// Emit a graph-aware object together with the byte ranges of every DNIR
 /// instruction that retained application facts. The symbol table remains a
 /// physical linker projection; semantic correspondence is queried through this
@@ -263,17 +256,8 @@ pub fn emitObjectWithGraphLineageObserved(
     return emitObjectModeWithGraphLineage(alloc, mod, null, graph, diagnostic);
 }
 
-/// Like `emitObject`, but when `process_entry` is set the named zero-arg function
+/// When `process_entry` is set the named zero-arg function
 /// gets `fcvtzs x0, d0` on f64 returns so native executables receive an i64 exit code.
-fn emitObjectForExecutable(alloc: std.mem.Allocator, mod: *const ast.Module, process_entry: []const u8) Error![]u8 {
-    var diagnostic: Diagnostic = .{};
-    diagnostic.reset();
-    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) {
-        return error.UnsupportedTarget;
-    }
-    return emitObjectMode(alloc, mod, process_entry, &diagnostic);
-}
-
 pub fn emitObjectForExecutableWithGraphLineage(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
@@ -298,12 +282,6 @@ pub fn emitObjectForExecutableWithGraphLineageObserved(
     return emitObjectModeWithGraphLineage(alloc, mod, process_entry, graph, diagnostic);
 }
 
-fn emitSharedObjectInput(alloc: std.mem.Allocator, mod: *const ast.Module) Error![]u8 {
-    var diagnostic: Diagnostic = .{};
-    diagnostic.reset();
-    return emitObjectMode(alloc, mod, null, &diagnostic);
-}
-
 pub fn emitSharedObjectInputWithGraphLineage(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
@@ -321,16 +299,6 @@ pub fn emitSharedObjectInputWithGraphLineageObserved(
 ) Error!ObjectWithLineage {
     diagnostic.reset();
     return emitObjectModeWithGraphLineage(alloc, mod, null, graph, diagnostic);
-}
-
-fn emitObjectMode(alloc: std.mem.Allocator, mod: *const ast.Module, process_entry: ?[]const u8, diagnostic: *Diagnostic) Error![]u8 {
-    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) {
-        return error.UnsupportedTarget;
-    }
-
-    var output = try emitArm64Module(alloc, mod, process_entry, diagnostic);
-    defer output.deinit(alloc);
-    return emitMachOArm64Object(alloc, output.text, output.cstring, output.symbols, output.relocations, output.bss_size);
 }
 
 fn emitObjectModeWithGraphLineage(
@@ -362,18 +330,6 @@ fn emitObjectModeWithGraphLineage(
         .lineage = lineage,
         .graph = graph,
     };
-}
-
-fn emitAssembly(alloc: std.mem.Allocator, mod: *const ast.Module, target: []const u8) Error![]u8 {
-    var diagnostic: Diagnostic = .{};
-    diagnostic.reset();
-    if (!isNativeAsmTarget(target)) return error.UnsupportedTarget;
-    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) {
-        return error.UnsupportedTarget;
-    }
-    var output = try emitArm64Module(alloc, mod, null, &diagnostic);
-    defer output.deinitExceptAssembly(alloc);
-    return output.asm_text;
 }
 
 pub fn emitAssemblyWithGraphLineage(
@@ -440,17 +396,6 @@ fn emitAssemblyModeWithGraphLineage(
     };
     output.deinitExceptAssemblyMachineAndLineage(alloc);
     return artifact;
-}
-
-fn emitAssemblyForExecutable(alloc: std.mem.Allocator, mod: *const ast.Module, process_entry: []const u8) Error![]u8 {
-    var diagnostic: Diagnostic = .{};
-    diagnostic.reset();
-    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) {
-        return error.UnsupportedTarget;
-    }
-    var output = try emitArm64Module(alloc, mod, process_entry, &diagnostic);
-    defer output.deinitExceptAssembly(alloc);
-    return output.asm_text;
 }
 
 pub fn unsupportedReason(target: []const u8) []const u8 {
@@ -831,8 +776,7 @@ fn validateFunction(
         // `str` is a `const char*` — an integer-class argument that rides x0..x7
         // exactly like an i64. The record-returning path above already accepts
         // it; excluding it here was an oversight, and it rejected every
-        // `f(s: str): i64` reaching the AST path (which is any function using
-        // `and`/`or`, since DNIR lowering has no arm for them).
+        // `f(s: str): i64` reaching the retired AST compiler path.
         // `ptr` is the base address of a memory-backed positional table — an
         // integer-class argument in x0..x7 like `i64` and `str`. Admitting it is
         // what lets a table cross a function boundary at all (SH-04).
@@ -4793,6 +4737,13 @@ fn validateDnirApplications(
                     if (instruction.op == .call_direct) {
                         return invalidFactsWith(diagnostic, @src(), "missing-application-lineage");
                     }
+                    if (instruction.op == .call_extern) {
+                        return invalidFactsWith(
+                            diagnostic,
+                            @src(),
+                            "missing-foreign-application-lineage",
+                        );
+                    }
                     continue;
                 }
                 if (fact_count != 3) return invalidFactsWith(diagnostic, @src(), "partial-application-lineage");
@@ -4824,7 +4775,7 @@ fn validateDnirApplications(
                     return invalidFactsWith(diagnostic, @src(), "application-fact-mismatch");
                 }
                 const target = targets.get(application.relation) orelse
-                    return invalidFactsWith(diagnostic, @src(), "application-link-target");
+                    return invalidFactsWith(diagnostic, @src(), "missing-foreign-application-lineage");
                 if (!std.meta.eql(target.id, application.relation)) {
                     return invalidFactsWith(diagnostic, @src(), "application-link-target");
                 }
@@ -4974,20 +4925,6 @@ fn collectF64RecordsFromDnir(alloc: std.mem.Allocator, m: dnir.Module) Error!F64
     return map;
 }
 
-fn emitArm64Module(alloc: std.mem.Allocator, mod: *const ast.Module, process_entry: ?[]const u8, diagnostic: *Diagnostic) Error!Arm64Output {
-    var graph = semantic_graph.SemanticGraph.init(alloc);
-    defer graph.deinit();
-    _ = graph.liftModuleWithCalls(mod, "<native>") catch {};
-
-    var output = try emitArm64ModuleFromGraph(alloc, mod, process_entry, &graph, true, diagnostic);
-    if (output.lineage.len != 0) {
-        output.deinit(alloc);
-        return recordRefusalWith(diagnostic, @src(), "orphan-machine-lineage");
-    }
-    output.graph = null;
-    return output;
-}
-
 fn emitArm64ModuleWithGraph(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
@@ -4995,48 +4932,28 @@ fn emitArm64ModuleWithGraph(
     graph: *const semantic_graph.SemanticGraph,
     diagnostic: *Diagnostic,
 ) Error!Arm64Output {
-    return emitArm64ModuleFromGraph(alloc, mod, process_entry, graph, false, diagnostic);
-}
-
-fn emitArm64ModuleFromGraph(
-    alloc: std.mem.Allocator,
-    mod: *const ast.Module,
-    process_entry: ?[]const u8,
-    graph: *const semantic_graph.SemanticGraph,
-    allow_ast_fallback: bool,
-    diagnostic: *Diagnostic,
-) Error!Arm64Output {
-    const applications = try checkedApplications(graph, diagnostic);
-    const strict_graph = !allow_ast_fallback or applications.len > 0;
-    if (strict_graph and graph.unresolvedApplicationCount(null) != 0) {
+    _ = try checkedApplications(graph, diagnostic);
+    if (graph.unresolvedApplicationCount(null) != 0) {
         return invalidFactsWith(diagnostic, @src(), "unresolved-application-facts");
     }
 
-    const lowered_result = if (allow_ast_fallback)
-        dnir_lower.lowerModuleObserved(alloc, mod, &diagnostic.lowering)
-    else
-        dnir_lower.lowerModuleWithGraphObserved(alloc, mod, graph, &diagnostic.lowering);
+    const lowered_result = dnir_lower.lowerModuleWithGraphObserved(alloc, mod, graph, &diagnostic.lowering);
     if (lowered_result) |lowered| {
         var dnir_mut = lowered;
         defer dnir.deinitModule(alloc, dnir_mut);
-        if (strict_graph) try validateDnirApplications(alloc, dnir_mut, graph, diagnostic);
+        try validateDnirApplications(alloc, dnir_mut, graph, diagnostic);
         if (dnir.moduleIsNativeDirectReady(dnir_mut)) {
             if (region_graph.buildModuleRegions(alloc, dnir_mut)) |initial_regions| {
                 defer region_graph.freeModuleRegions(alloc, initial_regions);
-                const transform_result = if (strict_graph)
-                    region_transform.applyModuleRegionTransformsWithGraph(
-                        alloc,
-                        &dnir_mut,
-                        initial_regions,
-                        graph,
-                    )
-                else
-                    region_transform.applyModuleRegionTransforms(alloc, &dnir_mut, initial_regions);
-                const transform_report = transform_result catch |err| {
+                const transform_report = region_transform.applyModuleRegionTransformsWithGraph(
+                    alloc,
+                    &dnir_mut,
+                    initial_regions,
+                    graph,
+                ) catch |err| {
                     if (err == error.OutOfMemory) return error.OutOfMemory;
                     if (err == error.CoordinateOverflow) return transformFailure(diagnostic, @src(), err);
-                    if (strict_graph) return transformFailure(diagnostic, @src(), err);
-                    return recordRefusalWith(diagnostic, @src(), "region-transform-physical");
+                    return transformFailure(diagnostic, @src(), err);
                 };
                 _ = transform_report;
             } else |err| switch (err) {
@@ -5050,7 +4967,7 @@ fn emitArm64ModuleFromGraph(
 
             // Transformation changes realization, not meaning. Revalidate the
             // actual DNIR that will be emitted before selecting realization.
-            if (strict_graph) try validateDnirApplications(alloc, dnir_mut, graph, diagnostic);
+            try validateDnirApplications(alloc, dnir_mut, graph, diagnostic);
             if (realization.buildDeferredFromGraph(alloc, graph, "<native>")) |plan_val| {
                 var plan = plan_val;
                 defer plan.deinit(alloc);
@@ -5060,57 +4977,21 @@ fn emitArm64ModuleFromGraph(
             var output = try emitArm64FromDnir(alloc, dnir_mut, process_entry, diagnostic);
             errdefer output.deinit(alloc);
             output.graph = graph;
-            if (strict_graph) try validateMachineLineage(alloc, output, graph, diagnostic);
+            try validateMachineLineage(alloc, output, graph, diagnostic);
             return output;
         }
-        if (strict_graph) return recordRefusalWith(diagnostic, @src(), "graph-direct-not-ready");
+        return recordRefusalWith(diagnostic, @src(), "graph-direct-not-ready");
     } else |e| {
-        // Without this the only trace a developer sees is the *AST fallback's*
-        // failure, which is a different and usually less informative site. The
-        // DNIR bail is the one that decides whether a program lowers natively.
         if (std.c.getenv("DUO_DNIR_TRACE") != null) {
-            if (strict_graph) {
-                std.debug.print("DUO_DNIR_TRACE: graph DNIR lowering refused with {s}\n", .{@errorName(e)});
-            } else {
-                std.debug.print("DUO_DNIR_TRACE: DNIR lowering bailed with {s}; falling back to the AST path\n", .{@errorName(e)});
-            }
+            std.debug.print("DUO_DNIR_TRACE: graph DNIR lowering refused with {s}\n", .{@errorName(e)});
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
         }
-        if (strict_graph) return switch (e) {
+        return switch (e) {
             error.OutOfMemory => error.OutOfMemory,
             error.GraphFactsInvalid => invalidFactsWith(diagnostic, @src(), "graph-dnir-facts"),
             error.UnsupportedConstruct => recordRefusalWith(diagnostic, @src(), "graph-dnir-unsupported"),
         };
     }
-
-    var records = try collectF64Records(alloc, mod);
-    defer freeF64Records(alloc, &records);
-    var scal_records = try collectScalRecords(alloc, mod);
-    defer freeScalRecords(alloc, &scal_records);
-    var func_record_returns: FuncRecordReturns = .empty;
-    defer freeFuncRecordReturns(alloc, &func_record_returns);
-    var func_f64_record_returns: FuncF64RecordReturns = .empty;
-    defer freeFuncF64RecordReturns(alloc, &func_f64_record_returns);
-    var req_ctx = try native_req_support.collectFromModule(alloc, mod);
-    defer req_ctx.deinit(alloc);
-    const blobs = try collectByteBlobs(alloc, mod);
-    defer freeByteBlobs(alloc, blobs);
-    var native_mod = try collectFunctions(alloc, mod, &scal_records, &func_record_returns, diagnostic);
-    defer native_mod.deinit(alloc);
-    var compiler = Arm64Compiler{
-        .alloc = alloc,
-        .diagnostic = diagnostic,
-        .f64_records = &records,
-        .scal_records = &scal_records,
-        .func_record_returns = &func_record_returns,
-        .func_f64_record_returns = &func_f64_record_returns,
-        .req_ctx = &req_ctx,
-        .process_entry = process_entry,
-    };
-    defer compiler.deinit();
-
-    try compiler.compileModule(native_mod.functions, native_mod.externs, blobs);
-    return compiler.finish();
 }
 
 fn machOTextOffset(cstring_len: usize, bss_size: u64) usize {
@@ -5422,6 +5303,106 @@ fn stageCompactGpApplication(
     return staged;
 }
 
+fn liftCheckedTestGraph(
+    module: *const ast.Module,
+    checked: *const Sema,
+    graph: *semantic_graph.SemanticGraph,
+) !void {
+    _ = try graph.liftModuleWithCheckedCalls(module, checked, module.file);
+}
+
+fn emitCheckedTestAssembly(
+    alloc: std.mem.Allocator,
+    module: *const ast.Module,
+    graph: *semantic_graph.SemanticGraph,
+    process_entry: ?[]const u8,
+) !AssemblyWithLineage {
+    var diagnostic: Diagnostic = .{};
+    if (process_entry) |entry| {
+        return emitAssemblyForExecutableWithGraphLineageObserved(
+            alloc,
+            module,
+            entry,
+            graph,
+            &diagnostic,
+        );
+    }
+    return emitAssemblyWithGraphLineageObserved(
+        alloc,
+        module,
+        "native-asm",
+        graph,
+        &diagnostic,
+    );
+}
+
+fn emitCheckedTestObject(
+    alloc: std.mem.Allocator,
+    module: *const ast.Module,
+    graph: *semantic_graph.SemanticGraph,
+) !ObjectWithLineage {
+    var diagnostic: Diagnostic = .{};
+    return emitObjectWithGraphLineageObserved(
+        alloc,
+        module,
+        "native-object",
+        graph,
+        &diagnostic,
+    );
+}
+
+fn expectCheckedTestSemanticFailure(
+    alloc: std.mem.Allocator,
+    module: *const ast.Module,
+    checked: *const Sema,
+    expected: []const u8,
+    expected_lowering: ?[]const u8,
+) !void {
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(module, checked, &graph);
+    var diagnostic: Diagnostic = .{};
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        emitAssemblyWithGraphLineageObserved(
+            alloc,
+            module,
+            "native-asm",
+            &graph,
+            &diagnostic,
+        ),
+    );
+    try std.testing.expectEqualStrings(expected, diagnostic.note().?);
+    if (expected_lowering) |note| {
+        try std.testing.expectEqualStrings(note, diagnostic.lowering.note().?);
+    } else {
+        try std.testing.expect(diagnostic.lowering.note() == null);
+    }
+}
+
+fn expectCheckedTestPhysicalRefusal(
+    alloc: std.mem.Allocator,
+    module: *const ast.Module,
+    checked: *const Sema,
+    expected: []const u8,
+) !void {
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(module, checked, &graph);
+    var diagnostic: Diagnostic = .{};
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        emitAssemblyWithGraphLineageObserved(
+            alloc,
+            module,
+            "native-asm",
+            &graph,
+            &diagnostic,
+        ),
+    );
+    try std.testing.expectEqualStrings(expected, diagnostic.note().?);
+}
+
 test "native backend: folded module provenance does not select constant realization" {
     var diagnostic: Diagnostic = .{};
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
@@ -5464,6 +5445,10 @@ test "native backend: folded module provenance does not select constant realizat
     defer plain_output.deinit(alloc);
     var qualified_output = try emitArm64FromDnir(alloc, qualified, null, &diagnostic);
     defer qualified_output.deinit(alloc);
+    try std.testing.expect(plain_output.graph == null);
+    try std.testing.expectEqual(@as(usize, 0), plain_output.lineage.len);
+    try std.testing.expect(qualified_output.graph == null);
+    try std.testing.expectEqual(@as(usize, 0), qualified_output.lineage.len);
     try std.testing.expectEqualSlices(u8, plain_output.text, qualified_output.text);
     try std.testing.expectEqualStrings(plain_output.asm_text, qualified_output.asm_text);
 
@@ -5943,6 +5928,34 @@ test "native backend: empty application facts do not admit a direct call" {
     try std.testing.expectEqualStrings("missing-application-lineage", diagnostic.note().?);
 }
 
+test "native backend: empty application facts do not admit a foreign call" {
+    var diagnostic: Diagnostic = .{};
+    const alloc = std.testing.allocator;
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const instructions = [_]dnir.Instr{.{
+        .op = .call_extern,
+        .callee = "unowned",
+    }};
+    const blocks = [_]dnir.Block{.{ .instrs = &instructions }};
+    const functions = [_]dnir.Function{.{
+        .name = "main",
+        .ret = .void,
+        .blocks = &blocks,
+    }};
+    const module = dnir.Module{
+        .functions = &functions,
+        .graph = &graph,
+    };
+
+    try std.testing.expectEqual(@as(usize, 0), graph.applications().len);
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        validateDnirApplications(alloc, module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("missing-foreign-application-lineage", diagnostic.note().?);
+}
+
 test "native backend: strict graph physical refusal stays unsupported" {
     var diagnostic: Diagnostic = .{};
     const alloc = std.testing.allocator;
@@ -6049,7 +6062,7 @@ test "native backend: strict graph allocation failure stays allocation failure" 
     try std.testing.expectEqual(failing.allocated_bytes, failing.freed_bytes);
 }
 
-test "native backend: graphless region validation preserves physical native entry" {
+test "native backend: graph-resident region validation preserves physical native entry" {
     var diagnostic: Diagnostic = .{};
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -6060,13 +6073,20 @@ test "native backend: graphless region validation preserves physical native entr
         \\    y = 32
         \\    x + y
     ;
-    var lexer = Lexer.init(source, "graphless-region.id");
+    var lexer = Lexer.init(source, "region-entry.id");
     var parser = Parser.init(&lexer, alloc);
     parser.duo_mode = true;
     var module = try parser.parse_module();
-    var output = try emitArm64Module(alloc, &module, null, &diagnostic);
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&module, &checked, &graph);
+    var output = try emitArm64ModuleWithGraph(alloc, &module, null, &graph, &diagnostic);
     defer output.deinit(alloc);
-    try std.testing.expect(output.graph == null);
+    try std.testing.expect(output.graph == &graph);
     try std.testing.expectEqual(@as(usize, 0), output.lineage.len);
     try std.testing.expect(output.text.len != 0);
 }
@@ -6422,7 +6442,7 @@ test "native backend: callee spelling cannot redirect a checked application" {
         error.SemanticFactsInvalid,
         validateDnirApplications(alloc, module, &graph, &diagnostic),
     );
-    try std.testing.expectEqualStrings("application-link-target", diagnostic.note().?);
+    try std.testing.expectEqualStrings("missing-foreign-application-lineage", diagnostic.note().?);
     selected.id = selected_id;
 
     instruction.callee = "impostor";
@@ -6682,7 +6702,7 @@ test "native backend: discarded checked calls do not retain return registers" {
     }
 }
 
-test "native backend lowers Pass 4 milestone with f64 return in d0 (no main exit hack)" {
+test "native backend refuses source f64 aggregate application absent operand ABI facts" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -6706,19 +6726,87 @@ test "native backend lowers Pass 4 milestone with f64 return in d0 (no main exit
     sem.duo_mode = true;
     try sem.check_module(&mod);
 
-    const listing = try emitAssembly(alloc, &mod, "native-asm");
-    defer alloc.free(listing);
-    try std.testing.expect(std.mem.indexOf(u8, listing, "_main") != null);
-    try std.testing.expect(std.mem.indexOf(u8, listing, "fcvtzs x0, d0") == null);
-    try std.testing.expect(std.mem.indexOf(u8, listing, "_distance2") != null);
-    try std.testing.expect(std.mem.indexOf(u8, listing, "fmov d2, d0") == null);
-    const main_pos = std.mem.indexOf(u8, listing, "_main:") orelse return error.TestExpectedEqual;
-    const bl_off = std.mem.indexOf(u8, listing[main_pos..], "bl _distance2") orelse return error.TestExpectedEqual;
-    const after_bl = listing[main_pos + bl_off ..];
-    try std.testing.expect(std.mem.indexOf(u8, after_bl, "fmov d") == null);
+    try expectCheckedTestSemanticFailure(
+        alloc,
+        &mod,
+        &sem,
+        "graph-dnir-facts",
+        "application-operand-abi",
+    );
+}
 
-    const obj = try emitObject(alloc, &mod, "native-object");
-    try std.testing.expect(obj.len > 0);
+test "native backend physical oracle retains f64 aggregate ABI and branch return" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const fields = [_][]const u8{ "x", "y" };
+    const kinds = [_]dnir.FieldKind{ .f64, .f64 };
+    const records = [_]dnir.RecordDesc{.{ .name = "Point", .fields = &fields, .kinds = &kinds }};
+    const parameters = [_]dnir.Param{.{ .name = "p", .ty = .any, .record = "Point" }};
+    const distance_instructions = [_]dnir.Instr{
+        .{ .op = .load_field, .result = 2, .req_alias = "p", .field = "x", .ty = .f64 },
+        .{ .op = .load_field, .result = 3, .req_alias = "p", .field = "y", .ty = .f64 },
+        .{ .op = .binop, .result = 4, .lhs = .{ .temp = 2 }, .rhs = .{ .temp = 2 }, .binop = .mul, .ty = .f64 },
+        .{ .op = .binop, .result = 5, .lhs = .{ .temp = 3 }, .rhs = .{ .temp = 3 }, .binop = .mul, .ty = .f64 },
+        .{ .op = .binop, .result = 6, .lhs = .{ .temp = 4 }, .rhs = .{ .temp = 5 }, .binop = .add, .ty = .f64 },
+        .{ .op = .ret, .lhs = .{ .temp = 6 }, .ty = .f64 },
+    };
+    const main_instructions = [_]dnir.Instr{
+        .{ .op = .fp_mov_arg, .result = 0, .lhs = .{ .f64 = 3.0 }, .ty = .f64 },
+        .{ .op = .fp_mov_arg, .result = 1, .lhs = .{ .f64 = 4.0 }, .ty = .f64 },
+        .{ .op = .call_direct, .result = 0, .callee = "distance2", .ty = .f64 },
+        .{ .op = .ret, .lhs = .{ .temp = 0 }, .ty = .f64 },
+    };
+    const compare_instructions = [_]dnir.Instr{
+        .{ .op = .fp_mov_arg, .result = 0, .lhs = .{ .f64 = 3.0 }, .ty = .f64 },
+        .{ .op = .fp_mov_arg, .result = 1, .lhs = .{ .f64 = 4.0 }, .ty = .f64 },
+        .{ .op = .call_direct, .result = 0, .callee = "distance2", .ty = .f64 },
+        .{ .op = .@"const", .result = 1, .lhs = .{ .f64 = 25.0 }, .ty = .f64 },
+        .{ .op = .binop, .result = 2, .lhs = .{ .temp = 0 }, .rhs = .{ .temp = 1 }, .binop = .eq, .ty = .f64 },
+        .{ .op = .br, .lhs = .{ .temp = 2 }, .branch_target = 7, .branch_condition = .when_true },
+        .{ .op = .ret, .lhs = .{ .i64 = 1 }, .ty = .i64 },
+        .{ .op = .ret, .lhs = .{ .i64 = 0 }, .ty = .i64 },
+    };
+    const distance_blocks = [_]dnir.Block{.{ .instrs = &distance_instructions }};
+    const main_blocks = [_]dnir.Block{.{ .instrs = &main_instructions }};
+    const compare_blocks = [_]dnir.Block{.{ .instrs = &compare_instructions }};
+    const functions = [_]dnir.Function{
+        .{ .name = "distance2", .ret = .f64, .params = &parameters, .is_float_kernel = true, .blocks = &distance_blocks },
+        .{ .name = "main", .ret = .f64, .is_float_kernel = true, .blocks = &main_blocks },
+        .{ .name = "compare", .ret = .i64, .is_float_kernel = true, .blocks = &compare_blocks },
+    };
+    const module = dnir.Module{ .functions = &functions, .records = &records };
+
+    // This schedule is authority-false: it preserves the physical ABI and
+    // encoder obligation while aggregate application facts remain producer-blocked.
+    var diagnostic: Diagnostic = .{};
+    var output = try emitArm64FromDnir(alloc, module, null, &diagnostic);
+    defer output.deinit(alloc);
+    try std.testing.expect(output.graph == null);
+    try std.testing.expectEqual(@as(usize, 0), output.lineage.len);
+    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "_distance2") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "fmul") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "fadd") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "fcmp") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "fcvtzs x0, d0") == null);
+    const main_start = std.mem.indexOf(u8, output.asm_text, "_main:\n") orelse return error.TestExpectedEqual;
+    const compare_start = std.mem.indexOf(u8, output.asm_text, "_compare:\n") orelse return error.TestExpectedEqual;
+    const main_body = output.asm_text[main_start..compare_start];
+    const call = std.mem.indexOf(u8, main_body, "bl _distance2") orelse return error.TestExpectedEqual;
+    try std.testing.expect(std.mem.indexOf(u8, main_body[call..], "fmov d") == null);
+
+    const object = try emitMachOArm64Object(
+        alloc,
+        output.text,
+        output.cstring,
+        output.symbols,
+        output.relocations,
+        output.bss_size,
+    );
+    defer alloc.free(object);
+    try std.testing.expectEqual(@as(u32, 0xfeedfacf), std.mem.readInt(u32, object[0..4], .little));
 }
 
 test "native backend: no mandatory main — run() entry compiles" {
@@ -6735,10 +6823,17 @@ test "native backend: no mandatory main — run() entry compiles" {
     , "run.duo");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
-    const mod = try parser.parse_module();
-
-    const listing = try emitAssembly(alloc, &mod, "native-asm");
-    defer alloc.free(listing);
+    var mod = try parser.parse_module();
+    var sem = Sema.init(alloc);
+    defer sem.deinit();
+    sem.duo_mode = true;
+    try sem.check_module(&mod);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&mod, &sem, &graph);
+    var artifact = try emitCheckedTestAssembly(alloc, &mod, &graph, null);
+    defer artifact.deinit(alloc);
+    const listing = artifact.assembly;
     try std.testing.expect(std.mem.indexOf(u8, listing, "_run") != null);
     try std.testing.expect(std.mem.indexOf(u8, listing, "_main") == null);
 }
@@ -6880,12 +6975,17 @@ test "native backend: f64 process entry coerces d0 to x0 exit code" {
     sem.duo_mode = true;
     try sem.check_module(&mod);
 
-    const listing = try emitAssemblyForExecutable(alloc, &mod, "run");
-    defer alloc.free(listing);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&mod, &sem, &graph);
+    var executable = try emitCheckedTestAssembly(alloc, &mod, &graph, "run");
+    defer executable.deinit(alloc);
+    const listing = executable.assembly;
     try std.testing.expect(std.mem.indexOf(u8, listing, "fcvtzs x0, d0") != null);
 
-    const plain = try emitAssembly(alloc, &mod, "native-asm");
-    defer alloc.free(plain);
+    var plain_artifact = try emitCheckedTestAssembly(alloc, &mod, &graph, null);
+    defer plain_artifact.deinit(alloc);
+    const plain = plain_artifact.assembly;
     try std.testing.expect(std.mem.indexOf(u8, plain, "fcvtzs x0, d0") == null);
 }
 
@@ -6913,10 +7013,15 @@ test "native backend lowers sealed f64 record distance2 kernel" {
     sem.duo_mode = true;
     try sem.check_module(&mod);
 
-    const obj = try emitObject(alloc, &mod, "native-object");
-    try std.testing.expect(obj.len > 0);
-    const listing = try emitAssembly(alloc, &mod, "native-asm");
-    defer alloc.free(listing);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&mod, &sem, &graph);
+    var object = try emitCheckedTestObject(alloc, &mod, &graph);
+    defer object.deinit(alloc);
+    try std.testing.expect(object.bytes.len > 0);
+    var assembly = try emitCheckedTestAssembly(alloc, &mod, &graph, null);
+    defer assembly.deinit(alloc);
+    const listing = assembly.assembly;
     try std.testing.expect(std.mem.indexOf(u8, listing, "_distance2") != null);
     try std.testing.expect(std.mem.indexOf(u8, listing, "fmul") != null);
     try std.testing.expect(std.mem.indexOf(u8, listing, "fadd") != null);
@@ -6942,14 +7047,18 @@ test "native backend emits arm64 Mach-O object for constant main" {
     defer sem.deinit();
     try sem.check_module(&mod);
 
-    const obj = try emitObject(alloc, &mod, "native-object");
-    try std.testing.expect(obj.len > 0);
-    try std.testing.expectEqual(@as(u32, 0xfeedfacf), std.mem.readInt(u32, obj[0..4], .little));
-    try std.testing.expect(std.mem.indexOf(u8, obj, "_main") != null);
-    try std.testing.expect(std.mem.indexOf(u8, obj, "\xc0\x03\x5f\xd6") != null);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&mod, &sem, &graph);
+    var artifact = try emitCheckedTestObject(alloc, &mod, &graph);
+    defer artifact.deinit(alloc);
+    try std.testing.expect(artifact.bytes.len > 0);
+    try std.testing.expectEqual(@as(u32, 0xfeedfacf), std.mem.readInt(u32, artifact.bytes[0..4], .little));
+    try std.testing.expect(std.mem.indexOf(u8, artifact.bytes, "_main") != null);
+    try std.testing.expect(std.mem.indexOf(u8, artifact.bytes, "\xc0\x03\x5f\xd6") != null);
 }
 
-test "Pass 11 WP-04: length2 record local + and-or ternary exits 0 on direct backend" {
+test "native backend refuses source length2 short-circuit absent physical lowering" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -6975,16 +7084,12 @@ test "Pass 11 WP-04: length2 record local + and-or ternary exits 0 on direct bac
     sem.duo_mode = true;
     try sem.check_module(&mod);
 
-    const obj = try emitObject(alloc, &mod, "native-object");
-    defer alloc.free(obj);
-    try std.testing.expect(obj.len > 0);
-    try std.testing.expectEqual(@as(u32, 0xfeedfacf), std.mem.readInt(u32, obj[0..4], .little));
-
-    const listing = try emitAssembly(alloc, &mod, "native-asm");
-    defer alloc.free(listing);
-    try std.testing.expect(std.mem.indexOf(u8, listing, "_length2") != null);
-    try std.testing.expect(std.mem.indexOf(u8, listing, "fmul") != null);
-    try std.testing.expect(std.mem.indexOf(u8, listing, "lua_") == null);
+    try expectCheckedTestPhysicalRefusal(
+        alloc,
+        &mod,
+        &sem,
+        "graph-dnir-unsupported",
+    );
 }
 
 test "native backend target classification includes executable target" {
@@ -7020,10 +7125,14 @@ test "native backend lowers locals and integer arithmetic" {
     defer sem.deinit();
     try sem.check_module(&mod);
 
-    const obj = try emitObject(alloc, &mod, "native-object");
-    try std.testing.expect(obj.len > 0);
-    try std.testing.expect(std.mem.indexOf(u8, obj, "_main") != null);
-    try std.testing.expect(std.mem.indexOf(u8, obj, "\xc0\x03\x5f\xd6") != null);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&mod, &sem, &graph);
+    var artifact = try emitCheckedTestObject(alloc, &mod, &graph);
+    defer artifact.deinit(alloc);
+    try std.testing.expect(artifact.bytes.len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, artifact.bytes, "_main") != null);
+    try std.testing.expect(std.mem.indexOf(u8, artifact.bytes, "\xc0\x03\x5f\xd6") != null);
 }
 
 test "native backend lowers direct calls and emits multiple symbols" {
@@ -7049,9 +7158,13 @@ test "native backend lowers direct calls and emits multiple symbols" {
     defer sem.deinit();
     try sem.check_module(&mod);
 
-    const obj = try emitObject(alloc, &mod, "native-object");
-    try std.testing.expect(std.mem.indexOf(u8, obj, "_add") != null);
-    try std.testing.expect(std.mem.indexOf(u8, obj, "_main") != null);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&mod, &sem, &graph);
+    var artifact = try emitCheckedTestObject(alloc, &mod, &graph);
+    defer artifact.deinit(alloc);
+    try std.testing.expect(std.mem.indexOf(u8, artifact.bytes, "_add") != null);
+    try std.testing.expect(std.mem.indexOf(u8, artifact.bytes, "_main") != null);
 }
 
 test "native backend refuses a qualified call absent graph application facts" {
@@ -7132,6 +7245,7 @@ test "native backend physical oracle retains qualified link symbol and two-regis
     var diagnostic: Diagnostic = .{};
     var output = try emitArm64FromDnir(alloc, module, null, &diagnostic);
     defer output.deinit(alloc);
+    try std.testing.expect(output.graph == null);
     try std.testing.expectEqual(@as(usize, 0), output.lineage.len);
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "_math_add") != null);
     const main_start = std.mem.indexOf(u8, output.asm_text, "_main:\n") orelse
@@ -7154,7 +7268,7 @@ test "native backend physical oracle retains qualified link symbol and two-regis
     try std.testing.expect(std.mem.indexOf(u8, object, "_math_add") != null);
 }
 
-test "native backend passes a variadic tail argument on the stack, not in x3" {
+test "native backend refuses source conversion absent application facts and retains variadic ABI oracle" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -7175,8 +7289,35 @@ test "native backend passes a variadic tail argument on the stack, not in x3" {
     sem.duo_mode = true;
     try sem.check_module(&mod);
 
-    const listing = try emitAssembly(alloc, &mod, "native-asm");
-    defer alloc.free(listing);
+    try expectCheckedTestSemanticFailure(
+        alloc,
+        &mod,
+        &sem,
+        "unresolved-application-facts",
+        null,
+    );
+
+    const instructions = [_]dnir.Instr{
+        .{ .op = .alloc_slots, .result = 0, .lhs = .{ .i64 = 3 } },
+        .{ .op = .@"const", .result = 1, .lhs = .{ .i64 = 24 }, .ty = .i64 },
+        .{ .op = .@"const", .result = 2, .lhs = .{ .str = "%lld" }, .ty = .str },
+        .{ .op = .@"const", .result = 3, .lhs = .{ .i64 = 42 }, .ty = .i64 },
+        .{ .op = .mov_arg, .result = 0, .lhs = .{ .temp = 0 }, .ty = .i64 },
+        .{ .op = .mov_arg, .result = 1, .lhs = .{ .temp = 1 }, .ty = .i64 },
+        .{ .op = .mov_arg, .result = 2, .lhs = .{ .temp = 2 }, .ty = .str },
+        .{ .op = .mov_arg, .result = 0, .lhs = .{ .temp = 3 }, .field = "vararg", .ty = .i64 },
+        .{ .op = .call_extern, .callee = "snprintf", .ty = .i64 },
+        .{ .op = .ret, .lhs = .{ .i64 = 0 }, .ty = .i64 },
+    };
+    const blocks = [_]dnir.Block{.{ .instrs = &instructions }};
+    const functions = [_]dnir.Function{.{ .name = "main", .ret = .i64, .blocks = &blocks }};
+    const module = dnir.Module{ .functions = &functions };
+    var diagnostic: Diagnostic = .{};
+    var output = try emitArm64FromDnir(alloc, module, null, &diagnostic);
+    defer output.deinit(alloc);
+    try std.testing.expect(output.graph == null);
+    try std.testing.expectEqual(@as(usize, 0), output.lineage.len);
+    const listing = output.asm_text;
 
     const main_pos = std.mem.indexOf(u8, listing, "_main:") orelse return error.TestExpectedEqual;
     const bl_off = std.mem.indexOf(u8, listing[main_pos..], "bl _snprintf") orelse return error.TestExpectedEqual;
@@ -7231,8 +7372,12 @@ test "native backend lowers if elseif else branches" {
     defer sem.deinit();
     try sem.check_module(&mod);
 
-    const asm_text = try emitAssembly(alloc, &mod, "native-asm");
-    defer alloc.free(asm_text);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&mod, &sem, &graph);
+    var assembly = try emitCheckedTestAssembly(alloc, &mod, &graph, null);
+    defer assembly.deinit(alloc);
+    const asm_text = assembly.assembly;
     try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tcmp x") != null);
     var cmp_count: usize = 0;
     var branch_count: usize = 0;
@@ -7244,11 +7389,12 @@ test "native backend lowers if elseif else branches" {
     try std.testing.expect(cmp_count >= 3);
     try std.testing.expect(branch_count >= 3);
 
-    const obj = try emitObject(alloc, &mod, "native-object");
-    try std.testing.expect(std.mem.indexOf(u8, obj, "_pick") != null);
+    var object = try emitCheckedTestObject(alloc, &mod, &graph);
+    defer object.deinit(alloc);
+    try std.testing.expect(std.mem.indexOf(u8, object.bytes, "_pick") != null);
 }
 
-test "native backend lowers while break and continue" {
+test "native backend refuses source while break and continue absent physical lowering" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -7282,15 +7428,10 @@ test "native backend lowers while break and continue" {
     defer sem.deinit();
     try sem.check_module(&mod);
 
-    const asm_text = try emitAssembly(alloc, &mod, "native-asm");
-    try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tb.ge .Lduo_") != null);
-    try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tb .Lduo_") != null);
-
-    const obj = try emitObject(alloc, &mod, "native-object");
-    try std.testing.expect(std.mem.indexOf(u8, obj, "_sum_to") != null);
+    try expectCheckedTestPhysicalRefusal(alloc, &mod, &sem, "graph-dnir-unsupported");
 }
 
-test "native backend lowers numeric for loops" {
+test "native backend refuses source numeric loops absent physical lowering" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -7325,17 +7466,59 @@ test "native backend lowers numeric for loops" {
     defer sem.deinit();
     try sem.check_module(&mod);
 
-    const asm_text = try emitAssembly(alloc, &mod, "native-asm");
-    try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tb.lt .Lduo_") != null);
-    try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tb.gt .Lduo_") != null);
-    try std.testing.expect(std.mem.indexOf(u8, asm_text, "_counted:") != null);
-
-    const obj = try emitObject(alloc, &mod, "native-object");
-    try std.testing.expect(std.mem.indexOf(u8, obj, "_counted") != null);
+    try expectCheckedTestPhysicalRefusal(alloc, &mod, &sem, "graph-dnir-unsupported");
 }
 
-test "native backend emits external call relocation" {
+test "native backend authority-false physical loop oracle retains continue break and backedge" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    const alloc = std.testing.allocator;
+    const instructions = [_]dnir.Instr{
+        .{ .op = .@"const", .result = 0, .lhs = .{ .i64 = 0 }, .ty = .i64 },
+        .{ .op = .store_local, .result = 0, .lhs = .{ .temp = 0 }, .ty = .i64 },
+        .{ .op = .@"const", .result = 1, .lhs = .{ .i64 = 0 }, .ty = .i64 },
+        .{ .op = .store_local, .result = 1, .lhs = .{ .temp = 1 }, .ty = .i64 },
+        .{ .op = .@"const", .result = 2, .lhs = .{ .i64 = 5 }, .ty = .i64 },
+        .{ .op = .binop, .result = 3, .lhs = .{ .local = 0 }, .rhs = .{ .temp = 2 }, .binop = .lt, .ty = .i64 },
+        .{ .op = .br, .lhs = .{ .temp = 3 }, .branch_target = 19, .branch_condition = .when_false },
+        .{ .op = .@"const", .result = 4, .lhs = .{ .i64 = 2 }, .ty = .i64 },
+        .{ .op = .binop, .result = 5, .lhs = .{ .local = 0 }, .rhs = .{ .temp = 4 }, .binop = .eq, .ty = .i64 },
+        .{ .op = .br, .lhs = .{ .temp = 5 }, .branch_target = 15, .branch_condition = .when_true },
+        .{ .op = .@"const", .result = 6, .lhs = .{ .i64 = 4 }, .ty = .i64 },
+        .{ .op = .binop, .result = 7, .lhs = .{ .local = 0 }, .rhs = .{ .temp = 6 }, .binop = .eq, .ty = .i64 },
+        .{ .op = .br, .lhs = .{ .temp = 7 }, .branch_target = 19, .branch_condition = .when_true },
+        .{ .op = .binop, .result = 8, .lhs = .{ .local = 1 }, .rhs = .{ .local = 0 }, .binop = .add, .ty = .i64 },
+        .{ .op = .store_local, .result = 1, .lhs = .{ .temp = 8 }, .ty = .i64 },
+        .{ .op = .@"const", .result = 9, .lhs = .{ .i64 = 1 }, .ty = .i64 },
+        .{ .op = .binop, .result = 10, .lhs = .{ .local = 0 }, .rhs = .{ .temp = 9 }, .binop = .add, .ty = .i64 },
+        .{ .op = .store_local, .result = 0, .lhs = .{ .temp = 10 }, .ty = .i64 },
+        .{ .op = .br, .branch_target = 4, .branch_condition = .unconditional },
+        .{ .op = .ret, .lhs = .{ .local = 1 }, .ty = .i64 },
+    };
+    const blocks = [_]dnir.Block{.{ .instrs = &instructions }};
+    const functions = [_]dnir.Function{.{ .name = "main", .ret = .i64, .blocks = &blocks }};
+    const module = dnir.Module{ .functions = &functions };
     var diagnostic: Diagnostic = .{};
+    var output = try emitArm64FromDnir(alloc, module, null, &diagnostic);
+    defer output.deinit(alloc);
+    try std.testing.expect(output.graph == null);
+    try std.testing.expectEqual(@as(usize, 0), output.lineage.len);
+    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "b.eq") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "\tb .Lduo_") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "add x") != null);
+    const object = try emitMachOArm64Object(
+        alloc,
+        output.text,
+        output.cstring,
+        output.symbols,
+        output.relocations,
+        output.bss_size,
+    );
+    defer alloc.free(object);
+    try std.testing.expectEqual(@as(u32, 0xfeedfacf), std.mem.readInt(u32, object[0..4], .little));
+}
+
+test "native backend refuses source foreign call without graph lineage and retains relocation oracle" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -7357,25 +7540,46 @@ test "native backend emits external call relocation" {
     defer sem.deinit();
     try sem.check_module(&mod);
 
-    const obj = try emitObject(alloc, &mod, "native-object");
-    try std.testing.expect(std.mem.indexOf(u8, obj, "_llabs") != null);
+    try expectCheckedTestSemanticFailure(
+        alloc,
+        &mod,
+        &sem,
+        "missing-foreign-application-lineage",
+        null,
+    );
 
-    const output = try emitArm64Module(alloc, &mod, null, &diagnostic);
-    defer {
-        alloc.free(output.text);
-        alloc.free(output.asm_text);
-        for (output.symbols) |sym| alloc.free(sym.name);
-        alloc.free(output.symbols);
-        alloc.free(output.relocations);
-        if (output.lineage.len > 0) alloc.free(output.lineage);
-    }
+    const instructions = [_]dnir.Instr{
+        .{ .op = .@"const", .result = 0, .lhs = .{ .i64 = -37 }, .ty = .i64 },
+        .{ .op = .mov_arg, .result = 0, .lhs = .{ .temp = 0 }, .ty = .i64 },
+        .{ .op = .call_extern, .result = 1, .callee = "llabs", .ty = .i64 },
+        .{ .op = .@"const", .result = 2, .lhs = .{ .i64 = 5 }, .ty = .i64 },
+        .{ .op = .binop, .result = 3, .lhs = .{ .temp = 1 }, .rhs = .{ .temp = 2 }, .binop = .add, .ty = .i64 },
+        .{ .op = .ret, .lhs = .{ .temp = 3 }, .ty = .i64 },
+    };
+    const blocks = [_]dnir.Block{.{ .instrs = &instructions }};
+    const functions = [_]dnir.Function{.{ .name = "main", .ret = .i64, .blocks = &blocks }};
+    const module = dnir.Module{ .functions = &functions };
+    var diagnostic: Diagnostic = .{};
+    var output = try emitArm64FromDnir(alloc, module, null, &diagnostic);
+    defer output.deinit(alloc);
+    try std.testing.expect(output.graph == null);
+    try std.testing.expectEqual(@as(usize, 0), output.lineage.len);
     try std.testing.expectEqual(@as(usize, 1), output.relocations.len);
     try std.testing.expectEqualStrings("llabs", output.symbols[output.relocations[0].symbol_index].name);
     try std.testing.expect(!output.symbols[output.relocations[0].symbol_index].defined);
+    const object = try emitMachOArm64Object(
+        alloc,
+        output.text,
+        output.cstring,
+        output.symbols,
+        output.relocations,
+        output.bss_size,
+    );
+    defer alloc.free(object);
+    try std.testing.expect(std.mem.indexOf(u8, object, "_llabs") != null);
 }
 
-test "native backend lowers string literals to cstring with adrp/add relocations" {
-    var diagnostic: Diagnostic = .{};
+test "native backend refuses source foreign string call and retains cstring relocation oracle" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -7397,21 +7601,28 @@ test "native backend lowers string literals to cstring with adrp/add relocations
     defer sem.deinit();
     try sem.check_module(&mod);
 
-    const obj = try emitObject(alloc, &mod, "native-object");
-    // A __cstring section appears alongside __text when a string literal is present.
-    try std.testing.expect(std.mem.indexOf(u8, obj, "__cstring") != null);
-    try std.testing.expect(std.mem.indexOf(u8, obj, "_puts") != null);
+    try expectCheckedTestSemanticFailure(
+        alloc,
+        &mod,
+        &sem,
+        "missing-foreign-application-lineage",
+        null,
+    );
 
-    const output = try emitArm64Module(alloc, &mod, null, &diagnostic);
-    defer {
-        alloc.free(output.text);
-        alloc.free(output.asm_text);
-        if (output.cstring.len > 0) alloc.free(output.cstring);
-        for (output.symbols) |sym| alloc.free(sym.name);
-        alloc.free(output.symbols);
-        alloc.free(output.relocations);
-        if (output.lineage.len > 0) alloc.free(output.lineage);
-    }
+    const instructions = [_]dnir.Instr{
+        .{ .op = .@"const", .result = 0, .lhs = .{ .str = "Hello" }, .ty = .str },
+        .{ .op = .mov_arg, .result = 0, .lhs = .{ .temp = 0 }, .ty = .str },
+        .{ .op = .call_extern, .result = 1, .callee = "puts", .ty = .i64 },
+        .{ .op = .ret, .lhs = .{ .i64 = 0 }, .ty = .i64 },
+    };
+    const blocks = [_]dnir.Block{.{ .instrs = &instructions }};
+    const functions = [_]dnir.Function{.{ .name = "main", .ret = .i64, .blocks = &blocks }};
+    const module = dnir.Module{ .functions = &functions };
+    var diagnostic: Diagnostic = .{};
+    var output = try emitArm64FromDnir(alloc, module, null, &diagnostic);
+    defer output.deinit(alloc);
+    try std.testing.expect(output.graph == null);
+    try std.testing.expectEqual(@as(usize, 0), output.lineage.len);
     // Interned literal materializes in the cstring section.
     try std.testing.expect(output.cstring.len > 0);
     try std.testing.expect(std.mem.indexOf(u8, output.cstring, "Hello") != null);
@@ -7451,6 +7662,18 @@ test "native backend lowers string literals to cstring with adrp/add relocations
             try std.testing.expect(sym.offset >= text_len);
         }
     }
+
+    const object = try emitMachOArm64Object(
+        alloc,
+        output.text,
+        output.cstring,
+        output.symbols,
+        output.relocations,
+        output.bss_size,
+    );
+    defer alloc.free(object);
+    try std.testing.expect(std.mem.indexOf(u8, object, "__cstring") != null);
+    try std.testing.expect(std.mem.indexOf(u8, object, "_puts") != null);
 }
 
 test "native backend emits shared object input for exported function without main" {
@@ -7473,12 +7696,22 @@ test "native backend emits shared object input for exported function without mai
     defer sem.deinit();
     try sem.check_module(&mod);
 
-    const obj = try emitSharedObjectInput(alloc, &mod);
-    try std.testing.expect(std.mem.indexOf(u8, obj, "_duo_native_add") != null);
-    try std.testing.expect(std.mem.indexOf(u8, obj, "_main") == null);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&mod, &sem, &graph);
+    var diagnostic: Diagnostic = .{};
+    var object = try emitSharedObjectInputWithGraphLineageObserved(
+        alloc,
+        &mod,
+        &graph,
+        &diagnostic,
+    );
+    defer object.deinit(alloc);
+    try std.testing.expect(std.mem.indexOf(u8, object.bytes, "_duo_native_add") != null);
+    try std.testing.expect(std.mem.indexOf(u8, object.bytes, "_main") == null);
 }
 
-test "native backend reuses expression registers and narrows call saves" {
+test "native backend refuses source register reuse absent application operand ABI facts" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -7505,12 +7738,57 @@ test "native backend reuses expression registers and narrows call saves" {
     defer sem.deinit();
     try sem.check_module(&mod);
 
-    const asm_text = try emitAssembly(alloc, &mod, "native-asm");
-    try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tsub sp, sp, #176\n") == null);
-    try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tstr x30, [sp, #") != null);
+    try expectCheckedTestSemanticFailure(
+        alloc,
+        &mod,
+        &sem,
+        "graph-dnir-facts",
+        "application-operand-abi",
+    );
+}
 
-    const obj = try emitObject(alloc, &mod, "native-object");
-    try std.testing.expect(std.mem.indexOf(u8, obj, "_id") != null);
+test "native backend authority-false physical call oracle narrows register saves" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    const alloc = std.testing.allocator;
+    const parameters = [_]dnir.Param{.{ .name = "n", .ty = .i64 }};
+    const id_instructions = [_]dnir.Instr{
+        .{ .op = .ret, .lhs = .{ .temp = 0 }, .ty = .i64 },
+    };
+    const main_instructions = [_]dnir.Instr{
+        .{ .op = .@"const", .result = 0, .lhs = .{ .i64 = 40 }, .ty = .i64 },
+        .{ .op = .store_local, .result = 0, .lhs = .{ .temp = 0 }, .ty = .i64 },
+        .{ .op = .@"const", .result = 1, .lhs = .{ .i64 = 2 }, .ty = .i64 },
+        .{ .op = .store_local, .result = 1, .lhs = .{ .temp = 1 }, .ty = .i64 },
+        .{ .op = .mov_arg, .result = 0, .lhs = .{ .local = 0 }, .ty = .i64 },
+        .{ .op = .call_direct, .result = 2, .callee = "id", .ty = .i64 },
+        .{ .op = .binop, .result = 3, .lhs = .{ .temp = 2 }, .rhs = .{ .local = 1 }, .binop = .add, .ty = .i64 },
+        .{ .op = .ret, .lhs = .{ .temp = 3 }, .ty = .i64 },
+    };
+    const id_blocks = [_]dnir.Block{.{ .instrs = &id_instructions }};
+    const main_blocks = [_]dnir.Block{.{ .instrs = &main_instructions }};
+    const functions = [_]dnir.Function{
+        .{ .name = "id", .ret = .i64, .params = &parameters, .blocks = &id_blocks },
+        .{ .name = "main", .ret = .i64, .blocks = &main_blocks },
+    };
+    const module = dnir.Module{ .functions = &functions };
+    var diagnostic: Diagnostic = .{};
+    var output = try emitArm64FromDnir(alloc, module, null, &diagnostic);
+    defer output.deinit(alloc);
+    try std.testing.expect(output.graph == null);
+    try std.testing.expectEqual(@as(usize, 0), output.lineage.len);
+    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "\tsub sp, sp, #176\n") == null);
+    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "\tstr x30, [sp, #") != null);
+    const object = try emitMachOArm64Object(
+        alloc,
+        output.text,
+        output.cstring,
+        output.symbols,
+        output.relocations,
+        output.bss_size,
+    );
+    defer alloc.free(object);
+    try std.testing.expect(std.mem.indexOf(u8, object, "_id") != null);
 }
 
 // The asm listing prints the *intended* mnemonic while the object file carries
@@ -7569,8 +7847,12 @@ test "native backend: conditional branch never consumes stale flags after cset" 
     defer sem.deinit();
     try sem.check_module(&mod);
 
-    const asm_text = try emitAssembly(alloc, &mod, "native-asm");
-    defer alloc.free(asm_text);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&mod, &sem, &graph);
+    var assembly = try emitCheckedTestAssembly(alloc, &mod, &graph, null);
+    defer assembly.deinit(alloc);
+    const asm_text = assembly.assembly;
 
     var prev_was_cset = false;
     var lines = std.mem.splitScalar(u8, asm_text, '\n');
@@ -7615,7 +7897,12 @@ test "native backend emits assembly listing for arithmetic" {
     defer sem.deinit();
     try sem.check_module(&mod);
 
-    const asm_text = try emitAssembly(alloc, &mod, "native-asm");
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&mod, &sem, &graph);
+    var assembly = try emitCheckedTestAssembly(alloc, &mod, &graph, null);
+    defer assembly.deinit(alloc);
+    const asm_text = assembly.assembly;
     try std.testing.expect(std.mem.indexOf(u8, asm_text, ".globl _main") != null);
     try std.testing.expect(std.mem.indexOf(u8, asm_text, "mul x") != null);
     try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tret\n") != null);
@@ -7643,13 +7930,18 @@ test "native backend assembly lists helper call labels" {
     defer sem.deinit();
     try sem.check_module(&mod);
 
-    const asm_text = try emitAssembly(alloc, &mod, "native-asm");
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&mod, &sem, &graph);
+    var assembly = try emitCheckedTestAssembly(alloc, &mod, &graph, null);
+    defer assembly.deinit(alloc);
+    const asm_text = assembly.assembly;
     try std.testing.expect(std.mem.indexOf(u8, asm_text, ".globl _add") != null);
     try std.testing.expect(std.mem.indexOf(u8, asm_text, ".globl _main") != null);
     try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tbl _add\n") != null);
 }
 
-test "native backend lowers sovereign print (no DNB007 fallback)" {
+test "native backend refuses source print absent application facts and retains physical print oracle" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -7666,14 +7958,41 @@ test "native backend lowers sovereign print (no DNB007 fallback)" {
     defer sem.deinit();
     try sem.check_module(&mod);
 
-    // `print` is sovereign native output now: the direct backend lowers it to
-    // Mach-O `_printf`/`_puts` externs instead of rejecting with DNB007
-    // ("undefined symbol"). Emitting the object proves the DNIR path fires.
-    const obj = try emitObject(alloc, &mod, "native-object");
-    try std.testing.expect(obj.len > 0);
+    try expectCheckedTestSemanticFailure(
+        alloc,
+        &mod,
+        &sem,
+        "unresolved-application-facts",
+        null,
+    );
+
+    const instructions = [_]dnir.Instr{
+        .{ .op = .@"const", .result = 0, .lhs = .{ .i64 = 1 }, .ty = .i64 },
+        .{ .op = .print_value, .lhs = .{ .temp = 0 }, .ty = .i64 },
+        .{ .op = .ret, .lhs = .{ .i64 = 0 }, .ty = .i64 },
+    };
+    const blocks = [_]dnir.Block{.{ .instrs = &instructions }};
+    const functions = [_]dnir.Function{.{ .name = "main", .ret = .i64, .blocks = &blocks }};
+    const module = dnir.Module{ .functions = &functions };
+    var diagnostic: Diagnostic = .{};
+    var output = try emitArm64FromDnir(alloc, module, null, &diagnostic);
+    defer output.deinit(alloc);
+    try std.testing.expect(output.graph == null);
+    try std.testing.expectEqual(@as(usize, 0), output.lineage.len);
+    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "bl _printf") != null);
+    const object = try emitMachOArm64Object(
+        alloc,
+        output.text,
+        output.cstring,
+        output.symbols,
+        output.relocations,
+        output.bss_size,
+    );
+    defer alloc.free(object);
+    try std.testing.expect(std.mem.indexOf(u8, object, "_printf") != null);
 }
 
-test "native backend Pass 11 sealed record proof (integer main + f64 kernel)" {
+test "native backend refuses source sealed record application absent graph identity facts" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -7701,18 +8020,16 @@ test "native backend Pass 11 sealed record proof (integer main + f64 kernel)" {
     sem.duo_mode = true;
     try sem.check_module(&mod);
 
-    const listing = try emitAssembly(alloc, &mod, "native-asm");
-    defer alloc.free(listing);
-    try std.testing.expect(std.mem.indexOf(u8, listing, "_length2") != null);
-    try std.testing.expect(std.mem.indexOf(u8, listing, "fmul") != null);
-    try std.testing.expect(std.mem.indexOf(u8, listing, "fcmp") != null);
-    try std.testing.expect(std.mem.indexOf(u8, listing, "lua_") == null);
-
-    const obj = try emitObject(alloc, &mod, "native-object");
-    try std.testing.expect(obj.len > 0);
+    try expectCheckedTestSemanticFailure(
+        alloc,
+        &mod,
+        &sem,
+        "graph-dnir-facts",
+        "missing-application-id",
+    );
 }
 
-test "Pass 11 WP-05: byte blob + load_u8 intrinsic on direct backend" {
+test "native backend refuses raw byte source absent graph byte facts" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -7742,15 +8059,51 @@ test "Pass 11 WP-05: byte blob + load_u8 intrinsic on direct backend" {
     sem.duo_mode = true;
     try sem.check_module(&mod);
 
-    const listing = try emitAssembly(alloc, &mod, "native-asm");
-    defer alloc.free(listing);
-    try std.testing.expect(std.mem.indexOf(u8, listing, "Lduo_blob_wasm_header") != null);
-    try std.testing.expect(std.mem.indexOf(u8, listing, "ldrb") != null);
-    try std.testing.expect(std.mem.indexOf(u8, listing, "lua_") == null);
+    try expectCheckedTestSemanticFailure(
+        alloc,
+        &mod,
+        &sem,
+        "unresolved-application-facts",
+        null,
+    );
+}
 
-    const obj = try emitObject(alloc, &mod, "native-object");
-    try std.testing.expect(obj.len > 0);
-    try std.testing.expect(std.mem.indexOf(u8, obj, "\x00asm") != null);
+test "native backend authority-false physical byte load oracle" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    const alloc = std.testing.allocator;
+    const parameters = [_]dnir.Param{.{ .name = "base", .ty = .i64 }};
+    const instructions = [_]dnir.Instr{
+        .{ .op = .@"const", .result = 1, .lhs = .{ .i64 = 3 }, .ty = .i64 },
+        .{ .op = .load_index, .result = 2, .lhs = .{ .temp = 0 }, .rhs = .{ .temp = 1 }, .ty = .u8 },
+        .{ .op = .ret, .lhs = .{ .temp = 2 }, .ty = .i64 },
+    };
+    const blocks = [_]dnir.Block{.{ .instrs = &instructions }};
+    const functions = [_]dnir.Function{.{
+        .name = "read",
+        .ret = .i64,
+        .params = &parameters,
+        .blocks = &blocks,
+    }};
+    const module = dnir.Module{ .functions = &functions };
+    var diagnostic: Diagnostic = .{};
+    var output = try emitArm64FromDnir(alloc, module, null, &diagnostic);
+    defer output.deinit(alloc);
+    try std.testing.expect(output.graph == null);
+    try std.testing.expectEqual(@as(usize, 0), output.lineage.len);
+    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "ldrb") != null);
+    try std.testing.expectEqual(@as(usize, 0), output.cstring.len);
+    try std.testing.expectEqual(@as(usize, 0), output.relocations.len);
+    const object = try emitMachOArm64Object(
+        alloc,
+        output.text,
+        output.cstring,
+        output.symbols,
+        output.relocations,
+        output.bss_size,
+    );
+    defer alloc.free(object);
+    try std.testing.expectEqual(@as(u32, 0xfeedfacf), std.mem.readInt(u32, object[0..4], .little));
 }
 
 test "Pass 11 WP-04: i64 record field assign with binop" {
@@ -7776,12 +8129,15 @@ test "Pass 11 WP-04: i64 record field assign with binop" {
     sem.duo_mode = true;
     try sem.check_module(&mod);
 
-    const obj = try emitObject(alloc, &mod, "native-object");
-    defer alloc.free(obj);
-    try std.testing.expect(obj.len > 0);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&mod, &sem, &graph);
+    var object = try emitCheckedTestObject(alloc, &mod, &graph);
+    defer object.deinit(alloc);
+    try std.testing.expect(object.bytes.len > 0);
 }
 
-test "Pass 11 WP-05: if-return then i64 field assign" {
+test "native backend refuses unresolved byte call and retains branch-field physical oracle" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -7811,9 +8167,54 @@ test "Pass 11 WP-05: if-return then i64 field assign" {
     sem.duo_mode = true;
     try sem.check_module(&mod);
 
-    const obj = try emitObject(alloc, &mod, "native-object");
-    defer alloc.free(obj);
-    try std.testing.expect(obj.len > 0);
+    try expectCheckedTestSemanticFailure(
+        alloc,
+        &mod,
+        &sem,
+        "unresolved-application-facts",
+        null,
+    );
+
+    const instructions = [_]dnir.Instr{
+        .{ .op = .@"const", .result = 0, .lhs = .{ .str = "\x00asm" }, .ty = .str },
+        .{ .op = .@"const", .result = 1, .lhs = .{ .i64 = 1 }, .ty = .i64 },
+        .{ .op = .load_index, .result = 2, .lhs = .{ .temp = 0 }, .rhs = .{ .temp = 1 }, .ty = .u8 },
+        .{ .op = .@"const", .result = 3, .lhs = .{ .i64 = 0 }, .ty = .i64 },
+        .{ .op = .binop, .result = 4, .lhs = .{ .temp = 2 }, .rhs = .{ .temp = 3 }, .binop = .neq, .ty = .i64 },
+        .{ .op = .br, .lhs = .{ .temp = 4 }, .branch_target = 7, .branch_condition = .when_false },
+        .{ .op = .ret, .lhs = .{ .i64 = 1001 }, .ty = .i64 },
+        .{ .op = .@"const", .result = 5, .lhs = .{ .i64 = 0 }, .ty = .i64 },
+        .{ .op = .store_local, .result = 10, .lhs = .{ .temp = 5 }, .record = "Cursor", .field = "pos", .ty = .i64 },
+        .{ .op = .@"const", .result = 6, .lhs = .{ .i64 = 1 }, .ty = .i64 },
+        .{ .op = .binop, .result = 7, .lhs = .{ .local = 10 }, .rhs = .{ .temp = 6 }, .binop = .add, .ty = .i64 },
+        .{ .op = .store_local, .result = 10, .lhs = .{ .temp = 7 }, .record = "Cursor", .field = "pos", .ty = .i64 },
+        .{ .op = .@"const", .result = 8, .lhs = .{ .i64 = 1 }, .ty = .i64 },
+        .{ .op = .binop, .result = 9, .lhs = .{ .local = 10 }, .rhs = .{ .temp = 8 }, .binop = .neq, .ty = .i64 },
+        .{ .op = .br, .lhs = .{ .temp = 9 }, .branch_target = 16, .branch_condition = .when_false },
+        .{ .op = .ret, .lhs = .{ .i64 = 1006 }, .ty = .i64 },
+        .{ .op = .ret, .lhs = .{ .i64 = 0 }, .ty = .i64 },
+    };
+    const blocks = [_]dnir.Block{.{ .instrs = &instructions }};
+    const functions = [_]dnir.Function{.{ .name = "main", .ret = .i64, .blocks = &blocks }};
+    const module = dnir.Module{ .functions = &functions };
+    var diagnostic: Diagnostic = .{};
+    var output = try emitArm64FromDnir(alloc, module, null, &diagnostic);
+    defer output.deinit(alloc);
+    try std.testing.expect(output.graph == null);
+    try std.testing.expectEqual(@as(usize, 0), output.lineage.len);
+    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "ldrb") != null);
+    try std.testing.expect(std.mem.count(u8, output.asm_text, "add x") >= 2);
+    try std.testing.expect(std.mem.count(u8, output.asm_text, "b.eq") >= 2);
+    const object = try emitMachOArm64Object(
+        alloc,
+        output.text,
+        output.cstring,
+        output.symbols,
+        output.relocations,
+        output.bss_size,
+    );
+    defer alloc.free(object);
+    try std.testing.expectEqual(@as(u32, 0xfeedfacf), std.mem.readInt(u32, object[0..4], .little));
 }
 
 test "unused immediate bindings do not demand register or stack places" {
@@ -7858,34 +8259,20 @@ test "unused immediate bindings do not demand register or stack places" {
     sem.duo_mode = true;
     try sem.check_module(&mod);
 
-    const listing = try emitAssembly(alloc, &mod, "native-asm");
-    defer alloc.free(listing);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&mod, &sem, &graph);
+    var assembly = try emitCheckedTestAssembly(alloc, &mod, &graph, null);
+    defer assembly.deinit(alloc);
+    const listing = assembly.assembly;
     try std.testing.expect(std.mem.indexOf(u8, listing, "\tstr x") == null);
     try std.testing.expect(std.mem.indexOf(u8, listing, "\tldr x") == null);
     try std.testing.expect(std.mem.indexOf(u8, listing, "\tsub sp") == null);
     try std.testing.expect(std.mem.indexOf(u8, listing, "lua_") == null);
 
-    const obj = try emitObject(alloc, &mod, "native-object");
-    defer alloc.free(obj);
-    try std.testing.expect(obj.len > 0);
-
-    var compatibility_lex = Lexer.init(source, "pass11_spill_proof.duo");
-    var compatibility_parser = Parser.init(&compatibility_lex, alloc);
-    compatibility_parser.duo_mode = true;
-    var compatibility_mod = try compatibility_parser.parse_module();
-    var compatibility_sem = Sema.init(alloc);
-    defer compatibility_sem.deinit();
-    compatibility_sem.duo_mode = true;
-    try compatibility_sem.check_module(&compatibility_mod);
-
-    try std.testing.expectEqualStrings("pass11_spill_proof.id", mod.file);
-    try std.testing.expectEqualStrings("pass11_spill_proof.duo", compatibility_mod.file);
-    const compatibility_listing = try emitAssembly(alloc, &compatibility_mod, "native-asm");
-    defer alloc.free(compatibility_listing);
-    try std.testing.expectEqualStrings(listing, compatibility_listing);
-    const compatibility_obj = try emitObject(alloc, &compatibility_mod, "native-object");
-    defer alloc.free(compatibility_obj);
-    try std.testing.expectEqualSlices(u8, obj, compatibility_obj);
+    var object = try emitCheckedTestObject(alloc, &mod, &graph);
+    defer object.deinit(alloc);
+    try std.testing.expect(object.bytes.len > 0);
 
     const minimal_source =
         \\main: i64 = ()
@@ -7902,12 +8289,15 @@ test "unused immediate bindings do not demand register or stack places" {
     minimal_sem.duo_mode = true;
     try minimal_sem.check_module(&minimal_mod);
 
-    const minimal_listing = try emitAssembly(alloc, &minimal_mod, "native-asm");
-    defer alloc.free(minimal_listing);
-    try std.testing.expectEqualStrings(minimal_listing, listing);
-    const minimal_obj = try emitObject(alloc, &minimal_mod, "native-object");
-    defer alloc.free(minimal_obj);
-    try std.testing.expectEqualSlices(u8, minimal_obj, obj);
+    var minimal_graph = semantic_graph.SemanticGraph.init(alloc);
+    defer minimal_graph.deinit();
+    try liftCheckedTestGraph(&minimal_mod, &minimal_sem, &minimal_graph);
+    var minimal_assembly = try emitCheckedTestAssembly(alloc, &minimal_mod, &minimal_graph, null);
+    defer minimal_assembly.deinit(alloc);
+    try std.testing.expectEqualStrings(minimal_assembly.assembly, listing);
+    var minimal_object = try emitCheckedTestObject(alloc, &minimal_mod, &minimal_graph);
+    defer minimal_object.deinit(alloc);
+    try std.testing.expectEqualSlices(u8, minimal_object.bytes, object.bytes);
 }
 
 test "more live integer values than registers refuses without aliasing owners" {
@@ -7950,9 +8340,19 @@ test "more live integer values than registers refuses without aliasing owners" {
     sem.duo_mode = true;
     try sem.check_module(&mod);
 
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&mod, &sem, &graph);
+    var diagnostic: Diagnostic = .{};
     try std.testing.expectError(
         error.RegisterExhausted,
-        emitAssembly(alloc, &mod, "native-asm"),
+        emitAssemblyWithGraphLineageObserved(
+            alloc,
+            &mod,
+            "native-asm",
+            &graph,
+            &diagnostic,
+        ),
     );
 }
 
@@ -8049,8 +8449,12 @@ test "an eight-field record return still explodes into x0..x7" {
     sem.duo_mode = true;
     try sem.check_module(&mod);
 
-    const listing = try emitAssembly(alloc, &mod, "native-asm");
-    defer alloc.free(listing);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&mod, &sem, &graph);
+    var assembly = try emitCheckedTestAssembly(alloc, &mod, &graph, null);
+    defer assembly.deinit(alloc);
+    const listing = assembly.assembly;
 
     // Every one of the eight ABI registers is written, including the eighth.
     try std.testing.expect(std.mem.indexOf(u8, listing, "mov x7,") != null);
@@ -8060,7 +8464,7 @@ test "an eight-field record return still explodes into x0..x7" {
     // pressure that used to reach it.
     try std.testing.expect(std.mem.indexOf(u8, listing, "x18") == null);
 
-    const obj = try emitObject(alloc, &mod, "native-object");
-    defer alloc.free(obj);
-    try std.testing.expect(obj.len > 0);
+    var object = try emitCheckedTestObject(alloc, &mod, &graph);
+    defer object.deinit(alloc);
+    try std.testing.expect(object.bytes.len > 0);
 }
