@@ -1,11 +1,10 @@
 # Idsem bootstrap contract
 
-The seed currently obtains structural bootstrap candidate data from the tracked
-project-owned file `lib/compiler/bootstrap.duo`. That file is SOURCE-ZERO debt,
-not canonical source or an implementation pattern. This document is a human
-projection of the executed authority frontier; it is not bootstrap evidence or
-production authority. The immediate target is compiler B, not a sovereign
-backend.
+No executable compiler-B/C evidence producer exists yet. The seed remains the
+host compiler; it does not obtain bootstrap authority from a project-owned
+source model. This document is a human projection of the executed authority
+frontier, not bootstrap evidence or production authority. The immediate target
+is compiler B, not a sovereign backend.
 
 ## Current stage: S0
 
@@ -116,14 +115,11 @@ contain independent `.duo` assumptions. Their deletion gate is a generated
 source-family projection consumed by each surface, with untracked `.id`
 candidates included and missing census input failing closed.
 
-SHC-00 supplies an executable structural verifier in
-`lib/compiler/bootstrap.duo`. Its synthetic controls validate lineage and
-parity relationships only; they neither authenticate the supplied identities
-nor observe a compiler run. Its historical three-coordinate `identity` record
-is not the constitutional graph-owned identity model and must not be promoted to
-canonical `.id` source. A real bootstrap projection must consume exact graph
-entities, witnesses, provenance, and observations from an execution world
-before the contract can accept B or C.
+The former synthetic bootstrap verifier was deleted. It had no production
+consumer, observed no compiler run, and modeled identity through three invented
+numeric coordinates. A real bootstrap projection must consume exact graph ids,
+facts, witnesses, provenance, and observations from an execution world before
+the contract can accept B or C.
 
 The tracked SOURCE-ZERO file `lib/compiler/application.duo` inventories the
 application and pack facts required by the next bootstrap transfer. It is not a complete
@@ -176,12 +172,11 @@ capability level of canonical Idsem, not a permanent second language.
 
 The candidate compiler-critical basis is: bytes, views, strings, arenas,
 vectors, maps, interning, bitsets, source/span, filesystem read, and diagnostic
-output. `lib/compiler/bootstrap.duo` records a relation, descriptor, and witness
-identity for each candidate row plus the chain/evidence shape. That is not yet
-an exact frozen capability contract: filesystem read and diagnostic output
-still need their subject, world, and effect identities, and no row has observed
-production reachability. Adding unrelated standard vocabulary does not advance
-this contract.
+output. No graph/world-backed projection currently records or observes that
+basis for B and C. Filesystem read and diagnostic output still need their
+subject, world, and effect facts, and production reachability must be observed
+rather than asserted. `GAP-139` owns that missing evidence boundary. Adding
+unrelated standard vocabulary does not advance this contract.
 
 ## FTCFTW constraint
 
@@ -213,17 +208,18 @@ Future B/C acceptance requires two distinct application and output
 incarnations, the seed as B's exact producer, B as C's exact producer,
 identical source content, the same backend and execution-world content, and
 semantic, behavioral, and diagnostic observations with witness and provenance
-bound to each application. The structural controls check those relationships,
-not the authenticity of their synthetic identities. B and C may have different
-artifact content; binary identity is not required for B-to-C acceptance.
+bound to each application. No synthetic structural self-check substitutes for
+those observations. B and C may have different artifact content; binary
+identity is not required for B-to-C acceptance.
 
 ## Source-zero deletion gate
 
-Do not copy or run the tracked bootstrap sources as canonical examples. Their
-retained structural behavior must move into executed `.id`, receive production
-perturbation and differential proof, and then be deleted. A future bootstrap
-projection derives its evidence from the executed Idsem compiler graph rather
-than making a host build step authoritative.
+Do not add a bootstrap verifier beside the production graph. The remaining
+tracked application inventory is migration evidence only; its demanded facts
+must move into executed `.id` with production perturbation and differential
+proof before that source is deleted. A future bootstrap projection derives its
+evidence from the executed Idsem compiler graph rather than making a host build
+step authoritative.
 
 ## Prohibited claims
 
