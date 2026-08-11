@@ -8412,21 +8412,36 @@ test "parse: string interpolation indexed holes" {
     , &arena);
 
     const a = mod.body.stmts[0].assign.values[0];
-    try testing.expect(a.* == .index);
-    try testing.expectEqualStrings("found", a.index.obj.name.ident);
-    try testing.expectEqualStrings("i", a.index.key.name.ident);
+    try testing.expect(a.* == .binop);
+    try testing.expect(a.binop.op == .concat);
+    try testing.expect(a.binop.lhs.* == .string_lit);
+    try testing.expectEqualStrings("", a.binop.lhs.string_lit.val);
+    const a_hole = a.binop.rhs;
+    try testing.expect(a_hole.* == .index);
+    try testing.expectEqualStrings("found", a_hole.index.obj.name.ident);
+    try testing.expectEqualStrings("i", a_hole.index.key.name.ident);
 
     const b = mod.body.stmts[1].assign.values[0];
-    try testing.expect(b.* == .index);
-    try testing.expectEqualStrings("r", b.index.obj.name.ident);
-    try testing.expectEqual(@as(i64, 1), b.index.key.int_lit.val);
+    try testing.expect(b.* == .binop);
+    try testing.expect(b.binop.op == .concat);
+    try testing.expect(b.binop.lhs.* == .string_lit);
+    try testing.expectEqualStrings("", b.binop.lhs.string_lit.val);
+    const b_hole = b.binop.rhs;
+    try testing.expect(b_hole.* == .index);
+    try testing.expectEqualStrings("r", b_hole.index.obj.name.ident);
+    try testing.expectEqual(@as(i64, 1), b_hole.index.key.int_lit.val);
 
     const c = mod.body.stmts[2].assign.values[0];
-    try testing.expect(c.* == .field);
-    try testing.expectEqualStrings("name", c.field.field);
-    try testing.expect(c.field.obj.* == .index);
-    try testing.expectEqualStrings("rows", c.field.obj.index.obj.name.ident);
-    try testing.expectEqualStrings("i", c.field.obj.index.key.name.ident);
+    try testing.expect(c.* == .binop);
+    try testing.expect(c.binop.op == .concat);
+    try testing.expect(c.binop.lhs.* == .string_lit);
+    try testing.expectEqualStrings("", c.binop.lhs.string_lit.val);
+    const c_hole = c.binop.rhs;
+    try testing.expect(c_hole.* == .field);
+    try testing.expectEqualStrings("name", c_hole.field.field);
+    try testing.expect(c_hole.field.obj.* == .index);
+    try testing.expectEqualStrings("rows", c_hole.field.obj.index.obj.name.ident);
+    try testing.expectEqualStrings("i", c_hole.field.obj.index.key.name.ident);
 }
 
 test "parse: field projection .name desugars to anonymous function" {
