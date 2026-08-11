@@ -18,8 +18,9 @@
 const std = @import("std");
 const lexer = @import("lexer.zig");
 
-/// i64 slots per token in the `duo_lexer_tokenize_full` record buffer:
+/// Temporary physical width of `duo_lexer_tokenize_full` records:
 /// 0 kind · 1 line · 2 col · 3 int_val · 4 source_off · 5 text_len · 6 float_val.
+/// GAP-107 deletes this host constant once the producer projects its schema.
 pub const RECORD_SLOTS: usize = 7;
 
 extern fn duo_lexer_tokenize_full(
@@ -31,36 +32,100 @@ extern fn duo_lexer_tokenize_full(
     txtcap: i64,
 ) i64;
 
-/// Published by `lib/std/compiler/host.duo` so a consumer asserts the layout it
-/// decodes rather than hard-coding it.
-extern fn duo_lexer_host_stride() i64;
-
 /// GAP-017 closed: the Idsem lexer returns a REJECTION rather than aborting the
 /// process. Negative returns are offset by 100 so they cannot be confused with
 /// -1 (buffer too small), and the codes mirror `lexer.LexError`'s order.
 extern fn duo_lexer_error_line(src: [*:0]const u8, file: [*:0]const u8) i64;
 
-fn lexErrorFromCode(code: i64) lexer.LexError {
+pub const DispatchError = error{
+    BufferTooSmall,
+    EmbeddedNul,
+    InvalidBufferAddress,
+    InvalidEndToken,
+    InvalidRecordCount,
+    InvalidRejectionCode,
+    InvalidSourceSpan,
+    InvalidTokenKind,
+    InvalidTokenLocation,
+    OutOfMemory,
+    SourceTooLarge,
+} || lexer.LexError;
+
+/// Line of a source rejection. An invalid diagnostic record is an ABI failure,
+/// not a fabricated source location.
+pub fn errorLine(src: [:0]const u8, file: [:0]const u8) error{InvalidTokenLocation}!u32 {
+    const line = duo_lexer_error_line(src.ptr, file.ptr);
+    if (line <= 0) return error.InvalidTokenLocation;
+    return std.math.cast(u32, line) orelse error.InvalidTokenLocation;
+}
+
+fn lexErrorFromCode(code: i64) DispatchError {
     return switch (code) {
         -101 => lexer.LexError.UnterminatedString,
         -102 => lexer.LexError.UnterminatedLongString,
         -103 => lexer.LexError.InvalidEscape,
         -104 => lexer.LexError.UnexpectedChar,
-        else => lexer.LexError.UnexpectedChar,
+        else => DispatchError.InvalidRejectionCode,
     };
 }
 
-/// Line of the rejection, for a caller holding a negative code. Cold path.
-pub fn errorLine(src: [:0]const u8, file: [:0]const u8) u32 {
-    const line = duo_lexer_error_line(src.ptr, file.ptr);
-    return if (line > 0) @intCast(line) else 1;
+fn tokenKindFromOrdinal(raw: i64) ?lexer.TokenKind {
+    const enum_info = @typeInfo(lexer.TokenKind).@"enum";
+    comptime {
+        for (enum_info.field_values, 0..) |value, ordinal| {
+            if (value != ordinal) @compileError("TokenKind ABI requires contiguous ordinals");
+        }
+    }
+    if (raw < 0 or raw >= enum_info.field_names.len) return null;
+    return @enumFromInt(@as(enum_info.tag_type, @intCast(raw)));
 }
 
-pub const DispatchError = error{
-    BufferTooSmall,
-    InvalidSourceSpan,
-    OutOfMemory,
-} || lexer.LexError;
+fn decodeRecords(
+    allocator: std.mem.Allocator,
+    src: [:0]const u8,
+    file: [:0]const u8,
+    records: []const i64,
+    record_count: i64,
+) DispatchError![]lexer.Token {
+    const count = std.math.cast(usize, record_count) orelse return DispatchError.InvalidRecordCount;
+    if (count == 0) return DispatchError.InvalidRecordCount;
+    const used_slots = std.math.mul(usize, count, RECORD_SLOTS) catch
+        return DispatchError.InvalidRecordCount;
+    if (used_slots > records.len) return DispatchError.InvalidRecordCount;
+
+    const tokens = try allocator.alloc(lexer.Token, count);
+    errdefer allocator.free(tokens);
+
+    for (tokens, 0..) |*tok, i| {
+        const r = records[i * RECORD_SLOTS ..][0..RECORD_SLOTS];
+        const kind = tokenKindFromOrdinal(r[0]) orelse
+            return DispatchError.InvalidTokenKind;
+        const line = std.math.cast(u32, r[1]) orelse
+            return DispatchError.InvalidTokenLocation;
+        const col = std.math.cast(u32, r[2]) orelse
+            return DispatchError.InvalidTokenLocation;
+        if (line == 0 or col == 0) return DispatchError.InvalidTokenLocation;
+        if (r[4] < 0 or r[5] < 0) return DispatchError.InvalidSourceSpan;
+        const off = std.math.cast(usize, r[4]) orelse return DispatchError.InvalidSourceSpan;
+        const len = std.math.cast(usize, r[5]) orelse return DispatchError.InvalidSourceSpan;
+        if (off > src.len or len > src.len - off) return DispatchError.InvalidSourceSpan;
+        const final = i + 1 == count;
+        if (kind == .eof) {
+            if (!final or off != src.len or len != 0) return DispatchError.InvalidEndToken;
+        } else if (final) {
+            return DispatchError.InvalidEndToken;
+        }
+
+        tok.* = .{
+            .kind = kind,
+            .loc = .{ .file = file, .line = line, .col = col },
+            .text = src[off .. off + len],
+            .int_val = r[3],
+            .float_val = @bitCast(r[6]),
+        };
+    }
+    return tokens;
+}
 
 /// Tokenize `src` through the Idsem lexer, returning host `Token`s.
 ///
@@ -71,18 +136,27 @@ pub fn tokenize(
     src: [:0]const u8,
     file: [:0]const u8,
 ) DispatchError![]lexer.Token {
+    if (std.mem.indexOfScalar(u8, src, 0) != null or
+        std.mem.indexOfScalar(u8, file, 0) != null)
+        return DispatchError.EmbeddedNul;
+
     // One record per byte is a safe upper bound: every token consumes at least
     // one source byte, plus one for the terminating EOF. Sized rather than
     // guessed, so a short read can never masquerade as a short file.
-    const cap: usize = src.len + 2;
-    const records = try allocator.alloc(i64, cap * RECORD_SLOTS);
+    const cap = std.math.add(usize, src.len, 2) catch return DispatchError.SourceTooLarge;
+    const slot_count = std.math.mul(usize, cap, RECORD_SLOTS) catch
+        return DispatchError.SourceTooLarge;
+    const cap_i64 = std.math.cast(i64, cap) orelse return DispatchError.SourceTooLarge;
+    const records = try allocator.alloc(i64, slot_count);
     defer allocator.free(records);
+    const records_ptr = std.math.cast(i64, @intFromPtr(records.ptr)) orelse
+        return DispatchError.InvalidBufferAddress;
 
     const n = duo_lexer_tokenize_full(
         src.ptr,
         file.ptr,
-        @intCast(@intFromPtr(records.ptr)),
-        @intCast(cap),
+        records_ptr,
+        cap_i64,
         0,
         0,
     );
@@ -92,31 +166,12 @@ pub fn tokenize(
     // parser cannot detect.
     if (n < 0) return lexErrorFromCode(n);
 
-    const count: usize = @intCast(n);
-    const tokens = try allocator.alloc(lexer.Token, count);
-    errdefer allocator.free(tokens);
-
     // GAP-022's first repair copied every token into an arena, then searched
     // the source for that copy. That preserved parser pointer arithmetic but
     // left source provenance as host reconstruction. Slot 4 is now the exact
     // zero-based text offset decided by the Idsem lexer. Reject an impossible
     // span instead of silently falling back to copied bytes.
-    for (tokens, 0..) |*tok, i| {
-        const r = records[i * RECORD_SLOTS ..][0..RECORD_SLOTS];
-        if (r[4] < 0 or r[5] < 0) return DispatchError.InvalidSourceSpan;
-        const off: usize = @intCast(r[4]);
-        const len: usize = @intCast(r[5]);
-        if (off > src.len or len > src.len - off) return DispatchError.InvalidSourceSpan;
-
-        tok.* = .{
-            .kind = @enumFromInt(r[0]),
-            .loc = .{ .file = file, .line = @intCast(r[1]), .col = @intCast(r[2]) },
-            .text = src[off .. off + len],
-            .int_val = r[3],
-            .float_val = @bitCast(r[6]),
-        };
-    }
-    return tokens;
+    return decodeRecords(allocator, src, file, records, n);
 }
 
 /// Drive `lex` from the Idsem lexer's token stream instead of the host scanner.
@@ -149,11 +204,16 @@ pub fn route(
     const zfile = try std.mem.concatWithSentinel(alloc, u8, &.{file}, 0);
     defer alloc.free(zfile);
     const toks = tokenize(alloc, zsrc, zfile) catch |e| switch (e) {
-        error.OutOfMemory, error.BufferTooSmall => return e,
-        else => {
-            lex.last_error_loc = .{ .file = file, .line = errorLine(zsrc, zfile), .col = 1 };
+        error.UnterminatedString,
+        error.UnterminatedLongString,
+        error.InvalidNumber,
+        error.UnexpectedChar,
+        error.InvalidEscape,
+        => {
+            lex.last_error_loc = .{ .file = file, .line = try errorLine(zsrc, zfile), .col = 1 };
             return e;
         },
+        else => return e,
     };
     errdefer alloc.free(toks);
     // Idsem's offsets first resolve against `zsrc`, the NUL-terminated copy the C
@@ -176,12 +236,6 @@ pub fn route(
         tok.loc.file = file;
     }
     try lex.useDuoTokens(toks);
-}
-
-/// The ABI contract, asserted rather than assumed. A layout change in the Idsem
-/// lexer must fail here, at the seam, instead of silently shifting every field.
-pub fn validateStride() !void {
-    if (duo_lexer_host_stride() != 4) return error.UnexpectedTokenizeAllStride;
 }
 
 /// Tokenize `src` with the HOST lexer — the differential's other side.
@@ -226,8 +280,150 @@ pub fn differential(allocator: std.mem.Allocator, src: [:0]const u8, file: [:0]c
     }
 }
 
-test "duo_lexer_dispatch: stride contract" {
-    try validateStride();
+test "duo_lexer_dispatch: malformed generated records fail closed" {
+    const a = std.testing.allocator;
+    const source: [:0]const u8 = "";
+    const file: [:0]const u8 = "record.id";
+    var record = [_]i64{
+        @intFromEnum(lexer.TokenKind.eof),
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+    };
+
+    const valid = try decodeRecords(a, source, file, &record, 1);
+    defer a.free(valid);
+    try std.testing.expectEqual(lexer.TokenKind.eof, valid[0].kind);
+
+    try std.testing.expectError(
+        DispatchError.InvalidEndToken,
+        decodeRecords(a, "x", file, &record, 1),
+    );
+    record[5] = 1;
+    try std.testing.expectError(
+        DispatchError.InvalidEndToken,
+        decodeRecords(a, "x", file, &record, 1),
+    );
+    record[5] = 0;
+    record[0] = @intFromEnum(lexer.TokenKind.name);
+    try std.testing.expectError(
+        DispatchError.InvalidEndToken,
+        decodeRecords(a, source, file, &record, 1),
+    );
+    record[0] = @intFromEnum(lexer.TokenKind.eof);
+
+    try std.testing.expectError(
+        DispatchError.InvalidRecordCount,
+        decodeRecords(a, source, file, &record, 0),
+    );
+    try std.testing.expectError(
+        DispatchError.InvalidRecordCount,
+        decodeRecords(a, source, file, &record, -1),
+    );
+    try std.testing.expectError(
+        DispatchError.InvalidRecordCount,
+        decodeRecords(a, source, file, &record, 2),
+    );
+    try std.testing.expectError(
+        DispatchError.InvalidRecordCount,
+        decodeRecords(a, source, file, &record, std.math.maxInt(i64)),
+    );
+
+    record[0] = std.math.maxInt(i64);
+    try std.testing.expectError(
+        DispatchError.InvalidTokenKind,
+        decodeRecords(a, source, file, &record, 1),
+    );
+    record[0] = -1;
+    try std.testing.expectError(
+        DispatchError.InvalidTokenKind,
+        decodeRecords(a, source, file, &record, 1),
+    );
+    record[0] = @intFromEnum(lexer.TokenKind.eof);
+
+    record[1] = -1;
+    try std.testing.expectError(
+        DispatchError.InvalidTokenLocation,
+        decodeRecords(a, source, file, &record, 1),
+    );
+    record[1] = 0;
+    try std.testing.expectError(
+        DispatchError.InvalidTokenLocation,
+        decodeRecords(a, source, file, &record, 1),
+    );
+    record[1] = 1;
+    record[2] = 0;
+    try std.testing.expectError(
+        DispatchError.InvalidTokenLocation,
+        decodeRecords(a, source, file, &record, 1),
+    );
+    record[2] = std.math.maxInt(i64);
+    try std.testing.expectError(
+        DispatchError.InvalidTokenLocation,
+        decodeRecords(a, source, file, &record, 1),
+    );
+    record[2] = 1;
+
+    record[4] = 1;
+    try std.testing.expectError(
+        DispatchError.InvalidSourceSpan,
+        decodeRecords(a, source, file, &record, 1),
+    );
+    record[4] = 0;
+    record[5] = -1;
+    try std.testing.expectError(
+        DispatchError.InvalidSourceSpan,
+        decodeRecords(a, source, file, &record, 1),
+    );
+    record[4] = -1;
+    record[5] = 0;
+    try std.testing.expectError(
+        DispatchError.InvalidSourceSpan,
+        decodeRecords(a, source, file, &record, 1),
+    );
+    record[4] = 0;
+    record[5] = std.math.maxInt(i64);
+    try std.testing.expectError(
+        DispatchError.InvalidSourceSpan,
+        decodeRecords(a, source, file, &record, 1),
+    );
+
+    try std.testing.expectEqual(
+        DispatchError.InvalidRejectionCode,
+        lexErrorFromCode(-105),
+    );
+
+    var premature = [_]i64{
+        @intFromEnum(lexer.TokenKind.eof), 1, 1, 0, 0, 0, 0,
+        @intFromEnum(lexer.TokenKind.eof), 1, 1, 0, 0, 0, 0,
+    };
+    try std.testing.expectError(
+        DispatchError.InvalidEndToken,
+        decodeRecords(a, source, file, &premature, 2),
+    );
+}
+
+test "duo_lexer_dispatch: production route rejects embedded NUL" {
+    const a = std.testing.allocator;
+    const source: []const u8 = "x\x00y";
+    var lex = lexer.Lexer.init(source, "nul.id");
+
+    try std.testing.expectError(
+        DispatchError.EmbeddedNul,
+        route(a, &lex, source, "nul.id"),
+    );
+    try std.testing.expect(!lex.isDuoBacked());
+    try std.testing.expectEqual(@as(?lexer.Loc, null), lex.last_error_loc);
+
+    var file_lex = lexer.Lexer.init("", "bad\x00file.id");
+    try std.testing.expectError(
+        DispatchError.EmbeddedNul,
+        route(a, &file_lex, "", "bad\x00file.id"),
+    );
+    try std.testing.expect(!file_lex.isDuoBacked());
 }
 
 test "duo_lexer_dispatch: Idsem lexer drives a host token stream" {
@@ -328,7 +524,7 @@ test "duo_lexer_dispatch: malformed sources reject instead of aborting" {
 }
 
 test "duo_lexer_dispatch: a rejection carries its line" {
-    try std.testing.expectEqual(@as(u32, 2), errorLine("x = 1\ns = \"bad", "bad.duo"));
+    try std.testing.expectEqual(@as(u32, 2), try errorLine("x = 1\ns = \"bad", "bad.duo"));
 }
 
 // GAP-023: do the shapes those proofs are built from — corpus data held as
