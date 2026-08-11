@@ -113,18 +113,37 @@ fun open_p0_gaps(): any
     gaps
 end
 
+fun exact_capture(cmd: str): any
+    full = cmd
+    out = std.proc.capture(full .. " 2>&1; echo \"duoexit:$?\"")
+    mark = "duoexit:"
+    status = -1
+    clean = out
+    for i = 1, #out do
+        if string.sub(out, i, i + #mark - 1) == mark then
+            rest = string.sub(out, i + #mark, #out)
+            status = std.strconv.parse_int(string.gsub(rest, "%s+", "")) or -1
+            clean = string.sub(out, 1, i - 1)
+            break
+        end
+    end
+    { status = status, passed = status == 0, output = clean }
+end
+
 -- === Build gates ===
 
 fun agent_smoke(timeout: int): any
     smoke_cmd = duobin .. " run scripts/agent_smoke.duo"
-    locked = lockprefix .. smoke_cmd
-    rc = 0
-    if os.getenv("DUO_LOCK_HELD") == "1"
-        rc = std.proc.exec(smoke_cmd)
-    else
-        rc = std.proc.exec(locked)
+    full = smoke_cmd
+    if os.getenv("DUO_LOCK_HELD") ~= "1"
+        full = lockprefix .. smoke_cmd
     end
-    { exit_code = rc, passed = rc == 0, gate = "agent-smoke" }
+    cap = exact_capture(full)
+    revision = string.gsub(std.proc.capture("git rev-parse HEAD 2>/dev/null") or "", "\n", "")
+    dirty = std.proc.capture("git status --short 2>/dev/null") or ""
+    path = os.tmpname()
+    std.fs.write_file(path, cap.output)
+    { gate = "agent-smoke", command = full, inner_command = smoke_cmd, exit_code = cap.status, passed = cap.passed, revision = revision, dirty_snapshot = dirty, lock_acquisition = cap.status ~= 75, artifact = path }
 end
 
 fun build_run(gate: str, timeout: int): any
@@ -137,13 +156,16 @@ fun build_run(gate: str, timeout: int): any
     }
     cmd = gates[gate]
     if cmd == nil then return { error = "unknown gate: " .. gate } end
-    rc = 0
-    if os.getenv("DUO_LOCK_HELD") == "1"
-        rc = std.proc.exec(cmd)
-    else
-        rc = std.proc.exec(lockprefix .. cmd)
+    full = cmd
+    if os.getenv("DUO_LOCK_HELD") ~= "1"
+        full = lockprefix .. cmd
     end
-    { exit_code = rc, passed = rc == 0, gate = gate }
+    cap = exact_capture(full)
+    revision = string.gsub(std.proc.capture("git rev-parse HEAD 2>/dev/null") or "", "\n", "")
+    dirty = std.proc.capture("git status --short 2>/dev/null") or ""
+    path = os.tmpname()
+    std.fs.write_file(path, cap.output)
+    { gate = gate, command = full, inner_command = cmd, exit_code = cap.status, passed = cap.passed, revision = revision, dirty_snapshot = dirty, lock_acquisition = cap.status ~= 75, artifact = path }
 end
 
 -- Benchmark suites. An ALLOWLIST, not string interpolation: `suite`
@@ -159,13 +181,16 @@ fun bench_run(suite: str, timeout: int): any
     }
     cmd = suites[suite]
     if cmd == nil then return { error = "unknown bench suite: " .. suite } end
-    rc = 0
-    if os.getenv("DUO_LOCK_HELD") == "1"
-        rc = std.proc.exec(cmd)
-    else
-        rc = std.proc.exec(lockprefix .. cmd)
+    full = cmd
+    if os.getenv("DUO_LOCK_HELD") ~= "1"
+        full = lockprefix .. cmd
     end
-    { exit_code = rc, passed = rc == 0, suite = suite }
+    cap = exact_capture(full)
+    revision = string.gsub(std.proc.capture("git rev-parse HEAD 2>/dev/null") or "", "\n", "")
+    dirty = std.proc.capture("git status --short 2>/dev/null") or ""
+    path = os.tmpname()
+    std.fs.write_file(path, cap.output)
+    { suite = suite, command = full, inner_command = cmd, exit_code = cap.status, passed = cap.passed, revision = revision, dirty_snapshot = dirty, lock_acquisition = cap.status ~= 75, artifact = path }
 end
 
 -- Run a fixed internal command under the build lock and retain its output and
