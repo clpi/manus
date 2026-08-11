@@ -449,14 +449,12 @@ fn freeScalRecords(alloc: std.mem.Allocator, map: *ScalRecordMap) void {
     map.deinit(alloc);
 }
 
-fn scalRecordDesc(records: *const ScalRecordMap, typ: ast.TypeExpr) ?ScalRecordDesc {
-    if (typ != .named) return null;
-    return records.get(typ.named);
+fn scalRecordDesc(records: *const ScalRecordMap, name: []const u8) ?ScalRecordDesc {
+    return records.get(name);
 }
 
-fn f64RecordDesc(records: *const F64RecordMap, typ: ast.TypeExpr) ?F64RecordDesc {
-    if (typ != .named) return null;
-    return records.get(typ.named);
+fn f64RecordDesc(records: *const F64RecordMap, name: []const u8) ?F64RecordDesc {
+    return records.get(name);
 }
 
 const Condition = enum(u4) {
@@ -1098,8 +1096,8 @@ const Arm64Compiler = struct {
         self.returned = false;
         self.fp_stack_slots.clearRetainingCapacity();
         self.stack_frame_bytes = 0;
-        self.cur_func_ret_record = if (f.ret_record) |rn| scalRecordDesc(self.scal_records, .{ .named = rn }) else null;
-        self.cur_func_ret_f64_record = if (f.ret_record) |rn| f64RecordDesc(self.f64_records, .{ .named = rn }) else null;
+        self.cur_func_ret_record = if (f.ret_record) |rn| scalRecordDesc(self.scal_records, rn) else null;
+        self.cur_func_ret_f64_record = if (f.ret_record) |rn| f64RecordDesc(self.f64_records, rn) else null;
         self.cur_ret_indirect_reg = null;
         self.cur_func_float = f.is_float_kernel;
         self.cur_func_ret_float = f.ret == .f64 and !f.is_float_kernel;
@@ -1150,7 +1148,7 @@ const Arm64Compiler = struct {
                     try self.markFpTemp(slot);
                     dreg += 1;
                 } else if (p.record) |rec_name| {
-                    const rec = f64RecordDesc(self.f64_records, .{ .named = rec_name }) orelse return self.refuse(@src());
+                    const rec = f64RecordDesc(self.f64_records, rec_name) orelse return self.refuse(@src());
                     for (rec.field_names) |fname| {
                         self.used_fp_regs[dreg] = true;
                         const home = if (fp_body_has_call) blk: {
@@ -1191,7 +1189,7 @@ const Arm64Compiler = struct {
             for (f.params) |p| {
                 var slots_for_param: u32 = 1;
                 if (p.record) |rec_name| {
-                    if (scalRecordDesc(self.scal_records, .{ .named = rec_name })) |rec| {
+                    if (scalRecordDesc(self.scal_records, rec_name)) |rec| {
                         slots_for_param = @intCast(rec.field_names.len);
                     }
                 }
@@ -1229,7 +1227,7 @@ const Arm64Compiler = struct {
         for (f.blocks) |b| {
             for (b.instrs) |ins| {
                 if (ins.record.len == 0) continue;
-                if (f64RecordDesc(self.f64_records, .{ .named = ins.record }) != null) has_f64_record = true;
+                if (f64RecordDesc(self.f64_records, ins.record) != null) has_f64_record = true;
             }
         }
         if (!has_f64_record) {
@@ -1241,7 +1239,7 @@ const Arm64Compiler = struct {
                         .init_record, .call_direct, .call_extern => {},
                         else => continue,
                     }
-                    const rec = scalRecordDesc(self.scal_records, .{ .named = ins.record }) orelse continue;
+                    const rec = scalRecordDesc(self.scal_records, ins.record) orelse continue;
                     // A record wider than the argument file is returned
                     // INDIRECTLY, and this reservation is the buffer the callee
                     // writes through — so it has to be made here too, not only
@@ -1548,7 +1546,7 @@ const Arm64Compiler = struct {
             },
             .binop => blk: {
                 if (ins.ty == .f64) {
-                    const ast_op = dnirBinOpToAst(ins.binop);
+                    const comparison = comparisonCondition(ins.binop);
                     // f64 ARITHMETIC outside a float-returning function. The
                     // arm below emits exactly this and is gated on
                     // `cur_func_float`, a per-FUNCTION property — so
@@ -1560,7 +1558,7 @@ const Arm64Compiler = struct {
                     // through evalDnirValueFp, an integer consumer through
                     // evalDnirValue. So an FP result is correct here regardless
                     // of what the function returns.
-                    if (!isComparison(ast_op)) {
+                    if (comparison == null) {
                         const alhs = try self.evalDnirValueFp(temps, ins.lhs);
                         const arhs = try self.evalDnirValueFp(temps, ins.rhs);
                         const adst = try self.allocFpReg();
@@ -1581,7 +1579,7 @@ const Arm64Compiler = struct {
                     const rhs = try self.evalDnirValueFp(temps, ins.rhs);
                     const dst = try self.allocReg();
                     try self.emitFcmpReg(lhs, rhs);
-                    try self.emitCsetFp(dst, conditionForComparison(ast_op));
+                    try self.emitCsetFp(dst, comparison.?);
                     // The sibling comparison arm inside a float kernel already
                     // does this. Both operands are consumed by the `fcmp` and
                     // neither survives into the boolean, so an immediate staged
@@ -1617,24 +1615,25 @@ const Arm64Compiler = struct {
                     // the other side is converted by `evalDnirValueFp` with
                     // `scvtf`, which is what makes `zx*zx + zy*zy < 4.0` — the
                     // shape this arm was written for — still work.
-                    const cmp_op = dnirBinOpToAst(ins.binop);
                     const any_fp = self.valueIsFp(ins.lhs) or self.valueIsFp(ins.rhs);
-                    if (isComparison(cmp_op) and any_fp) {
-                        const clhs = try self.evalDnirValueFp(temps, ins.lhs);
-                        const crhs = try self.evalDnirValueFp(temps, ins.rhs);
-                        const cdst = try self.allocReg();
-                        try self.emitFcmpReg(clhs, crhs);
-                        try self.emitCsetFp(cdst, conditionForComparison(cmp_op));
-                        self.releaseFpReg(clhs);
-                        self.releaseFpReg(crhs);
-                        if (ins.result) |t| try temps.put(self.alloc, t, cdst);
-                        break :blk;
+                    if (comparisonCondition(ins.binop)) |condition| {
+                        if (any_fp) {
+                            const clhs = try self.evalDnirValueFp(temps, ins.lhs);
+                            const crhs = try self.evalDnirValueFp(temps, ins.rhs);
+                            const cdst = try self.allocReg();
+                            try self.emitFcmpReg(clhs, crhs);
+                            try self.emitCsetFp(cdst, condition);
+                            self.releaseFpReg(clhs);
+                            self.releaseFpReg(crhs);
+                            if (ins.result) |t| try temps.put(self.alloc, t, cdst);
+                            break :blk;
+                        }
                     }
                     // An all-integer OPERATION inside a float kernel is an
                     // ordinary integer operation. Nothing about the enclosing
                     // function changes that.
                     //
-                    // This used to say `isComparison(cmp_op)` and let every
+                    // This used to classify comparisons and let every
                     // other integer op fall into the FP arithmetic below, which
                     // is the same confusion one step further along:
                     // `i += 1` on an i64 counter emitted
@@ -1648,7 +1647,7 @@ const Arm64Compiler = struct {
                         const ilhs = try self.evalDnirValue(temps, ins.lhs);
                         const irhs = try self.evalDnirValue(temps, ins.rhs);
                         const idst = try self.allocReg();
-                        try self.emitCompareOrBinop(idst, ilhs, irhs, cmp_op);
+                        try self.emitCompareOrBinop(idst, ilhs, irhs, ins.binop);
                         if (!Arm64Compiler.regIsPinned(pinned, ilhs)) self.releaseReg(ilhs);
                         if (!Arm64Compiler.regIsPinned(pinned, irhs)) self.releaseReg(irhs);
                         if (ins.result) |t| try temps.put(self.alloc, t, idst);
@@ -1672,8 +1671,7 @@ const Arm64Compiler = struct {
                     const lhs = try self.evalDnirValue(temps, ins.lhs);
                     const rhs = try self.evalDnirValue(temps, ins.rhs);
                     const dst = try self.allocReg();
-                    const op: ast.BinOp = dnirBinOpToAst(ins.binop);
-                    try self.emitCompareOrBinop(dst, lhs, rhs, op);
+                    try self.emitCompareOrBinop(dst, lhs, rhs, ins.binop);
                     if (!Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
                     if (!Arm64Compiler.regIsPinned(pinned, rhs)) self.releaseReg(rhs);
                     if (ins.result) |t| try temps.put(self.alloc, t, dst);
@@ -1768,10 +1766,10 @@ const Arm64Compiler = struct {
                     // the caller's buffer through x8, so there is nothing in
                     // x0..x7 to copy out.
                     if (ins.record.len > 0 and indirect == null) {
-                        if (f64RecordDesc(self.f64_records, .{ .named = ins.record })) |frec| {
+                        if (f64RecordDesc(self.f64_records, ins.record)) |frec| {
                             const base = if (ins.field.len > 0) ins.field else "rec";
                             try self.assignF64RecordFromFpAbiRegs(base, frec);
-                        } else if (scalRecordDesc(self.scal_records, .{ .named = ins.record })) |rec| {
+                        } else if (scalRecordDesc(self.scal_records, ins.record)) |rec| {
                             const base = if (ins.field.len > 0) ins.field else "rec";
                             try self.assignRecordFromAbiRegs(base, rec);
                         } else return self.refuse(@src());
@@ -1785,10 +1783,10 @@ const Arm64Compiler = struct {
             },
             .init_record => {
                 if (ins.record.len > 0) {
-                    if (f64RecordDesc(self.f64_records, .{ .named = ins.record })) |frec| {
+                    if (f64RecordDesc(self.f64_records, ins.record)) |frec| {
                         const base = if (ins.field.len > 0) ins.field else "rec";
                         try self.assignF64RecordFromFpAbiRegs(base, frec);
-                    } else if (scalRecordDesc(self.scal_records, .{ .named = ins.record })) |rec| {
+                    } else if (scalRecordDesc(self.scal_records, ins.record)) |rec| {
                         // A wide record never arrived in x0..x7. It is either
                         // the buffer a callee just filled through x8, or a
                         // literal whose fields already live in their own
@@ -1839,7 +1837,7 @@ const Arm64Compiler = struct {
             },
             .ret_record => {
                 if (self.cur_func_ret_f64_record != null or
-                    (ins.record.len > 0 and f64RecordDesc(self.f64_records, .{ .named = ins.record }) != null))
+                    (ins.record.len > 0 and f64RecordDesc(self.f64_records, ins.record) != null))
                 {
                     try self.emitRetF64RecordFromDnir(temps, ins);
                 } else if (self.cur_ret_indirect_reg) |buf| {
@@ -2321,16 +2319,16 @@ const Arm64Compiler = struct {
         self.used_fp_regs[reg] = false;
     }
 
-    fn emitCompareOrBinop(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, op: ast.BinOp) Error!void {
-        if (isComparison(op)) {
-            try self.emitCompareResult(dst, lhs, rhs, conditionForComparison(op));
+    fn emitCompareOrBinop(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, op: dnir.BinOpTag) Error!void {
+        if (comparisonCondition(op)) |condition| {
+            try self.emitCompareResult(dst, lhs, rhs, condition);
             return;
         }
         switch (op) {
             .add => try self.emitAddReg(dst, lhs, rhs),
             .sub => try self.emitSubReg(dst, lhs, rhs),
             .mul => try self.emitMulReg(dst, lhs, rhs),
-            .div, .idiv => try self.emitSdivReg(dst, lhs, rhs),
+            .div => try self.emitSdivReg(dst, lhs, rhs),
             .mod => {
                 const q = try self.allocReg();
                 try self.emitSdivReg(q, lhs, rhs);
@@ -2342,9 +2340,9 @@ const Arm64Compiler = struct {
             .band => try self.emitBitReg(0x8a000000, "and", dst, lhs, rhs),
             .bor => try self.emitBitReg(0xaa000000, "orr", dst, lhs, rhs),
             .bxor => try self.emitBitReg(0xca000000, "eor", dst, lhs, rhs),
-            .lshift => try self.emitBitReg(0x9ac02000, "lsl", dst, lhs, rhs),
-            .rshift => try self.emitBitReg(0x9ac02400, "lsr", dst, lhs, rhs),
-            else => return self.refuse(@src()),
+            .shl => try self.emitBitReg(0x9ac02000, "lsl", dst, lhs, rhs),
+            .shr => try self.emitBitReg(0x9ac02400, "lsr", dst, lhs, rhs),
+            .eq, .neq, .lt, .gt, .leq, .geq => unreachable,
         }
     }
 
@@ -2787,7 +2785,7 @@ const Arm64Compiler = struct {
     /// when the call returns in registers (or returns no record at all).
     fn indirectResultBuffer(self: *Arm64Compiler, ins: dnir.Instr) Error!?u16 {
         if (ins.record.len == 0) return null;
-        const rec = scalRecordDesc(self.scal_records, .{ .named = ins.record }) orelse return null;
+        const rec = scalRecordDesc(self.scal_records, ins.record) orelse return null;
         if (rec.field_names.len <= dnir_lower.max_reg_record_fields) return null;
         const base = if (ins.field.len > 0) ins.field else "rec";
         const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, rec.field_names[0] });
@@ -3136,35 +3134,7 @@ fn returnsVoid(t: ast.TypeExpr) bool {
     };
 }
 
-fn isComparison(op: ast.BinOp) bool {
-    return switch (op) {
-        .eq, .neq, .lt, .gt, .leq, .geq => true,
-        else => false,
-    };
-}
-
-fn dnirBinOpToAst(tag: dnir.BinOpTag) ast.BinOp {
-    return switch (tag) {
-        .add => .add,
-        .sub => .sub,
-        .mul => .mul,
-        .div => .div,
-        .mod => .mod,
-        .eq => .eq,
-        .neq => .neq,
-        .lt => .lt,
-        .gt => .gt,
-        .leq => .leq,
-        .geq => .geq,
-        .band => .band,
-        .bor => .bor,
-        .bxor => .bxor,
-        .shl => .lshift,
-        .shr => .rshift,
-    };
-}
-
-fn conditionForComparison(op: ast.BinOp) Condition {
+fn comparisonCondition(op: dnir.BinOpTag) ?Condition {
     return switch (op) {
         .eq => .eq,
         .neq => .ne,
@@ -3172,7 +3142,7 @@ fn conditionForComparison(op: ast.BinOp) Condition {
         .gt => .gt,
         .leq => .le,
         .geq => .ge,
-        else => unreachable,
+        else => null,
     };
 }
 
@@ -3495,8 +3465,8 @@ fn collectDnirRecordMapsAllocationProbe(alloc: std.mem.Allocator) !void {
     defer freeF64Records(alloc, &floats);
     var scalars = try collectScalRecordsFromDnir(alloc, module);
     defer freeScalRecords(alloc, &scalars);
-    try std.testing.expect(scalars.get("Scalar").?.field_names.ptr == scalar_fields[0..].ptr);
-    try std.testing.expect(floats.get("Float").?.field_names.ptr == float_fields[0..].ptr);
+    try std.testing.expect(scalRecordDesc(&scalars, "Scalar").?.field_names.ptr == scalar_fields[0..].ptr);
+    try std.testing.expect(f64RecordDesc(&floats, "Float").?.field_names.ptr == float_fields[0..].ptr);
 }
 
 test "native backend: DNIR record projections release every failed allocation" {
@@ -6371,6 +6341,49 @@ test "native backend authority-false physical call oracle narrows register saves
     );
     defer alloc.free(object);
     try std.testing.expect(std.mem.indexOf(u8, object, "_id") != null);
+}
+
+test "native backend: every DNIR integer binop selects its exact machine operation" {
+    const Case = struct {
+        op: dnir.BinOpTag,
+        assembly: []const u8,
+    };
+    const cases = [_]Case{
+        .{ .op = .add, .assembly = "\tadd x9, x10, x11\n" },
+        .{ .op = .sub, .assembly = "\tsub x9, x10, x11\n" },
+        .{ .op = .mul, .assembly = "\tmul x9, x10, x11\n" },
+        .{ .op = .div, .assembly = "\tsdiv x9, x10, x11\n" },
+        .{ .op = .mod, .assembly = "\tsdiv x12, x10, x11\n\tmsub x9, x12, x11, x10\n" },
+        .{ .op = .band, .assembly = "\tand x9, x10, x11\n" },
+        .{ .op = .bor, .assembly = "\torr x9, x10, x11\n" },
+        .{ .op = .bxor, .assembly = "\teor x9, x10, x11\n" },
+        .{ .op = .shl, .assembly = "\tlsl x9, x10, x11\n" },
+        .{ .op = .shr, .assembly = "\tlsr x9, x10, x11\n" },
+        .{ .op = .eq, .assembly = "\tcmp x10, x11\n\tcset x9, eq\n" },
+        .{ .op = .neq, .assembly = "\tcmp x10, x11\n\tcset x9, ne\n" },
+        .{ .op = .lt, .assembly = "\tcmp x10, x11\n\tcset x9, lt\n" },
+        .{ .op = .gt, .assembly = "\tcmp x10, x11\n\tcset x9, gt\n" },
+        .{ .op = .leq, .assembly = "\tcmp x10, x11\n\tcset x9, le\n" },
+        .{ .op = .geq, .assembly = "\tcmp x10, x11\n\tcset x9, ge\n" },
+    };
+
+    for (cases) |case| {
+        var diagnostic: Diagnostic = .{};
+        var floats: F64RecordMap = .empty;
+        var scalars: ScalRecordMap = .empty;
+        var compiler: Arm64Compiler = .{
+            .alloc = std.testing.allocator,
+            .diagnostic = &diagnostic,
+            .f64_records = &floats,
+            .scal_records = &scalars,
+        };
+        defer compiler.deinit();
+        compiler.used_regs[9] = true;
+        compiler.used_regs[10] = true;
+        compiler.used_regs[11] = true;
+        try compiler.emitCompareOrBinop(9, 10, 11, case.op);
+        try std.testing.expectEqualStrings(case.assembly, compiler.asm_text.items);
+    }
 }
 
 // The asm listing prints the *intended* mnemonic while the object file carries
