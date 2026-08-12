@@ -897,7 +897,7 @@ fun exponential_evaluate(code: str, file_path: str): any
     if #suggestions > 0
         optimized = "-- @comp exponential-eval: {tostring(#suggestions)} opportunity(s)\\n"
         for _, s in suggestions
-            optimized = "{optimized}-- [L{tostring(s.line)}] {s.construct}: {s.rationale}\\n"
+            optimized = "{optimized}# [L{tostring(s.line)}] {s.construct}: {s.rationale}\n"
         end
         optimized = "{optimized}{code}"
     end
@@ -1252,12 +1252,7 @@ fun gap_open(agent_id: str, kind: str, title: str, detail: str, priority: str, f
     ts = os.date("!%Y-%m-%dT%H:%m:%SZ")
     pr = priority
     if pr == nil or pr == "" then pr = "P1" end
-    body = "# {id} — {title}
-
-**Status:** OPEN · **Filed:** {ts}
-**Priority:** {pr} · **Kind:** {kind}
-**Filed by:** {agent_id}
-"
+    body = "# {id} — {title}\n\n**Status:** OPEN · **Filed:** {ts}\n**Priority:** {pr} · **Kind:** {kind}\n**Filed by:** {agent_id}\n"
     if files ~= nil and files ~= ""
         body = "{body}**Files:** {files}\n"
     end
@@ -1465,10 +1460,10 @@ fun agent_gaps_update(action: str, agent_id: str, gap_id: str, kind: str, title:
         if hpos ~= nil
             content = "{string.sub(content, 1, hpos + string.len(table_marker) - 1)}{entry}{string.sub(content, hpos + string.len(table_marker))}"
         else
-            content = "{content}{entry}\\n"
+            content = "{content}{entry}\n"
         end
     else
-        content = "{content}\\n\\n{marker}\\n\\n{table_marker}{entry}\\n"
+        content = "{content}\n\n{marker}\n\n{table_marker}{entry}\n"
     end
     fs:write_file(coordpath, content)
     "ok: gap {act} {gap_id}"
