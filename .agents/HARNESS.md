@@ -32,7 +32,8 @@ Repository truth (`docs/bootstrap.md`, live claims, gaps, metrics) overrides sta
 details in this template on implementation-state facts.
 
 Generated boot payload: `.agents/HARNESS.md` from `tools/node/dev/generate-harness`.
-Provider files (Cursor rules, Pi skills) add mechanics only — not a second harness law.
+**Blocking contract:** `docs/spec/convergence-contract.md` (STOP conditions, P0 order).
+Provider files add mechanics only — not a second harness law.
 
 ---
 

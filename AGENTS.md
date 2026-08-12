@@ -24,8 +24,8 @@ this order:
    are void; §67 is sole authority. The language is **Idol** only.
 2. `CLAUDE.md` — the operative projection of C0.
 3. `docs/spec/AUTHORITY.md`, `docs/bootstrap.md`, `docs/spec/source.md`,
-   `docs/spec/host.md` (host boundary / shell / capability closure), and the
-   relevant projection in `docs/spec/`.
+   `docs/spec/host.md`, `docs/spec/convergence-contract.md` (blocking execution
+   contract), and the relevant projection in `docs/spec/`.
 4. `.agents/AGENT_CANONICAL.md` and `.agents/AGENT_COORDINATION.md` — routing,
    ownership, and current obligations.
 

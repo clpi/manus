@@ -38,6 +38,7 @@ fn emitGrammarRole(w: *std.Io.Writer) !void {
     try emitBoolTable(w, "POSTFIX", &grammar_roles.rows, "postfix");
     try emitBoolTable(w, "PARAMETER", &grammar_roles.rows, "parameter");
     try emitBoolTable(w, "LITERALKIND", &grammar_roles.rows, "literal_kind");
+    try emitBoolTable(w, "PROJECTION", &grammar_roles.rows, "projection");
     try emitBoolTable(w, "COMPATONLY", &grammar_roles.rows, "compat_only");
     try emitI64Table(w, "PRECEDENCE", &grammar_roles.rows, "precedence");
     try emitI64Table(w, "ASSOC", &grammar_roles.rows, "assoc");

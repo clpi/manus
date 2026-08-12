@@ -4471,7 +4471,7 @@ pub const CodeGen = struct {
         }
         try self.emit_expr(c.func);
         self.p("(", .{});
-        const callee_abi: ParamAbi = if (self.expr_names_foreign_func(c.func)) .foreign else .duo;
+        const callee_abi: ParamAbi = if (self.expr_names_foreign_func(c.func)) .foreign else .native;
         var emitted_args: usize = 0;
         for (c.args, 0..) |arg, i| {
             if (i > 0) self.p(", ", .{});
@@ -8173,20 +8173,20 @@ pub const CodeGen = struct {
     }
 
     fn emit_arg_for_param(self: *CodeGen, arg: *const ast.Expr, param_type: RT, for_call: bool) E!void {
-        try self.emit_arg_for_param_abi(arg, param_type, for_call, .duo);
+        try self.emit_arg_for_param_abi(arg, param_type, for_call, .native);
     }
 
     /// Which calling convention the receiving parameter obeys.
     ///
-    /// `.duo` records may travel by pointer — that is Duo's own convention and
+    /// `.native` records may travel by pointer — that is Idol's own convention and
     /// it is chosen per translation unit. A `.foreign` parameter's convention
     /// is fixed by the C header that declared it: `extern double
     /// distance2(CPoint)` takes the record BY VALUE, and handing it `&p` is not
     /// a style difference, it is a type error clang rejects ("passing 'CPoint *'
-    /// to parameter of incompatible type 'CPoint'"). Applying the Duo record
+    /// to parameter of incompatible type 'CPoint'"). Applying the native record
     /// convention to an imported C function is what made every `@comp.c.import`
     /// program with a record argument unlinkable.
-    const ParamAbi = enum { duo, foreign };
+    const ParamAbi = enum { native, foreign };
 
     fn emit_arg_for_param_abi(
         self: *CodeGen,
@@ -8195,7 +8195,7 @@ pub const CodeGen = struct {
         for_call: bool,
         abi: ParamAbi,
     ) E!void {
-        if (for_call and abi == .duo and self.native_record_param_by_ptr(param_type)) {
+        if (for_call and abi == .native and self.native_record_param_by_ptr(param_type)) {
             if (arg.* == .name and self.expr_is_native_record_ptr_param(arg)) {
                 try self.emit_expr(arg);
                 return;
@@ -16459,7 +16459,7 @@ pub const CodeGen = struct {
                     var name_buf: [256]u8 = undefined;
                     break :blk self.func_bodies.get(self.mangled_name(c.func.name.ident, &name_buf));
                 } else null;
-                const callee_abi: ParamAbi = if (self.expr_names_foreign_func(c.func)) .foreign else .duo;
+                const callee_abi: ParamAbi = if (self.expr_names_foreign_func(c.func)) .foreign else .native;
                 var emitted_args: usize = 0;
                 for (c.args, 0..) |arg, i| {
                     if (i > 0) self.p(", ", .{});
@@ -36099,12 +36099,12 @@ test "codegen: lua_num reads the double slot instead of recursing" {
     defer arena.deinit();
     const alloc = arena.allocator();
     var lex = Lexer.init(
-        \\fun main()
+        \\main(): i64
         \\  print(1)
+        \\  return 0
         \\end
-    , "test.duo");
+    , "test.id");
     var parser = Parser.init(&lex, alloc);
-    parser.idol_mode = true;
     var module = try parser.parse_module();
     var semantic = sema.Sema.init(alloc);
     defer semantic.deinit();
@@ -36144,7 +36144,6 @@ test "codegen: a function-body local outranks a module global of the same name" 
         \\end
     , "shadow");
     var parser = Parser.init(&lex, alloc);
-    parser.idol_mode = true;
     var module = try parser.parse_module();
     var semantic = sema.Sema.init(alloc);
     defer semantic.deinit();

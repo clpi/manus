@@ -1,4 +1,4 @@
-//! Shared Duo module → C symbol prefix (`std.token.classify` → `std_token_classify`).
+//! Shared module path → C symbol prefix (`std.token.classify` → `std_token_classify`).
 const std = @import("std");
 
 pub fn moduleCName(alloc: std.mem.Allocator, path: []const u8) ![]const u8 {

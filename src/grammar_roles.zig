@@ -17,6 +17,7 @@ pub const RoleRow = struct {
     postfix: bool = false,
     parameter: bool = false,
     literal_kind: bool = false,
+    projection: bool = false,
     precedence: i8 = 0,
     assoc: Associativity = .none,
     compat_only: bool = false,

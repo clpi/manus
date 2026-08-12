@@ -47,11 +47,9 @@ newline: bool = (c: str)
 
 scanfiles: i64 = (files: str)
     canonicalid = 0
-    duo = 0
     zig = 0
     snake = 0
     foreign = 0
-    history = 0
     project = 0
     line = ""
     nl = string.char(10)
@@ -65,8 +63,6 @@ scanfiles: i64 = (files: str)
             if line:len() > 0
                 if line:len() >= 4 and line:sub(1, 4) == "ext/"
                     foreign = foreign + 1
-                if line:len() >= 4 and line:sub(line:len() - 3, line:len()) == ".duo"
-                    history = history + 1
                 if line:len() >= 3 and line:sub(line:len() - 2, line:len()) == ".id"
                     canonicalid = canonicalid + 1
                     if badstem(stem(line))
@@ -82,7 +78,6 @@ scanfiles: i64 = (files: str)
 
     print("gates/census (tracked files)")
     print("  canonical.id     {canonicalid}")
-    print("  history.duo      {duo}")
     print("  bootstrap.zig    {zig}")
     print("  project.owned    {project}")
     print("  foreign.paths    {foreign}")

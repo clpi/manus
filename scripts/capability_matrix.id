@@ -306,10 +306,9 @@ main: i64 = ()
     jobs = envor("CAPMATRIX_JOBS", "8")
     limit = envor("CAPMATRIX_TIMEOUT", "10")
 
-    if !std.script.fs_exists(duo)
+    if !duo:exists()
         print("capability_matrix: FAIL — no compiler at {duo}; run `zig build`")
         return 3
-    end
 
     # Stale binaries lie. A matrix measured with yesterday's compiler is a
     # confident report about a build nobody has. This does not run `zig build`
@@ -320,23 +319,18 @@ main: i64 = ()
     # fires for a bare `idol run`, which is exactly when it is needed. It caught
     # a stale binary twice while this file was being written, because another
     # session was editing src/ at the same time.
-    stale = std.script.chomp(std.script.capture(
-        "find src -name \"*.zig\" -newer {duo} 2>/dev/null | head -3"))
+    stale = cap("find src -name \"*.zig\" -newer {duo} 2>/dev/null | head -3")
     if stale != ""
         print("capability_matrix: FAIL — {duo} is older than src/; run `zig build`")
         print("  newer than the binary: {stale}")
         return 3
-    end
 
     tprefix = ""
     for i, cand in {"timeout", "gtimeout"}
-        if tprefix == "" and std.script.chomp(std.script.capture(
-            "command -v {cand} 2>/dev/null")) != ""
+        if tprefix == "" and cap("command -v {cand} 2>/dev/null") != ""
             tprefix = "{cand} {limit} "
-        end
-    end
 
-    std.script.run("rm -rf {work} && mkdir -p {work}")
+    status("rm -rf {work} && mkdir -p {work}")
 
     # compile_fail/ is excluded because DENIED TEXT IS ITS ASSERTION. Those
     # programs exist to be rejected; scoring them here would shrink every rung
