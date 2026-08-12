@@ -1233,7 +1233,7 @@ fun gap_open(agent_id: str, kind: str, title: str, detail: str, priority: str, f
         return json:encode({ allocated = false, error = "no free gap number in 512 tries" })
     end
     id = "GAP-{gappad(n)}"
-    ts = os.date("!%Y-%m-%dT%H:%m:%SZ")
+    ts = clock.utc()
     pr = priority
     if pr == nil or pr == "" then pr = "P1" end
     body = "# {id} — {title}\n\n**Status:** OPEN · **Filed:** {ts}\n**Priority:** {pr} · **Kind:** {kind}\n**Filed by:** {agent_id}\n"
@@ -1318,12 +1318,14 @@ end
 fun claim_live(key: str): bool
     m = claim_meta(key)
     if m == nil then return false end
-    (os.time() - m.at) < claimttl
+    now = clock.now()
+    (now - m.at) < claimttl
 end
 
 fun claim_write(key: str, owner: str, work: str): void
+    now = clock.now()
     fs:write_file("{claimsdir}/{key}/owner",
-        "{owner}\t{to(str)(os.time())}\t{work}\n")
+        "{owner}\t{now:to(str)}\t{work}\n")
 end
 
 # Remove claim directories with shell rm and verify metadata is gone — host remove lied on success.
