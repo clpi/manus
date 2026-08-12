@@ -1,22 +1,22 @@
--- std.io_util — I/O utilities (mirrors Go's io/ioutil)
--- Provides convenience functions for reading all data from files/streams.
+# std.io_util — I/O utilities (mirrors Go's io/ioutil)
+# Provides convenience functions for reading all data from files/streams.
 
-io_mod = require "std.io"
-fs_mod = require "std.fs"
+io_mod = io
+fs_mod = fs
 
--- read_all: read all data from a file handle until EOF.
+# read_all: read all data from a file handle until EOF.
 read_all(fh: any): str
     if fh == nil return "" end
     out = {}
     while true
         chunk = fh:read(4096)
         if chunk == nil break end
-        out[rawlen(out) + 1] = chunk
+        out[out:len() + 1] = chunk
     end
-    table.concat(out)
+    out:concat()
 end
 
--- read_file: read the entire contents of a file path.
+# read_file: read the entire contents of a file path.
 read_file(path: str): str
     if path == nil return "" end
     f = io.open(path, "r")
@@ -26,7 +26,7 @@ read_file(path: str): str
     return data, nil
 end
 
--- write_file: write data to a file path (truncating if it exists).
+# write_file: write data to a file path (truncating if it exists).
 write_file(path: str, data: str): any
     if path == nil return false, "nil path" end
     if data == nil data = "" end
@@ -37,7 +37,7 @@ write_file(path: str, data: str): any
     return true, nil
 end
 
--- append_file: append data to a file path (creating if it doesn't exist).
+# append_file: append data to a file path (creating if it doesn't exist).
 append_file(path: str, data: str): any
     if path == nil return false, "nil path" end
     if data == nil data = "" end
@@ -48,27 +48,27 @@ append_file(path: str, data: str): any
     return true, nil
 end
 
--- read_dir: list directory entries.
+# read_dir: list directory entries.
 read_dir(dir: str): any
     if dir == nil return {} end
     f = io.popen("ls -1 " .. dir .. " 2>/dev/null", "r")
     if f == nil return {} end
     out = {}
     for line in f:lines() do
-        out[rawlen(out) + 1] = line
+        out[out:len() + 1] = line
     end
     f:close()
     out
 end
 
--- temp_file: create a temporary file and return its handle and path.
+# temp_file: create a temporary file and return its handle and path.
 temp_file(): any
-    crypto_rand = req "std.crypto.rand"
+    crypto_rand = rand
     rand_hex = ""
     rand_bytes = crypto_rand.bytes(8)
     i = 1
     while i <= 8
-        rand_hex = rand_hex .. string.format("%02x", rand_bytes:byte(i))
+        rand_hex = rand_hex .. "%02x":format(rand_bytes:byte(i))
         i += 1
     end
     path = "/tmp/duo_" .. to(str)(os.time()) .. "_" .. rand_hex
@@ -76,14 +76,14 @@ temp_file(): any
     return {fh = f, path = path}
 end
 
--- temp_dir: create a temporary directory and return its path.
+# temp_dir: create a temporary directory and return its path.
 temp_dir(): str
-    crypto_rand = req "std.crypto.rand"
+    crypto_rand = rand
     rand_hex = ""
     rand_bytes = crypto_rand.bytes(8)
     i = 1
     while i <= 8
-        rand_hex = rand_hex .. string.format("%02x", rand_bytes:byte(i))
+        rand_hex = rand_hex .. "%02x":format(rand_bytes:byte(i))
         i += 1
     end
     path = "/tmp/duo_dir_" .. to(str)(os.time()) .. "_" .. rand_hex
@@ -91,7 +91,7 @@ temp_dir(): str
     path
 end
 
--- discard: a writer that discards all data (returns count written).
+# discard: a writer that discards all data (returns count written).
 discard(): any
     return {n = 0, write = (self: any, s: str): any
         self.n = self.n + #s
@@ -99,7 +99,7 @@ discard(): any
     end}
 end
 
--- nopCloser: wrap a reader so it has a no-op close method.
+# nopCloser: wrap a reader so it has a no-op close method.
 nop_closer(fh: any): any
     fh.close = (self: any) nil
     fh

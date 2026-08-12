@@ -1,5 +1,5 @@
--- Exponential ceiling: stacked @comp.* metaprogramming (concept sweep + migration + derive)
--- Run: duo run examples/exponential_ceiling_showcase.id
+# Exponential ceiling: stacked @comp.* metaprogramming (concept sweep + migration + derive)
+# Run: duo run examples/exponential_ceiling_showcase.id
 
 concept HasXY
     x: f64
@@ -26,7 +26,7 @@ registry_line(meta): str
     meta.name .. ";"
 end
 
--- One @comp.expand line → O(types × fields) C for every concept match
+# One @comp.expand line → O(types × fields) C for every concept match
 @c.emit(@comp.expand("HasXY", TouchApi))
 
 TYPED_SWEEP = @comp.map("HasXY", registry_line)

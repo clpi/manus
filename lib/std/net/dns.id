@@ -1,4 +1,4 @@
-net = req("std.net")
+net = net
 A = 1
 NS = 2
 CNAME = 5
@@ -67,7 +67,7 @@ name_encode(name: str): any
   pos = 1
   len = #name
   while pos <= len
-    dot_pos = string.find(name, ".", pos, true)
+    dot_pos = name:find(".", pos, true)
     if dot_pos == nil
       dot_pos = len + 1
     end
@@ -107,14 +107,14 @@ name_decode(data: any, pos: i64): any
       label = ""
       i = 0
       while i < len
-        label = label .. string.char(data[pos + i])
+        label = label .. data[pos + i]:char()
         i = i + 1
       end
       parts[#parts + 1] = label
       pos = pos + len
     end
   end
-  name = table.concat(parts, ".")
+  name = parts:concat(".")
   next_pos = jumped and original_pos or pos
   {
     name = name,
@@ -122,7 +122,7 @@ name_decode(data: any, pos: i64): any
   }
 end
 query_new(name: str, qtype: i64): any
-  crypto_rand = req("std.crypto.rand")
+  crypto_rand = rand
   id_bytes = crypto_rand.bytes(2)
   query_id = id_bytes:byte(1) << 8 | id_bytes:byte(2)
   {
@@ -172,10 +172,10 @@ record_decode(data: any, pos: i64): any
     while i < 16
       hi = data[pos + i]
       lo = data[pos + i + 1]
-      parts[#parts + 1] = string.format("%02x%02x", hi, lo)
+      parts[#parts + 1] = "%02x%02x":format(hi, lo)
       i = i + 2
     end
-    rdata = table.concat(parts, ":")
+    rdata = parts:concat(":")
   elseif rtype == CNAME or rtype == NS or rtype == PTR
     cname = name_decode(data, pos)
     rdata = cname.name
@@ -191,7 +191,7 @@ record_decode(data: any, pos: i64): any
     txt = ""
     i = 1
     while i <= txt_len
-      txt = txt .. string.char(data[pos + i])
+      txt = txt .. data[pos + i]:char()
       i = i + 1
     end
     rdata = txt
@@ -419,5 +419,5 @@ type_from_name(name: str): i64
     PTR = PTR,
     ANY = ANY
   }
-  types[string.upper(name)] or 0
+  types[name:upper()] or 0
 end

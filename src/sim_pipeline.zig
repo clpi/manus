@@ -67,7 +67,7 @@ test "sim_pipeline: exportInterchangeSnapshot applies abi.specialize" {
         \\distance2(p: Point): f64
         \\    p.x * p.x + p.y * p.y
         \\end
-    , "point.duo");
+    , "point.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -76,7 +76,7 @@ test "sim_pipeline: exportInterchangeSnapshot applies abi.specialize" {
     semantic.duo_mode = true;
     try semantic.check_module(&mod);
 
-    var snap = try exportInterchangeSnapshot(alloc, &mod, "point.duo");
+    var snap = try exportInterchangeSnapshot(alloc, &mod, "point.id");
     defer snap.deinit(alloc);
 
     for (snap.entities) |ent| {
@@ -101,7 +101,7 @@ test "sim_pipeline: graph enrichment attaches shape_id to Point" {
         \\    p.x * p.x + p.y * p.y
         \\end
     ;
-    var lex = Lexer.init(src, "point.duo");
+    var lex = Lexer.init(src, "point.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -112,11 +112,11 @@ test "sim_pipeline: graph enrichment attaches shape_id to Point" {
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCalls(&mod, "point.duo");
+    _ = try graph.liftModuleWithCalls(&mod, "point.id");
 
-    var snap_plain = try exportInterchangeSnapshot(alloc, &mod, "point.duo");
+    var snap_plain = try exportInterchangeSnapshot(alloc, &mod, "point.id");
     defer snap_plain.deinit(alloc);
-    var snap_graph = try exportInterchangeWithGraph(alloc, &mod, "point.duo", &graph);
+    var snap_graph = try exportInterchangeWithGraph(alloc, &mod, "point.id", &graph);
     defer snap_graph.deinit(alloc);
 
     const graph_node = graph.findTableShape("Point") orelse return error.TestExpectedEqual;

@@ -1,6 +1,6 @@
-# Idsem language server
+# Idol language server
 
-This directory contains the Language Server Protocol projection for Idsem.
+This directory contains the Language Server Protocol projection for Idol.
 Start at [`../../AGENTS.md`](../../AGENTS.md); the sole semantic law is
 [`../../docs/spec/constitution.md`](../../docs/spec/constitution.md), and the
 current executed compiler frontier is

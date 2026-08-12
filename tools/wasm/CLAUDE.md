@@ -1,4 +1,4 @@
-# Idsem WebAssembly implementation projection
+# Idol WebAssembly implementation projection
 
 Start at [`../../AGENTS.md`](../../AGENTS.md). It routes to the sole language
 law, the stable agent router, the executed compiler frontier, live ownership,
@@ -13,7 +13,7 @@ and stack machinery, standard-root dependencies, and runtime fallback. Those
 are SOURCE-ZERO and convergence debt. The sections below state the shared-graph
 admission target, not ownership already achieved by the live engine.
 
-WebAssembly enters Idsem as an exact foreign lawset. Decode and import produce
+WebAssembly enters Idol as an exact foreign lawset. Decode and import produce
 graph identities and facts carrying foreign origin, module identity, operation
 semantics, descriptors, ABI, ownership, effects, failures, worlds, trust, and
 provenance. Demand selects the needed work; realization selects interpreter,
@@ -59,7 +59,7 @@ mapping to native facts is witnessed.
 
 Canonical project-owned implementation uses `.id`. Existing project-owned
 `.id` sources in this directory are SOURCE-ZERO debt and behavioral evidence,
-not Idsem idiom sources. For each retained behavior, identify the relation,
+not Idol idiom sources. For each retained behavior, identify the relation,
 subject, foreign law, worlds, effects, outcome, demand, and realization;
 migrate it semantically into `.id`, prove it, and delete the old source. Delete
 obsolete or duplicate implementations rather than archive them in-tree.
@@ -67,11 +67,11 @@ obsolete or duplicate implementations rather than archive them in-tree.
 Compiler-forced monoliths, manual opcode ladders, sentinel outcomes, silent
 fallback, foreign-call wrappers, and implementation-qualified APIs are debt,
 not patterns. Record a removal gap when compiler capability blocks the canonical
-form. Do not add a host-language subsystem to improve a boundary Idsem must own.
+form. Do not add a host-language subsystem to improve a boundary Idol must own.
 
 Physical tool, environment, or artifact names containing `duo` are bootstrap
 aliases and deletion targets only. Foreign `.wasm` and `.wat` files are test or
-interchange inputs, not canonical Idsem source.
+interchange inputs, not canonical Idol source.
 
 ## Evidence
 

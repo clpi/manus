@@ -1,4 +1,4 @@
--- Concept introspection: query required members at compile time
+# Concept introspection: query required members at compile time
 
 concept Hashable
     hash(self): i64

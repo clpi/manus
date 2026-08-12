@@ -1,10 +1,10 @@
--- std.graphics.audio — Audio playback and spatial audio
--- For sound effects and music in ward's runtime.
--- Supports WAV file loading (PCM format) and procedural waveform generation.
+# std.graphics.audio — Audio playback and spatial audio
+# For sound effects and music in ward's runtime.
+# Supports WAV file loading (PCM format) and procedural waveform generation.
 
--- ═══════════════════════════════════════════════════════════════
--- Audio Config
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Audio Config
+# ═══════════════════════════════════════════════════════════════
 
 config_new(): any
     {
@@ -15,9 +15,9 @@ config_new(): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Audio Buffer
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Audio Buffer
+# ═══════════════════════════════════════════════════════════════
 
 buffer_new(config: any): any
     {
@@ -33,24 +33,24 @@ buffer_load(buffer: any, path: str): any
         return {ok = false, error = "Cannot open file: " .. path}
     end
 
-    -- Read RIFF header
+    # Read RIFF header
     riff = std.io.read(f, 4)
     if riff != "RIFF"
         std.io.close(f)
         return {ok = false, error = "Not a WAV file (missing RIFF header)"}
     end
 
-    -- File size (skip)
+    # File size (skip)
     std.io.read(f, 4)
 
-    -- WAVE marker
+    # WAVE marker
     wave = std.io.read(f, 4)
     if wave != "WAVE"
         std.io.close(f)
         return {ok = false, error = "Not a WAV file (missing WAVE marker)"}
     end
 
-    -- Parse chunks
+    # Parse chunks
     sample_rate = 44100
     channels = 1
     bits_per_sample = 16
@@ -58,46 +58,46 @@ buffer_load(buffer: any, path: str): any
 
     while true
         chunk_id = std.io.read(f, 4)
-        if chunk_id == nil or std.string.len(chunk_id) < 4 break end
+        if chunk_id == nil or chunk_id:len() < 4 break end
 
-        -- Read chunk size (little-endian u32)
+        # Read chunk size (little-endian u32)
         size_bytes = std.io.read(f, 4)
-        if size_bytes == nil or std.string.len(size_bytes) < 4 break end
+        if size_bytes == nil or size_bytes:len() < 4 break end
         chunk_size = 0
         i = 1
         while i <= 4
-            chunk_size = chunk_size + std.string.byte(size_bytes, i) * (256 ^ (i - 1))
+            chunk_size = chunk_size + size_bytes:byte(i) * (256 ^ (i - 1))
             i += 1
         end
 
         if chunk_id == "fmt "
-            -- Format chunk
+            # Format chunk
             fmt_data = std.io.read(f, chunk_size)
-            if fmt_data and std.string.len(fmt_data) >= 16
-                audio_format = std.string.byte(fmt_data, 1) + std.string.byte(fmt_data, 2) * 256
-                channels = std.string.byte(fmt_data, 3) + std.string.byte(fmt_data, 4) * 256
-                sample_rate = std.string.byte(fmt_data, 5) + std.string.byte(fmt_data, 6) * 256 +
-                    std.string.byte(fmt_data, 7) * 65536 + std.string.byte(fmt_data, 8) * 16777216
-                bits_per_sample = std.string.byte(fmt_data, 15) + std.string.byte(fmt_data, 16) * 256
+            if fmt_data and fmt_data:len() >= 16
+                audio_format = fmt_data:byte(1) + fmt_data:byte(2) * 256
+                channels = fmt_data:byte(3) + fmt_data:byte(4) * 256
+                sample_rate = fmt_data:byte(5) + fmt_data:byte(6) * 256 +
+                    fmt_data:byte(7) * 65536 + fmt_data:byte(8) * 16777216
+                bits_per_sample = fmt_data:byte(15) + fmt_data:byte(16) * 256
             end
         elseif chunk_id == "data"
-            -- Data chunk — read raw PCM samples
+            # Data chunk — read raw PCM samples
             raw = std.io.read(f, chunk_size)
             if raw
                 samples = {}
-                bytes_per_sample = math.floor(bits_per_sample / 8)
-                num_samples = math.floor(std.string.len(raw) / bytes_per_sample)
+                bytes_per_sample = bits_per_sample / 8:floor()
+                num_samples = raw:len() / bytes_per_sample:floor()
                 i = 1
                 while i <= num_samples
-                    -- Read little-endian sample (16-bit signed)
+                    # Read little-endian sample (16-bit signed)
                     if bits_per_sample == 16
-                        lo = std.string.byte(raw, i * 2 - 1) or 0
-                        hi = std.string.byte(raw, i * 2) or 0
+                        lo = raw:byte(i * 2 - 1) or 0
+                        hi = raw:byte(i * 2) or 0
                         val = lo + hi * 256
                         if val >= 32768 val = val - 65536 end
                         samples[i] = val / 32768.0
                     elseif bits_per_sample == 8
-                        val = std.string.byte(raw, i) or 128
+                        val = raw:byte(i) or 128
                         samples[i] = (val - 128) / 128.0
                     else
                         samples[i] = 0
@@ -107,7 +107,7 @@ buffer_load(buffer: any, path: str): any
                 data = samples
             end
         else
-            -- Skip unknown chunk
+            # Skip unknown chunk
             std.io.read(f, chunk_size)
         end
     end
@@ -129,9 +129,9 @@ buffer_get_duration(buffer: any): f64
     buffer.duration
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Audio Source
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Audio Source
+# ═══════════════════════════════════════════════════════════════
 
 source_new(buffer: any): any
     {
@@ -167,11 +167,11 @@ source_stop(source: any): void
 end
 
 source_set_volume(source: any, volume: f64): void
-    source.volume = math.max(0, math.min(1, volume))
+    source.volume = 0:max(1:min(volume))
 end
 
 source_set_pitch(source: any, pitch: f64): void
-    source.pitch = math.max(0.5, math.min(2, pitch))
+    source.pitch = 0.5:max(2:min(pitch))
 end
 
 source_set_loop(source: any, loop: bool): void
@@ -186,9 +186,9 @@ source_set_spatial(source: any, spatial: bool): void
     source.spatial = spatial
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Audio Listener
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Audio Listener
+# ═══════════════════════════════════════════════════════════════
 
 listener_new(): any
     {
@@ -210,12 +210,12 @@ listener_set_orientation(listener: any, direction: any, up: any): void
 end
 
 listener_set_gain(listener: any, gain: f64): void
-    listener.gain = math.max(0, math.min(1, gain))
+    listener.gain = 0:max(1:min(gain))
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Audio System
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Audio System
+# ═══════════════════════════════════════════════════════════════
 
 system_new(config: any): any
     {
@@ -237,7 +237,7 @@ system_destroy_source(system: any, source: any): void
     i = 1
     while i <= #system.sources
         if system.sources[i] == source
-            table.remove(system.sources, i)
+            system.sources:remove(i)
             return
         end
         i += 1
@@ -245,16 +245,16 @@ system_destroy_source(system: any, source: any): void
 end
 
 system_set_master_volume(system: any, volume: f64): void
-    system.master_volume = math.max(0, math.min(1, volume))
+    system.master_volume = 0:max(1:min(volume))
 end
 
 system_set_mute(system: any, muted: bool): void
     system.muted = muted
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Audio Mixing
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Audio Mixing
+# ═══════════════════════════════════════════════════════════════
 
 audio_mix_sources(sources: any, master_volume: f64, muted: bool): any
     if muted return {} end
@@ -262,7 +262,7 @@ audio_mix_sources(sources: any, master_volume: f64, muted: bool): any
     mixed = {}
     max_samples = 0
     
-    -- Find the longest source
+    # Find the longest source
     for source in sources
         if source.playing and source.buffer
             len = #source.buffer.data
@@ -272,24 +272,24 @@ audio_mix_sources(sources: any, master_volume: f64, muted: bool): any
     
     if max_samples == 0 return {} end
     
-    -- Initialize output buffer
+    # Initialize output buffer
     i = 1
     while i <= max_samples
         mixed[i] = 0
         i += 1
     end
     
-    -- Mix all playing sources
+    # Mix all playing sources
     for source in sources
         if source.playing and source.buffer
             vol = (source.current_volume or source.volume) * master_volume
             pitch = source.pitch or 1.0
             
-            -- Mix samples with volume and pitch adjustment
+            # Mix samples with volume and pitch adjustment
             i = 1
             while i <= max_samples
-                -- Get sample index with pitch adjustment
-                sample_idx = math.floor((i - 1) * pitch) + 1
+                # Get sample index with pitch adjustment
+                sample_idx = (i - 1) * pitch:floor() + 1
                 if sample_idx <= #source.buffer.data
                     sample = source.buffer.data[sample_idx]
                     mixed[i] = mixed[i] + sample * vol
@@ -299,7 +299,7 @@ audio_mix_sources(sources: any, master_volume: f64, muted: bool): any
         end
     end
     
-    -- Clamp output to [-1, 1]
+    # Clamp output to [-1, 1]
     i = 1
     while i <= max_samples
         if mixed[i] > 1 mixed[i] = 1 end
@@ -311,33 +311,33 @@ audio_mix_sources(sources: any, master_volume: f64, muted: bool): any
 end
 
 system_update(system: any, delta_time: f64): void
-    -- Process audio sources and apply spatial effects
+    # Process audio sources and apply spatial effects
     for source in system.sources
         if source.playing and not source.paused
-            -- Update playback position
+            # Update playback position
             source.position = source.position + delta_time
             
-            -- Apply volume falloff based on distance (if spatial)
+            # Apply volume falloff based on distance (if spatial)
             if source.spatial and source.listener
                 dx = source.x - source.listener.x
                 dy = source.y - source.listener.y
                 dz = source.z - source.listener.z
-                distance = math.sqrt(dx * dx + dy * dy + dz * dz)
+                distance = dx * dx + dy * dy + dz * dz:sqrt()
                 
-                -- Simple inverse distance falloff
+                # Simple inverse distance falloff
                 if distance > 1
                     source.current_volume = source.volume / distance
                 else
                     source.current_volume = source.volume
                 end
                 
-                -- Apply Doppler effect (simplified)
+                # Apply Doppler effect (simplified)
                 relative_velocity = (source.vx or 0) * dx + (source.vy or 0) * dy + (source.vz or 0) * dz
-                doppler_factor = 1.0 - relative_velocity / 343.0  -- Speed of sound
+                doppler_factor = 1.0 - relative_velocity / 343.0  # Speed of sound
                 source.pitch = source.base_pitch * doppler_factor
             end
             
-            -- Check if source has finished playing
+            # Check if source has finished playing
             if source.duration > 0 and source.position >= source.duration
                 if source.loop
                     source.position = 0
@@ -348,21 +348,21 @@ system_update(system: any, delta_time: f64): void
         end
     end
     
-    -- Update mixer output
+    # Update mixer output
     system.output = audio_mix_sources(system.sources, system.master_volume, system.muted)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Sound Generation
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Sound Generation
+# ═══════════════════════════════════════════════════════════════
 
 generate_sine(frequency: f64, duration: f64, sample_rate: i64): any
     samples = {}
-    num_samples = math.floor(duration * sample_rate)
+    num_samples = duration * sample_rate:floor()
     i = 1
     while i <= num_samples
         t = (i - 1) / sample_rate
-        samples[i] = math.sin(2 * math.pi * frequency * t)
+        samples[i] = 2 * math.pi * frequency * t:sin()
         i += 1
     end
     {
@@ -374,7 +374,7 @@ end
 
 generate_square(frequency: f64, duration: f64, sample_rate: i64): any
     samples = {}
-    num_samples = math.floor(duration * sample_rate)
+    num_samples = duration * sample_rate:floor()
     i = 1
     while i <= num_samples
         t = (i - 1) / sample_rate
@@ -395,7 +395,7 @@ end
 
 generate_noise(duration: f64, sample_rate: i64): any
     samples = {}
-    num_samples = math.floor(duration * sample_rate)
+    num_samples = duration * sample_rate:floor()
     i = 1
     while i <= num_samples
         samples[i] = math.random() * 2 - 1
@@ -408,13 +408,13 @@ generate_noise(duration: f64, sample_rate: i64): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
--- Config
--- Buffer
--- Source
--- Listener
--- System
--- Generation
+# Config
+# Buffer
+# Source
+# Listener
+# System
+# Generation

@@ -15,7 +15,7 @@ const c_sim_import = @import("c_sim_import.zig");
 const foreign_adapter = @import("foreign_adapter.zig");
 const abi_specialize = @import("abi_specialize.zig");
 const tail_result_demand = @import("tail_result_demand.zig");
-const pass26_wiring = @import("pass26_wiring.zig");
+const wiring = @import("wiring.zig");
 
 const callable_brace_error = "c0 §43 law.brace: braced application requires a descriptor subject; this subject resolved in callable space, not descriptor space, and ordinary callable application uses parentheses";
 
@@ -448,7 +448,7 @@ pub const Sema = struct {
     next_closure_id: u32 = 0,
     /// When true, module scope starts with implicit `global *` (plain .lua files).
     lua55_mode: bool = false,
-    /// When true, variables are local by default ( .duo files).
+    /// When true, variables are local by default ( .id files).
     duo_mode: bool = false,
     /// When type-checking a named top-level function body, its Duo name (for table field keys).
     current_func_name: ?[]const u8 = null,
@@ -976,6 +976,11 @@ pub const Sema = struct {
         // legitimately call `has(.err)(r)`. Listed here rather than added to the
         // catalog so a catalog-count gate is not silently moved.
         if (std.mem.eql(u8, name, "has")) return true;
+        // Path-boundary proof helpers: `audit(path)(pattern)` and `hit(path)(pattern)`
+        // curry like `len(path)(min)` and `to(micron)(inch)`. Without admission the
+        // undeclared-call guard rejects the second application on string paths.
+        if (std.mem.eql(u8, name, "audit")) return true;
+        if (std.mem.eql(u8, name, "hit")) return true;
         // `__`-prefixed names are compiler intrinsics (__native_load_u8,
         // __sizeof, __typeof, the __comptime* family). They are recognised in
         // the call handler by name, never declared in scope, so the undeclared
@@ -1160,7 +1165,7 @@ pub const Sema = struct {
             return try self.mem_pointer_to(.u8);
         }
         if (std.mem.eql(u8, fname, "cast") or std.mem.eql(u8, fname, "ptr_cast") or
-            std.mem.eql(u8, fname, "ptr_from_addr"))
+            std.mem.eql(u8, fname, "ptr_from_addr") or std.mem.eql(u8, fname, "ptrfromaddr"))
         {
             const pointee = try self.mem_type_arg(args, 0) orelse return try self.mem_pointer_to(.void);
             return try self.mem_pointer_to(pointee);
@@ -1185,12 +1190,12 @@ pub const Sema = struct {
         if (std.mem.eql(u8, fname, "read_f32") or std.mem.eql(u8, fname, "read_f64") or
             std.mem.eql(u8, fname, "bytes_to_f32") or std.mem.eql(u8, fname, "bytes_to_f64"))
             return .f64;
-        if (std.mem.eql(u8, fname, "write_byte") or std.mem.eql(u8, fname, "write_i8") or
+        if (std.mem.eql(u8, fname, "write_byte") or std.mem.eql(u8, fname, "writebyte") or std.mem.eql(u8, fname, "write_i8") or
             std.mem.eql(u8, fname, "write_u8") or std.mem.eql(u8, fname, "write_i16") or
             std.mem.eql(u8, fname, "write_u16") or std.mem.eql(u8, fname, "write_i32") or
-            std.mem.eql(u8, fname, "write_u32") or std.mem.eql(u8, fname, "write_i64") or
+            std.mem.eql(u8, fname, "write_u32") or std.mem.eql(u8, fname, "write_i64") or std.mem.eql(u8, fname, "writei64") or
             std.mem.eql(u8, fname, "write_u64") or std.mem.eql(u8, fname, "write_f32") or
-            std.mem.eql(u8, fname, "write_f64"))
+            std.mem.eql(u8, fname, "write_f64") or std.mem.eql(u8, fname, "writef64"))
             return .void;
         if (std.mem.eql(u8, fname, "dup")) return try self.mem_pointer_to(.u8);
         if (std.mem.eql(u8, fname, "compare")) return .i64;
@@ -1291,7 +1296,7 @@ pub const Sema = struct {
             self.mem_validate_pointer_arg(fname, args, 1);
             return;
         }
-        if (std.mem.eql(u8, fname, "ptr_from_addr")) {
+        if (std.mem.eql(u8, fname, "ptr_from_addr") or std.mem.eql(u8, fname, "ptrfromaddr")) {
             _ = self.mem_arg_count_ok(loc, fname, args.len, 2, 2);
             try self.mem_validate_type_arg(fname, args, 0);
             self.mem_validate_numeric_arg(fname, args, 1);
@@ -1350,12 +1355,12 @@ pub const Sema = struct {
             self.mem_validate_numeric_arg(fname, args, 1);
             return;
         }
-        if (std.mem.eql(u8, fname, "write_byte") or std.mem.eql(u8, fname, "write_i8") or
+        if (std.mem.eql(u8, fname, "write_byte") or std.mem.eql(u8, fname, "writebyte") or std.mem.eql(u8, fname, "write_i8") or
             std.mem.eql(u8, fname, "write_u8") or std.mem.eql(u8, fname, "write_i16") or
             std.mem.eql(u8, fname, "write_u16") or std.mem.eql(u8, fname, "write_i32") or
-            std.mem.eql(u8, fname, "write_u32") or std.mem.eql(u8, fname, "write_i64") or
+            std.mem.eql(u8, fname, "write_u32") or std.mem.eql(u8, fname, "write_i64") or std.mem.eql(u8, fname, "writei64") or
             std.mem.eql(u8, fname, "write_u64") or std.mem.eql(u8, fname, "write_f32") or
-            std.mem.eql(u8, fname, "write_f64"))
+            std.mem.eql(u8, fname, "write_f64") or std.mem.eql(u8, fname, "writef64"))
         {
             _ = self.mem_arg_count_ok(loc, fname, args.len, 3, 3);
             self.mem_validate_pointer_arg(fname, args, 0);
@@ -2011,7 +2016,7 @@ pub const Sema = struct {
     /// stays checked inside the body (`current_ret` below keeps it).
     ///
     /// Identity for every contract without a failure alternative — which is
-    /// all 748 tracked `.duo` files, since `ret_fallible` is set only by a
+    /// all 748 tracked `.id` files, since `ret_fallible` is set only by a
     /// `| alt` in return position and that alternative used to be discarded.
     fn contract_ret_expr(fb: *const ast.FuncBody) ast.TypeExpr {
         return if (fb.ret_fallible) .inferred else fb.ret_type;
@@ -3383,8 +3388,8 @@ pub const Sema = struct {
     /// RETRIEVES. Neither is a binary operator over values. `3f6ec4e` gave the
     /// GLUED spelling to the anchor — `at_is_glued_anchor` in `src/parser.zig`
     /// reads `p@x` as a SUFFIX beside `.field` and `[i]`, agreeing with
-    /// `lib/std/compiler/parser.duo`, pinned by value at 353 in
-    /// `examples/spec100/anchormove.duo`.
+    /// `lib/std/compiler/parser.id`, pinned by value at 353 in
+    /// `examples/spec100/anchormove.id`.
     ///
     /// `infix_prec` still maps the `@` token to `.matmul`, so the SPACED
     /// spelling kept everything the glued one shed:
@@ -3398,7 +3403,7 @@ pub const Sema = struct {
     /// the defect, and adjacency narrowed it rather than removing it. The
     /// tensor product is NOT the defect: `Tensor[M,K] @ Tensor[K,N]` is a real,
     /// shape-checked operation with real fixtures
-    /// (`examples/compile_fail/tensor_matmul_k_mismatch.duo`), and it is the
+    /// (`examples/compile_fail/tensor_matmul_k_mismatch.id`), and it is the
     /// only spelling that operation has today.
     ///
     /// So the verdict is a TYPE question, not a lexical one, which is why it
@@ -3424,10 +3429,10 @@ pub const Sema = struct {
             self.warn_msg(loc, "warning: infix '@' matmul is non-canonical; prefer explicit tensor APIs or typed helpers", .{});
             return true;
         }
-        self.err(loc, "infix '@' has no meaning in .duo: it parsed as the matmul operator over non-tensor operands", .{});
+        self.err(loc, "infix '@' has no meaning in .id: it parsed as the matmul operator over non-tensor operands", .{});
         // Unconditional, not `hint_msg`: `hints_enabled` is off under
         // `duo check`, and a refusal with no repair makes the corpus
-        // unmigratable — the rule `scripts/run_compile_fail_tests.duo` states
+        // unmigratable — the rule `scripts/run_compile_fail_tests.id` states
         // over its own rows. The `.@name` refusal hints the same way.
         term.locHint(loc, "the anchor is the GLUED form: close the space and 'X @ rel' becomes 'X@rel', which moves the anchor and retrieves. A spaced '@' is the matmul operator, and that needs both operands to be Tensor[..]", .{});
         return false;
@@ -4081,14 +4086,14 @@ pub const Sema = struct {
 
         // Pass 2: infer native signatures for scalar functions that are plain
         // enough to stay off the dynamic Lua path. This covers both untyped Lua
-        // functions and .duo functions with typed params but inferred returns.
+        // functions and .id functions with typed params but inferred returns.
         if (!fb.is_typed and !func_body_has_func_expr(fb)) {
             const self_name: ?[]const u8 = if (fd.path.len == 1 and !fd.method) fd.path[0] else null;
             const method_receiver: ?[]const u8 = if (fd.method and fd.path.len >= 2) fd.path[0] else null;
             try detect_dense_table(fb, self.alloc);
             self.try_specialize_native_func(fb, self_name, method_receiver) catch {};
         } else if (fb.is_typed) {
-            // For typed .duo functions, still run dense table detection
+            // For typed .id functions, still run dense table detection
             // to enable native int64_t array lowering for table-as-array patterns.
             try detect_dense_table(fb, self.alloc);
         }
@@ -5437,7 +5442,7 @@ pub const Sema = struct {
             // VISIT every index. The guard below rejects a statement this walk
             // cannot model — but the increment is an `.assign` like any other,
             // matches none of the three recognizers, and was therefore skipped
-            // in silence. So `i = i + 7` looked identical to `i = i + 1`.
+            // in silence. So `i += 7` looked identical to `i += 1`.
             //
             // Measured: `xs[i] = i` stepping by 7, summed over 1..n with n=10,
             // fills only xs[1] and xs[8] and must answer 9. This detector
@@ -5709,7 +5714,7 @@ pub const Sema = struct {
         return idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname);
     }
 
-    /// True for `i = i + 1` / `i = 1 + i` where `i` is the loop index — the ONLY
+    /// True for `i += 1` / `i = 1 + i` where `i` is the loop index — the ONLY
     /// step under which a whole-range closed form is sound. Any other step, and
     /// any step this cannot read, must decline: a fill that visits every 7th
     /// slot summed against a closed form for every slot is a wrong answer.
@@ -6061,7 +6066,7 @@ pub const Sema = struct {
     // matched the loop's SHAPE and never its CONSTANTS, so an ordinary program
     // with the same shape and different numbers silently received the
     // benchmark's answer instead of its own. Measured with matched
-    // single-constant edits to scratch copies of examples/benchmark.duo and
+    // single-constant edits to scratch copies of examples/benchmark.id and
     // examples/benchmark_c.c (the C is the oracle):
     //
     //   (i*31)%256    -> *37       Duo 127500000       C 127499680
@@ -6156,7 +6161,7 @@ pub const Sema = struct {
         return std.mem.eql(u8, st.name, name) and kx_num(st.value, v);
     }
 
-    /// `name = name + v` — the counter step of a while-as-for loop.
+    /// `name += v` — the counter step of a while-as-for loop.
     fn kx_step(s: *const ast.Stmt, name: []const u8, v: i64) bool {
         const st = kx_set(s) orelse return false;
         if (!std.mem.eql(u8, st.name, name)) return false;
@@ -6213,7 +6218,7 @@ pub const Sema = struct {
         return kx_name(band.rhs.unop.operand, name);
     }
 
-    /// `acc = acc + <rhs>` — returns the addend on success.
+    /// `acc += <rhs>` — returns the addend on success.
     fn kx_accum(s: *const ast.Stmt, acc: []const u8) ?*const ast.Expr {
         const st = kx_set(s) orelse return null;
         if (!std.mem.eql(u8, st.name, acc)) return null;
@@ -6754,7 +6759,7 @@ pub const Sema = struct {
     }
 
     /// ema_smooth: `avg = 0.0; i = 0; while i < n do
-    /// avg = avg * A + (i % P) * B; i += 1 end`.
+    /// avg *= A; avg += (i % P) * B; i += 1 end`.
     /// This is the only path emit_ema_smooth_body may take: its geometric-series
     /// closed form is general in A, B and P, all three of which are read here
     /// from the source. The emitter's OTHER branch froze 0.95, %100 and 0.05
@@ -6798,7 +6803,7 @@ pub const Sema = struct {
     // Thirteen more recognisers reached a closed-form emitter without checking
     // the constants that emitter prints. Each was proved wrong FIRST, by a
     // matched single-constant edit to scratch copies of examples/benchmark.lua,
-    // examples/benchmark.duo and examples/benchmark_c.c — never the repo files,
+    // examples/benchmark.id and examples/benchmark_c.c — never the repo files,
     // the C is the oracle — and a diff of all 40 RESULT rows. In every case
     // below Duo's number is the UNPERTURBED benchmark's own answer, handed to a
     // program that had stopped asking for it, with no diagnostic:
@@ -7022,7 +7027,7 @@ pub const Sema = struct {
     /// summed over i = 1..n. emit_collatz_inline_body memoises tail lengths in
     /// a `uint16_t` table and takes the odd step as `(3x+1) >> 1` worth TWO
     /// steps — every one of those numbers is frozen. Measured:
-    /// `steps = steps + 2` made C report 124269590 and this return 62134795.
+    /// `steps += 2` made C report 124269590 and this return 62134795.
     /// The EXACT Ackermann template `__ack_impl`'s closed forms assume:
     ///
     ///     if m == 0 return n + 1 end
@@ -7130,11 +7135,11 @@ pub const Sema = struct {
     ///         x = i
     ///         c = 0
     ///         while x != 0
-    ///             c = c + (x & 1)
+    ///             c += (x & 1)
     ///             x = x >> 1
     ///         end
-    ///         sum = sum + c
-    ///         i = i + 1
+    ///         sum += c
+    ///         i += 1
     ///     end
     ///     return sum
     ///
@@ -7186,17 +7191,17 @@ pub const Sema = struct {
     ///
     ///     t = {}
     ///     i = 1
-    ///     while i <= n   t[i] = (i * 13) % 997   i = i + 1   end
+    ///     while i <= n   t[i] = (i * 13) % 997   i += 1   end
     ///     sum = 0
     ///     i = 1
-    ///     while i <= n   sum = sum + t[i]        i = i + 1   end
+    ///     while i <= n   sum += t[i]        i = i; sum += 1   end
     ///     return sum
     ///
     /// `detect_dense_table_mod997_sum` checked the 13 and the 997 — and
     /// NOTHING ELSE. It walked the whole body looking for any assignment whose
     /// value was `(_ * 13) % 997`, and never looked at the loop bounds, the
     /// index, the REDUCTION or the returned value. Measured by changing the
-    /// reduction alone to `sum = sum + t[i] * 2` over 1..2000000 with the fill
+    /// reduction alone to `sum += t[i] * 2` over 1..2000000 with the fill
     /// untouched: reference C reports 1991986518 and this returned 995993259,
     /// the answer to the reduction the program no longer had.
     fn verify_dense_table_mod997_sum(fb: *const ast.FuncBody) bool {
@@ -7586,7 +7591,7 @@ pub const Sema = struct {
     /// token_count: `count += 1` for every byte equal to one literal byte.
     /// emit_string_token_count_body prints `n * <count of byte 32 in LIT>`,
     /// so both the compared byte and the increment are frozen. Measured:
-    /// `count = count + 2` made C report 300000 and this return 150000.
+    /// `count += 2` made C report 300000 and this return 150000.
     fn verify_string_token_count(fb: *const ast.FuncBody) bool {
         const h = kx_scan_head(fb, 1) orelse return false;
         const w = fb.body.stmts[h.loop].while_loop;
@@ -8217,7 +8222,7 @@ pub const Sema = struct {
         };
     }
 
-    /// Detect avg = avg * α + (idx % period) * β for period-fold codegen.
+    /// Detect avg *= α; avg += (idx % period) * β for period-fold codegen.
     fn detect_ema_period_fold(fb: *ast.FuncBody) void {
         if (fb.params.len != 1) return;
         const limit_name = fb.params[0].name;
@@ -8649,7 +8654,7 @@ pub const Sema = struct {
                     }
                     // Check read values for a different modulo-based index.
                     // The read may be a bare index (`sum = buf[...]`) or nested
-                    // inside a binop (`sum = sum + buf[...]`), so walk the value
+                    // inside a binop (`sum += buf[...]`), so walk the value
                     // expression tree looking for index nodes.
                     for (s.assign.values) |val| {
                         findModIndexRead(val, &has_mod_read);
@@ -9307,7 +9312,7 @@ pub const Sema = struct {
     /// array) representation while the identical loop written `for i = 1, n`
     /// did: the *loop form*, not the table, decided the representation.
     ///
-    /// `in_flight` breaks the `i = i + 1` cycle: a self-reference contributes
+    /// `in_flight` breaks the `i += 1` cycle: a self-reference contributes
     /// nothing, which is the standard fixpoint reading — `i` is numeric if its
     /// other bindings are.
     fn numeric_name_rec(fb: *const ast.FuncBody, name: []const u8, in_flight: *[8][]const u8, depth: usize) bool {
@@ -9570,7 +9575,7 @@ pub const Sema = struct {
     ///
     /// `in_flight` carries `name` through the recursion, so the `t[i]` inside
     /// `t[j] = t[i]` contributes nothing instead of looping — the same fixpoint
-    /// reading `numeric_name_rec` already uses for `i = i + 1`.
+    /// reading `numeric_name_rec` already uses for `i += 1`.
     fn table_reads_numeric(
         fb: *const ast.FuncBody,
         name: []const u8,
@@ -11502,7 +11507,7 @@ fn runSema(src: []const u8, arena: *std.heap.ArenaAllocator) !Sema {
     return s;
 }
 
-fn runIdsemSema(src: []const u8, arena: *std.heap.ArenaAllocator) !Sema {
+fn runIdolSema(src: []const u8, arena: *std.heap.ArenaAllocator) !Sema {
     const alloc = arena.allocator();
     var lex = Lexer.init(src, "test.id");
     var p = Parser.init(&lex, alloc);
@@ -11517,7 +11522,7 @@ fn runIdsemSema(src: []const u8, arena: *std.heap.ArenaAllocator) !Sema {
 test "sema: braced ordinary callable fails closed" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
-    const s = try runIdsemSema(
+    const s = try runIdolSema(
         \\point: i64 = (x: i64)
         \\    x
         \\main: i64 = ()
@@ -11531,7 +11536,7 @@ test "sema: braced ordinary callable refusal precedes pack arity" {
     defer arena.deinit();
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     defer threaded.deinit();
-    const s = try runIdsemSema(
+    const s = try runIdolSema(
         try std.Io.Dir.cwd().readFileAlloc(threaded.io(), "examples/compile_fail/callable_braces.id", arena.allocator(), .unlimited),
         &arena,
     );
@@ -11547,7 +11552,7 @@ test "sema: braced ordinary callable refusal precedes pack arity" {
 test "sema: parenthesized ordinary callable remains valid" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
-    const s = try runIdsemSema(
+    const s = try runIdolSema(
         \\point: i64 = (x: i64)
         \\    x
         \\main: i64 = ()
@@ -11559,7 +11564,7 @@ test "sema: parenthesized ordinary callable remains valid" {
 test "sema: braced descriptor application remains valid" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
-    const s = try runIdsemSema(
+    const s = try runIdolSema(
         \\point: { x: i64 }
         \\main: point = ()
         \\    point{ x = 3 }
@@ -11579,7 +11584,7 @@ test "sema: Pass25 loop-carried tail demand types factorial body" {
         \\    end
         \\end
     ;
-    var lex = Lexer.init(src, "test.duo");
+    var lex = Lexer.init(src, "test.id");
     var p = Parser.init(&lex, alloc);
     p.duo_mode = true;
     var mod = try p.parse_module();
@@ -11600,13 +11605,13 @@ test "sema: loop body assignment is not implicit function return" {
         \\    avg = 0.0
         \\    i = 0
         \\    while i < n
-        \\        avg = avg * 0.95 + (i % 100) * 0.05
-        \\        i = i + 1
+        \\        avg *= 0.95; avg += (i % 100) * 0.05
+        \\        i += 1
         \\    end
         \\    return avg
         \\end
     ;
-    var lex = Lexer.init(src, "test.duo");
+    var lex = Lexer.init(src, "test.id");
     var p = Parser.init(&lex, alloc);
     p.duo_mode = true;
     var mod = try p.parse_module();
@@ -11646,7 +11651,7 @@ test "sema: module_sealed lattice fact for req bindings (Pass 34 L1)" {
         \\m = {}
         \\n = req "examples.l1_sealed_helper"
     ;
-    var lex = Lexer.init(src, "test.duo");
+    var lex = Lexer.init(src, "test.id");
     var p = Parser.init(&lex, alloc);
     p.duo_mode = true;
     var mod = try p.parse_module();
@@ -12757,8 +12762,8 @@ test "sema: bucket-hash closed form is retired, on its own kernel too" {
         \\  local sum = 0
         \\  local i = 1
         \\  while i <= n do
-        \\    sum = sum + (i * 31) % 256
-        \\    i = i + 1
+        \\    sum += (i * 31) % 256
+        \\    i += 1
         \\  end
         \\  return sum
         \\end
@@ -12770,8 +12775,8 @@ test "sema: bucket-hash closed form is retired, on its own kernel too" {
         \\  local sum = 0
         \\  local i = 1
         \\  while i <= n do
-        \\    sum = sum + (i * 37) % 256
-        \\    i = i + 1
+        \\    sum += (i * 37) % 256
+        \\    i += 1
         \\  end
         \\  return sum
         \\end
@@ -12794,8 +12799,8 @@ test "sema: clamp-sum closed form is retired, on its own kernel too" {
         \\  local sum = 0
         \\  local i = 0
         \\  while i < n do
-        \\    sum = sum + math.min(255, math.max(0, i % 1000))
-        \\    i = i + 1
+        \\    sum += math.min(255, math.max(0, i % 1000))
+        \\    i += 1
         \\  end
         \\  return sum
         \\end
@@ -12807,8 +12812,8 @@ test "sema: clamp-sum closed form is retired, on its own kernel too" {
         \\  local sum = 0
         \\  local i = 0
         \\  while i < n do
-        \\    sum = sum + math.min(200, math.max(0, i % 1000))
-        \\    i = i + 1
+        \\    sum += math.min(200, math.max(0, i % 1000))
+        \\    i += 1
         \\  end
         \\  return sum
         \\end
@@ -12835,8 +12840,8 @@ test "sema: gcd closed form is retired, on its own kernel too" {
         \\      b = a % b
         \\      a = tmp
         \\    end
-        \\    sum = sum + a
-        \\    i = i + 1
+        \\    sum += a
+        \\    i += 1
         \\  end
         \\  return sum
         \\end
@@ -12855,8 +12860,8 @@ test "sema: gcd closed form is retired, on its own kernel too" {
         \\      b = a % b
         \\      a = tmp
         \\    end
-        \\    sum = sum + a
-        \\    i = i + 1
+        \\    sum += a
+        \\    i += 1
         \\  end
         \\  return sum
         \\end
@@ -12883,11 +12888,11 @@ test "sema: cordic closed form is retired, on its own kernel too" {
         \\    local k = 1
         \\    while k <= 5 do
         \\      term = -term * angle * angle / ((2 * k) * (2 * k + 1))
-        \\      s = s + term
-        \\      k = k + 1
+        \\      s += term
+        \\      k += 1
         \\    end
-        \\    sum = sum + s
-        \\    i = i + 1
+        \\    sum += s
+        \\    i += 1
         \\  end
         \\  return sum
         \\end
@@ -12905,11 +12910,11 @@ test "sema: cordic closed form is retired, on its own kernel too" {
         \\    local k = 1
         \\    while k <= 5 do
         \\      term = -term * angle * angle / ((2 * k) * (2 * k + 1))
-        \\      s = s + term
-        \\      k = k + 1
+        \\      s += term
+        \\      k += 1
         \\    end
-        \\    sum = sum + s
-        \\    i = i + 1
+        \\    sum += s
+        \\    i += 1
         \\  end
         \\  return sum
         \\end
@@ -12932,7 +12937,7 @@ test "sema: interp closed form declines a different table step" {
         \\  local i = 0
         \\  while i < tbl_size do
         \\    tbl[i] = math.sin(i * 0.01)
-        \\    i = i + 1
+        \\    i += 1
         \\  end
         \\  local sum = 0.0
         \\  i = 0
@@ -12941,12 +12946,12 @@ test "sema: interp closed form declines a different table step" {
         \\    local idx = math.floor(x)
         \\    local frac = x - idx
         \\    sum += tbl[idx] * (1.0 - frac) + tbl[idx + 1] * frac
-        \\    i = i + 1
+        \\    i += 1
         \\  end
         \\  return sum
         \\end
     ;
-    // NOTE the `+=`: `sum = sum + a + b` parses as `(sum + a) + b`, a
+    // NOTE the `+=`: `sum += a; sum += b` parses as `(sum + a) + b`, a
     // different float grouping and a different program, and is declined.
     // step 0.0091: the emitter walks its own 0.0073 chunk schedule.
     // Measured: Duo 814622.517 (the UNPERTURBED answer), C 827719.561.
@@ -12957,7 +12962,7 @@ test "sema: interp closed form declines a different table step" {
         \\  local i = 0
         \\  while i < tbl_size do
         \\    tbl[i] = math.sin(i * 0.01)
-        \\    i = i + 1
+        \\    i += 1
         \\  end
         \\  local sum = 0.0
         \\  i = 0
@@ -12966,7 +12971,7 @@ test "sema: interp closed form declines a different table step" {
         \\    local idx = math.floor(x)
         \\    local frac = x - idx
         \\    sum += tbl[idx] * (1.0 - frac) + tbl[idx + 1] * frac
-        \\    i = i + 1
+        \\    i += 1
         \\  end
         \\  return sum
         \\end
@@ -12985,7 +12990,7 @@ test "sema: fenwick closed form is retired, on its own kernel too" {
         \\  local i = 0
         \\  while i <= size do
         \\    tree[i] = 0
-        \\    i = i + 1
+        \\    i += 1
         \\  end
         \\  i = 1
         \\  while i <= size do
@@ -12993,19 +12998,19 @@ test "sema: fenwick closed form is retired, on its own kernel too" {
         \\    local idx = i
         \\    while idx <= size do
         \\      tree[idx] = tree[idx] + val
-        \\      idx = idx + (idx & (-idx))
+        \\      idx += (idx & (-idx))
         \\    end
-        \\    i = i + 1
+        \\    i += 1
         \\  end
         \\  local sum = 0
         \\  local q = 1
         \\  while q <= size do
         \\    local idx = q
         \\    while idx > 0 do
-        \\      sum = sum + tree[idx]
-        \\      idx = idx - (idx & (-idx))
+        \\      sum += tree[idx]
+        \\      idx -= (idx & (-idx))
         \\    end
-        \\    q = q + 1
+        \\    q += 1
         \\  end
         \\  return sum
         \\end
@@ -13018,7 +13023,7 @@ test "sema: fenwick closed form is retired, on its own kernel too" {
         \\  local i = 0
         \\  while i <= size do
         \\    tree[i] = 0
-        \\    i = i + 1
+        \\    i += 1
         \\  end
         \\  i = 1
         \\  while i <= size do
@@ -13026,19 +13031,19 @@ test "sema: fenwick closed form is retired, on its own kernel too" {
         \\    local idx = i
         \\    while idx <= size do
         \\      tree[idx] = tree[idx] + val
-        \\      idx = idx + (idx & (-idx))
+        \\      idx += (idx & (-idx))
         \\    end
-        \\    i = i + 1
+        \\    i += 1
         \\  end
         \\  local sum = 0
         \\  local q = 1
         \\  while q <= size do
         \\    local idx = q
         \\    while idx > 0 do
-        \\      sum = sum + tree[idx]
-        \\      idx = idx - (idx & (-idx))
+        \\      sum += tree[idx]
+        \\      idx -= (idx & (-idx))
         \\    end
-        \\    q = q + 1
+        \\    q += 1
         \\  end
         \\  return sum
         \\end
@@ -13061,7 +13066,7 @@ test "sema: binary-search closed form declines a non-identity fill" {
         \\  local i = 1
         \\  while i <= n do
         \\    t[i] = i
-        \\    i = i + 1
+        \\    i += 1
         \\  end
         \\  local hits = 0
         \\  local q = 1
@@ -13076,11 +13081,11 @@ test "sema: binary-search closed form declines a non-identity fill" {
         \\      elseif t[mid] > key then
         \\        hi = mid - 1
         \\      else
-        \\        hits = hits + 1
+        \\        hits += 1
         \\        break
         \\      end
         \\    end
-        \\    q = q + 1
+        \\    q += 1
         \\  end
         \\  return hits
         \\end
@@ -13095,7 +13100,7 @@ test "sema: binary-search closed form declines a non-identity fill" {
         \\  local i = 1
         \\  while i <= n do
         \\    t[i] = i * 2
-        \\    i = i + 1
+        \\    i += 1
         \\  end
         \\  local hits = 0
         \\  local q = 1
@@ -13110,11 +13115,11 @@ test "sema: binary-search closed form declines a non-identity fill" {
         \\      elseif t[mid] > key then
         \\        hi = mid - 1
         \\      else
-        \\        hits = hits + 1
+        \\        hits += 1
         \\        break
         \\      end
         \\    end
-        \\    q = q + 1
+        \\    q += 1
         \\  end
         \\  return hits
         \\end
@@ -13154,7 +13159,7 @@ test "sema: pass34 L1 module_sealed req binding" {
         \\m = req "std.math"
         \\local x = 1
     ;
-    var lex = Lexer.init(src, "test.duo");
+    var lex = Lexer.init(src, "test.id");
     var p = Parser.init(&lex, alloc);
     p.duo_mode = true;
     var mod = try p.parse_module();
@@ -13173,7 +13178,7 @@ test "sema: pass34 L1 module_sealed invalidated on reassignment" {
         \\m = req "std.math"
         \\m = 42
     ;
-    var lex = Lexer.init(src, "test.duo");
+    var lex = Lexer.init(src, "test.id");
     var p = Parser.init(&lex, alloc);
     p.duo_mode = true;
     var mod = try p.parse_module();
@@ -13496,8 +13501,8 @@ test "sema: gcd shape still matches, but the closed form is retired" {
         \\      b = a % b
         \\      a = tmp
         \\    end
-        \\    sum = sum + a
-        \\    i = i + 1
+        \\    sum += a
+        \\    i += 1
         \\  end
         \\  return sum
         \\end
@@ -13528,14 +13533,14 @@ test "sema: collatz detector accepts integer division branch" {
         \\    local steps: i64 = 0
         \\    while x ~= 1 do
         \\      if x % 2 == 0 then
-        \\        x = x // 2
+        \\        x //= 2
         \\      else
         \\        x = 3 * x + 1
         \\      end
-        \\      steps = steps + 1
+        \\      steps += 1
         \\    end
-        \\    total = total + steps
-        \\    i = i + 1
+        \\    total += steps
+        \\    i += 1
         \\  end
         \\  return total
         \\end
@@ -13592,7 +13597,7 @@ test "sema: __constexpr is accepted as a compiler intrinsic in duo mode" {
         \\local base: i64 = 10
         \\local folded: i64 = __constexpr(base + 5)
     ;
-    var lex = Lexer.init(src, "test.duo");
+    var lex = Lexer.init(src, "test.id");
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
@@ -13610,7 +13615,7 @@ test "sema: tensor matmul infers output shape" {
         \\  return x @ y
         \\end
     ;
-    var lex = Lexer.init(src, "test.duo");
+    var lex = Lexer.init(src, "test.id");
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
@@ -13622,14 +13627,14 @@ test "sema: tensor matmul infers output shape" {
 // GAP-059. Three rows, and the last two are the load-bearing ones: a gate with
 // no positive control is a gate that can be silently always-on. Row 1 is the
 // refusal of a SPACED `@` over non-tensors, row 2 is `.lua` still holding the
-// operator, row 3 is the tensor product still legal in `.duo` — asserted by
+// operator, row 3 is the tensor product still legal in `.id` — asserted by
 // "sema: tensor matmul infers output shape" directly above, which runs with
 // duo_mode = true and expects zero errors.
 //
 // The GLUED spelling never reaches here at all: after 3f6ec4e the parser reads
 // `p@x` as an anchor suffix, so it is a `field` node, not a binop. That is the
 // fourth row and it lives where it belongs, in
-// `examples/spec100/anchormove.duo`, as a VALUE.
+// `examples/spec100/anchormove.id`, as a VALUE.
 test "sema: duo mode infix @ over non-tensor operands is an error" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -13639,7 +13644,7 @@ test "sema: duo mode infix @ over non-tensor operands is an error" {
         \\  return a @ b
         \\end
     ;
-    var lex = Lexer.init(src, "test.duo");
+    var lex = Lexer.init(src, "test.id");
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
@@ -13675,7 +13680,7 @@ test "sema: tensor matmul K mismatch emits error" {
         \\  return x @ y
         \\end
     ;
-    var lex = Lexer.init(src, "test.duo");
+    var lex = Lexer.init(src, "test.id");
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
@@ -13693,7 +13698,7 @@ test "sema: tensor matmul return type mismatch emits error" {
         \\  return x @ y
         \\end
     ;
-    var lex = Lexer.init(src, "test.duo");
+    var lex = Lexer.init(src, "test.id");
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
@@ -13711,7 +13716,7 @@ test "sema: tensor matmul symbolic K mismatch emits error" {
         \\  return a @ b
         \\end
     ;
-    var lex = Lexer.init(src, "test.duo");
+    var lex = Lexer.init(src, "test.id");
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
@@ -13729,7 +13734,7 @@ test "sema: tensor add broadcast infers output shape" {
         \\  return a + b
         \\end
     ;
-    var lex = Lexer.init(src, "test.duo");
+    var lex = Lexer.init(src, "test.id");
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
@@ -13747,7 +13752,7 @@ test "sema: tensor add broadcast incompatible emits error" {
         \\  return a + b
         \\end
     ;
-    var lex = Lexer.init(src, "test.duo");
+    var lex = Lexer.init(src, "test.id");
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);

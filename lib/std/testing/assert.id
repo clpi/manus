@@ -1,9 +1,9 @@
--- std.testing.assert — Rich test assertions
--- Extends basic testing with more expressive assertion functions.
+# std.testing.assert — Rich test assertions
+# Extends basic testing with more expressive assertion functions.
 
--- ═══════════════════════════════════════════════════════════════
--- Assertion Context
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Assertion Context
+# ═══════════════════════════════════════════════════════════════
 
 assert_context_new(test_name: str): any
     {
@@ -26,9 +26,9 @@ assert_context_report(ctx: any): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Basic Assertions
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Basic Assertions
+# ═══════════════════════════════════════════════════════════════
 
 assert_true(ctx: any, value: bool, msg: str): void
     if value
@@ -86,13 +86,13 @@ assert_not_equal(ctx: any, got: any, expected: any, msg: str): void
     end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Numeric Assertions
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Numeric Assertions
+# ═══════════════════════════════════════════════════════════════
 
 assert_near(ctx: any, got: f64, expected: f64, tolerance: f64, msg: str): void
     if tolerance == nil tolerance = 1e-6 end
-    if math.abs(got - expected) <= tolerance
+    if got - expected:abs() <= tolerance
         ctx.passed += 1
     else
         ctx.failed += 1
@@ -148,9 +148,9 @@ assert_in_range(ctx: any, got: f64, min: f64, max: f64, msg: str): void
     end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Type Assertions
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Type Assertions
+# ═══════════════════════════════════════════════════════════════
 
 assert_type(ctx: any, got: any, expected_type: str, msg: str): void
     actual_type = type(got)
@@ -195,12 +195,12 @@ assert_is_not_nil(ctx: any, got: any, msg: str): void
     end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Collection Assertions
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Collection Assertions
+# ═══════════════════════════════════════════════════════════════
 
 assert_table_equal(ctx: any, got: any, expected: any, msg: str): void
-    -- Check length
+    # Check length
     if #got != #expected
         ctx.failed += 1
         ctx.errors[#ctx.errors + 1] = {
@@ -212,7 +212,7 @@ assert_table_equal(ctx: any, got: any, expected: any, msg: str): void
         return
     end
 
-    -- Check elements
+    # Check elements
     i = 1
     while i <= #got
         if got[i] != expected[i]
@@ -261,12 +261,12 @@ assert_table_empty(ctx: any, table: any, msg: str): void
     end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- String Assertions
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# String Assertions
+# ═══════════════════════════════════════════════════════════════
 
 assert_string_contains(ctx: any, got: str, expected: str, msg: str): void
-    if string.find(got, expected, 1, true)
+    if got:find(expected, 1, true)
         ctx.passed += 1
     else
         ctx.failed += 1
@@ -308,7 +308,7 @@ assert_string_ends_with(ctx: any, got: str, expected: str, msg: str): void
 end
 
 assert_string_matches(ctx: any, got: str, pattern: str, msg: str): void
-    if string.find(got, pattern)
+    if got:find(pattern)
         ctx.passed += 1
     else
         ctx.failed += 1
@@ -321,9 +321,9 @@ assert_string_matches(ctx: any, got: str, pattern: str, msg: str): void
     end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Error Assertions
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Error Assertions
+# ═══════════════════════════════════════════════════════════════
 
 assert_errors(ctx: any, func: any, msg: str): void
     ok, err = pcall(func)
@@ -341,7 +341,7 @@ end
 
 assert_errors_with(ctx: any, func: any, expected_err: str, msg: str): void
     ok, err = pcall(func)
-    if not ok and string.find(err, expected_err, 1, true)
+    if not ok and err:find(expected_err, 1, true)
         ctx.passed += 1
     else
         ctx.failed += 1
@@ -354,9 +354,9 @@ assert_errors_with(ctx: any, func: any, expected_err: str, msg: str): void
     end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Performance Assertions
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Performance Assertions
+# ═══════════════════════════════════════════════════════════════
 
 assert_faster_than(ctx: any, func: any, max_time: f64, iterations: i64, msg: str): void
     if iterations == nil iterations = 100 end
@@ -383,40 +383,40 @@ assert_faster_than(ctx: any, func: any, max_time: f64, iterations: i64, msg: str
     end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
 M = {}
--- Context
+# Context
 M.context_new = assert_context_new
 M.context_report = assert_context_report
--- Basic
+# Basic
 M.true = assert_true
 M.false = assert_false
 M.equal = assert_equal
 M.not_equal = assert_not_equal
--- Numeric
+# Numeric
 M.near = assert_near
 M.greater = assert_greater
 M.less = assert_less
 M.in_range = assert_in_range
--- Type
+# Type
 M.type = assert_type
 M.is_nil = assert_is_nil
 M.is_not_nil = assert_is_not_nil
--- Collection
+# Collection
 M.table_equal = assert_table_equal
 M.table_contains = assert_table_contains
 M.table_empty = assert_table_empty
--- String
+# String
 M.string_contains = assert_string_contains
 M.string_starts_with = assert_string_starts_with
 M.string_ends_with = assert_string_ends_with
 M.string_matches = assert_string_matches
--- Error
+# Error
 M.errors = assert_errors
 M.errors_with = assert_errors_with
--- Performance
+# Performance
 M.faster_than = assert_faster_than
 M

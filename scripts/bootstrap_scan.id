@@ -1,147 +1,147 @@
--- GAP-080 — the deny table, pointed at the compiler that enforces it.
---
--- WHY THIS EXISTS. `audit100` walks the canonical `.id` corpus and convicts
--- 19 rows over it. `src/*.zig` is the bootstrap ledger and is excluded from
--- every one of them. So the artifact that enforces the law on every other file
--- in the tree is the single corpus the law does not reach — and it shows:
--- `NodeKind` violates §0.1 LAW-ONE (no uppercase EVER) and §0.3 INFERRED CASES
--- (which denies companion `*_kind`/`*_type` descriptors BY NAME) in one
--- identifier, and nothing has ever convicted it.
---
--- WHAT THE EXEMPTION ACTUALLY GRANTS. `law.host.projection` is precise: the
--- bootstrap may look un-duon-like ONLY WHERE THE HOST LANGUAGE REQUIRES IT.
--- Zig does not require a companion `Kind` enum — §0.3's inline case-set has a
--- direct Zig spelling. The enum is a DESIGN CHOICE sheltering under a grant
--- written for pointer arithmetic and `extern` layout. "Bootstrap ledger" has
--- come to mean "unaudited" where the law says it means "projected, named, and
--- carrying a deletion gate."
---
--- WHAT IT MEASURES, three ratcheted rows over tracked `src/*.zig`:
---
---   upper      uppercase type declarations           §0.1 LAW-ONE
---   companion  `*Kind` / `*Type` enums               §0.3 INFERRED CASES
---   relation   addNode / addEdge / addChild /        law.arch.relation
---              register* / emit* — a semantic
---              distinction encoded in a host name
---
--- THE RATCHET RUNS DOWN. These numbers may fall and may not rise. That is the
--- whole mechanism: without it every repair in GAP-079 is voluntary, and a
--- voluntary repair against 791 sites is not a plan.
---
--- WHAT THIS GATE DOES NOT DO. It does not rename anything, and whoever takes
--- the repair must not bulk-rename either. `duo-lawone-predicate-collisions`
--- records a mechanical `is_*` sweep colliding on 25 of 71 sites, four against
--- their own constructors in the same file. 791 rows across the bootstrap
--- compiler would be worse, and the compiler is the one artifact that cannot be
--- allowed to break. Repair by subsystem, differentials green at each step —
--- `law.differential` applied to the compiler's own source.
+# GAP-080 — the deny table, pointed at the compiler that enforces it.
+#
+# WHY THIS EXISTS. `audit100` walks the canonical `.id` corpus and convicts
+# 19 rows over it. `src/*.zig` is the bootstrap ledger and is excluded from
+# every one of them. So the artifact that enforces the law on every other file
+# in the tree is the single corpus the law does not reach — and it shows:
+# `NodeKind` violates §0.1 LAW-ONE (no uppercase EVER) and §0.3 INFERRED CASES
+# (which denies companion `*_kind`/`*_type` descriptors BY NAME) in one
+# identifier, and nothing has ever convicted it.
+#
+# WHAT THE EXEMPTION ACTUALLY GRANTS. `law.host.projection` is precise: the
+# bootstrap may look un-duon-like ONLY WHERE THE HOST LANGUAGE REQUIRES IT.
+# Zig does not require a companion `Kind` enum — §0.3's inline case-set has a
+# direct Zig spelling. The enum is a DESIGN CHOICE sheltering under a grant
+# written for pointer arithmetic and `extern` layout. "Bootstrap ledger" has
+# come to mean "unaudited" where the law says it means "projected, named, and
+# carrying a deletion gate."
+#
+# WHAT IT MEASURES, three ratcheted rows over tracked `src/*.zig`:
+#
+#   upper      uppercase type declarations           §0.1 LAW-ONE
+#   companion  `*Kind` / `*Type` enums               §0.3 INFERRED CASES
+#   relation   addNode / addEdge / addChild /        law.arch.relation
+#              register* / emit* — a semantic
+#              distinction encoded in a host name
+#
+# THE RATCHET RUNS DOWN. These numbers may fall and may not rise. That is the
+# whole mechanism: without it every repair in GAP-079 is voluntary, and a
+# voluntary repair against 791 sites is not a plan.
+#
+# WHAT THIS GATE DOES NOT DO. It does not rename anything, and whoever takes
+# the repair must not bulk-rename either. `duo-lawone-predicate-collisions`
+# records a mechanical `is_*` sweep colliding on 25 of 71 sites, four against
+# their own constructors in the same file. 791 rows across the bootstrap
+# compiler would be worse, and the compiler is the one artifact that cannot be
+# allowed to break. Repair by subsystem, differentials green at each step —
+# `law.differential` applied to the compiler's own source.
 
 q = "'"
 
--- Tracked zig only. `git ls-files` rather than a glob so an untracked scratch
--- file cannot move a ratcheted number, which is the blind spot that made
--- audit100 red for four agents in a row tonight.
-head = (root: str): str
+# Tracked zig only. `git ls-files` rather than a glob so an untracked scratch
+# file cannot move a ratcheted number, which is the blind spot that made
+# audit100 red for four agents in a row tonight.
+head: str = (root: str)
     "cd {root} && git ls-files 'src/*.zig' | tr '\\n' '\\0' | xargs -0 grep -h -E "
 
--- §0.1 LAW-ONE. A declared type whose name carries a capital.
+# §0.1 LAW-ONE. A declared type whose name carries a capital.
 upperpat = "^pub const [A-Z][A-Za-z0-9]* = (enum|struct|union|packed struct)"
 
--- §0.3 INFERRED CASES: "case-sets INLINE at the field; NO companion
--- `*_kind`/`*_type` descriptors." A `*Kind` enum is that companion exactly.
+# §0.3 INFERRED CASES: "case-sets INLINE at the field; NO companion
+# `*_kind`/`*_type` descriptors." A `*Kind` enum is that companion exactly.
 companionpat = "^pub const [A-Za-z0-9]*(Kind|Type) = enum"
 
--- law.arch.relation. A semantic distinction recoverable from the operand,
--- encoded in the host function's NAME instead. `addNode`, `addEdge` and
--- `addChild` are one open relation successively specialized; `register*` and
--- `emit*` are the same shape wearing different verbs.
+# law.arch.relation. A semantic distinction recoverable from the operand,
+# encoded in the host function's NAME instead. `addNode`, `addEdge` and
+# `addChild` are one open relation successively specialized; `register*` and
+# `emit*` are the same shape wearing different verbs.
 relationpat = "pub fn (add|register|emit)[A-Z][A-Za-z0-9]*\\("
 
-count = (root: str, pat: str): i64
+count: i64 = (root: str, pat: str)
     pre: str = head(root)
     cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | wc -l"
     std.proc.capture(cmd):to(i64)
 
--- The control surface. `count` alone cannot separate "the corpus is clean"
--- from "the pattern matches nothing" — a broken pattern reads as a perfect
--- score, and this repository has already shipped a gate that reported 0/N for
--- exactly that reason. Every row below is checked against a synthetic line it
--- MUST see and one it MUST decline.
-sees = (pat: str, line: str): i64
+# The control surface. `count` alone cannot separate "the corpus is clean"
+# from "the pattern matches nothing" — a broken pattern reads as a perfect
+# score, and this repository has already shipped a gate that reported 0/N for
+# exactly that reason. Every row below is checked against a synthetic line it
+# MUST see and one it MUST decline.
+sees: i64 = (pat: str, line: str)
     cmd: str = "printf {q}%s\\n{q} {q}{line}{q} | grep -c -E {q}{pat}{q}"
     std.proc.capture(cmd):to(i64)
 
--- ── the assumption row (GAP-085) ──────────────────────────────────────────
---
--- `src/*.zig` carries `use_` flags on the function-body descriptor that gate
--- specialized emitters. CLAUDE.md §3 MEASUREMENT HONESTY already rules on
--- them — "a detector must verify every constant its emitter assumes, and
--- decline to the general path otherwise" — and records what violating it cost:
--- ten fabricated benchmark kernels, three of which returned frozen literals.
--- The rule was stated and NOTHING ENFORCED IT. This row is the number.
---
--- What it counts. A flag is UNADJUDICATED when it is all three of:
---
---   declared   `use_x: bool` on the descriptor in src/ast.zig
---   live       assigned something other than `false` — a flag retired to
---              `false` is adjudicated, and a declared field never assigned
---              at all cannot reach an emitter
---   unverified no `verify_x` companion anywhere in tracked zig
---
--- WHAT THIS ROW DOES NOT CLAIM, and the reason it is budgeted at 17 rather
--- than driven to zero. All seventeen were READ before this row was written
--- (GAP-085 step 0, the disconfirming case) and none is an unguarded value
--- claim. Twelve are the dense-table polynomial family: ONE detector that
--- reads every coefficient out of the ast, stores them on the descriptor, and
--- returns on any statement it does not model — measured, `t[i] = i` with a
--- `break` at 5 answers 15 over n = 50, not 1275. `dot product dense` is
--- verified by `verify_dot_product_identity`, deliberately shared because both
--- emitters print the same closed form; a name-matching grep cannot see that.
--- `iterative fib` is a total structural match on fibonacci's own definition
--- and requires SELF-recursion, which is how the §3 name-keying defect was
--- repaired. `simd reduction` and `force always inline` emit pragmas and
--- compute no value. `dense table` picks a representation whose accessors grow
--- on demand.
---
--- So the row does not convict the seventeen. It stops the EIGHTEENTH from
--- arriving unread — which is exactly the failure §3 describes and exactly the
--- one nothing in this tree could catch.
+# ── the assumption row (GAP-085) ──────────────────────────────────────────
+#
+# `src/*.zig` carries `use_` flags on the function-body descriptor that gate
+# specialized emitters. CLAUDE.md §3 MEASUREMENT HONESTY already rules on
+# them — "a detector must verify every constant its emitter assumes, and
+# decline to the general path otherwise" — and records what violating it cost:
+# ten fabricated benchmark kernels, three of which returned frozen literals.
+# The rule was stated and NOTHING ENFORCED IT. This row is the number.
+#
+# What it counts. A flag is UNADJUDICATED when it is all three of:
+#
+#   declared   `use_x: bool` on the descriptor in src/ast.zig
+#   live       assigned something other than `false` — a flag retired to
+#              `false` is adjudicated, and a declared field never assigned
+#              at all cannot reach an emitter
+#   unverified no `verify_x` companion anywhere in tracked zig
+#
+# WHAT THIS ROW DOES NOT CLAIM, and the reason it is budgeted at 17 rather
+# than driven to zero. All seventeen were READ before this row was written
+# (GAP-085 step 0, the disconfirming case) and none is an unguarded value
+# claim. Twelve are the dense-table polynomial family: ONE detector that
+# reads every coefficient out of the ast, stores them on the descriptor, and
+# returns on any statement it does not model — measured, `t[i] = i` with a
+# `break` at 5 answers 15 over n = 50, not 1275. `dot product dense` is
+# verified by `verify_dot_product_identity`, deliberately shared because both
+# emitters print the same closed form; a name-matching grep cannot see that.
+# `iterative fib` is a total structural match on fibonacci's own definition
+# and requires SELF-recursion, which is how the §3 name-keying defect was
+# repaired. `simd reduction` and `force always inline` emit pragmas and
+# compute no value. `dense table` picks a representation whose accessors grow
+# on demand.
+#
+# So the row does not convict the seventeen. It stops the EIGHTEENTH from
+# arriving unread — which is exactly the failure §3 describes and exactly the
+# one nothing in this tree could catch.
 livepat = "fb\\.use_[a-z0-9_]+ = [a-z!(][a-z]*"
 verifypat = "verify_[a-z0-9_]+"
 
--- Both extractors take their INPUT as a command so a synthetic line can be
--- pushed through the identical chain. A control that exercises a paraphrase
--- of the pattern proves nothing about the pattern that runs.
-live = (feed: str): str
+# Both extractors take their INPUT as a command so a synthetic line can be
+# pushed through the identical chain. A control that exercises a paraphrase
+# of the pattern proves nothing about the pattern that runs.
+live: str = (feed: str)
     "{feed} | grep -hoE {q}{livepat}{q} | grep -v {q} = false{q} | sed {q}s/fb\\.use_//;s/ = .*//{q} | sort -u"
 
-verified = (feed: str): str
+verified: str = (feed: str)
     "{feed} | grep -hoE {q}{verifypat}{q} | sed {q}s/verify_//{q} | sort -u"
 
-zig = (root: str): str
+zig: str = (root: str)
     "cd {root} && git ls-files 'src/*.zig' | tr '\\n' '\\0' | xargs -0 cat"
 
-lines = (cmd: str): i64
+lines: i64 = (cmd: str)
     to(i64)(std.proc.capture("{cmd} | wc -l"))
 
--- Set difference without a temp file and without a brace group, which would
--- collide with interpolation: emit the right side TWICE, so a name present on
--- both sides appears three times and a left-only name appears once. `uniq -u`
--- keeps the ones seen once.
-minus = (a: str, b: str): i64
+# Set difference without a temp file and without a brace group, which would
+# collide with interpolation: emit the right side TWICE, so a name present on
+# both sides appears three times and a left-only name appears once. `uniq -u`
+# keeps the ones seen once.
+minus: i64 = (a: str, b: str)
     to(i64)(std.proc.capture("( {a} ; {b} ; {b} ) | sort | uniq -u | wc -l"))
 
-pad = (s: str, width: i64): str
+pad: str = (s: str, width: i64)
     out = s
     while #out < width
         out = out .. " "
     out
 
--- Every hole below is a PLAIN BINDING, never an expression. `"{pad(name, 11)}"`
--- renders the call LITERALLY — duon interpolation substitutes bindings and
--- field walks only, so an expression hole silently prints its own source and
--- the table reads as corrupt data rather than as a formatting bug.
-row = (name: str, n: i64, budget: i64): i64
+# Every hole below is a PLAIN BINDING, never an expression. `"{pad(name, 11)}"`
+# renders the call LITERALLY — duon interpolation substitutes bindings and
+# field walks only, so an expression hole silently prints its own source and
+# the table reads as corrupt data rather than as a formatting bug.
+row: i64 = (name: str, n: i64, budget: i64)
     mark = "  "
     if n > budget
         mark = "!!"
@@ -152,13 +152,13 @@ row = (name: str, n: i64, budget: i64): i64
         return 1
     0
 
-main = (): i64
+main: i64 = ()
     root = std.os.getenv("DUO_ROOT")
     if root == ""
         root = "."
 
-    -- CONTROLS FIRST. A row printed before its control has been checked is a
-    -- number nobody should act on.
+    # CONTROLS FIRST. A row printed before its control has been checked is a
+    # number nobody should act on.
     bad = 0
     if sees(upperpat, "pub const NodeKind = enum {") != 1
         print("CONTROL FAILED: upper does not see `pub const NodeKind = enum`")
@@ -179,12 +179,12 @@ main = (): i64
         print("CONTROL FAILED: relation convicts an ordinary accessor")
         bad = bad + 1
 
-    -- The assumption row has FIVE controls, because it is a pipeline rather
-    -- than one grep and every stage of a pipeline can fail silently to zero.
-    -- Two prove the extractors read the real corpus at all; two prove the live
-    -- filter separates an assignment from a retirement; one proves the set
-    -- difference. Without the first two a broken `git ls-files` would score a
-    -- perfect nothing, which this repository has already shipped once.
+    # The assumption row has FIVE controls, because it is a pipeline rather
+    # than one grep and every stage of a pipeline can fail silently to zero.
+    # Two prove the extractors read the real corpus at all; two prove the live
+    # filter separates an assignment from a retirement; one proves the set
+    # difference. Without the first two a broken `git ls-files` would score a
+    # perfect nothing, which this repository has already shipped once.
     if lines(live(zig(root))) < 1
         print("CONTROL FAILED: the live extractor reads no flag from src/*.zig")
         bad = bad + 1

@@ -1,0 +1,71 @@
+# Tracked JavaScript debt ledger for the self-hosting target.
+#
+# language_census keeps the count bounded. This prints the exact tracked files
+# so the remaining non-duon debt is visible without re-reading prose.
+
+script = std.script
+
+lines: any = (text: str)
+    out = {}
+    start = 1
+    i = 1
+    n = text:len()
+    while i <= n
+        if text:byte(i) == 10
+            if i > start
+                out[out:len() + 1] = text:sub(start, i - 1)
+            start = i + 1
+        i += 1
+    if start <= n
+        out[out:len() + 1] = text:sub(start, n)
+    out
+
+vscode: bool = (root: str, path: str)
+    path == "ext/vscode-duo/extension.js" and script.status("cd '{root}' && ./zig-out/bin/idol run scripts/vscodeproj.id") == 0
+
+tree: bool = (root: str, path: str)
+    path == "ext/tree-sitter-duo/grammar.js" and script.status("cd '{root}' && env TSEMIT_CHECK=1 ./zig-out/bin/idol run scripts/treesitter_emit.id") == 0
+
+main: i64 = ()
+    root = script.chomp(script.capture("git rev-parse --show-toplevel 2>/dev/null"))
+    if root == ""
+        print("jsledger: fail no git root")
+        std.os.exit(3)
+
+    files = lines(script.capture("cd '{root}' && git ls-files '*.js' | sort"))
+    generated = {}
+    partial = {}
+    authored = {}
+    for i = 1, files:len()
+        path = files[i]
+        if vscode(root, path)
+            generated[generated:len() + 1] = path
+        elseif tree(root, path)
+            generated[generated:len() + 1] = path
+        else
+            authored[authored:len() + 1] = path
+
+    filecount = files:len()
+    gencount = generated:len()
+    partcount = partial:len()
+    authcount = authored:len()
+
+    if filecount == 0
+        print("jsledger: pass tracked js 0")
+        std.os.exit(0)
+
+    status = if partcount == 0 and authcount == 0 then "pass" else "fail" end
+    print("jsledger: {status} tracked js {filecount}")
+    print("generated {gencount}")
+    for i = 1, gencount
+        print("  {generated[i]}")
+    print("partial {partcount}")
+    for i = 1, partcount
+        print("  {partial[i]}")
+    print("authored {authcount}")
+    for i = 1, authcount
+        print("  {authored[i]}")
+    if partcount == 0 and authcount == 0
+        std.os.exit(0)
+    std.os.exit(1)
+    0

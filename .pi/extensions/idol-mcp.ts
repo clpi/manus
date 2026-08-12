@@ -8,7 +8,7 @@
  * serialized builds; `duo-lsp` owns diagnostics; `zls` owns Zig navigation.
  * This extension speaks newline-delimited JSON-RPC 2.0 to those servers by
  * spawning the repository-native `duo` binary on the same entrypoints the
- * Cursor/Codex projections use (tools/devnode/mcp.manifest.json).
+ * Cursor/Codex projections use (tools/node/dev/mcp.manifest.json).
  *
  * SCOPE — tooling projection only
  * This is the pi analogue of .cursor/mcp.json and .codex/mcp.generated.toml.
@@ -87,7 +87,7 @@ class McpClient {
       let proc: ChildProcessWithoutNullStreams;
       try {
         proc = spawn(
-          this.idBin,
+          this.duoBin,
           ["run", `--backend=${this.server.backend}`, join(this.repo, this.server.entry)],
           { cwd: this.repo, stdio: ["pipe", "pipe", "pipe"] },
         );
@@ -202,7 +202,7 @@ class McpClient {
 export default function (pi: ExtensionAPI) {
   let repo = process.cwd();
   let duoBin = join(repo, "zig-out", "bin", "duo");
-  const manifestPath = join(repo, "tools", "devnode", "mcp.manifest.json");
+  const manifestPath = join(repo, "tools", "node", "dev", "mcp.manifest.json");
 
   // The Idol dev workflow sends session metadata; PI env may resolve repo.
   const fromEnv = process.env.IDOL_REPO ?? process.env.DUO_ROOT;

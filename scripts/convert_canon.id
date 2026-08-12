@@ -1,70 +1,70 @@
--- GAP-081 step 3 — the canonicalizer, pointed at `to(str)` and nothing else.
---
--- Pass 121 §9 makes `n:to(str)` canonical and `to(str)(n)` noncanonical, and
--- §17 says canonicalization performs the repair mechanically rather than
--- asking 250 files' worth of authors to. This is that mechanism, and it is
--- deliberately narrow in TWO directions at once.
---
--- NARROW BY TARGET. `to(str)` only. `to(i64)` is not touched, and the reason
--- is the finding gaps/GAP-081.md was filed for: until step 1 of that gap
--- landed, `to(i64)` did not compile in EITHER face on a typed `str`, so
--- rewriting those sites would have turned a program that fails to build into a
--- different program that fails to build. `to(str)` was always the half where
--- both faces lower identically, which is what makes the rewrite provable
--- instead of hopeful. Step 4 opens `to(i64)` — from this same file, by adding
--- a target, once its fixture has held.
---
--- NARROW BY SUBJECT. Only a bare name or a field walk is rewritten:
--- `to(str)(n)` and `to(str)(p.x)`. Everything richer declines. `to(str)(a + b)`
--- would have to become `(a + b):to(str)`, and inserting that paren is a
--- JUDGEMENT about precedence rather than a mechanical step — the class of edit
--- that has to be read, not generated. `to(str)(f(x))` declines for the same
--- reason: safe by hand, out of reach of a scan that does not parse.
---
--- WHY IT REFUSES A WHOLE LINE. The substitution is applied per LINE, so it is
--- all-or-nothing there. A `to(str)(` sitting inside a string literal is DATA —
--- someone's diagnostic text, this repo's own gate patterns — and rewriting it
--- changes what a program prints. Measured at the commit this landed: 6 such
--- sites, 4 of them in the otherwise-rewritable shape. A substitution that did
--- not look for them would have corrupted four literals and NOTHING WOULD HAVE
--- FAILED TO BUILD. Quote parity is tracked per line and a line carrying one is
--- declined entire.
---
--- THE WITNESS, Pass 121 §18, one per rewrite:
---
---     w  <path>:<line>  relation to · subject <s> · level str · graph identity unchanged
---
--- RELATION unchanged (`to`), SUBJECT unchanged (the same operand, now held at
--- the receiver), LEVEL unchanged (`str`, still the descriptor group), GRAPH
--- IDENTITY unchanged — which is the clause that has to be earned rather than
--- asserted, and it is earned BY VALUE: both faces of `to(str)` were compiled
--- and RUN over a name, a field walk, a call, an index, f64, bool and inside a
--- `..` chain, and they agree on every one. They also emit byte-identical C,
--- which is the stronger form of the same statement.
---
--- WHY IT READS THE CORPUS THROUGH grep RATHER THAN WHOLE FILES. Only candidate
--- lines are pulled into this program, with their line numbers. Reading whole
--- files and rebuilding them here would be quadratic — every `..` allocates and
--- copies the accumulated text — and it would put the scan a long way from the
--- thing it is deciding about. grep answers "which lines could possibly be
--- sites"; this file answers "which of those actually are, and what is the
--- subject", which is the part a regex cannot do.
---
--- DRY RUN IS THE DEFAULT. `CONVERTCANON_APPLY=1` writes. Nothing else does.
+# GAP-081 step 3 — the canonicalizer, pointed at `to(str)` and nothing else.
+#
+# Pass 121 §9 makes `n:to(str)` canonical and `to(str)(n)` noncanonical, and
+# §17 says canonicalization performs the repair mechanically rather than
+# asking 250 files' worth of authors to. This is that mechanism, and it is
+# deliberately narrow in TWO directions at once.
+#
+# NARROW BY TARGET. `to(str)` only. `to(i64)` is not touched, and the reason
+# is the finding gaps/GAP-081.md was filed for: until step 1 of that gap
+# landed, `to(i64)` did not compile in EITHER face on a typed `str`, so
+# rewriting those sites would have turned a program that fails to build into a
+# different program that fails to build. `to(str)` was always the half where
+# both faces lower identically, which is what makes the rewrite provable
+# instead of hopeful. Step 4 opens `to(i64)` — from this same file, by adding
+# a target, once its fixture has held.
+#
+# NARROW BY SUBJECT. Only a bare name or a field walk is rewritten:
+# `to(str)(n)` and `to(str)(p.x)`. Everything richer declines. `to(str)(a + b)`
+# would have to become `(a + b):to(str)`, and inserting that paren is a
+# JUDGEMENT about precedence rather than a mechanical step — the class of edit
+# that has to be read, not generated. `to(str)(f(x))` declines for the same
+# reason: safe by hand, out of reach of a scan that does not parse.
+#
+# WHY IT REFUSES A WHOLE LINE. The substitution is applied per LINE, so it is
+# all-or-nothing there. A `to(str)(` sitting inside a string literal is DATA —
+# someone's diagnostic text, this repo's own gate patterns — and rewriting it
+# changes what a program prints. Measured at the commit this landed: 6 such
+# sites, 4 of them in the otherwise-rewritable shape. A substitution that did
+# not look for them would have corrupted four literals and NOTHING WOULD HAVE
+# FAILED TO BUILD. Quote parity is tracked per line and a line carrying one is
+# declined entire.
+#
+# THE WITNESS, Pass 121 §18, one per rewrite:
+#
+#     w  <path>:<line>  relation to · subject <s> · level str · graph identity unchanged
+#
+# RELATION unchanged (`to`), SUBJECT unchanged (the same operand, now held at
+# the receiver), LEVEL unchanged (`str`, still the descriptor group), GRAPH
+# IDENTITY unchanged — which is the clause that has to be earned rather than
+# asserted, and it is earned BY VALUE: both faces of `to(str)` were compiled
+# and RUN over a name, a field walk, a call, an index, f64, bool and inside a
+# `..` chain, and they agree on every one. They also emit byte-identical C,
+# which is the stronger form of the same statement.
+#
+# WHY IT READS THE CORPUS THROUGH grep RATHER THAN WHOLE FILES. Only candidate
+# lines are pulled into this program, with their line numbers. Reading whole
+# files and rebuilding them here would be quadratic — every `..` allocates and
+# copies the accumulated text — and it would put the scan a long way from the
+# thing it is deciding about. grep answers "which lines could possibly be
+# sites"; this file answers "which of those actually are, and what is the
+# subject", which is the part a regex cannot do.
+#
+# DRY RUN IS THE DEFAULT. `CONVERTCANON_APPLY=1` writes. Nothing else does.
 
 q = "'"
 
--- The substitution, as ONE fact stated once. The left guard is a character
--- class rather than a word boundary because `:` must be excluded: `xs:to(seq)`
--- is ALREADY canonical, and a rewriter that convicted it would be driving the
--- corpus backwards. `.` is excluded in the other direction — `x.to(str)` is a
--- member, not the relation family.
+# The substitution, as ONE fact stated once. The left guard is a character
+# class rather than a word boundary because `:` must be excluded: `xs:to(seq)`
+# is ALREADY canonical, and a rewriter that convicted it would be driving the
+# corpus backwards. `.` is excluded in the other direction — `x.to(str)` is a
+# member, not the relation family.
 pattern = "(^|[^A-Za-z0-9_.:])to\\(str\\)\\(([A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*)\\)"
 repl = "\\1\\2:to(str)"
 
--- The same left guard with no subject shape, used to ask grep for candidate
--- lines. It must be WIDER than `pattern` or the decline counts would be blind
--- to exactly the lines they exist to report.
+# The same left guard with no subject shape, used to ask grep for candidate
+# lines. It must be WIDER than `pattern` or the decline counts would be blind
+# to exactly the lines they exist to report.
 probe = "(^|[^A-Za-z0-9_.:])to\\(str\\)\\("
 
 rewrites = 0
@@ -72,31 +72,31 @@ declined = 0
 touched = 0
 seen = 0
 
-alpha = (b: i64): bool
+alpha: bool = (b: i64)
     (b >= 97 and b <= 122) or (b >= 65 and b <= 90) or b == 95
 
-alnum = (b: i64): bool
+alnum: bool = (b: i64)
     alpha(b) or (b >= 48 and b <= 57)
 
--- Is the byte to the LEFT of a `to` one that glues it to something else? An
--- identifier byte makes it a suffix (`auto`), a `.` makes it a member, a `:`
--- makes it an invoke — in none of the three is it the relation family.
-glued = (b: i64): bool
+# Is the byte to the LEFT of a `to` one that glues it to something else? An
+# identifier byte makes it a suffix (`auto`), a `.` makes it a member, a `:`
+# makes it an invoke — in none of the three is it the relation family.
+glued: bool = (b: i64)
     alnum(b) or b == 46 or b == 58
 
--- Is this line entirely a comment? Comment text is prose about the law, and it
--- is frequently the only place the noncanonical form is written ON PURPOSE.
-comment = (line: str): bool
+# Is this line entirely a comment? Comment text is prose about the law, and it
+# is frequently the only place the noncanonical form is written ON PURPOSE.
+comment: bool = (line: str)
     n: i64 = #line
     i: i64 = 1
     while i <= n and (line:byte(i) == 32 or line:byte(i) == 9)
         i += 1
     i + 1 <= n and line:byte(i) == 45 and line:byte(i + 1) == 45
 
--- The subject inside `to(str)(…)`, read from `at`. Answers the index of the
--- closing paren when the subject is a name or a field walk, and 0 for anything
--- richer. 0 is a DECLINE, never a failure: the site stays exactly as written.
-subject = (line: str, at: i64): i64
+# The subject inside `to(str)(…)`, read from `at`. Answers the index of the
+# closing paren when the subject is a name or a field walk, and 0 for anything
+# richer. 0 is a DECLINE, never a failure: the site stays exactly as written.
+subject: i64 = (line: str, at: i64)
     n: i64 = #line
     i: i64 = at
     ok = i <= n and alpha(line:byte(i))
@@ -105,7 +105,7 @@ subject = (line: str, at: i64): i64
             i += 1
         while ok and i <= n and line:byte(i) == 46
             i += 1
-            if i > n or not alpha(line:byte(i))
+            if i > n or !alpha(line:byte(i))
                 ok = false
             else
                 while i <= n and alnum(line:byte(i))
@@ -115,10 +115,10 @@ subject = (line: str, at: i64): i64
         stop = i
     stop
 
--- One line. Answers how many rewritable sites it carries, or -1 when the line
--- must be left alone entire because a site hides inside a string literal.
--- `talk` prints the §18 witness for each site as it is found.
-scan = (path: str, line: str, no: i64, talk: i64): i64
+# One line. Answers how many rewritable sites it carries, or -1 when the line
+# must be left alone entire because a site hides inside a string literal.
+# `talk` prints the §18 witness for each site as it is found.
+scan: i64 = (path: str, line: str, no: i64, talk: i64)
     n: i64 = #line
     i: i64 = 1
     quotes: i64 = 0
@@ -126,15 +126,15 @@ scan = (path: str, line: str, no: i64, talk: i64): i64
     hidden: i64 = 0
     while i <= n
         b: i64 = line:byte(i)
-        -- The escape is honoured ONLY inside a literal, the one place it means
-        -- anything. Honouring it outside would let a stray backslash swallow a
-        -- real quote and flip the parity for the whole rest of the line.
-        --
-        -- TWO, not one. This read `i += 1` first, which skipped the backslash
-        -- and then processed the quote it was escaping as an ordinary quote —
-        -- so `"… \"to(str)(n)\" …"` came back EVEN, the site read as code, and
-        -- a string literal was offered for rewriting. Caught by this file
-        -- convicting its own control line.
+        # The escape is honoured ONLY inside a literal, the one place it means
+        # anything. Honouring it outside would let a stray backslash swallow a
+        # real quote and flip the parity for the whole rest of the line.
+        #
+        # TWO, not one. This read `i += 1` first, which skipped the backslash
+        # and then processed the quote it was escaping as an ordinary quote —
+        # so `"… \"to(str)(n)\" …"` came back EVEN, the site read as code, and
+        # a string literal was offered for rewriting. Caught by this file
+        # convicting its own control line.
         if quotes % 2 == 1 and b == 92
             i += 2
         else
@@ -144,7 +144,7 @@ scan = (path: str, line: str, no: i64, talk: i64): i64
                 left: i64 = 0
                 if i > 1
                     left = line:byte(i - 1)
-                if not glued(left)
+                if !glued(left)
                     if quotes % 2 == 1
                         hidden += 1
                     else
@@ -160,8 +160,8 @@ scan = (path: str, line: str, no: i64, talk: i64): i64
         out = -1
     out
 
--- `grep -n` writes `<number>:<text>`. Answer the number.
-mark = (row: str): i64
+# `grep -n` writes `<number>:<text>`. Answer the number.
+mark: i64 = (row: str)
     n: i64 = #row
     i: i64 = 1
     v: i64 = 0
@@ -173,8 +173,8 @@ mark = (row: str): i64
         got = v
     got
 
--- and the text after it.
-body = (row: str): str
+# and the text after it.
+body: str = (row: str)
     n: i64 = #row
     i: i64 = 1
     while i <= n and row:byte(i) >= 48 and row:byte(i) <= 57
@@ -184,9 +184,9 @@ body = (row: str): str
         out = row:sub(i + 1, n)
     out
 
--- One file. Answers the sed program that performs its rewrites, "" when there
--- are none.
-walk = (path: str, talk: i64): str
+# One file. Answers the sed program that performs its rewrites, "" when there
+# are none.
+walk: str = (path: str, talk: i64)
     rows: str = std.script.capture("grep -n -E {q}{probe}{q} {path} 2>/dev/null")
     n: i64 = #rows
     start: i64 = 1
@@ -201,7 +201,7 @@ walk = (path: str, talk: i64): str
             if no > 0
                 line: str = body(row)
                 k: i64 = 0
-                if not comment(line)
+                if !comment(line)
                     k = scan(path, line, no, talk)
                 if k < 0
                     declined = declined + 1
@@ -212,11 +212,11 @@ walk = (path: str, talk: i64): str
         i += 1
     edits
 
--- CONTROLS FIRST, and every one is about a way this could be WRONG rather than
--- a way it could be idle. A canonicalizer reporting "0 sites" would look like
--- a clean tree; one that convicted the canonical form would look like progress
--- while undoing it.
-controls = (): i64
+# CONTROLS FIRST, and every one is about a way this could be WRONG rather than
+# a way it could be idle. A canonicalizer reporting "0 sites" would look like
+# a clean tree; one that convicted the canonical form would look like progress
+# while undoing it.
+controls: i64 = ()
     bad = 0
     if scan("c", "    print(to(str)(n))", 1, 0) != 1
         print("CONTROL FAILED: does not see an operation-first conversion")
@@ -239,9 +239,9 @@ controls = (): i64
     if scan("c", "    msg = \"to(str)(n)\"", 1, 0) != -1
         print("CONTROL FAILED: does not decline a site inside a string literal")
         bad = bad + 1
-    -- The same site behind an ESCAPED quote, which is the case that actually
-    -- broke. A scanner that mishandles `\\\"` reports the literal as closed and
-    -- offers its contents up as code.
+    # The same site behind an ESCAPED quote, which is the case that actually
+    # broke. A scanner that mishandles `\\\"` reports the literal as closed and
+    # offers its contents up as code.
     if scan("c", "    msg = probe(\"say \\\"to(str)(n)\\\" now\")", 1, 0) != -1
         print("CONTROL FAILED: an escaped quote flips the parity")
         bad = bad + 1
@@ -256,7 +256,7 @@ controls = (): i64
         bad = bad + 1
     bad
 
-main = (): i64
+main: i64 = ()
     list = std.script.getenv("CONVERTCANON", "/tmp/duo_audit100_canonical.list")
     apply = std.script.getenv("CONVERTCANON_APPLY", "")
 
@@ -267,7 +267,7 @@ main = (): i64
         print("  scanned and nothing was written.")
         std.os.exit(3)
 
-    if not std.fs.exists(list)
+    if !std.fs.exists(list)
         print("convert canon: FAIL — no corpus list at {list}")
         print("  run audit100 with AUDIT100_LIST pointed there first")
         std.os.exit(3)

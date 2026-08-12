@@ -1,4 +1,4 @@
-//! Pass 5 Layer B — frontend-neutral C declaration adapter (bounded subset).
+//! Layer B — frontend-neutral C declaration adapter (bounded subset).
 //!
 //! Produces frontend-owned records consumed by the semantic importer. Does not
 //! construct compiler-internal Duo objects or SIM entities directly.

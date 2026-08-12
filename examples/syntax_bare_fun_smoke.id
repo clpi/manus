@@ -1,4 +1,4 @@
--- Bare function syntax + if-expressions (GR-001, GR-002). Gate: agent-smoke.
+# Bare function syntax + if-expressions (GR-001, GR-002). Gate: agent-smoke.
 
 add(x: i64, y: i64): i64
     x + y

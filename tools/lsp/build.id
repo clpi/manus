@@ -1,8 +1,8 @@
--- Build the duo-lsp server binary from the Duo source.
---
--- Duo replacement for build.sh (monoglot census: a build script is a program,
--- and this repo's program language is Duo). Locates the compiler the same way
--- the shell version did, so DUO_LSP_DUO_BIN keeps working.
+# Build the duo-lsp server binary from the Duo source.
+#
+# Duo replacement for build.sh (monoglot census: a build script is a program,
+# and this repo's program language is Duo). Locates the compiler the same way
+# the shell version did, so DUO_LSP_DUO_BIN keeps working.
 
 _first_executable(candidates: any): str
     for _i, c in candidates
@@ -14,15 +14,15 @@ _first_executable(candidates: any): str
 end
 
 _locate_duo(): str
-    -- Explicit override wins, then the sibling checkout, then PATH. `which`
-    -- is asked LAST so a locally built compiler is preferred over an
-    -- installed one -- this repo tracks duo's main branch.
+    # Explicit override wins, then the sibling checkout, then PATH. `which`
+    # is asked LAST so a locally built compiler is preferred over an
+    # installed one # this repo tracks duo's main branch.
     override = std.script.getenv_or("DUO_LSP_DUO_BIN")
     on_path = std.script.chomp(std.script.capture("command -v duo 2>/dev/null"))
     _first_executable({ override, "../duo/zig-out/bin/duo", "../../zig-out/bin/duo", on_path })
 end
 
-main = (): i64
+main: i64 = ()
     duo = _locate_duo()
     if duo == ""
         print("error: duo compiler not found. Build it with 'zig build' or set DUO_LSP_DUO_BIN.")

@@ -1,7 +1,7 @@
--- TEXT: empty-string edges of the split face. An empty field between two
--- separators is KEPT, and the part count includes it.
--- expect: 3 []
-main = (): i64
+# TEXT: empty-string edges of the split face. An empty field between two
+# separators is KEPT, and the part count includes it.
+# expect: 3 []
+main: i64 = ()
     s = "a,,b"
     p = s:split(",")
     n = #p

@@ -1,37 +1,37 @@
--- comp_canonical_directives_showcase.id
--- Demonstrates the canonical @comp.* dotted directive hierarchy (the compiler
--- meta-module). These REPLACE the legacy flat/underscored spellings:
---   @static_assert   -> @comp.assert
---   @type_name       -> @comp.type.name
---   @type_id         -> @comp.type.id
---   @is_type         -> @comp.type.is
---   @comptime_for    -> @comp.for
---   @compile_log     -> @comp.compile.log
---   @concept_methods -> @comp.concepts.methods
--- (see docs/DIRECTIVE_HIERARCHY.md for the full legacy->canonical map)
---
--- Run: duo run examples/comp_canonical_directives_showcase.id
+# comp_canonical_directives_showcase.id
+# Demonstrates the canonical @comp.* dotted directive hierarchy (the compiler
+# meta-module). These REPLACE the legacy flat/underscored spellings:
+#   @static_assert   -> @comp.assert
+#   @type_name       -> @comp.type.name
+#   @type_id         -> @comp.type.id
+#   @is_type         -> @comp.type.is
+#   @comptime_for    -> @comp.for
+#   @compile_log     -> @comp.compile.log
+#   @concept_methods -> @comp.concepts.methods
+# (see docs/DIRECTIVE_HIERARCHY.md for the full legacy->canonical map)
+#
+# Run: duo run examples/comp_canonical_directives_showcase.id
 
 io.stdout:setvbuf("no")
 
--- 1. Compile-time type introspection (was @type_name / @type_id / @is_type)
+# 1. Compile-time type introspection (was @type_name / @type_id / @is_type)
 x: i64 = 42
 s: str = "hello"
 print("[type] x=" .. @comp.type.name(x) .. "  s=" .. @comp.type.name(s))
 print("[is]   x is i64=" .. to(str)(@comp.type.is(x, "i64")) .. "  x is str=" .. to(str)(@comp.type.is(x, "str")))
 print("[id]   distinct=" .. to(str)(@comp.type.id(x) != @comp.type.id(s)))
 
--- 2. Compile-time assertion (was @static_assert). Fails the build if false.
+# 2. Compile-time assertion (was @static_assert). Fails the build if false.
 @comp.assert(@comp.type.is(x, "i64"), "x must be i64")
 
--- 3. Compile-time unrolling inside @(expr) (was @comptime_for).
---    @comp.for(start, end, fmt) expands to the concatenated fragment per index.
+# 3. Compile-time unrolling inside @(expr) (was @comptime_for).
+#    @comp.for(start, end, fmt) expands to the concatenated fragment per index.
 SUM = @(@comp.for(0, 5, "%i"))
 print("[for]  sum 0..4 = " .. to(str)(SUM) .. "  (expect 10)")
 COUNT = @(@comp.for(0, 4, "1"))
 print("[for]  count   = " .. to(str)(COUNT) .. "  (expect 4)")
 
--- 4. Compile-time log (was @compile_log) -- emits a build-time note, no runtime effect.
+# 4. Compile-time log (was @compile_log) # emits a build-time note, no runtime effect.
 @comp.compile.log("showcase built with canonical @comp.* directives")
 
 print("RESULT comp_canonical_ok = true")

@@ -1,6 +1,6 @@
--- the engine/src/wasm/value.id — WASM value representation
--- All values stored as i64. Reinterpret casts for float types.
--- No boxing, no tags at runtime — type known statically from WASM validation.
+# the engine/src/wasm/value.id — WASM value representation
+# All values stored as i64. Reinterpret casts for float types.
+# No boxing, no tags at runtime — type known statically from WASM validation.
 
 VAL_I32 = 0x7F
 VAL_I64 = 0x7E

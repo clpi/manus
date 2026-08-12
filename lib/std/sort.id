@@ -1,8 +1,8 @@
--- std.sort — sorting utilities (mirrors Go's sort package)
--- Provides generic sort, stable sort, binary search, and convenience wrappers
--- for ascending/descending order on homogeneous array-like tables.
+# std.sort — sorting utilities (mirrors Go's sort package)
+# Provides generic sort, stable sort, binary search, and convenience wrappers
+# for ascending/descending order on homogeneous array-like tables.
 
--- Insertion sort for small ranges (stable).
+# Insertion sort for small ranges (stable).
 std_sort_insertion(arr: any, lo: any, hi: any, less: any): void
     i = lo + 1
     while i <= hi
@@ -17,7 +17,7 @@ std_sort_insertion(arr: any, lo: any, hi: any, less: any): void
     end
 end
 
--- Median-of-three pivot selection.
+# Median-of-three pivot selection.
 std_sort_median3(arr: any, lo: any, hi: any, less: any): any
     mid = lo + (hi - lo) / 2
     if less(arr[mid], arr[lo])
@@ -38,10 +38,10 @@ std_sort_median3(arr: any, lo: any, hi: any, less: any): any
     arr[mid]
 end
 
--- Partition for quicksort (Lomuto scheme).
+# Partition for quicksort (Lomuto scheme).
 std_sort_partition(arr: any, lo: any, hi: any, less: any): any
     pivot = std_sort_median3(arr, lo, hi, less)
-    -- move pivot to hi-1
+    # move pivot to hi-1
     tmp = arr[hi - 1]
     arr[hi - 1] = arr[lo + (hi - lo) / 2]
     arr[lo + (hi - lo) / 2] = tmp
@@ -58,14 +58,14 @@ std_sort_partition(arr: any, lo: any, hi: any, less: any): any
         arr[i] = arr[j]
         arr[j] = tmp
     end
-    -- place pivot
+    # place pivot
     tmp = arr[i]
     arr[i] = arr[hi - 1]
     arr[hi - 1] = tmp
     i
 end
 
--- Introsort-style quicksort with insertion-sort cutoff.
+# Introsort-style quicksort with insertion-sort cutoff.
 std_sort_quicksort(arr: any, lo: any, hi: any, less: any): void
     while hi - lo > 24
         p = std_sort_partition(arr, lo, hi, less)
@@ -82,43 +82,43 @@ std_sort_quicksort(arr: any, lo: any, hi: any, less: any): void
     end
 end
 
--- sort: sort the array portion of `arr` in-place using `less` comparator.
--- less(a, b) should return true when a should come before b.
+# sort: sort the array portion of `arr` in-place using `less` comparator.
+# less(a, b) should return true when a should come before b.
 sort(arr: any, less: any): void
     if arr == nil return end
-    n = rawlen(arr)
+    n = arr:len()
     if n < 2 return end
     std_sort_quicksort(arr, 1, n, less)
 end
 
--- stable: sort stably (insertion sort, O(n^2) but correct for all inputs).
+# stable: sort stably (insertion sort, O(n^2) but correct for all inputs).
 stable(arr: any, less: any): void
     if arr == nil return end
-    n = rawlen(arr)
+    n = arr:len()
     if n < 2 return end
     std_sort_insertion(arr, 1, n, less)
 end
 
--- Ascending integer sort.
+# Ascending integer sort.
 std_sort_less_int(a: any, b: any): bool
     return a < b
 end
 
--- Descending integer sort.
+# Descending integer sort.
 std_sort_greater_int(a: any, b: any): bool
     return a > b
 end
 
 ints(arr: any): void
     if arr == nil return end
-    n = rawlen(arr)
+    n = arr:len()
     if n < 2 return end
     std_sort_quicksort(arr, 1, n, std_sort_less_int)
 end
 
 ints_desc(arr: any): void
     if arr == nil return end
-    n = rawlen(arr)
+    n = arr:len()
     if n < 2 return end
     std_sort_quicksort(arr, 1, n, std_sort_greater_int)
 end
@@ -129,15 +129,15 @@ end
 
 strings(arr: any): void
     if arr == nil return end
-    n = rawlen(arr)
+    n = arr:len()
     if n < 2 return end
     std_sort_quicksort(arr, 1, n, std_sort_less_str)
 end
 
--- is_sorted: returns true if arr is sorted according to less.
+# is_sorted: returns true if arr is sorted according to less.
 is_sorted(arr: any, less: any): bool
     if arr == nil return true end
-    n = rawlen(arr)
+    n = arr:len()
     i = 2
     while i <= n
         if less(arr[i], arr[i - 1]) return false end
@@ -146,7 +146,7 @@ is_sorted(arr: any, less: any): bool
     true
 end
 
--- search: binary search for the smallest index i in [lo, hi) where f(i) is true.
+# search: binary search for the smallest index i in [lo, hi) where f(i) is true.
 search(n: any, f: any): any
     lo = 0
     hi = n
@@ -161,11 +161,11 @@ search(n: any, f: any): any
     lo
 end
 
--- search_sorted: binary search for value v in a sorted arr.
--- Returns 1-based index or -1. Uses iterative search (no closures).
+# search_sorted: binary search for value v in a sorted arr.
+# Returns 1-based index or -1. Uses iterative search (no closures).
 search_sorted(arr: any, v: any, less: any): any
     if arr == nil return 0 - 1 end
-    n = rawlen(arr)
+    n = arr:len()
     lo = 0
     hi = n
     while lo < hi
@@ -181,10 +181,10 @@ search_sorted(arr: any, v: any, less: any): any
     0 - 1
 end
 
--- reverse: reverse the array portion of arr in-place.
+# reverse: reverse the array portion of arr in-place.
 reverse(arr: any): void
     if arr == nil return end
-    n = rawlen(arr)
+    n = arr:len()
     i = 1
     j = n
     while i < j
@@ -196,18 +196,18 @@ reverse(arr: any): void
     end
 end
 
--- swap: swap two indices.
+# swap: swap two indices.
 swap(arr: any, i: any, j: any): void
     tmp = arr[i]
     arr[i] = arr[j]
     arr[j] = tmp
 end
 
--- slice: sort a sub-range [from, to] of arr.
+# slice: sort a sub-range [from, to] of arr.
 slice(arr: any, from: any, to: any, less: any): void
     if arr == nil return end
     if from < 1 from = 1 end
-    if to > rawlen(arr) to = rawlen(arr) end
+    if to > arr:len() to = arr:len() end
     if to - from < 1 return end
     std_sort_quicksort(arr, from, to, less)
 end

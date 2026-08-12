@@ -1,6 +1,5 @@
--- std.hex — Hexadecimal encoding and decoding utilities
+# std.hex — Hexadecimal encoding and decoding utilities
 
-global crypto = req "std.crypto"
 
 encode(s: str): str
     crypto.hex_encode(s)
@@ -11,8 +10,8 @@ decode(s: str): str
     out = {}
     for i = 1, #s, 2
         byte_str = s:sub(i, i + 1)
-        table.insert(out, string.char(tonumber(byte_str, 16)))
+        out:insert(tonumber(byte_str, 16):char())
     end
-    table.concat(out)
+    out:concat()
 end
 

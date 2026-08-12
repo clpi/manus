@@ -1,0 +1,51 @@
+#!/bin/sh
+set -eu
+
+repo="$(cd "$(dirname "$0")/../../.." && pwd)"
+cd "$repo"
+
+fail=0
+
+expect_fail() {
+  name="$1"
+  shift
+  if "$@" >/tmp/idol-positive.out 2>&1; then
+    echo "FAIL positive control did not fail: $name" >&2
+    fail=$((fail + 1))
+  else
+    echo "ok positive control failed: $name"
+  fi
+}
+
+work="$(mktemp -d "${TMPDIR:-/tmp}/idol-positive.XXXXXX")"
+trap 'rm -rf "$work"' EXIT
+
+cat > "$work/dead-manifest.json" <<JSON
+{
+  "schema": 1,
+  "authority": ["AGENTS.md"],
+  "servers": [
+    {
+      "name": "dead",
+      "entry": "tools/mcp/no_such_server.id",
+      "backend": "c",
+      "required": true,
+      "startup_timeout_sec": 1,
+      "tool_timeout_sec": 1
+    }
+  ]
+}
+JSON
+
+expect_fail "missing dependency" env PATH="/usr/bin:/bin" IDOL_DOCTOR_SKIP_GATES=1 "$repo/tools/node/dev/doctor"
+expect_fail "dead MCP server" env IDOL_MCP_MANIFEST="$work/dead-manifest.json" "$repo/tools/node/dev/probe-mcp"
+expect_fail "wrong compiler artifact" env IDOL_BOOTSTRAP_BIN="/bin/false" "$repo/tools/node/dev/probe-mcp"
+expect_fail "failing child gate" env IDOL_DOCTOR_SKIP_GATES=1 IDOL_DOCTOR_EXTRA_GATE="exit 42" "$repo/tools/node/dev/doctor"
+
+if [ "$fail" -eq 0 ]; then
+  echo "positive-controls: PASS"
+  exit 0
+fi
+
+echo "positive-controls: FAIL ($fail)" >&2
+exit 1

@@ -1,38 +1,38 @@
--- std.trace — beautiful, semantically-formatted trace & debug output
---
--- Design:
---   * Every event is signed with a beautiful Unicode glyph and colored
---     by severity. Bold/italic/dim/underline carry semantic meaning
---     (see LEGEND below).
---   * Spans can be opened/closed and timed.
---   * Field values are colored by Lua TYPE so a glance reveals shape:
---       string  => green       ("…")
---       number  => yellow      (123 / 1.5)
---       boolean => magenta     (true / false)
---       nil     => dim italic  (nil)
---       table   => cyan        ({…})
---       function=> italic cyan(⟪fn⟫)
---   * Source locations are underline; function names are magenta-italic;
---     timestamps are dim; slow durations are bold-yellow.
---   * Honors NO_COLOR / DUO_COLOR env vars.
---
--- LEGEND of formatting semantics:
---   bold      = essential payload (msg, error text, slow span durs)
---   italic   = identity (function names, type names, nil)
---   dim      = ancillary (timestamps, caller meta, trace level)
---   underline= location references (file:line, field keys)
---   color    = severity / type class
---
--- NOTE: this module is intentionally self-contained — it does not
--- `req` other stdlib modules at top level. The current codegen drops
--- top-level `local x = req "stdlib"` bindings when a stdlib module is
--- inlined under `duo run`; inlining ANSI codes + tty detection here
--- keeps std.trace compilable today. When that codegen gap is fixed,
--- trace.id can switch back to `local color = req "std.color"` etc.
+# std.trace — beautiful, semantically-formatted trace & debug output
+#
+# Design:
+#   * Every event is signed with a beautiful Unicode glyph and colored
+#     by severity. Bold/italic/dim/underline carry semantic meaning
+#     (see LEGEND below).
+#   * Spans can be opened/closed and timed.
+#   * Field values are colored by Lua TYPE so a glance reveals shape:
+#       string  => green       ("…")
+#       number  => yellow      (123 / 1.5)
+#       boolean => magenta     (true / false)
+#       nil     => dim italic  (nil)
+#       table   => cyan        ({…})
+#       function=> italic cyan(⟪fn⟫)
+#   * Source locations are underline; function names are magenta-italic;
+#     timestamps are dim; slow durations are bold-yellow.
+#   * Honors NO_COLOR / DUO_COLOR env vars.
+#
+# LEGEND of formatting semantics:
+#   bold      = essential payload (msg, error text, slow span durs)
+#   italic   = identity (function names, type names, nil)
+#   dim      = ancillary (timestamps, caller meta, trace level)
+#   underline= location references (file:line, field keys)
+#   color    = severity / type class
+#
+# NOTE: this module is intentionally self-contained — it does not
+# `req` other stdlib modules at top level. The current codegen drops
+# top-level `local x = stdlib` bindings when a stdlib module is
+# inlined under `duo run`; inlining ANSI codes + tty detection here
+# keeps std.trace compilable today. When that codegen gap is fixed,
+# trace.id can switch back to `local color = color` etc.
 
 global M = {}
 
--- ─── ANSI codes (inline copy of std.color) ─────────────────────────
+# ─── ANSI codes (inline copy of std.color) ─────────────────────────
 M.RESET     = "\x1b[0m"
 M.BOLD      = "\x1b[1m"
 M.DIM       = "\x1b[2m"
@@ -47,7 +47,7 @@ M.MAGENTA   = "\x1b[35m"
 M.CYAN      = "\x1b[36m"
 M.WHITE     = "\x1b[37m"
 
--- ─── Glyphs ────────────────────────────────────────────────────────
+# ─── Glyphs ────────────────────────────────────────────────────────
 M.G_TRACE      = "∘"
 M.G_DEBUG      = "⊙"
 M.G_INFO       = "✦"
@@ -62,7 +62,7 @@ M.G_KV_SEP     = "="
 M.G_PIPE       = "│"
 M.G_BULLET     = "•"
 
--- ─── Levels ────────────────────────────────────────────────────────
+# ─── Levels ────────────────────────────────────────────────────────
 M.LV_TRACE = 0
 M.LV_DEBUG = 1
 M.LV_INFO  = 2
@@ -84,7 +84,7 @@ global trace_show_caller = true
 global trace_show_ts = true
 global trace_spans = {}
 
--- ─── tty detection ────────────────────────────────────────────────
+# ─── tty detection ────────────────────────────────────────────────
 tty(): bool
     ok, val = pcall(os.getenv, "DUO_COLOR")
     if ok and val != nil and val != "" and val != "0"
@@ -97,7 +97,7 @@ tty(): bool
     return true
 end
 
--- ─── Style wrappers ───────────────────────────────────────────────
+# ─── Style wrappers ───────────────────────────────────────────────
 s(prefix: str, text: str, suffix: str): str
     if prefix == nil prefix = "" end
     if suffix == nil suffix = M.RESET end
@@ -147,10 +147,10 @@ cyan(text: str): str
     return M.CYAN .. to(str)(text) .. M.RESET
 end
 
--- ─── Value formatting ─────────────────────────────────────────────
+# ─── Value formatting ─────────────────────────────────────────────
 tbl_summary(t: any): str
     if t == nil return "nil" end
-    n = rawlen(t)
+    n = t:len()
     if n > 0
         return "array(" .. to(str)(n) .. ")"
     end
@@ -181,7 +181,7 @@ pretty_val(value: any): str
     elseif t:find("function") == 1
         return cyan(italic("⟪fn⟫"))
     elseif t:find("table") == 1
-        n = rawlen(value)
+        n = value:len()
         if n > 0
             return cyan("⟦array " .. to(str)(n) .. "⟧")
         end
@@ -194,7 +194,7 @@ pretty_kv(k: str, v: any): str
     return underline(to(str)(k)) .. dim(" " .. M.G_KV_SEP .. " ") .. pretty_val(v)
 end
 
--- ─── Caller info ───────────────────────────────────────────────────
+# ─── Caller info ───────────────────────────────────────────────────
 caller(level: int): str
     info = debug.getinfo(level, "Snl")
     if info == nil return "" end
@@ -212,10 +212,10 @@ caller(level: int): str
     return magenta(italic(name_part)) .. dim(" " .. M.G_ARROW .. " ") .. underline(loc)
 end
 
--- ─── Timestamp ─────────────────────────────────────────────────────
+# ─── Timestamp ─────────────────────────────────────────────────────
 ts(): str
     secs = os.time()
-    ms = math.floor((os.clock() * 1000) % 1000)
+    ms = (os.clock() * 1000) % 1000:floor()
     frac = "." .. to(str)(ms)
     if ms < 10 frac = ".00" .. to(str)(ms)
     elseif ms < 100 frac = ".0" .. to(str)(ms)
@@ -223,7 +223,7 @@ ts(): str
     return dim(os.date("%H:%M:%S", secs) .. frac)
 end
 
--- ─── Level tag ─────────────────────────────────────────────────────
+# ─── Level tag ─────────────────────────────────────────────────────
 level_tag(level: int): str
     glyph = M.G_TRACE
     tag = "trace"
@@ -253,45 +253,45 @@ level_tag(level: int): str
     return body
 end
 
--- ─── Span indent ───────────────────────────────────────────────────
+# ─── Span indent ───────────────────────────────────────────────────
 span_indent(): str
-    n = rawlen(trace_spans)
+    n = trace_spans:len()
     if n <= 0 return "" end
-    rep = string.rep(M.G_PIPE .. " ", n)
+    rep = M.G_PIPE .. " ":rep(n)
     if rep == nil or rep == "" return "" end
     return dim(rep)
 end
 
--- ─── Emit ──────────────────────────────────────────────────────────
+# ─── Emit ──────────────────────────────────────────────────────────
 emit(level: int, msg: str, fields: any, skip: int): void
     if level < trace_level return end
     parts = {}
-    parts[rawlen(parts) + 1] = level_tag(level)
+    parts[parts:len() + 1] = level_tag(level)
     if trace_show_ts
-        parts[rawlen(parts) + 1] = dim("[") .. ts() .. dim("]")
+        parts[parts:len() + 1] = dim("[") .. ts() .. dim("]")
     end
     if trace_show_caller
         c = caller(skip + 1)
         if c != ""
-            parts[rawlen(parts) + 1] = dim("(") .. c .. dim(")")
+            parts[parts:len() + 1] = dim("(") .. c .. dim(")")
         end
     end
-    parts[rawlen(parts) + 1] = span_indent()
+    parts[parts:len() + 1] = span_indent()
     if msg != nil and msg != ""
-        parts[rawlen(parts) + 1] = bold(msg)
+        parts[parts:len() + 1] = bold(msg)
     end
     if fields != nil and type(fields) == "table"
         for k, v in fields
-            parts[rawlen(parts) + 1] = pretty_kv(k, v)
+            parts[parts:len() + 1] = pretty_kv(k, v)
         end
     end
-    print(table.concat(parts, " "))
+    print(parts:concat(" "))
 end
 
--- ─── Public API ─────────────────────────────────────────────────
+# ─── Public API ─────────────────────────────────────────────────
 set_level(level: any): void
     if type(level) == "string"
-        v = M.level_value[string.lower(level)]
+        v = M.level_value[level:lower()]
         if v != nil
             trace_level = v
         end
@@ -340,12 +340,12 @@ fatal(msg: str, fields: any): void
     emit(M.LV_FATAL, msg, fields, 2)
 end
 
--- ─── Spans ────────────────────────────────────────────────────────
--- Format a millisecond duration as a string like "12.34ms" without
--- relying on string.format (the codegen currently mishandles %f).
+# ─── Spans ────────────────────────────────────────────────────────
+# Format a millisecond duration as a string like "12.34ms" without
+# relying on string.format (the codegen currently mishandles %f).
 _fmt_ms(ms: float): str
-    whole = math.floor(ms)
-    frac = math.floor((ms - whole) * 100)
+    whole = ms:floor()
+    frac = (ms - whole) * 100:floor()
     frac_str = to(str)(frac)
     if frac < 10 frac_str = "0" .. to(str)(frac) end
     return to(str)(whole) .. "." .. frac_str .. "ms"
@@ -355,39 +355,39 @@ span(name: str, fields: any): any
     h = {
         name = name or "span",
         start = os.clock(),
-        depth = rawlen(trace_spans) + 1,
+        depth = trace_spans:len() + 1,
     }
-    trace_spans[rawlen(trace_spans) + 1] = h
-    ind = dim(string.rep(M.G_PIPE .. " ", h.depth - 1))
+    trace_spans[trace_spans:len() + 1] = h
+    ind = dim(M.G_PIPE .. " ":rep(h.depth - 1))
     parts = {}
-    parts[rawlen(parts) + 1] = magenta(M.G_SPAN_BEGIN)
-    parts[rawlen(parts) + 1] = bold(italic(name or "span"))
-    parts[rawlen(parts) + 1] = dim(M.G_ARROW)
+    parts[parts:len() + 1] = magenta(M.G_SPAN_BEGIN)
+    parts[parts:len() + 1] = bold(italic(name or "span"))
+    parts[parts:len() + 1] = dim(M.G_ARROW)
     if trace_show_ts
-        parts[rawlen(parts) + 1] = dim("[") .. ts() .. dim("]")
+        parts[parts:len() + 1] = dim("[") .. ts() .. dim("]")
     end
     if trace_show_caller
         c = caller(2)
         if c != ""
-            parts[rawlen(parts) + 1] = dim("(") .. c .. dim(")")
+            parts[parts:len() + 1] = dim("(") .. c .. dim(")")
         end
     end
-    parts[rawlen(parts) + 1] = ind
+    parts[parts:len() + 1] = ind
     if fields != nil and type(fields) == "table"
         for k, v in fields
-            parts[rawlen(parts) + 1] = pretty_kv(k, v)
+            parts[parts:len() + 1] = pretty_kv(k, v)
         end
     end
-    print(table.concat(parts, " "))
+    print(parts:concat(" "))
     return h
 end
 
 span_end(h: any, fields: any): void
     if h == nil return end
-    n = rawlen(trace_spans)
+    n = trace_spans:len()
     while n > 0
         if trace_spans[n] == h
-            table.remove(trace_spans, n)
+            trace_spans:remove(n)
             break
         end
         n -= 1
@@ -400,26 +400,26 @@ span_end(h: any, fields: any): void
     else
         dur_str = dim(_fmt_ms(dur_ms))
     end
-    ind = dim(string.rep(M.G_PIPE .. " ", (h.depth - 1)))
+    ind = dim(M.G_PIPE .. " ":rep((h.depth - 1)))
     parts = {}
-    parts[rawlen(parts) + 1] = magenta(M.G_SPAN_END)
-    parts[rawlen(parts) + 1] = italic(h.name)
-    parts[rawlen(parts) + 1] = dim(M.G_DUR)
-    parts[rawlen(parts) + 1] = dur_str
-    parts[rawlen(parts) + 1] = ind
+    parts[parts:len() + 1] = magenta(M.G_SPAN_END)
+    parts[parts:len() + 1] = italic(h.name)
+    parts[parts:len() + 1] = dim(M.G_DUR)
+    parts[parts:len() + 1] = dur_str
+    parts[parts:len() + 1] = ind
     if fields != nil and type(fields) == "table"
         for k, v in fields
-            parts[rawlen(parts) + 1] = pretty_kv(k, v)
+            parts[parts:len() + 1] = pretty_kv(k, v)
         end
     end
-    print(table.concat(parts, " "))
+    print(parts:concat(" "))
 end
 
--- ─── Banner / divider / legend ────────────────────────────────────
+# ─── Banner / divider / legend ────────────────────────────────────
 banner(title: str, subtitle: str): void
     if title == nil title = "trace" end
     if tty()
-        print(cyan("╭─── " .. title .. " ") .. dim("─") .. dim(string.rep("─", 40)))
+        print(cyan("╭─── " .. title .. " ") .. dim("─") .. dim("─":rep(40)))
         if subtitle != nil and subtitle != ""
             print(dim("│  " .. subtitle))
         end
@@ -432,7 +432,7 @@ banner(title: str, subtitle: str): void
 end
 
 divider(): void
-    print(span_indent() .. dim(string.rep("─", 60)))
+    print(span_indent() .. dim("─":rep(60)))
 end
 
 legend(): void
@@ -453,11 +453,11 @@ legend(): void
           " = span begin/end    " .. dim(M.G_DUR) .. " = measured duration")
 end
 
--- ─── Recursive pretty printer for dump() ───────────────────────────
+# ─── Recursive pretty printer for dump() ───────────────────────────
 _seen(seen: any, value: any): bool
     if seen == nil return false end
     i = 1
-    n = rawlen(seen)
+    n = seen:len()
     while i <= n
         if seen[i] == value return true end
         i += 1
@@ -466,7 +466,7 @@ _seen(seen: any, value: any): bool
 end
 
 _seen_add(seen: any, value: any): void
-    seen[rawlen(seen) + 1] = value
+    seen[seen:len() + 1] = value
 end
 
 pretty_repr(value: any, depth: int, seen: any): str
@@ -485,33 +485,33 @@ pretty_repr(value: any, depth: int, seen: any): str
     elseif t:find("table") != 1
         return to(str)(value)
     end
-    -- table branch — use table identity (== by reference) stored in a
-    -- flat array, because the codegen's to(str)(table) always returns
-    -- the bare type name "table" regardless of which table.
+    # table branch — use table identity (== by reference) stored in a
+    # flat array, because the codegen's to(str)(table) always returns
+    # the bare type name "table" regardless of which table.
     if _seen(seen, value) return "<circular>" end
     _seen_add(seen, value)
-    n = rawlen(value)
+    n = value:len()
     parts = {}
     if n > 0
         i = 1
         while i <= n
-            parts[rawlen(parts) + 1] = string.rep("  ", depth + 1) ..
+            parts[parts:len() + 1] = "  ":rep(depth + 1) ..
                 pretty_repr(value[i], depth + 1, seen)
             i += 1
         end
-        if rawlen(parts) <= 3
-            return "[" .. table.concat(parts, ", ") .. "]"
+        if parts:len() <= 3
+            return "[" .. parts:concat(", ") .. "]"
         end
-        return "[\n" .. table.concat(parts, ",\n") .. "\n" ..
-            string.rep("  ", depth) .. "]"
+        return "[\n" .. parts:concat(",\n") .. "\n" ..
+            "  ":rep(depth) .. "]"
     end
     for k, v in value
-        parts[rawlen(parts) + 1] = string.rep("  ", depth + 1) ..
+        parts[parts:len() + 1] = "  ":rep(depth + 1) ..
             to(str)(k) .. " = " .. pretty_repr(v, depth + 1, seen)
     end
-    if rawlen(parts) == 0 return "{}" end
-    return "{\n" .. table.concat(parts, "\n") .. "\n" ..
-        string.rep("  ", depth) .. "}"
+    if parts:len() == 0 return "{}" end
+    return "{\n" .. parts:concat("\n") .. "\n" ..
+        "  ":rep(depth) .. "}"
 end
 
 dump(label: str, value: any): void
@@ -522,14 +522,14 @@ dump(label: str, value: any): void
     print(header)
     if value != nil and type(value) == "table"
         rendered = pretty_repr(value, 1, nil)
-        -- split on newlines manually; the codegen mishandles gmatch
+        # split on newlines manually; the codegen mishandles gmatch
         i = 1
         n = #rendered
         line_start = 1
         while i <= n
-            ch = string.sub(rendered, i, i)
+            ch = rendered:sub(i, i)
             if ch == "\n"
-                seg = string.sub(rendered, line_start, i - 1)
+                seg = rendered:sub(line_start, i - 1)
                 if seg != ""
                     print(dim(M.G_PIPE .. " ") .. cyan(seg))
                 end
@@ -538,12 +538,12 @@ dump(label: str, value: any): void
             i += 1
         end
         if line_start <= n
-            print(dim(M.G_PIPE .. " ") .. cyan(string.sub(rendered, line_start)))
+            print(dim(M.G_PIPE .. " ") .. cyan(rendered:sub(line_start)))
         end
     end
 end
 
--- ─── Exports ──────────────────────────────────────────────────────
+# ─── Exports ──────────────────────────────────────────────────────
 M.set_level = set_level
 M.get_level = get_level
 M.show_caller = show_caller
@@ -568,10 +568,10 @@ M.LV_ERROR = M.LV_ERROR
 M.LV_FATAL = M.LV_FATAL
 
 M
--- ─── DEMO ─────────────────────────────────────────────────────────────
--- Beautiful, semantically-formatted trace & debug.
--- Run with:  DUO_COLOR=1 ./zig-out/bin/duo run examples/pretty_trace.id
--- Set NO_COLOR=1 to disable ANSI.
+# ─── DEMO ─────────────────────────────────────────────────────────────
+# Beautiful, semantically-formatted trace & debug.
+# Run with:  DUO_COLOR=1 ./zig-out/bin/duo run examples/pretty_trace.id
+# Set NO_COLOR=1 to disable ANSI.
 
 T = M
 

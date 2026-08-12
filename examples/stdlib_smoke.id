@@ -1,13 +1,4 @@
--- Test stdlib modules using builtin req (lua_require)
-log = req "std.log"
-memo = req "std.memo"
-json = req "std.json"
-hash = req "std.hash"
-fmt = req "std.fmt"
-atomic = req "std.atomic"
-crypto = req "std.crypto"
-test = req "std.test"
-meta = req "std.meta"
+# Test stdlib modules using builtin req (lua_require)
 
 total_passes = 0
 total_fails = 0

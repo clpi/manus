@@ -32,12 +32,12 @@ Evaluation contexts — the shape of "the next thing that reduces":
 ```
 E ::= []
     | E.n | E[e] | v[E]
-    | E(e,…) | v(v,…, E, e,…)          -- callee first, then arguments L→R
-    | E:n(e,…) | v:n(v,…, E, e,…)      -- receiver first
-    | E op e | v op E                   -- left operand first
+    | E(e,…) | v(v,…, E, e,…)          # callee first, then arguments L→R
+    | E:n(e,…) | v:n(v,…, E, e,…)      # receiver first
+    | E op e | v op E                   # left operand first
     | not E
-    | { f = v,…, f = E, f = e,… }       -- fields L→R
-    | "…{v}…{E}…{e}…"                   -- holes L→R
+    | { f = v,…, f = E, f = e,… }       # fields L→R
+    | "…{v}…{E}…{e}…"                   # holes L→R
     | E@rel
 ```
 
@@ -56,7 +56,7 @@ Reduction:
 (or-f)   v or e     → e        when v is falsy
 (route)  under a declared failure contract, if a call's failure position
          reduces to a non-nil failure and that position is unbound:
-         E[f(v,…)] → return (nil, err)               -- B-15, §4.4
+         E[f(v,…)] → return (nil, err)               # B-15, §4.4
 ```
 
 **The non-strict positions are exhaustive, and there are five.** The right
@@ -382,7 +382,7 @@ quoted from generated output are **C**, not Duo.
   column would otherwise be read as promising a check.
 - **The two backends disagree, and asm success is not run success.** A program
   reading two fields of an anonymous table emits correct scalarized ARM64 under
-  `--backend=direct --emit asm` (exit 0, arithmetic verified by hand) and
+  `--backend=direct #emit asm` (exit 0, arithmetic verified by hand) and
   **fails to build** under the default path, because the C backend calls an
   undeclared table getter. Anyone measuring cost from `--emit asm` alone will
   measure a program that does not run.

@@ -1,13 +1,13 @@
--- std.bytes — Native byte slices and cursors for binary parsing.
--- Ward blocker: Duo needs byte buffers for Wasm binary decoding.
--- This is a general-purpose capability, not Ward-specific.
+# std.bytes — Native byte slices and cursors for binary parsing.
+# Ward blocker: Duo needs byte buffers for Wasm binary decoding.
+# This is a general-purpose capability, not Ward-specific.
 
--- Create a byte buffer from a string (zero-copy view of string bytes)
+# Create a byte buffer from a string (zero-copy view of string bytes)
 from_string(s: str): any
     { data = s, pos = 1, len = #s }
 end
 
--- Read one byte at current position, advance cursor
+# Read one byte at current position, advance cursor
 read_byte(buf: any): i64
     if buf.pos > buf.len return -1 end
     b = buf.data:byte(buf.pos)
@@ -15,7 +15,7 @@ read_byte(buf: any): i64
     b
 end
 
--- Read a u32 (little-endian) from cursor
+# Read a u32 (little-endian) from cursor
 read_u32_le(buf: any): i64
     if buf.pos + 3 > buf.len return -1 end
     b0 = buf.data:byte(buf.pos)
@@ -26,7 +26,7 @@ read_u32_le(buf: any): i64
     b0 + b1 * 256 + b2 * 65536 + b3 * 16777216
 end
 
--- Read a u16 (little-endian) from cursor
+# Read a u16 (little-endian) from cursor
 read_u16_le(buf: any): i64
     if buf.pos + 1 > buf.len return -1 end
     b0 = buf.data:byte(buf.pos)
@@ -35,7 +35,7 @@ read_u16_le(buf: any): i64
     b0 + b1 * 256
 end
 
--- Read LEB128-encoded unsigned integer (used extensively in Wasm binary format)
+# Read LEB128-encoded unsigned integer (used extensively in Wasm binary format)
 read_leb128_u(buf: any): i64
     result = 0
     shift = 0
@@ -51,7 +51,7 @@ read_leb128_u(buf: any): i64
     result
 end
 
--- Read LEB128-encoded signed integer
+# Read LEB128-encoded signed integer
 read_leb128_s(buf: any): i64
     result = 0
     shift = 0
@@ -72,7 +72,7 @@ read_leb128_s(buf: any): i64
     result
 end
 
--- Read N bytes as a substring
+# Read N bytes as a substring
 read_bytes(buf: any, n: i64): str
     if buf.pos + n - 1 > buf.len return "" end
     result = buf.data:sub(buf.pos, buf.pos + n - 1)
@@ -80,22 +80,22 @@ read_bytes(buf: any, n: i64): str
     result
 end
 
--- Remaining bytes in buffer
+# Remaining bytes in buffer
 remaining(buf: any): i64
     buf.len - buf.pos + 1
 end
 
--- Check if at end
+# Check if at end
 is_eof(buf: any): bool
     buf.pos > buf.len
 end
 
--- Skip N bytes
+# Skip N bytes
 skip(buf: any, n: i64)
     buf.pos = buf.pos + n
 end
 
--- Current position (1-indexed)
+# Current position (1-indexed)
 position(buf: any): i64
     buf.pos
 end

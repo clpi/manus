@@ -1,21 +1,20 @@
--- std.mproc — multi-process utilities
+# std.mproc — multi-process utilities
 
-io = req "std.io"
 
 pid(): str
-    -- Get PID via /proc/self (Linux) or POSIX getpid
+    # Get PID via /proc/self (Linux) or POSIX getpid
     f = io.open("/proc/self/stat", "r")
     if f
         line = io.read(f, "*l")
         io.close(f)
         if line
-            space_idx = string.find(line, " ")
+            space_idx = line:find(" ")
             if space_idx
                 return line:sub(1, space_idx - 1)
             end
         end
     end
-    -- Fallback: use Lua's os.execute to capture $$
+    # Fallback: use Lua's os.execute to capture $$
     handle = io.popen("echo $$", "r")
     if handle
         result = io.read(handle, "*l")
@@ -42,7 +41,7 @@ kill(pid: str): void
 end
 
 wait(pid: str): void
-    -- Use waitpid via os.execute for the given PID
+    # Use waitpid via os.execute for the given PID
     os.execute("wait " .. pid:to(str) .. " 2>/dev/null")
 end
 

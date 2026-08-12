@@ -1,12 +1,12 @@
--- =============================================================================
--- Duo C Interop Showcase
--- Demonstrates the full @c.* metaprogramming interface for cross-language FFI:
---   @c.include  — bring in C headers
---   @c.call      — call C functions directly (no Lua runtime overhead)
---   @c.emit      — inject raw C code
---
--- Run: duo run examples/c_interop_showcase.id
--- =============================================================================
+# =============================================================================
+# Duo C Interop Showcase
+# Demonstrates the full @c.* metaprogramming interface for cross-language FFI:
+#   @c.include  — bring in C headers
+#   @c.call      — call C functions directly (no Lua runtime overhead)
+#   @c.emit      — inject raw C code
+#
+# Run: duo run examples/c_interop_showcase.id
+# =============================================================================
 
 --- @c.include("stdio.h")
 --- @c.include("stdlib.h")
@@ -15,16 +15,16 @@
 
 print("=== Duo C Interop Showcase ===")
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 1. @c.call — direct C function calls
--- ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# 1. @c.call — direct C function calls
+# ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 1. @c.call: direct C function calls --")
 
--- printf with format string
+# printf with format string
 @c.call("printf", "  printf via @c.call: %d\n", @(42))
 
--- Math functions via C library
+# Math functions via C library
 abs_val: i64 = @c.call("llabs", @(-12345))
 @c.call("printf", "  llabs(-12345) = %lld\n", abs_val)
 
@@ -34,9 +34,9 @@ sqrt_val: f64 = @c.call("sqrt", @(2.0))
 pow_val: f64 = @c.call("pow", @(2.0), @(10.0))
 @c.call("printf", "  pow(2.0, 10.0) = %.1f\n", pow_val)
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 2. Combining @c.call with Duo functions
--- ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# 2. Combining @c.call with Duo functions
+# ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 2. Duo + C interop --")
 
@@ -52,18 +52,18 @@ end
 print_sum(@(10), @(20))
 print_sum(@(100), @(200))
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 3. C string operations
--- ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# 3. C string operations
+# ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 3. C string operations --")
 
 strlen_result: i64 = @c.call("strlen", "Duo rocks!")
-@c.call("printf", "  strlen(\"Duo rocks!\") = %lld\n", strlen_result)
+@c.call("printf", "  str\"Duo rocks!\":len() = %lld\n", strlen_result)
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 4. C memory operations
--- ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# 4. C memory operations
+# ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 4. C memory operations --")
 
@@ -80,9 +80,9 @@ end
 mem_result: i64 = demo_malloc_free()
 @c.call("printf", "  malloc/memset/free result: %lld\n", mem_result)
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 5. Performance: C math in a tight loop
--- ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# 5. Performance: C math in a tight loop
+# ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 5. C math in a tight loop --")
 
@@ -98,9 +98,9 @@ n: i64 = @(1000)
 result: i64 = sqrt_sum(n)
 @c.call("printf", "  sum of 1..%lld = %lld\n", n, result)
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- Summary
--- ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# Summary
+# ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n=== Summary ===")
 print("  @c.include — import C headers")

@@ -1,7 +1,7 @@
--- Palindrome over bytes. A palindrome and a near miss, so a checker that
--- compares nothing cannot pass both.
--- expect: 1 0
-check = (s: str): i64
+# Palindrome over bytes. A palindrome and a near miss, so a checker that
+# compares nothing cannot pass both.
+# expect: 1 0
+check: i64 = (s: str)
     i = 0
     j = #s - 1
     while i < j
@@ -16,7 +16,7 @@ check = (s: str): i64
     1
 end
 
-main = (): i64
+main: i64 = ()
     a = check("racecar")
     b = check("racecars")
     print("{a} {b}")

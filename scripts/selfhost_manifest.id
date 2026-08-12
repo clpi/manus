@@ -1,0 +1,22 @@
+_row("SH-01")
+_row("SH-02")
+_row("SH-03")
+_row("SH-04")
+_row("SH-05")
+_row("SH-06")
+_row("SH-07")
+_row("SH-08")
+_row("SH-09")
+_row("SH-10")
+_row("SH-11")
+_row("SH-12")
+_row("SH-13")
+_row("SH-14")
+
+duo_impl_rows = 14
+oracle_backed_rows = 13
+duo_canonical_rows = 1
+
+# Notes:
+# production dispatch: host still calls src/*.zig
+# FIXTURES ONLY

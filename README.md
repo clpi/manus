@@ -8,7 +8,7 @@ around one durable semantic identity space:
 source/import -> graph -> demand -> realization -> machine
 ```
 
-Semantic identity persists while representation specializes. Earlier `Idsem`,
+Semantic identity persists while representation specializes. Earlier `Idol`,
 `Duo`, and `Duon` names and historical `.id` source are migration provenance,
 not a second language or a pattern library. Exact `duo` tool, command, path,
 and symbol spellings are physical bootstrap provenance until replaced by an
@@ -25,7 +25,7 @@ blockers, and measured aggregate outcome live in
 or generated artifacts.
 
 `GAP-131` makes the session-start P0 count unknown. An authority-independent
-scan is exposed by `tools/devnode/orient`; a fresh session must inspect every
+scan is exposed by `tools/node/dev/orient`; a fresh session must inspect every
 matching record under `gaps/GAP-*.md` directly rather than trust a zero, copied
 count, or this snapshot after the tree changes.
 

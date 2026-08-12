@@ -19,12 +19,18 @@ authority, authority wins and this skill must be repaired.
 2. `docs/spec/constitution.md` (C0, the sole semantic law; structured law
    notation, **not** executable source)
 3. `CLAUDE.md` (operative projection of C0)
-4. `docs/spec/AUTHORITY.md`, `docs/bootstrap.md`, the relevant `docs/spec/*.md`
-5. `.agents/AGENT_CANONICAL.md`, `.agents/AGENT_COORDINATION.md`
-6. The exact `gaps/GAP-*.md` for the frontier you are touching
+4. `docs/spec/source.md` (source/home/package/world closure — no native module
+   system)
+5. `docs/spec/host.md` (host boundary / shell / capability closure — blocking)
+6. `docs/spec/AUTHORITY.md`, `docs/bootstrap.md`, the relevant `docs/spec/*.md`
+7. `.agents/AGENT_CANONICAL.md`, `.agents/AGENT_COORDINATION.md`
+8. The exact `gaps/GAP-*.md` for the frontier you are touching
 
 `docs/spec/grammar.md`, `docs/spec/diagnostics.md`, etc. are **projections**.
 They defer to C0. A projection never overrides C0.
+
+**Skill identity:** this skill is `idol-dev`. Do not use the retired
+`duon-development` skill name or Duon branding for current Idol work.
 
 ## 2. Orient before every substantive change
 
@@ -101,6 +107,13 @@ executes a process. `()` ordinary application/grouping, `{}` structured
 packs/descriptor application/homes, `[]` computed projection, `.` static named
 projection, `:` only its admitted descriptor/subject/home roles.
 
+Layout law: no `req`, `import`, `module`, `use(`, `using(`, `inject`, or `admit`.
+Reachability is scope and home projection only.
+
+Host law (`docs/spec/world.md`, `GAP-154`, `GAP-157`): **no `std` anywhere**.
+Use `os.args[n]`, `os.env[k]`, `io:read`, `io:write`. Never `std.*`,
+`os.getenv`, `environment[...]`, or `io.read`/`io.write`.
+
 ## 6. Semantic-first correctness
 
 Do not translate a C/Rust/Python/Lua compiler pattern into Idol syntax. Begin
@@ -126,7 +139,7 @@ key? boolean erasing a case?).
 
 | Lane | Owner | Scope |
 | --- | --- | --- |
-| Cursor | coordination / canonicality | claims, devnode admission, gates, release-readiness |
+| Cursor | coordination / canonicality | claims, node dev admission, gates, release-readiness |
 | Codex | semantic graph producer | graph facts, application/relation/subject/pack authority |
 | Poolside | realization / machine | demand -> realization -> machine lineage |
 | Devin | self-host transfer | one executed production stage into `.id` (owns lexical identities / GAP-145) |

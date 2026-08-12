@@ -1,8 +1,8 @@
--- ML benchmark: Duo vs C on matmul / conv2d / softmax / attention / mlp.
---
--- Duo replacement for scripts/run_ml_benchmark.sh (monoglot census).
---
--- examples/bench_ml_c.c stays C: it is the reference this measures against.
+# ML benchmark: Duo vs C on matmul / conv2d / softmax / attention / mlp.
+#
+# Duo replacement for scripts/run_ml_benchmark.sh (monoglot census).
+#
+# examples/bench_ml_c.c stays C: it is the reference this measures against.
 
 _RUNS = 5
 _SLACK = 1.05
@@ -32,8 +32,8 @@ _lpad(s: str, w: i64): str
     o
 end
 
--- Fixed-point formatting from integer scaling: `to(str)` on an f64 does not
--- compile (it lowers to an undeclared `tostring`).
+# Fixed-point formatting from integer scaling: `to(str)` on an f64 does not
+# compile (it lowers to an undeclared `tostring`).
 _fx(x: f64, places: i64): str
     scale = 1
     i = 0
@@ -51,14 +51,14 @@ _fx(x: f64, places: i64): str
     whole:to(str) .. "." .. fs
 end
 
--- `to(f64)` is not a validating parse -- to(f64)("Time:") returns 0.0, not nil
--- -- so numeric fields are recognised structurally.
+# `to(f64)` is not a validating parse # to(f64)("Time:") returns 0.0, not nil
+# # so numeric fields are recognised structurally.
 _numeric(s: str): bool
     if s == "" return false end
     d = false
     i = 1
     while i <= #s
-        c = std.string.sub(s, i, i)
+        c = s:sub(i, i)
         if c >= "0" and c <= "9"
             d = true
         else
@@ -73,7 +73,7 @@ end
 
 _fields(line: str): any
     out = {}
-    for _i, w in std.string.split(std.string.gsub(line, "\t", " "), " ")
+    for _i, w in line:gsub("\t", " "):split(" ")
         if w != ""
             out[#out + 1] = w
         end
@@ -83,7 +83,7 @@ end
 
 _lines(t: str): any
     out = {}
-    for _i, l in std.string.split(t, "\n")
+    for _i, l in t:split("\n")
         c = std.script.chomp(l)
         if c != ""
             out[#out + 1] = c
@@ -92,7 +92,7 @@ _lines(t: str): any
     out
 end
 
--- "RESULT <id> <value>" -> id->value.
+# "RESULT <id> <value>" -> id->value.
 _results(text: str): any
     r = {}
     n = 0
@@ -107,16 +107,16 @@ _results(text: str): any
     r
 end
 
--- "Running <name>..." then a later "Time: <t>" -- the name line SETS the
--- current benchmark and the Time line reads it. Matching Time lines alone
--- would attribute every time to whichever benchmark sorted first.
+# "Running <name>..." then a later "Time: <t>" # the name line SETS the
+# current benchmark and the Time line reads it. Matching Time lines alone
+# would attribute every time to whichever benchmark sorted first.
 _times(text: str): any
     t = {}
     cur = ""
     for _i, l in _lines(text)
         f = _fields(l)
         if #f >= 2 and f[1] == "Running"
-            cur = std.string.gsub(f[2], "%.%.%.", "")
+            cur = f[2]:gsub("%.%.%.", "")
         end
         if #f >= 2 and f[1] == "Time:" and cur != "" and _numeric(f[2])
             t[cur] = to(f64)(f[2])
@@ -125,8 +125,8 @@ _times(text: str): any
     t
 end
 
-main = (): i64
-    duo = "./zig-out/bin/duo"
+main: i64 = ()
+    duo = "./zig-out/bin/idol"
     cc = _env_or("CC", "clang")
     runs = to(i64)(_env_or("RUNS", _RUNS:to(str)))
     if runs == nil or runs < 1 runs = _RUNS end
@@ -135,7 +135,7 @@ main = (): i64
     print("     ML BENCHMARK: Duo vs C             ")
     print("========================================")
 
-    if not std.script.fs_exists(duo)
+    if !std.script.fs_exists(duo)
         print("Building Duo compiler...")
         if std.script.run(_env_or("ZIG", "zig") .. " build") != 0
             return 1
@@ -166,8 +166,8 @@ main = (): i64
     dres = _results(std.script.capture(duo_bin .. " 2>/dev/null"))
     cres = _results(std.script.capture(c_bin .. " 2>/dev/null"))
 
-    -- A short RESULT set is a failed run wearing the costume of a passing one:
-    -- with zero rows every comparison below is vacuously satisfied.
+    # A short RESULT set is a failed run wearing the costume of a passing one:
+    # with zero rows every comparison below is vacuously satisfied.
     for _i, pair in {{"Duo", dres}, {"C", cres}}
         if pair[2]["__count"] != _BENCHES:to(str)
             print(pair[1] .. " correctness run emitted " .. pair[2]["__count"]
@@ -176,10 +176,10 @@ main = (): i64
         end
     end
 
-    -- The shell version compared inside `paste ... | while ...`, which runs in
-    -- a SUBSHELL: its `exit 1` left the subshell only, and the `FAIL` it set was
-    -- never read. A mismatch printed and the script went on to announce "All 5
-    -- results match." This returns instead.
+    # The shell version compared inside `paste ... | while ...`, which runs in
+    # a SUBSHELL: its `exit 1` left the subshell only, and the `FAIL` it set was
+    # never read. A mismatch printed and the script went on to announce "All 5
+    # results match." This returns instead.
     bad = 0
     for _i, name in _NAMES
         d = dres[name]
@@ -263,9 +263,9 @@ main = (): i64
     end
 
     print("")
-    -- Timing shortfalls are optimization targets, not gate failures: exit 0
-    -- either way, as the shell version did. The 40-benchmark gate is
-    -- `zig build bench`.
+    # Timing shortfalls are optimization targets, not gate failures: exit 0
+    # either way, as the shell version did. The 40-benchmark gate is
+    # `zig build bench`.
     if timing_fail > 0
         print("ML BENCHMARK: " .. timing_fail:to(str)
             .. " workload(s) slower than C (optimization targets).")

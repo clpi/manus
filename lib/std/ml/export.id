@@ -1,9 +1,9 @@
--- std.ml.export — Model export (ONNX, PyTorch, etc.)
--- For saving trained models to standard formats.
+# std.ml.export — Model export (ONNX, PyTorch, etc.)
+# For saving trained models to standard formats.
 
--- ═══════════════════════════════════════════════════════════════
--- ONNX Export
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# ONNX Export
+# ═══════════════════════════════════════════════════════════════
 
 onnx_graph_new(name: str): any
     {
@@ -59,8 +59,8 @@ onnx_model_new(graph: any, opset: i64): any
 end
 
 onnx_model_encode(model: any): any
-    -- Encode model as JSON (ONNX protobuf would require a protobuf encoder)
-    -- This JSON representation captures the full graph structure for interoperability
+    # Encode model as JSON (ONNX protobuf would require a protobuf encoder)
+    # This JSON representation captures the full graph structure for interoperability
     graph_summary = {
         name = model.graph.name,
         nodes = {},
@@ -96,9 +96,9 @@ onnx_model_save(model: any, path: str): any
     {ok = true, path = path, size = #data}
 end
 
--- ═══════════════════════════════════════════════════════════════
--- PyTorch Export (state dict)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# PyTorch Export (state dict)
+# ═══════════════════════════════════════════════════════════════
 
 pytorch_state_dict_new(): any
     {
@@ -112,7 +112,7 @@ pytorch_state_dict_add(state_dict: any, name: str, tensor: any): void
 end
 
 pytorch_state_dict_save(state_dict: any, path: str): any
-    -- Encode state dict as JSON
+    # Encode state dict as JSON
     payload = {tensors = {}, metadata = state_dict.metadata}
     for name, tensor in state_dict.tensors
         payload.tensors[name] = {
@@ -131,9 +131,9 @@ pytorch_state_dict_save(state_dict: any, path: str): any
     {ok = true, path = path, size = #encoded}
 end
 
--- ═══════════════════════════════════════════════════════════════
--- SafeTensors Export
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# SafeTensors Export
+# ═══════════════════════════════════════════════════════════════
 
 safetensors_new(): any
     {
@@ -151,7 +151,7 @@ safetensors_add_tensor(st: any, name: str, tensor: any, dtype: str): void
 end
 
 safetensors_encode(st: any): any
-    -- SafeTensors format: JSON header mapping tensor names to dtype/shape/offsets
+    # SafeTensors format: JSON header mapping tensor names to dtype/shape/offsets
     header = {}
     offset = 0
     for name, tensor in st.tensors
@@ -177,7 +177,7 @@ safetensors_save(st: any, path: str): any
     if f == nil
         return {ok = false, error = "Cannot create file: " .. path}
     end
-    -- Write 8-byte header length prefix, then header JSON
+    # Write 8-byte header length prefix, then header JSON
     header_len = data.header_size
     std.io.write(f, string.pack("<I8", header_len))
     std.io.write(f, data.header)
@@ -185,9 +185,9 @@ safetensors_save(st: any, path: str): any
     {ok = true, path = path, size = 8 + data.header_size + data.data_size}
 end
 
--- ═══════════════════════════════════════════════════════════════
--- GGUF Export
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# GGUF Export
+# ═══════════════════════════════════════════════════════════════
 
 gguf_writer_new(quantization: str): any
     {
@@ -209,7 +209,7 @@ gguf_writer_add_metadata(gw: any, key: str, value: any): void
 end
 
 gguf_writer_encode(gw: any): any
-    -- GGUF header as JSON (simplified; real GGUF uses binary format)
+    # GGUF header as JSON (simplified; real GGUF uses binary format)
     payload = {
         format = "gguf",
         version = 3,
@@ -242,9 +242,9 @@ gguf_writer_save(gw: any, path: str): any
     {ok = true, path = path, size = data.size}
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Model Conversion
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Model Conversion
+# ═══════════════════════════════════════════════════════════════
 
 convert_onnx_to_safetensors(onnx_model: any): any
     st = safetensors_new()
@@ -270,12 +270,12 @@ convert_gguf_to_safetensors(gguf_model: any): any
     st
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
--- ONNX
--- PyTorch
--- SafeTensors
--- GGUF
--- Conversion
+# ONNX
+# PyTorch
+# SafeTensors
+# GGUF
+# Conversion

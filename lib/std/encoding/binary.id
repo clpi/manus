@@ -1,78 +1,78 @@
--- std.encoding_binary — binary read/write (mirrors Go's encoding/binary)
--- Provides little-endian and big-endian encoding of integers into byte strings
--- and decoding back. Float is handled via string.format / tonumber.
+# std.encoding_binary — binary read/write (mirrors Go's encoding/binary)
+# Provides little-endian and big-endian encoding of integers into byte strings
+# and decoding back. Float is handled via string.format / tonumber.
 
--- ----- Encoding -----
+# ----- Encoding -----
 
--- encode_u16_le: encode a 16-bit unsigned integer as 2 bytes (little-endian).
+# encode_u16_le: encode a 16-bit unsigned integer as 2 bytes (little-endian).
 encode_u16_le(v: i64): str
     b0 = v % 256
     b1 = (v / 256) % 256
-    return string.char(b0, b1)
+    return b0:char(b1)
 end
 
--- encode_u16_be: encode a 16-bit unsigned integer as 2 bytes (big-endian).
+# encode_u16_be: encode a 16-bit unsigned integer as 2 bytes (big-endian).
 encode_u16_be(v: i64): str
     b0 = v % 256
     b1 = (v / 256) % 256
-    return string.char(b1, b0)
+    return b1:char(b0)
 end
 
--- encode_u32_le: encode a 32-bit unsigned integer as 4 bytes (little-endian).
+# encode_u32_le: encode a 32-bit unsigned integer as 4 bytes (little-endian).
 encode_u32_le(v: i64): str
     b0 = v % 256
     b1 = (v / 256) % 256
     b2 = (v / 65536) % 256
     b3 = (v / 16777216) % 256
-    return string.char(b0, b1, b2, b3)
+    return b0:char(b1, b2, b3)
 end
 
--- encode_u32_be: encode a 32-bit unsigned integer as 4 bytes (big-endian).
+# encode_u32_be: encode a 32-bit unsigned integer as 4 bytes (big-endian).
 encode_u32_be(v: i64): str
     b0 = v % 256
     b1 = (v / 256) % 256
     b2 = (v / 65536) % 256
     b3 = (v / 16777216) % 256
-    return string.char(b3, b2, b1, b0)
+    return b3:char(b2, b1, b0)
 end
 
--- encode_u64_le: encode a 64-bit unsigned integer as 8 bytes (little-endian).
+# encode_u64_le: encode a 64-bit unsigned integer as 8 bytes (little-endian).
 encode_u64_le(v: i64): str
     parts = {}
     i = 0
     while i < 8
-        parts[rawlen(parts) + 1] = string.char(v % 256)
+        parts[parts:len() + 1] = v % 256:char()
         v /= 256
         i += 1
     end
-    table.concat(parts)
+    parts:concat()
 end
 
--- encode_u64_be: encode a 64-bit unsigned integer as 8 bytes (big-endian).
+# encode_u64_be: encode a 64-bit unsigned integer as 8 bytes (big-endian).
 encode_u64_be(v: i64): str
     parts = {}
     i = 0
     while i < 8
-        parts[8 - i] = string.char(v % 256)
+        parts[8 - i] = v % 256:char()
         v /= 256
         i += 1
     end
-    table.concat(parts)
+    parts:concat()
 end
 
--- ----- Decoding -----
+# ----- Decoding -----
 
--- decode_u16_le: decode 2 bytes as a 16-bit unsigned integer (little-endian).
+# decode_u16_le: decode 2 bytes as a 16-bit unsigned integer (little-endian).
 decode_u16_le(s: str): i64
     s:byte(1) + s:byte(2) * 256
 end
 
--- decode_u16_be: decode 2 bytes as a 16-bit unsigned integer (big-endian).
+# decode_u16_be: decode 2 bytes as a 16-bit unsigned integer (big-endian).
 decode_u16_be(s: str): i64
     s:byte(2) + s:byte(1) * 256
 end
 
--- decode_u32_le: decode 4 bytes as a 32-bit unsigned integer (little-endian).
+# decode_u32_le: decode 4 bytes as a 32-bit unsigned integer (little-endian).
 decode_u32_le(s: str): i64
     b0 = s:byte(1)
     b1 = s:byte(2)
@@ -81,7 +81,7 @@ decode_u32_le(s: str): i64
     b0 + b1 * 256 + b2 * 65536 + b3 * 16777216
 end
 
--- decode_u32_be: decode 4 bytes as a 32-bit unsigned integer (big-endian).
+# decode_u32_be: decode 4 bytes as a 32-bit unsigned integer (big-endian).
 decode_u32_be(s: str): i64
     b0 = s:byte(1)
     b1 = s:byte(2)
@@ -90,7 +90,7 @@ decode_u32_be(s: str): i64
     b3 + b2 * 256 + b1 * 65536 + b0 * 16777216
 end
 
--- decode_u64_le: decode 8 bytes as a 64-bit unsigned integer (little-endian).
+# decode_u64_le: decode 8 bytes as a 64-bit unsigned integer (little-endian).
 decode_u64_le(s: str): i64
     v = 0
     i = 8
@@ -101,7 +101,7 @@ decode_u64_le(s: str): i64
     v
 end
 
--- decode_u64_be: decode 8 bytes as a 64-bit unsigned integer (big-endian).
+# decode_u64_be: decode 8 bytes as a 64-bit unsigned integer (big-endian).
 decode_u64_be(s: str): i64
     v = 0
     i = 1
@@ -112,45 +112,45 @@ decode_u64_be(s: str): i64
     v
 end
 
--- ----- Float encoding (via IEEE 754 string representation) -----
+# ----- Float encoding (via IEEE 754 string representation) -----
 
--- encode_f32: encode a float as a 4-byte string (big-endian, using %g).
--- Note: this is a textual encoding, not true IEEE 754, because Duo does not
--- expose raw pointer casts. It is sufficient for Duo-to-Duo serialization.
+# encode_f32: encode a float as a 4-byte string (big-endian, using %g).
+# Note: this is a textual encoding, not true IEEE 754, because Duo does not
+# expose raw pointer casts. It is sufficient for Duo-to-Duo serialization.
 encode_f32(v: f64): str
-    string.format("%.7g", v)
+    "%.7g":format(v)
 end
 
--- decode_f32: decode a float from encode_f32 output.
+# decode_f32: decode a float from encode_f32 output.
 decode_f32(s: str): f64
     tonumber(s)
 end
 
--- encode_f64: encode a double as an 8-byte string (big-endian, using %.17g).
+# encode_f64: encode a double as an 8-byte string (big-endian, using %.17g).
 encode_f64(v: f64): str
-    string.format("%.17g", v)
+    "%.17g":format(v)
 end
 
--- decode_f64: decode a double from encode_f64 output.
+# decode_f64: decode a double from encode_f64 output.
 decode_f64(s: str): f64
     tonumber(s)
 end
 
--- ----- Variable-length encoding (LEB128, used in protobuf etc.) -----
+# ----- Variable-length encoding (LEB128, used in protobuf etc.) -----
 
--- encode_varint: encode an unsigned integer as a LEB128 varint.
+# encode_varint: encode an unsigned integer as a LEB128 varint.
 encode_varint(v: i64): str
     out = {}
     while v >= 128
-        out[rawlen(out) + 1] = string.char((v % 128) + 128)
+        out[out:len() + 1] = (v % 128) + 128:char()
         v /= 128
     end
-    out[rawlen(out) + 1] = string.char(v)
-    table.concat(out)
+    out[out:len() + 1] = v:char()
+    out:concat()
 end
 
--- decode_varint: decode a LEB128 varint from string s starting at offset.
--- Returns (value, new_offset, ok).
+# decode_varint: decode a LEB128 varint from string s starting at offset.
+# Returns (value, new_offset, ok).
 decode_varint(s: str, offset: i64): any
     if offset == nil offset = 1 end
     v = 0
@@ -168,7 +168,7 @@ decode_varint(s: str, offset: i64): any
     return 0, offset, false
 end
 
--- ----- Put / Get helpers (write into / read from a byte string at offset) -----
+# ----- Put / Get helpers (write into / read from a byte string at offset) -----
 
 put_u16_le(s: str, offset: i64, v: i64): str
     prefix = ""

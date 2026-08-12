@@ -1,29 +1,29 @@
--- Six-runtime wall-clock table: the engine, wart, wasmtime, wasmer, wasm3, iwasm.
---
---   duo run bench/six.id
---   N=5 DUO_WASM_ENGINE=jit duo run bench/six.id
---
--- NOTHING IS TIMED UNTIL IT IS VERIFIED. Every runtime is first asked for the
--- fixture's answer and differenced against wasmtime; a runtime that cannot be
--- driven to that fixture, or that disagrees, gets a cell of `n/a` or `WRONG`
--- and is never given a millisecond. A faster wrong runtime is worthless, and
--- this project has published a table that timed one.
---
--- Timing is interleaved min-of-N. `the engine`'s own printed `seconds=` is os.clock,
--- which on macOS accumulates CPU across threads; it must never be quoted for a
--- perf claim. This harness uses std.time.monotonic around the whole process.
---
--- THE INVOCATION SURFACES DO NOT MATCH, and pretending they do is how a bogus
--- row gets published:
---   the engine      DUO_WASM_MODULE env var, DUO_WASM_INVOKE picks the export (never argv)
---   wasmtime  --invoke <export>
---   wasmer    run -i <export>
---   wasm3     --func <export>
---   iwasm     -f <export>, and prints HEX with a `:i32` suffix
---   wasm3     writes its `Result:` line to STDERR, not stdout — reading only
---             stdout made every wasm3 cell read WRONG against a right answer
---   wart      `wart run <mod>` only, i.e. `_start` only — it cannot reach a
---             `run` export at all, so those cells are `n/a` and not a loss.
+# Six-runtime wall-clock table: the engine, wart, wasmtime, wasmer, wasm3, iwasm.
+#
+#   duo run bench/six.id
+#   N=5 DUO_WASM_ENGINE=jit duo run bench/six.id
+#
+# NOTHING IS TIMED UNTIL IT IS VERIFIED. Every runtime is first asked for the
+# fixture's answer and differenced against wasmtime; a runtime that cannot be
+# driven to that fixture, or that disagrees, gets a cell of `n/a` or `WRONG`
+# and is never given a millisecond. A faster wrong runtime is worthless, and
+# this project has published a table that timed one.
+#
+# Timing is interleaved min-of-N. `the engine`'s own printed `seconds=` is os.clock,
+# which on macOS accumulates CPU across threads; it must never be quoted for a
+# perf claim. This harness uses std.time.monotonic around the whole process.
+#
+# THE INVOCATION SURFACES DO NOT MATCH, and pretending they do is how a bogus
+# row gets published:
+#   the engine      DUO_WASM_MODULE env var, DUO_WASM_INVOKE picks the export (never argv)
+#   wasmtime  #invoke <export>
+#   wasmer    run -i <export>
+#   wasm3     #func <export>
+#   iwasm     -f <export>, and prints HEX with a `:i32` suffix
+#   wasm3     writes its `Result:` line to STDERR, not stdout — reading only
+#             stdout made every wasm3 cell read WRONG against a right answer
+#   wart      `wart run <mod>` only, i.e. `_start` only — it cannot reach a
+#             `run` export at all, so those cells are `n/a` and not a loss.
 
 _msns(): i64
     1000000
@@ -50,7 +50,7 @@ end
 
 _pad(s: str, w: i64): str
     out = s
-    while string.len(out) < w
+    while out:len() < w
         out = out .. " "
     end
     out
@@ -58,7 +58,7 @@ end
 
 _lpad(s: str, w: i64): str
     out = s
-    while string.len(out) < w
+    while out:len() < w
         out = " " .. out
     end
     out
@@ -66,31 +66,31 @@ end
 
 _isnum(s: str): bool
     if s == "" return false end
-    string.match(s, "^%-?%d+%.?%d*$") != nil
+    s:match("^%-?%d+%.?%d*$") != nil
 end
 
--- Position in the digit alphabet IS the value, so there is no sixteen-arm
--- ladder to get wrong. `string.find` with plain=true; `-1` for a non-digit.
+# Position in the digit alphabet IS the value, so there is no sixteen-arm
+# ladder to get wrong. `string.find` with plain=true; `-1` for a non-digit.
 _hexdigit(c: str): i64
-    at = string.find("0123456789abcdef", string.lower(c), 1, true)
+    at = "0123456789abcdef":find(c:lower(), 1, true)
     if at == nil
         return -1
     end
     at - 1
 end
 
--- iwasm reports `0x7134ac76:i32`. Hand-rolled because `tonumber` in this
--- toolchain answers 0 for a string it cannot parse, which would silently turn
--- every iwasm row into a WRONG verdict against a real answer.
+# iwasm reports `0x7134ac76:i32`. Hand-rolled because `tonumber` in this
+# toolchain answers 0 for a string it cannot parse, which would silently turn
+# every iwasm row into a WRONG verdict against a real answer.
 _unhex(s: str): str
     v: i64 = 0
     i: i64 = 3
-    n: i64 = string.len(s)
+    n: i64 = s:len()
     if n < 3
         return s
     end
     while i <= n
-        d: i64 = _hexdigit(string.sub(s, i, i))
+        d: i64 = _hexdigit(s:sub(i, i))
         if d < 0
             return s
         end
@@ -100,17 +100,17 @@ _unhex(s: str): str
     v:to(str)
 end
 
--- One spelling for a value that six runtimes print six ways: signed vs
--- unsigned i32, hex with a type suffix, and differing f64 digit counts.
+# One spelling for a value that six runtimes print six ways: signed vs
+# unsigned i32, hex with a type suffix, and differing f64 digit counts.
 _norm(raw: str): str
     t = std.script.chomp(raw)
-    t = string.gsub(t, ":i32", "")
-    t = string.gsub(t, ":i64", "")
-    t = string.gsub(t, ":f32", "")
-    t = string.gsub(t, ":f64", "")
-    t = string.gsub(t, "Result: ", "")
-    t = std.string.trim(t)
-    if string.match(t, "^0[xX]%x+$") != nil
+    t = t:gsub(":i32", "")
+    t = t:gsub(":i64", "")
+    t = t:gsub(":f32", "")
+    t = t:gsub(":f64", "")
+    t = t:gsub("Result: ", "")
+    t = t:trim()
+    if t:match("^0[xX]%x+$") != nil
         t = _unhex(t)
     end
     if not _isnum(t)
@@ -128,30 +128,30 @@ _norm(raw: str): str
     f:to(str)
 end
 
--- Is this line the RUNTIME talking rather than the MODULE? Every runtime here
--- wraps the module's own output in a protocol of its own, and mistaking one for
--- the other is how a right answer reads as WRONG: wasm3 appends `Result: 0` to
--- a printing `_start`, so taking the last line scored wasm3 against its own
--- epilogue on eight fixtures.
+# Is this line the RUNTIME talking rather than the MODULE? Every runtime here
+# wraps the module's own output in a protocol of its own, and mistaking one for
+# the other is how a right answer reads as WRONG: wasm3 appends `Result: 0` to
+# a printing `_start`, so taking the last line scored wasm3 against its own
+# epilogue on eight fixtures.
 _protocol(line: str): bool
-    if string.match(line, "^engine=") != nil return true end
-    if string.match(line, "^result=") != nil return true end
-    if string.match(line, "^seconds=") != nil return true end
-    if string.match(line, "^wasm: ") != nil return true end
-    if string.match(line, "^Result: ") != nil return true end
-    if string.match(line, "^warning:") != nil return true end
-    if string.match(line, "^0[xX]%x+:[if]%d+$") != nil return true end
+    if line:match("^engine=") != nil return true end
+    if line:match("^result=") != nil return true end
+    if line:match("^seconds=") != nil return true end
+    if line:match("^wasm: ") != nil return true end
+    if line:match("^Result: ") != nil return true end
+    if line:match("^warning:") != nil return true end
+    if line:match("^0[xX]%x+:[if]%d+$") != nil return true end
     false
 end
 
--- The module's answer: what it PRINTED if it printed anything, otherwise the
--- runtime's own report of the returned value. Printed bytes win because a
--- wasi-libc `_start` returns void and prints its result.
+# The module's answer: what it PRINTED if it printed anything, otherwise the
+# runtime's own report of the returned value. Printed bytes win because a
+# wasi-libc `_start` returns void and prints its result.
 _answer(raw: str): str
     body = ""
     proto = ""
-    for _i, line in std.string.split(raw, "\n")
-        t = std.string.trim(line)
+    for _i, line in raw:split("\n")
+        t = line:trim()
         if t != ""
             if _protocol(t)
                 proto = t
@@ -163,22 +163,22 @@ _answer(raw: str): str
     if body != ""
         return body
     end
-    -- searched over the WHOLE output, not just the last protocol line: the engine
-    -- prints `seconds=` after `result=`, and taking the last one scored every
-    -- the engine row against its own timing line
-    m = string.match(raw, "result=([^\n]*)")
+    # searched over the WHOLE output, not just the last protocol line: the engine
+    # prints `seconds=` after `result=`, and taking the last one scored every
+    # the engine row against its own timing line
+    m = raw:match("result=([^\n]*)")
     if m != nil
         return std.script.chomp(m)
     end
     proto
 end
 
--- The runtime refused the module rather than answering it — wasm3 cannot decode
--- two of the wasm_rt fixtures at all ("Error: LEB encoded value overflow").
--- That is not a wrong answer and must not be printed as one.
+# The runtime refused the module rather than answering it — wasm3 cannot decode
+# two of the wasm_rt fixtures at all ("Error: LEB encoded value overflow").
+# That is not a wrong answer and must not be printed as one.
 _errored(raw: str): bool
-    if string.match(raw, "Error:") != nil return true end
-    if string.match(raw, "error:") != nil return true end
+    if raw:match("Error:") != nil return true end
+    if raw:match("error:") != nil return true end
     false
 end
 
@@ -190,10 +190,10 @@ main(): i64
     secs = std.script.getenv("SIX_TIMEOUT", "120")
     root = std.script.chomp(std.script.capture("pwd"))
 
-    -- Every runtime is named and probed BEFORE anything is measured. A table
-    -- whose baseline binary had been deleted mid-run once reported a confident
-    -- "0 identical / 176 differing"; a missing runtime must be a stated `n/a`
-    -- column, never a silent zero.
+    # Every runtime is named and probed BEFORE anything is measured. A table
+    # whose baseline binary had been deleted mid-run once reported a confident
+    # "0 identical / 176 differing"; a missing runtime must be a stated `n/a`
+    # column, never a silent zero.
     have = {}
     for _i, r in {"wasmtime", "wasmer", "wasm3", "iwasm"}
         have[r] = std.script.status(r .. " --help >/dev/null 2>&1") == 0
@@ -252,17 +252,17 @@ main(): i64
     rows = 0
     losses = {}
     nloss = 0
-    -- STARTUP FLOOR. Most fixtures here finish in single-digit milliseconds, so
-    -- the number being compared is PROCESS STARTUP -- the engine is a 208 KB static
-    -- binary and wasmtime builds a JIT before it runs anything. Counting those
-    -- as wins is the same defect as the withdrawn table in this repo's README,
-    -- where 13 of 24 "wins" read at or below timer resolution. A row whose
-    -- fastest AND the engine's own time are both under it is reported and shown but
-    -- attributed to nobody. Both halves are needed: keying on the fastest alone
-    -- called `brtable` startup-dominated while the engine spent 442 ms on it against
-    -- wart's 12 -- which is precisely the loss the row exists to show. This is a
-    -- resolution rule, not a per-module one: it keys on the measured time, never
-    -- on a name, an index or an input size.
+    # STARTUP FLOOR. Most fixtures here finish in single-digit milliseconds, so
+    # the number being compared is PROCESS STARTUP # the engine is a 208 KB static
+    # binary and wasmtime builds a JIT before it runs anything. Counting those
+    # as wins is the same defect as the withdrawn table in this repo's README,
+    # where 13 of 24 "wins" read at or below timer resolution. A row whose
+    # fastest AND the engine's own time are both under it is reported and shown but
+    # attributed to nobody. Both halves are needed: keying on the fastest alone
+    # called `brtable` startup-dominated while the engine spent 442 ms on it against
+    # wart's 12 -- which is precisely the loss the row exists to show. This is a
+    # resolution rule, not a per-module one: it keys on the measured time, never
+    # on a name, an index or an input size.
     floor: i64 = to(i64)(std.script.getenv("FLOOR_MS", "40"))
     startup = 0
 
@@ -274,7 +274,7 @@ main(): i64
                 oracle = _norm(_answer(std.script.capture(
                     "wasmtime --invoke " .. entry .. " " .. mod .. " 2>/dev/null")))
 
-                -- ── commands, one per runtime ────────────────────────────
+                # ── commands, one per runtime ────────────────────────────
                 cmd = {}
                 cmd["duon"] = "DUO_WASM_MODULE=" .. abs .. " DUO_WASM_INVOKE=" .. entry
                     .. " DUO_WASM_ENGINE=" .. engine .. " timeout " .. secs .. " " .. binary
@@ -282,13 +282,13 @@ main(): i64
                 cmd["wasmer"] = "timeout " .. secs .. " wasmer run -i " .. entry .. " " .. mod
                 cmd["wasm3"] = "timeout " .. secs .. " wasm3 --func " .. entry .. " " .. mod
                 cmd["iwasm"] = "timeout " .. secs .. " iwasm -f " .. entry .. " " .. mod
-                -- wart's CLI has no export selector: `wart run` enters _start
-                -- and nothing else. A `run`-only fixture is UNREACHABLE for it,
-                -- which is not the same as slow and is not counted as a loss.
+                # wart's CLI has no export selector: `wart run` enters _start
+                # and nothing else. A `run`-only fixture is UNREACHABLE for it,
+                # which is not the same as slow and is not counted as a loss.
                 cmd["wart"] = "timeout " .. secs .. " " .. wart .. " run " .. mod
-                -- Where each runtime writes its answer. wasm3 and iwasm use
-                -- stderr; wasmtime's stdout must stay clean because it is the
-                -- oracle and it prints a `--invoke` warning on stderr.
+                # Where each runtime writes its answer. wasm3 and iwasm use
+                # stderr; wasmtime's stdout must stay clean because it is the
+                # oracle and it prints a `--invoke` warning on stderr.
                 errpol = {}
                 errpol["duon"] = " 2>/dev/null"
                 errpol["wasmtime"] = " 2>/dev/null"
@@ -297,7 +297,7 @@ main(): i64
                 errpol["iwasm"] = " 2>&1"
                 errpol["wart"] = " 2>&1"
 
-                -- ── verify before timing ─────────────────────────────────
+                # ── verify before timing ─────────────────────────────────
                 okrt = {}
                 miss = {}
                 errd = {}
@@ -312,17 +312,17 @@ main(): i64
                             raw = std.script.capture(cmd[r] .. errpol[r])
                             got = _norm(_answer(raw))
                             if oracle == ""
-                                -- a void export: there is no value to agree on,
-                                -- so agreement cannot be claimed and the row is
-                                -- skipped rather than timed on exit status
+                                # a void export: there is no value to agree on,
+                                # so agreement cannot be claimed and the row is
+                                # skipped rather than timed on exit status
                                 okrt[r] = false
                             elseif got == oracle
                                 okrt[r] = true
                             elseif got == "" or _errored(raw)
-                                -- produced nothing at all: this runtime cannot
-                                -- be driven to this export, which is different
-                                -- from computing the wrong thing and must not
-                                -- be reported as if it were
+                                # produced nothing at all: this runtime cannot
+                                # be driven to this export, which is different
+                                # from computing the wrong thing and must not
+                                # be reported as if it were
                                 miss[r] = true
                                 if _errored(raw)
                                     errd[r] = true
@@ -333,7 +333,7 @@ main(): i64
                 end
 
                 if okrt["duon"] or okrt["wasmtime"]
-                    -- ── interleaved min-of-N over the verified runtimes ──
+                    # ── interleaved min-of-N over the verified runtimes ──
                     t = {}
                     for _k, r in {"duon", "wart", "wasmtime", "wasmer", "wasm3", "iwasm"}
                         t[r] = {}
@@ -350,8 +350,8 @@ main(): i64
 
                     best = -1
                     bestr = "-"
-                    -- the engine's own time, needed by the startup floor below and
-                    -- taken from the same pass that renders the cells
+                    # the engine's own time, needed by the startup floor below and
+                    # taken from the same pass that renders the cells
                     duonms: i64 = floor
                     cells = ""
                     for _k, r in {"duon", "wart", "wasmtime", "wasmer", "wasm3", "iwasm"}

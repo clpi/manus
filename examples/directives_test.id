@@ -1,12 +1,12 @@
 @test.unit
 test_add(): void
-    t = req("std.test")
+    t = test
     t.assert_eq(1 + 1, 2, "addition")
 end
 
 @test
 test_truth(): void
-    t = req("std.test")
+    t = test
     t.assert_true(true, "true is true")
 end
 
@@ -26,12 +26,12 @@ end
 
 @test.integration({ name = "smoke" })
 test_integration_tag(): void
-    t = req("std.test")
+    t = test
     t.assert_true(true, "integration smoke")
 end
 
 @test({ iterations = 5 })
 test_with_iterations(): void
-    t = req("std.test")
+    t = test
     t.assert_eq(2 * 2, 4, "mul")
 end

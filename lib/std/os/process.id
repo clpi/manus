@@ -1,9 +1,9 @@
--- std.os.process — Process management, spawning, pipes
--- For ward's process isolation and runtime management.
+# std.os.process — Process management, spawning, pipes
+# For ward's process isolation and runtime management.
 
--- ═══════════════════════════════════════════════════════════════
--- Process Configuration
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Process Configuration
+# ═══════════════════════════════════════════════════════════════
 
 config_new(cmd: str): any
     {
@@ -43,7 +43,7 @@ config_cwd(config: any, cwd: str): any
 end
 
 config_stdin(config: any, mode: str): any
-    config.stdin = mode  -- "pipe", "inherit", "ignore", or file path
+    config.stdin = mode  # "pipe", "inherit", "ignore", or file path
     config
 end
 
@@ -62,9 +62,9 @@ config_detached(config: any, detached: bool): any
     config
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Process Handle
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Process Handle
+# ═══════════════════════════════════════════════════════════════
 
 new(): any
     {
@@ -79,19 +79,19 @@ new(): any
 end
 
 start(proc: any, config: any): any
-    -- Build command with arguments
+    # Build command with arguments
     full_cmd = config.cmd
     for arg in config.args
         full_cmd = full_cmd .. " " .. arg:to(str)
     end
 
-    -- Set environment variables for the child process
+    # Set environment variables for the child process
     env_prefix = ""
     for k, v in config.env
         env_prefix = env_prefix .. k .. "=" .. v:to(str) .. " "
     end
 
-    -- Capture PID and run in background
+    # Capture PID and run in background
     handle = io.popen(env_prefix .. full_cmd .. " 2>&1 & echo $!")
     if handle
         pid_str = io.read(handle, "*l")
@@ -112,10 +112,10 @@ wait(proc: any): any
         return {exit_code = proc.exit_code}
     end
 
-    -- Wait for process and capture exit code
+    # Wait for process and capture exit code
     if proc.pid and proc.pid > 0
         os.execute("wait " .. proc.pid:to(str) .. " 2>/dev/null")
-        -- Get exit code via $?
+        # Get exit code via $?
         handle = io.popen("echo $?")
         if handle
             code_str = io.read(handle, "*l")
@@ -137,7 +137,7 @@ kill(proc: any, signal: i64): any
         return {error = "Process not running"}
     end
 
-    sig = signal or 15  -- SIGTERM default
+    sig = signal or 15  # SIGTERM default
     if proc.pid and proc.pid > 0
         os.execute("kill -" .. sig:to(str) .. " " .. proc.pid:to(str) .. " 2>/dev/null")
     end
@@ -152,7 +152,7 @@ write_stdin(proc: any, data: str): any
         return {error = "stdin not available"}
     end
 
-    -- Write to the process's stdin pipe
+    # Write to the process's stdin pipe
     if type(proc.stdin) == "userdata"
         proc.stdin:write(data)
         proc.stdin:flush()
@@ -192,12 +192,12 @@ exit_code(proc: any): any
     proc.exit_code
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Command Execution Helpers
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Command Execution Helpers
+# ═══════════════════════════════════════════════════════════════
 
 run(cmd: str, args: any): any
-    -- Build full command line
+    # Build full command line
     full_cmd = cmd
     if args
         for arg in args
@@ -205,7 +205,7 @@ run(cmd: str, args: any): any
         end
     end
 
-    -- Execute and capture output + exit code in one shot
+    # Execute and capture output + exit code in one shot
     f = io.popen(full_cmd .. " 2>&1; echo \"\\n$?\"", "r")
     if f == nil
         return {exit_code = 1, stdout = "", stderr = "Failed to execute: " .. cmd}
@@ -213,20 +213,20 @@ run(cmd: str, args: any): any
     raw = f:read("*a") or ""
     f:close()
 
-    -- Split output from exit code (last line after final newline).
-    --
-    -- The local is `code`, not `exit_code`: `exit_code` is a TOP-LEVEL FUNCTION
-    -- in this module (see above), so assigning that name inside a function
-    -- shadows a frozen binding and fails with "attempt to assign to const
-    -- variable" — which took the whole module down. Both names are introduced
-    -- before the branch so neither arm is the first assignment.
+    # Split output from exit code (last line after final newline).
+    #
+    # The local is `code`, not `exit_code`: `exit_code` is a TOP-LEVEL FUNCTION
+    # in this module (see above), so assigning that name inside a function
+    # shadows a frozen binding and fails with "attempt to assign to const
+    # variable" — which took the whole module down. Both names are introduced
+    # before the branch so neither arm is the first assignment.
     stdout = raw
     code = 0
-    last_nl = string.find(raw, "\n[^\n]*$")
+    last_nl = raw:find("\n[^\n]*$")
     if last_nl
         stdout = raw:sub(1, last_nl - 1)
         exit_str = raw:sub(last_nl + 1)
-        code = tonumber(string.match(exit_str, "%d+")) or 0
+        code = tonumber(exit_str:match("%d+")) or 0
     end
 
     {
@@ -244,8 +244,8 @@ run_with_input(cmd: str, args: any, input: str): any
         end
     end
 
-    -- Pipe input to command and capture output + exit code
-    escaped_input = string.gsub(input, "'", "'\\''")
+    # Pipe input to command and capture output + exit code
+    escaped_input = input:gsub("'", "'\\''")
     f = io.popen("echo '" .. escaped_input .. "' | " .. full_cmd .. " 2>&1; echo \"\\n$?\"", "r")
     if f == nil
         return {exit_code = 1, stdout = "", stderr = "Failed to execute: " .. cmd}
@@ -253,14 +253,14 @@ run_with_input(cmd: str, args: any, input: str): any
     raw = f:read("*a") or ""
     f:close()
 
-    -- Same shadowing hazard as run(): `exit_code` is a top-level function here.
+    # Same shadowing hazard as run(): `exit_code` is a top-level function here.
     stdout = raw
     code = 0
-    last_nl = string.find(raw, "\n[^\n]*$")
+    last_nl = raw:find("\n[^\n]*$")
     if last_nl
         stdout = raw:sub(1, last_nl - 1)
         exit_str = raw:sub(last_nl + 1)
-        code = tonumber(string.match(exit_str, "%d+")) or 0
+        code = tonumber(exit_str:match("%d+")) or 0
     end
 
     {
@@ -275,9 +275,9 @@ output(cmd: str, args: any): any
     result.stdout
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Pipe (inter-process communication)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Pipe (inter-process communication)
+# ═══════════════════════════════════════════════════════════════
 
 pipe_new(): any
     {
@@ -293,7 +293,7 @@ pipe_read(pipe: any): any
     end
 
     data = pipe.buffer[1]
-    table.remove(pipe.buffer, 1)
+    pipe.buffer:remove(1)
     {data = data, eof = false}
 end
 
@@ -306,24 +306,24 @@ pipe_close(pipe: any): void
     pipe.buffer = {}
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Environment Variables
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Environment Variables
+# ═══════════════════════════════════════════════════════════════
 
 env_get(name: str): any
     os.getenv(name)
 end
 
 env_set(name: str, value: str): any
-    -- Use C setenv for persistent environment changes in the current process
+    # Use C setenv for persistent environment changes in the current process
     @c.emit("setenv(" .. name .. ", " .. value .. ", 1)")
-    -- Also update Lua's environment table
+    # Also update Lua's environment table
     os.setenv(name, value)
     {ok = true}
 end
 
 env_unset(name: str): any
-    -- Use C unsetenv for persistent environment changes
+    # Use C unsetenv for persistent environment changes
     @c.emit("unsetenv(" .. name .. ")")
     os.setenv(name, nil)
     {ok = true}
@@ -333,12 +333,12 @@ env_list(): any
     os.getenv()
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
--- Config
--- Process
--- Helpers
--- Pipe
--- Environment
+# Config
+# Process
+# Helpers
+# Pipe
+# Environment

@@ -106,7 +106,7 @@ identity and continuity boundary. Until the complete checked-fact comparison
 passes, suffix and path influence remain unclosed rather than being inferred
 from machine equality.
 
-The earlier Idsem, Duo, and Duon names, the host names `duo_lexer_bridge` and
+The earlier Idol, Duo, and Duon names, the host names `duo_lexer_bridge` and
 `duo_mode`, the `.id` suffix, and the `duo` executable are historical or
 bootstrap provenance. These exact physical symbols and paths remain one
 implementation path, not a second language or command authority. Delete the

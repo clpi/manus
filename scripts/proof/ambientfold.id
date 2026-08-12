@@ -1,0 +1,42 @@
+# gap[100] rung 3 — the canonical ambient spelling folds like `req`.
+#
+# Before this fixture's fix, the form the LAW requires returned nil and the
+# form on the §1 DENY LIST worked. `req` was not idiomatic debt; it was the
+# only spelling that FUNCTIONED, which is why 399 sites still use it and why
+# rungs 3, 5 and 6 all stalled on one defect.
+#
+# The failure was SILENT: `std.a.b.c(x)` compiled clean, ran, printed nothing
+# and exited 0, because a native-direct module's `lua_require` answers a nil
+# stub by design (its exports are folded C symbols, so there is no table to
+# bind) and nothing folded the member call.
+#
+# This asserts BY VALUE that both spellings answer the same thing. It must not
+# be weakened to "the ambient call returned something" — the defect returned
+# nil, and nil prints as nothing, so a fixture that only checks for a crash
+# would have passed throughout.
+#
+# exit 0 all good; 1..3 names the direction that broke.
+
+anchor = symbol
+
+main: i64 = ()
+    viareq = anchor.root("q")
+    ambient = std.compiler.symbol.root("q")
+
+    if viareq != "duo_fn_q"
+        print("ambient fold: the req spelling itself broke: {viareq}")
+        std.os.exit(1)
+
+    if ambient != viareq
+        print("ambient fold: req gave {viareq}, ambient gave {ambient}")
+        std.os.exit(2)
+
+    # A second arity, because a one-argument fold could pass on a coincidence
+    # of the calling convention while a two-argument one did not.
+    two = std.compiler.symbol.module("h", "n")
+    if two != anchor.module("h", "n")
+        print("ambient fold: two-arg disagreed: {two}")
+        std.os.exit(3)
+
+    print("ambient fold: both spellings fold to the same direct call")
+    0

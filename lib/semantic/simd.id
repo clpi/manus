@@ -1,0 +1,5 @@
+# simd world — vector lane relations.
+
+load = { world = "simd", possessed = true, callable = true, operation = false }
+store = { world = "simd", possessed = true, callable = true, operation = false }
+lane = { world = "simd", possessed = true, callable = true, operation = false }

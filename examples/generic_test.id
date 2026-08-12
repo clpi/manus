@@ -1,17 +1,17 @@
--- Test generics with angle bracket syntax, multi-param generics, and early returns
+# Test generics with angle bracket syntax, multi-param generics, and early returns
 
--- Basic generic identity
+# Basic generic identity
 fun identity<T>(value: T): T
     value
 end
 
--- Multi-param generic
+# Multi-param generic
 fun pair<A, B>(first: A, second: B)
     { first = first, second = second }
 end
 
--- Generic with early return in conditional
--- Early returns in conditionals ARE allowed and supported
+# Generic with early return in conditional
+# Early returns in conditionals ARE allowed and supported
 fun safe_div<T>(a: T, b: T): T
     if b == 0
         return a
@@ -19,12 +19,12 @@ fun safe_div<T>(a: T, b: T): T
     a // b
 end
 
--- Generic swap with explicit multi-return
+# Generic swap with explicit multi-return
 fun swap<T>(a: T, b: T): any
     return b, a
 end
 
--- Generic function with type constraints via runtime checks
+# Generic function with type constraints via runtime checks
 fun print_if_str<T>(val: T): void
     if type(val) == "string"
         print("str value: " .. val)
@@ -37,7 +37,7 @@ fun print_if_str<T>(val: T): void
     print("other type")
 end
 
--- Test
+# Test
 result = identity(42)
 print("identity(42): " .. to(str)(result))
 

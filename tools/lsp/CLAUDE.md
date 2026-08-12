@@ -1,4 +1,4 @@
-# Idsem LSP implementation projection
+# Idol LSP implementation projection
 
 Start at [`../../AGENTS.md`](../../AGENTS.md). It routes to the sole language
 law, the stable agent router, the executed compiler frontier, live ownership,
@@ -23,7 +23,7 @@ When a protocol feature needs a fact that the graph cannot supply, record the
 missing graph query as a gap. Do not add a line scanner, spelling table, local
 registry, source-category flag, or string dispatch as a substitute authority.
 Compatibility recognition remains explicitly foreign or historical provenance;
-it never defines canonical Idsem.
+it never defines canonical Idol.
 
 Document snapshots and protocol caches are physical projections. A path,
 formatted token, span, hash, cache key, or protocol string may locate evidence

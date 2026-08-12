@@ -1,9 +1,8 @@
--- verify_build.id — build verification: zig build + zig build test.
--- Replaced scripts/verify_build.sh (deleted 2026-08-07)
--- Run: duo run scripts/verify_build.id
--- Run: duo run scripts/verify_build.id
+# verify_build.id — build verification: zig build + zig build test.
+# Replaced scripts/verify_build.sh (deleted 2026-08-07)
+# Run: idol run scripts/verify_build.id
+# Run: idol run scripts/verify_build.id
 
-script = req "std.script"
 
 script.must("zig build 2>&1 | tee /tmp/duo_zig_build.log")
 script.echo("zig build OK")

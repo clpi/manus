@@ -1,60 +1,60 @@
--- std.xml — basic XML parsing and formatting
+# std.xml — basic XML parsing and formatting
 
 xml_entity_to_char(c: any): any
-    std.string.char(c)
+    c:char()
 end
 
 escape(s: str): str
     if s == nil return "" end
-    s = std.string.gsub(s, "&", "&amp;")
-    s = std.string.gsub(s, "<", "&lt;")
-    s = std.string.gsub(s, ">", "&gt;")
-    s = std.string.gsub(s, "\"", "&quot;")
-    s = std.string.gsub(s, "'", "&apos;")
+    s = s:gsub("&", "&amp;")
+    s = s:gsub("<", "&lt;")
+    s = s:gsub(">", "&gt;")
+    s = s:gsub("\"", "&quot;")
+    s = s:gsub("'", "&apos;")
     s
 end
 
 unescape(s: str): str
     if s == nil return "" end
-    s = std.string.gsub(s, "&amp;", "&")
-    s = std.string.gsub(s, "&lt;", "<")
-    s = std.string.gsub(s, "&gt;", ">")
-    s = std.string.gsub(s, "&quot;", "\"")
-    s = std.string.gsub(s, "&apos;", "'")
-    -- A named function, not a lambda. `to_char = (c) std.string.char(c)`
-    -- lowered to `lua_Value to_char = c;` — the lambda BODY leaked into the
-    -- initializer and its parameter `c` was undeclared at that scope, taking
-    -- the module down. A file-scope declaration lowers correctly and is passed
-    -- by name.
-    s = std.string.gsub(s, "&#(%d+);", xml_entity_to_char)
+    s = s:gsub("&amp;", "&")
+    s = s:gsub("&lt;", "<")
+    s = s:gsub("&gt;", ">")
+    s = s:gsub("&quot;", "\"")
+    s = s:gsub("&apos;", "'")
+    # A named function, not a lambda. `to_char = (c) c:char()`
+    # lowered to `lua_Value to_char = c;` — the lambda BODY leaked into the
+    # initializer and its parameter `c` was undeclared at that scope, taking
+    # the module down. A file-scope declaration lowers correctly and is passed
+    # by name.
+    s = s:gsub("&#(%d+);", xml_entity_to_char)
     s
 end
 
 parse_attributes(data: str, start: i64): any
     attrs = {}
     i = start
-    len = std.string.len(data)
+    len = data:len()
     while i <= len
-        while i <= len and (std.string.byte(data, i) == 32 or std.string.byte(data, i) == 9 or std.string.byte(data, i) == 10 or std.string.byte(data, i) == 13)
+        while i <= len and (data:byte(i) == 32 or data:byte(i) == 9 or data:byte(i) == 10 or data:byte(i) == 13)
             i += 1
         end
-        if i > len or std.string.byte(data, i) == 62 or std.string.byte(data, i) == 47
+        if i > len or data:byte(i) == 62 or data:byte(i) == 47
             break
         end
         key_start = i
-        while i <= len and std.string.byte(data, i) != 61 and std.string.byte(data, i) != 32 and std.string.byte(data, i) != 9 and std.string.byte(data, i) != 10 and std.string.byte(data, i) != 13 and std.string.byte(data, i) != 62 and std.string.byte(data, i) != 47
+        while i <= len and data:byte(i) != 61 and data:byte(i) != 32 and data:byte(i) != 9 and data:byte(i) != 10 and data:byte(i) != 13 and data:byte(i) != 62 and data:byte(i) != 47
             i += 1
         end
-        key = std.string.sub(data, key_start, i - 1)
-        if std.string.byte(data, i) == 61
+        key = data:sub(key_start, i - 1)
+        if data:byte(i) == 61
             i += 1
-            delim = std.string.byte(data, i)
+            delim = data:byte(i)
             i += 1
             val_start = i
-            while i <= len and std.string.byte(data, i) != delim
+            while i <= len and data:byte(i) != delim
                 i += 1
             end
-            val = std.string.sub(data, val_start, i - 1)
+            val = data:sub(val_start, i - 1)
             i += 1
             attrs[key] = unescape(val)
         end
@@ -64,15 +64,15 @@ end
 
 parse_elem(data: str, start: i64): any
     i = start
-    len = std.string.len(data)
-    while i <= len and std.string.byte(data, i) != 60
+    len = data:len()
+    while i <= len and data:byte(i) != 60
         i += 1
     end
     if i > len return nil end
     i += 1
-    if i <= len and std.string.byte(data, i) == 63
+    if i <= len and data:byte(i) == 63
         while i <= len
-            if std.string.byte(data, i) == 63 and i + 1 <= len and std.string.byte(data, i + 1) == 62
+            if data:byte(i) == 63 and i + 1 <= len and data:byte(i + 1) == 62
                 break
             end
             i += 1
@@ -80,9 +80,9 @@ parse_elem(data: str, start: i64): any
         if i <= len i += 2 end
         return parse_elem(data, i)
     end
-    if i <= len and std.string.byte(data, i) == 33
+    if i <= len and data:byte(i) == 33
         while i <= len
-            if std.string.byte(data, i) == 93 and i + 2 <= len and std.string.byte(data, i + 1) == 93 and std.string.byte(data, i + 2) == 62
+            if data:byte(i) == 93 and i + 2 <= len and data:byte(i + 1) == 93 and data:byte(i + 2) == 62
                 break
             end
             i += 1
@@ -90,43 +90,43 @@ parse_elem(data: str, start: i64): any
         if i <= len i += 3 end
         return parse_elem(data, i)
     end
-    if i <= len and std.string.byte(data, i) == 47
+    if i <= len and data:byte(i) == 47
         return nil
     end
     tag_start = i
-    while i <= len and std.string.byte(data, i) != 32 and std.string.byte(data, i) != 9 and std.string.byte(data, i) != 10 and std.string.byte(data, i) != 13 and std.string.byte(data, i) != 62 and std.string.byte(data, i) != 47
+    while i <= len and data:byte(i) != 32 and data:byte(i) != 9 and data:byte(i) != 10 and data:byte(i) != 13 and data:byte(i) != 62 and data:byte(i) != 47
         i += 1
     end
-    tag = std.string.sub(data, tag_start, i - 1)
+    tag = data:sub(tag_start, i - 1)
     attrs = {}
     self_closing = false
-    if std.string.byte(data, i) == 47 or std.string.byte(data, i) == 32 or std.string.byte(data, i) == 9 or std.string.byte(data, i) == 10 or std.string.byte(data, i) == 13
+    if data:byte(i) == 47 or data:byte(i) == 32 or data:byte(i) == 9 or data:byte(i) == 10 or data:byte(i) == 13
         attrs, i = parse_attributes(data, i)
     end
-    if i <= len and std.string.byte(data, i) == 47
+    if i <= len and data:byte(i) == 47
         self_closing = true
         i += 1
     end
-    if i <= len and std.string.byte(data, i) == 62
+    if i <= len and data:byte(i) == 62
         i += 1
     end
     elem = {tag = tag, attrs = attrs, children = {}}
     if not self_closing
         while true
             sp = ""
-            while i <= len and std.string.byte(data, i) != 60
-                sp = sp .. std.string.sub(data, i, i)
+            while i <= len and data:byte(i) != 60
+                sp = sp .. data:sub(i, i)
                 i += 1
             end
-            trimmed = std.string.trim(sp)
-            if std.string.len(trimmed) > 0
-                elem.children[rawlen(elem.children) + 1] = {kind = "text", text = unescape(sp)}
+            trimmed = sp:trim()
+            if trimmed:len() > 0
+                elem.children[elem.children:len() + 1] = {kind = "text", text = unescape(sp)}
             end
             if i > len break end
-            peek_byte = std.string.byte(data, i + 1)
+            peek_byte = data:byte(i + 1)
             if peek_byte == 47
                 i += 2
-                while i <= len and std.string.byte(data, i) != 62
+                while i <= len and data:byte(i) != 62
                     i += 1
                 end
                 if i <= len i += 1 end
@@ -134,7 +134,7 @@ parse_elem(data: str, start: i64): any
             end
             child = parse_elem(data, i)
             if child == nil break end
-            elem.children[rawlen(elem.children) + 1] = child
+            elem.children[elem.children:len() + 1] = child
             i = child._end
         end
     end
@@ -145,10 +145,10 @@ end
 parse(data: str): any
     if data == nil return nil end
     i = 1
-    while i <= std.string.len(data) and std.string.byte(data, i) != 60
+    while i <= data:len() and data:byte(i) != 60
         i += 1
     end
-    if i > std.string.len(data) return nil end
+    if i > data:len() return nil end
     doc = parse_elem(data, i)
     if doc != nil
         doc._end = nil
@@ -168,11 +168,11 @@ format_node(node: any, indent: i64): str
         end
     end
     children = node.children
-    if children == nil or rawlen(children) == 0
+    if children == nil or children:len() == 0
         return "<" .. tag .. attr_str .. " />"
     end
     inner = ""
-    pad = std.string.rep("  ", indent)
+    pad = "  ":rep(indent)
     for _, child in children
         inner = inner .. "\n" .. pad .. "  " .. format_node(child, indent + 1)
     end

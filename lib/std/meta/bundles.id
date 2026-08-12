@@ -1,6 +1,6 @@
--- std.meta.bundles — @comp.derive.bundle catalog and helpers
--- One line on a type → many generated trait implementations.
--- Bare syntax + implicit module-scope table (G-033/G-039).
+# std.meta.bundles — @comp.derive.bundle catalog and helpers
+# One line on a type → many generated trait implementations.
+# Bare syntax + implicit module-scope table (G-033/G-039).
 
 bundles = {
     Serializable = { "Display", "Eq", "Hash", "Serialize", "Deserialize" },
@@ -35,6 +35,6 @@ end
 
 describe(bundle_name: str): str
     rows = traits(bundle_name)
-    bundle_name .. " => " .. table.concat(rows, ", ")
+    bundle_name .. " => " .. rows:concat(", ")
 end
 

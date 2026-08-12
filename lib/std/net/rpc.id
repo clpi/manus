@@ -1,18 +1,18 @@
--- std.net.rpc — Remote Procedure Call (RPC) framework
--- For ward's distributed communication and service mesh.
+# std.net.rpc — Remote Procedure Call (RPC) framework
+# For ward's distributed communication and service mesh.
 
--- ═══════════════════════════════════════════════════════════════
--- RPC Message Types
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# RPC Message Types
+# ═══════════════════════════════════════════════════════════════
 
 REQUEST = 1
 RESPONSE = 2
 ERROR = 3
 NOTIFICATION = 4
 
--- ═══════════════════════════════════════════════════════════════
--- RPC Message
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# RPC Message
+# ═══════════════════════════════════════════════════════════════
 
 request_new(id: i64, method: str, params: any): any
     {
@@ -51,9 +51,9 @@ notification_new(method: str, params: any): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- RPC Server
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# RPC Server
+# ═══════════════════════════════════════════════════════════════
 
 server_new(): any
     {
@@ -72,18 +72,18 @@ server_add_middleware(server: any, middleware: any): void
 end
 
 server_handle(server: any, request: any): any
-    -- Validate JSON-RPC version
+    # Validate JSON-RPC version
     if request.jsonrpc != "2.0"
         return error_new(request.id, -32600, "Invalid Request", "Invalid JSON-RPC version")
     end
 
-    -- Check if method exists
+    # Check if method exists
     handler = server.handlers[request.method]
     if handler == nil
         return error_new(request.id, -32601, "Method not found", request.method)
     end
 
-    -- Run middleware
+    # Run middleware
     context = {
         request = request,
         server = server,
@@ -93,7 +93,7 @@ server_handle(server: any, request: any): any
         if result return result end
     end
 
-    -- Call handler
+    # Call handler
     ok, result = pcall(handler, request.params, context)
     if not ok
         return error_new(request.id, -32603, "Internal error", result:to(str))
@@ -108,9 +108,9 @@ server_next_id(server: any): i64
     id
 end
 
--- ═══════════════════════════════════════════════════════════════
--- RPC Client
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# RPC Client
+# ═══════════════════════════════════════════════════════════════
 
 client_new(transport: any): any
     {
@@ -126,11 +126,11 @@ client_call(client: any, method: str, params: any): any
 
     request = request_new(id, method, params)
 
-    -- Send request
+    # Send request
     result = client.transport.send(request)
     if result.error return result end
 
-    -- Store pending request
+    # Store pending request
     client.pending[id] = {
         method = method,
         start_time = os.clock(),
@@ -170,9 +170,9 @@ client_pending_count(client: any): i64
     count
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Transport Layer (pluggable)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Transport Layer (pluggable)
+# ═══════════════════════════════════════════════════════════════
 
 transport_http_new(url: str): any
     {
@@ -239,9 +239,9 @@ transport_tcp_send(transport: any, message: any): any
     {ok = true}
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Error Codes
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Error Codes
+# ═══════════════════════════════════════════════════════════════
 
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
@@ -262,9 +262,9 @@ error_code_name(code: i64): str
     codes[code] or "Unknown error"
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Service Discovery
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Service Discovery
+# ═══════════════════════════════════════════════════════════════
 
 registry_new(): any
     {
@@ -303,14 +303,14 @@ registry_heartbeat(registry: any, name: str): void
     end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
--- Constants
--- Messages
--- Server
--- Client
--- Transport
--- Error Codes
--- Registry
+# Constants
+# Messages
+# Server
+# Client
+# Transport
+# Error Codes
+# Registry

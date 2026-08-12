@@ -1,5 +1,5 @@
--- std.agent — hooks for agentic development on Duo (compiler dev + end-user apps)
--- Primary surface: @comp.* (@meta.* / @compiler.* are aliases). Comptime strings fold to native C.
+# std.agent — hooks for agentic development on Duo (compiler dev + end-user apps)
+# Primary surface: @comp.* (@meta.* / @compiler.* are aliases). Comptime strings fold to native C.
 
 discover(): str
     "comp.map comp.sweep comp.derive comp.product comp.tensor comp.nfold comp.burst comp.power comp.choose comp.permute\n" ..
@@ -69,53 +69,53 @@ grammar_index(): str
 end
 
 multiplier_for(goal: str): str
-    g = string.lower(goal)
-    if string.find(g, "trait") or string.find(g, "derive") or string.find(g, "impl")
+    g = goal:lower()
+    if g:find("trait") or g:find("derive") or g:find("impl")
         return "@comp.derive / @comp.derive.all / @comp.derive.bundle — O(types×fields)"
     end
-    if string.find(g, "pair") or string.find(g, "cartesian") or string.find(g, "product")
+    if g:find("pair") or g:find("cartesian") or g:find("product")
         return "@comp.product / @comp.derive.product — O(types²)"
     end
-    if string.find(g, "triple") or string.find(g, "tensor")
+    if g:find("triple") or g:find("tensor")
         return "@comp.tensor / @comp.derive.tensor — O(types³)"
     end
-    if string.find(g, "subset") or string.find(g, "powerset") or string.find(g, "power")
+    if g:find("subset") or g:find("powerset") or g:find("power")
         return "@comp.power / @comp.derive.power — O(2^n)"
     end
-    if string.find(g, "combination") or string.find(g, "choose") or string.find(g, "fixed subset")
+    if g:find("combination") or g:find("choose") or g:find("fixed subset")
         return "@comp.choose / @comp.derive.choose — O(n choose k), controlled exponential subset generation"
     end
-    if string.find(g, "permute") or string.find(g, "order")
+    if g:find("permute") or g:find("order")
         return "@comp.permute / @comp.derive.permute — O(n!)"
     end
-    if string.find(g, "compose") or string.find(g, "chain") or string.find(g, "nest") or string.find(g, "combine") or string.find(g, "glue")
+    if g:find("compose") or g:find("chain") or g:find("nest") or g:find("combine") or g:find("glue")
         return "@comp.each(src, fn) / @comp.chain(src, fn) — composition glue: split any combinator output into fragments, re-expand each; chains any two combinators (closes the algebra)"
     end
-    if string.find(g, "module") or string.find(g, "file") or string.find(g, "emit")
+    if g:find("module") or g:find("file") or g:find("emit")
         return "@comp.burst → @comp.transcend → @comp.infinity → @comp.hyper"
     end
-    if string.find(g, "pipeline") or string.find(g, "fuse")
+    if g:find("pipeline") or g:find("fuse")
         return "@comp.pipeline({ variants = ... }) — typed kernel family"
     end
-    if string.find(g, "rewrite") or string.find(g, "rule")
+    if g:find("rewrite") or g:find("rule")
         return "@comp.rewrite / @comp.rewrite.bundle — pattern → infinite instances"
     end
-    if string.find(g, "template") or string.find(g, "parametric")
+    if g:find("template") or g:find("parametric")
         return "@comp.template / @comp.generate — O(n) or O(ops×types) native C fragments; chain with @comp.each"
     end
-    if string.find(g, "scheme") or string.find(g, "declarative")
+    if g:find("scheme") or g:find("declarative")
         return "@comp.scheme(declarations, template) — pipe-separated type/fn units → O(units) C"
     end
-    if string.find(g, "grammar") or string.find(g, "ebnf") or string.find(g, "language")
+    if g:find("grammar") or g:find("ebnf") or g:find("language")
         return "@comp.grammar(spec, fn) — O(b^d) EBNF expansion"
     end
-    if string.find(g, "weave") or string.find(g, "cross-module") or string.find(g, "cross module")
+    if g:find("weave") or g:find("cross-module") or g:find("cross module")
         return "@comp.weave(module, concept, fn) — O(N×M) cross-module concept sweep"
     end
-    if string.find(g, "dedupe") or string.find(g, "duplicate") or string.find(g, "coord")
+    if g:find("dedupe") or g:find("duplicate") or g:find("coord")
         return "@comp.agent.dedupe() + read .agents/AGENT_COORDINATION.md; claim before edit"
     end
-    if string.find(g, "gap") or string.find(g, "script") or string.find(g, "ergonomic")
+    if g:find("gap") or g:find("script") or g:find("ergonomic")
         return "@comp.agent.gaps() + .agents/AGENT_COORDINATION.md#cross-agent-gap-buffer; record finding before adding one-off tooling"
     end
     "@comp.map / @comp.sweep — O(types); stack @comp.ceiling / @comp.omni for quadratic+"

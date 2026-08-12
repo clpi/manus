@@ -1,9 +1,9 @@
--- Exponential cascade: folded concat zip + power→each→template (O(2^n) native C).
--- Run: duo run examples/meta_exponential_cascade.id
---
--- Closes the combinator algebra at module level:
---   TYPES = "i32|" .. "i64|" .. "f64"  →  @comp.zip(TYPES, OPS, ...)
---   @comp.power → @comp.each → @comp.template (nested hooks via G-059 meta_hook)
+# Exponential cascade: folded concat zip + power→each→template (O(2^n) native C).
+# Run: duo run examples/meta_exponential_cascade.id
+#
+# Closes the combinator algebra at module level:
+#   TYPES = "i32|" .. "i64|" .. "f64"  →  @comp.zip(TYPES, OPS, ...)
+#   @comp.power → @comp.each → @comp.template (nested hooks via G-059 meta_hook)
 
 concept HasXY
     x: f64
@@ -14,7 +14,7 @@ Vec2: { x: f64, y: f64 }
 Vec3: { x: f64, y: f64, z: f64 }
 Pt: { x: f64, y: f64 }
 
--- Folded concat builds zip specs (fold_meta_string_expr binop ..).
+# Folded concat builds zip specs (fold_meta_string_expr binop ..).
 TYPES = "i32|" .. "i64|" .. "f64"
 OPS = "add|" .. "sub"
 
@@ -22,7 +22,7 @@ PAIRS = @comp.zip(TYPES, OPS, fun(p)
     p.a .. "_" .. p.b .. " "
 end)
 
--- power(3 types) → 7 subset fragments; each re-expands; template emits C stub per type.
+# power(3 types) → 7 subset fragments; each re-expands; template emits C stub per type.
 SUBSETS = @comp.power("HasXY", fun(s)
     s.name .. ";"
 end)

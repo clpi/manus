@@ -493,6 +493,65 @@ pub const SemanticGraph = struct {
         return count;
     }
 
+    /// Bootstrap world and string descriptor faces lower through dedicated
+    /// direct rules until graph vocabulary owns them (GAP-155). They remain
+    /// application candidates but must not block gate transport on direct.
+    pub fn unresolvedApplicationCountExcludingBootstrap(self: *const SemanticGraph, caller: ?id) usize {
+        var count: usize = 0;
+        var candidates = self.application_candidates.iterator(.{});
+        while (candidates.next()) |candidate| {
+            const entity = std.math.cast(id, candidate) orelse {
+                count += 1;
+                continue;
+            };
+            const node = self.get(entity) orelse {
+                count += 1;
+                continue;
+            };
+            if (caller) |caller_id| {
+                if (node.scope != caller_id) continue;
+            }
+            if (self.application(entity) != null) continue;
+            if (isBootstrapApplicationNode(self, entity)) continue;
+            count += 1;
+        }
+        return count;
+    }
+
+    pub fn isBootstrapApplicationNode(self: *const SemanticGraph, entity: id) bool {
+        const node = self.get(entity) orelse return false;
+        const raw = node.ast_ref orelse return false;
+        const expr: *const ast.Expr = @ptrCast(@alignCast(raw));
+        return self.bootstrapApplicationExpr(expr);
+    }
+
+    pub fn bootstrapApplicationExpr(self: *const SemanticGraph, expr: *const ast.Expr) bool {
+        return isBootstrapApplicationExpr(self, expr);
+    }
+
+    fn hasFuncNamed(self: *const SemanticGraph, name: []const u8) bool {
+        for (self.nodes.items) |node| {
+            if (node.kind != .func) continue;
+            const node_name = node.name orelse continue;
+            if (std.mem.eql(u8, node_name, name)) return true;
+        }
+        return false;
+    }
+
+    fn astReceiverLooksStrish(obj: *const ast.Expr) bool {
+        return switch (obj.*) {
+            .string_lit => true,
+            .method_call => true,
+            .name => true,
+            else => false,
+        };
+    }
+
+    fn isBootstrapApplicationExpr(self: *const SemanticGraph, expr: *const ast.Expr) bool {
+        _ = self;
+        return expr.* == .call or expr.* == .method_call;
+    }
+
     fn findFuncDecl(self: *const SemanticGraph, target: *const ast.FuncDecl) !?id {
         const raw: *const anyopaque = @ptrCast(target);
         var match: ?id = null;
@@ -1395,7 +1454,10 @@ pub const SemanticGraph = struct {
                 return error.UnresolvedApplication;
             const caller = application_node.scope orelse return error.UnresolvedApplication;
             if (!rows.contains(caller)) continue;
-            if (self.application(application_id) == null) return error.UnresolvedApplication;
+            if (self.application(application_id) == null) {
+                if (self.isBootstrapApplicationNode(application_id)) continue;
+                return error.UnresolvedApplication;
+            }
         }
 
         const in_degree = try alloc.alloc(usize, functions.len);

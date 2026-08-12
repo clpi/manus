@@ -1,7 +1,7 @@
--- Anagram check by byte histogram. One positive and one negative, because a
--- comparator that always answers true passes the positive alone.
--- expect: 1 0
-same = (a: str, b: str): i64
+# Anagram check by byte histogram. One positive and one negative, because a
+# comparator that always answers true passes the positive alone.
+# expect: 1 0
+same: i64 = (a: str, b: str)
     if #a != #b
         return 0
     end
@@ -26,7 +26,7 @@ same = (a: str, b: str): i64
     1
 end
 
-main = (): i64
+main: i64 = ()
     a = same("listen", "silent")
     b = same("listen", "tinsel!")
     print("{a} {b}")

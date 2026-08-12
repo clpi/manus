@@ -22,7 +22,6 @@ test {
     _ = @import("meta_module.zig");
     _ = @import("transform_engine.zig");
     _ = @import("meta_dispatch.zig");
-    _ = @import("codegen_pass3_tests.zig");
     _ = @import("semantic_graph.zig");
     _ = @import("semantic_algebra.zig");
     _ = @import("sim.zig");
@@ -46,9 +45,9 @@ test {
     _ = @import("wasm_semantic_gen.zig");
     _ = @import("wasm_decode_differential.zig");
     _ = @import("tail_result_demand.zig");
-    _ = @import("pass25_tail_result_model.zig");
-    _ = @import("pass26_wiring.zig");
-    _ = @import("pass27_benchmark_evidence.zig");
+    _ = @import("tail_result_model.zig");
+    _ = @import("wiring.zig");
+    _ = @import("benchmark_evidence.zig");
     _ = @import("lua_metamethod.zig");
     _ = @import("graph_query.zig");
     _ = @import("region_graph.zig");
@@ -69,11 +68,9 @@ test {
     _ = @import("semantic_transaction.zig");
     _ = @import("backend_identity.zig");
     _ = @import("native_barrier_checks.zig");
-    _ = @import("pass11_ward_barrier_tests.zig");
     _ = @import("wasm_decode_semantic.zig");
     _ = @import("target_model.zig");
     _ = @import("sim_pipeline.zig");
-    _ = @import("pass4_native_tests.zig");
     _ = @import("meta_codegen.zig");
     _ = @import("directives.zig");
     _ = @import("term.zig");

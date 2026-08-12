@@ -1,10 +1,10 @@
--- bench_simd_matmul.id
--- Benchmarks the builtin simd.matmul_f32 against a baseline C compiler.
+# bench_simd_matmul.id
+# Benchmarks the builtin simd.matmul_f32 against a baseline C compiler.
 
--- Value form with an annotation. A bare `run_bench()` with no type annotation
--- parses as a CALL, not a declaration (GR-001), which orphaned the closing
--- `end` at the bottom of the file and made the whole benchmark unparseable.
-_run_bench = (): void
+# Value form with an annotation. A bare `run_bench()` with no type annotation
+# parses as a CALL, not a declaration (GR-001), which orphaned the closing
+# `end` at the bottom of the file and made the whole benchmark unparseable.
+_run_bench: void = ()
     print("STARTING")
     n = 512
 
@@ -34,12 +34,12 @@ _run_bench = (): void
         c_ptr = (void*)c;
     ]])
     
-    -- Warmup
+    # Warmup
     simd.matmul_f32(a_ptr, b_ptr, c_ptr, 128, 128, 128)
     dummy = 0
 
     start = os.clock()
-    -- 10 iterations of 512x512 to get a measurable time
+    # 10 iterations of 512x512 to get a measurable time
     for i = 1, 10 do
         simd.matmul_f32(a_ptr, b_ptr, c_ptr, n, n, n)
         dummy = 0
@@ -61,7 +61,7 @@ _run_bench = (): void
     print("Checksum:", checksum)
 end
 
-main = (): i64
+main: i64 = ()
     _run_bench()
     0
 end

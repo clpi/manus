@@ -1,18 +1,18 @@
--- the engine JIT compiler stub
--- Strategy: emit C and invoke clang -O2 to produce a shared library.
--- Codegen prefers native i64 / str throughout; calls are kept in
--- statement position so the compiler emits direct C calls rather than
--- lua_invoke indirect dispatch (which previously failed to wrap
--- function references with their lua-arity adapters).
+# the engine JIT compiler stub
+# Strategy: emit C and invoke clang -O2 to produce a shared library.
+# Codegen prefers native i64 / str throughout; calls are kept in
+# statement position so the compiler emits direct C calls rather than
+# lua_invoke indirect dispatch (which previously failed to wrap
+# function references with their lua-arity adapters).
 
 req "std.os"
 req "std.fmt"
 
--- ═══════════════════════════════════════════════════════════════
--- valtype_to_c — translate a WASM value type byte to a C type name.
--- Defined first so callers can dispatch directly without forward
--- references.
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# valtype_to_c — translate a WASM value type byte to a C type name.
+# Defined first so callers can dispatch directly without forward
+# references.
+# ═══════════════════════════════════════════════════════════════
 fun valtype_to_c(vt: i64): str
   match vt
   case 0x7F "int32_t"
@@ -23,11 +23,11 @@ fun valtype_to_c(vt: i64): str
   end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- emit_c_function — produce a C source string for one WASM function.
--- Calls to valtype_to_c go through locals (statement form) so the
--- codegen wraps them in __lua arity adapters correctly.
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# emit_c_function — produce a C source string for one WASM function.
+# Calls to valtype_to_c go through locals (statement form) so the
+# codegen wraps them in __lua arity adapters correctly.
+# ═══════════════════════════════════════════════════════════════
 fun emit_c_function(mod: any, func_idx: i64, code: any, sig: any): str
   lines: any = {}
   lines[#lines + 1] = "#include <stdint.h>"
@@ -38,15 +38,15 @@ fun emit_c_function(mod: any, func_idx: i64, code: any, sig: any): str
   n_locals: i64 = #code.locals
   n_results: i64 = #sig.results
 
-  -- Determine return type. Extract the table lookup to a native i64
-  -- first so the call to valtype_to_c gets a native int64_t argument.
+  # Determine return type. Extract the table lookup to a native i64
+  # first so the call to valtype_to_c gets a native int64_t argument.
   ret_type: str = "void"
   if n_results > 0
     r1: i64 = sig.results[1]
     ret_type = valtype_to_c(r1)
   end
 
-  -- Build parameter list.
+  # Build parameter list.
   params: any = {}
   for i = 1, n_params
     p: i64 = sig.params[i]
@@ -55,9 +55,9 @@ fun emit_c_function(mod: any, func_idx: i64, code: any, sig: any): str
   end
   params[#params + 1] = "uint8_t* memory"
   lines[#lines + 1] = ret_type .. " wasmjitf" .. tostring(func_idx) ..
-    "(" .. table.concat(params, ", ") .. ") {"
+    "(" .. params:concat(", ") .. ") {"
 
-  -- Locals.
+  # Locals.
   for i = 1, n_locals
     l: i64 = code.locals[i]
     l_type: str = valtype_to_c(l)
@@ -68,12 +68,12 @@ fun emit_c_function(mod: any, func_idx: i64, code: any, sig: any): str
   lines[#lines + 1] = "  return 0;"
   lines[#lines + 1] = "}"
 
-  table.concat(lines, "\n")
+  lines:concat("\n")
 end
 
--- ═══════════════════════════════════════════════════════════════
--- compile_function — JIT: compile a hot WASM function to a .so.
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# compile_function — JIT: compile a hot WASM function to a .so.
+# ═══════════════════════════════════════════════════════════════
 fun compile_function(mod: any, func_idx: i64): any
   n_imports: i64 = #mod.imports
   code_idx: i64 = func_idx - n_imports
@@ -81,7 +81,7 @@ fun compile_function(mod: any, func_idx: i64): any
   type_idx: i64 = mod.functions[code_idx + 1]
   sig: any = mod.types[type_idx + 1]
 
-  -- Call in statement form so the codegen emits a direct C call.
+  # Call in statement form so the codegen emits a direct C call.
   c_src: str = emit_c_function(mod, func_idx, code, sig)
 
   tmp_c: str = os.tmpname() .. ".c"
@@ -93,9 +93,9 @@ fun compile_function(mod: any, func_idx: i64): any
   { path = tmp_so, func_idx = func_idx }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Tiered JIT threshold.
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Tiered JIT threshold.
+# ═══════════════════════════════════════════════════════════════
 fun tiered_new(): any
   {
     hot_counts = {},

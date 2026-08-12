@@ -1,5 +1,5 @@
--- User-defined @comp.define.derive + @comp.fields.map exponential codegen showcase
--- Run: duo run examples/user_derive_showcase.id
+# User-defined @comp.define.derive + @comp.fields.map exponential codegen showcase
+# Run: duo run examples/user_derive_showcase.id
 
 @comp.define.derive("CStruct", generate(meta) -> str
     acc = "typedef struct " .. meta.name .. " {\n"

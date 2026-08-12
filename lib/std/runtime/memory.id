@@ -1,9 +1,9 @@
--- std.runtime.memory — Memory management for ward runtime
--- Heap management, GC tuning, memory arenas for isolate isolation.
+# std.runtime.memory — Memory management for ward runtime
+# Heap management, GC tuning, memory arenas for isolate isolation.
 
--- ═══════════════════════════════════════════════════════════════
--- Memory Stats
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Memory Stats
+# ═══════════════════════════════════════════════════════════════
 
 stats_new(): any
     {
@@ -48,9 +48,9 @@ stats_summary(stats: any): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Memory Arena (per-isolate)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Memory Arena (per-isolate)
+# ═══════════════════════════════════════════════════════════════
 
 arena_new(initial_size: i64): any
     {
@@ -62,10 +62,10 @@ arena_new(initial_size: i64): any
 end
 
 arena_alloc(arena: any, size: i64): any
-    -- Check if current block has enough space
+    # Check if current block has enough space
     if #arena.blocks == 0 or arena.blocks[#arena.blocks].used + size > arena.block_size
-        -- Allocate new block
-        block_size = math.max(arena.block_size, size)
+        # Allocate new block
+        block_size = arena.block_size:max(size)
         arena.blocks[#arena.blocks + 1] = {
             data = {},
             size = block_size,
@@ -99,17 +99,17 @@ arena_stats(arena: any): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- GC Configuration
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# GC Configuration
+# ═══════════════════════════════════════════════════════════════
 
 gc_config_new(): any
     {
-        mode = "incremental",  -- "incremental", "generational", "concurrent"
-        pause_target = 10,     -- ms
+        mode = "incremental",  # "incremental", "generational", "concurrent"
+        pause_target = 10,     # ms
         growth_factor = 2.0,
-        min_heap_size = 1024 * 1024,  -- 1MB
-        max_heap_size = 256 * 1024 * 1024,  -- 256MB
+        min_heap_size = 1024 * 1024,  # 1MB
+        max_heap_size = 256 * 1024 * 1024,  # 256MB
         heap_growth = 0.5,
         marking_threshold = 0.8,
         sweep_threshold = 0.5,
@@ -138,14 +138,14 @@ gc_config_set_growth(config: any, factor: f64, heap_growth: f64): any
     config
 end
 
--- ═══════════════════════════════════════════════════════════════
--- GC State
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# GC State
+# ═══════════════════════════════════════════════════════════════
 
 gc_state_new(config: any): any
     {
         config = config,
-        phase = "idle",  -- "idle", "marking", "sweeping", "compact"
+        phase = "idle",  # "idle", "marking", "sweeping", "compact"
         allocated = 0,
         threshold = config.min_heap_size,
         pause_start = nil,
@@ -197,9 +197,9 @@ gc_state_stats(gc: any): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Memory Pressure Monitor
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Memory Pressure Monitor
+# ═══════════════════════════════════════════════════════════════
 
 pressure_new(low_threshold: f64, high_threshold: f64): any
     {
@@ -241,9 +241,9 @@ pressure_should_gc(pressure: any): bool
     pressure.current_pressure > pressure.high_threshold
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Object Pool (for frequently allocated objects)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Object Pool (for frequently allocated objects)
+# ═══════════════════════════════════════════════════════════════
 
 pool_new(factory: any, initial_size: i64): any
     {
@@ -291,13 +291,13 @@ pool_stats(pool: any): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
--- Stats
--- Arena
--- GC Config
--- GC State
--- Pressure
--- Object Pool
+# Stats
+# Arena
+# GC Config
+# GC State
+# Pressure
+# Object Pool

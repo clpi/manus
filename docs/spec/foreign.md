@@ -56,17 +56,21 @@ payloads. No extension-based census can see it, and this repository has a
 worked example of what that costs: `lib/std/os.id` and `lib/std/io.id` obtain
 their capability through raw C, which is why gap[061]'s ambient-authority grep
 could not find the authority those two modules hold. The census therefore
-counts embedded sites as a row of its own and ratchets it. It is `ledger`-class
-by construction — it is bootstrap, it has a termination condition (Pass 103's
-no-foreign-waist ruling), and it only shrinks.
+**advertises** the aggregate embedded-site count (with a positive control so a
+broken grep cannot pass). Per-site **audit** and **enforce** live in
+`scripts/embedledger.id`: it names every remaining `@c` payload by file and
+fails until the count reaches zero. Embedded sites are `ledger`-class by
+construction — bootstrap, with Pass 103's no-foreign-waist ruling as the
+termination condition — and they only shrink.
 
 Two things are stripped before that count, and both were paid for rather than
 foreseen. **Comment lines**: the moment the three Pass 105 gates were tracked,
-their headers' mentions of `@c.emit` took the count from 236 to 240 and the
-ratchet went red over prose. **The census's own source**: adding a diagnostic
-that names the token in a string took it to 184. A scanner whose subject is the
-text it greps for reports itself, which is the exclusion `audit100` makes for
-the identical reason. The honest count is **181**.
+their headers' mentions of `@c.emit` took the count from 236 to 240 until the
+scanner learned to skip comment lines. **The census's own source**: adding a
+diagnostic that names the token in a string took it to 184. A scanner whose
+subject is the text it greps for reports itself, which is the exclusion
+`audit100` makes for the identical reason. The honest advertised count is
+**181**; shrinking it is enforced by `embedledger`, not a second census floor.
 
 ## Rules
 

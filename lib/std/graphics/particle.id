@@ -1,9 +1,9 @@
--- std.graphics.particle — Particle systems
--- For visual effects, explosions, rain, fire, and other phenomena.
+# std.graphics.particle — Particle systems
+# For visual effects, explosions, rain, fire, and other phenomena.
 
--- ═══════════════════════════════════════════════════════════════
--- Particle
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Particle
+# ═══════════════════════════════════════════════════════════════
 
 particle_new(): any
     {
@@ -20,9 +20,9 @@ particle_new(): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Emitter Configuration
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Emitter Configuration
+# ═══════════════════════════════════════════════════════════════
 
 emitter_config_new(): any
     {
@@ -78,9 +78,9 @@ emitter_config_set_gravity(config: any, x: f64, y: f64, z: f64): void
     config.gravity = {x = x, y = y, z = z}
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Particle Emitter
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Particle Emitter
+# ═══════════════════════════════════════════════════════════════
 
 emitter_new(config: any): any
     {
@@ -95,31 +95,31 @@ emitter_emit(emitter: any): any
     config = emitter.config
     particle = particle_new()
 
-    -- Randomize position within spread
+    # Randomize position within spread
     particle.position = {
         x = config.position.x + (math.random() - 0.5) * config.spread.x,
         y = config.position.y + (math.random() - 0.5) * config.spread.y,
         z = config.position.z + (math.random() - 0.5) * config.spread.z,
     }
 
-    -- Randomize velocity
+    # Randomize velocity
     speed = config.speed.min + math.random() * (config.speed.max - config.speed.min)
     angle = math.random() * 2 * math.pi
     elevation = (math.random() - 0.5) * math.pi * config.spread.y
 
     particle.velocity = {
-        x = config.direction.x + math.cos(angle) * math.cos(elevation) * speed,
-        y = config.direction.y + math.sin(elevation) * speed,
-        z = config.direction.z + math.sin(angle) * math.cos(elevation) * speed,
+        x = config.direction.x + angle:cos() * elevation:cos() * speed,
+        y = config.direction.y + elevation:sin() * speed,
+        z = config.direction.z + angle:sin() * elevation:cos() * speed,
     }
 
-    -- Randomize properties
+    # Randomize properties
     particle.lifetime = config.lifetime.min + math.random() * (config.lifetime.max - config.lifetime.min)
     particle.size = config.size.min + math.random() * (config.size.max - config.size.min)
     particle.rotation = config.rotation.min + math.random() * (config.rotation.max - config.rotation.min)
     particle.angular_velocity = config.angular_velocity.min + math.random() * (config.angular_velocity.max - config.angular_velocity.min)
 
-    -- Interpolate color
+    # Interpolate color
     if #config.colors >= 2
         t = math.random()
         c1 = config.colors[1]
@@ -142,14 +142,14 @@ emitter_update(emitter: any, delta_time: f64): void
 
     config = emitter.config
 
-    -- Emit new particles
+    # Emit new particles
     emitter.time_since_emission = emitter.time_since_emission + delta_time
     if emitter.time_since_emission >= 1 / config.rate
         emitter_emit(emitter)
         emitter.time_since_emission = 0
     end
 
-    -- Burst
+    # Burst
     if config.burst > 0
         i = 0
         while i < config.burst
@@ -159,7 +159,7 @@ emitter_update(emitter: any, delta_time: f64): void
         config.burst = 0
     end
 
-    -- Update particles
+    # Update particles
     i = 1
     while i <= #emitter.particles
         p = emitter.particles[i]
@@ -167,25 +167,25 @@ emitter_update(emitter: any, delta_time: f64): void
 
         if p.age >= p.lifetime
             p.alive = false
-            table.remove(emitter.particles, i)
+            emitter.particles:remove(i)
         else
-            -- Update velocity with acceleration
+            # Update velocity with acceleration
             p.velocity.x = p.velocity.x + p.acceleration.x * delta_time
             p.velocity.y = p.velocity.y + p.acceleration.y * delta_time
             p.velocity.z = p.velocity.z + p.acceleration.z * delta_time
 
-            -- Apply drag
+            # Apply drag
             drag = 1 - config.drag * delta_time
             p.velocity.x = p.velocity.x * drag
             p.velocity.y = p.velocity.y * drag
             p.velocity.z = p.velocity.z * drag
 
-            -- Update position
+            # Update position
             p.position.x = p.position.x + p.velocity.x * delta_time
             p.position.y = p.position.y + p.velocity.y * delta_time
             p.position.z = p.position.z + p.velocity.z * delta_time
 
-            -- Update rotation
+            # Update rotation
             p.rotation = p.rotation + p.angular_velocity * delta_time
 
             i += 1
@@ -209,9 +209,9 @@ emitter_particle_count(emitter: any): i64
     #emitter.particles
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Particle System
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Particle System
+# ═══════════════════════════════════════════════════════════════
 
 system_new(): any
     {
@@ -256,9 +256,9 @@ system_total_count(system: any): i64
     count
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Preset Configurations
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Preset Configurations
+# ═══════════════════════════════════════════════════════════════
 
 fire(): any
     config = emitter_config_new()
@@ -329,12 +329,12 @@ sparkle(): any
     config
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
--- Particle
--- Emitter Config
--- Emitter
--- System
--- Presets
+# Particle
+# Emitter Config
+# Emitter
+# System
+# Presets

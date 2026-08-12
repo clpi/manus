@@ -1,5 +1,5 @@
--- Nested match → derive.power: comptime-only cascade on the O(2^n) derive axis.
--- Run: duo run examples/meta_derive_power_cascade.id
+# Nested match → derive.power: comptime-only cascade on the O(2^n) derive axis.
+# Run: duo run examples/meta_derive_power_cascade.id
 
 concept HasXY
     x: f64

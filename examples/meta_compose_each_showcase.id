@@ -1,16 +1,16 @@
--- @comp.each — universal composition glue (closes the combinator algebra).
---
--- The combinator ladder (map→derive→product→tensor→nfold→power→permute) enumerates
--- type sets exponentially, but each combinator is one-shot: its output cannot feed
--- into another. @comp.each fixes that — it splits any combinator's string output
--- into fragments and applies a callback to each, so ONE declaration can chain
--- multiple exponential stages:
---
---   @comp.map  : O(n)                ─┐
---   @comp.each( map_output, fn )      ─┘  re-expand each fragment → O(n × per-frag work)
---
--- meta.name = fragment text, meta.index = 0-based, meta.count = total fragments.
--- All output is native C, folded at compile time — no lua_Value intermediaries.
+# @comp.each — universal composition glue (closes the combinator algebra).
+#
+# The combinator ladder (map→derive→product→tensor→nfold→power→permute) enumerates
+# type sets exponentially, but each combinator is one-shot: its output cannot feed
+# into another. @comp.each fixes that — it splits any combinator's string output
+# into fragments and applies a callback to each, so ONE declaration can chain
+# multiple exponential stages:
+#
+#   @comp.map  : O(n)                ─┐
+#   @comp.each( map_output, fn )      ─┘  re-expand each fragment → O(n × per-frag work)
+#
+# meta.name = fragment text, meta.index = 0-based, meta.count = total fragments.
+# All output is native C, folded at compile time — no lua_Value intermediaries.
 
 concept HasXY
     x: f64
@@ -21,14 +21,14 @@ Vec2: { x: f64, y: f64 }
 Vec3: { x: f64, y: f64, z: f64 }
 Pt: { x: f64, y: f64 }
 
--- Stage 1: @comp.map produces "Name;" fragments for each matching type.
+# Stage 1: @comp.map produces "Name;" fragments for each matching type.
 type_sig(m): str
     m.name .. ";"
 end
 
 NAMES = @comp.map("HasXY", type_sig)
 
--- Stage 2: @comp.each splits that output and re-expands each fragment.
+# Stage 2: @comp.each splits that output and re-expands each fragment.
 expand(frag: str): str
     "/* each[" .. to(str)(frag.index) .. "/" .. to(str)(frag.count) .. "] = " .. frag.name .. " */\n"
 end
@@ -43,8 +43,8 @@ print(EXPANDED)
 LINES = @comp.str.countlines(EXPANDED)
 print("map→each fragments = " .. to(str)(LINES) .. "  (expect 3 = one per type)")
 
--- Stage 3: compose @comp.power (2^n) with @comp.each — nest an exponential
--- stage inside the composition glue. 3 types → 2^3-1 = 7 subsets.
+# Stage 3: compose @comp.power (2^n) with @comp.each — nest an exponential
+# stage inside the composition glue. 3 types → 2^3-1 = 7 subsets.
 subset_sig(subset): str
     subset.name .. ";"
 end

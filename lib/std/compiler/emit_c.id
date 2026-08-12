@@ -1,55 +1,55 @@
--- SH-10 — the C emission backend, seed.
---
--- SH-10 is the row Pass 16 calls "canonical path today; must become explicit
--- bootstrap backend". It has no Duo implementation at all. This is one, for the
--- integer-expression subset, and it is checked the only way a backend can
--- honestly be checked: the emitted C is COMPILED AND RUN, and its answer must
--- equal what the folder (SH-08) computes for the same expression.
---
---     Duo source -> emit_c -> cc -> ./a.out -> exit code
---                          \
---                           -> comptime.fold -> value
---
--- Two independent implementations of the same arithmetic, agreeing. That is a
--- differential, not a self-check: a bug would have to appear identically in a
--- byte-scanning folder and in a C translation to pass, and the two share no
--- code beyond the token shapes.
---
--- Scope is the same subset SH-08 folds — integer literals, arithmetic and
--- bitwise operators, unary minus and `~`, parentheses. A backend for the whole
--- language needs the semantic graph SH-07 has only begun; a backend for a
--- subset that is PROVEN by execution is worth more than a broader one that is
--- argued.
---
--- The emitted C is an artifact, never source (Pass 60): it is written to a temp
--- path, compiled, run, and deleted. Nothing under version control is generated.
+# SH-10 — the C emission backend, seed.
+#
+# SH-10 is the row Pass 16 calls "canonical path today; must become explicit
+# bootstrap backend". It has no Duo implementation at all. This is one, for the
+# integer-expression subset, and it is checked the only way a backend can
+# honestly be checked: the emitted C is COMPILED AND RUN, and its answer must
+# equal what the folder (SH-08) computes for the same expression.
+#
+#     Duo source -> emit_c -> cc -> ./a.out -> exit code
+#                          \
+#                           -> comptime.fold -> value
+#
+# Two independent implementations of the same arithmetic, agreeing. That is a
+# differential, not a self-check: a bug would have to appear identically in a
+# byte-scanning folder and in a C translation to pass, and the two share no
+# code beyond the token shapes.
+#
+# Scope is the same subset SH-08 folds — integer literals, arithmetic and
+# bitwise operators, unary minus and `~`, parentheses. A backend for the whole
+# language needs the semantic graph SH-07 has only begun; a backend for a
+# subset that is PROVEN by execution is worth more than a broader one that is
+# argued.
+#
+# The emitted C is an artifact, never source (Pass 60): it is written to a temp
+# path, compiled, run, and deleted. Nothing under version control is generated.
 
 
--- Translate a closed Duo integer expression to a C expression.
---
--- The subset is chosen so translation is the identity on almost everything:
--- Duo and C agree on `+ - * / % & | ^(bitwise in C) << >> ~` spelling and on
--- precedence for all of them EXCEPT `^`, which is exponentiation in Duo and
--- xor in C, and `~`, which is xor in Duo when infix. Those two are the whole
--- job — and getting them wrong is exactly what the execution differential
--- catches.
-_expr_to_c = (src: str): str
+# Translate a closed Duo integer expression to a C expression.
+#
+# The subset is chosen so translation is the identity on almost everything:
+# Duo and C agree on `+ - * / % & | ^(bitwise in C) << >> ~` spelling and on
+# precedence for all of them EXCEPT `^`, which is exponentiation in Duo and
+# xor in C, and `~`, which is xor in Duo when infix. Those two are the whole
+# job — and getting them wrong is exactly what the execution differential
+# catches.
+_expr_to_c: str = (src: str)
     n: i64 = #src
     out = ""
     i: i64 = 1
     while i <= n
         c: i64 = src:byte(i)
         if c == 94
-            -- `^` is exponentiation in Duo and xor in C. Emitting it unchanged
-            -- would COMPILE and return the wrong number, which is strictly
-            -- worse than refusing, so the backend refuses.
+            # `^` is exponentiation in Duo and xor in C. Emitting it unchanged
+            # would COMPILE and return the wrong number, which is strictly
+            # worse than refusing, so the backend refuses.
             return ""
         end
         if c == 126
-            -- `~` is prefix bitwise-NOT in both languages, but INFIX xor in Duo
-            -- and nothing at all in C — `12 ~ 10` is not a C expression. C
-            -- spells that `^`. Position decides, exactly as it does in the
-            -- parser and the folder: a `~` after an operand is infix.
+            # `~` is prefix bitwise-NOT in both languages, but INFIX xor in Duo
+            # and nothing at all in C — `12 ~ 10` is not a C expression. C
+            # spells that `^`. Position decides, exactly as it does in the
+            # parser and the folder: a `~` after an operand is infix.
             j: i64 = i - 1
             while j >= 1 and src:byte(j) == 32
                 j -= 1
@@ -74,13 +74,13 @@ _expr_to_c = (src: str): str
     out
 end
 
--- A complete C program that PRINTS the expression's value.
---
--- Printing rather than exiting with it: `std.script.run` reports success or
--- failure, not the child's raw status, so an exit-code differential silently
--- compared 1 against 14. Standard output also removes the 8-bit ceiling, so the
--- comparison is over the whole i64 range instead of a masked slice of it.
-program_for = (expr: str): str
+# A complete C program that PRINTS the expression's value.
+#
+# Printing rather than exiting with it: `std.script.run` reports success or
+# failure, not the child's raw status, so an exit-code differential silently
+# compared 1 against 14. Standard output also removes the 8-bit ceiling, so the
+# comparison is over the whole i64 range instead of a masked slice of it.
+program_for: str = (expr: str)
     body = _expr_to_c(expr)
     if body == ""
         return ""
@@ -89,10 +89,10 @@ program_for = (expr: str): str
         .. body .. ")); return 0; }\n"
 end
 
--- Emit, compile and run; returns the value the emitted C computes.
--- `ok` is false when the subset does not cover the expression or the toolchain
--- refuses, so a caller never mistakes a refusal for a result.
-eval_ok = (expr: str): bool
+# Emit, compile and run; returns the value the emitted C computes.
+# `ok` is false when the subset does not cover the expression or the toolchain
+# refuses, so a caller never mistakes a refusal for a result.
+eval_ok: bool = (expr: str)
     prog = program_for(expr)
     if prog == ""
         return false
@@ -100,7 +100,7 @@ eval_ok = (expr: str): bool
     true
 end
 
-eval_via_c = (expr: str): i64
+eval_via_c: i64 = (expr: str)
     prog = program_for(expr)
     if prog == ""
         return 0 - 1
@@ -109,15 +109,15 @@ eval_via_c = (expr: str): i64
     csrc = base .. ".c"
     exe = base .. ".out"
     fh = io.open(csrc, "w")
-    if not fh
+    if !fh
         return 0 - 1
     end
     fh:write(prog)
     fh:close()
-    -- `xcrun cc`, not bare `cc`: on this machine a bare `cc` link fails with
-    -- `ld: library 'System' not found` outside the SDK environment, which made
-    -- the proof report SKIP rather than fail — exactly the silent-degradation
-    -- mode the proof's own skip branch exists to make visible.
+    # `xcrun cc`, not bare `cc`: on this machine a bare `cc` link fails with
+    # `ld: library 'System' not found` outside the SDK environment, which made
+    # the proof report SKIP rather than fail — exactly the silent-degradation
+    # mode the proof's own skip branch exists to make visible.
     cc = std.script.getenv("DUO_EMIT_CC", "xcrun cc")
     if std.script.run(cc .. " -O0 -o " .. exe .. " " .. csrc .. " 2>/dev/null") != 0
         os.remove(csrc)

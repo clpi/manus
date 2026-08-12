@@ -1,4 +1,4 @@
 main(): i64
     s = "ABC"
-    return string.byte(s, 1)
+    return s:byte(1)
 end

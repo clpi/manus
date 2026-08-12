@@ -1,4 +1,4 @@
--- Smoke: missing trailing call args are deterministic nil/default values.
+# Smoke: missing trailing call args are deterministic nil/default values.
 
 missing_any(a, b, c, d): bool
     d == nil

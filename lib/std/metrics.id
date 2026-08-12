@@ -1,9 +1,9 @@
--- std.metrics — Observability: counters, gauges, histograms, timers
--- For profiling ward runtime, ML inference, and application monitoring.
+# std.metrics — Observability: counters, gauges, histograms, timers
+# For profiling ward runtime, ML inference, and application monitoring.
 
--- ═══════════════════════════════════════════════════════════════
--- Counter (monotonically increasing)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Counter (monotonically increasing)
+# ═══════════════════════════════════════════════════════════════
 
 counter_new(name: str, help: str): any
     {
@@ -28,9 +28,9 @@ counter_reset(c: any): void
     c.value = 0
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Gauge (can go up and down)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Gauge (can go up and down)
+# ═══════════════════════════════════════════════════════════════
 
 gauge_new(name: str, help: str): any
     {
@@ -59,9 +59,9 @@ gauge_get(g: any): f64
     g.value
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Histogram (value distribution)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Histogram (value distribution)
+# ═══════════════════════════════════════════════════════════════
 
 histogram_new(name: str, help: str, buckets: any): any
     if buckets == nil
@@ -111,7 +111,7 @@ end
 
 histogram_quantile(h: any, q: f64): f64
     if h.count == 0 return 0.0 end
-    target = math.floor(h.count * q)
+    target = h.count * q:floor()
     cumulative = 0
     for i = 1, #h.buckets
         cumulative += h.bucket_counts[i]
@@ -132,9 +132,9 @@ histogram_reset(h: any): void
     end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Timer (measure elapsed time)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Timer (measure elapsed time)
+# ═══════════════════════════════════════════════════════════════
 
 timer_new(name: str): any
     {
@@ -176,9 +176,9 @@ timer_get(t: any): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Registry (collect all metrics)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Registry (collect all metrics)
+# ═══════════════════════════════════════════════════════════════
 
 registry_new(): any
     {
@@ -230,12 +230,12 @@ registry_summary(reg: any): any
     summary
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
--- Counter
--- Gauge
--- Histogram
--- Timer
--- Registry
+# Counter
+# Gauge
+# Histogram
+# Timer
+# Registry

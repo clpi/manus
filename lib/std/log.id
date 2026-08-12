@@ -1,4 +1,4 @@
--- std.log — structured logging with level filtering
+# std.log — structured logging with level filtering
 
 global log_level = 1
 global log_levels = {DEBUG = 0, INFO = 1, WARN = 2, ERROR = 3}
@@ -20,46 +20,46 @@ end
 
 debug(msg: str): void
     if log_level <= 0
-        io.write(string.format("[DEBUG] %s\n", msg))
+        io.write("[DEBUG] %s\n":format(msg))
     end
 end
 
 info(msg: str): void
     if log_level <= 1
-        io.write(string.format("[INFO] %s\n", msg))
+        io.write("[INFO] %s\n":format(msg))
     end
 end
 
 warn(msg: str): void
     if log_level <= 2
-        io.write(string.format("[WARN] %s\n", msg))
+        io.write("[WARN] %s\n":format(msg))
     end
 end
 
 error(msg: str): void
     if log_level <= 3
-        io.write(string.format("[ERROR] %s\n", msg))
+        io.write("[ERROR] %s\n":format(msg))
     end
 end
 
 print(level: str, msg: str): void
     if level == nil
-        io.write(string.format("%s\n", msg))
+        io.write("%s\n":format(msg))
     else
-        io.write(string.format("[%s] %s\n", string.upper(level), msg))
+        io.write("[%s] %s\n":format(level:upper(), msg))
     end
 end
 
 with_fields(level: str, fields: any, msg: str): void
     if level == nil level = "INFO" end
-    level_val = log_levels[string.upper(level)] or 1
+    level_val = log_levels[level:upper()] or 1
     if level_val < log_level return end
-    parts = {string.format("[%s] %s", string.upper(level), msg)}
+    parts = {"[%s] %s":format(level:upper(), msg)}
     if fields != nil
         for k, v in fields
-            parts[rawlen(parts) + 1] = string.format("%s=%s", k, v:to(str))
+            parts[parts:len() + 1] = "%s=%s":format(k, v:to(str))
         end
     end
-    io.write(table.concat(parts, " ") .. "\n")
+    io.write(parts:concat(" ") .. "\n")
 end
 

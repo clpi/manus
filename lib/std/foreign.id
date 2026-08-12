@@ -1,76 +1,76 @@
--- std.foreign — Cross-Language AST Bridge
--- Transpile snippets from Python, Rust, Zig, and other languages into C
--- at compile time via @run, then inject the result with @c.emit.
---
--- Usage:
---   @foreign("zig", "fn add(a: i64, b: i64) i64 { return a + b; }")
---   @foreign("python", "def add(a, b): return a + b")
---
---   local foreign = req "std.foreign"
---   local c_code = foreign.zig_to_c("fn add(a: i64, b: i64) i64 { return a + b; }")
---   -- c_code = "int64_t add(int64_t a, int64_t b) { return a + b; }"
+# std.foreign — Cross-Language AST Bridge
+# Transpile snippets from Python, Rust, Zig, and other languages into C
+# at compile time via @run, then inject the result with @c.emit.
+#
+# Usage:
+#   @foreign("zig", "fn add(a: i64, b: i64) i64 { return a + b; }")
+#   @foreign("python", "def add(a, b): return a + b")
+#
+#   local foreign = foreign
+#   local c_code = foreign.zig_to_c("fn add(a: i64, b: i64) i64 { return a + b; }")
+#   # c_code = "int64_t add(int64_t a, int64_t b) { return a + b; }"
 
--- ═══════════════════════════════════════════════════════════════
--- Zig → C transpilation
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Zig → C transpilation
+# ═══════════════════════════════════════════════════════════════
 
--- zig_to_c: translate common Zig patterns to C.
--- Returns the C equivalent as a string.
+# zig_to_c: translate common Zig patterns to C.
+# Returns the C equivalent as a string.
 zig_to_c(code: str): str
     result = code
-    result = string.gsub(result, ": u64", ": uint64_t")
-    result = string.gsub(result, ": u32", ": uint32_t")
-    result = string.gsub(result, ": u16", ": uint16_t")
-    result = string.gsub(result, ": u8", ": uint8_t")
-    result = string.gsub(result, ": i64", ": int64_t")
-    result = string.gsub(result, ": i32", ": int32_t")
-    result = string.gsub(result, ": i16", ": int16_t")
-    result = string.gsub(result, ": i8", ": int8_t")
-    result = string.gsub(result, ": f64", ": double")
-    result = string.gsub(result, ": f32", ": float")
-    result = string.gsub(result, ": bool", ": int")
-    result = string.gsub(result, ": void", ": void")
-    result = string.gsub(result, "*const [%d+]u8", "const char*")
-    result = string.gsub(result, "*[%d+]u8", "char*")
-    result = string.gsub(result, "*const u8", "const char*")
+    result = result:gsub(": u64", ": uint64_t")
+    result = result:gsub(": u32", ": uint32_t")
+    result = result:gsub(": u16", ": uint16_t")
+    result = result:gsub(": u8", ": uint8_t")
+    result = result:gsub(": i64", ": int64_t")
+    result = result:gsub(": i32", ": int32_t")
+    result = result:gsub(": i16", ": int16_t")
+    result = result:gsub(": i8", ": int8_t")
+    result = result:gsub(": f64", ": double")
+    result = result:gsub(": f32", ": float")
+    result = result:gsub(": bool", ": int")
+    result = result:gsub(": void", ": void")
+    result = result:gsub("*const [%d+]u8", "const char*")
+    result = result:gsub("*[%d+]u8", "char*")
+    result = result:gsub("*const u8", "const char*")
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Rust → C transpilation
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Rust → C transpilation
+# ═══════════════════════════════════════════════════════════════
 
--- rust_to_c: translate common Rust patterns to C.
--- Returns the C equivalent as a string.
+# rust_to_c: translate common Rust patterns to C.
+# Returns the C equivalent as a string.
 rust_to_c(code: str): str
     result = code
-    result = string.gsub(result, "pub fn (%w+)%((.-)%)%s*->%s*(%S+)", "%3 %1(%2)")
-    result = string.gsub(result, "fn (%w+)%((.-)%)%s*->%s*(%S+)", "%3 %1(%2)")
-    result = string.gsub(result, ": u64", ": uint64_t")
-    result = string.gsub(result, ": u32", ": uint32_t")
-    result = string.gsub(result, ": u16", ": uint16_t")
-    result = string.gsub(result, ": u8", ": uint8_t")
-    result = string.gsub(result, ": i64", ": int64_t")
-    result = string.gsub(result, ": i32", ": int32_t")
-    result = string.gsub(result, ": i16", ": int16_t")
-    result = string.gsub(result, ": i8", ": int8_t")
-    result = string.gsub(result, ": f64", ": double")
-    result = string.gsub(result, ": f32", ": float")
-    result = string.gsub(result, ": bool", ": int")
-    result = string.gsub(result, ": usize", ": size_t")
-    result = string.gsub(result, ": isize", ": ssize_t")
-    result = string.gsub(result, "&str", "const char*")
-    result = string.gsub(result, "&[%d+]u8", "const uint8_t*")
-    result = string.gsub(result, "*mut u8", "uint8_t*")
+    result = result:gsub("pub fn (%w+)%((.-)%)%s*->%s*(%S+)", "%3 %1(%2)")
+    result = result:gsub("fn (%w+)%((.-)%)%s*->%s*(%S+)", "%3 %1(%2)")
+    result = result:gsub(": u64", ": uint64_t")
+    result = result:gsub(": u32", ": uint32_t")
+    result = result:gsub(": u16", ": uint16_t")
+    result = result:gsub(": u8", ": uint8_t")
+    result = result:gsub(": i64", ": int64_t")
+    result = result:gsub(": i32", ": int32_t")
+    result = result:gsub(": i16", ": int16_t")
+    result = result:gsub(": i8", ": int8_t")
+    result = result:gsub(": f64", ": double")
+    result = result:gsub(": f32", ": float")
+    result = result:gsub(": bool", ": int")
+    result = result:gsub(": usize", ": size_t")
+    result = result:gsub(": isize", ": ssize_t")
+    result = result:gsub("&str", "const char*")
+    result = result:gsub("&[%d+]u8", "const uint8_t*")
+    result = result:gsub("*mut u8", "uint8_t*")
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Python → C helper
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Python → C helper
+# ═══════════════════════════════════════════════════════════════
 
--- python_func: generate a C function declaration from Python-style metadata.
--- Returns the C function as a string (caller can pass to @c.emit).
+# python_func: generate a C function declaration from Python-style metadata.
+# Returns the C function as a string (caller can pass to @c.emit).
 python_func(name: str, params: any, body: str, ret_type: str): str
     parts = {}
     parts[#parts + 1] = "/* [foreign.python] " .. name .. " */"
@@ -95,9 +95,9 @@ python_func(name: str, params: any, body: str, ret_type: str): str
     str_join(parts, "\n")
 end
 
--- ═══════════════════════════════════════════════════════════════
--- String joining helper
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# String joining helper
+# ═══════════════════════════════════════════════════════════════
 
 str_join(parts: any, sep: str): str
     result = ""

@@ -1,34 +1,34 @@
--- APPLY-ONE — c0 §43 `law.brace`, §44 `law.apply.one` / `law.construct.zero` /
--- `law.pack.shape`. gap[088] is the defect; gap[092] carries what is still owed.
---
--- THE LAW. `name{ … }` is ONE form and it is APPLICATION; the SUBJECT decides
--- what applying means. A descriptor subject constructs, a callable subject
--- applies, and neither is a diagnostic. The parser resolves NOTHING — it emits
--- one structural application node for every face.
---
--- WHAT THIS FIXTURE PINS. This paragraph used to say the descriptor rows were
--- "deliberately not here" because `point{ x = 3.0, y = 4.0 }` still emitted a
--- call to an undeclared `point`. THAT IS STALE: gap[092] closed the resolving
--- half, and a fixture that goes on recording the old state teaches the next
--- reader that the gap is still open. Rows 6-7 below are the descriptor subject,
--- by value; the rows needing a descriptor-TYPED callee are in
--- `examples/apply_one_descriptor_proof.id` and ROW 8 says why.
---
--- Every row asserts a VALUE. `tostring(d)` once reported `d=table` for a
--- decoder returning an EMPTY table and a bisect built on that was wrong, so
--- "it compiled" and "it built something" are not evidence here.
---
--- SEPARATE DEFECT, measured while writing this and NOT caused by APPLY-ONE: a
--- module-scope typed record binding beside a `main()` emits `duo_g__p` against
--- a `duo_g_p` declaration and the C compiler refuses it. Reproduces with no
--- brace face anywhere in the file. That is why `p` lives inside `main` here.
+# APPLY-ONE — c0 §43 `law.brace`, §44 `law.apply.one` / `law.construct.zero` /
+# `law.pack.shape`. gap[088] is the defect; gap[092] carries what is still owed.
+#
+# THE LAW. `name{ … }` is ONE form and it is APPLICATION; the SUBJECT decides
+# what applying means. A descriptor subject constructs, a callable subject
+# applies, and neither is a diagnostic. The parser resolves NOTHING — it emits
+# one structural application node for every face.
+#
+# WHAT THIS FIXTURE PINS. This paragraph used to say the descriptor rows were
+# "deliberately not here" because `point{ x = 3.0, y = 4.0 }` still emitted a
+# call to an undeclared `point`. THAT IS STALE: gap[092] closed the resolving
+# half, and a fixture that goes on recording the old state teaches the next
+# reader that the gap is still open. Rows 6-7 below are the descriptor subject,
+# by value; the rows needing a descriptor-TYPED callee are in
+# `examples/apply_one_descriptor_proof.id` and ROW 8 says why.
+#
+# Every row asserts a VALUE. `tostring(d)` once reported `d=table` for a
+# decoder returning an EMPTY table and a bisect built on that was wrong, so
+# "it compiled" and "it built something" are not evidence here.
+#
+# SEPARATE DEFECT, measured while writing this and NOT caused by APPLY-ONE: a
+# module-scope typed record binding beside a `main()` emits `duo_g__p` against
+# a `duo_g_p` declaration and the C compiler refuses it. Reproduces with no
+# brace face anywhere in the file. That is why `p` lives inside `main` here.
 
 point: @{ x: f64, y: f64 }
 
--- The CALLABLE subjects. `apply(callable)(argpack)` is one of the four edges
--- §44 `apply.edge` enumerates, and these rows prove the brace face reaches its
--- subject and answers. Read against rows 6-7: the SAME face, a different
--- subject, and the subject is what decides which edge is taken.
+# The CALLABLE subjects. `apply(callable)(argpack)` is one of the four edges
+# §44 `apply.edge` enumerates, and these rows prove the brace face reaches its
+# subject and answers. Read against rows 6-7: the SAME face, a different
+# subject, and the subject is what decides which edge is taken.
 first(t: any): any
     t.x
 
@@ -38,69 +38,69 @@ second(t: any): any
 kind = @{ eof = 0, ident = 1 }
 
 main(): void
-    -- ROW 1 — the anonymous pack, applied to nothing. c0 §44a: "`{ x = 1,
-    -- y = 2 }` an ordinary anonymous structured value / `point{ x = 1, y = 2 }`
-    -- APPLICATION of `point` to that shape — different because one has a
-    -- SUBJECT." This row is the one WITHOUT a subject, and it is the
-    -- construction path that has always worked: a typed binding plus a bare
-    -- pack, two forms already in the grammar, composed.
+    # ROW 1 — the anonymous pack, applied to nothing. c0 §44a: "`{ x = 1,
+    # y = 2 }` an ordinary anonymous structured value / `point{ x = 1, y = 2 }`
+    # APPLICATION of `point` to that shape — different because one has a
+    # SUBJECT." This row is the one WITHOUT a subject, and it is the
+    # construction path that has always worked: a typed binding plus a bare
+    # pack, two forms already in the grammar, composed.
     p: point = { x = 3.0, y = 4.0 }
     print(p.x)
     print(p.y)
 
-    -- ROW 2 — the CALLABLE subject through the BRACE face, and ROW 3 the same
-    -- subject through the PAREN face. §44: "parenthesized, braced and string
-    -- faces project onto the SAME application relation", so these two must
-    -- agree. If they ever disagree the faces have stopped being faces, and this
-    -- pair is what convicts that.
+    # ROW 2 — the CALLABLE subject through the BRACE face, and ROW 3 the same
+    # subject through the PAREN face. §44: "parenthesized, braced and string
+    # faces project onto the SAME application relation", so these two must
+    # agree. If they ever disagree the faces have stopped being faces, and this
+    # pair is what convicts that.
     braced = first{ x = 7.0, y = 8.0 }
     parened = first({ x = 7.0, y = 8.0 })
     print(braced)
     print(parened)
 
-    -- ROW 4 — a second label read off the same pack. §44 `apply.carries` names
-    -- "argument labels" and "argument positions"; both are the pack's own
-    -- fields in declaration order, which is why APPLY-ONE added nothing
-    -- parallel to hold them — a second table of labels is where the two shapes
-    -- drift apart.
+    # ROW 4 — a second label read off the same pack. §44 `apply.carries` names
+    # "argument labels" and "argument positions"; both are the pack's own
+    # fields in declaration order, which is why APPLY-ONE added nothing
+    # parallel to hold them — a second table of labels is where the two shapes
+    # drift apart.
     print(second{ x = 1.0, y = 9.0 })
 
-    -- ROW 5 — `@{ … }`. c0 §43 `anchor.brace` recovers the elided name from the
-    -- ENCLOSING DESCRIPTOR; at top level there is none, so the pack is honestly
-    -- anonymous and `@` is doing its OTHER job, staging. Not a third mechanism:
-    -- one reader, a different stance.
+    # ROW 5 — `@{ … }`. c0 §43 `anchor.brace` recovers the elided name from the
+    # ENCLOSING DESCRIPTOR; at top level there is none, so the pack is honestly
+    # anonymous and `@` is doing its OTHER job, staging. Not a third mechanism:
+    # one reader, a different stance.
     print(kind.ident)
 
-    -- ROW 6 — THE DESCRIPTOR SUBJECT. c0 §43 `law.brace` row 1, §44
-    -- `apply.edge`: "apply(descriptor)(fieldpack) -> a value the descriptor
-    -- describes". This is the row gap[092] owed, and the reason the gap existed
-    -- is worth keeping next to it: the face reached its subject all along, and
-    -- nothing downstream asked what the subject WAS, so the call path won
-    -- unconditionally and this read `call to undeclared function 'point'`.
-    --
-    -- Read against ROW 1. Row 1 constructs a `point` through the two forms that
-    -- always worked — a typed binding plus a bare pack — and this row builds the
-    -- SAME value through the applied face with no annotation to lean on. Same
-    -- digits from two edges, or one of them has stopped describing `point`.
+    # ROW 6 — THE DESCRIPTOR SUBJECT. c0 §43 `law.brace` row 1, §44
+    # `apply.edge`: "apply(descriptor)(fieldpack) -> a value the descriptor
+    # describes". This is the row gap[092] owed, and the reason the gap existed
+    # is worth keeping next to it: the face reached its subject all along, and
+    # nothing downstream asked what the subject WAS, so the call path won
+    # unconditionally and this read `call to undeclared function 'point'`.
+    #
+    # Read against ROW 1. Row 1 constructs a `point` through the two forms that
+    # always worked — a typed binding plus a bare pack — and this row builds the
+    # SAME value through the applied face with no annotation to lean on. Same
+    # digits from two edges, or one of them has stopped describing `point`.
     q = point{ x = 3.0, y = 4.0 }
     print(q.x)
     print(q.y)
 
-    -- ROW 7 — POSITIONS as well as labels. §44 `apply.carries` names both, and
-    -- both are the pack's OWN fields in declaration order. Nothing parallel
-    -- holds them, which is why this needed no machinery of its own — a second
-    -- table of labels beside the pack is where the two shapes drift apart.
+    # ROW 7 — POSITIONS as well as labels. §44 `apply.carries` names both, and
+    # both are the pack's OWN fields in declaration order. Nothing parallel
+    # holds them, which is why this needed no machinery of its own — a second
+    # table of labels beside the pack is where the two shapes drift apart.
     r = point{ 5.0, 6.0 }
     print(r.x)
 
-    -- ROW 8 — COMPOSITION and REPRESENTATION are in
-    -- `examples/apply_one_descriptor_proof.id`, not here, for a MEASURED
-    -- reason rather than a preference. A top-level function with a non-`any`
-    -- return type, in the same file as `kind`, makes ROW 5's `print(kind.ident)`
-    -- emit `lua_to_display_str(1)` — an `int` where a `lua_Value` is wanted,
-    -- which the C compiler refuses. Confirmed on the pre-gap[092] compiler
-    -- (`HEAD~1`, built in isolation and run against the same nine lines), so it
-    -- is not this work. Same class as the `duo_g__p` mangling noted above, and
-    -- it is recorded rather than stepped around silently: a fixture that quietly
-    -- avoids a defect hides it.
+    # ROW 8 — COMPOSITION and REPRESENTATION are in
+    # `examples/apply_one_descriptor_proof.id`, not here, for a MEASURED
+    # reason rather than a preference. A top-level function with a non-`any`
+    # return type, in the same file as `kind`, makes ROW 5's `print(kind.ident)`
+    # emit `lua_to_display_str(1)` — an `int` where a `lua_Value` is wanted,
+    # which the C compiler refuses. Confirmed on the pre-gap[092] compiler
+    # (`HEAD~1`, built in isolation and run against the same nine lines), so it
+    # is not this work. Same class as the `duo_g__p` mangling noted above, and
+    # it is recorded rather than stepped around silently: a fixture that quietly
+    # avoids a defect hides it.
 end

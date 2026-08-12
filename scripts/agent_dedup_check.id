@@ -1,9 +1,9 @@
--- agent_dedup_check.id — check claim status before editing shared files.
---
--- Run BEFORE editing any shared file, to detect potential duplication.
--- Usage: duo run scripts/agent_dedup_check.id -- [file1 file2 ...]
---
--- Duo replacement for scripts/agent_dedup_check.sh (monoglot census).
+# agent_dedup_check.id — check claim status before editing shared files.
+#
+# Run BEFORE editing any shared file, to detect potential duplication.
+# Usage: idol run scripts/agent_dedup_check.id # [file1 file2 ...]
+#
+# Duo replacement for scripts/agent_dedup_check.sh (monoglot census).
 
 _COORD = ".agents/AGENT_COORDINATION.md"
 _CANONICAL = ".agents/AGENT_CANONICAL.md"
@@ -13,11 +13,11 @@ _sh(cmd: str): str
     std.script.chomp(std.script.capture(cmd))
 end
 
-main = (): i64
+main: i64 = ()
     print("=== Duo Agent Dedup Check ===")
 
     for _i, f in {_COORD, _CANONICAL, _GAPS}
-        if not std.script.fs_exists(f)
+        if !std.script.fs_exists(f)
             print("WARNING: " .. f .. " not found")
         end
     end
@@ -30,14 +30,14 @@ main = (): i64
     end
 
     if std.script.fs_exists(_GAPS)
-        -- `grep -c` exits 1 when the count is 0, which is why the shell version
-        -- needed `|| echo 0`. capture keeps the stdout either way.
+        # `grep -c` exits 1 when the count is 0, which is why the shell version
+        # needed `|| echo 0`. capture keeps the stdout either way.
         n = _sh("grep -c '| P0 |' " .. _GAPS .. " 2>/dev/null")
         if n == "" n = "0" end
         print("--- Open P0 gaps: " .. n .. " ---")
     end
 
-    -- `duo run script.id -- a b` consumes the `--`; args are what follows.
+    # `idol run script.id # a b` consumes the `--`; args are what follows.
     args = std.os.args()
     if #args > 0
         print("--- File claim check ---")
@@ -48,11 +48,11 @@ main = (): i64
         end
     end
 
-    -- The shell version tested `[ -f /tmp/duo-build.lock ]` and read the path
-    -- as a FILE. The lock is a DIRECTORY holding an `owner` file (mkdir is what
-    -- makes it atomic), so that test was false whether or not the lock was
-    -- held: it reported FREE every single time. Asked through std.script here,
-    -- which owns the layout.
+    # The shell version tested `[ -f /tmp/duo-build.lock ]` and read the path
+    # as a FILE. The lock is a DIRECTORY holding an `owner` file (mkdir is what
+    # makes it atomic), so that test was false whether or !the lock was
+    # held: it reported FREE every single time. Asked through std.script here,
+    # which owns the layout.
     owner = _sh("cat " .. std.script.build_lock_owner() .. " 2>/dev/null")
     if owner != ""
         print("--- Build lock held by: " .. owner .. " ---")

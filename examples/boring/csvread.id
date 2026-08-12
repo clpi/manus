@@ -1,7 +1,7 @@
--- A CSV reader over three fixed rows. Asserts a field from the middle row and
--- the row count, because a splitter that drops its last field still counts.
--- expect: 3 bob 30
-main = (): i64
+# A CSV reader over three fixed rows. Asserts a field from the middle row and
+# the row count, because a splitter that drops its last field still counts.
+# expect: 3 bob 30
+main: i64 = ()
     rows = { "name,age", "bob,30", "eve,41" }
     count = 0
     who = ""

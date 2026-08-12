@@ -1,7 +1,7 @@
--- Line and word count over a fixed body of text, the shape of `wc`. Counting
--- lines by the newline byte is the §0.8 spelling.
--- expect: 3 6 17
-main = (): i64
+# Line and word count over a fixed body of text, the shape of `wc`. Counting
+# lines by the newline byte is the §0.8 spelling.
+# expect: 3 6 17
+main: i64 = ()
     text = "one two\nthree four\nfive six"
     lines = 1
     i = 0

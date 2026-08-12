@@ -1,8 +1,8 @@
--- std.datetime — date and time parsing, formatting, and arithmetic
--- Uses Lua's os.date/os.time as the underlying engine.
--- A datetime is a table: {year, month, day, hour, min, sec, wday, yday, isdst}
+# std.datetime — date and time parsing, formatting, and arithmetic
+# Uses Lua's os.date/os.time as the underlying engine.
+# A datetime is a table: {year, month, day, hour, min, sec, wday, yday, isdst}
 
--- ---- Constants ----
+# ---- Constants ----
 
 global DT_MONTH_NAMES = {}
 DT_MONTH_NAMES[1] = "January"
@@ -69,7 +69,7 @@ global SECS_PER_HOUR = 3600
 global SECS_PER_DAY = 86400
 global SECS_PER_WEEK = 604800
 
--- ---- Constructors ----
+# ---- Constructors ----
 new(year: any, month: any, day: any, hour: any, min: any, sec: any): any
     d = {}
     d.year = year
@@ -100,7 +100,7 @@ to_timestamp(d: any): int
     os.time(d)
 end
 
--- ---- Queries ----
+# ---- Queries ----
 
 is_leap_year(year: i64): bool
     if year % 400 == 0 return true end
@@ -139,7 +139,7 @@ is_weekend(d: any): bool
     d.wday == 1 or d.wday == 7
 end
 
--- ---- Arithmetic ----
+# ---- Arithmetic ----
 
 add(d: any, secs: int): any
     ts = os.time(d)
@@ -160,7 +160,7 @@ end
 
 add_months(d: any, n: i64): any
     total_month = d.month + n
-    new_year = d.year + std.math.floor(total_month / 12)
+    new_year = d.year + total_month / 12:floor()
     new_month = total_month % 12
     if new_month <= 0
         new_month += 12
@@ -198,7 +198,7 @@ diff_hours(a: any, b: any): i64
     diff(a, b) // SECS_PER_HOUR
 end
 
--- ---- Formatting ----
+# ---- Formatting ----
 dt_pad2(n: i64): str
     if n < 10 return "0" .. n:to(str) end
     n:to(str)
@@ -208,24 +208,24 @@ format(d: any, layout: str): str
     r = layout
     year4 = d.year:to(str)
     year2 = year4:sub(#year4 - 1)
-    r = string.gsub(r, "YYYY", year4)
-    r = string.gsub(r, "YY", year2)
-    r = string.gsub(r, "MM", dt_pad2(d.month))
-    r = string.gsub(r, "DD", dt_pad2(d.day))
-    r = string.gsub(r, "HH", dt_pad2(d.hour))
-    r = string.gsub(r, "mm", dt_pad2(d.min))
-    r = string.gsub(r, "ss", dt_pad2(d.sec))
-    r = string.gsub(r, "WWW", DT_DAY_ABBR[d.wday])
-    r = string.gsub(r, "WWWW", DT_DAY_NAMES[d.wday])
+    r = r:gsub("YYYY", year4)
+    r = r:gsub("YY", year2)
+    r = r:gsub("MM", dt_pad2(d.month))
+    r = r:gsub("DD", dt_pad2(d.day))
+    r = r:gsub("HH", dt_pad2(d.hour))
+    r = r:gsub("mm", dt_pad2(d.min))
+    r = r:gsub("ss", dt_pad2(d.sec))
+    r = r:gsub("WWW", DT_DAY_ABBR[d.wday])
+    r = r:gsub("WWWW", DT_DAY_NAMES[d.wday])
     h12 = d.hour % 12
     if h12 == 0 h12 = 12 end
-    r = string.gsub(r, "hh", dt_pad2(h12))
+    r = r:gsub("hh", dt_pad2(h12))
     if d.hour < 12
-        r = string.gsub(r, "AMPM", "AM")
-        r = string.gsub(r, "ampm", "am")
+        r = r:gsub("AMPM", "AM")
+        r = r:gsub("ampm", "am")
     else
-        r = string.gsub(r, "AMPM", "PM")
-        r = string.gsub(r, "ampm", "pm")
+        r = r:gsub("AMPM", "PM")
+        r = r:gsub("ampm", "pm")
     end
     r
 end
@@ -262,16 +262,16 @@ human_relative(d: any): str
     end
     if secs < 60 return "just now" end
     if secs < 3600
-        mins = std.math.floor(secs / 60)
+        mins = secs / 60:floor()
         if future return "in " .. mins:to(str) .. " minutes" end
         return mins:to(str) .. " minutes ago"
     end
     if secs < 86400
-        hrs = std.math.floor(secs / 3600)
+        hrs = secs / 3600:floor()
         if future return "in " .. hrs:to(str) .. " hours" end
         return hrs:to(str) .. " hours ago"
     end
-    day_count = std.math.floor(secs / 86400)
+    day_count = secs / 86400:floor()
     if day_count == 1
         if future return "tomorrow" end
         return "yesterday"
@@ -280,20 +280,20 @@ human_relative(d: any): str
         if future return "in " .. day_count:to(str) .. " days" end
         return day_count:to(str) .. " days ago"
     end
-    months = std.math.floor(day_count / 30)
+    months = day_count / 30:floor()
     if months < 12
         if future return "in " .. months:to(str) .. " months" end
         return months:to(str) .. " months ago"
     end
-    years = std.math.floor(months / 12)
+    years = months / 12:floor()
     if future return "in " .. years:to(str) .. " years" end
     years:to(str) .. " years ago"
 end
 
--- ---- Parsing ----
--- Parse helpers return two values via Duo multi-return.
--- The codegen handles multi-return for direct call sites.
--- We pre-declare variables so the codegen emits proper C declarations.
+# ---- Parsing ----
+# Parse helpers return two values via Duo multi-return.
+# The codegen handles multi-return for direct call sites.
+# We pre-declare variables so the codegen emits proper C declarations.
 
 dt_parse_digit2(s: str, pos: any): any
     val = tonumber(s:sub(pos, pos)) * 10 + tonumber(s:sub(pos + 1, pos + 1))
@@ -356,7 +356,7 @@ parse_time(s: str): any
     new(0, 1, 1, hour, minute, second)
 end
 
--- ---- Comparison ----
+# ---- Comparison ----
 
 before(a: any, b: any): bool
     os.time(a) < os.time(b)
@@ -380,7 +380,7 @@ max(a: any, b: any): any
     b
 end
 
--- ---- Range & Truncation ----
+# ---- Range & Truncation ----
 start_of_day(d: any): any
     new(d.year, d.month, d.day, 0, 0, 0)
 end

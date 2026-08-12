@@ -1,39 +1,39 @@
--- Metaprogramming test: exercises public @ compile-time intrinsics
+# Metaprogramming test: exercises public @ compile-time intrinsics
 
--- ═══════════════════════════════════════════════════════════════
--- Type introspection: @comp.type.name, @comp.type.id, @comp.type.is
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Type introspection: @comp.type.name, @comp.type.id, @comp.type.is
+# ═══════════════════════════════════════════════════════════════
 
 x: i64 = 42
 s: str = "hello"
 f: f64 = 3.14
 
--- @comp.type.name returns the C type name as a string literal
+# @comp.type.name returns the C type name as a string literal
 print("type_name(x) = " .. @comp.type.name(x))
 print("type_name(s) = " .. @comp.type.name(s))
 print("type_name(f) = " .. @comp.type.name(f))
 
--- @comp.type.id returns a stable integer hash of the type
+# @comp.type.id returns a stable integer hash of the type
 id1: i64 = @comp.type.id(x)
 id2: i64 = @comp.type.id(s)
 print("type_id(x) = " .. to(str)(id1))
 print("type_id(s) = " .. to(str)(id2))
 print("type_ids_differ = " .. to(str)(id1 != id2))
 
--- @comp.type.is checks type at compile time
+# @comp.type.is checks type at compile time
 print("is_type(x, i64) = " .. to(str)(@comp.type.is(x, "i64")))
 print("is_type(s, str) = " .. to(str)(@comp.type.is(s, "str")))
 print("is_type(x, str) = " .. to(str)(@comp.type.is(x, "str")))
 
--- ═══════════════════════════════════════════════════════════════
--- Compile-time evaluation: @(expr)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Compile-time evaluation: @(expr)
+# ═══════════════════════════════════════════════════════════════
 
--- @() forces compile-time evaluation
+# @() forces compile-time evaluation
 comptime_result = @(10 * 20 + 5)
 print("comptime_result = " .. to(str)(comptime_result))
 
--- @constexpr for compile-time function evaluation
+# @constexpr for compile-time function evaluation
 factorial(n: i64): i64
     if n <= 1 return 1 end
     return n * factorial(n - 1)
@@ -42,16 +42,16 @@ end
 fact10 = @(factorial(10))
 print("factorial(10) = " .. to(str)(fact10))
 
--- ═══════════════════════════════════════════════════════════════
--- @comp.if — compile-time conditional
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# @comp.if — compile-time conditional
+# ═══════════════════════════════════════════════════════════════
 
 platform_msg = @comp.if(true, "compiled_path_a", "compiled_path_b")
 print("comptimeif = " .. platform_msg)
 
--- ═══════════════════════════════════════════════════════════════
--- @sizeof, @alignof — memory layout
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# @sizeof, @alignof — memory layout
+# ═══════════════════════════════════════════════════════════════
 
 sz_i64 = @sizeof(i64)
 sz_f64 = @sizeof(f64)
@@ -60,38 +60,38 @@ print("sizeof(i64) = " .. to(str)(sz_i64))
 print("sizeof(f64) = " .. to(str)(sz_f64))
 print("alignof(i64) = " .. to(str)(align_i64))
 
--- ═══════════════════════════════════════════════════════════════
--- @comp.assert — compile-time assertions
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# @comp.assert — compile-time assertions
+# ═══════════════════════════════════════════════════════════════
 
--- These will fail compilation if false
+# These will fail compilation if false
 @comp.assert("sizeof(int64_t) == 8", "i64 must be 8 bytes")
 @comp.assert("sizeof(double) == 8", "f64 must be 8 bytes")
 
--- ═══════════════════════════════════════════════════════════════
--- @comp.has.metamethod — runtime metamethod check
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# @comp.has.metamethod — runtime metamethod check
+# ═══════════════════════════════════════════════════════════════
 
 obj = {}
--- Value-form lambda, not `function(t, k) return ... end`: Duo rejects a `return`
--- inside a one-line anonymous function body ("expected expression, got
--- 'return'"), and the last expression IS the result, so the return was never
--- needed. This parse failure is what made the whole file — and
--- scripts/run_compile_size_benchmark.sh, which compiles it — fail to build.
+# Value-form lambda, not `function(t, k) return ... end`: Duo rejects a `return`
+# inside a one-line anonymous function body ("expected expression, got
+# 'return'"), and the last expression IS the result, so the return was never
+# needed. This parse failure is what made the whole file — and
+# scripts/run_compile_size_benchmark.sh, which compiles it — fail to build.
 setmetatable(obj, { __index = (t, k) "default" })
 print("has __index = " .. to(str)(@comp.has.metamethod(obj, "__index")))
 print("has __add = " .. to(str)(@comp.has.metamethod(obj, "__add")))
 
--- ═══════════════════════════════════════════════════════════════
--- @comp.type.info — C type string
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# @comp.type.info — C type string
+# ═══════════════════════════════════════════════════════════════
 
 print("typeinfo(x) = " .. @comp.type.info(x))
 print("typeinfo(s) = " .. @comp.type.info(s))
 
--- ═══════════════════════════════════════════════════════════════
--- Low-level intrinsics
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Low-level intrinsics
+# ═══════════════════════════════════════════════════════════════
 
 bits: i64 = 0xFF00
 print("popcount(0xFF00) = " .. to(str)(@popcount(bits)))
@@ -99,21 +99,21 @@ print("ctz(0xFF00) = " .. to(str)(@ctz(bits)))
 print("clz(0xFF00) = " .. to(str)(@clz(bits)))
 print("bswap(0xFF00) = " .. to(str)(@bswap(bits)))
 
--- ═══════════════════════════════════════════════════════════════
--- @comp.for — compile-time loop unrolling
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# @comp.for — compile-time loop unrolling
+# ═══════════════════════════════════════════════════════════════
 
--- Unroll a sum at compile time
+# Unroll a sum at compile time
 arr = {10, 20, 30, 40}
--- Uses @emit for inline C-level array access in the unrolled loop
+# Uses @emit for inline C-level array access in the unrolled loop
 print("compile-time loop done")
 
--- ═══════════════════════════════════════════════════════════════
--- Compile-time string operations
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Compile-time string operations
+# ═══════════════════════════════════════════════════════════════
 
-ct_upper = @(string.upper("hello"))
-ct_len = @(string.len("world"))
+ct_upper = @("hello":upper())
+ct_len = @("world":len())
 print("comptime upper = " .. ct_upper)
 print("comptime len = " .. to(str)(ct_len))
 

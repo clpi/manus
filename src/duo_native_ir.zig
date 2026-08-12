@@ -305,6 +305,36 @@ pub fn findRecord(m: Module, name: []const u8) ?RecordDesc {
     return null;
 }
 
+/// Foreign calls emitted by bootstrap lowering without graph application facts
+/// (GAP-155). Must stay aligned with `dnir_lower.zig` bootstrap extern paths.
+pub fn isBootstrapForeignCall(callee: []const u8) bool {
+    const bootstrap = [_][]const u8{
+        "abort",
+        "ceil",
+        "cos",
+        "duo_str_sub",
+        "exit",
+        "fabs",
+        "floor",
+        "free",
+        "idol_io_read_path",
+        "idol_io_read_stdin",
+        "idol_str_has",
+        "idol_str_match",
+        "malloc",
+        "memset",
+        "printf",
+        "sin",
+        "snprintf",
+        "sqrt",
+        "strlen",
+    };
+    for (bootstrap) |name| {
+        if (std.mem.eql(u8, callee, name)) return true;
+    }
+    return false;
+}
+
 /// True when every instruction is in the direct-backend subset.
 pub fn moduleIsNativeDirectReady(m: Module) bool {
     if (m.functions.len == 0) return false;
@@ -317,6 +347,7 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
                 if (fact_count != 0 and fact_count != 3) return false;
                 if ((fact_count == 3) != (i.realization_start != null)) return false;
                 if (i.op == .call_direct) {
+                    if (i.application == null) continue;
                     const graph = m.graph orelse return false;
                     const application = i.application orelse return false;
                     const relation = i.relation orelse return false;
@@ -325,6 +356,9 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
                     if (fact.relation != relation or fact.subject != i.subject) return false;
                     const results = graph.applicationResults(application) orelse return false;
                     if (results.len != 1 or results[0] != value) return false;
+                }
+                if (i.op == .call_extern and i.application == null and !isBootstrapForeignCall(i.callee)) {
+                    return false;
                 }
                 if (i.op == .br) {
                     switch (i.branch_condition) {

@@ -1,20 +1,20 @@
--- SIM and native C ABI gate.
---
--- Entity-bounded public serialization observations replace the former
--- in-process golden tests. The C rows replace the foreign execution tests and
--- the fixture-only layout/adapter tests: emitted C stays unboxed, clang agrees
--- with the projected layouts, semantic boundary metadata stays attached, and
--- the tracked oracle programs return 25 and 10. Every compound observation
--- owns a private temporary directory.
--- The five removed blocks were one c_layout_verify test, one foreign_adapter
--- test, and all three abi_specialize tests; S1, S3, and S10-S12 name their
--- public replacements exactly.
+# SIM and native C ABI gate.
+#
+# Entity-bounded public serialization observations replace the former
+# in-process golden tests. The C rows replace the foreign execution tests and
+# the fixture-only layout/adapter tests: emitted C stays unboxed, clang agrees
+# with the projected layouts, semantic boundary metadata stays attached, and
+# the tracked oracle programs return 25 and 10. Every compound observation
+# owns a private temporary directory.
+# The five removed blocks were one c_layout_verify test, one foreign_adapter
+# test, and all three abi_specialize tests; S1, S3, and S10-S12 name their
+# public replacements exactly.
 
 here: str = ()
     std.script.chomp(std.script.capture("pwd"))
 
 compiler: str = (root: str)
-    "{root}/zig-out/bin/duo"
+    "{root}/zig-out/bin/idol"
 
 shout: void = (msg: str)
     print("sim: {msg}")
@@ -38,7 +38,7 @@ expect: i64 = (ok: bool, msg: str)
 row: str = (id: str)
     "awk -v id='\"id\":\"{id}\"' 'p=index($0,id) { s=substr($0,p); q=index(s,\"},{\\\"id\\\":\"); if (q) s=substr(s,1,q-1); print s; exit } END { if (!p) exit 1 }' $d/snap.json"
 
-main = (): i64
+main: i64 = ()
     root = here()
     bin = compiler(root)
     fixtures = "{root}/examples/pass5/fixtures"
@@ -57,9 +57,9 @@ main = (): i64
     boxes = "grep -E -q '(lua_Value|lua_val_|lua_to_|lua_table_|duo_retain|duo_release|duo_CPoint|duo_CBigRect)' "
     bad = 0
 
-    -- Controls establish that the runner, tools, fixtures, matcher, and byte
-    -- comparator can all convict a deliberately false observation.
-    bad += expect(not capture("false", "/dev/null"),
+    # Controls establish that the runner, tools, fixtures, matcher, and byte
+    # comparator can all convict a deliberately false observation.
+    bad += expect(!capture("false", "/dev/null"),
         "control 1: capture called false a success")
     bad += expect(present(bin),
         "control 2: no compiler at {bin}; run zig build first")

@@ -1,4 +1,4 @@
--- std.net.http.cgi — CGI handler (mirrors Go's net/http/cgi)
+# std.net.http.cgi — CGI handler (mirrors Go's net/http/cgi)
 
 serve(handler: any): void
     method = os.getenv("REQUEST_METHOD") or "GET"

@@ -1,10 +1,10 @@
--- std.io.buffer — Buffered I/O operations
--- For efficient file and network I/O.
--- Sources: file handles (std.io.open), stdin, or raw byte-table sources.
+# std.io.buffer — Buffered I/O operations
+# For efficient file and network I/O.
+# Sources: file handles (std.io.open), stdin, or raw byte-table sources.
 
--- ═══════════════════════════════════════════════════════════════
--- Buffered Reader
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Buffered Reader
+# ═══════════════════════════════════════════════════════════════
 
 reader_new(source: any, buffer_size: i64): any
     if buffer_size == nil buffer_size = 4096 end
@@ -26,7 +26,7 @@ buffered_reader_fill(br: any): any
     br.buffer_pos = 1
     br.buffer_len = 0
 
-    -- Read from Lua file handle
+    # Read from Lua file handle
     if type(br.source) != "table"
         chunk = br.source:read(br.buffer_size)
         if chunk == nil or chunk == ""
@@ -42,7 +42,7 @@ buffered_reader_fill(br: any): any
         return {ok = true, bytes = #chunk}
     end
 
-    -- Read from raw byte table (source.pos tracks read cursor)
+    # Read from raw byte table (source.pos tracks read cursor)
     pos = br.source.pos or 1
     src = br.source.data or br.source
     avail = #src - pos + 1
@@ -50,7 +50,7 @@ buffered_reader_fill(br: any): any
         br.eof = true
         return {ok = true, bytes = 0}
     end
-    n = math.min(br.buffer_size, avail)
+    n = br.buffer_size:min(avail)
     i = 0
     while i < n
         br.buffer[i + 1] = src[pos + i]
@@ -92,7 +92,7 @@ reader_read(br: any, n: i64): any
         end
 
         available = br.buffer_len - br.buffer_pos + 1
-        to_read = math.min(n - count, available)
+        to_read = n - count:min(available)
         i = 0
         while i < to_read
             result[#result + 1] = br.buffer[br.buffer_pos]
@@ -118,18 +118,18 @@ reader_read_line(br: any): any
         end
 
         byte = result.byte
-        if byte == 10  -- newline
+        if byte == 10  # newline
             return {ok = true, line = line, eof = false}
-        elseif byte == 13  -- carriage return
-            -- Check for \r\n — if next byte is not \n, push it back
+        elseif byte == 13  # carriage return
+            # Check for \r\n — if next byte is not \n, push it back
             peek = reader_read_byte(br)
             if peek.ok and peek.byte != 10
-                -- Push back the non-newline byte
+                # Push back the non-newline byte
                 reader_unread(br, peek.byte)
             end
             return {ok = true, line = line, eof = false}
         else
-            line = line .. string.char(byte)
+            line = line .. byte:char()
         end
     end
 end
@@ -161,9 +161,9 @@ reader_bytes_read(br: any): i64
     br.bytes_read
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Buffered Writer
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Buffered Writer
+# ═══════════════════════════════════════════════════════════════
 
 writer_new(destination: any, buffer_size: i64): any
     if buffer_size == nil buffer_size = 4096 end
@@ -180,15 +180,15 @@ end
 writer_flush(bw: any): any
     if bw.buffer_pos == 1 return {ok = true} end
 
-    -- Build chunk from buffered bytes
+    # Build chunk from buffered bytes
     chunk = ""
     i = 1
     while i < bw.buffer_pos
-        chunk = chunk .. string.char(bw.buffer[i])
+        chunk = chunk .. bw.buffer[i]:char()
         i += 1
     end
 
-    -- Write to Lua file handle
+    # Write to Lua file handle
     if type(bw.destination) != "table"
         bw.destination:write(chunk)
     end
@@ -234,9 +234,9 @@ writer_bytes_written(bw: any): i64
     bw.bytes_written
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Ring Buffer I/O (for streaming)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Ring Buffer I/O (for streaming)
+# ═══════════════════════════════════════════════════════════════
 
 ring_new(capacity: i64): any
     actual = 1
@@ -291,10 +291,10 @@ ring_free(rio: any): i64
     rio.capacity - (rio.write_pos - rio.read_pos)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
--- Buffered Reader
--- Buffered Writer
--- Ring Buffer I/O
+# Buffered Reader
+# Buffered Writer
+# Ring Buffer I/O

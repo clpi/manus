@@ -1,7 +1,7 @@
--- vendor/mathc - C math library bindings via @ffi
--- Usage: local m = req("vendor.mathc")
---        or at compile time: duo compile myapp.id --link m
--- (-lm is already linked by default, so no --link needed for math)
+# vendor/mathc - C math library bindings via @ffi
+# Usage: local m = mathc
+#        or at compile time: duo compile myapp.id #link m
+# (-lm is already linked by default, so no #link needed for math)
 
 @ffi("sin")
 fun sin_c(x: f64): f64 end

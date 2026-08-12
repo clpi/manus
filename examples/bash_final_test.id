@@ -1,13 +1,13 @@
--- Test bash-style fun calls
+# Test bash-style fun calls
 
 greet(name: str): str
     "Hello, " .. name
 end
 
--- Bash-style call with string
+# Bash-style call with string
 print greet "World"
 
--- Bash-style call with numbers
+# Bash-style call with numbers
 add(a: i64, b: i64): i64
     a + b
 end

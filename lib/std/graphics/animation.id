@@ -1,9 +1,9 @@
--- std.graphics.animation — Animation and keyframe system
--- For character animation, procedural motion, and visual effects.
+# std.graphics.animation — Animation and keyframe system
+# For character animation, procedural motion, and visual effects.
 
--- ═══════════════════════════════════════════════════════════════
--- Keyframe
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Keyframe
+# ═══════════════════════════════════════════════════════════════
 
 keyframe_new(time: f64, value: any): any
     {
@@ -18,9 +18,9 @@ keyframe_set_easing(kf: any, easing: str): any
     kf
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Animation Curve
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Animation Curve
+# ═══════════════════════════════════════════════════════════════
 
 curve_new(name: str): any
     {
@@ -36,10 +36,10 @@ curve_add_keyframe(curve: any, time: f64, value: any): void
     kf = keyframe_new(time, value)
     curve.keyframes[#curve.keyframes + 1] = kf
 
-    -- Sort by time
-    table.sort(curve.keyframes, (a: any, b: any) a.time < b.time)
+    # Sort by time
+    curve.keyframes:sort((a: any, b: any) a.time < b.time)
 
-    -- Update duration
+    # Update duration
     if time > curve.duration
         curve.duration = time
     end
@@ -55,18 +55,18 @@ curve_evaluate(curve: any, time: f64): any
     if #curve.keyframes == 0 return nil end
     if #curve.keyframes == 1 return curve.keyframes[1].value end
 
-    -- Handle loop/ping-pong
+    # Handle loop/ping-pong
     if curve.loop
         time = time % curve.duration
     elseif curve.ping_pong
-        cycle = math.floor(time / curve.duration)
+        cycle = time / curve.duration:floor()
         time = time % curve.duration
         if cycle % 2 == 1
             time = curve.duration - time
         end
     end
 
-    -- Find surrounding keyframes
+    # Find surrounding keyframes
     prev = curve.keyframes[1]
     nxt = curve.keyframes[#curve.keyframes]
 
@@ -78,14 +78,14 @@ curve_evaluate(curve: any, time: f64): any
         end
     end
 
-    -- Calculate interpolation factor
+    # Calculate interpolation factor
     if nxt.time == prev.time return prev.value end
     t = (time - prev.time) / (nxt.time - prev.time)
 
-    -- Apply easing
+    # Apply easing
     t = apply_easing(t, nxt.easing)
 
-    -- Interpolate value
+    # Interpolate value
     interpolate_values(prev.value, nxt.value, t)
 end
 
@@ -101,9 +101,9 @@ curve_set_ping_pong(curve: any, ping_pong: bool): void
     curve.ping_pong = ping_pong
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Animation Clip
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Animation Clip
+# ═══════════════════════════════════════════════════════════════
 
 clip_new(name: str): any
     {
@@ -133,9 +133,9 @@ clip_set_fps(clip: any, fps: i64): void
     clip.fps = fps
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Animation Player
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Animation Player
+# ═══════════════════════════════════════════════════════════════
 
 player_new(): any
     {
@@ -182,10 +182,10 @@ player_update(player: any, delta_time: f64): any
 
     player.current_time += delta_time * player.speed
 
-    -- Handle end of clip
+    # Handle end of clip
     if player.current_time > clip.duration
         if clip.curves and next(clip.curves)
-            -- Check if any curve loops
+            # Check if any curve loops
             for curve in clip.curves
                 if curve.loop
                     player.current_time = player.current_time % clip.duration
@@ -198,10 +198,10 @@ player_update(player: any, delta_time: f64): any
         end
     end
 
-    -- Evaluate clip
+    # Evaluate clip
     result = clip_evaluate(clip, player.current_time)
 
-    -- Trigger callbacks
+    # Trigger callbacks
     for callback in player.callbacks
         callback(result, player.current_time)
     end
@@ -221,9 +221,9 @@ player_is_playing(player: any): bool
     player.playing
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Animation State Machine
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Animation State Machine
+# ═══════════════════════════════════════════════════════════════
 
 state_machine_new(): any
     {
@@ -257,7 +257,7 @@ end
 state_machine_update(sm: any, params: any): any
     if sm.current_state == nil return nil end
 
-    -- Check transitions
+    # Check transitions
     transitions = sm.transitions[sm.current_state]
     if transitions
         for transition in transitions
@@ -272,7 +272,7 @@ state_machine_update(sm: any, params: any): any
         end
     end
 
-    -- Return current state info
+    # Return current state info
     state = sm.states[sm.current_state]
     {
         state = sm.current_state,
@@ -280,32 +280,32 @@ state_machine_update(sm: any, params: any): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Procedural Animation
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Procedural Animation
+# ═══════════════════════════════════════════════════════════════
 
 procedural_sine(time: f64, frequency: f64, amplitude: f64, phase: f64): f64
     if frequency == nil frequency = 1 end
     if amplitude == nil amplitude = 1 end
     if phase == nil phase = 0 end
-    amplitude * math.sin(2 * math.pi * frequency * time + phase)
+    amplitude * 2 * math.pi * frequency * time + phase:sin()
 end
 
 procedural_noise(time: f64, frequency: f64, amplitude: f64): f64
-    -- Value noise using hash-based interpolation
+    # Value noise using hash-based interpolation
     if frequency == nil frequency = 1 end
     if amplitude == nil amplitude = 1 end
 
     t = time * frequency
-    -- Integer and fractional parts
-    i0 = math.floor(t)
+    # Integer and fractional parts
+    i0 = t:floor()
     frac = t - i0
 
-    -- Smoothstep interpolation (ease-in-out)
+    # Smoothstep interpolation (ease-in-out)
     fade = frac * frac * (3 - 2 * frac)
 
-    -- Hash function for pseudo-random values at integer points
-    _hash = (n: i64): f64
+    # Hash function for pseudo-random values at integer points
+    _hash: f64 = (n: i64)
         h = (n * 2654435761) & 0xFFFFFFFF
         h = ((h >> 16) ~ h) & 0xFFFFFFFF
         (h & 0xFFFF) / 65535.0
@@ -321,19 +321,19 @@ procedural_bounce(time: f64, period: f64, height: f64): f64
     if period == nil period = 1 end
     if height == nil height = 1 end
     t = time % period
-    -- Parabola
+    # Parabola
     height * (1 - (2 * t / period - 1) ^ 2)
 end
 
 procedural_wobble(time: f64, frequency: f64, damping: f64): f64
     if frequency == nil frequency = 5 end
     if damping == nil damping = 2 end
-    math.exp(-damping * time) * math.cos(2 * math.pi * frequency * time)
+    -damping * time:exp() * 2 * math.pi * frequency * time:cos()
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Utility Functions
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Utility Functions
+# ═══════════════════════════════════════════════════════════════
 
 apply_easing(t: f64, easing: str): f64
     if easing == "linear" return t end
@@ -374,13 +374,13 @@ interpolate_values(a: any, b: f64, t: f64): any
     a
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
--- Keyframe
--- Curve
--- Clip
--- Player
--- State Machine
--- Procedural
--- Utilities
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
+# Keyframe
+# Curve
+# Clip
+# Player
+# State Machine
+# Procedural
+# Utilities

@@ -1,93 +1,93 @@
--- The capability matrix — Pass 100 §22's "Running: nothing", replaced by a
--- measurement.
---
--- §22 used to answer the question "what works?" with a Boolean: implemented or
--- not, and for the running story, `nothing`. That was conservative rather than
--- honest. A compiler does not implement a program, it carries it some distance
--- up a ladder, and the distance is the information:
---
---     described -> parsed -> semantically checked -> C path
---               -> direct-native -> differentially proven -> canonical
---
--- This walks every program under examples/ and reports the population at each
--- rung. Nothing here is asserted from a list a human maintains; every cell is
--- the exit status of a command run against the file on this machine.
---
--- WHAT EACH RUNG RUNS, and why that command and not a nearby one:
---
---   described   the file carries a `--` line. A program with no statement of
---               intent is a program, not evidence.
---   parsed      `duo check <f>` did not print `parse failed`. The front end
---               accepted the source, whatever sema then said about it.
---   checked     `duo check <f>` exits 0.
---   c path      `duo compile --backend=c <f> -o T` exits 0.
---   native      `duo compile --backend=direct <f> -o T` exits 0. ONLY
---               `--backend=direct`: plain `duo compile` FALLS BACK to the C
---               backend and still prints `ok compile`, so a sweep over it
---               scores ~100% and means nothing. Same trap
---               scripts/native_census.id documents.
---   proven      both binaries BUILD, both RUN, and they agree on stdout and on
---               exit code. Compiling is not running — the bench suite reported
---               "Duo beats C" for a year off programs nothing ever executed.
---   canonical   the program lives in a BLOCKING native-differential directory
---               (the corpus root or native_only/), so losing a rung above
---               fails `zig build native-differential`. unsupported/ and
---               known_divergent/ are frontier reporting and do not block, so
---               they are proven-at-most. Proven but not canonical means proven
---               until someone breaks it quietly.
---
--- `proven` HERE IS THE STRICT DEFINITION: a real differential, both backends,
--- same stdout, same exit code. It is deliberately stricter than
--- `zig build native-differential`, which additionally accepts a native_only/
--- fixture matching its own declared `-- expect: N` — the C backend cannot
--- compile those programs at all and so is not an oracle for them. Three
--- fixtures sit in that gap (codegen_native, parser_token_stream,
--- table_shared_param); they appear below as `native, no C path`, and they are
--- proven by the gate even though they are not proven by this stricter test.
--- 63 blocking fixtures, 60 proven here, 3 in the gap — that is the whole
--- difference, and it reconciles exactly.
---
--- THE LADDER IS NOT A TOTAL ORDER, and saying it is would hide the most
--- interesting rows in the report. Eight programs compile to native ARM64 while
--- the C backend REFUSES them. So each rung is measured as an independent
--- predicate; the highest-rung census is derived from those, and every program
--- that reached a rung while failing one below it is named under LADDER
--- INVERSIONS. A matrix that silently sorted those into "c path" would be
--- describing a ladder the compiler does not actually have.
---
--- NO ENTRY POINT IS NOT A FAILURE. Most files under examples/ are fragments
--- with nothing to link; the direct backend says `no linker entry` and the C
--- backend happily synthesises a main from the top-level statements, which is
--- why the two disagree on 118 files that have no bug in them. They are counted
--- in their own bucket. Counting them as native failures is what put an earlier
--- reading of native coverage at 1/60.
---
--- RECONCILES WITH scripts/native_census.id, and this was CHECKED rather than
--- assumed, on 2026-08-08 against the same binary. `native` here is its
--- `native`: 89 = 89. `c path (native bail)` 47 plus the 5 programs that bail
--- while also failing the C path is 52, which is its `bail` 40 + `unreachable`
--- 12. Two sweeps written months apart, over the same corpus, by different
--- routes, landing on the same partition is the only reason to believe either.
--- If they ever part company, one of them has broken, and finding out which is
--- worth more than either number alone.
---
--- SISTER REPORT. scripts/capability_table.id runs the same rungs one fixture
--- at a time over examples/native_differential, to answer "which CAPABILITIES
--- are proven". This answers "how far does the POPULATION get". Neither
--- duplicates `zig build native-differential`, which is the gate; both are
--- reports, and a report that re-fails what a gate already fails just means two
--- things to fix when one breaks.
---
--- POSITIVE CONTROLS. This kind of report fails by measuring nothing, not by
--- measuring something wrong, so every zero is checked: no files found, no
--- records written, fewer records than files, or a zero population on a rung
--- this repo demonstrably reaches, are all EXIT 3 — the sweep is broken — and
--- never a green table.
---
--- Exit 0 pass · 1 a rung fell below its ratchet · 3 the matrix could not run.
---
--- Env: DUO, CAPMATRIX_ROOT, CAPMATRIX_JOBS, CAPMATRIX_TIMEOUT,
---      CAPMATRIX_PROVEN_FLOOR, CAPMATRIX_CHECKED_FLOOR.
+# The capability matrix — Pass 100 §22's "Running: nothing", replaced by a
+# measurement.
+#
+# §22 used to answer the question "what works?" with a Boolean: implemented or
+# not, and for the running story, `nothing`. That was conservative rather than
+# honest. A compiler does not implement a program, it carries it some distance
+# up a ladder, and the distance is the information:
+#
+#     described -> parsed -> semantically checked -> C path
+#               -> direct-native -> differentially proven -> canonical
+#
+# This walks every program under examples/ and reports the population at each
+# rung. Nothing here is asserted from a list a human maintains; every cell is
+# the exit status of a command run against the file on this machine.
+#
+# WHAT EACH RUNG RUNS, and why that command and !a nearby one:
+#
+#   described   the file carries a `--` line. A program with no statement of
+#               intent is a program, not evidence.
+#   parsed      `duo check <f>` did not print `parse failed`. The front end
+#               accepted the source, whatever sema then said about it.
+#   checked     `duo check <f>` exits 0.
+#   c path      `duo compile <f> -o T` exits 0.
+#   native      `duo compile #backend=direct <f> -o T` exits 0. ONLY
+#               `--backend=direct`: plain `duo compile` FALLS BACK to the C
+#               backend and still prints `ok compile`, so a sweep over it
+#               scores ~100% and means nothing. Same trap
+#               scripts/native_census.id documents.
+#   proven      both binaries BUILD, both RUN, and they agree on stdout and on
+#               exit code. Compiling is not running — the bench suite reported
+#               "Duo beats C" for a year off programs nothing ever executed.
+#   canonical   the program lives in a BLOCKING native-differential directory
+#               (the corpus root or native_only/), so losing a rung above
+#               fails `zig build native-differential`. unsupported/ and
+#               known_divergent/ are frontier reporting and do not block, so
+#               they are proven-at-most. Proven but not canonical means proven
+#               until someone breaks it quietly.
+#
+# `proven` HERE IS THE STRICT DEFINITION: a real differential, both backends,
+# same stdout, same exit code. It is deliberately stricter than
+# `zig build native-differential`, which additionally accepts a native_only/
+# fixture matching its own declared `-- expect: N` — the C backend cannot
+# compile those programs at all and so is not an oracle for them. Three
+# fixtures sit in that gap (codegen_native, parser_token_stream,
+# table_shared_param); they appear below as `native, no C path`, and they are
+# proven by the gate even though they are not proven by this stricter test.
+# 63 blocking fixtures, 60 proven here, 3 in the gap — that is the whole
+# difference, and it reconciles exactly.
+#
+# THE LADDER IS NOT A TOTAL ORDER, and saying it is would hide the most
+# interesting rows in the report. Eight programs compile to native ARM64 while
+# the C backend REFUSES them. So each rung is measured as an independent
+# predicate; the highest-rung census is derived from those, and every program
+# that reached a rung while failing one below it is named under LADDER
+# INVERSIONS. A matrix that silently sorted those into "c path" would be
+# describing a ladder the compiler does not actually have.
+#
+# NO ENTRY POINT IS NOT A FAILURE. Most files under examples/ are fragments
+# with nothing to link; the direct backend says `no linker entry` and the C
+# backend happily synthesises a main from the top-level statements, which is
+# why the two disagree on 118 files that have no bug in them. They are counted
+# in their own bucket. Counting them as native failures is what put an earlier
+# reading of native coverage at 1/60.
+#
+# RECONCILES WITH scripts/native_census.id, and this was CHECKED rather than
+# assumed, on 2026-08-08 against the same binary. `native` here is its
+# `native`: 89 = 89. `c path (native bail)` 47 plus the 5 programs that bail
+# while also failing the C path is 52, which is its `bail` 40 + `unreachable`
+# 12. Two sweeps written months apart, over the same corpus, by different
+# routes, landing on the same partition is the only reason to believe either.
+# If they ever part company, one of them has broken, and finding out which is
+# worth more than either number alone.
+#
+# SISTER REPORT. scripts/capability_table.id runs the same rungs one fixture
+# at a time over examples/native_differential, to answer "which CAPABILITIES
+# are proven". This answers "how far does the POPULATION get". Neither
+# duplicates `zig build native-differential`, which is the gate; both are
+# reports, and a report that re-fails what a gate already fails just means two
+# things to fix when one breaks.
+#
+# POSITIVE CONTROLS. This kind of report fails by measuring nothing, not by
+# measuring something wrong, so every zero is checked: no files found, no
+# records written, fewer records than files, or a zero population on a rung
+# this repo demonstrably reaches, are all EXIT 3 — the sweep is broken — and
+# never a green table.
+#
+# Exit 0 pass · 1 a rung fell below its ratchet · 3 the matrix could not run.
+#
+# Env: DUO, CAPMATRIX_ROOT, CAPMATRIX_JOBS, CAPMATRIX_TIMEOUT,
+#      CAPMATRIX_PROVEN_FLOOR, CAPMATRIX_CHECKED_FLOOR.
 
 work = "/tmp/duo-capability-matrix"
 probepath = "/tmp/duo-capability-matrix/probe.sh"
@@ -123,53 +123,53 @@ envor(name: str, fallback: str): str
     std.script.getenv(name, fallback)
 end
 
--- The per-file probe, written out as shell because measuring 348 programs
--- means ~1400 compiler and process invocations and Duo has no process pool.
--- Duo still does all the REASONING: the probe emits seven raw booleans per
--- file and nothing else, and every rung, bucket and inversion below is derived
--- here from those booleans.
---
--- Every status is read WITHOUT A PIPE. `cmd | tail; echo $?` reads tail, not
--- cmd, and that exact shape has produced false greens in this repo. Command
--- substitution keeps the status of the command being measured.
---
--- Grouped one phase per literal rather than one shell line per literal: the
--- phases are what a reader needs to check, and 30 concatenations of one line
--- each hide them.
---
--- `DUO_SEMANTIC_CACHE=0` IS LOAD-BEARING, and it is the most expensive thing
--- this file learned. `duo check` writes `.id/cache/semantic/state.json` — ONE
--- file, relative to the working directory — so eight parallel probes share one
--- semantic cache and corrupt each other's reads. Two -P 8 sweeps minutes apart
--- disagreed on SIX programs, and not only at the backends:
--- `p09_closure.id` read `0000000` in one sweep and `0110000` in the next, so
--- `duo check` itself was flipping and `parsed` and `checked` were flaky too.
--- With the cache off, two sweeps are byte-identical, and the numbers go UP —
--- checked 282 -> 285, c path 240 -> 246 — because the contention was producing
--- FALSE FAILURES, the direction that quietly understates a capability report.
---
--- THE FIX IS NOT AN ISOLATED WORKING DIRECTORY, which was tried first and is
--- worse. It makes the sweep deterministic too, but `req "std.compiler.token"`
--- resolves relative to the CWD, so three native_only fixtures lose their
--- module and `native` reads 86 where native_census reads 89. A measurement
--- that has to disagree with the neighbouring gate to be reproducible has
--- picked the wrong isolation. Cache off, repo root, both properties hold.
---
--- If you ever make this sweep faster, re-run it twice and DIFF THE RECORDS
--- before believing either run. This class of fault does not announce itself;
--- it just reports a slightly worse compiler than you have.
+# The per-file probe, written out as shell because measuring 348 programs
+# means ~1400 compiler and process invocations and Duo has no process pool.
+# Duo still does all the REASONING: the probe emits seven raw booleans per
+# file and nothing else, and every rung, bucket and inversion below is derived
+# here from those booleans.
+#
+# Every status is read WITHOUT A PIPE. `cmd | tail; echo $?` reads tail, not
+# cmd, and that exact shape has produced false greens in this repo. Command
+# substitution keeps the status of the command being measured.
+#
+# Grouped one phase per literal rather than one shell line per literal: the
+# phases are what a reader needs to check, and 30 concatenations of one line
+# each hide them.
+#
+# `DUO_SEMANTIC_CACHE=0` IS LOAD-BEARING, and it is the most expensive thing
+# this file learned. `duo check` writes `.id/cache/semantic/state.json` — ONE
+# file, relative to the working directory — so eight parallel probes share one
+# semantic cache and corrupt each other's reads. Two -P 8 sweeps minutes apart
+# disagreed on SIX programs, and !only at the backends:
+# `p09_closure.id` read `0000000` in one sweep and `0110000` in the next, so
+# `duo check` itself was flipping and `parsed` and `checked` were flaky too.
+# With the cache off, two sweeps are byte-identical, and the numbers go UP —
+# checked 282 -> 285, c path 240 -> 246 — because the contention was producing
+# FALSE FAILURES, the direction that quietly understates a capability report.
+#
+# THE FIX IS NOT AN ISOLATED WORKING DIRECTORY, which was tried first and is
+# worse. It makes the sweep deterministic too, but `req "std.compiler.token"`
+# resolves relative to the CWD, so three native_only fixtures lose their
+# module and `native` reads 86 where native_census reads 89. A measurement
+# that has to disagree with the neighbouring gate to be reproducible has
+# picked the wrong isolation. Cache off, repo root, both properties hold.
+#
+# If you ever make this sweep faster, re-run it twice and DIFF THE RECORDS
+# before believing either run. This class of fault does not announce itself;
+# it just reports a slightly worse compiler than you have.
 probetext(duo: str, tprefix: str): str
     "f=\"$1\"\nd={duo}\nt={work}/w$$\nexport DUO_SEMANTIC_CACHE=0\n"
     .. "des=0\ngrep -q \"^--\" \"$f\" && des=1\n"
     .. "oc=$($d check \"$f\" 2>&1); cr=$?\npar=1\n"
     .. "case \"$oc\" in *\"parse failed\"*) par=0;; esac\n"
     .. "chk=0\nif [ $cr -eq 0 ]; then chk=1; fi\n"
-    .. "xc=$($d compile --backend=c \"$f\" -o $t.c 2>&1); crc=$?\n"
+    .. "xc=$($d compile \"$f\" -o $t.c 2>&1); crc=$?\n"
     .. "xd=$($d compile --backend=direct \"$f\" -o $t.d 2>&1); drc=$?\ncpa=0\n"
     .. "if [ $crc -eq 0 ]; then cpa=1; fi\nnat=0\nif [ $drc -eq 0 ]; then nat=1; fi\n"
     .. "ent=0\ncase \"$xd\" in *\"no linker entry\"*) ent=1;; esac\n"
-    -- A miscompiled loop does not fail, it spins; 124 is the timeout marker,
-    -- and a run that timed out has no answer, which is not agreement.
+    # A miscompiled loop does not fail, it spins; 124 is the timeout marker,
+    # and a run that timed out has no answer, which is not agreement.
     .. "prv=0\nif [ $cpa -eq 1 ] && [ $nat -eq 1 ]; then\n"
     .. "  {tprefix}$t.c > $t.co 2>/dev/null; a=$?\n"
     .. "  {tprefix}$t.d > $t.do 2>/dev/null; b=$?\n"
@@ -179,26 +179,26 @@ probetext(duo: str, tprefix: str): str
 end
 
 flagat(rec: str, at: i64): bool
-    string.sub(rec, at, at) == "1"
+    rec:sub(at, at) == "1"
 end
 
 pathof(rec: str): str
     i: i64 = 1
     n: i64 = #rec
-    while i <= n and string.byte(rec, i) != 9
+    while i <= n and rec:byte(i) != 9
         i += 1
     end
-    string.sub(rec, i + 1, n)
+    rec:sub(i + 1, n)
 end
 
--- A program is canonical when a regression in it fails a BLOCKING gate.
--- native_differential blocks on the corpus root and on native_only/; it prints
--- unsupported/ and known_divergent/ as frontier reporting and passes anyway.
+# A program is canonical when a regression in it fails a BLOCKING gate.
+# native_differential blocks on the corpus root and on native_only/; it prints
+# unsupported/ and known_divergent/ as frontier reporting and passes anyway.
 blocking(path: str): bool
-    incorpus = string.find(path, "/native_differential/", 1, true) != nil
-    frontier = string.find(path, "/unsupported/", 1, true) != nil
-        or string.find(path, "/known_divergent/", 1, true) != nil
-    incorpus and not frontier
+    incorpus = path:find("/native_differential/", 1, true) != nil
+    frontier = path:find("/unsupported/", 1, true) != nil
+        or path:find("/known_divergent/", 1, true) != nil
+    incorpus and !frontier
 end
 
 note(path: str, why: str): void
@@ -246,10 +246,10 @@ tally(rec: str): void
         nnoentry = nnoentry + 1
     end
 
-    -- Highest rung reached. Each program lands in exactly one bucket, and the
-    -- C-path bucket is split because "compiles to C, nothing to link" and
-    -- "compiles to C, the direct backend bailed" are opposite facts about the
-    -- compiler that a single number would average into noise.
+    # Highest rung reached. Each program lands in exactly one bucket, and the
+    # C-path bucket is split because "compiles to C, nothing to link" and
+    # "compiles to C, the direct backend bailed" are opposite facts about the
+    # compiler that a single number would average into noise.
     if can
         topcanon = topcanon + 1
     elseif prv
@@ -272,24 +272,24 @@ tally(rec: str): void
         topnone = topnone + 1
     end
 
-    -- Inversions: a rung reached over a rung missed. These are the rows worth
-    -- reading, and folding them into the ladder would erase them.
-    --
-    -- `described` is deliberately NOT an inversion. A checked program with no
-    -- comment is a documentation gap, not a fact about the compiler, and there
-    -- are enough of them to bury the eight rows that ARE facts about the
-    -- compiler. It gets a count of its own instead — an inversion list nobody
-    -- reads to the bottom is an inversion list that has stopped working.
-    if nat and not cpa
+    # Inversions: a rung reached over a rung missed. These are the rows worth
+    # reading, and folding them into the ladder would erase them.
+    #
+    # `described` is deliberately NOT an inversion. A checked program with no
+    # comment is a documentation gap, not a fact about the compiler, and there
+    # are enough of them to bury the eight rows that ARE facts about the
+    # compiler. It gets a count of its own instead — an inversion list nobody
+    # reads to the bottom is an inversion list that has stopped working.
+    if nat and !cpa
         note(path, "native, no C path  ")
     end
-    if cpa and not chk
+    if cpa and !chk
         note(path, "C path, check fails")
     end
-    if nat and not chk
+    if nat and !chk
         note(path, "native, check fails")
     end
-    if chk and not des
+    if chk and !des
         nundescribed = nundescribed + 1
     end
 end
@@ -305,26 +305,26 @@ bucket(label: str, n: i64, tail: str): void
     print("    {label} {v}   {tail}")
 end
 
-main = (): i64
-    duo = envor("DUO", "./zig-out/bin/duo")
+main: i64 = ()
+    duo = envor("DUO", "./zig-out/bin/idol")
     root = envor("CAPMATRIX_ROOT", "examples")
     jobs = envor("CAPMATRIX_JOBS", "8")
     limit = envor("CAPMATRIX_TIMEOUT", "10")
 
-    if not std.script.fs_exists(duo)
+    if !std.script.fs_exists(duo)
         print("capability_matrix: FAIL — no compiler at {duo}; run `zig build`")
         return 3
     end
 
-    -- Stale binaries lie. A matrix measured with yesterday's compiler is a
-    -- confident report about a build nobody has. This does not run `zig build`
-    -- itself — a nested build inside `zig build capability-matrix` contends for
-    -- the same cache lock — it refuses to measure a binary older than the
-    -- sources that produced it. The build step depends on the install step, so
-    -- from `zig build capability-matrix` this is always already satisfied; it
-    -- fires for a bare `duo run`, which is exactly when it is needed. It caught
-    -- a stale binary twice while this file was being written, because another
-    -- session was editing src/ at the same time.
+    # Stale binaries lie. A matrix measured with yesterday's compiler is a
+    # confident report about a build nobody has. This does not run `zig build`
+    # itself — a nested build inside `zig build capability-matrix` contends for
+    # the same cache lock — it refuses to measure a binary older than the
+    # sources that produced it. The build step depends on the install step, so
+    # from `zig build capability-matrix` this is always already satisfied; it
+    # fires for a bare `idol run`, which is exactly when it is needed. It caught
+    # a stale binary twice while this file was being written, because another
+    # session was editing src/ at the same time.
     stale = std.script.chomp(std.script.capture(
         "find src -name \"*.zig\" -newer {duo} 2>/dev/null | head -3"))
     if stale != ""
@@ -343,32 +343,32 @@ main = (): i64
 
     std.script.run("rm -rf {work} && mkdir -p {work}")
 
-    -- compile_fail/ is excluded because DENIED TEXT IS ITS ASSERTION. Those
-    -- programs exist to be rejected; scoring them here would shrink every rung
-    -- population and make every number mean less — the same argument
-    -- docs/spec/corpus.md makes for the canonical partition.
+    # compile_fail/ is excluded because DENIED TEXT IS ITS ASSERTION. Those
+    # programs exist to be rejected; scoring them here would shrink every rung
+    # population and make every number mean less — the same argument
+    # docs/spec/corpus.md makes for the canonical partition.
     std.script.run(
         "find {root} -name \"*.id\" -not -path \"*/compile_fail/*\" | sort > {listpath}")
-    -- `wc -l <`, not `awk END`, for a reason that is about Duo and not shell:
-    -- `{` opens a string interpolation hole, so an awk program cannot be
-    -- written in a Duo string literal at all. `find | sort` always ends its
-    -- output with a newline, so the line count is the file count.
+    # `wc -l <`, not `awk END`, for a reason that is about Duo and !shell:
+    # `{` opens a string interpolation hole, so an awk program cannot be
+    # written in a Duo string literal at all. `find | sort` always ends its
+    # output with a newline, so the line count is the file count.
     wanted: i64 = to(i64)(std.script.chomp(std.script.capture("wc -l < {listpath}")))
     if wanted == 0
         print("capability_matrix: FAIL — no .id programs under {root}; the sweep is broken")
         return 3
     end
 
-    -- The workers inherit this process's working directory — the repo root,
-    -- which `find {root}` above already depends on — so a relative compiler
-    -- path is the same path the rest of this file uses. An earlier revision
-    -- absolutised it, which was only needed by the isolated-directory design
-    -- the comment on probetext explains was wrong.
+    # The workers inherit this process's working directory — the repo root,
+    # which `find {root}` above already depends on — so a relative compiler
+    # path is the same path the rest of this file uses. An earlier revision
+    # absolutised it, which was only needed by the isolated-directory design
+    # the comment on probetext explains was wrong.
     std.script.fs_write(probepath, probetext(duo, tprefix))
     std.script.run(
         "xargs -P {jobs} -n 1 sh {probepath} < {listpath} > {recordpath} 2>/dev/null")
 
-    for i, line in std.string.split(std.script.fs_read(recordpath), "\n")
+    for i, line in std.script.fs_read(recordpath):split("\n")
         rec = std.script.chomp(line)
         if #rec > 8
             tally(rec)
@@ -381,8 +381,8 @@ main = (): i64
         print("capability_matrix: FAIL — 0 records for {want} programs; the sweep is broken")
         return 3
     end
-    -- A worker that dies mid-sweep drops its line and every population below it
-    -- shrinks silently. The denominator is known independently, so check it.
+    # A worker that dies mid-sweep drops its line and every population below it
+    # shrinks silently. The denominator is known independently, so check it.
     if ntotal != wanted
         print("capability_matrix: FAIL — {got} records for {want} programs; the sweep lost files")
         return 3
@@ -432,9 +432,9 @@ main = (): i64
     end
     print("")
 
-    -- Positive controls, one per rung this repo is known to reach. A rung that
-    -- reports 0 is a broken probe far more often than a broken compiler, and a
-    -- matrix that prints a green zero has stopped being evidence.
+    # Positive controls, one per rung this repo is known to reach. A rung that
+    # reports 0 is a broken probe far more often than a broken compiler, and a
+    # matrix that prints a green zero has stopped being evidence.
     if nparsed == 0
         print("capability_matrix: FAIL — 0 programs parsed; the parse probe is broken")
         return 3
@@ -456,15 +456,15 @@ main = (): i64
         return 3
     end
 
-    -- Ratchets on the two rungs nothing else guards. `native` is
-    -- native_census's ratchet and is deliberately not re-ratcheted here;
-    -- `canonical` is native-differential's. Lower a floor whenever you lower a
-    -- count on purpose; that is the whole protocol.
-    --
-    -- Both floors are the counts measured on 2026-08-08. `proven` moved 75 ->
-    -- 79 between two runs an hour apart, on a codegen change landing in another
-    -- session, so it is a live number and not a constant: raise it when you
-    -- raise it.
+    # Ratchets on the two rungs nothing else guards. `native` is
+    # native_census's ratchet and is deliberately not re-ratcheted here;
+    # `canonical` is native-differential's. Lower a floor whenever you lower a
+    # count on purpose; that is the whole protocol.
+    #
+    # Both floors are the counts measured on 2026-08-08. `proven` moved 75 ->
+    # 79 between two runs an hour apart, on a codegen change landing in another
+    # session, so it is a live number and !a constant: raise it when you
+    # raise it.
     provenfloor: i64 = to(i64)(envor("CAPMATRIX_PROVEN_FLOOR", "79"))
     checkedfloor: i64 = to(i64)(envor("CAPMATRIX_CHECKED_FLOOR", "285"))
     pf = provenfloor:to(str)

@@ -1,22 +1,22 @@
--- std.ini — INI file parser
+# std.ini — INI file parser
 
 parse(data: str): any
-    lines = std.string.split(data, "\n")
+    lines = data:split("\n")
     res = {}
     current_section = res
     
     for _, line in lines
-        line = std.string.trim(line)
-        if std.string.len(line) > 0 and std.string.sub(line, 1, 1) != ";" and std.string.sub(line, 1, 1) != "#"
-            if std.string.sub(line, 1, 1) == "[" and std.string.sub(line, std.string.len(line), std.string.len(line)) == "]"
-                sec_name = std.string.sub(line, 2, std.string.len(line) - 1)
+        line = line:trim()
+        if line:len() > 0 and line:sub(1, 1) != ";" and line:sub(1, 1) != "#"
+            if line:sub(1, 1) == "[" and line:sub(line:len(), line:len()) == "]"
+                sec_name = line:sub(2, line:len() - 1)
                 res[sec_name] = {}
                 current_section = res[sec_name]
             else
-                parts = std.string.split(line, "=")
-                if std.table.len(parts) >= 2
-                    key = std.string.trim(parts[1])
-                    val = std.string.trim(parts[2])
+                parts = line:split("=")
+                if parts:len() >= 2
+                    key = parts[1]:trim()
+                    val = parts[2]:trim()
                     current_section[key] = val
                 end
             end

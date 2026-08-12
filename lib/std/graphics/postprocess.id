@@ -1,9 +1,9 @@
--- std.graphics.postprocess — Post-processing effects
--- For screen-space effects in ward's rendering pipeline.
+# std.graphics.postprocess — Post-processing effects
+# For screen-space effects in ward's rendering pipeline.
 
--- ═══════════════════════════════════════════════════════════════
--- Post-process Config
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Post-process Config
+# ═══════════════════════════════════════════════════════════════
 
 config_new(): any
     {
@@ -16,7 +16,7 @@ config_new(): any
         },
         tone_map = {
             enabled = false,
-            mode = "aces",  -- "reinhard", "aces", "linear"
+            mode = "aces",  # "reinhard", "aces", "linear"
             exposure = 1.0,
             gamma = 2.2,
         },
@@ -53,9 +53,9 @@ config_new(): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Bloom
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Bloom
+# ═══════════════════════════════════════════════════════════════
 
 bloom_extract_bright(image: any, threshold: f64): any
     width = image.width
@@ -92,31 +92,31 @@ bloom_extract_bright(image: any, threshold: f64): any
 end
 
 bloom_blur(image: any, radius: i64): any
-    -- Separable Gaussian blur (two-pass: horizontal then vertical)
+    # Separable Gaussian blur (two-pass: horizontal then vertical)
     width = image.width
     height = image.height
     channels = image.channels
 
-    -- Build 1D Gaussian kernel
+    # Build 1D Gaussian kernel
     sigma = radius / 3.0
     if sigma < 0.5 sigma = 0.5 end
     kernel = {}
     kernel_sum = 0.0
     i = -radius
     while i <= radius
-        val = math.exp(-(i * i) / (2 * sigma * sigma))
+        val = -(i * i) / (2 * sigma * sigma):exp()
         kernel[i + radius + 1] = val
         kernel_sum += val
         i += 1
     end
-    -- Normalize kernel
+    # Normalize kernel
     i = 1
     while i <= #kernel
         kernel[i] = kernel[i] / kernel_sum
         i += 1
     end
 
-    -- Horizontal pass
+    # Horizontal pass
     temp = {}
     y = 0
     while y < height
@@ -150,7 +150,7 @@ bloom_blur(image: any, radius: i64): any
         y += 1
     end
 
-    -- Vertical pass
+    # Vertical pass
     result = {}
     y = 0
     while y < height
@@ -196,14 +196,14 @@ bloom_apply(original: any, config: any): any
     bright = bloom_extract_bright(original, config.threshold)
     blurred = bloom_blur(bright, config.radius)
 
-    -- Add blurred bloom to original
+    # Add blurred bloom to original
     result = {}
     i = 1
     while i <= #original.data
-        result[i] = math.min(255, original.data[i] + blurred.data[i] * config.intensity)
+        result[i] = 255:min(original.data[i] + blurred.data[i] * config.intensity)
         if original.channels >= 3
-            result[i + 1] = math.min(255, original.data[i + 1] + blurred.data[i + 1] * config.intensity)
-            result[i + 2] = math.min(255, original.data[i + 2] + blurred.data[i + 2] * config.intensity)
+            result[i + 1] = 255:min(original.data[i + 1] + blurred.data[i + 1] * config.intensity)
+            result[i + 2] = 255:min(original.data[i + 2] + blurred.data[i + 2] * config.intensity)
         end
         i += original.channels
     end
@@ -216,9 +216,9 @@ bloom_apply(original: any, config: any): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Tone Mapping
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Tone Mapping
+# ═══════════════════════════════════════════════════════════════
 
 tonemap_reinhard(color: any): any
     {
@@ -236,7 +236,7 @@ tonemap_aces(color: any): any
     e = 0.14
 
     clamp = function(x)
-        math.max(0, math.min(1, x))
+        0:max(1:min(x))
     end
 
     {
@@ -248,15 +248,15 @@ end
 
 tonemap_linear(color: any, exposure: f64): any
     {
-        r = 1 - math.exp(-color.r * exposure),
-        g = 1 - math.exp(-color.g * exposure),
-        b = 1 - math.exp(-color.b * exposure),
+        r = 1 - -color.r * exposure:exp(),
+        g = 1 - -color.g * exposure:exp(),
+        b = 1 - -color.b * exposure:exp(),
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- FXAA (Fast Approximate Anti-Aliasing)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# FXAA (Fast Approximate Anti-Aliasing)
+# ═══════════════════════════════════════════════════════════════
 
 fxaa_luminance(r: f64, g: f64, b: f64): f64
     0.2126 * r + 0.7152 * g + 0.0722 * b
@@ -274,7 +274,7 @@ fxaa_process(image: any, config: any): any
         while x < width - 1
             idx = (y * width + x) * channels + 1
 
-            -- Get 3x3 neighborhood luminance
+            # Get 3x3 neighborhood luminance
             n = {}
             dy = -1
             while dy <= 1
@@ -289,13 +289,13 @@ fxaa_process(image: any, config: any): any
                 dy += 1
             end
 
-            -- Simple edge detection
-            edge_h = math.abs(n[1] - n[7]) + 2 * math.abs(n[2] - n[8]) + math.abs(n[3] - n[9])
-            edge_v = math.abs(n[1] - n[3]) + 2 * math.abs(n[4] - n[6]) + math.abs(n[7] - n[9])
+            # Simple edge detection
+            edge_h = n[1] - n[7]:abs() + 2 * n[2] - n[8]:abs() + n[3] - n[9]:abs()
+            edge_v = n[1] - n[3]:abs() + 2 * n[4] - n[6]:abs() + n[7] - n[9]:abs()
 
-            -- Blend based on edge
+            # Blend based on edge
             if edge_h > config.edge_threshold or edge_v > config.edge_threshold
-                -- Apply simple blur
+                # Apply simple blur
                 i = 0
                 while i < channels
                     result[#result + 1] = (image.data[idx + i] * 4 + image.data[idx - channels + i] + image.data[idx + channels + i] + image.data[idx - 1 + i] + image.data[idx + 1 + i]) / 8
@@ -322,9 +322,9 @@ fxaa_process(image: any, config: any): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Vignette
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Vignette
+# ═══════════════════════════════════════════════════════════════
 
 vignette_apply(image: any, intensity: f64, smoothness: f64): any
     width = image.width
@@ -332,7 +332,7 @@ vignette_apply(image: any, intensity: f64, smoothness: f64): any
     channels = image.channels
     cx = width / 2
     cy = height / 2
-    max_dist = math.sqrt(cx * cx + cy * cy)
+    max_dist = cx * cx + cy * cy:sqrt()
 
     result = {}
     y = 0
@@ -341,7 +341,7 @@ vignette_apply(image: any, intensity: f64, smoothness: f64): any
         while x < width
             dx = (x - cx) / cx
             dy = (y - cy) / cy
-            dist = math.sqrt(dx * dx + dy * dy)
+            dist = dx * dx + dy * dy:sqrt()
             vignette = 1 - smoothstep(1 - intensity, 1, dist) * smoothness
 
             idx = (y * width + x) * channels + 1
@@ -363,9 +363,9 @@ vignette_apply(image: any, intensity: f64, smoothness: f64): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Film Grain
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Film Grain
+# ═══════════════════════════════════════════════════════════════
 
 film_grain_apply(image: any, intensity: f64): any
     width = image.width
@@ -382,7 +382,7 @@ film_grain_apply(image: any, intensity: f64): any
             idx = (y * width + x) * channels + 1
             i = 0
             while i < channels
-                result[#result + 1] = math.max(0, math.min(255, image.data[idx + i] + grain))
+                result[#result + 1] = 0:max(255:min(image.data[idx + i] + grain))
                 i += 1
             end
             x += 1
@@ -398,22 +398,22 @@ film_grain_apply(image: any, intensity: f64): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Utility Functions
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Utility Functions
+# ═══════════════════════════════════════════════════════════════
 
 smoothstep(edge0: f64, edge1: f64, x: f64): f64
-    t = math.max(0, math.min(1, (x - edge0) / (edge1 - edge0)))
+    t = 0:max(1:min((x - edge0) / (edge1 - edge0)))
     t * t * (3 - 2 * t)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
--- Config
--- Bloom
--- Tone Map
--- FXAA
--- Vignette
--- Film Grain
+# Config
+# Bloom
+# Tone Map
+# FXAA
+# Vignette
+# Film Grain

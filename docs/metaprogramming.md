@@ -1,10 +1,10 @@
-# Idsem metaprogramming architecture
+# Idol metaprogramming architecture
 
 This page is a current projection, not a directive catalog. The sole semantic
 law is [`docs/spec/constitution.md`](spec/constitution.md), and canonical
 source uses `.id`.
 
-Idsem metaprogramming operates on graph-owned identities, relations, facts,
+Idol metaprogramming operates on graph-owned identities, relations, facts,
 dependencies, demands, laws, worlds, provenance, and transformations. It does
 not require an independent macro language, AST kingdom, directive namespace,
 or string-dispatched compiler API.

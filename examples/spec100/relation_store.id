@@ -1,0 +1,72 @@
+# Pass 100 §9 THE RELATION STORE — a SECOND relation family in the same
+# machinery as `to`. gap[082], generalized 2026-08-09.
+#
+#     to(micron)(inch) = stretch@lossless     # the first family
+#     eq(i64)(f64)     = eq_f64_i64@lossless  # a second family, SAME store
+#     for src, conv in eq[str]
+#
+# WHAT THIS FIXTURE EXISTS TO CATCH. `to` proved the relation shape; the
+# failure mode that comes next is building `eq`, `ord`, `iter`, `from` as
+# separate systems — the same GAP-084 registry problem in a cleaner costume.
+# The store in `src/relation.zig` holds every family as a row, and the
+# declaration / enumeration / composition machinery is family-generic. This
+# fixture exercises `eq` only: declaration face, enumerable trie, composition
+# through a hub — no call face yet, because `eq` has no call projection and
+# the declaration face must not wait for one to exist.
+#
+# THE HUB IS f64, mirroring `relation.id`. `i64` and `str` each declare their
+# two edges to and from it; the spoke-to-spoke pair i64<->str is NEVER
+# DECLARED and is answered by composition. SER for the eq family reads
+# n=3 authored=4 derived=2 refused=0 ser=1.50, printed beside `to`'s line by
+# the per-family census (`DUO_SER=1`) — one store, two families, two lines.
+#
+# WHY THE CONV FUNCTIONS ARE REAL. A declaration names the callable that
+# realizes the edge, and `duo check` resolves the value side like any name.
+# Their bodies route through the `to` projections, so this fixture also proves
+# the two families coexist without cross-talk.
+#
+# VERIFIED BY VALUE. The enumerations sum #src per declared edge: eq[str]
+# yields f64 (1), eq[f64] yields i64 then str (2), eq[i64] yields f64 (1), for
+# 4 edges and name-lengths 3+3+3+3. An enumeration that ran the wrong family
+# or transposed the key prints something else entirely.
+# expect: 16
+
+eq_f64_i64 = (v: f64): i64
+    v:to(i64)
+
+eq_i64_f64 = (v: i64): f64
+    v:to(f64)
+
+eq_f64_str = (v: f64): str
+    v:to(str)
+
+eq_str_f64 = (v: str): f64
+    v:to(f64)
+
+eq(i64)(f64) = eq_f64_i64@lossless
+eq(f64)(i64) = eq_i64_f64@lossless
+eq(str)(f64) = eq_f64_str@lossless
+eq(f64)(str) = eq_str_f64@lossless
+
+main: i64 = ()
+    n = 0
+
+    # Sources comparable to `str`: just f64, directly.
+    for src, conv in eq[str]
+        n += 1
+        n += #src
+
+    # Sources comparable to f64: i64 and str, in declaration order.
+    for src, conv in eq[f64]
+        n += 1
+        n += #src
+
+    # Sources comparable to i64: f64 directly; the str edge is derived, and
+    # enumeration lists DECLARED edges only — the derived one is the trie
+    # answering, not a stored row.
+    for src, conv in eq[i64]
+        n += 1
+        n += #src
+
+    print("{n}")
+    0

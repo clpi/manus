@@ -4,4 +4,4 @@
 # servers, and broken gates. Run before any substantive agent work.
 set -eu
 repo="$(cd "$(dirname "$0")/../../../.." && pwd)"
-exec "$repo/tools/devnode/doctor"
+exec "$repo/tools/node/dev/doctor"

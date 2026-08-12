@@ -1,0 +1,66 @@
+# Tracked C header/source ledger for the self-hosting target.
+#
+# language_census counts these as sanctioned bootstrap or oracle files. This
+# prints the exact queue so foreign C can retire under duon-visible evidence.
+
+script = std.script
+
+lines: any = (text: str)
+    out = {}
+    start = 1
+    i = 1
+    n = text:len()
+    while i <= n
+        if text:byte(i) == 10
+            if i > start
+                out[out:len() + 1] = text:sub(start, i - 1)
+            start = i + 1
+        i += 1
+    if start <= n
+        out[out:len() + 1] = text:sub(start, n)
+    out
+
+starts: bool = (path: str, prefix: str)
+    path:sub(1, prefix:len()) == prefix
+
+boot: bool = (path: str)
+    starts(path, "src/") or starts(path, "lib/c/")
+
+pick: any = (files: any, want: str)
+    out = {}
+    for i = 1, files:len()
+        path = files[i]
+        isboot = boot(path)
+        if want == "boot" and isboot
+            out[out:len() + 1] = path
+        elseif want == "oracle" and !isboot
+            out[out:len() + 1] = path
+    out
+
+show: i64 = (name: str, files: any)
+    count = files:len()
+    print("{name} {count}")
+    for i = 1, count
+        print("  {files[i]}")
+    count
+
+main: i64 = ()
+    root = script.chomp(script.capture("git rev-parse --show-toplevel 2>/dev/null"))
+    if root == ""
+        print("cledger: fail no git root")
+        std.os.exit(3)
+
+    cmd = "cd '{root}' && git ls-files '*.[ch]' | sort"
+    files = lines(script.capture(cmd))
+    boots = pick(files, "boot")
+    oracles = pick(files, "oracle")
+    count = boots:len()
+    show("cboot", boots)
+    show("coracle", oracles)
+    if count == 0
+        print("cledger: pass bootstrap c 0")
+        std.os.exit(0)
+
+    print("cledger: fail bootstrap c {count}")
+    std.os.exit(1)
+    0

@@ -1,33 +1,33 @@
--- std.meta.codegen — compile-time C code generation helpers
--- Use with @meta.define.derive, @meta.fields.map, @meta.loop, @meta.map, and @c.emit
--- to turn O(1) descriptions into O(n) generated code.
+# std.meta.codegen — compile-time C code generation helpers
+# Use with @meta.define.derive, @meta.fields.map, @meta.loop, @meta.map, and @c.emit
+# to turn O(1) descriptions into O(n) generated code.
 
--- Expand a template once per field name in a comptime field table.
--- fields: result of @fields(T) — each entry has .name and .type
--- tmpl: string with %n=field name, %t=field type, %i=index
+# Expand a template once per field name in a comptime field table.
+# fields: result of @fields(T) — each entry has .name and .type
+# tmpl: string with %n=field name, %t=field type, %i=index
 fields_map(fields: any, tmpl: str): str
     acc = ""
     for i, f in fields
         row = tmpl
-        row = string.gsub(row, "%n", f.name)
-        row = string.gsub(row, "%t", f.type)
-        row = string.gsub(row, "%i", to(str)(i - 1))
+        row = row:gsub("%n", f.name)
+        row = row:gsub("%t", f.type)
+        row = row:gsub("%i", to(str)(i - 1))
         acc = acc .. row
     end
     acc
 end
 
--- Generate C struct typedef from field descriptors (for @c.emit injection).
+# Generate C struct typedef from field descriptors (for @c.emit injection).
 c_struct(name: str, fields: any): str
     lines = { "typedef struct " .. name .. " {" }
     for _, f in fields
         lines[#lines + 1] = "    " .. f.type .. " " .. f.name .. ";"
     end
     lines[#lines + 1] = "} " .. name .. ";"
-    table.concat(lines, "\n")
+    lines:concat("\n")
 end
 
--- Generate field-wise hash combine (FNV-style) for @derive(Hash) style macros.
+# Generate field-wise hash combine (FNV-style) for @derive(Hash) style macros.
 c_hash_combine(type_name: str, fields: any): str
     acc = "static uint64_t " .. type_name .. "_hash(const " .. type_name .. "* v) {\n"
     acc = acc .. "    uint64_t h = 14695981039346656037ULL;\n"
@@ -42,31 +42,31 @@ c_hash_combine(type_name: str, fields: any): str
     acc
 end
 
--- Generate getters: one static inline per field.
+# Generate getters: one static inline per field.
 c_getters(type_name: str, fields: any): str
     fields_map(fields, "static inline %t get_%n(const " .. type_name .. "* self) { return self->%n; }\n")
 end
 
--- Canonical @meta.map callback: emit a C comment per matching type.
+# Canonical @meta.map callback: emit a C comment per matching type.
 c_type_comment(meta): str
     "/* " .. meta.name .. " */\n"
 end
 
--- Canonical @meta.map callback: semicolon-separated type registry line.
+# Canonical @meta.map callback: semicolon-separated type registry line.
 type_registry_line(meta): str
     meta.name .. ";"
 end
 
--- Canonical @meta.product callback: cross-product type pair signature.
+# Canonical @meta.product callback: cross-product type pair signature.
 type_pair_line(a, b): str
     a.name .. "x" .. b.name .. ";"
 end
 
--- Document @meta.expand / @meta.pow / @meta.ceiling stacking.
--- Usage:
---   @c.emit(@meta.pow("Concept", DeriveApi))
---   @c.emit(@meta.ceiling("ConceptA", DeriveApi, "ConceptB"))
---   @meta.emit.derive("Concept", DeriveApi)
+# Document @meta.expand / @meta.pow / @meta.ceiling stacking.
+# Usage:
+#   @c.emit(@meta.pow("Concept", DeriveApi))
+#   @c.emit(@meta.ceiling("ConceptA", DeriveApi, "ConceptB"))
+#   @meta.emit.derive("Concept", DeriveApi)
 expand_hint(): str
     "@meta.pow(concept, derive[, map_fn])"
 end
@@ -147,7 +147,7 @@ chain_hint(): str
     "@comp.chain(source, fn) — alias of @comp.each; composition glue for exponential combinator algebra"
 end
 
--- Canonical @meta.tensor callback: triple cross-product signature line.
+# Canonical @meta.tensor callback: triple cross-product signature line.
 type_triple_line(a, b, c): str
     a.name .. "x" .. b.name .. "x" .. c.name .. ";"
 end

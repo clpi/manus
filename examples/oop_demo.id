@@ -1,26 +1,26 @@
--- =============================================================================
--- Duo OOP + Inheritance Demo
--- Tables ARE classes in Duo (like Lua). Fields are implicitly public.
--- `alias` provides type aliases. `extends` works via metatable chaining.
--- `private` fields are compile-time enforced (sema checks access).
--- =============================================================================
+# =============================================================================
+# Duo OOP + Inheritance Demo
+# Tables ARE classes in Duo (like Lua). Fields are implicitly public.
+# `alias` provides type aliases. `extends` works via metatable chaining.
+# `private` fields are compile-time enforced (sema checks access).
+# =============================================================================
 
--- ── Type aliases (alias) ────────────────────────────────────────────────────
+# ── Type aliases (alias) ────────────────────────────────────────────────────
 
 Point2D: { x: f64, y: f64 }
 
 Float: f64
 
--- ── Basic class pattern (Lua-style table as class) ──────────────────────────
+# ── Basic class pattern (Lua-style table as class) ──────────────────────────
 
--- All fields are implicitly public, just like Lua tables.
--- Methods are just function-valued fields.
+# All fields are implicitly public, just like Lua tables.
+# Methods are just function-valued fields.
 
 point = {
     x = 3.0,
     y = 4.0,
     distance = fun(self: any): f64
-        math.sqrt(self.x * self.x + self.y * self.y)
+        self.x * self.x + self.y * self.y:sqrt()
     end,
     move = fun(self: any, dx: f64, dy: f64): void
         self.x = self.x + dx
@@ -35,9 +35,9 @@ point.move(point, 1.0, 2.0)
 print("After move: (" .. to(str)(point.x) .. ", " .. to(str)(point.y) .. ")")
 print("New distance: " .. to(str)(point.distance(point)))
 
--- ── Inheritance via metatables (extends pattern) ────────────────────────────
+# ── Inheritance via metatables (extends pattern) ────────────────────────────
 
--- Base "class" - a factory function returning instances
+# Base "class" - a factory function returning instances
 Point_base(x: f64, y: f64): any
     {
         x = x,
@@ -48,7 +48,7 @@ Point_base(x: f64, y: f64): any
     }
 end
 
--- Derived "class" via metatable delegation
+# Derived "class" via metatable delegation
 Point3D_base(x: f64, y: f64, z: f64): any
     base = Point_base(x, y)
     setmetatable(
@@ -68,9 +68,9 @@ print(p1.describe(p1))
 p2 = Point3D_base(3.0, 4.0, 5.0)
 print(p2.describe(p2))
 
--- ── Factory function pattern (constructor + methods) ────────────────────────
+# ── Factory function pattern (constructor + methods) ────────────────────────
 
--- A counter "class" using constructor functions
+# A counter "class" using constructor functions
 Counter_new(): any
     {
         _value = 0,
@@ -89,7 +89,7 @@ print("Counter: " .. to(str)(counter.value(counter)))
 counter.decrement(counter)
 print("After decrement: " .. to(str)(counter.value(counter)))
 
--- ── Concepts with table types ──────────────────────────────────────────────
+# ── Concepts with table types ──────────────────────────────────────────────
 
 concept Describable
     describe(self): str
@@ -99,7 +99,7 @@ concept Measurable
     measure(self, unit: str): f64
 end
 
--- A shape that implements both concepts
+# A shape that implements both concepts
 shape = {}
 shape.describe = fun(self): str
     "Circle(radius=" .. to(str)(self.radius) .. ")"
@@ -117,7 +117,7 @@ shape.radius = 5.0
 print(shape.describe(shape))
 print("Area (mm): " .. to(str)(shape.measure(shape, "mm")))
 
--- ── Default function parameter values ───────────────────────────────────────
+# ── Default function parameter values ───────────────────────────────────────
 
 greet(name: str = "World", greeting: str = "Hello"): str
     greeting .. ", " .. name .. "!"
@@ -127,7 +127,7 @@ power(base: f64, exp: f64 = 2.0): f64
     if exp == 0 return 1.0 end
     result: f64 = base
     i: i64 = 1
-    while i < math.floor(exp)
+    while i < exp:floor()
         result *= base
         i += 1
     end

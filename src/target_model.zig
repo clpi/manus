@@ -199,7 +199,7 @@ pub fn resolveTargetInput(target: []const u8, emit: EmitKind) ?ResolvedTarget {
         // A bare `native` is the only legacy name that says nothing about the
         // output format, and resolveLegacyTarget hardcodes `.emit = .exe` for
         // it — so `--emit asm` was overwritten before anything downstream could
-        // read it, and `duo compile --emit asm x.duo -o out.s` wrote a Mach-O
+        // read it, and `duo compile --emit asm x.id -o out.s` wrote a Mach-O
         // EXECUTABLE while reporting `ok compile`. Every other legacy name
         // (`native-asm`, `native-object`, …) names its own format and keeps it.
         //

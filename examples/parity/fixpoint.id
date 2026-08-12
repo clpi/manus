@@ -1,6 +1,6 @@
--- G-061 tier-1 three-site parity fixture for `comp.fixpoint`.
--- TOP = top_level_assign · NESTED = nested_callback · BLOCK = block_body.
--- All three C string literals must be IDENTICAL; scripts/transform.id asserts it.
+# G-061 tier-1 three-site parity fixture for `comp.fixpoint`.
+# TOP = top_level_assign · NESTED = nested_callback · BLOCK = block_body.
+# All three C string literals must be IDENTICAL; scripts/transform.id asserts it.
 
 TOP = @comp.fixpoint("s", fun(state) "i" .. tostring(state.iteration) .. "\n" end, 2)
 NESTED = @comp.map("q", fun(seed)

@@ -1,6 +1,6 @@
--- std.cursor — typed byte cursor for binary parsing (Pass 9 / Ward substrate).
--- Blockers: (1) embedded-module record ctor codegen, (2) C str cannot hold NUL — need slice+len.
--- Proof: examples/pass9/leb128_cursor_smoke.id (numeric LEB128 + u32 le).
+# std.cursor — typed byte cursor for binary parsing (Pass 9 / Ward substrate).
+# Blockers: (1) embedded-module record ctor codegen, (2) C str cannot hold NUL — need slice+len.
+# Proof: examples/pass9/leb128_cursor_smoke.id (numeric LEB128 + u32 le).
 
 bytecursor: @{ data: str, pos: i64, len: i64 }
 
@@ -25,7 +25,7 @@ skip(c: bytecursor, n: i64)
     c.pos = c.pos + n
 end
 
--- Read one byte; returns -1 on EOF.
+# Read one byte; returns -1 on EOF.
 readu8(c: bytecursor): i64
     if c.pos > c.len return -1 end
     b = c.data:byte(c.pos)
@@ -53,7 +53,7 @@ readu32le(c: bytecursor): i64
     b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
 end
 
--- Wasm LEB128 unsigned (P9-M1 kernel primitive).
+# Wasm LEB128 unsigned (P9-M1 kernel primitive).
 readlebu(c: bytecursor): i64
     result = 0
     shift = 0
@@ -68,7 +68,7 @@ readlebu(c: bytecursor): i64
     return -1
 end
 
--- Wasm LEB128 signed.
+# Wasm LEB128 signed.
 readlebs(c: bytecursor): i64
     result = 0
     shift = 0
@@ -96,7 +96,7 @@ readbytes(c: bytecursor, n: i64): str
     s
 end
 
--- Wasm module header: magic (0x6D736100) + version (1).
+# Wasm module header: magic (0x6D736100) + version (1).
 readwasmheader(c: bytecursor): i64
     magic = readu32le(c)
     if magic < 0 return -1 end

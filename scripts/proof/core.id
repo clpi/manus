@@ -1,0 +1,71 @@
+# GAP-157 core proof router — no std, no sym_ / duo_fn_ mangling proofs.
+
+semantic = { census = "lib/semantic/census.id", ingest = "lib/semantic/ingest.id" }
+proof = { record = "scripts/proof/record.id", world = "scripts/proof/worldreach.id", bit = "scripts/proof/bit.id" }
+
+len(path) = (min: i64)
+    path:read()
+        :len() >= min
+
+
+audit(path) = (pattern: str)
+    path:read()
+        :match(pattern)
+
+hit(path) = (pattern: str)
+    path:read()
+        :match(pattern)
+
+main: i64 = ()
+    code: i64 = 0
+    if !len(proof["record"])(32)
+        code = 1
+    if code == 0 and !len(proof["world"])(16)
+        code = 2
+    if code == 0 and !len(proof["bit"])(32)
+        code = 3
+    if code == 0 and hit(proof["record"])("std%.[a-z]")
+        code = 4
+    if code == 0 and hit(proof["record"])("duo_fn_")
+        code = 5
+    if code == 0 and hit(proof["record"])("sym_")
+        code = 6
+    if code == 0 and hit(proof["world"])("std%.[a-z]")
+        code = 7
+    if code == 0 and hit(proof["bit"])("std%.[a-z]")
+        code = 8
+    if code == 0 and hit(proof["bit"])("bitcast")
+        code = 9
+    if code == 0 and hit(proof["bit"])("bit%.f64")
+        code = 10
+    if code == 0 and !audit(proof["bit"])(":to%(bit%)")
+        code = 11
+    if code == 0 and !audit(proof["bit"])("to%(bit%)%(f64%)")
+        code = 12
+    if code == 0 and !audit(proof["bit"])("to%(f64%)%(bit%)")
+        code = 13
+    if code == 0 and !audit(proof["bit"])("to%(i64%)%(bit%)")
+        code = 14
+    if code == 0 and !audit(proof["bit"])("type bit = i64")
+        code = 15
+    if code == 0 and !audit(proof["bit"])("@view")
+        code = 16
+    if code == 0 and hit(proof["bit"])("unpack@view")
+        code = 17
+    if code == 0 and hit(proof["bit"])("bit%.")
+        code = 18
+    if code == 0 and !len(semantic["census"])(16)
+        code = 19
+    if code == 0 and !len(semantic["ingest"])(32)
+        code = 20
+    if code == 0 and hit(semantic["census"])("viewedges")
+        code = 21
+    if code == 0 and !audit(semantic["census"])("view%(edges%)")
+        code = 22
+    if code == 0 and !audit(semantic["ingest"])("view%(edges%)")
+        code = 23
+    if code == 0 and hit(semantic["ingest"])("viewedges")
+        code = 24
+    if code == 0
+        print("proof/core: pass")
+    code

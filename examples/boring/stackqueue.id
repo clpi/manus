@@ -1,7 +1,7 @@
--- A stack and a queue over one sequence face. LIFO and FIFO must disagree,
--- which is the whole assertion.
--- expect: 3 1
-main = (): i64
+# A stack and a queue over one sequence face. LIFO and FIFO must disagree,
+# which is the whole assertion.
+# expect: 3 1
+main: i64 = ()
     st = { }
     st:push(1)
     st:push(2)

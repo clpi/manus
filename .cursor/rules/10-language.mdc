@@ -1,14 +1,84 @@
 ---
-globs: ["*.id", "docs/spec/**", "CLAUDE.md", "AGENTS.md"]
+globs: ["*.id", "docs/spec/**", "CLAUDE.md", "AGENTS.md", "gates/**", "scripts/idiomgate.id", "scripts/preflight.id", "scripts/semanticgate.id"]
 ---
 
 # Language
 
-Use `AGENTS.md`, `docs/spec/constitution.md`, `CLAUDE.md`,
-`docs/spec/grammar.md`, and `docs/spec/corpus.md`.
+Use `AGENTS.md`, `docs/spec/constitution.md`, `docs/spec/source.md`,
+`CLAUDE.md`, `docs/spec/grammar.md`, and `docs/spec/corpus.md`.
 
 Canonical source is `.id`. Current language is **Idol** (`idol`). Historical
-Idsem, Duo, Duon, and `.id` are provenance only. C0 owns
+Idol, Duo, Duon, and `.id` are provenance only. C0 owns
 `law.update.face`; `AGENTS.md` projects it, and `scripts/idiomgate.id` exposes
 candidate pressure pending the graph witness. Do not use examples or
 historical files as language law.
+
+## Gate scan — curried boundary symbols
+
+When a gate scans across a transport boundary (unified diff, path list, tree
+listing), **never** mash the boundary name into the relation:
+
+- **Forbidden:** `scandiff`, `scanline`, `diffhead`, `bareend`, `scanpath`, or
+  any `scan+*` compound binding.
+- **Forbidden:** string boundary tags — `scan("diff")(body)`,
+  `scan("path")(body)`, or runtime `if boundary == "diff"`.
+
+**Required:** curried specialization with a **symbol** in the first slot.
+Definition form is **`name(...) = (...)`**, never `name(...): type = ()`:
+
+```id
+scan(diff)(body) = ()
+    # diff is a symbol, not a string — same curry shape as to(micron)(inch)
+
+scan(path)(body) = ()
+    # path-list boundary in gates/path.id
+
+ingress(path) = ()
+    # ingress is the subject/home edge
+
+total = scan(diff)(files)
+```
+
+Inside `scan(diff)(…)` use single-word line relations:
+
+- `audit(path, no, line)` — never `scanline`
+- `head(line)` — never `diffhead`
+- `bare(code)` — never `bareend`
+- `ingress(path)` — never `ingressonly` or `only(ingress)(path)`
+
+World-dot detection uses **`dot(world) = (code: str)`** — world is a symbol in
+the first slot, never a string argument or mashed name. Prefix scan uses
+**`hit(prefix) = (code: str)`** — prefix is the curry-slot symbol; call
+`hit(io)(code)`, never `hit("io.", code)` or `hit("io.")(code)`:
+
+```id
+hit(io) = (code: str)
+    peek("io.", code)
+
+dot(io) = (code: str)
+    hit(io)(code)
+
+dot(os) = (code: str)
+    hit(os)(code)
+
+dot(std) = (world: str, code: str)
+    edge("std.{world}.", code)
+```
+
+Call sites: `dot(io)(code)`, `hit(io)(code)`, `dot(std)(io, code)` — never `worlddot`,
+`qualworlddot`, or `dot(code, "io")`.
+
+Reference gates: `scripts/idiomgate.id`, `gates/host.id`, `gates/path.id`.
+Transport: stdin via `io:read()` only; shell pipes or `< file` redirect. No
+`gate.sh`, `gatepath`, `os.args`, or `--backend=c`.
+
+## Path and file names (law.path.name)
+
+No **snake_case** (or camelCase, kebab-case, mashed stems) in project-controlled
+path components. One lowercase word per home; decompose through hierarchy:
+
+- `semantic/graph.id` — never `semantic_graph.id`
+- `suffix/array.id` — never `suffixarray.id`
+
+`gates/path.id` rejects `_` in stems via `sep()` on every path component.
+Positive control: `semantic_graph` fails; `semantic/graph.id` passes.

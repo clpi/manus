@@ -6,16 +6,17 @@ alwaysApply: true
 
 Start every substantive session at `AGENTS.md`, then follow its chain to
 `docs/spec/constitution.md` (sole semantic law). `CLAUDE.md`,
+`docs/spec/source.md`, `docs/spec/host.md` (host/shell/capability closure),
 `docs/spec/AUTHORITY.md`, `docs/bootstrap.md`, `.agents/AGENT_CANONICAL.md`,
 `.agents/AGENT_COORDINATION.md`, and `.agents/RELEASE_READINESS.md` are
 projections only.
 
 **Idol** (`idol`, `.id`) is the language identity. Active development is
 **`clpi/duo`**. **`idollang/idol`** is the future release repository only; do
-not migrate development there. Historical Idsem, Duo, Duon, `.id`, and `duo`
+not migrate development there. Historical Idol, Duo, Duon, `.id`, and `duo`
 bootstrap names are provenance only.
 
-Run `./tools/devnode/orient` and `./tools/devnode/doctor` before substantive
+Run `./tools/node/dev/orient` and `./tools/node/dev/doctor` before substantive
 work. Identify the semantic owner and bounded boundary before editing. Prefer
 deletion or convergence over new mechanisms. Do not restore historical
 architecture or duplicate MCP manifests, emitters, or coordination ledgers.

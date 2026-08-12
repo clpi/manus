@@ -1,34 +1,34 @@
--- std.trace — beautiful, semantically-formatted trace & debug output
---
--- Design:
---   * Every event is signed with a beautiful Unicode glyph and colored
---     by severity. Bold/italic/dim/underline/strikethrough/reverse
---     carry semantic meaning (see LEGEND below).
---   * Spans can be opened/closed and timed.
---   * Field values are colored by Lua TYPE so a glance reveals shape.
---   * Source locations are underline; function names are magenta-italic;
---     timestamps are dim; slow durations are bold-yellow.
---   * Honors NO_COLOR / DUO_COLOR env vars.
---
--- LEGEND of formatting semantics:
---   bold       = essential payload (msg, error text, slow span durs)
---   italic     = identity (function names, type names, nil)
---   dim        = ancillary (timestamps, caller meta, trace level)
---   underline  = location references (file:line, field keys)
---   strikethrough = deleted/removed (in diffs, deprecated values)
---   reverse    = breakpoint / attention-grab (fatal banner, divider)
---   color      = severity / type class
---
--- NOTE: this module is intentionally self-contained — it does not
--- `req` other stdlib modules at top level. The current codegen drops
--- top-level `local x = req "stdlib"` bindings when a stdlib module is
--- inlined under `duo run`; inlining ANSI codes + tty detection here
--- keeps std.trace compilable today. When that codegen gap is fixed,
--- trace.id can switch back to `local color = req "std.color"` etc.
+# std.trace — beautiful, semantically-formatted trace & debug output
+#
+# Design:
+#   * Every event is signed with a beautiful Unicode glyph and colored
+#     by severity. Bold/italic/dim/underline/strikethrough/reverse
+#     carry semantic meaning (see LEGEND below).
+#   * Spans can be opened/closed and timed.
+#   * Field values are colored by Lua TYPE so a glance reveals shape.
+#   * Source locations are underline; function names are magenta-italic;
+#     timestamps are dim; slow durations are bold-yellow.
+#   * Honors NO_COLOR / DUO_COLOR env vars.
+#
+# LEGEND of formatting semantics:
+#   bold       = essential payload (msg, error text, slow span durs)
+#   italic     = identity (function names, type names, nil)
+#   dim        = ancillary (timestamps, caller meta, trace level)
+#   underline  = location references (file:line, field keys)
+#   strikethrough = deleted/removed (in diffs, deprecated values)
+#   reverse    = breakpoint / attention-grab (fatal banner, divider)
+#   color      = severity / type class
+#
+# NOTE: this module is intentionally self-contained — it does not
+# `req` other stdlib modules at top level. The current codegen drops
+# top-level `local x = stdlib` bindings when a stdlib module is
+# inlined under `duo run`; inlining ANSI codes + tty detection here
+# keeps std.trace compilable today. When that codegen gap is fixed,
+# trace.id can switch back to `local color = color` etc.
 
 global M = {}
 
--- ─── ANSI codes (inline copy of std.color) ─────────────────────────
+# ─── ANSI codes (inline copy of std.color) ─────────────────────────
 M.RESET      = "\x1b[0m"
 M.BOLD       = "\x1b[1m"
 M.DIM        = "\x1b[2m"
@@ -65,7 +65,7 @@ M.BG_MAGENTA = "\x1b[45m"
 M.BG_CYAN    = "\x1b[46m"
 M.BG_WHITE   = "\x1b[47m"
 
--- ─── Glyphs ────────────────────────────────────────────────────────
+# ─── Glyphs ────────────────────────────────────────────────────────
 M.G_TRACE      = "∘"
 M.G_DEBUG      = "⊙"
 M.G_INFO       = "✦"
@@ -103,22 +103,22 @@ M.G_CIRCLE     = "●"
 M.G_TRIANGLE   = "▲"
 M.G_HEXAGON    = "⬡"
 
--- ─── Box-drawing palette ──────────────────────────────────────────
-M.BOX_TL = "╭"   -- top-left rounded
-M.BOX_TR = "╮"   -- top-right rounded
-M.BOX_BL = "╰"   -- bottom-left rounded
-M.BOX_BR = "╯"   -- bottom-right rounded
-M.BOX_ML = "├"   -- mid-left
-M.BOX_MR = "┤"   -- mid-right
-M.BOX_H  = "─"   -- horizontal
-M.BOX_V  = "│"   -- vertical
-M.BOX_C  = "┼"   -- cross
+# ─── Box-drawing palette ──────────────────────────────────────────
+M.BOX_TL = "╭"   # top-left rounded
+M.BOX_TR = "╮"   # top-right rounded
+M.BOX_BL = "╰"   # bottom-left rounded
+M.BOX_BR = "╯"   # bottom-right rounded
+M.BOX_ML = "├"   # mid-left
+M.BOX_MR = "┤"   # mid-right
+M.BOX_H  = "─"   # horizontal
+M.BOX_V  = "│"   # vertical
+M.BOX_C  = "┼"   # cross
 M.BOX_TL_SQUARE = "┌"
 M.BOX_TR_SQUARE = "┐"
 M.BOX_BL_SQUARE = "└"
 M.BOX_BR_SQUARE = "┘"
 
--- ─── Levels ────────────────────────────────────────────────────────
+# ─── Levels ────────────────────────────────────────────────────────
 M.LV_TRACE = 0
 M.LV_DEBUG = 1
 M.LV_INFO  = 2
@@ -141,7 +141,7 @@ global trace_show_ts = true
 global trace_spans = {}
 global trace_color = true
 
--- ─── tty detection ────────────────────────────────────────────────
+# ─── tty detection ────────────────────────────────────────────────
 tty(): bool
     ok, val = pcall(os.getenv, "DUO_COLOR")
     if ok and val != nil and val != "" and val != "0"
@@ -154,7 +154,7 @@ tty(): bool
     return true
 end
 
--- ─── Low-level style wrappers ────────────────────────────────────
+# ─── Low-level style wrappers ────────────────────────────────────
 
 s(prefix: str, text: str, suffix: str): str
     if prefix == nil prefix = "" end
@@ -249,9 +249,9 @@ gray(text: str): str
     return M.BRIGHT_BLACK .. text:to(str) .. M.RESET
 end
 
--- ─── Compound semantic styles ─────────────────────────────────────
--- These combine attributes for specific semantic roles.
--- Each one paints a single concept — use them to build readable output.
+# ─── Compound semantic styles ─────────────────────────────────────
+# These combine attributes for specific semantic roles.
+# Each one paints a single concept — use them to build readable output.
 
 sem_success(text: str): str
     return M.BOLD .. M.GREEN .. text:to(str) .. M.RESET
@@ -309,7 +309,7 @@ sem_hex(text: str): str
     return M.BRIGHT_BLACK .. M.UNDERLINE .. text:to(str) .. M.RESET
 end
 
-sem_size(text: str): str
+sem_text: str:len(): str
     return M.BRIGHT_YELLOW .. text:to(str) .. M.RESET
 end
 
@@ -389,10 +389,10 @@ sem_context_line(text: str): str
     return M.DIM .. text:to(str) .. M.RESET
 end
 
--- ─── Value formatting ─────────────────────────────────────────────
+# ─── Value formatting ─────────────────────────────────────────────
 tbl_summary(t: any): str
     if t == nil return "nil" end
-    n = rawlen(t)
+    n = t:len()
     if n > 0
         return "array(" .. n:to(str) .. ")"
     end
@@ -423,7 +423,7 @@ pretty_val(value: any): str
     elseif t:find("function") == 1
         return sem_function_val("⟪fn⟫")
     elseif t:find("table") == 1
-        n = rawlen(value)
+        n = value:len()
         if n > 0
             return sem_table_val("⟦array " .. n:to(str) .. "⟧")
         end
@@ -436,16 +436,16 @@ pretty_kv(k: str, v: any): str
     return sem_key(k:to(str)) .. dim(" " .. M.G_KV_SEP .. " ") .. pretty_val(v)
 end
 
--- ─── Contextual formatters ───────────────────────────────────────
+# ─── Contextual formatters ───────────────────────────────────────
 
 _to_hex(n: int): str
     digits = "0123456789abcdef"
     if n == 0 return "0" end
     result = ""
     while n > 0
-        d = math.floor(n % 16) + 1
+        d = n % 16:floor() + 1
         result = digits:sub(d, d) .. result
-        n = math.floor(n / 16)
+        n = n / 16:floor()
     end
     return result
 end
@@ -458,36 +458,36 @@ fmt_hex(value: any): str
         neg = true
         n = -n
     end
-    hex = _to_hex(math.floor(n))
+    hex = _to_hex(n:floor())
     if neg hex = "-" .. hex end
     return sem_hex("0x" .. hex)
 end
 
-fmt_size(bytes: any): str
+fmt_bytes: any:len(): str
     n = tonumber(bytes)
     if n == nil return bytes:to(str) end
     if n < 1024
-        return sem_size(n:to(str) .. "B")
+        return sem_n:to(str) .. "B":len()
     elseif n < 1048576
-        whole = math.floor(n / 1024)
-        frac = math.floor((n - whole * 1024) * 10 / 1024)
-        return sem_size(whole:to(str) .. "." .. frac:to(str) .. "KB")
+        whole = n / 1024:floor()
+        frac = (n - whole * 1024) * 10 / 1024:floor()
+        return sem_whole:to(str) .. "." .. frac:to(str) .. "KB":len()
     elseif n < 1073741824
-        whole = math.floor(n / 1048576)
-        frac = math.floor((n - whole * 1048576) * 10 / 1048576)
-        return sem_size(whole:to(str) .. "." .. frac:to(str) .. "MB")
+        whole = n / 1048576:floor()
+        frac = (n - whole * 1048576) * 10 / 1048576:floor()
+        return sem_whole:to(str) .. "." .. frac:to(str) .. "MB":len()
     else
-        whole = math.floor(n / 1073741824)
-        frac = math.floor((n - whole * 1073741824) * 10 / 1073741824)
-        return sem_size(whole:to(str) .. "." .. frac:to(str) .. "GB")
+        whole = n / 1073741824:floor()
+        frac = (n - whole * 1073741824) * 10 / 1073741824:floor()
+        return sem_whole:to(str) .. "." .. frac:to(str) .. "GB":len()
     end
 end
 
 fmt_pct(value: any): str
     n = tonumber(value)
     if n == nil return value:to(str) end
-    whole = math.floor(n)
-    frac = math.floor((n - whole) * 100 + 0.5)
+    whole = n:floor()
+    frac = (n - whole) * 100 + 0.5:floor()
     if frac >= 100 frac = 99 end
     frac_str = frac:to(str)
     if frac < 10 frac_str = "0" .. frac:to(str) end
@@ -517,7 +517,7 @@ fmt_path(path: str): str
     return sem_location(path:to(str))
 end
 
--- ─── Caller info ───────────────────────────────────────────────────
+# ─── Caller info ───────────────────────────────────────────────────
 caller(level: int): str
     info = debug.getinfo(level, "Snl")
     if info == nil return "" end
@@ -535,10 +535,10 @@ caller(level: int): str
     return sem_identity(name_part) .. dim(" " .. M.G_ARROW .. " ") .. sem_location(loc)
 end
 
--- ─── Timestamp ─────────────────────────────────────────────────────
+# ─── Timestamp ─────────────────────────────────────────────────────
 ts(): str
     secs = os.time()
-    ms = math.floor((os.clock() * 1000) % 1000)
+    ms = (os.clock() * 1000) % 1000:floor()
     frac = "." .. ms:to(str)
     if ms < 10 frac = ".00" .. ms:to(str)
     elseif ms < 100 frac = ".0" .. ms:to(str)
@@ -546,7 +546,7 @@ ts(): str
     return sem_meta(os.date("%H:%M:%S", secs) .. frac)
 end
 
--- ─── Level tag ─────────────────────────────────────────────────────
+# ─── Level tag ─────────────────────────────────────────────────────
 level_tag(level: int): str
     glyph = M.G_TRACE
     tag = "trace"
@@ -578,19 +578,19 @@ level_tag(level: int): str
     return body
 end
 
--- ─── Span indent ───────────────────────────────────────────────────
+# ─── Span indent ───────────────────────────────────────────────────
 span_indent(): str
-    n = rawlen(trace_spans)
+    n = trace_spans:len()
     if n <= 0 return "" end
-    rep = string.rep(M.G_PIPE .. " ", n)
+    rep = M.G_PIPE .. " ":rep(n)
     if rep == nil or rep == "" return "" end
     return dim(rep)
 end
 
--- ─── Duration formatting with speed coloring ──────────────────────
+# ─── Duration formatting with speed coloring ──────────────────────
 _fmt_dur(ms: float): str
-    whole = math.floor(ms)
-    frac = math.floor((ms - whole) * 100)
+    whole = ms:floor()
+    frac = (ms - whole) * 100:floor()
     frac_str = frac:to(str)
     if frac < 10 frac_str = "0" .. frac:to(str) end
     raw = whole:to(str) .. "." .. frac_str .. "ms"
@@ -603,36 +603,36 @@ _fmt_dur(ms: float): str
     end
 end
 
--- ─── Emit ──────────────────────────────────────────────────────────
+# ─── Emit ──────────────────────────────────────────────────────────
 emit(level: int, msg: str, fields: any, skip: int): void
     if level < trace_level return end
     parts = {}
-    parts[rawlen(parts) + 1] = level_tag(level)
+    parts[parts:len() + 1] = level_tag(level)
     if trace_show_ts
-        parts[rawlen(parts) + 1] = dim("[") .. ts() .. dim("]")
+        parts[parts:len() + 1] = dim("[") .. ts() .. dim("]")
     end
     if trace_show_caller
         c = caller(skip + 1)
         if c != ""
-            parts[rawlen(parts) + 1] = dim("(") .. c .. dim(")")
+            parts[parts:len() + 1] = dim("(") .. c .. dim(")")
         end
     end
-    parts[rawlen(parts) + 1] = span_indent()
+    parts[parts:len() + 1] = span_indent()
     if msg != nil and msg != ""
-        parts[rawlen(parts) + 1] = sem_payload(msg)
+        parts[parts:len() + 1] = sem_payload(msg)
     end
     if fields != nil and type(fields) == "table"
         for k, v in fields
-            parts[rawlen(parts) + 1] = pretty_kv(k, v)
+            parts[parts:len() + 1] = pretty_kv(k, v)
         end
     end
-    print(table.concat(parts, " "))
+    print(parts:concat(" "))
 end
 
--- ─── Public API ─────────────────────────────────────────────────
+# ─── Public API ─────────────────────────────────────────────────
 set_level(level: any): void
     if type(level) == "string"
-        v = M.level_value[string.lower(level)]
+        v = M.level_value[level:lower()]
         if v != nil
             trace_level = v
         end
@@ -685,44 +685,44 @@ fatal(msg: str, fields: any): void
     emit(M.LV_FATAL, msg, fields, 2)
 end
 
--- ─── Spans ────────────────────────────────────────────────────────
+# ─── Spans ────────────────────────────────────────────────────────
 span(name: str, fields: any): any
     h = {
         name = name or "span",
         start = os.clock(),
-        depth = rawlen(trace_spans) + 1,
+        depth = trace_spans:len() + 1,
     }
-    trace_spans[rawlen(trace_spans) + 1] = h
-    ind = dim(string.rep(M.G_PIPE .. " ", h.depth - 1))
+    trace_spans[trace_spans:len() + 1] = h
+    ind = dim(M.G_PIPE .. " ":rep(h.depth - 1))
     parts = {}
-    parts[rawlen(parts) + 1] = magenta(M.G_SPAN_BEGIN)
-    parts[rawlen(parts) + 1] = sem_identity(name or "span")
-    parts[rawlen(parts) + 1] = dim(M.G_ARROW)
+    parts[parts:len() + 1] = magenta(M.G_SPAN_BEGIN)
+    parts[parts:len() + 1] = sem_identity(name or "span")
+    parts[parts:len() + 1] = dim(M.G_ARROW)
     if trace_show_ts
-        parts[rawlen(parts) + 1] = dim("[") .. ts() .. dim("]")
+        parts[parts:len() + 1] = dim("[") .. ts() .. dim("]")
     end
     if trace_show_caller
         c = caller(2)
         if c != ""
-            parts[rawlen(parts) + 1] .. dim("(") .. c .. dim(")")
+            parts[parts:len() + 1] .. dim("(") .. c .. dim(")")
         end
     end
-    parts[rawlen(parts) + 1] = ind
+    parts[parts:len() + 1] = ind
     if fields != nil and type(fields) == "table"
         for k, v in fields
-            parts[rawlen(parts) + 1] = pretty_kv(k, v)
+            parts[parts:len() + 1] = pretty_kv(k, v)
         end
     end
-    print(table.concat(parts, " "))
+    print(parts:concat(" "))
     return h
 end
 
 span_end(h: any, fields: any): void
     if h == nil return end
-    n = rawlen(trace_spans)
+    n = trace_spans:len()
     while n > 0
         if trace_spans[n] == h
-            table.remove(trace_spans, n)
+            trace_spans:remove(n)
             break
         end
         n -= 1
@@ -730,22 +730,22 @@ span_end(h: any, fields: any): void
     dur_s = os.clock() - h.start
     dur_ms = dur_s * 1000
     dur_str = _fmt_dur(dur_ms)
-    ind = dim(string.rep(M.G_PIPE .. " ", (h.depth - 1)))
+    ind = dim(M.G_PIPE .. " ":rep((h.depth - 1)))
     parts = {}
-    parts[rawlen(parts) + 1] = magenta(M.G_SPAN_END)
-    parts[rawlen(parts) + 1] = italic(h.name)
-    parts[rawlen(parts) + 1] = dim(M.G_DUR)
-    parts[rawlen(parts) + 1] = dur_str
-    parts[rawlen(parts) + 1] = ind
+    parts[parts:len() + 1] = magenta(M.G_SPAN_END)
+    parts[parts:len() + 1] = italic(h.name)
+    parts[parts:len() + 1] = dim(M.G_DUR)
+    parts[parts:len() + 1] = dur_str
+    parts[parts:len() + 1] = ind
     if fields != nil and type(fields) == "table"
         for k, v in fields
-            parts[rawlen(parts) + 1] = pretty_kv(k, v)
+            parts[parts:len() + 1] = pretty_kv(k, v)
         end
     end
-    print(table.concat(parts, " "))
+    print(parts:concat(" "))
 end
 
--- ─── Assertion / check helpers ────────────────────────────────────
+# ─── Assertion / check helpers ────────────────────────────────────
 
 assert_ok(condition: bool, msg: str): void
     if condition
@@ -760,16 +760,16 @@ assert_eq(actual: any, expected: any, msg: str): void
         print(sem_success(M.G_CHECK .. " " .. to(str)(msg or "eq")))
     else
         parts = {}
-        parts[rawlen(parts) + 1] = sem_failure(M.G_CROSS_MARK .. " " .. to(str)(msg or "eq"))
-        parts[rawlen(parts) + 1] = dim("expected")
-        parts[rawlen(parts) + 1] = sem_changed_new(pretty_val(expected))
-        parts[rawlen(parts) + 1] = dim("got")
-        parts[rawlen(parts) + 1] = sem_changed_old(pretty_val(actual))
-        print(table.concat(parts, " "))
+        parts[parts:len() + 1] = sem_failure(M.G_CROSS_MARK .. " " .. to(str)(msg or "eq"))
+        parts[parts:len() + 1] = dim("expected")
+        parts[parts:len() + 1] = sem_changed_new(pretty_val(expected))
+        parts[parts:len() + 1] = dim("got")
+        parts[parts:len() + 1] = sem_changed_old(pretty_val(actual))
+        print(parts:concat(" "))
     end
 end
 
--- ─── Structured diff ──────────────────────────────────────────────
+# ─── Structured diff ──────────────────────────────────────────────
 
 diff_line(kind: str, key: str, old_val: any, new_val: any): str
     prefix = ""
@@ -794,94 +794,94 @@ end
 
 print_diff(label: str, diffs: any): void
     if label == nil label = "diff" end
-    n = rawlen(diffs)
+    n = diffs:len()
     if n == 0
         print(sem_success(M.G_CHECK .. " " .. bold(label) .. " " .. dim("— no differences")))
         return
     end
     print(sem_diff_hunk(M.BOX_TL .. M.G_DIAMOND .. " " .. bold(label) ..
-          " " .. dim(M.G_DASH) .. dim(string.rep(M.G_DASH, 38))))
+          " " .. dim(M.G_DASH) .. dim(M.G_DASH:rep(38))))
     i = 1
     while i <= n
         d = diffs[i]
         print(M.BOX_V .. " " .. diff_line(d.kind, d.path, d.old, d.new))
         i += 1
     end
-    print(dim(M.BOX_BL .. string.rep(M.G_DASH, 50)))
+    print(dim(M.BOX_BL .. M.G_DASH:rep(50)))
     print(dim("  " .. n:to(str) .. " difference(s)"))
 end
 
--- ─── Checkpoint / milestone markers ───────────────────────────────
+# ─── Checkpoint / milestone markers ───────────────────────────────
 
 checkpoint(label: str): void
     ind = span_indent()
     parts = {}
-    parts[rawlen(parts) + 1] = ind
-    parts[rawlen(parts) + 1] = sem_constant(M.G_SNAPSHOT)
-    parts[rawlen(parts) + 1] = sem_payload(to(str)(label or "checkpoint"))
+    parts[parts:len() + 1] = ind
+    parts[parts:len() + 1] = sem_constant(M.G_SNAPSHOT)
+    parts[parts:len() + 1] = sem_payload(to(str)(label or "checkpoint"))
     if trace_show_ts
-        parts[rawlen(parts) + 1] = dim("[") .. ts() .. dim("]")
+        parts[parts:len() + 1] = dim("[") .. ts() .. dim("]")
     end
     if trace_show_caller
         c = caller(2)
         if c != ""
-            parts[rawlen(parts) + 1] = dim("(") .. c .. dim(")")
+            parts[parts:len() + 1] = dim("(") .. c .. dim(")")
         end
     end
-    print(table.concat(parts, " "))
+    print(parts:concat(" "))
 end
 
 milestone(label: str, value: any): void
     ind = span_indent()
     parts = {}
-    parts[rawlen(parts) + 1] = ind
-    parts[rawlen(parts) + 1] = sem_constant(M.G_STAR)
-    parts[rawlen(parts) + 1] = sem_identity(to(str)(label or "milestone"))
+    parts[parts:len() + 1] = ind
+    parts[parts:len() + 1] = sem_constant(M.G_STAR)
+    parts[parts:len() + 1] = sem_identity(to(str)(label or "milestone"))
     if value != nil
-        parts[rawlen(parts) + 1] = dim(M.G_ARROW)
-        parts[rawlen(parts) + 1] = pretty_val(value)
+        parts[parts:len() + 1] = dim(M.G_ARROW)
+        parts[parts:len() + 1] = pretty_val(value)
     end
     if trace_show_ts
-        parts[rawlen(parts) + 1] = dim("[") .. ts() .. dim("]")
+        parts[parts:len() + 1] = dim("[") .. ts() .. dim("]")
     end
-    print(table.concat(parts, " "))
+    print(parts:concat(" "))
 end
 
--- ─── Variable watch ───────────────────────────────────────────────
+# ─── Variable watch ───────────────────────────────────────────────
 
 watch(name: str, value: any): void
     ind = span_indent()
     parts = {}
-    parts[rawlen(parts) + 1] = ind
-    parts[rawlen(parts) + 1] = dim(M.G_SEED)
-    parts[rawlen(parts) + 1] = sem_key(name:to(str))
-    parts[rawlen(parts) + 1] = dim("→")
-    parts[rawlen(parts) + 1] = pretty_val(value)
+    parts[parts:len() + 1] = ind
+    parts[parts:len() + 1] = dim(M.G_SEED)
+    parts[parts:len() + 1] = sem_key(name:to(str))
+    parts[parts:len() + 1] = dim("→")
+    parts[parts:len() + 1] = pretty_val(value)
     if trace_show_ts
-        parts[rawlen(parts) + 1] = dim("[") .. ts() .. dim("]")
+        parts[parts:len() + 1] = dim("[") .. ts() .. dim("]")
     end
-    print(table.concat(parts, " "))
+    print(parts:concat(" "))
 end
 
--- ─── Event timeline entry ────────────────────────────────────────
+# ─── Event timeline entry ────────────────────────────────────────
 
 event(name: str, fields: any): void
     ind = span_indent()
     parts = {}
-    parts[rawlen(parts) + 1] = ind
-    parts[rawlen(parts) + 1] = sem_type(M.G_PROPEL .. " " .. name:to(str))
+    parts[parts:len() + 1] = ind
+    parts[parts:len() + 1] = sem_type(M.G_PROPEL .. " " .. name:to(str))
     if fields != nil and type(fields) == "table"
         for k, v in fields
-            parts[rawlen(parts) + 1] = pretty_kv(k, v)
+            parts[parts:len() + 1] = pretty_kv(k, v)
         end
     end
     if trace_show_ts
-        parts[rawlen(parts) + 1] = dim("[") .. ts() .. dim("]")
+        parts[parts:len() + 1] = dim("[") .. ts() .. dim("]")
     end
-    print(table.concat(parts, " "))
+    print(parts:concat(" "))
 end
 
--- ─── Section / divider helpers ────────────────────────────────────
+# ─── Section / divider helpers ────────────────────────────────────
 
 banner(title: str, subtitle: str): void
     if title == nil title = "trace" end
@@ -890,12 +890,12 @@ banner(title: str, subtitle: str): void
         title_len = #title
         pad = w - title_len - 4
         if pad < 2 pad = 2 end
-        print(sem_banner_line(M.BOX_TL .. string.rep(M.BOX_H, 2) .. " " .. title .. " " ..
-              string.rep(M.BOX_H, pad) .. M.BOX_TR))
+        print(sem_banner_line(M.BOX_TL .. M.BOX_H:rep(2) .. " " .. title .. " " ..
+              M.BOX_H:rep(pad) .. M.BOX_TR))
         if subtitle != nil and subtitle != ""
-            print(dim(M.BOX_V .. "  " .. subtitle .. string.rep(" ", w - 2 - #subtitle) .. M.BOX_V))
+            print(dim(M.BOX_V .. "  " .. subtitle .. " ":rep(w - 2 - #subtitle) .. M.BOX_V))
         end
-        print(dim(M.BOX_BL .. string.rep(M.BOX_H, w) .. M.BOX_BR))
+        print(dim(M.BOX_BL .. M.BOX_H:rep(w) .. M.BOX_BR))
     else
         print("=== " .. title .. " ===")
         if subtitle != nil and subtitle != ""
@@ -905,11 +905,11 @@ banner(title: str, subtitle: str): void
 end
 
 divider(): void
-    print(span_indent() .. dim(string.rep(M.BOX_H, 60)))
+    print(span_indent() .. dim(M.BOX_H:rep(60)))
 end
 
 double_divider(): void
-    print(span_indent() .. dim(string.rep("═", 60)))
+    print(span_indent() .. dim("═":rep(60)))
 end
 
 section(title: str): void
@@ -919,10 +919,10 @@ section(title: str): void
     pad = w - title_len - 3
     if pad < 2 pad = 2 end
     print(ind .. dim(" ") .. sem_banner_line(M.G_DIAMOND .. " " .. title) ..
-          dim(" " .. string.rep(M.BOX_H, pad)))
+          dim(" " .. M.BOX_H:rep(pad)))
 end
 
--- ─── Legend ───────────────────────────────────────────────────────
+# ─── Legend ───────────────────────────────────────────────────────
 
 legend(): void
     print(bold(italic("trace legend:")))
@@ -951,7 +951,7 @@ legend(): void
           sem_failure("failure") .. "    " ..
           sem_caution("caution") .. "    " ..
           sem_hex("0xDEAD") .. " hex    " ..
-          sem_size("1.2MB") .. " size    " ..
+          sem_"1.2MB":len() .. " size    " ..
           sem_percent("87.5%") .. " percent")
     print("")
     print("  " .. sem_time_fast("<1ms") .. " fast    " ..
@@ -968,11 +968,11 @@ legend(): void
           sem_function_val("⟪fn⟫"))
 end
 
--- ─── Recursive pretty printer for dump() ───────────────────────────
+# ─── Recursive pretty printer for dump() ───────────────────────────
 _seen(seen: any, value: any): bool
     if seen == nil return false end
     i = 1
-    n = rawlen(seen)
+    n = seen:len()
     while i <= n
         if seen[i] == value return true end
         i += 1
@@ -981,7 +981,7 @@ _seen(seen: any, value: any): bool
 end
 
 _seen_add(seen: any, value: any): void
-    seen[rawlen(seen) + 1] = value
+    seen[seen:len() + 1] = value
 end
 
 pretty_repr(value: any, depth: int, seen: any): str
@@ -1002,28 +1002,28 @@ pretty_repr(value: any, depth: int, seen: any): str
     end
     if _seen(seen, value) return "<circular>" end
     _seen_add(seen, value)
-    n = rawlen(value)
+    n = value:len()
     parts = {}
     if n > 0
         i = 1
         while i <= n
-            parts[rawlen(parts) + 1] = string.rep("  ", depth + 1) ..
+            parts[parts:len() + 1] = "  ":rep(depth + 1) ..
                 pretty_repr(value[i], depth + 1, seen)
             i += 1
         end
-        if rawlen(parts) <= 3
-            return "[" .. table.concat(parts, ", ") .. "]"
+        if parts:len() <= 3
+            return "[" .. parts:concat(", ") .. "]"
         end
-        return "[\n" .. table.concat(parts, ",\n") .. "\n" ..
-            string.rep("  ", depth) .. "]"
+        return "[\n" .. parts:concat(",\n") .. "\n" ..
+            "  ":rep(depth) .. "]"
     end
     for k, v in value
-        parts[rawlen(parts) + 1] = string.rep("  ", depth + 1) ..
+        parts[parts:len() + 1] = "  ":rep(depth + 1) ..
             k:to(str) .. " = " .. pretty_repr(v, depth + 1, seen)
     end
-    if rawlen(parts) == 0 return "{}" end
-    return "{\n" .. table.concat(parts, "\n") .. "\n" ..
-        string.rep("  ", depth) .. "}"
+    if parts:len() == 0 return "{}" end
+    return "{\n" .. parts:concat("\n") .. "\n" ..
+        "  ":rep(depth) .. "}"
 end
 
 dump(label: str, value: any): void
@@ -1057,7 +1057,7 @@ dump(label: str, value: any): void
     end
 end
 
--- ─── Compact value table ──────────────────────────────────────────
+# ─── Compact value table ──────────────────────────────────────────
 
 table_print(label: str, t: any): void
     if t == nil or type(t) != "table"
@@ -1065,7 +1065,7 @@ table_print(label: str, t: any): void
         return
     end
     ind = span_indent()
-    n = rawlen(t)
+    n = t:len()
     if n > 0
         print(ind .. bold(label) .. dim(" [" .. n:to(str) .. " items]"))
         i = 1
@@ -1083,7 +1083,7 @@ table_print(label: str, t: any): void
     end
 end
 
--- ─── Exports ──────────────────────────────────────────────────────
+# ─── Exports ──────────────────────────────────────────────────────
 M.set_level = set_level
 M.get_level = get_level
 M.show_caller = show_caller

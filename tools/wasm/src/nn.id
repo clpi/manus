@@ -1,2 +1,2 @@
-M = req "src.nn.init"
+M = init
 M

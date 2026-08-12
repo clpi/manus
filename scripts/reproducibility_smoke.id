@@ -1,10 +1,10 @@
--- Pass 11 WP-13: build the compiler twice and compare ReleaseFast binary hashes.
---
--- Duo replacement for scripts/reproducibility_smoke.sh (monoglot census).
---
--- The property under test is that a CLEAN rebuild is byte-identical, so each
--- build deletes zig-out first. That is also why this is slow and not on the
--- tier-0 path: it pays for two full ReleaseFast builds.
+# Pass 11 WP-13: build the compiler twice and compare ReleaseFast binary hashes.
+#
+# Duo replacement for scripts/reproducibility_smoke.sh (monoglot census).
+#
+# The property under test is that a CLEAN rebuild is byte-identical, so each
+# build deletes zig-out first. That is also why this is slow and !on the
+# tier-0 path: it pays for two full ReleaseFast builds.
 
 _zig(): str
     z = std.script.getenv_or("ZIG")
@@ -18,18 +18,18 @@ _opt(): str
     o
 end
 
--- One clean build; returns the binary's sha256, or "" if the build failed.
--- A missing hash must not read as "hashes differ" -- that would report a
--- reproducibility failure for what is actually a broken build.
+# One clean build; returns the binary's sha256, or "" if the build failed.
+# A missing hash must not read as "hashes differ" # that would report a
+# reproducibility failure for what is actually a broken build.
 _build_once(zig: str, opt: str): str
     std.script.run("rm -rf zig-out")
     if std.script.run(zig .. " build -Doptimize=" .. opt) != 0
         return ""
     end
-    std.script.chomp(std.script.capture("shasum -a 256 zig-out/bin/duo | awk '{print $1}'"))
+    std.script.chomp(std.script.capture("shasum -a 256 zig-out/bin/idol | awk '{print $1}'"))
 end
 
-main = (): i64
+main: i64 = ()
     zig = _zig()
     opt = _opt()
     ver = std.script.chomp(std.script.capture(zig .. " version"))

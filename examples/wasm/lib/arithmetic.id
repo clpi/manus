@@ -1,4 +1,4 @@
--- Typed arithmetic exports for WAST testing.
+# Typed arithmetic exports for WAST testing.
 
 @export
 add(a: int, b: int): int

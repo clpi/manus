@@ -1,0 +1,510 @@
+# gates/path — LAW-ONE path/name migration preflight. NOT semantic authority.
+#
+# Classification: temporary migration approximation for path stems and separators.
+# Production authority approximated: filename law in docs/spec/source.md and
+# GAP-124 graph obligations for source-line semantics.
+# Deletion gate: GAP-124 closes graph-backed canonicality on staged diffs.
+#
+# Gate transport: Idol only — stdin via stdin:read(). No os.args, no --backend=c.
+#   idol run gates/path.id < idolgate-body.txt
+
+transport: str = ()
+    text = stdin:read()
+    if text:len() == 0
+        return ""
+    text
+
+alpha: bool = (c: str)
+    c >= "a" and c <= "z"
+
+upper: bool = (c: str)
+    c >= "A" and c <= "Z"
+
+digit: bool = (c: str)
+    c >= "0" and c <= "9"
+
+glyph: bool = (c: str)
+    alpha(c) or upper(c) or digit(c) or c == "_"
+
+atom: bool = (code: str, sought: str)
+    n = code:len()
+    m = sought:len()
+    i = 1
+    while i + m - 1 <= n
+        if code:sub(i, i + m - 1) == sought
+            before = ""
+            after = ""
+            if i > 1
+                before = code:sub(i - 1, i - 1)
+            if i + m <= n
+                after = code:sub(i + m, i + m)
+            if (before == "" or !glyph(before)) and (after == "" or !glyph(after))
+                return true
+        i += 1
+    false
+
+has: bool = (hay: str, needle: str)
+    n = hay:len()
+    m = needle:len()
+    if m == 0
+        return false
+    i = 1
+    while i + m - 1 <= n
+        if hay:sub(i, i + m - 1) == needle
+            return true
+        i += 1
+    false
+
+words = " graph lexer parser compiler token scope world demand relation semantic native backend read line old thing layout home origin law stage role value witness place realize machine emit target bind host profile rewrite fmt check trace proof schema cursor thread sync time random hash crypto net path bytes str text json io mem heap bit flag table vector meta script build config foreign wasm os process signal id idol gap agent bench engine opcode decode run tool orient doctor manifest ledger census gate smoke audit highlight capability idiom module surface correctness embed hygiene repro init spec corpus constitution authority bootstrap tooling performance contributing alignment integration readme examples scripts tools lib src gaps tests benchmarks docs agents cursor rules hooks lower codegen sema ast term transaction snapshot reach layout compound name proof fixture benchmark generated migration cache legacy compat foreign history numeric version taxonomy ambient fold mkdir remove bitcast worldreach convert symbol record benchmark suffix array back end write file dir view edges quick fstest iotest cmplx ascii adler subtle strbuilder tabwriter scanner template jpeg png gif flate gzip zlib lzw crc fnv sha hmac rand split join concat format emit lower codegen parse symbol scope compress encode decode image color database sql encoding testing grammar classify role classify wasm wasi jit simd memory stack value engine probe derived verify perf hash ledger claim debt embed zig shc ftcftw perf js c census dig full vscode emit project materialization priority chained comparison capability scan temp body base diff list name track tree scratch quote zero staged range worktree "
+
+known: bool = (word: str)
+    m = word:len()
+    if m < 2
+        return false
+    needle = " {word} "
+    hay = words
+    n = hay:len()
+    k = needle:len()
+    i = 1
+    while i + k - 1 <= n
+        if hay:sub(i, i + k - 1) == needle
+            return true
+        i += 1
+    false
+
+seed: bool = ()
+    # Static vocabulary only. Dynamic git-derived stems belong in build-world
+    # preparation piped through stdin, not io.popen inside this gate.
+    true
+
+foreign: bool = (path: str)
+    path:len() >= 4 and path:sub(1, 4) == "ext/"
+
+historical: bool = (path: str)
+    path:len() >= 9 and path:sub(1, 9) == "examples/"
+    or path:len() >= 12 and path:sub(1, 12) == "benchmarks/"
+    or path:len() >= 5 and path:sub(1, 5) == ".duo/"
+    or path:len() >= 7 and path:sub(1, 7) == "vendor/"
+
+owned: bool = (path: str)
+    !foreign(path) and !historical(path)
+
+leaf: str = (path: str)
+    slash = 0
+    i = path:len()
+    while i >= 1
+        if path:sub(i, i) == "/"
+            slash = i
+            break
+        i -= 1
+    base = path
+    if slash > 0
+        base = path:sub(slash + 1, path:len())
+    dot = 0
+    i = base:len()
+    while i >= 1
+        if base:sub(i, i) == "."
+            dot = i
+            break
+        i -= 1
+    if dot <= 1
+        base
+    else
+        base:sub(1, dot - 1)
+
+sep: bool = (name: str)
+    n = name:len()
+    i = 1
+    while i <= n
+        c = name:sub(i, i)
+        if c == "_" or c == "-" or upper(c)
+            return true
+        i += 1
+    false
+
+# numeric suffix taxonomy on a path word. Subject-first: name:tail().
+tail: bool = (name: str)
+    n = name:len()
+    if n < 2
+        return false
+    if !digit(name:sub(n, n))
+        return false
+    i = n - 1
+    while i >= 1 and digit(name:sub(i, i))
+        i -= 1
+    i == 0 or alpha(name:sub(i, i)) or name:sub(i, i) == "_"
+
+mash: bool = (name: str)
+    if known(name)
+        return false
+    n = name:len()
+    if n >= 5 and name:sub(n - 4, n) == "proof"
+        left = name:sub(1, n - 5)
+        if left:len() >= 2 and known(left)
+            return true
+    if n < 4
+        return false
+    i = 2
+    while i <= n - 1
+        left = name:sub(1, i - 1)
+        right = name:sub(i, n)
+        if left:len() >= 2 and right:len() >= 2 and known(left) and known(right)
+            return true
+        i += 1
+    false
+
+verdict: i64 = (where: str, name: str)
+    hits = 0
+    if name:len() == 0
+        return 0
+    if sep(name)
+        print("{where}  [law.path.name]  snake_case or separator `{name}` — one lowercase word per path component; use home hierarchy")
+        hits += 1
+    if name:tail()
+        print("{where}  [law.path.name]  numeric taxonomy `{name}` — version is provenance")
+        hits += 1
+    if mash(name)
+        print("{where}  [PATH-SEMANTICS-BLOCKED]  mashed compound `{name}` — decompose the owner")
+        hits += 1
+    hits
+
+walk: i64 = (path: str)
+    if !owned(path)
+        return 0
+    hits = verdict(path, leaf(path))
+    part = ""
+    n = path:len()
+    i = 1
+    while i <= n
+        c = path:sub(i, i)
+        if c == "/"
+            if part:len() > 0 and part:sub(1, 1) != "."
+                hits += verdict("{path}:", part)
+            part = ""
+        else
+            part = "{part}{c}"
+        i += 1
+    if part:len() > 0 and part:sub(1, 1) != "." and part != leaf(path)
+        hits += verdict("{path}:", part)
+    hits
+
+peel: str = (line: str)
+    out = ""
+    n = line:len()
+    quote = ""
+    i = 1
+    while i <= n
+        c = line:sub(i, i)
+        if quote == ""
+            if c == "#"
+                return out
+            if c == "\"" or c == "'"
+                quote = c
+                out = "{out} "
+            else
+                out = "{out}{c}"
+        else
+            if c == quote
+                quote = ""
+            out = "{out} "
+        i += 1
+    out
+
+dash: bool = (code: str)
+    n = code:len()
+    quote = ""
+    i = 1
+    while i <= n
+        c = code:sub(i, i)
+        if quote == ""
+            if c == "#"
+                return false
+            if c == "\"" or c == "'"
+                quote = c
+            else
+                if c == "-" and i < n and code:sub(i + 1, i + 1) == "-"
+                    if i + 2 <= n and code:sub(i + 2, i + 2) == "-"
+                        i += 1
+                    else
+                        before = ""
+                        if i > 1
+                            before = code:sub(i - 1, i - 1)
+                        if before == "" or before == " " or before == "\t"
+                            return true
+        else
+            if c == quote
+                quote = ""
+        i += 1
+    false
+
+wide: bool = (code: str)
+    n = code:len()
+    i = 1
+    while i <= n
+        if code:sub(i, i) == "="
+            left = ""
+            j = i - 1
+            while j >= 1 and (code:sub(j, j) == " " or code:sub(j, j) == "\t")
+                j -= 1
+            endpos = j
+            while j >= 1 and glyph(code:sub(j, j))
+                j -= 1
+            if endpos >= j + 1
+                left = code:sub(j + 1, endpos)
+            k = i + 1
+            while k <= n and (code:sub(k, k) == " " or code:sub(k, k) == "\t")
+                k += 1
+            start = k
+            while k <= n and glyph(code:sub(k, k))
+                k += 1
+            if k > start
+                right = code:sub(start, k - 1)
+                if left != "" and left == right
+                    while k <= n and (code:sub(k, k) == " " or code:sub(k, k) == "\t")
+                        k += 1
+                    if k <= n
+                        op = code:sub(k, k)
+                        if op == "+" or op == "-" or op == "*" or op == "/"
+                            return true
+        i += 1
+    false
+
+judge: i64 = (path: str, no: i64, line: str)
+    code = peel(line)
+    hits = 0
+    if wide(code)
+        print("{path}:{no}  [law.update.face]  place += value — use += -= *= /=; never place = place op value")
+        hits += 1
+    n = code:len()
+    i = 1
+    while i <= n
+        c = code:sub(i, i)
+        if glyph(c)
+            start = i
+            while i <= n and glyph(code:sub(i, i))
+                i += 1
+            token = code:sub(start, i - 1)
+            if token:len() >= 2
+                hits += verdict("{path}:{no}", token)
+        else
+            i += 1
+    hits
+
+num: i64 = (s: str, i: i64)
+    v = 0
+    n = s:len()
+    j = i
+    while j <= n and s:sub(j, j) >= "0" and s:sub(j, j) <= "9"
+        v *= 10
+        v += (s:sub(j, j):byte() - 48)
+        j += 1
+    v
+
+head: bool = (line: str)
+    line:len() >= 6 and line:sub(1, 6) == "+++ b/"
+
+list: i64 = (body: str)
+    hits = 0
+    line = ""
+    n = body:len()
+    i = 1
+    while i <= n + 1
+        c = "\n"
+        if i <= n
+            c = body:sub(i, i)
+        if c == "\n"
+            if line:len() > 0
+                hits += walk(line)
+            line = ""
+        else
+            line = "{line}{c}"
+        i += 1
+    hits
+
+diff: i64 = (body: str)
+    hits = 0
+    path = ""
+    no = 0
+    line = ""
+    n = body:len()
+    i = 1
+    while i <= n + 1
+        c = "\n"
+        if i <= n
+            c = body:sub(i, i)
+        if c == "\n"
+            if head(line)
+                path = line:sub(7, line:len())
+                no = 0
+            else
+                if line:len() > 2 and line:sub(1, 2) == "@@"
+                    p = 1
+                    m = line:len()
+                    while p <= m and line:sub(p, p) != "+"
+                        p += 1
+                    no = num(line, p + 1)
+                else
+                    if line:len() > 0 and line:sub(1, 1) == "+" and path != ""
+                        hits += judge(path, no, line:sub(2, line:len()))
+                        no += 1
+            line = ""
+        else
+            line = "{line}{c}"
+        i += 1
+    hits
+
+tree: i64 = (body: str)
+    if body:len() == 0
+        print("gates/path: empty tree listing on stdin")
+        return 3
+    hits = list(body)
+    print("gates/path: {hits} finding(s) on tracked project paths  [tree: pass]")
+    hits
+
+# Decode IDOLGATE section protocol from input body.
+feed: i64 = (body: str)
+    m = ""
+    a = ""
+    b = ""
+    slot = ""
+    line = ""
+    n = body:len()
+    i = 1
+    while i <= n + 1
+        boundary = false
+        if i > n
+            boundary = true
+        else
+            if body:byte(i) == 10
+                boundary = true
+        if boundary
+            if line == "IDOLGATE tree"
+                m = "tree"
+                slot = "tree"
+            else
+                if line == "IDOLGATE staged"
+                    m = "staged"
+                    slot = "pathlist"
+                else
+                    if line == "IDOLGATE namediff"
+                        slot = "namediff"
+                    else
+                        if line == "IDOLGATE end"
+                            slot = "done"
+                        else
+                            if slot == "tree"
+                                if a:len() > 0
+                                    a = "{a}\n"
+                                a = "{a}{line}"
+                            else
+                                if slot == "pathlist"
+                                    if a:len() > 0
+                                        a = "{a}\n"
+                                    a = "{a}{line}"
+                                else
+                                    if slot == "namediff"
+                                        if b:len() > 0
+                                            b = "{b}\n"
+                                        b = "{b}{line}"
+            line = ""
+        else
+            c = body:sub(i, i)
+            line = "{line}{c}"
+        i += 1
+    if m == ""
+        return 3
+    if m == "tree"
+        return tree(a)
+    total = 0
+    if a:len() > 0
+        total += list(a)
+    if b:len() > 0
+        total += diff(b)
+    print("gates/path: {total} finding(s) on staged names  [control: pass]")
+    if total > 0
+        return 1
+    0
+
+control: bool = ()
+    ok = true
+    if verdict("graph.id", "graph") != 0
+        print("control FAIL: graph.id rejected")
+        ok = false
+    if verdict("semantic_graph.id", "semantic_graph") == 0
+        print("control FAIL: semantic_graph")
+        ok = false
+    if verdict("semanticGraph.id", "semanticGraph") == 0
+        print("control FAIL: semanticGraph")
+        ok = false
+    if verdict("semantic-graph.id", "semantic-graph") == 0
+        print("control FAIL: semantic-graph")
+        ok = false
+    if verdict("semanticgraph.id", "semanticgraph") == 0
+        print("control FAIL: semanticgraph")
+        ok = false
+    if verdict("readline.id", "readline") == 0
+        print("control FAIL: readline")
+        ok = false
+    if verdict("lib/std/index/suffix/array.id", "array") != 0
+        print("control FAIL: decomposed suffix/array path rejected")
+        ok = false
+    if walk("lib/std/index/suffixarray.id") == 0
+        print("control FAIL: suffixarray compound path not rejected")
+        ok = false
+    if verdict("nativebackend.zig", "nativebackend") == 0
+        print("control FAIL: nativebackend")
+        ok = false
+    if verdict("graph2.id", "graph2") == 0
+        print("control FAIL: graph2")
+        ok = false
+    if judge("probe.id", 1, "answer = nativebackend") == 0
+        print("control FAIL: line compound detector")
+        ok = false
+    if judge("probe.id", 2, "answer = graph") != 0
+        print("control FAIL: graph token rejected")
+        ok = false
+    if judge("probe.id", 7, "hits = hits + 1") == 0
+        print("control FAIL: expanded add not rejected")
+        ok = false
+    if judge("probe.id", 8, "hits += 1") != 0
+        print("control FAIL: compound add rejected")
+        ok = false
+    if judge("probe.id", 9, "n = n - 1") == 0
+        print("control FAIL: expanded subtract not rejected")
+        ok = false
+    if judge("probe.id", 10, "n -= 1") != 0
+        print("control FAIL: compound subtract rejected")
+        ok = false
+    if judge("probe.id", 11, "viewedges = \"|bit|\"") == 0
+        print("control FAIL: viewedges mash not rejected")
+        ok = false
+    if judge("probe.id", 12, "view(edges) = ()") != 0
+        print("control FAIL: view(edges) curried binding rejected")
+        ok = false
+    if judge("probe.id", 11, "x = x * 2") == 0
+        print("control FAIL: expanded multiply not rejected")
+        ok = false
+    if judge("probe.id", 12, "x *= 2") != 0
+        print("control FAIL: compound multiply rejected")
+        ok = false
+    if judge("probe.id", 13, "y = y / 2") == 0
+        print("control FAIL: expanded divide not rejected")
+        ok = false
+    if judge("probe.id", 14, "y /= 2") != 0
+        print("control FAIL: compound divide rejected")
+        ok = false
+    ok
+
+main: i64 = ()
+    if !seed()
+        print("gates/path: vocabulary load failed")
+        return 3
+    if !control()
+        print("gates/path: POSITIVE CONTROL FAILED")
+        return 3
+    body = transport()
+    if body:len() == 0
+        print("gates/path: empty input — pipe IDOLGATE sections")
+        print("  { printf 'IDOLGATE tree\\n'; git ls-files; printf '\\nIDOLGATE end\\n'; } | idol run gates/path.id")
+        return 3
+    feed(body)

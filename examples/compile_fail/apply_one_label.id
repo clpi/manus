@@ -1,26 +1,26 @@
--- APPLY-ONE, the NEGATIVE twin of `examples/apply_one_descriptor_proof.id`.
--- c0 §43 `law.brace` row 1, §44 `apply.carries`. gap[092].
---
--- WHY THIS TWIN EXISTS, and why the neither-case twin does not cover it.
--- `apply_one_neither.id` pins the third outcome: a subject in NEITHER home.
--- This pins the first outcome REFUSING — the subject resolves, it is a
--- descriptor, and the pack hands it a label it has no field for.
---
--- That distinction is the whole benefit of resolving the subject instead of
--- calling it, and without this row the resolution could regress into a silent
--- success. Before gap[092], `point{ x = 1.0, z = 2.0 }` was an application of a
--- name nothing declared, and if the emitter had merely been taught to build a
--- table, `z` would have become a table KEY: no diagnostic, a `point` with a
--- field the descriptor never declared, and `q.z` reading it back. A construction
--- that accepts any label is not construction, it is a table with a name on it.
---
--- MEASURED 2026-08-09:
---
---     error: descriptor 'point' has no field 'z', so the applied pack carries
---            a label the subject cannot receive
---
--- Pinned on the substring `has no field` plus the label `z`, so rewording the
--- sentence does not move the fixture.
+# APPLY-ONE, the NEGATIVE twin of `examples/apply_one_descriptor_proof.id`.
+# c0 §43 `law.brace` row 1, §44 `apply.carries`. gap[092].
+#
+# WHY THIS TWIN EXISTS, and why the neither-case twin does not cover it.
+# `apply_one_neither.id` pins the third outcome: a subject in NEITHER home.
+# This pins the first outcome REFUSING — the subject resolves, it is a
+# descriptor, and the pack hands it a label it has no field for.
+#
+# That distinction is the whole benefit of resolving the subject instead of
+# calling it, and without this row the resolution could regress into a silent
+# success. Before gap[092], `point{ x = 1.0, z = 2.0 }` was an application of a
+# name nothing declared, and if the emitter had merely been taught to build a
+# table, `z` would have become a table KEY: no diagnostic, a `point` with a
+# field the descriptor never declared, and `q.z` reading it back. A construction
+# that accepts any label is not construction, it is a table with a name on it.
+#
+# MEASURED 2026-08-09:
+#
+#     error: descriptor 'point' has no field 'z', so the applied pack carries
+#            a label the subject cannot receive
+#
+# Pinned on the substring `has no field` plus the label `z`, so rewording the
+# sentence does not move the fixture.
 
 point: @{ x: f64, y: f64 }
 

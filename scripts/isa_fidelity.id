@@ -1,53 +1,53 @@
--- G-D3 — ISA fidelity. Pass 104 §4 asks for
---
---   > per-instruction encode/exec tests GENERATED from the descriptors and
---   > checked against an oracle assembler AND hardware — continuous, automatic.
---
--- This is the encode half, generated and oracle-checked. Every row of
--- `std.target.arm64.rows` is expanded into sixteen operand tuples, encoded by
--- the descriptor derivation, rendered as assembler text, handed to `clang`, and
--- the resulting object is disassembled and compared WORD FOR WORD. The oracle
--- is the external assembler, never this repository's own encoder — a generated
--- test that agrees with a wrong descriptor proves nothing, and two of these
--- rows were wrong when the file was written.
---
--- WHAT IT CAUGHT ON ITS FIRST RUN, both in `src/native_backend.zig`:
---
---   rbit   the emitter had 0x5ac00000 — RBIT **32-bit** — under a ctz lowering
---          that is rbit-then-clz. A 32-bit reverse zero-fills the top half, so
---          `clz x` counted those 32 zeros too: `@ctz(8)` answered 35 under
---          --backend=direct against 3 from the C backend. clang says dac000a3;
---          the emitter said 5ac000a3. One bit, one wrong answer.
---   scvtf  0x1e620000 converts from a **32-bit** GPR. `emitScvtfFromGpr` is
---          handed an x register by both of its callers, so anything at or above
---          2^32 would have converted from its low half.
---
--- Neither was reachable by `native-differential`, which can only compare
--- programs someone wrote, and no corpus program takes ctz of anything. That is
--- the same uncovered-not-broken failure `abi-matrix` was built for, one level
--- down: a hand-written corpus cannot cover an instruction set, so the
--- instruction set generates its own tests. Both asm texts read `rbit x, x` and
--- `scvtf d, x`, so only a BYTE-level oracle could tell the pairs apart.
---
--- Pass 103 §5 licenses clang here and nowhere else: foreign toolchains are CI
--- equipment, never the shipping path. Nothing this gate produces is linked.
---
--- POSITIVE CONTROLS. A gate that reports 0 wrong is usually broken rather than
--- green, and this repository has shipped a gate that zeroed 16 of 17 rows and
--- exited 0. So the sweep runs three more times against DELIBERATELY DAMAGED
--- descriptors — a corrupted base word, a shifted field, and two swapped fields
--- — and if any of the three goes uncaught the gate exits 3 rather than
--- reporting a clean run it has not earned.
---
--- Exit 0 all rows agree · 1 a descriptor and the oracle disagree · 3 the gate
--- could not run, or its own controls did not fire.
+# G-D3 — ISA fidelity. Pass 104 §4 asks for
+#
+#   > per-instruction encode/exec tests GENERATED from the descriptors and
+#   > checked against an oracle assembler AND hardware — continuous, automatic.
+#
+# This is the encode half, generated and oracle-checked. Every row of
+# `std.target.arm64.rows` is expanded into sixteen operand tuples, encoded by
+# the descriptor derivation, rendered as assembler text, handed to `clang`, and
+# the resulting object is disassembled and compared WORD FOR WORD. The oracle
+# is the external assembler, never this repository's own encoder — a generated
+# test that agrees with a wrong descriptor proves nothing, and two of these
+# rows were wrong when the file was written.
+#
+# WHAT IT CAUGHT ON ITS FIRST RUN, both in `src/native_backend.zig`:
+#
+#   rbit   the emitter had 0x5ac00000 — RBIT **32-bit** — under a ctz lowering
+#          that is rbit-then-clz. A 32-bit reverse zero-fills the top half, so
+#          `clz x` counted those 32 zeros too: `@ctz(8)` answered 35 under
+#          #backend=direct against 3 from the C backend. clang says dac000a3;
+#          the emitter said 5ac000a3. One bit, one wrong answer.
+#   scvtf  0x1e620000 converts from a **32-bit** GPR. `emitScvtfFromGpr` is
+#          handed an x register by both of its callers, so anything at or above
+#          2^32 would have converted from its low half.
+#
+# Neither was reachable by `native-differential`, which can only compare
+# programs someone wrote, and no corpus program takes ctz of anything. That is
+# the same uncovered-not-broken failure `abi-matrix` was built for, one level
+# down: a hand-written corpus cannot cover an instruction set, so the
+# instruction set generates its own tests. Both asm texts read `rbit x, x` and
+# `scvtf d, x`, so only a BYTE-level oracle could tell the pairs apart.
+#
+# Pass 103 §5 licenses clang here and nowhere else: foreign toolchains are CI
+# equipment, never the shipping path. Nothing this gate produces is linked.
+#
+# POSITIVE CONTROLS. A gate that reports 0 wrong is usually broken rather than
+# green, and this repository has shipped a gate that zeroed 16 of 17 rows and
+# exited 0. So the sweep runs three more times against DELIBERATELY DAMAGED
+# descriptors — a corrupted base word, a shifted field, and two swapped fields
+# — and if any of the three goes uncaught the gate exits 3 rather than
+# reporting a clean run it has not earned.
+#
+# Exit 0 all rows agree · 1 a descriptor and the oracle disagree · 3 the gate
+# could not run, or its own controls did not fire.
 
--- How many operand tuples each descriptor is expanded into, and where the
--- generated assembler and its object land. Both are functions rather than
--- file-scope bindings: a typed global in this file emitted a C identifier its
--- own initializer then could not find (`duo_g_tuples` declared,
--- `duo_g__tuples` assigned), which is a codegen defect worth its own
--- reproduction and not worth carrying here.
+# How many operand tuples each descriptor is expanded into, and where the
+# generated assembler and its object land. Both are functions rather than
+# file-scope bindings: a typed global in this file emitted a C identifier its
+# own initializer then could not find (`duo_g_tuples` declared,
+# `duo_g__tuples` assigned), which is a codegen defect worth its own
+# reproduction and !worth carrying here.
 each(): i64
     16
 end
@@ -73,17 +73,17 @@ hexof(v: i64): str
     out
 end
 
--- Sixteen registers, none of them 31. x31 reads as xzr in some positions and sp
--- in others, so an operand sweep that includes it is asking the assembler a
--- different question than the one the descriptor answers.
+# Sixteen registers, none of them 31. x31 reads as xzr in some positions and sp
+# in others, so an operand sweep that includes it is asking the assembler a
+# different question than the one the descriptor answers.
 regs(): any
     { 0, 1, 3, 5, 9, 12, 17, 20, 24, 28, 30, 2, 7, 15, 21, 29 }
 end
 
--- One operand, for field `f` of width `w`, on tuple `t`. Register fields walk
--- the register list at four different offsets so d, n, m and a are rarely
--- equal — an encoder that ORs two fields into the same bits looks correct when
--- every operand is the same number.
+# One operand, for field `f` of width `w`, on tuple `t`. Register fields walk
+# the register list at four different offsets so d, n, m and a are rarely
+# equal — an encoder that ORs two fields into the same bits looks correct when
+# every operand is the same number.
 pick(f: str, w: i64, t: i64): i64
     v: i64 = 0
     if f == "d"
@@ -99,8 +99,8 @@ pick(f: str, w: i64, t: i64): i64
     elseif f == "c"
         v = t % 16
     else
-        -- Immediates: both ends of the field, then a spread across it. A field
-        -- tested only at 0 and 1 cannot tell 21:10 from 21:11.
+        # Immediates: both ends of the field, then a spread across it. A field
+        # tested only at 0 and 1 cannot tell 21:10 from 21:11.
         top = (1 << w) - 1
         v = (t * 2731) % (top + 1)
         if t == 0
@@ -113,9 +113,9 @@ pick(f: str, w: i64, t: i64): i64
     v
 end
 
--- Expand one row into its tuples, appending assembler text to `asmout` and the
--- expected words to `want`. `want` and `whose` are filled in place; the text
--- comes back as the value, because one of the three has to.
+# Expand one row into its tuples, appending assembler text to `asmout` and the
+# expected words to `want`. `want` and `whose` are filled in place; the text
+# comes back as the value, because one of the three has to.
 expand(row: str, asmout: str, want: any, whose: any): str
     out = asmout
     lay = std.target.arm64.layout(row)
@@ -138,43 +138,43 @@ expand(row: str, asmout: str, want: any, whose: any): str
     out
 end
 
--- Assemble the generated text and read back what the oracle actually encoded.
--- Returns the disassembled words, one hex string per line. An empty result
--- means clang or objdump could not run, which is exit 3 and not a pass.
+# Assemble the generated text and read back what the oracle actually encoded.
+# Returns the disassembled words, one hex string per line. An empty result
+# means clang or objdump could not run, which is exit 3 and !a pass.
 oracle(asmtext: str, tag: str): any
     wd = work()
     src = "{wd}/{tag}.s"
     obj = "{wd}/{tag}.o"
-    -- FACE-CALL, and not for style: `io.write(handle, body)` resolves to the
-    -- Lua-compat `io` whose `write` takes only values, so it printed 720 lines
-    -- of assembler to stdout and left the file empty. The gate then compared 0
-    -- oracle words against 720 expected and exited 3 -- honest, but for the
-    -- wrong reason. Holding the handle and calling on it is the spelling that
-    -- reaches the file.
+    # FACE-CALL, and !for style: `io.write(handle, body)` resolves to the
+    # Lua-compat `io` whose `write` takes only values, so it printed 720 lines
+    # of assembler to stdout and left the file empty. The gate then compared 0
+    # oracle words against 720 expected and exited 3 # honest, but for the
+    # wrong reason. Holding the handle and calling on it is the spelling that
+    # reaches the file.
     handle = io.open(src, "w")
     handle:write(".text\n.globl _isaprobe\n_isaprobe:\n{asmtext}")
     handle:close()
-    -- The integrated assembler cross-assembles aarch64 from any host, so the
-    -- gate is not macOS-only even though this is where it was written.
+    # The integrated assembler cross-assembles aarch64 from any host, so the
+    # gate is not macOS-only even though this is where it was written.
     trip = "arm64-apple-macos"
     if std.script.chomp(sh("uname -s")) != "Darwin"
         trip = "aarch64-linux-gnu"
     end
     out = {}
     if std.script.status("clang -c -target {trip} -o {obj} {src} >/dev/null 2>&1") == 0
-        -- `cut -f1` keeps the address-and-word column (objdump puts a tab
-        -- before the mnemonic), the sed drops the address, and `tr` removes the
-        -- padding. Written without awk on purpose: an awk program needs braces,
-        -- and braces in a Duo string are interpolation.
+        # `cut -f1` keeps the address-and-word column (objdump puts a tab
+        # before the mnemonic), the sed drops the address, and `tr` removes the
+        # padding. Written without awk on purpose: an awk program needs braces,
+        # and braces in a Duo string are interpolation.
         raw = sh("objdump -d {obj} | cut -f1 | sed -n -e 's/^ *[0-9a-f]*: *//p' | tr -d ' '")
         out = raw:split("\n")
     end
     out
 end
 
--- One full pass: descriptors in, disagreement count out. -1 means the oracle
--- did not run at all. `show` is false for the controls, which are SUPPOSED to
--- disagree and would otherwise bury the report.
+# One full pass: descriptors in, disagreement count out. -1 means the oracle
+# did not run at all. `show` is false for the controls, which are SUPPOSED to
+# disagree and would otherwise bury the report.
 sweep(rowset: any, tag: str, show: bool): i64
     want = {}
     whose = {}
@@ -222,7 +222,7 @@ sweep(rowset: any, tag: str, show: bool): i64
     outcome
 end
 
--- A single row's worth of rows, so a control can be swept on its own.
+# A single row's worth of rows, so a control can be swept on its own.
 only(row: str): any
     { row }
 end
@@ -249,17 +249,17 @@ main(): i64
 
         bad = sweep(rowset, "main", true)
 
-        -- THE CONTROLS. Each damages the `add` descriptor in a different place,
-        -- and each must be caught. `ctlbase` flips bit 25, which no field of
-        -- `add` occupies, so every tuple must disagree — the first draft flipped
-        -- bit 0 instead and was caught only 7 times of 16, because bit 0 IS the
-        -- low bit of the destination field and OR-ing 1 into an odd register
-        -- changes nothing. A control that fires on some inputs would have
-        -- passed a broken gate. `ctlshift` moves the destination field one bit
-        -- left, which cannot be caught on the tuple where the destination is
-        -- x0, so it is required to fire, not to fire everywhere. `ctlswap`
-        -- exchanges the two source fields — an encoder that ORed operands
-        -- together without reading their positions would agree with it.
+        # THE CONTROLS. Each damages the `add` descriptor in a different place,
+        # and each must be caught. `ctlbase` flips bit 25, which no field of
+        # `add` occupies, so every tuple must disagree — the first draft flipped
+        # bit 0 instead and was caught only 7 times of 16, because bit 0 IS the
+        # low bit of the destination field and OR-ing 1 into an odd register
+        # changes nothing. A control that fires on some inputs would have
+        # passed a broken gate. `ctlshift` moves the destination field one bit
+        # left, which cannot be caught on the tuple where the destination is
+        # x0, so it is required to fire, not to fire everywhere. `ctlswap`
+        # exchanges the two source fields — an encoder that ORed operands
+        # together without reading their positions would agree with it.
         ctlbase = "add|8d000000|m@20:16 n@9:5 d@4:0|add x%d, x%n, x%m"
         ctlshift = "add|8b000000|m@20:16 n@9:5 d@4:1|add x%d, x%n, x%m"
         ctlswap = "add|8b000000|m@9:5 n@20:16 d@4:0|add x%d, x%n, x%m"

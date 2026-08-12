@@ -1,4 +1,4 @@
--- @comp.for folding in @(expr): sum of indices
+# @comp.for folding in @(expr): sum of indices
 
 SUM0_5 = @(@comp.for(0, 5, "%i"))
 print("@comp.for(0, 5, '%i') = " .. to(str)(SUM0_5))

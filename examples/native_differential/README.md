@@ -117,7 +117,7 @@ checksum 162 through the C backend.
 #### Resolved: `f{...}` table-call sugar no longer spans a newline
 
 ```
-scan = (pos: i64): tok
+scan: tok = (pos: i64)
     k = one(pos)                        -- a call statement …
     { kind = k, start = pos, len = 1 }  -- … then a tail record literal
 end
@@ -367,7 +367,7 @@ encoded the wrong test. That defect is defect #2 of this session.
 
 `native_only/codegen_native.id` takes the program `return 42` and emits the
 *sequence* of ARM64 instructions for it into a mutable table — `code[n] = word;
-n = n + 1`, exactly the shape of `emitFmt` in `src/native_backend.zig` — then
+n += 1`, exactly the shape of `emitFmt` in `src/native_backend.zig` — then
 verifies both emitted words against what `objdump` shows:
 
 ```

@@ -1,4 +1,4 @@
-//! Pass 11 — explicit backend / representation / runtime identity (WP-02 split).
+//! Explicit backend / representation / runtime identity (WP-02 split).
 //!
 //! Artifact manifests must record all three axes; silent conflation is forbidden.
 const std = @import("std");

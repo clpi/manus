@@ -1,79 +1,79 @@
--- expect: 7
--- SH-04 step: a recursive-descent expression parser written in Duo and compiled
--- to native ARM64.
---
--- This is the core shape of `src/parser.zig` — precedence climbing over a token
--- stream, with recursive descent through the grammar levels — reduced to the
--- arithmetic subset so it fits the proven native subset:
---
---   expr   := term   (('+' | '-') term)*
---   term   := factor (('*' | '/') factor)*
---   factor := NUMBER | '(' expr ')'
---
--- Recursive descent needs each level to return BOTH a value and the position it
--- consumed to. There are no tuples in the native subset, so the parse result is
--- a 2-field record — which rides the ABI registers and never allocates.
---
--- Gated `native_only` because the C backend cannot compile this shape; the
--- direct backend is strictly more capable here, so C is not a valid oracle.
+# expect: 7
+# SH-04 step: a recursive-descent expression parser written in Duo and compiled
+# to native ARM64.
+#
+# This is the core shape of `src/parser.zig` — precedence climbing over a token
+# stream, with recursive descent through the grammar levels — reduced to the
+# arithmetic subset so it fits the proven native subset:
+#
+#   expr   := term   (('+' | '-') term)*
+#   term   := factor (('*' | '/') factor)*
+#   factor := NUMBER | '(' expr ')'
+#
+# Recursive descent needs each level to return BOTH a value and the position it
+# consumed to. There are no tuples in the native subset, so the parse result is
+# a 2-field record — which rides the ABI registers and never allocates.
+#
+# Gated `native_only` because the C backend cannot compile this shape; the
+# direct backend is strictly more capable here, so C is not a valid oracle.
 
--- A parse result: the value produced, and the position after it.
+# A parse result: the value produced, and the position after it.
 res: @{ val: i64, pos: i64 }
 
-is_digit = (c: i64): i64
+is_digit: i64 = (c: i64)
     if c >= 48 and c <= 57
         return 1
     end
     0
 end
 
-skip_spaces = (src: str, pos: i64): i64
+skip_spaces: i64 = (src: str, pos: i64)
     n = #src
     i = pos
-    while i <= n and string.byte(src, i) == 32
+    while i <= n and src:byte(i) == 32
         i = i + 1
     end
     i
 end
 
--- factor := NUMBER | '(' expr ')'
---
--- Mutual recursion with parseexpr: `factor` calls `expr` for a parenthesised
--- group, and `expr` calls `factor` through `term`. Proving that mutual recursion
--- lowers natively is half the point of this file — a recursive-descent parser is
--- nothing but a cycle of such calls.
-parsefactor = (src: str, pos: i64): res
+# factor := NUMBER | '(' expr ')'
+#
+# Mutual recursion with parseexpr: `factor` calls `expr` for a parenthesised
+# group, and `expr` calls `factor` through `term`. Proving that mutual recursion
+# lowers natively is half the point of this file — a recursive-descent parser is
+# nothing but a cycle of such calls.
+parsefactor: res = (src: str, pos: i64)
     n = #src
     i = skip_spaces(src, pos)
     if i > n
         return { val = 0, pos = i }
     end
-    c = string.byte(src, i)
+    c = src:byte(i)
     if c == 40
         inner: res = parseexpr(src, i + 1)
         j = skip_spaces(src, inner.pos)
-        if j <= n and string.byte(src, j) == 41
+        if j <= n and src:byte(j) == 41
             return { val = inner.val, pos = j + 1 }
         end
         return { val = inner.val, pos = j }
     end
     acc = 0
     j = i
-    while j <= n and is_digit(string.byte(src, j)) == 1
-        acc = acc * 10 + string.byte(src, j) - 48
+    while j <= n and is_digit(src:byte(j)) == 1
+        acc = acc * 10 + src:byte(j) - 48
         j = j + 1
     end
     { val = acc, pos = j }
 end
 
--- term := factor (('*' | '/') factor)*
-parseterm = (src: str, pos: i64): res
+# term := factor (('*' | '/') factor)*
+parseterm: res = (src: str, pos: i64)
     n = #src
     left: res = parsefactor(src, pos)
     acc = left.val
     i = skip_spaces(src, left.pos)
     while i <= n
-        op = string.byte(src, i)
+        op = src:byte(i)
         if op == 42
             rhs: res = parsefactor(src, i + 1)
             acc = acc * rhs.val
@@ -91,14 +91,14 @@ parseterm = (src: str, pos: i64): res
     { val = acc, pos = i }
 end
 
--- expr := term (('+' | '-') term)*
-parseexpr = (src: str, pos: i64): res
+# expr := term (('+' | '-') term)*
+parseexpr: res = (src: str, pos: i64)
     n = #src
     left: res = parseterm(src, pos)
     acc = left.val
     i = skip_spaces(src, left.pos)
     while i <= n
-        op = string.byte(src, i)
+        op = src:byte(i)
         if op == 43
             rhs: res = parseterm(src, i + 1)
             acc = acc + rhs.val
@@ -117,7 +117,7 @@ parseexpr = (src: str, pos: i64): res
 end
 
 main(): i64
-    -- Precedence must bind `*` tighter than `+`: 1 + 2*3 = 7, not 9.
+    # Precedence must bind `*` tighter than `+`: 1 + 2*3 = 7, not 9.
     r: res = parseexpr("1 + 2 * 3", 1)
     r.val
 end

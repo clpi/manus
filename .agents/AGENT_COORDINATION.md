@@ -14,6 +14,7 @@ the ignored `.agents/session/` state or in evidence from an exact run.
 | Open obligations | `gaps/GAP-0NN.md`; session-start census remains `GAP-131` debt |
 | Performance evidence | `docs/performance.md` |
 | Source-family classification | `docs/spec/corpus.md` |
+| Source/home/package/world closure | `docs/spec/source.md` |
 | Historical changes | Git history |
 
 ## Implementation owners

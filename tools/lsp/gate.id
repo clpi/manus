@@ -1,65 +1,65 @@
--- tools/lsp/gate.id — tier-0 gate: the LSP actually SERVES, and by VALUE.
---
--- Why this exists. `build.zig` had `mcp-gate` and NOTHING for the LSP. That is
--- the position all three MCP servers were in when they turned out to be dead
--- for an unknown length of time and nothing noticed. The LSP is the same kind
--- of program — a long-lived stdio server whose only failure signal is silence
--- — and it was carrying the same class of defect on the day this was written:
---
---   `textDocument/didClose` SEGFAULTED the server. Exit 139, no diagnostic, no
---   partial answer, no further response to anything. `t[k] = nil` does not
---   remove a key in Duo, so `flush_dirty` — which runs after EVERY message —
---   walked the docs table, found the nil, and dereferenced it. Every editor
---   closes documents. Nobody had run one.
---
--- What this gate refuses to accept as evidence:
---
---   * "it compiled" — the server compiled fine on the day it segfaulted.
---   * "it started" — a server that starts and then dies mid-session is
---     byte-for-byte indistinguishable from a working one in the first reply.
---   * "initialize answered" — initialize answered on the day didClose killed
---     it. Every check below happens AFTER a document has been opened, changed
---     and CLOSED, so the session has to survive to score.
---
--- So every check is a real LSP-framed JSON-RPC round trip over stdio
--- (`Content-Length: N\r\n\r\n{…}`) whose RESPONSE BYTES are asserted. Counts
--- and token arrays are asserted EXACTLY, never as floors: a floor silently
--- tolerates the handler that stopped answering.
---
--- POSITIVE CONTROLS.
---
---   in-band, every run — an unknown method must come back as a -32601 ERROR.
---     That is the control that separates "answered" from "did not answer": if
---     the transport were broken, or the reader were counting bytes that are
---     not there, this row could not pass while the others do.
---   out-of-band, and RUN — `LSPGATE_SERVER` points this gate at a corrupted
---     copy of the server. A gate that has never been shown failing is not
---     known to be able to fail. Three corruptions were run on 2026-08-08 and
---     each is recorded with what it cost:
---
---       revert the didClose repair (both layers)  →  18 rows red, exit 1
---       decide copula/invoke by SPACING, not R1   →   1 row red, exit 1
---       hand-edit one name in the generated legend →  3 rows red, exit 1
---
---     The middle one is the point: painting `count:u32` purple is the exact
---     H-1 failure docs/spec/roles.md §5.1 warns about, it changes nothing a
---     human would notice in a screenshot, and it moves exactly one integer in
---     the asserted token array.
---
--- TAXONOMY. The legend and token rows below assert the RULED one: CLAUDE.md
--- §0d closes H-2 at 18 with the fine splits as CARDS rather than roles, names
--- `place` as the eighteenth, and rules that grammar.md R1 decides `:` while
--- spacing only renders it. `tools/lsp/legend.id` generates the legend out of
--- `tools/lsp/src/highlight.id`, which owns the vocabulary; this gate asserts
--- the generated result verbatim so a hand edit anywhere in that chain surfaces
--- here. gaps/GAP-078.md is the record of the conflict that ruling settled.
---
--- G-TOTAL IS THREE NUMBERS (§0g), and the lens row below asserts all three:
--- coverage MUST be 100%, ambiguity MUST be 0, provenance MUST be 100%. A front
--- end that publishes coverage alone can report 100% while every role it emits
--- is uncited.
---
--- LSPGATE_SERVER   drive a different server file (the controls use it).
+# tools/lsp/gate.id — tier-0 gate: the LSP actually SERVES, and by VALUE.
+#
+# Why this exists. `build.zig` had `mcp-gate` and NOTHING for the LSP. That is
+# the position all three MCP servers were in when they turned out to be dead
+# for an unknown length of time and nothing noticed. The LSP is the same kind
+# of program — a long-lived stdio server whose only failure signal is silence
+# — and it was carrying the same class of defect on the day this was written:
+#
+#   `textDocument/didClose` SEGFAULTED the server. Exit 139, no diagnostic, no
+#   partial answer, no further response to anything. `t[k] = nil` does not
+#   remove a key in Duo, so `flush_dirty` — which runs after EVERY message —
+#   walked the docs table, found the nil, and dereferenced it. Every editor
+#   closes documents. Nobody had run one.
+#
+# What this gate refuses to accept as evidence:
+#
+#   * "it compiled" — the server compiled fine on the day it segfaulted.
+#   * "it started" — a server that starts and then dies mid-session is
+#     byte-for-byte indistinguishable from a working one in the first reply.
+#   * "initialize answered" — initialize answered on the day didClose killed
+#     it. Every check below happens AFTER a document has been opened, changed
+#     and CLOSED, so the session has to survive to score.
+#
+# So every check is a real LSP-framed JSON-RPC round trip over stdio
+# (`Content-Length: N\r\n\r\n{…}`) whose RESPONSE BYTES are asserted. Counts
+# and token arrays are asserted EXACTLY, never as floors: a floor silently
+# tolerates the handler that stopped answering.
+#
+# POSITIVE CONTROLS.
+#
+#   in-band, every run — an unknown method must come back as a -32601 ERROR.
+#     That is the control that separates "answered" from "did not answer": if
+#     the transport were broken, or the reader were counting bytes that are
+#     not there, this row could not pass while the others do.
+#   out-of-band, and RUN — `LSPGATE_SERVER` points this gate at a corrupted
+#     copy of the server. A gate that has never been shown failing is not
+#     known to be able to fail. Three corruptions were run on 2026-08-08 and
+#     each is recorded with what it cost:
+#
+#       revert the didClose repair (both layers)  →  18 rows red, exit 1
+#       decide copula/invoke by SPACING, not R1   →   1 row red, exit 1
+#       hand-edit one name in the generated legend →  3 rows red, exit 1
+#
+#     The middle one is the point: painting `count:u32` purple is the exact
+#     H-1 failure docs/spec/roles.md §5.1 warns about, it changes nothing a
+#     human would notice in a screenshot, and it moves exactly one integer in
+#     the asserted token array.
+#
+# TAXONOMY. The legend and token rows below assert the RULED one: CLAUDE.md
+# §0d closes H-2 at 18 with the fine splits as CARDS rather than roles, names
+# `place` as the eighteenth, and rules that grammar.md R1 decides `:` while
+# spacing only renders it. `tools/lsp/legend.id` generates the legend out of
+# `tools/lsp/src/highlight.id`, which owns the vocabulary; this gate asserts
+# the generated result verbatim so a hand edit anywhere in that chain surfaces
+# here. gaps/GAP-078.md is the record of the conflict that ruling settled.
+#
+# G-TOTAL IS THREE NUMBERS (§0g), and the lens row below asserts all three:
+# coverage MUST be 100%, ambiguity MUST be 0, provenance MUST be 100%. A front
+# end that publishes coverage alone can report 100% while every role it emits
+# is uncited.
+#
+# LSPGATE_SERVER   drive a different server file (the controls use it).
 
 root = std.os.getenv("DUO_ROOT")
 if root == nil or root == ""
@@ -79,9 +79,9 @@ if server == nil or server == ""
     server = root .. "/tools/lsp/src/server.id"
 end
 
--- `duo run x.id` drops `x.out` in the CURRENT directory. Run from the repo
--- root and the gate litters the root with server.out, which `zig build
--- repo-hygiene` is entitled to fail on. Work in a scratch dir.
+# `duo run x.id` drops `x.out` in the CURRENT directory. Run from the repo
+# root and the gate litters the root with server.out, which `zig build
+# repo-hygiene` is entitled to fail on. Work in a scratch dir.
 work = "/tmp/duo-lsp-gate"
 
 fails = 0
@@ -94,18 +94,18 @@ report(ok: bool, what: str, detail: str): void
     end
 end
 
--- LSP framing. Not newline-delimited JSON: the server reads a header, parses
--- Content-Length, and then reads exactly that many bytes. A gate that spoke
--- the wrong transport would hang rather than fail, so the frame is built here
--- from the body's own byte length and never from a constant.
+# LSP framing. Not newline-delimited JSON: the server reads a header, parses
+# Content-Length, and then reads exactly that many bytes. A gate that spoke
+# the wrong transport would hang rather than fail, so the frame is built here
+# from the body's own byte length and never from a constant.
 frame(body: str): str
     n = #body
     "Content-Length: " .. n:to(str) .. "\r\n\r\n" .. body
 end
 
--- Feed the server a session on stdin, hand back everything it wrote. stdin is
--- a FILE, not a pipe: a half-written pipe would look like a hang rather than a
--- failure, and this gate exists because silence is the failure mode.
+# Feed the server a session on stdin, hand back everything it wrote. stdin is
+# a FILE, not a pipe: a half-written pipe would look like a hang rather than a
+# failure, and this gate exists because silence is the failure mode.
 drive(lines: str): str
     reqf = work .. "/req.lsp"
     respf = work .. "/resp.lsp"
@@ -151,21 +151,21 @@ check(ok: bool, what: str, detail: str): void
     end
 end
 
--- The fixture, as one JSON string literal. It is `fixtures/highlight/copula.id`
--- byte for byte, because that file is the one the golden corpus uses to
--- separate the copula from the invoke — the H-1 discrimination the whole role
--- taxonomy turns on — and a gate should assert against the corpus the law
--- names rather than a fixture it invented for itself.
+# The fixture, as one JSON string literal. It is `fixtures/highlight/copula.id`
+# byte for byte, because that file is the one the golden corpus uses to
+# separate the copula from the invoke — the H-1 discrimination the whole role
+# taxonomy turns on — and a gate should assert against the corpus the law
+# names rather than a fixture it invented for itself.
 doc = "-- copula\\ntotal: f64\\ncount:u32\\nn = lx:read(number)\\n"
 uri = "file:///tmp/duo-lsp-gate/fixture.id"
 
--- A second document, carrying the three things the copula fixture cannot show.
--- It declares a parameter and NOT a return and binds a bare literal, so both
--- inlay-hint paths have something true to say; it NESTS a declaration, so the
--- document-symbol trie has depth to prove; and its last line puts a `|`
--- outside shape position, where union (orange) and pipe (green) are two ROLES
--- in two hues with no lexical rule between them — a real ambiguity, so the
--- ambiguity counter is shown answering something other than zero.
+# A second document, carrying the three things the copula fixture cannot show.
+# It declares a parameter and NOT a return and binds a bare literal, so both
+# inlay-hint paths have something true to say; it NESTS a declaration, so the
+# document-symbol trie has depth to prove; and its last line puts a `|`
+# outside shape position, where union (orange) and pipe (green) are two ROLES
+# in two hues with no lexical rule between them — a real ambiguity, so the
+# ambiguity counter is shown answering something other than zero.
 cdr = "outer(a: i64)\\n  helper(b: i64): i64\\n    b\\n  end\\n  helper(a)\\nend\\ntotal = 7\\nout = xs | ys\\n"
 cdruri = "file:///tmp/duo-lsp-gate/cdr.id"
 
@@ -192,12 +192,12 @@ main(): i64
         .. note("initialized", "{}")
         .. note("textDocument/didOpen", "{\"textDocument\":{\"uri\":\"" .. uri
             .. "\",\"languageId\":\"duo\",\"version\":1,\"text\":\"" .. doc .. "\"}}")
-        -- CLOSE THE DOCUMENT, THEN REOPEN IT. Everything scored below happens
-        -- after this pair. On the day this gate was written the close alone
-        -- took the process down with SIGSEGV and every later id went
-        -- unanswered — which is exactly how the seven dead MCP handlers
-        -- looked, and exactly why counts are asserted after the close and not
-        -- before it.
+        # CLOSE THE DOCUMENT, THEN REOPEN IT. Everything scored below happens
+        # after this pair. On the day this gate was written the close alone
+        # took the process down with SIGSEGV and every later id went
+        # unanswered — which is exactly how the seven dead MCP handlers
+        # looked, and exactly why counts are asserted after the close and not
+        # before it.
         .. note("textDocument/didClose", "{\"textDocument\":{\"uri\":\"" .. uri .. "\"}}")
         .. msg(2, "workspace/symbol", "{\"query\":\"total\"}")
         .. note("textDocument/didOpen", "{\"textDocument\":{\"uri\":\"" .. uri
@@ -225,7 +225,7 @@ main(): i64
         return 1
     end
 
-    -- ── handshake and the capability set ─────────────────────────────────
+    # ── handshake and the capability set ─────────────────────────────────
     check(has(out, "\"serverInfo\":{\"name\":\"duo-lsp\""), "initialize handshakes",
         "no serverInfo in the response — the server never handshook")
 
@@ -238,10 +238,10 @@ main(): i64
             "absent from capabilities — a client will never send the request")
     end
 
-    -- The legend, EXACTLY, in order. It is GENERATED from the ONE taxonomy in
-    -- tools/lsp/src/highlight.id by tools/lsp/legend.id; a hand edit in it is
-    -- an H-1 drift finding (CLAUDE.md §0d) and this row is where it surfaces.
-    -- If the taxonomy legitimately moves, update this string ON PURPOSE.
+    # The legend, EXACTLY, in order. It is GENERATED from the ONE taxonomy in
+    # tools/lsp/src/highlight.id by tools/lsp/legend.id; a hand edit in it is
+    # an H-1 drift finding (CLAUDE.md §0d) and this row is where it surfaces.
+    # If the taxonomy legitimately moves, update this string ON PURPOSE.
     legend = "\"tokenTypes\":[\"keyword\",\"copula\",\"operator\",\"layout\",\"descriptor\","
         .. "\"union\",\"anchor\",\"retrieve\",\"invoke\",\"callable\",\"world\",\"foreign\","
         .. "\"place\",\"number\",\"literal\",\"case\",\"comment\",\"walk\",\"pipe\"]"
@@ -250,22 +250,22 @@ main(): i64
     check(has(out, "\"tokenModifiers\":[\"declaration\",\"defaultlibrary\"]"),
         "the legend carries H-3 weight and H-5 italic as modifiers",
         "definition-adds-weight and ambient-is-italic are axes and must reach the client")
-    -- `ambiguous` is NOT a role and must never acquire an index. If it did, an
-    -- unresolved span could be TOKENIZED, and a token is a colour — which is
-    -- the guess G-TOTAL forbids, wearing the taxonomy as a disguise.
+    # `ambiguous` is NOT a role and must never acquire an index. If it did, an
+    # unresolved span could be TOKENIZED, and a token is a colour — which is
+    # the guess G-TOTAL forbids, wearing the taxonomy as a disguise.
     check(hasnot(out, "\"ambiguous\""), "the legend has no `ambiguous` member",
         "an unresolved span could be given a colour; two candidates is a diagnostic, never a role")
 
-    -- ── THE DIDCLOSE REGRESSION ──────────────────────────────────────────
-    -- id 2 is asked immediately after a close. If the close crashed the
-    -- process this id — and every id after it — is simply missing, which is
-    -- what a dead server looks like from the outside.
+    # ── THE DIDCLOSE REGRESSION ──────────────────────────────────────────
+    # id 2 is asked immediately after a close. If the close crashed the
+    # process this id — and every id after it — is simply missing, which is
+    # what a dead server looks like from the outside.
     check(has(out, "\"id\":2"), "the session SURVIVES textDocument/didClose",
         "no answer after the close — SIGSEGV again; see `forget` in server.id")
     check(has(out, "{\"id\":2,\"result\":[],\"jsonrpc\":\"2.0\"}"), "the close really FORGETS the document",
         "workspace/symbol still answers for a closed document, so removal did not remove")
 
-    -- ── VALUE round trips ────────────────────────────────────────────────
+    # ── VALUE round trips ────────────────────────────────────────────────
     check(has(out, "\"name\":\"total\"") and has(out, "\"name\":\"count\"") and has(out, "\"name\":\"n\""),
         "documentSymbol answers by value (total, count, n)",
         "the three top-level bindings of the fixture did not all come back")
@@ -275,10 +275,10 @@ main(): i64
     check(has(out, "`why(span)` · role **place** · card **bound** (closed set)"),
         "hover carries why(span) — the role AND the card at the cursor",
         "H-7: every (span, role) carries a rule citation; the hover answered prose only")
-    -- `total` is an ordinary binding. That is the role `place`, and the hover
-    -- must carry the ruling that named it — GAP-073 found the hole, GAP-078
-    -- ruled it, and this row is where the LSP proves it reads the merged
-    -- taxonomy rather than either of the two that disagreed.
+    # `total` is an ordinary binding. That is the role `place`, and the hover
+    # must carry the ruling that named it — GAP-073 found the hole, GAP-078
+    # ruled it, and this row is where the LSP proves it reads the merged
+    # taxonomy rather than either of the two that disagreed.
     check(has(out, "rule: gaps/GAP-078.md RULING — an ordinary binding is a PLACE"),
         "hover carries the rule that decided the role",
         "H-7: the why-chain has no rule behind it")
@@ -288,15 +288,15 @@ main(): i64
         "definition answers by value (line 1, cols 0-5)",
         "the definition range for `total` is not the fixture's line 1")
 
-    -- ── semantic tokens, byte for byte ───────────────────────────────────
-    -- Delta-encoded five-tuples. This array IS the copula/invoke ruling in
-    -- numbers: `count:u32` on line 2 is tight and groupless, so its `:` must
-    -- come back as role 1 (copula) and not role 6 (invoke). Painting it purple
-    -- moves one integer here and this row goes red.
-    -- Type ids index the GENERATED legend, so inserting `retrieve` at index 7
-    -- shifted every id above it by one: comment 15->16, place 11->12, invoke
-    -- 7->8, callable 8->9. That renumber is the legend doing its job — it is
-    -- generated, so a renumber costs nothing and a hand edit is caught.
+    # ── semantic tokens, byte for byte ───────────────────────────────────
+    # Delta-encoded five-tuples. This array IS the copula/invoke ruling in
+    # numbers: `count:u32` on line 2 is tight and groupless, so its `:` must
+    # come back as role 1 (copula) and not role 6 (invoke). Painting it purple
+    # moves one integer here and this row goes red.
+    # Type ids index the GENERATED legend, so inserting `retrieve` at index 7
+    # shifted every id above it by one: comment 15->16, place 11->12, invoke
+    # 7->8, callable 8->9. That renumber is the legend doing its job — it is
+    # generated, so a renumber costs nothing and a hand edit is caught.
     tokens = "\"data\":[0,0,9,16,0,1,0,5,12,1,0,5,1,1,0,0,2,3,4,0,1,0,5,12,1,0,5,1,1,0,"
         .. "0,1,3,4,0,1,0,1,12,1,0,2,1,2,0,0,2,2,12,0,0,2,1,8,0,0,1,4,9,0,0,4,1,3,0,"
         .. "0,1,6,12,0,0,6,1,3,0]"
@@ -304,7 +304,7 @@ main(): i64
         "the token array moved; compare against fixtures/highlight/copula.roles.id")
 
 
-    -- ── inlay hints: CDR-inferred descriptors ────────────────────────────
+    # ── inlay hints: CDR-inferred descriptors ────────────────────────────
     check(has(out, "\"id\":7"), "inlayHint answers",
         "no response for id 7 — the handler killed the session")
     check(has(out, "\"label\":\": i64\""), "inlayHint shows the CDR-inferred descriptor by value",
@@ -314,52 +314,52 @@ main(): i64
     check(has(out, "\"dnir\":\"sim-v0 entity\""), "inlayHint carries its dnir correspondence",
         "H-7: a hint with no provenance cannot be checked against the compiler that produced it")
 
-    -- ── code lenses: lenses count witnesses ──────────────────────────────
+    # ── code lenses: lenses count witnesses ──────────────────────────────
     check(has(out, "\"id\":8"), "codeLens answers",
         "no response for id 8 — the handler killed the session")
-    -- ALL THREE §0g numbers, by value, in one string. Naming `place` is what
-    -- takes coverage from 20% to 100% on this fixture, and the two application
-    -- parens stay findings because their CARD (level vs param) is undecided
-    -- even though their ROLE is not — SPECIFICITY, which coverage alone misses.
+    # ALL THREE §0g numbers, by value, in one string. Naming `place` is what
+    # takes coverage from 20% to 100% on this fixture, and the two application
+    # parens stay findings because their CARD (level vs param) is undecided
+    # even though their ROLE is not — SPECIFICITY, which coverage alone misses.
     check(has(out, "G-TOTAL — coverage 100% (43/43 bytes) · ambiguity 0 · provenance 100% · specificity findings 2 · unclaimed bytes 0"),
         "the file lens reports all three G-TOTAL numbers by value",
         "coverage/ambiguity/provenance moved on the golden copula fixture")
     check(has(out, "\"role\":\"witness\""), "every lens carries its (role, why, dnir) tuple",
         "H-8: a lens whose only payload is a title string is plain-text output")
 
-    -- AND THE AMBIGUITY COUNTER ANSWERS SOMETHING ELSE. A counter that reads 0
-    -- on every input is not measuring; the second document puts `|` outside
-    -- shape position, where union and pipe are two roles in two hues, and the
-    -- lens must say so.
+    # AND THE AMBIGUITY COUNTER ANSWERS SOMETHING ELSE. A counter that reads 0
+    # on every input is not measuring; the second document puts `|` outside
+    # shape position, where union and pipe are two roles in two hues, and the
+    # lens must say so.
     check(has(out, "· ambiguity 4 ·"), "the ambiguity counter is live, not stuck at zero",
         "`xs | ys` is union-or-pipe with no lexical rule between them and must be COUNTED, never guessed")
 
-    -- ── document symbols ARE the trie (§0g) ──────────────────────────────
-    -- This returned a flat list with a `containerName` hint, which every
-    -- client is free to ignore and all of them do. `helper` is declared inside
-    -- `outer`; it must come back as its CHILD, with its own name. Both halves
-    -- were broken: nothing indented was lifted at all, and what the `fun` path
-    -- did lift came back NAMED `un`, because the keyword was read off the
-    -- trimmed line and the remainder sliced out of the untrimmed one.
+    # ── document symbols ARE the trie (§0g) ──────────────────────────────
+    # This returned a flat list with a `containerName` hint, which every
+    # client is free to ignore and all of them do. `helper` is declared inside
+    # `outer`; it must come back as its CHILD, with its own name. Both halves
+    # were broken: nothing indented was lifted at all, and what the `fun` path
+    # did lift came back NAMED `un`, because the keyword was read off the
+    # trimmed line and the remainder sliced out of the untrimmed one.
     check(has(out, "\"children\":[{"), "documentSymbol nests — it IS the trie, not a flat list",
         "no child anywhere in the response; `helper` is declared inside `outer`")
     check(has(out, "\"name\":\"helper\""), "the nested symbol keeps its own name",
         "an indented declaration came back mangled — head_keyword sliced the untrimmed line")
 
-    -- ── THE IN-BAND POSITIVE CONTROL ─────────────────────────────────────
-    -- An unknown method must come back as an ERROR, not as silence and not as
-    -- a result. If the transport were broken every `has` above could fail
-    -- together and look like one bug; this row can only pass when the reader
-    -- and the writer are both real.
+    # ── THE IN-BAND POSITIVE CONTROL ─────────────────────────────────────
+    # An unknown method must come back as an ERROR, not as silence and not as
+    # a result. If the transport were broken every `has` above could fail
+    # together and look like one bug; this row can only pass when the reader
+    # and the writer are both real.
     check(has(out, "{\"id\":9,\"error\":{\"code\":-32601"), "an unknown method ERRORS (positive control)",
         "the server answered an unknown method with silence or with a result")
 
     check(has(out, "{\"id\":99,\"jsonrpc\":\"2.0\"}"), "shutdown answers last",
         "the session did not reach shutdown; something between opened and it died")
 
-    -- ── the legend is GENERATED, and still current ───────────────────────
-    -- Re-derive from the taxonomy and require no change. This is the H-1 drift
-    -- check with teeth: it runs the real generator against the real document.
+    # ── the legend is GENERATED, and still current ───────────────────────
+    # Re-derive from the taxonomy and require no change. This is the H-1 drift
+    # check with teeth: it runs the real generator against the real document.
     src = root .. "/docs/spec/roles.md"
     if std.fs.exists(src)
         rc = os.execute("cd " .. work .. " && DUO_ROOT='" .. root .. "' '" .. duobin
@@ -379,9 +379,9 @@ main(): i64
         return 0
     end
     io.write("lsp-gate: FAIL — " .. fails:to(str) .. " check(s) failed\n")
-    -- `std.os.exit`, NOT `return 1`. A Duo script's `main` return value is
-    -- DROPPED, so a gate that returns 1 exits 0 and `zig build` reads success.
-    -- mcp-gate learned this by printing 13 failures into a green build.
+    # `std.os.exit`, NOT `return 1`. A Duo script's `main` return value is
+    # DROPPED, so a gate that returns 1 exits 0 and `zig build` reads success.
+    # mcp-gate learned this by printing 13 failures into a green build.
     std.os.exit(1)
     1
 end

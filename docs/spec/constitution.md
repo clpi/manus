@@ -6,17 +6,17 @@ it. Historical pass documents and retired source are provenance only.
 
 The fenced body is structured law notation retained while `GAP-145` closes the
 canonical lexical and generated-role boundary. It is not executable canonical
-Idol, not a source template, and its `--` notation must not be copied into
+Idol, not a source template, and its `#` notation must not be copied into
 `.id`. The current law lives in the facts; the notation is a documentation
 projection until the whole file can move truthfully to `constitution.id`.
 
 ```text
--- C0 structured law notation. NON-SOURCE.
+# C0 structured law notation. NON-SOURCE.
 
--- ═══ §1 · the primary representation ═══════════════════════════════════════
---
--- The first fact, and the one every other fact depends on: law lives in the
--- graph, not in sentences.
+# ═══ §1 · the primary representation ═══════════════════════════════════════
+#
+# The first fact, and the one every other fact depends on: law lives in the
+# graph, not in sentences.
 
 law: {
     id: str
@@ -24,9 +24,9 @@ law: {
     holds: any
     binds: seq(str)
     fails: str
-    -- These fields describe the complete law record in the structured
-    -- documentation bridge. Canonical constitution source and generated
-    -- machine validation remain blocked by GAP-145.
+    # These fields describe the complete law record in the structured
+    # documentation bridge. Canonical constitution source and generated
+    # machine validation remain blocked by GAP-145.
     why: any
     deny: any
     canon: any
@@ -62,8 +62,8 @@ authority.constitution = law{
     fails = "two encodings of one rule is two languages"
 }
 
--- The structural goal. Note it is an OBJECTIVE, not an invariant: it states
--- where the language is going, and it is measured, not asserted.
+# The structural goal. Note it is an OBJECTIVE, not an invariant: it states
+# where the language is going, and it is measured, not asserted.
 correctness = law{
     id    = "law.correctness"
     kind  = .objective
@@ -74,7 +74,7 @@ correctness = law{
     }
 }
 
--- ═══ §2 · the constitutional stack ═════════════════════════════════════════
+# ═══ §2 · the constitutional stack ═════════════════════════════════════════
 
 level: { rank: i64, name: str, role: str }
 
@@ -107,18 +107,18 @@ coherence = law{
     fails = "the build stops BEFORE compiling anything"
 }
 
--- ═══ §3 · RULE-OWNER — precedence, and why it exists ═══════════════════════
---
--- Agent output and historical pass material never outrank an owner directive
--- reconciled into this constitution. A conflicting projection is void and must
--- be repaired rather than treated as another authority.
+# ═══ §3 · RULE-OWNER — precedence, and why it exists ═══════════════════════
+#
+# Agent output and historical pass material never outrank an owner directive
+# reconciled into this constitution. A conflicting projection is void and must
+# be repaired rather than treated as another authority.
 
 precedence = {
-    "directive",       -- the owner, verbatim, until reconciled here
-    "constitution",    -- the sole living repository law
-    "projection",      -- grammar, corpus, context and workflow views
-    "implementation",  -- what happens to be implemented
-    "history",         -- pass documents and retired source, provenance only
+    "directive",       # the owner, verbatim, until reconciled here
+    "constitution",    # the sole living repository law
+    "projection",      # grammar, corpus, context and workflow views
+    "implementation",  # what happens to be implemented
+    "history",         # pass documents and retired source, provenance only
 }
 
 owner = law{
@@ -133,7 +133,7 @@ owner = law{
     fails = "leaving a current directive beside contradictory repository law or treating historical pass text as authority"
 }
 
--- ═══ §4 · identity ═════════════════════════════════════════════════════════
+# ═══ §4 · identity ═════════════════════════════════════════════════════════
 
 language = @{
     name  = "idol"
@@ -144,7 +144,7 @@ language = @{
 }
 
 language.history = {
-    @{ names = { "Idsem", "idsem" }, binaries = { "idsem" }, role = "historical and bootstrap provenance only" },
+    @{ names = { "Idol", "idol" }, binaries = { "idol" }, role = "historical and bootstrap provenance only" },
     @{ names = { "Duon", "duon", "Duo", "duo" }, files = { ".id" }, binaries = { "duo" }, role = "historical and bootstrap provenance only" },
 }
 
@@ -215,66 +215,107 @@ number = law{
     fails = "a primitive kind tag selecting meaning or an inferred literal committing a machine representation without demand"
 }
 
--- ═══ §5 · syntax ═══════════════════════════════════════════════════════════
+# ═══ §5 · syntax ═══════════════════════════════════════════════════════════
 
 syntax.name = @{
-    shape     = .word          -- one lowercase word
+    shape     = .word          # one lowercase word
     underscore = false
     uppercase  = false
 }
 
 syntax.anchor = @{
-    bare    = .descriptor      -- `@` is the enclosing descriptor
-    postfix = .relation        -- `x@rel` moves the anchor
-    prefix  = false            -- prefix `@` does not exist
+    bare    = .descriptor      # `@` is the enclosing descriptor
+    postfix = .relation        # `x@rel` moves the anchor
+    prefix  = false            # prefix `@` does not exist
 }
 
 syntax.block = @{
     bound     = .offside
     close     = false
-    semicolon = false          -- the repair is "press enter"
+    semicolon = false          # the repair is "press enter"
 }
 
--- ═══ §6 · semantic roles ═══════════════════════════════════════════════════
+# ═══ §5b · path and home names ═════════════════════════════════════════════
+#
+# A project-owned filename or directory that projects an Idol binding or home
+# obeys the SAME name law as Idol source. There is no separate filename
+# convention. The stem is the semantic table or home name; the path projects
+# it. Physical path is provenance after resolution; it must not mint a second
+# semantic identity.
+
+path.name = law{
+    id    = "law.path.name"
+    kind  = .invariant
+    holds = .same
+    binds = {
+        "canonical(path stem) equals the canonical semantic name of the table or home that source contributes",
+        "one irreducible semantic meaning maps to one lowercase word in every path component that projects semantic home",
+        "concatenated file and directory names never express qualification — decompose semantic units into nested homes and worlds through hierarchy, never mashed stems",
+        "snake_case camelCase PascalCase SCREAMING_CASE kebab-case dot.compounds word concatenation invented abbreviations and numeric version suffixes used as taxonomy are forbidden in project-controlled semantic path components",
+        "removing punctuation does not repair a compound name",
+        "a slash expresses semantic home topology only when the enclosing component is an admitted home",
+        "corpus role words such as test proof fixture example benchmark generated native foreign compat legacy migration and snapshot do not belong in semantic source-table identity unless they are the irreducible owner",
+        "foreign generated and history classifications remain mechanically distinct and must not teach native naming",
+    }
+    fails = "filesystem name and language name maintained as two independent authorities"
+}
+
+path.gate = law{
+    id    = "law.gate.path"
+    kind  = .protocol
+    holds = .ratchet
+    binds = {
+        "every added or renamed project-controlled path component is classified before admission",
+        "separator and case violations fail immediately",
+        "a stem decomposable into two or more established semantic words fails unless the whole stem is independently admitted as one irreducible word",
+        "semantic_graph semanticGraph SemanticGraph semantic-graph and semanticgraph receive the same verdict",
+        "old_thing to oldthing does not clear a compound finding merely because punctuation disappeared",
+        "no filename allowlist becomes a second naming authority",
+        "long-term validation belongs in the source graph; gates/path.id and scripts/idiomgate.id are the staged lexical and compound firewalls until then",
+    }
+    fails = "a commit that adds canonical source inside an invalid new filename or introduces a mashed compound name token on an added line"
+}
+
+# ═══ §6 · semantic roles ═══════════════════════════════════════════════════
 
 call.face = @{
-    declare = .operation       -- read(number) = (lx, b) …
-    invoke  = .subject         -- lx:read(number)(b)
+    declare = .operation       # read(number) = (lx, b) …
+    invoke  = .subject         # lx:read(number)(b)
 }
 
 subject = @{
     implicit = true
-    named    = false           -- SELF-ZERO: there is no self
+    named    = false           # SELF-ZERO: there is no self
 }
 
 failure = @{
-    result   = .union          -- t | error; structural nil is unwritten
-    obligate = true            -- an unconsumed failure position diagnoses
-    route    = .contract       -- B-15 routes under a declared contract
+    result   = .union          # t | error; structural nil is unwritten
+    obligate = true            # an unconsumed failure position diagnoses
+    route    = .contract       # B-15 routes under a declared contract
 }
 
--- ═══ §7 · lua is hosted, not assimilated ═══════════════════════════════════
---
--- Language origin is not merely metadata. A Lua table lookup and an
--- Idol sealed-shape field lookup can have identical graph SHAPE and different
--- semantic LAW. If origin were only provenance, an optimizer could prove a
--- fact using Idol laws over a Lua node.
---
--- So: the SUBSTRATE is shared, the LAWSET is not. Lua shares shapes,
--- specialization, representation selection and witnesses without becoming
--- almost-Idol.
+# ═══ §7 · lua is hosted, not assimilated ═══════════════════════════════════
+#
+# Language origin is not merely metadata. A Lua table lookup and an
+# Idol sealed-shape field lookup can have identical graph SHAPE and different
+# semantic LAW. If origin were only provenance, an optimizer could prove a
+# fact using Idol laws over a Lua node.
+#
+# So: the SUBSTRATE is shared, the LAWSET is not. Lua shares shapes,
+# specialization, representation selection and witnesses without becoming
+# almost-Idol.
 
 lua = @{
     host   = .hosted
-    law    = .lua              -- lua semantics, exactly
+    law    = .lua              # lua semantics, exactly
     face   = .foreign
 }
 
--- ═══ §8 · passes become provenance ═════════════════════════════════════════
---
--- Pass numbers stop being authority and become history. Supersession is a
--- graph operation, not a numeric comparison — which is what let "higher pass
--- wins" overrule a directive in the first place.
+# ═══ §8 · passes become provenance ═════════════════════════════════════════
+#
+# Pass numbers stop being authority and become history. Supersession is a
+# graph operation, not a numeric comparison — which is what let "higher pass
+# wins" overrule a directive in the first place.
 
 passes = law{
     id      = "law.pass"
@@ -284,30 +325,30 @@ passes = law{
 }
 
 supersedes = @{
-    old = .retired             -- removed from the current view
+    old = .retired             # removed from the current view
     new = .active
 }
 
--- ═══ §9 · CLAUDE.md is a non-normative projection ══════════════════════════
---
--- Generation is the target. Until that projection exists, a hand-maintained
--- view must remain short, declare its source and fail closed on disagreement.
+# ═══ §9 · CLAUDE.md is a non-normative projection ══════════════════════════
+#
+# Generation is the target. Until that projection exists, a hand-maintained
+# view must remain short, declare its source and fail closed on disagreement.
 
 context = @{
     source = .constitution
     write  = .bootstrap
     target = .generated
-    binds  = false             -- non-normative
+    binds  = false             # non-normative
     parts  = {
         "identity", "invariants", "canon", "denied",
         "ownership", "gates", "gaps", "foreign",
     }
 }
 
--- ═══ §10 · the pattern lattice ═════════════════════════════════════════════
---
--- A canonical pattern is not an example. It is five artifacts, and a pattern
--- missing any of them is undefended.
+# ═══ §10 · the pattern lattice ═════════════════════════════════════════════
+#
+# A canonical pattern is not an example. It is five artifacts, and a pattern
+# missing any of them is undefended.
 
 pattern: {
     canon: str
@@ -325,19 +366,19 @@ selfzero.pattern = pattern{
     diagnostic = "a parameter named self is an audit finding"
 }
 
--- ═══ §11 · dialect identity ════════════════════════════════════════════════
+# ═══ §11 · dialect identity ════════════════════════════════════════════════
 
 dialect = @{
     kinds  = { .idol, .lua, .generated, .foreign },
-    switch = false             -- no implicit mode switch
-    hidden = false             -- no hidden semantics
+    switch = false             # no implicit mode switch
+    hidden = false             # no hidden semantics
 }
 
--- Every semantic fact carries these three. `law` is what §7 adds and what the
--- substrate RFC was missing.
+# Every semantic fact carries these three. `law` is what §7 adds and what the
+# substrate RFC was missing.
 fact.marks = { "origin", "dialect", "law" }
 
--- ═══ §12 · canonicalization ════════════════════════════════════════════════
+# ═══ §12 · canonicalization ════════════════════════════════════════════════
 
 canon = law{
     id    = "law.canon"
@@ -349,7 +390,7 @@ canon = law{
     }
 }
 
--- ═══ §13 · corpora ═════════════════════════════════════════════════════════
+# ═══ §13 · corpora ═════════════════════════════════════════════════════════
 
 corpus = @{
     canon   = "canonical id only"
@@ -370,11 +411,11 @@ training = law{
     fails = "a blind search autocomplete or nearest file analogy teaching retired architecture"
 }
 
--- ═══ §14 · the allowed semantic kinds ══════════════════════════════════════
---
--- This list is CLOSED. A subsystem that is not one of these, and not one of
--- the four allowed roles below, requires a constitutional amendment — which
--- means editing this file, in the open, with the owner.
+# ═══ §14 · the allowed semantic kinds ══════════════════════════════════════
+#
+# This list is CLOSED. A subsystem that is not one of these, and not one of
+# the four allowed roles below, requires a constitutional amendment — which
+# means editing this file, in the open, with the owner.
 
 kinds = {
     "id", "descriptor", "relation", "binding", "place", "demand",
@@ -387,13 +428,13 @@ roles = { "index", "cache", "projection", "bootstrap" }
 subsystems = law{
     id    = "law.subsystem"
     kind  = .invariant
-    holds = false              -- no freeform subsystems
+    holds = false              # no freeform subsystems
     fails = "needs a constitutional amendment, not a directory"
 }
 
--- ═══ §15 · the mechanism delta ═════════════════════════════════════════════
---
--- What a change must NOT add. All zeros, and a nonzero is not a warning.
+# ═══ §15 · the mechanism delta ═════════════════════════════════════════════
+#
+# What a change must NOT add. All zeros, and a nonzero is not a warning.
 
 delta = @{
     kinds      = 0
@@ -404,7 +445,7 @@ delta = @{
     authorities = 0
 }
 
--- ═══ §16 · the agent protocol ══════════════════════════════════════════════
+# ═══ §16 · the agent protocol ══════════════════════════════════════════════
 
 agent.before = @{
     ask  = "what is the earliest host-owned production boundary?"
@@ -422,21 +463,23 @@ agent.steps = {
     "release exact owned claims and hand off remaining blockers after the pushed revision is verified",
 }
 
--- The stop condition, and it is a STOP, not a fallback. An agent that cannot
--- find an owner must record a gap rather than invent a home.
--- `do` cannot name this field — it is a reserved word, and `noowner` would be
--- two words jammed into one, which LAW-ONE forbids as surely as an underscore.
--- `.orphan` is the one word that names the state: an entity with no owner.
+# The stop condition, and it is a STOP, not a fallback. An agent that cannot
+# find an owner must record a gap rather than invent a home.
+# `do` cannot name this field — it is a reserved word, and `noowner` would be
+# two words jammed into one, which LAW-ONE forbids as surely as an underscore.
+# `.orphan` is the one word that names the state: an entity with no owner.
 agent.stop = @{
     when = .orphan
     act  = .gap
 }
 
--- ═══ §17 · the gate ════════════════════════════════════════════════════════
+# ═══ §17 · the gate ════════════════════════════════════════════════════════
 
 gate.agent = {
     "constitution consistent",
     "source law and canonicality classified",
+    "path and home names classified",
+    "layout resolution without req import loader or admission syntax; projection and scope reachability only",
     "current revision and dirty state bound",
     "ownership conflict absent",
     "graph valid",
@@ -449,7 +492,7 @@ gate.agent = {
     "architecture delta zero",
 }
 
--- ═══ §18 · what an agent reports ═══════════════════════════════════════════
+# ═══ §18 · what an agent reports ═══════════════════════════════════════════
 
 report: {
     change: { owner: str, laws: seq(str), archetype: str, graph: str, realization: str }
@@ -464,7 +507,7 @@ report: {
     result: { gates: seq(str) }
 }
 
--- ═══ §19 · why ═════════════════════════════════════════════════════════════
+# ═══ §19 · why ═════════════════════════════════════════════════════════════
 
 why.takes = { "syntax", "edge", "relation", "failure", "span" }
 
@@ -473,20 +516,20 @@ why.gives = {
     "origin", "resolution path", "witness",
 }
 
--- ═══ §20 · totality — THREE gates, not one ═════════════════════════════════
---
--- The distinction the audit was right about: 100% role coverage is not 100%
--- understood meaning. A token can be beautifully coloured while its binding
--- resolution is wrong. These are separate dimensions and each gets its number.
+# ═══ §20 · totality — THREE gates, not one ═════════════════════════════════
+#
+# The distinction the audit was right about: 100% role coverage is not 100%
+# understood meaning. A token can be beautifully coloured while its binding
+# resolution is wrong. These are separate dimensions and each gets its number.
 
 total.role = "every span has ONE role"
 total.meaning = "every semantic occurrence resolves to an id and facts or to an explicit error"
 total.origin = "every non-source fact carries its chain"
 
--- ═══ §21 · identity is one graph entity ════════════════════════════════════
---
--- Equal content may share realization without replacing id.
--- Incarnation, correspondence, provenance and content remain separate facts.
+# ═══ §21 · identity is one graph entity ════════════════════════════════════
+#
+# Equal content may share realization without replacing id.
+# Incarnation, correspondence, provenance and content remain separate facts.
 
 coordinate = "a private compact physical representation of id valid only within one exact graph incarnation"
 content = "normalized semantic facts and relations, never identity"
@@ -504,7 +547,7 @@ dedup = law{
     fails = "two counters becoming one object"
 }
 
--- ═══ §22 · lawsets ═════════════════════════════════════════════════════════
+# ═══ §22 · lawsets ═════════════════════════════════════════════════════════
 
 lawsets = @{
     native = { "idol" }
@@ -512,11 +555,11 @@ lawsets = @{
     closed = false
 }
 
--- ═══ §23 · the lua firewall ════════════════════════════════════════════════
---
--- Exact source behaviour is non-negotiable. Representation may specialize
--- arbitrarily; behaviour may not move. Each of these participates in guards,
--- and each specialization owes a behavioural differential.
+# ═══ §23 · the lua firewall ════════════════════════════════════════════════
+#
+# Exact source behaviour is non-negotiable. Representation may specialize
+# arbitrarily; behaviour may not move. Each of these participates in guards,
+# and each specialization owes a behavioural differential.
 
 lua.holds = {
     "table semantics",
@@ -544,9 +587,9 @@ lua.adapt = law{
     fails = "a faster lua that is not lua"
 }
 
--- ═══ §24 · the shared substrate ════════════════════════════════════════════
---
--- Shared REPRESENTATION. Not shared law — §7 and §22 are the firewall.
+# ═══ §24 · the shared substrate ════════════════════════════════════════════
+#
+# Shared REPRESENTATION. Not shared law — §7 and §22 are the firewall.
 
 shared = {
     "values", "descriptors", "bindings", "places", "calls", "relations",
@@ -554,20 +597,20 @@ shared = {
     "law", "trust", "representation", "realization", "witness",
 }
 
--- ═══ §25 · cross-language equivalence ══════════════════════════════════════
+# ═══ §25 · cross-language equivalence ══════════════════════════════════════
 
 equiv = @{
     kind    = .edge
     form    = "equiv(a)(b)"
-    witness = true             -- A5: no claim without one
+    witness = true             # A5: no claim without one
 }
 
--- ═══ §26 · effects touch resources ═════════════════════════════════════════
---
--- NOT a total order. A per-function happens-before chain over-constrains and
--- costs reordering, vectorization, commuting and parallelism. Effects name
--- what they TOUCH and in what mode; ordering is DERIVED where dependence
--- actually requires it.
+# ═══ §26 · effects touch resources ═════════════════════════════════════════
+#
+# NOT a total order. A per-function happens-before chain over-constrains and
+# costs reordering, vectorization, commuting and parallelism. Effects name
+# what they TOUCH and in what mode; ordering is DERIVED where dependence
+# actually requires it.
 
 effect: { on: str, mode: { read, write, alloc, io, state } }
 
@@ -588,50 +631,50 @@ ordering = law{
     fails = "an effect chain that forbids legal reordering"
 }
 
--- ═══ §27 · ownership ═══════════════════════════════════════════════════════
+# ═══ §27 · ownership ═══════════════════════════════════════════════════════
 
 ownership = {
     "native", "region", "rc", "borrowed", "pinned",
     "foreign.lua", "foreign.python", "foreign.jvm", "wasm.linear",
 }
 
--- ═══ §28 · what dnir is, and is not ════════════════════════════════════════
+# ═══ §28 · what dnir is, and is not ════════════════════════════════════════
 
--- `is` and `not` are both reserved, so the fields are `role` and `denies` —
--- two more places the constitution had to obey itself to be written.
+# `is` and `not` are both reserved, so the fields are `role` and `denies` —
+# two more places the constitution had to obey itself to be written.
 dnir = @{
     role   = "demand-selected realization, linearized"
     denies = { "the semantic graph", "the language definition" }
 }
 
--- dnir is a FAMILY of canonical realization facts with backend views, not one
--- linear form serving every backend forever. These are FACETS of one graph, not
--- independent IRs; a backend requests the facets it needs and the textual
--- `.dnir` form is a deterministic projection of them.
+# dnir is a FAMILY of canonical realization facts with backend views, not one
+# linear form serving every backend forever. These are FACETS of one graph, not
+# independent IRs; a backend requests the facets it needs and the textual
+# `.dnir` form is a deterministic projection of them.
 dnir.facets = {
-    "core",        -- scalars, places, blocks, calls, packs, effects, control
-    "mem",         -- lifetime, retain/release, region operations
-    "vector",      -- lanes, masks, vector operations
-    "concurrent",  -- suspend, resume, atomic
-    "machine",     -- target-selected constraints
+    "core",        # scalars, places, blocks, calls, packs, effects, control
+    "mem",         # lifetime, retain/release, region operations
+    "vector",      # lanes, masks, vector operations
+    "concurrent",  # suspend, resume, atomic
+    "machine",     # target-selected constraints
 }
 
--- Every dnir operation carries these. A physical temporary may be `%17`, and
--- `%17` is NEVER semantic identity — that is what keeps backend-local numbering
--- out of MCP, LSP, debugging and the persistent graph.
+# Every dnir operation carries these. A physical temporary may be `%17`, and
+# `%17` is NEVER semantic identity — that is what keeps backend-local numbering
+# out of MCP, LSP, debugging and the persistent graph.
 dnir.marks = { "meaning", "incarnation", "origin", "law", "witness" }
 
--- Linearization need not be perfectly reconstructable — optimization destroys
--- surface structure — but every instruction maps BACKWARD to its semantic
--- nodes, source spans, transforms and witnesses. That route is what powers
--- debugging, perf blame, why(realization), review and certification.
+# Linearization need not be perfectly reconstructable — optimization destroys
+# surface structure — but every instruction maps BACKWARD to its semantic
+# nodes, source spans, transforms and witnesses. That route is what powers
+# debugging, perf blame, why(realization), review and certification.
 dnir.reverses = true
 
--- ═══ §28a · what is persisted ══════════════════════════════════════════════
---
--- "Persist meaning; derive mechanics." Not every compiler detail belongs in the
--- persistent graph. Register allocation is not persisted merely because graphs
--- are fashionable.
+# ═══ §28a · what is persisted ══════════════════════════════════════════════
+#
+# "Persist meaning; derive mechanics." Not every compiler detail belongs in the
+# persistent graph. Register allocation is not persisted merely because graphs
+# are fashionable.
 
 persist = law{
     id    = "law.persist"
@@ -644,7 +687,7 @@ persist = law{
     }
 }
 
--- ═══ §29 · realization candidates ══════════════════════════════════════════
+# ═══ §29 · realization candidates ══════════════════════════════════════════
 
 realization = law{
     id    = "law.realization.candidate"
@@ -660,7 +703,7 @@ realization = law{
     }
 }
 
--- ═══ §30 · optimization is a witnessed rewrite ═════════════════════════════
+# ═══ §30 · optimization is a witnessed rewrite ═════════════════════════════
 
 rewrite: {
     pattern: str
@@ -671,10 +714,10 @@ rewrite: {
     witness: str
 }
 
--- ═══ §31 · frontends ═══════════════════════════════════════════════════════
---
--- A foreign language lifts to the SUBSTRATE directly. Routing it through a
--- Idol AST first would assimilate its semantics on the way in, which is §7.
+# ═══ §31 · frontends ═══════════════════════════════════════════════════════
+#
+# A foreign language lifts to the SUBSTRATE directly. Routing it through a
+# Idol AST first would assimilate its semantics on the way in, which is §7.
 
 frontends = @{
     native = { "idol" }
@@ -689,18 +732,18 @@ lifting = law{
     fails = "a foreign language wearing Idol's ast"
 }
 
--- ═══ §32 · a call across a boundary ════════════════════════════════════════
+# ═══ §32 · a call across a boundary ════════════════════════════════════════
 
 edge.call = {
     "caller law", "callee law", "abi", "ownership", "effects",
     "failure translation", "trust", "representation",
 }
 
--- ═══ §33 · the self-hosting sequence ═══════════════════════════════════════
---
--- In SLICES, never all at once. At every rung: the old implementation is the
--- ORACLE, the new one is the CANDIDATE, and the differential is the JUDGE.
--- Do not rewrite from faith.
+# ═══ §33 · the self-hosting sequence ═══════════════════════════════════════
+#
+# In SLICES, never all at once. At every rung: the old implementation is the
+# ORACLE, the new one is the CANDIDATE, and the differential is the JUDGE.
+# Do not rewrite from faith.
 
 slice: { rank: i64, name: str, note: str }
 
@@ -723,10 +766,10 @@ differential = law{
     fails = "a rewrite landed on faith"
 }
 
--- ═══ §33a · the orientation truths every agent gets first ══════════════════
+# ═══ §33a · the orientation truths every agent gets first ══════════════════
 
--- The structured documentation keeps one rule per string so every obligation
--- remains independently reviewable. This notation is not canonical source.
+# The structured documentation keeps one rule per string so every obligation
+# remains independently reviewable. This notation is not canonical source.
 agent.first = {
     "Do not design Idol. Idol is already designed.",
     "Identity is id; facts qualify it and no layer exposes a node kind edge or typed identity vocabulary.",
@@ -741,7 +784,7 @@ agent.first = {
     "A change is complete only when syntax, rendering, identity, ownership, effects, obligations, provenance, realization, differential and witnesses ALL agree.",
 }
 
--- ═══ §34 · the final architectural invariant ═══════════════════════════════
+# ═══ §34 · the final architectural invariant ═══════════════════════════════
 
 substrate = law{
     id    = "law.substrate"
@@ -755,18 +798,18 @@ substrate = law{
     }
 }
 
--- ═══ §35 · topology ════════════════════════════════════════════════════════
+# ═══ §35 · topology ════════════════════════════════════════════════════════
 
 layers = {
     "constitution", "grammar", "context", "tooling", "frontends",
     "graph", "specialized", "realization", "dnir", "backend",
 }
 
--- ═══ §36 · THE COMPILER'S OWN ARCHITECTURE IS IDOL-SHAPED ══════════════════
---
--- The compiler should not merely COMPILE Idol this way. A host helper that
--- owns a recoverable semantic distinction is evidence that the architecture
--- has not internalized its own language.
+# ═══ §36 · THE COMPILER'S OWN ARCHITECTURE IS IDOL-SHAPED ══════════════════
+#
+# The compiler should not merely COMPILE Idol this way. A host helper that
+# owns a recoverable semantic distinction is evidence that the architecture
+# has not internalized its own language.
 
 archrelation = law{
     id    = "law.arch.relation"
@@ -781,11 +824,11 @@ archrelation = law{
     fails = "addnode addedge addchild registertype registerprotocol emitwitness"
 }
 
--- These are not unrelated functions sharing a prefix. They are ONE open
--- relation successively specialized: `add`, then the LEVEL, then the subject,
--- then the value. Where the operand already names its kind, `g:add(n)` resolves
--- through the descriptor of `n` and the level is unnecessary.
-add.canon = { "g:add(n)", "g:add(mode)(n)" }   -- level ONLY where mode is a real choice
+# These are not unrelated functions sharing a prefix. They are ONE open
+# relation successively specialized: `add`, then the LEVEL, then the subject,
+# then the value. Where the operand already names its kind, `g:add(n)` resolves
+# through the descriptor of `n` and the level is unnecessary.
+add.canon = { "g:add(n)", "g:add(mode)(n)" }   # level ONLY where mode is a real choice
 
 factone = law{
     id    = "law.fact.one"
@@ -801,9 +844,9 @@ factone = law{
     fails = "addChild writes n.scope = parent AND addEdge(.contains) — two mutations of one fact"
 }
 
--- `parent contains child` is the fact; child scope, parent children and
--- ancestry are projections. A host helper may project that fact but does not
--- create another semantic operation.
+# `parent contains child` is the fact; child scope, parent children and
+# ancestry are projections. A host helper may project that fact but does not
+# create another semantic operation.
 contains.canon = "parent:add(contains)(child)"
 
 hostprojection = law{
@@ -818,48 +861,48 @@ hostprojection = law{
     fails = "a host abstraction made permanent because it was convenient in zig"
 }
 
--- `add` is an ORDINARY OPEN RELATION, not privileged compiler magic. The
--- compiler ships well-known specializations; a graph world may authorize more
--- under coherence. A hidden switch over kinds would fix forever what adding can
--- mean.
---
--- Closed host enums are compact indexes only. They may not freeze the set of
--- relations or revive retired source concepts as graph ontology.
-kinds.role = .index          -- bootstrap acceleration, never ontology
+# `add` is an ORDINARY OPEN RELATION, not privileged compiler magic. The
+# compiler ships well-known specializations; a graph world may authorize more
+# under coherence. A hidden switch over kinds would fix forever what adding can
+# mean.
+#
+# Closed host enums are compact indexes only. They may not freeze the set of
+# relations or revive retired source concepts as graph ontology.
+kinds.role = .index          # bootstrap acceleration, never ontology
 kinds.authority = false
 
--- A graph VALUE is immutable current truth. Authority to produce the next
--- incarnation is a WORLD, so arbitrary code cannot mutate compiler truth by
--- accident. G0 --transaction--> G1, never mutation in place — which is what
--- buys incrementality, undo, replay, speculation, parallel agents and stable
--- incarnation identity.
-edit.canon = { "edit = world(graph)(g)", "parent:add(child)" }  -- graph is AUTHORITY, not cargo
+# A graph VALUE is immutable current truth. Authority to produce the next
+# incarnation is a WORLD, so arbitrary code cannot mutate compiler truth by
+# accident. G0 --transaction--> G1, never mutation in place — which is what
+# buys incrementality, undo, replay, speculation, parallel agents and stable
+# incarnation identity.
+edit.canon = { "edit = world(graph)(g)", "parent:add(child)" }  # graph is AUTHORITY, not cargo
 
--- The irreducible primitives. Everything else — descriptor, binding, place,
--- effect, capability, lifetime, origin, trust, provenance, representation,
--- realization — is a semantic FAMILY OF FACTS, not a separate graph object
--- class. The graph must not look like an OO graph database implemented in Zig;
--- it is Idol's relation calculus made persistent.
+# The irreducible primitives. Everything else — descriptor, binding, place,
+# effect, capability, lifetime, origin, trust, provenance, representation,
+# realization — is a semantic FAMILY OF FACTS, not a separate graph object
+# class. The graph must not look like an OO graph database implemented in Zig;
+# it is Idol's relation calculus made persistent.
 primitives = { "value", "relation", "fact", "world", "demand", "witness" }
 
--- TRUST IS A LEVEL ON A FACT, never a mechanism standing beside one. The line
--- above already names trust a FAMILY OF FACTS; these are its levels, in the
--- ordinary Idol sense that `read(number)` is a level — no new object class, no
--- new surface.
---
--- An assertion must be recorded, attributable and invalidatable. An unlabelled
--- assumption is never allowed to masquerade as proof.
+# TRUST IS A LEVEL ON A FACT, never a mechanism standing beside one. The line
+# above already names trust a FAMILY OF FACTS; these are its levels, in the
+# ordinary Idol sense that `read(number)` is a level — no new object class, no
+# new surface.
+#
+# An assertion must be recorded, attributable and invalidatable. An unlabelled
+# assumption is never allowed to masquerade as proof.
 trust = @{
-    inferred = .derived      -- the compiler derived it from the graph
-    proven   = .witness      -- A5 satisfied; the witness is inspectable
-    observed = .sample       -- profile-time; carries its sample and its expiry
-    asserted = .author       -- the author knows and the compiler cannot check
-    foreign  = .lawset       -- a foreign lawset guarantees it, trust-tagged
-    guarded  = .runtime      -- true under a check, which carries its descent
+    inferred = .derived      # the compiler derived it from the graph
+    proven   = .witness      # A5 satisfied; the witness is inspectable
+    observed = .sample       # profile-time; carries its sample and its expiry
+    asserted = .author       # the author knows and the compiler cannot check
+    foreign  = .lawset       # a foreign lawset guarantees it, trust-tagged
+    guarded  = .runtime      # true under a check, which carries its descent
 }
 
--- Weakest last, and an unlabelled claim takes the WEAKEST level rather than the
--- strongest. A default of `proven` is how six mechanisms became invisible.
+# Weakest last, and an unlabelled claim takes the WEAKEST level rather than the
+# strongest. A default of `proven` is how six mechanisms became invisible.
 trust.order = { "proven", "inferred", "observed", "guarded", "foreign", "asserted" }
 trust.rest = .asserted
 
@@ -877,31 +920,31 @@ facttrust = law{
     fails = "a flag wearing the face of a proof: no companion check, no witness, no census"
 }
 
--- ABSENCE IS A FACT, AND ITS SPELLING ALREADY EXISTS. A2 NNS, checked against
--- this document rather than assumed: a false-valued field in a descriptor is
--- how absence has always been written here — `syntax.anchor` denies a prefix,
--- `syntax.name` denies underscore and uppercase, `syntax.block` denies the
--- semicolon, `subject` denies a name, `kinds` denies authority, `std` denies
--- ambient reach. Nothing is owed at the SURFACE, and a proposal for `noalias`,
--- `restrict` or an unsafe block is the signal that the existing form has not
--- been found yet.
---
--- What IS owed is the ENUMERATION. Optimization runs on negative facts — no
--- alias, no re-entry, no failure edge, no observer — and the compiler spells
--- none of them, so a flag stands in for "no alias exists" and hopes. Each
--- negative below is an ordinary fact taking an ordinary trust level, which is
--- the whole point: `alias = false` proven by an ownership witness and the same
--- words asserted by an author are different claims, and only the census can
--- tell them apart.
---
--- The negative ownership fact is `sharing`; a reserved grammar word does not
--- become a new fact identity merely because a proposal used it.
+# ABSENCE IS A FACT, AND ITS SPELLING ALREADY EXISTS. A2 NNS, checked against
+# this document rather than assumed: a false-valued field in a descriptor is
+# how absence has always been written here — `syntax.anchor` denies a prefix,
+# `syntax.name` denies underscore and uppercase, `syntax.block` denies the
+# semicolon, `subject` denies a name, `kinds` denies authority, `std` denies
+# ambient reach. Nothing is owed at the SURFACE, and a proposal for `noalias`,
+# `restrict` or an unsafe block is the signal that the existing form has not
+# been found yet.
+#
+# What IS owed is the ENUMERATION. Optimization runs on negative facts — no
+# alias, no re-entry, no failure edge, no observer — and the compiler spells
+# none of them, so a flag stands in for "no alias exists" and hopes. Each
+# negative below is an ordinary fact taking an ordinary trust level, which is
+# the whole point: `alias = false` proven by an ownership witness and the same
+# words asserted by an author are different claims, and only the census can
+# tell them apart.
+#
+# The negative ownership fact is `sharing`; a reserved grammar word does not
+# become a new fact identity merely because a proposal used it.
 absence = @{
-    sharing  = .ownership    -- no other live place reaches this one
-    reentry  = .world        -- no foreign frame re-enters during this scope
-    failure  = .contract     -- no failure edge leaves this realization
-    observer = .region       -- no other thread observes this place
-    effect   = .purity       -- no world is touched
+    sharing  = .ownership    # no other live place reaches this one
+    reentry  = .world        # no foreign frame re-enters during this scope
+    failure  = .contract     # no failure edge leaves this realization
+    observer = .region       # no other thread observes this place
+    effect   = .purity       # no world is touched
 }
 
 negative = law{
@@ -917,18 +960,18 @@ negative = law{
     fails = "noalias, restrict or an unsafe block proposed as new grammar"
 }
 
--- dnir is THE CANONICAL REALIZED RELATION STREAM — not nodes plus an operation
--- taxonomy. This SUPERSEDES the earlier "family of facets" reading in §28:
--- naming sub-ir families recreates ir kingdoms under a friendlier word.
--- The `add` identity stays traceable at every rung, which a conventional opcode
--- enum cannot promise:
---
---     semantic     x --add--> y, z
---     realized     add(i64)(register, register)
---     dnir         %3 = add.i64 %1 %2
+# dnir is THE CANONICAL REALIZED RELATION STREAM — not nodes plus an operation
+# taxonomy. This SUPERSEDES the earlier "family of facets" reading in §28:
+# naming sub-ir families recreates ir kingdoms under a friendlier word.
+# The `add` identity stays traceable at every rung, which a conventional opcode
+# enum cannot promise:
+#
+#     semantic     x --add--> y, z
+#     realized     add(i64)(register, register)
+#     dnir         %3 = add.i64 %1 %2
 dnir.stream = true
 
--- ═══ the final invariant ═══════════════════════════════════════════════════
+# ═══ the final invariant ═══════════════════════════════════════════════════
 
 final = law{
     id    = "law.final"
@@ -938,17 +981,17 @@ final = law{
     fails = "a second place where meaning is decided"
 }
 
--- ═══ §36 · what the twenty-point review added, and nothing more ════════════
---
--- Five rulings the adjudication produced that no fact above carries yet. Added
--- rather than restated: every other point of that review was already law here.
+# ═══ §36 · what the twenty-point review added, and nothing more ════════════
+#
+# Five rulings the adjudication produced that no fact above carries yet. Added
+# rather than restated: every other point of that review was already law here.
 
--- SELF-ZERO deletes a PARAMETER, not a PROOF. Unspecified, the ambient subject
--- becomes a second borrowing mechanism by accident — `capture = () .` and a
--- nested `f = () () .` have to answer reference vs copy vs view vs lifetime
--- extension, and each answer touches closures, regions, ownership, aliasing and
--- ABI. A surface cheaper than the binding it abbreviates is how implicit
--- borrowing gets in.
+# SELF-ZERO deletes a PARAMETER, not a PROOF. Unspecified, the ambient subject
+# becomes a second borrowing mechanism by accident — `capture = () .` and a
+# nested `f = () () .` have to answer reference vs copy vs view vs lifetime
+# extension, and each answer touches closures, regions, ownership, aliasing and
+# ABI. A surface cheaper than the binding it abbreviates is how implicit
+# borrowing gets in.
 escape = law{
     id    = "law.escape"
     kind  = .invariant
@@ -961,13 +1004,13 @@ escape = law{
     fails = "a second borrowing mechanism nobody declared"
 }
 
--- The memory ladder's load-bearing undefined term. `cycle-possible` is doing
--- enormous work: dynamic tables, closures capturing tables capturing closures,
--- foreign objects, weak refs, finalizers, resurrection, cross-thread graphs,
--- detection latency, behaviour under memory pressure, per-object metadata.
--- "Never a tracing collector" is a LATENCY PROMISE, so it is measured, not
--- asserted — and lua hosting generates pathological cyclic graphs routinely,
--- which makes the supremacy story and the memory doctrine ONE experiment.
+# The memory ladder's load-bearing undefined term. `cycle-possible` is doing
+# enormous work: dynamic tables, closures capturing tables capturing closures,
+# foreign objects, weak refs, finalizers, resurrection, cross-thread graphs,
+# detection latency, behaviour under memory pressure, per-object metadata.
+# "Never a tracing collector" is a LATENCY PROMISE, so it is measured, not
+# asserted — and lua hosting generates pathological cyclic graphs routinely,
+# which makes the supremacy story and the memory doctrine ONE experiment.
 cycle = law{
     id    = "law.cycle"
     kind  = .objective
@@ -980,12 +1023,12 @@ cycle = law{
     fails = "a mechanism list standing in for a latency guarantee"
 }
 
--- The wasm engine is one very large file BECAUSE compiler defects punish
--- decomposition. An agent reading it could conclude giant modules are idiomatic
--- high-performance Idol. THEY ARE NOT. Every such workaround is a gap with a
--- removal fixture, and the engine is the primary language-design fuzzer: each
--- ugly thing it needs is either inherent wasm complexity or an Idol defect, and
--- it gets adjudicated as exactly one of the two.
+# The wasm engine is one very large file BECAUSE compiler defects punish
+# decomposition. An agent reading it could conclude giant modules are idiomatic
+# high-performance Idol. THEY ARE NOT. Every such workaround is a gap with a
+# removal fixture, and the engine is the primary language-design fuzzer: each
+# ugly thing it needs is either inherent wasm complexity or an Idol defect, and
+# it gets adjudicated as exactly one of the two.
 workaround = law{
     id    = "law.wasm.workaround"
     kind  = .invariant
@@ -999,10 +1042,10 @@ workaround = law{
     fails = "an agent learning bad Idol from the best evidence Idol has"
 }
 
--- Fastest AND smallest AND most featureful are conflicting dimensions, so the
--- WHOLE matrix publishes, losses included. The external reference runtime is a
--- moving oracle and ceiling, never an ancestor: its performance is ITS claim,
--- and this repository may publish only its own last reproducible measurement.
+# Fastest AND smallest AND most featureful are conflicting dimensions, so the
+# WHOLE matrix publishes, losses included. The external reference runtime is a
+# moving oracle and ceiling, never an ancestor: its performance is ITS claim,
+# and this repository may publish only its own last reproducible measurement.
 matrix = @{
     speed   = { "startup", "cold", "warm", "jit latency", "steady", "memory", "branch", "call", "simd", "wasi" }
     size    = { "binary", "stripped", "loc", "rss", "instance", "jit metadata", "code cache" }
@@ -1026,13 +1069,13 @@ release = law{
     fails = "a correctness-free speed win, which this repository already paid for once"
 }
 
--- Package composition is a semantic exercise, not package-system detail owed
--- after implementation.
--- And compatibility does not reduce to graph shape: complexity, effects,
--- allocation, determinism, the error set, precision, ordering stability, a
--- sealed descriptor opening, and timing observable through a foreign interface
--- all move while the edge set stands still. A COMPUTED number that misses an
--- effect growth is worse than a declared one, because it is trusted.
+# Package composition is a semantic exercise, not package-system detail owed
+# after implementation.
+# And compatibility does not reduce to graph shape: complexity, effects,
+# allocation, determinism, the error set, precision, ordering stability, a
+# sealed descriptor opening, and timing observable through a foreign interface
+# all move while the edge set stands still. A COMPUTED number that misses an
+# effect growth is worse than a declared one, because it is trusted.
 package = law{
     id    = "law.package"
     kind  = .invariant
@@ -1048,18 +1091,18 @@ package = law{
     fails = "opening a registry before coherence closes"
 }
 
--- ═══ §37 · ORIENTATION. Semantic expressibility is not canonicality. ═══════
---
--- Idol source may be semantically correct and still noncanonical. Orientation,
--- compaction and idiom are LAW, not taste — and the compiler, formatter,
--- agents, std, the self-hosted compiler, Idol Wasm, the docs and every piece of
--- architectural pseudocode obey the same one.
+# ═══ §37 · ORIENTATION. Semantic expressibility is not canonicality. ═══════
+#
+# Idol source may be semantically correct and still noncanonical. Orientation,
+# compaction and idiom are LAW, not taste — and the compiler, formatter,
+# agents, std, the self-hosted compiler, Idol Wasm, the docs and every piece of
+# architectural pseudocode obey the same one.
 
--- Declare from the relation. Work from the value. The two faces are different
--- questions: the declaration answers "what relation exists?", the invocation
--- answers "what can this value do or become?". Never collapse them into one
--- spelling. Operation-first at a CALL SITE is canonical only when the relation
--- itself is the value being held or passed — `xs:map(to(str))`.
+# Declare from the relation. Work from the value. The two faces are different
+# questions: the declaration answers "what relation exists?", the invocation
+# answers "what can this value do or become?". Never collapse them into one
+# spelling. Operation-first at a CALL SITE is canonical only when the relation
+# itself is the value being held or passed — `xs:map(to(str))`.
 face = law{
     id    = "law.face.subject"
     kind  = .invariant
@@ -1072,10 +1115,10 @@ face = law{
     fails = "to(str)(n) where n is in hand — the algebra described, not the work done"
 }
 
--- A level names a REAL CHOICE, never a category already recoverable. If removing
--- a level leaves exactly one valid edge, the canonicalizer removes it. `x:to(str)`
--- cannot collapse — `str` is the demanded destination and is an independent
--- decision. `g:add(node)(n)` DOES collapse, because `n` names its own descriptor.
+# A level names a REAL CHOICE, never a category already recoverable. If removing
+# a level leaves exactly one valid edge, the canonicalizer removes it. `x:to(str)`
+# cannot collapse — `str` is the demanded destination and is an independent
+# decision. `g:add(node)(n)` DOES collapse, because `n` names its own descriptor.
 necessity = law{
     id    = "law.level.necessity"
     kind  = .invariant
@@ -1088,13 +1131,13 @@ necessity = law{
     fails = "a redundant semantic level, which is restatement and violates hpls"
 }
 
--- THE OBJECT THAT STORES THE DATA IS NOT NECESSARILY THE SEMANTIC SUBJECT.
--- A host structure owning the memory does not make it the receiver. If the
--- operation resolves a subject, canonical orientation is `subject:resolve(rel)`
--- with the graph ambient — NOT `graph:resolve(relation)(subject)` merely because
--- the index physically lives in a graph object. This is the law that stops
--- pseudo-OOP drift, and it is the twin of law.face.subject: together they
--- forbid both `compiler:everything(...)` and `lower(target)(value)`.
+# THE OBJECT THAT STORES THE DATA IS NOT NECESSARILY THE SEMANTIC SUBJECT.
+# A host structure owning the memory does not make it the receiver. If the
+# operation resolves a subject, canonical orientation is `subject:resolve(rel)`
+# with the graph ambient — NOT `graph:resolve(relation)(subject)` merely because
+# the index physically lives in a graph object. This is the law that stops
+# pseudo-OOP drift, and it is the twin of law.face.subject: together they
+# forbid both `compiler:everything(...)` and `lower(target)(value)`.
 physical = law{
     id    = "law.owner.physical"
     kind  = .invariant
@@ -1108,10 +1151,10 @@ physical = law{
     fails = "an api perfectly named and incorrectly oriented"
 }
 
--- Ambient is earned, not assumed: a thing is ambient ONLY where exactly one
--- valid contextual value exists. Otherwise it DIAGNOSES. No hidden global
--- compiler graph — the dynamic global environment is a lua fact, not an Idol one,
--- and it may not return as architecture.
+# Ambient is earned, not assumed: a thing is ambient ONLY where exactly one
+# valid contextual value exists. Otherwise it DIAGNOSES. No hidden global
+# compiler graph — the dynamic global environment is a lua fact, not an Idol one,
+# and it may not return as architecture.
 ambient = law{
     id    = "law.ambient.one"
     kind  = .invariant
@@ -1124,12 +1167,12 @@ ambient = law{
     fails = "shortening source by hiding an independent choice"
 }
 
--- Canonical source is a FIXED POINT, semantically and not merely by formatting.
--- The canonicalizer performs semantic REPAIRS — `to(str)(n)` becomes `n:to(str)`
--- — and emits a witness naming the relation, subject, level and the unchanged
--- graph identity, which is what makes the rewrite justified rather than a
--- reformat. Idiom is checked across every dimension at once, not one grep:
--- face, level, home, bind, return, route, subject, case, chain, convert.
+# Canonical source is a FIXED POINT, semantically and not merely by formatting.
+# The canonicalizer performs semantic REPAIRS — `to(str)(n)` becomes `n:to(str)`
+# — and emits a witness naming the relation, subject, level and the unchanged
+# graph identity, which is what makes the rewrite justified rather than a
+# reformat. Idiom is checked across every dimension at once, not one grep:
+# face, level, home, bind, return, route, subject, case, chain, convert.
 idiom = law{
     id    = "law.idiom.total"
     kind  = .invariant
@@ -1142,11 +1185,11 @@ idiom = law{
     fails = "semantically valid source that teaches the wrong idiom"
 }
 
--- Relation metadata carries the canonical face, so rendering is DERIVED rather
--- than left to agent taste. An argument list is not `{ a, b, c }` — each operand
--- carries a ROLE, and orientation follows from the roles automatically. This is
--- also what stops a bootstrap host signature from teaching the renderer that its
--- first parameter is the receiver.
+# Relation metadata carries the canonical face, so rendering is DERIVED rather
+# than left to agent taste. An argument list is not `{ a, b, c }` — each operand
+# carries a ROLE, and orientation follows from the roles automatically. This is
+# also what stops a bootstrap host signature from teaching the renderer that its
+# first parameter is the receiver.
 role = law{
     id    = "law.relation.role"
     kind  = .invariant
@@ -1159,13 +1202,13 @@ role = law{
     fails = "a generator emitting to(str)(x) because it had a signature and no subject role"
 }
 
--- DOCUMENTATION IS CORPUS. A code block in a normative document is a canonical
--- corpus member and compiles under the same gate, because an architect writing
--- `to(str)(x)` in a design note teaches every later agent the wrong idiom. A
--- block is Idol, dnir, foreign or CONCEPTUAL — and if an idea cannot yet be
--- expressed canonically it is marked conceptual and filed as a gap. Never invent
--- near-Idol. Prose is lintable too: say "add fact" and "resolve relation", never
--- "call addnode" or "the registry owns".
+# DOCUMENTATION IS CORPUS. A code block in a normative document is a canonical
+# corpus member and compiles under the same gate, because an architect writing
+# `to(str)(x)` in a design note teaches every later agent the wrong idiom. A
+# block is Idol, dnir, foreign or CONCEPTUAL — and if an idea cannot yet be
+# expressed canonically it is marked conceptual and filed as a gap. Never invent
+# near-Idol. Prose is lintable too: say "add fact" and "resolve relation", never
+# "call addnode" or "the registry owns".
 doc = law{
     id    = "law.doc.corpus"
     kind  = .invariant
@@ -1178,21 +1221,21 @@ doc = law{
     fails = "a specification teaching an idiom its own gate would reject"
 }
 
--- ═══ §37 · DISTRIBUTION IS NOT SEMANTICS (the stdlib reconciliation) ════════
---
--- THE DEEPEST RULE, and everything below is a consequence:
---
---   Distribution boundaries must never become semantic boundaries unless the
---   semantics genuinely require it.
---
--- Four distinctions follow:
---
---   1. A function does not become conceptually different because it arrived
---      from another package.
---   2. A standard operation does not need a package root because of where its
---      implementation file lives.
---   3. A package namespace is not a substitute for relation identity.
---   4. IMPORTING CODE IS NOT GRANTING CAPABILITY.
+# ═══ §37 · DISTRIBUTION IS NOT SEMANTICS (the stdlib reconciliation) ════════
+#
+# THE DEEPEST RULE, and everything below is a consequence:
+#
+#   Distribution boundaries must never become semantic boundaries unless the
+#   semantics genuinely require it.
+#
+# Four distinctions follow:
+#
+#   1. A function does not become conceptually different because it arrived
+#      from another package.
+#   2. A standard operation does not need a package root because of where its
+#      implementation file lives.
+#   3. A package namespace is not a substitute for relation identity.
+#   4. IMPORTING CODE IS NOT GRANTING CAPABILITY.
 
 distribution = law{
     id    = "law.distribution"
@@ -1206,22 +1249,22 @@ distribution = law{
     fails = "std.string.split(s, x) where s:split(x) names the same edge"
 }
 
--- The orthogonal facts that a conventional standard-library namespace blurs.
---
---   meaning    ordinary Idol descriptors, relations, values and laws —
---              relation, table, callable, failure, basic numerics and
---              sequences, reflection. Always present. No import, no prefix.
---   vocabulary standardized relation and descriptor IDENTITIES that are NOT
---              language axioms — sort, encode, json, time, format. Standard
---              MEANING; realization is replaceable.
---   package    a separately versioned GRAPH FRAGMENT contributing descriptors,
---              relations, implementations, worlds, laws, realizations. It does
---              NOT contribute a namespace.
---   world      AUTHORITY to perform effects, orthogonal to distribution.
+# The orthogonal facts that a conventional standard-library namespace blurs.
+#
+#   meaning    ordinary Idol descriptors, relations, values and laws —
+#              relation, table, callable, failure, basic numerics and
+#              sequences, reflection. Always present. No import, no prefix.
+#   vocabulary standardized relation and descriptor IDENTITIES that are NOT
+#              language axioms — sort, encode, json, time, format. Standard
+#              MEANING; realization is replaceable.
+#   package    a separately versioned GRAPH FRAGMENT contributing descriptors,
+#              relations, implementations, worlds, laws, realizations. It does
+#              NOT contribute a namespace.
+#   world      AUTHORITY to perform effects, orthogonal to distribution.
 distribution.projects = { "relation", "descriptor", "law", "world", "implementation", "realization", "origin", "trust" }
 
--- Availability and authority remain orthogonal. A relation may be known while
--- its required world refuses the application.
+# Availability and authority remain orthogonal. A relation may be known while
+# its required world refuses the application.
 authority.grant = law{
     id    = "law.authority.grant"
     kind  = .invariant
@@ -1234,11 +1277,135 @@ authority.grant = law{
     fails = "import as permission"
 }
 
--- MEANING is standard and non-replaceable; REALIZATION is replaceable. A
--- package may contribute a better `sort` realization — insertion, introsort,
--- radix, simd, gpu — and the call stays `xs:sort()`. It may NOT redefine what
--- standard `sort`, `eq`, `hash` or `to` MEAN, or ordinary code would change
--- behaviour on installation.
+# ═══ §37b · layout resolution (GAP-153) ═════════════════════════════════════
+#
+# Native dependency is NOT req, require, import, module, package, namespace,
+# include, Lua require, or any newly invented loader or admission edge. Files
+# contribute ordinary tables; directories may contribute enclosing homes; the
+# reference is the dependency edge. Worlds grant authority; possession of a
+# table never implies possession of a world.
+
+layout = law{
+    id    = "law.layout"
+    kind  = .invariant
+    holds = .topology
+    binds = {
+        "same-directory sibling references resolve without dependency syntax",
+        "cross-home visibility uses anchored root tables supplied by build or project configuration rather than per-file loader declarations",
+        "scope and enclosing home topology decide referability",
+        "req and require remain compatibility provenance only and ratchet to zero in new canonical source",
+        "reachability is scope and home projection not use using import inject admit open include or any admission syntax",
+        "selective visibility is scope construction at owner boundaries not source ceremony",
+        "native resolution never lowers through Lua require package traversal or runtime module tables",
+        "visibility of a table never grants the worlds its relations may require",
+        "world requirements remain ordinary application facts resolved by existing world law",
+    }
+    fails = "dependency possession treated as authority possession"
+}
+
+projection = law{
+    id    = "law.projection"
+    kind  = .invariant
+    holds = .lexical
+    binds = {
+        "projection is ordinary table home and binding reachability not a module mechanism",
+        "bare selective cross and algebraic projection preserve one semantic identity with distinct witnesses",
+        "no native operation means add x to the current environment for visibility alone",
+        "use using import inject admit open include bring provide register install mount and expose are not native admission faces",
+        "after resolution projection facts are binding home relation world anchor and witness facts only",
+        "projection has zero independent downstream ontology beyond admitted graph facts",
+    }
+    fails = "using edge use face module open object runtime namespace merge loader registry or hidden authority"
+}
+
+layout.gate = law{
+    id    = "law.gate.layout"
+    kind  = .protocol
+    holds = .ratchet
+    binds = {
+        "new canonical use using import inject admit open include bring provide register install mount and expose admission sites are zero",
+        "new canonical req require and import sites are zero",
+        "new req-specific compiler authority is zero",
+        "native dependency decisions keyed on req spelling are zero",
+        "nearest-pattern-zero blocks filling a vacuum with req or Lua loader idioms",
+        "docs/spec/source.md is the operative projection scope package and capability closure",
+    }
+    fails = "a new canonical line that reintroduces loader syntax module registry import-as-permission or admission-as-visibility as native architecture"
+}
+
+# ═══ §37c · host boundary (GAP-154) ════════════════════════════════════════
+#
+# Idol source sees semantic values. Host OS APIs are ingress/egress realization
+# only. Renaming os.args → core.args without decomposition is forbidden.
+
+host = law{
+    id    = "law.host"
+    kind  = .invariant
+    holds = .boundary
+    binds = {
+        "Idol source does not call host operating system APIs as semantics",
+        "args and env are ordinary tables under os world accessed as os.args[n] and os.env[k]",
+        "environment is not a thing",
+        "io read and write use io:read and io:write not io.read or io.write",
+        "environment observation requires environment value facts and compatible world authority",
+        "process execution requires structured command value and process world not popen or opaque shell strings",
+        "endpoints are input output error values whose physical realization is embedding selected",
+        "build world and program world remain orthogonal",
+        "backend and target selection are realization facts not canonical source switches",
+        "host APIs may exist only at classified bootstrap ingress or egress adapters with deletion gates",
+    }
+    fails = "host namespace authority in native semantic middle"
+}
+
+shell = law{
+    id    = "law.shell.home"
+    kind  = .invariant
+    holds = .home
+    binds = {
+        "shell is an execution home not a mode bit keyword or global boolean",
+        "shell home adds command projection and appropriate worlds and endpoints",
+        "bare external command resolution requires shell home command projection",
+        "ordinary home without command projection leaves unknown bare commands unresolved",
+        "Idol native bindings resolve before shell fallback",
+        "shell home does not alternate parser AST or compiler semantics",
+    }
+    fails = "shell string execution or popen as native relation"
+}
+
+core = law{
+    id    = "law.core.vocabulary"
+    kind  = .invariant
+    holds = .vocabulary
+    binds = {
+        "core names canonical vocabulary authority not a runtime traversable namespace",
+        "no runtime std core or prelude table is required for canonical resolution",
+        "canonical relations are directly reachable from root projection",
+    }
+    fails = "core.len std table or prelude namespace as semantic authority"
+}
+
+host.gate = law{
+    id    = "law.gate.host"
+    kind  = .protocol
+    holds = .ratchet
+    binds = {
+        "new canonical os.args os.getenv popen io.popen os.execute host argv and host getenv lookup are zero",
+        "new canonical generic io proc ir process runtime system std core and environment namespace authority are zero",
+        "no std namespace table prelude or spelling anywhere in Idol source",
+        "std proc and ir are not things — vocabulary is layout and world projection only",
+        "new shell string execution and backend string semantic switches in canonical source are zero",
+        "docs/spec/host.md is the operative host boundary projection",
+        "tools/node/dev/hostcensus classifies existing debt FOREIGN BOOTSTRAP MIGRATION VIOLATION BLOCKED",
+        "lexical host detectors in idiomgate are temporary migration firewalls until graph enforcement",
+    }
+    fails = "new host API debt or host wrapper without semantic boundary and deletion gate"
+}
+
+# MEANING is standard and non-replaceable; REALIZATION is replaceable. A
+# package may contribute a better `sort` realization — insertion, introsort,
+# radix, simd, gpu — and the call stays `xs:sort()`. It may NOT redefine what
+# standard `sort`, `eq`, `hash` or `to` MEAN, or ordinary code would change
+# behaviour on installation.
 vocabulary = law{
     id    = "law.vocabulary"
     kind  = .invariant
@@ -1251,11 +1418,11 @@ vocabulary = law{
     fails = "behaviour changing because a dependency was installed"
 }
 
--- REACHABILITY FOR LINKING AND REACHABILITY FOR RESOLUTION ARE DIFFERENT
--- RELATIONS. `app -> orm -> driver` must not hand the app every edge the driver
--- contributes; `orm` decides what it re-exports. Without this, a project with
--- 400 dependencies has an unreasonable resolution universe and composition
--- becomes spooky.
+# REACHABILITY FOR LINKING AND REACHABILITY FOR RESOLUTION ARE DIFFERENT
+# RELATIONS. `app -> orm -> driver` must not hand the app every edge the driver
+# contributes; `orm` decides what it re-exports. Without this, a project with
+# 400 dependencies has an unreasonable resolution universe and composition
+# becomes spooky.
 reach = law{
     id    = "law.reach"
     kind  = .invariant
@@ -1268,20 +1435,20 @@ reach = law{
     fails = "a transitive dependency's extensions becoming candidate edges"
 }
 
--- Coherence under composition, which is the real pre-registry problem: two
--- fragments may each imply a different edge for the same identity. "Latest
--- import wins" is DENIED — it destroys semantic locality.
+# Coherence under composition, which is the real pre-registry problem: two
+# fragments may each imply a different edge for the same identity. "Latest
+# import wins" is DENIED — it destroys semantic locality.
 coherence.rule = "a package may freely define relations over identities it OWNS. extending a relation where it owns NEITHER side needs explicit extension authority or a local scope."
 
--- Packages advertise PROVEN FACTS, not only apis — allocation-free, deterministic,
--- no-network, native on a target, thread-safe, no-failure under a descriptor.
--- Downstream optimization consumes them, which makes a package a fragment
--- carrying realization knowledge rather than only code you can call.
+# Packages advertise PROVEN FACTS, not only apis — allocation-free, deterministic,
+# no-network, native on a target, thread-safe, no-failure under a descriptor.
+# Downstream optimization consumes them, which makes a package a fragment
+# carrying realization knowledge rather than only code you can call.
 package.publishes = { "origin", "version", "exports", "requires", "guarantees", "implementations", "provenance" }
 
--- Build, dev, runtime and plugin dependencies are ONE system. The STAGE at
--- which a fragment is demanded decides when it participates; separate
--- dependency families are a mechanism duplicated four times.
+# Build, dev, runtime and plugin dependencies are ONE system. The STAGE at
+# which a fragment is demanded decides when it participates; separate
+# dependency families are a mechanism duplicated four times.
 depends = law{
     id    = "law.depends"
     kind  = .invariant
@@ -1289,11 +1456,11 @@ depends = law{
     fails = "build-dependency, dev-dependency and proc-macro as separate families"
 }
 
--- Feature flags are DEMAND, not package metadata booleans. If nothing demands
--- tls, its fragment and realization disappear. A package with 50,000 semantic
--- facts may contribute 17 machine realizations to a given program — which is
--- what makes "more featureful AND smaller binary" expressible rather than
--- contradictory.
+# Feature flags are DEMAND, not package metadata booleans. If nothing demands
+# tls, its fragment and realization disappear. A package with 50,000 semantic
+# facts may contribute 17 machine realizations to a given program — which is
+# what makes "more featureful AND smaller binary" expressible rather than
+# contradictory.
 features = law{
     id    = "law.features"
     kind  = .invariant
@@ -1301,15 +1468,15 @@ features = law{
     fails = "a feature-configuration mini-language beside the language"
 }
 
--- ═══ §38 · THE PERFORMANCE CONSTITUTION ════════════════════════════════════
---
--- NORTH STAR: Idol source states MAXIMUM SEMANTICS; the compiler emits MINIMUM
--- MACHINERY.
---
--- Performance, binary size, compile time, memory and specialization cost are
--- REALIZATION OBJECTIVES, not benchmarks run afterwards. Every layer preserves
--- enough semantic information for the compiler to optimize them JOINTLY rather
--- than locally.
+# ═══ §38 · THE PERFORMANCE CONSTITUTION ════════════════════════════════════
+#
+# NORTH STAR: Idol source states MAXIMUM SEMANTICS; the compiler emits MINIMUM
+# MACHINERY.
+#
+# Performance, binary size, compile time, memory and specialization cost are
+# REALIZATION OBJECTIVES, not benchmarks run afterwards. Every layer preserves
+# enough semantic information for the compiler to optimize them JOINTLY rather
+# than locally.
 
 perf.demand = law{
     id    = "law.perf.demand"
@@ -1335,23 +1502,23 @@ perf.late = law{
     fails = "boxed because the front end could not yet know better"
 }
 
--- Every dynamic mechanism carries the SAME ladder and an exact descent.
--- Relation lookup, tables, closures, failures, packages, worlds, foreign
--- values, wasm dispatch, lua metatables — one ladder, not one per subsystem.
+# Every dynamic mechanism carries the SAME ladder and an exact descent.
+# Relation lookup, tables, closures, failures, packages, worlds, foreign
+# values, wasm dispatch, lua metatables — one ladder, not one per subsystem.
 perf.ladder = {
     "dynamic", "observed", "guarded", "sealed", "direct", "erased",
 }
 
--- Budgeted GLOBALLY, never greedily. A specialization justifies its code
--- growth or it is refused, and `why(skip)` answers.
+# Budgeted GLOBALLY, never greedily. A specialization justifies its code
+# growth or it is refused, and `why(skip)` answers.
 perf.worth = {
     "hotness", "expected cycles saved", "guard cost", "compile cost",
     "icache pressure", "binary growth", "duplication", "deopt probability",
 }
 
--- THE INVERSE OPERATION, and the tree has no mechanism for it. Without
--- re-generalization the compiler can derive billions of variants and has no way
--- to recover compactness.
+# THE INVERSE OPERATION, and the tree has no mechanism for it. Without
+# re-generalization the compiler can derive billions of variants and has no way
+# to recover compactness.
 perf.merge = law{
     id    = "law.perf.merge"
     kind  = .invariant
@@ -1375,9 +1542,9 @@ perf.explain = law{
     }
 }
 
--- Three reusable engines replace a conventional procession of semantic passes.
--- Their physical indexes are disposable projections; ids, facts, relations,
--- witnesses and provenance remain the authority.
+# Three reusable engines replace a conventional procession of semantic passes.
+# Their physical indexes are disposable projections; ids, facts, relations,
+# witnesses and provenance remain the authority.
 perf.propagate = law{
     id    = "law.perf.propagate"
     kind  = .invariant
@@ -1433,29 +1600,29 @@ perf.extract = law{
     fails = "uniformly expensive optimization or a backend heuristic kingdom detached from graph facts"
 }
 
--- THE SIZE INVARIANT, and it is what makes "more featureful AND smaller" a
--- statement rather than a contradiction:
---
---   FEATUREFULNESS is a property of the SEMANTIC GRAPH.
---   BINARY SIZE is a property of DEMANDED REALIZATION.
+# THE SIZE INVARIANT, and it is what makes "more featureful AND smaller" a
+# statement rather than a contradiction:
+#
+#   FEATUREFULNESS is a property of the SEMANTIC GRAPH.
+#   BINARY SIZE is a property of DEMANDED REALIZATION.
 size.invariant = true
 
--- Every emitted byte range is attributable to a semantic demand — the relation,
--- what demanded it, its realization, and why it was retained. That is what
--- `idol why size` reads, and it reports semantic causes rather than symbols.
+# Every emitted byte range is attributable to a semantic demand — the relation,
+# what demanded it, its realization, and why it was retained. That is what
+# `idol why size` reads, and it reports semantic causes rather than symbols.
 size.ledger = { "relation", "demanded by", "realization", "retained because" }
 
--- Multi-objective cost. The build's world chooses the objective; these are
--- ordinary descriptors, NOT compiler-mode kingdoms, so one deployment may
--- optimize a hot kernel for speed and everything else for size.
+# Multi-objective cost. The build's world chooses the objective; these are
+# ordinary descriptors, NOT compiler-mode kingdoms, so one deployment may
+# optimize a hot kernel for speed and everything else for size.
 cost.facts = {
     "cycles", "bytes", "compile", "peak", "allocations",
     "misses", "footprint", "energy", "variance",
 }
 cost.objectives = { "speed", "size", "startup", "latency", "energy", "balanced" }
 
--- These ratios are definitions. Current values belong to revision-bound
--- evidence, never to the constitution.
+# These ratios are definitions. Current values belong to revision-bound
+# evidence, never to the constitution.
 perf.ratios = {
     "retention: realized facts / reachable semantic facts",
     "erasure: constructs erased / constructs used",
@@ -1465,21 +1632,21 @@ perf.ratios = {
     "reuse: realized capabilities / distinct mechanisms",
 }
 
--- ═══ §39 · THE PRIME DIRECTIVE (what every agent receives first) ════════════
---
--- You are MODIFYING Idol. You are not designing a conventional compiler in Zig
--- and you are not inventing language architecture. The job is to move the
--- repository MONOTONICALLY toward 100% self-hosted canonical Idol with zero
--- competing semantic mechanisms.
---
--- THE CORE QUESTION, asked before adding anything:
---
---   Is this an irreducible NEW concept, or is it already a value, relation,
---   fact, world, demand, witness or realization — specialized by operands and
---   context?
---
--- ASSUME THE LATTER UNTIL PROVEN OTHERWISE. Prefer one relation with many
--- specializations over many functions, enums, registries, managers and systems.
+# ═══ §39 · THE PRIME DIRECTIVE (what every agent receives first) ════════════
+#
+# You are MODIFYING Idol. You are not designing a conventional compiler in Zig
+# and you are not inventing language architecture. The job is to move the
+# repository MONOTONICALLY toward 100% self-hosted canonical Idol with zero
+# competing semantic mechanisms.
+#
+# THE CORE QUESTION, asked before adding anything:
+#
+#   Is this an irreducible NEW concept, or is it already a value, relation,
+#   fact, world, demand, witness or realization — specialized by operands and
+#   context?
+#
+# ASSUME THE LATTER UNTIL PROVEN OTHERWISE. Prefer one relation with many
+# specializations over many functions, enums, registries, managers and systems.
 
 directive = law{
     id    = "law.directive"
@@ -1493,35 +1660,35 @@ directive = law{
     }
 }
 
--- For every semantic operation, name all eight. An operation that cannot name
--- them is not understood well enough to land.
+# For every semantic operation, name all eight. An operation that cannot name
+# them is not understood well enough to land.
 operation.names = {
     "canonical relation", "semantic subject", "semantic owner", "fact",
     "lawset", "witness", "physical projection", "deletion gate",
 }
 
--- What an agent must be able to show is ZERO before completion. A nonzero entry
--- is not a warning; it needs a constitutional amendment.
+# What an agent must be able to show is ZERO before completion. A nonzero entry
+# is not a warning; it needs a constitutional amendment.
 delta.zero = {
     "semantic owners added", "competing registries added", "semantic enums added",
     "syntax added", "keywords or operators added", "string-based semantic cases",
     "unclassified semantic apis", "new silent fallbacks",
 }
 
--- THE FINAL TEST, and it is the strongest rule in this file because it is the
--- only one that closes a class rather than an instance:
---
---   Could another competent agent look at this change and reasonably implement
---   the SAME semantic idea using another registry, enum, helper family, api
---   orientation, syntax or subsystem?
---
---   IF YES, DO NOT STOP. Find and enforce the missing constitutional invariant
---   so there is only ONE reasonable Idol-native direction.
---
--- Restated as the rule it generalizes: any architectural mistake an agent can
--- make TWICE is a missing machine-enforced invariant. The constitution evolves
--- primarily by converting recurring review findings into executable
--- impossibility.
+# THE FINAL TEST, and it is the strongest rule in this file because it is the
+# only one that closes a class rather than an instance:
+#
+#   Could another competent agent look at this change and reasonably implement
+#   the SAME semantic idea using another registry, enum, helper family, api
+#   orientation, syntax or subsystem?
+#
+#   IF YES, DO NOT STOP. Find and enforce the missing constitutional invariant
+#   so there is only ONE reasonable Idol-native direction.
+#
+# Restated as the rule it generalizes: any architectural mistake an agent can
+# make TWICE is a missing machine-enforced invariant. The constitution evolves
+# primarily by converting recurring review findings into executable
+# impossibility.
 final.test = law{
     id    = "law.final.test"
     kind  = .invariant
@@ -1533,10 +1700,10 @@ final.test = law{
     fails = "a stronger prompt where a gate was owed"
 }
 
--- THE OBJECTIVE, stated so it is not mistaken for code quality: not merely code
--- that works, but a repository in which non-Idol architecture becomes
--- IMPOSSIBLE TO WRITE, IMPOSSIBLE TO TEACH, IMPOSSIBLE TO MERGE, and
--- UNNECESSARY TO REPRESENT.
+# THE OBJECTIVE, stated so it is not mistaken for code quality: not merely code
+# that works, but a repository in which non-Idol architecture becomes
+# IMPOSSIBLE TO WRITE, IMPOSSIBLE TO TEACH, IMPOSSIBLE TO MERGE, and
+# UNNECESSARY TO REPRESENT.
 objective = law{
     id    = "law.objective"
     kind  = .objective
@@ -1547,34 +1714,34 @@ objective = law{
     }
 }
 
--- A lexical host scan can ratchet spellings but cannot close an architectural
--- class. Different names can own the same shadow meaning, while a correctly
--- named physical helper can still orient the semantic subject incorrectly.
---
--- So the scan MEASURES the habit and does not CLOSE it. The invariant it is
--- missing is declarative rather than lexical: every function that mutates or
--- resolves semantic state DECLARES the relation it projects, and an unannotated
--- semantic mutation is the finding. Then the question stops being "what is it
--- called" and becomes "how many physical apis project `add`, and why".
+# A lexical host scan can ratchet spellings but cannot close an architectural
+# class. Different names can own the same shadow meaning, while a correctly
+# named physical helper can still orient the semantic subject incorrectly.
+#
+# So the scan MEASURES the habit and does not CLOSE it. The invariant it is
+# missing is declarative rather than lexical: every function that mutates or
+# resolves semantic state DECLARES the relation it projects, and an unannotated
+# semantic mutation is the finding. Then the question stops being "what is it
+# called" and becomes "how many physical apis project `add`, and why".
 scan.gap = "lexical rows cannot close an architectural class — projects= is owed"
 
--- ═══ §40 · SYNTAX SUBTRACTION — leading dot is retirement debt ══════════════
---
--- This law supersedes every earlier leading-dot reading.
---
--- CANONICAL `.` HAS ONE MEANING: explicit postfix projection from an
--- ALREADY-WRITTEN subject — `x.y`. Every other leading-dot form is retirement
--- debt, and is not preserved merely because the parser accepts it.
---
--- THE TEST, asked of every syntactic form and not only this one:
---
---   Does this token encode semantic information ALREADY UNIQUELY RECOVERABLE
---   from subject, expected descriptor, demand, relation identity or context?
---
---   If yes it is canonicalization debt. AND THE REPAIR IS NOT NEW SYNTAX.
---
--- THE TARGET IS NOT FEWER CHARACTERS. It is FEWER SYNTACTIC SEMANTIC
--- MECHANISMS. A shorter spelling that adds a mechanism is a loss.
+# ═══ §40 · SYNTAX SUBTRACTION — leading dot is retirement debt ══════════════
+#
+# This law supersedes every earlier leading-dot reading.
+#
+# CANONICAL `.` HAS ONE MEANING: explicit postfix projection from an
+# ALREADY-WRITTEN subject — `x.y`. Every other leading-dot form is retirement
+# debt, and is not preserved merely because the parser accepts it.
+#
+# THE TEST, asked of every syntactic form and not only this one:
+#
+#   Does this token encode semantic information ALREADY UNIQUELY RECOVERABLE
+#   from subject, expected descriptor, demand, relation identity or context?
+#
+#   If yes it is canonicalization debt. AND THE REPAIR IS NOT NEW SYNTAX.
+#
+# THE TARGET IS NOT FEWER CHARACTERS. It is FEWER SYNTACTIC SEMANTIC
+# MECHANISMS. A shorter spelling that adds a mechanism is a loss.
 
 subtract = law{
     id    = "law.subtract"
@@ -1588,10 +1755,10 @@ subtract = law{
     fails = "preserving a form because the parser happens to accept it"
 }
 
--- FIVE OBLIGATIONS BEFORE ANY DELETION. Retirement is proven, not asserted.
---
--- Replacement parsing is insufficient. The replacement must resolve, lower and
--- preserve behavior by value before a source face is deleted.
+# FIVE OBLIGATIONS BEFORE ANY DELETION. Retirement is proven, not asserted.
+#
+# Replacement parsing is insufficient. The replacement must resolve, lower and
+# preserve behavior by value before a source face is deleted.
 subtract.proves = {
     "the replacement RESOLVES AND LOWERS, proven BY VALUE, on both backends",
     "every semantic role has a strictly SIMPLER EXISTING spelling",
@@ -1601,40 +1768,40 @@ subtract.proves = {
     "lua and foreign dialects are unaffected",
 }
 
--- SELF-ZERO requires implicit-subject fields to use ordinary bare identities.
--- Leading-dot fields and bare dot are retirement debt; leading colon remains
--- the admitted ambient-subject application face.
---
---   scale = (k) @{ x * k, y * k }
---
--- Which collides with a local binding named `x`, so obligation 2 —
--- DETERMINISTIC RESOLUTION — is the one that decides this form, and it is not
--- yet proven either way. This is recorded as OPEN rather than resolved.
+# SELF-ZERO requires implicit-subject fields to use ordinary bare identities.
+# Leading-dot fields and bare dot are retirement debt; leading colon remains
+# the admitted ambient-subject application face.
+#
+#   scale = (k) @{ x * k, y * k }
+#
+# Which collides with a local binding named `x`, so obligation 2 —
+# DETERMINISTIC RESOLUTION — is the one that decides this form, and it is not
+# yet proven either way. This is recorded as OPEN rather than resolved.
 subtract.blocked = "self-zero's implicit subject: bare identity vs local binding"
 subtract.free = { "case in construction", "argument lens", "inferred case" }
 
--- ═══ §41 · SELF-ZERO, REDEFINED — the receiver disappears, not into dots ════
---
--- This resolves the open SELF-ZERO question and supersedes every punctuation-
--- receiver definition.
---
--- THE MISTAKE THE OLD DEFINITION MADE: it defined SELF-ZERO as `.x` / `.y` /
--- `:length()`, which makes `.` and `:` CARRY THE BURDEN OF SELF. The receiver
--- did not disappear; it was respelled as punctuation.
---
--- THE CORRECTED DEFINITION:
---
---   A subject-bearing scope contributes its subject's visible relations and
---   projections to ORDINARY NAME RESOLUTION. The subject has no user-visible
---   binding name.
---
--- So this is the SELF-ZERO form:
---
---   point:scale = (k) @{ x * k, y * k }
---
--- and this is not:
---
---   point:scale = (k) @{ .x * k, .y * k }
+# ═══ §41 · SELF-ZERO, REDEFINED — the receiver disappears, not into dots ════
+#
+# This resolves the open SELF-ZERO question and supersedes every punctuation-
+# receiver definition.
+#
+# THE MISTAKE THE OLD DEFINITION MADE: it defined SELF-ZERO as `.x` / `.y` /
+# `:length()`, which makes `.` and `:` CARRY THE BURDEN OF SELF. The receiver
+# did not disappear; it was respelled as punctuation.
+#
+# THE CORRECTED DEFINITION:
+#
+#   A subject-bearing scope contributes its subject's visible relations and
+#   projections to ORDINARY NAME RESOLUTION. The subject has no user-visible
+#   binding name.
+#
+# So this is the SELF-ZERO form:
+#
+#   point:scale = (k) @{ x * k, y * k }
+#
+# and this is not:
+#
+#   point:scale = (k) @{ .x * k, .y * k }
 
 selfzero = law{
     id    = "law.selfzero"
@@ -1648,22 +1815,22 @@ selfzero = law{
     fails = "defining the implicit subject as a punctuation prefix"
 }
 
--- THE COMPLETE RECEIVER MODEL. Seven rows, and every one of them earns its
--- spelling:
---
---   explicit field            p.x
---   IMPLICIT field            x
---   explicit relation         p:length()
---   IMPLICIT relation         :length()
---   explicit whole subject    p
---   passed field projection   map(name)
---   passed relation           map(to(str))
+# THE COMPLETE RECEIVER MODEL. Seven rows, and every one of them earns its
+# spelling:
+#
+#   explicit field            p.x
+#   IMPLICIT field            x
+#   explicit relation         p:length()
+#   IMPLICIT relation         :length()
+#   explicit whole subject    p
+#   passed field projection   map(name)
+#   passed relation           map(to(str))
 receiver.model = 7
 
--- `:` IS KEPT BECAUSE IT CONTRIBUTES INFORMATION. `normalize()` could be an
--- ordinary local or world function; `:normalize()` unambiguously says "invoke
--- the normalize relation on the ambient subject". That earns its syntax.
---
+# `:` IS KEPT BECAUSE IT CONTRIBUTES INFORMATION. `normalize()` could be an
+# ordinary local or world function; `:normalize()` unambiguously says "invoke
+# the normalize relation on the ambient subject". That earns its syntax.
+#
 punctuation = law{
     id    = "law.subject.punctuation"
     kind  = .invariant
@@ -1675,22 +1842,22 @@ punctuation = law{
     }
 }
 
--- THE ONE RULE THAT REPLACES THREE PUNCTUATION ENCODINGS. `.case`, `.field`
--- and `.lens` were three spellings for three contexts the graph already
--- distinguishes:
---
---   BARE IDENTITY + SEMANTIC DEMAND + AVAILABLE HOMES -> ONE IDENTITY, OR A
---   DIAGNOSTIC.
---
---   law{ kind = invariant }     `invariant` resolves: kind demands a case
---   point:scale = (k) x * k     `x` resolves: the subject has one projection x
---   users:map(name)             `name` resolves: map demands a callable
+# THE ONE RULE THAT REPLACES THREE PUNCTUATION ENCODINGS. `.case`, `.field`
+# and `.lens` were three spellings for three contexts the graph already
+# distinguishes:
+#
+#   BARE IDENTITY + SEMANTIC DEMAND + AVAILABLE HOMES -> ONE IDENTITY, OR A
+#   DIAGNOSTIC.
+#
+#   law{ kind = invariant }     `invariant` resolves: kind demands a case
+#   point:scale = (k) x * k     `x` resolves: the subject has one projection x
+#   users:map(name)             `name` resolves: map demands a callable
 resolution.rule = "bare identity plus demand plus homes yields one identity or a diagnostic"
 
--- SHADOWING IS DIAGNOSED, NEVER SILENTLY RESOLVED. "Locals win" is DENIED:
--- adding `x = 3` would silently change every later `x` from a subject
--- projection to a local binding, which makes source meaning depend on a
--- declaration the reader may not have reached yet.
+# SHADOWING IS DIAGNOSED, NEVER SILENTLY RESOLVED. "Locals win" is DENIED:
+# adding `x = 3` would silently change every later `x` from a subject
+# projection to a local binding, which makes source meaning depend on a
+# declaration the reader may not have reached yet.
 shadow = law{
     id    = "law.shadow"
     kind  = .invariant
@@ -1703,21 +1870,21 @@ shadow = law{
     fails = "locals win, and every later x quietly changes meaning"
 }
 
--- Leading-dot fields retire to bare identity once deterministic resolution is
--- implemented. Bare dot has no canonical role. Leading colon remains because
--- it contributes the ambient-subject application fact.
+# Leading-dot fields retire to bare identity once deterministic resolution is
+# implemented. Bare dot has no canonical role. Leading colon remains because
+# it contributes the ambient-subject application fact.
 subtract.resolved = "leading dot retires; bare dot is invalid; leading colon remains"
 
--- ═══ §42 · SURFACE SUBTRACTION — the rules that keep it from becoming golf ══
---
--- Canonical Idol encodes ONLY distinctions the compiler cannot
--- recover from the explicit subject, the ambient subject, expected descriptor,
--- relation identity, operand descriptors, demand, lexical scope, or
--- world/lawset context. Syntax restating recoverable information is debt.
---
--- ULTIMATE RULE: syntax exists to RESOLVE UNCERTAINTY, not to RESTATE
--- CERTAINTY. The shortest form is not the one with the fewest characters — it
--- is the one containing the FEWEST UNNECESSARY SEMANTIC DECISIONS.
+# ═══ §42 · SURFACE SUBTRACTION — the rules that keep it from becoming golf ══
+#
+# Canonical Idol encodes ONLY distinctions the compiler cannot
+# recover from the explicit subject, the ambient subject, expected descriptor,
+# relation identity, operand descriptors, demand, lexical scope, or
+# world/lawset context. Syntax restating recoverable information is debt.
+#
+# ULTIMATE RULE: syntax exists to RESOLVE UNCERTAINTY, not to RESTATE
+# CERTAINTY. The shortest form is not the one with the fewest characters — it
+# is the one containing the FEWEST UNNECESSARY SEMANTIC DECISIONS.
 
 minimum = law{
     id    = "law.minimum"
@@ -1730,18 +1897,18 @@ minimum = law{
     }
 }
 
--- THE CANONICAL-PERFORMANCE LAW.
--- A canonical rewrite is INVALID if it lowers worse than the form it replaces
--- without a semantic reason. Canonicality and performance CANNOT DISAGREE —
--- and where they do, COMPILER CAPABILITY IS THE GAP, never the corpus.
---
--- A canonical face that does not yet resolve or lower while a noncanonical
--- fallback does is compiler-capability debt, not permission to canonize the
--- fallback.
---
--- In both the corpus looked like bad taste and was authors writing what
--- compiles. This law inverts the repair order permanently: FIX THE CAPABILITY,
--- THEN ENFORCE THE ORIENTATION.
+# THE CANONICAL-PERFORMANCE LAW.
+# A canonical rewrite is INVALID if it lowers worse than the form it replaces
+# without a semantic reason. Canonicality and performance CANNOT DISAGREE —
+# and where they do, COMPILER CAPABILITY IS THE GAP, never the corpus.
+#
+# A canonical face that does not yet resolve or lower while a noncanonical
+# fallback does is compiler-capability debt, not permission to canonize the
+# fallback.
+#
+# In both the corpus looked like bad taste and was authors writing what
+# compiles. This law inverts the repair order permanently: FIX THE CAPABILITY,
+# THEN ENFORCE THE ORIENTATION.
 canonperf = law{
     id    = "law.canon.performance"
     kind  = .invariant
@@ -1754,12 +1921,12 @@ canonperf = law{
     fails = "a law prescribing a spelling the compiler cannot produce"
 }
 
--- RESOLUTION ENTROPY CEILING. Every omitted token transfers work to semantic
--- resolution, and that cost is MEASURED, not assumed away. A compaction is
--- accepted only when resolution stays unique, diagnostics stay good, local
--- reasoning stays predictable, and AGENT GENERATION ACCURACY DOES NOT REGRESS.
--- If removing syntax causes a large nonlocal search, THE SYNTAX WAS EARNING ITS
--- KEEP.
+# RESOLUTION ENTROPY CEILING. Every omitted token transfers work to semantic
+# resolution, and that cost is MEASURED, not assumed away. A compaction is
+# accepted only when resolution stays unique, diagnostics stay good, local
+# reasoning stays predictable, and AGENT GENERATION ACCURACY DOES NOT REGRESS.
+# If removing syntax causes a large nonlocal search, THE SYNTAX WAS EARNING ITS
+# KEEP.
 entropy.resolution = law{
     id    = "law.entropy"
     kind  = .invariant
@@ -1767,17 +1934,17 @@ entropy.resolution = law{
     binds = { "hpls includes compaction WITHOUT semantic-distance explosion" }
 }
 
--- SEMANTIC LOCALITY. Bare-identity resolution draws from a PREDICTABLE LOCAL
--- LATTICE and nothing wider. Transitive dependency existence does NOT make an
--- identity visible — no global graph soup.
+# SEMANTIC LOCALITY. Bare-identity resolution draws from a PREDICTABLE LOCAL
+# LATTICE and nothing wider. Transitive dependency existence does NOT make an
+# identity visible — no global graph soup.
 locality.lattice = {
     "lexical", "ambient subject", "expected descriptor",
     "exact visible semantic identities", "admitted vocabulary",
 }
 
--- WHAT IS NOT COMPACTED, stated so subtraction does not become point-free code.
--- Idol does not delete syntax merely because the graph can technically infer
--- meaning. These carry irreducible or high-value HUMAN information:
+# WHAT IS NOT COMPACTED, stated so subtraction does not become point-free code.
+# Idol does not delete syntax merely because the graph can technically infer
+# meaning. These carry irreducible or high-value HUMAN information:
 keep = {
     "x.y", "x:f()", ":f() under self-zero",
     "if", "while", "for x in xs", "break", "continue",
@@ -1787,7 +1954,7 @@ keep = {
     "ordinary interpolated strings", "offside layout",
 }
 
--- THE THREE TIERS. Retirement is not one list — it is a judgement per form.
+# THE THREE TIERS. Retirement is not one list — it is a judgement per form.
 retire = {
     "leading .field implicit projection", "leading .case", "leading .field lens",
     ".field constructor designation", "tail `return x`",
@@ -1803,32 +1970,32 @@ audit = {
     "& refinement over bitwise", "| union over bitwise", "early return",
 }
 
--- LEVEL-ZERO, HOME-ZERO, TEMP-ZERO, ROUTE-ZERO, SUBJECT-ZERO, CASE-ZERO,
--- CONVERT-ZERO. One test serves all seven: does removing it leave EXACTLY ONE
--- valid reading? If yes it goes; if no it stays in its smallest existing form.
+# LEVEL-ZERO, HOME-ZERO, TEMP-ZERO, ROUTE-ZERO, SUBJECT-ZERO, CASE-ZERO,
+# CONVERT-ZERO. One test serves all seven: does removing it leave EXACTLY ONE
+# valid reading? If yes it goes; if no it stays in its smallest existing form.
 zero.test = "does removal leave exactly one valid edge"
 
--- CONSTITUTION SOURCE MIGRATION. This Markdown document is structured law
--- notation, not executable canonical source. It moves atomically to
--- `constitution.id` only after GAP-145 closes lexical identity and generated
--- grammar roles and the complete body passes all four canonical source layers.
+# CONSTITUTION SOURCE MIGRATION. This Markdown document is structured law
+# notation, not executable canonical source. It moves atomically to
+# `constitution.id` only after GAP-145 closes lexical identity and generated
+# grammar roles and the complete body passes all four canonical source layers.
 migrate.first = "the constitution"
 migrate.blocked = "gap[145] — canonical lexical identity and generated roles are incomplete"
 
--- Grammar reconciliation: postfix `expr.name` is statically named projection;
--- bare dot has no ambient-subject meaning. The formal grammar and this law must
--- converge through one generated role projection.
+# Grammar reconciliation: postfix `expr.name` is statically named projection;
+# bare dot has no ambient-subject meaning. The formal grammar and this law must
+# converge through one generated role projection.
 grammar.owed = "remove bare dot primary; preserve postfix named projection; generate every role from one authority"
 
--- ═══ §43 · DELIMITER CLOSURE — useful source distinctions survive ═══════
---
--- Brace-zero and bracket-zero are closed.
---
--- Source faces preserve useful human distinctions while semantic meaning
--- converges immediately after resolution. One application architecture does
--- not imply one delimiter. Parentheses carry ordinary callable operands;
--- braces carry structured packs, descriptor homes and descriptor application;
--- brackets carry genuinely computed keys. None selects a physical aggregate.
+# ═══ §43 · DELIMITER CLOSURE — useful source distinctions survive ═══════
+#
+# Brace-zero and bracket-zero are closed.
+#
+# Source faces preserve useful human distinctions while semantic meaning
+# converges immediately after resolution. One application architecture does
+# not imply one delimiter. Parentheses carry ordinary callable operands;
+# braces carry structured packs, descriptor homes and descriptor application;
+# brackets carry genuinely computed keys. None selects a physical aggregate.
 
 brace = law{
     id    = "law.brace"
@@ -1844,32 +2011,32 @@ brace = law{
     fails = "letting a callable use braces or letting delimiter choice force representation"
 }
 
--- `@{ … }` IS THE SAME FORM with the name ELIDED — the enclosing descriptor
--- supplies it. So the anchor constructor is not a third mechanism either; it is
--- `name{ … }` where the name is recovered from context, which is exactly what
--- §42's minimum-information rule says should happen when the name is already
--- known.
+# `@{ … }` IS THE SAME FORM with the name ELIDED — the enclosing descriptor
+# supplies it. So the anchor constructor is not a third mechanism either; it is
+# `name{ … }` where the name is recovered from context, which is exactly what
+# §42's minimum-information rule says should happen when the name is already
+# known.
 anchor.recover = "the same form, name recovered from the enclosing descriptor"
 
--- The provisional brace-call is retired. Ordinary call and descriptor
--- application converge semantically only after their distinct source facts
--- have been recognized.
+# The provisional brace-call is retired. Ordinary call and descriptor
+# application converge semantically only after their distinct source facts
+# have been recognized.
 audit.braceresolved = "brace-call retired; callable uses parentheses; descriptor application uses braces"
 
--- The resolution rule is §41's, unchanged and now doing a second job:
---
---   BARE IDENTITY + SEMANTIC DEMAND + AVAILABLE HOMES -> ONE IDENTITY, OR A
---   DIAGNOSTIC.
---
--- Here the demand is a descriptor applicable to a structured pack. Callable
--- resolution remains the ordinary parenthesized face. Both produce graph
--- application facts without preserving a source delimiter as semantic truth.
+# The resolution rule is §41's, unchanged and now doing a second job:
+#
+#   BARE IDENTITY + SEMANTIC DEMAND + AVAILABLE HOMES -> ONE IDENTITY, OR A
+#   DIAGNOSTIC.
+#
+# Here the demand is a descriptor applicable to a structured pack. Callable
+# resolution remains the ordinary parenthesized face. Both produce graph
+# application facts without preserving a source delimiter as semantic truth.
 
--- ═══ §44 · APPLICATION IS ONE MECHANISM ════════════════════════════════════
---
--- Application unification is SEMANTIC, never punctuation unification. The
--- recognizer retains the minimum source structure and provenance. Resolution
--- supplies relation, subject, operand pack, result pack and descriptor facts.
+# ═══ §44 · APPLICATION IS ONE MECHANISM ════════════════════════════════════
+#
+# Application unification is SEMANTIC, never punctuation unification. The
+# recognizer retains the minimum source structure and provenance. Resolution
+# supplies relation, subject, operand pack, result pack and descriptor facts.
 
 apply = law{
     id    = "law.apply.one"
@@ -1885,10 +2052,10 @@ apply = law{
     fails = "a delimiter becoming semantic identity or an ordinary callable accepting braces"
 }
 
--- Unification of the MECHANISM is not a claim that every application is
--- observationally identical. These stay distinct EDGES — specializations of one
--- relation, exactly as `add(node)` and `add(edge)` are specializations of `add`,
--- never separate grammar or object models.
+# Unification of the MECHANISM is not a claim that every application is
+# observationally identical. These stay distinct EDGES — specializations of one
+# relation, exactly as `add(node)` and `add(edge)` are specializations of `add`,
+# never separate grammar or object models.
 apply.edge = {
     "apply(descriptor)(fieldpack)",
     "apply(callable)(argpack)",
@@ -1927,64 +2094,64 @@ pack.shape = law{
     keep  = "distinct source packs converge without implying runtime materialization"
 }
 
--- Unification must EXPOSE facts, not erase them. The application identity
--- carries subject identity, argument labels and positions, operand descriptors,
--- constants, world, demand and return pack — so `point{ x = 1, y = 2 }` is a far
--- stronger fact than a generic dynamic call, and specializes accordingly.
+# Unification must EXPOSE facts, not erase them. The application identity
+# carries subject identity, argument labels and positions, operand descriptors,
+# constants, world, demand and return pack — so `point{ x = 1, y = 2 }` is a far
+# stronger fact than a generic dynamic call, and specializes accordingly.
 apply.carries = {
     "subject identity", "argument labels", "argument positions",
     "operand descriptors", "constants", "world", "demand", "return pack",
 }
 
--- ═══ §44a · the traps, the surviving distinction, and the ladder ══════════
---
--- The laws below extend the one application architecture without duplicating
--- its identity, construction or pack owners.
+# ═══ §44a · the traps, the surviving distinction, and the ladder ══════════
+#
+# The laws below extend the one application architecture without duplicating
+# its identity, construction or pack owners.
 
--- THREE TRAPS, each a plausible implementation that would regress this ruling:
---
---   1. PARSER-LEVEL OVERLOAD — the parser asking whether `point` is a type,
---      emitting a constructor node if so and a call node if not. That is the
---      split this law deletes,
---      relocated one layer down. My own reverted patch did this in codegen,
---      branching on `record_aliases`, and it was the same mistake at a third
---      layer.
---   2. BRACES AS CALL — accepting `f{…}` for an ordinary callable erases a
---      useful source distinction. Defining `f({…})` as a forced table operand
---      separately commits representation before demand.
---   3. LOST CALL SHAPE — application identity must PRESERVE subject identity,
---      argument labels, positions, descriptor identities, constants, world,
---      demand and return pack. `point{ x = 1, y = 2 }` must be strictly
---      STRONGER than a generic dynamic call, never equal to one.
+# THREE TRAPS, each a plausible implementation that would regress this ruling:
+#
+#   1. PARSER-LEVEL OVERLOAD — the parser asking whether `point` is a type,
+#      emitting a constructor node if so and a call node if not. That is the
+#      split this law deletes,
+#      relocated one layer down. My own reverted patch did this in codegen,
+#      branching on `record_aliases`, and it was the same mistake at a third
+#      layer.
+#   2. BRACES AS CALL — accepting `f{…}` for an ordinary callable erases a
+#      useful source distinction. Defining `f({…})` as a forced table operand
+#      separately commits representation before demand.
+#   3. LOST CALL SHAPE — application identity must PRESERVE subject identity,
+#      argument labels, positions, descriptor identities, constants, world,
+#      demand and return pack. `point{ x = 1, y = 2 }` must be strictly
+#      STRONGER than a generic dynamic call, never equal to one.
 apply.traps = { "parser overload", "braces as sugar", "lost call shape" }
 
--- The distinction that SURVIVES, and it is not "constructor versus call":
---
---   { x = 1, y = 2 }         an ordinary anonymous structured value
---   point{ x = 1, y = 2 }    APPLICATION of `point` to that shape
---
--- Different because one has a SUBJECT.
---
--- Descriptor, callable and staged applications remain distinguishable through
--- facts while sharing one application architecture. Computed indexing retains
--- subject, key pack, place, value, descriptor and demand facts without becoming
--- callable syntax.
+# The distinction that SURVIVES, and it is not "constructor versus call":
+#
+#   { x = 1, y = 2 }         an ordinary anonymous structured value
+#   point{ x = 1, y = 2 }    APPLICATION of `point` to that shape
+#
+# Different because one has a SUBJECT.
+#
+# Descriptor, callable and staged applications remain distinguishable through
+# facts while sharing one application architecture. Computed indexing retains
+# subject, key pack, place, value, descriptor and demand facts without becoming
+# callable syntax.
 apply.edges = { "descriptor", "callable", "staged" }
 
--- The ladder this buys, which is why the unification is worth more than the
--- collision it fixes:
---
---   dynamic application -> descriptor known -> field shape known -> layout
---   known -> direct initialization -> scalar replacement -> registers
---
--- NO CONSTRUCTOR ABSTRACTION SURVIVES INTO MACHINE CODE UNLESS DEMANDED.
+# The ladder this buys, which is why the unification is worth more than the
+# collision it fixes:
+#
+#   dynamic application -> descriptor known -> field shape known -> layout
+#   known -> direct initialization -> scalar replacement -> registers
+#
+# NO CONSTRUCTOR ABSTRACTION SURVIVES INTO MACHINE CODE UNLESS DEMANDED.
 apply.ladder = 7
 
--- ═══ §45 · DELETION CONTRACTS — relation.zig may not fossilize ═════════════
---
--- `src/relation.zig` is a deletion-gated bootstrap projection of ordinary graph
--- relation facts. None of its host object taxonomy is semantic authority, and
--- cleaner host names do not make a parallel registry canonical.
+# ═══ §45 · DELETION CONTRACTS — relation.zig may not fossilize ═════════════
+#
+# `src/relation.zig` is a deletion-gated bootstrap projection of ordinary graph
+# relation facts. None of its host object taxonomy is semantic authority, and
+# cleaner host names do not make a parallel registry canonical.
 
 relationdebt = law{
     id    = "law.relation.debt"
@@ -1998,39 +2165,39 @@ relationdebt = law{
     fails = "gap[084]'s registries returning under cleaner names"
 }
 
--- FOUR DEBTS NAMED, each with the condition that retires it:
---
---   string identities   relation resolution must not depend on textual
---                       descriptor names once exact graph relation identities exist —
---                       packages, renames, MCP, refactoring and multiple
---                       versions all break on text.
---   codegen legality    the lossy-composition REFUSAL happens at codegen, so
---                       `duo check` approves what compilation later refuses.
---                       Class algebra belongs in SEMANTIC RESOLUTION: legality
---                       above realization, always.
---   one hop             derivation is deliberately one hop. Before longer
---                       paths, a path-selection law must cover multiple valid
---                       paths, cost, loss, effects, ownership, failure, trust
---                       and ambiguity. **Adding BFS would be architecturally
---                       wrong** — search is not a coherence law.
---   `to` in codegen     four literal `"to"` comparisons remain, annotated
---                       non-authoritative. HARD GATE: once primitive
---                       conversions are authored std relation facts,
---                       `codegen.zig` must go NET NEGATIVE in conversion code,
---                       or the relation layer is a front-end feeding the same
---                       builtin emitter kingdom.
+# FOUR DEBTS NAMED, each with the condition that retires it:
+#
+#   string identities   relation resolution must not depend on textual
+#                       descriptor names once exact graph relation identities exist —
+#                       packages, renames, MCP, refactoring and multiple
+#                       versions all break on text.
+#   codegen legality    the lossy-composition REFUSAL happens at codegen, so
+#                       `duo check` approves what compilation later refuses.
+#                       Class algebra belongs in SEMANTIC RESOLUTION: legality
+#                       above realization, always.
+#   one hop             derivation is deliberately one hop. Before longer
+#                       paths, a path-selection law must cover multiple valid
+#                       paths, cost, loss, effects, ownership, failure, trust
+#                       and ambiguity. **Adding BFS would be architecturally
+#                       wrong** — search is not a coherence law.
+#   `to` in codegen     four literal `"to"` comparisons remain, annotated
+#                       non-authoritative. HARD GATE: once primitive
+#                       conversions are authored std relation facts,
+#                       `codegen.zig` must go NET NEGATIVE in conversion code,
+#                       or the relation layer is a front-end feeding the same
+#                       builtin emitter kingdom.
 relation.retires = { "string identities", "codegen legality", "one hop", "to comparisons" }
 
--- ═══ §46 · NOMINAL IDENTITY IS THE NEXT WALL ═══════════════════════════════
---
--- A nominal value cannot participate in derived relations if the compiler
--- collapses it into the descriptor of its physical initializer.
---
--- That is not a conversion feature. It is REPRESENTATION POLYMORPHISM, and it
--- is the milestone the algebra is waiting on: **a `feet` value may physically
--- remain an f64 while being semantically distinct.** Expanding conversion
--- machinery before this lands buys nothing, because there is nothing for the
--- derived edges to act on.
+# ═══ §46 · NOMINAL IDENTITY IS THE NEXT WALL ═══════════════════════════════
+#
+# A nominal value cannot participate in derived relations if the compiler
+# collapses it into the descriptor of its physical initializer.
+#
+# That is not a conversion feature. It is REPRESENTATION POLYMORPHISM, and it
+# is the milestone the algebra is waiting on: **a `feet` value may physically
+# remain an f64 while being semantically distinct.** Expanding conversion
+# machinery before this lands buys nothing, because there is nothing for the
+# derived edges to act on.
 nominal = law{
     id    = "law.nominal"
     kind  = .invariant
@@ -2042,33 +2209,33 @@ nominal = law{
     fails = "a descriptor that cannot inhabit a value"
 }
 
--- ═══ §47 · C-DOMINANCE — C is a CANDIDATE, not the ceiling ═════════════════
---
--- THE HONEST QUALIFICATION FIRST, because the goal as usually stated cannot be
--- met: no compiler can guarantee that EVERY Idol program beats EVERY
--- hand-written C program on every machine and every metric. A human can write
--- assembly, exploit undocumented behaviour, or choose a workload built to
--- defeat one optimizer.
---
--- What IS achievable, and is strictly stronger than benchmarking:
---
---   For every Idol program whose semantics are no stronger than an equivalent
---   C program, the compiler must be able to produce machine code NO WORSE than
---   the best C realization in its candidate set — while exploiting semantic
---   facts unavailable to C where they exist.
---
--- THE MECHANISM. C stops being the ceiling and becomes ONE CANDIDATE
--- REALIZATION. For any semantic fragment the compiler holds several: Idol
--- native lowering, a C-equivalent scalar lowering, simd, an intrinsic, a
--- generated sequence, a library call, a profile-guided version. It costs them
--- and picks. If Idol-native is worse, IT PICKS THE C-EQUIVALENT ONE.
---
---   Idol semantic information   >=  C semantic information
---   candidate set              includes the C-equivalent realization
---   chosen                     = min cost over candidates
---
--- Idol cannot lose, because it keeps the fallback. That is monotonicity rather
--- than optimism, and it is why this is architecture and not a benchmark claim.
+# ═══ §47 · C-DOMINANCE — C is a CANDIDATE, not the ceiling ═════════════════
+#
+# THE HONEST QUALIFICATION FIRST, because the goal as usually stated cannot be
+# met: no compiler can guarantee that EVERY Idol program beats EVERY
+# hand-written C program on every machine and every metric. A human can write
+# assembly, exploit undocumented behaviour, or choose a workload built to
+# defeat one optimizer.
+#
+# What IS achievable, and is strictly stronger than benchmarking:
+#
+#   For every Idol program whose semantics are no stronger than an equivalent
+#   C program, the compiler must be able to produce machine code NO WORSE than
+#   the best C realization in its candidate set — while exploiting semantic
+#   facts unavailable to C where they exist.
+#
+# THE MECHANISM. C stops being the ceiling and becomes ONE CANDIDATE
+# REALIZATION. For any semantic fragment the compiler holds several: Idol
+# native lowering, a C-equivalent scalar lowering, simd, an intrinsic, a
+# generated sequence, a library call, a profile-guided version. It costs them
+# and picks. If Idol-native is worse, IT PICKS THE C-EQUIVALENT ONE.
+#
+#   Idol semantic information   >=  C semantic information
+#   candidate set              includes the C-equivalent realization
+#   chosen                     = min cost over candidates
+#
+# Idol cannot lose, because it keeps the fallback. That is monotonicity rather
+# than optimism, and it is why this is architecture and not a benchmark claim.
 
 cfloor = law{
     id    = "law.c.floor"
@@ -2104,94 +2271,94 @@ perfdominance = law{
     fails = "a fact that makes the compiler forget an option it had"
 }
 
--- Every rewrite carries these, and a candidate replaces another ONLY when
--- correctness is proven AND cost does not rise for the chosen objective. Where
--- uncertain, KEEP BOTH and dispatch — monotonic optimization rather than
--- heuristic optimism.
+# Every rewrite carries these, and a candidate replaces another ONLY when
+# correctness is proven AND cost does not rise for the chosen objective. Where
+# uncertain, KEEP BOTH and dispatch — monotonic optimization rather than
+# heuristic optimism.
 rewrite.carries = { "requires", "preserves", "cost", "witness", "descent" }
 
--- PERFORMANCE IS NOT ONE NUMBER. A realization DOMINATES another when it is no
--- worse on every relevant dimension and strictly better on one — a Pareto
--- frontier, never a magical scalar.
+# PERFORMANCE IS NOT ONE NUMBER. A realization DOMINATES another when it is no
+# worse on every relevant dimension and strictly better on one — a Pareto
+# frontier, never a magical scalar.
 cost.dimensions = {
     "latency", "throughput", "code size", "compile time", "peak memory",
     "allocations", "cache footprint", "branch misses", "energy", "startup",
     "binary size", "tail latency",
 }
 
--- THREE THINGS C DOES THAT IDOL MUST BEAT BY CONSTRUCTION, not by tuning:
---
---   ALIASING             C optimizes poorly without `restrict`. Idol derives
---                        alias facts, so NO USER-WRITTEN EQUIVALENT OF
---                        `restrict` appears in ordinary code.
---   SEPARATE COMPILATION C loses whole-program facts at translation-unit
---                        boundaries. Packages retain graph fragments and
---                        specialize across them — whole-program knowledge
---                        WITHOUT whole-program rebuild cost.
---   ABI FREEZING         C APIs commit to physical representation early. An Idol
---                        interface commits to MEANING; the machine abi is
---                        chosen at realization.
+# THREE THINGS C DOES THAT IDOL MUST BEAT BY CONSTRUCTION, not by tuning:
+#
+#   ALIASING             C optimizes poorly without `restrict`. Idol derives
+#                        alias facts, so NO USER-WRITTEN EQUIVALENT OF
+#                        `restrict` appears in ordinary code.
+#   SEPARATE COMPILATION C loses whole-program facts at translation-unit
+#                        boundaries. Packages retain graph fragments and
+#                        specialize across them — whole-program knowledge
+#                        WITHOUT whole-program rebuild cost.
+#   ABI FREEZING         C APIs commit to physical representation early. An Idol
+#                        interface commits to MEANING; the machine abi is
+#                        chosen at realization.
 beats = { "aliasing", "separate compilation", "abi freezing" }
 
--- ═══ §48 · THE RELATION ALGEBRA — one vocabulary, not one per family ════════
---
--- `to` proved the seed: authored edges, enumeration, one-hop composition,
--- witnesses, refused lossy derivation, SER 2.00 at N=4. THE NEXT MISTAKE WOULD
--- BE GROWING SEPARATE SYSTEMS AROUND IT — an algebra for `add`, another for
--- `iter`, another for `from`.
---
--- Fourteen operations, and they are the algebra rather than syntax:
+# ═══ §48 · THE RELATION ALGEBRA — one vocabulary, not one per family ════════
+#
+# `to` proved the seed: authored edges, enumeration, one-hop composition,
+# witnesses, refused lossy derivation, SER 2.00 at N=4. THE NEXT MISTAKE WOULD
+# BE GROWING SEPARATE SYSTEMS AROUND IT — an algebra for `add`, another for
+# `iter`, another for `from`.
+#
+# Fourteen operations, and they are the algebra rather than syntax:
 algebra = {
-    "derive",   -- obtain an edge from other facts
-    "compose",  -- compose compatible edges
-    "invert",   -- the logically inverse orientation, never a second store
-    "imply",    -- one relationship entails another
-    "lift",     -- map a relation across descriptor, container or world structure
-    "restrict", -- narrow applicability by world, descriptor or property
-    "project",  -- expose one relation through another surface
-    "orient",   -- choose the face WITHOUT changing identity
-    "meet",     -- combine constraints conservatively
-    "join",     -- combine alternatives where lawful
-    "block",    -- an explicit NEGATIVE fact that prevents derivation
-    "prefer",   -- candidate ordering as DATA, never a resolver hardcode
-    "canon",    -- choose the canonical equivalent surface
-    "realize",  -- choose the physical implementation under demand and target
+    "derive",   # obtain an edge from other facts
+    "compose",  # compose compatible edges
+    "invert",   # the logically inverse orientation, never a second store
+    "imply",    # one relationship entails another
+    "lift",     # map a relation across descriptor, container or world structure
+    "restrict", # narrow applicability by world, descriptor or property
+    "project",  # expose one relation through another surface
+    "orient",   # choose the face WITHOUT changing identity
+    "meet",     # combine constraints conservatively
+    "join",     # combine alternatives where lawful
+    "block",    # an explicit NEGATIVE fact that prevents derivation
+    "prefer",   # candidate ordering as DATA, never a resolver hardcode
+    "canon",    # choose the canonical equivalent surface
+    "realize",  # choose the physical implementation under demand and target
 }
 
--- The faces are ORIENTATIONS of one identity, not separate mechanisms:
--- declaration (operation-first) · subject invocation · callable value ·
--- enumeration · anchored/reflection · derivation · inverse · operator · field ·
--- application · ambient-subject.
---
--- CONSEQUENCE, stated so it is not rediscovered: the conversion CLASSES —
--- exact, lossless, view, checked, narrowing, consuming — must not stay
--- conversion-only. They become ORDINARY FACTS on the edge (`loss = none`,
--- `failure = false`, `storage = view`, `consumes = true`), or `add` and `iter`
--- each grow their own class system and gap[084] returns a third time.
+# The faces are ORIENTATIONS of one identity, not separate mechanisms:
+# declaration (operation-first) · subject invocation · callable value ·
+# enumeration · anchored/reflection · derivation · inverse · operator · field ·
+# application · ambient-subject.
+#
+# CONSEQUENCE, stated so it is not rediscovered: the conversion CLASSES —
+# exact, lossless, view, checked, narrowing, consuming — must not stay
+# conversion-only. They become ORDINARY FACTS on the edge (`loss = none`,
+# `failure = false`, `storage = view`, `consumes = true`), or `add` and `iter`
+# each grow their own class system and gap[084] returns a third time.
 classes.become = "ordinary facts on the edge"
 
--- Algebra breadth is an implementation measurement. It does not change the
--- requirement that new breadth be expressed as facts rather than syntax.
+# Algebra breadth is an implementation measurement. It does not change the
+# requirement that new breadth be expressed as facts rather than syntax.
 
 
--- ═══ §49 · two additions to §47, merged from a parallel derivation ══════════
---
--- §47 and an independent §45 draft were written simultaneously and BOTH landed,
--- duplicating law.c.floor, law.perf.floor and law.perf.dominance. Duplicate law
--- ids are precisely what law.stack.consistency forbids ("two constitutional
--- facts may not disagree"), so the duplicate block is deleted and only what it
--- carried UNIQUELY survives here. Recorded rather than silently merged: two
--- agents deriving the same law independently is evidence the law was findable,
--- which is a good sign — and duplicate ids are still a defect.
+# ═══ §49 · two additions to §47, merged from a parallel derivation ══════════
+#
+# §47 and an independent §45 draft were written simultaneously and BOTH landed,
+# duplicating law.c.floor, law.perf.floor and law.perf.dominance. Duplicate law
+# ids are precisely what law.stack.consistency forbids ("two constitutional
+# facts may not disagree"), so the duplicate block is deleted and only what it
+# carried UNIQUELY survives here. Recorded rather than silently merged: two
+# agents deriving the same law independently is evidence the law was findable,
+# which is a good sign — and duplicate ids are still a defect.
 
--- The objective is an ordinary target/world fact. NO new surface, no compiler
--- modes: `target = latency` and `target = size` select different frontiers of
--- the same cost.dimensions in §47.
+# The objective is an ordinary target/world fact. NO new surface, no compiler
+# modes: `target = latency` and `target = size` select different frontiers of
+# the same cost.dimensions in §47.
 cost.objective = { latency, throughput, size, energy, startup, balanced }
 
--- WHY a candidate can BEAT the c floor rather than merely match it. Each row is
--- information C discards at the source level and Idol retains as an ordinary
--- fact.
+# WHY a candidate can BEAT the c floor rather than merely match it. Each row is
+# information C discards at the source level and Idol retains as an ordinary
+# fact.
 edge.over = {
     { fact = "descriptor identity", c = "double", idol = "meters, probability, sorted vector, nonzero scalar — can change the ALGORITHM" },
     { fact = "closed world",        c = "cannot know no future participant exists", idol = "sealed relation: devirtualize, erase dispatch, drop tag checks" },
@@ -2203,11 +2370,11 @@ edge.over = {
     { fact = "call shape",          c = "one function, one body",                   idol = "many machine realizations from one semantic function" },
 }
 
--- ═══ §50 · WORLD IS AN OPERAND, NOT THE SUBJECT ════════════════════════════
---
--- A namespace-first operation makes authority look like an inert table. Making
--- the capability the receiver would fix reach while breaking subject
--- orientation.
+# ═══ §50 · WORLD IS AN OPERAND, NOT THE SUBJECT ════════════════════════════
+#
+# A namespace-first operation makes authority look like an inert table. Making
+# the capability the receiver would fix reach while breaking subject
+# orientation.
 
 world = law{
     id    = "law.world.operand"
@@ -2225,9 +2392,9 @@ world = law{
     fails = "call sites migrated into capability-first orientation"
 }
 
--- OBSERVE-MIN. The deepest reason Idol can beat C, and it is not instruction
--- selection: C freezes representation and ABI at the source, Idol keeps them as
--- degrees of freedom until demand forces the choice.
+# OBSERVE-MIN. The deepest reason Idol can beat C, and it is not instruction
+# selection: C freezes representation and ABI at the source, Idol keeps them as
+# degrees of freedom until demand forces the choice.
 observe = law{
     id    = "law.observe.min"
     kind  = .invariant
@@ -2240,10 +2407,10 @@ observe = law{
     why   = "the optimizer question is not `what transformation preserves the program` but `what observations must this demand preserve`. Those are different questions and only the second admits erasing the value itself."
 }
 
--- ABI is DERIVED from the call graph, not declared. One semantic callable, many
--- physical faces: a caller needing one field gets one register, a caller that
--- only tests failure gets flags. C settles this in the header and spends the
--- optimizer trying to recover it.
+# ABI is DERIVED from the call graph, not declared. One semantic callable, many
+# physical faces: a caller needing one field gets one register, a caller that
+# only tests failure gets flags. C settles this in the header and spends the
+# optimizer trying to recover it.
 abi = law{
     id    = "law.abi.demand"
     kind  = .invariant
@@ -2255,9 +2422,9 @@ abi = law{
     }
 }
 
--- Facts survive REGIONS, not operations. One guard establishes a child world in
--- which many operations consume the proven fact without re-proving it — and the
--- counterpart law is what kills it.
+# Facts survive REGIONS, not operations. One guard establishes a child world in
+# which many operations consume the proven fact without re-proving it — and the
+# counterpart law is what kills it.
 epoch = law{
     id    = "law.proof.epoch"
     kind  = .invariant
@@ -2271,10 +2438,10 @@ epoch = law{
     why   = "c optimizers usually cannot prove a condition survives a call or an aliasing boundary. Idol can because the graph says which relations can falsify it and that makes compilation cheaper as well as the output faster."
 }
 
--- Physical width follows the proven STATE SPACE, not the declared type. A value
--- with ten reachable states does not require sixty-four bits; a table of 0/1 is
--- one bit per element, which is 8x denser than the c `int8_t` a programmer would
--- have to choose by hand.
+# Physical width follows the proven STATE SPACE, not the declared type. A value
+# with ten reachable states does not require sixty-four bits; a table of 0/1 is
+# one bit per element, which is 8x denser than the c `int8_t` a programmer would
+# have to choose by hand.
 entropy.state = law{
     id    = "law.entropy.min"
     kind  = .invariant
@@ -2287,12 +2454,12 @@ entropy.state = law{
     canon = "0 <= x <= 255 realizes u8 while remaining the same semantic value"
 }
 
--- ═══ §51 · LIFTING. What a refinement inherits from its representation. ════
---
--- The rule that makes `str` acquire `slice(byte)`'s vocabulary WITHOUT
--- acquiring the operations that would destroy it. General: it governs every
--- refinement over every representation, and it is what turns a relation store
--- into a projection algebra.
+# ═══ §51 · LIFTING. What a refinement inherits from its representation. ════
+#
+# The rule that makes `str` acquire `slice(byte)`'s vocabulary WITHOUT
+# acquiring the operations that would destroy it. General: it governs every
+# refinement over every representation, and it is what turns a relation store
+# into a projection algebra.
 
 lift = law{
     id    = "law.lift.safe"
@@ -2308,9 +2475,9 @@ lift = law{
     fails = "an operation that compiles and produces a value its own descriptor forbids"
 }
 
--- Element axes are LEVELS, not separate names. `str` enumerates three ways and
--- they disagree — so `len`, `at` and `iter` are each three relations, and
--- law.level.necessity decides when the axis may elide.
+# Element axes are LEVELS, not separate names. `str` enumerates three ways and
+# they disagree — so `len`, `at` and `iter` are each three relations, and
+# law.level.necessity decides when the axis may elide.
 axis = law{
     id    = "law.axis.level"
     kind  = .invariant
@@ -2323,10 +2490,10 @@ axis = law{
     deny  = "picking an axis silently — `#s` choosing bytes is a wrong answer for text, not a limitation"
 }
 
--- PERSISTENT SEMANTICS, EPHEMERAL REALIZATION. The value is immutable; the
--- machine operation need not be. This is what lets functional source compile to
--- the same instructions as imperative C, and it is the same mechanism that
--- gives snapshots, replay, rollback and stateless handles.
+# PERSISTENT SEMANTICS, EPHEMERAL REALIZATION. The value is immutable; the
+# machine operation need not be. This is what lets functional source compile to
+# the same instructions as imperative C, and it is the same mechanism that
+# gives snapshots, replay, rollback and stateless handles.
 persist.value = law{
     id    = "law.persist.unique"
     kind  = .invariant
@@ -2340,7 +2507,7 @@ persist.value = law{
     open  = "snapshot identity, diff, patch and merge are the same mechanism reaching tooling: patch(a, diff(a,b)) = b"
 }
 
--- The acceptance test, written as law so it cannot be satisfied by renaming.
+# The acceptance test, written as law so it cannot be satisfied by renaming.
 basis = law{
     id    = "law.basis.derive"
     kind  = .objective
@@ -2354,19 +2521,19 @@ basis = law{
     fails = "a second sequence descriptor having to write `starts`, `contains` and `split` again"
 }
 
--- ═══ §52 · @ IS ANCHORING, AND NOTHING ELSE ════════════════════════════════
---
--- The old reading — "@ is the universal compiler prefix" — is permanently
--- abandoned. What survives is one irreducible job, and the three surviving
--- The anchor forms omit a descriptor identity the semantic environment already
--- knows. Ambient subject application is the distinct leading-colon source face;
--- dot remains statically named projection.
---
---     @        the enclosing descriptor
---     x@rel    the relation anchored at x
---
--- `@comp.foo` is not in that family and dies with the bootstrap authority it
--- carries.
+# ═══ §52 · @ IS ANCHORING, AND NOTHING ELSE ════════════════════════════════
+#
+# The old reading — "@ is the universal compiler prefix" — is permanently
+# abandoned. What survives is one irreducible job, and the three surviving
+# The anchor forms omit a descriptor identity the semantic environment already
+# knows. Ambient subject application is the distinct leading-colon source face;
+# dot remains statically named projection.
+#
+#     @        the enclosing descriptor
+#     x@rel    the relation anchored at x
+#
+# `@comp.foo` is not in that family and dies with the bootstrap authority it
+# carries.
 
 anchor = law{
     id    = "law.at.one"
@@ -2384,19 +2551,19 @@ anchor = law{
     deny  = "@comp.* and the legacy attributes — bootstrap debt with a deletion gate, never authority"
 }
 
--- `@{ … }` IS NOT A CONSTRUCTION SYNTAX. It is compositional: `@` recovers the
--- enclosing descriptor and `{ … }` is the pack, so it is APPLY-ONE with the
--- subject elided. `@{ x, y }` and `point{ x, y }` are the SAME family; the
--- first recovers `point` from context. This is why @ carries zero special
--- construction semantics and why the anchor form did not become a third
--- mechanism when §43 preserved brace structure and retired brace call.
+# `@{ … }` IS NOT A CONSTRUCTION SYNTAX. It is compositional: `@` recovers the
+# enclosing descriptor and `{ … }` is the pack, so it is APPLY-ONE with the
+# subject elided. `@{ x, y }` and `point{ x, y }` are the SAME family; the
+# first recovers `point` from context. This is why @ carries zero special
+# construction semantics and why the anchor form did not become a third
+# mechanism when §43 preserved brace structure and retired brace call.
 anchor.apply = "@ + pack = apply(enclosing descriptor)(pack)"
 
--- ═══ §53 · CAPABILITY BY PRESSURE, NOT BY CHECKLIST ════════════════════════
---
--- How to reach a comprehensive implementation without implementing a
--- theoretical feature list: three workloads, run simultaneously, each forcing a
--- different half of the substrate.
+# ═══ §53 · CAPABILITY BY PRESSURE, NOT BY CHECKLIST ════════════════════════
+#
+# How to reach a comprehensive implementation without implementing a
+# theoretical feature list: three workloads, run simultaneously, each forcing a
+# different half of the substrate.
 
 forcing = law{
     id    = "law.force.three"
@@ -2412,33 +2579,33 @@ forcing = law{
     keep  = "any capability Idol Wasm needs should normally become a GENERAL compiler primitive — never ward-only infrastructure"
 }
 
--- The claim to make, and the one to refuse. "Faster than C across the board
--- without exception" invites benchmark hacking and cannot be established: no
--- compiler architecture mathematically guarantees one implementation wins every
--- program on every cpu. The defensible construction is already law
--- (law.c.floor, law.perf.floor, law.perf.dominance) and reads:
---
---   the c-equivalent realization is RETAINED whenever lawful · Idol may add
---   STRICTLY STRONGER candidates from additional semantic facts · the public
---   supported corpus demonstrates RELIABLE dominance, adversarial workloads
---   retained
---
--- Get law.perf.dominance right — more semantic knowledge may never shrink the
--- valid realization set — and systematic dominance becomes an engineering
--- problem rather than a wish.
+# The claim to make, and the one to refuse. "Faster than C across the board
+# without exception" invites benchmark hacking and cannot be established: no
+# compiler architecture mathematically guarantees one implementation wins every
+# program on every cpu. The defensible construction is already law
+# (law.c.floor, law.perf.floor, law.perf.dominance) and reads:
+#
+#   the c-equivalent realization is RETAINED whenever lawful · Idol may add
+#   STRICTLY STRONGER candidates from additional semantic facts · the public
+#   supported corpus demonstrates RELIABLE dominance, adversarial workloads
+#   retained
+#
+# Get law.perf.dominance right — more semantic knowledge may never shrink the
+# valid realization set — and systematic dominance becomes an engineering
+# problem rather than a wish.
 claim.refused = "faster than c across the board without exception"
 claim.made    = "more semantic knowledge never reduces the valid realization set"
 
--- ═══ §54 · THE PACK LADDER — three source forms, one application ═══════════
---
--- Most explicit to most inferred, and the canonicalizer picks the SHORTEST that
--- stays uniquely resolvable:
---
---     point{ x, y }    descriptor stated
---     @{ x, y }        descriptor = the ambient one
---     { x, y }         descriptor = the expected one
---
--- Three source projections of ONE apply relation. Not three constructors.
+# ═══ §54 · THE PACK LADDER — three source forms, one application ═══════════
+#
+# Most explicit to most inferred, and the canonicalizer picks the SHORTEST that
+# stays uniquely resolvable:
+#
+#     point{ x, y }    descriptor stated
+#     @{ x, y }        descriptor = the ambient one
+#     { x, y }         descriptor = the expected one
+#
+# Three source projections of ONE apply relation. Not three constructors.
 
 pack.neutral = law{
     id    = "law.pack.neutral"
@@ -2491,9 +2658,9 @@ omit = law{
     fails = "a form that is shorter but no longer uniquely resolvable"
 }
 
--- A REAL semantic decision, recorded as one rather than smuggled in as a
--- function-declaration special case. `b: point = (x, y) …` cannot mean the
--- CALLABLE satisfies `point` — a callable is not a point.
+# A REAL semantic decision, recorded as one rather than smuggled in as a
+# function-declaration special case. `b: point = (x, y) …` cannot mean the
+# CALLABLE satisfies `point` — a callable is not a point.
 demand = law{
     id    = "law.callable.demand"
     kind  = .invariant
@@ -2508,14 +2675,14 @@ demand = law{
     why   = "a general contextual projection, not a `function return type` production. NNS holds: no new grammar, and it beats both `b = (x, y): point` and inventing function-type notation."
 }
 
--- ═══ §55 · IDENTITY, AUTHORITY ORDER, AND WHAT SELF-HOSTING MUST NOT COST ══
+# ═══ §55 · IDENTITY, AUTHORITY ORDER, AND WHAT SELF-HOSTING MUST NOT COST ══
 
--- Authority order is owned once by `law.owner` in §3. This section adds no
--- second ranking or reconciliation law.
+# Authority order is owned once by `law.owner` in §3. This section adds no
+# second ranking or reconciliation law.
 
--- The clarification that keeps monoglot from eating the product. Deleting
--- foreign SEMANTIC AUTHORITY is the goal; deleting foreign INTEGRATION would
--- make Idol less useful the day it became self-hosted.
+# The clarification that keeps monoglot from eating the product. Deleting
+# foreign SEMANTIC AUTHORITY is the goal; deleting foreign INTEGRATION would
+# make Idol less useful the day it became self-hosted.
 foreign = law{
     id    = "law.foreign.integration"
     kind  = .invariant
@@ -2528,7 +2695,7 @@ foreign = law{
     deny  = "deleting foreign INTEGRATION in the name of deleting foreign AUTHORITY"
 }
 
--- ═══ §56 · CHAIN ORDER IS SEMANTIC · NO IMPLICIT CALL ══════════════════════
+# ═══ §56 · CHAIN ORDER IS SEMANTIC · NO IMPLICIT CALL ══════════════════════
 
 chain = law{
     id    = "law.chain.order"
@@ -2566,10 +2733,10 @@ world.order = law{
     why   = "authority that can be reached by default is not a capability. The ladder ends in failure on purpose."
 }
 
--- ═══ §57 · THE DOCS GATE ═══════════════════════════════════════════════════
---
--- Six conditions, each a BUILD FAILURE. Documentation is corpus
--- (law.doc.corpus) and this is what makes that mechanical.
+# ═══ §57 · THE DOCS GATE ═══════════════════════════════════════════════════
+#
+# Six conditions, each a BUILD FAILURE. Documentation is corpus
+# (law.doc.corpus) and this is what makes that mechanical.
 docgate = {
     "a visible semantic token lacks a semantic role",
     "a current lowering claim lacks compiler evidence",
@@ -2579,7 +2746,7 @@ docgate = {
     "distinguishable semantic roles collapse to identical rendering by accident",
 }
 
--- ═══ §58 · IF THE GRAPH IS A PATH, THE SOURCE IS A PATH ════════════════════
+# ═══ §58 · IF THE GRAPH IS A PATH, THE SOURCE IS A PATH ════════════════════
 
 chainprefer = law{
     id    = "law.chain.prefer"
@@ -2608,17 +2775,17 @@ chainbreak = law{
     why   = "chain-prefer without this becomes point-free code, which trades a readable name for a shorter line. The rule is about deleting BRIDGES, not deleting names."
 }
 
--- THE DISAMBIGUATION, and the reason layout may not carry this weight.
---
---     :normalize()        two SIBLING invocations on one ambient subject
---     :validate()
---
---     point               a CHAIN: each step consumes the step above
---         :normalize()
---         :validate()
---
--- Indenting a leading `:` under another leading `:` must NEVER mean "continue
--- the pipeline". A chain ORIGINATES FROM A VALUE.
+# THE DISAMBIGUATION, and the reason layout may not carry this weight.
+#
+#     :normalize()        two SIBLING invocations on one ambient subject
+#     :validate()
+#
+#     point               a CHAIN: each step consumes the step above
+#         :normalize()
+#         :validate()
+#
+# Indenting a leading `:` under another leading `:` must NEVER mean "continue
+# the pipeline". A chain ORIGINATES FROM A VALUE.
 chainop = law{
     id    = "law.chain.postfix"
     kind  = .invariant
@@ -2632,8 +2799,8 @@ chainop = law{
     fails = "two sibling effects silently read as a two-stage pipeline, or the reverse"
 }
 
--- Where to look for this defect. Every one of these is a path in the graph and
--- is routinely written as a stack of temporaries.
+# Where to look for this defect. Every one of these is a path in the graph and
+# is routinely written as a stack of temporaries.
 chainaudit = {
     "normalize, validate, format",
     "decode, validate, transform, encode",
@@ -2647,10 +2814,10 @@ chainaudit = {
     "conversion and protocol examples",
 }
 
--- ═══ §59 · DNIR IS A PROJECTION, NOT A SECOND LANGUAGE ═════════════════════
---
--- A realization record that reserves unrelated operation-specific fields is a
--- second ontology with its own naming and cost model, not a compact projection.
+# ═══ §59 · DNIR IS A PROJECTION, NOT A SECOND LANGUAGE ═════════════════════
+#
+# A realization record that reserves unrelated operation-specific fields is a
+# second ontology with its own naming and cost model, not a compact projection.
 
 irone = law{
     id    = "law.ir.one"
@@ -2702,14 +2869,14 @@ irbomit = law{
     deny  = "constdirect, loadfield, callextern — one-wording an underscore is WORSE than the underscore"
 }
 
--- THE GUARDRAIL, without which this ruling is destructive. Unify IDENTITY;
--- preserve REALIZATION FACTS. Integer add, float add, vector add, saturating,
--- wrapping and checked add are ONE relation — and dnir must still carry
--- descriptor, representation, overflow law, vector width, rounding and target
--- features, or the backend cannot legalize an instruction.
+# THE GUARDRAIL, without which this ruling is destructive. Unify IDENTITY;
+# preserve REALIZATION FACTS. Integer add, float add, vector add, saturating,
+# wrapping and checked add are ONE relation — and dnir must still carry
+# descriptor, representation, overflow law, vector width, rounding and target
+# features, or the backend cannot legalize an instruction.
 irguard = "unify identity, preserve realization facts — never one dynamically interpreted relation"
 
--- The retirement list, and what each becomes.
+# The retirement list, and what each becomes.
 irretire = {
     { was = "const_i64 const_f64 const_str const_req", now = "const, with the descriptor" },
     { was = "load_local load_field load_index load_global", now = "load, with the place" },
@@ -2722,18 +2889,18 @@ irretire = {
     { was = "str_len", now = "len, with the axis" },
 }
 
--- Two of those are worth more than the renaming. `mov_arg`/`fp_mov_arg` mean
--- ABI PLACEMENT LEAKED INTO A TYPED IR — removing them enables move coalescing
--- and argument precoloring instead of materializing pointless virtual moves.
--- And `load_local`/`store_local` are SOURCE-STORAGE ARTIFACTS: under ssa a
--- binding is not a memory location until demand proves it needs one — address
--- observed, capture, aliasing, spill, mutation or a debugger.
+# Two of those are worth more than the renaming. `mov_arg`/`fp_mov_arg` mean
+# ABI PLACEMENT LEAKED INTO A TYPED IR — removing them enables move coalescing
+# and argument precoloring instead of materializing pointless virtual moves.
+# And `load_local`/`store_local` are SOURCE-STORAGE ARTIFACTS: under ssa a
+# binding is not a memory location until demand proves it needs one — address
+# observed, capture, aliasing, spill, mutation or a debugger.
 irwin = "a binding is not a memory location until demand proves it needs one"
 
--- ═══ §60 · FOUR CLAIMS §59 DID NOT CARRY ═══════════════════════════════════
+# ═══ §60 · FOUR CLAIMS §59 DID NOT CARRY ═══════════════════════════════════
 
--- SEMANTIC-ONE: one meaning retains one graph identity and one native word;
--- qualification belongs to facts and physical choice belongs to realization.
+# SEMANTIC-ONE: one meaning retains one graph identity and one native word;
+# qualification belongs to facts and physical choice belongs to realization.
 semantic.one = law{
     id    = "law.vocab.same"
     kind  = .invariant
@@ -2748,10 +2915,10 @@ semantic.one = law{
     canon = "add(a,b) semantic · add + descriptor i64 + repr register + overflow wrap realized · block 7, value v19, users {v20,v23} in flow · v19 -> x3 allocated · `add x3,x1,x2` machine"
 }
 
--- `Op` is a SECOND TAXONOMY. It should become an interned ACCELERATION of a
--- relation identity, never an identity of its own — and the same collapse
--- deletes the redundant dispatch level `switch op { .binop => switch binop }`,
--- because `lt` is a relation, not `cmp` carrying a `lt` tag.
+# `Op` is a SECOND TAXONOMY. It should become an interned ACCELERATION of a
+# relation identity, never an identity of its own — and the same collapse
+# deletes the redundant dispatch level `switch op { .binop => switch binop }`,
+# because `lt` is a relation, not `cmp` carrying a `lt` tag.
 opintern = law{
     id    = "law.op.intern"
     kind  = .invariant
@@ -2764,8 +2931,8 @@ opintern = law{
     deny  = "binop.add beside the semantic relation add — one redundant dispatch level, and a switch inside a switch to service it"
 }
 
--- Most irs freeze physical type on entry. DNIR need not: it can carry a LADDER
--- of realization knowledge and commit only where demand or abi forces it.
+# Most irs freeze physical type on entry. DNIR need not: it can carry a LADDER
+# of realization knowledge and commit only where demand or abi forces it.
 reprladder = law{
     id    = "law.repr.ladder"
     kind  = .invariant
@@ -2778,9 +2945,9 @@ reprladder = law{
     why   = "freezing representation early is what makes a conventional lower ir lose the optimizations it then spends passes trying to recover. law.observe.min and law.abi.demand both need this to be true of the ir, not only of the graph."
 }
 
--- If realized ir is ordinary graph data, the self-hosted compiler transforms it
--- with ordinary Idol — no separate pattern language, which is a whole subsystem
--- SHC does not then have to write.
+# If realized ir is ordinary graph data, the self-hosted compiler transforms it
+# with ordinary Idol — no separate pattern language, which is a whole subsystem
+# SHC does not then have to write.
 irdata = law{
     id    = "law.ir.data"
     kind  = .objective
@@ -2794,16 +2961,16 @@ irdata = law{
     why   = "a compiler that needs a bespoke matching dsl to manipulate its own ir has two languages in it. law.force.three says the self-host workload is what forces this to be true."
 }
 
--- Places unify: `field(x)`, `index(i)` and `global(g)` are one PLACE operand to
--- load and store, so alias, bounds, mutability and provenance analysis reason
--- uniformly and the backend still picks its own instruction.
+# Places unify: `field(x)`, `index(i)` and `global(g)` are one PLACE operand to
+# load and store, so alias, bounds, mutability and provenance analysis reason
+# uniformly and the backend still picks its own instruction.
 irplace = "load(subject, place) · store(subject, place, value) — place is field, index or global"
 
--- ═══ §61 · IDENTITY-ONE · COMMIT-MONOTONIC · THE CONVERGENCE GATE ══════════
---
--- §59-60 are FROZEN. No further dnir design pass. What follows is the two
--- invariants they did not carry, and the instrument that measures whether the
--- implementation is converging on them at all.
+# ═══ §61 · IDENTITY-ONE · COMMIT-MONOTONIC · THE CONVERGENCE GATE ══════════
+#
+# §59-60 are FROZEN. No further dnir design pass. What follows is the two
+# invariants they did not carry, and the instrument that measures whether the
+# implementation is converging on them at all.
 
 lineage = law{
     id    = "law.identity.lineage"
@@ -2831,9 +2998,9 @@ commit = law{
     why   = "this is what makes `why wasn't this simd`, `why did this allocate`, `why did this become sret`, `why wasn't this scalar-replaced` MECHANICALLY answerable rather than a debugging exercise."
 }
 
--- The governance gap this closes: the constitution can say law.ir.one while the
--- implementation stays the old dnir indefinitely. These are measured, not
--- asserted — and the LAST line is the guardrail on the whole list.
+# The governance gap this closes: the constitution can say law.ir.one while the
+# implementation stays the old dnir indefinitely. These are measured, not
+# asserted — and the LAST line is the guardrail on the whole list.
 converge = {
     { row = "semantic operation identity spaces",   target = 1 },
     { row = "instructions carrying a semantic id",  target = "100%" },
@@ -2852,15 +3019,15 @@ converge = {
 
 converge.guard = "MEASURE SEMANTIC AUTHORITY AND RECONSTRUCTION, never a vanity opcode count — a smaller count that hides distinctions inside giant dynamic switches is WORSE"
 
--- The recurring failure this names, in the lowerer's own shape: a semantic fact
--- exists · the lowerer loses it · a local map re-discovers it · another consumer
--- misses the map · another special case is added. **Every deleted reconstruction
--- table is worth more than an opcode rename.**
+# The recurring failure this names, in the lowerer's own shape: a semantic fact
+# exists · the lowerer loses it · a local map re-discovers it · another consumer
+# misses the map · another special case is added. **Every deleted reconstruction
+# table is worth more than an opcode rename.**
 reconstruct = "establish once · project many times · reconstruct nowhere"
 
--- ═══ §62 · EVIDENCE MUST BE PRIVATE TO THE RUN ═════════════════════════════
---
--- Mutable evidence shared between concurrent runs has no trustworthy owner.
+# ═══ §62 · EVIDENCE MUST BE PRIVATE TO THE RUN ═════════════════════════════
+#
+# Mutable evidence shared between concurrent runs has no trustworthy owner.
 
 evidence = law{
     id    = "law.evidence.private"
@@ -2874,11 +3041,11 @@ evidence = law{
     why   = "the same law as everywhere else — one fact, one authority, explicit provenance — applied to every artifact a gate reads"
 }
 
--- ═══ §63 · THE BOUNDARY EVERY RECONSTRUCTION IS DOWNSTREAM OF ══════════════
---
--- Treating the graph as optional metadata after AST lowering makes every
--- downstream reconstruction table predictable. Realization consumes graph
--- facts; it does not decorate a parallel lowering authority afterward.
+# ═══ §63 · THE BOUNDARY EVERY RECONSTRUCTION IS DOWNSTREAM OF ══════════════
+#
+# Treating the graph as optional metadata after AST lowering makes every
+# downstream reconstruction table predictable. Realization consumes graph
+# facts; it does not decorate a parallel lowering authority afterward.
 
 authority.graph = law{
     id    = "law.graph.authority"
@@ -2894,17 +3061,17 @@ authority.graph = law{
     fails = "a lowerer that re-derives from the ast what sema already established"
 }
 
--- COUNT SEMANTIC RECONSTRUCTIONS, NOT DATA STRUCTURES. Two maps may legitimately
--- project two independent dimensions; one function may reconstruct five facts.
--- Two physical maps may project genuinely different scope facts and must not be
--- fused merely to lower a structure count.
+# COUNT SEMANTIC RECONSTRUCTIONS, NOT DATA STRUCTURES. Two maps may legitimately
+# project two independent dimensions; one function may reconstruct five facts.
+# Two physical maps may project genuinely different scope facts and must not be
+# fused merely to lower a structure count.
 reconstructrow = { "fact", "authority", "consumer", "projection or query or RECONSTRUCTION" }
 reconstructwarn = "hpls pressure applied to a structure count causes destructive fusion — the metric is the fact, not the table"
 
--- ═══ §64 · TWO AXES, AND ONE MAY NEVER SUBSTITUTE FOR THE OTHER ════════════
---
--- Foreign-file reduction and vertical authority transfer are independent axes.
--- Either can improve while the other remains unchanged or regresses.
+# ═══ §64 · TWO AXES, AND ONE MAY NEVER SUBSTITUTE FOR THE OTHER ════════════
+#
+# Foreign-file reduction and vertical authority transfer are independent axes.
+# Either can improve while the other remains unchanged or regresses.
 
 axes = {
     horizontal = { "foreign files", "generated foreign projections", "shell and python dependencies", "duplicated tooling" },
@@ -2913,11 +3080,11 @@ axes = {
 
 axes.rule = "NEVER LET HORIZONTAL SOVEREIGNTY SUBSTITUTE FOR VERTICAL DESCENT — they are scored separately or a repository compression reads as an architecture"
 
--- codegen.zig absorbing responsibility instead of surrendering it is the failure
--- a file count cannot see. The budget is on RESPONSIBILITIES, not lines: a
--- migration may add adapters, but every new semantic capability names its target
--- owner, and nothing lands in codegen merely because that is where native
--- behaviour currently works.
+# codegen.zig absorbing responsibility instead of surrendering it is the failure
+# a file count cannot see. The budget is on RESPONSIBILITIES, not lines: a
+# migration may add adapters, but every new semantic capability names its target
+# owner, and nothing lands in codegen merely because that is where native
+# behaviour currently works.
 codegen.budget = "semantic responsibilities monotonically DECREASE"
 
 gatelive = law{
@@ -2932,19 +3099,19 @@ gatelive = law{
     why   = "a checker that is not reached by an aggregate can exist without ever supplying admission evidence"
 }
 
--- `unsupported/` is a CAPABILITY FRONTIER, not a graveyard: it means "proven not
--- to pass the required native gate today", never "someone once thought this was
--- unsupported". Promotion is AUTOMATIC the moment a program compiles and agrees.
+# `unsupported/` is a CAPABILITY FRONTIER, not a graveyard: it means "proven not
+# to pass the required native gate today", never "someone once thought this was
+# unsupported". Promotion is AUTOMATIC the moment a program compiles and agrees.
 unsupported.means = "proven not to pass the required gate today; promotion is automatic on agreement"
 
--- ═══ §65 · SEMANTIC NORMALIZATION — SURFACE IS EVIDENCE, NEVER AUTHORITY ══════
---
--- The pressure test is the conventional shape
--- `if not std.fs.exists(path)`: control words survived as semantic categories,
--- a distribution home masqueraded as meaning, and an existence query exposed
--- a state transition that should usually be atomic. The correction is NOT an
--- immediate keyword purge. Meaning unifies first; spelling earns or loses its
--- place only after ordinary relations can carry the work.
+# ═══ §65 · SEMANTIC NORMALIZATION — SURFACE IS EVIDENCE, NEVER AUTHORITY ══════
+#
+# The pressure test is the conventional shape
+# `if not std.fs.exists(path)`: control words survived as semantic categories,
+# a distribution home masqueraded as meaning, and an existence query exposed
+# a state transition that should usually be atomic. The correction is NOT an
+# immediate keyword purge. Meaning unifies first; spelling earns or loses its
+# place only after ordinary relations can carry the work.
 
 surfacezero = law{
     id    = "law.surface.zero"
@@ -3052,7 +3219,7 @@ update = law{
         "the rewrite witness preserves evaluation order effects custom relation law overflow failure aliasing and result demand",
         "a non-equivalent expanded form remains unchanged",
     }
-    canon = "step = step + 1 is migratable to step += 1 when the witness proves equivalence"
+    canon = "step += 1, n -= 1, x *= y, and y /= z are canonical when witness proves equivalence; expanded place = place op value is migratable debt only"
     deny  = { "++", "addassign", "increment ontology", "unwitnessed text rewrite" }
     proof = {
         "positive control: step = step + 1 is migratable when both occurrences resolve to the same place and every required observation is preserved",
@@ -3247,7 +3414,7 @@ vocabularyaudit = law{
 canonicaldebt = {
     "tracked project owned .id source -> 0",
     "new generated native .id source -> 0",
-    "current facing idsem duo duon and pass branding outside exact history -> 0",
+    "current facing idol duo duon and pass branding outside exact history -> 0",
     "stale agent router concepts and compatibility pattern sources -> 0",
     "statically knowable bracket keys and literal string projections -> 0",
     "namespace subject calls -> 0",
@@ -3324,7 +3491,7 @@ stdzero = law{
     kind  = .protocol
     holds = .zero
     binds = {
-        "canonical semantic namespace roots are zero; std core system platform runtime base idol idsem os fs script process and env never own native meaning",
+        "canonical semantic namespace roots are zero; std core system platform runtime base idol idol os fs script process and env never own native meaning",
         "std is migration distribution and foreign provenance, never semantic architecture or authority",
         "std script is frozen historical architecture and every touched use moves toward semantic reduction and deletion",
         "standard describes origin trust and distribution while implementation location contributes zero relation identity",
@@ -3348,9 +3515,9 @@ stdzero = law{
     fails = "finishing std replacing it with another universal root or selecting meaning from implementation location"
 }
 
--- Conventional source to semantic reduction, recorded without blessing a
--- replacement spelling. The environment/default vocabulary remains OPEN: the
--- relation family must be derived before a canonical name is assigned.
+# Conventional source to semantic reduction, recorded without blessing a
+# replacement spelling. The environment/default vocabulary remains OPEN: the
+# relation family must be derived before a canonical name is assigned.
 budgetreduction = @{
     denied = "namespace environment lookup followed by empty-string sentinel temporary branch and conversion"
     graph = {
@@ -3366,11 +3533,11 @@ budgetreduction = @{
     machine = "runtime: lookup presence test then parse or fallback; build-stage known name and environment may fold to one integer constant"
 }
 
--- ═══ §66 · AUTHORITY, SUBJECT AND STANDARD VOCABULARY CLOSURE ══════════════
---
--- A home may locate a meaning. It can never grant permission to observe or
--- change a world. This is graph law, not a deny list for particular spellings:
--- renaming a home must not alter the verdict.
+# ═══ §66 · AUTHORITY, SUBJECT AND STANDARD VOCABULARY CLOSURE ══════════════
+#
+# A home may locate a meaning. It can never grant permission to observe or
+# change a world. This is graph law, not a deny list for particular spellings:
+# renaming a home must not alter the verdict.
 
 authorityhome = law{
     id    = "law.authority.home"
@@ -3727,9 +3894,9 @@ lexical.block = @{
     unlock = "complete idol owned lexical identities plus generated grammar roles canonical migrations explicit foreign import boundaries and derived tooling projections"
 }
 
--- Semantic identity is the spine, not the whole acceptance claim. Every
--- production change is judged across meaning, physical work, human use and
--- sovereignty. A local win may not hide cost or authority on another axis.
+# Semantic identity is the spine, not the whole acceptance claim. Every
+# production change is judged across meaning, physical work, human use and
+# sovereignty. A local win may not hide cost or authority on another axis.
 
 closure = law{
     id    = "law.project.closure"

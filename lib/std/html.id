@@ -1,20 +1,20 @@
--- std.html — basic HTML escaping and unescaping
+# std.html — basic HTML escaping and unescaping
 
 string = std.string
 escape(s: str): str
-    s = string.gsub(s, "&", "&amp;")
-    s = string.gsub(s, "<", "&lt;")
-    s = string.gsub(s, ">", "&gt;")
-    s = string.gsub(s, '"', "&quot;")
-    s = string.gsub(s, "'", "&#39;")
+    s = s:gsub("&", "&amp;")
+    s = s:gsub("<", "&lt;")
+    s = s:gsub(">", "&gt;")
+    s = s:gsub('"', "&quot;")
+    s = s:gsub("'", "&#39;")
     s
 end
 
 unescape(s: str): str
-    s = string.gsub(s, "&lt;", "<")
-    s = string.gsub(s, "&gt;", ">")
-    s = string.gsub(s, "&quot;", '"')
-    s = string.gsub(s, "&#39;", "'")
-    s = string.gsub(s, "&amp;", "&")
+    s = s:gsub("&lt;", "<")
+    s = s:gsub("&gt;", ">")
+    s = s:gsub("&quot;", '"')
+    s = s:gsub("&#39;", "'")
+    s = s:gsub("&amp;", "&")
     s
 end

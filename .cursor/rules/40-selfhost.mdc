@@ -1,5 +1,5 @@
 ---
-globs: ["docs/bootstrap.md", "gaps/GAP-139.md", "src/main.zig", "lib/**", "tools/devnode/**"]
+globs: ["docs/bootstrap.md", "gaps/GAP-139.md", "src/main.zig", "lib/**", "tools/node/dev/**"]
 ---
 
 # Selfhost

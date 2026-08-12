@@ -21,7 +21,7 @@ pub const PrettyPrinter = struct {
     alloc: std.mem.Allocator,
     buf: *std.ArrayList(u8),
     mode: Mode,
-    /// When true in .duo mode, omit deprecated keywords (`then`, `do`, bare `fun`).
+    /// When true in .id mode, omit deprecated keywords (`then`, `do`, bare `fun`).
     canonical: bool = false,
     indent_level: usize,
     indent_str: []const u8,

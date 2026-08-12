@@ -1,5 +1,5 @@
--- the engine/src/wasm/stack.id — Operand + control stack
--- Pre-allocated fixed arrays. All ops inline to single pointer derefs.
+# the engine/src/wasm/stack.id — Operand + control stack
+# Pre-allocated fixed arrays. All ops inline to single pointer derefs.
 
 fun stack_new(capacity: i64)
     ptr = __emit("calloc(capacity, sizeof(int64_t))")
@@ -28,7 +28,7 @@ fun stack_peek_at(s, offset: i64): i64
     return __emit("((int64_t*)s.as.tval)[s_sp - 1 - offset]")
 end
 
--- Control stack: stores (pc, arity, stack_height) triples
+# Control stack: stores (pc, arity, stack_height) triples
 fun ctrl_new(capacity: i64)
     ptr = __emit("calloc(capacity * 3, sizeof(int64_t))")
     return { ptr = ptr, depth = 0, cap = capacity }

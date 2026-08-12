@@ -1,6 +1,6 @@
--- std.bit — bit manipulation primitives for WASM, low-level, and cryptographic work
+# std.bit — bit manipulation primitives for WASM, low-level, and cryptographic work
 
--- Population count (Hamming weight)
+# Population count (Hamming weight)
 popcount(x: i64): i64
     n = x
     count = 0
@@ -11,7 +11,7 @@ popcount(x: i64): i64
     count
 end
 
--- Count leading zeros
+# Count leading zeros
 clz(x: i64): i64
     if x == 0 return 64 end
     n = 0
@@ -23,7 +23,7 @@ clz(x: i64): i64
     n
 end
 
--- Count trailing zeros
+# Count trailing zeros
 ctz(x: i64): i64
     if x == 0 return 64 end
     n = 0
@@ -34,27 +34,27 @@ ctz(x: i64): i64
     n
 end
 
--- Bit length (position of highest set bit + 1)
+# Bit length (position of highest set bit + 1)
 bit_length(x: i64): i64
     if x == 0 return 0 end
     64 - clz(x)
 end
 
--- Rotate left (for hash functions, ciphers)
+# Rotate left (for hash functions, ciphers)
 rotl(x: i64, k: i64): i64
     k = k & 63
     if k == 0 return x end
     (x << k) | (x >> (64 - k))
 end
 
--- Rotate right
+# Rotate right
 rotr(x: i64, k: i64): i64
     k = k & 63
     if k == 0 return x end
     (x >> k) | (x << (64 - k))
 end
 
--- Reverse all bits (for bitfield encoding)
+# Reverse all bits (for bitfield encoding)
 reverse(x: i64): i64
     r = 0
     i = 0
@@ -65,7 +65,7 @@ reverse(x: i64): i64
     r
 end
 
--- Reverse bytes (endianness conversion)
+# Reverse bytes (endianness conversion)
 reverse_bytes(x: i64): i64
     ((x & 0xFF) << 56) |
     ((x & 0xFF00) << 40) |
@@ -77,14 +77,14 @@ reverse_bytes(x: i64): i64
     ((x >> 56) & 0xFF)
 end
 
--- Extract a bitfield: extract bits [hi:lo] from x (inclusive, 0-indexed)
+# Extract a bitfield: extract bits [hi:lo] from x (inclusive, 0-indexed)
 extract(x: i64, hi: i64, lo: i64): i64
     width = hi - lo + 1
     mask = (1 << width) - 1
     (x >> lo) & mask
 end
 
--- Insert a bitfield: insert value into bits [hi:lo] of x
+# Insert a bitfield: insert value into bits [hi:lo] of x
 insert(x: i64, hi: i64, lo: i64, value: i64): i64
     width = hi - lo + 1
     mask = (1 << width) - 1
@@ -92,36 +92,36 @@ insert(x: i64, hi: i64, lo: i64, value: i64): i64
     cleared | ((value & mask) << lo)
 end
 
--- Set a single bit
+# Set a single bit
 set_bit(x: i64, pos: i64): i64
     x | (1 << pos)
 end
 
--- Clear a single bit
+# Clear a single bit
 clear_bit(x: i64, pos: i64): i64
     x & ~(1 << pos)
 end
 
--- Toggle a single bit
+# Toggle a single bit
 toggle_bit(x: i64, pos: i64): i64
-    -- `~` is XOR; `^` is exponentiation and yields f64, which made this fail
-    -- to typecheck against the declared i64 return.
+    # `~` is XOR; `^` is exponentiation and yields f64, which made this fail
+    # to typecheck against the declared i64 return.
     x ~ (1 << pos)
 end
 
--- Test if bit at pos is set
+# Test if bit at pos is set
 test_bit(x: i64, pos: i64): bool
     (x & (1 << pos)) != 0
 end
 
--- Count set bits in range [hi:lo]
+# Count set bits in range [hi:lo]
 popcount_range(x: i64, hi: i64, lo: i64): i64
     width = hi - lo + 1
     mask = (1 << width) - 1
     popcount((x >> lo) & mask)
 end
 
--- Next power of two
+# Next power of two
 next_pow2(x: i64): i64
     if x <= 1 return 1 end
     x -= 1
@@ -134,13 +134,13 @@ next_pow2(x: i64): i64
     x + 1
 end
 
--- Previous power of two
+# Previous power of two
 prev_pow2(x: i64): i64
     if x <= 1 return 1 end
     1 << (bit_length(x) - 1)
 end
 
--- LEB128 unsigned encode (used in WASM binary format)
+# LEB128 unsigned encode (used in WASM binary format)
 leb128_encode_u(value: i64): any
     bytes = {}
     repeat
@@ -154,7 +154,7 @@ leb128_encode_u(value: i64): any
     bytes
 end
 
--- LEB128 unsigned decode
+# LEB128 unsigned decode
 leb128_decode_u(bytes: any, pos: i64): any
     result = 0
     shift = 0
@@ -169,7 +169,7 @@ leb128_decode_u(bytes: any, pos: i64): any
     {value = result, next = i + 1}
 end
 
--- LEB128 signed encode
+# LEB128 signed encode
 leb128_encode_s(value: i64): any
     bytes = {}
     more = true
@@ -186,7 +186,7 @@ leb128_encode_s(value: i64): any
     bytes
 end
 
--- LEB128 signed decode
+# LEB128 signed decode
 leb128_decode_s(bytes: any, pos: i64): any
     result = 0
     shift = 0
@@ -206,7 +206,7 @@ leb128_decode_s(bytes: any, pos: i64): any
     {value = result, next = i + 1}
 end
 
--- Binary AND/OR/XOR arrays element-wise (for SIMD-like ops on byte arrays)
+# Binary AND/OR/XOR arrays element-wise (for SIMD-like ops on byte arrays)
 and_bytes(a: any, b: any): any
     out = {}
     n = #a
@@ -253,11 +253,11 @@ not_bytes(a: any): any
     out
 end
 
--- ── IEEE-754 bit reinterpretation ─────────────────────────────────────
--- Reinterpret (not convert) between floats and their bit patterns. Needed by
--- any lane-wise float work (wasm SIMD, serialization, hashing) and expressible
--- only as a primitive, so it lives here in the stdlib rather than in callers.
--- This is the sanctioned home for C-level primitives; callers stay pure Duo.
+# ── IEEE-754 bit reinterpretation ─────────────────────────────────────
+# Reinterpret (not convert) between floats and their bit patterns. Needed by
+# any lane-wise float work (wasm SIMD, serialization, hashing) and expressible
+# only as a primitive, so it lives here in the stdlib rather than in callers.
+# This is the sanctioned home for C-level primitives; callers stay pure Duo.
 
 f64_to_bits(x: f64): i64
     @comp.bit.bitcast(x, "int64_t")

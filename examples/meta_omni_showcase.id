@@ -1,5 +1,5 @@
--- @comp.omni / @comp.stack: one agent line → linear + quadratic codegen output
--- Run: duo run examples/meta_omni_showcase.id
+# @comp.omni / @comp.stack: one agent line → linear + quadratic codegen output
+# Run: duo run examples/meta_omni_showcase.id
 
 concept HasXY
     x: f64
@@ -31,7 +31,7 @@ registry_line(meta): str
     meta.name .. ";"
 end
 
--- Expression form: ceiling + sweep comment in one call
+# Expression form: ceiling + sweep comment in one call
 @c.emit(@comp.omni("HasXY", PairApi, "HasTag", registry_line))
 
 print("=== meta omni showcase ===")

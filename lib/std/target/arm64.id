@@ -1,75 +1,75 @@
--- std.target.arm64 — the ARM64 instruction set as DATA.
---
--- Pass 103 §2 and Pass 104 §3 make one structural claim about the descent:
---
---   > The ISA is a descriptor family with layout facts, so machine encoding is
---   > the same codec derivation that encodes wire structs. encode(arm64) is not
---   > a special engine, it is the codec matrix pointed at silicon. The backend
---   > is small because it is mostly REUSE.
---
--- What that cashes out to here: `rows` below is the whole ARM64 surface this
--- compiler emits, one line per instruction form, and `encode` is ONE function
--- that consumes the layout fact. Adding an instruction is adding a line of
--- data. There is no per-instruction code.
---
--- THE INVENTORY THIS WAS DERIVED FROM. `src/native_backend.zig` funnels every
--- machine word through `emit`/`emitFmt`, at 56 call sites reaching 50 distinct
--- instruction FORMS. 45 of those 50 are here. The five that are not are the
--- ones whose word is not a function of its operands:
---
---   adrp x%d, sym       immhi/immlo filled by a Mach-O relocation
---   add  x%d, x%n, sym  PAGEOFF filled by a Mach-O relocation
---   bl   sym            imm26 filled by a branch relocation
---   b    .L             imm26 back-patched once the label resolves
---   b.cond .L           imm19 back-patched once the label resolves
---
--- Those need a relocation/patch fact the layout grammar below does not yet
--- carry, and inventing one to raise the ratio would be counting rather than
--- covering. `src/dnir_hardware.zig` also defines a 51st word — `cnt` for
--- popcount, 0x5ac02000 — that no path reaches, because `emitHwUnary`
--- intercepts popcount into a Kernighan loop before `arm64UnaryWord` is asked.
--- It is dead and is not counted.
---
--- ROW GRAMMAR — four `|`-separated segments:
---
---   name | base | layout | form
---
--- `base` is the hex word with every operand field zero. `layout` is a
--- space-separated list of `field@hi:lo` facts, hi and lo being bit positions
--- INCLUSIVE, exactly as Pass 103 writes them. `form` is the assembler text,
--- with `%x` naming a field so an oracle assembler can be handed the same
--- instruction and asked what it thinks the bytes are.
---
--- FIELD NAMES are one letter and mean the same thing on every row:
---
---   d  destination register        n  first source / base register
---   m  second source register      a  accumulator (msub only)
---   i  immediate                   h  movz/movk shift, in units of 16
---   c  condition code
---
--- FORM PLACEHOLDERS: `%d %n %m %a %i` render their field's value directly;
--- `%s` renders field `i` times 8 (the scaled load/store offset, where the
--- field holds bytes/8); `%h` renders field `h` times 16 (the shift in bits);
--- `%c` renders field `c` as its condition mnemonic.
---
--- TWO ROWS DISAGREED WITH THE SHIPPING EMITTER, and the disagreement was the
--- emitter's:
---
---   rbit   `src/native_backend.zig` emitted 0x5ac00000, which is RBIT **32**.
---          The ctz lowering is rbit-then-clz, and a 32-bit reverse zero-fills
---          the top half, so `clz x` counted those 32 zeros too: `@ctz(8)`
---          answered 35 under --backend=direct against 3 from the C backend.
---   scvtf  the emitter had 0x1e620000, which is SCVTF from a **32-bit** GPR.
---          `emitScvtfFromGpr` is handed an x register by both callers, so
---          anything at or above 2^32 converted from its low half.
---
--- Both were found by handing this table's `form` text to `clang` and diffing
--- the bytes, which is what `zig build isa-fidelity` does on every run. Both
--- were repaired in the emitter in the same commit; the rows below carry the
--- CORRECT words, and the gate is the thing that keeps them correct.
+# std.target.arm64 — the ARM64 instruction set as DATA.
+#
+# Pass 103 §2 and Pass 104 §3 make one structural claim about the descent:
+#
+#   > The ISA is a descriptor family with layout facts, so machine encoding is
+#   > the same codec derivation that encodes wire structs. encode(arm64) is not
+#   > a special engine, it is the codec matrix pointed at silicon. The backend
+#   > is small because it is mostly REUSE.
+#
+# What that cashes out to here: `rows` below is the whole ARM64 surface this
+# compiler emits, one line per instruction form, and `encode` is ONE function
+# that consumes the layout fact. Adding an instruction is adding a line of
+# data. There is no per-instruction code.
+#
+# THE INVENTORY THIS WAS DERIVED FROM. `src/native_backend.zig` funnels every
+# machine word through `emit`/`emitFmt`, at 56 call sites reaching 50 distinct
+# instruction FORMS. 45 of those 50 are here. The five that are not are the
+# ones whose word is not a function of its operands:
+#
+#   adrp x%d, sym       immhi/immlo filled by a Mach-O relocation
+#   add  x%d, x%n, sym  PAGEOFF filled by a Mach-O relocation
+#   bl   sym            imm26 filled by a branch relocation
+#   b    .L             imm26 back-patched once the label resolves
+#   b.cond .L           imm19 back-patched once the label resolves
+#
+# Those need a relocation/patch fact the layout grammar below does not yet
+# carry, and inventing one to raise the ratio would be counting rather than
+# covering. `src/dnir_hardware.zig` also defines a 51st word — `cnt` for
+# popcount, 0x5ac02000 — that no path reaches, because `emitHwUnary`
+# intercepts popcount into a Kernighan loop before `arm64UnaryWord` is asked.
+# It is dead and is not counted.
+#
+# ROW GRAMMAR — four `|`-separated segments:
+#
+#   name | base | layout | form
+#
+# `base` is the hex word with every operand field zero. `layout` is a
+# space-separated list of `field@hi:lo` facts, hi and lo being bit positions
+# INCLUSIVE, exactly as Pass 103 writes them. `form` is the assembler text,
+# with `%x` naming a field so an oracle assembler can be handed the same
+# instruction and asked what it thinks the bytes are.
+#
+# FIELD NAMES are one letter and mean the same thing on every row:
+#
+#   d  destination register        n  first source / base register
+#   m  second source register      a  accumulator (msub only)
+#   i  immediate                   h  movz/movk shift, in units of 16
+#   c  condition code
+#
+# FORM PLACEHOLDERS: `%d %n %m %a %i` render their field's value directly;
+# `%s` renders field `i` times 8 (the scaled load/store offset, where the
+# field holds bytes/8); `%h` renders field `h` times 16 (the shift in bits);
+# `%c` renders field `c` as its condition mnemonic.
+#
+# TWO ROWS DISAGREED WITH THE SHIPPING EMITTER, and the disagreement was the
+# emitter's:
+#
+#   rbit   `src/native_backend.zig` emitted 0x5ac00000, which is RBIT **32**.
+#          The ctz lowering is rbit-then-clz, and a 32-bit reverse zero-fills
+#          the top half, so `clz x` counted those 32 zeros too: `@ctz(8)`
+#          answered 35 under #backend=direct against 3 from the C backend.
+#   scvtf  the emitter had 0x1e620000, which is SCVTF from a **32-bit** GPR.
+#          `emitScvtfFromGpr` is handed an x register by both callers, so
+#          anything at or above 2^32 converted from its low half.
+#
+# Both were found by handing this table's `form` text to `clang` and diffing
+# the bytes, which is what `zig build isa-fidelity` does on every run. Both
+# were repaired in the emitter in the same commit; the rows below carry the
+# CORRECT words, and the gate is the thing that keeps them correct.
 
--- The condition codes, in encoding order. `hs`/`lo` rather than `cs`/`cc`;
--- both spellings assemble to the same four bits and only one has to be picked.
+# The condition codes, in encoding order. `hs`/`lo` rather than `cs`/`cc`;
+# both spellings assemble to the same four bits and only one has to be picked.
 conds(): any
     {
         "eq", "ne", "hs", "lo", "mi", "pl", "vs", "vc",
@@ -77,13 +77,13 @@ conds(): any
     }
 end
 
--- The ISA. 45 rows; every one of them is consumed by `encode` below and by
--- nothing else.
+# The ISA. 45 rows; every one of them is consumed by `encode` below and by
+# nothing else.
 rows(): any
     {
-        -- Register arithmetic and logic, 64-bit. The model form in Pass 103 §2:
-        -- three register fields at 20:16, 9:5 and 4:0, and the mnemonic is the
-        -- only thing that changes between ten of these rows.
+        # Register arithmetic and logic, 64-bit. The model form in Pass 103 §2:
+        # three register fields at 20:16, 9:5 and 4:0, and the mnemonic is the
+        # only thing that changes between ten of these rows.
         "add|8b000000|m@20:16 n@9:5 d@4:0|add x%d, x%n, x%m",
         "sub|cb000000|m@20:16 n@9:5 d@4:0|sub x%d, x%n, x%m",
         "mul|9b007c00|m@20:16 n@9:5 d@4:0|mul x%d, x%n, x%m",
@@ -95,33 +95,33 @@ rows(): any
         "lsr|9ac02400|m@20:16 n@9:5 d@4:0|lsr x%d, x%n, x%m",
         "asr|9ac02800|m@20:16 n@9:5 d@4:0|asr x%d, x%n, x%m",
 
-        -- Multiply-subtract carries a fourth register field at 14:10; it is
-        -- how the emitter spells integer remainder.
+        # Multiply-subtract carries a fourth register field at 14:10; it is
+        # how the emitter spells integer remainder.
         "msub|9b008000|m@20:16 a@14:10 n@9:5 d@4:0|msub x%d, x%n, x%m, x%a",
 
-        -- Compares are SUBS into the zero register, which is why the low five
-        -- bits are already 0b11111 in the base and there is no `d` field.
+        # Compares are SUBS into the zero register, which is why the low five
+        # bits are already 0b11111 in the base and there is no `d` field.
         "cmpreg|eb00001f|m@20:16 n@9:5|cmp x%n, x%m",
         "cmpzero|f100001f|n@9:5|cmp x%n, #0",
 
-        -- Register moves are ORR/ORN against the zero register.
+        # Register moves are ORR/ORN against the zero register.
         "movreg|aa0003e0|m@20:16 d@4:0|mov x%d, x%m",
         "mvn|aa2003e0|m@20:16 d@4:0|mvn x%d, x%m",
 
-        -- Wide immediates. `h` is the halfword index, so the shift the text
-        -- prints is h times 16.
+        # Wide immediates. `h` is the halfword index, so the shift the text
+        # prints is h times 16.
         "movz|d2800000|h@22:21 i@20:5 d@4:0|movz x%d, #%i, lsl #%h",
         "movk|f2800000|h@22:21 i@20:5 d@4:0|movk x%d, #%i, lsl #%h",
 
-        -- `cset` is CSINC from the zero register with the condition INVERTED.
-        -- The row is the csinc, because that is the word, and the inversion
-        -- belongs to whoever picks the operand rather than to the layout.
+        # `cset` is CSINC from the zero register with the condition INVERTED.
+        # The row is the csinc, because that is the word, and the inversion
+        # belongs to whoever picks the operand rather than to the layout.
         "csinc|9a9f07e0|c@15:12 d@4:0|csinc x%d, xzr, xzr, %c",
 
         "ret|d65f03c0||ret",
 
-        -- Loads and stores. The unsigned-offset forms hold bytes/8 in the
-        -- immediate field, which is why the text renders `%s` and not `%i`.
+        # Loads and stores. The unsigned-offset forms hold bytes/8 in the
+        # immediate field, which is why the text renders `%s` and not `%i`.
         "strspx|f90003e0|i@21:10 d@4:0|str x%d, [sp, #%s]",
         "ldrspx|f94003e0|i@21:10 d@4:0|ldr x%d, [sp, #%s]",
         "strbaseimm|f9000000|i@21:10 n@9:5 d@4:0|str x%d, [x%n, #%s]",
@@ -130,13 +130,13 @@ rows(): any
         "strb|39000000|n@9:5 d@4:0|strb w%d, [x%n]",
         "ldrb|39400000|n@9:5 d@4:0|ldrb w%d, [x%n]",
 
-        -- Frame arithmetic. These hold RAW bytes in the immediate field, not
-        -- bytes/8, because the add/sub immediate form is unscaled.
+        # Frame arithmetic. These hold RAW bytes in the immediate field, not
+        # bytes/8, because the add/sub immediate form is unscaled.
         "subspimm|d10003ff|i@21:10|sub sp, sp, #%i",
         "addspimm|910003ff|i@21:10|add sp, sp, #%i",
         "addxdsp|910003e0|i@21:10 d@4:0|add x%d, sp, #%i",
 
-        -- Double-precision floating point.
+        # Double-precision floating point.
         "fadd|1e602800|m@20:16 n@9:5 d@4:0|fadd d%d, d%n, d%m",
         "fsub|1e603800|m@20:16 n@9:5 d@4:0|fsub d%d, d%n, d%m",
         "fmul|1e600800|m@20:16 n@9:5 d@4:0|fmul d%d, d%n, d%m",
@@ -150,7 +150,7 @@ rows(): any
         "strspd|fd0003e0|i@21:10 d@4:0|str d%d, [sp, #%s]",
         "ldrspd|fd4003e0|i@21:10 d@4:0|ldr d%d, [sp, #%s]",
 
-        -- Bit counting and the two barriers.
+        # Bit counting and the two barriers.
         "rbit|dac00000|n@9:5 d@4:0|rbit x%d, x%n",
         "clz|dac01000|n@9:5 d@4:0|clz x%d, x%n",
         "dmb|d5033bbf||dmb ish",
@@ -158,8 +158,8 @@ rows(): any
     }
 end
 
--- One hex digit. Written without a branch ladder: subtracting 48 lands digits
--- on 0..9 and letters above 9, and the second subtraction only runs for those.
+# One hex digit. Written without a branch ladder: subtracting 48 lands digits
+# on 0..9 and letters above 9, and the second subtraction only runs for those.
 digit(ch: i64): i64
     v: i64 = ch - 48
     if v > 9
@@ -178,10 +178,10 @@ hex(s: str): i64
     v
 end
 
--- `field@hi:lo` applied to an operand map, as the shifted contribution to the
--- word. `hi` is read by `width` and deliberately not used to mask here: an
--- operand wider than its field is a generator bug, and masking it would HIDE
--- that bug, which is the opposite of what this file is for.
+# `field@hi:lo` applied to an operand map, as the shifted contribution to the
+# word. `hi` is read by `width` and deliberately not used to mask here: an
+# operand wider than its field is a generator bug, and masking it would HIDE
+# that bug, which is the opposite of what this file is for.
 place(fact: str, ops: any): i64
     at = fact:split("@")
     span = at[2]:split(":")
@@ -190,8 +190,8 @@ place(fact: str, ops: any): i64
     v << lo
 end
 
--- How many bits a layout fact spends. A generator uses this to pick operands
--- that fit rather than guessing per row.
+# How many bits a layout fact spends. A generator uses this to pick operands
+# that fit rather than guessing per row.
 width(fact: str): i64
     at = fact:split("@")
     span = at[2]:split(":")
@@ -200,7 +200,7 @@ width(fact: str): i64
     hi - lo + 1
 end
 
--- The name a layout fact fills.
+# The name a layout fact fills.
 holds(fact: str): str
     at = fact:split("@")
     at[1]
@@ -216,11 +216,11 @@ layout(row: str): str
     parts[3]
 end
 
--- THE DERIVATION. Pass 103 §2 writes it `encode(arm64)(i: instr): u32 =
--- i:to(arm64[i.mnem])`; this is that, spelled in what the compiler accepts
--- today. Note what is NOT here: any mnemonic, any special case, any
--- per-instruction arm. The base word ORs with each layout fact's contribution
--- and that is the entire encoder for all 45 rows.
+# THE DERIVATION. Pass 103 §2 writes it `encode(arm64)(i: instr): u32 =
+# i:to(arm64[i.mnem])`; this is that, spelled in what the compiler accepts
+# today. Note what is NOT here: any mnemonic, any special case, any
+# per-instruction arm. The base word ORs with each layout fact's contribution
+# and that is the entire encoder for all 45 rows.
 encode(row: str, ops: any): i64
     parts = row:split("|")
     word: i64 = hex(parts[2])
@@ -233,8 +233,8 @@ encode(row: str, ops: any): i64
     word
 end
 
--- One `%x` placeholder, rendered. `%s` and `%h` are the two fields whose text
--- form is a multiple of the encoded form; `%c` is the one that is a name.
+# One `%x` placeholder, rendered. `%s` and `%h` are the two fields whose text
+# form is a multiple of the encoded form; `%c` is the one that is a name.
 slot(k: str, ops: any): str
     out: str = ""
     if k == "s"
@@ -249,9 +249,9 @@ slot(k: str, ops: any): str
     out
 end
 
--- The same instruction, as assembler text, so a foreign assembler can be asked
--- the same question `encode` was asked. Pass 103 §5 licenses exactly this use
--- and no other: the oracle is CI equipment, never a stage.
+# The same instruction, as assembler text, so a foreign assembler can be asked
+# the same question `encode` was asked. Pass 103 §5 licenses exactly this use
+# and no other: the oracle is CI equipment, never a stage.
 text(row: str, ops: any): str
     parts = row:split("|")
     form: str = parts[4]

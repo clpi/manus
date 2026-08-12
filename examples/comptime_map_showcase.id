@@ -1,5 +1,5 @@
--- @comp.map: one concept + one fn → code for every matching type in the module
--- Run: duo run examples/comptime_map_showcase.id
+# @comp.map: one concept + one fn → code for every matching type in the module
+# Run: duo run examples/comptime_map_showcase.id
 
 concept HasXY
     x: f64

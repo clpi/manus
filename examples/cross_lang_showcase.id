@@ -1,6 +1,6 @@
--- Cross-language metaprogramming paths that are implemented today.
---
--- Run: duo run examples/cross_lang_showcase.id
+# Cross-language metaprogramming paths that are implemented today.
+#
+# Run: duo run examples/cross_lang_showcase.id
 
 --- @c.include("math.h")
 --- @c.include("string.h")
@@ -45,7 +45,7 @@ static double vec2_dot(double x1, double y1, double x2, double y2) {
     return x1 * x2 + y1 * y2;
 }
 
-static double vec2_len(double x, double y) {
+static double vec2_double x, double y:len() {
     return sqrt(x * x + y * y);
 }
 ]])
@@ -67,12 +67,12 @@ print("-- Generated native C via @run --")
 @c.call("printf", "  fibonacci(10) = %ld\n", @c.call("fibonacci", @(10)))
 @c.call("printf", "  gcd(12, 8) = %ld\n", @c.call("gcd_long", @(12), @(8)))
 @c.call("printf", "  vec2_dot(1,2,3,4) = %.1f\n", @c.call("vec2_dot", @(1.0), @(2.0), @(3.0), @(4.0)))
-@c.call("printf", "  vec2_len(3,4) = %.1f\n", @c.call("vec2_len", @(3.0), @(4.0)))
+@c.call("printf", "  vec2_3,4) = %.1f\n", @c.call("vec2_len", @(3.0), @(4.0):len())
 @c.call("printf", "  sin_lut[2] = %.8f\n", @c.call("sin_lut_at", @(2)))
 print("")
 
 print("-- Header/schema/embed surfaces --")
-@c.call("printf", "  strlen(\"duo\") = %zu\n", @c.call("strlen", "duo"))
+@c.call("printf", "  str\"duo\":len() = %zu\n", @c.call("strlen", "duo"))
 print("  embedded file bytes = " .. to(str)(#EMBEDDED))
 print("  host = " .. HOST)
 print("  python = " .. PY)

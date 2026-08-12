@@ -1,4 +1,5 @@
 const std = @import("std");
+const lexical_identity = @import("lexical_identity.zig");
 const source_cursor = @import("source_cursor.zig");
 
 pub const Loc = source_cursor.Loc;
@@ -121,6 +122,11 @@ pub const TokenKind = enum {
     percent_assign, // %=
     caret_assign, // ^=
 
+    text_lit,
+    bytes_lit,
+    compat_text_lit,
+    compat_long_text_lit,
+
     eof,
 
     pub fn spelling(self: TokenKind) []const u8 {
@@ -129,6 +135,10 @@ pub const TokenKind = enum {
             .int_lit => "integer",
             .float_lit => "float",
             .string_lit => "string",
+            .text_lit => "text",
+            .bytes_lit => "bytes",
+            .compat_text_lit => "compat_text",
+            .compat_long_text_lit => "compat_long_text",
             .lparen => "(",
             .rparen => ")",
             .lbracket => "[",
@@ -199,6 +209,7 @@ pub const LexError = error{
     InvalidNumber,
     UnexpectedChar,
     InvalidEscape,
+    InsufficientIndent,
     OutOfMemory,
 };
 
@@ -212,7 +223,7 @@ pub const Lexer = struct {
     pending_hint_count: u8 = 0,
 
     /// SH-03 production dispatch. When non-null, tokens come from the DUO lexer
-    /// (lib/std/compiler/lexer.duo, via src/duo_lexer_dispatch.zig) and this
+    /// (lib/std/compiler/lexer.id, via src/duo_lexer_dispatch.zig) and this
     /// struct is a cursor over that stream rather than a scanner. The host
     /// scanner below stays intact and stays the differential oracle.
     ///
@@ -222,6 +233,10 @@ pub const Lexer = struct {
     /// existing call sites and every test are unaffected.
     duo_tokens: ?[]const Token = null,
     duo_index: usize = 0,
+
+    /// Scratch for canonical multiline text normalization (GAP-145).
+    text_scratch: [8192]u8 = undefined,
+    text_scratch_len: usize = 0,
 
     pub fn init(src: []const u8, file: []const u8) Lexer {
         return .{
@@ -236,7 +251,7 @@ pub const Lexer = struct {
         MissingEndToken,
     };
 
-    /// Drive this lexer from an Idsem-produced, EOF-terminated token stream.
+    /// Drive this lexer from an Idol-produced, EOF-terminated token stream.
     pub fn useDuoTokens(self: *Lexer, toks: []const Token) TokenStreamError!void {
         if (toks.len == 0) return TokenStreamError.EmptyTokenStream;
         if (toks[toks.len - 1].kind != .eof) return TokenStreamError.MissingEndToken;
@@ -248,6 +263,16 @@ pub const Lexer = struct {
     /// Whether this lexer is tokenizing through Duo rather than the host scanner.
     pub fn isDuoBacked(self: *const Lexer) bool {
         return self.duo_tokens != null;
+    }
+
+    /// Index of the token returned by the next `peek()` on the Duo path.
+    pub fn duoStreamIndex(self: *const Lexer) usize {
+        if (self.duo_tokens == null) return 0;
+        if (self.peeked != null) {
+            return if (self.duo_index > 0) self.duo_index - 1 else 0;
+        }
+        const toks = self.duo_tokens.?;
+        return @min(self.duo_index, toks.len);
     }
 
     /// One token from the Duo stream. Past the end it repeats EOF, matching the
@@ -300,6 +325,9 @@ pub const Lexer = struct {
             if (c == ' ' or c == '\t' or c == '\r' or c == '\n') {
                 _ = self.adv();
             } else if (c == '#' and self.peek_char2() == '!' and self.cursor.index == 0) {
+                while (self.cursor.index < self.cursor.bytes.len and self.peek_char() != '\n')
+                    _ = self.adv();
+            } else if (c == '#' and @import("duo_lexer_bridge.zig").isIdolSourcePath(self.cursor.file)) {
                 while (self.cursor.index < self.cursor.bytes.len and self.peek_char() != '\n')
                     _ = self.adv();
             } else if (c == '-' and self.peek_char2() == '-') {
@@ -399,8 +427,90 @@ pub const Lexer = struct {
         return LexError.UnterminatedLongString;
     }
 
+    fn skipNewline(self: *Lexer) void {
+        if (self.peek_char() == '\r') _ = self.adv();
+        if (self.peek_char() == '\n') _ = self.adv();
+    }
+
+    fn readCanonicalMultiline(self: *Lexer) LexError![]const u8 {
+        self.skipNewline();
+        const content_start = self.cursor.index;
+        var close_at: ?usize = null;
+        var close_indent: u32 = 0;
+        while (self.cursor.index < self.cursor.bytes.len) {
+            const line_start = self.cursor.index;
+            var only_ws = true;
+            while (self.cursor.index < self.cursor.bytes.len) {
+                const c = self.peek_char();
+                if (c == '\n' or c == '\r') break;
+                if (c == '"') {
+                    if (only_ws) {
+                        close_at = line_start;
+                        close_indent = self.cursor.col - 1;
+                        _ = self.adv();
+                        break;
+                    }
+                }
+                if (c != ' ' and c != '\t') only_ws = false;
+                _ = self.adv();
+            }
+            if (close_at != null) break;
+            if (self.peek_char() == '\r') _ = self.adv();
+            if (self.peek_char() == '\n') _ = self.adv();
+        }
+        if (close_at == null) return LexError.UnterminatedString;
+
+        var out_len: usize = 0;
+        self.cursor.index = content_start;
+        while (self.cursor.index < close_at.?) {
+            const line_start = self.cursor.index;
+            while (self.cursor.index < close_at.? and self.peek_char() != '\n' and self.peek_char() != '\r')
+                _ = self.adv();
+            const line_end = self.cursor.index;
+            var nonblank = false;
+            var check = line_start;
+            while (check < line_end) : (check += 1) {
+                const bc = self.cursor.bytes[check];
+                if (bc != ' ' and bc != '\t') {
+                    nonblank = true;
+                    break;
+                }
+            }
+            if (nonblank) {
+                if (close_indent > 0) {
+                    var wi: u32 = 0;
+                    while (wi < close_indent) : (wi += 1) {
+                        if (line_start + wi >= line_end or self.cursor.bytes[line_start + wi] != ' ')
+                            return LexError.InsufficientIndent;
+                    }
+                }
+                const chunk_start = line_start + close_indent;
+                if (chunk_start <= line_end) {
+                    const chunk = self.cursor.bytes[chunk_start..line_end];
+                    if (out_len + chunk.len + 1 > self.text_scratch.len) return LexError.OutOfMemory;
+                    if (out_len > 0) self.text_scratch[out_len] = '\n';
+                    if (out_len > 0) out_len += 1;
+                    @memcpy(self.text_scratch[out_len .. out_len + chunk.len], chunk);
+                    out_len += chunk.len;
+                }
+            } else if (out_len > 0) {
+                if (out_len + 1 > self.text_scratch.len) return LexError.OutOfMemory;
+                self.text_scratch[out_len] = '\n';
+                out_len += 1;
+            }
+            if (self.peek_char() == '\r') _ = self.adv();
+            if (self.peek_char() == '\n') _ = self.adv();
+        }
+        self.text_scratch_len = out_len;
+        return self.text_scratch[0..out_len];
+    }
+
     fn read_str(self: *Lexer, quote: u8) LexError![]const u8 {
         _ = self.adv(); // opening quote
+        if (quote == '"' and lexical_identity.isCanonicalSource(self.cursor.file)) {
+            const c0 = self.peek_char();
+            if (c0 == '\n' or c0 == '\r') return self.readCanonicalMultiline();
+        }
         const start = self.cursor.index;
         while (self.cursor.index < self.cursor.bytes.len) {
             const c = self.peek_char();
@@ -529,7 +639,8 @@ pub const Lexer = struct {
                     while (i < raw.len and raw[i] != '}') {
                         if (!std.ascii.isHex(raw[i])) return LexError.InvalidEscape;
                         const digit = std.fmt.parseInt(u21, raw[i .. i + 1], 16) catch return LexError.InvalidEscape;
-                        cp = cp * 16 + digit;
+                        cp *= 16;
+                        cp += digit;
                         digits += 1;
                         i += 1;
                     }
@@ -600,7 +711,7 @@ pub const Lexer = struct {
                 // A hex literal is a bit pattern, not a signed magnitude. Parsing it
                 // as i64 rejected every constant with the top bit set — e.g. the FNV
                 // offset basis `0xcbf29ce484222325` (14695981039346656037) in
-                // `lib/std/heap.duo`, which failed the whole file with
+                // `lib/std/heap.id`, which failed the whole file with
                 // "lexer failed with InvalidNumber". Fall back to u64 and reinterpret.
                 if (std.fmt.parseInt(i64, text[2..], 16)) |signed| {
                     break :blk signed;
@@ -654,18 +765,20 @@ pub const Lexer = struct {
             return Token{ .kind = kind, .loc = l, .text = text };
         }
 
-        // Strings
+        // Strings — GAP-145 identities keyed by quote and source provenance.
         if (c == '\'' or c == '"') {
+            const facts = lexical_identity.sourceFacts(self.cursor.file);
+            const lit_kind = lexical_identity.classifyQuote(facts, c, false).?.tokenKind();
             const s = try self.read_str(c);
-            return Token{ .kind = .string_lit, .loc = l, .text = s };
+            return Token{ .kind = lit_kind, .loc = l, .text = s };
         }
 
-        // Long strings
+        // Long strings — compatibility long text only.
         if (c == '[') {
             const lvl = self.long_bracket_level();
             if (lvl >= 0) {
                 const s = try self.read_long_str(@intCast(lvl));
-                return Token{ .kind = .string_lit, .loc = l, .text = s };
+                return Token{ .kind = .compat_long_text_lit, .loc = l, .text = s };
             }
         }
 
@@ -934,52 +1047,79 @@ test "lex: float with exponent" {
     try testing.expectApproxEqAbs(@as(f64, 0.2), tok2.float_val, 1e-9);
 }
 
-test "lex: double-quoted string" {
-    var l = Lexer.init("\"hello\"", "test");
+test "lex: canonical multiline text strips closing indent" {
+    const src =
+        \\"
+        \\  line1
+        \\  line2
+        \\  "
+    ;
+    var l = Lexer.init(src, "probe.id");
     const tok = try l.next();
-    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqual(TokenKind.text_lit, tok.kind);
+    try testing.expectEqualStrings("line1\nline2", tok.text);
+}
+
+test "lex: double-quoted string on canonical .id is text" {
+    var l = Lexer.init("\"hello\"", "probe.id");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.text_lit, tok.kind);
     try testing.expectEqualStrings("hello", tok.text);
 }
 
-test "lex: single-quoted string" {
-    var l = Lexer.init("'world'", "test");
+test "lex: single-quoted string on canonical .id is bytes" {
+    var l = Lexer.init("'world'", "probe.id");
     const tok = try l.next();
-    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqual(TokenKind.bytes_lit, tok.kind);
+    try testing.expectEqualStrings("world", tok.text);
+}
+
+test "lex: double-quoted string" {
+    var l = Lexer.init("\"hello\"", "test.id");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.text_lit, tok.kind);
+    try testing.expectEqualStrings("hello", tok.text);
+}
+
+test "lex: single-quoted string on historical source is compat text" {
+    var l = Lexer.init("'world'", "test.duo");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.compat_text_lit, tok.kind);
     try testing.expectEqualStrings("world", tok.text);
 }
 
 test "lex: empty string" {
-    var l = Lexer.init("\"\"", "test");
+    var l = Lexer.init("\"\"", "test.id");
     const tok = try l.next();
-    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqual(TokenKind.text_lit, tok.kind);
     try testing.expectEqualStrings("", tok.text);
 }
 
 test "lex: long string level 0" {
     var l = Lexer.init("[[hello world]]", "test");
     const tok = try l.next();
-    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqual(TokenKind.compat_long_text_lit, tok.kind);
     try testing.expectEqualStrings("hello world", tok.text);
 }
 
 test "lex: long string level 1" {
     var l = Lexer.init("[=[content]=]", "test");
     const tok = try l.next();
-    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqual(TokenKind.compat_long_text_lit, tok.kind);
     try testing.expectEqualStrings("content", tok.text);
 }
 
 test "lex: long string level 1 with embedded level-0 close" {
     var l = Lexer.init("[=[contains ]] without ending]=]", "test");
     const tok = try l.next();
-    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqual(TokenKind.compat_long_text_lit, tok.kind);
     try testing.expectEqualStrings("contains ]] without ending", tok.text);
 }
 
 test "lex: long string level 2 with embedded level-1 close" {
     var l = Lexer.init("[==[contains ]=] and more ]==]", "test");
     const tok = try l.next();
-    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqual(TokenKind.compat_long_text_lit, tok.kind);
     try testing.expectEqualStrings("contains ]=] and more ", tok.text);
 }
 
@@ -991,7 +1131,7 @@ test "lex: long string preserves bash conditional text at shell boundary" {
     try testing.expectEqual(TokenKind.name, name.kind);
     try testing.expectEqualStrings("shell", name.text);
     const tok = try l.next();
-    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqual(TokenKind.compat_long_text_lit, tok.kind);
     try testing.expect(std.mem.indexOf(u8, tok.text, "if [[ -f") != null);
     try testing.expect(std.mem.indexOf(u8, tok.text, "echo \"$file\"") != null);
     try testing.expect(std.mem.indexOf(u8, tok.text, "fi") != null);
@@ -1014,28 +1154,28 @@ test "lex: long comment level 1 with ]] inside" {
 test "lex: long string level 2" {
     var l = Lexer.init("[==[text]==]", "test");
     const tok = try l.next();
-    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqual(TokenKind.compat_long_text_lit, tok.kind);
     try testing.expectEqualStrings("text", tok.text);
 }
 
 test "lex: long string strips leading newline" {
     var l = Lexer.init("[[\nhello]]", "test");
     const tok = try l.next();
-    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqual(TokenKind.compat_long_text_lit, tok.kind);
     try testing.expectEqualStrings("hello", tok.text);
 }
 
 test "lex: long string with embedded newlines preserved" {
     var l = Lexer.init("[[line1\nline2]]", "test");
     const tok = try l.next();
-    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqual(TokenKind.compat_long_text_lit, tok.kind);
     try testing.expectEqualStrings("line1\nline2", tok.text);
 }
 
 test "lex: long string with array index before close" {
     var l = Lexer.init("[[double cksum=0; for(int i=0;i<128*128;i++) cksum+=C[i];]]", "test");
     const tok = try l.next();
-    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqual(TokenKind.compat_long_text_lit, tok.kind);
     try testing.expectEqualStrings("double cksum=0; for(int i=0;i<128*128;i++) cksum+=C[i];", tok.text);
     try testing.expect(tok.text[tok.text.len - 1] != ']');
 }
@@ -1044,7 +1184,7 @@ test "lex: long bracket after lparen for c.emit" {
     var l = Lexer.init("([[double cksum=0; for(int i=0;i<128*128;i++) cksum+=C[i];]])", "test");
     _ = try l.next(); // lparen
     const tok = try l.next();
-    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqual(TokenKind.compat_long_text_lit, tok.kind);
     try testing.expect(std.mem.indexOf(u8, tok.text, "C[i];") != null);
     try testing.expect(!std.mem.endsWith(u8, tok.text, "]"));
 }
@@ -1054,11 +1194,18 @@ test "lex: long string embedded in other tokens" {
     const t1 = try l.next();
     try testing.expectEqual(TokenKind.int_lit, t1.kind);
     const t2 = try l.next();
-    try testing.expectEqual(TokenKind.string_lit, t2.kind);
+    try testing.expectEqual(TokenKind.compat_long_text_lit, t2.kind);
     try testing.expectEqualStrings("inside", t2.text);
     const t3 = try l.next();
     try testing.expectEqual(TokenKind.int_lit, t3.kind);
     try testing.expectEqual(@as(i64, 99), t3.int_val);
+}
+
+test "lex: canonical hash comment on .id is skipped" {
+    var l = Lexer.init("# note\n42", "gate.id");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.int_lit, tok.kind);
+    try testing.expectEqual(@as(i64, 42), tok.int_val);
 }
 
 test "lex: line comment is skipped" {
@@ -1132,9 +1279,9 @@ test "lex: column advances within a line" {
 }
 
 test "lex: file name preserved in loc" {
-    var l = Lexer.init("x", "myfile.duo");
+    var l = Lexer.init("x", "myfile.id");
     const tok = try l.next();
-    try testing.expectEqualStrings("myfile.duo", tok.loc.file);
+    try testing.expectEqualStrings("myfile.id", tok.loc.file);
 }
 
 test "lex: peek does not consume" {

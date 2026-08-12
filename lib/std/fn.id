@@ -1,39 +1,39 @@
--- std.fn — functional programming utilities
--- Higher-order functions and data transformations.
--- Note: closure-returning combinators are not supported by the compiler;
--- this module focuses on functions that compose without creating new closures.
+# std.fn — functional programming utilities
+# Higher-order functions and data transformations.
+# Note: closure-returning combinators are not supported by the compiler;
+# this module focuses on functions that compose without creating new closures.
 
--- identity: return its argument unchanged.
+# identity: return its argument unchanged.
 identity(x: any): any
     x
 end
 
--- constant: return the value (for use as a function body).
+# constant: return the value (for use as a function body).
 constant(v: any): any
     v
 end
 
--- noop: a function that does nothing.
+# noop: a function that does nothing.
 noop(): void
 end
 
--- foldl: left fold over a list.
+# foldl: left fold over a list.
 foldl(list: any, init: any, fn_ref: any): any
     acc = init
     if list == nil return acc end
     i = 1
-    while i <= rawlen(list)
+    while i <= list:len()
         acc = fn_ref(acc, list[i])
         i += 1
     end
     acc
 end
 
--- foldr: right fold over a list.
+# foldr: right fold over a list.
 foldr(list: any, init: any, fn_ref: any): any
     acc = init
     if list == nil return acc end
-    i = rawlen(list)
+    i = list:len()
     while i >= 1
         acc = fn_ref(list[i], acc)
         i -= 1
@@ -41,144 +41,144 @@ foldr(list: any, init: any, fn_ref: any): any
     acc
 end
 
--- map_filter: apply fn and keep only non-nil results.
+# map_filter: apply fn and keep only non-nil results.
 map_filter(list: any, fn_ref: any): any
     out = {}
     if list == nil return out end
     i = 1
-    while i <= rawlen(list)
+    while i <= list:len()
         result = fn_ref(list[i])
         if result != nil
-            out[rawlen(out) + 1] = result
+            out[out:len() + 1] = result
         end
         i += 1
     end
     out
 end
 
--- group_by: partition list into groups keyed by fn's return value.
+# group_by: partition list into groups keyed by fn's return value.
 group_by(list: any, fn_ref: any): any
     groups = {}
     if list == nil return groups end
     i = 1
-    while i <= rawlen(list)
+    while i <= list:len()
         key = fn_ref(list[i])
         if groups[key] == nil groups[key] = {} end
-        groups[key][rawlen(groups[key]) + 1] = list[i]
+        groups[key][groups[key]:len() + 1] = list[i]
         i += 1
     end
     groups
 end
 
--- unique_by: deduplicate list by fn's return value (first occurrence wins).
+# unique_by: deduplicate list by fn's return value (first occurrence wins).
 unique_by(list: any, fn_ref: any): any
     seen = {}
     out = {}
     if list == nil return out end
     i = 1
-    while i <= rawlen(list)
+    while i <= list:len()
         key = fn_ref(list[i])
         if seen[key] == nil
             seen[key] = true
-            out[rawlen(out) + 1] = list[i]
+            out[out:len() + 1] = list[i]
         end
         i += 1
     end
     out
 end
 
--- take_while: take elements from the front while predicate holds.
+# take_while: take elements from the front while predicate holds.
 take_while(list: any, fn_ref: any): any
     out = {}
     if list == nil return out end
     i = 1
-    while i <= rawlen(list)
+    while i <= list:len()
         if not fn_ref(list[i]) break end
-        out[rawlen(out) + 1] = list[i]
+        out[out:len() + 1] = list[i]
         i += 1
     end
     out
 end
 
--- drop_while: drop elements from the front while predicate holds.
+# drop_while: drop elements from the front while predicate holds.
 drop_while(list: any, fn_ref: any): any
     out = {}
     if list == nil return out end
     dropping = true
     i = 1
-    while i <= rawlen(list)
+    while i <= list:len()
         if dropping and fn_ref(list[i])
-            -- skip
+            # skip
         else
             dropping = false
-            out[rawlen(out) + 1] = list[i]
+            out[out:len() + 1] = list[i]
         end
         i += 1
     end
     out
 end
 
--- chunk: split list into sub-lists of size n.
+# chunk: split list into sub-lists of size n.
 chunk(list: any, n: i64): any
     out = {}
     if list == nil or n == nil or n < 1 return out end
     i = 1
-    while i <= rawlen(list)
+    while i <= list:len()
         group = {}
         j = 0
-        while j < n and i + j <= rawlen(list)
-            group[rawlen(group) + 1] = list[i + j]
+        while j < n and i + j <= list:len()
+            group[group:len() + 1] = list[i + j]
             j += 1
         end
-        out[rawlen(out) + 1] = group
+        out[out:len() + 1] = group
         i += n
     end
     out
 end
 
--- interleave: weave elements from two lists alternately.
+# interleave: weave elements from two lists alternately.
 interleave(a: any, b: any): any
     out = {}
     if a == nil a = {} end
     if b == nil b = {} end
-    n = rawlen(a)
-    if rawlen(b) > n n = rawlen(b) end
+    n = a:len()
+    if b:len() > n n = b:len() end
     i = 1
     while i <= n
-        if i <= rawlen(a) out[rawlen(out) + 1] = a[i] end
-        if i <= rawlen(b) out[rawlen(out) + 1] = b[i] end
+        if i <= a:len() out[out:len() + 1] = a[i] end
+        if i <= b:len() out[out:len() + 1] = b[i] end
         i += 1
     end
     out
 end
 
--- transpose: transpose a list of lists (rows to columns).
+# transpose: transpose a list of lists (rows to columns).
 transpose(matrix: any): any
-    if matrix == nil or rawlen(matrix) == 0 return {} end
-    cols = rawlen(matrix[1])
+    if matrix == nil or matrix:len() == 0 return {} end
+    cols = matrix[1]:len()
     out = {}
     c = 1
     while c <= cols
         col = {}
         r = 1
-        while r <= rawlen(matrix)
-            if matrix[r] != nil and rawlen(matrix[r]) >= c
-                col[rawlen(col) + 1] = matrix[r][c]
+        while r <= matrix:len()
+            if matrix[r] != nil and matrix[r]:len() >= c
+                col[col:len() + 1] = matrix[r][c]
             end
             r += 1
         end
-        out[rawlen(out) + 1] = col
+        out[out:len() + 1] = col
         c += 1
     end
     out
 end
 
--- count_by: count elements grouped by fn's return value.
+# count_by: count elements grouped by fn's return value.
 count_by(list: any, fn_ref: any): any
     counts = {}
     if list == nil return counts end
     i = 1
-    while i <= rawlen(list)
+    while i <= list:len()
         key = fn_ref(list[i])
         if counts[key] == nil counts[key] = 0 end
         counts[key] = counts[key] + 1
@@ -187,38 +187,38 @@ count_by(list: any, fn_ref: any): any
     counts
 end
 
--- flatten: flatten a list of lists one level deep.
+# flatten: flatten a list of lists one level deep.
 flatten(list: any): any
     out = {}
     if list == nil return out end
     i = 1
-    while i <= rawlen(list)
+    while i <= list:len()
         item = list[i]
         if type(item) == "table"
             j = 1
-            while j <= rawlen(item)
-                out[rawlen(out) + 1] = item[j]
+            while j <= item:len()
+                out[out:len() + 1] = item[j]
                 j += 1
             end
         else
-            out[rawlen(out) + 1] = item
+            out[out:len() + 1] = item
         end
         i += 1
     end
     out
 end
 
--- partition: split list into {matching, non_matching} by predicate.
+# partition: split list into {matching, non_matching} by predicate.
 partition(list: any, fn_ref: any): any
     yes = {}
     no = {}
     if list == nil return {yes, no} end
     i = 1
-    while i <= rawlen(list)
+    while i <= list:len()
         if fn_ref(list[i])
-            yes[rawlen(yes) + 1] = list[i]
+            yes[yes:len() + 1] = list[i]
         else
-            no[rawlen(no) + 1] = list[i]
+            no[no:len() + 1] = list[i]
         end
         i += 1
     end
@@ -228,13 +228,13 @@ partition(list: any, fn_ref: any): any
     out
 end
 
--- min_by: find the element that minimizes fn's return value.
+# min_by: find the element that minimizes fn's return value.
 min_by(list: any, fn_ref: any): any
-    if list == nil or rawlen(list) == 0 return nil end
+    if list == nil or list:len() == 0 return nil end
     best = list[1]
     best_val = fn_ref(best)
     i = 2
-    while i <= rawlen(list)
+    while i <= list:len()
         val = fn_ref(list[i])
         if val < best_val
             best = list[i]
@@ -245,13 +245,13 @@ min_by(list: any, fn_ref: any): any
     best
 end
 
--- max_by: find the element that maximizes fn's return value.
+# max_by: find the element that maximizes fn's return value.
 max_by(list: any, fn_ref: any): any
-    if list == nil or rawlen(list) == 0 return nil end
+    if list == nil or list:len() == 0 return nil end
     best = list[1]
     best_val = fn_ref(best)
     i = 2
-    while i <= rawlen(list)
+    while i <= list:len()
         val = fn_ref(list[i])
         if val > best_val
             best = list[i]
@@ -262,11 +262,11 @@ max_by(list: any, fn_ref: any): any
     best
 end
 
--- sort_by: sort list by fn's return value.
--- Bubble sort to avoid closure capture issues in the codegen.
+# sort_by: sort list by fn's return value.
+# Bubble sort to avoid closure capture issues in the codegen.
 sort_by(list: any, fn_ref: any): void
     if list == nil return end
-    n = rawlen(list)
+    n = list:len()
     i = 1
     while i < n
         j = 1
@@ -282,22 +282,22 @@ sort_by(list: any, fn_ref: any): void
     end
 end
 
--- GAP: pipe/pipe3/negate/curry2 cannot be expressed in Duo today.
--- Each needs a returned lambda to CAPTURE the enclosing function's parameters
--- (f1/f2/fn_ref) and then CALL them. Two independent compiler gaps block that:
---   1. a lambda does not capture an enclosing PARAMETER -- the generated C says
---      "use of undeclared identifier 'f2'";
---   2. a function arriving as a parameter is not callable at all.
--- They were also written as NESTED BARE DECLARATIONS, which do not parse (GR-001
--- is file-scope), and pipe/pipe3 both named their inner function `composed`,
--- which collides at module scope ("redefinition of std_fn__composed__lua").
---
--- Why they are stubbed rather than left as they were: while they failed to
--- PARSE, `emit_embedded_module` failed for the whole file, so std.fn was
--- unusable -- and std.iter and std.go, which require it, were down purely as
--- collateral. Three modules were unreachable to protect four functions that
--- could not run under any spelling. They return nil until the capture gap
--- closes, so the rest of the module is reachable.
+# GAP: pipe/pipe3/negate/curry2 cannot be expressed in Duo today.
+# Each needs a returned lambda to CAPTURE the enclosing function's parameters
+# (f1/f2/fn_ref) and then CALL them. Two independent compiler gaps block that:
+#   1. a lambda does not capture an enclosing PARAMETER # the generated C says
+#      "use of undeclared identifier 'f2'";
+#   2. a function arriving as a parameter is not callable at all.
+# They were also written as NESTED BARE DECLARATIONS, which do not parse (GR-001
+# is file-scope), and pipe/pipe3 both named their inner function `composed`,
+# which collides at module scope ("redefinition of std_fn__composed__lua").
+#
+# Why they are stubbed rather than left as they were: while they failed to
+# PARSE, `emit_embedded_module` failed for the whole file, so std.fn was
+# unusable # and std.iter and std.go, which require it, were down purely as
+# collateral. Three modules were unreachable to protect four functions that
+# could not run under any spelling. They return nil until the capture gap
+# closes, so the rest of the module is reachable.
 pipe(f1: any, f2: any): any
     nil
 end
@@ -314,7 +314,7 @@ curry2(fn_ref: any): any
     nil
 end
 
--- clamp: clamp value between min and max.
+# clamp: clamp value between min and max.
 clamp(v: any, lo: any, hi: any): any
     if v < lo return lo end
     if v > hi return hi end

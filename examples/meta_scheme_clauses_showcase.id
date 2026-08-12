@@ -1,5 +1,5 @@
--- @comp.scheme.clauses — named clause list → O(clauses) native C
--- Run: duo run examples/meta_scheme_clauses_showcase.id
+# @comp.scheme.clauses — named clause list → O(clauses) native C
+# Run: duo run examples/meta_scheme_clauses_showcase.id
 
 SPEC = "header: /* header clause */; body: /* body clause */"
 

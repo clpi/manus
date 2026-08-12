@@ -1,29 +1,21 @@
 #!/usr/bin/env duo
--- duo-mcp/zls.id — MCP server: Zig LSP bridge (zls subprocess).
--- Pure Duo. Run from the Duo repo root:
---   duo run tools/mcp/zls.id
---
--- THIS SERVER HAD NEVER BUILT. Measured at HEAD on 2026-08-08, before any
--- change here: `ensure_zls()` and `zls_request()` were file-scope `fun`s
--- called from three tool handlers, which lowers to an upvalue call and fails
--- the C stage with "called object type 'lua_Value' is not a function or
--- function pointer". Handlers CAN call functions reached through a `req`'d
--- module, so the bridge moved to tools/mcp/zls_bridge.id and this file is
--- registration only.
---
--- Every `req` is at file scope and sibling modules are spelled from the
--- project root — see tools/mcp/CLAUDE.md for why both are load-bearing.
---
--- STD IS THE PRELUDE GRAPH (Pass 118 §0h): no module tree, no import. std
--- descriptors are referenced DIRECTLY — `std.mcp.register_tool`,
--- `std.fs.exists`, `std.json.encode`, `std.os.getenv` — which was verified to
--- work from inside a tool handler before this file stopped importing them.
--- `req "std.x"` is migration debt against that rule; the `req` left here
--- names a PROJECT module, which is not std and does still need one.
-bridge = req "tools.mcp.zls_bridge"
+# duo-mcp/zls.id — MCP server: Zig LSP bridge (zls subprocess).
+# Pure Duo. Run from the Duo repo root:
+#   duo run tools/mcp/zls.id
+#
+# THIS SERVER HAD NEVER BUILT. Measured at HEAD on 2026-08-08, before any
+# change here: `ensure_zls()` and `zls_request()` were file-scope `fun`s
+# called from three tool handlers, which lowers to an upvalue call and fails
+# the C stage with "called object type 'lua_Value' is not a function or
+# function pointer". Handlers CAN call functions reached through a `req`'d
+# module, so the bridge moved to tools/mcp/zls/bridge.id and this file is
+# registration only.
+#
+# Project module bindings live at file scope. Worlds are referenced directly.
+bridge = tools.mcp.zls.bridge
 
--- Tool: zig_diagnostics — get diagnostics for a Zig file
-std.mcp.register_tool("zig_diagnostics", "Get LSP diagnostics for a .zig file via zls", {
+# Tool: zig_diagnostics — get diagnostics for a Zig file
+mcp:register_tool("zig_diagnostics", "Get LSP diagnostics for a .zig file via zls", {
     type = "object",
     properties = {
         file_path = { type = "string", description = "Path to .zig file" },
@@ -31,21 +23,21 @@ std.mcp.register_tool("zig_diagnostics", "Get LSP diagnostics for a .zig file vi
     required = { "file_path" },
 }, fun(args)
     if not bridge.available()
-        return std.json.encode({ error = "zls not installed or not on PATH" })
+        return json:encode({ error = "zls not installed or not on PATH" })
     end
-    uri = "file://" .. args.file_path
+    "{uri = \"file://\"}{args.file_path}"
     content = bridge.read_source(args.file_path)
     opened = bridge.request("textDocument/didOpen", {
         textDocument = { uri = uri, languageId = "zig", version = 1, text = content }
     })
-    -- Diagnostics arrive as a publishDiagnostics NOTIFICATION, which a
-    -- one-shot request/response bridge cannot observe. The list is honestly
-    -- empty and says so, rather than reporting a clean file.
-    std.json.encode({ diagnostics = {}, file = args.file_path, note = "publishDiagnostics is a notification; not captured by the one-shot bridge" })
+    # Diagnostics arrive as a publishDiagnostics NOTIFICATION, which a
+    # one-shot request/response bridge cannot observe. The list is honestly
+    # empty and says so, rather than reporting a clean file.
+    json:encode({ diagnostics = {}, file = args.file_path, note = "publishDiagnostics is a notification; not captured by the one-shot bridge" })
 end)
 
--- Tool: zig_hover — get hover info for a symbol
-std.mcp.register_tool("zig_hover", "Get hover/type info for a symbol at a position in a .zig file", {
+# Tool: zig_hover — get hover info for a symbol
+mcp:register_tool("zig_hover", "Get hover/type info for a symbol at a position in a .zig file", {
     type = "object",
     properties = {
         file_path = { type = "string", description = "Path to .zig file" },
@@ -54,14 +46,14 @@ std.mcp.register_tool("zig_hover", "Get hover/type info for a symbol at a positi
     },
     required = { "file_path", "line", "col" },
 }, fun(args)
-    std.json.encode(bridge.request("textDocument/hover", {
-        textDocument = { uri = "file://" .. args.file_path },
+    json:encode(bridge.request("textDocument/hover", {
+        textDocument = "{{ uri = \"file://\"}{args.file_path },}"
         position = { line = args.line, character = args.col },
     }))
 end)
 
--- Tool: zig_definition — go-to-definition
-std.mcp.register_tool("zig_definition", "Go-to-definition for a symbol in a .zig file", {
+# Tool: zig_definition — go-to-definition
+mcp:register_tool("zig_definition", "Go-to-definition for a symbol in a .zig file", {
     type = "object",
     properties = {
         file_path = { type = "string", description = "Path to .zig file" },
@@ -70,14 +62,14 @@ std.mcp.register_tool("zig_definition", "Go-to-definition for a symbol in a .zig
     },
     required = { "file_path", "line", "col" },
 }, fun(args)
-    std.json.encode(bridge.request("textDocument/definition", {
-        textDocument = { uri = "file://" .. args.file_path },
+    json:encode(bridge.request("textDocument/definition", {
+        textDocument = "{{ uri = \"file://\"}{args.file_path },}"
         position = { line = args.line, character = args.col },
     }))
 end)
 
--- Tool: zig_format — format a .zig file with `zig fmt`
-std.mcp.register_tool("zig_format", "Format a .zig file with zig fmt", {
+# Tool: zig_format — format a .zig file with `zig fmt`
+mcp:register_tool("zig_format", "Format a .zig file with zig fmt", {
     type = "object",
     properties = {
         file_path = { type = "string", description = "Path to .zig file" },
@@ -87,4 +79,4 @@ std.mcp.register_tool("zig_format", "Format a .zig file with zig fmt", {
     bridge.fmt(args.file_path)
 end)
 
-std.mcp.serve()
+mcp:serve()

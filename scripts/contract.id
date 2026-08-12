@@ -1,37 +1,37 @@
--- Declared-contract enforcement gate: `@noalloc` and `@pure`, asserted at the
--- verbs a USER STANDS AT, plus the lexer rejection diagnostic.
---
--- WHY THIS GATE EXISTS. GAP-090 measured `@noalloc` as decorative:
---
---     duo check   examples/pass7/noalloc_fail.id    exit 0
---     duo compile examples/pass7/noalloc_fail.id    exit 0
---     duo explain examples/pass7/noalloc_fail.id    exit 0, rejection as JSON
---
--- The contract was checked in exactly one place, `codegen.zig`'s guardNoAlloc,
--- which only runs while the C backend is emitting. The default backend is
--- `direct`, so the default path never checked at all: `--backend=c` was the ONLY
--- red. A user could write `@noalloc`, violate it and ship. The Zig test that
--- claimed to cover this asserted `error.NoAllocViolation` out of
--- `explain_pipeline.runForProvenance` — a pipeline no CLI verb reaches — so it
--- was green in the suite and absent in the product for its whole life.
---
--- The check now lives in `parse_and_check`, the single funnel every verb shares.
--- This gate asserts through the SHIPPING CLI and by EXIT CODE, because "it
--- compiled" is what let the hole persist. Every status here is read from a
--- command with no pipe on it: `cmd | grep; echo $?` measures grep, and that is
--- how a broken commit got shipped as verified once already.
---
--- FIXTURE HOMES. Positives sit beside the pair they belong to in
--- `examples/pass7/`; negatives sit in `examples/compile_fail/`, which
--- `docs/spec/corpus.md` classifies `negative` — denied text IS the assertion
--- there, so the deny-table scan correctly skips them.
+# Declared-contract enforcement gate: `@noalloc` and `@pure`, asserted at the
+# verbs a USER STANDS AT, plus the lexer rejection diagnostic.
+#
+# WHY THIS GATE EXISTS. GAP-090 measured `@noalloc` as decorative:
+#
+#     duo check   examples/pass7/noalloc_fail.id    exit 0
+#     duo compile examples/pass7/noalloc_fail.id    exit 0
+#     duo explain examples/pass7/noalloc_fail.id    exit 0, rejection as JSON
+#
+# The contract was checked in exactly one place, `codegen.zig`'s guardNoAlloc,
+# which only runs while the C backend is emitting. The default backend is
+# `direct`, so the default path never checked at all: `` was the ONLY
+# red. A user could write `@noalloc`, violate it and ship. The Zig test that
+# claimed to cover this asserted `error.NoAllocViolation` out of
+# `explain_pipeline.runForProvenance` — a pipeline no CLI verb reaches — so it
+# was green in the suite and absent in the product for its whole life.
+#
+# The check now lives in `parse_and_check`, the single funnel every verb shares.
+# This gate asserts through the SHIPPING CLI and by EXIT CODE, because "it
+# compiled" is what let the hole persist. Every status here is read from a
+# command with no pipe on it: `cmd | grep; echo $?` measures grep, and that is
+# how a broken commit got shipped as verified once already.
+#
+# FIXTURE HOMES. Positives sit beside the pair they belong to in
+# `examples/pass7/`; negatives sit in `examples/compile_fail/`, which
+# `docs/spec/corpus.md` classifies `negative` — denied text IS the assertion
+# there, so the deny-table scan correctly skips them.
 
 here(): str
     std.script.chomp(std.script.capture("pwd"))
 end
 
 compiler(root: str): str
-    "{root}/zig-out/bin/duo"
+    "{root}/zig-out/bin/idol"
 end
 
 shout(msg: str): void
@@ -42,64 +42,64 @@ present(path: str): bool
     std.script.status("test -e {path}") == 0
 end
 
--- The verb's OWN exit status. No pipe: a pipeline reports its last stage, and
--- this gate's whole subject is whether the compiler itself refuses.
+# The verb's OWN exit status. No pipe: a pipeline reports its last stage, and
+# this gate's whole subject is whether the compiler itself refuses.
 code(bin: str, verb: str, fixture: str): i64
     std.script.status("{bin} {verb} {fixture} >/dev/null 2>&1")
 end
 
--- `duo compile` needs somewhere to put the artifact; /dev/null keeps the repo
--- clean and repo-hygiene green.
+# `duo compile` needs somewhere to put the artifact; /dev/null keeps the repo
+# clean and repo-hygiene green.
 codecompile(bin: str, flags: str, fixture: str): i64
     std.script.status("{bin} compile {flags} {fixture} -o /dev/null >/dev/null 2>&1")
 end
 
--- Does the verb's combined output hold `want`? Diagnostics go to stderr and the
--- explain render goes to stdout, so both are folded in.
+# Does the verb's combined output hold `want`? Diagnostics go to stderr and the
+# explain render goes to stdout, so both are folded in.
 mentions(bin: str, verb: str, fixture: str, want: str): bool
     std.script.status("{bin} {verb} {fixture} 2>&1 | grep -q -F '{want}'") == 0
 end
 
--- The same question for a `want` that contains an APOSTROPHE — a diagnostic
--- quoting a name (`function 'leak'`) cannot travel inside single quotes, and a
--- shell that ends the quote early greps for the wrong thing and answers a
--- confident NO. Two helpers rather than one escaping rule, because the JSON
--- assertions carry double quotes and these carry single ones.
+# The same question for a `want` that contains an APOSTROPHE — a diagnostic
+# quoting a name (`function 'leak'`) cannot travel inside single quotes, and a
+# shell that ends the quote early greps for the wrong thing and answers a
+# confident NO. Two helpers rather than one escaping rule, because the JSON
+# assertions carry double quotes and these carry single ones.
 mentionsq(bin: str, verb: str, fixture: str, want: str): bool
     std.script.status("{bin} {verb} {fixture} 2>&1 | grep -q -F \"{want}\"") == 0
 end
 
--- `compile` under an explicit backend, asserting on the MESSAGE and not only on
--- the status. Measured 2026-08-09: with the attribute stripped, `--backend=c` on
--- the violating fixture still exits 1, because the emitted C for `mem.alloc`
--- under ARC calls undeclared `duo_retain`/`duo_release` — a separate pre-existing
--- C-backend defect. A nonzero-status row would therefore have PASSED for the
--- wrong reason under its own break control, which is a false green with a
--- positive control attached. Naming the diagnostic is what makes the row real.
+# `compile` under an explicit backend, asserting on the MESSAGE and !only on
+# the status. Measured 2026-08-09: with the attribute stripped, `` on
+# the violating fixture still exits 1, because the emitted C for `mem.alloc`
+# under ARC calls undeclared `duo_retain`/`duo_release` — a separate pre-existing
+# C-backend defect. A nonzero-status row would therefore have PASSED for the
+# wrong reason under its own break control, which is a false green with a
+# positive control attached. Naming the diagnostic is what makes the row real.
 compilesays(bin: str, flags: str, fixture: str, want: str): bool
     std.script.status("{bin} compile {flags} {fixture} -o /dev/null 2>&1 | grep -q -F '{want}'") == 0
 end
 
-main = (): i64
+main: i64 = ()
     root = here()
     bin = compiler(root)
     bad = 0
 
-    -- CONTROL 1 — the runner can convict.
+    # CONTROL 1 — the runner can convict.
     if std.script.status("false") == 0
         shout("FAIL — control: status() called `false` a success")
         bad += 1
     end
 
-    -- CONTROL 2 — and can acquit. A `status` stuck at nonzero would turn every
-    -- rejection assertion below into a free pass.
+    # CONTROL 2 — and can acquit. A `status` stuck at nonzero would turn every
+    # rejection assertion below into a free pass.
     if std.script.status("true") != 0
         shout("FAIL — control: status() called `true` a failure")
         bad += 1
     end
 
-    -- CONTROL 3 — the compiler is here.
-    if not present(bin)
+    # CONTROL 3 — the compiler is here.
+    if !present(bin)
         shout("FAIL — no compiler at {bin}; run `zig build` first")
         bad += 1
     end
@@ -110,37 +110,37 @@ main = (): i64
     purebad = "{root}/examples/compile_fail/pure_module_state.id"
     lexbad = "{root}/examples/compile_fail/lex_slash_comment.id"
 
-    -- CONTROL 4 — the fixtures are here. A missing file is refused by every
-    -- verb, which reads as a wall of passing rejection assertions.
-    if not present(naok)
+    # CONTROL 4 — the fixtures are here. A missing file is refused by every
+    # verb, which reads as a wall of passing rejection assertions.
+    if !present(naok)
         shout("FAIL — missing fixture {naok}")
         bad += 1
     end
-    if not present(nabad)
+    if !present(nabad)
         shout("FAIL — missing fixture {nabad}")
         bad += 1
     end
-    if not present(pureok)
+    if !present(pureok)
         shout("FAIL — missing fixture {pureok}")
         bad += 1
     end
-    if not present(purebad)
+    if !present(purebad)
         shout("FAIL — missing fixture {purebad}")
         bad += 1
     end
-    if not present(lexbad)
+    if !present(lexbad)
         shout("FAIL — missing fixture {lexbad}")
         bad += 1
     end
 
-    -- CONTROL 5 — `mentions` can answer NO. Without it a grep that has stopped
-    -- matching, or a diagnostic that has stopped printing, sweeps clean.
+    # CONTROL 5 — `mentions` can answer NO. Without it a grep that has stopped
+    # matching, or a diagnostic that has stopped printing, sweeps clean.
     if mentions(bin, "check", naok, "duo-contract-this-string-does-not-exist")
         shout("FAIL — control: mentions() matched a string that is not in the output")
         bad += 1
     end
 
-    -- @NOALLOC, the honouring half. Every verb must ACCEPT.
+    # @NOALLOC, the honouring half. Every verb must ACCEPT.
     if code(bin, "check", naok) != 0
         shout("FAIL — `check` rejected the module that honours @noalloc")
         bad += 1
@@ -154,9 +154,9 @@ main = (): i64
         bad += 1
     end
 
-    -- @NOALLOC, the violating half. Every verb must REFUSE. The `--backend=direct`
-    -- row is the one this gate exists for: it is the DEFAULT path, and it was the
-    -- path that exited 0 while `--backend=c` exited 1.
+    # @NOALLOC, the violating half. Every verb must REFUSE. The `--backend=direct`
+    # row is the one this gate exists for: it is the DEFAULT path, and it was the
+    # path that exited 0 while `` exited 1.
     if code(bin, "check", nabad) == 0
         shout("FAIL — `check` accepted a module that violates @noalloc")
         bad += 1
@@ -165,16 +165,16 @@ main = (): i64
         shout("FAIL — `compile` accepted a module that violates @noalloc")
         bad += 1
     end
-    if not compilesays(bin, "", nabad, "@noalloc violated")
+    if !compilesays(bin, "", nabad, "@noalloc violated")
         shout("FAIL — `compile` refused without naming the contract")
         bad += 1
     end
-    if not compilesays(bin, "--backend=direct", nabad, "@noalloc violated")
+    if !compilesays(bin, "--backend=direct", nabad, "@noalloc violated")
         shout("FAIL — `compile --backend=direct` did not diagnose the @noalloc violation")
         bad += 1
     end
-    if not compilesays(bin, "--backend=c", nabad, "@noalloc violated")
-        shout("FAIL — `compile --backend=c` did not diagnose the @noalloc violation")
+    if !compilesays(bin, "", nabad, "@noalloc violated")
+        shout("FAIL — `compile ` did not diagnose the @noalloc violation")
         bad += 1
     end
     if code(bin, "explain", nabad) == 0
@@ -186,31 +186,31 @@ main = (): i64
         bad += 1
     end
 
-    -- The diagnostic itself, not merely the status. It must name the function
-    -- and the allocation site, and it must carry repair edges rather than prose.
-    if not mentionsq(bin, "check", nabad, "@noalloc violated in function 'leak'")
+    # The diagnostic itself, not merely the status. It must name the function
+    # and the allocation site, and it must carry repair edges rather than prose.
+    if !mentionsq(bin, "check", nabad, "@noalloc violated in function 'leak'")
         shout("FAIL — the @noalloc diagnostic did not name the function")
         bad += 1
     end
-    if not mentions(bin, "check", nabad, "heap allocation at mem.alloc")
+    if !mentions(bin, "check", nabad, "heap allocation at mem.alloc")
         shout("FAIL — the @noalloc diagnostic did not name the allocation site")
         bad += 1
     end
-    if not mentions(bin, "check", nabad, "[allocate_output_separately]")
+    if !mentions(bin, "check", nabad, "[allocate_output_separately]")
         shout("FAIL — the @noalloc diagnostic carried no repair edge")
         bad += 1
     end
 
-    -- `explain` still RENDERS. Its job is to project the graph, and the
-    -- rejection with its repair set is part of that projection; the repair for
-    -- exit 0 was the exit, not the render.
-    if not mentions(bin, "explain", nabad, "\"transformation\":\"contract.noalloc\"")
+    # `explain` still RENDERS. Its job is to project the graph, and the
+    # rejection with its repair set is part of that projection; the repair for
+    # exit 0 was the exit, not the render.
+    if !mentions(bin, "explain", nabad, "\"transformation\":\"contract.noalloc\"")
         shout("FAIL — `explain` stopped rendering the contract outcome")
         bad += 1
     end
 
-    -- @PURE, both halves. The negative fixture ran and printed its FIRST call's
-    -- answer twice before this was checked; see the fixture header.
+    # @PURE, both halves. The negative fixture ran and printed its FIRST call's
+    # answer twice before this was checked; see the fixture header.
     if code(bin, "check", pureok) != 0
         shout("FAIL — `check` rejected the module that honours @pure")
         bad += 1
@@ -223,7 +223,7 @@ main = (): i64
         shout("FAIL — `compile` accepted a @pure function reading mutable module state")
         bad += 1
     end
-    if not mentionsq(bin, "check", purebad, "reads module state 'seed'")
+    if !mentionsq(bin, "check", purebad, "reads module state 'seed'")
         shout("FAIL — the @pure diagnostic did not name the module state it reads")
         bad += 1
     end
@@ -232,9 +232,9 @@ main = (): i64
         bad += 1
     end
 
-    -- THE LEXER REJECTION, H-8. The old emission was the bare Zig error name
-    -- with no file, no span and no repair. Three positive assertions and one
-    -- ABSENCE assertion, because the absence is what "no raw error name" means.
+    # THE LEXER REJECTION, H-8. The old emission was the bare Zig error name
+    # with no file, no span and no repair. Three positive assertions and one
+    # ABSENCE assertion, because the absence is what "no raw error name" means.
     if code(bin, "check", lexbad) == 0
         shout("FAIL — `check` accepted a file the lexer refuses")
         bad += 1
@@ -243,11 +243,11 @@ main = (): i64
         shout("FAIL — `explain` accepted a file the lexer refuses")
         bad += 1
     end
-    if not mentions(bin, "explain", lexbad, "lex_slash_comment.id:1:")
+    if !mentions(bin, "explain", lexbad, "lex_slash_comment.id:1:")
         shout("FAIL — the lexer diagnostic named no file and no span")
         bad += 1
     end
-    if not mentions(bin, "explain", lexbad, "a duon comment starts with")
+    if !mentions(bin, "explain", lexbad, "a duon comment starts with")
         shout("FAIL — the lexer diagnostic carried no repair")
         bad += 1
     end

@@ -1,6 +1,6 @@
-# Idsem WebAssembly
+# Idol WebAssembly
 
-This directory contains Idsem's WebAssembly foreign-lawset implementation and
+This directory contains Idol's WebAssembly foreign-lawset implementation and
 evidence. Start at [`../../AGENTS.md`](../../AGENTS.md); the sole semantic law is
 [`../../docs/spec/constitution.md`](../../docs/spec/constitution.md), the live
 compiler frontier is [`../../docs/bootstrap.md`](../../docs/bootstrap.md), and

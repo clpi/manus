@@ -1,12 +1,12 @@
--- Auto-generate extern declarations from a C header at compile time
--- Run: duo run examples/ffi_gen_showcase.id
+# Auto-generate extern declarations from a C header at compile time
+# Run: duo run examples/ffi_gen_showcase.id
 
 @c.include("string.h")
 @comp.ffi("string.h")
 
-demo_len(s: str): i64
+demo_s: str:len(): i64
   return @c.call("strlen", s)
 end
 
 print("=== @comp.ffi showcase ===")
-print("strlen('duo') = " .. to(str)(demo_len("duo")))
+print("str'duo':len() = " .. to(str)(demo_"duo":len()))

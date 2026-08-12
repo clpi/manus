@@ -1,7 +1,7 @@
--- Binary search over a sorted sequence. Asserts a hit, a miss and a boundary,
--- because a search that always answers `found` passes any single hit.
--- expect: 5 0 1
-find = (xs, n: i64, key: i64): i64
+# Binary search over a sorted sequence. Asserts a hit, a miss and a boundary,
+# because a search that always answers `found` passes any single hit.
+# expect: 5 0 1
+find: i64 = (xs, n: i64, key: i64)
     lo = 1
     hi = n
     while lo <= hi
@@ -20,7 +20,7 @@ find = (xs, n: i64, key: i64): i64
     0
 end
 
-main = (): i64
+main: i64 = ()
     xs = { 2, 4, 6, 8, 10, 12, 14 }
     a = find(xs, 7, 10)
     b = find(xs, 7, 11)

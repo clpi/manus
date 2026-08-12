@@ -1,6 +1,6 @@
--- std.simd — SIMD helpers and documentation for Duo's vector types.
--- Vector literals and ops use the global `simd.*` builtins; this module
--- adds buffer-level kernels (dot / matmul) for numeric workloads.
+# std.simd — SIMD helpers and documentation for Duo's vector types.
+# Vector literals and ops use the global `simd.*` builtins; this module
+# adds buffer-level kernels (dot / matmul) for numeric workloads.
 
 dot_f32(a: ptr, b: ptr, n: i64): f32
     return simd.dot_f32(a, b, n)
@@ -18,7 +18,7 @@ matmul_f64(a: ptr, b: ptr, c: ptr, m: i64, n: i64, k: i64)
     simd.matmul_f64(a, b, c, m, n, k)
 end
 
--- Tiny 4-lane vector sanity (discoverability)
+# Tiny 4-lane vector sanity (discoverability)
 add4(a: v4f64, b: v4f64): v4f64
     a + b
 end

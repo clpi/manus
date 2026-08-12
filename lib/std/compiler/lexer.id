@@ -1,10 +1,10 @@
--- std.compiler.lexer
--- Duo-native lexer implementation
+# std.compiler.lexer
+# Duo-native lexer implementation
 
--- Native string slicing: string.sub allocates, and the direct backend emits
--- only read-only __TEXT. std.str exports the allocation as a @comp.c.export
--- primitive, so a qualified call lowers to a relocation instead (SH-03).
-global strm = req "std.str"
+# Native string slicing: string.sub allocates, and the direct backend emits
+# only read-only __TEXT. std.str exports the allocation as a @comp.c.export
+# primitive, so a qualified call lowers to a relocation instead (SH-03).
+strm = str
 
 Loc: {
     file: str,
@@ -158,10 +158,10 @@ is_canonical_source(file: str): bool
     return file:byte(n - 2) == 46 and file:byte(n - 1) == 105 and file:byte(n) == 100
 end
 
--- GAP-145: distinct literal identities keyed by quote and source law, never by
--- delimiter text alone. Canonical `.id` uses `"` text and `'` bytes; historical
--- and foreign inputs keep compatibility provenance on single quotes and long
--- strings.
+# GAP-145: distinct literal identities keyed by quote and source law, never by
+# delimiter text alone. Canonical `.id` uses `"` text and `'` bytes; historical
+# and foreign inputs keep compatibility provenance on single quotes and long
+# strings.
 classify_quote(file: str, quote: i64): i64
     if quote == 34
         return std.compiler.token.KIND_TEXT_LIT
@@ -176,11 +176,11 @@ classify_quote(file: str, quote: i64): i64
 end
 
 hash_operator_allowed(file: str): bool
-    not is_canonical_source(file)
+    !is_canonical_source(file)
 end
 
 backtick_allowed(file: str): bool
-    not is_canonical_source(file)
+    !is_canonical_source(file)
 end
 
 long_bracket_level(self: Lexer): i64
@@ -196,19 +196,19 @@ long_bracket_level(self: Lexer): i64
     lvl
 end
 
--- GAP-017: a lexer error is a REJECTION the caller can count, not a process
--- abort. `error(...)` killed the whole run, so one bad file truncated any corpus
--- walk and silently shrank the denominator — and it made production dispatch
--- impossible, because routing the compiler through this lexer would have turned
--- every malformed source into a bare abort with no location.
---
--- Codes mirror src/lexer.zig's LexError order so the host maps them directly:
---   1 UnterminatedString  2 UnterminatedLongString  3 InvalidEscape
---   4 UnexpectedChar
--- First error wins: later failures are consequences of the first, and reporting
--- the last one points at the wrong place.
+# GAP-017: a lexer error is a REJECTION the caller can count, not a process
+# abort. `error(...)` killed the whole run, so one bad file truncated any corpus
+# walk and silently shrank the denominator — and it made production dispatch
+# impossible, because routing the compiler through this lexer would have turned
+# every malformed source into a bare abort with no location.
+#
+# Codes mirror src/lexer.zig's LexError order so the host maps them directly:
+#   1 UnterminatedString  2 UnterminatedLongString  3 InvalidEscape
+#   4 UnexpectedChar
+# First error wins: later failures are consequences of the first, and reporting
+# the last one points at the wrong place.
 _fail(self: Lexer, code: i64)
-    if not self.has_error
+    if !self.has_error
         self.has_error = true
         self.error_code = code
         self.error_loc = self:cur_loc()
@@ -248,12 +248,12 @@ skip_ws(self: Lexer)
         if c == 32 or c == 9 or c == 13 or c == 10
             self:adv()
         elseif c == 35 and self.pos == 1 and self:peek_char2() == 33
-            -- C0 law.comment.one: byte-zero `#!` is launch provenance only.
+            # C0 law.comment.one: byte-zero `#!` is launch provenance only.
             while self.pos <= #self.src and self:peek_char() != 10
                 self:adv()
             end
         elseif c == 35 and is_canonical_source(self.file)
-            -- Canonical `#` comments; `#!` elsewhere stays comment, not shebang.
+            # Canonical `#` comments; `#!` elsewhere stays comment, not shebang.
             while self.pos <= #self.src and self:peek_char() != 10
                 self:adv()
             end
@@ -359,7 +359,7 @@ read_str(self: Lexer, quote: i64): str
             esc = self:peek_char()
             if esc == 120
                 self:adv()
-                if self.pos > #self.src or not is_hex(self:peek_char())
+                if self.pos > #self.src or !is_hex(self:peek_char())
                     self:_fail(3)
                     return ""
                 end
@@ -376,14 +376,14 @@ read_str(self: Lexer, quote: i64): str
                 self:adv()
                 has_digit = false
                 while self.pos <= #self.src and self:peek_char() != 125
-                    if not is_hex(self:peek_char())
+                    if !is_hex(self:peek_char())
                         self:_fail(3)
                         return ""
                     end
                     has_digit = true
                     self:adv()
                 end
-                if not has_digit or self.pos > #self.src or self:peek_char() != 125
+                if !has_digit or self.pos > #self.src or self:peek_char() != 125
                     self:_fail(3)
                     return ""
                 end
@@ -414,35 +414,35 @@ read_str(self: Lexer, quote: i64): str
     ""
 end
 
--- GAP-023/024: exact decimal and hex to i64, never through f64.
---
--- `to(i64)("4810305713451201937")` yields 4810305713451201536 — the value is
--- 63 bits and an f64 mantissa carries 53, so the conversion rounds to a
--- multiple of 512. That is a SILENT wrong number in a token, and it made the
--- Duo lexer disagree with src/lexer.zig on every integer literal above 2^53:
--- the two fingerprint proofs were the only programs that had one, which is why
--- they were the only two that regressed under production dispatch.
---
--- Digits accumulate in i64 directly. Values beyond i64 wrap rather than
--- rejecting; that is the same shape the rest of the compiler carries today and
--- is recorded in GAP-024 rather than fixed here.
+# GAP-023/024: exact decimal and hex to i64, never through f64.
+#
+# `to(i64)("4810305713451201937")` yields 4810305713451201536 — the value is
+# 63 bits and an f64 mantissa carries 53, so the conversion rounds to a
+# multiple of 512. That is a SILENT wrong number in a token, and it made the
+# Duo lexer disagree with src/lexer.zig on every integer literal above 2^53:
+# the two fingerprint proofs were the only programs that had one, which is why
+# they were the only two that regressed under production dispatch.
+#
+# Digits accumulate in i64 directly. Values beyond i64 wrap rather than
+# rejecting; that is the same shape the rest of the compiler carries today and
+# is recorded in GAP-024 rather than fixed here.
 _int_of(text: str): i64
     n: i64 = #text
     if n > 2 and text:byte(1) == 48 and (text:byte(2) == 120 or text:byte(2) == 88)
-        -- gap[042]: ACCUMULATE UNSIGNED, for the same reason the decimal path
-        -- below does. gap[024] fixed only the decimal accumulator; this one
-        -- stayed `i64`, so `v * 16` on any hex literal at or above 2^63 was
-        -- signed overflow and the compiler ABORTED lexing the file:
-        --
-        --     panic: signed integer overflow: 576460752303423488 * 16 cannot
-        --     be represented in type 'int64_t'
-        --
-        -- `lib/std/heap.id` writes `0xcbf29ce484222325` (the FNV-1a offset
-        -- basis) and `0xFFFFFFFFFFFFFFFF`; `lib/std/encoding/varint.id` and
-        -- `lib/std/ml/gguf.id` write `0x8000000000000000`. src/lexer.zig
-        -- already treats a hex literal as a BIT PATTERN — it retries as u64
-        -- and bitcasts — so accumulating unsigned here is what makes the two
-        -- lexers agree rather than a new convention.
+        # gap[042]: ACCUMULATE UNSIGNED, for the same reason the decimal path
+        # below does. gap[024] fixed only the decimal accumulator; this one
+        # stayed `i64`, so `v * 16` on any hex literal at or above 2^63 was
+        # signed overflow and the compiler ABORTED lexing the file:
+        #
+        #     panic: signed integer overflow: 576460752303423488 * 16 cannot
+        #     be represented in type 'int64_t'
+        #
+        # `lib/std/heap.id` writes `0xcbf29ce484222325` (the FNV-1a offset
+        # basis) and `0xFFFFFFFFFFFFFFFF`; `lib/std/encoding/varint.id` and
+        # `lib/std/ml/gguf.id` write `0x8000000000000000`. src/lexer.zig
+        # already treats a hex literal as a BIT PATTERN — it retries as u64
+        # and bitcasts — so accumulating unsigned here is what makes the two
+        # lexers agree rather than a new convention.
         v: u64 = 0
         i: i64 = 3
         while i <= n
@@ -462,19 +462,19 @@ _int_of(text: str): i64
         end
         return v
     end
-    -- gap[024]: ACCUMULATE UNSIGNED. This was `v: i64`, and `v * 10` on a
-    -- literal above i64 max is signed overflow -- undefined behaviour that the
-    -- generated C traps on, so the COMPILER ABORTED (SIGABRT) rather than
-    -- lexing the file:
-    --
-    --     panic: signed integer overflow: 1363643836025834967 * 10 cannot be
-    --     represented in type 'int64_t'
-    --
-    -- reached from `print(tostring(13636438360258349679))` -- the u64 form of
-    -- the text fingerprint, an ordinary literal a program is entitled to write.
-    -- Unsigned multiplication wraps rather than trapping, so the accumulator
-    -- carries the full 64-bit range and the value lands in int_val with the
-    -- same bits the host lexer's parseInt(u64) produces.
+    # gap[024]: ACCUMULATE UNSIGNED. This was `v: i64`, and `v * 10` on a
+    # literal above i64 max is signed overflow # undefined behaviour that the
+    # generated C traps on, so the COMPILER ABORTED (SIGABRT) rather than
+    # lexing the file:
+    #
+    #     panic: signed integer overflow: 1363643836025834967 * 10 cannot be
+    #     represented in type 'int64_t'
+    #
+    # reached from `print(tostring(13636438360258349679))` # the u64 form of
+    # the text fingerprint, an ordinary literal a program is entitled to write.
+    # Unsigned multiplication wraps rather than trapping, so the accumulator
+    # carries the full 64-bit range and the value lands in int_val with the
+    # same bits the host lexer's parseInt(u64) produces.
     v: u64 = 0
     i: i64 = 1
     while i <= n
@@ -547,19 +547,19 @@ read_num(self: Lexer): Tok
     end
     
     text = strm.sub(self.src, start, self.pos - 1)
-    -- `to(f64)`/`to(i64)`, NOT `tonumber(text) or 0.0`. The `or` truncated the
-    -- float: `tonumber("1.5")` is 1.5, and `tonumber("1.5") or 0.0` is **1**.
-    -- Measured 2026-08-07, filed as GAP-021.
-    --
-    -- Nothing caught it for as long as it existed, because float_val is the one
-    -- token field no differential reads — the kind fingerprint hashes kinds, the
-    -- text fingerprint hashes text. Every float literal in the language lexed to
-    -- its integer part, silently. That is why duo_lexer_tokenize_full carries the
-    -- field: dispatch on tokenize_text would have shipped this.
-    --
-    -- The fallback is dropped rather than re-spelled: this branch is reached only
-    -- after read_number has already scanned a well-formed literal, so `or 0.0`
-    -- was defending an unreachable case while corrupting the reachable one.
+    # `to(f64)`/`to(i64)`, NOT `tonumber(text) or 0.0`. The `or` truncated the
+    # float: `tonumber("1.5")` is 1.5, and `tonumber("1.5") or 0.0` is **1**.
+    # Measured 2026-08-07, filed as GAP-021.
+    #
+    # Nothing caught it for as long as it existed, because float_val is the one
+    # token field no differential reads — the kind fingerprint hashes kinds, the
+    # text fingerprint hashes text. Every float literal in the language lexed to
+    # its integer part, silently. That is why duo_lexer_tokenize_full carries the
+    # field: dispatch on tokenize_text would have shipped this.
+    #
+    # The fallback is dropped rather than re-spelled: this branch is reached only
+    # after read_number has already scanned a well-formed literal, so `or 0.0`
+    # was defending an unreachable case while corrupting the reachable one.
     if is_float
         return { kind = std.compiler.token.KIND_FLOAT_LIT, loc = l, text = text, int_val = 0, float_val = to(f64)(text) }
     else
@@ -613,12 +613,12 @@ next_tok(self: Lexer): Tok
         end
     end
     
-    if c == 35 and not hash_operator_allowed(self.file)
+    if c == 35 and !hash_operator_allowed(self.file)
         self:_fail(4)
         return { kind = std.compiler.token.KIND_EOF, loc = l, text = "", int_val = 0, float_val = 0.0 }
     end
     
-    if c == 96 and not backtick_allowed(self.file)
+    if c == 96 and !backtick_allowed(self.file)
         self:_fail(4)
         return { kind = std.compiler.token.KIND_EOF, loc = l, text = "", int_val = 0, float_val = 0.0 }
     end
@@ -780,7 +780,7 @@ next(self: Lexer): Tok
 end
 
 peek(self: Lexer): Tok
-    if not self.has_peeked
+    if !self.has_peeked
         self.peeked_token = self:next_tok()
         self.has_peeked = true
     end
@@ -807,48 +807,48 @@ restore_state(self: Lexer, state: State)
     self.peeked_token = state.peeked_token
 end
 
--- ── Pass 16 MP4-B02 — sovereign tokenize surface ──────────────────────────────
---
--- Two entries, because two is all the power needs: a streaming primitive the host
--- tokenizer loop consumes, and the differential that proves this lexer agrees with
--- the production one token-for-std.compiler.token. Everything else (counts, kinds at an index,
--- spans) derives from `step` in the caller, and deriving it there is also the only
--- way to keep it O(n) — a `kind_at(index)` entry must re-lex per call.
---
--- Both lower through DNIR to native machine code: no C backend, no runtime helper.
--- `@c.export` sets the wasm export name; the native symbol is the Duo function
--- name, so each is named exactly what the ABI must see.
+# ── Pass 16 MP4-B02 — sovereign tokenize surface ──────────────────────────────
+#
+# Two entries, because two is all the power needs: a streaming primitive the host
+# tokenizer loop consumes, and the differential that proves this lexer agrees with
+# the production one token-for-std.compiler.token. Everything else (counts, kinds at an index,
+# spans) derives from `step` in the caller, and deriving it there is also the only
+# way to keep it O(n) — a `kind_at(index)` entry must re-lex per call.
+#
+# Both lower through DNIR to native machine code: no C backend, no runtime helper.
+# `@c.export` sets the wasm export name; the native symbol is the Duo function
+# name, so each is named exactly what the ABI must see.
 
--- Lex one token at 1-based byte offset `pos`; return `kind * 2^40 + next_pos`.
--- Feed `next_pos` back to walk the stream in O(n). Packing keeps this a single
--- scalar, so no aggregate crosses the boundary.
---
--- `kind` is at most 105 and `next_pos` is a byte offset, so the product cannot
--- overflow i64 for any source a compiler will see.
--- Whole-file tokenize in ONE call, writing into a host-provided buffer.
---
--- This is the shape production dispatch needs, and `duo_lexer_step` is not it.
--- Step rebuilds a `Lexer` at a byte offset, which discards `has_peeked` /
--- `peeked_token` and the hint state the type carries, so a step-driven walk
--- silently mis-lexes context-sensitive shapes (bisected to the `=` in
--- `fun add(a: i64): i64 =`). Here a single `Lexer` runs the whole file, so the
--- stream is state-faithful by construction, and it is O(n) with no cursor ABI.
---
--- `out` is a host address (see `mem.addr` / `mem.ptr_from_addr`); tokens are
--- written as four i64 fields — kind, line, col, int_val — and the return is the
--- token count including the terminating EOF, or -1 if `cap` is too small.
--- Whole-file tokenize carrying TEXT as well, into two host-provided buffers.
---
--- `duo_lexer_tokenize_all` is enough to fingerprint a stream but not to DRIVE a
--- parser: the host also needs each token's text, and text is not a slice of the
--- source once escapes are processed, so start/end offsets cannot recover it.
--- Here the caller supplies a second arena; each token records (offset, length)
--- into it. The arena belongs to the HOST, which keeps the no-writable-__DATA
--- constraint in this file's header intact — nothing is allocated on the Duo
--- side beyond what std.str already does.
---
--- Six i64 per token: kind, line, col, int_val, text_off, text_len.
--- Returns the token count including EOF, or -1 if either buffer is too small.
+# Lex one token at 1-based byte offset `pos`; return `kind * 2^40 + next_pos`.
+# Feed `next_pos` back to walk the stream in O(n). Packing keeps this a single
+# scalar, so no aggregate crosses the boundary.
+#
+# `kind` is at most 105 and `next_pos` is a byte offset, so the product cannot
+# overflow i64 for any source a compiler will see.
+# Whole-file tokenize in ONE call, writing into a host-provided buffer.
+#
+# This is the shape production dispatch needs, and `duo_lexer_step` is not it.
+# Step rebuilds a `Lexer` at a byte offset, which discards `has_peeked` /
+# `peeked_token` and the hint state the type carries, so a step-driven walk
+# silently mis-lexes context-sensitive shapes (bisected to the `=` in
+# `fun add(a: i64): i64 =`). Here a single `Lexer` runs the whole file, so the
+# stream is state-faithful by construction, and it is O(n) with no cursor ABI.
+#
+# `out` is a host address (see `mem.addr` / `mem.ptr_from_addr`); tokens are
+# written as four i64 fields — kind, line, col, int_val — and the return is the
+# token count including the terminating EOF, or -1 if `cap` is too small.
+# Whole-file tokenize carrying TEXT as well, into two host-provided buffers.
+#
+# `duo_lexer_tokenize_all` is enough to fingerprint a stream but not to DRIVE a
+# parser: the host also needs each token's text, and text is not a slice of the
+# source once escapes are processed, so start/end offsets cannot recover it.
+# Here the caller supplies a second arena; each token records (offset, length)
+# into it. The arena belongs to the HOST, which keeps the no-writable-__DATA
+# constraint in this file's header intact — nothing is allocated on the Duo
+# side beyond what std.str already does.
+#
+# Six i64 per token: kind, line, col, int_val, text_off, text_len.
+# Returns the token count including EOF, or -1 if either buffer is too small.
 @c.export("duo_lexer_tokenize_text")
 duo_lexer_tokenize_text(src: str, file: str, out: i64, cap: i64, txt: i64, txtcap: i64): i64
     lex = new(src, file)
@@ -878,21 +878,21 @@ duo_lexer_tokenize_text(src: str, file: str, out: i64, cap: i64, txt: i64, txtca
     -1
 end
 
--- The PRODUCTION DISPATCH entry: everything the host `Token` carries, in one
--- pass. `tokenize_text` is one field short of that — it drops `float_val`, so a
--- host driven by it would silently mis-read every float literal while every
--- kind-based differential stayed green. That is the same shape as the token-TEXT
--- gap this file already records, so the field is carried rather than recomputed.
---
--- Seven slots per token, byte offsets, `float_val` written as f64 bits:
---     0 kind   1 line   2 col   3 int_val   4 source offset   5 text length   6 float value
---
--- Returns the token count, or -1 if `cap` is too small. The final two arguments
--- remain only to preserve the bootstrap ABI while consumers migrate; token text
--- is no longer copied through them. A short read that looks like a short file is
--- the one failure a parser cannot detect.
--- The rejection's location, for a host that has just been handed a negative
--- code. Re-lexes: this is the cold path, taken once per failed file.
+# The PRODUCTION DISPATCH entry: everything the host `Token` carries, in one
+# pass. `tokenize_text` is one field short of that — it drops `float_val`, so a
+# host driven by it would silently mis-read every float literal while every
+# kind-based differential stayed green. That is the same shape as the token-TEXT
+# gap this file already records, so the field is carried rather than recomputed.
+#
+# Seven slots per token, byte offsets, `float_val` written as f64 bits:
+#     0 kind   1 line   2 col   3 int_val   4 source offset   5 text length   6 float value
+#
+# Returns the token count, or -1 if `cap` is too small. The final two arguments
+# remain only to preserve the bootstrap ABI while consumers migrate; token text
+# is no longer copied through them. A short read that looks like a short file is
+# the one failure a parser cannot detect.
+# The rejection's location, for a host that has just been handed a negative
+# code. Re-lexes: this is the cold path, taken once per failed file.
 @c.export("duo_lexer_error_line")
 duo_lexer_error_line(src: str, file: str): i64
     lex = new(src, file)
@@ -924,10 +924,10 @@ duo_lexer_tokenize_full(src: str, file: str, out: i64, cap: i64, txt: i64, txtca
         mem.write_i64(buf, (n * 7 + 5) * 8, tlen)
         mem.write_f64(buf, (n * 7 + 6) * 8, tok.float_val)
         n += 1
-        -- GAP-017: a rejection is returned, not raised. Negative codes are
-        -- offset by 100 so they cannot collide with -1 (buffer too small):
-        -- -101 UnterminatedString, -102 UnterminatedLongString,
-        -- -103 InvalidEscape, -104 UnexpectedChar.
+        # GAP-017: a rejection is returned, not raised. Negative codes are
+        # offset by 100 so they cannot collide with -1 (buffer too small):
+        # -101 UnterminatedString, -102 UnterminatedLongString,
+        # -103 InvalidEscape, -104 UnexpectedChar.
         if lex.has_error return 0 - 100 - lex.error_code end
         if tok.kind == std.compiler.token.KIND_EOF return n end
     end
@@ -960,22 +960,22 @@ duo_lexer_step(src: str, file: str, pos: i64): i64
     tok.kind * 1099511627776 + lex.pos
 end
 
--- Token-kind fingerprint: mixes every token including the terminating EOF.
--- Agrees bit-for-bit with `src/lexer_differential.zig:fingerprintSource`
--- (`h = h * 31 + kind`), which is what makes it a differential against the
--- production lexer rather than a self-consistency check.
---
--- u64, not i64: a hash must wrap, and signed overflow is UB in lowered code.
--- Token-TEXT fingerprint, the companion to `duo_lexer_kind_fingerprint`.
---
--- The kind fingerprint hashes only `tok.kind`, so text equivalence with
--- `src/lexer.zig` was never differenced — a lexer could return the wrong bytes
--- for every string literal and the corpus proof would stay green. That gap let
--- me both mis-diagnose and then mis-"fix" the escape contract in one session.
---
--- Mixes the LENGTH before the bytes so that concatenation cannot alias: "ab"
--- then "c" must not hash like "a" then "bc". Includes the terminating EOF
--- (length 0), matching `lexer_differential.textFingerprintSource`.
+# Token-kind fingerprint: mixes every token including the terminating EOF.
+# Agrees bit-for-bit with `src/lexer_differential.zig:fingerprintSource`
+# (`h = h * 31 + kind`), which is what makes it a differential against the
+# production lexer rather than a self-consistency check.
+#
+# u64, not i64: a hash must wrap, and signed overflow is UB in lowered code.
+# Token-TEXT fingerprint, the companion to `duo_lexer_kind_fingerprint`.
+#
+# The kind fingerprint hashes only `tok.kind`, so text equivalence with
+# `src/lexer.zig` was never differenced — a lexer could return the wrong bytes
+# for every string literal and the corpus proof would stay green. That gap let
+# me both mis-diagnose and then mis-"fix" the escape contract in one session.
+#
+# Mixes the LENGTH before the bytes so that concatenation cannot alias: "ab"
+# then "c" must not hash like "a" then "bc". Includes the terminating EOF
+# (length 0), matching `lexer_differential.textFingerprintSource`.
 @c.export("duo_lexer_text_fingerprint")
 duo_lexer_text_fingerprint(src: str, file: str): u64
     lex = new(src, file)

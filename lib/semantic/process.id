@@ -1,0 +1,6 @@
+# process world — structured command and handle relations.
+
+run = { world = "process", possessed = false, callable = true, operation = false }
+capture = { world = "process", possessed = false, callable = true, operation = false }
+open = { world = "process", possessed = true, callable = true, operation = false }
+close = { world = "process", possessed = true, callable = true, operation = false }

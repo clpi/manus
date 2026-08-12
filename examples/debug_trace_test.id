@@ -14,7 +14,7 @@ end
 
 @test.unit
 test_color_exists(): void
-  t = req("std.test")
+  t = test
     t.assert_true(true, "enum compiled")
 end
 

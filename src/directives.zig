@@ -323,7 +323,7 @@ pub fn parseAttrArgs(alloc: std.mem.Allocator, raw: ?[]const u8) ParseError!ArgM
     const trimmed = std.mem.trim(u8, text, " \t\r\n");
     if (trimmed.len == 0) return map;
 
-    // Table literal: { name = "app", src = "main.duo", iterations = 1000 }
+    // Table literal: { name = "app", src = "main.id", iterations = 1000 }
     if (std.mem.startsWith(u8, trimmed, "{") and std.mem.endsWith(u8, trimmed, "}")) {
         try parseKvArgs(alloc, trimmed[1 .. trimmed.len - 1], &map);
         return map;

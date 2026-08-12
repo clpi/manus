@@ -1,15 +1,15 @@
--- std.table — table and array helper utilities
+# std.table — table and array helper utilities
 
-len(t: any): any
+t: any:len(): any
     if t == nil return 0 end
-    rawlen(t)
+    t:len()
 end
 
 keys(t: any): any
     out = {}
     if t == nil return out end
     for k, _ in t
-        out[rawlen(out) + 1] = k
+        out[out:len() + 1] = k
     end
     out
 end
@@ -18,7 +18,7 @@ values(t: any): any
     out = {}
     if t == nil return out end
     for _, v in t
-        out[rawlen(out) + 1] = v
+        out[out:len() + 1] = v
     end
     out
 end
@@ -45,7 +45,7 @@ end
 contains(list: any, value: any): bool
     if list == nil return false end
     i = 1
-    while i <= rawlen(list)
+    while i <= list:len()
         v = list[i]
         if v == value return true end
         i += 1
@@ -56,7 +56,7 @@ end
 index_of(list: any, value: any): any
     if list == nil return 0 end
     i = 1
-    while i <= rawlen(list)
+    while i <= list:len()
         v = list[i]
         if v == value return i end
         i += 1
@@ -67,9 +67,9 @@ end
 reverse(list: any): any
     out = {}
     if list == nil return out end
-    i = rawlen(list)
+    i = list:len()
     while i >= 1
-        out[rawlen(out) + 1] = list[i]
+        out[out:len() + 1] = list[i]
         i -= 1
     end
     out
@@ -79,7 +79,7 @@ map(list: any, fn: any): any
     out = {}
     if list == nil return out end
     i = 1
-    while i <= rawlen(list)
+    while i <= list:len()
         v = list[i]
         out[i] = fn(v, i)
         i += 1
@@ -91,10 +91,10 @@ filter(list: any, fn: any): any
     out = {}
     if list == nil return out end
     i = 1
-    while i <= rawlen(list)
+    while i <= list:len()
         v = list[i]
         if fn(v, i)
-            out[rawlen(out) + 1] = v
+            out[out:len() + 1] = v
         end
         i += 1
     end
@@ -105,7 +105,7 @@ reduce(list: any, fn: any, init: any): any
     acc = init
     if list == nil return acc end
     i = 1
-    while i <= rawlen(list)
+    while i <= list:len()
         v = list[i]
         acc = fn(acc, v, i)
         i += 1
@@ -135,12 +135,12 @@ slice(t: any, start_idx: any, end_idx: any): any
     out = {}
     if t == nil return out end
     if start_idx == nil start_idx = 1 end
-    if end_idx == nil end_idx = rawlen(t) end
+    if end_idx == nil end_idx = t:len() end
     if start_idx < 1 start_idx = 1 end
-    if end_idx > rawlen(t) end_idx = rawlen(t) end
+    if end_idx > t:len() end_idx = t:len() end
     i = start_idx
     while i <= end_idx
-        out[rawlen(out) + 1] = t[i]
+        out[out:len() + 1] = t[i]
         i += 1
     end
     out
@@ -149,46 +149,46 @@ end
 concat(t: any, sep: any): str
     if t == nil return "" end
     if sep == nil sep = "" end
-    table.concat(t, sep)
+    t:concat(sep)
 end
 
 sort(list: any, cmp: any): void
     if list == nil return end
     if cmp == nil
-        table.sort(list)
+        list:sort()
     else
-        table.sort(list, cmp)
+        list:sort(cmp)
     end
 end
 
 unpack(list: any, i: any, j: any): any
     if list == nil return nil end
     if i == nil i = 1 end
-    if j == nil j = rawlen(list) end
-    table.unpack(list, i, j)
+    if j == nil j = list:len() end
+    list:unpack(i, j)
 end
 
 insert(list: any, pos: any, value: any): void
     if list == nil return end
     if value == nil
-        table.insert(list, pos)
+        list:insert(pos)
     else
-        table.insert(list, pos, value)
+        list:insert(pos, value)
     end
 end
 
 remove(list: any, pos: any): any
     if list == nil return nil end
-    if pos == nil pos = rawlen(list) end
-    table.remove(list, pos)
+    if pos == nil pos = list:len() end
+    list:remove(pos)
 end
 
 count(list: any, fn: any): i64
     c = 0
     if list == nil return c end
-    if fn == nil return rawlen(list) end
+    if fn == nil return list:len() end
     i = 1
-    while i <= rawlen(list)
+    while i <= list:len()
         if fn(list[i]) c += 1 end
         i += 1
     end
@@ -199,16 +199,16 @@ flat(list: any): any
     out = {}
     if list == nil return out end
     i = 1
-    while i <= rawlen(list)
+    while i <= list:len()
         item = list[i]
         if type(item) == "table"
             j = 1
-            while j <= rawlen(item)
-                out[rawlen(out) + 1] = item[j]
+            while j <= item:len()
+                out[out:len() + 1] = item[j]
                 j += 1
             end
         else
-            out[rawlen(out) + 1] = item
+            out[out:len() + 1] = item
         end
         i += 1
     end
@@ -220,12 +220,12 @@ unique(list: any): any
     if list == nil return out end
     seen = {}
     i = 1
-    while i <= rawlen(list)
+    while i <= list:len()
         v = list[i]
         key = v:to(str)
         if not seen[key]
             seen[key] = true
-            out[rawlen(out) + 1] = v
+            out[out:len() + 1] = v
         end
         i += 1
     end
@@ -234,12 +234,12 @@ end
 
 zip(lists: any): any
     out = {}
-    if lists == nil or rawlen(lists) == 0 return out end
-    min_len = rawlen(lists[1])
+    if lists == nil or lists:len() == 0 return out end
+    min_len = lists[1]:len()
     i = 2
-    while i <= rawlen(lists)
-        if rawlen(lists[i]) < min_len
-            min_len = rawlen(lists[i])
+    while i <= lists:len()
+        if lists[i]:len() < min_len
+            min_len = lists[i]:len()
         end
         i += 1
     end
@@ -247,11 +247,11 @@ zip(lists: any): any
     while j <= min_len
         tuple = {}
         i = 1
-        while i <= rawlen(lists)
-            tuple[rawlen(tuple) + 1] = lists[i][j]
+        while i <= lists:len()
+            tuple[tuple:len() + 1] = lists[i][j]
             i += 1
         end
-        out[rawlen(out) + 1] = tuple
+        out[out:len() + 1] = tuple
         j += 1
     end
     out
@@ -261,9 +261,9 @@ from_pairs(pairs: any): any
     out = {}
     if pairs == nil return out end
     i = 1
-    while i <= rawlen(pairs)
+    while i <= pairs:len()
         pair = pairs[i]
-        if pair and rawlen(pair) >= 2
+        if pair and pair:len() >= 2
             out[pair[1]] = pair[2]
         end
         i += 1
@@ -275,7 +275,7 @@ to_pairs(t: any): any
     out = {}
     if t == nil return out end
     for k, v in t
-        out[rawlen(out) + 1] = {k, v}
+        out[out:len() + 1] = {k, v}
     end
     out
 end
@@ -284,7 +284,7 @@ pick(t: any, keys: any): any
     out = {}
     if t == nil or keys == nil return out end
     i = 1
-    while i <= rawlen(keys)
+    while i <= keys:len()
         k = keys[i]
         if t[k] != nil
             out[k] = t[k]
@@ -300,7 +300,7 @@ omit(t: any, keys: any): any
     omit_set = {}
     if keys != nil
         i = 1
-        while i <= rawlen(keys)
+        while i <= keys:len()
             omit_set[keys[i]] = true
             i += 1
         end
@@ -316,7 +316,7 @@ end
 find(list: any, fn: any): any
     if list == nil return nil end
     i = 1
-    while i <= rawlen(list)
+    while i <= list:len()
         if fn(list[i]) return list[i] end
         i += 1
     end
@@ -326,7 +326,7 @@ end
 every(list: any, fn: any): bool
     if list == nil return true end
     i = 1
-    while i <= rawlen(list)
+    while i <= list:len()
         if not fn(list[i]) return false end
         i += 1
     end
@@ -336,7 +336,7 @@ end
 some(list: any, fn: any): bool
     if list == nil return false end
     i = 1
-    while i <= rawlen(list)
+    while i <= list:len()
         if fn(list[i]) return true end
         i += 1
     end

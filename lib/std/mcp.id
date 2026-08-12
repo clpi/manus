@@ -1,30 +1,30 @@
--- std.mcp — Model Context Protocol SDK for Duo.
--- Provides a pure Duo implementation of the MCP stdio transport (JSON-RPC 2.0).
+# std.mcp — Model Context Protocol SDK for Duo.
+# Provides a pure Duo implementation of the MCP stdio transport (JSON-RPC 2.0).
 
 global M = {}
 M.tools = {}
 
 mcp_read_message(): any
-    -- MCP stdio transport = newline-delimited JSON-RPC: one JSON object per
-    -- line, no embedded newlines (Model Context Protocol spec). This is NOT
-    -- LSP Content-Length framing — every real MCP client (Claude Code, Cursor,
-    -- …) sends newline-delimited JSON, so the prior framed transport never
-    -- completed a handshake. Blank lines are skipped; EOF (nil) terminates.
+    # MCP stdio transport = newline-delimited JSON-RPC: one JSON object per
+    # line, no embedded newlines (Model Context Protocol spec). This is NOT
+    # LSP Content-Length framing — every real MCP client (Claude Code, Cursor,
+    # …) sends newline-delimited JSON, so the prior framed transport never
+    # completed a handshake. Blank lines are skipped; EOF (nil) terminates.
     while true
-        line = std.io.read_line(std.io.input())
+        line = io:read_line(io:input())
         if line == nil return nil end
-        line = string.gsub(line, "[\r\n]", "")
+        line = line:gsub("[\r\n]", "")
         if line != "" break end
     end
-    std.json.decode(line)
+    json:decode(line)
 end
 
 mcp_send_message(obj: any): void
-    -- MCP stdio: one compact JSON object per line. json.encode emits no
-    -- embedded newlines, so the trailing "\n" is the sole delimiter.
-    body = std.json.encode(obj)
-    std.io.write_bytes(std.io.output(), body .. "\n")
-    std.io.flush(std.io.output())
+    # MCP stdio: one compact JSON object per line. json.encode emits no
+    # embedded newlines, so the trailing "\n" is the sole delimiter.
+    body = json:encode(obj)
+    io:write_bytes(io:output(), body .. "\n")
+    io:flush(io:output())
 end
 
 mcp_send_response(id: any, result: any): void
@@ -50,9 +50,9 @@ mcp_handle_initialize(msg: any): void
     mcp_send_response(msg.id, {
         protocolVersion = "2024-11-05",
         capabilities = {
-            -- MCP requires `capabilities.tools` to be an OBJECT. A bare `{}`
-            -- would encode as `[]` and clients reject the handshake shape.
-            tools = std.json.empty_object
+            # MCP requires `capabilities.tools` to be an OBJECT. A bare `{}`
+            # would encode as `[]` and clients reject the handshake shape.
+            tools = json:empty_object
         },
         serverInfo = {
             name = "duo-mcp",
@@ -64,13 +64,13 @@ end
 mcp_handle_tools_list(msg: any): void
     tools_list = {}
     for name, tool in M.tools
-        -- JSON Schema requires `properties` to be an object. A tool declaring
-        -- `properties = {}` would encode as `[]` and fail client-side schema
-        -- validation, so the tool never surfaces. Normalize here rather than
-        -- at every tool definition.
+        # JSON Schema requires `properties` to be an object. A tool declaring
+        # `properties = {}` would encode as `[]` and fail client-side schema
+        # validation, so the tool never surfaces. Normalize here rather than
+        # at every tool definition.
         schema = tool.inputSchema
         if schema != nil and schema.properties != nil and next(schema.properties) == nil
-            schema.properties = std.json.empty_object
+            schema.properties = json:empty_object
         end
         tools_list[#tools_list + 1] = {
             name = name,
@@ -118,7 +118,7 @@ mcp_handle_tools_call(msg: any): void
             content = {
                 {
                     type = "text",
-                    text = std.json.encode(res)
+                    text = json:encode(res)
                 }
             }
         })
@@ -138,7 +138,7 @@ mcp_serve(): void
         elseif msg.method == "tools/call"
             mcp_handle_tools_call(msg)
         elseif msg.method == "notifications/initialized"
-            -- nothing to do
+            # nothing to do
         elseif msg.method == "ping"
             mcp_send_response(msg.id, {})
         elseif has(.id)(msg)
@@ -148,12 +148,12 @@ mcp_serve(): void
 end
 
 mcp_register_tool(name: str, p2: any, p3: any, p4: any): void
-    -- Accept two calling conventions:
-    --   3-arg: register_tool(name, inputSchema_with_description, handler)
-    --   4-arg: register_tool(name, description, inputSchema, handler)
-    -- Distinguish by type, not nil: Duo codegen leaves missing trailing args as
-    -- non-nil garbage, so `p4 != nil` misfires on the 3-arg form and stores garbage
-    -- as the handler (tools/call then crashes). `type(p4)=="function"` is unambiguous.
+    # Accept two calling conventions:
+    #   3-arg: register_tool(name, inputSchema_with_description, handler)
+    #   4-arg: register_tool(name, description, inputSchema, handler)
+    # Distinguish by type, not nil: Duo codegen leaves missing trailing args as
+    # non-nil garbage, so `p4 != nil` misfires on the 3-arg form and stores garbage
+    # as the handler (tools/call then crashes). `type(p4)=="function"` is unambiguous.
     if type(p4) == "function"
         M.tools[name] = { name = name, description = p2 or "", inputSchema = p3, handler = p4 }
     else

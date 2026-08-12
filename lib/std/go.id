@@ -1,8 +1,8 @@
--- std.go — Go compatibility wrapper
--- Provides Go-standard function names mapping to Duo std implementations.
--- Import with: local go = req("std.go")
+# std.go — Go compatibility wrapper
+# Provides Go-standard function names mapping to Duo std implementations.
+# Import with: local go = go
 
-std = req("std")
+std = std
 
 go = {}
 
@@ -100,6 +100,6 @@ go.encoding_ascii85 = std.encoding.ascii85
 go.testing_quick = std.testing.quick
 go.testing_fstest = std.testing.fstest
 go.testing_iotest = std.testing.iotest
-go.index_suffixarray = std.index.suffixarray
+go.index.suffix.array = std.index.suffix.array
 go.math_cmplx = std.math.cmplx
 go

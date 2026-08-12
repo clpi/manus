@@ -1,12 +1,12 @@
--- REPRO: duo compiler panic (not a miscompile — a hard crash).
---   thread panic: access of union field 'table_type' while field 'pointer' is active
---   src/codegen.zig:4616 ensure_record_decl  <- emit_stmt (codegen.zig:9360)
---
--- Trigger: a `mem.alloc` pointer local in a function that also has a `while`
--- loop and a `match` in the same body. Removing the mem.alloc, the inner
--- while, or the match each make it compile.
---
--- Repro: duo compile examples/repro_pointer_local_match_panic.id
+# REPRO: duo compiler panic (not a miscompile — a hard crash).
+#   thread panic: access of union field 'table_type' while field 'pointer' is active
+#   src/codegen.zig:4616 ensure_record_decl  <- emit_stmt (codegen.zig:9360)
+#
+# Trigger: a `mem.alloc` pointer local in a function that also has a `while`
+# loop and a `match` in the same body. Removing the mem.alloc, the inner
+# while, or the match each make it compile.
+#
+# Repro: duo compile examples/repro_pointer_local_match_panic.id
 f(n: i64): i64
   code = mem.alloc(64)
   mem.zero(code, 64)

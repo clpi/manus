@@ -1,0 +1,40 @@
+# View-class edge pipe — view(edges) pipe; path audit over semantic homes.
+
+view = { census = "lib/semantic/census.id", ingest = "lib/semantic/ingest.id" }
+
+len(path) = (min: i64)
+    path:read()
+        :len() >= min
+
+
+audit(path) = (pattern: str)
+    path:read()
+        :match(pattern)
+
+hit(path) = (pattern: str)
+    path:read()
+        :match(pattern)
+
+main: i64 = ()
+    code: i64 = 0
+    if !len(view["census"])(16)
+        code = 1
+    if code == 0 and !len(view["ingest"])(32)
+        code = 2
+    if code == 0 and hit(view["census"])("viewedges")
+        code = 3
+    if code == 0 and hit(view["ingest"])("viewedges")
+        code = 4
+    if code == 0 and !audit(view["census"])("view%(edges%)")
+        code = 5
+    if code == 0 and !audit(view["ingest"])("view%(edges%)")
+        code = 6
+    if code == 0 and !audit(view["census"])("|bit/f64|")
+        code = 7
+    if code == 0 and !audit(view["census"])("|i64/bit|")
+        code = 8
+    if code == 0 and !audit(view["ingest"])("|f32/bit|")
+        code = 9
+    if code == 0
+        print("proof/view: pass")
+    code

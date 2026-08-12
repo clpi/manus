@@ -1,7 +1,7 @@
--- NUMERICS: i64 overflow. Pass 100 §12 OVFL says "checked default".
--- Measured: silent two's-complement wrap, no diagnostic, no fault.
--- expect: -9223372036854775808
-main = (): i64
+# NUMERICS: i64 overflow. Pass 100 §12 OVFL says "checked default".
+# Measured: silent two's-complement wrap, no diagnostic, no fault.
+# expect: -9223372036854775808
+main: i64 = ()
     a: i64 = 9223372036854775807
     b = a + 1
     print("{b}")

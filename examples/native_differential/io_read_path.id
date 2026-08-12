@@ -1,0 +1,7 @@
+main: i64 = ()
+    text = io:read("lib/semantic/vocabulary.id")
+    if text == nil
+        print("nil")
+        return 1
+    print(text:len())
+    0

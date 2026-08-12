@@ -1,0 +1,213 @@
+# P0 proof matrix — Idol-native; std.script transport only.
+
+s = script
+
+rowhash: str = (output: str)
+    rows = {}
+    for line in output:gmatch("[^\n]+")
+        rid, val = line:match("^RESULT%s+(%S+)%s+(.*)$")
+        if rid:len() > 0
+            rows[rows:len() + 1] = rid .. " " .. val
+        end
+    end
+    rows:sort()
+    digest(rows:concat("\n"))
+
+digest: str = (data: str)
+    tmp = "/tmp/idolproofhash"
+    f = tmp:open("w")
+    f:write(data)
+    f:close()
+    cap = s.capture("shasum -a 256 '" .. tmp .. "' 2>/dev/null")
+    tmp:remove()
+    matched = cap:match("(%x+)")
+    if matched:len() == 0
+        return ""
+    end
+    matched
+
+rowcount: i64 = (output: str)
+    n = 0
+    for line in output:gmatch("[^\n]+")
+        if line:match("^RESULT%s+") != ""
+            n += 1
+        end
+    end
+    n
+
+intfield: i64 = (text: str, key: str)
+    _, _, val = text:find('"' .. key .. '":(%d+)')
+    if val:len() == 0
+        return 0
+    end
+    tonumber(val)
+
+strfield: str = (text: str, key: str)
+    _, _, val = text:find('"' .. key .. '":"([^"]+)"')
+    if val:len() == 0
+        return ""
+    end
+    val
+
+emission: any = (path: str)
+    text = path:read()
+    {
+        boxes = intfield(text, "boxes"),
+        unboxes = intfield(text, "unboxes"),
+        generictableops = intfield(text, "generic_table_ops"),
+        evidenceclass = strfield(text, "evidence_class"),
+    }
+
+artifact: str = (stem: str, native: bool)
+    nativepath = "/tmp/idol" .. stem .. "native.proof.json"
+    cpath = "/tmp/idol" .. stem .. ".c.proof.json"
+    if native and nativepath:exists()
+        return nativepath
+    end
+    cpath
+
+runout: str = (bin: str)
+    r = s.exec("'" .. bin .. "'")
+    if r.code != 0
+        s.echo("run failed: " .. bin)
+        os.exit(1)
+    end
+    r.output
+
+compile: str = (idol: str, work: str, profile: str, mainpath: str, nativepath: str)
+    src = mainpath
+    if profile == "direct"
+        src = nativepath
+    end
+    out = work .. "/bench" .. profile .. ".out"
+    s.env_set("BENCH_BACKEND", profile)
+    s.env_set("DUO_BENCH_MANIFEST", "backend=" .. profile .. " representation=profile-selected runtime=dynamic")
+    cmd = idol .. " compile --bench-backend " .. profile .. " -O3 '" .. src .. "' -o '" .. out .. "' >/dev/null"
+    if !s.ok(cmd)
+        s.echo("compile failed: " .. profile)
+        os.exit(1)
+    end
+    out
+
+copyartifact: str = (work: str, profile: str, mainstem: str, nativestem: str)
+    stem = mainstem
+    if profile == "direct"
+        stem = nativestem
+    end
+    src = artifact(stem, profile == "direct")
+    if !src:exists()
+        s.echo("missing proof artifact: " .. src)
+        os.exit(1)
+    end
+    dst = work .. "/bench" .. profile .. ".proof.json"
+    src:copy(dst)
+    dst
+
+s.env_set("DUO_EMIT_PROOF", "1")
+root = s.capture("git rev-parse --show-toplevel 2>/dev/null"):gsub("\n", "")
+idol = s.getenv("IDOL", root .. "/zig-out/bin/idol")
+cc = s.getenv("CC", "clang")
+mainpath = s.getenv("BENCH_PROOF_SOURCE", "examples/pass27_proof_matrix.id")
+nativepath = s.getenv("BENCH_PROOF_DIRECT_SOURCE", "examples/pass27_proof_matrix_direct.id")
+cpath = s.getenv("BENCH_PROOF_C_SOURCE", "examples/pass27_proof_matrix_c.c")
+work = s.getenv("BENCH_PROOF_DIR", "")
+clean = 0
+if work == ""
+    work = "/tmp/idolproofbench"
+    clean = 1
+end
+mainstem = s.path_stem(mainpath)
+nativestem = s.path_stem(nativepath)
+
+s.must("cd '" .. root .. "'")
+
+sdk = s.getenv("SDKROOT", s.capture("xcrun --sdk macosx --show-sdk-path 2>/dev/null || true"):gsub("\n", ""))
+cflags = "-O3 -ffast-math -march=native -flto -lm"
+if sdk != ""
+    cflags = cflags .. " -isysroot " .. sdk
+end
+
+s.echo("=== Pass 27 benchmark proof matrix (Idol-native) ===")
+s.echo("source: " .. mainpath)
+s.echo("direct: " .. nativepath)
+s.echo("work:   " .. work)
+
+cref = work .. "/cref.out"
+s.must(cc .. " " .. cflags .. " -o '" .. cref .. "' '" .. cpath .. "'")
+chash = rowhash(runout(cref))
+s.echo("correctness_hash(c_ref)=" .. chash)
+
+canonical = ""
+baseline = ""
+fail = 0
+profiles = {
+    { id = "c-dynamic", native = 0, expect = 10 },
+    { id = "c-specialized", native = 0, expect = 10 },
+    { id = "direct", native = 1, expect = 0 },
+}
+
+for i = 1, profiles:len()
+    prof = profiles[i]
+    pid = prof.id
+    s.echo("--- Profile: " .. pid .. " ---")
+    bin = compile(idol, work, pid, mainpath, nativepath)
+    proof = copyartifact(work, pid, mainstem, nativestem)
+    em = emission(proof)
+    hash = ""
+
+    if prof.native != 0
+        if !s.ok("'" .. bin .. "' >/dev/null 2>&1")
+            s.echo("FAIL: direct native exit non-zero")
+            fail = 1
+        else
+            s.echo("OK direct native binary exit 0")
+        end
+        hash = digest(proof:read())
+        if em.evidenceclass != "direct-native-subset"
+            s.echo("FAIL: direct profile must emit direct-native-subset")
+            fail = 1
+        end
+        if em.boxes != 0
+            s.echo("FAIL: direct profile must have zero boxes")
+            fail = 1
+        end
+    else
+        out = runout(bin)
+        rc = rowcount(out)
+        hash = rowhash(out)
+        if rc != prof.expect
+            s.echo("FAIL: " .. pid .. " emitted " .. tostring(rc) .. " RESULT lines")
+            fail = 1
+        end
+        if canonical == ""
+            canonical = hash
+            baseline = pid
+        else
+            if hash != canonical
+                s.echo("FAIL: semantics mismatch vs " .. baseline)
+                fail = 1
+            else
+                s.echo("OK cross-profile semantics match " .. baseline)
+            end
+        end
+    end
+    s.echo("emission boxes=" .. tostring(em.boxes) .. " class=" .. em.evidenceclass)
+    s.echo("correctness_hash=" .. hash)
+end
+
+summary = work .. "/proofmatrixsummary.json"
+sum = summary:open("w")
+sum:write("{\"schema\":\"pass27-proof-matrix-v0\",\"canonical_hash\":\"" .. canonical .. "\"}")
+sum:close()
+
+if fail != 0
+    if clean != 0
+        work:remove()
+    end
+    os.exit(1)
+end
+
+s.echo("PASS: canonical " .. canonical .. "; summary " .. summary)
+if clean != 0
+    work:remove()
+end

@@ -12,14 +12,16 @@ separate unclosed lexical and grammar projection.
 
 The language and project are **Idol**: public command identity `idol`, canonical
 source suffix `.id`, and repository identity `idollang/idol`. No production
-`idol` compiler binary exists yet. Earlier `Idsem`, `Duo`, and `Duon` names and
+`idol` compiler binary exists yet. Earlier `Idol`, `Duo`, and `Duon` names and
 historical `.id` source are migration provenance. Exact `duo` executable,
 path, symbol, command, and MCP tool spellings are physical bootstrap aliases
 until their owned replacements execute; their presence does not rename Idol.
 
-`std` is migration distribution, not semantic architecture. `std.script` is
-frozen debt. Never add, improve, alias, advertise, or generate a native
-`std.*` capability. A possessed value supplies the subject; authority belongs
+**No `std` anywhere** in Idol source, agents, gates, or teaching examples.
+There is no `std` table, prelude, or namespace. Use layout-projected homes and
+worlds (`fs`, `json`, `os`, `io`, …) with subject-first relations. Never
+`std.*`. **`proc` and `ir` are not source vocabulary** — DNIR is realization
+encoding only. A possessed value supplies the subject; authority belongs
 to worlds; package location supplies neither. Missing admitted vocabulary is
 `SEMANTIC-VOCABULARY-BLOCKED`, not permission to invent another namespace.
 
@@ -31,6 +33,27 @@ realization. None may select semantic meaning after resolution.
 
 One irreducible native meaning has one lowercase word. Facts carry
 qualification. Demand carries need. Realization carries physical choice.
+
+### Gate scan boundaries
+
+Migration gates that walk unified diffs or path lists use **curried boundary
+symbols**, not mashed compounds or string dispatch:
+
+```id
+scan(diff)(body) = ()   # diff is a symbol in the curry slot
+total = scan(diff)(files)
+
+ingress(path) = ()       # ingress is the subject/home edge
+hit(io) = (code: str)   # hit(prefix)(code) — prefix symbol in curry slot
+dot(io) = (code: str)
+    hit(io)(code)
+```
+
+Never write `scandiff`, `scanline`, `diffhead`, `bareend`, or `scan("diff")`.
+Use `audit`, `head`, `bare`, and `scan(diff)(…)` / `scan(path)(…)` per
+`AGENTS.md` and `scripts/idiomgate.id`. Ingress home checks use
+**`ingress(path)`** — ingress is the subject; never `only(ingress)(path)` or
+`ingressonly`.
 
 ## Architecture
 
@@ -57,6 +80,27 @@ Idol and Lua are distinct lawsets hosted by one compiler. Foreign law and
 provenance remain explicit until equivalence is proven; proven equivalents use
 the same graph, demand, and realization machinery. Wasm is an imported lawset,
 not a permanent second optimizer or virtual-machine ontology.
+
+Resolution does not use import, module, package, namespace, require, req, use,
+using, inject, admit, include, or any admission syntax. Files and directories
+contribute ordinary table/home topology derived from source layout; scope decides
+referability; worlds remain authority (`docs/spec/source.md`, `GAP-153`).
+Same-directory references need no dependency syntax — the semantic reference is
+the dependency edge. Visibility is already a graph fact; change scope facts at
+the owner boundary instead of writing admission ceremony in source.
+
+## Host boundary
+
+Idol source sees semantic values — not host OS APIs (`docs/spec/host.md`,
+`GAP-154`). Arguments, environment, input, output, error, and cwd are
+root/home-projected values supplied by the launcher. Process execution uses
+structured command values under a process world — not `popen`, opaque shell
+strings, or `os.execute`. Endpoints are embedding-polymorphic; stdin-only is
+not language architecture. Shell is an execution home with command projection,
+not a mode bit. Build world != program world. `--backend=c` is foreign CLI input
+projected to realization facts — not canonical source semantics. Do not rename
+`os.args` / `getenv` / `popen` without semantic decomposition. Host APIs belong
+only at classified bootstrap ingress/egress with deletion gates.
 
 ## Source
 
@@ -224,7 +268,7 @@ red aggregate. Obtain volatile state live: current HEAD and dirty tree from
 Git, live ownership from `duo_dev_claim_files`, open obligations from `gaps/`,
 and the current aggregate outcome from a serialized run. `GAP-131` records that
 the session-start open-P0 summary is unknown rather than a trustworthy census.
-Run `tools/devnode/orient` for the current observed count, then inspect every
+Run `tools/node/dev/orient` for the current observed count, then inspect every
 matching `gaps/GAP-*.md` record directly before work. A copied count is
 orientation evidence rather than replacement status authority.
 
@@ -237,7 +281,7 @@ claim exact paths, and serialize heavy commands through:
 
 ```text
 repo="$(git rev-parse --show-toplevel)"
-"$repo/zig-out/bin/duo" run --backend=c "$repo/scripts/duo_lock.id" -- <command>
+"$repo/zig-out/bin/duo" run #backend=c "$repo/scripts/duo_lock.id" # <command>
 ```
 
 `duo` in commands and `duo-*` in MCP names are current physical bootstrap

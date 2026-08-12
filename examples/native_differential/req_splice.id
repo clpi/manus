@@ -1,8 +1,8 @@
--- The direct backend must absorb a plain-Duo `req` module into its own object.
--- Before spliceReqModules this died in patchCalls as an undefined symbol
--- `P_answer`: the module exports no C symbol, so nothing built an object for
--- it. 42 + 1 = 43.
-P = req "nativespliceprobe"
+# The direct backend must absorb a plain-Duo `req` module into its own object.
+# Before spliceReqModules this died in patchCalls as an undefined symbol
+# `P_answer`: the module exports no C symbol, so nothing built an object for
+# it. 42 + 1 = 43.
+P = nativespliceprobe
 
 main(): i64
     P.answer() + P.bump(0)

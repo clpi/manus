@@ -109,7 +109,7 @@ test "explain_pipeline: typed module completes codegen for provenance" {
         \\    add(1, 2)
         \\end
     ;
-    var lex = Lexer.init(src, "milestone.duo");
+    var lex = Lexer.init(src, "milestone.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -124,5 +124,5 @@ test "explain_pipeline: typed module completes codegen for provenance" {
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     const io = threaded.io();
-    try runForProvenance(alloc, io, &mod, &semantic, "milestone.duo", null);
+    try runForProvenance(alloc, io, &mod, &semantic, "milestone.id", null);
 }

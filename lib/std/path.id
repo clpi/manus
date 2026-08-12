@@ -1,4 +1,4 @@
--- std.path — path manipulation utilities (POSIX-style)
+# std.path — path manipulation utilities (POSIX-style)
 
 join(a: str, b: str): str
     if a == ""
@@ -70,8 +70,8 @@ end
 
 normalize(p: str): str
     if p == nil or p == "" return "." end
-    while string.find(p, "//")
-        p = string.gsub(p, "//", "/")
+    while p:find("//")
+        p = p:gsub("//", "/")
     end
     if p != "/" and p:sub(-1, -1) == "/"
         p = p:sub(1, -2)

@@ -1,4 +1,4 @@
--- std.crypto.subtle — constant-time operations (mirrors Go's crypto/subtle)
+# std.crypto.subtle — constant-time operations (mirrors Go's crypto/subtle)
 
 constant_time_compare(x: str, y: str): bool
     if #x != #y return false end
@@ -33,9 +33,9 @@ constant_time_eq(x: i64, y: i64): i64
 end
 
 xor_bytes(dst: any, a: any, b: any): i64
-    n = rawlen(dst)
-    if rawlen(a) < n n = rawlen(a) end
-    if rawlen(b) < n n = rawlen(b) end
+    n = dst:len()
+    if a:len() < n n = a:len() end
+    if b:len() < n n = b:len() end
     for i = 1, n
         dst[i] = a[i] ~ b[i]
     end

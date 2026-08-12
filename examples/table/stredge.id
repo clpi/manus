@@ -1,25 +1,25 @@
--- TEXT: the numeric str-edge, and the difference between parsing "0" and
--- failing to parse anything. §12 B-13 makes this an EDGE and B-14 makes an
--- unconsumed failure a diagnostic.
---
--- REMEASURED 2026-08-08 (gaps/GAP-081.md step 1). This row used to read
--- `to(i64)("abc")` = 0 with no failure and no diagnostic, so a parse failure
--- was indistinguishable from the successful parse of "0" — and it could only
--- read that through the boxed lowering, because in a full-native module the
--- conversion did not compile at all. It now FAULTS on input holding no number.
---
--- WHAT THIS FIXTURE CAN AND CANNOT HOLD. The runner requires exit 0 and
--- compares stdout, so a faulting program cannot be a passing row here. The
--- refusal is therefore asserted where an exit code can be read —
--- `zig build convert-proof`, which requires "abc" and "12x" to fault and
--- requires "0" to answer 0, so the two are never confused again. What this row
--- keeps is the half that must stay TRUE for that proof to mean anything: a
--- genuine zero still parses, and still parses as a zero.
---
--- `007` is the second value because a strict parse is the kind of change that
--- quietly acquires a radix. It is 7, decimal, not 7 octal and not a rejection.
--- expect: 0 7
-main = (): i64
+# TEXT: the numeric str-edge, and the difference between parsing "0" and
+# failing to parse anything. §12 B-13 makes this an EDGE and B-14 makes an
+# unconsumed failure a diagnostic.
+#
+# REMEASURED 2026-08-08 (gaps/GAP-081.md step 1). This row used to read
+# `to(i64)("abc")` = 0 with no failure and no diagnostic, so a parse failure
+# was indistinguishable from the successful parse of "0" — and it could only
+# read that through the boxed lowering, because in a full-native module the
+# conversion did not compile at all. It now FAULTS on input holding no number.
+#
+# WHAT THIS FIXTURE CAN AND CANNOT HOLD. The runner requires exit 0 and
+# compares stdout, so a faulting program cannot be a passing row here. The
+# refusal is therefore asserted where an exit code can be read —
+# `zig build convert-proof`, which requires "abc" and "12x" to fault and
+# requires "0" to answer 0, so the two are never confused again. What this row
+# keeps is the half that must stay TRUE for that proof to mean anything: a
+# genuine zero still parses, and still parses as a zero.
+#
+# `007` is the second value because a strict parse is the kind of change that
+# quietly acquires a radix. It is 7, decimal, not 7 octal and not a rejection.
+# expect: 0 7
+main: i64 = ()
     a = "0":to(i64)
     b = "007":to(i64)
     print("{a} {b}")

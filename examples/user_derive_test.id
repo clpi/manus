@@ -1,4 +1,4 @@
--- Test user-defined @comp.define.derive macro generating code at compile time.
+# Test user-defined @comp.define.derive macro generating code at compile time.
 
 @comp.define.derive("Printable", generate(meta) -> str
   acc = "static char* " .. meta.name .. "_to_string(void* self) {\n"

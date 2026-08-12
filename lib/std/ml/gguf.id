@@ -1,12 +1,12 @@
--- std.ml.gguf — GGUF model file parser (for LLM inference in ward)
--- GGUF is the standard format for quantized LLM weights (llama.cpp, etc.)
+# std.ml.gguf — GGUF model file parser (for LLM inference in ward)
+# GGUF is the standard format for quantized LLM weights (llama.cpp, etc.)
 
--- GGUF magic number
-GGUF_MAGIC = 0x46554747  -- "GGUF" in little-endian
+# GGUF magic number
+GGUF_MAGIC = 0x46554747  # "GGUF" in little-endian
 GGUF_VERSION_3 = 3
 GGUF_VERSION_4 = 4
 
--- Value types
+# Value types
 GGUF_TYPE_UINT8 = 0
 GGUF_TYPE_INT8 = 1
 GGUF_TYPE_UINT16 = 2
@@ -21,7 +21,7 @@ GGUF_TYPE_UINT64 = 10
 GGUF_TYPE_INT64 = 11
 GGUF_TYPE_FLOAT64 = 12
 
--- Quantization types
+# Quantization types
 GGUF_QUANT_F32 = 0
 GGUF_QUANT_F16 = 1
 GGUF_QUANT_Q4_0 = 2
@@ -37,9 +37,9 @@ GGUF_QUANT_Q4_0_4_4 = 16
 GGUF_QUANT_Q4_0_4_8 = 17
 GGUF_QUANT_Q4_0_8_8 = 18
 
--- ═══════════════════════════════════════════════════════════════
--- Binary reader
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Binary reader
+# ═══════════════════════════════════════════════════════════════
 
 reader_new(data: any): any
     {data = data, pos = 1, len = #data}
@@ -86,7 +86,7 @@ end
 
 reader_f32_le(r: any): f64
     bits = reader_u32_le(r)
-    -- Convert IEEE 754 bits to float (simplified)
+    # Convert IEEE 754 bits to float (simplified)
     if bits == nil return 0.0 end
     sign = 1
     if (bits & 0x80000000) != 0 sign = -1 end
@@ -131,10 +131,10 @@ reader_string_le(r: any): str
     parts = {}
     i = 1
     while i <= #bytes
-        parts[#parts + 1] = string.char(bytes[i])
+        parts[#parts + 1] = bytes[i]:char()
         i += 1
     end
-    table.concat(parts)
+    parts:concat()
 end
 
 reader_bytes(r: any, n: i64): any
@@ -149,9 +149,9 @@ reader_bytes(r: any, n: i64): any
     out
 end
 
--- ═══════════════════════════════════════════════════════════════
--- GGUF Value reading
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# GGUF Value reading
+# ═══════════════════════════════════════════════════════════════
 
 gguf_read_value(r: any, type_id: i64): any
     if type_id == GGUF_TYPE_UINT8
@@ -179,7 +179,7 @@ gguf_read_value(r: any, type_id: i64): any
     elseif type_id == GGUF_TYPE_UINT64
         return reader_u64_le(r)
     elseif type_id == GGUF_TYPE_INT64
-        return reader_u64_le(r)  -- simplified
+        return reader_u64_le(r)  # simplified
     elseif type_id == GGUF_TYPE_FLOAT64
         return reader_f64_le(r)
     elseif type_id == GGUF_TYPE_ARRAY
@@ -196,14 +196,14 @@ gguf_read_value(r: any, type_id: i64): any
     nil
 end
 
--- ═══════════════════════════════════════════════════════════════
--- GGUF File parsing
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# GGUF File parsing
+# ═══════════════════════════════════════════════════════════════
 
 gguf_load(data: any): any
     r = reader_new(data)
 
-    -- Read header
+    # Read header
     magic = reader_u32_le(r)
     if magic != GGUF_MAGIC
         return nil, "invalid GGUF magic"
@@ -215,7 +215,7 @@ gguf_load(data: any): any
     n_tensors = reader_u64_le(r)
     n_kv = reader_u64_le(r)
 
-    -- Read metadata key-value pairs
+    # Read metadata key-value pairs
     metadata = {}
     i = 0
     while i < n_kv
@@ -226,7 +226,7 @@ gguf_load(data: any): any
         i += 1
     end
 
-    -- Read tensor info
+    # Read tensor info
     tensors = {}
     i = 0
     while i < n_tensors
@@ -250,19 +250,19 @@ gguf_load(data: any): any
         i += 1
     end
 
-    -- Read weight data
+    # Read weight data
     for tensor in tensors
-        -- Align to 32 bytes
+        # Align to 32 bytes
         padding = (32 - (r.pos % 32)) % 32
         reader_bytes(r, padding)
 
-        -- Calculate element count
+        # Calculate element count
         n_elements = 1
         for d in tensor.dims
             n_elements *= d
         end
 
-        -- Read raw weight bytes
+        # Read raw weight bytes
         if tensor.type == GGUF_QUANT_F32
             weight = {}
             j = 0
@@ -275,7 +275,7 @@ gguf_load(data: any): any
             weight = {}
             j = 0
             while j < n_elements
-                -- Read 16-bit float (simplified: treat as f32 approximation)
+                # Read 16-bit float (simplified: treat as f32 approximation)
                 bits = reader_u32_le(r)
                 if bits == nil break end
                 b0 = bits & 0xFF
@@ -285,7 +285,7 @@ gguf_load(data: any): any
             end
             tensor.weight = weight
         elseif tensor.type == GGUF_QUANT_Q8_0
-            -- Read quantized: scale (f32) + n int8 values
+            # Read quantized: scale (f32) + n int8 values
             scale = reader_f32_le(r)
             weight = {}
             j = 0
@@ -298,9 +298,9 @@ gguf_load(data: any): any
             end
             tensor.weight = weight
         elseif tensor.type == GGUF_QUANT_Q4_0
-            -- Read quantized: scale (f32) + packed int4 values
+            # Read quantized: scale (f32) + packed int4 values
             scale = reader_f32_le(r)
-            n_bytes = math.ceil(n_elements / 2)
+            n_bytes = n_elements / 2:ceil()
             weight = {}
             j = 0
             while j < n_bytes
@@ -318,7 +318,7 @@ gguf_load(data: any): any
             end
             tensor.weight = weight
         else
-            -- Unknown quantization, store raw bytes
+            # Unknown quantization, store raw bytes
             tensor.weight = nil
         end
     end
@@ -332,7 +332,7 @@ gguf_load(data: any): any
     }
 end
 
--- Approximate f16 to f32
+# Approximate f16 to f32
 reader_f16_approx(bits: i64): f64
     sign = 1
     if (bits & 0x8000) != 0 sign = -1 end
@@ -347,9 +347,9 @@ reader_f16_approx(bits: i64): f64
     sign * math.ldexp(1 + mantissa / 1024, exponent - 15)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Model info helpers
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Model info helpers
+# ═══════════════════════════════════════════════════════════════
 
 gguf_get_metadata(model: any, key: str): any
     if model == nil return nil end
@@ -388,9 +388,9 @@ gguf_quantization_type_name(type_id: i64): str
     "unknown"
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
 M = {}
 M.load = gguf_load

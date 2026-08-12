@@ -1,0 +1,40 @@
+#!/usr/bin/env duo
+
+main: i64 = ()
+    args = s.args()
+    if #args < 2
+        print("Usage: idol run project_materialization_priority.id <manifest.json>")
+        return 1
+    end
+
+    manifest_path = args[2]
+    print("Trying to read: '" .. manifest_path .. "'")
+    content = fs.read_file(manifest_path)
+    if content == nil or content == ""
+        print("error: could not read manifest from " .. manifest_path)
+        return 1
+    end
+
+    evidence = json.decode(content)
+    if evidence == nil or evidence.emission == nil
+        print("error: invalid manifest schema")
+        return 1
+    end
+
+    print("=== Materialization Cost Priority ===")
+    print("Semantic Identity: " .. manifest_path)
+    print("Realization: " .. evidence.manifest.backend)
+    print("Allocations (Static): " .. tostring(evidence.emission.allocations))
+    print("Boxes (Static): " .. tostring(evidence.emission.boxes))
+    print("Dynamic Dispatches (Static): " .. tostring(evidence.emission.dynamic_dispatches))
+    print("")
+
+    # Workstream 4: Optimization Priority Projection
+    # We need executions N to compute: frequency * observed cost
+    
+    print("BLOCKED: Poolside has not supplied runtime execution counts (executions N)")
+    print("for exact graph lineage. Static materialization counts (M) cannot be")
+    print("multiplied by frequency to establish optimization priority.")
+    print("Requesting Poolside interface: 'graph -> machine range -> runtime execution count'.")
+    0
+end

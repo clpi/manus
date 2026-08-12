@@ -22,7 +22,7 @@ current canonical `.id` source
 
 The destination is 100% self-hosted canonical Idol: public command identity
 `idol`, source suffix `.id`, and repository identity `idollang/idol`. A `.id`
-filename does not transfer authority. Earlier Idsem, Duo, and Duon names,
+filename does not transfer authority. Earlier Idol, Duo, and Duon names,
 historical `.id` source, exact physical `duo` tools, generated projections,
 epoch-1 syntax, C-backed proofs, and Idol wrappers over Zig owners remain
 migration or bootstrap debt.
@@ -35,7 +35,7 @@ superset, and Lua compatibility may not define Idol semantics or architecture.
 The language architecture is already specified. The current frontier is S0:
 the seed is host-built, parser recognition remains host-owned, and no compiler
 B exists. `GAP-131` makes the session-start P0 count unknown; a fresh session
-runs `tools/devnode/orient` for the live observed count and inspects every
+runs `tools/node/dev/orient` for the live observed count and inspects every
 matching canonical gap record directly. A copied number is orientation
 evidence, not lasting gap authority.
 

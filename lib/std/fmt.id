@@ -1,4 +1,4 @@
--- std.fmt — formatting utilities
+# std.fmt — formatting utilities
 
 int(v: any): str
     if v == nil return "nil" end
@@ -8,9 +8,9 @@ end
 float(v: any, precision: i64): str
     if v == nil return "nil" end
     if precision == nil
-        string.format("%g", v)
+        "%g":format(v)
     end
-    string.format("%." .. precision:to(str) .. "f", v)
+    "%." .. precision:to(str) .. "f":format(v)
 end
 
 to_str(v: any): str
@@ -20,11 +20,11 @@ end
 
 boolean(v: any): str
     if v == nil return "false" end
-    -- A guard, not `if v "true" else "false" end`. The endless one-liner clause
-    -- must be SELF-DELIMITED (Pass 48 2.4), and `v "true"` reads as PARENLESS
-    -- APPLICATION -- it called `v("true")` and returned that. Because `v` is
-    -- `any` the bogus call TYPE-CHECKS, so unlike strconv's `b: bool` version
-    -- this compiled and shipped: boolean(true) returned "false".
+    # A guard, not `if v "true" else "false" end`. The endless one-liner clause
+    # must be SELF-DELIMITED (Pass 48 2.4), and `v "true"` reads as PARENLESS
+    # APPLICATION # it called `v("true")` and returned that. Because `v` is
+    # `any` the bogus call TYPE-CHECKS, so unlike strconv's `b: bool` version
+    # this compiled and shipped: boolean(true) returned "false".
     if v
         return "true"
     end
@@ -33,7 +33,7 @@ end
 
 hex(v: any): str
     if v == nil return "nil" end
-    string.format("0x%X", v)
+    "0x%X":format(v)
 end
 
 bin(v: any): str
@@ -44,10 +44,10 @@ bin(v: any): str
         "0b0"
     end
     while n > 0
-        table.insert(digits, 1, to(str)(n % 2))
-        n = math.floor(n / 2)
+        digits:insert(1, to(str)(n % 2))
+        n = n / 2:floor()
     end
-    "0b" .. table.concat(digits)
+    "0b" .. digits:concat()
 end
 
 trim(s: str, chars: str): str
@@ -64,7 +64,7 @@ pad(s: str, width: i64, pad_char: str): str
     len = #s
     w = width
     if w == nil or w <= len return s end
-    pad_str = string.rep(pad_char, w - len)
+    pad_str = pad_char:rep(w - len)
     s .. pad_str
 end
 
@@ -93,7 +93,7 @@ format(fmt: str, args: any): str
                 elseif spec:sub(1, 2) == ":."
                     prec = tonumber(spec:sub(3))
                     if prec and tonumber(v)
-                        out = out .. string.format("%." .. prec:to(str) .. "f", v)
+                        out = out .. "%." .. prec:to(str) .. "f":format(v)
                     else
                         out = out .. v:to(str)
                     end
@@ -125,11 +125,11 @@ bytes(size: any): str
     if size < 1024
         return size:to(str) .. " B"
     elseif size < 1024 * 1024
-        return string.format("%.1f KB", size / 1024)
+        return "%.1f KB":format(size / 1024)
     elseif size < 1024 * 1024 * 1024
-        return string.format("%.1f MB", size / (1024 * 1024))
+        return "%.1f MB":format(size / (1024 * 1024))
     else
-        return string.format("%.2f GB", size / (1024 * 1024 * 1024))
+        return "%.2f GB":format(size / (1024 * 1024 * 1024))
     end
 end
 
@@ -138,37 +138,37 @@ join(parts: any, sep: str): str
     if sep == nil sep = ", " end
     strs = {}
     i = 1
-    while i <= rawlen(parts)
-        strs[rawlen(strs) + 1] = to(str)(parts[i])
+    while i <= parts:len()
+        strs[strs:len() + 1] = to(str)(parts[i])
         i += 1
     end
-    table.concat(strs, sep)
+    strs:concat(sep)
 end
 
 repr(v: any): str
     if v == nil return "nil" end
     t = type(v)
     if t == "string"
-        return "\"" .. string.gsub(v, "\"", "\\\"") .. "\""
+        return "\"" .. v:gsub("\"", "\\\"") .. "\""
     elseif t == "boolean"
         if v return "true" else return "false" end
     elseif t == "number"
         return v:to(str)
     elseif t == "table"
         parts = {}
-        n = rawlen(v)
+        n = v:len()
         if n > 0
             i = 1
             while i <= n
-                parts[rawlen(parts) + 1] = repr(v[i])
+                parts[parts:len() + 1] = repr(v[i])
                 i += 1
             end
-            return "{" .. table.concat(parts, ", ") .. "}"
+            return "{" .. parts:concat(", ") .. "}"
         else
             for k, val in v
-                parts[rawlen(parts) + 1] = k:to(str) .. "=" .. repr(val)
+                parts[parts:len() + 1] = k:to(str) .. "=" .. repr(val)
             end
-            return "{" .. table.concat(parts, ", ") .. "}"
+            return "{" .. parts:concat(", ") .. "}"
         end
     else
         return v:to(str)

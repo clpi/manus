@@ -1,8 +1,8 @@
--- Test minimal bash-style fun call
+# Test minimal bash-style fun call
 
 greet(name: str): str
     "Hello, " .. name
 end
 
--- Bash-style call
+# Bash-style call
 print greet "World"

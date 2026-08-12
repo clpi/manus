@@ -1,5 +1,5 @@
--- Typed pipeline: x |> f |> g lowers to direct C calls (no lua_invoke)
--- Run: duo run examples/pipeline_typed_showcase.id
+# Typed pipeline: x |> f |> g lowers to direct C calls (no lua_invoke)
+# Run: duo run examples/pipeline_typed_showcase.id
 
 twice(x: i64): i64
     x * 2

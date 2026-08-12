@@ -1,4 +1,4 @@
--- bind
+# bind
 i = 0
 i += 1
 if i == 1

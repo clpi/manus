@@ -1,41 +1,41 @@
--- Pass 100 §20 — the DESCENT STUBS the golden corpus's fragments cite.
---
--- §20 heads every block with a PATH, not with a program name. `shc/lex.id`
--- and `shc/parse.id` are two files of ONE module: `parse.id` cites `lexer`
--- and `token` precisely because `lex.id` declares them. Checking each path as
--- a standalone program is an artifact of the gate, not a defect in the corpus,
--- so the gate joins a block to the blocks that share its path prefix first and
--- consults this file only for what is left over.
---
--- What is left over is THREE names, and all three are named by the compiler in
--- its own `call to undeclared function` diagnostic. §19 already rules on what
--- they are — "**Descent**: four exits; stubs are `todo(gap[nn])` or bodiless
--- declarations" — so a fragment citing a helper it never declares is a fragment
--- at a descent exit, which the spec provides for. Declaring them in the §20
--- block instead would edit the corpus to match the compiler, and §20 exists to
--- be evidence.
---
--- THE HONESTY RULE, and it is the whole reason this file is safe:
---
---   * a name may be added ONLY after the compiler NAMED it in a diagnostic,
---     and only with the shape §20's own use of it implies. Nothing here is
---     derived automatically — a prelude generated from the error output would
---     make the gate incapable of ever failing;
---   * nothing here may carry BEHAVIOUR. `grow` and `attach` answer nil, so a
---     block that depended on what they RETURN fails here rather than passing
---     on a stub's arithmetic;
---   * `stubs/control.id` is the negative control, and the gate refuses to
---     report a verdict unless that control still FAILS.
---
--- `todo(gap[25])` — §19's own first stub spelling — is not implemented; it
--- reports `call to undeclared function 'todo'`. Recorded as gap[25]. `nil`
--- bodies stand in until it lands, which is why the citation is in a comment
--- rather than in the body where §19 puts it.
+# Pass 100 §20 — the DESCENT STUBS the golden corpus's fragments cite.
+#
+# §20 heads every block with a PATH, not with a program name. `shc/lex.id`
+# and `shc/parse.id` are two files of ONE module: `parse.id` cites `lexer`
+# and `token` precisely because `lex.id` declares them. Checking each path as
+# a standalone program is an artifact of the gate, not a defect in the corpus,
+# so the gate joins a block to the blocks that share its path prefix first and
+# consults this file only for what is left over.
+#
+# What is left over is THREE names, and all three are named by the compiler in
+# its own `call to undeclared function` diagnostic. §19 already rules on what
+# they are — "**Descent**: four exits; stubs are `todo(gap[nn])` or bodiless
+# declarations" — so a fragment citing a helper it never declares is a fragment
+# at a descent exit, which the spec provides for. Declaring them in the §20
+# block instead would edit the corpus to match the compiler, and §20 exists to
+# be evidence.
+#
+# THE HONESTY RULE, and it is the whole reason this file is safe:
+#
+#   * a name may be added ONLY after the compiler NAMED it in a diagnostic,
+#     and only with the shape §20's own use of it implies. Nothing here is
+#     derived automatically — a prelude generated from the error output would
+#     make the gate incapable of ever failing;
+#   * nothing here may carry BEHAVIOUR. `grow` and `attach` answer nil, so a
+#     block that depended on what they RETURN fails here rather than passing
+#     on a stub's arithmetic;
+#   * `stubs/control.id` is the negative control, and the gate refuses to
+#     report a verdict unless that control still FAILS.
+#
+# `todo(gap[25])` — §19's own first stub spelling — is not implemented; it
+# reports `call to undeclared function 'todo'`. Recorded as gap[25]. `nil`
+# bodies stand in until it lands, which is why the citation is in a comment
+# rather than in the body where §19 puts it.
 
--- shc/lex.id — `here = () span{ .pos, .pos }` constructs one from two
--- positions, which is the only fact §20 states about its shape.
+# shc/lex.id — `here = () span{ .pos, .pos }` constructs one from two
+# positions, which is the only fact §20 states about its shape.
 span: { start: u32, stop: u32 }
 
--- shc/parse.id — `node = grow(tok)` and `attach(node, t2)`. -- gap[25]
+# shc/parse.id — `node = grow(tok)` and `attach(node, t2)`. # gap[25]
 grow = (t) nil
 attach = (n, t) nil

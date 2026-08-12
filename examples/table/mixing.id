@@ -1,7 +1,7 @@
--- NUMERICS: i64 and u64 in one expression. Measured: mixes without a
--- diagnostic and answers in the signed domain.
--- expect: 8
-main = (): i64
+# NUMERICS: i64 and u64 in one expression. Measured: mixes without a
+# diagnostic and answers in the signed domain.
+# expect: 8
+main: i64 = ()
     a: i64 = 5
     b: u64 = 3
     c = a + b

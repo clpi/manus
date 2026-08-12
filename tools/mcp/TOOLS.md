@@ -23,7 +23,7 @@ MCP does not own semantics. It projects graph identity, facts, demand,
 realization, provenance, evidence, and current repository state. It must fail
 closed when a projection cannot be produced.
 
-No tool or example may teach `std.*` as native meaning. `std` is migration
-distribution; package location is provenance, relations are identity, subjects
-orient application, worlds grant authority, and realization selects physical
+No tool or example may teach universal namespace dispatch as native meaning.
+Package location is provenance, relations are identity, subjects orient
+application, worlds grant authority, and realization selects physical
 implementation with zero runtime catalog obligation for sealed programs.

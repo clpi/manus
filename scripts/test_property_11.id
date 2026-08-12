@@ -1,22 +1,22 @@
--- Property 11: the C backend emits C that a strict compiler accepts.
---
--- Duo replacement for scripts/test_property_11.sh (monoglot census).
---
--- Nine modules go through `duo dump-c` and then `clang -fsyntax-only -Wall
--- -Wextra -pedantic -std=c11`. Two of them additionally assert on the SHAPE of
--- the generated C: a native pointer index and a typed function parameter must
--- stay direct C, not degrade into boxed runtime calls.
---
--- The corpus is deliberately written in the OLD surface -- `function ... -> t`,
--- `local`, `then`, `while ... do`, `type X =`, `string.sub`, `tostring`. Those
--- are deny-list forms for new Duo, and that is exactly why they belong here:
--- this gate exists to prove the compiler still lowers what it accepts. Do not
--- "modernise" the corpus; it would stop testing the legacy paths.
---
--- The sources are [[raw strings]], which take no interpolation. That matters:
--- every record literal below contains braces, and in an ordinary string
--- `{ x = 1, y = 2 }` would be read as a hole and rewritten (GAP-16 -- the same
--- class of self-inflicted corpus damage that broke spec_conformance once).
+# Property 11: the C backend emits C that a strict compiler accepts.
+#
+# Duo replacement for scripts/test_property_11.sh (monoglot census).
+#
+# Nine modules go through `duo dump-c` and then `clang -fsyntax-only -Wall
+# -Wextra -pedantic -std=c11`. Two of them additionally assert on the SHAPE of
+# the generated C: a native pointer index and a typed function parameter must
+# stay direct C, not degrade into boxed runtime calls.
+#
+# The corpus is deliberately written in the OLD surface # `function ... -> t`,
+# `local`, `then`, `while ... do`, `type X =`, `string.sub`, `tostring`. Those
+# are deny-list forms for new Duo, and that is exactly why they belong here:
+# this gate exists to prove the compiler still lowers what it accepts. Do not
+# "modernise" the corpus; it would stop testing the legacy paths.
+#
+# The sources are [[raw strings]], which take no interpolation. That matters:
+# every record literal below contains braces, and in an ordinary string
+# `{ x = 1, y = 2 }` would be read as a hole and rewritten (GAP-16 # the same
+# class of self-inflicted corpus damage that broke spec_conformance once).
 
 _TMP = "/tmp/duo-prop11"
 
@@ -29,17 +29,17 @@ _clang(): str
     "clang"
 end
 
--- Emit one module and syntax-check its C. Returns the generated .c path, or
--- "" if the module did not survive. Failures are COUNTED, not fatal: the
--- shell version ran under `set -e` and aborted on the first bad module, so a
--- run told you about one failure at a time.
+# Emit one module and syntax-check its C. Returns the generated .c path, or
+# "" if the module did not survive. Failures are COUNTED, not fatal: the
+# shell version ran under `set -e` and aborted on the first bad module, so a
+# run told you about one failure at a time.
 _check_module(name: str, src: str, cc: str): str
     duo_file = _TMP .. "/" .. name .. ".id"
     c_file = _TMP .. "/" .. name .. ".c"
     log = _TMP .. "/" .. name .. ".clang.log"
 
     std.script.fs_write(duo_file, src)
-    if std.script.run("./zig-out/bin/duo dump-c " .. duo_file .. " > " .. c_file .. " 2>/dev/null") != 0
+    if std.script.run("./zig-out/bin/idol dump-c " .. duo_file .. " > " .. c_file .. " 2>/dev/null") != 0
         print("FAIL " .. name .. ": duo dump-c failed")
         _fails = _fails + 1
         return ""
@@ -58,8 +58,8 @@ _check_module(name: str, src: str, cc: str): str
     c_file
 end
 
--- A shape assertion on the emitted C. `grep -F` -- fixed string, no regex --
--- because these patterns contain `(*f)` and `[i]`.
+# A shape assertion on the emitted C. `grep -F` # fixed string, no regex #
+# because these patterns contain `(*f)` and `[i]`.
 _c_contains(path: str, needle: str, why: str): void
     if path == "" return end
     n = std.script.chomp(std.script.capture(
@@ -70,7 +70,7 @@ _c_contains(path: str, needle: str, why: str): void
     end
 end
 
-main = (): i64
+main: i64 = ()
     print("[Property 11] Testing C codegen...")
     std.script.run("rm -rf " .. _TMP .. " && mkdir -p " .. _TMP)
     cc = _clang()
@@ -115,7 +115,7 @@ local total: i64 = sum_to(16)
 ]], cc)
 
     _check_module("strings", [[function middle(s: str): str
-  return string.sub(s, 2, 4)
+  return s:sub(2, 4)
 end
 
 function label(n: i64): str
@@ -165,9 +165,9 @@ end
 local n: i64 = bits(123456, 7890, 3)
 ]], cc)
 
-    -- A pointer index must stay a typed C index. If this degrades into a
-    -- boxed runtime call the module still COMPILES, which is why the shape is
-    -- asserted and not merely the exit status.
+    # A pointer index must stay a typed C index. If this degrades into a
+    # boxed runtime call the module still COMPILES, which is why the shape is
+    # asserted and !merely the exit status.
     ni = _check_module("native_indexing", [[function pointer_read(xs: *i32, i: i64) -> i32
   return xs[i]
 end

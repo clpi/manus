@@ -1,0 +1,279 @@
+# gates/host — TEMPORARY MIGRATION FIREWALL for host API debt on ADDED lines.
+#
+# Classification: TEMPORARY MIGRATION FIREWALL (docs/spec/host.md, GAP-155).
+# Authority: semantic gate + graph host-boundary obligations (GAP-124, GAP-155).
+# Deletion condition: production semantic enforcement on staged diff.
+#
+# Blocks NEW direct host API spellings on staged additions in project surfaces.
+# This is not semantic authority — spelling mutation must not evade graph law.
+#
+# Gate transport: Idol only — stdin via stdin:read(). No os.args, no --backend=c.
+
+transport: str = ()
+    text = stdin:read()
+    if text:len() == 0
+        return ""
+    text
+
+alpha: bool = (c: str)
+    c >= "a" and c <= "z"
+
+digit: bool = (c: str)
+    c >= "0" and c <= "9"
+
+word: bool = (c: str)
+    alpha(c) or digit(c) or c == "_"
+
+peek(prefix: str, code: str)
+    n = code:len()
+    m = prefix:len()
+    i = 1
+    while i + m - 1 <= n
+        if code:sub(i, i + m - 1) == prefix
+            before = ""
+            if i > 1
+                before = code:sub(i - 1, i - 1)
+            if before != "." and (before == "" or !word(before))
+                j = i + m
+                start = j
+                while j <= n and word(code:sub(j, j))
+                    j += 1
+                if j > start
+                    k = j
+                    while k <= n and (code:sub(k, k) == " " or code:sub(k, k) == "\t")
+                        k += 1
+                    if k <= n and code:sub(k, k) == "("
+                        return true
+        i += 1
+    false
+
+hit(io) = (code: str)
+    peek("io.", code)
+
+hit(os) = (code: str)
+    peek("os.", code)
+
+edge: bool = (prefix: str, code: str)
+    n = code:len()
+    m = prefix:len()
+    i = 1
+    while i + m - 1 <= n
+        if code:sub(i, i + m - 1) == prefix
+            j = i + m
+            start = j
+            while j <= n and word(code:sub(j, j))
+                j += 1
+            if j > start
+                k = j
+                while k <= n and (code:sub(k, k) == " " or code:sub(k, k) == "\t")
+                    k += 1
+                if k <= n and code:sub(k, k) == "("
+                    return true
+        i += 1
+    false
+
+dot(io) = (code: str)
+    hit(io)(code)
+
+dot(os) = (code: str)
+    hit(os)(code)
+
+dot(std) = (world: str, code: str)
+    edge("std.{world}.", code)
+
+ingress: bool = (path: str)
+    path:len() >= 17 and path:sub(1, 17) == "scripts/ingress/"
+
+hostrow: i64 = (path: str, no: i64, code: str, id: str, needle: str, law: str, fix: str)
+    if code:has(needle)
+        print("({path}, {no}, violation, {id}, {law}, {fix})")
+        1
+    else
+        0
+
+hostrules: i64 = (path: str, no: i64, code: str)
+    hits = 0
+    hits += hostrow(path, no, code, "host.args", "os.args(", "law.host.root", "os.args[n] under os world; foreign argv only at scripts/ingress/")
+    hits += hostrow(path, no, code, "host.getenv", "os.getenv(", "law.host.root", "os.env[key] — environment is not a thing")
+    hits += hostrow(path, no, code, "host.environment", "environment[", "law.host.root", "environment is not a thing — use os.env[key]")
+    hits += hostrow(path, no, code, "host.environment.colon", "environment:", "law.host.root", "environment is not a thing — use os.env[key]")
+    hits += hostrow(path, no, code, "host.popen", "io.popen(", "law.host.process", "command(line) then c:open(mode) — never popen")
+    hits += hostrow(path, no, code, "host.popen.colon", "io:popen(", "law.host.process", "command(line) then c:open(mode) across process boundary")
+    hits += hostrow(path, no, code, "host.popen.word", "popen(", "law.host.process", "c:open(mode) on command subject — never popen")
+    hits += hostrow(path, no, code, "host.execute", "os.execute(", "law.host.process", "structured command + run relation + process world")
+    hits += hostrow(path, no, code, "host.write", "io.write(", "law.host.endpoint", "subject:write() — never io.write()")
+    hits += hostrow(path, no, code, "host.open", "io.open(", "law.world.dot", "path:open(mode) — subject-first; never io.open()")
+    hits += hostrow(path, no, code, "host.exit", "os.exit(", "law.world.dot", "never os.exit() — admitted demand transition; docs/spec/world.md")
+    hits += hostrow(path, no, code, "host.stdin.arch", "stdin-only", "law.host.endpoint", "endpoint polymorphism; never stdin-only language architecture")
+    hits += hostrow(path, no, code, "host.backend", "--backend=", "law.host.target", "launcher target fact; not canonical source switch")
+    hits += hostrow(path, no, code, "host.std", "std.", "law.host.namespace", "std is not a thing — use root/home/world facts")
+    hits += hostrow(path, no, code, "host.proc", "proc.", "law.host.namespace", "proc is not a thing — structured command + process world")
+    hits += hostrow(path, no, code, "host.ir", "ir.", "law.host.namespace", "ir is not source vocabulary — graph/realization only")
+    hits += hostrow(path, no, code, "host.core", "core.", "law.host.namespace", "core is vocabulary authority not a runtime table")
+    hits += hostrow(path, no, code, "host.cemit", "@c.", "foreign-zero", "no @c.emit — compiler-owned realization")
+    hits += hostrow(path, no, code, "host.compc", "@comp.c.", "foreign-zero", "no @comp.c.emit — compiler-owned realization")
+    hits += hostrow(path, no, code, "host.lua", "lua_", "foreign-zero", "no lua intermediaries in Idol source")
+    hits += hostrow(path, no, code, "host.bracket", "[[", "lexical", "use \\\" — double quotes admit multiline content")
+    hits
+
+
+strip: str = (line: str)
+    out = ""
+    n = line:len()
+    quote = ""
+    i = 1
+    while i <= n
+        c = line:sub(i, i)
+        if quote == ""
+            if c == "#"
+                return out
+            if c == "\"" or c == "'"
+                quote = c
+                out = "{out} "
+            else
+                out = "{out}{c}"
+        else
+            if c == quote
+                quote = ""
+            out = "{out} "
+        i += 1
+    out
+
+readable: i64 = (path: str, no: i64, code: str)
+    hits = 0
+    hits += hostrow(path, no, code, "host.read.colon", "io:read(", "law.readable", "stdin:read() or path:read() — readable protocol on the subject; never io:read")
+    hits += hostrow(path, no, code, "host.read", "io.read(", "law.readable", "stdin:read() or path:read() — never io.read")
+    hits
+
+audit = (path: str, no: i64, line: str): i64
+    code = strip(line)
+    hits = readable(path, no, code)
+    if ingress(path)
+        return hits
+    hits += hostrules(path, no, code)
+    if dot(io)(code)
+        print("({path}, {no}, violation, law.world.dot, io is a world — stdin:read() / path:read() / subject:relation(); never io.method())")
+        hits += 1
+    if dot(os)(code)
+        print("({path}, {no}, violation, law.world.dot, os is a world — use os.args[n] / os.env[k]; never os.method())")
+        hits += 1
+    if dot(std)(io, code)
+        print("({path}, {no}, violation, law.world.dot, std.io forbidden — stdin:read() / path:read() / subject:relation(); docs/spec/world.md)")
+        hits += 1
+    if dot(std)(os, code)
+        print("({path}, {no}, violation, law.world.dot, std.os forbidden — root projection or bridge; docs/spec/world.md)")
+        hits += 1
+    hits
+
+num: i64 = (s: str, i: i64)
+    v = 0
+    n = s:len()
+    j = i
+    while j <= n and s:sub(j, j) >= "0" and s:sub(j, j) <= "9"
+        v *= 10
+        v += (s:sub(j, j):byte() - 48)
+        j += 1
+    v
+
+head: bool = (line: str)
+    line:len() >= 6 and line:sub(1, 6) == "+++ b/"
+
+scan: i64 = (body: str)
+    hits = 0
+    path = ""
+    no = 0
+    line = ""
+    n = body:len()
+    i = 1
+    while i <= n + 1
+        c = "\n"
+        if i <= n
+            c = body:sub(i, i)
+        if c == "\n"
+            if head(line)
+                path = line:sub(7, line:len())
+                no = 0
+            else
+                if line:len() > 2 and line:sub(1, 2) == "@@"
+                    p = 1
+                    m = line:len()
+                    while p <= m and line:sub(p, p) != "+"
+                        p += 1
+                    no = num(line, p + 1)
+                else
+                    if line:len() > 0 and line:sub(1, 1) == "+" and path != ""
+                        hits += audit(path, no, line:sub(2, line:len()))
+                        no += 1
+            line = ""
+        else
+            line = "{line}{c}"
+        i += 1
+    hits
+
+control: bool = ()
+    print("host: control enter")
+    ok = true
+    if audit("probe.id", 1, "x = os.args()") == 0
+        print("control FAIL: host.args did not fire")
+        ok = false
+    if audit("scripts/ingress/input/read.id", 1, "x = io:read()") == 0
+        print("control FAIL: io:read must be rejected — use stdin:read() / path:read() even in ingress")
+        ok = false
+    if audit("scripts/ingress/input/read.id", 2, "x = stdin:read()") != 0
+        print("control FAIL: canonical stdin:read rejected in ingress")
+        ok = false
+    if audit("probe.id", 2, "mode = os.getenv(\"X\")") == 0
+        print("control FAIL: host.getenv did not fire")
+        ok = false
+    if audit("probe.id", 3, "f = io.popen(\"git status\")") == 0
+        print("control FAIL: host.popen did not fire")
+        ok = false
+    if audit("probe.id", 4, "text = io.read(\"*a\")") == 0
+        print("control FAIL: host.read did not fire")
+        ok = false
+    if audit("probe.id", 5, "command = os.args[1]") != 0
+        print("control FAIL: os.args table index rejected")
+        ok = false
+    if audit("probe.id", 5, "mode = environment[\"X\"]") == 0
+        print("control FAIL: environment entity did not fire")
+        ok = false
+    if audit("probe.id", 6, "mode = os.env[\"X\"]") != 0
+        print("control FAIL: os.env table index rejected")
+        ok = false
+    if audit("probe.id", 6, "out = std.proc.capture(\"echo\")") == 0
+        print("control FAIL: host.std did not fire")
+        ok = false
+    if audit("probe.id", 7, "n = ir.node()") == 0
+        print("control FAIL: host.ir did not fire")
+        ok = false
+    if audit("probe.id", 8, "f = io.open(p)") == 0
+        print("control FAIL: host.open / dot did not fire")
+        ok = false
+    if audit("probe.id", 9, "line = io:read()") != 0
+        print("control FAIL: io:read rejected")
+        ok = false
+    if audit("probe.id", 10, "f = std.io.open(p)") == 0
+        print("control FAIL: std.io.open / qual did not fire")
+        ok = false
+    ok
+
+main: i64 = ()
+    print("host: main enter")
+    if !control()
+        print("gates/host: POSITIVE CONTROL FAILED")
+        return 3
+    body = transport()
+    if body:len() == 0
+        print("gates/host: empty input — pipe unified diff or pass diff path in os.args[1]")
+        print("Usage: git diff -U0 ... | idol run gates/host.id")
+        print("       idol run gates/host.id < /path/to.diff")
+        return 3
+    total = scan(body)
+    print("")
+    print("gates/host: {total} finding(s) on ADDED lines  [control: pass]")
+    if total > 0
+        print("")
+        print("The law: docs/spec/host.md · docs/spec/world.md · GAP-155")
+        print("Host APIs belong at ingress/egress only — use root projection and worlds.")
+        return 1
+    0

@@ -1,16 +1,16 @@
--- std.schema_gen — Schema-Driven Code Generation
--- Read JSON Schema, OpenAPI, or Protobuf definitions at compile time
--- and generate strongly-typed Duo code with validation and serialization.
---
--- Usage at module scope:
---   local sg = req "std.schema_gen"
---   local json = @run("cat schemas/user.json 2>/dev/null")
---   local code = sg.from_json_schema_string(json, { name = "User" })
---   -- code contains generated C struct + validation + serialization
+# std.schema_gen — Schema-Driven Code Generation
+# Read JSON Schema, OpenAPI, or Protobuf definitions at compile time
+# and generate strongly-typed Duo code with validation and serialization.
+#
+# Usage at module scope:
+#   local sg = schema_gen
+#   local json = @run("cat schemas/user.json 2>/dev/null")
+#   local code = sg.from_json_schema_string(json, { name = "User" })
+#   # code contains generated C struct + validation + serialization
 
--- ═══════════════════════════════════════════════════════════════
--- Helpers
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Helpers
+# ═══════════════════════════════════════════════════════════════
 
 str_join(parts: any, sep: str): str
     result = ""
@@ -23,12 +23,12 @@ str_join(parts: any, sep: str): str
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- JSON Schema → Duo code generation
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# JSON Schema → Duo code generation
+# ═══════════════════════════════════════════════════════════════
 
--- from_json_schema_string: parse a JSON Schema string and generate code.
--- The caller should use @run at module scope to read the file, then pass the content here.
+# from_json_schema_string: parse a JSON Schema string and generate code.
+# The caller should use @run at module scope to read the file, then pass the content here.
 from_json_schema_string(schema_json: str, opts: any): str
     if opts == nil opts = {} end
     if schema_json == nil or schema_json == ""
@@ -47,23 +47,23 @@ from_json_schema_string(schema_json: str, opts: any): str
     str_join(code_parts, "\n")
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Protobuf → Duo code generation
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Protobuf → Duo code generation
+# ═══════════════════════════════════════════════════════════════
 
--- from_protobuf_string: parse a .proto file string and generate Duo code.
+# from_protobuf_string: parse a .proto file string and generate Duo code.
 from_protobuf_string(proto_src: str): str
     if proto_src == nil or proto_src == ""
         return "/* schema_gen: empty proto source */"
     end
     code_parts = {}
-    for name, fields in string.gmatch(proto_src, "message%s+(%w+)%s*{(.-)}") do
+    for name, fields in proto_src:gmatch("message%s+(%w+)%s*{(.-)}") do
         duo_fields = {}
-        for field in string.gmatch(fields, "[^\n]+") do
-            field = string.gsub(field, "^%s+", "")
-            field = string.gsub(field, "%s+$", "")
-            field = string.gsub(field, ";", "")
-            typ, fname = string.match(field, "(%S+)%s+(%w+)")
+        for field in fields:gmatch("[^\n]+") do
+            field = field:gsub("^%s+", "")
+            field = field:gsub("%s+$", "")
+            field = field:gsub(";", "")
+            typ, fname = field:match("(%S+)%s+(%w+)")
             if typ and fname
                 duo_type = proto_type_to_duo(typ)
                 duo_fields[#duo_fields + 1] = { name = fname, type = duo_type }
@@ -76,9 +76,9 @@ from_protobuf_string(proto_src: str): str
     str_join(code_parts, "\n")
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Code emission helpers (return strings, don't call @c.emit)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Code emission helpers (return strings, don't call @c.emit)
+# ═══════════════════════════════════════════════════════════════
 
 emit_record_type(name: str, fields: any, required: any): str
     parts = {}
@@ -104,14 +104,14 @@ emit_validation_func(name: str, fields: any, required: any): str
         end
     end
     if #checks > 0
-        "/* [schema_gen] validate_" .. string.lower(name) .. " */\nint validate_" .. string.lower(name) .. "(const " .. name .. "* record) {\n" .. str_join(checks, "\n") .. "\n    return 1;\n}"
+        "/* [schema_gen] validate_" .. name:lower() .. " */\nint validate_" .. name:lower() .. "(const " .. name .. "* record) {\n" .. str_join(checks, "\n") .. "\n    return 1;\n}"
     else
         ""
     end
 end
 
 emit_json_serializers(name: str, fields: any): str
-    lower = string.lower(name)
+    lower = name:lower()
     serialize_parts = {}
     for _, f in fields
         if f.type == "str"
@@ -128,7 +128,7 @@ emit_json_serializers(name: str, fields: any): str
 end
 
 emit_protobuf_encode(name: str, fields: any): str
-    lower = string.lower(name)
+    lower = name:lower()
     parts = {}
     parts[#parts + 1] = "/* [schema_gen] encode_" .. lower .. " */"
     parts[#parts + 1] = "void encode_" .. lower .. "(const " .. name .. "* msg, uint8_t* buf, size_t* len) {"
@@ -138,7 +138,7 @@ emit_protobuf_encode(name: str, fields: any): str
 end
 
 emit_protobuf_decode(name: str, fields: any): str
-    lower = string.lower(name)
+    lower = name:lower()
     parts = {}
     parts[#parts + 1] = "/* [schema_gen] decode_" .. lower .. " */"
     parts[#parts + 1] = "int decode_" .. lower .. "(" .. name .. "* msg, const uint8_t* buf, size_t len) {"
@@ -147,14 +147,14 @@ emit_protobuf_decode(name: str, fields: any): str
     str_join(parts, "\n")
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Helper functions
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Helper functions
+# ═══════════════════════════════════════════════════════════════
 
 parse_json_properties(json: str): any
     fields = {}
-    for name in string.gmatch(json, '"(%w+)"%s*:%s*{') do
-        type_str = string.match(json, '"' .. name .. '"%s*:%s*{[^}]*"type"%s*:%s*"(%w+)"')
+    for name in json:gmatch('"(%w+)"%s*:%s*{') do
+        type_str = json:match('"' .. name .. '"%s*:%s*{[^}]*"type"%s*:%s*"(%w+)"')
         if type_str
             fields[#fields + 1] = {
                 name = name,
@@ -167,7 +167,7 @@ end
 
 parse_required_fields(json: str): any
     required = {}
-    for name in string.gmatch(json, '"(%w+)"') do
+    for name in json:gmatch('"(%w+)"') do
         required[name] = true
     end
     required

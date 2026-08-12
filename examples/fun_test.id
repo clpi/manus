@@ -1,4 +1,4 @@
--- Test the new 'fun' keyword
+# Test the new 'fun' keyword
 add(a: i64, b: i64): i64
     a + b
 end

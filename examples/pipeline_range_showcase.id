@@ -1,5 +1,5 @@
--- @comp.pipeline range source — fused loop over [start, stop) without a data array
--- Run: duo run examples/pipeline_range_showcase.id
+# @comp.pipeline range source — fused loop over [start, stop) without a data array
+# Run: duo run examples/pipeline_range_showcase.id
 
 @comp.pipeline({
     fn = "sum_range",

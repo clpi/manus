@@ -23,12 +23,12 @@ global function count_primes(limit)
             if n % d == 0 then
                 is_prime = false
             end
-            d = d + 1
+            d += 1
         end
         if is_prime then
-            count = count + 1
+            count += 1
         end
-        n = n + 1
+        n += 1
     end
     return count
 end
@@ -46,7 +46,7 @@ global function mandel_iter(cx, cy)
         end
         zy = 2.0 * zx * zy + cy
         zx = zx2 - zy2 + cx
-        i = i + 1
+        i += 1
     end
     return i
 end
@@ -62,10 +62,10 @@ global function compute_grid_sum(size)
     while i < size do
         local j = 0
         while j < size do
-            total = total + eval_A(i, j)
-            j = j + 1
+            total += eval_A(i, j)
+            j += 1
         end
-        i = i + 1
+        i += 1
     end
     return total
 end
@@ -95,26 +95,26 @@ global function simulate_nbody(steps)
         local dist12_sq = dx12 * dx12 + dy12 * dy12 + 0.001
         local dist12 = math.sqrt(dist12_sq)
         local f12 = (m1 * m2) / dist12_sq
-        vx1 = vx1 + (f12 * dx12 / dist12) * dt / m1
-        vy1 = vy1 + (f12 * dy12 / dist12) * dt / m1
-        vx2 = vx2 - (f12 * dx12 / dist12) * dt / m2
-        vy2 = vy2 - (f12 * dy12 / dist12) * dt / m2
+        vx1 += (f12 * dx12 / dist12) * dt / m1
+        vy1 += (f12 * dy12 / dist12) * dt / m1
+        vx2 -= (f12 * dx12 / dist12) * dt / m2
+        vy2 -= (f12 * dy12 / dist12) * dt / m2
         local dx13 = x3 - x1
         local dy13 = y3 - y1
         local dist13_sq = dx13 * dx13 + dy13 * dy13 + 0.001
         local dist13 = math.sqrt(dist13_sq)
         local f13 = (m1 * m3) / dist13_sq
-        vx1 = vx1 + (f13 * dx13 / dist13) * dt / m1
-        vy1 = vy1 + (f13 * dy13 / dist13) * dt / m1
-        vx3 = vx3 - (f13 * dx13 / dist13) * dt / m3
-        vy3 = vy3 - (f13 * dy13 / dist13) * dt / m3
-        x1 = x1 + vx1 * dt
-        y1 = y1 + vy1 * dt
-        x2 = x2 + vx2 * dt
-        y2 = y2 + vy2 * dt
-        x3 = x3 + vx3 * dt
-        y3 = y3 + vy3 * dt
-        i = i + 1
+        vx1 += (f13 * dx13 / dist13) * dt / m1
+        vy1 += (f13 * dy13 / dist13) * dt / m1
+        vx3 -= (f13 * dx13 / dist13) * dt / m3
+        vy3 -= (f13 * dy13 / dist13) * dt / m3
+        x1 += vx1 * dt
+        y1 += vy1 * dt
+        x2 += vx2 * dt
+        y2 += vy2 * dt
+        x3 += vx3 * dt
+        y3 += vy3 * dt
+        i += 1
     end
     return x1 + y1 + x2 + y2 + x3 + y3
 end
@@ -126,8 +126,8 @@ global function string_byte_sum(n)
     local i = 1
     local last = string.len(s)
     while i <= last do
-        sum = sum + string.byte(s, i)
-        i = i + 1
+        sum += string.byte(s, i)
+        i += 1
     end
     return sum
 end
@@ -138,13 +138,13 @@ global function table_array_sum(n)
     local i = 1
     while i <= n do
         t[i] = i
-        i = i + 1
+        i += 1
     end
     local sum = 0
     i = 1
     while i <= n do
-        sum = sum + t[i]
-        i = i + 1
+        sum += t[i]
+        i += 1
     end
     return sum
 end
@@ -154,8 +154,8 @@ global function trig_sum(n)
     local sum = 0.0
     local i = 0
     while i < n do
-        sum = sum + math.sin(i) * math.cos(i)
-        i = i + 1
+        sum += math.sin(i) * math.cos(i)
+        i += 1
     end
     return sum
 end
@@ -166,8 +166,8 @@ global function string_len_chain(n)
     local total = 0
     local i = 1
     while i <= n do
-        total = total + string.len(s) + string.len(string.rep("b", (i % 10) + 1))
-        i = i + 1
+        total += string.len(s) + string.len(string.rep("b", (i % 10) + 1))
+        i += 1
     end
     return total
 end
@@ -180,7 +180,7 @@ global function string_hash_roll(n)
     local lim = string.len(s)
     while i <= lim do
         h = (h * 31 + string.byte(s, i)) % 1000000007
-        i = i + 1
+        i += 1
     end
     return h
 end
@@ -192,9 +192,9 @@ global function math_floor_max(n)
     local i = 0
     while i < n do
         local v = math.floor((i * 0.73) + 0.5)
-        acc = acc + v
+        acc += v
         peak = math.max(peak, v)
-        i = i + 1
+        i += 1
     end
     return acc + peak
 end
@@ -205,7 +205,7 @@ global function table_max_scan(n)
     local i = 1
     while i <= n do
         t[i] = (i * 17) % 100003
-        i = i + 1
+        i += 1
     end
     local mx = 0
     i = 1
@@ -213,7 +213,7 @@ global function table_max_scan(n)
         if t[i] > mx then
             mx = t[i]
         end
-        i = i + 1
+        i += 1
     end
     return mx
 end
@@ -223,8 +223,8 @@ global function math_pow_sqrt(n)
     local sum = 0.0
     local i = 1
     while i <= n do
-        sum = sum + math.sqrt(math.pow(i % 997, 0.25))
-        i = i + 1
+        sum += math.sqrt(math.pow(i % 997, 0.25))
+        i += 1
     end
     return sum
 end
@@ -235,7 +235,7 @@ global function binary_search_scan(n)
     local i = 1
     while i <= n do
         t[i] = i
-        i = i + 1
+        i += 1
     end
     local hits = 0
     local q = 1
@@ -250,11 +250,11 @@ global function binary_search_scan(n)
             elseif t[mid] > key then
                 hi = mid - 1
             else
-                hits = hits + 1
+                hits += 1
                 break
             end
         end
-        q = q + 1
+        q += 1
     end
     return hits
 end
@@ -266,9 +266,9 @@ global function filter_count(n)
     while i <= n do
         local v = (i * 17) % 100003
         if v > 50000 then
-            count = count + 1
+            count += 1
         end
-        i = i + 1
+        i += 1
     end
     return count
 end
@@ -281,13 +281,13 @@ global function dot_product(n)
     while i <= n do
         a[i] = i
         b[i] = n - i + 1
-        i = i + 1
+        i += 1
     end
     local sum = 0
     i = 1
     while i <= n do
-        sum = sum + a[i] * b[i]
-        i = i + 1
+        sum += a[i] * b[i]
+        i += 1
     end
     return sum
 end
@@ -297,8 +297,8 @@ global function clamp_sum(n)
     local sum = 0
     local i = 0
     while i < n do
-        sum = sum + math.min(255, math.max(0, i % 1000))
-        i = i + 1
+        sum += math.min(255, math.max(0, i % 1000))
+        i += 1
     end
     return sum
 end
@@ -308,8 +308,8 @@ global function bucket_hash(n)
     local sum = 0
     local i = 1
     while i <= n do
-        sum = sum + (i * 31) % 256
-        i = i + 1
+        sum += (i * 31) % 256
+        i += 1
     end
     return sum
 end
@@ -319,8 +319,9 @@ global function ema_smooth(n)
     local avg = 0.0
     local i = 0
     while i < n do
-        avg = avg * 0.95 + (i % 100) * 0.05
-        i = i + 1
+        avg *= 0.95
+        avg += (i % 100) * 0.05
+        i += 1
     end
     return avg
 end
@@ -333,9 +334,9 @@ global function token_count(n)
     local last = string.len(s)
     while i <= last do
         if string.byte(s, i) == 32 then
-            count = count + 1
+            count += 1
         end
-        i = i + 1
+        i += 1
     end
     return count
 end
@@ -349,9 +350,9 @@ global function config_parse_sum(n)
     while i <= last do
         local c = string.byte(s, i)
         if c == 123 or c == 58 or c == 34 then
-            sum = sum + c
+            sum += c
         end
-        i = i + 1
+        i += 1
     end
     return sum
 end
@@ -362,14 +363,14 @@ global function table_lookup_sum(n)
     local i = 1
     while i <= n do
         t[i] = i * 3
-        i = i + 1
+        i += 1
     end
     local sum = 0
     local q = 1
     while q <= n do
         local idx = (q * 7) % n + 1
-        sum = sum + t[idx]
-        q = q + 1
+        sum += t[idx]
+        q += 1
     end
     return sum
 end
@@ -380,13 +381,13 @@ global function table_insert_churn(n)
     local i = 1
     while i <= n do
         t[i] = (i * 13) % 997
-        i = i + 1
+        i += 1
     end
     local sum = 0
     i = 1
     while i <= n do
-        sum = sum + t[i]
-        i = i + 1
+        sum += t[i]
+        i += 1
     end
     return sum
 end
@@ -420,10 +421,10 @@ local y = -100
 while y <= 100 do
     local x = -100
     while x <= 100 do
-        sum_iters = sum_iters + mandel_iter(x / 100.0, y / 100.0)
-        x = x + 1
+        sum_iters += mandel_iter(x / 100.0, y / 100.0)
+        x += 1
     end
-    y = y + 1
+    y += 1
 end
 local t_end3 = os.clock()
 print("Mandel Iterations  ", sum_iters)

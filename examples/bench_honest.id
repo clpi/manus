@@ -1,11 +1,11 @@
--- bench_honest.id — Runtime-seeded benchmarks vs optimized C reference.
--- Hot paths use @c.emit (canonical @c.* metaprogramming) for explicit native C.
--- C reference (bench_honest_c.c) keeps straightforward native baselines under
--- the same Clang -O3 -flto toolchain.
+# bench_honest.id — Runtime-seeded benchmarks vs optimized C reference.
+# Hot paths use @c.emit (canonical @c.* metaprogramming) for explicit native C.
+# C reference (bench_honest_c.c) keeps straightforward native baselines under
+# the same Clang -O3 -flto toolchain.
 
--- ═══════════════════════════════════════════════════════════════
--- 1. Matrix checksum 128x128 — COLUMN/ROW SUM CONTRACTION
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# 1. Matrix checksum 128x128 — COLUMN/ROW SUM CONTRACTION
+# ═══════════════════════════════════════════════════════════════
 @hot
 bench_matmul(n: i64, s: i64): f64
     @c.emit([[
@@ -34,9 +34,9 @@ bench_matmul(n: i64, s: i64): f64
     return result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- 2. Int64 radix sort
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# 2. Int64 radix sort
+# ═══════════════════════════════════════════════════════════════
 @hot
 bench_qsort(n: i64, s: i64): i64
     @c.emit([[
@@ -79,11 +79,11 @@ bench_qsort(n: i64, s: i64): i64
     return result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- ═══════════════════════════════════════════════════════════════
--- 3. Hash table probe — 4-way ILP with 8-way iteration unrolling
---    Same chains as C. Duo adds 8-way unrolling + branchless hits.
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# 3. Hash table probe — 4-way ILP with 8-way iteration unrolling
+#    Same chains as C. Duo adds 8-way unrolling + branchless hits.
+# ═══════════════════════════════════════════════════════════════
 @hot
 bench_hashtable(n: i64, s: i64): i64
     @c.emit([[
@@ -137,9 +137,9 @@ bench_hashtable(n: i64, s: i64): i64
     return result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- 4. Binary search — branchless comparison
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# 4. Binary search — branchless comparison
+# ═══════════════════════════════════════════════════════════════
 @hot
 bench_bsearch(n: i64, s: i64): i64
     @c.emit([[
@@ -198,9 +198,9 @@ bench_bsearch(n: i64, s: i64): i64
     return result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- 5. N-body — direct force summation
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# 5. N-body — direct force summation
+# ═══════════════════════════════════════════════════════════════
 @hot
 @noinline
 bench_nbody_real(steps: i64, s: i64): f64
@@ -244,9 +244,9 @@ bench_nbody_real(steps: i64, s: i64): f64
     return result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- 6. FNV hash — interleaved for ILP
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# 6. FNV hash — interleaved for ILP
+# ═══════════════════════════════════════════════════════════════
 @hot
 @noinline
 bench_fnv_hash(n: i64, s: i64): i64
@@ -378,9 +378,9 @@ print_fnv_result(v: i64): void
     @c.emit([[printf("RESULT fnv %lld\n", (long long)v);]])
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Driver
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Driver
+# ═══════════════════════════════════════════════════════════════
 seed: i64 = @c.emit("getenv(\"HONEST_SEED\") ? (int64_t)atoll(getenv(\"HONEST_SEED\")) : (int64_t)(((double)clock()/(double)CLOCKS_PER_SEC) * 1000000) + 12345")
 print("=== Honest Benchmarks (runtime-seeded, no precomputation) ===")
 print("Seed: " .. to(str)(seed))

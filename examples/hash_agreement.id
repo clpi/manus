@@ -1,31 +1,31 @@
--- The compile-time string hash and the runtime string hash must agree bit for
--- bit, or interning silently splits.
---
--- A string LITERAL is interned at the bucket named by the hash the COMPILER
--- computed (`calc_lua_hash` in src/codegen.zig and src/sema.zig, baked into the
--- emitted `lua_val_from_literal(s, <hash>, len)`). A string the program BUILDS
--- is interned at the bucket named by the hash the RUNTIME computed (`calc_hash`
--- in the emitted prelude). If those two disagree, the built copy misses the
--- literal, becomes a second object holding the same bytes, and every consumer
--- that treats string identity as pointer identity -- `==`, table keys -- says
--- they are different strings. No error, no crash, a wrong answer.
---
--- Long strings hash a SAMPLE rather than every byte, so the two halves of the
--- rule have to be written twice and kept in step; that is what this fixture is
--- for. Both sides of the 32-byte boundary are exercised.
---
--- METHOD NOTE, learned by getting it wrong: every "built" value here has to be
--- derived through a runtime call AND has to stay boxed. The first version of
--- this test concatenated two literals, which folds at compile time, and passed
--- against a deliberately broken runtime half. The second lowered to native
--- `const char*` with `strcmp` and `lua_val_from_str`, so BOTH sides used the
--- runtime hash and the control still could not fire. Passing a value through an
--- `any` parameter is what forces the literal down the `lua_val_from_literal`
--- path where the compile-time hash actually appears.
---
--- Control: revert the `len <= 32` guard in the emitted `calc_hash` to hash in
--- full while the compiler keeps sampling. This fixture then reports two long
--- failures and no short ones, and exits 1. Re-fired 2026-08-08.
+# The compile-time string hash and the runtime string hash must agree bit for
+# bit, or interning silently splits.
+#
+# A string LITERAL is interned at the bucket named by the hash the COMPILER
+# computed (`calc_lua_hash` in src/codegen.zig and src/sema.zig, baked into the
+# emitted `lua_val_from_literal(s, <hash>, len)`). A string the program BUILDS
+# is interned at the bucket named by the hash the RUNTIME computed (`calc_hash`
+# in the emitted prelude). If those two disagree, the built copy misses the
+# literal, becomes a second object holding the same bytes, and every consumer
+# that treats string identity as pointer identity # `==`, table keys # says
+# they are different strings. No error, no crash, a wrong answer.
+#
+# Long strings hash a SAMPLE rather than every byte, so the two halves of the
+# rule have to be written twice and kept in step; that is what this fixture is
+# for. Both sides of the 32-byte boundary are exercised.
+#
+# METHOD NOTE, learned by getting it wrong: every "built" value here has to be
+# derived through a runtime call AND has to stay boxed. The first version of
+# this test concatenated two literals, which folds at compile time, and passed
+# against a deliberately broken runtime half. The second lowered to native
+# `const char*` with `strcmp` and `lua_val_from_str`, so BOTH sides used the
+# runtime hash and the control still could not fire. Passing a value through an
+# `any` parameter is what forces the literal down the `lua_val_from_literal`
+# path where the compile-time hash actually appears.
+#
+# Control: revert the `len <= 32` guard in the emitted `calc_hash` to hash in
+# full while the compiler keeps sampling. This fixture then reports two long
+# failures and no short ones, and exits 1. Re-fired 2026-08-08.
 
 box(x: any): any
     return x
@@ -34,23 +34,23 @@ end
 main(): i64
     fails = 0
 
-    -- <= 32 bytes: hashed in full, on both sides, exactly as it always was.
+    # <= 32 bytes: hashed in full, on both sides, exactly as it always was.
     shortlit = box("shortkey")
-    shortbuilt = box(string.sub("shortkey!", 1, 8))
+    shortbuilt = box("shortkey!":sub(1, 8))
     if shortlit ~= shortbuilt
         print("FAIL short: literal and runtime-built are different objects")
         fails += 1
     end
 
-    -- > 32 bytes: sampled on a stride, on both sides.
+    # > 32 bytes: sampled on a stride, on both sides.
     longlit = box("a very long table key that is definitely more than thirty-two bytes long")
-    longbuilt = box(string.sub("a very long table key that is definitely more than thirty-two bytes long" .. "!", 1, 72))
+    longbuilt = box("a very long table key that is definitely more than thirty-two bytes long" .. "!":sub(1, 72))
     if longlit ~= longbuilt
         print("FAIL long: literal and runtime-built are different objects")
         fails += 1
     end
 
-    -- Inserted under the runtime hash, read back under the compile-time one.
+    # Inserted under the runtime hash, read back under the compile-time one.
     t = {}
     t[shortbuilt] = 11
     t[longbuilt] = 22
@@ -63,20 +63,20 @@ main(): i64
         fails += 1
     end
 
-    -- 200 long strings identical for their first 500 bytes, differing only in a
-    -- suffix the sample stride may step over. The pool confirms with a length
-    -- check and a memcmp, so a sampled collision may cost a probe and must never
-    -- merge two distinct keys.
+    # 200 long strings identical for their first 500 bytes, differing only in a
+    # suffix the sample stride may step over. The pool confirms with a length
+    # check and a memcmp, so a sampled collision may cost a probe and must never
+    # merge two distinct keys.
     u = {}
     i = 0
     while i < 200 do
-        u[string.rep("x", 500) .. tostring(i)] = i
+        u["x":rep(500) .. tostring(i)] = i
         i += 1
     end
     bad = 0
     i = 0
     while i < 200 do
-        if u[string.rep("x", 500) .. tostring(i)] ~= i
+        if u["x":rep(500) .. tostring(i)] ~= i
             bad += 1
         end
         i += 1
@@ -86,15 +86,15 @@ main(): i64
         fails += 1
     end
 
-    -- Negative control: a long key never inserted must miss. Without this, a
-    -- table that answered every lookup would score 200/200 above.
-    if u[string.rep("x", 500) .. "999"] ~= nil
+    # Negative control: a long key never inserted must miss. Without this, a
+    # table that answered every lookup would score 200/200 above.
+    if u["x":rep(500) .. "999"] ~= nil
         print("FAIL control: a long key never inserted answered non-nil")
         fails += 1
     end
 
-    -- Positive control on the counter itself: this fixture reports 0/6 only
-    -- because six checks ran, not because none did.
+    # Positive control on the counter itself: this fixture reports 0/6 only
+    # because six checks ran, not because none did.
     print("hash agreement: 6 checks ran")
     if fails == 0
         print("hash agreement: PASS")

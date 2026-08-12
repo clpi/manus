@@ -1,52 +1,52 @@
--- Transform engine gate — tier-1 registry, dispatch, three-site parity, call algebra.
---
--- PORTED from three deleted Zig files:
---
---   src/meta_transform_tests.zig       444 lines, 6 tests
---   src/call_transform_tests.zig       102 lines, 4 tests
---   src/pass6_dispatch_tests.zig        45 lines, 4 tests
---
--- All fourteen reached `transform_engine` state that no verb printed: the
--- registry, its contracts, the dispatch gate, and the provenance log. That
--- state is now RENDERED — `duo explain` grew `transform_provenance` and
--- `transform_registry` in the same commit, and `optimization_outcome` grew the
--- `entity` / `before_repr` / `after_repr` fields it already carried. No
--- compiler semantics changed; state that existed became state that leaves the
--- process, which is what H-8 output totality asks for anyway.
---
--- WHY THE PROVENANCE NEEDED A SNAPSHOT. `runForProvenance` enables the log and
--- `defer`s `setProvenanceEnabled(false)`, which CLEARS it — so by the time any
--- caller could render it, it was empty. `transform_engine.snapshotProvenance`
--- fires first (LIFO) and preserves the run. That is the whole reason this
--- state had no projection before.
---
--- THE FIXTURES ARE TRACKED AND ARE OPENED. `meta_transform_tests.zig` BUILT
--- its parity sources at runtime by string concatenation, which is how a
--- harness ends up asserting against text no one can read or repair. The ten
--- combinator fixtures now live in `examples/parity/` in the exact three-site
--- shape, and this gate compiles those files.
---
--- WHAT THE PORT FOUND. `call_transform_tests.zig` had a test named
--- "call.simd_lower provenance for @hot callee" that asserted only that
--- `call.simd_lower` was logged — and `call.simd_lower` is ALSO logged for a
--- call in tail position with no `@hot` anywhere. The test could not fail for
--- the reason it was named after. This gate keeps the claim falsifiable: the
--- two fixtures differ ONLY by the attribute, and the gate asserts
--- simd_lower observed on one and NOT observed on the other.
---
--- WHAT THE PORT COULD NOT KEEP. One assertion, from pass6 test 4: that
--- `dispatchMetaCombinator` called with a hook name that is in no registry
--- appends nothing. Rendering it would mean printing a row for a hook that does
--- not exist, which is fabricated data in a projection. What is kept is its
--- OBSERVABLE consequence, asserted at D4: no provenance entry ever names an
--- internal `__` hook — every logged transform is a public registry id.
+# Transform engine gate — tier-1 registry, dispatch, three-site parity, call algebra.
+#
+# PORTED from three deleted Zig files:
+#
+#   src/meta_transform_tests.zig       444 lines, 6 tests
+#   src/call_transform_tests.zig       102 lines, 4 tests
+#   src/pass6_dispatch_tests.zig        45 lines, 4 tests
+#
+# All fourteen reached `transform_engine` state that no verb printed: the
+# registry, its contracts, the dispatch gate, and the provenance log. That
+# state is now RENDERED — `duo explain` grew `transform_provenance` and
+# `transform_registry` in the same commit, and `optimization_outcome` grew the
+# `entity` / `before_repr` / `after_repr` fields it already carried. No
+# compiler semantics changed; state that existed became state that leaves the
+# process, which is what H-8 output totality asks for anyway.
+#
+# WHY THE PROVENANCE NEEDED A SNAPSHOT. `runForProvenance` enables the log and
+# `defer`s `setProvenanceEnabled(false)`, which CLEARS it — so by the time any
+# caller could render it, it was empty. `transform_engine.snapshotProvenance`
+# fires first (LIFO) and preserves the run. That is the whole reason this
+# state had no projection before.
+#
+# THE FIXTURES ARE TRACKED AND ARE OPENED. `meta_transform_tests.zig` BUILT
+# its parity sources at runtime by string concatenation, which is how a
+# harness ends up asserting against text no one can read or repair. The ten
+# combinator fixtures now live in `examples/parity/` in the exact three-site
+# shape, and this gate compiles those files.
+#
+# WHAT THE PORT FOUND. `call_transform_tests.zig` had a test named
+# "call.simd_lower provenance for @hot callee" that asserted only that
+# `call.simd_lower` was logged — and `call.simd_lower` is ALSO logged for a
+# call in tail position with no `@hot` anywhere. The test could not fail for
+# the reason it was named after. This gate keeps the claim falsifiable: the
+# two fixtures differ ONLY by the attribute, and the gate asserts
+# simd_lower observed on one and NOT observed on the other.
+#
+# WHAT THE PORT COULD NOT KEEP. One assertion, from pass6 test 4: that
+# `dispatchMetaCombinator` called with a hook name that is in no registry
+# appends nothing. Rendering it would mean printing a row for a hook that does
+# not exist, which is fabricated data in a projection. What is kept is its
+# OBSERVABLE consequence, asserted at D4: no provenance entry ever names an
+# internal `__` hook — every logged transform is a public registry id.
 
 here(): str
     std.script.chomp(std.script.capture("pwd"))
 end
 
 compiler(root: str): str
-    "{root}/zig-out/bin/duo"
+    "{root}/zig-out/bin/idol"
 end
 
 shout(msg: str): void
@@ -61,47 +61,47 @@ capture(cmd: str, out: str): bool
     std.script.status("{cmd} >{out} 2>/dev/null") == 0
 end
 
--- A whole-line regex over the raw JSON. The registry rows are flat objects, so
--- `[^}]*` cannot cross an object boundary — which is what lets one grep tie a
--- transform's NAME to its own fields instead of to a neighbour's.
+# A whole-line regex over the raw JSON. The registry rows are flat objects, so
+# `[^}]*` cannot cross an object boundary — which is what lets one grep tie a
+# transform's NAME to its own fields instead of to a neighbour's.
 row(path: str, want: str): bool
     std.script.status("grep -q -E '{want}' {path}") == 0
 end
 
--- Substring, comma-split so a value cannot be matched across two fields.
+# Substring, comma-split so a value cannot be matched across two fields.
 held(path: str, want: str): bool
     std.script.status("tr ',' '\\n' < {path} | grep -q -F '{want}'") == 0
 end
 
--- The C string literal bound to `name` in emitted C, e.g. `TOP`. The binding's
--- own name is stripped here so the three sites compare as VALUES — they are
--- bound to three different names and would never be equal otherwise.
+# The C string literal bound to `name` in emitted C, e.g. `TOP`. The binding's
+# own name is stripped here so the three sites compare as VALUES — they are
+# bound to three different names and would never be equal otherwise.
 literal(path: str, name: str): str
     std.script.chomp(std.script.capture("grep -o 'const char\\* {name} = \"[^\"]*\"' {path} | head -1 | sed 's/.*= //'"))
 end
 
--- The literal returned by the block-body site's function. Anchored on the
--- callee name rather than on the opening brace: `duo explain` and this gate
--- share an interpolation syntax in which a brace is a hole, so the pattern
--- stays brace-free on purpose.
+# The literal returned by the block-body site's function. Anchored on the
+# callee name rather than on the opening brace: `duo explain` and this gate
+# share an interpolation syntax in which a brace is a hole, so the pattern
+# stays brace-free on purpose.
 blocklit(path: str): str
     std.script.chomp(std.script.capture("grep -A1 'const char\\* parity()' {path} | grep -o 'return \"[^\"]*\"' | head -1 | sed 's/^return //'"))
 end
 
-main = (): i64
+main: i64 = ()
     root = here()
     bin = compiler(root)
     dir = "/tmp/duo-transform-gate"
     bad = 0
 
-    -- CONTROL 1 — the runner convicts.
+    # CONTROL 1 — the runner convicts.
     if std.script.status("false") == 0
         shout("FAIL — control: status() called `false` a success")
         bad += 1
     end
 
-    -- CONTROL 2 — the compiler is here.
-    if not present(bin)
+    # CONTROL 2 — the compiler is here.
+    if !present(bin)
         shout("FAIL — no compiler at {bin}; run `zig build` first")
         bad += 1
     end
@@ -116,13 +116,13 @@ main = (): i64
     hooks = { "__comptimemap", "__comptimematch", "__comptimepower", "__derivepower", "__comptimefixpoint", "__comptimetabulate", "__comptimeinterpolate", "__comptimeeach", "__metacatalog" }
     calls = { "call.inline", "call.specialize", "call.memo", "call.devirtualize", "call.gpu_lower", "call.simd_lower" }
 
-    -- CONTROL 3 — every fixture this gate reads is on disk. A grep over a
-    -- missing file is false for every want, which reads as real failures.
+    # CONTROL 3 — every fixture this gate reads is on disk. A grep over a
+    # missing file is false for every want, which reads as real failures.
     i = 1
     while i <= #tier
         leaf = tier[i]
         f = "{root}/examples/parity/{leaf}.id"
-        if not present(f)
+        if !present(f)
             shout("FAIL — missing parity fixture {f}")
             bad += 1
         end
@@ -130,118 +130,118 @@ main = (): i64
     end
     for extra in { "call", "hot", "pipeline" }
         f = "{root}/examples/parity/{extra}.id"
-        if not present(f)
+        if !present(f)
             shout("FAIL — missing fixture {f}")
             bad += 1
         end
     end
 
-    -- One strict-mode explain over one fixture answers every registry and
-    -- dispatch-gate question: the registry is static, the gate is a mode.
+    # One strict-mode explain over one fixture answers every registry and
+    # dispatch-gate question: the registry is static, the gate is a mode.
     reg = "{dir}/registry.json"
-    if not capture("DUO_TRANSFORM_GATE=1 {bin} explain {root}/examples/parity/map.id", reg)
+    if !capture("DUO_TRANSFORM_GATE=1 {bin} explain {root}/examples/parity/map.id", reg)
         shout("FAIL — `duo explain` did not run under DUO_TRANSFORM_GATE=1")
         bad += 1
     end
 
-    -- CONTROL 4 — held() can answer NO.
+    # CONTROL 4 — held() can answer NO.
     if held(reg, "duo-transform-this-string-does-not-exist")
         shout("FAIL — control: held() matched a string that is not in the output")
         bad += 1
     end
 
-    -- D1 — the tier-1 registry is exactly ten, and every entry is registered,
-    -- native-only, and declares all three parity sites.
-    if not held(reg, "\"tier1_count\":10")
+    # D1 — the tier-1 registry is exactly ten, and every entry is registered,
+    # native-only, and declares all three parity sites.
+    if !held(reg, "\"tier1_count\":10")
         shout("FAIL — D1: the tier-1 registry is not ten transforms")
         bad += 1
     end
     i = 1
     while i <= #named
         n = named[i]
-        if not row(reg, "\"transform\":\"{n}\"[^}}]*\"registered\":true")
+        if !row(reg, "\"transform\":\"{n}\"[^}}]*\"registered\":true")
             shout("FAIL — D1: {n} is not registered")
             bad += 1
         end
-        if not row(reg, "\"transform\":\"{n}\"[^}}]*\"requires_parity\":true")
+        if !row(reg, "\"transform\":\"{n}\"[^}}]*\"requires_parity\":true")
             shout("FAIL — D1: {n} does not require a parity test")
             bad += 1
         end
-        if not row(reg, "\"transform\":\"{n}\"[^}}]*\"native_only\":true")
+        if !row(reg, "\"transform\":\"{n}\"[^}}]*\"native_only\":true")
             shout("FAIL — D1: {n} has no native-only contract")
             bad += 1
         end
-        if not row(reg, "\"transform\":\"{n}\"[^}}]*\"parity_contract_satisfied\":true")
+        if !row(reg, "\"transform\":\"{n}\"[^}}]*\"parity_contract_satisfied\":true")
             shout("FAIL — D1: {n} does not declare all three parity sites")
             bad += 1
         end
-        -- M2 — and it must parse as an EXPRESSION, never as a block directive.
-        if not row(reg, "\"transform\":\"{n}\"[^}}]*\"parse_as_expression\":true")
+        # M2 — and it must parse as an EXPRESSION, never as a block directive.
+        if !row(reg, "\"transform\":\"{n}\"[^}}]*\"parse_as_expression\":true")
             shout("FAIL — M2: {n} would parse as a directive, not an expression")
             bad += 1
         end
         i += 1
     end
 
-    -- D2/D3 — every mapped internal hook clears the dispatch gate, under
-    -- STRICT mode. `__metacatalog` is in the list on purpose: it is mapped but
-    -- not tier-1, so it is the row that shows strict mode gating on the
-    -- registry rather than on the parity list.
+    # D2/D3 — every mapped internal hook clears the dispatch gate, under
+    # STRICT mode. `__metacatalog` is in the list on purpose: it is mapped but
+    # not tier-1, so it is the row that shows strict mode gating on the
+    # registry rather than on the parity list.
     i = 1
     while i <= #hooks
         h = hooks[i]
-        if not row(reg, "\"hook\":\"{h}\"[^}}]*\"dispatch_allowed\":true")
+        if !row(reg, "\"hook\":\"{h}\"[^}}]*\"dispatch_allowed\":true")
             shout("FAIL — D2: internal hook {h} is refused by the strict dispatch gate")
             bad += 1
         end
         i += 1
     end
 
-    -- D4 — the log names public registry ids only. An internal hook reaching
-    -- provenance means dispatch logged something the registry never admitted.
+    # D4 — the log names public registry ids only. An internal hook reaching
+    # provenance means dispatch logged something the registry never admitted.
     if std.script.status("sed 's/.*\"transform_provenance\"//; s/\"transform_registry\".*//' {reg} | grep -q '\"transform\":\"__'") == 0
         shout("FAIL — D4: an internal __ hook name reached the provenance log")
         bad += 1
     end
-    if not held(reg, "\"schema\":\"transform-provenance-v0\"")
+    if !held(reg, "\"schema\":\"transform-provenance-v0\"")
         shout("FAIL — D4: no provenance was projected at all")
         bad += 1
     end
 
-    -- C1 — the whole call algebra is registered, native-only, and declares
-    -- exactly the emit_call site. Enumerated from the enum, so an unregistered
-    -- new variant shows up rather than going unmeasured.
+    # C1 — the whole call algebra is registered, native-only, and declares
+    # exactly the emit_call site. Enumerated from the enum, so an unregistered
+    # new variant shows up rather than going unmeasured.
     i = 1
     while i <= #calls
         c = calls[i]
-        if not row(reg, "\"transform\":\"{c}\"[^}}]*\"is_call\":true")
+        if !row(reg, "\"transform\":\"{c}\"[^}}]*\"is_call\":true")
             shout("FAIL — C1: {c} is not classed a call transform")
             bad += 1
         end
-        if not row(reg, "\"transform\":\"{c}\"[^}}]*\"registered\":true")
+        if !row(reg, "\"transform\":\"{c}\"[^}}]*\"registered\":true")
             shout("FAIL — C1: {c} is not registered")
             bad += 1
         end
-        if not row(reg, "\"transform\":\"{c}\"[^}}]*\"native_only\":true")
+        if !row(reg, "\"transform\":\"{c}\"[^}}]*\"native_only\":true")
             shout("FAIL — C1: {c} has no native-only contract")
             bad += 1
         end
-        if not row(reg, "\"transform\":\"{c}\"[^}}]*\"parity_sites\":\\[\"emit_call\"\\]")
+        if !row(reg, "\"transform\":\"{c}\"[^}}]*\"parity_sites\":\\[\"emit_call\"\\]")
             shout("FAIL — C1: {c} does not declare exactly the emit_call site")
             bad += 1
         end
         i += 1
     end
 
-    -- C2/C3 — a plain typed call dispatches call.inline and lowers to a direct
-    -- C call with no boxed invoke anywhere in the translation unit.
+    # C2/C3 — a plain typed call dispatches call.inline and lowers to a direct
+    # C call with no boxed invoke anywhere in the translation unit.
     plain = "{dir}/call.json"
     plainc = "{dir}/call.c"
-    if not capture("{bin} explain {root}/examples/parity/call.id", plain)
+    if !capture("{bin} explain {root}/examples/parity/call.id", plain)
         shout("FAIL — C3: `duo explain` did not run on the call fixture")
         bad += 1
     end
-    if not capture("{bin} dump-c {root}/examples/parity/call.id", plainc)
+    if !capture("{bin} dump-c {root}/examples/parity/call.id", plainc)
         shout("FAIL — C2: `duo dump-c` did not run on the call fixture")
         bad += 1
     end
@@ -253,19 +253,19 @@ main = (): i64
         shout("FAIL — C2: the direct call still emitted lua_invoke")
         bad += 1
     end
-    if not row(plain, "\"transform\":\"call.inline\"[^}}]*\"observed\":true")
+    if !row(plain, "\"transform\":\"call.inline\"[^}}]*\"observed\":true")
         shout("FAIL — C3: call.inline never dispatched")
         bad += 1
     end
 
-    -- C4 — the `@hot` discrimination, kept falsifiable. The two fixtures
-    -- differ only by the attribute, so simd_lower must split them.
+    # C4 — the `@hot` discrimination, kept falsifiable. The two fixtures
+    # differ only by the attribute, so simd_lower must split them.
     hot = "{dir}/hot.json"
-    if not capture("{bin} explain {root}/examples/parity/hot.id", hot)
+    if !capture("{bin} explain {root}/examples/parity/hot.id", hot)
         shout("FAIL — C4: `duo explain` did not run on the @hot fixture")
         bad += 1
     end
-    if not row(hot, "\"transform\":\"call.simd_lower\"[^}}]*\"observed\":true")
+    if !row(hot, "\"transform\":\"call.simd_lower\"[^}}]*\"observed\":true")
         shout("FAIL — C4: the @hot callee did not dispatch call.simd_lower")
         bad += 1
     end
@@ -274,9 +274,9 @@ main = (): i64
         bad += 1
     end
 
-    -- C5 — the native pipeline lowers to a direct call, by the exact C line.
+    # C5 — the native pipeline lowers to a direct call, by the exact C line.
     pipec = "{dir}/pipeline.c"
-    if not capture("{bin} dump-c {root}/examples/parity/pipeline.id", pipec)
+    if !capture("{bin} dump-c {root}/examples/parity/pipeline.id", pipec)
         shout("FAIL — C5: `duo dump-c` did not run on the pipeline fixture")
         bad += 1
     end
@@ -289,9 +289,9 @@ main = (): i64
         bad += 1
     end
 
-    -- M3/M4 — three-site parity, per combinator, on the tracked fixture: the
-    -- top-level, nested-callback and block-body sites must fold to the SAME C
-    -- string literal, and the run must OBSERVE all three sites.
+    # M3/M4 — three-site parity, per combinator, on the tracked fixture: the
+    # top-level, nested-callback and block-body sites must fold to the SAME C
+    # string literal, and the run must OBSERVE all three sites.
     i = 1
     while i <= #tier
         stem = tier[i]
@@ -299,7 +299,7 @@ main = (): i64
         src = "{root}/examples/parity/{stem}.id"
         out = "{dir}/{stem}.c"
         seen = "{dir}/{stem}.json"
-        if not capture("{bin} dump-c {src}", out)
+        if !capture("{bin} dump-c {src}", out)
             shout("FAIL — M3: {stem}.id did not compile")
             bad += 1
         end
@@ -322,20 +322,20 @@ main = (): i64
             shout("FAIL — M3: {n} folded differently at top-level and block-body sites")
             bad += 1
         end
-        if not capture("{bin} explain {src}", seen)
+        if !capture("{bin} explain {src}", seen)
             shout("FAIL — M4: `duo explain` did not run on {stem}.id")
             bad += 1
         end
-        if not row(seen, "\"transform\":\"{n}\"[^}}]*\"parity_observed\":true")
+        if !row(seen, "\"transform\":\"{n}\"[^}}]*\"parity_observed\":true")
             shout("FAIL — M4: {n} did not dispatch at all three parity sites")
             bad += 1
         end
         i += 1
     end
 
-    -- CONTROL 5 — `parity_observed` can answer NO. Without it M4 would pass
-    -- for a field frozen at true, and ten assertions would be one constant.
-    if not row("{dir}/match.json", "\"transform\":\"comp.zip\"[^}}]*\"parity_observed\":false")
+    # CONTROL 5 — `parity_observed` can answer NO. Without it M4 would pass
+    # for a field frozen at true, and ten assertions would be one constant.
+    if !row("{dir}/match.json", "\"transform\":\"comp.zip\"[^}}]*\"parity_observed\":false")
         shout("FAIL — control: a combinator the match fixture never calls still reported full parity")
         bad += 1
     end

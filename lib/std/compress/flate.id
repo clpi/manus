@@ -1,4 +1,4 @@
--- std.compress_flate — DEFLATE compression (mirrors Go's compress/flate)
+# std.compress_flate — DEFLATE compression (mirrors Go's compress/flate)
 
 compress(data: any)
     if data == nil or data == "" return "" end
@@ -14,14 +14,14 @@ compress(data: any)
             j += 1
         end
         if run >= 3
-            out[rawlen(out) + 1] = string.char(0xFE) .. string.char(run) .. ch
+            out[out:len() + 1] = 0xFE:char() .. run:char() .. ch
             i += run
         else
-            out[rawlen(out) + 1] = ch
+            out[out:len() + 1] = ch
             i += 1
         end
     end
-    return table.concat(out)
+    return out:concat()
 end
 
 decompress(data: any)
@@ -35,14 +35,14 @@ decompress(data: any)
             if i + 2 > n break end
             run = data:byte(i + 1)
             ch = data:sub(i + 2, i + 2)
-            out[rawlen(out) + 1] = string.rep(ch, run)
+            out[out:len() + 1] = ch:rep(run)
             i += 3
         else
-            out[rawlen(out) + 1] = data:sub(i, i)
+            out[out:len() + 1] = data:sub(i, i)
             i += 1
         end
     end
-    return table.concat(out)
+    return out:concat()
 end
 
 compress_level(data: any, level: any)

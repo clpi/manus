@@ -1,0 +1,46 @@
+chomp: str = (text: str)
+    n = text:len()
+    while n > 0
+        c = text:byte(n)
+        if c != 10 and c != 13 and c != 32
+            break
+        n -= 1
+    text:sub(1, n)
+
+cap: str = (cmd: str)
+    f = io.popen(cmd, "r")
+    if f == nil
+        return ""
+    out = ""
+    line = f:read("*a")
+    if line != nil
+        out = line
+    f:close()
+    chomp(out)
+
+envor: str = (name: str, fallback: str)
+    v = cap("printenv " .. name .. " 2>/dev/null")
+    if v:len() == 0
+        fallback
+    else
+        v
+
+tally: i64 = (pattern: str)
+    home = envor("DUO_ROOT", ".")
+    out = cap("cd " .. home .. " && git ls-files | grep -c -E '" .. pattern .. "' 2>/dev/null")
+    n = out:len()
+    while n > 0 and (out:byte(n) == 10 or out:byte(n) == 32)
+        n -= 1
+    to(i64)(out:sub(1, n))
+
+ratchet: i64 = (ceiling: i64)
+    if ceiling < 113
+        ceiling
+    else
+        113
+
+main: i64 = ()
+    duo = tally("\\.id$")
+    zig = tally("\\.zig$")
+    print(zig)
+    0

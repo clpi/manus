@@ -1,4 +1,4 @@
--- std.ml.data — Batching, shuffling, and dataset iterators (training pipelines)
+# std.ml.data — Batching, shuffling, and dataset iterators (training pipelines)
 
 batch(samples, batch_size): any
     if batch_size == nil batch_size = 32 end
@@ -29,12 +29,12 @@ from_pairs(xs, ys): any
     return samples
 end
 
--- Fisher–Yates shuffle (in-place on array table)
+# Fisher–Yates shuffle (in-place on array table)
 shuffle(samples): any
     n = #samples
     i = n
     while i >= 2
-        j = math.floor(math.random() * i) + 1
+        j = math.random() * i:floor() + 1
         tmp = samples[i]
         samples[i] = samples[j]
         samples[j] = tmp

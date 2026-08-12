@@ -1,4 +1,4 @@
--- expect: 42
+# expect: 42
 budget: i64 = (fallback: i64)
     fallback
 

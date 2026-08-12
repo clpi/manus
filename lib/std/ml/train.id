@@ -1,4 +1,4 @@
--- std.ml.train — Training loop helpers (forward / loss / backward / step)
+# std.ml.train — Training loop helpers (forward / loss / backward / step)
 
 sgd_step(model, optimizer, lr): any
     if lr == nil lr = optimizer.lr end
@@ -18,19 +18,19 @@ sgd_step(model, optimizer, lr): any
     return model
 end
 
--- One supervised step with cross-entropy on softmax output
+# One supervised step with cross-entropy on softmax output
 @profile
 train_step(model, x, target, lr): f64
     if lr == nil lr = 0.01 end
     tape = std.ml.autodiff.tape_new()
     pred = std.ml.nn.forward(model, x)
     loss = std.ml.nn.cross_entropy(pred, target)
-    -- Backward pass: compute gradients via autodiff tape
+    # Backward pass: compute gradients via autodiff tape
     grad = std.ml.autodiff.backward(tape, loss)
     return loss
 end
 
--- Epoch over a list of { x, y } batches
+# Epoch over a list of { x, y } batches
 fit(model, batches, epochs, lr): any
     if epochs == nil epochs = 1 end
     for e = 1, epochs
@@ -39,7 +39,7 @@ fit(model, batches, epochs, lr): any
             b = batches[i]
             total += train_step(model, b.x, b.y, lr)
         end
-        print(string.format("epoch %d loss %.4f", e, total / #batches))
+        print("epoch %d loss %.4f":format(e, total / #batches))
     end
     return model
 end

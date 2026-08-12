@@ -440,7 +440,7 @@ pub const FuncBody = struct {
     use_clamp_mod_sum: bool = false,
     use_mod_histogram_sum: bool = false,
     use_ema_smooth: bool = false,
-    /// avg = avg * alpha + (i % period) * beta — fold full periods in O(1)
+    /// avg *= alpha; avg += (i % period) * beta — fold full periods in O(1)
     use_ema_period_fold: bool = false,
     ema_alpha: f64 = 0.95,
     ema_beta: f64 = 0.05,
@@ -879,7 +879,7 @@ test "TypeExpr.eql: inferred != named" {
 }
 
 test "Expr.loc returns correct location for all variants" {
-    const loc = Loc{ .line = 42, .col = 10, .file = "test.duo" };
+    const loc = Loc{ .line = 42, .col = 10, .file = "test.id" };
     var dummy_expr = Expr{ .nil = loc };
     var dummy_func_body = FuncBody{
         .loc = loc,

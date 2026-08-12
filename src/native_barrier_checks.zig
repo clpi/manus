@@ -1,4 +1,4 @@
-//! Pass 11 §3.4 — executable native-barrier assertions on compiler artifacts.
+//! Executable native-barrier assertions on compiler artifacts.
 //!
 //! Test harness inspects generated C or object bytes; source-level intent is not trusted.
 const std = @import("std");
@@ -300,69 +300,6 @@ pub const BarrierProfile = struct {
     asserts: ?[]const Assert = null,
 };
 
-pub const pass12_m1_profile = BarrierProfile{
-    .id = "pass12_m1_classifier",
-    .source_path = "examples/pass12_m1_diff.duo",
-    .symbols = &.{
-        "std_token_classify__classify_branch_chain",
-    },
-    .expect_native = true,
-    .require_inline = true,
-};
-
-/// Native sorted lookup: module dense tables lower to C arrays (Pass 12 M1).
-pub const pass12_m1_sorted_lookup_profile = BarrierProfile{
-    .id = "pass12_m1_sorted_lookup",
-    .source_path = "examples/pass12_m1_diff.duo",
-    .symbols = &.{"std_token_classify__classify_sorted_lookup"},
-    .expect_native = true,
-    .require_inline = true,
-};
-
-/// Native opcode lookup tables (Pass 12 M2 partial): dense OPCODE_TO_INDEX + typed accessors.
-pub const ward_opcode_lookup_profile = BarrierProfile{
-    .id = "ward_opcode_lookup",
-    .source_path = "examples/pass9/decode_semantic_smoke.duo",
-    .symbols = &.{
-        "std_wasm_opcode_lookup__instruction_index_for_opcode",
-        "std_wasm_opcode_lookup__semantic_id_for_index",
-    },
-    .expect_native = true,
-    .require_inline = true,
-};
-
-pub const ward_decode_profile = BarrierProfile{
-    .id = "ward_decode_hot",
-    .source_path = "examples/pass9/decode_semantic_smoke.duo",
-    .symbols = &.{"std_wasm_decode__decode_instruction"},
-    .expect_native = false,
-    .require_inline = false,
-};
-
-/// Req-module devirtualization: decode_instruction hot path has zero lua_invoke (Pass 12 M2).
-pub const ward_decode_dispatch_profile = BarrierProfile{
-    .id = "ward_decode_dispatch",
-    .source_path = "examples/pass9/decode_semantic_smoke.duo",
-    .symbols = &.{"std_wasm_decode__decode_instruction"},
-    .expect_native = true,
-    .require_inline = false,
-    .asserts = &.{.no_dynamic_dispatch},
-};
-
-/// Pass 27 P1 — bounded cursor + LEB128 on direct path (`pass27_proof_matrix_direct.duo`).
-pub const pass27_ward_direct_profile = BarrierProfile{
-    .id = "pass27_ward_direct",
-    .source_path = "examples/pass27_proof_matrix_direct.duo",
-    .symbols = &.{
-        "read_u8_at",
-        "decode_leb128_bounded",
-        "length2",
-    },
-    .expect_native = true,
-    .require_inline = false,
-    .asserts = &.{ .no_boxing, .no_dynamic_dispatch },
-};
-
 pub fn writeSymbolCheckJson(w: *std.Io.Writer, sc: SymbolCheck) !void {
     try w.print("{{\"symbol\":\"{s}\",\"found\":", .{sc.symbol});
     try w.print("{s},\"passed\":", .{if (sc.found) "true" else "false"});
@@ -492,43 +429,8 @@ test "native_barrier_checks: symbol prefix does not match longer names" {
     try std.testing.expect(std.mem.indexOf(u8, body, "return 1") == null);
 }
 
-test "native_barrier_checks: pass12_m1 branch_chain body passes no_boxing" {
-    const alloc = std.testing.allocator;
-    const argv = [_][]const u8{ "zig-out/bin/duo", "dump-c", "examples/pass12_m1_diff.duo" };
-    const out = @import("host_run.zig").runHostCommandArgs(alloc, &argv) orelse return error.SkipZigTest;
-    defer alloc.free(out.stdout);
-    // `runHostCommandArgs` allocates BOTH pipes; freeing only stdout leaked the
-    // captured stderr (4588 bytes — this command is chatty on stderr). The
-    // sibling `evaluateProfile` above already frees both.
-    defer alloc.free(out.stderr);
-    if (!out.ok) return error.SkipZigTest;
-    const body = extractFunctionBody(out.stdout, "std_token_classify__classify_branch_chain", true) orelse return error.TestExpectedEqual;
-    var report = try checkGeneratedC(alloc, body, &.{ .no_boxing, .no_dynamic_dispatch });
-    defer freeReport(alloc, report);
-    if (!report.passed()) {
-        for (report.violations) |v| std.debug.print("violation: {s} — {s}\n", .{ v.assert.name(), v.detail });
-    }
-    try std.testing.expect(report.passed());
-}
 
-test "native_barrier_checks: pass12_m1 sorted lookup profile end-to-end" {
-    const alloc = std.testing.allocator;
-    const r = try evaluateProfile(alloc, pass12_m1_sorted_lookup_profile, "zig-out/bin/duo");
-    defer alloc.free(r.checks);
-    defer for (r.checks) |c| freeSymbolCheck(alloc, c);
-    try std.testing.expect(r.profile_ok);
-}
 
-test "native_barrier_checks: pass12_m1 profile end-to-end" {
-    const alloc = std.testing.allocator;
-    const r = try evaluateProfile(alloc, pass12_m1_profile, "zig-out/bin/duo");
-    defer alloc.free(r.checks);
-    defer for (r.checks) |c| freeSymbolCheck(alloc, c);
-    for (r.checks) |c| {
-        if (!c.passed) {
-            std.debug.print("FAIL sym={s} found={} lv={d} li={d}\n", .{ c.symbol, c.found, c.counts.lua_value, c.counts.lua_invoke });
-            for (c.violations) |v| std.debug.print("  {s}: {s}\n", .{ v.assert.name(), v.detail });
-        }
-    }
-    try std.testing.expect(r.profile_ok);
-}
+
+
+

@@ -1,6 +1,6 @@
--- std.ml.shape — Compile-time-friendly shape helpers (const dims + runtime checks)
---
--- `Tensor[M,N,T]` types are resolved in the compiler; use these helpers for runtime bundles and asserts.
+# std.ml.shape — Compile-time-friendly shape helpers (const dims + runtime checks)
+#
+# `Tensor[M,N,T]` types are resolved in the compiler; use these helpers for runtime bundles and asserts.
 
 assert_matmul(a_rows: any, a_cols: any, b_rows: any, b_cols: any)
     assert(a_cols == b_rows, string.format(
@@ -19,7 +19,7 @@ numel(rows, cols): i64
     return rows * cols
 end
 
--- MNIST-style MLP shape bundle
+# MNIST-style MLP shape bundle
 mnist_mlp(): any
     return {
         input = { rows = 784, cols = 1 },
@@ -29,7 +29,7 @@ mnist_mlp(): any
     }
 end
 
--- Transformer block shape template (batch, seq, dim)
+# Transformer block shape template (batch, seq, dim)
 transformer_block(heads, dim): any
     return {
         heads = heads,

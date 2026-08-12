@@ -1,5 +1,5 @@
--- Demonstrate that @comp.derive.eval works on built-in derives too.
--- The macro evaluates Display, Eq, and Hash and reports how much code each produces.
+# Demonstrate that @comp.derive.eval works on built-in derives too.
+# The macro evaluates Display, Eq, and Hash and reports how much code each produces.
 
 @comp.define.derive("ReportBuiltins", generate(meta) -> str
     display_src = @comp.derive.eval("Display", meta)

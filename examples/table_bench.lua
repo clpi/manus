@@ -5,7 +5,7 @@ for i = 1, 100000 do
 end
 local sum = 0
 for i = 1, 100000 do
-    sum = sum + t[i]
+    sum += t[i]
 end
 local t_end = os.clock()
 print("Table sum:", sum)

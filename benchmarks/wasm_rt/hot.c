@@ -6,7 +6,7 @@ static volatile uint32_t seed_src = 0u;
 __attribute__((noinline))
 static uint32_t kernel(uint32_t n, uint32_t seed) {
     uint32_t acc = 1u + seed, i = 0u;
-    while (i < n) { acc = acc * 31u + i; i = i + 1u; }
+    while (i < n) { acc *= 31u; acc += i; i += 1u; }
     return acc;
 }
 static void emit(uint32_t v) {

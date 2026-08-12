@@ -1,10 +1,10 @@
--- std.heap — specialized data structures: binary heap, priority queue, bloom filter, LRU cache
--- These are fundamental for networking (priority scheduling), ML (beam search),
--- and runtime (GC mark queues).
+# std.heap — specialized data structures: binary heap, priority queue, bloom filter, LRU cache
+# These are fundamental for networking (priority scheduling), ML (beam search),
+# and runtime (GC mark queues).
 
--- ═══════════════════════════════════════════════════════════════
--- Binary Min-Heap
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Binary Min-Heap
+# ═══════════════════════════════════════════════════════════════
 
 heap_new(cmp: any): any
     {
@@ -35,13 +35,13 @@ heap_peek(h: any): any
     h.data[1]
 end
 
-heap_size(h: any): i64
+heap_h: any:len(): i64
     h.n
 end
 
 heap_up(h: any, i: i64): void
     while i > 1
-        parent = math.floor(i / 2)
+        parent = i / 2:floor()
         if h.cmp(h.data[i], h.data[parent])
             h.data[i], h.data[parent] = h.data[parent], h.data[i]
             i = parent
@@ -71,9 +71,9 @@ heap_down(h: any, i: i64): void
     end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Priority Queue (keyed heap with decrease-key)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Priority Queue (keyed heap with decrease-key)
+# ═══════════════════════════════════════════════════════════════
 
 pq_new(cmp: any): any
     {
@@ -123,13 +123,13 @@ pq_contains(pq: any, key: any): bool
     pq.index[key] != nil
 end
 
-pq_size(pq: any): i64
+pq_pq: any:len(): i64
     pq.n
 end
 
 heap_up_pq(pq: any, i: i64): void
     while i > 1
-        parent = math.floor(i / 2)
+        parent = i / 2:floor()
         if pq.cmp(pq.data[i], pq.data[parent])
             pq.data[i], pq.data[parent] = pq.data[parent], pq.data[i]
             pq.data[i].pos = i
@@ -163,18 +163,18 @@ heap_down_pq(pq: any, i: i64): void
     end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Bloom Filter (probabilistic set membership)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Bloom Filter (probabilistic set membership)
+# ═══════════════════════════════════════════════════════════════
 
 bloom_new(expected_items: i64, fp_rate: any): any
     if fp_rate == nil fp_rate = 0.01 end
-    -- Optimal bit count: m = -n * ln(p) / (ln2)^2
-    m = math.ceil(-expected_items * math.log(fp_rate) / (math.log(2) * math.log(2)))
-    -- Optimal hash count: k = (m/n) * ln2
-    k = math.ceil((m / expected_items) * math.log(2))
+    # Optimal bit count: m = -n * ln(p) / (ln2)^2
+    m = -expected_items * fp_rate:log() / (2:log() * 2:log()):ceil()
+    # Optimal hash count: k = (m/n) * ln2
+    k = (m / expected_items) * 2:log():ceil()
     bits = {}
-    num_words = math.ceil(m / 64)
+    num_words = m / 64:ceil()
     w = 1
     while w <= num_words
         bits[w] = 0
@@ -188,7 +188,7 @@ bloom_new(expected_items: i64, fp_rate: any): any
     }
 end
 
--- FNV-1a hash for bloom filter
+# FNV-1a hash for bloom filter
 bloom_hash(data: any, seed: i64): i64
     h = 0xcbf29ce484222325 + seed
     i = 1
@@ -213,7 +213,7 @@ bloom_add(bf: any, item: any): void
     i = 0
     while i < bf.num_hashes
         pos = bloom_hash(data, i) % bf.num_bits
-        word = math.floor(pos / 64) + 1
+        word = pos / 64:floor() + 1
         bit = pos % 64
         bf.bits[word] = bf.bits[word] | (1 << bit)
         i += 1
@@ -226,7 +226,7 @@ bloom_may_contain(bf: any, item: any): bool
     i = 0
     while i < bf.num_hashes
         pos = bloom_hash(data, i) % bf.num_bits
-        word = math.floor(pos / 64) + 1
+        word = pos / 64:floor() + 1
         bit = pos % 64
         if (bf.bits[word] & (1 << bit)) == 0
             return false
@@ -237,12 +237,12 @@ bloom_may_contain(bf: any, item: any): bool
 end
 
 bloom_false_positive_rate(bf: any): f64
-    math.pow(1 - math.exp(-bf.num_hashes * bf.count / bf.num_bits), bf.num_hashes)
+    1 - -bf.num_hashes * bf.count / bf.num_bits:exp():pow(bf.num_hashes)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- LRU Cache (fixed-size, O(1) get/put via hash map + doubly-linked list)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# LRU Cache (fixed-size, O(1) get/put via hash map + doubly-linked list)
+# ═══════════════════════════════════════════════════════════════
 
 lru_new(capacity: i64): any
     {
@@ -260,7 +260,7 @@ lru_get(cache: any, key: any): any
         cache.misses = cache.misses + 1
         return nil
     end
-    -- Move to front (most recently used)
+    # Move to front (most recently used)
     lru_touch(cache, key)
     cache.hits = cache.hits + 1
     entry.value
@@ -273,13 +273,13 @@ lru_put(cache: any, key: any, value: any): void
         lru_touch(cache, key)
         return
     end
-    -- Evict if at capacity
+    # Evict if at capacity
     if #cache.list >= cache.capacity
-        oldest = table.remove(cache.list)
+        oldest = cache.list:remove()
         cache.map[oldest] = nil
     end
-    -- Insert at front
-    table.insert(cache.list, 1, key)
+    # Insert at front
+    cache.list:insert(1, key)
     cache.map[key] = {key = key, value = value}
 end
 
@@ -287,8 +287,8 @@ lru_touch(cache: any, key: any): void
     i = 1
     while i <= #cache.list
         if cache.list[i] == key
-            table.remove(cache.list, i)
-            table.insert(cache.list, 1, key)
+            cache.list:remove(i)
+            cache.list:insert(1, key)
             return
         end
         i += 1
@@ -302,7 +302,7 @@ lru_remove(cache: any, key: any): bool
     i = 1
     while i <= #cache.list
         if cache.list[i] == key
-            table.remove(cache.list, i)
+            cache.list:remove(i)
             return true
         end
         i += 1
@@ -310,7 +310,7 @@ lru_remove(cache: any, key: any): bool
     false
 end
 
-lru_size(cache: any): i64
+lru_cache: any:len(): i64
     #cache.list
 end
 
@@ -327,11 +327,11 @@ lru_clear(cache: any): void
     cache.misses = 0
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
--- Heap
--- Priority Queue
--- Bloom Filter
--- LRU Cache
+# Heap
+# Priority Queue
+# Bloom Filter
+# LRU Cache

@@ -1,8 +1,8 @@
--- std.meta.derive — derivable concept descriptors for the Duo standard library
--- These descriptors are ordinary Lua-shaped meta tables, not `concept`
--- declarations. They are suitable for runtime reflection and
--- std.meta.satisfies_concept checks today, while compile-time @implements support
--- still uses parser-level concept declarations.
+# std.meta.derive — derivable concept descriptors for the Duo standard library
+# These descriptors are ordinary Lua-shaped meta tables, not `concept`
+# declarations. They are suitable for runtime reflection and
+# std.meta.satisfies_concept checks today, while compile-time @implements support
+# still uses parser-level concept declarations.
 
 Clone = std.meta.make_concept("Clone", {
     methods = { "clone" },
@@ -148,4 +148,4 @@ DeepClone = std.meta.make_concept("DeepClone", {
     methods = { "deep_clone" },
 })
 
--- Derive module table
+# Derive module table

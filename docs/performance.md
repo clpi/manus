@@ -1,4 +1,4 @@
-# Idsem performance contract
+# Idol performance contract
 
 This file is the stable performance protocol. It is not a volatile project
 status page or a historical optimization diary. Exact results belong to
@@ -8,7 +8,7 @@ run-bound evidence artifacts and current gaps; Git preserves retired records.
 
 The governing objective is maximum semantic knowledge with minimum physical
 state. Equivalent semantics retain at least a C-equivalent lawful realization.
-Idsem may exceed that floor when graph facts justify stronger specialization,
+Idol may exceed that floor when graph facts justify stronger specialization,
 elimination, fusion, layout, algorithm, or target choices.
 
 Native evidence reports separately:

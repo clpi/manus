@@ -1,4 +1,4 @@
--- F-13813-3: nil-init must not pin binding to void*; later str assignment must work
+# F-13813-3: nil-init must not pin binding to void*; later str assignment must work
 
 nil_then_str(): i64
     x = nil

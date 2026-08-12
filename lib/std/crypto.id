@@ -1,13 +1,13 @@
--- std.crypto — cryptographic hash and encoding utilities
+# std.crypto — cryptographic hash and encoding utilities
 
-global crypto_sha = req "std.crypto.sha"
-global hash_sha512 = req "std.hash.sha512"
-global crypto_rand = req "std.crypto.rand"
+global crypto_sha = sha
+global hash_sha512 = sha512
+global crypto_rand = rand
 
--- Wrappers are prefixed with `wrap_` so they don't collide at the C
--- static level with the same-named implementations in std.crypto.sha
--- / std.hash.sha512 when both modules end up embedded in the same
--- compilation unit.
+# Wrappers are prefixed with `wrap_` so they don't collide at the C
+# static level with the same-named implementations in std.crypto.sha
+# / std.hash.sha512 when both modules end up embedded in the same
+# compilation unit.
 sha1(s: str): str
     crypto_sha.sha1(s)
 end
@@ -20,18 +20,18 @@ sha512(s: str): str
     hash_sha512.sha512(s)
 end
 
--- ── Base64 ──────────────────────────────────────────────────────────────
+# ── Base64 ──────────────────────────────────────────────────────────────
 
 B64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
 base64_encode(s: str): str
     if s == nil return "" end
-    -- Partial groups are handled EXPLICITLY rather than by padding the input
-    -- with "\0". Null bytes do not survive runtime string concatenation --
-    -- duo_str_concat is C-string based, so `padded = padded .. "\0"` appends
-    -- nothing and the trailing group is built from whatever follows in memory.
-    -- That is why encode("h") produced "aD==" instead of "aA==": the second
-    -- sextet came from a byte that was never there.
+    # Partial groups are handled EXPLICITLY rather than by padding the input
+    # with "\0". Null bytes do not survive runtime string concatenation #
+    # duo_str_concat is C-string based, so `padded = padded .. "\0"` appends
+    # nothing and the trailing group is built from whatever follows in memory.
+    # That is why encode("h") produced "aD==" instead of "aA==": the second
+    # sextet came from a byte that was never there.
     n = #s
     out = {}
     i = 1
@@ -40,10 +40,10 @@ base64_encode(s: str): str
         b2 = s:byte(i + 1)
         b3 = s:byte(i + 2)
         triple = (b1 * 65536) + (b2 * 256) + b3
-        out[rawlen(out) + 1] = string.sub(B64_CHARS, math.floor(triple / 262144) + 1, math.floor(triple / 262144) + 1)
-        out[rawlen(out) + 1] = string.sub(B64_CHARS, math.floor((triple % 262144) / 4096) + 1, math.floor((triple % 262144) / 4096) + 1)
-        out[rawlen(out) + 1] = string.sub(B64_CHARS, math.floor((triple % 4096) / 64) + 1, math.floor((triple % 4096) / 64) + 1)
-        out[rawlen(out) + 1] = string.sub(B64_CHARS, (triple % 64) + 1, (triple % 64) + 1)
+        out[out:len() + 1] = B64_CHARS:sub(triple / 262144:floor() + 1, triple / 262144:floor() + 1)
+        out[out:len() + 1] = B64_CHARS:sub((triple % 262144) / 4096:floor() + 1, (triple % 262144) / 4096:floor() + 1)
+        out[out:len() + 1] = B64_CHARS:sub((triple % 4096) / 64:floor() + 1, (triple % 4096) / 64:floor() + 1)
+        out[out:len() + 1] = B64_CHARS:sub((triple % 64) + 1, (triple % 64) + 1)
         i += 3
     end
 
@@ -51,32 +51,32 @@ base64_encode(s: str): str
     if rem == 1
         b1 = s:byte(i)
         triple = b1 * 65536
-        out[rawlen(out) + 1] = string.sub(B64_CHARS, math.floor(triple / 262144) + 1, math.floor(triple / 262144) + 1)
-        out[rawlen(out) + 1] = string.sub(B64_CHARS, math.floor((triple % 262144) / 4096) + 1, math.floor((triple % 262144) / 4096) + 1)
-        out[rawlen(out) + 1] = "="
-        out[rawlen(out) + 1] = "="
+        out[out:len() + 1] = B64_CHARS:sub(triple / 262144:floor() + 1, triple / 262144:floor() + 1)
+        out[out:len() + 1] = B64_CHARS:sub((triple % 262144) / 4096:floor() + 1, (triple % 262144) / 4096:floor() + 1)
+        out[out:len() + 1] = "="
+        out[out:len() + 1] = "="
     end
     if rem == 2
         b1 = s:byte(i)
         b2 = s:byte(i + 1)
         triple = (b1 * 65536) + (b2 * 256)
-        out[rawlen(out) + 1] = string.sub(B64_CHARS, math.floor(triple / 262144) + 1, math.floor(triple / 262144) + 1)
-        out[rawlen(out) + 1] = string.sub(B64_CHARS, math.floor((triple % 262144) / 4096) + 1, math.floor((triple % 262144) / 4096) + 1)
-        out[rawlen(out) + 1] = string.sub(B64_CHARS, math.floor((triple % 4096) / 64) + 1, math.floor((triple % 4096) / 64) + 1)
-        out[rawlen(out) + 1] = "="
+        out[out:len() + 1] = B64_CHARS:sub(triple / 262144:floor() + 1, triple / 262144:floor() + 1)
+        out[out:len() + 1] = B64_CHARS:sub((triple % 262144) / 4096:floor() + 1, (triple % 262144) / 4096:floor() + 1)
+        out[out:len() + 1] = B64_CHARS:sub((triple % 4096) / 64:floor() + 1, (triple % 4096) / 64:floor() + 1)
+        out[out:len() + 1] = "="
     end
-    table.concat(out)
+    out:concat()
 end
 
 base64_decode(s: str): str
     if s == nil return "" end
-    clean = string.gsub(s, "[^A-Za-z0-9+/=]", "")
+    clean = s:gsub("[^A-Za-z0-9+/=]", "")
     while #clean % 4 != 0
         clean = clean .. "="
     end
     lookup = {}
     for i = 1, 64
-        lookup[string.sub(B64_CHARS, i, i)] = i - 1
+        lookup[B64_CHARS:sub(i, i)] = i - 1
     end
     out = {}
     for i = 1, #clean, 4
@@ -85,40 +85,40 @@ base64_decode(s: str): str
         c3v = lookup[clean:sub(i + 2, i + 2)] or 0
         c4v = lookup[clean:sub(i + 3, i + 3)] or 0
         triple = c1v * 262144 + c2v * 4096 + c3v * 64 + c4v
-        b1 = math.floor(triple / 65536)
-        b2 = math.floor((triple % 65536) / 256)
+        b1 = triple / 65536:floor()
+        b2 = (triple % 65536) / 256:floor()
         b3 = triple % 256
-        -- Which bytes a 4-character group yields (RFC 4648 s4):
-        --   b1 ALWAYS      -- every group carries at least one byte
-        --   b2 unless char3 is '='
-        --   b3 unless char4 is '='
-        -- The conditions were misassigned: b1 was gated on char3 and b2 on
-        -- char4, so decoding "aGk=" emitted only b1 and returned "h" for "hi".
-        -- One byte lost from every 2-byte tail, silently.
-        out[rawlen(out) + 1] = string.char(b1)
+        # Which bytes a 4-character group yields (RFC 4648 s4):
+        #   b1 ALWAYS      # every group carries at least one byte
+        #   b2 unless char3 is '='
+        #   b3 unless char4 is '='
+        # The conditions were misassigned: b1 was gated on char3 and b2 on
+        # char4, so decoding "aGk=" emitted only b1 and returned "h" for "hi".
+        # One byte lost from every 2-byte tail, silently.
+        out[out:len() + 1] = b1:char()
         if clean:sub(i + 2, i + 2) != "="
-            out[rawlen(out) + 1] = string.char(b2)
+            out[out:len() + 1] = b2:char()
         end
         if clean:sub(i + 3, i + 3) != "="
-            out[rawlen(out) + 1] = string.char(b3)
+            out[out:len() + 1] = b3:char()
         end
     end
-    table.concat(out)
+    out:concat()
 end
 
 B64URL_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
 base64_url_encode(s: str): str
     std = base64_encode(s)
-    result = string.gsub(std, "+", "-")
-    result = string.gsub(result, "/", "_")
-    result = string.gsub(result, "=", "")
+    result = std:gsub("+", "-")
+    result = result:gsub("/", "_")
+    result = result:gsub("=", "")
     result
 end
 
 base64_url_decode(s: str): str
-    padded = string.gsub(s, "-", "+")
-    padded = string.gsub(padded, "_", "/")
+    padded = s:gsub("-", "+")
+    padded = padded:gsub("_", "/")
     pad_len = (4 - (#padded % 4)) % 4
     for _ = 1, pad_len
         padded = padded .. "="
@@ -126,7 +126,7 @@ base64_url_decode(s: str): str
     base64_decode(padded:to(str))
 end
 
--- ── Hex ─────────────────────────────────────────────────────────────────
+# ── Hex ─────────────────────────────────────────────────────────────────
 
 HEX_CHARS = "0123456789abcdef"
 
@@ -135,34 +135,34 @@ hex_encode(s: str): str
     out = ""
     for i = 1, #s
         b = s:byte(i)
-        hi = math.floor(b / 16) + 1
+        hi = b / 16:floor() + 1
         lo = (b % 16) + 1
-        out = out .. string.sub(HEX_CHARS, hi, hi) .. string.sub(HEX_CHARS, lo, lo)
+        out = out .. HEX_CHARS:sub(hi, hi) .. HEX_CHARS:sub(lo, lo)
     end
     out
 end
 
 hex_decode(s: str): str
     if s == nil return "" end
-    clean = string.gsub(s, "[^0-9a-fA-F]", "")
+    clean = s:gsub("[^0-9a-fA-F]", "")
     if #clean % 2 != 0 clean = "0" .. clean end
     out = ""
     hex_map = {}
     for i = 1, 16
-        hex_map[string.sub(HEX_CHARS, i, i)] = i - 1
-        hex_map[string.sub("ABCDEF", i - 10, i - 10)] = i - 1
+        hex_map[HEX_CHARS:sub(i, i)] = i - 1
+        hex_map["ABCDEF":sub(i - 10, i - 10)] = i - 1
     end
     for i = 1, #clean, 2
         hi = clean:sub(i, i)
         lo = clean:sub(i + 1, i + 1)
-        h = hex_map[string.lower(hi)] or 0
-        l = hex_map[string.lower(lo)] or 0
-        out = out .. string.char(h * 16 + l)
+        h = hex_map[hi:lower()] or 0
+        l = hex_map[lo:lower()] or 0
+        out = out .. h * 16 + l:char()
     end
     out
 end
 
--- ── XOR encryption ──────────────────────────────────────────────────────
+# ── XOR encryption ──────────────────────────────────────────────────────
 
 xor_encrypt(s: str, key: str): str
     if s == nil or key == nil return "" end
@@ -171,12 +171,12 @@ xor_encrypt(s: str, key: str): str
     for i = 1, #s
         sc = s:byte(i)
         kc = key:byte(((i - 1) % key_len) + 1)
-        out = out .. string.char(sc ~ kc)
+        out = out .. sc ~ kc:char()
     end
     out
 end
 
--- ── Secure random ───────────────────────────────────────────────────────
+# ── Secure random ───────────────────────────────────────────────────────
 
 secure_random_bytes(n: i64): str
     if n == nil or n <= 0 return "" end
@@ -188,13 +188,13 @@ secure_random_hex(n: i64): str
 end
 
 secure_random_int(): i64
-    -- `int` takes a required bound and returns `r % max`; calling it with no
-    -- argument did not compile, which took std.crypto and its four dependents
-    -- down. Unbounded here means the full i64 range.
+    # `int` takes a required bound and returns `r % max`; calling it with no
+    # argument did not compile, which took std.crypto and its four dependents
+    # down. Unbounded here means the full i64 range.
     crypto_rand.int(9223372036854775807)
 end
 
--- ── Constant-time comparison (timing-attack safe) ───────────────────────
+# ── Constant-time comparison (timing-attack safe) ───────────────────────
 
 compare_digest(a: str, b: str): bool
     if a == nil or b == nil return false end
@@ -206,7 +206,7 @@ compare_digest(a: str, b: str): bool
     result == 0
 end
 
--- ── HMAC (RFC 2104) ────────────────────────────────────────────────────
+# ── HMAC (RFC 2104) ────────────────────────────────────────────────────
 
 hmac_sha256(key: str, message: str): str
     block_size = 64
@@ -220,8 +220,8 @@ hmac_sha256(key: str, message: str): str
     o_key_pad = ""
     i_key_pad = ""
     for i = 1, block_size
-        o_key_pad = o_key_pad .. string.char(k:byte(i) ~ 0x5c)
-        i_key_pad = i_key_pad .. string.char(k:byte(i) ~ 0x36)
+        o_key_pad = o_key_pad .. k:byte(i) ~ 0x5c:char()
+        i_key_pad = i_key_pad .. k:byte(i) ~ 0x36:char()
     end
     sha256(o_key_pad .. sha256(i_key_pad .. message))
 end

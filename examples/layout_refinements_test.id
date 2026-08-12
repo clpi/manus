@@ -1,12 +1,12 @@
--- The refinement spelling of examples/layout_attrs_test.id.
---
--- Pass 100 §11 calls packed/aligned/endian/at-address "layout FACTS", and
--- LAW-STRATA makes `&` the refinement edge that carries them. The `@packed` /
--- `@align(n)` attributes in the sibling file store exactly the same fact
--- through `ast.Attribute`; this file stores it on the descriptor.
---
--- Both files print 6 and emit byte-identical C. That equality is the point:
--- the attribute was never a second mechanism, only a second spelling.
+# The refinement spelling of examples/layout_attrs_test.id.
+#
+# Pass 100 §11 calls packed/aligned/endian/at-address "layout FACTS", and
+# LAW-STRATA makes `&` the refinement edge that carries them. The `@packed` /
+# `@align(n)` attributes in the sibling file store exactly the same fact
+# through `ast.Attribute`; this file stores it on the descriptor.
+#
+# Both files print 6 and emit byte-identical C. That equality is the point:
+# the attribute was never a second mechanism, only a second spelling.
 global gp: { x: i8, y: i64 } & packed & align(16) = { x = 1, y = 2 }
 
 p: { x: i8, y: i64 } & packed & align(8) = { x = 3, y = 4 }

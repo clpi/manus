@@ -1,5 +1,5 @@
--- std.hash.sha512 — SHA-512 hash (mirrors Go's crypto/sha512)
--- Pure-Duo implementation using 32-bit word pairs to represent 64-bit values.
+# std.hash.sha512 — SHA-512 hash (mirrors Go's crypto/sha512)
+# Pure-Duo implementation using 32-bit word pairs to represent 64-bit values.
 
 make_wide(hi: i64, lo: i64): any
     {hi = hi % (4294967296), lo = lo % (4294967296)}
@@ -54,7 +54,7 @@ wide_ror(a: any, n: i64): any
 end
 
 wide_to_hex(a: any): str
-    string.format("%08x%08x", a.hi, a.lo)
+    "%08x%08x":format(a.hi, a.lo)
 end
 
 wide_from_bytes(data: str, off: i64): any
@@ -121,13 +121,13 @@ H_init = {
 
 sha512(s: str): str
     if s == nil s = "" end
-    msg = s .. string.char(0x80)
+    msg = s .. 0x80:char()
     while #msg % 128 != 112
-        msg = msg .. string.char(0)
+        msg = msg .. 0:char()
     end
     bit_len = #s * 8
     for i = 1, 16
-        msg = msg .. string.char((bit_len >> (16 - i) * 8) % 256)
+        msg = msg .. (bit_len >> (16 - i) * 8) % 256:char()
     end
     H = {}
     for i = 1, 8

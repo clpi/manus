@@ -1,14 +1,14 @@
--- std.wasm.decode — cursor-integrated Wasm opcode + immediate decoding (Pass 9 P9-06).
---
--- Uses std.bytes (any-buffer) until std.cursor ByteCursor native lowering lands (P9-WS3).
--- Semantic opcode facts: src/wasm_semantic.zig via std.wasm.opcode_lookup (generated).
---
--- Regenerate lookup: duo wasm-tables emit
+# std.wasm.decode — cursor-integrated Wasm opcode + immediate decoding (Pass 9 P9-06).
+#
+# Uses std.bytes (any-buffer) until std.cursor ByteCursor native lowering lands (P9-WS3).
+# Semantic opcode facts: src/wasm_semantic.zig via std.wasm.opcode_lookup (generated).
+#
+# Regenerate lookup: duo wasm-tables emit
 
--- Cursor: local { data, pos, len } table (mutates in-module; std.cursor when native).
+# Cursor: local { data, pos, len } table (mutates in-module; std.cursor when native).
 
-Inst = req "std.wasm.instruction"
-Lookup = req "std.wasm.opcode_lookup"
+Inst = instruction
+Lookup = opcode_lookup
 
 DECODER_OWNER = "lib/std/wasm/decode.id"
 SEMANTIC_TABLE = Inst.decoder_table_owner()
@@ -103,8 +103,8 @@ decode_opcode(c): any
     return { status = "ok", opcode = op }
 end
 
--- Reads opcode once on c (mutates cursor). Avoid nested decode_opcode call — embedded
--- modules may not propagate table mutation through nested req calls.
+# Reads opcode once on c (mutates cursor). Avoid nested decode_opcode call — embedded
+# modules may not propagate table mutation through nested req calls.
 decode_instruction(c): any
     op = read_byte(c)
     if op < 0 return { status = "eof" } end

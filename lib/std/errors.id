@@ -1,32 +1,32 @@
--- std.errors — error creation and wrapping (mirrors Go's errors package)
--- In Duo, errors are represented as tables with a `message` field and
--- optional `cause` chain. The `error` interface is just a callable returning
--- a string description.
+# std.errors — error creation and wrapping (mirrors Go's errors package)
+# In Duo, errors are represented as tables with a `message` field and
+# optional `cause` chain. The `error` interface is just a callable returning
+# a string description.
 
--- new: create a new error with the given message.
+# new: create a new error with the given message.
 new(message: any): any
     return {message = message, cause = nil, kind = "error"}
 end
 
--- newf: create a new error with formatted message.
+# newf: create a new error with formatted message.
 newf(fmt: any): any
     return {message = fmt:to(str), cause = nil, kind = "error"}
 end
 
--- wrap: create a new error wrapping an existing one (adds context).
+# wrap: create a new error wrapping an existing one (adds context).
 wrap(err: any, message: str): any
     if err == nil return new(message) end
     {message = message, cause = err, kind = "wrapped"}
 end
 
--- wrapf: wrap with a formatted message.
+# wrapf: wrap with a formatted message.
 wrapf(err: any, fmt: any): any
     msg = fmt:to(str)
     if err == nil return new(msg) end
     return {message = msg, cause = err, kind = "wrapped"}
 end
 
--- is: report whether err (or any error in its cause chain) matches target.
+# is: report whether err (or any error in its cause chain) matches target.
 is(err: any, target: any): bool
     if err == nil return false end
     if target == nil return false end
@@ -39,7 +39,7 @@ is(err: any, target: any): bool
     false
 end
 
--- as: extract a specific error type from the chain (returns the error or nil).
+# as: extract a specific error type from the chain (returns the error or nil).
 as(err: any, kind: str): any
     if err == nil return nil end
     cur = err
@@ -50,37 +50,37 @@ as(err: any, kind: str): any
     nil
 end
 
--- unwrap: return the cause of err, or nil if err has no cause.
+# unwrap: return the cause of err, or nil if err has no cause.
 unwrap(err: any): any
     if err == nil return nil end
     err.cause
 end
 
--- message: get the message string of an error (or nil).
+# message: get the message string of an error (or nil).
 message(err: any): any
     if err == nil return nil end
     if type(err) == "string" return err end
     err.message
 end
 
--- join: combine multiple errors into one.
+# join: combine multiple errors into one.
 join(...errs): any
     parts = {}
     i = 1
-    while i <= rawlen(errs)
+    while i <= errs:len()
         e = errs[i]
         if e != nil
             msg = e.message
             if msg == nil msg = e:to(str) end
-            parts[rawlen(parts) + 1] = msg
+            parts[parts:len() + 1] = msg
         end
         i += 1
     end
-    if rawlen(parts) == 0 return nil end
-    {message = table.concat(parts, "; "), cause = nil, kind = "joined"}
+    if parts:len() == 0 return nil end
+    {message = parts:concat("; "), cause = nil, kind = "joined"}
 end
 
--- to_str: convert an error to a human-readable string.
+# to_str: convert an error to a human-readable string.
 to_str(err: any): str
     if err == nil return "" end
     if type(err) == "string" return err end

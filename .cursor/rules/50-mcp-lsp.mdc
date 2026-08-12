@@ -1,13 +1,21 @@
 ---
-globs: ["tools/mcp/**", "tools/lsp/**", "tools/devnode/**", ".cursor/**", ".codex/**", ".agents/AGENT_INTEGRATION.md"]
+globs: ["tools/mcp/**", "tools/lsp/**", "tools/node/dev/**", ".cursor/**", ".codex/**", ".agents/AGENT_INTEGRATION.md"]
 ---
 
 # MCP LSP
 
 The in-tree MCP compatibility transports are declared once by the
-client-neutral `tools/devnode/mcp.manifest.json` and projected into Codex and
-Cursor by `tools/devnode/generate-configs`. Generated absolute-path client
+client-neutral `tools/node/dev/mcp.manifest.json` and projected into Codex and
+Cursor by `tools/node/dev/generate-configs`. Generated absolute-path client
 files are machine-local state, not additional manifest authority.
+
+Install the **`idol-dev`** agent skill with `./tools/node/dev/install-skills`.
+Do not use the retired `duon-development` skill name. Physical `duo-*` MCP
+server and tool names remain bootstrap aliases.
+
+Do not add host OS API calls or host-shaped wrappers to canonical source until
+`docs/spec/host.md` closure is implemented (`GAP-154`). Host APIs belong at
+ingress/egress bootstrap boundaries only.
 
 MCP health requires real JSON-RPC initialize and gate execution, not config
 presence or compilation. Protocol stdout must contain protocol data only;

@@ -2,8 +2,8 @@
 const std = @import("std");
 const sim = @import("sim.zig");
 const types = @import("types.zig");
-const pass26_wiring = @import("pass26_wiring.zig");
-const pass26_abi_resource = @import("pass26_abi_resource.zig");
+const wiring = @import("wiring.zig");
+const abi_resource = @import("abi_resource.zig");
 
 pub const ForeignFunc = struct {
     name: []const u8,
@@ -17,7 +17,7 @@ pub const ForeignFunc = struct {
     /// Pass 26 — semantic boundary on C foreign lift (default P26-B02).
     boundary_id: []const u8 = "P26-B02",
     /// Pass 26 — calling convention descriptor kind.
-    calling_conv: pass26_abi_resource.CallingConventionKind = .c_abi,
+    calling_conv: abi_resource.CallingConventionKind = .c_abi,
 
     pub fn deinit(self: *ForeignFunc, alloc: std.mem.Allocator) void {
         alloc.free(self.name);
@@ -168,7 +168,7 @@ fn funcFromEntity(
         "unknown"
     else
         try alloc.dupe(u8, pass_by);
-    const lift_meta = pass26_wiring.foreignLiftMetadata(pass_by);
+    const lift_meta = wiring.foreignLiftMetadata(pass_by);
     return .{
         .name = try alloc.dupe(u8, ent.name),
         .c_symbol = try alloc.dupe(u8, ent.name),

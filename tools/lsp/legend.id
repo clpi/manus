@@ -1,35 +1,35 @@
--- tools/lsp/legend.id — GENERATE the LSP semantic-token legend.
---
--- CLAUDE.md §0d: "`highlights.scm` and the LSP legend are GENERATED from the
--- graph service — hand edits are an H-1 drift finding." This is the generator
--- for the LSP half, and it does not own a taxonomy. It asks the one the RULING
--- settled on.
---
--- WHERE IT ASKS, AND WHY THAT CHANGED. This generator first read
--- `docs/spec/roles.md` §2/§3 — 17 hued roles plus 13 the law required and left
--- unhued. Two implementations had landed with opposite readings and gap[078]
--- recorded the conflict rather than picking. §0d then RULED:
---
---     H-2 RULES CLOSURE, NOT A COUNT. FINE SPLITS ARE CARDS, NOT ROLES, and the
---     discriminator is HUE — a split that changes hue is a role, a split within
---     one hue is a card, EXCEPT where the law names a role outright (Pass 118
---     §4 does, for the space walk). The ordinary binding is `place`.
---
--- So the winning enumeration is the one in `tools/lsp/src/highlight.id`, and
--- this file reads it through that file's own published interface —
--- `hlmode=legend`, which prints `<index> <role> <modifier>` — rather than
--- re-deriving it. One vocabulary, two consumers: `highlights.scm` for
--- tree-sitter and this legend for the LSP, both out of the same table.
---
--- WHAT THE GENERATOR STILL REFUSES TO DO. It does not invent, reorder or
--- rename a role, and it will not write a legend at all if the source enumerates
--- nothing. `zig build lsp-gate` re-derives this block on every run and fails if
--- the committed copy drifted, so a hand edit is caught on the commit that makes
--- it.
---
--- Run: duo run tools/lsp/legend.id    (writes in place, prints what changed)
--- Exit 0 wrote or already current · 2 the taxonomy source could not be read or
--- enumerated no roles at all — no file was touched.
+# tools/lsp/legend.id — GENERATE the LSP semantic-token legend.
+#
+# CLAUDE.md §0d: "`highlights.scm` and the LSP legend are GENERATED from the
+# graph service — hand edits are an H-1 drift finding." This is the generator
+# for the LSP half, and it does not own a taxonomy. It asks the one the RULING
+# settled on.
+#
+# WHERE IT ASKS, AND WHY THAT CHANGED. This generator first read
+# `docs/spec/roles.md` §2/§3 — 17 hued roles plus 13 the law required and left
+# unhued. Two implementations had landed with opposite readings and gap[078]
+# recorded the conflict rather than picking. §0d then RULED:
+#
+#     H-2 RULES CLOSURE, NOT A COUNT. FINE SPLITS ARE CARDS, NOT ROLES, and the
+#     discriminator is HUE — a split that changes hue is a role, a split within
+#     one hue is a card, EXCEPT where the law names a role outright (Pass 118
+#     §4 does, for the space walk). The ordinary binding is `place`.
+#
+# So the winning enumeration is the one in `tools/lsp/src/highlight.id`, and
+# this file reads it through that file's own published interface —
+# `hlmode=legend`, which prints `<index> <role> <modifier>` — rather than
+# re-deriving it. One vocabulary, two consumers: `highlights.scm` for
+# tree-sitter and this legend for the LSP, both out of the same table.
+#
+# WHAT THE GENERATOR STILL REFUSES TO DO. It does not invent, reorder or
+# rename a role, and it will not write a legend at all if the source enumerates
+# nothing. `zig build lsp-gate` re-derives this block on every run and fails if
+# the committed copy drifted, so a hand edit is caught on the commit that makes
+# it.
+#
+# Run: duo run tools/lsp/legend.id    (writes in place, prints what changed)
+# Exit 0 wrote or already current · 2 the taxonomy source could not be read or
+# enumerated no roles at all — no file was touched.
 
 root = std.os.getenv("DUO_ROOT")
 if root == nil or root == ""
@@ -61,9 +61,9 @@ lines(s: str): any
     out
 end
 
--- Field `want` of a space-separated record, "" when the record is shorter.
--- `hlmode=legend` prints `<index> <role> <modifier>`, and a modifier of "-"
--- means the role carries none.
+# Field `want` of a space-separated record, "" when the record is shorter.
+# `hlmode=legend` prints `<index> <role> <modifier>`, and a modifier of "-"
+# means the role carries none.
 field(rec: str, want: i64): str
     n = #rec
     i = 1
@@ -94,10 +94,10 @@ third(rec: str): str
     field(rec, 3)
 end
 
--- Literal substring search. Written out rather than reached for in std: the
--- ambient `std.string` path has resolved to a missing member before in this
--- tree, and a search that answers nil for "absent" and nil for "not wired"
--- would make the marker check below pass by accident.
+# Literal substring search. Written out rather than reached for in std: the
+# ambient `std.string` path has resolved to a missing member before in this
+# tree, and a search that answers nil for "absent" and nil for "not wired"
+# would make the marker check below pass by accident.
 findat(hay: str, needle: str): i64
     hn = #hay
     nn = #needle
@@ -155,11 +155,11 @@ main(): i64
         i = i + 1
     end
 
-    -- H-2 rules CLOSURE, not a count (gaps/GAP-078.md), so no number is asserted
-    -- here. What this generator refuses is a legend with nothing behind it: an
-    -- empty enumeration, or one whose rows carry no modifier axis. A fixed count
-    -- would have refused the taxonomy the moment Pass 118 §4 named a nineteenth
-    -- role, which is exactly the event closure is supposed to survive.
+    # H-2 rules CLOSURE, not a count (gaps/GAP-078.md), so no number is asserted
+    # here. What this generator refuses is a legend with nothing behind it: an
+    # empty enumeration, or one whose rows carry no modifier axis. A fixed count
+    # would have refused the taxonomy the moment Pass 118 §4 named a nineteenth
+    # role, which is exactly the event closure is supposed to survive.
     nclosed = #closed
     nmods = #mods
     if nclosed == 0
@@ -217,9 +217,9 @@ main(): i64
         return 2
     end
 
-    -- Splice between the markers. Both must be present: a generator that
-    -- APPENDS when it cannot find its own block silently doubles the legend,
-    -- and the second copy wins at load time.
+    # Splice between the markers. Both must be present: a generator that
+    # APPENDS when it cannot find its own block silently doubles the legend,
+    # and the second copy wins at load time.
     a = findat(cur, opener)
     b = findat(cur, closer)
     if a == 0 or b == 0 or b < a

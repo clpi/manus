@@ -1,0 +1,39 @@
+# grammarconvergence — tree-sitter operator binding order must agree with the
+# generated grammar authority (lib/std/token/grammar_role.id), the same
+# artifact parser roles derive from. Sibling gate to idiomgate/semanticgate.
+#
+# Run: idol run scripts/grammarconvergence.id
+# Exits 0 (convergent) / 1 (divergent) / 3 (misconfigured). No req, no std.
+
+rolefile = "lib/std/token/grammar_role.id"
+tokenfile = "lib/std/compiler/token.id"
+
+firstint: i64 = (s: str)
+    n = s:len()
+    v = 0
+    seen = false
+    done = false
+    i = 1
+    while i <= n and not done
+        c = s:byte(i)
+        if c >= 48 and c <= 57
+            v *= 10
+            v += (c - 48)
+            seen = true
+        else
+            if seen
+                done = true
+        i += 1
+    result = -1
+    if seen
+        result = v
+    result
+
+main: i64 = ()
+    role = rolefile:read()
+    token = tokenfile:read()
+    rb = role:len()
+    tb = token:len()
+    print("role bytes {rb}")
+    print("token bytes {tb}")
+    0

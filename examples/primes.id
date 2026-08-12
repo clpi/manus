@@ -1,5 +1,5 @@
--- Sieve of Eratosthenes — typed duo, generates native C
--- Shows typed array usage and numeric loops at C speed.
+# Sieve of Eratosthenes — typed duo, generates native C
+# Shows typed array usage and numeric loops at C speed.
 
 const LIMIT: i64 = 10000
 

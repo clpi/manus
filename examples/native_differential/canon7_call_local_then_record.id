@@ -1,8 +1,8 @@
 tok: @{ kind: i64, start: i64, len: i64 }
-one = (x: i64): i64
+one: i64 = (x: i64)
     x + 1
 end
-scan = (pos: i64): tok
+scan: tok = (pos: i64)
     k = one(pos)
     { kind = k, start = pos, len = 1 }
 end

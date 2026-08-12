@@ -1,14 +1,14 @@
--- gap[104], the same hole reached through `while` instead of `if`.
---
--- A loop body is lowered with `allow_return = false` for a good reason — its
--- last statement runs once per iteration, not once per call — and that is
--- exactly the flag that used to decide whether `blk.tail_expr` was lowered at
--- all. So an ordinary accumulate-then-emit loop iterated the right number of
--- times and produced nothing.
---
--- Three `b` lines, then `3`.
+# gap[104], the same hole reached through `while` instead of `if`.
+#
+# A loop body is lowered with `allow_return = false` for a good reason — its
+# last statement runs once per iteration, not once per call — and that is
+# exactly the flag that used to decide whether `blk.tail_expr` was lowered at
+# all. So an ordinary accumulate-then-emit loop iterated the right number of
+# times and produced nothing.
+#
+# Three `b` lines, then `3`.
 
-main = (): i64
+main: i64 = ()
     n: i64 = 0
     while n < 3
         n += 1

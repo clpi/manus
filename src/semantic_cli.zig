@@ -1,4 +1,4 @@
-//! Pass 12 CLI projections — `duo semantic` (Goal D, MCP parity without network).
+//! CLI projections — `duo semantic` (Goal D, MCP parity without network).
 const std = @import("std");
 const token_semantic = @import("token_semantic.zig");
 const wasm_decode_semantic = @import("wasm_decode_semantic.zig");

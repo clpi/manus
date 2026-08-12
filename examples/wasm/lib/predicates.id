@@ -1,4 +1,4 @@
--- Boolean predicate exports for WAST testing.
+# Boolean predicate exports for WAST testing.
 
 @export
 is_even(n: int): int

@@ -1,7 +1,7 @@
 #!/bin/sh
 # List OPEN P0 gaps and their filed-by owner. Until GAP-131 closes, the
 # session-start P0 summary is incomplete; this scan plus the exact gap files
-# are the routing evidence. Pattern matches tools/devnode/orient.
+# are the routing evidence. Pattern matches tools/node/dev/orient.
 set -eu
 repo="$(cd "$(dirname "$0")/../../../.." && pwd)"
 cd "$repo"

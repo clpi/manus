@@ -1,16 +1,16 @@
--- std.ffi_gen — Intelligent FFI Binding Generator
--- At compile time, parses C headers and generates Duo FFI bindings
--- with proper type mapping, error handling, and memory management hints.
---
--- Usage:
---   local ffi = req "std.ffi_gen"
---   local bindings = ffi.from_header("sqlite3.h", { prefix = "sqlite3_" })
---   -- bindings contains generated C code as a string
---   -- Pass to @c.emit(@run(...)) or use directly
+# std.ffi_gen — Intelligent FFI Binding Generator
+# At compile time, parses C headers and generates Duo FFI bindings
+# with proper type mapping, error handling, and memory management hints.
+#
+# Usage:
+#   local ffi = ffi_gen
+#   local bindings = ffi.from_header("sqlite3.h", { prefix = "sqlite3_" })
+#   # bindings contains generated C code as a string
+#   # Pass to @c.emit(@run(...)) or use directly
 
--- ═══════════════════════════════════════════════════════════════
--- Helpers
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Helpers
+# ═══════════════════════════════════════════════════════════════
 
 str_join(parts: any, sep: str): str
     result = ""
@@ -23,22 +23,22 @@ str_join(parts: any, sep: str): str
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Header parsing and binding generation
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Header parsing and binding generation
+# ═══════════════════════════════════════════════════════════════
 
--- from_header: parse a C header and generate Duo FFI bindings.
--- Use at module scope: the caller preprocesses with @run and passes the source.
--- Example:
---   local preprocessed = @run("echo '#include \"sqlite3.h\"' | cc -E -dM -x c - 2>/dev/null | head -500")
---   local bindings = ffi.from_header_source(preprocessed, { prefix = "sqlite3_" })
+# from_header: parse a C header and generate Duo FFI bindings.
+# Use at module scope: the caller preprocesses with @run and passes the source.
+# Example:
+#   local preprocessed = @run("echo '#include \"sqlite3.h\"' | cc -E -dM -x c - 2>/dev/null | head -500")
+#   local bindings = ffi.from_header_source(preprocessed, { prefix = "sqlite3_" })
 from_header(header: str, opts: any): str
-    -- NOTE: @run with string concat doesn't work inside function bodies.
-    -- Use from_header_source() with a preprocessed string instead.
+    # NOTE: @run with string concat doesn't work inside function bodies.
+    # Use from_header_source() with a preprocessed string instead.
     "/* from_header: use from_header_source() with @run at module scope */"
 end
 
--- from_source: parse a preprocessed header source string directly.
+# from_source: parse a preprocessed header source string directly.
 from_source(source: str, opts: any): str
     if opts == nil opts = {} end
     prefix = opts.prefix or ""
@@ -57,25 +57,25 @@ from_source(source: str, opts: any): str
     str_join(parts, "\n")
 end
 
--- ═══════════════════════════════════════════════════════════════
--- C declaration parser
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# C declaration parser
+# ═══════════════════════════════════════════════════════════════
 
--- parse_c_declarations: extract function signatures from C source.
+# parse_c_declarations: extract function signatures from C source.
 parse_c_declarations(source: str, prefix: str, excludes: any, includes: any): any
     funcs = {}
-    lines = string.split(source, "\n")
+    lines = source:split("\n")
     for _, line in lines
-        line = string.gsub(line, "^%s+", "")
-        line = string.gsub(line, "%s+$", "")
+        line = line:gsub("^%s+", "")
+        line = line:gsub("%s+$", "")
         if line:sub(1, 1) != "#"
            and line:sub(1, 2) != "//"
-           and not string.match(line, "^typedef")
-           and not string.match(line, "^struct ")
-           and not string.match(line, "^enum ")
-           and not string.match(line, "^union ")
-           and not string.match(line, "^#")
-            ret_type, name, params = string.match(line, "^(%S+)%s+(%w+)%s*%((.-)%)%s*;")
+           and not line:match("^typedef")
+           and not line:match("^struct ")
+           and not line:match("^enum ")
+           and not line:match("^union ")
+           and not line:match("^#")
+            ret_type, name, params = line:match("^(%S+)%s+(%w+)%s*%((.-)%)%s*;")
             if ret_type and name
                 if prefix == "" or name:sub(1, #prefix) == prefix
                     if not excludes[name]
@@ -104,16 +104,16 @@ parse_c_declarations(source: str, prefix: str, excludes: any, includes: any): an
     funcs
 end
 
--- parse_c_params: parse a C parameter list string into a list of {type, name} pairs
+# parse_c_params: parse a C parameter list string into a list of {type, name} pairs
 parse_c_params(params_str: str): any
     if params_str == "void" or params_str == "" return {} end
     params = {}
-    parts = string.split(params_str, ",")
+    parts = params_str:split(",")
     for _, part in parts
-        part = string.gsub(part, "^%s+", "")
-        part = string.gsub(part, "%s+$", "")
+        part = part:gsub("^%s+", "")
+        part = part:gsub("%s+$", "")
         tokens = {}
-        for token in string.gmatch(part, "%S+") do
+        for token in part:gmatch("%S+") do
             tokens[#tokens + 1] = token
         end
         if #tokens >= 2
@@ -126,8 +126,8 @@ parse_c_params(params_str: str): any
             params[#params + 1] = {
                 c_type = typ,
                 name = name,
-                is_pointer = string.find(typ, "*") != nil,
-                is_const = string.find(typ, "const") != nil,
+                is_pointer = typ:find("*") != nil,
+                is_const = typ:find("const") != nil,
             }
         elseif #tokens == 1
             params[#params + 1] = {
@@ -141,15 +141,15 @@ parse_c_params(params_str: str): any
     params
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Type mapping: C types → Duo types
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Type mapping: C types → Duo types
+# ═══════════════════════════════════════════════════════════════
 
 c_type_to_duo(c_type: str, is_pointer: bool): str
-    base = string.gsub(c_type, "%*", "")
-    base = string.gsub(base, "const ", "")
-    base = string.gsub(base, "^%s+", "")
-    base = string.gsub(base, "%s+$", "")
+    base = c_type:gsub("%*", "")
+    base = base:gsub("const ", "")
+    base = base:gsub("^%s+", "")
+    base = base:gsub("%s+$", "")
 
     if is_pointer
         if base == "char" return "str" end
@@ -171,19 +171,19 @@ c_type_to_duo(c_type: str, is_pointer: bool): str
 end
 
 c_ret_type_to_duo(c_type: str): str
-    cleaned = string.gsub(c_type, "^%s+", "")
-    cleaned = string.gsub(cleaned, "%s+$", "")
+    cleaned = c_type:gsub("^%s+", "")
+    cleaned = cleaned:gsub("%s+$", "")
     if cleaned == "void" return "void" end
-    if string.find(cleaned, "*") return "any" end
+    if cleaned:find("*") return "any" end
     c_type_to_duo(cleaned, false)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Binding generation
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Binding generation
+# ═══════════════════════════════════════════════════════════════
 
--- emit_ffi_binding: generate a Duo FFI binding string for a C function.
--- Returns the binding as a string (caller passes to @c.emit or uses directly).
+# emit_ffi_binding: generate a Duo FFI binding string for a C function.
+# Returns the binding as a string (caller passes to @c.emit or uses directly).
 emit_ffi_binding(func: any): str
     duo_params = {}
     for _, p in func.params
@@ -194,12 +194,12 @@ emit_ffi_binding(func: any): str
     params_str = #duo_params > 0 and str_join(duo_params, ", ") or ""
 
     call_args = build_c_call_args(func.params)
-    sig = "@ffi(\"" .. func.name .. "\")\nfun " .. string.lower(func.name) .. "(" .. params_str .. "): " .. duo_ret
+    sig = "@ffi(\"" .. func.name .. "\")\nfun " .. func.name:lower() .. "(" .. params_str .. "): " .. duo_ret
     body = "    @c.call(\"" .. func.name .. "\"" .. (#func.params > 0 and ", " or "") .. call_args .. ")"
     sig .. "\n" .. body .. "\nend"
 end
 
--- build_c_call_args: generate the argument list for @c.call
+# build_c_call_args: generate the argument list for @c.call
 build_c_call_args(params: any): str
     args = {}
     for _, p in params
@@ -208,9 +208,9 @@ build_c_call_args(params: any): str
     str_join(args, ", ")
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Convenience: generate bindings for common libraries
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Convenience: generate bindings for common libraries
+# ═══════════════════════════════════════════════════════════════
 
 bind_sqlite(): str
     from_header("sqlite3.h", {

@@ -1,0 +1,51 @@
+# IEEE754 reinterpret: subject-first to(bit) over view-class edges.
+
+type bit = i64
+
+pack: i64 = (v: f64)
+    @comp.c.emit([[({ union { double d; int64_t i; } u; u.d = (double)v; u.i; })]])
+
+restore: f64 = (w: i64)
+    @comp.c.emit([[({ union { double d; int64_t i; } u; u.i = (int64_t)w; u.d; })]])
+
+thin: i64 = (v: f32)
+    @comp.c.emit([[({ union { float f; uint32_t u; } x; x.f = (float)v; (int64_t)x.u; })]])
+
+lift: f32 = (w: i64)
+    @comp.c.emit([[({ union { float f; uint32_t u; } x; x.u = (uint32_t)w; x.f; })]])
+
+observe: i64 = (w: bit)
+    @comp.c.emit([[((int64_t)w)]])
+
+to(bit)(f64) = pack@view
+to(f64)(bit) = restore@view
+to(bit)(f32) = thin@view
+to(f32)(bit) = lift@view
+to(i64)(bit) = observe@view
+
+check: i64 = (name: str, got: any, want: any, fail: i64)
+    if got == want
+        print("ok {name}")
+        fail
+    else
+        print("FAIL {name}: got {got} want {want}")
+        fail + 1
+
+main: i64 = ()
+    code: i64 = 0
+    fail: i64 = 0
+    one: f64 = 1.0
+    pattern: bit = one:to(bit)
+    fail = check("f64 bit roundtrip", pattern:to(f64), 1.0, fail)
+    fail = check("bit to i64 one", one:to(bit):to(i64), 4607182418800017408, fail)
+    fail = check("f64 zero bit roundtrip", 0.0:to(bit):to(f64), 0.0, fail)
+    unit: f32 = 1.0
+    word: bit = unit:to(bit)
+    fail = check("f32 bit roundtrip", word:to(f32), 1.0, fail)
+    raw: bit = 1065353216
+    fail = check("bit to f32 one", raw:to(f32), 1.0, fail)
+    if fail > 0
+        code = 1
+    if code == 0
+        print("proof/bit: pass")
+    code

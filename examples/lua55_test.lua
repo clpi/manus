@@ -14,7 +14,7 @@ print("--- named vararg table ---")
 function sum_all(first, ...rest)
     local total = first
     for i = 1, rest.n do
-        total = total + rest[i]
+        total += rest[i]
     end
     return total
 end

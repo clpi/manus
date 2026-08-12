@@ -1,9 +1,9 @@
--- std.math.noise — Perlin and Simplex noise
--- For procedural generation, terrain, textures, and ML data augmentation.
+# std.math.noise — Perlin and Simplex noise
+# For procedural generation, terrain, textures, and ML data augmentation.
 
--- ═══════════════════════════════════════════════════════════════
--- Permutation Table
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Permutation Table
+# ═══════════════════════════════════════════════════════════════
 
 permutation_new(seed: i64): any
     perm = {}
@@ -13,7 +13,7 @@ permutation_new(seed: i64): any
         i += 1
     end
 
-    -- Shuffle with seed
+    # Shuffle with seed
     rng = seed
     i = 255
     while i > 0
@@ -25,7 +25,7 @@ permutation_new(seed: i64): any
         i -= 1
     end
 
-    -- Duplicate
+    # Duplicate
     p = {}
     i = 0
     while i < 512
@@ -35,9 +35,9 @@ permutation_new(seed: i64): any
     p
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Perlin Noise (2D)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Perlin Noise (2D)
+# ═══════════════════════════════════════════════════════════════
 
 perlin_fade(t: f64): f64
     t * t * t * (t * (t * 6 - 15) + 10)
@@ -56,10 +56,10 @@ perlin_grad_2d(hash: i64, x: f64, y: f64): f64
 end
 
 perlin_2d(perm: any, x: f64, y: f64): f64
-    xi = math.floor(x) & 255
-    yi = math.floor(y) & 255
-    xf = x - math.floor(x)
-    yf = y - math.floor(y)
+    xi = x:floor() & 255
+    yi = y:floor() & 255
+    xf = x - x:floor()
+    yf = y - y:floor()
 
     u = perlin_fade(xf)
     v = perlin_fade(yf)
@@ -74,9 +74,9 @@ perlin_2d(perm: any, x: f64, y: f64): f64
     perlin_lerp(x1, x2, v)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Perlin Noise (3D)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Perlin Noise (3D)
+# ═══════════════════════════════════════════════════════════════
 
 perlin_grad_3d(hash: i64, x: f64, y: f64, z: f64): f64
     h = hash & 15
@@ -90,12 +90,12 @@ perlin_grad_3d(hash: i64, x: f64, y: f64, z: f64): f64
 end
 
 perlin_3d(perm: any, x: f64, y: f64, z: f64): f64
-    xi = math.floor(x) & 255
-    yi = math.floor(y) & 255
-    zi = math.floor(z) & 255
-    xf = x - math.floor(x)
-    yf = y - math.floor(y)
-    zf = z - math.floor(z)
+    xi = x:floor() & 255
+    yi = y:floor() & 255
+    zi = z:floor() & 255
+    xf = x - x:floor()
+    yf = y - y:floor()
+    zf = z - z:floor()
 
     u = perlin_fade(xf)
     v = perlin_fade(yf)
@@ -121,9 +121,9 @@ perlin_3d(perm: any, x: f64, y: f64, z: f64): f64
     perlin_lerp(y1, y2, w)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Simplex Noise (2D)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Simplex Noise (2D)
+# ═══════════════════════════════════════════════════════════════
 
 SIMPLEX_GRAD2 = {
     {1, 1}, {-1, 1}, {1, -1}, {-1, -1},
@@ -131,21 +131,21 @@ SIMPLEX_GRAD2 = {
 }
 
 simplex_2d(perm: any, x: f64, y: f64): f64
-    -- Skewing factors
-    F2 = 0.5 * (math.sqrt(3) - 1)
-    G2 = (3 - math.sqrt(3)) / 6
+    # Skewing factors
+    F2 = 0.5 * (3:sqrt() - 1)
+    G2 = (3 - 3:sqrt()) / 6
 
-    -- Skew input space
+    # Skew input space
     s = (x + y) * F2
-    i = math.floor(x + s)
-    j = math.floor(y + s)
+    i = x + s:floor()
+    j = y + s:floor()
 
-    -- Unskew
+    # Unskew
     t = (i + j) * G2
     x0 = x - (i - t)
     y0 = y - (j - t)
 
-    -- Determine simplex
+    # Determine simplex
     if x0 > y0
         i1 = 1
         j1 = 0
@@ -154,20 +154,20 @@ simplex_2d(perm: any, x: f64, y: f64): f64
         j1 = 1
     end
 
-    -- Offsets
+    # Offsets
     x1 = x0 - i1 + G2
     y1 = y0 - j1 + G2
     x2 = x0 - 1 + 2 * G2
     y2 = y0 - 1 + 2 * G2
 
-    -- Hash
+    # Hash
     ii = i & 255
     jj = j & 255
     gi0 = perm[ii + perm[jj]] % 8
     gi1 = perm[ii + i1 + perm[jj + j1]] % 8
     gi2 = perm[ii + 1 + perm[jj + 1]] % 8
 
-    -- Contributions
+    # Contributions
     n0 = 0
     n1 = 0
     n2 = 0
@@ -193,9 +193,9 @@ simplex_2d(perm: any, x: f64, y: f64): f64
     70 * (n0 + n1 + n2)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Fractal Brownian Motion (fBM)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Fractal Brownian Motion (fBM)
+# ═══════════════════════════════════════════════════════════════
 
 fbm_2d(perm: any, x: f64, y: f64, octaves: i64, lacunarity: f64, gain: f64): f64
     if octaves == nil octaves = 6 end
@@ -241,9 +241,9 @@ fbm_3d(perm: any, x: f64, y: f64, z: f64, octaves: i64, lacunarity: f64, gain: f
     value / max_value
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Ridged Noise
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Ridged Noise
+# ═══════════════════════════════════════════════════════════════
 
 ridged_2d(perm: any, x: f64, y: f64, octaves: i64, lacunarity: f64, gain: f64): f64
     if octaves == nil octaves = 6 end
@@ -257,7 +257,7 @@ ridged_2d(perm: any, x: f64, y: f64, octaves: i64, lacunarity: f64, gain: f64): 
 
     i = 0
     while i < octaves
-        n = 1 - math.abs(perlin_2d(perm, x * frequency, y * frequency))
+        n = 1 - perlin_2d(perm, x * frequency, y * frequency):abs()
         n *= n
         value += amplitude * n
         max_value += amplitude
@@ -269,9 +269,9 @@ ridged_2d(perm: any, x: f64, y: f64, octaves: i64, lacunarity: f64, gain: f64): 
     value / max_value
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Domain Warping
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Domain Warping
+# ═══════════════════════════════════════════════════════════════
 
 domain_warp_2d(perm: any, x: f64, y: f64, strength: f64): f64
     if strength == nil strength = 1 end
@@ -280,13 +280,13 @@ domain_warp_2d(perm: any, x: f64, y: f64, strength: f64): f64
     fbm_2d(perm, x + strength * qx, y + strength * qy, 4)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Voronoi Noise
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Voronoi Noise
+# ═══════════════════════════════════════════════════════════════
 
 voronoi_2d(x: f64, y: f64, seed: i64): any
-    xi = math.floor(x)
-    yi = math.floor(y)
+    xi = x:floor()
+    yi = y:floor()
 
     min_dist = 1e10
     second_min = 1e10
@@ -299,13 +299,13 @@ voronoi_2d(x: f64, y: f64, seed: i64): any
             cx = xi + dx
             cy = yi + dy
 
-            -- Hash for cell
+            # Hash for cell
             h = (cx * 374761393 + cy * 668265263 + seed) & 0x7FFFFFFF
             px = cx + (h % 1000) / 1000
             h = (h * 1103515245 + 12345) & 0x7FFFFFFF
             py = cy + (h % 1000) / 1000
 
-            dist = math.sqrt((x - px) * (x - px) + (y - py) * (y - py))
+            dist = (x - px) * (x - px) + (y - py) * (y - py):sqrt()
 
             if dist < min_dist
                 second_min = min_dist
@@ -327,9 +327,9 @@ voronoi_2d(x: f64, y: f64, seed: i64): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Worley Noise
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Worley Noise
+# ═══════════════════════════════════════════════════════════════
 
 worley_2d(x: f64, y: f64, seed: i64): f64
     result = voronoi_2d(x, y, seed)
@@ -341,15 +341,15 @@ worley_edge_2d(x: f64, y: f64, seed: i64): f64
     result.edge
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
--- Permutation
--- Perlin
--- Simplex
--- FBM
--- Ridged
--- Domain Warping
--- Voronoi
--- Worley
+# Permutation
+# Perlin
+# Simplex
+# FBM
+# Ridged
+# Domain Warping
+# Voronoi
+# Worley

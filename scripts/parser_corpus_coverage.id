@@ -1,63 +1,62 @@
--- SH-04 coverage — what fraction of real Duo source can the SELF-HOSTED parser
--- parse?
---
--- examples/pass16_parser_corpus_proof.id proves the projection is CORRECT on 55
--- hand-written cases. It cannot say how much of the language those cases reach.
--- This walks lib/std and reports how many files parse_status accepts. That
--- number has to reach 100% before SH-04 is anything but `porting`, and it is the
--- only honest way to say how far along the self-hosted parser actually is.
---
--- 2026-08-07: 44/245 when this number first existed, then 245/245 the same day.
---
--- It GATES now. `PARSER_COVERAGE_FLOOR` (default 256) is a ratchet: the number
--- only goes up. Every regression this session was invisible to the 55-case
--- projection proof and visible only here — a guard that silently dropped 33
--- files, a speculation that truncated expression statements, a lambda arm that
--- ate the wrong `end`. A floor is what stops the next one.
---
--- Two things this file is deliberately careful about:
---
---   * It terminates. An earlier version of this walk did not finish in ten
---     minutes; the cause was a parser loop that could iterate without consuming
---     a token, now fixed structurally by the `stalled` guard in parser.id. A
---     scripts/ entry that hangs is worse than no measurement, because the next
---     agent wires it into a gate.
---   * `lib/std/os/linux.id` is NO LONGER skipped. GAP-017 is closed: a lexer
---     error is now a rejection the caller can count, not a process abort, so a
---     bad file costs one row instead of truncating the run. The skip existed
---     only to keep that truncation visible; with the cause gone, the file
---     rejoins the denominator.
---
--- `req` rather than an ambient root: GAP-13 — ambient `std.str.sub` on a
--- native-direct module crashes at startup with no output.
+# SH-04 coverage — what fraction of real Idol source can the SELF-HOSTED parser
+# parse?
+#
+# examples/pass16_parser_corpus_proof.id proves the projection is CORRECT on 55
+# hand-written cases. It cannot say how much of the language those cases reach.
+# This walks lib/std and reports how many files parse_status accepts. That
+# number has to reach 100% before SH-04 is anything but `porting`, and it is the
+# only honest way to say how far along the self-hosted parser actually is.
+#
+# 2026-08-07: 44/245 when this number first existed, then 245/245 the same day.
+#
+# It GATES now. `PARSER_COVERAGE_FLOOR` (default 256) is a ratchet: the number
+# only goes up. Every regression this session was invisible to the 55-case
+# projection proof and visible only here — a guard that silently dropped 33
+# files, a speculation that truncated expression statements, a lambda arm that
+# ate the wrong `end`. A floor is what stops the next one.
+#
+# Two things this file is deliberately careful about:
+#
+#   * It terminates. An earlier version of this walk did not finish in ten
+#     minutes; the cause was a parser loop that could iterate without consuming
+#     a token, now fixed structurally by the `stalled` guard in parser.id. A
+#     scripts/ entry that hangs is worse than no measurement, because the next
+#     agent wires it into a gate.
+#   * `lib/std/os/linux.id` is NO LONGER skipped. GAP-017 is closed: a lexer
+#     error is now a rejection the caller can count, not a process abort, so a
+#     bad file costs one row instead of truncating the run. The skip existed
+#     only to keep that truncation visible; with the cause gone, the file
+#     rejoins the denominator.
+#
+# Layout homes only — no req, no std namespace traversal, no process env antipattern.
 
-corpus = (): str
-    std.script.capture("find " .. std.script.getenv("DUO_ROOT", ".")
-        .. "/lib/std -name '*.id' 2>/dev/null")
-end
+head: str = (root: str)
+    "find {root}/lib/std -name '*.id' 2>/dev/null"
 
-main(): i64
-    listing = corpus()
-    n: i64 = #listing
-    total: i64 = 0
-    ok: i64 = 0
-    start: i64 = 1
-    i: i64 = 1
+corpus: str = (root: str)
+    script.capture(head(root))
+
+main: i64 = ()
+    root = env.or("DUO_ROOT", ".")
+    listing = corpus(root)
+    n = listing:len()
+    total = 0
+    ok = 0
+    start = 1
+    i = 1
     while i <= n + 1
         at_end = i > n
         eol = false
-        if not at_end
-            eol = string.byte(listing, i) == 10
+        if !at_end
+            eol = listing:byte(i) == 10
         end
         if at_end or eol
             if i > start
-                path = string.sub(listing, start, i - 1)
-                f = io.open(path, "r")
-                if f
-                    src = f:read("a")
-                    f:close()
+                path = listing:sub(start, i - 1)
+                if fs.exists(path)
+                    src = fs.read_file(path)
                     total += 1
-                    if std.compiler.parser.parse_status(src, path) == 0
+                    if compiler.parser.parse_status(src, path) == 0
                         ok += 1
                     else
                         print("  REJECT {path}")
@@ -68,18 +67,15 @@ main(): i64
         end
         i += 1
     end
-    -- GAP-11: numeric holes do not interpolate, so the tallies stay a chain.
-    print("parser_coverage: " .. ok:to(str) .. "/" .. total:to(str)
-        .. " lib/std files parse clean")
-    floor: i64 = to(i64)(std.script.getenv("PARSER_COVERAGE_FLOOR", "256"))
+    print("parser_coverage: {ok}/{total} lib/std files parse clean")
+    floor = env.or("PARSER_COVERAGE_FLOOR", "256"):to(i64)
     if total == 0
         print("parser_coverage: FAIL (empty corpus)")
         return 1
     end
     if ok < floor
-        print("parser_coverage: FAIL — floor is " .. floor:to(str))
+        print("parser_coverage: FAIL — floor is {floor}")
         return 1
     end
     print("parser_coverage: PASS")
     0
-end

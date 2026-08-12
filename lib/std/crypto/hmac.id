@@ -1,73 +1,71 @@
--- std.crypto_hmac — HMAC implementation (mirrors Go's crypto/hmac)
--- Provides HMAC construction using any hash function that takes a string and
--- returns a hex string.
+# std.crypto_hmac — HMAC implementation (mirrors Go's crypto/hmac)
+# Provides HMAC construction using any hash function that takes a string and
+# returns a hex string.
 
-h = require "std.hash"
+h = hash
 
--- hmac: compute HMAC of message m using key k and hash function hash_fn.
--- hash_fn(s) should return a hex string. block_size is the hash's block size.
+# hmac: compute HMAC of message m using key k and hash function hash_fn.
+# hash_fn(s) should return a hex string. block_size is the hash's block size.
 hmac(hash_fn: any, key: str, message: str, block_size: i64): str
     if block_size == nil block_size = 64 end
-    -- if key is longer than block_size, hash it
+    # if key is longer than block_size, hash it
     if #key > block_size
         key = hash_fn(key)
     end
-    -- pad key to block_size
+    # pad key to block_size
     while #key < block_size
-        key = key .. string.char(0)
+        key = key .. 0:char()
     end
-    -- create inner and outer pads
+    # create inner and outer pads
     inner_pad = ""
     outer_pad = ""
     i = 1
     while i <= block_size
         k = key:byte(i)
-        inner_pad = inner_pad .. string.char(k ~ 0x36)
-        outer_pad = outer_pad .. string.char(k ~ 0x5C)
+        inner_pad = inner_pad .. k ~ 0x36:char()
+        outer_pad = outer_pad .. k ~ 0x5C:char()
         i += 1
     end
-    -- compute inner hash
+    # compute inner hash
     inner_hash = hash_fn(inner_pad .. message)
-    -- compute outer hash
+    # compute outer hash
     hash_fn(outer_pad .. inner_hash)
 end
 
--- hmac_sha256: HMAC-SHA-256 using the std.crypto sha256.
+# hmac_sha256: HMAC-SHA-256 using the std.crypto sha256.
 hmac_sha256(key: str, message: str): str
-    crypto = require "std.crypto"
     hmac(crypto.sha256, key, message, 64)
 end
 
--- hmac_sha256_bytes: HMAC-SHA-256 returning raw 32-byte binary string.
+# hmac_sha256_bytes: HMAC-SHA-256 returning raw 32-byte binary string.
 hmac_sha256_bytes(key: str, message: str): str
     hex = hmac_sha256(key, message)
     bytes = {}
     i = 1
     while i <= 64
         byte_val = tonumber(hex:sub(i, i + 1), 16)
-        bytes[#bytes + 1] = string.char(byte_val)
+        bytes[#bytes + 1] = byte_val:char()
         i += 2
     end
-    return table.concat(bytes)
+    return bytes:concat()
 end
 
--- hmac_sha1: HMAC-SHA-1.
+# hmac_sha1: HMAC-SHA-1.
 hmac_sha1(key: str, message: str): str
-    crypto = require "std.crypto"
     hmac(crypto.sha1, key, message, 64)
 end
 
--- hmac_md5: HMAC-MD5.
+# hmac_md5: HMAC-MD5.
 hmac_md5(key: str, message: str): str
     hmac(h.md5, key, message, 64)
 end
 
--- hmac_fnv1a: HMAC using FNV-1a (non-standard but available).
+# hmac_fnv1a: HMAC using FNV-1a (non-standard but available).
 hmac_fnv1a(key: str, message: str): str
     hmac(h.fnv1a, key, message, 64)
 end
 
--- equal: constant-time comparison of two hex strings (length-checked).
+# equal: constant-time comparison of two hex strings (length-checked).
 equal(a: str, b: str): bool
     if #a != #b return false end
     result = 0

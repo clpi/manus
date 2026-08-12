@@ -1,4 +1,4 @@
--- Smoke: Python-style not and != lower through normal Duo boolean ops.
+# Smoke: Python-style not and != lower through normal Duo boolean ops.
 
 same = 4 == 4
 different = 4 != 5

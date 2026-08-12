@@ -1,29 +1,29 @@
--- std.net_mail — email address and message parsing (mirrors Go's net/mail)
+# std.net_mail — email address and message parsing (mirrors Go's net/mail)
 
--- parse_address: parse a single email address string.
+# parse_address: parse a single email address string.
 parse_address(s: str): any
     if s == nil or s == "" return nil end
-    s = string.gsub(s, "^%s+", "")
-    s = string.gsub(s, "%s+$", "")
-    lt = string.find(s, "<", 1, true)
+    s = s:gsub("^%s+", "")
+    s = s:gsub("%s+$", "")
+    lt = s:find("<", 1, true)
     if lt != nil
-        gt = string.find(s, ">", lt + 1, true)
+        gt = s:find(">", lt + 1, true)
         if gt == nil return nil end
         addr = s:sub(lt + 1, gt - 1)
         name = s:sub(1, lt - 1)
-        name = string.gsub(name, "^%s+", "")
-        name = string.gsub(name, "%s+$", "")
+        name = name:gsub("^%s+", "")
+        name = name:gsub("%s+$", "")
         if #name >= 2 and name:sub(1, 1) == "\"" and name:sub(#name, #name) == "\""
             name = name:sub(2, #name - 1)
         end
         return {name = name, address = addr}
     end
-    at = string.find(s, "@", 1, true)
+    at = s:find("@", 1, true)
     if at == nil return nil end
     {name = "", address = s}
 end
 
--- parse_address_list: parse a comma-separated list of addresses.
+# parse_address_list: parse a comma-separated list of addresses.
 parse_address_list(s: str): any
     if s == nil or s == "" return {} end
     out = {}
@@ -36,22 +36,22 @@ parse_address_list(s: str): any
         if ch == "<" depth += 1 end
         if ch == ">" depth -= 1 end
         if ch == "," and depth == 0
-            parts[rawlen(parts) + 1] = s:sub(start, i - 1)
+            parts[parts:len() + 1] = s:sub(start, i - 1)
             start = i + 1
         end
         i += 1
     end
-    parts[rawlen(parts) + 1] = s:sub(start)
+    parts[parts:len() + 1] = s:sub(start)
     i = 1
-    while i <= rawlen(parts)
+    while i <= parts:len()
         addr = parse_address(parts[i])
-        if addr != nil out[rawlen(out) + 1] = addr end
+        if addr != nil out[out:len() + 1] = addr end
         i += 1
     end
     out
 end
 
--- format_address: format an address table as "Name <addr>" or "addr".
+# format_address: format an address table as "Name <addr>" or "addr".
 format_address(addr: any): str
     if addr == nil return "" end
     if has(.name)(addr) and addr.name != ""
@@ -60,7 +60,7 @@ format_address(addr: any): str
     addr.address
 end
 
--- split_lines: helper to split a string on newlines.
+# split_lines: helper to split a string on newlines.
 split_lines(s: str): any
     if s == nil return {} end
     out = {}
@@ -72,25 +72,25 @@ split_lines(s: str): any
             if #line > 0 and line:byte(#line) == 13
                 line = line:sub(1, #line - 1)
             end
-            out[rawlen(out) + 1] = line
+            out[out:len() + 1] = line
             start = i + 1
         end
         i += 1
     end
     if start <= #s
-        out[rawlen(out) + 1] = s:sub(start)
+        out[out:len() + 1] = s:sub(start)
     end
     out
 end
 
--- read_message: parse an RFC 5322 message into {headers = {...}, body = "..."}.
+# read_message: parse an RFC 5322 message into {headers = {...}, body = "..."}.
 read_message(raw: str): any
     if raw == nil return {headers = {}, body = ""} end
-    sep = string.find(raw, "\r\n\r\n", 1, true)
+    sep = raw:find("\r\n\r\n", 1, true)
     header_block = ""
     body = ""
     if sep == nil
-        sep = string.find(raw, "\n\n", 1, true)
+        sep = raw:find("\n\n", 1, true)
         if sep == nil
             return {headers = {}, body = raw}
         end
@@ -105,15 +105,15 @@ read_message(raw: str): any
     cur_key = nil
     cur_val = ""
     i = 1
-    while i <= rawlen(lines)
+    while i <= lines:len()
         line = lines[i]
         if line:sub(1, 1) == " " or line:sub(1, 1) == "\t"
-            cur_val = cur_val .. " " .. string.gsub(line, "^%s+", "")
+            cur_val = cur_val .. " " .. line:gsub("^%s+", "")
         else
             if cur_key != nil
-                headers[string.lower(cur_key)] = string.gsub(cur_val, "^%s+", "")
+                headers[cur_key:lower()] = cur_val:gsub("^%s+", "")
             end
-            colon = string.find(line, ":", 1, true)
+            colon = line:find(":", 1, true)
             if colon != nil
                 cur_key = line:sub(1, colon - 1)
                 cur_val = line:sub(colon + 1)
@@ -124,7 +124,7 @@ read_message(raw: str): any
         i += 1
     end
     if cur_key != nil
-        headers[string.lower(cur_key)] = string.gsub(cur_val, "^%s+", "")
+        headers[cur_key:lower()] = cur_val:gsub("^%s+", "")
     end
     return {headers = headers, body = body}
 end

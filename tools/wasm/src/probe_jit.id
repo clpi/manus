@@ -1,5 +1,4 @@
--- Prove the std.jit substrate: emit ARM64 `MOVZ W0,#42; RET`, seal, call.
-jit = req "std.jit"
+# Prove the std.jit substrate: emit ARM64 `MOVZ W0,#42; RET`, seal, call.
 
 emit42(unused: i64): i64
   buf = jit.alloc(4096)
@@ -7,9 +6,9 @@ emit42(unused: i64): i64
     print("jit: mmap refused")
     return -1
   end
-  -- MOVZ W0, #42   => 0x52800000 | (imm16 << 5) | Rd
+  # MOVZ W0, #42   => 0x52800000 | (imm16 << 5) | Rd
   jit.w32(buf, 0, 0x52800000 | (42 << 5) | 0)
-  -- RET
+  # RET
   jit.w32(buf, 1, 0xD65F03C0)
   ok = jit.seal(buf, 8)
   if not ok

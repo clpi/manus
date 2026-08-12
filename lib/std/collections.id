@@ -1,22 +1,22 @@
--- std.collections — basic data structures over Duo tables
+# std.collections — basic data structures over Duo tables
 
 list_new(): any
     {}
 end
 
 list_push(list: any, value: any): void
-    table.insert(list, value)
+    list:insert(value)
 end
 
 list_pop(list: any): any
-    table.remove(list)
+    list:remove()
 end
 
 list_get(list: any, index: i64): any
     list[index]
 end
 
-list_len(list: any): i64
+list_list: any:len(): i64
     return #list
 end
 
@@ -25,11 +25,11 @@ stack_new(): any
 end
 
 stack_push(stack: any, value: any): void
-    table.insert(stack, value)
+    stack:insert(value)
 end
 
 stack_pop(stack: any): any
-    table.remove(stack)
+    stack:remove()
 end
 
 queue_new(): any
@@ -37,7 +37,7 @@ queue_new(): any
 end
 
 queue_enqueue(q: any, value: any): void
-    table.insert(q, value)
+    q:insert(value)
 end
 
 queue_dequeue(q: any): any
@@ -45,7 +45,7 @@ queue_dequeue(q: any): any
     if n == 0
         nil
     end
-    table.remove(q, 1)
+    q:remove(1)
 end
 
 map_new(): any
@@ -89,18 +89,18 @@ is_array(t: any): bool
 end
 
 remove_at(list: any, index: i64): any
-    table.remove(list, index)
+    list:remove(index)
 end
 
 list_insert(list: any, index: i64, value: any): void
-    table.insert(list, index, value)
+    list:insert(index, value)
 end
 
 list_clear(list: any): void
     if list == nil return end
     i = #list
     while i > 0
-        table.remove(list, i)
+        list:remove(i)
         i -= 1
     end
 end
@@ -114,7 +114,7 @@ map_keys(m: any): any
     out = {}
     if m == nil return out end
     for k, _ in m
-        table.insert(out, k)
+        out:insert(k)
     end
     out
 end
@@ -123,7 +123,7 @@ map_values(m: any): any
     out = {}
     if m == nil return out end
     for _, v in m
-        table.insert(out, v)
+        out:insert(v)
     end
     out
 end

@@ -1,17 +1,17 @@
--- std.net.http.httputil — HTTP utilities (mirrors Go's net/http/httputil)
--- Provides reverse proxy and dump helpers
+# std.net.http.httputil — HTTP utilities (mirrors Go's net/http/httputil)
+# Provides reverse proxy and dump helpers
 
 dump_request(req: any): str
     if req == nil return "" end
     out = {req.method or "GET", " ", req.path or "/", " HTTP/1.1\r\n"}
     if req.headers
         for k, v in req.headers
-            out[rawlen(out) + 1] = k .. ": " .. v .. "\r\n"
+            out[out:len() + 1] = k .. ": " .. v .. "\r\n"
         end
     end
-    out[rawlen(out) + 1] = "\r\n"
-    if req.body out[rawlen(out) + 1] = req.body end
-    table.concat(out)
+    out[out:len() + 1] = "\r\n"
+    if req.body out[out:len() + 1] = req.body end
+    out:concat()
 end
 
 dump_response(resp: any): str
@@ -19,12 +19,12 @@ dump_response(resp: any): str
     out = {"HTTP/1.1 ", to(str)(resp.status or 200), " OK\r\n"}
     if resp.headers
         for k, v in resp.headers
-            out[rawlen(out) + 1] = k .. ": " .. v .. "\r\n"
+            out[out:len() + 1] = k .. ": " .. v .. "\r\n"
         end
     end
-    out[rawlen(out) + 1] = "\r\n"
-    if resp.body out[rawlen(out) + 1] = resp.body end
-    table.concat(out)
+    out[out:len() + 1] = "\r\n"
+    if resp.body out[out:len() + 1] = resp.body end
+    out:concat()
 end
 
 reverse_proxy(target: str): any

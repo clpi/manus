@@ -1,5 +1,5 @@
--- Cross-language @foreign transpilation at compile time
--- Run: duo run examples/foreign_showcase.id
+# Cross-language @foreign transpilation at compile time
+# Run: duo run examples/foreign_showcase.id
 
 @foreign("zig", "fn add(a: i64, b: i64) i64 { return a + b; }")
 @foreign("python", "def mul(a, b):\n    return a * b")

@@ -1,0 +1,27 @@
+# Path audit helpers — subject-first read chains; boundary-curried relation edges.
+# len(path)(min), audit(path)(pattern), and hit(path)(pattern) — relation-family curry slots.
+
+len(path) = (min: i64)
+    path:read()
+        :len() >= min
+
+
+audit(path) = (pattern: str)
+    path:read()
+        :match(pattern)
+
+hit(path) = (pattern: str)
+    path:read()
+        :match(pattern)
+
+main: i64 = ()
+    code: i64 = 0
+    if !len("scripts/proof/remove.id")(16)
+        code = 1
+    if code == 0 and !audit("scripts/proof/remove.id")(":remove%(")
+        code = 2
+    if code == 0 and hit("scripts/proof/remove.id")("fs:")
+        code = 3
+    if code == 0
+        print("proof/audit: pass")
+    code

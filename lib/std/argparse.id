@@ -1,7 +1,7 @@
--- std.argparse — Command-line argument parser
+# std.argparse — Command-line argument parser
 
 argparse_key(s: str): str
-    string.gsub(s or "", "^%-+", "")
+    s or "":gsub("^%-+", "")
 end
 
 add_positional(parser, name: str, help: str, options: any)
@@ -64,7 +64,7 @@ parse_with(parser, args: any): any
             i = i + 1
         elseif not stop_options and v:sub(1, 2) == "--"
             name = v:sub(3)
-            eq = string.find(name, "=")
+            eq = name:find("=")
             if eq
                 key = name:sub(1, eq - 1)
                 val = name:sub(eq + 1)
@@ -74,7 +74,7 @@ parse_with(parser, args: any): any
                 matched = false
                 for _, opt in parser.options
                     if opt.long == v
-                        if i + 1 <= #args and string.sub(args[i + 1], 1, 1) != "-"
+                        if i + 1 <= #args and args[i + 1]:sub(1, 1) != "-"
                             opts[opt.key] = args[i + 1]
                             i = i + 2
                         else
@@ -110,7 +110,7 @@ parse_with(parser, args: any): any
                     if #rest > 0
                         opts[opt.key] = rest
                         i = i + 1
-                    elseif i + 1 <= #args and string.sub(args[i + 1], 1, 1) != "-"
+                    elseif i + 1 <= #args and args[i + 1]:sub(1, 1) != "-"
                         opts[opt.key] = args[i + 1]
                         i = i + 2
                     else
@@ -132,7 +132,7 @@ parse_with(parser, args: any): any
                 end
             end
             if not matched
-                if #rest > 0 and i + 1 <= #args and string.sub(args[i + 1], 1, 1) != "-"
+                if #rest > 0 and i + 1 <= #args and args[i + 1]:sub(1, 1) != "-"
                     opts[name] = args[i + 1]
                     i = i + 2
                 else

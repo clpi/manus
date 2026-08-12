@@ -1,7 +1,7 @@
--- TEXT: str IS bytes, 0-based. Two-byte UTF-8 answers 2 for `#`, and the
--- indices are the encoding units, not characters or graphemes. §0.8, B-1.
--- expect: 2 195 169
-main = (): i64
+# TEXT: str IS bytes, 0-based. Two-byte UTF-8 answers 2 for `#`, and the
+# indices are the encoding units, not characters or graphemes. §0.8, B-1.
+# expect: 2 195 169
+main: i64 = ()
     s = "\xc3\xa9"
     n = #s
     a = s[0]

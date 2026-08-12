@@ -1,9 +1,9 @@
--- std.math.stats — Statistical functions
--- For ML training metrics and data analysis.
+# std.math.stats — Statistical functions
+# For ML training metrics and data analysis.
 
--- ═══════════════════════════════════════════════════════════════
--- Descriptive Statistics
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Descriptive Statistics
+# ═══════════════════════════════════════════════════════════════
 
 stats_mean(data: any): f64
     if #data == 0 return 0.0 end
@@ -20,11 +20,11 @@ stats_median(data: any): f64
     for v in data
         sorted[#sorted + 1] = v
     end
-    table.sort(sorted)
+    sorted:sort()
 
     n = #sorted
     if n % 2 == 1
-        return sorted[math.floor(n / 2) + 1]
+        return sorted[n / 2:floor() + 1]
     else
         return (sorted[n / 2] + sorted[n / 2 + 1]) / 2
     end
@@ -68,7 +68,7 @@ stats_variance(data: any, population: bool): f64
 end
 
 stats_std_dev(data: any, population: bool): f64
-    math.sqrt(stats_variance(data, population))
+    stats_variance(data, population):sqrt()
 end
 
 stats_standardize(data: any): any
@@ -83,9 +83,9 @@ stats_standardize(data: any): any
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Percentiles & Quartiles
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Percentiles & Quartiles
+# ═══════════════════════════════════════════════════════════════
 
 stats_percentile(data: any, p: f64): f64
     if #data == 0 return 0.0 end
@@ -93,11 +93,11 @@ stats_percentile(data: any, p: f64): f64
     for v in data
         sorted[#sorted + 1] = v
     end
-    table.sort(sorted)
+    sorted:sort()
 
     k = (p / 100) * (#sorted - 1)
-    f = math.floor(k)
-    c = math.ceil(k)
+    f = k:floor()
+    c = k:ceil()
     if f == c
         return sorted[f + 1]
     end
@@ -119,9 +119,9 @@ stats_iqr(data: any): f64
     q.q3 - q.q1
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Covariance & Correlation
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Covariance & Correlation
+# ═══════════════════════════════════════════════════════════════
 
 stats_covariance(x: any, y: any): f64
     n = #x
@@ -146,20 +146,20 @@ stats_correlation(x: any, y: any): f64
     cov / (std_x * std_y)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Distribution Functions
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Distribution Functions
+# ═══════════════════════════════════════════════════════════════
 
 stats_normal_pdf(x: f64, mean: f64, std: f64): f64
     if std < 1e-10 return 0.0 end
     z = (x - mean) / std
-    (1 / (std * math.sqrt(2 * math.pi))) * math.exp(-0.5 * z * z)
+    (1 / (std * 2 * math.pi:sqrt())) * -0.5 * z * z:exp()
 end
 
 stats_normal_cdf(x: f64, mean: f64, std: f64): f64
     if std < 1e-10 return x >= mean and 1.0 or 0.0 end
     z = (x - mean) / std
-    0.5 * (1 + math.erf(z / math.sqrt(2)))
+    0.5 * (1 + math.erf(z / 2:sqrt()))
 end
 
 stats_uniform_pdf(x: f64, a: f64, b: f64): f64
@@ -173,9 +173,9 @@ stats_uniform_cdf(x: f64, a: f64, b: f64): f64
     (x - a) / (b - a)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Histogram
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Histogram
+# ═══════════════════════════════════════════════════════════════
 
 stats_histogram(data: any, bins: i64): any
     if #data == 0 return {bins = {}, edges = {}} end
@@ -202,7 +202,7 @@ stats_histogram(data: any, bins: i64): any
     end
 
     for v in data
-        bin = math.floor((v - min_val) / bin_width) + 1
+        bin = (v - min_val) / bin_width:floor() + 1
         if bin > bins bin = bins end
         counts[bin] = counts[bin] + 1
     end
@@ -215,9 +215,9 @@ stats_histogram(data: any, bins: i64): any
     {bins = counts, edges = edges}
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Summary Statistics
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Summary Statistics
+# ═══════════════════════════════════════════════════════════════
 
 stats_summary(data: any): any
     if #data == 0
@@ -228,7 +228,7 @@ stats_summary(data: any): any
     for v in data
         sorted[#sorted + 1] = v
     end
-    table.sort(sorted)
+    sorted:sort()
 
     {
         count = #data,
@@ -243,9 +243,9 @@ stats_summary(data: any): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Outlier Detection
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Outlier Detection
+# ═══════════════════════════════════════════════════════════════
 
 stats_outliers_iqr(data: any): any
     q = stats_quartiles(data)
@@ -270,7 +270,7 @@ stats_outliers_zscore(data: any, threshold: f64): any
 
     outliers = {}
     for v in data
-        z = math.abs((v - mean) / std)
+        z = (v - mean) / std:abs()
         if z > threshold
             outliers[#outliers + 1] = {value = v, zscore = z}
         end
@@ -278,35 +278,35 @@ stats_outliers_zscore(data: any, threshold: f64): any
     {outliers = outliers}
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
 M = {}
--- Descriptive
+# Descriptive
 M.mean = stats_mean
 M.median = stats_median
 M.mode = stats_mode
 M.variance = stats_variance
 M.std_dev = stats_std_dev
 M.standardize = stats_standardize
--- Percentiles
+# Percentiles
 M.percentile = stats_percentile
 M.quartiles = stats_quartiles
 M.iqr = stats_iqr
--- Correlation
+# Correlation
 M.covariance = stats_covariance
 M.correlation = stats_correlation
--- Distributions
+# Distributions
 M.normal_pdf = stats_normal_pdf
 M.normal_cdf = stats_normal_cdf
 M.uniform_pdf = stats_uniform_pdf
 M.uniform_cdf = stats_uniform_cdf
--- Histogram
+# Histogram
 M.histogram = stats_histogram
--- Summary
+# Summary
 M.summary = stats_summary
--- Outliers
+# Outliers
 M.outliers_iqr = stats_outliers_iqr
 M.outliers_zscore = stats_outliers_zscore
 M

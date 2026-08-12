@@ -1,5 +1,5 @@
--- Mandelbrot set renderer — fully typed, compiles to pure C at -O3.
--- Run: duo run examples/mandelbrot.id
+# Mandelbrot set renderer — fully typed, compiles to pure C at -O3.
+# Run: duo run examples/mandelbrot.id
 
 const WIDTH: i64  = 80
 const HEIGHT: i64 = 40

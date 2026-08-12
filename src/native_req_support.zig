@@ -14,7 +14,7 @@ pub const ModuleMeta = struct {
     mod_cname: []const u8,
     constants: std.StringHashMapUnmanaged(i64),
     exports: std.StringHashMapUnmanaged([]const u8),
-    /// The Idsem source this module resolved to, when it was found on disk. The
+    /// The Idol source this module resolved to, when it was found on disk. The
     /// direct backend emits relocations against this module's `@comp.c.export`
     /// symbols, so it must be able to compile and link the file that defines
     /// them; the alias and C prefix alone do not say where that file lives.
@@ -86,10 +86,10 @@ pub const Context = struct {
         return meta.exports.get(field);
     }
 
-    /// One `req` binding: the local alias and the `.duo` file it names.
+    /// One `req` binding: the local alias and the `.id` file it names.
     pub const AliasSource = struct { alias: []const u8, source_path: []const u8 };
 
-    /// Every `req` binding that resolved to a readable `.duo` file, paired with
+    /// Every `req` binding that resolved to a readable `.id` file, paired with
     /// the alias the caller uses. `exportingModuleSources` answers a different
     /// question — which modules need a SEPARATE object — and deliberately skips
     /// modules with no `@comp.c.export`. Those are exactly the modules the
@@ -116,7 +116,7 @@ pub const Context = struct {
         return meta.exports.count() != 0;
     }
 
-    /// `.duo` files that define `@comp.c.export` symbols. A direct-backend call
+    /// `.id` files that define `@comp.c.export` symbols. A direct-backend call
     /// into one of these lowers to a relocation, so the linker needs an object
     /// built from each file — without them the link fails on undefined
     /// `duo_*` symbols even though lowering fully succeeded. Modules with no
@@ -490,13 +490,13 @@ test "native_req_support: token constants" {
         m.deinit(alloc);
     }
     try std.testing.expectEqual(@as(i64, 14), meta.constants.get("KIND_FUN").?);
-    try std.testing.expectEqual(@as(i64, 105), meta.constants.get("KIND_EOF").?);
+    try std.testing.expectEqual(@as(i64, 109), meta.constants.get("KINDEOF").?);
 }
 
 test "native_req_support: canonical source precedes historical source" {
     try std.testing.expectEqualStrings(".id", source_suffixes[0]);
     try std.testing.expectEqualStrings(".duo", source_suffixes[1]);
-    try std.testing.expectEqual(source_family.SourceLaw.idsem, source_family.sourceFacts("module.id").law);
+    try std.testing.expectEqual(source_family.SourceLaw.idol, source_family.sourceFacts("module.id").law);
     try std.testing.expectEqual(source_family.SourceProvenance.canonical, source_family.sourceFacts("module.id").provenance);
     try std.testing.expectEqual(source_family.SourceProvenance.historical, source_family.sourceFacts("module.duo").provenance);
 }
@@ -511,5 +511,5 @@ test "native_req_support: classify export" {
         var m = meta;
         m.deinit(alloc);
     }
-    try std.testing.expectEqualStrings("duo_keyword_classify", meta.exports.get("classify").?);
+    try std.testing.expectEqualStrings("duokeywordclassify", meta.exports.get("classify").?);
 }

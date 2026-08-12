@@ -1,4 +1,4 @@
--- F-13813-1: implicit return of chained string concat after a side-effect stmt
+# F-13813-1: implicit return of chained string concat after a side-effect stmt
 
 format_msg(id: str, kind: str): str
     "ok: " .. id .. " (" .. kind .. ")"

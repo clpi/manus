@@ -8,7 +8,7 @@ not a compiler subsystem, and not semantic source.
 Authority and workflow law live where C0 says they live:
 
 ```
-AGENTS.md -> docs/spec/constitution.md -> CLAUDE.md
+AGENTS.md -> docs/spec/constitution.md -> CLAUDE.md -> docs/spec/source.md
          -> docs/spec/AUTHORITY.md -> docs/bootstrap.md
          -> .agents/AGENT_CANONICAL.md / AGENT_COORDINATION.md
 ```
@@ -21,7 +21,7 @@ file is right and this projection must be repaired.
 | Path | Purpose |
 | --- | --- |
 | `settings.json` | Project-local pi settings (compaction retention, npm via mise). |
-| `skills/idol-dev/` | The Idol development-loop skill + CLI helper scripts. |
+| `skills/idol-dev/` | The Idol development-loop skill + CLI helper scripts. Install into Codex with `./tools/node/dev/install-skills`. |
 | `extensions/idol-mcp.ts` | Bridges the three project MCP servers (`duo-bench`, `duo-lsp`, `zls`) into pi tools, since pi has no native MCP and the Idol coordination workflow (claims, gaps, serialized builds) is MCP-based. |
 
 ## What this projection does NOT do

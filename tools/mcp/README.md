@@ -11,17 +11,17 @@ Start at [`AGENTS.md`](../../AGENTS.md). Configure the servers through
 their current schemas with MCP `tools/list`, and read executed compiler
 ownership from [`docs/bootstrap.md`](../../docs/bootstrap.md).
 
-`std` is migration distribution, not a semantic namespace. Existing direct
-`std.*` calls in these transports are deletion-gated physical debt. Do not copy,
-expand, document, or generate them as canonical Idol. New capability begins
-with the relation, subject, world, facts, outcome, evidence, and realization;
-missing vocabulary blocks instead of creating a helper root.
+No universal namespace in these transports. Existing namespace dispatch is
+deletion-gated physical debt. Do not copy, expand, document, or generate it
+as canonical Idol. New capability begins with relation, subject, world, facts,
+outcome, evidence, and realization; missing vocabulary blocks instead of
+creating a helper root.
 
 Run the exact serialized MCP gate after changes:
 
 ```bash
 repo="$(git rev-parse --show-toplevel)"
-"$repo/zig-out/bin/duo" run --backend=c "$repo/scripts/duo_lock.id" -- zig build mcp-gate
+"$repo/zig-out/bin/idol" run --backend=c "$repo/scripts/duo_lock.id" -- zig build mcp-gate
 ```
 
 The gate must prove handshake, schema/value agreement, truthful session state,

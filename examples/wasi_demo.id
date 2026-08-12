@@ -1,7 +1,7 @@
--- WASI type system demo: WebAssembly System Interface types
--- Demonstrates WASI type constants and bindings
+# WASI type system demo: WebAssembly System Interface types
+# Demonstrates WASI type constants and bindings
 
--- WASI errno constants
+# WASI errno constants
 errno_success(): u16    0 end
 errno_badf(): u16       8 end
 errno_exist(): u16      20 end
@@ -11,12 +11,12 @@ errno_inval(): u16      28 end
 errno_notdir(): u16     54 end
 errno_overflow(): u16   61 end
 
--- WASI file descriptor types
+# WASI file descriptor types
 fd_stdin(): i32    0 end
 fd_stdout(): i32   1 end
 fd_stderr(): i32   2 end
 
--- WASI rights
+# WASI rights
 right_fd_read(): u64        1 end
 right_fd_write(): u64       2 end
 right_fd_seek(): u64        4 end
@@ -24,13 +24,13 @@ right_fd_fdstat_get(): u64  16 end
 right_poll_oneoff(): u64    256 end
 right_sock_accept(): u64    65536 end
 
--- WASI open flags
+# WASI open flags
 oflags_creat(): u16      1 end
 oflags_directory(): u16  2 end
 oflags_excl(): u16       4 end
 oflags_trunc(): u16      8 end
 
--- WASI file types
+# WASI file types
 filetype_unknown(): u8            0 end
 filetype_block_device(): u8       1 end
 filetype_character_device(): u8   2 end
@@ -40,34 +40,34 @@ filetype_socket_dgram(): u8       5 end
 filetype_socket_stream(): u8      6 end
 filetype_symlink(): u8            7 end
 
--- WASI clock IDs
+# WASI clock IDs
 clockid_realtime(): u32               0 end
 clockid_monotonic(): u32              1 end
 clockid_process_cputime_id(): u32     2 end
 clockid_thread_cputime_id(): u32      3 end
 
--- WASI event types
+# WASI event types
 eventtype_clock(): u8     0 end
 eventtype_fd_read(): u8   1 end
 eventtype_fd_write(): u8  2 end
 
--- WASI whence (seek origin)
+# WASI whence (seek origin)
 whence_set(): u8  0 end
 whence_cur(): u8  1 end
 whence_end(): u8  2 end
 
--- WASI signal constants
+# WASI signal constants
 signal_hup(): u8   1 end
 signal_int(): u8   2 end
 signal_quit(): u8  3 end
 signal_kill(): u8  9 end
 signal_term(): u8  15 end
 
--- WASI exit codes
+# WASI exit codes
 exit_success(): u32  0 end
 exit_failure(): u32  1 end
 
--- WASI timestamp helpers
+# WASI timestamp helpers
 timestamp_second(): u64      1000000000 end
 timestamp_millisecond(): u64 1000000 end
 timestamp_microsecond(): u64 1000 end

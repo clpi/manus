@@ -1,5 +1,5 @@
--- Pass 2.4 fixture: the native pipeline `|>` must lower to a direct C call,
--- not to a boxed invoke. The C must hold `double(21)` at the call site.
+# Pass 2.4 fixture: the native pipeline `|>` must lower to a direct C call,
+# not to a boxed invoke. The C must hold `double(21)` at the call site.
 
 double(x: i64): i64
     x * 2

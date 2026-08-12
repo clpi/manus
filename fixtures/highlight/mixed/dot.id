@@ -1,16 +1,16 @@
--- surface: duon
--- NEGATIVE CONTROL for G-TOTAL, and the positive control for the diagnostic
--- path. Every marked span below has TWO candidates and no surface fact that
--- separates them, so the projector must DIAGNOSE rather than default. A gate
--- reporting "0 unresolved spans" over a corpus that cannot produce one is the
--- kind of zero §3 says is usually a broken gate; this file is what stops that.
---
--- A leading `.` at the head of a clause: §0.3 reads it as an inferred case,
--- §0a reads it as a field of the subject. Both are law. Nothing on the line
--- decides, so nothing may be coloured.
+# surface: duon
+# NEGATIVE CONTROL for G-TOTAL, and the positive control for the diagnostic
+# path. Every marked span below has TWO candidates and no surface fact that
+# separates them, so the projector must DIAGNOSE rather than default. A gate
+# reporting "0 unresolved spans" over a corpus that cannot produce one is the
+# kind of zero §3 says is usually a broken gate; this file is what stops that.
+#
+# A leading `.` at the head of a clause: §0.3 reads it as an inferred case,
+# §0a reads it as a field of the subject. Both are law. Nothing on the line
+# decides, so nothing may be coloured.
 .eof
--- Pass 119: THE SEMICOLON DOES NOT EXIST. A byte spelling one names no edge.
+# Pass 119: THE SEMICOLON DOES NOT EXIST. A byte spelling one names no edge.
 n = 1;
--- And the space walk where the surface CANNOT decide: is `i` a descriptor or a
--- place? Two candidates, no rule between them, so both brackets diagnose.
+# And the space walk where the surface CANNOT decide: is `i` a descriptor or a
+# place? Two candidates, no rule between them, so both brackets diagnose.
 q = xs[i]

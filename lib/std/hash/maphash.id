@@ -1,6 +1,6 @@
--- std.hash.maphash — Hash for tables/maps (mirrors Go's hash/maphash)
--- A non-cryptographic hash function suitable for use in hash tables.
--- Uses a seed-based FNV-like approach to resist hash-collision attacks.
+# std.hash.maphash — Hash for tables/maps (mirrors Go's hash/maphash)
+# A non-cryptographic hash function suitable for use in hash tables.
+# Uses a seed-based FNV-like approach to resist hash-collision attacks.
 
 make_seed(): i64
     bytes = std.crypto.rand.bytes(8)

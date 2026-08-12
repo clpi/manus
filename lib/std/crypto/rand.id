@@ -1,4 +1,4 @@
--- std.crypto.rand — cryptographic random number generation (uses /dev/urandom)
+# std.crypto.rand — cryptographic random number generation (uses /dev/urandom)
 
 @c.include("fcntl.h")
 @c.include("unistd.h")
@@ -26,7 +26,7 @@ hex(n: i64): str
     b = bytes(n)
     res = ""
     for i = 1, n
-        res = res .. string.format("%02x", b[i])
+        res = res .. "%02x":format(b[i])
     end
     res
 end
@@ -47,7 +47,7 @@ end
 
 read(buf: any): i64
     if buf == nil return 0 end
-    n: i64 = rawlen(buf)
+    n: i64 = buf:len()
     b = bytes(n)
     for i = 1, n
         buf[i] = b[i]

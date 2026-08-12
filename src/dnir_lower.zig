@@ -2,7 +2,7 @@
 //!
 //! Produces `duo_native_ir.Module` for direct machine backends. C emission is bootstrap-only.
 //!
-//! Entry points: Idsem modules export functions at file scope (file-as-M). There is no
+//! Entry points: Idol modules export functions at file scope (file-as-M). There is no
 //! Python/Lua-style mandatory `main()` or special entry typing — any eligible function
 //! lowers the same way; linker entry is `@export` / CLI target, not a magic name.
 const std = @import("std");
@@ -160,6 +160,7 @@ const OccurrenceBridge = struct {
             if (node.kind != .call) continue;
             const application: semantic_graph.id = @intCast(coordinate);
             if (graph.application(application) == null) {
+                if (graph.isBootstrapApplicationNode(application)) continue;
                 index.unresolved += 1;
                 continue;
             }
@@ -872,6 +873,10 @@ pub const LowerCtx = struct {
     /// makes the reassign-and-jump legal: a record parameter occupies several
     /// slots and is excluded rather than partially written.
     self_param_slots: []const u32 = &.{},
+    /// Instruction indices of `break` branches waiting for the innermost loop end.
+    loop_breaks: std.ArrayListUnmanaged(std.ArrayListUnmanaged(u32)) = .empty,
+    /// Back-edge targets for `continue` in the innermost loop.
+    loop_heads: std.ArrayListUnmanaged(u32) = .empty,
 
     pub fn deinit(self: *LowerCtx) void {
         var it = self.locals.iterator();
@@ -886,6 +891,12 @@ pub const LowerCtx = struct {
         while (ci.next()) |e| self.alloc.free(e.key_ptr.*);
         self.const_ints.deinit(self.alloc);
         if (self.self_param_slots.len > 0) self.alloc.free(self.self_param_slots);
+        while (self.loop_breaks.pop()) |breaks| {
+            var pending = breaks;
+            pending.deinit(self.alloc);
+        }
+        self.loop_breaks.deinit(self.alloc);
+        self.loop_heads.deinit(self.alloc);
         self.instrs.deinit(self.alloc);
     }
 
@@ -1118,7 +1129,7 @@ fn resolveType(t: ast.TypeExpr) RT {
 /// `int` and `integer` ARE `i64`, and this is not a courtesy: `types.zig`
 /// resolves both to `.i64` under "Common aliases", so they are the same type by
 /// the language's own answer. This pass matched the two spellings `i64` and
-/// `i32` literally, so `exit(code: int)` in `lib/std/os.duo` was ineligible —
+/// `i32` literally, so `exit(code: int)` in `lib/std/os.id` was ineligible —
 /// and because `lowerModule` requires EVERY function in a module to lower, one
 /// spliced `os.exit` refused the whole program. Two spellings of one type, and
 /// the narrower reading cost every program that touches `std.os`.
@@ -1207,7 +1218,8 @@ fn tryEmitSelfTail(ctx: *LowerCtx, expr: *const ast.Expr) Error!bool {
     // lowering retain the application instead of authorizing a rewrite from
     // the callee spelling.
     if (ctx.occurrences.get(expr) != null) return false;
-    if (ctx.require_graph_facts) return invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-id");
+    if (ctx.require_graph_facts and !ctx.graph.bootstrapApplicationExpr(expr))
+        return invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-id");
     const c = expr.call;
     if (c.func.* != .name) return false;
     if (!std.mem.eql(u8, c.func.name.ident, ctx.self_name)) return false;
@@ -1443,7 +1455,10 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             }
         },
         .while_loop => |ws| {
+            try ctx.loop_breaks.append(ctx.alloc, std.ArrayListUnmanaged(u32).empty);
             const head_idx: u32 = @intCast(ctx.instrs.items.len);
+            try ctx.loop_heads.append(ctx.alloc, head_idx);
+            defer _ = ctx.loop_heads.pop();
             const cond = try lowerExpr(ctx, ws.cond);
             const fail_idx = ctx.instrs.items.len;
             try ctx.emit(.{ .op = .br, .lhs = cond, .branch_target = 0, .branch_condition = .when_false });
@@ -1456,6 +1471,11 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             try ctx.emit(.{ .op = .br, .branch_target = head_idx });
             const end_idx: u32 = @intCast(ctx.instrs.items.len);
             ctx.instrs.items[fail_idx].branch_target = end_idx;
+            var breaks = ctx.loop_breaks.pop() orelse return bail(ctx.diagnostic, @src());
+            defer breaks.deinit(ctx.alloc);
+            for (breaks.items) |br_idx| {
+                ctx.instrs.items[br_idx].branch_target = end_idx;
+            }
         },
         .num_for => |nf| try lowerNumFor(ctx, nf),
         .ret => |r| {
@@ -1483,7 +1503,17 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
         .call_stmt => |cs| {
             _ = try lowerExprCons(ctx, cs.expr, .discard);
         },
-        else => return bail(ctx.diagnostic, @src()),
+        .brk => {
+            if (ctx.loop_breaks.items.len == 0) return bail(ctx.diagnostic, @src());
+            const br_idx: u32 = @intCast(ctx.instrs.items.len);
+            try ctx.emit(.{ .op = .br, .branch_target = 0 });
+            try ctx.loop_breaks.items[ctx.loop_breaks.items.len - 1].append(ctx.alloc, br_idx);
+        },
+        .cont => {
+            if (ctx.loop_heads.items.len == 0) return bail(ctx.diagnostic, @src());
+            try ctx.emit(.{ .op = .br, .branch_target = ctx.loop_heads.items[ctx.loop_heads.items.len - 1] });
+        },
+        else => return bailWith(ctx.diagnostic, @src(), @tagName(stmt.*)),
     }
 }
 
@@ -1557,7 +1587,7 @@ fn lowerBlockTailEffect(ctx: *LowerCtx, block: *const ast.Block) Error!void {
 ///     if r == 0
 ///         r = 5        -- lowered to `mov x0, #5 ; ret`
 ///     end
-///     r = r + 100      -- unreachable
+///     r += 100      -- unreachable
 ///     print(r)         -- unreachable
 ///
 /// printed nothing and returned 5, where the C backend printed 105. The whole
@@ -1911,15 +1941,31 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
         // and one integer arm is a slot whose type depends on the branch taken,
         // which no consumer downstream can read correctly.
         .if_expr => |ie| exprIsStr(ctx, ie.then_expr) and exprIsStr(ctx, ie.else_expr),
+        .method_call => |mc| blk: {
+            if (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "io") and
+                std.mem.eql(u8, mc.method, "read"))
+                break :blk true;
+            if (std.mem.eql(u8, mc.method, "len") and mc.args.len == 0)
+                break :blk exprIsStr(ctx, mc.obj);
+            if (std.mem.eql(u8, mc.method, "sub") and mc.args.len >= 1 and mc.args.len <= 2)
+                break :blk exprIsStr(ctx, mc.obj);
+            if (std.mem.eql(u8, mc.method, "has") and mc.args.len == 1)
+                break :blk exprIsStr(ctx, mc.obj);
+            break :blk false;
+        },
         else => false,
     };
 }
 
+fn applicationNeedsGraphOccurrence(ctx: *const LowerCtx, expr: *const ast.Expr) bool {
+    if (!ctx.require_graph_facts) return false;
+    if (expr.* != .call and expr.* != .method_call) return false;
+    if (ctx.occurrences.get(expr) != null) return false;
+    return !ctx.graph.bootstrapApplicationExpr(expr);
+}
+
 fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) Error!void {
-    if (ctx.require_graph_facts and
-        (value.* == .call or value.* == .method_call) and
-        ctx.occurrences.get(value) == null)
-    {
+    if (applicationNeedsGraphOccurrence(ctx, value)) {
         return invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-id");
     }
     // `Alias = req "std.compiler.token"` binds a module at compile time; the
@@ -2109,7 +2155,7 @@ fn lowerPositionalTableAssign(ctx: *LowerCtx, name: []const u8, table: *const as
 /// gap[063] — `abort()` when a dynamic index leaves a register-exploded table's
 /// range, instead of silently doing nothing.
 ///
-/// A positional table lowered to registers has a FIXED capacity; an Idsem table
+/// A positional table lowered to registers has a FIXED capacity; an Idol table
 /// GROWS. The select-chain below matched no slot for an out-of-range index and
 /// simply fell through, so `t = { 0 }` followed by `t[i] = i` for i in 1..3 kept
 /// only the first write and the program printed 1 where the C oracle printed 6 —
@@ -2532,19 +2578,22 @@ fn lowerExprCons(
     expr: *const Expr,
     consumption: types.ReturnConsumption,
 ) Error!dnir.Value {
-    if (ctx.require_graph_facts and
-        (expr.* == .call or expr.* == .method_call) and
-        ctx.occurrences.get(expr) == null)
-    {
+    if (applicationNeedsGraphOccurrence(ctx, expr)) {
         return invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-id");
     }
     return switch (expr.*) {
+        .nil => .{ .i64 = 0 },
         .int_lit => |i| .{ .i64 = i.val },
         .float_lit => |fl| .{ .f64 = fl.val },
         .true_lit => .{ .i64 = 1 },
         .false_lit => .{ .i64 = 0 },
         .string_lit => |s| .{ .str = s.val },
         .name => |n| blk: {
+            if (std.mem.eql(u8, n.ident, "io") or std.mem.eql(u8, n.ident, "os") or
+                std.mem.eql(u8, n.ident, "std"))
+            {
+                break :blk dnir.Value{ .str = n.ident };
+            }
             const slot = ctx.locals.get(n.ident) orelse {
                 // Not a local — a module-level integer constant folds here.
                 if (ctx.module_consts.ints.get(n.ident)) |mv| break :blk dnir.Value{ .i64 = mv };
@@ -2570,6 +2619,19 @@ fn lowerExprCons(
                 try ensureExtern(ctx, "string", "len", "strlen");
                 const t = ctx.freshTemp();
                 try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "strlen", .lhs = arg });
+                break :blk dnir.Value{ .temp = t };
+            }
+            if (u.op == .not) {
+                const operand = try lowerExpr(ctx, u.operand);
+                const t = ctx.freshTemp();
+                try ctx.emit(.{
+                    .op = .binop,
+                    .result = t,
+                    .binop = .eq,
+                    .lhs = operand,
+                    .rhs = .{ .i64 = 0 },
+                    .ty = .any,
+                });
                 break :blk dnir.Value{ .temp = t };
             }
             return bailWith(ctx.diagnostic, @src(), @tagName(u.op));
@@ -2630,7 +2692,7 @@ fn lowerExprCons(
             }
             return bail(ctx.diagnostic, @src());
         },
-        else => bail(ctx.diagnostic, @src()),
+        else => bailWith(ctx.diagnostic, @src(), @tagName(expr.*)),
     };
 }
 
@@ -2655,7 +2717,12 @@ fn faceAsCall(ctx: *LowerCtx, expr: *const ast.Expr) Error!*const ast.Expr {
     @memcpy(args[1..], mc.args);
 
     const func = try ctx.alloc.create(ast.Expr);
-    if (exprIsStr(ctx, mc.obj)) {
+    const string_method =
+        std.mem.eql(u8, mc.method, "sub") or
+        std.mem.eql(u8, mc.method, "match") or
+        std.mem.eql(u8, mc.method, "byte") or
+        std.mem.eql(u8, mc.method, "len");
+    if (exprIsStr(ctx, mc.obj) or string_method) {
         const recv = try ctx.alloc.create(ast.Expr);
         recv.* = .{ .name = .{ .loc = mc.loc, .ident = "string" } };
         func.* = .{ .field = .{ .loc = mc.loc, .obj = recv, .field = mc.method } };
@@ -2695,7 +2762,7 @@ fn checkedScalarOperand(
     const descriptor = node.descriptor orelse
         return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-descriptor");
     switch (descriptor) {
-        .i32, .i64, .bool, .str, .f64 => {},
+        .i32, .i64, .bool, .str, .f64, .any => {},
         else => return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi"),
     }
     const raw = node.ast_ref orelse return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-provenance");
@@ -2707,7 +2774,7 @@ fn checkedScalarOperand(
 
 fn checkedScalarResult(diagnostic: *Diagnostic, descriptor: types.ResolvedType) Error!void {
     switch (descriptor) {
-        .i32, .i64, .bool, .str, .f64, .void => {},
+        .i32, .i64, .bool, .str, .f64, .void, .any => {},
         else => return invalidGraphFacts(diagnostic, @src(), "application-result-abi"),
     }
 }
@@ -2822,9 +2889,69 @@ fn lowerCheckedScalarCall(
     return if (result) |temp| .{ .temp = temp } else .void;
 }
 
-/// Lower the canonical subject face from the relation id selected by
-/// semantic analysis. The exact source expression remains the lookup key, so
-/// realization never recreates a call and never resolves its spelling again.
+fn lowerStdinRead(
+    ctx: *LowerCtx,
+    consumption: types.ReturnConsumption,
+) Error!dnir.Value {
+    _ = consumption;
+    try ensureExtern(ctx, "stdin", "read", "idol_io_read_stdin");
+    const t = ctx.freshTemp();
+    try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_io_read_stdin", .ty = .str });
+    return .{ .temp = t };
+}
+
+fn lowerSubjectRead(
+    ctx: *LowerCtx,
+    expr: *const Expr,
+    consumption: types.ReturnConsumption,
+) Error!dnir.Value {
+    _ = consumption;
+    const subject = try lowerExpr(ctx, expr.method_call.obj);
+    try ensureExtern(ctx, "idol", "read", "idol_io_read_path");
+    try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = subject });
+    const t = ctx.freshTemp();
+    try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_io_read_path", .ty = .str });
+    return .{ .temp = t };
+}
+
+/// Subject-first `hay:has(needle)` — lowers the held subject and needle directly
+/// to a bootstrap extern. No `string.*`, `std.*`, or operation-first rewrite.
+fn lowerSubjectHas(
+    ctx: *LowerCtx,
+    expr: *const Expr,
+    consumption: types.ReturnConsumption,
+) Error!dnir.Value {
+    const mc = expr.method_call;
+    if (mc.args.len != 1) return bail(ctx.diagnostic, @src());
+    const hay = try lowerExpr(ctx, mc.obj);
+    const needle = try lowerExpr(ctx, mc.args[0]);
+    try ensureExtern(ctx, "idol", "has", "idol_str_has");
+    try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = hay });
+    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = needle });
+    if (consumption == .discard) {
+        try ctx.emit(.{ .op = .call_extern, .callee = "idol_str_has", .ty = .i64 });
+        return .void;
+    }
+    const t = ctx.freshTemp();
+    try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_str_has", .ty = .i64 });
+    return .{ .temp = t };
+}
+
+fn lowerSubjectTail(
+    ctx: *LowerCtx,
+    expr: *const Expr,
+    consumption: types.ReturnConsumption,
+) Error!dnir.Value {
+    const subject = try lowerExpr(ctx, expr.method_call.obj);
+    if (consumption == .discard) {
+        try ctx.emit(.{ .op = .call_direct, .callee = "tail", .lhs = subject });
+        return .void;
+    }
+    const t = ctx.freshTemp();
+    try ctx.emit(.{ .op = .call_direct, .result = t, .callee = "tail", .lhs = subject });
+    return .{ .temp = t };
+}
+
 fn lowerSubjectCall(
     ctx: *LowerCtx,
     expr: *const Expr,
@@ -2834,14 +2961,46 @@ fn lowerSubjectCall(
         if (application.subject == null) return invalidGraphFacts(ctx.diagnostic, @src(), "application-subject");
         return lowerCheckedScalarCall(ctx, application, consumption);
     }
-    if (ctx.require_graph_facts) return invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-id");
-
-    // String descriptor primitives are bootstrap lowering rules, not declared
-    // ordinary relations yet. Preserve their current realization until the
-    // standard vocabulary owns those identities.
-    if (expr.* == .method_call and exprIsStr(ctx, expr.method_call.obj)) {
-        return lowerCall(ctx, try faceAsCall(ctx, expr), consumption);
+    if (expr.* == .method_call) {
+        const mc = expr.method_call;
+        if (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "stdin") and
+            std.mem.eql(u8, mc.method, "read") and mc.args.len == 0)
+        {
+            return lowerStdinRead(ctx, consumption);
+        }
+        if (std.mem.eql(u8, mc.method, "read") and mc.args.len == 0 and exprIsStr(ctx, mc.obj)) {
+            return lowerSubjectRead(ctx, expr, consumption);
+        }
+        if (std.mem.eql(u8, mc.method, "len") and mc.args.len == 0) {
+            const base = try lowerExpr(ctx, mc.obj);
+            if (consumption == .discard) {
+                try ctx.emit(.{ .op = .str_len, .lhs = base });
+                return .void;
+            }
+            const t = ctx.freshTemp();
+            try ctx.emit(.{ .op = .str_len, .result = t, .lhs = base });
+            return .{ .temp = t };
+        }
+        if (std.mem.eql(u8, mc.method, "has") and mc.args.len == 1) {
+            return lowerSubjectHas(ctx, expr, consumption);
+        }
+        if (std.mem.eql(u8, mc.method, "tail") and mc.args.len == 0 and exprIsStr(ctx, mc.obj)) {
+            return lowerSubjectTail(ctx, expr, consumption);
+        }
+        // String descriptor primitives are bootstrap lowering rules, not
+        // declared ordinary relations yet. Admit them before graph-fact bail
+        // so gate transport can run on direct without Lua/C bridges.
+        if (exprIsStr(ctx, mc.obj) or
+            (std.mem.eql(u8, mc.method, "sub") and mc.args.len >= 1 and mc.args.len <= 2 and
+                exprIsStr(ctx, mc.obj)))
+        {
+            return lowerCall(ctx, try faceAsCall(ctx, expr), consumption);
+        }
+        if (ctx.graph.bootstrapApplicationExpr(expr)) {
+            return lowerCall(ctx, try faceAsCall(ctx, expr), consumption);
+        }
     }
+    if (ctx.require_graph_facts) return invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-id");
 
     return invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-id");
 }
@@ -3360,7 +3519,6 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
     if (ctx.occurrences.get(expr)) |application| {
         return lowerCheckedScalarCall(ctx, application, consumption);
     }
-    if (ctx.require_graph_facts) return invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-id");
     const c = expr.call;
     const discard = consumption == .discard;
     if (try lowerToStr(ctx, c)) |v| return v;
@@ -3509,7 +3667,7 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
                 try ensureExtern(ctx, f.obj.name.ident, f.field, sym);
                 // Marshal through scalarCallLhs like the static-module path
                 // below. Lowering only `c.args[0]` silently dropped every later
-                // argument, so `Lexer.new("fun", "proof.duo")` reached the callee
+                // argument, so `Lexer.new("fun", "proof.id")` reached the callee
                 // with one argument and garbage in x1.
                 const arg0 = try scalarCallLhs(ctx, c.args, null);
                 if (discard) {
@@ -3534,12 +3692,44 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
             // loop as plain native code with no runtime helper.
             if (std.mem.eql(u8, f.obj.name.ident, "string") and
                 std.mem.eql(u8, f.field, "byte") and
-                c.args.len == 2 and exprIsStr(ctx, c.args[0]))
+                c.args.len >= 1 and c.args.len <= 2)
             {
                 const base = try lowerExpr(ctx, c.args[0]);
-                const idx = try lowerExpr(ctx, c.args[1]);
                 const t = ctx.freshTemp();
-                try ctx.emit(.{ .op = .load_index, .result = t, .lhs = base, .rhs = idx });
+                if (c.args.len == 1) {
+                    try ctx.emit(.{ .op = .load_index, .result = t, .lhs = base, .rhs = .{ .i64 = 1 } });
+                } else {
+                    const idx = try lowerExpr(ctx, c.args[1]);
+                    try ctx.emit(.{ .op = .load_index, .result = t, .lhs = base, .rhs = idx });
+                }
+                return .{ .temp = t };
+            }
+            if (std.mem.eql(u8, f.obj.name.ident, "string") and
+                std.mem.eql(u8, f.field, "sub") and
+                c.args.len == 3)
+            {
+                const s = try lowerExpr(ctx, c.args[0]);
+                const i = try lowerExpr(ctx, c.args[1]);
+                const j = try lowerExpr(ctx, c.args[2]);
+                try ensureExtern(ctx, "str", "sub", "duo_str_sub");
+                try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = s });
+                try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = i });
+                try ctx.emit(.{ .op = .mov_arg, .result = 2, .lhs = j });
+                const t = ctx.freshTemp();
+                try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "duo_str_sub", .ty = .str });
+                return .{ .temp = t };
+            }
+            if (std.mem.eql(u8, f.obj.name.ident, "string") and
+                std.mem.eql(u8, f.field, "match") and
+                c.args.len == 2)
+            {
+                const s = try lowerExpr(ctx, c.args[0]);
+                const pat = try lowerExpr(ctx, c.args[1]);
+                try ensureExtern(ctx, "str", "match", "idol_str_match");
+                try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = s });
+                try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = pat });
+                const t = ctx.freshTemp();
+                try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_str_match", .ty = .str });
                 return .{ .temp = t };
             }
             // `string.len(s)` is a byte-length scan over a `const char*`, not a
@@ -3548,7 +3738,7 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
             // inside the direct subset instead of forcing the C backend.
             if (std.mem.eql(u8, f.obj.name.ident, "string") and
                 std.mem.eql(u8, f.field, "len") and
-                c.args.len == 1 and exprIsStr(ctx, c.args[0]))
+                c.args.len == 1)
             {
                 const base = try lowerExpr(ctx, c.args[0]);
                 const t = ctx.freshTemp();
@@ -3596,6 +3786,7 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
         });
         return .{ .temp = t };
     }
+    if (ctx.require_graph_facts) return invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-id");
     // Name the callee. Every row this session that reported only a location
     // turned out to be covering more than one cause, and a call site's whole
     // content is "I could not resolve this callee" — the name IS the finding.
@@ -3834,7 +4025,7 @@ test "dnir_lower: hardware direct module" {
         \\    0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "pass16_hardware_direct.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "hardware_direct.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -3859,7 +4050,7 @@ test "dnir_lower: hardware popcount" {
         \\    return @popcount(47)
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "test.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "test.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -3882,7 +4073,7 @@ test "dnir_lower: f64 record kernel" {
         \\    0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "pass4_dnir.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "dnir_kernel.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -3914,7 +4105,7 @@ test "dnir_lower: f64 kernel call with table literal" {
         \\    distance2({ x = 3.0, y = 4.0 })
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "pass4_call.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "f64_call.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -3941,12 +4132,12 @@ test "dnir_lower: while loop" {
         \\main(): i64
         \\    i = 0
         \\    while i < 3
-        \\        i = i + 1
+        \\        i += 1
         \\    end
         \\    i
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "while.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "while.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -3966,12 +4157,12 @@ test "dnir_lower: numeric for" {
         \\main(): i64
         \\    sum = 0
         \\    for i = 0, 2
-        \\        sum = sum + i
+        \\        sum += i
         \\    end
         \\    sum
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "num_for.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "num_for.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -3999,7 +4190,7 @@ test "dnir_lower: f64 local in integer main" {
         \\    0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "f64_local.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "f64_local.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -4029,7 +4220,7 @@ test "dnir_lower: multi-arg f64 kernel" {
         \\    0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "add2.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "add2.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -4056,7 +4247,7 @@ test "dnir_lower: multi-arg i64 call_direct uses mov_arg" {
         \\    math.add(10, 20)
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "math_add_call.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "math_add_call.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -4087,7 +4278,7 @@ test "dnir_lower: to(str)(n) stages the value as a variadic tail argument" {
         \\    return #s
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "to_str.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "to_str.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -4121,7 +4312,7 @@ test "dnir_lower: to(str) declines a non-integer argument rather than mis-loweri
         \\    return #s
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "to_str_f64.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "to_str_f64.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -4281,7 +4472,7 @@ test "dnir_lower: no mandatory main — entry function lowers uniformly" {
         \\    42
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "run.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "run.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -4304,7 +4495,7 @@ test "dnir_lower: implicit f64 assign" {
         \\    0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "implicit_f64.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "implicit_f64.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -4329,12 +4520,12 @@ test "dnir_lower: numeric for negative step" {
         \\main(): i64
         \\    sum = 0
         \\    for i = 3, 1, -1
-        \\        sum = sum + i
+        \\        sum += i
         \\    end
         \\    sum
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "neg_for.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "neg_for.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -4355,12 +4546,12 @@ test "dnir_lower: numeric for const step binding" {
         \\    step = -1
         \\    sum = 0
         \\    for i = 3, 1, step
-        \\        sum = sum + i
+        \\        sum += i
         \\    end
         \\    sum
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "const_step.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "const_step.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -4381,7 +4572,7 @@ test "dnir_lower: ret zero" {
         \\    0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "test.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "test.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -4406,7 +4597,7 @@ test "dnir_lower: f64 compare in integer main" {
         \\    end
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "f64_cmp.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "f64_cmp.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -4442,7 +4633,7 @@ test "dnir_lower: if elseif else chain" {
         \\    out
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "elseif.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "elseif.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -4462,12 +4653,12 @@ test "dnir_lower: numeric for runtime step parameter" {
         \\sum_to(n: i64, step: i64): i64
         \\    s = 0
         \\    for i = 1, n, step
-        \\        s = s + i
+        \\        s += i
         \\    end
         \\    s
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "runtime_step.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "runtime_step.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -4494,14 +4685,14 @@ test "dnir_lower: lowerModuleWithGraph matches lowerModule" {
         \\    42
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "test.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "test.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
     const m_direct = try lowerModule(alloc, &mod);
     var g = semantic_graph.SemanticGraph.init(alloc);
     defer g.deinit();
-    _ = try g.liftModuleWithCalls(&mod, "test.duo");
+    _ = try g.liftModuleWithCalls(&mod, "test.id");
     const m_graph = try lowerModuleWithGraph(alloc, &mod, &g);
     defer dnir.deinitModule(alloc, m_graph);
     try std.testing.expect(m_direct.graph == null);
@@ -4697,7 +4888,7 @@ test "dnir_lower: call result class comes from graph descriptor" {
         \\integer(): i64
         \\    count()
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "result_query.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "result_query.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -4802,7 +4993,7 @@ test "dnir_lower: applications share relation without sharing occurrence id" {
         \\    41:read()
         \\    42:read()
     ;
-    var lex = Lexer.init(src, "application-occurrence.duo");
+    var lex = Lexer.init(src, "application-occurrence.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -4812,7 +5003,7 @@ test "dnir_lower: applications share relation without sharing occurrence id" {
     try checked.check_module(&mod);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCheckedCalls(&mod, &checked, "application-occurrence.duo");
+    _ = try graph.liftModuleWithCheckedCalls(&mod, &checked, "application-occurrence.id");
 
     const module = try lowerModuleWithGraph(alloc, &mod, &graph);
     defer dnir.deinitModule(alloc, module);
@@ -5020,7 +5211,7 @@ test "dnir_lower: checked f64 call derives ABI staging from descriptors" {
         \\main: f64 = ()
         \\    add(1.5, 2.5)
     ;
-    var lexer = Lexer.init(source, "ordinary-f64-application.duo");
+    var lexer = Lexer.init(source, "ordinary-f64-application.id");
     var parser = Parser.init(&lexer, alloc);
     parser.duo_mode = true;
     var ast_module = try parser.parse_module();
@@ -5030,7 +5221,7 @@ test "dnir_lower: checked f64 call derives ABI staging from descriptors" {
     try checked.check_module(&ast_module);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "ordinary-f64-application.duo");
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "ordinary-f64-application.id");
 
     const module = try lowerModuleWithGraph(alloc, &ast_module, &graph);
     defer dnir.deinitModule(alloc, module);
@@ -5063,7 +5254,7 @@ test "dnir_lower: bool result descriptor prevents integer interpolation" {
         \\render(): str
         \\    "ready=" .. ready()
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "bool_result_query.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "bool_result_query.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -5189,7 +5380,7 @@ test "dnir_lower: record-return tail and call assign emit init_record" {
         \\    0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "rec.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "rec.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -5221,7 +5412,7 @@ test "dnir_lower: f64 record-return tail lowers ret_record" {
         \\    0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "f64ret.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "f64ret.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -5254,7 +5445,7 @@ test "dnir_lower: f64 kernel inline table emits init_record" {
         \\    0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "f64tbl.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "f64tbl.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -5284,7 +5475,7 @@ test "dnir_lower: discard call_stmt omits call result temp" {
         \\    1
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "discard.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "discard.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -5312,7 +5503,7 @@ test "dnir_lower: trailing compound assign returns assigned local" {
         \\    x *= 2
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "trail.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "trail.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -5343,7 +5534,7 @@ test "dnir_lower: dot static member exports module.method" {
         \\    0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "static.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "static.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -5364,7 +5555,7 @@ test "dnir_lower: colon method compound field assign exports Type.method" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src = "Vec: @{ x: i32 }\nVec:xplus = (amt): i32\n    self.x += amt\nend";
-    var lex = @import("lexer.zig").Lexer.init(src, "method.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "method.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -5387,7 +5578,7 @@ test "dnir_lower: trailing compound field assign returns updated field slot" {
         \\    v.x += amt
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "field.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "field.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -5431,7 +5622,7 @@ test "dnir_lower: if binding assigns before branch" {
         \\    end
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "ifbind.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "ifbind.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -5473,7 +5664,7 @@ test "dnir_lower: ret_record carries every field in DESCRIPTOR order" {
         \\    0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "retorder.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "retorder.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -5507,7 +5698,7 @@ test "dnir_lower: a nine-field record return is eligible, a nine-field param is 
     // Nine fields RETURNED: the x8 indirect-result convention covers it.
     {
         const src = wide ++ "mk(): big\n    return " ++ lit ++ "\nend\nmain(): i64\n    0\nend\n";
-        var lex = @import("lexer.zig").Lexer.init(src, "wideret.duo");
+        var lex = @import("lexer.zig").Lexer.init(src, "wideret.id");
         var parser = @import("parser.zig").Parser.init(&lex, alloc);
         parser.duo_mode = true;
         const mod = try parser.parse_module();
@@ -5519,7 +5710,7 @@ test "dnir_lower: a nine-field record return is eligible, a nine-field param is 
     // no ninth. Refusing beats exploding past x7 into caller garbage.
     {
         const src = wide ++ "take(v: big): i64\n    return v.a\nend\nmain(): i64\n    0\nend\n";
-        var lex = @import("lexer.zig").Lexer.init(src, "wideparam.duo");
+        var lex = @import("lexer.zig").Lexer.init(src, "wideparam.id");
         var parser = @import("parser.zig").Parser.init(&lex, alloc);
         parser.duo_mode = true;
         const mod = try parser.parse_module();

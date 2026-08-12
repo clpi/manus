@@ -96,8 +96,8 @@ pub const PreservationReport = struct {
 pub const ignore_prefixes = [_][]const u8{
     ".zig-cache/",
     "zig-out/",
-    ".duo/cache/",
-    ".duo/graph/",
+    ".id/cache/",
+    ".id/graph/",
     ".DS_Store",
     "default.profraw",
     "benchmark_c",
@@ -105,7 +105,7 @@ pub const ignore_prefixes = [_][]const u8{
 
 /// Extensions that mark a path as valuable source/docs/scripts.
 pub const valuable_extensions = [_][]const u8{
-    ".zig", ".duo", ".md", ".sh", ".txt", ".toml", ".json", ".yml", ".yaml",
+    ".zig", ".id", ".md", ".sh", ".txt", ".toml", ".json", ".yml", ".yaml",
     ".c", ".h", ".lua", ".patch",
 };
 
@@ -416,8 +416,8 @@ test "git_preservation: isValuableUntracked filters caches, keeps source" {
     try std.testing.expect(isValuableUntracked("CLAUDE.md"));
     try std.testing.expect(isValuableUntracked(".zig-cache/o/abc") == false);
     try std.testing.expect(isValuableUntracked("default.profraw") == false);
-    try std.testing.expect(isValuableUntracked(".duo/cache/comptime/x.ducache") == false);
-    try std.testing.expect(isValuableUntracked("examples/foo.duo"));
+    try std.testing.expect(isValuableUntracked(".id/cache/comptime/x.ducache") == false);
+    try std.testing.expect(isValuableUntracked("examples/foo.id"));
     // A no-ext binary artifact with no recognized extension is not auto-valuable.
     try std.testing.expect(isValuableUntracked("benchmark_c_fastmath") == false);
 }

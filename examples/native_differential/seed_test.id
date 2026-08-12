@@ -1,0 +1,9 @@
+main: i64 = ()
+    census = io:read("lib/semantic/census.id")
+    if census == nil
+        return 1
+    if census:match("forbidden")
+        print("forbidden ok")
+    if census:match("|std|")
+        print("std token ok")
+    0

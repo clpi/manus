@@ -1,9 +1,9 @@
--- std.ml.vision — Image classification, data augmentation
--- For ward's vision model support and preprocessing pipeline.
+# std.ml.vision — Image classification, data augmentation
+# For ward's vision model support and preprocessing pipeline.
 
--- ═══════════════════════════════════════════════════════════════
--- Image Utilities
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Image Utilities
+# ═══════════════════════════════════════════════════════════════
 
 new(width: i64, height: i64, channels: i64): any
     {
@@ -45,11 +45,11 @@ set_pixel(img: any, x: i64, y: i64, pixel: any): void
     end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Image Transforms
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Image Transforms
+# ═══════════════════════════════════════════════════════════════
 
-resize(img: any, new_width: i64, new_height: i64): any
+reimg: any, new_width: i64, new_height: i64:len(): any
     result = new(new_width, new_height, img.channels)
     x_scale = img.width / new_width
     y_scale = img.height / new_height
@@ -58,10 +58,10 @@ resize(img: any, new_width: i64, new_height: i64): any
     while y < new_height
         x = 0
         while x < new_width
-            src_x = math.floor(x * x_scale)
-            src_y = math.floor(y * y_scale)
-            src_x = math.min(src_x, img.width - 1)
-            src_y = math.min(src_y, img.height - 1)
+            src_x = x * x_scale:floor()
+            src_y = y * y_scale:floor()
+            src_x = src_x:min(img.width - 1)
+            src_y = src_y:min(img.height - 1)
 
             pixel = get_pixel(img, src_x, src_y)
             set_pixel(result, x, y, pixel)
@@ -135,9 +135,9 @@ rotate90(img: any, clockwise: bool): any
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Color Transforms
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Color Transforms
+# ═══════════════════════════════════════════════════════════════
 
 grayscale(img: any): any
     if img.channels == 1 return img end
@@ -149,7 +149,7 @@ grayscale(img: any): any
         while x < img.width
             pixel = get_pixel(img, x, y)
             gray = 0.299 * pixel[1] + 0.587 * pixel[2] + 0.114 * pixel[3]
-            set_pixel(result, x, y, {math.floor(gray)})
+            set_pixel(result, x, y, {gray:floor()})
             x += 1
         end
         y += 1
@@ -200,15 +200,15 @@ to_float(img: any): any
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Data Augmentation
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Data Augmentation
+# ═══════════════════════════════════════════════════════════════
 
 augment_random_crop(img: any, crop_size: i64): any
     max_x = img.width - crop_size
     max_y = img.height - crop_size
-    x = math.random(0, max_x)
-    y = math.random(0, max_y)
+    x = 0:random(max_x)
+    y = 0:random(max_y)
     crop(img, x, y, crop_size, crop_size)
 end
 
@@ -221,8 +221,8 @@ augment_random_flip(img: any, p: f64): any
 end
 
 augment_random_rotation(img: any, max_angle: f64): any
-    -- Simple 90-degree rotations for now
-    rotations = math.random(0, 3)
+    # Simple 90-degree rotations for now
+    rotations = 0:random(3)
     result = img
     i = 0
     while i < rotations
@@ -244,19 +244,19 @@ augment_color_jitter(img: any, brightness: f64, contrast: f64, saturation: f64):
             while c < img.channels
                 val = pixel[c + 1] / 255.0
 
-                -- Brightness
+                # Brightness
                 val += (math.random() - 0.5) * brightness * 2
-                -- Contrast
+                # Contrast
                 val = (val - 0.5) * (1 + (math.random() - 0.5) * contrast * 2) + 0.5
-                -- Saturation (simplified)
+                # Saturation (simplified)
                 if c > 0 and img.channels >= 3
                     gray = 0.299 * pixel[1] + 0.587 * pixel[2] + 0.114 * pixel[3]
                     gray /= 255.0
                     val = gray + (val - gray) * (1 + (math.random() - 0.5) * saturation * 2)
                 end
 
-                val = math.max(0, math.min(1, val))
-                new_pixel[c + 1] = math.floor(val * 255)
+                val = 0:max(1:min(val))
+                new_pixel[c + 1] = val * 255:floor()
                 c += 1
             end
             set_pixel(result, x, y, new_pixel)
@@ -268,9 +268,9 @@ augment_color_jitter(img: any, brightness: f64, contrast: f64, saturation: f64):
 end
 
 augment_random_affine(img: any, translate_range: f64, scale_range: f64): any
-    -- Simplified affine: just translate
-    tx = math.floor((math.random() - 0.5) * translate_range * 2)
-    ty = math.floor((math.random() - 0.5) * translate_range * 2)
+    # Simplified affine: just translate
+    tx = (math.random() - 0.5) * translate_range * 2:floor()
+    ty = (math.random() - 0.5) * translate_range * 2:floor()
 
     result = new(img.width, img.height, img.channels)
     y = 0
@@ -290,9 +290,9 @@ augment_random_affine(img: any, translate_range: f64, scale_range: f64): any
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Classification Helpers
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Classification Helpers
+# ═══════════════════════════════════════════════════════════════
 
 softmax(logits: any): any
     max_logit = -1e30
@@ -303,7 +303,7 @@ softmax(logits: any): any
     exp_sum = 0
     probs = {}
     for i = 1, #logits
-        exp_val = math.exp(logits[i] - max_logit)
+        exp_val = logits[i] - max_logit:exp()
         probs[i] = exp_val
         exp_sum += exp_val
     end
@@ -320,7 +320,7 @@ top_k(probs: any, k: i64): any
         indexed[#indexed + 1] = {index = i, prob = probs[i]}
     end
 
-    -- Simple selection sort for top-k
+    # Simple selection sort for top-k
     result = {}
     i = 1
     while i <= k and i <= #indexed
@@ -349,12 +349,12 @@ accuracy(predictions: any, labels: any): f64
     correct / #predictions
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
--- Image
--- Transforms
--- Color
--- Augmentation
--- Classification
+# Image
+# Transforms
+# Color
+# Augmentation
+# Classification

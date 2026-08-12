@@ -68,7 +68,7 @@ pub const seed_capabilities: []const Capability = &.{
     .{ .id = "cap.cli.compile", .description = "CLI compile orchestration", .status = .supported, .owner = "src/main.zig" },
     .{ .id = "cap.cli.backend_direct", .description = "Explicit --backend=direct selection", .status = .partial, .owner = "src/main.zig" },
     .{ .id = "cap.native_backend.arm64", .description = "Direct ARM64 Mach-O subset", .status = .experimental, .owner = "src/native_backend.zig" },
-    .{ .id = "cap.bootstrap.duo_chain", .description = "Zig seed → Duo B → Duo C bootstrap", .status = .planned, .owner = "(archived, deleted — git history)" },
+    .{ .id = "cap.bootstrap.id_chain", .description = "Zig seed → Duo B → Duo C bootstrap", .status = .planned, .owner = "(archived, deleted — git history)" },
     .{ .id = "cap.repr.native_scalar", .description = "Full native_scalar module without lua runtime", .status = .partial, .owner = "src/codegen.zig" },
     .{ .id = "cap.bench.c_specialized", .description = "Benchmark profile c-specialized (default)", .status = .partial, .owner = "src/backend_identity.zig" },
     .{ .id = "cap.bench.correctness", .description = "Benchmark RESULT correctness gate", .status = .supported, .owner = "scripts/run_benchmark.sh" },
@@ -306,7 +306,7 @@ pub const ClaimStatus = enum {
 };
 
 pub const RELEASE_PROOF_SCHEMA_VERSION = "duo-release-proof-v0";
-pub const RELEASE_PROOF_BUNDLE_DIR = ".duo/proof/release-0.1";
+pub const RELEASE_PROOF_BUNDLE_DIR = ".id/proof/release-0.1";
 
 /// The release argument is deliberately orthogonal: passing one domain cannot
 /// stand in for missing evidence in another.
@@ -529,12 +529,7 @@ pub fn writeReleaseProofJson(
 
 /// Seed claims — must match README and release docs or be downgraded.
 pub const seed_claims: []const ReleaseClaim = &.{
-    .{
-        .id = "claim.c_backend_default",
-        .statement = "Default compile path emits C and invokes external C compiler",
-        .status = .supported,
-        .dependency_ids = &.{ "cap.codegen.c", "cap.cli.compile" },
-    },
+
     .{
         .id = "claim.direct_arm64_subset",
         .statement = "Direct ARM64 Mach-O backend for restricted typed scalar subset",
@@ -545,7 +540,7 @@ pub const seed_claims: []const ReleaseClaim = &.{
         .id = "claim.self_hosted",
         .statement = "Compiler is self-hosted",
         .status = .planned,
-        .dependency_ids = &.{"cap.bootstrap.duo_chain"},
+        .dependency_ids = &.{"cap.bootstrap.id_chain"},
     },
     .{
         .id = "claim.zero_boxing_global",
@@ -657,7 +652,7 @@ test "proof_carrying: claims needing downgrade tracks dependency drift" {
 
 test "proof_carrying: stale bundle downgrades claim" {
     for (seed_claims) |c| {
-        if (std.mem.eql(u8, c.id, "claim.c_backend_default")) {
+        if (std.mem.eql(u8, c.id, "claim.direct_arm64_subset")) {
             const stale_bundle: ProofBundle = .{
                 .bundle_id = "test",
                 .subject_entity = "test",

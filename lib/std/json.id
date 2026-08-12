@@ -1,25 +1,25 @@
--- std.json — JSON encoder and decoder for Duo.
---
--- Pure Duo, no external module dependencies. Objects become tables with
--- string keys; arrays become tables with integer keys 1..n; null becomes nil;
--- booleans/numbers/strings map to the obvious Duo values.
---
--- `encode` is total (never errors): tables, arrays, scalars all round-trip.
--- `decode` is a recursive-descent parser tolerant of standard JSON (strings
--- with \uXXXX escapes, nested arrays/objects). Returns nil on malformed input.
+# std.json — JSON encoder and decoder for Duo.
+#
+# Pure Duo, no external module dependencies. Objects become tables with
+# string keys; arrays become tables with integer keys 1..n; null becomes nil;
+# booleans/numbers/strings map to the obvious Duo values.
+#
+# `encode` is total (never errors): tables, arrays, scalars all round-trip.
+# `decode` is a recursive-descent parser tolerant of standard JSON (strings
+# with \uXXXX escapes, nested arrays/objects). Returns nil on malformed input.
 
--- ── encode ──────────────────────────────────────────────────────────────────
+# ── encode ──────────────────────────────────────────────────────────────────
 
--- Sentinel that encodes as `{}` rather than `[]`. An empty Duo table is
--- indistinguishable from an empty sequence, so `{}` defaults to `[]` (see
--- `is_array`). Where the consumer requires a JSON *object* — JSON Schema
--- `properties`, MCP `capabilities` — pass `json.empty_object` instead.
--- Compared by table identity, so it must never be mutated by callers.
+# Sentinel that encodes as `{}` rather than `[]`. An empty Duo table is
+# indistinguishable from an empty sequence, so `{}` defaults to `[]` (see
+# `is_array`). Where the consumer requires a JSON *object* — JSON Schema
+# `properties`, MCP `capabilities` — pass `json.empty_object` instead.
+# Compared by table identity, so it must never be mutated by callers.
 empty_object = {}
 
--- JSON arrays are tables whose every key is a positive integer. A table with
--- only string keys (an object) is not an array; an empty table is treated as
--- an empty array (matches Duo/Lua table usage where {} grows as a sequence).
+# JSON arrays are tables whose every key is a positive integer. A table with
+# only string keys (an object) is not an array; an empty table is treated as
+# an empty array (matches Duo/Lua table usage where {} grows as a sequence).
 is_array(t: any): bool
     if type(t) != "table" return false end
     for k, _ in t
@@ -36,31 +36,31 @@ escape(s: any): str
     i = 1
     hex = "0123456789abcdef"
     while i <= n
-        b = string.byte(s, i)
+        b = s:byte(i)
         if b == 34
-            out[rawlen(out) + 1] = "\\\""
+            out[out:len() + 1] = "\\\""
         elseif b == 92
-            out[rawlen(out) + 1] = "\\\\"
+            out[out:len() + 1] = "\\\\"
         elseif b == 10
-            out[rawlen(out) + 1] = "\\n"
+            out[out:len() + 1] = "\\n"
         elseif b == 13
-            out[rawlen(out) + 1] = "\\r"
+            out[out:len() + 1] = "\\r"
         elseif b == 9
-            out[rawlen(out) + 1] = "\\t"
+            out[out:len() + 1] = "\\t"
         elseif b == 8
-            out[rawlen(out) + 1] = "\\b"
+            out[out:len() + 1] = "\\b"
         elseif b == 12
-            out[rawlen(out) + 1] = "\\f"
+            out[out:len() + 1] = "\\f"
         elseif b < 32
-            hi = math.floor(b / 16) + 1
+            hi = b / 16:floor() + 1
             lo = (b % 16) + 1
-            out[rawlen(out) + 1] = "\\u00" .. string.sub(hex, hi, hi) .. string.sub(hex, lo, lo)
+            out[out:len() + 1] = "\\u00" .. hex:sub(hi, hi) .. hex:sub(lo, lo)
         else
-            out[rawlen(out) + 1] = string.sub(s, i, i)
+            out[out:len() + 1] = s:sub(i, i)
         end
         i += 1
     end
-    table.concat(out)
+    out:concat()
 end
 
 encode(val: any): str
@@ -83,33 +83,33 @@ encode(val: any): str
             parts = {}
             i = 1
             while val[i] != nil
-                parts[rawlen(parts) + 1] = encode(val[i])
+                parts[parts:len() + 1] = encode(val[i])
                 i += 1
             end
-            return "[" .. table.concat(parts, ",") .. "]"
+            return "[" .. parts:concat(",") .. "]"
         end
         parts = {}
         for k, v in val
             if type(k) == "string"
-                parts[rawlen(parts) + 1] = encode(k) .. ":" .. encode(v)
+                parts[parts:len() + 1] = encode(k) .. ":" .. encode(v)
             end
         end
-        return "{" .. table.concat(parts, ",") .. "}"
+        return "{" .. parts:concat(",") .. "}"
     end
     "null"
 end
 
 
 
--- ── decode ──────────────────────────────────────────────────────────────────
--- Recursive-descent over a {s=string, i=index} cursor table. Passes the cursor
--- explicitly to avoid nested-function codegen quirks.
+# ── decode ──────────────────────────────────────────────────────────────────
+# Recursive-descent over a {s=string, i=index} cursor table. Passes the cursor
+# explicitly to avoid nested-function codegen quirks.
 
 json_skip_ws(cur: any)
     s = cur.s
     n = #s
     while cur.i <= n
-        b = string.byte(s, cur.i)
+        b = s:byte(cur.i)
         if b == 32 or b == 9 or b == 10 or b == 13
             cur.i = cur.i + 1
         else
@@ -122,7 +122,7 @@ json_hex4(s): i64
     v = 0
     i = 1
     while i <= 4
-        b = string.byte(s, i)
+        b = s:byte(i)
         d = 0
         if b >= 48 and b <= 57
             d = b - 48
@@ -139,17 +139,17 @@ end
 
 json_utf8_char(cp): str
     if cp < 128
-        return string.char(cp)
+        return cp:char()
     end
     if cp < 2048
-        b1 = math.floor(cp / 64) + 192
+        b1 = cp / 64:floor() + 192
         b2 = (cp % 64) + 128
-        return string.char(b1) .. string.char(b2)
+        return b1:char() .. b2:char()
     end
-    b1 = math.floor(cp / 4096) + 224
-    b2 = math.floor((cp % 4096) / 64) + 128
+    b1 = cp / 4096:floor() + 224
+    b2 = (cp % 4096) / 64:floor() + 128
     b3 = (cp % 64) + 128
-    return string.char(b1) .. string.char(b2) .. string.char(b3)
+    return b1:char() .. b2:char() .. b3:char()
 end
 
 json_string(cur): any
@@ -158,55 +158,55 @@ json_string(cur): any
     n = #s
     out = {}
     while cur.i <= n
-        b = string.byte(s, cur.i)
+        b = s:byte(cur.i)
         if b == 34
             cur.i = cur.i + 1
-            return table.concat(out)
+            return out:concat()
         end
         if b == 92
             cur.i = cur.i + 1
-            e = string.byte(s, cur.i)
+            e = s:byte(cur.i)
             if e == 110
-                out[rawlen(out) + 1] = "\n"
+                out[out:len() + 1] = "\n"
             elseif e == 116
-                out[rawlen(out) + 1] = "\t"
+                out[out:len() + 1] = "\t"
             elseif e == 114
-                out[rawlen(out) + 1] = "\r"
+                out[out:len() + 1] = "\r"
             elseif e == 34
-                out[rawlen(out) + 1] = "\""
+                out[out:len() + 1] = "\""
             elseif e == 92
-                out[rawlen(out) + 1] = "\\"
+                out[out:len() + 1] = "\\"
             elseif e == 47
-                out[rawlen(out) + 1] = "/"
+                out[out:len() + 1] = "/"
             elseif e == 98
-                out[rawlen(out) + 1] = string.char(8)
+                out[out:len() + 1] = 8:char()
             elseif e == 102
-                out[rawlen(out) + 1] = string.char(12)
+                out[out:len() + 1] = 12:char()
             elseif e == 117
-                hex = string.sub(s, cur.i + 1, cur.i + 4)
+                hex = s:sub(cur.i + 1, cur.i + 4)
                 cp = json_hex4(hex)
-                out[rawlen(out) + 1] = json_utf8_char(cp)
+                out[out:len() + 1] = json_utf8_char(cp)
                 cur.i = cur.i + 4
             else
-                out[rawlen(out) + 1] = string.char(e)
+                out[out:len() + 1] = e:char()
             end
             cur.i = cur.i + 1
         else
-            -- accumulate a run of plain chars up to the next quote/backslash
-            -- (one chunk per run, not one char per byte — avoids the O(n*chars)
-            -- concat cliff that made large decodes take >100s). Manual byte scan,
-            -- no Lua patterns (immune to F-13813-5).
+            # accumulate a run of plain chars up to the next quote/backslash
+            # (one chunk per run, not one char per byte — avoids the O(n*chars)
+            # concat cliff that made large decodes take >100s). Manual byte scan,
+            # no Lua patterns (immune to F-13813-5).
             start = cur.i
             cur.i = cur.i + 1
             while cur.i <= n
-                b2 = string.byte(s, cur.i)
+                b2 = s:byte(cur.i)
                 if b2 == 34 or b2 == 92 break end
                 cur.i = cur.i + 1
             end
-            out[rawlen(out) + 1] = string.sub(s, start, cur.i - 1)
+            out[out:len() + 1] = s:sub(start, cur.i - 1)
         end
     end
-    table.concat(out)
+    out:concat()
 end
 
 json_number(cur): any
@@ -214,14 +214,14 @@ json_number(cur): any
     start = cur.i
     n = #s
     while cur.i <= n
-        b = string.byte(s, cur.i)
+        b = s:byte(cur.i)
         if (b >= 48 and b <= 57) or b == 45 or b == 43 or b == 46 or b == 101 or b == 69
             cur.i = cur.i + 1
         else
             break
         end
     end
-    num_str = string.sub(s, start, cur.i - 1)
+    num_str = s:sub(start, cur.i - 1)
     tonumber(num_str)
 end
 
@@ -229,7 +229,7 @@ json_value(cur): any
     json_skip_ws(cur)
     s = cur.s
     if cur.i > #s return nil end
-    b = string.byte(s, cur.i)
+    b = s:byte(cur.i)
     if b == 123
         cur.i = cur.i + 1
         obj = {}

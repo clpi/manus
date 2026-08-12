@@ -1,11 +1,11 @@
--- Table shape foundation smoke (2026-08-04)
--- Typed records infer storage class; @comp.type.shape / @comp.shape expose it at compile time.
--- Run: duo check examples/table_shape_smoke.id
---      DUO_GRAPH=1 duo check examples/table_shape_smoke.id
---      DUO_PROVENANCE=1 duo compile examples/table_shape_smoke.id -o /tmp/table_shape_smoke
--- Unit tests: zig test src/types.zig --test-filter inferStorageClass
---              zig test src/semantic_graph.zig --test-filter liftAliasShapes
---              zig test src/codegen.zig --test-filter type_shape
+# Table shape foundation smoke (2026-08-04)
+# Typed records infer storage class; @comp.type.shape / @comp.shape expose it at compile time.
+# Run: duo check examples/table_shape_smoke.id
+#      DUO_GRAPH=1 duo check examples/table_shape_smoke.id
+#      DUO_PROVENANCE=1 duo compile examples/table_shape_smoke.id -o /tmp/table_shape_smoke
+# Unit tests: zig test src/types.zig #test-filter inferStorageClass
+#              zig test src/semantic_graph.zig #test-filter liftAliasShapes
+#              zig test src/codegen.zig #test-filter type_shape
 
 Point: { x: f64, y: f64 }
 
@@ -40,9 +40,9 @@ main()
     red = Color.Red
     print("color=", red, "\n")
 
-    -- Graph export (duo graph examples/table_shape_smoke.id) lists table_shapes + enum_shapes.
+    # Graph export (duo graph examples/table_shape_smoke.id) lists table_shapes + enum_shapes.
     ok = point_shape == "native" and alias_shape == "native" and inline_shape == "native" and box_shape == "sealed" and p.x == 3.0
-    ok = ok and string.find(point_why, "native C scalars") != nil and string.find(box_why, "@sealed") != nil
-    ok = ok and string.find(point_origin, "shape_id=") != nil and red == 0
+    ok = ok and point_why:find("native C scalars") != nil and box_why:find("@sealed") != nil
+    ok = ok and point_origin:find("shape_id=") != nil and red == 0
     print("ok=", ok, "\n")
 end

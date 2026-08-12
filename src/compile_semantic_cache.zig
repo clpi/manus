@@ -1,4 +1,4 @@
-//! Pass 8 — refresh persistent realization cache during compile/realize.
+//! Refresh persistent realization cache during compile/realize.
 const std = @import("std");
 const ast = @import("ast.zig");
 const realization = @import("realization.zig");
@@ -284,7 +284,7 @@ test "compile_semantic_cache: second refresh reuses entry" {
     defer threaded.deinit();
     const io = threaded.io();
 
-    var lex = Lexer.init(src, "point.duo");
+    var lex = Lexer.init(src, "point.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -293,16 +293,16 @@ test "compile_semantic_cache: second refresh reuses entry" {
     semantic.duo_mode = true;
     try semantic.check_module(&mod);
 
-    const cache_path = ".duo/cache/semantic/state.json";
+    const cache_path = ".id/cache/semantic/state.json";
     const cwd = std.Io.Dir.cwd();
     cwd.deleteFile(io, cache_path) catch {};
 
-    var r1 = try refreshFromCheckedModule(alloc, io, &mod, "point.duo", "native");
+    var r1 = try refreshFromCheckedModule(alloc, io, &mod, "point.id", "native");
     defer r1.deinit(alloc);
     try std.testing.expect(r1.audits.len >= 1);
     try std.testing.expect(r1.audits[0].action == .fresh);
 
-    var r2 = try refreshFromCheckedModule(alloc, io, &mod, "point.duo", "native");
+    var r2 = try refreshFromCheckedModule(alloc, io, &mod, "point.id", "native");
     defer r2.deinit(alloc);
     try std.testing.expect(r2.audits[0].action == .reused);
 }

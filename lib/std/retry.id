@@ -1,25 +1,25 @@
--- std.retry — retry with configurable backoff strategies
--- Provides retry, backoff, and circuit breaker patterns for
--- resilient operations that may fail transiently.
+# std.retry — retry with configurable backoff strategies
+# Provides retry, backoff, and circuit breaker patterns for
+# resilient operations that may fail transiently.
 
--- Internal: sleep for the given number of seconds.
+# Internal: sleep for the given number of seconds.
 std_retry_sleep(seconds: any): void
     if seconds == nil or seconds <= 0 return end
     start = os.clock()
     while os.clock() - start < seconds
-        -- busy wait
+        # busy wait
     end
 end
 
--- ===== Backoff strategies =====
+# ===== Backoff strategies =====
 
--- constant_backoff: always wait the same interval.
+# constant_backoff: always wait the same interval.
 constant_backoff(interval: float): any
     iv = interval
     return (attempt: any) iv
 end
 
--- linear_backoff: wait increases linearly with attempt number.
+# linear_backoff: wait increases linearly with attempt number.
 linear_backoff(base: float, max_val: float): any
     if base == nil base = 1 end
     if max_val == nil max_val = 30 end
@@ -32,7 +32,7 @@ linear_backoff(base: float, max_val: float): any
     end
 end
 
--- exponential_backoff: wait doubles each attempt (with optional jitter).
+# exponential_backoff: wait doubles each attempt (with optional jitter).
 exponential_backoff(base: float, max_val: float, jitter: bool): any
     if base == nil base = 0.5 end
     if max_val == nil max_val = 30 end
@@ -56,9 +56,9 @@ exponential_backoff(base: float, max_val: float, jitter: bool): any
     end
 end
 
--- ===== Core retry =====
+# ===== Core retry =====
 
--- do_retry: execute fn up to `max_attempts` times with a backoff strategy.
+# do_retry: execute fn up to `max_attempts` times with a backoff strategy.
 do_retry(max_attempts: i64, backoff_fn: any, fn_ref: any): any
     if max_attempts == nil or max_attempts < 1 max_attempts = 3 end
     if backoff_fn == nil backoff_fn = constant_backoff(1) end
@@ -81,7 +81,7 @@ do_retry(max_attempts: i64, backoff_fn: any, fn_ref: any): any
     {ok = nil, error = last_error, attempts = max_attempts}
 end
 
--- do_retry_bool: like do_retry but fn returns true for success.
+# do_retry_bool: like do_retry but fn returns true for success.
 do_retry_bool(max_attempts: i64, backoff_fn: any, fn_ref: any): any
     if max_attempts == nil or max_attempts < 1 max_attempts = 3 end
     if backoff_fn == nil backoff_fn = constant_backoff(1) end
@@ -104,18 +104,18 @@ do_retry_bool(max_attempts: i64, backoff_fn: any, fn_ref: any): any
     {ok = false, error = last_error, attempts = max_attempts}
 end
 
--- retry: simplified retry with defaults (3 attempts, 1s constant backoff).
+# retry: simplified retry with defaults (3 attempts, 1s constant backoff).
 retry(fn_ref: any): any
     do_retry(3, constant_backoff(1), fn_ref)
 end
 
--- retry_with_backoff: retry with exponential backoff, configurable attempts.
+# retry_with_backoff: retry with exponential backoff, configurable attempts.
 retry_with_backoff(fn_ref: any, max_attempts: i64): any
     if max_attempts == nil max_attempts = 5 end
     do_retry(max_attempts, exponential_backoff(0.5, 30, true), fn_ref)
 end
 
--- retry_if: retry fn only if `condition` returns true for the error.
+# retry_if: retry fn only if `condition` returns true for the error.
 retry_if(max_attempts: i64, backoff_fn: any, condition: any, fn_ref: any): any
     if max_attempts == nil or max_attempts < 1 max_attempts = 3 end
     if backoff_fn == nil backoff_fn = constant_backoff(1) end
@@ -141,9 +141,9 @@ retry_if(max_attempts: i64, backoff_fn: any, condition: any, fn_ref: any): any
     {ok = nil, error = last_error, attempts = max_attempts}
 end
 
--- ===== Circuit Breaker =====
+# ===== Circuit Breaker =====
 
--- circuit_new: create a circuit breaker.
+# circuit_new: create a circuit breaker.
 circuit_new(failure_threshold: i64, reset_timeout: i64): any
     if failure_threshold == nil failure_threshold = 5 end
     if reset_timeout == nil reset_timeout = 30 end
@@ -159,7 +159,7 @@ circuit_new(failure_threshold: i64, reset_timeout: i64): any
     }
 end
 
--- circuit_call: execute fn through the circuit breaker.
+# circuit_call: execute fn through the circuit breaker.
 circuit_call(cb: any, fn_ref: any): any
     if cb == nil return {ok = nil, error = "nil circuit breaker"} end
     cb.total_calls = cb.total_calls + 1
@@ -195,13 +195,13 @@ circuit_call(cb: any, fn_ref: any): any
     {ok = nil, error = result:to(str)}
 end
 
--- circuit_state: return the current state of the circuit breaker.
+# circuit_state: return the current state of the circuit breaker.
 circuit_state(cb: any): str
     if cb == nil return "unknown" end
     cb.state
 end
 
--- circuit_reset: manually reset the circuit breaker to closed.
+# circuit_reset: manually reset the circuit breaker to closed.
 circuit_reset(cb: any): void
     if cb == nil return end
     cb.state = "closed"
@@ -210,7 +210,7 @@ circuit_reset(cb: any): void
     cb.success_count = 0
 end
 
--- circuit_stats: return circuit breaker statistics.
+# circuit_stats: return circuit breaker statistics.
 circuit_stats(cb: any): any
     if cb == nil return {} end
     {

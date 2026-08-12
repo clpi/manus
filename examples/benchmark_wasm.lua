@@ -21,12 +21,12 @@ function count_primes(limit)
             if n % d == 0 then
                 is_prime = false
             end
-            d = d + 1
+            d += 1
         end
         if is_prime then
-            count = count + 1
+            count += 1
         end
-        n = n + 1
+        n += 1
     end
     return count
 end
@@ -44,7 +44,7 @@ function mandel_iter(cx: f64, cy: f64): i64
         end
         zy = 2.0 * zx * zy + cy
         zx = zx2 - zy2 + cx
-        i = i + 1
+        i += 1
     end
     return i
 end
@@ -60,10 +60,10 @@ function compute_grid_sum(size: i64): f64
     while i < size do
         local j: i64 = 0
         while j < size do
-            total = total + eval_A(i, j)
-            j = j + 1
+            total += eval_A(i, j)
+            j += 1
         end
-        i = i + 1
+        i += 1
     end
     return total
 end
@@ -93,26 +93,26 @@ function simulate_nbody(steps: i64): f64
         local dist12_sq: f64 = dx12 * dx12 + dy12 * dy12 + 0.001
         local dist12: f64 = math.sqrt(dist12_sq)
         local f12: f64 = (m1 * m2) / dist12_sq
-        vx1 = vx1 + (f12 * dx12 / dist12) * dt / m1
-        vy1 = vy1 + (f12 * dy12 / dist12) * dt / m1
-        vx2 = vx2 - (f12 * dx12 / dist12) * dt / m2
-        vy2 = vy2 - (f12 * dy12 / dist12) * dt / m2
+        vx1 += (f12 * dx12 / dist12) * dt / m1
+        vy1 += (f12 * dy12 / dist12) * dt / m1
+        vx2 -= (f12 * dx12 / dist12) * dt / m2
+        vy2 -= (f12 * dy12 / dist12) * dt / m2
         local dx13: f64 = x3 - x1
         local dy13: f64 = y3 - y1
         local dist13_sq: f64 = dx13 * dx13 + dy13 * dy13 + 0.001
         local dist13: f64 = math.sqrt(dist13_sq)
         local f13: f64 = (m1 * m3) / dist13_sq
-        vx1 = vx1 + (f13 * dx13 / dist13) * dt / m1
-        vy1 = vy1 + (f13 * dy13 / dist13) * dt / m1
-        vx3 = vx3 - (f13 * dx13 / dist13) * dt / m3
-        vy3 = vy3 - (f13 * dy13 / dist13) * dt / m3
-        x1 = x1 + vx1 * dt
-        y1 = y1 + vy1 * dt
-        x2 = x2 + vx2 * dt
-        y2 = y2 + vy2 * dt
-        x3 = x3 + vx3 * dt
-        y3 = y3 + vy3 * dt
-        i = i + 1
+        vx1 += (f13 * dx13 / dist13) * dt / m1
+        vy1 += (f13 * dy13 / dist13) * dt / m1
+        vx3 -= (f13 * dx13 / dist13) * dt / m3
+        vy3 -= (f13 * dy13 / dist13) * dt / m3
+        x1 += vx1 * dt
+        y1 += vy1 * dt
+        x2 += vx2 * dt
+        y2 += vy2 * dt
+        x3 += vx3 * dt
+        y3 += vy3 * dt
+        i += 1
     end
     return x1 + y1 + x2 + y2 + x3 + y3
 end
@@ -124,8 +124,8 @@ function string_byte_sum(n)
     local i = 1
     local last = string.len(s)
     while i <= last do
-        sum = sum + string.byte(s, i)
-        i = i + 1
+        sum += string.byte(s, i)
+        i += 1
     end
     return sum
 end
@@ -136,13 +136,13 @@ function table_array_sum(n)
     local i = 1
     while i <= n do
         t[i] = i
-        i = i + 1
+        i += 1
     end
     local sum = 0
     i = 1
     while i <= n do
-        sum = sum + t[i]
-        i = i + 1
+        sum += t[i]
+        i += 1
     end
     return sum
 end
@@ -152,8 +152,8 @@ function trig_sum(n)
     local sum = 0.0
     local i = 0
     while i < n do
-        sum = sum + math.sin(i) * math.cos(i)
-        i = i + 1
+        sum += math.sin(i) * math.cos(i)
+        i += 1
     end
     return sum
 end
@@ -164,8 +164,8 @@ function string_len_chain(n)
     local total = 0
     local i = 1
     while i <= n do
-        total = total + string.len(s) + string.len(string.rep("b", (i % 10) + 1))
-        i = i + 1
+        total += string.len(s) + string.len(string.rep("b", (i % 10) + 1))
+        i += 1
     end
     return total
 end
@@ -178,7 +178,7 @@ function string_hash_roll(n)
     local lim = string.len(s)
     while i <= lim do
         h = (h * 31 + string.byte(s, i)) % 1000000007
-        i = i + 1
+        i += 1
     end
     return h
 end
@@ -190,9 +190,9 @@ function math_floor_max(n)
     local i = 0
     while i < n do
         local v = math.floor((i * 0.73) + 0.5)
-        acc = acc + v
+        acc += v
         peak = math.max(peak, v)
-        i = i + 1
+        i += 1
     end
     return acc + peak
 end
@@ -203,7 +203,7 @@ function table_max_scan(n)
     local i = 1
     while i <= n do
         t[i] = (i * 17) % 100003
-        i = i + 1
+        i += 1
     end
     local mx = 0
     i = 1
@@ -211,7 +211,7 @@ function table_max_scan(n)
         if t[i] > mx then
             mx = t[i]
         end
-        i = i + 1
+        i += 1
     end
     return mx
 end
@@ -221,8 +221,8 @@ function math_pow_sqrt(n)
     local sum = 0.0
     local i = 1
     while i <= n do
-        sum = sum + math.sqrt(math.pow(i % 997, 0.25))
-        i = i + 1
+        sum += math.sqrt(math.pow(i % 997, 0.25))
+        i += 1
     end
     return sum
 end
@@ -233,7 +233,7 @@ function binary_search_scan(n)
     local i = 1
     while i <= n do
         t[i] = i
-        i = i + 1
+        i += 1
     end
     local hits = 0
     local q = 1
@@ -248,11 +248,11 @@ function binary_search_scan(n)
             elseif t[mid] > key then
                 hi = mid - 1
             else
-                hits = hits + 1
+                hits += 1
                 break
             end
         end
-        q = q + 1
+        q += 1
     end
     return hits
 end
@@ -264,9 +264,9 @@ function filter_count(n)
     while i <= n do
         local v = (i * 17) % 100003
         if v > 50000 then
-            count = count + 1
+            count += 1
         end
-        i = i + 1
+        i += 1
     end
     return count
 end
@@ -279,13 +279,13 @@ function dot_product(n)
     while i <= n do
         a[i] = i
         b[i] = n - i + 1
-        i = i + 1
+        i += 1
     end
     local sum = 0
     i = 1
     while i <= n do
-        sum = sum + a[i] * b[i]
-        i = i + 1
+        sum += a[i] * b[i]
+        i += 1
     end
     return sum
 end
@@ -295,8 +295,8 @@ function clamp_sum(n)
     local sum = 0
     local i = 0
     while i < n do
-        sum = sum + math.min(255, math.max(0, i % 1000))
-        i = i + 1
+        sum += math.min(255, math.max(0, i % 1000))
+        i += 1
     end
     return sum
 end
@@ -306,8 +306,8 @@ function bucket_hash(n)
     local sum = 0
     local i = 1
     while i <= n do
-        sum = sum + (i * 31) % 256
-        i = i + 1
+        sum += (i * 31) % 256
+        i += 1
     end
     return sum
 end
@@ -317,8 +317,9 @@ function ema_smooth(n)
     local avg = 0.0
     local i = 0
     while i < n do
-        avg = avg * 0.95 + (i % 100) * 0.05
-        i = i + 1
+        avg *= 0.95
+        avg += (i % 100) * 0.05
+        i += 1
     end
     return avg
 end
@@ -331,9 +332,9 @@ function token_count(n)
     local last = string.len(s)
     while i <= last do
         if string.byte(s, i) == 32 then
-            count = count + 1
+            count += 1
         end
-        i = i + 1
+        i += 1
     end
     return count
 end
@@ -347,9 +348,9 @@ function config_parse_sum(n)
     while i <= last do
         local c = string.byte(s, i)
         if c == 123 or c == 58 or c == 34 then
-            sum = sum + c
+            sum += c
         end
-        i = i + 1
+        i += 1
     end
     return sum
 end
@@ -360,14 +361,14 @@ function table_lookup_sum(n)
     local i = 1
     while i <= n do
         t[i] = i * 3
-        i = i + 1
+        i += 1
     end
     local sum = 0
     local q = 1
     while q <= n do
         local idx = (q * 7) % n + 1
-        sum = sum + t[idx]
-        q = q + 1
+        sum += t[idx]
+        q += 1
     end
     return sum
 end
@@ -378,13 +379,13 @@ function table_insert_churn(n)
     local i = 1
     while i <= n do
         t[i] = (i * 13) % 997
-        i = i + 1
+        i += 1
     end
     local sum = 0
     i = 1
     while i <= n do
-        sum = sum + t[i]
-        i = i + 1
+        sum += t[i]
+        i += 1
     end
     return sum
 end
@@ -400,7 +401,7 @@ function matmul(n: i64): i64
         a[i] = i % 100
         b[i] = (i * 7) % 100
         c[i] = 0
-        i = i + 1
+        i += 1
     end
     local rep: i64 = 0
     while rep < n do
@@ -411,21 +412,21 @@ function matmul(n: i64): i64
                 local sum: i64 = 0
                 local k: i64 = 0
                 while k < size do
-                    sum = sum + a[i * size + k + 1] * b[k * size + j + 1]
-                    k = k + 1
+                    sum += a[i * size + k + 1] * b[k * size + j + 1]
+                    k += 1
                 end
                 c[i * size + j + 1] = sum
-                j = j + 1
+                j += 1
             end
-            i = i + 1
+            i += 1
         end
-        rep = rep + 1
+        rep += 1
     end
     local total: i64 = 0
     i = 1
     while i <= size * size do
-        total = total + c[i]
-        i = i + 1
+        total += c[i]
+        i += 1
     end
     return total
 end
@@ -436,12 +437,12 @@ function prefix_sum(n)
     local i = 1
     while i <= n do
         t[i] = (i * 3) % 1000
-        i = i + 1
+        i += 1
     end
     i = 2
     while i <= n do
         t[i] = t[i] + t[i - 1]
-        i = i + 1
+        i += 1
     end
     return t[n]
 end
@@ -458,8 +459,8 @@ function gcd_reduce(n)
             b = a % b
             a = tmp
         end
-        sum = sum + a
-        i = i + 1
+        sum += a
+        i += 1
     end
     return sum
 end
@@ -473,14 +474,14 @@ function collatz_sum(n: i64): i64
         local steps: i64 = 0
         while x ~= 1 do
             if x % 2 == 0 then
-                x = x // 2
+                x /= / 2
             else
                 x = 3 * x + 1
             end
-            steps = steps + 1
+            steps += 1
         end
-        total = total + steps
-        i = i + 1
+        total += steps
+        i += 1
     end
     return total
 end
@@ -491,7 +492,7 @@ function xor_fold(n)
     local i = 1
     while i <= n do
         acc = acc ~ (i * 2654435761)
-        i = i + 1
+        i += 1
     end
     return acc
 end
@@ -503,15 +504,15 @@ function ring_buffer(n)
     local i = 1
     while i <= size do
         buf[i] = 0
-        i = i + 1
+        i += 1
     end
     local sum = 0
     i = 0
     while i < n do
         local idx = (i % size) + 1
         buf[idx] = (i * 31) % 100000
-        sum = sum + buf[((i + size - 7) % size) + 1]
-        i = i + 1
+        sum += buf[((i + size - 7) % size) + 1]
+        i += 1
     end
     return sum
 end
@@ -522,7 +523,7 @@ function cond_swap(n)
     local i = 1
     while i <= n do
         t[i] = (i * 17) % 10007
-        i = i + 1
+        i += 1
     end
     local passes = 5
     local p = 0
@@ -534,15 +535,15 @@ function cond_swap(n)
                 t[i] = t[i + 1]
                 t[i + 1] = tmp
             end
-            i = i + 1
+            i += 1
         end
-        p = p + 1
+        p += 1
     end
     local sum = 0
     i = 1
     while i <= n do
-        sum = sum + t[i]
-        i = i + 1
+        sum += t[i]
+        i += 1
     end
     return sum
 end
@@ -566,7 +567,7 @@ function leven(n)
         local j = 0
         while j <= len_b do
             prev[j] = j
-            j = j + 1
+            j += 1
         end
         local i = 1
         while i <= len_a do
@@ -584,15 +585,15 @@ function leven(n)
                 if ins < mn then mn = ins end
                 if sub < mn then mn = sub end
                 curr[j] = mn
-                j = j + 1
+                j += 1
             end
             local tmp = prev
             prev = curr
             curr = tmp
-            i = i + 1
+            i += 1
         end
-        sum = sum + prev[len_b]
-        rep = rep + 1
+        sum += prev[len_b]
+        rep += 1
     end
     return sum
 end
@@ -603,7 +604,7 @@ function sieve(n: i64): i64
     local i: i64 = 0
     while i <= n do
         is_prime[i] = true
-        i = i + 1
+        i += 1
     end
     is_prime[0] = false
     is_prime[1] = false
@@ -613,16 +614,16 @@ function sieve(n: i64): i64
             local j: i64 = i * i
             while j <= n do
                 is_prime[j] = false
-                j = j + i
+                j += i
             end
         end
-        i = i + 1
+        i += 1
     end
     local count: i64 = 0
     i = 2
     while i <= n do
-        if is_prime[i] then count = count + 1 end
-        i = i + 1
+        if is_prime[i] then count += 1 end
+        i += 1
     end
     return count
 end
@@ -633,7 +634,7 @@ function fenwick(size: i64): i64
     local i: i64 = 0
     while i <= size do
         tree[i] = 0
-        i = i + 1
+        i += 1
     end
     i = 1
     while i <= size do
@@ -641,19 +642,19 @@ function fenwick(size: i64): i64
         local idx: i64 = i
         while idx <= size do
             tree[idx] = tree[idx] + val
-            idx = idx + (idx & (-idx))
+            idx += (idx & (-idx))
         end
-        i = i + 1
+        i += 1
     end
     local sum: i64 = 0
     local q: i64 = 1
     while q <= size do
         local idx: i64 = q
         while idx > 0 do
-            sum = sum + tree[idx]
-            idx = idx - (idx & (-idx))
+            sum += tree[idx]
+            idx -= (idx & (-idx))
         end
-        q = q + 1
+        q += 1
     end
     return sum
 end
@@ -665,7 +666,7 @@ function interp(n)
     local i = 0
     while i < tbl_size do
         tbl[i] = math.sin(i * 0.01)
-        i = i + 1
+        i += 1
     end
     local sum = 0.0
     i = 0
@@ -673,8 +674,8 @@ function interp(n)
         local x = (i * 0.0073) % (tbl_size - 1)
         local idx = math.floor(x)
         local frac = x - idx
-        sum = sum + tbl[idx] * (1.0 - frac) + tbl[idx + 1] * frac
-        i = i + 1
+        sum += tbl[idx] * (1.0 - frac) + tbl[idx + 1] * frac
+        i += 1
     end
     return sum
 end
@@ -687,9 +688,9 @@ function run_len(n)
     local last = string.len(s)
     while i <= last do
         if string.byte(s, i) ~= string.byte(s, i - 1) then
-            count = count + 1
+            count += 1
         end
-        i = i + 1
+        i += 1
     end
     return count + 1
 end
@@ -702,11 +703,11 @@ function bitcount(n: i64): i64
         local x: i64 = i
         local c: i64 = 0
         while x ~= 0 do
-            c = c + (x & 1)
+            c += (x & 1)
             x = x >> 1
             end
-        sum = sum + c
-        i = i + 1
+        sum += c
+        i += 1
     end
     return sum
 end
@@ -722,11 +723,11 @@ function cordic(n)
         local k = 1
         while k <= 5 do
             term = -term * angle * angle / ((2 * k) * (2 * k + 1))
-            s = s + term
-            k = k + 1
+            s += term
+            k += 1
         end
-        sum = sum + s
-        i = i + 1
+        sum += s
+        i += 1
     end
     return sum
 end
@@ -741,21 +742,21 @@ function sparse_dot(n)
     while i <= len do
         a[i] = 0
         b[i] = 0
-        i = i + 1
+        i += 1
     end
     i = 1
     while i <= n do
         local idx = (i - 1) * stride + 1
         a[idx] = i
         b[idx] = n - i + 1
-        i = i + 1
+        i += 1
     end
     local sum = 0
     i = 1
     while i <= n do
         local idx = (i - 1) * stride + 1
-        sum = sum + a[idx] * b[idx]
-        i = i + 1
+        sum += a[idx] * b[idx]
+        i += 1
     end
     return sum
 end
@@ -770,7 +771,7 @@ function life(steps)
     while i < W * H do
         grid[i] = (i * 31337) % 3 == 0 and 1 or 0
         next_grid[i] = 0
-        i = i + 1
+        i += 1
     end
     local s = 0
     while s < steps do
@@ -785,20 +786,20 @@ function life(steps)
                 else
                     next_grid[y * W + x] = neighbors == 3 and 1 or 0
                 end
-                x = x + 1
+                x += 1
             end
-            y = y + 1
+            y += 1
         end
         local tmp = grid
         grid = next_grid
         next_grid = tmp
-        s = s + 1
+        s += 1
     end
     local sum = 0
     i = 0
     while i < W * H do
-        sum = sum + grid[i]
-        i = i + 1
+        sum += grid[i]
+        i += 1
     end
     return sum
 end
@@ -816,10 +817,10 @@ local y = -100
 while y <= 100 do
     local x = -100
     while x <= 100 do
-        sum_iters = sum_iters + mandel_iter(x / 100.0, y / 100.0)
-        x = x + 1
+        sum_iters += mandel_iter(x / 100.0, y / 100.0)
+        x += 1
     end
-    y = y + 1
+    y += 1
 end
 print("RESULT mandel", sum_iters)
 

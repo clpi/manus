@@ -1,0 +1,35 @@
+# SH-10 proof router — resident + suite orchestrator.
+
+proof = {
+    resident = "scripts/proof/resident.id"
+    suite = "scripts/proof/semantic.id"
+}
+
+len(path) = (min: i64)
+    path:read()
+        :len() >= min
+
+
+audit(path) = (pattern: str)
+    path:read()
+        :match(pattern)
+
+hit(path) = (pattern: str)
+    path:read()
+        :match(pattern)
+
+main: i64 = ()
+    code: i64 = 0
+    if !len(proof["resident"])(32)
+        code = 1
+    if code == 0 and !audit(proof["resident"])("path:read%(")
+        code = 2
+    if code == 0 and !len(proof["suite"])(16)
+        code = 3
+    if code == 0 and !audit(proof["suite"])("path:read%(")
+        code = 4
+    if code == 0 and !audit(proof["resident"])("ingest.resident")
+        code = 5
+    if code == 0
+        print("semantic proof router: pass")
+    code

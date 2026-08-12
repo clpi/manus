@@ -1,2 +1,2 @@
--- LS-2 — two levels of bracket, containing an inner ]=] that must not close it.
+# LS-2 — two levels of bracket, containing an inner ]=] that must not close it.
 x = [==[nested ]=] ok ]==]

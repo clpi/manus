@@ -1,29 +1,29 @@
--- gap[064]. Integer division by zero: THE FOURTH STATE.
---
--- `docs/spec/soundness.md` §1 enumerates three outcomes and says there is no
--- fourth: proven / runtime-checked / diagnostic. `7 / 0` is none of them.
---
---     --backend=c        9218868437227405312     0x7FF0000000000000, +inf
---     --backend=direct   0
---
--- State 1 (proven) is false — neither answer is correct. State 2
--- (runtime-checked) is false — nothing checks. State 3 (diagnostic) is false —
--- exit 0, no message, on both columns.
---
--- The C column's +inf bit pattern is gap[065] showing through: `i64 / i64` is
--- typed f64, so the quotient is computed as a double and its bits are printed
--- as an integer. Fix the typing and this column changes on its own.
---
--- **The direct column's 0 is not a fix either.** It is a decision nobody made.
--- Pass 100 B-4 says division is operand-selected and `i64/i64` truncates; it
--- does not say what `7/0` does, and that silence IS the finding. `error.divzero`
--- routed, or a FAULT per Pass 107 §3, or a documented trap — any of the three is
--- an answer. Two backends quietly disagreeing is what happens when there is
--- none, so this row must not be closed by making them agree on an undecided
--- value: the numerics page owes a ruling first, and then this file asserts it.
---
--- Watched, not blocking, and reported on every `zig build native-differential`
--- run. Both columns exit 0, so only the stdout comparison can see it at all.
+# gap[064]. Integer division by zero: THE FOURTH STATE.
+#
+# `docs/spec/soundness.md` §1 enumerates three outcomes and says there is no
+# fourth: proven / runtime-checked / diagnostic. `7 / 0` is none of them.
+#
+#     #backend=c        9218868437227405312     0x7FF0000000000000, +inf
+#     #backend=direct   0
+#
+# State 1 (proven) is false — neither answer is correct. State 2
+# (runtime-checked) is false — nothing checks. State 3 (diagnostic) is false —
+# exit 0, no message, on both columns.
+#
+# The C column's +inf bit pattern is gap[065] showing through: `i64 / i64` is
+# typed f64, so the quotient is computed as a double and its bits are printed
+# as an integer. Fix the typing and this column changes on its own.
+#
+# **The direct column's 0 is not a fix either.** It is a decision nobody made.
+# Pass 100 B-4 says division is operand-selected and `i64/i64` truncates; it
+# does not say what `7/0` does, and that silence IS the finding. `error.divzero`
+# routed, or a FAULT per Pass 107 §3, or a documented trap — any of the three is
+# an answer. Two backends quietly disagreeing is what happens when there is
+# none, so this row must not be closed by making them agree on an undecided
+# value: the numerics page owes a ruling first, and then this file asserts it.
+#
+# Watched, not blocking, and reported on every `zig build native-differential`
+# run. Both columns exit 0, so only the stdout comparison can see it at all.
 
 main(): i64
     a: i64 = 7

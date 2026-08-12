@@ -1,4 +1,4 @@
--- @comp.compile.cached persists cacheable comptime results across compiler runs.
+# @comp.compile.cached persists cacheable comptime results across compiler runs.
 
 @comp.compile.cached
 cached_fib(n: i64): i64

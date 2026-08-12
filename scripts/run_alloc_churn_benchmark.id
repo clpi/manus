@@ -1,17 +1,17 @@
--- run_alloc_churn_benchmark.id — compare Duo dynamic table churn to native C arrays.
---
--- Duo replacement for scripts/run_alloc_churn_benchmark.sh (monoglot census).
---
--- examples/bench_alloc_churn_c.c stays C on purpose: it is the REFERENCE the
--- benchmark measures against. Converting the baseline to Duo would delete the
--- comparison, which is the whole point of the script.
+# run_alloc_churn_benchmark.id — compare Duo dynamic table churn to native C arrays.
+#
+# Duo replacement for scripts/run_alloc_churn_benchmark.sh (monoglot census).
+#
+# examples/bench_alloc_churn_c.c stays C on purpose: it is the REFERENCE the
+# benchmark measures against. Converting the baseline to Duo would delete the
+# comparison, which is the whole point of the script.
 
 _OUT_DIR = "/tmp/duo_alloc_churn_bench"
 _EX = "examples"
 
--- Two decimals, built from integer hundredths. `to(str)` on an f64 does not
--- compile today -- it lowers to an undeclared `tostring` -- and printing the
--- float raw gives 1.2344999999999999. Integer math sidesteps both.
+# Two decimals, built from integer hundredths. `to(str)` on an f64 does not
+# compile today # it lowers to an undeclared `tostring` # and printing the
+# float raw gives 1.2344999999999999. Integer math sidesteps both.
 _fmt2(x: f64): str
     n = to(i64)(x * 100.0 + 0.5)
     whole = n / 100
@@ -28,12 +28,12 @@ _sdk_flag(): str
     "-isysroot " .. sdk
 end
 
-main = (): i64
+main: i64 = ()
     print("=== Duo Alloc Churn Benchmark ===")
     print("")
 
-    duo = "./zig-out/bin/duo"
-    if not std.script.fs_exists(duo)
+    duo = "./zig-out/bin/idol"
+    if !std.script.fs_exists(duo)
         print("ERROR: Duo compiler not found at " .. duo)
         print("  Run 'zig build' first")
         return 1
@@ -71,9 +71,9 @@ main = (): i64
     c_out = std.script.chomp(std.script.capture(cbin .. " | tail -n 1"))
     print("C Time:   " .. c_out .. " s")
 
-    -- A zero or unparseable C time would make the ratio meaningless (or a
-    -- divide by zero); the shell version handed both straight to awk and
-    -- printed "inf" or "nan" as if it were a measurement.
+    # A zero or unparseable C time would make the ratio meaningless (or a
+    # divide by zero); the shell version handed both straight to awk and
+    # printed "inf" or "nan" as if it were a measurement.
     ct = to(f64)(c_out)
     dt = to(f64)(duo_out)
     if ct == nil or dt == nil or ct == 0.0

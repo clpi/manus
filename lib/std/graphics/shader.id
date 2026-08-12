@@ -1,19 +1,19 @@
--- std.graphics.shader — Shader compilation and management
--- Data-structure API for WebGPU/Vulkan/Metal shaders.
--- compile/link/use are no-ops in pure Duo — actual GPU compilation
--- happens in the rendering backend (wgpu, Metal, Vulkan driver).
+# std.graphics.shader — Shader compilation and management
+# Data-structure API for WebGPU/Vulkan/Metal shaders.
+# compile/link/use are no-ops in pure Duo — actual GPU compilation
+# happens in the rendering backend (wgpu, Metal, Vulkan driver).
 
--- ═══════════════════════════════════════════════════════════════
--- Shader Types
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Shader Types
+# ═══════════════════════════════════════════════════════════════
 
 M.SHADER_VERTEX = "vertex"
 M.SHADER_FRAGMENT = "fragment"
 M.SHADER_COMPUTE = "compute"
 
--- ═══════════════════════════════════════════════════════════════
--- Shader
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Shader
+# ═══════════════════════════════════════════════════════════════
 
 shader_new(shader_type: str, source: str): any
     {
@@ -25,7 +25,7 @@ shader_new(shader_type: str, source: str): any
 end
 
 shader_compile(shader: any): any
-    -- In production, would compile via WebGPU/Vulkan/Metal
+    # In production, would compile via WebGPU/Vulkan/Metal
     shader.compiled = true
     {ok = true}
 end
@@ -34,9 +34,9 @@ shader_get_error(shader: any): str
     ""
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Shader Program
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Shader Program
+# ═══════════════════════════════════════════════════════════════
 
 shader_program_new(): any
     {
@@ -60,13 +60,13 @@ shader_program_attach(program: any, shader: any): void
 end
 
 shader_program_link(program: any): any
-    -- In production, would link shader program
+    # In production, would link shader program
     program.linked = true
     {ok = true}
 end
 
 shader_program_use(program: any): void
-    -- In production, would bind program
+    # In production, would bind program
 end
 
 shader_program_get_uniform(program: any, name: str): any
@@ -77,9 +77,9 @@ shader_program_set_uniform(program: any, name: str, value: any): void
     program.uniforms[name] = value
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Built-in Shaders
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Built-in Shaders
+# ═══════════════════════════════════════════════════════════════
 
 shader_basic_vertex(): str
     [[
@@ -173,9 +173,9 @@ shader_pbr_fragment(): str
     ]]
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Shader Presets
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Shader Presets
+# ═══════════════════════════════════════════════════════════════
 
 shader_preset_basic(): any
     program = shader_program_new()
@@ -193,9 +193,9 @@ shader_preset_pbr(): any
     program
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
 M.new = shader_new
 M.compile = shader_compile

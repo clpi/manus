@@ -1,62 +1,62 @@
--- std.crypto.tls — TLS client via OpenSSL (@ffi bindings)
--- Provides TLS/SSL connections over TCP sockets.
--- Link with: duo compile myapp.id --link ssl crypto
+# std.crypto.tls — TLS client via OpenSSL (@ffi bindings)
+# Provides TLS/SSL connections over TCP sockets.
+# Link with: duo compile myapp.id #link ssl crypto
 
--- ═══════════════════════════════════════════════════════════════
--- OpenSSL FFI declarations
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# OpenSSL FFI declarations
+# ═══════════════════════════════════════════════════════════════
 
--- SSL_CTX *SSL_CTX_new(const SSL_METHOD *method)
+# SSL_CTX *SSL_CTX_new(const SSL_METHOD *method)
 @ffi("SSL_CTX_new")
 ssl_ctx_new(method: any): any
 
--- const SSL_METHOD *TLS_client_method(void)
+# const SSL_METHOD *TLS_client_method(void)
 @ffi("TLS_client_method")
 tls_client_method(): any
 
--- int SSL_CTX_set_default_verify_paths(SSL_CTX *ctx)
+# int SSL_CTX_set_default_verify_paths(SSL_CTX *ctx)
 @ffi("SSL_CTX_set_default_verify_paths")
 ssl_ctx_set_default_verify_paths(ctx: any): int
 
--- SSL *SSL_new(SSL_CTX *ctx)
+# SSL *SSL_new(SSL_CTX *ctx)
 @ffi("SSL_new")
 ssl_new(ctx: any): any
 
--- int SSL_set_fd(SSL *ssl, int fd)
+# int SSL_set_fd(SSL *ssl, int fd)
 @ffi("SSL_set_fd")
 ssl_set_fd(ssl: any, fd: int): int
 
--- int SSL_connect(SSL *ssl)
+# int SSL_connect(SSL *ssl)
 @ffi("SSL_connect")
 ssl_connect(ssl: any): int
 
--- int SSL_write(SSL *ssl, const void *buf, int num)
+# int SSL_write(SSL *ssl, const void *buf, int num)
 @ffi("SSL_write")
 ssl_write(ssl: any, buf: str, num: int): int
 
--- int SSL_read(SSL *ssl, void *buf, int num)
+# int SSL_read(SSL *ssl, void *buf, int num)
 @ffi("SSL_read")
 ssl_read(ssl: any, buf: str, num: int): int
 
--- void SSL_free(SSL *ssl)
+# void SSL_free(SSL *ssl)
 @ffi("SSL_free")
 ssl_free(ssl: any): void
 
--- void SSL_CTX_free(SSL_CTX *ctx)
+# void SSL_CTX_free(SSL_CTX *ctx)
 @ffi("SSL_CTX_free")
 ssl_ctx_free(ctx: any): void
 
--- int SSL_get_error(SSL *ssl, int ret)
+# int SSL_get_error(SSL *ssl, int ret)
 @ffi("SSL_get_error")
 ssl_get_error(ssl: any, ret: int): int
 
--- int SSL_shutdown(SSL *ssl)
+# int SSL_shutdown(SSL *ssl)
 @ffi("SSL_shutdown")
 ssl_shutdown(ssl: any): int
 
--- ═══════════════════════════════════════════════════════════════
--- TLS Configuration
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# TLS Configuration
+# ═══════════════════════════════════════════════════════════════
 
 new_config(): any
     {
@@ -82,20 +82,20 @@ config_set_server_name(config: any, name: str): void
     config.server_name = name
 end
 
--- ═══════════════════════════════════════════════════════════════
--- TLS Client Connection
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# TLS Client Connection
+# ═══════════════════════════════════════════════════════════════
 
 dial(host: str, port: i64, config: any): any
     if config == nil config = new_config() end
 
-    -- Establish TCP connection first
+    # Establish TCP connection first
     fd = std.net.connect(host, port)
     if fd == nil
         return nil, "TCP connection failed"
     end
 
-    -- Initialize OpenSSL
+    # Initialize OpenSSL
     method = tls_client_method()
     ctx = ssl_ctx_new(method)
     if ctx == nil
@@ -103,10 +103,10 @@ dial(host: str, port: i64, config: any): any
         return nil, "Failed to create SSL context"
     end
 
-    -- Set default CA paths
+    # Set default CA paths
     ssl_ctx_set_default_verify_paths(ctx)
 
-    -- Create SSL connection
+    # Create SSL connection
     ssl = ssl_new(ctx)
     if ssl == nil
         ssl_ctx_free(ctx)
@@ -114,15 +114,15 @@ dial(host: str, port: i64, config: any): any
         return nil, "Failed to create SSL connection"
     end
 
-    -- Associate TCP fd with SSL
+    # Associate TCP fd with SSL
     ssl_set_fd(ssl, fd)
 
-    -- Set server name for SNI
+    # Set server name for SNI
     if config.server_name
-        -- Use the hostname for SNI
+        # Use the hostname for SNI
     end
 
-    -- Perform TLS handshake
+    # Perform TLS handshake
     ret = ssl_connect(ssl)
     if ret != 1
         ssl_free(ssl)
@@ -149,8 +149,8 @@ end
 read(conn: any, maxlen: i64): any
     if conn == nil or conn.ssl == nil return nil end
     if maxlen == nil maxlen = 4096 end
-    -- Allocate a buffer of the right size for SSL_read
-    buf = string.rep("\0", maxlen)
+    # Allocate a buffer of the right size for SSL_read
+    buf = "\0":rep(maxlen)
     n = ssl_read(conn.ssl, buf, maxlen)
     if n <= 0 return nil end
     buf:sub(1, n), nil
@@ -173,12 +173,12 @@ close(conn: any): void
     end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Convenience: HTTPS GET
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Convenience: HTTPS GET
+# ═══════════════════════════════════════════════════════════════
 
 https_get(url: str): any
-    -- Parse URL
+    # Parse URL
     parsed = std.net.parse_url(url)
     host = parsed.host
     port = parsed.port
@@ -186,20 +186,20 @@ https_get(url: str): any
 
     if port == nil or port == 0 port = 443 end
 
-    -- Connect with TLS
+    # Connect with TLS
     conn, err = dial(host, port, nil)
     if conn == nil
         return {body = "", status = 0, error = err}
     end
 
-    -- Send HTTP request
+    # Send HTTP request
     request = "GET " .. path .. " HTTP/1.0\r\n"
         .. "Host: " .. host .. "\r\n"
         .. "Connection: close\r\n"
         .. "\r\n"
     write(conn, request)
 
-    -- Read response
+    # Read response
     body = ""
     while true
         chunk, err = read(conn, 4096)
@@ -209,9 +209,9 @@ https_get(url: str): any
 
     close(conn)
 
-    -- Parse status
+    # Parse status
     status = tonumber(string["match"](body, "HTTP/%d+%.%d+ (%d+)")) or 0
-    sep = string.find(body, "\r\n\r\n", 1, true)
+    sep = body:find("\r\n\r\n", 1, true)
     resp_body = body
     if sep
         resp_body = body:sub(sep + 4)
@@ -220,7 +220,7 @@ https_get(url: str): any
     {body = resp_body, status = status}
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 

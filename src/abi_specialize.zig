@@ -1,4 +1,4 @@
-//! Pass 5 Layer C — shared ABI specialization for native Duo + imported foreign SIM entities.
+//! Layer C — shared ABI specialization for native Duo + imported foreign SIM entities.
 const std = @import("std");
 const sim = @import("sim.zig");
 const transform_engine = @import("transform_engine.zig");

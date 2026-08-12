@@ -1,5 +1,5 @@
--- Nested match → fixpoint: comptime-only, no runtime closures.
--- Run: duo run examples/meta_match_fixpoint_showcase.id
+# Nested match → fixpoint: comptime-only, no runtime closures.
+# Run: duo run examples/meta_match_fixpoint_showcase.id
 
 OUT = @comp.match("alpha|beta", fun(m)
     @comp.fixpoint(m.pattern, fun(s)

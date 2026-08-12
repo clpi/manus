@@ -1,7 +1,7 @@
--- Memory allocator demo: arena, pool, and stack allocators
--- Demonstrates memory primitives and allocators (std.mem)
+# Memory allocator demo: arena, pool, and stack allocators
+# Demonstrates memory primitives and allocators (std.mem)
 
--- Define a simple arena allocator
+# Define a simple arena allocator
 arena_new(size: i64)
     {
         _bufs = {},
@@ -13,7 +13,7 @@ end
 
 arena_alloc(self, bytes: i64)
     if self._offset + bytes > self._capacity
-        self._bufs[#self._bufs + 1] = string.rep(".", bytes)
+        self._bufs[#self._bufs + 1] = ".":rep(bytes)
         self._offset = 0
     end
     ptr = { addr = self._total + self._offset, size = bytes }
@@ -31,7 +31,7 @@ arena_free_all(self): void
     self._total = 0
 end
 
--- Test arena
+# Test arena
 arena = arena_new(4096)
 ptr1 = arena_alloc(arena, 256)
 ptr2 = arena_alloc(arena, 512)
@@ -39,7 +39,7 @@ print("Arena used: " .. to(str)(arena_used(arena)))
 arena_free_all(arena)
 print("Arena after free: " .. to(str)(arena_used(arena)))
 
--- Alignment utilities
+# Alignment utilities
 align_up(n: i64, alignment: i64): i64
     if n % alignment == 0 return n end
     n + alignment - (n % alignment)

@@ -231,7 +231,8 @@ static int64_t bucket_hash(int64_t n) {
 static double ema_smooth(int64_t n) {
     double avg = 0;
     for (int64_t i = 0; i < n; i++)
-        avg = avg * 0.95 + (double)(i % 100) * 0.05;
+        avg *= 0.95
+        avg += (double)(i % 100) * 0.05;
     return avg;
 }
 
@@ -327,7 +328,7 @@ static int64_t collatz_sum(int64_t n) {
     for (int64_t i = 1; i <= n; i++) {
         int64_t x = i, steps = 0;
         while (x != 1) {
-            if (x % 2 == 0) x = x / 2;
+            if (x % 2 == 0) x /= 2;
             else x = 3 * x + 1;
             steps++;
         }

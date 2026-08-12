@@ -9,6 +9,8 @@ const term = @import("term.zig");
 const meta_module = @import("meta_module.zig");
 const legacy_directives = @import("legacy_directives.zig");
 const debug_trace = @import("debug_trace.zig");
+const grammar_roles = @import("grammar_roles.zig");
+const token_view = @import("token_view.zig");
 
 pub const ParseError = error{
     UnexpectedToken,
@@ -74,7 +76,7 @@ pub const Parser = struct {
     /// right-hand sides use the restricted scrutinee parser so that `[` at
     /// the start of the next arm is not greedily consumed as an index suffix.
     match_arm_depth: u32 = 0,
-    /// When true (.duo source), emit deprecation warnings for `then` and `local`.
+    /// When true (.id source), emit deprecation warnings for `then` and `local`.
     duo_mode: bool = false,
     /// Nesting inside function bodies; bare `name()` func decls are module-scope only.
     func_body_depth: u32 = 0,
@@ -101,7 +103,7 @@ pub const Parser = struct {
     subject: ?[]const u8 = null,
     /// Nesting inside a DESCRIPTOR body, where the first parameter of a slot
     /// function is emphatically NOT the receiver — the enclosing descriptor is.
-    /// §20's own golden `shc/lex.duo` is the proof and the reason this counter
+    /// §20's own golden `shc/lex.id` is the proof and the reason this counter
     /// exists:
     ///
     ///     lexer: {
@@ -248,7 +250,7 @@ pub const Parser = struct {
     fn open_layout(self: *Parser, open: ?ast.Loc) ParseError!LayoutFrame {
         const first = try self.pk();
         var f = LayoutFrame{};
-        // LAYOUT IS A `.duo` RULE. Lua has no offside rule: blocks close with
+        // LAYOUT IS A `.id` RULE. Lua has no offside rule: blocks close with
         // `end` at whatever column the writer left them, and `f.offside` is
         // what turns a dedent into a close and a deeper `end` into an error.
         // Applying it to `.lua` input imposes the Duo surface on a Lua file,
@@ -339,6 +341,12 @@ pub const Parser = struct {
             return;
         }
         if (offside) return;
+        if (self.duo_mode) {
+            const edge = try self.pk();
+            term.locErr(edge.loc, "this block opened at column {d} is still open at the file edge", .{open.col});
+            term.locHint(edge.loc, "outdent to close the block — `end` is deleted in .id source", .{});
+            return ParseError.UnexpectedToken;
+        }
         _ = try self.expect(.kw_end);
     }
 
@@ -472,9 +480,13 @@ pub const Parser = struct {
     fn expect(self: *Parser, kind: TK) ParseError!Token {
         const tok = try self.adv();
         if (tok.kind != kind) {
-            term.locErr(tok.loc, "expected '{s}', got '{s}'", .{
-                kind.spelling(), tok.kind.spelling(),
-            });
+            if (self.duo_mode and kind == .kw_end) {
+                term.locErr(tok.loc, "this line continues a block that already closed by dedent", .{});
+                term.locHint(tok.loc, "remove `end` — .id blocks close by outdent only", .{});
+            } else {
+                term.locErr(tok.loc, "write `{s}` at this token edge", .{kind.spelling()});
+                term.locHint(tok.loc, "got `{s}` here instead", .{tok.kind.spelling()});
+            }
             return ParseError.ExpectedToken;
         }
         return tok;
@@ -485,14 +497,14 @@ pub const Parser = struct {
         return null;
     }
 
-    /// Consume a deprecated keyword (then/do) if present. In .duo mode, emit a
+    /// Consume a deprecated keyword (then/do) if present. In .id mode, emit a
     /// hint suggesting the keyword can be omitted. Used for `then` after `if`
     /// and `do` after `while`/`for` in canonical Duo.
     fn eat_deprecated(self: *Parser, kind: TK) ParseError!void {
         if ((try self.pk()).kind == kind) {
             const tok = try self.adv();
             if (self.duo_mode) {
-                term.locHint(tok.loc, "'{s}' is optional in .duo files and can be omitted", .{kind.spelling()});
+                term.locHint(tok.loc, "'{s}' is optional in .id files and can be omitted", .{kind.spelling()});
             }
         }
     }
@@ -1238,24 +1250,24 @@ pub const Parser = struct {
     /// Pass 100 §1/§15 — statement-leading keywords the deny table retires,
     /// and the graveyard rows it names as load-bearing absences.
     ///
-    /// This fires for `.duo` input ONLY. Duo is a Lua superset and `.lua`
+    /// This fires for `.id` input ONLY. Duo is a Lua superset and `.lua`
     /// input keeps today's behaviour unchanged; the dialect is selected from
     /// the file extension by `is_duo_source_path` in main.zig, which sets
     /// `duo_mode`. That is the same switch `comptime` already rejects on, not
     /// a new one. It is also the owner's scoping ruling made mechanical
     /// (2026-08-08): "lua backcompat should work native mode for lua files
     /// only" — `.lua` keeps the whole compatibility surface and lowers
-    /// natively, `.duo` gets Pass 100 and nothing else.
+    /// natively, `.id` gets Pass 100 and nothing else.
     ///
     /// EVERY ROW NAMES THE REPAIR. A bare rejection makes the corpus
     /// unmigratable: the reader is left guessing the replacement spelling, and
     /// guessing is what kept these forms in the tree.
     ///
     /// A row belongs here only once its statement-leading count is measured at
-    /// zero over EVERY `.duo` file a gate compiles — not just the canonical
+    /// zero over EVERY `.id` file a gate compiles — not just the canonical
     /// partition of `docs/spec/corpus.md`. That distinction is not pedantic:
     /// `const` was in this switch on the first cut because canonical measured
-    /// 0, and it still broke `examples/control_defaults_mem.duo`, whose output
+    /// 0, and it still broke `examples/control_defaults_mem.id`, whose output
     /// `zig build test` asserts. `examples/` is classified `historical`, so the
     /// canonical count could not see it. Measure against the gates, then add
     /// the row.
@@ -1263,12 +1275,12 @@ pub const Parser = struct {
     /// A second measurement trap, found the same way: the census has to strip
     /// `[[ … ]]` long-bracket bodies as well as `"…"` ones. `let` reads 6 and
     /// `local` reads 23 with long brackets IN, and both read 0 with them out —
-    /// the `let`s are WGSL inside `lib/std/graphics/shader.duo`'s shader
-    /// source and the `local`s are Duo snippets `scripts/test_property_11.duo`
+    /// the `let`s are WGSL inside `lib/std/graphics/shader.id`'s shader
+    /// source and the `local`s are Duo snippets `scripts/test_property_11.id`
     /// hands the compiler as DATA. Neither is Duo code this parser ever sees,
     /// and budgeting them as debt asks for a repair no edit can make.
     ///
-    /// Measured 2026-08-08, statement-leading over the 767 tracked `.duo`
+    /// Measured 2026-08-08, statement-leading over the 767 tracked `.id`
     /// files with both strips applied: try 0, catch 0, defer 0, goto 0,
     /// extends 0, private 0, await 0, let 0, async 2.
     ///
@@ -1284,7 +1296,7 @@ pub const Parser = struct {
     /// and `req` (100 files) need the replacement surface to exist first.
     fn denyRetiredStmtKeyword(self: *Parser, tok: Token) ParseError!void {
         if (tok.kind == .kw_macro) {
-            term.locErr(tok.loc, "'macro' has no native Idsem statement role", .{});
+            term.locErr(tok.loc, "'macro' has no native Idol statement role", .{});
             term.locHint(tok.loc, "metaprogramming is expressed through ordinary relations and compile-time facts", .{});
             return ParseError.UnexpectedToken;
         }
@@ -1299,7 +1311,7 @@ pub const Parser = struct {
             .kw_let => "Pass 100 §0: bindings are bare — `x = expr`. `if let p = e` / `while let p = e` is the Rust shape; write `if v, err = f(x) use(v) else report(err)`",
             else => return,
         };
-        term.locErr(tok.loc, "'{s}' is retired in .duo files (Pass 100 §1 deny table)", .{tok.kind.spelling()});
+        term.locErr(tok.loc, "'{s}' is retired in .id files (Pass 100 §1 deny table)", .{tok.kind.spelling()});
         term.locHint(tok.loc, "{s}", .{replacement});
         term.locHint(tok.loc, "Lua-shaped input is still accepted, and still lowers natively, in a `.lua` file", .{});
         return ParseError.UnexpectedToken;
@@ -2143,8 +2155,23 @@ pub const Parser = struct {
             } };
         }
 
-        // Otherwise it's a typed local binding with attributes
+        // Otherwise it's a typed binding with attributes — or a canonical callable
+        // `name: Ret = (params) body` when an export attribute precedes it.
         _ = try self.adv(); // consume '='
+        if (try self.starts_parenthesized_func_expr()) {
+            var fb = try self.parse_func_body(nm.loc);
+            fb.ret_type = typ;
+            const path = try self.alloc.alloc([]const u8, 1);
+            path[0] = nm.text;
+            return ast.Stmt{ .func_decl = .{
+                .loc = nm.loc,
+                .path = path,
+                .method = false,
+                .is_local = false,
+                .func = fb,
+                .attributes = attrs,
+            } };
+        }
         var inits: std.ArrayList(*ast.Expr) = .empty;
         try inits.append(self.alloc, try self.parse_expr());
         var names: std.ArrayList(ast.LocalName) = .empty;
@@ -2347,7 +2374,7 @@ pub const Parser = struct {
         const tok = try self.adv();
         const hint_loc = tok.loc;
         const result = try self.parse_func_decl_after_first(is_local, attrs, tok.loc);
-        // Emit hint only in .duo mode and only when the function has typed params
+        // Emit hint only in .id mode and only when the function has typed params
         // (bare syntax requires at least one typed param for disambiguation).
         if (self.duo_mode) {
             if (result == .func_decl) {
@@ -2539,7 +2566,130 @@ pub const Parser = struct {
         return (try self.pk()).kind == .lparen;
     }
 
+    fn viewColonIsMethodCall(view: token_view.View, idx: usize) bool {
+        const colon = view.kind(idx) orelse return false;
+        if (colon != .colon) return false;
+        const name_kind = view.kind(idx + 1) orelse return false;
+        if (name_kind != .name and !Lexer.isTypeKeyword(name_kind)) return false;
+        return view.kind(idx + 2) == .lparen;
+    }
+
+    /// Index-based header scan over an immutable token view (GAP-134). Used when
+    /// the lexer is Duo-backed so observation does not mutate the host cursor.
+    fn scanFuncHeaderSignalView(self: *Parser, allow_untyped_comma: bool) ParseError!bool {
+        const tokens = self.lex.duo_tokens.?;
+        const view = token_view.fromTokens(tokens);
+        var idx = self.lex.duoStreamIndex();
+
+        if (view.kind(idx) != .lparen) return false;
+        idx += 1;
+        if (view.kind(idx) == .lparen) return false;
+
+        var paren_depth: usize = 1;
+        var bracket_depth: usize = 0;
+        var brace_depth: usize = 0;
+        var typed_or_vararg = false;
+        var has_comma = false;
+        var depth1_tokens: usize = 0;
+        var depth1_names: usize = 0;
+        var has_literal_arg = false;
+        var has_table_literal_arg = false;
+        var has_infix_operator = false;
+        var rparen_line: u32 = 0;
+        var prev: TK = .eof;
+        while (paren_depth > 0) {
+            const tok = view.at(idx) orelse return false;
+            const row = view.role(idx);
+            if (paren_depth == 1 and bracket_depth == 0 and brace_depth == 0 and
+                row != null and row.?.literal_kind)
+            {
+                has_literal_arg = true;
+            }
+            switch (tok.kind) {
+                .eof => return false,
+                .dots => typed_or_vararg = true,
+                .comma => if (paren_depth == 1) {
+                    if (prev == .eof) return false;
+                    has_comma = true;
+                },
+                .colon => if (paren_depth == 1 and bracket_depth == 0 and brace_depth == 0 and prev == .name) {
+                    if (!viewColonIsMethodCall(view, idx)) typed_or_vararg = true;
+                },
+                .kw_fun, .kw_function => {
+                    if (paren_depth == 1 and bracket_depth == 0 and brace_depth == 0 and !typed_or_vararg) {
+                        return false;
+                    }
+                },
+                .lparen => paren_depth += 1,
+                .rparen => {
+                    paren_depth -= 1;
+                    if (paren_depth == 0) rparen_line = tok.loc.line;
+                },
+                .lbracket => bracket_depth += 1,
+                .rbracket => {
+                    if (bracket_depth > 0) bracket_depth -= 1;
+                },
+                .lbrace => {
+                    if (paren_depth == 1 and bracket_depth == 0 and brace_depth == 0) {
+                        has_table_literal_arg = true;
+                    }
+                    brace_depth += 1;
+                },
+                .rbrace => {
+                    if (brace_depth > 0) brace_depth -= 1;
+                },
+                else => {},
+            }
+            if (paren_depth == 1 and bracket_depth == 0 and brace_depth == 0 and
+                tok.kind != .lparen and tok.kind != .rparen)
+            {
+                depth1_tokens += 1;
+                if (tok.kind == .name) depth1_names += 1;
+                if (infix_prec(tok.kind) != null) has_infix_operator = true;
+            }
+            prev = tok.kind;
+            idx += 1;
+        }
+
+        const after = view.at(idx) orelse return false;
+        if (has_literal_arg and !typed_or_vararg) return false;
+        if (has_infix_operator and !typed_or_vararg) return false;
+        if (has_table_literal_arg and !typed_or_vararg) return false;
+        if (after.kind == .colon) {
+            const ty = view.kind(idx + 1) orelse return false;
+            if (ty == .name or Lexer.isTypeKeyword(ty)) return true;
+        }
+        if (typed_or_vararg or after.kind == .arrow or after.kind == .assign) return true;
+        if (allow_untyped_comma and has_comma) {
+            if (after.kind == .eof) return false;
+            if (after.kind == .colon) {
+                const ty = view.kind(idx + 1) orelse return false;
+                if (ty != .name and !Lexer.isTypeKeyword(ty)) return false;
+                return view.kind(idx + 2) != .lparen;
+            }
+            if (infix_prec(after.kind) != null or after.kind == .dot) return false;
+            return true;
+        }
+        if (after.kind == .colon) {
+            const ty = view.kind(idx + 1) orelse return false;
+            if (ty != .name and !Lexer.isTypeKeyword(ty)) return false;
+            return view.kind(idx + 2) != .lparen;
+        }
+        if (infix_prec(after.kind) != null or after.kind == .comma) return false;
+        if (depth1_tokens == 1 and depth1_names == 1 and !typed_or_vararg and !has_comma) {
+            if (!allow_untyped_comma) return false;
+            if (after.loc.line != rparen_line) return false;
+        }
+        if (!allow_untyped_comma and !typed_or_vararg) return false;
+        if (depth1_tokens == 0 and !allow_untyped_comma) return false;
+        if (token_can_start_func_body(after.kind)) return true;
+        return false;
+    }
+
     fn scan_func_header_signal(self: *Parser, allow_untyped_comma: bool) ParseError!bool {
+        if (self.lex.isDuoBacked()) {
+            return self.scanFuncHeaderSignalView(allow_untyped_comma);
+        }
         const saved = self.lex.saveState();
         defer self.lex.restoreState(saved);
 
@@ -2550,7 +2700,7 @@ pub const Parser = struct {
         // as a header: the literal sits at paren_depth 2, so the has_literal_arg
         // guard below (depth 1 only) never fires, and the group is misread as a
         // param list -- failing with "expected 'name', got '('". Grouping parens
-        // in an assignment RHS (`r = r + ((b % 128) * (2 ^ s))`) hit this.
+        // in an assignment RHS (`r += ((b % 128) * (2 ^ s))`) hit this.
         if ((try self.pk()).kind == .lparen) return false;
 
         var paren_depth: usize = 1;
@@ -2567,15 +2717,15 @@ pub const Parser = struct {
         var prev: TK = .eof;
         while (paren_depth > 0) {
             const tok = try self.pk();
+            if (paren_depth == 1 and bracket_depth == 0 and brace_depth == 0 and grammar_roles.isLiteralKind(tok.kind)) {
+                has_literal_arg = true;
+            }
             switch (tok.kind) {
                 .eof => return false,
                 .dots => typed_or_vararg = true,
                 .comma => if (paren_depth == 1) {
                     if (prev == .eof) return false;
                     has_comma = true;
-                },
-                .string_lit, .int_lit, .float_lit => if (paren_depth == 1 and bracket_depth == 0 and brace_depth == 0) {
-                    has_literal_arg = true;
                 },
                 .colon => if (paren_depth == 1 and bracket_depth == 0 and brace_depth == 0 and prev == .name) {
                     // `: type` annotation — but NOT a method call `:name(`. A
@@ -2705,10 +2855,10 @@ pub const Parser = struct {
         // call set `has_comma`, fell through to `token_can_start_func_body`, and
         // was swallowed as a declaration whose body was the rest of the file:
         //
-        //     script.duo_run_all(agent.smoke_targets(), bin)
+        //     script.id_run_all(agent.smoke_targets(), bin)
         //     print("agent-smoke: PASS")     -- read as the "body"
         //
-        // which is why scripts/agent_smoke.duo failed with "expected ')', got '.'".
+        // which is why scripts/agent_smoke.id failed with "expected ')', got '.'".
         // Zero-parameter headers are unaffected: `name(): Ret` returns true at the
         // `after.kind == .colon` check above, and `g()` is rejected below.
         if (!allow_untyped_comma and !typed_or_vararg) return false;
@@ -3599,7 +3749,7 @@ pub const Parser = struct {
         // named `const` used as a pattern silently becomes a catch-all binding
         // rather than a comparison.
         if (self.duo_mode) {
-            term.locWarn(l, "warning: 'match'/'case' are deprecated in .duo; use if/elseif or table dispatch", .{});
+            term.locWarn(l, "warning: 'match'/'case' are deprecated in .id; use if/elseif or table dispatch", .{});
         }
         const scrutinee = try self.parse_match_scrutinee();
 
@@ -3636,11 +3786,11 @@ pub const Parser = struct {
                 lhs = try self.new_expr(.{ .await_expr = .{ .loc = tok.loc, .operand = operand } });
             } else {
                 if (tok.kind == .kw_comptime and self.duo_mode) {
-                    term.locErr(tok.loc, "'comptime' is not valid in .duo files. Use @(expr) for inline comptime evaluation or @comp.* for module-scope transforms.", .{});
+                    term.locErr(tok.loc, "'comptime' is not valid in .id files. Use @(expr) for inline comptime evaluation or @comp.* for module-scope transforms.", .{});
                     return ParseError.UnexpectedToken;
                 }
                 const op: ?ast.UnOp = switch (tok.kind) {
-                    .kw_not => .not,
+                    .kw_not, .bang => .not,
                     .hash => .len,
                     .hash_hash, .kw_comptime => .compile,
                     .minus => .neg,
@@ -3648,6 +3798,8 @@ pub const Parser = struct {
                     else => null,
                 };
                 if (op) |uop| {
+                    if (tok.kind == .kw_not and self.duo_mode)
+                        term.locWarn(tok.loc, "warning: 'not' is deprecated in .id; use prefix !", .{});
                     _ = try self.adv();
                     const operand = try self.parse_match_scrutinee_prec(20);
                     lhs = try self.new_expr(.{ .unop = .{ .loc = tok.loc, .op = uop, .operand = operand } });
@@ -4305,7 +4457,7 @@ pub const Parser = struct {
         // suffixed expressions (names, literals, calls, field access).
         const first_tok = try self.pk();
         const is_unary = switch (first_tok.kind) {
-            .kw_not, .hash, .hash_hash, .kw_comptime, .minus, .tilde, .kw_await => true,
+            .kw_not, .bang, .hash, .hash_hash, .kw_comptime, .minus, .tilde, .kw_await => true,
             else => false,
         };
         // Pass 3: `{ name, age } = user` named destructuring assign
@@ -4705,8 +4857,9 @@ pub const Parser = struct {
     }
 
     fn is_expr_start(_: *Parser, kind: TK) bool {
+        if (grammar_roles.canBeginExpression(kind)) return true;
         return switch (kind) {
-            .name, .int_lit, .float_lit, .string_lit, .kw_nil, .kw_true, .kw_false, .dots, .lparen, .lbrace, .lbracket, .kw_not, .hash, .minus, .tilde, .hash_hash, .kw_comptime, .kw_await, .comma, .at => true,
+            .dots, .kw_not, .hash, .minus, .tilde, .hash_hash, .kw_comptime, .kw_await, .comma, .at => true,
             else => false,
         };
     }
@@ -4832,11 +4985,11 @@ pub const Parser = struct {
                 lhs = try self.new_expr(.{ .await_expr = .{ .loc = tok.loc, .operand = operand } });
             } else {
                 if (tok.kind == .kw_comptime and self.duo_mode) {
-                    term.locErr(tok.loc, "'comptime' is not valid in .duo files. Use @(expr) for inline comptime evaluation or @comp.* for module-scope transforms.", .{});
+                    term.locErr(tok.loc, "'comptime' is not valid in .id files. Use @(expr) for inline comptime evaluation or @comp.* for module-scope transforms.", .{});
                     return ParseError.UnexpectedToken;
                 }
                 const op: ?ast.UnOp = switch (tok.kind) {
-                    .kw_not => .not,
+                    .kw_not, .bang => .not,
                     .hash => .len,
                     .hash_hash, .kw_comptime => .compile,
                     .minus => .neg,
@@ -4844,6 +4997,8 @@ pub const Parser = struct {
                     else => null,
                 };
                 if (op) |uop| {
+                    if (tok.kind == .kw_not and self.duo_mode)
+                        term.locWarn(tok.loc, "warning: 'not' is deprecated in .id; use prefix !", .{});
                     _ = try self.adv();
                     const operand = try self.parse_prec(20);
                     lhs = try self.new_expr(.{ .unop = .{ .loc = tok.loc, .op = uop, .operand = operand } });
@@ -4917,11 +5072,11 @@ pub const Parser = struct {
             return self.new_expr(.{ .await_expr = .{ .loc = tok.loc, .operand = operand } });
         }
         if (tok.kind == .kw_comptime and self.duo_mode) {
-            term.locErr(tok.loc, "'comptime' is not valid in .duo files. Use @(expr) for inline comptime evaluation or @comp.* for module-scope transforms.", .{});
+            term.locErr(tok.loc, "'comptime' is not valid in .id files. Use @(expr) for inline comptime evaluation or @comp.* for module-scope transforms.", .{});
             return ParseError.UnexpectedToken;
         }
         const op: ?ast.UnOp = switch (tok.kind) {
-            .kw_not => .not,
+            .kw_not, .bang => .not,
             .hash => .len,
             .hash_hash, .kw_comptime => .compile,
             .minus => .neg,
@@ -4929,6 +5084,8 @@ pub const Parser = struct {
             else => null,
         };
         if (op) |uop| {
+            if (tok.kind == .kw_not and self.duo_mode)
+                term.locWarn(tok.loc, "warning: 'not' is deprecated in .id; use prefix !", .{});
             _ = try self.adv();
             const operand = try self.parse_prec(20);
             return self.new_expr(.{ .unop = .{ .loc = tok.loc, .op = uop, .operand = operand } });
@@ -5139,6 +5296,24 @@ pub const Parser = struct {
                 const decoded = try Lexer.decode_lua_short_string(self.alloc, tok.text);
                 break :blk try self.desugar_string_interpolation(tok.loc, decoded);
             },
+            .text_lit => blk: {
+                _ = try self.adv();
+                const val = try self.alloc.dupe(u8, tok.text);
+                break :blk try self.desugar_string_interpolation(tok.loc, val);
+            },
+            .bytes_lit => blk: {
+                _ = try self.adv();
+                break :blk self.new_expr(.{ .string_lit = .{ .loc = tok.loc, .val = try self.alloc.dupe(u8, tok.text) } });
+            },
+            .compat_text_lit => blk: {
+                _ = try self.adv();
+                const decoded = try Lexer.decode_lua_short_string(self.alloc, tok.text);
+                break :blk try self.desugar_string_interpolation(tok.loc, decoded);
+            },
+            .compat_long_text_lit => blk: {
+                _ = try self.adv();
+                break :blk self.new_expr(.{ .string_lit = .{ .loc = tok.loc, .val = try self.alloc.dupe(u8, tok.text) } });
+            },
             .kw_nil => blk: {
                 _ = try self.adv();
                 break :blk self.new_expr(.{ .nil = tok.loc });
@@ -5234,7 +5409,7 @@ pub const Parser = struct {
     ///
     /// Column arithmetic and not a source scan, because the lexer is not always
     /// scanning a buffer — under SH-03 it is a cursor over a token stream the
-    /// DUO lexer produced (`Lexer.duo_tokens`), and a rule that reached for
+    /// DUO lexer produced (`Lexer.id_tokens`), and a rule that reached for
     /// bytes would decide differently depending on which lexer ran. `loc` and
     /// `text` are the two things both paths carry, which is exactly what
     /// `peek_glued_assign` uses for `>>=`.
@@ -5673,11 +5848,11 @@ pub const Parser = struct {
         if (at_builtin_internal_name(self, qualified)) |internal| {
             if (self.duo_mode) {
                 if (std.mem.eql(u8, qualified, "constexpr")) {
-                    term.locErr(l, "@constexpr is not valid in .duo files. Use @(expr) for comptime evaluation.", .{});
+                    term.locErr(l, "@constexpr is not valid in .id files. Use @(expr) for comptime evaluation.", .{});
                     return ParseError.UnexpectedToken;
                 }
                 if (std.mem.eql(u8, qualified, "comptime_if")) {
-                    term.locErr(l, "@comptime_if is not valid in .duo files. Use if-expressions with @(expr) conditions.", .{});
+                    term.locErr(l, "@comptime_if is not valid in .id files. Use if-expressions with @(expr) conditions.", .{});
                     return ParseError.UnexpectedToken;
                 }
             }
@@ -5706,7 +5881,7 @@ pub const Parser = struct {
         return self.expect(.name);
     }
 
-    /// Pass 3 (P3-08): deprecation warnings for flat/legacy @-directive aliases in .duo mode.
+    /// Pass 3 (P3-08): deprecation warnings for flat/legacy @-directive aliases in .id mode.
     fn warnDeprecatedAtQualified(self: *Parser, loc: ast.Loc, qualified: []const u8) void {
         if (!self.duo_mode) return;
         if (std.mem.startsWith(u8, qualified, "meta.")) {
@@ -5835,7 +6010,7 @@ pub const Parser = struct {
                     // postfix `X@rel` MOVES it — and `.@name` is none of them.
                     // It came in from the Pass 38 catalog (7af9a66) and Pass 48
                     // put it in the GRAVEYARD alongside `point:@to` and
-                    // `Point.@to`; `scripts/spec_conformance.duo` has carried a
+                    // `Point.@to`; `scripts/spec_conformance.id` has carried a
                     // row asserting the form ABSENT, failing on purpose, ever
                     // since.
                     //
@@ -5897,10 +6072,10 @@ pub const Parser = struct {
                     //
                     // THE EVIDENCE THAT THIS IS A DISAGREEMENT AND NOT A GAP.
                     // The SELF-HOSTED parser already reads postfix `@` as an
-                    // anchor SUFFIX: `lib/std/compiler/parser.duo` builds
+                    // anchor SUFFIX: `lib/std/compiler/parser.id` builds
                     // `(anchor base name)` in `proj_suffixed`, right beside
                     // `.field`, `[i]` and `:m()`, and
-                    // `examples/pass16_parser_corpus_proof.duo` pins
+                    // `examples/pass16_parser_corpus_proof.id` pins
                     // `bar = foo@7` -> `(program (assign bar (anchor foo 7)))`.
                     // Two parsers in one repository held different facts about
                     // one token. This one now agrees with the canonical graph,
@@ -5909,13 +6084,13 @@ pub const Parser = struct {
                     //
                     // ADJACENCY DECIDES, which is this parser's own precedent
                     // (`peek_glued_assign`: `>>=` is `>>` glued to `=`, and
-                    // "ADJACENCY is the whole rule"; `examples/spec100/glued.duo`
+                    // "ADJACENCY is the whole rule"; `examples/spec100/glued.id`
                     // is the fixture). Every `X@rel` in the spec is written
                     // glued — `p@x`, `backend@driver`, `shc@wire`,
                     // `ward@allocation_free`, `point@ordering` — and every
                     // matmul in this repository is written spaced: the three
                     // `x @ y` rows are all in `examples/compile_fail/`, and a
-                    // grep of infix `@` over 770 tracked `.duo` files finds no
+                    // grep of infix `@` over 770 tracked `.id` files finds no
                     // others. So glued `X@rel` is the anchor, spaced `a @ b`
                     // stays matmul, and no existing program changes meaning.
                     //
@@ -6005,7 +6180,7 @@ pub const Parser = struct {
                     //     { kind = k, start = pos }   -- parsed as one(pos)({...})
                     // so the function returned a call result instead of a record.
                     // Table-call sugar buys nothing `f({...})` does not, and a
-                    // scan of 575 `.duo` files found zero real uses of it.
+                    // scan of 575 `.id` files found zero real uses of it.
                     //
                     // APPLY-ONE (c0 §43 `law.brace`, §44 `law.apply.one`).
                     // `name{ … }` is ONE form and it is APPLICATION; the SUBJECT
@@ -6036,7 +6211,7 @@ pub const Parser = struct {
                         // c0 §44a trap 1 verbatim — the parser asking what a name
                         // denotes to pick a different production — sitting in the
                         // very arm APPLY-ONE repairs. It is left standing because
-                        // deleting it changes what `examples/ml_showcase.duo`
+                        // deleting it changes what `examples/ml_showcase.id`
                         // compiles to, and a regression is not a fix. Its removal
                         // is a step of gap[092], with its one real user measured.
                         e = try self.parse_nn_block_desugar(tok.loc);
@@ -6373,7 +6548,7 @@ fn parseSource(src: []const u8, arena: *std.heap.ArenaAllocator) ParseError!ast.
 
 fn parseDuoSource(src: []const u8, arena: *std.heap.ArenaAllocator) ParseError!ast.Module {
     const alloc = arena.allocator();
-    var lex = Lexer.init(src, "test.duo");
+    var lex = Lexer.init(src, "test.id");
     var p = Parser.init(&lex, alloc);
     p.duo_mode = true;
     return p.parse_module();
@@ -6553,18 +6728,15 @@ test "parse: local declaration with integer initializer" {
     try testing.expectEqual(@as(i64, 42), init_expr.int_lit.val);
 }
 
-test "parse: Idsem token identity keeps backtick reserved" {
+test "parse: Idol token identity keeps backtick reserved" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const source = "`value";
     var lex = Lexer.init(source, "reserved.id");
-    try @import("duo_lexer_dispatch.zig").route(testing.allocator, &lex, source, "reserved.id");
-    defer testing.allocator.free(lex.duo_tokens.?);
-
-    try testing.expectEqual(TK.backtick, (try lex.peek()).kind);
-    var p = Parser.init(&lex, arena.allocator());
-    p.duo_mode = true;
-    try testing.expectError(ParseError.UnexpectedToken, p.parse_module());
+    try testing.expectError(
+        @import("lexer.zig").LexError.UnexpectedChar,
+        @import("duo_lexer_dispatch.zig").route(testing.allocator, &lex, source, "reserved.id"),
+    );
 }
 
 test "parse: backtick rejection does not depend on token text" {
@@ -6895,6 +7067,15 @@ test "parse: unary negation" {
     const expr = mod.body.stmts[0].local_decl.inits[0];
     try testing.expect(expr.* == .unop);
     try testing.expectEqual(ast.UnOp.neg, expr.unop.op);
+}
+
+test "parse: bang prefix negation" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("local r = !true", &arena);
+    const expr = mod.body.stmts[0].local_decl.inits[0];
+    try testing.expect(expr.* == .unop);
+    try testing.expectEqual(ast.UnOp.not, expr.unop.op);
 }
 
 test "parse: table constructor empty" {
@@ -8135,7 +8316,7 @@ test "parse: simple concept with one method" {
 test "parse: concept with bare (GR-001) method signatures" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
-    // Canonical bare form as used by lib/std/mem.duo — no `fun` keyword.
+    // Canonical bare form as used by lib/std/mem.id — no `fun` keyword.
     const mod = try parseSource(
         \\concept Allocator
         \\    alloc(self, bytes: i64): any

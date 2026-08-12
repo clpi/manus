@@ -1,5 +1,5 @@
--- @comp.pipeline family: one descriptor emits multiple typed fused kernels
--- Run: duo run examples/pipeline_family_showcase.id
+# @comp.pipeline family: one descriptor emits multiple typed fused kernels
+# Run: duo run examples/pipeline_family_showcase.id
 
 @comp.pipeline({
     name = "sum_family",

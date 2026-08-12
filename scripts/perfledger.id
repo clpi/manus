@@ -1,0 +1,153 @@
+# Performance evidence ledger.
+#
+# This is a read-only index, not a benchmark runner. It names the duon scripts
+# whose results are needed before broad speed, wasm, startup, or size claims.
+
+chomp: str = (text: str)
+    n = text:len()
+    while n > 0
+        c = text:byte(n)
+        if c != 10 and c != 13 and c != 32
+            break
+        n -= 1
+    text:sub(1, n)
+
+capture: str = (cmd: str)
+    f = io.popen(cmd, "r")
+    if f == nil
+        return ""
+    out = ""
+    line = f:read("*a")
+    if line != nil
+        out = line
+    f:close()
+    chomp(out)
+
+cap: str = (cmd: str)
+    chomp(capture(cmd))
+
+shellstatus: i64 = (cmd: str)
+    to(i64)(cap("( " .. cmd .. " ) >/dev/null 2>&1; echo $?"))
+
+lines: any = (text: str)
+    out = {}
+    start = 1
+    i = 1
+    n = text:len()
+    while i <= n
+        if text:byte(i) == 10
+            if i > start
+                out[out:len() + 1] = text:sub(start, i - 1)
+            start = i + 1
+        i += 1
+    if start <= n
+        out[out:len() + 1] = text:sub(start, n)
+    out
+
+has: bool = (text: str, part: str)
+    text:find(part, 1, true) != nil
+
+present: bool = (path: str)
+    shellstatus("test -e '" .. path .. "'") == 0
+
+grepfile: bool = (path: str, pat: str)
+    has(cap("cat '" .. path .. "' 2>/dev/null"), pat)
+
+requirepath: i64 = (path: str, tag: str, pat: str)
+    if grepfile(path, pat)
+        print("  ok {tag}")
+        return 0
+    print("  miss {tag}: {pat}")
+    1
+
+control: i64 = ()
+    selfpath = "scripts/perfledger.id"
+    presentpat = "perfledger: pass all evidence contracts present"
+    absentpat = "perfledger-control-" .. "absent"
+    if !grepfile(selfpath, presentpat)
+        print("perfledger: fail control present pattern")
+        return 1
+    if grepfile(selfpath, absentpat)
+        print("perfledger: fail control absent pattern")
+        return 1
+    print("perfledger: control ok")
+    0
+
+row: i64 = (name: str, path: str, proof: str, a: str, b: str, c: str, d: str)
+    state = "missing"
+    if present(path)
+        state = "present"
+    print("{state} {name} {path}")
+    print("  {proof}")
+    result = 0
+    if state == "missing"
+        result = 1
+    else
+        result += requirepath(path, "contract", a)
+        result += requirepath(path, "oracle", b)
+        result += requirepath(path, "negative", c)
+        result += requirepath(path, "verdict", d)
+    result
+
+main: i64 = ()
+    missing = control()
+    missing += row("bench", "scripts/run_benchmark.id",
+        "duon and hosted lua results match reference c and meet the c speed floor",
+        "benchmark results match reference C",
+        "reference C benchmark",
+        "RESULT_FAIL_FLAG = 1",
+        "Duo .lua/.id >= C")
+    missing += row("cross", "scripts/run_cross_benchmark.id",
+        "duon compared against c lua and luajit without changing kernels",
+        "Correctness (RESULT lines vs reference C)",
+        "reference C binary",
+        "Cross-language benchmark FAILED",
+        "Duo must match reference C")
+    missing += row("wasm", "scripts/run_wasm_benchmark.id",
+        "wasm runtimes measured through the command harness",
+        "ERROR: Expected ",
+        "wasmtime",
+        "runtimes disagree",
+        " RESULT lines present")
+    missing += row("runtime", "scripts/runtime_bench.id",
+        "ward measured against wart wasmtime and wasmer for bytes startup rss and execution",
+        "AXIS startup and rss",
+        "wasmtime is the oracle",
+        "losses += 1",
+        "AXIS bytes")
+    missing += row("size", "scripts/run_compile_size_benchmark.id",
+        "compile time and binary size tracked against c",
+        "binary_bytes",
+        "RESULT mismatch",
+        "RESULT count mismatch",
+        "compile-size-bench")
+    missing += row("ml", "scripts/run_ml_benchmark.id",
+        "ml kernels measured against c",
+        "RESULT row(s), expected",
+        "bench_ml_c.c",
+        "mismatch",
+        "Duo vs C")
+    missing += row("honest", "scripts/run_honest_benchmark.id",
+        "runtime input benchmark blocks precomputation claims",
+        "HONEST_SEED",
+        "bench_honest_c.c",
+        "RESULT count mismatch",
+        "Duo matches or beats C")
+    missing += row("proof", "scripts/proof/benchmark.id",
+        "profile correctness and proof artifacts",
+        "proof_matrix_summary.json",
+        "direct-native-subset",
+        "must have zero boxes",
+        "cross-profile semantics match")
+    missing += row("ftcftw", "scripts/ftcftwledger.id",
+        "Idol-only SHC native > c-equivalent > wasm oracle evidence chain index",
+        "claim.refused faster than c across the board",
+        "claim.made    law.project.ftcftw",
+        "ftcftwledger: fail missing contracts",
+        "ftcftwledger: pass all evidence contracts present")
+
+    if missing == 0
+        print("perfledger: pass all evidence contracts present")
+        return 0
+    print("perfledger: fail missing contracts {missing}")
+    1

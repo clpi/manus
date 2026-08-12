@@ -1527,7 +1527,7 @@ test "comptime eval: do blocks with bounded loops and local mutation" {
         \\  case _ then do
         \\    local acc = 0
         \\    for i = 1, 4 do
-        \\      acc = acc + i
+        \\      acc += i
         \\    end
         \\    acc
         \\  end
@@ -1537,8 +1537,8 @@ test "comptime eval: do blocks with bounded loops and local mutation" {
         \\    local n = 4
         \\    local acc = 0
         \\    while n > 0 do
-        \\      acc = acc + n
-        \\      n = n - 1
+        \\      acc += n
+        \\      n -= 1
         \\    end
         \\    acc
         \\  end

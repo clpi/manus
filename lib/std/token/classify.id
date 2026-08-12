@@ -1,18 +1,18 @@
--- GENERATED from src/token_classify_gen.zig — do not edit by hand.
--- Regenerate: duo token-tables emit
--- Canonical token facts: src/token_semantic.zig
+# GENERATED from src/token_classify_gen.zig — do not edit by hand.
+# Regenerate: duo token-tables emit
+# Canonical token facts: src/token_semantic.zig
 
--- Pass 12 M1 — Duo-native keyword classifier (P12-WS7).
--- 54 reserved words across 3 categories; 3 candidate realizations.
--- Proof: examples/pass12_m1_diff.id (differential + fuzz); artifact
--- inspection in src/token_classify_gen.zig (kind ids match lexer.TokenKind).
+# Pass 12 M1 — Duo-native keyword classifier (P12-WS7).
+# 54 reserved words across 3 categories; 3 candidate realizations.
+# Proof: examples/pass12_m1_diff.id (differential + fuzz); artifact
+# inspection in src/token_classify_gen.zig (kind ids match lexer.TokenKind).
 
 GENERATOR_OWNER = "src/token_classify_gen.zig"
 DESCRIPTOR_SCHEMA = "token-semantic-v0"
 KEYWORD_COUNT = 54
 PRODUCTION_CLASSIFIER = "classifier.branch_chain"
 
--- Categories: 1 = lua_keyword, 2 = duo_type, 3 = duo_contextual
+# Categories: 1 = lua_keyword, 2 = duo_type, 3 = duo_contextual
 CATEGORY_LUA = 1
 CATEGORY_DUO_TYPE = 2
 CATEGORY_DUO_CONTEXTUAL = 3
@@ -71,7 +71,7 @@ KIND_COMPTIME = 55
 KIND_BY = 56
 KIND_LET = 57
 
--- Sorted descriptor (lexicographic) for sorted_lookup + metadata.
+# Sorted descriptor (lexicographic) for sorted_lookup + metadata.
 SORTED_TEXT = {
     "alias",
     "and",
@@ -241,7 +241,7 @@ SORTED_CATEGORY = {
     1,
 }
 
--- Candidate 1: branch chain (production).
+# Candidate 1: branch chain (production).
 fun classify_branch_chain(w: str): i64
     if w == "and" return 4 end
     if w == "break" return 5 end
@@ -300,7 +300,7 @@ fun classify_branch_chain(w: str): i64
     0
 end
 
--- Candidate 2: length bucket (filter then equality chain).
+# Candidate 2: length bucket (filter then equality chain).
 fun classify_length_bucket(w: str): i64
     n = #w
     if n == 2
@@ -381,7 +381,7 @@ fun classify_length_bucket(w: str): i64
     0
 end
 
--- Candidate 3: sorted lookup (binary search over descriptor).
+# Candidate 3: sorted lookup (binary search over descriptor).
 fun classify_sorted_lookup(w: str): i64
     lo = 1
     hi = 54
@@ -397,7 +397,7 @@ fun classify_sorted_lookup(w: str): i64
     0
 end
 
--- Production entry (mirrors token_semantic.production_classifier).
+# Production entry (mirrors token_semantic.production_classifier).
 @c.export("duo_keyword_classify")
 fun classify(w: str): i64
     classify_branch_chain(w)

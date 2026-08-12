@@ -1,7 +1,6 @@
--- std.atomic — atomic operations on table-backed memory
--- Uses compare swap for CAS-based mutexes and hardware spinwait for CPU yielding.
+# std.atomic — atomic operations on table-backed memory
+# Uses compare swap for CAS-based mutexes and hardware spinwait for CPU yielding.
 
-hardware = req "std.hardware"
 
 store(t: any, key: any, value: any): any
     old = t[key]

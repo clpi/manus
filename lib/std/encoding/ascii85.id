@@ -1,4 +1,4 @@
--- std.encoding.ascii85 — Ascii85 (Adobe-style) encoding (mirrors Go's encoding/ascii85)
+# std.encoding.ascii85 — Ascii85 (Adobe-style) encoding (mirrors Go's encoding/ascii85)
 
 alphabet = "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
 
@@ -6,32 +6,32 @@ encode(src: str): str
     if src == nil return "" end
     out = {}
     i = 1
-    len = std.string.len(src)
+    len = src:len()
     while i <= len
-        available = math.min(4, len - i + 1)
-        chunk = std.string.sub(src, i, i + 3)
-        b1 = std.string.byte(chunk, 1)
+        available = 4:min(len - i + 1)
+        chunk = src:sub(i, i + 3)
+        b1 = chunk:byte(1)
         b2 = 0
-        if available >= 2 b2 = std.string.byte(chunk, 2) end
+        if available >= 2 b2 = chunk:byte(2) end
         b3 = 0
-        if available >= 3 b3 = std.string.byte(chunk, 3) end
+        if available >= 3 b3 = chunk:byte(3) end
         b4 = 0
-        if available >= 4 b4 = std.string.byte(chunk, 4) end
+        if available >= 4 b4 = chunk:byte(4) end
         if available == 4
             val = ((b1 * 256 + b2) * 256 + b3) * 256 + b4
             if val == 0
-                out[rawlen(out) + 1] = "z"
+                out[out:len() + 1] = "z"
             else
                 c1 = (val / 85^4) % 85
                 c2 = (val / 85^3) % 85
                 c3 = (val / 85^2) % 85
                 c4 = (val / 85) % 85
                 c5 = val % 85
-                out[rawlen(out) + 1] = std.string.sub(alphabet, c1 + 1, c1 + 1)
-                out[rawlen(out) + 1] = std.string.sub(alphabet, c2 + 1, c2 + 1)
-                out[rawlen(out) + 1] = std.string.sub(alphabet, c3 + 1, c3 + 1)
-                out[rawlen(out) + 1] = std.string.sub(alphabet, c4 + 1, c4 + 1)
-                out[rawlen(out) + 1] = std.string.sub(alphabet, c5 + 1, c5 + 1)
+                out[out:len() + 1] = alphabet:sub(c1 + 1, c1 + 1)
+                out[out:len() + 1] = alphabet:sub(c2 + 1, c2 + 1)
+                out[out:len() + 1] = alphabet:sub(c3 + 1, c3 + 1)
+                out[out:len() + 1] = alphabet:sub(c4 + 1, c4 + 1)
+                out[out:len() + 1] = alphabet:sub(c5 + 1, c5 + 1)
             end
         else
             val = 0
@@ -44,22 +44,22 @@ encode(src: str): str
             c3 = (val / 85^2) % 85
             c4 = (val / 85) % 85
             c5 = val % 85
-            out[rawlen(out) + 1] = std.string.sub(alphabet, c1 + 1, c1 + 1)
-            out[rawlen(out) + 1] = std.string.sub(alphabet, c2 + 1, c2 + 1)
-            out[rawlen(out) + 1] = std.string.sub(alphabet, c3 + 1, c3 + 1)
-            out[rawlen(out) + 1] = std.string.sub(alphabet, c4 + 1, c4 + 1)
-            out[rawlen(out) + 1] = std.string.sub(alphabet, c5 + 1, c5 + 1)
+            out[out:len() + 1] = alphabet:sub(c1 + 1, c1 + 1)
+            out[out:len() + 1] = alphabet:sub(c2 + 1, c2 + 1)
+            out[out:len() + 1] = alphabet:sub(c3 + 1, c3 + 1)
+            out[out:len() + 1] = alphabet:sub(c4 + 1, c4 + 1)
+            out[out:len() + 1] = alphabet:sub(c5 + 1, c5 + 1)
         end
         i += 4
     end
-    "~<" .. table.concat(out) .. "~>"
+    "~<" .. out:concat() .. "~>"
 end
 
 decode_word(w: str): any
     if w == "z" return {0, 0, 0, 0} end
     v = 0
-    for j = 1, std.string.len(w)
-        c = std.string.byte(w, j)
+    for j = 1, w:len()
+        c = w:byte(j)
         v = v * 85 + (c - 33)
     end
     b1 = (v / 16777216) % 256
@@ -72,27 +72,27 @@ end
 decode(src: str): str
     if src == nil return "" end
     out = {}
-    len = std.string.len(src)
+    len = src:len()
     i = 1
-    if std.string.sub(src, 1, 2) == "~<" i = 3 end
+    if src:sub(1, 2) == "~<" i = 3 end
     while i <= len
-        c = std.string.byte(src, i)
+        c = src:byte(i)
         if c == 126 break end
         if c == 32 or c == 9 or c == 10 or c == 13
             i += 1
         elseif c == 122
-            out[rawlen(out) + 1] = 0
-            out[rawlen(out) + 1] = 0
-            out[rawlen(out) + 1] = 0
-            out[rawlen(out) + 1] = 0
+            out[out:len() + 1] = 0
+            out[out:len() + 1] = 0
+            out[out:len() + 1] = 0
+            out[out:len() + 1] = 0
             i += 1
         elseif c >= 33 and c <= 117
             word = ""
             for j = 0, 4
                 if i + j <= len
-                    nc = std.string.byte(src, i + j)
+                    nc = src:byte(i + j)
                     if nc >= 33 and nc <= 117
-                        word = word .. std.string.sub(src, i + j, i + j)
+                        word = word .. src:sub(i + j, i + j)
                     elseif nc == 122
                         word = word .. "z"
                         break
@@ -103,24 +103,24 @@ decode(src: str): str
             end
             bytes = decode_word(word)
             for _, b in bytes
-                out[rawlen(out) + 1] = b
+                out[out:len() + 1] = b
             end
-            i += std.string.len(word)
+            i += word:len()
         else
             i += 1
         end
     end
     result = ""
     for _, b in out
-        result = result .. std.string.char(b)
+        result = result .. b:char()
     end
     result
 end
 
--- `/` yields f64 even on two i64 operands, so this was a return-type mismatch
--- against the declared `: i64` and took the module down. The division is the
--- ceiling of n/4 in 4-byte groups; the truncation is intended, so it is stated.
-max_encoded_len(n: i64): i64
+# `/` yields f64 even on two i64 operands, so this was a return-type mismatch
+# against the declared `: i64` and took the module down. The division is the
+# ceiling of n/4 in 4-byte groups; the truncation is intended, so it is stated.
+max_encoded_n: i64:len(): i64
     to(i64)((n + 3) / 4) * 5 + 4
 end
 

@@ -1,10 +1,10 @@
--- std.strconv — string conversion utilities (mirrors Go's strconv package)
--- Provides numeric-to-string and string-to-numeric conversions with base
--- support, quote/unescape helpers, and boolean formatting.
+# std.strconv — string conversion utilities (mirrors Go's strconv package)
+# Provides numeric-to-string and string-to-numeric conversions with base
+# support, quote/unescape helpers, and boolean formatting.
 
--- ----- Number to string -----
+# ----- Number to string -----
 
--- format_int: format integer v as a string in the given base (2-36).
+# format_int: format integer v as a string in the given base (2-36).
 format_int(v: any, base: any): str
     if base == nil or base < 2 base = 10 end
     if base > 36 base = 36 end
@@ -18,11 +18,11 @@ format_int(v: any, base: any): str
     end
     out = {}
     while n > 0
-        out[rawlen(out) + 1] = digits:sub((n % base) + 1, (n % base) + 1)
-        n = math.floor(n / base)
+        out[out:len() + 1] = digits:sub((n % base) + 1, (n % base) + 1)
+        n = n / base:floor()
     end
     s = ""
-    i = rawlen(out)
+    i = out:len()
     while i >= 1
         s = s .. out[i]
         i -= 1
@@ -31,45 +31,45 @@ format_int(v: any, base: any): str
     s
 end
 
--- itoa: convenience for format_int(v, 10).
+# itoa: convenience for format_int(v, 10).
 itoa(v: any): str
     format_int(v, 10)
 end
 
--- format_float: format float v with 'g', 'f', or 'e' verb and precision.
+# format_float: format float v with 'g', 'f', or 'e' verb and precision.
 format_float(v: any, fmt: str, prec: any): str
     if v == nil return "0" end
     if fmt == nil fmt = "g" end
     if prec == nil or prec < 0 prec = 0 - 1 end
     if fmt == "e"
         if prec < 0
-            string.format("%e", v)
+            "%e":format(v)
         else
-            string.format("%." .. prec:to(str) .. "e", v)
+            "%." .. prec:to(str) .. "e":format(v)
         end
     elseif fmt == "f"
         if prec < 0
-            string.format("%f", v)
+            "%f":format(v)
         else
-            string.format("%." .. prec:to(str) .. "f", v)
+            "%." .. prec:to(str) .. "f":format(v)
         end
     else
-        -- 'g' or default
+        # 'g' or default
         if prec < 0
-            string.format("%g", v)
+            "%g":format(v)
         else
-            string.format("%." .. prec:to(str) .. "g", v)
+            "%." .. prec:to(str) .. "g":format(v)
         end
     end
 end
 
--- ----- String to number -----
+# ----- String to number -----
 
--- parse_int: interpret s as an integer in the given base. Returns (value, ok).
+# parse_int: interpret s as an integer in the given base. Returns (value, ok).
 parse_int(s: str, base: any): any
     if s == nil or s == "" return 0, false end
-    s = string.gsub(s, "^%s+", "")
-    s = string.gsub(s, "%s+$", "")
+    s = s:gsub("^%s+", "")
+    s = s:gsub("%s+$", "")
     neg = false
     if s:sub(1, 1) == "-"
         neg = true
@@ -92,8 +92,8 @@ parse_int(s: str, base: any): any
     val = 0
     i = 1
     while i <= #s
-        ch = string.lower(s:sub(i, i))
-        pos = string.find(digits, ch, 1, true)
+        ch = s:sub(i, i):lower()
+        pos = digits:find(ch, 1, true)
         if pos == nil return 0, false end
         d = pos - 1
         if d >= base return 0, false end
@@ -104,17 +104,17 @@ parse_int(s: str, base: any): any
     return val, true
 end
 
--- atoi: convenience for parse_int(s, 10).
+# atoi: convenience for parse_int(s, 10).
 atoi(s: str): any
     parse_int(s, 10)
 end
 
--- parse_float: interpret s as a floating-point number. Returns (value, ok).
+# parse_float: interpret s as a floating-point number. Returns (value, ok).
 parse_float(s: str): any
     if s == nil or s == "" return 0.0, false end
-    s = string.gsub(s, "^%s+", "")
-    s = string.gsub(s, "%s+$", "")
-    -- accept optional sign
+    s = s:gsub("^%s+", "")
+    s = s:gsub("%s+$", "")
+    # accept optional sign
     neg = false
     if s:sub(1, 1) == "-"
         neg = true
@@ -122,8 +122,8 @@ parse_float(s: str): any
     elseif s:sub(1, 1) == "+"
         s = s:sub(2)
     end
-    -- match numeric pattern: digits . digits [eE [+-] digits]
-    -- Use Lua pattern to validate
+    # match numeric pattern: digits . digits [eE [+-] digits]
+    # Use Lua pattern to validate
     m = string["match"](s, "^(%d+%.?%d*[eE]?[+-]?%d*)$")
     if m == nil
         m = string["match"](s, "^(%d*%.%d+[eE]?[+-]?%d*)$")
@@ -135,18 +135,18 @@ parse_float(s: str): any
     return v, true
 end
 
--- parse_bool: interpret s as a boolean. Returns (value, ok).
+# parse_bool: interpret s as a boolean. Returns (value, ok).
 parse_bool(s: str): any
     if s == nil return false, false end
-    s = string.lower(s)
+    s = s:lower()
     if s == "1" or s == "t" or s == "true" return true, true end
     if s == "0" or s == "f" or s == "false" return false, true end
     return false, false
 end
 
--- ----- Quote / unquote -----
+# ----- Quote / unquote -----
 
--- quote: return a double-quoted, safely-escaped string literal.
+# quote: return a double-quoted, safely-escaped string literal.
 quote(s: str): str
     if s == nil return "\"\"" end
     out = {"\""}
@@ -155,27 +155,27 @@ quote(s: str): str
         ch = s:sub(i, i)
         b = s:byte(i)
         if ch == "\\"
-            out[rawlen(out) + 1] = "\\\\"
+            out[out:len() + 1] = "\\\\"
         elseif ch == "\""
-            out[rawlen(out) + 1] = "\\\""
+            out[out:len() + 1] = "\\\""
         elseif ch == "\n"
-            out[rawlen(out) + 1] = "\\n"
+            out[out:len() + 1] = "\\n"
         elseif ch == "\r"
-            out[rawlen(out) + 1] = "\\r"
+            out[out:len() + 1] = "\\r"
         elseif ch == "\t"
-            out[rawlen(out) + 1] = "\\t"
+            out[out:len() + 1] = "\\t"
         elseif b < 32
-            out[rawlen(out) + 1] = string.format("\\x%02X", b)
+            out[out:len() + 1] = "\\x%02X":format(b)
         else
-            out[rawlen(out) + 1] = ch
+            out[out:len() + 1] = ch
         end
         i += 1
     end
-    out[rawlen(out) + 1] = "\""
-    table.concat(out)
+    out[out:len() + 1] = "\""
+    out:concat()
 end
 
--- unquote: remove surrounding quotes and interpret escape sequences.
+# unquote: remove surrounding quotes and interpret escape sequences.
 unquote(s: str): str
     if s == nil return "" end
     n = #s
@@ -193,39 +193,39 @@ unquote(s: str): str
         if ch == "\\" and i < #inner
             nxt = inner:sub(i + 1, i + 1)
             if nxt == "n"
-                out[rawlen(out) + 1] = "\n"
+                out[out:len() + 1] = "\n"
             elseif nxt == "t"
-                out[rawlen(out) + 1] = "\t"
+                out[out:len() + 1] = "\t"
             elseif nxt == "r"
-                out[rawlen(out) + 1] = "\r"
+                out[out:len() + 1] = "\r"
             elseif nxt == "\\"
-                out[rawlen(out) + 1] = "\\"
+                out[out:len() + 1] = "\\"
             elseif nxt == "\""
-                out[rawlen(out) + 1] = "\""
+                out[out:len() + 1] = "\""
             elseif nxt == "'"
-                out[rawlen(out) + 1] = "'"
+                out[out:len() + 1] = "'"
             elseif nxt == "0"
-                out[rawlen(out) + 1] = string.char(0)
+                out[out:len() + 1] = 0:char()
             else
-                out[rawlen(out) + 1] = nxt
+                out[out:len() + 1] = nxt
             end
             i += 2
         else
-            out[rawlen(out) + 1] = ch
+            out[out:len() + 1] = ch
             i += 1
         end
     end
-    table.concat(out)
+    out:concat()
 end
 
--- append_bool: format a boolean as "true" or "false".
+# append_bool: format a boolean as "true" or "false".
 format_bool(b: bool): str
-    -- A guard, not `if b "true" else "false" end`. In the endless one-liner
-    -- form the clause must be SELF-DELIMITED (Pass 48 2.4), and `b "true"`
-    -- reads as PARENLESS APPLICATION -- the emitted C was
-    -- `b(lua_val_from_literal("true", ...))`, i.e. calling a bool
-    -- ("called object type 'bool' is not a function"), which took the module
-    -- down.
+    # A guard, not `if b "true" else "false" end`. In the endless one-liner
+    # form the clause must be SELF-DELIMITED (Pass 48 2.4), and `b "true"`
+    # reads as PARENLESS APPLICATION # the emitted C was
+    # `b(lua_val_from_literal("true", ...))`, i.e. calling a bool
+    # ("called object type 'bool' is not a function"), which took the module
+    # down.
     if b
         return "true"
     end

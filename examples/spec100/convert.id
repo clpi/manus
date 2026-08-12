@@ -1,22 +1,22 @@
--- Pass 121 §9 — the CONVERSION EDGE at the receiver, which is the canonical
--- face: `n:to(str)`, never `to(str)(n)`.
---
--- Every value here is asserted by the `-- expect:` line rather than by the
--- fixture compiling, and that distinction is the entire reason this file
--- exists. gaps/GAP-081.md measured the tree at 1647 operation-first
--- conversions against ONE canonical one, and the honest reading was not taste:
--- `str -> i64` did not BUILD in either face (`lua_to_num` undeclared in a
--- full-native module), so the commonest conversion direction in the corpus —
--- parsing a number — had no canonical spelling that worked. Authors wrote what
--- worked. A gate demanding the canonical form before that was fixed would have
--- demanded a form the compiler could not produce.
---
--- `-17` is here because a sign is the cheapest way to tell a real parse from a
--- digit-scraper, and `9007199254740993` because it is 2^53 + 1: a conversion
--- that detoured through a double would answer 9007199254740992 and look right.
--- expect: 17 -17 9007199254740993 42 2.5 true
+# Pass 121 §9 — the CONVERSION EDGE at the receiver, which is the canonical
+# face: `n:to(str)`, never `to(str)(n)`.
+#
+# Every value here is asserted by the `-- expect:` line rather than by the
+# fixture compiling, and that distinction is the entire reason this file
+# exists. gaps/GAP-081.md measured the tree at 1647 operation-first
+# conversions against ONE canonical one, and the honest reading was not taste:
+# `str -> i64` did not BUILD in either face (`lua_to_num` undeclared in a
+# full-native module), so the commonest conversion direction in the corpus —
+# parsing a number — had no canonical spelling that worked. Authors wrote what
+# worked. A gate demanding the canonical form before that was fixed would have
+# demanded a form the compiler could not produce.
+#
+# `-17` is here because a sign is the cheapest way to tell a real parse from a
+# digit-scraper, and `9007199254740993` because it is 2^53 + 1: a conversion
+# that detoured through a double would answer 9007199254740992 and look right.
+# expect: 17 -17 9007199254740993 42 2.5 true
 
-main = (): i64
+main: i64 = ()
     s: str = "17"
     neg: str = "-17"
     wide: str = "9007199254740993"

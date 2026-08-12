@@ -1,0 +1,59 @@
+# SH-10 — GAP-124 proof over ingested resident facts and verdict gates.
+
+standard = ingest.resident
+
+main: i64 = ()
+    code: i64 = 0
+    if ingest.sync() != 0
+        code = 1
+    if !census.relations:match("|read|")
+        code = 2
+    if !census.relations:match("|realize|")
+        code = 3
+    if !census.worlds:match("|process|")
+        code = 4
+    if !census.primitives:match("|witness|")
+        code = 5
+    if !ingest.edges:match("|io/read|")
+        code = 6
+    if verdict.subject(standard["read"]["possessed"], standard["read"]["callable"], standard["read"]["operation"]) != verdict.valid
+        code = 7
+    if verdict.world(census.ioauthority, census.ioauthority) != verdict.valid
+        code = 8
+    if verdict.subject(standard["run"]["possessed"], standard["run"]["callable"], standard["run"]["operation"]) != verdict.valid
+        code = 9
+    if verdict.world(census.processauthority, census.processauthority) != verdict.valid
+        code = 10
+    if standard["encode"]["possessed"] != false
+        code = 11
+    if verdict.subject(standard["match"]["possessed"], standard["match"]["callable"], standard["match"]["operation"]) != verdict.valid
+        code = 12
+    if verdict.world(census.fsauthority, census.fsauthority) != verdict.valid
+        code = 13
+    if verdict.world(census.netauthority, census.netauthority) != verdict.valid
+        code = 14
+    if verdict.vocab(true, false, false, false) != verdict.valid
+        code = 15
+    if verdict.vocab(false, false, false, true) != verdict.missing
+        code = 16
+    if verdict.sentinel(true, true, true) != verdict.invalid
+        code = 17
+    if verdict.control(true, true, true) != verdict.migrate
+        code = 18
+    if os.args != true
+        code = 19
+    if os.env != true
+        code = 20
+    if census.worlds:match("|std|")
+        code = 21
+    if !census.forbidden:match("|std|")
+        code = 22
+    if !census.descriptors:match("|bit|")
+        code = 23
+    if !ingest.view(edges):match("|bit/f64|")
+        code = 24
+    if !census.view(edges):match("|i64/bit|")
+        code = 25
+    if code == 0
+        print("semantic vocabulary: pass")
+    code

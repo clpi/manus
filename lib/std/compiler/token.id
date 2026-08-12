@@ -1,7 +1,6 @@
--- std.compiler.token
--- Token descriptors for the Duo-native lexer
+# std.compiler.token
+# Token descriptors for the Duo-native lexer
 
-classify = req "std.token.classify"
 
 loc: {
     file: str,
@@ -14,7 +13,7 @@ KIND_INT_LIT = 1
 KIND_FLOAT_LIT = 2
 KIND_STRING_LIT = 3
 
--- Keywords from classify.id
+# Keywords from classify.id
 KIND_AND = 4
 KIND_BREAK = 5
 KIND_CONTINUE = 6
@@ -70,7 +69,7 @@ KIND_COMPTIME = 55
 KIND_BY = 56
 KIND_LET = 57
 
--- Single-char punctuation
+# Single-char punctuation
 KIND_LPAREN = 58
 KIND_RPAREN = 59
 KIND_LBRACKET = 60
@@ -99,7 +98,7 @@ KIND_QUESTION = 82
 KIND_BANG = 83
 KIND_BACKTICK = 84
 
--- Multi-char operators
+# Multi-char operators
 KIND_CONCAT = 85
 KIND_DOTS = 86
 KIND_HASH_HASH = 87

@@ -1,40 +1,40 @@
--- =============================================================================
--- Duo Metaprogramming Showcase
--- Comprehensive demo of ALL compile-time intrinsics, concepts, @derive,
--- type targeting, and structural typing features.
--- Run: duo run examples/metaprogramming_showcase.id
--- =============================================================================
+# =============================================================================
+# Duo Metaprogramming Showcase
+# Comprehensive demo of ALL compile-time intrinsics, concepts, @derive,
+# type targeting, and structural typing features.
+# Run: duo run examples/metaprogramming_showcase.id
+# =============================================================================
 
 print("=== Duo Metaprogramming Showcase ===")
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 1. COMPILE-TIME EVALUATION: @(expr)
--- ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# 1. COMPILE-TIME EVALUATION: @(expr)
+# ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 1. Compile-time evaluation --")
 
--- Arithmetic at compile time
+# Arithmetic at compile time
 COMPUTE_RESULT = @(42 * 10 + 8)
 print("42 * 10 + 8 = " .. to(str)(COMPUTE_RESULT))
 
--- String operations at compile time
+# String operations at compile time
 GREETING = @("Hello" .. ", " .. "Duo!")
 print("GREETING = " .. GREETING)
 
--- Compile-time conditional
+# Compile-time conditional
 IS_RELEASE = @(true)
 BUILD_MODE = @comp.if(IS_RELEASE, "release", "debug")
 print("BUILD_MODE = " .. BUILD_MODE)
 
--- Compile-time constants
+# Compile-time constants
 MAX_BUFFER = @(64 * 1024)
 PI_APPROX = @(3.14159)
 print("MAX_BUFFER = " .. to(str)(MAX_BUFFER))
 print("PI_APPROX = " .. to(str)(PI_APPROX))
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 2. TYPE INTROSPECTION: @comp.type.name, @comp.type.id, @comp.type.is, @comp.type.info
--- ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# 2. TYPE INTROSPECTION: @comp.type.name, @comp.type.id, @comp.type.is, @comp.type.info
+# ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 2. Type introspection --")
 
@@ -58,9 +58,9 @@ print("is_type(x, str) = " .. to(str)(@comp.type.is(x, "str")))
 
 print("typeinfo(x) = " .. @comp.type.info(x))
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 3. MEMORY LAYOUT: @sizeof, @alignof
--- ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# 3. MEMORY LAYOUT: @sizeof, @alignof
+# ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 3. Memory layout --")
 
@@ -71,9 +71,9 @@ print("sizeof(bool) = " .. to(str)(@sizeof(bool)))
 print("alignof(i64) = " .. to(str)(@alignof(i64)))
 print("alignof(f64) = " .. to(str)(@alignof(f64)))
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 4. STATIC ASSERTIONS: @comp.assert
--- ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# 4. STATIC ASSERTIONS: @comp.assert
+# ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 4. Static assertions --")
 
@@ -81,23 +81,23 @@ print("\n-- 4. Static assertions --")
 @comp.assert("sizeof(double) == 8", "f64 must be 8 bytes")
 print("All static assertions passed")
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 5. EXPLICIT TYPE CASTING: @as, @comp.as.type
--- ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# 5. EXPLICIT TYPE CASTING: @as, @comp.as.type
+# ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 5. Type casting --")
 
--- @as(Type, expr) — cast expression to type
+# @as(Type, expr) — cast expression to type
 val_f: f64 = @as(f64, 42)
 print("@as(f64, 42) = " .. to(str)(val_f))
 
--- @comp.as.type(expr, "type") — reversed argument order (string type name)
+# @comp.as.type(expr, "type") — reversed argument order (string type name)
 val_i: i64 = @comp.as.type(3.14, "int64_t")
 print("@comp.as.type(3.14, 'int64_t') = " .. to(str)(val_i))
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 6. BIT INTRINSICS: @popcount, @ctz, @clz, @bswap
--- ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# 6. BIT INTRINSICS: @popcount, @ctz, @clz, @bswap
+# ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 6. Bit intrinsics --")
 
@@ -107,9 +107,9 @@ print("ctz(0xFF00) = " .. to(str)(@ctz(bits)))
 print("clz(0xFF00) = " .. to(str)(@clz(bits)))
 print("bswap(0xFF00) = " .. to(str)(@bswap(bits)))
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 7. BRANCH HINTS: @likely, @unlikely
--- ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# 7. BRANCH HINTS: @likely, @unlikely
+# ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 7. Branch hints --")
 
@@ -121,9 +121,9 @@ if @unlikely(x_val < 0)
     print("x is negative (unlikely branch)")
 end
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 8. COMPILE-TIME CONDITIONAL: @comp.if
--- ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# 8. COMPILE-TIME CONDITIONAL: @comp.if
+# ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 8. Compile-time conditional --")
 
@@ -133,9 +133,9 @@ print("platform = " .. platform)
 debug_level = @comp.if(false, "verbose", "quiet")
 print("debug_level = " .. debug_level)
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 9. CONCEPTS (Structural Typing)
--- ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# 9. CONCEPTS (Structural Typing)
+# ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 9. Concepts --")
 
@@ -148,7 +148,7 @@ concept Counter
     value(self): i64
 end
 
--- Create types that satisfy concepts
+# Create types that satisfy concepts
 counter = { _val = 0 }
 counter.increment = fun(self): void
     self._val = self._val + 1
@@ -160,14 +160,14 @@ counter.to_string = fun(self): str
     "Counter(" .. to(str)(self._val) .. ")"
 end
 
--- Use : method syntax
+# Use : method syntax
 counter:increment()
 counter:increment()
 counter:increment()
 print("Counter: " .. counter:to_string())
 print("Counter value: " .. to(str)(counter:value()))
 
--- @satisfies — compile-time concept check on table modules (fun T:method syntax)
+# @satisfies — compile-time concept check on table modules (fun T:method syntax)
 M = {}
 M:hash(): i64
     42
@@ -185,7 +185,7 @@ end
 @comp.assert(@satisfies(Ctable, "Counter"), "Ctable satisfies Counter")
 print("@satisfies(Ctable, Counter) = " .. to(str)(@satisfies(Ctable, "Counter")))
 
--- Generic constraints: compile-time check + monomorphic dispatch
+# Generic constraints: compile-time check + monomorphic dispatch
 concept Hashable
     hash(self): i64
 end
@@ -202,37 +202,37 @@ end
 @comp.assert(@satisfies(Bump, "Hashable"), "Bump satisfies Hashable")
 print("bump(Bump) = " .. to(str)(bump(Bump)))
 
--- Concept introspection: required members as compile-time table
+# Concept introspection: required members as compile-time table
 hashable_members = @comp.concepts.methods("Hashable")
 print("@comp.concepts.methods('Hashable') count = " .. to(str)(#hashable_members))
 
--- Multi-concept: T: A + B — see examples/multi_concept.id
+# Multi-concept: T: A + B — see examples/multi_concept.id
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 10. @derive (Auto-generated metamethods)
--- ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# 10. @derive (Auto-generated metamethods)
+# ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 10. @derive --")
 
--- @derive generates metamethods and methods for alias types:
--- Display  → __tostring, :to_string()
--- Eq       → __eq, :eq()
--- Add      → __add
--- Sub      → __sub
--- Mul      → __mul
--- Div      → __div
--- Rem      → __mod
--- Neg      → __unm
--- BitAnd   → __band
--- BitOr    → __bor
--- BitXor   → __bxor
--- BitNot   → __bnot
--- Shl      → __shl
--- Shr      → __shr
--- Len      → __len
--- Hash     → :hash()
--- Clone    → :clone()
--- Default  → TypeName.default()
+# @derive generates metamethods and methods for alias types:
+# Display  → __tostring, :to_string()
+# Eq       → __eq, :eq()
+# Add      → __add
+# Sub      → __sub
+# Mul      → __mul
+# Div      → __div
+# Rem      → __mod
+# Neg      → __unm
+# BitAnd   → __band
+# BitOr    → __bor
+# BitXor   → __bxor
+# BitNot   → __bnot
+# Shl      → __shl
+# Shr      → __shr
+# Len      → __len
+# Hash     → :hash()
+# Clone    → :clone()
+# Default  → TypeName.default()
 
 @derive(Display, Eq, Add, Sub, Mul, Neg, Len, Hash, Clone, Default)
 Vec2: { x: f64, y: f64 }
@@ -240,7 +240,7 @@ Vec2: { x: f64, y: f64 }
 @derive(Div, Rem)
 Rat: { num: f64, den: f64 }
 
--- Derived Enum
+# Derived Enum
 @derive("Display", "Eq")
 enum Color
     Red
@@ -255,13 +255,13 @@ print("Enum c2 = " .. to(str)(c2))
 print("c1 == c1: " .. to(str)(c1 == c1))
 print("c1 == c2: " .. to(str)(c1 == c2))
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 11. @derive Division and Modulo
--- ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# 11. @derive Division and Modulo
+# ═══════════════════════════════════════════════════════════════════════════════
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 11. RUNTIME METAMETHODS
--- ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# 11. RUNTIME METAMETHODS
+# ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 12. Runtime metamethods --")
 
@@ -287,29 +287,29 @@ print("v1 = " .. to(str)(v1))
 print("v2 = " .. to(str)(v2))
 print("v1 + v2 = " .. to(str)(v3))
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 13. COMPILE-TIME STRING OPERATIONS
--- ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# 13. COMPILE-TIME STRING OPERATIONS
+# ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 13. Compile-time string operations --")
 
-upper = @(string.upper("hello world"))
-len = @(string.len("duo language"))
+upper = @("hello world":upper())
+len = @("duo language":len())
 print("comptime upper = " .. upper)
 print("comptime len = " .. to(str)(len))
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 14. HAS METAMETHOD CHECK
--- ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# 14. HAS METAMETHOD CHECK
+# ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 14. Has metamethod --")
 
 print("v1 has __add = " .. to(str)(@comp.has.metamethod(v1, "__add")))
 print("v1 has __mul = " .. to(str)(@comp.has.metamethod(v1, "__mul")))
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 15. COMPILE-TIME DIAGNOSTICS
--- ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# 15. COMPILE-TIME DIAGNOSTICS
+# ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 15. Compile-time diagnostics --")
 
@@ -317,21 +317,21 @@ print("\n-- 15. Compile-time diagnostics --")
 @comp.compile.warn("This is a compile-time warning")
 print("Compile-time diagnostics emitted")
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- 16. TYPE ALIASES
--- ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# 16. TYPE ALIASES
+# ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 17. Type aliases --")
 
--- Type aliases create named types for documentation
--- but the underlying C type is what matters for assignment
+# Type aliases create named types for documentation
+# but the underlying C type is what matters for assignment
 uid: i64 = 12345
 sc: f64 = 98.6
 print("UserId(12345) = " .. to(str)(uid))
 print("Score(98.6) = " .. to(str)(sc))
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- SUMMARY
--- ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# SUMMARY
+# ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n=== All metaprogramming features demonstrated ===")

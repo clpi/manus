@@ -1,7 +1,7 @@
-//! Pass 12 M2 — Ward instruction decode semantic intent (P12-WS12 / P12-M2).
+//! Ward instruction decode semantic intent (WS12 / M2).
 //!
 //! Canonical subject for `std.wasm.decode` hot path; barrier proofs live in
-//! `native_barrier_checks.ward_decode_profile`.
+//! `native_barrier_checks`.
 const std = @import("std");
 const proof_carrying = @import("proof_carrying.zig");
 const evidence_record = @import("evidence_record.zig");
@@ -38,7 +38,7 @@ pub const proof_obligations: []const proof_carrying.ProofObligation = &.{
         .subject_entity = "duo:wasm:decode_instruction",
         .predicate = "Duo decode matches reference decoder on MVP opcode corpus",
         .accepted_evidence = &.{ evidence_record.Kind.differential_test, evidence_record.Kind.property_test },
-        .validation_method = "examples/pass9/decode_semantic_smoke.duo + wasm_decode_differential",
+        .validation_method = "examples/pass9/decode_semantic_smoke.id + wasm_decode_differential",
         .status = .discharged,
     },
     .{

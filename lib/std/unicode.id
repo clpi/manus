@@ -1,79 +1,79 @@
--- std.unicode — Unicode character classification (mirrors Go's unicode package)
--- Provides basic rune/byte classification: IsDigit, IsLetter, IsSpace, etc.
--- Since Duo operates on byte strings, these functions take a byte value (0-255)
--- and classify based on ASCII/Latin-1 ranges. Full Unicode would require UTF-8
--- decoding (see std.utf8 for multi-byte support).
+# std.unicode — Unicode character classification (mirrors Go's unicode package)
+# Provides basic rune/byte classification: IsDigit, IsLetter, IsSpace, etc.
+# Since Duo operates on byte strings, these functions take a byte value (0-255)
+# and classify based on ASCII/Latin-1 ranges. Full Unicode would require UTF-8
+# decoding (see std.utf8 for multi-byte support).
 
--- is_digit: report whether b is an ASCII digit ('0'-'9').
+# is_digit: report whether b is an ASCII digit ('0'-'9').
 is_digit(b: any): bool
     b >= 48 and b <= 57
 end
 
--- is_letter: report whether b is an ASCII letter (a-z, A-Z).
+# is_letter: report whether b is an ASCII letter (a-z, A-Z).
 is_letter(b: any): bool
     (b >= 65 and b <= 90) or (b >= 97 and b <= 122)
 end
 
--- is_upper: report whether b is an ASCII uppercase letter.
+# is_upper: report whether b is an ASCII uppercase letter.
 is_upper(b: any): bool
     b >= 65 and b <= 90
 end
 
--- is_lower: report whether b is an ASCII lowercase letter.
+# is_lower: report whether b is an ASCII lowercase letter.
 is_lower(b: any): bool
     b >= 97 and b <= 122
 end
 
--- is_space: report whether b is a whitespace byte.
+# is_space: report whether b is a whitespace byte.
 is_space(b: any): bool
     b == 32 or b == 9 or b == 10 or b == 13 or b == 11 or b == 12
 end
 
--- is_print: report whether b is a printable ASCII character (0x20-0x7E).
+# is_print: report whether b is a printable ASCII character (0x20-0x7E).
 is_print(b: any): bool
     b >= 32 and b <= 126
 end
 
--- is_control: report whether b is a control character (0x00-0x1F or 0x7F).
+# is_control: report whether b is a control character (0x00-0x1F or 0x7F).
 is_control(b: any): bool
     b < 32 or b == 127
 end
 
--- is_punct: report whether b is an ASCII punctuation character.
+# is_punct: report whether b is an ASCII punctuation character.
 is_punct(b: any): bool
     (b >= 33 and b <= 47) or (b >= 58 and b <= 64) or (b >= 91 and b <= 96) or (b >= 123 and b <= 126)
 end
 
--- is_hex_digit: report whether b is a hexadecimal digit (0-9, a-f, A-F).
+# is_hex_digit: report whether b is a hexadecimal digit (0-9, a-f, A-F).
 is_hex_digit(b: any): bool
     (b >= 48 and b <= 57) or (b >= 65 and b <= 70) or (b >= 97 and b <= 102)
 end
 
--- is_alnum: report whether b is a letter or digit.
+# is_alnum: report whether b is a letter or digit.
 is_alnum(b: any): bool
     is_letter(b) or is_digit(b)
 end
 
--- to_upper: convert byte b to uppercase if it is a lowercase letter.
+# to_upper: convert byte b to uppercase if it is a lowercase letter.
 to_upper(b: any): i64
     if b >= 97 and b <= 122 return b - 32 end
     b
 end
 
--- to_lower: convert byte b to lowercase if it is an uppercase letter.
+# to_lower: convert byte b to lowercase if it is an uppercase letter.
 to_lower(b: any): i64
     if b >= 65 and b <= 90 return b + 32 end
     b
 end
 
--- to_title: convert byte b to title case (same as upper for ASCII).
+# to_title: convert byte b to title case (same as upper for ASCII).
 to_title(b: any): i64
     to_upper(b)
 end
 
--- ----- Range-based classification on strings -----
+# ----- Range-based classification on strings -----
 
--- is_digit_str: report whether s consists entirely of ASCII digits.
+# is_digit_str: report whether s consists entirely of ASCII digits.
 is_digit_str(s: str): bool
     if s == nil or s == "" return false end
     i = 1
@@ -84,7 +84,7 @@ is_digit_str(s: str): bool
     true
 end
 
--- is_letter_str: report whether s consists entirely of ASCII letters.
+# is_letter_str: report whether s consists entirely of ASCII letters.
 is_letter_str(s: str): bool
     if s == nil or s == "" return false end
     i = 1
@@ -95,7 +95,7 @@ is_letter_str(s: str): bool
     true
 end
 
--- is_alnum_str: report whether s consists entirely of ASCII letters and digits.
+# is_alnum_str: report whether s consists entirely of ASCII letters and digits.
 is_alnum_str(s: str): bool
     if s == nil or s == "" return false end
     i = 1
@@ -106,7 +106,7 @@ is_alnum_str(s: str): bool
     true
 end
 
--- is_space_str: report whether s consists entirely of whitespace.
+# is_space_str: report whether s consists entirely of whitespace.
 is_space_str(s: str): bool
     if s == nil or s == "" return false end
     i = 1
@@ -117,7 +117,7 @@ is_space_str(s: str): bool
     true
 end
 
--- is_hex_str: report whether s consists entirely of hex digits.
+# is_hex_str: report whether s consists entirely of hex digits.
 is_hex_str(s: str): bool
     if s == nil or s == "" return false end
     i = 1
@@ -128,7 +128,7 @@ is_hex_str(s: str): bool
     true
 end
 
--- is_identifier: report whether s is a valid identifier (letter or _ followed by alnum or _).
+# is_identifier: report whether s is a valid identifier (letter or _ followed by alnum or _).
 is_identifier(s: str): bool
     if s == nil or s == "" return false end
     b = s:byte(1)

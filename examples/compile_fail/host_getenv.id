@@ -1,0 +1,6 @@
+# compile_fail: os.getenv is forbidden — use os.env table (docs/spec/world.md).
+
+main: i64 = ()
+    mode = os.getenv("IDOLTREE")
+    print(mode)
+    0

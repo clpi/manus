@@ -1,9 +1,9 @@
--- std.toml — TOML parser with section support
+# std.toml — TOML parser with section support
 
 parse_value(s: str): any
     if s == nil return nil end
-    if std.string.len(s) >= 2 and std.string.sub(s, 1, 1) == '"' and std.string.sub(s, std.string.len(s), std.string.len(s)) == '"'
-        return std.string.sub(s, 2, std.string.len(s) - 1)
+    if s:len() >= 2 and s:sub(1, 1) == '"' and s:sub(s:len(), s:len()) == '"'
+        return s:sub(2, s:len() - 1)
     end
     if s == "true" return true end
     if s == "false" return false end
@@ -17,35 +17,35 @@ parse(data: str): any
     res = {}
     current = res
     current_path = {}
-    lines = std.string.split(data, "\n")
+    lines = data:split("\n")
     for _, line in lines
-        line = std.string.trim(line)
-        if std.string.len(line) > 0 and std.string.sub(line, 1, 1) != "#"
-            if std.string.sub(line, 1, 1) == "["
-                section_name = std.string.sub(line, 2, std.string.len(line) - 1)
-                section_name = std.string.trim(section_name)
+        line = line:trim()
+        if line:len() > 0 and line:sub(1, 1) != "#"
+            if line:sub(1, 1) == "["
+                section_name = line:sub(2, line:len() - 1)
+                section_name = section_name:trim()
                 current = res
                 current_path = {}
-                parts = std.string.split(section_name, ".")
+                parts = section_name:split(".")
                 for _, part in parts
-                    part = std.string.trim(part)
+                    part = part:trim()
                     if current[part] == nil
                         current[part] = {}
                     end
-                    current_path[rawlen(current_path) + 1] = part
+                    current_path[current_path:len() + 1] = part
                     current = current[part]
                 end
             else
                 eq_pos = nil
-                for j = 1, std.string.len(line)
-                    if std.string.byte(line, j) == 61
+                for j = 1, line:len()
+                    if line:byte(j) == 61
                         eq_pos = j
                         break
                     end
                 end
                 if eq_pos != nil
-                    key = std.string.trim(std.string.sub(line, 1, eq_pos - 1))
-                    val_str = std.string.trim(std.string.sub(line, eq_pos + 1))
+                    key = line:sub(1, eq_pos - 1):trim()
+                    val_str = line:sub(eq_pos + 1):trim()
                     current[key] = parse_value(val_str)
                 end
             end

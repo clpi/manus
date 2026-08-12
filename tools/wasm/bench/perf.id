@@ -1,37 +1,37 @@
--- Interleaved median wall-clock benchmark: the engine vs wasmtime.
---
--- Duo replacement for bench/perf.sh, which was bash wrapping a Python heredoc
--- -- two foreign languages in one file, for a benchmark harness, which the
--- monoglot mandate puts squarely in Duo.
---
--- Use THIS for any perf claim, never the engine's printed `seconds=`. That value is
--- os.clock, which on macOS accumulates CPU time across threads: it read 0.60 s
--- while wall time was 0.40 s. Comparing it to wasmtime's wall time flattered
--- the engine once and faked a 55% regression later. Interleave, and take the median
--- -- this box drifts measurably under sustained load.
---
--- Timing is std.time.monotonic(), which returned 0 for every call until
--- 2026-08-07: a no-argument function with a bare @c.emit body drops its value,
--- so `now_ns` needed an explicit return. Without that fix this harness would
--- have reported every run as instantaneous -- worse than the bash it replaces.
+# Interleaved median wall-clock benchmark: the engine vs wasmtime.
+#
+# Duo replacement for bench/perf.sh, which was bash wrapping a Python heredoc
+# # two foreign languages in one file, for a benchmark harness, which the
+# monoglot mandate puts squarely in Duo.
+#
+# Use THIS for any perf claim, never the engine's printed `seconds=`. That value is
+# os.clock, which on macOS accumulates CPU time across threads: it read 0.60 s
+# while wall time was 0.40 s. Comparing it to wasmtime's wall time flattered
+# the engine once and faked a 55% regression later. Interleave, and take the median
+# # this box drifts measurably under sustained load.
+#
+# Timing is std.time.monotonic(), which returned 0 for every call until
+# 2026-08-07: a no-argument function with a bare @c.emit body drops its value,
+# so `now_ns` needed an explicit return. Without that fix this harness would
+# have reported every run as instantaneous # worse than the bash it replaces.
 
 _ms_per_ns(): i64
     1000000
 end
 
--- Wall-clock milliseconds for one command. Monotonic, so it is unaffected by
--- clock adjustments during a long sweep.
+# Wall-clock milliseconds for one command. Monotonic, so it is unaffected by
+# clock adjustments during a long sweep.
 _time_ms(cmd: str): i64
     a: i64 = std.time.monotonic()
     std.script.status(cmd)
     b: i64 = std.time.monotonic()
-    -- `/` yields f64 even on two i64 operands, so the narrowing is stated.
+    # `/` yields f64 even on two i64 operands, so the narrowing is stated.
     to(i64)((b - a) / _ms_per_ns())
 end
 
--- Median of a positional list of i64. Sorted in place; n is small (7 by
--- default), so an insertion sort is the honest shape -- no pipeline surface
--- exists for this yet (GAP-14).
+# Median of a positional list of i64. Sorted in place; n is small (7 by
+# default), so an insertion sort is the honest shape # no pipeline surface
+# exists for this yet (GAP-14).
 _median(xs: any, n: i64): i64
     i = 2
     while i <= n
@@ -71,9 +71,9 @@ main(): i64
     abs = std.script.chomp(std.script.capture("cd \"$(dirname " .. mod .. ")\" && pwd"))
         .. "/" .. std.script.path_basename(mod)
 
-    -- the engine reads DUO_WASM_MODULE, NOT argv (src/engine.id entry) and silently falls
-    -- back to a hardcoded /tmp/hash.wasm. Passing the module as an argument
-    -- measures nothing -- the env var is the only thing that binds.
+    # the engine reads DUO_WASM_MODULE, NOT argv (src/engine.id entry) and silently falls
+    # back to a hardcoded /tmp/hash.wasm. Passing the module as an argument
+    # measures nothing # the env var is the only thing that binds.
     invocation = "DUO_WASM_MODULE=" .. abs .. " " .. binary
     wasmtime_cmd = "wasmtime --invoke run " .. mod
 

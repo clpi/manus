@@ -1,5 +1,5 @@
--- @comp.generate constraint block → O(ops×types) cartesian native C
--- Run: duo run examples/meta_generate_showcase.id
+# @comp.generate constraint block → O(ops×types) cartesian native C
+# Run: duo run examples/meta_generate_showcase.id
 
 CONSTRAINTS = [[
 ops: add|sub

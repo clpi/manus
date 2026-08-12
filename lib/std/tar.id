@@ -1,6 +1,6 @@
--- std.tar — basic TAR archive wrapper
+# std.tar — basic TAR archive wrapper
 
-proc = req("std.proc")
+proc = proc
 
 create(archive_path: str, source_dir: str): bool
     cmd = "tar -cf " .. archive_path .. " -C " .. source_dir .. " ."
@@ -9,7 +9,7 @@ create(archive_path: str, source_dir: str): bool
 end
 
 extract(archive_path: str, dest_dir: str): bool
-    -- Ensure destination exists
+    # Ensure destination exists
     proc.exec("mkdir -p " .. dest_dir)
     cmd = "tar -xf " .. archive_path .. " -C " .. dest_dir
     rc = proc.exec(cmd)

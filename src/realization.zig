@@ -509,7 +509,7 @@ fn funcLowersNative(alloc: std.mem.Allocator, fd: *const ast.FuncDecl) bool {
 /// The first draft of this builder attached `compile_time` as PROVEN — the
 /// C-equivalent path spawns an external C compiler process and the direct path
 /// does not, so the ordering looked structural rather than estimated. Then
-/// `zig build c-floor` measured it on `examples/cfloor/fact.duo` and the
+/// `zig build c-floor` measured it on `examples/cfloor/fact.id` and the
 /// ordering was BACKWARDS: the direct backend does more work in-process than
 /// the spawn costs. A process-spawn fact never entailed a wall-time ordering;
 /// the label was doing the work the evidence was supposed to do.
@@ -914,7 +914,7 @@ test "realization: native Point selects native aggregate" {
         \\    0
         \\end
     ;
-    var lex = Lexer.init(src, "point.duo");
+    var lex = Lexer.init(src, "point.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -924,9 +924,9 @@ test "realization: native Point selects native aggregate" {
     try semantic.check_module(&mod);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCalls(&mod, "point.duo");
+    _ = try graph.liftModuleWithCalls(&mod, "point.id");
 
-    var m = try buildFromGraph(alloc, &graph, "point.duo");
+    var m = try buildFromGraph(alloc, &graph, "point.id");
     defer m.deinit(alloc);
     try std.testing.expect(m.variables.len >= 1);
     const point_var = blk: {
@@ -1026,7 +1026,7 @@ test "realization: deferred candidates remain lawful until deterministic extract
         \\    0
         \\end
     ;
-    var lex = Lexer.init(src, "user.duo");
+    var lex = Lexer.init(src, "user.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -1036,9 +1036,9 @@ test "realization: deferred candidates remain lawful until deterministic extract
     try semantic.check_module(&mod);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCalls(&mod, "user.duo");
+    _ = try graph.liftModuleWithCalls(&mod, "user.id");
 
-    var deferred = try buildDeferredFromGraph(alloc, &graph, "user.duo");
+    var deferred = try buildDeferredFromGraph(alloc, &graph, "user.id");
     defer deferred.deinit(alloc);
     try std.testing.expect(deferred.variables.len >= 1);
     const candidate_count = deferred.variables[0].candidates.len;
@@ -1106,7 +1106,7 @@ test "cfloor: law.c.floor — a native-eligible callable still carries the C bas
         \\add(a: i64, b: i64): i64
         \\    a + b
         \\end
-    , "add.duo");
+    , "add.id");
     defer fx.deinit();
 
     const vars = try buildLoweringFloor(alloc, &fx.graph, .balanced);
@@ -1131,7 +1131,7 @@ test "cfloor: law.perf.floor — with no cost fact the floor is RETAINED, not gu
         \\add(a: i64, b: i64): i64
         \\    a + b
         \\end
-    , "add.duo");
+    , "add.id");
     defer fx.deinit();
 
     const vars = try buildLoweringFloor(alloc, &fx.graph, .balanced);
@@ -1164,7 +1164,7 @@ test "cfloor: measured facts covering the objective DO unseat the floor" {
         \\add(a: i64, b: i64): i64
         \\    a + b
         \\end
-    , "add.duo");
+    , "add.id");
     defer fx.deinit();
 
     // Objective `latency` is two dimensions. Supply BOTH, measured, for both
@@ -1199,7 +1199,7 @@ test "cfloor: an `any` descriptor makes native invalid and the floor is the only
         \\add(a: any, b: any): any
         \\    a + b
         \\end
-    , "anyadd.duo");
+    , "anyadd.id");
     defer fx.deinit();
 
     const vars = try buildLoweringFloor(alloc, &fx.graph, .balanced);
@@ -1224,18 +1224,18 @@ test "cfloor: law.perf.dominance — adding a fact does not shrink the candidate
         \\add(a: any, b: any): any
         \\    a + b
         \\end
-    , "m.duo");
+    , "m.id");
     defer weak.deinit();
     var strong = try CFloorFixture.init(&arena,
         \\add(a: i64, b: i64): i64
         \\    a + b
         \\end
-    , "m.duo");
+    , "m.id");
     defer strong.deinit();
 
-    var before = try buildFromGraph(alloc, &weak.graph, "m.duo");
+    var before = try buildFromGraph(alloc, &weak.graph, "m.id");
     defer before.deinit(alloc);
-    var after = try buildFromGraph(alloc, &strong.graph, "m.duo");
+    var after = try buildFromGraph(alloc, &strong.graph, "m.id");
     defer after.deinit(alloc);
 
     try std.testing.expect(monotoneAgainst(&before, &after) == null);
@@ -1259,12 +1259,12 @@ test "cfloor: the monotonicity checker FIRES when a candidate is deleted" {
         \\add(a: i64, b: i64): i64
         \\    a + b
         \\end
-    , "m.duo");
+    , "m.id");
     defer fx.deinit();
 
-    var before = try buildFromGraph(alloc, &fx.graph, "m.duo");
+    var before = try buildFromGraph(alloc, &fx.graph, "m.id");
     defer before.deinit(alloc);
-    var after = try buildFromGraph(alloc, &fx.graph, "m.duo");
+    var after = try buildFromGraph(alloc, &fx.graph, "m.id");
     defer after.deinit(alloc);
     try std.testing.expect(monotoneAgainst(&before, &after) == null);
 
@@ -1287,7 +1287,7 @@ test "realization: fingerprint includes shape identity" {
         \\    0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "point.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "point.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -1297,7 +1297,7 @@ test "realization: fingerprint includes shape identity" {
     try semantic.check_module(&mod);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCalls(&mod, "point.duo");
+    _ = try graph.liftModuleWithCalls(&mod, "point.id");
     const fp = try fingerprintForRecordEntity(alloc, &graph, "Point", "native", DEFAULT_TRANSFORM_VERSION);
     try std.testing.expect(fp != 0);
 }

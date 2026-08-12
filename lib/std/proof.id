@@ -1,32 +1,32 @@
--- std.proof — Pass 27 proof helpers (codegen-safe; no json.decode/inspect on hot path).
+# std.proof — Pass 27 proof helpers (codegen-safe; no json.decode/inspect on hot path).
 sha256(data: str): str
-    p = string.gsub(std.script.fs_tmp(), "\n", "")
+    p = std.script.fs_tmp():gsub("\n", "")
     std.script.fs_write(p, data)
-    h = string.match(std.script.capture("shasum -a 256 '" .. p .. "' 2>/dev/null"), "(%x+)") or ""
+    h = std.script.capture("shasum -a 256 '" .. p .. "' 2>/dev/null"):match("(%x+)") or ""
     std.script.fs_rm(p)
     h
 end
 
 result_rows(output: str): any
     rows = {}
-    for line in string.gmatch(output, "[^\n]+")
-        rid, val = string.match(line, "^RESULT%s+(%S+)%s+(.*)$")
+    for line in output:gmatch("[^\n]+")
+        rid, val = line:match("^RESULT%s+(%S+)%s+(.*)$")
         if rid != nil
-            rows[rawlen(rows) + 1] = rid .. " " .. val
+            rows[rows:len() + 1] = rid .. " " .. val
         end
     end
-    table.sort(rows)
+    rows:sort()
     rows
 end
 
 result_hash(output: str): str
-    sha256(table.concat(result_rows(output), "\n"))
+    sha256(result_rows(output):concat("\n"))
 end
 
 count_results(output: str): i64
     n = 0
-    for line in string.gmatch(output, "[^\n]+")
-        if string.match(line, "^RESULT%s+") != nil
+    for line in output:gmatch("[^\n]+")
+        if line:match("^RESULT%s+") != nil
             n += 1
         end
     end
@@ -43,7 +43,7 @@ artifact_path(stem: str, prefer_native: bool): str
 end
 
 proof_field_int(text: str, key: str): i64
-    _, _, val = string.find(text, '"' .. key .. '":(%d+)')
+    _, _, val = text:find('"' .. key .. '":(%d+)')
     if val == nil
         return 0
     end
@@ -51,7 +51,7 @@ proof_field_int(text: str, key: str): i64
 end
 
 proof_field_str(text: str, key: str): str
-    _, _, val = string.find(text, '"' .. key .. '":"([^"]+)"')
+    _, _, val = text:find('"' .. key .. '":"([^"]+)"')
     if val == nil
         return ""
     end

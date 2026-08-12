@@ -1413,9 +1413,9 @@ test "term: printSourceContext at high line numbers does not panic" {
         pos += s.len;
         if (pos + 32 > lines.len) break;
     }
-    setSource("big.duo", lines[0..pos]);
+    setSource("big.id", lines[0..pos]);
     defer clearSource();
-    printSourceContext(.{ .file = "big.duo", .line = 999, .col = 1 }, "");
+    printSourceContext(.{ .file = "big.id", .line = 999, .col = 1 }, "");
 }
 
 test "feedTestLine DUO_EVT json mode" {

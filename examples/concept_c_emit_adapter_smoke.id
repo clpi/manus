@@ -1,4 +1,3 @@
-contracts = req "std.contracts"
 
 concept ContractShape
     id: i64

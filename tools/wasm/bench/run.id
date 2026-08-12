@@ -1,23 +1,23 @@
--- duon wasm benchmark + coverage harness.
---
--- Duo replacement for bench/run.sh, which shelled out to python3 four times per
--- module just to read a clock. Timing is std.time.monotonic() now.
---
--- Every perf/coverage claim about the engine must come from this harness. It exists
--- because two earlier "baselines" were wrong for the same reason: the engine reads
--- DUO_WASM_MODULE, NOT argv (src/engine.id entry), and silently falls back to a
--- hardcoded /tmp/hash.wasm. Passing a module as an argument measures nothing.
---
---   duo run bench/run.id          # full sweep
---   duo run bench/run.id cover    # coverage only, no timing
---
--- For CORRECTNESS use bench/verify.id: "the engine produced a result" is not
--- coverage, and this harness only checks that the two engines agree with
--- each other. Only wasmtime agreement counts, and that lives there.
+# duon wasm benchmark + coverage harness.
+#
+# Duo replacement for bench/run.sh, which shelled out to python3 four times per
+# module just to read a clock. Timing is std.time.monotonic() now.
+#
+# Every perf/coverage claim about the engine must come from this harness. It exists
+# because two earlier "baselines" were wrong for the same reason: the engine reads
+# DUO_WASM_MODULE, NOT argv (src/engine.id entry), and silently falls back to a
+# hardcoded /tmp/hash.wasm. Passing a module as an argument measures nothing.
+#
+#   duo run bench/run.id          # full sweep
+#   duo run bench/run.id cover    # coverage only, no timing
+#
+# For CORRECTNESS use bench/verify.id: "the engine produced a result" is not
+# coverage, and this harness only checks that the two engines agree with
+# each other. Only wasmtime agreement counts, and that lives there.
 
 _pad(s: str, w: i64): str
     out = s
-    while string.len(out) < w
+    while out:len() < w
         out = out .. " "
     end
     out
@@ -34,9 +34,9 @@ _rule(n: i64): void
 end
 
 _field(raw: str, key: str): str
-    m = string.match(raw, "\n" .. key .. "=([^\n]*)")
+    m = raw:match("\n" .. key .. "=([^\n]*)")
     if m == nil
-        m = string.match(raw, "^" .. key .. "=([^\n]*)")
+        m = raw:match("^" .. key .. "=([^\n]*)")
     end
     if m == nil
         return "none"
@@ -50,11 +50,11 @@ _ms(a: i64, b: i64): i64
     to(i64)((b - a) / 1000000)
 end
 
--- Run one engine on one module. Returns "<result>|<ms>|<engine>".
--- the engine is invoked via DUO_WASM_MODULE; anything else is a lie (see header).
+# Run one engine on one module. Returns "<result>|<ms>|<engine>".
+# the engine is invoked via DUO_WASM_MODULE; anything else is a lie (see header).
 _engine(root: str, binary: str, mod: str, engine: str): str
-    -- Corpora disagree on the entry export: hash.wasm uses `run`, wart's uses
-    -- `_start`. Try both rather than silently reporting "unsupported".
+    # Corpora disagree on the entry export: hash.wasm uses `run`, wart's uses
+    # `_start`. Try both rather than silently reporting "unsupported".
     raw = ""
     res = "none"
     for _i, want in {"run", "_start"}
@@ -65,9 +65,9 @@ _engine(root: str, binary: str, mod: str, engine: str): str
             res = _field(raw, "result")
         end
     end
-    -- Report the engine that ACTUALLY ran: the JIT falls back to the
-    -- interpreter on any opcode it cannot emit, so "jit" requested is not
-    -- "jit" used.
+    # Report the engine that ACTUALLY ran: the JIT falls back to the
+    # interpreter on any opcode it cannot emit, so "jit" requested is not
+    # "jit" used.
     res .. "|" .. _field(raw, "seconds") .. "|" .. _field(raw, "engine")
 end
 
@@ -80,18 +80,18 @@ _wasmtime_run(wasmtime: str, mod: str): str
     out .. "|" .. to(str)(_ms(a, b)) .. "ms"
 end
 
--- Which wart produced the numbers in this table.
---
--- Every wart row used to be reported against "whatever binary $WART resolved
--- to", which is a path into an uncommitted working tree outside this
--- repository. No published comparison recorded which wart it ran against, so
--- none of them was reproducible -- and wart moves: `ad10076` landed 232 NEON
--- SIGILL opcodes on 2026-08-08 alone. A number without a commit is not a
--- measurement, it is an anecdote with a decimal point.
---
--- This does not PIN wart -- pinning means a submodule and that decision is
--- open (docs/wart-integration.md §5). It makes the absence of a pin VISIBLE,
--- which is the part that can be done from here.
+# Which wart produced the numbers in this table.
+#
+# Every wart row used to be reported against "whatever binary $WART resolved
+# to", which is a path into an uncommitted working tree outside this
+# repository. No published comparison recorded which wart it ran against, so
+# none of them was reproducible # and wart moves: `ad10076` landed 232 NEON
+# SIGILL opcodes on 2026-08-08 alone. A number without a commit is not a
+# measurement, it is an anecdote with a decimal point.
+#
+# This does not PIN wart # pinning means a submodule and that decision is
+# open (docs/wart-integration.md §5). It makes the absence of a pin VISIBLE,
+# which is the part that can be done from here.
 provenance(repo: str): str
     out = "no repo at {repo}"
     if std.script.fs_exists(repo)
@@ -100,8 +100,8 @@ provenance(repo: str): str
         if sha == ""
             out = "{repo} is not a git checkout"
         else
-            -- `wc -l` pads its count with leading blanks on macOS; a raw splice
-            -- puts "ad10076+       3 uncommitted" in the table.
+            # `wc -l` pads its count with leading blanks on macOS; a raw splice
+            # puts "ad10076+       3 uncommitted" in the table.
             dirt = std.script.chomp(std.script.capture(
                 "git -C {repo} status --porcelain 2>/dev/null | wc -l | tr -d ' '"))
             out = sha
@@ -113,14 +113,14 @@ provenance(repo: str): str
     out
 end
 
--- A nonzero exit from wart is REPORTED, never mapped to a name.
---
--- This used to special-case 132 (128+SIGILL) as wart's expected failure, on a
--- note saying wart's ARM64 JIT emits `ldp xzr,xzr,[sp],#16` and traps on Apple
--- silicon. Measured 2026-08-08: wart builds clean and its JIT returns the same
--- values as wasmtime, wasmer and this engine. The arm was dead code guarding a
--- condition that does not occur, and a harness that has a name ready for a
--- failure will use it.
+# A nonzero exit from wart is REPORTED, never mapped to a name.
+#
+# This used to special-case 132 (128+SIGILL) as wart's expected failure, on a
+# note saying wart's ARM64 JIT emits `ldp xzr,xzr,[sp],#16` and traps on Apple
+# silicon. Measured 2026-08-08: wart builds clean and its JIT returns the same
+# values as wasmtime, wasmer and this engine. The arm was dead code guarding a
+# condition that does not occur, and a harness that has a name ready for a
+# failure will use it.
 _wartrun(wart: str, mod: str): str
     a: i64 = std.time.monotonic()
     rc: i64 = std.script.status("timeout 120 " .. wart .. " run " .. mod)
@@ -133,9 +133,9 @@ _wartrun(wart: str, mod: str): str
 end
 
 _head(s: str): str
-    i = string.find(s, "|", 1, true)
+    i = s:find("|", 1, true)
     if i == nil return s end
-    string.sub(s, 1, i - 1)
+    s:sub(1, i - 1)
 end
 
 main(): i64
@@ -156,8 +156,8 @@ main(): i64
         return 1
     end
 
-    -- PROVENANCE, before any number. A wart column with no wart commit beside
-    -- it is not reproducible, and the reader cannot tell that by looking at it.
+    # PROVENANCE, before any number. A wart column with no wart commit beside
+    # it is not reproducible, and the reader cannot tell that by looking at it.
     if mode != "cover"
         repo = std.script.getenv("WARTREPO", std.script.getenv("HOME", ".") .. "/x/wart")
         print("wart      {repo}")
@@ -173,8 +173,8 @@ main(): i64
     total = 0
     for _i, m in std.script.fs_glob("bench/*.wasm")
         total += 1
-        -- `jt`, not `jit`: `jit` is the frozen std.jit namespace root, and
-        -- assigning it is "attempt to assign to const variable".
+        # `jt`, not `jit`: `jit` is the frozen std.jit namespace root, and
+        # assigning it is "attempt to assign to const variable".
         jt = _engine(root, binary, m, "jit")
         itp = _engine(root, binary, m, "interp")
         wt = "-|-"
@@ -186,9 +186,9 @@ main(): i64
         print(_pad(std.script.path_stem(m), 32) .. " " .. _pad(jt, 26) .. " "
             .. _pad(itp, 26) .. " " .. _pad(wt, 18) .. " " .. wr)
 
-        -- the engine "covers" a module when it produced a result at all and both
-        -- engines agree. result=0 is legitimate here: the wart corpus exports
-        -- a void `_start`.
+        # the engine "covers" a module when it produced a result at all and both
+        # engines agree. result=0 is legitimate here: the wart corpus exports
+        # a void `_start`.
         jr = _head(jt)
         ir = _head(itp)
         if jr == ir and jr != "none" and jr != "-1"

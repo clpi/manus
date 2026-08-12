@@ -1,20 +1,20 @@
--- std.mime.multipart — MIME multipart reader/writer (mirrors Go's mime/multipart)
+# std.mime.multipart — MIME multipart reader/writer (mirrors Go's mime/multipart)
 
 parse_boundary(content_type: any)
     if content_type == nil return nil end
-    d1, d2, b = string.find(content_type, "boundary=([^;]+)")
+    d1, d2, b = content_type:find("boundary=([^;]+)")
     if b == nil return nil end
-    b = string.gsub(b, "^\"", "")
-    b = string.gsub(b, "\"$", "")
+    b = b:gsub("^\"", "")
+    b = b:gsub("\"$", "")
     return b
 end
 
 parse_headers(header_str: any)
     h = {}
-    for line in string.gmatch(header_str, "[^\r\n]+")
-        d1, d2, k, v = string.find(line, "^([^:]+):%s*(.+)$")
+    for line in header_str:gmatch("[^\r\n]+")
+        d1, d2, k, v = line:find("^([^:]+):%s*(.+)$")
         if k != nil
-            h[string.lower(k)] = v
+            h[k:lower()] = v
         end
     end
     return h
@@ -31,23 +31,23 @@ next_part(r: any)
         end_sep = "--" .. r.boundary .. "--"
         pos = r.pos
         while pos <= #r.data
-            d1, e = string.find(r.data, sep, pos, true)
+            d1, e = r.data:find(sep, pos, true)
             if e == nil break end
             if r.data:sub(e + 1, e + 1) == "-" break end
             if r.data:sub(e + 1, e + 1) == "\r" e += 2 else e += 1 end
-            d2, hdr_end = string.find(r.data, "\r\n\r\n", e, true)
-            if hdr_end == nil d2, hdr_end = string.find(r.data, "\n\n", e, true) end
+            d2, hdr_end = r.data:find("\r\n\r\n", e, true)
+            if hdr_end == nil d2, hdr_end = r.data:find("\n\n", e, true) end
             if hdr_end == nil break end
             hdr = r.data:sub(e, hdr_end - 1)
             body_start = hdr_end + 1
             if r.data:sub(hdr_end - 1, hdr_end) == "\n\n" body_start = hdr_end else body_start = hdr_end + 2 end
-            next_sep = string.find(r.data, "\r\n" .. sep, body_start, true)
-            if next_sep == nil next_sep = string.find(r.data, "\n" .. sep, body_start, true) end
+            next_sep = r.data:find("\r\n" .. sep, body_start, true)
+            if next_sep == nil next_sep = r.data:find("\n" .. sep, body_start, true) end
             if next_sep == nil
-                next_sep2 = string.find(r.data, end_sep, body_start, true)
+                next_sep2 = r.data:find(end_sep, body_start, true)
                 if next_sep2 == nil break end
                 part_body = r.data:sub(body_start, next_sep2 - 1)
-                r.parts[rawlen(r.parts) + 1] = {headers = parse_headers(hdr), body = part_body}
+                r.parts[r.parts:len() + 1] = {headers = parse_headers(hdr), body = part_body}
                 break
             end
             part_body = r.data:sub(body_start, next_sep - 1)
@@ -56,11 +56,11 @@ next_part(r: any)
             elseif part_body:sub(#part_body) == "\n"
                 part_body = part_body:sub(1, #part_body - 1)
             end
-            r.parts[rawlen(r.parts) + 1] = {headers = parse_headers(hdr), body = part_body}
+            r.parts[r.parts:len() + 1] = {headers = parse_headers(hdr), body = part_body}
             pos = next_sep + 1
         end
     end
-    if r.part_idx > rawlen(r.parts) return nil end
+    if r.part_idx > r.parts:len() return nil end
     p = r.parts[r.part_idx]
     r.part_idx = r.part_idx + 1
     return p

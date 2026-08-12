@@ -150,7 +150,7 @@ pub const invariants: []const Invariant = &.{
     .{ .id = "P25-TD07", .rule = "supersedes Pass 23 P23-D01 arbitrary live-out deferral" },
 };
 
-test "pass25_tail_result_model: rules + rejected heuristics" {
+test "tail_result_model: rules + rejected heuristics" {
     try std.testing.expectEqualStrings("pass25-tail-result-model-v0", SCHEMA_VERSION);
     try std.testing.expectEqual(@as(usize, 8), @typeInfo(TailResultRule).@"enum".field_names.len);
     try std.testing.expect(rejected_heuristics.len >= 6);

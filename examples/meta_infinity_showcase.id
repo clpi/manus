@@ -1,5 +1,5 @@
--- @comp.infinity: quartic ceiling breaker — transcend + O(n^4 × fields) in one directive
--- Run: duo run examples/meta_infinity_showcase.id
+# @comp.infinity: quartic ceiling breaker — transcend + O(n^4 × fields) in one directive
+# Run: duo run examples/meta_infinity_showcase.id
 
 concept HasXY
     x: f64
@@ -35,7 +35,7 @@ Label: { tag: str, id: i64, extra: i64 }
     end
 end)
 
--- One line: derive.all + quadratic + cubic + quartic emit
+# One line: derive.all + quadratic + cubic + quartic emit
 @comp.infinity("HasXY", QuadApi, "HasTag", "HasId", "HasExtra")
 
 quad_sig(a, b, c, d): str

@@ -1,0 +1,18 @@
+semantic = {
+    vocab = "lib/semantic/vocabulary.id"
+}
+
+router(semantic) = (home: str)
+    io:read(home)
+
+main: i64 = ()
+    path = semantic["vocab"]
+    if path == nil
+        print("path nil")
+        return 1
+    body = router(semantic)(path)
+    if body == nil
+        print("body nil")
+        return 2
+    print(body:len())
+    0

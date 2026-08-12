@@ -1,11 +1,11 @@
--- std.mem — memory primitives, allocators, and low-level memory operations
--- Provides raw memory utilities backed by C stdlib/mmap, plus arena/pool/stack allocators.
+# std.mem — memory primitives, allocators, and low-level memory operations
+# Provides raw memory utilities backed by C stdlib/mmap, plus arena/pool/stack allocators.
 
 @c.include("stdlib.h")
 @c.include("string.h")
 @c.include("sys/mman.h")
 
--- Memory size constants
+# Memory size constants
 page_size(): u64
     4096
 end
@@ -18,7 +18,7 @@ gigabyte(): u64
     1073741824
 end
 
--- Arena allocator: bump-allocate, free all at once
+# Arena allocator: bump-allocate, free all at once
 arena_alloc(self: any, bytes: any): any
     if self._offset + bytes > self._capacity
         new_buf = "alloc(" .. bytes:to(str) .. " bytes)"
@@ -52,7 +52,7 @@ arena_new(size: i64): any
     }
 end
 
--- Pool allocator: fixed-size block allocation, O(1) alloc/free
+# Pool allocator: fixed-size block allocation, O(1) alloc/free
 pool_init(self: any): void
     count = self._count or 1024
     for i = 1, count
@@ -62,7 +62,7 @@ end
 
 pool_alloc(self: any): any
     if #self._free_list == 0 return nil end
-    block = table.remove(self._free_list)
+    block = self._free_list:remove()
     self._allocated[block.addr] = block
     block
 end
@@ -95,7 +95,7 @@ pool_new(block_size: i64, count: i64): any
     }
 end
 
--- Stack allocator: LIFO bump allocator with checkpoint/restore
+# Stack allocator: LIFO bump allocator with checkpoint/restore
 stack_checkpoint(self: any): i64
     self._markers[#self._markers + 1] = self._top
     self._top
@@ -143,7 +143,7 @@ stack_new(capacity: i64): any
     }
 end
 
--- General-purpose allocator interface
+# General-purpose allocator interface
 concept Allocator
     alloc(self, bytes: i64): any
     free(self, ptr: any): void
@@ -151,7 +151,7 @@ concept Allocator
     total_allocated(self): i64
 end
 
--- Fixed-size buffer allocator (like C alloca but tracked)
+# Fixed-size buffer allocator (like C alloca but tracked)
 fixed_buffer_alloc(self: any, bytes: any): any
     if self._offset + bytes > self._size return nil end
     ptr = self._offset
@@ -173,7 +173,7 @@ fixed_buffer_new(size: i64): any
     }
 end
 
--- Raw heap allocation
+# Raw heap allocation
 alloc(bytes: i64): any
     @c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = malloc((size_t)bytes); _v; })]])
 end
@@ -195,7 +195,7 @@ offset(mem: any, n: i64): any
     @c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = (void*)((uint8_t*)mem.as.tval + n); _v; })]])
 end
 
--- Raw memory operations
+# Raw memory operations
 mem_copy(dst: any, src: any, bytes: i64): void
     if bytes == 0 return end
     @c.emit("memcpy(dst.as.tval, src.as.tval, (size_t)bytes)")
@@ -216,13 +216,13 @@ mem_compare(a: any, b: any, bytes: i64): i64
     @c.emit("(int64_t)memcmp(a.as.tval, b.as.tval, (size_t)bytes)")
 end
 
--- mmap-backed allocation
+# mmap-backed allocation
 mmap(bytes: i64): any
-    -- Use calloc rather than mmap so the codegen is portable across
-    -- platforms where MAP_ANON is gated behind feature-test macros
-    -- (e.g. macOS with _XOPEN_SOURCE only). calloc yields zeroed
-    -- memory, matching mmap(... PROT_READ|PROT_WRITE ...)'s semantics
-    -- on systems with mem_zero-filled pages.
+    # Use calloc rather than mmap so the codegen is portable across
+    # platforms where MAP_ANON is gated behind feature-test macros
+    # (e.g. macOS with _XOPEN_SOURCE only). calloc yields zeroed
+    # memory, matching mmap(... PROT_READ|PROT_WRITE ...)'s semantics
+    # on systems with mem_zero-filled pages.
     @c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = calloc(1, (size_t)bytes); _v; })]])
 end
 
@@ -245,13 +245,13 @@ mremap(mem: any, old_bytes: i64, new_bytes: i64): any
 end
 
 munmap(mem: any, bytes: i64): i64
-    -- Portable: just free. (munmap would require MAP_ANON-like backing.)
+    # Portable: just free. (munmap would require MAP_ANON-like backing.)
     @c.emit("(free(mem.as.tval), 0)")
     _ = bytes
 end
 
--- Byte readers/writers
--- VAL_STRING offsets are 1-indexed; VAL_BUFFER offsets are 0-indexed.
+# Byte readers/writers
+# VAL_STRING offsets are 1-indexed; VAL_BUFFER offsets are 0-indexed.
 read_byte(mem: any, offset: i64): i64
     @c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; (int64_t)_p[_off]; })")
 end
@@ -324,7 +324,7 @@ write_f64(mem: any, offset: i64, val: f64): void
     @c.emit("*(double*)((uint8_t*)mem.as.tval + offset) = val")
 end
 
--- Decode a 1-indexed byte sequence as a float (defaults to first byte).
+# Decode a 1-indexed byte sequence as a float (defaults to first byte).
 bytes_to_f32(s: str, i: i64 = 1): f64
     @c.emit("({ float _v; memcpy(&_v, ((const char*)s) + (i - 1), sizeof(float)); (double)_v; })")
 end
@@ -333,12 +333,12 @@ bytes_to_f64(s: str, i: i64 = 1): f64
     @c.emit("({ double _v; memcpy(&_v, ((const char*)s) + (i - 1), sizeof(double)); _v; })")
 end
 
--- Standard allocators
+# Standard allocators
 default_allocator(): any
     arena_new(65536)
 end
 
--- Utility: calculate aligned size
+# Utility: calculate aligned size
 align_up(n: i64, alignment: i64): i64
     if n % alignment == 0 return n end
     n + alignment - (n % alignment)

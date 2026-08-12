@@ -1,5 +1,5 @@
 tok: @{ kind: i64, start: i64, len: i64 }
-scan = (src: str, pos: i64): tok
+scan: tok = (src: str, pos: i64)
     n = #src
     i = pos
     if i < n

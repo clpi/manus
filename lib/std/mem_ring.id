@@ -1,12 +1,12 @@
--- std.mem — Enhanced memory primitives: ring buffer, mmap wrapper, virtual memory arena
--- Extends the existing mem.id with advanced memory management for runtime and networking.
+# std.mem — Enhanced memory primitives: ring buffer, mmap wrapper, virtual memory arena
+# Extends the existing mem.id with advanced memory management for runtime and networking.
 
--- ═══════════════════════════════════════════════════════════════
--- Ring Buffer (lock-free SPSC for producer-consumer patterns)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Ring Buffer (lock-free SPSC for producer-consumer patterns)
+# ═══════════════════════════════════════════════════════════════
 
 ring_new(capacity: i64): any
-    -- Round up to power of two for efficient modulo
+    # Round up to power of two for efficient modulo
     actual = 1
     while actual < capacity
         actual *= 2
@@ -23,7 +23,7 @@ end
 ring_push(rb: any, value: any): bool
     wp = rb.write_pos
     rp = rb.read_pos
-    -- Check if full
+    # Check if full
     if wp - rp >= rb.capacity return false end
     rb.buf[(wp & rb.mask) + 1] = value
     rb.write_pos = wp + 1
@@ -34,7 +34,7 @@ ring_pop(rb: any): any
     rp = rb.read_pos
     if rp >= rb.write_pos return nil end
     val = rb.buf[(rp & rb.mask) + 1]
-    rb.buf[(rp & rb.mask) + 1] = nil  -- help GC
+    rb.buf[(rp & rb.mask) + 1] = nil  # help GC
     rb.read_pos = rp + 1
     val
 end
@@ -45,7 +45,7 @@ ring_peek(rb: any): any
     rb.buf[(rp & rb.mask) + 1]
 end
 
-ring_len(rb: any): i64
+ring_rb: any:len(): i64
     rb.write_pos - rb.read_pos
 end
 
@@ -79,15 +79,15 @@ ring_clear(rb: any): void
     rb.write_pos = 0
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Double Buffer (swap between read/write buffers)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Double Buffer (swap between read/write buffers)
+# ═══════════════════════════════════════════════════════════════
 
 double_buffer_new(): any
     {
         front = {},
         back = {},
-        read_idx = 1,  -- 1 = front, 2 = back
+        read_idx = 1,  # 1 = front, 2 = back
     }
 end
 
@@ -114,9 +114,9 @@ double_buffer_read(db: any): any
     db.back
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Memory Pool (pre-allocated fixed-size blocks)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Memory Pool (pre-allocated fixed-size blocks)
+# ═══════════════════════════════════════════════════════════════
 
 mem_pool_new(block_size: i64, block_count: i64): any
     blocks = {}
@@ -145,7 +145,7 @@ mem_pool_alloc(pool: any): any
         end
         i += 1
     end
-    nil  -- out of blocks
+    nil  # out of blocks
 end
 
 mem_pool_free(pool: any, block: any): void
@@ -165,9 +165,9 @@ mem_pool_stats(pool: any): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Slab Allocator (size-segregated pools for different object sizes)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Slab Allocator (size-segregated pools for different object sizes)
+# ═══════════════════════════════════════════════════════════════
 
 slab_allocator_new(): any
     {
@@ -196,9 +196,9 @@ slab_stats(sa: any): any
     stats
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Virtual Memory Arena (bump allocator with commit/decommit)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Virtual Memory Arena (bump allocator with commit/decommit)
+# ═══════════════════════════════════════════════════════════════
 
 vmem_arena_new(initial_pages: i64, max_pages: i64): any
     page_size = 4096
@@ -213,12 +213,12 @@ vmem_arena_new(initial_pages: i64, max_pages: i64): any
 end
 
 vmem_arena_alloc(arena: any, size: i64): any
-    -- Align to 8 bytes
-    aligned = math.ceil(size / 8) * 8
+    # Align to 8 bytes
+    aligned = size / 8:ceil() * 8
 
-    -- Check if we need more pages
+    # Check if we need more pages
     if arena.used_bytes + aligned > arena.total_bytes
-        needed = math.ceil((arena.used_bytes + aligned - arena.total_bytes) / arena.page_size)
+        needed = (arena.used_bytes + aligned - arena.total_bytes) / arena.page_size:ceil()
         arena.committed_pages = arena.committed_pages + needed
         if arena.committed_pages > arena.max_pages
             return nil
@@ -245,12 +245,12 @@ vmem_arena_stats(arena: any): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
--- Ring Buffer
--- Double Buffer
--- Memory Pool
--- Slab Allocator
--- Virtual Memory Arena
+# Ring Buffer
+# Double Buffer
+# Memory Pool
+# Slab Allocator
+# Virtual Memory Arena

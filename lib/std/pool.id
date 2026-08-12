@@ -1,4 +1,4 @@
-time_mod = req("std.time")
+time_mod = time
 new(factory: any, destroyer: any, opts: any): any
   if opts == nil
     opts = {}
@@ -21,8 +21,8 @@ new(factory: any, destroyer: any, opts: any): any
   }
 end
 get(p: any): any
-  while rawlen(p.resources) > 0
-    res = table.remove(p.resources)
+  while p.resources:len() > 0
+    res = p.resources:remove()
     age = time_mod.now() - (p.last_used[res] or time_mod.now())
     if p.idle_timeout > 0 and age > p.idle_timeout
       destroy_res(p, res)
@@ -38,7 +38,7 @@ get(p: any): any
   for _ in p.in_use
     total = total + 1
   end
-  total = total + rawlen(p.resources)
+  total = total + p.resources:len()
   if total < p.max
     res = p.factory()
     p.total_created = p.total_created + 1
@@ -51,7 +51,7 @@ get(p: any): any
     _val = nil,
     _done = false
   }
-  p.waiters[rawlen(p.waiters) + 1] = slot
+  p.waiters[p.waiters:len() + 1] = slot
   while not slot._done
     coroutine.yield()
   end
@@ -68,20 +68,20 @@ put(p: any, res: any): void
     wake_waiter(p)
     return
   end
-  if rawlen(p.waiters) > 0
-    slot = table.remove(p.waiters, 1)
+  if p.waiters:len() > 0
+    slot = p.waiters:remove(1)
     slot._val = res
     slot._done = true
     p.in_use[res] = true
     p.last_used[res] = time_mod.now()
     return
   end
-  p.resources[rawlen(p.resources) + 1] = res
+  p.resources[p.resources:len() + 1] = res
   p.last_used[res] = time_mod.now()
 end
 try_get(p: any): any
-  while rawlen(p.resources) > 0
-    res = table.remove(p.resources)
+  while p.resources:len() > 0
+    res = p.resources:remove()
     age = time_mod.now() - (p.last_used[res] or time_mod.now())
     if p.idle_timeout > 0 and age > p.idle_timeout
       destroy_res(p, res)
@@ -97,7 +97,7 @@ try_get(p: any): any
   for _ in p.in_use
     total = total + 1
   end
-  total = total + rawlen(p.resources)
+  total = total + p.resources:len()
   if total < p.max
     res = p.factory()
     p.total_created = p.total_created + 1
@@ -120,7 +120,7 @@ stats(p: any): any
   for _ in p.in_use
     active = active + 1
   end
-  waiting = rawlen(p.waiters)
+  waiting = p.waiters:len()
   {
     idle = idle,
     active = active,
@@ -133,18 +133,18 @@ stats(p: any): any
   }
 end
 drain(p: any): void
-  while rawlen(p.resources) > 0
-    destroy_res(p, table.remove(p.resources))
+  while p.resources:len() > 0
+    destroy_res(p, p.resources:remove())
   end
   i = 1
-  while i <= rawlen(p.waiters)
+  while i <= p.waiters:len()
     p.waiters[i]._done = true
     p.waiters[i]._val = nil
     i = i + 1
   end
   p.waiters = {}
 end
-resize(p: any, new_max: i64): void
+rep: any, new_max: i64:len(): void
   p.max = new_max
 end
 destroy_res(p: any, res: any): void
@@ -156,10 +156,10 @@ destroy_res(p: any, res: any): void
   end
 end
 wake_waiter(p: any): void
-  if rawlen(p.waiters) == 0
+  if p.waiters:len() == 0
     return
   end
-  slot = table.remove(p.waiters, 1)
+  slot = p.waiters:remove(1)
   res = p.factory()
   p.total_created = p.total_created + 1
   p.created_at[res] = time_mod.now()

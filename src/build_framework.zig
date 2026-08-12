@@ -773,12 +773,12 @@ test "build_framework: load targets from sema directives" {
         \\@build.project({ name = "demo", default = "app" })
         \\@build.stage({ name = "prepare", order = -10, desc = "prepare assets" })
         \\@build.command({ name = "assets", command = "echo assets", stage = "prepare" })
-        \\@build.run({ name = "app", src = "main.duo" })
-        \\@build.test({ name = "test", src = "tests.duo", out = "zig-out/bin/t" })
+        \\@build.run({ name = "app", src = "main.id" })
+        \\@build.test({ name = "test", src = "tests.id", out = "zig-out/bin/t" })
         \\@build.clean({ name = "clean" })
         \\
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "build.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "build.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -787,7 +787,7 @@ test "build_framework: load targets from sema directives" {
     sem.duo_mode = true;
     try sem.check_module(&mod);
 
-    var project = try loadFromSema(alloc, "build.duo", &sem);
+    var project = try loadFromSema(alloc, "build.id", &sem);
     defer project.deinit(alloc);
 
     try std.testing.expectEqualStrings("demo", project.name.?);
@@ -798,7 +798,7 @@ test "build_framework: load targets from sema directives" {
 
     const app = try resolveTarget(&project, "app", null);
     try std.testing.expect(app.kind == .run);
-    try std.testing.expectEqualStrings("main.duo", app.src.?);
+    try std.testing.expectEqualStrings("main.id", app.src.?);
 
     const assets = try resolveTarget(&project, "assets", null);
     try std.testing.expect(assets.kind == .command);
@@ -848,7 +848,7 @@ test "build_framework: sortBuildOrder respects deps" {
     const tools_name = try alloc.dupe(u8, "tools");
     const app_deps = try alloc.dupe([]const u8, &.{lib_dep});
     var project = Project{
-        .build_source = "build.duo",
+        .build_source = "build.id",
         .name = null,
         .version = null,
         .default_target = null,

@@ -1,5 +1,5 @@
--- @comp.expand: one call → O(types × fields) derive C (+ optional sweep comment)
--- Run: duo run examples/meta_expand_showcase.id
+# @comp.expand: one call → O(types × fields) derive C (+ optional sweep comment)
+# Run: duo run examples/meta_expand_showcase.id
 
 concept HasXY
     x: f64
@@ -24,10 +24,10 @@ registry_line(meta): str
     meta.name .. ";"
 end
 
--- Derive sweep only (2-arg form)
+# Derive sweep only (2-arg form)
 @c.emit(@comp.expand("HasXY", TouchApi))
 
--- Registry sweep separately (comptime string, not C)
+# Registry sweep separately (comptime string, not C)
 SWEEP = @comp.sweep("HasXY", registry_line)
 
 print("=== meta.expand showcase ===")

@@ -1,5 +1,5 @@
--- @comp.template parametric expansion → O(n) native C fragments
--- Run: duo run examples/meta_template_showcase.id
+# @comp.template parametric expansion → O(n) native C fragments
+# Run: duo run examples/meta_template_showcase.id
 
 INSTANCES = "i64:int64_t | f64:double"
 BODY = "/* template[$0:$1] */\n"

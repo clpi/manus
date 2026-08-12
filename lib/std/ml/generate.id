@@ -1,9 +1,9 @@
--- std.ml.generate — Text generation for LLMs
--- For ward's text generation pipeline and inference.
+# std.ml.generate — Text generation for LLMs
+# For ward's text generation pipeline and inference.
 
--- ═══════════════════════════════════════════════════════════════
--- Generation Config
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Generation Config
+# ═══════════════════════════════════════════════════════════════
 
 config_new(): any
     {
@@ -50,9 +50,9 @@ config_set_seed(config: any, seed: i64): any
     config
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Sampling Strategies
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Sampling Strategies
+# ═══════════════════════════════════════════════════════════════
 
 sample_greedy(logits: any): i64
     max_idx = 1
@@ -71,32 +71,32 @@ end
 sample_temperature(logits: any, temperature: f64): i64
     if temperature < 0.01 return sample_greedy(logits) end
 
-    -- Apply temperature
+    # Apply temperature
     scaled = {}
     for i = 1, #logits
         scaled[i] = logits[i] / temperature
     end
 
-    -- Softmax
+    # Softmax
     probs = softmax(scaled)
 
-    -- Sample from distribution
+    # Sample from distribution
     return sample_from_probs(probs)
 end
 
 sample_top_k(logits: any, k: i64, temperature: f64): i64
     if temperature < 0.01 return sample_greedy(logits) end
 
-    -- Find top k
+    # Find top k
     indexed = {}
     for i = 1, #logits
         indexed[#indexed + 1] = {idx = i, logit = logits[i]}
     end
 
-    -- Sort by logit descending
-    table.sort(indexed, (a: any, b: any): any a.logit > b.logit)
+    # Sort by logit descending
+    indexed:sort((a: any, b: any): any a.logit > b.logit)
 
-    -- Keep top k
+    # Keep top k
     top_k = {}
     i = 1
     while i <= k and i <= #indexed
@@ -104,16 +104,16 @@ sample_top_k(logits: any, k: i64, temperature: f64): i64
         i += 1
     end
 
-    -- Apply temperature to top k
+    # Apply temperature to top k
     scaled = {}
     for item in top_k
         scaled[#scaled + 1] = item.logit / temperature
     end
 
-    -- Softmax
+    # Softmax
     probs = softmax(scaled)
 
-    -- Sample
+    # Sample
     chosen = sample_from_probs(probs)
     top_k[chosen].idx
 end
@@ -121,21 +121,21 @@ end
 sample_top_p(logits: any, top_p: f64, temperature: f64): i64
     if temperature < 0.01 return sample_greedy(logits) end
 
-    -- Sort logits
+    # Sort logits
     indexed = {}
     for i = 1, #logits
         indexed[#indexed + 1] = {idx = i, logit = logits[i]}
     end
-    table.sort(indexed, (a: any, b: any): any a.logit > b.logit)
+    indexed:sort((a: any, b: any): any a.logit > b.logit)
 
-    -- Apply temperature and softmax
+    # Apply temperature and softmax
     scaled = {}
     for item in indexed
         scaled[#scaled + 1] = item.logit / temperature
     end
     probs = softmax(scaled)
 
-    -- Accumulate until top_p
+    # Accumulate until top_p
     cumulative = 0
     cutoff = 0
     i = 1
@@ -150,7 +150,7 @@ sample_top_p(logits: any, top_p: f64, temperature: f64): i64
 
     if cutoff == 0 cutoff = #probs end
 
-    -- Renormalize and sample
+    # Renormalize and sample
     truncated_probs = {}
     i = 1
     while i <= cutoff
@@ -163,10 +163,10 @@ sample_top_p(logits: any, top_p: f64, temperature: f64): i64
 end
 
 sample_beam_search(logits: any, beams: i64, sequence: any): any
-    -- Beam search: maintain top-k candidates across decoding steps
-    -- sequence is the accumulated token history for each beam
+    # Beam search: maintain top-k candidates across decoding steps
+    # sequence is the accumulated token history for each beam
     if sequence == nil
-        -- First step: initialize beams from first logits
+        # First step: initialize beams from first logits
         beam_scores = {}
         for i = 1, beams
             beam_scores[i] = {score = 0, tokens = {}}
@@ -176,7 +176,7 @@ sample_beam_search(logits: any, beams: i64, sequence: any): any
         for i = 1, #logits
             indexed[#indexed + 1] = {idx = i, logit = logits[i]}
         end
-        table.sort(indexed, (a: any, b: any): any a.logit > b.logit)
+        indexed:sort((a: any, b: any): any a.logit > b.logit)
 
         i = 1
         while i <= beams and i <= #indexed
@@ -187,18 +187,18 @@ sample_beam_search(logits: any, beams: i64, sequence: any): any
         return beam_scores
     end
 
-    -- Subsequent steps: expand each beam, keep top beams
+    # Subsequent steps: expand each beam, keep top beams
     all_candidates = {}
     for beam_idx = 1, #sequence
         beam = sequence[beam_idx]
-        -- Expand this beam with top candidates
+        # Expand this beam with top candidates
         indexed = {}
         for i = 1, #logits
             indexed[#indexed + 1] = {idx = i, logit = logits[i]}
         end
-        table.sort(indexed, (a: any, b: any): any a.logit > b.logit)
+        indexed:sort((a: any, b: any): any a.logit > b.logit)
 
-        top_n = math.min(beams, #indexed)
+        top_n = beams:min(#indexed)
         i = 1
         while i <= top_n
             new_tokens = {}
@@ -214,8 +214,8 @@ sample_beam_search(logits: any, beams: i64, sequence: any): any
         end
     end
 
-    -- Sort all candidates by score and keep top beams
-    table.sort(all_candidates, (a: any, b: any): any a.score > b.score)
+    # Sort all candidates by score and keep top beams
+    all_candidates:sort((a: any, b: any): any a.score > b.score)
     result = {}
     i = 1
     while i <= beams and i <= #all_candidates
@@ -225,9 +225,9 @@ sample_beam_search(logits: any, beams: i64, sequence: any): any
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Repetition Penalty
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Repetition Penalty
+# ═══════════════════════════════════════════════════════════════
 
 apply_repetition_penalty(logits: any, generated: any, penalty: f64): any
     if penalty <= 1.0 return logits end
@@ -276,13 +276,13 @@ apply_presence_penalty(logits: any, generated: any, penalty: f64): any
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Stop Conditions
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Stop Conditions
+# ═══════════════════════════════════════════════════════════════
 
 check_stop_tokens(generated: any, stop_tokens: any): bool
     if #stop_tokens == 0 return false end
-    -- Check if any stop token appears at the end
+    # Check if any stop token appears at the end
     for stop in stop_tokens
         stop_len = #stop
         if #generated >= stop_len
@@ -303,16 +303,16 @@ end
 
 check_stop_strings(generated_text: str, stop_strings: any): bool
     for stop in stop_strings
-        if string.find(generated_text, stop, 1, true)
+        if generated_text:find(stop, 1, true)
             return true
         end
     end
     false
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Utility Functions
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Utility Functions
+# ═══════════════════════════════════════════════════════════════
 
 softmax(logits: any): any
     max_logit = -1e30
@@ -323,7 +323,7 @@ softmax(logits: any): any
     exp_sum = 0
     probs = {}
     for i = 1, #logits
-        exp_val = math.exp(logits[i] - max_logit)
+        exp_val = logits[i] - max_logit:exp()
         probs[i] = exp_val
         exp_sum += exp_val
     end
@@ -351,7 +351,7 @@ top_k_logits(logits: any, k: i64): any
     for i = 1, #logits
         indexed[#indexed + 1] = {idx = i, logit = logits[i]}
     end
-    table.sort(indexed, (a: any, b: any): any a.logit > b.logit)
+    indexed:sort((a: any, b: any): any a.logit > b.logit)
 
     result = {}
     i = 1
@@ -362,12 +362,12 @@ top_k_logits(logits: any, k: i64): any
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
--- Config
--- Sampling
--- Penalties
--- Stop conditions
--- Utilities
+# Config
+# Sampling
+# Penalties
+# Stop conditions
+# Utilities

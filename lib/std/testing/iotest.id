@@ -1,13 +1,13 @@
--- std.testing.iotest — I/O test helpers (mirrors Go's testing/iotest)
--- Provides readers/writers that simulate errors, slow reads, etc.
+# std.testing.iotest — I/O test helpers (mirrors Go's testing/iotest)
+# Provides readers/writers that simulate errors, slow reads, etc.
 
 new_one_byte_reader(data: str): any
     {data = data, pos = 1}
 end
 
 one_byte_read(r: any): any
-    if r.pos > std.string.len(r.data) return nil end
-    b = std.string.sub(r.data, r.pos, r.pos)
+    if r.pos > r.data:len() return nil end
+    b = r.data:sub(r.pos, r.pos)
     r.pos = r.pos + 1
     b
 end
@@ -17,10 +17,10 @@ new_half_reader(data: str): any
 end
 
 half_read(r: any): any
-    if r.pos > std.string.len(r.data) return nil end
-    remaining = std.string.len(r.data) - r.pos + 1
-    chunk_size = math.max(1, math.floor(remaining / 2))
-    chunk = std.string.sub(r.data, r.pos, r.pos + chunk_size - 1)
+    if r.pos > r.data:len() return nil end
+    remaining = r.data:len() - r.pos + 1
+    chunk_size = 1:max(remaining / 2:floor())
+    chunk = r.data:sub(r.pos, r.pos + chunk_size - 1)
     r.pos = r.pos + chunk_size
     chunk
 end
@@ -35,8 +35,8 @@ data_err_read(r: any): any
         r.erred = true
         return nil
     end
-    if r.pos > std.string.len(r.data) return nil end
-    chunk = std.string.sub(r.data, r.pos, r.pos)
+    if r.pos > r.data:len() return nil end
+    chunk = r.data:sub(r.pos, r.pos)
     r.pos = r.pos + 1
     chunk
 end
@@ -48,8 +48,8 @@ end
 timeout_read(r: any): any
     r.reads = r.reads + 1
     if r.reads > r.timeout_after return nil end
-    if r.pos > std.string.len(r.data) return nil end
-    chunk = std.string.sub(r.data, r.pos, r.pos)
+    if r.pos > r.data:len() return nil end
+    chunk = r.data:sub(r.pos, r.pos)
     r.pos = r.pos + 1
     chunk
 end
@@ -59,13 +59,13 @@ new_trunc_writer(): any
 end
 
 trunc_write(w: any, data: str): i64
-    w.written[rawlen(w.written) + 1] = data
-    w.max = w.max + std.string.len(data)
-    std.string.len(data)
+    w.written[w.written:len() + 1] = data
+    w.max = w.max + data:len()
+    data:len()
 end
 
 trunc_bytes(w: any): str
-    table.concat(w.written)
+    w.written:concat()
 end
 
 new_error_writer(): any

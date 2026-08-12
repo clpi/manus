@@ -1,6 +1,4 @@
 #!/usr/bin/env duo
-json = req "std.json"
-fs = req "std.fs"
 
 content = fs.read_file("benchmark_evidence.json")
 if content == nil

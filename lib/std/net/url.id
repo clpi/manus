@@ -1,6 +1,6 @@
--- std.net_url — URL parsing and construction (mirrors Go's net/url)
+# std.net_url — URL parsing and construction (mirrors Go's net/url)
 
--- escape: percent-encode a string for use in URL components.
+# escape: percent-encode a string for use in URL components.
 escape(s: str): str
     if s == nil return "" end
     out = {}
@@ -8,18 +8,18 @@ escape(s: str): str
     while i <= #s
         b = s:byte(i)
         if (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or (b >= 48 and b <= 57) or b == 45 or b == 46 or b == 95 or b == 126
-            out[rawlen(out) + 1] = s:sub(i, i)
+            out[out:len() + 1] = s:sub(i, i)
         elseif b == 32
-            out[rawlen(out) + 1] = "+"
+            out[out:len() + 1] = "+"
         else
-            out[rawlen(out) + 1] = string.format("%%%02X", b)
+            out[out:len() + 1] = "%%%02X":format(b)
         end
         i += 1
     end
-    table.concat(out)
+    out:concat()
 end
 
--- path_escape: percent-encode for URL path segments (preserves /).
+# path_escape: percent-encode for URL path segments (preserves /).
 path_escape(s: str): str
     if s == nil return "" end
     out = {}
@@ -27,16 +27,16 @@ path_escape(s: str): str
     while i <= #s
         b = s:byte(i)
         if (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or (b >= 48 and b <= 57) or b == 45 or b == 46 or b == 95 or b == 126 or b == 47
-            out[rawlen(out) + 1] = s:sub(i, i)
+            out[out:len() + 1] = s:sub(i, i)
         else
-            out[rawlen(out) + 1] = string.format("%%%02X", b)
+            out[out:len() + 1] = "%%%02X":format(b)
         end
         i += 1
     end
-    table.concat(out)
+    out:concat()
 end
 
--- unescape: decode a percent-encoded string.
+# unescape: decode a percent-encoded string.
 unescape(s: str): str
     if s == nil return "" end
     out = {}
@@ -47,23 +47,23 @@ unescape(s: str): str
             hex = s:sub(i + 1, i + 2)
             code = tonumber(hex, 16)
             if code != nil
-                out[rawlen(out) + 1] = string.char(code)
+                out[out:len() + 1] = code:char()
             else
-                out[rawlen(out) + 1] = ch
+                out[out:len() + 1] = ch
             end
             i += 3
         elseif ch == "+"
-            out[rawlen(out) + 1] = " "
+            out[out:len() + 1] = " "
             i += 1
         else
-            out[rawlen(out) + 1] = ch
+            out[out:len() + 1] = ch
             i += 1
         end
     end
-    table.concat(out)
+    out:concat()
 end
 
--- parse_query: parse a query string into a table mapping keys to value arrays.
+# parse_query: parse a query string into a table mapping keys to value arrays.
 parse_query(query: str): any
     if query == nil or query == "" return {} end
     out = {}
@@ -72,16 +72,16 @@ parse_query(query: str): any
     i = 1
     while i <= #query
         if query:sub(i, i) == "&"
-            parts[rawlen(parts) + 1] = query:sub(start, i - 1)
+            parts[parts:len() + 1] = query:sub(start, i - 1)
             start = i + 1
         end
         i += 1
     end
-    parts[rawlen(parts) + 1] = query:sub(start)
+    parts[parts:len() + 1] = query:sub(start)
     j = 1
-    while j <= rawlen(parts)
+    while j <= parts:len()
         pair = parts[j]
-        eq = string.find(pair, "=", 1, true)
+        eq = pair:find("=", 1, true)
         k = ""
         v = ""
         if eq != nil
@@ -92,77 +92,77 @@ parse_query(query: str): any
             v = ""
         end
         if out[k] == nil out[k] = {} end
-        out[k][rawlen(out[k]) + 1] = v
+        out[k][out[k]:len() + 1] = v
         j += 1
     end
     out
 end
 
--- encode_query: encode a query table into a URL query string.
+# encode_query: encode a query table into a URL query string.
 encode_query(params: any): str
     if params == nil return "" end
     out = {}
     for k, vs in params
         if type(vs) == "table"
             i = 1
-            while i <= rawlen(vs)
-                out[rawlen(out) + 1] = escape(k) .. "=" .. escape(vs[i])
+            while i <= vs:len()
+                out[out:len() + 1] = escape(k) .. "=" .. escape(vs[i])
                 i += 1
             end
         else
-            out[rawlen(out) + 1] = escape(k) .. "=" .. escape(vs)
+            out[out:len() + 1] = escape(k) .. "=" .. escape(vs)
         end
     end
-    table.concat(out, "&")
+    out:concat("&")
 end
 
--- parse: parse a URL string into a structured table.
+# parse: parse a URL string into a structured table.
 parse(raw_url: str): any
     if raw_url == nil or raw_url == "" return nil end
     url = raw_url
     scheme = ""
-    colon = string.find(url, "://", 1, true)
+    colon = url:find("://", 1, true)
     if colon != nil
         scheme = url:sub(1, colon - 1)
         url = url:sub(colon + 3)
     else
-        colon2 = string.find(url, ":", 1, true)
-        slash = string.find(url, "/", 1, true)
+        colon2 = url:find(":", 1, true)
+        slash = url:find("/", 1, true)
         if colon2 != nil and (slash == nil or colon2 < slash)
             scheme = url:sub(1, colon2 - 1)
             url = url:sub(colon2 + 1)
         end
     end
     fragment = ""
-    hash = string.find(url, "#", 1, true)
+    hash = url:find("#", 1, true)
     if hash != nil
         fragment = url:sub(hash + 1)
         url = url:sub(1, hash - 1)
     end
     raw_query = ""
     query = nil
-    qmark = string.find(url, "?", 1, true)
+    qmark = url:find("?", 1, true)
     if qmark != nil
         raw_query = url:sub(qmark + 1)
         query = parse_query(raw_query)
         url = url:sub(1, qmark - 1)
     end
     user = ""
-    at = string.find(url, "@", 1, true)
+    at = url:find("@", 1, true)
     if at != nil
         user = url:sub(1, at - 1)
         url = url:sub(at + 1)
     end
     host = url
     port = nil
-    slash_pos = string.find(url, "/", 1, true)
+    slash_pos = url:find("/", 1, true)
     if slash_pos != nil
         host = url:sub(1, slash_pos - 1)
         url = url:sub(slash_pos)
     else
         url = ""
     end
-    colon_pos = string.find(host, ":", 1, true)
+    colon_pos = host:find(":", 1, true)
     if colon_pos != nil
         port = tonumber(host:sub(colon_pos + 1))
         host = host:sub(1, colon_pos - 1)
@@ -171,10 +171,10 @@ parse(raw_url: str): any
     {scheme = scheme, host = host, port = port, path = url, query = query, raw_query = raw_query, fragment = fragment, user = user}
 end
 
--- resolve: resolve a reference URL against a base URL.
+# resolve: resolve a reference URL against a base URL.
 resolve(base: str, ref: str): str
     if ref == nil or ref == "" return base end
-    if string.find(ref, "://", 1, true) != nil return ref end
+    if ref:find("://", 1, true) != nil return ref end
     if ref:sub(1, 1) == "/"
         base_url = parse(base)
         result = base_url.scheme .. "://"
@@ -185,10 +185,10 @@ resolve(base: str, ref: str): str
     end
     base_url = parse(base)
     base_path = base_url.path
-    last_slash = string.find(base_path, "/", 1, true)
+    last_slash = base_path:find("/", 1, true)
     if last_slash != nil
         while true
-            next_slash = string.find(base_path, "/", last_slash + 1, true)
+            next_slash = base_path:find("/", last_slash + 1, true)
             if next_slash == nil break end
             last_slash = next_slash
         end
@@ -204,7 +204,7 @@ resolve(base: str, ref: str): str
     result .. new_path
 end
 
--- build: construct a URL string from a parsed URL table.
+# build: construct a URL string from a parsed URL table.
 build(u: any): str
     if u == nil return "" end
     result = ""

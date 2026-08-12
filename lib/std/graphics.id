@@ -1,9 +1,9 @@
--- std.graphics — color, geometry, and render pipeline primitives
--- Targets: game engines, visualization, ML result rendering, image processing
+# std.graphics — color, geometry, and render pipeline primitives
+# Targets: game engines, visualization, ML result rendering, image processing
 
--- ═══════════════════════════════════════════════════════════════
--- Color
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Color
+# ═══════════════════════════════════════════════════════════════
 
 color_rgb(r: f64, g: f64, b: f64): any
     {r = r, g = g, b = b, a = 1.0}
@@ -33,10 +33,10 @@ color_hex(hex_str: str): any
 end
 
 color_to_hex(c: any): str
-    ri = math.floor(c.r * 255.0 + 0.5)
-    gi = math.floor(c.g * 255.0 + 0.5)
-    bi = math.floor(c.b * 255.0 + 0.5)
-    return string.format("#%02x%02x%02x", ri, gi, bi)
+    ri = c.r * 255.0 + 0.5:floor()
+    gi = c.g * 255.0 + 0.5:floor()
+    bi = c.b * 255.0 + 0.5:floor()
+    return "#%02x%02x%02x":format(ri, gi, bi)
 end
 
 color_lerp(a: any, b: any, t: f64): any
@@ -65,11 +65,11 @@ color_clamp(c: any): any
     }
 end
 
--- Convert RGB to HSV
+# Convert RGB to HSV
 color_to_hsv(c: any): any
     r, g, b = c.r, c.g, c.b
-    max_val = math.max(r, math.max(g, b))
-    min_val = math.min(r, math.min(g, b))
+    max_val = r:max(g:max(b))
+    min_val = r:min(g:min(b))
     d = max_val - min_val
     h = 0
     s = 0
@@ -89,9 +89,9 @@ color_to_hsv(c: any): any
     {h = h, s = s, v = v}
 end
 
--- Convert HSV to RGB
+# Convert HSV to RGB
 color_from_hsv(h: f64, s: f64, v: f64): any
-    i = math.floor(h * 6)
+    i = h * 6:floor()
     f = h * 6 - i
     p = v * (1 - s)
     q = v * (1 - f * s)
@@ -105,7 +105,7 @@ color_from_hsv(h: f64, s: f64, v: f64): any
     {r = v, g = p, b = q, a = 1.0}
 end
 
--- Named colors
+# Named colors
 COLORS = {
     red = {r = 1, g = 0, b = 0, a = 1},
     green = {r = 0, g = 1, b = 0, a = 1},
@@ -121,9 +121,9 @@ COLORS = {
     transparent = {r = 0, g = 0, b = 0, a = 0},
 }
 
--- ═══════════════════════════════════════════════════════════════
--- Geometry: 2D vectors and shapes
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Geometry: 2D vectors and shapes
+# ═══════════════════════════════════════════════════════════════
 
 vec2(x: f64, y: f64): any
     {x = x, y = y}
@@ -146,7 +146,7 @@ vec2_dot(a: any, b: any): f64
 end
 
 vec2_length(v: any): f64
-    math.sqrt(v.x * v.x + v.y * v.y)
+    v.x * v.x + v.y * v.y:sqrt()
 end
 
 vec2_normalize(v: any): any
@@ -163,7 +163,7 @@ vec2_lerp(a: any, b: any, t: f64): any
     {x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t}
 end
 
--- 2D Rectangle
+# 2D Rectangle
 rect(x: f64, y: f64, w: f64, h: f64): any
     {x = x, y = y, w = w, h = h}
 end
@@ -184,7 +184,7 @@ rect_center(r: any): any
     {x = r.x + r.w / 2, y = r.y + r.h / 2}
 end
 
--- Circle
+# Circle
 circle(cx: f64, cy: f64, r: f64): any
     {cx = cx, cy = cy, r = r}
 end
@@ -203,9 +203,9 @@ circle_perimeter(c: any): f64
     2 * math.pi * c.r
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Transform (2D affine: translation + rotation + scale)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Transform (2D affine: translation + rotation + scale)
+# ═══════════════════════════════════════════════════════════════
 
 transform_new(): any
     {tx = 0, ty = 0, sx = 1, sy = 1, rotation = 0}
@@ -229,8 +229,8 @@ transform_scale(t: any, sx: f64, sy: f64): any
 end
 
 transform_apply(t: any, px: f64, py: f64): any
-    cos_r = math.cos(t.rotation)
-    sin_r = math.sin(t.rotation)
+    cos_r = t.rotation:cos()
+    sin_r = t.rotation:sin()
     rx = px * t.sx
     ry = py * t.sy
     {
@@ -239,9 +239,9 @@ transform_apply(t: any, px: f64, py: f64): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Canvas (simple rasterizer for ML visualization / image gen)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Canvas (simple rasterizer for ML visualization / image gen)
+# ═══════════════════════════════════════════════════════════════
 
 canvas_new(width: i64, height: i64): any
     pixels = {}
@@ -273,7 +273,7 @@ canvas_get_pixel(canvas: any, x: i64, y: i64): any
     canvas.pixels[y * canvas.width + x + 1]
 end
 
--- Draw a filled rectangle
+# Draw a filled rectangle
 canvas_fill_rect(canvas: any, x: i64, y: i64, w: i64, h: i64, color: any): void
     dy = 0
     while dy < h
@@ -286,10 +286,10 @@ canvas_fill_rect(canvas: any, x: i64, y: i64, w: i64, h: i64, color: any): void
     end
 end
 
--- Draw a line (Bresenham's algorithm)
+# Draw a line (Bresenham's algorithm)
 canvas_line(canvas: any, x0: i64, y0: i64, x1: i64, y1: i64, color: any): void
-    dx = math.abs(x1 - x0)
-    dy = -math.abs(y1 - y0)
+    dx = x1 - x0:abs()
+    dy = -y1 - y0:abs()
     sx = 1
     if x0 > x1 sx = -1 end
     sy = 1
@@ -311,7 +311,7 @@ canvas_line(canvas: any, x0: i64, y0: i64, x1: i64, y1: i64, color: any): void
     end
 end
 
--- Draw a circle (Midpoint circle algorithm)
+# Draw a circle (Midpoint circle algorithm)
 canvas_circle(canvas: any, cx: i64, cy: i64, r: i64, color: any): void
     x = r
     y = 0
@@ -335,26 +335,26 @@ canvas_circle(canvas: any, cx: i64, cy: i64, r: i64, color: any): void
     end
 end
 
--- Convert canvas to PPM format (for easy viewing)
+# Convert canvas to PPM format (for easy viewing)
 canvas_to_ppm(canvas: any): str
     out = "P6\n" .. canvas.width:to(str) .. " " .. canvas.height:to(str) .. "\n255\n"
     i = 1
     while i <= canvas.width * canvas.height
         c = canvas.pixels[i]
-        out = out .. string.char(math.floor(c.r * 255))
-            .. string.char(math.floor(c.g * 255))
-            .. string.char(math.floor(c.b * 255))
+        out = out .. c.r * 255:floor():char()
+            .. c.g * 255:floor():char()
+            .. c.b * 255:floor():char()
         i += 1
     end
     out
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
--- Color
--- Vec2
--- Shapes
--- Transform
--- Canvas
+# Color
+# Vec2
+# Shapes
+# Transform
+# Canvas

@@ -1,5 +1,5 @@
--- @comp.transcend: cubic ceiling breaker — one module directive → O(n²×f) + O(n³×f)
--- Run: duo run examples/meta_transcend_showcase.id
+# @comp.transcend: cubic ceiling breaker — one module directive → O(n²×f) + O(n³×f)
+# Run: duo run examples/meta_transcend_showcase.id
 
 concept HasXY
     x: f64
@@ -33,7 +33,7 @@ Label: { tag: str, id: i64 }
     end
 end)
 
--- One line: derive.all + quadratic product emit + cubic derive tensor emit
+# One line: derive.all + quadratic product emit + cubic derive tensor emit
 @comp.transcend("HasXY", TripleApi, "HasTag", "HasId")
 
 triple_sig(a, b, c): str

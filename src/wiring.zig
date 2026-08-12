@@ -1,9 +1,9 @@
 const std = @import("std");
-const pass26_abi_resource = @import("pass26_abi_resource.zig");
+const abi_resource = @import("abi_resource.zig");
 
 pub const ForeignLiftMetadata = struct {
     boundary_id: []const u8,
-    calling_conv: pass26_abi_resource.CallingConventionKind,
+    calling_conv: abi_resource.CallingConventionKind,
 };
 
 pub fn foreignLiftMetadata(pass_by: []const u8) ForeignLiftMetadata {

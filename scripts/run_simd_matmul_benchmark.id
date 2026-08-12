@@ -1,15 +1,15 @@
--- run_simd_matmul_benchmark.id — compare Duo builtin simd.matmul_f32 to native C.
---
--- Duo replacement for scripts/run_simd_matmul_benchmark.sh (monoglot census).
---
--- examples/bench_simd_matmul_c.c stays C: it is the REFERENCE this benchmark
--- measures against, and converting the baseline deletes the comparison.
+# run_simd_matmul_benchmark.id — compare Duo builtin simd.matmul_f32 to native C.
+#
+# Duo replacement for scripts/run_simd_matmul_benchmark.sh (monoglot census).
+#
+# examples/bench_simd_matmul_c.c stays C: it is the REFERENCE this benchmark
+# measures against, and converting the baseline deletes the comparison.
 
 _OUT_DIR = "/tmp/duo_simd_matmul_bench"
 _EX = "examples"
 
--- See run_alloc_churn_benchmark.id: `to(str)` on an f64 does not compile, and
--- printing the float raw gives full binary precision. Integer hundredths.
+# See run_alloc_churn_benchmark.id: `to(str)` on an f64 does not compile, and
+# printing the float raw gives full binary precision. Integer hundredths.
 _fmt2(x: f64): str
     n = to(i64)(x * 100.0 + 0.5)
     whole = n / 100
@@ -26,18 +26,18 @@ _sdk_flag(): str
     "-isysroot " .. sdk
 end
 
--- Output shape is: RESULT simd_matmul / <time> / Checksum: <csum>, so the time
--- is the line AFTER the marker -- not the last line, which is the checksum.
+# Output shape is: RESULT simd_matmul / <time> / Checksum: <csum>, so the time
+# is the line AFTER the marker # not the last line, which is the checksum.
 _time_after_marker(bin: str): str
     std.script.chomp(std.script.capture(bin .. " | grep -A 1 \"RESULT simd_matmul\" | tail -n 1"))
 end
 
-main = (): i64
+main: i64 = ()
     print("=== Duo SIMD Matmul Benchmark (512x512) ===")
     print("")
 
-    duo = "./zig-out/bin/duo"
-    if not std.script.fs_exists(duo)
+    duo = "./zig-out/bin/idol"
+    if !std.script.fs_exists(duo)
         print("ERROR: Duo compiler not found at " .. duo)
         print("  Run 'zig build' first")
         return 1

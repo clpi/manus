@@ -1,37 +1,37 @@
--- SH-11 — the ARM64 encoder differential, against the SYSTEM ASSEMBLER.
---
--- std.compiler.arm64 grew from 9 register-register encoders to 46 by
--- transcribing tools/wasm/src/wasm/jit_arm64.id; the 50 cases below check them
--- (some forms twice, with different operands). A transcription is exactly the
--- kind of change that looks right and is wrong in one nibble, so it does not
--- get to be believed on inspection.
---
---     "ldr x1, [x2, #24]" -> clang -> otool -> f9400c41
---                         \
---                          -> encode_ldr_imm(1, 2, 24) -> f9400c41
---
--- The system assembler already knows every encoding, and it did not learn them
--- from the same person who wrote the encoder. A hand-written table of expected
--- words agrees with the transcription error; clang does not and cannot.
---
--- This lives beside the encoder rather than inside it because a stdlib module
--- that shells out to a C toolchain on import is a liability. Import it only to
--- check.
---
--- `run` returns the NUMBER OF DISAGREEMENTS — 0 when every form agrees, 90 when
--- no assembler is available, which is a visible SKIP and never a silent pass.
--- Each mismatch prints both words, so a failure names the nibble.
---
--- WHY THE COUNT IS A LOCAL, and this is not style. Accumulating into a module
--- global and reading it back in the same function returns the value the global
--- was RESET to, not what the callees wrote — measured here, and reduced to: a
--- `void` module function whose trailing statement is `g += 1` stores correctly
--- (a separate accessor sees the write) but leaves the CALLING function's later
--- read stale. The identical code in a top-level script is correct, so it is the
--- req-module lowering, not the language. `_ck` therefore RETURNS its verdict and
--- `run` sums it into a local, which is immune. The case count still goes through
--- a global, but is only ever read from `checked` — a different function, which
--- is the shape that measured correct.
+# SH-11 — the ARM64 encoder differential, against the SYSTEM ASSEMBLER.
+#
+# std.compiler.arm64 grew from 9 register-register encoders to 46 by
+# transcribing tools/wasm/src/wasm/jit_arm64.id; the 50 cases below check them
+# (some forms twice, with different operands). A transcription is exactly the
+# kind of change that looks right and is wrong in one nibble, so it does not
+# get to be believed on inspection.
+#
+#     "ldr x1, [x2, #24]" -> clang -> otool -> f9400c41
+#                         \
+#                          -> encode_ldr_imm(1, 2, 24) -> f9400c41
+#
+# The system assembler already knows every encoding, and it did not learn them
+# from the same person who wrote the encoder. A hand-written table of expected
+# words agrees with the transcription error; clang does not and cannot.
+#
+# This lives beside the encoder rather than inside it because a stdlib module
+# that shells out to a C toolchain on import is a liability. Import it only to
+# check.
+#
+# `run` returns the NUMBER OF DISAGREEMENTS — 0 when every form agrees, 90 when
+# no assembler is available, which is a visible SKIP and never a silent pass.
+# Each mismatch prints both words, so a failure names the nibble.
+#
+# WHY THE COUNT IS A LOCAL, and this is not style. Accumulating into a module
+# global and reading it back in the same function returns the value the global
+# was RESET to, not what the callees wrote — measured here, and reduced to: a
+# `void` module function whose trailing statement is `g += 1` stores correctly
+# (a separate accessor sees the write) but leaves the CALLING function's later
+# read stale. The identical code in a top-level script is correct, so it is the
+# req-module lowering, not the language. `_ck` therefore RETURNS its verdict and
+# `run` sums it into a local, which is immune. The case count still goes through
+# a global, but is only ever read from `checked` — a different function, which
+# is the shape that measured correct.
 
 global A = std.compiler.arm64
 
@@ -40,12 +40,12 @@ global _objpath = "/tmp/duo_arm64_check.o"
 
 global _count: i64 = 0
 
--- Assemble one instruction and return its encoding as `otool -t` prints it:
--- eight lowercase hex digits, most significant first. Comparing in the
--- assembler's own format means no reformatting step can make a mismatch cancel.
-_assemble = (mnemonic: str): str
+# Assemble one instruction and return its encoding as `otool -t` prints it:
+# eight lowercase hex digits, most significant first. Comparing in the
+# assembler's own format means no reformatting step can make a mismatch cancel.
+_assemble: str = (mnemonic: str)
     fh = io.open(_asmpath, "w")
-    if not fh
+    if !fh
         return ""
     end
     fh:write(".text\n.global _start\n_start:\n    " .. mnemonic .. "\n")
@@ -60,16 +60,16 @@ _assemble = (mnemonic: str): str
     os.remove(_asmpath)
     os.remove(_objpath)
     n: i64 = #out
-    while n > 0 and (string.byte(out, n) == 10 or string.byte(out, n) == 32)
+    while n > 0 and (out:byte(n) == 10 or out:byte(n) == 32)
         n -= 1
     end
-    string.sub(out, 1, n)
+    out:sub(1, n)
 end
 
--- 1 when the encoder and the assembler disagree, 0 when they agree. An
--- assembler that refuses the mnemonic counts as a disagreement: a case that
--- quietly stops being checked is how a suite reports green over nothing.
-_ck = (mnemonic: str, word: i64): i64
+# 1 when the encoder and the assembler disagree, 0 when they agree. An
+# assembler that refuses the mnemonic counts as a disagreement: a case that
+# quietly stops being checked is how a suite reports green over nothing.
+_ck: i64 = (mnemonic: str, word: i64)
     want = _assemble(mnemonic)
     _count += 1
     if want == ""
@@ -85,11 +85,11 @@ _ck = (mnemonic: str, word: i64): i64
     0
 end
 
--- The register operands deliberately differ per case. A proof that only ever
--- encodes x0/x1/x2 passes just as happily when the register fields are dropped
--- on the floor, so every field of every form is given a value that would show
--- up somewhere visible if it landed in the wrong place.
-run = (): i64
+# The register operands deliberately differ per case. A proof that only ever
+# encodes x0/x1/x2 passes just as happily when the register fields are dropped
+# on the floor, so every field of every form is given a value that would show
+# up somewhere visible if it landed in the wrong place.
+run: i64 = ()
     _count = 0
     bad: i64 = 0
 
@@ -98,7 +98,7 @@ run = (): i64
         return 90
     end
 
-    -- the original register-register set, still checked
+    # the original register-register set, still checked
     bad += _ck("add x0, x1, x2", A.encode_add_reg(0, 1, 2))
     bad += _ck("sub x28, x0, x30", A.encode_sub_reg(28, 0, 30))
     bad += _ck("mul x5, x9, x13", A.encode_mul_reg(5, 9, 13))
@@ -109,7 +109,7 @@ run = (): i64
     bad += _ck("movz x4, #4660", A.encode_movz(4, 0x1234))
     bad += _ck("ret", A.encode_ret())
 
-    -- immediates
+    # immediates
     bad += _ck("movz x3, #4660, lsl #16", A.encode_movz_shift(3, 0x1234, 1))
     bad += _ck("movz x0, #65535", A.encode_movz_shift(0, 0xFFFF, 0))
     bad += _ck("movk x7, #291, lsl #32", A.encode_movk(7, 0x123, 2))
@@ -117,7 +117,7 @@ run = (): i64
     bad += _ck("add x1, x2, #100", A.encode_add_imm(1, 2, 100))
     bad += _ck("sub x9, x10, #4095", A.encode_sub_imm(9, 10, 4095))
 
-    -- loads and stores
+    # loads and stores
     bad += _ck("ldr x1, [x2, #24]", A.encode_ldr_imm(1, 2, 24))
     bad += _ck("str x5, [x19, #4088]", A.encode_str_imm(5, 19, 4088))
     bad += _ck("ldr x3, [x19, x20, lsl #3]", A.encode_ldr_reg(3, 19, 20))
@@ -126,11 +126,11 @@ run = (): i64
     bad += _ck("strb w6, [x7, #4095]", A.encode_strb_imm(6, 7, 4095))
     bad += _ck("ldrb w9, [x10, x11]", A.encode_ldrb_reg(9, 10, 11))
 
-    -- frame: the signed imm7 counts 8-byte units, so -16 must land on 0x7E
+    # frame: the signed imm7 counts 8-byte units, so -16 must land on 0x7E
     bad += _ck("stp x19, x20, [sp, #-16]!", A.encode_stp_pre(19, 20, 31, -16))
     bad += _ck("ldp x21, x22, [sp], #16", A.encode_ldp_post(21, 22, 31, 16))
 
-    -- compare and select, each condition code separately
+    # compare and select, each condition code separately
     bad += _ck("cmp x3, x4", A.encode_cmp_reg(3, 4))
     bad += _ck("cmp x11, #42", A.encode_cmp_imm(11, 42))
     bad += _ck("cset x0, eq", A.encode_cset(0, 0))
@@ -139,7 +139,7 @@ run = (): i64
     bad += _ck("cset x3, gt", A.encode_cset(3, 12))
     bad += _ck("csel x5, x6, x7, ne", A.encode_csel(5, 6, 7, 1))
 
-    -- branches; offsets are in instructions
+    # branches; offsets are in instructions
     bad += _ck("b #16", A.encode_b(4))
     bad += _ck("bl #32", A.encode_bl(8))
     bad += _ck("blr x8", A.encode_blr(8))
@@ -147,7 +147,7 @@ run = (): i64
     bad += _ck("cbz x9, #12", A.encode_cbz(9, 3))
     bad += _ck("cbnz x10, #20", A.encode_cbnz(10, 5))
 
-    -- remaining data processing
+    # remaining data processing
     bad += _ck("sdiv x1, x2, x3", A.encode_sdiv(1, 2, 3))
     bad += _ck("udiv x4, x5, x6", A.encode_udiv(4, 5, 6))
     bad += _ck("msub x7, x8, x9, x10", A.encode_msub(7, 8, 9, 10))
@@ -165,9 +165,9 @@ run = (): i64
     bad
 end
 
--- How many forms the last `run` actually compared. A gate reporting "0
--- failures" over 0 cases is the failure this project has been bitten by, so a
--- caller must assert this is the number it expects, not merely non-zero.
-checked = (): i64
+# How many forms the last `run` actually compared. A gate reporting "0
+# failures" over 0 cases is the failure this project has been bitten by, so a
+# caller must assert this is the number it expects, not merely non-zero.
+checked: i64 = ()
     _count
 end

@@ -135,7 +135,7 @@ benchmark(func: any, iterations: i64): any
     iterations = 1000
   end
   i = 0
-  while i < math.min(iterations, 100)
+  while i < iterations:min(100)
     func()
     i = i + 1
   end
@@ -148,7 +148,7 @@ benchmark(func: any, iterations: i64): any
     times[#times + 1] = elapsed
     i = i + 1
   end
-  table.sort(times)
+  times:sort()
   total = 0
   for t in times
     total = total + t
@@ -157,11 +157,11 @@ benchmark(func: any, iterations: i64): any
     iterations = iterations,
     total = total,
     avg = total / iterations,
-    median = times[math.floor(iterations / 2) + 1],
+    median = times[iterations / 2:floor() + 1],
     min = times[1],
     max = times[iterations],
-    p95 = times[math.floor(iterations * 0.95) + 1],
-    p99 = times[math.floor(iterations * 0.99) + 1],
+    p95 = times[iterations * 0.95:floor() + 1],
+    p99 = times[iterations * 0.99:floor() + 1],
     ops_per_sec = iterations / total
   }
 end

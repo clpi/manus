@@ -46,8 +46,8 @@ set_flip(sprite: any, flip_x: bool, flip_y: bool): void
   sprite.flip_y = flip_y
 end
 sheet_new(texture: any, frame_width: i64, frame_height: i64): any
-  cols = math.floor(texture.width / frame_width)
-  rows = math.floor(texture.height / frame_height)
+  cols = texture.width / frame_width:floor()
+  rows = texture.height / frame_height:floor()
   frames = {}
   y = 0
   while y < rows
@@ -135,7 +135,7 @@ renderer_remove(renderer: any, sprite: any): void
   i = 1
   while i <= #renderer.sprites
     if renderer.sprites[i] == sprite
-      table.remove(renderer.sprites, i)
+      renderer.sprites:remove(i)
       return
     end
     i = i + 1

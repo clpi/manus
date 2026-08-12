@@ -1,0 +1,21 @@
+# Bit-boundary descriptor — curried to(bit)(src) view edges; nominal over i64.
+
+boundary = { world = "", possessed = false, callable = false, operation = false, class = "view", repr = "i64" }
+
+main: i64 = ()
+    code: i64 = 0
+    if !census.descriptors:match("|bit|")
+        code = 1
+    if code == 0 and boundary["class"] != "view"
+        code = 2
+    if code == 0 and !census.view(edges):match("|bit/f64|")
+        code = 3
+    if code == 0 and !census.view(edges):match("|i64/bit|")
+        code = 4
+    if code == 0 and !ingest.view(edges):match("|f64/bit|")
+        code = 5
+    if code == 0 and census.view(edges) != ingest.view(edges)
+        code = 6
+    if code == 0
+        print("semantic bit: pass")
+    code

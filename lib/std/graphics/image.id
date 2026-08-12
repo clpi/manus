@@ -1,13 +1,12 @@
--- std.graphics.image — Image loading, saving, and manipulation
--- For loading PNG/JPEG/etc. in ward's rendering pipeline.
--- Delegates I/O to std.image.png and std.io.
+# std.graphics.image — Image loading, saving, and manipulation
+# For loading PNG/JPEG/etc. in ward's rendering pipeline.
+# Delegates I/O to std.image.png and std.io.
 
-io = req "std.io"
-png_mod = req "std.image.png"
+png_mod = png
 
--- ═══════════════════════════════════════════════════════════════
--- Image I/O
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Image I/O
+# ═══════════════════════════════════════════════════════════════
 
 load(path: str): any
     f = io.open(path, "rb")
@@ -88,9 +87,9 @@ set_pixel(image: any, x: i64, y: i64, pixel: any): void
     end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Image Conversion
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Image Conversion
+# ═══════════════════════════════════════════════════════════════
 
 to_rgba(image: any): any
     if image.channels == 4 return image end
@@ -109,7 +108,7 @@ to_rgba(image: any): any
                 i += 1
             end
 
-            -- Add alpha if RGB
+            # Add alpha if RGB
             if image.channels == 3
                 result.data[dst_idx + 3] = 255
             end
@@ -133,7 +132,7 @@ to_grayscale(image: any): any
             else
                 gray = image.data[idx]
             end
-            result.data[(y * image.width + x) + 1] = math.floor(gray)
+            result.data[(y * image.width + x) + 1] = gray:floor()
             x += 1
         end
         y += 1
@@ -141,9 +140,9 @@ to_grayscale(image: any): any
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Image Resize
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Image Resize
+# ═══════════════════════════════════════════════════════════════
 
 resize_nearest(image: any, new_width: i64, new_height: i64): any
     result = new(new_width, new_height, image.channels)
@@ -154,8 +153,8 @@ resize_nearest(image: any, new_width: i64, new_height: i64): any
     while y < new_height
         x = 0
         while x < new_width
-            src_x = math.floor(x * x_ratio)
-            src_y = math.floor(y * y_ratio)
+            src_x = x * x_ratio:floor()
+            src_y = y * y_ratio:floor()
             pixel = get_pixel(image, src_x, src_y)
             if pixel
                 set_pixel(result, x, y, pixel)
@@ -178,10 +177,10 @@ resize_bilinear(image: any, new_width: i64, new_height: i64): any
         while x < new_width
             src_x = x * x_ratio
             src_y = y * y_ratio
-            x0 = math.floor(src_x)
-            y0 = math.floor(src_y)
-            x1 = math.min(x0 + 1, image.width - 1)
-            y1 = math.min(y0 + 1, image.height - 1)
+            x0 = src_x:floor()
+            y0 = src_y:floor()
+            x1 = x0 + 1:min(image.width - 1)
+            y1 = y0 + 1:min(image.height - 1)
 
             fx = src_x - x0
             fy = src_y - y0
@@ -212,9 +211,9 @@ resize_bilinear(image: any, new_width: i64, new_height: i64): any
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Image Filters
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Image Filters
+# ═══════════════════════════════════════════════════════════════
 
 blur(image: any, radius: i64): any
     result = new(image.width, image.height, image.channels)
@@ -252,7 +251,7 @@ blur(image: any, radius: i64): any
             pixel = {}
             c = 1
             while c <= image.channels
-                pixel[c] = math.floor(sum[c] / kernel_area)
+                pixel[c] = sum[c] / kernel_area:floor()
                 c += 1
             end
             set_pixel(result, x, y, pixel)
@@ -264,7 +263,7 @@ blur(image: any, radius: i64): any
 end
 
 sharpen(image: any, strength: f64): any
-    -- Sharpen kernel: [0, -1, 0; -1, 5, -1; 0, -1, 0]
+    # Sharpen kernel: [0, -1, 0; -1, 5, -1; 0, -1, 0]
     result = new(image.width, image.height, image.channels)
     kernel = {
         {0, -1 * strength, 0},
@@ -303,7 +302,7 @@ sharpen(image: any, strength: f64): any
             pixel = {}
             c = 1
             while c <= image.channels
-                pixel[c] = math.max(0, math.min(255, math.floor(sum[c])))
+                pixel[c] = 0:max(255:min(sum[c]:floor()))
                 c += 1
             end
             set_pixel(result, x, y, pixel)
@@ -318,7 +317,7 @@ adjust_brightness(image: any, factor: f64): any
     result = new(image.width, image.height, image.channels)
     i = 1
     while i <= #result.data
-        result.data[i] = math.max(0, math.min(255, math.floor(image.data[i] * factor)))
+        result.data[i] = 0:max(255:min(image.data[i] * factor:floor()))
         i += 1
     end
     result
@@ -329,13 +328,13 @@ adjust_contrast(image: any, factor: f64): any
     i = 1
     while i <= #result.data
         value = image.data[i]
-        result.data[i] = math.max(0, math.min(255, math.floor((value - 128) * factor + 128)))
+        result.data[i] = 0:max(255:min((value - 128) * factor + 128:floor()))
         i += 1
     end
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 

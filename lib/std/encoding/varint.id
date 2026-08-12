@@ -1,19 +1,19 @@
--- std.encoding.varint — Variable-length integer encodings
--- Provides three common varint formats:
---   1. Base-128 varint (protobuf-style, unsigned)
---   2. ZigZag encoding (maps signed to unsigned for better compression)
---   3. LEB128 (DWARF/ELF style, signed and unsigned)
--- ═══════════════════════════════════════════════════════════════
--- Base-128 Varint (protobuf-style, unsigned)
--- Each byte: 7 bits of data + 1 continuation bit (high bit)
--- ═══════════════════════════════════════════════════════════════
+# std.encoding.varint — Variable-length integer encodings
+# Provides three common varint formats:
+#   1. Base-128 varint (protobuf-style, unsigned)
+#   2. ZigZag encoding (maps signed to unsigned for better compression)
+#   3. LEB128 (DWARF/ELF style, signed and unsigned)
+# ═══════════════════════════════════════════════════════════════
+# Base-128 Varint (protobuf-style, unsigned)
+# Each byte: 7 bits of data + 1 continuation bit (high bit)
+# ═══════════════════════════════════════════════════════════════
 
 write(buf: any, value: i64): void
     while value >= 0x80
-        buf[#buf + 1] = string.char((value & 0x7F) | 0x80)
+        buf[#buf + 1] = (value & 0x7F) | 0x80:char()
         value = value >> 7
     end
-    buf[#buf + 1] = string.char(value)
+    buf[#buf + 1] = value:char()
 end
 
 read(data: str, pos: any): i64
@@ -37,7 +37,7 @@ read(data: str, pos: any): i64
     result
 end
 
-size(value: i64): i64
+value: i64:len(): i64
     if value < 0x80 return 1 end
     if value < 0x4000 return 2 end
     if value < 0x200000 return 3 end
@@ -50,11 +50,11 @@ size(value: i64): i64
     10
 end
 
--- ═══════════════════════════════════════════════════════════════
--- ZigZag encoding (protobuf-style, maps signed → unsigned)
--- ZigZag(n) = (n << 1) ^ (n >> 63)
---   0 → 0, -1 → 1, 1 → 2, -2 → 3, ...
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# ZigZag encoding (protobuf-style, maps signed → unsigned)
+# ZigZag(n) = (n << 1) ^ (n >> 63)
+#   0 → 0, -1 → 1, 1 → 2, -2 → 3, ...
+# ═══════════════════════════════════════════════════════════════
 
 zigzag_encode(value: i64): i64
     (value << 1) ~ (value >> 63)
@@ -72,11 +72,11 @@ read_zigzag(data: str, pos: any): i64
     zigzag_decode(read(data, pos))
 end
 
--- ═══════════════════════════════════════════════════════════════
--- LEB128 (Little-Endian Base-128, DWARF/ELF style)
--- Each byte: 7 bits of data + 1 continuation bit (high bit)
--- Little-endian ordering (lsb first)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# LEB128 (Little-Endian Base-128, DWARF/ELF style)
+# Each byte: 7 bits of data + 1 continuation bit (high bit)
+# Little-endian ordering (lsb first)
+# ═══════════════════════════════════════════════════════════════
 
 write_leb128(buf: any, value: i64): void
     repeat
@@ -85,7 +85,7 @@ write_leb128(buf: any, value: i64): void
         if value != 0
             byte = byte | 0x80
         end
-        buf[#buf + 1] = string.char(byte)
+        buf[#buf + 1] = byte:char()
     until value == 0
 end
 
@@ -120,7 +120,7 @@ write_signed_leb128(buf: any, value: i64): void
         else
             byte = byte | 0x80
         end
-        buf[#buf + 1] = string.char(byte)
+        buf[#buf + 1] = byte:char()
     end
 end
 
@@ -148,6 +148,6 @@ read_signed_leb128(data: str, pos: any): i64
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════

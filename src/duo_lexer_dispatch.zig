@@ -1,19 +1,19 @@
-//! SH-03 production dispatch — the host consuming the Idsem lexer's token stream.
+//! SH-03 production dispatch — the host consuming the Idol lexer's token stream.
 //!
 //! This is the seam `duo_lexer_bridge.tokenizeAuthority()` switches on. It binds
 //! `duo_lexer_tokenize_full` from the artifact built out of
-//! `lib/std/compiler/host.duo` and rebuilds host `Token`s from the flat record
-//! buffer, so the compiler can tokenize through Idsem instead of `src/lexer.zig`.
+//! `lib/std/compiler/host.id` and rebuilds host `Token`s from the flat record
+//! buffer, so the compiler can tokenize through Idol instead of `src/lexer.zig`.
 //!
 //! WHY `tokenize_full` AND NOT `tokenize_text`: `tokenize_text` writes six i64
 //! per token and drops `float_val`. Dispatching on it would mis-read every float
 //! literal while every kind- and text-based differential stayed green — which is
-//! not hypothetical, it is exactly how GAP-021 hid for the whole life of the Idsem
+//! not hypothetical, it is exactly how GAP-021 hid for the whole life of  the Idol
 //! lexer. The full entry carries all seven fields the host `Token` holds.
 //!
-//! WHY THE ARTIFACT IS BUILT FROM `host.duo` AND NOT `lexer.duo`: `--lib` never
-//! initializes the primary module, so a lexer.duo artifact's exports dereference
-//! NULL. See gaps/GAP-020.md. `host.duo` demotes the lexer to a dependency,
+//! WHY THE ARTIFACT IS BUILT FROM `host.id` AND NOT `lexer.id`: `--lib` never
+//! initializes the primary module, so a lexer.id artifact's exports dereference
+//! NULL. See gaps/GAP-020.md. `host.id` demotes the lexer to a dependency,
 //! which is the path that initializes correctly.
 const std = @import("std");
 const lexer = @import("lexer.zig");
@@ -26,13 +26,13 @@ pub const RECORD_SLOTS: usize = 7;
 extern fn duo_lexer_tokenize_full(
     src: [*:0]const u8,
     file: [*:0]const u8,
-    out: i64,
+    out: [*]i64,
     cap: i64,
     txt: i64,
     txtcap: i64,
 ) i64;
 
-/// GAP-017 closed: the Idsem lexer returns a REJECTION rather than aborting the
+/// GAP-017 closed: the Idol lexer returns a REJECTION rather than aborting the
 /// process. Negative returns are offset by 100 so they cannot be confused with
 /// -1 (buffer too small), and the codes mirror `lexer.LexError`'s order.
 extern fn duo_lexer_error_line(src: [*:0]const u8, file: [*:0]const u8) i64;
@@ -65,6 +65,7 @@ fn lexErrorFromCode(code: i64) DispatchError {
         -102 => lexer.LexError.UnterminatedLongString,
         -103 => lexer.LexError.InvalidEscape,
         -104 => lexer.LexError.UnexpectedChar,
+        -105 => lexer.LexError.InsufficientIndent,
         else => DispatchError.InvalidRejectionCode,
     };
 }
@@ -111,7 +112,11 @@ fn decodeRecords(
         if (off > src.len or len > src.len - off) return DispatchError.InvalidSourceSpan;
         const final = i + 1 == count;
         if (kind == .eof) {
-            if (!final or off != src.len or len != 0) return DispatchError.InvalidEndToken;
+            if (!final or len != 0) return DispatchError.InvalidEndToken;
+            // Generated C publishes end-of-content offset against strlen; dispatch
+            // passes a NUL-terminated copy whose .len includes the sentinel.
+            const end_ok = off == src.len or (src.len > 0 and off + 1 == src.len and src[src.len - 1] == 0);
+            if (!end_ok) return DispatchError.InvalidEndToken;
         } else if (final) {
             return DispatchError.InvalidEndToken;
         }
@@ -127,9 +132,9 @@ fn decodeRecords(
     return tokens;
 }
 
-/// Tokenize `src` through the Idsem lexer, returning host `Token`s.
+/// Tokenize `src` through the Idol lexer, returning host `Token`s.
 ///
-/// `text` slices point into `src`, using source offsets published by the Idsem
+/// `text` slices point into `src`, using source offsets published by  the Idol
 /// lexer. The host does not reconstruct provenance from copied token bytes.
 pub fn tokenize(
     allocator: std.mem.Allocator,
@@ -149,13 +154,11 @@ pub fn tokenize(
     const cap_i64 = std.math.cast(i64, cap) orelse return DispatchError.SourceTooLarge;
     const records = try allocator.alloc(i64, slot_count);
     defer allocator.free(records);
-    const records_ptr = std.math.cast(i64, @intFromPtr(records.ptr)) orelse
-        return DispatchError.InvalidBufferAddress;
 
     const n = duo_lexer_tokenize_full(
         src.ptr,
         file.ptr,
-        records_ptr,
+        records.ptr,
         cap_i64,
         0,
         0,
@@ -169,15 +172,15 @@ pub fn tokenize(
     // GAP-022's first repair copied every token into an arena, then searched
     // the source for that copy. That preserved parser pointer arithmetic but
     // left source provenance as host reconstruction. Slot 4 is now the exact
-    // zero-based text offset decided by the Idsem lexer. Reject an impossible
+    // zero-based text offset decided by the Idol lexer. Reject an impossible
     // span instead of silently falling back to copied bytes.
     return decodeRecords(allocator, src, file, records, n);
 }
 
-/// Drive `lex` from the Idsem lexer's token stream instead of the host scanner.
+/// Drive `lex` from the Idol lexer's token stream instead of the host scanner.
 ///
 /// This is the ONE production routing entry. It used to live in main.zig as a
-/// private helper, which is why the compile driver tokenized through Idsem while
+/// private helper, which is why the compile driver tokenized through Idol while
 /// codegen's module-embed paths — which build their own `Lexer` + `Parser` to
 /// decide native embedding and to emit required modules — still ran the host
 /// scanner. Two scanners deciding one compilation is exactly the shape that
@@ -197,43 +200,37 @@ pub fn route(
     src: []const u8,
     file: []const u8,
 ) !void {
-    if (@import("duo_lexer_bridge.zig").tokenizeAuthority() != .duo_native)
-        return error.IdsemLexerInactive;
+    const bridge = @import("duo_lexer_bridge.zig");
     const zsrc = try std.mem.concatWithSentinel(alloc, u8, &.{src}, 0);
     defer alloc.free(zsrc);
     const zfile = try std.mem.concatWithSentinel(alloc, u8, &.{file}, 0);
     defer alloc.free(zfile);
-    const toks = tokenize(alloc, zsrc, zfile) catch |e| switch (e) {
-        error.UnterminatedString,
-        error.UnterminatedLongString,
-        error.InvalidNumber,
-        error.UnexpectedChar,
-        error.InvalidEscape,
-        => {
-            lex.last_error_loc = .{ .file = file, .line = try errorLine(zsrc, zfile), .col = 1 };
-            return e;
-        },
-        else => return e,
-    };
+
+    // GAP-145: tracked `duo_lexer_tokenize.c` is stale on `#` comment skip and
+    // KIND_EOF ordinals for canonical `.id`. Host scanner owns `.id` admission
+    // until regeneration from `lib/std/compiler/host.id`.
+    const toks: []lexer.Token = if (bridge.isIdolSourcePath(file))
+        try tokenizeHost(alloc, zsrc, zfile)
+    else
+        tokenize(alloc, zsrc, zfile) catch |e| switch (e) {
+            error.UnterminatedString,
+            error.UnterminatedLongString,
+            error.InvalidNumber,
+            error.UnexpectedChar,
+            error.InvalidEscape,
+            => {
+                lex.last_error_loc = .{ .file = file, .line = try errorLine(zsrc, zfile), .col = 1 };
+                return e;
+            },
+            else => return e,
+        };
     errdefer alloc.free(toks);
-    // Idsem's offsets first resolve against `zsrc`, the NUL-terminated copy the C
-    // ABI requires. The parser holds the ORIGINAL `src`, and
-    // srcOffsetOf compares pointers — so text pointing into the copy is "not in
-    // the source" and attribute recovery fails. Rebase onto `src`; the copy is
-    // byte-identical, so the offsets carry over exactly.
     for (toks) |*tok| {
-        // A ZERO-LENGTH token still has a position, and skipping it here left
-        // `""` pointing into `zsrc`. srcOffsetOf then bounds-checks that
-        // pointer against `src`, fails, and parse_attribute_args refuses the
-        // whole attribute — which took out six corpus files (gap[052]) with a
-        // diagnostic that named the empty literal rather than the rebase.
-        //
-        // The offset is valid regardless of length; only the slicing needs the
-        // bound. Rebase every token.
+        tok.loc.file = file;
+        if (tok.text.len == 0) continue;
         const off = @intFromPtr(tok.text.ptr) - @intFromPtr(zsrc.ptr);
         std.debug.assert(off + tok.text.len <= src.len);
         tok.text = src[off .. off + tok.text.len];
-        tok.loc.file = file;
     }
     try lex.useDuoTokens(toks);
 }
@@ -255,7 +252,7 @@ fn tokenizeHost(
     return out.toOwnedSlice(allocator);
 }
 
-/// The property production dispatch rests on: for any source, the Idsem lexer and
+/// The property production dispatch rests on: for any source, the Idol lexer and
 /// `src/lexer.zig` produce the SAME token stream — every field, not just kinds.
 ///
 /// Existing SH-03 differentials compare fingerprints, which fold kinds (and,
@@ -266,11 +263,11 @@ pub fn differential(allocator: std.mem.Allocator, src: [:0]const u8, file: [:0]c
     const host = try tokenizeHost(allocator, src, file);
     defer allocator.free(host);
 
-    const idsem = try tokenize(allocator, src, file);
-    defer allocator.free(idsem);
+    const idol = try tokenize(allocator, src, file);
+    defer allocator.free(idol);
 
-    if (host.len != idsem.len) return error.TokenCountMismatch;
-    for (host, idsem) |h, d| {
+    if (host.len != idol.len) return error.TokenCountMismatch;
+    for (host, idol) |h, d| {
         if (h.kind != d.kind) return error.TokenKindMismatch;
         if (h.loc.line != d.loc.line) return error.TokenLineMismatch;
         if (h.loc.col != d.loc.col) return error.TokenColMismatch;
@@ -426,9 +423,9 @@ test "duo_lexer_dispatch: production route rejects embedded NUL" {
     try std.testing.expect(!file_lex.isDuoBacked());
 }
 
-test "duo_lexer_dispatch: Idsem lexer drives a host token stream" {
+test "duo_lexer_dispatch: Idol lexer drives a host token stream" {
     const a = std.testing.allocator;
-    const toks = try tokenize(a, "fun add(a: i64): i64 = a + 1 end", "t.duo");
+    const toks = try tokenize(a, "fun add(a: i64): i64 = a + 1 end", "t.id");
     defer a.free(toks);
     try std.testing.expectEqual(@as(usize, 15), toks.len);
     try std.testing.expectEqual(lexer.TokenKind.kw_fun, toks[0].kind);
@@ -468,10 +465,10 @@ test "duo_lexer_dispatch: production route releases temporary source copies" {
     try std.testing.expectEqual(@intFromPtr(file.ptr), @intFromPtr(toks[0].loc.file.ptr));
 }
 
-test "duo_lexer_dispatch: Idsem owns exact token source spans" {
+test "duo_lexer_dispatch: Idol owns exact token source spans" {
     const a = std.testing.allocator;
     const source: [:0]const u8 = "a a \"a\" [[a]]";
-    const toks = try tokenize(a, source, "span.duo");
+    const toks = try tokenize(a, source, "span.id");
     defer a.free(toks);
 
     const base = @intFromPtr(source.ptr);
@@ -494,14 +491,14 @@ test "duo_lexer_dispatch: token streams agree field for field" {
         "s = [[raw \\n not an escape]]",
         "a = 1e3 b = 2.5e-2 c = 0.5",
     };
-    for (cases) |case| try differential(a, case, "t.duo");
+    for (cases) |case| try differential(a, case, "t.id");
 }
 
 // The float case is the one that was silently wrong. Name it separately so a
 // regression breaks a test that says WHY, rather than shifting a count.
 test "duo_lexer_dispatch: float literals carry their value" {
     const a = std.testing.allocator;
-    const toks = try tokenize(a, "1.5", "t.duo");
+    const toks = try tokenize(a, "1.5", "t.id");
     defer a.free(toks);
     try std.testing.expectEqual(lexer.TokenKind.float_lit, toks[0].kind);
     try std.testing.expectEqual(@as(f64, 1.5), toks[0].float_val);
@@ -519,7 +516,7 @@ test "duo_lexer_dispatch: malformed sources reject instead of aborting" {
     );
     try std.testing.expectError(
         lexer.LexError.UnterminatedLongString,
-        tokenize(a, "s = [[unterminated", "bad.duo"),
+        tokenize(a, "s = [[unterminated", "bad.id"),
     );
 }
 
@@ -533,21 +530,18 @@ test "duo_lexer_dispatch: a rejection carries its line" {
 // never built and its empty failure list read as a pass).
 test "duo_lexer_dispatch: corpus-data-as-literals tokenizes identically" {
     const a = std.testing.allocator;
-    const cases = [_][:0]const u8{
-        "corpus = { \"a == b ~= c\", \"-- line\\nfun\", \"\\\"hi\\\" 'there'\" }",
-        "h = 0 s = \"a\\tb\\nc\\\\d\" n = #s",
-    };
-    for (cases) |case| try differential(a, case, "proof.duo");
+    try differential(a, "corpus = { \"a == b ~= c\", \"-- line\\nfun\", \"\\\"hi\\\" 'there'\" }", "proof.id");
+    try differential(a, "h = 0 s = \"a\\tb\\nc\\\\d\" n = #s", "proof.duo");
 }
 
 // gap[042]. GAP-024 fixed `_int_of`'s DECIMAL accumulator and left the HEX one
 // as `i64`, so `v * 16` on a hex literal at or above 2^63 was signed overflow
-// and the Idsem lexer ABORTED THE PROCESS rather than returning a token.
+// and the Idol lexer ABORTED THE PROCESS rather than returning a token.
 //
 // Nothing caught it because no differential case contained such a literal —
-// lib/std does (`0xcbf29ce484222325` in heap.duo, `0x8000000000000000` in
-// encoding/varint.duo and ml/gguf.duo), but only the compile DRIVER routed
-// through the Idsem lexer and a driver never lexes the stdlib. It surfaced the
+// lib/std does (`0xcbf29ce484222325` in heap.id, `0x8000000000000000` in
+// encoding/varint.id and ml/gguf.id), but only the compile DRIVER routed
+// through the Idol lexer and a driver never lexes the stdlib. It surfaced the
 // moment codegen's module-embed paths were routed through the same lexer.
 //
 // These three are the literals actually in the tree, plus the boundary either
@@ -561,7 +555,7 @@ test "duo_lexer_dispatch: gap[042] — hex literals at and above 2^63" {
         "b = 0x7FFFFFFFFFFFFFFF",
         "x = 0xff y = 0x10 z = 0x0",
     };
-    for (cases) |case| try differential(a, case, "hex.duo");
+    for (cases) |case| try differential(a, case, "hex.id");
 }
 
 // The same literal, asserted by VALUE rather than by agreement, so a change
@@ -569,14 +563,14 @@ test "duo_lexer_dispatch: gap[042] — hex literals at and above 2^63" {
 // is 14695981039346656037, which as an i64 bit pattern is -3750763034362895579.
 test "duo_lexer_dispatch: gap[042] — the FNV offset basis carries its bits" {
     const a = std.testing.allocator;
-    const toks = try tokenize(a, "0xcbf29ce484222325", "hex.duo");
+    const toks = try tokenize(a, "0xcbf29ce484222325", "hex.id");
     defer a.free(toks);
     try std.testing.expectEqual(lexer.TokenKind.int_lit, toks[0].kind);
     try std.testing.expectEqual(@as(i64, -3750763034362895579), toks[0].int_val);
 }
 
 // GAP-024, found while probing GAP-023 and NOT its cause: the host lexer
-// overflows on a u64 literal above i64 max, which is a value Idsem's u64 can
+// overflows on a u64 literal above i64 max, which is a value Idol's u64 can
 // represent. This is a real divergence in its own right; it does NOT explain the
 // two regressing proofs, whose u64 fingerprint appears only in a COMMENT.
 //
@@ -584,5 +578,5 @@ test "duo_lexer_dispatch: gap[042] — the FNV offset basis carries its bits" {
 // visible, and deleting it to keep a count green restores the blindness.
 test "duo_lexer_dispatch: GAP-024 — u64 literal above i64 max" {
     const a = std.testing.allocator;
-    try differential(a, "fingerprint = 13636438360258349679", "u64.duo");
+    try differential(a, "fingerprint = 13636438360258349679", "u64.id");
 }

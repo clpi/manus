@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "project": "Idol",
+  "language": "idol",
+  "development_repository": "clpi/duo",
+  "release_repository": "idollang/idol",
+  "canonical_source": ".id",
+  "authority": [
+    "AGENTS.md",
+    "docs/spec/constitution.md",
+    "CLAUDE.md",
+    "docs/spec/source.md",
+    "docs/spec/host.md",
+    "docs/spec/AUTHORITY.md",
+    "docs/bootstrap.md",
+    ".agents/AGENT_CANONICAL.md",
+    ".agents/AGENT_COORDINATION.md",
+    ".agents/RELEASE_READINESS.md"
+  ],
+  "skill": "idol-dev",
+  "skill_path": ".pi/skills/idol-dev",
+  "deprecated_skill": "duon-development",
+  "servers": [
+    {
+      "name": "duo-bench",
+      "entry": "tools/mcp/bench.id",
+      "provenance": "bootstrap-compatibility",
+      "backend": "c",
+      "required": true,
+      "startup_timeout_sec": 60,
+      "tool_timeout_sec": 1800,
+      "purpose": "claims, gaps, serialized gates, and performance evidence"
+    },
+    {
+      "name": "duo-lsp",
+      "entry": "tools/mcp/duo_lsp.id",
+      "provenance": "bootstrap-compatibility",
+      "backend": "c",
+      "required": true,
+      "startup_timeout_sec": 60,
+      "tool_timeout_sec": 1800,
+      "purpose": "diagnostics and language intelligence"
+    },
+    {
+      "name": "zls",
+      "entry": "tools/mcp/zls.id",
+      "provenance": "bootstrap-compatibility",
+      "backend": "c",
+      "required": true,
+      "startup_timeout_sec": 60,
+      "tool_timeout_sec": 1800,
+      "purpose": "Zig bootstrap navigation through zls"
+    }
+  ]
+}

@@ -1,5 +1,5 @@
--- std.math.cmplx — complex number support (mirrors Go's math/cmplx)
--- Complex numbers as tables {re, im}.
+# std.math.cmplx — complex number support (mirrors Go's math/cmplx)
+# Complex numbers as tables {re, im}.
 
 new(re: any, im: any): any
     {re = re, im = im}
@@ -31,7 +31,7 @@ conj(a: any): any
 end
 
 abs(a: any): any
-    math.sqrt(a.re * a.re + a.im * a.im)
+    a.re * a.re + a.im * a.im:sqrt()
 end
 
 phase(a: any): any
@@ -39,7 +39,7 @@ phase(a: any): any
 end
 
 polar(r: any, theta: any): any
-    {re = r * math.cos(theta), im = r * math.sin(theta)}
+    {re = r * theta:cos(), im = r * theta:sin()}
 end
 
 rect(r: any, theta: any): any
@@ -47,22 +47,22 @@ rect(r: any, theta: any): any
 end
 
 exp(a: any): any
-    er = math.exp(a.re)
-    return {re = er * math.cos(a.im), im = er * math.sin(a.im)}
+    er = a.re:exp()
+    return {re = er * a.im:cos(), im = er * a.im:sin()}
 end
 
 log(a: any): any
     r = abs(a)
     theta = phase(a)
-    return {re = math.log(r), im = theta}
+    return {re = r:log(), im = theta}
 end
 
 sin(a: any): any
-    {re = math.sin(a.re) * math.cosh(a.im), im = math.cos(a.re) * math.sinh(a.im)}
+    {re = a.re:sin() * math.cosh(a.im), im = a.re:cos() * math.sinh(a.im)}
 end
 
 cos(a: any): any
-    {re = math.cos(a.re) * math.cosh(a.im), im = -math.sin(a.re) * math.sinh(a.im)}
+    {re = a.re:cos() * math.cosh(a.im), im = -a.re:sin() * math.sinh(a.im)}
 end
 
 tan(a: any): any
@@ -73,14 +73,14 @@ end
 
 sqrt(a: any): any
     if a.im == 0 and a.re >= 0
-        return {re = math.sqrt(a.re), im = 0}
+        return {re = a.re:sqrt(), im = 0}
     end
     r = abs(a)
-    return {re = math.sqrt((r + a.re) / 2), im = math.sign(a.im) * math.sqrt((r - a.re) / 2)}
+    return {re = (r + a.re) / 2:sqrt(), im = math.sign(a.im) * (r - a.re) / 2:sqrt()}
 end
 
 pow(a: any, b: any): any
-    if b.im == 0 and b.re == math.floor(b.re)
+    if b.im == 0 and b.re == b.re:floor()
         n = b.re
         result = {re = 1, im = 0}
         base = {re = a.re, im = a.im}

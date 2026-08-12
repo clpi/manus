@@ -1,6 +1,5 @@
--- std.base64 — Base64 encoding and decoding utilities
+# std.base64 — Base64 encoding and decoding utilities
 
-global crypto = req "std.crypto"
 
 encode(s: str): str
     crypto.base64_encode(s)

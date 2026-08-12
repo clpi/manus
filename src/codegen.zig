@@ -1211,6 +1211,50 @@ pub const CodeGen = struct {
         return false;
     }
 
+    /// World symbols used in `dot(io)(code)` / `dot(std)(io, code)` specialization
+    /// slots are not runtime-global table access for native precheck purposes.
+    fn is_world_symbol(name: []const u8) bool {
+        return std.mem.eql(u8, name, "io") or
+            std.mem.eql(u8, name, "os") or
+            std.mem.eql(u8, name, "std");
+    }
+
+    fn world_method_result_type(_: *CodeGen, method: []const u8, obj: *const ast.Expr, args: []const *ast.Expr) ?RT {
+        if (obj.* != .name or !is_world_symbol(obj.name.ident)) return null;
+        if (std.mem.eql(u8, obj.name.ident, "io")) {
+            if (std.mem.eql(u8, method, "write") and args.len == 1) return .void;
+        }
+        return null;
+    }
+
+    /// Readable protocol: subject:read() on stdin or a path/str subject — never io:read().
+    fn try_emit_readable_protocol(
+        self: *CodeGen,
+        call: anytype,
+    ) E!bool {
+        if (!std.mem.eql(u8, call.method, "read") or call.args.len != 0) return false;
+        if (call.obj.* == .name and std.mem.eql(u8, call.obj.name.ident, "stdin")) {
+            self.p("idol_io_read_stdin()", .{});
+            return true;
+        }
+        const obj_ty = self.expr_type(call.obj);
+        if (obj_ty == .str or call.obj.* == .string_lit or call.obj.* == .name) {
+            self.p("idol_io_read_path(", .{});
+            try self.emit_expr(call.obj);
+            self.p(")", .{});
+            return true;
+        }
+        return false;
+    }
+
+    fn readable_method_result_type(self: *CodeGen, method: []const u8, obj: *const ast.Expr, args: []const *ast.Expr) ?RT {
+        if (!std.mem.eql(u8, method, "read") or args.len != 0) return null;
+        if (obj.* == .name and std.mem.eql(u8, obj.name.ident, "stdin")) return .str;
+        const obj_ty = self.expr_type(obj);
+        if (obj_ty == .str or obj.* == .string_lit or obj.* == .name) return .str;
+        return null;
+    }
+
     fn comptime_binding_is_scalar_const(self: *CodeGen, name: []const u8) bool {
         const val = self.comptime_bindings().get(name) orelse return false;
         return switch (val) {
@@ -1963,6 +2007,8 @@ pub const CodeGen = struct {
         if (e.* == .method_call) {
             const mc = e.method_call;
             if (self.string_method_result_type(mc.method, mc.obj, mc.args)) |t| return t;
+            if (self.readable_method_result_type(mc.method, mc.obj, mc.args)) |t| return t;
+            if (self.world_method_result_type(mc.method, mc.obj, mc.args)) |t| return t;
             // gap[025] / FACE-CALL: a receiver face over a FREE function has the
             // callee's declared return type. Without this the method call types
             // as `.any`, the caller wraps it in `lua_to_num(...)`, and the
@@ -2558,6 +2604,7 @@ pub const CodeGen = struct {
         if (std.mem.eql(u8, fname, "starts_with") or
             std.mem.eql(u8, fname, "ends_with"))
             return .bool;
+        if (std.mem.eql(u8, fname, "match") and args.len == 1) return .str;
         if (std.mem.eql(u8, fname, "byte")) {
             if (args.len >= 2 and args[0].* == .string_lit and args[1].* == .int_lit) return .i64;
             // A `str` receiver with an integer index lowers to a raw
@@ -2580,15 +2627,15 @@ pub const CodeGen = struct {
     }
 
     fn string_method_result_type(self: *CodeGen, method: []const u8, obj: *const ast.Expr, args: []const *ast.Expr) ?RT {
-        if (self.expr_type(obj) != .str and obj.* != .string_lit) return null;
-        if (std.mem.eql(u8, method, "byte")) {
-            if (obj.* == .string_lit and args.len >= 1 and args[0].* == .int_lit) return .i64;
-            // gap[025]: `s:byte(i)` on a str receiver is an i64 byte read, same
-            // as string.byte(s, i). Without this it typed as .any and the
-            // native lowering above could not be selected.
-            if (args.len == 1 and self.expr_type(obj) == .str) return .i64;
-            return null;
-        }
+        const obj_ty = self.expr_type(obj);
+        const strish = obj_ty == .str or obj.* == .string_lit or obj.* == .name;
+        if (!strish) return null;
+        if (std.mem.eql(u8, method, "len")) return .i64;
+        if (std.mem.eql(u8, method, "sub") and args.len >= 1 and args.len <= 2) return .str;
+        if (std.mem.eql(u8, method, "match") and args.len >= 1 and args.len <= 2) return .bool;
+        if (std.mem.eql(u8, method, "has") and args.len == 1) return .bool;
+        if (std.mem.eql(u8, method, "find") and args.len >= 1 and args.len <= 4) return .bool;
+        if (std.mem.eql(u8, method, "byte") and args.len <= 1) return .i64;
         return self.string_builtin_result_type(method, args);
     }
 
@@ -2911,7 +2958,7 @@ pub const CodeGen = struct {
             return self.mem_pointer_to(.u8);
         }
         if (std.mem.eql(u8, fname, "cast") or std.mem.eql(u8, fname, "ptr_cast") or
-            std.mem.eql(u8, fname, "ptr_from_addr"))
+            std.mem.eql(u8, fname, "ptr_from_addr") or std.mem.eql(u8, fname, "ptrfromaddr"))
         {
             const pointee = self.mem_type_arg(args, 0) orelse RT.void;
             return self.mem_pointer_to(pointee);
@@ -2936,12 +2983,12 @@ pub const CodeGen = struct {
         if (std.mem.eql(u8, fname, "read_f32") or std.mem.eql(u8, fname, "read_f64") or
             std.mem.eql(u8, fname, "bytes_to_f32") or std.mem.eql(u8, fname, "bytes_to_f64"))
             return .f64;
-        if (std.mem.eql(u8, fname, "write_byte") or std.mem.eql(u8, fname, "write_i8") or
+        if (std.mem.eql(u8, fname, "write_byte") or std.mem.eql(u8, fname, "writebyte") or std.mem.eql(u8, fname, "write_i8") or
             std.mem.eql(u8, fname, "write_u8") or std.mem.eql(u8, fname, "write_i16") or
             std.mem.eql(u8, fname, "write_u16") or std.mem.eql(u8, fname, "write_i32") or
-            std.mem.eql(u8, fname, "write_u32") or std.mem.eql(u8, fname, "write_i64") or
+            std.mem.eql(u8, fname, "write_u32") or std.mem.eql(u8, fname, "write_i64") or std.mem.eql(u8, fname, "writei64") or
             std.mem.eql(u8, fname, "write_u64") or std.mem.eql(u8, fname, "write_f32") or
-            std.mem.eql(u8, fname, "write_f64"))
+            std.mem.eql(u8, fname, "write_f64") or std.mem.eql(u8, fname, "writef64"))
             return .void;
         if (std.mem.eql(u8, fname, "dup")) return self.mem_pointer_to(.u8);
         if (std.mem.eql(u8, fname, "compare")) return .i64;
@@ -3408,8 +3455,8 @@ pub const CodeGen = struct {
         // function body treats the name as its own register-resident local, so
         // the write lands nowhere the next read can see.
         //
-        // Measured before this guard: `g: i64 = 0` with `g = g + i` in a loop
-        // printed 3 where C printed 6, and `g = g + 1` printed 0 where C
+        // Measured before this guard: `g: i64 = 0` with `g += i` in a loop
+        // printed 3 where C printed 6, and `g += 1` printed 0 where C
         // printed 3 — g's READ folded to the initializer while the write was
         // discarded. Not a bail, not a diagnostic: a running program with a
         // confident wrong number, which is the worst class there is.
@@ -3456,7 +3503,8 @@ pub const CodeGen = struct {
                         self.nativeDiagFail("func-type-params");
                         return self.nofit(@src());
                     }
-                    if (!self.type_expr_is_native_scalar(contract_ret(&fd.func))) {
+                    const ret_ty = contract_ret(&fd.func);
+                    if (ret_ty != .inferred and !self.type_expr_is_native_scalar(ret_ty)) {
                         // The tag has to name what the PREDICATE saw, not what
                         // the source spells. `contract_ret` answers `.inferred`
                         // for a fallible contract, so `scan(b: i64): i64 | error`
@@ -3742,7 +3790,7 @@ pub const CodeGen = struct {
             // directly but fails with "expected '<eof>', got 'end'" the moment it
             // is embedded — which is what stopped `std/script.duo` and
             // `std/mcp.duo` from embedding, and so kept the Duo MCP servers dead.
-            sub_parser.duo_mode = duo_lexer_bridge.isIdsemSourcePath(mod_path);
+            sub_parser.duo_mode = duo_lexer_bridge.isIdolSourcePath(mod_path);
             var sub_mod = sub_parser.parse_module() catch return false;
             self.collect_require_names_block(&sub_mod.body, &names) catch return false;
             for (sub_mod.body.stmts) |*sub_stmt| {
@@ -4920,8 +4968,10 @@ pub const CodeGen = struct {
     fn expr_is_native_scalar(self: *CodeGen, expr: *const ast.Expr) bool {
         return switch (expr.*) {
             .true_lit, .false_lit, .int_lit, .float_lit, .string_lit => true,
-            .nil => self.nofit(@src()),
-            .name => |name| if (is_runtime_global(name.ident)) blk: {
+            .nil => true,
+            .name => |name| if (is_world_symbol(name.ident)) blk: {
+                break :blk true;
+            } else if (is_runtime_global(name.ident)) blk: {
                 self.nativeDiagFailFmt("runtime-global:{s}", .{name.ident});
                 break :blk false;
             } else true,
@@ -5108,6 +5158,8 @@ pub const CodeGen = struct {
                     if (!self.expr_is_native_scalar(arg)) break :blk false;
                 }
                 const resolvable = self.string_method_result_type(mc.method, mc.obj, mc.args) != null or
+                    self.readable_method_result_type(mc.method, mc.obj, mc.args) != null or
+                    self.world_method_result_type(mc.method, mc.obj, mc.args) != null or
                     self.func_decls.get(mc.method) != null or
                     fd: {
                         var tbuf: [256]u8 = undefined;
@@ -6519,7 +6571,7 @@ pub const CodeGen = struct {
         // file-scope initializer. This must run before ANY body is emitted:
         // functions are emitted ahead of the top-level walk, so poisoning
         // discovered during that walk arrives too late. Without it, `n = 0` plus
-        // a `bump()` doing `n = n + 1` left a sibling `get(): i64` compiling to
+        // a `bump()` doing `n += 1` left a sibling `get(): i64` compiling to
         // `return 0` — wrong, and only for native scalars.
         for (mod.body.stmts) |*stmt| {
             if (stmt.* == .func_decl) try self.poison_assigned_in_block(&stmt.func_decl.func.body);
@@ -11200,7 +11252,7 @@ pub const CodeGen = struct {
                 // A function body is the most conditionally-executed construct
                 // there is: it runs on every call, in an order this pass cannot
                 // know. Without this, `n = 0` followed by a `bump()` that does
-                // `n = n + 1` left `n` foldable, and a sibling `get(): i64`
+                // `n += 1` left `n` foldable, and a sibling `get(): i64`
                 // reading it compiled to `return 0` — silently wrong, and only
                 // for native scalars (a `str` was never folded, so it worked).
                 .func_decl => |*fd| try self.poison_assigned_in_block(&fd.func.body),
@@ -11881,7 +11933,7 @@ pub const CodeGen = struct {
         return st.checks;
     }
 
-    /// `i = i + K` / `i = K + i` with `K` a positive integer literal.
+    /// `i += K` / `i = K + i` with `K` a positive integer literal.
     fn lv_is_positive_step(self: *CodeGen, s: *const ast.Stmt, ivar: []const u8) bool {
         _ = self;
         if (s.* != .assign) return false;
@@ -16509,6 +16561,7 @@ pub const CodeGen = struct {
                 }
 
                 if (try self.tryEmitSubjectRelation(mc)) return;
+                if (try self.try_emit_readable_protocol(mc)) return;
 
                 // ═══════════════════════════════════════════════════════════
                 // Zero-cost metatable dispatch: if we know the object's type
@@ -20896,7 +20949,7 @@ pub const CodeGen = struct {
             self.p("))", .{});
             return true;
         }
-        if (std.mem.eql(u8, fname, "ptr_from_addr")) {
+        if (std.mem.eql(u8, fname, "ptr_from_addr") or std.mem.eql(u8, fname, "ptrfromaddr")) {
             const target = if (result_rt == .pointer) result_rt else self.mem_call_result_type(func, args) orelse (self.mem_pointer_to(.void) orelse result_rt);
             self.p("((", .{});
             self.typ(target);
@@ -21102,7 +21155,7 @@ pub const CodeGen = struct {
             self.p(")))", .{});
             return true;
         }
-        if (std.mem.eql(u8, fname, "write_byte") or std.mem.eql(u8, fname, "write_i8") or std.mem.eql(u8, fname, "write_u8")) {
+        if (std.mem.eql(u8, fname, "write_byte") or std.mem.eql(u8, fname, "writebyte") or std.mem.eql(u8, fname, "write_i8") or std.mem.eql(u8, fname, "write_u8")) {
             self.p("*(uint8_t*)((uint8_t*)(", .{});
             if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
             self.p(") + (", .{});
@@ -21152,7 +21205,7 @@ pub const CodeGen = struct {
             self.p(")", .{});
             return true;
         }
-        if (std.mem.eql(u8, fname, "write_i64")) {
+        if (std.mem.eql(u8, fname, "write_i64") or std.mem.eql(u8, fname, "writei64")) {
             self.p("*(int64_t*)((uint8_t*)(", .{});
             if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
             self.p(") + (", .{});
@@ -21182,7 +21235,7 @@ pub const CodeGen = struct {
             self.p(")", .{});
             return true;
         }
-        if (std.mem.eql(u8, fname, "write_f64")) {
+        if (std.mem.eql(u8, fname, "write_f64") or std.mem.eql(u8, fname, "writef64")) {
             self.p("*(double*)((uint8_t*)(", .{});
             if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
             self.p(") + (", .{});
@@ -22925,8 +22978,8 @@ pub const CodeGen = struct {
                 var sub_lex = @import("lexer.zig").Lexer.init(sub_src, mod_path.?);
                 if (!routeEmbedThroughDuoLexer(self.alloc, &sub_lex, sub_src, mod_path.?)) continue;
                 var sub_parser = @import("parser.zig").Parser.init(&sub_lex, self.alloc);
-                sub_parser.duo_mode = duo_lexer_bridge.isIdsemSourcePath(mod_path.?);
-                // The embed path must parse Duon modules in the same dialect the
+                sub_parser.duo_mode = duo_lexer_bridge.isIdolSourcePath(mod_path.?);
+                // The embed path must parse Idol modules in the same dialect the
                 // standalone path uses. Without this, duo-mode-only syntax (bare
                 // function declarations) parses fine when the file is compiled
                 // directly but fails with "expected '<eof>', got 'end'" the moment it
@@ -23169,7 +23222,7 @@ pub const CodeGen = struct {
         // bodies and typed bindings are rejected — the file then fails to embed
         // and its duo_mod_* thunk is never emitted, while the caller registers
         // it anyway ("use of undeclared identifier duo_mod_*").
-        parser.duo_mode = duo_lexer_bridge.isIdsemSourcePath(path);
+        parser.duo_mode = duo_lexer_bridge.isIdolSourcePath(path);
         const submod = parser.parse_module() catch return false;
         if (module_ast_blocks_full_native_ast(&submod)) return false;
         // A dependency that materializes a table export is reached through
@@ -23221,7 +23274,7 @@ pub const CodeGen = struct {
             // directly but fails with "expected '<eof>', got 'end'" the moment it
             // is embedded — which is what stopped `std/script.duo` and
             // `std/mcp.duo` from embedding, and so kept the Duo MCP servers dead.
-            sub_parser.duo_mode = duo_lexer_bridge.isIdsemSourcePath(mod_path);
+            sub_parser.duo_mode = duo_lexer_bridge.isIdolSourcePath(mod_path);
             var sub_mod = sub_parser.parse_module() catch return false;
             self.collect_require_names_block(&sub_mod.body, &names) catch return false;
             for (sub_mod.body.stmts) |*sub_stmt| {
@@ -23816,7 +23869,7 @@ pub const CodeGen = struct {
         var lex = @import("lexer.zig").Lexer.init(source, module_path);
         if (!routeEmbedThroughDuoLexer(self.alloc, &lex, source, module_path)) return null;
         var parser = @import("parser.zig").Parser.init(&lex, self.alloc);
-        parser.duo_mode = duo_lexer_bridge.isIdsemSourcePath(module_path);
+        parser.duo_mode = duo_lexer_bridge.isIdolSourcePath(module_path);
         const module = parser.parse_module() catch return null;
 
         var declared = false;
@@ -24466,7 +24519,7 @@ pub const CodeGen = struct {
         // bodies and typed bindings are rejected — the file then fails to embed
         // and its duo_mod_* thunk is never emitted, while the caller registers
         // it anyway ("use of undeclared identifier duo_mod_*").
-        parser.duo_mode = duo_lexer_bridge.isIdsemSourcePath(path);
+        parser.duo_mode = duo_lexer_bridge.isIdolSourcePath(path);
         var submod = parser.parse_module() catch |e| {
             term.err("emit_embedded_module: parse failed for {s}: {}", .{ path, e });
             return false;
@@ -24474,7 +24527,7 @@ pub const CodeGen = struct {
         var subsem = sema.Sema.init(self.alloc);
         defer subsem.deinit();
         subsem.lua55_mode = duo_lexer_bridge.isLuaSourcePath(path);
-        subsem.duo_mode = duo_lexer_bridge.isIdsemSourcePath(path);
+        subsem.duo_mode = duo_lexer_bridge.isIdolSourcePath(path);
         subsem.next_closure_id = self.next_closure_id;
         subsem.check_module(&submod) catch |e| {
             term.err("emit_embedded_module: sema failed for {s}: {}", .{ path, e });
@@ -27435,7 +27488,7 @@ const duo_runtime =
     \\        else if (c >= 'A' && c <= 'Z') d = c - 'A' + 10;
     \\        else break;
     \\        if (d >= base) break;
-    \\        acc = acc * base + d;
+    \\        acc *= base; acc += d;
     \\        digits++;
     \\        s++;
     \\    }
@@ -27869,6 +27922,25 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_io_read(lua_Value fmt_val) {
     \\    return lua_read_fmt(get_input_file(), fmt_val);
+    \\}
+    \\
+    \\static int duo_read_file(const char* path, char** out, size_t* out_len);
+    \\static inline lua_Value lua_io_popen(lua_Value prog_val, lua_Value mode_val);
+    \\
+    \\static inline lua_Value lua_io_read_path(lua_Value path_val) {
+    \\    if (path_val.type != VAL_STRING) return lua_val_nil();
+    \\    char* buf = NULL;
+    \\    size_t len = 0;
+    \\    if (duo_read_file(lua_to_str(path_val), &buf, &len) != 0) return lua_val_nil();
+    \\    lua_Value out = lua_val_from_str_len(buf, len);
+    \\    free(buf);
+    \\    return out;
+    \\}
+    \\
+    \\static inline lua_Value lua_command_open(lua_Value cmd_val, lua_Value mode_val) {
+    \\    lua_Value line = lua_table_get_lit(cmd_val, "line");
+    \\    if (line.type != VAL_STRING) return lua_val_nil();
+    \\    return lua_io_popen(line, mode_val);
     \\}
     \\
     \\static inline lua_Value lua_io_flush(void) {
@@ -29624,7 +29696,7 @@ const duo_runtime =
     \\    const char* f = *fmt;
     \\    while (*f == '<' || *f == '>' || *f == '=' || *f == '!') f++;
     \\    int count = 0;
-    \\    while (*f >= '0' && *f <= '9') { count = count * 10 + (*f - '0'); f++; }
+    \\    while (*f >= '0' && *f <= '9') { count *= 10; count += (*f - '0'); f++; }
     \\    char op = *f;
     \\    if (!op) return 0;
     \\    *fmt = f + 1;
@@ -31839,7 +31911,7 @@ test "codegen: mixed native/boxed binops unbox only the dynamic side" {
         \\fun f(): i64
         \\  local boxed = { x = 40 }
         \\  local sum: i64 = 0
-        \\  sum = sum + boxed.x
+        \\  sum += boxed.x
         \\  return sum
         \\end
         \\print(f())
@@ -31957,8 +32029,8 @@ test "codegen: any accumulator plus numeric table index unboxes both sides" {
         \\  sum = 0
         \\  local i = 1
         \\  while i <= n
-        \\    sum = sum + t[i]
-        \\    i = i + 1
+        \\    sum += t[i]
+        \\    i += 1
         \\  end
         \\  return sum
         \\end
@@ -31997,8 +32069,8 @@ test "codegen: any accumulator plus boxed field unboxes both sides" {
         \\  sum = 0
         \\  local i = 1
         \\  while i <= n do
-        \\    sum = sum + boxed.x
-        \\    i = i + 1
+        \\    sum += boxed.x
+        \\    i += 1
         \\  end
         \\  return sum
         \\end
@@ -32102,7 +32174,7 @@ test "codegen: numeric lua locals unbox in mixed native binops" {
         \\  local i
         \\  i = 1
         \\  while i <= n do
-        \\    i = i + 1
+        \\    i += 1
         \\  end
         \\  return i
         \\end
@@ -32170,7 +32242,7 @@ test "codegen: one-sided any binop unboxes numeric local plus dynamic table inde
         \\  local sum
         \\  sum = 0
         \\  i = 1
-        \\  sum = sum + t[i]
+        \\  sum += t[i]
         \\  return sum + t[j]
         \\end
     , "test.lua");
@@ -32265,7 +32337,7 @@ test "codegen: typed native local plus dynamic table index unboxes in assign" {
     var lex = Lexer.init(
         \\function k(t, i)
         \\  local sum = 0
-        \\  sum = sum + t[i]
+        \\  sum += t[i]
         \\  return sum
         \\end
     , "test.lua");
@@ -32450,7 +32522,7 @@ test "codegen: __constexpr folds bounded loop blocks" {
         \\  case _ then do
         \\    local acc = 0
         \\    for i = 1, 4 do
-        \\      acc = acc + i
+        \\      acc += i
         \\    end
         \\    acc
         \\  end
@@ -32460,8 +32532,8 @@ test "codegen: __constexpr folds bounded loop blocks" {
         \\    local n = 4
         \\    local acc = 0
         \\    while n > 0 do
-        \\      acc = acc + n
-        \\      n = n - 1
+        \\      acc += n
+        \\      n -= 1
         \\    end
         \\    acc
         \\  end
@@ -35254,7 +35326,7 @@ test "table max scan lowers the real comparison, never a frozen maximum" {
         \\    local i = 1
         \\    while i <= n do
         \\        t[i] = (i * 17) % 100003
-        \\        i = i + 1
+        \\        i += 1
         \\    end
         \\    local mx = 0
         \\    i = 1
@@ -35262,7 +35334,7 @@ test "table max scan lowers the real comparison, never a frozen maximum" {
         \\        if t[i] > mx then
         \\            mx = t[i]
         \\        end
-        \\        i = i + 1
+        \\        i += 1
         \\    end
         \\    return mx
         \\end
@@ -35288,13 +35360,13 @@ test "loop versioning: an affine index gets a guarded unchecked arm, a modular o
         \\    local i = 1
         \\    while i <= n do
         \\        t[i] = i * 17
-        \\        i = i + 1
+        \\        i += 1
         \\    end
         \\    local s = 0
         \\    i = 2
         \\    while i <= n do
-        \\        s = s + t[i] + t[i - 1]
-        \\        i = i + 1
+        \\        s += t[i]; s += t[i - 1]
+        \\        i += 1
         \\    end
         \\    return s
         \\end
@@ -35319,14 +35391,14 @@ test "loop versioning: an affine index gets a guarded unchecked arm, a modular o
         \\    local i = 1
         \\    while i <= size do
         \\        buf[i] = 0
-        \\        i = i + 1
+        \\        i += 1
         \\    end
         \\    local s = 0
         \\    i = 0
         \\    while i < n do
         \\        buf[(i % size) + 1] = i
-        \\        s = s + buf[(i % size) + 1]
-        \\        i = i + 1
+        \\        s += buf[(i % size); s += 1]
+        \\        i += 1
         \\    end
         \\    return s
         \\end
@@ -35383,13 +35455,13 @@ test "tightened kernel recognisers fold the template and decline everything else
             \\    while i <= n do
             \\        a[i] = i
             \\        b[i] = n - i + 1
-            \\        i = i + 1
+            \\        i += 1
             \\    end
             \\    local sum = 0
             \\    i = 1
             \\    while i <= n do
-            \\        sum = sum + a[i] * b[i]
-            \\        i = i + 1
+            \\        sum += a[i] * b[i]
+            \\        i += 1
             \\    end
             \\    return sum
             \\end
@@ -35403,13 +35475,13 @@ test "tightened kernel recognisers fold the template and decline everything else
             \\    while i <= n do
             \\        a[i] = i * 2
             \\        b[i] = n - i + 1
-            \\        i = i + 1
+            \\        i += 1
             \\    end
             \\    local sum = 0
             \\    i = 1
             \\    while i <= n do
-            \\        sum = sum + a[i] * b[i]
-            \\        i = i + 1
+            \\        sum += a[i] * b[i]
+            \\        i += 1
             \\    end
             \\    return sum
             \\end
@@ -35427,9 +35499,9 @@ test "tightened kernel recognisers fold the template and decline everything else
             \\    while i <= n do
             \\        local v = (i * 17) % 100003
             \\        if v > 50000 then
-            \\            count = count + 1
+            \\            count += 1
             \\        end
-            \\        i = i + 1
+            \\        i += 1
             \\    end
             \\    return count
             \\end
@@ -35442,9 +35514,9 @@ test "tightened kernel recognisers fold the template and decline everything else
             \\    while i <= n do
             \\        local v = (i * 17) % 99991
             \\        if v > 50000 then
-            \\            count = count + 1
+            \\            count += 1
             \\        end
-            \\        i = i + 1
+            \\        i += 1
             \\    end
             \\    return count
             \\end
@@ -35461,7 +35533,7 @@ test "tightened kernel recognisers fold the template and decline everything else
             \\    local i = 1
             \\    while i <= n do
             \\        acc = acc ~ (i * 2654435761)
-            \\        i = i + 1
+            \\        i += 1
             \\    end
             \\    return acc
             \\end
@@ -35473,7 +35545,7 @@ test "tightened kernel recognisers fold the template and decline everything else
             \\    local i = 1
             \\    while i <= n do
             \\        acc = acc ~ (i * 2654435759)
-            \\        i = i + 1
+            \\        i += 1
             \\    end
             \\    return acc
             \\end
@@ -35489,8 +35561,8 @@ test "tightened kernel recognisers fold the template and decline everything else
             \\    local avg = 0.0
             \\    local i = 0
             \\    while i < n do
-            \\        avg = avg * 0.95 + (i % 100) * 0.05
-            \\        i = i + 1
+            \\        avg *= 0.95; avg += (i % 100) * 0.05
+            \\        i += 1
             \\    end
             \\    return avg
             \\end
@@ -35504,7 +35576,7 @@ test "tightened kernel recognisers fold the template and decline everything else
             \\    local i = 0
             \\    while i < n do
             \\        avg = 0.9 * avg + 0.05 * (i % 100)
-            \\        i = i + 1
+            \\        i += 1
             \\    end
             \\    return avg
             \\end
@@ -35531,11 +35603,11 @@ test "tightened kernel recognisers fold the template and decline everything else
             \\        local v = k
             \\        local bits = 0
             \\        while v ~= 0 do
-            \\            bits = bits + (v & 1)
+            \\            bits += (v & 1)
             \\            v = v >> 1
             \\        end
-            \\        acc = acc + bits
-            \\        k = k + 1
+            \\        acc += bits
+            \\        k += 1
             \\    end
             \\    return acc
             \\end
@@ -35552,11 +35624,11 @@ test "tightened kernel recognisers fold the template and decline everything else
             \\        local v = k
             \\        local bits = 0
             \\        while v ~= 0 do
-            \\            bits = bits + (v & 3)
+            \\            bits += (v & 3)
             \\            v = v >> 2
             \\        end
-            \\        acc = acc + bits
-            \\        k = k + 1
+            \\        acc += bits
+            \\        k += 1
             \\    end
             \\    return acc
             \\end
@@ -35576,13 +35648,13 @@ test "tightened kernel recognisers fold the template and decline everything else
             \\    local k = 1
             \\    while k <= m do
             \\        arr[k] = k
-            \\        k = k + 1
+            \\        k += 1
             \\    end
             \\    local acc = 0
             \\    k = 1
             \\    while k <= m do
-            \\        acc = acc + arr[k]
-            \\        k = k + 1
+            \\        acc += arr[k]
+            \\        k += 1
             \\    end
             \\    return acc
             \\end
@@ -35596,13 +35668,13 @@ test "tightened kernel recognisers fold the template and decline everything else
             \\    local k = 1
             \\    while k <= m do
             \\        arr[k] = k * k
-            \\        k = k + 1
+            \\        k += 1
             \\    end
             \\    local acc = 0
             \\    k = 1
             \\    while k <= m do
-            \\        acc = acc + arr[k]
-            \\        k = k + 1
+            \\        acc += arr[k]
+            \\        k += 1
             \\    end
             \\    return acc
             \\end

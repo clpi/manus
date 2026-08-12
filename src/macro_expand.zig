@@ -952,7 +952,7 @@ const Parser = @import("parser.zig").Parser;
 
 fn parseAndExpandForTest(src: []const u8, arena: *std.heap.ArenaAllocator) !ast.Module {
     const alloc = arena.allocator();
-    var lex = Lexer.init(src, "test.duo");
+    var lex = Lexer.init(src, "test.id");
     var parser = Parser.init(&lex, alloc);
     var module = try parser.parse_module();
     var expander = Expander.init(alloc);
@@ -965,7 +965,7 @@ test "macro expansion substitutes quoted unquote arguments" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    const loc = ast.Loc{ .file = "test.duo", .line = 1, .col = 1 };
+    const loc = ast.Loc{ .file = "test.id", .line = 1, .col = 1 };
     var arg = ast.Expr{ .int_lit = .{ .loc = loc, .val = 21 } };
     var unquote_name = ast.Expr{ .name = .{ .loc = loc, .ident = "x" } };
     var unquote = ast.Expr{ .unquote = .{ .loc = loc, .expr = &unquote_name } };
@@ -978,7 +978,7 @@ test "macro expansion substitutes quoted unquote arguments" {
         .{ .macro_def = .{ .loc = loc, .name = "twice", .params = &params, .body = .{ .expr = &body_inner } } },
         .{ .expr_stmt = .{ .loc = loc, .expr = &call } },
     };
-    var module = ast.Module{ .file = "test.duo", .body = .{ .loc = loc, .stmts = stmts[0..] } };
+    var module = ast.Module{ .file = "test.id", .body = .{ .loc = loc, .stmts = stmts[0..] } };
 
     var expander = Expander.init(alloc);
     defer expander.deinit();
@@ -995,7 +995,7 @@ test "macro expansion hygienically renames introduced function parameters" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    const loc = ast.Loc{ .file = "test.duo", .line = 1, .col = 1 };
+    const loc = ast.Loc{ .file = "test.id", .line = 1, .col = 1 };
     var arg = ast.Expr{ .name = .{ .loc = loc, .ident = "tmp" } };
     var unquote_name = ast.Expr{ .name = .{ .loc = loc, .ident = "x" } };
     var unquote = ast.Expr{ .unquote = .{ .loc = loc, .expr = &unquote_name } };
@@ -1020,7 +1020,7 @@ test "macro expansion hygienically renames introduced function parameters" {
         .{ .macro_def = .{ .loc = loc, .name = "wrap", .params = &params, .body = .{ .expr = &quoted_call } } },
         .{ .expr_stmt = .{ .loc = loc, .expr = &call_expr } },
     };
-    var module = ast.Module{ .file = "test.duo", .body = .{ .loc = loc, .stmts = stmts[0..] } };
+    var module = ast.Module{ .file = "test.id", .body = .{ .loc = loc, .stmts = stmts[0..] } };
 
     var expander = Expander.init(alloc);
     defer expander.deinit();
@@ -1039,7 +1039,7 @@ test "macro expansion: nn block assign clones without hang" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var lex = Lexer.init("model = nn { relu }\n", "test.duo");
+    var lex = Lexer.init("model = nn { relu }\n", "test.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var module = try parser.parse_module();

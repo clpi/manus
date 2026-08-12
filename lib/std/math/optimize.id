@@ -40,7 +40,7 @@ adam(f: any, df: any, x0: f64, lr: f64, beta1: f64, beta2: f64, epsilon: f64, it
     v = beta2 * v + (1 - beta2) * grad * grad
     m_hat = m / (1 - beta1 ^ i)
     v_hat = v / (1 - beta2 ^ i)
-    x = x - lr * m_hat / (math.sqrt(v_hat) + epsilon)
+    x = x - lr * m_hat / (v_hat:sqrt() + epsilon)
     history[#history + 1] = x
     i = i + 1
   end

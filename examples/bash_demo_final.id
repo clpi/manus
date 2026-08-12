@@ -1,24 +1,24 @@
--- Demo of bash-style fun calls
+# Demo of bash-style fun calls
 
 greet(name: str): str
     "Hello, " .. name
 end
 
--- Bash-style call with string literal
+# Bash-style call with string literal
 print(greet("World"))
 
--- Bash-style call with name variable
+# Bash-style call with name variable
 name: str = "Duo"
 print(greet(name))
 
--- Bash-style call with number
+# Bash-style call with number
 multiply_by_two(x: i64): i64
     x * 2
 end
 
 print(multiply_by_two(21))
 
--- Multiple arguments
+# Multiple arguments
 add(a: i64, b: i64): i64
     a + b
 end

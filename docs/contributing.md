@@ -1,4 +1,4 @@
-# Contributing to Idsem
+# Contributing to Idol
 
 Start with [AGENTS.md](../AGENTS.md). It routes contributors to the sole
 semantic law, [C0](spec/constitution.md), the
@@ -14,7 +14,7 @@ the narrow bridge rules in `AGENTS.md`.
 Canonical source exposes the strongest known fact with the least ceremony.
 Use named projection and structured fields for static identity; use `[]` only
 when the key is genuinely computed. Do not translate host namespaces,
-sentinels, staging variables, storage choices, or parser categories into Idsem.
+sentinels, staging variables, storage choices, or parser categories into Idol.
 Do not encode cases, descriptor/world facts, demand, refinements, or transitions
 as `has`, `is`, `can`, `exists`, or other boolean helpers. Subject correction
 alone does not make a weak predicate canonical. Preserve unknown, absent,

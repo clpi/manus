@@ -1,0 +1,301 @@
+#!/bin/sh
+set -u
+
+repo="$(cd "$(dirname "$0")/../../.." && pwd)"
+cd "$repo" || exit 1
+
+fail=0
+warn=0
+
+ok() { printf 'ok %s\n' "$1"; }
+bad() { printf 'FAIL %s\n' "$1" >&2; fail=$((fail + 1)); }
+note() { printf 'WARN %s\n' "$1" >&2; warn=$((warn + 1)); }
+
+cleanup_root_artifacts() {
+  find "$repo" -maxdepth 1 -type f \( -name '*.out' -o -name '*.profraw' -o -name 'test_*.c' -o -name 'test_*.wasm' \) -exec rm {} \;
+}
+
+trap cleanup_root_artifacts EXIT
+
+need_cmd() {
+  command -v "$1" >/dev/null 2>&1 && ok "$1 on PATH" || bad "$1 missing from PATH"
+}
+
+want_version() {
+  name="$1"
+  want="$2"
+  got="$3"
+  if [ "$got" = "$want" ]; then
+    ok "$name version $want"
+  else
+    bad "$name version is '$got', expected '$want'"
+  fi
+}
+
+[ -f AGENTS.md ] || bad "AGENTS.md missing"
+[ -f docs/spec/constitution.md ] || bad "C0 missing"
+[ -f CLAUDE.md ] || bad "CLAUDE.md missing"
+
+need_cmd git
+need_cmd gh
+need_cmd rg
+need_cmd zig
+need_cmd clang
+need_cmd cc
+need_cmd jq
+need_cmd zls
+need_cmd codex
+need_cmd cursor
+need_cmd cursor-agent
+need_cmd tree-sitter
+need_cmd node
+need_cmd npm
+need_cmd lua
+need_cmd luajit
+need_cmd wasmtime
+need_cmd wasmer
+
+if [ "$(uname -s)" = "Darwin" ]; then
+  ok "host platform Darwin"
+else
+  bad "host platform is not Darwin"
+fi
+
+if [ "$(uname -m)" = "arm64" ]; then
+  ok "host architecture arm64"
+else
+  bad "host architecture is not arm64"
+fi
+
+avail_kb="$(df -k . | awk 'NR == 2 { print $4 }')"
+if [ "${avail_kb:-0}" -ge 10485760 ]; then
+  ok "disk has at least 10 GiB free"
+else
+  bad "disk has less than 10 GiB free"
+fi
+
+if [ "$(git rev-parse --show-toplevel 2>/dev/null || true)" = "$repo" ]; then
+  ok "repository root is $repo"
+else
+  bad "wrong repository root"
+fi
+
+origin_url="$(git remote get-url origin 2>/dev/null || true)"
+if printf '%s' "$origin_url" | grep -Eq '(^git@github.com:clpi/duo(.git)?$|^https://github.com/clpi/duo(.git)?$)'; then
+  ok "active development repository is clpi/duo"
+elif printf '%s' "$origin_url" | grep -Eq '(^git@github.com:idollang/idol(.git)?$|^https://github.com/idollang/idol(.git)?$)'; then
+  bad "release repository checkout; active development remains in clpi/duo"
+else
+  bad "origin is not the admitted clpi/duo development repository"
+fi
+
+if [ "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)" = "main" ]; then
+  ok "branch is main"
+else
+  bad "branch is not main"
+fi
+
+if gh api user --jq .login >/tmp/idol-gh-auth.out 2>&1; then
+  ok "GitHub CLI authenticated"
+else
+  bad "GitHub CLI authentication failed"
+fi
+
+if command -v zig >/dev/null 2>&1; then
+  want_version zig "0.17.0-dev.1567+f0354179a" "$(zig version 2>/dev/null || true)"
+fi
+if command -v zls >/dev/null 2>&1; then
+  want_version zls "0.16.0" "$(zls --version 2>/dev/null | head -1 || true)"
+fi
+if command -v codex >/dev/null 2>&1; then
+  want_version codex "codex-cli 0.147.0" "$(codex --version 2>/dev/null | head -1 || true)"
+fi
+if command -v cursor >/dev/null 2>&1; then
+  cursor_v="$(cursor --version 2>/dev/null | head -1 || true)"
+  want_version cursor "3.5.33" "$cursor_v"
+fi
+if command -v cursor-agent >/dev/null 2>&1; then
+  cursor_agent_v="$(cursor-agent --version 2>/dev/null | head -1 || true)"
+  want_version cursor-agent "2026.08.04-aaa8809" "$cursor_agent_v"
+fi
+
+duo="${IDOL_BOOTSTRAP_BIN:-${DUO_BIN:-$repo/zig-out/bin/duo}}"
+if [ ! -x "$duo" ]; then
+  bad "missing fresh compiler artifact $duo"
+else
+  stale="$(git ls-files build.zig.zon src | while IFS= read -r p; do [ "$p" -nt "$duo" ] && echo "$p" && break; done)"
+  if [ -n "$stale" ]; then
+    bad "compiler artifact is older than tracked source: $stale"
+  else
+    ok "compiler artifact is newer than compiler sources"
+  fi
+fi
+
+if git status --short | grep -E '^[ MADRCU?!]{1,2} ext/duo-lsp$' >/dev/null 2>&1; then
+  bad "ext/duo-lsp submodule is not admitted"
+else
+  ok "ext/duo-lsp submodule admitted"
+fi
+
+root_artifacts="$(find "$repo" -maxdepth 1 -type f \( -name '*.out' -o -name '*.profraw' -o -name 'test_*.c' -o -name 'test_*.wasm' \) -print | head -1)"
+if [ -n "$root_artifacts" ]; then
+  bad "stale root generated artifact exists: $root_artifacts"
+else
+  ok "no stale root generated artifacts"
+fi
+
+"$repo/tools/node/dev/generate-configs" --check || bad "generated MCP projections are missing or stale"
+"$repo/tools/node/dev/install-skills" || bad "idol-dev skill installation failed"
+if [ -f "${CODEX_HOME:-$HOME/.codex}/skills/idol-dev/SKILL.md" ]; then
+  ok "Codex skill idol-dev installed"
+else
+  bad "Codex skill idol-dev missing after install-skills"
+fi
+if grep -q '^name: idol-dev' "${CODEX_HOME:-$HOME/.codex}/skills/idol-dev/SKILL.md" 2>/dev/null; then
+  ok "Codex skill idol-dev names idol-dev"
+else
+  bad "Codex skill idol-dev has wrong skill name"
+fi
+
+for name in duo-bench duo-lsp zls; do
+  if codex mcp get "$name" >/dev/null 2>&1; then
+    ok "Codex has MCP server $name"
+  else
+    bad "Codex missing MCP server $name"
+  fi
+done
+
+if [ -f "$repo/.cursor/mcp.json" ] && jq -e '.mcpServers["duo-bench"] and .mcpServers["duo-lsp"] and .mcpServers.zls' "$repo/.cursor/mcp.json" >/dev/null 2>&1; then
+  ok "Cursor project MCP config has all three servers"
+else
+  bad "Cursor project MCP config missing required servers"
+fi
+
+if [ -f "$repo/.cursor/rules/00-authority.mdc" ] && grep -q 'AGENTS.md' "$repo/.cursor/rules/00-authority.mdc" && grep -q 'docs/spec/constitution.md' "$repo/.cursor/rules/00-authority.mdc"; then
+  ok "Cursor rule projects AGENTS.md and C0"
+else
+  bad "Cursor authority rule missing AGENTS.md or C0"
+fi
+
+for rule in 00-authority 10-language 20-graph 30-realization 40-selfhost 50-mcp-lsp 60-performance 70-evidence 80-coordination; do
+  if [ -f "$repo/.cursor/rules/$rule.mdc" ]; then
+    ok "Cursor rule exists: $rule"
+  else
+    bad "Cursor rule missing: $rule"
+  fi
+done
+
+if [ -f "$repo/.cursorignore" ] && grep -q '^zig-out/$' "$repo/.cursorignore"; then
+  ok "Cursor indexing exclusions configured"
+else
+  bad "Cursor indexing exclusions missing"
+fi
+
+if "$repo/tools/node/dev/orient" >/tmp/idol-orient.out 2>&1 && grep -q '^project: Idol$' /tmp/idol-orient.out && grep -q '^authority:' /tmp/idol-orient.out; then
+  ok "orientation command reports current repository facts"
+else
+  bad "orientation command failed"
+fi
+
+gate="$(mktemp -t idiomgate)" || bad "could not create idiomgate probe"
+trap 'rm -f "$gate"' EXIT
+printf '+++ b/updateface.id\n@@ -0,0 +1 @@\n+step = step + 1\n' > "$gate"
+if DUOGATEDIFF="$gate" "$duo" run --backend=c "$repo/scripts/idiomgate.id" >/tmp/idol-updateface.out 2>&1; then
+  bad "idiomgate update-face positive control did not flag the expanded candidate"
+elif grep -q 'law.update.face' /tmp/idol-updateface.out; then
+  ok "idiomgate update-face positive control"
+else
+  bad "idiomgate update-face positive control missing law.update.face"
+fi
+rm -f "$gate"
+trap cleanup_root_artifacts EXIT
+
+"$repo/tools/node/dev/probe-mcp" || bad "direct MCP initialize probe failed"
+
+if TERM=xterm-256color codex --strict-config doctor >/tmp/idol-codex-doctor.out 2>&1; then
+  if grep -q 'app-server.*stale or unreachable' /tmp/idol-codex-doctor.out; then
+    bad "codex doctor reports stale or unreachable app-server socket"
+  else
+    ok "codex doctor"
+  fi
+else
+  bad "codex doctor failed"
+fi
+
+if cursor agent --help >/tmp/idol-cursor-agent.out 2>&1; then
+  ok "Cursor Agent starts far enough to read CLI help"
+else
+  if grep -qi 'keychain is locked' /tmp/idol-cursor-agent.out; then
+    bad "Cursor Agent blocked by locked macOS login keychain"
+  else
+    bad "Cursor Agent CLI failed"
+  fi
+fi
+
+if cursor agent mcp list >/tmp/idol-cursor-mcp.out 2>&1; then
+  missing_cursor_mcp=0
+  for name in duo-bench duo-lsp zls; do
+    if grep -q "^$name: ready" /tmp/idol-cursor-mcp.out; then
+      ok "Cursor MCP server ready: $name"
+    else
+      bad "Cursor MCP server is not ready: $name"
+      missing_cursor_mcp=1
+    fi
+  done
+  if [ "$missing_cursor_mcp" -eq 0 ]; then
+    ok "Cursor MCP required servers approved"
+  fi
+else
+  bad "Cursor MCP server list failed"
+fi
+
+if cursor agent --print --mode=ask --trust --workspace "$repo" "Start at AGENTS.md. Answer with the sole Idol semantic law file path only." >/tmp/idol-cursor-agent-smoke.out 2>&1; then
+  if grep -q 'docs/spec/constitution.md' /tmp/idol-cursor-agent-smoke.out; then
+    ok "Cursor Agent fresh headless session orients through AGENTS.md"
+  else
+    bad "Cursor Agent fresh headless session did not identify C0"
+  fi
+else
+  if grep -qi 'keychain is locked' /tmp/idol-cursor-agent-smoke.out; then
+    bad "Cursor Agent fresh headless session blocked by locked macOS login keychain"
+  elif grep -qi 'Authentication required' /tmp/idol-cursor-agent-smoke.out; then
+    bad "Cursor Agent fresh headless session requires login"
+  else
+    bad "Cursor Agent fresh headless session failed"
+  fi
+fi
+
+run_gate() {
+  label="$1"
+  shift
+  if "$@"; then
+    ok "$label"
+  else
+    bad "$label"
+  fi
+}
+
+extra_gate="${IDOL_DOCTOR_EXTRA_GATE:-}"
+if [ "$extra_gate" != "" ]; then
+  run_gate "extra child gate" sh -c "$extra_gate"
+fi
+
+skip_gates="${IDOL_DOCTOR_SKIP_GATES:-0}"
+if [ "$skip_gates" != "1" ]; then
+  run_gate "mcp-gate" "$duo" run --backend=c "$repo/scripts/duo_lock.id" -- zig build mcp-gate
+  run_gate "lsp-gate" "$duo" run --backend=c "$repo/scripts/duo_lock.id" -- zig build lsp-gate
+  run_gate "semantic architecture gate" "$duo" run --backend=c "$repo/scripts/duo_lock.id" -- zig build semantic-architecture
+  run_gate "repo hygiene gate" "$duo" run --backend=c "$repo/scripts/duo_lock.id" -- zig build repo-hygiene
+  run_gate "unit gate" "$duo" run --backend=c "$repo/scripts/duo_lock.id" -- zig build unit-test --summary all
+fi
+
+if [ "$fail" -eq 0 ]; then
+  cleanup_root_artifacts
+  printf 'idol doctor: PASS'
+  [ "$warn" -gt 0 ] && printf ' (%s warning(s))' "$warn"
+  printf '\n'
+  exit 0
+fi
+
+printf 'idol doctor: FAIL (%s failure(s), %s warning(s))\n' "$fail" "$warn" >&2
+exit 1

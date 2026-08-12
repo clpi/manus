@@ -1,9 +1,9 @@
--- std.math.geometry — Computational geometry
--- For 2D/3D calculations, collision detection, and mesh operations.
+# std.math.geometry — Computational geometry
+# For 2D/3D calculations, collision detection, and mesh operations.
 
--- ═══════════════════════════════════════════════════════════════
--- 2D Geometry
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# 2D Geometry
+# ═══════════════════════════════════════════════════════════════
 
 vec2_new(x: f64, y: f64): any
     {x = x, y = y}
@@ -30,7 +30,7 @@ vec2_cross(a: any, b: any): f64
 end
 
 vec2_length(v: any): f64
-    math.sqrt(v.x * v.x + v.y * v.y)
+    v.x * v.x + v.y * v.y:sqrt()
 end
 
 vec2_length_squared(v: any): f64
@@ -59,8 +59,8 @@ vec2_lerp(a: any, b: any, t: f64): any
 end
 
 vec2_rotate(v: any, angle: f64): any
-    c = math.cos(angle)
-    s = math.sin(angle)
+    c = angle:cos()
+    s = angle:sin()
     {
         x = v.x * c - v.y * s,
         y = v.x * s + v.y * c,
@@ -75,9 +75,9 @@ vec2_angle(a: any, b: any): f64
     math.atan2(b.y - a.y, b.x - a.x)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- 2D Shapes
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# 2D Shapes
+# ═══════════════════════════════════════════════════════════════
 
 point_new(x: f64, y: f64): any
     {x = x, y = y}
@@ -164,7 +164,7 @@ polygon_area(poly: any): f64
         area -= poly.vertices[j].x * poly.vertices[i].y
         i += 1
     end
-    math.abs(area) / 2
+    area:abs() / 2
 end
 
 polygon_perimeter(poly: any): f64
@@ -194,9 +194,9 @@ polygon_contains_point(poly: any, p: any): bool
     inside
 end
 
--- ═══════════════════════════════════════════════════════════════
--- 3D Geometry
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# 3D Geometry
+# ═══════════════════════════════════════════════════════════════
 
 vec3_new(x: f64, y: f64, z: f64): any
     {x = x, y = y, z = z}
@@ -227,7 +227,7 @@ vec3_cross(a: any, b: any): any
 end
 
 vec3_length(v: any): f64
-    math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)
+    v.x * v.x + v.y * v.y + v.z * v.z:sqrt()
 end
 
 vec3_normalize(v: any): any
@@ -274,7 +274,7 @@ aabb_center(box: any): any
     }
 end
 
-aabb_size(box: any): any
+aabb_box: any:len(): any
     vec3_sub(box.max, box.min)
 end
 
@@ -302,16 +302,16 @@ sphere_intersects_sphere(a: any, b: any): bool
     vec3_distance(a.center, b.center) <= a.radius + b.radius
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Intersection Tests
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Intersection Tests
+# ═══════════════════════════════════════════════════════════════
 
 line_segment_intersection(p1: any, p2: any, p3: any, p4: any): any
     d1 = vec2_sub(p2, p1)
     d2 = vec2_sub(p4, p3)
     cross = d1.x * d2.y - d1.y * d2.x
 
-    if math.abs(cross) < 1e-10 return nil end
+    if cross:abs() < 1e-10 return nil end
 
     t = ((p3.x - p1.x) * d2.y - (p3.y - p1.y) * d2.x) / cross
     u = ((p3.x - p1.x) * d1.y - (p3.y - p1.y) * d1.x) / cross
@@ -334,9 +334,9 @@ ray_sphere_intersection(ray_origin: any, ray_dir: any, sphere: any): any
 
     if discriminant < 0 return nil end
 
-    t = (-b - math.sqrt(discriminant)) / (2 * a)
+    t = (-b - discriminant:sqrt()) / (2 * a)
     if t < 0
-        t = (-b + math.sqrt(discriminant)) / (2 * a)
+        t = (-b + discriminant:sqrt()) / (2 * a)
     end
     if t < 0 return nil end
 
@@ -346,7 +346,7 @@ end
 
 ray_plane_intersection(ray_origin: any, ray_dir: any, plane: any): any
     denom = vec3_dot(plane.normal, ray_dir)
-    if math.abs(denom) < 1e-10 return nil end
+    if denom:abs() < 1e-10 return nil end
 
     t = (plane.distance - vec3_dot(plane.normal, ray_origin)) / denom
     if t < 0 return nil end
@@ -355,9 +355,9 @@ ray_plane_intersection(ray_origin: any, ray_dir: any, plane: any): any
     {t = t, point = point}
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Triangle Operations
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Triangle Operations
+# ═══════════════════════════════════════════════════════════════
 
 triangle_new(v0: any, v1: any, v2: any): any
     {v0 = v0, v1 = v1, v2 = v2}
@@ -395,7 +395,7 @@ triangle_barycentric(tri: any, p: any): any
     d21 = vec3_dot(v2, v1)
 
     denom = d00 * d11 - d01 * d01
-    if math.abs(denom) < 1e-10 return nil end
+    if denom:abs() < 1e-10 return nil end
 
     v = (d11 * d20 - d01 * d21) / denom
     w = (d00 * d21 - d01 * d20) / denom
@@ -404,13 +404,13 @@ triangle_barycentric(tri: any, p: any): any
     {u = u, v = v, w = w}
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
--- MOD-1: the file IS the module. Identity re-exports deleted; the few
--- exports that carried real content are ordinary top-level bindings now.
--- 2D Vec
+# MOD-1: the file IS the module. Identity re-exports deleted; the few
+# exports that carried real content are ordinary top-level bindings now.
+# 2D Vec
 vec2 = {
     new = vec2_new,
     add = vec2_add,
@@ -429,8 +429,8 @@ vec2 = {
     angle = vec2_angle,
 }
 
--- 2D Shapes
--- 3D Vec
+# 2D Shapes
+# 3D Vec
 vec3 = {
     new = vec3_new,
     add = vec3_add,
@@ -444,6 +444,6 @@ vec3 = {
     lerp = vec3_lerp,
 }
 
--- 3D Shapes
--- Intersections
--- Triangles
+# 3D Shapes
+# Intersections
+# Triangles

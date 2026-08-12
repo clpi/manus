@@ -1,16 +1,16 @@
--- std.config — structured configuration with defaults, merge, and validation
--- Provides a config object that supports default schemas, deep merging,
--- dot-path access, and environment variable overrides.
+# std.config — structured configuration with defaults, merge, and validation
+# Provides a config object that supports default schemas, deep merging,
+# dot-path access, and environment variable overrides.
 
--- ---- Internal helpers (defined first for forward reference) ----
+# ---- Internal helpers (defined first for forward reference) ----
 
--- deep_get: get a value from a nested table by dot-path.
+# deep_get: get a value from a nested table by dot-path.
 deep_get(t: any, key: any): any
     if t == nil return nil end
-    parts = string.split(key, ".")
+    parts = key:split(".")
     current = t
     i = 1
-    while i <= rawlen(parts)
+    while i <= parts:len()
         if current == nil return nil end
         current = current[parts[i]]
         i += 1
@@ -18,27 +18,27 @@ deep_get(t: any, key: any): any
     current
 end
 
--- deep_has: check if a dot-path key exists.
+# deep_has: check if a dot-path key exists.
 deep_has(t: any, key: any): bool
     deep_get(t, key) != nil
 end
 
--- deep_set: set a value in a nested table by dot-path.
+# deep_set: set a value in a nested table by dot-path.
 deep_set(t: any, key: any, value: any): void
-    parts = string.split(key, ".")
+    parts = key:split(".")
     current = t
     i = 1
-    while i < rawlen(parts)
+    while i < parts:len()
         if current[parts[i]] == nil
             current[parts[i]] = {}
         end
         current = current[parts[i]]
         i += 1
     end
-    current[parts[rawlen(parts)]] = value
+    current[parts[parts:len()]] = value
 end
 
--- deep_merge_into: recursively merge src into dst.
+# deep_merge_into: recursively merge src into dst.
 deep_merge_into(dst: any, src: any): void
     if src == nil return end
     for k, v in src
@@ -50,7 +50,7 @@ deep_merge_into(dst: any, src: any): void
     end
 end
 
--- collect_keys: collect dot-path keys from a nested table.
+# collect_keys: collect dot-path keys from a nested table.
 collect_keys(seen: any, out: any, t: any, prefix: any): void
     if t == nil return end
     for k, v in t
@@ -61,7 +61,7 @@ collect_keys(seen: any, out: any, t: any, prefix: any): void
         if seen[full_key] == nil
             seen[full_key] = true
             if type(v) != "table"
-                out[rawlen(out) + 1] = full_key
+                out[out:len() + 1] = full_key
             else
                 collect_keys(seen, out, v, full_key)
             end
@@ -69,7 +69,7 @@ collect_keys(seen: any, out: any, t: any, prefix: any): void
     end
 end
 
--- deep_copy_flat: copy nested values as dot-path keys into a flat table.
+# deep_copy_flat: copy nested values as dot-path keys into a flat table.
 deep_copy_flat(dst: any, prefix: any, src: any): void
     if src == nil return end
     for k, v in src
@@ -87,9 +87,9 @@ deep_copy_flat(dst: any, prefix: any, src: any): void
     end
 end
 
--- ---- Constructors ----
+# ---- Constructors ----
 
--- new: create a config from a table of defaults.
+# new: create a config from a table of defaults.
 new(defaults: any): any
     if defaults == nil defaults = {} end
     cfg = {}
@@ -99,54 +99,54 @@ new(defaults: any): any
     cfg
 end
 
--- ---- Access ----
+# ---- Access ----
 
--- get: retrieve a value by dot-path key (e.g. "server.port").
--- Falls back to defaults if not set.
+# get: retrieve a value by dot-path key (e.g. "server.port").
+# Falls back to defaults if not set.
 get(cfg: any, key: any): any
     val = deep_get(cfg.values, key)
     if val != nil return val end
     deep_get(cfg.defaults, key)
 end
 
--- get_or: retrieve a value with a custom fallback.
+# get_or: retrieve a value with a custom fallback.
 get_or(cfg: any, key: any, fallback: any): any
     val = get(cfg, key)
     if val != nil return val end
     fallback
 end
 
--- set: set a value by dot-path key.
+# set: set a value by dot-path key.
 set(cfg: any, key: any, value: any): void
     deep_set(cfg.values, key, value)
 end
 
--- has: check if a key exists (values or defaults).
+# has: check if a key exists (values or defaults).
 has(cfg: any, key: any): bool
     if deep_has(cfg.values, key) return true end
     deep_has(cfg.defaults, key)
 end
 
--- ---- Merge ----
+# ---- Merge ----
 
--- merge: deep-merge another config or table into this config's values.
+# merge: deep-merge another config or table into this config's values.
 merge(cfg: any, overlay: any): void
     deep_merge_into(cfg.values, overlay)
 end
 
--- merge_defaults: merge overrides into the defaults schema.
+# merge_defaults: merge overrides into the defaults schema.
 merge_defaults(cfg: any, overlay: any): void
     deep_merge_into(cfg.defaults, overlay)
 end
 
--- ---- Environment ----
+# ---- Environment ----
 
--- set_env_prefix: set a prefix for env var overrides (e.g. "APP").
+# set_env_prefix: set a prefix for env var overrides (e.g. "APP").
 set_env_prefix(cfg: any, prefix: str): void
     cfg.env_prefix = prefix
 end
 
--- load_env: populate config values from environment variables.
+# load_env: populate config values from environment variables.
 load_env(cfg: any): void
     env_data = os.getenv()
     if env_data == nil return end
@@ -161,17 +161,17 @@ load_env(cfg: any): void
         if prefix_len > 0
             if k:sub(1, prefix_len) == prefix
                 rest = k:sub(prefix_len + 1)
-                dot_key = string.lower(rest)
-                dot_key = string.gsub(dot_key, "_", ".")
+                dot_key = rest:lower()
+                dot_key = dot_key:gsub("_", ".")
                 deep_set(cfg.values, dot_key, v)
             end
         end
     end
 end
 
--- ---- Bulk Access ----
+# ---- Bulk Access ----
 
--- keys: return a list of all defined keys (values + defaults).
+# keys: return a list of all defined keys (values + defaults).
 keys(cfg: any): any
     seen = {}
     out = {}
@@ -180,7 +180,7 @@ keys(cfg: any): any
     out
 end
 
--- to_table: return the fully resolved config as a flat table.
+# to_table: return the fully resolved config as a flat table.
 to_table(cfg: any): any
     result = {}
     deep_copy_flat(result, "", cfg.defaults)
@@ -188,40 +188,40 @@ to_table(cfg: any): any
     result
 end
 
--- ---- Validation ----
+# ---- Validation ----
 
--- require_keys: check that all dot-path keys are present; return missing keys.
+# require_keys: check that all dot-path keys are present; return missing keys.
 require_keys(cfg: any, keys: any): any
     missing = {}
     i = 1
-    while i <= rawlen(keys)
+    while i <= keys:len()
         if not has(cfg, keys[i])
-            missing[rawlen(missing) + 1] = keys[i]
+            missing[missing:len() + 1] = keys[i]
         end
         i += 1
     end
     missing
 end
 
--- validate_not_nil: check that a key is not nil; return error message or nil.
+# validate_not_nil: check that a key is not nil; return error message or nil.
 validate_not_nil(cfg: any, key: any): any
     if get(cfg, key) != nil return nil end
     "missing required config key: " .. key
 end
 
--- ---- Serialization ----
+# ---- Serialization ----
 
--- to_string: format config as a readable string.
+# to_string: format config as a readable string.
 to_string(cfg: any): str
     parts = {}
     all_keys = keys(cfg)
     i = 1
-    while i <= rawlen(all_keys)
+    while i <= all_keys:len()
         val = get(cfg, all_keys[i])
-        parts[rawlen(parts) + 1] = all_keys[i] .. " = " .. val:to(str)
+        parts[parts:len() + 1] = all_keys[i] .. " = " .. val:to(str)
         i += 1
     end
-    table.sort(parts)
-    table.concat(parts, "\n")
+    parts:sort()
+    parts:concat("\n")
 end
 

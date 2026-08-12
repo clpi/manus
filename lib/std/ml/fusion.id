@@ -1,6 +1,6 @@
--- std.ml.fusion — Kernel fusion rules (compile-time rewrite targets)
+# std.ml.fusion — Kernel fusion rules (compile-time rewrite targets)
 
--- Adjacent op patterns the compiler should merge (documented contract for @trace)
+# Adjacent op patterns the compiler should merge (documented contract for @trace)
 rules(): any
     return {
         { pattern = { "linear", "relu" }, fused = "fused_linear_relu" },

@@ -1,35 +1,35 @@
--- expect: 84
--- SH-03 step: a Duo lexer that lowers to native ARM64 and emits the CANONICAL
--- token kind IDs — the same ids `src/lexer.zig` uses.
---
--- The kind ids are not invented here. They come from `lib/std/token/classify.id`
--- (SH-02, already `duo_canonical`, generated from `src/token_classify_gen.zig`)
--- via `req`, and fold to immediates at compile time — so the Duo lexer and the
--- host lexer agree on token identity by construction, not by convention.
---
--- Why this shape rather than `lib/std/compiler/lexer.id`: that lexer's `Lexer`
--- record has 18 fields including strings, nested records and floats, which
--- exceeds the direct backend's 8-slot register ABI for aggregates. Keeping lexer
--- state in scalars and a 3-field token record puts the whole thing inside the
--- proven native subset. The 18-field design is a choice, not a requirement.
+# expect: 84
+# SH-03 step: a Duo lexer that lowers to native ARM64 and emits the CANONICAL
+# token kind IDs — the same ids `src/lexer.zig` uses.
+#
+# The kind ids are not invented here. They come from `lib/std/token/classify.id`
+# (SH-02, already `duo_canonical`, generated from `src/token_classify_gen.zig`)
+# via `req`, and fold to immediates at compile time — so the Duo lexer and the
+# host lexer agree on token identity by construction, not by convention.
+#
+# Why this shape rather than `lib/std/compiler/lexer.id`: that lexer's `Lexer`
+# record has 18 fields including strings, nested records and floats, which
+# exceeds the direct backend's 8-slot register ABI for aggregates. Keeping lexer
+# state in scalars and a 3-field token record puts the whole thing inside the
+# proven native subset. The 18-field design is a choice, not a requirement.
 
-Classify = req "std.token.classify"
+Classify = classify
 
 tok: @{ kind: i64, start: i64, len: i64 }
 
--- Non-keyword kinds. `classify.id` covers only the 54 reserved words, so these
--- two live here and are deliberately outside the canonical keyword range.
+# Non-keyword kinds. `classify.id` covers only the 54 reserved words, so these
+# two live here and are deliberately outside the canonical keyword range.
 KIND_NAME = 0
 KIND_NUMBER = 1
 
-is_digit = (c: i64): i64
+is_digit: i64 = (c: i64)
     if c >= 48 and c <= 57
         return 1
     end
     0
 end
 
-is_alpha = (c: i64): i64
+is_alpha: i64 = (c: i64)
     if c >= 97 and c <= 122
         return 1
     end
@@ -42,7 +42,7 @@ is_alpha = (c: i64): i64
     0
 end
 
-is_space = (c: i64): i64
+is_space: i64 = (c: i64)
     if c == 32
         return 1
     end
@@ -55,63 +55,63 @@ is_space = (c: i64): i64
     0
 end
 
--- Keyword recognition by length then bytes. A real lexer does exactly this;
--- substring slicing is not in the native subset, and byte tests compile to
--- register compares with no allocation.
-classify_word = (src: str, start: i64, len: i64): i64
-    b0 = string.byte(src, start)
+# Keyword recognition by length then bytes. A real lexer does exactly this;
+# substring slicing is not in the native subset, and byte tests compile to
+# register compares with no allocation.
+classify_word: i64 = (src: str, start: i64, len: i64)
+    b0 = src:byte(start)
     if len == 2
-        if b0 == 105 and string.byte(src, start + 1) == 102
+        if b0 == 105 and src:byte(start + 1) == 102
             return Classify.KIND_IF
         end
-        if b0 == 100 and string.byte(src, start + 1) == 111
+        if b0 == 100 and src:byte(start + 1) == 111
             return Classify.KIND_DO
         end
     end
     if len == 3
-        if b0 == 101 and string.byte(src, start + 1) == 110 and string.byte(src, start + 2) == 100
+        if b0 == 101 and src:byte(start + 1) == 110 and src:byte(start + 2) == 100
             return Classify.KIND_END
         end
-        if b0 == 97 and string.byte(src, start + 1) == 110 and string.byte(src, start + 2) == 100
+        if b0 == 97 and src:byte(start + 1) == 110 and src:byte(start + 2) == 100
             return Classify.KIND_AND
         end
-        if b0 == 102 and string.byte(src, start + 1) == 117 and string.byte(src, start + 2) == 110
+        if b0 == 102 and src:byte(start + 1) == 117 and src:byte(start + 2) == 110
             return Classify.KIND_FUN
         end
     end
     if len == 5
-        if b0 == 108 and string.byte(src, start + 1) == 111 and string.byte(src, start + 4) == 108
+        if b0 == 108 and src:byte(start + 1) == 111 and src:byte(start + 4) == 108
             return Classify.KIND_LOCAL
         end
     end
     if len == 6
-        if b0 == 114 and string.byte(src, start + 1) == 101 and string.byte(src, start + 5) == 110
+        if b0 == 114 and src:byte(start + 1) == 101 and src:byte(start + 5) == 110
             return Classify.KIND_RETURN
         end
     end
     KIND_NAME
 end
 
-nexttoken = (src: str, pos: i64): tok
+nexttoken: tok = (src: str, pos: i64)
     n = #src
     i = pos
-    while i <= n and is_space(string.byte(src, i)) == 1
+    while i <= n and is_space(src:byte(i)) == 1
         i = i + 1
     end
     if i > n
         return { kind = 0 - 1, start = i, len = 0 }
     end
-    c = string.byte(src, i)
+    c = src:byte(i)
     if is_alpha(c) == 1
         j = i
-        while j <= n and is_alpha(string.byte(src, j)) == 1
+        while j <= n and is_alpha(src:byte(j)) == 1
             j = j + 1
         end
         return { kind = classify_word(src, i, j - i), start = i, len = j - i }
     end
     if is_digit(c) == 1
         j = i
-        while j <= n and is_digit(string.byte(src, j)) == 1
+        while j <= n and is_digit(src:byte(j)) == 1
             j = j + 1
         end
         return { kind = KIND_NUMBER, start = i, len = j - i }
@@ -119,10 +119,10 @@ nexttoken = (src: str, pos: i64): tok
     { kind = 0 - 2, start = i, len = 1 }
 end
 
--- Sum the canonical kind ids of every reserved word found. Because the ids come
--- from `classify.id`, this total is a fact about the shared token vocabulary —
--- if the Duo lexer and the host lexer ever disagreed on an id, it would move.
-sum_keyword_kinds = (src: str): i64
+# Sum the canonical kind ids of every reserved word found. Because the ids come
+# from `classify.id`, this total is a fact about the shared token vocabulary —
+# if the Duo lexer and the host lexer ever disagreed on an id, it would move.
+sum_keyword_kinds: i64 = (src: str)
     total = 0
     pos = 1
     n = #src
@@ -140,7 +140,7 @@ sum_keyword_kinds = (src: str): i64
 end
 
 main(): i64
-    -- Real Duo source. Reserved words present, with canonical ids:
-    --   local(19) + if(17) + and(4) + return(24) + end(10) + end(10) = 84
+    # Real Duo source. Reserved words present, with canonical ids:
+    #   local(19) + if(17) + and(4) + return(24) + end(10) + end(10) = 84
     sum_keyword_kinds("local x = 1 if x and x return x end end")
 end

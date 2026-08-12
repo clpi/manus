@@ -1,5 +1,5 @@
--- @pipeline product: one descriptor emits types x windows x operation policies
--- Run: duo run examples/pipeline_policy_product_showcase.id
+# @pipeline product: one descriptor emits types x windows x operation policies
+# Run: duo run examples/pipeline_policy_product_showcase.id
 
 @c.emit([[
 static inline int64_t double_i64(int64_t v) { return v * 2; }

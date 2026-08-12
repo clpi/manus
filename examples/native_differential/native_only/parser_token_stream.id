@@ -1,14 +1,14 @@
--- expect: 15
--- The capability SH-04 was actually waiting on: a token-driven recursive-descent
--- parser lowering to native ARM64.
---
--- Recursive descent needs the token array shared across mutually recursive
--- functions, plus a cursor they all advance. Both are positional tables passed
--- by base address, so this exercises shared reads (`toks[p]`), shared writes
--- (`st[1] = ...`), and mutual recursion in one program.
---
--- Tokens: a value >= 0 is a literal, -1 is `+`, -2 is `*`. The input is
--- 2 + 3 * 4 + 1, so precedence must be respected: 2 + 12 + 1 = 15, not 21.
+# expect: 15
+# The capability SH-04 was actually waiting on: a token-driven recursive-descent
+# parser lowering to native ARM64.
+#
+# Recursive descent needs the token array shared across mutually recursive
+# functions, plus a cursor they all advance. Both are positional tables passed
+# by base address, so this exercises shared reads (`toks[p]`), shared writes
+# (`st[1] = ...`), and mutual recursion in one program.
+#
+# Tokens: a value >= 0 is a literal, -1 is `+`, -2 is `*`. The input is
+# 2 + 3 * 4 + 1, so precedence must be respected: 2 + 12 + 1 = 15, not 21.
 parse_factor(toks: ptr, st: ptr): i64
     p: i64 = st[1]
     v: i64 = toks[p]

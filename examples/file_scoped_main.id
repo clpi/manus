@@ -1,4 +1,4 @@
-guy = req "file_scoped_guy"
+guy = file_scoped_guy
 
 assert(guy.x == 3)
 assert(guy.y == 8)

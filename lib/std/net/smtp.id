@@ -1,28 +1,28 @@
--- std.net_smtp — SMTP client (mirrors Go's net/smtp)
--- Provides a minimal SMTP client for sending plain-text email.
--- Uses io.popen to invoke the system `sendmail` or `curl` as a transport.
+# std.net_smtp — SMTP client (mirrors Go's net/smtp)
+# Provides a minimal SMTP client for sending plain-text email.
+# Uses io.popen to invoke the system `sendmail` or `curl` as a transport.
 
--- Sanitize email addresses and arguments for shell safety
+# Sanitize email addresses and arguments for shell safety
 shell_escape(s: str): str
-    -- Replace dangerous shell characters
-    string.gsub(s, "[;&|`$(){}]", "")
+    # Replace dangerous shell characters
+    s:gsub("[;&|`$(){}]", "")
 end
 
--- send_mail: send a plain-text email.
--- addr: "host:port" of the SMTP server (or just "host" for port 25).
--- from: sender address.
--- to: array of recipient addresses.
--- msg: full RFC 5322 message string (headers + blank line + body).
--- Returns true on success, false + error on failure.
+# send_mail: send a plain-text email.
+# addr: "host:port" of the SMTP server (or just "host" for port 25).
+# from: sender address.
+# to: array of recipient addresses.
+# msg: full RFC 5322 message string (headers + blank line + body).
+# Returns true on success, false + error on failure.
 send_mail(addr: str, from: str, to: any, msg: str): any
     if addr == nil or from == nil or to == nil or msg == nil
         return false, "missing arguments"
     end
-    -- build a sendmail command with sanitized arguments
+    # build a sendmail command with sanitized arguments
     safe_from = shell_escape(from)
     recipients = ""
     i = 1
-    while i <= rawlen(to)
+    while i <= to:len()
         recipients = recipients .. " " .. shell_escape(to(str)(to[i]))
         i += 1
     end
@@ -36,30 +36,30 @@ send_mail(addr: str, from: str, to: any, msg: str): any
     return true, nil
 end
 
--- plain_auth: create a PLAIN SMTP auth credential.
+# plain_auth: create a PLAIN SMTP auth credential.
 plain_auth(username: str, password: str): any
     return {mechanism = "PLAIN", username = username, password = password}
 end
 
--- send_mail_auth: send email with SMTP AUTH (using curl as transport).
+# send_mail_auth: send email with SMTP AUTH (using curl as transport).
 send_mail_auth(addr: str, auth: any, from: str, to: any, msg: str): any
     if addr == nil or from == nil or to == nil or msg == nil
         return false, "missing arguments"
     end
-    -- use curl --url smtp://host:port --mail-from ... --mail-rcpt ...
+    # use curl #url smtp://host:port #mail-from ... #mail-rcpt ...
     host = addr
     port = 25
-    colon = string.find(addr, ":", 1, true)
+    colon = addr:find(":", 1, true)
     if colon != nil
         host = addr:sub(1, colon - 1)
         port = tonumber(addr:sub(colon + 1))
     end
-    -- Sanitize host to prevent shell injection
+    # Sanitize host to prevent shell injection
     safe_host = shell_escape(host)
     url = "smtp://" .. safe_host .. ":" .. port:to(str)
     cmd = "curl -s --url " .. url
     if auth != nil and auth.username != nil
-        -- Sanitize credentials
+        # Sanitize credentials
         safe_user = shell_escape(auth.username)
         safe_pass = shell_escape(auth.password)
         cmd = cmd .. " --user " .. safe_user .. ":" .. safe_pass
@@ -67,7 +67,7 @@ send_mail_auth(addr: str, auth: any, from: str, to: any, msg: str): any
     safe_from = shell_escape(from)
     cmd = cmd .. " --mail-from " .. safe_from
     i = 1
-    while i <= rawlen(to)
+    while i <= to:len()
         cmd = cmd .. " --mail-rcpt " .. shell_escape(to(str)(to[i]))
         i += 1
     end
@@ -81,18 +81,18 @@ send_mail_auth(addr: str, auth: any, from: str, to: any, msg: str): any
     return true, nil
 end
 
--- new_message: build an RFC 5322 message from parts.
--- headers: table of header name -> value.
--- body: message body string.
+# new_message: build an RFC 5322 message from parts.
+# headers: table of header name -> value.
+# body: message body string.
 new_message(headers: any, body: str): str
     if headers == nil headers = {} end
     if body == nil body = "" end
     out = {}
     for k, v in headers
-        out[rawlen(out) + 1] = k .. ": " .. v:to(str) .. "\r\n"
+        out[out:len() + 1] = k .. ": " .. v:to(str) .. "\r\n"
     end
-    out[rawlen(out) + 1] = "\r\n"
-    out[rawlen(out) + 1] = body
-    table.concat(out)
+    out[out:len() + 1] = "\r\n"
+    out[out:len() + 1] = body
+    out:concat()
 end
 

@@ -11,14 +11,14 @@ until every blocker below is closed and explicit release authorization is record
 | Development remote remains `clpi/duo` during concurrent work | **open** — current origin |
 | Release repo `idollang/idol` receives no development commits | **open** — do not push dev work there |
 | Release migration runbook exists as a dedicated future operation | **open** |
-| `tools/devnode/doctor` admits only `clpi/duo` development checkouts | **met** — release checkout fails closed |
+| `tools/node/dev/doctor` admits only `clpi/duo` development checkouts | **met** — release checkout fails closed |
 
 ## Authority and orientation
 
 | Requirement | Status |
 |---|---|
-| Single MCP manifest at `tools/devnode/mcp.manifest.json` | **candidate implemented** — aggregate admission remains open |
-| Single config generator `tools/devnode/generate-configs` | **candidate implemented** — aggregate admission remains open |
+| Single MCP manifest at `tools/node/dev/mcp.manifest.json` | **candidate implemented** — aggregate admission remains open |
+| Single config generator `tools/node/dev/generate-configs` | **candidate implemented** — aggregate admission remains open |
 | `orient` / `doctor` / `setup` derive live facts from current tree | **met** — verify on each clone |
 | Cursor rules remain routers under C0; no client-specific constitution | **met** — 9 scoped rules |
 | Language identity projects as Idol / `.id` without implying release-repo migration | **in progress** — reconcile projections |
@@ -41,13 +41,13 @@ until every blocker below is closed and explicit release authorization is record
 | Production graph facts consumed without source-text reconstruction | **open** — Codex/Poolside lanes |
 | FTCFTW evidence bundle for release candidate | **open** |
 
-## Client/devnode health
+## Client node dev health
 
 | Requirement | Status |
 |---|---|
-| Fresh clone: `tools/devnode/setup` → generated MCP projections → doctor PASS | **open** — re-verify after each devnode change |
+| Fresh clone: `tools/node/dev/setup` → generated MCP projections → doctor PASS | **open** — re-verify after each node dev change |
 | Codex/Cursor MCP initialize probes pass on release candidate | **open** |
-| Devin projection routes through `AGENTS.md` and devnode only | **met** at `HEAD` |
+| Devin projection routes through `AGENTS.md` and node dev only | **met** at `HEAD` |
 
 ## Authorization
 
@@ -78,7 +78,7 @@ Status and closure evidence live in the gaps and bootstrap ledger, not here.
 
 | Lane | Scope |
 |---|---|
-| **Cursor** | Coordination, release-readiness ledger, devnode admission routers only |
+| **Cursor** | Coordination, release-readiness ledger, node dev admission routers only |
 | **Devin** | Lexical identity → grammar-role SHC prerequisite (`GAP-145` → `GAP-134` input) |
 | **Poolside** | Realization / machine / FTCFTW |
 | **AGY** | Adversarial audit / `GAP-131` evidence truth |
@@ -86,13 +86,13 @@ Status and closure evidence live in the gaps and bootstrap ledger, not here.
 
 Claim exact paths before write. No broad cleanup. No release migration.
 
-## Current devnode admission notes (2026-08-11)
+## Current node dev admission notes (2026-08-11)
 
 | Check | Status |
 |---|---|
-| `tools/devnode/orient` | **met** — reports Idol / `clpi/duo` / untouched `idollang/idol` |
-| `tools/devnode/doctor` | **fail** — see blockers below |
-| Single MCP manifest | **met** — `tools/devnode/mcp.manifest.json` only |
+| `tools/node/dev/orient` | **met** — reports Idol / `clpi/duo` / untouched `idollang/idol` |
+| `tools/node/dev/doctor` | **fail** — see blockers below |
+| Single MCP manifest | **met** — `tools/node/dev/mcp.manifest.json` only |
 | Cursor rules as routers | **met** — 9 scoped `.mdc`, all under 50 lines except always-on (21 lines) |
 
 Doctor failures observed on this checkout (not an exhaustive census): pinned tool

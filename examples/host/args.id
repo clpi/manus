@@ -1,0 +1,11 @@
+# Teaching: os.args table under os world (GAP-155).
+#
+# Launcher ingress (bootstrap only): host argv → os.args table projection.
+# Source never calls os.args(). It indexes the ordinary table.
+
+command: str = os.args[1]
+target: str = os.args[2]
+
+main: i64 = ()
+    print("{command} {target}")
+    0

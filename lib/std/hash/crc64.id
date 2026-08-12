@@ -1,23 +1,23 @@
--- std.hash.crc64 — CRC-64 checksum (mirrors Go's hash/crc64)
--- Uses the ECMA-182 polynomial with 32-bit wide arithmetic.
+# std.hash.crc64 — CRC-64 checksum (mirrors Go's hash/crc64)
+# Uses the ECMA-182 polynomial with 32-bit wide arithmetic.
 
 make_poly_hi(lo: i64): i64
-    -- ECMA-182 polynomial top 32 bits
+    # ECMA-182 polynomial top 32 bits
     0x42F0E1EB
 end
 
 make_poly_lo(lo: i64): i64
-    -- ECMA-182 polynomial bottom 32 bits
+    # ECMA-182 polynomial bottom 32 bits
     (0xA9EA3693 + lo) % 4294967296
 end
 
 poly_hi = 0xC96C5795
 poly_lo = 0xD7870F42
 
--- NOT `table`: a module-level binding named `table` shadows the runtime
--- `table` global, and `update` then resolved `table[idx+1]` to the library
--- table instead of this one. `.hi`/`.lo` came back nil, so no XOR ever
--- happened and the checksum was pure byte-shifting (crc_hi stayed 0).
+# NOT `table`: a module-level binding named `table` shadows the runtime
+# `table` global, and `update` then resolved `table[idx+1]` to the library
+# table instead of this one. `.hi`/`.lo` came back nil, so no XOR ever
+# happened and the checksum was pure byte-shifting (crc_hi stayed 0).
 crc_table = {}
 for i = 0, 255
     crc_hi = 0
@@ -41,8 +41,8 @@ new(): any
 end
 
 update(state: any, data: str): void
-    for i = 1, std.string.len(data)
-        idx = (state.crc_lo ~ std.string.byte(data, i)) % 256
+    for i = 1, data:len()
+        idx = (state.crc_lo ~ data:byte(i)) % 256
         new_hi = state.crc_hi >> 8
         new_lo = ((state.crc_hi & 0xFF) << 24) + (state.crc_lo >> 8)
         state.crc_hi = (new_hi ~ crc_table[idx + 1].hi) % 4294967296

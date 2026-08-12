@@ -1,6 +1,6 @@
--- std.ml.ops — High-level ML ops; hot paths delegate to ml.* intrinsics
+# std.ml.ops — High-level ML ops; hot paths delegate to ml.* intrinsics
 
--- Native kernels (zero-arg checksum benchmarks / fused paths)
+# Native kernels (zero-arg checksum benchmarks / fused paths)
 bench_matmul(): f64
     return ml.matmul_256()
 end
@@ -37,7 +37,7 @@ bench_conv1d(): f64
     return ml.conv1d()
 end
 
--- User-facing tensor ops (stdlib path; compiler may fuse later)
+# User-facing tensor ops (stdlib path; compiler may fuse later)
 @hot
 matmul(a, b): any
     return std.ml.tensor.matmul(a, b)
@@ -69,7 +69,7 @@ layernorm(t, eps): any
         d = t.data[i] - mean
         var += d * d
     end
-    inv_std = 1.0 / math.sqrt(var / n + eps)
+    inv_std = 1.0 / var / n + eps:sqrt()
     result = std.ml.tensor.zeros(t.rows, t.cols)
     for i = 1, n
         result.data[i] = (t.data[i] - mean) * inv_std

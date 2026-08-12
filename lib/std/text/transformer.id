@@ -1,19 +1,19 @@
--- std.text.transformer — Text transformation utilities
--- For NLP preprocessing and text normalization in ward's ML pipeline.
+# std.text.transformer — Text transformation utilities
+# For NLP preprocessing and text normalization in ward's ML pipeline.
 
--- ═══════════════════════════════════════════════════════════════
--- Text Normalization
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Text Normalization
+# ═══════════════════════════════════════════════════════════════
 
 lower(s: str): str
     result = ""
     i = 1
     while i <= #s
         c = s:byte(i)
-        if c >= 65 and c <= 90  -- A-Z
-            result = result .. string.char(c + 32)
+        if c >= 65 and c <= 90  # A-Z
+            result = result .. c + 32:char()
         else
-            result = result .. string.char(c)
+            result = result .. c:char()
         end
         i += 1
     end
@@ -25,10 +25,10 @@ upper(s: str): str
     i = 1
     while i <= #s
         c = s:byte(i)
-        if c >= 97 and c <= 122  -- a-z
-            result = result .. string.char(c - 32)
+        if c >= 97 and c <= 122  # a-z
+            result = result .. c - 32:char()
         else
-            result = result .. string.char(c)
+            result = result .. c:char()
         end
         i += 1
     end
@@ -41,14 +41,14 @@ title(s: str): str
     i = 1
     while i <= #s
         c = s:byte(i)
-        if c == 32 or c == 9 or c == 10  -- whitespace
+        if c == 32 or c == 9 or c == 10  # whitespace
             capitalize_next = true
-            result = result .. string.char(c)
+            result = result .. c:char()
         elseif capitalize_next and c >= 97 and c <= 122
-            result = result .. string.char(c - 32)
+            result = result .. c - 32:char()
             capitalize_next = false
         else
-            result = result .. string.char(c)
+            result = result .. c:char()
             capitalize_next = false
         end
         i += 1
@@ -60,17 +60,17 @@ capitalize(s: str): str
     if #s == 0 return s end
     first = s:byte(1)
     if first >= 97 and first <= 122
-        return string.char(first - 32) .. s:sub(2)
+        return first - 32:char() .. s:sub(2)
     end
     s
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Whitespace Handling
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Whitespace Handling
+# ═══════════════════════════════════════════════════════════════
 
 trim(s: str): str
-    -- Trim leading whitespace
+    # Trim leading whitespace
     start = 1
     while start <= #s
         c = s:byte(start)
@@ -78,7 +78,7 @@ trim(s: str): str
         start += 1
     end
 
-    -- Trim trailing whitespace
+    # Trim trailing whitespace
     finish = #s
     while finish >= start
         c = s:byte(finish)
@@ -121,7 +121,7 @@ compress_whitespace(s: str): str
                 in_whitespace = true
             end
         else
-            result = result .. string.char(c)
+            result = result .. c:char()
             in_whitespace = false
         end
         i += 1
@@ -133,12 +133,12 @@ normalize_whitespace(s: str): str
     compress_whitespace(trim(s))
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Text Cleaning (for NLP)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Text Cleaning (for NLP)
+# ═══════════════════════════════════════════════════════════════
 
 remove_accents(s: str): str
-    -- Simple accent removal (ASCII approximation)
+    # Simple accent removal (ASCII approximation)
     accents = {
         ["á"] = "a", ["à"] = "a", ["ä"] = "a", ["â"] = "a", ["ã"] = "a",
         ["é"] = "e", ["è"] = "e", ["ë"] = "e", ["ê"] = "e",
@@ -157,7 +157,7 @@ remove_accents(s: str): str
     result = ""
     i = 1
     while i <= #s
-        -- Try to match multi-byte characters
+        # Try to match multi-byte characters
         found = false
         for pattern, replacement in accents
             plen = #pattern
@@ -169,7 +169,7 @@ remove_accents(s: str): str
             end
         end
         if not found
-            result = result .. string.char(s:byte(i))
+            result = result .. s:byte(i):char()
             i += 1
         end
     end
@@ -181,12 +181,12 @@ remove_punctuation(s: str): str
     i = 1
     while i <= #s
         c = s:byte(i)
-        -- Keep alphanumeric and spaces
-        if (c >= 48 and c <= 57) or  -- 0-9
-           (c >= 65 and c <= 90) or  -- A-Z
-           (c >= 97 and c <= 122) or -- a-z
-           c == 32              -- space
-            result = result .. string.char(c)
+        # Keep alphanumeric and spaces
+        if (c >= 48 and c <= 57) or  # 0-9
+           (c >= 65 and c <= 90) or  # A-Z
+           (c >= 97 and c <= 122) or # a-z
+           c == 32              # space
+            result = result .. c:char()
         end
         i += 1
     end
@@ -198,14 +198,14 @@ collapse_whitespace(s: str): str
 end
 
 normalize_unicode(s: str): str
-    -- Simple Unicode normalization (NFKD approximation)
-    -- Remove combining characters, normalize forms
+    # Simple Unicode normalization (NFKD approximation)
+    # Remove combining characters, normalize forms
     remove_accents(s)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Text Analysis
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Text Analysis
+# ═══════════════════════════════════════════════════════════════
 
 word_count(s: str): i64
     if #s == 0 return 0 end
@@ -237,7 +237,7 @@ sentence_count(s: str): i64
     i = 1
     while i <= #s
         c = s:byte(i)
-        if c == 46 or c == 33 or c == 63  -- . ! ?
+        if c == 46 or c == 33 or c == 63  # . ! ?
             count += 1
         end
         i += 1
@@ -255,9 +255,9 @@ avg_word_length(s: str): f64
     total / #words
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Text Splitting
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Text Splitting
+# ═══════════════════════════════════════════════════════════════
 
 split_lines(s: str): any
     lines = {}
@@ -265,13 +265,13 @@ split_lines(s: str): any
     i = 1
     while i <= #s
         c = s:byte(i)
-        if c == 10  -- newline
+        if c == 10  # newline
             lines[#lines + 1] = current
             current = ""
-        elseif c == 13  -- carriage return
-            -- Skip, handle \r\n
+        elseif c == 13  # carriage return
+            # Skip, handle \r\n
         else
-            current = current .. string.char(c)
+            current = current .. c:char()
         end
         i += 1
     end
@@ -293,7 +293,7 @@ split_words(s: str): any
                 current = ""
             end
         else
-            current = current .. string.char(c)
+            current = current .. c:char()
         end
         i += 1
     end
@@ -309,14 +309,14 @@ split_sentences(s: str): any
     i = 1
     while i <= #s
         c = s:byte(i)
-        current = current .. string.char(c)
-        if c == 46 or c == 33 or c == 63  -- . ! ?
+        current = current .. c:char()
+        if c == 46 or c == 33 or c == 63  # . ! ?
             sentences[#sentences + 1] = trim(current)
             current = ""
         end
         i += 1
     end
-    if string.len(trim(current)) > 0
+    if trim(current):len() > 0
         sentences[#sentences + 1] = trim(current)
     end
     sentences
@@ -348,9 +348,9 @@ split_tokens(s: str, max_length: i64): any
     tokens
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Text Search & Replace
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Text Search & Replace
+# ═══════════════════════════════════════════════════════════════
 
 replace(s: str, old: str, new: str): str
     result = ""
@@ -361,7 +361,7 @@ replace(s: str, old: str, new: str): str
             result = result .. new
             i += old_len
         else
-            result = result .. string.char(s:byte(i))
+            result = result .. s:byte(i):char()
             i += 1
         end
     end
@@ -387,9 +387,9 @@ count_occurrences(s: str, pattern: str): i64
     count
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Text Encoding Detection (simplified)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Text Encoding Detection (simplified)
+# ═══════════════════════════════════════════════════════════════
 
 is_ascii(s: str): bool
     i = 1
@@ -401,18 +401,18 @@ is_ascii(s: str): bool
 end
 
 is_utf8(s: str): bool
-    -- Simplified check
+    # Simplified check
     is_ascii(s)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
--- Normalization
--- Whitespace
--- Cleaning
--- Analysis
--- Splitting
--- Search
--- Encoding
+# Normalization
+# Whitespace
+# Cleaning
+# Analysis
+# Splitting
+# Search
+# Encoding

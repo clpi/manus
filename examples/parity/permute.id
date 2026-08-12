@@ -1,6 +1,6 @@
--- G-061 tier-1 three-site parity fixture for `comp.permute`.
--- TOP = top_level_assign · NESTED = nested_callback · BLOCK = block_body.
--- All three C string literals must be IDENTICAL; scripts/transform.id asserts it.
+# G-061 tier-1 three-site parity fixture for `comp.permute`.
+# TOP = top_level_assign · NESTED = nested_callback · BLOCK = block_body.
+# All three C string literals must be IDENTICAL; scripts/transform.id asserts it.
 
 concept Has1
     x: i64

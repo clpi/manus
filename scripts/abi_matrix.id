@@ -1,63 +1,63 @@
--- ABI shape matrix — differential the direct backend over GENERATED call
--- shapes rather than over the programs someone happened to write.
---
--- WHY THIS EXISTS. The native differential sat at 81 agree / 2 differ, green,
--- while the backend passed f64 arguments to a float kernel in GP registers
--- (gap[056]) — `p(x: f64, y: f64): i64` with `if x > y` answered 1 where C
--- answered 9. The gate was not broken. It was UNCOVERED: no corpus program had
--- the shape "f64 params + comparison + non-f64 return", so 81/2 was a statement
--- about what the corpus contains, not about whether the backend is correct.
---
--- A corpus grows by accident. This grid grows on purpose: every combination of
--- parameter signature x return type x whether the body branches on a
--- comparison. Shapes nobody would think to write down are exactly the ones a
--- hand-written corpus omits, and the AAPCS64 argument classifier is precisely
--- the kind of code that is right for the shapes you tested and wrong for the
--- rest.
---
--- MIXED SIGNATURES ARE THE POINT. AAPCS64 counts FP and GP argument registers
--- SEPARATELY: `f(a: i64, b: f64, c: i64)` is x0, d0, x1 — not x0, d1, x2. An
--- all-float or all-integer signature is right under a shared-counter
--- implementation and a mixed one is not, so a grid without mixtures would have
--- reported this backend clean.
---
--- The C backend is the oracle. Every row is judged by comparing VALUES from
--- both backends, never by "it compiled" — a bail is reported separately and is
--- not a failure here, because a refusal is honest and a wrong answer is not.
---
--- MISCOMPILE_CEILING ratchets DOWNWARD. It shipped at 4 -- the gap[056]
--- family -- and reached 0 the same day, so the gate is now a floor at zero:
--- ANY wrong answer fails it, and a future fix that lowers it further should do
--- so in the same commit — the mirror of how NATIVE_FLOOR ratchets up.
+# ABI shape matrix — differential the direct backend over GENERATED call
+# shapes rather than over the programs someone happened to write.
+#
+# WHY THIS EXISTS. The native differential sat at 81 agree / 2 differ, green,
+# while the backend passed f64 arguments to a float kernel in GP registers
+# (gap[056]) — `p(x: f64, y: f64): i64` with `if x > y` answered 1 where C
+# answered 9. The gate was not broken. It was UNCOVERED: no corpus program had
+# the shape "f64 params + comparison + non-f64 return", so 81/2 was a statement
+# about what the corpus contains, not about whether the backend is correct.
+#
+# A corpus grows by accident. This grid grows on purpose: every combination of
+# parameter signature x return type x whether the body branches on a
+# comparison. Shapes nobody would think to write down are exactly the ones a
+# hand-written corpus omits, and the AAPCS64 argument classifier is precisely
+# the kind of code that is right for the shapes you tested and wrong for the
+# rest.
+#
+# MIXED SIGNATURES ARE THE POINT. AAPCS64 counts FP and GP argument registers
+# SEPARATELY: `f(a: i64, b: f64, c: i64)` is x0, d0, x1 — not x0, d1, x2. An
+# all-float or all-integer signature is right under a shared-counter
+# implementation and a mixed one is not, so a grid without mixtures would have
+# reported this backend clean.
+#
+# The C backend is the oracle. Every row is judged by comparing VALUES from
+# both backends, never by "it compiled" — a bail is reported separately and is
+# not a failure here, because a refusal is honest and a wrong answer is not.
+#
+# MISCOMPILE_CEILING ratchets DOWNWARD. It shipped at 4 # the gap[056]
+# family # and reached 0 the same day, so the gate is now a floor at zero:
+# ANY wrong answer fails it, and a future fix that lowers it further should do
+# so in the same commit — the mirror of how NATIVE_FLOOR ratchets up.
 
-_sh = (cmd: str): str
+_sh: str = (cmd: str)
     root = std.script.getenv("DUO_ROOT", ".")
     std.script.capture("cd {root} && {cmd}")
 end
 
-_num = (out: str): i64
+_num: i64 = (out: str)
     n: i64 = #out
     while n > 0 and (out:byte(n) == 10 or out:byte(n) == 32)
         n -= 1
     end
-    to(i64)(string.sub(out, 1, n))
+    to(i64)(out:sub(1, n))
 end
 
--- One shell pass builds the grid, compiles each shape both ways, runs both, and
--- prints four counts. Duo parses numbers, not process output.
---
--- Each row is `params|call|unused`. For every row three bodies are generated:
---   1. no comparison, constant i64 return   — isolates plain argument passing
---   2. comparison, i64 return               — argument passing + fcmp
---   3. comparison, str return               — the return-classification path
--- The shell program is ONE long-bracket literal. It was a 19-line `..` chain,
--- which put 37 hits on audit100's `concatlit` row — a gate that enforces the
--- deny table has no business violating it, and §0.7 is explicit: `..` joins
--- existing string BINDINGS, interpolation does the rest. A long bracket also
--- deletes a whole class of quoting bug, since the shell's own `"` and `$` need
--- no escaping inside one.
+# One shell pass builds the grid, compiles each shape both ways, runs both, and
+# prints four counts. Duo parses numbers, not process output.
+#
+# Each row is `params|call|unused`. For every row three bodies are generated:
+#   1. no comparison, constant i64 return   — isolates plain argument passing
+#   2. comparison, i64 return               — argument passing + fcmp
+#   3. comparison, str return               — the return-classification path
+# The shell program is ONE long-bracket literal. It was a 19-line `..` chain,
+# which put 37 hits on audit100's `concatlit` row — a gate that enforces the
+# deny table has no business violating it, and §0.7 is explicit: `..` joins
+# existing string BINDINGS, interpolation does the rest. A long bracket also
+# deletes a whole class of quoting bug, since the shell's own `"` and `$` need
+# no escaping inside one.
 _script = [[
-duo=./zig-out/bin/duo; d=/tmp/duo_abi_matrix; rm -rf $d; mkdir -p $d; i=0;
+duo=./zig-out/bin/idol; d=/tmp/duo_abi_matrix; rm -rf $d; mkdir -p $d; i=0;
 for ps in 'a: i64|f(7)' 'a: f64|f(3.5)' 'a: i64, b: f64|f(7, 3.5)' \
           'a: f64, b: i64|f(3.5, 7)' 'a: f64, b: f64|f(3.5, 1.5)' \
           'a: i64, b: f64, c: i64, d: f64|f(1, 2.5, 3, 4.5)' \
@@ -70,14 +70,14 @@ for ps in 'a: i64|f(7)' 'a: f64|f(3.5)' 'a: i64, b: f64|f(7, 3.5)' \
 done
 ok=0; wrong=0; bail=0; noc=0
 for f in $d/t*.id; do
-  if $duo compile --backend=c "$f" -o $d/c.bin >/dev/null 2>&1; then cv=$($d/c.bin; echo $?); else noc=$((noc+1)); continue; fi
-  if $duo compile --backend=direct "$f" -o $d/x.bin >/dev/null 2>&1; then dv=$($d/x.bin; echo $?); else bail=$((bail+1)); continue; fi
+  if $duo compile "$f" -o $d/c.bin >/dev/null 2>&1; then cv=$($d/c.bin; echo $?); else noc=$((noc+1)); continue; fi
+  if $duo compile #backend=direct "$f" -o $d/x.bin >/dev/null 2>&1; then dv=$($d/x.bin; echo $?); else bail=$((bail+1)); continue; fi
   if [ "$cv" = "$dv" ]; then ok=$((ok+1)); else wrong=$((wrong+1)); echo "$(basename $f) c=$cv direct=$dv" >> $d/wrong.txt; fi
 done
 echo "$ok $wrong $bail $noc"
 ]]
 
-_sweep = (): str
+_sweep: str = ()
     _sh(_script)
 end
 
@@ -88,17 +88,17 @@ main(): i64
         return 3
     end
 
-    ok: i64 = _num(string.match(counts, "^%d+"))
-    r1 = string.gsub(counts, "^%d+%s+", "")
-    wrong: i64 = _num(string.match(r1, "^%d+"))
-    r2 = string.gsub(r1, "^%d+%s+", "")
-    bail: i64 = _num(string.match(r2, "^%d+"))
-    r3 = string.gsub(r2, "^%d+%s+", "")
-    noc: i64 = _num(string.match(r3, "^%d+"))
+    ok: i64 = _num(counts:match("^%d+"))
+    r1 = counts:gsub("^%d+%s+", "")
+    wrong: i64 = _num(r1:match("^%d+"))
+    r2 = r1:gsub("^%d+%s+", "")
+    bail: i64 = _num(r2:match("^%d+"))
+    r3 = r2:gsub("^%d+%s+", "")
+    noc: i64 = _num(r3:match("^%d+"))
 
     total: i64 = ok + wrong + bail
-    -- Positive control. Every zero here is reported by a gate that could equally
-    -- be broken, and a grid that judged nothing would print a clean 0 wrong.
+    # Positive control. Every zero here is reported by a gate that could equally
+    # be broken, and a grid that judged nothing would print a clean 0 wrong.
     if total == 0
         print("abi_matrix: FAIL — 0 shapes were judged; the grid is broken, not clean")
         return 3

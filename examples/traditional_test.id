@@ -1,10 +1,10 @@
--- Test traditional fun calls
+# Test traditional fun calls
 
 greet(name: str): str
     "Hello, " .. name
 end
 
--- Traditional Lua-style call
+# Traditional Lua-style call
 print(greet("World"))
 
 add(a: i64, b: i64): i64

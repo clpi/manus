@@ -1,8 +1,8 @@
--- std.text_scanner — text scanning (mirrors Go's text/scanner)
--- Provides a simple tokenizer for source-like text: identifiers, numbers,
--- strings, punctuation, and comments.
+# std.text_scanner — text scanning (mirrors Go's text/scanner)
+# Provides a simple tokenizer for source-like text: identifiers, numbers,
+# strings, punctuation, and comments.
 
--- Token kinds
+# Token kinds
 EOF = -1
 IDENT = 1
 INT = 2
@@ -14,27 +14,27 @@ COMMENT = 7
 NEWLINE = 8
 WS = 9
 
--- new_scanner: create a scanner over source string s.
+# new_scanner: create a scanner over source string s.
 new_scanner(s: str): any
     {src = s, pos = 1, tok = "", kind = 0, line = 1, col = 1}
 end
 
--- is_ident_start: report whether byte b can start an identifier.
+# is_ident_start: report whether byte b can start an identifier.
 is_ident_start(b: i64): bool
     (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or b == 95
 end
 
--- is_ident_part: report whether byte b can continue an identifier.
+# is_ident_part: report whether byte b can continue an identifier.
 is_ident_part(b: i64): bool
     is_ident_start(b) or (b >= 48 and b <= 57)
 end
 
--- is_digit: report whether byte b is a digit.
+# is_digit: report whether byte b is a digit.
 is_digit(b: i64): bool
     b >= 48 and b <= 57
 end
 
--- scan_ident: scan an identifier starting at current position.
+# scan_ident: scan an identifier starting at current position.
 scan_ident(sc: any): any
     start = sc.pos
     while sc.pos <= #sc.src and is_ident_part(sc.src:byte(sc.pos))
@@ -45,14 +45,14 @@ scan_ident(sc: any): any
     sc
 end
 
--- scan_number: scan an integer or float.
+# scan_number: scan an integer or float.
 scan_number(sc: any): any
     start = sc.pos
     is_float = false
     while sc.pos <= #sc.src and is_digit(sc.src:byte(sc.pos))
         sc.pos = sc.pos + 1
     end
-    -- check for decimal point
+    # check for decimal point
     if sc.pos <= #sc.src and sc.src:byte(sc.pos) == 46
         is_float = true
         sc.pos = sc.pos + 1
@@ -60,15 +60,15 @@ scan_number(sc: any): any
             sc.pos = sc.pos + 1
         end
     end
-    -- check for exponent
+    # check for exponent
     if sc.pos <= #sc.src
         b = sc.src:byte(sc.pos)
-        if b == 101 or b == 69  -- 'e' or 'E'
+        if b == 101 or b == 69  # 'e' or 'E'
             is_float = true
             sc.pos = sc.pos + 1
             if sc.pos <= #sc.src
                 b = sc.src:byte(sc.pos)
-                if b == 43 or b == 45 sc.pos = sc.pos + 1 end  -- + or -
+                if b == 43 or b == 45 sc.pos = sc.pos + 1 end  # + or -
             end
             while sc.pos <= #sc.src and is_digit(sc.src:byte(sc.pos))
                 sc.pos = sc.pos + 1
@@ -84,7 +84,7 @@ scan_number(sc: any): any
     sc
 end
 
--- scan_string: scan a quoted string. Supports " and ' delimiters.
+# scan_string: scan a quoted string. Supports " and ' delimiters.
 scan_string(sc: any): any
     quote = sc.src:byte(sc.pos)
     sc.pos = sc.pos + 1
@@ -97,22 +97,22 @@ scan_string(sc: any): any
             sc.kind = STRING
             return sc
         end
-        if b == 92  -- backslash escape
+        if b == 92  # backslash escape
             sc.pos = sc.pos + 2
         else
             sc.pos = sc.pos + 1
         end
     end
-    -- unterminated string
+    # unterminated string
     sc.tok = sc.src:sub(start)
     sc.kind = STRING
     sc
 end
 
--- scan_comment: scan a line comment starting with -- or //.
+# scan_comment: scan a line comment starting with # or //.
 scan_comment(sc: any): any
     start = sc.pos
-    sc.pos = sc.pos + 2  -- skip prefix
+    sc.pos = sc.pos + 2  # skip prefix
     while sc.pos <= #sc.src and sc.src:byte(sc.pos) != 10
         sc.pos = sc.pos + 1
     end
@@ -121,14 +121,14 @@ scan_comment(sc: any): any
     sc
 end
 
--- scan: advance to the next token. Returns the token kind (or EOF).
+# scan: advance to the next token. Returns the token kind (or EOF).
 scan(sc: any): i64
     if sc.pos > #sc.src
         sc.tok = ""
         sc.kind = EOF
         return EOF
     end
-    -- skip whitespace but track newlines
+    # skip whitespace but track newlines
     while sc.pos <= #sc.src
         b = sc.src:byte(sc.pos)
         if b == 32 or b == 9
@@ -149,38 +149,38 @@ scan(sc: any): i64
         return EOF
     end
     b = sc.src:byte(sc.pos)
-    -- comment
+    # comment
     if b == 45 and sc.pos + 1 <= #sc.src and sc.src:byte(sc.pos + 1) == 45
         return scan_comment(sc)
     end
     if b == 47 and sc.pos + 1 <= #sc.src and sc.src:byte(sc.pos + 1) == 47
         return scan_comment(sc)
     end
-    -- identifier
+    # identifier
     if is_ident_start(b)
         return scan_ident(sc)
     end
-    -- number
+    # number
     if is_digit(b)
         return scan_number(sc)
     end
-    -- string
-    if b == 34 or b == 39  -- " or '
+    # string
+    if b == 34 or b == 39  # " or '
         return scan_string(sc)
     end
-    -- punctuation (single char)
+    # punctuation (single char)
     sc.tok = sc.src:sub(sc.pos, sc.pos)
     sc.kind = PUNCT
     sc.pos = sc.pos + 1
     PUNCT
 end
 
--- token_text: return the current token text.
+# token_text: return the current token text.
 token_text(sc: any): str
     sc.tok
 end
 
--- token_kind: return the current token kind.
+# token_kind: return the current token kind.
 token_kind(sc: any): i64
     sc.kind
 end

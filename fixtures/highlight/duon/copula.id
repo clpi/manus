@@ -1,13 +1,13 @@
--- surface: duon
--- H-1, THE FIRST PROOF. `:` is two roles and grammar.md R1 decides which:
--- INVOKE always takes an argument group, IS never does. Every `:` below is one
--- or the other, and a front-end that gives them one colour is convicted here.
+# surface: duon
+# H-1, THE FIRST PROOF. `:` is two roles and grammar.md R1 decides which:
+# INVOKE always takes an argument group, IS never does. Every `:` below is one
+# or the other, and a front-end that gives them one colour is convicted here.
 x: f64 = 1.5
 lx: lexer = lexer{ src }
 b = lx:read(number)(x)
 n: i64 = b:len()
 tok = lx:peek():kind()
--- R1 DECIDES, NOT SPACING (gap[078]). The `:` below is TIGHT and carries no
--- call group, so grammar.md R1 — normative, Pass 108 — makes it the COPULA.
--- A projector that reads spacing colours it purple and is convicted here.
+# R1 DECIDES, NOT SPACING (gap[078]). The `:` below is TIGHT and carries no
+# call group, so grammar.md R1 — normative, Pass 108 — makes it the COPULA.
+# A projector that reads spacing colours it purple and is convicted here.
 count:u32

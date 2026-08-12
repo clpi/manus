@@ -1,5 +1,5 @@
--- Break the linear codegen ceiling: one @comp.* line → O(types² × fields) output
--- Run: duo run examples/meta_ceiling_breaker.id
+# Break the linear codegen ceiling: one @comp.* line → O(types² × fields) output
+# Run: duo run examples/meta_ceiling_breaker.id
 
 concept HasXY
     x: f64
@@ -27,7 +27,7 @@ Label: { tag: str }
     acc
 end)
 
--- One @comp.ceiling line → O(types × fields) + O(types² × fields) C
+# One @comp.ceiling line → O(types × fields) + O(types² × fields) C
 @c.emit(@comp.ceiling("HasXY", PairApi, "HasTag"))
 
 pair_sig(a, b): str

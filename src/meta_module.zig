@@ -421,15 +421,15 @@ const builtins = [_]BuiltinEntry{
     .{ .public = "meta.sql", .internal = "__sql" },
     .{ .public = "comp.sql", .internal = "__sql" },
     .{ .public = "compiler.sql", .internal = "__sql" },
-    // The last two intrinsics still spelled with a leading `__` in .duo source.
+    // The last two intrinsics still spelled with a leading `__` in .id source.
     // Every other internal already had a `@comp.*` public name here; these did
     // not, which is the only reason the `__` namespace could not reach zero.
     .{ .public = "meta.native.load.u8", .internal = "__native_load_u8" },
     .{ .public = "comp.native.load.u8", .internal = "__native_load_u8" },
     .{ .public = "compiler.native.load.u8", .internal = "__native_load_u8" },
-    .{ .public = "meta.duo.kind", .internal = "__duo_kind" },
-    .{ .public = "comp.duo.kind", .internal = "__duo_kind" },
-    .{ .public = "compiler.duo.kind", .internal = "__duo_kind" },
+    .{ .public = "meta.id.kind", .internal = "__duo_kind" },
+    .{ .public = "comp.id.kind", .internal = "__duo_kind" },
+    .{ .public = "compiler.id.kind", .internal = "__duo_kind" },
     .{ .public = "meta.lua", .internal = "__lua_exec" },
     .{ .public = "comp.lua", .internal = "__lua_exec" },
     .{ .public = "compiler.lua", .internal = "__lua_exec" },
@@ -1345,7 +1345,7 @@ pub fn agentHooksText() []const u8 {
     \\docs/bootstrap.md — executed compiler frontier
     \\gaps/GAP-0NN.md — open obligations; verify the live census
     \\MCP duo_agent_session_start and duo_dev_claim_* — live state and ownership
-    \\Canonical implementation is .id; historical .duo and host code are migration debt
+    \\Canonical implementation is .id; historical .id and host code are migration debt
     \\std is migration distribution and std.script is frozen debt
     \\Missing relation or world vocabulary is SEMANTIC-VOCABULARY-BLOCKED
     ;
@@ -1591,7 +1591,7 @@ fn goalContains(goal: []const u8, needle: []const u8) bool {
     return std.mem.indexOf(u8, lower, needle) != null;
 }
 
-/// Goal-specific multiplier hint (mirrors lib/std/agent.duo multiplier_for).
+/// Goal-specific multiplier hint (mirrors lib/std/agent.id multiplier_for).
 pub fn agentMultiplierFor(goal: []const u8) []const u8 {
     if (goalContains(goal, "trait") or goalContains(goal, "derive") or goalContains(goal, "impl"))
         return "@comp.derive / @comp.derive.all / @comp.derive.bundle — O(types×fields)";

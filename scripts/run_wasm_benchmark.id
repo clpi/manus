@@ -1,13 +1,13 @@
--- WASM runtime benchmark with a ratcheted wall-clock baseline.
---
--- Duo replacement for scripts/run_wasm_benchmark.sh (monoglot census).
---
--- Compiles examples/benchmark_wasm.lua to wasm32-wasi, runs it under every
--- runtime on PATH, checks correctness, times each, and gates against
--- benchmarks/wasm_baseline.txt: a runtime more than 10% slower than its
--- recorded time fails the build.
---
--- Usage: duo run scripts/run_wasm_benchmark.id -- [--reset-baseline] [--runs N]
+# WASM runtime benchmark with a ratcheted wall-clock baseline.
+#
+# Duo replacement for scripts/run_wasm_benchmark.sh (monoglot census).
+#
+# Compiles examples/benchmark_wasm.lua to wasm32-wasi, runs it under every
+# runtime on PATH, checks correctness, times each, and gates against
+# benchmarks/wasm_baseline.txt: a runtime more than 10% slower than its
+# recorded time fails the build.
+#
+# Usage: idol run scripts/run_wasm_benchmark.id # [--reset-baseline] [--runs N]
 
 _BENCHES = 40
 _REGRESS_PCT = 10.0
@@ -36,9 +36,9 @@ _lpad(s: str, w: i64): str
     o
 end
 
--- `to(str)` on an f64 does not compile, so fixed-point comes from integers.
--- Negative values matter here: a delta percentage can be either sign, and
--- flooring a negative toward zero would report an improvement as a regression.
+# `to(str)` on an f64 does not compile, so fixed-point comes from integers.
+# Negative values matter here: a delta percentage can be either sign, and
+# flooring a negative toward zero would report an improvement as a regression.
 _fx(x: f64, places: i64): str
     neg = false
     v = x
@@ -70,18 +70,18 @@ end
 
 _fields(l: str): any
     o = {}
-    for _i, w in std.string.split(std.string.gsub(l, "\t", " "), " ")
+    for _i, w in l:gsub("\t", " "):split(" ")
         if w != "" o[#o + 1] = w end
     end
     o
 end
 
--- "RESULT <id> <value>" lines, joined, so two runtimes can be compared as one
--- string rather than field by field.
+# "RESULT <id> <value>" lines, joined, so two runtimes can be compared as one
+# string rather than field by field.
 _result_block(text: str): str
     out = ""
     n = 0
-    for _i, l in std.string.split(text, "\n")
+    for _i, l in text:split("\n")
         f = _fields(std.script.chomp(l))
         if #f >= 3 and f[1] == "RESULT"
             out = out .. f[2] .. " " .. f[3] .. "\n"
@@ -92,7 +92,7 @@ _result_block(text: str): str
 end
 
 _result_count(block: str): i64
-    for _i, l in std.string.split(block, "\n")
+    for _i, l in block:split("\n")
         f = _fields(l)
         if #f == 2 and f[1] == "__n"
             return to(i64)(f[2])
@@ -101,10 +101,10 @@ _result_count(block: str): i64
     0
 end
 
--- Wall clock via std.time.monotonic. The shell version needed a two-stage
--- fallback -- `/usr/bin/time -f %e`, and if that produced something
--- unparseable, bash's own TIMEFORMAT='%R' -- because GNU and BSD `time` differ.
--- An in-process clock has neither problem and no fork per sample.
+# Wall clock via std.time.monotonic. The shell version needed a two-stage
+# fallback # `/usr/bin/time -f %e`, and if that produced something
+# unparseable, bash's own TIMEFORMAT='%R' -- because GNU and BSD `time` differ.
+# An in-process clock has neither problem and no fork per sample.
 _wall_seconds(cmd: str): f64
     t0 = std.time.monotonic()
     std.script.run(cmd .. " >/dev/null 2>&1")
@@ -123,10 +123,10 @@ _min_wall(cmd: str, runs: i64): f64
 end
 
 _baseline_for(path: str, rt: str): f64
-    if not std.script.fs_exists(path) return 0.0 end
-    for _i, l in std.string.split(std.script.capture("cat " .. path), "\n")
+    if !std.script.fs_exists(path) return 0.0 end
+    for _i, l in std.script.capture("cat " .. path):split("\n")
         c = std.script.chomp(l)
-        if c != "" and std.string.sub(c, 1, 1) != "#"
+        if c != "" and c:sub(1, 1) != "#"
             f = _fields(c)
             if #f >= 2 and f[1] == rt
                 return to(f64)(f[2])
@@ -152,7 +152,7 @@ _save_baseline(path: str, names: any, times: any, runs: i64): void
     print("  INFO Baseline saved -> " .. path)
 end
 
-main = (): i64
+main: i64 = ()
     args = std.os.args()
     reset = false
     runs = to(i64)(_env_or("WASM_BENCH_RUNS", "3"))
@@ -200,7 +200,7 @@ main = (): i64
     names = {}
     cmds = {}
     for _i, c in candidates
-        wanted = filter == "" or std.string.find(filter, c[1], 1, true) != nil
+        wanted = filter == "" or filter:find(c[1], 1, true) != nil
         if wanted and _have(c[2])
             names[#names + 1] = c[1]
             cmds[#names] = c[3] .. wasm
@@ -217,11 +217,11 @@ main = (): i64
 
     print("")
     print("=== Compiling benchmark to WASM ===")
-    duo = "./zig-out/bin/duo"
+    duo = "./zig-out/bin/idol"
     std.script.run(duo .. " compile " .. _SRC .. " --target wasm32-wasi -o " .. wasm)
-    -- Existence is checked separately from the exit status: the compiler can
-    -- report success and write nothing, or the wrong format (GAP-19).
-    if not std.script.fs_exists(wasm)
+    # Existence is checked separately from the exit status: the compiler can
+    # report success and write nothing, or the wrong format (GAP-19).
+    if !std.script.fs_exists(wasm)
         print("ERROR: WASM compilation failed — " .. wasm .. " not produced.")
         os.exit(1)
     end
@@ -238,8 +238,8 @@ main = (): i64
     end
     print("  PASS All " .. _BENCHES:to(str) .. " RESULT lines present")
 
-    -- Two runtimes disagreeing on a RESULT is a wasm codegen bug, not a
-    -- performance note, so it fails before any timing is reported.
+    # Two runtimes disagreeing on a RESULT is a wasm codegen bug, not a
+    # performance note, so it fails before any timing is reported.
     if #names >= 2
         second = _result_block(std.script.capture(cmds[2] .. " 2>/dev/null"))
         if first == second
@@ -260,7 +260,7 @@ main = (): i64
     end
 
     print("")
-    if reset or not std.script.fs_exists(baseline)
+    if reset or !std.script.fs_exists(baseline)
         if reset
             print("=== Resetting baseline ===")
         else
@@ -302,9 +302,9 @@ main = (): i64
         end
     end
 
-    -- The baseline only moves on a PASSING run. Saving after a regression
-    -- would ratchet the slowdown in and the gate would never fire again.
-    if not gate_fail
+    # The baseline only moves on a PASSING run. Saving after a regression
+    # would ratchet the slowdown in and the gate would never fire again.
+    if !gate_fail
         print("")
         _save_baseline(baseline, names, times, runs)
     end

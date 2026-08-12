@@ -1,5 +1,5 @@
--- @native ABI smoke: direct C calls from dynamic module (no native_scalar_mode)
--- Run: duo run examples/native_abi_smoke.id
+# @native ABI smoke: direct C calls from dynamic module (no native_scalar_mode)
+# Run: duo run examples/native_abi_smoke.id
 
 @native
 native_add(a: i64, b: i64): i64

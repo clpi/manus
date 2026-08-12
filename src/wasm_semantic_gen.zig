@@ -139,7 +139,7 @@ pub fn writeCatalogJson(w: *std.Io.Writer) !void {
     try w.print("}}", .{});
 }
 
-/// Emit `lib/std/wasm/opcode_lookup.duo` — generated opcode → semantic id dispatch (P9-M1).
+/// Emit `lib/std/wasm/opcode_lookup.id` — generated opcode → semantic id dispatch (P9-M1).
 pub fn emitDuoOpcodeLookup(w: *std.Io.Writer) !void {
     try w.writeAll(
         \\-- GENERATED from src/wasm_semantic_gen.zig — do not edit by hand.
@@ -236,12 +236,12 @@ fn wardOpcodeFieldName(id: []const u8) []const u8 {
     return local;
 }
 
-/// Emit `lib/std/wasm/ward_mvp_opcodes.duo` — Ward-compatible OP_* for MVP subset only.
+/// Emit `lib/std/wasm/ward_mvp_opcodes.id` — Ward-compatible OP_* for MVP subset only.
 pub fn emitWardMvpOpcodes(w: *std.Io.Writer) !void {
     try w.writeAll(
         \\-- GENERATED from src/wasm_semantic_gen.zig — do not edit by hand.
         \\-- Regenerate: duo wasm-tables emit
-        \\-- MVP subset (63 ops). Ward extended opcodes remain in ward/src/wasm/op.duo until migrated.
+        \\-- MVP subset (63 ops). Ward extended opcodes remain in ward/src/wasm/op.id until migrated.
         \\
         \\GENERATOR_OWNER = "src/wasm_semantic_gen.zig"
         \\CANONICAL_OWNER = "src/wasm_semantic.zig"

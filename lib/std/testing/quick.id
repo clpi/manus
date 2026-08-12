@@ -1,7 +1,6 @@
--- std.testing.quick — property-based testing (mirrors Go's testing/quick)
--- Generates random test values and checks that properties hold for all of them.
+# std.testing.quick — property-based testing (mirrors Go's testing/quick)
+# Generates random test values and checks that properties hold for all of them.
 
-random = req "std.random"
 
 default_config(): any
     {max_count = 100, max_count_scale = 10}
@@ -23,7 +22,7 @@ gen_string(max_len: i64): str
     len = random.int(0, max_len)
     s = ""
     for i = 1, len
-        s = s .. string.char(random.int(32, 126))
+        s = s .. random.int(32, 126):char()
     end
     s
 end

@@ -1,4 +1,4 @@
--- std.maps — map (table) helper utilities (mirrors Go 1.21 maps package)
+# std.maps — map (table) helper utilities (mirrors Go 1.21 maps package)
 
 clone(m: any): any
     if m == nil return {} end
@@ -60,21 +60,21 @@ end
 keys(m: any): any
     if m == nil return {} end
     out = {}
-    for k, _ in m do out[rawlen(out) + 1] = k end
+    for k, _ in m do out[out:len() + 1] = k end
     out
 end
 
 values(m: any): any
     if m == nil return {} end
     out = {}
-    for _, v in m do out[rawlen(out) + 1] = v end
+    for _, v in m do out[out:len() + 1] = v end
     out
 end
 
 entries(m: any): any
     if m == nil return {} end
     out = {}
-    for k, v in m do out[rawlen(out) + 1] = {key = k, value = v} end
+    for k, v in m do out[out:len() + 1] = {key = k, value = v} end
     out
 end
 
@@ -96,7 +96,7 @@ set(m: any, k: any, v: any): any
     m
 end
 
-size(m: any): i64
+m: any:len(): i64
     if m == nil return 0 end
     c = 0
     for _k, _v in m do c += 1 end

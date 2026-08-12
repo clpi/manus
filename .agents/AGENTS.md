@@ -12,10 +12,14 @@ and obligations from the exact current `gaps/GAP-*.md` files. Read live
 ownership through `duo_dev_claim_files` rather than copying claims here.
 
 The current language and project are Idol (`idol`, `idollang/idol`), with
-canonical `.id` source. Historical Idsem, Duo, Duon, `.id`, and physical
+canonical `.id` source. Historical Idol, Duo, Duon, `.id`, and physical
 `duo-*` tool names remain bootstrap or migration provenance only.
 An executed gate, lock, or MCP entrypoint with an `.id` suffix remains
 bootstrap transport until `docs/bootstrap.md` credits the authority transfer.
+
+**Gate scan law:** diff/path boundaries are curried symbols —
+`scan(diff)(body)`, never `scandiff` or `scan("diff")`. See root `AGENTS.md`
+§ Gate scan boundaries and `scripts/idiomgate.id` header.
 
 Do not treat this directory as a semantic registry. `std` is migration
 distribution, `std.script` is frozen debt, and neither an agent document nor a

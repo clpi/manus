@@ -1,10 +1,10 @@
--- =============================================================================
--- Duo Language Full Feature Demo
--- Demonstrates: functions, concepts, meta blocks, early returns, derive helpers,
--- reflection, and the req-only import system.
--- =============================================================================
+# =============================================================================
+# Duo Language Full Feature Demo
+# Demonstrates: functions, concepts, meta blocks, early returns, derive helpers,
+# reflection, and the req-only import system.
+# =============================================================================
 
--- ── Section 1: Functions ───────────────────────────────────────────────────
+# ── Section 1: Functions ───────────────────────────────────────────────────
 
 identity(value)
     value
@@ -33,7 +33,7 @@ map_list(xs, fn): any
     result
 end
 
--- ── Section 2: Concepts ─────────────────────────────────────────────────────
+# ── Section 2: Concepts ─────────────────────────────────────────────────────
 
 concept Measurable
     measure(self, unit: str): f64
@@ -48,7 +48,7 @@ distance = {}
 distance.x = 3.0
 distance.y = 4.0
 distance.measure = fun(self, unit: str): f64
-    mag = math.sqrt(self.x * self.x + self.y * self.y)
+    mag = self.x * self.x + self.y * self.y:sqrt()
     if unit == "km"
         return mag / 1000.0
     end
@@ -58,14 +58,14 @@ distance.label = fun(self): str
     "Distance(" .. to(str)(self.x) .. ", " .. to(str)(self.y) .. ")"
 end
 
--- ── Section 3: Meta Blocks (@ compile-time evaluation) ─────────────────────
+# ── Section 3: Meta Blocks (@ compile-time evaluation) ─────────────────────
 
 MAX_ITEMS = @(100)
 BUFFER_SIZE = @(1024 * 16)
 APP_NAME = @("duo_demo")
 IS_DEBUG = @(false)
 
--- ── Section 4: Derive helpers ──────────────────────────────────────────────
+# ── Section 4: Derive helpers ──────────────────────────────────────────────
 
 derive_clone(val)
     if type(val) != "table" return val end
@@ -88,12 +88,12 @@ derive_display(val): str
                 parts[#parts + 1] = k .. ": " .. derive_display(v)
             end
         end
-        return "{" .. table.concat(parts, ", ") .. "}"
+        return "{" .. parts:concat(", ") .. "}"
     end
     to(str)(val)
 end
 
--- ── Section 5: Memory Allocators ───────────────────────────────────────────
+# ── Section 5: Memory Allocators ───────────────────────────────────────────
 
 demo_arena(): void
     arena = { _bufs = {}, _offset = 0, _capacity = 4096, _total = 0 }
@@ -104,7 +104,7 @@ demo_pool(): void
     print("Pool created, block_size: 128, count: 64")
 end
 
--- ── Section 6: WASI Types ──────────────────────────────────────────────────
+# ── Section 6: WASI Types ──────────────────────────────────────────────────
 
 demo_wasi(): void
     print("WASI stdin fd:  0")
@@ -114,7 +114,7 @@ demo_wasi(): void
     print("WASI exit failure: 1")
 end
 
--- ── Section 7: Reflection ───────────────────────────────────────────────────
+# ── Section 7: Reflection ───────────────────────────────────────────────────
 
 demo_reflection(val): void
     print("typeof: " .. type(val))
@@ -131,7 +131,7 @@ demo_reflection(val): void
     end
 end
 
--- ── Section 8: Functions with/without return types ────────────────────────
+# ── Section 8: Functions with/without return types ────────────────────────
 
 typed_add(a: i64, b: i64): i64
     a + b
@@ -168,11 +168,11 @@ validate_input(val): bool
     true
 end
 
--- ── Main: run all demos ─────────────────────────────────────────────────────
+# ── Main: run all demos ─────────────────────────────────────────────────────
 
 print("=== Duo Full Feature Demo ===")
 
--- Functions
+# Functions
 print("\n-- Functions --")
 print("identity(42): " .. to(str)(identity(42)))
 print("identity('hello'): " .. identity("hello"))
@@ -183,7 +183,7 @@ print("pair: " .. to(str)(pair.first) .. " => " .. pair.second)
 x, y = swap(10, 20)
 print("swap(10, 20): " .. to(str)(x) .. ", " .. to(str)(y))
 
--- Early returns
+# Early returns
 print("\n-- Early Returns --")
 print("classify(-5): " .. classify(-5))
 print("classify(0): " .. classify(0))
@@ -192,44 +192,44 @@ print("validate_input(nil): " .. to(str)(validate_input(nil)))
 print("validate_input(501): " .. to(str)(validate_input(501)))
 print("validate_input(50): " .. to(str)(validate_input(50)))
 
--- Safe div with early return
+# Safe div with early return
 print("safe_div(10, 2): " .. to(str)(safe_div(10, 2)))
 print("safe_div(10, 0): " .. to(str)(safe_div(10, 0)))
 
--- Meta blocks
+# Meta blocks
 print("\n-- Meta Blocks --")
 print("MAX_ITEMS: " .. to(str)(MAX_ITEMS))
 print("BUFFER_SIZE: " .. to(str)(BUFFER_SIZE))
 print("APP_NAME: " .. APP_NAME)
 print("IS_DEBUG: " .. to(str)(IS_DEBUG))
 
--- Concepts
+# Concepts
 print("\n-- Concepts --")
 print("Distance label: " .. distance:label())
 print("Distance measure (m): " .. to(str)(distance:measure("m")))
 print("Distance measure (km): " .. to(str)(distance:measure("km")))
 
--- Derive
+# Derive
 print("\n-- Derive --")
 original = { a = 1, b = 2, c = { d = 3 } }
 cloned = derive_clone(original)
 print("clone: " .. derive_display(cloned))
 
--- Memory
+# Memory
 print("\n-- Memory Allocators --")
 demo_arena()
 demo_pool()
 
--- WASI
+# WASI
 print("\n-- WASI --")
 demo_wasi()
 
--- Reflection
+# Reflection
 print("\n-- Reflection --")
 demo_reflection("hello world")
 demo_reflection({ a = 1, b = 2 })
 
--- Return types
+# Return types
 print("\n-- Return Types --")
 print("typed_add(5, 3): " .. to(str)(typed_add(5, 3)))
 print("untyped_add(5, 3): " .. to(str)(untyped_add(5, 3)))

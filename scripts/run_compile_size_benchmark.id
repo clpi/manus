@@ -1,42 +1,42 @@
--- Compile time + binary size, Duo against C. A TRACKING benchmark: it reports,
--- it does not fail when Duo is slower or larger.
---
--- Duo replacement for scripts/run_compile_size_benchmark.sh (monoglot census,
--- G11). The shell version was the last tracked .sh in the repo and it carried
--- TWO foreign languages, not one: 439 lines of bash plus two inline python3
--- heredocs (39 lines) — one the wall-clock timer, one the ML float comparison.
--- Both are arithmetic, which is exactly what the census says belongs in Duo.
---
--- WHAT IS STILL SHELLED OUT, and why none of it is reasoning:
---   uname / xcrun / mktemp / cp / rm     environment facts and file moves
---   stat -f%z, wc -l                     one number, read back and compared here
---   grep '^RESULT ' | sort               selecting and ordering lines; the
---                                        COMPARISON of those lines is Duo
---   the compilers themselves             the thing being measured
--- No branch, no ratio and no tolerance is computed by a foreign process.
---
--- THE ONE MEASUREMENT DIFFERENCE, stated rather than buried. The shell version
--- timed with python's time.perf_counter around subprocess.run, which forks and
--- execs the compiler directly. Duo's process primitive goes through system(3),
--- which inserts a /bin/sh between this process and the compiler and costs
--- about 3.6 ms every call. So the harness MEASURES that floor — the min over
--- eight runs of an empty command, which spawns the shell and nothing else —
--- subtracts it, and PRINTS the value it subtracted, so the correction is
--- visible rather than assumed. Against the shell version's last run every
--- deterministic column is identical and compile_s agrees closely; the
--- correction is what makes the second half of that true.
---
--- SOURCES ARE STREAMED TO DISK, NOT BUILT IN MEMORY. The 10k workload is a
--- 205 KB source. Accumulating it with string interpolation is quadratic AND
--- hits a live native-backend defect: a 1500-iteration append loop sitting
--- beside a few i64 scalars compiles clean under --backend=direct and then
--- SEGFAULTS before its first print (exit 139), while --backend=c runs the same
--- program correctly. Writing each block straight to an open file handle is
--- linear and steps around it.
---
--- Env: RUNS, CHAIN_FUNCS_1K (or CHAIN_FUNCS), CHAIN_FUNCS_10K, CC, STRIP,
--- SDKROOT, ZIG, DUO_ROOT. Exit 0 report produced, 1 a workload disagreed with
--- C, a capture came back short, or a compile failed.
+# Compile time + binary size, Duo against C. A TRACKING benchmark: it reports,
+# it does not fail when Duo is slower or larger.
+#
+# Duo replacement for scripts/run_compile_size_benchmark.sh (monoglot census,
+# G11). The shell version was the last tracked .sh in the repo and it carried
+# TWO foreign languages, not one: 439 lines of bash plus two inline python3
+# heredocs (39 lines) — one the wall-clock timer, one the ML float comparison.
+# Both are arithmetic, which is exactly what the census says belongs in Duo.
+#
+# WHAT IS STILL SHELLED OUT, and why none of it is reasoning:
+#   uname / xcrun / mktemp / cp / rm     environment facts and file moves
+#   stat -f%z, wc -l                     one number, read back and compared here
+#   grep '^RESULT ' | sort               selecting and ordering lines; the
+#                                        COMPARISON of those lines is Duo
+#   the compilers themselves             the thing being measured
+# No branch, no ratio and no tolerance is computed by a foreign process.
+#
+# THE ONE MEASUREMENT DIFFERENCE, stated rather than buried. The shell version
+# timed with python's time.perf_counter around subprocess.run, which forks and
+# execs the compiler directly. Duo's process primitive goes through system(3),
+# which inserts a /bin/sh between this process and the compiler and costs
+# about 3.6 ms every call. So the harness MEASURES that floor — the min over
+# eight runs of an empty command, which spawns the shell and nothing else —
+# subtracts it, and PRINTS the value it subtracted, so the correction is
+# visible rather than assumed. Against the shell version's last run every
+# deterministic column is identical and compile_s agrees closely; the
+# correction is what makes the second half of that true.
+#
+# SOURCES ARE STREAMED TO DISK, NOT BUILT IN MEMORY. The 10k workload is a
+# 205 KB source. Accumulating it with string interpolation is quadratic AND
+# hits a live native-backend defect: a 1500-iteration append loop sitting
+# beside a few i64 scalars compiles clean under #backend=direct and then
+# SEGFAULTS before its first print (exit 139), while runs the same
+# program correctly. Writing each block straight to an open file handle is
+# linear and steps around it.
+#
+# Env: RUNS, CHAIN_FUNCS_1K (or CHAIN_FUNCS), CHAIN_FUNCS_10K, CC, STRIP,
+# SDKROOT, ZIG, DUO_ROOT. Exit 0 report produced, 1 a workload disagreed with
+# C, a capture came back short, or a compile failed.
 
 sh(cmd: str): str
     std.script.chomp(std.script.capture(cmd))
@@ -66,9 +66,9 @@ digits(n: i64, w: i64): str
     o
 end
 
--- Seconds with six places, from integer nanoseconds. `to(str)` on an f64 does
--- not compile, and a float round trip would put the last digit at the mercy of
--- the printer; this arithmetic is exact in i64.
+# Seconds with six places, from integer nanoseconds. `to(str)` on an f64 does
+# not compile, and a float round trip would put the last digit at the mercy of
+# the printer; this arithmetic is exact in i64.
 secs(ns: i64): str
     v: i64 = ns
     if v < 0
@@ -80,8 +80,8 @@ secs(ns: i64): str
     "{whole}.{frac}"
 end
 
--- a / b to three places, half-up, entirely in i64. Reproduces awk's "%.3f" on
--- every value this benchmark has produced; checked against the shell run.
+# a / b to three places, half-up, entirely in i64. Reproduces awk's "%.3f" on
+# every value this benchmark has produced; checked against the shell run.
 ratio(a: i64, b: i64): str
     out = "n/a"
     if b > 0
@@ -154,7 +154,7 @@ end
 
 homedir = std.script.getenv("DUO_ROOT", ".")
 root = sh("cd '{homedir}' && pwd")
-duobin = "{root}/zig-out/bin/duo"
+duobin = "{root}/zig-out/bin/idol"
 zigbin = std.script.getenv("ZIG", "zig")
 cc = std.script.getenv("CC", "clang")
 stripbin = std.script.getenv("STRIP", "strip")
@@ -185,9 +185,9 @@ stripmode = stripflag()
 cflags = "-O3 -ffast-math -march=native -flto -fomit-frame-pointer {trim}"
 work = sh("mktemp -d 2>/dev/null")
 
--- The min of `runs` wall times, less the shell-spawn floor. A failed compile is
--- fatal: a benchmark that quietly times a command which did not run is the
--- frozen-literal failure mode in another costume.
+# The min of `runs` wall times, less the shell-spawn floor. A failed compile is
+# fatal: a benchmark that quietly times a command which did not run is the
+# frozen-literal failure mode in another costume.
 mintime(label: str, cmd: str, floor: i64): i64
     log = "{work}/compile.log"
     quiet = "{cmd} > '{log}' 2>&1"
@@ -232,7 +232,7 @@ spawnfloor(): i64
     best
 end
 
-strippedsize(input: str, out: str): i64
+strippedinput: str, out: str:len(): i64
     std.script.must("cp '{input}' '{out}'")
     std.script.run("'{stripbin}' {stripmode} '{out}' 2>/dev/null")
     sizeat(out)
@@ -443,9 +443,9 @@ workload(name: str, duosrc: str, csrc: str, duoout: str, cout: str,
     resultrow(name, duoanswer)
 end
 
--- Sorted RESULT rows, with the count checked against what the program is
--- supposed to emit. A capture that silently produced 0 rows would otherwise
--- compare two empty lists and call them equal.
+# Sorted RESULT rows, with the count checked against what the program is
+# supposed to emit. A capture that silently produced 0 rows would otherwise
+# compare two empty lists and call them equal.
 capturerows(label: str, want: i64, bin: str, out: str): void
     rc: i64 = std.script.run("'{bin}' > '{out}.raw' 2>'{out}.err'")
     std.script.run("grep '^RESULT ' '{out}.raw' | sort > '{out}'")
@@ -507,8 +507,8 @@ mlbinary(floor: i64): void
     capturerows("ml_binary C", 5, cout, crows)
     mlagree(duorows, crows)
     pairrows(name, duosrc, csrc, duoout, cout, duons, cns)
-    duostrip: i64 = strippedsize(duoout, "{work}/ml_bench_duo_stripped")
-    cstrip: i64 = strippedsize(cout, "{work}/ml_bench_c_stripped")
+    duostrip: i64 = strippedduoout, "{work}/ml_bench_duo_stripped":len()
+    cstrip: i64 = strippedcout, "{work}/ml_bench_c_stripped":len()
     row(name, "stripped_bytes", duostrip:to(str), cstrip:to(str),
         ratio(duostrip, cstrip))
     resultrow(name, "5_rows_match")
@@ -527,7 +527,7 @@ duoapp(name: str, duosrc: str, sentinel: str, floor: i64): void
     duolines: i64 = linesat(duosrc)
     duobytes: i64 = sizeat(duosrc)
     duosize: i64 = sizeat(duoout)
-    duostrip: i64 = strippedsize(duoout, duostripped)
+    duostrip: i64 = strippedduoout, duostripped:len()
     lone(name, "source_lines", duolines:to(str))
     lone(name, "source_bytes", duobytes:to(str))
     lone(name, "compile_s", secs(duons))

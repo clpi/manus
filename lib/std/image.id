@@ -1,6 +1,5 @@
--- std.image — Image root module (mirrors Go's image)
+# std.image — Image root module (mirrors Go's image)
 
-global color = req "std.image.color"
 
 pt(x: any, y: any): any
     {x = x, y = y, kind = "point"}
@@ -27,13 +26,13 @@ rect_inset(r: any, n: i64): any
 end
 
 rect_union(r1: any, r2: any): any
-    rect(math.min(r1.min.x, r2.min.x), math.min(r1.min.y, r2.min.y),
-         math.max(r1.max.x, r2.max.x), math.max(r1.max.y, r2.max.y))
+    rect(r1.min.x:min(r2.min.x), r1.min.y:min(r2.min.y),
+         r1.max.x:max(r2.max.x), r1.max.y:max(r2.max.y))
 end
 
 rect_intersect(r1: any, r2: any): any
-    rect(math.max(r1.min.x, r2.min.x), math.max(r1.min.y, r2.min.y),
-         math.min(r1.max.x, r2.max.x), math.min(r1.max.y, r2.max.y))
+    rect(r1.min.x:max(r2.min.x), r1.min.y:max(r2.min.y),
+         r1.max.x:min(r2.max.x), r1.max.y:min(r2.max.y))
 end
 
 rect_overlaps(r1: any, r2: any): bool

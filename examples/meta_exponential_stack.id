@@ -1,5 +1,5 @@
--- @comp.* exponential stack: one module directive set → O(types × fields × derives) output
--- Run: duo run examples/meta_exponential_stack.id
+# @comp.* exponential stack: one module directive set → O(types × fields × derives) output
+# Run: duo run examples/meta_exponential_stack.id
 
 concept HasXY
     x: f64

@@ -1,0 +1,38 @@
+#!/bin/sh
+set -eu
+
+repo="$(cd "$(dirname "$0")/../../.." && pwd)"
+codex_home="${CODEX_HOME:-$HOME/.codex}"
+skill_src="$repo/.pi/skills/idol-dev"
+skill_dst="$codex_home/skills/idol-dev"
+legacy_dst="$codex_home/skills/duon-development"
+
+if [ ! -f "$skill_src/SKILL.md" ]; then
+  echo "install-skills: missing $skill_src/SKILL.md" >&2
+  exit 1
+fi
+
+mkdir -p "$codex_home/skills"
+rm -rf "$skill_dst"
+cp -R "$skill_src" "$skill_dst"
+echo "installed $skill_dst"
+
+if [ -d "$legacy_dst" ] || [ -f "$legacy_dst/SKILL.md" ]; then
+  mkdir -p "$legacy_dst"
+  cat >"$legacy_dst/SKILL.md" <<'EOF'
+---
+name: duon-development
+description: RETIRED — use idol-dev instead. Historical alias for Idol development in clpi/duo.
+---
+
+# Retired
+
+This skill name is migration provenance only. Use **idol-dev** for all current
+Idol (`idol`, `.id`) work in the active development repository.
+
+Read `AGENTS.md`, then `docs/spec/constitution.md`, `CLAUDE.md`, and
+`docs/spec/source.md`. Run `./tools/node/dev/orient` and claim paths through
+`duo_dev_claim_acquire` before editing.
+EOF
+  echo "retired $legacy_dst (redirect stub installed)"
+fi

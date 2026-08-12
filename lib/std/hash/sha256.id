@@ -1,6 +1,6 @@
--- std.hash.sha256 — SHA-256 hash (re-exports from std.crypto.sha)
+# std.hash.sha256 — SHA-256 hash (re-exports from std.crypto.sha)
 
-crypto_sha = req "std.crypto.sha"
+crypto_sha = sha
 
 sha256(s: str): str
     crypto_sha.sha256(s)

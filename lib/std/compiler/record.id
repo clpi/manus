@@ -1,80 +1,80 @@
--- SH-10 — the duon-native owner of RECORD emission.
---
--- The second half of the capability three canonical repairs terminate at.
--- `symbol.id` owns the NAME a duon function takes in C; this owns the SHAPE a
--- descriptor takes, and the form applying it produces.
---
--- WHAT IT UNBLOCKS. gap[088]: `point{ x = 1, y = 2 }` — the constructor
--- ladder's rung (a), the form §0.4 makes canonical while BANNING
--- `.new`/`.create`/`make_*` — does not lower. gap[087]: descriptor construction
--- with a case field fails for BOTH the dotted and bare spellings, so it is not
--- a dot question. Both need something that can say what applying a descriptor
--- to a field pack EMITS.
---
--- THE LAW IT OBEYS, and the reason this file is shaped as it is:
---
---   law.apply.one     there is ONE application mechanism. This is not a
---                     "constructor" module — it is the DESCRIPTOR EDGE of
---                     apply, and a callable edge would be a sibling, not a
---                     rival.
---   law.construct.zero  a descriptor IS an applicable value. Nothing here is
---                     named `constructor`, and nothing should be.
---   law.pack          a braced argument is a STRUCTURED PACK, not a table.
---                     This emits a C COMPOUND LITERAL — fields, positionally
---                     or by name, straight into storage. It never allocates a
---                     table because the surface had braces.
---
--- WHAT IT IS NOT. It does not resolve descriptors, does not check field types,
--- does not own layout. It answers two questions — what C type name does this
--- descriptor take, and what does applying it to a pack look like — and refuses
--- everything else so the next reader does not grow a code generator here by
--- accident.
+# SH-10 — the duon-native owner of RECORD emission.
+#
+# The second half of the capability three canonical repairs terminate at.
+# `symbol.id` owns the NAME a duon function takes in C; this owns the SHAPE a
+# descriptor takes, and the form applying it produces.
+#
+# WHAT IT UNBLOCKS. gap[088]: `point{ x = 1, y = 2 }` — the constructor
+# ladder's rung (a), the form §0.4 makes canonical while BANNING
+# `.new`/`.create`/`make_*` — does not lower. gap[087]: descriptor construction
+# with a case field fails for BOTH the dotted and bare spellings, so it is not
+# a dot question. Both need something that can say what applying a descriptor
+# to a field pack EMITS.
+#
+# THE LAW IT OBEYS, and the reason this file is shaped as it is:
+#
+#   law.apply.one     there is ONE application mechanism. This is not a
+#                     "constructor" module — it is the DESCRIPTOR EDGE of
+#                     apply, and a callable edge would be a sibling, not a
+#                     rival.
+#   law.construct.zero  a descriptor IS an applicable value. Nothing here is
+#                     named `constructor`, and nothing should be.
+#   law.pack          a braced argument is a STRUCTURED PACK, not a table.
+#                     This emits a C COMPOUND LITERAL — fields, positionally
+#                     or by name, straight into storage. It never allocates a
+#                     table because the surface had braces.
+#
+# WHAT IT IS NOT. It does not resolve descriptors, does not check field types,
+# does not own layout. It answers two questions — what C type name does this
+# descriptor take, and what does applying it to a pack look like — and refuses
+# everything else so the next reader does not grow a code generator here by
+# accident.
 
--- The C type name for a named descriptor.
---
--- One namespace with `symbol.id`'s `duo_fn_`, for the same reason: two
--- prefixes would be two namespaces to keep disjoint, and the bootstrap already
--- spells every emitted type `duo_`.
-typename = (desc: str): str
+# The C type name for a named descriptor.
+#
+# One namespace with `symbol.id`'s `duo_fn_`, for the same reason: two
+# prefixes would be two namespaces to keep disjoint, and the bootstrap already
+# spells every emitted type `duo_`.
+typename: str = (desc: str)
     "duo_{desc}"
 
--- Applying a descriptor to a NAMED field pack.
---
--- `point{ x = 1, y = 2 }` becomes `((duo_point){ .x = 1, .y = 2 })`, a C
--- compound literal. The designators are what make this positional-order-free —
--- and what makes the emitted C readable, which matters because the C is an
--- artifact a human reads when a differential disagrees.
---
--- The outer parens are not decoration: a compound literal in expression
--- position binds looser than a cast, and `(duo_point){…}.x` without them
--- parses as a cast applied to a member access.
-applynamed = (desc: str, fields: str): str
+# Applying a descriptor to a NAMED field pack.
+#
+# `point{ x = 1, y = 2 }` becomes `((duo_point){ .x = 1, .y = 2 })`, a C
+# compound literal. The designators are what make this positional-order-free —
+# and what makes the emitted C readable, which matters because the C is an
+# artifact a human reads when a differential disagrees.
+#
+# The outer parens are not decoration: a compound literal in expression
+# position binds looser than a cast, and `(duo_point){…}.x` without them
+# parses as a cast applied to a member access.
+applynamed: str = (desc: str, fields: str)
     ty: str = typename(desc)
     "(({ty}){{fields}})"
 
--- Applying a descriptor to a POSITIONAL pack — spec §15.1's `point{ 3, 4 }`.
---
--- Same literal, no designators: C fills declaration order, which is the order
--- the descriptor declared its fields. That correspondence is the whole reason
--- positional construction is expressible at all, and it is why a descriptor
--- whose field order is not stable cannot take this form.
-applypositional = (desc: str, values: str): str
+# Applying a descriptor to a POSITIONAL pack — spec §15.1's `point{ 3, 4 }`.
+#
+# Same literal, no designators: C fills declaration order, which is the order
+# the descriptor declared its fields. That correspondence is the whole reason
+# positional construction is expressible at all, and it is why a descriptor
+# whose field order is not stable cannot take this form.
+applypositional: str = (desc: str, values: str)
     ty: str = typename(desc)
     "(({ty}){{values}})"
 
--- One named field inside a pack. Separated so the caller assembles the pack
--- rather than this file learning about commas, which is the first step toward
--- accidentally owning expression emission.
-field = (name: str, value: str): str
+# One named field inside a pack. Separated so the caller assembles the pack
+# rather than this file learning about commas, which is the first step toward
+# accidentally owning expression emission.
+field: str = (name: str, value: str)
     ".{name} = {value}"
 
--- Whether a descriptor name can take the compound-literal form at all.
---
--- The honest answer today is "any named descriptor", and the function exists so
--- the caller states the question. When layout facts arrive — packed, foreign
--- ABI, dynamic storage class — this is where the refusal lives, and a refusal
--- is better than an emission that compiles and reads the wrong offsets.
-emits = (desc: str): bool
+# Whether a descriptor name can take the compound-literal form at all.
+#
+# The honest answer today is "any named descriptor", and the function exists so
+# the caller states the question. When layout facts arrive — packed, foreign
+# ABI, dynamic storage class — this is where the refusal lives, and a refusal
+# is better than an emission that compiles and reads the wrong offsets.
+emits: bool = (desc: str)
     if desc == ""
         return false
     true

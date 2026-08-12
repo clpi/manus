@@ -1,6 +1,6 @@
--- GENERATED from src/wasm_semantic_gen.zig — do not edit by hand.
--- Regenerate: duo wasm-tables emit
--- MVP subset (63 ops). Ward extended opcodes remain in ward/src/wasm/op.id until migrated.
+# GENERATED from src/wasm_semantic_gen.zig — do not edit by hand.
+# Regenerate: duo wasm-tables emit
+# MVP subset (63 ops). Ward extended opcodes remain in ward/src/wasm/op.id until migrated.
 
 GENERATOR_OWNER = "src/wasm_semantic_gen.zig"
 CANONICAL_OWNER = "src/wasm_semantic.zig"

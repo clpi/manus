@@ -38,17 +38,17 @@ result_calculate_stats(result: any): void
     return
   end
   sorted = {
-    table.unpack(result.latencies)
+    result.latencies:unpack()
   }
-  table.sort(sorted)
+  sorted:sort()
   sum = 0
   for v in sorted
     sum = sum + v
   end
   result.mean_latency = sum / n
-  result.median_latency = sorted[math.floor(n / 2) + 1]
-  result.p95_latency = sorted[math.floor(n * 0.95) + 1]
-  result.p99_latency = sorted[math.floor(n * 0.99) + 1]
+  result.median_latency = sorted[n / 2:floor() + 1]
+  result.p95_latency = sorted[n * 0.95:floor() + 1]
+  result.p99_latency = sorted[n * 0.99:floor() + 1]
   result.min_latency = sorted[1]
   result.max_latency = sorted[n]
   if result.mean_latency > 0
@@ -134,7 +134,7 @@ latency(model_fn: any, input_generator: any, batch_size: i64, num_runs: i64): an
     latencies[#latencies + 1] = end_time - start_time
     i = i + 1
   end
-  table.sort(latencies)
+  latencies:sort()
   sum = 0
   for v in latencies
     sum = sum + v
@@ -143,9 +143,9 @@ latency(model_fn: any, input_generator: any, batch_size: i64, num_runs: i64): an
     batch_size = batch_size,
     num_runs = num_runs,
     mean = sum / num_runs,
-    median = latencies[math.floor(num_runs / 2) + 1],
-    p95 = latencies[math.floor(num_runs * 0.95) + 1],
-    p99 = latencies[math.floor(num_runs * 0.99) + 1],
+    median = latencies[num_runs / 2:floor() + 1],
+    p95 = latencies[num_runs * 0.95:floor() + 1],
+    p99 = latencies[num_runs * 0.99:floor() + 1],
     min = latencies[1],
     max = latencies[num_runs]
   }
@@ -207,5 +207,5 @@ report(results: any): str
     lines[#lines + 1] = "  Tokens/sec: " .. result.tokens_per_second:to(str)
     lines[#lines + 1] = ""
   end
-  table.concat(lines, "\n")
+  lines:concat("\n")
 end

@@ -1,23 +1,23 @@
--- constitution §41 `law.shadow` — A LEXICAL BINDING MAY NOT SILENTLY SHADOW AN
--- AMBIENT IDENTITY REFERENCED IN THE SAME SCOPE. gap[087] fix step 2, and it
--- lands WITH the resolution, not after.
---
--- "Locals win" is DENIED by the law in as many words, and so is "the case
--- wins". Both are precedence rules, and a precedence rule is exactly what makes
--- source meaning depend on a declaration the reader may not have reached yet:
--- adding `eof = 7` would silently change every later `k == eof` from a case
--- comparison into an integer comparison against 7, in a program that keeps
--- compiling.
---
--- So the collision DIAGNOSES, and the diagnostic names both readings rather
--- than announcing a winner. The repairs are both spellings the reader already
--- has — name the home, or rename the binding — and neither is a new form.
---
--- NOTE WHAT IS *NOT* DIAGNOSED, because a rule that fired on every collision
--- would be unusable: the binding has to shadow a case OF THE DEMANDED
--- CASE-SET. A local named `circle` compared against an i64 is an ordinary
--- comparison and stays one, because no case-set was demanded there and nothing
--- is ambiguous.
+# constitution §41 `law.shadow` — A LEXICAL BINDING MAY NOT SILENTLY SHADOW AN
+# AMBIENT IDENTITY REFERENCED IN THE SAME SCOPE. gap[087] fix step 2, and it
+# lands WITH the resolution, not after.
+#
+# "Locals win" is DENIED by the law in as many words, and so is "the case
+# wins". Both are precedence rules, and a precedence rule is exactly what makes
+# source meaning depend on a declaration the reader may not have reached yet:
+# adding `eof = 7` would silently change every later `k == eof` from a case
+# comparison into an integer comparison against 7, in a program that keeps
+# compiling.
+#
+# So the collision DIAGNOSES, and the diagnostic names both readings rather
+# than announcing a winner. The repairs are both spellings the reader already
+# has — name the home, or rename the binding — and neither is a new form.
+#
+# NOTE WHAT IS *NOT* DIAGNOSED, because a rule that fired on every collision
+# would be unusable: the binding has to shadow a case OF THE DEMANDED
+# CASE-SET. A local named `circle` compared against an i64 is an ordinary
+# comparison and stays one, because no case-set was demanded there and nothing
+# is ambiguous.
 
 token: {
     kind: { name, number, eof }

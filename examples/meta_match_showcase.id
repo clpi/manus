@@ -1,29 +1,29 @@
--- @comp.match — compile-time pattern-match codegen (switch/case of codegen)
--- One declarative line produces N specialized branches from a pipe-separated spec.
--- Composes with @comp.each, @comp.burst, etc. Comptime-only — folds to native C string.
+# @comp.match — compile-time pattern-match codegen (switch/case of codegen)
+# One declarative line produces N specialized branches from a pipe-separated spec.
+# Composes with @comp.each, @comp.burst, etc. Comptime-only — folds to native C string.
 
--- Basic: generate typed typedefs from pattern alternatives
+# Basic: generate typed typedefs from pattern alternatives
 typedefs = @comp.match("i32|i64|f64|str", fun(m)
     "typedef " .. m.pattern .. " variant_" .. to(str)(m.index) .. ";\n"
 end)
 print("=== @comp.match: typed typedefs ===")
 print(typedefs)
 
--- Generate function signatures for arithmetic operations
+# Generate function signatures for arithmetic operations
 ops = @comp.match("add|sub|mul|div", fun(m)
     "i64 " .. m.pattern .. "(i64 a, i64 b);\n"
 end)
 print("=== @comp.match: function signatures ===")
 print(ops)
 
--- Compose with @comp.each: match → split → annotate each fragment
+# Compose with @comp.each: match → split → annotate each fragment
 annotated = @comp.each(ops, fun(f)
     "/* fragment " .. to(str)(f.index) .. ": " .. f.name .. " */\n"
 end)
 print("=== @comp.match + @comp.each: composition ===")
 print(annotated)
 
--- Generate switch-case dispatch table
+# Generate switch-case dispatch table
 dispatch = @comp.match("get|set|del|has", fun(m)
     "case OP_" .. m.pattern .. ": return handle_" .. m.pattern .. "(args);\n"
 end)

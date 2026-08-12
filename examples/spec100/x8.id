@@ -1,8 +1,8 @@
--- Pass 100 §7, X8 — ">=2 named fields -> one per line, always". The newline is
--- therefore the canonical field separator and the comma is the optional one.
--- The golden `token` and `user` descriptors of §20 are written this way and
--- did not parse: the record-type reader stopped at the first missing comma.
--- expect: 8
+# Pass 100 §7, X8 — ">=2 named fields -> one per line, always". The newline is
+# therefore the canonical field separator and the comma is the optional one.
+# The golden `token` and `user` descriptors of §20 are written this way and
+# did not parse: the record-type reader stopped at the first missing comma.
+# expect: 8
 span: {
     start: i64
     stop: i64

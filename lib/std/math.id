@@ -1,4 +1,4 @@
--- std.math — numeric helper utilities
+# std.math — numeric helper utilities
 
 std_math_clamp(x: any, lo: any, hi: any): any
     if x < lo return lo end
@@ -24,9 +24,9 @@ end
 
 std_math_round(x: any): i64
     if x >= 0
-        return @as(i64, math.floor(x + 0.5))
+        return @as(i64, x + 0.5:floor())
     end
-    return @as(i64, 0 - math.floor((0 - x) + 0.5))
+    return @as(i64, 0 - (0 - x) + 0.5:floor())
 end
 
 std_math_lerp(a: any, b: any, t: any): any
@@ -52,8 +52,8 @@ std_math_sum(xs: any): any
 end
 
 std_math_mean(xs: any): any
-    if xs == nil or rawlen(xs) == 0 return 0 end
-    std_math_sum(xs) / rawlen(xs)
+    if xs == nil or xs:len() == 0 return 0 end
+    std_math_sum(xs) / xs:len()
 end
 
 std_math_is_even(n: i64): bool
@@ -71,7 +71,7 @@ std_math_distance_squared(x1: any, y1: any, x2: any, y2: any): any
 end
 
 std_math_distance(x1: any, y1: any, x2: any, y2: any): any
-    math.sqrt(std_math_distance_squared(x1, y1, x2, y2))
+    std_math_distance_squared(x1, y1, x2, y2):sqrt()
 end
 
 std_math_gcd(a: i64, b: i64): i64
@@ -93,32 +93,32 @@ std_math_lcm(a: i64, b: i64): i64
 end
 
 std_math_median(xs: any): any
-    if xs == nil or rawlen(xs) == 0 return 0 end
+    if xs == nil or xs:len() == 0 return 0 end
     sorted = {}
     for _, v in xs
-        sorted[rawlen(sorted) + 1] = v
+        sorted[sorted:len() + 1] = v
     end
-    table.sort(sorted)
-    n = rawlen(sorted)
+    sorted:sort()
+    n = sorted:len()
     if n % 2 == 1
-        return sorted[math.floor(n / 2) + 1]
+        return sorted[n / 2:floor() + 1]
     end
     (sorted[n / 2] + sorted[n / 2 + 1]) / 2
 end
 
 std_math_variance(xs: any): any
-    if xs == nil or rawlen(xs) <= 1 return 0 end
+    if xs == nil or xs:len() <= 1 return 0 end
     m = std_math_mean(xs)
     sum_sq = 0
     for _, v in xs
         diff = v - m
         sum_sq = sum_sq + diff * diff
     end
-    sum_sq / rawlen(xs)
+    sum_sq / xs:len()
 end
 
 std_math_std_dev(xs: any): any
-    math.sqrt(std_math_variance(xs))
+    std_math_variance(xs):sqrt()
 end
 
 std_math_smoothstep(edge0: any, edge1: any, x: any): any
@@ -134,10 +134,10 @@ std_math_approx_eq(a: any, b: any, eps: any): bool
 end
 
 std_math_min_of(list: any): any
-    if list == nil or rawlen(list) == 0 return nil end
+    if list == nil or list:len() == 0 return nil end
     result = list[1]
     i = 2
-    while i <= rawlen(list)
+    while i <= list:len()
         if list[i] < result result = list[i] end
         i += 1
     end
@@ -145,10 +145,10 @@ std_math_min_of(list: any): any
 end
 
 std_math_max_of(list: any): any
-    if list == nil or rawlen(list) == 0 return nil end
+    if list == nil or list:len() == 0 return nil end
     result = list[1]
     i = 2
-    while i <= rawlen(list)
+    while i <= list:len()
         if list[i] > result result = list[i] end
         i += 1
     end
@@ -179,7 +179,7 @@ M.distance_squared = std_math_distance_squared
 M.gcd = std_math_gcd
 M.lcm = std_math_lcm
 
--- Expose core Lua math utilities
+# Expose core Lua math utilities
 M.pi = math.pi
 M.huge = math.huge
 M.maxinteger = math.maxinteger

@@ -403,7 +403,7 @@ addressed to a compiler author:**
 ```
 error: direct backend: DNB001: program construct is outside the direct backend subset
 hint: DNB001: program is outside the current direct backend subset (machine code
-      is canonical; use --backend=c only for bootstrap C emit)
+      is canonical; use #backend=c only for bootstrap C emit)
 hint: refused with: UnsupportedProgram
 hint: bail site: lowerBinop() at dnir_lower.zig:2413 — concat
 ```

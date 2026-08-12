@@ -1,7 +1,7 @@
--- std.wasm.wasi — WASI (WebAssembly System Interface) type definitions and bindings
--- Maps WASI preview1/preview2 types to Duo-native types for WASM targets.
+# std.wasm.wasi — WASI (WebAssembly System Interface) type definitions and bindings
+# Maps WASI preview1/preview2 types to Duo-native types for WASM targets.
 
--- WASI errno constants
+# WASI errno constants
 errno_success(): u16
     0
 end
@@ -34,7 +34,7 @@ errno_overflow(): u16
     61
 end
 
--- WASI file descriptor types
+# WASI file descriptor types
 fd_stdin(): i32
     0
 end
@@ -47,7 +47,7 @@ fd_stderr(): i32
     2
 end
 
--- WASI rights (capability flags)
+# WASI rights (capability flags)
 right_fd_read(): u64
     1
 end
@@ -72,12 +72,12 @@ right_sock_accept(): u64
     65536
 end
 
--- WASI lookup flags
+# WASI lookup flags
 lookupflags_symlink_follow(): u32
     1
 end
 
--- WASI oflags (open flags)
+# WASI oflags (open flags)
 oflags_creat(): u16
     1
 end
@@ -94,7 +94,7 @@ oflags_trunc(): u16
     8
 end
 
--- WASI filetype constants
+# WASI filetype constants
 filetype_unknown(): u8
     0
 end
@@ -127,12 +127,12 @@ filetype_symlink(): u8
     7
 end
 
--- WASI dircookie (directory entry cookie)
+# WASI dircookie (directory entry cookie)
 dircookie_start(): u64
     0
 end
 
--- WASI clockid constants
+# WASI clockid constants
 clockid_realtime(): u32
     0
 end
@@ -149,7 +149,7 @@ clockid_thread_cputime_id(): u32
     3
 end
 
--- WASI event types for poll_oneoff
+# WASI event types for poll_oneoff
 eventtype_clock(): u8
     0
 end
@@ -162,7 +162,7 @@ eventtype_fd_write(): u8
     2
 end
 
--- WASI advice constants
+# WASI advice constants
 advice_normal(): u8
     0
 end
@@ -187,7 +187,7 @@ advice_noreuse(): u8
     5
 end
 
--- WASI whence (seek origin)
+# WASI whence (seek origin)
 whence_set(): u8
     0
 end
@@ -200,7 +200,7 @@ whence_end(): u8
     2
 end
 
--- WASI signal constants
+# WASI signal constants
 signal_hup(): u8
     1
 end
@@ -229,7 +229,7 @@ signal_term(): u8
     15
 end
 
--- WASI exit code type
+# WASI exit code type
 exit_success(): u32
     0
 end
@@ -238,30 +238,30 @@ exit_failure(): u32
     1
 end
 
--- WASI dirent type (directory entry)
+# WASI dirent type (directory entry)
 dirent_type(buf: any, offset: i64): i64
-    -- dirent structure: u64 d_next, u64 d_ino, u32 d_namlen, u8 d_type, [namlen]u8 name
-    -- d_type is at offset 16 from start of dirent
+    # dirent structure: u64 d_next, u64 d_ino, u32 d_namlen, u8 d_type, [namlen]u8 name
+    # d_type is at offset 16 from start of dirent
     if buf == nil return 0 end
     buf[offset + 16] or 0
 end
 
-dirent_name_len(buf: any, offset: i64): i64
+dirent_name_buf: any, offset: i64:len(): i64
     if buf == nil return 0 end
     buf[offset + 12] or 0
 end
 
--- WASI iovec structure helpers
+# WASI iovec structure helpers
 iovec_new(buf: any, buf_len: i64): any
     { buf = buf, buf_len = buf_len }
 end
 
--- WASI ciovec structure helpers
+# WASI ciovec structure helpers
 ciovec_new(buf: str): any
     { buf = buf, buf_len = #buf }
 end
 
--- WASI timestamp (nanosecond) utilities
+# WASI timestamp (nanosecond) utilities
 timestamp_now(): u64
     0
 end
@@ -278,13 +278,13 @@ timestamp_microsecond(): u64
     1000
 end
 
--- WASI prestat helpers (preopened directory descriptor)
+# WASI prestat helpers (preopened directory descriptor)
 prestat_dir_fd(prestat: any): i32
     if prestat == nil return -1 end
     prestat.fd or -1
 end
 
--- WASI subscription helpers
+# WASI subscription helpers
 subscription_clock(id: u64, timeout: u64, precision: u64, flags: u16): any
     {
         userdata = id,
@@ -304,4 +304,4 @@ subscription_fd_read(fd: i32): any
     }
 end
 
--- Module table
+# Module table

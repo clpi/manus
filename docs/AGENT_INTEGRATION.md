@@ -1,4 +1,4 @@
-# Idsem agent integration redirect
+# Idol agent integration redirect
 
 This legacy path does not define agent configuration, tool inventories, or
 language law. Current agents begin at [AGENTS.md](../AGENTS.md), then follow the
@@ -6,7 +6,7 @@ language law. Current agents begin at [AGENTS.md](../AGENTS.md), then follow the
 [integration workflow](../.agents/AGENT_INTEGRATION.md). The sole semantic law
 is [C0](spec/constitution.md).
 
-The language is Idsem. Canonical source uses `.id`. Every tracked project-owned
+The language is Idol. Canonical source uses `.id`. Every tracked project-owned
 `.id` file is SOURCE-ZERO migration debt that must be semantically migrated or
 deleted; historical names remain only when their exact provenance is the topic.
 
@@ -17,7 +17,7 @@ At session start, call `duo_agent_session_start`, inspect the dirty tree,
 heavy commands through the current lock route documented by the canonical
 router.
 
-Canonical Idsem has no standard semantic namespace. `std` is migration
+Canonical Idol has no standard semantic namespace. `std` is migration
 distribution, `std.script` is frozen debt, and another universal root is not a
 replacement. Relations own meaning, possessed values supply subjects, and
 worlds supply authority. Static identity uses named projection; `[]` means the

@@ -8,6 +8,8 @@ it contains no language law and no volatile project status.
 | Purpose | Path |
 |---|---|
 | Sole semantic law | `docs/spec/constitution.md` |
+| Source/home/package/world closure | `docs/spec/source.md` |
+| Host boundary / shell / capability closure | `docs/spec/host.md` |
 | Operative projection | `CLAUDE.md` |
 | Grammar projection | `docs/spec/grammar.md` |
 | Source-family classification | `docs/spec/corpus.md` |
@@ -46,7 +48,7 @@ The language identity is Idol (`idol`, `.id`). Active development repository is
 `clpi/duo`. Future release repository is `idollang/idol`; do not migrate
 development there until `.agents/RELEASE_READINESS.md` authorizes release. The
 physical `duo` command and `duo-*` MCP names are bootstrap aliases. Historical
-Idsem, Duo, Duon, and `.id` paths are migration provenance.
+Idol, Duo, Duon, and `.id` paths are migration provenance.
 
 `std` is migration distribution, not a semantic namespace. `std.script` is
 frozen debt. New canonical `std.*` calls, APIs, generated source, and onboarding

@@ -1,9 +1,9 @@
 #!/usr/bin/env duo
-global s = req "std.script"
+s = script
 
 global DUO: str = tostring(s.getenv_or("DUO"))
-if string.len(DUO) == 0
-    DUO = "./zig-out/bin/duo"
+if DUO:len() == 0
+    DUO = "./zig-out/bin/idol"
 end
 
 global PASS: i64 = 0
@@ -20,7 +20,7 @@ fail(label: str)
 end
 
 assert_contains(label: str, text: str, pattern: str)
-    if string.find(text, pattern, 1, true) != nil
+    if text:find(pattern, 1, true) != nil
         pass(label)
     else
         fail(label .. " — expected to find: " .. pattern)
@@ -28,14 +28,14 @@ assert_contains(label: str, text: str, pattern: str)
 end
 
 assert_not_contains(label: str, text: str, pattern: str)
-    if string.find(text, pattern, 1, true) != nil
+    if text:find(pattern, 1, true) != nil
         fail(label .. " — expected NOT to find: " .. pattern)
     else
         pass(label)
     end
 end
 
-global TMPDIR_TEST: str = string.gsub(tostring(s.fs_tmpdir()), "\n", "")
+global TMPDIR_TEST: str = tostring(s.fs_tmpdir()):gsub("\n", "")
 
 write_src(name: str, src: str): str
     path: str = tostring(s.path_join(TMPDIR_TEST, name))
@@ -148,7 +148,7 @@ OUT_NATIVE: str = tostring(s.path_join(TMPDIR_TEST, "hello.out"))
 if s.ok(DUO .. " compile " .. HELLO .. " --target wasm32-wasi -o " .. OUT_WASM)
     if s.ok("test -f " .. OUT_WASM)
         out_type: str = tostring(s.capture("file " .. OUT_WASM))
-        if string.find(out_type, "WebAssembly", 1, true) != nil
+        if out_type:find("WebAssembly", 1, true) != nil
             pass("wasm: output is valid WebAssembly binary")
         else
             fail("wasm: output is not valid WebAssembly binary")

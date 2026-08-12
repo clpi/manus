@@ -1,10 +1,10 @@
--- the engine WASM opcode constants
---
--- CANONICAL MVP facts: duo/src/wasm_semantic.zig (sibling repo)
--- Generated MVP subset (63 ops): `duo wasm-tables emit` → lib/std/wasm/ward_mvp_opcodes.id
--- When compiling The engine with Duo stdlib, prefer: mvp = req "std.wasm.ward_mvp_opcodes"
---
--- Extended opcodes below are The engine-only until migrated into wasm_semantic.
+# the engine WASM opcode constants
+#
+# CANONICAL MVP facts: duo/src/wasm_semantic.zig (sibling repo)
+# Generated MVP subset (63 ops): `duo wasm-tables emit` → lib/std/wasm/ward_mvp_opcodes.id
+# When compiling The engine with Duo stdlib, prefer: mvp = ward_mvp_opcodes
+#
+# Extended opcodes below are The engine-only until migrated into wasm_semantic.
 M = {
   OP_unreachable = 0x00,
   OP_nop = 0x01,

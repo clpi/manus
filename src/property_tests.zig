@@ -1049,11 +1049,11 @@ test "Property 4 (eql): random type pairs - acceptance iff types compatible" {
 //
 // **Validates: Requirements 1.3, 1.4**
 //
-// In `.duo` mode, a bare assignment (`x = ...`) at a new-binding position SHALL
+// In `.id` mode, a bare assignment (`x = ...`) at a new-binding position SHALL
 // create a local binding (not visible as a module global), while the `global`
 // keyword SHALL create a module-global binding.
 
-/// Run sema in `.duo` mode and return the sema state.
+/// Run sema in `.id` mode and return the sema state.
 fn parse_and_check_duo(alloc: std.mem.Allocator, src: []const u8) !Sema {
     var lex = Lexer.init(src, "test");
     var parser = Parser.init(&lex, alloc);

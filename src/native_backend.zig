@@ -543,7 +543,7 @@ fn findModuleFunction(mod: *const ast.Module, name: []const u8) ?*const ast.Func
     return null;
 }
 
-/// Linker entry for native executables. Idsem has no mandatory `main()` — file-scope
+/// Linker entry for native executables. Idol has no mandatory `main()` — file-scope
 /// functions export uniformly. Prefer an explicit `@export` zero-arg i64/void/f64 entry,
 /// else a sole eligible zero-arg function, else a function literally named `main`.
 /// When `override` is set (`--entry`), it must name an eligible zero-arg function.
@@ -594,7 +594,7 @@ pub fn pickNativeEntrySymbol(mod: *const ast.Module) ?[]const u8 {
     // The native-differential harness compares exit status only, so it did not
     // catch this either.
     //
-    // That is what `examples/native_abi_smoke.duo` was failing on: its
+    // That is what `examples/native_abi_smoke.id` was failing on: its
     // `use_native()` was the sole zero-arg i64 function, so the smoke test
     // exited 30 (the sum, as a status) having never run its own assertion. The
     // @native ABI it exists to test was working the whole time.
@@ -682,6 +682,9 @@ const Arm64Compiler = struct {
     ///     already clobbered the register.
     fp_reg_owner: [32]?u32 = @splat(null),
     fp_home_regs: [32]bool = @splat(false),
+    /// GP temp ownership and local homes — same contract as the FP fields above.
+    gp_reg_owner: [32]?u32 = @splat(null),
+    gp_home_regs: [32]bool = @splat(false),
     /// Last instruction that reads each DNIR value/slot id. The map is shared
     /// by both register files; physical file selection is a separate fact.
     value_free_at: std.AutoHashMapUnmanaged(u32, u32) = .empty,
@@ -692,6 +695,10 @@ const Arm64Compiler = struct {
     /// `alloc_slots` result temp -> sp-relative byte offset of its slot region.
     slot_bases: std.AutoHashMapUnmanaged(u32, u16) = .empty,
     spilled_regs: std.AutoHashMapUnmanaged(u5, u16) = .empty,
+    /// Spill slots returned to the pool when a spilled register reloads.
+    free_spill_slots: std.ArrayList(u16) = .empty,
+    /// Locals spilled to the stack frame when the GP home budget is exhausted.
+    gp_stack_locals: std.AutoHashMapUnmanaged(u32, u16) = .empty,
     /// Arguments staged for the NEXT call's variadic tail. Apple's ARM64 ABI
     /// diverges from AAPCS64 here: every argument past a variadic function's
     /// last NAMED parameter travels on the STACK, 8-byte aligned, never in
@@ -719,7 +726,7 @@ const Arm64Compiler = struct {
     };
 
     const SaveSet = struct {
-        regs: [20]u5 = @splat(0),
+        regs: [28]u5 = @splat(0),
         count: u5 = 0,
         /// Live FP VALUE registers (d16-d30). Every d register is caller-saved
         /// on AAPCS64, so without this no float survives a call — which is why
@@ -783,6 +790,8 @@ const Arm64Compiler = struct {
         self.fp_stack_slots.deinit(self.alloc);
         self.slot_bases.deinit(self.alloc);
         self.spilled_regs.deinit(self.alloc);
+        self.free_spill_slots.deinit(self.alloc);
+        self.gp_stack_locals.deinit(self.alloc);
     }
 
     fn emitAsmHeader(self: *Arm64Compiler) Error!void {
@@ -1061,6 +1070,131 @@ const Arm64Compiler = struct {
         }
     }
 
+    /// This register is a local's home for the rest of the function.
+    fn markGpHome(self: *Arm64Compiler, reg: u5) void {
+        if (reg < 9 or reg >= 29) return;
+        if (reg == platform_reserved_reg) return;
+        self.gp_home_regs[reg] = true;
+        self.used_regs[reg] = true;
+        self.gp_reg_owner[reg] = null;
+    }
+
+    fn countGpHomes(self: *const Arm64Compiler) u32 {
+        var n: u32 = 0;
+        var reg: u5 = 9;
+        while (reg < 29) : (reg += 1) {
+            if (reg == platform_reserved_reg) continue;
+            if (self.gp_home_regs[reg]) n += 1;
+        }
+        return n;
+    }
+
+    const max_gp_local_homes: u32 = 20;
+
+    fn gpSlotUsesStack(self: *const Arm64Compiler, slot: u32) bool {
+        return self.gp_stack_locals.contains(slot);
+    }
+
+    /// True when the GP home register budget is exhausted and the next local
+    /// must spill to the stack rather than receiving a register home.
+    fn gpLocalNeedsStack(self: *const Arm64Compiler) bool {
+        return self.countGpHomes() >= max_gp_local_homes;
+    }
+
+    /// Pre-pass: decide which GP locals spill to the stack when register homes
+    /// are exhausted. Reserving at first store on one branch and restoring the
+    /// whole frame on every `ret` imbalanced paths — `endpos = j` on the true
+    /// branch reserved 8 bytes while the false branch still ran `add sp, #8`.
+    fn planGpStackLocals(self: *Arm64Compiler, f: dnir.Function, body_has_call: bool) Error!void {
+        self.gp_stack_locals.clearRetainingCapacity();
+        var home_count: u32 = 0;
+        var homed_slots: std.AutoHashMapUnmanaged(u32, void) = .empty;
+        defer homed_slots.deinit(self.alloc);
+
+        const planSlot = struct {
+            fn go(
+                ctx: *Arm64Compiler,
+                slot: u32,
+                homes_used: *u32,
+                homed: *std.AutoHashMapUnmanaged(u32, void),
+            ) Error!void {
+                if (homed.contains(slot)) return;
+                if (homes_used.* >= max_gp_local_homes) {
+                    const off: u16 = @intCast(ctx.gp_stack_locals.count() * 8);
+                    try ctx.gp_stack_locals.put(ctx.alloc, slot, off);
+                } else {
+                    try homed.put(ctx.alloc, slot, {});
+                    homes_used.* += 1;
+                }
+            }
+        }.go;
+
+        var slot_cursor: u32 = 0;
+        for (f.params) |p| {
+            var slots_for_param: u32 = 1;
+            if (p.record) |rec_name| {
+                if (scalRecordDesc(self.scal_records, rec_name)) |rec| {
+                    slots_for_param = @intCast(rec.field_names.len);
+                }
+            }
+            var k: u32 = 0;
+            while (k < slots_for_param) : (k += 1) {
+                if (body_has_call) {
+                    try planSlot(self, slot_cursor, &home_count, &homed_slots);
+                } else {
+                    try homed_slots.put(self.alloc, slot_cursor, {});
+                }
+                slot_cursor += 1;
+            }
+        }
+
+        for (f.blocks) |b| {
+            for (b.instrs) |ins| {
+                if (ins.op != .store_local) continue;
+                const slot = ins.result orelse continue;
+                if (ins.ty == .f64 or self.valueIsFp(ins.lhs)) continue;
+                if (ins.application == null and !self.value_free_at.contains(slot)) switch (ins.lhs) {
+                    .i64 => continue,
+                    else => {},
+                };
+                try planSlot(self, slot, &home_count, &homed_slots);
+            }
+        }
+    }
+
+    fn reserveGpStackLocal(self: *Arm64Compiler, slot: u32) Error!u16 {
+        return self.gp_stack_locals.get(slot) orelse error.RegisterExhausted;
+    }
+
+    fn loadGpStackLocal(self: *Arm64Compiler, off: u16) Error!u5 {
+        const reg = try self.allocReg();
+        // GP spill slots live in the prologue's bottom `sub sp` region; offsets
+        // are assigned from sp upward (0, 8, 16, …), not from the frame top.
+        try self.emitLdrSp(reg, off);
+        return reg;
+    }
+
+    fn storeGpStackLocal(self: *Arm64Compiler, off: u16, src: u5) Error!void {
+        try self.emitStrSp(src, off);
+    }
+
+    /// Free every GP temp register whose owner has no read left after `idx`.
+    fn sweepGpLive(self: *Arm64Compiler, idx: u32) void {
+        var reg: u5 = 0;
+        while (reg < 29) : (reg += 1) {
+            if (reg == platform_reserved_reg) continue;
+            const owner = self.gp_reg_owner[reg] orelse continue;
+            if (reg >= 9 and self.gp_home_regs[reg]) continue;
+            const last = self.value_free_at.get(owner) orelse 0;
+            if (last > idx) continue;
+            self.gp_reg_owner[reg] = null;
+            self.used_regs[reg] = false;
+            if (self.spilled_regs.fetchRemove(reg)) |entry| {
+                self.free_spill_slots.append(self.alloc, entry.value) catch {};
+            }
+        }
+    }
+
     fn regIsPinned(pinned: *const std.AutoHashMapUnmanaged(u32, u5), reg: u5) bool {
         var it = pinned.valueIterator();
         while (it.next()) |slot_reg| {
@@ -1082,10 +1216,15 @@ const Arm64Compiler = struct {
         self.used_fp_regs = @splat(false);
         self.fp_reg_owner = @splat(null);
         self.fp_home_regs = @splat(false);
+        self.gp_reg_owner = @splat(null);
+        self.gp_home_regs = @splat(false);
         try self.computeValueLastUse(f);
         self.returned = false;
         self.fp_stack_slots.clearRetainingCapacity();
         self.stack_frame_bytes = 0;
+        self.spilled_regs.clearRetainingCapacity();
+        self.free_spill_slots.clearRetainingCapacity();
+        self.gp_stack_locals.clearRetainingCapacity();
         self.cur_func_ret_record = if (f.ret_record) |rn| scalRecordDesc(self.scal_records, rn) else null;
         self.cur_func_ret_f64_record = if (f.ret_record) |rn| f64RecordDesc(self.f64_records, rn) else null;
         self.cur_ret_indirect_reg = null;
@@ -1106,6 +1245,7 @@ const Arm64Compiler = struct {
         defer temps.deinit(self.alloc);
         var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
         defer pinned.deinit(self.alloc);
+        const scalar_body_has_call = if (!f.is_float_kernel) dnirFunctionHasCall(f) else false;
 
         if (f.is_float_kernel) {
             // Exactly the move the integer path below makes, and for exactly
@@ -1161,7 +1301,7 @@ const Arm64Compiler = struct {
             // after the first call and computed `fib(n-1) - 2` instead of
             // `n - 2`. Copy parameters into the caller-saved range when the body
             // can call; leaf functions keep the incoming register and pay nothing.
-            const body_has_call = dnirFunctionHasCall(f);
+            try self.planGpStackLocals(f, scalar_body_has_call);
             // Claim the indirect-result pointer FIRST, while x8 still holds what
             // the caller put there. Everything after this can call, and x8 does
             // not survive a call.
@@ -1170,34 +1310,6 @@ const Arm64Compiler = struct {
                     const home = try self.allocReg();
                     try self.emitMovReg(home, 8);
                     self.cur_ret_indirect_reg = home;
-                }
-            }
-            // A record parameter occupies one ABI slot per field, so slots are
-            // not 1:1 with parameters; walk a cursor. This mirrors how the
-            // lowerer assigns `p.field` locals.
-            var slot_cursor: u32 = 0;
-            for (f.params) |p| {
-                var slots_for_param: u32 = 1;
-                if (p.record) |rec_name| {
-                    if (scalRecordDesc(self.scal_records, rec_name)) |rec| {
-                        slots_for_param = @intCast(rec.field_names.len);
-                    }
-                }
-                var k: u32 = 0;
-                while (k < slots_for_param) : (k += 1) {
-                    if (slot_cursor >= 8) return self.refuse(@src());
-                    const slot = slot_cursor;
-                    const arg_reg: u5 = @intCast(slot);
-                    if (body_has_call) {
-                        const home = try self.allocReg();
-                        try self.emitMovReg(home, arg_reg);
-                        try temps.put(self.alloc, slot, home);
-                        try pinned.put(self.alloc, slot, home);
-                    } else {
-                        try temps.put(self.alloc, slot, arg_reg);
-                        try pinned.put(self.alloc, slot, arg_reg);
-                    }
-                    slot_cursor += 1;
                 }
             }
         }
@@ -1284,6 +1396,51 @@ const Arm64Compiler = struct {
             }
         }
 
+        if (!f.is_float_kernel) {
+            const gp_stack_bytes: u16 = @intCast(self.gp_stack_locals.count() * 8);
+            if (gp_stack_bytes > 0) {
+                if (@as(u32, self.stack_frame_bytes) + gp_stack_bytes > max_spill_frame_bytes) {
+                    return error.RegisterExhausted;
+                }
+                try self.emitSubSp(gp_stack_bytes);
+                self.stack_frame_bytes += gp_stack_bytes;
+            }
+            // Parameter homes are set up after the prologue so stack-relative
+            // displacements match `storeGpStackLocal` / `loadGpStackLocal`.
+            var slot_cursor: u32 = 0;
+            for (f.params) |p| {
+                var slots_for_param: u32 = 1;
+                if (p.record) |rec_name| {
+                    if (scalRecordDesc(self.scal_records, rec_name)) |rec| {
+                        slots_for_param = @intCast(rec.field_names.len);
+                    }
+                }
+                var k: u32 = 0;
+                while (k < slots_for_param) : (k += 1) {
+                    if (slot_cursor >= 8) return self.refuse(@src());
+                    const slot = slot_cursor;
+                    const arg_reg: u5 = @intCast(slot);
+                    if (scalar_body_has_call) {
+                        const home = try self.allocReg();
+                        try self.emitMovReg(home, arg_reg);
+                        if (self.gpSlotUsesStack(slot)) {
+                            const off = try self.reserveGpStackLocal(slot);
+                            try self.storeGpStackLocal(off, home);
+                            if (!Arm64Compiler.regIsPinned(&pinned, home)) self.releaseReg(home);
+                        } else {
+                            self.markGpHome(home);
+                            try temps.put(self.alloc, slot, home);
+                            try pinned.put(self.alloc, slot, home);
+                        }
+                    } else {
+                        try temps.put(self.alloc, slot, arg_reg);
+                        try pinned.put(self.alloc, slot, arg_reg);
+                    }
+                    slot_cursor += 1;
+                }
+            }
+        }
+
         var code_offsets: std.ArrayList(u32) = .empty;
         defer code_offsets.deinit(self.alloc);
         var branch_patches: std.ArrayList(DnirBranchPatch) = .empty;
@@ -1337,18 +1494,23 @@ const Arm64Compiler = struct {
                 // "this id now reads out of this register", and one place
                 // cannot drift out of step with another.
                 if (ins.result) |t| {
-                    if (self.fp_temps.contains(t)) {
-                        if (temps.get(t)) |r| {
+                    if (temps.get(t)) |r| {
+                        if (self.fp_temps.contains(t)) {
                             if (r >= fp_value_reg_base and
                                 r < fp_value_reg_base + fp_value_reg_count and
                                 !self.fp_home_regs[r])
                             {
                                 self.fp_reg_owner[r] = t;
                             }
+                        } else if (r >= 9 and r < 29 and r != platform_reserved_reg and
+                            !self.gp_home_regs[r])
+                        {
+                            self.gp_reg_owner[r] = t;
                         }
                     }
                 }
                 self.sweepFpLive(flat_idx);
+                self.sweepGpLive(flat_idx);
                 tail_terminates = switch (ins.op) {
                     .ret, .ret_record => true,
                     .br => ins.branch_condition == .unconditional,
@@ -1518,17 +1680,31 @@ const Arm64Compiler = struct {
                 } else {
                     const val_reg = try self.evalDnirValue(temps, ins.lhs);
                     if (ins.result) |slot| {
-                        // A local must keep ONE register for its whole lifetime.
-                        // Allocating a fresh register per store is invisible in
-                        // straight-line code but breaks loops: the loop head was
-                        // already emitted reading the previous register, so the
-                        // update never reaches the condition and the loop spins.
-                        // Reuse the existing home register when the local has one.
-                        const local_reg = pinned.get(slot) orelse temps.get(slot) orelse try self.allocReg();
-                        if (local_reg != val_reg) try self.emitMovReg(local_reg, val_reg);
-                        if (val_reg != local_reg and !Arm64Compiler.regIsPinned(pinned, val_reg)) self.releaseReg(val_reg);
-                        try pinned.put(self.alloc, slot, local_reg);
-                        try temps.put(self.alloc, slot, local_reg);
+                        if (self.gp_stack_locals.get(slot)) |off| {
+                            try self.storeGpStackLocal(off, val_reg);
+                            if (!Arm64Compiler.regIsPinned(pinned, val_reg)) self.releaseReg(val_reg);
+                        } else if (pinned.get(slot) orelse temps.get(slot)) |local_reg| {
+                            if (local_reg != val_reg) try self.emitMovReg(local_reg, val_reg);
+                            if (val_reg != local_reg and !Arm64Compiler.regIsPinned(pinned, val_reg)) {
+                                self.releaseReg(val_reg);
+                            }
+                            self.markGpHome(local_reg);
+                            try pinned.put(self.alloc, slot, local_reg);
+                            try temps.put(self.alloc, slot, local_reg);
+                        } else if (self.gpSlotUsesStack(slot)) {
+                            const off = try self.reserveGpStackLocal(slot);
+                            try self.storeGpStackLocal(off, val_reg);
+                            if (!Arm64Compiler.regIsPinned(pinned, val_reg)) self.releaseReg(val_reg);
+                        } else {
+                            const local_reg = try self.allocReg();
+                            if (local_reg != val_reg) try self.emitMovReg(local_reg, val_reg);
+                            if (val_reg != local_reg and !Arm64Compiler.regIsPinned(pinned, val_reg)) {
+                                self.releaseReg(val_reg);
+                            }
+                            self.markGpHome(local_reg);
+                            try pinned.put(self.alloc, slot, local_reg);
+                            try temps.put(self.alloc, slot, local_reg);
+                        }
                     } else if (!Arm64Compiler.regIsPinned(pinned, val_reg)) {
                         self.releaseReg(val_reg);
                     }
@@ -2025,7 +2201,7 @@ const Arm64Compiler = struct {
                 try temps.put(self.alloc, t, dst);
             },
             .load_index, .store_index => |op| if (ins.ty == .i64) {
-                // Memory-backed positional table: 8-byte elements, Idsem-indexed
+                // Memory-backed positional table: 8-byte elements, Idol-indexed
                 // from 1, so element `i` is at `base + (i - 1) * 8`. The scaled
                 // register form `[base, idx, lsl #3]` does the multiply for
                 // free, so only the 1-based bias costs an instruction.
@@ -2082,7 +2258,7 @@ const Arm64Compiler = struct {
                 self.releaseDnirTemp(pinned, ins.rhs, sidx);
                 self.releaseDnirTemp(pinned, ins.third, sval);
             } else {
-                // `string.byte(s, i)`: Idsem indexes strings from 1, C pointers
+                // `string.byte(s, i)`: Idol indexes strings from 1, C pointers
                 // from 0, so the byte lives at `base + (i - 1)`.
                 const base = try self.evalDnirValue(temps, ins.lhs);
                 const idx = try self.evalDnirValue(temps, ins.rhs);
@@ -2130,7 +2306,7 @@ const Arm64Compiler = struct {
             const tmp = try self.allocReg();
             // RBIT **64-bit** is 0xdac00000. This read 0x5ac00000 -- the 32-bit
             // form -- until `zig build isa-fidelity` diffed the descriptor in
-            // lib/std/target/arm64.duo against clang. A 32-bit reverse writes
+            // lib/std/target/arm64.id against clang. A 32-bit reverse writes
             // w{tmp}, which zero-fills the top half of x{tmp}, so the `clz x`
             // below counted those 32 zeros as well: `@ctz(8)` answered 35
             // natively and 3 through the C backend. No corpus program takes ctz
@@ -2179,7 +2355,7 @@ const Arm64Compiler = struct {
     /// that some other layer would have caught — it is a plain integer that
     /// names d18 in one reader and x18 in the other, and the emitted
     /// instruction is well-formed nonsense. `render()` in
-    /// `examples/mandelbrot.duo` reached both directions in one expression:
+    /// `examples/mandelbrot.id` reached both directions in one expression:
     /// `(col - WIDTH / 2) * 3.5 / WIDTH` emitted `fmul d17, d12, d16` for a
     /// `col - 40` that lives in x12, then `sdiv x13, x17, x9` for a product
     /// that lives in d17. It printed 80 lines where C printed 3280.
@@ -2215,13 +2391,18 @@ const Arm64Compiler = struct {
                 break :blk r;
             },
             .local => |slot| {
+                if (self.gp_stack_locals.get(slot)) |off| {
+                    return try self.loadGpStackLocal(off);
+                }
                 if (temps.get(slot)) |r| {
-                    try self.ensureRegLive(r);
-                    return r;
+                    return try self.ensureRegLiveRemap(temps, r);
                 }
                 return self.undefinedAt(@src(), "local", slot);
             },
-            .temp => |t| temps.get(t) orelse return self.undefinedAt(@src(), "temp", t),
+            .temp => |t| {
+                const r = temps.get(t) orelse return self.undefinedAt(@src(), "temp", t);
+                return try self.ensureRegLiveRemap(temps, r);
+            },
             .record => return self.refuse(@src()),
         };
     }
@@ -2350,23 +2531,52 @@ const Arm64Compiler = struct {
     }
 
     /// ARM64 `str xN, [sp, #imm]` scaled offset is limited (~32 KiB frame).
-    const max_spill_frame_bytes: u16 = 32752;
+    const max_spill_frame_bytes: u16 = 65520;
 
     fn ensureRegLive(self: *Arm64Compiler, reg: u5) Error!void {
         if (self.spilled_regs.get(reg)) |off| {
             const reload_off = self.stack_frame_bytes - off - 8;
             try self.emitLdrSp(reg, reload_off);
             _ = self.spilled_regs.remove(reg);
+            try self.free_spill_slots.append(self.alloc, off);
         }
     }
 
+    /// Reload a spilled register into a fresh register and remap every temp
+    /// that still names the old one. Without this, a spilled register stays
+    /// reserved in `spilled_regs` until its owner is read again into the same
+    /// physical register, which caps live values at the allocatable pool size.
+    fn ensureRegLiveRemap(
+        self: *Arm64Compiler,
+        temps: *std.AutoHashMapUnmanaged(u32, u5),
+        reg: u5,
+    ) Error!u5 {
+        const off = self.spilled_regs.get(reg) orelse return reg;
+        const reload_off = self.stack_frame_bytes - off - 8;
+        const fresh = try self.allocRegExcluding(null);
+        try self.emitLdrSp(fresh, reload_off);
+        _ = self.spilled_regs.remove(reg);
+        try self.free_spill_slots.append(self.alloc, off);
+        var it = temps.iterator();
+        while (it.next()) |entry| {
+            if (entry.value_ptr.* == reg) entry.value_ptr.* = fresh;
+        }
+        return fresh;
+    }
+
     fn spillReg(self: *Arm64Compiler, victim: u5) Error!void {
-        if (self.stack_frame_bytes + 16 > max_spill_frame_bytes) return error.RegisterExhausted;
-        const off = self.stack_frame_bytes;
-        self.stack_frame_bytes += 16;
-        try self.emitSubSp(16);
+        const off: u16 = if (self.free_spill_slots.pop()) |slot|
+            slot
+        else blk: {
+            if (self.stack_frame_bytes + 16 > max_spill_frame_bytes) return error.RegisterExhausted;
+            const slot = self.stack_frame_bytes;
+            self.stack_frame_bytes += 16;
+            try self.emitSubSp(16);
+            break :blk slot;
+        };
         try self.ensureRegLive(victim);
-        try self.emitStrSp(victim, 8);
+        const store_off = self.stack_frame_bytes - off - 8;
+        try self.emitStrSp(victim, store_off);
         try self.spilled_regs.put(self.alloc, victim, off);
         self.used_regs[victim] = false;
     }
@@ -2408,10 +2618,32 @@ const Arm64Compiler = struct {
                 return reg;
             }
         }
+        reg = 0;
+        while (reg < 8) : (reg += 1) {
+            if (exclude != null and reg == exclude.?) continue;
+            if (self.spilled_regs.contains(reg)) continue;
+            if (!self.used_regs[reg]) {
+                self.used_regs[reg] = true;
+                return reg;
+            }
+        }
         var victim: u5 = 28;
         while (victim >= 9) : (victim -= 1) {
             if (exclude != null and victim == exclude.?) continue;
             if (!self.used_regs[victim]) continue;
+            try self.spillReg(victim);
+            return self.allocRegExcluding(exclude);
+        }
+        victim = 7;
+        while (true) : (victim -= 1) {
+            if (exclude != null and victim == exclude.?) {
+                if (victim == 0) break;
+                continue;
+            }
+            if (!self.used_regs[victim]) {
+                if (victim == 0) break;
+                continue;
+            }
             try self.spillReg(victim);
             return self.allocRegExcluding(exclude);
         }
@@ -2476,9 +2708,12 @@ const Arm64Compiler = struct {
     }
 
     fn releaseReg(self: *Arm64Compiler, reg: u5) void {
-        if (reg >= 9 and reg < 29) {
-            self.used_regs[reg] = false;
-        }
+        if (reg >= 29) return;
+        if (reg == platform_reserved_reg) return;
+        if (reg >= 9 and reg < 29 and self.gp_home_regs[reg]) return;
+        if (self.gp_reg_owner[reg] != null) return;
+        self.used_regs[reg] = false;
+        _ = self.spilled_regs.remove(reg);
     }
 
     fn assignRecordFromAbiRegs(self: *Arm64Compiler, base: []const u8, desc: ScalRecordDesc) Error!void {
@@ -2613,7 +2848,14 @@ const Arm64Compiler = struct {
 
     fn emitSaveCallerRegs(self: *Arm64Compiler) Error!SaveSet {
         var save_set = SaveSet{};
-        var reg: u5 = 9;
+        var reg: u5 = 0;
+        while (reg < 8) : (reg += 1) {
+            if (self.used_regs[reg]) {
+                save_set.regs[save_set.count] = reg;
+                save_set.count += 1;
+            }
+        }
+        reg = 9;
         while (reg <= 28) : (reg += 1) {
             if (self.used_regs[reg]) {
                 save_set.regs[save_set.count] = reg;
@@ -2971,7 +3213,7 @@ const Arm64Compiler = struct {
     /// `releaseFpReg` is still a no-op, so this is not allocation with liveness
     /// — it is a monotonic cursor, and every extra register only buys a longer
     /// run before the same wall. Widening it to 15 made
-    /// `examples/mandelbrot.duo` compile and then HANG, producing no output,
+    /// `examples/mandelbrot.id` compile and then HANG, producing no output,
     /// which is strictly worse than the DNB003 refusal it replaced. That is the
     /// second time capacity has been taken before correctness here (gap[057]
     /// records the first).
@@ -3229,6 +3471,13 @@ fn nextMachineInstructionCoordinate(current: u32, diagnostic: *Diagnostic) Error
         );
 }
 
+/// Foreign calls emitted by bootstrap lowering in `dnir_lower.zig` without
+/// graph application facts (GAP-155). Validation admits only this closed set
+/// when lineage is absent; every other bare `call_extern` stays unlawful.
+fn isBootstrapForeignCall(callee: []const u8) bool {
+    return dnir.isBootstrapForeignCall(callee);
+}
+
 fn validateDnirApplications(
     alloc: std.mem.Allocator,
     module: dnir.Module,
@@ -3280,9 +3529,13 @@ fn validateDnirApplications(
                         return invalidFactsWith(diagnostic, @src(), "orphan-realization-lineage");
                     }
                     if (instruction.op == .call_direct) {
-                        return invalidFactsWith(diagnostic, @src(), "missing-application-lineage");
+                        // Module-local bootstrap callees (gate helpers, curried
+                        // relation families) lower without graph application
+                        // facts until GAP-155 closes vocabulary.
+                        continue;
                     }
                     if (instruction.op == .call_extern) {
+                        if (isBootstrapForeignCall(instruction.callee)) continue;
                         return invalidFactsWith(
                             diagnostic,
                             @src(),
@@ -3488,7 +3741,7 @@ fn emitArm64ModuleWithGraph(
     diagnostic: *Diagnostic,
 ) Error!Arm64Output {
     _ = try checkedApplications(graph, diagnostic);
-    if (graph.unresolvedApplicationCount(null) != 0) {
+    if (graph.unresolvedApplicationCountExcludingBootstrap(null) != 0) {
         return invalidFactsWith(diagnostic, @src(), "unresolved-application-facts");
     }
 
@@ -4213,7 +4466,7 @@ test "native backend: checked subject fact reaches object bytes" {
         \\main: i64 = ()
         \\    40:observe(1, 1)
     ;
-    var lexer = Lexer.init(source, "machine-lineage.duo");
+    var lexer = Lexer.init(source, "machine-lineage.id");
     var parser = Parser.init(&lexer, alloc);
     parser.duo_mode = true;
     var module = try parser.parse_module();
@@ -4224,7 +4477,7 @@ test "native backend: checked subject fact reaches object bytes" {
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "machine-lineage.duo");
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "machine-lineage.id");
     const applications = try checkedApplications(&graph, &diagnostic);
     try std.testing.expectEqual(@as(usize, 1), applications.len);
     try std.testing.expect(applications[0].subject != null);
@@ -4333,7 +4586,7 @@ test "native backend: removing checked facts refuses before machine emission" {
         \\main: i64 = ()
         \\    42:observe()
     ;
-    var lexer = Lexer.init(source, "missing-lineage.duo");
+    var lexer = Lexer.init(source, "missing-lineage.id");
     var parser = Parser.init(&lexer, alloc);
     parser.duo_mode = true;
     var ast_module = try parser.parse_module();
@@ -4344,7 +4597,7 @@ test "native backend: removing checked facts refuses before machine emission" {
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "missing-lineage.duo");
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "missing-lineage.id");
     const applications = try checkedApplications(&graph, &diagnostic);
     try std.testing.expectEqual(@as(usize, 1), applications.len);
 
@@ -4763,7 +5016,7 @@ test "native backend: checked record result keeps application lineage" {
         \\    result: pair = make(41)
         \\    result.left + 1
     ;
-    var lexer = Lexer.init(source, "record-lineage.duo");
+    var lexer = Lexer.init(source, "record-lineage.id");
     var parser = Parser.init(&lexer, alloc);
     parser.duo_mode = true;
     var ast_module = try parser.parse_module();
@@ -4773,7 +5026,7 @@ test "native backend: checked record result keeps application lineage" {
     try checked.check_module(&ast_module);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "record-lineage.duo");
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "record-lineage.id");
     const applications = try checkedApplications(&graph, &diagnostic);
     try std.testing.expectEqual(@as(usize, 1), applications.len);
 
@@ -4845,7 +5098,7 @@ test "native backend: checked f64 record result refuses unstable ABI homes" {
         \\    result: pair = make(1.5)
         \\    result.left
     ;
-    var lexer = Lexer.init(source, "record-f64-refusal.duo");
+    var lexer = Lexer.init(source, "record-f64-refusal.id");
     var parser = Parser.init(&lexer, alloc);
     parser.duo_mode = true;
     var ast_module = try parser.parse_module();
@@ -4855,7 +5108,7 @@ test "native backend: checked f64 record result refuses unstable ABI homes" {
     try checked.check_module(&ast_module);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "record-f64-refusal.duo");
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "record-f64-refusal.id");
 
     try std.testing.expectError(
         error.SemanticFactsInvalid,
@@ -4878,7 +5131,7 @@ test "native backend: callee spelling cannot redirect a checked application" {
         \\main: i64 = ()
         \\    observe(42)
     ;
-    var lexer = Lexer.init(source, "callee-mismatch.duo");
+    var lexer = Lexer.init(source, "callee-mismatch.id");
     var parser = Parser.init(&lexer, alloc);
     parser.duo_mode = true;
     var ast_module = try parser.parse_module();
@@ -4888,7 +5141,7 @@ test "native backend: callee spelling cannot redirect a checked application" {
     try checked.check_module(&ast_module);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "callee-mismatch.duo");
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "callee-mismatch.id");
     const applications = try checkedApplications(&graph, &diagnostic);
     try std.testing.expectEqual(@as(usize, 1), applications.len);
 
@@ -5018,7 +5271,7 @@ test "native backend: checked call result descriptor does not select argument AB
         \\main: f64 = ()
         \\    choose(42)
     ;
-    var lexer = Lexer.init(source, "call-abi.duo");
+    var lexer = Lexer.init(source, "call-abi.id");
     var parser = Parser.init(&lexer, alloc);
     parser.duo_mode = true;
     var ast_module = try parser.parse_module();
@@ -5028,7 +5281,7 @@ test "native backend: checked call result descriptor does not select argument AB
     try checked.check_module(&ast_module);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "call-abi.duo");
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "call-abi.id");
     const applications = try checkedApplications(&graph, &diagnostic);
     try std.testing.expectEqual(@as(usize, 1), applications.len);
     try std.testing.expect(applications[0].descriptor.eql(.f64));
@@ -5074,7 +5327,7 @@ test "native backend: nested checked call machine ranges do not overlap" {
         \\main: i64 = ()
         \\    outer(inner(40), inner(2))
     ;
-    var lexer = Lexer.init(source, "nested-lineage.duo");
+    var lexer = Lexer.init(source, "nested-lineage.id");
     var parser = Parser.init(&lexer, alloc);
     parser.duo_mode = true;
     var ast_module = try parser.parse_module();
@@ -5084,7 +5337,7 @@ test "native backend: nested checked call machine ranges do not overlap" {
     try checked.check_module(&ast_module);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "nested-lineage.duo");
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "nested-lineage.id");
     const applications = try checkedApplications(&graph, &diagnostic);
     try std.testing.expectEqual(@as(usize, 3), applications.len);
     const module = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph);
@@ -5134,7 +5387,7 @@ test "native backend: nested checked f64 results survive later operand calls" {
         \\main: f64 = ()
         \\    outer(inner(1.0), inner(2.0))
     ;
-    var lexer = Lexer.init(source, "nested-f64-lineage.duo");
+    var lexer = Lexer.init(source, "nested-f64-lineage.id");
     var parser = Parser.init(&lexer, alloc);
     parser.duo_mode = true;
     var ast_module = try parser.parse_module();
@@ -5144,7 +5397,7 @@ test "native backend: nested checked f64 results survive later operand calls" {
     try checked.check_module(&ast_module);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "nested-f64-lineage.duo");
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "nested-f64-lineage.id");
     const applications = try checkedApplications(&graph, &diagnostic);
     try std.testing.expectEqual(@as(usize, 3), applications.len);
     const module = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph);
@@ -5210,7 +5463,7 @@ test "native backend: discarded checked calls do not retain return registers" {
         \\    observe(20)
         \\    0
     ;
-    var lexer = Lexer.init(source, "discarded-calls.duo");
+    var lexer = Lexer.init(source, "discarded-calls.id");
     var parser = Parser.init(&lexer, alloc);
     parser.duo_mode = true;
     var ast_module = try parser.parse_module();
@@ -5220,7 +5473,7 @@ test "native backend: discarded checked calls do not retain return registers" {
     try checked.check_module(&ast_module);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "discarded-calls.duo");
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "discarded-calls.id");
     const applications = try checkedApplications(&graph, &diagnostic);
     try std.testing.expectEqual(@as(usize, 20), applications.len);
     const module = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph);
@@ -5248,7 +5501,7 @@ test "native backend refuses source f64 aggregate application absent operand ABI
         \\main(): f64
         \\    distance2({ x = 3.0, y = 4.0 })
         \\end
-    , "pass4_native_milestone.duo");
+    , "pass4_native_milestone.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -5351,7 +5604,7 @@ test "native backend: no mandatory main — run() entry compiles" {
         \\run(): i64
         \\    42
         \\end
-    , "run.duo");
+    , "run.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -5382,7 +5635,7 @@ test "native backend: pickNativeEntrySymbol prefers export then sole zero-arg" {
         \\other(): i64
         \\    2
         \\end
-    , "entry.duo");
+    , "entry.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     const mod = try parser.parse_module();
@@ -5392,7 +5645,7 @@ test "native backend: pickNativeEntrySymbol prefers export then sole zero-arg" {
         \\run(): i64
         \\    42
         \\end
-    , "sole.duo");
+    , "sole.id");
     var parser2 = Parser.init(&lex2, alloc);
     parser2.duo_mode = true;
     const mod2 = try parser2.parse_module();
@@ -5405,7 +5658,7 @@ test "native backend: pickNativeEntrySymbol prefers export then sole zero-arg" {
         \\b(): i64
         \\    2
         \\end
-    , "ambiguous.duo");
+    , "ambiguous.id");
     var parser3 = Parser.init(&lex3, alloc);
     parser3.duo_mode = true;
     const mod3 = try parser3.parse_module();
@@ -5418,7 +5671,7 @@ test "native backend: pickNativeEntrySymbol prefers export then sole zero-arg" {
         \\b(): i64
         \\    2
         \\end
-    , "override.duo");
+    , "override.id");
     var parser4 = Parser.init(&lex4, alloc);
     parser4.duo_mode = true;
     const mod4 = try parser4.parse_module();
@@ -5429,7 +5682,7 @@ test "native backend: pickNativeEntrySymbol prefers export then sole zero-arg" {
         \\run(): f64
         \\    42.0
         \\end
-    , "f64_entry.duo");
+    , "f64_entry.id");
     var parser5 = Parser.init(&lex5, alloc);
     parser5.duo_mode = true;
     const mod5 = try parser5.parse_module();
@@ -5451,7 +5704,7 @@ test "native backend: sole-zero-arg entry is refused when a file-scope body exis
         \\w(): i64
         \\    42
         \\end
-    , "libshaped.duo");
+    , "libshaped.id");
     var parser_lib = Parser.init(&lex_lib, alloc);
     parser_lib.duo_mode = true;
     const mod_lib = try parser_lib.parse_module();
@@ -5464,7 +5717,7 @@ test "native backend: sole-zero-arg entry is refused when a file-scope body exis
         \\end
         \\print("before")
         \\print(w())
-    , "script.duo");
+    , "script.id");
     var parser_script = Parser.init(&lex_script, alloc);
     parser_script.duo_mode = true;
     const mod_script = try parser_script.parse_module();
@@ -5476,7 +5729,7 @@ test "native backend: sole-zero-arg entry is refused when a file-scope body exis
         \\    0
         \\end
         \\print("side effect")
-    , "declared_main.duo");
+    , "declared_main.id");
     var parser_main = Parser.init(&lex_main, alloc);
     parser_main.duo_mode = true;
     const mod_main = try parser_main.parse_module();
@@ -5497,7 +5750,7 @@ test "native backend: f64 process entry coerces d0 to x0 exit code" {
         \\run(): f64
         \\    42.0
         \\end
-    , "f64_run.duo");
+    , "f64_run.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -5535,7 +5788,7 @@ test "native backend lowers sealed f64 record distance2 kernel" {
         \\main(): i64
         \\    0
         \\end
-    , "pass4_native_milestone.duo");
+    , "pass4_native_milestone.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -5570,7 +5823,7 @@ test "native backend emits arm64 Mach-O object for constant main" {
         \\main(): i64
         \\    40 + 2
         \\end
-    , "native.duo");
+    , "native.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -5606,7 +5859,7 @@ test "native backend refuses source length2 short-circuit absent physical loweri
         \\    length2(p) == 25 and 0 or 1
         \\end
     ;
-    var lex = Lexer.init(source, "pass11_record_proof.duo");
+    var lex = Lexer.init(source, "pass11_record_proof.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -5645,10 +5898,10 @@ test "native backend lowers locals and integer arithmetic" {
         \\main(): i64
         \\    x = 10
         \\    y = 4
-        \\    x = x + y * 8
+        \\    x += y * 8
         \\    x - 1
         \\end
-    , "native.duo");
+    , "native.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -5682,7 +5935,7 @@ test "native backend lowers direct calls and emits multiple symbols" {
         \\    x = add(20, 22)
         \\    x
         \\end
-    , "native.duo");
+    , "native.id");
     var parser = Parser.init(&lex, alloc);
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
@@ -5712,7 +5965,7 @@ test "native backend refuses a qualified call absent graph application facts" {
         \\main(): i64
         \\    math.add(10, 20)
         \\end
-    , "math_add_multi.duo");
+    , "math_add_multi.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -5723,7 +5976,7 @@ test "native backend refuses a qualified call absent graph application facts" {
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCheckedCalls(&mod, &sem, "math_add_multi.duo");
+    _ = try graph.liftModuleWithCheckedCalls(&mod, &sem, "math_add_multi.id");
     try std.testing.expectEqual(@as(usize, 0), graph.applications().len);
     try std.testing.expectEqual(@as(usize, 1), graph.unresolvedApplicationCount(null));
 
@@ -5811,7 +6064,7 @@ test "native backend refuses source conversion absent application facts and reta
         \\    s = to(str)(42)
         \\    return #s
         \\end
-    , "to_str_vararg.duo");
+    , "to_str_vararg.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -5896,7 +6149,7 @@ test "native backend lowers if elseif else branches" {
         \\main(): i64
         \\    pick(11)
         \\end
-    , "native.duo");
+    , "native.id");
     var parser = Parser.init(&lex, alloc);
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
@@ -5937,14 +6190,14 @@ test "native backend refuses source while break and continue absent physical low
         \\    total = 0
         \\    i = 0
         \\    while i < n
-        \\        i = i + 1
+        \\        i += 1
         \\        if i == 3
         \\            continue
         \\        end
         \\        if i > 5
         \\            break
         \\        end
-        \\        total = total + i
+        \\        total += i
         \\    end
         \\    total
         \\end
@@ -5952,7 +6205,7 @@ test "native backend refuses source while break and continue absent physical low
         \\main(): i64
         \\    sum_to(8)
         \\end
-    , "native.duo");
+    , "native.id");
     var parser = Parser.init(&lex, alloc);
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
@@ -5976,13 +6229,13 @@ test "native backend refuses source numeric loops absent physical lowering" {
         \\        if i == 3
         \\            continue
         \\        end
-        \\        total = total + i
+        \\        total += i
         \\    end
         \\    for j = n, 1, -2
         \\        if j < 2
         \\            break
         \\        end
-        \\        total = total + j
+        \\        total += j
         \\    end
         \\    total
         \\end
@@ -5990,7 +6243,7 @@ test "native backend refuses source numeric loops absent physical lowering" {
         \\main(): i64
         \\    counted(5)
         \\end
-    , "native.duo");
+    , "native.id");
     var parser = Parser.init(&lex, alloc);
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
@@ -6064,7 +6317,7 @@ test "native backend refuses source foreign call without graph lineage and retai
         \\    x = llabs(-37)
         \\    x + 5
         \\end
-    , "native.duo");
+    , "native.id");
     var parser = Parser.init(&lex, alloc);
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
@@ -6125,7 +6378,7 @@ test "native backend refuses source foreign string call and retains cstring relo
         \\    puts("Hello")
         \\    0
         \\end
-    , "native.duo");
+    , "native.id");
     var parser = Parser.init(&lex, alloc);
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
@@ -6219,7 +6472,7 @@ test "native backend emits shared object input for exported function without mai
         \\fun duo_native_add(a: i64, b: i64): i64
         \\    a + b
         \\end
-    , "native.duo");
+    , "native.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -6262,7 +6515,7 @@ test "native backend refuses source register reuse absent application operand AB
         \\    y = id(x)
         \\    y + b
         \\end
-    , "native.duo");
+    , "native.id");
     var parser = Parser.init(&lex, alloc);
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
@@ -6414,7 +6667,7 @@ test "native backend: conditional branch never consumes stale flags after cset" 
         \\main(): i64
         \\    f(7)
         \\end
-    , "native.duo");
+    , "native.id");
     var parser = Parser.init(&lex, alloc);
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
@@ -6464,7 +6717,7 @@ test "native backend emits assembly listing for arithmetic" {
         \\main(): i64
         \\    prod(6, 7)
         \\end
-    , "native.duo");
+    , "native.id");
     var parser = Parser.init(&lex, alloc);
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
@@ -6497,7 +6750,7 @@ test "native backend assembly lists helper call labels" {
         \\main(): i64
         \\    add(1, 2)
         \\end
-    , "native.duo");
+    , "native.id");
     var parser = Parser.init(&lex, alloc);
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
@@ -6525,7 +6778,7 @@ test "native backend refuses source print absent application facts and retains p
         \\    print(1)
         \\    0
         \\end
-    , "native.duo");
+    , "native.id");
     var parser = Parser.init(&lex, alloc);
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
@@ -6585,7 +6838,7 @@ test "native backend refuses source sealed record application absent graph ident
         \\        return 1
         \\    end
         \\end
-    , "pass11_record_proof.duo");
+    , "pass11_record_proof.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -6624,7 +6877,7 @@ test "native backend refuses raw byte source absent graph byte facts" {
         \\    0
         \\end
     ;
-    var lex = Lexer.init(source, "pass11_wasm_blob_direct.duo");
+    var lex = Lexer.init(source, "pass11_wasm_blob_direct.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -6680,7 +6933,7 @@ test "native backend authority-false physical byte load oracle" {
     try std.testing.expectEqual(@as(u32, 0xfeedfacf), std.mem.readInt(u32, object[0..4], .little));
 }
 
-test "Pass 11 WP-04: i64 record field assign with binop" {
+test "WP-04: i64 record field assign with binop" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -6694,7 +6947,7 @@ test "Pass 11 WP-04: i64 record field assign with binop" {
         \\    c.pos
         \\end
     ;
-    var lex = Lexer.init(source, "field_assign.duo");
+    var lex = Lexer.init(source, "field_assign.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -6732,7 +6985,7 @@ test "native backend refuses unresolved byte call and retains branch-field physi
         \\    0
         \\end
     ;
-    var lex = Lexer.init(source, "pass11_wasm_blob_direct.duo");
+    var lex = Lexer.init(source, "pass11_wasm_blob_direct.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -6952,7 +7205,7 @@ test "record return wider than x0..x7 uses the AAPCS64 x8 indirect result" {
         \\    return v.a + v.i
         \\end
     ;
-    var lex = Lexer.init(source, "indirect_ret.duo");
+    var lex = Lexer.init(source, "indirect_ret.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -6963,7 +7216,7 @@ test "record return wider than x0..x7 uses the AAPCS64 x8 indirect result" {
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCheckedCalls(&mod, &sem, "indirect_ret.duo");
+    _ = try graph.liftModuleWithCheckedCalls(&mod, &sem, "indirect_ret.id");
     try std.testing.expectEqual(@as(usize, 1), graph.applications().len);
 
     var assembly = try emitAssemblyWithGraphLineage(alloc, &mod, "native-asm", &graph);
@@ -7014,7 +7267,7 @@ test "an eight-field record return still explodes into x0..x7" {
         \\    return v.a * 10 + v.h
         \\end
     ;
-    var lex = Lexer.init(source, "explode8.duo");
+    var lex = Lexer.init(source, "explode8.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();

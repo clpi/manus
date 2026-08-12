@@ -1,78 +1,78 @@
--- treesitter emit — the grammar projection, as far as it honestly goes today.
---
--- Pass 101 §"The host" requires tree-sitter to be "a generated grammar
--- projection (output, never authored)". gaps/GAP-049 records why it was not:
--- three pieces were missing — a declarative production source, an emitter, and
--- a differential. Pass 108 landed the first as docs/spec/grammar.md. THIS FILE
--- is the second. `zig build tree-sitter-coverage` is the third.
---
--- WHAT THIS EMITS, and what it does not. The output file
--- ext/tree-sitter-duo/grammar.js is split by two markers into GENERATED parts
--- and an AUTHORED residue. Everything outside the markers is emitted from the
--- registries below; everything between them is carried through byte for byte
--- and COUNTED. The count is the number gaps/GAP-049 is measured by, and
--- printing it is the only honest way to say "partially generated".
---
--- The residue is not a formatting convenience. docs/spec/grammar.md §3 states
--- the structural productions as EBNF, but for the PASS-100 surface, and the
--- tracked corpus is still overwhelmingly pre-Pass-100 — `match`, `enum`,
--- `concept`, `local`, `fun`. Projecting §3 over the residue would drop editor
--- recognition from 755 of 775 files to almost none. That is a language
--- decision (GAP-049's "second reason"), not a build-system one, so this
--- emitter refuses to make it and says why instead.
---
--- WHAT IS GENUINELY DERIVED rather than transliterated:
---
---   long string levels 0..2   one rule per level from ONE template, with the
---                             body alternation that excludes the closer
---                             COMPUTED from the level. It used to be three
---                             hand-written lines whose alternations had to be
---                             got right by eye.
---   quoted string tokens      one template, two quote characters.
---   binary and unary operators  one table of spelling, level and
---                             associativity — which is what a precedence
---                             table IS — checked against grammar.md §2.
---
--- THE CHECK FOUND A REAL DEFECT THE DAY IT WAS WRITTEN, which is the argument
--- for the whole approach. The authored table numbered `or` 11 and `^` 4, and
--- in tree-sitter a HIGHER number binds TIGHTER, so the entire binary
--- precedence table was inverted end to end. Verified by value before it was
--- believed: `x = 2 + 3 * 4` parsed as `(2 + 3) * 4` and `a or b and c` as
--- `(a or b) and c`. The recognition gate could not see it — no ERROR node is
--- produced by a wrong tree — and no reader was going to diff twenty-five
--- `prec.left` lines against Lua by eye. A table that is DATA gets compared;
--- a table that is code gets read past.
---
--- WHAT IS CHECKED AGAINST THE SPEC BUT NOT PROJECTED FROM IT: the operator
--- table is compared, adjacent pair by adjacent pair, against §2, and every
--- divergence is PRINTED. The emitted bytes deliberately do NOT depend on
--- grammar.md: docs/spec is edited by other sessions, and a byte-identity gate
--- that an unrelated documentation commit can redden is a gate people learn to
--- skip. The report is the link; making it load-bearing needs §3 first.
---
--- THE OFFSIDE LAYER IS NOT EMITTED AND CANNOT BE. grammar.md §1 defines
--- NEWLINE / INDENT / DEDENT. tree-sitter has no offside layer; it needs an
--- EXTERNAL SCANNER, which is a C file, and `ls ext/tree-sitter-duo/src` has
--- none. That is why examples/spec100/offside.id parses as one ERROR node from
--- [0,0] to end of file. Emitting an `externals` block without the scanner
--- would make the generated parser fail to LINK, which is worse than the hole.
---
--- WHY THE REGISTRIES ARE SPACE-SEPARATED STRINGS and not tables: a table does
--- not survive a function boundary in this compilation path. Measured — a
--- table pushed to inside a callee reads `#t == 0` in the caller, and so does
--- one returned from a callee. scripts/audit100.id carries its budgets the
--- same way for the same reason. Positive-controlled below: the row-length
--- check refuses to run if the parallel rows are not all the same length.
---
--- Env:
---   TSEMIT_OUT     where to write (default the tracked grammar.js)
---   TSEMIT_CHECK   set to 1 to compare instead of writing — the gate mode
---   TSEMIT_RESIDUE bootstrap only: take the residue from this file when the
---                  output has no markers yet
---
--- Exit 0 emitted or identical · 1 the check found a difference · 3 the emitter
--- could not run (no output, no residue, no spec — a confident success is
--- usually a broken gate, so every path here is positive-controlled).
+# treesitter emit — the grammar projection, as far as it honestly goes today.
+#
+# Pass 101 §"The host" requires tree-sitter to be "a generated grammar
+# projection (output, never authored)". gaps/GAP-049 records why it was not:
+# three pieces were missing — a declarative production source, an emitter, and
+# a differential. Pass 108 landed the first as docs/spec/grammar.md. THIS FILE
+# is the second. `zig build tree-sitter-coverage` is the third.
+#
+# WHAT THIS EMITS, and what it does not. The output file
+# ext/tree-sitter-duo/grammar.js is split by two markers into GENERATED parts
+# and an AUTHORED residue. Everything outside the markers is emitted from the
+# registries below; everything between them is carried through byte for byte
+# and COUNTED. The count is the number gaps/GAP-049 is measured by, and
+# printing it is the only honest way to say "partially generated".
+#
+# The residue is not a formatting convenience. docs/spec/grammar.md §3 states
+# the structural productions as EBNF, but for the PASS-100 surface, and the
+# tracked corpus is still overwhelmingly pre-Pass-100 — `match`, `enum`,
+# `concept`, `local`, `fun`. Projecting §3 over the residue would drop editor
+# recognition from 755 of 775 files to almost none. That is a language
+# decision (GAP-049's "second reason"), not a build-system one, so this
+# emitter refuses to make it and says why instead.
+#
+# WHAT IS GENUINELY DERIVED rather than transliterated:
+#
+#   long string levels 0..2   one rule per level from ONE template, with the
+#                             body alternation that excludes the closer
+#                             COMPUTED from the level. It used to be three
+#                             hand-written lines whose alternations had to be
+#                             got right by eye.
+#   quoted string tokens      one template, two quote characters.
+#   binary and unary operators  one table of spelling, level and
+#                             associativity — which is what a precedence
+#                             table IS — checked against grammar.md §2.
+#
+# THE CHECK FOUND A REAL DEFECT THE DAY IT WAS WRITTEN, which is the argument
+# for the whole approach. The authored table numbered `or` 11 and `^` 4, and
+# in tree-sitter a HIGHER number binds TIGHTER, so the entire binary
+# precedence table was inverted end to end. Verified by value before it was
+# believed: `x = 2 + 3 * 4` parsed as `(2 + 3) * 4` and `a or b and c` as
+# `(a or b) and c`. The recognition gate could not see it — no ERROR node is
+# produced by a wrong tree — and no reader was going to diff twenty-five
+# `prec.left` lines against Lua by eye. A table that is DATA gets compared;
+# a table that is code gets read past.
+#
+# WHAT IS CHECKED AGAINST THE SPEC BUT NOT PROJECTED FROM IT: the operator
+# table is compared, adjacent pair by adjacent pair, against §2, and every
+# divergence is PRINTED. The emitted bytes deliberately do NOT depend on
+# grammar.md: docs/spec is edited by other sessions, and a byte-identity gate
+# that an unrelated documentation commit can redden is a gate people learn to
+# skip. The report is the link; making it load-bearing needs §3 first.
+#
+# THE OFFSIDE LAYER IS NOT EMITTED AND CANNOT BE. grammar.md §1 defines
+# NEWLINE / INDENT / DEDENT. tree-sitter has no offside layer; it needs an
+# EXTERNAL SCANNER, which is a C file, and `ls ext/tree-sitter-duo/src` has
+# none. That is why examples/spec100/offside.id parses as one ERROR node from
+# [0,0] to end of file. Emitting an `externals` block without the scanner
+# would make the generated parser fail to LINK, which is worse than the hole.
+#
+# WHY THE REGISTRIES ARE SPACE-SEPARATED STRINGS and !tables: a table does
+# not survive a function boundary in this compilation path. Measured — a
+# table pushed to inside a callee reads `#t == 0` in the caller, and so does
+# one returned from a callee. scripts/audit100.id carries its budgets the
+# same way for the same reason. Positive-controlled below: the row-length
+# check refuses to run if the parallel rows are not all the same length.
+#
+# Env:
+#   TSEMIT_OUT     where to write (default the tracked grammar.js)
+#   TSEMIT_CHECK   set to 1 to compare instead of writing — the gate mode
+#   TSEMIT_RESIDUE bootstrap only: take the residue from this file when the
+#                  output has no markers yet
+#
+# Exit 0 emitted or identical · 1 the check found a difference · 3 the emitter
+# could not run (no output, no residue, no spec — a confident success is
+# usually a broken gate, so every path here is positive-controlled).
 
 grammarpath = "ext/tree-sitter-duo/grammar.js"
 specpath = "docs/spec/grammar.md"
@@ -100,8 +100,8 @@ spill(path: str, body: str): bool
     done
 end
 
--- `n` copies of `s`. The long-string delimiters need exactly this: the number
--- of `=` signs IS the level.
+# `n` copies of `s`. The long-string delimiters need exactly this: the number
+# of `=` signs IS the level.
 tile(s: str, n: i64): str
     acc: str = ""
     i: i64 = 0
@@ -124,10 +124,10 @@ lines(s: str): i64
     n
 end
 
--- ── The head registry ────────────────────────────────────────────────────────
+# ── The head registry ────────────────────────────────────────────────────────
 
--- The banner. `count` is the residue line count — the one number in this file
--- that is measured rather than declared.
+# The banner. `count` is the residue line count — the one number in this file
+# that is measured rather than declared.
 banner(count: i64): str
     n: str = count:to(str)
     b: str = "/**\n"
@@ -136,7 +136,7 @@ banner(count: i64): str
     b = "{b} * GENERATED by scripts/treesitter_emit.id — do not edit the generated\n"
     b = "{b} * regions by hand. Regenerate with:\n"
     b = "{b} *\n"
-    b = "{b} *     duo run scripts/treesitter_emit.id\n"
+    b = "{b} *     idol run scripts/treesitter_emit.id\n"
     b = "{b} *\n"
     b = "{b} * `zig build treesitter-projection` regenerates and FAILS unless the result is\n"
     b = "{b} * byte-identical to the tracked file, so a hand edit to a generated region\n"
@@ -430,7 +430,7 @@ attributes(): str
     b = "{b}    // every ordinary call. Inside a directive's argument list that objection\n"
     b = "{b}    // does not apply: a call reading exists but cannot complete, because the\n"
     b = "{b}    // statements that follow are not arguments. So the rule is REACHABLE ONLY\n"
-    b = "{b}    // HERE — it is not in `statement` and not in `expression` — and the\n"
+    b = "{b}    // HERE — it is not in `statement` and !in `expression` — and the\n"
     b = "{b}    // exclusion that protects 791 call sites is untouched.\n"
     b = "{b}    directive_function: $ => seq(\n"
     b = "{b}      field('name', $.function_name),\n"
@@ -1298,19 +1298,19 @@ exprtail(): str
     b
 
 residuemark(): str
-    -- ONE LINE. The begin marker has to be a single line, because `carve`
-    -- starts capturing at the line AFTER it: a two-line marker puts its second
-    -- line inside the residue, where the next regeneration emits it again
-    -- above the copy it just carried. Caught by running the emitter twice.
+    # ONE LINE. The begin marker has to be a single line, because `carve`
+    # starts capturing at the line AFTER it: a two-line marker puts its second
+    # line inside the residue, where the next regeneration emits it again
+    # above the copy it just carried. Caught by running the emitter twice.
     "    // {markbegin} — AUTHORED to {markend}, carried verbatim; see the banner.\n"
 
--- ── The token registry ───────────────────────────────────────────────────────
+# ── The token registry ───────────────────────────────────────────────────────
 
--- A long string at level `lv`. The delimiters are `[` + lv `=` + `[`, and the
--- body is "any character that is not `]`, or a `]` run shorter than my own
--- closer". A single token DFA cannot remember how many `=` it opened with, so
--- the exclusion has to be spelled out per level — exactly the kind of thing a
--- generator should do and a person should not.
+# A long string at level `lv`. The delimiters are `[` + lv `=` + `[`, and the
+# body is "any character that is not `]`, or a `]` run shorter than my own
+# closer". A single token DFA cannot remember how many `=` it opened with, so
+# the exclusion has to be spelled out per level — exactly the kind of thing a
+# generator should do and a person should not.
 longlevel(lv: i64): str
     eqs: str = tile("=", lv)
     body: str = "/[^\\]]/"
@@ -1324,8 +1324,8 @@ longlevel(lv: i64): str
     "      seq('[{eqs}[', repeat(choice({body})), ']{eqs}]'),\n"
 end
 
--- One template, two quote characters. The escape class is the quote itself
--- plus the backslash, which is the only thing that differs between them.
+# One template, two quote characters. The escape class is the quote itself
+# plus the backslash, which is the only thing that differs between them.
 quoted(rulename: str, quote: str, wrap: str): str
     b: str = "    {rulename}: $ => token(seq(\n"
     b = "{b}      {wrap}{quote}{wrap},\n"
@@ -1405,28 +1405,28 @@ tokens(): str
     b
 end
 
--- ── The operator table ───────────────────────────────────────────────────────
---
--- This IS the precedence table, and it is the reason this generator exists.
---
---   spell   the operator, as the lexer spells it
---   level   the tree-sitter binding power — HIGHER BINDS TIGHTER
---   spec    the level docs/spec/grammar.md §2 gives it, counting the other way
---           (§2 is tightest-first), or 0 where §2 does not list it at all
---   assoc   left, or right for the one right-associative operator
---
--- The rows are parallel and the lengths are checked before anything is
--- emitted. `cat` stands for the concatenation operator, spelled out at use, so
--- that this file never places that spelling beside a quote — CLAUDE.md §1's
--- `concatlit` row is a text rule and applies to the generator too.
+# ── The operator table ───────────────────────────────────────────────────────
+#
+# This IS the precedence table, and it is the reason this generator exists.
+#
+#   spell   the operator, as the lexer spells it
+#   level   the tree-sitter binding power — HIGHER BINDS TIGHTER
+#   spec    the level docs/spec/grammar.md §2 gives it, counting the other way
+#           (§2 is tightest-first), or 0 where §2 does not list it at all
+#   assoc   left, or right for the one right-associative operator
+#
+# The rows are parallel and the lengths are checked before anything is
+# emitted. `cat` stands for the concatenation operator, spelled out at use, so
+# that this file never places that spelling beside a quote — CLAUDE.md §1's
+# `concatlit` row is a text rule and applies to the generator too.
 
 spell(): str
     "or and < > <= >= ~= != == in | & ~ << >> |> cat + - * / // % ^"
 end
 
--- Tree-sitter binding power. Tighter binds higher. §2 order, translated:
--- ^ 13 · unary 12 · * / // % 11 · + - 10 · << >> 9 · & 8 · ~ | 7 · cat 6 ·
--- comparisons and `in` 5 · and 4 · or 3 · |> 2.
+# Tree-sitter binding power. Tighter binds higher. §2 order, translated:
+# ^ 13 · unary 12 · * / // % 11 · + - 10 · << >> 9 · & 8 · ~ | 7 · cat 6 ·
+# comparisons and `in` 5 · and 4 · or 3 · |> 2.
 level(): str
     "3 4 5 5 5 5 5 5 5 5 7 8 7 9 9 2 6 10 10 11 11 11 11 13"
 end
@@ -1453,7 +1453,7 @@ width(row: str): i64
     #parts
 end
 
--- A note printed immediately above the row it explains.
+# A note printed immediately above the row it explains.
 opnote(idx: i64): str
     b: str = ""
     if idx == 8
@@ -1519,7 +1519,7 @@ operators(): str
     b
 end
 
--- ── The tail registry ────────────────────────────────────────────────────────
+# ── The tail registry ────────────────────────────────────────────────────────
 
 tail(): str
     dash: str = "\u{2500}"
@@ -1555,12 +1555,12 @@ tail(): str
     b
 end
 
--- ── The spec cross-check ─────────────────────────────────────────────────────
---
--- Reads docs/spec/grammar.md §2 and reports, per adjacent pair of operators,
--- whether the tree-sitter table and the normative table agree on WHICH BINDS
--- TIGHTER. Compared by order, not by value, because the two tables count in
--- opposite directions. Nothing here changes a byte of the output.
+# ── The spec cross-check ─────────────────────────────────────────────────────
+#
+# Reads docs/spec/grammar.md §2 and reports, per adjacent pair of operators,
+# whether the tree-sitter table and the normative table agree on WHICH BINDS
+# TIGHTER. Compared by order, not by value, because the two tables count in
+# opposite directions. Nothing here changes a byte of the output.
 
 specrows(body: str): i64
     rows = body:split("\n")
@@ -1642,10 +1642,10 @@ report(): i64
     bad
 end
 
--- ── Splice ───────────────────────────────────────────────────────────────────
+# ── Splice ───────────────────────────────────────────────────────────────────
 
--- Everything between the two markers, verbatim, the marker lines themselves
--- excluded. Empty when the markers are absent, which is the bootstrap path.
+# Everything between the two markers, verbatim, the marker lines themselves
+# excluded. Empty when the markers are absent, which is the bootstrap path.
 carve(body: str): str
     rows = body:split("\n")
     out: str = ""
@@ -1677,13 +1677,13 @@ rulesonly(body: str): str
     i: i64 = 1
     while i <= #rows
         row: str = rows[i]
-        if not seen and row:find("    // ── No authored residue") > 0
+        if !seen and row:find("    // ── No authored residue") > 0
             seen = true
         if seen
             out = "{out}{row}\n"
         i = i + 1
     if out != ""
-        n: i64 = rawlen(out)
+        n: i64 = out:len()
         while n > 0 and out:sub(n, n) == "\n"
             n = n - 1
         out:sub(1, n) .. "\n"
@@ -1761,9 +1761,9 @@ main(): i64
     ngen: str = gen:to(str)
     print("  emitted  {ngen} generated lines of {ntotal} total")
 
-    -- Positive control on the emitter itself. A build that lost the operator
-    -- table or the residue would still look like a plausible file; these are
-    -- the two absences that must never be reported as success.
+    # Positive control on the emitter itself. A build that lost the operator
+    # table or the residue would still look like a plausible file; these are
+    # the two absences that must never be reported as success.
     hasop: i64 = body:find("binary_expression")
     hasmod: i64 = body:find("module.exports")
     hasres: i64 = body:find("conflicts")
@@ -1785,7 +1785,7 @@ main(): i64
             print("  tracked {na} bytes, regenerated {nb} bytes.")
             print("  Either a generated region was hand-edited, or the emitter changed and")
             print("  the file was not regenerated. Run:")
-            print("      duo run scripts/treesitter_emit.id")
+            print("      idol run scripts/treesitter_emit.id")
             std.os.exit(1)
         end
     else

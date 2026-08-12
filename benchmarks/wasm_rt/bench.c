@@ -67,7 +67,8 @@ static uint32_t run(uint32_t seed) { return fib(24u + (seed & 1u)); }
 static uint32_t run(uint32_t seed) {
     uint32_t h = 12345u ^ seed, acc = 0;
     for (uint32_t i = 0; i < 300000u * SCALE; i++) {
-        h = h * 1103515245u + 12345u;
+        h *= 1103515245u
+        h += 12345u;
         switch ((h >> 16) & 7u) {
             case 0: acc += 3u; break;
             case 1: acc ^= h; break;

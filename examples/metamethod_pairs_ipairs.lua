@@ -17,12 +17,12 @@ local values = setmetatable({}, {
 
 local pair_sum = 0
 for i, value in pairs(values) do
-    pair_sum = pair_sum + value
+    pair_sum += value
 end
 
 local ipairs_sum = 0
 for i, value in ipairs(values) do
-    ipairs_sum = ipairs_sum + value
+    ipairs_sum += value
 end
 
 print(pair_sum)

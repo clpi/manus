@@ -11,7 +11,17 @@ test4
 docs/book/
 
 # Build artifacts
+scripts/ingress/.run.id
 *.profraw
+/_probe138/
+/ziglex
+/ziglex2
+/scripts/__pycache__/
+**/.duo/
+scripts/migrate_lexical.py
+lib/std/token/grammar_role.id
+.pi/skills/
+scripts/_*.id
 *.dylib
 /bench_*
 /benchmark_c*

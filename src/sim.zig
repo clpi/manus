@@ -439,7 +439,7 @@ test "sim: export pass4 Point record deterministically" {
         \\distance2(p: Point): f64
         \\    p.x * p.x + p.y * p.y
         \\end
-    , "point.duo");
+    , "point.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -448,7 +448,7 @@ test "sim: export pass4 Point record deterministically" {
     semantic.duo_mode = true;
     try semantic.check_module(&mod);
 
-    var snap = try exportNativeModule(alloc, &mod, "point.duo");
+    var snap = try exportNativeModule(alloc, &mod, "point.id");
     defer snap.deinit(alloc);
     try std.testing.expectEqual(@as(usize, 2), snap.entities.len);
 

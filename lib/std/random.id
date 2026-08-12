@@ -1,46 +1,46 @@
--- std.random — Random number generation and utilities
+# std.random — Random number generation and utilities
 
--- seed: seed the random number generator.
+# seed: seed the random number generator.
 seed(s: int): void
     math.randomseed(s)
 end
 
--- float: return a random float in [0, 1).
+# float: return a random float in [0, 1).
 float(): float
     math.random()
 end
 
--- int: return a random integer in [min, max] (inclusive).
--- If only one argument, returns random int in [1, max].
+# int: return a random integer in [min, max] (inclusive).
+# If only one argument, returns random int in [1, max].
 int(min: int, max: int): int
     if max == nil
-        math.random(min)
+        min:random()
     else
-        math.random(min, max)
+        min:random(max)
     end
 end
 
--- rand_bool: return a random boolean (50/50).
+# rand_bool: return a random boolean (50/50).
 rand_bool(): bool
     math.random() < 0.5
 end
 
--- bool_weighted: return a random boolean with the given probability of true.
+# bool_weighted: return a random boolean with the given probability of true.
 bool_weighted(p: float): bool
     math.random() < p
 end
 
--- choice: return a random element from a list.
+# choice: return a random element from a list.
 choice(list: any): any
     if list == nil or #list == 0 return nil end
-    list[math.random(1, #list)]
+    list[1:random(#list)]
 end
 
--- sample: return n unique random elements from a list (without replacement).
+# sample: return n unique random elements from a list (without replacement).
 sample(list: any, n: i64): any
     out = {}
     if list == nil or n <= 0 return out end
-    len = rawlen(list)
+    len = list:len()
     if n > len n = len end
     indices = {}
     i = 1
@@ -50,28 +50,28 @@ sample(list: any, n: i64): any
     end
     picked = 0
     while picked < n
-        swap_idx = math.random(picked + 1, len)
+        swap_idx = picked + 1:random(len)
         tmp = indices[picked + 1]
         indices[picked + 1] = indices[swap_idx]
         indices[swap_idx] = tmp
-        out[rawlen(out) + 1] = list[indices[picked + 1]]
+        out[out:len() + 1] = list[indices[picked + 1]]
         picked += 1
     end
     out
 end
 
--- pick_n: alias for sample (more idiomatic name).
+# pick_n: alias for sample (more idiomatic name).
 pick_n(list: any, n: i64): any
     sample(list, n)
 end
 
--- weighted_choice: choose from items with corresponding weights.
--- items: list of values, weights: parallel list of numeric weights.
+# weighted_choice: choose from items with corresponding weights.
+# items: list of values, weights: parallel list of numeric weights.
 weighted_choice(items: any, weights: any): any
     if items == nil or weights == nil return nil end
-    len = rawlen(items)
+    len = items:len()
     if len == 0 return nil end
-    if rawlen(weights) != len return nil end
+    if weights:len() != len return nil end
     total = 0
     i = 1
     while i <= len
@@ -89,7 +89,7 @@ weighted_choice(items: any, weights: any): any
     items[len]
 end
 
--- range: return a list of integers from start to stop (exclusive), with optional step.
+# range: return a list of integers from start to stop (exclusive), with optional step.
 range(start: i64, stop: i64, step: i64): any
     out = {}
     if step == nil step = 1 end
@@ -97,20 +97,20 @@ range(start: i64, stop: i64, step: i64): any
     if step > 0
         i = start
         while i < stop
-            out[rawlen(out) + 1] = i
+            out[out:len() + 1] = i
             i += step
         end
     else
         i = start
         while i > stop
-            out[rawlen(out) + 1] = i
+            out[out:len() + 1] = i
             i += step
         end
     end
     out
 end
 
--- gauss: return a random number from a normal distribution (Box-Muller).
+# gauss: return a random number from a normal distribution (Box-Muller).
 gauss(mean: float, stddev: float): float
     if mean == nil mean = 0 end
     if stddev == nil stddev = 1 end
@@ -119,16 +119,16 @@ gauss(mean: float, stddev: float): float
     while u1 == 0
         u1 = math.random()
     end
-    z = math.sqrt(-2 * math.log(u1)) * math.cos(2 * math.pi * u2)
+    z = -2 * u1:log():sqrt() * 2 * math.pi * u2:cos()
     mean + stddev * z
 end
 
--- shuffle: shuffle a list in-place (Fisher-Yates).
+# shuffle: shuffle a list in-place (Fisher-Yates).
 shuffle(list: any): void
     if list == nil return end
     n = #list
     while n > 1
-        k = math.random(1, n)
+        k = 1:random(n)
         tmp = list[n]
         list[n] = list[k]
         list[k] = tmp
@@ -136,13 +136,13 @@ shuffle(list: any): void
     end
 end
 
--- coin: flip a coin, return "heads" or "tails".
+# coin: flip a coin, return "heads" or "tails".
 coin(): str
     if math.random() < 0.5 return "heads" end
     "tails"
 end
 
--- uuid_v4ish: generate a random UUID-like string (not cryptographically secure).
+# uuid_v4ish: generate a random UUID-like string (not cryptographically secure).
 uuid_v4ish(): str
     hex_chars = "0123456789abcdef"
     parts = {}
@@ -153,15 +153,15 @@ uuid_v4ish(): str
         elseif i == 15
             parts[i] = "4"
         elseif i == 20
-            idx = math.random(1, 4)
+            idx = 1:random(4)
             if idx == 1 parts[i] = "8"
             elseif idx == 2 parts[i] = "9"
             elseif idx == 3 parts[i] = "a"
             else parts[i] = "b"
             end
         else
-            -- Use single random call to get one hex character
-            idx = math.random(1, 16)
+            # Use single random call to get one hex character
+            idx = 1:random(16)
             parts[i] = hex_chars:sub(idx, idx)
         end
         i += 1

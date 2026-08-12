@@ -1,6 +1,6 @@
--- GENERATED from src/wasm_semantic_gen.zig — do not edit by hand.
--- Regenerate: duo wasm-tables emit
--- Canonical opcode facts: src/wasm_semantic.zig
+# GENERATED from src/wasm_semantic_gen.zig — do not edit by hand.
+# Regenerate: duo wasm-tables emit
+# Canonical opcode facts: src/wasm_semantic.zig
 
 GENERATOR_OWNER = "src/wasm_semantic_gen.zig"
 INSTRUCTION_COUNT = 63

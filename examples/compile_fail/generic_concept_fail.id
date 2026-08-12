@@ -1,4 +1,4 @@
--- compile_fail: generic concept constraint violation
+# compile_fail: generic concept constraint violation
 concept Hashable
     hash(self) -> i64
 end

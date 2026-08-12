@@ -1,0 +1,5 @@
+# json world — world-first encode/decode/parse (semanticgate positive face).
+
+encode = { world = "json", possessed = false, callable = true, operation = false }
+decode = { world = "json", possessed = false, callable = true, operation = false }
+parse = { world = "json", possessed = false, callable = true, operation = false }

@@ -1,13 +1,13 @@
--- Test bash-style calls with strings only
+# Test bash-style calls with strings only
 
 greet(name: str): str
     "Hello, " .. name
 end
 
--- Bash-style call with string
+# Bash-style call with string
 print greet "World"
 
--- Multiple string arguments
+# Multiple string arguments
 concat(a: str, b: str): str
     a .. b
 end

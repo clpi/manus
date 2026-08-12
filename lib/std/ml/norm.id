@@ -1,8 +1,8 @@
--- std.ml.norm — Normalization layers (BatchNorm, RMSNorm, GroupNorm, InstanceNorm)
+# std.ml.norm — Normalization layers (BatchNorm, RMSNorm, GroupNorm, InstanceNorm)
 
--- ═══════════════════════════════════════════════════════════════
--- Batch Normalization
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Batch Normalization
+# ═══════════════════════════════════════════════════════════════
 
 batchnorm(num_features: i64, eps: f64, momentum: f64): any
     if eps == nil eps = 1e-5 end
@@ -17,11 +17,11 @@ batchnorm(num_features: i64, eps: f64, momentum: f64): any
         running_mean = std.ml.tensor.zeros(1, num_features),
         running_var = std.ml.tensor.ones(1, num_features),
         training = true,
-        -- Gradient storage
+        # Gradient storage
         grad_weight = nil,
         grad_bias = nil,
         input_cache = nil,
-        -- Per-batch statistics
+        # Per-batch statistics
         batch_mean = nil,
         batch_var = nil,
         x_normalized = nil,
@@ -34,7 +34,7 @@ batchnorm_forward(layer: any, x: any): any
     d = x.cols
 
     if layer.training
-        -- Compute batch mean
+        # Compute batch mean
         mean = std.ml.tensor.zeros(1, d)
         for j = 1, d
             s = 0
@@ -44,7 +44,7 @@ batchnorm_forward(layer: any, x: any): any
             mean.data[j] = s / n
         end
 
-        -- Compute batch variance
+        # Compute batch variance
         variance = std.ml.tensor.zeros(1, d)
         for j = 1, d
             s = 0
@@ -55,7 +55,7 @@ batchnorm_forward(layer: any, x: any): any
             variance.data[j] = s / n
         end
 
-        -- Update running statistics
+        # Update running statistics
         for j = 1, d
             layer.running_mean.data[j] = (1 - layer.momentum) * layer.running_mean.data[j] + layer.momentum * mean.data[j]
             layer.running_var.data[j] = (1 - layer.momentum) * layer.running_var.data[j] + layer.momentum * variance.data[j]
@@ -68,11 +68,11 @@ batchnorm_forward(layer: any, x: any): any
         variance = layer.running_var
     end
 
-    -- Normalize
+    # Normalize
     result = std.ml.tensor.zeros(n, d)
     layer.x_normalized = std.ml.tensor.zeros(n, d)
     for j = 1, d
-        inv_std = 1.0 / math.sqrt(variance.data[j] + layer.eps)
+        inv_std = 1.0 / variance.data[j] + layer.eps:sqrt()
         for i = 1, n
             x_norm = (x.data[(i - 1) * d + j] - mean.data[j]) * inv_std
             layer.x_normalized.data[(i - 1) * d + j] = x_norm
@@ -95,9 +95,9 @@ batchnorm_backward(layer: any, grad_out: any): any
     end
 
     for j = 1, d
-        inv_std = 1.0 / math.sqrt(layer.batch_var.data[j] + layer.eps)
+        inv_std = 1.0 / layer.batch_var.data[j] + layer.eps:sqrt()
 
-        -- Gradient w.r.t. weight and bias
+        # Gradient w.r.t. weight and bias
         dg = 0
         db = 0
         for i = 1, n
@@ -107,7 +107,7 @@ batchnorm_backward(layer: any, grad_out: any): any
         layer.grad_weight.data[j] = dg
         layer.grad_bias.data[j] = db
 
-        -- Gradient w.r.t. input
+        # Gradient w.r.t. input
         dx_mean = 0
         dx_norm_sum = 0
         for i = 1, n
@@ -125,9 +125,9 @@ batchnorm_backward(layer: any, grad_out: any): any
     dx
 end
 
--- ═══════════════════════════════════════════════════════════════
--- RMS Normalization (used in LLMs like LLaMA)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# RMS Normalization (used in LLMs like LLaMA)
+# ═══════════════════════════════════════════════════════════════
 
 rmsnorm(dim: i64, eps: f64): any
     if eps == nil eps = 1e-6 end
@@ -148,15 +148,15 @@ rmsnorm_forward(layer: any, x: any): any
     result = std.ml.tensor.zeros(n, d)
 
     for i = 1, n
-        -- Compute RMS
+        # Compute RMS
         sum_sq = 0
         for j = 1, d
             v = x.data[(i - 1) * d + j]
             sum_sq += v * v
         end
-        rms = math.sqrt(sum_sq / d + layer.eps)
+        rms = sum_sq / d + layer.eps:sqrt()
 
-        -- Normalize and scale
+        # Normalize and scale
         for j = 1, d
             result.data[(i - 1) * d + j] = (x.data[(i - 1) * d + j] / rms) * layer.weight.data[j]
         end
@@ -166,9 +166,9 @@ rmsnorm_forward(layer: any, x: any): any
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Group Normalization
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Group Normalization
+# ═══════════════════════════════════════════════════════════════
 
 groupnorm(num_channels: i64, num_groups: i64, eps: f64): any
     if eps == nil eps = 1e-5 end
@@ -194,7 +194,7 @@ groupnorm_forward(layer: any, x: any): any
         start_ch = (g - 1) * channels_per_group + 1
         end_ch = g * channels_per_group
 
-        -- Compute group mean
+        # Compute group mean
         mean = 0
         count = 0
         for i = 1, n
@@ -205,7 +205,7 @@ groupnorm_forward(layer: any, x: any): any
         end
         mean /= count
 
-        -- Compute group variance
+        # Compute group variance
         var = 0
         for i = 1, n
             for j = start_ch, end_ch
@@ -215,8 +215,8 @@ groupnorm_forward(layer: any, x: any): any
         end
         var /= count
 
-        -- Normalize
-        inv_std = 1.0 / math.sqrt(var + layer.eps)
+        # Normalize
+        inv_std = 1.0 / var + layer.eps:sqrt()
         for i = 1, n
             for j = start_ch, end_ch
                 idx = (i - 1) * d + j
@@ -229,9 +229,9 @@ groupnorm_forward(layer: any, x: any): any
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Layer Normalization
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Layer Normalization
+# ═══════════════════════════════════════════════════════════════
 
 layernorm(dim: i64, eps: f64): any
     if eps == nil eps = 1e-5 end
@@ -253,14 +253,14 @@ layernorm_forward(layer: any, x: any): any
     result = std.ml.tensor.zeros(n, d)
 
     for i = 1, n
-        -- Mean
+        # Mean
         mean = 0
         for j = 1, d
             mean += x.data[(i - 1) * d + j]
         end
         mean /= d
 
-        -- Variance
+        # Variance
         var = 0
         for j = 1, d
             diff = x.data[(i - 1) * d + j] - mean
@@ -268,8 +268,8 @@ layernorm_forward(layer: any, x: any): any
         end
         var /= d
 
-        -- Normalize and scale
-        inv_std = 1.0 / math.sqrt(var + layer.eps)
+        # Normalize and scale
+        inv_std = 1.0 / var + layer.eps:sqrt()
         for j = 1, d
             idx = (i - 1) * d + j
             result.data[idx] = (x.data[idx] - mean) * inv_std * layer.weight.data[j] + layer.bias.data[j]
@@ -280,7 +280,7 @@ layernorm_forward(layer: any, x: any): any
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 

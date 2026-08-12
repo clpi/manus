@@ -1,13 +1,13 @@
--- std.ml.conv — Convolution and pooling layers for neural networks
+# std.ml.conv — Convolution and pooling layers for neural networks
 
--- ═══════════════════════════════════════════════════════════════
--- Conv1D
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Conv1D
+# ═══════════════════════════════════════════════════════════════
 
 conv1d_layer(in_channels: i64, out_channels: i64, kernel_size: i64, stride: i64, padding: i64): any
     if stride == nil stride = 1 end
     if padding == nil padding = 0 end
-    scale = 1.0 / math.sqrt(in_channels * kernel_size)
+    scale = 1.0 / in_channels * kernel_size:sqrt()
     weight = std.ml.tensor.zeros(kernel_size * in_channels, out_channels)
     for i = 1, weight.size
         weight.data[i] = (math.random() * 2 - 1) * scale
@@ -26,11 +26,11 @@ end
 
 @hot
 conv1d_forward(layer: any, input: any): any
-    -- input: {batch_size, in_channels, length}
-    -- Simplified: assumes input is a single flattened sequence
+    # input: {batch_size, in_channels, length}
+    # Simplified: assumes input is a single flattened sequence
     batch = input.rows
     in_len = input.cols
-    out_len = math.floor((in_len + 2 * layer.padding - layer.kernel_size) / layer.stride) + 1
+    out_len = (in_len + 2 * layer.padding - layer.kernel_size) / layer.stride:floor() + 1
     result = std.ml.tensor.zeros(batch, out_len * layer.out_channels)
     for b = 1, batch
         for o = 1, out_len
@@ -38,7 +38,7 @@ conv1d_forward(layer: any, input: any): any
             for k = 0, layer.kernel_size - 1
                 pos = (o - 1) * layer.stride + k - layer.padding + 1
                 if pos >= 1 and pos <= in_len
-                    -- Dot product of input slice with kernel
+                    # Dot product of input slice with kernel
                     for c = 1, layer.in_channels
                         idx_in = (b - 1) * in_len + (pos - 1) * layer.in_channels + c
                         for oc = 1, layer.out_channels
@@ -49,12 +49,12 @@ conv1d_forward(layer: any, input: any): any
                     end
                 end
             end
-            -- Add bias
+            # Add bias
             for oc = 1, layer.out_channels
                 idx_out = (o - 1) * layer.out_channels + oc
                 acc.data[idx_out] = acc.data[idx_out] + layer.bias.data[oc]
             end
-            -- Write to result
+            # Write to result
             for oc = 1, layer.out_channels
                 idx_res = (b - 1) * out_len * layer.out_channels + (o - 1) * layer.out_channels + oc
                 result.data[idx_res] = acc.data[oc]
@@ -64,14 +64,14 @@ conv1d_forward(layer: any, input: any): any
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Conv2D
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Conv2D
+# ═══════════════════════════════════════════════════════════════
 
 conv2d_layer(in_channels: i64, out_channels: i64, kernel_size: i64, stride: i64, padding: i64): any
     if stride == nil stride = 1 end
     if padding == nil padding = 0 end
-    scale = 1.0 / math.sqrt(in_channels * kernel_size * kernel_size)
+    scale = 1.0 / in_channels * kernel_size * kernel_size:sqrt()
     weight = std.ml.tensor.zeros(kernel_size * kernel_size * in_channels, out_channels)
     for i = 1, weight.size
         weight.data[i] = (math.random() * 2 - 1) * scale
@@ -90,12 +90,12 @@ end
 
 @hot
 conv2d_forward(layer: any, input: any): any
-    -- input: flattened {height, width, in_channels}
-    -- Simplified: 2D convolution on a single image
+    # input: flattened {height, width, in_channels}
+    # Simplified: 2D convolution on a single image
     h_in = input.rows
-    w_in = math.floor(input.cols / layer.in_channels)
-    h_out = math.floor((h_in + 2 * layer.padding - layer.kernel_size) / layer.stride) + 1
-    w_out = math.floor((w_in + 2 * layer.padding - layer.kernel_size) / layer.stride) + 1
+    w_in = input.cols / layer.in_channels:floor()
+    h_out = (h_in + 2 * layer.padding - layer.kernel_size) / layer.stride:floor() + 1
+    w_out = (w_in + 2 * layer.padding - layer.kernel_size) / layer.stride:floor() + 1
     result = std.ml.tensor.zeros(h_out * w_out, layer.out_channels)
     for oh = 0, h_out - 1
         for ow = 0, w_out - 1
@@ -122,9 +122,9 @@ conv2d_forward(layer: any, input: any): any
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Max Pooling
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Max Pooling
+# ═══════════════════════════════════════════════════════════════
 
 maxpool1d(kernel_size: i64, stride: i64): any
     if stride == nil stride = kernel_size end
@@ -138,7 +138,7 @@ end
 maxpool1d_forward(layer: any, input: any): any
     in_len = input.cols
     channels = input.rows
-    out_len = math.floor((in_len - layer.kernel_size) / layer.stride) + 1
+    out_len = (in_len - layer.kernel_size) / layer.stride:floor() + 1
     result = std.ml.tensor.zeros(channels, out_len)
     for c = 1, channels
         for o = 1, out_len
@@ -154,9 +154,9 @@ maxpool1d_forward(layer: any, input: any): any
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Average Pooling
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Average Pooling
+# ═══════════════════════════════════════════════════════════════
 
 avgpool1d(kernel_size: i64, stride: i64): any
     if stride == nil stride = kernel_size end
@@ -170,7 +170,7 @@ end
 avgpool1d_forward(layer: any, input: any): any
     in_len = input.cols
     channels = input.rows
-    out_len = math.floor((in_len - layer.kernel_size) / layer.stride) + 1
+    out_len = (in_len - layer.kernel_size) / layer.stride:floor() + 1
     result = std.ml.tensor.zeros(channels, out_len)
     for c = 1, channels
         for o = 1, out_len
@@ -185,9 +185,9 @@ avgpool1d_forward(layer: any, input: any): any
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Adaptive Average Pooling (output size is fixed)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Adaptive Average Pooling (output size is fixed)
+# ═══════════════════════════════════════════════════════════════
 
 adaptive_avgpool(output_size: i64): any
     {
@@ -203,8 +203,8 @@ adaptive_avgpool_forward(layer: any, input: any): any
     result = std.ml.tensor.zeros(channels, out_size)
     for c = 1, channels
         for o = 1, out_size
-            start = math.floor((o - 1) * in_len / out_size)
-            finish = math.floor(o * in_len / out_size)
+            start = (o - 1) * in_len / out_size:floor()
+            finish = o * in_len / out_size:floor()
             sum = 0
             count = 0
             i = start
@@ -221,9 +221,9 @@ adaptive_avgpool_forward(layer: any, input: any): any
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Global Average Pooling
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Global Average Pooling
+# ═══════════════════════════════════════════════════════════════
 
 global_avgpool(): any
     {type = "global_avgpool"}
@@ -245,16 +245,16 @@ global_avgpool_forward(layer: any, input: any): any
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Flatten (for transitioning conv to linear layers)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Flatten (for transitioning conv to linear layers)
+# ═══════════════════════════════════════════════════════════════
 
 flatten(): any
     {type = "flatten"}
 end
 
 flatten_forward(layer: any, input: any): any
-    -- Reshape to {1, total_elements}
+    # Reshape to {1, total_elements}
     result = std.ml.tensor.zeros(1, input.size)
     i = 1
     while i <= input.size
@@ -264,7 +264,7 @@ flatten_forward(layer: any, input: any): any
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 

@@ -4,7 +4,7 @@ This file is machine-read by the current bootstrap audit. It is a temporary
 deletion manifest, not source-family authority, a compatibility archive, or a
 pattern catalog.
 
-Canonical project-owned Idol source uses `.id`. Earlier Idsem, Duo, and Duon
+Canonical project-owned Idol source uses `.id`. Earlier Idol, Duo, and Duon
 names and every tracked project-owned `.id` file are migration provenance and
 SOURCE-ZERO debt. Retained behavior must be reduced to current semantics,
 executed from canonical `.id`, proved, and followed by deletion of the old

@@ -1,5 +1,5 @@
--- @comp.derive: one concept + one derive macro → C for EVERY matching type
--- Run: duo run examples/derive_map_showcase.id
+# @comp.derive: one concept + one derive macro → C for EVERY matching type
+# Run: duo run examples/derive_map_showcase.id
 
 concept HasXY
     x: f64

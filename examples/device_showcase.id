@@ -1,15 +1,15 @@
--- device_showcase.id — Demonstrates @device multi-target code generation
---
--- Shows how @device generates backend-specific code:
---   @device(.cuda)  → __global__ kernel + launch wrapper
---   @device(.metal) → kernel + dispatch wrapper
---   @device(.cpu)   → regular C function
---   @device(.auto)  → auto-detected device
+# device_showcase.id — Demonstrates @device multi-target code generation
+#
+# Shows how @device generates backend-specific code:
+#   @device(.cuda)  → __global__ kernel + launch wrapper
+#   @device(.metal) → kernel + dispatch wrapper
+#   @device(.cpu)   → regular C function
+#   @device(.auto)  → auto-detected device
 
 @c.include("stdio.h")
 @c.include("stdlib.h")
 
--- CUDA kernel: matrix multiplication
+# CUDA kernel: matrix multiplication
 @device(.cuda)
 cuda_matmul(a: ptr, b: ptr, c: ptr, M: i32, N: i32, K: i32): void
   @c.emit([[
@@ -24,7 +24,7 @@ cuda_matmul(a: ptr, b: ptr, c: ptr, M: i32, N: i32, K: i32): void
   ]])
 end
 
--- Metal kernel: vector addition
+# Metal kernel: vector addition
 @device(.metal)
 metal_vecadd(a: ptr, b: ptr, c: ptr, n: i32): void
   @c.emit([[
@@ -35,7 +35,7 @@ metal_vecadd(a: ptr, b: ptr, c: ptr, n: i32): void
   ]])
 end
 
--- Regular CPU function
+# Regular CPU function
 @device(.cpu)
 cpu_dot(a: ptr, b: ptr, n: i32): float
   @c.emit([[
@@ -46,7 +46,7 @@ cpu_dot(a: ptr, b: ptr, n: i32): float
   ]])
 end
 
--- Auto-detected device (runtime selection)
+# Auto-detected device (runtime selection)
 @device(.auto)
 auto_relu(x: ptr, n: i32): void
   @c.emit([[

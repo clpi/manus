@@ -1,0 +1,40 @@
+# GAP-157 fs proof router — subject-first path relations, no std.
+
+proof = { remove = "scripts/proof/remove.id", mkdir = "scripts/proof/mkdir.id" }
+
+len(path) = (min: i64)
+    path:read()
+        :len() >= min
+
+
+audit(path) = (pattern: str)
+    path:read()
+        :match(pattern)
+
+hit(path) = (pattern: str)
+    path:read()
+        :match(pattern)
+
+main: i64 = ()
+    code: i64 = 0
+    if !len(proof["remove"])(16)
+        code = 1
+    if code == 0 and !len(proof["mkdir"])(16)
+        code = 2
+    if code == 0 and !audit(proof["remove"])(":remove%(")
+        code = 3
+    if code == 0 and !audit(proof["remove"])(":exists%(")
+        code = 4
+    if code == 0 and hit(proof["remove"])("std%.[a-z]")
+        code = 5
+    if code == 0 and hit(proof["remove"])("fs:")
+        code = 6
+    if code == 0 and !audit(proof["mkdir"])(":mkdir%(")
+        code = 7
+    if code == 0 and !audit(proof["mkdir"])(":copy%(")
+        code = 8
+    if code == 0 and hit(proof["mkdir"])("std%.[a-z]")
+        code = 9
+    if code == 0
+        print("proof/fs: pass")
+    code

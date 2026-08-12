@@ -286,7 +286,7 @@ field_accessor_plan(target_name: str, receiver_expr: str, field: any): any
   }
 end
 c_type_eq(type_name: str, expected: str): bool
-  return string.find(type_name, expected, 1, true) == 1 and #type_name == #expected
+  return type_name:find(expected, 1, true) == 1 and #type_name == #expected
 end
 c_type(type_name: str): str
   if c_type_eq(type_name, "i64") or c_type_eq(type_name, "integer")

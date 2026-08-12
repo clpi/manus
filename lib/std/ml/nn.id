@@ -1,14 +1,14 @@
--- std.ml.nn — Neural network layers and training
+# std.ml.nn — Neural network layers and training
 
--- ═══════════════════════════════════════════════════════════════
--- Layer definitions
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Layer definitions
+# ═══════════════════════════════════════════════════════════════
 
 linear(in_features: i64, out_features: i64): any
-    -- Xavier initialization
-    scale = 1.0 / math.sqrt(in_features)
+    # Xavier initialization
+    scale = 1.0 / in_features:sqrt()
     weight = std.ml.tensor.rand(in_features, out_features)
-    -- Apply Xavier scaling
+    # Apply Xavier scaling
     r = 0
     while r < in_features
         c = 0
@@ -24,10 +24,10 @@ linear(in_features: i64, out_features: i64): any
         bias = std.ml.tensor.zeros(1, out_features),
         in_features = in_features,
         out_features = out_features,
-        -- Gradient storage (allocated on first backward)
+        # Gradient storage (allocated on first backward)
         grad_weight = nil,
         grad_bias = nil,
-        -- Cache for backward pass
+        # Cache for backward pass
         input_cache = nil,
     }
 end
@@ -58,9 +58,9 @@ dropout(rate: f64): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Model construction
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Model construction
+# ═══════════════════════════════════════════════════════════════
 
 sequential(...): any
     layers = {...}
@@ -71,10 +71,10 @@ sequential(...): any
     }
 end
 
--- Alias for `nn { ... }` design doc syntax (varargs table today)
+# Alias for `nn { ... }` design doc syntax (varargs table today)
 build = sequential
 
--- MNIST classifier preset
+# MNIST classifier preset
 mnist_classifier(): any
     return sequential(
         linear(784, 256),
@@ -86,15 +86,15 @@ mnist_classifier(): any
     )
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Forward pass
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Forward pass
+# ═══════════════════════════════════════════════════════════════
 
 @hot
 forward_linear(layer, x): any
-    -- Cache input for backward pass
+    # Cache input for backward pass
     layer.input_cache = x
-    -- y = x @ W + b
+    # y = x @ W + b
     y = std.ml.tensor.matmul(x, layer.weight)
     return std.ml.tensor.add(y, layer.bias)
 end
@@ -106,7 +106,7 @@ end
 
 @hot
 forward_gelu(layer, x): any
-    Ops = req "std.ml.ops"
+    Ops = ops
     return Ops.gelu(x)
 end
 
@@ -118,21 +118,21 @@ forward_softmax(layer, x): any
 end
 
 forward_dropout(layer, x): any
-    -- During training, randomly zero out elements
+    # During training, randomly zero out elements
     if not layer.training return x end
     
     rate = layer.rate or 0.5
     scale = 1.0 / (1.0 - rate)
     
-    -- Use CSPRNG for truly random dropout mask each call
-    crypto_rand = req "std.crypto.rand"
-    mask_bytes = crypto_rand.bytes(math.ceil(x.rows * x.cols / 8))
+    # Use CSPRNG for truly random dropout mask each call
+    crypto_rand = rand
+    mask_bytes = crypto_rand.bytes(x.rows * x.cols / 8:ceil())
     
     result = std.ml.tensor.zeros(x.rows, x.cols)
     i = 0
     while i < x.rows * x.cols
-        -- Extract bit from mask bytes
-        byte_idx = math.floor(i / 8)
+        # Extract bit from mask bytes
+        byte_idx = i / 8:floor()
         bit_idx = i % 8
         mask_byte = mask_bytes:byte(byte_idx + 1) or 0
         bit_set = (mask_byte >> bit_idx) & 1
@@ -161,18 +161,18 @@ forward(model, x): any
     return h
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Loss functions
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Loss functions
+# ═══════════════════════════════════════════════════════════════
 
 cross_entropy(pred, target): f64
-    -- Simplified: assumes pred is softmax output, target is class index per row
+    # Simplified: assumes pred is softmax output, target is class index per row
     loss = 0.0
     for i = 1, pred.rows
         idx = std.ml.tensor.get(target, i, 1)
         p = std.ml.tensor.get(pred, i, idx)
         if p < 1e-7 p = 1e-7 end
-        loss -= math.log(p)
+        loss -= p:log()
     end
     return loss / pred.rows
 end
@@ -187,9 +187,9 @@ mse_loss(pred, target): f64
     return sum / diff.size
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Optimizer (SGD with momentum)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Optimizer (SGD with momentum)
+# ═══════════════════════════════════════════════════════════════
 
 sgd(lr: any, momentum: any)
     if momentum == nil momentum = 0.0 end
@@ -217,7 +217,7 @@ adam(lr: any, beta1: any, beta2: any, eps: any)
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 

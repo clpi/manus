@@ -1,10 +1,10 @@
--- std.os.linux — Linux-specific APIs
--- For epoll, inotify, eventfd, timerfd, and mmap.
--- Uses @c.emit for direct Linux syscalls.
+# std.os.linux — Linux-specific APIs
+# For epoll, inotify, eventfd, timerfd, and mmap.
+# Uses @c.emit for direct Linux syscalls.
 
--- ═══════════════════════════════════════════════════════════════
--- epoll Constants
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# epoll Constants
+# ═══════════════════════════════════════════════════════════════
 
 M.EPOLL_CTL_ADD = 1
 M.EPOLL_CTL_MOD = 2
@@ -17,9 +17,9 @@ M.EPOLLHUP = 0x010
 M.EPOLLRDHUP = 0x2000
 M.EPOLLET = 0x80000000
 
--- ═══════════════════════════════════════════════════════════════
--- Linux syscalls via @c.emit
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Linux syscalls via @c.emit
+# ═══════════════════════════════════════════════════════════════
 
 @c.emit('#include <sys/epoll.h>')
 @c.emit('#include <sys/inotify.h>')
@@ -31,7 +31,7 @@ M.EPOLLET = 0x80000000
 @c.emit('#include <stdlib.h>')
 @c.emit('#include <string.h>')
 
--- C shim functions for Linux syscalls
+# C shim functions for Linux syscalls
 
 @c.emit([[
 static int duo_epoll_create(int maxevents) {
@@ -111,9 +111,9 @@ static int duo_close(int fd) {
 }
 ]])
 
--- ═══════════════════════════════════════════════════════════════
--- epoll
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# epoll
+# ═══════════════════════════════════════════════════════════════
 
 epoll_new(): any
     epoll_create(64)
@@ -156,7 +156,7 @@ end
 
 epoll_wait(epoll: any, timeout_ms: i64): any
     if timeout_ms == nil timeout_ms = -1 end
-    -- Allocate arrays for results
+    # Allocate arrays for results
     fds = @ffi("calloc", any, {i64, i64})(epoll.max_events, 4)
     events_buf = @ffi("calloc", any, {i64, i64})(epoll.max_events, 4)
     count = @ffi("duo_epoll_wait", i64, {i64, any, any, i64, i64})(epoll.fd, fds, events_buf, epoll.max_events, timeout_ms)
@@ -184,9 +184,9 @@ epoll_close(epoll: any): void
     epoll.fd = -1
 end
 
--- ═══════════════════════════════════════════════════════════════
--- inotify
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# inotify
+# ═══════════════════════════════════════════════════════════════
 
 M.IN_CREATE = 0x00000100
 M.IN_DELETE = 0x00000200
@@ -229,7 +229,7 @@ inotify_rm_watch(inotify: any, watch_id: i64): any
 end
 
 inotify_read(inotify: any): any
-    buf = string.rep(string.char(0), 4096)
+    buf = 0:char():rep(4096)
     n = @ffi("duo_read", i64, {i64, str, i64})(inotify.fd, buf, 4096)
     if n < 0
         return {ok = false, events = {}, count = 0}
@@ -248,8 +248,8 @@ inotify_read(inotify: any): any
         name = ""
         if name_len > 0
             name = buf:sub(pos + 16, pos + 15 + name_len)
-            -- Strip null terminator
-            null_pos = string.find(name, string.char(0))
+            # Strip null terminator
+            null_pos = name:find(0:char())
             if null_pos name = name:sub(1, null_pos - 1) end
         end
         events[#events + 1] = {
@@ -268,9 +268,9 @@ inotify_close(inotify: any): void
     inotify.fd = -1
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Memory Mapping
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Memory Mapping
+# ═══════════════════════════════════════════════════════════════
 
 M.MAP_SHARED = 0x01
 M.MAP_PRIVATE = 0x02
@@ -281,8 +281,8 @@ M.MS_SYNC = 0x04
 
 mmap_new(path: str, size: i64, flags: i64): any
     if flags == nil flags = M.MAP_SHARED end
-    -- Open file for reading/writing
-    fd = @ffi("open", i64, {str, i64, i64})(path, 0x0002, 0x0644)  -- O_RDWR | O_CREAT
+    # Open file for reading/writing
+    fd = @ffi("open", i64, {str, i64, i64})(path, 0x0002, 0x0644)  # O_RDWR | O_CREAT
     if fd < 0
         error("mmap: failed to open " .. path)
     end
@@ -301,7 +301,7 @@ mmap_new(path: str, size: i64, flags: i64): any
 end
 
 mmap_read(mmap: any, offset: i64, length: i64): any
-    buf = string.rep(string.char(0), length)
+    buf = 0:char():rep(length)
     @ffi("memcpy", void, {any, any, i64})(buf, mmap.ptr + offset, length)
     {ok = true, data = buf, size = length}
 end
@@ -327,9 +327,9 @@ mmap_unmap(mmap: any): void
     end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Eventfd
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Eventfd
+# ═══════════════════════════════════════════════════════════════
 
 M.EFD_SEMAPHORE = 1
 M.EFD_NONBLOCK = 2048
@@ -346,12 +346,12 @@ eventfd_new(initval: i64, flags: i64): any
 end
 
 eventfd_write(eventfd: any, value: i64): any
-    buf = string.rep(string.char(0), 8)
-    -- Write 8-byte little-endian uint64
+    buf = 0:char():rep(8)
+    # Write 8-byte little-endian uint64
     v = value
     i = 1
     while i <= 8
-        buf = buf:sub(1, i - 1) .. string.char(v & 0xFF) .. buf:sub(i + 1)
+        buf = buf:sub(1, i - 1) .. v & 0xFF:char() .. buf:sub(i + 1)
         v = v >> 8
         i += 1
     end
@@ -360,7 +360,7 @@ eventfd_write(eventfd: any, value: i64): any
 end
 
 eventfd_read(eventfd: any): any
-    buf = string.rep(string.char(0), 8)
+    buf = 0:char():rep(8)
     n = @ffi("duo_read", i64, {i64, str, i64})(eventfd.fd, buf, 8)
     if n != 8
         return {ok = false, value = 0}
@@ -379,9 +379,9 @@ eventfd_close(eventfd: any): void
     eventfd.fd = -1
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Timerfd
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Timerfd
+# ═══════════════════════════════════════════════════════════════
 
 M.TFD_TIMER_ABSTIME = 1
 M.TFD_CLOEXEC = 0x800
@@ -407,7 +407,7 @@ timerfd_settime(timerfd: any, initial: any, interval: any): any
 end
 
 timerfd_read(timerfd: any): any
-    buf = string.rep(string.char(0), 8)
+    buf = 0:char():rep(8)
     n = @ffi("duo_read", i64, {i64, str, i64})(timerfd.fd, buf, 8)
     if n != 8
         return {ok = false, expirations = 0}
@@ -426,9 +426,9 @@ timerfd_close(timerfd: any): void
     timerfd.fd = -1
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Signalfd (stub - needs struct sigset_t)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Signalfd (stub - needs struct sigset_t)
+# ═══════════════════════════════════════════════════════════════
 
 signalfd_new(signals: any, flags: i64): any
     {
@@ -448,9 +448,9 @@ signalfd_close(signalfd: any): void
     signalfd.fd = -1
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Timer Wheel (pure Lua, no syscalls needed)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Timer Wheel (pure Lua, no syscalls needed)
+# ═══════════════════════════════════════════════════════════════
 
 timer_wheel_new(slot_count: i64, resolution_ms: i64): any
     slots = {}
@@ -468,7 +468,7 @@ timer_wheel_new(slot_count: i64, resolution_ms: i64): any
 end
 
 timer_wheel_add(wheel: any, timeout_ms: i64, callback: any): any
-    slots_forward = math.floor(timeout_ms / wheel.resolution_ms)
+    slots_forward = timeout_ms / wheel.resolution_ms:floor()
     target_slot = ((wheel.current_slot - 1 + slots_forward) % wheel.slot_count) + 1
 
     wheel.slots[target_slot][#wheel.slots[target_slot] + 1] = {
@@ -483,7 +483,7 @@ timer_wheel_add(wheel: any, timeout_ms: i64, callback: any): any
 end
 
 timer_wheel_advance(wheel: any, elapsed_ms: i64): any
-    slots_to_advance = math.floor(elapsed_ms / wheel.resolution_ms)
+    slots_to_advance = elapsed_ms / wheel.resolution_ms:floor()
     fired = {}
 
     i = 0
@@ -503,9 +503,9 @@ timer_wheel_advance(wheel: any, elapsed_ms: i64): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
 M.epoll_new = epoll_new
 M.epoll_create = epoll_create

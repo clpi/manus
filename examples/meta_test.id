@@ -1,16 +1,16 @@
--- Test metaprogramming support with @ compile-time evaluation
+# Test metaprogramming support with @ compile-time evaluation
 
--- Basic compile-time constant evaluation
+# Basic compile-time constant evaluation
 a = @(42)
 print("a = @(42): " .. to(str)(a))
 
 b = @(10 + 20)
 print("b = @(10 + 20): " .. to(str)(b))
 
--- String constant
+# String constant
 c = @("hello")
 print("c = @(\"hello\"): " .. c)
 
--- Compile-time complex expression
+# Compile-time complex expression
 d = @(2 * 3 + 4 * 5)
 print("d = @(2*3+4*5): " .. to(str)(d))

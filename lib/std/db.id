@@ -1,13 +1,13 @@
--- std.db — Database abstraction: connection pooling, query builder
--- Generic interface for SQLite (via std.sqlite FFI), PostgreSQL, MySQL with connection pooling.
+# std.db — Database abstraction: connection pooling, query builder
+# Generic interface for SQLite (via std.sqlite FFI), PostgreSQL, MySQL with connection pooling.
 
--- ═══════════════════════════════════════════════════════════════
--- Database Configuration
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Database Configuration
+# ═══════════════════════════════════════════════════════════════
 
 config_new(driver: str): any
     {
-        driver = driver,          -- "sqlite", "postgres", "mysql"
+        driver = driver,          # "sqlite", "postgres", "mysql"
         host = "localhost",
         port = 5432,
         database = "",
@@ -50,9 +50,9 @@ config_set_pool(config: any, min: i64, max: i64): any
     config
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Connection Pool
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Connection Pool
+# ═══════════════════════════════════════════════════════════════
 
 pool_new(config: any): any
     pool = {
@@ -62,7 +62,7 @@ pool_new(config: any): any
         in_use = 0,
         total = 0,
     }
-    -- Pre-create minimum connections
+    # Pre-create minimum connections
     i = 0
     while i < config.min_connections
         conn = connection_new(config)
@@ -77,7 +77,7 @@ pool_new(config: any): any
 end
 
 pool_acquire(pool: any): any
-    -- Try to get an available connection
+    # Try to get an available connection
     if #pool.available > 0
         conn = pool.available[#pool.available]
         pool.available[#pool.available] = nil
@@ -85,7 +85,7 @@ pool_acquire(pool: any): any
         return conn
     end
 
-    -- Create new connection if under limit
+    # Create new connection if under limit
     if pool.total < pool.config.max_connections
         conn = connection_new(pool.config)
         if conn
@@ -95,7 +95,7 @@ pool_acquire(pool: any): any
         end
     end
 
-    nil  -- pool exhausted
+    nil  # pool exhausted
 end
 
 pool_release(pool: any, conn: any): void
@@ -124,9 +124,9 @@ pool_stats(pool: any): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Database Connection (backed by real SQLite FFI)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Database Connection (backed by real SQLite FFI)
+# ═══════════════════════════════════════════════════════════════
 
 connection_new(config: any): any
     if config.driver == "sqlite"
@@ -146,7 +146,7 @@ connection_new(config: any): any
             transaction_active = false,
         }
     else
-        -- Non-sqlite drivers not yet supported
+        # Non-sqlite drivers not yet supported
         {error = "Unsupported driver: " .. config.driver}
     end
 end
@@ -169,7 +169,7 @@ connection_execute(conn: any, sql: str, params: any): any
         return {error = "Connection closed"}
     end
     if conn.driver == "sqlite"
-        -- Use std.sqlite.exec for DDL/DML without results
+        # Use std.sqlite.exec for DDL/DML without results
         err = std.sqlite.execute(conn.handle, sql)
         if err != ""
             return {ok = false, error = err, rows_affected = 0, rows = {}, columns = {}}
@@ -189,7 +189,7 @@ connection_query(conn: any, sql: str, params: any): any
         if rows == nil
             return {ok = false, error = "Query failed", rows = {}, columns = {}}
         end
-        -- Extract column names from first row
+        # Extract column names from first row
         columns = {}
         if #rows > 0
             for k, _ in rows[1]
@@ -252,9 +252,9 @@ connection_rollback(conn: any): any
     {ok = true}
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Query Builder
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Query Builder
+# ═══════════════════════════════════════════════════════════════
 
 query(): any
     {
@@ -359,65 +359,65 @@ build(q: any): any
     params = {}
 
     if q.type == "select"
-        -- SELECT
+        # SELECT
         if #q.columns == 0
             parts[#parts + 1] = "SELECT *"
         else
-            parts[#parts + 1] = "SELECT " .. table.concat(q.columns, ", ")
+            parts[#parts + 1] = "SELECT " .. q.columns:concat(", ")
         end
 
-        -- FROM
+        # FROM
         if q.table != ""
             parts[#parts + 1] = "FROM " .. q.table
         end
 
-        -- JOINs
+        # JOINs
         for join in q.joins
             parts[#parts + 1] = join.type .. " JOIN " .. join.table .. " ON " .. join.condition
         end
 
-        -- WHERE
+        # WHERE
         if #q.where > 0
-            parts[#parts + 1] = "WHERE " .. table.concat(q.where, " AND ")
+            parts[#parts + 1] = "WHERE " .. q.where:concat(" AND ")
             for p in q.params
                 params[#params + 1] = p
             end
         end
 
-        -- GROUP BY
+        # GROUP BY
         if #q.group_by > 0
-            parts[#parts + 1] = "GROUP BY " .. table.concat(q.group_by, ", ")
+            parts[#parts + 1] = "GROUP BY " .. q.group_by:concat(", ")
         end
 
-        -- HAVING
+        # HAVING
         if #q.having > 0
-            parts[#parts + 1] = "HAVING " .. table.concat(q.having, " AND ")
+            parts[#parts + 1] = "HAVING " .. q.having:concat(" AND ")
         end
 
-        -- ORDER BY
+        # ORDER BY
         if #q.order_by > 0
             order_parts = {}
             for o in q.order_by
                 order_parts[#order_parts + 1] = o.column .. " " .. o.direction
             end
-            parts[#parts + 1] = "ORDER BY " .. table.concat(order_parts, ", ")
+            parts[#parts + 1] = "ORDER BY " .. order_parts:concat(", ")
         end
 
-        -- LIMIT
+        # LIMIT
         if has(.limit)(q)
             parts[#parts + 1] = "LIMIT " .. q.limit:to(str)
         end
 
-        -- OFFSET
+        # OFFSET
         if has(.offset)(q)
             parts[#parts + 1] = "OFFSET " .. q.offset:to(str)
         end
 
     elseif q.type == "insert"
-        -- INSERT INTO
+        # INSERT INTO
         parts[#parts + 1] = "INSERT INTO " .. q.table
 
-        -- Columns and values
+        # Columns and values
         columns = {}
         values = {}
         placeholders = {}
@@ -427,36 +427,36 @@ build(q: any): any
             placeholders[#placeholders + 1] = "$" .. to(str)(#params + 1)
             params[#params + 1] = val
         end
-        parts[#parts + 1] = "(" .. table.concat(columns, ", ") .. ")"
-        parts[#parts + 1] = "VALUES (" .. table.concat(placeholders, ", ") .. ")"
+        parts[#parts + 1] = "(" .. columns:concat(", ") .. ")"
+        parts[#parts + 1] = "VALUES (" .. placeholders:concat(", ") .. ")"
 
     elseif q.type == "update"
-        -- UPDATE
+        # UPDATE
         parts[#parts + 1] = "UPDATE " .. q.table
 
-        -- SET
+        # SET
         set_parts = {}
         for col, val in q.data
             set_parts[#set_parts + 1] = col .. " = $" .. to(str)(#params + 1)
             params[#params + 1] = val
         end
-        parts[#parts + 1] = "SET " .. table.concat(set_parts, ", ")
+        parts[#parts + 1] = "SET " .. set_parts:concat(", ")
 
-        -- WHERE
+        # WHERE
         if #q.where > 0
-            parts[#parts + 1] = "WHERE " .. table.concat(q.where, " AND ")
+            parts[#parts + 1] = "WHERE " .. q.where:concat(" AND ")
             for p in q.params
                 params[#params + 1] = p
             end
         end
 
     elseif q.type == "delete"
-        -- DELETE
+        # DELETE
         parts[#parts + 1] = "DELETE FROM " .. q.table
 
-        -- WHERE
+        # WHERE
         if #q.where > 0
-            parts[#parts + 1] = "WHERE " .. table.concat(q.where, " AND ")
+            parts[#parts + 1] = "WHERE " .. q.where:concat(" AND ")
             for p in q.params
                 params[#params + 1] = p
             end
@@ -464,16 +464,16 @@ build(q: any): any
     end
 
     {
-        sql = table.concat(parts, " "),
+        sql = parts:concat(" "),
         params = params,
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
--- Config
--- Pool
--- Connection
--- Query Builder
+# Config
+# Pool
+# Connection
+# Query Builder

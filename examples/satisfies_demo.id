@@ -1,4 +1,4 @@
--- @satisfies — compile-time concept membership for table modules and typed records
+# @satisfies — compile-time concept membership for table modules and typed records
 
 concept Hashable
     hash(self) -> i64

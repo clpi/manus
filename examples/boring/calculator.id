@@ -1,8 +1,8 @@
--- A tiny calculator: single-digit terms with + and *, precedence by two
--- loops. Asserts a sum, a product and a mixed expression, so a parser that
--- ignores precedence cannot pass the third.
--- expect: 5 12 14
-eval = (src: str): i64
+# A tiny calculator: single-digit terms with + and *, precedence by two
+# loops. Asserts a sum, a product and a mixed expression, so a parser that
+# ignores precedence cannot pass the third.
+# expect: 5 12 14
+eval: i64 = (src: str)
     total = 0
     term = 1
     op = 43
@@ -31,7 +31,7 @@ eval = (src: str): i64
     total + term
 end
 
-main = (): i64
+main: i64 = ()
     a = eval("2+3")
     b = eval("3*4")
     c = eval("2+3*4")

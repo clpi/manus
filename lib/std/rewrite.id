@@ -1,16 +1,16 @@
--- std.rewrite — User-Definable Compile-Time Rewrite Rules
--- Define algebraic simplification and loop transformation rules
--- that the compiler applies at compile time.
---
--- **Ergonomic entry point:** use `@meta.rewrite.bundle("algebraic")` or
--- `@meta.rewrite.bundle("fast")` at module scope — one line registers the
--- full rule set in the compiler (see examples/meta_algebra_showcase.id).
--- The functions below are for inspection, documentation, and future
--- user-defined rule registration via `@meta.rewrite(...)`.
+# std.rewrite — User-Definable Compile-Time Rewrite Rules
+# Define algebraic simplification and loop transformation rules
+# that the compiler applies at compile time.
+#
+# **Ergonomic entry point:** use `@meta.rewrite.bundle("algebraic")` or
+# `@meta.rewrite.bundle("fast")` at module scope — one line registers the
+# full rule set in the compiler (see examples/meta_algebra_showcase.id).
+# The functions below are for inspection, documentation, and future
+# user-defined rule registration via `@meta.rewrite(...)`.
 
--- ═══════════════════════════════════════════════════════════════
--- Helpers
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Helpers
+# ═══════════════════════════════════════════════════════════════
 
 str_join(parts: any, sep: str): str
     result = ""
@@ -23,14 +23,14 @@ str_join(parts: any, sep: str): str
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Rule registry
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Rule registry
+# ═══════════════════════════════════════════════════════════════
 
 global rules = {}
 global rule_count = 0
 
--- define: register a rewrite rule.
+# define: register a rewrite rule.
 define(name: str, pattern: str, replacement: str, priority: i64)
     if priority == nil priority = 0 end
     rule_count = rule_count + 1
@@ -43,7 +43,7 @@ define(name: str, pattern: str, replacement: str, priority: i64)
     }
 end
 
--- disable: temporarily disable a rule by name
+# disable: temporarily disable a rule by name
 disable(name: str)
     for i = 1, rule_count
         if rules[i].name == name
@@ -52,7 +52,7 @@ disable(name: str)
     end
 end
 
--- enable: re-enable a rule by name
+# enable: re-enable a rule by name
 enable(name: str)
     for i = 1, rule_count
         if rules[i].name == name
@@ -61,9 +61,9 @@ enable(name: str)
     end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Built-in algebraic simplification rules
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Built-in algebraic simplification rules
+# ═══════════════════════════════════════════════════════════════
 
 register_algebraic(): void
     define("add_zero_l", "(0 + $1)", "$1", 10)
@@ -87,9 +87,9 @@ register_algebraic(): void
     define("div_self", "($1 / $1)", "1", 8)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Loop transformation rules
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Loop transformation rules
+# ═══════════════════════════════════════════════════════════════
 
 register_loop_opts(): void
     define("strength_mul_pow2", "($1 * (1 << $2))", "($1 << $2)", 5)
@@ -98,9 +98,9 @@ register_loop_opts(): void
     define("loop_fuse", "for ($1) = $2, $3 do $4 end for ($1) = $2, $3 do $5 end", "fused", 3)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Constant folding rules
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Constant folding rules
+# ═══════════════════════════════════════════════════════════════
 
 register_const_fold(): void
     define("fold_add", "($1 + $2)", "evaluated", 15)
@@ -116,16 +116,16 @@ register_const_fold(): void
     define("fold_shr", "($1 >> $2)", "evaluated", 15)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Rule application engine
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Rule application engine
+# ═══════════════════════════════════════════════════════════════
 
--- apply_all: apply all enabled rules and return a summary string.
+# apply_all: apply all enabled rules and return a summary string.
 apply_all(): str
     applied = 0
-    -- `lines`, not `summary`: a local shadowing this module's own top-level
-    -- `summary()` binding lowers to an assignment to the function name, and the
-    -- C backend then emits "use of undeclared identifier".
+    # `lines`, not `summary`: a local shadowing this module's own top-level
+    # `summary()` binding lowers to an assignment to the function name, and the
+    # C backend then emits "use of undeclared identifier".
     lines = {}
     for i = 1, rule_count
         if rules[i].enabled
@@ -137,17 +137,17 @@ apply_all(): str
     "/* [rewrite] " .. applied:to(str) .. " rules registered */\n" .. str_join(lines, "\n")
 end
 
--- describe_bundle: compile-time bundle metadata (folds to native C string).
+# describe_bundle: compile-time bundle metadata (folds to native C string).
 describe_bundle(name: str): str
     @comp.rewrite.describe(name)
 end
 
--- active_rule_count: compiler-registered rewrite rules after @comp.rewrite.bundle.
+# active_rule_count: compiler-registered rewrite rules after @comp.rewrite.bundle.
 active_rule_count(): i64
     @comp.rewrite.rulecount()
 end
 
--- summary: return a summary of all registered rules as a string
+# summary: return a summary of all registered rules as a string
 summary(): str
     parts = {}
     for i = 1, rule_count
@@ -158,7 +158,7 @@ summary(): str
     "Rewrite rules (" .. rule_count:to(str) .. "):\n" .. str_join(parts, "\n")
 end
 
--- clear: remove all rules
+# clear: remove all rules
 clear(): void
     rules = {}
     rule_count = 0

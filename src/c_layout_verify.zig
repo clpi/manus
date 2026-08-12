@@ -1,4 +1,4 @@
-//! Target layout verification for imported C records (Pass 5 validation engine seam).
+//! Target layout verification for imported C records (validation engine seam).
 const std = @import("std");
 const host_run = @import("host_run.zig");
 const c_frontend = @import("c_frontend.zig");

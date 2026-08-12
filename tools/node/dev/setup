@@ -1,0 +1,59 @@
+#!/bin/sh
+set -eu
+
+repo="$(cd "$(dirname "$0")/../../.." && pwd)"
+cd "$repo"
+
+cleanup_root_artifacts() {
+  find "$repo" -maxdepth 1 -type f \( -name '*.out' -o -name '*.profraw' -o -name 'test_*.c' -o -name 'test_*.wasm' \) -delete
+}
+
+trap cleanup_root_artifacts EXIT
+
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "setup: this bootstrap currently admits macOS only" >&2
+  exit 1
+fi
+
+if ! command -v brew >/dev/null 2>&1; then
+  echo "setup: Homebrew is required for the macOS bootstrap" >&2
+  exit 1
+fi
+
+if ! command -v mise >/dev/null 2>&1; then
+  brew install mise
+fi
+
+if command -v mise >/dev/null 2>&1; then
+  mise install
+fi
+
+for tool in jq git gh rg codex cursor tree-sitter wasmtime wasmer zls; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    brew install "$tool" || true
+  fi
+done
+
+git submodule update --init --recursive ext/duo-lsp ext/duo.el
+
+cleanup_root_artifacts
+
+zig build --summary all
+
+"$repo/tools/node/dev/generate-configs"
+"$repo/tools/node/dev/install-skills"
+
+"$repo/tools/node/dev/cursor-auth"
+
+for server in duo-bench duo-lsp zls; do
+  cursor agent mcp enable "$server"
+done
+
+"$repo/tools/node/dev/probe-mcp"
+"$repo/tools/node/dev/positive-controls"
+
+cleanup_root_artifacts
+
+"$repo/tools/node/dev/doctor"
+
+cleanup_root_artifacts

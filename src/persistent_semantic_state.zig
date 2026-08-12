@@ -4,8 +4,8 @@
 const std = @import("std");
 
 pub const SCHEMA_VERSION = "persistent-semantic-state-v0";
-pub const CACHE_DIR = ".duo/cache/semantic";
-pub const DEFAULT_CACHE_PATH = ".duo/cache/semantic/state.json";
+pub const CACHE_DIR = ".id/cache/semantic";
+pub const DEFAULT_CACHE_PATH = ".id/cache/semantic/state.json";
 
 /// Classification of persistent facts (Pass 8 §5 / Goal C).
 pub const FactKind = enum(u8) {

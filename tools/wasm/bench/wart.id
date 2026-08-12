@@ -1,43 +1,43 @@
--- Pass 101 §4: wart as the differential BASELINE, plus the claim table.
---
---   duo run bench/wart.id            # generated differential + timing
---   K=16 N=5 duo run bench/wart.id   # more kernels, more reps
---
--- Pass 101 asks for "wart enters the differential harness as the baseline" and
--- for the claim to "ship as a table, not an adjective". Before 2026-08-08 no
--- harness compared the engine to wart at all: bench/verify.id differences the engine
--- against wasmtime, bench/run.id has a wart column that only reports SIGILL or
--- a wall time, and bench/perf.id has no wart column at all.
---
--- THE PROBLEM THIS HARNESS SOLVES. `wart run <mod>` can only invoke `_start`,
--- and it prints nothing for a function that returns a value. 24 of the 44
--- modules in bench/ export only `run`, so wart cannot reach them; of the 17
--- that export `_start`, only 2 print anything. So on the existing corpus wart's
--- ANSWER is observable for 2 modules out of 44, and a "the engine vs wart" row built
--- on the other 42 would be timing two runtimes with no evidence either computed
--- the right thing. That is the shape of claim CLAUDE.md §3 was written about.
---
--- THE REPAIR. Generate the kernel, ask wasmtime for the answer, then emit a
--- SECOND module with the same kernel whose `_start` traps unless the value
--- matches. wart's exit status becomes a value check, and the engine's `result=-1`
--- bail becomes one too. The expected constant comes from the oracle at run
--- time, never from this file -- and the kernels are generated from a seed, so
--- no recognizer anywhere can key on a function name, a literal, or a loop
--- bound and still pass.
---
--- CONTROLS. A trap-on-mismatch check that never traps proves nothing, so the
--- first thing this runs is a deliberately WRONG assert. If wart or the engine accepts
--- it, the harness refuses to report and exits non-zero.
+# Pass 101 §4: wart as the differential BASELINE, plus the claim table.
+#
+#   duo run bench/wart.id            # generated differential + timing
+#   K=16 N=5 duo run bench/wart.id   # more kernels, more reps
+#
+# Pass 101 asks for "wart enters the differential harness as the baseline" and
+# for the claim to "ship as a table, not an adjective". Before 2026-08-08 no
+# harness compared the engine to wart at all: bench/verify.id differences the engine
+# against wasmtime, bench/run.id has a wart column that only reports SIGILL or
+# a wall time, and bench/perf.id has no wart column at all.
+#
+# THE PROBLEM THIS HARNESS SOLVES. `wart run <mod>` can only invoke `_start`,
+# and it prints nothing for a function that returns a value. 24 of the 44
+# modules in bench/ export only `run`, so wart cannot reach them; of the 17
+# that export `_start`, only 2 print anything. So on the existing corpus wart's
+# ANSWER is observable for 2 modules out of 44, and a "the engine vs wart" row built
+# on the other 42 would be timing two runtimes with no evidence either computed
+# the right thing. That is the shape of claim CLAUDE.md §3 was written about.
+#
+# THE REPAIR. Generate the kernel, ask wasmtime for the answer, then emit a
+# SECOND module with the same kernel whose `_start` traps unless the value
+# matches. wart's exit status becomes a value check, and the engine's `result=-1`
+# bail becomes one too. The expected constant comes from the oracle at run
+# time, never from this file # and the kernels are generated from a seed, so
+# no recognizer anywhere can key on a function name, a literal, or a loop
+# bound and still pass.
+#
+# CONTROLS. A trap-on-mismatch check that never traps proves nothing, so the
+# first thing this runs is a deliberately WRONG assert. If wart or the engine accepts
+# it, the harness refuses to report and exits non-zero.
 
--- Deterministic 32-bit LCG. The kernels must be arbitrary but the run must be
--- reproducible, so the seed is an input rather than a clock read.
+# Deterministic 32-bit LCG. The kernels must be arbitrary but the run must be
+# reproducible, so the seed is an input rather than a clock read.
 _next(s: i64): i64
     (s * 1103515245 + 12345) % 2147483648
 end
 
 _pad(s: str, w: i64): str
     out = s
-    while string.len(out) < w
+    while out:len() < w
         out = out .. " "
     end
     out
@@ -53,10 +53,10 @@ _rule(n: i64): void
     print(line)
 end
 
--- One arbitrary i32 loop kernel as WAT body text, driven entirely by `seed`.
--- `ops` is indexed by the seed too, so the instruction MIX varies between
--- kernels and not just the constants -- a runtime that special-cased one shape
--- would still have to be right on the others.
+# One arbitrary i32 loop kernel as WAT body text, driven entirely by `seed`.
+# `ops` is indexed by the seed too, so the instruction MIX varies between
+# kernels and not just the constants # a runtime that special-cased one shape
+# would still have to be right on the others.
 _body(seed: i64, iters: i64): str
     a = seed % 1048576
     b = (seed / 7) % 99991 + 3
@@ -82,15 +82,15 @@ _body(seed: i64, iters: i64): str
         .. "\n    (br $L)))"
 end
 
--- The value-returning form. wasmtime reads the answer out of this one.
+# The value-returning form. wasmtime reads the answer out of this one.
 _run_wat(body: str): str
     "(module\n (func (export \"run\") (result i32)\n  (local $i i32) (local $acc i32)"
         .. body .. "\n  (local.get $acc)))\n"
 end
 
--- The trapping form. Identical kernel; `_start` is void, so the only thing that
--- escapes is whether it trapped -- which is exactly what makes wart, whose CLI
--- prints no return value, into a checkable oracle.
+# The trapping form. Identical kernel; `_start` is void, so the only thing that
+# escapes is whether it trapped # which is exactly what makes wart, whose CLI
+# prints no return value, into a checkable oracle.
 _assert_wat(body: str, want: str): str
     "(module\n (func (export \"_start\")\n  (local $i i32) (local $acc i32)"
         .. body
@@ -119,9 +119,9 @@ _time_ms(cmd: str): i64
 end
 
 _field(raw: str, key: str): str
-    m = string.match(raw, "\n" .. key .. "=([^\n]*)")
+    m = raw:match("\n" .. key .. "=([^\n]*)")
     if m == nil
-        m = string.match(raw, "^" .. key .. "=([^\n]*)")
+        m = raw:match("^" .. key .. "=([^\n]*)")
     end
     if m == nil
         return ""
@@ -129,18 +129,18 @@ _field(raw: str, key: str): str
     std.script.chomp(m)
 end
 
--- the engine's verdict on a trapping module. Both signals are required, because each
--- one alone has been wrong at some point:
---
---   exit status  -- since 981b1f0 a trap exits non-zero (71) and prints a
---                   diagnostic to stderr. Before that commit a trap and a
---                   legitimate result were both `result=-1`, indistinguishable
---                   from a function that genuinely returns -1.
---   result=0     -- a void `_start` that ran to completion. Checking only the
---                   exit status would score "the engine never started" as agreement.
---
--- Requiring both means a future change to either channel shows up as
--- `no-result` rather than as a silent pass.
+# the engine's verdict on a trapping module. Both signals are required, because each
+# one alone has been wrong at some point:
+#
+#   exit status  # since 981b1f0 a trap exits non-zero (71) and prints a
+#                   diagnostic to stderr. Before that commit a trap and a
+#                   legitimate result were both `result=-1`, indistinguishable
+#                   from a function that genuinely returns -1.
+#   result=0     # a void `_start` that ran to completion. Checking only the
+#                   exit status would score "the engine never started" as agreement.
+#
+# Requiring both means a future change to either channel shows up as
+# `no-result` rather than as a silent pass.
 _expect(binary: str, wasm: str): str
     cmd = "DUO_WASM_MODULE=" .. wasm
         .. " DUO_WASM_INVOKE=_start DUO_WASM_ENGINE=jit timeout 300 " .. binary
@@ -170,9 +170,9 @@ main(): i64
     kn: i64 = to(i64)(std.script.getenv("K", "8"))
     reps: i64 = to(i64)(std.script.getenv("N", "3"))
     seed0: i64 = to(i64)(std.script.getenv("SEED", "20260808"))
-    -- 100M keeps the kernel an order of magnitude above the ~13 ms process
-    -- floor all three runtimes pay. At 4M every row read 14/14/16 ms and the
-    -- ratio column was measuring `fork` and dyld, not code generation.
+    # 100M keeps the kernel an order of magnitude above the ~13 ms process
+    # floor all three runtimes pay. At 4M every row read 14/14/16 ms and the
+    # ratio column was measuring `fork` and dyld, not code generation.
     iters: i64 = to(i64)(std.script.getenv("ITERS", "100000000"))
 
     if not std.script.fs_exists(binary)
@@ -192,10 +192,10 @@ main(): i64
     dir = std.script.fs_tmpdir() .. "/_delta"
     std.script.fs_mkdir(dir)
 
-    -- ── CONTROLS ─────────────────────────────────────────────────────────
-    -- A trap-on-mismatch oracle that cannot detect a mismatch reports a clean
-    -- sweep for a runtime that computes garbage. Prove both directions before
-    -- believing a single row below.
+    # ── CONTROLS ─────────────────────────────────────────────────────────
+    # A trap-on-mismatch oracle that cannot detect a mismatch reports a clean
+    # sweep for a runtime that computes garbage. Prove both directions before
+    # believing a single row below.
     cbody = _body(_next(seed0), 200000)
     crun = _build(dir, "ctl_run", _run_wat(cbody))
     if crun == ""
@@ -209,8 +209,8 @@ main(): i64
         return 1
     end
     cpos = _build(dir, "ctl_pos", _assert_wat(cbody, cref))
-    -- "1" is not the answer to a 200000-iteration FNV-ish chain; if it reads as
-    -- one, the check is not checking.
+    # "1" is not the answer to a 200000-iteration FNV-ish chain; if it reads as
+    # one, the check is not checking.
     cneg = _build(dir, "ctl_neg", _assert_wat(cbody, "1"))
 
     print("== controls ==")
@@ -231,7 +231,7 @@ main(): i64
     print("  both directions proved; the table below is evidence.")
     print("")
 
-    -- ── GENERATED DIFFERENTIAL + TIMING ──────────────────────────────────
+    # ── GENERATED DIFFERENTIAL + TIMING ──────────────────────────────────
     print(_pad("KERNEL", 10) .. _pad("WASMTIME", 14) .. _pad("WARD", 14)
         .. _pad("wart", 10) .. _pad("duon", 10) .. _pad("the engine ms", 9)
         .. _pad("wart ms", 9) .. _pad("wtime ms", 9) .. "the engine/wart")
@@ -253,17 +253,17 @@ main(): i64
         vwart = _wart_assert(wart, amod)
         vduon = _expect(binary, amod)
 
-        -- the engine's own value, read the way bench/verify.id reads it, so the row
-        -- carries a number and not only a verdict. wasmtime prints i32 signed
-        -- and the engine prints it unsigned; the two columns are the same 32-bit
-        -- value when they differ only by 2^32.
+        # the engine's own value, read the way bench/verify.id reads it, so the row
+        # carries a number and not only a verdict. wasmtime prints i32 signed
+        # and the engine prints it unsigned; the two columns are the same 32-bit
+        # value when they differ only by 2^32.
         wraw = std.script.capture("DUO_WASM_MODULE=" .. rmod
             .. " DUO_WASM_INVOKE=run DUO_WASM_ENGINE=jit timeout 300 " .. binary .. " 2>/dev/null")
         got = _field(wraw, "result")
 
-        -- Interleaved, min of `reps`. Interleaving matters: this box drifts
-        -- measurably under sustained load, and a sequential sweep charges the
-        -- drift to whichever runtime ran last.
+        # Interleaved, min of `reps`. Interleaving matters: this box drifts
+        # measurably under sustained load, and a sequential sweep charges the
+        # drift to whichever runtime ran last.
         tduon = 9999999
         twart = 9999999
         twt = 9999999

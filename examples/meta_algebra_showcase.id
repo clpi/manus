@@ -1,10 +1,10 @@
--- @comp.rewrite.bundle: one-line algebraic + strength-reduction rules
--- Run: duo run examples/meta_algebra_showcase.id
+# @comp.rewrite.bundle: one-line algebraic + strength-reduction rules
+# Run: duo run examples/meta_algebra_showcase.id
 
 @comp.rewrite.bundle("algebraic")
 
 dot_like(a: i64, b: i64, c: i64): i64
-    -- mul×2/×4/×8 → shifts; add+0 folded; x-x → 0
+    # mul×2/×4/×8 → shifts; add+0 folded; x-x → 0
     (a * 2) + (b * 4) + (c * 8) + (a - a) + 0
 end
 

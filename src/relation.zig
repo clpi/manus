@@ -52,9 +52,9 @@
 //!
 //! KNOWN BOOTSTRAP DEBT, so it is measured rather than discovered later:
 //!   - the FRONT END still hands the store one origin, one lawset and one
-//!     scope, because duon has no package surface yet and `rename` has no
+//!     scope, because Idol has no package surface yet and `rename` has no
 //!     source form. Every discrimination below is proven at the store layer and
-//!     unreachable from a `.duo` file; that is the remaining half and it is
+//!     unreachable from a `.id` file; that is the remaining half and it is
 //!     gap[103], not a claim this file makes.
 //!   - class legality is refused at CODEGEN, so `duo check` can approve what
 //!     compilation later rejects. Resolution, coherence and class legality
@@ -260,7 +260,7 @@ pub const Class = enum {
 //              key lets one module's edge answer the other module's query.
 //
 // WHAT AN ID IS. A number minted by `Names` from a key carrying all four
-// discriminators plus the Lua firewall's — a Lua `number` and a duon `f64` may
+// discriminators plus the Lua firewall's — a Lua `number` and an Idol `f64` may
 // share a spelling and are never the same thing, so LAWSET is an identity fact
 // before it is an optimizer fact. An `Id` holds no text on purpose: a copy
 // cannot go stale across a rename and cannot be byte-compared by accident.
@@ -275,7 +275,7 @@ pub const Class = enum {
 
 /// Which LAWSET an identity belongs to (constitution §22). THE LUA FIREWALL:
 /// the substrate is shared and the lawset is not, so identity may not be.
-pub const Lawset = enum { duon, lua, c, wasm };
+pub const Lawset = enum { idol, lua, c, wasm };
 
 /// What kind of thing an identity names. A descriptor `to` and a relation `to`
 /// share a spelling and nothing else.
@@ -312,7 +312,7 @@ pub const Name = struct {
     text: []const u8,
     origin: Origin = .{},
     scope: Scope = .{},
-    lawset: Lawset = .duon,
+    lawset: Lawset = .idol,
 };
 
 /// A STABLE SEMANTIC IDENTITY. The number is the identity and there is no text
@@ -1211,13 +1211,13 @@ test "private: two modules' private scratch never answer each other" {
     try testing.expect(mine.eq(again));
 }
 
-test "lawset: a lua number and a duon number are two identities" {
-    // THE LUA FIREWALL as an identity fact. duon laws may never prove a Lua
+test "lawset: a lua number and an Idol number are two identities" {
+    // THE LUA FIREWALL as an identity fact. Idol laws may never prove a Lua
     // optimization, and the first place that has to hold is the identity that
     // an edge is keyed on.
     var store = Store{};
     defer store.deinit(testing.allocator);
-    const native = try store.intern(testing.allocator, .{ .kind = .descriptor, .text = "number", .lawset = .duon });
+    const native = try store.intern(testing.allocator, .{ .kind = .descriptor, .text = "number", .lawset = .idol });
     const lua = try store.intern(testing.allocator, .{ .kind = .descriptor, .text = "number", .lawset = .lua });
     try testing.expect(!native.eq(lua));
 
@@ -1354,7 +1354,7 @@ test "law.identity.three: a redeclaration keeps the edge, moves content, bumps i
 }
 
 test "the hub shape derives six edges nobody wrote — SER 2.00 at N = 4" {
-    // The unit twin of `examples/spec100/relation.duo`, which is what actually
+    // The unit twin of `examples/spec100/relation.id`, which is what actually
     // runs the compiler. This pins the STORE's numbers so a regression names
     // the store rather than the fixture.
     var store = Store{};

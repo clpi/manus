@@ -75,7 +75,7 @@ assert(offs == 5, "utf8.offset failed")
 
 local n = 0
 for p, c in utf8.codes("Duo") do
-    n = n + 1
+    n += 1
     if n == 1 then
         print("utf8.codes first pos/cp:", p, c)
         assert(p == 1 and c == 68, "utf8.codes failed on D")

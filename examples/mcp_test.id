@@ -1,6 +1,6 @@
-mcp = req("std.mcp")
-json = req("std.json")
-io = req("std.io")
+mcp = mcp
+json = json
+io = io
 
 print("Hello at startup")
 Vector3: { x: f64, y: f64, z: f64 }

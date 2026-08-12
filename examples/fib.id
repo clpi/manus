@@ -1,6 +1,6 @@
--- Typed fibonacci in duo — compiles to native C via LLVM/clang
--- Every parameter and return type is annotated, so duo generates
--- a pure C fun with zero dynamic dispatch overhead.
+# Typed fibonacci in duo — compiles to native C via LLVM/clang
+# Every parameter and return type is annotated, so duo generates
+# a pure C fun with zero dynamic dispatch overhead.
 
 fib(n: i64): i64
     if n <= 1 return n end

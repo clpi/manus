@@ -1,75 +1,74 @@
 #!/usr/bin/env duo
-global s = req "std.script"
-global fs = req "std.fs"
+s = script
 
--- Prevent stale artifact reuse on crash
+# Prevent stale artifact reuse on crash
 s.run("rm -f benchmark_evidence.json")
 
--- Keep compile progress off stdout
+# Keep compile progress off stdout
 global DUO_BUILD_REPORT = tostring(s.getenv_or("DUO_BUILD_REPORT"))
-if string.len(DUO_BUILD_REPORT) == 0
+if DUO_BUILD_REPORT:len() == 0
     s.env_set("DUO_BUILD_REPORT", "plain")
 end
 
--- gap[027]: the parameter must NOT be named `s` — a parameter does not shadow
--- a global of the same name, so `s` here resolved to the module global above and
--- this file would not compile at all.
---
--- gap[014] keeps the body manual: `text:trim()` resolves and returns nil.
+# gap[027]: the parameter must NOT be named `s` — a parameter does not shadow
+# a global of the same name, so `s` here resolved to the module global above and
+# this file would not compile at all.
+#
+# gap[014] keeps the body manual: `text:trim()` resolves and returns nil.
 trim(text: str): str
-    if string.sub(text, -1) == "\n" return string.sub(text, 1, #text - 1) end
+    if text:sub(-1) == "\n" return text:sub(1, #text - 1) end
     text
 end
 
 global ROOT = trim(s.capture("git rev-parse --show-toplevel"))
 
--- Everything this script says about the fold classifier goes out through the
--- SAME channel as the results table. `print` from a compiled Duo script is
--- buffered and the shelled-out `printf` the table uses is not, so a caveat
--- written with `print` lands in a different part of the transcript from the
--- numbers it qualifies -- which is exactly how a win count gets quoted without
--- the caveat attached to it.
+# Everything this script says about the fold classifier goes out through the
+# SAME channel as the results table. `print` from a compiled Duo script is
+# buffered and the shelled-out `printf` the table uses is not, so a caveat
+# written with `print` lands in a different part of the transcript from the
+# numbers it qualifies # which is exactly how a win count gets quoted without
+# the caveat attached to it.
 say(line: str): i64
     s.must("printf \"%s\\n\" \"" .. line .. "\"")
     0
 end
 
 global DUO = tostring(s.getenv_or("DUO"))
-if string.len(DUO) == 0
-    DUO = ROOT .. "/zig-out/bin/duo"
+if DUO:len() == 0
+    DUO = ROOT .. "/zig-out/bin/idol"
 end
 DUO = "env DUO_BUILD_REPORT=plain " .. DUO
 
 global CC = tostring(s.getenv_or("CC"))
-if string.len(CC) == 0
+if CC:len() == 0
     CC = "clang"
 end
 
 global CFLAGS = "-O3 -ffast-math -march=native -flto -fomit-frame-pointer -funroll-loops -ffp-contract=fast -fno-trapping-math -fno-math-errno -ffunction-sections -fdata-sections -Wl,-dead_strip -std=c99 -lm"
 
 global SDKROOT = tostring(s.getenv_or("SDKROOT"))
-if string.len(SDKROOT) == 0
+if SDKROOT:len() == 0
     SDKROOT = trim(s.capture("xcrun --sdk macosx --show-sdk-path 2>/dev/null || true"))
 end
-if string.len(SDKROOT) != 0
+if SDKROOT:len() != 0
     CFLAGS = CFLAGS .. " -isysroot " .. SDKROOT
 end
 
-s.must("cd " .. ROOT .. " && if [ ! -x zig-out/bin/duo ]; then ${ZIG:-zig} build; fi")
+s.must("cd " .. ROOT .. " && if [ ! -x zig-out/bin/idol ]; then ${ZIG:-zig} build; fi")
 
--- Pass 11 WP-01: explicit benchmark manifest (backend must not force boxing).
--- The first port dropped this entirely. It is not decoration: the row states
--- which backend and representation produced the numbers below, so a run that
--- silently fell back to a boxed representation is distinguishable from one that
--- did not. DUO_BENCH_MANIFEST is also read downstream -- and only reaches a
--- child now that std.script.env_set is a real setenv rather than a shelled-out
--- `export` that never left its subshell.
+# Pass 11 WP-01: explicit benchmark manifest (backend must not force boxing).
+# The first port dropped this entirely. It is not decoration: the row states
+# which backend and representation produced the numbers below, so a run that
+# silently fell back to a boxed representation is distinguishable from one that
+# did not. DUO_BENCH_MANIFEST is also read downstream # and only reaches a
+# child now that std.script.env_set is a real setenv rather than a shelled-out
+# `export` that never left its subshell.
 BENCH_BACKEND = s.getenv_or("BENCH_BACKEND")
-if string.len(BENCH_BACKEND) == 0
+if BENCH_BACKEND:len() == 0
     BENCH_BACKEND = "c-specialized"
 end
 duo_version = trim(s.capture(DUO .. " --version 2>/dev/null || echo unknown"))
-if string.len(duo_version) == 0
+if duo_version:len() == 0
     duo_version = "unknown"
 end
 BENCH_MANIFEST = "backend=" .. BENCH_BACKEND .. " representation=specialized runtime=dynamic intermediate=generated-c external_compiler=" .. CC .. " duo=" .. duo_version
@@ -84,12 +83,12 @@ _c_opt_compile = "/usr/bin/time -l " .. CC .. " " .. CFLAGS .. " -fprofile-instr
 _c_profile_steps = "env LLVM_PROFILE_FILE=/tmp/c_bench.profraw /tmp/c_bench_instr.out > /dev/null 2>&1 || true; xcrun llvm-profdata merge -output=/tmp/c_bench.profdata /tmp/c_bench.profraw"
 
 if BENCH_PARALLEL_COMPILE == "1"
-    -- ONE shell. The previous spelling backgrounded with `s.run("... &")` and
-    -- then called `s.run("wait")` -- two SEPARATE shells, so `wait` had no jobs
-    -- to wait for and returned instantly. The compiles were orphaned and the
-    -- script raced on to time /tmp/duo_bench.out while it was still being
-    -- written, or was a stale binary from a previous run. Off by default, so it
-    -- never fired in CI; a trap for whoever set the variable.
+    # ONE shell. The previous spelling backgrounded with `s.run("... &")` and
+    # then called `s.run("wait")` # two SEPARATE shells, so `wait` had no jobs
+    # to wait for and returned instantly. The compiles were orphaned and the
+    # script raced on to time /tmp/duo_bench.out while it was still being
+    # written, or was a stale binary from a previous run. Off by default, so it
+    # never fired in CI; a trap for whoever set the variable.
     s.must("cd " .. ROOT .. " && { " .. _duo_lua_compile .. " ; } & DUO_PID=$!; " .. _c_instr_compile .. " && { " .. _c_profile_steps .. " ; } && { " .. _c_opt_compile .. " ; } & CC_PID=$!; wait $DUO_PID && wait $CC_PID")
 else
     s.must("cd " .. ROOT .. " && " .. _duo_lua_compile)
@@ -98,68 +97,68 @@ else
     s.must("cd " .. ROOT .. " && " .. _c_opt_compile)
 end
 
--- Compile the .id mirror
+# Compile the .id mirror
 s.must("cd " .. ROOT .. " && /usr/bin/time -l " .. DUO .. " compile --pgo -O3 examples/benchmark.id -o /tmp/duo_bench_duo.out 2> /tmp/duoduo_compile_time.txt")
 
--- RESULT rows and TIMED rows are no longer the same count, and the split is
--- the whole of gap[096]'s closure.
---
--- BENCHES is the CORRECTNESS count: every kernel still runs in all three
--- programs and every answer is still compared against reference C. 40, and it
--- must stay 40 -- the three rows removed below are precisely the ones whose
--- RESULT row is the only thing keeping the compiler's most aggressive kernel
--- substitutions honest, so deleting them would delete the oracle.
---
--- TIMED is the SPEED count. Three rows publish no Time line in ANY of the
--- three programs, because a duration for them cannot be compared:
---
---   Fibonacci(40)  codegen substitutes an O(n) iteration for O(phi^n) recursion
---   Table array    codegen substitutes n(n+1)/2 for the O(n) fill-and-sum
---   Bitcount       codegen substitutes an O(log n) identity for the O(n log n)
---
--- These are not constant folds and gap[096]'s two proposed repairs were both
--- measured INEFFECTIVE before the rows were removed:
---
---   raise the bound  -- the run this was decided on reported `res 0`: NO row
---                       folded for want of resolution. Every fold was `both`,
---                       and an O(1) kernel has no bound that reaches the floor.
---   opaque input     -- sourcing the bound from getenv (which neither compiler
---                       can see through) leaves the emitted kernel BYTE-
---                       IDENTICAL. Verified by diffing the generated C for all
---                       three functions, literal bound against getenv bound.
---
--- The substitutions are keyed on the function BODY, so no change to the INPUT
--- reaches them. The row was comparing two algorithms, not two codegens, and
--- gap[096] step 5 says a row that still folds after the repair is removed with
--- a reason rather than left folding. That is what this is.
+# RESULT rows and TIMED rows are no longer the same count, and the split is
+# the whole of gap[096]'s closure.
+#
+# BENCHES is the CORRECTNESS count: every kernel still runs in all three
+# programs and every answer is still compared against reference C. 40, and it
+# must stay 40 # the three rows removed below are precisely the ones whose
+# RESULT row is the only thing keeping the compiler's most aggressive kernel
+# substitutions honest, so deleting them would delete the oracle.
+#
+# TIMED is the SPEED count. Three rows publish no Time line in ANY of the
+# three programs, because a duration for them cannot be compared:
+#
+#   Fibonacci(40)  codegen substitutes an O(n) iteration for O(phi^n) recursion
+#   Table array    codegen substitutes n(n+1)/2 for the O(n) fill-and-sum
+#   Bitcount       codegen substitutes an O(log n) identity for the O(n log n)
+#
+# These are not constant folds and gap[096]'s two proposed repairs were both
+# measured INEFFECTIVE before the rows were removed:
+#
+#   raise the bound  # the run this was decided on reported `res 0`: NO row
+#                       folded for want of resolution. Every fold was `both`,
+#                       and an O(1) kernel has no bound that reaches the floor.
+#   opaque input     # sourcing the bound from getenv (which neither compiler
+#                       can see through) leaves the emitted kernel BYTE-
+#                       IDENTICAL. Verified by diffing the generated C for all
+#                       three functions, literal bound against getenv bound.
+#
+# The substitutions are keyed on the function BODY, so no change to the INPUT
+# reaches them. The row was comparing two algorithms, not two codegens, and
+# gap[096] step 5 says a row that still folds after the repair is removed with
+# a reason rather than left folding. That is what this is.
 global BENCHES: i64 = 40
 global TIMED: i64 = 37
 
--- Two measured defects forced this shape; do not "simplify" it back.
---
--- 1. NESTED gmatch IS BROKEN. Iterating words with a gmatch inside a gmatch
---    over lines yields 4 of 12 words on a 3-line fixture -- the inner
---    iterator corrupts the outer one. The old body did exactly that, so it
---    returned 2 times for a 40-benchmark run. -- gap[035]
--- 2. tonumber DOES NOT RETURN nil ON NON-NUMBERS. tonumber("Fibonacci(40)")
---    and tonumber("Time") both return 0, so the "first word that parses as a
---    number" scan accepted the FIRST word of every line and recorded 0. Every
---    timing was therefore 0 or missing, every row printed N/A, and every
---    winner defaulted to C -- a suite reporting total defeat for a reason
---    that had nothing to do with speed. -- gap[031]
---
--- One match per line, anchored to the "Time" label, extracts the number
--- directly: no inner iterator, and no reliance on tonumber signalling failure
--- (it is only ever handed text already known to be numeric).
---
--- Duo separates the fields with TABS and C with spaces, so the pattern spans
--- %s+ rather than a literal space.
+# Two measured defects forced this shape; do not "simplify" it back.
+#
+# 1. NESTED gmatch IS BROKEN. Iterating words with a gmatch inside a gmatch
+#    over lines yields 4 of 12 words on a 3-line fixture # the inner
+#    iterator corrupts the outer one. The old body did exactly that, so it
+#    returned 2 times for a 40-benchmark run. # gap[035]
+# 2. tonumber DOES NOT RETURN nil ON NON-NUMBERS. tonumber("Fibonacci(40)")
+#    and tonumber("Time") both return 0, so the "first word that parses as a
+#    number" scan accepted the FIRST word of every line and recorded 0. Every
+#    timing was therefore 0 or missing, every row printed N/A, and every
+#    winner defaulted to C # a suite reporting total defeat for a reason
+#    that had nothing to do with speed. # gap[031]
+#
+# One match per line, anchored to the "Time" label, extracts the number
+# directly: no inner iterator, and no reliance on tonumber signalling failure
+# (it is only ever handed text already known to be numeric).
+#
+# Duo separates the fields with TABS and C with spaces, so the pattern spans
+# %s+ rather than a literal space.
 extract_times(out: str): table
     times = {}
-    for line in string.gmatch(out, "([^\n]+)")
-        num = string.match(line, "Time%s+([0-9%.eE%+%-]+)")
+    for line in out:gmatch("([^\n]+)")
+        num = line:match("Time%s+([0-9%.eE%+%-]+)")
         if num != nil
-            table.insert(times, tonumber(num))
+            times:insert(tonumber(num))
         end
     end
     times
@@ -167,10 +166,10 @@ end
 
 extract_results(out: str): table
     res = {}
-    for line in string.gmatch(out, "([^\n]+)")
-        id, val = string.match(line, "^RESULT%s+([^%s]+)%s+([^%s]+)")
+    for line in out:gmatch("([^\n]+)")
+        id, val = line:match("^RESULT%s+([^%s]+)%s+([^%s]+)")
         if id != nil
-            table.insert(res, { id = id, val = val })
+            res:insert({ id = id, val = val })
         end
     end
     res
@@ -192,15 +191,15 @@ compare_results(name: str, duo_res: table, c_res: table): bool
             if a != b
                 da = tonumber(a)
                 db = tonumber(b)
-                -- INTEGER RESULTS MUST MATCH EXACTLY. The shell original had
-                -- this branch and the first port of it did not, which silently
-                -- weakened the gate: without it two integers fall through to
-                -- the float ladder below, where `base > 1e6 => tol = 1` accepts
-                -- an off-by-one. A checksum of 1899277430 vs 1899277431 -- a
-                -- real divergence between Duo and C -- was reported as
-                -- AGREEMENT. Compared as strings, which is exact; tonumber
-                -- would round any value past 2^53 and re-introduce the hole.
-                is_int = string.match(a, "^%-?%d+$") != nil and string.match(b, "^%-?%d+$") != nil
+                # INTEGER RESULTS MUST MATCH EXACTLY. The shell original had
+                # this branch and the first port of it did not, which silently
+                # weakened the gate: without it two integers fall through to
+                # the float ladder below, where `base > 1e6 => tol = 1` accepts
+                # an off-by-one. A checksum of 1899277430 vs 1899277431 # a
+                # real divergence between Duo and C # was reported as
+                # AGREEMENT. Compared as strings, which is exact; tonumber
+                # would round any value past 2^53 and re-introduce the hole.
+                is_int = a:match("^%-?%d+$") != nil and b:match("^%-?%d+$") != nil
                 if is_int
                     print("RESULT mismatch for " .. duo_res[i].id .. ": Duo=" .. a .. " C=" .. b)
                     fail = true
@@ -208,26 +207,26 @@ compare_results(name: str, duo_res: table, c_res: table): bool
                     print("RESULT mismatch for " .. duo_res[i].id .. ": Duo=" .. a .. " C=" .. b)
                     fail = true
                 else
-                    abs_a = math.abs(da)
-                    abs_b = math.abs(db)
+                    abs_a = da:abs()
+                    abs_b = db:abs()
                     if abs_a < 1e-6 and abs_b < 1e-6
-                        -- SIGN-AWARE. This compared abs_a - abs_b, i.e. the
-                        -- MAGNITUDES, so a sign flip in a small value differed
-                        -- by exactly zero and passed. Not hypothetical: nbody
-                        -- reports Duo=+9.3782588805879641e-08 against
-                        -- C=-9.3782588805879641e-08 -- bit-identical magnitude,
-                        -- opposite sign -- and the suite called that agreement
-                        -- on every run. The shell original had the same defect
-                        -- (`abs_a - abs_b > 1e-12 && abs_b - abs_a > 1e-12`),
-                        -- so the port inherited a blind spot rather than
-                        -- introducing one.
-                        if math.abs(da - db) > 1e-12
+                        # SIGN-AWARE. This compared abs_a - abs_b, i.e. the
+                        # MAGNITUDES, so a sign flip in a small value differed
+                        # by exactly zero and passed. Not hypothetical: nbody
+                        # reports Duo=+9.3782588805879641e-08 against
+                        # C=-9.3782588805879641e-08 # bit-identical magnitude,
+                        # opposite sign # and the suite called that agreement
+                        # on every run. The shell original had the same defect
+                        # (`abs_a - abs_b > 1e-12 && abs_b - abs_a > 1e-12`),
+                        # so the port inherited a blind spot rather than
+                        # introducing one.
+                        if da - db:abs() > 1e-12
                             print("RESULT mismatch for " .. duo_res[i].id .. ": Duo=" .. a .. " C=" .. b)
                             fail = true
                         end
                     else
-                        diff = math.abs(da - db)
-                        base = math.max(abs_a, abs_b)
+                        diff = da - db:abs()
+                        base = abs_a:max(abs_b)
                         tol = 1e-9
                         if base != 0
                             tol = base * 1e-6
@@ -243,7 +242,7 @@ compare_results(name: str, duo_res: table, c_res: table): bool
             end
         end
     end
-    not fail
+    !fail
 end
 
 _collect_min_times_impl(cmd: str, min_times: table): table
@@ -251,14 +250,14 @@ _collect_min_times_impl(cmd: str, min_times: table): table
     for i = 1, runs
         out = s.capture("cd " .. ROOT .. " && " .. cmd .. " 2>/dev/null")
         times = extract_times(out)
-        -- DO NOT round-trip through tonumber here. `tonumber(nil)` returns 0,
-        -- not nil -- gap[031] -- so `m = tonumber(min_times[j])` on an unset
-        -- slot gave 0, `m == nil` was false, and `t < 0` is false for every
-        -- positive duration. The minimum was therefore NEVER SEEDED: min_times
-        -- stayed empty, every row printed N/A, every winner defaulted to C, and
-        -- the suite reported Duo losing all 40 benchmarks on timing it had not
-        -- collected. extract_times already returns numbers, so compare the raw
-        -- values and let an unset slot actually read as nil.
+        # DO NOT round-trip through tonumber here. `tonumber(nil)` returns 0,
+        # not nil # gap[031] # so `m = tonumber(min_times[j])` on an unset
+        # slot gave 0, `m == nil` was false, and `t < 0` is false for every
+        # positive duration. The minimum was therefore NEVER SEEDED: min_times
+        # stayed empty, every row printed N/A, every winner defaulted to C, and
+        # the suite reported Duo losing all 40 benchmarks on timing it had not
+        # collected. extract_times already returns numbers, so compare the raw
+        # values and let an unset slot actually read as nil.
         for j = 1, #times
             t = times[j]
             m = min_times[j]
@@ -292,51 +291,51 @@ capture_results(label: str, cmd: str): table
     res
 end
 
--- ── The folded-row classifier ───────────────────────────────────────────────
---
--- A benchmark row is supposed to answer "is the code Duo GENERATED fast?".
--- It answers that only if the kernel actually RAN. Two observable signatures
--- say it did not:
---
---   R1  the Duo duration is at or under `cutoff`, this harness's reporting
---       floor, so there is no significant digit in it to compare with;
---   R2  the Duo duration beats reference C by more than `ratio`.
---       Both sides reach clang -O3 through PGO from the same source algorithm,
---       so a CODEGEN difference cannot open a gap of that size. An ASYMPTOTIC
---       difference can, and that is exactly what a closed-form substitution
---       is: the compiler evaluated the benchmark instead of running it.
---
--- Such a row measures whether a human wrote a closed form. It is not a win and
--- it is reported as `folded`, never as `Duo`.
---
--- NOTHING HERE KEYS ON A ROW. No benchmark name, no expected value, no loop
--- bound reaches this code; the only inputs are the row's own two durations.
--- The same rule would fire for arbitrary user code of the same shape, which is
--- the test CLAUDE.md §3 sets for any recogniser in this repository.
---
--- `tick` is a property of the INSTRUMENT, not a constant fitted to the results:
--- reference C prints every duration with printf("%f") -- six decimal places --
--- so the smallest non-zero duration this harness can report at all is 1e-06 s.
--- `cutoff` is ten of those quanta; under ten ticks a duration carries no
--- significant digit. The summary prints the smallest positive duration actually
--- observed, so a reader can check that assumed resolution against the run
--- instead of taking it on the comment.
---
--- Named `cutoff` rather than `floor` on purpose: `floor` is an unmangled libc
--- symbol and a file-scope binding of that name is a link hazard here.
+# ── The folded-row classifier ───────────────────────────────────────────────
+#
+# A benchmark row is supposed to answer "is the code Duo GENERATED fast?".
+# It answers that only if the kernel actually RAN. Two observable signatures
+# say it did not:
+#
+#   R1  the Duo duration is at or under `cutoff`, this harness's reporting
+#       floor, so there is no significant digit in it to compare with;
+#   R2  the Duo duration beats reference C by more than `ratio`.
+#       Both sides reach clang -O3 through PGO from the same source algorithm,
+#       so a CODEGEN difference cannot open a gap of that size. An ASYMPTOTIC
+#       difference can, and that is exactly what a closed-form substitution
+#       is: the compiler evaluated the benchmark instead of running it.
+#
+# Such a row measures whether a human wrote a closed form. It is not a win and
+# it is reported as `folded`, never as `Duo`.
+#
+# NOTHING HERE KEYS ON A ROW. No benchmark name, no expected value, no loop
+# bound reaches this code; the only inputs are the row's own two durations.
+# The same rule would fire for arbitrary user code of the same shape, which is
+# the test CLAUDE.md §3 sets for any recogniser in this repository.
+#
+# `tick` is a property of the INSTRUMENT, not a constant fitted to the results:
+# reference C prints every duration with printf("%f") # six decimal places #
+# so the smallest non-zero duration this harness can report at all is 1e-06 s.
+# `cutoff` is ten of those quanta; under ten ticks a duration carries no
+# significant digit. The summary prints the smallest positive duration actually
+# observed, so a reader can check that assumed resolution against the run
+# instead of taking it on the comment.
+#
+# Named `cutoff` rather than `floor` on purpose: `floor` is an unmangled libc
+# symbol and a file-scope binding of that name is a link hazard here.
 global tick: f64 = 0.000001
 global cutoff: f64 = 0.00001
 global ratio: f64 = 100.0
 
--- gap[019]: a value read out of a table is `any`, and `any` arithmetic
--- truncates the field to int64 first, which would turn every sub-second
--- duration into 0 and fold the entire table. Both durations are taken as f64
--- PARAMETERS so everything below is native f64. Verified by value, not by
--- shape: 0.0002 handed through an f64 parameter and multiplied by 100.0 comes
--- back 0.02, and the ratio arm answers accordingly.
---
--- No early return: both clauses are evaluated every call, so neither can be
--- silently unreachable behind the other.
+# gap[019]: a value read out of a table is `any`, and `any` arithmetic
+# truncates the field to int64 first, which would turn every sub-second
+# duration into 0 and fold the entire table. Both durations are taken as f64
+# PARAMETERS so everything below is native f64. Verified by value, not by
+# shape: 0.0002 handed through an f64 parameter and multiplied by 100.0 comes
+# back 0.02, and the ratio arm answers accordingly.
+#
+# No early return: both clauses are evaluated every call, so neither can be
+# silently unreachable behind the other.
 folded(dt: f64, ct: f64): bool
     out = false
     if dt <= cutoff
@@ -348,26 +347,26 @@ folded(dt: f64, ct: f64): bool
     out
 end
 
--- WHICH rule fired, and it is not cosmetic. `folded` returns one bool for two
--- causes that need OPPOSITE repairs:
---
---   res   R1, at or under the reporting floor. The workload is too cheap to
---         measure and the repair is a larger bound.
---   form  R2, beating C by more than `ratio`. Both sides reach clang -O3 from
---         the same algorithm, so a gap that size is ASYMPTOTIC — the compiler
---         evaluated the benchmark instead of running it. A larger bound folds
---         just the same; the repair is an input the compiler cannot know.
---   both  R1 and R2 together, which is what a closed form usually looks like:
---         it returns instantly AND beats C enormously.
---
--- gap[096] recorded a repair plan that was WRONG for three rows because one
--- word covered both causes and the summary line — "smallest POSITIVE duration"
--- — had quietly excluded the rows sitting at 0. Reporting the reason is what
--- makes the two piles countable.
---
--- The DECISION is unchanged: this reads the same two clauses and adds no third.
--- A reason function that could disagree with `folded` would be a second
--- classifier, and then the table would have two answers.
+# WHICH rule fired, and it is not cosmetic. `folded` returns one bool for two
+# causes that need OPPOSITE repairs:
+#
+#   res   R1, at or under the reporting floor. The workload is too cheap to
+#         measure and the repair is a larger bound.
+#   form  R2, beating C by more than `ratio`. Both sides reach clang -O3 from
+#         the same algorithm, so a gap that size is ASYMPTOTIC — the compiler
+#         evaluated the benchmark instead of running it. A larger bound folds
+#         just the same; the repair is an input the compiler cannot know.
+#   both  R1 and R2 together, which is what a closed form usually looks like:
+#         it returns instantly AND beats C enormously.
+#
+# gap[096] recorded a repair plan that was WRONG for three rows because one
+# word covered both causes and the summary line — "smallest POSITIVE duration"
+# — had quietly excluded the rows sitting at 0. Reporting the reason is what
+# makes the two piles countable.
+#
+# The DECISION is unchanged: this reads the same two clauses and adds no third.
+# A reason function that could disagree with `folded` would be a second
+# classifier, and then the table would have two answers.
 foldreason(dt: f64, ct: f64): str
     r1 = false
     r2 = false
@@ -381,18 +380,18 @@ foldreason(dt: f64, ct: f64): str
     if r1 and r2
         out = "both"
     end
-    if r1 and not r2
+    if r1 and !r2
         out = "res"
     end
-    if r2 and not r1
+    if r2 and !r1
         out = "form"
     end
     out
 end
 
--- One place formats a duration, so one line in this file names a Lua library.
+# One place formats a duration, so one line in this file names a Lua library.
 sec(v: f64): str
-    string.format("%g", v)
+    "%g":format(v)
 end
 
 yesno(b: bool): str
@@ -416,23 +415,23 @@ probe(label: str, dt: f64, ct: f64, want: bool): i64
     bad
 end
 
--- POSITIVE CONTROL, run before any benchmark data exists. A classifier that
--- never fires is indistinguishable from one that is broken -- this repository
--- has already shipped a capability table reporting 46/0 and a gate reporting
--- 0/N from evidence neither of them could have read. So the rule is fired on
--- synthetic points first, and each point pins one edge:
---
---   rows 1-3 walk the cutoff clause up to the cutoff;   row 4 clears the cutoff
---   and is caught by the RATIO ALONE, which is what proves the two clauses
---   independent;
---   row 5 holds C fixed and moves Duo across the ratio, so 4 and 5 bracket
---   `ratio` from both sides;   rows 6-7 hold the ratio at 10 and 5, far below
---   the fold ratio, and move Duo across the CUTOFF, so they bracket `cutoff`
---   with the ratio clause disabled -- without that pair the cutoff could be
---   moved two orders of magnitude and the ratio clause would silently cover
---   for it, which is a perturbation this table was checked against;
---   rows 8-9 are genuine wins (2x and 50x) and must NOT fire; row 11 is a
---   loss and must not fire either.
+# POSITIVE CONTROL, run before any benchmark data exists. A classifier that
+# never fires is indistinguishable from one that is broken # this repository
+# has already shipped a capability table reporting 46/0 and a gate reporting
+# 0/N from evidence neither of them could have read. So the rule is fired on
+# synthetic points first, and each point pins one edge:
+#
+#   rows 1-3 walk the cutoff clause up to the cutoff;   row 4 clears the cutoff
+#   and is caught by the RATIO ALONE, which is what proves the two clauses
+#   independent;
+#   row 5 holds C fixed and moves Duo across the ratio, so 4 and 5 bracket
+#   `ratio` from both sides;   rows 6-7 hold the ratio at 10 and 5, far below
+#   the fold ratio, and move Duo across the CUTOFF, so they bracket `cutoff`
+#   with the ratio clause disabled # without that pair the cutoff could be
+#   moved two orders of magnitude and the ratio clause would silently cover
+#   for it, which is a perturbation this table was checked against;
+#   rows 8-9 are genuine wins (2x and 50x) and must NOT fire; row 11 is a
+#   loss and must not fire either.
 control(): i64
     bad: i64 = 0
     say("=== fold classifier control (synthetic; no benchmark data in scope) ===")
@@ -464,16 +463,16 @@ duobenchres = capture_results("Duo benchmark.lua", "/tmp/duo_bench.out")
 duobenchduores = capture_results("Duo benchmark.id", "/tmp/duo_bench_duo.out")
 cbenchres = capture_results("reference C benchmark", "/tmp/c_bench.out")
 
--- `global` is load-bearing. As a BARE top-level binding this stayed false
--- through both reassignments below: the suite printed real mismatches and then
--- "All 40 benchmark results match reference C" on the same run. RESULT_FAIL_FLAG
--- further down was already declared global and always worked, which is the
--- contrast that named the cause.
+# `global` is load-bearing. As a BARE top-level binding this stayed false
+# through both reassignments below: the suite printed real mismatches and then
+# "All 40 benchmark results match reference C" on the same run. RESULT_FAIL_FLAG
+# further down was already declared global and always worked, which is the
+# contrast that named the cause.
 global RESULT_FAIL: bool = false
-if not compare_results("Duo .lua", duobenchres, cbenchres)
+if !compare_results("Duo .lua", duobenchres, cbenchres)
     RESULT_FAIL = true
 end
-if not compare_results("Duo .id", duobenchduores, cbenchres)
+if !compare_results("Duo .id", duobenchduores, cbenchres)
     RESULT_FAIL = true
 end
 
@@ -515,12 +514,12 @@ else
     print("=== Nelua (skipped; set RUN_NELUA_BENCH=1 to enable) ===")
 end
 
--- TIMED rows, in Time-line order. Fibonacci(40), Table array and Bitcount are
--- absent BY REMOVAL, not by oversight: see the TIMED note at the top of this
--- file. Their kernels still run and their RESULT rows are still compared, so
--- this list is 37 while BENCHES stays 40. The count check below is what turns
--- a silently dropped Time line back into a failure instead of three N/A rows
--- that would read as losses.
+# TIMED rows, in Time-line order. Fibonacci(40), Table array and Bitcount are
+# absent BY REMOVAL, not by oversight: see the TIMED note at the top of this
+# file. Their kernels still run and their RESULT rows are still compared, so
+# this list is 37 while BENCHES stays 40. The count check below is what turns
+# a silently dropped Time line back into a failure instead of three N/A rows
+# that would read as losses.
 global NAMES = {
     "Prime sieve", "Mandelbrot", "Grid matrix", "N-body", "String bytes",
     "Trig sum", "String chain", "String hash", "Math floor/max", "Table max",
@@ -531,11 +530,11 @@ global NAMES = {
     "CORDIC sin", "Sparse dot", "Game of Life"
 }
 
--- POSITIVE CONTROL on the row count. Without it, a build that emits fewer Time
--- lines than TIMED prints N/A for the tail, N/A takes the `c_wins` default, and
--- a PARSE failure is published as a clean sweep of losses. This repository has
--- already shipped exactly that once -- gap[031], every row N/A and every winner
--- C -- so the count is asserted rather than assumed.
+# POSITIVE CONTROL on the row count. Without it, a build that emits fewer Time
+# lines than TIMED prints N/A for the tail, N/A takes the `c_wins` default, and
+# a PARSE failure is published as a clean sweep of losses. This repository has
+# already shipped exactly that once # gap[031], every row N/A and every winner
+# C # so the count is asserted rather than assumed.
 checktimes(label: str, t: table): i64
     n = #t
     if n != TIMED
@@ -552,30 +551,30 @@ checktimes("reference C benchmark", C_TIMES)
 
 global RESULT_FAIL_FLAG: i64 = 0
 
--- The three-way split. `measured` is the only one of these that is a win.
+# The three-way split. `measured` is the only one of these that is a win.
 global measured: i64 = 0
 global folds: i64 = 0
 global losses: i64 = 0
--- Instrument checks, printed with the summary rather than assumed:
--- the smallest positive Duo duration anywhere in the table (which is what the
--- assumed reporting resolution has to be consistent with), and a negative
--- control on real data -- the C column classified against ITSELF, a ratio of
--- exactly 1, must never be called folded on any row where C did real work.
+# Instrument checks, printed with the summary rather than assumed:
+# the smallest positive Duo duration anywhere in the table (which is what the
+# assumed reporting resolution has to be consistent with), and a negative
+# control on real data # the C column classified against ITSELF, a ratio of
+# exactly 1, must never be called folded on any row where C did real work.
 global least: f64 = 1000000.0
 global impossible: i64 = 0
--- Rows where AT LEAST ONE of the two Duo builds is folded. The verdict column
--- uses the slower build, so it only says `folded` when both are; this counter
--- is the wider number, and the gap between them is rows where one build ran
--- the kernel and the other evaluated it.
+# Rows where AT LEAST ONE of the two Duo builds is folded. The verdict column
+# uses the slower build, so it only says `folded` when both are; this counter
+# is the wider number, and the gap between them is rows where one build ran
+# the kernel and the other evaluated it.
 global partial: i64 = 0
--- gap[096]: the two fold causes, counted separately. `folded` stays one
--- decision; these only record WHY, so a reader can size the two repairs — a
--- larger bound fixes `res` and does nothing for `form`.
---
--- `fold*` counts the verdict rows, where the SLOWER Duo variant decides.
--- `fold*all` counts every folded Duo build observation across the .lua and
--- .id columns. That second count is the worklist: a row where only one
--- variant folded still tells us one benchmark input is not measuring runtime.
+# gap[096]: the two fold causes, counted separately. `folded` stays one
+# decision; these only record WHY, so a reader can size the two repairs — a
+# larger bound fixes `res` and does nothing for `form`.
+#
+# `fold*` counts the verdict rows, where the SLOWER Duo variant decides.
+# `fold*all` counts every folded Duo build observation across the .lua and
+# .id columns. That second count is the worklist: a row where only one
+# variant folded still tells us one benchmark input is not measuring runtime.
 global foldres: i64 = 0
 global foldform: i64 = 0
 global foldboth: i64 = 0
@@ -653,19 +652,19 @@ for i = 1, TIMED
         end
     end
 
-    -- Verdict. `folded` only ever reclassifies a row that would otherwise have
-    -- been called a Duo win, so the loss column is unaffected by the rule.
+    # Verdict. `folded` only ever reclassifies a row that would otherwise have
+    # been called a Duo win, so the loss column is unaffected by the rule.
     winner = "Duo"
     if c_wins == 1
         winner = "C"
         losses = losses + 1
         RESULT_FAIL_FLAG = 1
     else
-        -- The SLOWER of the two Duo builds decides. A row is folded only when
-        -- BOTH the .lua and the .id build failed to run it; if either one did
-        -- real work the row stays a measured win. That is the conservative
-        -- direction -- this under-reports folding rather than over-reporting
-        -- it, so the number below is a floor on the problem, not a ceiling.
+        # The SLOWER of the two Duo builds decides. A row is folded only when
+        # BOTH the .lua and the .id build failed to run it; if either one did
+        # real work the row stays a measured win. That is the conservative
+        # direction # this under-reports folding rather than over-reporting
+        # it, so the number below is a floor on the problem, not a ceiling.
         slower: f64 = d
         if duofile > slower
             slower = duofile
@@ -678,9 +677,9 @@ for i = 1, TIMED
             impossible = impossible + 1
         end
         if folded(slower, ct)
-            -- EVALUATED, NOT RUN. Not a win: the pass/fail criterion is
-            -- "Duo must beat or tie C on every test", and a row whose kernel
-            -- did not execute has not beaten anything.
+            # EVALUATED, NOT RUN. Not a win: the pass/fail criterion is
+            # "Duo must beat or tie C on every test", and a row whose kernel
+            # did not execute has not beaten anything.
             winner = "folded"
             folds = folds + 1
             why = foldreason(slower, ct)
@@ -699,22 +698,22 @@ for i = 1, TIMED
         end
     end
     d_fmt = "N/A"
-    if d != nil d_fmt = string.format("%g", d) end
+    if d != nil d_fmt = "%g":format(d) end
     
     duofilefmt = "N/A"
-    if duofile != nil duofilefmt = string.format("%g", duofile) end
+    if duofile != nil duofilefmt = "%g":format(duofile) end
     
     c_fmt = "N/A"
-    if c != nil c_fmt = string.format("%g", c) end
+    if c != nil c_fmt = "%g":format(c) end
     
     lj_fmt = "N/A"
-    if lj != nil lj_fmt = string.format("%g", lj) end
+    if lj != nil lj_fmt = "%g":format(lj) end
     
     l5_fmt = "N/A"
-    if l5 != nil l5_fmt = string.format("%g", l5) end
+    if l5 != nil l5_fmt = "%g":format(l5) end
     
     n_fmt = "N/A"
-    if n != nil n_fmt = string.format("%g", n) end
+    if n != nil n_fmt = "%g":format(n) end
     
     s.must("printf \"%-16s %12s %12s %12s %12s %12s %12s %8s\\n\" \"" .. name .. "\" \"" .. d_fmt .. "\" \"" .. duofilefmt .. "\" \"" .. c_fmt .. "\" \"" .. lj_fmt .. "\" \"" .. l5_fmt .. "\" \"" .. n_fmt .. "\" \"" .. winner .. "\"")
 end
@@ -723,9 +722,9 @@ say("")
 say("-- Speed verdict, three ways --------------------------------------------------")
 say("  measured wins  " .. measured:to(str) .. "   Duo ran the kernel and was faster")
 say("  folded         " .. folds:to(str) .. "   EVALUATED, NOT RUN - closed form, not codegen; NOT a win")
--- gap[096]: WHY each row folded, because the two causes need opposite repairs
--- and one word hid that. `res` wants a larger bound; `form` wants an input the
--- compiler cannot know, and a larger bound does nothing for it.
+# gap[096]: WHY each row folded, because the two causes need opposite repairs
+# and one word hid that. `res` wants a larger bound; `form` wants an input the
+# compiler cannot know, and a larger bound does nothing for it.
 say("    verdict cause res " .. foldres:to(str) .. " (under the reporting floor - raise the bound)")
 say("                  form " .. foldform:to(str) .. " (beats C asymptotically - closed form, bound will not help)")
 say("                  both " .. foldboth:to(str) .. " (returns instantly AND beats C - the usual closed-form signature)")
@@ -752,11 +751,11 @@ end
 say("  negative control on real data: the rule fires on 0 rows when the C column")
 say("  is classified against itself.")
 say("")
--- gap[096]: the removed rows are declared HERE, in the same block as the
--- verdict, so a reader counting 37 against a suite documented as 40 finds the
--- reason attached to the number rather than in a commit message. Their kernels
--- still run and their RESULT rows are still compared against reference C, so
--- correctness stays 40 of 40 while the speed table is 37.
+# gap[096]: the removed rows are declared HERE, in the same block as the
+# verdict, so a reader counting 37 against a suite documented as 40 finds the
+# reason attached to the number rather than in a commit message. Their kernels
+# still run and their RESULT rows are still compared against reference C, so
+# correctness stays 40 of 40 while the speed table is 37.
 removed = BENCHES - TIMED
 say("  REMOVED from the speed table (gap[096]), " .. tostring(removed)
     .. " of " .. BENCHES:to(str) .. " rows -- their RESULT is still compared:")
@@ -776,8 +775,8 @@ end
 
 extract_compile_metrics(file: str): table
     out = s.capture("cat " .. file .. " 2>/dev/null || echo ''")
-    latency = string.match(out, "([0-9%.]+)%s+real")
-    mem = string.match(out, "([0-9]+)%s+maximum resident set size")
+    latency = out:match("([0-9%.]+)%s+real")
+    mem = out:match("([0-9]+)%s+maximum resident set size")
     { latency = tonumber(latency) or -1.0, mem = tonumber(mem) or -1 }
 end
 
@@ -789,7 +788,7 @@ duolua_size = tonumber(trim(s.capture("stat -f %z /tmp/duo_bench.out 2>/dev/null
 duoduo_size = tonumber(trim(s.capture("stat -f %z /tmp/duo_bench_duo.out 2>/dev/null || echo 0"))) or -1
 c_size = tonumber(trim(s.capture("stat -f %z /tmp/c_bench.out 2>/dev/null || echo 0"))) or -1
 
--- Workstream A/B evidence binding
+# Workstream A/B evidence binding
 duo_hash = trim(s.capture("shasum -a 256 " .. DUO .. " 2>/dev/null | awk '{print $1}'"))
 c_out_hash = trim(s.capture("shasum -a 256 /tmp/c_bench.out 2>/dev/null | awk '{print $1}'"))
 workload_hash = trim(s.capture("shasum -a 256 examples/benchmark.id 2>/dev/null | awk '{print $1}'"))
@@ -842,7 +841,6 @@ for i = 1, TIMED
 end
 evidence = evidence .. "  ]\n}\n"
 
-fs = req "std.fs"
 fs.write_file("benchmark_evidence.json", evidence)
 
 if RESULT_FAIL_FLAG == 1

@@ -1,14 +1,14 @@
 //! Pass 25 §5.1 — tail-demand propagation (AST resolution, no backward local search).
 const std = @import("std");
 const ast = @import("ast.zig");
-const pass25_tail_result_model = @import("pass25_tail_result_model.zig");
+const tail_result_model = @import("tail_result_model.zig");
 
-pub const TailResultRule = pass25_tail_result_model.TailResultRule;
-pub const ResultDemand = pass25_tail_result_model.ResultDemand;
+pub const TailResultRule = tail_result_model.TailResultRule;
+pub const ResultDemand = tail_result_model.ResultDemand;
 
 pub const Resolution = struct {
     rule: TailResultRule,
-    region: pass25_tail_result_model.TailRegionKind = .tail_statement,
+    region: tail_result_model.TailRegionKind = .tail_statement,
     /// Expression used for type-check / lowering (name ref for loop/branch-carried value).
     expr: *ast.Expr,
     /// For `.tail_compound_assignment` only: the assignment TARGET.
@@ -71,7 +71,7 @@ pub fn blockTailResultWithDemand(blk: *const ast.Block, demand: ResultDemand) ?R
     // time, so this was a sema-only false positive.
     // …but a tail expression that is itself a discard call carries no value, so
     // stripping must still run for it — `s = new32(); update(s, data); final(s)`
-    // in std/hash/fnv.duo depends on that walk-back. Only a value-carrying tail
+    // in std/hash/fnv.id depends on that walk-back. Only a value-carrying tail
     // expression suppresses stripping.
     const tail_carries_value = if (blk.tail_expr) |e| !isVoidShapedCall(e) else false;
     if (!tail_carries_value) {
@@ -457,7 +457,7 @@ test "tail_result_demand: ambiguous pre-loop locals + effect loop returns null" 
 }
 
 fn parseDuo(src: []const u8, arena: *std.heap.ArenaAllocator) !ast.Module {
-    var lex = @import("lexer.zig").Lexer.init(src, "test.duo");
+    var lex = @import("lexer.zig").Lexer.init(src, "test.id");
     var parser = @import("parser.zig").Parser.init(&lex, arena.allocator());
     parser.duo_mode = true;
     return parser.parse_module();

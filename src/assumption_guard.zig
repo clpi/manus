@@ -1,4 +1,4 @@
-//! Pass 7 — explicit specialization assumptions and runtime guards.
+//! Explicit specialization assumptions and runtime guards.
 //!
 //! Canonical owner for guarded specialization, invalidation, and agent explanations.
 //! Not a second semantic graph: assumptions reference stable entity IDs from sema/graph.

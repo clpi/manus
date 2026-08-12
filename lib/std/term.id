@@ -1,4 +1,4 @@
--- std.term — terminal styling helpers for Duo programs and build scripts
+# std.term — terminal styling helpers for Duo programs and build scripts
 
 global M = {}
 

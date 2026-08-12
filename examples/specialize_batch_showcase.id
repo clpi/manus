@@ -1,5 +1,5 @@
--- @specialize table batch — pre-generate monomorphizations without call sites
--- Run: duo run examples/specialize_batch_showcase.id
+# @specialize table batch — pre-generate monomorphizations without call sites
+# Run: duo run examples/specialize_batch_showcase.id
 
 @specialize({ fn = "twice", types = "i64, f64" })
 
@@ -7,7 +7,7 @@ fun twice<T>(x: T): T
     x
 end
 
--- Concrete call sites still monomorphize at use; batch ensures bodies exist early.
+# Concrete call sites still monomorphize at use; batch ensures bodies exist early.
 print("=== @specialize batch showcase ===")
 print("twice(21) = " .. to(str)(twice(21)))
 print("twice(2.5) = " .. to(str)(twice(2.5)))

@@ -1,6 +1,6 @@
--- Agent hooks showcase: std.agent coordination hooks.
--- Run: duo run examples/agent_hooks_showcase.id
--- Gate: scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/agent_smoke.id
+# Agent hooks showcase: std.agent coordination hooks.
+# Run: duo run examples/agent_hooks_showcase.id
+# Gate: scripts/duo_lock.sh # ./zig-out/bin/duo run scripts/agent_smoke.id
 
 HOOKS: str = std.agent.hook_index()
 DISCOVER: str = std.agent.discover()
@@ -10,18 +10,18 @@ GAPS: str = std.agent.gaps_index()
 POLICY: str = std.agent.native_policy()
 GATES: str = std.agent.build_gates()
 
-has_map = string.find(DISCOVER, "comp.map") != nil or string.find(DISCOVER, "meta.map") != nil
-has_burst = string.find(DISCOVER, "comp.burst") != nil or string.find(DISCOVER, "meta.burst") != nil
-has_power = string.find(LADDER, "power:O(2^n)", 1, true) != nil
-has_coord = string.find(HOOKS, "AGENT_COORDINATION") != nil
-has_dedupe = string.find(DEDUPE, "duo_coordination_update") != nil
-has_gaps = string.find(GAPS, "Gap Buffer") != nil and string.find(GAPS, "duo_agent_gaps") != nil
-has_no_lua = string.find(POLICY, "NO lua_Value") != nil
-has_tier0 = string.find(GATES, "agent_smoke.id") != nil
-has_comp_alias = string.find(DISCOVER, "comp.agent.catalog") != nil
+has_map = DISCOVER:find("comp.map") != nil or DISCOVER:find("meta.map") != nil
+has_burst = DISCOVER:find("comp.burst") != nil or DISCOVER:find("meta.burst") != nil
+has_power = LADDER:find("power:O(2^n)", 1, true) != nil
+has_coord = HOOKS:find("AGENT_COORDINATION") != nil
+has_dedupe = DEDUPE:find("duo_coordination_update") != nil
+has_gaps = GAPS:find("Gap Buffer") != nil and GAPS:find("duo_agent_gaps") != nil
+has_no_lua = POLICY:find("NO lua_Value") != nil
+has_tier0 = GATES:find("agent_smoke.id") != nil
+has_comp_alias = DISCOVER:find("comp.agent.catalog") != nil
 
 HINT = std.agent.multiplier_for("derive traits for all types")
-has_derive_hint = string.find(HINT, "@comp.derive") != nil
+has_derive_hint = HINT:find("@comp.derive") != nil
 
 ok = has_map
 ok = ok and has_burst

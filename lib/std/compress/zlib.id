@@ -1,5 +1,5 @@
--- std.compress.zlib — Zlib decompression (mirrors Go's compress/zlib)
--- Uses the flate module for actual DEFLATE data
+# std.compress.zlib — Zlib decompression (mirrors Go's compress/zlib)
+# Uses the flate module for actual DEFLATE data
 
 decompress(data: any)
     if data == nil or #data < 2 return "" end
@@ -12,7 +12,7 @@ decompress(data: any)
     deflate_start = 3
     if deflate_start > #data return "" end
     deflate_data = data:sub(deflate_start)
-    flate_mod = req("std.compress.flate")
+    flate_mod = flate
     return flate_mod.decompress(deflate_data)
 end
 

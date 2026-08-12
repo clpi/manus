@@ -1,10 +1,10 @@
--- Syntax highlighting test for Duo
---
--- Note: Duo has no `struct` or `class` keyword. Typed records are declared
--- via inline type-literal annotations on bindings:
---   p: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }
--- OO-style objects are just table literals with method fields. Concept
--- satisfaction is declared via `@implements(...)` on the binding.
+# Syntax highlighting test for Duo
+#
+# Note: Duo has no `struct` or `class` keyword. Typed records are declared
+# via inline type-literal annotations on bindings:
+#   p: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }
+# OO-style objects are just table literals with method fields. Concept
+# satisfaction is declared via `@implements(...)` on the binding.
 
 greet(name: str): str
     "Hello, " .. name

@@ -1,4 +1,4 @@
--- Test nested call
+# Test nested call
 greet(name: str): str
     "Hello, " .. name
 end

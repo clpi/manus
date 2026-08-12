@@ -1,5 +1,5 @@
--- Smoke test for native table initialization
--- Typed table literals should emit native C struct access
+# Smoke test for native table initialization
+# Typed table literals should emit native C struct access
 
 Point: { x: f64, y: f64 }
 

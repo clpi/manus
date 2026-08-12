@@ -15,6 +15,8 @@ separately owns the missing lexical identities and generated grammar roles.
 - `CLAUDE.md` is the operative projection.
 - `docs/spec/grammar.md` is the grammar projection.
 - `docs/spec/corpus.md` classifies source families for gates.
+- `docs/spec/source.md` is the source/home/package/world closure projection.
+- `docs/spec/host.md` is the host boundary, capability, and shell-home projection.
 - `AGENTS.md` is workflow and mechanical preflight.
 - `docs/AGENT_ALIGNMENT.md` is the current priority compass.
 - `docs/bootstrap.md` is the executed compiler-authority ledger.
@@ -37,14 +39,14 @@ authority. Refresh it from:
 - the exact serialized gate output for current evidence.
 
 `GAP-131` records that the MCP session-start open-P0 summary is unknown and can
-under-report repository gaps. Until the gap closes, run `tools/devnode/orient`
+under-report repository gaps. Until the gap closes, run `tools/node/dev/orient`
 for the live observed count and inspect every matching `gaps/GAP-*.md` record
 directly. The observed count is orientation evidence, not a second or durable
 status authority.
 
 ## History
 
-Pass-number documents and Idsem/Duo/Duon-era plans, `.id` source, and exact
+Pass-number documents and Idol/Duo/Duon-era plans, `.id` source, and exact
 physical `duo` tool names are historical or bootstrap provenance. Git history
 preserves them. Their names, examples, measurements, and architectural claims
 do not bind current work. A current document may mention a historical spelling

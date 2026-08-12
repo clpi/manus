@@ -1,4 +1,4 @@
--- std.debug — debugging utilities
+# std.debug — debugging utilities
 
 traceback(message: str, level: int): str
     debug.traceback(message, level)

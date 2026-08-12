@@ -1,9 +1,8 @@
 #!/usr/bin/env duo
--- duo_lock.id — serialize heavy Duo/Zig builds across concurrent agent sessions.
--- Native mkdir mutex + stale-PID reclaim. Bash wrapper: scripts/duo_lock.sh
+# duo_lock.id — serialize heavy Duo/Zig builds across concurrent agent sessions.
+# Native mkdir mutex + stale-PID reclaim. Bash wrapper: scripts/duo_lock.sh
 
-script = req "std.script"
-osmod = req "std.os"
+osmod = os
 
 args = osmod.args()
 n = #args
@@ -16,8 +15,8 @@ end
 if args[1] == "status"
     of = script.build_lock_owner()
     owner = script.capture("cat '" .. of .. "' 2>/dev/null")
-    trimmed = string.gsub(owner, "%s+", "")
-    if trimmed != "" and string.find(trimmed, "%d")
+    trimmed = owner:gsub("%s+", "")
+    if trimmed != "" and trimmed:find("%d")
         print("LOCKED by " .. owner)
     else
         print("FREE")
@@ -35,11 +34,11 @@ else
         i = i + 2
     end
 
-    -- `duo run script.id -- cmd args` CONSUMES the `--` itself; the script
-    -- receives only what follows. This used to require `--` in its own argv and
-    -- rejected every invocation with "expected -- before command", which is why
-    -- build.zig still called the bash version. A leading `--` is tolerated for
-    -- anyone invoking the script directly, but never required.
+    # `idol run script.id # cmd args` CONSUMES the `--` itself; the script
+    # receives only what follows. This used to require `--` in its own argv and
+    # rejected every invocation with "expected -- before command", which is why
+    # build.zig still called the bash version. A leading `--` is tolerated for
+    # anyone invoking the script directly, but never required.
     if i <= n and args[i] == "--"
         i = i + 1
     end
@@ -54,9 +53,9 @@ else
         parts[#parts + 1] = args[i]
         i = i + 1
     end
-    cmd = table.concat(parts, " ")
+    cmd = parts:concat(" ")
 
-    if not script.build_lock_acquire(timeout)
+    if !script.build_lock_acquire(timeout)
         print("duo_lock: timed out after " .. tostring(timeout) .. "s waiting for " .. script.build_lock_dir())
         os.exit(75)
     end

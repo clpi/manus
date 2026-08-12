@@ -1,22 +1,22 @@
--- law.perf.dominance fixture, STRONG half, and the `law.c.floor` measurement
--- workload. Byte-for-byte `weak.id` except that `mix` states i64 descriptors.
---
--- The added fact makes `lower.native` a LEGAL candidate where it was invalid.
--- What it must NOT do is make `lower.cequiv` disappear: the C-equivalent
--- lowering stays in the plan as the retained baseline even though the native
--- one is now available. That is law.c.floor — C is a candidate, and a candidate
--- is not deleted for being unfashionable.
---
--- The loop bound is 100000000 so the compiled program takes long enough to
--- time. GAP-096 is the reason it is not 1000: a duration under ten reporting
--- quanta is noise with a favourable sign, and `scripts/cfloor.id` refuses to
--- credit one. Nothing in the compiler keys on this bound and nothing may — §3's
--- first rule — so the number is chosen for the INSTRUMENT, not the optimizer.
+# law.perf.dominance fixture, STRONG half, and the `law.c.floor` measurement
+# workload. Byte-for-byte `weak.id` except that `mix` states i64 descriptors.
+#
+# The added fact makes `lower.native` a LEGAL candidate where it was invalid.
+# What it must NOT do is make `lower.cequiv` disappear: the C-equivalent
+# lowering stays in the plan as the retained baseline even though the native
+# one is now available. That is law.c.floor — C is a candidate, and a candidate
+# is not deleted for being unfashionable.
+#
+# The loop bound is 100000000 so the compiled program takes long enough to
+# time. GAP-096 is the reason it is not 1000: a duration under ten reporting
+# quanta is noise with a favourable sign, and `scripts/cfloor.id` refuses to
+# credit one. Nothing in the compiler keys on this bound and nothing may — §3's
+# first rule — so the number is chosen for the INSTRUMENT, not the optimizer.
 
-mix = (a: i64, b: i64): i64
+mix: i64 = (a: i64, b: i64)
     (a * 31 + b) % 1000003
 
-main = (): i64
+main: i64 = ()
     acc = 1
     i = 0
     while i < 100000000

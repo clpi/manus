@@ -1,4 +1,4 @@
--- std.ml.deploy — Edge / WASM / static-binary deploy helpers
+# std.ml.deploy — Edge / WASM / static-binary deploy helpers
 
 static_binary_opts(): any
     return {
@@ -28,11 +28,11 @@ edge_pipeline(model): any
     }
 end
 
--- Metadata for ONNX / safetensors export
+# Metadata for ONNX / safetensors export
 export_onnx(model, path): any
-    -- Build ONNX model from Duo model's layers
+    # Build ONNX model from Duo model's layers
     graph = std.ml.export.onnx_graph_new(model.name or "model")
-    -- Export layers as ONNX nodes
+    # Export layers as ONNX nodes
     for layer in model.layers
         if layer.type == "linear"
             std.ml.export.onnx_graph_add_node(graph, "MatMul", {layer.name .. "_input", layer.name .. "_weight"}, {layer.name .. "_output"}, layer.name)
@@ -50,7 +50,7 @@ export_onnx(model, path): any
             std.ml.export.onnx_graph_add_node(graph, "Gather", {layer.name .. "_weight", layer.name .. "_input"}, {layer.name .. "_output"}, layer.name)
         end
     end
-    -- Set input/output specs
+    # Set input/output specs
     std.ml.export.onnx_graph_add_input(graph, "input", {nil}, "float32")
     std.ml.export.onnx_graph_add_output(graph, "output", {nil}, "float32")
     onnx_model = std.ml.export.onnx_model_new(graph, model.opset or 17)
@@ -63,14 +63,14 @@ load_safetensors(path: str): any
         return {ok = false, error = "Cannot open file: " .. path}
     end
 
-    -- Read 8-byte header length prefix
+    # Read 8-byte header length prefix
     len_bytes = std.io.read(f, 8)
     if len_bytes == nil or #len_bytes < 8
         std.io.close(f)
         return {ok = false, error = "Invalid safetensors: missing header length"}
     end
 
-    -- Decode little-endian u64 header length
+    # Decode little-endian u64 header length
     header_len = 0
     i = 1
     while i <= 8
@@ -78,7 +78,7 @@ load_safetensors(path: str): any
         i += 1
     end
 
-    -- Read header JSON
+    # Read header JSON
     header_json = std.io.read(f, header_len)
     std.io.close(f)
     if header_json == nil
@@ -90,7 +90,7 @@ load_safetensors(path: str): any
         return {ok = false, error = "Invalid safetensors: bad header JSON"}
     end
 
-    -- Build tensor map from header metadata
+    # Build tensor map from header metadata
     tensors = {}
     for name, entry in header
         if type(entry) == "table" and entry.dtype

@@ -1,28 +1,28 @@
--- std.graphics.font — Font rendering and text layout
--- For rendering text in ward's graphics pipeline.
+# std.graphics.font — Font rendering and text layout
+# For rendering text in ward's graphics pipeline.
 
--- ═══════════════════════════════════════════════════════════════
--- Font Config
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Font Config
+# ═══════════════════════════════════════════════════════════════
 
 config_new(): any
     {
         path = "",
         size = 16,
         dpi = 72,
-        antialiasing = "gray",  -- "none", "gray", "lcd"
-        hinting = "normal",  -- "none", "slight", "normal"
+        antialiasing = "gray",  # "none", "gray", "lcd"
+        hinting = "normal",  # "none", "slight", "normal"
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Glyph
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Glyph
+# ═══════════════════════════════════════════════════════════════
 
 glyph_new(char: str): any
     {
         char = char,
-        codepoint = string.byte(char),
+        codepoint = char:byte(),
         width = 0,
         height = 0,
         advance_x = 0,
@@ -33,9 +33,9 @@ glyph_new(char: str): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Font
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Font
+# ═══════════════════════════════════════════════════════════════
 
 font_new(config: any): any
     {
@@ -49,16 +49,16 @@ font_new(config: any): any
 end
 
 font_load(font: any): any
-    -- Load font with proper metrics
+    # Load font with proper metrics
     if font.config.size == nil font.config.size = 16 end
     
-    -- Standard font metrics (ascent/descent ratios)
-    font.ascender = math.floor(font.config.size * 0.8)
-    font.descender = -math.floor(font.config.size * 0.2)
+    # Standard font metrics (ascent/descent ratios)
+    font.ascender = font.config.size * 0.8:floor()
+    font.descender = -font.config.size * 0.2:floor()
     font.line_height = font.ascender - font.descender
     font.loaded = true
     
-    -- Pre-cache common characters
+    # Pre-cache common characters
     common_chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,;:!?-"
     i = 1
     while i <= #common_chars
@@ -71,54 +71,54 @@ font_load(font: any): any
 end
 
 font_get_glyph(font: any, char: str): any
-    codepoint = string.byte(char)
+    codepoint = char:byte()
     if font.glyphs[codepoint]
         return font.glyphs[codepoint]
     end
 
-    -- Generate glyph with character-appropriate metrics
+    # Generate glyph with character-appropriate metrics
     glyph = glyph_new(char)
     
-    -- Character width varies by type
+    # Character width varies by type
     if codepoint >= 65 and codepoint <= 90
-        -- Uppercase A-Z: wider
-        glyph.width = math.floor(font.config.size * 0.7)
+        # Uppercase A-Z: wider
+        glyph.width = font.config.size * 0.7:floor()
     elseif codepoint >= 97 and codepoint <= 122
-        -- Lowercase a-z: medium
-        glyph.width = math.floor(font.config.size * 0.55)
+        # Lowercase a-z: medium
+        glyph.width = font.config.size * 0.55:floor()
     elseif codepoint >= 48 and codepoint <= 57
-        -- Digits 0-9: medium-wide
-        glyph.width = math.floor(font.config.size * 0.6)
+        # Digits 0-9: medium-wide
+        glyph.width = font.config.size * 0.6:floor()
     elseif codepoint == 32
-        -- Space: half width
-        glyph.width = math.floor(font.config.size * 0.3)
+        # Space: half width
+        glyph.width = font.config.size * 0.3:floor()
     elseif codepoint == 46 or codepoint == 44 or codepoint == 39
-        -- Punctuation: narrow
-        glyph.width = math.floor(font.config.size * 0.2)
+        # Punctuation: narrow
+        glyph.width = font.config.size * 0.2:floor()
     else
-        -- Default: medium
-        glyph.width = math.floor(font.config.size * 0.5)
+        # Default: medium
+        glyph.width = font.config.size * 0.5:floor()
     end
     
     glyph.height = font.config.size
-    glyph.advance_x = glyph.width + math.floor(font.config.size * 0.1)
+    glyph.advance_x = glyph.width + font.config.size * 0.1:floor()
     glyph.bearing_x = 0
     glyph.bearing_y = font.ascender
 
-    -- Generate bitmap with anti-aliased edges
+    # Generate bitmap with anti-aliased edges
     y = 1
     while y <= glyph.height
         x = 1
         while x <= glyph.width
             alpha = 255
-            -- Anti-alias edges
+            # Anti-alias edges
             if x == 1 or x == glyph.width
                 alpha = 200
             end
             if y == 1 or y == glyph.height
                 alpha = 180
             end
-            -- Corners
+            # Corners
             if (x == 1 or x == glyph.width) and (y == 1 or y == glyph.height)
                 alpha = 128
             end
@@ -153,9 +153,9 @@ font_measure_text(font: any, text: str): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Text Layout
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Text Layout
+# ═══════════════════════════════════════════════════════════════
 
 layout_new(font: any): any
     {
@@ -202,7 +202,7 @@ layout_get_glyphs(layout: any): any
     glyphs
 end
 
-layout_get_size(layout: any): any
+layout_get_layout: any:len(): any
     max_x = 0
     for line in layout.lines
         line_width = 0
@@ -219,9 +219,9 @@ layout_get_size(layout: any): any
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Text Rendering
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Text Rendering
+# ═══════════════════════════════════════════════════════════════
 
 render_text(font: any, text: str, x: f64, y: f64, color: any): any
     layout = layout_new(font)
@@ -239,16 +239,16 @@ render_text(font: any, text: str, x: f64, y: f64, color: any): any
 
     {
         items = render_items,
-        size = layout_get_size(layout),
+        size = layout_get_layout:len(),
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
--- Config
--- Glyph
--- Font
--- Layout
--- Rendering
+# Config
+# Glyph
+# Font
+# Layout
+# Rendering

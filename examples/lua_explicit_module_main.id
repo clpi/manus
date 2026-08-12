@@ -1,2 +1,2 @@
-m = req "lua_explicit_module"
+m = lua_explicit_module
 assert(m.value == 42)

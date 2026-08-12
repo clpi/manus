@@ -1,23 +1,23 @@
--- std.math.wavelet — Wavelet transforms
--- For signal processing, compression, and denoising.
+# std.math.wavelet — Wavelet transforms
+# For signal processing, compression, and denoising.
 
--- ═══════════════════════════════════════════════════════════════
--- Haar Wavelet Transform
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Haar Wavelet Transform
+# ═══════════════════════════════════════════════════════════════
 
 haar_forward(data: any): any
     n = #data
     if n <= 1 return data end
 
-    -- Pad to even length if needed
-    padded = {table.unpack(data)}
+    # Pad to even length if needed
+    padded = {data:unpack()}
     if n % 2 != 0
         padded[n + 1] = padded[n]
         n += 1
     end
 
     result = {}
-    temp = {table.unpack(padded)}
+    temp = {padded:unpack()}
 
     level = n
     while level > 1
@@ -38,7 +38,7 @@ haar_forward(data: any): any
         level = half
     end
 
-    -- Reorder: store as [cA_n, cD_n, cD_{n-1}, ..., cD_1]
+    # Reorder: store as [cA_n, cD_n, cD_{n-1}, ..., cD_1]
     result
 end
 
@@ -46,7 +46,7 @@ haar_inverse(data: any): any
     n = #data
     if n <= 1 return data end
 
-    temp = {table.unpack(data)}
+    temp = {data:unpack()}
 
     level = 2
     while level <= n
@@ -63,11 +63,11 @@ haar_inverse(data: any): any
     temp
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Daubechies Wavelet (db4)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Daubechies Wavelet (db4)
+# ═══════════════════════════════════════════════════════════════
 
--- Filter coefficients for Daubechies-4
+# Filter coefficients for Daubechies-4
 DB4_LO_DE = {
     0.4829629131446902,
     0.8365163037378077,
@@ -155,7 +155,7 @@ db4_inverse(approx: any, detail: any): any
     detail_us = upsample(detail, 2)
     a = convolve(approx_us, DB4_LO_RE)
     d = convolve(detail_us, DB4_HI_RE)
-    n = math.min(#a, #d)
+    n = #a:min(#d)
     result = {}
     i = 1
     while i <= n
@@ -165,9 +165,9 @@ db4_inverse(approx: any, detail: any): any
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Multi-level Decomposition
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Multi-level Decomposition
+# ═══════════════════════════════════════════════════════════════
 
 decompose(data: any, levels: i64): any
     coeffs = {data}
@@ -195,20 +195,20 @@ reconstruct(decomp: any): any
     signal
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Denoising
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Denoising
+# ═══════════════════════════════════════════════════════════════
 
 denoise(signal: any, threshold: f64): any
     decomp = decompose(signal, 3)
 
-    -- Soft threshold detail coefficients
+    # Soft threshold detail coefficients
     i = 1
     while i <= #decomp.details
         j = 1
         while j <= #decomp.details[i]
             coeff = decomp.details[i][j]
-            if math.abs(coeff) < threshold
+            if coeff:abs() < threshold
                 decomp.details[i][j] = 0
             else
                 decomp.details[i][j] = coeff - math.sign(coeff) * threshold
@@ -221,12 +221,12 @@ denoise(signal: any, threshold: f64): any
     reconstruct(decomp)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
--- Haar
--- Daubechies
--- Multi-level
--- Denoise
--- Utility
+# Haar
+# Daubechies
+# Multi-level
+# Denoise
+# Utility

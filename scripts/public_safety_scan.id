@@ -1,19 +1,19 @@
--- Pass 10 A19 — public safety pre-scan (tracked + staged files).
--- Duo-native replacement for public_safety_scan.sh (foreign_code_ledger class D:
--- "scripts/*.sh -> Duo build system + std.script").
---
--- Exit 0 = no hits; exit 1 = review required.
---
--- The scan stays on git/grep because `git ls-files -z` is the only authority on
--- what is tracked; std.script.capture orchestrates it. That is the ledger's
--- intended shape, not a shell fallback.
---
--- State is threaded through return values rather than a module-level flag: a
--- function assigning to a file-scope variable does not make the write visible to
--- other functions (same codegen gap std.context documents), which produced a
--- scan that printed its hits and still exited 0.
+# Pass 10 A19 — public safety pre-scan (tracked + staged files).
+# Duo-native replacement for public_safety_scan.sh (foreign_code_ledger class D:
+# "scripts/*.sh -> Duo build system + std.script").
+#
+# Exit 0 = no hits; exit 1 = review required.
+#
+# The scan stays on git/grep because `git ls-files -z` is the only authority on
+# what is tracked; std.script.capture orchestrates it. That is the ledger's
+# intended shape, not a shell fallback.
+#
+# State is threaded through return values rather than a module-level flag: a
+# function assigning to a file-scope variable does not make the write visible to
+# other functions (same codegen gap std.context documents), which produced a
+# scan that printed its hits and still exited 0.
 
--- Emit captured hits; true when anything was found.
+# Emit captured hits; true when anything was found.
 flag_hits(hits: str, msg: str): bool
     if hits == ""
         return false
@@ -23,21 +23,21 @@ flag_hits(hits: str, msg: str): bool
     return true
 end
 
--- API keys, private key blocks, common token prefixes.
+# API keys, private key blocks, common token prefixes.
 secret_rg(): str
     "AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|-----BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY-----"
 end
 
--- Personal / machine paths that must not appear in tracked public files.
+# Personal / machine paths that must not appear in tracked public files.
 path_rg(): str
     "/Users/[a-zA-Z0-9._-]+|/home/[a-zA-Z0-9._-]+|C:\\\\Users\\\\"
 end
 
--- Agent/plan/ledger paths legitimately carry local paths; production docs and
--- source do not. `docs/history/` joins that list for the same reason
--- `docs/plans/` is on it: both are frozen historical evidence quoting sessions
--- verbatim, and rewriting a quotation to launder a path would make the record
--- less true, not more safe.
+# Agent/plan/ledger paths legitimately carry local paths; production docs and
+# source do not. `docs/history/` joins that list for the same reason
+# `docs/plans/` is on it: both are frozen historical evidence quoting sessions
+# verbatim, and rewriting a quotation to launder a path would make the record
+# less true, not more safe.
 path_excludes(): str
     "^(\\.agents/|\\.cursor/|\\.poolside/|\\.vscode/|docs/AGENT_|docs/history/|docs/plans/|docs/performance\\.md|scripts/mcp/|AGENTS\\.md|CLAUDE\\.md)"
 end
@@ -45,7 +45,7 @@ end
 main(): i64
     bad = false
 
-    if not std.script.fs_exists("LICENSE")
+    if !std.script.fs_exists("LICENSE")
         print("public_safety_scan: missing LICENSE at repo root")
         bad = true
     end
@@ -62,7 +62,7 @@ main(): i64
         bad = true
     end
 
-    -- Large unexpected binaries in the tracked tree.
+    # Large unexpected binaries in the tracked tree.
     large = std.script.capture("git ls-files -z | xargs -0 -I{} sh -c 'test -f \"{}\" && test $(wc -c < \"{}\") -gt 5000000 && echo \"{}\"' 2>/dev/null | head -10")
     if flag_hits(large, "tracked files >5MB (review above)")
         bad = true

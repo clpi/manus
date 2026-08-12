@@ -1,7 +1,7 @@
--- std.zip — ZIP archive utilities
+# std.zip — ZIP archive utilities
 
-proc = req("std.proc")
-fs = req("std.fs")
+proc = proc
+fs = fs
 
 create(archive_path: str, source_dir: str): bool
     cmd = "cd " .. source_dir .. " && zip -r -q " .. archive_path .. " ."
@@ -9,8 +9,8 @@ create(archive_path: str, source_dir: str): bool
 end
 
 create_files(archive_path: str, files: any): bool
-    if files == nil or rawlen(files) == 0 return false end
-    file_args = table.concat(files, " ")
+    if files == nil or files:len() == 0 return false end
+    file_args = files:concat(" ")
     cmd = "zip -q " .. archive_path .. " " .. file_args
     proc.exec(cmd) == 0
 end
@@ -41,7 +41,7 @@ list(archive_path: str): any
             end
             name = line:match("^%s+%d+%s+%S+%s+(.+)$")
             if name and name != ""
-                files[rawlen(files) + 1] = name
+                files[files:len() + 1] = name
             end
         end
         if line:match("^%s+Length")
@@ -65,7 +65,7 @@ list_detailed(archive_path: str): any
             end
             size, date, time, name = line:match("^%s+(%d+)%s+(%S+)%s+(%S+)%s+(.+)$")
             if name and name != ""
-                files[rawlen(files) + 1] = {
+                files[files:len() + 1] = {
                     name = name,
                     size = tonumber(size),
                     date = date,

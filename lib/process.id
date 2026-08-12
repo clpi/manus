@@ -1,0 +1,23 @@
+# process home — structured command + open across process boundary.
+# No popen. No @c. No lua. Never io.popen / io:popen spellings.
+#
+# Canonical capture path:
+#   c = command("git status")
+#   stream = c:open("r")
+#   text = stream:read("*a")
+
+command: any = (line: str)
+    { line = line }
+
+capture: str = (shellline: str)
+    c = command(shellline)
+    stream = c:open("r")
+    if stream == nil
+        return ""
+    out = ""
+    line = stream:read()
+    while line != nil
+        out = out .. line .. "\n"
+        line = stream:read()
+    stream:close()
+    out

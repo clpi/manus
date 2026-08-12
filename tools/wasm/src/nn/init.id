@@ -1,13 +1,12 @@
--- the engine NN inference engine — AI-native WASI-NN implementation
--- Replaces wart's src/wasm/wasi/nn/ (~170K of Zig) with ~350 lines of Duo
--- The AHA: @device(.auto) + Tensor types + nn{} blocks = ML inference that writes itself
+# the engine NN inference engine — AI-native WASI-NN implementation
+# Replaces wart's src/wasm/wasi/nn/ (~170K of Zig) with ~350 lines of Duo
+# The AHA: @device(.auto) + Tensor types + nn{} blocks = ML inference that writes itself
 
-global mem_mod = req "std.mem"
-global fmt = req "std.fmt"
+global mem_mod = mem
 
--- ═══════════════════════════════════════════════════════════════
--- Model encodings (matches WASI-NN spec)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Model encodings (matches WASI-NN spec)
+# ═══════════════════════════════════════════════════════════════
 ENCODING = {
   openvino = 0, onnx = 1, tensorflow = 2, pytorch = 3,
   tflite = 4, ggml = 5, autodetect = 255,
@@ -38,9 +37,9 @@ layerweights: {
   wdown: [float]
 }
 
--- ═══════════════════════════════════════════════════════════════
--- Accelerator dispatch — one line replaces wart's 130-line module
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Accelerator dispatch — one line replaces wart's 130-line module
+# ═══════════════════════════════════════════════════════════════
 @device(.auto)
 fun select_target(requested: i64, available: [any]): i64
   for _, dev in ipairs(available)
@@ -48,16 +47,16 @@ fun select_target(requested: i64, available: [any]): i64
       return requested
     end
   end
-  -- Fallback to CPU (never error — always compute)
+  # Fallback to CPU (never error — always compute)
   fmt.eprintln("nn: target {} unavailable, falling back to CPU", requested)
   TARGET.cpu
 end
 
--- ═══════════════════════════════════════════════════════════════
--- GGUF model loader (for LLM inference)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# GGUF model loader (for LLM inference)
+# ═══════════════════════════════════════════════════════════════
 fun gguf_load(data: str): any
-  -- Parse GGUF magic + header
+  # Parse GGUF magic + header
   assert(data:sub(1, 4) == "GGUF", "not a GGUF file")
   version = mem_mod.read_u32(data, 5)
   n_tensors = mem_mod.read_u64(data, 9)
@@ -70,7 +69,7 @@ fun gguf_load(data: str): any
     blob = data,
   }
 
-  -- Parse metadata key-value pairs
+  # Parse metadata key-value pairs
   pos = 25
   for i = 1, n_kv
     key, pos = gguf_read_string(data, pos)
@@ -79,7 +78,7 @@ fun gguf_load(data: str): any
     model.metadata[key] = val
   end
 
-  -- Parse tensor infos
+  # Parse tensor infos
   for i = 1, n_tensors
     name, pos = gguf_read_string(data, pos)
     n_dims, pos = mem_mod.read_u32(data, pos), pos + 4
@@ -105,17 +104,17 @@ fun gguf_read_value(data, pos, vtype): (any, i64)
   val: any = nil
   new_pos = pos
   match vtype
-  case 0   -- u8
+  case 0   # u8
     val, new_pos = mem_mod.read_byte(data, pos), pos + 1
-  case 1   -- i8
+  case 1   # i8
     val, new_pos = mem_mod.read_byte(data, pos), pos + 1
-  case 2   -- u16
+  case 2   # u16
     val, new_pos = mem_mod.read_u16(data, pos), pos + 2
-  case 4   -- u32
+  case 4   # u32
     val, new_pos = mem_mod.read_u32(data, pos), pos + 4
-  case 6   -- f32
+  case 6   # f32
     val, new_pos = mem_mod.read_f32(data, pos), pos + 4
-  case 8   -- string
+  case 8   # string
     val, new_pos = gguf_read_string(data, pos)
   else
     val, new_pos = 0, pos + 4
@@ -123,11 +122,11 @@ fun gguf_read_value(data, pos, vtype): (any, i64)
   return val, new_pos
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Transformer inference — the @device + @hot magic
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Transformer inference — the @device + @hot magic
+# ═══════════════════════════════════════════════════════════════
 
--- Transformer config read from GGUF metadata
+# Transformer config read from GGUF metadata
 fun transformer_config(model): any
   meta = model.metadata
   nembd = meta["llama.embedding_length"] or 4096
@@ -142,7 +141,7 @@ fun transformer_config(model): any
   }
 end
 
--- RMS LayerNorm — the building block
+# RMS LayerNorm — the building block
 @hot
 @device(.auto)
 fun rms_norm(x: [float], eps: float): [float]
@@ -151,7 +150,7 @@ fun rms_norm(x: [float], eps: float): [float]
   for i = 1, n
     ss = ss + x[i] * x[i]
   end
-  ss = 1.0 / math.sqrt(ss / n + eps)
+  ss = 1.0 / ss / n + eps:sqrt()
   result = {}
   for i = 1, n
     result[i] = x[i] * ss
@@ -159,57 +158,57 @@ fun rms_norm(x: [float], eps: float): [float]
   result
 end
 
--- Attention forward pass
+# Attention forward pass
 @hot
 @device(.auto)
 fun attention(x: [float], cfg: config, weights: layerweights): [float]
   headdim = cfg.nembd // cfg.nhead
   nhead = cfg.nhead
 
-  -- Q, K, V projections (matmul)
+  # Q, K, V projections (matmul)
   q = matmul(x, weights.wq, cfg.nembd, cfg.nembd)
   k = matmul(x, weights.wk, cfg.nembd, cfg.nembd)
   v = matmul(x, weights.wv, cfg.nembd, cfg.nembd)
 
-  -- Scaled dot-product attention per head
+  # Scaled dot-product attention per head
   scale = 1.0 / headdim:sqrt()
   out = {}
   for h = 0, nhead - 1
     offset = h * headdim
-    -- Score = Q · K^T / sqrt(d)
+    # Score = Q · K^T / sqrt(d)
     score = 0.0
     for d = 1, headdim
       score = score + q[offset + d] * k[offset + d]
     end
     score = score * scale
-    -- Softmax (single token, no causal mask needed for greedy)
-    weight = math.exp(score)
-    -- Weighted V
+    # Softmax (single token, no causal mask needed for greedy)
+    weight = score:exp()
+    # Weighted V
     for d = 1, headdim
       out[offset + d] = (out[offset + d] or 0) + weight * v[offset + d]
     end
   end
 
-  -- Output projection
+  # Output projection
   matmul(out, weights.wo, cfg.nembd, cfg.nembd)
 end
 
--- FFN (SwiGLU)
+# FFN (SwiGLU)
 @hot
 @device(.auto)
 fun ffn(x: [float], cfg: config, weights: layerweights): [float]
-  -- gate = silu(x @ W_gate)
+  # gate = silu(x @ W_gate)
   gate = matmul(x, weights.wgate, cfg.nembd, cfg.ffndim)
   up = matmul(x, weights.wup, cfg.nembd, cfg.ffndim)
-  -- SiLU activation
+  # SiLU activation
   for i = 1, cfg.ffndim
-    gate[i] = gate[i] * (1.0 / (1.0 + math.exp(-gate[i]))) * up[i]
+    gate[i] = gate[i] * (1.0 / (1.0 + -gate[i]:exp())) * up[i]
   end
-  -- Down projection
+  # Down projection
   matmul(gate, weights.wdown, cfg.ffndim, cfg.nembd)
 end
 
--- Dense matmul (SIMD-friendly via @hot)
+# Dense matmul (SIMD-friendly via @hot)
 @hot
 fun matmul(x: [float], w: [float], in_dim: i64, out_dim: i64): [float]
   result = {}
@@ -224,44 +223,44 @@ fun matmul(x: [float], w: [float], in_dim: i64, out_dim: i64): [float]
   result
 end
 
--- Full transformer forward
+# Full transformer forward
 @device(.auto)
 fun transformerforward(model, cfg: config, tokenid: i64): [float]
-  -- Embedding lookup
+  # Embedding lookup
   x = getembedding(model, tokenid, cfg.nembd)
 
-  -- Layer loop
+  # Layer loop
   for l = 0, cfg.nlayer - 1
     weights = getlayerweights(model, l)
 
-    -- Pre-attention norm
+    # Pre-attention norm
     normed = rms_norm(x, cfg.eps)
-    -- Attention + residual
+    # Attention + residual
     attnout = attention(normed, cfg, weights)
     for i = 1, cfg.nembd x[i] = x[i] + attnout[i] end
 
-    -- Pre-FFN norm
+    # Pre-FFN norm
     normed = rms_norm(x, cfg.eps)
-    -- FFN + residual
+    # FFN + residual
     ffnout = ffn(normed, cfg, weights)
     for i = 1, cfg.nembd x[i] = x[i] + ffnout[i] end
   end
 
-  -- Final norm + logits
+  # Final norm + logits
   x = rms_norm(x, cfg.eps)
   matmul(x, getoutputweight(model), cfg.nembd, cfg.nvocab)
 end
 
--- Helpers for weight loading
+# Helpers for weight loading
 fun getembedding(model, tokenid, nembd: i64): [float]
-  -- Read from tensor data at offset tokenid * nembd * 4 bytes
+  # Read from tensor data at offset tokenid * nembd * 4 bytes
   result = {}
-  for i = 1, nembd result[i] = 0.0 end  -- placeholder
+  for i = 1, nembd result[i] = 0.0 end  # placeholder
   result
 end
 
 fun getlayerweights(model, layeridx): { wq: [float], wk: [float], wv: [float], wo: [float], wgate: [float], wup: [float], wdown: [float] }
-  -- Return weight struct for layer (loads from GGUF blob)
+  # Return weight struct for layer (loads from GGUF blob)
   { wq = {}, wk = {}, wv = {}, wo = {}, wgate = {}, wup = {}, wdown = {} }
 end
 
@@ -269,29 +268,29 @@ fun getoutputweight(model): [float]
   {}
 end
 
--- ═══════════════════════════════════════════════════════════════
--- ONNX model loader (simplified)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# ONNX model loader (simplified)
+# ═══════════════════════════════════════════════════════════════
 fun onnx_load(data: str): any
-  -- ONNX uses protobuf; minimal parser
+  # ONNX uses protobuf; minimal parser
   { encoding = ENCODING.onnx, data = data, graph = {} }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Model registry (wasi-nn compliant)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Model registry (wasi-nn compliant)
+# ═══════════════════════════════════════════════════════════════
 fun registry_new(): any
   {
-    models = {},       -- name → { versions, latest }
+    models = {},       # name → { versions, latest }
     devices = {
       { target = TARGET.cpu, device_name = "cpu", available = true, compute_units = 0, memory_bytes = 0 },
     },
-    backends = {},     -- encoding → loader function
+    backends = {},     # encoding → loader function
   }
 end
 
 fun registry_register_model(reg, name: str, data: str, encoding: i64, target: i64)
-  -- Auto-detect encoding from magic bytes
+  # Auto-detect encoding from magic bytes
   if encoding == ENCODING.autodetect
     if data:sub(1, 4) == "GGUF"
       encoding = ENCODING.ggml
@@ -324,42 +323,42 @@ fun registry_infer(reg, name: str, inputs: [any]): [any]
   if not entry error("model not found: " .. name) end
   model = entry.latest
 
-  -- Dispatch based on encoding
-  if model.version  -- GGUF
+  # Dispatch based on encoding
+  if model.version  # GGUF
     cfg = transformer_config(model)
-    -- Run transformer on first input token
+    # Run transformer on first input token
     token = inputs[1] and inputs[1][1] or 0
     logits = transformerforward(model, cfg, token)
     return { logits }
   else
-    -- ONNX: generic graph execution (stub)
+    # ONNX: generic graph execution (stub)
     return inputs
   end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 M = {}
 M.ENCODING = ENCODING
 M.TARGET = TARGET
 M.DTYPE = DTYPE
--- Accelerator
+# Accelerator
 M.accel = {
   select_target = select_target,
   list_devices = fun() "cpu" end,
 }
--- Loaders
+# Loaders
 M.gguf_load = gguf_load
 M.onnx_load = onnx_load
--- Transformer
+# Transformer
 M.transformer_config = transformer_config
 M.transformerforward = transformerforward
 M.rms_norm = rms_norm
 M.attention = attention
 M.ffn = ffn
 M.matmul = matmul
--- Registry
+# Registry
 M.registry = {
   new = registry_new,
   register_model = registry_register_model,

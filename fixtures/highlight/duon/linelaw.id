@@ -1,11 +1,11 @@
--- surface: duon
--- LINE-LAW (§0i, Pass 119). One-lining is FREE while every clause boundary
--- carries a structural token — the binder below is that token, so the whole
--- clause fits one line legally.
+# surface: duon
+# LINE-LAW (§0i, Pass 119). One-lining is FREE while every clause boundary
+# carries a structural token — the binder below is that token, so the whole
+# clause fits one line legally.
 lo: i64 = 0
--- The counter-case, and it is the reason the rule is stated mechanically: a
--- space between two expression-starts NEVER separates. So the guarded value
--- cannot be one-lined; it is newline plus indent, and there is no `;` to buy
--- the shortcut back because THE SEMICOLON DOES NOT EXIST.
+# The counter-case, and it is the reason the rule is stated mechanically: a
+# space between two expression-starts NEVER separates. So the guarded value
+# cannot be one-lined; it is newline plus indent, and there is no `;` to buy
+# the shortcut back because THE SEMICOLON DOES NOT EXIST.
 if x < lo
     lo

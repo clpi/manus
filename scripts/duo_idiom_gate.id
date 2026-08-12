@@ -1,31 +1,23 @@
--- duo_idiom_gate — compatibility entry for the build step.
---
--- The law lives in scripts/idiomgate.id and scans added lines from a unified
--- diff. Keep this file small so pre-commit and zig build use the same scanner.
+# duo_idiom_gate — compatibility entry for the build step.
+#
+# The law lives in scripts/idiomgate.id and scans added lines from a unified
+# diff on stdin. Keep this file small so pre-commit and zig build use the same scanner.
 
 script = std.script
 
-main(): i64
+main: i64 = ()
     root = script.chomp(script.capture("git rev-parse --show-toplevel 2>/dev/null"))
     if root == ""
         print("duo_idiom_gate: fail no git root")
-        std.os.exit(3)
+        return 3
 
-    tmp = script.chomp(script.capture("mktemp -t duoidiomgate"))
-    if tmp == ""
-        print("duo_idiom_gate: fail no temp file")
-        std.os.exit(3)
-
-    script.run("cd '{root}' && git diff -U0 --diff-filter=ACM -- '*.id' > '{tmp}'")
-    bytes = script.chomp(script.capture("wc -c < '{tmp}'"))
+    bytes = script.chomp(script.capture("cd '{root}' && git diff -U0 --diff-filter=ACM -- '*.id' | wc -c"))
     if bytes == "" or bytes == "0"
-        script.run("rm -f '{tmp}'")
         print("duo_idiom_gate: PASS no added duo diff")
-        std.os.exit(0)
+        return 0
 
-    rc = script.run("cd '{root}' && DUOGATEDIFF='{tmp}' ./zig-out/bin/duo run scripts/idiomgate.id")
-    script.run("rm -f '{tmp}'")
+    rc = script.run("cd '{root}' && git diff -U0 --diff-filter=ACM -- '*.id' | ./zig-out/bin/idol run scripts/idiomgate.id")
     if rc != 0
-        std.os.exit(rc)
+        return rc
     print("duo_idiom_gate: PASS")
     0

@@ -1,11 +1,11 @@
--- Nested ambient std access: std.os and std.json reached through dotted paths,
--- no activity namespace. std.script is a denied junk drawer (Pass 100 §15), so
--- the file is written and read through std.os directly.
+# Nested ambient std access: std.os and std.json reached through dotted paths,
+# no activity namespace. std.script is a denied junk drawer (Pass 100 §15), so
+# the file is written and read through std.os directly.
 path = "/tmp/duo_nested_req_smoke.json"
 std.os.write_file(path, "{\"ok\":true,\"n\":7}")
 
 data = std.json.decode(std.os.read_file(path))
 ok = data.ok == true and data.n == 7
 
--- `..` joins existing string bindings only (B-5); a bool needs the str edge.
+# `..` joins existing string bindings only (B-5); a bool needs the str edge.
 print("RESULT nested_std_req_ok = " .. tostring(ok))

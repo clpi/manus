@@ -1,11 +1,11 @@
--- @comp.grammar EBNF → O(b^d) expansion fragments (comptime, native C output)
--- Run: duo run examples/meta_grammar_showcase.id
+# @comp.grammar EBNF → O(b^d) expansion fragments (comptime, native C output)
+# Run: duo run examples/meta_grammar_showcase.id
 
 frag(meta): str
     "/* grammar[" .. to(str)(meta.index) .. "/" .. to(str)(meta.count) .. "]: " .. meta.expansion .. " */\n"
 end
 
--- Tiny expr grammar: S → num | S + S | ( S )
+# Tiny expr grammar: S → num | S + S | ( S )
 GRAMMAR = "S: num | S plus S | lpar S rpar ; plus: + ; lpar: ( ; rpar: ) ; num: 0 | 1 | 2"
 
 CODE = @comp.grammar(GRAMMAR, frag)

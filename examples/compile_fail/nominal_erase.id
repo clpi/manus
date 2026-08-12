@@ -1,14 +1,14 @@
--- constitution §46 `law.nominal`, read the OTHER WAY — a `feet` does not
--- silently become a plain double either.
---
--- One law, two directions. `examples/compile_fail/nominal_bare.id` refuses
--- widening a bare `f64` INTO `feet`; this refuses dropping `feet` back OUT to
--- `f64`. A nominal descriptor that leaks in one direction is a unit system that
--- reports the wrong number exactly once, at the boundary where somebody stopped
--- writing the descriptor down.
---
--- The repair is the same edge in both files: convert, and the trie says what
--- the conversion costs.
+# constitution §46 `law.nominal`, read the OTHER WAY — a `feet` does not
+# silently become a plain double either.
+#
+# One law, two directions. `examples/compile_fail/nominal_bare.id` refuses
+# widening a bare `f64` INTO `feet`; this refuses dropping `feet` back OUT to
+# `f64`. A nominal descriptor that leaks in one direction is a unit system that
+# reports the wrong number exactly once, at the boundary where somebody stopped
+# writing the descriptor down.
+#
+# The repair is the same edge in both files: convert, and the trie says what
+# the conversion costs.
 
 type feet = f64
 

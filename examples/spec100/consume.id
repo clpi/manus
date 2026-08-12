@@ -1,9 +1,9 @@
--- Pass 100 §6, the consumption loop: `while b = cursor:next() mix(b)`. `if`
--- had the binding condition and `while` did not, so the golden `leb128` and
--- `lexer` of §20 both stop on their first loop.
--- The loop ends when the binding is falsy, so nil terminates it and nothing
--- reads a sentinel (B-8).
--- expect: 26
+# Pass 100 §6, the consumption loop: `while b = cursor:next() mix(b)`. `if`
+# had the binding condition and `while` did not, so the golden `leb128` and
+# `lexer` of §20 both stop on their first loop.
+# The loop ends when the binding is falsy, so nil terminates it and nothing
+# reads a sentinel (B-8).
+# expect: 26
 src = { 3, 5, 7, 11 }
 pos = 0
 pull = ()

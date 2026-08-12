@@ -1,0 +1,165 @@
+# FTCFTW evidence ledger for the Idol SHC performance claim chain.
+#
+# This is a read-only index, not a benchmark runner. It names the `.id` gates
+# whose measured outputs must exist before any broad Idol-only performance
+# claim is admissible.
+#
+# CONSTITUTIONAL FRAMING (C0 §47, §49, law.project.ftcftw):
+#
+#   claim.refused = "faster than c across the board without exception"
+#   claim.made    = "more semantic knowledge never reduces the valid realization set"
+#
+# The defensible construction compares THREE DISTINCT REALIZATION FAMILIES on
+# the exact exercised path, never collapsing them:
+#
+#   direct native (--backend=direct)  >  C-equivalent ()  >  wasm oracle (wasmtime)
+#
+# Each family reports separately. A steady-state win is not an FTCFTW result.
+# Generated-C evidence is not direct-native evidence. Direct-native evidence is
+# not Wasm evidence. Unexercised dimensions are NOT EXERCISED, never inferred.
+#
+# "100% SHC native lowering" is coverage over the REACHABLE Idol corpus
+# (native_census), not file count. C-emitter proof fixtures are unreachable by
+# construction and must not shrink the denominator.
+
+chomp: str = (text: str)
+    n = text:len()
+    while n > 0
+        c = text:byte(n)
+        if c != 10 and c != 13 and c != 32
+            break
+        n -= 1
+    text:sub(1, n)
+
+capture: str = (cmd: str)
+    f = io.popen(cmd, "r")
+    if f == nil
+        return ""
+    out = ""
+    line = f:read("*a")
+    if line != nil
+        out = line
+    f:close()
+    chomp(out)
+
+cap: str = (cmd: str)
+    chomp(capture(cmd))
+
+shellstatus: i64 = (cmd: str)
+    to(i64)(cap("( " .. cmd .. " ) >/dev/null 2>&1; echo $?"))
+
+lines: any = (text: str)
+    out = {}
+    start = 1
+    i = 1
+    n = text:len()
+    while i <= n
+        if text:byte(i) == 10
+            if i > start
+                out[out:len() + 1] = text:sub(start, i - 1)
+            start = i + 1
+        i += 1
+    if start <= n
+        out[out:len() + 1] = text:sub(start, n)
+    out
+
+has: bool = (text: str, part: str)
+    text:find(part, 1, true) != nil
+
+present: bool = (path: str)
+    shellstatus("test -e '" .. path .. "'") == 0
+
+grepfile: bool = (path: str, pat: str)
+    has(cap("cat '" .. path .. "' 2>/dev/null"), pat)
+
+requirepath: i64 = (path: str, tag: str, pat: str)
+    if grepfile(path, pat)
+        print("  ok {tag}")
+        return 0
+    print("  miss {tag}: {pat}")
+    1
+
+control: i64 = ()
+    selfpath = "scripts/ftcftwledger.id"
+    presentpat = "ftcftwledger: pass all evidence contracts present"
+    absentpat = "ftcftwledger-control-" .. "absent"
+    if !grepfile(selfpath, presentpat)
+        print("ftcftwledger: fail control present pattern")
+        return 1
+    if grepfile(selfpath, absentpat)
+        print("ftcftwledger: fail control absent pattern")
+        return 1
+    print("ftcftwledger: control ok")
+    0
+
+row: i64 = (name: str, path: str, proof: str, a: str, b: str, c: str, d: str)
+    state = "missing"
+    if present(path)
+        state = "present"
+    print("{state} {name} {path}")
+    print("  {proof}")
+    result = 0
+    if state == "missing"
+        result = 1
+    else
+        result += requirepath(path, "contract", a)
+        result += requirepath(path, "oracle", b)
+        result += requirepath(path, "negative", c)
+        result += requirepath(path, "verdict", d)
+    result
+
+main: i64 = ()
+    missing = control()
+    missing += row("native", "scripts/native_census.id",
+        "direct-native coverage over the reachable Idol examples corpus",
+        "native census (--backend=direct",
+        "NATIVE_FLOOR",
+        "0 programs compiled natively",
+        "native_census: PASS")
+    missing += row("cfloor", "scripts/cfloor.id",
+        "direct vs c-equivalent lowering plan and measurement (law.c.floor, law.perf.dominance)",
+        "law.c.floor",
+        "awk-oracle",
+        "cfloor: FAIL",
+        "cfloor: PASS")
+    missing += row("diff", "scripts/native_differential.id",
+        "direct and c backends agree on stdout and exit for blocking fixtures",
+        "native_differential: PASS",
+        "c backend failed to compile",
+        "native_differential: FAIL",
+        "stdout")
+    missing += row("bench", "scripts/run_benchmark.id",
+        "Idol-hosted kernels match reference C before any speed comparison",
+        "reference C benchmark",
+        "RESULT_FAIL_FLAG = 1",
+        "Benchmark failed:",
+        "Duo .lua/.id >= C")
+    missing += row("runtime", "scripts/runtime_bench.id",
+        "Idol Wasm runtime measured against wasmtime with answer-checked exec axis",
+        "wasmtime is the oracle",
+        "answer mismatch",
+        "losses += 1",
+        "runtime bench: PASS")
+    missing += row("shc", "scripts/shcledger.id",
+        "live bootstrap blockers to 100% Idol self-hosting authority",
+        "shcledger -- current blockers",
+        "audit     scripts/embedledger",
+        "shcledger: FAIL",
+        "manifest contract")
+    missing += row("perf", "scripts/perfledger.id",
+        "parent performance evidence index must remain wired",
+        "perfledger: pass all evidence contracts present",
+        "perfledger: fail",
+        "perfledger: fail control",
+        "perfledger: control ok")
+
+    print("")
+    print("claim.refused faster than c across the board without exception")
+    print("claim.made    law.project.ftcftw + law.perf.dominance on supported corpus")
+    print("ordering      direct native > c-equivalent > wasm oracle (separate evidence per family)")
+
+    if missing == 0
+        print("ftcftwledger: pass all evidence contracts present")
+        return 0
+    print("ftcftwledger: fail missing contracts {missing}")
+    1

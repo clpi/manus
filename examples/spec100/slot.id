@@ -1,38 +1,38 @@
--- Pass 100 §9 / §20 — a RELATION SLOT inside a descriptor body, with a level
--- and without.
---
---     token: {
---         span: i64
---         format(sink) = (out) …
---     }
---
--- §20's golden `token` carries one; a descriptor body accepted `name: shape`
--- and nothing else, so it reported "expected ':', got '('". A slot is an EDGE
--- homed on the descriptor, so it is hoisted as a function whose first
--- parameter IS the receiver, typed by that descriptor — the one shape both
--- call spellings lower to.
---
--- Both spellings are exercised because they resolve through different
--- machinery and one of them is still partial:
---
---   width(pad)(t, 3)   operation-first, through the level. The level selects
---                      the edge, so a second edge at another level must give
---                      a different answer — `width(trim)` does.
---   t:plain(3)         the receiver face over an UNLEVELLED slot, projected
---                      onto the free function by codegen (gap[025]).
---
--- A LEVELLED receiver face (`t:width(pad)`) has no resolution yet; that is
--- still gap[025] and is deliberately not asserted here.
--- expect: 7 1 12
+# Pass 100 §9 / §20 — a RELATION SLOT inside a descriptor body, with a level
+# and without.
+#
+#     token: {
+#         span: i64
+#         format(sink) = (out) …
+#     }
+#
+# §20's golden `token` carries one; a descriptor body accepted `name: shape`
+# and nothing else, so it reported "expected ':', got '('". A slot is an EDGE
+# homed on the descriptor, so it is hoisted as a function whose first
+# parameter IS the receiver, typed by that descriptor — the one shape both
+# call spellings lower to.
+#
+# Both spellings are exercised because they resolve through different
+# machinery and one of them is still partial:
+#
+#   width(pad)(t, 3)   operation-first, through the level. The level selects
+#                      the edge, so a second edge at another level must give
+#                      a different answer — `width(trim)` does.
+#   t:plain(3)         the receiver face over an UNLEVELLED slot, projected
+#                      onto the free function by codegen (gap[025]).
+#
+# A LEVELLED receiver face (`t:width(pad)`) has no resolution yet; that is
+# still gap[025] and is deliberately not asserted here.
+# expect: 7 1 12
 
 token: {
     span: i64
     width(pad) = (extra: i64): i64 self.span + extra
     width(trim) = (extra: i64): i64 self.span - extra
-    plain = (extra: i64): i64 self.span * extra
+    plain: i64 = (extra: i64)self.span * extra
 }
 
-main = (): i64
+main: i64 = ()
     t: token = { span = 4 }
     a = width(pad)(t, 3)
     b = width(trim)(t, 3)

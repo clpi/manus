@@ -1,14 +1,14 @@
--- test_plugin.id — verify the Neovim plugin files are structurally valid.
---
--- Duo replacement for tests/test_plugin.sh (monoglot census).
---
--- Checks the required files exist and that Neovim can load the ftdetect script
--- headless. Does NOT require Neovim: a missing nvim skips the live test and
--- still reports the file-existence results.
---
--- The plugin's own .vim and lua/duo/init.lua stay as they are -- Neovim's
--- runtime reads vimscript and Lua, so those are a HOST requirement, the same
--- class as examples/metal_compute.m. A Duo file there would simply not load.
+# test_plugin.id — verify the Neovim plugin files are structurally valid.
+#
+# Duo replacement for tests/test_plugin.sh (monoglot census).
+#
+# Checks the required files exist and that Neovim can load the ftdetect script
+# headless. Does NOT require Neovim: a missing nvim skips the live test and
+# still reports the file-existence results.
+#
+# The plugin's own .vim and lua/duo/init.lua stay as they are -- Neovim's
+# runtime reads vimscript and Lua, so those are a HOST requirement, the same
+# class as examples/metal_compute.m. A Duo file there would simply not load.
 
 _ROOT = "tests"
 
@@ -25,14 +25,14 @@ _bad(msg: str): void
     _fail = _fail + 1
 end
 
--- grep -c exits nonzero on no match, so the COUNT is what is read, not the
--- status: capture keeps stdout either way and "" means no match.
+# grep -c exits nonzero on no match, so the COUNT is what is read, not the
+# status: capture keeps stdout either way and "" means no match.
 _grep(pattern: str, path: str): bool
     n = std.script.chomp(std.script.capture("grep -cE \"" .. pattern .. "\" " .. path .. " 2>/dev/null"))
     n != "" and n != "0"
 end
 
-main = (): i64
+main: i64 = ()
     for _i, f in {"ftdetect/duo.vim", "syntax/duo.vim", "plugin/duo.vim", "lua/duo/init.lua"}
         path = _ROOT .. "/" .. f
         if std.script.fs_exists(path)

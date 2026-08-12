@@ -1,0 +1,27 @@
+# GAP-124 graph projection — resident facts must agree with edge census.
+
+main: i64 = ()
+    code: i64 = 0
+    if ingest.sync() != 0
+        code = 1
+    if ingest.resident["read"]["world"] != "io"
+        code = 2
+    if ingest.resident["connect"]["world"] != "net"
+        code = 3
+    if ingest.resident["compile"]["world"] != "jit"
+        code = 4
+    if !ingest.edges:match("|net/connect|")
+        code = 5
+    if !ingest.edges:match("|mcp/call|")
+        code = 6
+    if !ingest.view(edges):match("|bit/f64|")
+        code = 7
+    if !ingest.view(edges):match("|i64/bit|")
+        code = 8
+    if !census.view(edges):match("|bit/f64|")
+        code = 9
+    if !census.view(edges):match("|i64/bit|")
+        code = 10
+    if code == 0
+        print("semantic graph: pass")
+    code

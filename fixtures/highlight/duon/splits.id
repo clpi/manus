@@ -1,6 +1,6 @@
--- surface: duon
--- §0g FINE SPLITS, one per line. These are cards WITHIN roles, never new roles:
--- the discriminator is HUE, and none of these forks it. Precision does.
+# surface: duon
+# §0g FINE SPLITS, one per line. These are cards WITHIN roles, never new roles:
+# the discriminator is HUE, and none of these forks it. Precision does.
 n: i64 = 0
 n += 1
 same = n == 1
@@ -9,8 +9,8 @@ point.x = 3.0
 area: m * m
 xs = (n + 1) * 2
 t = token{ kind = .eof }
--- Pass 118 §4: the SPACE WALK is its own ROLE, descriptor-tinted. The same
--- bracket walks descriptor space or retrieves by a value key, and the CONTENT
--- is what decides — R5, operands select the operator.
+# Pass 118 §4: the SPACE WALK is its own ROLE, descriptor-tinted. The same
+# bracket walks descriptor space or retrieves by a value key, and the CONTENT
+# is what decides — R5, operands select the operator.
 sig = to[str]
 k = xs[0]

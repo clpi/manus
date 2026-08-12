@@ -4,7 +4,7 @@ spawn(fn: any, ...args): any
     args
   }
   co = coroutine.create(()
-    fn(table.unpack(args_list))
+    fn(args_list:unpack())
   end)
   __sync_run_queue[#__sync_run_queue + 1] = {
     co = co
@@ -16,7 +16,7 @@ yield(): void
 end
 run(): void
   while #__sync_run_queue > 0
-    task = table.remove(__sync_run_queue, 1)
+    task = __sync_run_queue:remove(1)
     ok, err = coroutine.resume(task.co)
     if not ok
       io.write("sync: task error: " .. err:to(str) .. "\n")
@@ -29,7 +29,7 @@ step(): bool
   if #__sync_run_queue == 0
     return false
   end
-  task = table.remove(__sync_run_queue, 1)
+  task = __sync_run_queue:remove(1)
   ok, err = coroutine.resume(task.co)
   if not ok
     io.write("sync: task error: " .. err:to(str) .. "\n")
@@ -52,7 +52,7 @@ channel_send(ch: any, val: any): void
     error("send on closed channel")
   end
   if #ch._recv_waiters > 0
-    w = table.remove(ch._recv_waiters, 1)
+    w = ch._recv_waiters:remove(1)
     w._slot[1] = val
     w._slot[2] = true
     __sync_run_queue[#__sync_run_queue + 1] = w
@@ -71,9 +71,9 @@ channel_send(ch: any, val: any): void
 end
 channel_recv(ch: any): any
   if #ch._queue > 0
-    val = table.remove(ch._queue, 1)
+    val = ch._queue:remove(1)
     if #ch._send_waiters > 0
-      w = table.remove(ch._send_waiters, 1)
+      w = ch._send_waiters:remove(1)
       ch._queue[#ch._queue + 1] = w._val
       __sync_run_queue[#__sync_run_queue + 1] = w
     end
@@ -96,9 +96,9 @@ channel_recv(ch: any): any
 end
 channel_try_recv(ch: any): any
   if #ch._queue > 0
-    val = table.remove(ch._queue, 1)
+    val = ch._queue:remove(1)
     if #ch._send_waiters > 0
-      w = table.remove(ch._send_waiters, 1)
+      w = ch._send_waiters:remove(1)
       ch._queue[#ch._queue + 1] = w._val
       __sync_run_queue[#__sync_run_queue + 1] = w
     end
@@ -118,7 +118,7 @@ end
 channel_drain(ch: any): any
   out = {}
   while #ch._queue > 0
-    out[#out + 1] = table.remove(ch._queue, 1)
+    out[#out + 1] = ch._queue:remove(1)
   end
   return out
 end

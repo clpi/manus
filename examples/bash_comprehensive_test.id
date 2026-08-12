@@ -1,21 +1,21 @@
--- Test both traditional and bash-style fun calls
+# Test both traditional and bash-style fun calls
 
 greet(name: str): str
     "Hello, " .. name
 end
 
--- Traditional Lua-style call
+# Traditional Lua-style call
 print(greet("World"))
 
--- Bash-style call with string
+# Bash-style call with string
 print greet "Duo"
 
--- Bash-style call with numbers
+# Bash-style call with numbers
 add(a: i64, b: i64): i64
     a + b
 end
 
 print add 10 20
 
--- Traditional call with numbers
+# Traditional call with numbers
 print(add(5, 7))

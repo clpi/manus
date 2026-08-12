@@ -1,6 +1,6 @@
--- std.database.sql — Generic SQL interface (mirrors Go's database/sql)
--- Provides a registry of drivers and a generic DB handle.
--- Actual drivers (sqlite, postgres, mysql) register themselves.
+# std.database.sql — Generic SQL interface (mirrors Go's database/sql)
+# Provides a registry of drivers and a generic DB handle.
+# Actual drivers (sqlite, postgres, mysql) register themselves.
 
 new(): void
     return {drivers = {}}
@@ -19,7 +19,7 @@ end
 databases(db: any)
     out = {}
     for k in db.drivers
-        out[rawlen(out) + 1] = k
+        out[out:len() + 1] = k
     end
     return out
 end

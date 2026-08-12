@@ -1,7 +1,7 @@
--- Sieve of Eratosthenes below 30. Two values: the count and the last prime,
--- because a sieve that marks nothing still counts something.
--- expect: 10 29
-main = (): i64
+# Sieve of Eratosthenes below 30. Two values: the count and the last prime,
+# because a sieve that marks nothing still counts something.
+# expect: 10 29
+main: i64 = ()
     limit = 30
     flag = { }
     for i = 1, limit

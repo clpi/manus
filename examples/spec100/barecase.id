@@ -1,59 +1,59 @@
--- constitution §41 `resolution.rule` — BARE IDENTITY + SEMANTIC DEMAND +
--- AVAILABLE HOMES -> ONE IDENTITY, OR A DIAGNOSTIC. gap[087].
---
---     law{ kind = invariant }      -- canonical
---     law{ kind = .invariant }     -- retirement debt
---
--- WHAT THIS FIXTURE EXISTS TO CATCH. §40 recorded obligation 1 satisfied
--- because both forms PARSE. Measured by value, that was the wrong test: the
--- dotted case compiled and the bare case died in the C backend on "use of
--- undeclared identifier 'eof'". The parser accepted the name and nothing bound
--- it. gap[087] correctly BLOCKED the §40/§41 retirement of 231 sites on this,
--- and recorded the durable rule: **a retirement obligation is not satisfied by
--- the replacement PARSING; it is satisfied by the replacement RESOLVING AND
--- LOWERING, proven by value.**
---
--- THE DEMAND COMES FROM THE OTHER OPERAND, WHICH IS WHY IT IS NOT CIRCULAR.
--- §41's rule needs an expected descriptor known INDEPENDENTLY of the token
--- being resolved. In `k == eof` that is `k`, whose case-set was fixed by the
--- binding above it. Nothing about `eof` contributes to deciding what `eof`
--- means.
---
--- THE AMBIGUOUS SPELLING IS THE POINT, and it is why this fixture declares two
--- case-sets. `number` is a case of BOTH `token.kind` and `glyph.form`. A
--- resolver that indexed case names and picked the home that declared one would
--- answer whichever file parsed first — a wrong VALUE rather than a failed
--- build, which is the failure mode this repository keeps paying for. Here the
--- same spelling resolves to two DIFFERENT homes eight lines apart, and only the
--- demand tells them apart.
---
--- VERIFIED BY VALUE, and every wrong resolution prints a different number:
---
---   1     k == eof            resolves and is TRUE
---   10    eof == k            the reversed operand order also resolves
---   5     k != number         `number` takes token.kind, and k is not it
---   200   f == number         the SAME spelling takes glyph.form, and f IS it
---   30000 f == circle         must NOT fire — a real case of the right home
---   1000  k == number         must NOT fire — cross-home comparison is false
---
--- 216 is the only total. A case that resolved to nothing compares equal to
--- nothing and prints 0; one that resolved to a constant and compared equal to
--- everything prints 31216; a resolver that picked `number`'s home by index
--- rather than by demand prints 16 or 1216 depending on which it picked.
--- expect: 216
---
--- LOWERING IS NOT WORSE, which `law.canon.performance` (§42) makes a
--- requirement and not a nicety: the emitted C is `k == duo_token__kind_eof`,
--- byte-identical to what the dotted form produces, because the resolver
--- rewrites the bare name into THE SAME NODE the dotted and fully-named forms
--- already produce (A3 ONE EDGE — nothing downstream learns a bare name was
--- written).
---
--- WHAT IS NOT CLOSED. Descriptor CONSTRUCTION with a case field — `law{ kind =
--- invariant }` itself — still fails, in BOTH the bare and the dotted spelling,
--- and gap[087] separates it by name as an independent defect. This fixture
--- closes the COMPARISON half, which is the half the 231-site migration was
--- blocked on.
+# constitution §41 `resolution.rule` — BARE IDENTITY + SEMANTIC DEMAND +
+# AVAILABLE HOMES -> ONE IDENTITY, OR A DIAGNOSTIC. gap[087].
+#
+#     law{ kind = invariant }      # canonical
+#     law{ kind = .invariant }     # retirement debt
+#
+# WHAT THIS FIXTURE EXISTS TO CATCH. §40 recorded obligation 1 satisfied
+# because both forms PARSE. Measured by value, that was the wrong test: the
+# dotted case compiled and the bare case died in the C backend on "use of
+# undeclared identifier 'eof'". The parser accepted the name and nothing bound
+# it. gap[087] correctly BLOCKED the §40/§41 retirement of 231 sites on this,
+# and recorded the durable rule: **a retirement obligation is not satisfied by
+# the replacement PARSING; it is satisfied by the replacement RESOLVING AND
+# LOWERING, proven by value.**
+#
+# THE DEMAND COMES FROM THE OTHER OPERAND, WHICH IS WHY IT IS NOT CIRCULAR.
+# §41's rule needs an expected descriptor known INDEPENDENTLY of the token
+# being resolved. In `k == eof` that is `k`, whose case-set was fixed by the
+# binding above it. Nothing about `eof` contributes to deciding what `eof`
+# means.
+#
+# THE AMBIGUOUS SPELLING IS THE POINT, and it is why this fixture declares two
+# case-sets. `number` is a case of BOTH `token.kind` and `glyph.form`. A
+# resolver that indexed case names and picked the home that declared one would
+# answer whichever file parsed first — a wrong VALUE rather than a failed
+# build, which is the failure mode this repository keeps paying for. Here the
+# same spelling resolves to two DIFFERENT homes eight lines apart, and only the
+# demand tells them apart.
+#
+# VERIFIED BY VALUE, and every wrong resolution prints a different number:
+#
+#   1     k == eof            resolves and is TRUE
+#   10    eof == k            the reversed operand order also resolves
+#   5     k != number         `number` takes token.kind, and k is not it
+#   200   f == number         the SAME spelling takes glyph.form, and f IS it
+#   30000 f == circle         must NOT fire — a real case of the right home
+#   1000  k == number         must NOT fire — cross-home comparison is false
+#
+# 216 is the only total. A case that resolved to nothing compares equal to
+# nothing and prints 0; one that resolved to a constant and compared equal to
+# everything prints 31216; a resolver that picked `number`'s home by index
+# rather than by demand prints 16 or 1216 depending on which it picked.
+# expect: 216
+#
+# LOWERING IS NOT WORSE, which `law.canon.performance` (§42) makes a
+# requirement and not a nicety: the emitted C is `k == duo_token__kind_eof`,
+# byte-identical to what the dotted form produces, because the resolver
+# rewrites the bare name into THE SAME NODE the dotted and fully-named forms
+# already produce (A3 ONE EDGE — nothing downstream learns a bare name was
+# written).
+#
+# WHAT IS NOT CLOSED. Descriptor CONSTRUCTION with a case field — `law{ kind =
+# invariant }` itself — still fails, in BOTH the bare and the dotted spelling,
+# and gap[087] separates it by name as an independent defect. This fixture
+# closes the COMPARISON half, which is the half the 231-site migration was
+# blocked on.
 
 token: {
     kind: { name, number, eof }
@@ -65,7 +65,7 @@ glyph: {
     area: f64
 }
 
-main = (): i64
+main: i64 = ()
     n = 0
     k = token.kind.eof
     f = glyph.form.number
@@ -77,12 +77,12 @@ main = (): i64
     if k != number
         n = n + 5
 
-    -- Same spelling, other home. Decided by `f`, not by an index.
+    # Same spelling, other home. Decided by `f`, not by an index.
     if f == number
         n = n + 200
 
-    -- Both of these resolve and are FALSE. A fixture that only asserted the
-    -- true rows would pass on a resolver that answered "equal" to everything.
+    # Both of these resolve and are FALSE. A fixture that only asserted the
+    # true rows would pass on a resolver that answered "equal" to everything.
     if f == circle
         n = n + 30000
     if k == number

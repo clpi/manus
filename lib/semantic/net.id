@@ -1,0 +1,7 @@
+# net world — socket and stream relations.
+
+connect = { world = "net", possessed = false, callable = true, operation = false }
+send = { world = "net", possessed = true, callable = true, operation = false }
+recv = { world = "net", possessed = true, callable = true, operation = false }
+listen = { world = "net", possessed = false, callable = true, operation = false }
+accept = { world = "net", possessed = true, callable = true, operation = false }

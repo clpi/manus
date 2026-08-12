@@ -1,7 +1,7 @@
--- Structural owner for one semantic application.
---
--- Identities are supplied by the graph. This module preserves their complete
--- shape; it does not mint, authenticate, project, or observe them.
+# Structural owner for one semantic application.
+#
+# Identities are supplied by the graph. This module preserves their complete
+# shape; it does not mint, authenticate, project, or observe them.
 
 identity: {
     meaning: i64

@@ -1,4 +1,4 @@
-std = req "std"
+std = std
 
 concept ContractShape
     id: i64
@@ -17,10 +17,10 @@ end
 if shape_contract.count != 2
     error("concept contract should include field and method checks")
 end
-if not string.find(shape_contract.expression, "user.id")
+if not shape_contract.expression:find("user.id")
     error("concept contract did not include field descriptor")
 end
-if not string.find(shape_contract.report, "hash")
+if not shape_contract.report:find("hash")
     error("concept contract did not include method descriptor")
 end
 
@@ -30,10 +30,10 @@ if member_contract.count != shape_contract.count
 end
 
 shape_docs = std.contracts.concept_markdown("ContractShape", @comp.concepts.members("ContractShape"))
-if not string.find(shape_docs, "field id: i64")
+if not shape_docs:find("field id: i64")
     error("concept markdown should include field type")
 end
-if not string.find(shape_docs, "method hash")
+if not shape_docs:find("method hash")
     error("concept markdown should include method signature")
 end
 
@@ -64,13 +64,13 @@ signature_key = std.contracts.concept_specialization_key(
     "UserAdapter",
     @comp.concepts.members("ContractShape")
 )
-if not string.find(signature_key, "UserAdapter::ContractShape")
+if not signature_key:find("UserAdapter::ContractShape")
     error("concept specialization key should include target and concept")
 end
-if not string.find(signature_key, "method:hash")
+if not signature_key:find("method:hash")
     error("concept specialization key should include method signature")
 end
-if not string.find(signature_key, "any, i64")
+if not signature_key:find("any, i64")
     error("concept specialization key should include parameter types")
 end
 
@@ -81,25 +81,25 @@ c_report = std.contracts.concept_target_c_report(
     "UserAdapter",
     @comp.concepts.members("ContractShape")
 )
-if not string.find(c_report.c_wrappers, "static inline int64_t UserAdapter_hash")
+if not c_report.c_wrappers:find("static inline int64_t UserAdapter_hash")
     error("concept C report should generate typed static wrappers")
 end
-if not string.find(c_report.c_wrappers, "void* self", 1, true)
+if not c_report.c_wrappers:find("void* self", 1, true)
     error("concept C report should lower any receiver to void*")
 end
-if not string.find(c_report.c_wrappers, "int64_t arg1")
+if not c_report.c_wrappers:find("int64_t arg1")
     error("concept C report should lower i64 parameters")
 end
-if not string.find(c_report.c_wrappers, "hash(self, arg1)", 1, true)
+if not c_report.c_wrappers:find("hash(self, arg1)", 1, true)
     error("concept C report should call the target method slot")
 end
-if not string.find(c_report.c_accessors, "static inline int64_t UserAdapter_get_id")
+if not c_report.c_accessors:find("static inline int64_t UserAdapter_get_id")
     error("concept C report should generate typed field accessors")
 end
-if not string.find(c_report.c_accessors, "return ((UserAdapter*)self)->id;", 1, true)
+if not c_report.c_accessors:find("return ((UserAdapter*)self)->id;", 1, true)
     error("concept C report should access target struct fields")
 end
-if not string.find(c_report.c_source, "UserAdapter_get_id") or not string.find(c_report.c_source, "UserAdapter_hash")
+if not c_report.c_source:find("UserAdapter_get_id") or not c_report.c_source:find("UserAdapter_hash")
     error("concept C source should include accessors and wrappers")
 end
 
@@ -118,7 +118,7 @@ coverage_bad = std.contracts.concept_coverage(
 if coverage_bad.ok or coverage_bad.missing_count != 1
     error("concept coverage should report missing method rows")
 end
-if not string.find(std.contracts.coverage_report(coverage_bad), "missing method:hash")
+if not std.contracts.coverage_report(coverage_bad):find("missing method:hash")
     error("concept coverage report should name missing method")
 end
 
@@ -177,7 +177,7 @@ map_copy_dst = { id = 1 }
 if std.maps.copy(map_copy_dst, map_subject) != 2 or map_copy_dst.score != 3
     error("std.maps.copy should copy direct table entries")
 end
--- A `fun` body must be on its own line; the single-line form never parses.
+# A `fun` body must be on its own line; the single-line form never parses.
 map_eq = fun(a, b)
     a == b
 end
@@ -204,7 +204,7 @@ table_clone = std.table.clone(table_subject)
 if table_clone.id != 7 or table_clone.score != 3
     error("std.table.clone should preserve direct table entries")
 end
-if #std.table.keys(table_subject) != 2 or #std.table.values(table_subject) != 2
+if #table_subject:keys() != 2 or #std.table.values(table_subject) != 2
     error("std.table key/value views should use direct table iteration")
 end
 table_merged = std.table.merge({ id = 1 }, { score = 3 })
@@ -230,14 +230,14 @@ if #pipe_c <= 0
 end
 
 zig_c = std.foreign.zig_to_c("fn add(a: i64, b: i64) i64 { return a + b; }")
-if not string.find(zig_c, "int64_t")
+if not zig_c:find("int64_t")
     error("foreign Zig bridge did not map i64")
 end
 
 std.rewrite.clear()
 std.rewrite.register_algebraic()
 rules = std.rewrite.summary()
-if not string.find(rules, "add_zero")
+if not rules:find("add_zero")
     error("rewrite bundle did not register algebraic rules")
 end
 

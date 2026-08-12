@@ -1,0 +1,55 @@
+#!/bin/sh
+set -eu
+
+repo="$(cd "$(dirname "$0")/../../.." && pwd)"
+manifest="${IDOL_MCP_MANIFEST:-$repo/tools/node/dev/mcp.manifest.json}"
+duo="${IDOL_BOOTSTRAP_BIN:-${DUO_BIN:-$repo/zig-out/bin/duo}}"
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "probe-mcp: jq is required" >&2
+  exit 1
+fi
+
+if [ ! -x "$duo" ]; then
+  echo "probe-mcp: missing compiler artifact: $duo" >&2
+  exit 1
+fi
+
+work="$(mktemp -d "${TMPDIR:-/tmp}/idol-probe.XXXXXX")"
+retain_work=0
+cleanup_probe() {
+  if [ "$retain_work" -eq 0 ]; then
+    rm -rf "$work"
+  else
+    echo "probe-mcp: preserved artifacts=$work" >&2
+  fi
+}
+trap cleanup_probe EXIT
+
+printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n' > "$work/init.json"
+
+fail=0
+jq -r '.servers[] | [.name, .entry, .backend] | @tsv' "$manifest" |
+while IFS='	' read -r name entry backend; do
+  out="$work/$name.response.json"
+  artifact="$work/$name.out"
+  err="$work/$name.err"
+  echo "probe-mcp: command bin=$duo run --backend=$backend entry=$repo/$entry artifact=$artifact" >&2
+  if ! (cd "$repo" && DUO_ROOT="$repo" DUO_BIN="$duo" "$duo" run "--backend=$backend" -o "$artifact" "$repo/$entry" < "$work/init.json" > "$out" 2>"$err"); then
+    echo "probe-mcp: $name process failed" >&2
+    cat "$err" >&2 || true
+    echo "probe-mcp: response=$out artifact=$artifact stderr=$err" >&2
+    exit 20
+  fi
+  if ! grep -q '"protocolVersion":"2024-11-05"' "$out"; then
+    echo "probe-mcp: $name did not answer initialize" >&2
+    cat "$out" >&2 || true
+    exit 21
+  fi
+  echo "ok $name initialize"
+done || fail=$?
+
+if [ "$fail" -ne 0 ]; then
+  retain_work=1
+fi
+exit "$fail"

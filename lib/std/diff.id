@@ -1,15 +1,15 @@
--- std.diff — Structural diff algorithms
--- Myers O(ND) text diff, LCS, and hierarchical table diff.
--- Critical for: config management, CRDTs, code review, data sync,
--- ML model versioning, and version control systems.
+# std.diff — Structural diff algorithms
+# Myers O(ND) text diff, LCS, and hierarchical table diff.
+# Critical for: config management, CRDTs, code review, data sync,
+# ML model versioning, and version control systems.
 
--- ═══════════════════════════════════════════════════════════════
--- LCS: longest common subsequence
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# LCS: longest common subsequence
+# ═══════════════════════════════════════════════════════════════
 
 lcs(a: any, b: any): any
-    la = rawlen(a)
-    lb = rawlen(b)
+    la = a:len()
+    lb = b:len()
     prev = {}
     curr = {}
     j = 0
@@ -36,13 +36,13 @@ lcs(a: any, b: any): any
         curr = tmp
         i += 1
     end
-    -- backtrack
+    # backtrack
     out = {}
     i = la
     j = lb
     while i > 0 and j > 0
         if a[i] == b[j]
-            out[rawlen(out) + 1] = {op = "equal", old = i, new = j, value = a[i]}
+            out[out:len() + 1] = {op = "equal", old = i, new = j, value = a[i]}
             i -= 1
             j -= 1
         else
@@ -64,18 +64,18 @@ lcs(a: any, b: any): any
         end
     end
     ops = {}
-    k = rawlen(out)
+    k = out:len()
     while k >= 1
-        ops[rawlen(ops) + 1] = out[k]
+        ops[ops:len() + 1] = out[k]
         k -= 1
     end
     ops
 end
 
--- lcs_length: return just the length of the LCS (faster, no backtrack).
+# lcs_length: return just the length of the LCS (faster, no backtrack).
 lcs_length(a: any, b: any): i64
-    la = rawlen(a)
-    lb = rawlen(b)
+    la = a:len()
+    lb = b:len()
     prev = {}
     curr = {}
     j = 0
@@ -105,13 +105,13 @@ lcs_length(a: any, b: any): i64
     prev[lb + 1]
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Myers diff: edit script (insert/delete) for sequences
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Myers diff: edit script (insert/delete) for sequences
+# ═══════════════════════════════════════════════════════════════
 
 myers(a: any, b: any): any
-    la = rawlen(a)
-    lb = rawlen(b)
+    la = a:len()
+    lb = b:len()
     max = la + lb
     if max == 0 return {} end
     v = {}
@@ -140,7 +140,7 @@ myers(a: any, b: any): any
         for sk, sv in v
             snap[sk] = sv
         end
-        trace[rawlen(trace) + 1] = snap
+        trace[trace:len() + 1] = snap
         d += 1
     end
     {}
@@ -148,7 +148,7 @@ end
 
 myers_backtrack(a: any, b: any, trace: any, x: any, y: any): any
     edits = {}
-    d = rawlen(trace)
+    d = trace:len()
     while d > 0
         snap = trace[d]
         k = x - y
@@ -159,55 +159,55 @@ myers_backtrack(a: any, b: any, trace: any, x: any, y: any): any
         end
         prev_y = prev_x - k
         while x > prev_x and y > prev_y
-            edits[rawlen(edits) + 1] = {op = "equal", value = a[x]}
+            edits[edits:len() + 1] = {op = "equal", value = a[x]}
             x -= 1
             y -= 1
         end
         if d > 1
             if x == prev_x
-                edits[rawlen(edits) + 1] = {op = "insert", value = b[y]}
+                edits[edits:len() + 1] = {op = "insert", value = b[y]}
                 y -= 1
             else
-                edits[rawlen(edits) + 1] = {op = "delete", value = a[x]}
+                edits[edits:len() + 1] = {op = "delete", value = a[x]}
                 x -= 1
             end
         end
         d -= 1
     end
     out = {}
-    i = rawlen(edits)
+    i = edits:len()
     while i >= 1
-        out[rawlen(out) + 1] = edits[i]
+        out[out:len() + 1] = edits[i]
         i -= 1
     end
     out
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Unified diff: produce human-readable line diff
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Unified diff: produce human-readable line diff
+# ═══════════════════════════════════════════════════════════════
 
 unified(old_lines: any, new_lines: any): any
     ops = myers(old_lines, new_lines)
     out = {}
     i = 1
-    while i <= rawlen(ops)
+    while i <= ops:len()
         op = ops[i]
         if op.op == "equal"
-            out[rawlen(out) + 1] = " " .. op.value
+            out[out:len() + 1] = " " .. op.value
         elseif op.op == "delete"
-            out[rawlen(out) + 1] = "-" .. op.value
+            out[out:len() + 1] = "-" .. op.value
         elseif op.op == "insert"
-            out[rawlen(out) + 1] = "+" .. op.value
+            out[out:len() + 1] = "+" .. op.value
         end
         i += 1
     end
     out
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Table diff: hierarchical structural diff for nested tables
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Table diff: hierarchical structural diff for nested tables
+# ═══════════════════════════════════════════════════════════════
 
 table_diff(old: any, new_: any): any
     diffs = {}
@@ -218,20 +218,20 @@ end
 table_diff_into(old: any, new_: any, path: str, diffs: any): void
     if old == nil and new_ == nil return end
     if old == nil
-        diffs[rawlen(diffs) + 1] = {op = "add", path = path, value = new_}
+        diffs[diffs:len() + 1] = {op = "add", path = path, value = new_}
         return
     end
     if new_ == nil
-        diffs[rawlen(diffs) + 1] = {op = "remove", path = path}
+        diffs[diffs:len() + 1] = {op = "remove", path = path}
         return
     end
     if type(old) != type(new_)
-        diffs[rawlen(diffs) + 1] = {op = "replace", path = path, old = old, new = new_}
+        diffs[diffs:len() + 1] = {op = "replace", path = path, old = old, new = new_}
         return
     end
     if type(old) != "table"
         if old != new_
-            diffs[rawlen(diffs) + 1] = {op = "replace", path = path, old = old, new = new_}
+            diffs[diffs:len() + 1] = {op = "replace", path = path, old = old, new = new_}
         end
         return
     end
@@ -257,21 +257,21 @@ table_diff_into(old: any, new_: any, path: str, diffs: any): void
                 if p != "" p = p .. "." end
                 p = p .. k:to(str)
             end
-            diffs[rawlen(diffs) + 1] = {op = "add", path = p, value = v}
+            diffs[diffs:len() + 1] = {op = "add", path = p, value = v}
         end
     end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Utility: count additions, removals, replacements
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Utility: count additions, removals, replacements
+# ═══════════════════════════════════════════════════════════════
 
 stats(diffs: any): any
     adds = 0
     removes = 0
     replaces = 0
     i = 1
-    while i <= rawlen(diffs)
+    while i <= diffs:len()
         if diffs[i].op == "add" adds += 1
         elseif diffs[i].op == "remove" removes += 1
         elseif diffs[i].op == "replace" replaces += 1
@@ -281,7 +281,7 @@ stats(diffs: any): any
     {adds = adds, removes = removes, replaces = replaces, total = adds + removes + replaces}
 end
 
--- has_changes: return true if the diff list is non-empty.
+# has_changes: return true if the diff list is non-empty.
 has_changes(diffs: any): bool
-    rawlen(diffs) > 0
+    diffs:len() > 0
 end

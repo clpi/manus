@@ -1,9 +1,9 @@
--- std.graphics.material — Material and texture management
--- For ward's graphics pipeline and rendering.
+# std.graphics.material — Material and texture management
+# For ward's graphics pipeline and rendering.
 
--- ═══════════════════════════════════════════════════════════════
--- Texture
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Texture
+# ═══════════════════════════════════════════════════════════════
 
 texture_new(width: i64, height: i64, channels: i64): any
     data = {}
@@ -61,12 +61,12 @@ texture_set_pixel(tex: any, x: i64, y: i64, pixel: any): void
 end
 
 texture_sample(tex: any, u: f64, v: f64): any
-    x = math.floor(u * tex.width) % tex.width
-    y = math.floor(v * tex.height) % tex.height
+    x = u * tex.width:floor() % tex.width
+    y = v * tex.height:floor() % tex.height
     texture_get_pixel(tex, x, y)
 end
 
-texture_resize(tex: any, new_width: i64, new_height: i64): any
+texture_retex: any, new_width: i64, new_height: i64:len(): any
     new_tex = texture_new(new_width, new_height, tex.channels)
     x_scale = tex.width / new_width
     y_scale = tex.height / new_height
@@ -75,8 +75,8 @@ texture_resize(tex: any, new_width: i64, new_height: i64): any
     while y < new_height
         x = 0
         while x < new_width
-            src_x = math.floor(x * x_scale)
-            src_y = math.floor(y * y_scale)
+            src_x = x * x_scale:floor()
+            src_y = y * y_scale:floor()
             pixel = texture_get_pixel(tex, src_x, src_y)
             texture_set_pixel(new_tex, x, y, pixel)
             x += 1
@@ -116,9 +116,9 @@ texture_flip_v(tex: any): any
     new_tex
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Procedural Textures
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Procedural Textures
+# ═══════════════════════════════════════════════════════════════
 
 texture_checkerboard(size: i64, square_size: i64): any
     tex = texture_new(size, size, 3)
@@ -146,9 +146,9 @@ texture_gradient(size: i64, color1: any, color2: any): any
         x = 0
         while x < size
             t = x / size
-            r = math.floor(color1[1] + (color2[1] - color1[1]) * t)
-            g = math.floor(color1[2] + (color2[2] - color1[2]) * t)
-            b = math.floor(color1[3] + (color2[3] - color1[3]) * t)
+            r = color1[1] + (color2[1] - color1[1]) * t:floor()
+            g = color1[2] + (color2[2] - color1[2]) * t:floor()
+            b = color1[3] + (color2[3] - color1[3]) * t:floor()
             texture_set_pixel(tex, x, y, {r, g, b})
             x += 1
         end
@@ -157,9 +157,9 @@ texture_gradient(size: i64, color1: any, color2: any): any
     tex
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Material
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Material
+# ═══════════════════════════════════════════════════════════════
 
 material_new(name: str): any
     {
@@ -176,7 +176,7 @@ material_new(name: str): any
         ao_texture = nil,
         emissive_texture = nil,
         double_sided = false,
-        alpha_mode = "opaque",  -- "opaque", "mask", "blend"
+        alpha_mode = "opaque",  # "opaque", "mask", "blend"
         alpha_cutoff = 0.5,
     }
 end
@@ -209,9 +209,9 @@ material_set_texture(mat: any, texture_type: str, texture: any): void
     end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Material Library
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Material Library
+# ═══════════════════════════════════════════════════════════════
 
 library_new(): any
     {
@@ -240,7 +240,7 @@ library_list(lib: any): any
     names
 end
 
--- Default materials
+# Default materials
 default_white(): any
     mat = material_new("default_white")
     mat.albedo = {r = 1, g = 1, b = 1}
@@ -300,36 +300,36 @@ emissive(color: any, strength: f64): any
     mat
 end
 
--- ═══════════════════════════════════════════════════════════════
--- PBR Shading (simplified)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# PBR Shading (simplified)
+# ═══════════════════════════════════════════════════════════════
 
 pbr_shade(material: any, normal: any, light_dir: any, view_dir: any): any
-    -- Simplified PBR shading
-    n_dot_l = math.max(0, normal.x * light_dir.x + normal.y * light_dir.y + normal.z * light_dir.z)
+    # Simplified PBR shading
+    n_dot_l = 0:max(normal.x * light_dir.x + normal.y * light_dir.y + normal.z * light_dir.z)
 
-    -- Diffuse
+    # Diffuse
     diffuse = {
         r = material.albedo.r * n_dot_l,
         g = material.albedo.g * n_dot_l,
         b = material.albedo.b * n_dot_l,
     }
 
-    -- Specular (simplified)
+    # Specular (simplified)
     half_dir = {
         x = light_dir.x + view_dir.x,
         y = light_dir.y + view_dir.y,
         z = light_dir.z + view_dir.z,
     }
-    len = math.sqrt(half_dir.x * half_dir.x + half_dir.y * half_dir.y + half_dir.z * half_dir.z)
+    len = half_dir.x * half_dir.x + half_dir.y * half_dir.y + half_dir.z * half_dir.z:sqrt()
     if len > 0
         half_dir.x = half_dir.x / len
         half_dir.y = half_dir.y / len
         half_dir.z = half_dir.z / len
     end
 
-    n_dot_h = math.max(0, normal.x * half_dir.x + normal.y * half_dir.y + normal.z * half_dir.z)
-    spec = math.pow(n_dot_h, 32 * (1 - material.roughness))
+    n_dot_h = 0:max(normal.x * half_dir.x + normal.y * half_dir.y + normal.z * half_dir.z)
+    spec = n_dot_h:pow(32 * (1 - material.roughness))
 
     specular = {
         r = spec * material.metallic,
@@ -337,21 +337,21 @@ pbr_shade(material: any, normal: any, light_dir: any, view_dir: any): any
         b = spec * material.metallic,
     }
 
-    -- Combine
+    # Combine
     {
-        r = math.min(1, diffuse.r + specular.r),
-        g = math.min(1, diffuse.g + specular.g),
-        b = math.min(1, diffuse.b + specular.b),
+        r = 1:min(diffuse.r + specular.r),
+        g = 1:min(diffuse.g + specular.g),
+        b = 1:min(diffuse.b + specular.b),
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
--- Texture
--- Procedural
--- Material
--- Library
--- Defaults
--- Shading
+# Texture
+# Procedural
+# Material
+# Library
+# Defaults
+# Shading

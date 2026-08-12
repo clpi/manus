@@ -1,9 +1,9 @@
--- std.math.fft — Fast Fourier Transform
--- For signal processing, audio analysis, and convolution acceleration.
+# std.math.fft — Fast Fourier Transform
+# For signal processing, audio analysis, and convolution acceleration.
 
--- ═══════════════════════════════════════════════════════════════
--- Complex Number Operations (for FFT)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Complex Number Operations (for FFT)
+# ═══════════════════════════════════════════════════════════════
 
 complex_new(re: f64, im: f64): any
     {re = re, im = im}
@@ -33,24 +33,24 @@ complex_conjugate(a: any): any
 end
 
 complex_abs(a: any): f64
-    math.sqrt(a.re * a.re + a.im * a.im)
+    a.re * a.re + a.im * a.im:sqrt()
 end
 
 complex_phase(a: any): f64
     math.atan2(a.im, a.re)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- FFT (Cooley-Tukey algorithm)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# FFT (Cooley-Tukey algorithm)
+# ═══════════════════════════════════════════════════════════════
 
 fft(x: any): any
     n = #x
     if n == 0 return {} end
 
-    -- Check if power of 2
+    # Check if power of 2
     if n & (n - 1) != 0
-        -- Pad to next power of 2
+        # Pad to next power of 2
         new_n = 1
         while new_n < n
             new_n *= 2
@@ -70,7 +70,7 @@ fft(x: any): any
 
     if n == 1 return x end
 
-    -- Bit-reversal permutation
+    # Bit-reversal permutation
     j = 0
     i = 1
     while i < n
@@ -89,12 +89,12 @@ fft(x: any): any
         i += 1
     end
 
-    -- FFT butterfly
+    # FFT butterfly
     length = 2
     while length <= n
         half = length >> 1
         angle = -2 * math.pi / length
-        wlen = complex_new(math.cos(angle), math.sin(angle))
+        wlen = complex_new(angle:cos(), angle:sin())
 
         i = 0
         while i < n
@@ -116,15 +116,15 @@ fft(x: any): any
     x
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Inverse FFT
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Inverse FFT
+# ═══════════════════════════════════════════════════════════════
 
 ifft(x: any): any
     n = #x
     if n == 0 return {} end
 
-    -- Conjugate input
+    # Conjugate input
     conjugated = {}
     i = 1
     while i <= n
@@ -132,10 +132,10 @@ ifft(x: any): any
         i += 1
     end
 
-    -- Forward FFT
+    # Forward FFT
     result = fft(conjugated)
 
-    -- Conjugate and scale
+    # Conjugate and scale
     scaled = {}
     i = 1
     while i <= n
@@ -145,9 +145,9 @@ ifft(x: any): any
     scaled
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Real-valued FFT (for real signals)
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Real-valued FFT (for real signals)
+# ═══════════════════════════════════════════════════════════════
 
 rfft(signal: any): any
     n = #signal
@@ -172,9 +172,9 @@ irfft(spectrum: any, n: i64): any
     signal
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Power Spectrum
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Power Spectrum
+# ═══════════════════════════════════════════════════════════════
 
 power_spectrum(spectrum: any): any
     ps = {}
@@ -206,20 +206,20 @@ phase_spectrum(spectrum: any): any
     phase
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Convolution via FFT
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Convolution via FFT
+# ═══════════════════════════════════════════════════════════════
 
 convolve(a: any, b: any): any
     n = #a + #b - 1
 
-    -- Pad to next power of 2
+    # Pad to next power of 2
     fft_size = 1
     while fft_size < n
         fft_size *= 2
     end
 
-    -- Zero-pad inputs
+    # Zero-pad inputs
     fa = {}
     fb = {}
     i = 1
@@ -237,11 +237,11 @@ convolve(a: any, b: any): any
         i += 1
     end
 
-    -- FFT both
+    # FFT both
     fa_fft = fft(fa)
     fb_fft = fft(fb)
 
-    -- Multiply in frequency domain
+    # Multiply in frequency domain
     product = {}
     i = 1
     while i <= fft_size
@@ -249,10 +249,10 @@ convolve(a: any, b: any): any
         i += 1
     end
 
-    -- Inverse FFT
+    # Inverse FFT
     result = ifft(product)
 
-    -- Extract real part
+    # Extract real part
     output = {}
     i = 1
     while i <= #a + #b - 1
@@ -262,12 +262,12 @@ convolve(a: any, b: any): any
     output
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Correlation via FFT
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Correlation via FFT
+# ═══════════════════════════════════════════════════════════════
 
 correlate(a: any, b: any): any
-    -- Cross-correlation: correlate(a, b) = convolve(a, reverse(b))
+    # Cross-correlation: correlate(a, b) = convolve(a, reverse(b))
     b_rev = {}
     i = #b
     while i >= 1
@@ -281,9 +281,9 @@ autocorrelate(x: any): any
     correlate(x, x)
 end
 
--- ═══════════════════════════════════════════════════════════════
--- DFT (Discrete Fourier Transform) - for small sizes
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# DFT (Discrete Fourier Transform) - for small sizes
+# ═══════════════════════════════════════════════════════════════
 
 dft(x: any): any
     n = #x
@@ -294,7 +294,7 @@ dft(x: any): any
         j = 0
         while j < n
             angle = -2 * math.pi * k * j / n
-            w = complex_new(math.cos(angle), math.sin(angle))
+            w = complex_new(angle:cos(), angle:sin())
             sum = complex_add(sum, complex_mul(x[j + 1], w))
             j += 1
         end
@@ -313,7 +313,7 @@ idft(x: any): any
         j = 0
         while j < n
             angle = 2 * math.pi * k * j / n
-            w = complex_new(math.cos(angle), math.sin(angle))
+            w = complex_new(angle:cos(), angle:sin())
             sum = complex_add(sum, complex_mul(x[j + 1], w))
             j += 1
         end
@@ -323,12 +323,12 @@ idft(x: any): any
     result
 end
 
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# Module exports
+# ═══════════════════════════════════════════════════════════════
 
--- Complex
--- FFT
--- Spectrum
--- Convolution
--- DFT
+# Complex
+# FFT
+# Spectrum
+# Convolution
+# DFT

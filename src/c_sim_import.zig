@@ -1,4 +1,4 @@
-//! Pass 5 Layer B — map C frontend records into SIM v0 entities.
+//! Layer B — map C frontend records into SIM v0 entities.
 const std = @import("std");
 const c_frontend = @import("c_frontend.zig");
 const c_layout_verify = @import("c_layout_verify.zig");
@@ -256,7 +256,7 @@ test "c_sim_import: point.h → SIM entities" {
         \\} CPoint;
         \\double distance2(CPoint point);
     ;
-    var snap = try importHeaderSource(std.testing.allocator, "examples/pass5/fixtures/point.h", src);
+    var snap = try importHeaderSource(std.testing.allocator, "fixtures/point.h", src);
     defer snap.deinit(std.testing.allocator);
 
     try std.testing.expect(snap.entities.len >= 2);

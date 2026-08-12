@@ -1,7 +1,7 @@
--- std.ml.device — Device selection (runtime table + compile-time @device hints)
---
--- Use `@device(.auto)` on functions for backend selection at compile time.
--- This module tracks runtime placement for tensors and pipelines.
+# std.ml.device — Device selection (runtime table + compile-time @device hints)
+#
+# Use `@device(.auto)` on functions for backend selection at compile time.
+# This module tracks runtime placement for tensors and pipelines.
 
 cpu(): any
     return { kind = "cpu", id = 0 }
@@ -29,32 +29,32 @@ wasm_simd(): any
     return { kind = "wasm", id = 0 }
 end
 
--- Pick best device for current host (Metal on Apple, CUDA on NVIDIA, else CPU)
+# Pick best device for current host (Metal on Apple, CUDA on NVIDIA, else CPU)
 best(): any
-    -- Check for CUDA
+    # Check for CUDA
     cuda_env = os.getenv("CUDA_VISIBLE_DEVICES")
     if cuda_env and cuda_env != ""
         return cuda(0)
     end
-    -- Check for Apple Silicon / Metal via uname
+    # Check for Apple Silicon / Metal via uname
     handle = io.popen("uname -m 2>/dev/null")
     if handle
         arch = handle:read("*l") or ""
         handle:close()
         if arch == "arm64" or arch == "aarch64"
-            -- Likely Apple Silicon — check for Metal support
+            # Likely Apple Silicon — check for Metal support
             metal_handle = io.popen("system_profiler SPDisplaysDataType 2>/dev/null | head -5")
             if metal_handle
                 info = metal_handle:read("*a") or ""
                 metal_handle:close()
-                if string.find(info, "Metal") or string.find(info, "Apple")
+                if info:find("Metal") or info:find("Apple")
                     return metal(0)
                 end
             end
-            return metal(0)  -- Default to Metal on ARM
+            return metal(0)  # Default to Metal on ARM
         end
     end
-    -- Check for NVIDIA GPU
+    # Check for NVIDIA GPU
     nvidia_handle = io.popen("nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1")
     if nvidia_handle
         gpu_name = nvidia_handle:read("*l") or ""
@@ -66,7 +66,7 @@ best(): any
     cpu()
 end
 
--- Place a tensor descriptor on a device (metadata only until GPU buffers land)
+# Place a tensor descriptor on a device (metadata only until GPU buffers land)
 on(tensor, dev): any
     out = {}
     for k, v in tensor
@@ -76,7 +76,7 @@ on(tensor, dev): any
     return out
 end
 
--- Pipeline stage placement: { encoder = metal(), llm = cuda(0), ... }
+# Pipeline stage placement: { encoder = metal(), llm = cuda(0), ... }
 place(stages): any
     return { type = "placement", stages = stages }
 end

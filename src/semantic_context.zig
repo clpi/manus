@@ -1,4 +1,4 @@
-//! Pass 12 Goal D / Audit 6 — bounded semantic context packages for agents.
+//! Goal D / Audit 6 — bounded semantic context packages for agents.
 //!
 //! Reproducible from stable IDs; not a second semantic graph.
 const std = @import("std");
@@ -19,7 +19,7 @@ pub const ContextPackage = struct {
     accepted_operations: []const []const u8,
 };
 
-/// Bounded context for M1 keyword classifier work (P12-M1).
+/// Bounded context for M1 keyword classifier work.
 pub const m1_keyword_classifier: ContextPackage = .{
     .package_id = "ctx.m1.keyword_classifier",
     .task = "Inspect or modify duo:lexer:keyword_classifier without full compiler tree",
@@ -32,7 +32,7 @@ pub const m1_keyword_classifier: ContextPackage = .{
         "src/lexer.zig",
         "src/realization.zig",
         "src/token_classify_gen.zig",
-        "lib/std/token/classify.duo",
+        "lib/std/token/classify.id",
     },
     .governing_contracts = &.{
         "token_semantic.intent",
@@ -47,7 +47,6 @@ pub const m1_keyword_classifier: ContextPackage = .{
         "token_semantic: all legal classifiers agree",
         "token_semantic: compareKeywordClassifiers",
         "lex: standard keywords",
-        "examples/pass12_m1_diff.duo",
     },
     .public_claims = &.{
         "claim.m1_keyword_semantic",
@@ -63,7 +62,7 @@ pub const m1_keyword_classifier: ContextPackage = .{
     },
 };
 
-/// Bounded context for M2 Ward decode work (P12-M2).
+/// Bounded context for M2 Ward decode work (M2).
 pub const m2_wasm_decode: ContextPackage = .{
     .package_id = "ctx.m2.wasm_decode",
     .task = "Inspect or modify duo:wasm:decode_instruction without full Ward tree",
@@ -73,11 +72,10 @@ pub const m2_wasm_decode: ContextPackage = .{
         "std_wasm_decode__decode_instruction",
     },
     .canonical_owners = &.{
-        "lib/std/wasm/decode.duo",
+        "lib/std/wasm/decode.id",
         "src/wasm_semantic_gen.zig",
         "src/wasm_semantic.zig",
         "src/native_barrier_checks.zig",
-        "examples/pass9/decode_semantic_smoke.duo",
     },
     .governing_contracts = &.{
         "wasm_decode_semantic.intent",
@@ -88,9 +86,7 @@ pub const m2_wasm_decode: ContextPackage = .{
         "expect_native=false",
     },
     .affected_tests = &.{
-        "pass11_ward_barrier_tests",
         "wasm_decode_differential",
-        "examples/pass9/decode_semantic_smoke.duo",
         "duo dev barrier check ward_decode",
     },
     .public_claims = &.{

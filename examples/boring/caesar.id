@@ -1,8 +1,8 @@
--- Caesar cipher, shift 3, lowercase only. Encode then decode: the round trip
--- must return the original, which a shift of zero would also do, so the
--- ciphertext is asserted too.
--- expect: kdo hal
-shift = (s: str, by: i64): str
+# Caesar cipher, shift 3, lowercase only. Encode then decode: the round trip
+# must return the original, which a shift of zero would also do, so the
+# ciphertext is asserted too.
+# expect: kdo hal
+shift: str = (s: str, by: i64)
     out = ""
     i = 0
     n = #s
@@ -19,7 +19,7 @@ shift = (s: str, by: i64): str
     out
 end
 
-main = (): i64
+main: i64 = ()
     a = shift("hal", 3)
     b = shift(a, 23)
     print("{a} {b}")

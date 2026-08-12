@@ -1,49 +1,49 @@
--- STABLE SEMANTIC IDENTITY for the relation store — the gate. gap[103].
---
--- WHAT IT GUARDS, and why it is two different kinds of check.
---
--- `src/relation.zig` used to key every edge on a descriptor's TEXT.
--- `law.identity.three` (constitution §21) says identity is three things —
--- semantic, content, incarnation — and forbids collapsing them; a text key
--- collapses all three onto a byte string. The store now keys on a stable `Id`
--- minted from kind + spelling + origin + scope + lawset, and the string
--- survives only as a rendering and lookup convenience.
---
---   ROW 1..4  BEHAVIOUR BY VALUE. The compiler is run over the two relation
---             fixtures, and the `[ser]` census line and the program's own
---             printed answer are both compared to a literal. This is the row
---             that would catch an identity change that silently equated or
---             silently split two descriptors: either one moves SER.
---   ROW 5..6  THE QUARANTINE RATCHET. Resolving a spelling to an identity is
---             the one place a byte comparison is correct, and it lives in
---             `Names`. Everything from `pub const Relation` down compares
---             `Id`. A `std.mem.eql` reappearing in the algebra is the text key
---             growing back, and it would grow back silently — the tests would
---             still pass, because a single-origin single-lawset compilation
---             unit cannot tell the two keys apart. Only a scan can see it.
---
--- POSITIVE-CONTROL EVERY ZERO. Row 6 asserts a zero, and a scanner that cannot
--- see the file also reports zero. Row 5 is its control: the same scanner, over
--- the QUARANTINE region of the same file, must report a NONZERO count. If row
--- 5 is 0 the gate reports FAIL and no verdict, because row 6's zero is then
--- unearned. Four confident zeros were caught in this repository in one day;
--- each of them read as good news.
---
--- THE GATE DOES NOT DUPLICATE WHAT IT GUARDS. It does not re-implement the
--- trie and it does not restate the store's numbers from the store — it runs
--- the shipped binary over tracked fixtures and reads stdout. The identity LAWS
--- themselves (packages, renames, versions, private descriptors, law.dedup) are
--- proven in `src/relation.zig`'s own tests against the very `Store` type
--- `codegen.zig` instantiates, each with a negative twin, and they run under
--- `zig build unit-test`.
+# STABLE SEMANTIC IDENTITY for the relation store — the gate. gap[103].
+#
+# WHAT IT GUARDS, and why it is two different kinds of check.
+#
+# `src/relation.zig` used to key every edge on a descriptor's TEXT.
+# `law.identity.three` (constitution §21) says identity is three things —
+# semantic, content, incarnation — and forbids collapsing them; a text key
+# collapses all three onto a byte string. The store now keys on a stable `Id`
+# minted from kind + spelling + origin + scope + lawset, and the string
+# survives only as a rendering and lookup convenience.
+#
+#   ROW 1..4  BEHAVIOUR BY VALUE. The compiler is run over the two relation
+#             fixtures, and the `[ser]` census line and the program's own
+#             printed answer are both compared to a literal. This is the row
+#             that would catch an identity change that silently equated or
+#             silently split two descriptors: either one moves SER.
+#   ROW 5..6  THE QUARANTINE RATCHET. Resolving a spelling to an identity is
+#             the one place a byte comparison is correct, and it lives in
+#             `Names`. Everything from `pub const Relation` down compares
+#             `Id`. A `std.mem.eql` reappearing in the algebra is the text key
+#             growing back, and it would grow back silently — the tests would
+#             still pass, because a single-origin single-lawset compilation
+#             unit cannot tell the two keys apart. Only a scan can see it.
+#
+# POSITIVE-CONTROL EVERY ZERO. Row 6 asserts a zero, and a scanner that cannot
+# see the file also reports zero. Row 5 is its control: the same scanner, over
+# the QUARANTINE region of the same file, must report a NONZERO count. If row
+# 5 is 0 the gate reports FAIL and no verdict, because row 6's zero is then
+# unearned. Four confident zeros were caught in this repository in one day;
+# each of them read as good news.
+#
+# THE GATE DOES NOT DUPLICATE WHAT IT GUARDS. It does not re-implement the
+# trie and it does not restate the store's numbers from the store — it runs
+# the shipped binary over tracked fixtures and reads stdout. The identity LAWS
+# themselves (packages, renames, versions, private descriptors, law.dedup) are
+# proven in `src/relation.zig`'s own tests against the very `Store` type
+# `codegen.zig` instantiates, each with a negative twin, and they run under
+# `zig build unit-test`.
 
 file = "src/relation.zig"
 fixture = "examples/spec100/relation.id"
 store = "examples/spec100/relation_store.id"
 
--- The census line and the answer, both literal. `n=` is carried with the ratio
--- because a ratio without its universe is not a measurement: an identity split
--- that invented a descriptor moves `n` while `ser` holds still.
+# The census line and the answer, both literal. `n=` is carried with the ratio
+# because a ratio without its universe is not a measurement: an identity split
+# that invented a descriptor moves `n` while `ser` holds still.
 wantser = "[ser] relation=to n=4 authored=6 derived=6 refused=0 ser=2.00"
 wantout = "189"
 wantstoreser = "[ser] relation=eq n=3 authored=4 derived=2 refused=0 ser=1.50"
@@ -52,9 +52,9 @@ wantstoreout = "16"
 rows = 0
 pass = 0
 
--- The absolute line number of the first line matching a pattern, or 0. `grep`
--- exits 1 on no match, so this pipes through `head`/`cut`, both of which
--- always print and always exit 0.
+# The absolute line number of the first line matching a pattern, or 0. `grep`
+# exits 1 on no match, so this pipes through `head`/`cut`, both of which
+# always print and always exit 0.
 at(pattern: str): i64
     n = 0
     hit = std.script.chomp(std.script.capture(
@@ -63,23 +63,23 @@ at(pattern: str): i64
         n = to(i64)(hit)
     n
 
--- Byte comparisons in a line range. `grep -c` exits 1 on a zero count, which
--- would read as a failed capture rather than as a zero, so it goes through
--- `head` for the same reason.
+# Byte comparisons in a line range. `grep -c` exits 1 on a zero count, which
+# would read as a failed capture rather than as a zero, so it goes through
+# `head` for the same reason.
 eqlin(lo: i64, hi: i64): i64
     to(i64)(std.script.chomp(std.script.capture(
         "sed -n '{lo},{hi}p' {file} | grep -c 'std.mem.eql' | head -1")))
 
--- The compiler's own output for a fixture. stderr carries the census and
--- stdout the answer, captured separately so a census line can never be
--- mistaken for a program's answer.
+# The compiler's own output for a fixture. stderr carries the census and
+# stdout the answer, captured separately so a census line can never be
+# mistaken for a program's answer.
 census(path: str): str
     std.script.chomp(std.script.capture(
-        "DUO_SER=1 ./zig-out/bin/duo run {path} 2>&1 >/dev/null | grep '^.ser.' | head -1"))
+        "DUO_SER=1 ./zig-out/bin/idol run {path} 2>&1 >/dev/null | grep '^.ser.' | head -1"))
 
 answer(path: str): str
     std.script.chomp(std.script.capture(
-        "DUO_SER=1 ./zig-out/bin/duo run {path} 2>/dev/null | tail -1"))
+        "DUO_SER=1 ./zig-out/bin/idol run {path} 2>/dev/null | tail -1"))
 
 row(name: str, got: str, want: str): void
     rows = rows + 1
@@ -99,8 +99,8 @@ main(): i64
     row("ser eq", census(store), wantstoreser)
     row("answer eq", answer(store), wantstoreout)
 
-    -- `pub const Relation = struct {` opens the ALGEBRA; the test block closes
-    -- it. Everything between the two is id-native by law.
+    # `pub const Relation = struct {` opens the ALGEBRA; the test block closes
+    # it. Everything between the two is id-native by law.
     algebra = at("^pub const Relation = struct")
     tests = at("^const testing = std.testing;")
     quarantine = eqlin(1, algebra - 1)
@@ -109,8 +109,8 @@ main(): i64
     std.script.echo("  algebra begins at line {algebra}, tests at line {tests}")
     std.script.echo("  byte comparisons: quarantine {quarantine}, algebra {leaked}")
 
-    -- The control is reported BEFORE the zero it licenses, because that zero
-    -- means nothing until the scanner has proven it can see the file at all.
+    # The control is reported BEFORE the zero it licenses, because that zero
+    # means nothing until the scanner has proven it can see the file at all.
     control = 0
     if algebra > 0
         if tests > algebra

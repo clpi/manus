@@ -1,15 +1,14 @@
--- std.concurrent — high-level concurrency primitives (Requirement 20.9)
--- Builds on std.sync's scheduler.  Provides go/wait/select/all patterns.
+# std.concurrent — high-level concurrency primitives (Requirement 20.9)
+# Builds on std.sync's scheduler.  Provides go/wait/select/all patterns.
 
-sync = require "std.sync"
 
--- Spawn a task and return a future channel (capacity 1) for its result.
--- result shape: {ok=bool, val=any, err=any}
+# Spawn a task and return a future channel (capacity 1) for its result.
+# result shape: {ok=bool, val=any, err=any}
 go(fn: any, ...args): any
     fut = sync.channel(1)
     args_list = {args}
-    closure = (): void
-        ok, result = pcall(fn, table.unpack(args_list))
+    closure: void = ()
+        ok, result = pcall(fn, args_list:unpack())
         if ok
             sync.channel_send(fut, {ok = true, val = result})
         else
@@ -20,7 +19,7 @@ go(fn: any, ...args): any
     fut
 end
 
--- Await a future (blocks/yields until result available).
+# Await a future (blocks/yields until result available).
 wait(fut: any): any
     r = sync.channel_recv(fut)
     if r == nil return nil end
@@ -31,19 +30,19 @@ wait(fut: any): any
     end
 end
 
--- Run N tasks concurrently; return table of results in order.
+# Run N tasks concurrently; return table of results in order.
 all(tasks: any, ...args): any
     futs = {}
-    -- tasks can be a list, or varargs
+    # tasks can be a list, or varargs
     if type(tasks) == "function"
         args_list = {args}
-        futs[1] = go(tasks, table.unpack(args_list))
+        futs[1] = go(tasks, args_list:unpack())
     else
         for _, t in tasks
             if type(t) == "function"
                 futs[#futs + 1] = go(t)
             elseif type(t) == "table" and t[1]
-                futs[#futs + 1] = go(t[1], table.unpack(t, 2))
+                futs[#futs + 1] = go(t[1], t:unpack(2))
             end
         end
     end
@@ -55,13 +54,13 @@ all(tasks: any, ...args): any
     results
 end
 
--- Race: return the first completed future's result.
+# Race: return the first completed future's result.
 race(futs: any): any
     winner = sync.channel(1)
     for i, fut in futs
-        race_closure = (): void
+        race_closure: void = ()
             val = sync.channel_recv(fut)
-            sync.channel_try_recv(winner)  -- drain if already won
+            sync.channel_try_recv(winner)  # drain if already won
             sync.channel_send(winner, {idx = i, val = val})
         end
         sync.spawn(race_closure)
@@ -70,9 +69,9 @@ race(futs: any): any
     sync.channel_try_recv(winner)
 end
 
--- Select: poll channels round-robin until one has data.
--- cases = {{ch=channel, fn=handler_fn}, ...}
--- Returns when one case fires; calls its fn with the value.
+# Select: poll channels round-robin until one has data.
+# cases = {{ch=channel, fn=handler_fn}, ...}
+# Returns when one case fires; calls its fn with the value.
 select(cases: any): any
     while true
         for _, c in cases
@@ -86,34 +85,34 @@ select(cases: any): any
     end
 end
 
--- Semaphore: counting semaphore built on a buffered channel.
+# Semaphore: counting semaphore built on a buffered channel.
 semaphore(n: i64): any
     s = sync.channel(n)
     for _ = 1, n sync.channel_send(s, true) end
     {
-        acquire = (): any sync.channel_recv(s),
-        release = (): void sync.channel_send(s, true),
-        try_acquire = (): bool sync.channel_try_recv(s) != nil,
+        acquire: any = ()sync.channel_recv(s),
+        release: void = ()sync.channel_send(s, true),
+        try_acquire: bool = ()sync.channel_try_recv(s) != nil,
     }
 end
 
--- WaitGroup: wait for N tasks to complete.
+# WaitGroup: wait for N tasks to complete.
 waitgroup(n: i64): any
     ch = sync.channel(n)
     return {
-        done = (): void sync.channel_send(ch, true),
-        wait = (): void
+        done: void = ()sync.channel_send(ch, true),
+        wait: void = ()
             for _ = 1, n sync.channel_recv(ch) end
         end,
     }
 end
 
--- LV-2 / Pass 64 SCOPE: a module's top-level bindings ARE its surface, so these
--- self-assignments (`go = go`) published nothing that was not already public.
--- They were also const violations — the binding exists by the time the line is
--- reached — which took the whole module down. The re-exports below are kept
--- because they bind a DIFFERENT name to a sync.* member; the identity lines are
--- deleted.
+# LV-2 / Pass 64 SCOPE: a module's top-level bindings ARE its surface, so these
+# self-assignments (`go = go`) published nothing that was not already public.
+# They were also const violations — the binding exists by the time the line is
+# reached — which took the whole module down. The re-exports below are kept
+# because they bind a DIFFERENT name to a sync.* member; the identity lines are
+# deleted.
 spawn = sync.spawn
 run = sync.run
 yield = sync.yield

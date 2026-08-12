@@ -9,8 +9,8 @@ The version-locked MCP implementations live in this repository:
 
 | Physical server name | Entry point | Purpose |
 |---|---|---|
-| `duo-bench` | `tools/mcp/duo_bench.id` | claims, gaps, serialized gates, performance evidence |
-| `duo-lsp` | `tools/mcp/duo_lsp.id` | diagnostics and language intelligence |
+| `duo-bench` | `tools/mcp/bench.id` | claims, gaps, serialized gates, performance evidence |
+| `duo-lsp` | `tools/mcp/lsp.id` | diagnostics and language intelligence |
 | `zls` | `tools/mcp/zls.id` | Zig bootstrap navigation |
 
 The physical `duo` executable and `duo-*` server names are bootstrap aliases.
@@ -24,8 +24,8 @@ those transport or historical spellings names the language, authorizes new
 ## Client shape
 
 Clients run the in-tree bootstrap executable with the repository as cwd. The
-one client-neutral physical manifest is `tools/devnode/mcp.manifest.json`; run
-`tools/devnode/generate-configs` to derive absolute client projections from the
+one client-neutral physical manifest is `tools/node/dev/mcp.manifest.json`; run
+`tools/node/dev/generate-configs` to derive absolute client projections from the
 actual clone path. Generated client configurations are projections, not
 additional manifest authorities.
 
@@ -34,7 +34,7 @@ The generated Codex shape is:
 ```toml
 [mcp_servers.id-bench]
 command = "<repo>/zig-out/bin/duo"
-args = ["run", "--backend=c", "<repo>/tools/mcp/duo_bench.id"]
+args = ["run", "--backend=c", "<repo>/tools/mcp/bench.id"]
 cwd = "<repo>"
 env = { DUO_ROOT = "<repo>", DUO_BIN = "<repo>/zig-out/bin/duo" }
 startup_timeout_sec = 60
@@ -52,15 +52,17 @@ checks the current tool lists through real JSON-RPC requests.
 ## Session protocol
 
 1. Start at `AGENTS.md` and `.agents/AGENT_CANONICAL.md`.
-2. Call `duo_agent_session_start`.
-3. Inspect current HEAD, dirty state, recent commits, `duo_dev_claim_files`,
+2. Use skill **`idol-dev`** (`.pi/skills/idol-dev`). Do not use the retired
+   `duon-development` skill name.
+3. Call `duo_agent_session_start`.
+4. Inspect current HEAD, dirty state, recent commits, `duo_dev_claim_files`,
    every current `gaps/GAP-*.md`, the verified `docs/bootstrap.md` frontier,
    and stash state.
-4. Treat the session-start gap summary as incomplete until `GAP-131` closes.
-5. Claim exact paths through `duo_dev_claim_acquire`.
-6. Delegate only bounded independent work with disjoint write ownership.
-7. Serialize heavy gates through `scripts/duo_lock.id`.
-8. Commit explicit pathspecs and release only claims owned by the session.
+5. Treat the session-start gap summary as incomplete until `GAP-131` closes.
+6. Claim exact paths through `duo_dev_claim_acquire`.
+7. Delegate only bounded independent work with disjoint write ownership.
+8. Serialize heavy gates through `scripts/duo_lock.id`.
+9. Commit explicit pathspecs and release only claims owned by the session.
 
 ## Validation
 
