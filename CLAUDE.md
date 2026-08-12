@@ -10,12 +10,16 @@ separate unclosed lexical and grammar projection.
 
 ## Identity
 
-The language and project are **Idol**: public command identity `idol`, canonical
-source suffix `.id`, and repository identity `idollang/idol`. No production
-`idol` compiler binary exists yet. Earlier `Idol`, `Duo`, and `Duon` names and
-historical `.id` source are migration provenance. Exact `duo` executable,
-path, symbol, command, and MCP tool spellings are physical bootstrap aliases
-until their owned replacements execute; their presence does not rename Idol.
+**Idol** is the public command and repository identity (`idol`, `.id`).
+**Idsem** is the semantic language whose sole law is
+`docs/spec/constitution.md`. Branding is not ontology; do not mint artificial
+`idsem.*` namespaces for graph, value, or relation.
+
+The language and project ship as Idol. No production `idol` compiler binary
+exists yet. Earlier `Idol`, `Duo`, and `Duon` names and historical `.id` /
+`.duo` source are migration provenance. Exact `duo` executable, path, symbol,
+command, and MCP tool spellings are physical bootstrap aliases until their owned
+replacements execute; their presence does not rename Idol.
 
 **No `std` anywhere** in Idol source, agents, gates, or teaching examples.
 There is no `std` table, prelude, or namespace. Use layout-projected homes and

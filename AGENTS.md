@@ -2,8 +2,8 @@
 
 ## Authority
 
-The language law has one home. Read these files before editing Idol, in this
-order:
+The language law has one home. Read these files before editing Idsem (`.id`), in
+this order:
 
 1. `docs/spec/constitution.md` — C0, the sole semantic authority. It is
    structured law documentation, not executable source or a source template.
@@ -27,10 +27,465 @@ untouched until explicit release-readiness authorization; see
 routers live in `.cursor/rules/`; executable canonicality remains in
 `scripts/idiomgate.id` and `scripts/semanticgate.id`.
 
+## Idsem durable project orientation
+
+You are working on Idsem (`idol`, `.id`).
+
+**Idol** is the public command and repository identity. **Idsem** is the semantic
+language (C0). **`.id`** is the sole canonical native source suffix. Branding is
+not ontology.
+
+Your task is not to translate an existing compiler into prettier syntax.
+
+Your task is to converge a single semantic system whose governing principle is:
+
+**semantic identity persists; representation changes.**
+
+Canonical native source uses `.id`.
+
+Historical Duo, Duon, and `.duo` material is migration or provenance unless
+current repository authority explicitly states otherwise.
+
+Repository truth and current owner-active authority override historical documents,
+stale examples, prior agent assumptions, and this prompt on implementation-state
+details.
+
+If current implementation contradicts an established architectural law, treat
+that as migration debt rather than evidence that the law is wrong.
+
+### First action
+
+Before modifying anything:
+
+1. Inspect current main, HEAD, dirty state, active claims, and recent commits.
+2. Read the repository authority chain: `docs/spec/constitution.md`,
+   `docs/spec/grammar.md`, `docs/spec/source.md`, `CLAUDE.md`, `AGENTS.md`,
+   `docs/bootstrap.md`, `.agents/AGENT_COORDINATION.md`.
+3. Identify the exact semantic boundary being changed.
+4. Identify authoritative producers of required facts.
+5. Identify downstream consumers of those facts.
+6. Detect overlap with other active ownership.
+7. Determine authority shifts and remove duplicates.
+8. If conflicts exist, report one precise authority conflict. Do not invent a
+   third interpretation.
+
+Do not begin from conventional compiler design assumptions.
+
+Begin from: what semantic observation, relation, value, dependency, state, law,
+or effect is required?
+
+### Identity
+
+There is one semantic identity space.
+
+Do not derive identity from:
+
+- source spelling
+- filename
+- `.id` suffix
+- namespace
+- parser node type
+- host enum
+- backend opcode
+- machine instruction
+- local counters
+- textual composites
+- hashes alone
+
+A hash may accelerate lookup only when it is provably collision-safe relative to
+semantic identity.
+
+A hash is evidence or acceleration, not identity.
+
+Distinct occurrences of the same relation remain distinct application identities
+with independent provenance and demand.
+
+### One meaning
+
+Each irreducible semantic meaning has:
+
+- one identity
+- one canonical native word
+- zero parallel names
+
+Prefer existing vocabulary:
+
+relation, subject, value, pack, binding, descriptor, shape, place, world, effect,
+demand, law, origin, stage, witness, provenance, realization, identity, span,
+token, role, view, run, outcome, evidence
+
+Do not encode qualification into relation names.
+
+Facts qualify meaning. Realization carries physical choice.
+
+### Naming
+
+Canonical vocabulary is lowercase.
+
+Use one word for irreducible meaning.
+
+Do not introduce names containing:
+
+- underscores
+- casing conventions
+- host compiler jargon
+- backend or OS jargon
+- transport or ABI qualifiers
+- representation qualifiers
+
+Foreign identifiers may retain spelling only when required for provenance.
+
+Foreign spelling does not become native vocabulary.
+
+If no irreducible meaning remains after decomposition:
+
+`SEMANTIC-VOCABULARY-BLOCKED`
+
+### Source
+
+Canonical language: Idsem
+
+Canonical source: `.id`
+
+Historical `.duo` is compatibility or migration provenance.
+
+There is exactly one source-family authority.
+
+Do not duplicate suffix logic across compiler, formatter, LSP, MCP, or tooling.
+
+Project branding is not ontology.
+
+Do not create artificial namespaces like “idsem graph/value/relation” when the
+concepts are simply graph, value, relation.
+
+### Source faces
+
+Human syntax may differ while converging semantically.
+
+Current delimiter model:
+
+- `()` call / grouping
+- `{}` structured packs / descriptors
+- `[]` computed or indexed projection
+- `.` named projection
+- `:` subject/descriptor constraint
+
+Do not collapse these into a single delimiter system.
+
+Minimal grammar means minimal irreducible distinctions, not minimal characters.
+
+### Structured values
+
+`{}` is neutral structure.
+
+It does not imply object, class, heap, or record allocation.
+
+Materialization is optional and demand-driven.
+
+Only write what cannot be reconstructed.
+
+### Descriptor homes
+
+A home organizes structure; it does not define ownership.
+
+Relations declared in a home remain global semantic relations.
+
+No method/class/member-function identity exists.
+
+### Subject
+
+Subject is a semantic role, not argument position.
+
+It is not inferred from syntax position, naming, or location.
+
+Subject resolution must be explicit and preserved.
+
+`:` form uses ambient subject when defined.
+
+It must not be conflated with ordinary function calls.
+
+### Pack
+
+Arguments and results are semantic packs.
+
+A pack preserves:
+
+identity, order, labels, values, descriptors, provenance, demand
+
+Do not flatten into host tuples or reconstruct later.
+
+Unknown, empty, zero, and false are distinct.
+
+### Value
+
+A value is identity plus facts.
+
+It is not a storage class.
+
+Do not map to:
+
+local, temp, stack, heap, register, record
+
+Binding is not place unless demand requires it.
+
+### Place
+
+A place exists only if semantically required.
+
+Do not preserve storage artifacts from host compilers.
+
+If no place is required, eliminate it entirely.
+
+### Control
+
+Control syntax is not IR ontology.
+
+After normalization, meaning is expressed as:
+
+- conditions
+- demands
+- dependencies
+- effects
+- continuations
+
+Not as syntactic categories.
+
+### Grammar
+
+Authority chain:
+
+```text
+source → lexer → grammar → parser → semantic resolver → graph → demand → realization
+```
+
+Each stage preserves strongest known fact.
+
+No stage reconstructs earlier stages from text.
+
+Lexer identifies tokens; grammar assigns roles; parser consumes roles; resolver
+assigns meaning.
+
+No handwritten keyword/punctuation tables.
+
+If missing projection:
+
+`IMPLEMENTATION-BLOCKED`
+
+Stage ownership detail: `docs/spec/grammar.md` § Authority pipeline.
+
+### Lexical law
+
+- `"` text
+- `'` bytes
+- `#` comment
+- `len` is relation, not syntax
+- backtick reserved unless explicitly defined
+
+Lua compatibility is historical only.
+
+No implicit execution semantics.
+
+### Numbers
+
+Numeric forms (`i64`, `u32`, `f64`) remain compact source faces.
+
+Do not prematurely assign semantic or physical representation.
+
+Separate:
+
+- numeric meaning
+- constraints
+- realization
+
+### Foreign
+
+Foreign systems retain their own laws until equivalence is proven.
+
+Do not flatten C/Rust/Wasm/etc into native semantics.
+
+Preserve:
+
+origin, ABI, ownership, aliasing, failure semantics, uncertainty
+
+### World
+
+World authority is explicit, not namespace-based.
+
+No `std.*` style implicit authority systems.
+
+World facts grant capability, not imports.
+
+### Files and packages
+
+Files do not define identity.
+
+Paths do not define semantics.
+
+No import system is assumed unless explicitly required by authority.
+
+Reachability is scope and home projection (`docs/spec/source.md`, `GAP-153`).
+
+### DNIR
+
+DNIR is a realization layer only.
+
+It does not introduce new semantic vocabulary.
+
+It may define:
+
+representation, target, ABI, linkage, placement, schedule, encoding
+
+but not rename semantics.
+
+### Transformation
+
+Transformations preserve lineage.
+
+Even when folded or optimized, original semantic application identity remains
+traceable.
+
+### Demand
+
+Demand determines what must exist.
+
+Do not materialize structures that are never demanded.
+
+Eliminate unnecessary abstraction before construction.
+
+### Realization
+
+Semantic graph defines meaning.
+
+Demand defines necessity.
+
+Realization defines physical execution.
+
+Do not collapse realization choices prematurely.
+
+### Performance
+
+Goal: FTCFTW
+
+Maximize semantic knowledge, minimize compiler state.
+
+Avoid unnecessary IR duplication or abstraction layers.
+
+### Selfhost
+
+Self-hosting is measured by transferred semantic authority, not file count or
+structure replication.
+
+### Host pattern zero
+
+Do not inherit host compiler architecture patterns as semantic truth.
+
+Translate only real semantic requirements, not implementation artifacts.
+
+### Evidence
+
+Truth requires executed production evidence.
+
+Not schema, not fixture, not file presence.
+
+Only actual execution outcome counts.
+
+### Concurrency
+
+Do not resolve conflicts by reintroducing removed authority.
+
+Missing facts are preferable to shadow systems.
+
+### No fallback authority
+
+Never reconstruct missing semantic truth from text or inference.
+
+Fail closed.
+
+### Relation admission
+
+A new relation is allowed only if:
+
+- no existing relation covers it
+- it is irreducible after full decomposition
+- it is not representable as descriptor, shape, or provenance
+
+### Tooling
+
+Tools operate on graph identity, not text inference.
+
+### Canonical code
+
+Canonical `.id` is stricter than compatibility code.
+
+Correctness includes semantic authority, not just parsing.
+
+### Historical source
+
+History is preserved but never authoritative over current grammar.
+
+### Unresolved grammar
+
+Never resolve grammar from examples.
+
+Only from current machine-authoritative grammar source.
+
+### Scope
+
+Keep changes local.
+
+Do not expand into unrelated subsystems.
+
+### Adversarial mindset
+
+Every rule must survive a degenerate implementation test.
+
+### Completion standard
+
+A change is complete only when:
+
+- semantic boundary is uniquely owned
+- no downstream re-derivation occurs
+- authority is singular
+
+Report:
+
+boundary, authority, identity, facts, loss, bridges, world, realization,
+evidence, performance, blocker
+
+Then stop.
+
+### Progress metrics
+
+Do not headline progress with file counts, `.id` percentage, or keyword removal.
+Report the three dominant metrics in `docs/METRICS.md` first: executed authority
+frontier, semantic reconstruction debt, FTCFTW evidence matrix coverage. Split
+**new debt introduced = 0** (gates on changed lines) from **existing corpus
+debt** (historical ledgers).
+
+### Absolute project law
+
+Do not turn Idsem into another conventional compiler.
+
+Do not turn semantics into syntax.
+
+Do not turn representation into identity.
+
+Do not turn naming into ontology.
+
+One meaning. One identity. One word.
+
 ## Monoglot boundary
 
 The destination is an Idol compiler, standard vocabulary, build, tools, gates,
 and documentation projections implemented in Idol.
+
+**No `std` anywhere** in new canonical source — not a namespace, table, prelude,
+or migration alias. Vocabulary reaches through layout/home/world projection
+(`path:read()`, `json:encode`, `os.env[k]`, `io:read`). The `lib/std/` tree is
+filesystem bootstrap provenance until renamed (GAP-157); it is not authority.
+
+Every canonicality result has one of four states: `canonical`, `migratable`,
+`vocabularyblocked`, `invalid`. Do not invent vocabulary to silence a gate.
 
 Do not add a new Zig, C, Lua, shell, Python, or other foreign subsystem. Existing
 foreign implementation is bootstrap debt. A foreign edit is admissible only
@@ -43,48 +498,7 @@ Never route a typed or compile-time value through a boxed compatibility value.
 The semantic value and its native realization remain distinct; compatibility
 front ends do not own Idol meaning.
 
-## Semantic-first correctness
-
-Never translate a C, Rust, Python, Lua, or conventional compiler pattern into
-Idol syntax. Begin with the semantic operation the program requests. Express it
-with the smallest existing combination of relation, level, descriptor, value,
-demand, world, place, proof, application, and structured value.
-
-Canonicality is part of correctness. Parsing, type checking, and tests do not
-make a weaker conventional representation canonical.
-
-Every canonicality result has one of four states:
-
-- `canonical` — the strongest admitted semantic representation is present.
-- `migratable` — equivalence is proved and the canonicalizer may rewrite it.
-- `vocabularyblocked` — the missing semantic relation, world, case, or law must
-  be added at its authoritative layer before source is written.
-- `invalid` — the program contradicts language law.
-
-Do not invent vocabulary to silence a gate. When the result is
-`vocabularyblocked`, record the missing semantic requirement and repair the
-authoritative semantic model first.
-
-Source faces are not semantic ontology. `if`, `else`, `while`, `for`, `and`,
-`or`, `not`, calls, indexing, updates, and operators must erase during early
-normalization into durable relation, value, demand, dependency, world, place,
-and realization facts. Retain a source face only when its use is irreducible or
-removing it would measurably sacrifice clarity or performance.
-
-Each file owns one semantic concept. Each Idol identifier is one lowercase
-semantic word. An underscore or uppercase letter in an Idol identifier is never
-canonical. **No `std` anywhere** — not a namespace, table, prelude, path to
-call, or migration alias. Vocabulary reaches through layout/home/world
-projection (`fs:read`, `json:encode`, `os.env[k]`, `io:read`). Never write
-`std.*`. Never teach or copy `std.*` from nearby debt. The `lib/std/` tree is
-filesystem bootstrap provenance until renamed (GAP-157); it is not authority.
-Do not replace `std` with another universal namespace: possessed values supply
-subjects; authority belongs to worlds; qualification belongs in facts. If the required
-relation or world is not admitted, report `SEMANTIC-VOCABULARY-BLOCKED` instead
-of adding a helper.
-
-The following shapes are presumptively noncanonical whenever written or
-touched:
+Presumptively noncanonical shapes whenever written or touched:
 
 - namespace activity whose first meaningful value is the subject;
 - module traversal standing in for a subject or world;
@@ -105,8 +519,9 @@ touched:
 - representation-specific vocabulary where an admitted semantic relation
   exists.
 - computed-key syntax when the key identity is already statically known;
-- a `use(` / `using(` / `import` / `inject` / `admit` / `include` admission face —
-  visibility is scope reachability; change scope facts at the owner boundary;
+- import, admission, or loader syntax (`req`, `require`, `import`, `module`,
+  `namespace`, `include`, `use(`, `inject`, `admit`, privileged `*bind`) —
+  reachability is scope and home projection only;
 - a literal string projected through `[]` when admitted named projection or a
   structured field exposes the same identity directly;
 - a mashed gate-scan compound (`scandiff`, `scanline`, `diffhead`, `bareend`, or
@@ -201,11 +616,8 @@ tokens, and namespace-first calls (`string.*`, `std.string.*`, `table.*`, `math.
 `std.*`) on every staged added line in project surfaces.
 Do not mash compound names, strip punctuation, or invent loader syntax. Native
 resolution uses source layout, scope, and worlds (`docs/spec/source.md`,
-`GAP-153`). Do not add `req`, `require`, `import`, `module`, `namespace`, `include`, `use(`,
-`using(`, `inject`, `admit`, or privileged `*bind` edges to new canonical source.
-Reachability is scope and home projection only (`docs/spec/source.md`, `GAP-153`).
-No admission syntax makes already-known bindings visible — change scope facts at
-the owner boundary instead.
+`GAP-153`). No import or admission syntax in new canonical source — change
+scope facts at the owner boundary instead.
 
 ## Host boundary (blocking)
 
@@ -428,7 +840,7 @@ or algorithm family.
 - Do not use Python for migration, census, or gate tooling; implement in Idol only.
 - Use `"{}"` text composition in Idol source, not `..` concatenation.
 - No `std.*`; `environment` is not a thing — use `os.env[k]`, `os.args[n]`, subject-first `io:read`/`io:write` and `hay:has(needle)`.
-- `using(x)` is lexical admission compression only—not import, module, or loader syntax; bit view reverse is `restore` not `unpack`; do not refactor `scripts/grammarconvergence.id` without explicit approval.
+- Bit view reverse is `restore` not `unpack`; do not refactor `scripts/grammarconvergence.id` without explicit approval.
 
 ## Learned Workspace Facts
 

@@ -1,21 +1,24 @@
 # Idol agent router
 
-`AGENTS.md` is the repository entry point. This file is its stable path router;
-it contains no language law and no volatile project status.
+`AGENTS.md` is the repository entry point — including **Idsem durable project
+orientation** (semantic law projection, not C0). This file is its stable path
+router; it contains no language law and no volatile project status.
 
 ## One law
 
 | Purpose | Path |
 |---|---|
 | Sole semantic law | `docs/spec/constitution.md` |
+| Durable root orientation | `AGENTS.md` § Idsem durable project orientation |
 | Source/home/package/world closure | `docs/spec/source.md` |
 | Host boundary / shell / capability closure | `docs/spec/host.md` |
 | Operative projection | `CLAUDE.md` |
 | Grammar projection | `docs/spec/grammar.md` |
 | Source-family classification | `docs/spec/corpus.md` |
 | Authority and migration protocol | `docs/spec/AUTHORITY.md` |
-| Priority compass | `docs/AGENT_ALIGNMENT.md` |
 | Executed compiler frontier | `docs/bootstrap.md` |
+| Progress metrics dashboard | `docs/METRICS.md` |
+| Priority compass | `docs/AGENT_ALIGNMENT.md` |
 | Ownership and gates | `.agents/AGENT_COORDINATION.md` |
 | Release readiness ledger | `.agents/RELEASE_READINESS.md` |
 | MCP setup | `.agents/AGENT_INTEGRATION.md` |
@@ -28,9 +31,9 @@ historical corpus file is an authority.
 
 ## Session start
 
-1. Read `AGENTS.md`, the constitution, `CLAUDE.md`,
-   `docs/AGENT_ALIGNMENT.md`, `docs/bootstrap.md`, and the scope-specific
-   authority.
+1. Read `AGENTS.md` (orientation + mechanical preflight), the constitution,
+   `CLAUDE.md`, `docs/AGENT_ALIGNMENT.md`, `docs/bootstrap.md`, and the
+   scope-specific authority.
 2. Call `duo_agent_session_start(agent_id="your-id")` on `duo-bench`.
 3. Inspect `git status --short --branch`, current HEAD, recent commits,
    `duo_dev_claim_files`, every current `gaps/GAP-*.md`, and `git stash list`.
@@ -44,11 +47,16 @@ historical corpus file is an authority.
    The `.id` lock entry is executed bootstrap transport, not self-hosting proof.
 7. Commit only explicit owned paths and release only your own claims.
 
-The language identity is Idol (`idol`, `.id`). Active development repository is
-`clpi/duo`. Future release repository is `idollang/idol`; do not migrate
-development there until `.agents/RELEASE_READINESS.md` authorizes release. The
-physical `duo` command and `duo-*` MCP names are bootstrap aliases. Historical
-Idol, Duo, Duon, and `.id` paths are migration provenance.
+The language identity is **Idol** (`idol`, `.id`); the semantic language is
+**Idsem** (law in `docs/spec/constitution.md`). Branding is not ontology.
+Active development repository is `clpi/duo`. Future release repository is
+`idollang/idol`; do not migrate development there until
+`.agents/RELEASE_READINESS.md` authorizes release. The physical `duo` command
+and `duo-*` MCP names are bootstrap aliases. Historical Idol, Duo, Duon, and
+`.duo` paths are migration provenance.
+
+No import or admission syntax in canonical source — reachability is scope and
+home projection (`docs/spec/source.md`, `GAP-153`).
 
 `std` is migration distribution, not a semantic namespace. `std.script` is
 frozen debt. New canonical `std.*` calls, APIs, generated source, and onboarding

@@ -1,10 +1,25 @@
 # Agent Alignment Compass
 
 This file is a short priority router. It is not language law and must not grow
-into a second specification. Start at `AGENTS.md`; it routes to the sole law,
-this priority projection, the current production ledger, and live ownership.
+into a second specification. Start at `AGENTS.md` (Idsem durable orientation +
+mechanical preflight); it routes to the sole law, this priority projection,
+the current production ledger, and live ownership.
 The constitution is structured law documentation, not an implementation
 example.
+
+## Dominant dashboard
+
+Report these before file counts or keyword metrics (`docs/METRICS.md`):
+
+1. **Executed authority frontier** — production stages actually Idol-owned
+   (`docs/bootstrap.md` ledger).
+2. **Semantic reconstruction debt** — downstream decisions still re-deriving
+   meaning from text/AST/opcode/host shape after resolution.
+3. **FTCFTW evidence matrix coverage** — workloads × backends × dimensions;
+   empty cells stay explicit until revision-bound proof fills them.
+
+Canonicality splits permanently: **new debt introduced = 0** (gates on changed
+lines) vs **existing corpus debt** (historical ledgers; substantial).
 
 ## One target
 

@@ -129,3 +129,37 @@ starts, descriptor-member roles, delimiter capabilities, prefix/postfix roles,
 precedence, associativity, block/offside behavior, and compatibility status.
 No consumer may maintain a punctuation list, keyword list, expression-start
 chain, or source-text fallback beside that authority.
+
+## Authority pipeline
+
+The closed recognition chain is:
+
+```text
+source → lexer → grammar → parser → semantic resolver → graph → demand → realization → machine
+```
+
+Each stage preserves the strongest fact already known. No stage reconstructs an
+earlier stage from text, names, hashes, or backend shape.
+
+| Stage | Owns | Must not own |
+|---|---|---|
+| Lexer | token identity, content, span, provenance | semantic roles inferred from punctuation spelling |
+| Grammar | roles, precedence, associativity, block/offside | meaning, world, relation, or representation identity |
+| Parser | minimum structure and provenance for resolution | relation, subject, application, demand, failure cases |
+| Resolver | subject, binding, scope, home reachability | storage class, opcode, target, or schedule choice |
+| Graph | semantic identity, facts, application lineage, witnesses | text spelling authority or parser-node ontology |
+| Demand | observable necessity, effects, result requirements | premature materialization |
+| Realization (DNIR) | target, ABI, linkage, placement, schedule, encoding | new semantic vocabulary or renamed graph meaning |
+| Machine | instructions, objects, ranges, physical artifacts | recovered semantics from opcodes or names |
+
+Foreign source faces enter only through explicit foreign import with provenance.
+They do not share native token identity or supply patterns for new `.id`.
+
+Until `GAP-145` (lexical identities) and `GAP-134` (generated grammar roles)
+close, any hand-maintained keyword table, punctuation list, or text classifier
+is bootstrap debt — report `IMPLEMENTATION-BLOCKED`, not a workaround parser
+kingdom.
+
+Tools, gates, LSP, MCP, formatter, and canonicalizer consume graph facts and
+admitted projections. They do not infer meaning from formatted text or
+substring detectors.

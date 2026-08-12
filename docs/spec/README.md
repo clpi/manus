@@ -12,15 +12,15 @@ documentation, not executable source or a canonical implementation example.
 
 ## Projections
 
-- `grammar.md` projects source roles and grammar constraints.
-- `source.md` projects source/home/package/world closure — no native module system.
-- `host.md` projects host boundary, root values, endpoints, and capability closure.
-- `world.md` projects world/home invocation — no `io.method()` or `std.os` namespaces.
-- `host.md` projects host boundary, root values, endpoints, process/shell homes.
+- `grammar.md` — source roles, delimiter law, parser boundary, authority pipeline.
+- `source.md` — source/home/package/world closure; no native module or admission syntax.
+- `host.md` — host boundary, root values, endpoints, process/shell homes.
+- `world.md` — world/home invocation; no `io.method()` or `std.os` namespaces.
 - `cost.md` projects the cost model.
 - `soundness.md` projects soundness obligations.
 - `numerics.md` projects numeric law.
 - `AUTHORITY.md` defines routing, migration, and conflict handling.
+- `METRICS.md` — progress dashboard; three dominant metrics; audit scorecard (not C0).
 - `corpus.md` classifies source provenance for canonicality gates.
 
 These files may organize or explain constitutional facts. They do not override
