@@ -1347,7 +1347,7 @@ fun claim_write(key: str, owner: str, work: str): void
         "{owner}\t{to(str)(os.time())}\t{work}\n")
 end
 
-# NOT `std.fs.remove` + `std.fs.rmdir`. `std.fs.remove` is written
+# Remove claim directories with shell rm and verify metadata is gone — host remove lied on success.
 # `os.remove(path) ~= nil`, and `false ~= nil` is TRUE, so it reports success
 # unconditionally — measured 2026-08-08: it returned true on a file that was
 # still on disk and still read back its old contents afterwards. A release
