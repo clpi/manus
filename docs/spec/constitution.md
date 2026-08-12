@@ -1467,7 +1467,7 @@ host.gate = law{
         "std proc and ir are not things — vocabulary is layout and world projection only",
         "new shell string execution and backend string semantic switches in canonical source are zero",
         "docs/spec/host.md is the operative host boundary projection",
-        "tools/node/dev/hostcensus classifies existing debt FOREIGN BOOTSTRAP MIGRATION VIOLATION BLOCKED",
+        "tools/node/dev/census/host classifies existing debt FOREIGN BOOTSTRAP MIGRATION VIOLATION BLOCKED",
         "lexical host detectors in idiomgate are temporary migration firewalls until graph enforcement",
     }
     fails = "new host API debt or host wrapper without semantic boundary and deletion gate"
@@ -2244,7 +2244,7 @@ relationdebt = law{
 #                       packages, renames, MCP, refactoring and multiple
 #                       versions all break on text.
 #   codegen legality    the lossy-composition REFUSAL happens at codegen, so
-#                       `duo check` approves what compilation later refuses.
+#                       `idol check` approves what compilation later refuses.
 #                       Class algebra belongs in SEMANTIC RESOLUTION: legality
 #                       above realization, always.
 #   one hop             derivation is deliberately one hop. Before longer
@@ -3487,7 +3487,7 @@ vocabularyaudit = law{
 canonicaldebt = {
     "tracked project owned .id source -> 0",
     "new generated native .id source -> 0",
-    "current facing idol duo duon and pass branding outside exact history -> 0",
+    "current facing idol idol idol and pass branding outside exact history -> 0",
     "stale agent router concepts and compatibility pattern sources -> 0",
     "statically knowable bracket keys and literal string projections -> 0",
     "namespace subject calls -> 0",
@@ -3810,8 +3810,8 @@ legacyzero = law{
     kind  = .protocol
     holds = .zero
     binds = {
-        "native compilation recognizes canonical id only and has no duo duon lua or historical syntax mode",
-        "tracked project owned duo source native duo suffix recognition lua lexical forms historical directives old callable forms std namespace semantics and implicit boxed fallbacks descend to zero",
+        "native compilation recognizes canonical id only and has no idol idol lua or historical syntax mode",
+        "tracked project owned idol source native idol suffix recognition lua lexical forms historical directives old callable forms std namespace semantics and implicit boxed fallbacks descend to zero",
         "a still required historical behavior is first preserved as an explicit foreign lawset obligation then reimplemented through the shared id facts demand and realization architecture before the legacy carrier is deleted",
         "old or unmerged work is audited and corrected against current main rather than merged wholesale or deleted while its valid obligation remains unsatisfied",
         "foreign conformance input is generated structured external or mechanically unmistakable and never becomes searchable native training material",
@@ -5168,7 +5168,7 @@ repairinfer = law{
         "class K world effectful conversion keep explicit when authority not already demanded",
         "class L historical to(str)(value) migrate down ladder to shortest unique form",
         "foreign compatibility examples do not train canonical inference classify by corpus role first",
-        "run scripts/infer_census.id before bulk repair — classify each site A through L never regex-delete",
+        "run scripts/census/infer.id before bulk repair — classify each site A through L never regex-delete",
     }
     fails = "bulk to deletion or rewrite without per-site semantic classification and graph identity proof"
 }
@@ -5781,12 +5781,27 @@ gateconvergence = law{
         "unrelated declaration changing prior unique resolution rejected monotonicity control",
         "utility migration cannot satisfy shc milestone gate",
         "concept delta and physical delta reported on material changes",
-        "current projection Idsem idsem as live identity outside history blocks rejected",
+        "current projection Idol idol as live identity outside history blocks rejected",
         "repository source treated as canonical proof without C0 resolution rejected",
         "specimen repair without class impossibility proof rejected",
         "positive controls preserve one producer unknown state negative facts effect algebra observable order profile guard assumption lineage semantic invalidation b to c semantic comparison trusted base shrink representation audit identity projection and source not proof",
     }
     fails = "convergence invariant enforced only as local cleanup guidance without gate controls"
+}
+
+totalconvergence = law{
+    id    = "law.total.convergence"
+    kind  = .protocol
+    holds = .current
+    binds = {
+        "blocking execution contract lives in docs/spec/convergence-contract.md",
+        "agents halt on stop conditions rather than invent vocabulary or host templates",
+        "current tree is not canonical by default — revalidate against C0",
+        "one meaning one id one relation one fact producer one projection algebra one lowering lineage",
+        "completion reports bind revision dirty state authority transfer and adversarial controls",
+        "P0 repair order identity source application worlds lowering shc ftcftw is mandatory scheduling",
+    }
+    fails = "total convergence treated as optional guidance without stop conditions census or completion report"
 }
 
 absolutelaw = law{
@@ -5998,10 +6013,25 @@ nocbackend = law{
     binds = {
         "NO-C-BACKEND the generated C backend is not a destination architecture — it is bootstrap debt that must be deleted",
         "the direct native backend is the sole realization path — no compiler B or C should emit C as a production backend",
-        "duo_lexer_tokenize.c duo codegen and all generated C artifacts are temporary bridges with mandatory deletion conditions",
+        "duo_lexer_tokenize.c idol codegen and all generated C artifacts are temporary bridges with mandatory deletion conditions",
         "do not invest in improving the C backend — invest in deleting it by advancing the native backend to full coverage",
         "the C backend exists only while the native backend cannot yet compile the bootstrap subset — its deletion gate is native backend coverage of the compiler critical basis",
     }
     fails = "C backend treated as permanent architecture or improved rather than deleted"
+}
+
+projection_algebra = law{
+    id    = "law.projection.algebra"
+    kind  = .invariant
+    holds = .filesystem
+    binds = {
+        "if a file like gate/idiom.id defines the callable semantics of the child member and those semantics are oriented on the enclosing gate table, its canonical invocation is gate:idiom(...)",
+        "gate.idiom(...) is only legal when idiom resolves as a genuinely static callable member rather than a relation on gate",
+        "the filesystem supplies member identity once, so the child file is the body and its root expressions are its execution",
+        "a callable child file is a relation on its parent when its parent is the semantic subject",
+        "dot is static projection only and colon is relation orientation",
+        "parentheses are the canonical application/accessor mechanism converging application and accessor semantics",
+    }
+    fails = "treating a child file as a static module or using dot projection for a relation on the parent subject"
 }
 ```
