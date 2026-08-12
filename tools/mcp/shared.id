@@ -851,7 +851,7 @@ fun exponential_evaluate(code: str, file_path: str): any
             kind = "exponential_opportunity",
             line = type_line,
             construct = "@comp.derive.bundle",
-            rationale = "{tostring(type_defs)} record types; @comp.derive.bundle generates shared trait impls for all in one annotation."
+            rationale = "{type_defs:to(str)} record types; @comp.derive.bundle generates shared trait impls for all in one annotation."
             multiplier = "O(types x traits <= 1 annotation)",
         })
     end
