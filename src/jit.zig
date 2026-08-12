@@ -29,7 +29,7 @@ pub fn emitClosureSourceTable(cg: anytype, list: []const *ast.FuncBody) E!void {
     }
     @memset(sources, null);
 
-    const mode: pretty.Mode = if (cg.idol_mode) .duo else .lua;
+    const mode: pretty.Mode = if (cg.idol_mode) .idol else .lua;
     for (list) |fb| {
         const id = fb.closure_id orelse continue;
         if (id >= table_len) continue;

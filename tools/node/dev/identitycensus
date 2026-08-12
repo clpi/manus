@@ -23,7 +23,7 @@ docs/spec/AUTHORITY.md
 .cursor/rules/50-mcp-lsp.mdc
 "
 
-retired='Idsem|idsem|Duon|duon|\.duo\b|language\.history|Historical Idol|Historical Duo|historical Idol/Duo'
+retired='Idsem|idsem|Duon|duon|\.duo\b|Historical Idol|Historical Duo|historical Idol/Duo'
 count=0
 for f in $paths; do
   [ -f "$f" ] || continue

@@ -19,7 +19,8 @@ Repository truth (`docs/bootstrap.md`, live claims, gaps, metrics) overrides sta
 details in this template on implementation-state facts.
 
 Generated boot payload: `.agents/HARNESS.md` from `tools/node/dev/generate-harness`.
-Provider files (Cursor rules, Pi skills) add mechanics only — not a second harness law.
+**Blocking contract:** `docs/spec/convergence-contract.md` (STOP conditions, P0 order).
+Provider files add mechanics only — not a second harness law.
 
 ---
 
@@ -912,6 +913,32 @@ ftcftw on the declared evidence matrix.
 
 One meaning. One id. One word. One authority. Maximum knowledge. Minimum physical
 state. Demand deletes work. Realization chooses late. Evidence proves truth.
+
+---
+
+## zero-history (law.zero.history)
+
+The active repository is not a museum. It contains **current Idol**, **current
+foreign interoperability**, and **currently executed bounded bootstrap bridges**
+— nothing else. Git stores history; C0 stores truth; the graph stores meaning.
+
+Mandatory for every agent:
+
+1. **Current identities only** — language Idol, source `.id`, binary `idol`,
+   repository `idollang/idol`. Git is sole historical archive. Durable corpus
+   states: `current` and `foreign` only.
+2. **Delete before rename** — do not rebrand host-shaped subsystems (`process.*`,
+   `std.*`, `lib.*`, `req`) when the architecture should disappear.
+3. **Gap steady state** — open gaps hold current obligation + acceptance +
+   deletion condition only; resolved gaps delete.
+4. **Generated harness** — stable law projection in `.agents/HARNESS.md`;
+   session envelope in `.agents/session/ENVELOPE.md` is ephemeral and never
+   committed.
+5. **Verification** — run `./tools/node/dev/zerohistorycensus` and
+   `./tools/node/dev/identitycensus` before claiming purge complete.
+
+Text census discovers debt; semantic gates convict equivalent architecture under
+different spelling (`law.gate.convergence`).
 
 ---
 

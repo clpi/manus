@@ -52,16 +52,15 @@ checks the current tool lists through real JSON-RPC requests.
 ## Session protocol
 
 1. Start at `AGENTS.md` and `.agents/AGENT_CANONICAL.md`.
-2. Use skill **`idol-dev`** (`.pi/skills/idol-dev`). Do not use the retired
-   `duon-development` skill name.
-3. Call `duo_agent_session_start`.
-4. Inspect current HEAD, dirty state, recent commits, `duo_dev_claim_files`,
+2. Use skill **`idol-dev`** (`.pi/skills/idol-dev`).
+3. Call session start on the bench MCP server.
+4. Inspect current HEAD, dirty state, recent commits, live claim files,
    every current `gaps/GAP-*.md`, the verified `docs/bootstrap.md` frontier,
    and stash state.
 5. Treat the session-start gap summary as incomplete until `GAP-131` closes.
-6. Claim exact paths through `duo_dev_claim_acquire`.
+6. Claim exact paths before editing.
 7. Delegate only bounded independent work with disjoint write ownership.
-8. Serialize heavy gates through `scripts/duo_lock.id`.
+8. Serialize heavy gates through the repository lock script.
 9. Commit explicit pathspecs and release only claims owned by the session.
 
 ## Validation

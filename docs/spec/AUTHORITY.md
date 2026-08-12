@@ -48,14 +48,12 @@ for the live observed count and inspect every matching `gaps/GAP-*.md` record
 directly. The observed count is orientation evidence, not a second or durable
 status authority.
 
-## History
+## Current tree only
 
-Pass-number documents and Idol/Duo/Duon-era plans, `.id` source, and exact
-physical `duo` tool names are historical or bootstrap provenance. Git history
-preserves them. Their names, examples, measurements, and architectural claims
-do not bind current work. A current document may mention a historical spelling
-only when that exact provenance is the subject; exact paths, commands, symbols,
-gap references, and evidence retain their physical spelling.
+Git history is the sole historical archive. Active projections and open gaps
+describe current Idol only (`law.zero.history`). Do not treat pass-number
+documents, retired brand names, or obsolete architecture narratives as binding
+current work.
 
 ## Conflict protocol
 

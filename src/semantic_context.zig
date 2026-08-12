@@ -32,7 +32,7 @@ pub const m1_keyword_classifier: ContextPackage = .{
         "src/lexer.zig",
         "src/realization.zig",
         "src/token_classify_gen.zig",
-        "lib/std/token/classify.id",
+        "lib/token/classify.id",
     },
     .governing_contracts = &.{
         "token_semantic.intent",
@@ -72,7 +72,7 @@ pub const m2_wasm_decode: ContextPackage = .{
         "std_wasm_decode__decode_instruction",
     },
     .canonical_owners = &.{
-        "lib/std/wasm/decode.id",
+        "lib/wasm/decode.id",
         "src/wasm_semantic_gen.zig",
         "src/wasm_semantic.zig",
         "src/native_barrier_checks.zig",

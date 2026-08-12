@@ -43,7 +43,7 @@ pub const expected_fingerprint: u64 = 14826786755700828545;
 /// The migration producer uses signed arithmetic, so the proof compares these
 /// bits as i64.
 pub const expected_fingerprint_i64: i64 = @bitCast(expected_fingerprint);
-pub const MIGRATION_FINGERPRINT_SOURCE = "lib/std/compiler/lexer.id";
+pub const MIGRATION_FINGERPRINT_SOURCE = "lib/compiler/lexer.id";
 pub const MIGRATION_FINGERPRINT_EXPORT = "duolexerkindfingerprint";
 
 pub fn mixFingerprint(h: u64, kind: lexer.TokenKind) u64 {
@@ -189,7 +189,7 @@ test "lexer differential: generated fingerprint control is wired" {
 
     const migration_source = try io_mod.Dir.cwd().readFileAlloc(
         io,
-        "lib/std/compiler/lexer.id",
+        "lib/compiler/lexer.id",
         std.testing.allocator,
         .unlimited,
     );

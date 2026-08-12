@@ -11,7 +11,7 @@ const BinOp = ast.BinOp;
 const UnOp = ast.UnOp;
 
 pub const Mode = enum {
-    duo,
+    idol,
     lua,
 };
 

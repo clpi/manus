@@ -814,8 +814,8 @@ pub fn main(init: std.process.Init) !void {
             term.err("unknown wasm-tables subcommand '{s}' (expected: emit)", .{sub});
             std.process.exit(1);
         }
-        try wasm_semantic_gen.emitDuoOpcodeLookupFile(alloc, io, "lib/std/wasm/opcode_lookup.id");
-        try wasm_semantic_gen.emitWardMvpOpcodesFile(alloc, io, "lib/std/wasm/ward_mvp_opcodes.id");
+        try wasm_semantic_gen.emitDuoOpcodeLookupFile(alloc, io, "lib/wasm/opcode_lookup.id");
+        try wasm_semantic_gen.emitWardMvpOpcodesFile(alloc, io, "lib/wasm/ward_mvp_opcodes.id");
         term.print("wrote lib/std/wasm/opcode_lookup.id\n", .{});
         term.print("wrote lib/std/wasm/ward_mvp_opcodes.id\n", .{});
         return;
@@ -830,9 +830,9 @@ pub fn main(init: std.process.Init) !void {
             term.err("unknown token-tables subcommand '{s}' (expected: emit)", .{sub});
             std.process.exit(1);
         }
-        try token_classify_gen.emitTokenClassifyFile(alloc, io, "lib/std/token/classify.id");
+        try token_classify_gen.emitTokenClassifyFile(alloc, io, "lib/token/classify.id");
         try token_classify_gen.emitKeywordClassifyNativeCFile(alloc, io, "src/keyword_classify.c");
-        try grammar_role_gen.emitGrammarRoleFile(alloc, io, "lib/std/token/grammarrole.id");
+        try grammar_role_gen.emitGrammarRoleFile(alloc, io, "lib/token/grammarrole.id");
         term.print("wrote lib/std/token/classify.id\n", .{});
         term.print("wrote src/keyword_classify.c\n", .{});
         term.print("wrote lib/std/token/grammarrole.id\n", .{});
@@ -4888,7 +4888,7 @@ fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8, canonical: boo
     };
 
     var buf: std.ArrayList(u8) = .empty;
-    var pp = PrettyPrinter.init(alloc, &buf, .duo);
+    var pp = PrettyPrinter.init(alloc, &buf, .idol);
     pp.canonical = canonical and parser.idol_mode;
     pp.printModule(&mod) catch {
         term.err("failed to format '{s}'", .{src_path});

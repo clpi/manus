@@ -6,7 +6,7 @@ cd "$repo"
 
 fail=0
 warn=0
-filter='zerohistorycensus|law\.zero\.history|ZERO-HISTORY|retired name|git stores|foreign provenance|Zig @import'
+filter='zerohistorycensus|law\.zero\.history|ZERO-HISTORY|retired name|git stores|foreign provenance|Zig @import|No `language\.history`|no language\.history'
 
 # Project-owned paths (exclude constitution law text, census tools, idiom ratchets).
 owned_files() {

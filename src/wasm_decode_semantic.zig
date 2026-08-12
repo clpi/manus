@@ -57,7 +57,7 @@ pub fn entityMatches(entity: []const u8) bool {
 }
 
 pub fn writeCatalogJson(w: *std.Io.Writer) !void {
-    try w.print("{{\"schema\":\"{s}\",\"intent_subject\":\"{s}\",\"descriptor\":\"{s}\",\"obligations\":{d},\"barrier_cli\":\"duo dev barrier check ward_decode\",\"semantic_cli\":[\"duo semantic intent duo:wasm:decode_instruction\",\"duo semantic obligations duo:wasm:decode_instruction\"],\"owners\":[\"lib/std/wasm/decode.duo\",\"src/wasm_semantic_gen.zig\",\"src/wasm_decode_semantic.zig\"]}}", .{
+    try w.print("{{\"schema\":\"{s}\",\"intent_subject\":\"{s}\",\"descriptor\":\"{s}\",\"obligations\":{d},\"barrier_cli\":\"duo dev barrier check ward_decode\",\"semantic_cli\":[\"duo semantic intent duo:wasm:decode_instruction\",\"duo semantic obligations duo:wasm:decode_instruction\"],\"owners\":[\"lib/wasm/decode.duo\",\"src/wasm_semantic_gen.zig\",\"src/wasm_decode_semantic.zig\"]}}", .{
         SCHEMA_VERSION,
         intent.subject_entity,
         intent.descriptor_id.?,

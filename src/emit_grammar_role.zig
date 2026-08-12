@@ -7,6 +7,6 @@ pub fn main() !void {
     const alloc = gpa.allocator();
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
-    try grammar_role_gen.emitGrammarRoleFile(alloc, threaded.io(), "lib/std/token/grammarrole.id");
+    try grammar_role_gen.emitGrammarRoleFile(alloc, threaded.io(), "lib/token/grammarrole.id");
     std.debug.print("wrote lib/std/token/grammarrole.id\n", .{});
 }

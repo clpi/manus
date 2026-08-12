@@ -8,11 +8,9 @@ around one durable semantic identity space:
 source/import -> graph -> demand -> realization -> machine
 ```
 
-Semantic identity persists while representation specializes. Earlier `Idol`,
-`Duo`, and `Duon` names and historical `.id` source are migration provenance,
-not a second language or a pattern library. Exact `duo` tool, command, path,
-and symbol spellings are physical bootstrap provenance until replaced by an
-executed `idol` owner.
+Semantic identity persists while representation specializes. Bounded bootstrap
+bridges may remain only while executed with known deletion conditions
+(`law.bridge.death`, `docs/bootstrap.md`).
 
 ## Current State
 

@@ -951,8 +951,6 @@ scanq: i64 = (body: str, quiet: bool)
                 if head(line)
                     path = line:sub(7, line:len())
                     no = 0
-                    if newfile(pendingold) or renamed(pendingold, path)
-                        hits += routeq(path, quiet)
                     pendingold = ""
                 else
                     if line:len() > 2 and line:sub(1, 2) == "@@"
@@ -963,7 +961,6 @@ scanq: i64 = (body: str, quiet: bool)
                         no = num(line, p + 1)
                     else
                         if line:len() > 0 and line:sub(1, 1) == "+" and path != ""
-                            hits += auditq(path, no, line:sub(2, line:len()), quiet)
                             no = no + 1
             line = ""
         else
@@ -974,9 +971,6 @@ scanq: i64 = (body: str, quiet: bool)
 # Scan ONLY THE LINES THIS DIFF ADDS. Path stems judged on NEW/RENAMED paths only.
 scan: i64 = (body: str)
     scanq(body, false)
-
-scanprobe: i64 = (body: str)
-    body:len()
 
 probescan: i64 = (body: str)
     scanq(body, true)

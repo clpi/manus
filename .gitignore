@@ -17,7 +17,7 @@ scripts/ingress/.run.id
 /ziglex
 /ziglex2
 /scripts/__pycache__/
-**/.duo/
+**/.idol/
 scripts/migrate_lexical.py
 lib/std/token/grammar_role.id
 .pi/skills/
@@ -34,7 +34,7 @@ scripts/_*.id
 .vscode/
 .idea/
 
-# Scratch and debug (Pass 10: no repository pollution)
+# Scratch and debug — no repository pollution
 *.log
 *.patch
 *.diff
@@ -97,7 +97,7 @@ scripts/_*.id
 /bench_simd_matmul_c
 /default.profraw
 
-# Agent/session state is not repository truth (Pass 10, Pass 13).
+# Agent/session state is not repository truth.
 .cursor/hooks/state/
 .cursor/mcp.json
 .codex/
