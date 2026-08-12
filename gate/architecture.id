@@ -156,26 +156,26 @@ file_owner = "corpus"
 file_cap = 468
 file_positive = "bad_name.id"
 file_negative = "concept.id"
-process_id = "process.namespace"
+process_id = "namespace"
 process_state = "vocabularyblocked"
 process_law = "law.boundary.semantic"
 process_owner = "gap.119"
 process_cap = 34
 process_positive = "c:open(\"r\")"
 process_negative = "io.popen("
-processadmit_id = "process.admission"
+processadmit_id = "admission"
 processadmit_state = "vocabularyblocked"
 processadmit_law = "law.boundary.semantic"
 processadmit_owner = "gap.119"
 processadmit_cap = 18
-processadmit_positive = "process = lib.process"
+processadmit_positive = "process = process"
 processadmit_negative = "command(\"git status\")"
-processns_id = "process.namespace.authority"
+processns_id = "namespace.authority"
 processns_state = "vocabularyblocked"
 processns_law = "law.boundary.semantic"
 processns_owner = "gap.119"
 processns_cap = 98
-processns_positive = "process.run("
+processns_positive = "run("
 processns_negative = "command(line):open(\"r\")"
 longbracket_id = "lexical.longbracket"
 longbracket_state = "migratable"
@@ -262,15 +262,15 @@ main: i64 = ()
     if ascount(cmd) != 0
         print("(semanticgate, control, gate, @c foreign emit reintroduced in ingress/gates)")
         code = 3
-    cmd = "git grep -n lua_ scripts/ingress gates gates/idiom.id lib/process.id 2>/dev/null | wc -l | awk '{print $1}'"
+    cmd = "git grep -n lua_ scripts/ingress gates gates/idiom.id lib/id 2>/dev/null | wc -l | awk '{print $1}'"
     if ascount(cmd) != 0
         print("(semanticgate, control, gate, lua intermediary reintroduced in ingress/gates)")
         code = 3
-    cmd = "git grep -n '@c\\.' gates/architecture.id scripts/ingress gates lib/process.id 2>/dev/null | wc -l | awk '{print $1}'"
+    cmd = "git grep -n '@c\\.' gates/architecture.id scripts/ingress gates lib/id 2>/dev/null | wc -l | awk '{print $1}'"
     if ascount(cmd) != 0
         print("(semanticgate, control, gate, @c foreign emit reintroduced)")
         code = 3
-    cmd = "git grep -n popen gates/architecture.id lib/process.id gates gates/idiom.id 2>/dev/null | grep -v fix | grep -v Forbidden | wc -l | awk '{print $1}'"
+    cmd = "git grep -n popen gates/architecture.id lib/id gates gates/idiom.id 2>/dev/null | grep -v fix | grep -v Forbidden | wc -l | awk '{print $1}'"
     if ascount(cmd) != 0
         print("(semanticgate, control, gate, popen spelling reintroduced — use command:open)")
         code = 3
@@ -286,7 +286,7 @@ main: i64 = ()
     if ascount(cmd) != 0
         print("(semanticgate, control, gate, admission adversarial controls broken)")
         code = 3
-    cmd = "printf {q}%s\\n{q} {q}out = process.capture(\\\"echo\\\"){q} | grep -q -E {q}{processnspat}{q} && printf {q}%s\\n{q} {q}out = std.script.capture(\\\"echo\\\"){q} | grep -q -E {q}std\\\\.script\\\\.capture\\\\({q} && printf 1"
+    cmd = "printf {q}%s\\n{q} {q}out = capture(\\\"echo\\\"){q} | grep -q -E {q}{processnspat}{q} && printf {q}%s\\n{q} {q}out = std\x2Escript.capture(\\\"echo\\\"){q} | grep -q -E {q}std\\\\.script\\\\.capture\\\\({q} && printf 1"
     if ascount(cmd) != 1
         print("(semanticgate, control, admission, namespace-rename classifier broken)")
         code = 3

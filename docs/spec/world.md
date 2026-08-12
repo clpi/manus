@@ -67,8 +67,8 @@ os.open(path)
 When unique world context projects these values, prefer direct use:
 
 ```id
-args[1]
-env["KEY"]
+args(1)
+env("KEY")
 stdout:write(text)
 clock:now()
 stdin:read()
@@ -77,8 +77,8 @@ stdin:read()
 over organizational spellings:
 
 ```id
-os.args[1]
-os.env["KEY"]
+os.args(1)
+os.env("KEY")
 io:write(text)
 ```
 
@@ -107,7 +107,7 @@ Forbidden on new canonical lines:
 ```id
 os.args()
 os.getenv(name)
-environment["KEY"]
+environment("KEY")
 io.read("*a")
 io.write(data)
 io.open(path, "r")
@@ -162,7 +162,7 @@ not stylistic law — genuine curry only when the intermediate callable has sema
 value (`law.curry.structural`).
 
 ```id
-path = args[1]
+path = args(1)
 text = stdin:read()
 if path:len() > 0
     text = path:read()

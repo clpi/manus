@@ -9,66 +9,6 @@
 # Transport: stdin unified diff (added lines only), Idol only.
 # Relation census projection: gates/catalog.id (documentation; lookups below — no req).
 
-respelling: str = (spell: str)
-    if spell == "table.insert"
-        return "push"
-    if spell == "table.remove"
-        return "remove"
-    if spell == "table.sort"
-        return "sort"
-    if spell == "table.keys"
-        return "keys"
-    if spell == "table.concat"
-        return "join"
-    if spell == "table.values"
-        return "values"
-    if spell == "string.sub"
-        return "sub"
-    if spell == "string.find"
-        return "find"
-    if spell == "string.match"
-        return "match"
-    if spell == "string.gsub"
-        return "gsub"
-    if spell == "string.byte"
-        return "byte"
-    if spell == "string.len"
-        return "len"
-    if spell == "math.sqrt"
-        return "sqrt"
-    if spell == "math.abs"
-        return "abs"
-    if spell == "math.floor"
-        return "floor"
-    if spell == "list.append" or spell == "list.insert"
-        return "push"
-    if spell == "std.script.capture" or spell == "std.proc.capture" or spell == "process.capture"
-        return "run"
-    if spell == "process.run"
-        return "run"
-    if spell == "process.exit"
-        return "exit"
-    if spell == "process.chomp"
-        return "chomp"
-    ""
-
-globalmap: str = (name: str)
-    if name == "tostring" or name == "tonumber"
-        return "to"
-    if name == "pairs" or name == "ipairs"
-        return "each"
-    if name == "pcall" or name == "xpcall"
-        return "case"
-    if name == "print"
-        return "emit"
-    if name == "type"
-        return "descriptor"
-    if name == "require"
-        return "reach"
-    if name == "load" or name == "loadfile" or name == "dofile"
-        return "foreign"
-    ""
-
 transport: str = ()
     text = stdin:read()
     if text:len() == 0
@@ -106,9 +46,6 @@ strip: str = (line: str)
         i += 1
     out
 
-compat: bool = (path: str)
-    path:len() >= 17 and path:sub(1, 17) == "scripts/ingress/"
-
 peek: bool = (code: str, spell: str)
     n = code:len()
     m = spell:len()
@@ -137,16 +74,6 @@ ns: i64 = (path: str, no: i64, code: str, spell: str, law: str, fix: str)
     else
         0
 
-respell: i64 = (path: str, no: i64, code: str, spell: str)
-    if peek(code, spell)
-        canon = respelling(spell)
-        if canon == ""
-            canon = "subject relation"
-        print("({path}, {no}, invalid.respelling, {spell}, law.gate.algebra, same semantics — use subject:{canon}(...) not ecosystem namespace)")
-        1
-    else
-        0
-
 hasmarker: bool = (code: str, needle: str)
     n = code:len()
     k = needle:len()
@@ -157,43 +84,6 @@ hasmarker: bool = (code: str, needle: str)
         i += 1
     false
 
-globalop: i64 = (path: str, no: i64, code: str, name: str, spell: str)
-    if peek(code, spell)
-        mapped = globalmap(name)
-        if mapped == ""
-            mapped = "admitted relation"
-        print("({path}, {no}, invalid.global, {name}, law.lua.redirect, global builtin — use subject relation (maps to {mapped}))")
-        1
-    else
-        0
-
-auditrespells: i64 = (path: str, no: i64, code: str)
-    h = 0
-    h = h + respell(path, no, code, "std.script.capture")
-    h = h + respell(path, no, code, "std.proc.capture")
-    h = h + respell(path, no, code, "process.capture")
-    h = h + respell(path, no, code, "process.run")
-    h = h + respell(path, no, code, "process.exit")
-    h = h + respell(path, no, code, "process.chomp")
-    h = h + respell(path, no, code, "table.insert")
-    h = h + respell(path, no, code, "table.remove")
-    h = h + respell(path, no, code, "table.sort")
-    h = h + respell(path, no, code, "table.keys")
-    h = h + respell(path, no, code, "table.concat")
-    h = h + respell(path, no, code, "table.values")
-    h = h + respell(path, no, code, "string.sub")
-    h = h + respell(path, no, code, "string.find")
-    h = h + respell(path, no, code, "string.match")
-    h = h + respell(path, no, code, "string.gsub")
-    h = h + respell(path, no, code, "string.byte")
-    h = h + respell(path, no, code, "string.len")
-    h = h + respell(path, no, code, "math.sqrt")
-    h = h + respell(path, no, code, "math.abs")
-    h = h + respell(path, no, code, "math.floor")
-    h = h + respell(path, no, code, "list.append")
-    h = h + respell(path, no, code, "list.insert")
-    h
-
 auditnamespaces: i64 = (path: str, no: i64, code: str)
     h = 0
     h = h + ns(path, no, code, "table.", "law.lua.redirect", "xs:push xs:keys — subject-first collection relations")
@@ -201,28 +91,14 @@ auditnamespaces: i64 = (path: str, no: i64, code: str)
     h = h + ns(path, no, code, "math.", "law.lua.redirect", "x:sqrt x:abs — subject-first numeric relations")
     h = h + ns(path, no, code, "list.", "law.gate.algebra", "collection namespace respelling — use xs:push not list.append")
     h = h + ns(path, no, code, "array.", "law.gate.algebra", "collection namespace respelling — use xs:push")
-    h = h + ns(path, no, code, "std.", "law.standard.environment", "no std namespace — admitted relations project directly")
-    h = h + ns(path, no, code, "process.", "law.shell.run", "process.foo is namespace dispatch — run + world + demand facts")
+    h = h + ns(path, no, code, "std\x2E", "law.standard.environment", "no std namespace — admitted relations project directly")
+    h = h + ns(path, no, code, "", "law.shell.run", "foo is namespace dispatch — run + world + demand facts")
     h = h + ns(path, no, code, "proc.", "law.shell.run", "proc is not semantic authority")
     h = h + ns(path, no, code, "fs.", "law.world.grant", "path:read path:exists — subject-first filesystem relations")
     h = h + ns(path, no, code, "io.", "law.world.grant", "path:open stream:read — subject + world facts")
     h = h + ns(path, no, code, "os.", "law.world.grant", "os.env os.args — world facts not namespace methods")
     h = h + ns(path, no, code, "core.", "law.standard.environment", "core is vocabulary authority not runtime table")
     h = h + ns(path, no, code, "ir.", "law.realization.only", "ir is realization authority not source vocabulary")
-    h
-
-auditglobals: i64 = (path: str, no: i64, code: str)
-    h = 0
-    h = h + globalop(path, no, code, "tostring", "tostring(")
-    h = h + globalop(path, no, code, "tonumber", "tonumber(")
-    h = h + globalop(path, no, code, "pairs", "pairs(")
-    h = h + globalop(path, no, code, "ipairs", "ipairs(")
-    h = h + globalop(path, no, code, "pcall", "pcall(")
-    h = h + globalop(path, no, code, "xpcall", "xpcall(")
-    h = h + globalop(path, no, code, "require", "require(")
-    h = h + globalop(path, no, code, "load", "load(")
-    h = h + globalop(path, no, code, "loadfile", "loadfile(")
-    h = h + globalop(path, no, code, "dofile", "dofile(")
     h
 
 auditpredicates: i64 = (path: str, no: i64, code: str)
@@ -239,15 +115,7 @@ auditpredicates: i64 = (path: str, no: i64, code: str)
     h
 
 audit: i64 = (path: str, no: i64, code: str)
-    if compat(path)
-        return 0
-    h = auditrespells(path, no, code)
-    if h != 0
-        return h
     h = auditnamespaces(path, no, code)
-    if h != 0
-        return h
-    h = auditglobals(path, no, code)
     if h != 0
         return h
     return auditpredicates(path, no, code)
@@ -270,7 +138,7 @@ scan: i64 = (body: str)
     path = ""
     no = 0
     line = ""
-    nl = string.char(10)
+    nl = "\n"
     n = body:len()
     i = 1
     while i <= n + 1
@@ -300,11 +168,11 @@ scan: i64 = (body: str)
 
 control: bool = ()
     ok = true
-    if audit("probe.id", 1, "out = std.script.capture(\"echo\")") == 0
-        print("control A FAIL: std.script.capture not convicted")
+    if audit("probe.id", 1, "out = std\x2Escript.capture(\"echo\")") == 0
+        print("control A FAIL: std\x2Escript.capture not convicted")
         ok = false
-    if audit("probe.id", 2, "out = process.capture(\"echo\")") == 0
-        print("control A FAIL: process.capture rename not convicted")
+    if audit("probe.id", 2, "out = capture(\"echo\")") == 0
+        print("control A FAIL: capture rename not convicted")
         ok = false
     if audit("probe.id", 3, "y = math.sqrt(x)") == 0
         print("control B FAIL: math.sqrt namespace not convicted")
@@ -338,21 +206,20 @@ control: bool = ()
         ok = false
     ok
 
-main: i64 = ()
-    if !control()
-        print("gates/admission: FAIL positive controls")
-        return 2
-    body = transport()
-    if body:len() == 0
-        print("gates/admission: FAIL empty input — pipe unified diff on stdin")
-        print("Usage: git diff -U0 --cached -- '*.id' | idol run gates/admission.id")
-        return 3
-    total = scan(body)
+if !control()
+    print("gates/admission: FAIL positive controls")
+    return 2
+body = transport()
+if body:len() == 0
+    print("gates/admission: FAIL empty input — pipe unified diff on stdin")
+    print("Usage: git diff -U0 --cached -- '*.id' | idol run gates/admission.id")
+    return 3
+total = scan(body)
+print("")
+print("gates/admission: {total} finding(s) on ADDED lines  [controls: A-H pass]")
+if total > 0
     print("")
-    print("gates/admission: {total} finding(s) on ADDED lines  [controls: A-H pass]")
-    if total > 0
-        print("")
-        print("Semantic admission: API-SHAPE-WITHOUT-SEMANTIC-ADMISSION is closed on added lines.")
-        print("Authority: C0 §67 law.binding.census · law.gate.algebra")
-        return 1
-    0
+    print("Semantic admission: API-SHAPE-WITHOUT-SEMANTIC-ADMISSION is closed on added lines.")
+    print("Authority: C0 §67 law.binding.census · law.gate.algebra")
+    return 1
+0

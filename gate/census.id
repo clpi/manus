@@ -1,6 +1,7 @@
-# gates/census — repository-wide LAW-ONE name debt census (blocking).
+# gate/census — repository-wide LAW-ONE name debt census (blocking).
 #
 # Gate transport: Idol only — stdin:read() pipe. No os.args, no --backend=c.
+# File is the body of gate.census — no main, no census = { } wrapper.
 
 transport: str = ()
     text = stdin:read()
@@ -42,9 +43,6 @@ badstem: bool = (st: str)
         k += 1
     false
 
-newline: bool = (c: str)
-    c:byte() == 10
-
 scanfiles: i64 = (files: str)
     canonicalid = 0
     zig = 0
@@ -52,7 +50,7 @@ scanfiles: i64 = (files: str)
     foreign = 0
     project = 0
     line = ""
-    nl = string.char(10)
+    nl = "\n"
     n = files:len()
     i = 1
     while i <= n + 1
@@ -69,14 +67,14 @@ scanfiles: i64 = (files: str)
                         snake = snake + 1
                 if line:len() >= 4 and line:sub(line:len() - 3, line:len()) == ".zig"
                     zig = zig + 1
-                if line:sub(1, 4) == "src/" or line:sub(1, 4) == "lib/" or line:sub(1, 8) == "scripts/" or line:sub(1, 6) == "gates/"
+                if line:sub(1, 4) == "src/" or line:sub(1, 4) == "lib/" or line:sub(1, 8) == "scripts/" or line:sub(1, 5) == "gate/"
                     project = project + 1
             line = ""
         else
             line = "{line}{c}"
         i += 1
 
-    print("gates/census (tracked files)")
+    print("gate/census (tracked files)")
     print("  canonical.id     {canonicalid}")
     print("  bootstrap.zig    {zig}")
     print("  project.owned    {project}")
@@ -85,14 +83,15 @@ scanfiles: i64 = (files: str)
     print("")
     snake
 
-main: i64 = ()
-    files = transport()
-    if files:len() == 0
-        print("gates/census: FAIL empty input — pipe git ls-files")
-        return 3
+files = transport()
+if files:len() == 0
+    print("gate/census: FAIL empty input — pipe git ls-files")
+    3
+else
     snake = scanfiles(files)
     if snake > 0
-        print("gates/census: FAIL separator debt in tracked .id stems")
-        return 1
-    print("gates/census: stem census pass (run gates/path.id tree via stdin for compound paths)")
-    0
+        print("gate/census: FAIL separator debt in tracked .id stems")
+        1
+    else
+        print("gate/census: stem census pass (run gate/path.id tree via stdin for compound paths)")
+        0

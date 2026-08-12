@@ -1,0 +1,41 @@
+# gates/catalog.id — admitted native relation census (projection producer).
+#
+# Consumed by gates/admission.id (tables inlined there — no req). Constitution
+# this table is the text projection until GAP-124 graph queries replace it.
+#
+# Each row: relation id, typical subject class, world/effect hints, law, owner.
+
+catalog = {
+    push = { id = "push", subject = "collection", effect = "mutate", law = "law.collection.push", owner = "graph" },
+    remove = { id = "remove", subject = "collection", effect = "mutate", law = "law.collection.remove", owner = "graph" },
+    sort = { id = "sort", subject = "collection", effect = "mutate", law = "law.collection.sort", owner = "graph" },
+    keys = { id = "keys", subject = "collection", effect = "observe", law = "law.collection.keys", owner = "graph" },
+    join = { id = "join", subject = "collection", effect = "observe", law = "law.collection.join", owner = "graph" },
+    len = { id = "len", subject = "value", effect = "observe", law = "law.axis.level", owner = "graph" },
+    sub = { id = "sub", subject = "text", effect = "observe", law = "law.text.slice", owner = "graph" },
+    find = { id = "find", subject = "text", effect = "observe", law = "law.text.find", owner = "graph" },
+    match = { id = "match", subject = "text", effect = "observe", law = "law.text.match", owner = "graph" },
+    gsub = { id = "gsub", subject = "text", effect = "mutate", law = "law.text.gsub", owner = "graph" },
+    byte = { id = "byte", subject = "text", effect = "observe", law = "law.text.byte", owner = "graph" },
+    has = { id = "has", subject = "text", effect = "observe", law = "law.text.has", owner = "graph" },
+    read = { id = "read", subject = "stream|path|stdin", effect = "observe", law = "law.relation.read", owner = "graph" },
+    write = { id = "write", subject = "stream|path|sink", effect = "mutate", law = "law.relation.write", owner = "graph" },
+    open = { id = "open", subject = "path", effect = "mutate", law = "law.world.grant", owner = "graph" },
+    close = { id = "close", subject = "stream", effect = "mutate", law = "law.stream.close", owner = "graph" },
+    exists = { id = "exists", subject = "path", effect = "observe", law = "law.path.exists", owner = "graph" },
+    to = { id = "to", subject = "value", effect = "convert", law = "law.convert.descriptor", owner = "graph" },
+    sqrt = { id = "sqrt", subject = "number", effect = "observe", law = "law.number.sqrt", owner = "graph" },
+    abs = { id = "abs", subject = "number", effect = "observe", law = "law.number.abs", owner = "graph" },
+    floor = { id = "floor", subject = "number", effect = "observe", law = "law.number.floor", owner = "graph" },
+    each = { id = "each", subject = "collection", effect = "observe", law = "law.collection.each", owner = "graph" },
+    run = { id = "run", subject = "command", effect = "mutate", law = "law.shell.run", owner = "graph" },
+    encode = { id = "encode", subject = "value", effect = "observe", law = "law.json.encode", owner = "json" },
+    decode = { id = "decode", subject = "text", effect = "observe", law = "law.json.decode", owner = "json" },
+}
+
+admitted: bool = (rel: str)
+    row = catalog[rel]
+    if row
+        return true
+    false
+

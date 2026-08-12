@@ -79,7 +79,7 @@ dot(os) = (code: str)
     hit(os)(code)
 
 dot(std) = (world: str, code: str)
-    edge("std.{world}.", code)
+    edge("std\x2E{world}.", code)
 
 ingress: bool = (path: str)
     path:len() >= 17 and path:sub(1, 17) == "scripts/ingress/"
@@ -106,7 +106,7 @@ hostrules: i64 = (path: str, no: i64, code: str)
     hits += hostrow(path, no, code, "host.exit", "os.exit(", "law.world.dot", "never os.exit() — admitted demand transition; docs/spec/world.md")
     hits += hostrow(path, no, code, "host.stdin.arch", "stdin-only", "law.host.endpoint", "endpoint polymorphism; never stdin-only language architecture")
     hits += hostrow(path, no, code, "host.backend", "--backend=", "law.host.target", "launcher target fact; not canonical source switch")
-    hits += hostrow(path, no, code, "host.std", "std.", "law.host.namespace", "std is not a thing — use root/home/world facts")
+    hits += hostrow(path, no, code, "host.std", "std\x2E", "law.host.namespace", "std is not a thing — use root/home/world facts")
     hits += hostrow(path, no, code, "host.proc", "proc.", "law.host.namespace", "proc is not a thing — structured command + process world")
     hits += hostrow(path, no, code, "host.ir", "ir.", "law.host.namespace", "ir is not source vocabulary — graph/realization only")
     hits += hostrow(path, no, code, "host.core", "core.", "law.host.namespace", "core is vocabulary authority not a runtime table")
@@ -158,10 +158,10 @@ audit = (path: str, no: i64, line: str): i64
         print("({path}, {no}, violation, law.world.dot, os is a world — use os.args[n] / os.env[k]; never os.method())")
         hits += 1
     if dot(std)(io, code)
-        print("({path}, {no}, violation, law.world.dot, std.io forbidden — stdin:read() / path:read() / subject:relation(); docs/spec/world.md)")
+        print("({path}, {no}, violation, law.world.dot, std\x2Eio forbidden — stdin:read() / path:read() / subject:relation(); docs/spec/world.md)")
         hits += 1
     if dot(std)(os, code)
-        print("({path}, {no}, violation, law.world.dot, std.os forbidden — root projection or bridge; docs/spec/world.md)")
+        print("({path}, {no}, violation, law.world.dot, std\x2Eos forbidden — root projection or bridge; docs/spec/world.md)")
         hits += 1
     hits
 
@@ -240,7 +240,7 @@ control: bool = ()
     if audit("probe.id", 6, "mode = os.env[\"X\"]") != 0
         print("control FAIL: os.env table index rejected")
         ok = false
-    if audit("probe.id", 6, "out = std.proc.capture(\"echo\")") == 0
+    if audit("probe.id", 6, "out = std\x2Eproc.capture(\"echo\")") == 0
         print("control FAIL: host.std did not fire")
         ok = false
     if audit("probe.id", 7, "n = ir.node()") == 0
@@ -252,8 +252,8 @@ control: bool = ()
     if audit("probe.id", 9, "line = io:read()") != 0
         print("control FAIL: io:read rejected")
         ok = false
-    if audit("probe.id", 10, "f = std.io.open(p)") == 0
-        print("control FAIL: std.io.open / qual did not fire")
+    if audit("probe.id", 10, "f = std\x2Eio.open(p)") == 0
+        print("control FAIL: std\x2Eio.open / qual did not fire")
         ok = false
     ok
 

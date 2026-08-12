@@ -493,6 +493,24 @@ control: bool = ()
     if judge("probe.id", 14, "y /= 2") != 0
         print("control FAIL: compound divide rejected")
         ok = false
+    if verdict("scripts/perfledger.id", "perfledger") == 0
+        print("control FAIL: perfledger mashed ledger path not rejected")
+        ok = false
+    if verdict("scripts/ledger/perf.id", "perf") != 0
+        print("control FAIL: scripts/ledger/perf.id decomposed path rejected")
+        ok = false
+    if verdict("tools/node/dev/zerohistorycensus", "zerohistorycensus") == 0
+        print("control FAIL: zerohistorycensus mashed census path not rejected")
+        ok = false
+    if verdict("tools/node/dev/census/history/zero", "zero") != 0
+        print("control FAIL: census/history/zero decomposed path rejected")
+        ok = false
+    if verdict("scripts/infer_census.id", "infer_census") == 0
+        print("control FAIL: infer_census mashed census path not rejected")
+        ok = false
+    if verdict("scripts/census/infer.id", "infer") != 0
+        print("control FAIL: scripts/census/infer.id decomposed path rejected")
+        ok = false
     ok
 
 main: i64 = ()
