@@ -277,7 +277,7 @@ fun repo_tooling(script_name: str, args: str): any
     elseif fs:exists("{root}/scripts/{script_name}")
         full = "{duobin} run {root}/scripts/{script_name}"
     else
-        return "{{ error = \"script not found: \"}{script_name }}"
+        return { error = "script not found: {script_name}" }
     end
     if args ~= "" then full = "{full} {args}" end
     rc = exec(full)
@@ -402,7 +402,7 @@ end
 # === Pass 5 semantic interchange (SIM) ===
 
 fun semantic_snapshot(file_path: str): any
-    output = "{capture(duobin} sim {file_path}{\" 2>&1\")}"
+    output = capture("{duobin} sim {file_path} 2>&1")
     if string.find(output, ": error:") or string.find(output, "sema error") or string.find(output, "parse failed") then
         return { ok = false, error = string.sub(output, 1, 4000), schema = "sim-v0" }
     end
@@ -421,7 +421,7 @@ fun semantic_snapshot(file_path: str): any
 end
 
 fun semantic_snapshot_raw(file_path: str): str
-    output = "{capture(duobin} sim {file_path}{\" 2>&1\")}"
+    output = capture("{duobin} sim {file_path} 2>&1")
     -- Find the JSON start (skip any diagnostic lines)
     i = string.find(output, "{")
     if i == nil then
@@ -435,7 +435,7 @@ fun foreign_import_preview(header_path: str, source_dir: str): any
     if source_dir ~= "" and string.sub(header_path, 1, 1) ~= "/" then
         resolved = "{source_dir}/{header_path}"
     end
-    output = "{capture(duobin} sim --import-c {resolved}{\" 2>&1\")}"
+    output = capture("{duobin} sim --import-c {resolved} 2>&1")
     if string.find(output, ": error:") or string.find(output, "failed") then
         return { ok = false, error = string.sub(output, 1, 4000), header = resolved }
     end
@@ -462,7 +462,7 @@ fun foreign_import_preview(header_path: str, source_dir: str): any
 end
 
 fun pass6_catalog(): any
-    output = "{capture(duobin}{\" catalog 2>&1\")}"
+    output = capture("{duobin} catalog 2>&1")
     parsed = json:decode(output)
     if parsed == nil then
         return { ok = false, error = "failed to parse catalog JSON", raw_output = string.sub(output, 1, 2000) }
@@ -475,7 +475,7 @@ fun pass6_catalog(): any
 end
 
 fun pass5_catalog(): any
-    output = "{capture(duobin}{\" catalog 2>&1\")}"
+    output = capture("{duobin} catalog 2>&1")
     parsed = json:decode(output)
     if parsed == nil then
         return { ok = false, error = "failed to parse catalog JSON", raw_output = string.sub(output, 1, 2000) }
@@ -562,7 +562,7 @@ prove: any = (suite: str)
         }
     path = os.tmpname()
     command = "zig build bench"
-    run = "{capture(command} > '{path}{\"' 2>&1\")}"
+    run = runcapture("{command} > '{path}' 2>&1")
     status = run.status
     proof = {
         correct = false
@@ -646,7 +646,7 @@ end
 # spending hours on these. Literal scans only (pattern engine is unreliable).
 fun audit_codegen_pitfalls(file_path: str): any
     if not fs:exists(file_path) then
-        return "{{ error = \"file not found: \"}{file_path }}"
+        return { error = "file not found: {file_path}" }
     end
     src = fs:read_file(file_path)
     lines = string.split(src, "\n")
@@ -722,7 +722,7 @@ fun audit_codegen_pitfalls(file_path: str): any
         file = file_path,
         finding_count = #findings,
         findings = findings,
-        summary = "Scanned {#lines} lines; {#findings}{\" codegen-pitfall(s).\",}"
+        summary = "Scanned {#lines} lines; {#findings} codegen-pitfall(s)."
     }
 end
 # === Exponential evaluator ===
@@ -790,8 +790,8 @@ fun exponential_evaluate(code: str, file_path: str): any
                 kind = "exponential_opportunity",
                 line = first,
                 construct = "@comp.map / @comp.derive",
-                rationale = "'{base}' is hand-monomorphized across {tostring(cnt)}{\" types; one @comp.map emits all variants with zero lua_Value.\",}"
-                multiplier = "O({tostring(cnt)}{\" decls <= 1 call)\",}"
+                rationale = "'{base}' is hand-monomorphized across {tostring(cnt)} types; one @comp.map emits all variants with zero lua_Value."
+                multiplier = "O({tostring(cnt)} decls <= 1 call)"
             })
         end
     end
@@ -810,7 +810,7 @@ fun exponential_evaluate(code: str, file_path: str): any
             kind = "exponential_opportunity",
             line = dispatch_line,
             construct = "@comp.select / @comp.product",
-            rationale = "Runtime type-string branching ({tostring(dispatch_hits)}{\" arms) collapses to a compile-time type dispatch.\",}"
+            rationale = "Runtime type-string branching ({tostring(dispatch_hits)} arms) collapses to a compile-time type dispatch."
             multiplier = "O(branches -> 0 runtime cost)",
         })
     end
