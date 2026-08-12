@@ -1,0 +1,46 @@
+#!/bin/sh
+# Interim @corpus tag census — GAP-161 / law.zero.history
+# Durable states: current | foreign only.
+set -eu
+repo="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$repo"
+
+fail=0
+
+check_first_line() {
+  f="$1"
+  want="$2"
+  first=$(head -1 "$f")
+  echo "$first" | rg -q "^# @corpus ${want}\$" || {
+    echo "census/corpus: FAIL $f — need '# @corpus ${want}'"
+    fail=$((fail + 1))
+  }
+}
+
+# Current teaching fixtures under semantic example homes
+for f in examples/conversion/*.id examples/demand/*.id examples/nominal/*.id \
+         examples/infer/*.id examples/projection/*.id examples/layout/*.id \
+         examples/pack/*.id examples/anchor/*.id examples/case/*.id \
+         examples/read/*.id; do
+  [ -f "$f" ] || continue
+  check_first_line "$f" current
+done
+
+for f in examples/compile_fail/*.id; do
+  [ -f "$f" ] || continue
+  check_first_line "$f" current
+done
+
+# Retired corpus labels must not appear
+bad=$(git ls-files '*.id' 2>/dev/null | xargs rg -l '@corpus (verified|proof|history|migration|compat|legacy)' 2>/dev/null || true)
+if [ -n "$bad" ]; then
+  echo "census/corpus: FAIL retired @corpus labels:"
+  echo "$bad" | sed 's/^/  /'
+  fail=$((fail + 1))
+fi
+
+if [ "$fail" -gt 0 ]; then
+  echo "census/corpus: $fail issue(s)"
+  exit 1
+fi
+echo "census/corpus: pass current corpus tags"

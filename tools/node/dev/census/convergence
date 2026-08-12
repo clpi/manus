@@ -1,0 +1,110 @@
+#!/bin/sh
+# TOTAL CONVERGENCE census — blocking contract verification (P0-A/B subset).
+set -eu
+repo="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$repo"
+
+fail=0
+
+scan() {
+  pat="$1"
+  label="$2"
+  ex="${3:-^$}"
+  hits=$(git ls-files 'src/*.zig' 2>/dev/null | rg -v "$ex" | xargs rg -n "$pat" 2>/dev/null || true)
+  n=$(printf '%s\n' "$hits" | sed '/^$/d' | wc -l | tr -d ' ')
+  if [ "$n" -gt 0 ]; then
+    echo "census/convergence: FAIL $label ($n)"
+    printf '%s\n' "$hits" | head -10 | sed 's/^/  /'
+    fail=$((fail + n))
+  else
+    echo "census/convergence: pass $label"
+  fi
+}
+
+echo "census/convergence: TOTAL CONVERGENCE P0-A/B"
+
+scan 'duo_mode' 'duo_mode field'
+scan 'duo_native' 'duo_native authority tag' 'lexer_bridge\.zig'
+scan 'duo_classify' 'duo_classify authority' 'token_semantic\.zig'
+scan 'duo_type|duo_contextual' 'duo token categories' 'token_semantic\.zig'
+scan 'isEntrypointPath\(".*\.duo"\)|build\.duo' 'entrypoint .duo acceptance' 'build_framework\.zig'
+scan 'sourceFacts\(".*\.duo"\).*idol|\.duo.*canonical' 'idol law for .duo suffix' 'lexer_bridge\.zig'
+scan '@import\("native_req_support\.zig"\)' 'native_req_support import'
+scan 'map\.get\("DUO_' 'DUO_ env prefix in main' 'main\.zig'
+scan 'std\.c\.getenv\("DUO_' 'DUO_ getenv in src' 'main\.zig'
+
+if [ -f scripts/duo_lock.id ]; then
+  echo "census/convergence: FAIL scripts/duo_lock.id still present"
+  fail=$((fail + 1))
+else
+  echo "census/convergence: pass duo_lock retired"
+fi
+
+if ! [ -f scripts/idol_lock.id ]; then
+  echo "census/convergence: FAIL scripts/idol_lock.id missing"
+  fail=$((fail + 1))
+else
+  echo "census/convergence: pass idol_lock present"
+fi
+
+if [ -f src/native_req_support.zig ]; then
+  echo "census/convergence: FAIL native_req_support.zig still present"
+  fail=$((fail + 1))
+else
+  echo "census/convergence: pass native_req_support deleted"
+fi
+
+if [ -f src/duo_native_ir.zig ]; then
+  echo "census/convergence: FAIL duo_native_ir.zig retired name still present"
+  fail=$((fail + 1))
+else
+  echo "census/convergence: pass duo_native_ir retired"
+fi
+
+if [ ! -f src/native_ir.zig ]; then
+  echo "census/convergence: FAIL missing src/native_ir.zig"
+  fail=$((fail + 1))
+else
+  echo "census/convergence: pass native_ir present"
+fi
+
+if rg -n '\.duo' gates/census.id 2>/dev/null | rg -q '.'; then
+  echo "census/convergence: FAIL gates/census.id references .duo"
+  fail=$((fail + 1))
+else
+  echo "census/convergence: pass gates/census.id .id only"
+fi
+
+if git ls-files --error-unmatch .agents/session/ENVELOPE.md >/dev/null 2>&1; then
+  echo "census/convergence: FAIL committed session envelope"
+  fail=$((fail + 1))
+else
+  echo "census/convergence: pass ephemeral session envelope"
+fi
+
+if [ ! -f docs/spec/convergence-directive.md ]; then
+  echo "census/convergence: FAIL missing convergence-directive.md"
+  fail=$((fail + 1))
+else
+  echo "census/convergence: pass convergence-directive present"
+fi
+
+if [ ! -f docs/spec/convergence-contract.md ]; then
+  echo "census/convergence: FAIL missing convergence-contract.md"
+  fail=$((fail + 1))
+fi
+
+# Positive control: retired suffix must not classify as canonical Idol law.
+probe='compiler.duo'
+if ! rg -q 'compiler\.duo' src/lexer_bridge.zig 2>/dev/null; then
+  echo "census/convergence: WARN missing .duo negative control test in lexer_bridge"
+else
+  echo "census/convergence: pass .duo negative control present"
+fi
+
+if [ "$fail" -gt 0 ]; then
+  echo "census/convergence: $fail violation(s) — see docs/spec/convergence-contract.md"
+  exit 1
+fi
+echo "census/convergence: P0-A/B subset pass"
+exit 0

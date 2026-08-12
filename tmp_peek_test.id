@@ -1,0 +1,5 @@
+peek: i64 = (s: str, i: i64)
+ s:to()(i)
+
+main: i64 = ()
+ peek("abc", 2)

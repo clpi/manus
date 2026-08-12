@@ -1,0 +1,52 @@
+---
+globs: ["gate/**", "scripts/**", "*.id", "AGENTS.md"]
+alwaysApply: true
+---
+
+# Gate and identifier antipatterns (agents)
+
+Cursor agents editing Idol source or gates **must not** mint compound binding
+names, mashed selector kingdoms, or law-violating identifiers.
+
+## Forbidden gate compounds (convicted on added lines)
+
+Never introduce these binding names — `gate/idiom.id` rejects them:
+
+```text
+scandiff scanline diffhead bareend stagelist pluralpath pluralfix
+nativebackend backendnative
+machinery machinerycall machinerypeek inferstrhole
+worlddot qualworlddot ingressonly rungate writetemp pathbody treebody
+viewrouter viewproof ingestbody graphbody …
+```
+
+## Required decomposition
+
+| Wrong | Right |
+|---|---|
+| `nativebackend`, `backendnative` | `backend/native` home hierarchy |
+| `pluralpath(home)` | `list(staged)(body)` + inline `plural(root(line))` |
+| `stagelist(body)` | `list(staged)(body)` |
+| `machinery(name)` | `collision(name)` + `flag(..., "router(", ...)` rows |
+| `scandiff` | `scan(diff)(body)` or `feed(body)` |
+
+## Forbidden identifiers (any new binding or path component)
+
+One lowercase word per binding. Reject via `gate/idiom.id` (`eq`, `term`) and
+`gate/path.id` (`verdict`, `walk`, `sep`, `mash`, `plural`):
+
+- snake_case, camelCase, kebab-case, numeric taxonomy suffixes
+- `*able`/`*ible` protocol names (`readable`, `callable`, `invokable`, …)
+- collision identities (`router`, `gateway`, `registry`, `context`, …)
+- codec machinery (`codec`, `encoder`, `decoder`, `converter`, …)
+- plural roots on **new staged paths** (`scripts/`, `examples/`, …) — rehome per
+  `docs/spec/path-migration.md` / GAP-168
+
+## Before editing gates
+
+Read `AGENTS.md` § Gate scan boundaries. Match existing phase owners: `lex`,
+`face`, `realm`, `term`, `deny`, `edge`, `home`, `adj`, `walk`, `verdict`,
+`list(staged)`, `list(tree)`, `feed`, `control`.
+
+Do not add a second gate ontology to classify law — extend `flag()` rows and
+one-word helpers only.

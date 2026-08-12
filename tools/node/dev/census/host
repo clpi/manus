@@ -1,0 +1,66 @@
+#!/bin/sh
+# census/host — classified host/world pattern census (migration evidence only).
+#
+# NOT semantic authority. Shell + git grep only — never std/proc/io namespaces.
+# Authority: docs/spec/host.md · docs/spec/world.md · GAP-154
+#
+# Run: ./tools/node/dev/census/host
+
+set -eu
+
+repo="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$repo"
+
+count() {
+  needle="$1"
+  n="$(git grep -F "$needle" -- \
+    '*.id' '*.zig' '*.md' '*.mdc' '*.yaml' '*.ts' \
+    2>/dev/null | wc -l | tr -d ' ')"
+  printf '%s' "${n:-0}"
+}
+
+emit() {
+  name="$1"
+  class="$2"
+  needle="$3"
+  n="$(count "$needle")"
+  total=$((total + n))
+  printf '%s  %s  %s\n' "$name" "$class" "$n"
+}
+
+total=0
+
+printf 'census/host: classified host/world pattern counts (migration evidence)\n'
+printf 'authority: docs/spec/host.md · docs/spec/world.md · gap: GAP-154\n'
+printf '\n'
+printf '# --- violations (must ratchet down) ---\n'
+
+emit os_args_call VIOLATION 'os.args('
+emit os_getenv VIOLATION 'os.getenv('
+emit environment_bracket VIOLATION 'environment['
+emit environment_colon VIOLATION 'environment:'
+emit io_read_dot VIOLATION 'io.read('
+emit io_write_dot VIOLATION 'io.write('
+emit io_open_dot VIOLATION 'io.open('
+emit io_popen VIOLATION 'io.popen'
+emit popen MIGRATION 'popen('
+emit os_execute VIOLATION 'os.execute'
+emit getenv MIGRATION 'getenv('
+emit std_dot VIOLATION 'std.'
+emit proc_dot VIOLATION 'proc.'
+emit use_paren VIOLATION 'use('
+emit using_paren VIOLATION 'using('
+emit core_dot VIOLATION 'core.'
+
+printf '\n'
+printf '# --- canonical targets (should grow as backfill proceeds) ---\n'
+
+emit os_args_table CANONICAL 'os.args['
+emit os_env_table CANONICAL 'os.env['
+emit os_env_call CANONICAL 'os.env('
+emit io_read_rel CANONICAL 'io:read'
+emit io_write_rel CANONICAL 'io:write'
+
+printf '\n'
+printf 'total violation+migration hits: %s\n' "$total"
+printf 'ratchet: new os.args( os.getenv environment io.read io.write std on added lines = 0\n'

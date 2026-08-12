@@ -1,0 +1,22 @@
+#!/bin/sh
+# PROJECTION-ONE + INFER-ONE text debt census (GAP-165).
+set -eu
+repo="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$repo"
+idol="${IDOL:-$repo/zig-out/bin/idol}"
+fail=0
+run_census() {
+  label="$1"
+  script="$2"
+  if "$idol" run "$repo/$script" >/tmp/idol-census-projection.out 2>&1; then
+    echo "census/projection: pass $label"
+    sed 's/^/  /' /tmp/idol-census-projection.out
+  else
+    echo "census/projection: FAIL $label" >&2
+    sed 's/^/  /' /tmp/idol-census-projection.out >&2
+    fail=1
+  fi
+}
+run_census "projection" "scripts/census/projection.id"
+run_census "infer" "scripts/census/infer.id"
+exit "$fail"
