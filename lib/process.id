@@ -26,3 +26,15 @@ run: i64 = (shellline: str)
     if os.execute(shellline)
         return 0
     1
+
+chomp: str = (text: str)
+    n = text:len()
+    while n > 0
+        c = text:byte(n)
+        if c != 10 and c != 13 and c != 32
+            break
+        n -= 1
+    text:sub(1, n)
+
+exit: void = (code: i64)
+    os.exit(code)

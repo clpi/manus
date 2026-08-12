@@ -3,7 +3,7 @@
 # This is intentionally standalone evidence. It does not change any ratchet or
 # build step; it prints the current queues that must reach zero.
 
-script = std.script
+process = req "lib.process"
 
 lines: any = (text: str)
     out = {}
@@ -13,18 +13,18 @@ lines: any = (text: str)
     while i <= n
         if text:byte(i) == 10
             if i > start
-                out[out:len() + 1] = text:sub(start, i - 1)
+                out:push(text:sub(start, i - 1))
             start = i + 1
         i += 1
     if start <= n
-        out[out:len() + 1] = text:sub(start, n)
+        out:push(text:sub(start, n))
     out
 
 list: any = (root: str, cmd: str)
-    lines(script.capture("cd '{root}' && {cmd}"))
+    lines(process.capture("cd '{root}' && {cmd}"))
 
 num: i64 = (root: str, cmd: str)
-    out = script.chomp(script.capture("cd '{root}' && {cmd}"))
+    out = process.chomp(process.capture("cd '{root}' && {cmd}"))
     if out == ""
         return 0
     to(i64)(out)
@@ -76,12 +76,10 @@ bootc: bool = (path: str)
 
 generated: bool = (root: str, path: str)
     if path == "ext/vscode-duo/extension.js"
-        script.status("cd '{root}' && ./zig-out/bin/idol run scripts/vscodeproj.id") == 0
-    elseif path == "ext/tree-sitter-duo/grammar.js"
-        script.status("cd '{root}' && env TSEMIT_CHECK=1 ./zig-out/bin/idol run scripts/treesitter_emit.id") == 0
-    else
-        false
-    end
+        return process.run("cd '{root}' && ./zig-out/bin/idol run scripts/vscodeproj.id") == 0
+    if path == "ext/tree-sitter-duo/grammar.js"
+        return process.run("cd '{root}' && env TSEMIT_CHECK=1 ./zig-out/bin/idol run scripts/treesitter_emit.id") == 0
+    false
 
 partial: bool = (root: str, path: str)
     false
@@ -93,11 +91,11 @@ pickjs: any = (root: str, files: any, mode: str)
         isgen = generated(root, path)
         ispart = partial(root, path)
         if mode == "generated" and isgen
-            out[out:len() + 1] = path
-        elseif mode == "partial" and ispart
-            out[out:len() + 1] = path
-        elseif mode == "authored" and !isgen and !ispart
-            out[out:len() + 1] = path
+            out:push(path)
+        if mode == "partial" and ispart
+            out:push(path)
+        if mode == "authored" and !isgen and !ispart
+            out:push(path)
     out
 
 pickc: any = (files: any, mode: str)
@@ -106,9 +104,9 @@ pickc: any = (files: any, mode: str)
         path = files[i]
         isboot = bootc(path)
         if mode == "boot" and isboot
-            out[out:len() + 1] = path
-        elseif mode == "oracle" and !isboot
-            out[out:len() + 1] = path
+            out:push(path)
+        if mode == "oracle" and !isboot
+            out:push(path)
     out
 
 show: i64 = (name: str, files: any)
@@ -134,10 +132,10 @@ shownum: i64 = (name: str, value: i64)
     value
 
 main: i64 = ()
-    root = script.chomp(script.capture("git rev-parse --show-toplevel 2>/dev/null"))
+    root = process.chomp(process.capture("git rev-parse --show-toplevel 2>/dev/null"))
     if root == ""
         print("debtledger: fail no git root")
-        std.os.exit(3)
+        process.exit(3)
 
     zig = list(root, "git ls-files '*.zig' | sort")
     c = list(root, "git ls-files '*.[ch]' | sort")
@@ -171,7 +169,7 @@ main: i64 = ()
 
     if total == 0
         print("debtledger: pass total 0")
-        std.os.exit(bad)
+        process.exit(bad)
     print("debtledger: fail total {total}")
-    std.os.exit(1)
+    process.exit(1)
     0

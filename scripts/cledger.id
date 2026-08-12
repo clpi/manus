@@ -3,7 +3,7 @@
 # language_census counts these as sanctioned bootstrap or oracle files. This
 # prints the exact queue so foreign C can retire under duon-visible evidence.
 
-script = std.script
+process = req "lib.process"
 
 lines: any = (text: str)
     out = {}
@@ -13,11 +13,11 @@ lines: any = (text: str)
     while i <= n
         if text:byte(i) == 10
             if i > start
-                out[out:len() + 1] = text:sub(start, i - 1)
+                out:push(text:sub(start, i - 1))
             start = i + 1
         i += 1
     if start <= n
-        out[out:len() + 1] = text:sub(start, n)
+        out:push(text:sub(start, n))
     out
 
 starts: bool = (path: str, prefix: str)
@@ -32,9 +32,9 @@ pick: any = (files: any, want: str)
         path = files[i]
         isboot = boot(path)
         if want == "boot" and isboot
-            out[out:len() + 1] = path
-        elseif want == "oracle" and !isboot
-            out[out:len() + 1] = path
+            out:push(path)
+        if want == "oracle" and !isboot
+            out:push(path)
     out
 
 show: i64 = (name: str, files: any)
@@ -45,13 +45,13 @@ show: i64 = (name: str, files: any)
     count
 
 main: i64 = ()
-    root = script.chomp(script.capture("git rev-parse --show-toplevel 2>/dev/null"))
+    root = process.chomp(process.capture("git rev-parse --show-toplevel 2>/dev/null"))
     if root == ""
         print("cledger: fail no git root")
-        std.os.exit(3)
+        process.exit(3)
 
     cmd = "cd '{root}' && git ls-files '*.[ch]' | sort"
-    files = lines(script.capture(cmd))
+    files = lines(process.capture(cmd))
     boots = pick(files, "boot")
     oracles = pick(files, "oracle")
     count = boots:len()
@@ -59,8 +59,8 @@ main: i64 = ()
     show("coracle", oracles)
     if count == 0
         print("cledger: pass bootstrap c 0")
-        std.os.exit(0)
+        process.exit(0)
 
     print("cledger: fail bootstrap c {count}")
-    std.os.exit(1)
+    process.exit(1)
     0

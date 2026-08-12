@@ -4,7 +4,7 @@
 # tracked bootstrap files, including build.zig, so the remaining queue is
 # inspectable from duon.
 
-script = std.script
+process = req "lib.process"
 
 lines: any = (text: str)
     out = {}
@@ -14,11 +14,11 @@ lines: any = (text: str)
     while i <= n
         if text:byte(i) == 10
             if i > start
-                out[out:len() + 1] = text:sub(start, i - 1)
+                out:push(text:sub(start, i - 1))
             start = i + 1
         i += 1
     if start <= n
-        out[out:len() + 1] = text:sub(start, n)
+        out:push(text:sub(start, n))
     out
 
 starts: bool = (text: str, prefix: str)
@@ -75,18 +75,18 @@ show: i64 = (name: str, files: any)
     count
 
 main: i64 = ()
-    root = script.chomp(script.capture("git rev-parse --show-toplevel 2>/dev/null"))
+    root = process.chomp(process.capture("git rev-parse --show-toplevel 2>/dev/null"))
     if root == ""
         print("zigledger: fail no git root")
-        std.os.exit(3)
+        process.exit(3)
 
     cmd = "cd '{root}' && git ls-files 'build.zig' 'src/*.zig' | sort"
-    files = lines(script.capture(cmd))
+    files = lines(process.capture(cmd))
     count = files:len()
     bad = control()
     if count == 0
         print("zigledger: pass tracked zig 0")
-        std.os.exit(bad)
+        process.exit(bad)
 
     print("zigledger: fail tracked zig {count}")
     show("build", files)
@@ -97,5 +97,5 @@ main: i64 = ()
     show("semantic", files)
     show("test", files)
     show("support", files)
-    std.os.exit(1)
+    process.exit(1)
     0

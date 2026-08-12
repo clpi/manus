@@ -1,7 +1,7 @@
-# FTCFTW evidence ledger for the Idol SHC performance claim chain.
+# FTCFTW evidence ledger for the Idiom SHC performance claim chain.
 #
 # This is a read-only index, not a benchmark runner. It names the `.id` gates
-# whose measured outputs must exist before any broad Idol-only performance
+# whose measured outputs must exist before any broad Idiom-only performance
 # claim is admissible.
 #
 # CONSTITUTIONAL FRAMING (C0 §47, §49, law.project.ftcftw):
@@ -18,35 +18,11 @@
 # Generated-C evidence is not direct-native evidence. Direct-native evidence is
 # not Wasm evidence. Unexercised dimensions are NOT EXERCISED, never inferred.
 #
-# "100% SHC native lowering" is coverage over the REACHABLE Idol corpus
+# "100% SHC native lowering" is coverage over the REACHABLE Idiom corpus
 # (native_census), not file count. C-emitter proof fixtures are unreachable by
 # construction and must not shrink the denominator.
 
-chomp: str = (text: str)
-    n = text:len()
-    while n > 0
-        c = text:byte(n)
-        if c != 10 and c != 13 and c != 32
-            break
-        n -= 1
-    text:sub(1, n)
-
-capture: str = (cmd: str)
-    f = io.popen(cmd, "r")
-    if f == nil
-        return ""
-    out = ""
-    line = f:read("*a")
-    if line != nil
-        out = line
-    f:close()
-    chomp(out)
-
-cap: str = (cmd: str)
-    chomp(capture(cmd))
-
-shellstatus: i64 = (cmd: str)
-    to(i64)(cap("( " .. cmd .. " ) >/dev/null 2>&1; echo $?"))
+process = req "lib.process"
 
 lines: any = (text: str)
     out = {}
@@ -56,11 +32,11 @@ lines: any = (text: str)
     while i <= n
         if text:byte(i) == 10
             if i > start
-                out[out:len() + 1] = text:sub(start, i - 1)
+                out:push(text:sub(start, i - 1))
             start = i + 1
         i += 1
     if start <= n
-        out[out:len() + 1] = text:sub(start, n)
+        out:push(text:sub(start, n))
     out
 
 has: bool = (text: str, part: str)
@@ -68,10 +44,10 @@ has: bool = (text: str, part: str)
     pos != nil and pos > 0
 
 present: bool = (path: str)
-    shellstatus("test -e '" .. path .. "'") == 0
+    process.run("test -e '{path}'") == 0
 
 grepfile: bool = (path: str, pat: str)
-    has(cap("cat '" .. path .. "' 2>/dev/null"), pat)
+    has(process.capture("cat '{path}' 2>/dev/null"), pat)
 
 requirepath: i64 = (path: str, tag: str, pat: str)
     if grepfile(path, pat)
@@ -83,7 +59,7 @@ requirepath: i64 = (path: str, tag: str, pat: str)
 control: i64 = ()
     selfpath = "scripts/ftcftwledger.id"
     presentpat = "ftcftwledger: pass all evidence contracts present"
-    absentpat = "ftcftwledger-control-" .. "absent"
+    absentpat = "ftcftwledger-control-absent"
     if !grepfile(selfpath, presentpat)
         print("ftcftwledger: fail control present pattern")
         return 1
@@ -102,7 +78,7 @@ row: i64 = (name: str, path: str, proof: str, a: str, b: str, c: str, d: str)
     result = 0
     if state == "missing"
         result = 1
-    else
+    if state != "missing"
         result += requirepath(path, "contract", a)
         result += requirepath(path, "oracle", b)
         result += requirepath(path, "negative", c)
@@ -112,7 +88,7 @@ row: i64 = (name: str, path: str, proof: str, a: str, b: str, c: str, d: str)
 main: i64 = ()
     missing = control()
     missing += row("native", "scripts/native_census.id",
-        "direct-native coverage over the reachable Idol examples corpus",
+        "direct-native coverage over the reachable Idiom examples corpus",
         "native census (--backend=direct",
         "NATIVE_FLOOR",
         "0 programs compiled natively",
@@ -130,19 +106,19 @@ main: i64 = ()
         "native_differential: FAIL",
         "stdout")
     missing += row("bench", "scripts/run_benchmark.id",
-        "Idol-hosted kernels match reference C before any speed comparison",
+        "Idiom-hosted kernels match reference C before any speed comparison",
         "reference C benchmark",
         "RESULT_FAIL_FLAG = 1",
         "Benchmark failed:",
         "Duo .lua/.id >= C")
     missing += row("runtime", "scripts/runtime_bench.id",
-        "Idol Wasm runtime measured against wasmtime with answer-checked exec axis",
+        "Idiom Wasm runtime measured against wasmtime with answer-checked exec axis",
         "wasmtime is the oracle",
         "answer mismatch",
         "losses += 1",
         "runtime bench: PASS")
     missing += row("shc", "scripts/shcledger.id",
-        "live bootstrap blockers to 100% Idol self-hosting authority",
+        "live bootstrap blockers to 100% Idiom self-hosting authority",
         "shcledger -- current blockers",
         "audit     scripts/embedledger",
         "shcledger: FAIL",

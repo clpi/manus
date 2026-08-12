@@ -3,7 +3,7 @@
 # The durable coordination file points agents at `.agents/session/claims`.
 # This script turns those markdown claims into a concise duon-readable view.
 
-script = std.script
+process = req "lib.process"
 
 lines: any = (text: str)
     out = {}
@@ -13,11 +13,11 @@ lines: any = (text: str)
     while i <= n
         if text:byte(i) == 10
             if i > start
-                out[out:len() + 1] = text:sub(start, i - 1)
+                out:push(text:sub(start, i - 1))
             start = i + 1
         i += 1
     if start <= n
-        out[out:len() + 1] = text:sub(start, n)
+        out:push(text:sub(start, n))
     out
 
 field: str = (line: str)
@@ -73,7 +73,7 @@ seen: bool = (out: any, item: str)
 push: void = (out: any, item: str)
     clean = trim(cutnote(item))
     if clean != "" and rootpath(clean) and !seen(out, clean)
-        out[out:len() + 1] = clean
+        out:push(clean)
 
 splitlocks: any = (text: str)
     out = {}
@@ -105,7 +105,7 @@ splitlocks: any = (text: str)
     out
 
 collect: any = (path: str)
-    text = script.capture("cat '{path}'")
+    text = process.capture("cat '{path}'")
     agent = ""
     area = ""
     files = ""
@@ -113,14 +113,14 @@ collect: any = (path: str)
     for i, line in lines(text)
         if line:sub(1, 9) == "- Agent: "
             agent = field(line)
-        elseif line:sub(1, 8) == "- Area: "
+        if line:sub(1, 9) != "- Agent: " and line:sub(1, 8) == "- Area: "
             area = field(line)
-        elseif line:sub(1, 16) == "- Files locked: "
+        if line:sub(1, 9) != "- Agent: " and line:sub(1, 8) != "- Area: " and line:sub(1, 16) == "- Files locked: "
             files = field(line)
             taking = true
-        elseif taking and line:sub(1, 2) == "  "
-            files = files .. " " .. trim(line)
-        elseif line:sub(1, 2) == "- "
+        if taking and line:sub(1, 2) == "  "
+            files = "{files} {trim(line)}"
+        if line:sub(1, 2) == "- "
             taking = false
     locktext = files
     if area != ""
@@ -201,18 +201,18 @@ statuspath: str = (line: str)
 
 dirtyfiles: any = (root: str)
     out = {}
-    text = script.capture("cd '{root}' && git status --porcelain --untracked-files=all")
+    text = process.capture("cd '{root}' && git status --porcelain --untracked-files=all")
     for i, line in lines(text)
         path = statuspath(line)
         if path != "" and !starts(path, ".agents/session/")
-            out[out:len() + 1] = path
+            out:push(path)
     out
 
 dirty: i64 = (claims: any, root: str)
     files = dirtyfiles(root)
     unclaimed = 0
     other = 0
-    strict = script.getenv("CLAIMLEDGER_STRICT", "") == "1"
+    strict = (os.env["CLAIMLEDGER_STRICT"] or "") == "1"
     for i = 1, files:len()
         path = files[i]
         hits = 0
@@ -227,10 +227,10 @@ dirty: i64 = (claims: any, root: str)
         if hits == 0
             unclaimed += 1
             print("claimledger: dirty unclaimed {path}")
-        elseif foreign > 0
+        if hits != 0 and foreign > 0
             other += 1
             print("claimledger: dirty foreign {path}")
-        else
+        if hits != 0 and foreign == 0
             print("claimledger: dirty claimed {path}")
     if other > 0 and strict
         print("claimledger: fail dirty paths claimed by another agent {other}")
@@ -267,26 +267,26 @@ overlaps: i64 = (claims: any)
     0
 
 main: i64 = ()
-    root = script.chomp(script.capture("git rev-parse --show-toplevel 2>/dev/null"))
+    root = process.chomp(process.capture("git rev-parse --show-toplevel 2>/dev/null"))
     if root == ""
         print("claimledger: fail no git root")
-        std.os.exit(3)
+        process.exit(3)
 
-    found = lines(script.capture("cd '{root}' && find .agents/session/claims -maxdepth 1 -type f -name '*.md' -print | sort"))
+    found = lines(process.capture("cd '{root}' && find .agents/session/claims -maxdepth 1 -type f -name '*.md' -print | sort"))
     count = found:len()
     if count == 0
         print("claimledger: fail live claims 0")
-        std.os.exit(1)
+        process.exit(1)
 
     print("claimledger: live claims {count}")
     claims = {}
     for i = 1, count
         path = "{root}/{found[i]}"
         claim = collect(path)
-        claims[claims:len() + 1] = claim
+        claims:push(claim)
         show(claim)
     rc = control()
     rc += overlaps(claims)
     rc += dirty(claims, root)
-    std.os.exit(rc)
+    process.exit(rc)
     0
