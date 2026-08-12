@@ -64,7 +64,8 @@ lines: any = (text: str)
     out
 
 has: bool = (text: str, part: str)
-    text:find(part, 1, true) != nil
+    pos = text:find(part, 1, true)
+    pos != nil and pos > 0
 
 present: bool = (path: str)
     shellstatus("test -e '" .. path .. "'") == 0
@@ -162,4 +163,4 @@ main: i64 = ()
         print("ftcftwledger: pass all evidence contracts present")
         return 0
     print("ftcftwledger: fail missing contracts {missing}")
-    1
+    return 1

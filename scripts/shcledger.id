@@ -57,7 +57,8 @@ count: i64 = (root: str, cmd: str)
     to(i64)(out:sub(1, n))
 
 has: bool = (text: str, part: str)
-    text:find(part, 1, true) != nil
+    pos = text:find(part, 1, true)
+    pos != nil and pos > 0
 
 need: i64 = (text: str, part: str, label: str)
     if has(text, part)
@@ -175,10 +176,10 @@ main: i64 = ()
     bad += need(manifest, "FIXTURES ONLY", "fixture-only backend row not hidden")
 
     print("cheap gates")
-    bad += runcheck(root, "language_census", duobin .. " run scripts/language_census.id")
-    bad += runcheck(root, "foreign_census", duobin .. " run scripts/foreign_census.id")
-    bad += runcheck(root, "embedledger", duobin .. " run scripts/embedledger.id")
-    bad += runcheck(root, "duo_idiom_gate", duobin .. " run scripts/duo_idiom_gate.id")
+    bad += runcheck(root, "language_census", duobin .. " run --backend=c scripts/language_census.id")
+    bad += runcheck(root, "foreign_census", duobin .. " run --backend=c scripts/foreign_census.id")
+    bad += runcheck(root, "embedledger", duobin .. " run --backend=c scripts/embedledger.id")
+    bad += runcheck(root, "duo_idiom_gate", duobin .. " run --backend=c scripts/duo_idiom_gate.id")
 
     deep = envor("SHCLEDGER_DEEP", "0")
     if deep == "1"

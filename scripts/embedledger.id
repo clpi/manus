@@ -44,7 +44,8 @@ lines: any = (text: str)
     out
 
 has: bool = (text: str, part: str)
-    text:find(part, 1, true) != nil
+    pos = text:find(part, 1, true)
+    pos != nil and pos > 0
 
 trimleft: str = (text: str)
     i = 1
