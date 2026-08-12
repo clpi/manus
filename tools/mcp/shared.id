@@ -328,11 +328,11 @@ fun dev_integration_submit(owner: str, work_item: str, claim_id: str): str
     process.capture("{cmd} 2>&1")
 end
 
-fun dev_validate_run(file: str, work_item: str, process.runute: bool): str
+fun dev_validate_run(file: str, work_item: str, execute: bool): str
     cmd = "{duobin} dev validate run"
     if file ~= nil and file ~= "" then cmd = "{cmd} --file {file}"
     elseif work_item ~= nil and work_item ~= "" then cmd = "{cmd} --work-item {work_item}" end
-    if process.runute then cmd = "{cmd} --process.runute" end
+    if execute then cmd = "{cmd} --execute" end
     process.capture("{cmd} 2>&1")
 end
 
@@ -1305,7 +1305,7 @@ fun claim_overlaps(a: str, b: str): bool
 end
 
 fun claim_meta(key: str): any
-    raw = "{fs:read_file(claimsdir}/{key}{\"/owner\")}"
+    raw = fs:read_file("{claimsdir}/{key}/owner")
     if raw == nil or raw == "" then return nil end
     owner = string.match(raw, "^([^\t]*)")
     tsv = string.match(raw, "^[^\t]*\t([^\t\n]*)")
@@ -1333,7 +1333,7 @@ end
 # the metadata is gone before reporting anything.
 fun claim_drop(key: str): bool
     dir = "{claimsdir}/{key}"
-    os.process.runute("rm -rf '{dir}'")
+    process.run("rm -rf '{dir}'")
     claim_meta(key) == nil
 end
 
@@ -1466,7 +1466,7 @@ m.agent_smoke = agent_smoke
 m.build_run = build_run
 m.document = document
 m.bench_run = bench_run
-m.process.capture = runcapture
+m.capture = runcapture
 m.semantic_snapshot_raw = semantic_snapshot_raw
 m.repo_tooling = repo_tooling
 m.dump_c = dump_c
