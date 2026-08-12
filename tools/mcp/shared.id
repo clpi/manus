@@ -877,9 +877,10 @@ fun exponential_evaluate(code: str, file_path: str): any
     -- Annotated preview: prepend a discovery header listing every opportunity.
     optimized = code
     if #suggestions > 0
-        optimized = "-- @comp exponential-eval: {tostring(#suggestions)} opportunity(s)\\n"
+        scount = #suggestions
+        optimized = "# @comp exponential-eval: {scount:to(str)} opportunity(s)\n"
         for _, s in suggestions
-            optimized = "{optimized}# [L{tostring(s.line)}] {s.construct}: {s.rationale}\n"
+            optimized = "{optimized}# [L{s.line:to(str)}] {s.construct}: {s.rationale}\n"
         end
         optimized = "{optimized}{code}"
     end
@@ -1054,11 +1055,12 @@ end
 # ====================================
 
 fun file_finding(kind: str, title: str, detail: str, priority: str, files: str): str
-    -- IDs must be unique within a second (batch calls share os.time()); use a
-    -- per-process counter so same-second filings never collide.
+    # IDs must be unique within a second (batch calls share clock.now()); use a
+    # per-process counter so same-second filings never collide.
     finding_seq += 1
-    ts = os.date("!%Y-%m-%dT%H:%m:%SZ")
-    id = "F-{tostring(os.time() % 100000)}-{tostring(finding_seq)}"
+    ts = clock.utc()
+    slot = clock.now() % 100000
+    id = "F-{slot:to(str)}-{finding_seq:to(str)}"
     pr = priority
     if pr == "" or pr == nil then pr = "P1" end
     row = "| {id} | {title} | {pr} | {kind} | {ts} | open | {detail} |"
