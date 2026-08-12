@@ -20,7 +20,7 @@
 -- work from inside a tool handler before this file stopped importing them.
 -- `req "std.x"` is migration debt against that rule; the `req` left here
 -- names a PROJECT module, which is not std and does still need one.
-shared = req "tools.mcp.id_shared"
+shared = req "tools.mcp.shared"
 
 -- DUO_ROOT as a VALUE at file scope, not a helper function: a named
 -- file-scope function called from a handler lowers to an upvalue call Duo

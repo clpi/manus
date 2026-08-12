@@ -29,7 +29,8 @@ until every blocker below is closed and explicit release authorization is record
 |---|---|
 | Update-face law owned by C0, projected by `AGENTS.md`; candidate gate at `scripts/idiomgate.id` | **met** — candidate finding, not semantic proof |
 | Graph-owned canonicalizer for update-face equivalence | **blocked** — `GAP-145`, `GAP-134`, `GAP-124` |
-| Pre-commit / semantic gates pass on release candidate tree | **open** — requires clean aggregate run |
+| Pre-commit / semantic gates pass on release candidate tree | **open** — requires clean aggregate run at candidate HEAD |
+| Canonicality split enforced: new debt = 0 vs existing corpus debt tracked separately | **in progress** — see `docs/METRICS.md` |
 | No second idiom/canonicality authority in clients | **met** — derive from repository gates |
 
 ## Semantic and SHC closure

@@ -6,6 +6,10 @@ source model. This document is a human projection of the executed authority
 frontier, not bootstrap evidence or production authority. The immediate target
 is compiler B, not a sovereign backend. No compiler B exists.
 
+**Progress dashboard:** three dominant metrics and normalized audit scores live
+in [`docs/METRICS.md`](METRICS.md). Subordinate diagnostics (file counts, Zig
+counts, keyword counts) must not headline status reports.
+
 ## Current stage: S0
 
 **S0 (active):** the pinned Zig seed produces the host compiler.

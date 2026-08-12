@@ -29,7 +29,7 @@
 -- proves the coordination lock by making it REFUSE — a lock that only ever
 -- says yes is not a lock, and the gate would rather see the "no".
 
-shared = req "tools.mcp.id_shared"
+shared = req "tools.mcp.shared"
 
 root = std.os.getenv("DUO_ROOT")
 if root == nil or root == ""

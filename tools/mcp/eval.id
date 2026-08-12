@@ -1,7 +1,7 @@
 -- duo-mcp/duo_eval.id — exponential metaprogramming evaluator.
 -- Pure Duo. Input: Duo source. Output: metaprogramming-enhanced, minimized Duo
 -- intermediary using @comp.* combinators + native-boxing audit + LOC metrics.
--- Imported by duo_bench.id: `eval = req "tools.mcp.id_eval"`.
+-- Imported by bench.id: `eval = req "tools.mcp.eval"`.
 --
 -- Implementation notes:
 --  * All intermediate data is carried as DELIMITED STRINGS or string-keyed->string

@@ -20,6 +20,25 @@ exec: i64 = (cmd: str)
         return -1
     rc
 
+# Clock ingress at bootstrap boundary — not os.time/os.date in MCP logic.
+epoch: i64 = ()
+    t = @c.emit("lua_os_time()")
+    if t == nil
+        return 0
+    t
+
+utcstamp: str = ()
+    s = @c.emit("lua_os_date(lua_val_lit(\"!%Y-%m-%dT%H:%m:%SZ\"))")
+    if s == nil
+        return ""
+    s
+
+coordstamp: str = ()
+    s = @c.emit("lua_os_date(lua_val_lit(\"%Y-%m-%d %H:%m:%S\"))")
+    if s == nil
+        return ""
+    s
+
 
 # Host env and filesystem work use os.env, fs:*, capture, and exec — no universal namespace.
 root = os.env["DUO_ROOT"]
@@ -67,7 +86,7 @@ fun coordination_read(): str
 end
 
 fun coordination_update(action: str, agent_id: str, detail: str, files: str)
-    timestamp = os.date("%Y-%m-%d %H:%m:%S")
+    timestamp = coordstamp()
     entry = "\n### [{timestamp}] {agent_id} — {action:upper()}\n"
     entry = "{entry}Detail: {detail}\n"
     if files ~= ""
@@ -87,7 +106,7 @@ fun coordination_update(action: str, agent_id: str, detail: str, files: str)
 end
 
 fun session_log(agent_id: str, summary: str, detail: str)
-    timestamp = os.date("!%Y-%m-%dT%H:%m:%SZ")
+    timestamp = utcstamp()
     entry = "\n| {timestamp} | {agent_id} | {summary} |"
     if detail ~= "" then entry = "{entry} {detail} |" else entry = "{entry} |" end
     content = fs:read_file(coordpath)

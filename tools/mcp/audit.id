@@ -9,7 +9,7 @@
 -- It carried three defects until 2026-08-08 and could not have run at all:
 -- `req "duo_shared"` (bare, so it resolved only with cwd = tools/mcp), plus
 -- unused `std.mcp` and `std.script` imports.
-shared = req "tools.mcp.id_shared"
+shared = req "tools.mcp.shared"
 
 paths = {
     "examples/meta_template_showcase.id",

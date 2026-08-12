@@ -51,6 +51,9 @@ Unexercised dimensions are reported as `NOT EXERCISED`, never inferred. A
 focused pass does not turn a red aggregate green. Transport completion is not
 the requested run's outcome.
 
+Progress headline metrics: `docs/METRICS.md` (executed frontier, reconstruction
+debt, FTCFTW matrix). Do not substitute file counts or keyword removal.
+
 ## Demand and representation
 
 Prefer never materializing work over materializing and deleting it later. Audit
