@@ -1,0 +1,188 @@
+-- Pass 57 C3 — corpus census for chained comparisons (`0 <= i < n`).
+--
+-- C3 rules that the surface form stays behind the escape hatch unless corpus
+-- frequency clears the bar, and that this be "a measurement, not a debate".
+-- This is the measurement, in Duo so it is reproducible and so the repo stays
+-- single-language.
+--
+-- What counts as a site: `A op B and B op C` where the MIDDLE term is identical
+-- on both sides of the `and` — that is the shape `0 <= i < n` would replace.
+-- `a < b and c < d` is not a site; neither is `a < b and b == c` (only the
+-- ordering operators <, <=, >, >= chain).
+--
+-- Deliberately conservative: it counts only what the sugar would actually
+-- absorb. A looser matcher would inflate the number and weaken the evidence.
+--
+-- Run: CENSUS_PATHS="a.id b.id" duo run scripts/chained_comparison_census.id
+-- Paths come from the environment, NOT argv: duo-compiled binaries do not
+-- populate Lua's `arg` (it reads back nil), so an argv-driven script silently
+-- scans nothing and reports a reassuring zero.
+-- Prints one line per site plus a total. Exit 0 always — this reports, it does
+-- not gate.
+
+-- Bound with `req`, never called as the dotted `std.str.sub`: the dotted form
+-- resolves through a loader that returns nil for a native-direct module, and
+-- the call segfaults rather than erroring. Same defect that broke the Duo lexer.
+
+-- Denominator for the ratio C3 is judged on. Counted by the same walk that
+-- finds the sites, so numerator and denominator cannot drift apart.
+global census_ands: i64 = 0
+global census_files: i64 = 0
+
+is_ident_byte(c: i64): bool
+    (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or (c >= 48 and c <= 57) or c == 95 or c == 46
+end
+
+-- Scan left from `i` (1-based, inclusive) over an identifier/path, returning the
+-- start index, or 0 when there is no identifier there.
+ident_start(s: str, i: i64): i64
+    j: i64 = i
+    while j >= 1 and is_ident_byte(string.byte(s, j))
+        j -= 1
+    end
+    if j == i
+        return 0
+    end
+    j + 1
+end
+
+-- Scan right from `i` over an identifier/path, returning the end index, or 0.
+ident_end(s: str, i: i64): i64
+    n: i64 = #s
+    j: i64 = i
+    while j <= n and is_ident_byte(string.byte(s, j))
+        j += 1
+    end
+    if j == i
+        return 0
+    end
+    j - 1
+end
+
+skip_spaces_left(s: str, i: i64): i64
+    j: i64 = i
+    while j >= 1 and (string.byte(s, j) == 32 or string.byte(s, j) == 9)
+        j -= 1
+    end
+    j
+end
+
+skip_spaces_right(s: str, i: i64): i64
+    n: i64 = #s
+    j: i64 = i
+    while j <= n and (string.byte(s, j) == 32 or string.byte(s, j) == 9)
+        j += 1
+    end
+    j
+end
+
+-- Length of an ordering operator at `i`, or 0. `==` and `~=` are NOT ordering
+-- operators and must not match; `<=`/`>=` are checked before `<`/`>`.
+ord_op_len(s: str, i: i64): i64
+    n: i64 = #s
+    c: i64 = string.byte(s, i)
+    if i + 1 <= n
+        c2: i64 = string.byte(s, i + 1)
+        if (c == 60 or c == 62) and c2 == 61
+            return 2
+        end
+    end
+    if c == 60 or c == 62
+        return 1
+    end
+    0
+end
+
+line_of(s: str, upto: i64): i64
+    ln: i64 = 1
+    i: i64 = 1
+    while i < upto
+        if string.byte(s, i) == 10
+            ln += 1
+        end
+        i += 1
+    end
+    ln
+end
+
+-- Count sites in one source, printing each.
+scan(src: str, path: str): i64
+    n: i64 = #src
+    found: i64 = 0
+    i: i64 = 1
+    while i + 4 <= n
+        -- locate " and "
+        if string.byte(src, i) == 32 and string.byte(src, i + 1) == 97 and string.byte(src, i + 2) == 110 and string.byte(src, i + 3) == 100 and string.byte(src, i + 4) == 32
+            census_ands += 1
+            -- LEFT of `and`: ... op B
+            le: i64 = skip_spaces_left(src, i - 1)
+            bs: i64 = ident_start(src, le)
+            if bs > 0
+                opl: i64 = skip_spaces_left(src, bs - 1)
+                oplen: i64 = 0
+                if opl >= 2
+                    oplen = ord_op_len(src, opl - 1)
+                end
+                if oplen == 0 and opl >= 1
+                    oplen = ord_op_len(src, opl)
+                end
+                if oplen > 0
+                    -- RIGHT of `and`: C op ...
+                    rs: i64 = skip_spaces_right(src, i + 5)
+                    re: i64 = ident_end(src, rs)
+                    if re > 0
+                        ao: i64 = skip_spaces_right(src, re + 1)
+                        if ord_op_len(src, ao) > 0
+                            -- middle terms must be the SAME token
+                            if string.sub(src, bs, le) == string.sub(src, rs, re)
+                                found += 1
+                                print(path .. ":" .. to(str)(line_of(src, bs)) .. "  " .. string.sub(src, bs, le))
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        i += 1
+    end
+    found
+end
+
+main(): i64
+    paths = os.getenv("CENSUS_PATHS")
+    if not paths
+        print("set CENSUS_PATHS to a space-separated list of .id files")
+        return 0
+    end
+    total: i64 = 0
+    n: i64 = #paths
+    start: i64 = 1
+    i: i64 = 1
+    while i <= n + 1
+        at_end = i > n
+        sep = false
+        if not at_end
+            sep = string.byte(paths, i) == 32
+        end
+        if at_end or sep
+            if i > start
+                path = string.sub(paths, start, i - 1)
+                f = io.open(path, "r")
+                if f
+                    src = f:read("a")
+                    f:close()
+                    census_files += 1
+                    total += scan(src, path)
+                end
+            end
+            start = i + 1
+        end
+        i += 1
+    end
+    label = os.getenv("CENSUS_LABEL")
+    if not label
+        label = "corpus"
+    end
+    print(label .. ": files=" .. census_files:to(str) .. "  and=" .. census_ands:to(str) .. "  CHAINED=" .. total:to(str))
+    0
+end

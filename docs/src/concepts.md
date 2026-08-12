@@ -4,7 +4,7 @@ This page is a current architectural projection, not a syntax specification.
 The sole law is [`docs/spec/constitution.md`](../spec/constitution.md), and
 canonical source uses `.id`.
 
-Idsem describes a value through graph-owned identity plus facts. A descriptor
+Idol describes a value through graph-owned identity plus facts. A descriptor
 can state the laws and structure demanded of a subject without creating a
 parallel interface, trait, host-tagged-union, or reflection namespace.
 

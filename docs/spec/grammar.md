@@ -1,4 +1,4 @@
-# Idsem grammar projection
+# Idol grammar projection
 
 The sole language law is [`docs/spec/constitution.md`](constitution.md). This
 page is a human projection of closed source-face decisions; it is not a second
@@ -21,7 +21,7 @@ proof that a spelling is canonical.
 - backtick is reserved and never executes a process;
 - blocks use offside layout;
 - `end`, semicolons, `then`, `do`, Lua long strings/comments, and prefix
-  directives are not canonical Idsem.
+  directives are not canonical Idol.
 
 Compatibility recognition preserves its foreign or historical lawset and
 provenance. It never shares canonical token identity and never supplies a
@@ -85,6 +85,37 @@ table[key]
 
 None of these faces implies a table, record, object, allocation, place, nested
 container, hash lookup, boxing, or dispatch.
+
+## Update face
+
+Compound update is the canonical face only when an equivalence witness proves
+that `place op= value` and `place = place op value` request the same update.
+The face adds no semantic operation: normalization retains the base relation
+`op`, the exact place, its read, write, and update facts, the incoming value,
+result demand, effects, and provenance. There is no `addassign` relation family
+and no `++` face. When the witness exists, the compound form is the canonical
+shortest face and the expanded form is migratable.
+
+The witness must prove all of the following:
+
+- the read and write designate the exact same place;
+- a computed place and every expression that establishes it are evaluated
+  exactly once;
+- evaluation order and observable effects are unchanged;
+- custom relation law, overflow, failure, aliasing, and result demand are
+  preserved.
+
+For example, `step += 1` may be canonical when those facts prove it equivalent
+to `step = step + 1`. A different right-hand place, a repeated computed key, or
+an update whose relation law or observations differ is not mechanically
+rewritable.
+
+The authoritative formatter and gate must decide from graph facts and the
+equivalence witness. That implementation remains blocked by the distinct
+lexical identities in `GAP-145`, generated grammar roles in `GAP-134`, and the
+graph-derived semantic canonicality service in `GAP-124`. Any current text
+ratchet, including the added-line check in `scripts/idiomgate.id`, is
+non-authoritative migration pressure and may not claim equivalence.
 
 ## Parser boundary
 

@@ -4,7 +4,7 @@
 
 ### 1. Register the language
 
-Append the `[language-server.duo-lsp]`, `[[language]]`, and `[[grammar]]` entries
+Append the `[language-server.id-lsp]`, `[[language]]`, and `[[grammar]]` entries
 from `languages.toml` into your Helix languages config:
 
 ```sh

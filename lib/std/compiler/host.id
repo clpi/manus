@@ -1,0 +1,43 @@
+-- std.compiler.host — SH-03's production-dispatch anchor.
+--
+-- WHY THIS MODULE EXISTS — and what changed 2026-08-08.
+--
+-- It began as a WORKAROUND. `--lib` emitted a constructor that ran the
+-- runtime's initializers and `duo_register_modules()`, which initializes every
+-- REQUIRED module and not the module being compiled — a primary module's
+-- file-scope bindings were emitted as statements inside `main`, and `--lib`
+-- never emits `main`. So the top module of a library artifact was the one
+-- module that was never initialized, and compiling lib/std/compiler/lexer.id
+-- directly yielded exports that dereferenced NULL.
+--
+-- gap[020] is FIXED: the lib constructor now runs the primary module's
+-- file-scope body. Measured, `lexer.id` compiled directly as the artifact
+-- answers a C host — n=15, first kind 14 (KIND_FUN). The anchor trick is no
+-- longer needed and this module is no longer load-bearing for it.
+--
+--     duo compile lib/std/compiler/host.id --backend=c --lib
+--
+-- What it is KEPT for is the part a foreign caller cannot otherwise ask: the
+-- record layout it is about to decode, and a self-test that the boundary is
+-- live rather than returning plausible zeros. The host ABI is still the
+-- lexer's, not this module's.
+--
+-- The ambient reference below is what puts the lexer on the registration path;
+-- an unreferenced module is not linked in.
+
+-- Bytes per token written by `duo_lexer_tokenize_all`, as i64 slots:
+-- kind, loc.line, loc.col, int_val. A host decoding the buffer should assert
+-- this rather than hard-code 4, so a layout change fails loudly at the seam.
+@c.export("duo_lexer_host_stride")
+duo_lexer_host_stride(): i64
+    4
+end
+
+-- One call that proves the boundary is initialized. Returns the token count
+-- for a fixed source, so a host can distinguish "linked and live" from "linked
+-- and reading uninitialized state" without knowing any Duo.
+@c.export("duo_lexer_host_probe")
+duo_lexer_host_probe(out: i64, cap: i64): i64
+    std.compiler.lexer.id_lexer_tokenize_all("fun add(a: i64): i64 = a + 1 end",
+        "probe.id", out, cap)
+end

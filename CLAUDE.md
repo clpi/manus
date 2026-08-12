@@ -1,4 +1,4 @@
-# Idsem operative projection
+# Idol operative projection
 
 `docs/spec/constitution.md` is the one semantic-law authority. This file is a
 short operative projection for agents and implementers. It does not add law. A
@@ -10,9 +10,12 @@ separate unclosed lexical and grammar projection.
 
 ## Identity
 
-The language and project are **Idsem**. Canonical native source uses `.id`.
-Historical `Duo`, `Duon`, `.duo`, and the `duo` executable name are migration
-provenance or bootstrap aliases where their exact spelling still exists.
+The language and project are **Idol**: public command identity `idol`, canonical
+source suffix `.id`, and repository identity `idollang/idol`. No production
+`idol` compiler binary exists yet. Earlier `Idsem`, `Duo`, and `Duon` names and
+historical `.id` source are migration provenance. Exact `duo` executable,
+path, symbol, command, and MCP tool spellings are physical bootstrap aliases
+until their owned replacements execute; their presence does not rename Idol.
 
 `std` is migration distribution, not semantic architecture. `std.script` is
 frozen debt. Never add, improve, alias, advertise, or generate a native
@@ -50,16 +53,16 @@ DNIR is a compact migration encoding for realization scheduling. It may add
 physical facts but may not rename graph meaning or recover meaning from source
 text, a callee name, a hash, or an opcode.
 
-Idsem and Lua are distinct lawsets hosted by one compiler. Foreign law and
+Idol and Lua are distinct lawsets hosted by one compiler. Foreign law and
 provenance remain explicit until equivalence is proven; proven equivalents use
 the same graph, demand, and realization machinery. Wasm is an imported lawset,
 not a permanent second optimizer or virtual-machine ontology.
 
 ## Source
 
-Canonical source uses `.id`. New canonical `.duo` is forbidden. New foreign
+Canonical source uses `.id`. New canonical `.id` is forbidden. New foreign
 semantic implementation is forbidden by default; existing Zig, C, Lua, shell,
-Python, and historical `.duo` are bootstrap or compatibility debt.
+Python, and historical `.id` are bootstrap or compatibility debt.
 
 The current closed lexical and delimiter law is:
 
@@ -100,7 +103,28 @@ Identifiers are lowercase single words without underscores or casing-based
 distinctions. Subject-applicable work starts from the held subject. Do not port
 host save/restore observation, source-category flags, helper predicates,
 sentinel states, visitor taxonomies, string dispatch, or bridge temporaries
-into Idsem.
+into Idol.
+
+### Update of place
+
+An admitted compound update is canonical only when a witness proves it
+equivalent to `place = place op value`. Normalization keeps the base relation
+`op` and the exact place, read, write, update, value, provenance, effect, and
+result demand facts; it never creates `addassign`, another compound relation
+identity, or a `++` operation. With that witness, the compound form is the
+canonical shortest face and the expanded form is migratable.
+
+The witness must prove that the read and write designate the same place, that a
+computed place is evaluated exactly once, and that evaluation order, custom
+relation law, overflow, failure, aliasing, effects, and result demand are
+unchanged. Without that complete proof, neither spelling may be rewritten into
+the other merely because their text looks similar.
+
+A graph-aware formatter and canonicality gate for this face depend on the
+lexical identities in `GAP-145`, generated grammar roles in `GAP-134`, and the
+graph-derived semantic gate in `GAP-124`. Current text ratchets are migration
+pressure only: the added-line check in `scripts/idiomgate.id` is not
+authoritative equivalence proof.
 
 PREDICATE-ZERO applies after subject correction. Do not encode a semantic case,
 descriptor, capability, shape, identity, demand, transition, or realization
@@ -122,7 +146,7 @@ lexical identities
 -> machine-readable grammar authority
 -> generated grammar roles
 -> immutable token view
--> executed Idsem parser recognition
+-> executed Idol parser recognition
 -> binding and scope
 -> graph and application authority
 -> demand
@@ -133,7 +157,7 @@ lexical identities
 ```
 
 An `.id` file counts only when it executes in the production path and replaces
-an exact host decision. Every transfer states the host owner before, the Idsem
+an exact host decision. Every transfer states the host owner before, the Idol
 owner after, and the next host-owned boundary. Do not build a bootstrap AST,
 identity service, graph, grammar registry, IR, or error model beside the
 production owner.
@@ -199,7 +223,10 @@ Every claim names the exact tree, command, executed path, outcome, and known
 red aggregate. Obtain volatile state live: current HEAD and dirty tree from
 Git, live ownership from `duo_dev_claim_files`, open obligations from `gaps/`,
 and the current aggregate outcome from a serialized run. `GAP-131` records that
-the session-start open-P0 summary is not yet a trustworthy complete census.
+the session-start open-P0 summary is unknown rather than a trustworthy census.
+Run `tools/devnode/orient` for the current observed count, then inspect every
+matching `gaps/GAP-*.md` record directly before work. A copied count is
+orientation evidence rather than replacement status authority.
 
 ## Workflow
 
@@ -209,12 +236,15 @@ scope authority. Start the MCP session, inspect live claims and the dirty tree,
 claim exact paths, and serialize heavy commands through:
 
 ```text
-./zig-out/bin/duo run scripts/duo_lock.duo -- <command>
+repo="$(git rev-parse --show-toplevel)"
+"$repo/zig-out/bin/duo" run --backend=c "$repo/scripts/duo_lock.id" -- <command>
 ```
 
 `duo` in commands and `duo-*` in MCP names are current physical bootstrap
-aliases, not the language identity or permission to create a parallel current
-brand.
+aliases, not the `idol` command identity or permission to create a parallel
+current brand. The physical `.id` spelling of this lock entrypoint is not by
+itself semantic migration or self-host authority transfer. The repository
+remains at S0 and no compiler B exists.
 
 Never stash, hard-reset, absorb another session's changes, bypass a gate, or
 repair combined-tree failures by restoring a shadow authority. Commit only

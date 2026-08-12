@@ -1,12 +1,12 @@
 # Standard implementation without a namespace
 
-This page is a projection of the Idsem constitution, not an API catalog or a
+This page is a projection of the Idol constitution, not an API catalog or a
 second source of language law. The sole semantic authority is
 [`docs/spec/constitution.md`](../spec/constitution.md). Canonical project source
-uses `.id`; every tracked project-owned `.duo` file is SOURCE-ZERO debt that
+uses `.id`; every tracked project-owned `.id` file is SOURCE-ZERO debt that
 must be semantically migrated or deleted.
 
-Idsem has no canonical semantic standard-library namespace. The repository's
+Idol has no canonical semantic standard-library namespace. The repository's
 physical standard distribution is migration and implementation provenance. Its
 paths contribute no relation identity and grant no world authority.
 
@@ -57,4 +57,4 @@ external conformance material rather than an in-tree stale source library.
 
 The executed frontier and next dependency are recorded in
 [`docs/bootstrap.md`](../bootstrap.md). Historical API catalogs belong in Git
-history and must not train new Idsem source.
+history and must not train new Idol source.

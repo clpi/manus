@@ -1,0 +1,26 @@
+-- @comp.pipeline fusion + @rewrite strength reduction
+-- Run: duo run examples/pipeline_rewrite_showcase.id
+
+@comp.pipeline([[
+static inline int64_t pipeline_fused_sum(int64_t a, int64_t b, int64_t c) {
+    int64_t acc = 0;
+    acc += (a * 2);
+    acc += (b * 3);
+    acc += (c * 4);
+    return acc;
+}
+]])
+
+@comp.rewrite("mul_two", "($1 * 2)", "$1 << 1")
+@comp.rewrite("add_zero", "($1 + 0)", "$1")
+
+scaled(x: i64): i64
+    x * 2
+end
+
+total(): i64
+    pipeline_fused_sum(10, 20, 30) + scaled(5) + 0
+end
+
+print("=== @comp.pipeline / @rewrite showcase ===")
+print("result = " .. to(str)(total()))

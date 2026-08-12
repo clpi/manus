@@ -2,7 +2,7 @@
 .DS_Store
 *.bak
 zig-out/
-.duo/cache/
+.id/cache/
 
 # Build artifacts. Nine of these were tracked until 2026-08-08 (~3.4 MB of stale
 # binaries: ward, ward-bin, ward_new, ward_test, ward_test_baseline,

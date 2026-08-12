@@ -1,0 +1,237 @@
+-- Honest benchmark: Duo vs C on runtime-seeded, unfoldable workloads.
+--
+-- Duo replacement for scripts/run_honest_benchmark.sh (monoglot census).
+--
+-- "Honest" is the whole point: inputs come from a runtime-seeded PRNG so the
+-- compiler cannot constant-fold the work away. That failure mode is not
+-- hypothetical -- run_cross_benchmark reports "Duo vs C: 1221x faster" because
+-- its fib(40) folds to a constant and it times an empty loop (789fb74).
+--
+-- examples/bench_honest_c.c stays C: it is the baseline being measured.
+
+_RUNS = 5
+_SLACK = 1.03
+_ROWS = 6
+_NAMES = { "matmul", "qsort", "hashtable", "bsearch", "nbody", "fnv" }
+_WORK = "/tmp/duo-honest"
+
+_env_or(n: str, d: str): str
+    v = std.script.getenv_or(n)
+    if v == "" return d end
+    v
+end
+
+_pad(s: str, w: i64): str
+    o = s
+    while #o < w
+        o = o .. " "
+    end
+    o
+end
+
+_lpad(s: str, w: i64): str
+    o = s
+    while #o < w
+        o = " " .. o
+    end
+    o
+end
+
+-- `to(str)` on an f64 does not compile (undeclared `tostring`), so fixed-point
+-- output is assembled from integers.
+_fx(x: f64, places: i64): str
+    scale = 1
+    i = 0
+    while i < places
+        scale = scale * 10
+        i = i + 1
+    end
+    n = to(i64)(x * to(f64)(scale) + 0.5)
+    w = n / scale
+    f = n % scale
+    fs = f:to(str)
+    while #fs < places
+        fs = "0" .. fs
+    end
+    w:to(str) .. "." .. fs
+end
+
+_fields(l: str): any
+    o = {}
+    for _i, w in std.string.split(std.string.gsub(l, "\t", " "), " ")
+        if w != "" o[#o + 1] = w end
+    end
+    o
+end
+
+_known(name: str): bool
+    for _i, n in _NAMES
+        if n == name return true end
+    end
+    false
+end
+
+-- Rows tagged `tag` as name->value. Used for both RESULT (correctness) and
+-- Time (timing); keeping one reader means the two channels cannot drift.
+_rows(text: str, tag: str): any
+    r = {}
+    n = 0
+    for _i, l in std.string.split(text, "\n")
+        f = _fields(std.script.chomp(l))
+        if #f >= 3 and f[1] == tag
+            r[f[2]] = f[3]
+            n = n + 1
+        end
+    end
+    r["__n"] = n:to(str)
+    r
+end
+
+_fail(msg: str): i64
+    print(msg)
+    1
+end
+
+main = (): i64
+    duo = "./zig-out/bin/duo"
+    std.script.run("rm -rf " .. _WORK .. " && mkdir -p " .. _WORK)
+    dbin = _WORK .. "/honest_duo"
+    cbin = _WORK .. "/honest_c"
+
+    print("=== Honest Benchmark: Duo vs C (runtime-seeded observable workloads) ===")
+    print("")
+    print("Compiling Duo...")
+    if std.script.run(duo .. " compile examples/bench_honest.id -o " .. dbin) != 0
+        return _fail("honest_benchmark: FAIL — bench_honest.id did not compile")
+    end
+
+    print("Compiling C reference...")
+    sdk = std.script.chomp(std.script.capture("xcrun --show-sdk-path 2>/dev/null"))
+    cflags = "-O3 -ffast-math -march=native -flto -lm"
+    if sdk != "" cflags = cflags .. " -isysroot " .. sdk end
+    if std.script.run("clang " .. cflags .. " -o " .. cbin .. " examples/bench_honest_c.c") != 0
+        return _fail("honest_benchmark: FAIL — bench_honest_c.c did not compile")
+    end
+
+    seed = _env_or("HONEST_SEED", "123456789")
+    std.script.env_set("HONEST_SEED", seed)
+    print("")
+    print("Seed: " .. seed)
+    print("")
+    print("--- Correctness Check ---")
+
+    dres = _rows(std.script.capture("HONEST_SEED=" .. seed .. " " .. dbin .. " 2>/dev/null"), "RESULT")
+    cres = _rows(std.script.capture("HONEST_SEED=" .. seed .. " " .. cbin .. " 2>/dev/null"), "RESULT")
+
+    -- A short RESULT set is a failed run wearing the costume of a passing one:
+    -- with zero rows every comparison below is vacuously satisfied.
+    for _i, p in {{"Duo", dres}, {"C", cres}}
+        if p[2]["__n"] != _ROWS:to(str)
+            return _fail(p[1] .. " RESULT count mismatch: got " .. p[2]["__n"]
+                .. " expected " .. _ROWS:to(str))
+        end
+    end
+
+    -- matmul and nbody are floating point and compared within 1e-9; the other
+    -- four are integer checksums and must match EXACTLY. A blanket tolerance
+    -- would let a wrong hash slide.
+    checks = {
+        { "matmul", "Matmul checksum", true },
+        { "qsort", "Qsort checksum", false },
+        { "bsearch", "Bsearch hit count", false },
+        { "hashtable", "Hashtable hit count", false },
+        { "nbody", "Nbody energy", true },
+        { "fnv", "FNV checksum", false },
+    }
+    for _i, c in checks
+        d = dres[c[1]]
+        v = cres[c[1]]
+        if d == nil or v == nil
+            return _fail("RESULT " .. c[1] .. " missing")
+        end
+        if c[3]
+            diff = to(f64)(d) - to(f64)(v)
+            if diff < 0.0 diff = -diff end
+            if diff > 0.000000001
+                return _fail("RESULT " .. c[1] .. " mismatch: Duo=" .. d .. " C=" .. v)
+            end
+            print(c[2] .. " matches C within 1e-9.")
+        else
+            if d != v
+                return _fail("RESULT " .. c[1] .. " mismatch: Duo=" .. d .. " C=" .. v)
+            end
+            print(c[2] .. " matches C exactly.")
+        end
+    end
+
+    print("")
+    dmin = {}
+    cmin = {}
+    for _j, pair in {{"Duo", dbin, dmin}, {"C", cbin, cmin}}
+        print("Running " .. pair[1] .. " (" .. _RUNS:to(str) .. " iterations)...")
+        r = 0
+        while r < _RUNS
+            t = _rows(std.script.capture("HONEST_SEED=" .. seed .. " " .. pair[2] .. " 2>/dev/null"), "Time")
+            if t["__n"] != _ROWS:to(str)
+                return _fail(pair[1] .. " timing run " .. to(str)(r + 1)
+                    .. " Time count mismatch: got " .. t["__n"] .. " expected " .. _ROWS:to(str))
+            end
+            for k, v in t
+                if k != "__n"
+                    -- An unrecognised name means the corpus changed under the
+                    -- harness; silently binning it would drop a benchmark.
+                    if not _known(k)
+                        return _fail(pair[1] .. " timing run reported unknown benchmark: " .. k)
+                    end
+                    fv = to(f64)(v)
+                    if pair[3][k] == nil or fv < pair[3][k]
+                        pair[3][k] = fv
+                    end
+                end
+            end
+            r = r + 1
+        end
+    end
+
+    print("")
+    print("--- Results (min of " .. _RUNS:to(str) .. " runs) ---")
+    print("")
+    print(_pad("Benchmark", 16) .. " " .. _lpad("Duo(s)", 12) .. " " .. _lpad("C(s)", 12)
+        .. " " .. _lpad("Ratio", 10) .. " " .. _lpad("Winner", 8))
+    print(_pad("----------------", 16) .. " " .. _lpad("------------", 12) .. " "
+        .. _lpad("------------", 12) .. " " .. _lpad("----------", 10) .. " "
+        .. _lpad("--------", 8))
+
+    overall = true
+    for _i, name in _NAMES
+        d = dmin[name]
+        cv = cmin[name]
+        if d == nil or cv == nil
+            print(_pad(name, 16) .. " " .. _lpad("N/A", 12) .. " " .. _lpad("N/A", 12)
+                .. " " .. _lpad("N/A", 10) .. " " .. _lpad("SKIP", 8))
+        else
+            ratio = "N/A"
+            if cv > 0.0 ratio = _fx(d / cv, 3) .. "x" end
+            winner = "Duo/Tie"
+            if d > cv * _SLACK
+                winner = "C"
+                overall = false
+            end
+            print(_pad(name, 16) .. " " .. _lpad(_fx(d, 6), 12) .. " " .. _lpad(_fx(cv, 6), 12)
+                .. " " .. _lpad(ratio, 10) .. " " .. _lpad(winner, 8))
+        end
+    end
+
+    print("")
+    if not overall
+        print("Some benchmarks show C faster — investigating codegen overhead.")
+        os.exit(1)
+    end
+    print("PASS: Duo matches or beats C on all honest benchmarks.")
+    print("  (Duo uses runtime inputs and optimized native kernels without fixed-result folding)")
+    print("")
+    print("Note: These benchmarks use runtime-seeded PRNG inputs that cannot be")
+    print("constant-folded. Duo rows may use stronger algorithms or kernels when")
+    print("the observable result allows it; C rows remain straightforward baselines.")
+    0
+end

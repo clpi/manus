@@ -61,7 +61,7 @@ is not picked up (verified: `-V 1` still prints `JIT: true`). So:
   the JIT does nothing — it is evidence I could not turn it off.
 
 Any ward-vs-wart table that has ever carried a "wart interpreter" column is
-reporting wart's JIT under an interpreter's name. `tools/wasm/bench/run.duo:87`
+reporting wart's JIT under an interpreter's name. `tools/wasm/bench/run.id:87`
 also still special-cases exit status 132 (`128+SIGILL`) as wart's expected
 failure mode; that arm is now dead code guarding a condition that does not
 occur.
@@ -123,7 +123,7 @@ noise: wasmtime 0.10, wasmer 0.11, wart 0.12, ward 0.13.
   slower than wasmer on the same kernel. It is currently last of the five.
 - Anything about a wart *interpreter*, because §0.2 says that configuration is
   not reachable from the CLI.
-- Anything end-to-end. `duo run tools/wasm/src/engine.duo` spends **65.8 s
+- Anything end-to-end. `duo run tools/wasm/src/engine.id` spends **65.8 s
   compiling** before it runs anything; only the compiled `engine.out` binary is a
   runtime measurement. A harness that times `duo run` is timing the Duo
   compiler.
@@ -155,7 +155,7 @@ come with it:
 182 zig · 45 md · 44 wat · 29 wast · 21 sh · 18 wasm · 17 c · 8 yml · 1 py · 1 js · …
 ```
 
-Copied in as-is under `ext/wart/`, `language_census.duo` goes red on **three**
+Copied in as-is under `ext/wart/`, `language_census.id` goes red on **three**
 ratchets:
 
 | row | today | with wart | ratchet | result |
@@ -164,7 +164,7 @@ ratchets:
 | sh/py | 0 | **22** | `CENSUS_FLOOR=0` | **FAIL** |
 | js | 2 | **3** | `CENSUS_JS_FLOOR=2` | **FAIL** |
 | c/h | 25 | 42 | none (reported only) | passes |
-| duo | 824 | 824 | — | wart has no `.duo` |
+| duo | 824 | 824 | — | wart has no `.id` |
 
 The sh/py row is the sharpest. It reached zero on 2026-08-08 — that day —
 `CENSUS_FLOOR` was lowered to 0 in the same commit, and the census header says
@@ -174,7 +174,7 @@ it is a row that reached its stated target being un-reached on the next commit.
 
 ### The mechanism the brief is looking for already exists
 
-`docs/spec/foreign.md` + `scripts/foreign_census.duo` (`zig build
+`docs/spec/foreign.md` + `scripts/foreign_census.id` (`zig build
 foreign-census`, Pass 105 U8) already implements exactly "classified oracle, not
 debt". Two classes, no silent default:
 
@@ -206,7 +206,7 @@ counter should learn about classes.
 ## 3. What ward lacks that wart has
 
 wart: **182 tracked `.zig`, 121,283 lines** (107,311 under `src/`, 12,777 under
-`test/`). ward: **29 `.duo`, 11,350 lines**, of which `src/ward.duo` alone is
+`test/`). ward: **29 `.id`, 11,350 lines**, of which `src/ward.id` alone is
 6,312. wart is **10.7× ward's line count**, not the 1,000× that
 `tools/wasm/README.md` claims.
 
@@ -230,23 +230,23 @@ The JIT, specifically:
 | `src/jit_arm64_tests.zig` | 33 |
 | **total** | **35,033** (29% of all wart Zig) |
 
-ward's equivalent: `src/wasm/jit_arm64.duo` 701 + `src/wasm/jit.duo` 119 = 820
+ward's equivalent: `src/wasm/jit_arm64.id` 701 + `src/wasm/jit.id` 119 = 820
 lines, ARM64 only. And ward's ARM64 JIT is 29× its interpreter (§1), so the
 small number is not a stub.
 
-Beyond the JIT, grepped against `src/ward.duo` (6,312 lines) — **zero hits each**
+Beyond the JIT, grepped against `src/ward.id` (6,312 lines) — **zero hits each**
 for component, thread, atomic, exception, `gc.`, multi_memory, tail_call,
 memory64, relaxed:
 
 | capability | wart | ward |
 |---|---|---|
 | Component model + WIT | `component.zig` 3,361 · `component_binary.zig` 3,090 · `component_linker.zig` 1,492 · `component_types.zig` · `wit.zig` | absent |
-| WASI P2 / P3 | `wasi_preview2.zig` · `wasi/preview2.zig` · `wasi/preview3.zig` · `cli/http/sockets/clocks/random/poll/nn` | `wasi.duo`, 285 lines, P1 |
+| WASI P2 / P3 | `wasi_preview2.zig` · `wasi/preview2.zig` · `wasi/preview3.zig` · `cli/http/sockets/clocks/random/poll/nn` | `wasi.id`, 285 lines, P1 |
 | threads + atomics | `threads.zig` 1,949 | absent |
 | exceptions, GC, multi-memory, memory64, tail-call, relaxed-SIMD | present (and pinned suites for each) | absent |
-| AOT | `aot.zig` 1,710 | `aot.duo` — **10 lines, `compile()` returns `""`** |
+| AOT | `aot.zig` 1,710 | `aot.id` — **10 lines, `compile()` returns `""`** |
 | x86-64 JIT | 4,162 lines | absent (ARM64 only) |
-| spec conformance runner | `conformance/spectest.zig` 2,171 + 17 pinned suites | `test/conform.duo` 480 |
+| spec conformance runner | `conformance/spectest.zig` 2,171 + 17 pinned suites | `test/conform.id` 480 |
 | packaging (OCI, registry, manifest) | `pack.zig` · `manifest.zig` · `container` · `deploy` | absent |
 
 wart is also **actively developed by cloud sessions**: `~/x/wart` is on `main`
@@ -261,11 +261,11 @@ survive a repo that moves under it.
 
 ### Option 1 — in-tree, classified `oracle`
 
-Add `ext/wart/` with one `foreign.md` rule; teach `language_census.duo` to
+Add `ext/wart/` with one `foreign.md` rule; teach `language_census.id` to
 subtract oracle-classified files from the debt rows (or add a separate `oracle`
 row the way `lua` is separate).
 
-- **Cost:** `language_census.duo` must consult `foreign.md`, which today it
+- **Cost:** `language_census.id` must consult `foreign.md`, which today it
   deliberately does not — the two gates were split so a classification failure
   and a debt-count failure stay distinguishable. Coupling them is a real
   regression in that property.
@@ -311,7 +311,7 @@ row the way `lua` is separate).
 ### Option 4 — stay separate; only the harness reaches across
 
 - **Cost:** the status quo, which is what produced this document's two false
-  beliefs. `tools/wasm/bench/run.duo:103` resolves wart through
+  beliefs. `tools/wasm/bench/run.id:103` resolves wart through
   `$WART` / `$HOME/x/wart/zig-out/bin/wart` — an unpinned path to an
   uncommitted working tree. There is no commit anywhere recording which wart a
   ward number was measured against.
@@ -327,7 +327,7 @@ actually block the dominance claim, none of which need wart's files in-tree:
 1. **Fix `tools/wasm/README.md`.** 1.3M → 121,283; 1,500 → 11,350. The real 10.7×
    is a better number than a fabricated 1,000×, and §3's line is the first thing
    a reader sees.
-2. **Retire the SIGILL arm** in `tools/wasm/bench/run.duo:87` and the
+2. **Retire the SIGILL arm** in `tools/wasm/bench/run.id:87` and the
    "wart interpreter" column everywhere it appears. wart JITs by default
    (§0.2); a column labelled interpreter that reports a JIT is a §3 violation
    already shipped.
@@ -384,7 +384,7 @@ $(mise where wasi-sdk)/wasi-sdk/bin/clang --target=wasm32-wasip1 -O1 \
 wasmtime /tmp/k.wasm
 wasmer run /tmp/k.wasm
 ~/x/wart/zig-out/bin/wart run /tmp/k.wasm        # already JITs — see §0.2
-duo compile tools/wasm/src/engine.duo -o /tmp/engine.out   # ~66s; do NOT time `duo run`
+duo compile tools/wasm/src/engine.id -o /tmp/engine.out   # ~66s; do NOT time `duo run`
 DUO_WASM_MODULE=/tmp/k.wasm DUO_WASM_INVOKE=_start /tmp/engine.out
 DUO_WASM_ENGINE=interp DUO_WASM_MODULE=/tmp/k.wasm DUO_WASM_INVOKE=_start /tmp/engine.out   # 43s
 

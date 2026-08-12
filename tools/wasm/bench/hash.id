@@ -1,0 +1,39 @@
+-- WASM benchmark fixture: 200M-iteration FNV-style hash.
+--
+-- Duo replacement for bench/hash.c (and the identical hash.c at the repo root).
+-- Compiled to bench/hash.wasm, which is what the harnesses actually load:
+--
+--   duo compile bench/hash.id --target wasm32-wasi -o bench/hash.wasm
+--
+-- Semantics are the C original's, exactly:
+--   uint32_t h = 2166136261u;
+--   for (uint32_t i = 0; i < 200000000u; i++) {
+--       h ^= i; h *= 16777619u; h = (h << 13) | (h >> 19);
+--   }
+-- Verified against it: both produce 1899277430 under wasmtime.
+--
+-- Locals are `u32` so the TYPE carries the wrap, as C's uint32_t did. An
+-- earlier version used i64 plus `& 4294967295` after every step: same answer,
+-- three extra ops per iteration, which pushed the engine's INTERPRETER past the
+-- harnesses' 120s timeout on the 2-billion sibling. A fixture must be fast
+-- enough to time.
+
+-- GAP-12: `@c.export` does not attach to a value-form binding — it degrades
+-- to "use of undeclared identifier '__c_export'". The exported entry stays a
+-- bare declaration until that closes; `main` uses the canonical value form.
+@c.export("run")
+run(): i32
+    h: u32 = 2166136261
+    i: u32 = 0
+    while i < 200000000
+        h = h ~ i
+        h = h * 16777619
+        h = (h << 13) | (h >> 19)
+        i += 1
+    end
+    h
+end
+
+main = (): i32
+    run()
+end

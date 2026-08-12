@@ -80,10 +80,13 @@ else
   bad "wrong repository root"
 fi
 
-if git remote get-url origin 2>/dev/null | grep -Eq '(^git@github.com:clpi/duo.git$|^https://github.com/clpi/duo(.git)?$)'; then
-  ok "origin is clpi/duo"
+origin_url="$(git remote get-url origin 2>/dev/null || true)"
+if printf '%s' "$origin_url" | grep -Eq '(^git@github.com:clpi/duo(.git)?$|^https://github.com/clpi/duo(.git)?$)'; then
+  ok "active development repository is clpi/duo"
+elif printf '%s' "$origin_url" | grep -Eq '(^git@github.com:idollang/idol(.git)?$|^https://github.com/idollang/idol(.git)?$)'; then
+  bad "release repository checkout; active development remains in clpi/duo"
 else
-  bad "origin is not clpi/duo"
+  bad "origin is not the admitted clpi/duo development repository"
 fi
 
 if [ "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)" = "main" ]; then
@@ -92,7 +95,7 @@ else
   bad "branch is not main"
 fi
 
-if gh auth status >/tmp/idsem-gh-auth.out 2>&1; then
+if gh api user --jq .login >/tmp/idol-gh-auth.out 2>&1; then
   ok "GitHub CLI authenticated"
 else
   bad "GitHub CLI authentication failed"
@@ -116,7 +119,7 @@ if command -v cursor-agent >/dev/null 2>&1; then
   want_version cursor-agent "2026.08.04-aaa8809" "$cursor_agent_v"
 fi
 
-duo="${IDSEM_DUO_BIN:-$repo/zig-out/bin/duo}"
+duo="${IDOL_BOOTSTRAP_BIN:-${DUO_BIN:-${IDSEM_DUO_BIN:-$repo/zig-out/bin/duo}}}"
 if [ ! -x "$duo" ]; then
   bad "missing fresh compiler artifact $duo"
 else
@@ -177,16 +180,29 @@ else
   bad "Cursor indexing exclusions missing"
 fi
 
-if "$repo/tools/devnode/orient" >/tmp/idsem-orient.out 2>&1 && grep -q '^project: Idsem$' /tmp/idsem-orient.out && grep -q '^authority:' /tmp/idsem-orient.out; then
+if "$repo/tools/devnode/orient" >/tmp/idol-orient.out 2>&1 && grep -q '^project: Idol$' /tmp/idol-orient.out && grep -q '^authority:' /tmp/idol-orient.out; then
   ok "orientation command reports current repository facts"
 else
   bad "orientation command failed"
 fi
 
+gate="$(mktemp -t idiomgate)" || bad "could not create idiomgate probe"
+trap 'rm -f "$gate"' EXIT
+printf '+++ b/updateface.id\n@@ -0,0 +1 @@\n+step = step + 1\n' > "$gate"
+if DUOGATEDIFF="$gate" "$duo" run --backend=c "$repo/scripts/idiomgate.id" >/tmp/idol-updateface.out 2>&1; then
+  bad "idiomgate update-face positive control did not flag the expanded candidate"
+elif grep -q 'law.update.face' /tmp/idol-updateface.out; then
+  ok "idiomgate update-face positive control"
+else
+  bad "idiomgate update-face positive control missing law.update.face"
+fi
+rm -f "$gate"
+trap cleanup_root_artifacts EXIT
+
 "$repo/tools/devnode/probe-mcp" || bad "direct MCP initialize probe failed"
 
-if TERM=xterm-256color codex --strict-config doctor >/tmp/idsem-codex-doctor.out 2>&1; then
-  if grep -q 'app-server.*stale or unreachable' /tmp/idsem-codex-doctor.out; then
+if TERM=xterm-256color codex --strict-config doctor >/tmp/idol-codex-doctor.out 2>&1; then
+  if grep -q 'app-server.*stale or unreachable' /tmp/idol-codex-doctor.out; then
     bad "codex doctor reports stale or unreachable app-server socket"
   else
     ok "codex doctor"
@@ -195,20 +211,20 @@ else
   bad "codex doctor failed"
 fi
 
-if cursor agent --help >/tmp/idsem-cursor-agent.out 2>&1; then
+if cursor agent --help >/tmp/idol-cursor-agent.out 2>&1; then
   ok "Cursor Agent starts far enough to read CLI help"
 else
-  if grep -qi 'keychain is locked' /tmp/idsem-cursor-agent.out; then
+  if grep -qi 'keychain is locked' /tmp/idol-cursor-agent.out; then
     bad "Cursor Agent blocked by locked macOS login keychain"
   else
     bad "Cursor Agent CLI failed"
   fi
 fi
 
-if cursor agent mcp list >/tmp/idsem-cursor-mcp.out 2>&1; then
+if cursor agent mcp list >/tmp/idol-cursor-mcp.out 2>&1; then
   missing_cursor_mcp=0
   for name in duo-bench duo-lsp zls; do
-    if grep -q "^$name: ready" /tmp/idsem-cursor-mcp.out; then
+    if grep -q "^$name: ready" /tmp/idol-cursor-mcp.out; then
       ok "Cursor MCP server ready: $name"
     else
       bad "Cursor MCP server is not ready: $name"
@@ -222,16 +238,16 @@ else
   bad "Cursor MCP server list failed"
 fi
 
-if cursor agent --print --mode=ask --trust --workspace "$repo" "Start at AGENTS.md. Answer with the sole Idsem semantic law file path only." >/tmp/idsem-cursor-agent-smoke.out 2>&1; then
-  if grep -q 'docs/spec/constitution.md' /tmp/idsem-cursor-agent-smoke.out; then
+if cursor agent --print --mode=ask --trust --workspace "$repo" "Start at AGENTS.md. Answer with the sole Idol semantic law file path only." >/tmp/idol-cursor-agent-smoke.out 2>&1; then
+  if grep -q 'docs/spec/constitution.md' /tmp/idol-cursor-agent-smoke.out; then
     ok "Cursor Agent fresh headless session orients through AGENTS.md"
   else
     bad "Cursor Agent fresh headless session did not identify C0"
   fi
 else
-  if grep -qi 'keychain is locked' /tmp/idsem-cursor-agent-smoke.out; then
+  if grep -qi 'keychain is locked' /tmp/idol-cursor-agent-smoke.out; then
     bad "Cursor Agent fresh headless session blocked by locked macOS login keychain"
-  elif grep -qi 'Authentication required' /tmp/idsem-cursor-agent-smoke.out; then
+  elif grep -qi 'Authentication required' /tmp/idol-cursor-agent-smoke.out; then
     bad "Cursor Agent fresh headless session requires login"
   else
     bad "Cursor Agent fresh headless session failed"
@@ -248,25 +264,27 @@ run_gate() {
   fi
 }
 
-if [ "${IDSEM_DOCTOR_EXTRA_GATE:-}" != "" ]; then
-  run_gate "extra child gate" sh -c "$IDSEM_DOCTOR_EXTRA_GATE"
+extra_gate="${IDOL_DOCTOR_EXTRA_GATE:-${IDSEM_DOCTOR_EXTRA_GATE:-}}"
+if [ "$extra_gate" != "" ]; then
+  run_gate "extra child gate" sh -c "$extra_gate"
 fi
 
-if [ "${IDSEM_DOCTOR_SKIP_GATES:-0}" != "1" ]; then
-  run_gate "mcp-gate" "$duo" run --backend=c scripts/duo_lock.duo -- zig build mcp-gate
-  run_gate "lsp-gate" "$duo" run --backend=c scripts/duo_lock.duo -- zig build lsp-gate
-  run_gate "semantic architecture gate" "$duo" run --backend=c scripts/duo_lock.duo -- zig build semantic-architecture
-  run_gate "repo hygiene gate" "$duo" run --backend=c scripts/duo_lock.duo -- zig build repo-hygiene
-  run_gate "unit gate" "$duo" run --backend=c scripts/duo_lock.duo -- zig build unit-test --summary all
+skip_gates="${IDOL_DOCTOR_SKIP_GATES:-${IDSEM_DOCTOR_SKIP_GATES:-0}}"
+if [ "$skip_gates" != "1" ]; then
+  run_gate "mcp-gate" "$duo" run --backend=c "$repo/scripts/duo_lock.id" -- zig build mcp-gate
+  run_gate "lsp-gate" "$duo" run --backend=c "$repo/scripts/duo_lock.id" -- zig build lsp-gate
+  run_gate "semantic architecture gate" "$duo" run --backend=c "$repo/scripts/duo_lock.id" -- zig build semantic-architecture
+  run_gate "repo hygiene gate" "$duo" run --backend=c "$repo/scripts/duo_lock.id" -- zig build repo-hygiene
+  run_gate "unit gate" "$duo" run --backend=c "$repo/scripts/duo_lock.id" -- zig build unit-test --summary all
 fi
 
 if [ "$fail" -eq 0 ]; then
   cleanup_root_artifacts
-  printf 'idsem doctor: PASS'
+  printf 'idol doctor: PASS'
   [ "$warn" -gt 0 ] && printf ' (%s warning(s))' "$warn"
   printf '\n'
   exit 0
 fi
 
-printf 'idsem doctor: FAIL (%s failure(s), %s warning(s))\n' "$fail" "$warn" >&2
+printf 'idol doctor: FAIL (%s failure(s), %s warning(s))\n' "$fail" "$warn" >&2
 exit 1

@@ -1,4 +1,4 @@
-# Idsem agent integration
+# Idol agent integration
 
 This is a durable client setup guide. It contains no language law, live claims,
 tool census, or current gate status.
@@ -9,28 +9,32 @@ The version-locked MCP implementations live in this repository:
 
 | Physical server name | Entry point | Purpose |
 |---|---|---|
-| `duo-bench` | `tools/mcp/duo_bench.duo` | claims, gaps, serialized gates, performance evidence |
-| `duo-lsp` | `tools/mcp/duo_lsp.duo` | diagnostics and language intelligence |
-| `zls` | `tools/mcp/zls.duo` | Zig bootstrap navigation |
+| `duo-bench` | `tools/mcp/duo_bench.id` | claims, gaps, serialized gates, performance evidence |
+| `duo-lsp` | `tools/mcp/duo_lsp.id` | diagnostics and language intelligence |
+| `zls` | `tools/mcp/zls.id` | Zig bootstrap navigation |
 
-The `duo-*` names and `.duo` entry paths are current bootstrap compatibility
-identities. They do not name the language, authorize new `.duo`, or establish a
-second current project brand. Historical `~/x/duo-mcp` and `~/x/duo-lsp`
-checkouts are not canonical implementations.
+The physical `duo` executable and `duo-*` server names are bootstrap aliases.
+The current `.id` server entrypoints are executed bootstrap/compatibility
+transport; their suffix alone proves neither canonicality nor self-hosting
+authority transfer. Historical `.id` paths are migration provenance. None of
+those transport or historical spellings names the language, authorizes new
+`.id`, or establishes a second current project brand. Historical
+`~/x/duo-mcp` and `~/x/duo-lsp` checkouts are not canonical implementations.
 
 ## Client shape
 
 Clients run the in-tree bootstrap executable with the repository as cwd. The
-single physical manifest is `tools/devnode/mcp.manifest.json`; run
+one client-neutral physical manifest is `tools/devnode/mcp.manifest.json`; run
 `tools/devnode/generate-configs` to derive absolute client projections from the
-actual clone path.
+actual clone path. Generated client configurations are projections, not
+additional manifest authorities.
 
 The generated Codex shape is:
 
 ```toml
-[mcp_servers.duo-bench]
+[mcp_servers.id-bench]
 command = "<repo>/zig-out/bin/duo"
-args = ["run", "--backend=c", "<repo>/tools/mcp/duo_bench.duo"]
+args = ["run", "--backend=c", "<repo>/tools/mcp/duo_bench.id"]
 cwd = "<repo>"
 env = { DUO_ROOT = "<repo>", DUO_BIN = "<repo>/zig-out/bin/duo" }
 startup_timeout_sec = 60
@@ -49,12 +53,13 @@ checks the current tool lists through real JSON-RPC requests.
 
 1. Start at `AGENTS.md` and `.agents/AGENT_CANONICAL.md`.
 2. Call `duo_agent_session_start`.
-3. Inspect current HEAD, dirty state, recent commits, live claims, gap files,
+3. Inspect current HEAD, dirty state, recent commits, `duo_dev_claim_files`,
+   every current `gaps/GAP-*.md`, the verified `docs/bootstrap.md` frontier,
    and stash state.
-4. Treat the session-start P0 count as incomplete until `GAP-131` closes.
+4. Treat the session-start gap summary as incomplete until `GAP-131` closes.
 5. Claim exact paths through `duo_dev_claim_acquire`.
 6. Delegate only bounded independent work with disjoint write ownership.
-7. Serialize heavy gates through `scripts/duo_lock.duo`.
+7. Serialize heavy gates through `scripts/duo_lock.id`.
 8. Commit explicit pathspecs and release only claims owned by the session.
 
 ## Validation
@@ -62,11 +67,13 @@ checks the current tool lists through real JSON-RPC requests.
 Run setup evidence from the repository root:
 
 ```text
+repo="$(git rev-parse --show-toplevel)"
 codex --strict-config doctor
 codex mcp list
-./zig-out/bin/duo run scripts/duo_lock.duo -- zig build mcp-gate
+"$repo/zig-out/bin/duo" run --backend=c "$repo/scripts/duo_lock.id" -- zig build mcp-gate
 ```
 
-The first two commands validate client configuration. The locked gate validates
-the actual repository handlers. A client listing tools without exercising the
-handlers is not MCP health evidence.
+The absolute bootstrap paths avoid the current relative-executable discovery
+failure. The first two commands validate client configuration. The locked
+`--backend=c` gate validates the actual repository handlers. A client listing
+tools without exercising the handlers is not MCP health evidence.

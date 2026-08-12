@@ -1,0 +1,47 @@
+-- @comp.* exponential stack: one module directive set → O(types × fields × derives) output
+-- Run: duo run examples/meta_exponential_stack.id
+
+concept HasXY
+    x: f64
+    y: f64
+end
+
+concept HasTag
+    tag: str
+end
+
+Point: { x: f64, y: f64, tag: str }
+Pair: { x: f64, y: f64, tag: str }
+Label: { tag: str }
+
+@comp.define.derive("TouchApi", generate(meta) -> str
+    acc = ""
+    for i = 1, #meta.fields
+        f = meta.fields[i]
+        acc = acc .. "static inline void duo_" .. meta.name .. "_touch_" .. f.name .. "(const duo_" .. meta.name .. "* v) { (void)v->" .. f.name .. "; }\n"
+    end
+    acc
+end)
+
+@comp.derive.all("HasXY", TouchApi)
+
+pair_sig(a, b): str
+    a.name .. "x" .. b.name .. ";"
+end
+
+mark(meta): str
+    meta.name .. ";"
+end
+
+PAIRS = @comp.product("HasXY", "HasTag", pair_sig)
+SWEEP = @comp.map("HasXY", mark)
+TAGGED = @comp.types.with("HasTag")
+ALL = @comp.type.names()
+
+print("=== meta exponential stack ===")
+print("pairs = " .. PAIRS)
+print("sweep = " .. SWEEP)
+print("tagged = " .. TAGGED)
+print("all = " .. ALL)
+print("Point ok = true")
+print("ok")

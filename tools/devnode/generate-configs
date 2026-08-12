@@ -15,7 +15,20 @@ if [ ! -x "$duo" ]; then
   exit 1
 fi
 
-tmp="$(mktemp -d "${TMPDIR:-/tmp}/idsem-mcp.XXXXXX")"
+missing=0
+tab="$(printf '\t')"
+while IFS="$tab" read -r name entry; do
+  [ -f "$repo/$entry" ] && continue
+  echo "generate-configs: missing $name entry: $repo/$entry" >&2
+  missing=1
+done <<EOF
+$(jq -r '.servers[] | [.name, .entry] | @tsv' "$manifest")
+EOF
+if [ "$missing" -ne 0 ]; then
+  exit 1
+fi
+
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/idol-mcp.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 
 mkdir -p "$repo/.codex" "$repo/.cursor"
@@ -80,15 +93,20 @@ touch "$codex_config"
 
 clean="$tmp/config.toml"
 awk '
-  /^# BEGIN IDSEM MCP$/ { skip=1; next }
-  /^# END IDSEM MCP$/ { skip=0; next }
-  skip != 1 { print }
+  /^# BEGIN IDOL MCP$/ { marked=1; next }
+  /^# END IDOL MCP$/ { marked=0; next }
+  /^# BEGIN IDSEM MCP$/ { marked=1; next }
+  /^# END IDSEM MCP$/ { marked=0; next }
+  marked == 1 { next }
+  /^\[mcp_servers\.(duo-bench|duo-lsp|zls)(\.env)?\]$/ { legacy=1; next }
+  /^\[/ { legacy=0 }
+  legacy != 1 { print }
 ' "$codex_config" > "$clean"
 {
   cat "$clean"
-  printf "\n# BEGIN IDSEM MCP\n"
+  printf "\n# BEGIN IDOL MCP\n"
   cat "$repo/.codex/mcp.generated.toml"
-  printf "# END IDSEM MCP\n"
+  printf "# END IDOL MCP\n"
 } > "$codex_config"
 
 echo "generated .codex/mcp.generated.toml"

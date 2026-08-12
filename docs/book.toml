@@ -1,6 +1,6 @@
 [book]
-title = "Idsem"
-description = "Idsem language law, semantic architecture, and compiler-B frontier"
+title = "Idol"
+description = "Idol language law, semantic architecture, and compiler-B frontier"
 authors = ["Chris Pecunies"]
 src = "src"
 

@@ -1,0 +1,37 @@
+-- Pass 11 WP-13: single source for the CI Zig pin, read from build.zig.zon.
+--
+-- Duo replacement for scripts/ci_zig_version.sh. Prints the pinned version and
+-- nothing else, so CI can capture it directly:
+--
+--   ZIG_VERSION=$(duo run scripts/ci_zig_version.id)
+--
+_pin_file(): str
+    "build.zig.zon"
+end
+
+main(): i64
+    if not std.script.fs_exists(_pin_file())
+        print("ci_zig_version: missing " .. _pin_file())
+        return 1
+    end
+
+    for _i, line in std.string.split(std.script.fs_read(_pin_file()), "\n")
+        if std.string.contains(line, "minimum_zig_version")
+            -- The value is the text between the first pair of double quotes.
+            a = string.find(line, "\"", 1, true)
+            if a != nil
+                b = string.find(line, "\"", a + 1, true)
+                if b != nil
+                    print(string.sub(line, a + 1, b - 1))
+                    return 0
+                end
+            end
+        end
+    end
+
+    -- Emphatically NOT a silent empty line: a build that captures "" for its
+    -- toolchain pin installs whatever is newest, which is how a pinned
+    -- bootstrap stops being pinned without anyone noticing.
+    print("ci_zig_version: no minimum_zig_version in " .. _pin_file())
+    1
+end

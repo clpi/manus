@@ -121,9 +121,9 @@ diagnostic — no silent fourth state.** A diagnostic must say which of the thre
 it is and, when it is the third, why the proof failed.
 
 ```
-facts:  i : i64            declared at parse.duo:14
-        i ≥ 0              from the loop bound at parse.duo:31
-        #s = 5             from the literal at parse.duo:12
+facts:  i : i64            declared at parse.id:14
+        i ≥ 0              from the loop bound at parse.id:31
+        #s = 5             from the literal at parse.id:12
         i < #s             NOT KNOWN — nothing narrows i above
 ```
 
@@ -212,14 +212,14 @@ ever.
 ```json
 {"id":"DUO-B1-RANGE","severity":"error",
  "repair":"bind through `s:at(i)` and route the failure",
- "span":{"file":"parse.duo","line":31,"col":9,"endline":31,"endcol":13,
+ "span":{"file":"parse.id","line":31,"col":9,"endline":31,"endcol":13,
          "byte":812,"endbyte":816},
  "because":"nothing narrows i above; #s is 5",
  "counterexample":{"i":5,"len":5},
- "facts":[{"claim":"i >= 0","from":"parse.duo:31:5","state":"proven"},
+ "facts":[{"claim":"i >= 0","from":"parse.id:31:5","state":"proven"},
           {"claim":"i < #s","from":null,"state":"unknown"}],
  "fixes":[{"title":"route the failure","edits":[
-     {"file":"parse.duo","start":812,"end":816,"text":"s:at(i)"}]}],
+     {"file":"parse.id","start":812,"end":816,"text":"s:at(i)"}]}],
  "rule":"B-1","pass":100}
 ```
 
@@ -287,17 +287,17 @@ traces, or silence.
 ### The good ones — real repairs, and they lead
 
 ```
-examples/compile_fail/anchor_infix_at.duo:35:11: error: infix '@' has no meaning
-  in .duo: it parsed as the matmul operator over non-tensor operands
-examples/compile_fail/anchor_infix_at.duo:35:11: hint: the anchor is the GLUED
+examples/compile_fail/anchor_infix_at.id:35:11: error: infix '@' has no meaning
+  in .id: it parsed as the matmul operator over non-tensor operands
+examples/compile_fail/anchor_infix_at.id:35:11: hint: the anchor is the GLUED
   form: close the space and 'X @ rel' becomes 'X@rel', which moves the anchor
   and retrieves. A spaced '@' is the matmul operator, and that needs both
   operands to be Tensor[..]
 ```
 
 ```
-examples/compile_fail/pass100_goto_retired.duo:22:9: error: 'goto' is retired in
-  .duo files (Pass 100 §1 deny table)
+examples/compile_fail/pass100_goto_retired.id:22:9: error: 'goto' is retired in
+  .id files (Pass 100 §1 deny table)
 … hint: Pass 100 §13: use `break`/`continue`, or a dispatch table —
   `next(state)(event) = handler`, which gets exhaustiveness and the diagram free
 … hint: Lua-shaped input is still accepted, and still lowers natively, in a
@@ -305,14 +305,14 @@ examples/compile_fail/pass100_goto_retired.duo:22:9: error: 'goto' is retired in
 ```
 
 ```
-examples/compile_fail/offside_misindent.duo:12:9: error: indentation matches no
+examples/compile_fail/offside_misindent.id:12:9: error: indentation matches no
   block: this line starts at column 9, its block's statements start at column 5
 … hint: blocks close by dedent; a line may only be indented further than the one
   above it when that line opened a block
 ```
 
 ```
-examples/compile_fail/offside_end_column.duo:21:9: error: 'end' at column 9
+examples/compile_fail/offside_end_column.id:21:9: error: 'end' at column 9
   closes a block opened at column 5
 … hint: the block already closed by dedent; align this 'end' with its opener or
   remove it
@@ -338,7 +338,7 @@ page.
 `256 vs 128` is exactly a §4 counterexample. Its sibling is not:
 
 ```
-examples/compile_fail/tensor_broadcast_incompatible.duo:2:10: error: tensor
+examples/compile_fail/tensor_broadcast_incompatible.id:2:10: error: tensor
   broadcast incompatible shapes
 ```
 
@@ -355,7 +355,7 @@ and again from the renderer.
 mise installation and four `src/main.zig` line numbers:
 
 ```
-$ duo check nosuch.duo
+$ duo check nosuch.id
 error: FileNotFound
 /Users/…/mise/installs/zig/master/lib/std/Io/Threaded.zig:4889:35: … in dirOpenFilePosix (duo)
                         .NOENT => return error.FileNotFound,
@@ -450,8 +450,8 @@ the direct backend produces a garbage value.
 | §6 severity | **MET on the levels.** `error`/`warning`/`hint`/`info` exactly, `info` gated behind `--info`/`DUO_INFO=1`, no `note`, no `-Werror`, no suppression pragmas. Fails §6's warning rule: `@satisfies is deprecated, use @comp.satisfies instead` names a replacement but no removal schedule. And the `warning: warning:` double label. |
 | §7 rule IDs | **ONE FAMILY.** `DNB001`–`DNB007`, backend-admission only, emitted as `hint:` text. Zero IDs on user-facing errors: `grep -rn 'DUO[0-9]' src/*.zig` returns **0** and `grep -rn '"E[0-9][0-9][0-9]' src/*.zig` returns **0** (positive control: `grep -rn 'DNB[0-9]' src/*.zig` returns 41). Some diagnostics cite prose sections ("Pass 100 §1 deny table", "§2 gives the anchor three stances") — good practice, not a substitute, and nothing resolves them. |
 | §8 JSON | **DOES NOT EXIST.** `--diagnostics=json` is not a flag. `term.ReportStyle` has a `json` member but it is reachable only through `--test-report`/`--build-report`. |
-| §8 `--plain-diagnostics` | **EXISTS AND WORKS.** `file:line:col: severity: message`, one per line, hints retained, zero ANSI escapes. `tools/lsp/src/server.duo:1372` is its consumer and parses it with `parse_diagnostics`. No byte offsets, no end positions, no fixes, no IDs — so the LSP cannot offer a code action even where the hint contains the exact replacement text. |
-| §8 stdout discipline | **VIOLATED.** *Everything* goes to stderr, including diagnostics; stdout is empty. And the progress line `  > compile (f.duo) …` shares the stream with the diagnostics, so every consumer must filter it. |
+| §8 `--plain-diagnostics` | **EXISTS AND WORKS.** `file:line:col: severity: message`, one per line, hints retained, zero ANSI escapes. `tools/lsp/src/server.id:1372` is its consumer and parses it with `parse_diagnostics`. No byte offsets, no end positions, no fixes, no IDs — so the LSP cannot offer a code action even where the hint contains the exact replacement text. |
+| §8 stdout discipline | **VIOLATED.** *Everything* goes to stderr, including diagnostics; stdout is empty. And the progress line `  > compile (f.id) …` shares the stream with the diagnostics, so every consumer must filter it. |
 | §8 colour | **VIOLATED, measurably.** `printSourceContext` emits `\x1b[2m→\x1b[0m \x1b[2m{file}:{line}:{col}\x1b[0m` **unconditionally** — not inside the `if (color)` branch that guards every other escape in the file. Measured: piping to `grep -c $'\033'` returns **2** both with and without `--no-color`. Positive control: the same grep over the rest of the output returns 0, so the counter is real. Two escaped lines survive `--no-color`, `NO_COLOR`, and a non-TTY stdout. |
 | §9 unimplemented-as-a-kind | **PARTIAL.** DNB001 is the shape, addressed to the wrong reader, with no `gap[nn]` citation. |
 | §9 green check on unbuildable | **THE DOMINANT FAILURE.** Ten programs in the table above. |

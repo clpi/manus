@@ -1,4 +1,4 @@
-# Idsem and WebAssembly
+# Idol and WebAssembly
 
 This page projects current architecture without claiming an unverified command
 surface. The sole law is
@@ -27,7 +27,7 @@ and undemanded memory state.
 
 ## FTCFTW evidence
 
-Idsem-Wasm performance claims separately measure decode/import, compile,
+Idol Wasm performance claims separately measure decode/import, compile,
 instantiate, startup, steady execution, memory, artifact and runtime footprint,
 and end-to-end latency from bytes available to useful completion. Generated-C
 or isolated throughput evidence does not prove the whole envelope.

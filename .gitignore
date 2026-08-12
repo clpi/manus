@@ -30,7 +30,7 @@ docs/book/
 *.diff
 /scratch*
 /debug*
-/hello.duo
+/hello.id
 /root
 /patch*
 /diff*
@@ -76,7 +76,7 @@ docs/book/
 .poolside/
 .serena/
 .junie/
-.duo/
+.id/
 
 # Tracked build/reference binaries (must not be in release tree)
 /benchmark_c
@@ -113,11 +113,11 @@ docs/book/
 /repomix.md
 /d2.wasm
 /f6.wasm
-/test.duo
-/test2.duo
+/test.id
+/test2.id
 /test.zig
 /run_test.zig
-/error_test.duo
+/error_test.id
 
 # Ad-hoc debug modules. Nothing in build.zig or src/ imports these.
 /src/_dbg.zig

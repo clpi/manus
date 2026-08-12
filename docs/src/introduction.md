@@ -1,9 +1,10 @@
-# Idsem
+# Idol
 
-Idsem preserves semantic identity while allowing representation to change.
-Canonical project-owned source uses `.id`. The historical `.duo` family and
-the current `duo` command are migration artifacts, not source or naming
-templates.
+Idol preserves semantic identity while allowing representation to change. The
+canonical project identity is `idol`, the repository is `idollang/idol`, and
+canonical project-owned source uses `.id`. The historical `.id` family and
+the physical bootstrap `duo` command are migration artifacts, not source or
+naming templates.
 
 The sole semantic law is `docs/spec/constitution.md`. It is structured law
 documentation while lexical closure blocks a truthful `constitution.id`.
@@ -12,9 +13,9 @@ defective.
 
 ## Current compiler frontier
 
-The executed Idsem lexer owns token and span production. The earliest remaining
+The executed Idol lexer owns token and span production. The earliest remaining
 host-owned boundary is the complete lexical-role and grammar-role projection
-needed by an immutable token view and the first executed Idsem parser
+needed by an immutable token view and the first executed Idol parser
 recognition. Parser, binding, semantic construction, demand, realization,
 machine selection, object emission, and link selection remain bootstrap-hosted.
 

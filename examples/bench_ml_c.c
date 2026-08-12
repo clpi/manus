@@ -1,6 +1,6 @@
 /* Reference C implementation for ML benchmark suite.
  * Compile: clang -O3 -ffast-math -march=native -flto -lm -o bench_ml_c bench_ml_c.c
- * Must produce identical RESULT lines as bench_ml.duo.
+ * Must produce identical RESULT lines as bench_ml.id.
  */
 #include <stdio.h>
 #include <stdlib.h>

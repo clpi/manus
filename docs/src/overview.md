@@ -1,6 +1,6 @@
 # Semantic Architecture
 
-Idsem has one persistent semantic vocabulary from source or foreign import to
+Idol has one persistent semantic vocabulary from source or foreign import to
 the graph. Demand removes unused physical work. Realization chooses among
 lawful physical forms. Machine operations and object bytes remain projections
 with causal provenance; they do not rename meaning.
@@ -66,7 +66,7 @@ and end-to-end latency.
 
 ## Clean-room state
 
-Every tracked file is training material. Project-owned `.duo`, current-facing
+Every tracked file is training material. Project-owned `.id`, current-facing
 historical branding, stale examples, duplicated grammar tables, namespace
 authority, sentinel cases, predicate bridges, static bracket misuse, and new
 host semantic ownership all descend to zero. Git is the historical archive.

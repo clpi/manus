@@ -1,8 +1,0 @@
--- @comp.embed.json typed struct smoke — JSON Schema → native C typedef (no lua boxing)
--- Run: duo run examples/embed_json_schema_smoke.duo
--- Verify: duo dump-c examples/embed_json_schema_smoke.duo | grep 'typedef struct'
-
-@comp.embed.json("examples/schemas/point.json")
-
-print("=== embed json schema smoke ===")
-print("RESULT embed_json_schema_ok = true")

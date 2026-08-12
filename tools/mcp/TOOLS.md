@@ -1,4 +1,4 @@
-# Idsem MCP Tool Discovery
+# Idol MCP Tool Discovery
 
 This file intentionally contains no static tool census or copied schemas.
 Discover the exact current surface through MCP `tools/list`; validate it with
@@ -7,14 +7,15 @@ the locked `mcp-gate`.
 Stable orientation operations currently include:
 
 - session start, which routes to one law, the bootstrap ledger, live claims,
-  and a completeness-bearing `gaps/GAP-*.md` census;
+  and an explicit unknown state plus blocker `GAP-131` and
+  `gaps/GAP-*.md` route;
 - exact path claims and releases;
 - numbered gap allocation and updates;
 - serialized build and performance evidence;
 - grammar and graph projections that remain subordinate to the constitution.
 
 Names beginning with `duo_` are bootstrap compatibility identifiers. They do
-not rename Idsem. Tools that expose historical passes, directives, `.duo`
+not rename Idol. Tools that expose historical passes, directives, `.id`
 fixtures, or migration catalogs are provenance only and must not guide new
 source or architecture.
 

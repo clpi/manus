@@ -5,11 +5,11 @@ version = "0.1.0"
 repository = ""
 authors = [""]
 
-[grammars.duo]
+[grammars.id]
 repository = "https://github.com/user/tree-sitter-duo"
 rev = "main"
 
-[languages.duo]
+[languages.id]
 name = "Duo"
 grammar = "duo"
 language_servers = ["duo-lsp"]
@@ -17,6 +17,6 @@ formatter = "external"
 command = "duo"
 args = ["fmt"]
 
-[languages.duo.language_servers.duo-lsp]
+[languages.id.language_servers.id-lsp]
 name = "Duo LSP"
 language = "Duo"

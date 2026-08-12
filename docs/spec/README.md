@@ -1,6 +1,6 @@
-# Idsem Specification Router
+# Idol Specification Router
 
-Idsem language law has one home:
+Idol language law has one home:
 
 ```text
 docs/spec/constitution.md
@@ -25,9 +25,11 @@ repair the projection rather than choosing a convenient answer.
 
 ## History
 
-Files named `pass*.md`, historical Duo/Duon prose, `.duo` compatibility source,
-and repository history are migration evidence. They may explain provenance but
-must not train new implementation or decide current semantics.
+Files named `pass*.md`, historical Idsem/Duo/Duon prose, `.id` compatibility
+source, exact physical `duo` tool references, and repository history are
+migration or bootstrap evidence. They may explain provenance but must not train
+new implementation or decide current semantics. Exact historical paths,
+commands, symbols, gaps, and evidence keep their recorded spelling.
 
 Do not add another architecture document or precedence layer. A genuinely new
 irreducible rule belongs in the constitution through its admitted change

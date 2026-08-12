@@ -8,7 +8,7 @@ no dated status.
 ## Boundary
 
 The current engine has not reached this boundary. Its tracked project-owned
-`.duo` implementation is still a standalone interpreter/JIT with private opcode
+`.id` implementation is still a standalone interpreter/JIT with private opcode
 and stack machinery, standard-root dependencies, and runtime fallback. Those
 are SOURCE-ZERO and convergence debt. The sections below state the shared-graph
 admission target, not ownership already achieved by the live engine.
@@ -58,7 +58,7 @@ mapping to native facts is witnessed.
 ## Source and migration
 
 Canonical project-owned implementation uses `.id`. Existing project-owned
-`.duo` sources in this directory are SOURCE-ZERO debt and behavioral evidence,
+`.id` sources in this directory are SOURCE-ZERO debt and behavioral evidence,
 not Idsem idiom sources. For each retained behavior, identify the relation,
 subject, foreign law, worlds, effects, outcome, demand, and realization;
 migrate it semantically into `.id`, prove it, and delete the old source. Delete

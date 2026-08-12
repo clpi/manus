@@ -1,0 +1,104 @@
+# Idol release readiness ledger
+
+This is a release-gating checklist, not semantic law and not live project status.
+Active development stays in **`clpi/duo`**. **`idollang/idol`** remains untouched
+until every blocker below is closed and explicit release authorization is recorded.
+
+## Repository separation
+
+| Requirement | Status |
+|---|---|
+| Development remote remains `clpi/duo` during concurrent work | **open** — current origin |
+| Release repo `idollang/idol` receives no development commits | **open** — do not push dev work there |
+| Release migration runbook exists as a dedicated future operation | **open** |
+| `tools/devnode/doctor` admits only `clpi/duo` development checkouts | **met** — release checkout fails closed |
+
+## Authority and orientation
+
+| Requirement | Status |
+|---|---|
+| Single MCP manifest at `tools/devnode/mcp.manifest.json` | **candidate implemented** — aggregate admission remains open |
+| Single config generator `tools/devnode/generate-configs` | **candidate implemented** — aggregate admission remains open |
+| `orient` / `doctor` / `setup` derive live facts from current tree | **met** — verify on each clone |
+| Cursor rules remain routers under C0; no client-specific constitution | **met** — 9 scoped rules |
+| Language identity projects as Idol / `.id` without implying release-repo migration | **in progress** — reconcile projections |
+
+## Canonicality and gates
+
+| Requirement | Status |
+|---|---|
+| Update-face law owned by C0, projected by `AGENTS.md`; candidate gate at `scripts/idiomgate.id` | **met** — candidate finding, not semantic proof |
+| Graph-owned canonicalizer for update-face equivalence | **blocked** — `GAP-145`, `GAP-134`, `GAP-124` |
+| Pre-commit / semantic gates pass on release candidate tree | **open** — requires clean aggregate run |
+| No second idiom/canonicality authority in clients | **met** — derive from repository gates |
+
+## Semantic and SHC closure
+
+| Requirement | Status |
+|---|---|
+| Open P0 census trustworthy (`GAP-131`) | **open** |
+| Executed self-host frontier meets release bar in `docs/bootstrap.md` | **open** |
+| Production graph facts consumed without source-text reconstruction | **open** — Codex/Poolside lanes |
+| FTCFTW evidence bundle for release candidate | **open** |
+
+## Client/devnode health
+
+| Requirement | Status |
+|---|---|
+| Fresh clone: `tools/devnode/setup` → generated MCP projections → doctor PASS | **open** — re-verify after each devnode change |
+| Codex/Cursor MCP initialize probes pass on release candidate | **open** |
+| Devin projection routes through `AGENTS.md` and devnode only | **met** at `HEAD` |
+
+## Authorization
+
+Release migration to `idollang/idol` requires an explicit authorization record
+(named release operator, candidate commit, aggregate gate evidence, and signed
+acceptance that this ledger is complete). Until then, treat any
+`idollang/idol` push as out of policy.
+
+## SHC frontend dependency (implementation lane — not Cursor)
+
+Parser authority transfer (`GAP-134`) is **blocked upstream** until the lexical
+→ grammar-role prerequisite closes. Order is fixed:
+
+1. `gaps/GAP-145.md` — distinct lexical token identities (text, bytes, compat
+   literals/comments, shebang, reserved backtick) without delimiter-text
+   inference.
+2. Generated grammar-role projection — `lib/std/token/grammar_role.id` from
+   `src/grammar_roles.zig` / `duo token-tables emit`; no parser-local spelling
+   tables.
+3. Immutable token-pack view — `lib/std/compiler/token_view.id` and host
+   `src/token_view.zig` for observation/lookahead.
+4. `gaps/GAP-134.md` — first bounded production parser recognition slice.
+
+**Owner:** Devin / SHC frontend lane. **Cursor does not implement this chain.**
+Status and closure evidence live in the gaps and bootstrap ledger, not here.
+
+## Agent lanes (disjoint write ownership)
+
+| Lane | Scope |
+|---|---|
+| **Cursor** | Coordination, release-readiness ledger, devnode admission routers only |
+| **Devin** | Lexical identity → grammar-role SHC prerequisite (`GAP-145` → `GAP-134` input) |
+| **Poolside** | Realization / machine / FTCFTW |
+| **AGY** | Adversarial audit / `GAP-131` evidence truth |
+| **Codex** | Semantic graph producer (when active) |
+
+Claim exact paths before write. No broad cleanup. No release migration.
+
+## Current devnode admission notes (2026-08-11)
+
+| Check | Status |
+|---|---|
+| `tools/devnode/orient` | **met** — reports Idol / `clpi/duo` / untouched `idollang/idol` |
+| `tools/devnode/doctor` | **fail** — see blockers below |
+| Single MCP manifest | **met** — `tools/devnode/mcp.manifest.json` only |
+| Cursor rules as routers | **met** — 9 scoped `.mdc`, all under 50 lines except always-on (21 lines) |
+
+Doctor failures observed on this checkout (not an exhaustive census): pinned tool
+version drift (zig, cursor, cursor-agent); stale compiler artifact vs
+`src/dnir_lower.zig`; `scripts/idiomgate.id` / `scripts/duo_lock.id` referenced
+by doctor and coordination docs but **absent on disk** (only `.id` variants
+present); aggregate build gates blocked (`src/sema.zig` compile error); MCP raw
+initialize probe fail per `orient`. These are release/coordination blockers, not
+permission to duplicate manifests or client constitutions.

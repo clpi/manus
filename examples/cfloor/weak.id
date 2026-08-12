@@ -1,0 +1,24 @@
+-- law.perf.dominance fixture, WEAK half. Paired with `fact.id`, which is the
+-- same program with one semantic fact added.
+--
+-- Every descriptor here is `any`. The direct backend cannot lower an `any`
+-- parameter, so `lower.native` is an INVALID candidate for `mix` — but it is
+-- still a CANDIDATE, and `duo explain` must list it. "Adding semantic facts may
+-- never reduce the realization set" is measured by comparing this file's
+-- candidate count against `fact.id`'s: the count may not fall, and the LEGAL
+-- count must rise, or the added fact did nothing and the pair proves nothing.
+--
+-- The two files must print the SAME ANSWER. A fact that changes the answer is
+-- not a fact about realization.
+
+mix = (a: any, b: any): any
+    (a * 31 + b) % 1000003
+
+main = (): i64
+    acc = 1
+    i = 0
+    while i < 100000000
+        acc = mix(acc, i)
+        i = i + 1
+    print(acc)
+    0

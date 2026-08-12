@@ -7,7 +7,7 @@ current executed compiler frontier is
 [`../../docs/bootstrap.md`](../../docs/bootstrap.md).
 
 The target server projects the compiler's semantic graph over LSP. The current
-tracked `.duo` server still carries a private scanner, handwritten roles and
+tracked `.id` server still carries a private scanner, handwritten roles and
 worlds, standard-root completion, retired snippets, and string-shaped semantic
 decisions. That is SOURCE-ZERO and duplicate-authority debt, not proof of the
 target architecture. After migration, the server defines no keywords,
@@ -37,7 +37,7 @@ semantic facts, cases, refinements, and transitions rather than teaching
 boolean `has`/`is`/`can`/`exists` helpers or sentinel checks. Unknown, absent,
 false, and unresolved remain distinct.
 
-Canonical project source uses `.id`. Any tracked project-owned `.duo`
+Canonical project source uses `.id`. Any tracked project-owned `.id`
 implementation here is SOURCE-ZERO debt and must be semantically migrated or
 deleted, never copied as an example. Physical launcher and environment names
 containing `duo` are bootstrap aliases and deletion targets, not current

@@ -1,4 +1,4 @@
-# Idsem numeric meaning
+# Idol numeric meaning
 
 This page is a projection of
 [`docs/spec/constitution.md`](constitution.md), not a second numeric

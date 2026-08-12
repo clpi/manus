@@ -5,18 +5,18 @@ companion repository (sibling to this repo under the same parent directory).
 
 | Server | Entry point |
 | --- | --- |
-| duo-bench | `duo-mcp/duo_bench.duo` |
-| duo-lsp | `duo-mcp/duo_lsp.duo` |
-| zls | `duo-mcp/zls.duo` |
-| shared tool impl | `duo-mcp/duo_shared.duo` |
+| duo-bench | `duo-mcp/duo_bench.id` |
+| duo-lsp | `duo-mcp/duo_lsp.id` |
+| zls | `duo-mcp/zls.id` |
+| shared tool impl | `duo-mcp/duo_shared.id` |
 
 Run them from the Duo repo root (set `DUO_ROOT` to this checkout):
 
 ```sh
 export DUO_ROOT="$(pwd)"
-duo run "$DUO_ROOT/../duo-mcp/duo_bench.duo"
-duo run "$DUO_ROOT/../duo-mcp/duo_lsp.duo"
-duo run "$DUO_ROOT/../duo-mcp/zls.duo"
+duo run "$DUO_ROOT/../duo-mcp/duo_bench.id"
+duo run "$DUO_ROOT/../duo-mcp/duo_lsp.id"
+duo run "$DUO_ROOT/../duo-mcp/zls.id"
 ```
 
 See `duo-mcp/README.md` (in the companion repo) and `.agents/AGENT_INTEGRATION.md`.

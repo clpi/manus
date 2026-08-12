@@ -1,4 +1,4 @@
-# Idsem agent router
+# Idol agent router
 
 `AGENTS.md` is the repository entry point. This file is its stable path router;
 it contains no language law and no volatile project status.
@@ -15,9 +15,10 @@ it contains no language law and no volatile project status.
 | Priority compass | `docs/AGENT_ALIGNMENT.md` |
 | Executed compiler frontier | `docs/bootstrap.md` |
 | Ownership and gates | `.agents/AGENT_COORDINATION.md` |
+| Release readiness ledger | `.agents/RELEASE_READINESS.md` |
 | MCP setup | `.agents/AGENT_INTEGRATION.md` |
 | Performance evidence | `docs/performance.md` |
-| Open obligations | `gaps/GAP-0NN.md` |
+| Open obligations | exact current `gaps/GAP-*.md` files |
 
 The constitution is structured law documentation, not executable source or a
 pattern library. Canonical implementation uses `.id`. No pass document or
@@ -29,15 +30,23 @@ historical corpus file is an authority.
    `docs/AGENT_ALIGNMENT.md`, `docs/bootstrap.md`, and the scope-specific
    authority.
 2. Call `duo_agent_session_start(agent_id="your-id")` on `duo-bench`.
-3. Inspect `git status --short --branch`, current HEAD, recent commits, live
-   claims, open gap files, and `git stash list`.
-4. Treat the session-start open-P0 count as incomplete until `GAP-131` closes.
+3. Inspect `git status --short --branch`, current HEAD, recent commits,
+   `duo_dev_claim_files`, every current `gaps/GAP-*.md`, and `git stash list`.
+   Verify the executed frontier in `docs/bootstrap.md` against production.
+4. Treat the session-start gap summary as incomplete until `GAP-131` closes;
+   route work from the exact gap files and live claim result.
 5. Claim exact paths with `duo_dev_claim_acquire` before editing.
 6. Run heavy gates through the repository lock and record the inner outcome.
+   The MCP health gate is
+   `repo="$(git rev-parse --show-toplevel)" && "$repo/zig-out/bin/duo" run --backend=c "$repo/scripts/duo_lock.id" -- zig build mcp-gate`.
+   The `.id` lock entry is executed bootstrap transport, not self-hosting proof.
 7. Commit only explicit owned paths and release only your own claims.
 
-The current physical `duo` command and `duo-*` MCP names are bootstrap aliases.
-They do not rename Idsem or authorize new `.duo` implementation.
+The language identity is Idol (`idol`, `.id`). Active development repository is
+`clpi/duo`. Future release repository is `idollang/idol`; do not migrate
+development there until `.agents/RELEASE_READINESS.md` authorizes release. The
+physical `duo` command and `duo-*` MCP names are bootstrap aliases. Historical
+Idsem, Duo, Duon, and `.id` paths are migration provenance.
 
 `std` is migration distribution, not a semantic namespace. `std.script` is
 frozen debt. New canonical `std.*` calls, APIs, generated source, and onboarding

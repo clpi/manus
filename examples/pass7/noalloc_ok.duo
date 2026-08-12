@@ -1,8 +1,0 @@
-@noalloc
-sum2(a: i64, b: i64): i64
-    a + b
-end
-
-main(): i64
-    sum2(1, 2)
-end

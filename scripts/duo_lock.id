@@ -1,0 +1,71 @@
+#!/usr/bin/env duo
+-- duo_lock.id — serialize heavy Duo/Zig builds across concurrent agent sessions.
+-- Native mkdir mutex + stale-PID reclaim. Bash wrapper: scripts/duo_lock.sh
+
+script = req "std.script"
+osmod = req "std.os"
+
+args = osmod.args()
+n = #args
+
+if n == 0
+    print("duo_lock: no command (usage: duo_lock.id [--timeout N] -- cmd...)")
+    os.exit(64)
+end
+
+if args[1] == "status"
+    of = script.build_lock_owner()
+    owner = script.capture("cat '" .. of .. "' 2>/dev/null")
+    trimmed = string.gsub(owner, "%s+", "")
+    if trimmed != "" and string.find(trimmed, "%d")
+        print("LOCKED by " .. owner)
+    else
+        print("FREE")
+    end
+else
+    timeout = 1800
+    i = 1
+    if args[i] == "--timeout"
+        if i + 1 > n
+            print("duo_lock: --timeout needs a value")
+            os.exit(64)
+        end
+        timeout = tonumber(args[i + 1])
+        if timeout == nil timeout = 1800 end
+        i = i + 2
+    end
+
+    -- `duo run script.id -- cmd args` CONSUMES the `--` itself; the script
+    -- receives only what follows. This used to require `--` in its own argv and
+    -- rejected every invocation with "expected -- before command", which is why
+    -- build.zig still called the bash version. A leading `--` is tolerated for
+    -- anyone invoking the script directly, but never required.
+    if i <= n and args[i] == "--"
+        i = i + 1
+    end
+
+    if i > n
+        print("duo_lock: no command given")
+        os.exit(64)
+    end
+
+    parts = {}
+    while i <= n
+        parts[#parts + 1] = args[i]
+        i = i + 1
+    end
+    cmd = table.concat(parts, " ")
+
+    if not script.build_lock_acquire(timeout)
+        print("duo_lock: timed out after " .. tostring(timeout) .. "s waiting for " .. script.build_lock_dir())
+        os.exit(75)
+    end
+
+    script.env_set("DUO_LOCK_HELD", "1")
+    script.env_set("DUO_BUILD_LOCK", script.build_lock_dir())
+    rc = script.run(cmd)
+    script.build_lock_release()
+    if rc != 0
+        os.exit(rc)
+    end
+end

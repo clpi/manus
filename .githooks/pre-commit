@@ -111,7 +111,7 @@ duo="$root/zig-out/bin/duo"
 git diff --cached -U0 --diff-filter=ACM -- '*.id' '*.duo' > "$tmp"
 rc=0
 if [ -s "$tmp" ]; then
-  DUOGATEDIFF="$tmp" "$duo" run --backend=c "$root/scripts/idiomgate.duo"
+  DUOGATEDIFF="$tmp" "$duo" run --backend=c "$root/scripts/idiomgate.id"
   rc=$?
 fi
 rm -f "$tmp"
@@ -122,7 +122,7 @@ rm -f "$tmp"
   exit 1
 }
 
-"$duo" run --backend=c "$root/scripts/semanticgate.duo" || {
+"$duo" run --backend=c "$root/scripts/semanticgate.id" || {
   echo ""
   echo "COMMIT BLOCKED — semantic canonicality is part of correctness."
   echo "Repair or explicitly classify the semantic debt; do not suppress it."

@@ -1,6 +1,6 @@
-# Idsem Development Node
+# Idol development node
 
-This directory carries the reproducible machine bootstrap for Idsem. It is
+This directory carries the reproducible machine bootstrap for Idol. It is
 tooling projection only; semantic authority remains `AGENTS.md` and C0.
 
 Required on a fresh supported macOS machine:
@@ -67,7 +67,7 @@ Correctness-sensitive versions currently pinned or checked:
 ## Optional or historical dependencies
 
 Benchmark competitors and foreign engines not present in `doctor` are optional
-unless a named benchmark/conformance gate is being run. Historical `.duo`
+unless a named benchmark/conformance gate is being run. Historical `.id`
 source, generated editor artifacts, generated binaries, caches, Codex rollout
 history, Cursor memories, and previous machine MCP files are not dependencies
 and are not authority. A future need becomes required only when it is reachable

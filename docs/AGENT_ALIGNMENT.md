@@ -12,31 +12,40 @@ Move monotonically to:
 
 ```text
 current canonical `.id` source
--> Idsem-owned semantic identities and facts
+-> Idol-owned semantic identities and facts
 -> compiler B through the honest existing backend
 -> B compiles C from the identical compiler source
 -> B/C semantic and behavioral equivalence
--> progressively Idsem-owned realization and backend
--> Idsem Wasm faster than Wasmtime on equivalent semantics
+-> progressively Idol-owned realization and backend
+-> Idol Wasm faster than Wasmtime on equivalent semantics
 ```
 
-The destination is 100% self-hosted canonical Idsem. A `.id` filename does not
-transfer authority, and `.duo` remains historical source provenance during
-migration. Generated projections, epoch-1 syntax, C-backed proofs, and Idsem
-wrappers over Zig owners remain bootstrap debt.
+The destination is 100% self-hosted canonical Idol: public command identity
+`idol`, source suffix `.id`, and repository identity `idollang/idol`. A `.id`
+filename does not transfer authority. Earlier Idsem, Duo, and Duon names,
+historical `.id` source, exact physical `duo` tools, generated projections,
+epoch-1 syntax, C-backed proofs, and Idol wrappers over Zig owners remain
+migration or bootstrap debt.
 
-Idsem and Lua are distinct lawsets hosted by one compiler. Idsem is not a Lua
-superset, and Lua compatibility may not define Idsem semantics or architecture.
+Idol and Lua are distinct lawsets hosted by one compiler. Idol is not a Lua
+superset, and Lua compatibility may not define Idol semantics or architecture.
 
 ## Current phase
 
-The language architecture is already specified. The work now is the minimum
-closed semantic kernel, compiler B, bootstrap closure, and proof. Do not start another pass,
+The language architecture is already specified. The current frontier is S0:
+the seed is host-built, parser recognition remains host-owned, and no compiler
+B exists. `GAP-131` makes the session-start P0 count unknown; a fresh session
+runs `tools/devnode/orient` for the live observed count and inspects every
+matching canonical gap record directly. A copied number is orientation
+evidence, not lasting gap authority.
+
+The work now is the minimum closed semantic kernel, compiler B, bootstrap
+closure, and proof. Do not start another pass,
 invent another semantic taxonomy, add surface syntax, or strengthen a bootstrap
-subsystem that the constitution requires Idsem to replace.
+subsystem that the constitution requires Idol to replace.
 
 Horizontal ports are useful only when they remove a dependency. They are not
-self-hosting progress unless semantic and production authority move into Idsem.
+self-hosting progress unless semantic and production authority move into Idol.
 
 ## No New Zig
 
@@ -46,17 +55,17 @@ registries, or Zig reconstruction caches.
 An edit to existing Zig is exceptional bootstrap wiring. It is admissible only
 when all of these are true:
 
-1. Canonical Idsem already owns the semantic fact or relation.
+1. Canonical Idol already owns the semantic fact or relation.
 2. The edit only passes that authority into the current production path.
 3. No decision is reconstructed from syntax, text, names, or backend shape.
 4. Host semantic code is net negative, or the same change names the exact
-   deletion trigger and the Idsem file that replaces it.
+   deletion trigger and the Idol file that replaces it.
 5. A focused direct-native value proof fails before the edit and passes after.
 
-If those conditions do not hold, implement the missing authority in Idsem first.
+If those conditions do not hold, implement the missing authority in Idol first.
 Running the existing Zig bootstrap and its gates is validation, not permission
 to expand it. Retain old host implementations as differential oracles until the
-Idsem replacement is proven, then delete them.
+Idol replacement is proven, then delete them.
 
 ## Compiler-B Queue
 
@@ -90,7 +99,7 @@ Every capability report keeps these facts separate:
 
 ```text
 canonical source
-Idsem semantic owner
+Idol semantic owner
 direct execution
 production dispatch
 oracle identity

@@ -1,4 +1,4 @@
-# Idsem implementation status
+# Idol implementation status
 
 This file intentionally contains no static roadmap, completion percentage,
 test count, or feature census. Those values drift and previously trained agents
@@ -18,7 +18,7 @@ lexical identities
 -> machine-readable grammar authority
 -> generated grammar roles
 -> immutable token view
--> executed Idsem parser recognition
+-> executed Idol parser recognition
 -> binding and scope
 -> graph and application authority
 -> demand
@@ -28,7 +28,7 @@ lexical identities
 ```
 
 Canonical progress means executed `.id` replaces an exact host semantic
-decision. New canonical `.duo`, new host semantic ownership, new `std.*`
+decision. New canonical `.id`, new host semantic ownership, new `std.*`
 meaning, replacement namespace roots, and speculative syntax do not advance
 this path.
 

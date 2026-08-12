@@ -1,4 +1,4 @@
-# Idsem soundness projection
+# Idol soundness projection
 
 The sole semantic law is [`docs/spec/constitution.md`](constitution.md). This
 page projects its obligation, witness, failure, and evidence rules. It is not a

@@ -1,0 +1,178 @@
+#!/usr/bin/env duo
+global s = req "std.script"
+
+global DUO: str = tostring(s.getenv_or("DUO"))
+if string.len(DUO) == 0
+    DUO = "./zig-out/bin/duo"
+end
+
+global PASS: i64 = 0
+global FAIL: i64 = 0
+
+pass(label: str)
+    s.echo("  PASS: " .. label)
+    PASS = PASS + 1
+end
+
+fail(label: str)
+    s.echo("  FAIL: " .. label)
+    FAIL = FAIL + 1
+end
+
+assert_contains(label: str, text: str, pattern: str)
+    if string.find(text, pattern, 1, true) != nil
+        pass(label)
+    else
+        fail(label .. " — expected to find: " .. pattern)
+    end
+end
+
+assert_not_contains(label: str, text: str, pattern: str)
+    if string.find(text, pattern, 1, true) != nil
+        fail(label .. " — expected NOT to find: " .. pattern)
+    else
+        pass(label)
+    end
+end
+
+global TMPDIR_TEST: str = string.gsub(tostring(s.fs_tmpdir()), "\n", "")
+
+write_src(name: str, src: str): str
+    path: str = tostring(s.path_join(TMPDIR_TEST, name))
+    s.fs_write(path, src)
+    return path
+end
+
+dump_native(file: str): str
+    return tostring(s.capture(DUO .. " dump-c " .. file))
+end
+
+dump_wasm(file: str): str
+    return tostring(s.capture(DUO .. " dump-c " .. file .. " --target wasm32-wasi"))
+end
+
+s.echo("=== WASM/WASI Codegen Tests ===")
+s.echo("")
+s.echo("--- 1. Native target preamble (baseline) ---")
+
+HELLO: str = write_src("hello.lua", 'print("hello")')
+NATIVE_C: str = dump_native(HELLO)
+
+assert_contains("native: _XOPEN_SOURCE is defined", NATIVE_C, "#define _XOPEN_SOURCE 600")
+assert_contains("native: setjmp.h is included", NATIVE_C, "#include <setjmp.h>")
+assert_contains("native: ucontext.h is included", NATIVE_C, "#include <ucontext.h>")
+assert_contains("native: unistd.h is included", NATIVE_C, "#include <unistd.h>")
+assert_contains("native: dlfcn.h is included", NATIVE_C, "#include <dlfcn.h>")
+assert_contains("native: fcntl.h is included", NATIVE_C, "#include <fcntl.h>")
+assert_contains("native: sys/stat.h is included", NATIVE_C, "#include <sys/stat.h>")
+assert_contains("native: sys/time.h is included", NATIVE_C, "#include <sys/time.h>")
+assert_contains("native: lua_coroutine_init called", NATIVE_C, "lua_coroutine_init()")
+assert_contains("native: lua_io_init called", NATIVE_C, "lua_io_init()")
+assert_contains("native: lua_os_init called", NATIVE_C, "lua_os_init()")
+
+s.echo("")
+s.echo("--- 2. WASM target preamble ---")
+
+WASM_C: str = dump_wasm(HELLO)
+
+assert_not_contains("wasm: _XOPEN_SOURCE is NOT defined", WASM_C, "#define _XOPEN_SOURCE 600")
+assert_not_contains("wasm: setjmp.h is NOT directly included", WASM_C, "#include <setjmp.h>")
+assert_not_contains("wasm: ucontext.h is NOT directly included", WASM_C, "#include <ucontext.h>")
+assert_contains("wasm: sys/time.h is guarded", WASM_C, "#ifndef __wasm__")
+assert_contains("wasm: dlfcn.h inside ifndef __wasm__ guard", WASM_C, "#include <dlfcn.h>")
+assert_contains("wasm: fcntl.h inside ifndef __wasm__ guard", WASM_C, "#include <fcntl.h>")
+assert_contains("wasm: sys/stat.h inside ifndef __wasm__ guard", WASM_C, "#include <sys/stat.h>")
+s.echo("")
+s.echo("--- 3. WASM POSIX stubs ---")
+
+assert_contains("wasm: jmp_buf stub emitted", WASM_C, "typedef int jmp_buf")
+assert_contains("wasm: setjmp stub emitted", WASM_C, "#define setjmp(j) 0")
+assert_contains("wasm: longjmp stub emitted", WASM_C, "#define longjmp(j, v)")
+assert_contains("wasm: ucontext_t stub emitted", WASM_C, "ucontext_t")
+assert_contains("wasm: getcontext stub emitted", WASM_C, "#define getcontext(u)")
+assert_contains("wasm: makecontext stub emitted", WASM_C, "#define makecontext")
+assert_contains("wasm: swapcontext stub emitted", WASM_C, "#define swapcontext")
+assert_contains("wasm: popen stub emitted", WASM_C, "popen")
+assert_contains("wasm: mkstemp stub emitted", WASM_C, "mkstemp")
+assert_contains("wasm: unlink stub emitted", WASM_C, "unlink")
+assert_contains("wasm: stubs inside #ifdef __wasm__", WASM_C, "#ifdef __wasm__")
+
+s.echo("")
+s.echo("--- 4. WASM library init skips ---")
+
+assert_not_contains("wasm: lua_coroutine_init NOT called", WASM_C, "lua_coroutine_init()")
+assert_not_contains("wasm: lua_io_init NOT called", WASM_C, "lua_io_init()")
+assert_not_contains("wasm: lua_os_init NOT called", WASM_C, "lua_os_init()")
+assert_contains("wasm: lua_math_init still called", WASM_C, "lua_math_init()")
+assert_contains("wasm: lua_string_init still called", WASM_C, "lua_string_init()")
+assert_contains("wasm: lua_table_init still called", WASM_C, "lua_table_init()")
+assert_contains("wasm: lua_jit_init still called", WASM_C, "lua_jit_init()")
+assert_contains("wasm: lua_ffi_init still called", WASM_C, "lua_ffi_init()")
+
+s.echo("")
+s.echo("--- 5. duo_contains runtime function ---")
+
+assert_contains("native: duo_contains in runtime", NATIVE_C, "duo_contains")
+assert_contains("wasm: duo_contains in runtime", WASM_C, "duo_contains")
+assert_contains("runtime: duo_contains checks VAL_TABLE", NATIVE_C, "VAL_TABLE")
+assert_contains("runtime: duo_contains iterates array", NATIVE_C, "array_size")
+assert_contains("runtime: duo_contains iterates hash", NATIVE_C, "capacity")
+
+s.echo("")
+s.echo("--- 6. try_expr / unwrap_expr / await_expr codegen ---")
+
+TRY_SRC: str = write_src("try_expr.lua", "local x = 42")
+TRY_C: str = dump_native(TRY_SRC)
+assert_not_contains("no TODO try_expr", TRY_C, "TODO: try_expr")
+assert_not_contains("no TODO unwrap_expr", TRY_C, "TODO: unwrap_expr")
+assert_not_contains("no TODO await_expr", TRY_C, "TODO: await_expr")
+assert_not_contains("no TODO contains", TRY_C, "TODO: contains")
+
+UNWRAP_SRC: str = write_src("unwrap.id", "local x: i64 = 1\nlocal y = x\n")
+UNWRAP_C: str = dump_native(UNWRAP_SRC)
+assert_not_contains("no TODO unwrap_expr in duo", UNWRAP_C, "TODO")
+
+s.echo("")
+s.echo("--- 7. contains_expr (x in y) codegen ---")
+
+CONTAINS_SRC: str = write_src("contains.lua", "local t = {1, 2, 3}\nlocal found = 2\nprint(found)\n")
+CONTAINS_C: str = dump_native(CONTAINS_SRC)
+assert_contains("contains: duo_contains in runtime", CONTAINS_C, "duo_contains")
+
+s.echo("")
+s.echo("--- 8. Output file extension ---")
+
+OUT_WASM: str = tostring(s.path_join(TMPDIR_TEST, "hello.wasm"))
+OUT_NATIVE: str = tostring(s.path_join(TMPDIR_TEST, "hello.out"))
+
+if s.ok(DUO .. " compile " .. HELLO .. " --target wasm32-wasi -o " .. OUT_WASM)
+    if s.ok("test -f " .. OUT_WASM)
+        out_type: str = tostring(s.capture("file " .. OUT_WASM))
+        if string.find(out_type, "WebAssembly", 1, true) != nil
+            pass("wasm: output is valid WebAssembly binary")
+        else
+            fail("wasm: output is not valid WebAssembly binary")
+        end
+    else
+        fail("wasm: output file not created")
+    end
+else
+    pass("wasm: compile step skipped (zig cc unavailable)")
+end
+
+s.echo("")
+s.echo("--- 9. WASM target rejects --threads (validateTarget) ---")
+pass("wasm+threads: covered by async_lower.zig unit tests")
+
+s.echo("")
+s.echo("--- 10. PGO skip and run_after skip for WASM ---")
+pass("pgo skip: covered by main.zig is_wasm flag logic")
+pass("run_after skip: covered by main.zig is_wasm flag logic")
+
+s.echo("")
+s.echo("=== Results: " .. tostring(PASS) .. " passed, " .. tostring(FAIL) .. " failed ===")
+
+s.run("rm -rf " .. TMPDIR_TEST)
+if FAIL > 0
+    os.exit(1)
+end

@@ -1,0 +1,214 @@
+-- Pass 101 §4: derived-lines / total-lines for the engine, target >= 80%.
+--
+--   duo run bench/derived.id
+--
+-- Pass 101 calls hand-written serialization in the engine "a violation with a
+-- derivation repair", and asks for the repair to be MEASURED rather than
+-- asserted. This is that measurement. It had no implementation before
+-- 2026-08-08; the first honest reading of it is 0%.
+--
+-- WHAT COUNTS AS DERIVED. A line is derived when it was projected from a
+-- descriptor rather than typed by a person, and it says so in the source:
+--
+--   -- derived(std.wasm.opcodes) begin
+--   ...projected lines...
+--   -- derived end
+--
+-- That marker is the whole contract. It is deliberately a source annotation
+-- and not an inference: a heuristic that GUESSED which lines "look generated"
+-- would be exactly the kind of recognizer CLAUDE.md §3 forbids -- it would key
+-- on shape, and it would drift green as the shapes drifted.
+--
+-- POSITIVE CONTROL. A scanner that reports 0 is usually broken rather than
+-- green (§3 again), and this one reports 0 today, so the zero has to be
+-- proved. `_selfcheck` runs the same counter over a synthetic buffer that DOES
+-- carry the markers; if that reads 0 the harness declares itself broken and
+-- exits non-zero instead of reporting a clean 0%.
+--
+-- The denominator is the BUILT artifact only. `src/wasm/*.id` is excluded and
+-- reported separately: nothing requires those files, so counting them would
+-- inflate the denominator with code that does not ship.
+
+_is_code(line: str): bool
+    t = std.string.trim(line)
+    if t == "" return false end
+    if string.sub(t, 1, 2) == "--" return false end
+    true
+end
+
+-- Returns "<code>|<derived>" for one file's text. Both counters walk the same
+-- lines in the same pass so a marker can never be counted without its body.
+_scan(text: str): str
+    code = 0
+    derived = 0
+    inside = false
+    for _i, line in std.string.split(text, "\n")
+        t = std.string.trim(line)
+        if string.match(t, "^%-%- derived%(") != nil
+            inside = true
+        elseif t == "-- derived end"
+            inside = false
+        elseif _is_code(line)
+            code += 1
+            if inside
+                derived += 1
+            end
+        end
+    end
+    code:to(str) .. "|" .. derived:to(str)
+end
+
+_part(s: str, n: i64): i64
+    i = string.find(s, "|", 1, true)
+    if n == 1
+        return to(i64)(string.sub(s, 1, i - 1))
+    end
+    to(i64)(string.sub(s, i + 1, string.len(s)))
+end
+
+-- A file's marker-free line count, used to report what the projection would
+-- have to cover. Kept separate from _scan so the two can disagree loudly.
+_count(path: str): str
+    _scan(std.script.fs_read(path))
+end
+
+-- Lines that hard-code a WASM-format fact the canonical descriptor table
+-- already carries: an opcode number used as a dispatch predicate. This is the
+-- specific population Pass 101 names, so it is reported on its own rather than
+-- folded into "everything hand-written".
+--
+-- Two qualifications, both added 2026-08-08 when the population went 241 -> 2
+-- and the leftovers turned out to be noise rather than debt:
+--
+--   * a line INSIDE a derived region is skipped. A projected line does not
+--     hard-code anything -- it is the output of the descriptor, by the same
+--     marker contract the ratio above uses. Without this, projecting the table
+--     made the count go UP, because `OP_nop = 1` and `OP_loop = 3` match the
+--     pattern on the lowercase "op" buried in their own names.
+--   * the operator must be a COMPARISON. `fop = 0x3800` assigns an ARM64
+--     instruction field; it is an assignment, not a dispatch predicate, and
+--     the ARM64 encoding is not a fact any wasm descriptor carries.
+--
+-- What is deliberately NOT filtered: `f64op == 1`, three times, where `f64op`
+-- is a width flag and 1 is not an opcode. Tuning the pattern until it read
+-- exactly 0 would leave a detector that cannot be told apart from a broken
+-- one. Those three are a live floor: see 3, and the scanner is still looking.
+-- If this ever reports 0, suspect the scanner before celebrating.
+_format_facts(text: str): i64
+    n = 0
+    inside = false
+    for _i, line in std.string.split(text, "\n")
+        t = std.string.trim(line)
+        if string.match(t, "^%-%- derived%(") != nil
+            inside = true
+        elseif t == "-- derived end"
+            inside = false
+        elseif _is_code(line) and not inside
+            -- `==` `>=` `<=` / `!=` / bare `<` `>`. Three alternatives rather
+            -- than one because a single class would also admit the bare `=` of
+            -- an assignment, which is the case being excluded.
+            if string.match(line, "op%s*[=><]=%s*0?x?%x") != nil
+                n += 1
+            elseif string.match(line, "op%s*!=%s*0?x?%x") != nil
+                n += 1
+            elseif string.match(line, "op%s*[<>]%s*0?x?%x") != nil
+                n += 1
+            end
+        end
+    end
+    n
+end
+
+-- The zero has to be earned. Same counter, a buffer that is KNOWN to contain
+-- two derived code lines; anything else means the scanner stopped working and
+-- the real reading is untrustworthy.
+_selfcheck(): bool
+    probe = "a = 1\n-- derived(probe.table) begin\nb = 2\nc = 3\n-- derived end\nd = 4\n"
+    r = _scan(probe)
+    if _part(r, 1) != 4
+        print("selfcheck: expected 4 code lines, got " .. to(str)(_part(r, 1)))
+        return false
+    end
+    if _part(r, 2) != 2
+        print("selfcheck: expected 2 derived lines, got " .. to(str)(_part(r, 2)))
+        return false
+    end
+
+    -- The opcode-predicate counter gets the same treatment, and it needs it
+    -- more: it was tightened after the projection landed, and a filter added
+    -- to make a number go DOWN has to prove it still counts the thing it is
+    -- for. Four lines, one of each verdict.
+    facts = "if op == 106\nfop = 0x3800\n-- derived(t) begin\nOP_nop = 1\n-- derived end\nif op >= 40\n"
+    f = _format_facts(facts)
+    if f != 2
+        print("selfcheck: expected 2 opcode predicates in the probe, got " .. f:to(str))
+        print("  (the probe holds one `==`, one `>=`, one assignment, one derived line)")
+        return false
+    end
+    true
+end
+
+_pad(s: str, w: i64): str
+    out = s
+    while string.len(out) < w
+        out = out .. " "
+    end
+    out
+end
+
+main(): i64
+    if not _selfcheck()
+        print("*** derived-lines scanner is BROKEN; its 0 would not be evidence ***")
+        return 1
+    end
+    print("selfcheck OK (marker detection proved on a synthetic buffer)")
+    print("")
+
+    built = "src/engine.id"
+    r = _count(built)
+    code = _part(r, 1)
+    derived = _part(r, 2)
+
+    print(_pad("FILE", 30) .. _pad("CODE", 8) .. _pad("DERIVED", 9) .. "SHIPS")
+    print(_pad(built, 30) .. _pad(code:to(str), 8) .. _pad(derived:to(str), 9) .. "yes")
+
+    -- Everything under src/ that is NOT required by the built artifact. These
+    -- are reported so the number cannot be flattered by counting dead trees
+    -- (src/wasm/jit_arm64.id is 701 lines of a register-allocating JIT whose
+    -- host modules -- runtime.id, init.id -- were deleted; it compiles and
+    -- runs nowhere).
+    orphan = 0
+    for _i, f in std.script.fs_glob("src/wasm/*.id")
+        o = _count(f)
+        orphan = orphan + _part(o, 1)
+        print(_pad(f, 30) .. _pad(to(str)(_part(o, 1)), 8) .. _pad(to(str)(_part(o, 2)), 9) .. "no")
+    end
+
+    print("")
+    print("shipped code lines   " .. code:to(str))
+    print("derived code lines   " .. derived:to(str))
+    if code > 0
+        print("derived ratio        " .. to(str)(derived * 100 / code)
+            .. "%   (Pass 101 target >= 80%)")
+    end
+    print("orphan code lines    " .. orphan:to(str) .. "  (in src/wasm/, required by nothing)")
+
+    facts = _format_facts(std.script.fs_read(built))
+    print("")
+    print("hand-encoded WASM opcode predicates in the shipped file: " .. facts:to(str))
+    print("  was 241 on 2026-08-08, before the dispatch was projected from")
+    print("  tools/opcodes.id. The residue is 3 known false positives on the")
+    print("  `f64op` width flag, kept as the scanner's floor -- see the comment")
+    print("  on _format_facts. A reading of 0 means the scanner broke.")
+    if facts < 3
+        print("*** opcode-predicate scanner reads below its known floor; it is broken ***")
+        return 1
+    end
+
+    if derived * 100 < code * 80
+        print("")
+        print("*** PASS 101 §4 UNMET: derived/total is below 80% ***")
+        return 1
+    end
+    0
+end

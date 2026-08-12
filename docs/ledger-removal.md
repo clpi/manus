@@ -166,8 +166,8 @@ trio is untracked and scores nothing.)
 | file | lines | RL row | replacement |
 |---|---|---|---|
 | `src/codegen.zig` | 34,971 | RL-05 | none exists |
-| `src/parser.zig` | 8,455 | RL-04 | `lib/std/compiler/parser.duo` (projection only) |
-| `src/lexer.zig` | 1,332 | RL-02 | `lib/std/compiler/lexer.duo` |
+| `src/parser.zig` | 8,455 | RL-04 | `lib/std/compiler/parser.id` (projection only) |
+| `src/lexer.zig` | 1,332 | RL-02 | `lib/std/compiler/lexer.id` |
 
 ### (c) Bootstrap-required — 58 files, 61,865 lines
 
@@ -227,10 +227,10 @@ Verified each row against the tree.
 
 | row | status | finding |
 |---|---|---|
-| **RL-01** | **DONE — should be marked so** | `src/duo_keyword_classify.c` was deleted 2026-08-07 in `32643ed` ("its ledger gate was already met, c/h 27 → 26"). The row still reads `.after_m1` as if pending. Its replacement `lib/std/token/classify.duo` exists (8.1 KB). |
+| **RL-01** | **DONE — should be marked so** | `src/duo_keyword_classify.c` was deleted 2026-08-07 in `32643ed` ("its ledger gate was already met, c/h 27 → 26"). The row still reads `.after_m1` as if pending. Its replacement `lib/std/token/classify.id` exists (8.1 KB). |
 | **RL-02** | **gate ACCURATE** | 63 files `@import("lexer.zig")` (the row says 61 — measured 63 today). The type-home and driver-object reasons hold; `.after_m2` is right. |
 | **RL-03** | **ACCURATE** | `token_semantic.zig` (474 lines) is imported by 12 files, incl. `lexer.zig` and 4 audit modules. `retain_oracle` is correct. |
-| **RL-04** | **gate ACCURATE, one number stale** | `lib/std/compiler/parser.duo` exists (63 KB) and the structural objection stands — it emits s-expression TEXT, not the AST `sema`/`codegen` consume. |
+| **RL-04** | **gate ACCURATE, one number stale** | `lib/std/compiler/parser.id` exists (63 KB) and the structural objection stands — it emits s-expression TEXT, not the AST `sema`/`codegen` consume. |
 | **RL-05** | **SCOPE WRONG** | Row reads `src/codegen.zig (canonical path)`. Under Pass 103 the C path is **not** canonical, and the row is silent on the fact that 2,481 lines are the direct backend's own admission gate and must be PORTED. Gate should also cite native attainment (119/177) as the measurable precondition. |
 | **RL-06** | **ACCURATE but incomplete** | `build.zig` is 1,238 lines and counts against the ratchet; the row does not say so. |
 
@@ -246,7 +246,7 @@ Cumulative against the census ratchet (tracked files) and tracked lines.
 | **0** | delete the 14 dead files (§4b) | **none — PROVEN today** | −11 tracked | −1,837 tracked | **226** | 1,837 |
 | **1** | delete 4 unreferenced fns in `codegen.zig` | none; UNVERIFIED | 0 | −29 | 226 | 1,866 |
 | **2** | port the 164 class-(d) audit/gate/tooling files to Duo (§0f, MONOGLOT) | Duo can host them — no compiler work | −164 | −36,456 | **62** | 38,322 |
-| **3** | RL-04: Duo parser kernel emitting the real AST | parser.duo structural half | −1 | −8,455 | 61 | 46,777 |
+| **3** | RL-04: Duo parser kernel emitting the real AST | parser.id structural half | −1 | −8,455 | 61 | 46,777 |
 | **4** | RL-02: `lexer.zig` falls with the parser; retain as oracle | step 3 | −1 (or 0 if kept) | −1,332 | 60 | 48,109 |
 | **5** | RL-05: `codegen.zig` — needs native 177/177 AND the 2,481-line precheck ported | steps 3–4 + `emitReqModuleC` waist closed | −1 | −34,971 | 59 | 83,080 |
 | **6** | RL-06: `build.zig` orchestration | S2 is canonical | −1 | −1,238 | 58 | 84,318 |
@@ -280,7 +280,7 @@ Nothing else. Every other reduction is gated on a Duo replacement existing.
 ## 8. Caveats
 
 - `zig build agent-smoke` is **red at baseline** on this branch, before and
-  after the removal experiment (another session's in-flight `lib/std/fs.duo` and
+  after the removal experiment (another session's in-flight `lib/std/fs.id` and
   `tools/lsp` edits). It was confirmed red with the tree fully restored, so it
   is not attributable to anything here.
 - The `self.X(` call-graph pattern under-reports edges (97 of 104 apparent
@@ -332,15 +332,15 @@ touched a compiler path.
 
 Evidence the cut was clean: `zig build` green, and `zig test` on `tests.zig`
 went **1165 → 1152**, exactly the 13 tests those files declared. A grep for each
-deleted basename across `*.zig`, `*.duo` and `*.json` returns nothing.
+deleted basename across `*.zig`, `*.id` and `*.json` returns nothing.
 
 ### Ported — 3 files, replaced by two Duo gates wired into `agent-smoke`
 
 | Zig file | lines | Duo replacement |
 |---|---|---|
-| `lua_superset_corpus.zig` | 131 | `scripts/luahost.duo` + `examples/luahost/*.duo` (12 fixtures) |
-| `pass7_contract_tests.zig` | 94 | `scripts/explain.duo` |
-| `pass7_explain_tests.zig` | 107 | `scripts/explain.duo` |
+| `lua_superset_corpus.zig` | 131 | `scripts/luahost.id` + `examples/luahost/*.id` (12 fixtures) |
+| `pass7_contract_tests.zig` | 94 | `scripts/explain.id` |
+| `pass7_explain_tests.zig` | 107 | `scripts/explain.id` |
 
 Both ports assert through the **shipping CLI** rather than through internals,
 which is wider coverage than the originals: the Lua corpus went from
@@ -352,7 +352,7 @@ confirming the gate goes red, then restoring it.
 
 Two findings fell out of the porting, and neither is a porting loss:
 
-- **`examples/pass7/explain_smoke.duo` was broken and tracked.** It opened with
+- **`examples/pass7/explain_smoke.id` was broken and tracked.** It opened with
   a C-style `//` comment, which the duon lexer refuses. Nothing noticed because
   the Zig test that owned its content carried a byte-identical copy as a string
   literal and never opened the file. The marker is repaired in this commit.
@@ -384,9 +384,9 @@ projection before.
 
 | Zig retired | lines | Duo gate | controls |
 |---|---|---|---|
-| `pass8_realization_tests.zig` + `pass8_codegen_realization_tests.zig` | 213 | `scripts/realize.duo` | 4 |
-| `pass5_golden_tests.zig` | 73 | `scripts/sim.duo` | 5 |
-| `meta_transform_tests.zig` + `call_transform_tests.zig` + `pass6_dispatch_tests.zig` | 591 | `scripts/transform.duo` | 5 |
+| `pass8_realization_tests.zig` + `pass8_codegen_realization_tests.zig` | 213 | `scripts/realize.id` | 4 |
+| `pass5_golden_tests.zig` | 73 | `scripts/sim.id` | 5 |
+| `meta_transform_tests.zig` + `call_transform_tests.zig` + `pass6_dispatch_tests.zig` | 591 | `scripts/transform.id` | 5 |
 
 All three run inside `zig build agent-smoke`. `zig build unit-test` went
 **1147 → 1122**, exactly the 25 tests those six files declared, so nothing was
@@ -404,7 +404,7 @@ shape as GAP-089. The gate reads the tracked header.
 "call.simd_lower provenance for @hot callee" that asserted only that
 `call.simd_lower` was logged — and it is *also* logged for a call in tail
 position with no `@hot` anywhere. The test could not fail for the reason it was
-named after. `scripts/transform.duo` keeps the claim falsifiable: two fixtures
+named after. `scripts/transform.id` keeps the claim falsifiable: two fixtures
 differing only by the attribute, `simd_lower` observed on one and asserted
 **not** observed on the other.
 
@@ -420,7 +420,7 @@ differing only by the attribute, `simd_lower` observed on one and asserted
 
 ### Native C ABI execution — 115 → 114 by porting (2026-08-09)
 
-`pass5_foreign_tests.zig` is replaced by the widened `scripts/sim.duo` gate.
+`pass5_foreign_tests.zig` is replaced by the widened `scripts/sim.id` gate.
 An entity-bounded matcher selects each public SIM serialization row by stable
 identity, then checks that row's C origin, calling convention, native storage,
 and value/pointer ABI specialization. The schema and exact entity count are
@@ -445,7 +445,7 @@ relation remains vocabulary-blocked rather than being invented in this gate.
 `pass5_fixtures.zig` held 30 lines of inline copies of the tracked point and
 rectangle headers. Its five consumers were test blocks rather than compiler
 owners: one in `c_layout_verify.zig`, one in `foreign_adapter.zig`, and three in
-`abi_specialize.zig`. The copies and all five blocks are gone. `scripts/sim.duo`
+`abi_specialize.zig`. The copies and all five blocks are gone. `scripts/sim.id`
 S1, S3, and S10-S12 now observe the same contracts through the shipping CLI and
 clang: exact point and rectangle layouts, native and C calling conventions,
 P26-B02/c_abi attachment, and both the pointer-declared and by-value rectangle
@@ -484,7 +484,7 @@ Measured on clean baseline and staged-snapshot worktrees:
   over-ceiling rows; its per-diff report sees one improvement (`concatlit -1`)
   and no new debt.
 - The staged-snapshot `agent-smoke` reached and passed SIM, then stopped at
-  `std_metaprogramming_modules_smoke.duo`. That same smoke program exits 1 on
+  `std_metaprogramming_modules_smoke.id`. That same smoke program exits 1 on
   the clean baseline because the compose-each showcase reports zero fragments,
   so the unrelated red is retained rather than reported as a migration pass.
 
@@ -498,8 +498,8 @@ the production closure is real coverage, and each row says what stops the port.
 | `property_tests.zig` | 1495 | protected; property/fuzz harness with no Duo equivalent |
 | `lexer_differential.zig` | 207 | protected; field-for-field migration lexer differential |
 | `wasm_decode_differential.zig` | 82 | protected; 256-opcode decode/validator agreement |
-| `pass4_native_tests.zig` | 195 | asserts emitted C **and** ARM64 asm text; `duo dump-c` now covers the C half (see `scripts/transform.duo`), so what is left is a stable addressable path for `--backend=direct` asm |
-| `codegen_pass3_tests.zig` | 71 | same shape, `\|>` field-access fusion in emitted C — and `scripts/transform.duo` already asserts the pipeline's C line, so this is the smallest remaining port |
+| `pass4_native_tests.zig` | 195 | asserts emitted C **and** ARM64 asm text; `duo dump-c` now covers the C half (see `scripts/transform.id`), so what is left is a stable addressable path for `--backend=direct` asm |
+| `codegen_pass3_tests.zig` | 71 | same shape, `\|>` field-access fusion in emitted C — and `scripts/transform.id` already asserts the pipeline's C line, so this is the smallest remaining port |
 | `pass11_ward_barrier_tests.zig` | 37 | a 6-line driver over `native_barrier_checks.zig` (534 lines of symbol analysis). Porting means porting that; and `build.zig` owns its test root |
 | `tests.zig` | 95 | the aggregator; it dies last |
 
@@ -507,7 +507,7 @@ the production closure is real coverage, and each row says what stops the port.
 
 Two rows now share one blocker, and it is smaller than the last one:
 `pass4_native_tests.zig` and `codegen_pass3_tests.zig` both assert **emitted
-text**. `duo dump-c` already makes the C half addressable — `scripts/transform.duo`
+text**. `duo dump-c` already makes the C half addressable — `scripts/transform.id`
 greps it for `int64_t y = double(21);` — so what is actually missing is the
 same addressability for `--backend=direct` asm. That is a path, not a
 projection, and it is the highest-leverage move left on this axis.
@@ -540,7 +540,7 @@ and `convert` +2 were red at baseline and are unchanged. The `nonduo` row FELL
 Measured by exit code directly, never through a pipe. The whole deny table is
 byte-identical to baseline except `nonduo` 420 → **414**, which is the six
 retired `.zig` files. The three new gates cost **zero** deny points: the first
-draft of `scripts/transform.duo` cost two on `stdlib` for a pair of
+draft of `scripts/transform.id` cost two on `stdlib` for a pair of
 `string.gsub` calls, and those moved into the extractor's `sed` rather than
 being budgeted.
 

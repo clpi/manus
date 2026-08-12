@@ -1,0 +1,31 @@
+-- vendor/mathc - C math library bindings via @ffi
+-- Usage: local m = req("vendor.mathc")
+--        or at compile time: duo compile myapp.id --link m
+-- (-lm is already linked by default, so no --link needed for math)
+
+@ffi("sin")
+fun sin_c(x: f64): f64 end
+
+@ffi("cos")
+fun cos_c(x: f64): f64 end
+
+@ffi("sqrt")
+fun sqrt_c(x: f64): f64 end
+
+@ffi("pow")
+fun pow_c(x: f64, y: f64): f64 end
+
+@ffi("ceil")
+fun ceil_c(x: f64): f64 end
+
+@ffi("floor")
+fun floor_c(x: f64): f64 end
+
+M = {}
+M.sin = sin_c
+M.cos = cos_c
+M.sqrt = sqrt_c
+M.pow = pow_c
+M.ceil = ceil_c
+M.floor = floor_c
+M

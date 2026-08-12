@@ -1,4 +1,4 @@
-# Idsem text and bytes
+# Idol text and bytes
 
 The sole semantic law is [`docs/spec/constitution.md`](constitution.md). This
 page projects its text, bytes, source-face, demand, and realization facts. It is

@@ -18,7 +18,7 @@
  *   -lonnxruntime  (and the shim object)
  *
  * Build in duo:
- *   duo compile myapp.duo --link onnxruntime --link onnx_shim.c
+ *   duo compile myapp.id --link onnxruntime --link onnx_shim.c
  */
 
 #ifndef ONNX_SHIM_H

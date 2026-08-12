@@ -1,0 +1,52 @@
+-- Agent hooks showcase: std.agent coordination hooks.
+-- Run: duo run examples/agent_hooks_showcase.id
+-- Gate: scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/agent_smoke.id
+
+HOOKS: str = std.agent.hook_index()
+DISCOVER: str = std.agent.discover()
+LADDER: str = std.agent.scaling_ladder()
+DEDUPE: str = std.agent.dedupe_policy()
+GAPS: str = std.agent.gaps_index()
+POLICY: str = std.agent.native_policy()
+GATES: str = std.agent.build_gates()
+
+has_map = string.find(DISCOVER, "comp.map") != nil or string.find(DISCOVER, "meta.map") != nil
+has_burst = string.find(DISCOVER, "comp.burst") != nil or string.find(DISCOVER, "meta.burst") != nil
+has_power = string.find(LADDER, "power:O(2^n)", 1, true) != nil
+has_coord = string.find(HOOKS, "AGENT_COORDINATION") != nil
+has_dedupe = string.find(DEDUPE, "duo_coordination_update") != nil
+has_gaps = string.find(GAPS, "Gap Buffer") != nil and string.find(GAPS, "duo_agent_gaps") != nil
+has_no_lua = string.find(POLICY, "NO lua_Value") != nil
+has_tier0 = string.find(GATES, "agent_smoke.id") != nil
+has_comp_alias = string.find(DISCOVER, "comp.agent.catalog") != nil
+
+HINT = std.agent.multiplier_for("derive traits for all types")
+has_derive_hint = string.find(HINT, "@comp.derive") != nil
+
+ok = has_map
+ok = ok and has_burst
+ok = ok and has_power
+ok = ok and has_coord
+ok = ok and has_dedupe
+ok = ok and has_gaps
+ok = ok and has_no_lua
+ok = ok and has_tier0
+ok = ok and has_comp_alias
+ok = ok and has_derive_hint
+
+print("=== agent hooks showcase ===")
+print("discover_has_map = " .. to(str)(has_map))
+print("discover_has_burst = " .. to(str)(has_burst))
+print("ladder_has_power = " .. to(str)(has_power))
+print("hooks_has_coord = " .. to(str)(has_coord))
+print("dedupe_has_claim = " .. to(str)(has_dedupe))
+print("gaps_index_ok = " .. to(str)(has_gaps))
+print("native_policy_ok = " .. to(str)(has_no_lua))
+print("build_gates_ok = " .. to(str)(has_tier0))
+print("comp_alias_ok = " .. to(str)(has_comp_alias))
+print("derive_hint_ok = " .. to(str)(has_derive_hint))
+print("multiplier_hint = " .. HINT)
+print("RESULT agent_hooks_ok = " .. to(str)(ok))
+if not ok
+    error("agent hook discovery failed")
+end

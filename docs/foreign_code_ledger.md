@@ -27,42 +27,42 @@ Every row below is therefore debt by construction.
 
 | file | sites | class | role | replacement | deletion gate | status |
 | --- | ---: | --- | --- | --- | --- | --- |
-| `src/ward.duo` | **0** | — | interpreter + ARM64 JIT, the build that ships | — | n/a | **compliant** |
-| `src/duo_lexer_tokenize.c` | 8952 lines | **A** | SH-03 bootstrap: the Duo lexer compiled to C, linked into the production binary so the compiler can tokenize with `lib/std/compiler/lexer.duo` | regenerate from `lib/std/compiler/host.duo`; deleted when a Duo-hosted compiler can build itself without a C stage | **S1 viability — the compiler no longer needs a C bootstrap** | **declared 2026-08-07** |
-| ~~`src/duo_keyword_classify.c`~~ | ~~72~~ | **A** | SH-02 bootstrap keyword table; declared its symbol `weak` so a full Duo artifact could override it | `src/duo_lexer_tokenize.c` provides the strong symbol (both generated from `lib/std/token/classify.duo`) | gate met — nothing linked the weak fallback | **DELETED 2026-08-07** |
-| `src/lexer.zig` | 1300 lines | **C** | SH-03 differential reference: no longer authoritative — `tokenizeAuthority()` returns `.duo_native` as of 2026-08-07. Retained because `src/duo_lexer_dispatch.zig` differentials the Duo token stream against it field for field on every test run | none needed; class C may persist | **never authoritative; delete when the differential is retired at S1 closure** | **declared 2026-08-07; non-authoritative** |
-| `src/wasm/jit_arm64.duo` | **0** | — | ARM64 template JIT | — | n/a | **compliant** |
-| `src/wasm/{op,wasi,simd,aot,jit,memory,stack,table,value}.duo` | **0** | — | C-free leaves | — | n/a | **compliant** |
-| ~~`src/wasm/runtime.duo`~~ | ~~278~~ | — | dead tree | — | — | **DELETED 2026-08-07** |
-| ~~`src/wasm/module.duo`~~ | ~~9~~ | — | dead tree | — | — | **DELETED 2026-08-07** |
-| ~~`src/main.duo`~~ | ~~5~~ | — | dead entry, did not compile | — | — | **DELETED 2026-08-07** |
-| ~~`src/wasm/interp_ward.duo`~~ | ~~1~~ | — | dead shim | — | — | **DELETED 2026-08-07** |
-| ~~`src/wasm/jit_ward.duo`~~ | ~~1~~ | — | dead shim | — | — | **DELETED 2026-08-07** |
+| `src/ward.id` | **0** | — | interpreter + ARM64 JIT, the build that ships | — | n/a | **compliant** |
+| `src/duo_lexer_tokenize.c` | 8952 lines | **A** | SH-03 bootstrap: the Duo lexer compiled to C, linked into the production binary so the compiler can tokenize with `lib/std/compiler/lexer.id` | regenerate from `lib/std/compiler/host.id`; deleted when a Duo-hosted compiler can build itself without a C stage | **S1 viability — the compiler no longer needs a C bootstrap** | **declared 2026-08-07** |
+| ~~`src/duo_keyword_classify.c`~~ | ~~72~~ | **A** | SH-02 bootstrap keyword table; declared its symbol `weak` so a full Duo artifact could override it | `src/duo_lexer_tokenize.c` provides the strong symbol (both generated from `lib/std/token/classify.id`) | gate met — nothing linked the weak fallback | **DELETED 2026-08-07** |
+| `src/lexer.zig` | 1300 lines | **C** | SH-03 scanner-algorithm differential: `duo_lexer_dispatch.route` structurally invokes the generated Idsem lexer. The bridge still decodes its ordinals through host `TokenKind` and rebuilds host `Token` records, so the vocabulary and ABI remain migration debt | canonical lexical identities and generated grammar roles (`GAP-145`, `GAP-134`) | **delete the scanner oracle and host token projection when the complete generated-fact differential is resident** | **scanner algorithm non-authoritative; host vocabulary bridge remains** |
+| `src/wasm/jit_arm64.id` | **0** | — | ARM64 template JIT | — | n/a | **compliant** |
+| `src/wasm/{op,wasi,simd,aot,jit,memory,stack,table,value}.id` | **0** | — | C-free leaves | — | n/a | **compliant** |
+| ~~`src/wasm/runtime.id`~~ | ~~278~~ | — | dead tree | — | — | **DELETED 2026-08-07** |
+| ~~`src/wasm/module.id`~~ | ~~9~~ | — | dead tree | — | — | **DELETED 2026-08-07** |
+| ~~`src/main.id`~~ | ~~5~~ | — | dead entry, did not compile | — | — | **DELETED 2026-08-07** |
+| ~~`src/wasm/interp_ward.id`~~ | ~~1~~ | — | dead shim | — | — | **DELETED 2026-08-07** |
+| ~~`src/wasm/jit_ward.id`~~ | ~~1~~ | — | dead shim | — | — | **DELETED 2026-08-07** |
 
-### `runtime.duo` split (the 275)
+### `runtime.id` split (the 275)
 
 | region | sites | replacement | deletion gate | status |
 | --- | ---: | --- | --- | --- |
-| SIMD lane ops (added 2026-08-05) | **118** | `src/wasm/simd.duo` — written, descriptor-driven, ~90 opcodes from ~12 rows | (1) root-cause the codegen failure that bisects into `lane.get`; (2) wire into dispatch; (3) SIMD spot checks stay 4/4 | **blocked — replacement exists but inert** |
+| SIMD lane ops (added 2026-08-05) | **118** | `src/wasm/simd.id` — written, descriptor-driven, ~90 opcodes from ~12 rows | (1) root-cause the codegen failure that bisects into `lane.get`; (2) wire into dispatch; (3) SIMD spot checks stay 4/4 | **blocked — replacement exists but inert** |
 | interpreter core (pre-existing) | 157 | Duo over a native value substrate | S1 substrate (§7 phase 1) + representation IR | open |
 
-**Note:** `jit_arm64.duo` is the existence proof that ward's hot path does not require C —
+**Note:** `jit_arm64.id` is the existence proof that ward's hot path does not require C —
 a full ARM64 template JIT with zero `@c.emit`. The 118-site SIMD block was written against
 that precedent and violates it; it is the newest debt in the tree, not the oldest.
 
 ### RESOLVED 2026-08-07 — ward is 100% C-free; the dead tree is retired
 
-All 294 `@c.emit` sites are **gone**. runtime.duo (278), module.duo (9),
-main.duo (5), interp_ward.duo and jit_ward.duo (1 each) were removed along with
+All 294 `@c.emit` sites are **gone**. runtime.id (278), module.id (9),
+main.id (5), interp_ward.id and jit_ward.id (1 each) were removed along with
 the entry/wrapper modules that required them. `src/` went from 28 tracked files
 to 14, and `bench/verify.sh` is unchanged at 42 PASS / 0 wrong on both engines
 with 34 modules JIT-compiled.
 
 This had been recorded as blocked by a parallel session holding uncommitted
 changes in `src/wasm/`. **That was too coarse.** Those three files —
-`jit_arm64.duo`, `op.duo`, `wasi.duo` — carry ZERO `@c.` directives and require
+`jit_arm64.id`, `op.id`, `wasi.id` — carry ZERO `@c.` directives and require
 only `std.*`; every C site was in a file nobody else was editing, and
-`runtime.duo` depended on *them*, not the reverse. All three were left untouched.
+`runtime.id` depended on *them*, not the reverse. All three were left untouched.
 
 The lesson: "the directory is blocked" was never true — only three files were,
 and they were not the ones holding the debt. Check the actual file set before
@@ -70,8 +70,8 @@ concluding a cleanup is unreachable.
 
 ### Historical: ward has TWO parallel runtimes, and the C is all in the dead one
 
-The `src/ward.duo` row previously read "2 sites". Both hits are inside **comments**
-that assert *"Pure Duo: no @c.emit"* — a grep false positive. `src/ward.duo` contains
+The `src/ward.id` row previously read "2 sites". Both hits are inside **comments**
+that assert *"Pure Duo: no @c.emit"* — a grep false positive. `src/ward.id` contains
 **zero** `@c.` directives of any kind. It is also the build that ships: 2978 lines,
 interpreter + ARM64 JIT, verified 20 PASS / 0 wrong against a wasmtime oracle.
 
@@ -79,8 +79,8 @@ So ward carries two ~2900-line implementations of the same runtime:
 
 | tree | entry | lines | `@c.emit` | verified |
 |---|---|---:|---:|---|
-| `src/ward.duo` | standalone | 2978 | **0** | **20/20 vs wasmtime** |
-| `src/wasm/*.duo` | `src/main.duo` → `src.wasm` | 2890 | **275** | not exercised by `bench/verify.sh` |
+| `src/ward.id` | standalone | 2978 | **0** | **20/20 vs wasmtime** |
+| `src/wasm/*.id` | `src/main.id` → `src.wasm` | 2890 | **275** | not exercised by `bench/verify.sh` |
 
 **All of ward's C debt lives in the tree that does not ship.** Retiring `src/wasm/`
 would delete every one of the 275 sites at a stroke and halve ward's line count —
@@ -89,7 +89,7 @@ so it needs an explicit decision rather than a unilateral delete.
 
 ### Perf reality check (2026-08-07)
 
-`src/ward.duo`'s JIT covers **2 of 21** corpus modules (`hash`, `hash2b`); the other
+`src/ward.id`'s JIT covers **2 of 21** corpus modules (`hash`, `hash2b`); the other
 19 fall back to the interpreter because `jit_compile` bails on op 16 (`call`). Every
 ward-vs-wasmtime headline number to date was therefore measured on one of the only
 two modules the JIT handles. ward still wins **2.3-2.6x** on startup-bound modules,
@@ -102,7 +102,7 @@ where its microsecond template-JIT compile beats Cranelift's milliseconds.
 | item | count | class | role | replacement | deletion gate | status |
 | --- | ---: | --- | --- | --- | --- | --- |
 | `src/*.zig` | **224 files** | **A** | S0 bootstrap compiler | S1 (§2) | S1 viability, then **freeze** | open |
-| `lib/std/*.duo` with `@c.emit` | 10 files | **B** | OS/ABI primitives | permitted location per §1.1-B | remain until Duo has native syscall descriptors | **allowed** |
+| `lib/std/*.id` with `@c.emit` | 10 files | **B** | OS/ABI primitives | permitted location per §1.1-B | remain until Duo has native syscall descriptors | **allowed** |
 | `benchmarks/wasm_rt/conform/run_spec.py` | 1 | **C** | spec-conformance harness | Duo harness | non-authoritative; may persist | **allowed** |
 | `benchmarks/wasm_rt/bench.c` | 1 | **C** | C baseline for differential timing | none — it *is* the reference | never deleted; comparison target | **allowed** |
 | `scripts/*.sh` / `scripts/*.bash` | — | **D** | CI gates, build lock | Duo build system + `std.script` | per-script gate in `removal_ledger.zig` RL-07..RL-10 | **partial** — proof matrix + idiom gate Duo-native |
@@ -139,16 +139,16 @@ tested.
 
 1. **Enforce the S0 freeze.** Nothing else in this ledger can progress while the bootstrap
    compiler does not build.
-2. ~~Wire in `simd.duo`.~~ **Moot.** ward's C debt was retired wholesale on
-   2026-08-07 by deleting the dead tree; the shipping `src/ward.duo` carries a
+2. ~~Wire in `simd.id`.~~ **Moot.** ward's C debt was retired wholesale on
+   2026-08-07 by deleting the dead tree; the shipping `src/ward.id` carries a
    descriptor-driven SIMD executor (30 opcodes from 30 rows) with no C at all.
-3. **Slice/bytes substrate in `lib/std`.** Unblocks `module.duo` (9) and is §7 phase 1
+3. **Slice/bytes substrate in `lib/std`.** Unblocks `module.id` (9) and is §7 phase 1
    regardless.
 4. **Give `scripts/*.sh` a deletion gate** or accept it as permanent class-D.
 
 ---
 
-## Progress on gate #2 (wire in `simd.duo`) — 2026-08-05
+## Progress on gate #2 (wire in `simd.id`) — 2026-08-05
 
 Root-caused one blocker, found two more. The 118-site removal is **still blocked**, but the
 obstacles are now specific rather than "codegen fails somewhere in `lane.get`".
@@ -158,7 +158,7 @@ obstacles are now specific rather than "codegen fails somewhere in `lane.get`".
 Reproduced with three different functions, so it is the call mechanism, not one function:
 
 ```duo
--- src/wasm/probe.duo
+-- src/wasm/probe.id
 bit = req "std.bit"
 p = {}
 p.f = (v: any, w: i64): i64
@@ -171,7 +171,7 @@ p
 (`bit.extract(0xFF00, 15, 8)` -> 255). Only a call from inside a module that is itself
 `req`'d breaks. No diagnostic — just `C compiler failed`.
 
-**Worked around** in `simd.duo` by inlining the two operations needed:
+**Worked around** in `simd.id` by inlining the two operations needed:
 
 ```duo
 extract:  (half >> off) & ((1 << w) - 1)
@@ -186,7 +186,7 @@ module no longer needs a stdlib import at all.
 Minimal reproduction:
 
 ```duo
--- src/wasm/probe.duo  (a req'd module)
+-- src/wasm/probe.id  (a req'd module)
 p = {}
 p.g = (v: any, w: i64, i: i64, x: i64): any
   m: i64 = 15
@@ -247,7 +247,7 @@ which emits `lua_to_num(15(({ ... })))` and fails with
 The initializer's type is irrelevant — literal, string, and computed all fail. Only the
 absence of an explicit `return` matters.
 
-**Workaround: write `return` before tail table literals.** Applied to `simd.duo` (4 sites).
+**Workaround: write `return` before tail table literals.** Applied to `simd.id` (4 sites).
 
 ### Second blocker, now identified: dotted-namespace functions are not callable in-module
 
@@ -260,7 +260,7 @@ duo_simdtest.c:6665: ...
   if (cl->up2(lua_table_get_str_cstr(..., "k", ...), x, y)) {
 ```
 
-`simd.duo` defines functions as namespace-table fields (`lane.get = (...)`,
+`simd.id` defines functions as namespace-table fields (`lane.get = (...)`,
 `sign.extend = (...)`, `run.bin = (...)`). Calling one of those **from another function in
 the same module** emits a call against a `lua_Value` / captured upvalue rather than a
 direct call, and fails to compile.
@@ -332,7 +332,7 @@ ward: **288** `@c.emit` sites; 118 have a written replacement that remains inert
 
 ## CRITICAL duo codegen bug — 2 parameters + 2 `if` statements returns garbage
 
-Found 2026-08-05 while debugging why `simd.duo` produced wrong lane values. **Present in
+Found 2026-08-05 while debugging why `simd.id` produced wrong lane values. **Present in
 both `duo_old` and the current compiler, in both `fun` and bare-function syntax.**
 
 ### Minimal reproduction
@@ -375,7 +375,7 @@ The `exactly 2` signature suggests a two-argument calling-convention or multi-re
 just what pushes the body past some threshold in that path. Not yet located in
 `codegen.zig`.
 
-### It fully explains the `simd.duo` failures
+### It fully explains the `simd.id` failures
 
 `sign_extend = (x: i64, w: i64): i64` has exactly 2 parameters and 2 `if` statements. It
 returned 34 for input 1 and 67 for input 2 — which is why `run_bin` produced 101 instead of
@@ -389,7 +389,7 @@ manual `lane_put` gives 3 — only `sign_extend` is wrong.
 ### Status
 
 - Workaround exists (add a third parameter, or reduce to one `if`) but is **not applied** —
-  papering over this in `simd.duo` would leave the compiler bug live for every other caller.
+  papering over this in `simd.id` would leave the compiler bug live for every other caller.
 - This outranks everything else in this ledger: it is a **silent wrong-answer bug in the
   production compiler**, affecting an extremely common shape, in both compiler versions.
 - Under Pass 34 §1 this is a barrier record with `class: process`, `impact.runtime: dominant`,
@@ -428,7 +428,7 @@ before the pattern matches.
 | unit tests with fix | 1197 pass / 53 fail |
 | unit tests **without** fix (baseline) | 1197 pass / 53 fail — **identical, zero regressions** |
 
-### Consequence: `simd.duo` was never wrong
+### Consequence: `simd.id` was never wrong
 
 `sign_extend = (x: i64, w: i64)` was the only function in the module matching the pattern.
 With the second `if` nested (keeping the top-level if-count at 1, which also works under the
@@ -453,14 +453,14 @@ verify semantics, not structure — and must leave a witness (Pass 34 charter).
 
 ## SIMD migrated to pure Duo and WIRED IN (2026-08-05)
 
-The descriptor-driven module is now the live implementation. `runtime.duo` routes `0xFD` to
+The descriptor-driven module is now the live implementation. `runtime.id` routes `0xFD` to
 a Duo dispatch; all C SIMD code is deleted.
 
 | | |
 | --- | --- |
-| `runtime.duo` diff | **201 deletions, 140 insertions** |
+| `runtime.id` diff | **201 deletions, 140 insertions** |
 | C removed | `WardV128` union, 9 `WV_*` macros, wasm min/max helpers, the whole `case 0xFD` block (132 `WV_`/`WardV128` refs) |
-| Duo added | `src/wasm/simd.duo` (237 lines) + `simd_step`/`simd_pop`/`simd_push` marshalling |
+| Duo added | `src/wasm/simd.id` (237 lines) + `simd_step`/`simd_pop`/`simd_push` marshalling |
 | opcode coverage | ~90 opcodes from **12 descriptor rows** (compare/arith/unary tables are folds over wasm's opcode-block regularity) |
 | hot_big | 0.18s — **unchanged**; SIMD is not on that path |
 | bench modules | 21/21 |
@@ -472,13 +472,13 @@ Integer SIMD verified end-to-end through ward: `i32x4.add` + `extract_lane`, `i3
 ### Correction to an earlier figure in this ledger
 
 I repeatedly wrote "118 `@c.emit` sites" for the SIMD block. That was wrong: the block lived
-*inside one* `@c.emit`, and 118/132 was a count of `WV_`/`WardV128` references. `runtime.duo`
+*inside one* `@c.emit`, and 118/132 was a count of `WV_`/`WardV128` references. `runtime.id`
 still has 275 `@c.emit` calls — the SIMD migration removed C *lines*, not `@c.emit` *sites*.
 The ledger's headline ward count should be read as "lines of embedded C", not call sites.
 
 ### Regression I introduced: float SIMD is no longer supported
 
-The deleted C block implemented f32x4/f64x2 arithmetic and compares. `simd.duo` does not,
+The deleted C block implemented f32x4/f64x2 arithmetic and compares. `simd.id` does not,
 because lane-wise float work needs bit reinterpretation between i64 and f32/f64, and pure
 Duo has no such operation (`string.pack` returns nil under `duo_old`).
 
@@ -488,7 +488,7 @@ hidden because the trade was mine to make and should be reviewed.
 
 **Correct fix, per §1.1-B:** a bit-reinterpret primitive belongs in duo's stdlib
 (`lib/std/`), which is the sanctioned home for C-level primitives — not in ward. With
-`f64_from_bits` / `f64_to_bits` in `lib/std`, `simd.duo` gains float lanes with no C in ward
+`f64_from_bits` / `f64_to_bits` in `lib/std`, `simd.id` gains float lanes with no C in ward
 and the descriptor tables extend by a few rows.
 
 Until then: **integer SIMD is pure Duo and live; float SIMD is unimplemented.**
@@ -497,12 +497,12 @@ Until then: **integer SIMD is pure Duo and live; float SIMD is unimplemented.**
 
 The correct fix was the one §1.1-B implies: put the primitive in the **stdlib**, not in ward.
 
-**Added to `lib/std/bit.duo`** (the sanctioned home for C-level primitives):
+**Added to `lib/std/bit.id`** (the sanctioned home for C-level primitives):
 `f64_to_bits`, `f64_from_bits`, `f32_to_bits`, `f32_from_bits` — IEEE bit
 reinterpretation, 4 one-line `@c.emit` bodies. Verified: `f64_to_bits(1.5)` ->
 4609434218613702656, round-trips exactly; f32 round-trips through single precision.
 
-**`simd.duo` gained float lanes** as three more descriptor tables (`FBIN`, `FCMP`, `FUN`)
+**`simd.id` gained float lanes** as three more descriptor tables (`FBIN`, `FCMP`, `FUN`)
 plus three executors that reinterpret via `std.bit`, compute in f64, and reinterpret back.
 wasm `min`/`max` NaN and signed-zero semantics are handled explicitly; `pmin`/`pmax` use
 the spec's asymmetric definition.
@@ -515,10 +515,10 @@ documented convention).
 
 Recorded earlier as a duo codegen bug. It was a **missing `global`**. A module-level `req`
 binding must be `global` or the name is not visible in the embedded module's generated C
-(`use of undeclared identifier 'bit'`). `runtime.duo` already did this correctly
+(`use of undeclared identifier 'bit'`). `runtime.id` already did this correctly
 (`global mem_mod = req "std.mem"`); my probe did not.
 
-Consequence: the inlined bit arithmetic in `simd.duo` was never necessary, and one entry in
+Consequence: the inlined bit arithmetic in `simd.id` was never necessary, and one entry in
 this ledger's duo-bug list is withdrawn. That makes **two** of the four bugs I reported this
 session retractions — the other being the "locals in table literals" family, which was the
 Ackermann pattern-matcher.
@@ -527,10 +527,10 @@ Ackermann pattern-matcher.
 
 | | |
 | --- | --- |
-| `runtime.duo` | **201 deletions, 157 insertions** — all C SIMD gone |
-| `simd.duo` | 370 lines pure Duo, integer **and** float |
+| `runtime.id` | **201 deletions, 157 insertions** — all C SIMD gone |
+| `simd.id` | 370 lines pure Duo, integer **and** float |
 | descriptor rows | ~19 rows covering ~110 opcodes |
-| `jit_arm64.duo` | 0 `@c.emit` — still compliant |
+| `jit_arm64.id` | 0 `@c.emit` — still compliant |
 | hot_big | 0.18s (unchanged; SIMD is off that path) |
 | bench modules | 21/21 |
 | real C programs | 10/10 |
@@ -553,18 +553,18 @@ Collapsed to **one executor over one table**:
 - `run(spec, a, b)` — one lane walk. Arity, signedness, float-ness and compare-vs-arith are
   descriptor fields, not separate functions.
 - Kernels reduce to three: `int_k`, `flt_k`, `cmp_ok`.
-- `simd_step` in `runtime.duo` becomes a single `OPS[sub]` lookup instead of six.
+- `simd_step` in `runtime.id` becomes a single `OPS[sub]` lookup instead of six.
 
 | | before C removal | after migration | after compaction |
 | --- | ---: | ---: | ---: |
-| `simd.duo` lines | 0 | 370 | **268** |
-| `runtime.duo` net | baseline | -44 | **-66** |
+| `simd.id` lines | 0 | 370 | **268** |
+| `runtime.id` net | baseline | -44 | **-66** |
 | executors | (C macros) | 6 | **1** |
 | descriptor tables | (C switch) | 6 | **1** |
 | generated rows -> opcodes | — | ~19 -> ~110 | **~20 -> ~110** |
 
 **Net effect on ward: 268 lines of Duo replace 201 lines of C *and* the 6-way structural
-duplication, with `runtime.duo` down 66 lines.** Combined, ward's SIMD support is smaller
+duplication, with `runtime.id` down 66 lines.** Combined, ward's SIMD support is smaller
 than before the migration started and contains no C.
 
 Re-verified after compaction, no behaviour change:

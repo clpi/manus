@@ -1,22 +1,24 @@
-# Idsem bootstrap contract
+# Idol bootstrap contract
 
 No executable compiler-B/C evidence producer exists yet. The seed remains the
 host compiler; it does not obtain bootstrap authority from a project-owned
 source model. This document is a human projection of the executed authority
 frontier, not bootstrap evidence or production authority. The immediate target
-is compiler B, not a sovereign backend.
+is compiler B, not a sovereign backend. No compiler B exists.
 
 ## Current stage: S0
 
 **S0 (active):** the pinned Zig seed produces the host compiler.
 
-No Idsem-built compiler binary exists in the production path yet.
+No Idol-built compiler binary or production `idol` command exists yet.
 
-The production front end nevertheless has one executed Idsem-owned boundary:
-the historical distribution file `lib/std/compiler/lexer.duo` owns legacy
-token-kind production, token content, and exact source spans. The host
-bounds-checks those spans and projects them into its temporary parser
-representation. It does not reconstruct token text or source locations.
+The production front end nevertheless has one executed Idol-owned boundary:
+the physically renamed historical distribution file
+`lib/std/compiler/lexer.id` owns legacy token-kind production, token content,
+and exact source spans. Its `.id` suffix is not evidence of canonical source or
+compiler B. The host bounds-checks those spans and projects them into its
+temporary parser representation. It does not reconstruct token text or source
+locations.
 Canonical lexical identity is not closed: text, bytes, Lua long text, comments,
 shebang, and reserved backtick still lack the distinct law-bearing identities
 required by `GAP-145`. The `std` path is migration distribution, not semantic
@@ -37,33 +39,33 @@ failure.
 
 Source ingress remains the earliest host-owned entry seam: Zig still derives
 source law and provenance from suffix/path text instead of consuming an
-executed Idsem source-family fact. It is migration debt, but the current
+executed Idol source-family fact. It is migration debt, but the current
 executable blocker is `GAP-145`: the lexer must publish the distinct canonical
 lexical identities needed by `GAP-134`. Generated grammar roles and an
 immutable token view can then move the first production parser recognition
-into executed Idsem. Porting the host recognizer would duplicate grammar
+into executed Idol. Porting the host recognizer would duplicate grammar
 authority through token-text lists and mutable lookahead, so S0 remains the
 honest stage until those facts cross the frontier.
 
 The transfer must also preserve PREDICATE-ZERO. Parser and resolver output
 retain cases, refinements, descriptor and world facts, unknowns, demands, and
 transitions directly. It must not reproduce host `has`, `is`, `can`, `exists`,
-sentinel, or query-then-mutate helpers as Idsem semantic architecture.
+sentinel, or query-then-mutate helpers as Idol semantic architecture.
 
 ## Production authority ledger
 
 | Boundary | Current state | Exact remaining authority |
 | --- | --- | --- |
 | Source ingress | HOST OWNED | Zig currently classifies suffix/path text into source law and provenance. The helper is centralized but remains host authority and does not consume the complete corpus classification. |
-| Lexer | IDSEM OWNED | Executed Idsem lexer owns legacy token-kind, content, and span production and now fails closed; canonical lexical-law closure remains `GAP-145`. |
+| Lexer | IDOL OWNED | Executed Idol lexer owns legacy token-kind, content, and span production and now fails closed; canonical lexical-law closure remains `GAP-145`. |
 | Lexical identity | BLOCKED | Distinct text, bytes, compatibility literal/comment, shebang, and reserved-backtick facts do not yet cross the token boundary (`GAP-145`). |
-| Token/span | IDSEM OWNED | Exact token content spans are projected through the generated-C physical bridge; the host retains a temporary parser representation. |
+| Token/span | IDOL OWNED | Exact token content spans are projected through the generated-C physical bridge; the host retains a temporary parser representation. |
 | Grammar projection | BLOCKED | No complete machine-readable canonical role projection or immutable token view exists (`GAP-134`, `GAP-145`). |
 | Parser recognition | HOST OWNED | `src/parser.zig` still decides callable headers, expressions, bindings, and source structure. |
 | Binding/scope | HOST OWNED | Production binding and scope construction remain in the host parser and semantic producer. |
 | Semantic construction | HOST OWNED | The graph work is an improving host implementation, not executed compiler-B source. |
 | Relation/application resolution | HOST OWNED | Production resolution remains host-executed; exact graph application authority is still under integration. |
-| Demand | HOST OWNED | No executed Idsem compiler demand stage exists. |
+| Demand | HOST OWNED | No executed Idol compiler demand stage exists. |
 | Lowering/realization | HOST OWNED | Host lowering and realization select the artifact path. |
 | Machine selection | HOST OWNED | Host code selects direct native or generated-C realization. |
 | Object emission | HOST OWNED | The native object emitter is host implementation and production lineage is incomplete. |
@@ -72,7 +74,7 @@ sentinel, or query-then-mutate helpers as Idsem semantic architecture.
 
 For the fail-closed lexer transfer:
 
-- **BEFORE:** a storage failure returned success without installing the Idsem
+- **BEFORE:** a storage failure returned success without installing the Idol
   token pack, so the next parser read silently resumed the host scanner.
 - **AFTER:** the same failure propagates, partial route storage is released, and
   no host token stream is accepted by that route.
@@ -80,21 +82,21 @@ For the fail-closed lexer transfer:
   `GAP-134` can then project generated grammar roles to an immutable token view
   and replace the first host parser recognition. The source-family projection
   must replace suffix-derived ingress authority before compiler-B source ingress
-  can be called Idsem-owned.
+  can be called Idol-owned.
 
-Canonical source ingress now recognizes `.id` as Idsem and temporarily accepts
-`.duo` compatibility input with noncanonical provenance. Both suffixes select
+Canonical source ingress now recognizes `.id` as Idol and temporarily accepts
+`.id` compatibility input with noncanonical provenance. Both suffixes select
 the same lexer, parser law, semantic production, and realization path. Tracked
-project-owned `.duo` source remains SOURCE-ZERO debt and must reach zero;
+project-owned `.id` source remains SOURCE-ZERO debt and must reach zero;
 compatibility testing must move to generated, structured, or external material
 rather than an in-tree stale source library. `src/duo_lexer_bridge.zig` is one
 bootstrap helper, not the constitutional source-family authority: it still
-decides from suffix text and maps every `.duo` to the same law/provenance pair even though
+decides from suffix text and maps every `.id` to the same law/provenance pair even though
 the corpus distinguishes compatibility, historical, generated, and current
 migration inputs. Build entry, embedded module discovery, and direct-native
-module metadata discovery prefer `.id` and fall back to `.duo`. The native
+module metadata discovery prefer `.id` and fall back to `.id`. The native
 metadata path consumes the source-family constants rather than maintaining its
-own suffix spelling. Tooling and corpus gates that still enumerate `.duo`
+own suffix spelling. Tooling and corpus gates that still enumerate `.id`
 independently remain migration bridges, not bootstrap evidence.
 
 Suffix-independent semantic identity is not closed by the existing differential.
@@ -104,16 +106,18 @@ identity and continuity boundary. Until the complete checked-fact comparison
 passes, suffix and path influence remain unclosed rather than being inferred
 from machine equality.
 
-The host names `duo_lexer_bridge`, `duo_mode`, and the `duo` executable are
-historical bootstrap symbols. They remain one implementation path, not a second
-language or command authority. Delete the bridge names when compiler B consumes
-the constitutional source fact directly; remove the executable alias after an
-`idsem` entry invokes that same command authority in production. The generated
-runtime package search still spells `.duo` in emitted C, and the current corpus,
-formatter, LSP, MCP, Tree-sitter, generators, and census enumerations still
-contain independent `.duo` assumptions. Their deletion gate is a generated
-source-family projection consumed by each surface, with untracked `.id`
-candidates included and missing census input failing closed.
+The earlier Idsem, Duo, and Duon names, the host names `duo_lexer_bridge` and
+`duo_mode`, the `.id` suffix, and the `duo` executable are historical or
+bootstrap provenance. These exact physical symbols and paths remain one
+implementation path, not a second language or command authority. Delete the
+bridge names when compiler B consumes the constitutional source fact directly;
+remove the executable alias after an `idol` entry invokes that same command
+authority in production. The generated runtime package search still spells
+`.id` in emitted C, and the current corpus, formatter, LSP, MCP, Tree-sitter,
+generators, and census enumerations still contain independent `.id`
+assumptions. Their deletion gate is a generated source-family projection
+consumed by each surface, with untracked `.id` candidates included and missing
+census input failing closed.
 
 The former synthetic bootstrap verifier was deleted. It had no production
 consumer, observed no compiler run, and modeled identity through three invented
@@ -121,20 +125,22 @@ numeric coordinates. A real bootstrap projection must consume exact graph ids,
 facts, witnesses, provenance, and observations from an execution world before
 the contract can accept B or C.
 
-The tracked SOURCE-ZERO file `lib/compiler/application.duo` inventories the
-application and pack facts required by the next bootstrap transfer. It is not a complete
-identity owner: its three-coordinate `identity` record conflicts with the rule
-that the graph entity is identity, and unconditional identity fields cannot
-represent unknown, absent, and empty facts honestly. Production authority begins
-when exact graph entities and explicit fact cardinality survive graph, demand,
-realization, and machine lineage without source-name reconstruction.
+The physically renamed SOURCE-ZERO inventory file
+`lib/compiler/application.id` records application and pack facts required by
+the next bootstrap transfer. Its suffix does not transfer semantic or
+production authority. It is not a complete identity owner: its three-coordinate
+`identity` record conflicts with the rule that the graph entity is identity,
+and unconditional identity fields cannot represent unknown, absent, and empty
+facts honestly. Production authority begins when exact graph entities and
+explicit fact cardinality survive graph, demand, realization, and machine
+lineage without source-name reconstruction.
 
 ## Target chain
 
 | Stage | Input | Output | Proof |
 | --- | --- | --- | --- |
 | **S0** | Zig + repo source | Host `duo` binary | CI, unit tests, bench gates |
-| **S1 / B** | S0 + canonical Idsem compiler source | First Idsem-built compiler | Exact graph facts, witnessed correspondence, and behavior vs the seed oracle |
+| **S1 / B** | S0 + canonical Idol compiler source | First Idol-built compiler | Exact graph facts, witnessed correspondence, and behavior vs the seed oracle |
 | **S2 / C** | B + identical source | Self-built compiler | Semantic, diagnostic, and behavioral parity with B |
 | **S3** | C + identical source | Fixed-point candidate | Artifact comparison and reproducibility bundle |
 
@@ -145,7 +151,7 @@ The seed must be:
 - Pinned and checksummed
 - Archived and reproducibly obtainable
 - Minimal enough to audit
-- Clearly separated from canonical Idsem compiler source
+- Clearly separated from canonical Idol compiler source
 - Used for bootstrap only — not semantic authority after S2
 
 ## Stage comparisons (always required)
@@ -167,8 +173,8 @@ never establish B/C semantic identity, correspondence, or lineage.
 
 ## Bootstrap subset
 
-The minimum Idsem subset required to compile the next stage is a staged
-capability level of canonical Idsem, not a permanent second language.
+The minimum Idol subset required to compile the next stage is a staged
+capability level of canonical Idol, not a permanent second language.
 
 The candidate compiler-critical basis is: bytes, views, strings, arenas,
 vectors, maps, interning, bitsets, source/span, filesystem read, and diagnostic
@@ -218,14 +224,14 @@ Do not add a bootstrap verifier beside the production graph. The remaining
 tracked application inventory is migration evidence only; its demanded facts
 must move into executed `.id` with production perturbation and differential
 proof before that source is deleted. A future bootstrap projection derives its
-evidence from the executed Idsem compiler graph rather than making a host build
+evidence from the executed Idol compiler graph rather than making a host build
 step authoritative.
 
 ## Prohibited claims
 
-- "Self-hosted" when Idsem code exists but is not on the production compile path
+- "Self-hosted" when Idol code exists but is not on the production compile path
 - Silent fallback. A pinned trusted-seed C/native backend may remain only as
-  foreign physical realization with zero Idsem semantic authority; it does not
+  foreign physical realization with zero Idol semantic authority; it does not
   prove backend sovereignty or authorize new host implementation.
 - Undocumented bootstrap binaries or unpinned dependencies
 - A B/C comparison built from different compiler source

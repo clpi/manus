@@ -6,7 +6,7 @@ beside the golden corpus of lexers and LEB128.
 
 Every number below was **measured against the compiler**, never read off the
 spec. The command is `zig build boring-corpus`; the fixtures are
-`examples/boring/*.duo` (the twenty programs) and `examples/table/*.duo` (one
+`examples/boring/*.id` (the twenty programs) and `examples/table/*.id` (one
 per row here). Each fixture asserts a VALUE, and the gate compares stdout
 against the `-- expect:` line the fixture carries.
 

@@ -3,7 +3,7 @@
     {
       "name": "duo",
       "camelcase": "Duo",
-      "scope": "source.duo",
+      "scope": "source.id",
       "path": ".",
       "file-types": [
         "duo"

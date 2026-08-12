@@ -1,0 +1,20 @@
+-- @comp.pipeline range source — fused loop over [start, stop) without a data array
+-- Run: duo run examples/pipeline_range_showcase.id
+
+@comp.pipeline({
+    fn = "sum_range",
+    source = "range",
+    start = 1,
+    stop = 101,
+    elem = "int64_t",
+    kind = "reduce",
+    init = "0",
+})
+
+total(): i64
+    @c.call("sum_range")
+end
+
+print("=== @comp.pipeline range showcase ===")
+print("sum 1..100 = " .. to(str)(total()))
+print("ok")

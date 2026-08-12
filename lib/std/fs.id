@@ -1,0 +1,131 @@
+-- std.fs — simple file-system helpers
+
+exists(path: any): bool
+    if path == nil return false end
+    f = io.open(path, "r")
+    if f == nil return false end
+    f:close()
+    true
+end
+
+read_file(path: any): any
+    f = io.open(path, "r")
+    if f == nil return "" end
+    -- Read the WHOLE file in one C-level call (f:read("*a")). The previous
+    -- line-by-line `data = data .. line .. "\n"` loop was (a) O(n^2) and (b)
+    -- triggered a runtime large-string-concat corruption (extra bytes +
+    -- scrambled content past ~10KB), which broke json.decode of the symbol
+    -- index (apparent "1029 truncation") and any large-file read.
+    data = f:read("*a")
+    f:close()
+    if data == nil return "" end
+    data
+end
+
+write_file(path: any, data: any): bool
+    f = io.open(path, "w")
+    if f == nil return false end
+    if data == nil data = "" end
+    f:write(data)
+    f:close()
+    true
+end
+
+append_file(path: any, data: any): bool
+    f = io.open(path, "a")
+    if f == nil return false end
+    if data == nil data = "" end
+    f:write(data)
+    f:close()
+    true
+end
+
+read_lines(path: any): any
+    out = {}
+    f = io.open(path, "r")
+    if f == nil return out end
+    line = f:read()
+    while line != nil
+        out[rawlen(out) + 1] = line
+        line = f:read()
+    end
+    f:close()
+    out
+end
+
+-- gap[075]: these tested a BOOL against nil. os.remove answers `false` on
+-- failure, never nil, so `false != nil` is true and no input could ever answer
+-- false — remove reported success for a path it had not removed. Answer with
+-- the value itself. Proof asserts both directions: scripts/fs_remove_proof.id
+remove(path: any): bool
+    os.remove(path)
+end
+
+rename(src: any, dst: any): bool
+    os.rename(src, dst)
+end
+
+mkdir(path: str): bool
+    if path == nil return false end
+    return @c.emit("mkdir(path, 0777) == 0")
+end
+
+mkdirall(path: str): bool
+    if path == nil return false end
+    os.execute("mkdir -p '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null")
+end
+
+copy(src: str, dest: str): bool
+    if src == nil or dest == nil return false end
+    os.execute("cp '" .. string.gsub(src, "'", "'\\''") .. "' '" .. string.gsub(dest, "'", "'\\''") .. "' 2>/dev/null")
+end
+
+read_dir(path: str): any
+    out = {}
+    if path == nil return out end
+    f = io.popen("ls -1A '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null", "r")
+    if f == nil return out end
+    line = f:read()
+    while line != nil
+        out[rawlen(out) + 1] = line
+        line = f:read()
+    end
+    f:close()
+    out
+end
+
+is_dir(path: str): bool
+    if path == nil return false end
+    os.execute("test -d '" .. string.gsub(path, "'", "'\\''") .. "'")
+end
+
+is_file(path: str): bool
+    if path == nil return false end
+    os.execute("test -f '" .. string.gsub(path, "'", "'\\''") .. "'")
+end
+
+rmdir(path: str): bool
+    if path == nil return false end
+    os.execute("rmdir '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null")
+end
+
+chmod(path: str, mode: str): bool
+    if path == nil or mode == nil return false end
+    os.execute("chmod " .. mode .. " '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null")
+end
+
+size(path: str): i64
+    if path == nil return 0 - 1 end
+    f = io.popen("stat -c%s '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null", "r")
+    if f == nil
+        f = io.popen("stat -f%z '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null", "r")
+        if f == nil return 0 - 1 end
+    end
+    out = f:read("*a")
+    f:close()
+    if out == nil or out == "" return 0 - 1 end
+    s = tonumber(out)
+    if s == nil return 0 - 1 end
+    s
+end
+

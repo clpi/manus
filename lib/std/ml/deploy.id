@@ -1,0 +1,107 @@
+-- std.ml.deploy — Edge / WASM / static-binary deploy helpers
+
+static_binary_opts(): any
+    return {
+        target = "native",
+        optimize = "O3",
+        lto = true,
+        strip = true,
+        notes = "duo compile app.id -o app -O3",
+    }
+end
+
+wasm_opts(): any
+    return {
+        target = "wasm32-wasi",
+        simd = true,
+        notes = "duo compile app.id --target wasm32-wasi -o app.wasm",
+    }
+end
+
+edge_pipeline(model): any
+    return {
+        type = "edge_pipeline",
+        quant = std.ml.quant.amp_policy(),
+        device = std.ml.device.wasm_simd(),
+        steps = { "quantize", "strip", "wasm" },
+        model = model,
+    }
+end
+
+-- Metadata for ONNX / safetensors export
+export_onnx(model, path): any
+    -- Build ONNX model from Duo model's layers
+    graph = std.ml.export.onnx_graph_new(model.name or "model")
+    -- Export layers as ONNX nodes
+    for layer in model.layers
+        if layer.type == "linear"
+            std.ml.export.onnx_graph_add_node(graph, "MatMul", {layer.name .. "_input", layer.name .. "_weight"}, {layer.name .. "_output"}, layer.name)
+            std.ml.export.onnx_graph_add_initializer(graph, layer.name .. "_weight", {layer.in_features, layer.out_features}, layer.weight)
+            if layer.bias
+                std.ml.export.onnx_graph_add_node(graph, "Add", {layer.name .. "_output", layer.name .. "_bias"}, {layer.name .. "_final"}, layer.name .. "_add_bias")
+                std.ml.export.onnx_graph_add_initializer(graph, layer.name .. "_bias", {layer.out_features}, layer.bias)
+            end
+        elseif layer.type == "relu"
+            std.ml.export.onnx_graph_add_node(graph, "Relu", {layer.name .. "_input"}, {layer.name .. "_output"}, layer.name)
+        elseif layer.type == "softmax"
+            std.ml.export.onnx_graph_add_node(graph, "Softmax", {layer.name .. "_input"}, {layer.name .. "_output"}, layer.name)
+        elseif layer.type == "embedding"
+            std.ml.export.onnx_graph_add_initializer(graph, layer.name .. "_weight", {layer.vocab_size, layer.embed_dim}, layer.weight)
+            std.ml.export.onnx_graph_add_node(graph, "Gather", {layer.name .. "_weight", layer.name .. "_input"}, {layer.name .. "_output"}, layer.name)
+        end
+    end
+    -- Set input/output specs
+    std.ml.export.onnx_graph_add_input(graph, "input", {nil}, "float32")
+    std.ml.export.onnx_graph_add_output(graph, "output", {nil}, "float32")
+    onnx_model = std.ml.export.onnx_model_new(graph, model.opset or 17)
+    std.ml.export.onnx_model_save(onnx_model, path)
+end
+
+load_safetensors(path: str): any
+    f = std.io.open(path, "rb")
+    if f == nil
+        return {ok = false, error = "Cannot open file: " .. path}
+    end
+
+    -- Read 8-byte header length prefix
+    len_bytes = std.io.read(f, 8)
+    if len_bytes == nil or #len_bytes < 8
+        std.io.close(f)
+        return {ok = false, error = "Invalid safetensors: missing header length"}
+    end
+
+    -- Decode little-endian u64 header length
+    header_len = 0
+    i = 1
+    while i <= 8
+        header_len = header_len + len_bytes:byte(i) * (2 ^ ((i - 1) * 8))
+        i += 1
+    end
+
+    -- Read header JSON
+    header_json = std.io.read(f, header_len)
+    std.io.close(f)
+    if header_json == nil
+        return {ok = false, error = "Invalid safetensors: cannot read header"}
+    end
+
+    header = std.encoding.json.decode(header_json)
+    if header == nil
+        return {ok = false, error = "Invalid safetensors: bad header JSON"}
+    end
+
+    -- Build tensor map from header metadata
+    tensors = {}
+    for name, entry in header
+        if type(entry) == "table" and entry.dtype
+            tensors[name] = {
+                dtype = entry.dtype,
+                shape = entry.shape,
+                data_offsets = entry.data_offsets,
+            }
+        end
+    end
+
+    {ok = true, path = path, tensors = tensors, header = header}
+end
+

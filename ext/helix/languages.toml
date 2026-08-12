@@ -1,11 +1,11 @@
-[language-server.duo-lsp]
+[language-server.id-lsp]
 command = "duo-lsp"
 
 [[language]]
 name = "duo"
-scope = "source.duo"
+scope = "source.id"
 file-types = ["duo"]
-roots = ["build.duo"]
+roots = ["build.id"]
 comment-token = "--"
 injection-regex = "duo"
 indent = { tab-width = 4, unit = "    " }

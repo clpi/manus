@@ -1,0 +1,244 @@
+-- constitution §46 `law.nominal` — "a nominal descriptor over a primitive
+-- COSTS NO BOXING", measured on the emitted C rather than believed.
+--
+-- WHY A SEPARATE GATE. `examples/spec100/nominal.id` prints 914436 and that
+-- is a real proof of MEANING: the value could not come out right unless `d`
+-- really carried `feet` and the trie really composed `feet -> micron -> inch`.
+-- It is NOT a proof of COST. A boxed double adds exactly as correctly as an
+-- unboxed one, so a mechanism that quietly wrapped every `feet` in a
+-- `lua_Value` would print 914436 and read as a complete success. §46's second
+-- clause is a separate claim and needs a separate instrument.
+--
+-- THE MISTAKE THIS GATE IS BUILT AROUND. The first working draft of nominal
+-- descriptors emitted `duo_retain((void*)(d))` on a `double`. Nothing in the
+-- Duo pipeline objected — the C compiler did, with "operand of type 'double'
+-- cannot be cast to a pointer type". Had `feet` been nominal over `str`
+-- instead, that retain would have COMPILED and the descriptor would have cost
+-- a refcount per binding forever. The shape of the bug generalizes: every
+-- switch in the compiler that lists a descriptor as boxed is a place a nominal
+-- descriptor can acquire a cost, and only reading the output finds them.
+--
+-- FOUR FACTS, each falsifiable on its own, all read out of `duo_entry_main`:
+--
+--   storage      `double d`, `double n`, `double q` — the descriptor never
+--                reaches the C emitter as a type of its own.
+--   no box       no `lua_Value` anywhere in the function.
+--   no ladder    no `duo_retain` / `duo_release` — a scalar has no drop.
+--   direct call  the derived conversion is `shrink(grow(` — the composition is
+--                two ordinary calls, not a dispatch through anything.
+--
+-- POSITIVE CONTROL, because a scanner that always answers "no box" is the
+-- confident zero this repository has shipped before. The control compiles a
+-- program that is IDENTICAL except that the same value is bound `any`, and
+-- requires the box predicate to FIRE on it. If the control does not box, the
+-- predicate is broken and this gate reports FAIL and no verdict — never a pass.
+
+work = "/tmp/duo-nominal-zero-cost"
+fixture = "examples/spec100/nominal.id"
+want = "914436"
+
+rows = ""
+failed = 0
+
+-- 1 while the control program still boxes. A gate that cannot fail is not
+-- evidence.
+controlok = 0
+
+quiet(cmd: str): i64
+    std.script.status("{cmd} >/dev/null 2>&1")
+end
+
+record(row: str): void
+    rows = "{rows}{row}"
+end
+
+check(label: str, ok: i64): void
+    if ok == 1
+        record("  pass  {label}\n")
+    end
+    if ok != 1
+        record("  FAIL  {label}\n")
+        failed = failed + 1
+    end
+end
+
+-- The body of `duo_entry_main`, isolated. Scanning the WHOLE translation unit
+-- would find `lua_Value` in the runtime prelude every time and report a
+-- permanent, meaningless red — the claim is about the code generated for the
+-- fixture, so the window is the fixture's own function.
+-- `\x7b` / `\x7d` rather than the braces themselves: this string is
+-- interpolated before it reaches the shell, so a literal `{` here is read as
+-- the opening of a hole and the sed range silently becomes a pattern that
+-- matches nothing — a gate that finds no body and could be misread as a gate
+-- that found no box.
+body(cfile: str, out: str): i64
+    std.script.run("sed -n '/duo_entry_main() \x7b/,/^\x7d/p' {cfile} > {out}")
+    to(i64)(std.script.chomp(std.script.capture("wc -l < {out}")))
+end
+
+hits(path: str, pattern: str): i64
+    to(i64)(std.script.chomp(std.script.capture("grep -c '{pattern}' {path} || true")))
+end
+
+-- The one predicate both the fixture and the control are judged by, so the
+-- control actually controls something. A boxed value in this compiler is a
+-- `lua_Value` or a `lua_val_from_*` construction; either is a cost the law
+-- says a nominal descriptor does not pay.
+boxes(bodyfile: str): i64
+    n = hits(bodyfile, "lua_Value") + hits(bodyfile, "lua_val_from")
+    v = 0
+    if n > 0
+        v = 1
+    end
+    v
+end
+
+-- RENDERING IS A PHYSICAL QUESTION TOO, and it is checked here rather than in
+-- the fixture because the fixture asserts one line and this needs its own.
+--
+-- `print("\x7bd\x7d")` on a `feet` emitted `printf("%s", d)` against a
+-- `double` and SEGFAULTED at runtime while the build reported `ok compile` —
+-- the format selector's descriptor arm assumed boxed, which is gap[097] hole
+-- 2 in its most visible form. gap[093] measured the same site as SILENT
+-- NO-OUTPUT one step earlier. A nominal descriptor prints as the thing it is.
+writerender(path: str): void
+    std.script.run("rm -f {path}")
+    line(path, "type feet = f64")
+    line(path, "type tally = i64")
+    line(path, "")
+    line(path, "main = (): i64")
+    line(path, "    d: feet = 2.5")
+    line(path, "    t: tally = 41")
+    line(path, "    print(d)")
+    line(path, "    print(t)")
+    line(path, "    0")
+
+-- THE CONTROL. Same arithmetic, same printed value, but the binding that
+-- carries the descriptor in the fixture is `any` here — so the compiler has
+-- to box it. If `boxes` does not fire on this, `boxes` is measuring nothing.
+writecontrol(path: str): void
+    std.script.run("rm -f {path}")
+    line(path, "main = (): i64")
+    line(path, "    d: any = 3.0")
+    line(path, "    n: any = d")
+    line(path, "    print(n)")
+    line(path, "    0")
+end
+
+line(path: str, text: str): void
+    std.script.run("printf '%s\\n' '{text}' >> {path}")
+end
+
+measure(duo: str): i64
+    std.script.run("rm -rf {work} && mkdir -p {work}")
+
+    -- The C backend, explicitly. `--backend=direct` never writes a .c file, so
+    -- a gate that read one after a direct build would find nothing and could
+    -- report a stale artifact from an earlier run as this run's evidence.
+    bin = "{work}/nominal.out"
+    if quiet("{duo} compile {fixture} --backend=c -o {bin}") != 0
+        print("nominal zero cost: FAIL — {fixture} does not compile")
+        return 1
+    end
+
+    -- Value first. A cost claim about a program that computes the wrong number
+    -- is a claim about the wrong program.
+    got = std.script.chomp(std.script.capture("{bin}"))
+    okval = 0
+    if got == want
+        okval = 1
+    end
+    check("value {want} (got {got})", okval)
+
+    cfile = "/tmp/duo_nominal.c"
+    b = "{work}/body.c"
+    lines = body(cfile, b)
+    if lines == 0
+        print("nominal zero cost: FAIL — no duo_entry_main body found in {cfile}")
+        return 1
+    end
+
+    -- Storage: three descriptor-typed bindings, three doubles.
+    check("feet binding lowers to double", hits(b, "double d ="))
+    check("inch binding lowers to double", hits(b, "double n ="))
+    check("micron binding lowers to double", hits(b, "double q ="))
+
+    -- No box. Reported as its own row so the reason a red row is red is the
+    -- fact that failed, not "something about boxing".
+    nobox = 0
+    if boxes(b) == 0
+        nobox = 1
+    end
+    check("no lua_Value and no lua_val_from in the function", nobox)
+
+    -- No drop ladder. A scalar is not owned, so nothing retains it.
+    noarc = 0
+    if hits(b, "duo_retain") == 0 and hits(b, "duo_release") == 0
+        noarc = 1
+    end
+    check("no duo_retain / duo_release", noarc)
+
+    -- The derived conversion is two direct calls. If this row goes red while
+    -- the value row stays green, the composition started going through
+    -- something — which is exactly the regression the law.canon.performance
+    -- rule exists to catch.
+    check("derived feet -> inch is a direct shrink(grow(", hits(b, "shrink(grow("))
+
+    -- Rendering, by value on both representations.
+    rpath = "{work}/render.id"
+    writerender(rpath)
+    rendered = "no output"
+    if quiet("{duo} compile {rpath} --backend=c -o {work}/render.out") == 0
+        rendered = std.script.chomp(std.script.capture("{work}/render.out | xargs"))
+    okrender = 0
+    if rendered == "2.5 41"
+        okrender = 1
+    check("a nominal renders as its representation (got '{rendered}')", okrender)
+
+    -- THE POSITIVE CONTROL, run last so its output cannot be mistaken for the
+    -- fixture's.
+    cpath = "{work}/control.id"
+    writecontrol(cpath)
+    if quiet("{duo} compile {cpath} --backend=c -o {work}/control.out") == 0
+        cb = "{work}/controlbody.c"
+        if body("/tmp/duo_control.c", cb) > 0
+            controlok = boxes(cb)
+        end
+    end
+
+    report()
+    verdict()
+end
+
+report(): void
+    print("")
+    print("  §46 law.nominal — ZERO PHYSICAL OVERHEAD, read off the emitted C")
+    print("")
+    io.write(rows)
+    print("")
+end
+
+verdict(): i64
+    code = 0
+    if controlok == 0
+        print("nominal zero cost: FAIL — the control did not box.")
+        print("  The box predicate is measuring nothing, so every green row")
+        print("  above is unearned. Fix the predicate before reading a verdict.")
+        code = 1
+    end
+    if code == 0 and failed > 0
+        print("nominal zero cost: FAIL — {failed} row(s) red.")
+        print("  §46 binds 'a nominal descriptor over a primitive costs no")
+        print("  boxing'. A red row here is that clause, not a style note.")
+        code = 1
+    end
+    if code == 0
+        print("nominal zero cost: PASS — control boxes, fixture does not")
+    end
+    code
+end
+
+main = (): i64
+    duo = std.script.getenv("DUO", "./zig-out/bin/duo")
+    measure(duo)
+end

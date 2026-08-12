@@ -1,0 +1,50 @@
+-- @comp.transcend: cubic ceiling breaker — one module directive → O(n²×f) + O(n³×f)
+-- Run: duo run examples/meta_transcend_showcase.id
+
+concept HasXY
+    x: f64
+    y: f64
+end
+
+concept HasTag
+    tag: str
+end
+
+concept HasId
+    id: i64
+end
+
+Point: { x: f64, y: f64, tag: str, id: i64 }
+Pair: { x: f64, y: f64, tag: str, id: i64 }
+Label: { tag: str, id: i64 }
+
+@comp.define.derive("TripleApi", generate(meta) -> str
+    if meta.right != nil
+        "/* tensor " .. meta.left.name .. " x " .. meta.mid.name .. " x " .. meta.right.name .. " */\n"
+    elseif meta.left != nil
+        "/* pair " .. meta.left.name .. " x " .. meta.right.name .. " */\n"
+    else
+        acc = ""
+        for i = 1, #meta.fields
+            f = meta.fields[i]
+            acc = acc .. "static inline void duo_" .. meta.name .. "_mark_" .. f.name .. "(const duo_" .. meta.name .. "* v) { (void)v->" .. f.name .. "; }\n"
+        end
+        acc
+    end
+end)
+
+-- One line: derive.all + quadratic product emit + cubic derive tensor emit
+@comp.transcend("HasXY", TripleApi, "HasTag", "HasId")
+
+triple_sig(a, b, c): str
+    a.name .. "x" .. b.name .. "x" .. c.name .. ";"
+end
+
+TENSOR = @comp.tensor("HasXY", "HasTag", "HasId", triple_sig)
+COMBOS = @comp.catalog("combinators")
+
+print("=== meta transcend showcase ===")
+print("has_transcend = " .. to(str)(@comp.str.contains(COMBOS, "meta.transcend")))
+print("tensor = " .. TENSOR)
+print("Point ok = true")
+print("ok")

@@ -1,0 +1,196 @@
+-- SIM and native C ABI gate.
+--
+-- Entity-bounded public serialization observations replace the former
+-- in-process golden tests. The C rows replace the foreign execution tests and
+-- the fixture-only layout/adapter tests: emitted C stays unboxed, clang agrees
+-- with the projected layouts, semantic boundary metadata stays attached, and
+-- the tracked oracle programs return 25 and 10. Every compound observation
+-- owns a private temporary directory.
+-- The five removed blocks were one c_layout_verify test, one foreign_adapter
+-- test, and all three abi_specialize tests; S1, S3, and S10-S12 name their
+-- public replacements exactly.
+
+here: str = ()
+    std.script.chomp(std.script.capture("pwd"))
+
+compiler: str = (root: str)
+    "{root}/zig-out/bin/duo"
+
+shout: void = (msg: str)
+    print("sim: {msg}")
+
+present: bool = (path: str)
+    std.script.status("test -e {path}") == 0
+
+capture: bool = (cmd: str, out: str)
+    std.script.status("{cmd} >{out} 2>/dev/null") == 0
+
+isolated: bool = (cmd: str)
+    capture("d=$(mktemp -d) || exit 1; trap 'rm -rf $d' EXIT; {cmd}", "/dev/null")
+
+expect: i64 = (ok: bool, msg: str)
+    if ok
+        0
+    else
+        shout("FAIL — {msg}")
+        1
+
+row: str = (id: str)
+    "awk -v id='\"id\":\"{id}\"' 'p=index($0,id) { s=substr($0,p); q=index(s,\"},{\\\"id\\\":\"); if (q) s=substr(s,1,q-1); print s; exit } END { if (!p) exit 1 }' $d/snap.json"
+
+main = (): i64
+    root = here()
+    bin = compiler(root)
+    fixtures = "{root}/examples/pass5/fixtures"
+    examples = "{root}/examples/pass5"
+    point = {
+        header = "{fixtures}/point.h",
+        oracle = "{fixtures}/point.c",
+        source = "{examples}/c_point_smoke.id",
+    }
+    rect = {
+        header = "{fixtures}/big_rect.h",
+        oracle = "{fixtures}/big_rect.c",
+        source = "{examples}/c_big_rect_smoke.id",
+    }
+    native = "{root}/examples/pass4_native_milestone.id"
+    boxes = "grep -E -q '(lua_Value|lua_val_|lua_to_|lua_table_|duo_retain|duo_release|duo_CPoint|duo_CBigRect)' "
+    bad = 0
+
+    -- Controls establish that the runner, tools, fixtures, matcher, and byte
+    -- comparator can all convict a deliberately false observation.
+    bad += expect(not capture("false", "/dev/null"),
+        "control 1: capture called false a success")
+    bad += expect(present(bin),
+        "control 2: no compiler at {bin}; run zig build first")
+    bad += expect(capture("command -v clang", "/dev/null"),
+        "control 3: clang is unavailable")
+    bad += expect(present(point.header), "control 4: missing point header")
+    bad += expect(present(point.oracle), "control 4: missing point oracle")
+    bad += expect(present(point.source), "control 4: missing point source")
+    bad += expect(present(rect.header), "control 4: missing rectangle header")
+    bad += expect(present(rect.oracle), "control 4: missing rectangle oracle")
+    bad += expect(present(rect.source), "control 4: missing rectangle source")
+    bad += expect(present(native), "control 4: missing fixture {native}")
+    bad += expect(isolated("printf one > $d/one && printf two > $d/two && ! cmp -s $d/one $d/two"),
+        "control 5: comparator called distinct values identical")
+    bad += expect(isolated("printf 'lua_Value boxed' > $d/boxed.c && {boxes}$d/boxed.c"),
+        "control 6: boxed-output detector missed lua_Value")
+
+    call = row("c:function:distance2")
+    shape = row("c:record:CPoint")
+    probe = "cd '{root}' && '{bin}' sim --import-c examples/pass5/fixtures/point.h > $d/snap.json"
+        .. ' && grep -q -F "\\\"schema\\\":\\\"sim-v0\\\",\\\"file\\\":\\\"examples/pass5/fixtures/point.h\\\",\\\"entity_count\\\":2" $d/snap.json'
+        .. ' && (' .. call .. ' | grep -F "\\\"origin\\\":{\\\"language\\\":\\\"c\\\""'
+        .. ' | grep -F "\\\"params\\\":[{\\\"name\\\":\\\"point\\\",\\\"type\\\":\\\"CPoint\\\"}]"'
+        .. ' | grep -E "\\\"return.type\\\":\\\"f64\\\""'
+        .. ' | grep -F "\\\"abi\\\":{\\\"calling_convention\\\":\\\"c\\\",\\\"pass_by\\\":\\\"value\\\"}"'
+        .. ' | grep -q -F "\\\"contract\\\":{\\\"origin_language\\\":\\\"c\\\",\\\"semantic_completeness\\\":\\\"complete\\\",\\\"abi_completeness\\\":\\\"complete\\\"")'
+        .. ' && (' .. shape .. ' | grep -F "\\\"kind\\\":\\\"record\\\",\\\"name\\\":\\\"CPoint\\\""'
+        .. ' | grep -E "\\\"storage.class\\\":\\\"native\\\""'
+        .. ' | grep -F "\\\"fields\\\":[{\\\"name\\\":\\\"x\\\",\\\"type\\\":\\\"f64\\\",\\\"offset\\\":0},{\\\"name\\\":\\\"y\\\",\\\"type\\\":\\\"f64\\\",\\\"offset\\\":8}]"'
+        .. ' | grep -E "\\\"size.bytes\\\":16,\\\"align.bytes\\\":8"'
+        .. ' | grep -q -F "\\\"contract\\\":{\\\"origin_language\\\":\\\"c\\\",\\\"semantic_completeness\\\":\\\"complete\\\",\\\"abi_completeness\\\":\\\"complete\\\"")'
+    bad += expect(isolated(probe),
+        "S1: point snapshot lost bounded identity, exact layout, C ABI, or native storage")
+
+    absent = row("c:function:absent")
+    probe = "cd '{root}' && '{bin}' sim --import-c examples/pass5/fixtures/point.h > $d/snap.json"
+        .. " && ! ({absent} >/dev/null)"
+    bad += expect(isolated(probe),
+        "control 7: bounded selector found an absent stable identity")
+
+    stable = "cd '{root}' && '{bin}' sim --import-c examples/pass5/fixtures/point.h > $d/one.json"
+        .. " && '{bin}' sim --import-c examples/pass5/fixtures/point.h > $d/two.json"
+        .. " && cmp -s $d/one.json $d/two.json"
+    bad += expect(isolated(stable),
+        "S2: identical point imports rendered different bytes")
+
+    call = row("duo:function:distance2")
+    shape = row("duo:record:Point")
+    probe = "cd '{root}' && '{bin}' sim examples/pass4_native_milestone.id > $d/snap.json"
+        .. ' && grep -q -F "\\\"schema\\\":\\\"sim-v0\\\",\\\"file\\\":\\\"examples/pass4_native_milestone.id\\\",\\\"entity_count\\\":3" $d/snap.json'
+        .. ' && (' .. call .. ' | grep -F "\\\"origin\\\":{\\\"language\\\":\\\"duo\\\""'
+        .. ' | grep -E "\\\"abi\\\":\\{\\\"calling.convention\\\":\\\"duo-native\\\""'
+        .. ' | grep -q -F "\\\"contract\\\":{\\\"origin_language\\\":\\\"duo\\\",\\\"semantic_completeness\\\":\\\"complete\\\",\\\"abi_completeness\\\":\\\"complete\\\"")'
+        .. ' && (' .. shape .. ' | grep -F "\\\"storage_class\\\":\\\"native\\\""'
+        .. ' | grep -q -F "\\\"contract\\\":{\\\"origin_language\\\":\\\"duo\\\",\\\"semantic_completeness\\\":\\\"complete\\\",\\\"abi_completeness\\\":\\\"complete\\\"")'
+    bad += expect(isolated(probe),
+        "S3: native snapshot lost bounded identity, Duon origin, or native storage")
+
+    stable = "cd '{root}' && '{bin}' sim examples/pass4_native_milestone.id > $d/one.json"
+        .. " && '{bin}' sim examples/pass4_native_milestone.id > $d/two.json"
+        .. " && cmp -s $d/one.json $d/two.json"
+    bad += expect(isolated(stable),
+        "S4: identical native exports rendered different bytes")
+
+    call = row("c:function:sum4")
+    shape = row("c:record:CBigRect")
+    probe = "cd '{root}' && '{bin}' sim --import-c examples/pass5/fixtures/big_rect.h > $d/snap.json"
+        .. ' && grep -q -F "\\\"schema\\\":\\\"sim-v0\\\",\\\"file\\\":\\\"examples/pass5/fixtures/big_rect.h\\\",\\\"entity_count\\\":2" $d/snap.json'
+        .. ' && (' .. call .. ' | grep -F "\\\"origin\\\":{\\\"language\\\":\\\"c\\\""'
+        .. ' | grep -F "\\\"params\\\":[{\\\"name\\\":\\\"rect\\\",\\\"type\\\":\\\"CBigRect*\\\"}]"'
+        .. ' | grep -F "\\\"abi\\\":{\\\"calling_convention\\\":\\\"c\\\",\\\"pass_by\\\":\\\"pointer\\\"}"'
+        .. ' | grep -q -F "\\\"contract\\\":{\\\"origin_language\\\":\\\"c\\\",\\\"semantic_completeness\\\":\\\"complete\\\",\\\"abi_completeness\\\":\\\"complete\\\"")'
+        .. ' && (' .. shape .. ' | grep -F "\\\"storage_class\\\":\\\"native\\\""'
+        .. ' | grep -q -F "\\\"contract\\\":{\\\"origin_language\\\":\\\"c\\\",\\\"semantic_completeness\\\":\\\"complete\\\",\\\"abi_completeness\\\":\\\"complete\\\"")'
+    bad += expect(isolated(probe),
+        "S5: rectangle snapshot lost bounded identity, pointer ABI, or native storage")
+
+    source = point.source
+    emit = "'{bin}' dump-c '{source}' > $d/point.c"
+        .. " && grep -q -F 'fixtures/point.h' $d/point.c"
+        .. " && grep -q -F 'extern double distance2(CPoint' $d/point.c"
+        .. " && grep -q -F 'CPoint p = {' $d/point.c"
+        .. " && grep -q -F '.x = ' $d/point.c"
+        .. " && grep -q -F 'return distance2(p);' $d/point.c"
+        .. " && ! {boxes}$d/point.c"
+    bad += expect(isolated(emit),
+        "S6: point C lost its native value call or introduced boxed machinery")
+
+    oracle = point.oracle
+    link = "'{bin}' dump-c '{source}' > $d/point.c"
+        .. " && clang -std=c11 -O2 -I'{examples}' -I'{fixtures}'"
+        .. " $d/point.c '{oracle}' -lm -o $d/point"
+        .. " && ( $d/point; test $? -eq 25 )"
+    bad += expect(isolated(link),
+        "S7: point C did not link and return 25")
+
+    source = rect.source
+    emit = "'{bin}' dump-c '{source}' > $d/rect.c"
+        .. " && grep -q -F 'extern double sum4' $d/rect.c"
+        .. " && grep -q -F 'CBigRect r = {' $d/rect.c"
+        .. " && grep -q -F 'return sum4(&r);' $d/rect.c"
+        .. " && ! {boxes}$d/rect.c"
+    bad += expect(isolated(emit),
+        "S8: rectangle C lost its native pointer call or introduced boxed machinery")
+
+    oracle = rect.oracle
+    link = "'{bin}' dump-c '{source}' > $d/rect.c"
+        .. " && clang -std=c11 -O2 -I'{examples}' -I'{fixtures}'"
+        .. " $d/rect.c '{oracle}' -lm -o $d/rect"
+        .. " && ( $d/rect; test $? -eq 10 )"
+    bad += expect(isolated(link),
+        "S9: rectangle C did not link and return 10")
+
+    layout = "cd '{root}' && clang -Xclang -fdump-record-layouts-complete -fsyntax-only '{point.header}' > $d/layout 2>&1 && sed -n '/unnamed at .*[/]point.h:4:9/,/\\[sizeof=/p' $d/layout > $d/record && test -s $d/record && sed -n '2p' $d/record | grep -q -F '0 |   double x' && sed -n '3p' $d/record | grep -q -F '8 |   double y' && sed -n '4p' $d/record | grep -q -F '[sizeof=16, align=8]' && ! grep -q -F '[sizeof=17, align=8]' $d/record"
+    bad += expect(isolated(layout),
+        "S10: clang did not confirm CPoint size, alignment, and offsets")
+
+    call = row("c:function:sum4")
+    shape = row("c:record:CBigRect")
+    byval = "cd '{root}' && sed 's/CBigRect \\*rect/CBigRect rect/' '{rect.header}' > $d/byval.h && clang -Xclang -fdump-record-layouts-complete -fsyntax-only $d/byval.h > $d/layout 2>&1 && sed -n '/unnamed at .*[/]byval.h:4:9/,/\\[sizeof=/p' $d/layout > $d/record && test -s $d/record && sed -n '2p' $d/record | grep -q -F '0 |   double a' && sed -n '3p' $d/record | grep -q -F '8 |   double b' && sed -n '4p' $d/record | grep -q -F '16 |   double c' && sed -n '5p' $d/record | grep -q -F '24 |   double d' && sed -n '6p' $d/record | grep -q -F '[sizeof=32, align=8]' && '{bin}' sim --import-c $d/byval.h > $d/snap.json && ({call} | grep -F \"\\\"params\\\":[{\\\"name\\\":\\\"rect\\\",\\\"type\\\":\\\"CBigRect\\\"}]\" | grep -q -E \"\\\"abi\\\":\\{\\\"calling.convention\\\":\\\"c\\\",\\\"pass.by\\\":\\\"pointer\\\"\\}\") && ({shape} | grep -E \"\\\"size.bytes\\\":32,\\\"align.bytes\\\":8\" | grep -q -E \"\\\"layout.completeness\\\":\\\"complete\\\"\") && sed \"s|fixtures/big.rect.h|$d/byval.h|\" '{rect.source}' > $d/byval.id && '{bin}' dump-c $d/byval.id > $d/byval.gen.c && grep -q -F 'extern double sum4(CBigRect);' $d/byval.gen.c && grep -q -F 'return sum4(r);' $d/byval.gen.c && ! grep -q -F 'sum4(&r)' $d/byval.gen.c && ! {boxes}$d/byval.gen.c && sed -e 's/big.rect.h/byval.h/' -e 's/CBigRect \\*rect/CBigRect rect/' -e 's/rect->/rect./g' '{rect.oracle}' > $d/byval.c && clang -std=c11 -O2 -I$d $d/byval.gen.c $d/byval.c -lm -o $d/byval && ( $d/byval; test $? -eq 10 )"
+    bad += expect(isolated(byval),
+        "S11: large by-value C record changed semantic type or failed its physical pointer realization")
+
+    source = point.source
+    trace = "cd '{root}' && '{bin}' check --no-color --debug=sema '{source}' > $d/check.out 2> $d/check.err && grep -q -E 'foreign lift boundary=P26-B02 conv=c.abi' $d/check.err && grep -q -F 'pass26 call boundary=P26-B02' $d/check.err"
+    bad += expect(isolated(trace),
+        "S12: CPoint adaptation lost its semantic boundary or C ABI metadata")
+
+    if bad == 0
+        shout("PASS — 12 layout, boundary, ABI, and execution observations held; 7 controls held")
+
+    bad
+
+std.os.exit(main())

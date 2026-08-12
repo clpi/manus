@@ -1,5 +1,5 @@
 ---
-globs: ["gaps/**", "docs/**", "scripts/*gate*.duo", "tools/devnode/**", ".agents/**"]
+globs: ["gaps/**", "docs/**", "scripts/*gate*.id", "scripts/*gate*.id", "tools/devnode/**", ".agents/**"]
 ---
 
 # Evidence

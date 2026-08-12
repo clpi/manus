@@ -2,7 +2,7 @@
 
 ## Authority
 
-The language law has one home. Read these files before editing Idsem, in this
+The language law has one home. Read these files before editing Idol, in this
 order:
 
 1. `docs/spec/constitution.md` — C0, the sole semantic authority. It is
@@ -18,29 +18,34 @@ second language specification. If it conflicts with C0 or `CLAUDE.md`, stop,
 report the conflict, and repair this projection. Repository history and the
 legacy corpus are migration evidence, never authority.
 
-The language is Idsem. Canonical source files use `.id`; `.duo` is historical
-source provenance during migration.
+The language and project identity is **Idol** (`idol`, `.id`). Active development
+happens in **`clpi/duo`**. The future release repository **`idollang/idol`** is
+untouched until explicit release-readiness authorization; see
+`.agents/RELEASE_READINESS.md`. Historical Idsem, Duo, Duon, `.id`, and the
+`duo` bootstrap executable are development/migration provenance only. Cursor
+routers live in `.cursor/rules/`; executable canonicality remains in
+`scripts/idiomgate.id` and `scripts/semanticgate.id`.
 
 ## Monoglot boundary
 
-The destination is an Idsem compiler, standard vocabulary, build, tools, gates,
-and documentation projections implemented in Idsem.
+The destination is an Idol compiler, standard vocabulary, build, tools, gates,
+and documentation projections implemented in Idol.
 
 Do not add a new Zig, C, Lua, shell, Python, or other foreign subsystem. Existing
 foreign implementation is bootstrap debt. A foreign edit is admissible only
 when an active gap and evidence show that it is the smallest bridge needed to
-unlock its Idsem replacement, or when it strictly removes foreign surface. Keep
-the bridge local, preserve native performance, and move the authority into Idsem
+unlock its Idol replacement, or when it strictly removes foreign surface. Keep
+the bridge local, preserve native performance, and move the authority into Idol
 in the same vertical slice as soon as the compiler can express it.
 
 Never route a typed or compile-time value through a boxed compatibility value.
 The semantic value and its native realization remain distinct; compatibility
-front ends do not own Idsem meaning.
+front ends do not own Idol meaning.
 
 ## Semantic-first correctness
 
 Never translate a C, Rust, Python, Lua, or conventional compiler pattern into
-Idsem syntax. Begin with the semantic operation the program requests. Express it
+Idol syntax. Begin with the semantic operation the program requests. Express it
 with the smallest existing combination of relation, level, descriptor, value,
 demand, world, place, proof, application, and structured value.
 
@@ -65,8 +70,8 @@ normalization into durable relation, value, demand, dependency, world, place,
 and realization facts. Retain a source face only when its use is irreducible or
 removing it would measurably sacrifice clarity or performance.
 
-Each file owns one semantic concept. Each Idsem identifier is one lowercase
-semantic word. An underscore or uppercase letter in an Idsem identifier is never
+Each file owns one semantic concept. Each Idol identifier is one lowercase
+semantic word. An underscore or uppercase letter in an Idol identifier is never
 canonical. `std` is migration distribution, not semantic architecture.
 `std.script` is frozen debt. New canonical `std.*` APIs and call sites are
 forbidden. Do not replace `std` with another universal namespace: possessed
@@ -110,7 +115,7 @@ demand, places, proofs, provenance, and realization facts.
 The grammar is closed. New capability does not justify a token, sigil,
 directive, keyword, or special AST ontology.
 
-A changed canonical `.id` line, or touched historical `.duo` line, is rejected
+A changed canonical `.id` line, or touched historical `.id` line, is rejected
 when it introduces any of these forms:
 
 - an identifier containing an underscore or uppercase letter;
@@ -136,20 +141,38 @@ lawset provenance. Until `GAP-145` provides distinct lexer identities and
 generated grammar roles, do not migrate delimiters by search/replace or infer a
 literal/comment role downstream from token text.
 
-Before staging Idsem, run the repository-native idiom check over the exact
+## Update face
+
+Canonical Idol prefers `place op= value` only when a witnessed equivalence
+proves it preserves the expanded update's observations. Normalization keeps the
+base relation together with the exact place and update facts; it does not mint
+`addassign`, another compound relation, or a `++` ontology. An admitted compound
+update evaluates a computed place once, so collapsing repeated subject, key, or
+index evaluation requires an explicit equivalence witness.
+
+The current `scripts/idiomgate.id` added-line check is migration pressure over
+text, not semantic proof and not permission to rewrite. Its
+`law.update.face` finding identifies only a candidate expanded face. Existing
+compound forms, distinct left/right subjects, declarations, and unwitnessed
+computed places remain negative controls. Semantic classification, a
+graph-owned canonicalizer, and formatting for this equivalence remain blocked
+by `GAP-145`, `GAP-134`, and `GAP-124`.
+
+Before staging Idol source, run the repository-native idiom check over the exact
 working-tree diff:
 
+    repo="$(git rev-parse --show-toplevel)"
     gate="$(mktemp -t duogate)" && trap 'rm -f "$gate"' EXIT
-    git diff -U0 -- '*.id' '*.duo' > "$gate"
-    DUOGATEDIFF="$gate" duo run scripts/idiomgate.duo
+    git diff -U0 -- '*.id' '*.id' > "$gate"
+    DUOGATEDIFF="$gate" "$repo/zig-out/bin/duo" run --backend=c "$repo/scripts/idiomgate.id"
 
-`scripts/semanticgate.duo` reads the staged index, so run it after staging or let
+`scripts/semanticgate.id` reads the staged index, so run it after staging or let
 the pre-commit hook run it. The hook repeats both blocking gates. Do not
 suppress, bypass, weaken, or route around a finding. Safe formatting rewrites
 require proved semantic equivalence. Intent-sensitive findings require a
 semantic repair, not a regex rewrite.
 
-Before writing a nontrivial Idsem expression, answer:
+Before writing a nontrivial Idol expression, answer:
 
 1. What value is the semantic subject?
 2. What relation is requested?
@@ -170,21 +193,33 @@ Prefer the representation that preserves the most semantic information and the
 largest lawful realization set with the least source ceremony. Static identity
 looks static; computed identity uses `[]`; neither face chooses representation.
 
-## Coordination and commits
+## Concurrent lanes
 
-Idsem is developed by concurrent agents in one dirty checkout.
+Five disjoint write lanes; do not overlap semantic ownership:
 
-1. Read the local router and current bootstrap ledger, then call
+| Lane | Owner | Scope |
+|---|---|---|
+| Cursor | coordination / canonicality | claims, devnode admission, gates, release-readiness ledger |
+| Codex | semantic graph producer | graph facts, application/relation/subject/pack authority |
+| Poolside | realization / machine | demand → realization → machine lineage |
+| Devin | self-host transfer | one executed production stage into `.id` |
+| AGY | adversarial audit | read-heavy falsification; bounded mechanical repair only |
+
+Read live claims before editing. Never restore shadow authorities removed by
+another owner.
+
+1. Read the local router and `docs/bootstrap.md`, then call
    `duo_agent_session_start` and inspect `git status --short --branch`, recent
-   commits, live claims, live `gaps/GAP-*.md`, and `git stash list`. Until
-   `GAP-131` closes, a session response reporting zero P0 gaps is invalid; scan
-   the gap files and fail closed instead.
+   commits, `duo_dev_claim_files`, every current `gaps/GAP-*.md`, and
+   `git stash list`. Until `GAP-131` closes, the session gap summary is
+   incomplete; the exact gap files and live claim result remain the routing
+   evidence.
 2. Claim exact paths with `duo_dev_claim_acquire` before editing. Never edit a
    path owned by another live session.
 3. Use `duo_agent_gaps_update` for numbered obligations. Do not create a second
    tracker or hand-allocate a gap.
 4. Serialize builds and benchmarks through the locked MCP build tools. Until a
-   world-backed Idsem coordinator is admitted, do not teach a `std.script`
+   world-backed Idol coordinator is admitted, do not teach a `std.script`
    wrapper as canonical authority. A concurrent benchmark is not evidence.
 5. Commit only explicit owned pathspecs. Inspect the staged diff and the final
    commit before pushing. Never absorb, revert, format, or hide another agent's
@@ -202,3 +237,14 @@ then the prescribed locked broad gate. Never hard-code benchmark answers,
 inputs, seeds, iteration counts, or literal-specific recognizers. A performance
 change must improve a transferable realization, runtime path, data structure,
 or algorithm family.
+
+## Learned User Preferences
+
+- Do not migrate development to `idollang/idol`; keep active work in `clpi/duo` until explicit release-readiness authorization.
+- Do not implement or hand-edit lexical or tokenizer logic outside the Idol lexer source path (`lib/std/compiler/lexer.id`, `lib/std/compiler/token.id`).
+
+## Learned Workspace Facts
+
+- Production lexical authority is `lib/std/compiler/lexer.id` and `lib/std/compiler/token.id`.
+- `src/duo_lexer_tokenize.c` is generated bootstrap from `lib/std/compiler/host.id`; regenerate it instead of hand-editing trivia or token logic there.
+- `src/lexer.zig` is a differential oracle only, not production lexical authority.

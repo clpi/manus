@@ -7,7 +7,7 @@ compiler frontier is [`../../docs/bootstrap.md`](../../docs/bootstrap.md), and
 performance claims belong in
 [`../../docs/performance.md`](../../docs/performance.md).
 
-The current tracked `.duo` engine remains a standalone interpreter/JIT with
+The current tracked `.id` engine remains a standalone interpreter/JIT with
 private opcode and stack machinery, standard-root dependencies, and runtime
 fallback. That is SOURCE-ZERO and convergence debt; it is not the architecture
 described below.
@@ -28,7 +28,7 @@ PREDICATE-ZERO keeps capability, validation, presence, trap, and unknown states
 as facts or cases. Foreign predicate spellings remain foreign provenance until
 their mapping to native semantic facts is witnessed.
 
-Canonical project-owned source uses `.id`. Tracked project-owned `.duo` files
+Canonical project-owned source uses `.id`. Tracked project-owned `.id` files
 under this directory are SOURCE-ZERO debt and may be used only as behavioral or
 differential evidence while their retained semantics move into canonical
 source and the old files are deleted. They are not implementation templates.

@@ -7,7 +7,7 @@ authority. Start at [AGENTS.md](../AGENTS.md), then follow the
 is [C0](spec/constitution.md).
 
 The language is Idsem and canonical source uses `.id`. Every tracked
-project-owned `.duo` file is SOURCE-ZERO debt. Physical `duo` executable or
+project-owned `.id` file is SOURCE-ZERO debt. Physical `duo` executable or
 tool prefixes are bootstrap aliases and deletion targets, not a second current
 language. The current in-tree compiler, LSP, and MCP implementation paths live
 in this repository; do not route agents to historical companion checkouts or

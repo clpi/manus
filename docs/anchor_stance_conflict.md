@@ -40,7 +40,7 @@ the old comments resolve to an explicit deletion notice. Their controls must be
 rederived from the current grammar, graph facts, diagnostics, and gap-owned
 evidence.
 
-Delete this redirect after `examples/spec100/walk.duo`,
-`examples/spec100/anchorscope.duo`, and `scripts/run_compile_fail_tests.duo`
+Delete this redirect after `examples/spec100/walk.id`,
+`examples/spec100/anchorscope.id`, and `scripts/run_compile_fail_tests.id`
 have been migrated or deleted and `GAP-025` points directly to its current
 semantic owner.

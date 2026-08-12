@@ -1,0 +1,101 @@
+-- Self-application: the tokenizer scans its OWN source text.
+--
+-- This is the honest, bounded form of a bootstrap step. It is NOT self-hosting —
+-- Duo's compiler is still Zig-hosted at stage S0. What it does establish is that
+-- a compiler front-end component, written in canonical Duo and compiled to
+-- native ARM64 by `--backend=direct`, correctly processes Duo compiler source.
+--
+-- The scanned text is a verbatim copy of `is_digit`'s definition from
+-- `tokenizer.id` — real Duo syntax with identifiers, digits, operators and
+-- punctuation, including the `i64` case where a digit run terminates an
+-- identifier run.
+--
+-- Source reading is embedded rather than read from disk because `std.os.read_file`
+-- does not lower on either backend today; the scanner logic is identical either way.
+
+Kind = @{ eof = 0, ident = 1, number = 2, punct = 3 }
+
+tok: @{ kind: i64, start: i64, len: i64 }
+
+is_digit = (c: i64): i64
+    if c >= 48 and c <= 57
+        return 1
+    end
+    0
+end
+
+is_alpha = (c: i64): i64
+    if c >= 97 and c <= 122
+        return 1
+    end
+    if c >= 65 and c <= 90
+        return 1
+    end
+    if c == 95
+        return 1
+    end
+    0
+end
+
+is_space = (c: i64): i64
+    if c == 32
+        return 1
+    end
+    if c == 9
+        return 1
+    end
+    if c == 10
+        return 1
+    end
+    0
+end
+
+scanone = (src: str, pos: i64): tok
+    n = #src
+    i = pos
+    while i <= n and is_space(string.byte(src, i)) == 1
+        i = i + 1
+    end
+    if i > n
+        return { kind = Kind.eof, start = i, len = 0 }
+    end
+    c = string.byte(src, i)
+    if is_alpha(c) == 1
+        j = i
+        while j <= n and is_alpha(string.byte(src, j)) == 1
+            j = j + 1
+        end
+        return { kind = Kind.ident, start = i, len = j - i }
+    end
+    if is_digit(c) == 1
+        j = i
+        while j <= n and is_digit(string.byte(src, j)) == 1
+            j = j + 1
+        end
+        return { kind = Kind.number, start = i, len = j - i }
+    end
+    { kind = Kind.punct, start = i, len = 1 }
+end
+
+-- Count the tokens in `src`, so the result is a structural fact about the
+-- scanned Duo source rather than an arbitrary fold.
+count_tokens = (src: str): i64
+    total = 0
+    pos = 1
+    n = #src
+    while pos <= n
+        t: tok = scanone(src, pos)
+        if t.kind == Kind.eof
+            return total
+        end
+        total = total + 1
+        pos = t.start + t.len
+    end
+    total
+end
+
+main(): i64
+    -- Verbatim source of this file's own `is_digit`, scanned by this file's own
+    -- scanner, in a binary this file was compiled into.
+    count_tokens("is_digit = (c: i64): i64 if c >= 48 and c <= 57 return 1 end 0 end")
+end

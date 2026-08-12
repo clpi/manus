@@ -1,0 +1,17 @@
+-- Test local-by-default scoping in .id files
+
+-- This should create a variable automatically
+x = 10
+print(x)
+
+-- This should also create a variable
+y = 20
+print(y)
+
+-- Using global keyword to explicitly declare a global
+global z = 30
+print(z)
+
+-- Test that explicit still works
+explicit_local = 40
+print(explicit_local)

@@ -1,0 +1,780 @@
+#!/usr/bin/env duo
+-- duo-mcp/duo_lsp.id — MCP server: language intelligence, @comp.* catalog, diagnostics.
+-- Pure Duo (replaces duo_lsp_mcp.py). Run from the Duo repo root:
+--   duo run <DUO_ROOT>/tools/mcp/duo_lsp.id
+
+-- EVERY `req` LIVES HERE, AT FILE SCOPE, AND MUST STAY HERE — a `req` in a
+-- tool handler binds a local its nested closures try to capture, and Duo has
+-- no closure capture, so lowering emits an undeclared C identifier and the
+-- server never builds. Sibling modules are spelled from the PROJECT root
+-- (`tools.mcp.x`): `req` resolves at compile time against the tree above the
+-- source file, so a bare name only worked with cwd = tools/std.mcp.
+--
+-- `std.script` is gone: it is the denied activity junk drawer (Pass 100 §15).
+-- Its uses here were fs reads/writes and popen captures, which are std.fs and
+-- std.proc; lock-taking work belongs to duo_shared.
+--
+-- STD IS THE PRELUDE GRAPH (Pass 118 §0h): no module tree, no import. std
+-- descriptors are referenced DIRECTLY — `std.mcp.register_tool`,
+-- `std.fs.exists`, `std.json.encode`, `std.os.getenv` — which was verified to
+-- work from inside a tool handler before this file stopped importing them.
+-- `req "std.x"` is migration debt against that rule; the `req` left here
+-- names a PROJECT module, which is not std and does still need one.
+shared = req "tools.mcp.id_shared"
+
+-- DUO_ROOT as a VALUE at file scope, not a helper function: a named
+-- file-scope function called from a handler lowers to an upvalue call Duo
+-- cannot make. `std.os.getenv` answers "" — never nil — for an unset name.
+root = std.os.getenv("DUO_ROOT")
+if root == nil or root == ""
+    root = std.os.getenv("PWD")
+end
+if root == nil or root == ""
+    root = "."
+end
+
+-- Static @comp.* catalog (from meta_module.zig, should be auto-generated).
+--
+-- KNOWN BROKEN, and NOT a regression from the std.script removal: the only
+-- two handlers that read this table — `duo_meta_catalog` and
+-- `duo_complexity` — send NO response at all and the server then exits 0.
+-- They are registered, they appear in tools/list, and calling either one
+-- silently ends the session. Moving the table into duo_shared as a module
+-- export was tried and did not change the behaviour, so the fault is in the
+-- two handlers, not in where the table lives. `zig build mcp-gate` asserts
+-- the 30 tools that DO answer; these two are the outstanding work.
+META_CATALOG = {
+    map =              { kind = "expression", internal = "__comptimemap",    scaling = "O(types)" },
+    sweep =            { kind = "expression", internal = "__comptimemap",    scaling = "O(types)" },
+    expand =           { kind = "expression", internal = "__metaexpand",     scaling = "O(n×f)" },
+    ceiling =          { kind = "expression", internal = "__metaceiling",    scaling = "O(n×f)+O(n²×f)" },
+    omni =             { kind = "expression", internal = "__metaomni",       scaling = "ceiling + sweep" },
+    burst =            { kind = "expression", internal = "__metaburst",      scaling = "O(n²×f)" },
+    tensor =           { kind = "expression", internal = "__comptimetensor", scaling = "O(n³)" },
+    derive =           { kind = "expression", internal = "__derivemap",      scaling = "O(types × fields)" },
+    nfold =            { kind = "expression", internal = "__comptimenfold",  scaling = "O(types^k)" },
+    transcend =        { kind = "expression", internal = "__metatranscend",  scaling = "O(n³×f)" },
+    infinity =         { kind = "expression", internal = "__metainfinity",   scaling = "O(n⁴×f)" },
+    hyper =            { kind = "expression", internal = "__metahyper",      scaling = "O(n⁵×f)" },
+    tower =            { kind = "expression", internal = "__derivetower",    scaling = "O(n^k×f), k≤16" },
+    product =          { kind = "expression", internal = "__comptimeproduct",scaling = "O(n²)" },
+    ["derive.product"] ={ kind = "expression", internal = "__deriveproduct",scaling = "O(n²×f)" },
+    power =            { kind = "expression", internal = "__comptimepower",  scaling = "O(2^n)" },
+    permute =          { kind = "expression", internal = "__comptimepermute",scaling = "O(n!)" },
+    choose =           { kind = "expression", internal = "__comptimechoose", scaling = "O(n choose k)" },
+    ["derive.choose"] ={ kind = "expression", internal = "__derivechoose",   scaling = "O(n choose k × fields)" },
+    grammar =          { kind = "expression", internal = "__metagrammar",    scaling = "O(b^d)" },
+    weave =            { kind = "expression", internal = "__metaweave",      scaling = "O(N×M)" },
+    template =         { kind = "expression", internal = "__metatemplate",   scaling = "O(instances)" },
+    generate =         { kind = "expression", internal = "__metagenerate",   scaling = "O(ops×types)" },
+    scheme =           { kind = "expression", internal = "__metascheme",     scaling = "O(declarations)" },
+    each =             { kind = "expression", internal = "__comptimeeach",   scaling = "composition glue" },
+    chain =            { kind = "expression", internal = "__comptimeeach",   scaling = "alias of each" },
+    ["str.len"] =       { kind = "expression", internal = "__strlen" },
+    ["str.eq"] =        { kind = "expression", internal = "__streq" },
+    ["str.join"] =      { kind = "expression", internal = "__strjoin" },
+    ["str.contains"] =  { kind = "expression", internal = "__strcontains" },
+    ["str.countlines"] ={ kind = "expression", internal = "__strcountlines" },
+    ["concepts.count"] ={ kind = "expression", internal = "__conceptscount" },
+    ["rewrite.describe"]={ kind = "expression", internal = "__rewritedescribe" },
+    ["rewrite.rulecount"]={ kind = "expression", internal = "__rewriterulecount" },
+    ["agent.catalog"] = { kind = "expression", internal = "__agentcatalog" },
+    ["agent.ladder"] =  { kind = "expression", internal = "__agentladder" },
+    ["agent.hooks"] =   { kind = "expression", internal = "__agenthooks" },
+    ["agent.dedupe"] =  { kind = "expression", internal = "__agentdedupe" },
+    ["agent.gaps"] =    { kind = "expression", internal = "__agentgaps" },
+    ["agent.grammar"] = { kind = "expression", internal = "__agentgrammar" },
+}
+
+-- Tool: duo_diagnostics — run duo check on a file
+std.mcp.register_tool("duo_diagnostics", "Get compiler diagnostics for a Duo source file", {
+    type = "object",
+    properties = {
+        file_path = { type = "string", description = "Path to .id file" },
+    },
+    required = { "file_path" },
+}, fun(args)
+    output = std.proc.capture(shared.idbin .. " check " .. args.file_path .. " 2>&1")
+    diags = {}
+    for line in string.gmatch(output, "[^\n]+")
+        if string.find(line, ": error:") or string.find(line, ": warning:")
+            parts = {}
+            for p in string.gmatch(line, "[^:]+")
+                parts[#parts + 1] = p
+            end
+            severity = "warning"
+            if string.find(line, ": error:") then severity = "error" end
+            diag = {
+                file = parts[1] or "",
+                line = tonumber(parts[2]) or 0,
+                col = tonumber(parts[3]) or 0,
+                severity = severity,
+                message = "",
+            }
+            if #parts >= 4 then diag.message = parts[4] else diag.message = line end
+            diags[#diags + 1] = diag
+        end
+    end
+    std.json.encode({ diagnostics = diags, raw_output = string.sub(output, 1, 5000) })
+end)
+
+-- Tool: duo_compile_check — same as diagnostics
+std.mcp.register_tool("duo_compile_check", "Run duo check and return parsed diagnostics", {
+    type = "object",
+    properties = {
+        file_path = { type = "string", description = "Path to .id file" },
+    },
+    required = { "file_path" },
+}, fun(args)
+    output = std.proc.capture(shared.idbin .. " check " .. args.file_path .. " 2>&1")
+    diags = {}
+    for line in string.gmatch(output, "[^\n]+")
+        if string.find(line, ": error:") or string.find(line, ": warning:")
+            parts = {}
+            for p in string.gmatch(line, "[^:]+")
+                parts[#parts + 1] = p
+            end
+            severity = "warning"
+            if string.find(line, ": error:") then severity = "error" end
+            diags[#diags + 1] = {
+                file = parts[1] or "",
+                line = tonumber(parts[2]) or 0,
+                col = tonumber(parts[3]) or 0,
+                severity = severity,
+                message = #parts >= 4 and parts[4] or line,
+            }
+        end
+    end
+    std.json.encode({ diagnostics = diags, raw_output = string.sub(output, 1, 5000) })
+end)
+
+-- Tool: duo_table_shapes — semantic graph table/enum shape export for agents
+std.mcp.register_tool("duo_table_shapes", "Export table_shapes and enum_shapes from duo graph JSON", {
+    type = "object",
+    properties = {
+        file_path = { type = "string", description = "Path to .id file" },
+    },
+    required = { "file_path" },
+}, fun(args)
+    -- EXPLICIT `return` in every branch. A handler whose tail expression is a
+    -- bare `if … else … end` sends NO RESPONSE AT ALL and ends the session —
+    -- measured 2026-08-08 across 7 handlers, all of which were listed by
+    -- tools/list and all of which were dead.
+    output = std.proc.capture(shared.idbin .. " graph " .. args.file_path .. " 2>&1")
+    if string.find(output, ": error:") or string.find(output, "sema error") or string.find(output, "parse failed")
+        return std.json.encode({ ok = false, error = string.sub(output, 1, 4000), table_shapes = {}, enum_shapes = {} })
+    end
+    parsed = std.json.decode(output)
+    if parsed == nil
+        return std.json.encode({ ok = false, error = "failed to parse duo graph JSON", raw_output = string.sub(output, 1, 2000) })
+    end
+    std.json.encode({
+        ok = true,
+        file = parsed.file,
+        table_shapes = parsed.table_shapes or {},
+        enum_shapes = parsed.enum_shapes or {},
+        node_count = parsed.nodes and rawlen(parsed.nodes) or 0,
+    })
+end)
+
+-- Tool: duo_meta_catalog — list all @comp.* constructs
+std.mcp.register_tool("duo_meta_catalog", "List all @comp.* / @meta.* constructs", {
+    type = "object",
+    properties = {
+        grouped = { type = "boolean", description = "Group by category" },
+    },
+}, fun(args)
+    if args.grouped
+        groups = {
+            exponential_combinators = {},
+            type_introspection = {},
+            bit_intrinsics = {},
+            optimization_hints = {},
+            string_ops = {},
+            agent_hooks = {},
+        }
+        exp_keys = { map = true, sweep = true, derive = true, product = true, ["derive.product"] = true, tensor = true, nfold = true, ceiling = true, omni = true, burst = true, transcend = true, infinity = true, hyper = true, tower = true, power = true, permute = true, choose = true, ["derive.choose"] = true, grammar = true, weave = true, template = true, generate = true, scheme = true, each = true, chain = true }
+        str_keys = { ["str.len"] = true, ["str.eq"] = true, ["str.join"] = true, ["str.contains"] = true, ["str.countlines"] = true }
+        agent_keys = { ["agent.catalog"] = true, ["agent.ladder"] = true, ["agent.hooks"] = true, ["agent.dedupe"] = true, ["agent.gaps"] = true, ["agent.grammar"] = true }
+        for k, v in META_CATALOG
+            if exp_keys[k] then groups.exponential_combinators[k] = v
+            elseif str_keys[k] then groups.string_ops[k] = v
+            elseif agent_keys[k] then groups.agent_hooks[k] = v
+            else groups.type_introspection[k] = v end
+        end
+        return std.json.encode(groups)
+    end
+    std.json.encode(META_CATALOG)
+end)
+
+-- Tool: duo_meta_ladder — show scaling ladder
+std.mcp.register_tool("duo_meta_ladder", "Show the @comp.* scaling ladder O(types) → O(n!)", {
+    type = "object",
+    properties = {},
+}, fun(_args)
+    ladder = {
+        { name = "map/sweep", scaling = "O(types)", description = "Sweep over types matching a concept" },
+        { name = "derive", scaling = "O(types × fields)", description = "Apply derive macro to matching types" },
+        { name = "product", scaling = "O(n²)", description = "Cartesian product of type sets" },
+        { name = "tensor", scaling = "O(n³)", description = "3D type tensor sweep" },
+        { name = "nfold", scaling = "O(types^k)", description = "General n-fold type sweep" },
+        { name = "ceiling", scaling = "O(n×f)+O(n²×f)", description = "Derive sweep + cartesian derive product" },
+        { name = "omni/stack", scaling = "ceiling + sweep", description = "Ceiling + optional sweep" },
+        { name = "burst", scaling = "O(n²×f)", description = "Module: derive.all + quadratic emit" },
+        { name = "transcend", scaling = "O(n³×f)", description = "Module: burst + cubic emit" },
+        { name = "infinity", scaling = "O(n⁴×f)", description = "Module: transcend + quartic emit" },
+        { name = "hyper", scaling = "O(n⁵×f)", description = "Module: infinity + quintic emit" },
+        { name = "tower", scaling = "O(n^k×f), k≤16", description = "Generalized derive tower" },
+        { name = "power/powerset", scaling = "O(2^n)", description = "Power set sweep" },
+        { name = "choose", scaling = "O(n choose k)", description = "Fixed-size subset generation" },
+        { name = "permute", scaling = "O(n!)", description = "Permutation sweep" },
+        { name = "grammar", scaling = "O(b^d)", description = "Generative: EBNF grammar → code fragments" },
+        { name = "weave", scaling = "O(N×M)", description = "Generative: cross-module concept sweep" },
+        { name = "template", scaling = "O(instances)", description = "Generative: parametric template expansion" },
+        { name = "generate", scaling = "O(ops×types)", description = "Generative: constraint cartesian" },
+        { name = "scheme", scaling = "O(declarations)", description = "Generative: declarative scheme" },
+        { name = "each", scaling = "composition glue", description = "Split combinator output; chain stages" },
+    }
+    std.json.encode(ladder)
+end)
+
+-- Tool: duo_language_features — list language features
+std.mcp.register_tool("duo_language_features", "List all implemented Duo language features", {
+    type = "object",
+    properties = {},
+}, fun(_args)
+    std.json.encode({
+        syntax = {
+            ["fun"] = "Function declaration (replaces function)",
+            ["req"] = "Module import (replaces require)",
+            ["implicit_local"] = "Omit local keyword — bindings default to local scope",
+            ["omit_then"] = "Omit then — deprecated in .id",
+            ["string_literal_calls"] = "print 'hi' — call sugar without parens",
+            ["underscore_private"] = "_prefix names are file-private",
+        },
+        types = {
+            ["i64"] = "64-bit signed integer", ["f64"] = "64-bit float", ["str"] = "String",
+            ["bool"] = "Boolean", ["any"] = "Any type", ["void"] = "Void",
+            ["Tensor[dims, dtype]"] = "Compile-time shape-checked tensor",
+        },
+        metaprogramming = {
+            ["@(expr)"] = "Compile-time evaluation",
+            ["@comp.*"] = "Full metaprogramming framework",
+            ["@comp.catalog()"] = "Self-documenting: list all metaprogramming constructs",
+            ["@comp.ladder()"] = "Show scaling ladder of metaprogramming constructs",
+        },
+    })
+end)
+
+-- Tool: duo_coordination_buffer — read coordination buffer
+std.mcp.register_tool("duo_coordination_buffer", "Read the shared agent coordination buffer", {
+    type = "object",
+    properties = {},
+}, fun(_args)
+    std.json.encode(shared.document(shared.coordpath, "coordination-buffer", 0))
+end)
+
+-- Tool: duo_agent_gaps_buffer — read gaps ledger
+std.mcp.register_tool("duo_agent_gaps_buffer", "Read the cross-session agent gaps ledger", {
+    type = "object",
+    properties = {},
+}, fun(_args)
+    std.json.encode(shared.document(shared.coordpath, "gaps-buffer", 0))
+end)
+
+-- Tool: duo_agent_canonical_index — read canonical index
+std.mcp.register_tool("duo_agent_canonical_index", "Read canonical router for agent buffers", {
+    type = "object",
+    properties = {},
+}, fun(_args)
+    std.json.encode(shared.document(shared.canonpath, "canonical-index", 0))
+end)
+
+-- Tool: duo_grammar_spec_read — read grammar spec
+std.mcp.register_tool("duo_grammar_spec_read", "Read canonical surface-syntax rules", {
+    type = "object",
+    properties = {},
+}, fun(_args)
+    std.json.encode(shared.document(shared.root .. "/docs/GRAMMAR_SPEC.md", "grammar-spec", 0))
+end)
+
+-- Tool: duo_grammar_spec_update — append grammar rule change
+std.mcp.register_tool("duo_grammar_spec_update", "Append a grammar rule changelog entry", {
+    type = "object",
+    properties = {
+        rule_id = { type = "string", description = "e.g. GR-001" },
+        status = { type = "string", description = "preferred|accepted|deprecated|removed" },
+        detail = { type = "string", description = "Description of change" },
+    },
+    required = { "rule_id", "status", "detail" },
+}, fun(args)
+    gpath = "docs/GRAMMAR_SPEC.md"
+    if not std.fs.exists(gpath)
+        return std.json.encode({ kind = "grammar.update", ok = false, path = gpath, reason = "grammar spec missing; create docs/GRAMMAR_SPEC.md first" })
+    end
+    content = std.fs.read_file(gpath)
+    date = os.date("%Y-%m-%d")
+    entry = "| " .. date .. " | " .. args.rule_id .. " | " .. args.status .. ": " .. args.detail .. " |\n"
+    marker = "## Changelog\n\n| Date | Rule | Change |\n| --- | --- | --- |\n"
+    if string.find(content, marker)
+        content = string.gsub(content, marker, marker .. entry, 1)
+    else
+        content = content .. "\n## Changelog\n\n| Date | Rule | Change |\n| --- | --- | --- |\n" .. entry
+    end
+    std.fs.write_file(gpath, content)
+    std.json.encode({ kind = "grammar.update", ok = true, path = gpath, rule = args.rule_id, status = args.status })
+end)
+
+-- Tool: duo_directive_hierarchy_read — read directive hierarchy
+std.mcp.register_tool("duo_directive_hierarchy_read", "Read @comp.* dotted directive hierarchy", {
+    type = "object",
+    properties = {},
+}, fun(_args)
+    std.json.encode(shared.document(shared.root .. "/docs/DIRECTIVE_HIERARCHY.md", "directive-hierarchy", 0))
+end)
+
+-- Tool: duo_agent_smoke — run agent-smoke gate
+std.mcp.register_tool("duo_agent_smoke", "Run tier-0 agent-smoke gate under lock", {
+    type = "object",
+    properties = {
+        timeout = { type = "number", description = "Timeout in seconds" },
+    },
+}, fun(args)
+    result = shared.agent_smoke(args.timeout or 600)
+    std.json.encode(result)
+end)
+
+-- Tool: duo_audit_native_boxing — native boxing audit
+std.mcp.register_tool("duo_audit_native_boxing", "Dump C for a .id file and flag boxing patterns", {
+    type = "object",
+    properties = {
+        file_path = { type = "string", description = "Path to .id file" },
+    },
+    required = { "file_path" },
+}, fun(args)
+    result = shared.audit_native_boxing(args.file_path)
+    std.json.encode(result)
+end)
+
+-- Tool: duo_audit_metaprogramming_smokes — batch native audit
+std.mcp.register_tool("duo_audit_metaprogramming_smokes", "Batch native-boxing audit on generative showcases", {
+    type = "object",
+    properties = {},
+}, fun(_args)
+    paths = {
+        "examples/meta_template_showcase.id",
+        "examples/meta_generate_showcase.id",
+        "examples/meta_scheme_showcase.id",
+        "examples/meta_grammar_showcase.id",
+        "examples/meta_weave_showcase.id",
+        "examples/meta_power_permute_showcase.id",
+        "examples/meta_choose_showcase.id",
+    }
+    passed = 0
+    failed = 0
+    results = {}
+    for _, p in paths
+        r = shared.audit_native_boxing(p)
+        results[#results + 1] = r
+        if r.pass then passed = passed + 1 else failed = failed + 1 end
+    end
+    std.json.encode({ total = #paths, passed = passed, failed = failed, results = results })
+end)
+
+-- Tool: duo_session_log — structured session log entry
+std.mcp.register_tool("duo_session_log", "Append a structured session log entry to the coordination buffer", {
+    type = "object",
+    properties = {
+        agent_id = { type = "string", description = "Agent/session identifier" },
+        summary = { type = "string", description = "One-line summary" },
+        detail = { type = "string", description = "Optional longer description" },
+    },
+    required = { "agent_id", "summary" },
+}, fun(args)
+    std.json.encode(shared.session_log(args.agent_id, args.summary, args.detail or ""))
+end)
+
+-- Tool: duo_repo_tooling — run a Duo repo script
+std.mcp.register_tool("duo_repo_tooling", "Run a Duo repo-tooling script from scripts/", {
+    type = "object",
+    properties = {
+        script_name = { type = "string", description = "Script name (e.g. agent_dedup.id)" },
+        args = { type = "string", description = "Space-separated arguments" },
+    },
+    required = { "script_name" },
+}, fun(args)
+    result = shared.repo_tooling(args.script_name, args.args or "")
+    std.json.encode(result)
+end)
+
+-- Tool: duo_complexity — query complexity for any @comp.* path
+std.mcp.register_tool("duo_complexity", "Query complexity information for any @comp.* path (e.g., 'comp.map', 'comp.derive.product')", {
+    type = "object",
+    properties = {
+        path = { type = "string", description = "Path to query: comp.map, comp.derive.product, comp.burst, etc." },
+    },
+    required = { "path" },
+}, fun(args)
+    -- Static catalog with complexity info
+    catalog = META_CATALOG
+    
+    -- Normalize path
+    path = args.path
+    if string.find(path, "^comp.") or string.find(path, "^meta.") or string.find(path, "^compiler.")
+        -- Strip prefix
+        core = path
+        if string.find(path, "^comp.") then core = string.sub(path, 5)
+        elseif string.find(path, "^meta.") then core = string.sub(path, 5)
+        elseif string.find(path, "^compiler.") then core = string.sub(path, 10)
+        end
+        
+        -- Look up in catalog
+        entry = catalog[core] or catalog[path]
+        if entry
+            std.json.encode({
+                path = path,
+                core = core,
+                complexity = entry.scaling or "unknown",
+                kind = entry.kind or "unknown",
+                category = entry.category or "unknown",
+                internal = entry.internal or "",
+                suggestions = {
+                    next = string.sub(core, 1, 1) == "d" and { "@comp.product", "@comp.derive.product", "@comp.burst" }
+                        or string.sub(core, 1, 1) == "p" and { "@comp.tensor", "@comp.derive.product", "@comp.ceiling" }
+                        or string.sub(core, 1, 1) == "t" and { "@comp.nfold", "@comp.derive.tensor", "@comp.transcend" }
+                        or "@comp.ladder() for full scaling hierarchy"
+                }
+            })
+        end
+        return std.json.encode({ error = "Path not found in catalog: " .. path, suggestion = "Use duo_meta_catalog() to see all available paths" })
+    end
+    std.json.encode({ error = "Path must start with comp., meta., or compiler.: " .. path })
+end)
+
+-- Tool: duo_next_combinators — suggest next-level combinators
+std.mcp.register_tool("duo_next_combinators", "Suggest next-level combinators for a given @comp.* path", {
+    type = "object",
+    properties = {
+        path = { type = "string", description = "Current @comp.* path: comp.map, comp.product, etc." },
+    },
+    required = { "path" },
+}, fun(args)
+    path = args.path
+    
+    -- Normalize
+    core = path
+    if string.find(path, "^comp.") then core = string.sub(path, 5)
+    elseif string.find(path, "^meta.") then core = string.sub(path, 5)
+    elseif string.find(path, "^compiler.") then core = string.sub(path, 10)
+    end
+    
+    -- Next-level suggestions based on scaling ladder
+    suggestions_map = {
+        ["map"] = {
+            suggestions = { "@comp.product", "@comp.burst", "@comp.derive.all" },
+            explanation = "O(n) → O(n²) or O(n²xf): sweep over pairs of types",
+        },
+        ["derive"] = {
+            suggestions = { "@comp.derive.product", "@comp.product", "@comp.burst" },
+            explanation = "O(nxf) → O(n²xf): apply derive to type pairs",
+        },
+        ["derive.product"] = {
+            suggestions = { "@comp.tensor", "@comp.derive.tensor", "@comp.ceiling" },
+            explanation = "O(n²xf) → O(n³xf): product of derives with sweep",
+        },
+        ["product"] = {
+            suggestions = { "@comp.tensor", "@comp.nfold", "@comp.ceiling" },
+            explanation = "O(n²) → O(n³): extend to 3D type sweep",
+        },
+        ["tensor"] = {
+            suggestions = { "@comp.nfold", "@comp.derive.tensor", "@comp.transcend" },
+            explanation = "O(n³) → O(n^k) or O(n³xf): n-fold sweep or derive with emit",
+        },
+        ["nfold"] = {
+            suggestions = { "@comp.tower", "@comp.infinity", "@comp.hyper" },
+            explanation = "O(n^k) → O(n^(k+1)) or O(n^(k+1)f): tower or module emit",
+        },
+        ["burst"] = {
+            suggestions = { "@comp.transcend", "@comp.infinity", "@comp.hyper" },
+            explanation = "O(n²xf) → O(n³xf) or higher: module-level generative emit",
+        },
+        ["transcend"] = {
+            suggestions = { "@comp.infinity", "@comp.hyper", "@comp.tower" },
+            explanation = "O(n³xf) → O(n⁴xf) or O(n⁵xf): higher-order module emit",
+        },
+        ["power"] = {
+            suggestions = { "@comp.choose", "@comp.permute", "@comp.derive.power" },
+            explanation = "O(2ⁿ) → combinations or permutations",
+        },
+        ["grammar"] = {
+            suggestions = { "@comp.weave", "@comp.each" },
+            explanation = "O(b^d) → cross-module or composition",
+        },
+    }
+    
+    entry = suggestions_map[core] or suggestions_map["map"]
+    std.json.encode({
+        path = path,
+        next_level = entry.suggestions,
+        explanation = entry.explanation,
+        ladder = "map:O(n) → derive:O(nxf) → product:O(n²) → tensor:O(n³) → nfold:O(n^kf) → power:O(2ⁿ) → permute:O(n!)",
+    })
+end)
+
+-- Tool: duo_multiplier_opportunities — find metaprogramming opportunities in code
+std.mcp.register_tool("duo_multiplier_opportunities", "Analyze a .id file for places where metaprogramming exponentials could be applied", {
+    type = "object",
+    properties = {
+        file_path = { type = "string", description = "Path to .id file to analyze" },
+    },
+    required = { "file_path" },
+}, fun(args)
+    if not std.fs.exists(args.file_path)
+        std.json.encode({ error = "File not found: " .. args.file_path })
+    else
+        content = std.fs.read_file(args.file_path)
+        
+        opportunities = {}
+        
+        -- Check for multiple similar patterns
+        fun_count = 0
+        for _ in string.gmatch(content, "fun[^(]*%([^)]*%)[^{]*%{") do fun_count = fun_count + 1 end
+        if fun_count > 3
+            table.insert(opportunities, {
+                type = "multiple_similar_functions",
+                count = fun_count,
+                severity = "high",
+                suggestion = "Use @comp.derive.bundle or @comp.derive.all to generate boilerplate functions",
+                example = "@comp.derive.bundle(\"Numeric\")" .. " would generate add, sub, mul, etc. for all numeric types",
+            })
+        end
+        
+        -- Check for type pairs
+        type_pairs = 0
+        for _ in string.gmatch(content, "for[^;]*in[^;]*pairs?") do type_pairs = type_pairs + 1 end
+        if type_pairs > 1
+            table.insert(opportunities, {
+                type = "multiple_type_pairs",
+                count = type_pairs,
+                severity = "medium",
+                suggestion = "Use @comp.product for cartesian product of type sets",
+                example = "@comp.product({A, B}, {X, Y}, fun(a, b) ... end)",
+            })
+        end
+        
+        -- Check for repeated table structures
+        table_count = 0
+        for _ in string.gmatch(content, "{[^}]+=[^}]+}") do table_count = table_count + 1 end
+        if table_count > 3
+            table.insert(opportunities, {
+                type = "repeated_table_structures",
+                count = table_count,
+                severity = "medium",
+                suggestion = "Use @comp.generate or @comp.expand for table generation",
+            })
+        end
+        
+        -- Check for string concatenation in loops
+        if string.find(content, "for") and string.find(content, "..")
+            table.insert(opportunities, {
+                type = "loop_concat",
+                severity = "low",
+                suggestion = "Consider @comp.template for compile-time string generation",
+            })
+        end
+        
+    std.json.encode({
+        file = args.file_path,
+        opportunities = opportunities,
+        count = #opportunities,
+        ladder_link = "@comp.ladder() for full complexity reference",
+    })
+end)
+
+-- Tool: duo_agent_session_start — session bootstrap
+std.mcp.register_tool("duo_agent_session_start", "Session bootstrap: load coordination, gaps, canonical index", {
+    type = "object",
+    properties = {
+        agent_id = { type = "string", description = "Agent identifier" },
+    },
+}, fun(args)
+    coord = shared.coordination_read()
+    p0 = shared.open_p0_gaps()
+    canon = shared.canonical_index()
+    std.json.encode({
+        agent_id = args.agent_id or "agent",
+        coordination_path = shared.coordpath,
+        canonical_index_path = shared.canonpath,
+        open_p0_count = #p0,
+        next_steps = {
+            "duo_coordination_update(action='claim', ...) before shared edits",
+            "duo_complexity(path='comp.map') to query complexity",
+            "duo_next_combinators(path='comp.map') to get suggestions",
+            "duo_multiplier_opportunities(file_path='file.id') to find opportunities",
+            "cd " .. root .. " && " .. shared.idbin .. " run --backend=c scripts/agent_smoke.id (or the duo_agent_smoke tool, which takes the build lock)",
+        },
+        coordination_excerpt = string.sub(coord, 1, 4000),
+        canonical_excerpt = string.sub(canon, 1, 2000),
+    })
+end)
+
+-- Tool: duo_file_finding — append a gap/finding row to the cross-agent gap buffer
+std.mcp.register_tool("duo_file_finding", "Append a kind-tagged finding to the canonical cross-agent gap buffer (.agents/AGENT_COORDINATION.md).", {
+    type = "object",
+    properties = {
+        kind = { type = "string", description = "Category: expressiveness_gap | ergonomic_gap | perf_gap | native_lowering_gap | scripting_gap | backend_gap" },
+        title = { type = "string", description = "Short title" },
+        detail = { type = "string", description = "Full description" },
+        priority = { type = "string", description = "P0 | P1 | P2 (default P1)" },
+        files = { type = "string", description = "Affected files, comma-separated (optional)" },
+    },
+    required = { "kind", "title", "detail" },
+}, fun(args)
+    shared.file_finding(args.kind or "", args.title or "", args.detail or "", args.priority or "P1", args.files or "")
+end)
+
+-- Tool: duo_agent_gaps_update — canonical gap/finding update path
+std.mcp.register_tool("duo_agent_gaps_update", "Open or log updates for the canonical cross-agent gap buffer.", {
+    type = "object",
+    properties = {
+        action = { type = "string", description = "open|claim|delegate|close|note" },
+        agent_id = { type = "string" },
+        gap_id = { type = "string", description = "Existing gap id for non-open actions" },
+        kind = { type = "string", description = "perf|native|meta|script|agent|backend|expressiveness_gap|native_lowering_gap" },
+        title = { type = "string" },
+        detail = { type = "string" },
+        priority = { type = "string", description = "P0|P1|P2" },
+        files = { type = "string" },
+    },
+    required = { "action", "agent_id", "detail" },
+}, fun(args)
+    shared.agent_gaps_update(
+        args.action or "open",
+        args.agent_id or "agent",
+        args.gap_id or "",
+        args.kind or "agent",
+        args.title or "untitled gap",
+        args.detail or "",
+        args.priority or "P1",
+        args.files or ""
+    )
+end)
+
+-- Tool: duo_audit_codegen_pitfalls — static scan for the two most common Duo codegen pitfalls:
+-- F-13813-2 (bare call as last stmt of a block → premature return) and
+-- F-13813-3 (`= nil` init → void* type inference). Pure string.find/string.byte — no lua_Value.
+std.mcp.register_tool("duo_audit_codegen_pitfalls", "Static-scan a .id file for known Duo codegen pitfalls (call-as-tail premature return, nil-init void* inference).", {
+    type = "object",
+    properties = {
+        file_path = { type = "string", description = "Path to .id file" },
+    },
+    required = { "file_path" },
+}, fun(args)
+    result = shared.audit_codegen_pitfalls(args.file_path)
+    std.json.encode(result)
+end)
+
+-- Tool: duo_exponential_evaluate — analyze Duo code for metaprogramming opportunities
+-- This is the PRIMARY ONBOARDING tool for new agents to find exponential multipliers.
+-- Also returns a native-boxing audit of generated C when file_path is a real .id file.
+std.mcp.register_tool("duo_exponential_evaluate", "Analyze Duo source code for metaprogramming opportunities and suggest @comp.* combinators that create exponential gains with minimal code. When file_path is a real .id file it also returns a native-boxing audit of the generated C (lua_invoke/lua_Value/lua_table_* hits).", {
+    type = "object",
+    properties = {
+        code = { type = "string", description = "Duo source code to analyze" },
+        file_path = { type = "string", description = "Optional file path for context" },
+        detail = { type = "integer", description = "Result depth: 0=summary, 1=detailed, 2=explanations" },
+    },
+    required = { "code" },
+}, fun(args)
+    -- `exponential_evaluate` takes (code, file_path) only — duo_shared.id:583.
+    -- Lua silently drops the extra `detail` arg, but Duo lowers this to a direct
+    -- C call, where a third argument is a hard compile error. Dropping it here
+    -- preserves the behaviour the extra arg already had: none.
+    result = shared.exponential_evaluate(args.code, args.file_path)
+    std.json.encode(result)
+end)
+
+-- Tool: duo_onboard_exponential — guided onboarding for leveraging Duo's metaprogramming
+-- Helps new agents understand how to write code that creates exponential productivity gains
+std.mcp.register_tool("duo_onboard_exponential", "Step-by-step guide for writing exponential metaprogramming in Duo. Answers common questions about when to use @comp.* combinators.", {
+    type = "object",
+    properties = {
+        question = { type = "string", description = "Question about exponential metaprogramming" },
+        code = { type = "string", description = "Optional code snippet to analyze" },
+    },
+    required = {},
+}, fun(args)
+    result = shared.exponential_onboard(args.question or "", args.code or "")
+    std.json.encode(result)
+end)
+
+-- Tool: duo_combinator_info — get detailed information about a specific @comp.* combinator
+std.mcp.register_tool("duo_combinator_info", "Get detailed documentation and examples for a specific @comp.* combinator.", {
+    type = "object",
+    properties = {
+        path = { type = "string", description = "Path like 'map', 'derive.all', 'tensor', 'ladder' etc." },
+    },
+    required = { "path" },
+}, fun(args)
+    result = shared.combinator_info(args.path)
+    std.json.encode(result)
+end)
+
+-- Tool: duo_semantic_snapshot — SIM v0 export for a native Duo module (Pass 5 P5-08)
+std.mcp.register_tool("duo_semantic_snapshot", "Export SIM v0 semantic snapshot JSON for a .id file (Pass 5 Layer A)", {
+    type = "object",
+    properties = {
+        file_path = { type = "string", description = "Path to .id file" },
+    },
+    required = { "file_path" },
+}, fun(args)
+    std.json.encode(shared.semantic_snapshot(args.file_path))
+end)
+
+-- Tool: duo_foreign_import_preview — C header → SIM preview (Pass 5 P5-08)
+std.mcp.register_tool("duo_foreign_import_preview", "Preview C header import as SIM v0 entities with abi.specialize applied", {
+    type = "object",
+    properties = {
+        header_path = { type = "string", description = "Path to C header (.h)" },
+        source_dir = { type = "string", description = "Optional directory for resolving relative includes (defaults to header dirname)" },
+    },
+    required = { "header_path" },
+}, fun(args)
+    src_dir = args.source_dir or ""
+    if src_dir == "" then
+        dir = string.match(args.header_path, "^(.*)/[^/]+$")
+        if dir then src_dir = dir end
+    end
+    std.json.encode(shared.foreign_import_preview(args.header_path, src_dir))
+end)
+
+-- Tool: duo_pass6_catalog — Pass 6 reconciliation catalog (duplications, risks, DAG)
+std.mcp.register_tool("duo_pass6_catalog", "Read Pass 6 architectural reconciliation catalog (duplication matrix, risks, scorecard, dependency DAG)", {
+    type = "object",
+    properties = {},
+}, fun(_args)
+    std.json.encode(shared.pass6_catalog())
+end)
+
+-- Tool: duo_pass5_catalog — Pass 5 workstream/milestone status from duo catalog
+std.mcp.register_tool("duo_pass5_catalog", "Read Pass 5 semantic interchange catalog (workstreams + P5-M1 milestone)", {
+    type = "object",
+    properties = {},
+}, fun(_args)
+    std.json.encode(shared.pass5_catalog())
+end)
+
+-- Tool: duo_foreign_entity_lookup — resolve a symbol via @c.import headers in a .id file
+std.mcp.register_tool("duo_foreign_entity_lookup", "Look up a foreign type/function from @c.import headers in a Duo source file", {
+    type = "object",
+    properties = {
+        file_path = { type = "string", description = "Path to .id file containing @c.import" },
+        symbol = { type = "string", description = "Foreign symbol name (e.g. CPoint, distance2)" },
+    },
+    required = { "file_path", "symbol" },
+}, fun(args)
+    std.json.encode(shared.foreign_entity_lookup(args.file_path, args.symbol))
+end)
+
+-- Start serving
+std.mcp.serve()

@@ -1,4 +1,4 @@
-# Idsem grammar-role projection
+# Idol grammar-role projection
 
 The sole semantic law is [`docs/spec/constitution.md`](constitution.md). This
 page describes the role projection required by the production frontend; it is

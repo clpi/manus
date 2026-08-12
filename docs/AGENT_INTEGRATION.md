@@ -7,7 +7,7 @@ language law. Current agents begin at [AGENTS.md](../AGENTS.md), then follow the
 is [C0](spec/constitution.md).
 
 The language is Idsem. Canonical source uses `.id`. Every tracked project-owned
-`.duo` file is SOURCE-ZERO migration debt that must be semantically migrated or
+`.id` file is SOURCE-ZERO migration debt that must be semantically migrated or
 deleted; historical names remain only when their exact provenance is the topic.
 
 At session start, call `duo_agent_session_start`, inspect the dirty tree,

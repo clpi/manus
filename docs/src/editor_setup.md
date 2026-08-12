@@ -1,8 +1,8 @@
 # Editor and language-tooling status
 
-Idsem is the current language. Canonical native source uses `.id`; every tracked
-project-owned `.duo` file is SOURCE-ZERO debt that must be semantically migrated
-or deleted. Idsem is not a Lua superset, and a Lua grammar is not a safe fallback
+Idol is the current language. Canonical native source uses `.id`; every tracked
+project-owned `.id` file is SOURCE-ZERO debt that must be semantically migrated
+or deleted. Idol is not a Lua superset, and a Lua grammar is not a safe fallback
 authority for canonical source.
 
 The sole semantic law is
@@ -17,7 +17,7 @@ not use compatibility fixtures or historical syntax definitions as templates
 for new `.id`.
 
 The production frontend has not yet closed generated grammar roles and executed
-Idsem parser recognition. Read [`docs/bootstrap.md`](../bootstrap.md) for the
+Idol parser recognition. Read [`docs/bootstrap.md`](../bootstrap.md) for the
 exact current frontier before claiming formatter, highlighter, parser, or LSP
 coverage. A file association or successful highlighting pass is not evidence of
 semantic ownership.

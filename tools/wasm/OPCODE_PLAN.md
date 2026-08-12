@@ -7,7 +7,7 @@ prints a *signed* i32; compare against the engine with `+ 2**32` when negative.
 
 ## 0. First: verify what is already written (blocks everything else)
 
-`block`/`if` branch targets depend on the forward end-scanner in `src/engine.duo`. The
+`block`/`if` branch targets depend on the forward end-scanner in `src/engine.id`. The
 rewrite there is uncompiled. Until it is verified, **any** block containing an
 immediate-carrying opcode may branch to the wrong place, which will look like a wrong
 result in unrelated features.

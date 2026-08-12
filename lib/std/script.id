@@ -1,0 +1,445 @@
+-- std.script — Duo-first scripting ergonomics (prefer over bash/python for repo tooling)
+echo(msg: str): void
+    print(msg)
+end
+
+run(cmd: str): i64
+    rc = std.os.execute(cmd)
+    if rc == nil return -1 end
+    if rc == true return 0 end
+    if rc:to(str) == "0" return 0 end
+    1
+end
+
+-- The EXACT exit status, which `run` cannot give. std.os.execute collapses
+-- every failure to 1 -- `std.os.execute("exit 7")` returns 1, not 7 -- so any
+-- differential built on `run` calls a 7-vs-3 divergence "agreement". The status
+-- is read back through the shell instead, which is exact and needs no runtime
+-- change.
+--
+-- The subshell parentheses are load-bearing: without them `exit 7` terminates
+-- the popen'd shell before `echo $?` ever runs, and capture returns "" -> 0.
+-- That reads as "everything succeeded", the worst possible failure mode here.
+status(cmd: str): i64
+    to(i64)(capture("( " .. cmd .. " ) >/dev/null 2>&1; echo $?"))
+end
+
+ok(cmd: str): bool
+    run(cmd) == 0
+end
+
+must(cmd: str): void
+    if not ok(cmd)
+        echo("FAIL: " .. cmd)
+        std.os.exit(1)
+    end
+end
+
+-- The wrapper is Duo (RL-13); scripts/duo_lock.sh is deleted. `duo run x.id --
+-- cmd` consumes the first `--` itself, so the wrapper never sees a separator
+-- and none is passed here.
+lock_cmd(cmd: str): str
+    duo_bin() .. " run scripts/duo_lock.id -- " .. cmd
+end
+
+lock_cmd_timeout(cmd: str, timeout: i64): str
+    duo_bin() .. " run scripts/duo_lock.id -- --timeout " .. timeout:to(str) .. " -- " .. cmd
+end
+
+locked_run(cmd: str): i64
+    if getenv_or("DUO_LOCK_HELD") == "1"
+        return run(cmd)
+    end
+    run(lock_cmd(cmd))
+end
+
+locked_ok(cmd: str): bool
+    return locked_run(cmd) == 0
+end
+
+locked_must(cmd: str): void
+    must(lock_cmd(cmd))
+end
+
+locked_must_timeout(cmd: str, timeout: i64): void
+    must(lock_cmd_timeout(cmd, timeout))
+end
+
+-- Native build mutex (mkdir + stale-PID reclaim). Used by scripts/duo_lock.id.
+build_lock_dir(): str
+    getenv("DUO_BUILD_LOCK", "/tmp/duo-build.lock")
+end
+
+build_lock_owner(): str
+    build_lock_dir() .. "/owner"
+end
+
+build_lock_try_acquire(): bool
+    ld = build_lock_dir()
+    return @c.emit("mkdir(ld, 0777) == 0")
+end
+
+build_lock_write_owner(): void
+    of = build_lock_owner()
+    @c.emit([[({ FILE* f = fopen(of, "w"); if (f) { fprintf(f, "%d %ld\n", (int)getpid(), (long)time(NULL)); fclose(f); } })]])
+end
+
+build_lock_stale(): bool
+    of = build_lock_owner()
+    pid_line = capture("cut -d' ' -f1 '" .. of .. "' 2>/dev/null | head -1")
+    if pid_line == "" return true end
+    return run("kill -0 " .. string.gsub(pid_line, "%s+", "") .. " 2>/dev/null") != 0
+end
+
+build_lock_release(): void
+    ld = build_lock_dir()
+    of = build_lock_owner()
+    std.os.remove(of)
+    @c.emit("rmdir(ld)")
+end
+
+build_lock_acquire(timeout: i64): bool
+    if getenv_or("DUO_LOCK_HELD") == "1"
+        return true
+    end
+    waited = 0
+    while waited < timeout
+        if build_lock_try_acquire()
+            build_lock_write_owner()
+            return true
+        end
+        stale_now = build_lock_stale()
+        ld = build_lock_dir()
+        of = build_lock_owner()
+        cmd = "sleep 2"
+        if stale_now
+            cmd = "rm -f '" .. of .. "' 2>/dev/null; rmdir '" .. ld .. "' 2>/dev/null"
+        end
+        run(cmd)
+        if not stale_now
+            waited = waited + 2
+        end
+    end
+    false
+end
+
+capture(cmd: str): str
+    f = std.io.popen(cmd, "r")
+    if f == nil return "" end
+    out = ""
+    line = f:read()
+    while line != nil
+        out = out .. line .. "\n"
+        line = f:read()
+    end
+    f:close()
+    out
+end
+
+duo_bin(): str
+    "./zig-out/bin/duo"
+end
+
+duo_run(path: str, bin: str): void
+    echo("agent-smoke: duo run " .. path)
+    must(bin .. " run " .. path)
+end
+
+duo_run_all(paths: any, bin: str): void
+    for _, path in paths
+        duo_run(path, bin)
+    end
+end
+
+zig_build(): void
+    -- When invoked via the build target the duo binary is already fresh; a second
+    -- `zig build` here would just race other agents on .zig-cache. Skip it then.
+    if std.os.getenv("DUO_ALREADY_BUILT") == "1"
+        echo("agent-smoke: zig build skipped (DUO_ALREADY_BUILT)")
+        return
+    end
+    must("zig build")
+end
+
+zig_test_file(path: str): void
+    must("zig test " .. path)
+end
+
+-- === Environment ===
+
+-- The fallback fires on EMPTY as well as nil. std.os.getenv returns a string
+-- for an unset variable, never nil, so the `== nil` test alone never fired and
+-- this function returned "" for every unset name -- silently handing callers an
+-- empty path. `std.script.getenv("DUO_ROOT", ".")` yielded "", so a gate
+-- globbing "<root>/lib" searched "/lib" and reported an empty corpus rather
+-- than an error.
+--
+-- An env var deliberately set to "" is therefore indistinguishable from unset
+-- here. That is the right trade for this signature: a caller passing a fallback
+-- wants a usable value, and std.os.getenv gives us no way to tell the two apart.
+getenv(name: str, fallback: str): str
+    v = std.os.getenv(name)
+    if v == nil return fallback end
+    if v == "" return fallback end
+    v
+end
+
+getenv_or(name: str): str
+    v = std.os.getenv(name)
+    if v == nil return "" end
+    v
+end
+
+-- This SHELLED OUT (`must("export NAME='v'")`) and was therefore a silent
+-- no-op: `export` runs in the child std.os.execute spawns, and a child cannot
+-- mutate its parent's environment. `must` only checks export's exit status,
+-- which is always 0 -- so every caller got a success it never received.
+--
+-- What it broke, measured: scripts/duo_lock.id publishes DUO_LOCK_HELD=1 so a
+-- nested locked_run inside the wrapped command takes the early-return in
+-- build_lock_acquire instead of re-acquiring a lock this process already holds.
+-- With the no-op that variable never reached the child, so any nesting would
+-- block until the 1800s timeout. Nothing in-tree nests today (agent_smoke does
+-- not), which is exactly why this survived: a latent self-deadlock behind a
+-- setter that reported success.
+--
+-- std.os.setenv is the real call and already existed.
+env_set(name: str, value: str): void
+    std.os.setenv(name, value, true)
+end
+
+-- === Path manipulation (makes Duo ergonomic vs Python os.path) ===
+
+path_join(a: str, b: str): str
+    if a == "" return b end
+    if b == "" return a end
+    sep = "/"
+    if a:sub(-1) == sep
+        return a .. b
+    end
+    a .. sep .. b
+end
+
+path_basename(p: str): str
+    -- Find last /
+    pos = 0
+    for i = #p, 1, -1
+        if p:sub(i, i) == "/"
+            pos = i
+            break
+        end
+    end
+    if pos == 0 return p end
+    p:sub(pos + 1)
+end
+
+path_dirname(p: str): str
+    pos = 0
+    for i = #p, 1, -1
+        if p:sub(i, i) == "/"
+            pos = i
+            break
+        end
+    end
+    if pos == 0 return "." end
+    if pos == 1 return "/" end
+    p:sub(1, pos - 1)
+end
+
+path_ext(p: str): str
+    base = path_basename(p)
+    pos = 0
+    for i = #base, 1, -1
+        if base:sub(i, i) == "."
+            pos = i
+            break
+        end
+    end
+    if pos == 0 return "" end
+    base:sub(pos)
+end
+
+path_stem(p: str): str
+    base = path_basename(p)
+    ext = path_ext(base)
+    if ext == "" return base end
+    base:sub(1, #base - #ext)
+end
+
+-- === File system ===
+
+fs_exists(p: str): bool
+    return @c.emit([[({ struct stat _st; stat(p, &_st) == 0; })]])
+end
+
+fs_is_file(p: str): bool
+    return @c.emit([[({ struct stat _st; stat(p, &_st) == 0 && S_ISREG(_st.st_mode); })]])
+end
+
+fs_is_dir(p: str): bool
+    return @c.emit([[({ struct stat _st; stat(p, &_st) == 0 && S_ISDIR(_st.st_mode); })]])
+end
+
+fs_read(p: str): str
+    return std.os.read_file(p)
+end
+
+fs_write(p: str, content: str): void
+    if not std.os.write_file(p, content)
+        echo("FAIL: cannot write " .. p)
+        std.os.exit(1)
+    end
+end
+
+fs_mkdir(p: str): void
+    std.os.mkdirall(p)
+end
+
+fs_glob(pattern: str): any
+    out = {}
+    f = std.io.popen("ls -1 " .. pattern .. " 2>/dev/null", "r")
+    if f == nil return out end
+    line = f:read()
+    while line != nil
+        table.insert(out, line)
+        line = f:read()
+    end
+    f:close()
+    return out
+end
+
+fs_cp(src: str, dst: str): void
+    must("cp -R '" .. src .. "' '" .. dst .. "'")
+end
+
+fs_mv(src: str, dst: str): void
+    must("mv '" .. src .. "' '" .. dst .. "'")
+end
+
+fs_rm(path: str): void
+    must("rm -rf '" .. path .. "'")
+end
+
+-- Strip trailing newlines. `capture` terminates every line it reads, so a
+-- single-line command's output is a value with a "\n" welded on -- fine to
+-- print, silently wrong the moment it is used as a PATH.
+chomp(s: str): str
+    n = #s
+    while n > 0 and s:byte(n) == 10
+        n = n - 1
+    end
+    s:sub(1, n)
+end
+
+-- Both of these returned the temp path WITH capture's trailing newline, so
+-- `fs_tmpdir() .. "/x"` built "/var/.../tmp.ABC\n/x". Embedded in a shell
+-- command that newline ends the line, and the remainder runs as its own
+-- command -- giving exit 127 ("command not found") rather than any error
+-- naming the real problem. A differential harness reading that 127 in every
+-- column concluded the columns AGREED.
+fs_tmp(): str
+    chomp(capture("mktemp 2>/dev/null"))
+end
+
+fs_tmpdir(): str
+    chomp(capture("mktemp -d 2>/dev/null"))
+end
+
+-- === Process piping (makes Duo ergonomic vs bash pipes) ===
+
+pipe(cmd1: str, cmd2: str): str
+    capture(cmd1 .. " | " .. cmd2)
+end
+
+pipe_ok(cmd1: str, cmd2: str): bool
+    ok(cmd1 .. " | " .. cmd2)
+end
+
+-- === CLI args (makes Duo ergonomic vs Python argparse for simple cases) ===
+
+args(): any
+    return std.os.args()
+end
+
+arg(n: i64, fallback: str): str
+    a = args()
+    if a == nil or n < 1 or n > #a return fallback end
+    return a[n]
+end
+
+-- === Quick JSON read (makes Duo ergonomic vs python -c 'import json') ===
+
+json_read_file(p: str): any
+    std.json.decode(fs_read(p))
+end
+
+exec(cmd: str): any
+    f = std.io.popen(cmd .. " 2>&1", "r")
+    if f == nil return { output = "", code = -1 } end
+    out = f:read("*a")
+    close_ok, mode, code = f:close()
+    return { output = out, code = code or 0 }
+end
+
+M = {
+    echo = echo,
+    run = run,
+    exec = exec,
+    ok = ok,
+    must = must,
+    lock_cmd = lock_cmd,
+    lock_cmd_timeout = lock_cmd_timeout,
+    locked_run = locked_run,
+    locked_ok = locked_ok,
+    locked_must = locked_must,
+    locked_must_timeout = locked_must_timeout,
+    build_lock_dir = build_lock_dir,
+    build_lock_acquire = build_lock_acquire,
+    build_lock_release = build_lock_release,
+    build_lock_stale = build_lock_stale,
+    capture = capture,
+    duo_bin = duo_bin,
+    duo_run = duo_run,
+    duo_run_all = duo_run_all,
+    zig_build = zig_build,
+    zig_test_file = zig_test_file,
+    getenv = getenv,
+    getenv_or = getenv_or,
+    env_set = env_set,
+    path_join = path_join,
+    path_basename = path_basename,
+    path_dirname = path_dirname,
+    path_ext = path_ext,
+    path_stem = path_stem,
+    fs_exists = fs_exists,
+    fs_is_file = fs_is_file,
+    fs_is_dir = fs_is_dir,
+    fs_read = fs_read,
+    fs_write = fs_write,
+    fs_mkdir = fs_mkdir,
+    fs_glob = fs_glob,
+    fs_cp = fs_cp,
+    fs_mv = fs_mv,
+    fs_rm = fs_rm,
+    fs_tmp = fs_tmp,
+    fs_tmpdir = fs_tmpdir,
+    -- Ergonomic aliases
+    exists = fs_exists,
+    is_file = fs_is_file,
+    is_dir = fs_is_dir,
+    read = fs_read,
+    write = fs_write,
+    cat = fs_read,
+    mkdir = fs_mkdir,
+    glob = fs_glob,
+    cp = fs_cp,
+    mv = fs_mv,
+    rm = fs_rm,
+    tmp = fs_tmp,
+    tmpdir = fs_tmpdir,
+    pipe = pipe,
+    pipe_ok = pipe_ok,
+    args = args,
+    arg = arg,
+    json_read_file = json_read_file,
+}

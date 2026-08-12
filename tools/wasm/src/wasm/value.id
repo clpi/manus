@@ -1,0 +1,71 @@
+-- the engine/src/wasm/value.id — WASM value representation
+-- All values stored as i64. Reinterpret casts for float types.
+-- No boxing, no tags at runtime — type known statically from WASM validation.
+
+VAL_I32 = 0x7F
+VAL_I64 = 0x7E
+VAL_F32 = 0x7D
+VAL_F64 = 0x7C
+
+--- @inline
+fun wrap_i32(val: i64): i64
+    return __emit("(int64_t)(int32_t)val")
+end
+
+--- @inline
+fun wrap_i64(val: i64): i64
+    return val
+end
+
+--- @inline
+fun f32_to_bits(val: f64): i64
+    return __emit("({ float f = (float)val; int32_t i; memcpy(&i, &f, 4); (int64_t)i; })")
+end
+
+--- @inline
+fun bits_to_f32(val: i64): f64
+    return __emit("({ int32_t i = (int32_t)val; float f; memcpy(&f, &i, 4); (double)f; })")
+end
+
+--- @inline
+fun f64_to_bits(val: f64): i64
+    return __emit("({ double d = val; int64_t i; memcpy(&i, &d, 8); i; })")
+end
+
+--- @inline
+fun bits_to_f64(val: i64): f64
+    return __emit("({ int64_t i = val; double d; memcpy(&d, &i, 8); d; })")
+end
+
+--- @inline
+fun i32_to_f32(val: i64): f64
+    return __emit("(double)((float)(int32_t)val)")
+end
+
+--- @inline
+fun i64_to_f64(val: i64): f64
+    return __emit("(double)val")
+end
+
+--- @inline
+fun f32_to_i32(val: f64): i64
+    return __emit("(int64_t)(int32_t)(float)val")
+end
+
+--- @inline
+fun f64_to_i64(val: f64): i64
+    return __emit("(int64_t)val")
+end
+
+M = {}
+M.wrap_i32 = wrap_i32
+M.wrap_i64 = wrap_i64
+M.f32_to_bits = f32_to_bits
+M.bits_to_f32 = bits_to_f32
+M.f64_to_bits = f64_to_bits
+M.bits_to_f64 = bits_to_f64
+M.i32_to_f32 = i32_to_f32
+M.i64_to_f64 = i64_to_f64
+M.f32_to_i32 = f32_to_i32
+M.f64_to_i64 = f64_to_i64
+M

@@ -1,7 +1,0 @@
--- Pass 8 removal demo: the SAME module tree with Point gone. Realizing this
--- after realization_smoke.duo is what marks the cached `duo:record:Point`
--- entry stale and emits an entity_removed invalidation edge.
-
-main(): i64
-    0
-end

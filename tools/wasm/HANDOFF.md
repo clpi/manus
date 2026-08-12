@@ -175,7 +175,7 @@ for every buffer.
 
 ## 2026-08-08 — the JIT can leave its own code buffer
 
-The named architectural blocker is closed, and it was **in `lib/std/jit.duo`,
+The named architectural blocker is closed, and it was **in `lib/std/jit.id`,
 not in the engine**. `alloc`/`w32`/`seal`/`call*` let Duo emit code and ENTER it;
 nothing let emitted code LEAVE it. So a body reaching an imported function took
 the whole module to the interpreter — which is every wasi-libc `_start`, because
@@ -267,7 +267,7 @@ inlined body.
 
 ## 2026-08-08 (late) — the engine has a test suite, and it found eight real bugs
 
-`test/conform.duo` is the suite. `zig build wasm-test` is the step. It runs
+`test/conform.id` is the suite. `zig build wasm-test` is the step. It runs
 **every `.wasm` fixture under both engines and both entry shapes**, differences
 the answer against wasmtime BY VALUE, and refuses to print a score until five
 controls pass in the same process (exit 3, distinct from exit 1, so a broken
@@ -280,7 +280,7 @@ harness can never be read as a failing runtime):
 4. a PERTURBED module (byte 4 of the magic overwritten) is refused by both;
 5. a MISSING module is refused rather than defaulted.
 
-Control 4 was **red when it was written**: every walker in `engine.duo` starts at
+Control 4 was **red when it was written**: every walker in `engine.id` starts at
 byte 9, so the engine ran a file whose magic had been destroyed and printed the
 unperturbed answer. `main` now validates the 8-byte header. A control that
 cannot fail is not evidence, so the header check and the control landed
@@ -330,7 +330,7 @@ The trace produced a chain of four refusals, three of which are now fixed:
 **#4 is what is missing, stated exactly.** `hot_big`'s `_start` reaches
 `fd_write` and `proc_exit` through `__original_main` and `__wasi_proc_exit`, so
 compiling that body means compiling a call to an imported host function. Nothing
-in `lib/std/jit.duo` can express one: its surface is
+in `lib/std/jit.id` can express one: its surface is
 `alloc / w32 / r32 / w8 / seal / call0..call2 / release / arch`, and **none of
 those yields the ADDRESS of a host function**, so emitted code has no way to
 call back into the engine. The two ways out are both larger than a fix:
@@ -353,7 +353,7 @@ label buffer across frames.
 
 ## 2026-08-08 (late) — six runtimes, 61 rows, and where the engine is not first
 
-`duo run bench/six.duo`, N=3 interleaved, min of 3, machine otherwise idle.
+`duo run bench/six.id`, N=3 interleaved, min of 3, machine otherwise idle.
 Nothing is timed until it has been differenced against wasmtime, so a cell that
 disagrees or cannot be reached is `WRONG` / `err` / `n/a` and never a number.
 
@@ -400,15 +400,15 @@ counts they quote (`8/18`, `11/18`) are superseded by the table here.
 
 ## State, re-measured 2026-08-08
 
-Measured at `981b1f0`. `src/engine.duo` — 4976 lines, 4004 of them code; pure Duo,
+Measured at `981b1f0`. `src/engine.id` — 4976 lines, 4004 of them code; pure Duo,
 zero `@c.emit` — builds clean in **~35 s** (the 2026-08-06 handoff's
 "1177 lines / ~1.0 s" is four times out of date):
 
 ```
-duo compile src/engine.duo --backend=c --emit exe -o /tmp/duowasm
+duo compile src/engine.id --backend=c --emit exe -o /tmp/duowasm
 ```
 
-**Conformance, `duo run bench/verify.duo` against wasmtime, 44 modules:**
+**Conformance, `duo run bench/verify.id` against wasmtime, 44 modules:**
 
 | engine | PASS | OK(void) | UNSUPPORTED/DIFF | jit-compiled |
 | --- | ---: | ---: | ---: | ---: |
@@ -424,11 +424,11 @@ in bench/ that has a wasmtime reference now matches it**, on both engines.
 pass, so 24 kernels with seeded-random constants, loop bounds and instruction
 mixes were generated fresh and differenced against wasmtime: **24/24 agree**
 (12 i32, 6 f64, 6 i64+memory+call). Separately, every benchmark answer value was
-grepped for in `src/engine.duo`: the only two hits (`4037913`, `70000`) are in
-comments describing past bugs. `bench/wart.duo` regenerates the arbitrary-kernel
+grepped for in `src/engine.id`: the only two hits (`4037913`, `70000`) are in
+comments describing past bugs. `bench/wart.id` regenerates the arbitrary-kernel
 check on demand.
 
-**Speed.** Interleaved, min-of-N wall clock. `bench/wart.duo` produces this
+**Speed.** Interleaved, min-of-N wall clock. `bench/wart.id` produces this
 table; do not quote a number that did not come out of a harness.
 
 | workload | the engine JIT | wart | wasmtime | the engine/wart |
@@ -439,13 +439,13 @@ table; do not quote a number that did not come out of a harness.
 | `benchmarks/wasm_rt/hot_big.wasm` | 3400 ms (**interp**) | — | 119 ms | — |
 
 So: **the engine is ~1-3% slower than wart, not faster.** Pass 101 §4 asks for
-measurably faster; that criterion is UNMET and `bench/wart.duo` exits non-zero
+measurably faster; that criterion is UNMET and `bench/wart.id` exits non-zero
 saying so. the engine is at parity with wasmtime on `hash.wasm`, 19% behind it on the
 same kernel written by hand, and **28x** behind it on `hot_big.wasm`, where the
 JIT does not engage at all and the engine falls back to the interpreter.
 
 **Derived-lines ratio (Pass 101 §4, target >= 80%): `9%`** — was `0%` before
-2026-08-08. Measured by `duo run bench/derived.duo`, which positive-controls
+2026-08-08. Measured by `duo run bench/derived.id`, which positive-controls
 its own marker detection before reporting, because a scanner that reports 0 is
 usually broken.
 
@@ -457,7 +457,7 @@ usually broken.
 | hand-encoded opcode predicates | 241 | **3** |
 
 The 3 are known false positives on a `f64op` width flag and are deliberately
-left in as the scanner's floor: `bench/derived.duo` now FAILS if that count
+left in as the scanner's floor: `bench/derived.id` now FAILS if that count
 reads below 3, because a detector tuned until it says 0 cannot be told apart
 from a broken one.
 
@@ -470,21 +470,21 @@ table, and nothing here pretends otherwise.
 
 Every parser / hang / `#s` / boxing blocker from earlier handoffs is **resolved**.
 
-## `src/wasm/*.duo` is DEAD CODE — 1406 lines of it
+## `src/wasm/*.id` is DEAD CODE — 1406 lines of it
 
-`src/engine.duo` is self-contained: its only `req` is `std.jit`. Nothing in the
+`src/engine.id` is self-contained: its only `req` is `std.jit`. Nothing in the
 repo requires anything under `src/wasm/`, and the modules that used to
-(`src/main.duo`, `src/cli.duo`, `src/wasm/runtime.duo`, `src/wasm/init.duo`)
-were deleted. `test/main.duo` still requires `src.wasm`, `src.edge` and
+(`src/main.id`, `src/cli.id`, `src/wasm/runtime.id`, `src/wasm/init.id`)
+were deleted. `test/main.id` still requires `src.wasm`, `src.edge` and
 `src.lib`, none of which exist, and it fails to parse besides — **the engine has no
-running test suite**; `bench/verify.duo` is doing that job.
+running test suite**; `bench/verify.id` is doing that job.
 
-This matters most for `src/wasm/jit_arm64.duo` (701 lines). It is the
+This matters most for `src/wasm/jit_arm64.id` (701 lines). It is the
 **virtual-stack register-allocating JIT** landed in `55668dc` and written up in
 `docs/performance.md` — `vs_pop` / `vs_alloc_not` / `flush_tos`, pinned locals
 in x23..x28. It is a genuinely more advanced code generator than the one that
 ships, and it is unreachable: its host modules are gone. The shipping JIT is
-`jit_compile` inside `src/engine.duo` (lines 2712-4418, 1366 code lines), which
+`jit_compile` inside `src/engine.id` (lines 2712-4418, 1366 code lines), which
 tracks two register aliases and has no liveness model.
 
 **Do not treat `docs/performance.md`'s the engine numbers as this the engine's numbers.**
@@ -510,7 +510,7 @@ anything. So wart's ANSWER is observable for **2 of 44** fixtures, and any
 the engine-vs-wart row built on the other 42 is timing two runtimes with no evidence
 either computed the right thing.
 
-`bench/wart.duo` is the repair: generate the kernel, ask wasmtime for the value,
+`bench/wart.id` is the repair: generate the kernel, ask wasmtime for the value,
 then emit a second module whose `_start` traps unless the value matches. wart's
 exit status becomes a value check and the engine's `-1` bail becomes one too. It
 runs a deliberately-wrong assert first and refuses to report if either runtime
@@ -595,7 +595,7 @@ Fixed both; `wart_i64_bench` is now exact (3388630585). 9/18 -> 10/18.
 write *before* decrementing, which is correct. Script:
 
 ```
-grep -n 'mem.write_i64(st, (sp - 1)' src/engine.duo   # then check each for a
+grep -n 'mem.write_i64(st, (sp - 1)' src/engine.id   # then check each for a
                                                     # preceding `sp -= 1`
 ```
 
@@ -684,7 +684,7 @@ find than an honest bail. Audit any new range arm for this.
 **"the engine produced a result" is NOT coverage.** An earlier version of this harness
 counted any non-sentinel result as a pass and reported **8/18**. A differential
 check against wasmtime showed 2 of those were plain wrong and 1 was an f64 the
-reporting path truncates. `bench/verify.duo` is now the oracle; `bench/run.duo` is
+reporting path truncates. `bench/verify.id` is now the oracle; `bench/run.id` is
 for timing only. Real score: **4 PASS, 3 DIFF, 9 UNSUPPORTED, 2 SKIP**.
 
 | module | wasmtime | the engine | |
@@ -792,9 +792,9 @@ Opcode coverage, counted:
 
 | layer | ops | re-counted 2026-08-08 |
 | --- | --- | --- |
-| `src/engine.duo` — the binary that actually works | **20** | **184 opcodes, all projected**; 3 hard-coded predicates left, all false positives |
-| `tools/wasm/tools/opcodes.duo` — the engine's descriptor, new | — | 184 rows; answerable to duo's canonical 63 |
-| `src/wasm/op.duo` — separate 8398-line tree, not what builds | 151 | 162 lines, dead code |
+| `src/engine.id` — the binary that actually works | **20** | **184 opcodes, all projected**; 3 hard-coded predicates left, all false positives |
+| `tools/wasm/tools/opcodes.id` — the engine's descriptor, new | — | 184 rows; answerable to duo's canonical 63 |
+| `src/wasm/op.id` — separate 8398-line tree, not what builds | 151 | 162 lines, dead code |
 | duo canonical descriptors (`duo wasm-tables emit`) | **63** | 63, unchanged |
 | full spec (MVP + SIMD + bulk/ref + WASI/WASIX) | ~450+ | unchanged |
 
@@ -808,7 +808,7 @@ dispatch predicates. All 184 are now projected — see below.
 ### The projection landed, 2026-08-08
 
 **`duo wasm-tables emit` is idempotent now.** It used to re-write
-`lib/std/wasm/opcode_lookup.duo` with `then`-keyword `if` bodies that Pass 100
+`lib/std/wasm/opcode_lookup.id` with `then`-keyword `if` bodies that Pass 100
 §1 forbids, so the file could not be regenerated without failing the deny list
 — eight lines, all in a Zig multiline literal in `src/wasm_semantic_gen.zig`.
 Fixed there; two consecutive `duo wasm-tables emit` runs on a clean tree now
@@ -816,21 +816,21 @@ produce no diff. Positive-controlled: perturb the file first and the same
 `git diff` check does fire, and the re-emit restores the canonical text.
 
 **the engine's opcode dispatch is projected from a descriptor.**
-`tools/opcodes.duo` holds the table (184 opcodes, 24 ALU rows, 20 CMP rows)
-and writes four `-- derived(wasm.opcodes.*)` regions into `src/engine.duo`:
+`tools/opcodes.id` holds the table (184 opcodes, 24 ALU rows, 20 CMP rows)
+and writes four `-- derived(wasm.opcodes.*)` regions into `src/engine.id`:
 
 ```
-duo run tools/opcodes.duo                     # project
-DUO_WASM_DERIVE=1 duo run tools/opcodes.duo # fail if src/engine.duo drifted
+duo run tools/opcodes.id                     # project
+DUO_WASM_DERIVE=1 duo run tools/opcodes.id # fail if src/engine.id drifted
 ```
 
 It is not a second source of truth: it re-parses
-`lib/std/wasm/ward_mvp_opcodes.duo` and refuses to project on any disagreement
+`lib/std/wasm/ward_mvp_opcodes.id` and refuses to project on any disagreement
 over the 63 opcodes duo's canonical table holds (it reports the count it
 checked — 63 — so a parser that matched nothing cannot read as unanimous).
 the engine needs 170, which is why the extension lives here. Both gates are
 negative-controlled: perturbing a derived line makes `--check` fail, and
-mis-typing an opcode in `tools/opcodes.duo` makes the projection refuse.
+mis-typing an opcode in `tools/opcodes.id` makes the projection refuse.
 
 363 numeric literals across 231 dispatch predicates became derived names.
 `bail`/`bailop` now print the name too — `opcode 252 (prefix.fc)`, verified by
@@ -847,4 +847,4 @@ Two constraints still shape this, and both held:
    collides with the standing "no zig no c only duo" directive. `tools/` is
    Duo; only the eight-word `then` fix touched the Zig.
 2. Cross-file module embedding is still broken in duo, so the projection
-   writes **into** `engine.duo` rather than being required from it.
+   writes **into** `engine.id` rather than being required from it.

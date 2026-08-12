@@ -1,6 +1,6 @@
 # ward against wart, wasmtime and wasmer
 
-**Instrument:** `scripts/runtime_bench.duo` · **Run it:** `zig build runtime-bench`
+**Instrument:** `scripts/runtime_bench.id` · **Run it:** `zig build runtime-bench`
 **Measured:** 2026-08-08, aarch64-macos (Darwin 25.5.0)
 **Opponents:** wart `ad10076` (3 files dirty) · wasmtime v47.0.3 · wasmer
 **duo repo:** `0e4eb29`
@@ -38,7 +38,7 @@ v47.0.3, **wasmer**.
 
 The report prints **wart's git revision and dirty-file count** on every run, and
 warns when either the revision is unreadable or the tree is dirty. This is not
-ceremony. `tools/wasm/bench/run.duo:103` resolves wart through `$WART` or
+ceremony. `tools/wasm/bench/run.id:103` resolves wart through `$WART` or
 `$HOME/x/wart` with no revision recorded at all, so **no number ever published
 from that harness can say which wart it beat**. A comparison whose opponent
 cannot be identified is not reproducible.
@@ -242,7 +242,7 @@ general; it is f64.
 
 ## What fails the gate
 
-**A regression against the baselines recorded in `scripts/runtime_bench.duo`
+**A regression against the baselines recorded in `scripts/runtime_bench.id`
 — not a loss to another runtime.** ward loses rows today; making that fail the
 gate would make it red on day one for reasons nobody can act on in one sitting,
 and it would be switched off within a week. A gate nobody runs measures nothing.

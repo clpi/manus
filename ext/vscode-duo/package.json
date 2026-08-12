@@ -21,7 +21,7 @@
       {
         "id": "duo",
         "extensions": [
-          ".duo"
+          ".id"
         ],
         "aliases": [
           "Duo",
@@ -33,7 +33,7 @@
     "grammars": [
       {
         "language": "duo",
-        "scopeName": "source.duo",
+        "scopeName": "source.id",
         "path": "./syntaxes/duo.tmLanguage.json"
       }
     ],

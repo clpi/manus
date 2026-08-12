@@ -1,0 +1,12 @@
+-- @comp.weave: O(N×M) cross-module concept sweep (comptime → native C string)
+-- Run: duo run examples/meta_weave_showcase.id
+
+mark(meta): str
+    "/* weave[" .. meta.source_module .. "] " .. meta.name .. " (" .. to(str)(meta.index) .. "/" .. to(str)(meta.count) .. ") */\n"
+end
+
+CODE = @comp.weave("examples/weave_types", "HasXY", mark)
+
+print("=== @comp.weave showcase ===")
+print(CODE)
+print("RESULT weave_ok = true")

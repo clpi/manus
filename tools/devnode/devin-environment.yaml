@@ -1,4 +1,4 @@
-# Idsem Devin projection.
+# Idol Devin projection.
 #
 # This is physical agent setup only. It is not language authority. Devin must
 # start from AGENTS.md and repository facts, the same as Codex and Cursor.
@@ -18,15 +18,17 @@ maintenance:
       set -eu
       cd "$(git rev-parse --show-toplevel)"
       ./tools/devnode/orient
-      IDSEM_DOCTOR_SKIP_GATES=1 ./tools/devnode/doctor
+      IDOL_DOCTOR_SKIP_GATES=1 ./tools/devnode/doctor
 
 knowledge:
   - name: authority
     contents: |
       Read AGENTS.md first. It routes to docs/spec/constitution.md, CLAUDE.md,
       docs/spec/AUTHORITY.md, docs/bootstrap.md, and the relevant projection.
-      docs/spec/constitution.md is the sole Idsem semantic law. This Devin
-      projection is not semantic authority.
+      docs/spec/constitution.md is the sole semantic law. Current language and
+      project identity is Idol (`idol`, `idollang/idol`, `.id`). Historical
+      Idsem, Duo, Duon, and `.id` are provenance only. This Devin projection
+      is not semantic authority.
 
   - name: orientation
     contents: |
@@ -45,7 +47,8 @@ knowledge:
     contents: |
       Use ./tools/devnode/doctor for fast development-node admission. Use
       ./tools/devnode/probe-mcp for raw MCP initialize health. Heavy gates must
-      run through ./zig-out/bin/duo run --backend=c scripts/duo_lock.duo -- ...
+      resolve the repository root and run through its `zig-out/bin/duo` with
+      `run --backend=c`, its `scripts/duo_lock.id`, and `-- ...`.
       Evidence is exact tree, command, executed path, outcome, and positive
       controls.
 

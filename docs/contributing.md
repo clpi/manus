@@ -5,8 +5,8 @@ semantic law, [C0](spec/constitution.md), the
 [current priority projection](AGENT_ALIGNMENT.md), the
 [bootstrap authority ledger](bootstrap.md), and live agent coordination.
 
-Canonical native source uses `.id`. New `.duo` is forbidden; every remaining
-tracked project-owned `.duo` file must be semantically migrated or deleted and
+Canonical native source uses `.id`. New `.id` is forbidden; every remaining
+tracked project-owned `.id` file must be semantically migrated or deleted and
 is never an implementation template. Do not add a foreign semantic owner.
 Existing foreign code is seed or compatibility debt and may change only under
 the narrow bridge rules in `AGENTS.md`.

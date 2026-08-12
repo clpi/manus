@@ -1,9 +1,0 @@
--- Pass 5 smoke: @comp.c.import registers CPoint + distance2 for sema/codegen.
--- scripts/sim.duo links the emitted C against the tracked distance2 oracle.
-
-@comp.c.import("fixtures/point.h")
-
-main(): f64
-    p: CPoint = { x = 3.0, y = 4.0 }
-    distance2(p)
-end

@@ -2,11 +2,11 @@
 set -eu
 
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
-smoke_out="${TMPDIR:-/tmp}/idsem-cursor-auth-smoke.out"
+smoke_out="${TMPDIR:-/tmp}/idol-cursor-auth-smoke.out"
 
 run_smoke() {
   cursor agent --print --mode=ask --trust --workspace "$repo" \
-    "Start at AGENTS.md. Answer with the sole Idsem semantic law file path only." \
+    "Start at AGENTS.md. Answer with the sole Idol semantic law file path only." \
     >"$smoke_out" 2>&1
 }
 

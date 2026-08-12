@@ -1,0 +1,51 @@
+-- Exponential codegen: @comp.* bundles, @c.emit, concept sweeps
+-- Run: duo run examples/exponential_codegen_showcase.id
+
+@comp.define.derive("CStruct", generate(meta) -> str
+    acc = "typedef struct " .. meta.name .. " {\n"
+    for i = 1, #meta.fields
+        f = meta.fields[i]
+        acc = acc .. "    " .. f.type .. " " .. f.name .. ";\n"
+    end
+    acc .. "} " .. meta.name .. ";\n"
+end)
+
+@comp.define.derive("GetterBundle", generate(meta) -> str
+    acc = ""
+    for i = 1, #meta.fields
+        f = meta.fields[i]
+        acc = acc .. "static inline " .. f.type .. " " .. meta.name .. "_get_" .. f.name .. "(const " .. meta.name .. "* v) { return v->" .. f.name .. "; }\n"
+    end
+    acc
+end)
+
+@comp.define.bundle("Api", CStruct, GetterBundle, Debug)
+
+@comp.derive.bundle("Debug", Api)
+Point: { x: f64, y: f64 }
+
+concept HasXY
+    x: f64
+    y: f64
+end
+
+Pair: { x: f64, y: f64 }
+
+type_mark(meta): str
+    meta.name .. ";"
+end
+
+p: Point = { x = 3.0, y = 4.0 }
+
+@c.emit(@comp.fields.map(p, "/* field %n (%t) */\n"))
+
+FIELD_SIGS = @comp.fields.map(p, "%n:%t;")
+UNROLL = @(@comp.loop(0, 4, "init_%i();"))
+TYPE_MARKS = @comp.map("HasXY", type_mark)
+
+print("=== exponential codegen showcase ===")
+print("field_sigs = " .. FIELD_SIGS)
+print("unroll = " .. UNROLL)
+print("types = " .. TYPE_MARKS)
+print("Point fields = " .. to(str)(#@comp.fields(p)))
+print("ok")

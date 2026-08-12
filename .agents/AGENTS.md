@@ -1,4 +1,4 @@
-# Idsem Agent Scope
+# Idol Agent Scope
 
 Root [`AGENTS.md`](../AGENTS.md) is the repository entry point.
 [`docs/spec/constitution.md`](../docs/spec/constitution.md) is the sole
@@ -8,7 +8,14 @@ Use [`AGENT_CANONICAL.md`](AGENT_CANONICAL.md) for stable paths,
 [`AGENT_COORDINATION.md`](AGENT_COORDINATION.md) for ownership protocol, and
 [`AGENT_INTEGRATION.md`](AGENT_INTEGRATION.md) for bootstrap MCP transport.
 Read the current production frontier from [`docs/bootstrap.md`](../docs/bootstrap.md)
-and obligations from `gaps/GAP-*.md`.
+and obligations from the exact current `gaps/GAP-*.md` files. Read live
+ownership through `duo_dev_claim_files` rather than copying claims here.
+
+The current language and project are Idol (`idol`, `idollang/idol`), with
+canonical `.id` source. Historical Idsem, Duo, Duon, `.id`, and physical
+`duo-*` tool names remain bootstrap or migration provenance only.
+An executed gate, lock, or MCP entrypoint with an `.id` suffix remains
+bootstrap transport until `docs/bootstrap.md` credits the authority transfer.
 
 Do not treat this directory as a semantic registry. `std` is migration
 distribution, `std.script` is frozen debt, and neither an agent document nor a

@@ -398,7 +398,7 @@ print("Fibonacci(40) Result:", fib_res)
 print("RESULT fib", fib_res)
 -- gap[096] NO TIME LINE — this row left the cross-language speed table when it
 -- left examples/benchmark.lua's, and the two files are read POSITIONALLY by
--- scripts/run_cross_benchmark.duo: a Time line here that is absent there would
+-- scripts/run_cross_benchmark.id: a Time line here that is absent there would
 -- misalign every subsequent row. RESULT kept.
 print("----------------------------------------")
 

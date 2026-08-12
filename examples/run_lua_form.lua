@@ -1,5 +1,5 @@
 -- Lua-form @run showcase: the `--- @run` comment harness injects C at compile
--- time, identical to the `.duo` `@run` directive. Parsed in Lua compat mode.
+-- time, identical to the `.id` `@run` directive. Parsed in Lua compat mode.
 
 --- @c.include("stdio.h")
 

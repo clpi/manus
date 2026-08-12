@@ -1,0 +1,303 @@
+-- Pass 57 C2 — exports are scope.
+--
+-- The rule, pinned: a module's top-level bindings ARE its surface. There is no
+-- export keyword and there never was one. Privacy is a policy fact, not syntax:
+-- a top-level binding whose name starts with `_` is private, and nothing
+-- outside the defining module may reach through to it.
+--
+-- This gate enforces the second half. Zero new syntax; one convention, checked.
+--
+-- WHAT IS AND IS NOT A VIOLATION. `_` on a *field* is not module privacy —
+-- `ch._closed` on a channel value is an instance field, and the corpus has 184
+-- such accesses. Flagging those would make the gate 100% false positives, so
+-- the check is anchored to the MODULE ROOT: only
+--
+--   alias._name        where `alias` is bound in this file by `req`
+--   std.mod._name      the ambient form of the same reach-through
+--
+-- count. The `_` segment must sit exactly at module-surface depth; `m.obj._f`
+-- is an instance field on a value the module handed out, which is the module's
+-- business, not the consumer's.
+--
+-- Exit 0 iff no file reaches through a module surface. Exit 1 on any violation,
+-- or if the positive control fails to fire.
+
+
+is_ident_byte(c: i64): bool
+    (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or (c >= 48 and c <= 57) or c == 95
+end
+
+is_ident_start(c: i64): bool
+    (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or c == 95
+end
+
+-- Naive substring search. `std.str` is `sub` and `len` and nothing else, so
+-- membership in the alias set is spelled out here rather than borrowed.
+contains(hay: str, needle: str): bool
+    hn: i64 = #hay
+    nn: i64 = #needle
+    if nn == 0
+        return true
+    end
+    i: i64 = 1
+    while i + nn - 1 <= hn
+        j: i64 = 0
+        hit = true
+        while j < nn
+            if string.byte(hay, i + j) != string.byte(needle, j + 1)
+                hit = false
+                j = nn
+            end
+            j += 1
+        end
+        if hit
+            return true
+        end
+        i += 1
+    end
+    false
+end
+
+ident_end(s: str, i: i64): i64
+    n: i64 = #s
+    j: i64 = i
+    while j <= n and is_ident_byte(string.byte(s, j))
+        j += 1
+    end
+    j - 1
+end
+
+skip_spaces(s: str, i: i64): i64
+    n: i64 = #s
+    j: i64 = i
+    while j <= n and (string.byte(s, j) == 32 or string.byte(s, j) == 9)
+        j += 1
+    end
+    j
+end
+
+line_of(s: str, upto: i64): i64
+    ln: i64 = 1
+    i: i64 = 1
+    while i < upto
+        if string.byte(s, i) == 10
+            ln += 1
+        end
+        i += 1
+    end
+    ln
+end
+
+-- Does `s` read `word` at `i`, as a whole token?
+word_at(s: str, i: i64, word: str): bool
+    n: i64 = #s
+    w: i64 = #word
+    if i + w - 1 > n
+        return false
+    end
+    if string.sub(s, i, i + w - 1) != word
+        return false
+    end
+    if i + w <= n and is_ident_byte(string.byte(s, i + w))
+        return false
+    end
+    true
+end
+
+-- The module aliases this file binds, as "|a|b|c|". A file can only reach
+-- through a surface it named, so the alias set is per-file and comes from the
+-- source itself rather than a registry.
+aliases(src: str): str
+    n: i64 = #src
+    acc = "|"
+    i: i64 = 1
+    while i <= n
+        at_line_start = i == 1
+        if not at_line_start
+            at_line_start = string.byte(src, i - 1) == 10
+        end
+        if at_line_start
+            j: i64 = skip_spaces(src, i)
+            if word_at(src, j, "global")
+                j = skip_spaces(src, j + 6)
+            end
+            if j <= n and is_ident_start(string.byte(src, j))
+                e: i64 = ident_end(src, j)
+                k: i64 = skip_spaces(src, e + 1)
+                if k <= n and string.byte(src, k) == 61
+                    k = skip_spaces(src, k + 1)
+                    if word_at(src, k, "req")
+                        acc = acc .. string.sub(src, j, e) .. "|"
+                    end
+                end
+            end
+        end
+        i += 1
+    end
+    acc
+end
+
+-- Count reach-throughs, printing each. `report` selects whether sites are
+-- printed, so the positive control can run silently.
+scan(src: str, path: str, alias_set: str, report: bool): i64
+    n: i64 = #src
+    found: i64 = 0
+    i: i64 = 1
+    while i <= n
+        c: i64 = string.byte(src, i)
+        -- Code only. A `--` comment describing the rule, or a string literal
+        -- holding a counterexample, is not a reach-through — this file is proof
+        -- of that, and self-exempting it would have been the lazy fix.
+        if c == 45 and i < n and string.byte(src, i + 1) == 45
+            while i <= n and string.byte(src, i) != 10
+                i += 1
+            end
+        end
+        if i <= n
+            c = string.byte(src, i)
+        end
+        if c == 34 or c == 39
+            q: i64 = c
+            i += 1
+            while i <= n and string.byte(src, i) != q
+                if string.byte(src, i) == 92
+                    i += 1
+                end
+                i += 1
+            end
+            i += 1
+        end
+        if i > n
+            return found
+        end
+        c = string.byte(src, i)
+        prev_is_ident = false
+        if i > 1
+            prev_is_ident = is_ident_byte(string.byte(src, i - 1))
+        end
+        if is_ident_start(c) and not prev_is_ident
+            e: i64 = ident_end(src, i)
+            root = string.sub(src, i, e)
+            -- Depth at which a `_` segment means "module surface", or 0 for a
+            -- root that is not a module at all.
+            depth: i64 = 0
+            if contains(alias_set, "|" .. root .. "|")
+                depth = 2
+            end
+            if root == "std"
+                depth = 3
+            end
+            if depth > 0
+                pos: i64 = e + 1
+                idx: i64 = 1
+                walking = true
+                while walking
+                    walking = false
+                    if pos < n and string.byte(src, pos) == 46 and is_ident_start(string.byte(src, pos + 1))
+                        seg: i64 = pos + 1
+                        se: i64 = ident_end(src, seg)
+                        idx += 1
+                        if idx == depth
+                            if string.byte(src, seg) == 95
+                                found += 1
+                                if report
+                                    print(path .. ":" .. to(str)(line_of(src, i)) .. "  "
+                                        .. string.sub(src, i, se)
+                                        .. "  (private binding of another module)")
+                                end
+                            end
+                        end
+                        if idx < depth
+                            pos = se + 1
+                            walking = true
+                        end
+                    end
+                end
+            end
+            i = e + 1
+        end
+        i += 1
+    end
+    found
+end
+
+-- THE POSITIVE CONTROL, and it is not optional.
+--
+-- The C3 census taught this the expensive way: a scanner that reads nothing
+-- still prints a confident `0`, and `0` is exactly the number a passing gate
+-- prints. A green run therefore proves nothing unless the detector has been
+-- shown to fire. These three cases run every time, before the corpus.
+--
+-- Returns 0 when the detector behaves, or the failing case number.
+self_check(): i64
+    reach = "strm = req \"std.str\"\nx = strm._hidden\n"
+    if scan(reach, "<control>", aliases(reach), false) != 1
+        return 1
+    end
+    clean = "strm = req \"std.str\"\nx = string.sub(s, 1, 2)\n"
+    if scan(clean, "<control>", aliases(clean), false) != 0
+        return 2
+    end
+    -- the ambient form, and an instance field that must NOT be flagged
+    ambient = "x = std.thread._tls_registry\ny = ch._closed\nz = std.str.sub(s, 1, 2)\n"
+    if scan(ambient, "<control>", aliases(ambient), false) != 1
+        return 3
+    end
+    0
+end
+
+main(): i64
+    bad: i64 = self_check()
+    if bad != 0
+        -- GAP-11: `{bad}` is an i64 hole and would emit the brace text
+        -- literally, so this one stays a chain. The all-string line below is
+        -- interpolated, which is where `{}` works today.
+        print("module_surface: FAIL — positive control " .. bad:to(str) .. " did not fire")
+        print("module_surface: the detector is broken; a clean corpus report would be meaningless")
+        return 1
+    end
+
+    root = std.script.getenv("DUO_ROOT", ".")
+    listing = std.script.capture("find " .. root .. "/lib " .. root .. "/examples "
+        .. root .. "/scripts -name '*.id' 2>/dev/null")
+
+    n: i64 = #listing
+    files: i64 = 0
+    total: i64 = 0
+    start: i64 = 1
+    i: i64 = 1
+    while i <= n + 1
+        at_end = i > n
+        eol = false
+        if not at_end
+            eol = string.byte(listing, i) == 10
+        end
+        if at_end or eol
+            if i > start
+                path = string.sub(listing, start, i - 1)
+                f = io.open(path, "r")
+                if f
+                    src = f:read("a")
+                    f:close()
+                    files += 1
+                    total += scan(src, path, aliases(src), true)
+                end
+            end
+            start = i + 1
+        end
+        i += 1
+    end
+
+    print("module_surface: " .. files:to(str) .. " files, " .. total:to(str)
+        .. " reach-throughs (control: 3/3 fired)")
+    if files == 0
+        print("module_surface: FAIL (empty corpus)")
+        return 1
+    end
+    if total != 0
+        print("module_surface: FAIL")
+        return 1
+    end
+    print("module_surface: PASS")
+    0
+end

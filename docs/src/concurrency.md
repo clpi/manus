@@ -1,6 +1,6 @@
 # Concurrency, effects, and worlds
 
-This page states current Idsem architecture without admitting a source API. The
+This page states current Idol architecture without admitting a source API. The
 sole law is [`docs/spec/constitution.md`](../spec/constitution.md); canonical
 source uses `.id`.
 

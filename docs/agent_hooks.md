@@ -7,7 +7,7 @@ Read [AGENTS.md](../AGENTS.md), the
 [canonical router](../.agents/AGENT_CANONICAL.md), and the
 [coordination workflow](../.agents/AGENT_COORDINATION.md). The sole semantic
 law is [C0](spec/constitution.md). Canonical Idsem source uses `.id`; every
-tracked project-owned `.duo` file is SOURCE-ZERO debt to migrate or delete.
+tracked project-owned `.id` file is SOURCE-ZERO debt to migrate or delete.
 
 Agent tools consume graph-owned facts. They do not create language meaning,
 teach implementation paths as semantic namespaces, or reconstruct truth from

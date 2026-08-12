@@ -20,7 +20,7 @@ Or symlink it:
 ln -s /path/to/duo/ext/zed-duo ~/.config/zed/extensions/work/duo
 ```
 
-Restart Zed. Open any `.duo` file to activate.
+Restart Zed. Open any `.id` file to activate.
 
 ## Features
 

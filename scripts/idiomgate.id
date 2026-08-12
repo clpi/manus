@@ -1,0 +1,460 @@
+-- idiomgate — canonical idsem enforced on the STAGED DIFF, for every agent.
+--
+-- Why the diff and not the tree: 756 .id files still carry bare `end` and 227
+-- carry Lua module idioms. A whole-tree gate would block every commit until a
+-- 756-file migration landed, so it would be switched off within a day. Gating
+-- the diff makes the debt monotonically SHRINK and makes a NEW violation
+-- impossible. Same ratchet shape as audit100.
+--
+-- Scans ONLY THE LINES THE DIFF ADDS. Whole-file scanning looks stricter and is
+-- worse: it makes every debt-carrying file untouchable and punishes the person
+-- REPAIRING one, so it gets switched off. Added lines only freezes the debt and
+-- makes every new line canonical.
+--
+-- Reads a unified diff from the path in DUOGATEDIFF because duo binaries do not
+-- populate argv — an argv-driven scanner reports a confident 0. If the var is
+-- absent the gate exits 3; it never reports a clean run it did not perform.
+--
+-- Runs a POSITIVE CONTROL before any verdict. A gate that reports 0 findings is
+-- usually broken, not green (§3 MEASUREMENT HONESTY).
+
+-- one denied form: the bytes to look for, the law it breaks, the repair edge
+rules = {
+    { pat = "_",             law = "LAW-ONE",      fix = "one lowercase word: a LEVEL read(number), a HOME date.pad, or delete the axis" },
+    { pat = "end",           law = "Pass 100 §7",  fix = "`end` is DELETED — outdent" },
+    { pat = ";",             law = "Pass 119 §1",  fix = "the semicolon does not exist — press enter" },
+    { pat = "string.",       law = "§0.8",         fix = "s:sub(i,j) · s[i] IS the byte · no Lua module idioms" },
+    { pat = "table.",        law = "RECOGNITION",  fix = "xs:push(v) — worlds are the only namespaces" },
+    { pat = "math.",         law = "RECOGNITION",  fix = "x:abs() — pure ops are VALUE EDGES" },
+    { pat = "std.mem",       law = "RECOGNITION",  fix = "value edges, not a std module tree" },
+    { pat = "std.fmt",       law = "RECOGNITION",  fix = "interpolation, not a format module" },
+    { pat = "std.math",      law = "RECOGNITION",  fix = "x:abs()" },
+    { pat = "function",      law = "§1 deny",      fix = "callable binding: name: i64 = (a: i64)" },
+    { pat = "local",         law = "§1 deny",      fix = "bindings are already scoped" },
+    { pat = "require",       law = "§1 deny",      fix = "std is the prelude graph — no import" },
+    { pat = "then",          law = "§1 deny",      fix = "outdent" },
+    { pat = "tostring",      law = "§1 deny",      fix = "x:to(str)" },
+    { pat = "tonumber",      law = "§1 deny",      fix = "x:to(i64) — and it ROUTES on failure" },
+    { pat = "pcall",         law = "§1 deny",      fix = "t | error — failure routes (B-15)" },
+    { pat = "setmetatable",  law = "§1 deny",      fix = "descriptors and protocols" },
+    { pat = "pairs",         law = "§1 deny",      fix = "iterate the value: xs:each()" },
+    { pat = ".new(",         law = "LADDER",       fix = "desc{…} · x:to(desc) · p:from(mode)(…) · file.open" },
+    { pat = ".create(",      law = "LADDER",       fix = "desc{…}" },
+    { pat = "make",          law = "LADDER",       fix = "desc{…} — make* is banned" },
+    { pat = "self",          law = "SELF-ZERO",    fix = ".x · leading :call() · `.` is the subject · ... spreads it" },
+}
+
+-- true when needle occurs in hay. No pattern API: `s:find` is a value edge but
+-- a literal scan cannot misfire on a metacharacter, and these needles carry `.`
+has = (hay: str, needle: str): bool
+    n = rawlen(hay)
+    m = rawlen(needle)
+    if m == 0
+        return false
+    i = 1
+    while i + m - 1 <= n
+        if hay:sub(i, i + m - 1) == needle
+            return true
+        i = i + 1
+    false
+
+-- lowercase letter, for the LAW-ONE [a-z]_[a-z] check
+alpha = (c: str): bool
+    c >= "a" and c <= "z"
+
+upper = (c: str): bool
+    c >= "A" and c <= "Z"
+
+digit = (c: str): bool
+    c >= "0" and c <= "9"
+
+-- Strip comments and string bodies so a rule cannot fire on prose or on this
+-- file's own rule table. Quotes are replaced by spaces, not removed, so column
+-- numbers stay true.
+strip = (line: str): str
+    out = ""
+    n = rawlen(line)
+    quote = ""
+    i = 1
+    while i <= n
+        c = line:sub(i, i)
+        if quote == ""
+            if c == "-" and i < n and line:sub(i + 1, i + 1) == "-"
+                return out
+            if c == "\"" or c == "'"
+                quote = c
+                out = out .. " "
+            else
+                out = out .. c
+        else
+            if c == quote
+                quote = ""
+            out = out .. " "
+        i = i + 1
+    out
+
+-- LAW-ONE has no spelling exemptions. Qualification belongs to levels and
+-- homes; an underscore in idsem source is migration debt regardless of where it
+-- occurs in an identifier.
+under: bool = (code: str)
+    n = #code
+    i = 1
+    while i <= n
+        if code:sub(i, i) == "_"
+            return true
+        i = i + 1
+    false
+
+-- Uppercase is not a descriptor convention in idsem. Cases, descriptors,
+-- bindings, homes, relations, and generated identities share the same law.
+capital: bool = (code: str)
+    n = #code
+    i = 1
+    while i <= n
+        c = code:sub(i, i)
+        before = ""
+        if i > 1
+            before = code:sub(i - 1, i - 1)
+        if digit(c) and (i == 1 or (not alpha(before) and not upper(before) and before != "_"))
+            i = i + 1
+            while i <= n and (alpha(code:sub(i, i)) or upper(code:sub(i, i)) or digit(code:sub(i, i)) or code:sub(i, i) == "_" or code:sub(i, i) == ".")
+                i = i + 1
+        else
+            if upper(c)
+                return true
+            i = i + 1
+    false
+
+word: bool = (c: str)
+    alpha(c) or upper(c) or digit(c) or c == "_"
+
+token: bool = (code: str, sought: str)
+    n = #code
+    m = #sought
+    i = 1
+    while i + m - 1 <= n
+        if code:sub(i, i + m - 1) == sought
+            before = ""
+            after = ""
+            if i > 1
+                before = code:sub(i - 1, i - 1)
+            if i + m <= n
+                after = code:sub(i + m, i + m)
+            if (before == "" or not word(before)) and (after == "" or not word(after))
+                return true
+        i = i + 1
+    false
+
+-- A trie declaration is operation-first; invocation is always subject-first.
+-- This recognizes the declaration face without granting bare calls or an
+-- arbitrary home an exception.
+readdecl: bool = (code: str, start: i64)
+    i = 1
+    n = #code
+    while i <= n and (code:sub(i, i) == " " or code:sub(i, i) == "\t")
+        i = i + 1
+    if i != start
+        return false
+    equal = start + 5
+    while equal <= n and code:sub(equal, equal) != "="
+        equal = equal + 1
+    if equal > n
+        return false
+    equal = equal + 1
+    while equal <= n and (code:sub(equal, equal) == " " or code:sub(equal, equal) == "\t")
+        equal = equal + 1
+    equal <= n and code:sub(equal, equal) == "("
+
+readface: bool = (code: str)
+    n = #code
+    i = 1
+    while i + 4 <= n
+        if code:sub(i, i + 4) == "read("
+            if i == 1 or code:sub(i - 1, i - 1) != ":"
+                if not readdecl(code, i)
+                    return true
+        i = i + 1
+    false
+
+-- Concatenation is a real value relation. It is noncanonical when the same
+-- expression immediately demands only emission, because that spelling forces
+-- a materialized bridge value instead of exposing segments to the sink.
+materialize: bool = (code: str)
+    has(code, "print(") and has(code, "..")
+
+-- a bare `end` occupying its own line
+bareend = (code: str): bool
+    t = ""
+    n = rawlen(code)
+    i = 1
+    while i <= n
+        c = code:sub(i, i)
+        if c != " " and c != "\t"
+            t = t .. c
+        i = i + 1
+    t == "end"
+
+suffix: bool = (code: str)
+    n = rawlen(code)
+    seek = 1
+    while seek <= n
+        open = 0
+        equal = 0
+        i = seek
+        while i <= n and open == 0
+            c = code:sub(i, i)
+            if c == "="
+                equal = i
+            if c == "("
+                open = i
+            i = i + 1
+        if open == 0
+            return false
+
+        depth = 1
+        close = 0
+        i = open + 1
+        while i <= n and close == 0
+            c = code:sub(i, i)
+            if c == "("
+                depth = depth + 1
+            if c == ")"
+                depth = depth - 1
+                if depth == 0
+                    close = i
+            i = i + 1
+        if close == 0
+            return false
+
+        begin = open
+        if equal > 0
+            begin = equal + 1
+            while begin <= n and (code:sub(begin, begin) == " " or code:sub(begin, begin) == "\t")
+                begin = begin + 1
+        if equal == 0 or begin == open
+            i = close + 1
+            while i <= n and (code:sub(i, i) == " " or code:sub(i, i) == "\t")
+                i = i + 1
+            arrow = i < n and code:sub(i, i + 1) == "->"
+            colon = i <= n and code:sub(i, i) == ":"
+            if arrow or colon
+                if arrow
+                    i = i + 2
+                else
+                    i = i + 1
+                while i <= n and (code:sub(i, i) == " " or code:sub(i, i) == "\t")
+                    i = i + 1
+                if i <= n
+                    while i <= n and word(code:sub(i, i))
+                        i = i + 1
+                    while i <= n and (code:sub(i, i) == " " or code:sub(i, i) == "\t")
+                        i = i + 1
+                    if arrow or i > n or code:sub(i, i) != "("
+                        return true
+        seek = close + 1
+    false
+
+found = 0
+
+scanline = (path: str, no: i64, line: str): i64
+    code = strip(line)
+    hits = 0
+    if bareend(code)
+        print("{path}:{no}  end  [Pass 100 §7]  `end` is DELETED — outdent")
+        hits = hits + 1
+    if under(code)
+        print("{path}:{no}  underscore  [LAW-ONE]  one lowercase word: a LEVEL, a HOME, or delete the axis")
+        hits = hits + 1
+    if capital(code)
+        print("{path}:{no}  uppercase  [LAW-ONE]  no uppercase in an identifier, ever: point, error, max")
+        hits = hits + 1
+    if has(code, ";")
+        print("{path}:{no}  semicolon  [Pass 119 §1]  the semicolon does not exist — press enter")
+        hits = hits + 1
+    if has(code, "string.")
+        print("{path}:{no}  string.  [§0.8]  s:sub(i,j) · s[i] IS the byte")
+        hits = hits + 1
+    if has(code, "table.")
+        print("{path}:{no}  table.  [RECOGNITION]  xs:push(v) — worlds are the only namespaces")
+        hits = hits + 1
+    if has(code, "math.")
+        print("{path}:{no}  math.  [RECOGNITION]  x:abs() — pure ops are VALUE EDGES")
+        hits = hits + 1
+    if has(code, "function")
+        print("{path}:{no}  function  [§1]  callable binding: name: i64 = (a: i64)")
+        hits = hits + 1
+    if suffix(code)
+        print("({path}, {no}, migratable, law.callable.demand, result demand precedes `=`: name: result = (parameters))")
+        hits = hits + 1
+    if has(code, "require")
+        print("{path}:{no}  require  [§0h]  std is the prelude graph — no import")
+        hits = hits + 1
+    if has(code, "tostring")
+        print("{path}:{no}  tostring  [§1]  x:to(str)")
+        hits = hits + 1
+    if has(code, "pcall")
+        print("{path}:{no}  pcall  [B-15]  t | error — failure routes")
+        hits = hits + 1
+    if has(code, "setmetatable")
+        print("{path}:{no}  setmetatable  [§1]  descriptors and protocols")
+        hits = hits + 1
+    if token(code, "nil")
+        print("({path}, {no}, invalid, law.lua.hosted, nil is a Lua value; use the admitted semantic case)")
+        hits = hits + 1
+    if has(code, ".new(")
+        print("{path}:{no}  .new(  [LADDER]  desc{{…}} · x:to(desc) · p:from(mode)(…)")
+        hits = hits + 1
+    if readface(code)
+        print("({path}, {no}, invalid, law.subject.one, read is subject-first: subject:read(...))")
+        hits = hits + 1
+    if materialize(code)
+        print("({path}, {no}, migratable, law.demand.materialize, output consumes segments without demanding a concatenated value)")
+        hits = hits + 1
+    hits
+
+-- the decimal number starting at i
+num = (s: str, i: i64): i64
+    v = 0
+    n = rawlen(s)
+    j = i
+    while j <= n and s:sub(j, j) >= "0" and s:sub(j, j) <= "9"
+        v = v * 10 + (s:sub(j, j):byte() - 48)
+        j = j + 1
+    v
+
+diffhead: bool = (line: str)
+    #line >= 6 and line:sub(1, 6) == "+++ b/"
+
+-- Scan ONLY THE LINES THIS DIFF ADDS.
+--
+-- Scanning whole files looks stricter and is worse: 756 files carry inherited
+-- debt, so a whole-file gate makes every legacy file untouchable and gets
+-- itself switched off within a day. It also punishes the person REPAIRING a
+-- file, which is backwards. Added lines only means the debt is frozen, every
+-- new line is canonical, and repair is rewarded.
+scandiff = (body: str): i64
+    hits = 0
+    path = ""
+    no = 0
+    line = ""
+    n = rawlen(body)
+    i = 1
+    while i <= n + 1
+        c = "\n"
+        if i <= n
+            c = body:sub(i, i)
+        if c == "\n"
+            if diffhead(line)
+                path = line:sub(7, rawlen(line))
+                no = 0
+            else
+                if rawlen(line) > 2 and line:sub(1, 2) == "@@"
+                    p = 1
+                    m = rawlen(line)
+                    while p <= m and line:sub(p, p) != "+"
+                        p = p + 1
+                    no = num(line, p + 1)
+                else
+                    if rawlen(line) > 0 and line:sub(1, 1) == "+" and path != ""
+                        hits = hits + scanline(path, no, line:sub(2, rawlen(line)))
+                        no = no + 1
+            line = ""
+        else
+            line = line .. c
+        i = i + 1
+    hits
+
+-- POSITIVE CONTROL. Every detector must fire on a line built to trip it, and
+-- must stay silent on a canonical line. A gate that cannot convict its own
+-- exhibit reports 0 because it is broken, not because the tree is clean.
+control = (): bool
+    ok = true
+    if not bareend("    end")
+        print("control FAIL: bareend did not fire")
+        ok = false
+    if bareend("    scan(n)")
+        print("control FAIL: bareend fired on canonical")
+        ok = false
+    if not under("is_digit(c)") or not under("_subject")
+        print("control FAIL: under did not fire")
+        ok = false
+    if under("digit(c)")
+        print("control FAIL: under fired on canonical")
+        ok = false
+    if not capital("p: Point") or not capital("p: P") or not capital("foo2Bar")
+        print("control FAIL: capital did not fire")
+        ok = false
+    if capital("p: point") or capital("mask = 0xFF") or capital("value = 1E9")
+        print("control FAIL: capital fired on canonical")
+        ok = false
+    if not has("x = string.sub(s,1,2)", "string.")
+        print("control FAIL: has did not fire")
+        ok = false
+    if has("x = s:sub(1,2)", "string.")
+        print("control FAIL: has fired on canonical")
+        ok = false
+    if rawlen(strip("code -- string.sub here")) > 6
+        print("control FAIL: strip did not remove a comment")
+        ok = false
+    if not readface("arbitrary.home.read(subject)")
+        print("control FAIL: readface did not reject operation-first read")
+        ok = false
+    if not readface("value = read(subject)")
+        print("control FAIL: readface did not reject bare read")
+        ok = false
+    if readface("subject:read(world)")
+        print("control FAIL: readface rejected subject-first read")
+        ok = false
+    if readface("read(number) = (subject, bytes)")
+        print("control FAIL: readface rejected a trie declaration")
+        ok = false
+    if not token("value = nil", "nil") or token("value = vanilla", "nil")
+        print("control FAIL: nil token boundary is broken")
+        ok = false
+    if not diffhead("+++ b/example.id") or diffhead("+value = \"+++ b/\"")
+        print("control FAIL: diff header boundary is broken")
+        ok = false
+    if not materialize("print(\"x = \" .. x)")
+        print("control FAIL: materialize missed output concatenation")
+        ok = false
+    if materialize("value = left .. right")
+        print("control FAIL: materialize rejected a demanded concat value")
+        ok = false
+    if not suffix("answer(): i64") or not suffix("answer = (): i64") or not suffix("answer() -> i64") or not suffix("@export(\"answer\") answer(): i64")
+        print("control FAIL: suffix did not reject historical callable result faces")
+        ok = false
+    if suffix("answer: i64 = ()") or suffix("answer():to(i64)") or suffix("answer(): to(i64)") or suffix("@export(\"answer\") answer: i64 = ()")
+        print("control FAIL: suffix rejected a canonical binding or a subject call")
+        ok = false
+    ok
+
+main = (): i64
+    if not control()
+        print("")
+        print("idiomgate: POSITIVE CONTROL FAILED — the gate is broken, not the tree.")
+        print("No verdict is reported. Fix the gate before trusting any run.")
+        return 3
+    which = os.getenv("DUOGATEDIFF")
+    if which == nil or which == ""
+        print("idiomgate: DUOGATEDIFF is empty.")
+        print("This gate reads a unified diff from a path in the environment,")
+        print("because duo binaries do not populate argv. It refuses to report")
+        print("a clean run it did not perform. Write `git diff --cached -U0`")
+        print("to a file and set DUOGATEDIFF to its path.")
+        return 3
+    d = io.open(which, "r")
+    if d == nil
+        print("idiomgate: cannot read {which}")
+        return 3
+    files = d:read("a")
+    d:close()
+    total = scandiff(files)
+    print("")
+    print("idiomgate: {total} finding(s) on ADDED lines  [control: pass]")
+    if total > 0
+        print("")
+        print("The law: docs/spec/constitution.md · the preflight: AGENTS.md")
+        print("Canonical teaching source: current .id only; historical source is not a template.")
+        print("The corpus is NOT the law — do not imitate the file you are editing.")
+        return 1
+    0

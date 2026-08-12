@@ -1,7 +1,0 @@
--- Pass 8 invalidation demo: add a field → shape fingerprint drift → cache invalidated.
-
-Point: @{ x: f64, y: f64, z: f64 }
-
-main(): i64
-    0
-end

@@ -13,7 +13,7 @@
  *   -lonnxruntime
  *
  * Or (if your build system supports it):
- *   duo compile myapp.duo --link onnxruntime --link onnx_shim.c \
+ *   duo compile myapp.id --link onnxruntime --link onnx_shim.c \
  *     --cflags -I<onnxruntime include dir>
  */
 

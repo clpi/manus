@@ -83,7 +83,7 @@ contains no static suite counts or claimed current scores.
 The bootstrap host is a seed, not the final optimizer. Prefer deleting duplicate
 semantic authority, host authority, compiler state, and unnecessary work before
 adding host-only micro-optimization. New host semantic ownership and new
-project-owned `.duo` performance fixtures are forbidden. New canonical evidence
+project-owned `.id` performance fixtures are forbidden. New canonical evidence
 source uses `.id` and must execute in the production path.
 
 `std` is migration distribution, not a performance API namespace. Removing a

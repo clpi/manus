@@ -1,0 +1,68 @@
+-- device_showcase.id — Demonstrates @device multi-target code generation
+--
+-- Shows how @device generates backend-specific code:
+--   @device(.cuda)  → __global__ kernel + launch wrapper
+--   @device(.metal) → kernel + dispatch wrapper
+--   @device(.cpu)   → regular C function
+--   @device(.auto)  → auto-detected device
+
+@c.include("stdio.h")
+@c.include("stdlib.h")
+
+-- CUDA kernel: matrix multiplication
+@device(.cuda)
+cuda_matmul(a: ptr, b: ptr, c: ptr, M: i32, N: i32, K: i32): void
+  @c.emit([[
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row < M && col < N) {
+      float sum = 0.0f;
+      for (int i = 0; i < K; i++)
+        sum += ((float*)a)[row * K + i] * ((float*)b)[i * N + col];
+      ((float*)c)[row * N + col] = sum;
+    }
+  ]])
+end
+
+-- Metal kernel: vector addition
+@device(.metal)
+metal_vecadd(a: ptr, b: ptr, c: ptr, n: i32): void
+  @c.emit([[
+    int idx = thread_position_in_grid().x;
+    if (idx < n) {
+      ((float*)c)[idx] = ((float*)a)[idx] + ((float*)b)[idx];
+    }
+  ]])
+end
+
+-- Regular CPU function
+@device(.cpu)
+cpu_dot(a: ptr, b: ptr, n: i32): float
+  @c.emit([[
+    float sum = 0.0f;
+    for (int i = 0; i < n; i++)
+      sum += ((float*)a)[i] * ((float*)b)[i];
+    return sum;
+  ]])
+end
+
+-- Auto-detected device (runtime selection)
+@device(.auto)
+auto_relu(x: ptr, n: i32): void
+  @c.emit([[
+    for (int i = 0; i < n; i++) {
+      float val = ((float*)x)[i];
+      ((float*)x)[i] = val > 0.0f ? val : 0.0f;
+    }
+  ]])
+end
+
+print("=== @device Multi-Target Code Generation ===")
+print("")
+print("Generated code for each target:")
+print("  @device(.cuda)  → #ifdef __CUDACC__ __global__ kernel + launch_{name}() wrapper")
+print("  @device(.metal) → #ifdef __METAL_VERSION__ kernel + dispatch_{name}() wrapper")
+print("  @device(.cpu)   → /* @device(cpu) */ annotation")
+print("  @device(.auto)  → /* @device(auto) */ annotation")
+print("")
+print("=== done ===")

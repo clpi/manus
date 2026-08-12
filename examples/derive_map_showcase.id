@@ -1,0 +1,27 @@
+-- @comp.derive: one concept + one derive macro → C for EVERY matching type
+-- Run: duo run examples/derive_map_showcase.id
+
+concept HasXY
+    x: f64
+    y: f64
+end
+
+Point: { x: f64, y: f64 }
+Pair: { x: f64, y: f64 }
+
+@comp.define.derive("TouchApi", generate(meta) -> str
+    acc = "/* " .. meta.name .. " touch API */\n"
+    for i = 1, #meta.fields
+        f = meta.fields[i]
+        acc = acc .. "static inline void duo_" .. meta.name .. "_read_" .. f.name .. "(const duo_" .. meta.name .. "* v) { (void)v->" .. f.name .. "; }\n"
+    end
+    acc
+end)
+
+@c.emit(@comp.derive("HasXY", TouchApi))
+
+API_LEN = @comp.derive("HasXY", TouchApi)
+
+print("=== derive_map showcase ===")
+print("generated_bytes = " .. to(str)(#API_LEN))
+print("ok")

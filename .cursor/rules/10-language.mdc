@@ -7,7 +7,8 @@ globs: ["*.id", "docs/spec/**", "CLAUDE.md", "AGENTS.md"]
 Use `AGENTS.md`, `docs/spec/constitution.md`, `CLAUDE.md`,
 `docs/spec/grammar.md`, and `docs/spec/corpus.md`.
 
-Canonical source is `.id`. The language is Idsem. `.duo`, Duo, and Duon are
-historical bootstrap identities unless an authority file names the exact
-compatibility boundary. Do not use examples or historical files as language
-law.
+Canonical source is `.id`. Current language is **Idol** (`idol`). Historical
+Idsem, Duo, Duon, and `.id` are provenance only. C0 owns
+`law.update.face`; `AGENTS.md` projects it, and `scripts/idiomgate.id` exposes
+candidate pressure pending the graph witness. Do not use examples or
+historical files as language law.

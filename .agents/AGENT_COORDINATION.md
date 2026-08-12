@@ -1,4 +1,4 @@
-# Idsem agent coordination
+# Idol agent coordination
 
 This file is a durable ownership and gate map. It is not language law, a live
 control plane, or a current-status ledger. Any line likely to drift belongs in
@@ -18,14 +18,15 @@ the ignored `.agents/session/` state or in evidence from an exact run.
 
 ## Implementation owners
 
-Owner means the boundary that currently decides. Existing Zig and `.duo`
-paths are bootstrap or compatibility debt, not destination architecture.
+Owner means the boundary that currently decides. Existing Zig and `.id`
+paths are bootstrap or compatibility debt, not destination architecture. A
+suffix-only `.id` rename is not canonicality or self-host transfer.
 
 | Boundary | Current implementation owner |
 |---|---|
 | Driver and production dispatch | `src/main.zig` |
 | Lexer bridge | `src/duo_lexer_bridge.zig`, `src/duo_lexer_dispatch.zig` |
-| Lexer source and generated physical projection | `lib/std/compiler/lexer.duo`, `src/duo_lexer_tokenize.c` |
+| Lexer source and generated physical projection | `lib/std/compiler/lexer.id`, `src/duo_lexer_tokenize.c` |
 | Grammar and parser | `docs/spec/grammar.md`, `src/parser.zig`, `src/pass3*.zig` |
 | Binding and semantic production | `src/sema.zig`, `src/semantic_context.zig`, `src/semantic_graph.zig` |
 | Realization scheduling | `src/dnir_lower.zig`, `src/duo_native_ir.zig`, `src/region_graph.zig` |
@@ -57,7 +58,8 @@ counts or translate a host module line for line.
 1. Never use `git stash`, `git reset --hard`, or hidden worktree cleanup.
 2. Claim exact paths and commit only explicit owned pathspecs.
 3. Serialize heavy commands through
-   `./zig-out/bin/duo run scripts/duo_lock.duo -- <command>`.
+   `repo="$(git rev-parse --show-toplevel)"` and
+   `"$repo/zig-out/bin/duo" run --backend=c "$repo/scripts/duo_lock.id" -- <command>`.
 4. Positive-control every zero and report the inner requested outcome.
 5. Never repair an integration failure by restoring a shadow authority another
    owner removed.

@@ -1,0 +1,603 @@
+-- Compile time + binary size, Duo against C. A TRACKING benchmark: it reports,
+-- it does not fail when Duo is slower or larger.
+--
+-- Duo replacement for scripts/run_compile_size_benchmark.sh (monoglot census,
+-- G11). The shell version was the last tracked .sh in the repo and it carried
+-- TWO foreign languages, not one: 439 lines of bash plus two inline python3
+-- heredocs (39 lines) — one the wall-clock timer, one the ML float comparison.
+-- Both are arithmetic, which is exactly what the census says belongs in Duo.
+--
+-- WHAT IS STILL SHELLED OUT, and why none of it is reasoning:
+--   uname / xcrun / mktemp / cp / rm     environment facts and file moves
+--   stat -f%z, wc -l                     one number, read back and compared here
+--   grep '^RESULT ' | sort               selecting and ordering lines; the
+--                                        COMPARISON of those lines is Duo
+--   the compilers themselves             the thing being measured
+-- No branch, no ratio and no tolerance is computed by a foreign process.
+--
+-- THE ONE MEASUREMENT DIFFERENCE, stated rather than buried. The shell version
+-- timed with python's time.perf_counter around subprocess.run, which forks and
+-- execs the compiler directly. Duo's process primitive goes through system(3),
+-- which inserts a /bin/sh between this process and the compiler and costs
+-- about 3.6 ms every call. So the harness MEASURES that floor — the min over
+-- eight runs of an empty command, which spawns the shell and nothing else —
+-- subtracts it, and PRINTS the value it subtracted, so the correction is
+-- visible rather than assumed. Against the shell version's last run every
+-- deterministic column is identical and compile_s agrees closely; the
+-- correction is what makes the second half of that true.
+--
+-- SOURCES ARE STREAMED TO DISK, NOT BUILT IN MEMORY. The 10k workload is a
+-- 205 KB source. Accumulating it with string interpolation is quadratic AND
+-- hits a live native-backend defect: a 1500-iteration append loop sitting
+-- beside a few i64 scalars compiles clean under --backend=direct and then
+-- SEGFAULTS before its first print (exit 139), while --backend=c runs the same
+-- program correctly. Writing each block straight to an open file handle is
+-- linear and steps around it.
+--
+-- Env: RUNS, CHAIN_FUNCS_1K (or CHAIN_FUNCS), CHAIN_FUNCS_10K, CC, STRIP,
+-- SDKROOT, ZIG, DUO_ROOT. Exit 0 report produced, 1 a workload disagreed with
+-- C, a capture came back short, or a compile failed.
+
+sh(cmd: str): str
+    std.script.chomp(std.script.capture(cmd))
+end
+
+pad(s: str, w: i64): str
+    o = s
+    while #o < w
+        o = "{o} "
+    end
+    o
+end
+
+lpad(s: str, w: i64): str
+    o = s
+    while #o < w
+        o = " {o}"
+    end
+    o
+end
+
+digits(n: i64, w: i64): str
+    o = n:to(str)
+    while #o < w
+        o = "0{o}"
+    end
+    o
+end
+
+-- Seconds with six places, from integer nanoseconds. `to(str)` on an f64 does
+-- not compile, and a float round trip would put the last digit at the mercy of
+-- the printer; this arithmetic is exact in i64.
+secs(ns: i64): str
+    v: i64 = ns
+    if v < 0
+        v = 0
+    end
+    micro: i64 = (v + 500) // 1000
+    whole: i64 = micro // 1000000
+    frac: str = digits(micro % 1000000, 6)
+    "{whole}.{frac}"
+end
+
+-- a / b to three places, half-up, entirely in i64. Reproduces awk's "%.3f" on
+-- every value this benchmark has produced; checked against the shell run.
+ratio(a: i64, b: i64): str
+    out = "n/a"
+    if b > 0
+        scaled: i64 = (a * 1000 + b // 2) // b
+        whole: i64 = scaled // 1000
+        frac: str = digits(scaled % 1000, 3)
+        out = "{whole}.{frac}"
+    end
+    out
+end
+
+sizeat(path: str): i64
+    to(i64)(sh("stat -f%z '{path}' 2>/dev/null || stat -c%s '{path}'"))
+end
+
+linesat(path: str): i64
+    to(i64)(sh("wc -l < '{path}' | tr -d ' '"))
+end
+
+field(line: str, want: i64): str
+    n: i64 = #line
+    i: i64 = 1
+    seen: i64 = 0
+    out = ""
+    while i <= n
+        b: i64 = line:byte(i)
+        if b != 32 and b != 9
+            seen += 1
+            start: i64 = i
+            while i <= n and line:byte(i) != 32 and line:byte(i) != 9
+                i += 1
+            end
+            if seen == want and out == ""
+                out = line:sub(start, i - 1)
+            end
+        else
+            i += 1
+        end
+    end
+    out
+end
+
+lines(text: str): any
+    out = {}
+    n: i64 = #text
+    start: i64 = 1
+    i: i64 = 1
+    while i <= n
+        if text:byte(i) == 10
+            if i > start
+                out[#out + 1] = text:sub(start, i - 1)
+            end
+            start = i + 1
+        end
+        i += 1
+    end
+    if start <= n
+        out[#out + 1] = text:sub(start, n)
+    end
+    out
+end
+
+absf(x: f64): f64
+    o: f64 = x
+    if o < 0.0
+        o = 0.0 - o
+    end
+    o
+end
+
+homedir = std.script.getenv("DUO_ROOT", ".")
+root = sh("cd '{homedir}' && pwd")
+duobin = "{root}/zig-out/bin/duo"
+zigbin = std.script.getenv("ZIG", "zig")
+cc = std.script.getenv("CC", "clang")
+stripbin = std.script.getenv("STRIP", "strip")
+runs = to(i64)(std.script.getenv("RUNS", "5"))
+chainmid = to(i64)(std.script.getenv("CHAIN_FUNCS", "180"))
+chainsmall = to(i64)(std.script.getenv("CHAIN_FUNCS_1K", chainmid:to(str)))
+chainbig = to(i64)(std.script.getenv("CHAIN_FUNCS_10K", "1500"))
+uname = sh("uname -s")
+
+trimflag(): str
+    o = "-Wl,--gc-sections"
+    if uname == "Darwin"
+        o = "-Wl,-dead_strip"
+    end
+    o
+end
+
+stripflag(): str
+    o = "--strip-all"
+    if uname == "Darwin"
+        o = "-x"
+    end
+    o
+end
+
+trim = trimflag()
+stripmode = stripflag()
+cflags = "-O3 -ffast-math -march=native -flto -fomit-frame-pointer {trim}"
+work = sh("mktemp -d 2>/dev/null")
+
+-- The min of `runs` wall times, less the shell-spawn floor. A failed compile is
+-- fatal: a benchmark that quietly times a command which did not run is the
+-- frozen-literal failure mode in another costume.
+mintime(label: str, cmd: str, floor: i64): i64
+    log = "{work}/compile.log"
+    quiet = "{cmd} > '{log}' 2>&1"
+    best: i64 = 0
+    i: i64 = 0
+    while i < runs
+        a: i64 = std.time.monotonic()
+        rc: i64 = std.script.run(quiet)
+        b: i64 = std.time.monotonic()
+        if rc != 0
+            print("compile-size-bench: FAIL — {label} exited {rc}")
+            print("  command: {cmd}")
+            print(sh("sed -n '1,40p' '{log}'"))
+            std.os.exit(1)
+        end
+        d: i64 = b - a
+        if best == 0 or d < best
+            best = d
+        end
+        i += 1
+    end
+    out: i64 = best - floor
+    if out < 0
+        out = 0
+    end
+    out
+end
+
+spawnfloor(): i64
+    best: i64 = 0
+    i: i64 = 0
+    while i < 8
+        a: i64 = std.time.monotonic()
+        rc: i64 = std.script.run("true")
+        b: i64 = std.time.monotonic()
+        d: i64 = b - a
+        if rc == 0 and (best == 0 or d < best)
+            best = d
+        end
+        i += 1
+    end
+    best
+end
+
+strippedsize(input: str, out: str): i64
+    std.script.must("cp '{input}' '{out}'")
+    std.script.run("'{stripbin}' {stripmode} '{out}' 2>/dev/null")
+    sizeat(out)
+end
+
+duotyped(path: str): void
+    f = std.io.open(path, "w")
+    f:write("fun fib_iter(n: i64): i64\n")
+    f:write("    a: i64 = 0\n")
+    f:write("    b: i64 = 1\n")
+    f:write("    i: i64 = 0\n")
+    f:write("    while i < n\n")
+    f:write("        t: i64 = a + b\n")
+    f:write("        a = b\n")
+    f:write("        b = t\n")
+    f:write("        i += 1\n")
+    f:write("    end\n")
+    f:write("    a\n")
+    f:write("end\n")
+    f:write("\n")
+    f:write("fun checksum(n: i64): i64\n")
+    f:write("    acc: i64 = 0\n")
+    f:write("    i: i64 = 1\n")
+    f:write("    while i <= n\n")
+    f:write("        acc += (fib_iter(i % 40) * i) % 1000003\n")
+    f:write("        i += 1\n")
+    f:write("    end\n")
+    f:write("    acc\n")
+    f:write("end\n")
+    f:write("\n")
+    f:write("print(checksum(200000))\n")
+    f:close()
+end
+
+ctyped(path: str): void
+    f = std.io.open(path, "w")
+    f:write("#include <stdint.h>\n")
+    f:write("#include <stdio.h>\n")
+    f:write("\n")
+    f:write("static inline int64_t fib_iter(int64_t n) {\n")
+    f:write("    int64_t a = 0;\n")
+    f:write("    int64_t b = 1;\n")
+    f:write("    for (int64_t i = 0; i < n; ++i) {\n")
+    f:write("        int64_t t = a + b;\n")
+    f:write("        a = b;\n")
+    f:write("        b = t;\n")
+    f:write("    }\n")
+    f:write("    return a;\n")
+    f:write("}\n")
+    f:write("\n")
+    f:write("static inline int64_t checksum(int64_t n) {\n")
+    f:write("    int64_t acc = 0;\n")
+    f:write("    for (int64_t i = 1; i <= n; ++i) {\n")
+    f:write("        acc += (fib_iter(i % 40) * i) % 1000003;\n")
+    f:write("    }\n")
+    f:write("    return acc;\n")
+    f:write("}\n")
+    f:write("\n")
+    f:write("int main(void) {\n")
+    f:write("    printf(\"%lld\\n\", (long long)checksum(200000));\n")
+    f:write("    return 0;\n")
+    f:write("}\n")
+    f:close()
+end
+
+duochain(path: str, funcs: i64): void
+    f = std.io.open(path, "w")
+    f:write("-- Generated typed function-chain workload.\n")
+    f:write("\n")
+    i: i64 = 0
+    while i < funcs
+        add: i64 = i * 17 + 31
+        salt: i64 = i + 3
+        f:write("fun step_{i}(x: i64): i64\n")
+        f:write("    y: i64 = x + {add}\n")
+        f:write("    y = (y * 1103515245 + 12345 + {salt}) % 2147483647\n")
+        f:write("    y\n")
+        f:write("end\n")
+        f:write("\n")
+        i += 1
+    end
+    f:write("fun checksum(n: i64): i64\n")
+    f:write("    acc: i64 = 0\n")
+    f:write("    i: i64 = 1\n")
+    f:write("    while i <= n\n")
+    f:write("        x: i64 = i + acc % 97\n")
+    i = 0
+    while i < funcs
+        f:write("        x = step_{i}(x)\n")
+        i += 1
+    end
+    f:write("        acc = (acc + x) % 1000000007\n")
+    f:write("        i += 1\n")
+    f:write("    end\n")
+    f:write("    acc\n")
+    f:write("end\n")
+    f:write("\n")
+    f:write("print(checksum(2000))\n")
+    f:close()
+end
+
+cchain(path: str, funcs: i64): void
+    f = std.io.open(path, "w")
+    f:write("#include <stdint.h>\n")
+    f:write("#include <stdio.h>\n")
+    f:write("\n")
+    i: i64 = 0
+    while i < funcs
+        add: i64 = i * 17 + 31
+        salt: i64 = i + 3
+        f:write("static inline int64_t step_{i}(int64_t x) {\n")
+        f:write("    int64_t y = x + {add};\n")
+        f:write("    y = (y * 1103515245 + 12345 + {salt}) % 2147483647;\n")
+        f:write("    return y;\n")
+        f:write("}\n")
+        f:write("\n")
+        i += 1
+    end
+    f:write("static inline int64_t checksum(int64_t n) {\n")
+    f:write("    int64_t acc = 0;\n")
+    f:write("    for (int64_t i = 1; i <= n; ++i) {\n")
+    f:write("        int64_t x = i + acc % 97;\n")
+    i = 0
+    while i < funcs
+        f:write("        x = step_{i}(x);\n")
+        i += 1
+    end
+    f:write("        acc = (acc + x) % 1000000007;\n")
+    f:write("    }\n")
+    f:write("    return acc;\n")
+    f:write("}\n")
+    f:write("\n")
+    f:write("int main(void) {\n")
+    f:write("    printf(\"%lld\\n\", (long long)checksum(2000));\n")
+    f:write("    return 0;\n")
+    f:write("}\n")
+    f:close()
+end
+
+head(): void
+    a: str = pad("Workload", 22)
+    b: str = pad("Metric", 16)
+    c: str = lpad("Duo", 12)
+    d: str = lpad("C", 12)
+    e: str = lpad("Ratio", 10)
+    print("{a} {b} {c} {d} {e}")
+    a = pad("----------------------", 22)
+    b = pad("----------------", 16)
+    c = lpad("------------", 12)
+    d = lpad("------------", 12)
+    e = lpad("----------", 10)
+    print("{a} {b} {c} {d} {e}")
+end
+
+row(name: str, metric: str, dv: str, cv: str, rv: str): void
+    a: str = pad(name, 22)
+    b: str = pad(metric, 16)
+    c: str = lpad(dv, 12)
+    d: str = lpad(cv, 12)
+    e: str = lpad(rv, 10)
+    print("{a} {b} {c} {d} {e}x")
+end
+
+lone(name: str, metric: str, dv: str): void
+    a: str = pad(name, 22)
+    b: str = pad(metric, 16)
+    c: str = lpad(dv, 12)
+    d: str = lpad("-", 12)
+    e: str = lpad("-", 10)
+    print("{a} {b} {c} {d} {e}")
+end
+
+resultrow(name: str, value: str): void
+    a: str = pad(name, 15)
+    print("RESULT {a} {value}")
+end
+
+pairrows(name: str, duosrc: str, csrc: str, duoout: str, cout: str,
+    duons: i64, cns: i64): void
+    duolines: i64 = linesat(duosrc)
+    clines: i64 = linesat(csrc)
+    duobytes: i64 = sizeat(duosrc)
+    cbytes: i64 = sizeat(csrc)
+    duosize: i64 = sizeat(duoout)
+    csize: i64 = sizeat(cout)
+    row(name, "source_lines", duolines:to(str), clines:to(str),
+        ratio(duolines, clines))
+    row(name, "source_bytes", duobytes:to(str), cbytes:to(str),
+        ratio(duobytes, cbytes))
+    row(name, "compile_s", secs(duons), secs(cns), ratio(duons, cns))
+    row(name, "binary_bytes", duosize:to(str), csize:to(str),
+        ratio(duosize, csize))
+end
+
+workload(name: str, duosrc: str, csrc: str, duoout: str, cout: str,
+    floor: i64): void
+    duons: i64 = mintime("duo compile {name}",
+        "'{duobin}' compile '{duosrc}' -o '{duoout}'", floor)
+    cns: i64 = mintime("cc {name}",
+        "'{cc}' {cflags} '{csrc}' -o '{cout}'", floor)
+    duoanswer: str = sh("'{duoout}'")
+    canswer: str = sh("'{cout}'")
+    if duoanswer != canswer
+        print("RESULT mismatch for {name}: Duo={duoanswer} C={canswer}")
+        std.os.exit(1)
+    end
+    pairrows(name, duosrc, csrc, duoout, cout, duons, cns)
+    resultrow(name, duoanswer)
+end
+
+-- Sorted RESULT rows, with the count checked against what the program is
+-- supposed to emit. A capture that silently produced 0 rows would otherwise
+-- compare two empty lists and call them equal.
+capturerows(label: str, want: i64, bin: str, out: str): void
+    rc: i64 = std.script.run("'{bin}' > '{out}.raw' 2>'{out}.err'")
+    std.script.run("grep '^RESULT ' '{out}.raw' | sort > '{out}'")
+    got: i64 = to(i64)(sh("grep -c '^RESULT ' '{out}' | tr -d ' '"))
+    if rc != 0 or got != want
+        print("RESULT capture failed for {label}: got {got}/{want} row(s), status {rc}")
+        print(sh("sed -n '1,40p' '{out}.err'"))
+        print(sh("sed -n '1,40p' '{out}.raw'"))
+        std.os.exit(1)
+    end
+end
+
+mlagree(duopath: str, cpath: str): void
+    dl = lines(sh("cat '{duopath}'"))
+    cl = lines(sh("cat '{cpath}'"))
+    nd: i64 = #dl
+    nc: i64 = #cl
+    if nd != nc
+        print("RESULT count mismatch: Duo={nd} C={nc}")
+        std.os.exit(1)
+    end
+    i: i64 = 1
+    while i <= nd
+        a = dl[i]
+        b = cl[i]
+        ida: str = field(a, 2)
+        idb: str = field(b, 2)
+        if ida == "" or ida != idb
+            print("RESULT id mismatch: Duo={a} C={b}")
+            std.os.exit(1)
+        end
+        d: f64 = to(f64)(field(a, 3))
+        r: f64 = to(f64)(field(b, 3))
+        denom: f64 = absf(r)
+        if denom < 1.0
+            denom = 1.0
+        end
+        if absf(d - r) / denom >= 0.0001
+            print("RESULT mismatch for {ida}: Duo={d} C={r}")
+            std.os.exit(1)
+        end
+        i += 1
+    end
+end
+
+mlbinary(floor: i64): void
+    name = "ml_binary"
+    duosrc = "{root}/examples/bench_ml.id"
+    csrc = "{root}/examples/bench_ml_c.c"
+    duoout = "{work}/ml_bench_duo"
+    cout = "{work}/ml_bench_c"
+    duorows = "{work}/ml_duo.results"
+    crows = "{work}/ml_c.results"
+    duons: i64 = mintime("duo compile {name}",
+        "'{duobin}' compile '{duosrc}' -o '{duoout}'", floor)
+    cns: i64 = mintime("cc {name}",
+        "'{cc}' {cflags} '{csrc}' -o '{cout}' -lm", floor)
+    capturerows("ml_binary Duo", 5, duoout, duorows)
+    capturerows("ml_binary C", 5, cout, crows)
+    mlagree(duorows, crows)
+    pairrows(name, duosrc, csrc, duoout, cout, duons, cns)
+    duostrip: i64 = strippedsize(duoout, "{work}/ml_bench_duo_stripped")
+    cstrip: i64 = strippedsize(cout, "{work}/ml_bench_c_stripped")
+    row(name, "stripped_bytes", duostrip:to(str), cstrip:to(str),
+        ratio(duostrip, cstrip))
+    resultrow(name, "5_rows_match")
+end
+
+duoapp(name: str, duosrc: str, sentinel: str, floor: i64): void
+    duoout = "{work}/{name}_duo"
+    duostripped = "{work}/{name}_duo_stripped"
+    duons: i64 = mintime("duo compile {name}",
+        "'{duobin}' compile '{duosrc}' -o '{duoout}'", floor)
+    seen: i64 = to(i64)(sh("'{duoout}' 2>/dev/null | grep -c -F '{sentinel}' | tr -d ' '"))
+    if seen < 1
+        print("RESULT mismatch for {name}: missing sentinel '{sentinel}'")
+        std.os.exit(1)
+    end
+    duolines: i64 = linesat(duosrc)
+    duobytes: i64 = sizeat(duosrc)
+    duosize: i64 = sizeat(duoout)
+    duostrip: i64 = strippedsize(duoout, duostripped)
+    lone(name, "source_lines", duolines:to(str))
+    lone(name, "source_bytes", duobytes:to(str))
+    lone(name, "compile_s", secs(duons))
+    lone(name, "binary_bytes", duosize:to(str))
+    lone(name, "stripped_bytes", duostrip:to(str))
+    resultrow(name, "sentinel_match")
+end
+
+main(): i64
+    if sh("test -x '{duobin}' && echo yes") != "yes"
+        std.script.must("cd '{root}' && '{zigbin}' build")
+    end
+    if sh("test -x '{duobin}' && echo yes") != "yes"
+        print("compile-size-bench: FAIL — no duo binary at {duobin}")
+        std.os.exit(1)
+    end
+    if work == ""
+        print("compile-size-bench: FAIL — mktemp -d produced nothing")
+        std.os.exit(1)
+    end
+
+    sdk = std.script.getenv("SDKROOT", "")
+    if sdk == ""
+        sdk = sh("xcrun --sdk macosx --show-sdk-path 2>/dev/null")
+    end
+    if sdk != ""
+        std.os.setenv("SDKROOT", sdk, true)
+    end
+
+    floor: i64 = spawnfloor()
+    floortext: str = secs(floor)
+
+    print("=== Compile Time + Binary Size Benchmark ===")
+    print("Runs: {runs} (minimum wall time)")
+    print("Generated chain functions: 1k={chainsmall} 10k={chainbig}")
+    print("Harness: duo at {duobin}; spawn floor {floortext} s subtracted")
+    print("")
+    head()
+
+    duotypedsrc = "{work}/typed_checksum.id"
+    ctypedsrc = "{work}/typed_checksum.c"
+    duotyped(duotypedsrc)
+    ctyped(ctypedsrc)
+    workload("typed_checksum", duotypedsrc, ctypedsrc,
+        "{work}/typed_checksum_duo", "{work}/typed_checksum_c", floor)
+
+    duosmall = "{work}/function_chain_1k.id"
+    csmall = "{work}/function_chain_1k.c"
+    duochain(duosmall, chainsmall)
+    cchain(csmall, chainsmall)
+    workload("function_chain_1k", duosmall, csmall,
+        "{work}/function_chain_1k_duo", "{work}/function_chain_1k_c", floor)
+
+    duobig = "{work}/function_chain_10k.id"
+    cbig = "{work}/function_chain_10k.c"
+    duochain(duobig, chainbig)
+    cchain(cbig, chainbig)
+    workload("function_chain_10k", duobig, cbig,
+        "{work}/function_chain_10k_duo", "{work}/function_chain_10k_c", floor)
+
+    mlbinary(floor)
+    duoapp("metaprogramming_app", "{root}/examples/metaprogramming_test.id",
+        "ALL METAPROGRAMMING TESTS PASSED", floor)
+
+    std.script.must("rm -rf '{work}'")
+
+    print("")
+    print("Note: this is a tracking benchmark. It reports typed-program runtime")
+    print("prelude cost, generated 1k/10k-line project scaling, ML binary size,")
+    print("and a fixed metaprogramming app binary-size sample;")
+    print("it does not fail when Duo is slower or larger than C.")
+    0
+end

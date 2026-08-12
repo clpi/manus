@@ -1,33 +1,41 @@
-# Idsem
+# Idol
 
-Idsem is a language and compiler built around one durable semantic identity
-space:
+Idol is the language and project: public command identity `idol`, canonical
+source suffix `.id`, and repository identity `idollang/idol`. It is built
+around one durable semantic identity space:
 
 ```text
 source/import -> graph -> demand -> realization -> machine
 ```
 
-Semantic identity persists while representation specializes. Canonical native
-source uses `.id`. Historical `.duo` source is migration provenance, not a
-second language or a pattern library.
+Semantic identity persists while representation specializes. Earlier `Idsem`,
+`Duo`, and `Duon` names and historical `.id` source are migration provenance,
+not a second language or a pattern library. Exact `duo` tool, command, path,
+and symbol spellings are physical bootstrap provenance until replaced by an
+executed `idol` owner.
 
 ## Current State
 
-The repository is at bootstrap stage S0. The production Idsem lexer owns the
+The repository is at bootstrap stage S0. The production Idol lexer owns the
 legacy token-kind/content/span projection; canonical lexical identities remain
-open in `GAP-145`. Parser recognition is still host-owned, so no Idsem-built
-production compiler B exists yet. The exact current ownership,
+open in `GAP-145`. Parser recognition is still host-owned: no compiler B or
+production `idol` binary exists. The exact current ownership,
 blockers, and measured aggregate outcome live in
 [`docs/bootstrap.md`](docs/bootstrap.md); do not infer progress from file counts
 or generated artifacts.
 
-The compiler-B path is:
+`GAP-131` makes the session-start P0 count unknown. An authority-independent
+scan is exposed by `tools/devnode/orient`; a fresh session must inspect every
+matching record under `gaps/GAP-*.md` directly rather than trust a zero, copied
+count, or this snapshot after the tree changes.
+
+The path to the first compiler B is:
 
 ```text
 lexical identity
 -> generated grammar roles
 -> immutable token view
--> executed Idsem parser recognition
+-> executed Idol parser recognition
 -> binding and scope
 -> graph and application
 -> demand
@@ -38,10 +46,10 @@ lexical identity
 
 ## Source
 
-Canonical Idsem is deliberately compact while its semantic graph remains
+Canonical Idol is deliberately compact while its semantic graph remains
 compositional:
 
-```idsem
+```id
 main: i64 = ()
     0
 ```
@@ -59,7 +67,8 @@ universal namespace.
 ## Build And Evidence
 
 The physical bootstrap executable is currently named `duo`; that name is a
-migration alias, not the current language identity. Build it with:
+bootstrap alias, not the current language identity or evidence that the future
+`idol` command has entered production. Build the seed transport with:
 
 ```bash
 zig build

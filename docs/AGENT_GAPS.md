@@ -10,7 +10,7 @@ numbered obligation only through `duo_agent_gaps_update`. Do not append
 findings here.
 
 The sole semantic law is [C0](spec/constitution.md). Canonical Idsem source uses
-`.id`; every remaining tracked project-owned `.duo` file is SOURCE-ZERO debt
+`.id`; every remaining tracked project-owned `.id` file is SOURCE-ZERO debt
 that must be semantically migrated or deleted, never a pattern source.
 
 `std` is migration distribution, not semantic architecture. Do not add

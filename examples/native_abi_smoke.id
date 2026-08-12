@@ -1,0 +1,17 @@
+-- @native ABI smoke: direct C calls from dynamic module (no native_scalar_mode)
+-- Run: duo run examples/native_abi_smoke.id
+
+@native
+native_add(a: i64, b: i64): i64
+    return a + b
+end
+
+use_native(): i64
+    native_add(10, 20)
+end
+
+RESULT = use_native()
+print("RESULT native_abi_sum = " .. to(str)(RESULT))
+if RESULT != 30
+    error("native_abi smoke failed")
+end

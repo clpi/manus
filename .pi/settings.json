@@ -1,0 +1,7 @@
+{
+  "$schema": "https://pi.dev/schema/settings.json",
+  "compaction": {
+    "keepRecentTokens": 40000
+  },
+  "npmCommand": ["mise", "exec", "--", "npm"]
+}

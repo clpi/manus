@@ -1,8 +1,0 @@
--- MP4-B01 repro: minimal std.compiler.lexer.next() call via embedded req module.
-
-main(): i64
-    lex = std.compiler.lexer.new("fun", "proof.duo")
-    tok = std.compiler.lexer.next(lex)
-    if tok.kind != std.compiler.token.KIND_FUN return 1 end
-    0
-end

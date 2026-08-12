@@ -1,9 +1,10 @@
-# Idsem MCP Bootstrap
+# Idol MCP Bootstrap
 
 These servers are physical compatibility transports for current repository
 coordination, evidence, and semantic projections. The `duo-*` server names and
-`.duo` implementation files are historical bootstrap identities; they do not
-name the language or authorize new historical source.
+historical `.id` source are bootstrap identities. Current `.id` entrypoints
+still carry compatibility transport; their suffix alone is not canonicality or
+self-host evidence.
 
 Start at [`AGENTS.md`](../../AGENTS.md). Configure the servers through
 [`.agents/AGENT_INTEGRATION.md`](../../.agents/AGENT_INTEGRATION.md), discover
@@ -12,16 +13,18 @@ ownership from [`docs/bootstrap.md`](../../docs/bootstrap.md).
 
 `std` is migration distribution, not a semantic namespace. Existing direct
 `std.*` calls in these transports are deletion-gated physical debt. Do not copy,
-expand, document, or generate them as canonical Idsem. New capability begins
+expand, document, or generate them as canonical Idol. New capability begins
 with the relation, subject, world, facts, outcome, evidence, and realization;
 missing vocabulary blocks instead of creating a helper root.
 
 Run the exact serialized MCP gate after changes:
 
 ```bash
-./zig-out/bin/duo run scripts/duo_lock.duo -- zig build mcp-gate
+repo="$(git rev-parse --show-toplevel)"
+"$repo/zig-out/bin/duo" run --backend=c "$repo/scripts/duo_lock.id" -- zig build mcp-gate
 ```
 
 The gate must prove handshake, schema/value agreement, truthful session state,
-claim exclusion, inner failure propagation, and current routing. A server
-starting or listing tools is not sufficient evidence.
+claim exclusion, and current routing. `GAP-146` keeps inner child-build outcome
+propagation incomplete, so inspect inner output as well as wrapper status. A
+server starting or listing tools is not sufficient evidence.

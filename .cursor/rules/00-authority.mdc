@@ -2,16 +2,20 @@
 alwaysApply: true
 ---
 
-# Idsem Authority
+# Idol authority router
 
-Start every substantive repository session at `AGENTS.md`.
-
-`docs/spec/constitution.md` is the sole semantic law. `CLAUDE.md`,
+Start every substantive session at `AGENTS.md`, then follow its chain to
+`docs/spec/constitution.md` (sole semantic law). `CLAUDE.md`,
 `docs/spec/AUTHORITY.md`, `docs/bootstrap.md`, `.agents/AGENT_CANONICAL.md`,
-and `.agents/AGENT_COORDINATION.md` are projections and routers.
+`.agents/AGENT_COORDINATION.md`, and `.agents/RELEASE_READINESS.md` are
+projections only.
 
-History, legacy `.duo` source, generated binaries, editor memories, chat
-histories, and machine caches are not Idsem law. Identify the semantic owner
-before editing, inspect HEAD and dirty state, inspect gaps and claims, prefer
-deletion or convergence over new mechanisms, and do not restore historical
-architecture.
+**Idol** (`idol`, `.id`) is the language identity. Active development is
+**`clpi/duo`**. **`idollang/idol`** is the future release repository only; do
+not migrate development there. Historical Idsem, Duo, Duon, `.id`, and `duo`
+bootstrap names are provenance only.
+
+Run `./tools/devnode/orient` and `./tools/devnode/doctor` before substantive
+work. Identify the semantic owner and bounded boundary before editing. Prefer
+deletion or convergence over new mechanisms. Do not restore historical
+architecture or duplicate MCP manifests, emitters, or coordination ledgers.

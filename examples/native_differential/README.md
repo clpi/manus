@@ -47,7 +47,7 @@ the honest `DNB001` path reports the gap.
 
 ## Layout
 
-- `*.duo` — the gate. All must agree; a divergence or a hang fails the build.
+- `*.id` — the gate. All must agree; a divergence or a hang fails the build.
 - `unsupported/` — the direct backend refuses to compile these. That is an
   honest capability gap, not a miscompilation, so it does not block. Current
   gaps: f64 arithmetic, string `#`, record literals, table indexing, closures.
@@ -75,7 +75,7 @@ loops, multi-argument calls, nested calls, mutual recursion, and self-recursion 
 all with zero `lua_*` runtime symbols in the emitted binary.
 
 Plus compile-time module resolution: `Alias = req "std.compiler.token"` binds at
-compile time and `Alias.CONST` folds to an immediate. `native_only/req_module_constant.duo`
+compile time and `Alias.CONST` folds to an immediate. `native_only/req_module_constant.id`
 lowers to `mov x9, #14; mov x0, x9; ret` — the whole module reference erased.
 
 Of the Pass 16 self-hosting proofs, `pass16_m1_lexer_proof` and
@@ -108,7 +108,7 @@ Proven in the corpus: `canon1_lambda_record_return`, `canon2_tail_record_return`
 
 ### Open blocker: call result bound to a local before a tail record return
 
-`unsupported/tokenizer.duo` is a real compiler subsystem written in **canonical,
+`unsupported/tokenizer.id` is a real compiler subsystem written in **canonical,
 idiomatic Duo** — functions as value bindings (`name = (params): ret … end`), no
 `fun`/`then`/`do`, `@{}` descriptors instead of an `enum` keyword, `if`/`elseif`
 rather than `match`, named field projection. It is **semantically correct**:
@@ -131,7 +131,7 @@ assigned value was a `.call` whose `.func` was itself a `.call`.
 **Ruling:** a `{` on a new line starts a fresh expression, not a table-call
 argument. This is the rule `(` and string literals already follow in the same
 suffix loop (F-13813-1), so it adds no new concept — it removes an inconsistency.
-Evidence: `f({...})` expresses the same thing, and a scan of 575 `.duo` files
+Evidence: `f({...})` expresses the same thing, and a scan of 575 `.id` files
 found **zero** real uses of the sugar. Same-line `f{...}` still parses, so Lua
 compatibility is untouched.
 
@@ -166,7 +166,7 @@ and rides x0..x7 like an i64.
 
 #### Achieved: a real compiler subsystem compiles end to end natively
 
-`tokenizer.duo` is in the corpus and passes. It is a tokenizer written in
+`tokenizer.id` is in the corpus and passes. It is a tokenizer written in
 canonical Duo — value-binding functions, no `fun`/`then`/`do`, `@{}` descriptor
 enum, `if`/`elseif`, named projection — that scans a source string byte by byte
 and classifies identifiers, numbers and punctuation. It compiles through the
@@ -182,7 +182,7 @@ _scan_one  _tokenize_checksum  _is_space  _is_alpha  _is_digit  _main
 
 #### Self-application: the tokenizer scans its own source
 
-`tokenizer_selfscan.duo` compiles natively and scans a verbatim copy of its own
+`tokenizer_selfscan.id` compiles natively and scans a verbatim copy of its own
 `is_digit` definition, returning **26** — the exact token count, matching the C
 backend. The scanned text exercises the digit-terminates-identifier path (`i64`
 splits into `i` + `64`), so it is real Duo syntax, not a toy string.
@@ -197,9 +197,9 @@ on neither backend today; the scanner logic is identical either way.
 
 #### SH-03 step: a Duo lexer emitting canonical token ids, natively compiled
 
-`native_only/lexer_native.duo` compiles to native ARM64 and emits the **same
+`native_only/lexer_native.id` compiles to native ARM64 and emits the **same
 token kind ids as `src/lexer.zig`**. The ids are not restated here — they are
-consumed via `req "std.token.classify"` from `lib/std/token/classify.duo`
+consumed via `req "std.token.classify"` from `lib/std/token/classify.id`
 (SH-02, already `duo_canonical`, generated from `src/token_classify_gen.zig`) and
 fold to immediates. Duo lexer and host lexer therefore agree on token identity by
 construction rather than by convention: if an id ever moved, the gated total
@@ -214,7 +214,7 @@ It is gated `native_only` because the **C backend cannot compile it** — as wit
 `req_module_constant`, the direct backend is strictly more capable here, so C is
 not a valid oracle.
 
-Why not `lib/std/compiler/lexer.duo` (the existing SH-03 differential oracle):
+Why not `lib/std/compiler/lexer.id` (the existing SH-03 differential oracle):
 its `lexer` record has 18 fields including strings, nested records and floats,
 exceeding the 8-slot register ABI for aggregates. Keeping lexer state in scalars
 and a 3-field token record puts the whole thing inside the proven native subset.
@@ -223,7 +223,7 @@ finding, because it means SH-03 is not blocked on the aggregate-ABI milestone.
 
 #### SH-04 step: a recursive-descent parser, natively compiled
 
-`native_only/parser_native.duo` is a precedence-climbing expression parser —
+`native_only/parser_native.id` is a precedence-climbing expression parser —
 the core shape of `src/parser.zig` — written in Duo and compiled to native ARM64:
 
 ```
@@ -250,7 +250,7 @@ map is now filled by a pre-pass over all functions before any body lowers.
 
 #### SH-04 step 2: block structure over real Duo source
 
-`native_only/parser_blocks.duo` moves from arithmetic to actual Duo syntax. It
+`native_only/parser_blocks.id` moves from arithmetic to actual Duo syntax. It
 scans a Duo function body, recognises the reserved words that open and close
 blocks, and reports maximum nesting depth — the same bookkeeping `src/parser.zig`
 does to match an `end` against its opener. Returns **3** for
@@ -264,7 +264,7 @@ function f(n) while n > 0 if n == 1 return 1 end end end
 correctly pairing openers with closers. Unbalanced input (an `end` with no
 opener) returns −1 rather than a plausible-looking number.
 
-Keyword identity again comes from `classify.duo` via `req`, so "what counts as
+Keyword identity again comes from `classify.id` via `req`, so "what counts as
 `if`" is the compiler's own fact folded to an immediate.
 
 `do` is deliberately **not** an opener: in `while cond do … end` it belongs to
@@ -274,7 +274,7 @@ checked against Duo's grammar rules, not against my expectations.
 
 #### SH-06 step: name resolution, natively compiled
 
-`native_only/resolver_native.duo` answers the question a binder answers: which
+`native_only/resolver_native.id` answers the question a binder answers: which
 identifiers in a source fragment are **not** bound in the enclosing scope. It
 returns **2** for `x + total + y + z` against scope `x total` — `y` and `z` are
 the two "undefined name" diagnostics a real binder would emit. Zero `lua_*`
@@ -297,7 +297,7 @@ table lowering, which is the actual SH-06 milestone and is shared with
 
 #### Native tables, step 1: positional literals with constant indexing
 
-`native_only/table_const_index.duo` — `t = { 10, 20, 30 }` then `t[1] + t[2]`
+`native_only/table_const_index.id` — `t = { 10, 20, 30 }` then `t[1] + t[2]`
 returns **30** natively, zero `lua_*` symbols.
 
 Elements become one local per slot (`t.1`, `t.2`, …), exactly as record fields
@@ -311,7 +311,7 @@ construct, and C an invalid oracle.
 
 #### Native tables, step 2: dynamic indexing
 
-`native_only/table_dynamic_index.duo` — `t[i]` where `i` is a **loop variable**.
+`native_only/table_dynamic_index.id` — `t[i]` where `i` is a **loop variable**.
 Returns **60**, matching the `lua` reference exactly. Zero `lua_*` symbols. The C
 backend cannot compile it, so the gate uses Lua's answer.
 
@@ -333,24 +333,24 @@ table, but not an unbounded one.
 
 #### Native tables, step 3: mutable stores — and SH-06 completed
 
-`native_only/table_mutable_store.duo` — `t[i] = v` with `i` a loop variable
+`native_only/table_mutable_store.id` — `t[i] = v` with `i` a loop variable
 returns **100**, matching the `lua` reference. The mirror of dynamic reads: a
 select-chain of *stores* over register-resident slots. Still no memory, no
 allocation.
 
-That closes the capability that was blocking SH-06. `native_only/symtab_native.duo`
+That closes the capability that was blocking SH-06. `native_only/symtab_native.id`
 is a genuinely **mutable symbol table** — declare a symbol into a slot, look it
 up, get 0 for unbound, overwrite a slot and re-query. Returns **21**, zero
 `lua_*` symbols.
 
-`resolver_native.duo` could only resolve against a scope fixed at compile time,
+`resolver_native.id` could only resolve against a scope fixed at compile time,
 because strings are immutable and there was no mutable collection. There is one
 now, for bounded scopes — which is what a compiler frontend actually uses. An
 *unbounded* table still needs real allocation.
 
 #### SH-11 step: ARM64 instruction encoding, in Duo
 
-`native_only/arm64_encoder.duo` encodes MOVZ, ADD, SUB, CSET and RET and checks
+`native_only/arm64_encoder.id` encodes MOVZ, ADD, SUB, CSET and RET and checks
 each against the word the Zig backend emits — verified against `objdump` during
 this session's work on `src/native_backend.zig`. Returns **5**, zero `lua_*`
 symbols. It is compiled to ARM64 by the very backend whose encodings it
@@ -365,7 +365,7 @@ encoded the wrong test. That defect is defect #2 of this session.
 
 #### SH-11 step 2: a code generator
 
-`native_only/codegen_native.duo` takes the program `return 42` and emits the
+`native_only/codegen_native.id` takes the program `return 42` and emits the
 *sequence* of ARM64 instructions for it into a mutable table — `code[n] = word;
 n = n + 1`, exactly the shape of `emitFmt` in `src/native_backend.zig` — then
 verifies both emitted words against what `objdump` shows:
@@ -381,7 +381,7 @@ demonstrated in Duo, natively.
 **The one remaining gap is persistence — and it is smaller than it looks.**
 
 `os.write_file` does not lower natively (`DNB007`), but the reason is not that
-file I/O is hard. Look at its implementation in `lib/std/os.duo`:
+file I/O is hard. Look at its implementation in `lib/std/os.id`:
 
 ```
 fun os_write_file(path: str, data: any): bool
@@ -426,7 +426,7 @@ Two further compile-time gaps found while writing it:
 
 ### Open blocker: records produced inside a loop
 
-`unsupported/tokenizer.duo` is a real compiler subsystem written in spec'd Duo —
+`unsupported/tokenizer.id` is a real compiler subsystem written in spec'd Duo —
 it scans a source string byte by byte and classifies identifiers, numbers and
 punctuation. It is **semantically correct** (checksum 162 through the C backend)
 and uses only constructs the direct backend otherwise proves: `str` parameters,
@@ -461,6 +461,6 @@ honestly with `DNB001` rather than emitting wrong code. Nested records
 
 ## Adding a case
 
-Drop a `.duo` file here whose `main` returns an `i64` (exit statuses are `mod
+Drop a `.id` file here whose `main` returns an `i64` (exit statuses are `mod
 256`, so keep expected values under 256 and away from 124, which marks a
 timeout). The script picks it up automatically.

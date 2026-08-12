@@ -33,7 +33,7 @@ Several are. Those are not "features to migrate", they are dead syntax with a
 grammar slot, and they should be deleted rather than given a graph home.
 
 Every row below was traced to a consumer or shown to have none. Counts in this
-document were produced by grep over `src/*.zig` and over `.duo` sources in
+document were produced by grep over `src/*.zig` and over `.id` sources in
 `lib/ examples/ tools/ ext/ tests/`; where a number appears, it came from a
 command, not from reading.
 
@@ -146,13 +146,13 @@ and `sema.zig:1858`.
 | `@bench`, `@time` | same path | `fn --is--> benchmark` | (c) |
 | `@build.*` | `sema.zig:2054` → `sem.build_directives` → `build_framework.zig:518` | `module --builds--> target` — a build-system fact that should not be in the language at all | (c) |
 | `@debug.*`, `@trace.*` | `sema.zig:2056`; `debug_trace.zig:207,219` | `module --traces--> channel` | (c) |
-| `@c.emit` / `@c.include` / `@c.import` / `@c.type` / `@c.call` | `directives.zig isCInterfaceDirective` → `sema.zig:2049` bypass; `codegen.zig:5444,10762,22627` | `module --emits--> foreign-text` — genuine bootstrap escape hatch, 188 + 33 uses in `.duo` | (c) |
+| `@c.emit` / `@c.include` / `@c.import` / `@c.type` / `@c.call` | `directives.zig isCInterfaceDirective` → `sema.zig:2049` bypass; `codegen.zig:5444,10762,22627` | `module --emits--> foreign-text` — genuine bootstrap escape hatch, 188 + 33 uses in `.id` | (c) |
 
 ### F. Dead — recognized and/or permitted, consumed by nothing
 
 Traced repo-wide; each has zero consumer.
 
-| Name | Recognized | Permitted | `.duo` uses | Verdict |
+| Name | Recognized | Permitted | `.id` uses | Verdict |
 |---|---|---|---|---|
 | `@repr` | `parser.zig:755` | no | 0 | parse-accepted then **rejected** by `validateFuncAttrs`. Pure grammar debt. |
 | `@dispatch` | `parser.zig:769` | no | 0 | same |
@@ -169,7 +169,7 @@ allow-list, so a user writes them, gets no error, and gets no behaviour.
 ## What is already dead and was deleted
 
 Inside the two files this survey owns, four items had zero callers repo-wide
-(verified by grep across `*.zig`, `*.duo`, `*.md`, `*.sh`, `*.c`) and were
+(verified by grep across `*.zig`, `*.id`, `*.md`, `*.sh`, `*.c`) and were
 removed:
 
 - `directives.attrNameEq` — helper, never called.
@@ -196,7 +196,7 @@ rather than break.
   `@noalloc`, `@pure`, `@inline`/`@noinline`, `@flatten`, `@implements`, and the
   whole layout group `@packed`/`@align`/`@ffi`/`@sealed`/`@native`/`@guarded`.
 - **(b) erasable after a named capability lands** — see below.
-- **(c) load-bearing bootstrap** — `@c.*` (320 uses across `.duo`; nothing
+- **(c) load-bearing bootstrap** — `@c.*` (320 uses across `.id`; nothing
   replaces it until Pass 100 has its own foreign-text story), `@test`/`@bench`
   (the test harness is the gate that proves the rest), `@build.*`
   (`build_framework.zig` is a real build system with no replacement),
@@ -262,7 +262,7 @@ evidence of progress. *Blocks nothing; unblocks honest measurement.*
 
 **1. Delete group F.** `@repr`, `@dispatch`, `@bitfield`, `@volatile` from
 `parser.zig:723 is_known_attribute`; `@concurrent`, `@restrict`, `@deprecated`
-from the `validateFuncAttrs` allow-list. Two of these have `.duo` uses
+from the `validateFuncAttrs` allow-list. Two of these have `.id` uses
 (`@concurrent` ×1, and `@deprecated` ×0 but it is in the allow-list) — those
 call sites must be removed in the same change or the build breaks. This is pure
 subtraction and removes ~8 names from the surface with no migration cost.
@@ -311,7 +311,7 @@ Requires a replacement test-declaration surface, which does not exist yet.
 ramp and must outlive the things it warns about.
 
 **10. `@c.*` last, or never.** It is the foreign-text escape hatch with 142
-`.duo` call sites. Pass 100 needs its own answer here before this can move; this
+`.id` call sites. Pass 100 needs its own answer here before this can move; this
 survey does not have one.
 
 ## The single highest-leverage erasure
@@ -337,13 +337,13 @@ design risk: **step 1**, deleting group F.
 
 ## What could not be determined
 
-- Whether `@asm` (2 `.duo` uses) reaches a declaration-attribute consumer at
+- Whether `@asm` (2 `.id` uses) reaches a declaration-attribute consumer at
   all, or only the expression-position `legacy_directives` path. The two uses
   were not traced to a codegen site.
-- Whether any `.duo` file outside the searched roots uses the group F names.
+- Whether any `.id` file outside the searched roots uses the group F names.
   The census covered `lib/ examples/ tools/ ext/ tests/`.
 - Whether the `@location` / `@group` / `@vertex` / `@fragment` / `@schema` /
-  `@foreign` / `@lua` / `@run` / `@pipeline` names seen in `.duo` sources
+  `@foreign` / `@lua` / `@run` / `@pipeline` names seen in `.id` sources
   (12, 5, 2, 2, 3, 7, 2, 39, 9 occurrences respectively) are attributes at all — none appear in
   `parser.zig:723 is_known_attribute`, so they reach the compiler by some other
   route (likely `meta_module` module-directive handling or plain expression
@@ -361,7 +361,7 @@ Everything above is the **`ast.Attribute`** surface — 46 recognized names, one
 `Attribute { name, args }` record, ~70 `std.mem.eql` reads. That is the surface
 the audit read, and it is the one worth migrating first.
 
-It is not the largest `@` population in `.duo` source. Counted at `489bc1b`:
+It is not the largest `@` population in `.id` source. Counted at `489bc1b`:
 
 | surface | spellings | representation | consumers |
 |---|---|---|---|
@@ -443,7 +443,7 @@ fact has **no home yet** — `& le`, `& be`, `& at(a)`, `& volatile`,
 `& positive` — are therefore *rejected*, not silently accepted and ignored:
 
 ```
-$ duo check le.duo          # 'Pt: { x: i8, y: i64 } & le'
+$ duo check le.id          # 'Pt: { x: i8, y: i64 } & le'
 error: parse failed: ExpectedToken
 ```
 
@@ -483,30 +483,30 @@ The unit suite is red at this HEAD for unrelated reasons, so the evidence is
 the failing *name set*, not the count. Two tests were added and both pass, one
 of them a positive control against `applyLayout` being a no-op.
 
-Fixture: `examples/layout_refinements_test.duo`, gated by
-`scripts/run_compile_fail_tests.duo` (run by `zig build test`).
+Fixture: `examples/layout_refinements_test.id`, gated by
+`scripts/run_compile_fail_tests.id` (run by `zig build test`).
 Positive-controlled: changing its expected output to `999` produces
-`FAIL: examples/layout_refinements_test.duo output mismatch`, so the row
+`FAIL: examples/layout_refinements_test.id output mismatch`, so the row
 genuinely executes.
 
 > Found while positive-controlling, and worth fixing separately:
-> `run_compile_fail_tests.duo` prints its `FAIL:` lines but **never prints its
+> `run_compile_fail_tests.id` prints its `FAIL:` lines but **never prints its
 > `OK:` lines** — `grep -c '^OK:'` is 0 while 100+ rows pass. The assertions do
 > run. But nobody should read that script's output as a pass count.
 
 ## The old spelling was not deleted
 
 `@packed` / `@align` / `@sealed` / `@native` / `@guarded` still parse and still
-work, and `examples/layout_attrs_test.duo` still proves it. Pass 100 forbids
+work, and `examples/layout_attrs_test.id` still proves it. Pass 100 forbids
 the directive, not the fact, and removing a working spelling to move a grep
 count is not the goal — ontology collapse is, and the ontology is now one.
 
 **Real corpus cost of retiring the spelling later: zero.** `@packed` / `@align`
 on a *record* have **no uses in `lib/`, `tools/` or `ext/`** — the two
 `lib/tools/ext` grep hits are an LSP completion snippet string
-(`tools/lsp/src/server.duo:1767`). The only writers are
-`examples/layout_attrs_test.duo` and a raw-string test module in
-`scripts/test_property_11.duo:129`.
+(`tools/lsp/src/server.id:1767`). The only writers are
+`examples/layout_attrs_test.id` and a raw-string test module in
+`scripts/test_property_11.id:129`.
 
 ## What step 3 did NOT cover
 

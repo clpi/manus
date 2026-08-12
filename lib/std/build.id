@@ -1,0 +1,113 @@
+-- std.build — build system helpers and environment info
+
+global _project = { name = "duo-app", version = "0.1.0", default = "app" }
+global _targets = {}
+
+info(): any
+    {
+        compiler = "duo",
+        version = "0.1.0",
+        host = os.getenv("HOSTNAME") or "unknown",
+        timestamp = os.date("%Y-%m-%dT%H:%M:%S"),
+    }
+end
+
+platform(): str
+    os.getenv("OSTYPE") or "unknown"
+end
+
+arch(): str
+    a = os.getenv("HOSTTYPE") or os.getenv("MACHTYPE") or "unknown"
+    a
+end
+
+target(): str
+    string.format("%s-%s", arch(), platform())
+end
+
+is_debug(): bool
+    os.getenv("DEBUG") == "1"
+end
+
+env(): str
+    os.getenv("BUILD_ENV") or "development"
+end
+
+project(cfg: any): any
+    if cfg == nil
+        _project
+    else
+        if has(.name)(cfg) _project.name = cfg.name end
+        if has(.version)(cfg) _project.version = cfg.version end
+        if has(.default)(cfg) _project.default = cfg.default end
+        _project
+    end
+end
+
+exe(cfg: any): any
+    if cfg.name == nil cfg.name = "app" end
+    if cfg.src == nil cfg.src = "src/main.id" end
+    if cfg.out == nil cfg.out = "zig-out/bin/" .. cfg.name end
+    if cfg.opt == nil cfg.opt = "-O3" end
+    if cfg.target == nil cfg.target = "native" end
+    cfg.kind = "exe"
+    _targets[#_targets + 1] = cfg
+    cfg
+end
+
+lib(cfg: any): any
+    t = exe(cfg)
+    t.kind = "lib"
+    t.lib = true
+    t
+end
+
+targets(): any
+    _targets
+end
+
+default_target(): str
+    _project.default
+end
+
+find(name: str): any
+    for _, t in _targets
+        if t.name == name
+            t
+        end
+    end
+    nil
+end
+
+command(t: any): str
+    cmd = "duo compile " .. t.src
+    if has(.out)(t) cmd = cmd .. " -o " .. t.out end
+    if has(.opt)(t) cmd = cmd .. " " .. t.opt end
+    if has(.target)(t) and t.target != "native" cmd = cmd .. " --target " .. t.target end
+    if has(.cc)(t) cmd = cmd .. " --cc " .. t.cc end
+    if t.pgo cmd = cmd .. " --pgo" end
+    if t.shared_memory cmd = cmd .. " --shared-memory" end
+    if t.load_chunk cmd = cmd .. " --load-chunk" end
+    if t.lib cmd = cmd .. " --lib" end
+    cmd
+end
+
+clean(): i64
+    os.execute("rm -rf zig-out/bin")
+end
+
+log_target(t: any): void
+    print(std.term.banner("build target"))
+    print(std.term.kv("name", t.name))
+    print(std.term.kv("source", t.src))
+    if has(.out)(t) print(std.term.kv("output", t.out)) end
+    print(std.term.kv("command", command(t)))
+end
+
+log_project(): void
+    print(std.term.banner("duo project"))
+    print(std.term.kv("name", _project.name))
+    print(std.term.kv("version", _project.version))
+    print(std.term.kv("default", _project.default))
+end
+

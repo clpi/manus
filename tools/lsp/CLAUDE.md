@@ -8,7 +8,7 @@ status snapshot.
 ## Boundary
 
 The current server has not reached this boundary. Its tracked project-owned
-`.duo` implementation still contains a private source scanner, handwritten
+`.id` implementation still contains a private source scanner, handwritten
 keyword and world lists, standard-root completion, retired snippets, and
 string-shaped semantic decisions. Those are SOURCE-ZERO and duplicate-authority
 debt. The sections below state the admission target for their replacement, not
@@ -61,13 +61,13 @@ compatibility spellings into the server.
 ## Source and migration
 
 Canonical project-owned implementation uses `.id`. Every tracked project-owned
-`.duo` file in this directory is SOURCE-ZERO debt, not a template. Retain its
+`.id` file in this directory is SOURCE-ZERO debt, not a template. Retain its
 observable behavior only by semantic migration into canonical `.id`, then delete
 the old source; delete obsolete behavior instead of preserving it as an archive.
 
 Physical tool or environment names that still contain `duo` are bootstrap
 aliases and deletion targets only. They do not name the language, own protocol
-semantics, or authorize new `.duo` source.
+semantics, or authorize new `.id` source.
 
 ## Evidence
 
