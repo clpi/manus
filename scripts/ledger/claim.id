@@ -7,7 +7,7 @@ capture: str = (shellline: str)
     gatecap(shellline)
 
 chomp: str = (text: str)
-    if text == nil or text:len() == 0
+    if text:len() == 0
         return ""
     n = text:len()
     while n > 0
@@ -41,7 +41,7 @@ lines: any = (text: str)
 field: str = (line: str)
     mark = ": "
     p = line:find(mark)
-    if p == nil
+    if !p
         ""
     else
         line:sub(p + mark:len())
@@ -63,10 +63,10 @@ trim: str = (text: str)
 
 cutnote: str = (text: str)
     p = text:find(" — ", 1, true)
-    if p != nil
+    if p
         return text:sub(1, p - 1)
     p = text:find(" (", 1, true)
-    if p != nil
+    if p
         return text:sub(1, p - 1)
     text
 
@@ -161,7 +161,7 @@ starts: bool = (text: str, prefix: str)
 
 starprefix: str = (lock: str)
     p = lock:find("*", 1, true)
-    if p == nil
+    if !p
         ""
     else
         lock:sub(1, p - 1)
@@ -193,16 +193,16 @@ touches: bool = (left: str, right: str)
 control: i64 = ()
     bad = 0
     if !touches("a/b.id", "a/b.id")
-        print("claimledger: fail control exact")
+        print("ledger/claim: fail control exact")
         bad += 1
     if !touches("tools/wasm/**", "tools/wasm/src/engine.id")
-        print("claimledger: fail control wildcard")
+        print("ledger/claim: fail control wildcard")
         bad += 1
     if touches("tools/wasm/**", "lib/std/fs.id")
-        print("claimledger: fail control disjoint")
+        print("ledger/claim: fail control disjoint")
         bad += 1
     if bad == 0
-        print("claimledger: control ok")
+        print("ledger/claim: control ok")
     bad
 
 codex: bool = (agent: str)
@@ -213,7 +213,7 @@ statuspath: str = (line: str)
     if line:len() >= 4
         path = trim(line:sub(4))
     arrow = path:find(" -> ", 1, true)
-    if arrow != nil
+    if arrow
         path = trim(path:sub(arrow + 4))
     path
 
@@ -244,16 +244,16 @@ dirty: i64 = (claims: any, root: str)
                         foreign += 1
         if hits == 0
             unclaimed += 1
-            print("claimledger: dirty unclaimed {path}")
+            print("ledger/claim: dirty unclaimed {path}")
         if hits != 0 and foreign > 0
             other += 1
-            print("claimledger: dirty foreign {path}")
+            print("ledger/claim: dirty foreign {path}")
         if hits != 0 and foreign == 0
-            print("claimledger: dirty claimed {path}")
+            print("ledger/claim: dirty claimed {path}")
     if other > 0 and strict
-        print("claimledger: fail dirty paths claimed by another agent {other}")
+        print("ledger/claim: fail dirty paths claimed by another agent {other}")
         return 1
-    print("claimledger: dirty ok claimed-by-other {other} unclaimed {unclaimed}")
+    print("ledger/claim: dirty ok claimed-by-other {other} unclaimed {unclaimed}")
     0
 
 overlaps: i64 = (claims: any)
@@ -270,40 +270,39 @@ overlaps: i64 = (claims: any)
                     if touches(left, right)
                         if sameagent(a.agent, b.agent)
                             soft += 1
-                            print("claimledger: shared {left} <-> {right}")
+                            print("ledger/claim: shared {left} <-> {right}")
                             print("  {a.path}")
                             print("  {b.path}")
                         else
                             hard += 1
-                            print("claimledger: conflict {left} <-> {right}")
+                            print("ledger/claim: conflict {left} <-> {right}")
                             print("  {a.agent}: {a.path}")
                             print("  {b.agent}: {b.path}")
     if hard > 0
-        print("claimledger: fail cross-agent overlaps {hard}")
+        print("ledger/claim: fail cross-agent overlaps {hard}")
         return 1
-    print("claimledger: overlaps ok shared {soft} conflict 0")
+    print("ledger/claim: overlaps ok shared {soft} conflict 0")
     0
 
-main: i64 = ()
-    root = cap("git rev-parse --show-toplevel 2>/dev/null")
-    if root == ""
-        print("claimledger: fail no git root")
-        return 3
+root = cap("git rev-parse --show-toplevel 2>/dev/null")
+if root == ""
+    print("ledger/claim: fail no git root")
+    return 3
 
-    found = lines(capture("cd '{root}' && find .agents/session/claims -maxdepth 1 -type f -name '*.md' -print | sort"))
-    count = found:len()
-    if count == 0
-        print("claimledger: fail live claims 0")
-        return 1
+found = lines(capture("cd '{root}' && find .agents/session/claims -maxdepth 1 -type f -name '*.md' -print | sort"))
+count = found:len()
+if count == 0
+    print("ledger/claim: fail live claims 0")
+    return 1
 
-    print("claimledger: live claims {count}")
-    claims = {}
-    for i = 1, count
-        path = "{root}/{found[i]}"
-        claim = collect(path)
-        claims:push(claim)
-        show(claim)
-    rc = control()
-    rc += overlaps(claims)
-    rc += dirty(claims, root)
-    rc
+print("ledger/claim: live claims {count}")
+claims = {}
+for i = 1, count
+    path = "{root}/{found[i]}"
+    claim = collect(path)
+    claims:push(claim)
+    show(claim)
+rc = control()
+rc += overlaps(claims)
+rc += dirty(claims, root)
+rc

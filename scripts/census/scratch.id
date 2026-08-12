@@ -1,0 +1,51 @@
+# Root scratch census for the self-hosting hygiene target.
+#
+# Tracked sh/py debt is already counted by scripts/census/language. This catches the
+# local-root case that git ls-files cannot see: throwaway foreign scripts left
+# beside the compiler checkout.
+
+capture: str = (shellline: str)
+    gatecap(shellline)
+
+chomp: str = (text: str)
+    if text:len() == 0
+        return ""
+    n = text:len()
+    while n > 0
+        c = text:byte(n)
+        if c != 10 and c != 13 and c != 32 and c != 9
+            break
+        n -= 1
+    text:sub(1, n)
+
+lines: any = (text: str)
+    out = {}
+    start = 1
+    i = 1
+    n = text:len()
+    while i <= n
+        if text:byte(i) == 10
+            if i > start
+                out[out:len() + 1] = text:sub(start, i - 1)
+            start = i + 1
+        i += 1
+    if start <= n
+        out[out:len() + 1] = text:sub(start, n)
+    out
+
+root = chomp(capture("git rev-parse --show-toplevel 2>/dev/null"))
+if root == ""
+    print("census/scratch: fail no git root")
+    return 3
+
+cmd = "cd '{root}' && find . -maxdepth 1 -type f \\( -name '*.py' -o -name '*.sh' \\) -print | sort"
+found = lines(capture(cmd))
+count = found:len()
+if count == 0
+    print("census/scratch: pass root foreign scratch 0")
+    return 0
+
+print("census/scratch: fail root foreign scratch {count}")
+for i = 1, found:len()
+    print("  {found[i]}")
+return 1

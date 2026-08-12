@@ -1,0 +1,50 @@
+# PROJECTION-ONE debt census (law.projection.one · law.gate.projection).
+#
+# Reports projection-related spellings in tracked .id. Classify before rewrite.
+#
+# Bootstrap shell ingress via gatecap (GAP-155) — !std.script / process.*.
+# Uses grep for patterns containing '(' — gatecap strips rg regex escapes.
+#
+# Run from repository root: idol run scripts/census/projection.id
+
+chomp: str = (text: str)
+    if text:len() == 0
+        return ""
+    n = text:len()
+    while n > 0
+        c = text:byte(n)
+        if c != 10 and c != 13 and c != 32 and c != 9
+            break
+        n -= 1
+    text:sub(1, n)
+
+cap: str = (cmd: str)
+    chomp(gatecap(cmd))
+
+root = cap("git rev-parse --show-toplevel 2>/dev/null")
+if root == ""
+    print("census/projection: fail no root — run from repository root")
+    return 3
+
+subjto = cap("git ls-files '*.id' | xargs grep -h -c ':to(' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+fromface = cap("git ls-files '*.id' | xargs grep -h -c ':from(' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+nestto = cap("git ls-files '*.id' | xargs grep -h -E -c 'to\\((str|i64|bytes)\\)\\(' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+stdref = cap("git ls-files '*.id' | xargs grep -h -c 'std\\.' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+libref = cap("git ls-files '*.id' | xargs grep -h -c 'lib\\.' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+procns = cap("git ls-files '*.id' | xargs grep -h -c 'process\\.' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+adj = cap("git ls-files '*.id' | xargs grep -h -E -c ': (readable|writable|iterable|hashable|convertible)' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+
+print("census/projection: PROJECTION-ONE debt in tracked .id")
+print("  root {root}")
+print("  explicit :to(           {subjto}")
+print("  nested to(T)(            {nestto}")
+print("  :from( inverse face     {fromface}")
+print("  std. references         {stdref}")
+print("  lib. references         {libref}")
+print("  process. namespace      {procns}")
+print("  adjective protocols     {adj}")
+print("")
+print("  gates: REDUNDANT-PROJECTION-ZERO FROM-ZERO STD-ZERO LIB-ZERO")
+print("  classify each site — never bulk replace (law.repair.infer)")
+print("  graph enforcement blocked on GAP-124 (GAP-165)")
+0

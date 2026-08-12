@@ -1,6 +1,6 @@
 # Tracked Zig bootstrap ledger for the self-hosting target.
 #
-# language_census proves the count is bounded. This file prints the exact
+# scripts/census/language proves the count is bounded. This file prints the exact
 # tracked bootstrap files, including build.zig, so the remaining queue is
 # inspectable from duon.
 
@@ -8,7 +8,7 @@ capture: str = (shellline: str)
     gatecap(shellline)
 
 chomp: str = (text: str)
-    if text == nil or text:len() == 0
+    if text:len() == 0
         return ""
     n = text:len()
     while n > 0
@@ -44,7 +44,7 @@ starts: bool = (text: str, prefix: str)
 
 has: bool = (text: str, part: str)
     pos = text:find(part, 1, true)
-    pos != nil and pos > 0
+    pos and pos > 0
 
 bucket: str = (path: str)
     if path == "build.zig"
@@ -66,19 +66,19 @@ bucket: str = (path: str)
 control: i64 = ()
     bad = 0
     if bucket("build.zig") != "build"
-        print("zigledger: fail control build")
+        print("ledger/zig: fail control build")
         bad += 1
     if bucket("src/parser.zig") != "front"
-        print("zigledger: fail control front")
+        print("ledger/zig: fail control front")
         bad += 1
     if bucket("src/native_backend.zig") != "native"
-        print("zigledger: fail control native")
+        print("ledger/zig: fail control native")
         bad += 1
     if bucket("src/wasm_semantic.zig") != "wasm"
-        print("zigledger: fail control wasm")
+        print("ledger/zig: fail control wasm")
         bad += 1
     if bad == 0
-        print("zigledger: control ok")
+        print("ledger/zig: control ok")
     bad
 
 show: i64 = (name: str, files: any)
@@ -92,27 +92,26 @@ show: i64 = (name: str, files: any)
             print("  {files[i]}")
     count
 
-main: i64 = ()
-    root = cap("git rev-parse --show-toplevel 2>/dev/null")
-    if root == ""
-        print("zigledger: fail no git root")
-        return 3
+root = cap("git rev-parse --show-toplevel 2>/dev/null")
+if root == ""
+    print("ledger/zig: fail no git root")
+    return 3
 
-    cmd = "cd '{root}' && git ls-files 'build.zig' 'src/*.zig' | sort"
-    files = lines(capture(cmd))
-    count = files:len()
-    bad = control()
-    if count == 0
-        print("zigledger: pass tracked zig 0")
-        return bad
+cmd = "cd '{root}' && git ls-files 'build.zig' 'src/*.zig' | sort"
+files = lines(capture(cmd))
+count = files:len()
+bad = control()
+if count == 0
+    print("ledger/zig: pass tracked zig 0")
+    return bad
 
-    print("zigledger: fail tracked zig {count}")
-    show("build", files)
-    show("front", files)
-    show("back", files)
-    show("native", files)
-    show("wasm", files)
-    show("semantic", files)
-    show("test", files)
-    show("support", files)
-    1
+print("ledger/zig: fail tracked zig {count}")
+show("build", files)
+show("front", files)
+show("back", files)
+show("native", files)
+show("wasm", files)
+show("semantic", files)
+show("test", files)
+show("support", files)
+1

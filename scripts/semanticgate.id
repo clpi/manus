@@ -12,7 +12,7 @@
 # evidence. These are migration censuses, never semantic verdicts. GAP-124 owns
 # the graph queries that make world, subject, vocabulary, sentinel and control
 # findings authoritative. Host/world boundary is NOT spelling-census here.
-# Use gates/host.id + idiomgate dot(world)(code) on ADDED lines; GAP-124 owns semantics.
+# Use gate/host.id + gate/idiom on ADDED lines; GAP-124 owns semantics.
 #
 # GAP-119 owns this gate's 34 process-capture namespace calls. Execution has
 # no admitted subject/world/result vocabulary yet, and GAP-117 prevents hiding
@@ -75,7 +75,7 @@ all = "'src/*.zig'"
 front = "src/ast.zig src/parser.zig src/macro_expand.zig"
 after = "'src/*.zig' ':(exclude)src/ast.zig' ':(exclude)src/parser.zig' ':(exclude)src/macro_expand.zig' ':(exclude)src/pretty.zig'"
 proven = "src/ast.zig src/parser.zig src/pretty.zig"
-duofiles = "'*.id' ':(exclude)scripts/semanticgate.id' ':(exclude)scripts/idiomgate.id' ':(exclude)scripts/ingress/*'"
+duofiles = "'*.id' ':(exclude)scripts/semanticgate.id' ':(exclude)gate/idiom.id' ':(exclude)scripts/ingress/*'"
 
 astpat = "ast\\.(Expr|Stmt|BinOp|UnOp|IfExpr|ElseIf|ListComprehension)"
 dispatchpat = "\\.(if_stmt|while_loop|repeat_loop|num_for|gen_for|brk|cont|ret|binop|unop|call|method_call|index|field|if_expr|contains_expr)[[:space:],]*=>"
@@ -246,15 +246,15 @@ debt = {
 
 main: i64 = ()
     code = 0
-    cmd = "git grep -n {q}if not suffix({q} -- scripts/idiomgate.id gates/path.id gates/census.id gates/host.id 2>/dev/null | wc -l | awk '{print $1}'"
+    cmd = "git grep -n {q}if not suffix({q} -- gate/idiom.id gate/path.id gate/census.id gate/host.id 2>/dev/null | wc -l | awk '{print $1}'"
     if ascount(cmd) != 0
         print("(semanticgate, control, gate, suffix substring detector antipattern)")
         code = 3
-    cmd = "git grep -n {q}if suffix({q} -- scripts/idiomgate.id gates/path.id gates/census.id gates/host.id 2>/dev/null | wc -l | awk '{print $1}'"
+    cmd = "git grep -n {q}if suffix({q} -- gate/idiom.id gate/path.id gate/census.id gate/host.id 2>/dev/null | wc -l | awk '{print $1}'"
     if ascount(cmd) != 0
         print("(semanticgate, control, gate, suffix audit detector reintroduced)")
         code = 3
-    cmd = "git grep -n {q}suffix: bool{q} -- scripts/idiomgate.id gates/path.id gates/census.id gates/host.id 2>/dev/null | wc -l | awk '{print $1}'"
+    cmd = "git grep -n {q}suffix: bool{q} -- gate/idiom.id gate/path.id gate/census.id gate/host.id 2>/dev/null | wc -l | awk '{print $1}'"
     if ascount(cmd) != 0
         print("(semanticgate, control, gate, suffix detector kingdom reintroduced)")
         code = 3
@@ -270,15 +270,15 @@ main: i64 = ()
     if ascount(cmd) != 0
         print("(semanticgate, control, gate, host spelling census antipattern)")
         code = 3
-    cmd = "git grep -n 'dot: bool = (code: str, world: str)' scripts/idiomgate.id gates/host.id 2>/dev/null | wc -l | awk '{print $1}'"
+    cmd = "git grep -n 'dot: bool = (code: str, world: str)' gate/idiom.id gate/host.id 2>/dev/null | wc -l | awk '{print $1}'"
     if ascount(cmd) < 2
         print("(semanticgate, control, gate, dot(code, world) enforcement removed from gates)")
         code = 3
-    cmd = "git grep -n '@c\\.' scripts/ingress gates scripts/idiomgate.id 2>/dev/null | wc -l | awk '{print $1}'"
+    cmd = "git grep -n '@c\\.' scripts/ingress gates gate/idiom.id 2>/dev/null | wc -l | awk '{print $1}'"
     if ascount(cmd) != 0
         print("(semanticgate, control, gate, @c foreign emit reintroduced in ingress/gates)")
         code = 3
-    cmd = "git grep -n lua_ scripts/ingress gates scripts/idiomgate.id lib/process.id 2>/dev/null | wc -l | awk '{print $1}'"
+    cmd = "git grep -n lua_ scripts/ingress gates gate/idiom.id lib/process.id 2>/dev/null | wc -l | awk '{print $1}'"
     if ascount(cmd) != 0
         print("(semanticgate, control, gate, lua intermediary reintroduced in ingress/gates)")
         code = 3
@@ -286,13 +286,13 @@ main: i64 = ()
     if ascount(cmd) != 0
         print("(semanticgate, control, gate, @c foreign emit reintroduced)")
         code = 3
-    cmd = "git grep -n popen scripts/semanticgate.id lib/process.id gates scripts/idiomgate.id 2>/dev/null | grep -v fix | grep -v Forbidden | wc -l | awk '{print $1}'"
+    cmd = "git grep -n popen scripts/semanticgate.id lib/process.id gates gate/idiom.id 2>/dev/null | grep -v fix | grep -v Forbidden | wc -l | awk '{print $1}'"
     if ascount(cmd) != 0
         print("(semanticgate, control, gate, popen spelling reintroduced — use command:open)")
         code = 3
     # Every census pathset is compared with an independently expanded source
     # set. An empty or narrowed pathset with zero matches must withhold counts.
-    cmd = "allfiles=$(git ls-files -- {all}); frontfiles=$(git ls-files -- {front}); afterfiles=$(git ls-files -- {after}); provenfiles=$(git ls-files -- {proven}); duos=$(git ls-files -- {duofiles}); expectedall=$(git ls-files -- {q}src/*.zig{q}); expectedfront=$(git ls-files -- src/ast.zig src/parser.zig src/macro_expand.zig); expectedafter=$(git ls-files -- {q}src/*.zig{q} {q}:(exclude)src/ast.zig{q} {q}:(exclude)src/parser.zig{q} {q}:(exclude)src/macro_expand.zig{q} {q}:(exclude)src/pretty.zig{q}); expectedproven=$(git ls-files -- src/ast.zig src/parser.zig src/pretty.zig); expectedduos=$(git ls-files -- {q}*.id{q} {q}:(exclude)scripts/semanticgate.id{q} {q}:(exclude)scripts/idiomgate.id{q}); if test -n \"$allfiles\" && test -n \"$duos\" && test \"$allfiles\" = \"$expectedall\" && test \"$frontfiles\" = \"$expectedfront\" && test \"$afterfiles\" = \"$expectedafter\" && test \"$provenfiles\" = \"$expectedproven\" && test \"$duos\" = \"$expectedduos\" && test -z \"$(git ls-files -- {q}src/no-such-*.zig{q})\" && printf {q}%s\\n{q} \"$allfiles\" | grep -qx src/ast.zig && printf {q}%s\\n{q} \"$allfiles\" | grep -qx src/native_ir.zig && printf {q}%s\\n{q} \"$duos\" | grep -qx lib/compiler/application.id && git cat-file -e :src/ast.zig && git cat-file -e :src/parser.zig && git cat-file -e :src/pretty.zig && git cat-file -e :src/native_ir.zig && git cat-file -e :src/semantic_graph.zig && git cat-file -e :scripts/semanticgate.id && git grep --cached -q -E {q}{parserpat}{q} -- {front} && git grep --cached -q -E {q}{astpat}{q} -- {after} && git grep --cached -q {q}boxpat = {q} -- scripts/semanticgate.id; then git grep --cached -q {q}boxpat = {q} -- {duofiles}; status=$?; if test $status = 1; then printf {q}%s\\n{q} {q}pub const IfExpr = struct {{{q} | grep -q -E {q}{parserpat}{q} && printf {q}%s\\n{q} {q}pub const relation = struct {{{q} | grep -q -v -E {q}{parserpat}{q} && printf {q}%s\\n{q} {q}{debt.boxed.positive}{q} | grep -q -E {q}{boxpat}{q} && printf {q}%s\\n{q} {q}{debt.boxed.negative}{q} | grep -q -v -E {q}{boxpat}{q} && printf 1; else printf 0; fi; else printf 0; fi"
+    cmd = "allfiles=$(git ls-files -- {all}); frontfiles=$(git ls-files -- {front}); afterfiles=$(git ls-files -- {after}); provenfiles=$(git ls-files -- {proven}); duos=$(git ls-files -- {duofiles}); expectedall=$(git ls-files -- {q}src/*.zig{q}); expectedfront=$(git ls-files -- src/ast.zig src/parser.zig src/macro_expand.zig); expectedafter=$(git ls-files -- {q}src/*.zig{q} {q}:(exclude)src/ast.zig{q} {q}:(exclude)src/parser.zig{q} {q}:(exclude)src/macro_expand.zig{q} {q}:(exclude)src/pretty.zig{q}); expectedproven=$(git ls-files -- src/ast.zig src/parser.zig src/pretty.zig); expectedduos=$(git ls-files -- {q}*.id{q} {q}:(exclude)scripts/semanticgate.id{q} {q}:(exclude)gate/idiom.id{q}); if test -n \"$allfiles\" && test -n \"$duos\" && test \"$allfiles\" = \"$expectedall\" && test \"$frontfiles\" = \"$expectedfront\" && test \"$afterfiles\" = \"$expectedafter\" && test \"$provenfiles\" = \"$expectedproven\" && test \"$duos\" = \"$expectedduos\" && test -z \"$(git ls-files -- {q}src/no-such-*.zig{q})\" && printf {q}%s\\n{q} \"$allfiles\" | grep -qx src/ast.zig && printf {q}%s\\n{q} \"$allfiles\" | grep -qx src/native_ir.zig && printf {q}%s\\n{q} \"$duos\" | grep -qx lib/compiler/application.id && git cat-file -e :src/ast.zig && git cat-file -e :src/parser.zig && git cat-file -e :src/pretty.zig && git cat-file -e :src/native_ir.zig && git cat-file -e :src/semantic_graph.zig && git cat-file -e :scripts/semanticgate.id && git grep --cached -q -E {q}{parserpat}{q} -- {front} && git grep --cached -q -E {q}{astpat}{q} -- {after} && git grep --cached -q {q}boxpat = {q} -- scripts/semanticgate.id; then git grep --cached -q {q}boxpat = {q} -- {duofiles}; status=$?; if test $status = 1; then printf {q}%s\\n{q} {q}pub const IfExpr = struct {{{q} | grep -q -E {q}{parserpat}{q} && printf {q}%s\\n{q} {q}pub const relation = struct {{{q} | grep -q -v -E {q}{parserpat}{q} && printf {q}%s\\n{q} {q}{debt.boxed.positive}{q} | grep -q -E {q}{boxpat}{q} && printf {q}%s\\n{q} {q}{debt.boxed.negative}{q} | grep -q -v -E {q}{boxpat}{q} && printf 1; else printf 0; fi; else printf 0; fi"
     if ascount(cmd) != 1
         print("(semanticgate, control, source, staged pathspec parser classifier or exclusion failed)")
         code = 3
