@@ -421,13 +421,14 @@ or algorithm family.
 - Do not implement or hand-edit lexical or tokenizer logic outside the Idol lexer source path (`lib/std/compiler/lexer.id`, `lib/std/compiler/token.id`).
 - Do not use `ALU_OPS` or lookup-table dispatch for JIT lowering; specialize each opcode at its ALU or compare edge.
 - Prefer demand-based implicit results over explicit `return` in `.id` helpers where control flow allows.
-- Do not introduce lowering intermediaries except where explicitly opted into.
-- Gate `.id` files: stdin via `io:read()` only (no host bootstrap); run with `idol run gate.id`, never `--backend=c`.
+- Do not commit unless explicitly requested.
+- Gate `.id` helpers: boundary curry `len(path)(min)`, `audit(path)(pattern)`, `hit(path)(pattern)` — not flat comma forms or bridge bindings; multiline subject-first `path:read()` chains, no `text = path:read()` transitive bindings; stdin via `io:read()` only; `idol run`/`idol check`, never `--backend=c`.
+- Prefix `!` is canonical negation — never `if not`, `and not`, or `(not` in Idol source (gate detector prose may still quote those strings).
 - Do not decide canonicality with string-detector or substring architecture (`codens`, `luahash`, `layout`, `has(...)` admission patterns); route through production lexer → parser → graph → obligations (`GAP-124`).
 - Do not use Python for migration, census, or gate tooling; implement in Idol only.
 - Use `"{}"` text composition in Idol source, not `..` concatenation.
-- No `std.*` in new canonical source; world-first projection only (`fs:`, `io:`, `os.env`).
-- `using(x)` is lexical admission compression only—not import, module, or loader syntax.
+- No `std.*`; `environment` is not a thing — use `os.env[k]`, `os.args[n]`, subject-first `io:read`/`io:write` and `hay:has(needle)`.
+- `using(x)` is lexical admission compression only—not import, module, or loader syntax; do not refactor `scripts/grammarconvergence.id` without explicit approval.
 - Bit reinterpret: no `bitcast`/`bit.*`/`@comp.bit.bitcast`; curried subject-first `to(bit)` with `@view`; reverse f64 view is `restore` not `unpack`.
 
 ## Learned Workspace Facts
@@ -436,8 +437,11 @@ or algorithm family.
 - `src/duo_lexer_tokenize.c` is generated bootstrap from `lib/std/compiler/host.id`; regenerate it instead of hand-editing trivia or token logic there.
 - `src/lexer.zig` is a differential oracle only, not production lexical authority.
 - Dev and coordination tooling lives under `tools/node/dev/` (not mashed `devnode` paths).
-- Path LAW-ONE gate is `gates/path.id`.
+- Path LAW-ONE gate is `gates/path.id`; host-pattern firewall is `gates/host.id` (until `GAP-154`).
+- Gate boundary relation descriptors live in `lib/semantic/gate.id` (`len`, `audit`, `hit`, `scan`, `dot` — curry slots, not world relations).
+- Reserved keyword `not` cannot be a table field name — census row is `debt.negation`, never `debt.not`.
 - Bit view edges registered in `lib/semantic/ingest.id` as curried `view(edges)` pipe (separate from world `edges`).
 - Bit reinterpret proof: `scripts/proof/bit.id`; nominal `type bit = i64`; round-trip assertions; `to(i64)(bit)` is integer observation edge.
 - Bootstrap compiler binary: `zig-out/bin/idol` (`idol check`, `idol run`). `duo` is migration provenance only.
 - Proof scripts use `IDOL` env / `./zig-out/bin/idol` — not `DUO` / `bin/duo`.
+- Host boundary authority is `docs/spec/host.md`; read before argv, env, I/O, process, pipe, shell, or transport work.
