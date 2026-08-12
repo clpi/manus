@@ -276,7 +276,7 @@ test "knowledge_snapshot: native Point record from graph lift" {
         \\    p.x * p.x + p.y * p.y
         \\end
     ;
-    var lex = Lexer.init(src, "point.duo");
+    var lex = Lexer.init(src, "point.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -287,9 +287,9 @@ test "knowledge_snapshot: native Point record from graph lift" {
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCalls(&mod, "point.duo");
+    _ = try graph.liftModuleWithCalls(&mod, "point.id");
 
-    var snap = try buildFromModule(alloc, &mod, &semantic, &graph, "point.duo");
+    var snap = try buildFromModule(alloc, &mod, &semantic, &graph, "point.id");
     defer snap.deinit(alloc);
 
     const point = blk: {

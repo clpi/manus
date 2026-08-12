@@ -315,7 +315,7 @@ test "assumption_guard: sealed Point record yields shape assumption" {
         \\    p.x
         \\end
     ;
-    var lex = Lexer.init(src, "point.duo");
+    var lex = Lexer.init(src, "point.id");
     var parser = Parser.init(&lex, alloc);
     parser.duo_mode = true;
     var mod = try parser.parse_module();
@@ -325,7 +325,7 @@ test "assumption_guard: sealed Point record yields shape assumption" {
     try semantic.check_module(&mod);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCalls(&mod, "point.duo");
+    _ = try graph.liftModuleWithCalls(&mod, "point.id");
 
     var assumptions = try buildFromModule(alloc, &mod, &semantic, &graph);
     defer assumptions.deinit(alloc);
