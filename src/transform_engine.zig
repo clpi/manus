@@ -128,6 +128,11 @@ pub const ProvenanceEntry = struct {
     output_hash: u64,
     /// Pass 8: what evidence supports this transformation outcome.
     evidence: Evidence = .heuristic,
+    /// P2/GAP-137: exact graph coordinates retained through transformation
+    /// provenance so a transformed application remains traceable from
+    /// relation → realization → machine → bytes. Null when the caller
+    /// predates graph-lineage enforcement (hash-only entry).
+    graph: ?proof_carrying.GraphEntity = null,
 };
 
 var provenance_log: std.ArrayListUnmanaged(ProvenanceEntry) = .empty;
@@ -196,9 +201,16 @@ pub fn writeProvenanceJson(w: *std.Io.Writer) !void {
     for (entries, 0..) |e, i| {
         if (i > 0) try w.print(",", .{});
         try w.print(
-            "{{\"transform\":\"{s}\",\"site\":\"{s}\",\"inputs_hash\":\"{x}\",\"output_hash\":\"{x}\",\"evidence\":\"{s}\"}}",
+            "{{\"transform\":\"{s}\",\"site\":\"{s}\",\"inputs_hash\":\"{x}\",\"output_hash\":\"{x}\",\"evidence\":\"{s}\"",
             .{ e.public_name, siteKindName(e.site), e.inputs_hash, e.output_hash, e.evidence.name() },
         );
+        if (e.graph) |g| {
+            try w.print(
+                ",\"graph\":{{\"relation\":{?d},\"application\":{?d},\"subject\":{?d},\"input_value\":{?d},\"output_value\":{?d}}}",
+                .{ g.relation, g.application, g.subject, g.input_value, g.output_value },
+            );
+        }
+        try w.print("}}", .{});
     }
     try w.print("]}}", .{});
 }
@@ -403,6 +415,9 @@ pub const TransformProofLogEntry = struct {
     site: SiteKind,
     inputs_hash: u64,
     output_hash: u64,
+    /// P2/GAP-137: exact graph input/output coordinates carried alongside
+    /// the hash-based fingerprint so the lineage survives the proof log.
+    graph: ?proof_carrying.GraphEntity = null,
 };
 
 var proof_log: std.ArrayListUnmanaged(TransformProofLogEntry) = .empty;
@@ -441,6 +456,7 @@ pub fn buildTransformProofRecord(
     site: SiteKind,
     inputs_hash: u64,
     output_hash: u64,
+    graph: ?proof_carrying.GraphEntity,
 ) !proof_carrying.TransformProofRecord {
     const d = descriptor(public_name) orelse {
         return .{
@@ -450,6 +466,7 @@ pub fn buildTransformProofRecord(
             .result = .unsupported,
             .obligations = &.{},
             .evidence = &.{},
+            .graph = graph,
         };
     };
 
@@ -489,6 +506,7 @@ pub fn buildTransformProofRecord(
         .validation_method = validation,
         .status = if (result == .rejected_contract) .failed else .discharged,
         .stage = try alloc.dupe(u8, siteKindName(site)),
+        .graph = graph,
     };
     // subject owned by record.subject_entity; obligation borrows same pointer.
 
@@ -500,6 +518,7 @@ pub fn buildTransformProofRecord(
         .obligations = obligations,
         .evidence = ev_slice,
         .provenance = try std.fmt.allocPrint(alloc, "transform_engine.log @ {s}", .{siteKindName(site)}),
+        .graph = graph,
     };
 }
 
@@ -508,14 +527,16 @@ fn recordProof(
     site: SiteKind,
     inputs_hash: u64,
     output_hash: u64,
+    graph: ?proof_carrying.GraphEntity,
 ) void {
     if (!isRegisteredTransform(public_name)) return;
-    const record = buildTransformProofRecord(proof_allocator, public_name, site, inputs_hash, output_hash) catch return;
+    const record = buildTransformProofRecord(proof_allocator, public_name, site, inputs_hash, output_hash, graph) catch return;
     proof_log.append(proof_allocator, .{
         .record = record,
         .site = site,
         .inputs_hash = inputs_hash,
         .output_hash = output_hash,
+        .graph = graph,
     }) catch {
         freeProofRecord(&record, proof_allocator);
     };
@@ -541,7 +562,7 @@ pub fn writeProofLogJson(w: *std.Io.Writer) !void {
     try w.print("[", .{});
     for (proofLogEntries(), 0..) |e, i| {
         if (i > 0) try w.print(",", .{});
-        try w.print("{{\"transform_id\":\"{s}\",\"result\":\"{s}\",\"site\":\"{s}\",\"inputs_hash\":\"{x}\",\"output_hash\":\"{x}\",\"obligations_discharged\":{d}}}", .{
+        try w.print("{{\"transform_id\":\"{s}\",\"result\":\"{s}\",\"site\":\"{s}\",\"inputs_hash\":\"{x}\",\"output_hash\":\"{x}\",\"obligations_discharged\":{d}", .{
             e.record.transform_id,
             e.record.result.name(),
             siteKindName(e.site),
@@ -555,6 +576,13 @@ pub fn writeProofLogJson(w: *std.Io.Writer) !void {
                 break :blk n;
             },
         });
+        if (e.graph) |g| {
+            try w.print(
+                ",\"graph\":{{\"relation\":{?d},\"application\":{?d},\"subject\":{?d},\"input_value\":{?d},\"output_value\":{?d}}}",
+                .{ g.relation, g.application, g.subject, g.input_value, g.output_value },
+            );
+        }
+        try w.print("}}", .{});
     }
     try w.print("]", .{});
 }
@@ -566,14 +594,33 @@ pub fn logProvenance(
     inputs_hash: u64,
     output_hash: u64,
 ) void {
+    logProvenanceGraph(undefined, public_name, site, inputs_hash, output_hash, null);
+}
+
+/// Log provenance for a transform with exact graph entity coordinates (P2/GAP-137).
+///
+/// `graph` carries the semantic relation, application, subject, and input/output
+/// value ids (`semantic_graph.id` = u32) so that a transformed application
+/// remains queryable through graph → realization → machine → bytes without a
+/// hash standing in for semantic identity. Pass `null` for transforms that
+/// pre-date graph-lineage enforcement.
+pub fn logProvenanceGraph(
+    _: std.mem.Allocator,
+    public_name: []const u8,
+    site: SiteKind,
+    inputs_hash: u64,
+    output_hash: u64,
+    graph: ?proof_carrying.GraphEntity,
+) void {
     if (!provenance_enabled) return;
     provenance_log.append(provenance_allocator, .{
         .public_name = public_name,
         .site = site,
         .inputs_hash = inputs_hash,
         .output_hash = output_hash,
+        .graph = graph,
     }) catch {};
-    recordProof(public_name, site, inputs_hash, output_hash);
+    recordProof(public_name, site, inputs_hash, output_hash, graph);
 }
 
 /// Tier-1 combinators requiring 3-site parity (top-level, nested callback, block body).
@@ -960,6 +1007,66 @@ test "transform_engine: provenance log" {
     logProvenance(alloc, "comp.match", .nested_callback, 1, 2);
     try std.testing.expectEqual(@as(usize, 1), provenanceEntries().len);
     try std.testing.expectEqualStrings("comp.match", provenanceEntries()[0].public_name);
+    // Backward-compatible logProvenance passes null graph coordinates.
+    try std.testing.expectEqual(null, provenanceEntries()[0].graph);
+}
+
+test "transform_engine: provenance log retains graph entity identity" {
+    const alloc = std.testing.allocator;
+    defer deinitProvenance(alloc);
+    setProvenanceEnabled(true);
+    const graph_id: proof_carrying.GraphEntity = .{
+        .relation = 7,
+        .application = 42,
+        .subject = 3,
+        .input_value = 9,
+        .output_value = 14,
+    };
+    logProvenanceGraph(alloc, "comp.match", .nested_callback, 1, 2, graph_id);
+    try std.testing.expectEqual(@as(usize, 1), provenanceEntries().len);
+    const entry = provenanceEntries()[0];
+    try std.testing.expectEqualStrings("comp.match", entry.public_name);
+    const g = entry.graph orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(?u32, 7), g.relation);
+    try std.testing.expectEqual(@as(?u32, 42), g.application);
+    try std.testing.expectEqual(@as(?u32, 3), g.subject);
+    try std.testing.expectEqual(@as(?u32, 9), g.input_value);
+    try std.testing.expectEqual(@as(?u32, 14), g.output_value);
+    // The snapshot must also carry the graph coordinates.
+    snapshotProvenance();
+    const snapshot = provenanceSnapshotEntries();
+    try std.testing.expectEqual(@as(usize, 1), snapshot.len);
+    try std.testing.expectEqual(@as(?u32, 42), snapshot[0].graph.?.application);
+}
+
+test "transform_engine: provenance log without graph entities fails lineage gate" {
+    const alloc = std.testing.allocator;
+    defer deinitProvenance(alloc);
+    setProvenanceEnabled(true);
+    // logProvenance (the backward-compatible path) does NOT carry graph
+    // identity. A proof record built from such an entry must not pass the
+    // lineage gate — this is the P2 negative control: removing transform
+    // lineage must fail closed rather than degrading to hash-only.
+    logProvenance(alloc, "comp.match", .nested_callback, 1, 2);
+    try std.testing.expectEqual(@as(usize, 1), provenanceEntries().len);
+    try std.testing.expect(provenanceEntries()[0].graph == null);
+    // The proof record (if the transform is registered) has null graph.
+    if (isRegisteredTransform("comp.match")) {
+        var record = buildTransformProofRecord(alloc, "comp.match", .nested_callback, 1, 2, null) catch return;
+        defer freeProofRecord(&record, alloc);
+        try std.testing.expect(!proof_carrying.lineageGate(record));
+    }
+    // With graph entities present, the gate must pass.
+    const graph_id: proof_carrying.GraphEntity = .{
+        .relation = 7,
+        .application = 42,
+        .subject = 3,
+        .input_value = 9,
+        .output_value = 14,
+    };
+    var gated_record = buildTransformProofRecord(alloc, "comp.match", .nested_callback, 1, 2, graph_id) catch return;
+    defer freeProofRecord(&gated_record, alloc);
+    try std.testing.expect(proof_carrying.lineageGate(gated_record));
 }
 
 test "transform_engine: comp.shape registered as constant introspection" {

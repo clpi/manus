@@ -7,6 +7,51 @@ const evidence_record = @import("evidence_record.zig");
 
 pub const SCHEMA_VERSION = "proof-carrying-v0";
 
+/// Exact graph coordinates retained through transformation provenance.
+///
+/// These are `semantic_graph.id` values (`u32`); `proof_carrying` deliberately
+/// avoids importing `semantic_graph` to prevent a circular dependency
+/// (`semantic_graph → transform_engine → proof_carrying`).
+/// GAPS-137/P2: the provenance record must carry exact graph-minted identities
+/// — relation, application, input value, output value, and the graph
+/// transformation node — so that a transformed application remains traceable
+/// from relation → realization → machine → bytes without a hash standing in.
+pub const GraphEntity = struct {
+    /// Graph NodeId of the transform application node (the rewrite itself).
+    transform: ?u32 = null,
+    /// Exact relation identity (semantic_graph.id).
+    relation: ?u32 = null,
+    /// Exact application occurrence identity (semantic_graph.id).
+    application: ?u32 = null,
+    /// Semantic subject identity where applicable (semantic_graph.id).
+    subject: ?u32 = null,
+    /// Exact input value identity before transformation (semantic_graph.id).
+    input_value: ?u32 = null,
+    /// Exact output value identity after transformation (semantic_graph.id).
+    output_value: ?u32 = null,
+
+    /// True when this entry carries exact graph identity for lineage.
+    pub fn hasLineage(self: GraphEntity) bool {
+        return self.relation != null and self.application != null and
+            self.input_value != null and self.output_value != null;
+    }
+};
+
+/// Lineage gate for transform provenance.
+///
+/// Returns `true` only when a proof record carries exact graph coordinates —
+/// relation, application, input value, and output value — rather than
+/// hash/fingerprint coordinates standing in for semantic identity.
+/// A record whose `graph` is null is rejected (fail closed): removing the
+/// transform lineage must not silently degrade to hash-only reconstruction.
+/// This is the P2 negative control — the gate fails when graph identity is
+/// absent from the provenance log.
+pub fn lineageGate(record: TransformProofRecord) bool {
+    if (record.graph == null) return false;
+    const g = record.graph.?;
+    return g.hasLineage();
+}
+
 /// Evidence classes accepted for obligation discharge (Pass 12 §3.2, §4).
 pub const AcceptedEvidence = evidence_record.Kind;
 
@@ -78,6 +123,9 @@ pub const ProofObligation = struct {
     validation_method: []const u8,
     status: ObligationStatus = .pending,
     stage: ?[]const u8 = null,
+    /// Exact graph coordinates for this obligation's transform input/output.
+    /// Null when the obligation pre-dates graph-lineage enforcement.
+    graph: ?GraphEntity = null,
 };
 
 pub const ObligationStatus = enum {
@@ -185,6 +233,11 @@ pub const TransformProofRecord = struct {
     obligations: []const ProofObligation,
     evidence: []const AcceptedEvidence,
     provenance: ?[]const u8 = null,
+    /// Exact graph coordinates for the transform's input and output.
+    /// P2/GAP-137: must be present for any transform that rewrites a checked
+    /// application so that the original relation, application, and value
+    /// identities survive through machine and object lineage.
+    graph: ?GraphEntity = null,
 };
 
 pub const TransformResult = enum {

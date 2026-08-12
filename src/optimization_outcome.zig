@@ -4,6 +4,7 @@
 const std = @import("std");
 const transform_engine = @import("transform_engine.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
+const proof_carrying = @import("proof_carrying.zig");
 
 pub const SCHEMA_VERSION = "optimization-outcome-v0";
 
@@ -62,9 +63,12 @@ pub const Outcome = struct {
     site: transform_engine.SiteKind,
     reason: ?[]const u8,
     before_repr: ?[]const u8,
-    after_repr: ?[]const u8,
+    after_repr:?[]const u8,
     inputs_hash: u64,
     output_hash: u64,
+    /// P2/GAP-137: exact graph coordinates carried from provenance so
+    /// transformed applications remain traceable without hash-only reconstruction.
+    graph: ?proof_carrying.GraphEntity = null,
 
     pub fn deinit(self: *Outcome, alloc: std.mem.Allocator) void {
         alloc.free(self.transformation);
@@ -169,6 +173,7 @@ pub fn fromProvenance(alloc: std.mem.Allocator) !OutcomeLog {
             .after_repr = null,
             .inputs_hash = e.inputs_hash,
             .output_hash = e.output_hash,
+            .graph = e.graph,
         });
     }
     return .{ .items = try items.toOwnedSlice(alloc) };
@@ -200,6 +205,7 @@ pub fn mergeSessionInto(alloc: std.mem.Allocator, dest: *OutcomeLog) !void {
             .after_repr = if (src.after_repr) |a| try alloc.dupe(u8, a) else null,
             .inputs_hash = src.inputs_hash,
             .output_hash = src.output_hash,
+            .graph = src.graph,
         };
     }
     alloc.free(old);
@@ -242,6 +248,12 @@ pub fn writeJson(log: *const OutcomeLog, w: *std.Io.Writer) !void {
             try w.print(",\"after_repr\":\"", .{});
             try jsonEscape(w, a);
             try w.print("\"", .{});
+        }
+        if (o.graph) |g| {
+            try w.print(
+                ",\"graph\":{{\"relation\":{?d},\"application\":{?d},\"subject\":{?d},\"input_value\":{?d},\"output_value\":{?d}}}",
+                .{ g.relation, g.application, g.subject, g.input_value, g.output_value },
+            );
         }
         try w.print("}}", .{});
     }
