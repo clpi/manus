@@ -33,7 +33,7 @@
     },
     {
       "name": "duo-lsp",
-      "entry": "tools/mcp/duo_lsp.id",
+      "entry": "tools/mcp/lsp.id",
       "provenance": "bootstrap-compatibility",
       "backend": "c",
       "required": true,

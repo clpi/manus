@@ -1,15 +1,8 @@
 # gates/census — repository-wide LAW-ONE name debt census (blocking).
 #
-# Gate transport: Idol only — stdin:read() pipe or path:read() when path is os.args[1].
-#   git ls-files > /tmp/tree.txt && idol run gates/census.id /tmp/tree.txt
+# Gate transport: Idol only — stdin:read() pipe. No os.args, no --backend=c.
 
 transport: str = ()
-    path = os.args[1]
-    if path:len() > 0
-        text = path:read()
-        if text:len() == 0
-            return ""
-        text
     text = stdin:read()
     if text:len() == 0
         return ""
@@ -18,21 +11,41 @@ transport: str = ()
 upper: bool = (c: str)
     c >= "A" and c <= "Z"
 
-chomp: str = (text: str)
-    n = text:len()
-    while n > 0
-        c = text:byte(n)
-        if c != 10 and c != 13 and c != 32
+stem: str = (line: str)
+    slash = 0
+    j = line:len()
+    while j >= 1
+        if line:sub(j, j) == "/"
+            slash = j
             break
-        n -= 1
-    text:sub(1, n)
+        j -= 1
+    base = line
+    if slash > 0
+        base = line:sub(slash + 1, line:len())
+    dot = 0
+    j = base:len()
+    while j >= 1
+        if base:sub(j, j) == "."
+            dot = j
+            break
+        j -= 1
+    if dot > 1
+        return base:sub(1, dot - 1)
+    ""
 
-main: i64 = ()
-    files = transport()
-    if files:len() == 0
-        print("gates/census: FAIL empty input — pipe git ls-files")
-        return 3
+badstem: bool = (st: str)
+    k = 1
+    while k <= st:len()
+        c = st:sub(k, k)
+        if c == "_" or c == "-" or upper(c)
+            return true
+        k += 1
+    false
 
+newline: bool = (c: str)
+    c:byte() == 10
+
+scanfiles: i64 = (files: str)
     canonicalid = 0
     duo = 0
     zig = 0
@@ -40,56 +53,28 @@ main: i64 = ()
     foreign = 0
     history = 0
     project = 0
-
     line = ""
+    nl = string.char(10)
     n = files:len()
     i = 1
     while i <= n + 1
-        c = "\n"
+        c = nl
         if i <= n
             c = files:sub(i, i)
-        if c == "\n"
+        if c == nl
             if line:len() > 0
-                st = ""
-                slash = 0
-                j = line:len()
-                while j >= 1
-                    if line:sub(j, j) == "/"
-                        slash = j
-                        break
-                    j -= 1
-                base = line
-                if slash > 0
-                    base = line:sub(slash + 1, line:len())
-                dot = 0
-                j = base:len()
-                while j >= 1
-                    if base:sub(j, j) == "."
-                        dot = j
-                        break
-                    j -= 1
-                if dot > 1
-                    st = base:sub(1, dot - 1)
                 if line:len() >= 4 and line:sub(1, 4) == "ext/"
-                    foreign += 1
+                    foreign = foreign + 1
                 if line:len() >= 4 and line:sub(line:len() - 3, line:len()) == ".duo"
-                    history += 1
+                    history = history + 1
                 if line:len() >= 3 and line:sub(line:len() - 2, line:len()) == ".id"
-                    canonicalid += 1
-                    k = 1
-                    bad = false
-                    while k <= st:len()
-                        c = st:sub(k, k)
-                        if c == "_" or c == "-" or upper(c)
-                            bad = true
-                            break
-                        k += 1
-                    if bad
-                        snake += 1
+                    canonicalid = canonicalid + 1
+                    if badstem(stem(line))
+                        snake = snake + 1
                 if line:len() >= 4 and line:sub(line:len() - 3, line:len()) == ".zig"
-                    zig += 1
+                    zig = zig + 1
                 if line:sub(1, 4) == "src/" or line:sub(1, 4) == "lib/" or line:sub(1, 8) == "scripts/" or line:sub(1, 6) == "gates/"
-                    project += 1
+                    project = project + 1
             line = ""
         else
             line = "{line}{c}"
@@ -103,6 +88,14 @@ main: i64 = ()
     print("  foreign.paths    {foreign}")
     print("  separator.debt   {snake}")
     print("")
+    snake
+
+main: i64 = ()
+    files = transport()
+    if files:len() == 0
+        print("gates/census: FAIL empty input — pipe git ls-files")
+        return 3
+    snake = scanfiles(files)
     if snake > 0
         print("gates/census: FAIL separator debt in tracked .id stems")
         return 1

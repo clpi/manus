@@ -3,7 +3,25 @@
 # language_census keeps the count bounded. This prints the exact tracked files
 # so the remaining non-duon debt is visible without re-reading prose.
 
-process = lib.process
+capture: str = (shellline: str)
+    gatecap(shellline)
+
+chomp: str = (text: str)
+    if text == nil or text:len() == 0
+        return ""
+    n = text:len()
+    while n > 0
+        c = text:byte(n)
+        if c != 10 and c != 13 and c != 32 and c != 9
+            break
+        n -= 1
+    text:sub(1, n)
+
+cap: str = (shellline: str)
+    chomp(gatecap(shellline))
+
+status: i64 = (cmd: str)
+    cap("( {cmd} ) >/dev/null 2>&1; echo $?"):to(i64)
 
 lines: any = (text: str)
     out = {}
@@ -21,18 +39,18 @@ lines: any = (text: str)
     out
 
 vscode: bool = (root: str, path: str)
-    path == "ext/vscode-duo/extension.js" and process.run("cd '{root}' && ./zig-out/bin/idol run scripts/vscodeproj.id") == 0
+    path == "ext/vscode-duo/extension.js" and status("cd '{root}' && ./zig-out/bin/idol run scripts/vscodeproj.id") == 0
 
 tree: bool = (root: str, path: str)
-    path == "ext/tree-sitter-duo/grammar.js" and process.run("cd '{root}' && env TSEMIT_CHECK=1 ./zig-out/bin/idol run scripts/treesitter_emit.id") == 0
+    path == "ext/tree-sitter-duo/grammar.js" and status("cd '{root}' && env TSEMIT_CHECK=1 ./zig-out/bin/idol run scripts/treesitter_emit.id") == 0
 
 main: i64 = ()
-    root = process.chomp(process.capture("git rev-parse --show-toplevel 2>/dev/null"))
+    root = cap("git rev-parse --show-toplevel 2>/dev/null")
     if root == ""
         print("jsledger: fail no git root")
-        process.exit(3)
+        return 3
 
-    files = lines(process.capture("cd '{root}' && git ls-files '*.js' | sort"))
+    files = lines(capture("cd '{root}' && git ls-files '*.js' | sort"))
     generated = {}
     partial = {}
     authored = {}
@@ -52,12 +70,12 @@ main: i64 = ()
 
     if filecount == 0
         print("jsledger: pass tracked js 0")
-        process.exit(0)
+        return 0
 
-    status = "fail"
+    label = "fail"
     if partcount == 0 and authcount == 0
-        status = "pass"
-    print("jsledger: {status} tracked js {filecount}")
+        label = "pass"
+    print("jsledger: {label} tracked js {filecount}")
     print("generated {gencount}")
     for i = 1, gencount
         print("  {generated[i]}")
@@ -68,6 +86,5 @@ main: i64 = ()
     for i = 1, authcount
         print("  {authored[i]}")
     if partcount == 0 and authcount == 0
-        process.exit(0)
-    process.exit(1)
-    0
+        return 0
+    1

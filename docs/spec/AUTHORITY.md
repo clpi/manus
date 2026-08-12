@@ -1,10 +1,9 @@
 # Authority and migration
 
 `docs/spec/constitution.md` is the sole living semantic-law authority for
-**Idsem**. The public command and repository identity is **Idol** (`idol`,
-`.id`, `idollang/idol`). Branding is not ontology. No pass document, summary,
-plan, implementation, fixture, corpus pattern, or agent instruction competes
-with C0.
+**Idol** (`idol`, `.id`, `idollang/idol`). Branding, command identity, and
+semantic law are one language identity. No pass document, summary, plan,
+implementation, fixture, corpus pattern, or agent instruction competes with C0.
 
 The constitution uses a documentation extension because it is structured law
 data, not executable source. Its Idol-shaped declarations are not an
@@ -16,9 +15,11 @@ separately owns the missing lexical identities and generated grammar roles.
 - `CLAUDE.md` is the operative projection.
 - `docs/spec/grammar.md` is the grammar projection.
 - `docs/spec/corpus.md` classifies source families for gates.
-- `docs/spec/source.md` is the source/home/package/world closure projection.
+- `docs/spec/source.md` is the source/home/package/world closure projection
+  (defers to C0 §67 Idol algebra closure for home, subject, world, protocol,
+  witness, injection, union, standard reachability, and census law).
 - `docs/spec/host.md` is the host boundary, capability, and shell-home projection.
-- `AGENTS.md` is workflow, mechanical preflight, and Idsem durable root
+- `AGENTS.md` is workflow, mechanical preflight, and Idol durable root
   orientation (projection, not C0).
 - `docs/AGENT_ALIGNMENT.md` is the current priority compass.
 - `docs/bootstrap.md` is the executed compiler-authority ledger.

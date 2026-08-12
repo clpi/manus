@@ -2754,6 +2754,39 @@ const CheckedScalarOperand = struct {
     descriptor: types.ResolvedType,
 };
 
+fn exprBinopDepth(expr: *const ast.Expr) usize {
+    return switch (expr.*) {
+        .binop => |b| 1 + @max(exprBinopDepth(b.lhs), exprBinopDepth(b.rhs)),
+        else => 0,
+    };
+}
+
+fn nameIsCurrentParam(ctx: *const LowerCtx, name: []const u8) bool {
+    const slot = ctx.locals.get(name) orelse return false;
+    for (ctx.self_param_slots) |param_slot| {
+        if (param_slot == slot) return true;
+    }
+    return false;
+}
+
+fn checkedOperandAdmitsDirectGp(ctx: *const LowerCtx, expr: *const Expr) bool {
+    if (ctx.occurrences.get(expr) != null) return true;
+    return switch (expr.*) {
+        .int_lit, .true_lit, .false_lit, .float_lit => true,
+        .binop => exprBinopDepth(expr) <= 1,
+        .name => |n| nameIsCurrentParam(ctx, n.ident),
+        else => false,
+    };
+}
+
+fn checkedOperandUsesRecordStorage(ctx: *LowerCtx, expr: *const Expr) bool {
+    if (expr.* != .name) return false;
+    for (ctx.records) |rec| {
+        if (recordFieldsPresent(ctx, expr.name.ident, rec)) return true;
+    }
+    return false;
+}
+
 fn checkedScalarOperand(
     ctx: *const LowerCtx,
     value: semantic_graph.id,
@@ -2763,11 +2796,16 @@ fn checkedScalarOperand(
         return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-descriptor");
     switch (descriptor) {
         .i32, .i64, .bool, .str, .f64, .any => {},
+        .@"struct", .table_type => return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi"),
         else => return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi"),
     }
     const raw = node.ast_ref orelse return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-provenance");
+    const expression: *Expr = @ptrCast(@alignCast(raw));
+    if (expression.* == .table) {
+        return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+    }
     return .{
-        .expression = @ptrCast(@alignCast(raw)),
+        .expression = expression,
         .descriptor = descriptor,
     };
 }
@@ -2869,7 +2907,21 @@ fn lowerCheckedScalarCall(
     // operand laws have the same focused control.
     const direct_gp = operands.len == 1 and
         operands[0].descriptor == .i64 and
-        application.descriptor == .i64;
+        application.descriptor == .i64 and
+        checkedOperandAdmitsDirectGp(ctx, operands[0].expression);
+    for (operands) |operand| {
+        if (checkedOperandUsesRecordStorage(ctx, operand.expression)) {
+            return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+        }
+        if (operand.expression.* == .name) {
+            const ident = operand.expression.name.ident;
+            if (ctx.locals.get(ident)) |_| {
+                if (!nameIsCurrentParam(ctx, ident)) {
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+                }
+            }
+        }
+    }
     if (!direct_gp) try stageCheckedScalarOperands(ctx, values[0..operands.len], floating);
     const has_result = consumption != .discard and application.descriptor != .void;
     const result = if (has_result) ctx.freshTemp() else null;
@@ -2959,7 +3011,9 @@ fn lowerSubjectCall(
 ) Error!dnir.Value {
     if (ctx.occurrences.get(expr)) |application| {
         if (application.subject == null) return invalidGraphFacts(ctx.diagnostic, @src(), "application-subject");
-        return lowerCheckedScalarCall(ctx, application, consumption);
+        if (!ctx.graph.bootstrapApplicationExpr(expr)) {
+            return lowerCheckedScalarCall(ctx, application, consumption);
+        }
     }
     if (expr.* == .method_call) {
         const mc = expr.method_call;
@@ -3505,10 +3559,22 @@ fn flattenNames(alloc: std.mem.Allocator, e: *const ast.Expr, out: *std.ArrayLis
 fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnConsumption) Error!dnir.Value {
     if (expr.* != .call) return bail(ctx.diagnostic, @src());
     if (ctx.occurrences.get(expr)) |application| {
-        return lowerCheckedScalarCall(ctx, application, consumption);
+        if (!ctx.graph.bootstrapApplicationExpr(expr)) {
+            return lowerCheckedScalarCall(ctx, application, consumption);
+        }
+    }
+    if (ctx.require_graph_facts and !ctx.graph.bootstrapApplicationExpr(expr)) {
+        return invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-id");
     }
     const c = expr.call;
     const discard = consumption == .discard;
+    if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "gatecap") and c.args.len == 1) {
+        const arg = try lowerExpr(ctx, c.args[0]);
+        try ensureExtern(ctx, "gate", "cap", "idol_process_capture");
+        const t = ctx.freshTemp();
+        try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_process_capture", .lhs = arg, .ty = .str });
+        return .{ .temp = t };
+    }
     if (try lowerToStr(ctx, c)) |v| return v;
     if (c.func.* == .field) {
         const f = c.func.field;
@@ -3642,6 +3708,15 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
                 if (std.mem.eql(u8, f.field, "addr") and c.args.len == 1) {
                     return try lowerExpr(ctx, c.args[0]);
                 }
+            }
+            if (std.mem.eql(u8, f.obj.name.ident, "os") and
+                std.mem.eql(u8, f.field, "execute") and c.args.len == 1)
+            {
+                const arg = try lowerExpr(ctx, c.args[0]);
+                try ensureExtern(ctx, "os", "execute", "idol_os_execute");
+                const t = ctx.freshTemp();
+                try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_os_execute", .lhs = arg, .ty = .i64 });
+                return .{ .temp = t };
             }
             if (std.mem.eql(u8, f.obj.name.ident, "os") and
                 std.mem.eql(u8, f.field, "exit") and c.args.len == 1)
@@ -4863,23 +4938,26 @@ test "dnir_lower: call result class comes from graph descriptor" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\measure(): f64
+        \\measure: f64 = ()
         \\    1.5
-        \\count(): i64
+        \\count: i64 = ()
         \\    1
-        \\label(): str
-        \\    "ok"
-        \\length(): i64
-        \\    #label()
-        \\floating(): f64
+        \\label: str = "ok"
+        \\length: i64 = ()
+        \\    label:len()
+        \\floating: f64 = ()
         \\    measure()
-        \\integer(): i64
+        \\integer: i64 = ()
         \\    count()
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "result_query.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.duo_mode = true;
-    const mod = try parser.parse_module();
+    var mod = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.duo_mode = true;
+    try checked.check_module(&mod);
     const m = try lowerModule(alloc, &mod);
 
     var saw_float = false;
@@ -4897,6 +4975,10 @@ test "dnir_lower: call result class comes from graph descriptor" {
                 try std.testing.expect(ins.ty != .f64);
             }
             if (ins.op == .call_direct and std.mem.eql(u8, ins.callee, "label")) saw_string = true;
+            if (ins.op == .str_len) {
+                saw_string = true;
+                saw_length = true;
+            }
             if (ins.op == .call_extern and std.mem.eql(u8, ins.callee, "strlen")) saw_length = true;
         }
     }

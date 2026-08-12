@@ -2,11 +2,25 @@
 
 ## Authority
 
-The language law has one home. Read these files before editing Idsem (`.id`), in
+The language law has one home. Read these files before editing Idol (`.id`), in
 this order:
 
 1. `docs/spec/constitution.md` — C0, the sole semantic authority. It is
    structured law documentation, not executable source or a source template.
+   **Idol algebra closure:** §67 (`law.semantic.universe` … `law.algebra.absolute`;
+   adversarial controls in `law.gate.protocol`, `law.gate.algebra`,
+   `law.gate.infer`, and `law.gate.convergence`). **Convergence closure:**
+   `law.bridge.death`, `law.fallback.zero`, `law.fact.producer.one`,
+   `law.system.invariant`, `law.unknown.one`, `law.profile.evidence`,
+   `law.infer.contract` — see `docs/spec/harness-projection.md` § seam audit,
+   § universal anti-drift rules, and § projection (PROJECTION-ONE). **Anti-drift:**
+   `law.source.not.proof`, `law.repair.class`, `law.projection.one`,
+   `law.from.zero`, `law.std.zero`, `law.lib.zero`, `law.world.one`. **INFER-ONE:**
+   `to` is a graph relation usually omitted from source when demand uniquely resolves
+   (`law.infer.one`); census debt with `scripts/infer_census.id`; never bulk-delete.
+   `law.infer.one` — write only facts not uniquely recoverable; query resolver
+   before adding `:to(T)`. Re-pasted session prompts titled "algebra closure"
+   are void; §67 is sole authority. The language is **Idol** only.
 2. `CLAUDE.md` — the operative projection of C0.
 3. `docs/spec/AUTHORITY.md`, `docs/bootstrap.md`, `docs/spec/source.md`,
    `docs/spec/host.md` (host boundary / shell / capability closure), and the
@@ -22,457 +36,43 @@ legacy corpus are migration evidence, never authority.
 The language and project identity is **Idol** (`idol`, `.id`). Active development
 happens in **`clpi/duo`**. The future release repository **`idollang/idol`** is
 untouched until explicit release-readiness authorization; see
-`.agents/RELEASE_READINESS.md`. Historical Idol, Duo, Duon, `.id`, and the
+`.agents/RELEASE_READINESS.md`. Historical Duo, Duon, `.id`, and the
 `duo` bootstrap executable are development/migration provenance only. Cursor
-routers live in `.cursor/rules/`; executable canonicality remains in
-`scripts/idiomgate.id` and `scripts/semanticgate.id`.
-
-## Idsem durable project orientation
-
-You are working on Idsem (`idol`, `.id`).
-
-**Idol** is the public command and repository identity. **Idsem** is the semantic
-language (C0). **`.id`** is the sole canonical native source suffix. Branding is
-not ontology.
-
-Your task is not to translate an existing compiler into prettier syntax.
-
-Your task is to converge a single semantic system whose governing principle is:
-
-**semantic identity persists; representation changes.**
-
-Canonical native source uses `.id`.
-
-Historical Duo, Duon, and `.duo` material is migration or provenance unless
-current repository authority explicitly states otherwise.
-
-Repository truth and current owner-active authority override historical documents,
-stale examples, prior agent assumptions, and this prompt on implementation-state
-details.
-
-If current implementation contradicts an established architectural law, treat
-that as migration debt rather than evidence that the law is wrong.
-
-### First action
-
-Before modifying anything:
-
-1. Inspect current main, HEAD, dirty state, active claims, and recent commits.
-2. Read the repository authority chain: `docs/spec/constitution.md`,
-   `docs/spec/grammar.md`, `docs/spec/source.md`, `CLAUDE.md`, `AGENTS.md`,
-   `docs/bootstrap.md`, `.agents/AGENT_COORDINATION.md`.
-3. Identify the exact semantic boundary being changed.
-4. Identify authoritative producers of required facts.
-5. Identify downstream consumers of those facts.
-6. Detect overlap with other active ownership.
-7. Determine authority shifts and remove duplicates.
-8. If conflicts exist, report one precise authority conflict. Do not invent a
-   third interpretation.
-
-Do not begin from conventional compiler design assumptions.
-
-Begin from: what semantic observation, relation, value, dependency, state, law,
-or effect is required?
-
-### Identity
-
-There is one semantic identity space.
-
-Do not derive identity from:
-
-- source spelling
-- filename
-- `.id` suffix
-- namespace
-- parser node type
-- host enum
-- backend opcode
-- machine instruction
-- local counters
-- textual composites
-- hashes alone
-
-A hash may accelerate lookup only when it is provably collision-safe relative to
-semantic identity.
-
-A hash is evidence or acceleration, not identity.
-
-Distinct occurrences of the same relation remain distinct application identities
-with independent provenance and demand.
-
-### One meaning
-
-Each irreducible semantic meaning has:
-
-- one identity
-- one canonical native word
-- zero parallel names
-
-Prefer existing vocabulary:
-
-relation, subject, value, pack, binding, descriptor, shape, place, world, effect,
-demand, law, origin, stage, witness, provenance, realization, identity, span,
-token, role, view, run, outcome, evidence
-
-Do not encode qualification into relation names.
-
-Facts qualify meaning. Realization carries physical choice.
-
-### Naming
-
-Canonical vocabulary is lowercase.
-
-Use one word for irreducible meaning.
-
-Do not introduce names containing:
-
-- underscores
-- casing conventions
-- host compiler jargon
-- backend or OS jargon
-- transport or ABI qualifiers
-- representation qualifiers
-
-Foreign identifiers may retain spelling only when required for provenance.
-
-Foreign spelling does not become native vocabulary.
-
-If no irreducible meaning remains after decomposition:
-
-`SEMANTIC-VOCABULARY-BLOCKED`
-
-### Source
-
-Canonical language: Idsem
-
-Canonical source: `.id`
-
-Historical `.duo` is compatibility or migration provenance.
-
-There is exactly one source-family authority.
-
-Do not duplicate suffix logic across compiler, formatter, LSP, MCP, or tooling.
-
-Project branding is not ontology.
-
-Do not create artificial namespaces like “idsem graph/value/relation” when the
-concepts are simply graph, value, relation.
-
-### Source faces
-
-Human syntax may differ while converging semantically.
-
-Current delimiter model:
-
-- `()` call / grouping
-- `{}` structured packs / descriptors
-- `[]` computed or indexed projection
-- `.` named projection
-- `:` subject/descriptor constraint
-
-Do not collapse these into a single delimiter system.
-
-Minimal grammar means minimal irreducible distinctions, not minimal characters.
-
-### Structured values
-
-`{}` is neutral structure.
-
-It does not imply object, class, heap, or record allocation.
-
-Materialization is optional and demand-driven.
-
-Only write what cannot be reconstructed.
-
-### Descriptor homes
-
-A home organizes structure; it does not define ownership.
-
-Relations declared in a home remain global semantic relations.
-
-No method/class/member-function identity exists.
-
-### Subject
-
-Subject is a semantic role, not argument position.
-
-It is not inferred from syntax position, naming, or location.
-
-Subject resolution must be explicit and preserved.
-
-`:` form uses ambient subject when defined.
-
-It must not be conflated with ordinary function calls.
-
-### Pack
-
-Arguments and results are semantic packs.
-
-A pack preserves:
-
-identity, order, labels, values, descriptors, provenance, demand
-
-Do not flatten into host tuples or reconstruct later.
-
-Unknown, empty, zero, and false are distinct.
-
-### Value
-
-A value is identity plus facts.
-
-It is not a storage class.
-
-Do not map to:
-
-local, temp, stack, heap, register, record
-
-Binding is not place unless demand requires it.
-
-### Place
-
-A place exists only if semantically required.
-
-Do not preserve storage artifacts from host compilers.
-
-If no place is required, eliminate it entirely.
-
-### Control
-
-Control syntax is not IR ontology.
-
-After normalization, meaning is expressed as:
-
-- conditions
-- demands
-- dependencies
-- effects
-- continuations
-
-Not as syntactic categories.
-
-### Grammar
-
-Authority chain:
-
-```text
-source → lexer → grammar → parser → semantic resolver → graph → demand → realization
-```
-
-Each stage preserves strongest known fact.
-
-No stage reconstructs earlier stages from text.
-
-Lexer identifies tokens; grammar assigns roles; parser consumes roles; resolver
-assigns meaning.
-
-No handwritten keyword/punctuation tables.
-
-If missing projection:
-
-`IMPLEMENTATION-BLOCKED`
-
-Stage ownership detail: `docs/spec/grammar.md` § Authority pipeline.
-
-### Lexical law
-
-- `"` text
-- `'` bytes
-- `#` comment
-- `len` is relation, not syntax
-- backtick reserved unless explicitly defined
-
-Lua compatibility is historical only.
-
-No implicit execution semantics.
-
-### Numbers
-
-Numeric forms (`i64`, `u32`, `f64`) remain compact source faces.
-
-Do not prematurely assign semantic or physical representation.
-
-Separate:
-
-- numeric meaning
-- constraints
-- realization
-
-### Foreign
-
-Foreign systems retain their own laws until equivalence is proven.
-
-Do not flatten C/Rust/Wasm/etc into native semantics.
-
-Preserve:
-
-origin, ABI, ownership, aliasing, failure semantics, uncertainty
-
-### World
-
-World authority is explicit, not namespace-based.
-
-No `std.*` style implicit authority systems.
-
-World facts grant capability, not imports.
-
-### Files and packages
-
-Files do not define identity.
-
-Paths do not define semantics.
-
-No import system is assumed unless explicitly required by authority.
-
-Reachability is scope and home projection (`docs/spec/source.md`, `GAP-153`).
-
-### DNIR
-
-DNIR is a realization layer only.
-
-It does not introduce new semantic vocabulary.
-
-It may define:
-
-representation, target, ABI, linkage, placement, schedule, encoding
-
-but not rename semantics.
-
-### Transformation
-
-Transformations preserve lineage.
-
-Even when folded or optimized, original semantic application identity remains
-traceable.
-
-### Demand
-
-Demand determines what must exist.
-
-Do not materialize structures that are never demanded.
-
-Eliminate unnecessary abstraction before construction.
-
-### Realization
-
-Semantic graph defines meaning.
-
-Demand defines necessity.
-
-Realization defines physical execution.
-
-Do not collapse realization choices prematurely.
-
-### Performance
-
-Goal: FTCFTW
-
-Maximize semantic knowledge, minimize compiler state.
-
-Avoid unnecessary IR duplication or abstraction layers.
-
-### Selfhost
-
-Self-hosting is measured by transferred semantic authority, not file count or
-structure replication.
-
-### Host pattern zero
-
-Do not inherit host compiler architecture patterns as semantic truth.
-
-Translate only real semantic requirements, not implementation artifacts.
-
-### Evidence
-
-Truth requires executed production evidence.
-
-Not schema, not fixture, not file presence.
-
-Only actual execution outcome counts.
-
-### Concurrency
-
-Do not resolve conflicts by reintroducing removed authority.
-
-Missing facts are preferable to shadow systems.
-
-### No fallback authority
-
-Never reconstruct missing semantic truth from text or inference.
-
-Fail closed.
-
-### Relation admission
-
-A new relation is allowed only if:
-
-- no existing relation covers it
-- it is irreducible after full decomposition
-- it is not representable as descriptor, shape, or provenance
-
-### Tooling
-
-Tools operate on graph identity, not text inference.
-
-### Canonical code
-
-Canonical `.id` is stricter than compatibility code.
-
-Correctness includes semantic authority, not just parsing.
-
-### Historical source
-
-History is preserved but never authoritative over current grammar.
-
-### Unresolved grammar
-
-Never resolve grammar from examples.
-
-Only from current machine-authoritative grammar source.
-
-### Scope
-
-Keep changes local.
-
-Do not expand into unrelated subsystems.
-
-### Adversarial mindset
-
-Every rule must survive a degenerate implementation test.
-
-### Completion standard
-
-A change is complete only when:
-
-- semantic boundary is uniquely owned
-- no downstream re-derivation occurs
-- authority is singular
-
-Report:
-
-boundary, authority, identity, facts, loss, bridges, world, realization,
-evidence, performance, blocker
-
-Then stop.
-
-### Progress metrics
-
-Do not headline progress with file counts, `.id` percentage, or keyword removal.
-Report the three dominant metrics in `docs/METRICS.md` first: executed authority
-frontier, semantic reconstruction debt, FTCFTW evidence matrix coverage. Split
-**new debt introduced = 0** (gates on changed lines) from **existing corpus
-debt** (historical ledgers).
-
-### Absolute project law
-
-Do not turn Idsem into another conventional compiler.
-
-Do not turn semantics into syntax.
-
-Do not turn representation into identity.
-
-Do not turn naming into ontology.
-
-One meaning. One identity. One word.
+routers live in `.cursor/rules/`; executable canonicality lives under **`gates/`**
+(home hierarchy — not scattered `scripts/*gate*` paths).
+
+## Idol harness orientation
+
+Harnesses must **reason in Idol**, not as conventional coding agents with Idol
+syntax pasted onto output. This section is workflow routing only; harness
+reasoning law lives elsewhere.
+
+| Layer | Path | Role |
+|---|---|---|
+| Semantic law | `docs/spec/constitution.md` | Sole authority (C0) |
+| Harness reasoning | `docs/spec/harness-projection.md` | Pre-task reduction, deletion order, semantic diff, host quarantine, SHC scheduler, FTCFTW rejection, **before writing code audit seams** |
+| Live boot payload | `.agents/HARNESS.md` | Revision-bound envelope + template (from `tools/node/dev/generate-harness`) |
+| Mechanical preflight | This file (below) | Gates, claims, path law, host firewall |
+
+Before choosing work or editing:
+
+1. Read `docs/spec/harness-projection.md` § pre-task reduction, § work selection,
+   and § **before writing code — audit seams**.
+2. Read `.agents/HARNESS.md` for current SHC frontier and live envelope.
+3. Run `tools/node/dev/generate-harness` (or `orient`, which regenerates it) and
+   `tools/node/dev/doctor`.
+
+Every nontrivial change requires a **semantic diff** (`docs/spec/harness-projection.md`
+§ semantic diff) in the completion report. Lexical gate pass on changed lines
+is migration pressure, not semantic convergence proof.
+
+Do not begin from “remove std,” “fix gate,” or “implement process support.”
+Begin from: what fact is missing, what identity disappears, what should cease to
+exist, and whether executed authority, reconstruction debt, or FTCFTW evidence
+improves.
+
+If 1–9 in pre-task reduction lack answers, deprioritize. If the task only
+renames an abstraction (`std.*` → `process.*`, `req` → local binding), reject.
 
 ## Monoglot boundary
 
@@ -524,11 +124,22 @@ Presumptively noncanonical shapes whenever written or touched:
   reachability is scope and home projection only;
 - a literal string projected through `[]` when admitted named projection or a
   structured field exposes the same identity directly;
+- an adjective protocol or trait kingdom (`readable`, `writable`, `iterable`,
+  `source: readable`, `trait`, `impl`, `@implements`, `concept`) — relation
+  constraints only (`source: read`; `law.protocol.one`);
 - a mashed gate-scan compound (`scandiff`, `scanline`, `diffhead`, `bareend`, or
   any `scan+*` binding name);
 - a string where a boundary symbol belongs in a curried scan (`scan("diff")` —
   write `scan(diff)(body)`; `diff` and `path` are symbols in the curry slot, not
-  string literals).
+  string literals);
+- operation-first conversion or relation projection at a call site (`to(str)(value)`,
+  `to(i64)(value)`) — declare `to(str) = (value)` and invoke `value:to(str)`;
+  parentheses after a relation name in a declaration head project the relation,
+  they do not curry it (`law.paren.one`, `law.projection.head`);
+- redundant explicit conversion when demand already fixes the target
+  (`x: str = value:to(str)`, `f(value:to(i64))` when parameter demands `i64`) —
+  prefer minimal source under `law.infer.one`; graph must prove redundancy before
+  removal (`law.gate.infer`).
 
 After parsing, describe meaning in semantic terms. Parser terms such as
 statement, loop node, binary expression, or call expression are valid only
@@ -546,8 +157,7 @@ when it introduces any of these forms:
 
 - an identifier containing an underscore or uppercase letter;
 - `end`, a semicolon, `then`, or `do` instead of offside structure;
-- `--` or Lua long comments instead of `#` comments — `idiomgate` and `gates/path`
-  reject dash comments on every added line;
+- `--` or Lua long comments instead of `#` comments — `gates/idiom.id` and `gates/path.id`
 - Lua long strings, historical single-quoted text, `#value` length, or an
   unadmitted backtick use;
 - a new prefix directive or compatibility directive use;
@@ -564,6 +174,9 @@ when it introduces any of these forms:
 - expanded same-place updates: `hits = hits + 1`, `n = n - 1`, `x = x * y`,
   `y = y / z`, or any `place = place op value` — use compound update
   (`hits += 1`, `n -= 1`, `x *= y`, `y /= z`);
+- adjective protocols or trait kingdom (`readable`, `writable`, `iterable`,
+  `source: readable`, `trait`, `impl`, `@implements`, `concept`) — relation
+  constraints only (`source: read`; `law.protocol.one`);
 - a new foreign source file.
 
 Canonical lexical meaning is fixed: double quotes are text, single quotes are
@@ -583,7 +196,7 @@ base relation together with the exact place and update facts; it does not mint
 update evaluates a computed place once, so collapsing repeated subject, key, or
 index evaluation requires an explicit equivalence witness.
 
-The current `scripts/idiomgate.id` added-line check is migration pressure over
+The current `gates/idiom.id` added-line check is migration pressure over
 text, not semantic proof and not permission to rewrite. Its
 `law.update.face` finding identifies only a candidate expanded face. Existing
 compound forms, distinct left/right subjects, declarations, and unwitnessed
@@ -597,9 +210,9 @@ working-tree diff:
     repo="$(git rev-parse --show-toplevel)"
  gate="$(mktemp -t idolgate)" && trap 'rm -f "$gate"' EXIT
  git diff -U0 -- '*.id' '*.id' > "$gate"
- cat "$gate" | "$repo/zig-out/bin/idol" run "$repo/scripts/idiomgate.id"
+ cat "$gate" | "$repo/zig-out/bin/idol" run "$repo/gates/idiom.id"
 
-`scripts/semanticgate.id` reads the staged index, so run it after staging or let
+`gates/architecture.id` reads the staged index, so run it after staging or let
 the pre-commit hook run it. The hook also runs `gates/path.id` over every
 staged added or renamed path and over every added line in project teaching and
 implementation surfaces. Do not suppress, bypass, weaken, or route around a
@@ -610,7 +223,7 @@ Path and home names obey the same LAW-ONE as source identifiers (`law.path.name`
 Concat/mashed file and directory names are never allowed — each semantic unit belongs
 in its own home segment through hierarchy (`semantic/graph.id`), not a compound stem
 (`semantic_graph.id`, `readline.id`, `nativebackend/`). Both `gates/path.id` and
-`scripts/idiomgate.id` reject separator violations, version taxonomy, mashed
+`gates/idiom.id` reject separator violations, version taxonomy, mashed
 compounds in diff path headers, directory components, filename stems, and added-line
 tokens, and namespace-first calls (`string.*`, `std.string.*`, `table.*`, `math.*`,
 `std.*`) on every staged added line in project surfaces.
@@ -636,7 +249,7 @@ for host APIs.
 
 Run `./tools/node/dev/hostcensus` when auditing host debt. Never add `std.`,
 `proc.`, `ir.`, or similar namespace dispatch to new canonical source.
-Added-line host-pattern firewall: `scripts/idiomgate.id` and `gates/host.id`
+Added-line host-pattern firewall: `gates/idiom.id` and `gates/host.id`
 (temporary until graph enforcement, `GAP-154`).
 
 ## Gate scan boundaries (LAW-ONE + curry)
@@ -722,14 +335,29 @@ Bare-line `end` detection uses **`bare(code)`** — never `bareend`.
 Ingress home membership uses **`ingress(path)`** — never `ingressonly` or
 `only(ingress)(path)`; ingress is the subject.
 
-Authoritative implementations: `scripts/idiomgate.id`, `gates/host.id`,
+Authoritative implementations: `gates/idiom.id`, `gates/host.id`,
 `gates/path.id` (`scan(path)(body)` for path lists, `scan(diff)(body)` for
-namediffs). Gate transport is stdin only — `io:read()` via pipe or shell
+namediffs). Gate transport is stdin only — `stdin:read()` via pipe or shell
 redirect (`< file`); no `os.args`, no bash wrappers, no `gatepath`, no `gate.sh`.
-Run gates with **`idol run gate.id`** — never **`--backend=c`** (C emit is bootstrap
+Run gates with **`idol run gates/<name>.id`** — never **`--backend=c`** (C emit is bootstrap
 debt for the compiler build, not gate admission).
-Commit admission runs through `scripts/preflight.id` (`.githooks/pre-commit`
-execs it).
+Commit admission runs through `.githooks/pre-commit` (shell orchestrator → direct-backend
+`idol run gates/*`). Never `--backend=c` on gates.
+
+Gate home (`gates/`):
+
+| Gate | Role |
+|---|---|
+| `preflight` | `.githooks/pre-commit` shell → direct `idol run gates/*` |
+| `idiom.id` | Added-line lexical/canonical migration firewall |
+| `admission.id` | Semantic-admission firewall on added lines |
+| `host.id` | Host API debt on staged additions |
+| `architecture.id` | Staged-index migration censuses (C0 §65 ratchet) |
+| `path.id` | LAW-ONE path/name firewall |
+| `census.id` | Path stem census |
+| `catalog.id` | Admitted relation projection (tables; admission inlines) |
+| `bootstrap.id` | Shared capture helpers for gate scripts |
+| `build.id` | Zig build-step idiom wrapper (diff → `gates/idiom.id`) |
 
 ## Path and file names (law.path.name)
 
@@ -754,7 +382,7 @@ canonical one-word name, origin, and role. If decomposition is unclear, record
 
 Callable bindings use result demand on the binder: `name: descriptor = (args) body`.
 Never write suffix or header callable faces: `name = (): type`, `name = (args): type`,
-or `name(): type` — migratable debt ratcheted by `scripts/semanticgate.id` staged
+or `name(): type` — migratable debt ratcheted by `gates/architecture.id` staged
 census (callable.result.suffix), `examples/spec100/result.id`, and `scripts/canon.id`.
 Do not reintroduce a `suffix()` substring detector or `if !suffix(` / `if not suffix(` gate controls.
 Length is subject-first: `value:len()` — never `size(x)`, `len(x)`, `rawlen(x)`,
@@ -832,27 +460,27 @@ or algorithm family.
 - Do not migrate development to `idollang/idol`; keep active work in `clpi/duo` until explicit release-readiness authorization.
 - Do not implement or hand-edit lexical or tokenizer logic outside the Idol lexer source path (`lib/std/compiler/lexer.id`, `lib/std/compiler/token.id`).
 - Do not use `ALU_OPS` or lookup-table dispatch for JIT lowering; specialize each opcode at its ALU or compare edge.
-- Prefer demand-based implicit results over explicit `return` in `.id` helpers where control flow allows.
-- Do not commit unless explicitly requested.
+- INFER-ONE (`law.infer.one`): write only facts not uniquely recoverable from demand/descriptors/context; query resolver before `:to(T)`; prefer demand-implied results over explicit `return` or redundant conversions.
+- Relation projection is not curry: declare `to(str) = (value)` and invoke `value:to(str)`; operation-first `to(str)(value)` is migratable debt only.
 - Gate `.id` helpers: boundary curry `len(path)(min)`, `audit(path)(pattern)`, `hit(path)(pattern)` — not flat comma forms or bridge bindings; multiline subject-first `path:read()` chains, no `text = path:read()` transitive bindings; stdin via `io:read()` only; `idol run`/`idol check`, never `--backend=c`.
 - Prefix `!` is canonical negation — never `if not`, `and not`, or `(not` in Idol source (gate detector prose may still quote those strings).
 - Do not decide canonicality with string-detector or substring architecture (`codens`, `luahash`, `layout`, `has(...)` admission patterns); route through production lexer → parser → graph → obligations (`GAP-124`).
-- Do not use Python for migration, census, or gate tooling; implement in Idol only.
-- Use `"{}"` text composition in Idol source, not `..` concatenation.
-- No `std.*`; `environment` is not a thing — use `os.env[k]`, `os.args[n]`, subject-first `io:read`/`io:write` and `hay:has(needle)`.
-- Bit view reverse is `restore` not `unpack`; do not refactor `scripts/grammarconvergence.id` without explicit approval.
+- Harness must reason in Idol (pre-task reduction, semantic diff, deletion order), not as a conventional coding agent; read `docs/spec/harness-projection.md` and `.agents/HARNESS.md` before choosing work; audit seams for BRIDGE-DEATH, UNKNOWN-ONE, OWNERSHIP-ZERO, and PROFILE-EVIDENCE before introducing bridges or helpers.
+- Use `"{}"` text composition, not `..`; nested `{expr:to(str)}` inside string literals does not interpolate — build dynamic needles at expression level.
+- No `std.*`, `table.*`, `string.*`, or `math.*` namespace dispatch — subject-first edges only (`text:match`, `xs:keys`); reject lexical-substitution migrations (`std.*`→`process.*`, `req`→`process = lib.process`); prove semantic reduction, not respelling; `environment` is not a thing — use `os.env[k]`, `os.args[n]`, `io:read`/`io:write`.
+- `using`/`using(x)` forbidden — `use(x)` is the sole admitted compact lexical-admission face; do not refactor `scripts/grammarconvergence.id` without explicit approval.
 
 ## Learned Workspace Facts
 
-- Production lexical authority is `lib/std/compiler/lexer.id` and `lib/std/compiler/token.id`.
-- `src/duo_lexer_tokenize.c` is generated bootstrap from `lib/std/compiler/host.id`; regenerate it instead of hand-editing trivia or token logic there.
-- `src/lexer.zig` is a differential oracle only, not production lexical authority.
-- Dev and coordination tooling lives under `tools/node/dev/` (not mashed `devnode` paths).
-- Path LAW-ONE gate is `gates/path.id`; host-pattern firewall is `gates/host.id` (until `GAP-154`).
+- Production lexical authority is `lib/std/compiler/lexer.id` and `lib/std/compiler/token.id`; `src/duo_lexer_tokenize.c` is generated from `lib/std/compiler/host.id` — regenerate, never hand-edit; `src/lexer.zig` is a differential oracle only.
+- Executed SHC frontier is **S0** (lexer/token/span only); compiler B does not exist; next frontier is GAP-145 lexical identity → GAP-134 grammar roles.
+- Harness boot payload: `docs/spec/harness-projection.md` → `.agents/HARNESS.md` via `tools/node/dev/generate-harness` (`orient` regenerates).
+- Dev and coordination tooling lives under `tools/node/dev/` (not mashed `devnode` paths); Codex agent skill is `idol-dev` (`.codex/skills/idol-dev/`), not `duon-development`.
 - Gate boundary relation descriptors live in `lib/semantic/gate.id` (`len`, `audit`, `hit`, `scan`, `dot` — curry slots, not world relations).
 - Reserved keyword `not` cannot be a table field name — census row is `debt.negation`, never `debt.not`.
-- Bit view edges registered in `lib/semantic/ingest.id` as curried `view(edges)` pipe (separate from world `edges`).
-- Bit reinterpret proof: `scripts/proof/bit.id`; nominal `type bit = i64`; round-trip assertions; `to(i64)(bit)` is integer observation edge.
-- Bootstrap compiler binary: `zig-out/bin/idol` (`idol check`, `idol run`). `duo` is migration provenance only.
-- Proof scripts use `IDOL` env / `./zig-out/bin/idol` — not `DUO` / `bin/duo`.
-- Host boundary authority is `docs/spec/host.md`; read before argv, env, I/O, process, pipe, shell, or transport work.
+- Bit view edges registered in `lib/semantic/ingest.id` as curried `view(edges)` pipe (separate from world `edges`); reverse is `restore` not `unpack`.
+- Bit reinterpret proof: `scripts/proof/bit.id`; nominal `type bit = i64`; round-trip assertions; integer observation edge is `bit:to(i64)`.
+- Bootstrap/dev binary is `./zig-out/bin/idol` (`idol check`, `idol run`); `orient`, `doctor`, and `probe-mcp` default to it; proof scripts use `IDOL`/`./zig-out/bin/idol` — not `DUO`/`bin/duo`.
+- Authoritative migration gates live under `gates/` (`idiom.id`, `path.id`, `host.id`, `architecture.id`, `census.id`) — legacy `scripts/*gate.id` are debt, not authority; host boundary law is `docs/spec/host.md` (host firewall until `GAP-154`).
+- MCP bootstrap lives under `tools/mcp/` (`shared.id`, `bench.id`, `lsp.id`, `gate.id`, `audit.id`, `eval.id`, `zls/bridge.id`); integration gate is `zig build mcp-gate` → `./zig-out/bin/idol run --backend=c tools/mcp/gate.id`.
+- Compiled Idol bootstrap quirks: `string.match` with `\t` patterns returns nil (use `string.find` + `string.char(9)`); `"\n"` may be literal backslash-n (use `string.char(10)` for line splits); file-scope `os.env[k]` may be empty at module init (defer env reads to runtime/bootstrap ingress).

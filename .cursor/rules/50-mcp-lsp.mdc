@@ -20,3 +20,7 @@ ingress/egress bootstrap boundaries only.
 MCP health requires real JSON-RPC initialize and gate execution, not config
 presence or compilation. Protocol stdout must contain protocol data only;
 diagnostics belong on stderr.
+
+`duo_agent_session_start` on every MCP server returns `infer_one`, `harness_seams`,
+and combined `harness_context`. Agents must run the seam audit before code and query
+semantic demand before adding `:to(T)`.

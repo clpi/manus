@@ -106,7 +106,7 @@ The witness must prove all of the following:
   preserved.
 
 For example, `step += 1` may be canonical when those facts prove it equivalent
-to `step += 1`. A different right-hand place, a repeated computed key, or
+to `step = step + 1`. A different right-hand place, a repeated computed key, or
 an update whose relation law or observations differ is not mechanically
 rewritable.
 

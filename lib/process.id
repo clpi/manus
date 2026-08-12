@@ -1,40 +1,56 @@
-# process home — structured command + open across process boundary.
-# No popen. No @c. No lua. Never io.popen / io:popen spellings.
+# process home — work value and run/evidence relations (C0 §67 · docs/spec/host.md).
 #
-# Canonical capture path:
-#   c = command("git status")
-#   stream = c:open("r")
-#   text = stream:read("*a")
+# Home supplies context. Process world grants authority (witness when elided).
+# run = semantic execution. outcome = semantic truth. status = foreign evidence.
+# evidence = output demand on run — not a second execution relation identity.
+#
+# A string is not executable. Shell is law on explicit run only.
+# Bootstrap ingress (GAP-155): gatecap / os.execute until graph-owned run.
+# Do not call this a subprocess module.
 
-command: any = (line: str)
+work: { line: str } = (line: str)
     { line = line }
 
-capture: str = (shellline: str)
-    c = command(shellline)
-    stream = c:open("r")
-    if stream == nil
-        return ""
-    out = ""
-    line = stream:read()
-    while line != nil
-        out = "{out}{line}\n"
-        line = stream:read()
-    stream:close()
-    out
+command: { line: str } = (line: str)
+    work(line)
 
-run: i64 = (shellline: str)
-    if os.execute(shellline)
-        return 0
-    1
+verdict: str = (status: i64)
+    if status == 0
+        "ok"
+    "failed"
 
-chomp: str = (text: str)
+run: { outcome: str, status: i64 } = (line: str)
+    code = os.execute(line)
+    { outcome = verdict(code), status = code }
+
+evidence: str = (line: str)
+    gatecap(line)
+
+trim: str = (text: str)
     n = text:len()
     while n > 0
-        c = text:byte(n)
-        if c != 10 and c != 13 and c != 32
+        c = string.byte(text, n)
+        if c != 10 and c != 13 and c != 32 and c != 9
             break
         n -= 1
     text:sub(1, n)
 
-exit: void = (code: i64)
+read: str = (w: { line: str })
+    evidence(w.line)
+
+halt: void = (code: i64)
     os.exit(code)
+
+# Positive control — run/evidence algebra (revision-bound smoke).
+main: i64 = ()
+    w = command("printf ok")
+    r = run(w.line)
+    if r.outcome != "ok"
+        return 1
+    e = trim(evidence(w.line))
+    if e != "ok"
+        return 2
+    r2 = run("false")
+    if r2.outcome != "failed"
+        return 3
+    0

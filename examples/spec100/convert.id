@@ -1,19 +1,13 @@
-# Pass 121 §9 — the CONVERSION EDGE at the receiver, which is the canonical
-# face: `n:to(str)`, never `to(str)(n)`.
+# Pass 121 §9 — explicit conversion when target is NOT fixed by surrounding demand.
 #
-# Every value here is asserted by the `-- expect:` line rather than by the
-# fixture compiling, and that distinction is the entire reason this file
-# exists. gaps/GAP-081.md measured the tree at 1647 operation-first
-# conversions against ONE canonical one, and the honest reading was not taste:
-# `str -> i64` did not BUILD in either face (`lua_to_num` undeclared in a
-# full-native module), so the commonest conversion direction in the corpus —
-# parsing a number — had no canonical spelling that worked. Authors wrote what
-# worked. A gate demanding the canonical form before that was fixed would have
-# demanded a form the compiler could not produce.
+# INFER-ONE (law.infer.one): when binding/parameter/field/result already demands
+# the target descriptor, omit redundant :to(T) from source — graph retains inferred
+# application. This file keeps explicit :to(T) because each conversion direction
+# is exercised without a unique surrounding demand fixing the target.
 #
-# `-17` is here because a sign is the cheapest way to tell a real parse from a
-# digit-scraper, and `9007199254740993` because it is 2^53 + 1: a conversion
-# that detoured through a double would answer 9007199254740992 and look right.
+# Canonical invocation face: n:to(str), never to(str)(n). Full ladder:
+#   to(str)(n) → n:to(str) → n:to() → n   (stop at uniquely proved step)
+#
 # expect: 17 -17 9007199254740993 42 2.5 true
 
 main: i64 = ()

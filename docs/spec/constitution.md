@@ -143,8 +143,16 @@ language = @{
     epoch = 3
 }
 
+# Current identity — never list Idol in language.history.
+language.current = @{
+    names = { "Idol", "idol" }
+    file  = ".id"
+    binary = "idol"
+    repository = "idollang/idol"
+}
+
 language.history = {
-    @{ names = { "Idol", "idol" }, binaries = { "idol" }, role = "historical and bootstrap provenance only" },
+    @{ names = { "Idsem", "idsem" }, role = "historical and bootstrap provenance only" },
     @{ names = { "Duon", "duon", "Duo", "duo" }, files = { ".id" }, binaries = { "duo" }, role = "historical and bootstrap provenance only" },
 }
 
@@ -1223,6 +1231,71 @@ doc = law{
         "architecture prose uses Idol concepts so its wording is lintable",
     }
     fails = "a specification teaching an idiom its own gate would reject"
+}
+
+docteaching = law{
+    id    = "law.doc.teaching"
+    kind  = .invariant
+    holds = .canonical
+    binds = {
+        "canonical documentation and normative examples must pass SUBJECT-ONE and OPERATION-ONE",
+        "do not teach home package table class constructor or namespace receiver patterns unless the left-hand value is proven an ordinary semantic subject not organizational home",
+        "do not use new in examples unless new is an admitted irreducible relation",
+        "parser:parse(source) lexer:scan(source) and http.client:new() are anti-patterns in orientation unless explicitly decomposed to subject relation and admitted operands",
+    }
+    fails = "normative documentation that trains module api or constructor ontology"
+}
+
+sourcenotproof = law{
+    id    = "law.source.not.proof"
+    kind  = .invariant
+    holds = .absolute
+    binds = {
+        "current repository source is not proof of canonical Idol merely because it is id builds appears under spec100 or was recently canonicalized",
+        "resolve every touched construct against current C0 plus current owner directives",
+        "if shortest uniquely resolving form semantic fact ownership world authority relation identity or demand driven realization is not yet implemented classify existing spelling as bootstrap migration debt not the new pattern",
+        "spec100 and generated fixtures are verified projections only — fixture disagrees with C0 means fixture is wrong never preserve spec100 behavior against constitution",
+        "agent retrieval must exclude foreign compat history migration and generated corpus unless explicitly requested — corpus role must be machine visible",
+    }
+    fails = "learning from bootstrap debt compatibility fixtures or stale canonicalization as if it were current law"
+}
+
+repairclass = law{
+    id    = "law.repair.class"
+    kind  = .protocol
+    holds = .absolute
+    binds = {
+        "no agent may fix a surface specimen without proving the semantic class which produced it is now impossible to reintroduce under another spelling path helper namespace wrapper protocol name fallback or realization",
+        "every error class repair adds positive and negative controls and derives gate checks from authoritative facts where possible",
+    }
+    fails = "specimen-only repair that leaves the producing class reintroducible under another face"
+}
+
+projectionpack = law{
+    id    = "law.projection.pack"
+    kind  = .invariant
+    holds = .firstclass
+    binds = {
+        "every relation application carries projection pack subject operand pack and result pack as distinct first-class roles in resolver graph dnir and tooling",
+        "read(number) = (lx, b) declares relation read projection pack number subject lx operand pack b — not a curry stage",
+        "to(str) = (value) declares relation to projection pack str subject value — projection parameters are relation parameters not callable types",
+        "projection pack facts must survive elision in source — omitted syntax does not erase projection pack in the graph",
+        "must land before generic currying work or nested-call semantics that conflate projection with returned-callable application",
+    }
+    fails = "projection pack treated as curry operand intermediate callable or missing from graph facts"
+}
+
+identityprojection = law{
+    id    = "law.identity.projection"
+    kind  = .protocol
+    holds = .current
+    binds = {
+        "current language identity is Idol idol only — language.history records Idsem Duon Duo and duo as historical bootstrap provenance never current identity",
+        "current agent projection documents must not use Idsem idsem as live language identity",
+        "gate target current projection count of Idsem idsem as identity outside mechanically classified history foreign provenance blocks equals zero",
+        "Historical Duo Duon duo bootstrap names remain provenance only when explicitly qualified — never alongside Idol as if Idol were historical",
+    }
+    fails = "current Idol name appearing in historical name set or Idsem appearing as live identity in agent projections"
 }
 
 # ═══ §37 · DISTRIBUTION IS NOT SEMANTICS (the stdlib reconciliation) ════════
@@ -3811,9 +3884,8 @@ authorityinvariant = law{
 # injection, projection, union, standard reachability, shell/run/outcome,
 # binding census, and completion metrics. Fully reconciled here — not an
 # independent prompt, harness injection, chat paste, or parallel rule list.
-# Historical prompts titled "algebra closure", "Idsem algebra closure", or
-# "PROTOCOL-ONE" are void where they duplicate or conflict with this section; the language is
-# **Idol** (`idol`, `.id`), not a separate Idsem brand.
+# Historical prompts titled "algebra closure" are void where they duplicate or
+# conflict with this section. The language is **Idol** (`idol`, `.id`).
 #
 # Repository authority overrides stale implementation details. Every native surface
 # reduces to the semantic universe below or proves an irreducible distinction
@@ -3829,12 +3901,17 @@ authorityinvariant = law{
 # (law.protocol.satisfy) and documents inferred injection (law.inject.algebra).
 # Enforcement adversarial controls: law.gate.protocol and law.gate.algebra.
 # Protocol closure: law.protocol.one · law.constraint.protocol · law.specialize.algebra.
+# Projection closure: law.projection.one · law.projection.pack · law.from.zero ·
+# law.std.zero · law.lib.zero · law.world.one · law.home.projection ·
+# law.shell.not.world · law.cross.one · law.conversion.derive · law.conversion.decl ·
+# law.gate.projection.
 # Inference closure: law.infer.one · law.source.minimum · law.direct.bridge.one · law.gate.infer.
 # Meta-invariants (one-system SHC): law.bridge.death · law.fallback.zero · law.fact.producer.one ·
 # law.unknown.one · law.ownership.zero · law.effect.order · law.profile.evidence ·
 # law.incremental.semantic · law.canonical.semantic · law.infer.contract · law.world.capability ·
 # law.closure.semantic · law.shc.scheduler · law.delta.budget · law.coordination.fact ·
 # law.representation.demand · law.gate.convergence.
+# Anti-drift: law.source.not.proof · law.repair.class · law.doc.teaching · law.projection.pack · law.identity.projection.
 
 semanticuniverse = law{
     id    = "law.semantic.universe"
@@ -3864,6 +3941,220 @@ projectionalgebra = law{
         "there is no privileged standard dispatch path and no hidden std.x.y.z behind canonical source",
     }
     fails = "privileged std dispatch or unchecked application without relation subject world and demand facts"
+}
+
+projectionone = law{
+    id    = "law.projection.one"
+    kind  = .invariant
+    holds = .one
+    binds = {
+        "PROJECTION-ONE idol has one projection algebra — do not implement separate systems for conversion protocol generic specialization home lookup standard library world injection shell foreign projection descriptor coercion call specialization hardware selection or staging",
+        "all are combinations of ordinary semantic facts resolved to relation projection facts subject operand pack result demand descriptor facts law world requirements world witnesses effect stage origin provenance demand — physical realization comes later",
+        "projection means known semantic facts plus demanded semantic facts yield uniquely resolved semantic specialization — not namespace lookup module lookup method lookup generic instantiation object runtime dictionary function returning function world object plumbing or string key dispatch",
+        "projection fact sources include explicit source projection subject descriptor expected binding descriptor parameter descriptor result descriptor field descriptor relation declaration protocol relation constraint union refinement home context world context stage target foreign boundary law and abi semantic contract — source spelling is one input only",
+        "canonical source spells only facts the compiler cannot uniquely recover with preference implicit relation plus implicit projection then explicit relation plus implicit projection then explicit relation plus explicit projection where shorter form resolves identically",
+        "every application preserves one normalized projection fact set — conversion protocol world home and generic projection are not independent semantic structures projection is a role not a new semantic kind",
+        "relation projection to(str) = (value) and read(number) = (stream buffer) declare relation projection pack subject and operands — projection group is not an application and no intermediate callable exists",
+        "inferred relation projection value:to(str) may reduce to value:to() when target uniquely demanded and to value when relation and target uniquely inferable — graph still records inferred application syntax disappearance does not erase semantics",
+        "satisfaction conversion and realization remain distinct — satisfaction needs no to conversion is semantic relation with graph application source may omit realization is machine abi representation never semantic to",
+        "exact integer n i32 = 5 is descriptor specialization not default i64 followed by to(i32)",
+        "to is the one canonical conversion relation orientation — from does not receive independent relation id implementation registry trie protocol or conversion graph — from migration face normalizes to value:to(target) with source descriptor witnessed as source",
+        "derived conversion may compose source to canonical to target only when bounded admitted algebra proves one normalized witnessed edge preserving meet of conversion laws — no arbitrary path search declaration order tie breaking or whole graph search",
+        "protocol constraints are relation projections requiring unknown subject admit projected relation shape — no readable writable convertible hashable callable native identities",
+        "protocol witness is proof not interface dictionary vtable or runtime protocol token unless reflection heterogeneity demands representation — static constraints permit zero runtime witness bytes",
+        "home hierarchy supplies reachability context and provenance not runtime namespace chains — compiler.parser.parse is not semantic relation identity hierarchy elision preferred when lookup context uniquely determines binding",
+        "world grants authority not intent — unique compatible grant injects witness source need not name world — world availability never chooses conversion parser relation or target descriptor",
+        "shell is interpretation law process is authority command is semantic value — shell is not automatically the authority world",
+        "cross boundary projection adds origin law world abi provenance witness realization constraints — identity persists cross one requires explicit witness never map by same name path field spelling method name or binary layout alone",
+        "implied projection ladder is direct satisfaction infer relation and projection explicit relation inferred projection value:to() explicit projection value:to(str) explicit operands — minimal syntax demands maximal explainability in tooling",
+        "no spooky inference — implicit insertion only when demanded slot and supplied value define exactly one admitted bridge witness — constraint solving is not program synthesis",
+        "relation algebra coherence prefers uniquely more specific candidate by semantic facts — incomparable means AMBIGUOUS uniformly for conversion protocol world shape hardware and stage specialization",
+        "resolver determines relation projection role subject operand role result demand world requirement — parser preserves structure dnir consumes graph ids and facts missing projection fact fails closed",
+        "parser must not produce semantic ast kinds methodcall projectedcall genericcall protocolcall worldcall curriedcall — dnir must not recover meaning from callee string nested call shape home path std lib prefix method flag or type name",
+        "conversion trie and indexes are acceleration not semantic authority — hardcoded literal to checks in codegen are host projection debt with accelerated deletion gate",
+        "one resolver projection mechanism serves conversion relation specialization constraint satisfaction world satisfaction home context resolution foreign projection and stage target specialization for compiler b",
+    }
+    canon = {
+        "value",
+        "value:to()",
+        "value:to(str)",
+        "file = path:open()",
+        "consume = (source) source:read()",
+        "copy = (source sink) sink:write(source:read())",
+        "command:run()",
+        "stdout:write(text)",
+        "args[1]",
+        "env[\"KEY\"]",
+    }
+    deny  = {
+        "std.foo", "lib.foo", "lib.process", "process = lib.process",
+        "process.run", "process.capture", "process.exit",
+        "io:open(path)", "os.args()", "compiler.parser.parse",
+        "readable", "writable", "ProjectedCall", "ConversionProjection",
+        "inch:from(foot)(value) as canonical native face",
+    }
+    fails = "separate projection subsystems namespace method protocol adjective or host string comparison as semantic authority"
+}
+
+fromzero = law{
+    id    = "law.from.zero"
+    kind  = .orientation
+    holds = .orientation
+    binds = {
+        "FROM-ZERO canonical native source eliminates from when it merely reverses conversion orientation",
+        "target:from(source)(value) normalizes to value:to(target) with source descriptor witnessed — no second application relation or edge",
+        "inch from foot style examples are migration teaching debt unless explicitly classified historical",
+        "if future from meaning is independently irreducible it must pass relation admission separately not for symmetry",
+        "preferred destination architecture is descriptor home specialization with ambient subject descriptor supplying source descriptor",
+    }
+    fails = "second conversion universe or inverse from relation id beside to"
+}
+
+stdzero = law{
+    id    = "law.std.zero"
+    kind  = .invariant
+    holds = .zero
+    binds = {
+        "STD-ZERO no semantic or canonical source std exists — lib std paths are migration bootstrap provenance only",
+        "new canonical std semantic or source reference target equals zero",
+        "standard universe is default reachable relations descriptors laws and pure values — no std table prelude object or import",
+        "pure relations inject from ordinary relation catalog without standard namespace",
+    }
+    fails = "std as semantic authority namespace or canonical source lookup"
+}
+
+libzero = law{
+    id    = "law.lib.zero"
+    kind  = .invariant
+    holds = .zero
+    binds = {
+        "LIB-ZERO lib is not a native semantic root — process = lib.process is import traversal disguised as assignment and is noncanonical",
+        "physical repository directory lib may exist during bootstrap as provenance only — canonical source never traverses it",
+        "if tooling cannot reach binding without lib hop report SOURCE-PROJECTION-BLOCKED and fix reachability not canonize workaround",
+        "do not repair lib.process into process = process or another root alias — delete source loader namespace dependency",
+    }
+    fails = "lib.foo canonical source lookup or lib alias preserving module ontology"
+}
+
+worldone = law{
+    id    = "law.world.one"
+    kind  = .invariant
+    holds = .authority
+    binds = {
+        "WORLD-ONE worlds represent irreducible authority not bundled os api namespaces",
+        "avoid canonical monolithic os world and monolithic io world where authority can be represented more precisely as filesystem process environment clock network device capabilities",
+        "ambient world fields args env cwd stdin stdout stderr clock may project from context when meaning unique — prefer args[1] env[KEY] stdout:write(text) clock:now() over os.args os.env io:write when unique context supplies values",
+        "stdout is possessed endpoint value and legitimate subject — io is organizational authority not interchangeable",
+        "path exists isfile isdir ready valid supported suspect under predicate zero — prefer consuming richer path state relation when algorithm merely branches on existence",
+        "relation witness and world witness are separate — protocol satisfaction does not grant world authority",
+        "conditional world obligations for union subjects remain alternative specific until refinement narrows — do not require every world for every possible specialization prematurely",
+        "world may derive narrower capability through witnessed projection not namespace chain os.process.shell",
+        "multiple observable world grants that could satisfy same authority fail ambiguous — no nearest home declaration order package or default priority",
+    }
+    fails = "world as organizational receiver namespace or intent selector"
+}
+
+homeprojection = law{
+    id    = "law.home.projection"
+    kind  = .invariant
+    holds = .context
+    binds = {
+        "HOME-PROJECTION hierarchical source topology establishes home binding descriptor context and provenance — once resolved hierarchy does not qualify relation id",
+        "compiler parser id makes parser binding reachable not compiler.parser.parse semantic identity",
+        "reject std.foo lib.foo stdlib.foo package.foo module.foo when left side is organizational infrastructure not real semantic value",
+        "if home qualifier needed only for source lookup and context uniquely determines binding do not preserve downstream",
+    }
+    fails = "home chain as runtime namespace qualification of relation identity"
+}
+
+shellnotworld = law{
+    id    = "law.shell.not.world"
+    kind  = .invariant
+    holds = .separation
+    binds = {
+        "SHELL-NOT-WORLD shell defines interpretation law not automatic authority world",
+        "shell law plus command structure yields command value then command run requires process world",
+        "command may be constructed without process authority until run is demanded",
+        "if exactly one shell law in semantic context and command construction explicitly demands shell interpretation infer law — if several available require qualification — world choice cannot choose shell law",
+        "process namespace zero — do not preserve process.run process.capture process.exit process.command as destination api — orient run subject command world process output demand outcome evidence",
+        "capture is usually run plus output demand not second execution relation unless irreducible distinction survives admission",
+    }
+    fails = "shell as world or process namespace api as canonical destination"
+}
+
+crossone = law{
+    id    = "law.cross.one"
+    kind  = .invariant
+    holds = .witness
+    binds = {
+        "CROSS-ONE cross boundary projection valid only with explicit witness connecting semantic facts on both sides",
+        "foreign to cast coercion does not automatically equal idol to — preserve foreign law prove equivalence then project to native edge",
+        "zero copy view requires layout alignment lifetime alias ownership mutation encoding and foreign law proof — else copy convert semantically required",
+        "stage and target are facts — compile time projection may specialize without compile time api kingdom — target is realization unless program semantics intentionally select it",
+    }
+    fails = "cross boundary mapping by name path layout or foreign same spelling without witness"
+}
+
+derivedconversion = law{
+    id    = "law.derived.conversion"
+    kind  = .invariant
+    holds = .bounded
+    binds = {
+        "DIRECT-INFER implicit conversion consumes direct or already normalized derived edge from indexed relation catalog not arbitrary multi hop search",
+        "derivation from hub composition is not equally permissive as implicit source insertion",
+        "implicit use of derived edge requires bounded rule admitted canonical hub exactly one normalized witness composite law valid for implicit use and no incomparable alternate witness",
+        "lossy checked narrowing rounding truncating or consuming conversion not silently injected unless explicit demand and failure obligations make law uniquely intended",
+        "two hub derivations producing incomparable witnesses are ambiguous",
+    }
+    fails = "general shortest path conversion engine or silent law strengthening on derived path"
+}
+
+gateprojection = law{
+    id    = "law.gate.projection"
+    kind  = .protocol
+    holds = .adversarial
+    binds = {
+        "REDUNDANT-PROJECTION-ZERO no new explicit projection if graph canonicalizer proves uniquely inferable",
+        "RECONSTRUCTION-ZERO no downstream source name path reconstruction of projection facts",
+        "FROM-ZERO no new inverse conversion face when to edge expresses same semantics",
+        "STD-ZERO and LIB-ZERO no new canonical std or lib semantic source reference",
+        "WORLD-NAMESPACE-ZERO no world used merely as organizational receiver",
+        "PROTOCOL-ADJECTIVE-ZERO no adjective alias for existing relation constraint",
+        "PROJECTION-WRAPPER-ZERO no parallel semantic projection classes",
+        "AMBIGUITY-ZERO never choose among incomparable projections",
+        "control 1 x to str where result slot already demands str canonicalizer removes explicit projection",
+        "control 2 x to() with unique target succeeds",
+        "control 3 x to() with two possible targets fails",
+        "control 4 x with unique demanded conversion graph inserts to T",
+        "control 5 x already satisfying target inserts no conversion",
+        "control 6 ABI-only width difference produces no semantic to",
+        "control 7 from inverse face same edge id as to then canonical source eliminates from",
+        "control 8 derived hub conversion one witnessed normalized edge",
+        "control 9 two hub derivations ambiguity",
+        "control 10 weak narrowing derived path no silent strengthening",
+        "control 11 protocol relation constraint no runtime witness by default",
+        "control 12 protocol satisfaction does not grant world",
+        "control 13 unique world witness injected no world argument",
+        "control 14 multiple observable worlds fails",
+        "control 15 os io namespace availability cannot choose semantic relation",
+        "control 16 path home move relation id unchanged",
+        "control 17 std foo renamed lib foo still violation",
+        "control 18 lib foo renamed fooapi still violation if same source loader ontology",
+        "control 19 foreign same name relation no native equivalence without witness",
+        "control 20 zero copy foreign projection rejected when alias lifetime law differs",
+        "control 21 projection fact missing before DNIR fail closed",
+        "control 22 changing callee spelling after resolution projection unchanged",
+        "control 23 flattening projection pack into operands semantic comparison fails",
+        "control 24 genuine curry remains multiple applications",
+        "control 25 projected relation syntax remains one application",
+        "control 26 union projection preserves alternative specific world witnesses",
+        "control 27 inference cannot synthesize arbitrary relation chains",
+        "control 28 unrelated new specialization cannot change existing resolved projection",
+        "control 29 canonical render reparse preserves application identity facts",
+        "control 30 deleting projection indexes preserves semantic behavior",
+        "staged text gates are migration pressure until GAP-124 graph projection census owns verdicts",
+    }
+    fails = "projection invariant enforced only as chat guidance without adversarial controls"
 }
 
 projectionrules = law{
@@ -4566,6 +4857,8 @@ inferone = law{
     kind  = .invariant
     holds = .constraint
     binds = {
+        "endpoint is not make to shorter — to is a semantic relation that should usually exist in the graph without existing in source",
+        "INFER-ONE generalizes fact recoverability across conversions projections worlds descriptors calls and curry stages — not conversion syntax alone",
         "write only the semantic information that cannot be uniquely recovered from authoritative facts",
         "the compiler must know more than the source says and the source must not mechanically restate what the compiler already knows",
         "for every application distinguish supplied facts demanded facts inferred facts world witnesses semantic relation and realization",
@@ -4595,6 +4888,10 @@ inferone = law{
         "satisfaction conversion and realization are three distinct proofs — do not conflate descriptor satisfaction semantic to application and physical representation",
         "agents and MCP must query semantic demand before adding conversions — IMPLEMENTATION-BLOCKED not redundant workaround when inference is missing",
         "no new explicit conversion projection curry or world plumbing until author proves the fact cannot be uniquely recovered from existing context",
+        "resolver algorithm for each demanded slot — (1) direct satisfaction (2) exactly one direct bridge relation (3) infer projection when relation named but projection missing (4) world witness or diagnose (5) failure obligations consumed (6) ambiguity requires explicit source",
+        "inference priority order — direct semantic satisfaction then exact descriptor or refinement then exact relation projection then unique direct bridge then unique world witness then realization — never conversion before satisfaction",
+        "syntax priority for authors and canonicalizer — omit inferred relation then omit inferred projection then subject orientation then true operands only then genuine curry only then world explicit only when ambiguity requires it",
+        "final law — facts before syntax demand before casts descriptors flow inward results flow backward world grants authority but does not invent intent relations injected only when one direct semantic bridge is uniquely demanded projection omitted when uniquely recoverable to omitted when uniquely recoverable currying only for a real callable stage realization never masquerades as conversion shortest uniquely resolving source is canonical richest accurately preserved graph is authoritative cheapest lawful realization is selected last",
     }
     canon = {
         "enabled: bool = value",
@@ -4682,8 +4979,31 @@ infergate = law{
         "REDUNDANT-TO-ZERO new canonical code may not contain explicit to projection proved redundant by graph canonicalization",
         "IMPLIED-PROJECTION-ZERO new canonical code may not spell projection facts uniquely recoverable when shorter source is semantically identical",
         "IMPLICIT-MAGIC-ZERO inference may not introduce multiple bridge steps unrequested effects unbound failure unavailable world authority arbitrary candidate ordering or representation-only semantic conversions",
-        "positive controls require binding parameter result and field descriptor inference direct satisfaction identity literal specialization ambiguity rejection to() with unique target failure and world preservation projection elision without cardinality change foreign versus realization distinction and canonicalizer idempotence",
-        "negative controls require rejecting ambiguous targets unavailable worlds world-driven target choice physical ABI as to and nonredundant to removal",
+        "control 1 explicit binding target infers to(T) when required",
+        "control 2 explicit parameter descriptor infers to(T)",
+        "control 3 explicit result descriptor infers to(T)",
+        "control 4 explicit field descriptor infers to(T)",
+        "control 5 already-satisfying value inserts no to",
+        "control 6 exact integer literal constrained to i32 inserts no fake i64 to i32 conversion",
+        "control 7 two possible targets require explicit to(T)",
+        "control 8 explicit to() with uniquely inferred target succeeds",
+        "control 9 to() with ambiguous target fails",
+        "control 10 conversion with unhandled failure cannot be silently inserted",
+        "control 11 conversion with unavailable world cannot be inserted",
+        "control 12 two available world witnesses remain ambiguous",
+        "control 13 world availability alone cannot choose conversion target",
+        "control 14 physical ABI width change produces realization fact not to",
+        "control 15 historical to(T)(x) canonicalizes as far down the inference ladder as facts allow",
+        "control 16 inferred conversion still appears in semantic graph and provenance",
+        "control 17 removing redundant explicit to preserves semantic identity",
+        "control 18 removing nonredundant explicit to(T) changes resolution and is rejected",
+        "control 19 projection elision on read(number) preserves projection pack fact",
+        "control 20 ambiguous read projection forces explicit qualifier",
+        "control 21 nonescaping genuine curry still has zero required closure allocation",
+        "control 22 projection inference never creates a curry application",
+        "control 23 conversion inference never changes application cardinality",
+        "control 24 foreign semantic conversion remains distinct from ABI realization",
+        "control 25 canonicalization is idempotent",
         "staged text gates are migration pressure until GAP-124 graph canonicalization owns REDUNDANT-TO-ZERO and IMPLIED-PROJECTION-ZERO",
     }
     fails = "text-heuristic cast deletion or redundant to ratchet without graph identity proof"
@@ -4795,7 +5115,42 @@ repairinfer = law{
         "class K world effectful conversion keep explicit when authority not already demanded",
         "class L historical to(str)(value) migrate down ladder to shortest unique form",
         "foreign compatibility examples do not train canonical inference classify by corpus role first",
+        "run scripts/infer_census.id before bulk repair — classify each site A through L never regex-delete",
     }
+    fails = "bulk to deletion or rewrite without per-site semantic classification and graph identity proof"
+}
+
+# ── Conversion derivation and declaration laws (projections extension) ────
+# These extend PROJECTION-ONE with bounded derivation semantics and
+# conversion-edge declaration architecture. The §67 projectionone already
+# states the high-level rules; these add the operational detail.
+
+conversionderive = law{
+    id    = "law.conversion.derive"
+    kind  = .invariant
+    holds = .bounded
+    binds = {
+        "the graph may derive a conversion witness compositionally when an admitted algebra proves source to canonical to target and produces one normalized witnessed edge — composition preserves the meet of conversion laws exact lossless checked narrowing view consuming — no weak law is silently strengthened",
+        "bounded derivation — implicit inference may consume a derived edge only when the derivation rule is bounded the canonical hub law is already admitted exactly one normalized witness exists its composite law is valid for implicit use and no alternate incomparable witness exists — no general shortest path conversion engine no declaration order tie breaking no whole graph search for something that type checks",
+        "if two derivations produce incomparable witnesses the result is AMBIGUOUS — require explicit semantic information — do not pick by shorter path first declaration module priority home priority or world priority",
+        "DIRECT-INFER normal implicit conversion resolution consumes a direct or already normalized derived edge from an indexed relation catalog — it does not itself perform arbitrary multi hop search",
+        "lossy checked narrowing rounding truncating or consuming conversion may be implicitly inserted only when surrounding explicit semantic demand and failure obligations already make that law uniquely intended — an explicit destination descriptor can constitute intent for a known narrowing law but failure cannot disappear",
+    }
+    fails = "arbitrary conversion path search declaration order resolution or silent failure elimination in derived conversion"
+}
+
+conversiondecl = law{
+    id    = "law.conversion.decl"
+    kind  = .invariant
+    holds = .home
+    binds = {
+        "conversion edge declarations prefer home based specialization where the ambient subject descriptor supplies the source descriptor — inch home containing to micron equals value value times 25400.0 means relation to source descriptor inch projection target micron law lossless — no source descriptor operand needs to be repeated",
+        "operation first to micron inch equals stretch is mechanically useful but semantically backwards for subject orientation because no actual source value is possessed",
+        "exact grammar must be reconciled before mass migration of conversion declarations",
+        "current hardcoded literal to checks in codegen are host projection debt — primitive conversion edges must become ordinary relation facts and no string comparison may remain semantic authority",
+        "current conversion trie or index is acceleration not semantic authority — deleting or rebuilding the trie preserves conversion semantics from authoritative relation facts — never let trie key descriptor string or path become identity",
+    }
+    fails = "conversion edge declared operation first without possessed subject or string comparison as semantic authority for conversion"
 }
 
 # Canonical examples (non-exhaustive; canon and deny fields above are binding):
@@ -5140,6 +5495,10 @@ bridgedeath = law{
         "applies to zig idol idol c graph dnir dnir backend wasm graph foreign native tool compiler and every other host semantic seam",
         "no agent may introduce a bootstrap adapter without filing the deletion witness",
     }
+    canon = {
+        "bridgewitness semantic_owner physical_owner facts_crossing facts_lost facts_reconstructed fallback_behavior deletion_prerequisite negative_control",
+        "seams zig_idol idol_c graph_dnir dnir_backend wasm_graph foreign_native tool_compiler",
+    }
     fails = "bootstrap bridge introduced without deletion prerequisite and sabotage negative control"
 }
 
@@ -5167,6 +5526,9 @@ factproducerone = law{
         "if two components both produce the same fact drift is inevitable",
         "fact catalog maps fact to producer to consumers to provenance and rejects multiple authoritative producers",
         "consumers must not reconstruct facts already owned upstream",
+    }
+    canon = {
+        "token_identity lexer grammar_role grammar subject resolver relation resolver application graph world_requirement resolution demand demand_analysis placement realization instruction_range machine",
     }
     fails = "duplicate authoritative producers or shadow fact reconstruction across boundaries"
 }
@@ -5366,7 +5728,10 @@ gateconvergence = law{
         "unrelated declaration changing prior unique resolution rejected monotonicity control",
         "utility migration cannot satisfy shc milestone gate",
         "concept delta and physical delta reported on material changes",
-        "positive controls preserve one producer unknown state negative facts effect algebra observable order profile guard assumption lineage semantic invalidation b to c semantic comparison trusted base shrink and representation audit",
+        "current projection Idsem idsem as live identity outside history blocks rejected",
+        "repository source treated as canonical proof without C0 resolution rejected",
+        "specimen repair without class impossibility proof rejected",
+        "positive controls preserve one producer unknown state negative facts effect algebra observable order profile guard assumption lineage semantic invalidation b to c semantic comparison trusted base shrink representation audit identity projection and source not proof",
     }
     fails = "convergence invariant enforced only as local cleanup guidance without gate controls"
 }

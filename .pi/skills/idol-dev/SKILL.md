@@ -1,6 +1,6 @@
 ---
 name: idol-dev
-description: Idol language development loop in clpi/duo. Use whenever editing .id/.id source, the constitution or spec projections, the compiler, gates, gaps, or claims. Encodes the authority read-order, the monoglot boundary, the closed lexical/grammar law, claim coordination, serialized builds, and the idiomgate/semanticgate preflight. Run orient + doctor first; claim paths before editing; commit explicit pathspecs only.
+description: Idol language development loop in clpi/duo. Use whenever editing .id/.id source, the constitution or spec projections, the compiler, gates, gaps, or claims. Encodes the authority read-order, the monoglot boundary, the closed lexical/grammar law, claim coordination, serialized builds, and the gates/ preflight chain. Run orient + doctor first; claim paths before editing; commit explicit pathspecs only.
 license: MIT
 ---
 
@@ -15,16 +15,18 @@ authority, authority wins and this skill must be repaired.
 
 ## 1. Authority — read in this order before editing
 
-1. `AGENTS.md` (workflow + mechanical preflight — the file that sent you here)
-2. `docs/spec/constitution.md` (C0, the sole semantic law; structured law
+1. Read `AGENTS.md` (workflow + mechanical preflight — the file that sent you here)
+2. Run `./tools/node/dev/generate-harness` then read `.agents/HARNESS.md`
+   (pre-task reduction is mandatory before choosing work or editing)
+3. `docs/spec/constitution.md` (C0, the sole semantic law; structured law
    notation, **not** executable source)
-3. `CLAUDE.md` (operative projection of C0)
-4. `docs/spec/source.md` (source/home/package/world closure — no native module
+4. `CLAUDE.md` (operative projection of C0)
+5. `docs/spec/source.md` (source/home/package/world closure — no native module
    system)
-5. `docs/spec/host.md` (host boundary / shell / capability closure — blocking)
-6. `docs/spec/AUTHORITY.md`, `docs/bootstrap.md`, the relevant `docs/spec/*.md`
-7. `.agents/AGENT_CANONICAL.md`, `.agents/AGENT_COORDINATION.md`
-8. The exact `gaps/GAP-*.md` for the frontier you are touching
+6. `docs/spec/host.md` (host boundary / shell / capability closure — blocking)
+7. `docs/spec/AUTHORITY.md`, `docs/bootstrap.md`, the relevant `docs/spec/*.md`
+8. `.agents/AGENT_CANONICAL.md`, `.agents/AGENT_COORDINATION.md`
+9. The exact `gaps/GAP-*.md` for the frontier you are touching
 
 `docs/spec/grammar.md`, `docs/spec/diagnostics.md`, etc. are **projections**.
 They defer to C0. A projection never overrides C0.
@@ -35,10 +37,11 @@ They defer to C0. A projection never overrides C0.
 ## 2. Orient before every substantive change
 
 ```sh
-./skills/idol-dev/scripts/orient.sh     # current state (HEAD, dirty count, P0 count, MCP health)
-./skills/idol-dev/scripts/doctor.sh     # pre-agent admission check (rejects stale/broken state)
-./skills/idol-dev/scripts/claims.sh     # durable view of live claims in .agents/session/claims
-./skills/idol-dev/scripts/gaps.sh       # OPEN P0 gaps and their filed-by owner
+repo="$(git rev-parse --show-toplevel)"
+"$repo/tools/node/dev/orient"     # regenerates .agents/HARNESS.md + current state
+"$repo/tools/node/dev/doctor"     # pre-agent admission check (rejects stale/broken state)
+# claims: inspect .agents/session/claims or duo_dev_claim_files via MCP
+"$repo/tools/node/dev/orient"     # includes activep0; read exact gaps/GAP-*.md until GAP-131 closes
 ```
 
 `orient` reports `activep0` and `frontier`. Until GAP-131 closes, the
@@ -61,7 +64,8 @@ Devin, AGY). Never edit a path owned by another live session.
 ## 4. Build and test through the locked path
 
 ```sh
-./skills/idol-dev/scripts/build.sh        # zig build --summary all  +  zig build unit-test
+repo="$(git rev-parse --show-toplevel)"
+cd "$repo" && zig build --summary all && zig build unit-test
 ```
 
 For serialized builds and benchmarks, use the locked MCP build tools
@@ -79,11 +83,14 @@ Run the idiom gate over the **exact working-tree diff** before staging Idol
 source:
 
 ```sh
-./skills/idol-dev/scripts/gates.sh        # idiomgate over git diff of *.id *.id
+repo="$(git rev-parse --show-toplevel)"
+gate="$(mktemp -t idolgate)" && trap 'rm -f "$gate"' EXIT
+git diff -U0 -- '*.id' > "$gate"
+cat "$gate" | "$repo/zig-out/bin/idol" run "$repo/gates/idiom.id"
 ```
 
-Stage, then let the pre-commit hook run `scripts/semanticgate.id` (or run it
-yourself). Do not suppress, bypass, weaken, or route around a finding. A
+Stage, then let the pre-commit hook run `gates/preflight.id` (which invokes
+`gates/architecture.id` among others). Do not suppress, bypass, weaken, or route around a finding. A
 formatting rewrite requires a proved semantic equivalence, not a regex.
 
 A changed canonical `.id` line (or touched historical `.id` line) is rejected
@@ -128,6 +135,14 @@ canonical `std.*` is forbidden. Missing admitted vocabulary is
 
 Canonicality has four states: `canonical`, `migratable`, `vocabularyblocked`,
 `invalid`. Do not invent vocabulary to silence a gate.
+
+**INFER-ONE (`law.infer.one`):** write only facts not uniquely recoverable from
+descriptor/demand/world context. Query the resolver before adding `:to(T)`.
+Shortest uniquely resolving source wins (`value` → `value:to()` → `value:to(T)`).
+
+**Seam audit (mandatory before code):** read `docs/spec/harness-projection.md`
+§ seam audit — `law.bridge.death`, `law.fallback.zero`, `law.fact.producer.one`,
+`law.gate.convergence`, etc. `duo_agent_session_start` returns `harness_context`.
 
 Before writing a nontrivial Idol expression, answer the 12 preflight questions
 in `AGENTS.md` (subject? relation? indirect info? sentinel? value-relation

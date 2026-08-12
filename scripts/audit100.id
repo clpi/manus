@@ -74,7 +74,25 @@ me = "scripts/audit100.id"
 # passes `duo check`, and every rule it states is enforced on every other file.
 law = "docs/spec/constitution.id"
 paths = os.env["AUDIT100paths"] or "/tmp/duo_audit100_canonical.list"
-process = lib.process
+capture: str = (shellline: str)
+    gatecap(shellline)
+
+chomp: str = (text: str)
+    if text == nil or text:len() == 0
+        return ""
+    n = text:len()
+    while n > 0
+        c = text:byte(n)
+        if c != 10 and c != 13 and c != 32 and c != 9
+            break
+        n -= 1
+    text:sub(1, n)
+
+cap: str = (shellline: str)
+    chomp(gatecap(shellline))
+
+status: i64 = (cmd: str)
+    cap("( {cmd} ) >/dev/null 2>&1; echo $?"):to(i64)
 
 # The string-body strip, as a shell fragment. Two passes, in this order:
 # drop escaped quotes (`\"`) so they cannot close a body early, then drop
@@ -138,7 +156,7 @@ hits: i64 = (pat: str, keep: i64)
     if keep != 0
         s = ""
     cmd: str = "tr '\\n' '\\0' < {paths} | xargs -0 cat 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} {s} | grep -c -E {q}{pat}{q}"
-    process.chomp(process.capture(cmd)):to(i64)
+    cap(cmd):to(i64)
 
 # Count lines matching `pat` in an ARBITRARY text source, through the two
 # filters every row uses. `src` is a shell fragment that writes the text to
@@ -157,7 +175,7 @@ tally: i64 = (pat: str, keep: i64, src: str)
     if keep != 0
         s = ""
     cmd: str = "{src} | grep -v -E {q}^[[:space:]]*--{q} {s} | grep -c -E {q}{pat}{q}"
-    process.chomp(process.capture(cmd)):to(i64)
+    cap(cmd):to(i64)
 
 # Does `f` fall in the canonical partition, by the same first-match-wins walk
 # the census does? The delta report needs this for files the census never
@@ -178,7 +196,7 @@ canon: bool = (rcls: any, rpre: any, f: str)
 probe: i64 = (pat: str, line: str)
     q: str = "'"
     cmd: str = "printf {q}%s\\n{q} {q}{line}{q} | grep -c -E {q}{pat}{q}"
-    process.chomp(process.capture(cmd)):to(i64)
+    cap(cmd):to(i64)
 
 show: void = (pat: str, keep: i64)
     q: str = "'"
@@ -191,7 +209,7 @@ show: void = (pat: str, keep: i64)
     if keep != 0
         s = ""
     cmd: str = "tr '\\n' '\\0' < {paths} | xargs -0 grep -n -E {q}{pat}{q} 2>/dev/null | grep -v -E {q}:[0-9][0-9]*:[[:space:]]*--{q} {s} | grep -E {q}{pat}{q} | head -20"
-    print(process.capture(cmd))
+    print(capture(cmd))
 
 pad: str = (s: str, width: i64)
     out: str = s
@@ -200,7 +218,7 @@ pad: str = (s: str, width: i64)
     out
 
 main: i64 = ()
-    root: str = process.chomp(process.capture("git rev-parse --show-toplevel 2>/dev/null"))
+    root: str = cap("git rev-parse --show-toplevel 2>/dev/null")
     if root == ""
         print("audit100: FAIL — not inside a git work tree; the corpus cannot be listed")
         return 3
@@ -208,14 +226,14 @@ main: i64 = ()
     print(" root      {root}")
 
     manifest: str = "{root}/docs/spec/corpus.md"
-    if !process.run("test -e {manifest}") == 0
+    if status("test -e {manifest}") != 0
         print("audit100: FAIL — missing {manifest}")
         return 3
 
     # Rules: parallel arrays, first match wins, order as written.
     rcls = {}
     rpre = {}
-    for i, line in split(process.capture("cat {manifest}"))
+    for i, line in split(capture("cat {manifest}"))
         c: str = field(line, 1)
         p: str = field(line, 2)
         if known(c) and p != "" and field(line, 3) == ""
@@ -226,7 +244,7 @@ main: i64 = ()
         return 3
     print(" rules     {rcls:len()} from docs/spec/corpus.md")
 
-    files = split(process.capture("cd {root} && git ls-files '*.id'"))
+    files = split(capture("cd {root} && git ls-files '*.id'"))
     if files:len() == 0
         print("audit100: FAIL — git ls-files found 0 .id files; the census did not run")
         return 3
@@ -294,8 +312,8 @@ main: i64 = ()
         print("audit100: FAIL — canonical partition is empty; the rules cannot be right")
         return 3
 
-    process.run("printf %s {canon} > {paths}")
-    listed: i64 = process.chomp(process.capture("wc -l < {paths}")):to(i64)
+    status("printf %s {canon} > {paths}")
+    listed: i64 = cap("wc -l < {paths}"):to(i64)
     if listed != written
         print("audit100: FAIL — wrote {written} canonical paths but the list holds {listed}")
         return 3
@@ -1264,7 +1282,7 @@ main: i64 = ()
         i += 1
 
     # The one §1 row that is about files, not lines.
-    nonduo: i64 = process.chomp(process.capture("cd {root} && git ls-files | grep -c -v -E {q}\\.(duo|md)${q}")):to(i64)
+    nonduo: i64 = cap("cd {root} && git ls-files | grep -c -v -E {q}\\.(duo|md)${q}"):to(i64)
     # LOWERED 560 -> 536. The count fell on its own (546 -> 536) as tracked
     # non-.id files were deleted elsewhere, and "lower a budget whenever you
     # lower a count" is the half of the ratchet that nobody remembers to do —
@@ -1358,11 +1376,11 @@ main: i64 = ()
     chfresh: str = ""
     nch = 0
     nfresh = 0
-    for i, f in split(process.capture("cd {root} && git diff --name-only HEAD -- '*.id' 2>/dev/null"))
+    for i, f in split(capture("cd {root} && git diff --name-only HEAD -- '*.id' 2>/dev/null"))
         if f != me and f != law and canon(rcls, rpre, f)
             nch += 1
             chall += "{f}\n"
-    for i, f in split(process.capture("cd {root} && git ls-files -o --exclude-standard -- '*.id' 2>/dev/null"))
+    for i, f in split(capture("cd {root} && git ls-files -o --exclude-standard -- '*.id' 2>/dev/null"))
         if f != me and f != law and canon(rcls, rpre, f)
             nch += 1
             nfresh += 1
@@ -1370,7 +1388,7 @@ main: i64 = ()
             chfresh += "      {f}\n"
 
     if nch != 0
-        process.run("printf %s {chall} > {chlist}")
+        status("printf %s {chall} > {chlist}")
         after: str = "cd {root} && tr '\\n' '\\0' < {chlist} | xargs -0 cat 2>/dev/null"
         before: str = "cd {root} && while read p; do git show HEAD:\"$p\" 2>/dev/null; done < {chlist}"
 

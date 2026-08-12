@@ -1,7 +1,7 @@
 # Idol agent router
 
-`AGENTS.md` is the repository entry point — including **Idsem durable project
-orientation** (semantic law projection, not C0). This file is its stable path
+`AGENTS.md` is the repository entry point — including **Idol harness
+orientation** (harness routing, not C0). This file is its stable path
 router; it contains no language law and no volatile project status.
 
 ## One law
@@ -9,7 +9,11 @@ router; it contains no language law and no volatile project status.
 | Purpose | Path |
 |---|---|
 | Sole semantic law | `docs/spec/constitution.md` |
-| Durable root orientation | `AGENTS.md` § Idsem durable project orientation |
+| Idol algebra closure (C0 §67) | `docs/spec/constitution.md` §67 · `law.gate.protocol` · `law.gate.algebra` · `law.gate.infer` · `law.gate.convergence` |
+| Convergence meta-invariants (SHC seams) | C0 §67 · `law.bridge.death` … `law.gate.convergence` · harness § seam audit |
+| Harness reasoning (stable template) | `docs/spec/harness-projection.md` |
+| Harness boot payload (generated) | `.agents/HARNESS.md` |
+| Durable root orientation | `AGENTS.md` § Idol harness orientation |
 | Source/home/package/world closure | `docs/spec/source.md` |
 | Host boundary / shell / capability closure | `docs/spec/host.md` |
 | Operative projection | `CLAUDE.md` |
@@ -47,8 +51,8 @@ historical corpus file is an authority.
    The `.id` lock entry is executed bootstrap transport, not self-hosting proof.
 7. Commit only explicit owned paths and release only your own claims.
 
-The language identity is **Idol** (`idol`, `.id`); the semantic language is
-**Idsem** (law in `docs/spec/constitution.md`). Branding is not ontology.
+The language identity is **Idol** (`idol`, `.id`). Semantic law lives in
+`docs/spec/constitution.md` (C0). Branding is not ontology.
 Active development repository is `clpi/duo`. Future release repository is
 `idollang/idol`; do not migrate development there until
 `.agents/RELEASE_READINESS.md` authorizes release. The physical `duo` command

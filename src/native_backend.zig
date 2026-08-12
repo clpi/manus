@@ -3593,7 +3593,11 @@ fn validateDnirApplications(
         }
     }
 
-    if (seen.count() != applications.len) return invalidFactsWith(diagnostic, @src(), "application-realization-count");
+    var expected: usize = 0;
+    for (applications) |application| {
+        if (!graph.isBootstrapApplicationNode(application.application)) expected += 1;
+    }
+    if (seen.count() != expected) return invalidFactsWith(diagnostic, @src(), "application-realization-count");
 }
 
 fn validateMachineLineage(
@@ -3604,8 +3608,12 @@ fn validateMachineLineage(
 ) Error!void {
     if (output.graph != graph) return invalidFactsWith(diagnostic, @src(), "machine-graph-context");
     const applications = try checkedApplications(graph, diagnostic);
-    if (output.lineage.len == 0 and applications.len == 0) return;
-    if (output.lineage.len != applications.len) {
+    var expected: usize = 0;
+    for (applications) |application| {
+        if (!graph.isBootstrapApplicationNode(application.application)) expected += 1;
+    }
+    if (output.lineage.len == 0 and expected == 0) return;
+    if (output.lineage.len != expected) {
         return invalidFactsWith(diagnostic, @src(), "machine-lineage-count");
     }
     var seen: std.AutoHashMapUnmanaged(semantic_graph.id, void) = .empty;

@@ -3,7 +3,25 @@
 # The durable coordination file points agents at `.agents/session/claims`.
 # This script turns those markdown claims into a concise duon-readable view.
 
-process = lib.process
+capture: str = (shellline: str)
+    gatecap(shellline)
+
+chomp: str = (text: str)
+    if text == nil or text:len() == 0
+        return ""
+    n = text:len()
+    while n > 0
+        c = text:byte(n)
+        if c != 10 and c != 13 and c != 32 and c != 9
+            break
+        n -= 1
+    text:sub(1, n)
+
+cap: str = (shellline: str)
+    chomp(gatecap(shellline))
+
+status: i64 = (cmd: str)
+    cap("( {cmd} ) >/dev/null 2>&1; echo $?"):to(i64)
 
 lines: any = (text: str)
     out = {}
@@ -105,7 +123,7 @@ splitlocks: any = (text: str)
     out
 
 collect: any = (path: str)
-    text = process.capture("cat '{path}'")
+    text = capture("cat '{path}'")
     agent = ""
     area = ""
     files = ""
@@ -201,7 +219,7 @@ statuspath: str = (line: str)
 
 dirtyfiles: any = (root: str)
     out = {}
-    text = process.capture("cd '{root}' && git status --porcelain --untracked-files=all")
+    text = capture("cd '{root}' && git status --porcelain --untracked-files=all")
     for i, line in lines(text)
         path = statuspath(line)
         if path != "" and !starts(path, ".agents/session/")
@@ -267,16 +285,16 @@ overlaps: i64 = (claims: any)
     0
 
 main: i64 = ()
-    root = process.chomp(process.capture("git rev-parse --show-toplevel 2>/dev/null"))
+    root = cap("git rev-parse --show-toplevel 2>/dev/null")
     if root == ""
         print("claimledger: fail no git root")
-        process.exit(3)
+        return 3
 
-    found = lines(process.capture("cd '{root}' && find .agents/session/claims -maxdepth 1 -type f -name '*.md' -print | sort"))
+    found = lines(capture("cd '{root}' && find .agents/session/claims -maxdepth 1 -type f -name '*.md' -print | sort"))
     count = found:len()
     if count == 0
         print("claimledger: fail live claims 0")
-        process.exit(1)
+        return 1
 
     print("claimledger: live claims {count}")
     claims = {}
@@ -288,5 +306,4 @@ main: i64 = ()
     rc = control()
     rc += overlaps(claims)
     rc += dirty(claims, root)
-    process.exit(rc)
-    0
+    rc

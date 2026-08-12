@@ -1,0 +1,9 @@
+main: i64 = ()
+    body = stdin:read()
+    c = body:sub(1, 1)
+    b = c:byte()
+    if b == 10
+        print("byte10")
+    else
+        print("not10")
+    0

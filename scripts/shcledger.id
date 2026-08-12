@@ -179,7 +179,7 @@ main: i64 = ()
     bad += runcheck(root, "language_census", duobin .. " run --backend=c scripts/language_census.id")
     bad += runcheck(root, "foreign_census", duobin .. " run --backend=c scripts/foreign_census.id")
     bad += runcheck(root, "embedledger", duobin .. " run --backend=c scripts/embedledger.id")
-    bad += runcheck(root, "duo_idiom_gate", duobin .. " run --backend=c scripts/duo_idiom_gate.id")
+    bad += runcheck(root, "gates/build", duobin .. " run gates/build.id")
 
     deep = envor("SHCLEDGER_DEEP", "0")
     if deep == "1"

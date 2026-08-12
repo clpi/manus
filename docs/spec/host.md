@@ -45,8 +45,8 @@ Renaming host spellings without semantic decomposition is forbidden:
 ```text
 os.args()        → os.args[n]   (table under os world — not a function call)
 os.getenv(k)     → os.env[k] / os.env(k) / os.env[k] =
-io.read()        → io:read()
-io.write(x)      → io:write(x)
+io.read()        → stdin:read() / path:read()  (read relation on subject)
+io.write(x)      → sink:write(x)  (write relation on subject)
 io.popen(cmd)    → structured command + process world
 environment[k]   → os.env[k]    (environment is not a thing)
 ```
@@ -167,9 +167,13 @@ io.write(result)
 Canonical:
 
 ```id
-line = io:read()
-io:write(result)
+line = stdin:read()
+out:write(result)
 ```
+
+Relation is protocol: `source: read` not `source: readable` (`law.protocol.one`).
+World dot forms such as `io:read()` are ingress debt — subject-first
+`stdin:read()` / `path:read()` / `sink:write(value)` only.
 
 MCP stdin/stdout pipes are realization choices for an invocation — not
 language architecture.
@@ -307,7 +311,7 @@ Lexical ratchets on **added lines** are temporary migration firewalls only:
 - `gates/host.id` — blocks new host API spellings on staged additions
 - `scripts/ingress/` home — bootstrap foreign ingress boundary (`input.id`, `output.id`, `arg.id`)
 
-`scripts/semanticgate.id` must **not** host `hostread`, `hostargs`, `hostenv`, or
+`gates/architecture.id` must **not** host `hostread`, `hostargs`, `hostenv`, or
 other host spelling census rows. That is the same antipattern as `suffix()`,
 `readface`, and admission string detectors. Host semantic verdicts belong to
 GAP-124 graph obligations.
@@ -346,7 +350,7 @@ Do not reach for host APIs.
 ```text
 There is no native os.args()    — use os.args[n] under os world
 There is no native os.getenv   — use os.env[k]; environment is not a thing
-There is no native io.read     — use io:read under io world
+There is no native io.read     — use stdin:read() / path:read(); never readable adjective
 There is no native popen       — commands are structured values under process authority
 There is no stdin-only architecture — input/output/error are endpoint values
 There is no core namespace     — vocabulary is direct canonical reachability

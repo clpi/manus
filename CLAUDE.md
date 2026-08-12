@@ -10,13 +10,15 @@ separate unclosed lexical and grammar projection.
 
 ## Identity
 
-**Idol** is the public command and repository identity (`idol`, `.id`).
-**Idsem** is the semantic language whose sole law is
-`docs/spec/constitution.md`. Branding is not ontology; do not mint artificial
-`idsem.*` namespaces for graph, value, or relation.
+**Idol** is the language and project identity (`idol`, `.id`). Its sole semantic
+law is `docs/spec/constitution.md` — including §67 Idol algebra closure
+(home, subject, world, protocol, witness, injection, union, standard reachability,
+shell/run/outcome, binding census, completion metrics). Do not mint artificial
+secondary language namespaces for graph, value, or relation. No independent algebra
+prompt is authority.
 
 The language and project ship as Idol. No production `idol` compiler binary
-exists yet. Earlier `Idol`, `Duo`, and `Duon` names and historical `.id` /
+exists yet. Historical Duo and Duon names and historical `.id` /
 `.duo` source are migration provenance. Exact `duo` executable, path, symbol,
 command, and MCP tool spellings are physical bootstrap aliases until their owned
 replacements execute; their presence does not rename Idol.
@@ -55,9 +57,32 @@ dot(io) = (code: str)
 
 Never write `scandiff`, `scanline`, `diffhead`, `bareend`, or `scan("diff")`.
 Use `audit`, `head`, `bare`, and `scan(diff)(…)` / `scan(path)(…)` per
-`AGENTS.md` and `scripts/idiomgate.id`. Ingress home checks use
+`AGENTS.md` and `gates/idiom.id`. Ingress home checks use
 **`ingress(path)`** — ingress is the subject; never `only(ingress)(path)` or
 `ingressonly`.
+
+### Home, world, and protocol algebra
+
+Authoritative law: `docs/spec/constitution.md` §67 Idol algebra closure
+(`law.home.context` through `law.algebra.absolute`; adversarial controls in
+`law.gate.protocol` and `law.gate.algebra`). Session prompts are not authority.
+
+| Role | Supplies | Does not supply |
+|---|---|---|
+| **Home** | Context, reachability, ambient descriptor | Ownership, subject, world, capability, method identity |
+| **Subject** | Value a relation is about (resolution-owned) | Argument position, namespace receiver, home membership |
+| **World** | Authority required for an application | Namespace, import, home grant, protocol witness |
+| **Protocol** | Relation/fact constraints (`source: read`) | Trait, adjective protocol, vtable, impl registry |
+| **Witness** | Proof of relation constraint satisfaction | World grant, second implementation identity |
+| **Injection** | Required + available facts → unique satisfaction | Object construction, hidden priority, service locators |
+
+Prefer `path:open()`, `file:read()`, `text:len()` over `io:open(path)`,
+`fs:open(path)`, `string:len(text)`. Algebraic world injection omits a world
+only when uniquely satisfiable and witnessed. Protocol satisfaction and world
+grant remain separate facts. **Relation is protocol:** `source: read` not
+`source: readable`. No `trait`, `impl`, `interface`, `implements`, `concept`,
+or adjective protocols (`readable`, `iterable`, `hashable`, …). See
+`law.protocol.one`. Concrete knowledge survives relation constraint crossing.
 
 ## Architecture
 
@@ -147,6 +172,103 @@ main: i64 = ()
     0
 ```
 
+### Relation projection vs curry
+
+`()` is the sole grouping delimiter; resolution assigns its role — punctuation
+alone does not define curry (`law.paren.one`, `law.projection.head`).
+
+Three roles after resolution:
+
+1. **Relation projection** — `to(str)`, `read(number)`, `index(key)` attached to
+   a relation identity in declaration, selection, or constraint position. No call
+   has happened; no intermediate callable is produced.
+2. **Ordinary operand application** — `f(x)` when `f` is a callable value.
+3. **Genuine curried application** — `f(x)(y)` only when `f(x)` actually yields
+   another callable semantic value.
+
+Declaration and invocation stay distinct faces (`call.face`):
+
+```id
+to(str) = (value)
+    ...
+
+value:to(str)
+
+read(number) = (lx, b)
+    ...
+
+lx:read(number)(b)
+```
+
+Read `to(str) = (value)` as: relation `to`, projection `{str}`, subject `value`,
+operand pack `{}`. Read `value:to(str)` as: subject `value`, relation `to`,
+projection `{str}` — not `call to(str)` then apply `value`.
+
+An application carries relation × projection pack × subject × operand pack ×
+result pack. Projection operands are qualification/specialization facts; operand
+pack members are runtime application values — never conflate them.
+
+Prefer subject → relation projection → operand pack → genuine currying → closure
+capture when choosing syntax. Operation-first `to(str)(n)` at a call site is
+migratable debt; canonical invocation is `n:to(str)`.
+
+### Inference (INFER-ONE)
+
+**Endpoint:** `to` is a semantic relation that should usually exist in the **graph**
+without being spelled in **source** — not “make `to` shorter.”
+
+Write only semantic information the compiler cannot uniquely recover from
+authoritative facts (`law.infer.one`). The resolver solves constraints before
+demanding explicit syntax; never guess.
+
+**Conversion ladder** (shortest uniquely resolving form wins):
+
+```text
+level 0   enabled: bool = value          # infer to(bool) in graph when unique
+level 1   value:to()                     # relation explicit, target inferred
+level 2   value:to(str)                  # target must be explicit
+migrate   to(str)(value) → …             # stop at first uniquely valid step
+```
+
+Descriptor demand flows inward (parameters, fields) and backward (results).
+Omit `to` when the value already satisfies the demanded descriptor. One direct
+bridge relation only (`law.direct.bridge.one`). Physical ABI width is realization,
+not semantic `to`.
+
+Do not add `:to(T)` when `T` is already the exact demanded descriptor.
+`IMPLEMENTATION-BLOCKED` — not a redundant workaround — when inference is missing.
+
+### Convergence meta-invariants (SHC · multi-agent)
+
+Before substantive work, audit seams per `docs/spec/harness-projection.md` and
+§67 convergence closure. Named laws agents must not neglect:
+
+- **BRIDGE-DEATH** (`law.bridge.death`) — no bridge without deletion witness
+- **UNKNOWN-ONE** (`law.unknown.one`) — unknown is graph state, not placeholder value
+- **OWNERSHIP-ZERO** (`law.ownership.zero`) — alias/lifetime/escape as facts, not Rust
+- **PROFILE-EVIDENCE** (`law.profile.evidence`) — profile selects realization, never truth
+
+Also: one fact producer (`law.fact.producer.one`), no silent fallback
+(`law.fallback.zero`), bounded inference (`law.infer.contract`), concept/physical
+delta budgets (`law.delta.budget`), producer→consumer scheduling
+(`law.coordination.fact`), utilities-after-authorities forbidden
+(`law.shc.scheduler`).
+
+**Anti-drift (mandatory):** current repo source is not canonical proof
+(`law.source.not.proof`); fix semantic classes not specimens (`law.repair.class`);
+projection pack is first-class, not curry (`law.projection.pack`); Idol is current
+identity only (`law.identity.projection`).
+
+### Projection (PROJECTION-ONE)
+
+One projection algebra (`law.projection.one`) — no separate conversion/protocol/world/shell
+subsystems. **FROM-ZERO:** `to` only; `from` normalizes to same edge. **STD-ZERO /
+LIB-ZERO:** no canonical `std.*` / `lib.*` traversal. **WORLD-ONE:** worlds grant
+authority not intent; prefer `stdin:read()`, `args[1]`, `stdout:write()` over
+`os.*` / `io.*` namespace teaching. **SHELL-NOT-WORLD:** shell is law; `run` uses
+process world. Spell only facts not uniquely recoverable; ladder ends at implicit
+relation + implicit projection when proved.
+
 Identifiers are lowercase single words without underscores or casing-based
 distinctions. Subject-applicable work starts from the held subject. Do not port
 host save/restore observation, source-category flags, helper predicates,
@@ -171,7 +293,7 @@ the other merely because their text looks similar.
 A graph-aware formatter and canonicality gate for this face depend on the
 lexical identities in `GAP-145`, generated grammar roles in `GAP-134`, and the
 graph-derived semantic gate in `GAP-124`. Current text ratchets are migration
-pressure only: the added-line check in `scripts/idiomgate.id` is not
+pressure only: the added-line check in `gates/idiom.id` is not
 authoritative equivalence proof.
 
 PREDICATE-ZERO applies after subject correction. Do not encode a semantic case,

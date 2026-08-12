@@ -1,5 +1,5 @@
 ---
-globs: ["*.id", "docs/spec/**", "CLAUDE.md", "AGENTS.md", "gates/**", "scripts/idiomgate.id", "scripts/preflight.id", "scripts/semanticgate.id"]
+globs: ["*.id", "docs/spec/**", "CLAUDE.md", "AGENTS.md", "gates/**"]
 ---
 
 # Language
@@ -9,7 +9,7 @@ Use `AGENTS.md`, `docs/spec/constitution.md`, `docs/spec/source.md`,
 
 Canonical source is `.id`. Current language is **Idol** (`idol`). Historical
 Idol, Duo, Duon, and `.id` are provenance only. C0 owns
-`law.update.face`; `AGENTS.md` projects it, and `scripts/idiomgate.id` exposes
+`law.update.face`; `AGENTS.md` projects it, and `gates/idiom.id` exposes
 candidate pressure pending the graph witness. Do not use examples or
 historical files as language law.
 
@@ -68,9 +68,22 @@ dot(std) = (world: str, code: str)
 Call sites: `dot(io)(code)`, `hit(io)(code)`, `dot(std)(io, code)` — never `worlddot`,
 `qualworlddot`, or `dot(code, "io")`.
 
-Reference gates: `scripts/idiomgate.id`, `gates/host.id`, `gates/path.id`.
-Transport: stdin via `io:read()` only; shell pipes or `< file` redirect. No
+Reference gates: `gates/idiom.id`, `gates/host.id`, `gates/path.id`.
+Transport: stdin via `stdin:read()`; shell pipes or `< file` redirect. No
 `gate.sh`, `gatepath`, `os.args`, or `--backend=c`.
+
+## Protocol (law.protocol.one)
+
+Relation is protocol: constrain with the relation id, never an adjective.
+
+```id
+consume = (source: read) source:read()
+copy = (source, sink) sink:write(source:read())
+```
+
+Denied on added lines: `source: readable`, `trait`, `impl`, `@implements`,
+`concept`, and adjective protocols (`readable`, `writable`, `iterable`, …).
+Gates convict via `law.adjective.zero` and `law.protocol.one`.
 
 ## Path and file names (law.path.name)
 

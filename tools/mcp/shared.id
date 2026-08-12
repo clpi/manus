@@ -270,6 +270,21 @@ fun repo_tooling(script_name: str, args: str): any
     { exit_code = rc, passed = rc == 0, script = script_name }
 end
 
+# === INFER-ONE agent context (C0 law.infer.one — session bootstrap for all MCP agents) ===
+
+inferbrief = "INFER-ONE endpoint: to is a graph relation — usually NOT spelled in source. PROJECTION-ONE: one algebra for conversion/protocol/world/home — fact completion not namespace lookup. FROM-ZERO/STD-ZERO/LIB-ZERO. Ladder: value → value:to() → value:to(T). Census: scripts/infer_census.id scripts/projection_census.id. IMPLEMENTATION-BLOCKED when inference missing. Gates: law.gate.infer law.gate.projection."
+
+seamsbrief = "SEAM-AUDIT (before code): law.system.invariant — (1) bridges need deletion witness (2) inference bounded/direct/unique (3) facts rich representation compact. One fact producer (law.fact.producer.one); BRIDGE-DEATH 8-field witness at introduction; no silent fallback (law.fallback.zero); UNKNOWN-ONE; PROFILE-EVIDENCE never semantic truth; infer contract; physical objects justify demand; SHC=executed authority; delta budgets; stop on ambiguity. Full checklist: docs/spec/harness-projection.md § seam audit."
+
+fun infer_one_context(): str
+    inferbrief
+
+fun harness_seams_context(): str
+    seamsbrief
+
+fun harness_context(): str
+    "{inferbrief}\n{seamsbrief}"
+
 # === Pass 13 dev control plane (machine-readable claims) ===
 
 fun dev_session_start(owner: str, work_item: str, client: str): str
@@ -1425,6 +1440,9 @@ m.dev_validate_run = dev_validate_run
 m.prove = prove
 m.perf_gaps = perf_gaps
 m.audit_codegen_pitfalls = audit_codegen_pitfalls
+m.infer_one_context = infer_one_context
+m.harness_seams_context = harness_seams_context
+m.harness_context = harness_context
 m.exponential_onboard = exponential_onboard
 m.combinator_info = combinator_info
 m

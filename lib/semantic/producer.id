@@ -1,0 +1,34 @@
+# Fact producer catalog — text projection until GAP-124 graph queries replace it.
+# law.fact.producer.one: one authoritative producer per fact; reject duplicates.
+# Consumers must not reconstruct facts owned upstream.
+
+catalog = {
+    token = { producer = "lexer", consumers = "grammar parser formatter lsp", law = "law.fact.producer.one" },
+    role = { producer = "grammar", consumers = "parser resolver", law = "law.fact.producer.one" },
+    subject = { producer = "resolver", consumers = "graph demand realization", law = "law.fact.producer.one" },
+    relation = { producer = "resolver", consumers = "graph dnir realization", law = "law.fact.producer.one" },
+    application = { producer = "graph", consumers = "demand dnir diagnostics", law = "law.fact.producer.one" },
+    world = { producer = "resolution", consumers = "realization witness", law = "law.fact.producer.one" },
+    demand = { producer = "demand", consumers = "realization machine", law = "law.fact.producer.one" },
+    placement = { producer = "realization", consumers = "machine object", law = "law.fact.producer.one" },
+    range = { producer = "machine", consumers = "object provenance tooling", law = "law.fact.producer.one" },
+}
+
+seams = "|zig_idol|idol_c|graph_dnir|dnir_backend|wasm_graph|foreign_native|tool_compiler|"
+
+witness = {
+    semantic = "",
+    physical = "",
+    crossing = "",
+    lost = "",
+    reconstructed = "",
+    fallback = "",
+    deletion = "",
+    control = "",
+}
+
+main: i64 = ()
+    if #catalog < 9
+        1
+    else
+        0

@@ -3,7 +3,25 @@
 # language_census counts these as sanctioned bootstrap or oracle files. This
 # prints the exact queue so foreign C can retire under duon-visible evidence.
 
-process = lib.process
+capture: str = (shellline: str)
+    gatecap(shellline)
+
+chomp: str = (text: str)
+    if text == nil or text:len() == 0
+        return ""
+    n = text:len()
+    while n > 0
+        c = text:byte(n)
+        if c != 10 and c != 13 and c != 32 and c != 9
+            break
+        n -= 1
+    text:sub(1, n)
+
+cap: str = (shellline: str)
+    chomp(gatecap(shellline))
+
+status: i64 = (cmd: str)
+    cap("( {cmd} ) >/dev/null 2>&1; echo $?"):to(i64)
 
 lines: any = (text: str)
     out = {}
@@ -45,13 +63,13 @@ show: i64 = (name: str, files: any)
     count
 
 main: i64 = ()
-    root = process.chomp(process.capture("git rev-parse --show-toplevel 2>/dev/null"))
+    root = cap("git rev-parse --show-toplevel 2>/dev/null")
     if root == ""
         print("cledger: fail no git root")
-        process.exit(3)
+        return 3
 
     cmd = "cd '{root}' && git ls-files '*.[ch]' | sort"
-    files = lines(process.capture(cmd))
+    files = lines(capture(cmd))
     boots = pick(files, "boot")
     oracles = pick(files, "oracle")
     count = boots:len()
@@ -59,8 +77,7 @@ main: i64 = ()
     show("coracle", oracles)
     if count == 0
         print("cledger: pass bootstrap c 0")
-        process.exit(0)
+        return 0
 
     print("cledger: fail bootstrap c {count}")
-    process.exit(1)
-    0
+    1

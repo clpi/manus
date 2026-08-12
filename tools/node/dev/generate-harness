@@ -1,0 +1,230 @@
+#!/bin/sh
+# One revision-bound harness boot payload for every agent family.
+# Stable template: docs/spec/harness-projection.md
+# Output: .agents/HARNESS.md (sole generated harness orientation)
+set -eu
+
+repo="$(cd "$(dirname "$0")/../../.." && pwd)"
+cd "$repo"
+
+template="$repo/docs/spec/harness-projection.md"
+out="$repo/.agents/HARNESS.md"
+legacy="$repo/.agents/harness.generated.md"
+tmp="$(mktemp "${TMPDIR:-/tmp}/idol-harness.XXXXXX")"
+trap 'rm -f "$tmp"' EXIT
+
+if [ ! -f "$template" ]; then
+  echo "generate-harness: missing $template" >&2
+  exit 1
+fi
+
+head="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+dirty="$(git status --short 2>/dev/null | wc -l | tr -d ' ')"
+
+p0_list=""
+p0_count=0
+for gap in gaps/GAP-*.md; do
+  [ -f "$gap" ] || continue
+  if grep -Eiq '^\*\*Status:\*\*[[:space:]]*(OPEN|REOPENED)([[:space:]·(:—-]|$)' "$gap" 2>/dev/null &&
+     grep -Eiq '^\*\*(Status|Priority):\*\*.*P0' "$gap" 2>/dev/null; then
+    p0_count=$((p0_count + 1))
+    title="$(sed -n '1p' "$gap" | sed 's/^# *//')"
+    id="$(basename "$gap" .md)"
+    p0_list="${p0_list}
+- ${id}: ${title}"
+  fi
+done
+
+bootstrap_stage="S0"
+if [ -f docs/bootstrap.md ]; then
+  bootstrap_stage="$(sed -n 's/^## Current stage: //p' docs/bootstrap.md | head -1)"
+  [ -n "$bootstrap_stage" ] || bootstrap_stage="S0"
+fi
+
+shc_frontier="GAP-145 distinct lexical identities → GAP-134 generated grammar roles + immutable token view → first production parser recognition in executed Idol (not host token-text lists)"
+
+mcphealth="unknown"
+if "$repo/tools/node/dev/probe-mcp" >/dev/null 2>&1; then
+  mcphealth="raw initialize pass"
+else
+  mcphealth="raw initialize fail"
+fi
+
+hostdebt="unknown"
+if [ -x "$repo/tools/node/dev/hostcensus" ]; then
+  hosttotal="$("$repo/tools/node/dev/hostcensus" 2>/dev/null | sed -n 's/^total hits: //p' | tail -1)"
+  [ -n "$hosttotal" ] && hostdebt="$hosttotal classified hits"
+fi
+
+generated_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u)"
+
+{
+  cat <<EOF
+<!-- GENERATED — do not edit by hand. -->
+<!-- Source: docs/spec/harness-projection.md via tools/node/dev/generate-harness -->
+<!-- Regenerate: tools/node/dev/generate-harness (orient calls this) -->
+
+# Idol universal harness boot payload
+
+This file is a **generated projection**, not semantic law. Sole law:
+docs/spec/constitution.md. Stable harness template:
+docs/spec/harness-projection.md.
+
+**Invariant:** the harness must reason in Idol — not as a conventional coding
+agent with Idol syntax pasted onto output.
+
+If the live envelope below contradicts the template on implementation state,
+**live envelope wins**.
+
+---
+
+## live envelope
+
+| field | value |
+| --- | --- |
+| generated | ${generated_at} |
+| head | ${head} |
+| branch | ${branch} |
+| dirty entries | ${dirty} |
+| bootstrap stage | ${bootstrap_stage} |
+| compiler B | absent |
+| mcp health | ${mcphealth} |
+| host debt | ${hostdebt} |
+| authority ledger | docs/bootstrap.md |
+| dominant metrics | docs/METRICS.md — authority, reconstruction, ftcftw evidence |
+| claims | duo_dev_claim_acquire / duo_dev_claim_files before editing |
+| preflight | ./tools/node/dev/orient then ./tools/node/dev/doctor |
+
+### executed authority (metric 1)
+
+**Current:** ${bootstrap_stage}. One executed Idol-owned production boundary:
+lexer/token/span (docs/bootstrap.md). Compiler B does not exist. B→C = 0.
+
+**Next SHC boundary:** ${shc_frontier}
+
+Do not infer frontier from file extension, implementation language, or .id
+percentage.
+
+### reconstruction (metric 2)
+
+Target: zero downstream rediscovery of upstream-known meaning (callee → relation,
+path → identity, AST → visibility, opcode → relation, text → grammar role after
+lexing). Machine census: blocked until graph-owned counter lands — do not infer
+from grep alone.
+
+### ftcftw evidence (metric 3)
+
+Matrix cells empty until revision-bound aggregate proof fills them.
+Unknown ≠ pass. See docs/METRICS.md.
+
+---
+
+## pre-task gate (execution — not advice)
+
+**Do not choose work or edit** until docs/spec/harness-projection.md §
+pre-task reduction is answered (items 1–12). If 1–9 lack clear answers,
+deprioritize. If the task only renames an abstraction (std.* → process.*,
+req → local binding), **reject**.
+
+Current scheduler: **SHC frontier above** broad corpus rewrite, gate polish, or
+peripheral tooling unless it unlocks the next production authority boundary.
+
+---
+
+## open P0 obligations (${p0_count})
+
+Read exact files — session summary incomplete until GAP-131 closes.
+${p0_list:-none listed}
+
+---
+
+## semantic diff template (required for nontrivial changes)
+
+\`\`\`text
+boundary:
+before authority:
+after authority:
+ids consumed/produced:
+facts retained/added/removed/missing:
+reconstruction removed/remaining:
+deletion (what ceased to exist):
+world/demand/realization:
+performance (alloc/copy/box/dispatch/state):
+shc frontier before/after:
+ftcftw cells affected/unknown:
+evidence (command, path, revision, dirty, outcome):
+bridges retained + deletion gate:
+blocker:
+\`\`\`
+
+---
+
+## adversarial migration classes (changed-line gates)
+
+Not whole-corpus closure — new debt on touched lines must be zero:
+
+- process = lib.process — reachability admission, not world authority
+- process.run / process.capture / procrun / proccap — parallel run kingdoms
+- host 0/1 status as native outcome
+- redundant explicit \`:to(T)\` when descriptor demand already fixes \`T\` uniquely (law.gate.infer)
+- bootstrap bridge without deletion witness (law.bridge.death)
+- silent host fallback after authority transfer (law.fallback.zero)
+- std.* renamed to another namespace without semantic decomposition
+- [[ ... ]] on touched canonical lines — compatibility debt
+
+Run: git diff -U0 -- '*.id' | ./zig-out/bin/idol run scripts/idiomgate.id
+
+---
+
+## projection chain (no parallel harness law)
+
+docs/spec/constitution.md
+  → docs/spec/harness-projection.md   (stable harness reasoning)
+  → .agents/HARNESS.md                (this file — live envelope + template)
+
+Provider mechanics only (Cursor rules, Pi skills, MCP transport) — not a second
+semantic specification.
+
+---
+
+EOF
+  cat "$template"
+} >"$tmp"
+
+if [ "${1:-}" = "--check" ]; then
+  if [ ! -f "$out" ]; then
+    echo "generate-harness: missing $out" >&2
+    exit 1
+  fi
+  normalize() {
+    sed -E \
+      -e '/^\| generated \|/d' \
+      -e '/^\| mcp health \|/d' \
+      -e '/^\| host debt \|/d' \
+      "$1"
+  }
+  normalize "$tmp" > "${tmp}.norm"
+  normalize "$out" > "${out}.norm"
+  cmp -s "${tmp}.norm" "${out}.norm" || {
+    echo "generate-harness: stale $out (run tools/node/dev/generate-harness)" >&2
+    exit 1
+  }
+  exit 0
+fi
+
+cp "$tmp" "$out"
+
+# Back-compat stub — do not maintain parallel content.
+{
+  cat <<EOF
+# Deprecated projection path
+
+Read **\`.agents/HARNESS.md\`** — the sole revision-bound harness boot payload.
+
+Regenerate: \`tools/node/dev/generate-harness\`
+EOF
+} >"$legacy"
+
+echo "generated $out"
+echo "updated $legacy (redirect stub)"

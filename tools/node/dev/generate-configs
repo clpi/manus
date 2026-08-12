@@ -3,7 +3,7 @@ set -eu
 
 repo="$(cd "$(dirname "$0")/../../.." && pwd)"
 manifest="$repo/tools/node/dev/mcp.manifest.json"
-duo="$repo/zig-out/bin/duo"
+duo="${IDOL_BOOTSTRAP_BIN:-${IDOL_BIN:-${DUO_BIN:-$repo/zig-out/bin/idol}}}"
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "generate-configs: jq is required" >&2

@@ -41,6 +41,7 @@ cleanup_root_artifacts
 zig build --summary all
 
 "$repo/tools/node/dev/generate-configs"
+"$repo/tools/node/dev/generate-harness"
 "$repo/tools/node/dev/install-skills"
 
 "$repo/tools/node/dev/cursor-auth"

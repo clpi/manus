@@ -1,6 +1,109 @@
 #!/bin/sh
-# Thin git hook — all admission logic lives in scripts/preflight.id (Idol only).
-root=$(git rev-parse --show-toplevel) || exit 1
+# Commit admission — shell orchestrates git; Idol gates scan stdin/files (direct backend only).
+set -eu
+root=$(git rev-parse --show-toplevel)
 idol="$root/zig-out/bin/idol"
 [ -x "$idol" ] || idol="$root/zig-out/bin/duo"
-exec "$idol" run "$root/scripts/preflight.id" "$@"
+[ -x "$idol" ] || { echo "canonical preflight: idol not built — commit blocked." >&2; exit 1; }
+
+scratch="/tmp/idol/preflight"
+mkdir -p "$scratch"
+idiom="$scratch/idiom.diff"
+host="$scratch/host.diff"
+list="$scratch/paths.txt"
+names="$scratch/names.diff"
+track="$scratch/tree.txt"
+path="$scratch/path.txt"
+
+# SOURCE-ZERO: staged .duo additions forbidden
+if git diff --cached --no-renames --name-only --diff-filter=A -- ':(icase,glob)**/*.duo' | grep -q .; then
+  echo "SOURCE-ZERO: new .duo paths are forbidden; canonical source is .id:" >&2
+  git diff --cached --no-renames --name-only --diff-filter=A -- ':(icase,glob)**/*.duo' | sed 's/^/  /' >&2
+  exit 1
+fi
+
+if [ "${1:-}" = "source-zero" ]; then
+  base="${2:-}"
+  [ -n "$base" ] || { echo "SOURCE-ZERO: invalid admission invocation — blocked." >&2; exit 1; }
+  git rev-parse --verify "${base}^{commit}" >/dev/null 2>&1 || {
+    echo "SOURCE-ZERO: base revision unavailable — admission blocked." >&2
+    exit 1
+  }
+  if git diff "$base" HEAD --no-renames --name-only --diff-filter=A -- ':(icase,glob)**/*.duo' | grep -q .; then
+    echo "SOURCE-ZERO: this revision range adds forbidden .duo paths:" >&2
+    git diff "$base" HEAD --no-renames --name-only --diff-filter=A -- ':(icase,glob)**/*.duo' | sed 's/^/  /' >&2
+    exit 1
+  fi
+  if git diff --no-renames --name-only --diff-filter=A -- ':(icase,glob)**/*.duo' | grep -q .; then
+    echo "SOURCE-ZERO: worktree .duo additions are admission failures:" >&2
+    git diff --no-renames --name-only --diff-filter=A -- ':(icase,glob)**/*.duo' | sed 's/^/  /' >&2
+    exit 1
+  fi
+  if git ls-files --others -- ':(icase,glob)**/*.duo' | grep -q .; then
+    echo "SOURCE-ZERO: untracked .duo paths are admission failures:" >&2
+    git ls-files --others -- ':(icase,glob)**/*.duo' | sed 's/^/  /' >&2
+    exit 1
+  fi
+  exit 0
+fi
+
+git diff --cached -U0 --diff-filter=ACM -- '*.id' '*.duo' >"$idiom" || true
+if [ -s "$idiom" ]; then
+  "$idol" run "$root/gates/idiom.id" <"$idiom" || {
+    echo "" >&2
+    echo "COMMIT BLOCKED — every finding above is on a line THIS DIFF ADDS." >&2
+    echo "Inherited debt in the same file is not gated; only what you write is." >&2
+    exit 1
+  }
+  "$idol" run "$root/gates/admission.id" <"$idiom" || {
+    echo "" >&2
+    echo "COMMIT BLOCKED — gates/admission found API shape without semantic admission." >&2
+    exit 1
+  }
+fi
+
+git diff --cached -U0 --diff-filter=ACM -- '*.id' '*.zig' '*.md' '*.mdc' 'AGENTS.md' 'CLAUDE.md' 'README.md' 'build.zig' '.cursor/rules/*.mdc' '.githooks/*' 'gates/*' 'scripts/*' >"$host" || true
+if [ -s "$host" ]; then
+  "$idol" run "$root/gates/host.id" <"$host" || {
+    echo "" >&2
+    echo "COMMIT BLOCKED — gates/host found new host API debt on staged additions." >&2
+    exit 1
+  }
+fi
+
+"$idol" run "$root/gates/architecture.id" || {
+  echo "" >&2
+  echo "COMMIT BLOCKED — semantic canonicality is part of correctness." >&2
+  exit 1
+}
+
+git diff --cached --name-only --diff-filter=AR >"$list" || true
+git diff --cached -U0 --diff-filter=ACM -- '*.id' '*.zig' '*.md' '*.mdc' 'AGENTS.md' 'CLAUDE.md' 'README.md' 'build.zig' '.cursor/rules/*.mdc' '.githooks/*' 'gates/*' >"$names" || true
+if [ -s "$list" ] || [ -s "$names" ]; then
+  {
+    echo "IDOLGATE staged"
+    cat "$list" 2>/dev/null || true
+    echo "IDOLGATE namediff"
+    cat "$names" 2>/dev/null || true
+    echo "IDOLGATE end"
+  } >"$path"
+  "$idol" run "$root/gates/path.id" <"$path" || {
+    echo "" >&2
+    echo "COMMIT BLOCKED — gates/path found invalid names on staged paths or added lines." >&2
+    exit 1
+  }
+fi
+
+git ls-files >"$track"
+{
+  echo "IDOLGATE tree"
+  cat "$track"
+  echo "IDOLGATE end"
+} >"$path"
+"$idol" run "$root/gates/path.id" <"$path" || {
+  echo "" >&2
+  echo "COMMIT BLOCKED — tracked tree still carries mashed compound or separator path debt." >&2
+  exit 1
+}
+
+exit 0

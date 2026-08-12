@@ -2,6 +2,11 @@
 
 Apply this immediately to every active agent and every future agent.
 
+**Constitutional authority:** Idol algebra closure — home, subject, world,
+protocol, witness, injection, union, standard reachability, shell/run/outcome,
+and binding census — is **C0 §67** (`docs/spec/constitution.md`). This file
+projects that law for source layout and reachability; it does not add or override it.
+
 This closes the native source-distribution architecture.
 
 Do not introduce a conventional module system while implementing it.
@@ -72,14 +77,24 @@ app
   lexer
 ```
 
-These are ordinary table/home bindings.
+These are ordinary home bindings — `parser` and `lexer` are homes that
+supply context and reachability. When a home also holds a semantic
+value that is the true subject of a relation, subject-first call is
+canonical. But a home does not automatically become the subject merely
+because it appears before a colon. The resolver determines whether
+`parser` is a semantic subject (a value that admits `parse`) or only
+organizational context (a home for declarations).
 
-Inside `main.id`, sibling semantic references may therefore be ordinary:
+When the home supplies an ordinary semantic value as subject:
 
 ```id
-tree = parser:parse(source)
-tokens = lexer:scan(source)
+tree = source:parse()
+tokens = source:scan()
 ```
+
+Here `source` is the true semantic subject — the text being parsed —
+and `parse` / `scan` are relations over that subject. This is canonical
+subject-first orientation per `law.subject.resolve`.
 
 Do not write:
 
@@ -193,15 +208,28 @@ The build/source environment may anchor:
 http
 ```
 
-as an ordinary table/home.
-
-Ordinary code can then reference:
+as an ordinary home. If `http` supplies an ordinary semantic value
+(for example a client value that is the true subject of a request
+relation), canonical source uses subject-first orientation:
 
 ```id
-client = http.client:new()
+response = client:request(url)
 ```
 
-if that root is visible in the compilation context.
+where `client` is a semantic value (not a package table) and `request`
+is an admitted relation. Do not write `http.client:new()` — `new` is
+not an admitted constructor relation and chained home access
+(`http.client`) resembles package-to-class dispatch, not subject
+orientation. If the environment supplies a client value directly, use
+it as the subject. If construction is genuinely needed, use an
+admitted relation over a genuine subject.
+
+```id
+client = http:connect(host)
+```
+
+Here `http` would need to be a semantic subject admitting `connect`,
+not merely an organizational home.
 
 There is no import operation.
 
@@ -313,6 +341,56 @@ A world may satisfy authority. It does not establish package identity.
 A source path may establish provenance. It establishes neither semantic identity
 nor authority.
 
+## Home, world, and protocol algebra
+
+Authoritative law lives in `docs/spec/constitution.md` §67. This file's
+home/reach/world distinctions are projections only; they defer to:
+
+- `law.home.context`, `law.subject.resolve`, `law.world.grant`, `law.inject.algebra`
+- `law.constraint.protocol`, `law.protocol.satisfy`, `law.protocol.world`
+- `law.algebra.home`, `law.gate.protocol`
+
+**Invariant:** home supplies context; subject orients meaning; descriptor supplies
+facts; protocol demands facts; world grants authority; witness proves satisfaction.
+None substitutes for another. Protocol witness is not world grant.
+
+**Relation is protocol** (`law.protocol.one`): a constraint names an existing
+relation, never an adjective protocol.
+
+```id
+consume = (source: read) source:read()
+copy = (source, sink) sink:write(source:read())
+```
+
+Denied: `source: readable`, `trait`, `impl`, `@implements`, `concept`, and every
+native adjective protocol (`readable`, `writable`, `iterable`, `hashable`, …).
+The relation catalog is the universal protocol catalog.
+
+## Inference (INFER-ONE)
+
+**Endpoint:** `to` is a semantic relation that should usually exist in the graph
+without being spelled in source — the goal is not “make `to` shorter.”
+
+Authoritative law: `law.infer.one`, `law.source.minimum`, `law.direct.bridge.one`,
+`law.conversion.tripart`, `law.repair.infer`, `law.gate.infer`.
+
+Write only semantic information the compiler cannot uniquely recover from binding,
+parameter, result, field, relation, projection, world, and law facts already in
+context. The shortest uniquely resolving source is canonical:
+
+```id
+flag: bool = value
+enable(value)
+check: bool = (value) value
+```
+
+Conversion ladder: omit `to` when unique → `value:to()` when relation must be
+explicit → `value:to(T)` when target must be explicit. Never bulk-delete `to`
+without graph identity proof. If inference is not implemented, report
+`IMPLEMENTATION-BLOCKED` — do not require redundant casts as workaround.
+
+MCP: `duo_agent_session_start` returns `infer_one` on all agent servers.
+
 ## Projection
 
 Projection is not a module mechanism.
@@ -330,53 +408,65 @@ There is no special package projection syntax.
 
 ### Direct projection
 
-Given anchored root `codec` exposing `json`, `text`, `binary`:
+Given `source` as the semantic subject (text holding serialized data) and
+`parse` as an admitted relation:
 
 ```id
-value = codec.json:parse(source)
+value = source:parse()
 ```
 
-Resolution is:
+When a projection pack qualifies the relation (for example json vs text):
 
-```text
-root codec → projection json → relation parse → application
+```id
+value = source:parse(json)
 ```
 
-not package load → export table → member lookup → call.
+Here `json` is relation projection — not package table traversal. The graph
+records `parse` with projection pack `json` over subject `source`. Do not write
+`codec.json:parse(source)` — that trains home/package → member → call ontology.
 
-After semantic resolution, runtime need not contain a codec object at all.
+After semantic resolution, runtime need not materialize a codec object.
 
 ### Sibling projection
 
 Given `codec/parse.id` and `codec/encode.id`, sibling source under the same
-home may resolve `parse(source)` and `encode(value)` directly when ordinary
-home reachability makes those bindings visible. No package syntax. No file
-loading.
+home may resolve bindings directly when ordinary home reachability makes them
+visible:
+
+```id
+value = parse(source)
+encoded = encode(value)
+```
+
+No package syntax. No file loading ceremony. `parse` and `encode` are ordinary
+bindings reached through home topology.
 
 ### Cross projection
 
-Given roots `app`, `codec`, `net`:
+Given a semantic client value (a connection subject, not a package table) and
+admitted `send` relation:
 
 ```id
-value = codec.json:parse(source)
-reply = net.client:send(value)
+reply = client:send(value)
 ```
 
-The graph records exact dependencies on `codec.json.parse` and
-`net.client.send`, not merely coarse dependencies on `codec` or `net`, unless
-broader demand genuinely exists.
+The graph records exact dependencies on the concrete relation applications, not
+merely coarse dependencies on organizational homes unless broader demand genuinely
+exists. Do not write `net.client:send(value)` when `client` is already the
+semantic subject — the home prefix is organizational provenance, not the receiver.
 
 ### Bare projection
 
 A child scope may project bindings directly:
 
 ```text
-parse → codec.json.parse
-encode → codec.json.encode
+parse → codec.parse
+encode → codec.encode
 ```
 
 Source then sees `parse(source)` with no source statement requesting visibility.
-The witness records where the binding came from.
+The witness records home provenance; the semantic identity is the relation
+application, not a package member lookup.
 
 ### Selective projection
 
@@ -586,7 +676,7 @@ new compound semantic filenames = 0
 ```
 
 `gates/path.id` enforces LAW-ONE path names on staged paths and the tracked tree.
-`scripts/idiomgate.id` remains a lexical migration preflight on added lines only;
+`gates/idiom.id` remains a lexical migration preflight on added lines only;
 it must not be reported as semantic canonicality. Closure, namespace, length,
 cast, world, and relation identity verdicts belong to production parse → resolve
 → graph → obligation query (`GAP-124`, `scripts/canon.id`). Delete idiomgate

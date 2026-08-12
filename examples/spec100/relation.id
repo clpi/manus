@@ -1,47 +1,13 @@
-# Pass 100 §9 THE CONVERSION ALGEBRA — a relation with a declaration face, an
-# enumerable trie, and one composition law. gap[082].
+# @corpus verified
+# Pass 100 §9 — conversion algebra: one relation `to`, hub derivation, enumerable trie.
+# FROM-ZERO (law.from.zero): `from` normalizes to the same `to` edge — no second
+# relation universe. Canonical invocation is subject-first `value:to(target)`.
 #
-#     to(micron)(inch) = stretch@lossless
+#     to(micron)(inch) = stretch@lossless   # declaration projection — not call site
 #     for src, conv in to[micron]
-#     inch:from(foot)(3.0)          # an edge NOBODY DECLARED
+#     feet: f64 = 3.0:to(inch)              # was inch:from(foot)(3.0) — migration debt
 #
-# WHAT THIS FIXTURE EXISTS TO CATCH. `to` was not a relation. Four sites in
-# `src/codegen.zig` compared the literal string "to" and lowered the call
-# directly, so the conversion universe was exactly the primitives the code
-# generator had been taught by hand: 1647 call sites, six destinations, and
-# ZERO declared edges. The declaration face §9 is written in terms of
-# (`to(str)(u32) = digits`) parsed, passed `duo check`, and then died in the C
-# backend on "expression is not assignable" — it lowered to
-# `lua_to_str(tostring("u32")) = digits`. The enumeration face died on "use of
-# undeclared identifier 'to'". Neither was a missing feature exactly; both were
-# an ABSENT MECHANISM wearing a string comparison.
-#
-# NO NEW GRAMMAR (A2 NNS-FIRST). `to(dest)(src) = conv` is an ordinary
-# assignment statement and `conv@class` is the postfix anchor that already
-# parses to a field walk. Nothing here is a new token, sigil or keyword; the
-# forms existed and had no meaning.
-#
-# SIX AUTHORED EDGES, SIX DERIVED. `micron` is the canonical hub; `inch`,
-# `milli` and `foot` each declare their two edges to and from it. The three
-# spoke-to-spoke pairs in both directions — inch<->milli, inch<->foot,
-# milli<->foot — are NEVER DECLARED and are answered by composition through
-# the hub. SER = 12/6 = 2.00 at N = 4, and both numbers matter: the ratio is a
-# function of ecosystem size, so a SER without its N is not a measurement.
-#
-# WHY EVERY EDGE IS f64 AND WHY THAT IS THE POINT. The same six edges over i64
-# would make each division NARROWING (25401 micron is not a whole inch), and
-# the class lattice would then REFUSE all six derivations rather than silently
-# compose into a lossy conversion. That refusal is the companion fixture
-# `relationclass.id`. An algebra that composes anything is not safer than no
-# algebra — it is more dangerous, because adding a descriptor could quietly
-# change an existing program's answer.
-#
-# VERIFIED BY VALUE, and the value is chosen to kill the degenerate answers.
-# A composition that resolves and returns 0 — this tree's known failure mode,
-# the one `tonumber("abc")` already has — prints 153, 62 or 179 depending on
-# which hop collapsed. An enumeration that yields nothing prints 173. A trie
-# that answered the pair conversions from a transposed key would not compile at
-# all. Only real composition over a real trie prints 189.
+# Six authored edges, six derived through micron hub. SER = 12/6 = 2.00 at N = 4.
 # expect: 189
 
 stretch: f64 = (v: f64)
@@ -70,22 +36,16 @@ to(micron)(foot) = expand@lossless
 to(foot)(micron) = compress@lossless
 
 main: i64 = ()
-    # Three conversions, none of them declared. Each one is the hub composition
-    # and each one is exact in f64, so the answer is an integer or the
-    # derivation is wrong.
-    feet: f64 = inch:from(foot)(3.0)
-    bore: f64 = milli:from(inch)(5.0)
-    span: f64 = inch:from(milli)(254.0)
+    # Hub-derived spoke conversions — subject-first to, not from (law.from.zero)
+    feet: f64 = 3.0:to(inch)
+    bore: f64 = 5.0:to(milli)
+    span: f64 = 254.0:to(inch)
 
     n = 0
     n = n + feet:to(i64)
     n = n + bore:to(i64)
     n = n + span:to(i64)
 
-    # The trie is enumerable, and the loop is over the SOURCES that reach the
-    # hub. `src` carries the descriptor name as the string fact it is, which is
-    # what the name-length sum proves — a loop that ran the right number of
-    # times over empty names would print 176.
     for src, conv in to[micron]
         n = n + 1
         n = n + #src

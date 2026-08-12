@@ -502,6 +502,7 @@ pub const Sema = struct {
         if (std.mem.eql(u8, name, "std")) return true;
         // Lua built-in functions
         if (std.mem.eql(u8, name, "print") or
+            std.mem.eql(u8, name, "gatecap") or
             std.mem.eql(u8, name, "assert") or
             std.mem.eql(u8, name, "error") or
             std.mem.eql(u8, name, "ipairs") or
@@ -2872,6 +2873,7 @@ pub const Sema = struct {
                 // Low-level builtins return known types
                 if (c.func.* == .name) {
                     const bn = c.func.name.ident;
+                    if (std.mem.eql(u8, bn, "gatecap") and c.args.len == 1) return .str;
                     if (std.mem.eql(u8, bn, "__sizeof") or
                         std.mem.eql(u8, bn, "__alignof") or
                         std.mem.eql(u8, bn, "__offsetof"))

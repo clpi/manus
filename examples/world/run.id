@@ -1,0 +1,5 @@
+# world/run — documents lib/process.id positive control.
+# Executable proof: idol run --backend=c lib/process.id (main in lib/process.id).
+
+main: i64 = ()
+    0

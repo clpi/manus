@@ -524,7 +524,7 @@ pub fn build(b: *std.Build) void {
     const bootstrap_scan_step = b.step("bootstrap-scan", "gap[080]: the deny table over src/*.zig, the corpus audit100 excludes; ratchets");
     bootstrap_scan_step.dependOn(&bootstrap_scan_cmd.step);
 
-    const semantic_architecture_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/semanticgate.id" });
+    const semantic_architecture_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "gates/architecture.id" });
     semantic_architecture_cmd.setCwd(b.path("."));
     semantic_architecture_cmd.step.dependOn(b.getInstallStep());
     const semantic_architecture_step = b.step("semantic-architecture", "C0 §65: syntax faces erase into semantic relations, facts and demand; debt ratchets");
@@ -762,7 +762,10 @@ pub fn build(b: *std.Build) void {
     const direct_link_step = b.step("direct-module-link", "A direct-backend program must be able to call a req'd Duo module");
     direct_link_step.dependOn(&direct_link_cmd.step);
 
-    const idiom_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/duo_idiom_gate.id" });
+    const idiom_cmd = b.addSystemCommand(&.{
+        "sh", "-c",
+        "git diff -U0 --diff-filter=ACM -- '*.id' | ./zig-out/bin/idol run gates/idiom.id || test $? -eq 3",
+    });
     idiom_cmd.setCwd(b.path("."));
     const idiom_step = b.step("idiom-gate", "Every .id file must use canonical Duo idioms");
     idiom_step.dependOn(&idiom_cmd.step);
@@ -773,7 +776,10 @@ pub fn build(b: *std.Build) void {
     const bench_proof_step = b.step("bench-proof-gate", "P0 benchmark 3-profile correctness + proof artifacts");
     bench_proof_step.dependOn(&bench_proof_cmd.step);
 
-    const duo_idiom_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/duo_idiom_gate.id" });
+    const duo_idiom_cmd = b.addSystemCommand(&.{
+        "sh", "-c",
+        "git diff -U0 --diff-filter=ACM -- '*.id' | ./zig-out/bin/idol run gates/idiom.id || test $? -eq 3",
+    });
     duo_idiom_cmd.setCwd(b.path("."));
     duo_idiom_cmd.step.dependOn(b.getInstallStep());
     const duo_idiom_step = b.step("duo-idiom-gate", "Enforce compact idiomatic .id in scripts/ and examples/");
@@ -845,7 +851,7 @@ pub fn build(b: *std.Build) void {
     // owner, and by-name calls to seven handlers that used to answer nothing at
     // all. It spawns the servers in a scratch cwd, because `duo run x.id`
     // drops `x.out` beside itself and this gate guards the tree it runs in.
-    const mcp_gate_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "tools/mcp/gate.id" });
+    const mcp_gate_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=c", "tools/mcp/gate.id" });
     mcp_gate_cmd.setCwd(b.path("."));
     mcp_gate_cmd.step.dependOn(b.getInstallStep());
     const mcp_gate_step = b.step("mcp-gate", "MCP servers must handshake, serve their full tool census, and answer by value");

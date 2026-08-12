@@ -1,6 +1,11 @@
 # GAP-081 step 1 — the conversion edge, proved BY VALUE in both faces, both
 # lowerings, and on the input that used to answer 0.
 #
+# INFER-ONE scope: this proof establishes subject-first face equivalence and
+# failure preservation for str→i64. Future proofs must cover the full inference
+# ladder (descriptor satisfaction, inferred target, inferred relation, ambiguity
+# rejection) per law.gate.infer controls 1–25 — not explicit :to(T) syntax alone.
+#
 # WHAT WAS BROKEN. `to(i64)` on a typed `str` failed to build in BOTH faces:
 # `error: call to undeclared function 'lua_to_num'`. A full-native module has
 # no boxed runtime, so the name the conversion reached for was never declared.

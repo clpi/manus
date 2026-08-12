@@ -593,7 +593,7 @@ std.mcp.register_tool("duo_multiplier_opportunities", "Analyze a .id file for pl
 end)
 
 -- Tool: duo_agent_session_start — session bootstrap
-std.mcp.register_tool("duo_agent_session_start", "Session bootstrap: load coordination, gaps, canonical index", {
+std.mcp.register_tool("duo_agent_session_start", "Session bootstrap: coordination, gaps, canonical index, INFER-ONE, seam audit (law.gate.convergence)", {
     type = "object",
     properties = {
         agent_id = { type = "string", description = "Agent identifier" },
@@ -604,6 +604,9 @@ std.mcp.register_tool("duo_agent_session_start", "Session bootstrap: load coordi
     canon = shared.canonical_index()
     std.json.encode({
         agent_id = args.agent_id or "agent",
+        infer_one = shared.infer_one_context(),
+        harness_seams = shared.harness_seams_context(),
+        harness_context = shared.harness_context(),
         coordination_path = shared.coordpath,
         canonical_index_path = shared.canonpath,
         open_p0_count = #p0,

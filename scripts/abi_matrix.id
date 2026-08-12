@@ -30,11 +30,29 @@
 # ANY wrong answer fails it, and a future fix that lowers it further should do
 # so in the same commit — the mirror of how NATIVE_FLOOR ratchets up.
 
-process = lib.process
+capture: str = (shellline: str)
+    gatecap(shellline)
+
+chomp: str = (text: str)
+    if text == nil or text:len() == 0
+        return ""
+    n = text:len()
+    while n > 0
+        c = text:byte(n)
+        if c != 10 and c != 13 and c != 32 and c != 9
+            break
+        n -= 1
+    text:sub(1, n)
+
+cap: str = (shellline: str)
+    chomp(gatecap(shellline))
+
+status: i64 = (cmd: str)
+    cap("( {cmd} ) >/dev/null 2>&1; echo $?"):to(i64)
 
 sh: str = (cmd: str)
     root = os.env["DUO_ROOT"] or "."
-    process.capture("cd '{root}' && {cmd}")
+    capture("cd '{root}' && {cmd}")
 
 tonum: i64 = (out: str)
     n: i64 = out:len()

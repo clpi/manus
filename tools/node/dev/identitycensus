@@ -1,0 +1,48 @@
+#!/bin/sh
+# Identity projection census — law.identity.projection
+# Target: Idsem/idsem count = 0 in current agent projections outside history blocks.
+set -eu
+repo="$(cd "$(dirname "$0")/../../.." && pwd)"
+cd "$repo"
+
+paths="
+AGENTS.md
+CLAUDE.md
+docs/orientation.md
+docs/AGENT_ALIGNMENT.md
+docs/METRICS.md
+.agents/AGENT_CANONICAL.md
+.agents/AGENT_COORDINATION.md
+.agents/HARNESS.md
+docs/spec/harness-projection.md
+.cursor/rules/00-authority.mdc
+.cursor/rules/10-language.mdc
+.cursor/rules/50-mcp-lsp.mdc
+"
+
+count=0
+for f in $paths; do
+  [ -f "$f" ] || continue
+  hits=$(rg -n 'Idsem|idsem' "$f" 2>/dev/null | rg -v 'historical|history|provenance|never current|law\.identity' || true)
+  if [ -n "$hits" ]; then
+    echo "identitycensus: FAIL $f"
+    echo "$hits" | sed 's/^/  /'
+    count=$((count + $(echo "$hits" | wc -l | tr -d ' ')))
+  fi
+done
+
+# C0: Idol must not appear in language.history names (working tree)
+if [ -f docs/spec/constitution.md ]; then
+  block=$(awk '/^language\.history = \{/,/^\}/' docs/spec/constitution.md)
+  if echo "$block" | rg -q '"Idol"|"idol"'; then
+    echo "identitycensus: FAIL C0 language.history lists current Idol as historical"
+    echo "$block" | rg 'Idol|idol' | sed 's/^/  /'
+    count=$((count + 1))
+  fi
+fi
+
+if [ "$count" -gt 0 ]; then
+  echo "identitycensus: $count live Idsem/identity violation(s) — law.identity.projection"
+  exit 1
+fi
+echo "identitycensus: pass current projection Idsem=0 Idol-not-in-history"

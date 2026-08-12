@@ -29,7 +29,19 @@
 # `duo_g_name` declaration and the C compiler refuses the file. That defect is
 # unrelated to APPLY-ONE and is recorded on gap[092]; this is the convention
 # that steps around it.
-process = lib.process
+chomp: str = (text: str)
+    if text == nil or text:len() == 0
+        return ""
+    n = text:len()
+    while n > 0
+        c = text:byte(n)
+        if c != 10 and c != 13 and c != 32 and c != 9
+            break
+        n -= 1
+    text:sub(1, n)
+
+cap: str = (shellline: str)
+    chomp(gatecap(shellline))
 
 global duo: str = os.env["DUO"] or ""
 if duo:len() == 0
@@ -50,10 +62,10 @@ report: void = (ok: bool, what: str, detail: str)
 # SEPARATELY and never inferred from the text: `cmd | tail` reports the exit of
 # `tail`, and a gate built on that has already shipped a broken commit here.
 capture: str = (cmd: str)
-    process.chomp(process.capture("{cmd} 2>&1"))
+    cap("{cmd} 2>&1")
 
 status: i64 = (cmd: str)
-    process.run("{cmd} > /dev/null 2>&1")
+    cap("( {cmd} ) > /dev/null 2>&1; echo $?"):to(i64)
 
 # Literal substring test, as a VALUE EDGE. The rows added by gap[092] may not
 # reach for `string.find` (§0.8, a Lua module idiom); the older rows in this
@@ -88,7 +100,7 @@ allocs: i64 = (cpath: str)
 # A file written through `sh`. See ROW 7 for why this does not go through
 # `std.script`.
 put: void = (path: str, body: str)
-    process.run("printf '%s' '{body}' > '{path}'")
+    status("printf '%s' '{body}' > '{path}'")
 
 main: void = ()
     # ROW 1 — the POSITIVE twin, by VALUE. Six prints, and the pair that must
@@ -193,14 +205,14 @@ main: void = ()
     put(fa, "point: @{ x: f64, y: f64 }\nmain(): void\n    q = point{ x = 3.0, y: 4.0 }\n    print(q.x)\n")
     put(fb, "point: @{ x: f64, y: f64 }\nmain(): void\n    q: point = { x = 3.0, y: 4.0 }\n    print(q.x)\n")
     put(fc, "main(): void\n    q = { x = 3.0, y: 4.0 }\n    print(q.x)\n")
-    process.run("{duo} run {fa} > /dev/null 2>&1")
-    process.run("{duo} run {fb} > /dev/null 2>&1")
-    process.run("{duo} run {fc} > /dev/null 2>&1")
+    status("{duo} run {fa}")
+    status("{duo} run {fb}")
+    status("{duo} run {fc}")
     na = allocs(ca)
     nb = allocs(cb)
     nc = allocs(cc)
     lit = counted(ca, "'(duo_rec_'") > 0
-    process.run("rm -f '{fa}' '{fb}' '{fc}'")
+    status("rm -f '{fa}' '{fb}' '{fc}'")
     shape = lit and na == nb and nc > nb
     report(shape, "law.pack.shape: the applied pack lands as FIELDS, not a table",
         "applied={na} typed-binding={nb} anonymous-pack={nc} compound-literal={lit}")
@@ -209,4 +221,4 @@ main: void = ()
         print("apply-one: 7/7")
     if failures != 0
         print("apply-one: {failures:to(str)} row(s) drifted")
-        process.exit(1)
+        return 1

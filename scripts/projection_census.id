@@ -1,0 +1,34 @@
+# PROJECTION-ONE debt census (law.projection.one · law.gate.projection).
+#
+# Reports projection-related spellings in tracked .id. Classify before rewrite.
+#
+# Run: idol run scripts/projection_census.id
+
+main: i64 = ()
+    root = std.script.getenv("CENSUS_ROOT", "")
+    if root == ""
+        root = std.script.chomp(std.script.capture("git rev-parse --show-toplevel 2>/dev/null"))
+    if root == ""
+        print("projection_census: fail no root")
+        std.os.exit(3)
+
+    subjto = std.script.chomp(std.script.capture("cd '{root}' && git ls-files '*.id' | xargs rg -c ':to\\(' 2>/dev/null | awk -F: '{s+=$2} END{print s+0}'"))
+    fromface = std.script.chomp(std.script.capture("cd '{root}' && git ls-files '*.id' | xargs rg -c ':from\\(' 2>/dev/null | awk -F: '{s+=$2} END{print s+0}'"))
+    stdref = std.script.chomp(std.script.capture("cd '{root}' && git ls-files '*.id' | xargs rg -c 'std\\.' 2>/dev/null | awk -F: '{s+=$2} END{print s+0}'"))
+    libref = std.script.chomp(std.script.capture("cd '{root}' && git ls-files '*.id' | xargs rg -c 'lib\\.' 2>/dev/null | awk -F: '{s+=$2} END{print s+0}'"))
+    procns = std.script.chomp(std.script.capture("cd '{root}' && git ls-files '*.id' | xargs rg -c 'process\\.' 2>/dev/null | awk -F: '{s+=$2} END{print s+0}'"))
+    adj = std.script.chomp(std.script.capture("cd '{root}' && git ls-files '*.id' | xargs rg -c ': (readable|writable|iterable|hashable|convertible)' 2>/dev/null | awk -F: '{s+=$2} END{print s+0}'"))
+
+    print("projection_census: PROJECTION-ONE debt in tracked .id")
+    print("  root {root}")
+    print("  explicit :to(           {subjto}")
+    print("  :from( inverse face     {fromface}")
+    print("  std. references         {stdref}")
+    print("  lib. references         {libref}")
+    print("  process. namespace      {procns}")
+    print("  adjective protocols     {adj}")
+    print("")
+    print("  gates: REDUNDANT-PROJECTION-ZERO FROM-ZERO STD-ZERO LIB-ZERO")
+    print("  classify each site — never bulk replace (law.repair.infer)")
+    print("  graph enforcement blocked on GAP-124 (GAP-165)")
+    0

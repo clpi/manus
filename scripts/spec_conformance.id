@@ -112,7 +112,7 @@ main(): i64
     # miniature. Pass 100 §2 settles it: the anchor has three stances and
     # `.@name` is not among them. The row is retired, not flipped; the ABSENT
     # row below is the one that carries the ruling.
-    record("FF-14 strata curry", "main(): void\n    print(to(str)(42))\nend\n", "42")
+    record("FF-14 subject-first convert", "main(): void\n    print(42:to(str))\nend\n", "42")
     record("FF-12 subject-first", "main(): void\n    print((42):to(str))\nend\n", "42")
     record("primitive as value", "main(): void\n    t = str\n    print(t)\nend\n", "str")
 
@@ -132,7 +132,7 @@ main(): i64
     #
     # Note Pass 48 §2.6's own example lines (`edge = to[str][Point]`,
     # `render = Point@to(str)`) are among the rows that do not compile.
-    record("S14 apply to(T)(v)", "main(): void\n    print(to(str)(42))\nend\n", "42")
+    record("S14 apply subject-first to(T)", "main(): void\n    print(42:to(str))\nend\n", "42")
     record("S14 retrieve to[T]", "main(): void\n    print(to[str] != nil)\nend\n", "true")
     record("S14 retrieve to[T][X]", "main(): void\n    print(to[str][i64] != nil)\nend\n", "true")
 

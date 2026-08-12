@@ -319,6 +319,8 @@ pub fn isBootstrapForeignCall(callee: []const u8) bool {
         "free",
         "idol_io_read_path",
         "idol_io_read_stdin",
+        "idol_os_execute",
+        "idol_process_capture",
         "idol_str_has",
         "idol_str_match",
         "malloc",
@@ -335,6 +337,13 @@ pub fn isBootstrapForeignCall(callee: []const u8) bool {
     return false;
 }
 
+fn calleeIsModuleLocal(m: Module, callee: []const u8) bool {
+    for (m.functions) |function| {
+        if (std.mem.eql(u8, function.name, callee)) return true;
+    }
+    return false;
+}
+
 /// True when every instruction is in the direct-backend subset.
 pub fn moduleIsNativeDirectReady(m: Module) bool {
     if (m.functions.len == 0) return false;
@@ -347,7 +356,10 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
                 if (fact_count != 0 and fact_count != 3) return false;
                 if ((fact_count == 3) != (i.realization_start != null)) return false;
                 if (i.op == .call_direct) {
-                    if (i.application == null) continue;
+                    if (i.application == null) {
+                        if (!calleeIsModuleLocal(m, i.callee)) return false;
+                        continue;
+                    }
                     const graph = m.graph orelse return false;
                     const application = i.application orelse return false;
                     const relation = i.relation orelse return false;

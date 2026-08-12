@@ -119,7 +119,7 @@ if command -v cursor-agent >/dev/null 2>&1; then
   want_version cursor-agent "2026.08.04-aaa8809" "$cursor_agent_v"
 fi
 
-duo="${IDOL_BOOTSTRAP_BIN:-${DUO_BIN:-$repo/zig-out/bin/duo}}"
+duo="${IDOL_BOOTSTRAP_BIN:-${IDOL_BIN:-${DUO_BIN:-$repo/zig-out/bin/idol}}}"
 if [ ! -x "$duo" ]; then
   bad "missing fresh compiler artifact $duo"
 else
@@ -145,6 +145,7 @@ else
 fi
 
 "$repo/tools/node/dev/generate-configs" --check || bad "generated MCP projections are missing or stale"
+"$repo/tools/node/dev/generate-harness" --check || bad "generated harness orientation is missing or stale"
 "$repo/tools/node/dev/install-skills" || bad "idol-dev skill installation failed"
 if [ -f "${CODEX_HOME:-$HOME/.codex}/skills/idol-dev/SKILL.md" ]; then
   ok "Codex skill idol-dev installed"
@@ -274,6 +275,8 @@ run_gate() {
     bad "$label"
   fi
 }
+
+run_gate "identity projection census" "$repo/tools/node/dev/identitycensus"
 
 extra_gate="${IDOL_DOCTOR_EXTRA_GATE:-}"
 if [ "$extra_gate" != "" ]; then

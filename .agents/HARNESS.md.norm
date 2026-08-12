@@ -1,0 +1,675 @@
+<!-- GENERATED — do not edit by hand. -->
+<!-- Source: docs/spec/harness-projection.md via tools/node/dev/generate-harness -->
+<!-- Regenerate: tools/node/dev/generate-harness (orient calls this) -->
+
+# Idol universal harness boot payload
+
+This file is a **generated projection**, not semantic law. Sole law:
+docs/spec/constitution.md. Stable harness template:
+docs/spec/harness-projection.md.
+
+**Invariant:** the harness must reason in Idol — not as a conventional coding
+agent with Idol syntax pasted onto output.
+
+If the live envelope below contradicts the template on implementation state,
+**live envelope wins**.
+
+---
+
+## live envelope
+
+| field | value |
+| --- | --- |
+| head | 72e3540 |
+| branch | main |
+| dirty entries | 65 |
+| bootstrap stage | S0 |
+| compiler B | absent |
+| authority ledger | docs/bootstrap.md |
+| dominant metrics | docs/METRICS.md — authority, reconstruction, ftcftw evidence |
+| claims | duo_dev_claim_acquire / duo_dev_claim_files before editing |
+| preflight | ./tools/node/dev/orient then ./tools/node/dev/doctor |
+
+### executed authority (metric 1)
+
+**Current:** S0. One executed Idol-owned production boundary:
+lexer/token/span (docs/bootstrap.md). Compiler B does not exist. B→C = 0.
+
+**Next SHC boundary:** GAP-145 distinct lexical identities → GAP-134 generated grammar roles + immutable token view → first production parser recognition in executed Idol (not host token-text lists)
+
+Do not infer frontier from file extension, implementation language, or .id
+percentage.
+
+### reconstruction (metric 2)
+
+Target: zero downstream rediscovery of upstream-known meaning (callee → relation,
+path → identity, AST → visibility, opcode → relation, text → grammar role after
+lexing). Machine census: blocked until graph-owned counter lands — do not infer
+from grep alone.
+
+### ftcftw evidence (metric 3)
+
+Matrix cells empty until revision-bound aggregate proof fills them.
+Unknown ≠ pass. See docs/METRICS.md.
+
+---
+
+## pre-task gate (execution — not advice)
+
+**Do not choose work or edit** until docs/spec/harness-projection.md §
+pre-task reduction is answered (items 1–12). If 1–9 lack clear answers,
+deprioritize. If the task only renames an abstraction (std.* → process.*,
+req → local binding), **reject**.
+
+Current scheduler: **SHC frontier above** broad corpus rewrite, gate polish, or
+peripheral tooling unless it unlocks the next production authority boundary.
+
+---
+
+## open P0 obligations (38)
+
+Read exact files — session summary incomplete until GAP-131 closes.
+
+- GAP-050: GAP-050 — explicit realization evidence uses shared CWD state
+- GAP-092: GAP-092 — delimiter faces still survive as semantic call shape
+- GAP-107: GAP-107 — canonical compiler source lacks a graph-owned export projection
+- GAP-113: GAP-113 — an unknown relation on a subject silently answers nil; the same mistake in the denied spelling diagnoses
+- GAP-115: GAP-115 — test evidence is corruptible by concurrent sessions, so gate results are not facts
+- GAP-118: GAP-118 — Environment lookup erases absence into empty string
+- GAP-119: GAP-119 — Process execution lacks subject and world semantic vocabulary
+- GAP-121: GAP-121 — Native module initialization blocks real Duon compiler modules
+- GAP-123: GAP-123 — Agent law still mandates std.script-backed lock wrapper
+- GAP-124: GAP-124 — Graph world, subject, vocabulary, sentinel and control canonicality gates
+- GAP-125: GAP-125 — SH-07 passes a name census, not the semantic graph required by WORLDGATE
+- GAP-126: GAP-126 — Typed semantic facts cross a dynamic dispatch boundary
+- GAP-127: GAP-127 — SHC ledger contract drift makes the 100 percent Duon report fail for the wrong reasons
+- GAP-128: GAP-128 — Runtime benchmark invokes Duon WASM with obsolete WARD environment contract
+- GAP-129: GAP-129 — Locked validation MCP suppresses failing evidence
+- GAP-130: GAP-130 — Duon WASM hot loop remains 18 percent behind wasmtime in generated code
+- GAP-131: GAP-131 — Session bootstrap reports false empty P0 queue
+- GAP-132: GAP-132 - RG0 still accepts aliases and the proposed graph proof is not a gate
+- GAP-134: GAP-134 - SHC grammar authority is not a generatable canonical artifact
+- GAP-135: GAP-135 — Reader proof adds broken Zig semantic reconstruction instead of Duon authority
+- GAP-136: GAP-136 — relation identity gate accepts untracked C-only noncanonical evidence
+- GAP-137: GAP-137 — SHC-01 DNIR application identity remains optional and fail-open
+- GAP-138: GAP-138 — SHC source traversal has mixed authority and sentinel contract
+- GAP-139: GAP-139 — compiler B/C basis has no graph/world-backed evidence
+- GAP-141: GAP-141 - generated runtime reserves a different temporary path than it uses
+- GAP-142: GAP-142 - concurrent merge candidates lack one truthful admission boundary
+- GAP-144: GAP-144 - runtime-sized table branch derives realization from source names
+- GAP-145: GAP-145 — lexical authority is not projected into distinct canonical token identities
+- GAP-146: GAP-146 — build gate reports success after failed child process
+- GAP-147: GAP-147 — test gate deadlocks when child output fills an undrained pipe
+- GAP-148: GAP-148 — value locations and fixed-frame register spilling
+- GAP-149: GAP-149 — numeric source faces lack one compositional descriptor fact owner
+- GAP-151: GAP-151: Missing Semantic Lineage for Benchmark Measurement Attribution
+- GAP-152: GAP-152 — Idol-only FTCFTW claim chain lacks aggregate pass
+- GAP-153: GAP-153 — Layout resolution; projection scope package capability closure
+- GAP-154: GAP-154 — Host boundary, root projection, capability and shell closure
+- GAP-155: GAP-155 — Host boundary, root projection, and capability closure
+- GAP-157: GAP-157 — Zero std namespace elimination
+
+---
+
+## semantic diff template (required for nontrivial changes)
+
+```text
+boundary:
+before authority:
+after authority:
+ids consumed/produced:
+facts retained/added/removed/missing:
+reconstruction removed/remaining:
+deletion (what ceased to exist):
+world/demand/realization:
+performance (alloc/copy/box/dispatch/state):
+shc frontier before/after:
+ftcftw cells affected/unknown:
+evidence (command, path, revision, dirty, outcome):
+bridges retained + deletion gate:
+blocker:
+```
+
+---
+
+## adversarial migration classes (changed-line gates)
+
+Not whole-corpus closure — new debt on touched lines must be zero:
+
+- process = lib.process — reachability admission, not world authority
+- process.run / process.capture / procrun / proccap — parallel run kingdoms
+- host 0/1 status as native outcome
+- std.* renamed to another namespace without semantic decomposition
+- [[ ... ]] on touched canonical lines — compatibility debt
+
+Run: git diff -U0 -- '*.id' | ./zig-out/bin/idol run scripts/idiomgate.id
+
+---
+
+## projection chain (no parallel harness law)
+
+docs/spec/constitution.md
+  → docs/spec/harness-projection.md   (stable harness reasoning)
+  → .agents/HARNESS.md                (this file — live envelope + template)
+
+Provider mechanics only (Cursor rules, Pi skills, MCP transport) — not a second
+semantic specification.
+
+---
+
+# Idol universal harness projection
+
+This document is a **harness behavior projection** of C0 (`docs/spec/constitution.md`).
+It is not semantic law. If it conflicts with the constitution, the constitution wins
+and this projection must be repaired.
+
+**Idol algebra closure** lives solely in C0 §67 (`law.semantic.universe` through
+`law.algebra.absolute`; adversarial controls in `law.gate.protocol` and
+`law.gate.algebra`). Do not treat session prompts, chat injections, or hand-maintained
+rule lists as a second algebra authority — including historical prompts titled
+"Idsem algebra closure." The language is **Idol**. Projections route to §67; they
+do not restate it.
+
+The invariant: **the harness itself must reason in Idol.** Do not behave like a
+conventional coding agent with Idol syntax pasted onto output.
+
+Repository truth (`docs/bootstrap.md`, live claims, gaps, metrics) overrides stale
+details in this template on implementation-state facts.
+
+Generated boot payload: `.agents/HARNESS.md` from `tools/node/dev/generate-harness`.
+Provider files (Cursor rules, Pi skills) add mechanics only — not a second harness law.
+
+---
+
+## nine harness failures corrected
+
+These are execution requirements, not session advice.
+
+1. **Pre-task reduction before task selection** — not merely before naming. No edit
+   until facts-before/after and disappear-when-done are stated.
+2. **Deletion-biased convergence** — see deletion order below; additions are
+   extraordinary last resorts.
+3. **Goal-directed work selection** — every task must move executed authority,
+   reduce reconstruction, or fill FTCFTW evidence; corpus rewrite alone fails.
+4. **Semantic diff requirement** — gate pass and tests pass are insufficient.
+5. **Host-abstraction quarantine** — host code is oracle for behavior, not
+   architectural template; see host quarantine below.
+6. **Negative-space reasoning** — ask what should **cease to exist**; removal of
+   storage, wrappers, conversions, passes, and helper APIs is first-class output.
+7. **Single harness vocabulary** — frame tasks in id/relation/subject/world/demand/
+   run/outcome/evidence; never parser helpers, module imports, process status, AST
+   nodes, opcode enums as the question ontology.
+8. **FTCFTW rejection rule** — reject architecture that adds physical state without
+   measured freedom or explicit tradeoff; see ftcftw acceptance below.
+9. **SHC frontier scheduler** — prefer the earliest host-owned production boundary
+   in `docs/bootstrap.md` over peripheral cleanup; see shc scheduler below.
+
+---
+
+## mission
+
+Two overriding implementation goals.
+
+### shc
+
+Reach: trusted seed → compiler B built from canonical `.id` → B builds compiler C
+→ B/C semantic + behavioral closure → foreign semantic authority reaches zero.
+
+Self-hosting progress is measured by **executed semantic authority transferred**
+from the host into production Idol — not source-file count, `.id` percentage,
+translated lines, or test fixtures.
+
+### ftcftw
+
+For equivalent semantics, Idol must preserve at least the realizations available
+to excellent C. When Idol retains stronger semantic facts, exploit them to
+outperform C where possible.
+
+For Wasm: import semantic law → same graph → demand → realization, with the goal
+of outperforming conventional Wasm runtimes across correctness, compile, startup,
+runtime, memory, and artifact size.
+
+No local optimization win substitutes for the complete evidence matrix.
+
+---
+
+## one system
+
+One semantic universe. Use admitted concepts:
+
+id, relation, subject, value, pack, binding, descriptor, shape, place, world,
+effect, demand, law, origin, stage, witness, provenance, realization, token,
+role, span, view, run, outcome, evidence
+
+Do not create another ontology because a host language, compiler textbook, API,
+runtime, OS, tool, or model normally has one.
+
+Qualification is a fact. Physical choice is realization. Source spelling is
+provenance. A namespace is not authority. A file is not identity. A hash is not
+identity. A backend operation is not semantic identity. A source category is not
+semantic identity.
+
+---
+
+## pre-task reduction
+
+Before choosing or accepting work, answer:
+
+1. What exact semantic fact or authority is missing?
+2. What existing semantic fact is being reconstructed, duplicated, renamed, or lost?
+3. Which identity is authoritative?
+4. Who currently produces it?
+5. Who currently consumes it?
+6. What should disappear when this task succeeds?
+7. Does this advance the executed shc frontier?
+8. Does this reduce reconstruction debt?
+9. Does this improve ftcftw evidence or realization freedom?
+10. Is the task merely surface cleanup?
+11. Is the proposed abstraction inherited from the host?
+12. Can the result be expressed by existing facts rather than a new concept?
+
+If no clear answer to 1–9, deprioritize. If the task merely renames an
+abstraction, reject it. If an admitted fact is unavailable, report the missing
+producer. Do not build a substitute owner.
+
+---
+
+## work selection
+
+Rank candidate work by:
+
+```text
+executed authority transfer
+× semantic duplication removed
+× downstream unlock
+× ftcftw leverage
+× adversarial testability
+```
+
+divided by:
+
+```text
+new ontology
+× host-shape duplication
+× compiler state
+× runtime state
+× compatibility debt
+× integration overlap
+```
+
+Prefer work that advances several goals through one semantic closure.
+
+Avoid work whose primary result is: more files converted, more lexical cleanup,
+more wrapper APIs, more tooling commands, more status dashboards, more namespace
+movement, more helper functions, or more generated artifacts — unless it
+directly unlocks an authoritative semantic boundary.
+
+---
+
+## dominant metrics
+
+Reason from these three metrics first (`docs/METRICS.md`).
+
+### authority
+
+Latest production semantic decision executed in Idol rather than by the host.
+Current frontier: `docs/bootstrap.md`. Do not infer from file extension or
+implementation language.
+
+### reconstruction
+
+Downstream decisions that rediscover meaning already known upstream. Target: zero.
+Examples: callee name → relation, path → identity, AST shape → visibility,
+opcode → semantic relation, hash → identity, source punctuation → subject,
+host temporary → place, filename suffix → semantic law after ingress, text
+spelling → grammar role after lexing.
+
+### ftcftw evidence
+
+For every claimed workload: direct native, C-equivalent, Wasm — measure as
+applicable: correctness, compile time, startup, runtime, memory, artifact size.
+No evidence means unknown. Unknown does not mean pass.
+
+---
+
+## deletion order
+
+When solving a problem:
+
+1. delete the concept
+2. consume an existing authoritative fact
+3. expose an existing fact that was hidden
+4. derive the fact
+5. project the fact
+6. generalize an existing relation
+7. select a realization
+8. retain a bounded migration bridge
+9. introduce a new irreducible semantic concept
+
+Adding comes last. Every addition must survive semantic reduction.
+
+---
+
+## semantic reduction
+
+Before adding any identifier, structure, relation, helper, home, flag, status,
+wrapper, enum, source construct, graph field, dnir operation, tool field, or API:
+ask what irreducible meaning remains after decomposing into existing facts.
+
+If none remains: delete it. Do not cosmetically rename it.
+
+Changing one namespace helper into another namespace helper is not reduction.
+Changing an import keyword into a module binding is not reduction.
+Changing a host status integer into a native status integer is not reduction.
+
+---
+
+## host quarantine
+
+Host implementations are trusted for behavior only where explicitly designated
+as oracle. They are not trusted architectural templates.
+
+Treat as contaminated until independently justified: AST node families, visitor
+hierarchies, opcode enums, primitive type enums, parser state flags, method
+flags, boolean query helpers, save/restore lookahead, nullable/sentinel state,
+status integers, exception/result wrappers, namespace utility APIs, module
+loaders, filesystem helper APIs, process wrappers, allocator plumbing, temporary
+value classes, local/temp/register semantic categories, string-key registries,
+source-name identity, hash identity, backend type systems, handwritten grammar
+lists.
+
+Do not ask “How do I port this?” Ask “What observable semantic requirement caused
+this host mechanism to exist?” Then implement the requirement directly.
+
+---
+
+## semantic diff
+
+Every nontrivial change is a semantic transaction. Record:
+
+**before:** authority, ids, facts, worlds, demands, realizations, reconstruction,
+materialization
+
+**after:** same dimensions
+
+Desired changes normally include: authority moved into Idol, duplicate identity
+removed, reconstruction removed, fact preserved farther, realization choice
+widened, materialization removed, runtime dependency removed, foreign semantic
+authority reduced, compiler B frontier advanced.
+
+A change whose semantic diff is effectively zero but whose textual diff is large
+is probably migration, not architectural progress. Label it honestly.
+
+---
+
+## identity · relation · subject · pack · value · place · world
+
+- One semantic id concept. Do not create identity from name, path, span, file,
+  source spelling, hash, pointer, AST node, opcode, instruction, slot, or address.
+- One irreducible meaning has one relation. Facts carry qualification.
+- Subject is semantic, established once by resolver, not argument zero or namespace
+  receiver.
+- Packs preserve id, slot correspondence, order, labels, values, descriptors,
+  provenance, demand. Do not flatten to host arrays.
+- A value is not storage. Do not mint local/temp/stack/heap/register kinds.
+- Create a place only when observable storage is demanded.
+- Authority belongs to world facts, not std/process/filesystem namespaces or imports.
+- **Idol algebra closure** is C0 §67 only. A home supplies context only;
+  a world grants authority; a protocol demands facts; witness ≠ world grant.
+  No trait/impl/interface/vtable ontology. No independent algebra prompt is
+  authority. See `docs/spec/constitution.md` §67.
+
+---
+
+## home · world · protocol · witness · injection
+
+Harnesses must use the admitted algebra — not OO, modules, DI, traits, or
+interfaces:
+
+| role | supplies | does not supply |
+|---|---|---|
+| home | context, reachability, ambient descriptor | ownership, subject, world, capability, method identity |
+| subject | meaning orientation (resolution-owned) | argument-zero or namespace receiver |
+| world | authority for an application | namespace, import, home membership |
+| protocol | relation/fact constraint (`source: read`) | trait, adjective protocol, vtable, impl registry |
+| witness | satisfaction or injection proof | authority, second implementation identity |
+| injection | unique omitted fact when witnessed | hidden guess, path/import priority |
+
+Before `a:b(...)`, apply the colon decision procedure (law.colon.decide). Prefer
+`path:open()`, `file:read()`, `text:len()` over namespace-first spellings when
+the possessed value is the subject.
+
+Protocol satisfaction does not grant world authority. Concrete descriptors
+survive relation constraint parameter and result crossing without boxing or
+vtables. Canonical read constraint is `read`, not `readable` (`law.protocol.one`).
+
+Full law and adversarial controls: `docs/spec/constitution.md` §67
+(`law.gate.protocol`).
+
+---
+
+## run · outcome · evidence
+
+- One semantic run architecture. Do not mint separate kingdoms for execute,
+  capture, popen, shell run, process run unless world/origin/demand/law facts
+  require distinct qualification — not namespace shape.
+- One requested run has one authoritative outcome. Transport completion is not
+  outcome. Evidence supports outcome; evidence is not outcome.
+- A claim is valid only when the requested production boundary actually executed.
+  Missing evidence means unknown. Fail closed.
+
+---
+
+## grammar · lexical law
+
+Grammar is closed unless the constitution changes. Chain:
+
+```text
+source → lexer → token → grammar role → parser recognition → resolver → graph
+```
+
+Never reconstruct grammar from token text after token identity exists.
+Never reconstruct semantics from parser form after resolution exists.
+Handwritten spelling lists are duplicate authority.
+
+Canonical: `"` text, `'` bytes, `#` comment, `value:len()` length, backtick
+reserved. Compatibility retains provenance; it does not train native canonical code.
+
+---
+
+## predicate zero · bridge zero · failure · numbers · dnir · realization
+
+- Reject native helpers whose only job is bool projection of owned facts
+  (has/is/can/exists/valid/ready/supported). Consume the fact directly.
+- One-consumer bindings/wrappers are presumed unnecessary unless multiple
+  consumers, mutation, place, lifetime, effect ordering, or demand boundary
+  requires them.
+- Do not propagate sentinel architecture. Resolve foreign sentinel laws at ingress.
+- Numeric faces are not primitive kingdoms until observable law demands width/law.
+- DNIR is realization projection over the same identities — never opcode-defined
+  program meaning.
+- Prefer graph → demand → compact lawful realization candidates → commitment →
+  machine. Maximum semantic knowledge, minimum physical compiler state.
+
+---
+
+## ftcftw acceptance
+
+Every touched compiler/runtime architecture must answer whether it added
+allocation, boxing, copying, materialization, dynamic dispatch, generic lookup,
+compiler graph state, another IR translation, runtime support, or narrowed layout/
+vectorization/staging/specialization freedom — and whether it helped demand delete
+work earlier or native/Wasm share realization.
+
+A regression requires explicit measured justification. “Cleaner architecture” and
+“more semantic” alone are not sufficient.
+
+---
+
+## wasm
+
+Do not build a permanent Wasm VM ontology beside Idol. Import Wasm law into the
+graph, preserve observable Wasm law, then use ordinary demand/specialization/
+realization/machine. Prioritize stack erasure, memory proof, host-boundary fusion,
+runtime deletion, and layout specialization over cloning a conventional VM.
+
+---
+
+## shc scheduler
+
+Self-host work always asks: what is the earliest production semantic boundary still
+host-owned? Prefer advancing that boundary (`docs/bootstrap.md`).
+
+A valid transfer shows: before (exact host semantic decision), after (exact
+executed Idol semantic decision), next (exact next host boundary).
+
+A `.id` file does not count unless the production compiler executes it as
+authority. A wrapper calling the host does not count. A fixture does not count.
+
+Until repository truth changes, prioritize dependencies of the next frontend
+transfer (lexical identity → grammar role → parser recognition) over broad
+migration work. Do not jump ahead with parallel compiler subsystems.
+
+---
+
+## foreign authority · agent concurrency · anti-drift
+
+Destination: zero foreign **semantic** authority. Foreign physical tools may remain
+as realization when they make no semantic decisions. Never let a temporary bridge
+regain semantic authority.
+
+Each agent owns one semantic boundary. Read claims before editing. Missing fact
+is preferable to shadow identity.
+
+When an error class is discovered: identify the invariant, add positive and
+negative controls, fail closed in gates, derive checks from authoritative facts
+where possible, repair the class not the specimen.
+
+---
+
+## error-class generalization
+
+Never fix only the observed spelling.
+
+| observed | wrong repair | correct repair |
+|---|---|---|
+| one namespace is wrong | ban that namespace | deny namespace-mediated world/semantic authority generally |
+| one status integer caused false success | special-case the function | separate run, completion, outcome, evidence globally |
+| one parser spelling chain exists | replace that chain | grammar role is the only parser classification authority |
+| one source-name reconstruction exists | cache the reconstructed value | preserve upstream semantic fact across the boundary |
+
+Always repair the **class**, never the specimen.
+
+---
+
+## negative space
+
+The key question is often: **what should cease to exist?**
+
+Idol gets FTCFTW by never constructing work demand does not require — not by
+building abstractions and optimizing them away later. Treat removal of storage,
+wrappers, conversions, calls, aggregates, runtime dependencies, pass boundaries,
+and helper APIs as first-class success output.
+
+---
+
+## new-concept admission
+
+Before introducing any new native semantic concept, prove no existing relation,
+descriptor, shape, world, effect, demand, law, origin, or realization expresses
+it — and that it is not source syntax or host history. Otherwise:
+`SEMANTIC-VOCABULARY-BLOCKED`.
+
+---
+
+## no premature success
+
+Never state canonical, self-hosted, ftcftw, zero debt, native, semantic,
+authoritative, closed, or proven without specifying boundary and evidence.
+
+---
+
+## completion review
+
+Before reporting completion, inspect every changed native hunk: subject on each
+call, identity need on each binding, semantic fact behind each boolean, control
+irreducibility, observable mutation, demanded places, namespace authority vs
+organization, helper survival after reduction, graph vs substitute identity,
+demanded commitment, foreign law/provenance, production boundary in tests,
+performance freedom preserved.
+
+---
+
+## mandatory completion report
+
+Report: boundary, before/after authority, ids, facts (retained/added/removed/
+missing), reconstruction (removed/remaining), deletion, world, demand, realization,
+performance, shc frontier before/after, ftcftw cells affected/unknown, evidence
+(production execution, controls, revision, dirty state, aggregate outcome), bridges,
+one exact next blocker. Then stop.
+
+---
+
+## harness behavior
+
+Cursor, Poolside, Pi, Codex, Claude, Devin, Jules, and every other harness consume
+this same semantic orientation. Provider-specific tooling may differ; semantic law
+may not. No harness receives a simplified conventional interpretation. No harness
+treats another harness’s output as semantic authority.
+
+Distinguish: proposal from authority; local pass from integration pass; transport
+completion from requested outcome; textual cleanup from semantic convergence;
+migration from executed shc transfer; architecture from ftcftw evidence.
+
+---
+
+## pool scheduling
+
+Partition by semantic boundary. Prefer complementary lanes (producer, consumer,
+execution frontier, evidence/admission) over several agents doing broad cleanup.
+When a lane discovers an absent upstream fact, publish the requirement — do not
+implement a shadow fact locally. Frontier tasks win unless blocked.
+
+---
+
+## absolute project direction
+
+Idol is not a nicer systems language, Lua with types, Zig syntax made smaller,
+another LLVM frontend, another Wasm VM, or another conventional compiler rewritten
+in `.id`.
+
+Idol is semantic identity + facts + demand + lawful realization freedom.
+
+The compiler should know more while physically doing less. The graph is meaning.
+Demand is need. Realization is physical choice.
+
+---
+
+## absolute failure conditions
+
+Stop if any change introduces: second semantic identity or vocabulary,
+source-name/path/hash identity authority, namespace world authority, module/import
+authority, host status as native outcome, sentinel native state, parser text
+reconstruction, syntax-shaped semantic IR, storage-shaped semantic value,
+backend-shaped semantic relation, fake place/materialization, new runtime machinery
+without demand, new compiler IR for convenience, host abstraction copied without
+reduction, helper added because vocabulary was missing, wrapper preserving duplicate
+concept, broad migration presented as shc progress, benchmark as ftcftw closure,
+fixture as production evidence, local lane pass as integration proof, fallback
+restoring removed semantic authority.
+
+---
+
+## absolute success function
+
+Every successful change pushes toward: fewer authorities, fewer semantic names,
+fewer reconstructed facts, fewer materialized values, fewer allocations/copies/
+dynamic boundaries/runtime obligations/foreign semantic decisions — and toward
+more exact identity continuity, retained facts, demand-driven deletion,
+specialization freedom, direct machine lineage, production logic executed in
+Idol, and ftcftw evidence — until compiler B exists, B builds C, B/C close,
+foreign semantic authority reaches zero, and the realization engine demonstrates
+ftcftw on the declared evidence matrix.
+
+One meaning. One id. One word. One authority. Maximum knowledge. Minimum physical
+state. Demand deletes work. Realization chooses late. Evidence proves truth.

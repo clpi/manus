@@ -1,163 +1,185 @@
-# Idol world invocation law
+# Idol world and run projection
 
-Apply with `docs/spec/host.md` and `docs/spec/source.md`.
+Apply with `docs/spec/host.md`, `docs/spec/source.md`, and C0 §67
+(`law.projection.one`, `law.world.one`, `law.world.grant`, `law.shell.not.world`).
 
-## Law
+This document is normative teaching. It must pass SUBJECT-ONE and OPERATION-ONE
+(`law.doc.teaching`). If it conflicts with C0, C0 wins.
 
-`os` and `io` are **worlds** (authority carriers), not namespaces or runtime
-module tables.
+## One projection algebra
 
-**No `std` anywhere.** The `std` table, namespace, and `std.*` spellings are
-deleted (GAP-157). Vocabulary is layout-projected homes and worlds only.
+World authority, shell interpretation, command values, endpoint I/O, and process
+execution are **ordinary semantic facts** over one application algebra — not
+separate namespace systems.
 
-`args` is an ordinary table under the `os` world — not a host function call,
-not a separate root singleton, not `environment`.
+```text
+relation · projection · subject · operands · result demand · descriptor · law
+· world requirement · world witness · effect · origin · provenance
+```
 
-### Forbidden
+Physical realization comes later.
+
+## Worlds are authority, not namespaces
+
+A **world** grants irreducible authority required by a relation application.
+
+Worlds are **not**:
+
+- namespace imports
+- module tables
+- organizational receivers (`os.foo`, `io.bar`)
+- method lookup targets
+
+Do not bundle unrelated authority merely because a host API bundled it. Avoid
+canonical monolithic `os` and `io` worlds when finer authority facts suffice:
+
+```text
+filesystem · process · environment · clock · network · device
+```
+
+World availability **validates** authority after semantic intent is resolved.
+World availability must **never** choose conversion target, parser, relation, or
+descriptor.
+
+## Ambient world injection
+
+A relation declares its world requirement. Current context supplies grants.
+
+When exactly one compatible grant exists, inject the witness — source need not
+name the world:
+
+```id
+file = path:open()
+```
+
+Graph facts: `open` subject `path`, world filesystem, witness `W`, result `file`.
+
+Forbidden namespace receivers:
+
+```id
+fs.open(path)
+io.open(path)
+os.open(path)
+```
+
+## Ambient context values
+
+When unique world context projects these values, prefer direct use:
+
+```id
+args[1]
+env["KEY"]
+stdout:write(text)
+clock:now()
+stdin:read()
+```
+
+over organizational spellings:
+
+```id
+os.args[1]
+os.env["KEY"]
+io:write(text)
+```
+
+**`stdout` is a possessed endpoint subject** — legitimate receiver for `write`.
+**`io` is organizational authority** — not a substitute subject.
+
+Bootstrap ingress may still use `io:read()` in gate transport until root
+projection executes; that is not canonical teaching.
+
+## Subject-first path and file relations
+
+Path and file values possess relations directly:
+
+```id
+text = path:read()
+path:open("w"):write(text)
+src:copy(dst)
+```
+
+Audit `path:exists()` under PREDICATE-ZERO (`law.predicate.zero`): if existence
+merely routes control flow, consume the richer path/state/result relation instead
+of preserving a boolean helper API.
+
+Forbidden on new canonical lines:
 
 ```id
 os.args()
 os.getenv(name)
 environment["KEY"]
-environment:at("KEY")
 io.read("*a")
 io.write(data)
 io.open(path, "r")
 os.exit(1)
 os.execute(cmd)
-std.io.open(path)
-std.os.getenv(name)
-@c.emit("...")
-@comp.c.emit("...")
-lua_io_read(...)
-[[ long bracket strings ]]
+std.*
+lib.*
+process.run(...)
+process.capture(...)
+process.exit(...)
+process = lib.process
 ```
 
-Dot before `(` on a world name is namespace-method syntax — it erases world
-authority.
+## Shell and process (SHELL-NOT-WORLD)
 
-Bare root spellings without world grounding when `os` world is required:
+Shell is **interpretation law**. Process is **authority**. Command is a **semantic
+value**. Do not combine them into one namespace.
 
-```id
-args[1]          # when meaning host argv — use os.args[1]
-mode = getenv(x) # use os.env[x]
+```text
+shell law + command structure → command value
+command:run() requires process world
 ```
 
-Foreign realization (`@c*`, `@comp.c*`, explicit `lua_*` spellings) in Idol
-source is forbidden. The compiler owns lowering; source states semantic demand
-only.
-
-### Allowed — `os` world table projection
-
-```id
-command = os.args[1]
-target = os.args[2]
-
-mode = os.env["IDOLTREE"]
-flag = os.env(key)
-os.env["KEY"] = value
-os.env(key) = value
-```
-
-### Allowed — path subject-first relations
-
-Path values possess fs relations; read through subject-first method chains:
-
-```id
-path:read()
-    :match(pattern)
-path:read()
-    :len() >= min
-scratch:open("w")
-src:copy(dst)
-path:exists()
-path:remove()
-```
-
-Gate path-boundary helpers curry the path string first, then the criterion:
-
-```id
-len(path) = (min: i64)
-    path:read()
-        :len() >= min
-
-audit(path) = (pattern: str)
-    path:read()
-        :match(pattern)
-
-hit(path) = (pattern: str)
-    path:read()
-        :match(pattern)
-
-if !len(proof["resident"])(32)
-if code == 0 and !audit(proof["resident"])("path:read%(")
-if code == 0 and hit(proof["remove"])("fs:")
-```
-
-Never flat `len(path, min)`, `audit(path, pattern)`, `hit(path, pattern)`, or
-`len: bool = (path, min)` bridge bindings. Break read chains across lines — no
-`:read():match` on one line, no `text = path:read()` transitive bindings.
-
-Prefix `!` is canonical negation — `if !expr`, `and !expr`, `(!expr)`. Never
-`if not`, `and not`, `or not`, or `(not expr)` on added teaching lines.
-
-`io:read()` with no path remains the stdin endpoint for gate transport only.
-
-### Allowed — `io` world subject-first relations
-
-```id
-line = io:read()
-io:write(text)
-```
-
-Possessed handles keep subject-first edges:
-
-```id
-f:read("a")
-f:close()
-```
-
-## Gate transport (Idol only)
-
-Diff and IDOLGATE gates read input through world relations only — no shell
-wrappers, no `gate.sh`, no `gatepath`:
-
-```id
-path = os.args[1]
-text = io:read()
-if path:len() > 0
-    text = io:read(path)
-```
-
-Process census uses `command` + `c:open("r")` from `lib/process.id` — never
-`popen` / `io:popen` spellings.
-
-
-`popen` is not an Idol relation. Open a stream across the process boundary on
-the command subject:
+`capture` is usually **run + output demand**, not a second execution relation.
 
 ```id
 c = command("git status")
 stream = c:open("r")
-text = stream:read("*a")
+text = stream:read()
 stream:close()
 ```
 
-Wrong:
+Not `io.popen`, not `process.capture`.
+
+## Protocol constraints are projections
+
+Relation constraints demand relation facts — not adjective protocols:
 
 ```id
-f = io.popen("git status", "r")
-f = io:popen(cmd, "r")
+consume = (source: read)
+    source:read()
 ```
 
-Implementation vocabulary: `lib/process.id` (`command`, `capture`).
+Not `source: readable`. Protocol satisfaction does **not** grant world authority.
+Relation witness and world witness are separate.
 
+## Gate transport (bootstrap only)
+
+Gate scripts read stdin and optional path args through world relations — no shell
+wrappers. Curried gate helpers (`len(path)(min)`) are **migration transport**,
+not stylistic law — genuine curry only when the intermediate callable has semantic
+value (`law.curry.structural`).
+
+```id
+path = args[1]
+text = stdin:read()
+if path:len() > 0
+    text = path:read()
+```
+
+## STD-ZERO / LIB-ZERO
+
+No canonical `std.*` or `lib.*` semantic hop. Repository `lib/` path is bootstrap
+provenance only. If tooling cannot reach a binding without `lib.*`:
+`SOURCE-PROJECTION-BLOCKED` — fix reachability, do not canonize the workaround.
 
 ## Enforcement
 
-- `scripts/idiomgate.id` — `law.world.dot` + foreign-zero firewall on added lines
-- `gates/host.id` — same on staged additions
-- `scripts/semanticgate.id` — monotone baselines; only descend
+- `law.gate.projection` — REDUNDANT-PROJECTION-ZERO, FROM-ZERO, STD-ZERO,
+  LIB-ZERO, WORLD-NAMESPACE-ZERO, PROTOCOL-ADJECTIVE-ZERO
+- `gates/idiom.id`, `gates/host.id` — migration pressure on added lines
+- Graph verdicts when GAP-124 closes
 
 ## Deletion gate
 

@@ -99,7 +99,7 @@ Normalized assessment — not claimed repository counters.
 |---|---|---|---|---|
 | Language/semantic closure | settle syntax/features | one semantic authority + closed source law | ~90% design / lower implementation | ↑↑ |
 | Naming convergence | lowercase/no snake/camel | one meaning → one native word; qualifiers → facts | strong ratchet, corpus incomplete | ↑↑ |
-| Canonical source | `.duo`, later `.id` | Idol command + `.id` suffix; Idsem = semantic law | suffix migration largely landed | ↑↑ |
+| Canonical source | `.duo`, later `.id` | Idol command + `.id` suffix; constitution is semantic law | suffix migration largely landed | ↑↑ |
 | Canonicality gate quality | lexical grep / convention | fail-closed positive controls + semantic classifications | strong for **changed** lines | ↑↑ |
 | Canonical corpus debt | inferred from green gate | entire existing corpus satisfies current law | far from zero | ↑, lagging |
 | Semantic application authority | schema / call metadata | exact graph relation/subject/argument/result facts | substantial progress | ↑↑↑ |
@@ -124,7 +124,7 @@ Normalized assessment — not claimed repository counters.
 
 1. Lowercase / no underscore / camel.
 2. NAME-ONE — one irreducible meaning, one word; qualifiers → facts.
-3. Project identity: Duo → Duon → **Idsem** (semantic language) + **Idol**
+3. Project identity: Duo → Duon → **Idol** (`idol`, `.id`, constitution §67 algebra)
    (command, repository, `.id`). Historical names are provenance only when
    required (`clpi/duo`, `duo` bootstrap executable, `.duo` paths).
 
@@ -179,8 +179,8 @@ clean HEAD, for example:
 - `scripts/debtledger.id` — historical canonical-surface debt (not gate pass)
 - `scripts/ftcftwledger.id` — performance claim boundaries
 - `scripts/shcledger.id` — self-host authority stages
-- `scripts/semanticgate.id` — staged-index migration censuses
-- `scripts/idiomgate.id` — added-line canonicality
+- `gates/architecture.id` — staged-index migration censuses
+- `gates/idiom.id` — added-line canonicality
 
 Inspect committed evidence artifacts for revision, dirty state, and aggregate
 outcome. A proof bundle at an older revision does not certify current HEAD.

@@ -30,8 +30,8 @@ file is right and this projection must be repaired.
   the Idol compiler. The extension only shells out to the existing
   repository-native `duo` binary to speak JSON-RPC to the project's own MCP
   servers.
-- It does not bypass the gates. `skills/idol-dev` wraps `scripts/idiomgate.id`
-  and `scripts/semanticgate.id`; it never suppresses a finding.
+- It does not bypass the gates. `skills/idol-dev` wraps `gates/idiom.id`
+  and `gates/architecture.id`; it never suppresses a finding.
 - It does not replace claim coordination. Claim acquire/release is forwarded to
   the `duo-bench` MCP server (`duo_dev_claim_acquire` etc.), the same authority
   Cursor and Codex use.

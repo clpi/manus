@@ -1,0 +1,8 @@
+# gates/preflight.id — DEPRECATED. Commit admission is .githooks/pre-commit (shell orchestrator).
+#
+# Idol scan gates run on the direct backend only. Git/process orchestration stays
+# in the hook; this file remains as a negative control if invoked by mistake.
+
+main: i64 = ()
+    print("gates/preflight.id is retired — use .githooks/pre-commit (direct backend, no --backend=c)")
+    1

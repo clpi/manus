@@ -1,0 +1,55 @@
+# gates/bootstrap — direct-native capture helpers for gate scripts (GAP-155 ingress).
+#
+# gatecap(shellline) and os.execute(shellline) lower to idol_process_capture /
+# idol_os_execute in src/idol_io_bootstrap.c on the direct backend only.
+# No command:any, no :open, no --backend=c.
+
+capture: str = (shellline: str)
+    gatecap(shellline)
+
+chomp: str = (text: str)
+    if text == nil or text:len() == 0
+        return ""
+    n = text:len()
+    while n > 0
+        c = text:byte(n)
+        if c != 10 and c != 13 and c != 32 and c != 9
+            break
+        n -= 1
+    text:sub(1, n)
+
+cap: str = (shellline: str)
+    chomp(capture(shellline))
+
+run: i64 = (shellline: str)
+    rc = os.execute(shellline)
+    if rc == 0
+        return 0
+    1
+
+halt: void = (code: i64)
+    os.exit(code)
+
+digits: i64 = (text: str)
+    if text == nil or text:len() == 0
+        return -1
+    v = 0
+    i = 1
+    n = text:len()
+    while i <= n
+        c = text:sub(i, i)
+        if c >= "0" and c <= "9"
+            v = v * 10 + (c:byte() - 48)
+            i += 1
+        else
+            if c == " " or c == "\n" or c == "\r" or c == "\t"
+                i += 1
+            else
+                return -1
+    v
+
+count: i64 = (cmd: str)
+    digits(cap(cmd))
+
+shellstatus: i64 = (cmd: str)
+    count("( {cmd} ) >/dev/null 2>&1; echo $?")

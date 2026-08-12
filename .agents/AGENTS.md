@@ -19,7 +19,7 @@ bootstrap transport until `docs/bootstrap.md` credits the authority transfer.
 
 **Gate scan law:** diff/path boundaries are curried symbols —
 `scan(diff)(body)`, never `scandiff` or `scan("diff")`. See root `AGENTS.md`
-§ Gate scan boundaries and `scripts/idiomgate.id` header.
+§ Gate scan boundaries and `gates/idiom.id` header.
 
 Do not treat this directory as a semantic registry. `std` is migration
 distribution, `std.script` is frozen debt, and neither an agent document nor a

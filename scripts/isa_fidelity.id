@@ -4,7 +4,7 @@
 #   > checked against an oracle assembler AND hardware — continuous, automatic.
 #
 # This is the encode half, generated and oracle-checked. Every row of
-# `std.target.arm64.rows` is expanded into sixteen operand tuples, encoded by
+# `arm64.rows` is expanded into sixteen operand tuples, encoded by
 # the descriptor derivation, rendered as assembler text, handed to `clang`, and
 # the resulting object is disassembled and compared WORD FOR WORD. The oracle
 # is the external assembler, never this repository's own encoder — a generated
@@ -48,55 +48,70 @@
 # own initializer then could not find (`duo_g_tuples` declared,
 # `duo_g__tuples` assigned), which is a codegen defect worth its own
 # reproduction and !worth carrying here.
-each(): i64
+
+capture: str = (shellline: str)
+    gatecap(shellline)
+
+chomp: str = (text: str)
+    if text == nil or text:len() == 0
+        return ""
+    n = text:len()
+    while n > 0
+        c = text:byte(n)
+        if c != 10 and c != 13 and c != 32 and c != 9
+            break
+        n -= 1
+    text:sub(1, n)
+
+cap: str = (shellline: str)
+    chomp(gatecap(shellline))
+
+status: i64 = (cmd: str)
+    cap("( {cmd} ) >/dev/null 2>&1; echo $?"):to(i64)
+
+each: i64 = ()
     16
-end
 
-work(): str
+work: str = ()
     "/tmp/duo_isa"
-end
 
-sh(cmd: str): str
-    root = std.script.getenv("DUO_ROOT", ".")
-    std.script.capture("cd {root} && {cmd}")
-end
+sh: str = (cmd: str)
+    root = os.env["DUO_ROOT"] or "."
+    capture("cd {root} && {cmd}")
 
-hexof(v: i64): str
+hexof: str = (v: i64)
     digits = "0123456789abcdef"
     out: str = ""
     j: i64 = 0
     while j < 8
         nib = (v >> ((7 - j) * 4)) & 15
-        out = out .. digits:sub(nib + 1, nib + 1)
+        out = "{out}{digits:sub(nib + 1, nib + 1)}"
         j += 1
-    end
     out
-end
 
 # Sixteen registers, none of them 31. x31 reads as xzr in some positions and sp
 # in others, so an operand sweep that includes it is asking the assembler a
 # different question than the one the descriptor answers.
-regs(): any
+regs: any = ()
     { 0, 1, 3, 5, 9, 12, 17, 20, 24, 28, 30, 2, 7, 15, 21, 29 }
-end
 
 # One operand, for field `f` of width `w`, on tuple `t`. Register fields walk
 # the register list at four different offsets so d, n, m and a are rarely
 # equal — an encoder that ORs two fields into the same bits looks correct when
 # every operand is the same number.
-pick(f: str, w: i64, t: i64): i64
+pick: i64 = (f: str, w: i64, t: i64)
     v: i64 = 0
     if f == "d"
         v = regs()[(t % 16) + 1]
-    elseif f == "n"
+    elif f == "n"
         v = regs()[((t + 5) % 16) + 1]
-    elseif f == "m"
+    elif f == "m"
         v = regs()[((t + 9) % 16) + 1]
-    elseif f == "a"
+    elif f == "a"
         v = regs()[((t + 13) % 16) + 1]
-    elseif f == "h"
+    elif f == "h"
         v = t % 4
-    elseif f == "c"
+    elif f == "c"
         v = t % 16
     else
         # Immediates: both ends of the field, then a spread across it. A field
@@ -105,107 +120,91 @@ pick(f: str, w: i64, t: i64): i64
         v = (t * 2731) % (top + 1)
         if t == 0
             v = 0
-        end
         if t == 1
             v = top
-        end
-    end
     v
-end
 
 # Expand one row into its tuples, appending assembler text to `asmout` and the
 # expected words to `want`. `want` and `whose` are filled in place; the text
 # comes back as the value, because one of the three has to.
-expand(row: str, asmout: str, want: any, whose: any): str
+expand: str = (row: str, asmout: str, want: any, whose: any)
     out = asmout
-    lay = std.target.arm64.layout(row)
-    nm = std.target.arm64.name(row)
+    lay = arm64:layout(row)
+    nm = arm64:name(row)
     t: i64 = 0
     while t < each()
         ops = {}
-        if #lay > 0
+        if lay:len() > 0
             for i, fact in lay:split(" ")
-                ops[std.target.arm64.holds(fact)] =
-                    pick(std.target.arm64.holds(fact), std.target.arm64.width(fact), t)
-            end
-        end
-        line = std.target.arm64.text(row, ops)
-        want[#want + 1] = std.target.arm64.encode(row, ops)
-        whose[#whose + 1] = "{nm}  {line}"
+                ops[arm64:holds(fact)] =
+                    pick(arm64:holds(fact), arm64:width(fact), t)
+        line = arm64:text(row, ops)
+        want[want:len() + 1] = arm64:encode(row, ops)
+        whose[whose:len() + 1] = "{nm}  {line}"
         out = "{out}\t{line}\n"
         t += 1
-    end
     out
-end
 
 # Assemble the generated text and read back what the oracle actually encoded.
 # Returns the disassembled words, one hex string per line. An empty result
 # means clang or objdump could not run, which is exit 3 and !a pass.
-oracle(asmtext: str, tag: str): any
+oracle: any = (asmtext: str, tag: str)
     wd = work()
     src = "{wd}/{tag}.s"
     obj = "{wd}/{tag}.o"
-    # FACE-CALL, and !for style: `io.write(handle, body)` resolves to the
-    # Lua-compat `io` whose `write` takes only values, so it printed 720 lines
-    # of assembler to stdout and left the file empty. The gate then compared 0
+    # FACE-CALL, and !for style: `handle:write(body)` on the Lua-compat `io`
+    # whose `write` takes only values, so it printed 720 lines
     # oracle words against 720 expected and exited 3 # honest, but for the
     # wrong reason. Holding the handle and calling on it is the spelling that
     # reaches the file.
-    handle = io.open(src, "w")
+    handle = src:open("w")
     handle:write(".text\n.globl _isaprobe\n_isaprobe:\n{asmtext}")
     handle:close()
     # The integrated assembler cross-assembles aarch64 from any host, so the
     # gate is not macOS-only even though this is where it was written.
     trip = "arm64-apple-macos"
-    if std.script.chomp(sh("uname -s")) != "Darwin"
+    if chomp(sh("uname -s")) != "Darwin"
         trip = "aarch64-linux-gnu"
-    end
     out = {}
-    if std.script.status("clang -c -target {trip} -o {obj} {src} >/dev/null 2>&1") == 0
+    if status("clang -c -target {trip} -o {obj} {src} >/dev/null 2>&1") == 0
         # `cut -f1` keeps the address-and-word column (objdump puts a tab
         # before the mnemonic), the sed drops the address, and `tr` removes the
         # padding. Written without awk on purpose: an awk program needs braces,
         # and braces in a Duo string are interpolation.
         raw = sh("objdump -d {obj} | cut -f1 | sed -n -e 's/^ *[0-9a-f]*: *//p' | tr -d ' '")
         out = raw:split("\n")
-    end
     out
-end
 
 # One full pass: descriptors in, disagreement count out. -1 means the oracle
 # did not run at all. `show` is false for the controls, which are SUPPOSED to
 # disagree and would otherwise bury the report.
-sweep(rowset: any, tag: str, show: bool): i64
+sweep: i64 = (rowset: any, tag: str, show: bool)
     want = {}
     whose = {}
     asmtext = ""
     for i, row in rowset
         asmtext = expand(row, asmtext, want, whose)
-    end
 
     got = oracle(asmtext, tag)
     lines = {}
     for i, raw in got
-        h = std.script.chomp(raw)
-        if #h == 8
-            lines[#lines + 1] = h
-        end
-    end
+        h = chomp(raw)
+        if h:len() == 8
+            lines[lines:len() + 1] = h
 
     outcome: i64 = -1
-    if #lines != #want
+    if lines:len() != want:len()
         if show
-            a = to(str)(#lines)
-            b = to(str)(#want)
+            a = lines:len():to(str)
+            b = want:len():to(str)
             print("isa_fidelity: FAIL — the oracle returned {a} words for {b} instructions;")
             print("  clang or objdump did not run, and an unjudged sweep is not a clean one")
-        end
     else
         bad: i64 = 0
         shown: i64 = 0
         for i, h in lines
             mine = want[i]
-            theirs = std.target.arm64.hex(h)
+            theirs = arm64:hex(h)
             if mine != theirs
                 bad += 1
                 if show and shown < 12
@@ -214,25 +213,19 @@ sweep(rowset: any, tag: str, show: bool): i64
                     print("  MISMATCH  {which}")
                     print("            descriptor {ours}   oracle {h}")
                     shown += 1
-                end
-            end
-        end
         outcome = bad
-    end
     outcome
-end
 
 # A single row's worth of rows, so a control can be swept on its own.
-only(row: str): any
+only: any = (row: str)
     { row }
-end
 
-main(): i64
+main: i64 = ()
     wd = work()
-    std.script.run("rm -rf {wd} && mkdir -p {wd}")
+    status("rm -rf {wd} && mkdir -p {wd}")
 
-    rowset = std.target.arm64.rows()
-    nrows = #rowset
+    rowset = arm64:rows()
+    nrows = rowset:len()
     code: i64 = 0
 
     if nrows == 0
@@ -240,8 +233,8 @@ main(): i64
         code = 3
     else
         n = nrows:to(str)
-        tup = to(str)(each())
-        total = to(str)(nrows * each())
+        tup = each():to(str)
+        total = nrows * each():to(str)
         print("ISA fidelity — descriptors vs clang, byte for byte (Pass 104 G-D3)")
         print("  descriptors   {n} instruction forms")
         print("  tuples        {tup} operand combinations each — {total} instructions")
@@ -271,24 +264,24 @@ main(): i64
         cb = cbase:to(str)
         cs = cshift:to(str)
         cw = cswap:to(str)
-        agreed = to(str)(nrows * each() - bad)
+        agreed = nrows * each() - bad:to(str)
         b = bad:to(str)
 
         if bad < 0
             code = 3
-        elseif cbase != each()
+        elif cbase != each()
             print("isa_fidelity: FAIL — the corrupted-base control was caught {cb} times of {tup};")
             print("  a wrong base word must fail every tuple, so the comparison is not comparing")
             code = 3
-        elseif cshift < 1
+        elif cshift < 1
             print("isa_fidelity: FAIL — the shifted-field control was never caught;")
             print("  the encoder is not reading the layout's bit positions")
             code = 3
-        elseif cswap < 1
+        elif cswap < 1
             print("isa_fidelity: FAIL — the swapped-field control was never caught;")
             print("  operand identity is not reaching the encoding")
             code = 3
-        elseif bad > 0
+        elif bad > 0
             print("  controls      corrupted base {cb}/{tup} · shifted field {cs} · swapped fields {cw}")
             print("")
             print("  agree         {agreed}")
@@ -302,7 +295,4 @@ main(): i64
             print("")
             print("isa_fidelity: PASS")
             code = 0
-        end
-    end
     code
-end

@@ -283,7 +283,7 @@ std.mcp.register_tool("duo_agent_gaps_update", {
 end)
 
 std.mcp.register_tool("duo_agent_session_start", {
-    description = "Session bootstrap: machine-readable dev control plane + coordination excerpt + gaps",
+    description = "Session bootstrap: dev control plane + INFER-ONE + seam audit + coordination + gaps",
     type = "object",
     properties = {
         agent_id = { type = "string" },
@@ -300,6 +300,9 @@ std.mcp.register_tool("duo_agent_session_start", {
     std.json.encode({
         agent_id = agent,
         dev_control_plane = dev_json,
+        infer_one = shared.infer_one_context(),
+        harness_seams = shared.harness_seams_context(),
+        harness_context = shared.harness_context(),
         coordination_path = shared.coordpath,
         canonical_index_path = shared.canonpath,
         open_p0_count = open_count,

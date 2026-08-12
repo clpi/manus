@@ -1,7 +1,7 @@
 # Agent Alignment Compass
 
 This file is a short priority router. It is not language law and must not grow
-into a second specification. Start at `AGENTS.md` (Idsem durable orientation +
+into a second specification. Start at `AGENTS.md` (Idol durable orientation +
 mechanical preflight); it routes to the sole law, this priority projection,
 the current production ledger, and live ownership.
 The constitution is structured law documentation, not an implementation
@@ -37,7 +37,7 @@ current canonical `.id` source
 
 The destination is 100% self-hosted canonical Idol: public command identity
 `idol`, source suffix `.id`, and repository identity `idollang/idol`. A `.id`
-filename does not transfer authority. Earlier Idol, Duo, and Duon names,
+filename does not transfer authority. Historical Duo and Duon names,
 historical `.id` source, exact physical `duo` tools, generated projections,
 epoch-1 syntax, C-backed proofs, and Idol wrappers over Zig owners remain
 migration or bootstrap debt.

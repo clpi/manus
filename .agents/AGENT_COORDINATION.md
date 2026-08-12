@@ -64,3 +64,15 @@ counts or translate a host module line for line.
 4. Positive-control every zero and report the inner requested outcome.
 5. Never repair an integration failure by restoring a shadow authority another
    owner removed.
+
+## Fact handoffs (`law.coordination.fact`)
+
+When lane A needs a fact owned by lane B:
+
+- record needed fact, current producer, consumer, blocking interface, owner
+- do not duplicate the fact locally or reconstruct it from names/paths/text
+- schedule work on producer→consumer chains, not directories
+- stop on ambiguity and file a gap rather than invent helper semantics
+
+Claim semantic boundaries as well as paths. Integration state outranks
+branch-local success.

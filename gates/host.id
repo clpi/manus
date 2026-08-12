@@ -139,15 +139,15 @@ strip: str = (line: str)
         i += 1
     out
 
-readable: i64 = (path: str, no: i64, code: str)
+readscan: i64 = (path: str, no: i64, code: str)
     hits = 0
-    hits += hostrow(path, no, code, "host.read.colon", "io:read(", "law.readable", "stdin:read() or path:read() — readable protocol on the subject; never io:read")
-    hits += hostrow(path, no, code, "host.read", "io.read(", "law.readable", "stdin:read() or path:read() — never io.read")
+    hits += hostrow(path, no, code, "host.read.colon", "io:read(", "law.relation.read", "stdin:read() or path:read() — read relation on subject; never io:read")
+    hits += hostrow(path, no, code, "host.read", "io.read(", "law.relation.read", "stdin:read() or path:read() — never io.read")
     hits
 
 audit = (path: str, no: i64, line: str): i64
     code = strip(line)
-    hits = readable(path, no, code)
+    hits = readscan(path, no, code)
     if ingress(path)
         return hits
     hits += hostrules(path, no, code)
@@ -183,13 +183,14 @@ scan: i64 = (body: str)
     path = ""
     no = 0
     line = ""
+    nl = string.char(10)
     n = body:len()
     i = 1
     while i <= n + 1
-        c = "\n"
+        c = nl
         if i <= n
             c = body:sub(i, i)
-        if c == "\n"
+        if c == nl
             if head(line)
                 path = line:sub(7, line:len())
                 no = 0

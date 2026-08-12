@@ -1,4 +1,5 @@
-# clock home — epoch seconds and formatted stamps at world boundary.
+# clock home — epoch and formatted observation at clock world boundary.
+# os.time / os.date are foreign ingress (origin/provenance) until clock world executes.
 
 now: i64 = ()
     os.time()
@@ -6,5 +7,5 @@ now: i64 = ()
 utc: str = ()
     os.date("!%Y-%m-%dT%H:%m:%SZ")
 
-coord: str = ()
+stamp: str = ()
     os.date("%Y-%m-%d %H:%m:%S")
