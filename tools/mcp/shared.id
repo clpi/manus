@@ -792,7 +792,7 @@ fun exponential_evaluate(code: str, file_path: str): any
             kind = "exponential_opportunity",
             line = dispatch_line,
             construct = "@comp.select / @comp.product",
-            rationale = "Runtime type-string branching ({tostring(dispatch_hits)} arms) collapses to a compile-time type dispatch."
+            rationale = "Runtime type-string branching ({dispatch_hits:to(str)} arms) collapses to a compile-time type dispatch."
             multiplier = "O(branches -> 0 runtime cost)",
         })
     end
