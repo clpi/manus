@@ -426,7 +426,7 @@ std.mcp.register_tool("duo_file_finding", {
     required = { "kind", "title", "detail", "priority" },
 }, fun(args)
     coord_path = shared.coordpath
-    ts = os.date("!%Y-%m-%dT%H:%M:%SZ")
+    ts = shared.utc()
     fp_line = ""
     if args.file_path and args.file_path ~= ""
         fp_line = "\\n  file: {args.file_path}"
@@ -482,7 +482,7 @@ std.mcp.register_tool("duo_grammar_spec_update", {
 }, fun(args)
     spec_path = "{shared.root}/docs/GRAMMAR_SPEC.md"
     existing = std.fs.read_file(spec_path) or ""
-    ts = os.date("!%Y-%m-%dT%H:%M:%SZ")
+    ts = shared.utc()
     entry = "\\n\\n## Rule: {(args.rule_id or \"\")} [{(args.status or \"accepted\")}]\\n### {(args.title or \"\")}\\n_Updated: {ts}_\\n\\n{(args.content or \"\")}\\n"
     std.fs.write_file(spec_path, "{existing}{entry}")
     std.json.encode({ appended = true, rule_id = args.rule_id, status = args.status })

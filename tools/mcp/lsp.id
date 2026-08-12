@@ -313,8 +313,8 @@ std.mcp.register_tool("duo_grammar_spec_update", "Append a grammar rule changelo
         return std.json.encode({ kind = "grammar.update", ok = false, path = gpath, reason = "grammar spec missing; create docs/GRAMMAR_SPEC.md first" })
     end
     content = std.fs.read_file(gpath)
-    date = os.date("%Y-%m-%d")
-    entry = "| {date} | {args.rule_id} | {args.status}: {args.detail} |\\n"
+    date = clock.utc():sub(1, 10)
+    entry = "| {date} | {args.rule_id} | {args.status}: {args.detail} |\n"
     marker = "## Changelog\n\n| Date | Rule | Change |\n| --- | --- | --- |\n"
     if string.find(content, marker)
         content = "{string.gsub(content, marker, marker}{entry, 1)}"

@@ -62,7 +62,7 @@ pub fn build(b: *std.Build) void {
     // G11 — the language census ratchet. A number nobody runs is a number that
     // drifts, which is how "no language but Duo" stayed a slogan instead of a
     // list of twelve files.
-    const census_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/language_census.id" });
+    const census_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=c", "scripts/language_census.id" });
     census_cmd.setCwd(b.path("."));
     census_cmd.step.dependOn(b.getInstallStep());
     const census_step = b.step("language-census", "G11: count tracked non-Duo source; ratchets sh/py, js and zig");
@@ -74,13 +74,13 @@ pub fn build(b: *std.Build) void {
     // condition, or CI oracle -- and anything else is a violation. Rules live in
     // docs/spec/foreign.md, the same no-silent-default mechanism corpus.md uses
     // for .id.
-    const foreign_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/foreign_census.id" });
+    const foreign_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=c", "scripts/foreign_census.id" });
     foreign_cmd.setCwd(b.path("."));
     foreign_cmd.step.dependOn(b.getInstallStep());
     const foreign_step = b.step("foreign-census", "U8: every foreign file classified ledger or oracle; ratchets violations");
     foreign_step.dependOn(&foreign_cmd.step);
 
-    const embed_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/embedledger.id" });
+    const embed_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=c", "scripts/embedledger.id" });
     embed_cmd.setCwd(b.path("."));
     embed_cmd.step.dependOn(b.getInstallStep());
     const embed_step = b.step("embed-ledger", "Embedded @c audit; enforce zero sites for self-hosting");
@@ -397,7 +397,7 @@ pub fn build(b: *std.Build) void {
     const cfloor_step = b.step("c-floor", "constitution §47: the C-equivalent realization is a costed candidate; plan vs measurement");
     cfloor_step.dependOn(&cfloor_cmd.step);
 
-    const ftcftw_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/ftcftwledger.id" });
+    const ftcftw_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=c", "scripts/ftcftwledger.id" });
     ftcftw_cmd.setCwd(b.path("."));
     ftcftw_cmd.step.dependOn(b.getInstallStep());
     const ftcftw_step = b.step("ftcftw-ledger", "law.project.ftcftw: Idol-only native > c-equivalent > wasm evidence chain index");
@@ -748,6 +748,13 @@ pub fn build(b: *std.Build) void {
     semantic_proof_cmd.setCwd(b.path("."));
     const semantic_proof_step = b.step("semantic-proof", "SH-10: proof suite orchestrator and sub-proof routers (static check)");
     semantic_proof_step.dependOn(&semantic_proof_cmd.step);
+
+    const closure_proof_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=c", "scripts/proof/closure.id" });
+    closure_proof_cmd.step.dependOn(b.getInstallStep());
+    closure_proof_cmd.setCwd(b.path("."));
+    const closure_proof_step = b.step("closure-proof", "SHC + FTCFTW: semantic proof, ftcftw contracts, shc cheap gates at HEAD");
+    closure_proof_step.dependOn(&closure_proof_cmd.step);
+    closure_proof_step.dependOn(&semantic_proof_cmd.step);
 
     const direct_link_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/proof/module.id" });
     direct_link_cmd.step.dependOn(b.getInstallStep());

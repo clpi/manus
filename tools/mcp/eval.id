@@ -125,7 +125,7 @@ fun detect_op_families(records_csv: str): str
                     prefixes[pre] = cur
                     cc = counts[pre]
                     if cc == nil then cc = "0" end
-                    counts[pre] = tostring(tonumber(cc) + 1)
+                    counts[pre] = (tonumber(cc) + 1):to(str)
                 end
             end
         end
