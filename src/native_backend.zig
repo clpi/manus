@@ -3802,6 +3802,12 @@ fn emitMachOArm64Object(alloc: std.mem.Allocator, text: []const u8, cstring: []c
     const strtab = try buildStringTable(alloc, symbols);
     defer alloc.free(strtab);
 
+    // Relocation entries live in the file between __text and __cstring but not
+    // in the VM layout. llvm-objdump and ld reject LC_SEGMENT_64 when filesize >
+    // vmsize, which large gate modules hit once adrp/add relocations accumulate.
+    const segment_filesize = symoff - text_offset;
+    const segment_vmsize = @max(text.len + cstring.len + bss_size, segment_filesize);
+
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(alloc);
 
@@ -3820,9 +3826,9 @@ fn emitMachOArm64Object(alloc: std.mem.Allocator, text: []const u8, cstring: []c
     try appendU32(&out, alloc, @intCast(segment_size + section_size * nsects));
     try appendName16(&out, alloc, "");
     try appendU64(&out, alloc, 0); // vmaddr
-    try appendU64(&out, alloc, text.len + cstring.len + bss_size); // vmsize (bss is zerofill: VM only)
+    try appendU64(&out, alloc, segment_vmsize); // vmsize
     try appendU64(&out, alloc, text_offset); // fileoff
-    try appendU64(&out, alloc, symoff - text_offset); // filesize: section data + their relocations
+    try appendU64(&out, alloc, segment_filesize); // filesize: section data + their relocations
     try appendU32(&out, alloc, 7); // maxprot
     try appendU32(&out, alloc, 5); // initprot
     try appendU32(&out, alloc, nsects);
