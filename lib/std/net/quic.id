@@ -104,24 +104,24 @@ quic_stream_write(stream: any, data: any): any
 
     # Add to send buffer
     for byte in data
-        stream.send_buffer[#stream.send_buffer + 1] = byte
+        stream.send_buffer[stream:len().send_buffer + 1] = byte
     end
-    stream.send_offset = stream.send_offset + #data
+    stream.send_offset = stream.send_offset + data:len()
 
     # Would send STREAM frame
     {
         ok = true,
-        bytes_sent = #data,
+        bytes_sent = data:len(),
     }
 end
 
 quic_stream_read(stream: any, max_bytes: i64): any
-    if #stream.recv_buffer == 0
+    if stream:len().recv_buffer == 0
         return {ok = false, error = "no data"}
     end
 
     bytes = {}
-    count = max_bytes:min(#stream.recv_buffer)
+    count = max_bytes:min(stream:len().recv_buffer)
     i = 1
     while i <= count
         bytes[i] = stream.recv_buffer[i]
@@ -130,15 +130,15 @@ quic_stream_read(stream: any, max_bytes: i64): any
 
     # Remove from buffer
     i = 1
-    while i <= #stream.recv_buffer - count
+    while i <= stream:len().recv_buffer - count
         stream.recv_buffer[i] = stream.recv_buffer[i + count]
         i += 1
     end
 
     # Resize buffer
-    new_size = #stream.recv_buffer - count
-    while #stream.recv_buffer > new_size
-        stream.recv_buffer[#stream.recv_buffer] = nil
+    new_size = stream:len().recv_buffer - count
+    while stream:len().recv_buffer > new_size
+        stream.recv_buffer[stream:len().recv_buffer] = nil
     end
 
     stream.recv_offset = stream.recv_offset + count
@@ -203,11 +203,11 @@ quic_frame_stream_encode(stream_id: i64, offset: i64, data: any): any
     bytes[3] = bit.band(offset, 0xFF)
 
     # Data length
-    bytes[4] = #data
+    bytes[4] = data:len()
 
     # Data
     i = 1
-    while i <= #data
+    while i <= data:len()
         bytes[4 + i] = data[i]
         i += 1
     end

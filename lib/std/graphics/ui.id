@@ -47,12 +47,12 @@ end
 
 widget_add_child(parent: any, child: any): void
     child.parent = parent
-    parent.children[#parent.children + 1] = child
+    parent.children[parent:len().children + 1] = child
 end
 
 widget_remove_child(parent: any, child: any): void
     i = 1
-    while i <= #parent.children
+    while i <= parent:len().children
         if parent.children[i] == child
             parent.children:remove(i)
             child.parent = nil
@@ -114,7 +114,7 @@ end
 
 text_input_set_text(input: any, text: str): void
     input.text = text
-    input.cursor_pos = #text
+    input.cursor_pos = text:len()
 end
 
 text_input_get_text(input: any): str

@@ -46,18 +46,18 @@ lines(s: str): any
     out = {}
     cur = ""
     i = 1
-    n = #s
+    n = s:len()
     while i <= n
         b = s:byte(i)
         if b == 10
-            out[#out + 1] = cur
+            out[out:len() + 1] = cur
             cur = ""
         else
             cur = cur .. s:sub(i, i)
         end
         i = i + 1
     end
-    out[#out + 1] = cur
+    out[out:len() + 1] = cur
     out
 end
 
@@ -65,7 +65,7 @@ end
 # `hlmode=legend` prints `<index> <role> <modifier>`, and a modifier of "-"
 # means the role carries none.
 field(rec: str, want: i64): str
-    n = #rec
+    n = rec:len()
     i = 1
     seen = 0
     start = 0
@@ -99,8 +99,8 @@ end
 # tree, and a search that answers nil for "absent" and nil for "not wired"
 # would make the marker check below pass by accident.
 findat(hay: str, needle: str): i64
-    hn = #hay
-    nn = #needle
+    hn = hay:len()
+    nn = needle:len()
     if nn == 0 or nn > hn
         return 0
     end
@@ -141,15 +141,15 @@ main(): i64
     mods = {}
     seen = {}
     i = 1
-    while i <= #rows
+    while i <= rows:len()
         row = rows[i]
         nm = second(row)
         md = third(row)
         if nm != ""
-            closed[#closed + 1] = nm
+            closed[closed:len() + 1] = nm
             if md != "" and md != "-" and seen[md] == nil
                 seen[md] = true
-                mods[#mods + 1] = md
+                mods[mods:len() + 1] = md
             end
         end
         i = i + 1
@@ -160,8 +160,8 @@ main(): i64
     # empty enumeration, or one whose rows carry no modifier axis. A fixed count
     # would have refused the taxonomy the moment Pass 118 §4 named a nineteenth
     # role, which is exactly the event closure is supposed to survive.
-    nclosed = #closed
-    nmods = #mods
+    nclosed = closed:len()
+    nmods = mods:len()
     if nclosed == 0
         print("legend: FAIL — {src} enumerates no roles at all under hlmode=legend.")
         print("legend: the taxonomy is the SOURCE. Refusing to write an empty legend.")
@@ -229,7 +229,7 @@ main(): i64
         return 2
     end
     head = cur:sub(1, a - 1)
-    tail = cur:sub(b + #closer)
+    tail = cur:sub(b + closer:len())
     out = head .. body .. tail
 
     if out == cur

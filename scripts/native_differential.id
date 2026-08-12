@@ -73,7 +73,7 @@ _list(dir: str): any
     for _i, line in out:split("\n")
         t = std.script.chomp(line)
         if t != ""
-            files[#files + 1] = t
+            files[files:len() + 1] = t
         end
     end
     files

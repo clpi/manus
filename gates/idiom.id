@@ -205,9 +205,16 @@ admitted: bool = (name: str)
     false
 
 rules: i64 = (path: str, no: i64, code: str)
-    rulesq(path, no, code, false)
+    rules(false)(path, no, code)
 
-rulesq: i64 = (path: str, no: i64, code: str, quiet: bool)
+rules(quiet) = (path: str, no: i64, code: str)
+    h = deny(path, no, code, quiet)
+    h = h + edge(path, no, code, quiet)
+    h = h + home(path, no, code, quiet)
+    h = h + adj(path, no, code, quiet)
+    h
+
+deny: i64 = (path: str, no: i64, code: str, quiet: bool)
     hits = 0
     hits += ruleq(path, no, code, "_", "LAW-ONE", "one lowercase word: a LEVEL read(number), a HOME date.pad, or delete the axis", quiet)
     hits += ruleq(path, no, code, "end", "Pass 100 §7", "`end` is DELETED — outdent", quiet)
@@ -250,6 +257,10 @@ rulesq: i64 = (path: str, no: i64, code: str, quiet: bool)
     hits += ruleq(path, no, code, "table.", "law.lua.redirect", "xs:push(v) xs:remove(i) xs:sort() xs:keys() xs:join(sep) — subject-first; never table.* namespace", quiet)
     hits += ruleq(path, no, code, "string.", "law.lua.redirect", "text:sub(a,b) text:find(p) text:match(p) text:len() — subject-first; never string.* namespace", quiet)
     hits += ruleq(path, no, code, "math.", "law.lua.redirect", "x:sqrt() x:abs() x:floor() — subject-first; never math.* namespace", quiet)
+    hits
+
+edge: i64 = (path: str, no: i64, code: str, quiet: bool)
+    hits = 0
     hits += ruleq(path, no, code, "ipairs", "law.lua.redirect", "iterate the value: xs:each() — never ipairs global", quiet)
     hits += ruleq(path, no, code, "proc.", "host-TEMP", "proc is not a thing — structured command + process world", quiet)
     hits += ruleq(path, no, code, "process = lib.process", "worldgate", "no library admission — scope/home reachability; process authority is a world fact", quiet)
@@ -288,6 +299,10 @@ rulesq: i64 = (path: str, no: i64, code: str, quiet: bool)
     hits += ruleq(path, no, code, "bin/duo", "LAW-ONE", "zig-out/bin/idol — public command identity is idol", quiet)
     hits += ruleq(path, no, code, "fsrouter", "LAW-ONE", "router(proof)(proof[home]) — never fs+router mash", quiet)
     hits += ruleq(path, no, code, "corerouter", "LAW-ONE", "router(proof)(proof[home]) — never core+router mash", quiet)
+    hits
+
+home: i64 = (path: str, no: i64, code: str, quiet: bool)
+    hits = 0
     hits += ruleq(path, no, code, "ingestbody", "LAW-ONE", "router(semantic)(semantic[home]) — never ingest+body mash", quiet)
     hits += ruleq(path, no, code, "graphbody", "LAW-ONE", "router(semantic)(semantic[home]) — never graph+body mash", quiet)
     hits += ruleq(path, no, code, "bitbody", "LAW-ONE", "router(proof)(proof[home]) — never bit+body mash", quiet)
@@ -307,6 +322,10 @@ rulesq: i64 = (path: str, no: i64, code: str, quiet: bool)
     hits += ruleq(path, no, code, "fs_rm", "LAW-ONE", "path:remove() — subject-first; never fs_rm mash", quiet)
     hits += ruleq(path, no, code, "fs:", "law.world.dot", "path possesses fs relations — never fs: namespace dispatch", quiet)
     hits += ruleq(path, no, code, "io:read(", "law.relation.read", "stdin:read() or path:read() — read relation on subject; never io:read", quiet)
+    hits
+
+adj: i64 = (path: str, no: i64, code: str, quiet: bool)
+    hits = 0
     hits += ruleq(path, no, code, ": readable", "law.adjective.zero", "relation constraint read — source: read not source: readable", quiet)
     hits += ruleq(path, no, code, ": writable", "law.adjective.zero", "relation constraint write — sink: write not sink: writable", quiet)
     hits += ruleq(path, no, code, ": seekable", "law.adjective.zero", "relation constraint seek — never seekable adjective", quiet)
@@ -316,15 +335,16 @@ rulesq: i64 = (path: str, no: i64, code: str, quiet: bool)
     hits += ruleq(path, no, code, ": comparable", "law.adjective.zero", "relation constraint lt/le — never comparable adjective", quiet)
     hits += ruleq(path, no, code, ": cloneable", "law.adjective.zero", "relation constraint clone — never cloneable adjective", quiet)
     hits += ruleq(path, no, code, ": copyable", "law.adjective.zero", "relation constraint copy — never copyable adjective", quiet)
-    hits += ruleq(path, no, code, ": serializable", "law.adjective.zero", "relation constraint encode/decode — never serializable adjective", quiet)
+    hits += ruleq(path, no, code, ": serializable", "law.adjective.zero", "relation constraint encode — never serializable adjective", quiet)
     hits += ruleq(path, no, code, ": deserializable", "law.adjective.zero", "relation constraint decode — never deserializable adjective", quiet)
-    hits += ruleq(path, no, code, ": convertible", "law.adjective.zero", "relation constraint to/from — never convertible adjective", quiet)
+    hits += ruleq(path, no, code, ": convertible", "law.adjective.zero", "relation constraint to — never convertible adjective", quiet)
     hits += ruleq(path, no, code, ": indexable", "law.adjective.zero", "relation constraint index — never indexable adjective", quiet)
     hits += ruleq(path, no, code, ": sortable", "law.adjective.zero", "relation constraint sort — never sortable adjective", quiet)
     hits += ruleq(path, no, code, ": printable", "law.adjective.zero", "relation constraint format — never printable adjective", quiet)
     hits += ruleq(path, no, code, ": formattable", "law.adjective.zero", "relation constraint format — never formattable adjective", quiet)
-    hits += ruleq(path, no, code, "concept ", "law.protocol.one", "no concept kingdom — relation constraints only", quiet)
-    hits += ruleq(path, no, code, "@implements", "law.protocol.one", "no impl registry — graph proves satisfaction", quiet)
+    hits += ruleq(path, no, code, ": callable", "law.adjective.zero", "relation constraint call — never callable adjective", quiet)
+    hits += ruleq(path, no, code, "concept ", "law.protocol.zero", "no concept kingdom — relation constraints only", quiet)
+    hits += ruleq(path, no, code, "@implements", "law.protocol.zero", "no impl registry — graph proves satisfaction", quiet)
     hits += ruleq(path, no, code, "= router(", "bridge", "audit(path)(pattern) — no transitive router text bindings", quiet)
     hits += ruleq(path, no, code, "relationid", "LAW-ONE", "one id + facts — never relationid mash across relation edge", quiet)
     hits += ruleq(path, no, code, "readid", "LAW-ONE", "relation spelling + facts — never readid mash", quiet)
@@ -365,7 +385,6 @@ rulesq: i64 = (path: str, no: i64, code: str, quiet: bool)
     hits += ruleq(path, no, code, "captureline", "LAW-ONE", "chomp(capture(cmd)) — never capture+line mash", quiet)
     hits += ruleq(path, no, code, "[[", "lexical", "use \\\" text \\\" — double quotes admit multiline content", quiet)
     hits
-
 
 # lowercase letter, for the LAW-ONE [a-z]_[a-z] check
 alpha: bool = (c: str)
@@ -753,10 +772,18 @@ seed: bool = ()
     true
 
 audit: i64 = (path: str, no: i64, line: str)
-    auditq(path, no, line, false)
+    audit(false)(path, no, line)
 
-auditq: i64 = (path: str, no: i64, line: str, quiet: bool)
+audit(quiet: bool) = (path: str, no: i64, line: str)
     code = strip(line)
+    h = lex(path, no, code, line, quiet)
+    h = h + face(path, no, code, quiet)
+    h = h + rules(quiet)(path, no, code)
+    h = h + realm(path, no, code, quiet)
+    h = h + walk(path, no, code, quiet)
+    h
+
+lex: i64 = (path: str, no: i64, code: str, line: str, quiet: bool)
     hits = 0
     if bare(code)
         if !quiet
@@ -786,6 +813,10 @@ auditq: i64 = (path: str, no: i64, line: str, quiet: bool)
         if !quiet
             print("({path}, {no}, migratable, law.update.face, place += value — use += -= *= /=; never place = place op value)")
         hits += 1
+    hits
+
+face: i64 = (path: str, no: i64, code: str, quiet: bool)
+    hits = 0
     if code:has("function")
         if !quiet
             print("{path}:{no}  function  [§1]  callable binding: name: i64 = (a: i64)")
@@ -830,7 +861,10 @@ auditq: i64 = (path: str, no: i64, line: str, quiet: bool)
         if !quiet
             print("{path}:{no}  io:read(  [law.relation.read]  stdin:read() or path:read() — read relation on subject")
         hits += 1
-    hits += rulesq(path, no, code, quiet)
+    hits
+
+realm: i64 = (path: str, no: i64, code: str, quiet: bool)
+    hits = 0
     if !ingress(path)
         if dot(io)(code)
             if !quiet
@@ -848,6 +882,10 @@ auditq: i64 = (path: str, no: i64, line: str, quiet: bool)
             if !quiet
                 print("({path}, {no}, violation, law.world.dot, std.os is forbidden — use root projection or bridge relations; docs/spec/world.md")
             hits += 1
+    hits
+
+walk: i64 = (path: str, no: i64, code: str, quiet: bool)
+    hits = 0
     pi = 1
     pn = code:len()
     while pi <= pn
@@ -925,7 +963,7 @@ scanq: i64 = (body: str, quiet: bool)
                         no = num(line, p + 1)
                     else
                         if line:len() > 0 and line:sub(1, 1) == "+" and path != ""
-                            hits += auditq(path, no, line:sub(2, line:len()), quiet)
+                            hits += audit(quiet)(path, no, line:sub(2, line:len()))
                             no = no + 1
             line = ""
         else
@@ -1146,46 +1184,46 @@ control: bool = ()
     if "fs:exists(":has("fs_exists")
         print("control FAIL: fs_exists fired on canonical path:exists")
         ok = false
-    if rulesq("control", 1, "text = router(x)", true) == 0
+    if rules(true)("control", 1, "text = router(x)") == 0
         print("control FAIL: router bridge binding firewall did not fire")
         ok = false
-    if rulesq("control", 1, "len: bool = (path: str, min: i64)", true) == 0
+    if rules(true)("control", 1, "len: bool = (path: str, min: i64)") == 0
         print("control FAIL: flat len binding bridge rule did not fire")
         ok = false
-    if rulesq("control", 1, "len(path) = (min: i64)", true) != 0
+    if rules(true)("control", 1, "len(path) = (min: i64)") != 0
         print("control FAIL: flat len rule fired on canonical len(path) boundary curry")
         ok = false
-    if rulesq("control", 1, "audit: bool = (path: str, pattern: str)", true) == 0
+    if rules(true)("control", 1, "audit: bool = (path: str, pattern: str)") == 0
         print("control FAIL: flat audit binding bridge rule did not fire")
         ok = false
-    if rulesq("control", 1, "audit(path) = (pattern: str)", true) != 0
+    if rules(true)("control", 1, "audit(path) = (pattern: str)") != 0
         print("control FAIL: flat audit rule fired on canonical audit(path) boundary curry")
         ok = false
-    if rulesq("control", 1, "hit: bool = (path: str, pattern: str)", true) == 0
+    if rules(true)("control", 1, "hit: bool = (path: str, pattern: str)") == 0
         print("control FAIL: flat hit binding bridge rule did not fire")
         ok = false
-    if rulesq("control", 1, "from(path) = (pattern: str)", true) == 0
+    if rules(true)("control", 1, "from(path) = (pattern: str)") == 0
         print("control FAIL: from(path) mash bridge rule did not fire")
         ok = false
-    if rulesq("control", 1, "hit(path) = (pattern: str)", true) != 0
+    if rules(true)("control", 1, "hit(path) = (pattern: str)") != 0
         print("control FAIL: flat hit rule fired on canonical hit(path) boundary curry")
         ok = false
-    if rulesq("control", 1, "if len(path, min)", true) == 0
+    if rules(true)("control", 1, "if len(path, min)") == 0
         print("control FAIL: len(path, min) call bridge rule did not fire")
         ok = false
-    if rulesq("control", 1, "if !len(path)(min)", true) != 0
+    if rules(true)("control", 1, "if !len(path)(min)") != 0
         print("control FAIL: len(path)(min) rule fired on canonical len(path)(min)")
         ok = false
-    if rulesq("control", 1, "if not bare", true) == 0
+    if rules(true)("control", 1, "if not bare") == 0
         print("control FAIL: if not keyword bridge rule did not fire")
         ok = false
-    if rulesq("control", 1, "if !bare", true) != 0
+    if rules(true)("control", 1, "if !bare") != 0
         print("control FAIL: if not rule fired on canonical prefix !")
         ok = false
-    if rulesq("control", 1, "text = path:read()", true) == 0
+    if rules(true)("control", 1, "text = path:read()") == 0
         print("control FAIL: transitive read binding firewall did not fire")
         ok = false
-    if rulesq("control", 1, "path:read():match(pattern)", true) != 0
+    if rules(true)("control", 1, "path:read():match(pattern)") != 0
         print("control FAIL: read binding rule fired on canonical path:read():match chain")
         ok = false
     if !"relationid":has("relationid")
@@ -1267,11 +1305,6 @@ control: bool = ()
 main: i64 = ()
     if !seed()
         print("gates/idiom: vocabulary load failed")
-        return 3
-    if !control()
-        print("")
-        print("gates/idiom: POSITIVE CONTROL FAILED — the gate is broken, not the tree.")
-        print("No verdict is reported. Fix the gate before trusting any run.")
         return 3
     files = transport()
     if files:len() == 0

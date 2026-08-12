@@ -133,7 +133,7 @@ minus: i64 = (a: str, b: str)
 
 pad: str = (s: str, width: i64)
     out = s
-    while #out < width
+    while out:len() < width
         out = out .. " "
     out
 

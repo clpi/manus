@@ -2,7 +2,7 @@
 const std = @import("std");
 const lexer = @import("lexer.zig");
 const grammar_roles = @import("grammar_roles.zig");
-const duo_lexer_dispatch = @import("duo_lexer_dispatch.zig");
+const duo_lexer_dispatch = @import("lexer_dispatch.zig");
 
 pub const View = struct {
     tokens: []const lexer.Token,

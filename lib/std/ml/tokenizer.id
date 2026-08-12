@@ -31,7 +31,7 @@ bpe_learn(bpe: any, corpus: any, num_merges: i64): void
     # Initialize vocabulary with individual characters
     freqs = {}
     i = 1
-    while i <= #corpus
+    while i <= corpus:len()
         ch = corpus:sub(i, i)
         if freqs[ch] == nil freqs[ch] = 0 end
         freqs[ch] = freqs[ch] + 1
@@ -46,9 +46,9 @@ bpe_learn(bpe: any, corpus: any, num_merges: i64): void
     # Build initial word representations (list of token IDs)
     words = {}
     i = 1
-    while i <= #corpus
+    while i <= corpus:len()
         ch = corpus:sub(i, i)
-        words[#words + 1] = bpe.vocab[ch]
+        words[words:len() + 1] = bpe.vocab[ch]
         i += 1
     end
 
@@ -58,7 +58,7 @@ bpe_learn(bpe: any, corpus: any, num_merges: i64): void
         # Count adjacent adj_pairs
         adj_pairs = {}
         i = 1
-        while i < #words
+        while i < words:len()
             pair = words[i] .. "," .. words[i + 1]
             if adj_pairs[pair] == nil adj_pairs[pair] = 0 end
             adj_pairs[pair] = adj_pairs[pair] + 1
@@ -84,11 +84,11 @@ bpe_learn(bpe: any, corpus: any, num_merges: i64): void
         # Create new token
         parts = {}
         idx = 1
-        while idx <= #best_pair
+        while idx <= best_pair:len()
             if best_pair:sub(idx, idx) == ","
                 break
             end
-            parts[#parts + 1] = best_pair:sub(idx, idx)
+            parts[parts:len() + 1] = best_pair:sub(idx, idx)
             idx += 1
         end
         left = parts:concat()
@@ -99,19 +99,19 @@ bpe_learn(bpe: any, corpus: any, num_merges: i64): void
         # Apply merge to words
         new_words = {}
         i = 1
-        while i <= #words
-            if i < #words
+        while i <= words:len()
+            if i < words:len()
                 pair = words[i] .. "," .. words[i + 1]
                 if pair == best_pair
-                    new_words[#new_words + 1] = bpe.vocab[new_token]
+                    new_words[new_words:len() + 1] = bpe.vocab[new_token]
                     i += 2
                     # continue
                 else
-                    new_words[#new_words + 1] = words[i]
+                    new_words[new_words:len() + 1] = words[i]
                     i += 1
                 end
             else
-                new_words[#new_words + 1] = words[i]
+                new_words[new_words:len() + 1] = words[i]
                 i += 1
             end
         end
@@ -124,15 +124,15 @@ bpe_encode(bpe: any, text: str): any
     # Start with character tokens
     tokens = {}
     i = 1
-    while i <= #text
+    while i <= text:len()
         ch = text:sub(i, i)
         if bpe.vocab[ch] != nil
-            tokens[#tokens + 1] = bpe.vocab[ch]
+            tokens[tokens:len() + 1] = bpe.vocab[ch]
         else
             # Unknown character, use [UNK]
             unk = bpe.vocab["[UNK]"]
             if unk == nil unk = 0 end
-            tokens[#tokens + 1] = unk
+            tokens[tokens:len() + 1] = unk
         end
         i += 1
     end
@@ -141,9 +141,9 @@ bpe_encode(bpe: any, text: str): any
     for merge in bpe.merges
         parts = {}
         idx = 1
-        while idx <= #merge
+        while idx <= merge:len()
             if merge:sub(idx, idx) == "," break end
-            parts[#parts + 1] = merge:sub(idx, idx)
+            parts[parts:len() + 1] = merge:sub(idx, idx)
             idx += 1
         end
         left = parts:concat()
@@ -156,12 +156,12 @@ bpe_encode(bpe: any, text: str): any
         if left_id and right_id and new_id
             merged = {}
             i = 1
-            while i <= #tokens
-                if i < #tokens and tokens[i] == left_id and tokens[i + 1] == right_id
-                    merged[#merged + 1] = new_id
+            while i <= tokens:len()
+                if i < tokens:len() and tokens[i] == left_id and tokens[i + 1] == right_id
+                    merged[merged:len() + 1] = new_id
                     i += 2
                 else
-                    merged[#merged + 1] = tokens[i]
+                    merged[merged:len() + 1] = tokens[i]
                     i += 1
                 end
             end
@@ -176,10 +176,10 @@ end
 bpe_decode(bpe: any, tokens: any): str
     parts = {}
     i = 1
-    while i <= #tokens
+    while i <= tokens:len()
         token = bpe.inverse_vocab[tokens[i]]
         if token == nil token = "?" end
-        parts[#parts + 1] = token
+        parts[parts:len() + 1] = token
         i += 1
     end
     parts:concat()
@@ -197,11 +197,11 @@ wordpiece_encode(vocab: any, text: str, max_word_len: i64): any
     words = {}
     word = ""
     i = 1
-    while i <= #text
+    while i <= text:len()
         ch = text:sub(i, i)
         if ch == " " or ch == "\t" or ch == "\n"
-            if #word > 0
-                words[#words + 1] = word
+            if word:len() > 0
+                words[words:len() + 1] = word
                 word = ""
             end
         else
@@ -209,8 +209,8 @@ wordpiece_encode(vocab: any, text: str, max_word_len: i64): any
         end
         i += 1
     end
-    if #word > 0
-        words[#words + 1] = word
+    if word:len() > 0
+        words[words:len() + 1] = word
     end
 
     # Tokenize each word
@@ -219,15 +219,15 @@ wordpiece_encode(vocab: any, text: str, max_word_len: i64): any
         word_tokens = {}
         chars = w
         # Try to find longest match from end
-        while #chars > 0
+        while chars:len() > 0
             found = false
-            end_pos = #chars
+            end_pos = chars:len()
             while end_pos > 0
                 sub = chars:sub(1, end_pos)
-                if end_pos == #chars
+                if end_pos == chars:len()
                     # Whole word or prefix
                     if vocab[sub] != nil
-                        word_tokens[#word_tokens + 1] = sub
+                        word_tokens[word_tokens:len() + 1] = sub
                         chars = chars:sub(end_pos + 1)
                         found = true
                         break
@@ -236,7 +236,7 @@ wordpiece_encode(vocab: any, text: str, max_word_len: i64): any
                     # Subword with ##
                     sub_with_prefix = "##" .. sub
                     if vocab[sub_with_prefix] != nil
-                        word_tokens[#word_tokens + 1] = sub_with_prefix
+                        word_tokens[word_tokens:len() + 1] = sub_with_prefix
                         chars = chars:sub(end_pos + 1)
                         found = true
                         break
@@ -246,12 +246,12 @@ wordpiece_encode(vocab: any, text: str, max_word_len: i64): any
             end
             if not found
                 # Unknown token
-                word_tokens[#word_tokens + 1] = "[UNK]"
+                word_tokens[word_tokens:len() + 1] = "[UNK]"
                 break
             end
         end
         for t in word_tokens
-            tokens[#tokens + 1] = t
+            tokens[tokens:len() + 1] = t
         end
     end
 
@@ -266,7 +266,7 @@ simple_tokenize(text: str): any
     tokens = {}
     current = ""
     i = 1
-    while i <= #text
+    while i <= text:len()
         ch = text:sub(i, i)
         # Check if punctuation
         is_punct = ch == "." or ch == "," or ch == "!" or ch == "?"
@@ -275,23 +275,23 @@ simple_tokenize(text: str): any
             or ch == '"' or ch == "'"
 
         if ch == " " or ch == "\t" or ch == "\n"
-            if #current > 0
-                tokens[#tokens + 1] = current
+            if current:len() > 0
+                tokens[tokens:len() + 1] = current
                 current = ""
             end
         elseif is_punct
-            if #current > 0
-                tokens[#tokens + 1] = current
+            if current:len() > 0
+                tokens[tokens:len() + 1] = current
                 current = ""
             end
-            tokens[#tokens + 1] = ch
+            tokens[tokens:len() + 1] = ch
         else
             current = current .. ch
         end
         i += 1
     end
-    if #current > 0
-        tokens[#tokens + 1] = current
+    if current:len() > 0
+        tokens[tokens:len() + 1] = current
     end
     tokens
 end
@@ -313,14 +313,14 @@ top_k_tokens(tokens: any, k: i64): any
     freq = token_frequencies(tokens)
     sorted = {}
     for t, count in freq
-        sorted[#sorted + 1] = {token = t, count = count}
+        sorted[sorted:len() + 1] = {token = t, count = count}
     end
     # Simple selection sort for top k
     i = 1
-    while i <= #sorted and i <= k
+    while i <= sorted:len() and i <= k
         max_idx = i
         j = i + 1
-        while j <= #sorted
+        while j <= sorted:len()
             if sorted[j].count > sorted[max_idx].count
                 max_idx = j
             end
@@ -333,8 +333,8 @@ top_k_tokens(tokens: any, k: i64): any
     end
     result = {}
     i = 1
-    while i <= k and i <= #sorted
-        result[#result + 1] = sorted[i]
+    while i <= k and i <= sorted:len()
+        result[result:len() + 1] = sorted[i]
         i += 1
     end
     result

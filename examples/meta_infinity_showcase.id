@@ -23,11 +23,11 @@ Pair: { x: f64, y: f64, tag: str, id: i64, extra: i64 }
 Label: { tag: str, id: i64, extra: i64 }
 
 @comp.define.derive("QuadApi", generate(meta) -> str
-    if meta.parts != nil and #meta.parts >= 4
+    if meta.parts != nil and meta:len().parts >= 4
         "/* quad " .. meta.name .. " */\n"
     else
         acc = ""
-        for i = 1, #meta.fields
+        for i = 1, meta:len().fields
             f = meta.fields[i]
             acc = acc .. "static inline void duo_" .. meta.name .. "_touch_" .. f.name .. "(const duo_" .. meta.name .. "* v) { (void)v->" .. f.name .. "; }\n"
         end

@@ -72,7 +72,7 @@ mcp_handle_tools_list(msg: any): void
         if schema != nil and schema.properties != nil and next(schema.properties) == nil
             schema.properties = json:empty_object
         end
-        tools_list[#tools_list + 1] = {
+        tools_list[tools_list:len() + 1] = {
             name = name,
             description = tool.description,
             inputSchema = schema

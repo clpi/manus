@@ -13,7 +13,7 @@ end
 
 arena_alloc(self, bytes: i64)
     if self._offset + bytes > self._capacity
-        self._bufs[#self._bufs + 1] = ".":rep(bytes)
+        self._bufs[self:len()._bufs + 1] = ".":rep(bytes)
         self._offset = 0
     end
     ptr = { addr = self._total + self._offset, size = bytes }

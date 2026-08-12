@@ -30,10 +30,10 @@ result_new(model_name: str, batch_size: i64): any
   }
 end
 result_add_latency(result: any, latency: f64): void
-  result.latencies[#result.latencies + 1] = latency
+  result.latencies[result:len().latencies + 1] = latency
 end
 result_calculate_stats(result: any): void
-  n = #result.latencies
+  n = result:len().latencies
   if n == 0
     return
   end
@@ -66,7 +66,7 @@ runner_run(runner: any, model_fn: any, input_generator: any): any
   config = runner.config
   results = {}
   batch_idx = 1
-  while batch_idx <= #config.batch_sizes
+  while batch_idx <= config:len().batch_sizes
     batch_size = config.batch_sizes[batch_idx]
     result = result_new("model", batch_size)
     i = 0
@@ -131,7 +131,7 @@ latency(model_fn: any, input_generator: any, batch_size: i64, num_runs: i64): an
     input = input_generator(batch_size)
     model_fn(input)
     end_time = os.clock()
-    latencies[#latencies + 1] = end_time - start_time
+    latencies[latencies:len() + 1] = end_time - start_time
     i = i + 1
   end
   latencies:sort()
@@ -155,11 +155,11 @@ memory(model_fn: any, input_generator: any, batch_size: i64): any
   output = model_fn(input)
   input_size = 0
   if input and input.data
-    input_size = #input.data * 4
+    input_size = input:len().data * 4
   end
   output_size = 0
   if output and output.data
-    output_size = #output.data * 4
+    output_size = output:len().data * 4
   end
   {
     batch_size = batch_size,
@@ -182,7 +182,7 @@ end
 rank(results: any, metric: str): any
   ranked = {}
   for name, result in results
-    ranked[#ranked + 1] = {
+    ranked[ranked:len() + 1] = {
       name = name,
       value = result[metric] or 0
     }
@@ -194,18 +194,18 @@ rank(results: any, metric: str): any
 end
 report(results: any): str
   lines = {}
-  lines[#lines + 1] = "=== Benchmark Report ==="
-  lines[#lines + 1] = ""
+  lines[lines:len() + 1] = "=== Benchmark Report ==="
+  lines[lines:len() + 1] = ""
   for name, result in results
-    lines[#lines + 1] = "Model: " .. name
-    lines[#lines + 1] = "  Batch Size: " .. result.batch_size:to(str)
-    lines[#lines + 1] = "  Mean Latency: " .. result.mean_latency:to(str) .. "s"
-    lines[#lines + 1] = "  Median Latency: " .. result.median_latency:to(str) .. "s"
-    lines[#lines + 1] = "  P95 Latency: " .. result.p95_latency:to(str) .. "s"
-    lines[#lines + 1] = "  P99 Latency: " .. result.p99_latency:to(str) .. "s"
-    lines[#lines + 1] = "  Throughput: " .. result.throughput:to(str) .. " batches/s"
-    lines[#lines + 1] = "  Tokens/sec: " .. result.tokens_per_second:to(str)
-    lines[#lines + 1] = ""
+    lines[lines:len() + 1] = "Model: " .. name
+    lines[lines:len() + 1] = "  Batch Size: " .. result.batch_size:to(str)
+    lines[lines:len() + 1] = "  Mean Latency: " .. result.mean_latency:to(str) .. "s"
+    lines[lines:len() + 1] = "  Median Latency: " .. result.median_latency:to(str) .. "s"
+    lines[lines:len() + 1] = "  P95 Latency: " .. result.p95_latency:to(str) .. "s"
+    lines[lines:len() + 1] = "  P99 Latency: " .. result.p99_latency:to(str) .. "s"
+    lines[lines:len() + 1] = "  Throughput: " .. result.throughput:to(str) .. " batches/s"
+    lines[lines:len() + 1] = "  Tokens/sec: " .. result.tokens_per_second:to(str)
+    lines[lines:len() + 1] = ""
   end
   lines:concat("\n")
 end

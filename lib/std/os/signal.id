@@ -54,7 +54,7 @@ end
 
 emit(handler: any, sig: i64): void
     if handler.blocked[sig]
-        handler.signal_queue[#handler.signal_queue + 1] = sig
+        handler.signal_queue[handler:len().signal_queue + 1] = sig
         return
     end
 
@@ -64,7 +64,7 @@ emit(handler: any, sig: i64): void
 end
 
 process_queue(handler: any): void
-    while #handler.signal_queue > 0
+    while handler:len().signal_queue > 0
         sig = handler.signal_queue[1]
         handler.signal_queue:remove(1)
         if not handler.blocked[sig] and handler.handlers[sig]
@@ -154,7 +154,7 @@ shutdown_new(): any
 end
 
 shutdown_register(sh: any, callback: any): void
-    sh.shutdown_hooks[#sh.shutdown_hooks + 1] = callback
+    sh.shutdown_hooks[sh:len().shutdown_hooks + 1] = callback
 end
 
 shutdown_trigger(sh: any): void
@@ -162,7 +162,7 @@ shutdown_trigger(sh: any): void
     sh.is_shutting_down = true
 
     # Run hooks in reverse order
-    i = #sh.shutdown_hooks
+    i = sh:len().shutdown_hooks
     while i >= 1
         sh.shutdown_hooks[i]()
         i -= 1

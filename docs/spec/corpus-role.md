@@ -1,38 +1,36 @@
-# Corpus role classification (GAP-161)
+# Corpus role (ZERO-HISTORY)
 
-Machine-visible roles for `.id` and teaching surfaces. Not semantic law — projection
-of `law.source.not.proof`.
+Projection of `law.zero.history`. Git is the sole historical archive.
 
-## Roles
+## Durable states
 
-| Role | Agent retrieval | Meaning |
+Only two corpus states exist in the active tree:
+
+| state | meaning | agent retrieval |
 |---|---|---|
-| `canonical` | include default | teaches current Idol |
-| `verified` | include with label | spec100/generated projection of C0 — fixture wrong if disagrees with C0 |
-| `foreign` | exclude default | Lua/host/other lawset |
-| `compat` | exclude default | compatibility spelling |
-| `history` | exclude default | historical ontology (metatable, concept, etc.) |
-| `migration` | exclude default | debt being ratcheted down |
-| `generated` | exclude default | harness/config output |
-| `proof` | include with label | proves one edge; not teaching vocabulary |
-| `bootstrap` | exclude default | MCP/gate transport until decomposed |
+| `current` | teaches or exercises current Idol law | include by default |
+| `foreign` | current foreign law (Lua, C, Wasm, host oracle) | exclude unless requested |
 
-## Marking (interim until GAP-124)
+A bootstrap bridge is an **implementation dependency**, not a corpus state.
 
-First line of `.id` file:
+Deleted durable labels: `historical`, `legacy`, `migration`, `compat`, `verified`,
+`proof`, `deprecated`, `old`, pass-number archive.
+
+## Marking
+
+First line of `.id` when classification matters:
 
 ```id
-# @corpus verified
-# @corpus history
-# @corpus proof
+# @corpus current
+# @corpus foreign
 ```
 
-Agent MCP search should filter on `@corpus` tag. Files under `examples/spec100/`
-default to `@corpus verified` unless tagged otherwise.
+Mechanical check: `tools/node/dev/corpuscensus`.
 
 ## Rules
 
-- If spec100 fixture disagrees with C0: **fixture is wrong**.
-- Never preserve spec100 behavior against constitution.
-- Canonical agent search excludes `foreign compat history migration generated bootstrap`
-  unless explicitly requested.
+- Current tree source is not proof merely because it is `.id` or builds.
+- If a current fixture disagrees with C0, the fixture is wrong.
+- Never preserve behavior against the constitution to retain provenance.
+- Organizational directories (`examples/compile_fail/`) may exist; canonical Idol
+  inside them uses `@corpus current` when they prove current law edges.

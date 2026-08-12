@@ -302,7 +302,7 @@ end
 
 # Candidate 2: length bucket (filter then equality chain).
 fun classify_length_bucket(w: str): i64
-    n = #w
+    n = w:len()
     if n == 2
         if w == "do" return 7 end
         if w == "if" return 17 end

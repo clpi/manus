@@ -94,7 +94,7 @@ end
 # discard: a writer that discards all data (returns count written).
 discard(): any
     return {n = 0, write = (self: any, s: str): any
-        self.n = self.n + #s
+        self.n = self.n + s:len()
         self
     end}
 end

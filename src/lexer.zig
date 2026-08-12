@@ -223,7 +223,7 @@ pub const Lexer = struct {
     pending_hint_count: u8 = 0,
 
     /// SH-03 production dispatch. When non-null, tokens come from the DUO lexer
-    /// (lib/std/compiler/lexer.id, via src/duo_lexer_dispatch.zig) and this
+    /// (lib/std/compiler/lexer.id, via src/lexer_dispatch.zig) and this
     /// struct is a cursor over that stream rather than a scanner. The host
     /// scanner below stays intact and stays the differential oracle.
     ///
@@ -327,7 +327,7 @@ pub const Lexer = struct {
             } else if (c == '#' and self.peek_char2() == '!' and self.cursor.index == 0) {
                 while (self.cursor.index < self.cursor.bytes.len and self.peek_char() != '\n')
                     _ = self.adv();
-            } else if (c == '#' and @import("duo_lexer_bridge.zig").isIdolSourcePath(self.cursor.file)) {
+            } else if (c == '#' and @import("lexer_bridge.zig").isIdolSourcePath(self.cursor.file)) {
                 while (self.cursor.index < self.cursor.bytes.len and self.peek_char() != '\n')
                     _ = self.adv();
             } else if (c == '-' and self.peek_char2() == '-') {
@@ -739,7 +739,7 @@ pub const Lexer = struct {
     }
 
     fn lookup_kw(text: []const u8) ?TokenKind {
-        return @import("duo_lexer_bridge.zig").lookupKeyword(text);
+        return @import("lexer_bridge.zig").lookupKeyword(text);
     }
 
     fn next_tok(self: *Lexer) LexError!Token {

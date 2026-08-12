@@ -17,7 +17,7 @@ list_get(list: any, index: i64): any
 end
 
 list_list: any:len(): i64
-    return #list
+    return list:len()
 end
 
 stack_new(): any
@@ -41,7 +41,7 @@ queue_enqueue(q: any, value: any): void
 end
 
 queue_dequeue(q: any): any
-    n = #q
+    n = q:len()
     if n == 0
         nil
     end
@@ -98,7 +98,7 @@ end
 
 list_clear(list: any): void
     if list == nil return end
-    i = #list
+    i = list:len()
     while i > 0
         list:remove(i)
         i -= 1

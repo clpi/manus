@@ -4,7 +4,7 @@
 //! Projections: compiler metadata, classifier, spelling, formatter, LSP, MCP, tests.
 const std = @import("std");
 const lexer = @import("lexer.zig");
-const duo_keyword_bridge = @import("duo_keyword_bridge.zig");
+const duo_keyword_bridge = @import("keyword_bridge.zig");
 const proof_carrying = @import("proof_carrying.zig");
 const realization = @import("realization.zig");
 const evidence_record = @import("evidence_record.zig");

@@ -10,17 +10,17 @@
 
 write(buf: any, value: i64): void
     while value >= 0x80
-        buf[#buf + 1] = (value & 0x7F) | 0x80:char()
+        buf[buf:len() + 1] = (value & 0x7F) | 0x80:char()
         value = value >> 7
     end
-    buf[#buf + 1] = value:char()
+    buf[buf:len() + 1] = value:char()
 end
 
 read(data: str, pos: any): i64
     result = 0
     shift = 0
     while true
-        if pos[1] > #data
+        if pos[1] > data:len()
             error("varint: unexpected end of data")
         end
         byte = data:byte(pos[1])
@@ -85,7 +85,7 @@ write_leb128(buf: any, value: i64): void
         if value != 0
             byte = byte | 0x80
         end
-        buf[#buf + 1] = byte:char()
+        buf[buf:len() + 1] = byte:char()
     until value == 0
 end
 
@@ -93,7 +93,7 @@ read_leb128(data: str, pos: any): i64
     result = 0
     shift = 0
     while true
-        if pos[1] > #data
+        if pos[1] > data:len()
             error("leb128: unexpected end of data")
         end
         byte = data:byte(pos[1])
@@ -120,7 +120,7 @@ write_signed_leb128(buf: any, value: i64): void
         else
             byte = byte | 0x80
         end
-        buf[#buf + 1] = byte:char()
+        buf[buf:len() + 1] = byte:char()
     end
 end
 
@@ -128,7 +128,7 @@ read_signed_leb128(data: str, pos: any): i64
     result = 0
     shift = 0
     while true
-        if pos[1] > #data
+        if pos[1] > data:len()
             error("signed leb128: unexpected end of data")
         end
         byte = data:byte(pos[1])

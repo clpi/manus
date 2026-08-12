@@ -1,0 +1,51 @@
+#!/bin/sh
+# Interim @corpus tag census — GAP-161 until graph retrieval filters land.
+# docs/spec/corpus-role.md
+set -eu
+repo="$(cd "$(dirname "$0")/../../.." && pwd)"
+cd "$repo"
+
+fail=0
+
+check_dir() {
+  dir="$1"
+  want="$2"
+  for f in $(find "$dir" -name '*.id' 2>/dev/null | sort); do
+    first=$(head -1 "$f")
+    case "$want" in
+      verified)
+        echo "$first" | rg -q '^# @corpus verified' || {
+          echo "corpuscensus: FAIL missing @corpus verified: $f"
+          fail=$((fail + 1))
+        }
+        ;;
+      proof)
+        echo "$first" | rg -q '^# @corpus proof' || {
+          echo "corpuscensus: FAIL missing @corpus proof: $f"
+          fail=$((fail + 1))
+        }
+        ;;
+    esac
+  done
+}
+
+check_file() {
+  f="$1"
+  want="$2"
+  first=$(head -1 "$f")
+  echo "$first" | rg -q "^# @corpus $want" || {
+    echo "corpuscensus: FAIL missing @corpus $want: $f"
+    fail=$((fail + 1))
+  }
+}
+
+check_dir examples/spec100 verified
+check_dir examples/compile_fail proof
+check_file examples/metatable_class_semantics.id history
+check_file examples/concept_introspect.id history
+
+if [ "$fail" -gt 0 ]; then
+  echo "corpuscensus: $fail missing @corpus tag(s) — GAP-161 interim"
+  exit 1
+fi
+echo "corpuscensus: pass spec100=verified compile_fail=proof history=2"

@@ -4,7 +4,7 @@
 //! DNIR lineage. Regions retain only the contiguous instruction coordinate
 //! range, value-flow dependencies, and hardware tier.
 const std = @import("std");
-const dnir = @import("duo_native_ir.zig");
+const dnir = @import("native_ir.zig");
 const dnir_hardware = @import("dnir_hardware.zig");
 const semantic_graph = @import("semantic_graph.zig");
 

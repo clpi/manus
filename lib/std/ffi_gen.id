@@ -52,7 +52,7 @@ from_source(source: str, opts: any): str
     functions = parse_c_declarations(source, prefix, exclude_set, includes)
     parts = {}
     for _, func in functions
-        parts[#parts + 1] = emit_ffi_binding(func)
+        parts[parts:len() + 1] = emit_ffi_binding(func)
     end
     str_join(parts, "\n")
 end
@@ -77,20 +77,20 @@ parse_c_declarations(source: str, prefix: str, excludes: any, includes: any): an
            and not line:match("^#")
             ret_type, name, params = line:match("^(%S+)%s+(%w+)%s*%((.-)%)%s*;")
             if ret_type and name
-                if prefix == "" or name:sub(1, #prefix) == prefix
+                if prefix == "" or name:sub(1, prefix:len()) == prefix
                     if not excludes[name]
                         include_match = true
                         if includes
                             include_match = false
                             for _, inc in includes
-                                if name:sub(1, #inc) == inc
+                                if name:sub(1, inc:len()) == inc
                                     include_match = true
                                     break
                                 end
                             end
                         end
                         if include_match
-                            funcs[#funcs + 1] = {
+                            funcs[funcs:len() + 1] = {
                                 name = name,
                                 ret_type = ret_type,
                                 params = parse_c_params(params),
@@ -114,25 +114,25 @@ parse_c_params(params_str: str): any
         part = part:gsub("%s+$", "")
         tokens = {}
         for token in part:gmatch("%S+") do
-            tokens[#tokens + 1] = token
+            tokens[tokens:len() + 1] = token
         end
-        if #tokens >= 2
-            name = tokens[#tokens]
+        if tokens:len() >= 2
+            name = tokens[tokens:len()]
             type_parts = {}
-            for j = 1, #tokens - 1
-                type_parts[#type_parts + 1] = tokens[j]
+            for j = 1, tokens:len() - 1
+                type_parts[type_parts:len() + 1] = tokens[j]
             end
             typ = str_join(type_parts, " ")
-            params[#params + 1] = {
+            params[params:len() + 1] = {
                 c_type = typ,
                 name = name,
                 is_pointer = typ:find("*") != nil,
                 is_const = typ:find("const") != nil,
             }
-        elseif #tokens == 1
-            params[#params + 1] = {
+        elseif tokens:len() == 1
+            params[params:len() + 1] = {
                 c_type = tokens[1],
-                name = "arg" .. to(str)(#params + 1),
+                name = "arg" .. to(str)(params:len() + 1),
                 is_pointer = false,
                 is_const = false,
             }
@@ -188,14 +188,14 @@ emit_ffi_binding(func: any): str
     duo_params = {}
     for _, p in func.params
         duo_type = c_type_to_duo(p.c_type, p.is_pointer)
-        duo_params[#duo_params + 1] = p.name .. ": " .. duo_type
+        duo_params[duo_params:len() + 1] = p.name .. ": " .. duo_type
     end
     duo_ret = c_ret_type_to_duo(func.ret_type)
-    params_str = #duo_params > 0 and str_join(duo_params, ", ") or ""
+    params_str = duo_params:len() > 0 and str_join(duo_params, ", ") or ""
 
     call_args = build_c_call_args(func.params)
     sig = "@ffi(\"" .. func.name .. "\")\nfun " .. func.name:lower() .. "(" .. params_str .. "): " .. duo_ret
-    body = "    @c.call(\"" .. func.name .. "\"" .. (#func.params > 0 and ", " or "") .. call_args .. ")"
+    body = "    @c.call(\"" .. func.name .. "\"" .. (func:len().params > 0 and ", " or "") .. call_args .. ")"
     sig .. "\n" .. body .. "\nend"
 end
 
@@ -203,7 +203,7 @@ end
 build_c_call_args(params: any): str
     args = {}
     for _, p in params
-        args[#args + 1] = p.name
+        args[args:len() + 1] = p.name
     end
     str_join(args, ", ")
 end

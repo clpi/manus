@@ -20,16 +20,16 @@ clean(path: str): str
     # Handle . and ..
     parts = {}
     i = 1
-    len = #result
+    len = result:len()
     while i <= len do
         nxt = result:find("/", i, true)
         if nxt == nil
             part = result:sub(i)
-            parts[#parts + 1] = part
+            parts[parts:len() + 1] = part
             break
         end
         part = result:sub(i, nxt - 1)
-        parts[#parts + 1] = part
+        parts[parts:len() + 1] = part
         i = nxt + 1
     end
     stack = {}
@@ -37,10 +37,10 @@ clean(path: str): str
         if part == ".."
             stack:remove()
         elseif part != "." and part != ""
-            stack[#stack + 1] = part
+            stack[stack:len() + 1] = part
         end
     end
-    if #stack == 0 return "." end
+    if stack:len() == 0 return "." end
     stack:concat("/")
 end
 
@@ -53,7 +53,7 @@ end
 
 # Base returns the last element of path.
 base(path: str): str
-    dot = #path
+    dot = path:len()
     while dot > 1 and path:sub(dot, dot) == "/" do
         dot -= 1
     end
@@ -66,7 +66,7 @@ end
 
 # Dir returns the directory part of path.
 dir(path: str): str
-    dot = #path
+    dot = path:len()
     while dot > 1 and path:sub(dot, dot) == "/" do
         dot -= 1
     end
@@ -80,7 +80,7 @@ end
 # IsAbs reports whether path is absolute.
 is_abs(path: str): bool
     if path:sub(1, 1) == "/" return true end
-    if #path >= 2 and path:sub(2, 2) == ":" return true end
+    if path:len() >= 2 and path:sub(2, 2) == ":" return true end
     false
 end
 

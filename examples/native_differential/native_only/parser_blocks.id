@@ -82,7 +82,7 @@ end
 # Next word-or-symbol span. Non-word bytes are returned as single-byte spans so
 # the scan always advances.
 nextspan: span = (src: str, pos: i64)
-    n = #src
+    n = src:len()
     i = pos
     while i <= n and is_space(src:byte(i)) == 1
         i = i + 1
@@ -107,7 +107,7 @@ max_depth: i64 = (src: str)
     depth = 0
     best = 0
     pos = 1
-    n = #src
+    n = src:len()
     while pos <= n
         s: span = nextspan(src, pos)
         if s.kind == 0 - 1

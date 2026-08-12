@@ -15,7 +15,7 @@ end)
 
 @comp.define.derive("LayoutApi", generate(meta) -> str
     acc = ""
-    for i = 1, #meta.fields
+    for i = 1, meta:len().fields
         f = meta.fields[i]
         acc = acc .. "static inline size_t duo_" .. meta.name .. "_off_" .. f.name .. "(void) { return offsetof(duo_" .. meta.name .. ", " .. f.name .. "); }\n"
     end
@@ -28,5 +28,5 @@ end)
 
 BUNDLE_LEN = @comp.derive("HasXY", FullApi)
 
-print("bundle_len = " .. to(str)(#BUNDLE_LEN))
+print("bundle_len = " .. to(str)(BUNDLE_LEN:len()))
 print("ok")

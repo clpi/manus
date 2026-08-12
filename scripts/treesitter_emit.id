@@ -114,7 +114,7 @@ end
 
 lines(s: str): i64
     parts = s:split("\n")
-    n: i64 = #parts
+    n: i64 = parts:len()
     if n > 0
         last: str = parts[n]
         if last == ""
@@ -326,7 +326,7 @@ conflicts(): str
     b: str = "  conflicts: $ => [\n"
     rows = conflictrows():split("\n")
     i: i64 = 1
-    while i <= #rows
+    while i <= rows:len()
         row: str = rows[i]
         b = "{b}    ["
         n: i64 = width(row)
@@ -1442,7 +1442,7 @@ end
 field(row: str, n: i64): str
     parts = row:split(" ")
     got: str = ""
-    if n >= 1 and n <= #parts
+    if n >= 1 and n <= parts:len()
         got = parts[n]
     end
     got
@@ -1566,7 +1566,7 @@ specrows(body: str): i64
     rows = body:split("\n")
     seen: i64 = 0
     i: i64 = 1
-    while i <= #rows
+    while i <= rows:len()
         row: str = rows[i]
         two: str = row:sub(1, 2)
         one: str = row:sub(1, 1)
@@ -1651,7 +1651,7 @@ carve(body: str): str
     out: str = ""
     inside: bool = false
     i: i64 = 1
-    while i <= #rows
+    while i <= rows:len()
         row: str = rows[i]
         at1: i64 = row:find(markbegin)
         at2: i64 = row:find(markend)
@@ -1675,7 +1675,7 @@ rulesonly(body: str): str
     out: str = ""
     seen: bool = false
     i: i64 = 1
-    while i <= #rows
+    while i <= rows:len()
         row: str = rows[i]
         if !seen and row:find("    // ── No authored residue") > 0
             seen = true
@@ -1779,8 +1779,8 @@ main(): i64
         if onfile == body
             print("treesitter emit: PASS — regeneration is byte-identical to {out}")
         else
-            na: str = to(str)(#onfile)
-            nb: str = to(str)(#body)
+            na: str = to(str)(onfile:len())
+            nb: str = to(str)(body:len())
             print("treesitter emit: FAIL — {out} is not what this emitter produces.")
             print("  tracked {na} bytes, regenerated {nb} bytes.")
             print("  Either a generated region was hand-edited, or the emitter changed and")

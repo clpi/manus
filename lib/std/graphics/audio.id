@@ -121,7 +121,7 @@ buffer_load(buffer: any, path: str): any
     buffer.data = data
     buffer.sample_rate = sample_rate
     buffer.channels = channels
-    buffer.duration = #data / (sample_rate * channels)
+    buffer.duration = data:len() / (sample_rate * channels)
     {ok = true, duration = buffer.duration, sample_rate = sample_rate, channels = channels}
 end
 
@@ -229,13 +229,13 @@ end
 
 system_create_source(system: any, buffer: any): any
     source = source_new(buffer)
-    system.sources[#system.sources + 1] = source
+    system.sources[system:len().sources + 1] = source
     source
 end
 
 system_destroy_source(system: any, source: any): void
     i = 1
-    while i <= #system.sources
+    while i <= system:len().sources
         if system.sources[i] == source
             system.sources:remove(i)
             return
@@ -265,7 +265,7 @@ audio_mix_sources(sources: any, master_volume: f64, muted: bool): any
     # Find the longest source
     for source in sources
         if source.playing and source.buffer
-            len = #source.buffer.data
+            len = source:len().buffer.data
             if len > max_samples max_samples = len end
         end
     end
@@ -290,7 +290,7 @@ audio_mix_sources(sources: any, master_volume: f64, muted: bool): any
             while i <= max_samples
                 # Get sample index with pitch adjustment
                 sample_idx = (i - 1) * pitch:floor() + 1
-                if sample_idx <= #source.buffer.data
+                if sample_idx <= source:len().buffer.data
                     sample = source.buffer.data[sample_idx]
                     mixed[i] = mixed[i] + sample * vol
                 end

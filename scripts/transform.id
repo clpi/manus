@@ -119,7 +119,7 @@ main: i64 = ()
     # CONTROL 3 — every fixture this gate reads is on disk. A grep over a
     # missing file is false for every want, which reads as real failures.
     i = 1
-    while i <= #tier
+    while i <= tier:len()
         leaf = tier[i]
         f = "{root}/examples/parity/{leaf}.id"
         if !present(f)
@@ -157,7 +157,7 @@ main: i64 = ()
         bad += 1
     end
     i = 1
-    while i <= #named
+    while i <= named:len()
         n = named[i]
         if !row(reg, "\"transform\":\"{n}\"[^}}]*\"registered\":true")
             shout("FAIL — D1: {n} is not registered")
@@ -188,7 +188,7 @@ main: i64 = ()
     # not tier-1, so it is the row that shows strict mode gating on the
     # registry rather than on the parity list.
     i = 1
-    while i <= #hooks
+    while i <= hooks:len()
         h = hooks[i]
         if !row(reg, "\"hook\":\"{h}\"[^}}]*\"dispatch_allowed\":true")
             shout("FAIL — D2: internal hook {h} is refused by the strict dispatch gate")
@@ -212,7 +212,7 @@ main: i64 = ()
     # exactly the emit_call site. Enumerated from the enum, so an unregistered
     # new variant shows up rather than going unmeasured.
     i = 1
-    while i <= #calls
+    while i <= calls:len()
         c = calls[i]
         if !row(reg, "\"transform\":\"{c}\"[^}}]*\"is_call\":true")
             shout("FAIL — C1: {c} is not classed a call transform")
@@ -293,7 +293,7 @@ main: i64 = ()
     # top-level, nested-callback and block-body sites must fold to the SAME C
     # string literal, and the run must OBSERVE all three sites.
     i = 1
-    while i <= #tier
+    while i <= tier:len()
         stem = tier[i]
         n = named[i]
         src = "{root}/examples/parity/{stem}.id"

@@ -65,22 +65,22 @@ end
 name_encode(name: str): any
   bytes = {}
   pos = 1
-  len = #name
+  len = name:len()
   while pos <= len
     dot_pos = name:find(".", pos, true)
     if dot_pos == nil
       dot_pos = len + 1
     end
     label_len = dot_pos - pos
-    bytes[#bytes + 1] = label_len
+    bytes[bytes:len() + 1] = label_len
     i = pos
     while i < dot_pos
-      bytes[#bytes + 1] = name:byte(i)
+      bytes[bytes:len() + 1] = name:byte(i)
       i = i + 1
     end
     pos = dot_pos + 1
   end
-  bytes[#bytes + 1] = 0
+  bytes[bytes:len() + 1] = 0
   bytes
 end
 name_decode(data: any, pos: i64): any
@@ -88,7 +88,7 @@ name_decode(data: any, pos: i64): any
   jumped = false
   original_pos = pos
   while true
-    if pos > #data
+    if pos > data:len()
       break
     end
     len = data[pos]
@@ -110,7 +110,7 @@ name_decode(data: any, pos: i64): any
         label = label .. data[pos + i]:char()
         i = i + 1
       end
-      parts[#parts + 1] = label
+      parts[parts:len() + 1] = label
       pos = pos + len
     end
   end
@@ -139,16 +139,16 @@ query_encode(q: any): any
   q.header.qdcount = 1
   header_bytes = header_encode(q.header)
   for b in header_bytes
-    bytes[#bytes + 1] = b
+    bytes[bytes:len() + 1] = b
   end
   name_bytes = name_encode(q.question.name)
   for b in name_bytes
-    bytes[#bytes + 1] = b
+    bytes[bytes:len() + 1] = b
   end
-  bytes[#bytes + 1] = q.question.qtype >> 8 & 255
-  bytes[#bytes + 1] = q.question.qtype & 255
-  bytes[#bytes + 1] = q.question.qclass >> 8 & 255
-  bytes[#bytes + 1] = q.question.qclass & 255
+  bytes[bytes:len() + 1] = q.question.qtype >> 8 & 255
+  bytes[bytes:len() + 1] = q.question.qtype & 255
+  bytes[bytes:len() + 1] = q.question.qclass >> 8 & 255
+  bytes[bytes:len() + 1] = q.question.qclass & 255
   bytes
 end
 record_decode(data: any, pos: i64): any
@@ -172,7 +172,7 @@ record_decode(data: any, pos: i64): any
     while i < 16
       hi = data[pos + i]
       lo = data[pos + i + 1]
-      parts[#parts + 1] = "%02x%02x":format(hi, lo)
+      parts[parts:len() + 1] = "%02x%02x":format(hi, lo)
       i = i + 2
     end
     rdata = parts:concat(":")
@@ -231,7 +231,7 @@ response_decode(data: any): any
   i = 0
   while i < header.ancount
     record = record_decode(data, pos)
-    answers[#answers + 1] = record
+    answers[answers:len() + 1] = record
     pos = record.next
     i = i + 1
   end
@@ -239,7 +239,7 @@ response_decode(data: any): any
   i = 0
   while i < header.nscount
     record = record_decode(data, pos)
-    authority[#authority + 1] = record
+    authority[authority:len() + 1] = record
     pos = record.next
     i = i + 1
   end
@@ -247,7 +247,7 @@ response_decode(data: any): any
   i = 0
   while i < header.arcount
     record = record_decode(data, pos)
-    additional[#additional + 1] = record
+    additional[additional:len() + 1] = record
     pos = record.next
     i = i + 1
   end
@@ -315,7 +315,7 @@ resolver_resolve(resolver: any, name: str, qtype: i64): any
       authority = {},
       additional = {}
     }
-    if result.header.rcode == 0 and #result.answers > 0
+    if result.header.rcode == 0 and result:len().answers > 0
       resolver.cache[cache_key] = result
     end
     return result
@@ -332,7 +332,7 @@ resolver_lookup_a(resolver: any, name: str): any
   ips = {}
   for answer in result.answers
     if answer.type == A
-      ips[#ips + 1] = answer.rdata
+      ips[ips:len() + 1] = answer.rdata
     end
   end
   {
@@ -347,7 +347,7 @@ resolver_lookup_aaaa(resolver: any, name: str): any
   ips = {}
   for answer in result.answers
     if answer.type == AAAA
-      ips[#ips + 1] = answer.rdata
+      ips[ips:len() + 1] = answer.rdata
     end
   end
   {
@@ -362,7 +362,7 @@ resolver_lookup_mx(resolver: any, name: str): any
   mx_records = {}
   for answer in result.answers
     if answer.type == MX
-      mx_records[#mx_records + 1] = answer.rdata
+      mx_records[mx_records:len() + 1] = answer.rdata
     end
   end
   table.sort(mx_records, (a: any, b: any): any

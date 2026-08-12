@@ -11,11 +11,11 @@ sha1(s: str): str
     if s == nil s = "" end
     # padding: append 0x80, then zeros, then 64-bit length
     msg = s .. 0x80:char()
-    while #msg % 64 != 56
+    while msg:len() % 64 != 56
         msg = msg .. 0:char()
     end
     # append length in bits as big-endian 64-bit
-    bit_len = #s * 8
+    bit_len = s:len() * 8
     # high 32 bits (usually 0 for small inputs)
     msg = msg .. 0:char(0, 0, 0)
     # low 32 bits
@@ -33,7 +33,7 @@ sha1(s: str): str
     h4 = 0xC3D2E1F0
     # process each 64-byte block
     block = 0
-    nblocks = #msg / 64
+    nblocks = msg:len() / 64
     while block < nblocks
         w = {}
         j = 0
@@ -107,10 +107,10 @@ sha256(s: str): str
     }
     # padding
     msg = s .. 0x80:char()
-    while #msg % 64 != 56
+    while msg:len() % 64 != 56
         msg = msg .. 0:char()
     end
-    bit_len = #s * 8
+    bit_len = s:len() * 8
     msg = msg .. 0:char(0, 0, 0)
     msg = msg .. string.char(
         (bit_len / 16777216) % 256,
@@ -128,7 +128,7 @@ sha256(s: str): str
     hv6 = 0x1f83d9ab
     hv7 = 0x5be0cd19
     block = 0
-    nblocks = #msg / 64
+    nblocks = msg:len() / 64
     while block < nblocks
         w = {}
         j = 0

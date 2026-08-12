@@ -1,0 +1,17 @@
+# @corpus current
+# had the binding condition and `while` did not, so the golden `leb128` and
+# `lexer` of §20 both stop on their first loop.
+# The loop ends when the binding is falsy, so nil terminates it and nothing
+# reads a sentinel (B-8).
+# expect: 26
+src = { 3, 5, 7, 11 }
+pos = 0
+pull = ()
+    pos = pos + 1
+    src[pos]
+end
+total = 0
+while b = pull()
+    total = total + b
+end
+print(total)

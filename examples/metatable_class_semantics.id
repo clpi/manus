@@ -1,3 +1,4 @@
+# @corpus history
 global Vector = {}
 
 Vector.__index = Vector
@@ -62,7 +63,7 @@ fallback = setmetatable({}, {
 print(to(str)(v))
 print(to(str)(sum))
 print(to(str)(v == w))
-print(to(str)(#v))
+print(to(str)(v:len()))
 print(to(str)(4 in v))
 print(to(str)(proxy.answer))
 print(fallback.anything)

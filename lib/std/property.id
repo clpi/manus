@@ -9,7 +9,7 @@ std_property_parse(path: str): any
     parts = {}
     current = ""
     i = 1
-    while i <= #path
+    while i <= path:len()
         ch = path:sub(i, i)
         if ch == "."
             if current != ""

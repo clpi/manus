@@ -24,10 +24,10 @@ end
 
 write_varint(w: any, value: i64): void
     while value >= 0x80
-        w.bytes[#w.bytes + 1] = (value & 0x7F) | 0x80
+        w.bytes[w:len().bytes + 1] = (value & 0x7F) | 0x80
         value = value >> 7
     end
-    w.bytes[#w.bytes + 1] = value
+    w.bytes[w:len().bytes + 1] = value
 end
 
 write_tag(w: any, field: i64, wire_type: i64): void
@@ -41,34 +41,34 @@ end
 
 write_field_bytes(w: any, field: i64, data: any): void
     write_tag(w, field, WIRE_LENGTH_DELIMITED)
-    write_varint(w, #data)
+    write_varint(w, data:len())
     for b in data
-        w.bytes[#w.bytes + 1] = b
+        w.bytes[w:len().bytes + 1] = b
     end
 end
 
 write_field_string(w: any, field: i64, value: str): void
     write_tag(w, field, WIRE_LENGTH_DELIMITED)
     bytes = string_to_bytes(value)
-    write_varint(w, #bytes)
+    write_varint(w, bytes:len())
     for b in bytes
-        w.bytes[#w.bytes + 1] = b
+        w.bytes[w:len().bytes + 1] = b
     end
 end
 
 write_field_fixed32(w: any, field: i64, value: i64): void
     write_tag(w, field, WIRE_32BIT)
-    w.bytes[#w.bytes + 1] = value & 0xFF
-    w.bytes[#w.bytes + 1] = (value >> 8) & 0xFF
-    w.bytes[#w.bytes + 1] = (value >> 16) & 0xFF
-    w.bytes[#w.bytes + 1] = (value >> 24) & 0xFF
+    w.bytes[w:len().bytes + 1] = value & 0xFF
+    w.bytes[w:len().bytes + 1] = (value >> 8) & 0xFF
+    w.bytes[w:len().bytes + 1] = (value >> 16) & 0xFF
+    w.bytes[w:len().bytes + 1] = (value >> 24) & 0xFF
 end
 
 write_field_fixed64(w: any, field: i64, value: i64): void
     write_tag(w, field, WIRE_64BIT)
     i = 0
     while i < 8
-        w.bytes[#w.bytes + 1] = (value >> (i * 8)) & 0xFF
+        w.bytes[w:len().bytes + 1] = (value >> (i * 8)) & 0xFF
         i += 1
     end
 end
@@ -79,24 +79,24 @@ write_field_float(w: any, field: i64, value: f64): void
     # Convert to IEEE 754 float32 bytes
     if value != value
         # NaN
-        w.bytes[#w.bytes + 1] = 0x7F
-        w.bytes[#w.bytes + 1] = 0xC0
-        w.bytes[#w.bytes + 1] = 0x00
-        w.bytes[#w.bytes + 1] = 0x00
+        w.bytes[w:len().bytes + 1] = 0x7F
+        w.bytes[w:len().bytes + 1] = 0xC0
+        w.bytes[w:len().bytes + 1] = 0x00
+        w.bytes[w:len().bytes + 1] = 0x00
         return
     end
     if value == math.huge
-        w.bytes[#w.bytes + 1] = 0x7F
-        w.bytes[#w.bytes + 1] = 0x80
-        w.bytes[#w.bytes + 1] = 0x00
-        w.bytes[#w.bytes + 1] = 0x00
+        w.bytes[w:len().bytes + 1] = 0x7F
+        w.bytes[w:len().bytes + 1] = 0x80
+        w.bytes[w:len().bytes + 1] = 0x00
+        w.bytes[w:len().bytes + 1] = 0x00
         return
     end
     if value == -math.huge
-        w.bytes[#w.bytes + 1] = 0xFF
-        w.bytes[#w.bytes + 1] = 0x80
-        w.bytes[#w.bytes + 1] = 0x00
-        w.bytes[#w.bytes + 1] = 0x00
+        w.bytes[w:len().bytes + 1] = 0xFF
+        w.bytes[w:len().bytes + 1] = 0x80
+        w.bytes[w:len().bytes + 1] = 0x00
+        w.bytes[w:len().bytes + 1] = 0x00
         return
     end
     sign = 0
@@ -105,10 +105,10 @@ write_field_float(w: any, field: i64, value: f64): void
         value = -value
     end
     if value == 0
-        w.bytes[#w.bytes + 1] = sign * 128
-        w.bytes[#w.bytes + 1] = 0x00
-        w.bytes[#w.bytes + 1] = 0x00
-        w.bytes[#w.bytes + 1] = 0x00
+        w.bytes[w:len().bytes + 1] = sign * 128
+        w.bytes[w:len().bytes + 1] = 0x00
+        w.bytes[w:len().bytes + 1] = 0x00
+        w.bytes[w:len().bytes + 1] = 0x00
         return
     end
     # Decompose
@@ -127,10 +127,10 @@ write_field_float(w: any, field: i64, value: f64): void
     b1 = mantissa / (2^15):floor() % 256
     b2 = mantissa / (2^7):floor() % 256
     b3 = (mantissa * 2) % 256
-    w.bytes[#w.bytes + 1] = b0
-    w.bytes[#w.bytes + 1] = b1
-    w.bytes[#w.bytes + 1] = b2
-    w.bytes[#w.bytes + 1] = b3
+    w.bytes[w:len().bytes + 1] = b0
+    w.bytes[w:len().bytes + 1] = b1
+    w.bytes[w:len().bytes + 1] = b2
+    w.bytes[w:len().bytes + 1] = b3
 end
 
 read_field_float(r: any): f64
@@ -165,7 +165,7 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 reader_new(data: any): any
-    {data = data, pos = 1, len = #data}
+    {data = data, pos = 1, len = data:len()}
 end
 
 reader_varint(r: any): any
@@ -207,7 +207,7 @@ reader_field_bytes(r: any, wire_type: i64): any
     out = {}
     i = 0
     while i < len
-        out[#out + 1] = r.data[r.pos]
+        out[out:len() + 1] = r.data[r.pos]
         r.pos = r.pos + 1
         i += 1
     end
@@ -249,8 +249,8 @@ end
 string_to_bytes(s: str): any
     out = {}
     i = 1
-    while i <= #s
-        out[#out + 1] = s:byte(i)
+    while i <= s:len()
+        out[out:len() + 1] = s:byte(i)
         i += 1
     end
     out
@@ -259,8 +259,8 @@ end
 bytes_to_string(bytes: any): str
     parts = {}
     i = 1
-    while i <= #bytes
-        parts[#parts + 1] = bytes[i]:char()
+    while i <= bytes:len()
+        parts[parts:len() + 1] = bytes[i]:char()
         i += 1
     end
     parts:concat()

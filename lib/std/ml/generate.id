@@ -58,7 +58,7 @@ sample_greedy(logits: any): i64
     max_idx = 1
     max_val = logits[1]
     i = 2
-    while i <= #logits
+    while i <= logits:len()
         if logits[i] > max_val
             max_val = logits[i]
             max_idx = i
@@ -73,7 +73,7 @@ sample_temperature(logits: any, temperature: f64): i64
 
     # Apply temperature
     scaled = {}
-    for i = 1, #logits
+    for i = 1, logits:len()
         scaled[i] = logits[i] / temperature
     end
 
@@ -89,8 +89,8 @@ sample_top_k(logits: any, k: i64, temperature: f64): i64
 
     # Find top k
     indexed = {}
-    for i = 1, #logits
-        indexed[#indexed + 1] = {idx = i, logit = logits[i]}
+    for i = 1, logits:len()
+        indexed[indexed:len() + 1] = {idx = i, logit = logits[i]}
     end
 
     # Sort by logit descending
@@ -99,15 +99,15 @@ sample_top_k(logits: any, k: i64, temperature: f64): i64
     # Keep top k
     top_k = {}
     i = 1
-    while i <= k and i <= #indexed
-        top_k[#top_k + 1] = indexed[i]
+    while i <= k and i <= indexed:len()
+        top_k[top_k:len() + 1] = indexed[i]
         i += 1
     end
 
     # Apply temperature to top k
     scaled = {}
     for item in top_k
-        scaled[#scaled + 1] = item.logit / temperature
+        scaled[scaled:len() + 1] = item.logit / temperature
     end
 
     # Softmax
@@ -123,15 +123,15 @@ sample_top_p(logits: any, top_p: f64, temperature: f64): i64
 
     # Sort logits
     indexed = {}
-    for i = 1, #logits
-        indexed[#indexed + 1] = {idx = i, logit = logits[i]}
+    for i = 1, logits:len()
+        indexed[indexed:len() + 1] = {idx = i, logit = logits[i]}
     end
     indexed:sort((a: any, b: any): any a.logit > b.logit)
 
     # Apply temperature and softmax
     scaled = {}
     for item in indexed
-        scaled[#scaled + 1] = item.logit / temperature
+        scaled[scaled:len() + 1] = item.logit / temperature
     end
     probs = softmax(scaled)
 
@@ -139,7 +139,7 @@ sample_top_p(logits: any, top_p: f64, temperature: f64): i64
     cumulative = 0
     cutoff = 0
     i = 1
-    while i <= #probs
+    while i <= probs:len()
         cumulative += probs[i]
         if cumulative >= top_p
             cutoff = i
@@ -148,7 +148,7 @@ sample_top_p(logits: any, top_p: f64, temperature: f64): i64
         i += 1
     end
 
-    if cutoff == 0 cutoff = #probs end
+    if cutoff == 0 cutoff = probs:len() end
 
     # Renormalize and sample
     truncated_probs = {}
@@ -173,13 +173,13 @@ sample_beam_search(logits: any, beams: i64, sequence: any): any
         end
 
         indexed = {}
-        for i = 1, #logits
-            indexed[#indexed + 1] = {idx = i, logit = logits[i]}
+        for i = 1, logits:len()
+            indexed[indexed:len() + 1] = {idx = i, logit = logits[i]}
         end
         indexed:sort((a: any, b: any): any a.logit > b.logit)
 
         i = 1
-        while i <= beams and i <= #indexed
+        while i <= beams and i <= indexed:len()
             beam_scores[i].tokens[1] = indexed[i].idx
             beam_scores[i].score = indexed[i].logit
             i += 1
@@ -189,24 +189,24 @@ sample_beam_search(logits: any, beams: i64, sequence: any): any
 
     # Subsequent steps: expand each beam, keep top beams
     all_candidates = {}
-    for beam_idx = 1, #sequence
+    for beam_idx = 1, sequence:len()
         beam = sequence[beam_idx]
         # Expand this beam with top candidates
         indexed = {}
-        for i = 1, #logits
-            indexed[#indexed + 1] = {idx = i, logit = logits[i]}
+        for i = 1, logits:len()
+            indexed[indexed:len() + 1] = {idx = i, logit = logits[i]}
         end
         indexed:sort((a: any, b: any): any a.logit > b.logit)
 
-        top_n = beams:min(#indexed)
+        top_n = beams:min(indexed:len())
         i = 1
         while i <= top_n
             new_tokens = {}
             for t in beam.tokens
-                new_tokens[#new_tokens + 1] = t
+                new_tokens[new_tokens:len() + 1] = t
             end
-            new_tokens[#new_tokens + 1] = indexed[i].idx
-            all_candidates[#all_candidates + 1] = {
+            new_tokens[new_tokens:len() + 1] = indexed[i].idx
+            all_candidates[all_candidates:len() + 1] = {
                 score = beam.score + indexed[i].logit,
                 tokens = new_tokens,
             }
@@ -218,7 +218,7 @@ sample_beam_search(logits: any, beams: i64, sequence: any): any
     all_candidates:sort((a: any, b: any): any a.score > b.score)
     result = {}
     i = 1
-    while i <= beams and i <= #all_candidates
+    while i <= beams and i <= all_candidates:len()
         result[i] = all_candidates[i]
         i += 1
     end
@@ -233,7 +233,7 @@ apply_repetition_penalty(logits: any, generated: any, penalty: f64): any
     if penalty <= 1.0 return logits end
 
     result = {}
-    for i = 1, #logits
+    for i = 1, logits:len()
         result[i] = logits[i]
     end
 
@@ -252,7 +252,7 @@ apply_frequency_penalty(logits: any, token_counts: any, penalty: f64): any
     if penalty == 0.0 return logits end
 
     result = {}
-    for i = 1, #logits
+    for i = 1, logits:len()
         count = token_counts[i] or 0
         result[i] = logits[i] - penalty * count
     end
@@ -263,7 +263,7 @@ apply_presence_penalty(logits: any, generated: any, penalty: f64): any
     if penalty == 0.0 return logits end
 
     result = {}
-    for i = 1, #logits
+    for i = 1, logits:len()
         result[i] = logits[i]
     end
 
@@ -281,15 +281,15 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 check_stop_tokens(generated: any, stop_tokens: any): bool
-    if #stop_tokens == 0 return false end
+    if stop_tokens:len() == 0 return false end
     # Check if any stop token appears at the end
     for stop in stop_tokens
-        stop_len = #stop
-        if #generated >= stop_len
+        stop_len = stop:len()
+        if generated:len() >= stop_len
             matched = true
             i = 1
             while i <= stop_len
-                if generated[#generated - stop_len + i] != stop[i]
+                if generated[generated:len() - stop_len + i] != stop[i]
                     matched = false
                     break
                 end
@@ -322,13 +322,13 @@ softmax(logits: any): any
 
     exp_sum = 0
     probs = {}
-    for i = 1, #logits
+    for i = 1, logits:len()
         exp_val = logits[i] - max_logit:exp()
         probs[i] = exp_val
         exp_sum += exp_val
     end
 
-    for i = 1, #probs
+    for i = 1, probs:len()
         probs[i] = probs[i] / exp_sum
     end
     probs
@@ -337,26 +337,26 @@ end
 sample_from_probs(probs: any): i64
     r = math.random()
     cumulative = 0
-    for i = 1, #probs
+    for i = 1, probs:len()
         cumulative += probs[i]
         if r <= cumulative
             return i
         end
     end
-    #probs
+    probs:len()
 end
 
 top_k_logits(logits: any, k: i64): any
     indexed = {}
-    for i = 1, #logits
-        indexed[#indexed + 1] = {idx = i, logit = logits[i]}
+    for i = 1, logits:len()
+        indexed[indexed:len() + 1] = {idx = i, logit = logits[i]}
     end
     indexed:sort((a: any, b: any): any a.logit > b.logit)
 
     result = {}
     i = 1
-    while i <= k and i <= #indexed
-        result[#result + 1] = indexed[i]
+    while i <= k and i <= indexed:len()
+        result[result:len() + 1] = indexed[i]
         i += 1
     end
     result

@@ -88,7 +88,7 @@ done
 ok=0; wrong=0; bail=0; noc=0
 for f in $d/t*.id; do
   if $duo compile "$f" -o $d/c.bin >/dev/null 2>&1; then cv=$($d/c.bin; echo $?); else noc=$((noc+1)); continue; fi
-  if $duo compile #backend=direct "$f" -o $d/x.bin >/dev/null 2>&1; then dv=$($d/x.bin; echo $?); else bail=$((bail+1)); continue; fi
+  if $duo compile backend:len()=direct "$f" -o $d/x.bin >/dev/null 2>&1; then dv=$($d/x.bin; echo $?); else bail=$((bail+1)); continue; fi
   if [ "$cv" = "$dv" ]; then ok=$((ok+1)); else wrong=$((wrong+1)); echo "$(basename $f) c=$cv direct=$dv" >> $d/wrong.txt; fi
 done
 echo "$ok $wrong $bail $noc"

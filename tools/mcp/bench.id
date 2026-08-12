@@ -77,12 +77,12 @@ fun audit_smokes(): str
     }
     results = {}
     i = 1
-    while i <= #paths
+    while i <= paths:len()
         table.insert(results, shared.audit_native_boxing(paths[i]))
         i += 1
     end
     tallies = audit_tally(results)
-    total = #paths
+    total = paths:len()
     std.json.encode({ total = total, passed = tallies.passed, failed = tallies.failed, results = results })
 end
 
@@ -296,7 +296,7 @@ std.mcp.register_tool("duo_agent_session_start", {
     coord = shared.coordination_read()
     p0 = shared.open_p0_gaps()
     canon = shared.canonical_index()
-    open_count = #p0
+    open_count = p0:len()
     std.json.encode({
         agent_id = agent,
         dev_control_plane = dev_json,

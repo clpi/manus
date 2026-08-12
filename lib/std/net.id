@@ -158,7 +158,7 @@ http_serve(port: i64, handler: any): void
             resp_body = handler(method, req_path, raw) or ""
             response: str = "HTTP/1.0 200 OK\r\n"
                 .. "Content-Type: text/plain\r\n"
-                .. "Content-Length: " .. to(str)(#resp_body) .. "\r\n"
+                .. "Content-Length: " .. to(str)(resp_body:len()) .. "\r\n"
                 .. "Connection: close\r\n\r\n"
                 .. resp_body
             send(cli, response)

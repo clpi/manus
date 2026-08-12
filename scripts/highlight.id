@@ -228,7 +228,7 @@ field(line: str, n: i64): str
     i: i64 = 1
     inword: bool = false
     start: i64 = 0
-    while i <= #line
+    while i <= line:len()
         b: i64 = line:byte(i)
         if b == 32 or b == 9
             if inword
@@ -249,7 +249,7 @@ field(line: str, n: i64): str
     if inword
         got = got + 1
         if got == n
-            out = line:sub(start, #line)
+            out = line:sub(start, line:len())
         end
     end
     out
@@ -262,16 +262,16 @@ end
 cut(body: str): any
     all = {}
     for i, ln in body:split("\n")
-        all[#all + 1] = ln
+        all[all:len() + 1] = ln
     end
-    last: i64 = #all
+    last: i64 = all:len()
     if last > 0 and all[last] == ""
         last = last - 1
     end
     out = {}
     i: i64 = 1
     while i <= last
-        out[#out + 1] = all[i]
+        out[out:len() + 1] = all[i]
         i = i + 1
     end
     out
@@ -294,10 +294,10 @@ goldrows(body: str): any
     head: str = indent .. q
     for i, ln in body:split("\n")
         if ln:sub(1, 5) == head
-            rest: str = ln:sub(6, #ln)
+            rest: str = ln:sub(6, ln:len())
             b: i64 = rest:find(q)
             if b > 0
-                out[#out + 1] = rest:sub(1, b - 1)
+                out[out:len() + 1] = rest:sub(1, b - 1)
             end
         end
     end
@@ -306,7 +306,7 @@ end
 
 pad(s: str, width: i64): str
     out: str = s
-    while #out < width
+    while out:len() < width
         out = "{out} "
     end
     out
@@ -392,7 +392,7 @@ end
 # halves: a real row must parse, and a comment must not.
 sidespan: str = (raw: str)
     out: str = ""
-    n: i64 = #raw
+    n: i64 = raw:len()
     got: i64 = 0
     nums: str = ""
     i: i64 = 1
@@ -446,7 +446,7 @@ end
 # grammar has one — which would have overstated the baseline this beats.
 capname(tok: str): str
     i: i64 = 2
-    while i <= #tok and (wordy(tok:byte(i)) or tok:byte(i) == 46)
+    while i <= tok:len() and (wordy(tok:byte(i)) or tok:byte(i) == 46)
         i = i + 1
     end
     tok:sub(1, i - 1)
@@ -461,16 +461,16 @@ captures(body: str, glyph: str): i64
     acc: str = ""
     lines = cut(body)
     i: i64 = 1
-    while i <= #lines
+    while i <= lines:len()
         ln: str = lines[i]
         if ln:sub(1, 1) != ";" and ln:find(needle) > 0
             j: i64 = i
             found: str = ""
-            while j <= #lines and found == ""
+            while j <= lines:len() and found == ""
                 cur: str = lines[j]
                 at: i64 = cur:find("@")
                 if at > 0
-                    rest: str = cur:sub(at, #cur)
+                    rest: str = cur:sub(at, cur:len())
                     found = capname(field(rest, 1))
                 end
                 j = j + 1
@@ -548,7 +548,7 @@ main(): i64
         std.os.exit(1)
     end
 
-    if #srcs != #golds or #srcs != #kinds
+    if srcs:len() != golds:len() or srcs:len() != kinds:len()
         print("highlight corpus: FAIL — the fixture rows are not parallel")
         std.os.exit(3)
     end
@@ -576,7 +576,7 @@ main(): i64
     codebytes = {}
 
     f: i64 = 1
-    while f <= #srcs
+    while f <= srcs:len()
         src: str = srcs[f]
         gold: str = golds[f]
         kind: str = kinds[f]
@@ -591,48 +591,48 @@ main(): i64
             sl = cut(slurp(src))
             gl = goldrows(slurp(gold))
             nfix = nfix + 1
-            firstline[f] = #rolelines + 1
+            firstline[f] = rolelines:len() + 1
 
-            if #rl != #sl
-                nl: str = to(str)(#sl)
-                nr: str = to(str)(#rl)
+            if rl:len() != sl:len()
+                nl: str = to(str)(sl:len())
+                nr: str = to(str)(rl:len())
                 print("  !! {src}: {nl} source lines, {nr} role lines")
                 bad = bad + 1
             end
-            if #gl != #rl
-                ng: str = to(str)(#gl)
-                nr: str = to(str)(#rl)
+            if gl:len() != rl:len()
+                ng: str = to(str)(gl:len())
+                nr: str = to(str)(rl:len())
                 print("  !! {gold}: {ng} golden rows against {nr} projected")
                 bad = bad + 1
             end
 
             i: i64 = 1
-            while i <= #rl
+            while i <= rl:len()
                 srcln: str = ""
-                if i <= #sl
+                if i <= sl:len()
                     srcln = sl[i]
                 end
                 roleln: str = rl[i]
                 cardln: str = ""
-                if i <= #cl
+                if i <= cl:len()
                     cardln = cl[i]
                 end
-                rolelines[#rolelines + 1] = roleln
-                cardlines[#cardlines + 1] = cardln
+                rolelines[rolelines:len() + 1] = roleln
+                cardlines[cardlines:len() + 1] = cardln
                 nlines = nlines + 1
-                nbytes = nbytes + #srcln
+                nbytes = nbytes + srcln:len()
 
                 # TOTALITY, by length. This is the whole H-6 check.
-                if #roleln != #srcln
-                    a: str = to(str)(#srcln)
-                    c: str = to(str)(#roleln)
+                if roleln:len() != srcln:len()
+                    a: str = to(str)(srcln:len())
+                    c: str = to(str)(roleln:len())
                     n: str = i:to(str)
                     print("  !! {src}:{n} totality — {a} source bytes, {c} roles")
                     bad = bad + 1
                 end
-                if i <= #gl and gl[i] == roleln
+                if i <= gl:len() and gl[i] == roleln
                     nagree = nagree + 1
-                elseif i <= #gl
+                elseif i <= gl:len()
                     n: str = i:to(str)
                     want: str = gl[i]
                     print("  !! {src}:{n} golden mismatch")
@@ -642,10 +642,10 @@ main(): i64
                 end
 
                 j: i64 = 1
-                while j <= #roleln
+                while j <= roleln:len()
                     rb: str = roleln:sub(j, j)
                     sb: i64 = 32
-                    if j <= #srcln
+                    if j <= srcln:len()
                         sb = srcln:byte(j)
                     end
                     if !blank(sb)
@@ -659,16 +659,16 @@ main(): i64
                             nroled = nroled + 1
                             slot: i64 = 0
                             z: i64 = 1
-                            while z <= #codes
+                            while z <= codes:len()
                                 if codes[z] == rb
                                     slot = z
                                 end
                                 z = z + 1
                             end
                             if slot == 0
-                                codes[#codes + 1] = rb
-                                codebytes[#codes] = 0
-                                slot = #codes
+                                codes[codes:len() + 1] = rb
+                                codebytes[codes:len()] = 0
+                                slot = codes:len()
                             end
                             codebytes[slot] = codebytes[slot] + 1
                         end
@@ -682,11 +682,11 @@ main(): i64
                 # that were never in question. Stated rather than silently
                 # filtered.
                 j = 1
-                while j <= #roleln
+                while j <= roleln:len()
                     rb: str = roleln:sub(j, j)
                     cb: str = cardln:sub(j, j)
                     sb: i64 = 32
-                    if j <= #srcln
+                    if j <= srcln:len()
                         sb = srcln:byte(j)
                     end
                     if blank(sb) or rb == "m" or rb == "t" or rb == "g"
@@ -696,7 +696,7 @@ main(): i64
                         step: i64 = 1
                         if wordy(sb)
                             e: i64 = j
-                            while e <= #srcln and wordy(srcln:byte(e))
+                            while e <= srcln:len() and wordy(srcln:byte(e))
                                 e = e + 1
                             end
                             lex = srcln:sub(j, e - 1)
@@ -705,15 +705,15 @@ main(): i64
                         one: str = "{rb}{cb}"
                         slot: i64 = 0
                         k: i64 = 1
-                        while k <= #lexs
+                        while k <= lexs:len()
                             if lexs[k] == lex
                                 slot = k
                             end
                             k = k + 1
                         end
                         if slot == 0
-                            lexs[#lexs + 1] = lex
-                            pairsof[#lexs] = one
+                            lexs[lexs:len() + 1] = lex
+                            pairsof[lexs:len()] = one
                         else
                             prior: str = pairsof[slot]
                             if !held(prior, one)
@@ -763,7 +763,7 @@ main(): i64
     print("  THE PROOFS, by value — role AND card at a named byte")
     npass: i64 = 0
     p: i64 = 1
-    while p <= #proofs
+    while p <= proofs:len()
         row: str = proofs[p]
         fi: i64 = to(i64)(field(row, 1))
         li: i64 = to(i64)(field(row, 2))
@@ -771,15 +771,15 @@ main(): i64
         wantrole: str = field(row, 4)
         wantcard: str = field(row, 5)
         base: i64 = 0
-        if fi >= 1 and fi <= #srcs
+        if fi >= 1 and fi <= srcs:len()
             base = firstline[fi]
         end
         gotrole: str = "-"
         gotcard: str = "-"
-        if base > 0 and base + li - 1 <= #rolelines
+        if base > 0 and base + li - 1 <= rolelines:len()
             rr: str = rolelines[base + li - 1]
             cc: str = cardlines[base + li - 1]
-            if bi <= #rr
+            if bi <= rr:len()
                 gotrole = rolename(rr:sub(bi, bi))
                 gotcard = cardname(rr:sub(bi, bi), cc:sub(bi, bi))
             end
@@ -792,7 +792,7 @@ main(): i64
             bad = bad + 1
         end
         src: str = "?"
-        if fi >= 1 and fi <= #srcs
+        if fi >= 1 and fi <= srcs:len()
             src = srcs[fi]
         end
         loc: str = "{src}:{li}:{bi}"
@@ -810,7 +810,7 @@ main(): i64
         print("    {mark} {cell}{rcell}{ccell}{note}")
         p = p + 1
     end
-    nproofs: str = to(str)(#proofs)
+    nproofs: str = to(str)(proofs:len())
     print("    {npass} of {nproofs} proofs hold")
 
     # ── THE SPAN CORPUS, gap[078] ───────────────────────────────────────────
@@ -835,9 +835,9 @@ main(): i64
     sdiag: i64 = 0
     scontrol: i64 = 0
     s: i64 = 1
-    while s <= #spansrcs
+    while s <= spansrcs:len()
         src: str = spansrcs[s]
-        base: str = src:sub(1, #src - 4)
+        base: str = src:sub(1, src:len() - 4)
         side: str = "{base}.roles.id"
         kind: str = spankinds[s]
         std.script.run("hlpath={src} {bin} > {work}/sr 2>/dev/null")
@@ -846,21 +846,21 @@ main(): i64
         cl = cut(slurp("{work}/sc"))
         got = {}
         i: i64 = 1
-        while i <= #rl
+        while i <= rl:len()
             roleln: str = rl[i]
             cardln: str = cl[i]
             j: i64 = 1
-            while j <= #roleln
+            while j <= roleln:len()
                 rb: str = roleln:sub(j, j)
                 cb: str = cardln:sub(j, j)
                 e: i64 = j
-                while e <= #roleln and roleln:sub(e, e) == rb and cardln:sub(e, e) == cb
+                while e <= roleln:len() and roleln:sub(e, e) == rb and cardln:sub(e, e) == cb
                     e = e + 1
                 end
                 wide: i64 = e - j
                 if rb != "l" or cb != "s"
                     nm: str = rolename(rb)
-                    got[#got + 1] = "{i} {j} {wide} {nm}"
+                    got[got:len() + 1] = "{i} {j} {wide} {nm}"
                     nsolid = nsolid + wide
                     if rb == "!"
                         ndiag = ndiag + wide
@@ -873,16 +873,16 @@ main(): i64
                         nroled = nroled + wide
                         slot: i64 = 0
                         z: i64 = 1
-                        while z <= #codes
+                        while z <= codes:len()
                             if codes[z] == rb
                                 slot = z
                             end
                             z = z + 1
                         end
                         if slot == 0
-                            codes[#codes + 1] = rb
-                            codebytes[#codes] = 0
-                            slot = #codes
+                            codes[codes:len() + 1] = rb
+                            codebytes[codes:len()] = 0
+                            slot = codes:len()
                         end
                         codebytes[slot] = codebytes[slot] + wide
                     end
@@ -895,25 +895,25 @@ main(): i64
         for k, ln in slurp(side):split("\n")
             rec: str = sidespan(ln)
             if rec != ""
-                want[#want + 1] = rec
+                want[want:len() + 1] = rec
             end
         end
-        if #want == 0
+        if want:len() == 0
             print("    !! {side} parsed to 0 spans; the sidecar is unreadable, not empty")
             bad = bad + 1
         end
-        wide2: i64 = #got
-        if #want > wide2
-            wide2 = #want
+        wide2: i64 = got:len()
+        if want:len() > wide2
+            wide2 = want:len()
         end
         i = 1
         while i <= wide2
             sa: str = "-"
             sb: str = "-"
-            if i <= #got
+            if i <= got:len()
                 sa = got[i]
             end
-            if i <= #want
+            if i <= want:len()
                 sb = want[i]
             end
             if sa != sb
@@ -923,7 +923,7 @@ main(): i64
             end
             i = i + 1
         end
-        nspan = nspan + #got
+        nspan = nspan + got:len()
         nsfix = nsfix + 1
         s = s + 1
     end
@@ -945,7 +945,7 @@ main(): i64
     edge: i64 = 0
     lexer: i64 = 0
     k: i64 = 1
-    while k <= #lexs
+    while k <= lexs:len()
         one: str = pairsof[k]
         if tally(one) > 1
             edge = edge + 1
@@ -954,13 +954,13 @@ main(): i64
         end
         k = k + 1
     end
-    nlex: str = to(str)(#lexs)
+    nlex: str = to(str)(lexs:len())
     print("    program lexemes     {nlex}")
     print("    EDGE-decided        {edge}   (two or more role/card pairs)")
     print("    spelling-decided    {lexer}   (a lexer could have answered)")
     print("    the edge-decided lexemes, which is the artifact:")
     k = 1
-    while k <= #lexs
+    while k <= lexs:len()
         acc: str = pairsof[k]
         if tally(acc) > 1
             named: str = ""
@@ -992,7 +992,7 @@ main(): i64
     provbytes: i64 = 0
     provroles: i64 = 0
     k = 1
-    while k <= #codes
+    while k <= codes:len()
         one: str = codes[k]
         std.script.run("hlmode=why hlrole={one} {bin} > {work}/w 2>/dev/null")
         chain: str = slurp("{work}/w")
@@ -1022,7 +1022,7 @@ main(): i64
     if nroled > 0
         prov = to(i64)(provbytes * 100 / nroled)
     end
-    nrolesused: str = to(str)(#codes)
+    nrolesused: str = to(str)(codes:len())
     print("    coverage    {cov}%   ({nroled} of {canonbytes} canonical non-whitespace bytes carry a role)")
     print("    ambiguity   {unresolved}     unresolved spans outside the negative controls")
     print("    provenance  {prov}%   ({provroles} of {nrolesused} roles used answer `why` with rule + dnir)")
@@ -1067,12 +1067,12 @@ main(): i64
         print("    !! the generator produced nothing")
         bad = bad + 1
     elseif fresh == tracked
-        nb: str = to(str)(#tracked)
+        nb: str = to(str)(tracked:len())
         print("    {scm}")
         print("    regenerates byte-identically, {nb} bytes")
     else
-        na: str = to(str)(#tracked)
-        nb: str = to(str)(#fresh)
+        na: str = to(str)(tracked:len())
+        nb: str = to(str)(fresh:len())
         print("    !! {scm} is not what the taxonomy produces")
         print("       tracked {na} bytes, regenerated {nb}")
         print("       either a query was hand-edited or the taxonomy moved. Run:")
@@ -1080,7 +1080,7 @@ main(): i64
         bad = bad + 1
     end
     std.script.run("hlmode=legend {bin} > {work}/legend 2>/dev/null")
-    nleg: i64 = #cut(slurp("{work}/legend"))
+    nleg: i64 = cut:len()(slurp("{work}/legend"))
     print("    LSP legend  {nleg} semantic-token types, from the same rows")
     # Not "18": the legend must carry EXACTLY the roles the taxonomy enumerates.
     # That is the drift check a fixed number was standing in for, and it keeps

@@ -67,8 +67,8 @@ pool_new(config: any): any
     while i < config.min_connections
         conn = connection_new(config)
         if conn
-            pool.connections[#pool.connections + 1] = conn
-            pool.available[#pool.available + 1] = conn
+            pool.connections[pool:len().connections + 1] = conn
+            pool.available[pool:len().available + 1] = conn
             pool.total += 1
         end
         i += 1
@@ -78,9 +78,9 @@ end
 
 pool_acquire(pool: any): any
     # Try to get an available connection
-    if #pool.available > 0
-        conn = pool.available[#pool.available]
-        pool.available[#pool.available] = nil
+    if pool:len().available > 0
+        conn = pool.available[pool:len().available]
+        pool.available[pool:len().available] = nil
         pool.in_use += 1
         return conn
     end
@@ -101,7 +101,7 @@ end
 pool_release(pool: any, conn: any): void
     if conn == nil return end
     pool.in_use -= 1
-    pool.available[#pool.available + 1] = conn
+    pool.available[pool:len().available + 1] = conn
 end
 
 pool_close(pool: any): void
@@ -117,7 +117,7 @@ end
 pool_stats(pool: any): any
     {
         total = pool.total,
-        available = #pool.available,
+        available = pool:len().available,
         in_use = pool.in_use,
         max = pool.config.max_connections,
         utilization = pool.total > 0 and pool.in_use / pool.total or 0,
@@ -191,9 +191,9 @@ connection_query(conn: any, sql: str, params: any): any
         end
         # Extract column names from first row
         columns = {}
-        if #rows > 0
+        if rows:len() > 0
             for k, _ in rows[1]
-                columns[#columns + 1] = k
+                columns[columns:len() + 1] = k
             end
         end
         return {ok = true, rows_affected = 0, rows = rows, columns = columns}
@@ -204,7 +204,7 @@ end
 connection_query_one(conn: any, sql: str, params: any): any
     result = connection_query(conn, sql, params)
     if result.error or not result.ok return result end
-    if #result.rows > 0
+    if result:len().rows > 0
         return result.rows[1]
     end
     nil
@@ -275,8 +275,8 @@ end
 select(q: any, ...columns): any
     q.type = "select"
     args = {...}
-    for i = 1, #args
-        q.columns[#q.columns + 1] = args[i]
+    for i = 1, args:len()
+        q.columns[q:len().columns + 1] = args[i]
     end
     q
 end
@@ -287,40 +287,40 @@ from(q: any, table: str): any
 end
 
 where(q: any, condition: str, ...args): any
-    q.where[#q.where + 1] = condition
+    q.where[q:len().where + 1] = condition
     vals = {...}
-    for i = 1, #vals
-        q.params[#q.params + 1] = vals[i]
+    for i = 1, vals:len()
+        q.params[q:len().params + 1] = vals[i]
     end
     q
 end
 
 join(q: any, table: str, condition: str): any
-    q.joins[#q.joins + 1] = {table = table, condition = condition, type = "INNER"}
+    q.joins[q:len().joins + 1] = {table = table, condition = condition, type = "INNER"}
     q
 end
 
 left_join(q: any, table: str, condition: str): any
-    q.joins[#q.joins + 1] = {table = table, condition = condition, type = "LEFT"}
+    q.joins[q:len().joins + 1] = {table = table, condition = condition, type = "LEFT"}
     q
 end
 
 group_by(q: any, ...columns): any
     args = {...}
-    for i = 1, #args
-        q.group_by[#q.group_by + 1] = args[i]
+    for i = 1, args:len()
+        q.group_by[q:len().group_by + 1] = args[i]
     end
     q
 end
 
 having(q: any, condition: str): any
-    q.having[#q.having + 1] = condition
+    q.having[q:len().having + 1] = condition
     q
 end
 
 order_by(q: any, column: str, direction: str): any
     if direction == nil direction = "ASC" end
-    q.order_by[#q.order_by + 1] = {column = column, direction = direction}
+    q.order_by[q:len().order_by + 1] = {column = column, direction = direction}
     q
 end
 
@@ -360,105 +360,105 @@ build(q: any): any
 
     if q.type == "select"
         # SELECT
-        if #q.columns == 0
-            parts[#parts + 1] = "SELECT *"
+        if q:len().columns == 0
+            parts[parts:len() + 1] = "SELECT *"
         else
-            parts[#parts + 1] = "SELECT " .. q.columns:concat(", ")
+            parts[parts:len() + 1] = "SELECT " .. q.columns:concat(", ")
         end
 
         # FROM
         if q.table != ""
-            parts[#parts + 1] = "FROM " .. q.table
+            parts[parts:len() + 1] = "FROM " .. q.table
         end
 
         # JOINs
         for join in q.joins
-            parts[#parts + 1] = join.type .. " JOIN " .. join.table .. " ON " .. join.condition
+            parts[parts:len() + 1] = join.type .. " JOIN " .. join.table .. " ON " .. join.condition
         end
 
         # WHERE
-        if #q.where > 0
-            parts[#parts + 1] = "WHERE " .. q.where:concat(" AND ")
+        if q:len().where > 0
+            parts[parts:len() + 1] = "WHERE " .. q.where:concat(" AND ")
             for p in q.params
-                params[#params + 1] = p
+                params[params:len() + 1] = p
             end
         end
 
         # GROUP BY
-        if #q.group_by > 0
-            parts[#parts + 1] = "GROUP BY " .. q.group_by:concat(", ")
+        if q:len().group_by > 0
+            parts[parts:len() + 1] = "GROUP BY " .. q.group_by:concat(", ")
         end
 
         # HAVING
-        if #q.having > 0
-            parts[#parts + 1] = "HAVING " .. q.having:concat(" AND ")
+        if q:len().having > 0
+            parts[parts:len() + 1] = "HAVING " .. q.having:concat(" AND ")
         end
 
         # ORDER BY
-        if #q.order_by > 0
+        if q:len().order_by > 0
             order_parts = {}
             for o in q.order_by
-                order_parts[#order_parts + 1] = o.column .. " " .. o.direction
+                order_parts[order_parts:len() + 1] = o.column .. " " .. o.direction
             end
-            parts[#parts + 1] = "ORDER BY " .. order_parts:concat(", ")
+            parts[parts:len() + 1] = "ORDER BY " .. order_parts:concat(", ")
         end
 
         # LIMIT
         if has(.limit)(q)
-            parts[#parts + 1] = "LIMIT " .. q.limit:to(str)
+            parts[parts:len() + 1] = "LIMIT " .. q.limit:to(str)
         end
 
         # OFFSET
         if has(.offset)(q)
-            parts[#parts + 1] = "OFFSET " .. q.offset:to(str)
+            parts[parts:len() + 1] = "OFFSET " .. q.offset:to(str)
         end
 
     elseif q.type == "insert"
         # INSERT INTO
-        parts[#parts + 1] = "INSERT INTO " .. q.table
+        parts[parts:len() + 1] = "INSERT INTO " .. q.table
 
         # Columns and values
         columns = {}
         values = {}
         placeholders = {}
         for col, val in q.data
-            columns[#columns + 1] = col
-            values[#values + 1] = val
-            placeholders[#placeholders + 1] = "$" .. to(str)(#params + 1)
-            params[#params + 1] = val
+            columns[columns:len() + 1] = col
+            values[values:len() + 1] = val
+            placeholders[placeholders:len() + 1] = "$" .. to(str)(params:len() + 1)
+            params[params:len() + 1] = val
         end
-        parts[#parts + 1] = "(" .. columns:concat(", ") .. ")"
-        parts[#parts + 1] = "VALUES (" .. placeholders:concat(", ") .. ")"
+        parts[parts:len() + 1] = "(" .. columns:concat(", ") .. ")"
+        parts[parts:len() + 1] = "VALUES (" .. placeholders:concat(", ") .. ")"
 
     elseif q.type == "update"
         # UPDATE
-        parts[#parts + 1] = "UPDATE " .. q.table
+        parts[parts:len() + 1] = "UPDATE " .. q.table
 
         # SET
         set_parts = {}
         for col, val in q.data
-            set_parts[#set_parts + 1] = col .. " = $" .. to(str)(#params + 1)
-            params[#params + 1] = val
+            set_parts[set_parts:len() + 1] = col .. " = $" .. to(str)(params:len() + 1)
+            params[params:len() + 1] = val
         end
-        parts[#parts + 1] = "SET " .. set_parts:concat(", ")
+        parts[parts:len() + 1] = "SET " .. set_parts:concat(", ")
 
         # WHERE
-        if #q.where > 0
-            parts[#parts + 1] = "WHERE " .. q.where:concat(" AND ")
+        if q:len().where > 0
+            parts[parts:len() + 1] = "WHERE " .. q.where:concat(" AND ")
             for p in q.params
-                params[#params + 1] = p
+                params[params:len() + 1] = p
             end
         end
 
     elseif q.type == "delete"
         # DELETE
-        parts[#parts + 1] = "DELETE FROM " .. q.table
+        parts[parts:len() + 1] = "DELETE FROM " .. q.table
 
         # WHERE
-        if #q.where > 0
-            parts[#parts + 1] = "WHERE " .. q.where:concat(" AND ")
+        if q:len().where > 0
+            parts[parts:len() + 1] = "WHERE " .. q.where:concat(" AND ")
             for p in q.params
-                params[#params + 1] = p
+                params[params:len() + 1] = p
             end
         end
     end

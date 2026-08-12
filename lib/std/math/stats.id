@@ -6,23 +6,23 @@
 # ═══════════════════════════════════════════════════════════════
 
 stats_mean(data: any): f64
-    if #data == 0 return 0.0 end
+    if data:len() == 0 return 0.0 end
     sum = 0
     for v in data
         sum += v
     end
-    sum / #data
+    sum / data:len()
 end
 
 stats_median(data: any): f64
-    if #data == 0 return 0.0 end
+    if data:len() == 0 return 0.0 end
     sorted = {}
     for v in data
-        sorted[#sorted + 1] = v
+        sorted[sorted:len() + 1] = v
     end
     sorted:sort()
 
-    n = #sorted
+    n = sorted:len()
     if n % 2 == 1
         return sorted[n / 2:floor() + 1]
     else
@@ -31,7 +31,7 @@ stats_median(data: any): f64
 end
 
 stats_mode(data: any): any
-    if #data == 0 return nil end
+    if data:len() == 0 return nil end
 
     counts = {}
     for v in data
@@ -50,7 +50,7 @@ stats_mode(data: any): any
 end
 
 stats_variance(data: any, population: bool): f64
-    n = #data
+    n = data:len()
     if n == 0 return 0.0 end
 
     mean = stats_mean(data)
@@ -78,7 +78,7 @@ stats_standardize(data: any): any
 
     result = {}
     for v in data
-        result[#result + 1] = (v - mean) / std
+        result[result:len() + 1] = (v - mean) / std
     end
     result
 end
@@ -88,14 +88,14 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 stats_percentile(data: any, p: f64): f64
-    if #data == 0 return 0.0 end
+    if data:len() == 0 return 0.0 end
     sorted = {}
     for v in data
-        sorted[#sorted + 1] = v
+        sorted[sorted:len() + 1] = v
     end
     sorted:sort()
 
-    k = (p / 100) * (#sorted - 1)
+    k = (p / 100) * (sorted:len() - 1)
     f = k:floor()
     c = k:ceil()
     if f == c
@@ -124,8 +124,8 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 stats_covariance(x: any, y: any): f64
-    n = #x
-    if n == 0 or n != #y return 0.0 end
+    n = x:len()
+    if n == 0 or n != y:len() return 0.0 end
 
     mean_x = stats_mean(x)
     mean_y = stats_mean(y)
@@ -178,7 +178,7 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 stats_histogram(data: any, bins: i64): any
-    if #data == 0 return {bins = {}, edges = {}} end
+    if data:len() == 0 return {bins = {}, edges = {}} end
     if bins == nil bins = 10 end
 
     min_val = data[1]
@@ -190,7 +190,7 @@ stats_histogram(data: any, bins: i64): any
 
     if min_val == max_val
         return {
-            bins = {#data},
+            bins = {data:len()},
             edges = {min_val, max_val},
         }
     end
@@ -220,20 +220,20 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 stats_summary(data: any): any
-    if #data == 0
+    if data:len() == 0
         return {count = 0}
     end
 
     sorted = {}
     for v in data
-        sorted[#sorted + 1] = v
+        sorted[sorted:len() + 1] = v
     end
     sorted:sort()
 
     {
-        count = #data,
+        count = data:len(),
         min = sorted[1],
-        max = sorted[#sorted],
+        max = sorted[sorted:len()],
         mean = stats_mean(data),
         median = stats_median(data),
         std = stats_std_dev(data, false),
@@ -256,7 +256,7 @@ stats_outliers_iqr(data: any): any
     outliers = {}
     for v in data
         if v < lower or v > upper
-            outliers[#outliers + 1] = v
+            outliers[outliers:len() + 1] = v
         end
     end
     {lower = lower, upper = upper, outliers = outliers}
@@ -272,7 +272,7 @@ stats_outliers_zscore(data: any, threshold: f64): any
     for v in data
         z = (v - mean) / std:abs()
         if z > threshold
-            outliers[#outliers + 1] = {value = v, zscore = z}
+            outliers[outliers:len() + 1] = {value = v, zscore = z}
         end
     end
     {outliers = outliers}

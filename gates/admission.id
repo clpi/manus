@@ -127,17 +127,8 @@ peek: bool = (code: str, spell: str)
         i += 1
     false
 
-subjectrel: bool = (code: str, rel: str)
-    n = code:len()
-    m = rel:len()
-    needle = ":{rel}("
-    k = needle:len()
-    i = 1
-    while i + k - 1 <= n
-        if code:sub(i, i + k - 1) == needle
-            return true
-        i += 1
-    false
+subjectrel: bool = (code: str, needle: str)
+    hasmarker(code, needle)
 
 ns: i64 = (path: str, no: i64, code: str, spell: str, law: str, fix: str)
     if peek(code, spell)
@@ -156,8 +147,18 @@ respell: i64 = (path: str, no: i64, code: str, spell: str)
     else
         0
 
-globalop: i64 = (path: str, no: i64, code: str, name: str)
-    if peek(code, "{name}(")
+hasmarker: bool = (code: str, needle: str)
+    n = code:len()
+    k = needle:len()
+    i = 1
+    while i + k - 1 <= n
+        if code:sub(i, i + k - 1) == needle
+            return true
+        i += 1
+    false
+
+globalop: i64 = (path: str, no: i64, code: str, name: str, spell: str)
+    if peek(code, spell)
         mapped = globalmap(name)
         if mapped == ""
             mapped = "admitted relation"
@@ -212,16 +213,16 @@ auditnamespaces: i64 = (path: str, no: i64, code: str)
 
 auditglobals: i64 = (path: str, no: i64, code: str)
     h = 0
-    h = h + globalop(path, no, code, "tostring")
-    h = h + globalop(path, no, code, "tonumber")
-    h = h + globalop(path, no, code, "pairs")
-    h = h + globalop(path, no, code, "ipairs")
-    h = h + globalop(path, no, code, "pcall")
-    h = h + globalop(path, no, code, "xpcall")
-    h = h + globalop(path, no, code, "require")
-    h = h + globalop(path, no, code, "load")
-    h = h + globalop(path, no, code, "loadfile")
-    h = h + globalop(path, no, code, "dofile")
+    h = h + globalop(path, no, code, "tostring", "tostring(")
+    h = h + globalop(path, no, code, "tonumber", "tonumber(")
+    h = h + globalop(path, no, code, "pairs", "pairs(")
+    h = h + globalop(path, no, code, "ipairs", "ipairs(")
+    h = h + globalop(path, no, code, "pcall", "pcall(")
+    h = h + globalop(path, no, code, "xpcall", "xpcall(")
+    h = h + globalop(path, no, code, "require", "require(")
+    h = h + globalop(path, no, code, "load", "load(")
+    h = h + globalop(path, no, code, "loadfile", "loadfile(")
+    h = h + globalop(path, no, code, "dofile", "dofile(")
     h
 
 auditpredicates: i64 = (path: str, no: i64, code: str)
@@ -229,10 +230,10 @@ auditpredicates: i64 = (path: str, no: i64, code: str)
     if peek(code, "isvalid") or peek(code, "is_valid")
         print("({path}, {no}, invalid.predicate, isvalid, law.audit.conventional, consume owned fact/case — never predicate helper)")
         h = h + 1
-    if subjectrel(code, "valid")
+    if subjectrel(code, ":valid(")
         print("({path}, {no}, invalid.predicate, valid, law.audit.conventional, consume owned fact/case — never predicate projection)")
         h = h + 1
-    if subjectrel(code, "magicallyplausible")
+    if subjectrel(code, ":magicallyplausible(")
         print("({path}, {no}, invalid.unresolved, magicallyplausible, law.binding.census, no admitted relation resolves — vocabulary blocked)")
         h = h + 1
     h
@@ -338,6 +339,20 @@ control: bool = ()
     ok
 
 main: i64 = ()
-    h = audit("x.id", 1, "table.insert(t,v)")
-    print("h={h}")
+    if !control()
+        print("gates/admission: FAIL positive controls")
+        return 2
+    body = transport()
+    if body:len() == 0
+        print("gates/admission: FAIL empty input — pipe unified diff on stdin")
+        print("Usage: git diff -U0 --cached -- '*.id' | idol run gates/admission.id")
+        return 3
+    total = scan(body)
+    print("")
+    print("gates/admission: {total} finding(s) on ADDED lines  [controls: A-H pass]")
+    if total > 0
+        print("")
+        print("Semantic admission: API-SHAPE-WITHOUT-SEMANTIC-ADMISSION is closed on added lines.")
+        print("Authority: C0 §67 law.binding.census · law.gate.algebra")
+        return 1
     0

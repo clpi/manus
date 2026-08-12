@@ -8,7 +8,7 @@ typeof(v: any): str
 end
 
 eq_str(a: str, b: str): bool
-    a:find(b, 1, true) == 1 and #a == #b
+    a:find(b, 1, true) == 1 and a:len() == b:len()
 end
 
 # kind: return a more detailed kind string.
@@ -19,7 +19,7 @@ kind(v: any): str
         "float"
     elseif eq_str(t, "table")
         # check if it's an array (all integer keys 1..n)
-        n = #v
+        n = v:len()
         if n > 0
             count = 0
             for _ in v do count += 1 end
@@ -42,7 +42,7 @@ v: any:len(): i64
         for _k, _v in v do count += 1 end
         return count
     end
-    if t == "string" return #v end
+    if t == "string" return v:len() end
     1
 end
 
@@ -136,7 +136,7 @@ end
 # len: return the length of an array or string.
 v: any:len(): i64
     if v == nil return 0 end
-    if type(v) == "string" return #v end
+    if type(v) == "string" return v:len() end
     if type(v) == "table" return v:len() end
     0
 end

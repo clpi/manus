@@ -3,7 +3,7 @@
 # expect: 2 195 169
 main: i64 = ()
     s = "\xc3\xa9"
-    n = #s
+    n = s:len()
     a = s[0]
     b = s[1]
     print("{n} {a} {b}")

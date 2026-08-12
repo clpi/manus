@@ -45,7 +45,7 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 fft(x: any): any
-    n = #x
+    n = x:len()
     if n == 0 return {} end
 
     # Check if power of 2
@@ -61,8 +61,8 @@ fft(x: any): any
             padded[i] = x[i]
             i += 1
         end
-        while #padded < new_n
-            padded[#padded + 1] = {re = 0, im = 0}
+        while padded:len() < new_n
+            padded[padded:len() + 1] = {re = 0, im = 0}
         end
         x = padded
         n = new_n
@@ -121,7 +121,7 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 ifft(x: any): any
-    n = #x
+    n = x:len()
     if n == 0 return {} end
 
     # Conjugate input
@@ -150,7 +150,7 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 rfft(signal: any): any
-    n = #signal
+    n = signal:len()
     complex_input = {}
     i = 1
     while i <= n
@@ -161,7 +161,7 @@ rfft(signal: any): any
 end
 
 irfft(spectrum: any, n: i64): any
-    if n == nil n = #spectrum end
+    if n == nil n = spectrum:len() end
     result = ifft(spectrum)
     signal = {}
     i = 1
@@ -179,7 +179,7 @@ end
 power_spectrum(spectrum: any): any
     ps = {}
     i = 1
-    while i <= #spectrum
+    while i <= spectrum:len()
         ps[i] = complex_abs(spectrum[i]) ^ 2
         i += 1
     end
@@ -189,7 +189,7 @@ end
 magnitude_spectrum(spectrum: any): any
     mag = {}
     i = 1
-    while i <= #spectrum
+    while i <= spectrum:len()
         mag[i] = complex_abs(spectrum[i])
         i += 1
     end
@@ -199,7 +199,7 @@ end
 phase_spectrum(spectrum: any): any
     phase = {}
     i = 1
-    while i <= #spectrum
+    while i <= spectrum:len()
         phase[i] = complex_phase(spectrum[i])
         i += 1
     end
@@ -211,7 +211,7 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 convolve(a: any, b: any): any
-    n = #a + #b - 1
+    n = a:len() + b:len() - 1
 
     # Pad to next power of 2
     fft_size = 1
@@ -224,12 +224,12 @@ convolve(a: any, b: any): any
     fb = {}
     i = 1
     while i <= fft_size
-        if i <= #a
+        if i <= a:len()
             fa[i] = complex_new(a[i], 0)
         else
             fa[i] = {re = 0, im = 0}
         end
-        if i <= #b
+        if i <= b:len()
             fb[i] = complex_new(b[i], 0)
         else
             fb[i] = {re = 0, im = 0}
@@ -255,7 +255,7 @@ convolve(a: any, b: any): any
     # Extract real part
     output = {}
     i = 1
-    while i <= #a + #b - 1
+    while i <= a:len() + b:len() - 1
         output[i] = result[i].re
         i += 1
     end
@@ -269,9 +269,9 @@ end
 correlate(a: any, b: any): any
     # Cross-correlation: correlate(a, b) = convolve(a, reverse(b))
     b_rev = {}
-    i = #b
+    i = b:len()
     while i >= 1
-        b_rev[#b_rev + 1] = b[i]
+        b_rev[b_rev:len() + 1] = b[i]
         i -= 1
     end
     convolve(a, b_rev)
@@ -286,7 +286,7 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 dft(x: any): any
-    n = #x
+    n = x:len()
     result = {}
     k = 0
     while k < n
@@ -305,7 +305,7 @@ dft(x: any): any
 end
 
 idft(x: any): any
-    n = #x
+    n = x:len()
     result = {}
     k = 0
     while k < n

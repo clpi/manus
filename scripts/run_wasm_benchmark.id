@@ -22,7 +22,7 @@ end
 
 _pad(s: str, w: i64): str
     o = s
-    while #o < w
+    while o:len() < w
         o = o .. " "
     end
     o
@@ -30,7 +30,7 @@ end
 
 _lpad(s: str, w: i64): str
     o = s
-    while #o < w
+    while o:len() < w
         o = " " .. o
     end
     o
@@ -56,7 +56,7 @@ _fx(x: f64, places: i64): str
     w = n / scale
     f = n % scale
     fs = f:to(str)
-    while #fs < places
+    while fs:len() < places
         fs = "0" .. fs
     end
     s = w:to(str) .. "." .. fs
@@ -71,7 +71,7 @@ end
 _fields(l: str): any
     o = {}
     for _i, w in l:gsub("\t", " "):split(" ")
-        if w != "" o[#o + 1] = w end
+        if w != "" o[o:len() + 1] = w end
     end
     o
 end
@@ -83,7 +83,7 @@ _result_block(text: str): str
     n = 0
     for _i, l in text:split("\n")
         f = _fields(std.script.chomp(l))
-        if #f >= 3 and f[1] == "RESULT"
+        if f:len() >= 3 and f[1] == "RESULT"
             out = out .. f[2] .. " " .. f[3] .. "\n"
             n = n + 1
         end
@@ -94,7 +94,7 @@ end
 _result_count(block: str): i64
     for _i, l in block:split("\n")
         f = _fields(l)
-        if #f == 2 and f[1] == "__n"
+        if f:len() == 2 and f[1] == "__n"
             return to(i64)(f[2])
         end
     end
@@ -128,7 +128,7 @@ _baseline_for(path: str, rt: str): f64
         c = std.script.chomp(l)
         if c != "" and c:sub(1, 1) != "#"
             f = _fields(c)
-            if #f >= 2 and f[1] == rt
+            if f:len() >= 2 and f[1] == rt
                 return to(f64)(f[2])
             end
         end
@@ -159,13 +159,13 @@ main: i64 = ()
     if runs == nil or runs < 1 runs = 3 end
 
     i = 1
-    while i <= #args
+    while i <= args:len()
         a = args[i]
         if a == "--reset-baseline"
             reset = true
         else
             if a == "--runs"
-                if i + 1 > #args
+                if i + 1 > args:len()
                     print("ERROR: --runs requires a value")
                     os.exit(1)
                 end
@@ -202,12 +202,12 @@ main: i64 = ()
     for _i, c in candidates
         wanted = filter == "" or filter:find(c[1], 1, true) != nil
         if wanted and _have(c[2])
-            names[#names + 1] = c[1]
-            cmds[#names] = c[3] .. wasm
+            names[names:len() + 1] = c[1]
+            cmds[names:len()] = c[3] .. wasm
             print("  INFO Found runtime: " .. c[1])
         end
     end
-    if #names == 0
+    if names:len() == 0
         print("ERROR: No WASM runtimes found. Install at least one of:")
         print("  wasmtime  https://wasmtime.dev")
         print("  wazero    go install github.com/tetratelabs/wazero/cmd/wazero@latest")
@@ -240,7 +240,7 @@ main: i64 = ()
 
     # Two runtimes disagreeing on a RESULT is a wasm codegen bug, not a
     # performance note, so it fails before any timing is reported.
-    if #names >= 2
+    if names:len() >= 2
         second = _result_block(std.script.capture(cmds[2] .. " 2>/dev/null"))
         if first == second
             print("  PASS Results match between " .. names[1] .. " and " .. names[2])
@@ -309,7 +309,7 @@ main: i64 = ()
         _save_baseline(baseline, names, times, runs)
     end
 
-    if #names >= 2
+    if names:len() >= 2
         print("")
         print("=== Relative speed (" .. names[1] .. "=1.0x reference, lower is faster) ===")
         ref = times[1]

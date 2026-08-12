@@ -20,7 +20,7 @@ basename(p: str): str
     if p == ""
         ""
     end
-    i = #p
+    i = p:len()
     while i > 1 and p:sub(i, i) == "/"
         i -= 1
     end
@@ -35,7 +35,7 @@ dirname(p: str): str
     if p == ""
         "."
     end
-    i = #p
+    i = p:len()
     while i > 1 and p:sub(i, i) == "/"
         i -= 1
     end
@@ -53,10 +53,10 @@ end
 
 extname(p: str): str
     base = basename(p)
-    i = #base
+    i = base:len()
     while i > 1
         if base:sub(i, i) == "."
-            base:sub(i, #base)
+            base:sub(i, base:len())
         end
         i -= 1
     end

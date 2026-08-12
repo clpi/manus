@@ -99,7 +99,7 @@ end
 # the wrong transport would hang rather than fail, so the frame is built here
 # from the body's own byte length and never from a constant.
 frame(body: str): str
-    n = #body
+    n = body:len()
     "Content-Length: " .. n:to(str) .. "\r\n\r\n" .. body
 end
 
@@ -116,8 +116,8 @@ drive(lines: str): str
 end
 
 has(blob: str, needle: str): bool
-    hn = #blob
-    nn = #needle
+    hn = blob:len()
+    nn = needle:len()
     if nn == 0 or nn > hn
         return false
     end
@@ -218,7 +218,7 @@ main(): i64
 
     out = drive(session)
 
-    if #out == 0
+    if out:len() == 0
         check(false, "the server wrote anything at all", "zero bytes on stdout — it did not start, or it died before the first reply")
         io.write("\nlsp-gate: FAIL — no session\n")
         std.os.exit(1)

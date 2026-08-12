@@ -30,7 +30,7 @@ get_pixel(img: any, x: i64, y: i64): any
     pixel = {}
     i = 0
     while i < img.channels
-        pixel[#pixel + 1] = img.data[idx + i + 1]
+        pixel[pixel:len() + 1] = img.data[idx + i + 1]
         i += 1
     end
     pixel
@@ -302,13 +302,13 @@ softmax(logits: any): any
 
     exp_sum = 0
     probs = {}
-    for i = 1, #logits
+    for i = 1, logits:len()
         exp_val = logits[i] - max_logit:exp()
         probs[i] = exp_val
         exp_sum += exp_val
     end
 
-    for i = 1, #probs
+    for i = 1, probs:len()
         probs[i] = probs[i] / exp_sum
     end
     probs
@@ -316,23 +316,23 @@ end
 
 top_k(probs: any, k: i64): any
     indexed = {}
-    for i = 1, #probs
-        indexed[#indexed + 1] = {index = i, prob = probs[i]}
+    for i = 1, probs:len()
+        indexed[indexed:len() + 1] = {index = i, prob = probs[i]}
     end
 
     # Simple selection sort for top-k
     result = {}
     i = 1
-    while i <= k and i <= #indexed
+    while i <= k and i <= indexed:len()
         max_idx = i
         j = i + 1
-        while j <= #indexed
+        while j <= indexed:len()
             if indexed[j].prob > indexed[max_idx].prob
                 max_idx = j
             end
             j += 1
         end
-        result[#result + 1] = indexed[max_idx]
+        result[result:len() + 1] = indexed[max_idx]
         indexed[max_idx] = indexed[i]
         i += 1
     end
@@ -341,12 +341,12 @@ end
 
 accuracy(predictions: any, labels: any): f64
     correct = 0
-    for i = 1, #predictions
+    for i = 1, predictions:len()
         if predictions[i] == labels[i]
             correct += 1
         end
     end
-    correct / #predictions
+    correct / predictions:len()
 end
 
 # ═══════════════════════════════════════════════════════════════

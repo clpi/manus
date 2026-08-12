@@ -2,26 +2,43 @@
 #
 # Reports projection-related spellings in tracked .id. Classify before rewrite.
 #
+# Bootstrap shell ingress via gatecap (GAP-155) — not std.script / process.*.
+# Uses grep for patterns containing '(' — gatecap strips rg regex escapes.
+#
 # Run: idol run scripts/projection_census.id
 
+chomp: str = (text: str)
+    if text:len() == 0
+        return ""
+    n = text:len()
+    while n > 0
+        c = text:byte(n)
+        if c != 10 and c != 13 and c != 32 and c != 9
+            break
+        n -= 1
+    text:sub(1, n)
+
+cap: str = (cmd: str)
+    chomp(gatecap(cmd))
+
 main: i64 = ()
-    root = std.script.getenv("CENSUS_ROOT", "")
-    if root == ""
-        root = std.script.chomp(std.script.capture("git rev-parse --show-toplevel 2>/dev/null"))
+    root = cap("git rev-parse --show-toplevel 2>/dev/null")
     if root == ""
         print("projection_census: fail no root")
-        std.os.exit(3)
+        return 3
 
-    subjto = std.script.chomp(std.script.capture("cd '{root}' && git ls-files '*.id' | xargs rg -c ':to\\(' 2>/dev/null | awk -F: '{s+=$2} END{print s+0}'"))
-    fromface = std.script.chomp(std.script.capture("cd '{root}' && git ls-files '*.id' | xargs rg -c ':from\\(' 2>/dev/null | awk -F: '{s+=$2} END{print s+0}'"))
-    stdref = std.script.chomp(std.script.capture("cd '{root}' && git ls-files '*.id' | xargs rg -c 'std\\.' 2>/dev/null | awk -F: '{s+=$2} END{print s+0}'"))
-    libref = std.script.chomp(std.script.capture("cd '{root}' && git ls-files '*.id' | xargs rg -c 'lib\\.' 2>/dev/null | awk -F: '{s+=$2} END{print s+0}'"))
-    procns = std.script.chomp(std.script.capture("cd '{root}' && git ls-files '*.id' | xargs rg -c 'process\\.' 2>/dev/null | awk -F: '{s+=$2} END{print s+0}'"))
-    adj = std.script.chomp(std.script.capture("cd '{root}' && git ls-files '*.id' | xargs rg -c ': (readable|writable|iterable|hashable|convertible)' 2>/dev/null | awk -F: '{s+=$2} END{print s+0}'"))
+    subjto = cap("cd '{root}' && git ls-files '*.id' | xargs grep -h -c ':to(' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+    fromface = cap("cd '{root}' && git ls-files '*.id' | xargs grep -h -c ':from(' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+    nestto = cap("cd '{root}' && git ls-files '*.id' | xargs grep -h -E -c 'to\\((str|i64|bytes)\\)\\(' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+    stdref = cap("cd '{root}' && git ls-files '*.id' | xargs grep -h -c 'std\\.' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+    libref = cap("cd '{root}' && git ls-files '*.id' | xargs grep -h -c 'lib\\.' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+    procns = cap("cd '{root}' && git ls-files '*.id' | xargs grep -h -c 'process\\.' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+    adj = cap("cd '{root}' && git ls-files '*.id' | xargs grep -h -E -c ': (readable|writable|iterable|hashable|convertible)' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
 
     print("projection_census: PROJECTION-ONE debt in tracked .id")
     print("  root {root}")
     print("  explicit :to(           {subjto}")
+    print("  nested to(T)(            {nestto}")
     print("  :from( inverse face     {fromface}")
     print("  std. references         {stdref}")
     print("  lib. references         {libref}")

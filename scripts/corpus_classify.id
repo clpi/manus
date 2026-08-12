@@ -71,20 +71,20 @@ needles = "/tmp/duo_corpus_classify.pat"
 
 cut(s: str): any
     out = {}
-    n: i64 = #s
+    n: i64 = s:len()
     start: i64 = 1
     i: i64 = 1
     while i <= n
         if s:byte(i) == 10
             if i > start
-                out[#out + 1] = s:sub(start, i - 1)
+                out[out:len() + 1] = s:sub(start, i - 1)
             end
             start = i + 1
         end
         i += 1
     end
     if start <= n
-        out[#out + 1] = s:sub(start, n)
+        out[out:len() + 1] = s:sub(start, n)
     end
     out
 end
@@ -102,7 +102,7 @@ end
 # can, and the answer is carried to the tail rather than returned early.
 field(line: str, want: i64): str
     out: str = ""
-    n: i64 = #line
+    n: i64 = line:len()
     i: i64 = 1
     seen: i64 = 0
     while i <= n
@@ -130,10 +130,10 @@ end
 
 base(p: str): str
     out: str = p
-    i: i64 = #p
+    i: i64 = p:len()
     while i > 0
         if p:byte(i) == 47
-            out = p:sub(i + 1, #p)
+            out = p:sub(i + 1, p:len())
             i = 0
         else
             i -= 1
@@ -144,7 +144,7 @@ end
 
 parent(p: str): str
     out: str = ""
-    i: i64 = #p
+    i: i64 = p:len()
     while i > 0
         if p:byte(i) == 47
             out = p:sub(1, i - 1)
@@ -157,7 +157,7 @@ parent(p: str): str
 end
 
 depth(prefix: str): i64
-    n: i64 = #prefix
+    n: i64 = prefix:len()
     i: i64 = 1
     c: i64 = 0
     while i <= n
@@ -184,7 +184,7 @@ end
 
 pad(s: str, width: i64): str
     out: str = s
-    while #out < width
+    while out:len() < width
         out = "{out} "
     end
     out
@@ -219,21 +219,21 @@ main(): i64
         c: str = field(line, 1)
         p: str = field(line, 2)
         if known(c) and p != "" and field(line, 3) == ""
-            rcls[#rcls + 1] = c
-            rpre[#rpre + 1] = p
-            rpin[#rpin + 1] = tier(p)
-            rhit[#rhit + 1] = 0
+            rcls[rcls:len() + 1] = c
+            rpre[rpre:len() + 1] = p
+            rpin[rpin:len() + 1] = tier(p)
+            rhit[rhit:len() + 1] = 0
         end
     end
-    if #rcls == 0
+    if rcls:len() == 0
         print("corpus_classify: FAIL — docs/spec/corpus.md yielded 0 rules; the parse is broken")
         return 3
     end
-    nrules: str = to(str)(#rcls)
+    nrules: str = to(str)(rcls:len())
     print("  rules     {nrules} from docs/spec/corpus.md")
 
     files = cut(shell("cd {root} && git ls-files '*.id'"))
-    if #files == 0
+    if files:len() == 0
         print("corpus_classify: FAIL — git ls-files found 0 .id files; the census did not run")
         return 3
     end
@@ -318,7 +318,7 @@ main(): i64
         cls: str = ""
         pin: str = ""
         j: i64 = 1
-        while j <= #rpre and cls == ""
+        while j <= rpre:len() and cls == ""
             if starts(f, rpre[j])
                 cls = rcls[j]
                 pin = rpin[j]
@@ -402,7 +402,7 @@ main(): i64
         end
     end
 
-    nfiles: str = to(str)(#files)
+    nfiles: str = to(str)(files:len())
     scanon: str = ncanon:to(str)
     scompat: str = ncompat:to(str)
     sforeign: str = nforeign:to(str)
@@ -446,7 +446,7 @@ main(): i64
     print("  class          tier     files   prefix")
     dead = 0
     k: i64 = 1
-    while k <= #rpre
+    while k <= rpre:len()
         flag: str = "  "
         if rhit[k] == 0
             flag = "!!"

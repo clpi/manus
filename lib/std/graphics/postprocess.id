@@ -64,7 +64,7 @@ bloom_extract_bright(image: any, threshold: f64): any
 
     result = {}
     i = 1
-    while i <= #image.data
+    while i <= image:len().data
         if channels >= 3
             r = image.data[i]
             g = image.data[i + 1]
@@ -111,7 +111,7 @@ bloom_blur(image: any, radius: i64): any
     end
     # Normalize kernel
     i = 1
-    while i <= #kernel
+    while i <= kernel:len()
         kernel[i] = kernel[i] / kernel_sum
         i += 1
     end
@@ -199,7 +199,7 @@ bloom_apply(original: any, config: any): any
     # Add blurred bloom to original
     result = {}
     i = 1
-    while i <= #original.data
+    while i <= original:len().data
         result[i] = 255:min(original.data[i] + blurred.data[i] * config.intensity)
         if original.channels >= 3
             result[i + 1] = 255:min(original.data[i + 1] + blurred.data[i + 1] * config.intensity)
@@ -298,13 +298,13 @@ fxaa_process(image: any, config: any): any
                 # Apply simple blur
                 i = 0
                 while i < channels
-                    result[#result + 1] = (image.data[idx + i] * 4 + image.data[idx - channels + i] + image.data[idx + channels + i] + image.data[idx - 1 + i] + image.data[idx + 1 + i]) / 8
+                    result[result:len() + 1] = (image.data[idx + i] * 4 + image.data[idx - channels + i] + image.data[idx + channels + i] + image.data[idx - 1 + i] + image.data[idx + 1 + i]) / 8
                     i += 1
                 end
             else
                 i = 0
                 while i < channels
-                    result[#result + 1] = image.data[idx + i]
+                    result[result:len() + 1] = image.data[idx + i]
                     i += 1
                 end
             end
@@ -347,7 +347,7 @@ vignette_apply(image: any, intensity: f64, smoothness: f64): any
             idx = (y * width + x) * channels + 1
             i = 0
             while i < channels
-                result[#result + 1] = image.data[idx + i] * vignette
+                result[result:len() + 1] = image.data[idx + i] * vignette
                 i += 1
             end
             x += 1
@@ -382,7 +382,7 @@ film_grain_apply(image: any, intensity: f64): any
             idx = (y * width + x) * channels + 1
             i = 0
             while i < channels
-                result[#result + 1] = 0:max(255:min(image.data[idx + i] + grain))
+                result[result:len() + 1] = 0:max(255:min(image.data[idx + i] + grain))
                 i += 1
             end
             x += 1

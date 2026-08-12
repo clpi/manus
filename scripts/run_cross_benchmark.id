@@ -41,7 +41,7 @@ end
 
 _pad(s: str, w: i64): str
     out = s
-    while #out < w
+    while out:len() < w
         out = out .. " "
     end
     out
@@ -49,7 +49,7 @@ end
 
 _lpad(s: str, w: i64): str
     out = s
-    while #out < w
+    while out:len() < w
         out = " " .. out
     end
     out
@@ -63,7 +63,7 @@ _f6(x: f64): str
     whole = n / 1000000
     frac = n % 1000000
     fs = frac:to(str)
-    while #fs < 6
+    while fs:len() < 6
         fs = "0" .. fs
     end
     whole:to(str) .. "." .. fs
@@ -79,7 +79,7 @@ _numeric(s: str): bool
     if s == "" return false end
     seen_digit = false
     i = 1
-    while i <= #s
+    while i <= s:len()
         c = s:sub(i, i)
         if c >= "0" and c <= "9"
             seen_digit = true
@@ -98,7 +98,7 @@ _lines(text: str): any
     for _i, l in text:split("\n")
         t = std.script.chomp(l)
         if t != ""
-            out[#out + 1] = t
+            out[out:len() + 1] = t
         end
     end
     out
@@ -111,7 +111,7 @@ _results(text: str): any
     for _i, l in _lines(text)
         if l:sub(1, 7) == "RESULT "
             parts = l:split(" ")
-            if #parts >= 3
+            if parts:len() >= 3
                 r[parts[2]] = parts[3]
             end
         end
@@ -132,8 +132,8 @@ _times(text: str): any
             # nil, and a table of 0.000000 across all four languages # which
             # looks like a measurement rather than a parse failure.
             for _j, w in l:gsub("\t", " "):split(" ")
-                if #ts < _BENCHES and _numeric(w)
-                    ts[#ts + 1] = to(f64)(w)
+                if ts:len() < _BENCHES and _numeric(w)
+                    ts[ts:len() + 1] = to(f64)(w)
                     break
                 end
             end
@@ -150,7 +150,7 @@ _min_times(cmd: str): any
     while r < _RUNS
         ts = _times(std.script.capture(cmd .. " 2>/dev/null"))
         i = 1
-        while i <= #ts
+        while i <= ts:len()
             if best[i] == nil or ts[i] < best[i]
                 best[i] = ts[i]
             end

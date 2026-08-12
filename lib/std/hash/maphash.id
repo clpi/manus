@@ -23,7 +23,7 @@ end
 
 write(h: any, data: str): void
     h.hash = h.seed
-    for i = 1, #data
+    for i = 1, data:len()
         h.hash = (h.hash * 31 + data:byte(i))
     end
 end
@@ -38,7 +38,7 @@ end
 
 hash_string(seed: i64, s: str): i64
     h = seed
-    for i = 1, #s
+    for i = 1, s:len()
         h = (h * 31 + s:byte(i))
     end
     h

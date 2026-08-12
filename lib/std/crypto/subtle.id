@@ -1,9 +1,9 @@
 # std.crypto.subtle — constant-time operations (mirrors Go's crypto/subtle)
 
 constant_time_compare(x: str, y: str): bool
-    if #x != #y return false end
+    if x:len() != y:len() return false end
     v = 0
-    for i = 1, #x
+    for i = 1, x:len()
         v = v | (x:byte(i) ~ y:byte(i))
     end
     return v == 0

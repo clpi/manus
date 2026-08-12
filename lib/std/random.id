@@ -32,8 +32,8 @@ end
 
 # choice: return a random element from a list.
 choice(list: any): any
-    if list == nil or #list == 0 return nil end
-    list[1:random(#list)]
+    if list == nil or list:len() == 0 return nil end
+    list[1:random(list:len())]
 end
 
 # sample: return n unique random elements from a list (without replacement).
@@ -126,7 +126,7 @@ end
 # shuffle: shuffle a list in-place (Fisher-Yates).
 shuffle(list: any): void
     if list == nil return end
-    n = #list
+    n = list:len()
     while n > 1
         k = 1:random(n)
         tmp = list[n]

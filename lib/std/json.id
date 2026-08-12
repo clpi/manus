@@ -32,7 +32,7 @@ end
 escape(s: any): str
     if s == nil return "" end
     out = {}
-    n = #s
+    n = s:len()
     i = 1
     hex = "0123456789abcdef"
     while i <= n
@@ -107,7 +107,7 @@ end
 
 json_skip_ws(cur: any)
     s = cur.s
-    n = #s
+    n = s:len()
     while cur.i <= n
         b = s:byte(cur.i)
         if b == 32 or b == 9 or b == 10 or b == 13
@@ -155,7 +155,7 @@ end
 json_string(cur): any
     cur.i = cur.i + 1
     s = cur.s
-    n = #s
+    n = s:len()
     out = {}
     while cur.i <= n
         b = s:byte(cur.i)
@@ -212,7 +212,7 @@ end
 json_number(cur): any
     s = cur.s
     start = cur.i
-    n = #s
+    n = s:len()
     while cur.i <= n
         b = s:byte(cur.i)
         if (b >= 48 and b <= 57) or b == 45 or b == 43 or b == 46 or b == 101 or b == 69
@@ -228,7 +228,7 @@ end
 json_value(cur): any
     json_skip_ws(cur)
     s = cur.s
-    if cur.i > #s return nil end
+    if cur.i > s:len() return nil end
     b = s:byte(cur.i)
     if b == 123
         cur.i = cur.i + 1

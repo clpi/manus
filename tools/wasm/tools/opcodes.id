@@ -536,8 +536,8 @@ main(): i64
             print("    run: duo run tools/opcodes.id")
             return 1
         end
-        print(target .. " is current (" .. to(str)(#OPS) .. " opcodes, "
-            .. to(str)(#ALUWORD) .. " alu rows, " .. to(str)(#CMPCOND) .. " cmp rows)")
+        print(target .. " is current (" .. to(str)(OPS:len()) .. " opcodes, "
+            .. to(str)(ALUWORD:len()) .. " alu rows, " .. to(str)(CMPCOND:len()) .. " cmp rows)")
         return 0
     end
 
@@ -546,6 +546,6 @@ main(): i64
         return 0
     end
     std.script.fs_write(target, after)
-    print("projected " .. to(str)(#OPS) .. " opcodes into " .. target)
+    print("projected " .. to(str)(OPS:len()) .. " opcodes into " .. target)
     0
 end

@@ -3,7 +3,7 @@
 batch(samples, batch_size): any
     if batch_size == nil batch_size = 32 end
     batches = {}
-    n = #samples
+    n = samples:len()
     i = 1
     bi = 0
     while i <= n
@@ -21,9 +21,9 @@ batch(samples, batch_size): any
 end
 
 from_pairs(xs, ys): any
-    assert(#xs == #ys, "from_pairs: length mismatch")
+    assert(xs:len() == ys:len(), "from_pairs: length mismatch")
     samples = {}
-    for i = 1, #xs
+    for i = 1, xs:len()
         samples[i] = { x = xs[i], y = ys[i] }
     end
     return samples
@@ -31,7 +31,7 @@ end
 
 # Fisher–Yates shuffle (in-place on array table)
 shuffle(samples): any
-    n = #samples
+    n = samples:len()
     i = n
     while i >= 2
         j = math.random() * i:floor() + 1

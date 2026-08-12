@@ -67,7 +67,7 @@ ring_drain(rb: any, max: i64): any
     while count < max
         val = ring_pop(rb)
         if val == nil break end
-        out[#out + 1] = val
+        out[out:len() + 1] = val
         count += 1
     end
     out

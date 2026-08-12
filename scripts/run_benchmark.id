@@ -16,7 +16,7 @@ end
 #
 # gap[014] keeps the body manual: `text:trim()` resolves and returns nil.
 trim(text: str): str
-    if text:sub(-1) == "\n" return text:sub(1, #text - 1) end
+    if text:sub(-1) == "\n" return text:sub(1, text:len() - 1) end
     text
 end
 
@@ -176,8 +176,8 @@ extract_results(out: str): table
 end
 
 compare_results(name: str, duo_res: table, c_res: table): bool
-    if #duo_res != BENCHES or #c_res != BENCHES
-        print("RESULT count mismatch for " .. name .. ": Duo=" .. tostring(#duo_res) .. " C=" .. tostring(#c_res) .. " (expected " .. tostring(BENCHES) .. ")")
+    if duo_res:len() != BENCHES or c_res:len() != BENCHES
+        print("RESULT count mismatch for " .. name .. ": Duo=" .. tostring(duo_res:len()) .. " C=" .. tostring(c_res:len()) .. " (expected " .. tostring(BENCHES) .. ")")
         return false
     end
     fail = false
@@ -258,7 +258,7 @@ _collect_min_times_impl(cmd: str, min_times: table): table
         # the suite reported Duo losing all 40 benchmarks on timing it had not
         # collected. extract_times already returns numbers, so compare the raw
         # values and let an unset slot actually read as nil.
-        for j = 1, #times
+        for j = 1, times:len()
             t = times[j]
             m = min_times[j]
             if m == nil or t < m
@@ -279,14 +279,14 @@ capture_results(label: str, cmd: str): table
     for attempt = 1, 2
         out = s.capture("cd " .. ROOT .. " && " .. cmd .. " 2>/dev/null")
         res = extract_results(out)
-        if #res == BENCHES
+        if res:len() == BENCHES
             return res
         end
         if attempt == 1
-            s.echo("warning: " .. label .. " produced " .. tostring(#res) .. "/" .. tostring(BENCHES) .. " RESULT rows, retrying...")
+            s.echo("warning: " .. label .. " produced " .. tostring(res:len()) .. "/" .. tostring(BENCHES) .. " RESULT rows, retrying...")
         end
     end
-    s.echo("error: " .. label .. " produced " .. tostring(#res) .. "/" .. tostring(BENCHES) .. " RESULT rows after retry")
+    s.echo("error: " .. label .. " produced " .. tostring(res:len()) .. "/" .. tostring(BENCHES) .. " RESULT rows after retry")
     os.exit(1)
     res
 end
@@ -536,7 +536,7 @@ global NAMES = {
 # already shipped exactly that once # gap[031], every row N/A and every winner
 # C # so the count is asserted rather than assumed.
 checktimes(label: str, t: table): i64
-    n = #t
+    n = t:len()
     if n != TIMED
         say("error: " .. label .. " produced " .. tostring(n) .. "/" .. TIMED:to(str)
             .. " Time lines; the timing table cannot be trusted.")

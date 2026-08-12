@@ -171,7 +171,7 @@ end
 hex(s: str): i64
     v: i64 = 0
     j: i64 = 1
-    while j <= #s
+    while j <= s:len()
         v = (v << 4) | digit(s:byte(j))
         j += 1
     end
@@ -225,7 +225,7 @@ encode(row: str, ops: any): i64
     parts = row:split("|")
     word: i64 = hex(parts[2])
     lay: str = parts[3]
-    if #lay > 0
+    if lay:len() > 0
         for i, fact in lay:split(" ")
             word = word | place(fact, ops)
         end
@@ -257,7 +257,7 @@ text(row: str, ops: any): str
     form: str = parts[4]
     out: str = ""
     j: i64 = 1
-    while j <= #form
+    while j <= form:len()
         ch: str = form:sub(j, j)
         if ch == "%"
             out = out .. slot(form:sub(j + 1, j + 1), ops)

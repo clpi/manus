@@ -32,7 +32,7 @@ base64_encode(s: str): str
     # nothing and the trailing group is built from whatever follows in memory.
     # That is why encode("h") produced "aD==" instead of "aA==": the second
     # sextet came from a byte that was never there.
-    n = #s
+    n = s:len()
     out = {}
     i = 1
     while i + 2 <= n
@@ -71,7 +71,7 @@ end
 base64_decode(s: str): str
     if s == nil return "" end
     clean = s:gsub("[^A-Za-z0-9+/=]", "")
-    while #clean % 4 != 0
+    while clean:len() % 4 != 0
         clean = clean .. "="
     end
     lookup = {}
@@ -79,7 +79,7 @@ base64_decode(s: str): str
         lookup[B64_CHARS:sub(i, i)] = i - 1
     end
     out = {}
-    for i = 1, #clean, 4
+    for i = 1, clean:len(), 4
         c1v = lookup[clean:sub(i, i)] or 0
         c2v = lookup[clean:sub(i + 1, i + 1)] or 0
         c3v = lookup[clean:sub(i + 2, i + 2)] or 0
@@ -119,7 +119,7 @@ end
 base64_url_decode(s: str): str
     padded = s:gsub("-", "+")
     padded = padded:gsub("_", "/")
-    pad_len = (4 - (#padded % 4)) % 4
+    pad_len = (4 - (padded:len() % 4)) % 4
     for _ = 1, pad_len
         padded = padded .. "="
     end
@@ -133,7 +133,7 @@ HEX_CHARS = "0123456789abcdef"
 hex_encode(s: str): str
     if s == nil return "" end
     out = ""
-    for i = 1, #s
+    for i = 1, s:len()
         b = s:byte(i)
         hi = b / 16:floor() + 1
         lo = (b % 16) + 1
@@ -145,14 +145,14 @@ end
 hex_decode(s: str): str
     if s == nil return "" end
     clean = s:gsub("[^0-9a-fA-F]", "")
-    if #clean % 2 != 0 clean = "0" .. clean end
+    if clean:len() % 2 != 0 clean = "0" .. clean end
     out = ""
     hex_map = {}
     for i = 1, 16
         hex_map[HEX_CHARS:sub(i, i)] = i - 1
         hex_map["ABCDEF":sub(i - 10, i - 10)] = i - 1
     end
-    for i = 1, #clean, 2
+    for i = 1, clean:len(), 2
         hi = clean:sub(i, i)
         lo = clean:sub(i + 1, i + 1)
         h = hex_map[hi:lower()] or 0
@@ -167,8 +167,8 @@ end
 xor_encrypt(s: str, key: str): str
     if s == nil or key == nil return "" end
     out = ""
-    key_len = #key
-    for i = 1, #s
+    key_len = key:len()
+    for i = 1, s:len()
         sc = s:byte(i)
         kc = key:byte(((i - 1) % key_len) + 1)
         out = out .. sc ~ kc:char()
@@ -198,9 +198,9 @@ end
 
 compare_digest(a: str, b: str): bool
     if a == nil or b == nil return false end
-    if #a != #b return false end
+    if a:len() != b:len() return false end
     result = 0
-    for i = 1, #a
+    for i = 1, a:len()
         result = result | (a:byte(i) ~ b:byte(i))
     end
     result == 0
@@ -211,10 +211,10 @@ end
 hmac_sha256(key: str, message: str): str
     block_size = 64
     k = key
-    if #k > block_size
+    if k:len() > block_size
         k = sha256(k)
     end
-    while #k < block_size
+    while k:len() < block_size
         k = k .. "\0"
     end
     o_key_pad = ""

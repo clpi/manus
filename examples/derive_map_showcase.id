@@ -11,7 +11,7 @@ Pair: { x: f64, y: f64 }
 
 @comp.define.derive("TouchApi", generate(meta) -> str
     acc = "/* " .. meta.name .. " touch API */\n"
-    for i = 1, #meta.fields
+    for i = 1, meta:len().fields
         f = meta.fields[i]
         acc = acc .. "static inline void duo_" .. meta.name .. "_read_" .. f.name .. "(const duo_" .. meta.name .. "* v) { (void)v->" .. f.name .. "; }\n"
     end
@@ -23,5 +23,5 @@ end)
 API_LEN = @comp.derive("HasXY", TouchApi)
 
 print("=== derive_map showcase ===")
-print("generated_bytes = " .. to(str)(#API_LEN))
+print("generated_bytes = " .. to(str)(API_LEN:len()))
 print("ok")

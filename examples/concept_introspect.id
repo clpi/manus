@@ -1,3 +1,4 @@
+# @corpus history
 # Concept introspection: query required members at compile time
 
 concept Hashable
@@ -10,6 +11,6 @@ M:hash(): i64
 end
 
 members = @comp.concepts.methods("Hashable")
-print("@comp.concepts.methods('Hashable') entries: " .. to(str)(#members))
+print("@comp.concepts.methods('Hashable') entries: " .. to(str)(members:len()))
 print("@methods(M) entries: " .. to(str)(#@methods(M)))
 print("@satisfies(M, Hashable): " .. to(str)(@satisfies(M, "Hashable")))

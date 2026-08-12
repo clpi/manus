@@ -1,5 +1,5 @@
 count(src: str): i64
-    n = #src
+    n = src:len()
     i = 1
     total = 0
     while i <= n do

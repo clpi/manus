@@ -31,8 +31,8 @@ reader_read_line(r: any): any
         if nl != nil
             line = remaining:sub(1, nl - 1)
             # strip trailing \r
-            if #line > 0 and line:sub(#line, #line) == "\r"
-                line = line:sub(1, #line - 1)
+            if line:len() > 0 and line:sub(line:len(), line:len()) == "\r"
+                line = line:sub(1, line:len() - 1)
             end
             r.pos = r.pos + nl
             return line, true
@@ -43,8 +43,8 @@ reader_read_line(r: any): any
         if has(.err)(r)
             # return whatever is left
             left = r.buf:sub(r.pos)
-            if #left > 0
-                r.pos = #r.buf + 1
+            if left:len() > 0
+                r.pos = r:len().buf + 1
                 return left, true
             end
             return "", false
@@ -59,8 +59,8 @@ reader_read_bytes(r: any, n: i64): any
         reader_fill(r)
         if has(.err)(r)
             left = r.buf:sub(r.pos)
-            if #left > 0
-                r.pos = #r.buf + 1
+            if left:len() > 0
+                r.pos = r:len().buf + 1
                 return left, true
             end
             return "", false
@@ -78,7 +78,7 @@ end
 
 # reader_read_byte: read a single byte value. Returns (byte, ok).
 reader_read_byte(r: any): any
-    while r.pos > #r.buf
+    while r.pos > r:len().buf
         reader_fill(r)
         if has(.err)(r) return 0, false end
     end
@@ -118,7 +118,7 @@ scanner_scan(s: any): bool
         pos = remaining:find(s.delim, 1, true)
         if pos != nil
             s.token = remaining:sub(1, pos - 1)
-            s.pos = s.pos + pos + #s.delim - 1
+            s.pos = s.pos + pos + s:len().delim - 1
             return true
         end
         # need more data
@@ -126,9 +126,9 @@ scanner_scan(s: any): bool
         if chunk == nil
             s.done = true
             left = s.buf:sub(s.pos)
-            if #left > 0
+            if left:len() > 0
                 s.token = left
-                s.pos = #s.buf + 1
+                s.pos = s:len().buf + 1
                 return true
             end
             return false
@@ -159,7 +159,7 @@ end
 
 # writer_flush: write all buffered data to the underlying handle.
 writer_flush(w: any): any
-    if #w.buf > 0
+    if w:len().buf > 0
         w.fh:write(w.buf)
         w.buf = ""
     end
@@ -169,7 +169,7 @@ end
 # writer_write: buffer a string for later flushing.
 writer_write(w: any, s: str): any
     w.buf = w.buf .. s
-    if #w.buf >= w.size
+    if w:len().buf >= w.size
         writer_flush(w)
     end
     w
@@ -178,7 +178,7 @@ end
 # writer_write_byte: buffer a single byte.
 writer_write_byte(w: any, b: i64): any
     w.buf = w.buf .. b:char()
-    if #w.buf >= w.size
+    if w:len().buf >= w.size
         writer_flush(w)
     end
     w

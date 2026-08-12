@@ -83,7 +83,7 @@ note: void = (tag: str, ok: bool, detail: str)
 count: i64 = (cmd: str)
     out = grab("{cmd} 2>/dev/null | tr -d ' \\n'")
     n = -1
-    if #out > 0
+    if out:len() > 0
         n = to(i64)(out)
     n
 
@@ -241,7 +241,7 @@ main: i64 = ()
     adirect = grab("{work}/s.bin")
     acequiv = grab("{work}/sc.bin")
     aoracle = grab("awk 'BEGIN{ a=1; for(i=0;i<{bound};i++){ a=(a*31+i)%1000003 } print a }'")
-    agreed = adirect == acequiv and adirect == aoracle and #adirect > 0
+    agreed = adirect == acequiv and adirect == aoracle and adirect:len() > 0
     note("M0 same answer", agreed,
         "direct={adirect} c-equivalent={acequiv} awk-oracle={aoracle}")
     if !agreed

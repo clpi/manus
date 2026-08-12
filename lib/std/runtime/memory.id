@@ -63,23 +63,23 @@ end
 
 arena_alloc(arena: any, size: i64): any
     # Check if current block has enough space
-    if #arena.blocks == 0 or arena.blocks[#arena.blocks].used + size > arena.block_size
+    if arena:len().blocks == 0 or arena.blocks[arena:len().blocks].used + size > arena.block_size
         # Allocate new block
         block_size = arena.block_size:max(size)
-        arena.blocks[#arena.blocks + 1] = {
+        arena.blocks[arena:len().blocks + 1] = {
             data = {},
             size = block_size,
             used = 0,
         }
     end
 
-    block = arena.blocks[#arena.blocks]
+    block = arena.blocks[arena:len().blocks]
     offset = block.used
     block.used = block.used + size
     arena.used = arena.used + size
 
     {
-        block = #arena.blocks,
+        block = arena:len().blocks,
         offset = offset,
         size = size,
     }
@@ -92,7 +92,7 @@ end
 
 arena_stats(arena: any): any
     {
-        total_blocks = #arena.blocks,
+        total_blocks = arena:len().blocks,
         total_size = arena.total_size,
         used = arena.used,
         utilization = arena.total_size > 0 and arena.used / arena.total_size or 0,
@@ -259,9 +259,9 @@ pool_new(factory: any, initial_size: i64): any
 end
 
 pool_acquire(pool: any): any
-    if #pool.available > 0
-        obj = pool.available[#pool.available]
-        pool.available[#pool.available] = nil
+    if pool:len().available > 0
+        obj = pool.available[pool:len().available]
+        pool.available[pool:len().available] = nil
         pool.in_use[obj] = true
         pool.stats.reused = pool.stats.reused + 1
         return obj
@@ -276,14 +276,14 @@ end
 pool_release(pool: any, obj: any): void
     if pool.in_use[obj]
         pool.in_use[obj] = nil
-        pool.available[#pool.available + 1] = obj
+        pool.available[pool:len().available + 1] = obj
         pool.stats.returned = pool.stats.returned + 1
     end
 end
 
 pool_stats(pool: any): any
     {
-        available = #pool.available,
+        available = pool:len().available,
         in_use_count = 0,
         created = pool.stats.created,
         reused = pool.stats.reused,

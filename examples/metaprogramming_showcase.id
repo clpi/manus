@@ -204,7 +204,7 @@ print("bump(Bump) = " .. to(str)(bump(Bump)))
 
 # Concept introspection: required members as compile-time table
 hashable_members = @comp.concepts.methods("Hashable")
-print("@comp.concepts.methods('Hashable') count = " .. to(str)(#hashable_members))
+print("@comp.concepts.methods('Hashable') count = " .. to(str)(hashable_members:len()))
 
 # Multi-concept: T: A + B — see examples/multi_concept.id
 

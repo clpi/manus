@@ -1,3 +1,4 @@
+# @corpus proof
 # gap[082] — the composition law must REFUSE a silently-lossy derivation.
 #
 # The same four edges as `examples/spec100/relation.id`, over i64 instead of
@@ -37,6 +38,8 @@ to(micron)(milli) = swell@exact
 to(milli)(micron) = shrivel@narrowing
 
 main = (): i64
-    bore: i64 = milli:from(inch)(5)
+    # FROM-ZERO: subject-first to — same edge as milli:from(inch)(5); inch source
+    # from binding context when nominal descriptor lands (GAP-097).
+    bore: i64 = 5:to(milli)
     print("{bore}")
     0

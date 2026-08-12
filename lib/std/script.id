@@ -222,7 +222,7 @@ end
 path_basename(p: str): str
     # Find last /
     pos = 0
-    for i = #p, 1, -1
+    for i = p:len(), 1, -1
         if p:sub(i, i) == "/"
             pos = i
             break
@@ -234,7 +234,7 @@ end
 
 path_dirname(p: str): str
     pos = 0
-    for i = #p, 1, -1
+    for i = p:len(), 1, -1
         if p:sub(i, i) == "/"
             pos = i
             break
@@ -248,7 +248,7 @@ end
 path_ext(p: str): str
     base = path_basename(p)
     pos = 0
-    for i = #base, 1, -1
+    for i = base:len(), 1, -1
         if base:sub(i, i) == "."
             pos = i
             break
@@ -262,7 +262,7 @@ path_stem(p: str): str
     base = path_basename(p)
     ext = path_ext(base)
     if ext == "" return base end
-    base:sub(1, #base - #ext)
+    base:sub(1, base:len() - ext:len())
 end
 
 # === File system ===
@@ -333,7 +333,7 @@ end
 # single-line command's output is a value with a "\n" welded on -- fine to
 # print, silently wrong the moment it is used as a PATH.
 chomp(s: str): str
-    n = #s
+    n = s:len()
     while n > 0 and s:byte(n) == 10
         n = n - 1
     end
@@ -372,7 +372,7 @@ end
 
 arg(n: i64, fallback: str): str
     a = args()
-    if a == nil or n < 1 or n > #a return fallback end
+    if a == nil or n < 1 or n > a:len() return fallback end
     return a[n]
 end
 

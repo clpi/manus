@@ -3,7 +3,7 @@
 # expect: 1 0
 check: i64 = (s: str)
     i = 0
-    j = #s - 1
+    j = s:len() - 1
     while i < j
         a = s[i]
         b = s[j]

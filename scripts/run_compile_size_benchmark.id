@@ -44,7 +44,7 @@ end
 
 pad(s: str, w: i64): str
     o = s
-    while #o < w
+    while o:len() < w
         o = "{o} "
     end
     o
@@ -52,7 +52,7 @@ end
 
 lpad(s: str, w: i64): str
     o = s
-    while #o < w
+    while o:len() < w
         o = " {o}"
     end
     o
@@ -60,7 +60,7 @@ end
 
 digits(n: i64, w: i64): str
     o = n:to(str)
-    while #o < w
+    while o:len() < w
         o = "0{o}"
     end
     o
@@ -102,7 +102,7 @@ linesat(path: str): i64
 end
 
 field(line: str, want: i64): str
-    n: i64 = #line
+    n: i64 = line:len()
     i: i64 = 1
     seen: i64 = 0
     out = ""
@@ -126,20 +126,20 @@ end
 
 lines(text: str): any
     out = {}
-    n: i64 = #text
+    n: i64 = text:len()
     start: i64 = 1
     i: i64 = 1
     while i <= n
         if text:byte(i) == 10
             if i > start
-                out[#out + 1] = text:sub(start, i - 1)
+                out[out:len() + 1] = text:sub(start, i - 1)
             end
             start = i + 1
         end
         i += 1
     end
     if start <= n
-        out[#out + 1] = text:sub(start, n)
+        out[out:len() + 1] = text:sub(start, n)
     end
     out
 end
@@ -269,8 +269,8 @@ end
 
 ctyped(path: str): void
     f = std.io.open(path, "w")
-    f:write("#include <stdint.h>\n")
-    f:write("#include <stdio.h>\n")
+    f:write("include:len() <stdint.h>\n")
+    f:write("include:len() <stdio.h>\n")
     f:write("\n")
     f:write("static inline int64_t fib_iter(int64_t n) {\n")
     f:write("    int64_t a = 0;\n")
@@ -336,8 +336,8 @@ end
 
 cchain(path: str, funcs: i64): void
     f = std.io.open(path, "w")
-    f:write("#include <stdint.h>\n")
-    f:write("#include <stdio.h>\n")
+    f:write("include:len() <stdint.h>\n")
+    f:write("include:len() <stdio.h>\n")
     f:write("\n")
     i: i64 = 0
     while i < funcs
@@ -461,8 +461,8 @@ end
 mlagree(duopath: str, cpath: str): void
     dl = lines(sh("cat '{duopath}'"))
     cl = lines(sh("cat '{cpath}'"))
-    nd: i64 = #dl
-    nc: i64 = #cl
+    nd: i64 = dl:len()
+    nc: i64 = cl:len()
     if nd != nc
         print("RESULT count mismatch: Duo={nd} C={nc}")
         std.os.exit(1)

@@ -1,13 +1,10 @@
-# INFER-ONE conversion debt census (law.repair.infer).
+# INFER-ONE conversion debt census (law.repair.infer · law.projection.census).
 #
 # Counts explicit conversion spellings in tracked .id files. Reports by path
 # role prefix so agents classify before rewrite — never bulk-delete.
 #
-# Patterns (rg):
-#   :to(           subject-first explicit conversion
-#   to(str)(       nested historical call face
-#   to(i64)(
-#   to(bytes)(
+# Bootstrap shell ingress via gatecap (GAP-155) — not process.* namespace.
+# Uses grep for patterns containing '(' — gatecap strips rg regex escapes.
 #
 # Run:
 #   idol run scripts/infer_census.id
@@ -15,17 +12,29 @@
 #
 # Exit 0 always — this reports; graph gates own enforcement (law.gate.infer).
 
+chomp: str = (text: str)
+    if text:len() == 0
+        return ""
+    n = text:len()
+    while n > 0
+        c = text:byte(n)
+        if c != 10 and c != 13 and c != 32 and c != 9
+            break
+        n -= 1
+    text:sub(1, n)
+
+cap: str = (cmd: str)
+    chomp(gatecap(cmd))
+
 main: i64 = ()
-    root = std.script.getenv("CENSUS_ROOT", "")
-    if root == ""
-        root = std.script.chomp(std.script.capture("git rev-parse --show-toplevel 2>/dev/null"))
+    root = cap("git rev-parse --show-toplevel 2>/dev/null")
     if root == ""
         print("infer_census: fail no root")
-        std.os.exit(3)
+        return 3
 
-    subj = std.script.chomp(std.script.capture("cd '{root}' && git ls-files '*.id' | xargs rg -c ':to\\(' 2>/dev/null | awk -F: '{s+=$2} END{print s+0}'"))
-    nest = std.script.chomp(std.script.capture("cd '{root}' && git ls-files '*.id' | xargs rg -c 'to\\((str|i64|bytes)\\)\\(' 2>/dev/null | awk -F: '{s+=$2} END{print s+0}'"))
-    files = std.script.chomp(std.script.capture("cd '{root}' && git ls-files '*.id' | xargs rg -l ':to\\(|to\\((str|i64|bytes)\\)\\(' 2>/dev/null | wc -l | tr -d ' '"))
+    subj = cap("cd '{root}' && git ls-files '*.id' | xargs grep -h -c ':to(' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+    nest = cap("cd '{root}' && git ls-files '*.id' | xargs grep -h -E -c 'to\\((str|i64|bytes)\\)\\(' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+    files = cap("cd '{root}' && git ls-files '*.id' | xargs grep -l -E ':to\\(|to\\((str|i64|bytes)\\)\\(' 2>/dev/null | wc -l | tr -d ' '")
 
     print("infer_census: explicit conversion spellings in tracked .id")
     print("  root {root}")
@@ -34,11 +43,11 @@ main: i64 = ()
     print("  nested to(T)( {nest}")
     print("")
     print("  by role prefix:")
-    std.script.run("cd '{root}' && git ls-files '*.id' | xargs rg -l ':to\\(|to\\((str|i64|bytes)\\)\\(' 2>/dev/null | sed 's|^examples/spec100/|canonical-teaching |; s|^scripts/proof/|proof |; s|^gates/|gate |; s|^tools/mcp/|mcp-agent |; s|^lib/std/|std-migration |; s|^scripts/|script |; s|^examples/|example |; s|^tools/|tool |; s|^lib/|lib |; s|^|other |' | cut -d' ' -f1 | sort | uniq -c | sort -rn")
+    print(cap("cd '{root}' && git ls-files '*.id' | xargs grep -l -E ':to\\(|to\\((str|i64|bytes)\\)\\(' 2>/dev/null | sed 's|^examples/spec100/|canonical-teaching |; s|^scripts/proof/|proof |; s|^gates/|gate |; s|^tools/mcp/|mcp-agent |; s|^lib/std/|std-migration |; s|^scripts/|script |; s|^examples/|example |; s|^tools/|tool |; s|^lib/|lib |; s|^|other |' | cut -d' ' -f1 | sort | uniq -c | sort -rn"))
     print("")
     print("  top files (:to( count):")
-    std.script.run("cd '{root}' && git ls-files '*.id' | xargs rg -c ':to\\(' 2>/dev/null | sort -t: -k2 -nr | head -25")
+    print(cap("cd '{root}' && git ls-files '*.id' | xargs grep -c ':to(' 2>/dev/null | awk -F: '$2>0' | sort -t: -k2 -nr | head -25"))
     print("")
     print("  repair classes A–L (law.repair.infer) — classify each site before rewrite")
-    print("  census only; graph proof required for removal (GAP-124)")
+    print("  census only; graph proof required for removal (GAP-124 · GAP-165)")
     0

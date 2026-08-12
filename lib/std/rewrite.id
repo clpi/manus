@@ -130,7 +130,7 @@ apply_all(): str
     for i = 1, rule_count
         if rules[i].enabled
             r = rules[i]
-            lines[#lines + 1] = "  [" .. r.priority:to(str) .. "] " .. r.name .. ": " .. r.pattern .. " -> " .. r.replacement
+            lines[lines:len() + 1] = "  [" .. r.priority:to(str) .. "] " .. r.name .. ": " .. r.pattern .. " -> " .. r.replacement
             applied = applied + 1
         end
     end
@@ -153,7 +153,7 @@ summary(): str
     for i = 1, rule_count
         r = rules[i]
         status = r.enabled and "on" or "off"
-        parts[#parts + 1] = "  [" .. status .. "] " .. r.name .. ": " .. r.pattern .. " -> " .. r.replacement
+        parts[parts:len() + 1] = "  [" .. status .. "] " .. r.name .. ": " .. r.pattern .. " -> " .. r.replacement
     end
     "Rewrite rules (" .. rule_count:to(str) .. "):\n" .. str_join(parts, "\n")
 end

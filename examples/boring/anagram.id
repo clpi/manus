@@ -2,7 +2,7 @@
 # comparator that always answers true passes the positive alone.
 # expect: 1 0
 same: i64 = (a: str, b: str)
-    if #a != #b
+    if a:len() != b:len()
         return 0
     end
     count = { }
@@ -10,7 +10,7 @@ same: i64 = (a: str, b: str)
         count:push(0)
     end
     i = 0
-    n = #a
+    n = a:len()
     while i < n
         x = a[i]
         y = b[i]

@@ -6,7 +6,7 @@ is_alpha: i64 = (c: i64)
     0
 end
 scan: tok = (src: str, pos: i64)
-    n = #src
+    n = src:len()
     i = pos
     c = src:byte(i)
     if c > 0

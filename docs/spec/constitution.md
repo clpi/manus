@@ -2,7 +2,7 @@
 
 This is the sole living semantic law. `CLAUDE.md`, `docs/spec/*.md`, agent
 routers, tests, tools, and implementation are projections and may not contradict
-it. Historical pass documents and retired source are provenance only.
+it. Git history is the sole historical archive.
 
 The fenced body is structured law notation retained while `GAP-145` closes the
 canonical lexical and generated-role boundary. It is not executable canonical
@@ -118,7 +118,6 @@ precedence = {
     "constitution",    # the sole living repository law
     "projection",      # grammar, corpus, context and workflow views
     "implementation",  # what happens to be implemented
-    "history",         # pass documents and retired source, provenance only
 }
 
 owner = law{
@@ -144,16 +143,12 @@ language = @{
 }
 
 # Current identity — never list Idol in language.history.
+# ZERO-HISTORY: no language.history table. Git is the sole historical archive.
 language.current = @{
     names = { "Idol", "idol" }
     file  = ".id"
     binary = "idol"
     repository = "idollang/idol"
-}
-
-language.history = {
-    @{ names = { "Idsem", "idsem" }, role = "historical and bootstrap provenance only" },
-    @{ names = { "Duon", "duon", "Duo", "duo" }, files = { ".id" }, binaries = { "duo" }, role = "historical and bootstrap provenance only" },
 }
 
 mnemonic = law{
@@ -1290,12 +1285,12 @@ identityprojection = law{
     kind  = .protocol
     holds = .current
     binds = {
-        "current language identity is Idol idol only — language.history records Idsem Duon Duo and duo as historical bootstrap provenance never current identity",
-        "current agent projection documents must not use Idsem idsem as live language identity",
-        "gate target current projection count of Idsem idsem as identity outside mechanically classified history foreign provenance blocks equals zero",
-        "Historical Duo Duon duo bootstrap names remain provenance only when explicitly qualified — never alongside Idol as if Idol were historical",
+        "current language identity is Idol idol only — no language.history table exists in the active tree per law.zero.history",
+        "current agent projection documents must not use Idsem Duo Duon or any retired name as live language identity",
+        "gate target current projection count of retired names as identity outside foreign provenance equals zero",
+        "retired names Duo Duon duo Idsem idsem are not preserved in the active tree — git stores their history",
     }
-    fails = "current Idol name appearing in historical name set or Idsem appearing as live identity in agent projections"
+    fails = "retired name appearing as live identity in agent projections or active tree"
 }
 
 # ═══ §37 · DISTRIBUTION IS NOT SEMANTICS (the stdlib reconciliation) ════════
@@ -3911,7 +3906,7 @@ authorityinvariant = law{
 # law.incremental.semantic · law.canonical.semantic · law.infer.contract · law.world.capability ·
 # law.closure.semantic · law.shc.scheduler · law.delta.budget · law.coordination.fact ·
 # law.representation.demand · law.gate.convergence.
-# Anti-drift: law.source.not.proof · law.repair.class · law.doc.teaching · law.projection.pack · law.identity.projection.
+# Anti-drift: law.source.not.proof · law.repair.class · law.doc.teaching · law.projection.pack · law.identity.projection · law.projection.absolute · law.projection.repair.
 
 semanticuniverse = law{
     id    = "law.semantic.universe"
@@ -4155,6 +4150,64 @@ gateprojection = law{
         "staged text gates are migration pressure until GAP-124 graph projection census owns verdicts",
     }
     fails = "projection invariant enforced only as chat guidance without adversarial controls"
+}
+
+projectionabsolute = law{
+    id    = "law.projection.absolute"
+    kind  = .invariant
+    holds = .absolute
+    binds = {
+        "projection is fact completion not namespace selection",
+        "inference supplies uniquely determined facts",
+        "home supplies context not meaning relation supplies meaning subject supplies orientation",
+        "protocol constraints demand relation facts world supplies authority not intent",
+        "foreign crossing supplies law and provenance not new identity",
+        "standard means reachable not std repository layout means provenance not lib",
+        "to is one conversion relation from is not a second conversion universe",
+        "no explicit projection survives when the graph can uniquely recover it",
+        "no implicit projection is permitted when ambiguity hidden effect unhandled failure or unbounded search remains",
+        "one graph one application algebra one projection mechanism one world witness mechanism one native lowering path",
+        "for every new or changed expression if the answer relies on std lib module namespace method protocol adjective host api callee spelling path or text pattern the change is not idollic yet",
+    }
+    fails = "multiple projection mechanisms namespace-selected meaning or implicit projection under ambiguity"
+}
+
+projectionrepair = law{
+    id    = "law.projection.repair"
+    kind  = .protocol
+    holds = .sequence
+    binds = {
+        "repair order one reconcile projection law into c0",
+        "two rewrite docs spec world.md",
+        "three rewrite conversion fixtures eliminate from as separate semantic orientation",
+        "four make projection pack facts explicit in resolver graph application records",
+        "five add expected descriptor and result demand inference",
+        "six implement semantic canonicalization for redundant to and projection elision",
+        "seven move conversion class refusal authority out of codegen into semantic resolution",
+        "eight replace hardcoded primitive to codegen authority with ordinary relation edges",
+        "nine add relation constraint protocol witness derivation using same projection path",
+        "ten add world witness injection using same application facts",
+        "eleven remove canonical std lib source lookup",
+        "twelve fix source home reachability so no replacement import namespace is necessary",
+        "thirteen audit foreign cross projections through same graph",
+        "fourteen feed exact facts into dnir native lowering",
+        "fifteen delete lexical text gates once graph gates own semantic verdicts",
+        "do not continue implementing projection conversion protocol world source shell currying dnir or tooling machinery against older repository examples until this reconciliation is applied",
+    }
+    fails = "implementation ahead of projection law reconciliation or repair steps permuted without owner directive"
+}
+
+projectioncensus = law{
+    id    = "law.projection.census"
+    kind  = .protocol
+    holds = .machine
+    binds = {
+        "operation census machine projection must represent every canonical application with application id relation id explicit and inferred projection facts subject id operand pack id result pack id constraint witnesses world requirements world witnesses origin and law",
+        "projection census separately reports explicit projections inferred projections redundant explicit projections ambiguous projections reconstruction sites projection wrappers projection string lookups std lib source lookups world namespace calls protocol adjective identities and from inverse aliases",
+        "every debt class gets exact owners — census classifies never bulk replaces explicit to or from without per site proof",
+        "ftcftw target for statically resolved applications namespace lookup relation string lookup conversion registry lookup protocol dictionary protocol vtable world object plumbing generic runtime dispatch projection wrapper unnecessary conversion and unnecessary closure approach zero",
+    }
+    fails = "projection debt tracked only by search sampling without machine census and owners"
 }
 
 projectionrules = law{
@@ -5915,5 +5968,36 @@ ftcftw = law{
         "a throughput win cannot hide worse cold start compiler work memory runtime obligation or artifact footprint",
         "every measurement names the executed backend snapshot comparator workload machine and known unsupported or divergent cases",
     }
+}
+
+zerohistory = law{
+    id    = "law.zero.history"
+    kind  = .invariant
+    holds = .current
+    binds = {
+        "ZERO-HISTORY the active repository is not a museum — it contains current Idol current foreign interoperability and currently executed bounded bootstrap bridges and nothing else — git stores history current semantic law stores truth the graph stores meaning demand stores necessity realization stores physics",
+        "no retired name source form module system pass taxonomy compatibility layer historical fixture migration document old edge vocabulary old identity wrapper or host shaped semantic subsystem receives permanent residence merely because deleting it would lose provenance — provenance already exists in git",
+        "durable corpus states are current and foreign only — historical legacy migration compat deprecated old and pass number archive are not durable states and git owns those histories",
+        "do not maintain language.history — the active tree represents current Idol only",
+        "do not preserve old environment variable prefixes exported symbol prefixes package names artifact names or executable aliases",
+        "delete comments of the form formerly historical was X migration legacy retired in old path previously unless the statement is required to operate a current external compatibility boundary",
+        "every gap is either an open current obligation or resolved and deleted — an open gap contains only current missing fact evidence owner acceptance proof and deletion condition — no chronological archive no retired names no obsolete implementation narrative no pass references",
+        "generated projections consume only current C0 and current open obligations — no old gap titles old brands mutable session envelopes or committed stale state",
+    }
+    fails = "retired architecture preserved as permanent resident in the active tree when git already stores its history"
+}
+
+nocbackend = law{
+    id    = "law.backend.c.zero"
+    kind  = .invariant
+    holds = .native
+    binds = {
+        "NO-C-BACKEND the generated C backend is not a destination architecture — it is bootstrap debt that must be deleted",
+        "the direct native backend is the sole realization path — no compiler B or C should emit C as a production backend",
+        "duo_lexer_tokenize.c duo codegen and all generated C artifacts are temporary bridges with mandatory deletion conditions",
+        "do not invest in improving the C backend — invest in deleting it by advancing the native backend to full coverage",
+        "the C backend exists only while the native backend cannot yet compile the bootstrap subset — its deletion gate is native backend coverage of the compiler critical basis",
+    }
+    fails = "C backend treated as permanent architecture or improved rather than deleted"
 }
 ```

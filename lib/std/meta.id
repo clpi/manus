@@ -65,7 +65,7 @@ end
 fields(t: any)
     ks = {}
     for k, _ in t
-        ks[#ks + 1] = k
+        ks[ks:len() + 1] = k
     end
     ks
 end
@@ -75,7 +75,7 @@ field_names(t: any)
     ks = {}
     for k, _ in t
         if type(k) == "string"
-            ks[#ks + 1] = k
+            ks[ks:len() + 1] = k
         end
     end
     ks
@@ -86,7 +86,7 @@ method_names(t: any)
     ms = {}
     for k, v in t
         if type(k) == "string" and type(v) == "function"
-            ms[#ms + 1] = k
+            ms[ms:len() + 1] = k
         end
     end
     ms
@@ -147,7 +147,7 @@ concept_member(member: any, kind: str): any
     end
     if member.kind == nil member.kind = kind end
     if kind == "method" and member.param_count == nil and member.params != nil
-        member.param_count = #member.params
+        member.param_count = member:len().params
     end
     member
 end
@@ -156,7 +156,7 @@ concept_member_list(items: any, kind: str): any
     out = {}
     if items == nil return out end
     for _, item in items
-        out[#out + 1] = concept_member(item, kind)
+        out[out:len() + 1] = concept_member(item, kind)
     end
     out
 end
@@ -185,13 +185,13 @@ end
 # ─────────────────────────────────────────────────────────────
 
 t: any:len(): i64
-    return #t
+    return t:len()
 end
 
 keys(t: any)
     ks = {}
     for k, _ in t
-        ks[#ks + 1] = k
+        ks[ks:len() + 1] = k
     end
     ks
 end
@@ -199,7 +199,7 @@ end
 values(t: any)
     vs = {}
     for _, v in t
-        vs[#vs + 1] = v
+        vs[vs:len() + 1] = v
     end
     vs
 end
@@ -295,7 +295,7 @@ derive_display(val: any): str
         parts = {}
         for k, v in val
             if type(k) == "string"
-                parts[#parts + 1] = k .. ": " .. derive_display(v)
+                parts[parts:len() + 1] = k .. ": " .. derive_display(v)
             end
         end
         return "{" .. parts:concat(", ") .. "}"
@@ -328,7 +328,7 @@ derive_hash(val: any): u64
     end
     if type(val) == "string"
         h = 5381
-        for i = 1, #val
+        for i = 1, val:len()
             h = (h * 33 + val:byte(i)) % 4294967296
         end
         return h
@@ -376,8 +376,8 @@ end
 
 derive_val: any:len(): i64
     if val == nil return 0 end
-    if type(val) == "string" return #val end
-    if type(val) == "table" return #val end
+    if type(val) == "string" return val:len() end
+    if type(val) == "table" return val:len() end
     0
 end
 
@@ -406,7 +406,7 @@ end
 map(t: any, f: any): any
     out = {}
     i = 1
-    while i <= #t
+    while i <= t:len()
         out[i] = f(t[i], i)
         i += 1
     end
@@ -427,7 +427,7 @@ filter(t: any, pred: any): any
     out = {}
     n = 0
     i = 1
-    while i <= #t
+    while i <= t:len()
         if pred(t[i], i)
             n += 1
             out[n] = t[i]
@@ -452,7 +452,7 @@ end
 reduce(t: any, f: any, init: any): any
     acc = init
     i = 1
-    while i <= #t
+    while i <= t:len()
         acc = f(acc, t[i], i)
         i += 1
     end
@@ -471,7 +471,7 @@ end
 # each: call side-effecting function on each element
 each(t: any, f: any): void
     i = 1
-    while i <= #t
+    while i <= t:len()
         f(t[i], i)
         i += 1
     end
@@ -487,7 +487,7 @@ end
 # find: return first element matching predicate, or nil
 find(t: any, pred: any): any
     i = 1
-    while i <= #t
+    while i <= t:len()
         if pred(t[i], i) return t[i] end
         i += 1
     end
@@ -505,7 +505,7 @@ end
 # find_index: return 1-based index of first matching element, or 0
 find_index(t: any, pred: any): i64
     i = 1
-    while i <= #t
+    while i <= t:len()
         if pred(t[i], i) return i end
         i += 1
     end
@@ -515,7 +515,7 @@ end
 # includes: check if any element equals value
 includes(t: any, value: any): bool
     i = 1
-    while i <= #t
+    while i <= t:len()
         if t[i] == value return true end
         i += 1
     end
@@ -526,7 +526,7 @@ end
 count(t: any, pred: any): i64
     n = 0
     i = 1
-    while i <= #t
+    while i <= t:len()
         if pred(t[i], i) n += 1 end
         i += 1
     end
@@ -536,7 +536,7 @@ end
 # all: true if every element matches predicate
 all(t: any, pred: any): bool
     i = 1
-    while i <= #t
+    while i <= t:len()
         if not pred(t[i], i) return false end
         i += 1
     end
@@ -546,7 +546,7 @@ end
 # any: true if at least one element matches predicate
 any(t: any, pred: any): bool
     i = 1
-    while i <= #t
+    while i <= t:len()
         if pred(t[i], i) return true end
         i += 1
     end
@@ -562,11 +562,11 @@ flatten(t: any): any
     out = {}
     n = 0
     i = 1
-    while i <= #t
+    while i <= t:len()
         sub = t[i]
         if type(sub) == "table"
             j = 1
-            while j <= #sub
+            while j <= sub:len()
                 n += 1
                 out[n] = sub[j]
                 j += 1
@@ -588,11 +588,11 @@ end
 # zip: combine N arrays into array of tuples
 zip(...): any
     args = {...}
-    if #args == 0 return {} end
-    min_len = #args[1]
+    if args:len() == 0 return {} end
+    min_len = args:len()[1]
     i = 2
-    while i <= #args
-        if #args[i] < min_len min_len = #args[i] end
+    while i <= args:len()
+        if args:len()[i] < min_len min_len = args:len()[i] end
         i += 1
     end
     out = {}
@@ -600,7 +600,7 @@ zip(...): any
     while j <= min_len
         tuple = {}
         k = 1
-        while k <= #args
+        while k <= args:len()
             tuple[k] = args[k][j]
             k += 1
         end
@@ -614,7 +614,7 @@ end
 enumerate(t: any): any
     out = {}
     i = 1
-    while i <= #t
+    while i <= t:len()
         out[i] = { index = i, value = t[i] }
         i += 1
     end
@@ -625,7 +625,7 @@ end
 take(t: any, n: i64): any
     out = {}
     limit = n
-    if limit > #t limit = #t end
+    if limit > t:len() limit = t:len() end
     i = 1
     while i <= limit
         out[i] = t[i]
@@ -638,10 +638,10 @@ end
 drop(t: any, n: i64): any
     out = {}
     start = n + 1
-    if start > #t return out end
+    if start > t:len() return out end
     i = start
     j = 1
-    while i <= #t
+    while i <= t:len()
         out[j] = t[i]
         i += 1
         j += 1
@@ -652,7 +652,7 @@ end
 # reverse: return new reversed array
 reverse(t: any): any
     out = {}
-    n = #t
+    n = t:len()
     i = 1
     while i <= n
         out[i] = t[n - i + 1]
@@ -667,7 +667,7 @@ unique(t: any): any
     out = {}
     n = 0
     i = 1
-    while i <= #t
+    while i <= t:len()
         v = t[i]
         key = v:to(str)
         if not seen[key]
@@ -687,7 +687,7 @@ partition(t: any, pred: any): any
     ny = 0
     nn = 0
     i = 1
-    while i <= #t
+    while i <= t:len()
         if pred(t[i], i)
             ny += 1
             yes[ny] = t[i]
@@ -708,12 +708,12 @@ end
 sort(t: any): any
     out = {}
     i = 1
-    while i <= #t
+    while i <= t:len()
         out[i] = t[i]
         i += 1
     end
     i = 2
-    while i <= #out
+    while i <= out:len()
         key = out[i]
         j = i - 1
         while j >= 1 and out[j] > key
@@ -730,12 +730,12 @@ end
 sort_by(t: any, key_fn: any): any
     indexed = {}
     i = 1
-    while i <= #t
+    while i <= t:len()
         indexed[i] = { val = t[i], key = key_fn(t[i]) }
         i += 1
     end
     i = 2
-    while i <= #indexed
+    while i <= indexed:len()
         entry = indexed[i]
         j = i - 1
         while j >= 1 and indexed[j].key > entry.key
@@ -747,7 +747,7 @@ sort_by(t: any, key_fn: any): any
     end
     out = {}
     i = 1
-    while i <= #indexed
+    while i <= indexed:len()
         out[i] = indexed[i].val
         i += 1
     end
@@ -767,7 +767,7 @@ end
 group_by(t: any, key_fn: any): any
     groups = {}
     i = 1
-    while i <= #t
+    while i <= t:len()
         k = to(str)(key_fn(t[i]))
         if groups[k] == nil groups[k] = {} end
         groups[k][groups[k]:len() + 1] = t[i]
@@ -780,7 +780,7 @@ end
 count_by(t: any, key_fn: any): any
     counts = {}
     i = 1
-    while i <= #t
+    while i <= t:len()
         k = to(str)(key_fn(t[i]))
         if counts[k] == nil counts[k] = 0 end
         counts[k] += 1
@@ -793,7 +793,7 @@ end
 sum_by(t: any, key_fn: any): any
     total = 0
     i = 1
-    while i <= #t
+    while i <= t:len()
         total += key_fn(t[i])
         i += 1
     end
@@ -802,11 +802,11 @@ end
 
 # min_by / max_by: find element with min/max key
 min_by(t: any, key_fn: any): any
-    if #t == 0 return nil end
+    if t:len() == 0 return nil end
     best = t[1]
     best_key = key_fn(t[1])
     i = 2
-    while i <= #t
+    while i <= t:len()
         k = key_fn(t[i])
         if k < best_key
             best = t[i]
@@ -818,11 +818,11 @@ min_by(t: any, key_fn: any): any
 end
 
 max_by(t: any, key_fn: any): any
-    if #t == 0 return nil end
+    if t:len() == 0 return nil end
     best = t[1]
     best_key = key_fn(t[1])
     i = 2
-    while i <= #t
+    while i <= t:len()
         k = key_fn(t[i])
         if k > best_key
             best = t[i]
@@ -843,7 +843,7 @@ pipe(...): any
     return function(x)
         result = x
         i = 1
-        while i <= #funcs
+        while i <= funcs:len()
             result = funcs[i](result)
             i += 1
         end
@@ -856,7 +856,7 @@ compose(...): any
     funcs = {...}
     return function(x)
         result = x
-        i = #funcs
+        i = funcs:len()
         while i >= 1
             result = funcs[i](result)
             i -= 1
@@ -881,14 +881,14 @@ partial_invoke(self: any, ...): any
     joined = {}
     n = 0
     i = 1
-    while i <= #self.args
+    while i <= self:len().args
         n += 1
         joined[n] = self.args[i]
         i += 1
     end
     extra = {...}
     i = 1
-    while i <= #extra
+    while i <= extra:len()
         n += 1
         joined[n] = extra[i]
         i += 1
@@ -915,7 +915,7 @@ end
 sum(t: any): any
     total = 0
     i = 1
-    while i <= #t
+    while i <= t:len()
         total += t[i]
         i += 1
     end
@@ -925,7 +925,7 @@ end
 product(t: any): any
     total = 1
     i = 1
-    while i <= #t
+    while i <= t:len()
         total *= t[i]
         i += 1
     end
@@ -933,10 +933,10 @@ product(t: any): any
 end
 
 min(t: any): any
-    if #t == 0 return nil end
+    if t:len() == 0 return nil end
     best = t[1]
     i = 2
-    while i <= #t
+    while i <= t:len()
         if t[i] < best best = t[i] end
         i += 1
     end
@@ -944,10 +944,10 @@ min(t: any): any
 end
 
 max(t: any): any
-    if #t == 0 return nil end
+    if t:len() == 0 return nil end
     best = t[1]
     i = 2
-    while i <= #t
+    while i <= t:len()
         if t[i] > best best = t[i] end
         i += 1
     end
@@ -980,7 +980,7 @@ end
 key_by(t: any, key_fn: any): any
     out = {}
     i = 1
-    while i <= #t
+    while i <= t:len()
         k = to(str)(key_fn(t[i]))
         out[k] = t[i]
         i += 1
@@ -1033,7 +1033,7 @@ andf(...): any
     preds = {...}
     return function(x)
         i = 1
-        while i <= #preds
+        while i <= preds:len()
             if not preds[i](x) return false end
             i += 1
         end
@@ -1045,7 +1045,7 @@ orf(...): any
     preds = {...}
     return function(x)
         i = 1
-        while i <= #preds
+        while i <= preds:len()
             if preds[i](x) return true end
             i += 1
         end

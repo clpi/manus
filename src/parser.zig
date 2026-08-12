@@ -1196,7 +1196,23 @@ pub const Parser = struct {
                 .misindent => return layout_misindent(self.layout, tok),
             };
             switch (tok.kind) {
-                .kw_end, .kw_else, .kw_elseif, .kw_until, .eof => break,
+                .kw_end, .kw_until, .eof => break,
+                .kw_else, .kw_elseif => {
+                    // else/elseif close the block only when they bind at
+                    // or left of the block opener (layout .close). When
+                    // they are deeper (layout .keep), they belong to an
+                    // inner if and must not terminate this block — fall
+                    // through to parse_stmt which handles the if chain.
+                    if (self.layout.offside and tok.loc.col <= self.layout.open_col) break;
+                    // Not closing this block; parse as a statement.
+                    try self.flush_module_hint_directives(&stmts);
+                    const st = try self.parse_stmt();
+                    if (self.pending_hoists.items.len > 0) {
+                        try stmts.appendSlice(self.alloc, self.pending_hoists.items);
+                        self.pending_hoists.clearRetainingCapacity();
+                    }
+                    try stmts.append(self.alloc, st);
+                },
                 .kw_return => {
                     try stmts.append(self.alloc, try self.parse_return());
                     _ = try self.eat(.semi);
@@ -4938,7 +4954,7 @@ pub const Parser = struct {
     /// a space, `a >> = b` still reports exactly as it did.
     ///
     /// The lexers stay field-for-field identical and the generated
-    /// `src/duo_lexer_tokenize.c` does not move, which is the point: this is a
+    /// `src/lexer_tokenize.c` does not move, which is the point: this is a
     /// grammar fact, not a lexical one.
     fn peek_glued_assign(self: *Parser, op: Token) ParseError!?ast.BinOp {
         const bop: ast.BinOp = switch (op.kind) {
@@ -6735,7 +6751,7 @@ test "parse: Idol token identity keeps backtick reserved" {
     var lex = Lexer.init(source, "reserved.id");
     try testing.expectError(
         @import("lexer.zig").LexError.UnexpectedChar,
-        @import("duo_lexer_dispatch.zig").route(testing.allocator, &lex, source, "reserved.id"),
+        @import("lexer_dispatch.zig").route(testing.allocator, &lex, source, "reserved.id"),
     );
 }
 

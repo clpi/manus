@@ -8,7 +8,7 @@ append_count(): i64
             t:insert(i * 10)
         end
     end
-    return #t
+    return t:len()
 end
 
 direct_if_count(): i64
@@ -16,7 +16,7 @@ direct_if_count(): i64
     if true
         t:insert(7)
     end
-    return #t
+    return t:len()
 end
 
 ok = append_count() == 3 and direct_if_count() == 1

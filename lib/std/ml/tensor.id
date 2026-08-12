@@ -26,7 +26,7 @@ ones(rows: any, cols: any)
 end
 
 from(data: any)
-    n = #data
+    n = data:len()
     t = {}
     t.rows = 1
     t.cols = n
@@ -355,7 +355,7 @@ end
 
 # Concatenate tensors along rows (vertical stack)
 vstack(tensors: any): any
-    if #tensors == 0 return zeros(0, 0) end
+    if tensors:len() == 0 return zeros(0, 0) end
     total_rows = 0
     cols = tensors[1].cols
     for t in tensors
@@ -375,7 +375,7 @@ end
 
 # Concatenate tensors along columns (horizontal stack)
 hstack(tensors: any): any
-    if #tensors == 0 return zeros(0, 0) end
+    if tensors:len() == 0 return zeros(0, 0) end
     rows = tensors[1].rows
     total_cols = 0
     for t in tensors
@@ -420,7 +420,7 @@ arange(start, stop, step): any
     values = {}
     v = start
     while v < stop
-        values[#values + 1] = v
+        values[values:len() + 1] = v
         v += step
     end
     from(values)
@@ -549,12 +549,12 @@ unique(t): any
         v = t.data[i]
         if seen[v] == nil
             seen[v] = true
-            values[#values + 1] = v
+            values[values:len() + 1] = v
         end
     end
     values:sort()
-    result = zeros(1, #values)
-    for i = 1, #values
+    result = zeros(1, values:len())
+    for i = 1, values:len()
         result.data[i] = values[i]
     end
     result

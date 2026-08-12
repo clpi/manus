@@ -21,7 +21,7 @@ marshal(v: any): str
     if t == "string"
         out = {"\""}
         i = 1
-        while i <= #v
+        while i <= v:len()
             ch = v:sub(i, i)
             b = v:byte(i)
             if ch == "\""
@@ -76,7 +76,7 @@ marshal(v: any): str
                 # encode key as string
                 key_out = {"\""}
                 j = 1
-                while j <= #k
+                while j <= k:len()
                     ch = k:sub(j, j)
                     b = k:byte(j)
                     if ch == "\""
@@ -106,7 +106,7 @@ end
 
 # skip_ws: skip whitespace in the parser.
 skip_ws(p: any): void
-    while p.pos <= #p.s
+    while p.pos <= p:len().s
         b = p.s:byte(p.pos)
         if b == 32 or b == 9 or b == 10 or b == 13
             p.pos = p.pos + 1
@@ -121,7 +121,7 @@ end
 parse_value(p: any): any
     if has(.err)(p) return nil end
     skip_ws(p)
-    if p.pos > #p.s
+    if p.pos > p:len().s
         p.err = "unexpected end of input"
         return nil
     end
@@ -131,13 +131,13 @@ parse_value(p: any): any
         p.pos = p.pos + 1
         obj = {}
         skip_ws(p)
-        if p.pos <= #p.s and p.s:sub(p.pos, p.pos) == "}"
+        if p.pos <= p:len().s and p.s:sub(p.pos, p.pos) == "}"
             p.pos = p.pos + 1
             return obj
         end
         while true
             skip_ws(p)
-            if p.pos > #p.s
+            if p.pos > p:len().s
                 p.err = "unterminated object"
                 return nil
             end
@@ -148,7 +148,7 @@ parse_value(p: any): any
             # parse key (inline string parse)
             p.pos = p.pos + 1
             key_out = {}
-            while p.pos <= #p.s
+            while p.pos <= p:len().s
                 kch = p.s:sub(p.pos, p.pos)
                 if kch == "\""
                     p.pos = p.pos + 1
@@ -156,7 +156,7 @@ parse_value(p: any): any
                 end
                 if kch == "\\"
                     p.pos = p.pos + 1
-                    if p.pos > #p.s
+                    if p.pos > p:len().s
                         p.err = "unterminated string escape"
                         return nil
                     end
@@ -175,7 +175,7 @@ parse_value(p: any): any
             end
             key = key_out:concat()
             skip_ws(p)
-            if p.pos > #p.s or p.s:sub(p.pos, p.pos) != ":"
+            if p.pos > p:len().s or p.s:sub(p.pos, p.pos) != ":"
                 p.err = "expected colon"
                 return nil
             end
@@ -184,7 +184,7 @@ parse_value(p: any): any
             if has(.err)(p) return nil end
             obj[key] = val
             skip_ws(p)
-            if p.pos > #p.s
+            if p.pos > p:len().s
                 p.err = "unterminated object"
                 return nil
             end
@@ -206,7 +206,7 @@ parse_value(p: any): any
         p.pos = p.pos + 1
         arr = {}
         skip_ws(p)
-        if p.pos <= #p.s and p.s:sub(p.pos, p.pos) == "]"
+        if p.pos <= p:len().s and p.s:sub(p.pos, p.pos) == "]"
             p.pos = p.pos + 1
             return arr
         end
@@ -215,7 +215,7 @@ parse_value(p: any): any
             if has(.err)(p) return nil end
             arr[arr:len() + 1] = val
             skip_ws(p)
-            if p.pos > #p.s
+            if p.pos > p:len().s
                 p.err = "unterminated array"
                 return nil
             end
@@ -236,7 +236,7 @@ parse_value(p: any): any
         # parse string
         p.pos = p.pos + 1
         out = {}
-        while p.pos <= #p.s
+        while p.pos <= p:len().s
             sch = p.s:sub(p.pos, p.pos)
             if sch == "\""
                 p.pos = p.pos + 1
@@ -244,7 +244,7 @@ parse_value(p: any): any
             end
             if sch == "\\"
                 p.pos = p.pos + 1
-                if p.pos > #p.s
+                if p.pos > p:len().s
                     p.err = "unterminated string escape"
                     return nil
                 end
@@ -304,7 +304,7 @@ parse_value(p: any): any
     if ch == "-" or (ch >= "0" and ch <= "9")
         start = p.pos
         if p.s:sub(p.pos, p.pos) == "-" p.pos = p.pos + 1 end
-        while p.pos <= #p.s
+        while p.pos <= p:len().s
             nch = p.s:sub(p.pos, p.pos)
             if (nch >= "0" and nch <= "9") or nch == "." or nch == "e" or nch == "E" or nch == "+" or nch == "-"
                 p.pos = p.pos + 1
@@ -334,7 +334,7 @@ unmarshal(s: str): any
     v = parse_value(parser)
     if has(.err)(parser) return nil end
     skip_ws(parser)
-    if parser.pos <= #s return nil end
+    if parser.pos <= s:len() return nil end
     v
 end
 
@@ -346,11 +346,11 @@ marshal_indent(v: any, indent: str): str
     depth = 0
     i = 1
     in_string = false
-    while i <= #jstr
+    while i <= jstr:len()
         ch = jstr:sub(i, i)
         if in_string
             out[out:len() + 1] = ch
-            if ch == "\\" and i < #jstr
+            if ch == "\\" and i < jstr:len()
                 out[out:len() + 1] = jstr:sub(i + 1, i + 1)
                 i += 2
             elseif ch == "\""

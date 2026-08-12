@@ -38,7 +38,7 @@ str_to_bytes(s: str): any
     bytes = {}
     i = 1
     while i <= s:len()
-        bytes[#bytes + 1] = s:byte(i)
+        bytes[bytes:len() + 1] = s:byte(i)
         i += 1
     end
     bytes
@@ -47,8 +47,8 @@ end
 bytes_to_str(b: any): str
     parts = {}
     i = 1
-    while i <= #b
-        parts[#parts + 1] = b[i]:char()
+    while i <= b:len()
+        parts[parts:len() + 1] = b[i]:char()
         i += 1
     end
     parts:concat()

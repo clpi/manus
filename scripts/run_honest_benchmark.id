@@ -23,7 +23,7 @@ end
 
 _pad(s: str, w: i64): str
     o = s
-    while #o < w
+    while o:len() < w
         o = o .. " "
     end
     o
@@ -31,7 +31,7 @@ end
 
 _lpad(s: str, w: i64): str
     o = s
-    while #o < w
+    while o:len() < w
         o = " " .. o
     end
     o
@@ -50,7 +50,7 @@ _fx(x: f64, places: i64): str
     w = n / scale
     f = n % scale
     fs = f:to(str)
-    while #fs < places
+    while fs:len() < places
         fs = "0" .. fs
     end
     w:to(str) .. "." .. fs
@@ -59,7 +59,7 @@ end
 _fields(l: str): any
     o = {}
     for _i, w in l:gsub("\t", " "):split(" ")
-        if w != "" o[#o + 1] = w end
+        if w != "" o[o:len() + 1] = w end
     end
     o
 end
@@ -78,7 +78,7 @@ _rows(text: str, tag: str): any
     n = 0
     for _i, l in text:split("\n")
         f = _fields(std.script.chomp(l))
-        if #f >= 3 and f[1] == tag
+        if f:len() >= 3 and f[1] == tag
             r[f[2]] = f[3]
             n = n + 1
         end

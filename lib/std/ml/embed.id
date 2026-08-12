@@ -23,10 +23,10 @@ end
 token_embed_forward(layer: any, token_ids: any): any
     # token_ids: {batch_size, seq_len} or 1D array
     batch = 1
-    seq_len = #token_ids
+    seq_len = token_ids:len()
     if type(token_ids[1]) == "table"
-        batch = #token_ids
-        seq_len = #token_ids[1]
+        batch = token_ids:len()
+        seq_len = token_ids:len()[1]
     end
     result = std.ml.tensor.zeros(batch * seq_len, layer.embed_dim)
     for i = 1, batch * seq_len
@@ -80,7 +80,7 @@ end
 
 learned_positional_forward(layer: any, positions: any): any
     # positions: list of 0-based position indices
-    seq_len = #positions
+    seq_len = positions:len()
     result = std.ml.tensor.zeros(seq_len, layer.embed_dim)
     for i = 1, seq_len
         pos = positions[i] + 1  # 1-indexed
@@ -231,7 +231,7 @@ embedding_forward(layer: any, token_ids: any, offset: i64): any
         elseif layer.pos_encoding == "learned"
             positions = {}
             for i = 0, x.rows - 1
-                positions[#positions + 1] = i
+                positions[positions:len() + 1] = i
             end
             pos_enc = learned_positional_forward(layer.pos, positions)
             x = std.ml.tensor.add(x, pos_enc)

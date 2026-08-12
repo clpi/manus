@@ -3,7 +3,7 @@
 
 # Helper: apply a function to each element
 each(t, f)
-    for i = 1, #t do
+    for i = 1, t:len() do
         f(t[i])
     end
 end
@@ -11,7 +11,7 @@ end
 # Helper: map applying a method to each element
 map_method(t, f)
     result = {}
-    for i = 1, #t do
+    for i = 1, t:len() do
         result[i] = f(t[i])
     end
     return result

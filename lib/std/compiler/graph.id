@@ -27,8 +27,8 @@
 
 _has: bool = (set: str, name: str)
     needle = "|" .. name .. "|"
-    hn: i64 = #set
-    nn: i64 = #needle
+    hn: i64 = set:len()
+    nn: i64 = needle:len()
     i: i64 = 1
     while i + nn - 1 <= hn
         j: i64 = 0
@@ -115,7 +115,7 @@ dead_private: i64 = (src: str, file: str, report: bool)
     end
 
     # walk the declared set and count private names never used
-    n: i64 = #declared
+    n: i64 = declared:len()
     count: i64 = 0
     start: i64 = 2
     i: i64 = 2

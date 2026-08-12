@@ -8,8 +8,8 @@ point: { x: f64, y: f64, z: f64 } = { x = 1.0, y = 2.0, z = 3.0 }
 
 # @comp.fields returns a table of field descriptors
 fields = @comp.fields(point)
-print("field count = " .. to(str)(#fields))
-for i = 1, #fields do
+print("field count = " .. to(str)(fields:len()))
+for i = 1, fields:len() do
     print("  field " .. to(str)(i) .. ": name=" .. fields[i].name .. " type=" .. fields[i].type)
 end
 
@@ -53,8 +53,8 @@ end
 
 c = Color.Red
 color_fields = @comp.fields(c)
-print("enum variant count = " .. to(str)(#color_fields))
-for i = 1, #color_fields do
+print("enum variant count = " .. to(str)(color_fields:len()))
+for i = 1, color_fields:len() do
     print("  variant " .. to(str)(i) .. ": name=" .. color_fields[i].name)
 end
 
@@ -63,8 +63,8 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 variants = @comp.variants(c)
-print("variants count = " .. to(str)(#variants))
-for i = 1, #variants do
+print("variants count = " .. to(str)(variants:len()))
+for i = 1, variants:len() do
     print("  " .. variants[i].name .. " tag=" .. to(str)(variants[i].tag) .. " arity=" .. to(str)(variants[i].arity))
 end
 

@@ -346,14 +346,14 @@ _emit: void = (line: str)
 end
 
 _at2: i64 = ()
-    if _p2 > #_src2
+    if _p2 > _src2:len()
         return 0
     end
     _src2:byte(_p2)
 end
 
 _ws2: void = ()
-    while _p2 <= #_src2 and (_at2() == 32 or _at2() == 9)
+    while _p2 <= _src2:len() and (_at2() == 32 or _at2() == 9)
         _p2 += 1
     end
 end
@@ -387,7 +387,7 @@ _g_prim: i64 = ()
         _bad2 = true
         return _reg
     end
-    while _p2 <= #_src2 and _at2() >= 48 and _at2() <= 57
+    while _p2 <= _src2:len() and _at2() >= 48 and _at2() <= 57
         v = v * 10 + (_at2() - 48)
         _p2 += 1
     end
@@ -446,7 +446,7 @@ asm_for: str = (expr: str)
     _bad2 = false
     r: i64 = _g_expr()
     _ws2()
-    if _bad2 or _p2 <= #_src2
+    if _bad2 or _p2 <= _src2:len()
         return ""
     end
     body = _asm .. "    mov x0, x" .. r:to(str) .. "\n    ret\n"

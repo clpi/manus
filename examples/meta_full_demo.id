@@ -27,7 +27,7 @@ end
 
 map_list(xs, fn): any
     result = {}
-    for i = 1, #xs do
+    for i = 1, xs:len() do
         result[i] = fn(xs[i])
     end
     result
@@ -85,7 +85,7 @@ derive_display(val): str
         parts = {}
         for k, v in val do
             if type(k) == "string"
-                parts[#parts + 1] = k .. ": " .. derive_display(v)
+                parts[parts:len() + 1] = k .. ": " .. derive_display(v)
             end
         end
         return "{" .. parts:concat(", ") .. "}"

@@ -96,27 +96,27 @@ end
 
 cut(s: str): any
     out = {}
-    n: i64 = #s
+    n: i64 = s:len()
     start: i64 = 1
     i: i64 = 1
     while i <= n
         if s:byte(i) == 10
             if i > start
-                out[#out + 1] = s:sub(start, i - 1)
+                out[out:len() + 1] = s:sub(start, i - 1)
             end
             start = i + 1
         end
         i += 1
     end
     if start <= n
-        out[#out + 1] = s:sub(start, n)
+        out[out:len() + 1] = s:sub(start, n)
     end
     out
 end
 
 pad(s: str, width: i64): str
     out: str = s
-    while #out < width
+    while out:len() < width
         out = "{out} "
     end
     out
@@ -124,7 +124,7 @@ end
 
 lpad(s: str, width: i64): str
     out: str = s
-    while #out < width
+    while out:len() < width
         out = " {out}"
     end
     out
@@ -143,7 +143,7 @@ secs(ns: i64): str
     whole: i64 = to(i64)(tenk / 10000)
     frac: i64 = tenk % 10000
     fs: str = frac:to(str)
-    while #fs < 4
+    while fs:len() < 4
         fs = "0{fs}"
     end
     ws: str = whole:to(str)
@@ -162,13 +162,13 @@ end
 # `to(i64)` answers 0 for text that is not a number, so every numeric parse in
 # this file is guarded by this rather than by a nil check that never fires.
 digits(s: str): bool
-    out: bool = #s > 0
+    out: bool = s:len() > 0
     i: i64 = 1
     if out and s:byte(1) == 45
         i = 2
-        out = #s > 1
+        out = s:len() > 1
     end
-    while out and i <= #s
+    while out and i <= s:len()
         b: i64 = s:byte(i)
         if b < 48 or b > 57
             out = false
@@ -219,10 +219,10 @@ end
 # modules return a value rather than printing one.
 field(raw: str, key: str): str
     out: str = ""
-    n: i64 = #key
+    n: i64 = key:len()
     for i, line in cut(raw)
         if starts(line, key)
-            out = std.script.chomp(line:sub(n + 1, #line))
+            out = std.script.chomp(line:sub(n + 1, line:len()))
         end
     end
     out
@@ -278,7 +278,7 @@ number(s: str): i64
     out: i64 = -1
     start: i64 = 0
     i: i64 = 1
-    while i <= #s and out < 0
+    while i <= s:len() and out < 0
         b: i64 = s:byte(i)
         if b >= 48 and b <= 57
             if start == 0
@@ -290,7 +290,7 @@ number(s: str): i64
         i += 1
     end
     if start > 0 and out < 0
-        out = to(i64)(s:sub(start, #s))
+        out = to(i64)(s:sub(start, s:len()))
     end
     out
 end
@@ -561,7 +561,7 @@ main(): i64
         probe: str = "{wcmd} 2>/dev/null"
         wraw: str = shell(probe)
         wans: str = answer(wraw)
-        shorter: bool = #wraw > #wans
+        shorter: bool = wraw:len() > wans:len()
         if wans != "" and shorter
             print("  ward trailer strip  raw carries the trailer, answer is `{wans}`   OK")
         else
@@ -794,7 +794,7 @@ main(): i64
                 for j, nm in wname
                     tag: str = "{nm} "
                     if starts(line, tag)
-                        v: str = std.script.chomp(line:sub(#tag + 1, #line))
+                        v: str = std.script.chomp(line:sub(tag:len() + 1, line:len()))
                         if digits(v)
                             baseline[j] = to(i64)(v)
                         end
@@ -875,7 +875,7 @@ main(): i64
                     oktime[i] = marks[3]
                     okmer[i] = marks[4]
                     brief: str = ref
-                    if #brief > 15
+                    if brief:len() > 15
                         brief = brief:sub(1, 15)
                     end
                     r1: str = pad(nm, 12)
@@ -1005,8 +1005,8 @@ main(): i64
                 else
                     verdict = "loss"
                     losses += 1
-                    lossname[#lossname + 1] = nm
-                    lossvalue[#lossvalue + 1] = pct
+                    lossname[lossname:len() + 1] = nm
+                    lossvalue[lossvalue:len() + 1] = pct
                 end
             end
             verdict = "{verdict}{flags}"
@@ -1086,13 +1086,13 @@ main(): i64
         print("WHERE WARD LOSES — ranked, worst first. Percent is ward's time as a")
         print("  fraction of the fastest other runtime on that row.")
         print("")
-        if #lossname == 0
+        if lossname:len() == 0
             print("  none — ward is at or under the fastest rival on every measured row.")
         else
             i: i64 = 1
-            while i <= #lossname
+            while i <= lossname:len()
                 j: i64 = i + 1
-                while j <= #lossname
+                while j <= lossname:len()
                     if lossvalue[j] > lossvalue[i]
                         tv: i64 = lossvalue[i]
                         tn: str = lossname[i]
@@ -1106,7 +1106,7 @@ main(): i64
                 i += 1
             end
             k: i64 = 1
-            while k <= #lossname
+            while k <= lossname:len()
                 nm: str = pad(lossname[k], 12)
                 pv: str = lpad(to(str)(lossvalue[k]), 6)
                 print(ind .. nm .. pv .. "%")
@@ -1124,7 +1124,7 @@ main(): i64
     if code == 0
         rn: str = regressions:to(str)
         en: str = eligible:to(str)
-        total: str = to(str)(#wname)
+        total: str = to(str)(wname:len())
         if regressions > 0
             print("runtime bench: FAIL — {rn} of {en} unflagged row(s) regressed against")
             print("  the recorded baseline in this file. A loss to another runtime does")

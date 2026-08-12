@@ -8,7 +8,7 @@
 lower(s: str): str
     result = ""
     i = 1
-    while i <= #s
+    while i <= s:len()
         c = s:byte(i)
         if c >= 65 and c <= 90  # A-Z
             result = result .. c + 32:char()
@@ -23,7 +23,7 @@ end
 upper(s: str): str
     result = ""
     i = 1
-    while i <= #s
+    while i <= s:len()
         c = s:byte(i)
         if c >= 97 and c <= 122  # a-z
             result = result .. c - 32:char()
@@ -39,7 +39,7 @@ title(s: str): str
     capitalize_next = true
     result = ""
     i = 1
-    while i <= #s
+    while i <= s:len()
         c = s:byte(i)
         if c == 32 or c == 9 or c == 10  # whitespace
             capitalize_next = true
@@ -57,7 +57,7 @@ title(s: str): str
 end
 
 capitalize(s: str): str
-    if #s == 0 return s end
+    if s:len() == 0 return s end
     first = s:byte(1)
     if first >= 97 and first <= 122
         return first - 32:char() .. s:sub(2)
@@ -72,14 +72,14 @@ end
 trim(s: str): str
     # Trim leading whitespace
     start = 1
-    while start <= #s
+    while start <= s:len()
         c = s:byte(start)
         if c != 32 and c != 9 and c != 10 and c != 13 break end
         start += 1
     end
 
     # Trim trailing whitespace
-    finish = #s
+    finish = s:len()
     while finish >= start
         c = s:byte(finish)
         if c != 32 and c != 9 and c != 10 and c != 13 break end
@@ -91,7 +91,7 @@ end
 
 trim_left(s: str): str
     start = 1
-    while start <= #s
+    while start <= s:len()
         c = s:byte(start)
         if c != 32 and c != 9 and c != 10 and c != 13 break end
         start += 1
@@ -100,7 +100,7 @@ trim_left(s: str): str
 end
 
 trim_right(s: str): str
-    finish = #s
+    finish = s:len()
     while finish >= 1
         c = s:byte(finish)
         if c != 32 and c != 9 and c != 10 and c != 13 break end
@@ -113,7 +113,7 @@ compress_whitespace(s: str): str
     result = ""
     in_whitespace = false
     i = 1
-    while i <= #s
+    while i <= s:len()
         c = s:byte(i)
         if c == 32 or c == 9 or c == 10 or c == 13
             if not in_whitespace
@@ -156,11 +156,11 @@ remove_accents(s: str): str
 
     result = ""
     i = 1
-    while i <= #s
+    while i <= s:len()
         # Try to match multi-byte characters
         found = false
         for pattern, replacement in accents
-            plen = #pattern
+            plen = pattern:len()
             if s:sub(i, i + plen - 1) == pattern
                 result = result .. replacement
                 i += plen
@@ -179,7 +179,7 @@ end
 remove_punctuation(s: str): str
     result = ""
     i = 1
-    while i <= #s
+    while i <= s:len()
         c = s:byte(i)
         # Keep alphanumeric and spaces
         if (c >= 48 and c <= 57) or  # 0-9
@@ -208,11 +208,11 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 word_count(s: str): i64
-    if #s == 0 return 0 end
+    if s:len() == 0 return 0 end
     count = 1
     in_word = true
     i = 1
-    while i <= #s
+    while i <= s:len()
         c = s:byte(i)
         if c == 32 or c == 9 or c == 10 or c == 13
             if in_word
@@ -229,13 +229,13 @@ word_count(s: str): i64
 end
 
 char_count(s: str): i64
-    #s
+    s:len()
 end
 
 sentence_count(s: str): i64
     count = 0
     i = 1
-    while i <= #s
+    while i <= s:len()
         c = s:byte(i)
         if c == 46 or c == 33 or c == 63  # . ! ?
             count += 1
@@ -247,12 +247,12 @@ end
 
 avg_word_length(s: str): f64
     words = split_words(s)
-    if #words == 0 return 0.0 end
+    if words:len() == 0 return 0.0 end
     total = 0
     for word in words
-        total += #word
+        total += word:len()
     end
-    total / #words
+    total / words:len()
 end
 
 # ═══════════════════════════════════════════════════════════════
@@ -263,10 +263,10 @@ split_lines(s: str): any
     lines = {}
     current = ""
     i = 1
-    while i <= #s
+    while i <= s:len()
         c = s:byte(i)
         if c == 10  # newline
-            lines[#lines + 1] = current
+            lines[lines:len() + 1] = current
             current = ""
         elseif c == 13  # carriage return
             # Skip, handle \r\n
@@ -275,8 +275,8 @@ split_lines(s: str): any
         end
         i += 1
     end
-    if #current > 0
-        lines[#lines + 1] = current
+    if current:len() > 0
+        lines[lines:len() + 1] = current
     end
     lines
 end
@@ -285,11 +285,11 @@ split_words(s: str): any
     words = {}
     current = ""
     i = 1
-    while i <= #s
+    while i <= s:len()
         c = s:byte(i)
         if c == 32 or c == 9 or c == 10 or c == 13
-            if #current > 0
-                words[#words + 1] = current
+            if current:len() > 0
+                words[words:len() + 1] = current
                 current = ""
             end
         else
@@ -297,8 +297,8 @@ split_words(s: str): any
         end
         i += 1
     end
-    if #current > 0
-        words[#words + 1] = current
+    if current:len() > 0
+        words[words:len() + 1] = current
     end
     words
 end
@@ -307,17 +307,17 @@ split_sentences(s: str): any
     sentences = {}
     current = ""
     i = 1
-    while i <= #s
+    while i <= s:len()
         c = s:byte(i)
         current = current .. c:char()
         if c == 46 or c == 33 or c == 63  # . ! ?
-            sentences[#sentences + 1] = trim(current)
+            sentences[sentences:len() + 1] = trim(current)
             current = ""
         end
         i += 1
     end
     if trim(current):len() > 0
-        sentences[#sentences + 1] = trim(current)
+        sentences[sentences:len() + 1] = trim(current)
     end
     sentences
 end
@@ -327,23 +327,23 @@ split_tokens(s: str, max_length: i64): any
     tokens = {}
     current = ""
     for word in words
-        if #current + #word + 1 > max_length
-            if #current > 0
-                tokens[#tokens + 1] = current
+        if current:len() + word:len() + 1 > max_length
+            if current:len() > 0
+                tokens[tokens:len() + 1] = current
                 current = word
             else
-                tokens[#tokens + 1] = word
+                tokens[tokens:len() + 1] = word
             end
         else
-            if #current > 0
+            if current:len() > 0
                 current = current .. " " .. word
             else
                 current = word
             end
         end
     end
-    if #current > 0
-        tokens[#tokens + 1] = current
+    if current:len() > 0
+        tokens[tokens:len() + 1] = current
     end
     tokens
 end
@@ -355,8 +355,8 @@ end
 replace(s: str, old: str, new: str): str
     result = ""
     i = 1
-    old_len = #old
-    while i <= #s
+    old_len = old:len()
+    while i <= s:len()
         if s:sub(i, i + old_len - 1) == old
             result = result .. new
             i += old_len
@@ -375,8 +375,8 @@ end
 count_occurrences(s: str, pattern: str): i64
     count = 0
     i = 1
-    pat_len = #pattern
-    while i <= #s
+    pat_len = pattern:len()
+    while i <= s:len()
         if s:sub(i, i + pat_len - 1) == pattern
             count += 1
             i += pat_len
@@ -393,7 +393,7 @@ end
 
 is_ascii(s: str): bool
     i = 1
-    while i <= #s
+    while i <= s:len()
         if s:byte(i) > 127 return false end
         i += 1
     end

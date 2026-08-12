@@ -3,7 +3,7 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const directives = @import("directives.zig");
 const Sema = @import("sema.zig").Sema;
-const family = @import("duo_lexer_bridge.zig");
+const family = @import("lexer_bridge.zig");
 
 const canonical = family.CANONICAL_SOURCE_SUFFIX;
 const historical = family.HISTORICAL_SOURCE_SUFFIX;

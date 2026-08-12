@@ -1,0 +1,31 @@
+# @corpus current
+# law.infer.one — descriptor demand infers conversion; source stays minimal.
+#
+# Endpoint: to is a GRAPH relation. Source omits it when demand uniquely resolves.
+# The graph may still contain inferred to(bool) with provenance.
+#
+# When inference is implemented (GAP-124), these need no explicit to when unique:
+#   enabled: bool = value              # binding demand → infer to(bool)
+#   enable(value)                      # parameter demands bool
+#   check: bool = (value) value        # result demand → infer to(bool)
+#   config{ enabled = value }          # field demand → infer to(bool)
+#   serve(flag, n)                     # parameter demands bool and i64
+#
+# Ladder (shortest uniquely resolving form):
+#   value → value:to() → value:to(T) → migrate to(T)(value) only with proof
+#
+# This fixture proves direct satisfaction (class G): value already bool — no to.
+#
+# expect: 1
+
+enable: bool = (flag: bool)
+    flag
+
+check: bool = (value: bool)
+    value
+
+main: i64 = ()
+    flag: bool = true
+    if check(flag)
+        print("1")
+    0

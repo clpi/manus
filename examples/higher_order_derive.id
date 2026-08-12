@@ -3,7 +3,7 @@
 
 @comp.define.derive("TraceFields", generate(meta) -> str
   acc = "/* TraceFields for " .. meta.name .. " */\n"
-  for i = 1, #meta.fields
+  for i = 1, meta:len().fields
     f = meta.fields[i]
     acc = acc .. "// field " .. f.name .. " : " .. f.type .. "\n"
   end
@@ -12,7 +12,7 @@ end)
 
 @comp.define.derive("Offsets", generate(meta) -> str
   acc = "/* Offsets for " .. meta.name .. " */\n"
-  for i = 1, #meta.fields
+  for i = 1, meta:len().fields
     f = meta.fields[i]
     acc = acc .. "// offset of " .. f.name .. " = " .. to(str)(i - 1) .. "\n"
   end
@@ -23,7 +23,7 @@ end)
 @comp.define.derive("ComposeAll", generate(meta) -> str
   derives = @comp.derive.list()
   acc = "/* ComposeAll output for " .. meta.name .. " */\n"
-  for i = 1, #derives
+  for i = 1, derives:len()
     dname = derives[i]
     if dname != "ComposeAll"
       acc = acc .. "/* === from " .. dname .. " === */\n"
@@ -31,7 +31,7 @@ end)
     end
   end
   self_src = @comp.derive.lookup("ComposeAll")
-  acc = acc .. "// ComposeAll source length: " .. to(str)(#self_src) .. "\n"
+  acc = acc .. "// ComposeAll source length: " .. to(str)(self_src:len()) .. "\n"
   acc
 end)
 

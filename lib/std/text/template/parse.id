@@ -8,13 +8,13 @@ parse(template: any)
     if template == nil return new_node("module") end
     root = new_node("module")
     i = 1
-    n = #template
+    n = template:len()
     while i <= n
         d1, d2, before = template:find("^(.-){[{]", i)
         if before != nil
-            pos = #before
+            pos = before:len()
             before = before:gsub("^{", "", 1)
-            if #before > 0
+            if before:len() > 0
                 text_node = new_node("text")
                 text_node.text = before
                 root.children[root.children:len() + 1] = text_node

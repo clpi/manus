@@ -2,8 +2,8 @@
 const std = @import("std");
 const Io = std.Io;
 const ast = @import("ast.zig");
-const duo_module_names = @import("duo_module_names.zig");
-const source_family = @import("duo_lexer_bridge.zig");
+const duo_module_names = @import("module_names.zig");
+const source_family = @import("lexer_bridge.zig");
 
 const source_suffixes = [_][]const u8{
     source_family.CANONICAL_SOURCE_SUFFIX,

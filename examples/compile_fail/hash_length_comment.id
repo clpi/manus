@@ -1,9 +1,10 @@
+# @corpus proof
 # compile_fail — hash-length comment erases the rest of the line.
 #
 # Positive control: idiomgate and the lexer treat `#` as comment start.
 # This file must fail parse with an offside/block diagnostic, never silently.
 
 main: i64 = ()
-    if #broken < 1
+    if broken:len() < 1
         code = 1
     code = 0

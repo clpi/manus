@@ -7,7 +7,7 @@ gradient_descent(f: any, df: any, x0: f64, lr: f64, iterations: i64): any
   while i < iterations
     grad = df(x)
     x = x - lr * grad
-    history[#history + 1] = x
+    history[history:len() + 1] = x
     i = i + 1
   end
   {
@@ -41,7 +41,7 @@ adam(f: any, df: any, x0: f64, lr: f64, beta1: f64, beta2: f64, epsilon: f64, it
     m_hat = m / (1 - beta1 ^ i)
     v_hat = v / (1 - beta2 ^ i)
     x = x - lr * m_hat / (v_hat:sqrt() + epsilon)
-    history[#history + 1] = x
+    history[history:len() + 1] = x
     i = i + 1
   end
   {
@@ -64,7 +64,7 @@ nelder_mead(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, itera
   if sigma == nil
     sigma = 0.5
   end
-  n = #x0
+  n = x0:len()
   simplex = {}
   simplex[1] = {
     point = x0,
@@ -82,7 +82,7 @@ nelder_mead(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, itera
       end
       j = j + 1
     end
-    simplex[#simplex + 1] = {
+    simplex[simplex:len() + 1] = {
       point = point,
       value = f(point)
     }
@@ -184,7 +184,7 @@ grid_search(f: any, ranges: any, steps: i64): any
     points = {}
     i = 0
     while i < steps
-      points[#points + 1] = min_val + i * step_size
+      points[points:len() + 1] = min_val + i * step_size
       i = i + 1
     end
     grid[param_name] = points
@@ -194,15 +194,15 @@ grid_search(f: any, ranges: any, steps: i64): any
   results = {}
   param_names = {}
   for name in ranges
-    param_names[#param_names + 1] = name
+    param_names[param_names:len() + 1] = name
   end
-  if #param_names == 1
+  if param_names:len() == 1
     for v in grid[param_names[1]]
       params = {
         [param_names[1]] = v
       }
       value = f(params)
-      results[#results + 1] = {
+      results[results:len() + 1] = {
         params = params,
         value = value
       }
@@ -211,7 +211,7 @@ grid_search(f: any, ranges: any, steps: i64): any
         best = params
       end
     end
-  elseif #param_names == 2
+  elseif param_names:len() == 2
     for v1 in grid[param_names[1]]
       for v2 in grid[param_names[2]]
         params = {
@@ -219,7 +219,7 @@ grid_search(f: any, ranges: any, steps: i64): any
           [param_names[2]] = v2
         }
         value = f(params)
-        results[#results + 1] = {
+        results[results:len() + 1] = {
           params = params,
           value = value
         }
@@ -249,7 +249,7 @@ random_search(f: any, ranges: any, iterations: i64): any
       params[param_name] = min_val + math.random() * (max_val - min_val)
     end
     value = f(params)
-    results[#results + 1] = {
+    results[results:len() + 1] = {
       params = params,
       value = value
     }

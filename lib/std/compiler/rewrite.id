@@ -56,7 +56,7 @@ end
 # its value ONLY when the replacement folds to the same number — the rewrite's
 # own legality proof, checked per site rather than argued once.
 _fold_once: str = (src: str)
-    n: i64 = #src
+    n: i64 = src:len()
     out = ""
     quote: i64 = 0
     in_long = false

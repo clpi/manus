@@ -89,7 +89,7 @@ cache_set(cache: any, key: str, value: any): void
     end
 
     # Evict if at capacity
-    if #cache.entries >= cache.config.max_size
+    if cache:len().entries >= cache.config.max_size
         inference_cache_evict_oldest(cache)
     end
 
@@ -114,8 +114,8 @@ cache_evict(cache: any, key: str): void
 end
 
 inference_cache_evict_oldest(cache: any): void
-    if #cache.access_order == 0 return end
-    key = cache.access_order[#cache.access_order]
+    if cache:len().access_order == 0 return end
+    key = cache.access_order[cache:len().access_order]
     cache_evict(cache, key)
 end
 
@@ -127,7 +127,7 @@ end
 cache_stats(cache: any): any
     total = cache.hit_count + cache.miss_count
     {
-        size = #cache.entries,
+        size = cache:len().entries,
         max_size = cache.config.max_size,
         hit_count = cache.hit_count,
         miss_count = cache.miss_count,
@@ -156,8 +156,8 @@ attention_cache_append(cache: any, layer_idx: i64, keys: any, values: any): void
         cache.values[layer_idx] = {}
     end
 
-    cache.keys[layer_idx][#cache.keys[layer_idx] + 1] = keys
-    cache.values[layer_idx][#cache.values[layer_idx] + 1] = values
+    cache.keys[layer_idx][cache:len().keys[layer_idx] + 1] = keys
+    cache.values[layer_idx][cache:len().values[layer_idx] + 1] = values
     cache.current_len = cache.current_len + 1
 end
 
@@ -213,8 +213,8 @@ embedding_cache_set(cache: any, token_id: i64, embedding: any): void
     end
 
     # Evict if full
-    if #cache.access_order >= cache.max_entries
-        oldest = cache.access_order[#cache.access_order]
+    if cache:len().access_order >= cache.max_entries
+        oldest = cache.access_order[cache:len().access_order]
         cache.embeddings[oldest] = nil
         cache.access_order:remove()
     end
@@ -228,7 +228,7 @@ end
 
 embedding_cache_stats(cache: any): any
     {
-        size = #cache.access_order,
+        size = cache:len().access_order,
         max_size = cache.max_entries,
     }
 end

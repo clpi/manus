@@ -40,16 +40,16 @@ all(tasks: any, ...args): any
     else
         for _, t in tasks
             if type(t) == "function"
-                futs[#futs + 1] = go(t)
+                futs[futs:len() + 1] = go(t)
             elseif type(t) == "table" and t[1]
-                futs[#futs + 1] = go(t[1], t:unpack(2))
+                futs[futs:len() + 1] = go(t[1], t:unpack(2))
             end
         end
     end
     sync.run()
     results = {}
     for _, fut in futs
-        results[#results + 1] = wait(fut)
+        results[results:len() + 1] = wait(fut)
     end
     results
 end

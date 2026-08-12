@@ -56,7 +56,7 @@ _name16: str = (s: str)
     out = ""
     i: i64 = 1
     while i <= 16
-        if i <= #s
+        if i <= s:len()
             out = out .. _u8(s:byte(i))
         else
             out = out .. _u8(0)
@@ -70,7 +70,7 @@ end
 words_to_bytes: str = (words: any)
     out = ""
     i: i64 = 1
-    while i <= #words
+    while i <= words:len()
         out = out .. _u32(words[i])
         i += 1
     end
@@ -89,7 +89,7 @@ object_hex: str = (symbol: str, code: str)
     sym: i64 = 24
     sizeofcmds: i64 = seg + sym
     code_off: i64 = hdr + sizeofcmds
-    code_len: i64 = #code // 2
+    code_len: i64 = code:len() // 2
     sym_off: i64 = code_off + code_len
     nsyms: i64 = 1
     str_off: i64 = sym_off + 16 * nsyms
@@ -98,12 +98,12 @@ object_hex: str = (symbol: str, code: str)
     strtab = _u8(0)
     si: i64 = 1
     strtab = strtab .. _u8(95)
-    while si <= #symbol
+    while si <= s:len()ymbol
         strtab = strtab .. _u8(symbol:byte(si))
         si += 1
     end
     strtab = strtab .. _u8(0)
-    str_len: i64 = #strtab // 2
+    str_len: i64 = s:len()trtab // 2
 
     out = ""
     # mach_header_64

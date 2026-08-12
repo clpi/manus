@@ -74,7 +74,7 @@ cubic_lerp(a: f64, b: f64, c: f64, d: f64, t: f64): f64
 end
 
 catmull_rom(points: any, t: f64): f64
-    n = #points
+    n = points:len()
     if n < 4 return 0.0 end
 
     segment = t * (n - 1)

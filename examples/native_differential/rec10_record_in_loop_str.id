@@ -5,7 +5,7 @@ end
 loop_over(src: str): i64
     total = 0
     pos = 1
-    n = #src
+    n = src:len()
     while pos <= n do
         t: tok = mk(src, pos)
         total = total + t.kind

@@ -524,7 +524,7 @@ dump(label: str, value: any): void
         rendered = pretty_repr(value, 1, nil)
         # split on newlines manually; the codegen mishandles gmatch
         i = 1
-        n = #rendered
+        n = rendered:len()
         line_start = 1
         while i <= n
             ch = rendered:sub(i, i)

@@ -258,7 +258,7 @@ end
 
 # WASI ciovec structure helpers
 ciovec_new(buf: str): any
-    { buf = buf, buf_len = #buf }
+    { buf = buf, buf_len = buf:len() }
 end
 
 # WASI timestamp (nanosecond) utilities

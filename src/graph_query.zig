@@ -1,7 +1,7 @@
 //! Bounded semantic-graph projections for compiler, LSP, and MCP consumers.
 const std = @import("std");
 const ast = @import("ast.zig");
-const dnir = @import("duo_native_ir.zig");
+const dnir = @import("native_ir.zig");
 const dnir_hardware = @import("dnir_hardware.zig");
 const region_graph = @import("region_graph.zig");
 const semantic_graph = @import("semantic_graph.zig");

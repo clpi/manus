@@ -30,13 +30,13 @@ end
 # ═══════════════════════════════════════════════════════════════
 fun emit_c_function(mod: any, func_idx: i64, code: any, sig: any): str
   lines: any = {}
-  lines[#lines + 1] = "#include <stdint.h>"
-  lines[#lines + 1] = "#include <math.h>"
-  lines[#lines + 1] = ""
+  lines[lines:len() + 1] = "include:len() <stdint.h>"
+  lines[lines:len() + 1] = "include:len() <math.h>"
+  lines[lines:len() + 1] = ""
 
-  n_params: i64 = #sig.params
-  n_locals: i64 = #code.locals
-  n_results: i64 = #sig.results
+  n_params: i64 = sig:len().params
+  n_locals: i64 = code:len().locals
+  n_results: i64 = sig:len().results
 
   # Determine return type. Extract the table lookup to a native i64
   # first so the call to valtype_to_c gets a native int64_t argument.
@@ -53,20 +53,20 @@ fun emit_c_function(mod: any, func_idx: i64, code: any, sig: any): str
     c_type: str = valtype_to_c(p)
     params[i] = c_type .. " p" .. tostring(i - 1)
   end
-  params[#params + 1] = "uint8_t* memory"
-  lines[#lines + 1] = ret_type .. " wasmjitf" .. tostring(func_idx) ..
+  params[params:len() + 1] = "uint8_t* memory"
+  lines[lines:len() + 1] = ret_type .. " wasmjitf" .. tostring(func_idx) ..
     "(" .. params:concat(", ") .. ") {"
 
   # Locals.
   for i = 1, n_locals
     l: i64 = code.locals[i]
     l_type: str = valtype_to_c(l)
-    lines[#lines + 1] = "  " .. l_type .. " l" .. tostring(i + n_params - 1) .. " = 0;"
+    lines[lines:len() + 1] = "  " .. l_type .. " l" .. tostring(i + n_params - 1) .. " = 0;"
   end
 
-  lines[#lines + 1] = "  // TODO: bytecode-to-C translation"
-  lines[#lines + 1] = "  return 0;"
-  lines[#lines + 1] = "}"
+  lines[lines:len() + 1] = "  // TODO: bytecode-to-C translation"
+  lines[lines:len() + 1] = "  return 0;"
+  lines[lines:len() + 1] = "}"
 
   lines:concat("\n")
 end
@@ -75,7 +75,7 @@ end
 # compile_function — JIT: compile a hot WASM function to a .so.
 # ═══════════════════════════════════════════════════════════════
 fun compile_function(mod: any, func_idx: i64): any
-  n_imports: i64 = #mod.imports
+  n_imports: i64 = mod:len().imports
   code_idx: i64 = func_idx - n_imports
   code: any = mod.code[code_idx + 1]
   type_idx: i64 = mod.functions[code_idx + 1]

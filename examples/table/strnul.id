@@ -3,7 +3,7 @@
 # expect: 3
 main: i64 = ()
     s = "a\0b"
-    n = #s
+    n = s:len()
     print("{n}")
     0
 end

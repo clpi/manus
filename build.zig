@@ -5,12 +5,12 @@ const std = @import("std");
 /// behind it, so linking them separately only produces undefined symbols later.
 ///
 /// The Duo lexer artifact also defines a STRONG `duo_keyword_classify`, which
-/// overrides the weak one in src/duo_keyword_classify.c — that file was written
+/// overrides the weak one in src/keyword_classify.c — that file was written
 /// weak for exactly this case.
 fn linkProductionKeywordClassify(b: *std.Build, mod: *std.Build.Module) void {
-    // src/duo_keyword_classify.c retired 2026-08-07: it declared
+    // src/keyword_classify.c retired 2026-08-07: it declared
     // duo_keyword_classify `weak` precisely so a full Duo artifact could
-    // override it, and src/duo_lexer_tokenize.c now provides the strong
+    // override it, and src/lexer_tokenize.c now provides the strong
     // definition (both are generated from lib/std/token/classify.id, so this
     // is one source of truth, not two). Its ledger deletion gate — "delete once
     // nothing links the weak fallback" — is met.
@@ -20,11 +20,11 @@ fn linkProductionKeywordClassify(b: *std.Build, mod: *std.Build.Module) void {
 
 /// SH-03 production dispatch: the Duo lexer, generated from
 /// lib/std/compiler/host.id. Provides duo_lexer_tokenize_full and friends for
-/// src/duo_lexer_dispatch.zig, and a STRONG duo_keyword_classify that overrides
+/// src/lexer_dispatch.zig, and a STRONG duo_keyword_classify that overrides
 /// the weak one above — which is why that one is weak.
 fn linkProductionDuoLexer(b: *std.Build, mod: *std.Build.Module) void {
     mod.addCSourceFile(.{
-        .file = b.path("src/duo_lexer_tokenize.c"),
+        .file = b.path("src/lexer_tokenize.c"),
         .flags = &.{ "-std=c11", "-w" },
     });
     mod.link_libc = true;

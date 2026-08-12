@@ -15,7 +15,8 @@ this order:
    `law.infer.contract` — see `docs/spec/harness-projection.md` § seam audit,
    § universal anti-drift rules, and § projection (PROJECTION-ONE). **Anti-drift:**
    `law.source.not.proof`, `law.repair.class`, `law.projection.one`,
-   `law.from.zero`, `law.std.zero`, `law.lib.zero`, `law.world.one`. **INFER-ONE:**
+   `law.from.zero`, `law.std.zero`, `law.lib.zero`, `law.world.one`,
+   `law.projection.absolute`, `law.projection.repair`. **INFER-ONE:**
    `to` is a graph relation usually omitted from source when demand uniquely resolves
    (`law.infer.one`); census debt with `scripts/infer_census.id`; never bulk-delete.
    `law.infer.one` — write only facts not uniquely recoverable; query resolver

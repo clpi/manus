@@ -36,7 +36,7 @@ const backend_identity = @import("backend_identity.zig");
 const dynamic_boundary = @import("dynamic_boundary.zig");
 const lua_metamethod = @import("lua_metamethod.zig");
 const relation = @import("relation.zig");
-const duo_lexer_bridge = @import("duo_lexer_bridge.zig");
+const duo_lexer_bridge = @import("lexer_bridge.zig");
 
 /// SH-03: an embedded module tokenizes through the SAME lexer the compile
 /// driver uses.
@@ -59,7 +59,7 @@ fn routeEmbedThroughDuoLexer(
     src: []const u8,
     path: []const u8,
 ) bool {
-    @import("duo_lexer_dispatch.zig").route(alloc, lex, src, path) catch return false;
+    @import("lexer_dispatch.zig").route(alloc, lex, src, path) catch return false;
     return true;
 }
 
@@ -468,7 +468,7 @@ pub const CodeGen = struct {
     /// Strings of 32 bytes or fewer hash EVERY byte, exactly as before. That
     /// keeps every identifier, field name and metamethod key bit-identical,
     /// including the ones baked into the tracked generated
-    /// `src/duo_lexer_tokenize.c`, whose longest literal is 32 bytes and which
+    /// `src/lexer_tokenize.c`, whose longest literal is 32 bytes and which
     /// carries its own copy of this function and its own string pool.
     ///
     /// Longer strings sample the first 16 bytes, the LAST 16 bytes and at most
@@ -3411,7 +3411,7 @@ pub const CodeGen = struct {
         // `--lib` existed for wasm WAST testing, and the target guard immediately
         // below already rejects every wasm target — so relaxing it changes behavior
         // only for native targets, where `--lib` means exactly "a natively lowered
-        // object with no main", the emission mode a linkable `duo_lexer_tokenize.c`
+        // object with no main", the emission mode a linkable `lexer_tokenize.c`
         // needs (SH-03 / MP4-B02).
         if (self.load_chunk or self.test_mode) {
             self.nativeDiagFail("guard-mode");
@@ -5928,7 +5928,7 @@ pub const CodeGen = struct {
         }
         // Portability shim. Every arm is selected by the C PREPROCESSOR, not by
         // the target this generator happened to be pointed at, so one emitted
-        // .c file compiles on every host. GAP-040: `src/duo_lexer_tokenize.c`
+        // .c file compiles on every host. GAP-040: `src/lexer_tokenize.c`
         // is a tracked generated artifact that build.zig links into EVERY
         // cross-build, and it was frozen with the POSIX arm taken — which is
         // why x86_64-windows died on `ucontext.h` and wasm32-wasi on that plus

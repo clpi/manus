@@ -1,6 +1,6 @@
 //! DNIR transformations selected from physical coordinates and dependencies.
 const std = @import("std");
-const dnir = @import("duo_native_ir.zig");
+const dnir = @import("native_ir.zig");
 const region_graph = @import("region_graph.zig");
 const semantic_graph = @import("semantic_graph.zig");
 

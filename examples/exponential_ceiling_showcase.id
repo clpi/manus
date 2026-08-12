@@ -12,7 +12,7 @@ Pair: { x: f64, y: f64 }
 
 @comp.define.derive("TouchApi", generate(meta) -> str
     acc = ""
-    for i = 1, #meta.fields
+    for i = 1, meta:len().fields
         f = meta.fields[i]
         acc = acc .. "void duo_" .. meta.name .. "_touch_" .. f.name .. "(const duo_" .. meta.name .. "* v) { (void)v->" .. f.name .. "; }\n"
     end
@@ -39,7 +39,7 @@ MIGRATION = @comp.diff(UserV1, UserV2)
 
 print("=== exponential ceiling showcase ===")
 print("typed_sweep = " .. TYPED_SWEEP)
-print("migration_lines = " .. to(str)(#MIGRATION))
+print("migration_lines = " .. to(str)(MIGRATION:len()))
 print("Point satisfies HasXY = " .. to(str)(@comp.satisfies(Point, "HasXY")))
 print("BadXY satisfies HasXY = " .. to(str)(@comp.satisfies(BadXY, "HasXY")))
 print("ok")

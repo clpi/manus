@@ -1,3 +1,4 @@
+# @corpus proof
 # compile_fail: os.getenv is forbidden — use os.env table (docs/spec/world.md).
 
 main: i64 = ()

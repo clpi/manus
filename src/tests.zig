@@ -5,7 +5,7 @@ const std = @import("std");
 
 test {
     _ = @import("lexer.zig");
-    _ = @import("duo_lexer_dispatch.zig");
+    _ = @import("lexer_dispatch.zig");
     _ = @import("ast.zig");
     _ = @import("types.zig");
     _ = @import("parser.zig");
@@ -52,9 +52,9 @@ test {
     _ = @import("graph_query.zig");
     _ = @import("region_graph.zig");
     _ = @import("region_transform.zig");
-    _ = @import("duo_native_ir.zig");
+    _ = @import("native_ir.zig");
     _ = @import("dnir_lower.zig");
-    _ = @import("duo_module_names.zig");
+    _ = @import("module_names.zig");
     _ = @import("source_cursor.zig");
     _ = @import("lexer_differential.zig");
     _ = @import("shell_session.zig");

@@ -82,7 +82,7 @@ parse_int(s: str, base: any): any
         if s:sub(1, 2) == "0x" or s:sub(1, 2) == "0X"
             base = 16
             s = s:sub(3)
-        elseif s:sub(1, 1) == "0" and #s > 1
+        elseif s:sub(1, 1) == "0" and s:len() > 1
             base = 8
             s = s:sub(2)
         end
@@ -91,7 +91,7 @@ parse_int(s: str, base: any): any
     digits = "0123456789abcdefghijklmnopqrstuvwxyz"
     val = 0
     i = 1
-    while i <= #s
+    while i <= s:len()
         ch = s:sub(i, i):lower()
         pos = digits:find(ch, 1, true)
         if pos == nil return 0, false end
@@ -151,7 +151,7 @@ quote(s: str): str
     if s == nil return "\"\"" end
     out = {"\""}
     i = 1
-    while i <= #s
+    while i <= s:len()
         ch = s:sub(i, i)
         b = s:byte(i)
         if ch == "\\"
@@ -178,7 +178,7 @@ end
 # unquote: remove surrounding quotes and interpret escape sequences.
 unquote(s: str): str
     if s == nil return "" end
-    n = #s
+    n = s:len()
     if n < 2 return s end
     first = s:sub(1, 1)
     last = s:sub(n, n)
@@ -188,9 +188,9 @@ unquote(s: str): str
     end
     out = {}
     i = 1
-    while i <= #inner
+    while i <= inner:len()
         ch = inner:sub(i, i)
-        if ch == "\\" and i < #inner
+        if ch == "\\" and i < inner:len()
             nxt = inner:sub(i + 1, i + 1)
             if nxt == "n"
                 out[out:len() + 1] = "\n"

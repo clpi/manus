@@ -35,11 +35,11 @@ fit(model, batches, epochs, lr): any
     if epochs == nil epochs = 1 end
     for e = 1, epochs
         total = 0.0
-        for i = 1, #batches
+        for i = 1, batches:len()
             b = batches[i]
             total += train_step(model, b.x, b.y, lr)
         end
-        print("epoch %d loss %.4f":format(e, total / #batches))
+        print("epoch %d loss %.4f":format(e, total / batches:len()))
     end
     return model
 end

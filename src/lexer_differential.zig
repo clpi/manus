@@ -123,7 +123,7 @@ pub fn validateKindCorpusCase(case: CorpusCase) !void {
 
 /// Verify TokenKind ordinals match the generated classifier transport.
 pub fn validateTokenKindParity() !void {
-    const bridge = @import("duo_keyword_bridge.zig");
+    const bridge = @import("keyword_bridge.zig");
     if (bridge.lookupKeyword("fun") != .kw_fun) return error.TokenKindParity;
     if (@intFromEnum(lexer.TokenKind.kw_fun) != 14) return error.TokenKindParity;
     if (bridge.lookupKeyword("end") != .kw_end) return error.TokenKindParity;

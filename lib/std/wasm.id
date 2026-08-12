@@ -42,7 +42,7 @@ IMPORT_TAG = 4
 # ═══════════════════════════════════════════════════════════════
 
 reader_new(data: any): any
-    {data = data, pos = 1, len = #data}
+    {data = data, pos = 1, len = data:len()}
 end
 
 reader_u8(r: any): any
@@ -131,7 +131,7 @@ reader_bytes(r: any, n: i64): any
     while i < n
         b = reader_u8(r)
         if b == nil return nil end
-        out[#out + 1] = b
+        out[out:len() + 1] = b
         i += 1
     end
     out
@@ -143,8 +143,8 @@ reader_string(r: any): str
     bytes = reader_bytes(r, len)
     parts = {}
     i = 1
-    while i <= #bytes
-        parts[#parts + 1] = bytes[i]:char()
+    while i <= bytes:len()
+        parts[parts:len() + 1] = bytes[i]:char()
         i += 1
     end
     parts:concat()
@@ -207,17 +207,17 @@ module_decode(data: any): any
                 params = {}
                 j = 0
                 while j < param_count
-                    params[#params + 1] = reader_u8(r)
+                    params[params:len() + 1] = reader_u8(r)
                     j += 1
                 end
                 result_count = reader_u32(r)
                 results = {}
                 j = 0
                 while j < result_count
-                    results[#results + 1] = reader_u8(r)
+                    results[results:len() + 1] = reader_u8(r)
                     j += 1
                 end
-                mod.types[#mod.types + 1] = {params = params, results = results}
+                mod.types[mod:len().types + 1] = {params = params, results = results}
                 i += 1
             end
         elseif section_id == SECTION_IMPORT
@@ -242,7 +242,7 @@ module_decode(data: any): any
                     mutability = reader_u8(r)
                     import_entry.global = {type = val_type, mutable = mutability == 1}
                 end
-                mod.imports[#mod.imports + 1] = import_entry
+                mod.imports[mod:len().imports + 1] = import_entry
                 i += 1
             end
         elseif section_id == SECTION_FUNCTION
@@ -250,7 +250,7 @@ module_decode(data: any): any
             i = 0
             while i < count
                 type_idx = reader_u32(r)
-                mod.functions[#mod.functions + 1] = {type_idx = type_idx}
+                mod.functions[mod:len().functions + 1] = {type_idx = type_idx}
                 i += 1
             end
         elseif section_id == SECTION_MEMORY
@@ -258,7 +258,7 @@ module_decode(data: any): any
             i = 0
             while i < count
                 limits = reader_limits(r)
-                mod.memories[#mod.memories + 1] = {limits = limits}
+                mod.memories[mod:len().memories + 1] = {limits = limits}
                 i += 1
             end
         elseif section_id == SECTION_GLOBAL
@@ -268,7 +268,7 @@ module_decode(data: any): any
                 val_type = reader_u8(r)
                 mutability = reader_u8(r)
                 init_expr = reader_init_expr(r)
-                mod.globals[#mod.globals + 1] = {
+                mod.globals[mod:len().globals + 1] = {
                     type = val_type,
                     mutable = mutability == 1,
                     init = init_expr,
@@ -282,7 +282,7 @@ module_decode(data: any): any
                 name = reader_string(r)
                 kind = reader_u8(r)
                 index = reader_u32(r)
-                mod.exports[#mod.exports + 1] = {name = name, kind = kind, index = index}
+                mod.exports[mod:len().exports + 1] = {name = name, kind = kind, index = index}
                 i += 1
             end
         elseif section_id == SECTION_START
@@ -299,7 +299,7 @@ module_decode(data: any): any
                 while j < local_count
                     n = reader_u32(r)
                     val_type = reader_u8(r)
-                    locals[#locals + 1] = {count = n, type = val_type}
+                    locals[locals:len() + 1] = {count = n, type = val_type}
                     j += 1
                 end
                 # Read bytecode until end marker (0x0B)
@@ -307,10 +307,10 @@ module_decode(data: any): any
                 while r.pos < body_start + body_size
                     opcode = reader_u8(r)
                     if opcode == nil break end
-                    bytecode[#bytecode + 1] = opcode
+                    bytecode[bytecode:len() + 1] = opcode
                     if opcode == 0x0B break end  # end marker
                 end
-                mod.codes[#mod.codes + 1] = {
+                mod.codes[mod:len().codes + 1] = {
                     locals = locals,
                     bytecode = bytecode,
                     size = body_size,
@@ -325,7 +325,7 @@ module_decode(data: any): any
                 offset_expr = reader_init_expr(r)
                 data_len = reader_u32(r)
                 data_bytes = reader_bytes(r, data_len)
-                mod.datas[#mod.datas + 1] = {
+                mod.datas[mod:len().datas + 1] = {
                     memory_index = mem_idx,
                     offset = offset_expr,
                     data = data_bytes,
@@ -376,36 +376,36 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 module_func_count(mod: any): i64
-    #mod.functions
+    mod.functions:len()
 end
 
 module_memory_count(mod: any): i64
-    #mod.memories
+    mod.memories:len()
 end
 
 module_export_names(mod: any): any
     names = {}
     i = 1
-    while i <= #mod.exports
-        names[#names + 1] = mod.exports[i].name
+    while i <= mod:len().exports
+        names[names:len() + 1] = mod.exports[i].name
         i += 1
     end
     names
 end
 
 module_import_count(mod: any): i64
-    #mod.imports
+    mod.imports:len()
 end
 
 module_type_count(mod: any): i64
-    #mod.types
+    mod.types:len()
 end
 
 module_code_mod: any:len(): i64
     total = 0
     i = 1
-    while i <= #mod.datas
-        total += #mod.datas[i].data
+    while i <= mod:len().datas
+        total += mod:len().datas[i].data
         i += 1
     end
     total
@@ -420,10 +420,10 @@ module_validate(mod: any): any
 
     # Check type indices
     i = 1
-    while i <= #mod.functions
+    while i <= mod:len().functions
         idx = mod.functions[i].type_idx
-        if idx >= #mod.types
-            errors[#errors + 1] = "function " .. i:to(str) .. " references invalid type index " .. idx:to(str)
+        if idx >= mod:len().types
+            errors[errors:len() + 1] = "function " .. i:to(str) .. " references invalid type index " .. idx:to(str)
         end
         i += 1
     end
@@ -431,10 +431,10 @@ module_validate(mod: any): any
     # Check export names are unique
     seen = {}
     i = 1
-    while i <= #mod.exports
+    while i <= mod:len().exports
         name = mod.exports[i].name
         if seen[name]
-            errors[#errors + 1] = "duplicate export name: " .. name
+            errors[errors:len() + 1] = "duplicate export name: " .. name
         end
         seen[name] = true
         i += 1
@@ -442,15 +442,15 @@ module_validate(mod: any): any
 
     # Check memory limits
     i = 1
-    while i <= #mod.memories
+    while i <= mod:len().memories
         mem = mod.memories[i]
         if mem.limits.max != nil and mem.limits.min > mem.limits.max
-            errors[#errors + 1] = "memory " .. i:to(str) .. " min > max"
+            errors[errors:len() + 1] = "memory " .. i:to(str) .. " min > max"
         end
         i += 1
     end
 
-    {valid = #errors == 0, errors = errors}
+    {valid = errors:len() == 0, errors = errors}
 end
 
 # ═══════════════════════════════════════════════════════════════
@@ -465,16 +465,16 @@ module_encode(mod: any): any
     writer_bytes(writer, std.bit.leb128_encode_u(WASM_VERSION))
 
     # Type section
-    if #mod.types > 0
+    if mod:len().types > 0
         section = {}
-        writer_bytes(section, std.bit.leb128_encode_u(#mod.types))
+        writer_bytes(section, std.bit.leb128_encode_u(mod:len().types))
         i = 1
-        while i <= #mod.types
+        while i <= mod:len().types
             t = mod.types[i]
             writer_bytes(section, {TYPE_FUNC})
-            writer_bytes(section, std.bit.leb128_encode_u(#t.params))
+            writer_bytes(section, std.bit.leb128_encode_u(t:len().params))
             for p in t.params writer_bytes(section, {p}) end
-            writer_bytes(section, std.bit.leb128_encode_u(#t.results))
+            writer_bytes(section, std.bit.leb128_encode_u(t:len().results))
             for r in t.results writer_bytes(section, {r}) end
             i += 1
         end
@@ -483,9 +483,9 @@ module_encode(mod: any): any
 
     writer_data = {}
     i = 1
-    while i <= #writer
+    while i <= writer:len()
         for b in writer[i]
-            writer_data[#writer_data + 1] = b
+            writer_data[writer_data:len() + 1] = b
         end
         i += 1
     end
@@ -493,12 +493,12 @@ module_encode(mod: any): any
 end
 
 writer_bytes(writer: any, bytes: any): void
-    writer[#writer + 1] = bytes
+    writer[writer:len() + 1] = bytes
 end
 
 write_section(writer: any, id: i64, content: any): void
     writer_bytes(writer, {id})
-    writer_bytes(writer, std.bit.leb128_encode_u(#content))
+    writer_bytes(writer, std.bit.leb128_encode_u(content:len()))
     writer_bytes(writer, content)
 end
 

@@ -101,7 +101,7 @@ std.mcp.register_tool("duo_diagnostics", "Get compiler diagnostics for a Duo sou
         if string.find(line, ": error:") or string.find(line, ": warning:")
             parts = {}
             for p in string.gmatch(line, "[^:]+")
-                parts[#parts + 1] = p
+                parts[parts:len() + 1] = p
             end
             severity = "warning"
             if string.find(line, ": error:") then severity = "error" end
@@ -112,8 +112,8 @@ std.mcp.register_tool("duo_diagnostics", "Get compiler diagnostics for a Duo sou
                 severity = severity,
                 message = "",
             }
-            if #parts >= 4 then diag.message = parts[4] else diag.message = line end
-            diags[#diags + 1] = diag
+            if parts:len() >= 4 then diag.message = parts[4] else diag.message = line end
+            diags[diags:len() + 1] = diag
         end
     end
     std.json.encode({ diagnostics = diags, raw_output = string.sub(output, 1, 5000) })
@@ -133,16 +133,16 @@ std.mcp.register_tool("duo_compile_check", "Run duo check and return parsed diag
         if string.find(line, ": error:") or string.find(line, ": warning:")
             parts = {}
             for p in string.gmatch(line, "[^:]+")
-                parts[#parts + 1] = p
+                parts[parts:len() + 1] = p
             end
             severity = "warning"
             if string.find(line, ": error:") then severity = "error" end
-            diags[#diags + 1] = {
+            diags[diags:len() + 1] = {
                 file = parts[1] or "",
                 line = tonumber(parts[2]) or 0,
                 col = tonumber(parts[3]) or 0,
                 severity = severity,
-                message = #parts >= 4 and parts[4] or line,
+                message = parts:len() >= 4 and parts[4] or line,
             }
         end
     end
@@ -376,10 +376,10 @@ std.mcp.register_tool("duo_audit_metaprogramming_smokes", "Batch native-boxing a
     results = {}
     for _, p in paths
         r = shared.audit_native_boxing(p)
-        results[#results + 1] = r
+        results[results:len() + 1] = r
         if r.pass then passed += 1 else failed += 1 end
     end
-    std.json.encode({ total = #paths, passed = passed, failed = failed, results = results })
+    std.json.encode({ total = paths:len(), passed = passed, failed = failed, results = results })
 end)
 
 -- Tool: duo_session_log — structured session log entry
@@ -587,7 +587,7 @@ std.mcp.register_tool("duo_multiplier_opportunities", "Analyze a .id file for pl
     std.json.encode({
         file = args.file_path,
         opportunities = opportunities,
-        count = #opportunities,
+        count = opportunities:len(),
         ladder_link = "@comp.ladder() for full complexity reference",
     })
 end)
@@ -609,7 +609,7 @@ std.mcp.register_tool("duo_agent_session_start", "Session bootstrap: coordinatio
         harness_context = shared.harness_context(),
         coordination_path = shared.coordpath,
         canonical_index_path = shared.canonpath,
-        open_p0_count = #p0,
+        open_p0_count = p0:len(),
         next_steps = {
             "duo_coordination_update(action='claim', ...) before shared edits",
             "duo_complexity(path='comp.map') to query complexity",

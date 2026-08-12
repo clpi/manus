@@ -167,7 +167,7 @@ pub fn emitKeywordClassifyNativeC(w: *std.Io.Writer) !void {
         \\/* GENERATED from {s} — do not edit by hand.
         \\ * Regenerate: duo token-tables emit
         \\ * Canonical Duo projection: lib/std/token/classify.id (@c.export classify)
-        \\ * Production consumer: src/duo_keyword_bridge.zig → src/lexer.zig
+        \\ * Production consumer: src/keyword_bridge.zig → src/lexer.zig
         \\ */
         \\#include <stdint.h>
         \\#include <string.h>

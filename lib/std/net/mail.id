@@ -13,8 +13,8 @@ parse_address(s: str): any
         name = s:sub(1, lt - 1)
         name = name:gsub("^%s+", "")
         name = name:gsub("%s+$", "")
-        if #name >= 2 and name:sub(1, 1) == "\"" and name:sub(#name, #name) == "\""
-            name = name:sub(2, #name - 1)
+        if name:len() >= 2 and name:sub(1, 1) == "\"" and name:sub(name:len(), name:len()) == "\""
+            name = name:sub(2, name:len() - 1)
         end
         return {name = name, address = addr}
     end
@@ -31,7 +31,7 @@ parse_address_list(s: str): any
     depth = 0
     start = 1
     i = 1
-    while i <= #s
+    while i <= s:len()
         ch = s:sub(i, i)
         if ch == "<" depth += 1 end
         if ch == ">" depth -= 1 end
@@ -66,18 +66,18 @@ split_lines(s: str): any
     out = {}
     start = 1
     i = 1
-    while i <= #s
+    while i <= s:len()
         if s:byte(i) == 10
             line = s:sub(start, i - 1)
-            if #line > 0 and line:byte(#line) == 13
-                line = line:sub(1, #line - 1)
+            if line:len() > 0 and line:byte(line:len()) == 13
+                line = line:sub(1, line:len() - 1)
             end
             out[out:len() + 1] = line
             start = i + 1
         end
         i += 1
     end
-    if start <= #s
+    if start <= s:len()
         out[out:len() + 1] = s:sub(start)
     end
     out

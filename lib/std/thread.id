@@ -25,7 +25,7 @@ lock(m: any): void
     end
     while m._locked
         co = coroutine.running()
-        m._waiters[#m._waiters + 1] = co
+        m._waiters[m:len()._waiters + 1] = co
         coroutine.yield()
     end
     m._locked = true
@@ -50,7 +50,7 @@ unlock(m: any): void
     end
     m._locked = false
     m._holder = nil
-    if #m._waiters > 0
+    if m:len()._waiters > 0
         co = m._waiters:remove(1)
         sync.spawn(() coroutine.resume(co))
     end
@@ -75,7 +75,7 @@ end
 rlock(rw: any): void
     while rw._writing
         co = coroutine.running()
-        rw._r_waiters[#rw._r_waiters + 1] = co
+        rw._r_waiters[rw:len()._r_waiters + 1] = co
         coroutine.yield()
     end
     rw._readers = rw._readers + 1
@@ -84,7 +84,7 @@ end
 # Release a read lock.
 runlock(rw: any): void
     rw._readers = rw._readers - 1
-    if rw._readers == 0 and #rw._w_waiters > 0
+    if rw._readers == 0 and rw:len()._w_waiters > 0
         co = rw._w_waiters:remove(1)
         sync.spawn(() coroutine.resume(co))
     end
@@ -95,7 +95,7 @@ wlock(rw: any): void
     if rw._w_holder == coroutine.running() return end
     while rw._writing or rw._readers > 0
         co = coroutine.running()
-        rw._w_waiters[#rw._w_waiters + 1] = co
+        rw._w_waiters[rw:len()._w_waiters + 1] = co
         coroutine.yield()
     end
     rw._writing = true
@@ -109,10 +109,10 @@ wunlock(rw: any): void
     end
     rw._writing = false
     rw._w_holder = nil
-    if #rw._w_waiters > 0
+    if rw:len()._w_waiters > 0
         co = rw._w_waiters:remove(1)
         sync.spawn(() coroutine.resume(co))
-    elseif #rw._r_waiters > 0
+    elseif rw:len()._r_waiters > 0
         for _, co in rw._r_waiters
             sync.spawn(() coroutine.resume(co))
         end
@@ -140,7 +140,7 @@ wait(c: any): void
         error("thread: cond.wait without holding mutex")
     end
     co = coroutine.running()
-    c._waiters[#c._waiters + 1] = co
+    c._waiters[c:len()._waiters + 1] = co
     unlock(m)
     coroutine.yield()
     lock(m)
@@ -148,7 +148,7 @@ end
 
 # Wake one waiter on the condition.
 signal(c: any): void
-    if #c._waiters > 0
+    if c:len()._waiters > 0
         co = c._waiters:remove(1)
         sync.spawn(() coroutine.resume(co))
     end
@@ -204,7 +204,7 @@ acquire(s: any): void
     lock(s._mu)
     while s._permits <= 0
         co = coroutine.running()
-        s._waiters[#s._waiters + 1] = co
+        s._waiters[s:len()._waiters + 1] = co
         unlock(s._mu)
         coroutine.yield()
         lock(s._mu)
@@ -229,7 +229,7 @@ end
 release(s: any): void
     lock(s._mu)
     s._permits = s._permits + 1
-    if #s._waiters > 0
+    if s:len()._waiters > 0
         co = s._waiters:remove(1)
         sync.spawn(() coroutine.resume(co))
     end
@@ -324,7 +324,7 @@ id(): i64
     # Hash the coroutine pointer for a stable id
     s = co:to(str)
     h = 5381
-    for i = 1, #s
+    for i = 1, s:len()
         h = (h * 33 + s:byte(i)) % 4294967296
     end
     h
@@ -382,11 +382,11 @@ end
 for_each(items: any, fn: any): any
     handles = {}
     for _, item in items
-        handles[#handles + 1] = spawn(fn, item)
+        handles[handles:len() + 1] = spawn(fn, item)
     end
     results = {}
     for _, h in handles
-        results[#results + 1] = join(h)
+        results[results:len() + 1] = join(h)
     end
     results
 end
@@ -395,11 +395,11 @@ end
 for_range(n: i64, fn: any): any
     handles = {}
     for i = 0, n - 1
-        handles[#handles + 1] = spawn(fn, i)
+        handles[handles:len() + 1] = spawn(fn, i)
     end
     results = {}
     for _, h in handles
-        results[#results + 1] = join(h)
+        results[results:len() + 1] = join(h)
     end
     results
 end

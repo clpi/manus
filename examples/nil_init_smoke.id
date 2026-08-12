@@ -3,7 +3,7 @@
 nil_then_str(): i64
     x = nil
     x = "hi"
-    return #x
+    return x:len()
 end
 
 schema_swap(): str
@@ -15,7 +15,7 @@ end
 main(): i64
     if nil_then_str() != 2 return 1 end
     s = schema_swap()
-    if #s != 14 return 2 end
+    if s:len() != 14 return 2 end
     print("PASS nil_init_smoke")
     return 0
 end

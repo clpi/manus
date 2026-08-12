@@ -5,7 +5,7 @@
 //! consume kind ids, never delimiter spelling.
 const std = @import("std");
 const lexer = @import("lexer.zig");
-const bridge = @import("duo_lexer_bridge.zig");
+const bridge = @import("lexer_bridge.zig");
 
 pub const SCHEMA_VERSION = "lexical-identity-v1";
 

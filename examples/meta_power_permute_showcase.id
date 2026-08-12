@@ -49,7 +49,7 @@ print(PERMUTE)
 # 4. Count verification: power over a set of n types yields 2^n - 1 fragments.
 count_semicolons(s: str): i64
     n = 0
-    for i = 1, #s
+    for i = 1, s:len()
         if s:sub(i, i) == ";" n += 1 end
     end
     n

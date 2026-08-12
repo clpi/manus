@@ -30,7 +30,7 @@ NGRAM_W = 1.0
 # engine bugs in F-13813-5; pure arithmetic, lowers to native i64).
 hash32(s: str): i64
     h = 5381
-    n = #s
+    n = s:len()
     i = 1
     while i <= n
         h = (h * 33 + s:byte(i)) % 4294967296
@@ -44,7 +44,7 @@ end
 tokens(text: str): any
     out = {}
     if text == nil return out end
-    n = #text
+    n = text:len()
     i = 1
     cur = ""
     while i <= n
@@ -55,15 +55,15 @@ tokens(text: str): any
         if is_digit or is_upper or is_lower
             cur = cur .. c:char()
         else
-            if #cur >= 2
-                out[#out + 1] = cur:lower()
+            if cur:len() >= 2
+                out[out:len() + 1] = cur:lower()
             end
             cur = ""
         end
         i = i + 1
     end
-    if #cur >= 2
-        out[#out + 1] = cur:lower()
+    if cur:len() >= 2
+        out[out:len() + 1] = cur:lower()
     end
     out
 end
@@ -73,11 +73,11 @@ trigrams(token: str): any
     out = {}
     if token == nil return out end
     s = "^" .. token .. "$"
-    n = #s
+    n = s:len()
     if n < 3 return out end
     i = 1
     while i <= n - 2
-        out[#out + 1] = s:sub(i, i + 2)
+        out[out:len() + 1] = s:sub(i, i + 2)
         i = i + 1
     end
     out
@@ -136,11 +136,11 @@ rank(q: any, records: any, top_k: i64): any
     for _, rec in records
         sc = cosine(q, rec.vec)
         if sc > 0
-            all[#all + 1] = { name = rec.name, file = rec.file,
+            all[all:len() + 1] = { name = rec.name, file = rec.file,
                               kind = rec.kind, doc = rec.doc, score = sc }
         end
     end
-    n = #all
+    n = all:len()
     k = top_k
     if k > n k = n end
     if k < 0 k = 0 end
@@ -162,7 +162,7 @@ rank(q: any, records: any, top_k: i64): any
         end
         if besti == 0 break end
         taken[besti] = true
-        out[#out + 1] = all[besti]
+        out[out:len() + 1] = all[besti]
         round = round + 1
     end
     out

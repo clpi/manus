@@ -1,4 +1,4 @@
 main(): i64
     s = "hello"
-    return #s
+    return s:len()
 end

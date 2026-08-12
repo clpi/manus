@@ -20,8 +20,8 @@
 
 
 _contains: bool = (hay: str, needle: str)
-    hn: i64 = #hay
-    nn: i64 = #needle
+    hn: i64 = hay:len()
+    nn: i64 = needle:len()
     i: i64 = 1
     while i + nn - 1 <= hn
         j: i64 = 0

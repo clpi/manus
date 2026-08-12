@@ -143,7 +143,7 @@ end
 
 write(conn: any, data: str): i64
     if conn == nil or conn.ssl == nil return -1 end
-    ssl_write(conn.ssl, data, #data)
+    ssl_write(conn.ssl, data, data:len())
 end
 
 read(conn: any, maxlen: i64): any

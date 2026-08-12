@@ -1,3 +1,4 @@
+# @corpus proof
 # DENIED TEXT IS THE ASSERTION. `@pure` reading mutable module state.
 #
 # Measured 2026-08-09, BEFORE this was rejected, by running it:

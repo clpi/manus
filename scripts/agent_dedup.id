@@ -45,9 +45,9 @@ end
 print("--- Open P0 gaps:", p0_count, "---")
 
 # 4. Check specified files for claims
-if #args > 0
+if args:len() > 0
     print("--- File claim check ---")
-    for i = 1, #args
+    for i = 1, args:len()
         f = args[i]
         if content:find(f)
             print("WARNING:", f, "may be claimed by another agent (found in coordination buffer)")
@@ -59,7 +59,7 @@ end
 
 # 5. Check build lock status
 lock_owner = script.build_lock_owner()
-if lock_owner and #lock_owner > 0
+if lock_owner and lock_owner:len() > 0
     print("--- Build lock held by:", lock_owner, "---")
 else
     print("--- Build lock: FREE ---")

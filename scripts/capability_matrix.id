@@ -184,7 +184,7 @@ end
 
 pathof(rec: str): str
     i: i64 = 1
-    n: i64 = #rec
+    n: i64 = rec:len()
     while i <= n and rec:byte(i) != 9
         i += 1
     end
@@ -370,7 +370,7 @@ main: i64 = ()
 
     for i, line in std.script.fs_read(recordpath):split("\n")
         rec = std.script.chomp(line)
-        if #rec > 8
+        if rec:len() > 8
             tally(rec)
         end
     end

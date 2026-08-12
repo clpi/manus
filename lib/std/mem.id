@@ -22,7 +22,7 @@ end
 arena_alloc(self: any, bytes: any): any
     if self._offset + bytes > self._capacity
         new_buf = "alloc(" .. bytes:to(str) .. " bytes)"
-        self._bufs[#self._bufs + 1] = new_buf
+        self._bufs[self:len()._bufs + 1] = new_buf
         self._offset = 0
     end
     ptr = { addr = self._total + self._offset, size = bytes }
@@ -56,12 +56,12 @@ end
 pool_init(self: any): void
     count = self._count or 1024
     for i = 1, count
-        self._free_list[#self._free_list + 1] = { addr = i * self._block_size, data = {} }
+        self._free_list[self:len()._free_list + 1] = { addr = i * self._block_size, data = {} }
     end
 end
 
 pool_alloc(self: any): any
-    if #self._free_list == 0 return nil end
+    if self:len()._free_list == 0 return nil end
     block = self._free_list:remove()
     self._allocated[block.addr] = block
     block
@@ -70,15 +70,15 @@ end
 pool_free(self: any, block: any): void
     if block == nil return end
     self._allocated[block.addr] = nil
-    self._free_list[#self._free_list + 1] = block
+    self._free_list[self:len()._free_list + 1] = block
 end
 
 pool_available(self: any): i64
-    return #self._free_list
+    return self:len()._free_list
 end
 
 pool_in_use(self: any): i64
-    self._count - #self._free_list
+    self._count - self:len()._free_list
 end
 
 pool_new(block_size: i64, count: i64): any
@@ -97,13 +97,13 @@ end
 
 # Stack allocator: LIFO bump allocator with checkpoint/restore
 stack_checkpoint(self: any): i64
-    self._markers[#self._markers + 1] = self._top
+    self._markers[self:len()._markers + 1] = self._top
     self._top
 end
 
 stack_restore(self: any, marker: any): void
-    while #self._markers > 0 and self._markers[#self._markers] > marker
-        self._markers[#self._markers] = nil
+    while self:len()._markers > 0 and self._markers[self:len()._markers] > marker
+        self._markers[self:len()._markers] = nil
     end
     self._top = marker
 end

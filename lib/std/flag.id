@@ -92,7 +92,7 @@ parse(fs: any, argv: any): any
                     f.value = fval
                 end
             end
-        elseif arg:sub(1, 1) == "-" and #arg > 1
+        elseif arg:sub(1, 1) == "-" and arg:len() > 1
             # short flag: -name or -name=value
             rest = arg:sub(2)
             eq = rest:find("=", 1, true)

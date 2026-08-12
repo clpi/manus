@@ -15,7 +15,7 @@ load(path: str): any
     end
     raw = io.read(f, "*a")
     io.close(f)
-    if raw == nil or #raw == 0
+    if raw == nil or raw:len() == 0
         return {ok = false, error = "Empty file: " .. path}
     end
     png_result = png_mod.decode(raw)
@@ -316,7 +316,7 @@ end
 adjust_brightness(image: any, factor: f64): any
     result = new(image.width, image.height, image.channels)
     i = 1
-    while i <= #result.data
+    while i <= result:len().data
         result.data[i] = 0:max(255:min(image.data[i] * factor:floor()))
         i += 1
     end
@@ -326,7 +326,7 @@ end
 adjust_contrast(image: any, factor: f64): any
     result = new(image.width, image.height, image.channels)
     i = 1
-    while i <= #result.data
+    while i <= result:len().data
         value = image.data[i]
         result.data[i] = 0:max(255:min((value - 128) * factor + 128:floor()))
         i += 1

@@ -11,161 +11,6 @@ docs/spec/harness-projection.md.
 **Invariant:** the harness must reason in Idol — not as a conventional coding
 agent with Idol syntax pasted onto output.
 
-If the live envelope below contradicts the template on implementation state,
-**live envelope wins**.
-
----
-
-## live envelope
-
-| field | value |
-| --- | --- |
-| generated | 2026-08-12T18:41:58Z |
-| head | 5d722d3 |
-| branch | main |
-| dirty entries | 103 |
-| bootstrap stage | S0 |
-| compiler B | absent |
-| mcp health | raw initialize fail |
-| host debt | unknown |
-| authority ledger | docs/bootstrap.md |
-| dominant metrics | docs/METRICS.md — authority, reconstruction, ftcftw evidence |
-| claims | duo_dev_claim_acquire / duo_dev_claim_files before editing |
-| preflight | ./tools/node/dev/orient then ./tools/node/dev/doctor |
-
-### executed authority (metric 1)
-
-**Current:** S0. One executed Idol-owned production boundary:
-lexer/token/span (docs/bootstrap.md). Compiler B does not exist. B→C = 0.
-
-**Next SHC boundary:** GAP-145 distinct lexical identities → GAP-134 generated grammar roles + immutable token view → first production parser recognition in executed Idol (not host token-text lists)
-
-Do not infer frontier from file extension, implementation language, or .id
-percentage.
-
-### reconstruction (metric 2)
-
-Target: zero downstream rediscovery of upstream-known meaning (callee → relation,
-path → identity, AST → visibility, opcode → relation, text → grammar role after
-lexing). Machine census: blocked until graph-owned counter lands — do not infer
-from grep alone.
-
-### ftcftw evidence (metric 3)
-
-Matrix cells empty until revision-bound aggregate proof fills them.
-Unknown ≠ pass. See docs/METRICS.md.
-
----
-
-## pre-task gate (execution — not advice)
-
-**Do not choose work or edit** until docs/spec/harness-projection.md §
-pre-task reduction is answered (items 1–12). If 1–9 lack clear answers,
-deprioritize. If the task only renames an abstraction (std.* → process.*,
-req → local binding), **reject**.
-
-Current scheduler: **SHC frontier above** broad corpus rewrite, gate polish, or
-peripheral tooling unless it unlocks the next production authority boundary.
-
----
-
-## open P0 obligations (41)
-
-Read exact files — session summary incomplete until GAP-131 closes.
-
-- GAP-050: GAP-050 — explicit realization evidence uses shared CWD state
-- GAP-092: GAP-092 — delimiter faces still survive as semantic call shape
-- GAP-107: GAP-107 — canonical compiler source lacks a graph-owned export projection
-- GAP-113: GAP-113 — an unknown relation on a subject silently answers nil; the same mistake in the denied spelling diagnoses
-- GAP-115: GAP-115 — test evidence is corruptible by concurrent sessions, so gate results are not facts
-- GAP-118: GAP-118 — Environment lookup erases absence into empty string
-- GAP-119: GAP-119 — Process execution lacks subject and world semantic vocabulary
-- GAP-121: GAP-121 — Native module initialization blocks real Duon compiler modules
-- GAP-123: GAP-123 — Agent law still mandates std.script-backed lock wrapper
-- GAP-124: GAP-124 — Graph world, subject, vocabulary, sentinel and control canonicality gates
-- GAP-125: GAP-125 — SH-07 passes a name census, not the semantic graph required by WORLDGATE
-- GAP-126: GAP-126 — Typed semantic facts cross a dynamic dispatch boundary
-- GAP-127: GAP-127 — SHC ledger contract drift makes the 100 percent Duon report fail for the wrong reasons
-- GAP-128: GAP-128 — Runtime benchmark invokes Duon WASM with obsolete WARD environment contract
-- GAP-129: GAP-129 — Locked validation MCP suppresses failing evidence
-- GAP-130: GAP-130 — Duon WASM hot loop remains 18 percent behind wasmtime in generated code
-- GAP-131: GAP-131 — Session bootstrap reports false empty P0 queue
-- GAP-132: GAP-132 - RG0 still accepts aliases and the proposed graph proof is not a gate
-- GAP-134: GAP-134 - SHC grammar authority is not a generatable canonical artifact
-- GAP-135: GAP-135 — Reader proof adds broken Zig semantic reconstruction instead of Duon authority
-- GAP-136: GAP-136 — relation identity gate accepts untracked C-only noncanonical evidence
-- GAP-137: GAP-137 — SHC-01 DNIR application identity remains optional and fail-open
-- GAP-138: GAP-138 — SHC source traversal has mixed authority and sentinel contract
-- GAP-139: GAP-139 — compiler B/C basis has no graph/world-backed evidence
-- GAP-141: GAP-141 - generated runtime reserves a different temporary path than it uses
-- GAP-142: GAP-142 - concurrent merge candidates lack one truthful admission boundary
-- GAP-144: GAP-144 - runtime-sized table branch derives realization from source names
-- GAP-145: GAP-145 — lexical authority is not projected into distinct canonical token identities
-- GAP-146: GAP-146 — build gate reports success after failed child process
-- GAP-147: GAP-147 — test gate deadlocks when child output fills an undrained pipe
-- GAP-148: GAP-148 — value locations and fixed-frame register spilling
-- GAP-149: GAP-149 — numeric source faces lack one compositional descriptor fact owner
-- GAP-151: GAP-151: Missing Semantic Lineage for Benchmark Measurement Attribution
-- GAP-152: GAP-152 — Idol-only FTCFTW claim chain lacks aggregate pass
-- GAP-153: GAP-153 — Layout resolution; projection scope package capability closure
-- GAP-154: GAP-154 — Host boundary, root projection, capability and shell closure
-- GAP-155: GAP-155 — Host boundary, root projection, and capability closure
-- GAP-157: GAP-157 — Zero std namespace elimination
-- GAP-163: GAP-163 — PATH-ONE migration ledger and new-path zero gate
-- GAP-164: GAP-164 — Conversion tripartition gate (satisfaction ≠ conversion ≠ realization)
-- GAP-165: GAP-165 — PROJECTION-ONE graph census and enforcement
-
----
-
-## semantic diff template (required for nontrivial changes)
-
-```text
-boundary:
-before authority:
-after authority:
-ids consumed/produced:
-facts retained/added/removed/missing:
-reconstruction removed/remaining:
-deletion (what ceased to exist):
-world/demand/realization:
-performance (alloc/copy/box/dispatch/state):
-shc frontier before/after:
-ftcftw cells affected/unknown:
-evidence (command, path, revision, dirty, outcome):
-bridges retained + deletion gate:
-blocker:
-```
-
----
-
-## adversarial migration classes (changed-line gates)
-
-Not whole-corpus closure — new debt on touched lines must be zero:
-
-- process = lib.process — reachability admission, not world authority
-- process.run / process.capture / procrun / proccap — parallel run kingdoms
-- host 0/1 status as native outcome
-- redundant explicit `:to(T)` when descriptor demand already fixes `T` uniquely (law.gate.infer)
-- bootstrap bridge without deletion witness (law.bridge.death)
-- silent host fallback after authority transfer (law.fallback.zero)
-- std.* renamed to another namespace without semantic decomposition
-- [[ ... ]] on touched canonical lines — compatibility debt
-
-Run: git diff -U0 -- '*.id' | ./zig-out/bin/idol run scripts/idiomgate.id
-
----
-
-## projection chain (no parallel harness law)
-
-docs/spec/constitution.md
-  → docs/spec/harness-projection.md   (stable harness reasoning)
-  → .agents/HARNESS.md                (this file — live envelope + template)
-
-Provider mechanics only (Cursor rules, Pi skills, MCP transport) — not a second
-semantic specification.
-
----
-
 # Idol universal harness projection
 
 This document is a **harness behavior projection** of C0 (`docs/spec/constitution.md`).
@@ -537,9 +382,21 @@ implicit relation + implicit projection
 - Protocol constraints are relation projections (`source: read`), not adjective traits
 - DNIR/parser must not recover projection from callee strings or namespace shape
 
-Gates: `law.gate.projection`. Conversion derivation: `law.conversion.derive`,
-`law.conversion.decl`. Do not implement against stale `docs/spec/world.md` or
-`inch:from(...)` teaching without classifying migration debt.
+Gates: `law.gate.projection`, `law.gate.infer`, `law.gate.protocol`. Conversion
+derivation: `law.conversion.derive`, `law.conversion.decl`. **Do not implement**
+projection/conversion/world/shell/DNIR machinery against repository examples
+until resolved against C0 — classify bootstrap debt per `law.source.not.proof`.
+
+**Universal code-review** (every changed expression):
+
+- What is explicit vs implied vs injectable vs organizational hierarchy only?
+- What relation id, subject, projection facts, operands, descriptors, world, origin/law survive?
+- Why can any explicit qualifier be omitted?
+- If the answer relies on `std`, `lib`, namespace, method, adjective, host API,
+  callee spelling, path, or text pattern → not Idollic yet.
+
+**Absolute:** one graph · one application algebra · one projection mechanism ·
+one world-witness mechanism · one native lowering path (`law.projection.absolute`).
 
 ---
 
@@ -551,7 +408,8 @@ survive relation constraint parameter and result crossing without boxing or
 vtables. Canonical read constraint is `read`, not `readable` (`law.protocol.one`).
 
 Full law and adversarial controls: `docs/spec/constitution.md` §67
-(`law.gate.protocol`, `law.gate.infer`).
+(`law.gate.projection`, `law.gate.protocol`, `law.gate.infer`,
+`law.projection.absolute`, `law.projection.repair`).
 
 ---
 
@@ -911,6 +769,20 @@ C0 authority: `law.system.invariant` (compact master), `law.bridge.death`,
 - schedule producer→consumer chains
 - integration state outranks branch-local success
 - stop on ambiguity rather than inventing architecture
+
+### PROJECTION (law.projection.one)
+
+- one projection algebra for conversion, protocol, generic, world, home, shell, foreign, staging
+- projection is fact completion, not namespace selection
+- `to` is the one conversion orientation; `from` is not a second universe (FROM-ZERO)
+- `std` and `lib` are not semantic roots (STD-ZERO, LIB-ZERO)
+- home hierarchy supplies reachability, not relation identity (HOME-PROJECTION)
+- shell is law, process is authority, command is value (SHELL-NOT-WORLD)
+- cross-boundary projection needs explicit witness (CROSS-ONE)
+- conversion derivation is bounded: no arbitrary path search, no declaration-order ties
+- conversion declarations prefer home-based subject orientation, not operation-first
+- parser must not produce semantic AST kinds; DNIR must not reconstruct meaning from callee/path/text
+- projection wrappers (ProjectedCall, ConversionProjection, etc.) are forbidden as semantic kinds
 
 ### FTCFTW
 

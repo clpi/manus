@@ -1,0 +1,28 @@
+# @corpus current
+# Pass 121 §9 — explicit conversion when target is NOT fixed by surrounding demand.
+#
+# INFER-ONE (law.infer.one): when binding/parameter/field/result already demands
+# the target descriptor, omit redundant :to(T) from source — graph retains inferred
+# application. This file keeps explicit :to(T) because each conversion direction
+# is exercised without a unique surrounding demand fixing the target.
+#
+# Canonical invocation face: n:to(str), never to(str)(n). Full ladder:
+#   to(str)(n) → n:to(str) → n:to() → n   (stop at uniquely proved step)
+#
+# expect: 17 -17 9007199254740993 42 2.5 true
+
+main: i64 = ()
+    s: str = "17"
+    neg: str = "-17"
+    wide: str = "9007199254740993"
+    n: i64 = 42
+    f: f64 = 2.5
+    b: bool = true
+    a: i64 = s:to(i64)
+    c: i64 = neg:to(i64)
+    d: i64 = wide:to(i64)
+    e: str = n:to(str)
+    g: str = f:to(str)
+    h: str = b:to(str)
+    print("{a} {c} {d} {e} {g} {h}")
+    0

@@ -5,7 +5,7 @@
 shift: str = (s: str, by: i64)
     out = ""
     i = 0
-    n = #s
+    n = s:len()
     while i < n
         b = s[i]
         c = b

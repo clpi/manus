@@ -368,10 +368,25 @@ implicit relation + implicit projection
 - **HOME-PROJECTION** — hierarchy is reachability, not `compiler.parser.parse`
 - Protocol constraints are relation projections (`source: read`), not adjective traits
 - DNIR/parser must not recover projection from callee strings or namespace shape
+- **Application record** (repair step 4): `docs/spec/application-record.md` — resolver
+  mints one graph record per application with explicit/inferred projection pack facts
+- **Debt census** (classify, never bulk replace): `docs/spec/projection-debt.md`
 
-Gates: `law.gate.projection`. Conversion derivation: `law.conversion.derive`,
-`law.conversion.decl`. Do not implement against stale `docs/spec/world.md` or
-`inch:from(...)` teaching without classifying migration debt.
+Gates: `law.gate.projection`, `law.gate.infer`, `law.gate.protocol`. Conversion
+derivation: `law.conversion.derive`, `law.conversion.decl`. **Do not implement**
+projection/conversion/world/shell/DNIR machinery against repository examples
+until resolved against C0 — classify bootstrap debt per `law.source.not.proof`.
+
+**Universal code-review** (every changed expression):
+
+- What is explicit vs implied vs injectable vs organizational hierarchy only?
+- What relation id, subject, projection facts, operands, descriptors, world, origin/law survive?
+- Why can any explicit qualifier be omitted?
+- If the answer relies on `std`, `lib`, namespace, method, adjective, host API,
+  callee spelling, path, or text pattern → not Idollic yet.
+
+**Absolute:** one graph · one application algebra · one projection mechanism ·
+one world-witness mechanism · one native lowering path (`law.projection.absolute`).
 
 ---
 
@@ -383,7 +398,8 @@ survive relation constraint parameter and result crossing without boxing or
 vtables. Canonical read constraint is `read`, not `readable` (`law.protocol.one`).
 
 Full law and adversarial controls: `docs/spec/constitution.md` §67
-(`law.gate.protocol`, `law.gate.infer`).
+(`law.gate.projection`, `law.gate.protocol`, `law.gate.infer`,
+`law.projection.absolute`, `law.projection.repair`).
 
 ---
 
@@ -667,6 +683,7 @@ C0 authority: `law.system.invariant` (compact master), `law.bridge.death`,
 `law.coordination.fact`, `law.representation.demand`,
 `law.projection.one`, `law.from.zero`, `law.lib.zero`, `law.home.projection`,
 `law.shell.not.world`, `law.cross.one`, `law.conversion.derive`, `law.conversion.decl`,
+`law.zero.history`, `law.backend.c.zero`,
 `law.gate.convergence`. Adversarial controls: `law.gate.convergence`.
 
 **Before writing code, audit these seams.**
@@ -757,6 +774,24 @@ C0 authority: `law.system.invariant` (compact master), `law.bridge.death`,
 - conversion declarations prefer home-based subject orientation, not operation-first
 - parser must not produce semantic AST kinds; DNIR must not reconstruct meaning from callee/path/text
 - projection wrappers (ProjectedCall, ConversionProjection, etc.) are forbidden as semantic kinds
+
+### ZERO-HISTORY (law.zero.history)
+
+- the active tree is not a museum — current Idol, current foreign, bounded bridges only
+- no language.history table, no historical corpus states, no pass taxonomy
+- durable corpus states: current and foreign only — not historical, legacy, migration, compat
+- delete comments referencing formerly/was X/migration/legacy/retired/old path
+- resolved gaps are deleted; open gaps contain only current obligation
+- generated projections consume current C0 only — no old brands or committed session state
+- do not preserve old names/symbols/paths/env prefixes/artifacts as permanent residents
+
+### NO-C-BACKEND (law.backend.c.zero)
+
+- the generated C backend is bootstrap debt, not destination architecture
+- the direct native backend is the sole realization path
+- do not improve the C backend — invest in deleting it by advancing native coverage
+- duo_lexer_tokenize.c, duo codegen, all generated C: temporary bridges with deletion gates
+- deletion gate: native backend coverage of the compiler-critical basis
 
 ### FTCFTW
 

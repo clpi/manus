@@ -108,8 +108,8 @@ pub fn catalogEntry(h: HwIntrinsic) ?CatalogEntry {
     return null;
 }
 
-pub fn intrinsicOfOp(op: @import("duo_native_ir.zig").Op, hw: HwIntrinsic) ?HwIntrinsic {
-    const dnir = @import("duo_native_ir.zig");
+pub fn intrinsicOfOp(op: @import("native_ir.zig").Op, hw: HwIntrinsic) ?HwIntrinsic {
+    const dnir = @import("native_ir.zig");
     return switch (op) {
         dnir.Op.hw_fence => .fence,
         dnir.Op.hw_spin => .spin_wait,
@@ -118,7 +118,7 @@ pub fn intrinsicOfOp(op: @import("duo_native_ir.zig").Op, hw: HwIntrinsic) ?HwIn
     };
 }
 
-pub fn functionHardwareTier(f: @import("duo_native_ir.zig").Function) Tier {
+pub fn functionHardwareTier(f: @import("native_ir.zig").Function) Tier {
     var tier: Tier = .scalar;
     for (f.blocks) |b| {
         for (b.instrs) |ins| {
@@ -131,7 +131,7 @@ pub fn functionHardwareTier(f: @import("duo_native_ir.zig").Function) Tier {
 }
 
 /// Collect deduplicated hardware descriptors used in a DNIR module.
-pub fn collectModuleDescriptors(alloc: std.mem.Allocator, m: @import("duo_native_ir.zig").Module) ![]Descriptor {
+pub fn collectModuleDescriptors(alloc: std.mem.Allocator, m: @import("native_ir.zig").Module) ![]Descriptor {
     var counts: std.AutoHashMapUnmanaged(HwIntrinsic, u32) = .{};
     defer counts.deinit(alloc);
 
@@ -176,7 +176,7 @@ test "dnir_hardware: arm64 fence word" {
 }
 
 test "dnir_hardware: collectModuleDescriptors" {
-    const dnir = @import("duo_native_ir.zig");
+    const dnir = @import("native_ir.zig");
     const m = dnir.Module{
         .functions = &.{
             .{

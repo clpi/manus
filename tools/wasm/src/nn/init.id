@@ -145,7 +145,7 @@ end
 @hot
 @device(.auto)
 fun rms_norm(x: [float], eps: float): [float]
-  n = #x
+  n = x:len()
   ss = 0.0
   for i = 1, n
     ss = ss + x[i] * x[i]
@@ -314,7 +314,7 @@ fun registry_register_model(reg, name: str, data: str, encoding: i64, target: i6
 
   reg.models[name] = reg.models[name] or { versions = {}, latest = nil }
   versions = reg.models[name].versions
-  versions[#versions + 1] = model
+  versions[versions:len() + 1] = model
   reg.models[name].latest = model
 end
 

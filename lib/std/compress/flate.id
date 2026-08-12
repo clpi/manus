@@ -4,7 +4,7 @@ compress(data: any)
     if data == nil or data == "" return "" end
     out = {}
     i = 1
-    n = #data
+    n = data:len()
     while i <= n
         ch = data:sub(i, i)
         run = 1
@@ -28,7 +28,7 @@ decompress(data: any)
     if data == nil or data == "" return "" end
     out = {}
     i = 1
-    n = #data
+    n = data:len()
     while i <= n
         b = data:byte(i)
         if b == 0xFE
@@ -59,7 +59,7 @@ writer_write(w: any, data: any)
 end
 
 writer_flush(w: any)
-    if #w.buf > 0
+    if w:len().buf > 0
         w.fh:write(compress(w.buf))
         w.buf = ""
     end

@@ -68,7 +68,7 @@ server_register(server: any, method: str, handler: any): void
 end
 
 server_add_middleware(server: any, middleware: any): void
-    server.middleware[#server.middleware + 1] = middleware
+    server.middleware[server:len().middleware + 1] = middleware
 end
 
 server_handle(server: any, request: any): any
@@ -291,7 +291,7 @@ end
 registry_discover_all(registry: any): any
     services = {}
     for name, service in registry.services
-        services[#services + 1] = {name = name, address = service.address, metadata = service.metadata}
+        services[services:len() + 1] = {name = name, address = service.address, metadata = service.metadata}
     end
     services
 end

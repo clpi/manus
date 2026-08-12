@@ -34,7 +34,7 @@
 # job — and getting them wrong is exactly what the execution differential
 # catches.
 _expr_to_c: str = (src: str)
-    n: i64 = #src
+    n: i64 = src:len()
     out = ""
     i: i64 = 1
     while i <= n
@@ -85,7 +85,7 @@ program_for: str = (expr: str)
     if body == ""
         return ""
     end
-    "#include <stdio.h>\nint main(void) { printf(\"%lld\\n\", (long long)("
+    "include:len() <stdio.h>\nint main(void) { printf(\"%lld\\n\", (long long)("
         .. body .. ")); return 0; }\n"
 end
 

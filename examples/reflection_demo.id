@@ -69,7 +69,7 @@ end
 
 t = { a = 1, b = 2, c = 3 }
 print("\nTable utils:")
-print("len: " .. to(str)(#t))
+print("len: " .. to(str)(t:len()))
 print("has 'b': " .. to(str)(t.b != nil))
 
 shallow = clone(t)

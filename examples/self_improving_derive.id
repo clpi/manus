@@ -6,7 +6,7 @@
 @comp.define.derive("Evolving", generate(meta) -> str
     derives = @comp.derive.list()
     gen = 0
-    for i = 1, #derives do
+    for i = 1, derives:len() do
         if derives[i]:sub(1, 8) == "Evolving"
             gen = gen + 1
         end

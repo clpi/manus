@@ -1,0 +1,5 @@
+# @corpus current
+reader = std.compiler.reader
+
+main: i64 = ()
+    reader.document{ value = 42 }:read()

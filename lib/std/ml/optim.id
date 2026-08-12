@@ -134,7 +134,7 @@ optimizer_step(opt: any, params: any, grads: any): void
 end
 
 step_sgd(opt: any, params: any, grads: any): void
-    for i = 1, #params
+    for i = 1, params:len()
         p = params[i]
         g = grads[i]
         key = p:to(str)
@@ -161,7 +161,7 @@ step_adam(opt: any, params: any, grads: any): void
     bc1 = 1 - opt.beta1:pow(opt.step_count)
     bc2 = 1 - opt.beta2:pow(opt.step_count)
 
-    for i = 1, #params
+    for i = 1, params:len()
         p = params[i]
         g = grads[i]
         key = p:to(str)
@@ -188,7 +188,7 @@ step_adamw(opt: any, params: any, grads: any): void
     bc1 = 1 - opt.beta1:pow(opt.step_count)
     bc2 = 1 - opt.beta2:pow(opt.step_count)
 
-    for i = 1, #params
+    for i = 1, params:len()
         p = params[i]
         g = grads[i]
         key = p:to(str)
@@ -213,7 +213,7 @@ step_adamw(opt: any, params: any, grads: any): void
 end
 
 step_adagrad(opt: any, params: any, grads: any): void
-    for i = 1, #params
+    for i = 1, params:len()
         p = params[i]
         g = grads[i]
         key = p:to(str)
@@ -231,7 +231,7 @@ step_adagrad(opt: any, params: any, grads: any): void
 end
 
 step_rmsprop(opt: any, params: any, grads: any): void
-    for i = 1, #params
+    for i = 1, params:len()
         p = params[i]
         g = grads[i]
         key = p:to(str)
@@ -255,7 +255,7 @@ step_lamb(opt: any, params: any, grads: any): void
     bc1 = 1 - opt.beta1:pow(opt.step_count)
     bc2 = 1 - opt.beta2:pow(opt.step_count)
 
-    for i = 1, #params
+    for i = 1, params:len()
         p = params[i]
         g = grads[i]
         key = p:to(str)
@@ -418,7 +418,7 @@ end
 
 clip_grad_norm(params: any, grads: any, max_norm: f64): f64
     total_norm = 0
-    for i = 1, #params
+    for i = 1, params:len()
         g = grads[i]
         for j = 1, g.size
             total_norm += g.data[j] * g.data[j]
@@ -428,7 +428,7 @@ clip_grad_norm(params: any, grads: any, max_norm: f64): f64
 
     if total_norm > max_norm
         scale = max_norm / total_norm
-        for i = 1, #params
+        for i = 1, params:len()
             g = grads[i]
             for j = 1, g.size
                 g.data[j] = g.data[j] * scale
@@ -440,7 +440,7 @@ clip_grad_norm(params: any, grads: any, max_norm: f64): f64
 end
 
 clip_grad_value(grads: any, max_value: f64): void
-    for i = 1, #grads
+    for i = 1, grads:len()
         g = grads[i]
         for j = 1, g.size
             if g.data[j] > max_value

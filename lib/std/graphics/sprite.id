@@ -53,7 +53,7 @@ sheet_new(texture: any, frame_width: i64, frame_height: i64): any
   while y < rows
     x = 0
     while x < cols
-      frames[#frames + 1] = {
+      frames[frames:len() + 1] = {
         x = x * frame_width,
         y = y * frame_height,
         width = frame_width,
@@ -74,7 +74,7 @@ sheet_get_frame(sheet: any, index: i64): any
   sheet.frames[index]
 end
 sheet_get_frame_count(sheet: any): i64
-  #sheet.frames
+  s:len()heet.frames
 end
 anim_new(sheet: any, frame_indices: any, fps: f64): any
   {
@@ -107,11 +107,11 @@ anim_update(anim: any, delta_time: f64): void
   if anim.elapsed >= frame_duration
     anim.elapsed = anim.elapsed - frame_duration
     anim.current_frame = anim.current_frame + 1
-    if anim.current_frame > #anim.frames
+    if anim.current_frame > anim:len().frames
       if anim.loop
         anim.current_frame = 1
       else
-        anim.current_frame = #anim.frames
+        anim.current_frame = anim:len().frames
         anim.playing = false
       end
     end
@@ -128,12 +128,12 @@ renderer_new(): any
   }
 end
 renderer_add(renderer: any, sprite: any): void
-  renderer.sprites[#renderer.sprites + 1] = sprite
+  renderer.sprites[renderer:len().sprites + 1] = sprite
   renderer.sorted = false
 end
 renderer_remove(renderer: any, sprite: any): void
   i = 1
-  while i <= #renderer.sprites
+  while i <= renderer:len().sprites
     if renderer.sprites[i] == sprite
       renderer.sprites:remove(i)
       return
@@ -154,7 +154,7 @@ renderer_render(renderer: any): any
   render_calls = {}
   for sprite in renderer.sprites
     if sprite.visible
-      render_calls[#render_calls + 1] = {
+      render_calls[render_calls:len() + 1] = {
         texture = sprite.texture,
         x = sprite.x,
         y = sprite.y,
@@ -171,6 +171,6 @@ renderer_render(renderer: any): any
   end
   {
     calls = render_calls,
-    count = #render_calls
+    count = render_calls:len()
   }
 end

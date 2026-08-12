@@ -33,7 +33,7 @@ print("Eq:       " .. to(str)(point:eq(cloned)))
 print("\nPoint fields:")
 fields = {}
 for k, _ in point do
-    fields[#fields + 1] = k
+    fields[fields:len() + 1] = k
 end
 for _, name in fields do
     print("  " .. name .. ": " .. type(point[name]))

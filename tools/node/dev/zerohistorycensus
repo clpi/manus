@@ -1,0 +1,70 @@
+#!/bin/sh
+# ZERO-HISTORY whole-tree census — law.zero.history merge priority verification.
+# Foreign-language std (Zig @import("std"), C stdlib) reported separately.
+set -eu
+repo="$(cd "$(dirname "$0")/../../.." && pwd)"
+cd "$repo"
+
+fail=0
+warn=0
+
+count_project() {
+  pat="$1"
+  label="$2"
+  # Exclude git metadata; scan tracked + untracked project text
+  hits=$(git ls-files 2>/dev/null | while read -r f; do
+    case "$f" in
+      *.png|*.jpg|*.wasm|*.o|*.dylib|*.profraw) continue ;;
+    esac
+    rg -n "$pat" "$f" 2>/dev/null || true
+  done | rg -v 'zerohistorycensus|law\.zero\.history|ZERO-HISTORY|retired name|git stores' || true)
+  n=$(printf '%s\n' "$hits" | sed '/^$/d' | wc -l | tr -d ' ')
+  if [ "$n" -gt 0 ]; then
+    echo "zerohistorycensus: FAIL $label ($n hits)"
+    printf '%s\n' "$hits" | head -20 | sed 's/^/  /'
+    fail=$((fail + n))
+  else
+    echo "zerohistorycensus: pass $label"
+  fi
+}
+
+echo "zerohistorycensus: ZERO-HISTORY audit"
+
+count_project 'language\.history' 'language.history table'
+count_project '(^|[^a-zA-Z])Idsem([^a-zA-Z]|$)|idsem' 'Idsem identity'
+count_project '(^|[^a-zA-Z])Duon([^a-zA-Z]|$)|duon' 'Duon identity'
+count_project '\.duo\b' 'retired .duo suffix'
+count_project 'spec100|pass[0-9]+|Pass [0-9]+' 'pass/spec-number taxonomy'
+count_project '@corpus (verified|proof|history|migration|compat|legacy)' 'retired @corpus labels'
+count_project 'examples/spec100/' 'spec100 path references'
+
+# Duo/duo: allow in foreign vendored paths only — flag project-owned hits
+duo_hits=$(git ls-files 2>/dev/null | while read -r f; do
+  case "$f" in
+    */vendor/*|*/.git/*) continue ;;
+  esac
+  rg -n '(^|[^a-zA-Z])duo([^a-zA-Z]|$)|DUO_' "$f" 2>/dev/null || true
+done | rg -v 'zerohistorycensus|law\.zero|ZERO-HISTORY|duo_lock|bootstrap' || true)
+duo_n=$(printf '%s\n' "$duo_hits" | sed '/^$/d' | wc -l | tr -d ' ')
+if [ "$duo_n" -gt 0 ]; then
+  echo "zerohistorycensus: WARN duo/DUO_ project hits ($duo_n) — cutover in progress"
+  printf '%s\n' "$duo_hits" | head -15 | sed 's/^/  /'
+  warn=$((warn + duo_n))
+else
+  echo "zerohistorycensus: pass duo/DUO_ in project-owned paths"
+fi
+
+# Committed session envelope
+if git ls-files --error-unmatch .agents/session/ENVELOPE.md >/dev/null 2>&1; then
+  echo "zerohistorycensus: FAIL committed session envelope (.agents/session/ENVELOPE.md)"
+  fail=$((fail + 1))
+else
+  echo "zerohistorycensus: pass session envelope not committed"
+fi
+
+if [ "$fail" -gt 0 ]; then
+  echo "zerohistorycensus: $fail violation class(es) — law.zero.history"
+  exit 1
+fi
+echo "zerohistorycensus: census complete ($warn duo warnings pending cutover)"
+exit 0

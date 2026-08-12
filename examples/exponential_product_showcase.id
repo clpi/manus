@@ -18,7 +18,7 @@ Node: { id: i64, next: i64 }
 
 @comp.define.derive("TouchApi", generate(meta) -> str
     acc = "/* " .. meta.name .. " */\n"
-    for i = 1, #meta.fields
+    for i = 1, meta:len().fields
         f = meta.fields[i]
         acc = acc .. "static inline void duo_" .. meta.name .. "_touch_" .. f.name .. "(const duo_" .. meta.name .. "* v) { (void)v->" .. f.name .. "; }\n"
     end

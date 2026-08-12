@@ -28,22 +28,22 @@ base64_encode(data: any): str
     chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
     result = ""
     i = 1
-    while i <= #data
+    while i <= data:len()
         b0 = data[i]
         b1 = 0
         b2 = 0
-        if i + 1 <= #data b1 = data[i + 1] end
-        if i + 2 <= #data b2 = data[i + 2] end
+        if i + 1 <= data:len() b1 = data[i + 1] end
+        if i + 2 <= data:len() b2 = data[i + 2] end
 
         triplet = (b0 << 16) | (b1 << 8) | b2
         result = result .. chars:byte(((triplet >> 18) & 0x3F) + 1):char()
         result = result .. chars:byte(((triplet >> 12) & 0x3F) + 1):char()
-        if i + 1 <= #data
+        if i + 1 <= data:len()
             result = result .. chars:byte(((triplet >> 6) & 0x3F) + 1):char()
         else
             result = result .. "="
         end
-        if i + 2 <= #data
+        if i + 2 <= data:len()
             result = result .. chars:byte((triplet & 0x3F) + 1):char()
         else
             result = result .. "="
@@ -59,9 +59,9 @@ base64_sha1(data: str): str
     # Convert hex string to bytes
     sha1_bytes = {}
     i = 1
-    while i <= #sha1_hex
+    while i <= sha1_hex:len()
         hex_pair = sha1_hex:sub(i, i + 1)
-        sha1_bytes[#sha1_bytes + 1] = tonumber(hex_pair, 16)
+        sha1_bytes[sha1_bytes:len() + 1] = tonumber(hex_pair, 16)
         i += 2
     end
     base64_encode(sha1_bytes)
@@ -70,8 +70,8 @@ end
 base64_encode_string(s: str): str
     bytes = {}
     i = 1
-    while i <= #s
-        bytes[#bytes + 1] = s:byte(i)
+    while i <= s:len()
+        bytes[bytes:len() + 1] = s:byte(i)
         i += 1
     end
     base64_encode(bytes)
@@ -87,7 +87,7 @@ ws_encode_frame(opcode: i64, payload: any, mask: bool): any
     bytes[1] = 0x80 | opcode
 
     # Payload length
-    len = #payload
+    len = payload:len()
     if len < 126
         bytes[2] = len
         if mask bytes[2] = bytes[2] | 0x80 end
@@ -114,18 +114,18 @@ ws_encode_frame(opcode: i64, payload: any, mask: bool): any
         i = 1
         while i <= 4
             mask_key[i] = key_data:byte(i)
-            bytes[#bytes + 1] = mask_key[i]
+            bytes[bytes:len() + 1] = mask_key[i]
             i += 1
         end
     end
 
     # Payload
     i = 1
-    while i <= #payload
+    while i <= payload:len()
         if mask
-            bytes[#bytes + 1] = payload[i] ~ mask_key[((i - 1) % 4) + 1]
+            bytes[bytes:len() + 1] = payload[i] ~ mask_key[((i - 1) % 4) + 1]
         else
-            bytes[#bytes + 1] = payload[i]
+            bytes[bytes:len() + 1] = payload[i]
         end
         i += 1
     end
@@ -138,7 +138,7 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 ws_decode_frame(data: any, pos: i64): any
-    if pos > #data return nil end
+    if pos > data:len() return nil end
 
     byte1 = data[pos]
     byte2 = data[pos + 1]
@@ -179,7 +179,7 @@ ws_decode_frame(data: any, pos: i64): any
         if masked
             b = b ~ mask_key[i % 4]
         end
-        payload[#payload + 1] = b
+        payload[payload:len() + 1] = b
         i += 1
     end
 
@@ -246,8 +246,8 @@ end
 ws_text_frame(text: str): any
     bytes = {}
     i = 1
-    while i <= #text
-        bytes[#bytes + 1] = text:byte(i)
+    while i <= text:len()
+        bytes[bytes:len() + 1] = text:byte(i)
         i += 1
     end
     ws_encode_frame(OP_TEXT, bytes, false)
@@ -263,8 +263,8 @@ ws_close_frame(code: i64, reason: str): any
     payload[2] = code & 0xFF
     if reason
         i = 1
-        while i <= #reason
-            payload[#payload + 1] = reason:byte(i)
+        while i <= reason:len()
+            payload[payload:len() + 1] = reason:byte(i)
             i += 1
         end
     end
@@ -305,19 +305,19 @@ end
 ws_connection_receive(conn: any, data: any): any
     # Append to buffer
     for b in data
-        conn.buffer[#conn.buffer + 1] = b
+        conn.buffer[conn:len().buffer + 1] = b
     end
 
     # Try to decode
-    if #conn.buffer < 2 return nil end
+    if conn:len().buffer < 2 return nil end
     frame = ws_decode_frame(conn.buffer, 1)
     if frame == nil return nil end
 
     # Remove consumed bytes
     new_buf = {}
     i = frame.next
-    while i <= #conn.buffer
-        new_buf[#new_buf + 1] = conn.buffer[i]
+    while i <= conn:len().buffer
+        new_buf[new_buf:len() + 1] = conn.buffer[i]
         i += 1
     end
     conn.buffer = new_buf
@@ -330,7 +330,7 @@ ws_connection_receive(conn: any, data: any): any
         return {type = "pong", payload = frame.payload}
     elseif frame.opcode == OP_CLOSE
         conn.state = "closed"
-        if #frame.payload >= 2
+        if frame:len().payload >= 2
             conn.close_code = (frame.payload[1] << 8) | frame.payload[2]
         end
         return {type = "close", code = conn.close_code}
@@ -338,8 +338,8 @@ ws_connection_receive(conn: any, data: any): any
         # Convert payload to string
         parts = {}
         i = 1
-        while i <= #frame.payload
-            parts[#parts + 1] = frame.payload[i]:char()
+        while i <= frame:len().payload
+            parts[parts:len() + 1] = frame.payload[i]:char()
             i += 1
         end
         return {type = "text", data = parts:concat()}

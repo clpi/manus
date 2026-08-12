@@ -207,7 +207,7 @@ end
 
 pad(s: str, width: i64): str
     out = s
-    while #out < width
+    while out:len() < width
         out = out .. space
     end
     out

@@ -1,6 +1,6 @@
 tok: @{ kind: i64, start: i64, len: i64 }
 scan: tok = (src: str, pos: i64)
-    n = #src
+    n = src:len()
     i = pos
     if i < n
         j = i

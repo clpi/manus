@@ -49,7 +49,7 @@ _sh: str = (cmd: str)
 end
 
 _num: i64 = (out: str)
-    n: i64 = #out
+    n: i64 = out:len()
     while n > 0 and (out:byte(n) == 10 or out:byte(n) == 32)
         n -= 1
     end
@@ -72,7 +72,7 @@ end
 
 main(): i64
     counts = _sweep()
-    if #counts == 0
+    if counts:len() == 0
         print("native_census: FAIL — sweep produced no output; census did not run")
         return 3
     end

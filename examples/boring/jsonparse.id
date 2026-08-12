@@ -6,7 +6,7 @@ main: i64 = ()
     depth = 0
     deepest = 0
     i = 0
-    n = #src
+    n = src:len()
     while i < n
         b = src[i]
         if b == 123

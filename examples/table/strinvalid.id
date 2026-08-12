@@ -4,7 +4,7 @@
 # expect: 2 255 254
 main: i64 = ()
     s = "\xff\xfe"
-    n = #s
+    n = s:len()
     a = s[0]
     b = s[1]
     print("{n} {a} {b}")

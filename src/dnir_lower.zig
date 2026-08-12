@@ -9,7 +9,7 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const Expr = ast.Expr;
 const types = @import("types.zig");
-const dnir = @import("duo_native_ir.zig");
+const dnir = @import("native_ir.zig");
 const native_req_support = @import("native_req_support.zig");
 const dnir_hardware = @import("dnir_hardware.zig");
 const semantic_graph = @import("semantic_graph.zig");
@@ -3280,12 +3280,45 @@ fn lowerConcatChain(ctx: *LowerCtx, lhs: *const ast.Expr, rhs: *const ast.Expr) 
     return .{ .temp = buf };
 }
 
+fn lowerStrCompare(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const ast.Expr) Error!dnir.Value {
+    const l = try lowerExpr(ctx, lhs);
+    const r = try lowerExpr(ctx, rhs);
+    try ensureExtern(ctx, "libc", "strcmp", "strcmp");
+    try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = l });
+    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = r });
+    const cmp = ctx.freshTemp();
+    try ctx.emit(.{ .op = .call_extern, .result = cmp, .callee = "strcmp", .ty = .i64 });
+    const t = ctx.freshTemp();
+    try ctx.emit(.{
+        .op = .binop,
+        .result = t,
+        .binop = switch (op) {
+            .eq => .eq,
+            .neq => .neq,
+            .lt => .lt,
+            .gt => .gt,
+            .leq => .leq,
+            .geq => .geq,
+            else => return bailWith(ctx.diagnostic, @src(), @tagName(op)),
+        },
+        .lhs = .{ .temp = cmp },
+        .rhs = .{ .i64 = 0 },
+        .ty = .any,
+    });
+    return .{ .temp = t };
+}
+
 fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const ast.Expr) Error!dnir.Value {
     if (op == .concat and concatOperandOk(ctx, lhs) and concatOperandOk(ctx, rhs) and
         (exprIsStr(ctx, lhs) or exprIsStr(ctx, rhs)))
     {
         return try lowerConcatChain(ctx, lhs, rhs);
     }
+    const str_cmp = switch (op) {
+        .eq, .neq, .lt, .gt, .leq, .geq => exprIsStr(ctx, lhs) and exprIsStr(ctx, rhs),
+        else => false,
+    };
+    if (str_cmp) return try lowerStrCompare(ctx, op, lhs, rhs);
     const f64_op = exprIsF64(ctx, lhs) or exprIsF64(ctx, rhs);
     const t = ctx.freshTemp();
     try ctx.emit(.{

@@ -77,7 +77,7 @@ check_json_report(): void
     fh = io.open(tmp, "r")
     text = fh:read("a")
     fh:close()
-    n: i64 = #text
+    n: i64 = text:len()
     events: i64 = 0
     saw_summary = false
     start: i64 = 1
@@ -91,7 +91,7 @@ check_json_report(): void
         if at_end or eol
             if i > start
                 line = text:sub(start, i - 1)
-                if #line > 0
+                if line:len() > 0
                     ev = json.decode(line)
                     if ev == nil
                         error("json report line did not decode: " .. line)

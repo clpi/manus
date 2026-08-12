@@ -1,3 +1,4 @@
+# @corpus proof
 # compile-fail: @comp.assert(@satisfies(...)) must error when concept not satisfied
 
 concept HasHash

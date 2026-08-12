@@ -309,18 +309,18 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 cbc_encrypt(plaintext: any, key: any, iv: any): any
-    key_len = #key
+    key_len = key:len()
     expanded = key_expansion(key, key_len)
 
     # PKCS7 padding
-    pad_len = 16 - (#plaintext % 16)
+    pad_len = 16 - (plaintext:len() % 16)
     padded = {}
-    for i = 1, #plaintext
-        padded[#padded + 1] = plaintext[i]
+    for i = 1, plaintext:len()
+        padded[padded:len() + 1] = plaintext[i]
     end
     i = 0
     while i < pad_len
-        padded[#padded + 1] = pad_len
+        padded[padded:len() + 1] = pad_len
         i += 1
     end
 
@@ -328,7 +328,7 @@ cbc_encrypt(plaintext: any, key: any, iv: any): any
     prev = iv
 
     block_idx = 1
-    while block_idx <= #padded
+    while block_idx <= padded:len()
         block = {}
         i = 0
         while i < 16
@@ -338,7 +338,7 @@ cbc_encrypt(plaintext: any, key: any, iv: any): any
 
         encrypted = encrypt_block(block, expanded)
         for i = 0, 15
-            ciphertext[#ciphertext + 1] = encrypted[i]
+            ciphertext[ciphertext:len() + 1] = encrypted[i]
         end
         # Convert to 1-based for consistent XOR in next iteration
         prev = {}
@@ -352,14 +352,14 @@ cbc_encrypt(plaintext: any, key: any, iv: any): any
 end
 
 cbc_decrypt(ciphertext: any, key: any, iv: any): any
-    key_len = #key
+    key_len = key:len()
     expanded = key_expansion(key, key_len)
 
     plaintext = {}
     prev = iv
 
     block_idx = 1
-    while block_idx <= #ciphertext
+    while block_idx <= ciphertext:len()
         block = {}
         i = 0
         while i < 16
@@ -369,7 +369,7 @@ cbc_decrypt(ciphertext: any, key: any, iv: any): any
 
         decrypted = decrypt_block(block, expanded)
         for i = 0, 15
-            plaintext[#plaintext + 1] = decrypted[i] ~ prev[i + 1]
+            plaintext[plaintext:len() + 1] = decrypted[i] ~ prev[i + 1]
         end
         # Convert current ciphertext block to 1-based for next iteration
         prev = {}
@@ -380,16 +380,16 @@ cbc_decrypt(ciphertext: any, key: any, iv: any): any
     end
 
     # Remove PKCS7 padding
-    if #plaintext > 0
-        pad = plaintext[#plaintext]
+    if plaintext:len() > 0
+        pad = plaintext[plaintext:len()]
         if pad >= 1 and pad <= 16
-            i = #plaintext - pad + 1
-            while i <= #plaintext
+            i = plaintext:len() - pad + 1
+            while i <= plaintext:len()
                 if plaintext[i] != pad return plaintext end
                 i += 1
             end
             # Valid padding, trim
-            new_len = #plaintext - pad
+            new_len = plaintext:len() - pad
             trimmed = {}
             i = 1
             while i <= new_len
@@ -407,7 +407,7 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 ctr_crypt(data: any, key: any, nonce: any): any
-    key_len = #key
+    key_len = key:len()
     expanded = key_expansion(key, key_len)
 
     counter = {}
@@ -419,12 +419,12 @@ ctr_crypt(data: any, key: any, nonce: any): any
 
     output = {}
     block_idx = 0
-    while block_idx < #data
+    while block_idx < data:len()
         keystream = encrypt_block(counter, expanded)
 
         byte_idx = 0
-        while byte_idx < 16 and block_idx + byte_idx < #data
-            output[#output + 1] = data[block_idx + byte_idx + 1] ~ keystream[byte_idx]
+        while byte_idx < 16 and block_idx + byte_idx < data:len()
+            output[output:len() + 1] = data[block_idx + byte_idx + 1] ~ keystream[byte_idx]
             byte_idx += 1
         end
 
@@ -449,8 +449,8 @@ end
 string_to_bytes(s: str): any
     bytes = {}
     i = 1
-    while i <= #s
-        bytes[#bytes + 1] = s:byte(i)
+    while i <= s:len()
+        bytes[bytes:len() + 1] = s:byte(i)
         i += 1
     end
     bytes
@@ -459,8 +459,8 @@ end
 bytes_to_string(bytes: any): str
     parts = {}
     i = 1
-    while i <= #bytes
-        parts[#parts + 1] = bytes[i]:char()
+    while i <= bytes:len()
+        parts[parts:len() + 1] = bytes[i]:char()
         i += 1
     end
     parts:concat()

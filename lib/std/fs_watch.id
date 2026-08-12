@@ -471,7 +471,7 @@ poll(kq: int, timeout_ms: int): any
                 fflags = fflags | (byte_val << (b * 8))
             end
 
-            events[#events + 1] = {fd = ident, flags = fflags}
+            events[events:len() + 1] = {fd = ident, flags = fflags}
         end
         ffi_free(eventlist)
         return events
@@ -528,7 +528,7 @@ poll(kq: int, timeout_ms: int): any
             end
 
             if wd > 0
-                events[#events + 1] = {fd = wd, flags = mask}
+                events[events:len() + 1] = {fd = wd, flags = mask}
             end
 
             # Advance past event + name (16 + name_len, aligned to 16? No, name is padded)
@@ -537,7 +537,7 @@ poll(kq: int, timeout_ms: int): any
             pos += 16 + name_len
         end
 
-        if #events == 0 return nil end
+        if events:len() == 0 return nil end
         return events
 
     else

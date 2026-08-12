@@ -38,7 +38,7 @@ stopwatch_lap(sw: any): f64
     return 0.0
   end
   lap_time = os.clock() - sw.start_time
-  sw.laps[#sw.laps + 1] = lap_time
+  sw.laps[sw:len().laps + 1] = lap_time
   sw.start_time = os.clock()
   lap_time
 end
@@ -46,14 +46,14 @@ stopwatch_laps(sw: any): any
   sw.laps
 end
 stopwatch_avg_lap(sw: any): f64
-  if #sw.laps == 0
+  if sw:len().laps == 0
     return 0.0
   end
   total = 0
   for lap in sw.laps
     total = total + lap
   end
-  total / #sw.laps
+  total / sw:len().laps
 end
 scoped_timer_new(name: str): any
   sw = stopwatch_new()
@@ -120,7 +120,7 @@ end
 profiler_report(profiler: any): any
   report = {}
   for name, section in profiler.sections
-    report[#report + 1] = profiler_stats(profiler, name)
+    report[report:len() + 1] = profiler_stats(profiler, name)
   end
   table.sort(report, (a: any, b: any): any
     a.total > b.total
@@ -145,7 +145,7 @@ benchmark(func: any, iterations: i64): any
     start = os.clock()
     func()
     elapsed = os.clock() - start
-    times[#times + 1] = elapsed
+    times[times:len() + 1] = elapsed
     i = i + 1
   end
   times:sort()

@@ -73,7 +73,7 @@ end
 # Scan one token starting at `pos`. Every branch returns a fully-populated tok,
 # so a partial record never escapes. `Kind.eof` marks end of input.
 scanone: tok = (src: str, pos: i64)
-    n = #src
+    n = src:len()
     i = pos
     while i <= n and is_space(src:byte(i)) == 1
         i = i + 1
@@ -105,7 +105,7 @@ end
 tokenize_checksum: i64 = (src: str)
     total = 0
     pos = 1
-    n = #src
+    n = src:len()
     while pos <= n
         t: tok = scanone(src, pos)
         if t.kind == Kind.eof

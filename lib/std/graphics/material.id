@@ -235,7 +235,7 @@ end
 library_list(lib: any): any
     names = {}
     for name in lib.materials
-        names[#names + 1] = name
+        names[names:len() + 1] = name
     end
     names
 end

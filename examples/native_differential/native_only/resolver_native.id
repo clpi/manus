@@ -68,7 +68,7 @@ end
 # Each scope entry is matched whole: a candidate must be the same length, so
 # `n` does not match `name`.
 scope_has: i64 = (scope: str, src: str, start: i64, len: i64)
-    m = #scope
+    m = scope:len()
     i = 1
     while i <= m
         while i <= m and is_space(scope:byte(i)) == 1
@@ -94,7 +94,7 @@ end
 
 # Count identifiers in `src` that are not bound in `scope`.
 count_unbound: i64 = (src: str, scope: str)
-    n = #src
+    n = src:len()
     unbound = 0
     i = 1
     while i <= n

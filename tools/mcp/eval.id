@@ -39,13 +39,13 @@ fun parse_fun_header_str(line: str): any
         blob = bblob
     end
     if name == nil or blob == nil then return nil end
-    inner = string.sub(blob, 2, #blob - 1)
+    inner = string.sub(blob, 2, blob:len() - 1)
     -- collect distinct param types into a csv (string-keyed set, G-054-safe: literals only)
     -- NOTE: avoid string.gmatch here — it uses a global state and breaks
     -- any outer gmatch iterator that called us (e.g. extract_records).
     pset = {}
     pos = 1
-    while pos <= #inner do
+    while pos <= inner:len() do
         p_start, p_end = string.find(inner, "[^,]+", pos)
         if p_start == nil then break end
         p = string.sub(inner, p_start, p_end)

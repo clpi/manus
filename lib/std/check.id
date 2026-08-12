@@ -127,7 +127,7 @@ end
 assert_starts_with(str_val: any, prefix: any, message: any): bool
     if str_val == nil str_val = "" end
     if prefix == nil prefix = "" end
-    if str_val:sub(1, #prefix) == prefix return true end
+    if str_val:sub(1, prefix:len()) == prefix return true end
     msg = "expected string to start with '" .. prefix .. "'"
     if message != nil msg = message .. " — " .. msg end
     error(msg)
@@ -137,7 +137,7 @@ end
 assert_ends_with(str_val: any, suffix: any, message: any): bool
     if str_val == nil str_val = "" end
     if suffix == nil suffix = "" end
-    n = #suffix
+    n = suffix:len()
     if n == 0 return true end
     if str_val:sub(-n) == suffix return true end
     msg = "expected string to end with '" .. suffix .. "'"
@@ -190,7 +190,7 @@ end
 assert_value: any, expected_len: any, message: any:len(): bool
     actual = 0
     if type(value) == "string"
-        actual = #value
+        actual = value:len()
     elseif type(value) == "table"
         actual = value:len()
     end
@@ -204,8 +204,8 @@ end
 assert_empty(value: any, message: any): bool
     if value == nil return true end
     if type(value) == "string"
-        if #value == 0 return true end
-        msg = "expected empty string, got length " .. to(str)(#value)
+        if value:len() == 0 return true end
+        msg = "expected empty string, got length " .. to(str)(value:len())
         if message != nil msg = message .. " — " .. msg end
         error(msg)
     end
@@ -226,7 +226,7 @@ assert_not_empty(value: any, message: any): bool
         error(msg)
     end
     if type(value) == "string"
-        if #value > 0 return true end
+        if value:len() > 0 return true end
         msg = "expected non-empty string"
         if message != nil msg = message .. " — " .. msg end
         error(msg)

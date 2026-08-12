@@ -51,7 +51,7 @@ exe(cfg: any): any
     if cfg.opt == nil cfg.opt = "-O3" end
     if cfg.target == nil cfg.target = "native" end
     cfg.kind = "exe"
-    _targets[#_targets + 1] = cfg
+    _targets[_targets:len() + 1] = cfg
     cfg
 end
 

@@ -59,7 +59,7 @@ _assemble: str = (mnemonic: str)
         .. " 2>/dev/null | tail -1 | awk '{print $2}'")
     os.remove(_asmpath)
     os.remove(_objpath)
-    n: i64 = #out
+    n: i64 = out:len()
     while n > 0 and (out:byte(n) == 10 or out:byte(n) == 32)
         n -= 1
     end

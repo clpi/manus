@@ -2,8 +2,8 @@ const std = @import("std");
 const builtin = @import("builtin");
 const Io = std.Io;
 const Lexer = @import("lexer.zig").Lexer;
-const duo_lexer_bridge = @import("duo_lexer_bridge.zig");
-const duo_lexer_dispatch = @import("duo_lexer_dispatch.zig");
+const duo_lexer_bridge = @import("lexer_bridge.zig");
+const duo_lexer_dispatch = @import("lexer_dispatch.zig");
 const Parser = @import("parser.zig").Parser;
 const ast = @import("ast.zig");
 const Sema = @import("sema.zig").Sema;
@@ -832,10 +832,10 @@ pub fn main(init: std.process.Init) !void {
             std.process.exit(1);
         }
         try token_classify_gen.emitTokenClassifyFile(alloc, io, "lib/std/token/classify.id");
-        try token_classify_gen.emitKeywordClassifyNativeCFile(alloc, io, "src/duo_keyword_classify.c");
+        try token_classify_gen.emitKeywordClassifyNativeCFile(alloc, io, "src/keyword_classify.c");
         try grammar_role_gen.emitGrammarRoleFile(alloc, io, "lib/std/token/grammarrole.id");
         term.print("wrote lib/std/token/classify.id\n", .{});
-        term.print("wrote src/duo_keyword_classify.c\n", .{});
+        term.print("wrote src/keyword_classify.c\n", .{});
         term.print("wrote lib/std/token/grammarrole.id\n", .{});
         return;
     }
@@ -2965,7 +2965,7 @@ fn sourceLine(src: []const u8, line: u32) []const u8 {
 /// `duo_lexer_dispatch.route` already re-lexes on the cold path and leaves the
 /// LINE in `lex.last_error_loc`. The column is derived here rather than plumbed
 /// through the C ABI: adding a `duo_lexer_error_col` export would mean
-/// regenerating the tracked `src/duo_lexer_tokenize.c`, and the derivation is
+/// regenerating the tracked `src/lexer_tokenize.c`, and the derivation is
 /// exact for the class of byte that produces `UnexpectedChar` — a byte no token
 /// can start with. When nothing on the line qualifies the caret stays at column
 /// 1, which is where it was before, rather than pointing somewhere invented.
@@ -4087,7 +4087,7 @@ fn directLinkInputs(
     // This file is GENERATED (see emitKeywordClassifyNativeCFile above), and it
     // was deleted from the tree in 32643ed as monoglot-census work. The link
     // line still named it, so every `--backend=direct --emit exe` compile died
-    // with `clang: no such file or directory: 'src/duo_keyword_classify.c'` —
+    // with `clang: no such file or directory: 'src/keyword_classify.c'` —
     // the direct ARM64 backend could not produce an executable at all, which
     // took the direct-native smoke gates and the native differential with it.
     //
@@ -4095,7 +4095,7 @@ fn directLinkInputs(
     // artifact: a generated file absent from the tree is a build step that has
     // not run yet, not an error. The census stays correct — nothing foreign is
     // committed — and the backend keeps its keyword classifier.
-    const classify_c = "src/duo_keyword_classify.c";
+    const classify_c = "src/keyword_classify.c";
     if (Io.Dir.cwd().statFile(io, classify_c, .{})) |_| {} else |_| {
         token_classify_gen.emitKeywordClassifyNativeCFile(alloc, io, classify_c) catch {};
     }
@@ -4137,7 +4137,7 @@ fn directLinkInputs(
             // is generated from the same .id source and is the canonical one.
             if (std.mem.endsWith(u8, sp, "token/classify.id") and
                 inputs.items.len > 0 and
-                std.mem.eql(u8, inputs.items[0], "src/duo_keyword_classify.c"))
+                std.mem.eql(u8, inputs.items[0], "src/keyword_classify.c"))
             {
                 _ = inputs.orderedRemove(0);
             }

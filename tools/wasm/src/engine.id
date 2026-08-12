@@ -688,7 +688,7 @@ OP_NAMES = {
 
 opname(op: i64): str
   i: i64 = 1
-  while i <= #OP_NAMES
+  while i <= OP_NAMES:len()
     row = OP_NAMES[i]
     if row[1] == op
       return "(" .. row[2] .. ")"
@@ -3284,7 +3284,7 @@ CMP_OPS = {
 
 alu_word(op: i64): i64
   i: i64 = 1
-  while i <= #ALU_OPS
+  while i <= ALU_OPS:len()
     row = ALU_OPS[i]
     if row[1] == op
       return row[2]
@@ -3296,7 +3296,7 @@ end
 
 cmp_cond(op: i64): i64
   i: i64 = 1
-  while i <= #CMP_OPS
+  while i <= CMP_OPS:len()
     row = CMP_OPS[i]
     if row[1] == op
       return row[2]
@@ -6085,7 +6085,7 @@ main(): void
   # `test/conform.id` perturbs byte 4 of a fixture and requires a refusal;
   # without this the perturbation is invisible, and a control that cannot fail
   # is not evidence.
-  if #bytes < 8 or bytes:byte(1) != 0 or bytes:byte(2) != 97 or bytes:byte(3) != 115 or bytes:byte(4) != 109
+  if bytes:len() < 8 or bytes:byte(1) != 0 or bytes:byte(2) != 97 or bytes:byte(3) != 115 or bytes:byte(4) != 109
     iom.err("wasm: " .. path .. " is not a wasm module (bad magic)\n")
     os.exit(1)
   end
@@ -6094,9 +6094,9 @@ main(): void
     os.exit(1)
   end
 
-  packed: i64 = find_run_body(bytes, #bytes, invoke, #invoke, 0)
+  packed: i64 = find_run_body(bytes, bytes:len(), invoke, invoke:len(), 0)
   tRD2 = os.clock()
-  tgt: i64 = find_run_body(bytes, #bytes, invoke, #invoke, 1)
+  tgt: i64 = find_run_body(bytes, bytes:len(), invoke, invoke:len(), 1)
   tRD3 = os.clock()
   if os.getenv("DUO_WASM_PHASES")
     print("phase read=" .. to(str)(tRD1 - tRD0) .. " walk0=" .. to(str)(tRD2 - tRD1) .. " walk1=" .. to(str)(tRD3 - tRD2))
@@ -6107,9 +6107,9 @@ main(): void
   # The decoder is a minimal section walker; on a module shape it does not
   # handle it can desync. Validate before anything indexes the image, so a
   # desync is a clean diagnostic rather than an out-of-bounds read.
-  if blen <= 0 or boff < 0 or boff + blen > #bytes
+  if blen <= 0 or boff < 0 or boff + blen > bytes:len()
     iom.err("wasm: could not locate an exported `" .. invoke .. "` body in " .. path .. "\n")
-    iom.err("      (decoded offset=" .. boff:to(str) .. " len=" .. blen:to(str) .. " of " .. to(str)(#bytes) .. " bytes)\n")
+    iom.err("      (decoded offset=" .. boff:to(str) .. " len=" .. blen:to(str) .. " of " .. to(str)(bytes:len()) .. " bytes)\n")
     os.exit(1)
   end
 
@@ -6122,7 +6122,7 @@ main(): void
     code = jitm.alloc(1 << 20)
     tJ1 = os.clock()
     if code
-      words: i64 = jit_compile(bytes, boff, blen, code, #bytes)
+      words: i64 = jit_compile(bytes, boff, blen, code, bytes:len())
       # DUO_WASM_DUMP=<path>: write the emitted words as hex, one per line, for
       # disassembly. Diagnostic only; off unless the env var is set.
       dmp = os.getenv("DUO_WASM_DUMP")
@@ -6148,7 +6148,7 @@ main(): void
         # truncated every i64 and f64 the JIT returned (an f64 3.5+1.25 chain
         # came back as 0), and it was invisible while the JIT could only
         # compile i32 bodies.
-        rt0: i64 = find_run_body(bytes, #bytes, invoke, #invoke, 2)
+        rt0: i64 = find_run_body(bytes, bytes:len(), invoke, invoke:len(), 2)
         # LINEAR MEMORY for compiled code. Two things used to be wrong here and
         # they compounded: the buffer was a hardcoded 65536 bytes regardless of
         # the module's declared page count, and it was never seeded from the
@@ -6161,17 +6161,17 @@ main(): void
         jpg: i64 = 1
         jdb: i64 = 0
         jmx: i64 = 9
-        while jmx <= #bytes
+        while jmx <= bytes:len()
           jmd: i64 = bytes:byte(jmx)
           jmx += 1
-          jmz: i64 = uleb_val(bytes, jmx, #bytes)
-          jmx = uleb_end(bytes, jmx, #bytes)
+          jmz: i64 = uleb_val(bytes, jmx, bytes:len())
+          jmx = uleb_end(bytes, jmx, bytes:len())
           if jmd == 5
-            jmn: i64 = uleb_val(bytes, jmx, #bytes)
-            jmq: i64 = uleb_end(bytes, jmx, #bytes)
+            jmn: i64 = uleb_val(bytes, jmx, bytes:len())
+            jmq: i64 = uleb_end(bytes, jmx, bytes:len())
             if jmn > 0
               jmq += 1
-              jpg = uleb_val(bytes, jmq, #bytes)
+              jpg = uleb_val(bytes, jmq, bytes:len())
               if jpg < 1
                 jpg = 1
               end
@@ -6195,23 +6195,23 @@ main(): void
         # segment (mode 1) carries no offset and must NOT be copied now; the
         # `memory.init` that would place it has no jit arm and bails anyway.
         if jdb > 0
-          jdn: i64 = uleb_val(bytes, jdb, #bytes)
-          jdq: i64 = uleb_end(bytes, jdb, #bytes)
+          jdn: i64 = uleb_val(bytes, jdb, bytes:len())
+          jdq: i64 = uleb_end(bytes, jdb, bytes:len())
           jdv: i64 = 0
-          while jdv < jdn and jdq <= #bytes
-            jdm: i64 = uleb_val(bytes, jdq, #bytes)
-            jdq = uleb_end(bytes, jdq, #bytes)
+          while jdv < jdn and jdq <= bytes:len()
+            jdm: i64 = uleb_val(bytes, jdq, bytes:len())
+            jdq = uleb_end(bytes, jdq, bytes:len())
             jdo: i64 = 0
             if jdm == 2
-              jdq = uleb_end(bytes, jdq, #bytes)
+              jdq = uleb_end(bytes, jdq, bytes:len())
             end
             if jdm != 1
               jdq += 1
-              jdo = uleb_val(bytes, jdq, #bytes)
-              jdq = uleb_end(bytes, jdq, #bytes) + 1
+              jdo = uleb_val(bytes, jdq, bytes:len())
+              jdq = uleb_end(bytes, jdq, bytes:len()) + 1
             end
-            jdl: i64 = uleb_val(bytes, jdq, #bytes)
-            jdq = uleb_end(bytes, jdq, #bytes)
+            jdl: i64 = uleb_val(bytes, jdq, bytes:len())
+            jdq = uleb_end(bytes, jdq, bytes:len())
             if jdm != 1
               jdk: i64 = 0
               while jdk < jdl and jdo + jdk < jlinsz
@@ -6231,28 +6231,28 @@ main(): void
         # stack pointer # the same default the interpreter uses.
         jgb: i64 = 0
         jsx: i64 = 9
-        while jsx <= #bytes
+        while jsx <= bytes:len()
           jsd: i64 = bytes:byte(jsx)
           jsx += 1
-          jsz: i64 = uleb_val(bytes, jsx, #bytes)
-          jsx = uleb_end(bytes, jsx, #bytes)
+          jsz: i64 = uleb_val(bytes, jsx, bytes:len())
+          jsx = uleb_end(bytes, jsx, bytes:len())
           if jsd == 6
             jgb = jsx
           end
           jsx += jsz
         end
         if jgb > 0
-          ngj: i64 = uleb_val(bytes, jgb, #bytes)
-          gqj: i64 = uleb_end(bytes, jgb, #bytes)
+          ngj: i64 = uleb_val(bytes, jgb, bytes:len())
+          gqj: i64 = uleb_end(bytes, jgb, bytes:len())
           gvj: i64 = 0
-          while gvj < ngj and gqj <= #bytes and gvj < 4096
+          while gvj < ngj and gqj <= bytes:len() and gvj < 4096
             gqj += 2
             iopj: i64 = bytes:byte(gqj)
             gqj += 1
             gvalj: i64 = 0
             if iopj == 65 or iopj == 66
-              gvalj = uleb_val(bytes, gqj, #bytes)
-              gqj = uleb_end(bytes, gqj, #bytes)
+              gvalj = uleb_val(bytes, gqj, bytes:len())
+              gqj = uleb_end(bytes, gqj, bytes:len())
             elseif iopj == 67
               gqj += 4
             elseif iopj == 68
@@ -6274,7 +6274,7 @@ main(): void
   end
 
   if engine == "interp"
-    result = run_body(bytes, #bytes, tgt, 0)
+    result = run_body(bytes, bytes:len(), tgt, 0)
   end
 
   t1 = os.clock()
@@ -6283,7 +6283,7 @@ main(): void
   # Format by the function's declared RESULT TYPE. `result` carries raw bits, so
   # an f64 has to be bitcast back before printing; an i32 has to be folded to
   # unsigned 32-bit (the JIT path already masks, the interpreter no longer does).
-  rtype: i64 = find_run_body(bytes, #bytes, invoke, #invoke, 2)
+  rtype: i64 = find_run_body(bytes, bytes:len(), invoke, invoke:len(), 2)
   if rtype == 0x7C
     rbuf = mem.alloc(16)
     mem.write_i64(rbuf, 0, result)

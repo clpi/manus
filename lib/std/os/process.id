@@ -21,13 +21,13 @@ config_new(cmd: str): any
 end
 
 config_arg(config: any, arg: str): any
-    config.args[#config.args + 1] = arg
+    config.args[config:len().args + 1] = arg
     config
 end
 
 config_args(config: any, args: any): any
     for arg in args
-        config.args[#config.args + 1] = arg
+        config.args[config:len().args + 1] = arg
     end
     config
 end
@@ -167,7 +167,7 @@ read_stdout(proc: any): any
 
     if type(proc.stdout) == "userdata"
         data = proc.stdout:read("*a") or ""
-        return {data = data, eof = #data == 0}
+        return {data = data, eof = data:len() == 0}
     end
     {data = "", eof = true}
 end
@@ -179,7 +179,7 @@ read_stderr(proc: any): any
 
     if type(proc.stderr) == "userdata"
         data = proc.stderr:read("*a") or ""
-        return {data = data, eof = #data == 0}
+        return {data = data, eof = data:len() == 0}
     end
     {data = "", eof = true}
 end
@@ -288,7 +288,7 @@ pipe_new(): any
 end
 
 pipe_read(pipe: any): any
-    if #pipe.buffer == 0
+    if pipe:len().buffer == 0
         return {data = "", eof = true}
     end
 
@@ -298,7 +298,7 @@ pipe_read(pipe: any): any
 end
 
 pipe_write(pipe: any, data: str): any
-    pipe.buffer[#pipe.buffer + 1] = data
+    pipe.buffer[pipe:len().buffer + 1] = data
     {ok = true}
 end
 

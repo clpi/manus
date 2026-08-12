@@ -18,7 +18,7 @@ end
 
 _pad(s: str, w: i64): str
     o = s
-    while #o < w
+    while o:len() < w
         o = o .. " "
     end
     o
@@ -26,7 +26,7 @@ end
 
 _lpad(s: str, w: i64): str
     o = s
-    while #o < w
+    while o:len() < w
         o = " " .. o
     end
     o
@@ -45,7 +45,7 @@ _fx(x: f64, places: i64): str
     whole = n / scale
     frac = n % scale
     fs = frac:to(str)
-    while #fs < places
+    while fs:len() < places
         fs = "0" .. fs
     end
     whole:to(str) .. "." .. fs
@@ -57,7 +57,7 @@ _numeric(s: str): bool
     if s == "" return false end
     d = false
     i = 1
-    while i <= #s
+    while i <= s:len()
         c = s:sub(i, i)
         if c >= "0" and c <= "9"
             d = true
@@ -75,7 +75,7 @@ _fields(line: str): any
     out = {}
     for _i, w in line:gsub("\t", " "):split(" ")
         if w != ""
-            out[#out + 1] = w
+            out[out:len() + 1] = w
         end
     end
     out
@@ -86,7 +86,7 @@ _lines(t: str): any
     for _i, l in t:split("\n")
         c = std.script.chomp(l)
         if c != ""
-            out[#out + 1] = c
+            out[out:len() + 1] = c
         end
     end
     out
@@ -98,7 +98,7 @@ _results(text: str): any
     n = 0
     for _i, l in _lines(text)
         f = _fields(l)
-        if #f >= 3 and f[1] == "RESULT"
+        if f:len() >= 3 and f[1] == "RESULT"
             r[f[2]] = f[3]
             n = n + 1
         end
@@ -115,10 +115,10 @@ _times(text: str): any
     cur = ""
     for _i, l in _lines(text)
         f = _fields(l)
-        if #f >= 2 and f[1] == "Running"
+        if f:len() >= 2 and f[1] == "Running"
             cur = f[2]:gsub("%.%.%.", "")
         end
-        if #f >= 2 and f[1] == "Time:" and cur != "" and _numeric(f[2])
+        if f:len() >= 2 and f[1] == "Time:" and cur != "" and _numeric(f[2])
             t[cur] = to(f64)(f[2])
         end
     end

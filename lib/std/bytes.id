@@ -4,7 +4,7 @@
 
 # Create a byte buffer from a string (zero-copy view of string bytes)
 from_string(s: str): any
-    { data = s, pos = 1, len = #s }
+    { data = s, pos = 1, len = s:len() }
 end
 
 # Read one byte at current position, advance cursor

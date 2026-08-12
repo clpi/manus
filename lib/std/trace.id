@@ -887,13 +887,13 @@ banner(title: str, subtitle: str): void
     if title == nil title = "trace" end
     if tty()
         w = 50
-        title_len = #title
+        title_len = title:len()
         pad = w - title_len - 4
         if pad < 2 pad = 2 end
         print(sem_banner_line(M.BOX_TL .. M.BOX_H:rep(2) .. " " .. title .. " " ..
               M.BOX_H:rep(pad) .. M.BOX_TR))
         if subtitle != nil and subtitle != ""
-            print(dim(M.BOX_V .. "  " .. subtitle .. " ":rep(w - 2 - #subtitle) .. M.BOX_V))
+            print(dim(M.BOX_V .. "  " .. subtitle .. " ":rep(w - 2 - subtitle:len()) .. M.BOX_V))
         end
         print(dim(M.BOX_BL .. M.BOX_H:rep(w) .. M.BOX_BR))
     else
@@ -915,7 +915,7 @@ end
 section(title: str): void
     ind = span_indent()
     w = 50
-    title_len = #title
+    title_len = title:len()
     pad = w - title_len - 3
     if pad < 2 pad = 2 end
     print(ind .. dim(" ") .. sem_banner_line(M.G_DIAMOND .. " " .. title) ..
@@ -1035,7 +1035,7 @@ dump(label: str, value: any): void
     if value != nil and type(value) == "table"
         rendered = pretty_repr(value, 1, nil)
         i = 1
-        n = #rendered
+        n = rendered:len()
         line_start = 1
         line_num = 1
         while i <= n

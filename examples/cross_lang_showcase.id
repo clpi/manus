@@ -73,7 +73,7 @@ print("")
 
 print("-- Header/schema/embed surfaces --")
 @c.call("printf", "  str\"duo\":len() = %zu\n", @c.call("strlen", "duo"))
-print("  embedded file bytes = " .. to(str)(#EMBEDDED))
+print("  embedded file bytes = " .. to(str)(EMBEDDED:len()))
 print("  host = " .. HOST)
 print("  python = " .. PY)
 print("  zig = " .. ZIG_VER)

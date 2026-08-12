@@ -279,9 +279,9 @@ cards = {
 # and one dim, not eighteen hand-picked colours. Swapping themes is swapping
 # this table and nothing else.
 hues = {
-    "red    #ff7b72",
-    "orange #ffa657",
-    "purple #d2a8ff",
+    "red    ff7b72:len()",
+    "orange ffa657:len()",
+    "purple d2a8ff:len()",
     "blue   #79c0ff",
     "green  #7ee787",
     "faint  #8b949e",
@@ -381,7 +381,7 @@ field(line: str, n: i64): str
     i: i64 = 1
     inword: bool = false
     start: i64 = 0
-    while i <= #line
+    while i <= line:len()
         b: i64 = line:byte(i)
         if b == 32 or b == 9
             if inword
@@ -402,7 +402,7 @@ field(line: str, n: i64): str
     if inword
         seen = seen + 1
         if seen == n
-            out = line:sub(start, #line)
+            out = line:sub(start, line:len())
         end
     end
     out
@@ -412,7 +412,7 @@ end
 rowof(key: str): str
     out: str = ""
     i: i64 = 1
-    while i <= #roles
+    while i <= roles:len()
         r: str = roles[i]
         if field(r, 1) == key or field(r, 2) == key
             out = r
@@ -438,7 +438,7 @@ carding(role: str, card: str): str
     out: str = ""
     nm: str = naming(role)
     i: i64 = 1
-    while i <= #cards
+    while i <= cards:len()
         c: str = cards[i]
         if field(c, 3) == card and (field(c, 2) == nm or field(c, 2) == "none")
             out = field(c, 1)
@@ -451,7 +451,7 @@ end
 hexof(hue: str): str
     out: str = ""
     i: i64 = 1
-    while i <= #hues
+    while i <= hues:len()
         if field(hues[i], 1) == hue
             out = field(hues[i], 2)
         end
@@ -463,12 +463,12 @@ end
 citing(id: str): str
     out: str = ""
     i: i64 = 1
-    while i <= #rules
+    while i <= rules:len()
         r: str = rules[i]
         if field(r, 1) == id
-            out = r:sub(#id + 1, #r)
-            while #out > 0 and out:byte(1) == 32
-                out = out:sub(2, #out)
+            out = r:sub(id:len() + 1, r:len())
+            while out:len() > 0 and out:byte(1) == 32
+                out = out:sub(2, out:len())
             end
         end
         i = i + 1
@@ -488,15 +488,15 @@ end
 # this to fire.
 closed(): str
     bad: str = ""
-    if #roles == 0
+    if roles:len() == 0
         bad = "the taxonomy is empty; a closed set is enumerated, not absent"
     end
     i: i64 = 1
-    while i <= #roles
+    while i <= roles:len()
         r: str = roles[i]
         nm: str = field(r, 1)
         cd: str = field(r, 2)
-        if #cd != 1
+        if cd:len() != 1
             bad = "role {nm} has code [{cd}], which is not one byte"
         end
         if hexof(field(r, 3)) == ""
@@ -509,7 +509,7 @@ closed(): str
             bad = "role {nm} has no tree-sitter capture"
         end
         j: i64 = 1
-        while j <= #roles
+        while j <= roles:len()
             if j != i and field(roles[j], 2) == cd
                 bad = "role code {cd} is claimed twice"
             end
@@ -520,7 +520,7 @@ closed(): str
         end
         seen: i64 = 0
         j = 1
-        while j <= #cards
+        while j <= cards:len()
             if field(cards[j], 2) == nm
                 seen = seen + 1
             end
@@ -533,7 +533,7 @@ closed(): str
     end
     i = 1
     diag: i64 = 0
-    while i <= #cards
+    while i <= cards:len()
         c: str = cards[i]
         cn: str = field(c, 1)
         cr: str = field(c, 2)
@@ -578,7 +578,7 @@ end
 ahead(line: str, i: i64): i64
     j: i64 = i
     out: i64 = 0
-    while j <= #line and out == 0
+    while j <= line:len() and out == 0
         b: i64 = line:byte(j)
         if not blank(b)
             out = b
@@ -592,7 +592,7 @@ end
 nextat(line: str, i: i64): i64
     j: i64 = i
     out: i64 = 0
-    while j <= #line and out == 0
+    while j <= line:len() and out == 0
         if not blank(line:byte(j))
             out = j
         end
@@ -604,7 +604,7 @@ end
 # The byte at `i`, or 0 off the end.
 byteat(line: str, i: i64): i64
     out: i64 = 0
-    if i >= 1 and i <= #line
+    if i >= 1 and i <= line:len()
         out = line:byte(i)
     end
     out
@@ -641,7 +641,7 @@ end
 dotted(s: str): bool
     found: bool = false
     i: i64 = 1
-    while i <= #s
+    while i <= s:len()
         if s:byte(i) == 46
             found = true
         end
@@ -704,7 +704,7 @@ end
 lane(duet: str, k: i64): str
     out: str = ""
     i: i64 = k
-    while i <= #duet
+    while i <= duet:len()
         c: str = duet:sub(i, i)
         out = out .. c
         i = i + 2
@@ -715,7 +715,7 @@ end
 # The identifier starting at `i`.
 wordat(line: str, i: i64): str
     j: i64 = i
-    while j <= #line and wordy(line:byte(j))
+    while j <= line:len() and wordy(line:byte(j))
         j = j + 1
     end
     line:sub(i, j - 1)
@@ -730,7 +730,7 @@ end
 laddered(line: str): bool
     found: bool = false
     i: i64 = 1
-    while i < #line
+    while i < line:len()
         if line:byte(i) == 41
             nx: i64 = ahead(line, i + 1)
             if nx == 40
@@ -750,7 +750,7 @@ end
 # order of these arms is the priority the law implies.
 wordrole(line: str, i: i64, word: str, descpos: bool, prev: i64, inbrace: bool): str
     out: str = "pv"
-    nxt: i64 = ahead(line, i + #word)
+    nxt: i64 = ahead(line, i + word:len())
     if holds(keywords, word)
         out = "kk"
     elseif holds(literals, word)
@@ -816,10 +816,10 @@ end
 # foreign text and stays foreign.
 framing(line: str): bool
     i: i64 = 1
-    while i <= #line and blank(line:byte(i))
+    while i <= line:len() and blank(line:byte(i))
         i = i + 1
     end
-    i + 1 <= #line and line:byte(i) == 45 and line:byte(i + 1) == 45
+    i + 1 <= line:len() and line:byte(i) == 45 and line:byte(i + 1) == 45
 end
 
 duet(line: str, surface: str): str
@@ -830,7 +830,7 @@ duet(line: str, surface: str): str
         # across its whole extent and the italic says where duon stopped.
         # Colouring inside it would be a claim to understand it.
         i: i64 = 1
-        while i <= #line
+        while i <= line:len()
             if blank(line:byte(i))
                 out = "{out}ls"
             else
@@ -865,10 +865,10 @@ scan(line: str, surface: str): str
     holding: str = ""
     streaming: bool = false
     i: i64 = 1
-    while i <= #line
+    while i <= line:len()
         b: i64 = line:byte(i)
         nb: i64 = 0
-        if i < #line
+        if i < line:len()
             nb = line:byte(i + 1)
         end
         pb: i64 = behind(line, i - 1)
@@ -878,16 +878,16 @@ scan(line: str, surface: str): str
             i = i + 1
         elseif b == 45 and nb == 45
             # `--` to end of line. FAINT, never absent (H-6).
-            piece = pairof(mcode, kprose, #line - i + 1)
+            piece = pairof(mcode, kprose, line:len() - i + 1)
             out = out .. piece
-            i = #line + 1
+            i = line:len() + 1
         elseif b == 34 or b == 39
             # BOTH quotes. `'x'` used to fall through to the arithmetic arm and
             # render as operator/place/operator — a string read as two products
             # around a variable. grammar.md §1 gives `string` both spellings and
             # the flat span corpus is what caught it. gap[078].
             j: i64 = i + 1
-            while j <= #line and line:byte(j) != b
+            while j <= line:len() and line:byte(j) != b
                 j = j + 1
             end
             piece = strand(line, i, j, surface)
@@ -899,9 +899,9 @@ scan(line: str, surface: str): str
             # so it takes no role — it diagnoses. In dnir it is metadata
             # notation, which is a comment, and that is the only reading left.
             if surface == "dnir"
-                piece = pairof(mcode, kmeta, #line - i + 1)
+                piece = pairof(mcode, kmeta, line:len() - i + 1)
                 out = out .. piece
-                i = #line + 1
+                i = line:len() + 1
             else
                 out = "{out}!!"
                 head = false
@@ -920,8 +920,8 @@ scan(line: str, surface: str): str
                 out = "{out}ca"
             else
                 w: str = wordat(line, i + 1)
-                after: i64 = byteat(line, i + 1 + #w)
-                if #w > 0 and (after == 40 or after == 123 or after == 34)
+                after: i64 = byteat(line, i + 1 + w:len())
+                if w:len() > 0 and (after == 40 or after == 123 or after == 34)
                     out = "{out}iy"
                 else
                     out = "{out}ca"
@@ -976,10 +976,10 @@ scan(line: str, surface: str): str
             # plausible-looking answer, which is the kind this corpus exists to
             # catch.
             w: str = wordat(line, i + 1)
-            piece = pairof(pcode, kreg, #w + 1)
+            piece = pairof(pcode, kreg, w:len() + 1)
             out = out .. piece
             head = false
-            i = i + #w + 1
+            i = i + w:len() + 1
         elseif b == 43 or b == 42 or b == 47 or b == 37
             card: str = "a"
             if nb == 61
@@ -1022,33 +1022,33 @@ scan(line: str, surface: str): str
                 # every write read as a read. `nextat` answers the INDEX, and
                 # the byte after it is what separates `=` from `==`.
                 card: str = "r"
-                k: i64 = nextat(line, i + #w + 1)
+                k: i64 = nextat(line, i + w:len() + 1)
                 if k > 0 and line:byte(k) == 61 and byteat(line, k + 1) != 61
                     card = "w"
                 end
                 if holds(worlds, wordat(line, wordstart(line, i - 1)))
                     card = "s"
                 end
-                piece = pairof(vcode, card, #w + 1)
+                piece = pairof(vcode, card, w:len() + 1)
                 out = out .. piece
             elseif caseat(pb)
-                piece = pairof(ycode, kcase, #w + 1)
+                piece = pairof(ycode, kcase, w:len() + 1)
                 out = out .. piece
             else
-                piece = pairof(kbad, kbad, #w + 1)
+                piece = pairof(kbad, kbad, w:len() + 1)
                 out = out .. piece
             end
             head = false
-            i = i + #w + 1
+            i = i + w:len() + 1
         elseif b == 35 and surface == "asm"
             w: str = wordat(line, i + 1)
-            piece = pairof(ncode, kimm, #w + 1)
+            piece = pairof(ncode, kimm, w:len() + 1)
             out = out .. piece
             head = false
-            i = i + #w + 1
+            i = i + w:len() + 1
         elseif digit(b)
             j: i64 = i
-            while j <= #line and (digit(line:byte(j)) or line:byte(j) == 46)
+            while j <= line:len() and (digit(line:byte(j)) or line:byte(j) == 46)
                 j = j + 1
             end
             piece = pairof(ncode, klit, j - i)
@@ -1092,10 +1092,10 @@ scan(line: str, surface: str): str
                 # fact that separates a PIPE from a `bor` at the `|` arm above.
                 streaming = true
             end
-            piece = pairof(rc:sub(1, 1), rc:sub(2, 2), #w)
+            piece = pairof(rc:sub(1, 1), rc:sub(2, 2), w:len())
             out = out .. piece
             head = false
-            i = i + #w
+            i = i + w:len()
         elseif b == 40
             depth = depth + 1
             # §0g: level parens vs parameter parens vs grouping. A LEVEL is the
@@ -1124,9 +1124,9 @@ scan(line: str, surface: str): str
             i = i + 1
         elseif b == 41
             card: str = "g"
-            if #opened > 0
-                card = opened:sub(#opened, #opened)
-                opened = opened:sub(1, #opened - 1)
+            if opened:len() > 0
+                card = opened:sub(opened:len(), opened:len())
+                opened = opened:sub(1, opened:len() - 1)
             end
             depth = depth - 1
             piece = pairof(lcode, card, 1)
@@ -1152,14 +1152,14 @@ scan(line: str, surface: str): str
             # TWO CANDIDATES — is it a descriptor or a place? — so it diagnoses
             # rather than defaulting. gap[078].
             j: i64 = i + 1
-            while j <= #line and line:byte(j) != 93
+            while j <= line:len() and line:byte(j) != 93
                 j = j + 1
             end
             inner: str = line:sub(i + 1, j - 1)
             card: str = kbad
             if holds(shapes, inner)
                 card = "w"
-            elseif #inner > 0 and (digit(inner:byte(1)) or inner:byte(1) == 34)
+            elseif inner:len() > 0 and (digit(inner:byte(1)) or inner:byte(1) == 34)
                 card = "i"
             end
             role: str = rcode
@@ -1175,9 +1175,9 @@ scan(line: str, surface: str): str
             # the closer answers what the opener answered, for the reason the
             # paren closer does: recomputing it reads the byte AFTER the group.
             card: str = kbad
-            if #holding > 0
-                card = holding:sub(#holding, #holding)
-                holding = holding:sub(1, #holding - 1)
+            if holding:len() > 0
+                card = holding:sub(holding:len(), holding:len())
+                holding = holding:sub(1, holding:len() - 1)
             end
             role: str = rcode
             if card == kbad
@@ -1216,7 +1216,7 @@ machine(w: str): bool
     out: bool = false
     if w == "sp" or w == "lr" or w == "pc" or w == "fp"
         out = true
-    elseif #w >= 2 and (w:byte(1) == 120 or w:byte(1) == 119) and digit(w:byte(2))
+    elseif w:len() >= 2 and (w:byte(1) == 120 or w:byte(1) == 119) and digit(w:byte(2))
         out = true
     end
     out
@@ -1262,7 +1262,7 @@ strand(line: str, i: i64, j: i64, surface: str): str
             k = k + 1
         end
     end
-    if j <= #line
+    if j <= line:len()
         out = "{out}lq"
     end
     out
@@ -1305,7 +1305,7 @@ why(key: str): str
         out = "{out}  dnir     {dn}\n"
         out = "{out}  capture  {cap}\n"
         i: i64 = 1
-        while i <= #cards
+        while i <= cards:len()
             c: str = cards[i]
             if field(c, 2) == nm
                 ccode: str = field(c, 3)
@@ -1343,13 +1343,13 @@ spanwhy(): str
             f:close()
             surface: str = surfaceof(body)
             lines = body:split("\n")
-            if ln > #lines
+            if ln > lines:len()
                 out = "why: {path} has no line {ln}"
             else
                 src: str = lines[ln]
                 rr: str = project(src, surface)
                 cc: str = carded(src, surface)
-                if col > #rr
+                if col > rr:len()
                     out = "why: {path}:{ln} has no byte {col}"
                 else
                     rb: str = rr:sub(col, col)
@@ -1377,7 +1377,7 @@ end
 legend(): str
     out: str = ""
     i: i64 = 1
-    while i <= #roles
+    while i <= roles:len()
         r: str = roles[i]
         mods: str = "-"
         if field(r, 4) == "heavy"
@@ -1394,8 +1394,8 @@ legend(): str
     # without this the legend ends in a newline AND `print` adds one, so the
     # file carries one empty row past the last role. A consumer that indexes the
     # legend by position would be off by one at the end.
-    if #out > 0
-        out = out:sub(1, #out - 1)
+    if out:len() > 0
+        out = out:sub(1, out:len() - 1)
     end
     out
 end
@@ -1438,7 +1438,7 @@ emitscm(): str
     b = "{b};\n"
     b = "{b}; role -> capture -> github dark (Primer) colour:\n"
     i: i64 = 1
-    while i <= #roles
+    while i <= roles:len()
         r: str = roles[i]
         hx: str = hexof(field(r, 3))
         if field(r, 6) == "faint"
@@ -1466,7 +1466,7 @@ emitscm(): str
     end
     b = "{b}] {ycap}\n\n"
     i = 1
-    while i <= #bindings
+    while i <= bindings:len()
         row: str = bindings[i]
         pat: str = field(row, 1)
         j: i64 = 2
@@ -1480,7 +1480,7 @@ emitscm(): str
         at: i64 = pat:find("CAP")
         if at > 0
             pre: str = pat:sub(1, at - 1)
-            post: str = pat:sub(at + 3, #pat)
+            post: str = pat:sub(at + 3, pat:len())
             b = "{b}{pre}{cap}{post}\n"
         else
             b = "{b}{pat} {cap}\n"
@@ -1548,7 +1548,7 @@ main(): i64
         print("roles, H-2 CLOSED — finite, enumerated, total; the count is a binding:")
         print("  name code hue weight italic luminance rule dnir capture")
         i: i64 = 1
-        while i <= #roles
+        while i <= roles:len()
             r: str = roles[i]
             print("  {r}")
             i = i + 1
@@ -1556,7 +1556,7 @@ main(): i64
         print("cards, §0g fine splits — refinements WITHIN a role:")
         print("  name role code note")
         i = 1
-        while i <= #cards
+        while i <= cards:len()
             c: str = cards[i]
             print("  {c}")
             i = i + 1
@@ -1614,7 +1614,7 @@ main(): i64
     # the file has — which read, downstream, as every golden row being off by
     # one. Dropped here rather than in each consumer.
     lines = body:split("\n")
-    last: i64 = #lines
+    last: i64 = lines:len()
     if last > 0 and lines[last] == ""
         last = last - 1
     end

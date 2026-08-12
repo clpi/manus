@@ -5,7 +5,7 @@
 osmod = os
 
 args = osmod.args()
-n = #args
+n = args:len()
 
 if n == 0
     print("duo_lock: no command (usage: duo_lock.id [--timeout N] -- cmd...)")
@@ -50,7 +50,7 @@ else
 
     parts = {}
     while i <= n
-        parts[#parts + 1] = args[i]
+        parts[parts:len() + 1] = args[i]
         i = i + 1
     end
     cmd = parts:concat(" ")

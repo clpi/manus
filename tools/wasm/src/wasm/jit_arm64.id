@@ -646,7 +646,7 @@ fun compile(body: any, body_len: i64)
       if lb.kind == 0x03
         put(b, b_imm(lb.target - b.n))
       else
-        lb.patches[#lb.patches + 1] = b.n
+        lb.patches[lb:len().patches + 1] = b.n
         put(b, 0)
       end
 
@@ -660,7 +660,7 @@ fun compile(body: any, body_len: i64)
         put(b, cbnz(bc, lb.target - b.n))
       else
         put(b, cbz(bc, 2))                     # skip the branch when false
-        lb.patches[#lb.patches + 1] = b.n
+        lb.patches[lb:len().patches + 1] = b.n
         put(b, 0)
       end
 

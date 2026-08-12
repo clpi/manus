@@ -36,19 +36,19 @@ chacha20_block(key: any, counter: i64, nonce: any): any
     i = 0
     while i < 8
         off = i * 4
-        state[#state + 1] = key:byte(off + 1) |
+        state[state:len() + 1] = key:byte(off + 1) |
             (key:byte(off + 2) << 8) |
             (key:byte(off + 3) << 16) |
             (key:byte(off + 4) << 24)
         i += 1
     end
     # Counter
-    state[#state + 1] = counter & 0xFFFFFFFF
+    state[state:len() + 1] = counter & 0xFFFFFFFF
     # Nonce (3 x 32-bit words)
     i = 0
     while i < 3
         off = i * 4
-        state[#state + 1] = nonce:byte(off + 1) |
+        state[state:len() + 1] = nonce:byte(off + 1) |
             (nonce:byte(off + 2) << 8) |
             (nonce:byte(off + 3) << 16) |
             (nonce:byte(off + 4) << 24)
@@ -80,10 +80,10 @@ chacha20_block(key: any, counter: i64, nonce: any): any
     i = 1
     while i <= 16
         val = (working[i] + state[i]) & 0xFFFFFFFF
-        result[#result + 1] = val & 0xFF:char()
-        result[#result + 1] = (val >> 8) & 0xFF:char()
-        result[#result + 1] = (val >> 16) & 0xFF:char()
-        result[#result + 1] = (val >> 24) & 0xFF:char()
+        result[result:len() + 1] = val & 0xFF:char()
+        result[result:len() + 1] = (val >> 8) & 0xFF:char()
+        result[result:len() + 1] = (val >> 16) & 0xFF:char()
+        result[result:len() + 1] = (val >> 24) & 0xFF:char()
         i += 1
     end
     return result:concat()
@@ -96,15 +96,15 @@ chacha20_crypt(key: str, nonce: str, data: str): str
     counter = 1
     nonce12 = nonce
     # Pad nonce to 12 bytes
-    while #nonce12 < 12
+    while nonce12:len() < 12
         nonce12 = nonce12 .. 0:char()
     end
 
-    while pos <= #data
+    while pos <= data:len()
         block = chacha20_block(key, counter, nonce12)
         i = 1
-        while i <= 64 and pos <= #data
-            out[#out + 1] = data:byte(pos) ~ block:byte(i):char()
+        while i <= 64 and pos <= data:len()
+            out[out:len() + 1] = data:byte(pos) ~ block:byte(i):char()
             pos += 1
             i += 1
         end
@@ -153,7 +153,7 @@ hmac_drbg_generate(state: any, num_bytes: i64): str
         # Take min(remaining, 32) bytes from V
         take = remaining
         if take > 32 take = 32 end
-        temp[#temp + 1] = state.v:sub(1, take)
+        temp[temp:len() + 1] = state.v:sub(1, take)
         remaining -= take
     end
 
@@ -186,14 +186,14 @@ random_bytes(n: i64): str
     if handle
         data = handle:read(n) or ""
         handle:close()
-        if #data == n return data end
+        if data:len() == n return data end
     end
     # Fallback: ChaCha20 with time-based entropy (not all zeros!)
     time_seed = to(str)(os.clock()) .. to(str)(os.time()) .. to(str)(1:random(999999))
     key = {}
     i = 1
     while i <= 32
-        if i <= #time_seed
+        if i <= time_seed:len()
             key[i] = time_seed:byte(i)
         else
             key[i] = (i * 7 + 13) % 256  # deterministic but non-zero
@@ -203,8 +203,8 @@ random_bytes(n: i64): str
     nonce = {}
     i = 1
     while i <= 12
-        if i <= #time_seed
-            nonce[i] = time_seed:byte(((i - 1) % #time_seed) + 1) ~ i
+        if i <= time_seed:len()
+            nonce[i] = time_seed:byte(((i - 1) % time_seed:len()) + 1) ~ i
         else
             nonce[i] = (i * 11 + 3) % 256
         end

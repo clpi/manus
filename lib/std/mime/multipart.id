@@ -30,7 +30,7 @@ next_part(r: any)
         sep = "--" .. r.boundary
         end_sep = "--" .. r.boundary .. "--"
         pos = r.pos
-        while pos <= #r.data
+        while pos <= r:len().data
             d1, e = r.data:find(sep, pos, true)
             if e == nil break end
             if r.data:sub(e + 1, e + 1) == "-" break end
@@ -51,10 +51,10 @@ next_part(r: any)
                 break
             end
             part_body = r.data:sub(body_start, next_sep - 1)
-            if part_body:sub(#part_body - 1) == "\r\n"
-                part_body = part_body:sub(1, #part_body - 2)
-            elseif part_body:sub(#part_body) == "\n"
-                part_body = part_body:sub(1, #part_body - 1)
+            if part_body:sub(part_body:len() - 1) == "\r\n"
+                part_body = part_body:sub(1, part_body:len() - 2)
+            elseif part_body:sub(part_body:len()) == "\n"
+                part_body = part_body:sub(1, part_body:len() - 1)
             end
             r.parts[r.parts:len() + 1] = {headers = parse_headers(hdr), body = part_body}
             pos = next_sep + 1

@@ -118,11 +118,11 @@ main(): i64
 
     # PART IV LV — vestige replacements. These are the rows that fail SILENTLY,
     # which is why each asserts a VALUE and !merely that it compiled.
-    record("LV-4 t:push", "main(): void\n    a = {}\n    a:push(5)\n    print(#a)\nend\n", "1")
+    record("LV-4 t:push", "main(): void\n    a = {}\n    a:push(5)\n    print(a:len())\nend\n", "1")
     record("LV-5 t:pop", "main(): void\n    a = {1, 2}\n    print(a:pop())\nend\n", "2")
     record("LV-6 t:join", "main(): void\n    c = {\"x\", \"y\"}\n    print(c:join(\", \"))\nend\n", "x, y")
     record("LV-8 for v in t", "main(): void\n    t = {10, 20}\n    s = 0\n    for v in t\n        s = s + v\n    end\n    print(s)\nend\n", "30")
-    record("LV-13 #s", "main(): void\n    print(#\"hello\")\nend\n", "5")
+    record("LV-13 s:len()", "main(): void\n    print(#\"hello\")\nend\n", "5")
 
     # Pass 48 §2.1/§2.6 + Pass 67 §2 (S14): apply / retrieve / anchor are ruled
     # TOTAL and DISJOINT. Only APPLY exists. The collision S14 resolves —
@@ -163,8 +163,8 @@ main(): i64
     record("face brace call f{}", "srv(o: any): i64\n    o.port\nend\nmain(): void\n    print(srv{ port = 8080 })\nend\n", "8080")
 
     # PIPE-1 — the pinned pipeline surface
-    record("PIPE map", "main(): void\n    vs = {1, 2}\n    print(#vs:map(.x))\nend\n", "2")
-    record("PIPE filter", "main(): void\n    vs = {1, 2}\n    print(#vs:filter(.x))\nend\n", "2")
+    record("PIPE map", "main(): void\n    vs = {1, 2}\n    print(vs:len():map(.x))\nend\n", "2")
+    record("PIPE filter", "main(): void\n    vs = {1, 2}\n    print(vs:len():filter(.x))\nend\n", "2")
 
     io.write(report)
     print("spec_conformance: " .. implemented:to(str) .. "/" .. checked:to(str)

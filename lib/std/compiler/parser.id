@@ -71,7 +71,7 @@ is_digit: i64 = (c: i64)
 end
 
 skip_spaces: i64 = (src: str, pos: i64)
-    n = #src
+    n = src:len()
     i = pos
     while i <= n and src:byte(i) == 32
         i = i + 1
@@ -86,7 +86,7 @@ end
 # lowers natively is half the point of this file — a recursive-descent parser is
 # nothing but a cycle of such calls.
 parse_factor: Res = (src: str, pos: i64)
-    n = #src
+    n = src:len()
     i = skip_spaces(src, pos)
     if i > n
         return { val = 0, pos = i }
@@ -111,7 +111,7 @@ end
 
 # term := factor (('*' | '/') factor)*
 parse_term: Res = (src: str, pos: i64)
-    n = #src
+    n = src:len()
     left: Res = parse_factor(src, pos)
     acc = left.val
     i = skip_spaces(src, left.pos)
@@ -136,7 +136,7 @@ end
 
 # expr := term (('+' | '-') term)*
 parse_expr: Res = (src: str, pos: i64)
-    n = #src
+    n = src:len()
     left: Res = parse_term(src, pos)
     acc = left.val
     i = skip_spaces(src, left.pos)
@@ -298,6 +298,10 @@ is_type_kind: bool = (k: i64)
     false
 end
 
+is_string_kind: bool = (k: i64)
+    k == token.KIND_TEXT_LIT or k == token.KIND_BYTES_LIT or k == token.KIND_COMPAT_TEXT_LIT or k == token.KIND_COMPAT_LONG_TEXT_LIT
+end
+
 # Mark the parse failed. `lx` is the lexer (a table on this path), so the flag
 # persists through the recursion and is readable by `parse_status`.
 # A parser must terminate on ANY input, including truncated and malformed
@@ -332,7 +336,7 @@ end
 # check is spelling, not token class — `match` lexes as its own kind and every
 # `:match(...)` call in the corpus was rejected because of it.
 is_member_name: bool = (t: Tok)
-    if #t.text == 0
+    if t.text:len() == 0
         return false
     end
     c: i64 = t.text:byte(1)
@@ -1296,7 +1300,7 @@ proj_directive: str = (lx: Lexer)
             _d = lexer.next(lx)
         elseif t.kind == token.KIND_LPAREN
             s = join(s, proj_arglist(lx))
-        elseif t.kind == token.KIND_STRING_LIT
+        elseif is_string_kind(t.kind)
             _n = lexer.next(lx)
             s = s .. " " .. quote(t.text)
         else
@@ -1365,7 +1369,7 @@ proj_desc_body: str = (lx: Lexer)
         # projects as `(key "..." v)`, identical to the bracketed spelling,
         # because they denote the same edge.
         strkey = false
-        if t.kind == token.KIND_STRING_LIT
+        if is_string_kind(t.kind)
             k2 = peek2(lx)
             if k2.kind == token.KIND_ASSIGN
                 strkey = true
@@ -1625,7 +1629,7 @@ proj_postfix: str = (lx: Lexer)
         t = lexer.peek(lx)
         if t.kind == token.KIND_LPAREN
             base = "(call " .. join(base, proj_arglist(lx)) .. ")"
-        elseif t.kind == token.KIND_STRING_LIT
+        elseif is_string_kind(t.kind)
             _s = lexer.next(lx)
             base = "(call " .. base .. " " .. quote(t.text) .. ")"
         elseif t.kind == token.KIND_DOT
@@ -1652,7 +1656,7 @@ proj_postfix: str = (lx: Lexer)
                 return "(error)"
             end
             head = "(method " .. base .. " " .. m.text
-            if lexer.peek(lx).kind == token.KIND_STRING_LIT
+            if is_string_kind(lexer.peek(lx).kind)
                 sl = lexer.next(lx)
                 base = head .. " " .. quote(sl.text) .. ")"
             else
@@ -1680,7 +1684,7 @@ proj_primary: str = (lx: Lexer)
         _n = lexer.next(lx)
         return t.text
     end
-    if t.kind == token.KIND_STRING_LIT
+    if is_string_kind(t.kind)
         _n = lexer.next(lx)
         return quote(t.text)
     end

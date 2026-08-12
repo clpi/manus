@@ -44,7 +44,7 @@ fun wasi_fd_write(rt, args)
     if os.getenv("DUO_WASM_TRACE_FD")
       io.stderr:write("[fd_write fd=" .. tostring(fd) .. " iov=" .. tostring(i)
         .. "/" .. tostring(iovs_len) .. " ptr=" .. tostring(buf_ptr)
-        .. " len=" .. tostring(buf_len) .. " got=" .. tostring(#data) .. "]\n")
+        .. " len=" .. tostring(buf_len) .. " got=" .. tostring(data:len()) .. "]\n")
     end
 
     if fd == 1
@@ -75,10 +75,10 @@ fun wasi_fd_read(rt, args)
       buf_len = runtime.mem_load_i32(rt, base_addr + 4)
       data = io.read(buf_len)
       if data
-        for j = 1, #data
+        for j = 1, data:len()
           mem_mod.write_byte(rt.memory, buf_ptr + j - 1, data:byte(j))
         end
-        total = total + #data
+        total = total + data:len()
       end
     end
   end
@@ -140,10 +140,10 @@ fun wasi_args_sizes_get(rt, args)
   argv_buf_size_ptr = args[2]
   argv = rt.args or {"wasm"}
   buf_size = 0
-  for i = 1, #argv
-    buf_size = buf_size + #argv[i] + 1
+  for i = 1, argv:len()
+    buf_size = buf_size + argv:len()[i] + 1
   end
-  runtime.mem_store_i32(rt, argc_ptr, #argv)
+  runtime.mem_store_i32(rt, argc_ptr, argv:len())
   runtime.mem_store_i32(rt, argv_buf_size_ptr, buf_size)
   ERRNO.success
 end
@@ -154,14 +154,14 @@ fun wasi_args_get(rt, args)
   argv_buf_ptr = args[2]
   argv = rt.args or {"wasm"}
   cursor = argv_buf_ptr
-  for i = 1, #argv
+  for i = 1, argv:len()
     s = argv[i]
     runtime.mem_store_i32(rt, argv_ptr + (i - 1) * 4, cursor)
-    for j = 1, #s
+    for j = 1, s:len()
       mem_mod.write_byte(rt.memory, cursor + j - 1, s:byte(j))
     end
-    mem_mod.write_byte(rt.memory, cursor + #s, 0)
-    cursor = cursor + #s + 1
+    mem_mod.write_byte(rt.memory, cursor + s:len(), 0)
+    cursor = cursor + s:len() + 1
   end
   ERRNO.success
 end

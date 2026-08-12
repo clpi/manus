@@ -50,7 +50,7 @@ distill_soft_loss(student_logits: any, teacher_logits: any, temperature: f64): f
     teacher_probs = softmax_temperature(teacher_logits, temperature)
 
     kl = 0
-    for i = 1, #student_probs
+    for i = 1, student_probs:len()
         if teacher_probs[i] > 1e-10
             kl += teacher_probs[i] * teacher_probs[i] / student_probs[i]:log()
         end
@@ -62,7 +62,7 @@ end
 distill_hard_loss(student_logits: any, labels: any): f64
     # Cross-entropy loss
     loss = 0
-    for i = 1, #student_logits
+    for i = 1, student_logits:len()
         if labels[i] == 1
             loss -= student_logits[i]:max(1e-10):log()
         end
@@ -89,7 +89,7 @@ distill_feature_loss(student_features: any, teacher_features: any): f64
         teacher_feat = teacher_features[layer_name]
         if teacher_feat
             # MSE loss between feature maps
-            for i = 1, #student_feat
+            for i = 1, student_feat:len()
                 diff = student_feat[i] - teacher_feat[i]
                 loss += diff * diff
                 count += 1
@@ -116,7 +116,7 @@ distill_attention_transfer(student_attention: any, teacher_attention: any): f64
             teacher_norm = normalize_attention(teacher_attn)
 
             # MSE loss
-            for i = 1, #student_norm
+            for i = 1, student_norm:len()
                 diff = student_norm[i] - teacher_norm[i]
                 loss += diff * diff
                 count += 1
@@ -138,7 +138,7 @@ normalize_attention(attention: any): any
     if norm < 1e-10 return attention end
 
     normalized = {}
-    for i = 1, #attention
+    for i = 1, attention:len()
         normalized[i] = attention[i] / norm
     end
     normalized
@@ -172,7 +172,7 @@ distill_layer_loss(student_outputs: any, teacher_outputs: any, mapping: any): f6
         teacher_out = teacher_outputs[teacher_layer]
 
         if student_out and teacher_out
-            for i = 1, #student_out
+            for i = 1, student_out:len()
                 diff = student_out[i] - teacher_out[i]
                 loss += diff * diff
                 count += 1
@@ -195,7 +195,7 @@ distill_self_distillation_loss(logits: any, labels: any, temperature: f64): f64
     # Compute cross-entropy between soft probs and hard labels
     # KL divergence: sum(soft_probs * log(soft_probs / target_probs))
     # For self-distillation, target is the hard label distribution
-    n = #logits
+    n = logits:len()
     soft_loss = 0.0
     i = 1
     while i <= n
@@ -240,7 +240,7 @@ end
 
 softmax_temperature(logits: any, temperature: f64): any
     scaled = {}
-    for i = 1, #logits
+    for i = 1, logits:len()
         scaled[i] = logits[i] / temperature
     end
 
@@ -251,13 +251,13 @@ softmax_temperature(logits: any, temperature: f64): any
 
     exp_sum = 0
     probs = {}
-    for i = 1, #scaled
+    for i = 1, scaled:len()
         exp_val = scaled[i] - max_logit:exp()
         probs[i] = exp_val
         exp_sum += exp_val
     end
 
-    for i = 1, #probs
+    for i = 1, probs:len()
         probs[i] = probs[i] / exp_sum
     end
     probs
@@ -267,11 +267,11 @@ distill_accuracy(student_logits: any, labels: any): f64
     correct = 0
     total = 0
 
-    for i = 1, #student_logits
+    for i = 1, student_logits:len()
         max_idx = 1
         max_val = student_logits[i][1]
         j = 2
-        while j <= #student_logits[i]
+        while j <= student_logits:len()[i]
             if student_logits[i][j] > max_val
                 max_val = student_logits[i][j]
                 max_idx = j

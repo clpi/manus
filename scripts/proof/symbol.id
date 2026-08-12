@@ -59,7 +59,7 @@ main: i64 = ()
         std.os.exit(3)
 
     i: i64 = 1
-    n: i64 = #names
+    n: i64 = names:len()
     while i <= n
         nm: str = names[i]
         check(nm, "duo_fn_{nm}")

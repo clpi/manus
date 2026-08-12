@@ -243,7 +243,7 @@ end
 remember(files: any, seen: any, path: str): void
     if seen[path] == nil
         seen[path] = 1
-        files[#files + 1] = path
+        files[files:len() + 1] = path
     end
 end
 
@@ -254,7 +254,7 @@ end
 slot(path: str): str
     out = ""
     i: i64 = 1
-    n: i64 = #path
+    n: i64 = path:len()
     while i <= n
         b = path:byte(i)
         if b == 47 or b == 46
@@ -367,7 +367,7 @@ hosttext(): str
         "",
         "main(): i64",
         "    listing = std.script.fs_read(std.script.getenv(\"CAPROWS_LIST\", \"\"))",
-        "    n: i64 = #listing",
+        "    n: i64 = listing:len()",
         "    start: i64 = 1",
         "    i: i64 = 1",
         "    while i <= n + 1",
@@ -402,7 +402,7 @@ end
 
 tab(rec: str): i64
     i: i64 = 1
-    n: i64 = #rec
+    n: i64 = rec:len()
     while i <= n and rec:byte(i) != 9
         i = i + 1
     end
@@ -430,7 +430,7 @@ end
 
 pad(s: str, w: i64): str
     out = s
-    i: i64 = #s
+    i: i64 = s:len()
     while i < w
         out = out .. " "
         i = i + 1
@@ -495,7 +495,7 @@ main: i64 = ()
             remember(files, seen, f)
         end
     end
-    if #files == 0
+    if files:len() == 0
         print("capability_rows: FAIL — no fixtures at all; the report is not wired")
         return 3
     end
@@ -541,15 +541,15 @@ main: i64 = ()
     nrec = 0
     for i, line in std.script.fs_read("{work}/records.tsv"):split("\n")
         rec = std.script.chomp(line)
-        if #rec > 8
+        if rec:len() > 8
             t = tab(rec)
-            probe[rec:sub(t + 1, #rec)] = rec:sub(1, t - 1)
+            probe[rec:sub(t + 1, rec:len())] = rec:sub(1, t - 1)
             nrec = nrec + 1
         end
     end
-    if nrec != #files
+    if nrec != files:len()
         got = nrec:to(str)
-        want = to(str)(#files)
+        want = to(str)(files:len())
         print("capability_rows: FAIL — {got} records for {want} fixtures; the sweep lost files")
         return 3
     end
@@ -569,15 +569,15 @@ main: i64 = ()
     nhost = 0
     for i, line in std.script.fs_read("{work}/host.tsv"):split("\n")
         rec = std.script.chomp(line)
-        if #rec > 2
+        if rec:len() > 2
             t = tab(rec)
-            host[rec:sub(t + 1, #rec)] = rec:sub(1, t - 1)
+            host[rec:sub(t + 1, rec:len())] = rec:sub(1, t - 1)
             nhost = nhost + 1
         end
     end
-    if nhost != #files
+    if nhost != files:len()
         got = nhost:to(str)
-        want = to(str)(#files)
+        want = to(str)(files:len())
         print("capability_rows: FAIL — hosted probe answered {got} of {want}; H is not measured")
         return 3
     end
@@ -651,7 +651,7 @@ main: i64 = ()
         nm = r[1]
         gk = r[2]
         fs = r[3]
-        nf = #fs
+        nf = fs:len()
         # A row with no fixture has nothing to say about the graph either. `?`
         # means "measured, and the schema has no slot"; `—` means "nothing was
         # measured". Printing `?` for an unfixtured row would claim the first.
@@ -772,13 +772,13 @@ main: i64 = ()
         end
     end
     ec = edges:to(str)
-    fc = to(str)(#files)
+    fc = to(str)(files:len())
     print("  G NOTES — `duo graph` emits an `edges` array for {ec} of {fc} fixtures.")
     print("  A `?` cell means the graph schema has no slot for that capability at all")
     print("  (`-` in the row's key), so no run of this report could turn it into a ✓.")
     print("  Graph keys, per row:")
     for ri, r in rows
-        if #r[3] > 0
+        if r:len()[3] > 0
             print("    " .. pad(r[1], 24) .. "  " .. r[2])
         end
     end
@@ -798,8 +798,8 @@ main: i64 = ()
         print("capability_rows: FAIL — {df} deny fixture(s) were ACCEPTED")
         return 1
     end
-    nr = to(str)(#rows)
-    nfx = to(str)(#files)
+    nr = to(str)(rows:len())
+    nfx = to(str)(files:len())
     print("capability_rows: PASS ({nr} capabilities over {nfx} fixtures)")
     0
 end

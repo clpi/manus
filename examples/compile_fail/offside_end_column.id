@@ -1,3 +1,4 @@
+# @corpus proof
 # Pass 100 §3 — a written `end` is accepted and DELETED (§3.4), but under
 # layout the two renderings have to agree about the same block.
 #

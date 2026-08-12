@@ -41,7 +41,7 @@
 
 
 canonicalize: str = (src: str)
-    n: i64 = #src
+    n: i64 = src:len()
     if n == 0
         return src
     end

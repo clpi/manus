@@ -61,7 +61,7 @@ end
 pad(s: str, width: i64, pad_char: str): str
     if s == nil s = "" end
     if pad_char == nil pad_char = " " end
-    len = #s
+    len = s:len()
     w = width
     if w == nil or w <= len return s end
     pad_str = pad_char:rep(w - len)
@@ -71,7 +71,7 @@ end
 trunc(s: str, width: i64): str
     if s == nil return "" end
     if width == nil return s end
-    len = #s
+    len = s:len()
     if len <= width return s end
     s:sub(1, width)
 end
@@ -82,7 +82,7 @@ format(fmt: str, args: any): str
     out = ""
     i = 1
     arg_idx = 1
-    while i <= #fmt
+    while i <= fmt:len()
         if fmt:sub(i, i) == "{"
             j = fmt:find("}", i, true)
             if j

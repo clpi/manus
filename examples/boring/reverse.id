@@ -4,7 +4,7 @@
 main: i64 = ()
     s = "hello"
     out = ""
-    i = #s - 1
+    i = s:len() - 1
     while i >= 0
         # §0.8 writes this `str{ b }`. Rung (a) of the constructor ladder does
         # not lower — `call to undeclared function 'str'`, gap[088] — so the

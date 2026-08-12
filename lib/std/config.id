@@ -55,7 +55,7 @@ collect_keys(seen: any, out: any, t: any, prefix: any): void
     if t == nil return end
     for k, v in t
         full_key = k
-        if #prefix > 0
+        if prefix:len() > 0
             full_key = prefix .. "." .. k
         end
         if seen[full_key] == nil
@@ -74,7 +74,7 @@ deep_copy_flat(dst: any, prefix: any, src: any): void
     if src == nil return end
     for k, v in src
         full_key = k
-        if #prefix > 0
+        if prefix:len() > 0
             full_key = prefix .. "." .. k
         end
         if type(v) == "table"
@@ -151,12 +151,12 @@ load_env(cfg: any): void
     env_data = os.getenv()
     if env_data == nil return end
     prefix = cfg.env_prefix
-    if prefix != nil and #prefix > 0
+    if prefix != nil and prefix:len() > 0
         prefix = prefix .. "_"
     else
         prefix = ""
     end
-    prefix_len = #prefix
+    prefix_len = prefix:len()
     for k, v in env_data
         if prefix_len > 0
             if k:sub(1, prefix_len) == prefix

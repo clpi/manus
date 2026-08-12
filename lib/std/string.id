@@ -1,19 +1,19 @@
 # std.string — string helper utilities
 
 std_string_is_empty(s: any): bool
-    s == nil or #s == 0
+    s == nil or s:len() == 0
 end
 
 std_string_starts_with(s: any, prefix: any): bool
     if s == nil or prefix == nil return false end
-    s:sub(1, #prefix) == prefix
+    s:sub(1, prefix:len()) == prefix
 end
 
 std_string_ends_with(s: any, suffix: any): bool
     if s == nil or suffix == nil return false end
-    n = #suffix
+    n = suffix:len()
     if n == 0 return true end
-    if n > #s return false end
+    if n > s:len() return false end
     s:sub(-n, -1) == suffix
 end
 
@@ -29,7 +29,7 @@ end
 std_string_trim(s: any): any
     if s == nil return "" end
     first = 1
-    last = #s
+    last = s:len()
     while first <= last and std_string_is_space(s:sub(first, first))
         first += 1
     end
@@ -43,7 +43,7 @@ end
 std_string_ltrim(s: any): any
     if s == nil return "" end
     first = 1
-    last = #s
+    last = s:len()
     while first <= last and std_string_is_space(s:sub(first, first))
         first += 1
     end
@@ -52,7 +52,7 @@ end
 
 std_string_rtrim(s: any): any
     if s == nil return "" end
-    last = #s
+    last = s:len()
     while last >= 1 and std_string_is_space(s:sub(last, last))
         last -= 1
     end
@@ -64,7 +64,7 @@ std_string_split(s: any, sep: any): any
     out = {}
     if s == nil return out end
     if sep == nil or sep == ""
-        for i = 1, #s
+        for i = 1, s:len()
             out[out:len() + 1] = s:sub(i, i)
         end
         return out
@@ -77,7 +77,7 @@ std_string_split(s: any, sep: any): any
             break
         end
         out[out:len() + 1] = rest:sub(1, pos - 1)
-        rest = rest:sub(pos + #sep)
+        rest = rest:sub(pos + sep:len())
     end
     out
 end
@@ -124,7 +124,7 @@ end
 std_string_pad_left(s: any, width: any, pad: any): any
     if s == nil s = "" end
     if pad == nil or pad == "" pad = " " end
-    n = width - #s
+    n = width - s:len()
     if n <= 0 return s end
     pad:rep(n) .. s
 end
@@ -132,7 +132,7 @@ end
 std_string_pad_right(s: any, width: any, pad: any): any
     if s == nil s = "" end
     if pad == nil or pad == "" pad = " " end
-    n = width - #s
+    n = width - s:len()
     if n <= 0 return s end
     s .. pad:rep(n)
 end
@@ -150,7 +150,7 @@ std_string_count(s: any, pat: any): i64
         pos = s:find(pat, start, true)
         if pos == nil break end
         c += 1
-        start = pos + #pat
+        start = pos + pat:len()
     end
     c
 end
@@ -177,14 +177,14 @@ end
 
 std_string_char_at(s: any, index: any): any
     if s == nil or index == nil return "" end
-    if index < 1 or index > #s return "" end
+    if index < 1 or index > s:len() return "" end
     s:sub(index, index)
 end
 
 std_string_trim_prefix(s: any, prefix: any): any
     if s == nil or prefix == nil return s or "" end
     if std_string_starts_with(s, prefix)
-        return s:sub(#prefix + 1)
+        return s:sub(prefix:len() + 1)
     end
     s
 end
@@ -192,7 +192,7 @@ end
 std_string_trim_suffix(s: any, suffix: any): any
     if s == nil or suffix == nil return s or "" end
     if std_string_ends_with(s, suffix)
-        return s:sub(1, #s - #suffix)
+        return s:sub(1, s:len() - suffix:len())
     end
     s
 end
@@ -225,7 +225,7 @@ std_string_split_n(s: any, sep: any, n: any): any
             return out
         end
         out[out:len() + 1] = rest:sub(1, pos - 1)
-        rest = rest:sub(pos + #sep)
+        rest = rest:sub(pos + sep:len())
         count += 1
     end
     out[out:len() + 1] = rest
@@ -236,7 +236,7 @@ std_string_to_title_case(s: any): any
     if s == nil return "" end
     result = ""
     capitalize_next = true
-    for i = 1, #s
+    for i = 1, s:len()
         ch = s:sub(i, i)
         if ch == " " or ch == "-" or ch == "_"
             result = result .. ch

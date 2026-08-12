@@ -67,7 +67,7 @@ sequential(...): any
     return {
         type = "sequential",
         layers = layers,
-        n_layers = #layers,
+        n_layers = layers:len(),
     }
 end
 

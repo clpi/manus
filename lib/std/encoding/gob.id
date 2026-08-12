@@ -48,7 +48,7 @@ encode(v: any, out: any): void
     end
     if t == "string"
         out[out:len() + 1] = TAG_STRING:char()
-        encode_int(#v, out)
+        encode_int(v:len(), out)
         out[out:len() + 1] = v
         return
     end
@@ -113,7 +113,7 @@ end
 
 # decode: internal decoder.
 decode(p: any): any
-    if p.pos > #p.s return nil end
+    if p.pos > p:len().s return nil end
     tag = p.s:byte(p.pos)
     p.pos = p.pos + 1
     if tag == TAG_NIL return nil end
@@ -127,7 +127,7 @@ decode(p: any): any
     end
     if tag == TAG_FLOAT
         start = p.pos
-        while p.pos <= #p.s and p.s:byte(p.pos) != 0
+        while p.pos <= p:len().s and p.s:byte(p.pos) != 0
             p.pos = p.pos + 1
         end
         s = p.s:sub(start, p.pos - 1)
@@ -168,7 +168,7 @@ end
 # decode_int: decode a variable-length integer.
 decode_int(p: any): i64
     v = 0
-    while p.pos <= #p.s
+    while p.pos <= p:len().s
         b = p.s:byte(p.pos)
         p.pos = p.pos + 1
         v = v * 256 + b

@@ -1,3 +1,4 @@
+# @corpus proof
 # compile_fail: generic concept constraint violation
 concept Hashable
     hash(self) -> i64

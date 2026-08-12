@@ -6,7 +6,7 @@
 # ═══════════════════════════════════════════════════════════════
 
 haar_forward(data: any): any
-    n = #data
+    n = data:len()
     if n <= 1 return data end
 
     # Pad to even length if needed
@@ -43,7 +43,7 @@ haar_forward(data: any): any
 end
 
 haar_inverse(data: any): any
-    n = #data
+    n = data:len()
     if n <= 1 return data end
 
     temp = {data:unpack()}
@@ -94,8 +94,8 @@ DB4_HI_RE = {
 }
 
 convolve(signal: any, filter: any): any
-    n = #signal
-    f = #filter
+    n = signal:len()
+    f = filter:len()
     result = {}
     i = 1
     while i <= n
@@ -117,8 +117,8 @@ end
 downsample(data: any, factor: i64): any
     result = {}
     i = 1
-    while i <= #data
-        result[#result + 1] = data[i]
+    while i <= data:len()
+        result[result:len() + 1] = data[i]
         i += factor
     end
     result
@@ -127,11 +127,11 @@ end
 upsample(data: any, factor: i64): any
     result = {}
     i = 1
-    while i <= #data
-        result[#result + 1] = data[i]
+    while i <= data:len()
+        result[result:len() + 1] = data[i]
         j = 1
         while j < factor
-            result[#result + 1] = 0
+            result[result:len() + 1] = 0
             j += 1
         end
         i += 1
@@ -155,7 +155,7 @@ db4_inverse(approx: any, detail: any): any
     detail_us = upsample(detail, 2)
     a = convolve(approx_us, DB4_LO_RE)
     d = convolve(detail_us, DB4_HI_RE)
-    n = #a:min(#d)
+    n = a:len():min(d:len())
     result = {}
     i = 1
     while i <= n
@@ -204,9 +204,9 @@ denoise(signal: any, threshold: f64): any
 
     # Soft threshold detail coefficients
     i = 1
-    while i <= #decomp.details
+    while i <= decomp:len().details
         j = 1
-        while j <= #decomp.details[i]
+        while j <= decomp:len().details[i]
             coeff = decomp.details[i][j]
             if coeff:abs() < threshold
                 decomp.details[i][j] = 0

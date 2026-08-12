@@ -9,9 +9,12 @@ cd "$repo"
 
 template="$repo/docs/spec/harness-projection.md"
 out="$repo/.agents/HARNESS.md"
+session_out="$repo/.agents/session/ENVELOPE.md"
 legacy="$repo/.agents/harness.generated.md"
+mkdir -p "$repo/.agents/session"
 tmp="$(mktemp "${TMPDIR:-/tmp}/idol-harness.XXXXXX")"
-trap 'rm -f "$tmp"' EXIT
+session_tmp="$(mktemp "${TMPDIR:-/tmp}/idol-session.XXXXXX")"
+trap 'rm -f "$tmp" "$session_tmp"' EXIT
 
 if [ ! -f "$template" ]; then
   echo "generate-harness: missing $template" >&2
@@ -74,10 +77,14 @@ docs/spec/harness-projection.md.
 **Invariant:** the harness must reason in Idol — not as a conventional coding
 agent with Idol syntax pasted onto output.
 
-If the live envelope below contradicts the template on implementation state,
-**live envelope wins**.
+EOF
+  cat "$template"
+} >"$tmp"
 
----
+{
+  cat <<EOF
+<!-- EPHEMERAL SESSION ENVELOPE -->
+<!-- Regenerate: tools/node/dev/generate-harness (orient calls this) -->
 
 ## live envelope
 
@@ -177,20 +184,8 @@ Run: git diff -U0 -- '*.id' | ./zig-out/bin/idol run scripts/idiomgate.id
 
 ---
 
-## projection chain (no parallel harness law)
-
-docs/spec/constitution.md
-  → docs/spec/harness-projection.md   (stable harness reasoning)
-  → .agents/HARNESS.md                (this file — live envelope + template)
-
-Provider mechanics only (Cursor rules, Pi skills, MCP transport) — not a second
-semantic specification.
-
----
-
 EOF
-  cat "$template"
-} >"$tmp"
+} >"$session_tmp"
 
 if [ "${1:-}" = "--check" ]; then
   if [ ! -f "$out" ]; then
@@ -214,6 +209,7 @@ if [ "${1:-}" = "--check" ]; then
 fi
 
 cp "$tmp" "$out"
+cp "$session_tmp" "$session_out"
 
 # Back-compat stub — do not maintain parallel content.
 {
@@ -227,4 +223,5 @@ EOF
 } >"$legacy"
 
 echo "generated $out"
+echo "generated $session_out (ephemeral)"
 echo "updated $legacy (redirect stub)"

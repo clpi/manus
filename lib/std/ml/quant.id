@@ -110,7 +110,7 @@ dequantize(q): any
     if q.bits == 4
         # Unpack 4-bit values
         idx = 1
-        for i = 1, #q.data
+        for i = 1, q:len().data
             byte = q.data[i]
             val1 = (byte & 0x0F)
             if val1 >= 8 val1 -= 16 end

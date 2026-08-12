@@ -1,5 +1,5 @@
 n(s: str): i64
-    return #s
+    return s:len()
 end
 main(): i64
     return n("hello")

@@ -51,7 +51,7 @@ _f6(x: f64): str
     w = n / 1000000
     f = n % 1000000
     fs = to(str)(f)
-    while #fs < 6
+    while fs:len() < 6
         fs = "0" .. fs
     end
     s = to(str)(w) .. "." .. fs

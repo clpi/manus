@@ -42,7 +42,7 @@ GGUF_QUANT_Q4_0_8_8 = 18
 # ═══════════════════════════════════════════════════════════════
 
 reader_new(data: any): any
-    {data = data, pos = 1, len = #data}
+    {data = data, pos = 1, len = data:len()}
 end
 
 reader_u8(r: any): any
@@ -125,13 +125,13 @@ reader_string_le(r: any): str
     while i < len
         b = reader_u8(r)
         if b == nil break end
-        bytes[#bytes + 1] = b
+        bytes[bytes:len() + 1] = b
         i += 1
     end
     parts = {}
     i = 1
-    while i <= #bytes
-        parts[#parts + 1] = bytes[i]:char()
+    while i <= bytes:len()
+        parts[parts:len() + 1] = bytes[i]:char()
         i += 1
     end
     parts:concat()
@@ -143,7 +143,7 @@ reader_bytes(r: any, n: i64): any
     while i < n
         b = reader_u8(r)
         if b == nil return nil end
-        out[#out + 1] = b
+        out[out:len() + 1] = b
         i += 1
     end
     out
@@ -188,7 +188,7 @@ gguf_read_value(r: any, type_id: i64): any
         arr = {}
         i = 0
         while i < arr_len
-            arr[#arr + 1] = gguf_read_value(r, elem_type)
+            arr[arr:len() + 1] = gguf_read_value(r, elem_type)
             i += 1
         end
         return arr
@@ -235,12 +235,12 @@ gguf_load(data: any): any
         dims = {}
         d = 0
         while d < n_dims
-            dims[#dims + 1] = reader_u64_le(r)
+            dims[dims:len() + 1] = reader_u64_le(r)
             d += 1
         end
         type_id = reader_u32_le(r)
         offset = reader_u64_le(r)
-        tensors[#tensors + 1] = {
+        tensors[tensors:len() + 1] = {
             name = name,
             dims = dims,
             n_dims = n_dims,
@@ -267,7 +267,7 @@ gguf_load(data: any): any
             weight = {}
             j = 0
             while j < n_elements
-                weight[#weight + 1] = reader_f32_le(r)
+                weight[weight:len() + 1] = reader_f32_le(r)
                 j += 1
             end
             tensor.weight = weight
@@ -280,7 +280,7 @@ gguf_load(data: any): any
                 if bits == nil break end
                 b0 = bits & 0xFF
                 b1 = (bits >> 8) & 0xFF
-                weight[#weight + 1] = reader_f16_approx(b0 | (b1 << 8))
+                weight[weight:len() + 1] = reader_f16_approx(b0 | (b1 << 8))
                 j += 1
             end
             tensor.weight = weight
@@ -293,7 +293,7 @@ gguf_load(data: any): any
                 b = reader_u8(r)
                 if b == nil break end
                 if b > 127 b -= 256 end
-                weight[#weight + 1] = b * scale
+                weight[weight:len() + 1] = b * scale
                 j += 1
             end
             tensor.weight = weight
@@ -310,9 +310,9 @@ gguf_load(data: any): any
                 hi = (b >> 4) & 0x0F
                 if lo > 7 lo -= 16 end
                 if hi > 7 hi -= 16 end
-                weight[#weight + 1] = lo * scale
-                if #weight < n_elements
-                    weight[#weight + 1] = hi * scale
+                weight[weight:len() + 1] = lo * scale
+                if weight:len() < n_elements
+                    weight[weight:len() + 1] = hi * scale
                 end
                 j += 1
             end
@@ -368,7 +368,7 @@ gguf_tensor_names(model: any): any
     names = {}
     if model == nil return names end
     for t in model.tensors
-        names[#names + 1] = t.name
+        names[names:len() + 1] = t.name
     end
     names
 end
