@@ -428,8 +428,7 @@ or algorithm family.
 - Do not use Python for migration, census, or gate tooling; implement in Idol only.
 - Use `"{}"` text composition in Idol source, not `..` concatenation.
 - No `std.*`; `environment` is not a thing — use `os.env[k]`, `os.args[n]`, subject-first `io:read`/`io:write` and `hay:has(needle)`.
-- `using(x)` is lexical admission compression only—not import, module, or loader syntax; do not refactor `scripts/grammarconvergence.id` without explicit approval.
-- Bit reinterpret: no `bitcast`/`bit.*`/`@comp.bit.bitcast`; curried subject-first `to(bit)` with `@view`; reverse f64 view is `restore` not `unpack`.
+- `using(x)` is lexical admission compression only—not import, module, or loader syntax; bit view reverse is `restore` not `unpack`; do not refactor `scripts/grammarconvergence.id` without explicit approval.
 
 ## Learned Workspace Facts
 
