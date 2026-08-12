@@ -51,7 +51,7 @@ shared = req "tools.mcp.shared"
 eval = req "tools.mcp.eval"
 vector = req "lib.std.vector"
 
-audit_tally: any = (results: any)
+fun audit_tally(results: any): any
     passed = 0
     failed = 0
     for _, r in results
@@ -65,7 +65,7 @@ audit_tally: any = (results: any)
     { passed = passed, failed = failed }
 end
 
-audit_smokes: str = ()
+fun audit_smokes(): str
     paths = {
         "examples/meta_template_showcase.id",
         "examples/meta_generate_showcase.id",
@@ -78,11 +78,50 @@ audit_smokes: str = ()
     results = {}
     i = 1
     while i <= #paths
-        results[#results + 1] = shared.audit_native_boxing(paths[i])
+        table.insert(results, shared.audit_native_boxing(paths[i]))
         i += 1
     end
     tallies = audit_tally(results)
     json:encode({ total = #paths, passed = tallies.passed, failed = tallies.failed, results = results })
+end
+
+fun embed_symbols_tool(args: any): str
+    rd = root
+    ipath = "{rd}/docs/symbol_index.json"
+    k = args.top_k or 10
+    sc = args.scope or "all"
+    if args.force_rebuild or not fs:exists(ipath)
+        r = shared.capture("cd {rd} && {shared.idbin} run --backend=c scripts/build_symbol_index.id -- {ipath}")
+        if r.status ~= 0
+            return json:encode({ error = "symbol index build failed", status = r.status })
+        end
+    end
+    raw = fs:read_file(ipath)
+    if not raw
+        return json:encode({ error = "symbol index not found at {ipath}" })
+    end
+    idx = json:decode(raw)
+    dim = idx.dim or 256
+    decoded = #(idx.symbols or {})
+    indexed = idx.count or decoded
+    qvec = vector.embed(args.query or "", dim)
+    records = {}
+    for _, sym in idx.symbols or {}
+        f = sym.file or ""
+        if sc == "all"
+            table.insert(records, sym)
+        elseif sc == "compiler" and string.find(f, "src", 1, true) == 1
+            table.insert(records, sym)
+        elseif sc == "library" and string.find(f, "lib/std", 1, true) == 1
+            table.insert(records, sym)
+        end
+    end
+    results = vector.rank(qvec, records, k)
+    note = nil
+    if decoded < indexed
+        note = "partial decode: {decoded}/{indexed} symbols visible — runtime tonumber heap-corruption bug (see findings 2026-08-02T23:10) reduces recall until codegen.zig fix lands"
+    end
+    json:encode({ results = results, decoded = decoded, indexed = indexed, note = note, query = args.query, dim = dim })
 end
 
 mcp:register_tool("duo_bench_run", {
@@ -253,14 +292,14 @@ mcp:register_tool("duo_agent_session_start", {
     coord = shared.coordination_read()
     p0 = shared.open_p0_gaps()
     canon = shared.canonical_index()
+    open_count = #p0
     json:encode({
         agent_id = agent,
         dev_control_plane = dev_json,
         coordination_path = shared.coordpath,
         canonical_index_path = shared.canonpath,
-        open_p0_count = #p0,
-        next_steps = {
-        },
+        open_p0_count = open_count,
+        next_steps = {},
         coordination_excerpt = string.sub(coord, 1, 2000),
         canonical_excerpt = string.sub(canon, 1, 2000),
     })
@@ -391,10 +430,11 @@ mcp:register_tool("duo_file_finding", {
     entry = "\\n\\n### [{(args.priority or \"P1\")}] [{(args.kind or \"bug\")}] {(args.title or \"\")}\\n- filed: {ts}{fp_line}\\n- detail: {(args.detail or \"\")}\\n"
     existing = fs:read_file(coord_path) or ""
     marker = "## Cross-Agent Gap Buffer"
+    marker_len = string.len(marker)
     idx = string.find(existing, marker, 1, true)
     if idx
-        before = string.sub(existing, 1, idx + #marker - 1)
-        after = string.sub(existing, idx + #marker)
+        before = string.sub(existing, 1, idx + marker_len - 1)
+        after = string.sub(existing, idx + marker_len)
         fs:write_file(coord_path, "{before}{entry}{after}")
     else
         fs:write_file(coord_path, "{existing}\n{marker}{entry}")
@@ -463,52 +503,7 @@ mcp:register_tool("duo_embed_symbols", {
     },
     required = { "query" },
 }, fun(args)
-    rd    = root
-    ipath = "{rd}/docs/symbol_index.json"
-    k     = args.top_k or 10
-    sc    = args.scope or "all"
-
-    if args.force_rebuild or not fs:exists(ipath)
-        -- the literal "<DUO_ROOT>" that used to lead this command was a
-        -- never-substituted template placeholder: `cd <DUO_ROOT>` is a shell
-        -- redirect from a file named DUO_ROOT, so the rebuild always ran in
-        -- the wrong directory or not at all.
-        r = shared.capture("cd {rd} && {shared.idbin} run --backend=c scripts/build_symbol_index.id -- {ipath}")
-        if r.status ~= 0
-            return json:encode({ error = "symbol index build failed", status = r.status })
-        end
-    end
-
-    raw = fs:read_file(ipath)
-    if not raw
-        return json:encode({ error = "symbol index not found at {ipath}" })
-    end
-
-    idx = json:decode(raw)
-    dim = idx.dim or 256
-    decoded = #(idx.symbols or {})
-    indexed = idx.count or decoded
-    qvec = vector.embed(args.query or "", dim)
-
-    -- scope filter (derived from file path), then vector cosine rank
-    records = {}
-    for _, sym in idx.symbols or {}
-        f = sym.file or ""
-        if sc == "all"
-            records[#records+1] = sym
-        elseif sc == "compiler" and string.find(f, "src", 1, true) == 1
-            records[#records+1] = sym
-        elseif sc == "stdlib" and string.find(f, "lib/std", 1, true) == 1
-            records[#records+1] = sym
-        end
-    end
-
-    results = vector.rank(qvec, records, k)
-    note = nil
-    if decoded < indexed
-        note = "partial decode: {decoded}/{indexed} symbols visible — runtime tonumber heap-corruption bug (see findings 2026-08-02T23:10) reduces recall until codegen.zig fix lands"
-    end
-    json:encode({ results = results, decoded = decoded, indexed = indexed, note = note, query = args.query, dim = dim })
+    embed_symbols_tool(args)
 end)
 
 
