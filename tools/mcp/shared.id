@@ -1,7 +1,11 @@
+m = {}
+
 clock = req "lib.clock"
 process = req "lib.process"
+fs = req "lib.std.fs"
+json = req "lib.std.json"
 
-# Import as shared = tools.mcp.shared at file scope.
+# tools/mcp/shared.id — shared MCP implementations.
 
 # Host env, fs, process, and clock homes — no @c.* and no universal namespace.
 root = os.env["DUO_ROOT"]
