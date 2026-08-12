@@ -1,6 +1,6 @@
-m = {}
+clock = req "lib.clock"
+process = req "lib.process"
 
-# tools/mcp/shared.id — shared MCP implementations.
 # Import as shared = tools.mcp.shared at file scope.
 
 # Host env, fs, process, and clock homes — no @c.* and no universal namespace.
@@ -76,8 +76,8 @@ fun session_log(agent_id: str, summary: str, detail: str)
     marker = "## Session log (newest first)"
     pos = string.find(content, marker)
     if pos
-        before = string.sub(content, 1, pos + #marker - 1)
-        after = string.sub(content, pos + #marker)
+        before = string.sub(content, 1, pos + marker:len() - 1)
+        after = string.sub(content, pos + marker:len())
         -- find the table header
         table_pos = string.find(after, "| --- | --- | --- |")
         if table_pos
@@ -95,7 +95,7 @@ fun open_p0_gaps(): any
     content = coordination_read()
     gaps = {}
     for line in string.gmatch(content, "| G-[^|]+ |[^|]+ | P0 |[^|]+ |[^|]+ |")
-        gaps[#gaps + 1] = line
+        gaps[gaps:len() + 1] = line
     end
     gaps
 end
@@ -106,9 +106,9 @@ fun exact_capture(cmd: str): any
     mark = "duoexit:"
     status = -1
     clean = out
-    for i = 1, #out do
-        if string.sub(out, i, i + #mark - 1) == mark then
-            rest = string.sub(out, i + #mark, #out)
+    for i = 1, out:len() do
+        if string.sub(out, i, i + mark:len() - 1) == mark then
+            rest = string.sub(out, i + mark:len(), out:len())
             status = tonumber(string.gsub(rest, "%s+", "")) or -1
             clean = string.sub(out, 1, i - 1)
             break
@@ -192,14 +192,14 @@ runcapture: any = (cmd: str)
     raw = out
     at: i64 = 0
     i: i64 = 1
-    while i + #mark - 1 <= #raw
-        if raw:sub(i, i + #mark - 1) == mark
+    while i + mark:len() - 1 <= raw:len()
+        if raw:sub(i, i + mark:len() - 1) == mark
             at = i
         i += 1
     status: i64 = -1
     out = raw
     if at > 0
-        status = raw:sub(at + #mark):to(i64)
+        status = raw:sub(at + mark:len()):to(i64)
         if at == 1
             out = ""
         else
@@ -347,12 +347,12 @@ fun audit_native_boxing(file_path: str): any
     hits = {}
     for _, needle in {"lua_invoke(", "lua_table_get_str_lit(", "lua_Value ", "lua_table_new(", "lua_val_from_"}
         if string.find(c_code, needle)
-            hits[#hits + 1] = needle
+            hits[hits:len() + 1] = needle
         end
     end
     -- Check comptime violations in main()
     main_pos = 0
-    for i = #c_code, 1, -1
+    for i = c_code:len(), 1, -1
         if string.sub(c_code, i, i + 7) == "int main"
             main_pos = i
             break
@@ -363,7 +363,7 @@ fun audit_native_boxing(file_path: str): any
     comptime_violations = {}
     for ident, rhs in string.gmatch(user, "const char%* (%w+) = ([^;]+);")
         if string.find(rhs, "lua_")
-            comptime_violations[#comptime_violations + 1] = { binding = ident, rhs = string.sub(rhs, 1, 120) }
+            comptime_violations[comptime_violations:len() + 1] = { binding = ident, rhs = string.sub(rhs, 1, 120) }
         end
     end
     const_count = 0
@@ -373,11 +373,11 @@ fun audit_native_boxing(file_path: str): any
     {
         file = file_path,
         boxing_hits = hits,
-        boxing_hit_count = #hits,
+        boxing_hit_count = hits:len(),
         comptime_violations = comptime_violations,
-        comptime_violation_count = #comptime_violations,
+        comptime_violation_count = comptime_violations:len(),
         const_char_ptr_bindings = const_count,
-        pass = #comptime_violations == 0,
+        pass = comptime_violations:len() == 0,
     }
 end
 
@@ -428,8 +428,8 @@ fun foreign_import_preview(header_path: str, source_dir: str): any
     records = {}
     functions = {}
     for _, ent in parsed.entities or {}
-        if ent.kind == "record" then records[#records + 1] = ent
-        elseif ent.kind == "function" then functions[#functions + 1] = ent end
+        if ent.kind == "record" then records[records:len() + 1] = ent
+        elseif ent.kind == "function" then functions[functions:len() + 1] = ent end
     end
     {
         ok = true,
@@ -570,11 +570,11 @@ prove: any = (suite: str)
     reject = { correct = false, fold = false, removal = false, negative = false, speed = false, failures = {}, observe = observe }
     reject = reject:observe("FAIL: synthetic control")
     controls = positive.correct and positive.fold and positive.removal
-        and positive.negative and positive.speed and #positive.failures == 0
-        and #reject.failures == 1
+        and positive.negative and positive.speed and positive.failures:len() == 0
+        and reject.failures:len() == 1
     {
         passed = status == 0 and proof.correct and proof.fold and proof.removal
-            and proof.negative and proof.speed and #proof.failures == 0 and controls
+            and proof.negative and proof.speed and proof.failures:len() == 0 and controls
         correct = proof.correct
         fold = proof.fold
         removal = proof.removal
@@ -596,7 +596,7 @@ fun perf_gaps(): any
     lines = string.split(content, "\n")
     gaps = {}
     i = 1
-    while i <= #lines
+    while i <= lines:len()
         ln = lines[i]
         if string.sub(ln, 1, 4) == "| F-" then
             kind_match = false
@@ -616,7 +616,7 @@ fun perf_gaps(): any
         perf = string.sub(fs:read_file(perfpath), 1, 4000)
     end
     {
-        open_perf_gap_count = #gaps,
+        open_perf_gap_count = gaps:len(),
         gaps = gaps,
         perf_ledger_excerpt = perf,
     }
@@ -634,7 +634,7 @@ fun audit_codegen_pitfalls(file_path: str): any
     lines = string.split(src, "\n")
     findings = {}
     i = 1
-    while i <= #lines
+    while i <= lines:len()
         ln = lines[i]
         tr = str_trim(ln)
         -- F-13813-3: `= nil` init risks void* type inference
@@ -649,12 +649,12 @@ fun audit_codegen_pitfalls(file_path: str): any
         -- F-13813-2: a bare call statement as the LAST statement of an if/for/while
         -- block emits `return call(...)`, exiting the enclosing function early.
         is_tail = false
-        if i < #lines then
+        if i < lines:len() then
             j = i + 1
             nxt = ""
-            while j <= #lines
+            while j <= lines:len()
                 nxt = str_trim(lines[j])
-                if #nxt > 0 then break end
+                if nxt:len() > 0 then break end
                 j += 1
             end
             -- Prefix checks via string.find (NUMBER result); string == is
@@ -675,7 +675,7 @@ fun audit_codegen_pitfalls(file_path: str): any
                     -- (number comparison — string == fails inside loops).
                     head_ok = true
                     k = 1
-                    while k <= #head
+                    while k <= head:len()
                         code = string.byte(head, k)
                         ok_c = false
                         if code >= 48 and code <= 57 then ok_c = true end
@@ -702,9 +702,9 @@ fun audit_codegen_pitfalls(file_path: str): any
     end
     {
         file = file_path,
-        finding_count = #findings,
+        finding_count = findings:len(),
         findings = findings,
-        summary = "Scanned {#lines} lines; {#findings} codegen-pitfall(s)."
+        summary = "Scanned {lines:len()} lines; {findings:len()} codegen-pitfall(s)."
     }
 end
 # === Exponential evaluator ===
@@ -718,7 +718,7 @@ fun str_trim(s: str): str
     -- mis-compares string.sub results inside while loops (c == " " is false for
     -- a space). Number comparison (byte ~= 32) is reliable. Space=32, tab=9.
     a = 1
-    b = #s
+    b = s:len()
     while a <= b
         code = string.byte(s, a)
         if code ~= 32 and code ~= 9 then break end
@@ -739,7 +739,7 @@ fun exponential_evaluate(code: str, file_path: str): any
     -- Detector A: manually monomorphized functions (fun name_SUFFIX(...))
     -- Pattern-free: duo's %s+ and [..] classes are unreliable, so we use find+sub.
     bases = {}
-    for i = 1, #lines
+    for i = 1, lines:len()
         t = str_trim(lines[i])
         nm = ""
         if string.sub(t, 1, 4) == "fun "
@@ -748,12 +748,12 @@ fun exponential_evaluate(code: str, file_path: str): any
                 nm = str_trim(string.sub(t, 5, pp - 1))
             end
         end
-        if #nm > 0
-            for si = 1, #TYPE_SUFFIXES
+        if nm:len() > 0
+            for si = 1, TYPE_SUFFIXES:len()
                 suf = TYPE_SUFFIXES[si]
-                slen = #suf + 1
-                if #nm > slen and string.sub(nm, -slen) == "_{suf}"
-                    base = string.sub(nm, 1, #nm - slen)
+                slen = suf:len() + 1
+                if nm:len() > slen and string.sub(nm, -slen) == "_{suf}"
+                    base = string.sub(nm, 1, nm:len() - slen)
                     bases[base] = bases[base] or {}
                     bases[base][suf] = i
                 end
@@ -781,7 +781,7 @@ fun exponential_evaluate(code: str, file_path: str): any
     -- Detector B: runtime type-string dispatch (if t == "i64" ... elseif "f64")
     dispatch_hits = 0
     dispatch_line = 0
-    for i = 1, #lines
+    for i = 1, lines:len()
         if string.find(lines[i], '== "i64"') or string.find(lines[i], '== "f64"') or string.find(lines[i], '== "i32"') or string.find(lines[i], '== "f32"')
             dispatch_hits += 1
             if dispatch_line == 0 then dispatch_line = i end
@@ -802,7 +802,7 @@ fun exponential_evaluate(code: str, file_path: str): any
     run_prev = -1
     run_start = 0
     c_line = 0
-    for i = 1, #lines
+    for i = 1, lines:len()
         t = str_trim(lines[i])
         b1 = string.find(t, "%[")
         b2 = string.find(t, "%]")
@@ -839,7 +839,7 @@ fun exponential_evaluate(code: str, file_path: str): any
     -- Detector D: repeated record-type boilerplate (>=3 'type X = {')
     type_defs = 0
     type_line = 0
-    for i = 1, #lines
+    for i = 1, lines:len()
         t = str_trim(lines[i])
         if string.sub(t, 1, 5) == "type " and string.find(t, "{") and string.find(t, "=")
             type_defs += 1
@@ -857,7 +857,7 @@ fun exponential_evaluate(code: str, file_path: str): any
     end
 
     -- Detector E: comptime-foldable literal arithmetic (var = digits op digits, no vars)
-    for i = 1, #lines
+    for i = 1, lines:len()
         t = str_trim(lines[i])
         eq = string.find(t, "=")
         if eq and eq > 1 and string.sub(t, eq, eq + 1) ~= "=="
@@ -876,8 +876,8 @@ fun exponential_evaluate(code: str, file_path: str): any
 
     -- Annotated preview: prepend a discovery header listing every opportunity.
     optimized = code
-    if #suggestions > 0
-        scount = #suggestions
+    if suggestions:len() > 0
+        scount = suggestions:len()
         optimized = "# @comp exponential-eval: {scount:to(str)} opportunity(s)\n"
         for _, s in suggestions
             optimized = "{optimized}# [L{s.line:to(str)}] {s.construct}: {s.rationale}\n"
@@ -887,7 +887,7 @@ fun exponential_evaluate(code: str, file_path: str): any
 
     result = {
         file = file_path or "<inline>",
-        suggestion_count = #suggestions,
+        suggestion_count = suggestions:len(),
         suggestions = suggestions,
         optimized_preview = optimized,
     }
@@ -900,92 +900,24 @@ end
 # === Exponential mentoring: Onboarding guidance for metaprogramming ===
 
 fun exponential_onboard(question: str, code: str): any
-    -- Step-by-step guidance for leveraging Duo's exponential metaprogramming
+    default = "Exponential metaprogramming: write less source, get more native specialization via @comp.map, @comp.derive.all, @comp.burst, and @comp.tensor."
+    derive = "Use @comp.derive.all when structures repeat getters/setters across stable fields."
+    mapnote = "@comp.map emits one specialized native function per type with no runtime dispatch."
     questions = {
-        "what is exponential metaprogramming" = [[
-EXPOTENTIAL METAPROGRAMMING IN DUO
-=====================================
-
-The goal: Write LESS code, get MORE optimized native output.
-
-Key @comp.* combinators (no underscores!):
-
-1. @comp.map(type, callback) — Transform all types
-   - One callback handles N types
-   - Native fold → no lua_Value
-   - Example: @comp.map(i32, f32, f64, my_func) generates specialized versions
-
-2. @comp.derive.all(Type) — Auto-generate boilerplate
-   - One declarative type → all getters/setters/methods
-   - Native C emission
-   - Example: @comp.derive.all(MyStruct) gives you .id(), .set_id(), etc.
-
-3. @comp.burst(pattern) — Pattern expansion
-   - One template → N concrete programs
-   - For SIMD, unrolled loops, etc.
-
-4. @comp.tensor(shape, dtype) — Tensor operations
-   - Compile-time shape checking
-   - @device(.auto) for CPU/CUDA/Metal
-
-When to use: When you write nearly-identical code with minor variations
-Never use: Single instance code, or when you need runtime flexibility
-]],
-        "when to use derive" = [[
-USE @comp.derive.* WHEN:
-- You have regular data structures with repeating patterns
-- You need type-safe accessors without typing them all
-- The structure is stable (fields don't change often)
-
-EXAMPLE:
-Before (manual):
-```duo
-fun user_get_id(u: User): i64
-    u.id
-end
-fun user_get_name(u: User): str
-    u.name
-end
-# repeat for all types and fields...
-```
-
-After (exponential):
-```duo
-@comp.derive.all(User, Post, Comment)
-# ONE LINE generates all getters/setters for 3 types
-```
-]],
-        "how map differs from regular function" = [[
-@comp.MAP IS DIFFERENT FROM A REGULAR FUNCTION:
-
-Regular function:
-- One compile-time → one runtime call
-- Must be called N times for N types
-
-@comp.map:
-- One declaration → N specialized native functions
-- Each type gets optimized native code
-- No runtime dispatch, no lua_Value
-
-Example:
-@comp.map(i32, i64, f32, f64, abs)
-→ 4 native functions tailored for each type
-→ No branching, no boxing, full optimization
-]],
+        ["what is exponential metaprogramming"] = default,
+        ["when to use derive"] = derive,
+        ["how map differs from regular function"] = mapnote,
     }
-    
     if question == "" or question == nil
-        return { guidance = questions["what is exponential metaprogramming"], question = question }
+        return { guidance = default, question = question }
     end
-    
     q_lower = string.lower(question)
     for key, val in questions
         if string.find(q_lower, string.lower(key), 1, true) ~= nil
             return { guidance = val, question = question, matched = key }
         end
     end
-    
-    { error = "Question not recognized. Try: {table.concat({k for k in questions}, \", \")}" }
+    { error = "Question not recognized. Try: what is exponential metaprogramming, when to use derive, how map differs from regular function" }
 end
 
 fun combinator_info(path: str): any
@@ -995,29 +927,14 @@ fun combinator_info(path: str): any
             complexity = "O(n types × fields per type)",
             description = "Transform all types in a collection with a single callback",
             native_fold = true,
-            example = [[
-                fun add_one(x: i64): i64
-                    x + 1
-                end
-                
-                -- Generates specialized add_one for i32, i64, f32, f64
-                @comp.map(i32, i64, f32, f64, add_one)
-            ]],
+            example = "\n                fun add_one(x: i64): i64\n                    x + 1\n                end\n                \n                -- Generates specialized add_one for i32, i64, f32, f64\n                @comp.map(i32, i64, f32, f64, add_one)\n            ",
         },
         ["derive.all"] = {
             name = "@comp.derive.all",
             complexity = "O(n types × fields per type)",
             description = "Auto-generate getters, setters, and methods for all fields",
             native_fold = true,
-            example = [[
-                concept User
-                    id: i64
-                    name: str
-                end
-                
-                -- Generates: get_id, get_name, set_id, set_name for User
-                @comp.derive.all(User)
-            ]],
+            example = "\n                concept User\n                    id: i64\n                    name: str\n                end\n                \n                -- Generates: get_id, get_name, set_id, set_name for User\n                @comp.derive.all(User)\n            ",
         },
         tensor = {
             name = "@comp.tensor",
@@ -1025,19 +942,13 @@ fun combinator_info(path: str): any
             description = "Tensor operations with compile-time shape checking",
             native_fold = true,
             device_dispatch = true,
-            example = [[
-                T = @comp.tensor([256, 256], f32)
-                result = @comp.tensor.matmul(T, T)  -- Native BLAS
-            ]],
+            example = "\n                T = @comp.tensor([256, 256], f32)\n                result = @comp.tensor.matmul(T, T)  -- Native BLAS\n            ",
         },
         ladder = {
             name = "@comp.ladder",
             complexity = "O(1) string output",
             description = "Returns the exponential metaprogramming hierarchy",
-            example = [[
-                print(@comp.ladder())
-                -- Output: map:O(n) derive:O(n×f) tensor:O(n³) ...
-            ]],
+            example = "\n                print(@comp.ladder())\n                -- Output: map:O(n) derive:O(n×f) tensor:O(n³) ...\n            ",
         },
     }
     
@@ -1417,7 +1328,7 @@ fun dev_claim_files(): str
         m = claim_meta(key)
         if m ~= nil
             age = now - m.at
-            rows[#rows + 1] = {
+            rows[rows:len() + 1] = {
                 path = claim_unkey(key),
                 owner = m.owner,
                 work_item = m.work,
@@ -1426,7 +1337,7 @@ fun dev_claim_files(): str
             }
         end
     end
-    json:encode({ claims = rows, count = #rows, ttl = claimttl })
+    json:encode({ claims = rows, count = rows:len(), ttl = claimttl })
 end
 
 fun agent_gaps_update(action: str, agent_id: str, gap_id: str, kind: str, title: str, detail: str, priority: str, files: str): str

@@ -7,10 +7,8 @@ chomp: str = (text: str)
     n = text:len()
     while n > 0
         c = text:byte(n)
-        if c != 10
-            if c != 13
-                if c != 32
-                    break
+        if c != 10 and c != 13 and c != 32
+            break
         n -= 1
     text:sub(1, n)
 
@@ -18,12 +16,12 @@ capture: str = (cmd: str)
     f = io.popen(cmd, "r")
     if f == nil
         return ""
+    out = ""
     line = f:read("*a")
+    if line != nil
+        out = line
     f:close()
-    if line == nil
-        ""
-    else
-        chomp(line)
+    chomp(out)
 
 shellstatus: i64 = (cmd: str)
     to(i64)(capture("( " .. cmd .. " ) >/dev/null 2>&1; echo $?"))
